@@ -1421,10 +1421,7 @@ set(ARX_SOURCES
 )
 
 # Using include() for now as add_subdirectory causes problems with uses in qrc files
-option(BUILD_DATA_ICONS "Generate icons (needs ImageMagick and Inkscape)" OFF)
-if(BUILD_DATA_ICONS)
-	include(data/CMakeLists.txt)
-endif()
+include(data/CMakeLists.txt)
 
 # Set the icon for the Windows executable by adding this resource file to the sources
 if(WIN32)

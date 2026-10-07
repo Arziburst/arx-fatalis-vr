@@ -53,9 +53,9 @@ No more than two tasks in **In Progress** at a time.
 ## Task lifecycle
 
 1. **Before starting**, move the task to *In Progress* and add a concrete *definition of done* to it — how we will verify it is finished.
-2. **Branch**: `task/<number>-<short-name>` (e.g. `task/12-fix-rc-flags`), from the current working branch.
+2. **Branch**: `task/<number>-<short-name>` (e.g. `task/12-fix-rc-flags`), from `main`.
 3. **Commits** reference the task: `#12` in the message.
-4. **Pull request** contains `Closes #12` and describes what was done and how it was verified.
+4. **Pull request** into `main` contains `Closes #12` and describes what was done and how it was verified.
 5. **Done** = the definition of done is met and verified (build, launch, in-headset check — whatever applies). The task is closed and moves to *Done*.
 6. If a task is blocked, comment on it with exactly what blocks it and move it back to *Todo* / *Backlog*.
 

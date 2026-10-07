@@ -12,6 +12,8 @@ as fast as possible, show it to people, and only invest in polish and the full g
 Played in a Valve Index from a new game, at the start of Arx Fatalis (the goblin prison and the
 first areas after it):
 
+0. Start SteamVR and launch Arx Fatalis VR — it detects the headset and finds the Arx Fatalis data
+   from the Steam library on its own and starts in VR, with no setup (like the Valheim VR mod).
 1. Put on the headset — the world is in correct stereo and scale; looking around is head-tracked.
 2. Walk around with the thumbstick, turn with snap or smooth turn, crouch, jump.
 3. Pick up items, open doors and chests, pull a lever — by pointing the controller and pressing a button.
@@ -27,6 +29,7 @@ The desktop window mirrors one eye, so the demo can be recorded and shown.
 
 | Area | MVP version |
 |---|---|
+| Launch | VR starts automatically when a headset is available; game data found in Steam libraries; launchable from SteamVR |
 | Rendering | OpenXR stereo at the headset's native rate; desktop mirror |
 | Camera | HMD orientation drives the view; head decoupled from body; correct world scale; recenter |
 | Locomotion | Thumbstick movement, snap and smooth turn, crouch and jump on buttons |

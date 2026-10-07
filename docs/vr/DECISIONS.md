@@ -5,6 +5,34 @@ and what it rules out, so the reasoning survives after the conversation that pro
 
 ---
 
+## D-004: Zero-setup launch, like the Valheim VR mod
+
+- **Date:** 2026-10-08
+- **Status:** Accepted
+- **Decided by:** project owner
+
+### Decision
+The player starts SteamVR, launches Arx Fatalis VR, and the game sets itself up:
+
+- **VR is detected automatically.** If an OpenXR runtime with a headset is available, the game starts
+  in VR. There is no `--vr` flag; `--no-vr` forces flat mode.
+- **Game data is found automatically** in the player's Steam libraries (Steam path from the registry →
+  `libraryfolders.vdf` → `appmanifest_1700.acf` → install folder). No paths to configure.
+- **Launchable from SteamVR.** Until it is a Steam app with the VR flag, it is added to Steam as a
+  non-Steam shortcut; whether such shortcuts appear in the SteamVR dashboard is to be verified (task #80).
+
+### Notes for implementation
+- Creating an OpenXR instance with SteamVR as the active runtime may start SteamVR by itself.
+  If that is unwanted when the player intends to play flat, detect whether SteamVR is already running
+  before initializing OpenXR, and fall back to flat mode otherwise.
+- Today the engine finds data only next to its executable, in the working directory, via `--data-dir`,
+  or in the `Software\ArxLibertatis` registry key (`src/io/fs/SystemPaths.cpp`).
+
+### Consequences
+- Task #17 covers automatic VR start; new MVP tasks #79 (Steam data detection) and #80 (launch from SteamVR).
+
+---
+
 ## D-003: MVP first, polish later
 
 - **Date:** 2026-10-08

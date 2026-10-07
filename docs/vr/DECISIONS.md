@@ -5,6 +5,31 @@ and what it rules out, so the reasoning survives after the conversation that pro
 
 ---
 
+## D-003: MVP first, polish later
+
+- **Date:** 2026-10-08
+- **Status:** Accepted
+- **Decided by:** project owner
+
+### Decision
+The first milestone is an **MVP** ([MVP.md](MVP.md)): a short demo of the core VR experience —
+stereo, locomotion, physical melee, rune casting, and the original 2D UI on a floating panel —
+reached as fast as possible. Polish and the full game (`M2 Full Game & Polish`) come only after
+the MVP, and only if it is well received.
+
+### Why
+Validate interest early with the smallest convincing demo instead of spending months on polish
+for a project nobody may want.
+
+### Consequences
+- The board is organized around the MVP: MVP tasks are in **Todo** with milestone `M1 MVP`;
+  everything else is in **Backlog**.
+- Known rough edges are accepted in the MVP (flat floating UI, placeholder hands, no bow or shield,
+  cutscene and screen-effect issues) — listed in [MVP.md](MVP.md).
+- Milestones were renamed: `M1 Prototype` → `M1 MVP`, `M2 Playable` → `M2 Full Game & Polish`.
+
+---
+
 ## D-002: Project name is "Arx Fatalis VR"
 
 - **Date:** 2026-10-08

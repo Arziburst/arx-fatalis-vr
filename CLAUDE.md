@@ -2,6 +2,9 @@
 
 VR port of Arx Fatalis (OpenXR with SteamVR as the runtime, target headset: Valve Index) built on the Arx Libertatis engine.
 Key decisions and their reasoning are logged in [docs/vr/DECISIONS.md](docs/vr/DECISIONS.md) — add new ones there.
+
+**Current goal: the MVP** — see [docs/vr/MVP.md](docs/vr/MVP.md). Only work needed for the MVP demo
+scenario gets done now; everything else waits in Backlog.
 Goal: a free standalone Steam app that requires the original Arx Fatalis (app 1700) on the user's account.
 
 ## Working rules — mandatory

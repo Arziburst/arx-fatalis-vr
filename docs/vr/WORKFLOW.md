@@ -17,14 +17,23 @@ commit messages, pull requests, and code comments.
 | Epics and tasks | GitHub Issues — the **single source of truth** for the plan |
 | Rules | this file |
 | Decisions and their reasoning | [DECISIONS.md](DECISIONS.md) |
+| Current goal: the MVP | [MVP.md](MVP.md) |
 | Research and scope of playable v1 | [RESEARCH-playable-v1.md](RESEARCH-playable-v1.md) |
+
+## Current goal: MVP first
+
+The first goal is the **MVP** ([MVP.md](MVP.md)): a short, rough demo of the core VR experience,
+shipped fast. Polish and the full game come after, if the MVP lands. When deciding whether to do
+something now, ask: *is it needed to play the MVP demo scenario?* If not, it goes to Backlog.
 
 ## Plan structure
 
-- **Milestone** — a major stage: `M1 Prototype`, `M2 Playable`, `M3 Steam Release`.
-- **Epic** — an issue labeled `epic`: a large goal within a milestone. Its description holds the goal,
+- **Milestone** — a major stage: `M1 MVP`, `M2 Full Game & Polish`, `M3 Steam Release`.
+  Milestones are set on **tasks** only.
+- **Epic** — an issue labeled `epic`: a large goal (e.g. "VR rendering"). An epic spans milestones —
+  its MVP tasks are in `M1 MVP`, its polish tasks in `M2`. Its description holds the goal,
   prerequisites, definition of done, and dependencies.
-- **Task** — an issue labeled `task`, created as a **sub-issue** of its epic, in the same milestone.
+- **Task** — an issue labeled `task`, created as a **sub-issue** of its epic, with a milestone.
   A task must be doable in one working session (hours to a couple of days). Anything bigger gets split.
 - **Bug** — an issue labeled `bug`, also a sub-issue of the epic it belongs to.
 
@@ -34,8 +43,8 @@ Area labels: `vr` (VR-specific work), `legal` (rights, licensing, Steam).
 
 | Column | Meaning |
 |---|---|
-| **Backlog** | Planned, but not soon |
-| **Todo** | Next up; everything needed to start is available |
+| **Backlog** | Planned, but not part of the current goal (the MVP) |
+| **Todo** | Part of the current goal (the MVP); picked up in the order given in [MVP.md](MVP.md) |
 | **In Progress** | Being worked on right now |
 | **Done** | Finished and verified; issue closed |
 

@@ -57,21 +57,23 @@ if(MSVC)
 		add_definitions(-D_CRT_NONSTDC_NO_DEPRECATE)
 		add_definitions(-D_SCL_SECURE_NO_WARNINGS)
 		
+		# Compiler-only flags are limited to C/C++ so they don't reach the resource compiler (rc.exe).
+
 		# TODO TEMP - disable very noisy warning
 		# Conversion from 'A' to 'B', possible loss of data
-		add_definitions(/wd4244)
-		add_definitions(/wd4267)
-		
+		add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/wd4244>)
+		add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/wd4267>)
+
 		# warning C4127: conditional expression is constant
-		add_definitions(/wd4127)
+		add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/wd4127>)
 		# warning C4201: nonstandard extension used: nameless struct/union
-		add_definitions(/wd4201) # used in GLM
+		add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/wd4201>) # used in GLM
 		# warning C4324: 'xxx': structure was padded due to alignment specifier
-		add_definitions(/wd4324)
+		add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/wd4324>)
 		# warning C4701: potentially uninitialized local variable 'xxx' used
-		add_definitions(/wd4701)
+		add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/wd4701>)
 		# warning C4703: potentially uninitialized local pointer variable 'xxx' used
-		add_definitions(/wd4703)
+		add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/wd4703>)
 		
 	endif()
 	
@@ -92,7 +94,7 @@ if(MSVC)
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")
 		
 		# Disable RTTI
-		add_definitions(/GR-) # No RTTI
+		add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/GR->) # No RTTI
 		if(CMAKE_VERSION VERSION_LESS 3.20)
 			foreach(flag_var CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE)
 				string(REGEX REPLACE "/GR( |$)" "" ${flag_var} "${${flag_var}}")
@@ -134,7 +136,7 @@ if(MSVC)
 		
 	endforeach(flag_var)
 	
-	add_definitions(/utf-8)
+	add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/utf-8>)
 	
 	# Turn on standards compliant mode
 	# /Za is not compatible with /fp:fast, leave it off

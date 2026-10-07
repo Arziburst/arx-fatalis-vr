@@ -4,4 +4,8 @@
 !/.mailmap
 !/.travis.yml
 !/.github
+# Claude Code project commands are shared; worktrees and local settings are not.
+!/.claude
+/.claude/*
+!/.claude/commands
 /build

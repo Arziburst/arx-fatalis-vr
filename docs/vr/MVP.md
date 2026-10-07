@@ -48,7 +48,7 @@ The desktop window mirrors one eye, so the demo can be recorded and shown.
 - Cutscenes, death camera and scripted cameras may behave badly.
 - Screen-space effects (flares, fog, fades) may look wrong in stereo.
 - No positional tracking safeguards (leaning into walls), no vignette, no VR settings menu.
-- No CI, no Steam build.
+- No Steam build.
 
 ## Definition of done
 
@@ -59,15 +59,57 @@ The desktop window mirrors one eye, so the demo can be recorded and shown.
 
 ## Order of work
 
-1. **Build & run** — epic #1 (the game must run before anything can be tested)
+1. **Build & run, CI** — epic #1 (the game must run before anything can be tested)
 2. **Stereo rendering** — epic #2 (largest and riskiest; de-risk first)
-3. **Floating UI panel + laser pointer** — epics #7 and #4 (makes the whole game reachable in VR early)
-4. **Head tracking & camera** — epic #3
-5. **Input module & locomotion** — epic #4
-6. **Interaction** — epic #5
-7. **Melee** — epic #5
-8. **Rune casting** — epic #6
-9. **Comfort defaults, demo run, video** — epics #8 and #9
+3. **Head tracking & camera, comfort defaults** — epics #3 and #8
+4. **VR input, floating UI panel + laser pointer** — epics #4 and #7 (makes the whole game reachable in VR)
+5. **Locomotion, launch from SteamVR** — epics #4 and #1
+6. **Interaction, then melee** — epic #5
+7. **Rune casting** — epic #6
+8. **Demo video** — epic #9
+
+## Task queue
+
+The exact order in which MVP tasks are picked up. `/next-task` (via `scripts/dev/next-task.ps1`) takes
+the first task in this list that is in **Todo** on the board. Keep it up to date: when a task is added
+to the MVP, insert it where its dependencies are met; when a task is split, replace it with its parts.
+
+1. #13 — Build `arx.exe` and run the game with data from the Steam folder
+2. #79 — Find the Arx Fatalis data automatically in Steam libraries
+3. #16 — Developer documentation: how to build and run
+4. #70 — Test save library for MVP scenarios *(the owner records the saves; Claude prepares the list and instructions)*
+5. #17 — Integrate OpenXR; start in VR automatically when a headset is available
+6. #18 — Per-eye swapchains, render into swapchain images via FBO
+7. #71 — Split `renderLevel()` into simulate-once and draw-per-eye
+8. #20 — Frame loop: `xrWaitFrame` / `xrBeginFrame` / `xrEndFrame`
+9. #19 — Render the scene twice with per-eye view and projection
+10. #72 — Per-eye re-projection of CPU-projected (TL) geometry
+11. #73 — Decouple the UI virtual screen size from the eye render target size
+12. #21 — Desktop mirror (one eye)
+13. #24 — HMD orientation → camera orientation
+14. #27 — World scale: meters to Arx units, height calibration
+15. #25 — Decouple head direction from body direction
+16. #28 — Recenter; seated / standing modes
+17. #76 — VR comfort defaults: no view bobbing, screen shake, FOV zoom
+18. #30 — OpenXR action set
+19. #35 — Suggested bindings for the Index controller profile
+20. #74 — VR input module: actions → engine action states, mouse buttons, analog move vector
+21. #49 — Floating UI panel for the whole 2D layer
+22. #34 — Laser-pointer interaction as mouse on the panel
+23. #31 — Smooth stick locomotion
+24. #32 — Snap turn and smooth turn
+25. #33 — Jump, crouch, stealth
+26. #80 — Launch from SteamVR
+27. #36 — Placeholder hand models at controller poses
+28. #37 — Object selection by ray; picking up and throwing items
+29. #38 — Doors, levers, chests, searching bodies
+30. #75 — Equipped weapon follows the controller pose
+31. #39 — Melee: hits driven by controller speed and trajectory
+32. #42 — Haptic feedback
+33. #43 — Magic mode: glowing trail behind the controller
+34. #44 — Project the 3D stroke onto a plane → 2D strokes into the recognizer
+35. #45 — Tune recognition tolerances
+36. #77 — Record an MVP gameplay video
 
 ## Estimate
 

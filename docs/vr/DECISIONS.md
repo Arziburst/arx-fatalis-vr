@@ -5,6 +5,31 @@ and what it rules out, so the reasoning survives after the conversation that pro
 
 ---
 
+## D-005: CI gates merges; the owner only tests VR features
+
+- **Date:** 2026-10-08
+- **Status:** Accepted
+- **Decided by:** project owner
+
+### Decision
+The owner does not review every pull request. Every PR is built by CI. Claude merges PRs on its own
+when CI is green, **except** gameplay / VR behavior that can only be judged in the headset: those PRs
+are labeled `needs-vr-test`, wait in the **Testing** column, and are merged only after the owner
+tested them in VR (`/accept-task`).
+
+### Why
+The owner's time is best spent where only a human in a headset can judge the result. Build, tooling,
+documentation and engine plumbing are verified by CI.
+
+### Consequences
+- CI (task #15) is part of the MVP: without it Claude cannot merge.
+- The board has a **Testing** column; the PR template has *How verified* and *How to test* sections.
+- The development loop (`/next-task`, `/accept-task`, `/reject-task`) is described in
+  [WORKFLOW.md](WORKFLOW.md#the-development-loop).
+- The MVP tasks are ordered in a [task queue](MVP.md#task-queue) so that every session picks the same next task.
+
+---
+
 ## D-004: Zero-setup launch, like the Valheim VR mod
 
 - **Date:** 2026-10-08

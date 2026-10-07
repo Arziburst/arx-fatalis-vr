@@ -16,7 +16,7 @@ Conversation with the project owner is in Russian.
 
 ## Remotes
 
-- `origin` — https://github.com/Arziburst/arx-vr (private, ours)
+- `origin` — https://github.com/Arziburst/arx-fatalis-vr (private, ours)
 - `upstream` — https://github.com/arx/ArxLibertatis (original engine)
 
 ## Development environment (Windows)

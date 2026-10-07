@@ -12,7 +12,7 @@ commit messages, pull requests, and code comments.
 
 | What | Where |
 |---|---|
-| Code | repository [Arziburst/arx-vr](https://github.com/Arziburst/arx-vr) |
+| Code | repository [Arziburst/arx-fatalis-vr](https://github.com/Arziburst/arx-fatalis-vr) |
 | Plan and status | board [Arx Fatalis VR](https://github.com/users/Arziburst/projects/3) |
 | Epics and tasks | GitHub Issues — the **single source of truth** for the plan |
 | Rules | this file |

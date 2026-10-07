@@ -17,6 +17,7 @@ commit messages, pull requests, and code comments.
 | Epics and tasks | GitHub Issues — the **single source of truth** for the plan |
 | Rules | this file |
 | Decisions and their reasoning | [DECISIONS.md](DECISIONS.md) |
+| Research and scope of playable v1 | [RESEARCH-playable-v1.md](RESEARCH-playable-v1.md) |
 
 ## Plan structure
 

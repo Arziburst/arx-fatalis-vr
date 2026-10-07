@@ -17,10 +17,15 @@ Create new tasks and bugs discovered during work yourself and list them in your 
 **All project artifacts (docs, issues, commits, PRs, code comments) are in English.**
 Conversation with the project owner is in Russian.
 
-## Remotes
+## Remotes and branches
 
 - `origin` — https://github.com/Arziburst/arx-fatalis-vr (private, ours)
-- `upstream` — https://github.com/arx/ArxLibertatis (original engine)
+- `upstream` — https://github.com/arx/ArxLibertatis (original engine; add it with
+  `git remote add upstream https://github.com/arx/ArxLibertatis.git` if missing)
+- `main` — our development branch and the default branch. Task branches start from it, PRs go into it.
+- `master` — untouched mirror of the upstream engine at the point we forked; not used for development.
+
+The project owner's working copy is `C:\Users\arzib\OneDrive\Desktop\arx-fatalis-vr`.
 
 ## Development environment (Windows)
 

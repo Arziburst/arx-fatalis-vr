@@ -1,4 +1,4 @@
-# Arx VR — Working Rules
+# Arx Fatalis VR — Working Rules
 
 These are the agreed rules for developing the VR version. They apply to humans and to Claude alike.
 Update this file whenever the agreements change.
@@ -13,9 +13,10 @@ commit messages, pull requests, and code comments.
 | What | Where |
 |---|---|
 | Code | repository [Arziburst/arx-vr](https://github.com/Arziburst/arx-vr) |
-| Plan and status | board [Arx VR](https://github.com/users/Arziburst/projects/3) |
+| Plan and status | board [Arx Fatalis VR](https://github.com/users/Arziburst/projects/3) |
 | Epics and tasks | GitHub Issues — the **single source of truth** for the plan |
 | Rules | this file |
+| Decisions and their reasoning | [DECISIONS.md](DECISIONS.md) |
 
 ## Plan structure
 

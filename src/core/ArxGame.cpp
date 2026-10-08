@@ -307,6 +307,7 @@ static bool migrateFilenames(const fs::path & configFile) {
 }
 
 static bool g_forceWindowed = false;
+static bool g_configFullscreen = true; // the value from cfg.ini, restored before the config is saved
 
 static void forceWindowed() {
 	g_forceWindowed = true;
@@ -352,8 +353,9 @@ bool ArxGame::initConfig() {
 	
 	Logger::configure(config.misc.debug);
 
+	g_configFullscreen = config.video.fullscreen;
 	if(g_forceWindowed && config.video.fullscreen) {
-		// For this run only - the setting in cfg.ini is left alone unless the player changes it in the menu
+		// For this run only: the config is saved at exit, so the original value is restored there
 		LogInfo << "Starting in a window (--windowed)";
 		config.video.fullscreen = false;
 	}
@@ -977,9 +979,13 @@ void ArxGame::shutdownGame() {
 	TextureContainer::DeleteAll();
 	
 	cinematicDestroy();
-	
+
+	if(g_forceWindowed) {
+		// --windowed must not leak into cfg.ini
+		config.video.fullscreen = g_configFullscreen;
+	}
 	config.save();
-	
+
 	RoomDrawRelease();
 	EXITING = 1;
 	TREATZONE_Clear();

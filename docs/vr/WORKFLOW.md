@@ -84,8 +84,14 @@ Before a task goes to **Testing** (or is merged without a VR test), the worker r
 it launches the build in flat mode (`--no-vr`) and, when SteamVR is available, in VR; loads a level
 (`--loadlevel 10`, the first level of a new game) or a save (`--loadslot <n>`); lets it run; reads
 `%USERPROFILE%\Saved Games\Arx Libertatis\arx.log` and checks `...\crashes\` for new crash reports;
-closes the game and checks for `Clean shutdown`. A crash, a hang or a new `[E]` log line blocks the
-hand-off. Once #99 lands, `scripts/dev/smoke-test.ps1` does all of this in one command.
+closes the game and checks for `Clean shutdown`. A crash or a new `[E]` log line caused by the task
+blocks the hand-off.
+
+This is **best effort**: we do not know yet how reliably the game behaves under automated launches,
+especially in VR with nobody wearing the headset. If a self-test is flaky or cannot run (e.g. SteamVR
+idles without a user), the worker says so in the PR's *How verified* instead of blocking the task on
+it, and the owner's test decides. #99 first finds out how far automation can go before
+`scripts/dev/smoke-test.ps1` becomes part of the routine.
 The owner's headset time is for judging how it feels in VR, not for finding crashes.
 
 ### Testing a task in the headset
@@ -97,6 +103,10 @@ its branch stays checked out and freshly built there, so the owner tests exactly
 # SteamVR running, headset on
 .\scripts\run-windows.ps1 -- --skiplogo --loadslot 0
 ```
+
+Or double-click the **Arx Fatalis VR** desktop shortcut (created by `scripts/create-desktop-shortcut.ps1`):
+it runs the latest build of whatever branch is checked out in the owner's working copy and shows the
+branch name in its console window.
 
 `--loadslot <n>` starts straight into a saved game (recorded in flat mode) — needed until the in-VR
 menu exists (checkpoint B). `run-windows.ps1` starts the game in a window (`--windowed`; `-Fullscreen`

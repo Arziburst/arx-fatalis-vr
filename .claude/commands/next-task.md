@@ -35,7 +35,9 @@ Run `.\scripts\dev\next-task.ps1`.
   SteamVR is available, in VR (`.\scripts\run-windows.ps1 -- --loadlevel 10`); let it run, read
   `%USERPROFILE%\Saved Games\Arx Libertatis\arx.log`, check `...\crashes\` for new reports, close it and
   confirm `Clean shutdown`. Use `scripts\dev\smoke-test.ps1` once it exists (#99).
-  A crash, hang or new `[E]` line must be fixed (or filed as a bug, if unrelated) before the PR.
+  A crash or new `[E]` line caused by the task must be fixed (or filed as a bug, if unrelated) before
+  the PR. This is best effort: if a self-test is flaky or cannot run (e.g. VR with nobody wearing the
+  headset), say so in *How verified* rather than blocking on it.
 - Record new problems you find as tasks or bugs (sub-issues of the right epic, on the board).
 
 ## 5. Pull request

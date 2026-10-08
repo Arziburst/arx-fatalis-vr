@@ -69,6 +69,10 @@ One task per session, one pull request per task. The owner drives it with three 
 
 Start each task in a **new Claude Code session** in the owner's working copy, so every task starts
 with a clean context; everything a session needs to know lives in the repository and on the board.
+The session names itself after the task: a project hook (`.claude/settings.json` →
+`scripts/dev/hooks/session-title.ps1`) turns `/next-task 124` into the session title
+"ARXVR-124 <issue title>" (also for `/accept-task <n>` and `/reject-task <n>`), shown in `/resume`
+and the terminal tab.
 
 ### Roles
 

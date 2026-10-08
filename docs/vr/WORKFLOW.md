@@ -73,6 +73,10 @@ with a clean context; everything a session needs to know lives in the repository
   It hands out the next task (in the order of the [task queue](MVP.md#task-queue)) as a ready-to-paste
   prompt, and after the owner reports a task done it checks that the PR is merged and `main` is green,
   tests whatever can be tested without a headset, updates the plan, and hands out the next task.
+  The owner triggers this with **"новый цикл"** (or `/new-cycle`): the coordinator runs
+  `scripts/dev/cycle-report.ps1`, merges what is ready, fixes board inconsistencies, deletes leftover
+  branches, syncs the owner's working copy, and then gives either the next task's prompt or the reason
+  progress is blocked (a PR waiting for a VR test, red CI, a blocking bug, a decision needed).
 - **Worker session** — a fresh session per task, possibly with a different model. It implements exactly
   one task in its own PR (`/next-task <n>`), and handles the owner's verdict (`/accept-task`, `/reject-task`).
 - **Owner** — tests VR features in the headset following the PR's *How to test*, and gives the verdict.

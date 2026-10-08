@@ -101,6 +101,7 @@ dependencies are met; when a task is split, replace it with its parts.
 7. #129 — Diagnostics D1: the log always on disk (flush on warnings/errors and every second), last 10 runs kept
 7. #131 — Diagnostics D3: automatic log digest after every run and automatic bug filing (`auto-reported`)
 7. #130 — Diagnostics D2: game event log — one line per game and VR state change
+7. #127 — Flat smoke test in CI on the self-hosted runner (follow-up of #99)
 8. #18 — Per-eye swapchains; first visible result: the flat frame on a head-locked quad (F-20)
 9. #20 — Frame loop with pose-matched submission and a rate / cadence line (F-07, F-21, F-26)
 10. #21 — Desktop mirror = a copy of the left eye (F-24)
@@ -173,6 +174,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #129 D1 log always on disk, 10 runs | core | plain | #115 |
 | #131 D3 auto digest and bug filing | build | plain | #129, #115, #123 |
 | #130 D2 game event log | core | plain | #129 |
+| #127 smoke test in CI | build | plain | #99, #131 |
 | #18 swapchains, quad first | vr-runtime | VR | — |
 | #20 frame loop | vr-runtime | VR | #18 |
 | #21 desktop mirror | vr-runtime | VR | #20 |
@@ -221,7 +223,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | **0** — sequential, until #123 is merged | — | #99 → #124 → #123 |
 | **1** | #18 → #20 → #21 | #71, #114, #115 → #129, #76, #118, #120, #79 |
 | **2** | #24, #19 | #112 → #113, #30, #131, #130 |
-| **3** | #74, #72, #27, #25, #35 | #73, #70 |
+| **3** | #74, #72, #27, #25, #35 | #73, #70, #127 |
 | **4** — finishes checkpoint A | #28, #100, #31, #32, #42 | #80 |
 | **5** — checkpoint B | #49, #33, #36 | #88 → #132 *(after the owner's decisions on #118 / #120)* |
 | **6** | #34, #116, #37, #75 | — |

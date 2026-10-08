@@ -98,6 +98,9 @@ dependencies are met; when a task is split, replace it with its parts.
 7. #124 — Development launch: skip all cinematics (new-game intro, in-game `.cin`) — straight into the game or the menu
 7. #123 — Parallel development tooling: worktrees, isolated self-test folders, test-pr station, VR lock (switches on parallel work)
 7. #115 — Log banner and the OpenXR runtime that answered (F-18, F-98)
+7. #129 — Diagnostics D1: the log always on disk (flush on warnings/errors and every second), last 10 runs kept
+7. #131 — Diagnostics D3: automatic log digest after every run and automatic bug filing (`auto-reported`)
+7. #130 — Diagnostics D2: game event log — one line per game and VR state change
 8. #18 — Per-eye swapchains; first visible result: the flat frame on a head-locked quad (F-20)
 9. #20 — Frame loop with pose-matched submission and a rate / cadence line (F-07, F-21, F-26)
 10. #21 — Desktop mirror = a copy of the left eye (F-24)
@@ -134,6 +137,7 @@ dependencies are met; when a task is split, replace it with its parts.
 36. #38 — Doors, levers, chests and bodies with the hand (D-010, F-57)
 37. #79 — Find the Arx Fatalis data automatically in Steam libraries (F-97)
 38. #88 — Tester build for a friend (F-91, F-96, F-100) *(then the friend tests on Quest 3 — #87, Backlog until then)*
+38. #132 — Diagnostics D4: crash reports under SteamVR, debug symbols kept for every tester build
 
 ### C. Fight
 39. #75 — Weapon held by the IK hand; no engine arm attack animation while IK drives the arms (F-48, F-67)
@@ -166,6 +170,9 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #124 skip cinematics | ui | plain | — |
 | #123 parallel tooling | build | plain | #99 |
 | #115 log banner | core | plain | — |
+| #129 D1 log always on disk, 10 runs | core | plain | #115 |
+| #131 D3 auto digest and bug filing | build | plain | #129, #115, #123 |
+| #130 D2 game event log | core | plain | #129 |
 | #18 swapchains, quad first | vr-runtime | VR | — |
 | #20 frame loop | vr-runtime | VR | #18 |
 | #21 desktop mirror | vr-runtime | VR | #20 |
@@ -198,6 +205,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #38 doors, levers, chests | combat | VR | #37 |
 | #79 Steam data detection | core | plain | — |
 | #88 tester build | build | plain | #79, #123, decisions on #118 / #120 |
+| #132 D4 crash reports under SteamVR, symbols | build | plain | #88, #131 |
 | #75 weapon in the IK hand | combat | VR | #36 |
 | #39 melee | combat | VR | #75, #114 |
 | #42 haptics | input | VR | #74 |
@@ -211,11 +219,11 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | Wave | VR lane (needs the headset) | Plain lane (no headset) |
 |---|---|---|
 | **0** — sequential, until #123 is merged | — | #99 → #124 → #123 |
-| **1** | #18 → #20 → #21 | #71, #114, #115, #76, #118, #120, #79 |
-| **2** | #24, #19 | #112 → #113, #30 |
+| **1** | #18 → #20 → #21 | #71, #114, #115 → #129, #76, #118, #120, #79 |
+| **2** | #24, #19 | #112 → #113, #30, #131, #130 |
 | **3** | #74, #72, #27, #25, #35 | #73, #70 |
 | **4** — finishes checkpoint A | #28, #100, #31, #32, #42 | #80 |
-| **5** — checkpoint B | #49, #33, #36 | #88 *(after the owner's decisions on #118 / #120)* |
+| **5** — checkpoint B | #49, #33, #36 | #88 → #132 *(after the owner's decisions on #118 / #120)* |
 | **6** | #34, #116, #37, #75 | — |
 | **7** — checkpoints C, D | #38, #39, #43 → #44 → #45 | #16 |
 | **8** — MVP done | #77 | — |

@@ -343,6 +343,23 @@ ARXVR-1 docs: record the commit naming convention
 - Research tasks create **no** follow-up tasks: the owner decides from the catalog (*Decision* column),
   the coordinator turns the decisions into tasks and orders the queue.
 
+## Development diagnostics — automatic
+
+Every game run is evidence, with nothing for the owner to do (plan decided on 2026-10-09: #129–#132):
+- **D1 (#129)** the log is always on disk (flushed on warnings / errors and every second) and the last
+  10 runs are kept, so a hang or a forced close does not lose the end of the log.
+- **D2 (#130)** a game event log: one line per game and VR state change (level, save/load, death,
+  session state, controller profile, menus, spells, hits, refused actions with their reason).
+- **D3 (#131)** after **every** game exit started by our tools (desktop shortcut, `run-windows.ps1`,
+  `test-pr.ps1`, the smoke test) a digest runs automatically; a **new** error signature or a crash is
+  filed as an issue labeled `bug` + `auto-reported`, a known one gets a throttled "seen again" comment.
+- **D4 (#132)** crash reports verified under SteamVR, debug symbols kept for every tester build.
+
+**Triage:** the coordinator goes through new `auto-reported` issues in every `/new-cycle`: confirm or
+close as noise (and add the line to the allow-list), link to the right epic as a sub-issue, set the
+milestone, and put it into the MVP queue if it blocks the MVP. Workers never ignore an
+`auto-reported` issue that their change caused — they fix it in the same PR.
+
 ## Growing the plan as we go
 
 The plan is alive. When something new comes up during work:

@@ -31,7 +31,8 @@
 .EXAMPLE
 	.\scripts\run-windows.ps1 -Fullscreen -Config Debug -- --no-vr
 #>
-[CmdletBinding()]
+# PositionalBinding=$false: after "--" everything is positional, and without this "--skiplogo" would bind to -Config.
+[CmdletBinding(PositionalBinding = $false)]
 param(
 	[ValidateSet('Release', 'RelWithDebInfo', 'Debug')]
 	[string]$Config = 'Release',

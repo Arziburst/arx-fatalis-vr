@@ -19,6 +19,7 @@ commit messages, pull requests, and code comments.
 | Decisions and their reasoning | [DECISIONS.md](DECISIONS.md) |
 | Current goal: the MVP | [MVP.md](MVP.md) |
 | Research and scope of playable v1 | [RESEARCH-playable-v1.md](RESEARCH-playable-v1.md) |
+| Research: controllers (Valve Index, Quest 3) | [RESEARCH-controllers.md](RESEARCH-controllers.md) |
 
 ## Current goal: MVP first
 
@@ -64,6 +65,31 @@ One task per session, one pull request per task. The owner drives it with three 
 
 Start each task in a **new Claude Code session** in the owner's working copy, so every task starts
 with a clean context; everything a session needs to know lives in the repository and on the board.
+
+### Roles
+
+- **Coordinator session** — one long-running session that plans and does not write feature code.
+  It hands out the next task (in the order of the [task queue](MVP.md#task-queue)) as a ready-to-paste
+  prompt, and after the owner reports a task done it checks that the PR is merged and `main` is green,
+  tests whatever can be tested without a headset, updates the plan, and hands out the next task.
+- **Worker session** — a fresh session per task, possibly with a different model. It implements exactly
+  one task in its own PR (`/next-task <n>`), and handles the owner's verdict (`/accept-task`, `/reject-task`).
+- **Owner** — tests VR features in the headset following the PR's *How to test*, and gives the verdict.
+
+Tasks are strictly sequential: the next task starts only after the previous one is merged.
+
+### Testing a task in the headset
+
+The worker session works directly in the owner's working copy. When a task goes to **Testing**,
+its branch stays checked out and freshly built there, so the owner tests exactly the PR's code:
+
+```powershell
+# SteamVR running, headset on
+.\scripts\run-windows.ps1 -- --skiplogo --loadslot 0
+```
+
+`--loadslot <n>` starts straight into a saved game (recorded in flat mode) — needed until the in-VR
+menu exists (checkpoint B). After `/accept-task` the worker merges and switches the copy back to `main`.
 
 Helper scripts used by the commands:
 - `scripts/dev/next-task.ps1` — which task is next (Testing / In Progress first, then the queue)

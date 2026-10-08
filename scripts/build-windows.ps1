@@ -15,7 +15,8 @@
 	Build type: Release (default), RelWithDebInfo or Debug.
 
 .PARAMETER BuildDir
-	Build directory. Default: %LOCALAPPDATA%\ArxFatalisVR\build\<Config>.
+	Build directory. Default: %LOCALAPPDATA%\ArxFatalisVR\build\<folder>-<hash>\<Config>, one per working
+	copy (main clone or worktree), because CMake cannot share a build directory between source trees.
 
 .PARAMETER VcpkgRoot
 	vcpkg checkout. Default: $env:VCPKG_ROOT as set before the script starts (not the one Visual Studio
@@ -44,7 +45,8 @@ $ErrorActionPreference = 'Stop'
 $UserVcpkgRoot = $env:VCPKG_ROOT
 $SourceDir = Split-Path -Parent $PSScriptRoot
 $AppDataDir = Join-Path $env:LOCALAPPDATA 'ArxFatalisVR'
-if (-not $BuildDir) { $BuildDir = Join-Path $AppDataDir "build\$Config" }
+. (Join-Path $PSScriptRoot 'build-paths.ps1')
+if (-not $BuildDir) { $BuildDir = Get-DefaultBuildDir $SourceDir $Config }
 
 function Write-Step([string]$Message) { Write-Host "==> $Message" -ForegroundColor Cyan }
 

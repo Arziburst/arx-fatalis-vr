@@ -62,15 +62,16 @@ $ErrorActionPreference = 'Stop'
 function Short([string]$Sha) { if ($Sha -and $Sha.Length -gt 9) { $Sha.Substring(0, 9) } else { $Sha } }
 
 # --- The pull request --------------------------------------------------------------------------------
+# ($pull, not $pr: PowerShell variable names ignore case, and $Pr is the [int] parameter)
 
-$pr = gh pr view $Pr -R $Repo --json number,title,headRefName,headRefOid,body,state,labels,url | ConvertFrom-Json
-if ($LASTEXITCODE -or -not $pr) { throw "could not read PR #$Pr" }
-$branch = $pr.headRefName
-$labels = @($pr.labels.name)
+$pull = gh pr view $Pr -R $Repo --json number,title,headRefName,headRefOid,body,state,labels,url | ConvertFrom-Json
+if ($LASTEXITCODE -or -not $pull) { throw "could not read PR #$Pr" }
+$branch = $pull.headRefName
+$labels = @($pull.labels.name)
 
-Write-Host "==> PR #$($pr.number) $($pr.title)" -ForegroundColor Cyan
-Write-Host "    $($pr.url)  [$($pr.state.ToLower())$(if ($labels) { ', ' + ($labels -join ', ') })]  branch $branch @ $(Short $pr.headRefOid)"
-if ($pr.state -ne 'OPEN') { Write-Host "    note: this PR is $($pr.state.ToLower())" -ForegroundColor Yellow }
+Write-Host "==> PR #$($pull.number) $($pull.title)" -ForegroundColor Cyan
+Write-Host "    $($pull.url)  [$($pull.state.ToLower())$(if ($labels) { ', ' + ($labels -join ', ') })]  branch $branch @ $(Short $pull.headRefOid)"
+if ($pull.state -ne 'OPEN') { Write-Host "    note: this PR is $($pull.state.ToLower())" -ForegroundColor Yellow }
 
 # --- The worktree of its branch -------------------------------------------------------------------
 
@@ -81,15 +82,15 @@ Write-Host "    worktree: $wt"
 git -C $wt fetch -q origin 2>$null
 $dirty = @(git -C $wt status --porcelain)
 $head = (git -C $wt rev-parse HEAD).Trim()
-if ($head -ne $pr.headRefOid) {
+if ($head -ne $pull.headRefOid) {
 	if ($dirty) {
-		Write-Host "    worktree has uncommitted changes - left at $(Short $head), the PR head is $(Short $pr.headRefOid)" -ForegroundColor Yellow
+		Write-Host "    worktree has uncommitted changes - left at $(Short $head), the PR head is $(Short $pull.headRefOid)" -ForegroundColor Yellow
 	} else {
-		git -C $wt merge --ff-only $pr.headRefOid 2>&1 | Out-Null
+		git -C $wt merge --ff-only $pull.headRefOid 2>&1 | Out-Null
 		if ($LASTEXITCODE) {
-			Write-Host "    could not fast-forward $(Short $head) to the PR head $(Short $pr.headRefOid) (unpushed commits?) - testing $(Short $head)" -ForegroundColor Yellow
+			Write-Host "    could not fast-forward $(Short $head) to the PR head $(Short $pull.headRefOid) (unpushed commits?) - testing $(Short $head)" -ForegroundColor Yellow
 		} else {
-			$head = $pr.headRefOid
+			$head = $pull.headRefOid
 			Write-Host "    fast-forwarded to the PR head $(Short $head)"
 		}
 	}
@@ -114,7 +115,7 @@ if ($reason) {
 
 # --- The one question ---------------------------------------------------------------------------------
 
-$how = [regex]::Match([string]$pr.body, '(?ms)^#{2,}\s*How to test\s*\r?\n(.*?)(?=^#{2,}\s|\z)').Groups[1].Value.Trim()
+$how = [regex]::Match([string]$pull.body, '(?ms)^#{2,}\s*How to test\s*\r?\n(.*?)(?=^#{2,}\s|\z)').Groups[1].Value.Trim()
 Write-Host ''
 Write-Host '==> How to test (from the PR)' -ForegroundColor Cyan
 if ($how) { $how -split '\r?\n' | ForEach-Object { Write-Host "    $_" } } else { Write-Host '    (the PR has no "How to test" section)' -ForegroundColor Yellow }

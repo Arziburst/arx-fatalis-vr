@@ -80,6 +80,7 @@ dependencies are met; when a task is split, replace it with its parts.
 ### A. Walk in VR
 1. #17 — Integrate OpenXR; start in VR automatically when a headset is available
 2. #89 — Product name and image in SteamVR (the owner's key art: `data/vr/key-art.png`)
+3. #103 — Product icon `data/vr/ARXVR.ico` in `arx.exe` and as the window icon
 3. #98 — Dev launch finds the engine's own data (`data/core`): fonts and menu icons
 4. #99 — Automated smoke test: flat and VR launch, load a level, logs, crashes, clean shutdown
 5. #18 — Per-eye swapchains, render into swapchain images via FBO

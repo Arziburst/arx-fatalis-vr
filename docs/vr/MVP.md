@@ -150,6 +150,76 @@ dependencies are met; when a task is split, replace it with its parts.
 46. #16 — Developer documentation: how to build and run
 47. #77 — Record an MVP gameplay video
 
+## Parallel plan
+
+How the queue splits into **waves** of tasks that can run at the same time (see "Parallel work" in
+[WORKFLOW.md](WORKFLOW.md)). Every task carries an area label (`area:…`) and, if it will need the
+owner's headset, `lane:vr`. Within a wave, tasks of **different areas** run together; at most 3
+workers, the VR lane at most 2 in progress and 4 in Testing. The queue order above stays the
+tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
+
+### Dependencies
+
+| Task | Area | Lane | Depends on |
+|---|---|---|---|
+| #99 smoke test, command channel | build | plain | — |
+| #124 skip cinematics | ui | plain | — |
+| #123 parallel tooling | build | plain | #99 |
+| #115 log banner | core | plain | — |
+| #18 swapchains, quad first | vr-runtime | VR | — |
+| #20 frame loop | vr-runtime | VR | #18 |
+| #21 desktop mirror | vr-runtime | VR | #20 |
+| #112 simulated VR backend | vr-runtime | plain | #20, #21, #99 |
+| #113 scripted sequences | build | plain | #112 |
+| #71 simulate once, draw per eye | render | plain | — |
+| #19 render twice per eye | render | VR | #71, #20 (accepted via #112) |
+| #72 per-eye TL re-projection | render | VR | #19 |
+| #73 UI size vs eye size | ui | plain | #19 |
+| #24 HMD orientation → camera | camera | VR | #20 |
+| #27 scale and eye height | camera | VR | #24 |
+| #76 comfort defaults | camera | plain | — |
+| #28 recenter (button chord) | camera | VR | #24, #74 |
+| #114 host unit tests in CI | build | plain | — |
+| #100 physical crouch | camera | VR | #24, #28, #114 |
+| #30 OpenXR action set | input | plain | — |
+| #35 bindings | input | VR | #30 |
+| #74 input module | input | VR | #30 |
+| #25 head / body decouple | camera | VR | #24 |
+| #31 locomotion | input | VR | #74, #25 |
+| #32 turning | input | VR | #74 |
+| #118, #120 research | docs | plain | — (decisions before #36, #116, #49, #88) |
+| #49 UI panel | ui | VR | #73 |
+| #34 menu pointer | ui | VR | #49, #74 |
+| #33 jump, crouch toggle, stealth | input | VR | #74 |
+| #70 test saves | build | plain | #99, #123 |
+| #36 full body with IK arms | render | VR | #72, #24, #74, decisions on #118 / #120 |
+| #116 wrist vitals | ui | VR | #36 |
+| #37 grab and throw | combat | VR | #36, #74 |
+| #38 doors, levers, chests | combat | VR | #37 |
+| #79 Steam data detection | core | plain | — |
+| #88 tester build | build | plain | #79, #123, decisions on #118 / #120 |
+| #75 weapon in the IK hand | combat | VR | #36 |
+| #39 melee | combat | VR | #75, #114 |
+| #42 haptics | input | VR | #74 |
+| #43, #44, #45 runes | magic | VR | #36, #74 |
+| #80 launch from SteamVR | core | plain | — |
+| #16 developer docs | docs | plain | late, once the tooling settles |
+| #77 gameplay video | docs | VR | everything else |
+
+### Waves
+
+| Wave | VR lane (needs the headset) | Plain lane (no headset) |
+|---|---|---|
+| **0** — sequential, until #123 is merged | — | #99 → #124 → #123 |
+| **1** | #18 → #20 → #21 | #71, #114, #115, #76, #118, #120, #79 |
+| **2** | #24, #19 | #112 → #113, #30 |
+| **3** | #74, #72, #27, #25, #35 | #73, #70 |
+| **4** — finishes checkpoint A | #28, #100, #31, #32, #42 | #80 |
+| **5** — checkpoint B | #49, #33, #36 | #88 *(after the owner's decisions on #118 / #120)* |
+| **6** | #34, #116, #37, #75 | — |
+| **7** — checkpoints C, D | #38, #39, #43 → #44 → #45 | #16 |
+| **8** — MVP done | #77 | — |
+
 ## Estimate
 
 Roughly **9–14 weeks** of full-time-equivalent work: stereo rendering is the largest part (3–5 weeks);

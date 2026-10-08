@@ -240,6 +240,17 @@ ARXVR-1 docs: record the commit naming convention
   words joined with `-`.
 - Commits that come from the upstream engine (Arx Libertatis) keep their original messages.
 
+## Research
+
+- **All research is a task on the board**, done by a worker session in its own PR — never an ad-hoc
+  investigation in a conversation. The coordinator only takes a quick look to scope the task
+  (what exists, the license, where the source is) and writes the issue.
+- **Research on reference projects extends one catalog**, [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md):
+  each new project is a "Research continued (#107)" task that adds its summary, license line and rows
+  with continuing IDs (F-111, …); duplicates are noted on existing rows, not repeated.
+- Research tasks create **no** follow-up tasks: the owner decides from the catalog (*Decision* column),
+  the coordinator turns the decisions into tasks and orders the queue.
+
 ## Growing the plan as we go
 
 The plan is alive. When something new comes up during work:

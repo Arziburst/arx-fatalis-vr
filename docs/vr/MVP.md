@@ -119,7 +119,9 @@ dependencies are met; when a task is split, replace it with its parts.
 28. #32 — Snap turn and smooth turn (F-32)
 
 ### B. Body and interaction
-29. #118 — Research Titanfall 2 VR mods (CircuitLord: full body IK; TinyBlackDog: open C++ OpenXR mod) — catalog for the owner's decisions before the body, HUD and tester-build tasks
+29. #118 — Research continued (#107): TinyBlackDog's open-source Titanfall 2 VR — extends the reference-mods catalog
+29. #120 — Research continued (#107): CircuitLord's Titanfall 2 VR (closed source) — full body IK, weapons, installer
+*(the owner decides on the new catalog rows before #36, #116, #49 and #88)*
 29. #49 — Floating UI panel for menus, inventory, book, map (F-80, F-82)
 30. #34 — Menu pointer only while a menu or the inventory is open (D-010, F-81)
 31. #33 — Jump on A, crouch toggle on right stick down, stealth by partial deflection (F-47)

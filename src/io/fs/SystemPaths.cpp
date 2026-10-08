@@ -223,7 +223,13 @@ bool addSearchRoot(std::vector<path> & result, const path & dir, bool filter) {
 	path configFile = dir / "data.dirs";
 	if(is_regular_file(configFile)) {
 		std::string data = fs::read(configFile);
-		for(std::string_view line : util::splitIgnoreEmpty(data, '\n')) {
+		for(std::string_view rawline : util::splitIgnoreEmpty(data, '\n')) {
+			// The file may have CRLF line endings: CMake's file(GENERATE) writes it in text mode on
+			// Windows, and so do most Windows editors. A trailing '\r' would make the path not exist.
+			std::string_view line = util::trimRight(rawline, "\r");
+			if(line.empty()) {
+				continue;
+			}
 			path datadir = dir / line;
 			if(addSearchPath(result, datadir, filter)) {
 				LogDebug("got data dir from data.dirs file in dir: " << datadir);

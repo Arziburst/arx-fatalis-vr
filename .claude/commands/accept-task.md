@@ -10,7 +10,8 @@ Read `docs/vr/WORKFLOW.md` first.
    If more than one candidate exists, ask which one.
 2. Check CI: `gh pr checks <pr>`. If it is not green, do not merge — tell the owner why.
 3. Comment on the PR: "Tested in VR and accepted by the project owner." plus any notes from `$ARGUMENTS`.
-4. Merge: `gh pr merge <pr> --merge --delete-branch`, then return the working copy to `main`:
+4. Merge: `gh pr merge <pr> --merge --delete-branch --subject "<PR title> (#<pr>)"`, then return the
+   working copy to `main`:
    `git switch main; git pull --ff-only`.
 5. `.\scripts\dev\set-status.ps1 -Issue <n> -Status Done` (the issue closes through `Closes #<n>`; close it
    with `gh issue close` if it did not).

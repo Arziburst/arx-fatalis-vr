@@ -11,7 +11,9 @@ Goal: a free standalone Steam app that requires the original Arx Fatalis (app 17
 
 Before doing any work, read and follow [docs/vr/WORKFLOW.md](docs/vr/WORKFLOW.md):
 tasks are sub-issues of epics on GitHub, board at https://github.com/users/Arziburst/projects/3,
-statuses Backlog / Todo / In Progress / Done, branches `task/<number>-<short-name>`, PRs with `Closes #N`.
+statuses Backlog / Todo / In Progress / Testing / Done, PRs with `Closes #N`.
+Naming: commits and PR titles `ARXVR-<issue> <type>: <description>`, branches `ARXVR-<issue>-<type>-<short-name>`
+(see [Commit and pull request naming](docs/vr/WORKFLOW.md#commit-and-pull-request-naming)).
 Create new tasks and bugs discovered during work yourself and list them in your report.
 
 **Development loop:** `/next-task` takes the next task from the queue in [docs/vr/MVP.md](docs/vr/MVP.md#task-queue)

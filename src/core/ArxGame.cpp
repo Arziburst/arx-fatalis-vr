@@ -306,8 +306,16 @@ static bool migrateFilenames(const fs::path & configFile) {
 	return migrated;
 }
 
+static bool g_forceWindowed = false;
+
+static void forceWindowed() {
+	g_forceWindowed = true;
+}
+ARX_PROGRAM_OPTION("windowed", "", "Start in a window regardless of the fullscreen setting in cfg.ini",
+                   &forceWindowed)
+
 bool ArxGame::initConfig() {
-	
+
 	// Initialize config first, before anything else.
 	fs::path configFile = fs::getConfigDir() / "cfg.ini";
 	
@@ -343,7 +351,13 @@ bool ArxGame::initConfig() {
 	}
 	
 	Logger::configure(config.misc.debug);
-	
+
+	if(g_forceWindowed && config.video.fullscreen) {
+		// For this run only - the setting in cfg.ini is left alone unless the player changes it in the menu
+		LogInfo << "Starting in a window (--windowed)";
+		config.video.fullscreen = false;
+	}
+
 	if(!migrated && config.misc.migration < Config::CaseSensitiveFilenames) {
 		migrated = migrateFilenames(configFile);
 		if(!migrated) {
@@ -555,6 +569,18 @@ GameFlow::Transition GameFlow::s_currentTransition = GameFlow::FirstLogo;
 static AreaId g_areaToLoad = AreaId(10);
 static bool g_initialPlayerCollision = true;
 
+/*
+ * During development a plain launch goes straight to the main menu: the publisher logos and the
+ * intro cinematic are skipped (owner's decision, 2026-10-08). Bringing them back for players is #92;
+ * --intro shows the original startup sequence until then.
+ */
+static bool g_showIntro = false;
+
+static void showIntro() {
+	g_showIntro = true;
+}
+ARX_PROGRAM_OPTION("intro", "", "Show the publisher logos and the intro cinematic at startup", &showIntro)
+
 static void skipLogo() {
 	if(GameFlow::getTransition() != GameFlow::LoadingScreen) {
 		GameFlow::setTransition(GameFlow::LoadingScreen);
@@ -594,12 +620,15 @@ static bool HandleGameFlowTransitions() {
 		return false;
 	}
 
-	if(GInput->isAnyKeyPressed()) {
+	// A plain launch starts at the main menu, exactly like pressing a key during the logos does
+	bool skipIntro = (GameFlow::getTransition() == GameFlow::FirstLogo && !g_showIntro);
+
+	if(skipIntro || GInput->isAnyKeyPressed()) {
 		ARXmenu.requestMode(Mode_MainMenu);
 		ARX_MENU_Launch(false);
 		GameFlow::setTransition(GameFlow::InGame);
 	}
-		
+
 	if(GameFlow::getTransition() == GameFlow::FirstLogo) {
 		
 		benchmark::begin(benchmark::Splash);

@@ -8,9 +8,20 @@ You are working on Arx Fatalis VR. Follow the project rules exactly.
 Read `CLAUDE.md`, `docs/vr/WORKFLOW.md` and `docs/vr/MVP.md` before anything else.
 All artifacts (code comments, commits, PRs, issue comments) are in English; talk to the owner in Russian.
 
-## 1. Sync
-- `git fetch origin`, make sure the working tree is clean, `git switch main`, `git pull --ff-only`.
-- If the tree is not clean, stop and tell the owner what is uncommitted — do not discard anything.
+## 1. Prepare the working copy yourself
+The owner does not prepare anything before a task — you do. Do all of this without asking:
+- `git fetch --prune origin`.
+- If the working tree has uncommitted changes, stop and tell the owner exactly what is uncommitted —
+  never discard anything.
+- If a branch of an already merged task is still checked out (e.g. after a VR test), switch away from it;
+  delete the local branch if it is merged.
+- `git switch main`, `git pull --ff-only`.
+- Build `main` once before changing anything: `.\scripts\build-windows.ps1`. This also sets up or
+  updates vcpkg and the dependencies. If `main` does not build, that is the first thing to fix or
+  report — do not start the task on a broken base.
+- If something the task needs is missing on this machine (a tool, an SDK, a vcpkg port), install or
+  add it yourself (`winget`, `vcpkg.json`) and mention it in the report; ask only if it needs the
+  owner's account, payment, or hardware.
 
 ## 2. Pick the task
 Run `.\scripts\dev\next-task.ps1`.

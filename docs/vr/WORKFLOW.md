@@ -76,7 +76,17 @@ with a clean context; everything a session needs to know lives in the repository
   one task in its own PR (`/next-task <n>`), and handles the owner's verdict (`/accept-task`, `/reject-task`).
 - **Owner** — tests VR features in the headset following the PR's *How to test*, and gives the verdict.
 
-Tasks are strictly sequential: the next task starts only after the previous one is merged.
+Tasks are strictly sequential: the next task starts only after the previous one is merged
+(one headset, one tester — parallel tasks would only queue up at testing).
+
+### Worker sessions prepare everything themselves
+
+The owner only opens a session and types `/next-task <n>`. Everything else at the start of a task is
+the worker's job, without asking: fetch and pull `main`, leave a branch of an already merged task,
+build `main` once (which also sets up vcpkg and dependencies) to make sure the base is healthy, and
+install or add anything missing for the task (tools via `winget`, libraries via `vcpkg.json`).
+The worker asks the owner only for things that need the owner's account, payment, or hardware —
+and never discards uncommitted changes it finds; it reports them instead.
 
 ### Testing a task in the headset
 

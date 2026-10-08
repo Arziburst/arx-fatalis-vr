@@ -10,6 +10,35 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-011: The coordinator starts worker sessions itself; workers run without permission prompts
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** project owner
+
+### Decision
+- In parallel mode the **coordinator starts the worker sessions itself** instead of handing the owner
+  prompts to paste: `scripts/dev/start-worker.ps1 <n>` creates the task's worktree and runs
+  `claude --bg` there with `/next-task <n>`, named "ARXVR-<n> <issue title>".
+- Worker sessions run with **`--permission-mode bypassPermissions`** (the owner's choice over "auto mode
+  plus an allow-list" and over normal prompts), so they never stop to wait for a permission click.
+- The owner follows them with `claude agents`, opens one with `claude attach <id>` (questions,
+  `/accept-task`, `/reject-task`); the coordinator can message them and stop them.
+- Prerequisite: the owner accepts the bypass-mode disclaimer once (`claude --dangerously-skip-permissions`,
+  interactively); nobody can do that for them.
+
+### Why
+The owner wants the loop to run without copying prompts and without babysitting permission dialogs;
+the coordinator already knows which tasks may run together.
+
+### Trade-offs accepted
+- Nothing stops a worker's mistaken destructive command on the owner's PC. Mitigations that stay:
+  each worker has its own worktree outside OneDrive and its own game folders (#123), the project rules
+  (never push to `main`/`master`, no force-push, never discard uncommitted work) and GitHub's history.
+- Each worker spends tokens on its own; three in parallel cost about three times one.
+
+---
+
 ## D-010: No rays from the hands; runes drawn in the air with the hand; grab by reach
 
 - **Date:** 2026-10-08

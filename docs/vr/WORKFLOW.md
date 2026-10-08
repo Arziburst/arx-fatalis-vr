@@ -86,6 +86,9 @@ and the terminal tab.
   progress is blocked (a PR waiting for a VR test, red CI, a blocking bug, a decision needed).
 - **Worker session** — a fresh session per task, possibly with a different model. It implements exactly
   one task in its own PR (`/next-task <n>`), and handles the owner's verdict (`/accept-task`, `/reject-task`).
+  In parallel mode the coordinator starts workers itself as background sessions
+  (`scripts/dev/start-worker.ps1 <n>`, decision D-011): each in its own worktree, without permission
+  prompts. The owner sees them in `claude agents` and opens one with `claude attach <id>`.
 - **Owner** — tests VR features in the headset following the PR's *How to test*, and gives the verdict.
 
 By default tasks are sequential: the next task starts only after the previous one is merged. Once

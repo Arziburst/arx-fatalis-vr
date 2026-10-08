@@ -42,7 +42,9 @@ and the next task of the MVP queue.
   - remove worktrees of merged tasks (`scripts\dev\new-worktree.ps1 -Remove`);
   - fill the free worker slots (at most 3 workers; VR lane at most 2 in progress and 4 in Testing):
     pick tasks from the queue whose dependencies are merged and whose **areas differ** from every task
-    in progress; create a worktree for each (`scripts\dev\new-worktree.ps1`).
+    in progress; **start a worker for each** with `scripts\dev\start-worker.ps1 <n> [-Type <type>]`
+    (worktree + background session running `/next-task <n>`, decision D-011). `claude agents --json`
+    shows which workers are still running; a worker that is idle with its PR merged is finished.
 
 ## 2b. Headset test batch
 If PRs wait in **Testing**, list them as a batch for the owner: per PR the one question from its
@@ -56,7 +58,7 @@ When the owner answers ("#131 ok, #133 judder when turning"): merge the accepted
 2. **Next step**, exactly one of:
    - the next task with a ready-to-paste prompt for a new worker session in the owner's working copy:
      `/next-task <n>` (plus one line on what the task does and what the owner will test); in parallel
-     mode one prompt per free slot, each with the folder of its worktree to open the session in;
+     mode the workers you started (task, session id, what the owner will test later) instead of prompts;
    - a **headset test batch** (section 2b) when PRs wait in Testing;
    - **why we cannot move on**: a PR waits for the owner's VR test (link + what to test), CI is red
      (what failed + the fix prompt), a bug blocks the queue, or a decision is needed from the owner.

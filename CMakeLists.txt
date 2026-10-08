@@ -1442,9 +1442,23 @@ set(ARX_SOURCES
 # Using include() for now as add_subdirectory causes problems with uses in qrc files
 include(data/CMakeLists.txt)
 
+# Arx Fatalis VR: the Windows executables carry the product icon, the prebuilt
+# data/vr/ARXVR.ico, instead of the Arx Libertatis icon generated from SVG
+# (which needs ImageMagick and Inkscape). Sets ${arx-fatalis-vr-icon.rc}.
+function(create_product_icon_resource)
+	set(name ARXVR)
+	set(icon "${PROJECT_SOURCE_DIR}/data/vr/ARXVR.ico")
+	set(rc_file "${PROJECT_BINARY_DIR}/arx-fatalis-vr-icon.rc")
+	configure_file("${ICON_RESOURCE_TEMPLATE}" "${rc_file}")
+	# Recompile the resource when the icon changes
+	set_source_files_properties("${rc_file}" PROPERTIES OBJECT_DEPENDS "${icon}")
+	set(arx-fatalis-vr-icon.rc "${rc_file}" PARENT_SCOPE)
+endfunction()
+
 # Set the icon for the Windows executable by adding this resource file to the sources
 if(WIN32)
-	list(APPEND ARX_SOURCES ${arx-libertatis-icon.rc})
+	create_product_icon_resource()
+	list(APPEND ARX_SOURCES ${arx-fatalis-vr-icon.rc})
 endif()
 
 
@@ -1555,7 +1569,7 @@ if(ARX_HAVE_CRASHREPORTER)
 	endif()
 	
 	if(WIN32)
-		list(APPEND arxcrashreporter_SOURCES ${arx-libertatis-icon.rc})
+		list(APPEND arxcrashreporter_SOURCES ${arx-fatalis-vr-icon.rc})
 		create_version_resource(arxcrashreporter "${VERSION_NAME} Crash Reporter")
 		create_application_manifest(arxcrashreporter ${qt_dpiaware})
 		list(APPEND arxcrashreporter_SOURCES ${arxcrashreporter-version.rc} ${arxcrashreporter.manifest})
@@ -1656,7 +1670,7 @@ if(ARX_HAVE_PROFILER)
 	)
 	
 	if(WIN32)
-		list(APPEND arxprofiler_SOURCES ${arx-libertatis-icon.rc})
+		list(APPEND arxprofiler_SOURCES ${arx-fatalis-vr-icon.rc})
 		create_version_resource(arxprofiler "${VERSION_NAME} Profiler")
 		create_application_manifest(arxprofiler ${qt_dpiaware})
 		list(APPEND arxprofiler_SOURCES ${arxprofiler-version.rc} ${arxprofiler.manifest})

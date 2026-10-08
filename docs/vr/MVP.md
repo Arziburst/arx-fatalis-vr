@@ -79,7 +79,8 @@ dependencies are met; when a task is split, replace it with its parts.
 
 ### A. Walk in VR
 1. #17 — Integrate OpenXR; start in VR automatically when a headset is available
-2. #18 — Per-eye swapchains, render into swapchain images via FBO
+2. #89 — Product name and image in SteamVR (the owner's key art: `data/vr/key-art.png`)
+3. #18 — Per-eye swapchains, render into swapchain images via FBO
 3. #20 — Frame loop: `xrWaitFrame` / `xrBeginFrame` / `xrEndFrame`
 4. #21 — Desktop mirror (one eye)
 5. #71 — Split `renderLevel()` into simulate-once and draw-per-eye
@@ -119,10 +120,9 @@ dependencies are met; when a task is split, replace it with its parts.
 33. #45 — Tune recognition tolerances
 
 ### E. MVP done
-34. #89 — Product name "Arx Fatalis VR" in the window title and the OpenXR application name
-35. #80 — Launch from SteamVR
-36. #16 — Developer documentation: how to build and run
-37. #77 — Record an MVP gameplay video
+34. #80 — Launch from SteamVR
+35. #16 — Developer documentation: how to build and run
+36. #77 — Record an MVP gameplay video
 
 ## Estimate
 

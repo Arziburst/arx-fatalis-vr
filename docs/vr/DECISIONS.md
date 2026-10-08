@@ -22,6 +22,9 @@ and what it rules out, so the reasoning survives after the conversation that pro
 - The **icon name** stays `arx-libertatis` (used for the X11 window class, the OpenAL device
   override and the Linux `.desktop` file): renaming it means renaming the icon files for a
   non-Windows audience the MVP does not have. Revisit for the Steam release (`M3`).
+- The **Windows icon** is the owner's prebuilt `data/vr/ARXVR.ico`, compiled into `arx.exe` (and the
+  crash reporter / profiler) as a resource; the window takes it from the exe (#103). The upstream
+  icon generated from SVG stays off (`-DICON_TYPE=none`), so the build needs no ImageMagick or Inkscape.
 - SteamVR learns the name and the 460×215 tile from an **app manifest** registered by
   `scripts\register-steamvr.ps1` ([STEAMVR.md](STEAMVR.md)); the game has no OpenVR dependency (D-001).
 

@@ -89,7 +89,10 @@ its branch stays checked out and freshly built there, so the owner tests exactly
 ```
 
 `--loadslot <n>` starts straight into a saved game (recorded in flat mode) — needed until the in-VR
-menu exists (checkpoint B). After `/accept-task` the worker merges and switches the copy back to `main`.
+menu exists (checkpoint B). `run-windows.ps1` starts the game in a window (`--windowed`; `-Fullscreen`
+opts out), and a plain launch goes straight to the main menu — logos and the intro cinematic are
+skipped during development (`--intro` shows them, #92 restores them for players).
+After `/accept-task` the worker merges and switches the copy back to `main`.
 
 Helper scripts used by the commands:
 - `scripts/dev/next-task.ps1` — which task is next (Testing / In Progress first, then the queue)

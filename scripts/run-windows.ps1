@@ -6,6 +6,10 @@
 	Finds the Arx Fatalis install (Steam app 1700) in the player's Steam libraries and starts arx.exe
 	with it as the data directory. Any extra arguments are passed through to arx.exe.
 
+	Test runs start in a window (arx.exe --windowed) so the game does not take over the desktop;
+	pass -Fullscreen to use the fullscreen setting from cfg.ini instead. A plain launch goes straight
+	to the main menu; add --intro to see the publisher logos and the intro cinematic.
+
 	Until the engine finds the data itself (task #79), this script does the lookup.
 
 .PARAMETER Config
@@ -17,10 +21,15 @@
 .PARAMETER DataDir
 	Arx Fatalis install folder. Default: found automatically in the Steam libraries.
 
+.PARAMETER Fullscreen
+	Do not force windowed mode; use the fullscreen setting from cfg.ini.
+
 .EXAMPLE
 	.\scripts\run-windows.ps1
 .EXAMPLE
-	.\scripts\run-windows.ps1 -Config Debug -- --no-vr
+	.\scripts\run-windows.ps1 -- --skiplogo --loadslot 0
+.EXAMPLE
+	.\scripts\run-windows.ps1 -Fullscreen -Config Debug -- --no-vr
 #>
 [CmdletBinding()]
 param(
@@ -28,6 +37,7 @@ param(
 	[string]$Config = 'Release',
 	[string]$BuildDir,
 	[string]$DataDir,
+	[switch]$Fullscreen,
 	[Parameter(ValueFromRemainingArguments)]
 	[string[]]$ArxArgs
 )
@@ -63,6 +73,9 @@ if (-not (Test-Path $exe)) { throw "$exe not found. Build first: .\scripts\build
 if (-not $DataDir) { $DataDir = Find-ArxFatalisSteamInstall }
 if (-not $DataDir) { throw 'Arx Fatalis (Steam app 1700) was not found in any Steam library. Install it, or pass -DataDir.' }
 
+$modeArgs = @()
+if (-not $Fullscreen) { $modeArgs += '--windowed' }
+
 Write-Host "==> Running $exe" -ForegroundColor Cyan
 Write-Host "    data: $DataDir"
-& $exe --data-dir $DataDir @ArxArgs
+& $exe --data-dir $DataDir @modeArgs @ArxArgs

@@ -96,6 +96,10 @@ if ($Clean -and (Test-Path $BuildDir)) {
 	Remove-Item -Recurse -Force $BuildDir
 }
 
+# A running game from this build keeps arx.exe locked: the link would fail with LNK1104 (docs/vr/TRAPS.md)
+$running = @(Get-Process arx -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($BuildDir, [StringComparison]::OrdinalIgnoreCase) })
+if ($running) { throw "arx.exe from $BuildDir is still running (pid $($running.Id -join ', ')) - close it before building." }
+
 Write-Step "Configuring ($Config, $generator) in $BuildDir"
 & $cmake -S $SourceDir -B $BuildDir -G $generator `
 	"-DCMAKE_BUILD_TYPE=$Config" `
@@ -114,4 +118,15 @@ if ($LASTEXITCODE) { throw 'Build failed.' }
 
 $exe = Join-Path $BuildDir 'arx.exe'
 if (-not (Test-Path $exe)) { throw "Build finished but $exe was not found." }
-Write-Step "Done: $exe"
+
+# The build stamp: which commit this build came from ("<sha>" or "<sha> dirty"), read by
+# scripts/dev/test-pr.ps1 to decide whether a worktree needs rebuilding.
+$head = (git -C $SourceDir rev-parse HEAD 2>$null)
+if ($head) {
+	$dirty = @(git -C $SourceDir status --porcelain 2>$null)
+	$stamp = "$($head.Trim())$(if ($dirty) { ' dirty' })"
+	[IO.File]::WriteAllText((Join-Path $BuildDir 'built-from.txt'), $stamp, [Text.UTF8Encoding]::new($false))
+	Write-Step "Done: $exe (built from $stamp)"
+} else {
+	Write-Step "Done: $exe"
+}

@@ -9,6 +9,7 @@
 	  BOARD           tasks In Progress / Testing
 	  INCONSISTENT    board vs. issue state mismatches (to fix)
 	  CLEANUP         remote branches whose PR is merged or closed, or that have no PR
+	  WORKTREES       the worker worktrees: branch, uncommitted changes, PR state, removable or not
 	  WORKING COPY    branch and uncommitted changes in the owner's working copy
 	  NEXT            the next task from the MVP queue (same logic as next-task.ps1)
 
@@ -89,6 +90,36 @@ foreach ($b in $branches) {
 	elseif ($pr.state -ne 'OPEN') { "branch '$b' belongs to $($pr.state.ToLower()) PR #$($pr.number) -> delete"; $found = $true }
 }
 if (-not $found) { 'no leftover remote branches' }
+
+# --- Worktrees -------------------------------------------------------------------------------------
+Section 'WORKTREES'
+$wtRoot = if ($env:ARXVR_WORKTREE_ROOT) { $env:ARXVR_WORKTREE_ROOT } else { Join-Path $env:USERPROFILE 'arx-fatalis-vr-wt' }
+$worktrees = @()
+$current = $null
+foreach ($line in (git -C $WorkingCopy worktree list --porcelain 2>$null)) {
+	if ($line -match '^worktree (.+)$') { $current = [pscustomobject]@{ Path = $Matches[1] -replace '/', '\'; Head = ''; Branch = $null }; $worktrees += $current }
+	elseif ($line -match '^HEAD (\w+)$') { $current.Head = $Matches[1] }
+	elseif ($line -match '^branch refs/heads/(.+)$') { $current.Branch = $Matches[1] }
+}
+$found = $false
+foreach ($w in ($worktrees | Select-Object -Skip 1)) { # the first entry is the main working copy itself
+	$found = $true
+	$pr = if ($w.Branch) { $allPrs | Where-Object headRefName -eq $w.Branch | Select-Object -First 1 }
+	$prText = if (-not $w.Branch) { 'detached HEAD' } elseif (-not $pr) { 'no PR' } else { "PR #$($pr.number) $($pr.state.ToLower())" }
+	if (-not (Test-Path $w.Path)) { "$($w.Path) : folder MISSING -> git worktree prune"; continue }
+	$dirty = @(git -C $w.Path status --porcelain 2>$null)
+	$state = if ($dirty) { "UNCOMMITTED changes: $($dirty.Count) file(s)" } else { 'clean' }
+	$verdict = if ($pr -and $pr.state -ne 'OPEN' -and -not $dirty) { " -> remove: scripts\dev\new-worktree.ps1 -Branch $($w.Branch) -Remove" }
+		elseif ($pr -and $pr.state -ne 'OPEN') { ' -> PR finished but changes left behind: look, then -Remove -Force' }
+		else { '' }
+	"$($w.Path) : branch '$($w.Branch)' @ $($w.Head.Substring(0, 9)), $state, $prText$verdict"
+}
+if (Test-Path $wtRoot) {
+	foreach ($dir in Get-ChildItem $wtRoot -Directory) {
+		if (-not ($worktrees | Where-Object { $_.Path -ieq $dir.FullName })) { "$($dir.FullName) : not a registered worktree -> stale folder, delete it by hand"; $found = $true }
+	}
+}
+if (-not $found) { "no worktrees (root $wtRoot)" }
 
 # --- Owner's working copy --------------------------------------------------------------------------
 Section 'WORKING COPY'

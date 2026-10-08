@@ -32,6 +32,7 @@ or adding a second VR API just for a tile image.
 ### Consequences
 - `arx_version_number` restarts at 0.x: it is only stored in saves for information, never compared.
 - The crash reporter and tools (not built for the MVP) would also carry the new name.
+
 ---
 
 ## D-006: Eye height follows the character for the MVP; real crouch = game crouch

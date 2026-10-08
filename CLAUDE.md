@@ -48,9 +48,16 @@ Dependencies come from vcpkg in manifest mode (`vcpkg.json`, triplet `x64-window
 .\scripts\run-windows.ps1                # runs the build with Arx Fatalis data found in the Steam libraries
 .\scripts\run-windows.ps1 -- --skiplogo --loadslot 0   # extra arguments go to arx.exe; load save slot 0 directly
 .\scripts\run-windows.ps1 -Fullscreen    # test runs are windowed by default (arx.exe --windowed); this opts out
+.\scripts\run-windows.ps1 -Isolated      # this working copy's own user dir (log, config, saves) instead of Saved Games; -Saves save0000 copies a save in
 .\scripts\register-steamvr.ps1           # tell SteamVR the name and tile of this build (loading card, SteamVR library)
-.\scripts\dev\smoke-test.ps1             # worker self-test: start, play, quit, check the evidence (docs/vr/TESTING.md)
+.\scripts\dev\smoke-test.ps1             # worker self-test: start, play, quit, check the evidence (docs/vr/TESTING.md); isolated by default
+.\scripts\dev\new-worktree.ps1 -Issue 18 -Type feat -Name per-eye-swapchains   # a worker's own working copy (worktree) from origin/main; -Remove when merged
+.\scripts\dev\test-pr.ps1 131            # owner's test station: build the PR's worktree if needed, print its How to test, launch it
 ```
+
+- A launch that may start in VR (no `--no-vr`) holds the machine-wide VR lock (`scripts/vr-lock.ps1`)
+  while the game runs: one game in VR at a time. The smoke test skips its VR run (exit 2) when the lock
+  stays busy; flat launches need no lock.
 
 - SteamVR shows "Arx Fatalis VR" and the tile only for a registered build: run `register-steamvr.ps1`
   once per working copy / config and restart SteamVR — see [docs/vr/STEAMVR.md](docs/vr/STEAMVR.md).

@@ -3,24 +3,27 @@
 #
 # Where the game's user files live, where the test channel lives (docs/vr/TESTING.md), and how to
 # talk to a running game through it: status.json (read), command.txt (write), ack.txt (read).
+# Paths are per working copy (build-paths.ps1), so parallel workers never share them.
 
 . (Join-Path $PSScriptRoot '..\build-paths.ps1')
+. (Join-Path $PSScriptRoot '..\vr-lock.ps1')
 
-# %USERPROFILE%\Saved Games\Arx Libertatis - arx.log, cfg.ini, saves, crash reports
-function Get-ArxUserDir {
-	Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Saved Games\Arx Libertatis'
+# The working copy these scripts belong to (the repository root above scripts\dev)
+$ArxSourceDir = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+
+# The user directory a test run writes to: this working copy's isolated one (arx.log, cfg.ini,
+# saves, crashes), or with -Shared the player's %USERPROFILE%\Saved Games\Arx Libertatis
+function Get-ArxUserDir([switch]$Shared) {
+	if ($Shared) { Get-SharedUserDir } else { Get-DefaultUserDir $ArxSourceDir }
 }
 
-function Get-ArxLogPath { Join-Path (Get-ArxUserDir) 'arx.log' }
+function Get-ArxLogPath([string]$UserDir = (Get-ArxUserDir)) { Join-Path $UserDir 'arx.log' }
 
-function Get-ArxCrashDir { Join-Path (Get-ArxUserDir) 'crashes' }
+function Get-ArxCrashDir([string]$UserDir = (Get-ArxUserDir)) { Join-Path $UserDir 'crashes' }
 
 # The test channel directory the game is started with (--test-dir): $env:ARXVR_TEST_DIR if set,
-# otherwise %LOCALAPPDATA%\ArxFatalisVR\test
-function Get-ArxTestDir {
-	if ($env:ARXVR_TEST_DIR) { return $env:ARXVR_TEST_DIR }
-	Join-Path $env:LOCALAPPDATA 'ArxFatalisVR\test'
-}
+# otherwise %LOCALAPPDATA%\ArxFatalisVR\test\<folder>-<hash> of this working copy
+function Get-ArxTestDir { Get-DefaultTestDir $ArxSourceDir }
 
 # status.json as an object, or $null while it does not exist or is being replaced right now
 function Read-ArxStatus([string]$Dir = (Get-ArxTestDir)) {

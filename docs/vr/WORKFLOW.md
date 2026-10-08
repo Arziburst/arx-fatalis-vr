@@ -249,10 +249,16 @@ After `/accept-task` the worker merges and switches the copy back to `main`.
 Helper scripts used by the commands:
 - `scripts/dev/next-task.ps1` — which task is next (Testing / In Progress first, then the queue)
 - `scripts/dev/set-status.ps1 -Issue <n> -Status <column>` — move a task on the board
-- `scripts/build-windows.ps1`, `scripts/run-windows.ps1` — build and run
+- `scripts/build-windows.ps1`, `scripts/run-windows.ps1` — build and run (`-Isolated`: this copy's
+  own user directory; a launch without `--no-vr` holds the VR lock, `scripts/vr-lock.ps1`)
 - `scripts/dev/smoke-test.ps1` — the worker's self-test: start, play, quit, check the evidence
 - `scripts/dev/game-cmd.ps1`, `scripts/dev/game-status.ps1` — talk to a running game through the
   test channel (`--test-dir`), see [TESTING.md](TESTING.md)
+- `scripts/dev/new-worktree.ps1 -Issue <n> -Type <type> -Name <name>` — a worker's own working copy
+  (a git worktree from `origin/main`, outside OneDrive); `-Remove` once the task is merged
+- `scripts/dev/test-pr.ps1 <pr>` — the owner's test station: the PR's worktree, built if needed, its
+  *How to test*, the build id, launch
+- `scripts/dev/cycle-report.ps1` — the coordinator's report: PRs, board, leftovers, worktrees, next task
 
 ## Task lifecycle
 

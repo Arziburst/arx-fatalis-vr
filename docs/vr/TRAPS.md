@@ -8,6 +8,21 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — A crash report folder is dated "yesterday" and the VR self-test crashes where the flat one is clean
+
+**Symptom:** a run at 01:52 local time leaves `crashes\2026-10-08-22-52-43-00`; looking for a report
+from "today" finds none, and an isolated user directory (`--user-dir`, #123) seems to have a
+different crash than the shared one.
+**Cause:** crash report folders are named in **UTC** (the `crash time` inside the report too); the
+isolated directory simply has its own `crashes\` folder, so reports of a worker's runs are under
+`%LOCALAPPDATA%\ArxFatalisVR\userdirs\<key>\crashes\`, not in `Saved Games\Arx Libertatis`. And the
+crash that showed up only in VR (`smoke-test.ps1 -Vr`, 2 of 3 exits) is #93 again: the OpenXR session
+changes the heap layout enough for the dangling `m_owner` read to fault without any cinematic loaded.
+**Do:** match reports by the smoke test's `new crash report: <name>` line, not by the date; look in the
+user directory the run used (the smoke test prints it). Treat a `-Vr` exit crash with the
+`Entity::cleanReferences` ← `DanaeClearLevel` stack as #93, not as a VR bug — and remember `-Vr` is
+not a gate until #93 is fixed.
+
 ## 2026-10-09 — The exit crash #93 needs no playing cinematic — a loaded one is enough
 
 **Symptom:** closing the window after `--loadlevel 10` crashes in `Entity::cleanReferences`

@@ -9,6 +9,13 @@ Read `CLAUDE.md`, `docs/vr/WORKFLOW.md` and `docs/vr/MVP.md` before anything els
 All artifacts (code comments, commits, PRs, issue comments) are in English; talk to the owner in Russian.
 
 ## 1. Prepare the working copy yourself
+**Parallel mode** (see "Parallel work" in `docs/vr/WORKFLOW.md`): if this session runs in a worktree
+under `C:\Users\arzib\arx-fatalis-vr-wt\`, that folder is yours alone — it was created from `origin/main`
+on your task's branch. Do not switch it to `main`; bring it up to date with `git fetch origin` +
+`git merge origin/main` instead. Never work in the owner's copy in parallel mode. Self-test launches
+use `run-windows.ps1 -Isolated` (own log, config and saves); VR launches respect the VR lock and are
+skipped with a note when the lock is busy.
+
 The owner does not prepare anything before a task — you do. Do all of this without asking:
 - `git fetch --prune origin`.
 - If the working tree has uncommitted changes, stop and tell the owner exactly what is uncommitted —

@@ -32,11 +32,27 @@ and the next task of the MVP queue.
   it is reliable (best effort, see WORKFLOW.md).
 - **New findings** (bugs, follow-ups mentioned in merged PRs) → make sure they are issues on the board,
   in the MVP queue (`docs/vr/MVP.md`) if they block the MVP.
+- **Parallel mode** (once #123 is merged, see "Parallel work" in `docs/vr/WORKFLOW.md`):
+  - after each merge, bring the other open PRs up to date (`gh pr update-branch <pr>`) so they are
+    green on the current `main` before they merge;
+  - remove worktrees of merged tasks (`scripts\dev\new-worktree.ps1 -Remove`);
+  - fill the free worker slots (at most 3 workers; VR lane at most 2 in progress and 4 in Testing):
+    pick tasks from the queue whose dependencies are merged and whose **areas differ** from every task
+    in progress; create a worktree for each (`scripts\dev\new-worktree.ps1`).
+
+## 2b. Headset test batch
+If PRs wait in **Testing**, list them as a batch for the owner: per PR the one question from its
+*How to test* and the command `.\scripts\dev\test-pr.ps1 <pr>` (or, before #123, the steps from the PR).
+When the owner answers ("#131 ok, #133 judder when turning"): merge the accepted ones like
+`/accept-task <pr>` does; post the feedback on the rejected ones (in English) and give a
+`/reject-task <pr> <feedback>` prompt for a worker session in that PR's working copy.
 
 ## 3. Report to the owner (in Russian, short)
 1. What was merged, closed, cleaned up, or fixed in this cycle.
 2. **Next step**, exactly one of:
    - the next task with a ready-to-paste prompt for a new worker session in the owner's working copy:
-     `/next-task <n>` (plus one line on what the task does and what the owner will test);
+     `/next-task <n>` (plus one line on what the task does and what the owner will test); in parallel
+     mode one prompt per free slot, each with the folder of its worktree to open the session in;
+   - a **headset test batch** (section 2b) when PRs wait in Testing;
    - **why we cannot move on**: a PR waits for the owner's VR test (link + what to test), CI is red
      (what failed + the fix prompt), a bug blocks the queue, or a decision is needed from the owner.

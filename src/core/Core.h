@@ -86,6 +86,9 @@ extern float g_framedelay;
 
 extern bool g_requestLevelInit;
 
+//! Show the publisher logos and the intro cinematic (--intro); development launches skip them
+extern bool g_showIntro;
+
 extern AreaId g_currentArea;
 extern long TELEPORT_TO_ANGLE;
 

@@ -43,13 +43,16 @@ Run `.\scripts\dev\next-task.ps1`.
 ## 4. Implement and verify
 - Build with `.\scripts\build-windows.ps1`. The build must pass.
 - Test the game yourself before handing it over (see "Workers test the game themselves first" in
-  `docs/vr/WORKFLOW.md`): run it flat (`.\scripts\run-windows.ps1 -- --no-vr --loadlevel 10`) and, if
-  SteamVR is available, in VR (`.\scripts\run-windows.ps1 -- --loadlevel 10`); let it run, read
-  `%USERPROFILE%\Saved Games\Arx Libertatis\arx.log`, check `...\crashes\` for new reports, close it and
-  confirm `Clean shutdown`. Use `scripts\dev\smoke-test.ps1` once it exists (#99).
-  A crash or new `[E]` line caused by the task must be fixed (or filed as a bug, if unrelated) before
-  the PR. This is best effort: if a self-test is flaky or cannot run (e.g. VR with nobody wearing the
-  headset), say so in *How verified* rather than blocking on it.
+  `docs/vr/WORKFLOW.md` and `docs/vr/TESTING.md`): run `.\scripts\dev\smoke-test.ps1` (flat,
+  `--loadlevel 10`; it starts the game with the test channel, waits until it is playable, quits it and
+  checks exit code, `Clean shutdown`, crash reports, `[E]` lines and `status.json`). The flat run is a
+  gate: a failure caused by the task must be fixed (or filed as a bug, if unrelated) before the PR.
+  Add `-Commands '<channel or script-console command>',...` and `-- --loadslot <n>` to exercise what the
+  task changed; assert on `status.json` numbers and `shot` screenshots, not on reading the log by eye.
+  When SteamVR is running, also run `.\scripts\dev\smoke-test.ps1 -Vr` (best effort: with nobody
+  wearing the headset the session stays short of FOCUSED; `xr_hello.exe` next to `arx.exe` tells
+  whether the runtime itself is fine). If a self-test cannot run, say so in *How verified* rather than
+  blocking on it. Quote the smoke test's verdict lines in the PR.
 - Record new problems you find as tasks or bugs (sub-issues of the right epic, on the board).
 
 ## 5. Pull request

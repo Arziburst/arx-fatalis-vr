@@ -66,6 +66,9 @@ void pollEvents();
 //! \return true while the game runs in VR, i.e. an OpenXR session exists
 bool isEnabled();
 
+//! \return the current OpenXR session state as text ("none" without a session) - for status.json
+const char * sessionStateString();
+
 //! Destroy the OpenXR session and instance (if any)
 void shutdown();
 

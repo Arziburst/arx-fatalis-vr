@@ -59,6 +59,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "ai/Paths.h"
 
 #include "core/Application.h"
+#include "core/CommandChannel.h"
 #include "core/GameTime.h"
 #include "core/Config.h"
 #include "core/Core.h"
@@ -230,7 +231,8 @@ bool DanaeLoadLevel(AreaId area, bool loadEntities) {
 	const res::path file = "graph/levels/level" + levelId + "/level" + levelId + ".dlf";
 	
 	LogInfo << "Loading level " << file;
-	
+	channel::notifyLoading(area);
+
 	res::path lightingFileName = res::path(file).set_ext("llf");
 	
 	LogDebug("fic2 " << lightingFileName);

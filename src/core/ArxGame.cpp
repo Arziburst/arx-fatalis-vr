@@ -60,6 +60,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "cinematic/CinematicController.h"
 
 #include "core/Benchmark.h"
+#include "core/CommandChannel.h"
 #include "core/Config.h"
 #include "core/Core.h"
 #include "core/FpsCounter.h"
@@ -218,7 +219,10 @@ bool ArxGame::initialize() {
 		LogCritical << "Failed to initialize the config subsystem";
 		return false;
 	}
-	
+
+	// Test command channel and status file (--test-dir): counts log errors from here on
+	channel::initialize();
+
 	// Decide between VR and flat mode before the window exists: needs no OpenGL yet
 	vr::initialize();
 
@@ -583,9 +587,10 @@ static bool g_initialPlayerCollision = true;
 /*
  * During development a plain launch goes straight to the main menu: the publisher logos and the
  * intro cinematic are skipped (owner's decision, 2026-10-08). Bringing them back for players is #92;
- * --intro shows the original startup sequence until then.
+ * --intro shows the original startup sequence until then. The intro cinematic itself is started by
+ * the level 10 script, so a new game (--loadlevel 10, New Quest) is gated in cinematicLaunchWaiting().
  */
-static bool g_showIntro = false;
+bool g_showIntro = false;
 
 static void showIntro() {
 	g_showIntro = true;
@@ -976,7 +981,10 @@ void ArxGame::shutdown() {
 	vr::shutdown();
 
 	Application::shutdown();
-	
+
+	// Final status (state EXITED, cleanShutdown true) for the test channel, if enabled
+	channel::shutdown();
+
 	LogInfo << "Clean shutdown";
 }
 
@@ -1177,6 +1185,9 @@ void ArxGame::doFrame() {
 
 	vr::pollEvents();
 
+	// Test channel: frame counter, command file, status.json (no-op without --test-dir)
+	channel::update();
+
 	updateInput();
 
 	if(m_wasResized) {
@@ -1262,6 +1273,8 @@ void ArxGame::doFrame() {
 	} else {
 		cinematicLaunchWaiting();
 		render();
+		// A "shot" from the test channel reads the finished frame before it is shown
+		channel::afterRender();
 		m_MainWindow->showFrame();
 	}
 }

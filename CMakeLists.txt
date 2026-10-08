@@ -955,6 +955,7 @@ set(CORE_SOURCES
 	src/core/Application.cpp
 	src/core/ArxGame.cpp
 	src/core/Benchmark.cpp
+	src/core/CommandChannel.cpp
 	src/core/Config.cpp
 	src/core/Core.cpp
 	src/core/FpsCounter.cpp
@@ -1813,9 +1814,19 @@ if(BUILD_TOOLS)
 		endif()
 		
 		add_executable_shared(arxunpak "${arxunpak_SOURCES}" "${arxunpak_LIBRARIES}")
-		
+
 	endif()
-	
+
+endif()
+
+# xr_hello: OpenXR runtime probe (64-bit OpenGL) - "is the runtime the problem, or the game?"
+# A standalone console tool with no engine dependencies, see docs/vr/TESTING.md. Built with the
+# game (not a BUILD_TOOLS tool: the development build turns those off, and this one is for
+# development). Adapted from Dishonored VR's xr_hello32 (MIT, see LICENSE.xr_hello).
+option(BUILD_XR_HELLO "Build the xr_hello OpenXR runtime probe" ON)
+if(BUILD_XR_HELLO AND ARX_HAVE_OPENXR AND WIN32)
+	add_executable(xr_hello tools/xrhello/XrHello.cpp)
+	target_link_libraries(xr_hello PRIVATE OpenXR::openxr_loader opengl32 gdi32 user32 advapi32)
 endif()
 
 if(BUILD_IO_LIBRARY)

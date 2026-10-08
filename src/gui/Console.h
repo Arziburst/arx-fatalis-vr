@@ -179,4 +179,16 @@ public:
 
 extern ScriptConsole g_console;
 
+/*!
+ * \brief Run one line as if it had been typed into the script console
+ *
+ * Syntax: <tt>[entity.]command args</tt> - the command runs in the context of the given entity,
+ * or of the player when no entity is given. Used by the console itself and by the test command
+ * channel (\ref channel).
+ *
+ * \return an empty string on success, otherwise why the line was refused
+ *         (unknown entity, unknown command, no player entity)
+ */
+std::string executeConsoleLine(std::string_view line);
+
 #endif // ARX_GUI_CONSOLE_H

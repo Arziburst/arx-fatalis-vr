@@ -72,6 +72,7 @@ option(INSTALL_SCRIPTS "Install the data install script" ON)
 # Optional dependencies
 option(USE_OPENAL "Build the OpenAL audio backend" ON)
 option(USE_OPENGL "Build the OpenGL renderer backend" ON)
+option(USE_OPENXR "Build the OpenXR VR backend" ON)
 option(USE_WINHTTP "Use the native WinHTTP API instead of CURL on Windows" ON)
 option(USE_NATIVE_FS "Use the native filesystem backend directly instead of boost" ON)
 set(default_USE_X11 OFF)
@@ -448,6 +449,14 @@ if(USE_OPENAL)
 	find_package(OpenALEFX)
 	if(NOT MSVC AND OPENAL_FOUND)
 		check_link_library(OpenAL OPENAL_LIBRARY)
+	endif()
+endif()
+
+# OpenXR (VR)
+if(USE_OPENXR)
+	find_package(OpenXR CONFIG ${OPTIONAL_DEPENDENCY})
+	if(OpenXR_FOUND)
+		set(ARX_HAVE_OPENXR 1)
 	endif()
 endif()
 
@@ -1241,6 +1250,10 @@ set(UTIL_MD5_SOURCES
 )
 list(APPEND IO_RESOURCE_SOURCES ${UTIL_MD5_SOURCES})
 
+set(VR_SOURCES
+	src/vr/VRSystem.cpp
+)
+
 set(WINDOW_SOURCES
 	src/window/RenderWindow.cpp
 	src/window/Window.cpp
@@ -1294,6 +1307,11 @@ else()
 	unset(ARX_HAVE_SDL)
 	unset(ARX_HAVE_SDL1)
 	unset(ARX_HAVE_SDL2)
+endif()
+
+# VR
+if(ARX_HAVE_OPENXR)
+	list(APPEND ARX_LIBRARIES OpenXR::openxr_loader)
 endif()
 
 # Windowing / input
@@ -1417,6 +1435,7 @@ set(ARX_SOURCES
 	${SCRIPT_SOURCES}
 	${UTIL_SOURCES}
 	${UTIL_CMDLINE_SOURCES}
+	${VR_SOURCES}
 	${WINDOW_SOURCES}
 )
 
@@ -1976,6 +1995,9 @@ print_configuration("Renderer"
 print_configuration("Audio features"
 	ARX_HAVE_OPENAL_EFX  "EFX"
 	ARX_HAVE_OPENAL_HRTF "HRTF"
+)
+print_configuration("VR"
+	ARX_HAVE_OPENXR "OpenXR"
 )
 print_configuration("Windowing"
 	ARX_HAVE_SDL2 "SDL 2"

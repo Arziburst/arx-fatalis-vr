@@ -43,9 +43,12 @@ Run `.\scripts\dev\next-task.ps1`.
 ## 6. CI and merge
 - Wait for CI: `gh pr checks <pr> --watch`. If it fails, fix and push until it is green.
 - **No `needs-vr-test` label, CI green** → merge: `gh pr merge <pr> --merge --delete-branch`;
-  `.\scripts\dev\set-status.ps1 -Issue <n> -Status Done`.
-- **`needs-vr-test`, CI green** → `.\scripts\dev\set-status.ps1 -Issue <n> -Status Testing`, and stop:
-  give the owner the How to test steps and the PR link. The owner replies with `/accept-task` or `/reject-task`.
+  `.\scripts\dev\set-status.ps1 -Issue <n> -Status Done`; `git switch main; git pull --ff-only`.
+- **`needs-vr-test`, CI green** → `.\scripts\dev\set-status.ps1 -Issue <n> -Status Testing`. Leave the
+  task branch checked out with a fresh build (`.\scripts\build-windows.ps1`), so the owner tests exactly
+  this code. Then stop: give the owner the How to test steps and the PR link. Testing in VR starts with
+  `.\scripts\run-windows.ps1 -- --skiplogo --loadslot 0` (SteamVR running). The owner replies with
+  `/accept-task` or `/reject-task`.
 
 ## 7. Report (in Russian)
 What was done, the PR link, whether it was merged or waits for a VR test, and every task you created,

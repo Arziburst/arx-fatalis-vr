@@ -38,14 +38,16 @@ Requirements: VS 2022 or Build Tools 2022 with the C++ workload, CMake, Git, Pow
 Dependencies come from vcpkg in manifest mode (`vcpkg.json`, triplet `x64-windows`).
 
 ```powershell
-.\scripts\build-windows.ps1              # Release build -> %LOCALAPPDATA%\ArxFatalisVR\build\Release\arx.exe
+.\scripts\build-windows.ps1              # Release build of this working copy
 .\scripts\build-windows.ps1 -Config Debug -Clean
 .\scripts\run-windows.ps1                # runs the build with Arx Fatalis data found in the Steam libraries
-.\scripts\run-windows.ps1 -- --help      # extra arguments go to arx.exe
+.\scripts\run-windows.ps1 -- --skiplogo --loadslot 0   # extra arguments go to arx.exe; load save slot 0 directly
 ```
 
-- Build directories live in `%LOCALAPPDATA%\ArxFatalisVR\build\<Config>` — never inside the source tree,
-  which may sit in a synced folder (OneDrive).
+- Build directories live in `%LOCALAPPDATA%\ArxFatalisVR\build\<folder>-<hash>\<Config>` — one per
+  working copy, never inside the source tree (which may sit in a synced folder, OneDrive).
+- `--skiplogo --loadslot <n>` starts straight into a saved game — the way to test VR before the
+  in-VR menu exists. The owner records saves in flat mode.
 - vcpkg: `$env:VCPKG_ROOT` if set, else `%LOCALAPPDATA%\ArxFatalisVR\vcpkg` (cloned on first build).
 - Game data on the owner's machine: `D:\games\SteamLibrary\steamapps\common\Arx Fatalis` (Steam app 1700).
 

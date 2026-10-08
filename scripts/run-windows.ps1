@@ -12,7 +12,7 @@
 	Which build to run: Release (default), RelWithDebInfo or Debug.
 
 .PARAMETER BuildDir
-	Build directory containing arx.exe. Default: %LOCALAPPDATA%\ArxFatalisVR\build\<Config>.
+	Build directory containing arx.exe. Default: the one build-windows.ps1 uses for this working copy.
 
 .PARAMETER DataDir
 	Arx Fatalis install folder. Default: found automatically in the Steam libraries.
@@ -33,7 +33,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-if (-not $BuildDir) { $BuildDir = Join-Path $env:LOCALAPPDATA "ArxFatalisVR\build\$Config" }
+. (Join-Path $PSScriptRoot 'build-paths.ps1')
+if (-not $BuildDir) { $BuildDir = Get-DefaultBuildDir (Split-Path -Parent $PSScriptRoot) $Config }
 
 function Find-ArxFatalisSteamInstall {
 	$steam = (Get-ItemProperty -Path 'HKCU:\Software\Valve\Steam' -Name SteamPath -ErrorAction SilentlyContinue).SteamPath

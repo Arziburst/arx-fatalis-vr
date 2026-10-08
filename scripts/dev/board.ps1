@@ -31,6 +31,6 @@ function Get-BoardItems {
 function Get-MvpQueue {
 	# Issue numbers from the "Task queue" section of docs/vr/MVP.md, in order.
 	$mvp = Get-Content -Raw -Encoding UTF8 (Join-Path $PSScriptRoot '..\..\docs\vr\MVP.md')
-	$section = [regex]::Match($mvp, '(?ms)^## Task queue\s*$(.*?)(?=^## |\z)').Groups[1].Value
+	$section = [regex]::Match($mvp, '(?ms)^## Task queue\s*$(.*?)(?=^## [^#]|\z)').Groups[1].Value
 	[regex]::Matches($section, '(?m)^\s*\d+\.\s+#(\d+)') | ForEach-Object { [int]$_.Groups[1].Value }
 }

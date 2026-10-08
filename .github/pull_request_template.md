@@ -1,3 +1,5 @@
+<!-- PR title: ARXVR-<issue> <type>: <description>   e.g. "ARXVR-18 feat: render into per-eye OpenXR swapchains"
+     Branch:   ARXVR-<issue>-<type>-<short-name>   See docs/vr/WORKFLOW.md "Commit and pull request naming". -->
 Closes #
 
 ## What

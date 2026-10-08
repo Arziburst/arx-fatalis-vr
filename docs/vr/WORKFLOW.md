@@ -122,9 +122,9 @@ Helper scripts used by the commands:
 ## Task lifecycle
 
 1. **Before starting**, move the task to *In Progress* and add a concrete *definition of done* to it — how we will verify it is finished.
-2. **Branch**: `task/<number>-<short-name>` (e.g. `task/12-fix-rc-flags`), from `main`.
-3. **Commits** reference the task: `#12` in the message.
-4. **Pull request** into `main` uses the PR template: `Closes #12`, *What*, *How verified*, *How to test*.
+2. **Branch**: `ARXVR-<issue>-<type>-<short-name>` (e.g. `ARXVR-12-fix-rc-flags`), from `main`.
+3. **Commits** follow the [naming convention](#commit-and-pull-request-naming): `ARXVR-12 fix: ...`, `Refs #12` in the body.
+4. **Pull request** into `main`: title in the same format, PR template body with `Closes #12`, *What*, *How verified*, *How to test*.
 5. **CI and merge** — see [Pull requests, CI and merging](#pull-requests-ci-and-merging).
 6. **Done** = the definition of done is met and verified (build, launch, in-headset check — whatever applies). The task is closed and moves to *Done*.
 7. If a task is blocked, comment on it with exactly what blocks it and move it back to *Todo* / *Backlog*.
@@ -145,8 +145,52 @@ human in a headset:
   what to do, what should happen, what to report if it does not.
 - When unsure whether something needs VR testing, label it `needs-vr-test` — asking costs less than
   merging a broken feature.
-- Merge with a merge commit (`gh pr merge --merge --delete-branch`).
+- Merge with a merge commit whose subject is the PR title plus the PR number:
+  `gh pr merge <pr> --merge --delete-branch --subject "<PR title> (#<pr>)"`.
 - Claude never pushes directly to `main` or `master`, never force-pushes, never bypasses CI.
+
+## Commit and pull request naming
+
+```
+ARXVR-<issue> <type>: <description>
+```
+
+Examples:
+
+```
+ARXVR-18 feat: render into per-eye OpenXR swapchains
+ARXVR-12 fix: keep MSVC compiler-only flags away from rc.exe
+ARXVR-99 test: add a flat-mode smoke test script
+ARXVR-1 docs: record the commit naming convention
+```
+
+- **`ARXVR-<issue>`** — the GitHub issue the change belongs to (the task, or the bug). If no task fits
+  (small process or docs changes), use the epic it belongs to, e.g. `ARXVR-1` for build and process.
+- **`<type>`** — one of:
+
+  | Type | For |
+  |---|---|
+  | `feat` | new behavior the player or developer can use |
+  | `fix` | a bug fix |
+  | `perf` | performance |
+  | `refactor` | restructuring without behavior change |
+  | `build` | build system, dependencies, scripts that build or run |
+  | `ci` | GitHub Actions |
+  | `docs` | documentation, plan, rules |
+  | `test` | tests and test tooling |
+  | `chore` | anything else (assets, housekeeping) |
+
+- **`<description>`** — imperative, lowercase start, no trailing period; the whole first line ≤ 72 characters.
+- **Commit body** — what and why, wrapped at 72 characters; ends with `Refs #<issue>` so GitHub links the
+  commit to the issue (GitHub does not turn `ARXVR-18` into a link in this repository), followed by
+  the `Co-Authored-By` line when Claude wrote it.
+- **Pull request title** — same format; several commits in one PR still get one title for the task.
+  The PR body starts with `Closes #<issue>` (the template does this).
+- **Merge commit** — `<PR title> (#<pr>)`, see above.
+- **Branch** — named like the PR, in a form git accepts (no spaces or colons):
+  `ARXVR-<issue>-<type>-<short-name>`, e.g. `ARXVR-18-feat-per-eye-swapchains`. Lowercase after the key,
+  words joined with `-`.
+- Commits that come from the upstream engine (Arx Libertatis) keep their original messages.
 
 ## Growing the plan as we go
 

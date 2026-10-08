@@ -26,7 +26,8 @@ Run `.\scripts\dev\next-task.ps1`.
 - If the issue has no concrete **Definition of done**, write one into the issue now (`gh issue edit`).
 - If the task is too big for one session, split it into sub-issues of the same epic, add them to the
   queue in `docs/vr/MVP.md`, and take the first part.
-- Branch from `main`: `git switch -c task/<n>-<short-name>`.
+- Branch from `main`, named like the PR: `git switch -c ARXVR-<n>-<type>-<short-name>`
+  (e.g. `ARXVR-18-feat-per-eye-swapchains`).
 
 ## 4. Implement and verify
 - Build with `.\scripts\build-windows.ps1`. The build must pass.
@@ -41,14 +42,17 @@ Run `.\scripts\dev\next-task.ps1`.
 - Record new problems you find as tasks or bugs (sub-issues of the right epic, on the board).
 
 ## 5. Pull request
-- Commit with `#<n>` in the message; push; open a PR into `main` using the PR template.
+- Commit as `ARXVR-<n> <type>: <description>` with `Refs #<n>` in the body (see "Commit and pull request
+  naming" in `docs/vr/WORKFLOW.md`); push; open a PR into `main` with a title in the same format, using the
+  PR template.
 - Fill **How verified** and **How to test**. For VR behavior, **How to test** is a precise
   step-by-step script for the headset (save to load, actions, expected result, what to report).
 - Label the PR `needs-vr-test` if the result can only be judged in the headset.
 
 ## 6. CI and merge
 - Wait for CI: `gh pr checks <pr> --watch`. If it fails, fix and push until it is green.
-- **No `needs-vr-test` label, CI green** → merge: `gh pr merge <pr> --merge --delete-branch`;
+- **No `needs-vr-test` label, CI green** → merge:
+  `gh pr merge <pr> --merge --delete-branch --subject "<PR title> (#<pr>)"`;
   `.\scripts\dev\set-status.ps1 -Issue <n> -Status Done`; `git switch main; git pull --ff-only`.
 - **`needs-vr-test`, CI green** → `.\scripts\dev\set-status.ps1 -Issue <n> -Status Testing`. Leave the
   task branch checked out with a fresh build (`.\scripts\build-windows.ps1`), so the owner tests exactly

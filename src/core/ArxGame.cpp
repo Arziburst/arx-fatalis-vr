@@ -167,6 +167,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "util/String.h"
 
+#include "vr/VRSystem.h"
+
 #include "Configure.h"
 
 #include "window/RenderWindow.h"
@@ -217,11 +219,18 @@ bool ArxGame::initialize() {
 		return false;
 	}
 	
+	// Decide between VR and flat mode before the window exists: needs no OpenGL yet
+	vr::initialize();
+
 	init = initWindow();
 	if(!init) {
 		return false;
 	}
-	
+
+	// The OpenXR session is bound to the OpenGL context created by the window;
+	// on failure this logs the reason and the game continues in flat mode
+	vr::createSession();
+
 	init = initGameData();
 	if(!init) {
 		return false;
@@ -931,7 +940,10 @@ void ArxGame::shutdown() {
 	
 	if(m_gameInitialized)
 		shutdownGame();
-	
+
+	// Before the window takes the OpenGL context the VR session is bound to
+	vr::shutdown();
+
 	Application::shutdown();
 	
 	LogInfo << "Clean shutdown";
@@ -1127,6 +1139,8 @@ void ArxGame::doFrame() {
 	ARX_PROFILE_FUNC();
 	
 	updateTime();
+
+	vr::pollEvents();
 
 	updateInput();
 

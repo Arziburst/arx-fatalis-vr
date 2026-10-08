@@ -8,6 +8,7 @@
     "glew",
     "glm",
     "openal-soft",
+    "openxr-loader",
     "sdl2",
     "zlib",
     "boost-algorithm",

@@ -56,3 +56,5 @@ Dependencies come from vcpkg in manifest mode (`vcpkg.json`, triplet `x64-window
 - Rendering: `src/graphics/opengl/OpenGLRenderer.cpp` (OpenGL, the only backend)
 - Camera: `src/game/Camera.cpp` — `SetViewMatrix` / `SetProjectionMatrix`
 - Window: `src/window/SDL2Window.cpp`
+- VR runtime (OpenXR instance, headset, session; `--no-vr`): `src/vr/VRSystem.cpp`, called from
+  `ArxGame::initialize` / `doFrame` / `shutdown` in `src/core/ArxGame.cpp`

@@ -3,6 +3,80 @@
 Significant technical and project decisions, newest first. Each entry records what was decided, why,
 and what it rules out, so the reasoning survives after the conversation that produced it.
 
+**Any decision can be revisited.** A decision is never edited away or deleted: a new entry replaces
+it, and the old one gets `Status: Superseded by D-xxx` with a one-line reason. The same holds for the
+*Decision* column of research catalogs (e.g. [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md)):
+a changed decision keeps its history in that cell.
+
+---
+
+## D-010: No rays from the hands; runes drawn in the air with the hand; grab by reach
+
+- **Date:** 2026-10-08
+- **Status:** Accepted
+- **Decided by:** project owner (while deciding on [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md))
+
+### Decision
+- **No rays or lasers from the hands in the game world.**
+- **Runes are drawn in the air with the hand:** the glowing trail is where the hand moves. No laser
+  cursor; the projection onto a plane that the 2D recognizer needs is internal and invisible (#43–#45).
+- **Spell and projectile direction comes from the hand**, without a visible ray (F-75, F-76, #44).
+- **World interaction by reach:** items, doors, levers, chests and bodies are used by reaching and
+  grabbing with the hand (F-57, #37, #38); the engine still decides what is under the hand.
+- **Menus and the inventory:** a short pointer appears **only while a menu or the inventory is open**
+  (VHVR-like, F-81, #34) — chosen over touch UI for precision on the original 2D interface.
+
+### Why
+Immersion: in a hand-driven VR game a beam from the hand reads as a tool, not as the character's hand.
+The old 2D menus are small, so a pointer stays — but only where there is a menu.
+
+---
+
+## D-009: Full body in VR — the player model with arms driven by IK, in the MVP
+
+- **Date:** 2026-10-08
+- **Status:** Accepted
+- **Decided by:** project owner
+
+### Decision
+Arx Fatalis already has a full player model with legs, torso, arms and animations. In VR the player
+sees **their whole body**, not floating hands:
+- legs and torso keep the engine's animations (walk, crouch, jump); the head is hidden; the camera sits
+  at the eyes (D-006);
+- the **arms are driven by the controllers via IK** (F-52, Dishonored VR `docs/dishonored/ARM_IK.md`,
+  MIT): shoulders relative to the head frame, body yaw following the head with a dead zone, the
+  shoulder sliding when a hand is out of reach;
+- the weapon is held by the IK hand (#75); while IK drives the arms the engine's arm attack animation
+  is suppressed (F-67);
+- health and mana are **two bars on the left wrist** (F-83, #116).
+
+**In the MVP, before combat** (checkpoint B). Replaces the earlier plan of placeholder hands and
+hidden first-person arms (#36, #75). Hand-back to engine animations (death, ladders — F-53) is after
+the MVP.
+
+### Why
+The owner wants the game to feel like VHVR, which shows the full body; Arx has the model and
+animations already. Doing it before combat means the weapon is held by the model's hand from the
+start instead of being redone later. Cost: roughly 1–2 weeks more for the MVP.
+
+---
+
+## D-008: Stick forward = where you look
+
+- **Date:** 2026-10-08
+- **Status:** Accepted
+- **Decided by:** project owner (catalog row F-33)
+
+### Decision
+Thumbstick locomotion moves relative to the **head (look) direction**. Controller-relative movement is
+an option after the MVP. The body yaw is still decoupled from the head (#25) — for the full-body model
+and for where the hands and the UI anchor live — but it does not steer movement.
+
+### Why
+Both reference mods default to it (Dishonored VR `HeadBasedMovement`, VHVR
+`JoyStickForwardDirection=LookDirection`, which the owner plays); Dishonored VR's body-relative mode
+kept drifting.
+
 ---
 
 ## D-007: The product is named in `VERSION`; user directory and icon name stay as in Arx Libertatis

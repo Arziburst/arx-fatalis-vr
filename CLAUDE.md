@@ -15,6 +15,9 @@ statuses Backlog / Todo / In Progress / Testing / Done, PRs with `Closes #N`.
 Naming: commits and PR titles `ARXVR-<issue> <type>: <description>`, branches `ARXVR-<issue>-<type>-<short-name>`
 (see [Commit and pull request naming](docs/vr/WORKFLOW.md#commit-and-pull-request-naming)).
 Create new tasks and bugs discovered during work yourself and list them in your report.
+Before debugging something that makes no sense, read [docs/vr/TRAPS.md](docs/vr/TRAPS.md); add new traps there in the same PR.
+Design decisions that shape every VR task: stick forward = look direction (D-008), full body with IK arms (D-009),
+no rays from the hands — runes drawn in the air with the hand, grab by reach, a pointer only in menus (D-010).
 
 **Development loop:** `/next-task` takes the next task from the queue in [docs/vr/MVP.md](docs/vr/MVP.md#task-queue)
 and implements it in its own PR; `/accept-task` and `/reject-task` handle the owner's VR test verdict.

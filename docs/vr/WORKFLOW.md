@@ -22,6 +22,7 @@ commit messages, pull requests, and code comments.
 | Research: controllers (Valve Index, Quest 3) | [RESEARCH-controllers.md](RESEARCH-controllers.md) |
 | Research: reference VR mods (Dishonored VR, VHVR) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |
 | SteamVR app manifest: name and tile on the loading card | [STEAMVR.md](STEAMVR.md) |
+| Traps: misleading symptoms that already cost time — **read before debugging** | [TRAPS.md](TRAPS.md) |
 
 ## Current goal: MVP first
 
@@ -110,6 +111,27 @@ it, and the owner's test decides. #99 first finds out how far automation can go 
 `scripts/dev/smoke-test.ps1` becomes part of the routine.
 The owner's headset time is for judging how it feels in VR, not for finding crashes.
 
+**Verification tiers** — always climb in this order and stop at the lowest tier that answers the question:
+1. **Numbers**: host unit tests of pure logic (#114), `status.json` and log assertions (#99).
+2. **Flat or simulated visuals**: flat launch, the simulated VR backend (#112) with scripted
+   sequences and per-eye screenshots (#113), the two-eyes check.
+3. **The owner in the headset** — last, for how it *feels*. Asking the owner to put the headset on for
+   a question the simulator could answer wastes a session. Prove once that each automated check can
+   fail (break the thing on purpose) before trusting it.
+
+**One question per headset launch.** A `needs-vr-test` PR asks the owner exactly **one** clearly
+defined question in *How to test*, with the expected result and what each possible outcome means
+("smooth → done; judder on head turns → pacing, see the rate line"). The verdict and the build id go
+on the issue.
+
+**Logging rules for VR code** (`arx.log` is the instrument every test and every tester sends back):
+log state changes, not frames — nothing unbounded per frame (log once, every N ms, or the first N);
+every guard that refuses something logs why, with the values; name the owner of a decision before the
+result; an expected zero says so explicitly.
+
+**Traps.** Before debugging something that makes no sense, read [TRAPS.md](TRAPS.md). When a task
+hits a new trap (a misleading symptom, stale state, an instrument that lied), add an entry in the same PR.
+
 ### Testing a task in the headset
 
 The worker session works directly in the owner's working copy. When a task goes to **Testing**,
@@ -137,7 +159,7 @@ Helper scripts used by the commands:
 
 ## Task lifecycle
 
-1. **Before starting**, move the task to *In Progress* and add a concrete *definition of done* to it — how we will verify it is finished.
+1. **Before starting**, move the task to *In Progress* and add a concrete *definition of done* to it — how we will verify it is finished: **ordered pass criteria** (numeric and flat/simulated checks first, the headset check last, with the observation that would disprove it) and **non-goals** (what this task deliberately does not do). A task with no pass criteria cannot be finished, only abandoned.
 2. **Branch**: `ARXVR-<issue>-<type>-<short-name>` (e.g. `ARXVR-12-fix-rc-flags`), from `main`.
 3. **Commits** follow the [naming convention](#commit-and-pull-request-naming): `ARXVR-12 fix: ...`, `Refs #12` in the body.
 4. **Pull request** into `main`: title in the same format, PR template body with `Closes #12`, *What*, *How verified*, *How to test*.
@@ -240,3 +262,8 @@ Claude creates and updates tasks on its own, and after each working session repo
 - Creating new epics and changing milestones
 - Publishing anything externally: making the repository public, contacting rights holders, Steam
 - Changing these rules
+- Picking features from research catalogs (the *Decision* column); the coordinator turns the picks into tasks
+
+**Any decision can be revisited** — by the owner at any time. A changed decision is recorded as a new
+entry in [DECISIONS.md](DECISIONS.md) that supersedes the old one (never deleted), and affected tasks
+are updated.

@@ -79,7 +79,8 @@ dependencies are met; when a task is split, replace it with its parts.
 
 ### A. Walk in VR
 1. #17 — Integrate OpenXR; start in VR automatically when a headset is available
-2. #18 — Per-eye swapchains, render into swapchain images via FBO
+2. #89 — Product name and image in SteamVR (the owner's key art: `data/vr/key-art.png`)
+3. #18 — Per-eye swapchains, render into swapchain images via FBO
 3. #20 — Frame loop: `xrWaitFrame` / `xrBeginFrame` / `xrEndFrame`
 4. #21 — Desktop mirror (one eye)
 5. #71 — Split `renderLevel()` into simulate-once and draw-per-eye
@@ -105,22 +106,23 @@ dependencies are met; when a task is split, replace it with its parts.
 23. #36 — Placeholder hand models at controller poses
 24. #37 — Object selection by ray; picking up and throwing items
 25. #38 — Doors, levers, chests, searching bodies
+26. #79 — Find the Arx Fatalis data automatically in Steam libraries
+27. #88 — Tester build: zip package that runs on another PC *(then a friend tests on Quest 3 — #87, Backlog until then)*
 
 ### C. Fight
-26. #75 — Equipped weapon follows the controller pose
-27. #39 — Melee: hits driven by controller speed and trajectory
-28. #42 — Haptic feedback
+28. #75 — Equipped weapon follows the controller pose
+29. #39 — Melee: hits driven by controller speed and trajectory
+30. #42 — Haptic feedback
 
 ### D. Cast
-29. #43 — Magic mode: glowing trail behind the controller
-30. #44 — Project the 3D stroke onto a plane → 2D strokes into the recognizer
-31. #45 — Tune recognition tolerances
+31. #43 — Magic mode: glowing trail behind the controller
+32. #44 — Project the 3D stroke onto a plane → 2D strokes into the recognizer
+33. #45 — Tune recognition tolerances
 
 ### E. MVP done
-32. #79 — Find the Arx Fatalis data automatically in Steam libraries
-33. #80 — Launch from SteamVR
-34. #16 — Developer documentation: how to build and run
-35. #77 — Record an MVP gameplay video
+34. #80 — Launch from SteamVR
+35. #16 — Developer documentation: how to build and run
+36. #77 — Record an MVP gameplay video
 
 ## Estimate
 

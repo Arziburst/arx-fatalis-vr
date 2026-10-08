@@ -30,6 +30,10 @@ and the next task of the MVP queue.
   and tell the owner.
 - **Merged work you can check without a headset** → check it (build `main`, flat launch, logs), as far as
   it is reliable (best effort, see WORKFLOW.md).
+- **Auto-reported bugs** (`gh issue list -l auto-reported --state open`, see "Development diagnostics" in
+  `docs/vr/WORKFLOW.md`) → triage each new one: real → sub-issue of the right epic, milestone, board
+  column, into the MVP queue if it blocks the MVP; noise → close as not planned and add the line to the
+  digest's allow-list. Mention what you triaged in the report.
 - **New findings** (bugs, follow-ups mentioned in merged PRs) → make sure they are issues on the board,
   in the MVP queue (`docs/vr/MVP.md`) if they block the MVP.
 - **Parallel mode** (once #123 is merged, see "Parallel work" in `docs/vr/WORKFLOW.md`):

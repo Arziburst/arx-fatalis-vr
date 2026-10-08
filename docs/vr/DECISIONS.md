@@ -5,6 +5,33 @@ and what it rules out, so the reasoning survives after the conversation that pro
 
 ---
 
+## D-006: Eye height follows the character for the MVP; real crouch = game crouch
+
+- **Date:** 2026-10-08
+- **Status:** Accepted
+- **Decided by:** project owner
+
+### Decision
+- For the MVP the VR camera sits at the **character's in-game camera height** (the stable first-person
+  camera position, without head bob). The HMD provides the head **orientation**; the player's real
+  height does not change the eye height.
+- **Physical crouching** is detected from the HMD dropping below a threshold relative to the standing
+  height captured at recenter, and makes the character crouch in the game (#100).
+- **Height calibration** (matching the eye height to the player's real height, seated play) comes
+  after the MVP (#101).
+
+### Why
+The level geometry, doors and collision are built around the character's eye height; tying the camera
+to it keeps the world consistent and avoids clipping through floors and ceilings, while physical
+crouching keeps the most natural body movement.
+
+### Consequences
+- #27 covers eye height = character height and the meters ↔ Arx units conversion for head offsets
+  and eye separation.
+- Positional head tracking beyond that (leaning, room-scale) stays post-MVP (#26).
+
+---
+
 ## D-005: CI gates merges; the owner only tests VR features
 
 - **Date:** 2026-10-08

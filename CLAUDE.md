@@ -42,12 +42,16 @@ Dependencies come from vcpkg in manifest mode (`vcpkg.json`, triplet `x64-window
 .\scripts\build-windows.ps1 -Config Debug -Clean
 .\scripts\run-windows.ps1                # runs the build with Arx Fatalis data found in the Steam libraries
 .\scripts\run-windows.ps1 -- --skiplogo --loadslot 0   # extra arguments go to arx.exe; load save slot 0 directly
+.\scripts\run-windows.ps1 -Fullscreen    # test runs are windowed by default (arx.exe --windowed); this opts out
 ```
 
 - Build directories live in `%LOCALAPPDATA%\ArxFatalisVR\build\<folder>-<hash>\<Config>` — one per
   working copy, never inside the source tree (which may sit in a synced folder, OneDrive).
 - `--skiplogo --loadslot <n>` starts straight into a saved game — the way to test VR before the
   in-VR menu exists. The owner records saves in flat mode.
+- A plain launch starts at the main menu: publisher logos and the intro cinematic are skipped during
+  development (`--intro` shows them; restoring them for players is #92). Test runs are windowed
+  (`--windowed`, added by `run-windows.ps1`); `--no-vr` forces flat mode.
 - vcpkg: `$env:VCPKG_ROOT` if set, else `%LOCALAPPDATA%\ArxFatalisVR\vcpkg` (cloned on first build).
 - Game data on the owner's machine: `D:\games\SteamLibrary\steamapps\common\Arx Fatalis` (Steam app 1700).
 

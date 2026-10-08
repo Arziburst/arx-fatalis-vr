@@ -5,6 +5,36 @@ and what it rules out, so the reasoning survives after the conversation that pro
 
 ---
 
+## D-006: The product is named in `VERSION`; user directory and icon name stay as in Arx Libertatis
+
+- **Date:** 2026-10-08
+- **Status:** Accepted
+- **Decided by:** Claude, per the owner's request in #89
+
+### Decision
+- `VERSION` reads `Arx Fatalis VR 0.1-dev`. Everything the player can see that is derived from it —
+  window title, main menu version line, OpenXR `applicationName`, Windows file properties, error
+  dialogs — says **Arx Fatalis VR**. The engine name stays **Arx Libertatis** in the OpenXR
+  `engineName` and in the credits (`AUTHORS`).
+- The **user directory** stays `%USERPROFILE%\Saved Games\Arx Libertatis` (`USER_DIR` in
+  `CMakeLists.txt`, independent of `VERSION`): saves and `cfg.ini` recorded with earlier builds keep
+  working, and a save made in VR can be opened in flat Arx Libertatis.
+- The **icon name** stays `arx-libertatis` (used for the X11 window class, the OpenAL device
+  override and the Linux `.desktop` file): renaming it means renaming the icon files for a
+  non-Windows audience the MVP does not have. Revisit for the Steam release (`M3`).
+- SteamVR learns the name and the 460×215 tile from an **app manifest** registered by
+  `scripts\register-steamvr.ps1` ([STEAMVR.md](STEAMVR.md)); the game has no OpenVR dependency (D-001).
+
+### Why
+The product should call itself by its own name everywhere (D-002), without breaking anyone's saves
+or adding a second VR API just for a tile image.
+
+### Consequences
+- `arx_version_number` restarts at 0.x: it is only stored in saves for information, never compared.
+- The crash reporter and tools (not built for the MVP) would also carry the new name.
+
+---
+
 ## D-005: CI gates merges; the owner only tests VR features
 
 - **Date:** 2026-10-08

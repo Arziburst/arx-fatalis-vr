@@ -10,7 +10,7 @@
 	pass -Fullscreen to use the fullscreen setting from cfg.ini instead. A plain launch goes straight
 	to the main menu; add --intro to see the publisher logos and the intro cinematic.
 
-	Until the engine finds the data itself (task #79), this script does the lookup.
+	Until the engine finds the data itself (task #79), this script does the lookup (Find-ArxFatalisSteamInstall in build-paths.ps1).
 
 .PARAMETER Config
 	Which build to run: Release (default), RelWithDebInfo or Debug.
@@ -45,27 +45,6 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'build-paths.ps1')
 if (-not $BuildDir) { $BuildDir = Get-DefaultBuildDir (Split-Path -Parent $PSScriptRoot) $Config }
-
-function Find-ArxFatalisSteamInstall {
-	$steam = (Get-ItemProperty -Path 'HKCU:\Software\Valve\Steam' -Name SteamPath -ErrorAction SilentlyContinue).SteamPath
-	if (-not $steam) { return $null }
-	$libraries = @($steam)
-	$vdf = Join-Path $steam 'steamapps\libraryfolders.vdf'
-	if (Test-Path $vdf) {
-		foreach ($match in [regex]::Matches((Get-Content -Raw $vdf), '"path"\s+"([^"]+)"')) {
-			$libraries += $match.Groups[1].Value -replace '\\\\', '\'
-		}
-	}
-	foreach ($library in ($libraries | Select-Object -Unique)) {
-		$manifest = Join-Path $library 'steamapps\appmanifest_1700.acf'
-		if (-not (Test-Path $manifest)) { continue }
-		if ((Get-Content -Raw $manifest) -match '"installdir"\s+"([^"]+)"') {
-			$dir = Join-Path $library "steamapps\common\$($Matches[1])"
-			if (Test-Path $dir) { return $dir }
-		}
-	}
-	return $null
-}
 
 $exe = Join-Path $BuildDir 'arx.exe'
 if (-not (Test-Path $exe)) { throw "$exe not found. Build first: .\scripts\build-windows.ps1 -Config $Config" }

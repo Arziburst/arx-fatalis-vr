@@ -97,6 +97,7 @@ dependencies are met; when a task is split, replace it with its parts.
 6. #99 — Smoke test and command channel: `status.json`, script-console commands, `xr_hello` probe, flat and VR launch (F-01, F-02, F-03, F-16)
 7. #124 — Development launch: skip all cinematics (new-game intro, in-game `.cin`) — straight into the game or the menu
 7. #123 — Parallel development tooling: worktrees, isolated self-test folders, test-pr station, VR lock (switches on parallel work)
+7. #93 — Bug: crash on exit after a level load (dangling `m_owner` in `DanaeClearLevel`) — breaks VR self-tests and headset exits
 7. #115 — Log banner and the OpenXR runtime that answered (F-18, F-98)
 7. #129 — Diagnostics D1: the log always on disk (flush on warnings/errors and every second), last 10 runs kept
 7. #131 — Diagnostics D3: automatic log digest after every run and automatic bug filing (`auto-reported`)
@@ -170,6 +171,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #99 smoke test, command channel | build | plain | — |
 | #124 skip cinematics | ui | plain | — |
 | #123 parallel tooling | build | plain | #99 |
+| #93 bug: crash on exit after a level load | core | plain | — |
 | #115 log banner | core | plain | — |
 | #129 D1 log always on disk, 10 runs | core | plain | #115 |
 | #131 D3 auto digest and bug filing | build | plain | #129, #115, #123 |
@@ -221,7 +223,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | Wave | VR lane (needs the headset) | Plain lane (no headset) |
 |---|---|---|
 | **0** — sequential, until #123 is merged | — | #99 → #124 → #123 |
-| **1** | #18 → #20 → #21 | #71, #114, #115 → #129, #76, #118, #120, #79 |
+| **1** | #18 → #20 → #21 | #93, #71, #114, #115 → #129, #76, #118, #120, #79 |
 | **2** | #24, #19 | #112 → #113, #30, #131, #130 |
 | **3** | #74, #72, #27, #25, #35 | #73, #70, #127 |
 | **4** — finishes checkpoint A | #28, #100, #31, #32, #42 | #80 |

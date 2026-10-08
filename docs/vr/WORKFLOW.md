@@ -20,6 +20,7 @@ commit messages, pull requests, and code comments.
 | Current goal: the MVP | [MVP.md](MVP.md) |
 | Research and scope of playable v1 | [RESEARCH-playable-v1.md](RESEARCH-playable-v1.md) |
 | Research: controllers (Valve Index, Quest 3) | [RESEARCH-controllers.md](RESEARCH-controllers.md) |
+| SteamVR app manifest: name and tile on the loading card | [STEAMVR.md](STEAMVR.md) |
 
 ## Current goal: MVP first
 

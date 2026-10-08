@@ -13,8 +13,10 @@ Read `CLAUDE.md` and `docs/vr/WORKFLOW.md` first.
 3. `.\scripts\dev\set-status.ps1 -Issue <n> -Status 'In Progress'`; check out the PR branch.
 4. Fix the problems. If a problem is out of scope for this task, create a separate task or bug
    (sub-issue of the right epic) instead of growing the PR, and say so.
-5. Build, verify what you can without a headset, push. Update **How to test** in the PR description
-   so it covers the fixes.
+5. Build, verify what you can without a headset (`.\scripts\dev\smoke-test.ps1`, plus `-Vr` when
+   SteamVR is running, and `-Commands` / `scripts\dev\game-cmd.ps1` for the state the feedback is
+   about — see `docs/vr/TESTING.md`), push. Update **How to test** in the PR description so it covers
+   the fixes.
 6. Wait for CI to be green (`gh pr checks <pr> --watch`), then
    `.\scripts\dev\set-status.ps1 -Issue <n> -Status Testing`.
 7. Report in Russian: what you changed for each point of feedback, and what to re-test in the headset.

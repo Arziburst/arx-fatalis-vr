@@ -22,6 +22,7 @@ commit messages, pull requests, and code comments.
 | Research: controllers (Valve Index, Quest 3) | [RESEARCH-controllers.md](RESEARCH-controllers.md) |
 | Research: reference VR mods (Dishonored VR, VHVR) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |
 | SteamVR app manifest: name and tile on the loading card | [STEAMVR.md](STEAMVR.md) |
+| Testing without a headset: smoke test, command channel, `status.json`, `xr_hello` — what is reliable and what is not | [TESTING.md](TESTING.md) |
 | Traps: misleading symptoms that already cost time — **read before debugging** | [TRAPS.md](TRAPS.md) |
 
 ## Current goal: MVP first
@@ -175,18 +176,28 @@ and never discards uncommitted changes it finds; it reports them instead.
 
 ### Workers test the game themselves first
 
-Before a task goes to **Testing** (or is merged without a VR test), the worker runs the game itself:
-it launches the build in flat mode (`--no-vr`) and, when SteamVR is available, in VR; loads a level
-(`--loadlevel 10`, the first level of a new game) or a save (`--loadslot <n>`); lets it run; reads
-`%USERPROFILE%\Saved Games\Arx Libertatis\arx.log` and checks `...\crashes\` for new crash reports;
-closes the game and checks for `Clean shutdown`. A crash or a new `[E]` log line caused by the task
-blocks the hand-off.
+Before a task goes to **Testing** (or is merged without a VR test), the worker runs the game itself
+with the smoke test ([TESTING.md](TESTING.md)):
 
-This is **best effort**: we do not know yet how reliably the game behaves under automated launches,
-especially in VR with nobody wearing the headset. If a self-test is flaky or cannot run (e.g. SteamVR
-idles without a user), the worker says so in the PR's *How verified* instead of blocking the task on
-it, and the owner's test decides. #99 first finds out how far automation can go before
-`scripts/dev/smoke-test.ps1` becomes part of the routine.
+```powershell
+.\scripts\dev\smoke-test.ps1                 # flat, --loadlevel 10: start, play, quit, check the evidence
+.\scripts\dev\smoke-test.ps1 -Vr             # the same in VR, with SteamVR running (session state recorded)
+.\scripts\dev\smoke-test.ps1 -- --loadslot 0 # a save instead of a level; any arx.exe arguments after --
+```
+
+It starts the build with the test channel (`--test-dir`), waits until `status.json` says the game is
+playable, quits through the channel and fails on: exit code ≠ 0, no `Clean shutdown` in a fresh
+`arx.log`, a new crash report in `%USERPROFILE%\Saved Games\Arx Libertatis\crashes\`, an `[E]` log
+line, `errors ≠ 0` in `status.json`. The flat run is a **gate**: a failure caused by the task is fixed
+(or filed as a bug, if unrelated) before the PR. Checks that need game state use the channel
+(`-Commands 'shot before','teleport -p marker_0001','shot after'`, `scripts/dev/game-cmd.ps1`), so a
+worker asserts on `status.json` numbers and screenshots instead of reading the log by eye.
+
+The VR run is **best effort**: with nobody wearing the headset the OpenXR session is created but
+stays short of `FOCUSED` (measured in #99, numbers in TESTING.md), so it proves the VR start-up and
+shutdown paths, not the rendering. `xr_hello.exe` (built next to `arx.exe`) answers "is the runtime
+or the game at fault?" without the game. When a self-test cannot run (SteamVR off, no headset), the
+worker says so in the PR's *How verified* instead of blocking the task on it, and the owner's test decides.
 The owner's headset time is for judging how it feels in VR, not for finding crashes.
 
 **Verification tiers** — always climb in this order and stop at the lowest tier that answers the question:
@@ -234,6 +245,9 @@ Helper scripts used by the commands:
 - `scripts/dev/next-task.ps1` — which task is next (Testing / In Progress first, then the queue)
 - `scripts/dev/set-status.ps1 -Issue <n> -Status <column>` — move a task on the board
 - `scripts/build-windows.ps1`, `scripts/run-windows.ps1` — build and run
+- `scripts/dev/smoke-test.ps1` — the worker's self-test: start, play, quit, check the evidence
+- `scripts/dev/game-cmd.ps1`, `scripts/dev/game-status.ps1` — talk to a running game through the
+  test channel (`--test-dir`), see [TESTING.md](TESTING.md)
 
 ## Task lifecycle
 

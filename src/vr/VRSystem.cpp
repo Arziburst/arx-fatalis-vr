@@ -537,6 +537,13 @@ bool isEnabled() {
 	return g_xr.session != XR_NULL_HANDLE;
 }
 
+const char * sessionStateString() {
+	if(g_xr.session == XR_NULL_HANDLE) {
+		return "none";
+	}
+	return sessionStateName(g_xr.sessionState);
+}
+
 void shutdown() {
 
 	destroySession();
@@ -569,6 +576,10 @@ bool createSession() {
 }
 
 void pollEvents() { }
+
+const char * sessionStateString() {
+	return "none";
+}
 
 bool isEnabled() {
 	return false;

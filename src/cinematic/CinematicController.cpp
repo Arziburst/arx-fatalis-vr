@@ -22,6 +22,7 @@
 #include <string>
 
 #include "core/Application.h"
+#include "core/Core.h"
 #include "core/GameTime.h"
 
 #include "io/log/Logger.h"
@@ -70,7 +71,24 @@ void cinematicPrepare(std::string_view name, bool preload) {
 	CINE_PRELOAD = preload;
 }
 
+/*!
+ * Development launches skip the intro cinematic (#91: no logos, no intro; --intro shows them,
+ * #92 restores them for players). The level 10 script starts it, so it is skipped here rather
+ * than in the game flow; the script still gets its cine_end event and continues as usual.
+ */
+static bool skipCinematic(std::string_view name) {
+	return !g_showIntro && name == "introduction.cin";
+}
+
 void cinematicRequestStart() {
+
+	// A skipped (never loaded) cinematic that a script asks to play: end it right away
+	if(skipCinematic(LAST_LAUNCHED_CINE) && !(ControlCinematique && ControlCinematique->projectload)) {
+		LogInfo << "Skipping cinematic " << LAST_LAUNCHED_CINE << " (development launch, --intro shows it)";
+		SendMsgToAllIO(nullptr, SM_CINE_END, LAST_LAUNCHED_CINE);
+		return;
+	}
+
 	PLAY_LOADED_CINEMATIC = Cinematic_StartRequested;
 	g_gameTime.pause(GameTime::PauseCinematic);
 }
@@ -91,6 +109,19 @@ void cinematicLaunchWaiting() {
 
 	// A cinematic is waiting to be played...
 	if(WILL_LAUNCH_CINE.empty()) {
+		return;
+	}
+
+	if(skipCinematic(WILL_LAUNCH_CINE)) {
+		LogInfo << "Skipping cinematic " << WILL_LAUNCH_CINE << " (development launch, --intro shows it)";
+		cinematicKill();
+		LAST_LAUNCHED_CINE = WILL_LAUNCH_CINE;
+		WILL_LAUNCH_CINE.clear();
+		if(!CINE_PRELOAD) {
+			// Not just preloaded: the script expects the cinematic to play and end
+			SendMsgToAllIO(nullptr, SM_CINE_END, LAST_LAUNCHED_CINE);
+		}
+		CINE_PRELOAD = false;
 		return;
 	}
 

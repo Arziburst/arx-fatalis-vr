@@ -403,22 +403,71 @@ void ScriptConsole::execute() {
 	}
 	
 	ARX_LOG(Logger::Console) << "> " << text();
-	
-	Entity * entity = contextEntity();
-	if(!entity) {
-		LogError << "Unknown entity: " << context();
-		return;
+
+	std::string error = executeConsoleLine(text());
+	if(!error.empty()) {
+		LogError << error;
 	}
-	
+
+}
+
+std::string executeConsoleLine(std::string_view line) {
+
+	// The same split as ScriptConsole::parse(): [entity.]command args
+	size_t contextBegin = 0;
+	while(contextBegin < line.size() && std::isspace(static_cast<unsigned char>(line[contextBegin]))) {
+		++contextBegin;
+	}
+	size_t contextEnd = contextBegin;
+	while(contextEnd < line.size() && isScriptContextChar(line[contextEnd])) {
+		++contextEnd;
+	}
+	size_t dot = contextEnd;
+	while(dot < line.size() && std::isspace(static_cast<unsigned char>(line[dot]))) {
+		++dot;
+	}
+
+	std::string_view context;
+	size_t commandBegin = contextBegin;
+	if(dot < line.size() && line[dot] == '.') {
+		context = line.substr(contextBegin, contextEnd - contextBegin);
+		commandBegin = dot + 1;
+		while(commandBegin < line.size() && std::isspace(static_cast<unsigned char>(line[commandBegin]))) {
+			++commandBegin;
+		}
+	}
+	std::string_view command = line.substr(commandBegin);
+	if(command.empty()) {
+		return "Empty command";
+	}
+
+	Entity * entity = entities.player();
+	if(!context.empty()) {
+		entity = entities.getById(context, entity);
+	}
+	if(!entity) {
+		return context.empty() ? std::string("No player entity (no level loaded)")
+		                       : "Unknown entity: " + std::string(context);
+	}
+
+	size_t commandEnd = 0;
+	while(commandEnd < command.size() && !std::isspace(static_cast<unsigned char>(command[commandEnd]))) {
+		++commandEnd;
+	}
+	if(!ScriptEvent::isCommand(command.substr(0, commandEnd))) {
+		return "Unknown command: " + std::string(command.substr(0, commandEnd));
+	}
+
 	EERIE_SCRIPT es;
 	es.valid = true;
-	es.data = std::string(command()) += "\naccept\n";
+	es.data = std::string(command) += "\naccept\n";
 	// TODO Some script commands (timers, etc.) store references to the script
-	
+
 	// TODO Allow the "context.command" syntax in scripts too
 	size_t pos = 0;
 	ScriptEvent::resume(&es, entity, pos);
-	
+
+	return std::string();
 }
 
 bool ScriptConsole::addContextSuggestion(void * self, std::string_view suggestion) {

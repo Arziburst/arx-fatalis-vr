@@ -49,6 +49,7 @@ Dependencies come from vcpkg in manifest mode (`vcpkg.json`, triplet `x64-window
 .\scripts\run-windows.ps1 -- --skiplogo --loadslot 0   # extra arguments go to arx.exe; load save slot 0 directly
 .\scripts\run-windows.ps1 -Fullscreen    # test runs are windowed by default (arx.exe --windowed); this opts out
 .\scripts\register-steamvr.ps1           # tell SteamVR the name and tile of this build (loading card, SteamVR library)
+.\scripts\dev\smoke-test.ps1             # worker self-test: start, play, quit, check the evidence (docs/vr/TESTING.md)
 ```
 
 - SteamVR shows "Arx Fatalis VR" and the tile only for a registered build: run `register-steamvr.ps1`

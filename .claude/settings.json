@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"$env:CLAUDE_PROJECT_DIR/scripts/dev/hooks/session-title.ps1\"",
+            "timeout": 15,
+            "statusMessage": "Naming the session after the task"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -29,20 +29,20 @@ The project owner's working copy is `C:\Users\arzib\OneDrive\Desktop\arx-fatalis
 
 ## Development environment (Windows)
 
-- MSVC: VS Build Tools 2022 (`C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`)
-- CMake: `C:\Program Files\CMake\bin\cmake.exe`
-- vcpkg: `C:\Users\arzib\arx-vr\vcpkg`, triplet `x64-windows`
-- Game data: `D:\games\SteamLibrary\steamapps\common\Arx Fatalis`
+Requirements: VS 2022 or Build Tools 2022 with the C++ workload, CMake, Git, PowerShell 7.
+Dependencies come from vcpkg in manifest mode (`vcpkg.json`, triplet `x64-windows`).
 
-Configure (from a `VsDevCmd.bat -arch=x64` environment):
+```powershell
+.\scripts\build-windows.ps1              # Release build -> %LOCALAPPDATA%\ArxFatalisVR\build\Release\arx.exe
+.\scripts\build-windows.ps1 -Config Debug -Clean
+.\scripts\run-windows.ps1                # runs the build with Arx Fatalis data found in the Steam libraries
+.\scripts\run-windows.ps1 -- --help      # extra arguments go to arx.exe
+```
 
-```
-cmake -S . -B build -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release ^
-  -DCMAKE_TOOLCHAIN_FILE=C:/Users/arzib/arx-vr/vcpkg/scripts/buildsystems/vcpkg.cmake ^
-  -DVCPKG_TARGET_TRIPLET=x64-windows -DUSE_STATIC_LIBS=OFF ^
-  -DBUILD_TOOLS=OFF -DBUILD_CRASHREPORTER=OFF -DBUILD_TESTS=OFF
-cmake --build build
-```
+- Build directories live in `%LOCALAPPDATA%\ArxFatalisVR\build\<Config>` — never inside the source tree,
+  which may sit in a synced folder (OneDrive).
+- vcpkg: `$env:VCPKG_ROOT` if set, else `%LOCALAPPDATA%\ArxFatalisVR\vcpkg` (cloned on first build).
+- Game data on the owner's machine: `D:\games\SteamLibrary\steamapps\common\Arx Fatalis` (Steam app 1700).
 
 ## Key code locations for VR
 

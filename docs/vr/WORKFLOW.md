@@ -53,7 +53,7 @@ Area labels: `vr` (VR-specific work), `legal` (rights, licensing, Steam).
 | **Testing** | PR is ready and CI is green; waiting for the owner to test it in VR (`needs-vr-test`) |
 | **Done** | Finished and verified; issue closed |
 
-No more than two tasks in **In Progress** at a time.
+Work-in-progress limits: see [Parallel work](#parallel-work) (sequential mode: one task at a time).
 
 ## The development loop
 
@@ -83,8 +83,86 @@ with a clean context; everything a session needs to know lives in the repository
   one task in its own PR (`/next-task <n>`), and handles the owner's verdict (`/accept-task`, `/reject-task`).
 - **Owner** — tests VR features in the headset following the PR's *How to test*, and gives the verdict.
 
-Tasks are strictly sequential: the next task starts only after the previous one is merged
-(one headset, one tester — parallel tasks would only queue up at testing).
+By default tasks are sequential: the next task starts only after the previous one is merged. Once
+the tooling of #123 is merged, the coordinator can switch on **parallel work** (next section) — several
+workers at once, with headset tests still one at a time.
+
+### Parallel work
+
+The headset and the owner are the only shared bottleneck; code can be written in parallel as long as
+workers do not step on each other's files, game folders or the headset.
+
+**What runs in parallel and what does not** — VR tasks are not excluded: everything about them runs in
+parallel except the moments the real headset is used.
+
+| Stage of a task | In parallel? |
+|---|---|
+| Writing code, building, host unit tests | Yes — each worker in its own working copy |
+| Checks without a headset: flat launch, the simulated VR backend (#112), scripted sequences (#113), the two-eyes check | Yes |
+| A worker's self-test in real VR (SteamVR running, nobody wearing the headset) | **One at a time** — VR launch lock, a few minutes each |
+| The owner's test in the headset | **One at a time**, in batches |
+
+The owner's headset is the bottleneck by design; the rules shrink it: the simulator answers "does it
+work", so the headset only answers "how does it feel"; one question per launch; several PRs per
+sitting; and the plain lane plus the next VR task keep going while PRs wait in Testing.
+"Isolated" below means **separate game folders** (log, config, saves) per working copy — not "without
+the headset".
+
+**Two lanes**
+- **VR lane** — tasks whose PR will need the owner's headset test (`needs-vr-test`). At most **2 in
+  progress** and at most **4 waiting in Testing**; when Testing is full, VR work pauses until the owner
+  tests a batch.
+- **Plain lane** — everything else: build, CI, tooling, tests, refactoring, engine plumbing, docs,
+  research. Merged on green CI, no owner involvement.
+- Overall at most **3 workers at once** (start with 2 and raise it when merges stay clean).
+
+**Which tasks may run together** — the coordinator decides in `/new-cycle` and hands out one prompt per
+worker. Two tasks may run at the same time only if (1) both have their dependencies merged, and (2)
+they are in **different areas**:
+
+| Area | Typical files |
+|---|---|
+| Build, CI, scripts | `CMakeLists.txt`, `cmake/`, `vcpkg.json`, `scripts/`, `.github/` |
+| VR runtime and frame loop | `src/vr/`, `src/graphics/opengl/` |
+| Scene rendering | `src/scene/`, `src/graphics/` (except opengl), `src/animation/` |
+| Camera and player | `src/game/Camera.*`, `src/game/Player.*`, camera code in `src/core/ArxGame.cpp` |
+| Input | `src/input/`, controls in `src/gui/Interface.cpp` |
+| UI | `src/gui/` (except controls) |
+| Combat and magic | `src/core/Core.cpp` combat, `src/game/Equipment.*`, `src/game/Spells.*`, `src/game/magic/` |
+| Docs and research | `docs/`, `.claude/` |
+
+When in doubt, run them one after the other.
+
+**Each worker in its own working copy** — in parallel mode a worker never works in the owner's copy.
+It works in its own git worktree under `C:\Users\arzib\arx-fatalis-vr-wt\ARXVR-<n>-<type>-<name>`
+(outside OneDrive), created from `origin/main` with `scripts/dev/new-worktree.ps1` (#123). Build
+directories are per copy already. The owner's copy on the desktop stays on `main` and serves as the
+test station.
+
+**Isolation of game runs**
+- Self-test launches use their own user and config folders (`run-windows.ps1 -Isolated` →
+  `--user-dir` / `--config-dir` per working copy, #123), so workers never share `arx.log`, `cfg.ini`
+  or saves with each other or with the owner.
+- **One game in VR at a time:** VR launches take a machine-wide lock (#123). A worker that cannot get
+  it in time skips its VR self-test and says so (best effort). Flat launches need no lock.
+- **No workarounds for a second-instance limit** (owner's rule): the engine has no single-instance
+  check, so isolated flat and simulated runs should work side by side — #123 proves it. If they do
+  not, the lock covers **every** game launch and game runs are always one at a time; only code,
+  builds and host tests run in parallel.
+- CI has one runner on the owner's PC: parallel PRs queue for it (about a minute each). A second
+  runner can be added if the queue gets long.
+
+**Merging parallel PRs** — first green, first merged. Before merging, a PR must be up to date with
+`main` and green on that state (`gh pr update-branch <pr>`, wait for CI). Conflicts are resolved by
+the PR's worker. After each merge the coordinator updates the other open PRs in `/new-cycle`.
+
+**Headset tests in batches** — the owner tests when it suits them, several PRs in one sitting:
+1. "новый цикл" → the coordinator lists the PRs in **Testing**, each with its **one question** and the
+   command to run it: `.\scripts\dev\test-pr.ps1 <pr>` (from the owner's copy; builds and launches
+   that PR's working copy, #123).
+2. The owner answers per PR, e.g. "#131 ok, #133 judder when turning".
+3. The coordinator merges the accepted ones (`/accept-task <pr>` works from any session), posts the
+   feedback on the rejected ones and gives a `/reject-task <pr> <feedback>` prompt for a worker.
 
 ### Worker sessions prepare everything themselves
 

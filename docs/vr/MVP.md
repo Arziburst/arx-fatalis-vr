@@ -95,6 +95,8 @@ dependencies are met; when a task is split, replace it with its parts.
 4. #98 — Dev launch finds the engine's own data (`data/core`) *(done)*
 5. #107 — Research reference VR mods *(done — decisions in the catalog)*
 6. #99 — Smoke test and command channel: `status.json`, script-console commands, `xr_hello` probe, flat and VR launch (F-01, F-02, F-03, F-16)
+7. #124 — Development launch: skip all cinematics (new-game intro, in-game `.cin`) — straight into the game or the menu
+7. #123 — Parallel development tooling: worktrees, isolated self-test folders, test-pr station, VR lock (switches on parallel work)
 7. #115 — Log banner and the OpenXR runtime that answered (F-18, F-98)
 8. #18 — Per-eye swapchains; first visible result: the flat frame on a head-locked quad (F-20)
 9. #20 — Frame loop with pose-matched submission and a rate / cadence line (F-07, F-21, F-26)

@@ -1,0 +1,39 @@
+name: Build (Windows)
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Windows MSVC build
+    runs-on: windows-2022
+    timeout-minutes: 90
+
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\..\vcpkg-binary-cache
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Prepare vcpkg binary cache
+      shell: pwsh
+      run: New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+
+    - name: Restore vcpkg binary cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}\..\vcpkg-binary-cache
+        key: vcpkg-windows-${{ hashFiles('vcpkg.json') }}
+        restore-keys: vcpkg-windows-
+
+    - name: Build
+      shell: pwsh
+      run: ./scripts/build-windows.ps1 -Config Release

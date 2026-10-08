@@ -19,6 +19,7 @@ commit messages, pull requests, and code comments.
 | Decisions and their reasoning | [DECISIONS.md](DECISIONS.md) |
 | Current goal: the MVP | [MVP.md](MVP.md) |
 | Research and scope of playable v1 | [RESEARCH-playable-v1.md](RESEARCH-playable-v1.md) |
+| Research: controllers (Valve Index, Quest 3) | [RESEARCH-controllers.md](RESEARCH-controllers.md) |
 
 ## Current goal: MVP first
 

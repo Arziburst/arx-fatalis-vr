@@ -14,6 +14,11 @@ tasks are sub-issues of epics on GitHub, board at https://github.com/users/Arzib
 statuses Backlog / Todo / In Progress / Done, branches `task/<number>-<short-name>`, PRs with `Closes #N`.
 Create new tasks and bugs discovered during work yourself and list them in your report.
 
+**Development loop:** `/next-task` takes the next task from the queue in [docs/vr/MVP.md](docs/vr/MVP.md#task-queue)
+and implements it in its own PR; `/accept-task` and `/reject-task` handle the owner's VR test verdict.
+Merge on your own when CI is green, except `needs-vr-test` PRs — those wait for the owner
+(see [Pull requests, CI and merging](docs/vr/WORKFLOW.md#pull-requests-ci-and-merging)).
+
 **All project artifacts (docs, issues, commits, PRs, code comments) are in English.**
 Conversation with the project owner is in Russian.
 

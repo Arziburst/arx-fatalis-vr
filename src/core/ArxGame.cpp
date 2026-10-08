@@ -587,15 +587,24 @@ static bool g_initialPlayerCollision = true;
 /*
  * During development a plain launch goes straight to the main menu: the publisher logos and the
  * intro cinematic are skipped (owner's decision, 2026-10-08). Bringing them back for players is #92;
- * --intro shows the original startup sequence until then. The intro cinematic itself is started by
- * the level 10 script, so a new game (--loadlevel 10, New Quest) is gated in cinematicLaunchWaiting().
+ * --intro shows the original startup sequence until then. Every .cin cinematic - the intro that the
+ * level 10 script plays when a new game starts, and the in-game cutscenes - is skipped as well
+ * (#124, owner's decision: no cutscenes at all during development); --cinematics shows them. The
+ * skip itself lives in the cinematic controller (cinematicLaunchWaiting(), cinematicRequestStart())
+ * and ends the cinematic through the same path as pressing Esc, without loading its file.
  */
 bool g_showIntro = false;
+bool g_showCinematics = false;
 
 static void showIntro() {
 	g_showIntro = true;
 }
 ARX_PROGRAM_OPTION("intro", "", "Show the publisher logos and the intro cinematic at startup", &showIntro)
+
+static void showCinematics() {
+	g_showCinematics = true;
+}
+ARX_PROGRAM_OPTION("cinematics", "", "Show the .cin cinematics (new-game intro, in-game cutscenes)", &showCinematics)
 
 static void skipLogo() {
 	if(GameFlow::getTransition() != GameFlow::LoadingScreen) {

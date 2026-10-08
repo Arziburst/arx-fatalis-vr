@@ -241,8 +241,9 @@ branch name in its console window.
 
 `--loadslot <n>` starts straight into a saved game (recorded in flat mode) — needed until the in-VR
 menu exists (checkpoint B). `run-windows.ps1` starts the game in a window (`--windowed`; `-Fullscreen`
-opts out), and a plain launch goes straight to the main menu — logos and the intro cinematic are
-skipped during development (`--intro` shows them, #92 restores them for players).
+opts out), and a plain launch goes straight to the main menu — logos, the intro and every `.cin`
+cinematic are skipped during development (`--intro` shows the logos and the intro, `--cinematics`
+every cinematic; #92 restores them for players).
 After `/accept-task` the worker merges and switches the copy back to `main`.
 
 Helper scripts used by the commands:

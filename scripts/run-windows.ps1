@@ -8,7 +8,8 @@
 
 	Test runs start in a window (arx.exe --windowed) so the game does not take over the desktop;
 	pass -Fullscreen to use the fullscreen setting from cfg.ini instead. A plain launch goes straight
-	to the main menu; add --intro to see the publisher logos and the intro cinematic.
+	to the main menu and every .cin cinematic is skipped; add --intro to see the publisher logos and
+	the intro cinematic, --cinematics to see all cinematics (new-game intro, in-game cutscenes).
 
 	Until the engine finds the data itself (task #79), this script does the lookup (Find-ArxFatalisSteamInstall in build-paths.ps1).
 

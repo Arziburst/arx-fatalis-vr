@@ -88,6 +88,8 @@ extern bool g_requestLevelInit;
 
 //! Show the publisher logos and the intro cinematic (--intro); development launches skip them
 extern bool g_showIntro;
+//! Show every .cin cinematic (--cinematics); development launches skip them (#124)
+extern bool g_showCinematics;
 
 extern AreaId g_currentArea;
 extern long TELEPORT_TO_ANGLE;

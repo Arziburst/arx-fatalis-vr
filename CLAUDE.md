@@ -58,9 +58,10 @@ Dependencies come from vcpkg in manifest mode (`vcpkg.json`, triplet `x64-window
   working copy, never inside the source tree (which may sit in a synced folder, OneDrive).
 - `--skiplogo --loadslot <n>` starts straight into a saved game — the way to test VR before the
   in-VR menu exists. The owner records saves in flat mode.
-- A plain launch starts at the main menu: publisher logos and the intro cinematic are skipped during
-  development (`--intro` shows them; restoring them for players is #92). Test runs are windowed
-  (`--windowed`, added by `run-windows.ps1`); `--no-vr` forces flat mode.
+- A plain launch starts at the main menu: publisher logos and the intro are skipped during development
+  (`--intro` shows them), and every `.cin` cinematic — the new-game intro, in-game cutscenes — is
+  skipped too (`--cinematics` shows them; restoring all of it for players is #92). Test runs are
+  windowed (`--windowed`, added by `run-windows.ps1`); `--no-vr` forces flat mode.
 - vcpkg: `$env:VCPKG_ROOT` if set, else `%LOCALAPPDATA%\ArxFatalisVR\vcpkg` (cloned on first build).
 - Game data on the owner's machine: `D:\games\SteamLibrary\steamapps\common\Arx Fatalis` (Steam app 1700).
 

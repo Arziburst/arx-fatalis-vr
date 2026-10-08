@@ -53,6 +53,8 @@ static CinematicState PLAY_LOADED_CINEMATIC = Cinematic_Stopped;
 static bool CINE_PRELOAD = false;
 static std::string WILL_LAUNCH_CINE;
 static std::string LAST_LAUNCHED_CINE;
+// A skipped cinematic that a script only preloaded (cine -p) and will ask to play (cine play), #124
+static bool SKIPPED_CINE_PENDING = false;
 
 Cinematic * ControlCinematique = nullptr; // 2D Cinematic Controller
 
@@ -72,20 +74,36 @@ void cinematicPrepare(std::string_view name, bool preload) {
 }
 
 /*!
- * Development launches skip the intro cinematic (#91: no logos, no intro; --intro shows them,
- * #92 restores them for players). The level 10 script starts it, so it is skipped here rather
- * than in the game flow; the script still gets its cine_end event and continues as usual.
+ * Development launches skip every .cin cinematic (#124, owner's decision: straight into the game
+ * or the menu, no cutscenes; --cinematics shows them, #92 restores them for players). --intro keeps
+ * showing the intro cinematic that the level 10 script plays when a new game starts (#91).
  */
 static bool skipCinematic(std::string_view name) {
-	return !g_showIntro && name == "introduction.cin";
+	if(g_showCinematics) {
+		return false;
+	}
+	return !(g_showIntro && name == "introduction.cin");
+}
+
+/*!
+ * Ends a skipped cinematic (LAST_LAUNCHED_CINE) through the engine's own skip path - cinematicEnd(),
+ * what Esc calls - so the scripts get their cine_end event and the game state is the same as after
+ * a real cinematic. The .cin file itself is never loaded: a loaded cinematic, even one that never
+ * plays (the level 10 script preloads the intro), brings back the exit crash #93 - measured in #124:
+ * 2 of 5 window closes crashed with it loaded, 0 of 5 without.
+ * Callers must not touch WILL_LAUNCH_CINE afterwards: a cine_end handler may prepare the next one.
+ */
+static void endSkippedCinematic() {
+	LogInfo << "Skipping cinematic " << LAST_LAUNCHED_CINE << " (development launch, --cinematics shows it)";
+	SKIPPED_CINE_PENDING = false;
+	cinematicEnd();
 }
 
 void cinematicRequestStart() {
 
-	// A skipped (never loaded) cinematic that a script asks to play: end it right away
-	if(skipCinematic(LAST_LAUNCHED_CINE) && !(ControlCinematique && ControlCinematique->projectload)) {
-		LogInfo << "Skipping cinematic " << LAST_LAUNCHED_CINE << " (development launch, --intro shows it)";
-		SendMsgToAllIO(nullptr, SM_CINE_END, LAST_LAUNCHED_CINE);
+	if(SKIPPED_CINE_PENDING && !(ControlCinematique && ControlCinematique->projectload)) {
+		// cine play for a preloaded cinematic that was skipped: end it now (#124)
+		endSkippedCinematic();
 		return;
 	}
 
@@ -94,6 +112,7 @@ void cinematicRequestStart() {
 }
 
 void cinematicKill() {
+	SKIPPED_CINE_PENDING = false;
 	if(ControlCinematique && ControlCinematique->projectload) {
 		ControlCinematique->projectload = false;
 		ControlCinematique->OneTimeSceneReInit();
@@ -112,34 +131,39 @@ void cinematicLaunchWaiting() {
 		return;
 	}
 
-	if(skipCinematic(WILL_LAUNCH_CINE)) {
-		LogInfo << "Skipping cinematic " << WILL_LAUNCH_CINE << " (development launch, --intro shows it)";
-		cinematicKill();
-		LAST_LAUNCHED_CINE = WILL_LAUNCH_CINE;
-		WILL_LAUNCH_CINE.clear();
-		if(!CINE_PRELOAD) {
-			// Not just preloaded: the script expects the cinematic to play and end
-			SendMsgToAllIO(nullptr, SM_CINE_END, LAST_LAUNCHED_CINE);
-		}
-		CINE_PRELOAD = false;
-		return;
-	}
+	// Taken out first: starting (or skipping, #124) it runs scripts that may prepare the next one
+	std::string name;
+	name.swap(WILL_LAUNCH_CINE);
 
 	LogDebug("LaunchWaitingCine " << CINE_PRELOAD);
-	
+
 	if(g_camera) {
 		g_originalCameraPosition = g_camera->m_pos;
 	}
-	
+
 	cinematicKill();
 
-	res::path cinematic = res::path("graph/interface/illustrations") / WILL_LAUNCH_CINE;
+	if(skipCinematic(name)) {
+		LAST_LAUNCHED_CINE = name;
+		if(CINE_PRELOAD) {
+			// Only preloaded: the script will ask to play it later (cine play), it ends then
+			SKIPPED_CINE_PENDING = true;
+			CINE_PRELOAD = false;
+		} else {
+			endSkippedCinematic();
+		}
+		return;
+	}
+
+	res::path cinematic = res::path("graph/interface/illustrations") / name;
 
 	if(g_resources->getFile(cinematic)) {
 
 		ControlCinematique->OneTimeSceneReInit();
 
 		if(loadCinematic(ControlCinematique, cinematic)) {
+
+			LAST_LAUNCHED_CINE = name;
 
 			if(CINE_PRELOAD) {
 				LogDebug("only preloaded cinematic");
@@ -149,7 +173,6 @@ void cinematicLaunchWaiting() {
 				cinematicRequestStart();
 			}
 
-			LAST_LAUNCHED_CINE = WILL_LAUNCH_CINE;
 		} else {
 			LogWarning << "Error loading cinematic " << cinematic;
 		}
@@ -158,7 +181,6 @@ void cinematicLaunchWaiting() {
 		LogWarning << "Could not find cinematic " << cinematic;
 	}
 
-	WILL_LAUNCH_CINE.clear();
 }
 
 bool cinematicIsStopped() {

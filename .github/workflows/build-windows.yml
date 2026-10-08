@@ -1,10 +1,26 @@
 name: Build (Windows)
 
+# Runs on the self-hosted runner on the project owner's PC (label "arxvr"). vcpkg and the build
+# directory persist there between runs (see scripts/build-paths.ps1), so builds are incremental.
+# If that PC is off, runs wait in the queue until it is back.
+
 on:
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.claude/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/pull_request_template.md'
   push:
     branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.claude/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/pull_request_template.md'
   workflow_dispatch:
 
 concurrency:
@@ -14,25 +30,23 @@ concurrency:
 jobs:
   build:
     name: Windows MSVC build
-    runs-on: windows-2022
+    runs-on: [ self-hosted, Windows, arxvr ]
     timeout-minutes: 90
 
+    # Shared vcpkg on the runner machine (C:\vcpkg-shared, writable by the runner service): the same
+    # vcpkg commit, source downloads and binary packages as the owner's local builds, so dependencies
+    # come from the cache instead of being downloaded and rebuilt. The folder belongs to the owner's
+    # account, so git inside vcpkg needs safe.directory when run by the service account.
     env:
-      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\..\vcpkg-binary-cache
+      VCPKG_ROOT: C:\vcpkg-shared\vcpkg
+      VCPKG_DOWNLOADS: C:\vcpkg-shared\downloads
+      VCPKG_DEFAULT_BINARY_CACHE: C:\vcpkg-shared\archives
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: '*'
 
     steps:
     - uses: actions/checkout@v4
-
-    - name: Prepare vcpkg binary cache
-      shell: pwsh
-      run: New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
-
-    - name: Restore vcpkg binary cache
-      uses: actions/cache@v4
-      with:
-        path: ${{ github.workspace }}\..\vcpkg-binary-cache
-        key: vcpkg-windows-${{ hashFiles('vcpkg.json') }}
-        restore-keys: vcpkg-windows-
 
     - name: Build
       shell: pwsh

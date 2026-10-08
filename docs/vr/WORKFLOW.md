@@ -152,6 +152,12 @@ human in a headset:
 | Gameplay / VR behavior that can only be judged in the headset | `needs-vr-test` | **Claude, after the owner's OK** (`/accept-task`) | CI is green **and** the owner tested it in VR |
 
 - **Never merge with failing or pending CI.** Fix the PR instead.
+- **CI runs on a self-hosted runner on the owner's PC** (Windows service, label `arxvr`, installed in
+  `C:\actions-runner`). vcpkg and the build directory persist there, so a typical PR builds in minutes.
+  If the PC is off, CI waits in the queue — that is expected, not a failure.
+- **Docs-only PRs do not run CI** (`docs/**`, `*.md`, `.claude/**`, issue/PR templates — see `paths-ignore`
+  in the workflow). With no check on the PR, Claude merges them right away; a PR that touches anything
+  else always gets a build.
 - For `needs-vr-test` PRs, *How to test* is a step-by-step script for the headset: which save to load,
   what to do, what should happen, what to report if it does not.
 - When unsure whether something needs VR testing, label it `needs-vr-test` — asking costs less than

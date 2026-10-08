@@ -1,10 +1,26 @@
 name: Build (Windows)
 
+# Runs on the self-hosted runner on the project owner's PC (label "arxvr"). vcpkg and the build
+# directory persist there between runs (see scripts/build-paths.ps1), so builds are incremental.
+# If that PC is off, runs wait in the queue until it is back.
+
 on:
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.claude/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/pull_request_template.md'
   push:
     branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.claude/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/pull_request_template.md'
   workflow_dispatch:
 
 concurrency:
@@ -14,25 +30,11 @@ concurrency:
 jobs:
   build:
     name: Windows MSVC build
-    runs-on: windows-2022
+    runs-on: [ self-hosted, Windows, arxvr ]
     timeout-minutes: 90
-
-    env:
-      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\..\vcpkg-binary-cache
 
     steps:
     - uses: actions/checkout@v4
-
-    - name: Prepare vcpkg binary cache
-      shell: pwsh
-      run: New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
-
-    - name: Restore vcpkg binary cache
-      uses: actions/cache@v4
-      with:
-        path: ${{ github.workspace }}\..\vcpkg-binary-cache
-        key: vcpkg-windows-${{ hashFiles('vcpkg.json') }}
-        restore-keys: vcpkg-windows-
 
     - name: Build
       shell: pwsh

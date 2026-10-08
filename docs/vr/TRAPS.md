@@ -8,6 +8,31 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — The exit crash #93 needs no playing cinematic — a loaded one is enough
+
+**Symptom:** closing the window after `--loadlevel 10` crashes in `Entity::cleanReferences`
+(`DanaeClearLevel`) in 2 of 5 runs although no cinematic ever played and the log shows only
+`Loading cinematic "…/introduction.cin"`; quitting through the channel is clean 5 of 5.
+**Cause:** the level 10 script only *preloads* the intro (`cine -p introduction`); `cine play` comes
+from the real new-game flow, never from `--loadlevel 10`. A loaded `.cin` (its bitmaps) is enough to
+change the heap so that the dangling `m_owner` read of #93 faults; the window-close path is more
+exposed than the channel quit. The first version of #124 skipped cinematics by loading them and
+ending them at once — and brought the crash back.
+**Do:** a skipped cinematic must never be loaded (#124 ends it through `cinematicEnd()` without
+loading the file). Test exits with `-CloseWindow` as well as with the channel quit: they fail
+differently. `--intro` / `--cinematics` remain exposed to #93 until it is fixed.
+
+## 2026-10-09 — An issue body edited from PowerShell lost all its line breaks
+
+**Symptom:** after `gh issue edit --body-file`, the issue body is one long line, and the `-replace`
+that should have inserted a section into it did nothing.
+**Cause:** PowerShell captures `gh issue view --json body -q .body` as an **array of lines**, not a
+string: a multi-line regex never matches, `-eq` between two arrays is not a "did it change" check,
+and `Set-Content -NoNewline` with an array joins the lines **without** separators.
+**Do:** write issue bodies from a here-string or with `[IO.File]::WriteAllText`; to get a body as one
+string use `gh … | Out-String` (or `-join "`n"`); read the issue back and check its line count before
+moving on. (Hit on #124, 2026-10-09; the body was restored from the original text.)
+
 ## 2026-10-08 — Closing the game 30 s after `--loadlevel 10` crashes 4 times out of 5
 
 **Symptom:** a scripted flat launch (`--no-vr --loadlevel 10`, close the window after 30 s) ends with

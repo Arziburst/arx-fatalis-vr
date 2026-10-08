@@ -78,6 +78,16 @@ with a clean context; everything a session needs to know lives in the repository
 
 Tasks are strictly sequential: the next task starts only after the previous one is merged.
 
+### Workers test the game themselves first
+
+Before a task goes to **Testing** (or is merged without a VR test), the worker runs the game itself:
+it launches the build in flat mode (`--no-vr`) and, when SteamVR is available, in VR; loads a level
+(`--loadlevel 10`, the first level of a new game) or a save (`--loadslot <n>`); lets it run; reads
+`%USERPROFILE%\Saved Games\Arx Libertatis\arx.log` and checks `...\crashes\` for new crash reports;
+closes the game and checks for `Clean shutdown`. A crash, a hang or a new `[E]` log line blocks the
+hand-off. Once #99 lands, `scripts/dev/smoke-test.ps1` does all of this in one command.
+The owner's headset time is for judging how it feels in VR, not for finding crashes.
+
 ### Testing a task in the headset
 
 The worker session works directly in the owner's working copy. When a task goes to **Testing**,

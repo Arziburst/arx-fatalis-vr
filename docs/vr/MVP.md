@@ -80,7 +80,9 @@ dependencies are met; when a task is split, replace it with its parts.
 ### A. Walk in VR
 1. #17 — Integrate OpenXR; start in VR automatically when a headset is available
 2. #89 — Product name and image in SteamVR (the owner's key art: `data/vr/key-art.png`)
-3. #18 — Per-eye swapchains, render into swapchain images via FBO
+3. #98 — Dev launch finds the engine's own data (`data/core`): fonts and menu icons
+4. #99 — Automated smoke test: flat and VR launch, load a level, logs, crashes, clean shutdown
+5. #18 — Per-eye swapchains, render into swapchain images via FBO
 3. #20 — Frame loop: `xrWaitFrame` / `xrBeginFrame` / `xrEndFrame`
 4. #21 — Desktop mirror (one eye)
 5. #71 — Split `renderLevel()` into simulate-once and draw-per-eye
@@ -91,6 +93,7 @@ dependencies are met; when a task is split, replace it with its parts.
 10. #27 — World scale: meters to Arx units, height calibration
 11. #76 — VR comfort defaults: no view bobbing, screen shake, FOV zoom
 12. #28 — Recenter; seated / standing modes
+12. #100 — Physical crouch: lowering the head in reality makes the character crouch (D-006)
 13. #30 — OpenXR action set
 14. #35 — Suggested bindings for the Index controller profile
 15. #74 — VR input module: actions → engine action states, mouse buttons, analog move vector

@@ -30,8 +30,12 @@ Run `.\scripts\dev\next-task.ps1`.
 
 ## 4. Implement and verify
 - Build with `.\scripts\build-windows.ps1`. The build must pass.
-- Verify everything you can without a headset (build, launch in flat mode with
-  `.\scripts\run-windows.ps1 -- --no-vr` where relevant, logs, code paths).
+- Test the game yourself before handing it over (see "Workers test the game themselves first" in
+  `docs/vr/WORKFLOW.md`): run it flat (`.\scripts\run-windows.ps1 -- --no-vr --loadlevel 10`) and, if
+  SteamVR is available, in VR (`.\scripts\run-windows.ps1 -- --loadlevel 10`); let it run, read
+  `%USERPROFILE%\Saved Games\Arx Libertatis\arx.log`, check `...\crashes\` for new reports, close it and
+  confirm `Clean shutdown`. Use `scripts\dev\smoke-test.ps1` once it exists (#99).
+  A crash, hang or new `[E]` line must be fixed (or filed as a bug, if unrelated) before the PR.
 - Record new problems you find as tasks or bugs (sub-issues of the right epic, on the board).
 
 ## 5. Pull request

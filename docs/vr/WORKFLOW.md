@@ -155,6 +155,10 @@ human in a headset:
 - **CI runs on a self-hosted runner on the owner's PC** (Windows service, label `arxvr`, installed in
   `C:\actions-runner`). vcpkg and the build directory persist there, so a typical PR builds in minutes.
   If the PC is off, CI waits in the queue — that is expected, not a failure.
+- **One vcpkg for the whole machine:** `C:\vcpkg-shared` holds the vcpkg checkout, source downloads and
+  binary packages, used by CI (workflow `env`) and by the owner's builds (user environment variables
+  `VCPKG_ROOT`, `VCPKG_DOWNLOADS`, `VCPKG_DEFAULT_BINARY_CACHE`). A dependency built once — locally or
+  in CI — comes from the cache everywhere after that.
 - **Docs-only PRs do not run CI** (`docs/**`, `*.md`, `.claude/**`, issue/PR templates — see `paths-ignore`
   in the workflow). With no check on the PR, Claude merges them right away; a PR that touches anything
   else always gets a build.

@@ -10,6 +10,46 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-019: The MVP control scheme
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** project owner (agreed by questions, D-017; builds on D-008, D-010, D-016, D-018)
+
+### Decision
+Valve Index first; Quest 3 Touch the same (A/B on the right, X/Y on the left).
+
+| Action | Control |
+|---|---|
+| Walk | left stick, forward = where you look (D-008); **speed by deflection** — slightly = sneak / walk, fully = run; no run button |
+| Turn | right stick left / right; **snap 30° by default**, smooth turn selectable in the settings |
+| Jump | A (right) |
+| Crouch | physically (D-018) or a toggle on the right stick down |
+| Reticle per hand | a hidden ray from each hand; the reticle turns yellow with the item's name on an interactive object (D-016) |
+| Click / drag | the trigger of either hand: press = click; hold and move = drag; release = drop where the game says (inventory, floor, surface, throw) |
+| Use an item (eat, equip) | grip on the item (the original's right click) |
+| Straight into the inventory | **grip held + trigger** on a world item (the original's stealth-click), one hand, without opening the inventory |
+| Doors, levers, chests, bodies, talking | **one trigger press acts at once** (sent to the game as its double click) |
+| Inventory | **B on the right**; the panel opens in the centre of the view and stays where it appeared while open; **the weapon stays in the hand** (no sheathing in VR) |
+| Character book (stats, map, diary, spells) | **B on the left** (Y on Quest), on the same centred panel |
+| Menus | a pointer only while a menu is open (D-010); both hands can use it |
+| Two reticles on different items | the name shown is the one of the **hand that moved last** |
+| Recenter | hold a button chord (F-34) |
+| Runes | drawn in the air with the hand (D-010); the button that starts casting is decided with the magic block (#43–#45) |
+| Left-handed mode | after the MVP; SteamVR remapping covers it meanwhile (every gameplay concept is its own action, F-139) |
+
+### Why
+The original's mouse model stays the engine's (each hand produces the cursor), so the controls add little
+new mechanics; the owner's key case — sword in the right hand, open the inventory, drag an item from the
+floor into it with the left hand — works with these buttons.
+
+### Consequences
+#30 action set and #35 bindings follow this table; #32 snap 30° default + smooth option; #33 jump, crouch
+toggle, speed by deflection; #34 menu pointer for both hands; #37 / #38 the reticle rules (the proposal in
+RESEARCH-reference-mods.md 13g with these answers); #49 the centred panel for the inventory and the book.
+
+---
+
 ## D-018: The camera is where the head is — full head tracking in the MVP
 
 - **Date:** 2026-10-09

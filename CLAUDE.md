@@ -18,7 +18,8 @@ Create new tasks and bugs discovered during work yourself and list them in your 
 Before debugging something that makes no sense, read [docs/vr/TRAPS.md](docs/vr/TRAPS.md); add new traps there in the same PR.
 Design decisions that shape every VR task: stick forward = look direction (D-008), full body with IK arms (D-009),
 no rays from the hands — runes drawn in the air with the hand, a pointer only in menus (D-010); world interaction
-— both hands work as the mouse, each with its own reticle; the inventory opens in the centre of the view (D-016).
+— both hands work as the mouse, each with its own reticle; the inventory opens in the centre of the view (D-016);
+the camera is where the head is (D-018); the MVP control scheme (D-019).
 
 **Development loop:** `/next-task` takes the next task from the queue in [docs/vr/MVP.md](docs/vr/MVP.md#task-queue)
 and implements it in its own PR; `/accept-task` and `/reject-task` handle the owner's VR test verdict.

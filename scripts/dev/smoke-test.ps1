@@ -168,7 +168,8 @@ function Invoke-SmokeRun([int]$Run) {
 		foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt') {
 			Remove-Item (Join-Path $TestDir $f) -Force -ErrorAction SilentlyContinue
 		}
-		if (Test-Path $log) { Remove-Item $log -Force }
+		# arx.log is not deleted here: the game rotates the previous run to arx.1.log itself (#129), and
+		# deleting it would throw that history away. "Fresh" is judged by LastWriteTime >= launch time.
 		$crashesBefore = @(Get-ChildItem $crashDir -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
 
 		# Start-Process does not quote arguments: paths with spaces need explicit quotes

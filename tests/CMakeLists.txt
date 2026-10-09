@@ -16,7 +16,10 @@ set(arxtest_TESTCASES
 	
 	tests/io/fs/FilesystemTest.h
 	tests/io/fs/FilesystemTest.cpp
-	
+
+	tests/io/log/FileLoggerTest.h
+	tests/io/log/FileLoggerTest.cpp
+
 	tests/io/resource/ResourcePathTest.h
 	tests/io/resource/ResourcePathTest.cpp
 	
@@ -44,6 +47,7 @@ set(arxtest_SOURCES
 	src/graphics/Math.cpp
 	src/graphics/Renderer.cpp
 	src/io/IniSection.cpp
+	src/io/log/FileLogger.cpp
 	src/io/resource/ResourcePath.cpp
 	
 	${arxtest_TESTCASES}

@@ -85,8 +85,10 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
   last=<last line> error=<reason or ->`.
 - **rewrites `<dir>\status.json`** every 250 ms, after every batch and on every state change —
   atomically (`status.json.tmp`, then rename), so a reader sees whole files only.
-- **flushes `arx.log`** at the same cadence (the file logger never flushes on its own, see
-  [TRAPS.md](TRAPS.md)), so `[game] state:` and `[mark]` lines are readable while the game runs.
+- **flushes `arx.log`** at the same cadence, so `[game] state:` and `[mark]` lines are readable
+  while the game runs (since #129 the file logger flushes on its own after every warning or error
+  and at least once a second — see *Log:* in [The log banner](#the-log-banner); the channel only
+  makes it fresher).
 - **logs `[game] state: STARTUP|MENU|LOADING level N|GAMEPLAY|CINEMATIC|EXITED`** on every change.
 - sets `ARX_UNATTENDED=1` in its own environment, inherited by the crash processor: no crash dialog.
 
@@ -152,15 +154,16 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
 
 ## The log banner
 
-Every `arx.log` starts with four `Key: value` lines (#115, research rows F-18 and F-98), so a log says
-which build wrote it and how it was started before anything else; the run digest (#131) reads them.
-Keep their shape when touching them.
+Every `arx.log` starts with five `Key: value` lines (#115 and #129, research rows F-18, F-98 and
+F-92), so a log says which build wrote it, how it was started and where it is written before anything
+else; the run digest (#131) reads them. Keep their shape when touching them.
 
 ```
 [I] Startup:252  Starting Arx Fatalis VR 0.1-dev + f8b3585
 [I] Startup:111  Build: f8b3585637414910c931b733d27661cb8f4c407f on ARXVR-115-feat-log-banner-runtime, Release, MSVC 19.44, x86_64
 [I] Startup:141  Executable: "C:\Users\…\Release\arx.exe", linked 2026-10-09 14:02:55, built from f8b3585637414910c931b733d27661cb8f4c407f dirty
 [I] Startup:163  Run: 2026-10-09 15:10:03 local (12:10:03 UTC), pid 1234, command line: --windowed --no-vr --loadlevel 10
+[I] Startup:208  Log: "C:\Users\…\arx.log", previous runs kept as arx.1.log .. arx.9.log
 ```
 
 - `Build:` the commit and branch compiled into `Version.cpp` (`(detached)` without a branch), the
@@ -173,6 +176,17 @@ Keep their shape when touching them.
   when the two commits differ: the compiled-in version is stale — rebuild (see [TRAPS.md](TRAPS.md)).
 - `Run:` the start time in local time and in UTC (crash report folders are named in UTC), the pid
   and the command line.
+- `Log:` the file this run writes and what became of the previous runs (#129, research row F-92).
+  At startup `arx.log` → `arx.1.log` → … → `arx.9.log`, the oldest dropped: **ten runs** per user
+  directory (an isolated self-test directory rotates its own; the smoke test no longer deletes
+  `arx.log` before a run). When a file cannot be moved — another process holds it open — nothing is
+  deleted: the line says `appended to the previous run's log`, a `[W] Log rotation failed: could not
+  move … to …` names the files, and this run's banner is simply the next `Starting` line in the same
+  file. The log is **kept on disk while the game runs**: a warning, error or critical line is flushed
+  at once, everything else by the logger's own flush thread at least once a second (also while the
+  main thread sits in a level load or a hang), so a hang, a `Stop-Process` or a crash loses at most
+  the last second. Info lines are not flushed one by one on purpose: a flush per line was a measured
+  stutter source in Dishonored VR.
 
 The VR runtime follows a few lines later, **on every run, flat ones included**:
 
@@ -266,6 +280,11 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | 2026-10-09, #93 after the fix: `-Repeat 10 -Seconds 3 -CloseWindow -- --no-vr --loadlevel 10 --intro` (intro `.cin` loaded, window closed — 2 of 5 crashed in #124) | **10 of 10** `PASS` |
 | 2026-10-09, #93 after the fix: `-Vr -Repeat 10` + `-Vr -Repeat 5`, SteamVR running, headset idle | **13 of 15** `PASS`, **0** exit crashes (before: 2 of 3); 2 runs ended mid-run with exit code -1 and no crash report — a different problem, #146 |
 | 2026-10-09, #115 log banner: flat smoke test, then `status.json` and the first log lines asserted by script | `PASS`; `build.commit` = `git rev-parse HEAD` of the worktree **after a commit and a rebuild** (before #115 a worktree kept its first build's commit), `build.branch`, `build.config` = `Release`, `vr.manifest` = the SteamVR manifest from `HKLM`, `vr.runtime` = `""` in a flat run; the four banner lines match their documented shape. `XR_RUNTIME_JSON` → a missing file (flat, `--no-vr`): the manifest line says `from XR_RUNTIME_JSON, overriding the registry's "…steamxr_win64.json"`, exactly **1** `[W] … does not exist`, `vr.manifest` = that path, `PASS`. `built-from.txt` edited to another commit: exactly **1** `[W] built-from.txt names commit …`, `PASS`. The `OpenXR runtime answered` line needs an instance (SteamVR running): not exercised in that session, it is the renamed `Using OpenXR runtime` line |
+| 2026-10-09, #129 **before** (the `main` build): `run-windows.ps1 -Isolated -Background -- --no-vr --loadlevel 10`, no channel, `Stop-Process` long after the level had loaded | `arx.log` = **4137 bytes, 42 lines, cut mid-line** (`[I] Localisation` and nothing after it): the `ofstream` buffer; the end of the level load lost, no `Clean shutdown` |
+| 2026-10-09, #129 **after**: the same, killed 15.5 s after the start | `arx.log` = **4787 bytes, 49 complete lines**, last line `[I] LoadLevel:511  Done loading level` (the last line the game wrote), ends with a newline; the previous run's truncated log sits in `arx.1.log`; banner `Log: "…\arx.log", previous runs kept as arx.1.log .. arx.9.log` |
+| 2026-10-09, #129: `smoke-test.ps1 -Seconds 5 -Commands 'mark flush-check'`, then `-Seconds 3` on the final build | `PASS` both, 0 errors, 0 warnings; after the second run the history reads `arx.log` (pid 35468) ← `arx.1.log` ← `arx.2.log` (the killed `main` run), each `Run:` line one run older — the smoke test no longer deletes `arx.log` before a run |
+| 2026-10-09, #129, **the degraded path**: `arx.1.log` held open by PowerShell (`FileShare::ReadWrite`, no delete sharing) during `smoke-test.ps1 -Seconds 3` | `PASS` with exactly **1** warning: `[W] Startup:211  Log rotation failed: could not move "…\arx.1.log" to "…\arx.2.log" - nothing was deleted, this run appends to the previous log`; `Log: …, appended to the previous run's log`; `arx.log` grew from 5114 to 10583 bytes with two `Starting` lines, `arx.1.log` untouched. `fs::rename` retries 10 × 100 ms first (its `[W] Failed to move file … 32 = … being used by another process` lines go to stderr — the file logger does not exist yet), so `STARTUP` came at +1.0 s instead of +0.3 s |
+| 2026-10-09, #129, **the test can fail**: `FileLoggerTest` built with both flushes removed on purpose | `Run: 39  Failures: 2`: `testWarningIsOnDiskAtOnce` and `testInfoIsOnDiskWithinTheInterval` (after its 2 s wait); `testExplicitFlush` and the three rotation tests stay green, as they should. Restored: `OK (39 tests)` |
 
 Conclusions:
 

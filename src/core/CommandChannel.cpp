@@ -381,7 +381,7 @@ void writeStatus(PlatformInstant now) {
 		LogWarning << "[channel] could not write " << file;
 	}
 
-	// The file logger only flushes on shutdown; a test wants to read arx.log while the game runs
+	// The file logger flushes on its own every second (#129); a test reading arx.log wants it fresher
 	Logger::flush();
 }
 

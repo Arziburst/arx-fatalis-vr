@@ -154,6 +154,11 @@ closes it (so a crashed run *does* leave a log, without `Clean shutdown`).
 **Do:** start the game with `--test-dir <dir>`: the test channel flushes the log every 250 ms together
 with `status.json`, and `[game] state:` / `[mark] <text>` lines give a script fixed anchors. Without
 the channel, read the log only after the process exited.
+*Resolved: since #129 the file logger flushes a warning or error at once and everything else at
+least once a second from its own flush thread (so a stuck main thread does not stop it). A
+`Stop-Process` 15 s into a flat run without the channel left a complete log ending with `Done
+loading level`, where the old logger left 4137 bytes cut mid-line. The channel's 250 ms flush stays
+for tests that want the log fresher than a second.*
 
 ## 2026-10-08 — The crash dialog outlives the game and opens Explorer when dismissed
 
@@ -221,6 +226,11 @@ owner's call). Relevant for tester builds too (#88): unsigned builds may be bloc
 shutdown**; a launch that failed (or was killed) leaves the previous run's log in place.
 **Do:** compare the log's `LastWriteTime` with the launch time (or delete it first), and close the game
 with `Process.CloseMainWindow()`, never `Stop-Process`.
+*Resolved for the log: since #129 the previous run's log is rotated to `arx.1.log` at startup and the
+current run's lines reach the disk within a second, so a killed run leaves its own log (the `Run:`
+banner line names the pid and the start time; the smoke test no longer deletes `arx.log` before a run,
+the history would go with it). `Stop-Process` still skips `Clean shutdown` and the channel's final
+status: close the game properly whenever those are the evidence you need.*
 
 ## 2026-10-08 — `--data-dir` with the Steam path breaks the command line
 

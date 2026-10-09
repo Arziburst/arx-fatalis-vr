@@ -91,6 +91,21 @@ by the owner's run only.
 
 ---
 
+## 2026-10-09 — The head turns, the picture does not: the camera of a conversation owns the view (#24)
+
+**Symptom:** on the simulated headset `eye-check.ps1` failed its yaw leg on the #24 branch although the head
+drove the camera — the `yaw25` shot's flat frame was **identical** to `still-a` (picture change 1.34, floor 0.81),
+while the flat `head-check.ps1` on `mvp-new-game` passed.
+**Cause:** `--loadlevel 10` (the default of the smoke test and of `eye-check.ps1`) plays the intro conversation:
+`speechControlledCinematic()` places `g_playerCamera` itself **after** `updateFirstPersonCamera()`, so a head pose
+applied there was overwritten every frame. In the headset that glues the world to the face during every
+conversation, death and external view.
+**Fixed:** the head is applied in `updateActiveCamera()` to whatever camera the frame renders with, and taken off
+again (`restoreEngineCamera()`) before the engine updates its cameras next frame, so the engine's interpolations
+never read it back. Yaw leg after the fix: picture change 4.25.
+**Do:** a head-tracking check needs both a first-person save (`mvp-new-game`) and level 10 (a scripted camera);
+"PASS in one" proves only that path.
+
 ## 2026-10-09 — The world is black in the headset, only the HUD shows: no level was loaded (#24)
 
 **Symptom:** the owner's headset run of #215 (`test-pr.ps1 215`, `--skiplogo --loadslot 0`, the shared user dir)

@@ -47,12 +47,15 @@
 namespace vr {
 
 /*!
- * \brief Drive the first-person camera with the head - call once per frame after the engine
- *        placed the camera at the character's eye
+ * \brief Drive the camera the frame renders with by the head - call once per frame, after every
+ *        engine camera owner (first person, a conversation's camera, the death camera) placed it
  *
- * \param position the camera position, the character's eye on entry; the head on return
+ * The caller takes the result off again before the engine updates its cameras next frame
+ * (\ref ArxGame::restoreEngineCamera), so the head never feeds back into the engine's camera state.
+ *
+ * \param position the camera position, the engine's eye on entry; the head on return
  * \param angle the camera angles, replaced by the head's
- * \param bodyYaw the character's yaw (engine degrees)
+ * \param bodyYaw the engine camera's yaw (engine degrees): the character's yaw in first person
  * \return false when there is no head (flat mode without a simulated pose): nothing changed
  */
 bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw);

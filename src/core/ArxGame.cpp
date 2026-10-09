@@ -1455,14 +1455,6 @@ void ArxGame::updateFirstPersonCamera() {
 			g_playerCameraStablePos = g_playerCamera.m_pos = player.basePosition();
 		}
 
-		// The headset is the head (#24, D-018): the camera takes the head's orientation and its movement
-		// from the character's eye, after everything the engine did to the camera (F-31). The stable
-		// position moves with it, so drag rays start where the player looks from
-		Vec3f eye = g_playerCamera.m_pos;
-		if(vr::applyHeadPose(g_playerCamera.m_pos, g_playerCamera.angle, player.angle.getYaw())) {
-			g_playerCameraStablePos += g_playerCamera.m_pos - eye;
-		}
-
 	}
 	
 	if(EXTERNALVIEW) {
@@ -1628,6 +1620,26 @@ void ArxGame::handlePlayerDeath() {
 	
 }
 
+/*!
+ * \brief Take last frame's head pose off the camera it was put on (#24)
+ *
+ * The head is a view on top of the engine's camera, not part of its state: the engine's own camera code
+ * reads last frame's camera (the external view and the death camera interpolate from it, a conversation
+ * keeps its last position), and would otherwise feed the head back into itself every frame.
+ */
+void ArxGame::restoreEngineCamera() {
+
+	const HeadView view = m_headView;
+	m_headView = HeadView();
+	// The camera of a camera entity may be gone with its entity: only a camera that is still in use
+	Camera * cam = view.camera;
+	if(cam && (cam == &g_playerCamera || (g_cameraEntity && cam == &g_cameraEntity->_camdata->cam))) {
+		cam->m_pos = view.enginePos;
+		cam->angle = view.engineAngle;
+	}
+
+}
+
 void ArxGame::updateActiveCamera() {
 	
 	ARX_PROFILE_FUNC();
@@ -1642,7 +1654,21 @@ void ArxGame::updateActiveCamera() {
 	} else {
 		cam = &g_playerCamera;
 	}
-	
+
+	// The headset is the head (#24, D-018): whatever camera the engine chose this frame - first person, a
+	// conversation's camera, the death camera - takes the head's orientation and movement on top, after
+	// everything the engine did to it (F-31); a camera that ignored the head would glue the world to the
+	// face. The stable position moves with the player's camera, so drag rays start where the player looks
+	// from. restoreEngineCamera() takes it off again before the engine updates its cameras next frame
+	Vec3f enginePos = cam->m_pos;
+	Anglef engineAngle = cam->angle;
+	if(vr::applyHeadPose(cam->m_pos, cam->angle, engineAngle.getYaw())) {
+		m_headView = HeadView{ cam, enginePos, engineAngle };
+		if(cam == &g_playerCamera) {
+			g_playerCameraStablePos += cam->m_pos - enginePos;
+		}
+	}
+
 	ManageQuakeFX(cam);
 	
 	PrepareCamera(cam, g_size);
@@ -1844,8 +1870,10 @@ void ArxGame::updateLevel() {
 			ManageCombatModeAnimationsEND();
 	}
 
+	restoreEngineCamera();
+
 	updateFirstPersonCamera();
-	
+
 	ARX_SCRIPT_Timer_Check();
 
 	speechControlledCinematic();

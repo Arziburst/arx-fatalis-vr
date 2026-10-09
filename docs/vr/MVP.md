@@ -41,7 +41,7 @@ The desktop window mirrors one eye, so the demo can be recorded and shown.
 | Area | MVP version |
 |---|---|
 | Launch | VR starts automatically when a headset is available; game data found in Steam libraries; launchable from SteamVR |
-| Rendering | OpenXR stereo at the headset's native rate; desktop mirror (a copy of the left eye) |
+| Rendering | OpenXR stereo at the headset's native rate; desktop mirror (a copy of the right eye — the owner's choice of 2026-10-10; `vr_mirror_eye`) |
 | Camera | The camera is where the head is: HMD position and orientation; continuous height with a game crouch below a threshold; leaning and real steps with the body following and a wall fade; the standing head = the character's eye height; correct world scale; recenter, seated play (D-018) |
 | Body | The full player model: legs and torso animated by the engine, head hidden, arms driven by the controllers via IK (D-009) |
 | Locomotion | Thumbstick movement relative to the look direction, snap and smooth turn, physical crouch, crouch toggle (right stick down) and jump (A) |
@@ -110,7 +110,7 @@ dependencies are met; when a task is split, replace it with its parts.
 7. #147 — Launch control for parallel workers: never start SteamVR, one game at a time, own fresh build, launch ledger (D-014)
 8. #18 — Per-eye swapchains; first visible result: the flat frame on a head-locked quad (F-20)
 9. #20 — Frame loop with pose-matched submission and a rate / cadence line (F-07, F-21, F-26)
-10. #21 — Desktop mirror = a copy of the left eye (F-24)
+10. #21 — Desktop mirror = a copy of one eye, the right one by default (F-24)
 11. #112 — Simulated VR backend `--vr-sim` and the two-eyes check (F-04, F-06)
 12. #113 — Scripted VR test sequences and screenshot comparison (F-05, F-14)
 13. #71 — Split `renderLevel()` into simulate-once and draw-per-eye (F-22)

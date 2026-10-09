@@ -104,8 +104,10 @@ bool Swapchain::create(XrSession session, s64 format, Vec2i size, bool framebuff
 	m_failures = 0;
 
 	XrSwapchainCreateInfo info = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
-	// Color attachment: the game renders into eye images; transfer: the flat frame is copied into the quad
-	info.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
+	// Color attachment: the game renders into eye images; transfer: the flat frame is copied into the
+	// quad, and the left eye and the quad are copied out for the desktop mirror (#21)
+	info.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT
+	                  | XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT;
 	info.format = format;
 	info.sampleCount = 1;
 	info.width = u32(size.x);

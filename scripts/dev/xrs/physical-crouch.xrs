@@ -3,8 +3,9 @@
 # works. The view stays the head: the character's crouch never lowers it a second time on top of the head's
 # own drop - it is the head, but never above the crouched eye. The simulated head starts at the reference.
 #
-# Runs on the test save mvp-new-game (#70: controls free):
-#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence physical-crouch -Save mvp-new-game
+# Runs on the test save mvp-items (#70: controls free, room to stand up). Not mvp-new-game: in its start
+# cell the character cannot stand up again after any crouch, the button's too (#263):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence physical-crouch -Save mvp-items
 @sim idle
 @args --loadslot 0
 
@@ -17,6 +18,14 @@
 @assert vr.head.characterDrop eq 0
 @remember eye camera.eyeAboveFeet
 @shot standing
+
+# The crouch button first: it crouches and stands up here, so this spot has room to stand
+vr-input tap right.stick_down
+@until player.crouched eq true 5s
+@wait 1500
+vr-input tap right.stick_down
+@until player.crouched eq false 5s
+@wait 1500
 
 # 25 cm down: not deep enough - the view follows the head, the character stands
 vr-sim head pos 0 -0.25 0

@@ -55,6 +55,7 @@
 #include "gui/Interface.h"
 #include "gui/MainMenu.h"
 #include "gui/Menu.h"
+#include "gui/MenuPublic.h"
 #include "io/fs/FilePath.h"
 #include "io/fs/Filesystem.h"
 #include "io/log/LogBackend.h"
@@ -104,6 +105,7 @@ const struct { MENUSTATE page; const char * name; } MenuPages[] = {
 	{ Page_Options, "options" },
 	{ Page_OptionsInput, "input" },
 	{ Page_OptionsVR, "vr" },
+	{ Page_OptionsVRTurning, "vr-turning" },
 };
 
 const char * menuPageName(MENUSTATE page) {
@@ -647,6 +649,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("refAboveFloor", head.referenceAboveFloor);
 		json.value("aboveFloor", head.aboveFloor);
 		json.value("raised", head.raised);
+		json.value("heightOffset", head.heightOffset);
 		json.value("eyeAboveFeet", head.eyeAboveFeet);
 		json.value("unitsPerMeter", vr::UnitsPerMeter);
 		json.value("pitch", head.head.getPitch());
@@ -1101,7 +1104,9 @@ std::string execute(std::string_view line) {
 
 	if(word == "menu") {
 		// Open a page of the main / pause menu as a click on its entry would (#178): none, options, input,
-		// vr; "pause" opens the pause menu from the game, as Escape does
+		// vr, vr-turning; "pause" opens the pause menu from the game, as Escape does, "resume" goes back to
+		// it; "step <row> left|right"
+		// is a click on an arrow of a row of the VR turning page (#260)
 		std::string name(rest);
 		util::makeLowercase(name);
 		if(name == "pause") {
@@ -1114,13 +1119,32 @@ std::string execute(std::string_view line) {
 		if(ARXmenu.mode() != Mode_MainMenu || !g_mainMenu) {
 			return refuse(std::string("menu: needs the main or pause menu, mode is ") + menuModeName(ARXmenu.mode()));
 		}
+		if(name == "resume") {
+			// The main menu's "Resume game" with a game running: back to it (#260)
+			if(!g_canResumeGame) {
+				return refuse("menu resume: no game to resume");
+			}
+			ARXMenu_ResumeGame();
+			return std::string();
+		}
+		if(name.rfind("step ", 0) == 0) {
+			std::string_view after;
+			std::string row(firstWord(std::string_view(name).substr(5), after));
+			std::string direction(firstWord(after, after));
+			if(direction != "left" && direction != "right") {
+				return refuse("menu step: expected <row> left|right, got \"" + name + "\"");
+			}
+			std::string why = stepVRSettingRow(row, direction == "right" ? 1 : -1);
+			return why.empty() ? why : refuse(why);
+		}
 		for(const auto & entry : MenuPages) {
 			if(name == entry.name) {
 				g_mainMenu->requestPage(entry.page);
 				return std::string();
 			}
 		}
-		return refuse("menu: expected pause, none, options, input or vr, got \"" + name + "\"");
+		return refuse("menu: expected pause, resume, none, options, input, vr, vr-turning or step <row> left|right, got \""
+		              + name + "\"");
 	}
 
 	if(word == "ui") {

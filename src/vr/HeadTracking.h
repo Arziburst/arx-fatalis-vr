@@ -98,6 +98,7 @@ struct HeadStatus {
 	float referenceAboveFloor = -1.f; //!< the head above the room's floor at the reference, meters; -1 unknown (no STAGE)
 	float aboveFloor = -1.f;      //!< the head above the floor now, meters; -1 unknown
 	float raised = 0.f;           //!< how far auto-raise lifted the reference since it was taken, meters
+	float heightOffset = 0.f;     //!< the character height setting applied to the camera, meters up (#260)
 	float eyeAboveFeet = -1.f;    //!< the character's eye above its feet, game units; -1 for a camera that is not the player's
 	Anglef head;                  //!< the head's own angles in LOCAL (engine degrees)
 	Vec3f position = Vec3f(0.f);  //!< the head in LOCAL, meters

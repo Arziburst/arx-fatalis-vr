@@ -122,7 +122,17 @@ HeadCamera headToCamera(const HeadSample & head, const HeadReference & reference
 		camera.clamped = true;
 	}
 
+	// The character height setting: a taller player character sees from higher up (y is down)
+	camera.offset.y -= params.heightOffsetMeters * params.unitsPerMeter;
+
 	return camera;
+}
+
+float clampHeightOffset(float meters) {
+	if(!std::isfinite(meters)) {
+		return 0.f;
+	}
+	return std::clamp(meters, -MaxHeightOffset, MaxHeightOffset);
 }
 
 float headLockedQuadFov(float quadWidth, float distance, const Vec2i & frameSize) {

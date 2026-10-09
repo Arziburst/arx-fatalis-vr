@@ -23,6 +23,7 @@
 #include <cstring>
 #include <string>
 
+#include "core/Config.h"
 #include "core/GameEvent.h"
 #include "core/GameTime.h"
 #include "platform/Time.h"
@@ -222,7 +223,11 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 		g_head.raising = 0.f;
 	}
 
-	HeadCamera camera = headToCamera(head, status.reference, bodyYaw);
+	// The character height setting (#260) applies at once: read every frame
+	HeadCameraParams params;
+	params.heightOffsetMeters = clampHeightOffset(config.input.vrHeightOffset);
+	status.heightOffset = params.heightOffsetMeters;
+	HeadCamera camera = headToCamera(head, status.reference, bodyYaw, params);
 
 	if(camera.clamped != status.clamped) {
 		// An episode, not a frame: logged when the lean reaches the interim limit and when it is back within

@@ -42,6 +42,9 @@ public:
 	void setValue(int value) { m_value = value; }
 	int getValue() const { return m_value; }
 	
+	//! What a click on the right (\a delta 1) or left (-1) arrow does, without the mouse (test channel)
+	void step(int delta) { newValue(m_value + delta); }
+	
 	void selectLast();
 	
 	void addEntry(std::string_view label);

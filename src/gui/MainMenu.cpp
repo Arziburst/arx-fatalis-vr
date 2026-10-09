@@ -20,6 +20,7 @@
 #include "gui/MainMenu.h"
 
 #include <algorithm>
+#include <array>
 #include <functional>
 #include <iomanip>
 #include <memory>
@@ -36,6 +37,7 @@
 #include "core/Config.h"
 #include "core/ArxGame.h"
 #include "core/Core.h"
+#include "core/GameEvent.h"
 #include "core/Localisation.h"
 #include "core/SaveGame.h"
 #include "core/Version.h"
@@ -80,6 +82,7 @@
 #include "util/Unicode.h"
 #include "vr/VRControls.h"
 #include "vr/VRInput.h"
+#include "vr/VRSettingsRows.h"
 
 #include "vr/VRSystem.h"
 #include "window/RenderWindow.h"
@@ -1803,6 +1806,13 @@ public:
 			addCorner(std::move(txt), BottomCenter);
 		}
 
+		{
+			// The section's second page: turning and the character height (#260)
+			auto cb = std::make_unique<ButtonWidget>(buttonSize(16, 16), "graph/interface/menus/next");
+			cb->setTargetPage(Page_OptionsVRTurning);
+			addCorner(std::move(cb), BottomRight);
+		}
+
 	}
 
 	void focus() override {
@@ -1834,6 +1844,161 @@ private:
 	}
 
 };
+
+/*!
+ * The VR settings' Controls section, second page (#260, D-028): turning and the character height, in the
+ * game's own menu style (D-029). Each row edits its cfg.ini key (#32: vr_smooth_turn, vr_snap_turn_angle,
+ * vr_smooth_turn_speed, vr_snap_turn_repeat; vr_height_offset), which applies at once - the turn and the head
+ * camera read it every frame. The choices are vr/VRSettingsRows.h.
+ */
+class VRTurningMenuPage final : public MenuPage {
+
+public:
+
+	VRTurningMenuPage()
+		: MenuPage(Page_OptionsVRTurning)
+		, m_rows()
+	{ }
+
+	void init() override {
+
+		reserveBottom();
+
+		{
+			auto txt = std::make_unique<TextWidget>(hFontMenu, getLocalised("system_menus_options_vr_turning_title",
+			                                                                 "VR turning and height"));
+			txt->setEnabled(false);
+			addCenter(std::move(txt));
+		}
+
+		{
+			auto cb = makeRow(Row::Mode, "system_menus_options_vr_turn_mode", "Turning");
+			cb->addEntry(getLocalised("system_menus_options_vr_turn_snap", "Snap"));
+			cb->addEntry(getLocalised("system_menus_options_vr_turn_smooth", "Smooth"));
+			cb->valueChanged = [](int pos, std::string_view /* string */) {
+				config.input.vrSmoothTurn = (pos == 1);
+				gameevent::Event("vr.settings")("row", "turn")("value", config.input.vrSmoothTurn ? "smooth" : "snap");
+			};
+			addCenter(std::move(cb));
+		}
+
+		{
+			auto cb = makeRow(Row::SnapAngle, "system_menus_options_vr_snap_angle", "Snap angle");
+			for(float angle : vr::snapAngleChoices()) {
+				cb->addEntry(std::to_string(int(angle)) + " deg"); // the menu font has no degree sign
+			}
+			cb->valueChanged = [](int pos, std::string_view /* string */) {
+				config.input.vrSnapTurnAngle = vr::snapAngleChoices()[size_t(pos)];
+				gameevent::Event("vr.settings")("row", "angle")("value", config.input.vrSnapTurnAngle, 0);
+			};
+			addCenter(std::move(cb));
+		}
+
+		{
+			auto cb = makeRow(Row::SmoothSpeed, "system_menus_options_vr_smooth_speed", "Smooth speed");
+			for(float speed : vr::smoothSpeedChoices()) {
+				cb->addEntry(std::to_string(int(speed)) + " deg/s");
+			}
+			cb->valueChanged = [](int pos, std::string_view /* string */) {
+				config.input.vrSmoothTurnSpeed = vr::smoothSpeedChoices()[size_t(pos)];
+				gameevent::Event("vr.settings")("row", "speed")("value", config.input.vrSmoothTurnSpeed, 0);
+			};
+			addCenter(std::move(cb));
+		}
+
+		{
+			auto cb = makeRow(Row::SnapRepeat, "system_menus_options_vr_snap_repeat", "Repeat held snap");
+			for(float repeat : vr::snapRepeatChoices()) {
+				cb->addEntry(repeat > 0.f ? vr::formatSnapRepeat(repeat)
+				                          : std::string(getLocalised("system_menus_options_vr_snap_repeat_off", "Off")));
+			}
+			cb->valueChanged = [](int pos, std::string_view /* string */) {
+				config.input.vrSnapTurnRepeat = vr::snapRepeatChoices()[size_t(pos)];
+				gameevent::Event("vr.settings")("row", "repeat")("value", config.input.vrSnapTurnRepeat, 2);
+			};
+			addCenter(std::move(cb));
+		}
+
+		{
+			auto cb = makeRow(Row::Height, "system_menus_options_vr_height", "Character height");
+			for(float offset : vr::heightOffsetChoices()) {
+				cb->addEntry(vr::formatHeightOffset(offset));
+			}
+			cb->valueChanged = [](int pos, std::string_view /* string */) {
+				config.input.vrHeightOffset = vr::heightOffsetChoices()[size_t(pos)];
+				gameevent::Event("vr.settings")("row", "height")("value", config.input.vrHeightOffset, 2);
+			};
+			addCenter(std::move(cb));
+		}
+
+		addBackButton(Page_OptionsVR);
+
+		refresh();
+
+	}
+
+	void focus() override {
+		MenuPage::focus();
+		// cfg.ini is the source of truth: it may have changed since the last visit (test channel, another page)
+		refresh();
+	}
+
+	/*!
+	 * What the left or right arrow of a row does (\a delta -1 or +1), for the test channel's
+	 * \c menu \c step: the same change, game event and cfg value as a click
+	 * \return an empty string, or why it was refused
+	 */
+	std::string step(std::string_view name, int delta) {
+		for(size_t i = 0; i < size_t(Row::Count); i++) {
+			if(name == RowNames[i]) {
+				if(!m_rows[i]) {
+					return "the page has not been opened yet";
+				}
+				m_rows[i]->step(delta);
+				return std::string();
+			}
+		}
+		return "unknown row \"" + std::string(name) + "\", expected turn, angle, speed, repeat or height";
+	}
+
+private:
+
+	enum class Row : u8 { Mode, SnapAngle, SmoothSpeed, SnapRepeat, Height, Count };
+
+	static constexpr const char * RowNames[size_t(Row::Count)] = { "turn", "angle", "speed", "repeat", "height" };
+
+	std::unique_ptr<CycleTextWidget> makeRow(Row row, std::string_view key, std::string_view label) {
+		auto cb = std::make_unique<CycleTextWidget>(sliderSize(), hFontMenu, getLocalised(key, label));
+		m_rows[size_t(row)] = cb.get();
+		return cb;
+	}
+
+	void refresh() {
+		if(!m_rows[0]) {
+			return;
+		}
+		m_rows[size_t(Row::Mode)]->setValue(config.input.vrSmoothTurn ? 1 : 0);
+		m_rows[size_t(Row::SnapAngle)]->setValue(int(vr::nearestChoice(vr::snapAngleChoices(),
+		                                                                  config.input.vrSnapTurnAngle)));
+		m_rows[size_t(Row::SmoothSpeed)]->setValue(int(vr::nearestChoice(vr::smoothSpeedChoices(),
+		                                                                    config.input.vrSmoothTurnSpeed)));
+		m_rows[size_t(Row::SnapRepeat)]->setValue(int(vr::nearestChoice(vr::snapRepeatChoices(),
+		                                                                   config.input.vrSnapTurnRepeat)));
+		m_rows[size_t(Row::Height)]->setValue(int(vr::nearestChoice(vr::heightOffsetChoices(),
+		                                                               config.input.vrHeightOffset)));
+	}
+
+	std::array<CycleTextWidget *, size_t(Row::Count)> m_rows;
+
+};
+
+std::string stepVRSettingRow(std::string_view row, int delta) {
+	if(!g_mainMenu || !g_mainMenu->m_window || g_mainMenu->m_window->currentPageId() != Page_OptionsVRTurning) {
+		return "menu step: needs the VR turning page open (menu vr-turning)";
+	}
+	auto * page = static_cast<VRTurningMenuPage *>(g_mainMenu->m_window->getPage(Page_OptionsVRTurning));
+	return page->step(row, delta);
+}
 
 class QuitConfirmMenuPage final : public MenuPage {
 	
@@ -1900,6 +2065,7 @@ void MainMenu::initWindowPages() {
 	m_window->add(std::make_unique<ControlOptionsMenuPage1>());
 	m_window->add(std::make_unique<ControlOptionsMenuPage2>());
 	m_window->add(std::make_unique<VRControlsMenuPage>());
+	m_window->add(std::make_unique<VRTurningMenuPage>());
 	
 	m_window->add(std::make_unique<QuitConfirmMenuPage>());
 	m_window->add(std::make_unique<LocalizationMenuPage>());

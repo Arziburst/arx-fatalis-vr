@@ -227,6 +227,7 @@ public:
 		float vrSnapTurnAngle; //!< VR: degrees per snap turn (#32)
 		float vrSmoothTurnSpeed; //!< VR: smooth turn degrees per second at full deflection (#32)
 		float vrSnapTurnRepeat; //!< VR: seconds between snaps while the stick is held; 0 = no repeat (#32)
+		float vrHeightOffset; //!< VR: the character height setting, meters above the character's eye (#260)
 
 	} input;
 	

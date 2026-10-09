@@ -45,6 +45,7 @@
 #include "util/Number.h"
 #include "util/String.h"
 
+#include "vr/HeadPose.h"
 #include "vr/MirrorGeometry.h"
 #include "vr/UIPanel.h"
 #include "vr/VRTurn.h"
@@ -146,7 +147,8 @@ constexpr const float
 	ambianceVolume = 10.f,
 	vrSnapTurnAngle = vr::DefaultSnapAngle,
 	vrSmoothTurnSpeed = vr::DefaultSmoothSpeed,
-	vrSnapTurnRepeat = vr::DefaultSnapRepeat;
+	vrSnapTurnRepeat = vr::DefaultSnapRepeat,
+	vrHeightOffset = 0.f;
 
 constexpr const ActionKey actions[NUM_ACTION_KEY] = {
 	ActionKey(Keyboard::Key_Spacebar), // JUMP
@@ -296,7 +298,8 @@ constexpr const std::string_view
 	vrSmoothTurn = "vr_smooth_turn",
 	vrSnapTurnAngle = "vr_snap_turn_angle",
 	vrSmoothTurnSpeed = "vr_smooth_turn_speed",
-	vrSnapTurnRepeat = "vr_snap_turn_repeat";
+	vrSnapTurnRepeat = "vr_snap_turn_repeat",
+	vrHeightOffset = "vr_height_offset";
 
 // Input key options
 constexpr const std::string_view actions[NUM_ACTION_KEY] = {
@@ -569,6 +572,7 @@ bool Config::save() {
 	writer.writeKey(Key::vrSnapTurnAngle, input.vrSnapTurnAngle);
 	writer.writeKey(Key::vrSmoothTurnSpeed, input.vrSmoothTurnSpeed);
 	writer.writeKey(Key::vrSnapTurnRepeat, input.vrSnapTurnRepeat);
+	writer.writeKey(Key::vrHeightOffset, input.vrHeightOffset);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -728,6 +732,7 @@ bool Config::init(const fs::path & file) {
 	input.vrSmoothTurnSpeed = glm::clamp(vrSmoothTurnSpeed, vr::MinSmoothSpeed, vr::MaxSmoothSpeed);
 	float vrSnapTurnRepeat = reader.getKey(Section::Input, Key::vrSnapTurnRepeat, Default::vrSnapTurnRepeat);
 	input.vrSnapTurnRepeat = glm::clamp(vrSnapTurnRepeat, 0.f, vr::MaxSnapRepeat);
+	input.vrHeightOffset = vr::clampHeightOffset(reader.getKey(Section::Input, Key::vrHeightOffset, Default::vrHeightOffset));
 	
 	// Get action key settings
 	for(size_t i = 0; i < NUM_ACTION_KEY; i++) {

@@ -130,6 +130,45 @@ HeadCamera headToCamera(const HeadSample & head, const HeadReference & reference
  */
 float headLockedQuadFov(float quadWidth, float distance, const Vec2i & frameSize);
 
+//! A controller's grip pose in the OpenXR LOCAL space (#36)
+struct HandSample {
+	Vec3f position = Vec3f(0.f); //!< meters
+	glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f); //!< grip to LOCAL
+};
+
+//! A hand in the engine world, rigid with the head camera
+struct HandPlacement {
+	Vec3f offset = Vec3f(0.f); //!< game units from the head camera to the grip
+	//! the grip's rotation in engine axes: turns a grip-frame vector given in engine axes (OpenXR
+	//! +X, +Y, +Z = engine +X, -Y, -Z) into the world
+	glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f);
+};
+
+/*!
+ * \brief Where a hand is, rigid with the head (#36)
+ *
+ * The hand's position relative to the head is turned the way \ref headToCamera turns the head's
+ * movement (the LOCAL space put on the body's yaw by the reference) and scaled to game units; its
+ * orientation gets the same turn. So a hand 30 cm right of the head is 30 units right of the camera
+ * whatever the lean clamp did to the camera, and a hand oriented like the head has the camera's
+ * rotation. Hands at the character's eye height look right as soon as the head does (#27).
+ */
+HandPlacement handToWorld(const HandSample & hand, const HeadSample & head, const HeadReference & reference,
+                          float bodyYaw, const HeadCameraParams & params = HeadCameraParams());
+
+//! \return a vector in OpenXR axes (y up, z back) as the same vector in engine axes (y down, z forward)
+Vec3f toEngineAxes(const Vec3f & v);
+
+//! \return a vector in engine axes turned about the vertical by \a turnDegrees the way \ref headToCamera turns the head's movement
+Vec3f turnAboutVertical(const Vec3f & v, float turnDegrees);
+
+/*!
+ * \return a rotation given in OpenXR axes as the same rotation in engine axes, turned about the
+ *         vertical by \a turnDegrees: the quaternion \c toRotationMatrix(headAngles(q) + turn) is the
+ *         inverse of
+ */
+glm::quat orientationToEngine(const glm::quat & q, float turnDegrees);
+
 //! \return \a degrees wrapped to [0, 360)
 float wrapDegrees(float degrees);
 

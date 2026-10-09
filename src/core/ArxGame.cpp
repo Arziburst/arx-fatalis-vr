@@ -1241,7 +1241,7 @@ void ArxGame::doFrame() {
 	// In VR the frame starts when the headset wants it (xrWaitFrame, the only frame clock - D-024);
 	// otherwise the engine paces itself as before
 	applyVRPacing();
-	if(!vr::beginFrame()) {
+	if(!vr::beginFrame(m_MainWindow->getSize())) {
 		limitFrameRate();
 	}
 	
@@ -1602,10 +1602,21 @@ void ArxGame::handlePlayerDeath() {
 	
 }
 
+/*!
+ * The head camera of a stereo frame (#19): its own view with the union of both eyes' frusta as the
+ * projection (one cull for both eyes, research row F-163) and the VR near plane (F-39), at the
+ * window's size - what the update culls and projects with, and what the 2D interface is drawn with.
+ * The eyes themselves are prepared per view in renderStereoViews().
+ */
+static void prepareStereoHeadCamera(Camera * cam) {
+	const float nearDist = vr::NearClipMeters * vr::EyeRigParams().unitsPerMeter;
+	PrepareCamera(cam, g_size, cameraWorldToView(*cam), vr::eyeProjection(vr::unionEyeFov(), nearDist, cam->cdepth));
+}
+
 void ArxGame::updateActiveCamera() {
-	
+
 	ARX_PROFILE_FUNC();
-	
+
 	Camera * cam = nullptr;
 	if(g_cameraEntity) {
 		cam = &g_cameraEntity->_camdata->cam;
@@ -1616,11 +1627,15 @@ void ArxGame::updateActiveCamera() {
 	} else {
 		cam = &g_playerCamera;
 	}
-	
+
 	ManageQuakeFX(cam);
-	
-	PrepareCamera(cam, g_size);
-	
+
+	if(vr::stereoActive()) {
+		prepareStereoHeadCamera(cam);
+	} else {
+		PrepareCamera(cam, g_size);
+	}
+
 }
 
 void ArxGame::updateTime() {
@@ -1958,19 +1973,89 @@ void ArxGame::renderLevel() {
 	}
 	#endif
 
-	std::optional<Random::State> random;
-	if(views > 1) {
-		random = Random::getState();
-	}
-	for(size_t view = 0; view < views; view++) {
-		if(view > 0) {
-			Random::setState(*random);
+	if(vr::stereoActive()) {
+		// In VR the views are the two eyes, each into its own swapchain image (#19)
+		renderStereoViews();
+	} else {
+		std::optional<Random::State> random;
+		if(views > 1) {
+			random = Random::getState();
 		}
-		renderSceneView();
-		channel::afterSceneView(view);
+		for(size_t view = 0; view < views; view++) {
+			if(view > 0) {
+				Random::setState(*random);
+			}
+			renderSceneView();
+			channel::afterSceneView(view);
+		}
 	}
 
 	renderInterface();
+
+}
+
+/*!
+ * The scene once per eye (#19): each eye's image becomes the render target, the eye's camera is the
+ * head camera moved to the eye and turned by its cant, with the eye's own off-axis projection from
+ * the headset's field of view (research rows F-115, F-162). Both eyes draw the same frame of the
+ * game (#71) with the same random numbers. The eye image is the screen for everything drawn into
+ * it: full-screen effects, sprite sizes and their culling measure themselves against g_size, which
+ * is the eye's size during the draw (#73 separates the interface size from the scene's for good).
+ * Afterwards the head camera is prepared again for the interface, at the window's size.
+ */
+void ArxGame::renderStereoViews() {
+
+	ARX_PROFILE_FUNC();
+
+	static std::array<Camera, 2> s_eyeCameras;
+
+	Camera * cam = g_camera;
+	arx_assert(cam);
+
+	const std::array<vr::EyeRig, 2> & rigs = vr::eyeRigs();
+	const Vec2i eyeSize = vr::eyeRenderSize();
+	const Rect eyeRect(eyeSize.x, eyeSize.y);
+	const glm::mat4x4 headWorldToView = cameraWorldToView(*cam);
+	const float nearDist = vr::NearClipMeters * vr::EyeRigParams().unitsPerMeter;
+
+	const Rect interfaceSize = g_size;
+	const Vec2f interfaceRatio = g_sizeRatio;
+	const Random::State random = Random::getState();
+
+	for(size_t eye = 0; eye < rigs.size(); eye++) {
+
+		if(!vr::beginEyeRender(eye)) {
+			// The eye image could not be acquired (logged by the VR module): this frame shows the
+			// background in both eyes instead of one live and one stale eye (F-116)
+			continue;
+		}
+
+		if(eye > 0) {
+			Random::setState(random);
+		}
+
+		g_size = eyeRect;
+		g_sizeRatio = Vec2f(float(eyeRect.width()) / 640.f, float(eyeRect.height()) / 480.f);
+
+		Camera & eyeCamera = s_eyeCameras[eye];
+		eyeCamera = *cam;
+		eyeCamera.m_pos = vr::eyeWorldPosition(headWorldToView, rigs[eye]);
+		eyeCamera.setFov(vr::verticalFov(rigs[eye].fov));
+		PrepareCamera(&eyeCamera, eyeRect, vr::eyeWorldToView(headWorldToView, rigs[eye]),
+		              vr::eyeProjection(rigs[eye].fov, nearDist, cam->cdepth));
+
+		// Animated entities were projected with the head camera in the update: again for this eye
+		g_reprojectEntitiesPerView = true;
+		renderSceneView();
+		g_reprojectEntitiesPerView = false;
+
+		g_size = interfaceSize;
+		g_sizeRatio = interfaceRatio;
+
+		vr::endEyeRender(eye);
+	}
+
+	prepareStereoHeadCamera(cam);
 
 }
 

@@ -345,10 +345,21 @@ public:
 	
 	// Scissor
 	virtual void SetScissor(const Rect & rect) = 0;
-	
+
 	// Render Target
 	virtual void Clear(BufferFlags bufferFlags, Color clearColor = Color(), float clearDepth = 1.f,
 	                   size_t nrects = 0, Rect * rect = 0) = 0;
+
+	/*!
+	 * \brief Tell the renderer the size of the render target the caller bound
+	 *
+	 * Viewports and scissors are given in a coordinate system with the origin at the top-left; the
+	 * renderer measures them against the height of the current target, and snapshots read the whole
+	 * target. The default is the window. In VR (#19) the VR module binds an eye swapchain image or
+	 * the flat frame image as a framebuffer object and names its size here; \c Vec2i(0) means the
+	 * window again.
+	 */
+	virtual void setRenderTargetSize(const Vec2i & size) = 0;
 	
 	// Fog
 	virtual void SetFogColor(Color color) = 0;

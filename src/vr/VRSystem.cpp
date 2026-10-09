@@ -25,6 +25,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <iomanip>
 #include <iterator>
 #include <sstream>
 #include <string>
@@ -39,6 +40,7 @@
 #include "core/Config.h"
 #include "core/GameEvent.h"
 #include "core/Version.h"
+#include "graphics/Renderer.h"
 #include "gui/Credits.h"
 #include "io/fs/FilePath.h"
 #include "io/fs/Filesystem.h"
@@ -148,7 +150,20 @@ struct OpenXRState {
 		PlatformInstant lastWaitReturn = PlatformInstant(0); //!< when xrWaitFrame last returned: the cap sleeps relative to it
 		std::array<XrView, 2> located = { };
 		FrameViews views;                   //!< the located eyes, for the renderer and for the layer
+
+		//! Stereo (#19): the scene is drawn per eye into the eye swapchains, everything 2D into the quad
+		bool stereo = false;
+		std::array<EyeRig, 2> rig;          //!< the eyes relative to the head camera
+		EyeFov unionFov;                    //!< the frustum both eyes are culled with (F-163)
+		std::array<bool, 2> eyeRendered = { { false, false } }; //!< the eye image was drawn and released
+		bool quadAcquired = false;          //!< the flat frame image is acquired and bound as the 2D target
+		size_t eyeInRender = size_t(-1);    //!< the eye whose image is bound right now, or none
+		Vec2i windowSize = Vec2i(0);        //!< the window, i.e. the flat frame, this frame
 	} frame;
+
+	//! The stereo render as status.json reports it; \c active is the current frame's, the rest the last stereo frame's
+	StereoStatus stereo;
+	bool stereoLogged = false; //!< the stereo banner was logged for this session
 
 	//! The layers of the last frame that was shown, kept for frames ended without a new picture
 	struct Layers {
@@ -649,7 +664,49 @@ void flushPacing() {
 	}
 }
 
+/*!
+ * The window is the render target again: after a frame was submitted, when the session goes away,
+ * and whenever a target of ours is abandoned.
+ */
+void restoreWindowTarget() {
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	if(GRenderer) {
+		GRenderer->setRenderTargetSize(Vec2i(0));
+	}
+}
+
+//! Make a framebuffer object of \a size the render target for the engine
+void bindTarget(GLuint framebuffer, const Vec2i & size) {
+	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+	if(GRenderer) {
+		GRenderer->setRenderTargetSize(size);
+	}
+}
+
+/*!
+ * Give up the images of the current frame without submitting them: an eye left bound and the flat
+ * frame quad are released (the compositor then shows what they hold), and the window is the target
+ * again. For frames that end without a picture of their own (a level load, a session stop).
+ */
+void abandonFrameTargets() {
+	OpenXRState::Frame & frame = g_xr.frame;
+	if(frame.eyeInRender != size_t(-1)) {
+		g_xr.eyes[frame.eyeInRender].release();
+		frame.eyeInRender = size_t(-1);
+	}
+	if(frame.quadAcquired) {
+		g_xr.quad.release();
+		frame.quadAcquired = false;
+	}
+	frame.stereo = false;
+	frame.eyeRendered = { { false, false } };
+	g_xr.stereo.active = false;
+	restoreWindowTarget();
+}
+
 void destroySession() {
+
+	abandonFrameTargets();
 
 	// The swapchains' OpenGL objects go first, while the context the session is bound to is current
 	for(Swapchain & eye : g_xr.eyes) {
@@ -674,7 +731,8 @@ void destroySession() {
 		xrDestroySession(g_xr.session);
 		g_xr.session = XR_NULL_HANDLE;
 		LogInfo << "OpenXR session destroyed" << (g_xr.running ? " while running" : "")
-		        << " after " << g_xr.frames.submitted << " frames (" << g_xr.frames.shown << " shown)";
+		        << " after " << g_xr.frames.submitted << " frames (" << g_xr.frames.shown << " shown, "
+		        << g_xr.stereo.frames << " in stereo)";
 	}
 	g_xr.sessionState = XR_SESSION_STATE_UNKNOWN;
 	g_xr.running = false;
@@ -757,6 +815,7 @@ void beginSession() {
 	g_xr.running = true;
 	g_xr.frameFailures = 0;
 	g_xr.loggedInvalidViews = false;
+	g_xr.stereoLogged = false;
 	g_xr.frame = OpenXRState::Frame();
 	g_xr.layers = OpenXRState::Layers();
 	g_xr.gapsInWindow = 0;
@@ -783,6 +842,7 @@ void endSession() {
 
 	// A frame begun before the runtime asked to stop is ended first, so the session stops clean
 	if(g_xr.frame.begun) {
+		abandonFrameTargets();
 		endFrame(true);
 	}
 
@@ -796,7 +856,7 @@ void endSession() {
 	}
 
 	LogInfo << "OpenXR session stopped after " << g_xr.frames.submitted << " frames ("
-	        << g_xr.frames.shown << " shown)";
+	        << g_xr.frames.shown << " shown, " << g_xr.stereo.frames << " in stereo)";
 }
 
 void logFrameFailure(const char * call, XrResult result) {
@@ -874,7 +934,8 @@ void updateQuadSwapchain(const Vec2i & size) {
 		return;
 	}
 
-	if(!g_xr.quad.create(g_xr.session, g_xr.colorFormat, size, false, "flat frame quad")) {
+	// With framebuffers: in a stereo frame the 2D interface is drawn straight into the quad's image
+	if(!g_xr.quad.create(g_xr.session, g_xr.colorFormat, size, true, "flat frame quad")) {
 		g_xr.quadFailedSize = size;
 	}
 }
@@ -930,35 +991,23 @@ void locateFrameViews(XrTime displayTime) {
 }
 
 /*!
- * Clear both eye images to the background color through their framebuffers and describe them as a
- * projection layer with the poses located for this frame. Both eyes or none (F-116): one stale
- * eye against a live one is the bug class the two-eyes check exists for.
+ * Describe the eye swapchains as the projection layer with the poses and fields of view located for
+ * this frame (F-21, F-116): whatever the most recently released image of each eye holds is shown
+ * where that pose puts it.
  */
-bool renderBackground(OpenXRState::Layers & layers) {
+void describeProjectionLayer(OpenXRState::Layers & layers) {
 
 	const OpenXRState::Frame & frame = g_xr.frame;
-	if(!frame.views.valid) {
-		return false;
-	}
 
 	std::array<XrCompositionLayerProjectionView, 2> & views = layers.projectionViews;
 	for(size_t eye = 0; eye < views.size(); eye++) {
-
-		Swapchain & swapchain = g_xr.eyes[eye];
-		if(!swapchain.acquire()) {
-			return false;
-		}
-		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, swapchain.framebuffer());
-		glClearBufferfv(GL_COLOR, 0, BackgroundColor);
-		swapchain.release();
-
+		const Swapchain & swapchain = g_xr.eyes[eye];
 		views[eye] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
 		views[eye].pose = frame.located[eye].pose;
 		views[eye].fov = frame.located[eye].fov;
 		views[eye].subImage.swapchain = swapchain.handle();
 		views[eye].subImage.imageRect = swapchain.rect();
 		views[eye].subImage.imageArrayIndex = 0;
-
 	}
 
 	XrCompositionLayerProjection & layer = layers.projection;
@@ -969,12 +1018,87 @@ bool renderBackground(OpenXRState::Layers & layers) {
 	layer.views = views.data();
 
 	layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
+}
+
+/*!
+ * Clear both eye images to the background color through their framebuffers and describe them as a
+ * projection layer with the poses located for this frame - for frames whose scene was not drawn
+ * (a menu, a loading screen, a cinematic). Both eyes or none (F-116): one stale eye against a live
+ * one is the bug class the two-eyes check exists for.
+ */
+bool renderBackground(OpenXRState::Layers & layers) {
+
+	const OpenXRState::Frame & frame = g_xr.frame;
+	if(!frame.views.valid) {
+		return false;
+	}
+
+	for(Swapchain & swapchain : g_xr.eyes) {
+		if(!swapchain.acquire()) {
+			return false;
+		}
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, swapchain.framebuffer());
+		glClearBufferfv(GL_COLOR, 0, BackgroundColor);
+		swapchain.release();
+	}
+
+	describeProjectionLayer(layers);
 
 	return true;
 }
 
 /*!
- * Copy the window's back buffer into the quad swapchain and describe the head-locked quad.
+ * The projection layer with the images the scene was drawn into this frame (#19). Only when both
+ * eyes were drawn and released (F-116); the caller falls back to the background otherwise.
+ */
+bool describeEyeLayer(OpenXRState::Layers & layers) {
+
+	const OpenXRState::Frame & frame = g_xr.frame;
+	if(!frame.views.valid || !frame.stereo || !frame.eyeRendered[0] || !frame.eyeRendered[1]) {
+		return false;
+	}
+
+	describeProjectionLayer(layers);
+
+	return true;
+}
+
+/*!
+ * Describe the head-locked quad that shows the flat frame swapchain's most recently released image.
+ *
+ * \param layerFlags \c XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT when the image holds the
+ *                   2D interface over a transparent background (a stereo frame): the renderer
+ *                   accumulates coverage in the alpha channel, so the colors are premultiplied, as
+ *                   the compositor expects; 0 for an opaque copy of the window
+ */
+void describeQuadLayer(OpenXRState::Layers & layers, XrCompositionLayerFlags layerFlags) {
+
+	const Swapchain & swapchain = g_xr.quad;
+
+	XrCompositionLayerQuad & layer = layers.quad;
+	layer = { XR_TYPE_COMPOSITION_LAYER_QUAD };
+	layer.layerFlags = layerFlags;
+	layer.space = g_xr.viewSpace;
+	layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+	layer.subImage.swapchain = swapchain.handle();
+	layer.subImage.imageRect = swapchain.rect();
+	layer.subImage.imageArrayIndex = 0;
+	layer.pose.orientation.x = 0.f;
+	layer.pose.orientation.y = 0.f;
+	layer.pose.orientation.z = 0.f;
+	layer.pose.orientation.w = 1.f;
+	layer.pose.position.x = 0.f;
+	layer.pose.position.y = 0.f;
+	layer.pose.position.z = -QuadDistance;
+	layer.size.width = QuadWidth;
+	layer.size.height = QuadWidth * float(swapchain.size().y) / float(swapchain.size().x);
+
+	layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
+}
+
+/*!
+ * Copy the window's back buffer into the quad swapchain and describe the head-locked quad - for a
+ * frame drawn into the window (one shown from outside the game loop, F-20).
  *
  * A copy from the default framebuffer, not a blit: the window is usually multisampled, and a
  * resolving blit requires identical source and destination formats (RGB8 vs. SRGB8_ALPHA8 here),
@@ -993,27 +1117,160 @@ bool copyFlatFrame(OpenXRState::Layers & layers) {
 	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, swapchain.size().x, swapchain.size().y);
 	swapchain.release();
 
-	XrCompositionLayerQuad & layer = layers.quad;
-	layer = { XR_TYPE_COMPOSITION_LAYER_QUAD };
-	layer.layerFlags = 0;
-	layer.space = g_xr.viewSpace;
-	layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
-	layer.subImage.swapchain = swapchain.handle();
-	layer.subImage.imageRect = swapchain.rect();
-	layer.subImage.imageArrayIndex = 0;
-	layer.pose.orientation.x = 0.f;
-	layer.pose.orientation.y = 0.f;
-	layer.pose.orientation.z = 0.f;
-	layer.pose.orientation.w = 1.f;
-	layer.pose.position.x = 0.f;
-	layer.pose.position.y = 0.f;
-	layer.pose.position.z = -QuadDistance;
-	layer.size.width = QuadWidth;
-	layer.size.height = QuadWidth * float(swapchain.size().y) / float(swapchain.size().x);
-
-	layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
+	describeQuadLayer(layers, 0);
 
 	return true;
+}
+
+/*!
+ * Hand back the quad image the 2D interface was drawn into this frame and describe the quad,
+ * blended by its alpha over the eyes (#19).
+ */
+bool finishFlatFrame(OpenXRState::Layers & layers) {
+
+	OpenXRState::Frame & frame = g_xr.frame;
+	if(!frame.quadAcquired) {
+		return false;
+	}
+
+	g_xr.quad.release();
+	frame.quadAcquired = false;
+
+	describeQuadLayer(layers, XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT);
+
+	return true;
+}
+
+/*!
+ * The window shows the left eye while the scene is drawn per eye: the acquired eye image, fitted
+ * into the window's back buffer with its aspect kept. A plain blit until the desktop mirror (#21)
+ * draws the eye cropped to the window and the flat frame where the quad appears in it.
+ */
+void mirrorLeftEye(const Swapchain & eye, const Vec2i & windowSize) {
+
+	if(windowSize.x <= 0 || windowSize.y <= 0) {
+		return;
+	}
+
+	GLStateGuard state;
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, eye.framebuffer());
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+
+	const GLfloat black[4] = { 0.f, 0.f, 0.f, 1.f };
+	glClearBufferfv(GL_COLOR, 0, black);
+
+	const Vec2i source = eye.size();
+	const float scale = std::min(float(windowSize.x) / float(source.x), float(windowSize.y) / float(source.y));
+	const Vec2i size(std::max(1, int(float(source.x) * scale)), std::max(1, int(float(source.y) * scale)));
+	const Vec2i offset = (windowSize - size) / Vec2i(2);
+	glBlitFramebuffer(0, 0, source.x, source.y, offset.x, offset.y, offset.x + size.x, offset.y + size.y,
+	                  GL_COLOR_BUFFER_BIT, GL_LINEAR);
+}
+
+//! The stereo banner (research row F-115): the eyes, their fields of view, the cant and the near plane
+void logStereoBanner(const OpenXRState::Frame & frame, const Vec2i & eyeSize) {
+
+	std::ostringstream oss;
+	oss << std::fixed << std::setprecision(1);
+	oss << "[vr] stereo: the scene is drawn per eye - ";
+	const char * const names[] = { "left", "right" };
+	for(size_t eye = 0; eye < frame.rig.size(); eye++) {
+		const EyeFov & fov = frame.rig[eye].fov;
+		oss << names[eye] << ' ' << eyeSize.x << 'x' << eyeSize.y << " fov L " << glm::degrees(fov.left) << " R "
+		    << glm::degrees(fov.right) << " U " << glm::degrees(fov.up) << " D " << glm::degrees(fov.down)
+		    << " deg, ";
+	}
+	const float cant = glm::degrees(cantAngle(frame.rig));
+	oss << "eye separation " << eyeSeparationMeters(frame.rig) * 1000.f << " mm, "
+	    << (cant > 0.05f ? "canted displays: " : "parallel displays: ") << cant << " deg between the eyes, "
+	    << "union fov L " << glm::degrees(frame.unionFov.left) << " R " << glm::degrees(frame.unionFov.right)
+	    << " U " << glm::degrees(frame.unionFov.up) << " D " << glm::degrees(frame.unionFov.down)
+	    << " deg (one cull for both eyes), near " << std::setprecision(2) << NearClipMeters << " m = "
+	    << std::setprecision(1) << NearClipMeters * EyeRigParams().unitsPerMeter << " units; the 2D interface stays on the head-locked quad ("
+	    << frame.windowSize.x << 'x' << frame.windowSize.y << ", blended by its alpha)";
+	LogInfo << oss.str();
+
+	gameevent::Event("vr.stereo")("state", "on")("eyeWidth", u64(eyeSize.x))("eyeHeight", u64(eyeSize.y))
+		("ipdMm", eyeSeparationMeters(frame.rig) * 1000.f, 1)("cantDeg", cant, 1)
+		("hfovDeg", glm::degrees(horizontalFov(frame.rig[0].fov)), 1)
+		("vfovDeg", glm::degrees(verticalFov(frame.rig[0].fov)), 1);
+}
+
+/*!
+ * Set up the frame's stereo render (#19): the eyes relative to the head camera and their union
+ * frustum from the located views, and the flat frame quad's image as the render target for
+ * everything 2D, cleared to transparent so the world shows through. Only for frames the runtime
+ * wants rendered; otherwise the game draws into the window as in flat mode.
+ */
+void beginStereoFrame(const Vec2i & windowSize) {
+
+	OpenXRState::Frame & frame = g_xr.frame;
+	frame.stereo = false;
+	frame.eyeRendered = { { false, false } };
+	frame.quadAcquired = false;
+	frame.eyeInRender = size_t(-1);
+	frame.windowSize = windowSize;
+	g_xr.stereo.active = false;
+
+	if(!frame.state.shouldRender || !frame.views.valid) {
+		return;
+	}
+
+	std::array<LocatedEye, 2> located;
+	for(size_t eye = 0; eye < located.size(); eye++) {
+		const EyeView & view = frame.views.eyes[eye];
+		located[eye].position = view.position;
+		located[eye].orientation = view.orientation;
+		located[eye].fov.left = view.fovLeft;
+		located[eye].fov.right = view.fovRight;
+		located[eye].fov.up = view.fovUp;
+		located[eye].fov.down = view.fovDown;
+	}
+	frame.rig = eyeRig(located[0], located[1]);
+	frame.unionFov = unionFov(frame.rig);
+	frame.stereo = true;
+
+	const Vec2i eyeSize = g_xr.eyes[0].size();
+	StereoStatus & status = g_xr.stereo;
+	status.active = true;
+	status.eyeSize = eyeSize;
+	status.fov = { { frame.rig[0].fov, frame.rig[1].fov } };
+	status.unionFov = frame.unionFov;
+	status.eyeSeparationM = eyeSeparationMeters(frame.rig);
+	status.cantDeg = glm::degrees(cantAngle(frame.rig));
+
+	if(!g_xr.stereoLogged) {
+		g_xr.stereoLogged = true;
+		logStereoBanner(frame, eyeSize);
+	}
+
+	// Everything 2D goes to the flat frame quad; without one (a window too large for a swapchain)
+	// it stays in the window and the headset shows the eyes alone
+	updateQuadSwapchain(windowSize);
+	if(g_xr.quad.isValid() && g_xr.quad.acquire()) {
+		frame.quadAcquired = true;
+		bindTarget(g_xr.quad.framebuffer(), windowSize);
+		// Clears respect the scissor and the masks the renderer left behind
+		GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
+		GLboolean colorMask[4] = { GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE };
+		GLboolean depthMask = GL_TRUE;
+		glGetBooleanv(GL_COLOR_WRITEMASK, colorMask);
+		glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
+		glDisable(GL_SCISSOR_TEST);
+		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+		glDepthMask(GL_TRUE);
+		const GLfloat transparent[4] = { 0.f, 0.f, 0.f, 0.f };
+		const GLfloat depth = 1.f;
+		glClearBufferfv(GL_COLOR, 0, transparent);
+		glClearBufferfv(GL_DEPTH, 0, &depth);
+		glDepthMask(depthMask);
+		glColorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+		if(scissor) {
+			glEnable(GL_SCISSOR_TEST);
+		}
+	}
 }
 
 /*!
@@ -1100,6 +1357,7 @@ void requestExit() {
 	}
 
 	if(g_xr.frame.begun) {
+		abandonFrameTargets();
 		endFrame(true);
 	}
 
@@ -1343,7 +1601,14 @@ void pollEvents() {
 
 }
 
-bool beginFrame() {
+namespace {
+
+/*!
+ * The frame start shared by the game loop and the frames shown from outside it: \a stereo makes the
+ * flat frame quad the 2D render target and sets up the eyes (beginStereoFrame); a frame that was
+ * already drawn into the window when it is begun (the loading screen) skips that.
+ */
+bool beginFrameFor(const Vec2i & windowSize, bool stereo) {
 
 	if(!g_xr.running) {
 		return false;
@@ -1356,6 +1621,7 @@ bool beginFrame() {
 	if(frame.begun) {
 		// A frame begun but never shown (a level load that drew no frame): ended with the previous
 		// picture, so the compositor is not left waiting for it
+		abandonFrameTargets();
 		endFrame(true);
 	}
 
@@ -1404,7 +1670,21 @@ bool beginFrame() {
 
 	locateFrameViews(frame.state.predictedDisplayTime);
 
+	if(stereo) {
+		beginStereoFrame(windowSize);
+	} else {
+		frame.stereo = false;
+		frame.windowSize = windowSize;
+		g_xr.stereo.active = false;
+	}
+
 	return true;
+}
+
+} // anonymous namespace
+
+bool beginFrame(const Vec2i & windowSize) {
+	return beginFrameFor(windowSize, true);
 }
 
 void submitFrame(const Vec2i & windowSize) {
@@ -1417,13 +1697,24 @@ void submitFrame(const Vec2i & windowSize) {
 
 	OpenXRState::Frame & frame = g_xr.frame;
 
-	// A frame shown from outside the game loop (the loading screen) begins its own OpenXR frame
-	if(!frame.begun && !beginFrame()) {
+	// A frame shown from outside the game loop (the loading screen) begins its own OpenXR frame; its
+	// picture is already in the window, so it is copied onto the quad as the flat frame of #18 was
+	bool lateFrame = !frame.begun;
+	if(lateFrame && !beginFrameFor(windowSize, false)) {
 		return;
 	}
 
-	updateQuadSwapchain(windowSize);
+	// An eye left bound by a caller that gave up mid-way holds no finished picture
+	if(frame.eyeInRender != size_t(-1)) {
+		g_xr.eyes[frame.eyeInRender].release();
+		frame.eyeInRender = size_t(-1);
+	}
 
+	if(!frame.stereo) {
+		updateQuadSwapchain(windowSize);
+	}
+
+	bool eyes = false;
 	bool background = false;
 	bool flatFrame = false;
 
@@ -1431,26 +1722,103 @@ void submitFrame(const Vec2i & windowSize) {
 	if(frame.state.shouldRender) {
 		GLStateGuard state;
 		g_xr.layers.count = 0;
-		background = renderBackground(g_xr.layers);
-		flatFrame = copyFlatFrame(g_xr.layers);
+		eyes = describeEyeLayer(g_xr.layers);
+		if(!eyes) {
+			background = renderBackground(g_xr.layers);
+		}
+		flatFrame = frame.quadAcquired ? finishFlatFrame(g_xr.layers) : copyFlatFrame(g_xr.layers);
 	}
+
+	// Whatever happened, the window is the render target again before the buffers are swapped
+	abandonFrameTargets();
 
 	u64 shownBefore = g_xr.frames.shown;
 	if(!endFrame(false)) {
 		return;
 	}
 
-	if(shownBefore == 0 && g_xr.frames.shown == 1) {
-		if(flatFrame) {
-			LogInfo << "First VR frame shown: " << (background ? "dark background, " : "no background, ")
-			        << "flat frame " << g_xr.quad.size().x << 'x' << g_xr.quad.size().y << " on a head-locked quad "
-			        << g_xr.layers.quad.size.width << " x " << g_xr.layers.quad.size.height << " m at "
-			        << QuadDistance << " m";
-		} else {
-			LogInfo << "First VR frame shown: dark background only, no flat frame";
-		}
+	if(eyes) {
+		g_xr.stereo.frames++;
 	}
 
+	if(shownBefore == 0 && g_xr.frames.shown == 1) {
+		std::ostringstream oss;
+		oss << "First VR frame shown: " << (eyes ? "the scene per eye" : background ? "dark background" : "no background");
+		if(flatFrame) {
+			oss << ", flat frame " << g_xr.quad.size().x << 'x' << g_xr.quad.size().y << " on a head-locked quad "
+			    << g_xr.layers.quad.size.width << " x " << g_xr.layers.quad.size.height << " m at " << QuadDistance
+			    << " m" << (g_xr.layers.quad.layerFlags & XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT
+			                ? " (2D interface, blended by its alpha)" : " (a copy of the window)");
+		} else {
+			oss << ", no flat frame";
+		}
+		LogInfo << oss.str();
+	}
+
+}
+
+bool stereoActive() {
+	return g_xr.running && g_xr.frame.begun && g_xr.frame.stereo;
+}
+
+const std::array<EyeRig, 2> & eyeRigs() {
+	return g_xr.frame.rig;
+}
+
+const EyeFov & unionEyeFov() {
+	return g_xr.frame.unionFov;
+}
+
+Vec2i eyeRenderSize() {
+	return g_xr.eyes[0].isValid() ? g_xr.eyes[0].size() : Vec2i(0);
+}
+
+bool beginEyeRender(size_t eye) {
+
+	OpenXRState::Frame & frame = g_xr.frame;
+	if(!stereoActive() || eye >= g_xr.eyes.size()) {
+		return false;
+	}
+	arx_assert(frame.eyeInRender == size_t(-1));
+
+	Swapchain & swapchain = g_xr.eyes[eye];
+	if(!swapchain.isValid() || !swapchain.acquire()) {
+		return false;
+	}
+
+	frame.eyeInRender = eye;
+	bindTarget(swapchain.framebuffer(), swapchain.size());
+
+	return true;
+}
+
+void endEyeRender(size_t eye) {
+
+	OpenXRState::Frame & frame = g_xr.frame;
+	if(frame.eyeInRender != eye || eye >= g_xr.eyes.size()) {
+		return;
+	}
+
+	Swapchain & swapchain = g_xr.eyes[eye];
+	if(eye == 0) {
+		mirrorLeftEye(swapchain, frame.windowSize);
+	}
+	swapchain.release();
+	frame.eyeRendered[eye] = true;
+	frame.eyeInRender = size_t(-1);
+
+	// Back to the flat frame for the 2D interface, or to the window when there is no quad
+	if(frame.quadAcquired) {
+		bindTarget(g_xr.quad.framebuffer(), frame.windowSize);
+	} else {
+		restoreWindowTarget();
+	}
+}
+
+StereoStatus stereoStatus() {
+	StereoStatus status = g_xr.stereo;
+	status.active = stereoActive();
+	return status;
 }
 
 const FrameViews & frameViews() {
@@ -1526,11 +1894,39 @@ bool createSession() {
 
 void pollEvents() { }
 
-bool beginFrame() {
+bool beginFrame(const Vec2i & /* windowSize */) {
 	return false;
 }
 
 void submitFrame(const Vec2i & /* windowSize */) { }
+
+bool stereoActive() {
+	return false;
+}
+
+const std::array<EyeRig, 2> & eyeRigs() {
+	static const std::array<EyeRig, 2> none;
+	return none;
+}
+
+const EyeFov & unionEyeFov() {
+	static const EyeFov none;
+	return none;
+}
+
+Vec2i eyeRenderSize() {
+	return Vec2i(0);
+}
+
+bool beginEyeRender(size_t /* eye */) {
+	return false;
+}
+
+void endEyeRender(size_t /* eye */) { }
+
+StereoStatus stereoStatus() {
+	return StereoStatus();
+}
 
 const FrameViews & frameViews() {
 	static const FrameViews none;

@@ -209,6 +209,13 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   session closed (a shorter session gets its partial window at the end). See
   [The frame loop and the rate line](#the-frame-loop-and-the-rate-line-20) for every field and the
   verdicts; the two to assert on are `verdict` (`MATCHED`) and `cadence` (`EVEN`).
+- `vr.stereo` (#19): `active` — the current frame draws the scene once per eye (a session that
+  runs, a frame the runtime wants rendered, located eyes); `frames` — frames whose scene reached
+  both eyes since the start (grows while a level is shown in VR; stays 0 with an idle headset, like
+  `shownFrames`); `eyeWidth` × `eyeHeight` — the eye images; `ipdMm` and `cantDeg` — the distance
+  and the angle between the two located eyes; `fovLeft`, `fovRight`, `fovUnion` — the four
+  half-angles in degrees (left and down negative) of each eye's projection and of the frustum both
+  eyes are culled with. See [Stereo rendering](#stereo-rendering-19).
 - `player` is present only while a level is loaded; the `.xrs` runner (#113) asserts on these keys
   with `@modassert`.
   `player.y` is the **eye** (the camera is within a few units of it), not the feet.
@@ -499,6 +506,8 @@ What the check relies on and what it cannot see:
   splat lands only in view, a field animates only in view) now use the frame's camera in the update.
 - It compares the whole scene view, screen-space overlays included (hit blood, Magic Sight, the
   paralysis tint), but **not** the interface, which is drawn once per frame anyway.
+- It needs flat rendering: in a stereo frame (#19) the two views are the two eyes with different
+  cameras, so the command is refused there (`drawcheck: needs flat rendering`).
 - It cannot see state that only affects the *next* frame (a counter incremented in a draw path and
   read later). Those show up as a visibly faster effect, not as a differing pair.
 
@@ -574,6 +583,47 @@ The verdict logic is pure (`src/vr/FramePacing.h`: timestamps in, report out) an
 `tests/vr/FramePacingTest.cpp` (`arxtest`, run by `build-windows.ps1` and CI): a healthy loop, the
 cap, half rate without the cap (UNDER), 9 / 16 ms jitter at 80 fps (MATCHED but UNEVEN), 1 / 2 slot
 alternation, an unpaced loop (OVER), a late run, the gap phases, the window boundary.
+
+## Stereo rendering (#19)
+
+In a frame the runtime wants rendered, the 3D scene is drawn **once per eye** into the eye
+swapchains (2468×2740 on the Index) and everything 2D — menus, HUD, inventory, loading screens,
+cinematics, the console — into the flat frame quad's swapchain, which the compositor blends over
+the eyes by its alpha (research rows F-115, F-162, F-163; the design is D-025):
+
+- `vr::beginFrame()` sets the frame up after `xrLocateViews`: the **eye rig** — each eye relative to
+  the head between them (half the eye separation in game units, the cant as a rotation, the four
+  FOV angles) — and the **union frustum** of both eyes; then the quad image becomes the render
+  target, cleared to transparent.
+- `ArxGame::updateActiveCamera()` prepares the head camera with the union projection and the VR
+  near plane (0.09 m, F-39): rooms, portals and entities are culled once for both eyes, and the
+  update projects with it at the window's size.
+- `ArxGame::renderStereoViews()` draws `renderSceneView()` per eye between `vr::beginEyeRender()`
+  and `vr::endEyeRender()`: the eye's camera is the head camera moved to the eye and turned by its
+  cant, the projection is the eye's own off-axis matrix straight from its `XrFovf`
+  (`src/vr/EyeProjection.h`, pure math, host tests in `tests/vr/EyeProjectionTest.cpp`); animated
+  entities are projected again for the eye (`g_reprojectEntitiesPerView`); `g_size` is the eye's
+  size during the draw, so full-screen effects and sprite sizes follow the eye image.
+- `vr::submitFrame()` submits the eye images as the projection layer with the frame's poses and
+  the quad in front; a frame whose scene was not drawn (a menu) clears both eyes to the dark
+  background — both eyes or none (F-116). The window shows the left eye fitted into it (the
+  desktop mirror of #21 replaces this). With an idle headset (`shouldRender` false) the game draws
+  into the window as in flat mode and the frame is ended without layers.
+
+The log says once per session what the eyes are:
+
+```
+[vr] stereo: the scene is drawn per eye - left 2468x2740 fov L -54.0 R 40.0 U 44.0 D -55.0 deg, right 2468x2740 fov L -40.0 R 54.0 U 44.0 D -55.0 deg, eye separation 64.0 mm, canted displays: 5.0 deg between the eyes, union fov L -59.0 R 59.0 U 46.3 D -57.1 deg (one cull for both eyes), near 0.09 m = 9.0 units; the 2D interface stays on the head-locked quad (640x480, blended by its alpha)
+```
+
+plus one `vr.stereo` game event with the same numbers, and `status.json` → `vr.stereo`
+(`active`, `frames`, the sizes and angles). `OpenXR session stopped after N frames (M shown, K in
+stereo)` counts the stereo frames at the end.
+
+What stays with the head camera until #72 / #73 (and looks flat or misplaced in the headset):
+particles, sparks, light flares and the mouse-drawn rune sparkles (update-phase 2D data at the
+window's size); screen-space picking with the mouse (#37 replaces it with hand reticles). The
+draw check is refused in a stereo frame: its two views would be the two eyes.
 
 ## `xr_hello` — the runtime alone
 

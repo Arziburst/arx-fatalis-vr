@@ -388,6 +388,29 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("discardedFrames", frames.discarded);
 	json.value("frameGaps", frames.gaps);
 	json.value("frameDivisor", vr::frameDivisor());
+	// Stereo (#19): the scene drawn once per eye with its own projection; angles in degrees
+	{
+		vr::StereoStatus stereo = vr::stereoStatus();
+		json.object("stereo");
+		json.value("active", stereo.active);
+		json.value("frames", stereo.frames);
+		json.value("eyeWidth", stereo.eyeSize.x);
+		json.value("eyeHeight", stereo.eyeSize.y);
+		json.value("ipdMm", stereo.eyeSeparationM * 1000.f);
+		json.value("cantDeg", stereo.cantDeg);
+		const struct { const char * name; const vr::EyeFov & fov; } fovs[] = {
+			{ "fovLeft", stereo.fov[0] }, { "fovRight", stereo.fov[1] }, { "fovUnion", stereo.unionFov },
+		};
+		for(const auto & entry : fovs) {
+			json.object(entry.name);
+			json.value("left", glm::degrees(entry.fov.left));
+			json.value("right", glm::degrees(entry.fov.right));
+			json.value("up", glm::degrees(entry.fov.up));
+			json.value("down", glm::degrees(entry.fov.down));
+			json.end();
+		}
+		json.end();
+	}
 	json.value("runtime", vr::runtimeName());
 	json.value("manifest", vr::runtimeManifest());
 	// The last rate / cadence report of the frame loop (#20, F-07): one per 3 s while the session runs
@@ -586,6 +609,9 @@ std::string execute(std::string_view line) {
 		if(g.drawCheck.framesLeft != 0) {
 			return refuse("drawcheck: check " + std::to_string(g.drawCheck.seq) + " still runs ("
 			              + std::to_string(g.drawCheck.framesLeft) + " frames left)");
+		}
+		if(vr::stereoActive()) {
+			return refuse("drawcheck: needs flat rendering - in VR the two views of a frame are the two eyes (#19)");
 		}
 		if(currentState() != GameState::Gameplay) {
 			return refuse(std::string("drawcheck: needs a level on screen (state ")

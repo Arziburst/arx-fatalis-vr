@@ -8,6 +8,23 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — A scene drawn into a framebuffer object lands at the wrong place, is clipped, or loses its alpha cutouts (#19)
+
+**Symptom:** rendering through the engine's renderer into an OpenGL framebuffer object of another
+size than the window (a VR eye image, 2468×2740) puts the picture in a corner or off the image;
+scissored draws (the cinematic border) cut the wrong band; `getSnapshot()` reads the window's size;
+fences and foliage with alpha cutouts come out as solid black quads on the eye image although they are
+fine in the window.
+**Cause:** `OpenGLRenderer::SetViewport` / `SetScissor` turn the engine's top-left rectangles into
+OpenGL's bottom-left ones with the **window's** height, and `getSnapshot` reads the window's size; and
+with MSAA on the window the renderer draws alpha cutouts with alpha-to-coverage or sample shading
+(`alpha_cutout_antialiasing`), which do nothing on a single-sample framebuffer object - the alpha test
+that would discard the transparent texels is off.
+**Do:** tell the renderer the bound target's size (`Renderer::setRenderTargetSize`, 0 = the window): it
+re-applies the viewport and the scissor against that height, snapshots read that size, and
+`SetAntialiasing(true)` is refused off the window so the alpha cutout path falls back to the alpha test.
+`vr::beginEyeRender()` / `endEyeRender()` and the flat frame target do this; a new offscreen target must too.
+
 ## 2026-10-09 — A non-Steam shortcut written into `shortcuts.vdf` disappears
 
 **Symptom:** a script (or a hand edit) adds a shortcut to `<Steam>\userdata\<account>\config\shortcuts.vdf`,

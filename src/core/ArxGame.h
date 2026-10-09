@@ -105,6 +105,8 @@ private:
 	void renderLevel();
 	//! Draw the 3D world for the current camera without changing game state - once per eye in VR
 	void renderSceneView();
+	//! In a stereo frame: the scene once per eye into the eye swapchains, each with its own camera (#19)
+	void renderStereoViews();
 	//! Draw the HUD and other 2D interface on top of the scene - once per frame
 	void renderInterface();
 	

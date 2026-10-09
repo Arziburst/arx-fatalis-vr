@@ -39,6 +39,9 @@ set(arxtest_TESTCASES
 	tests/util/StringTest.h
 	tests/util/StringTest.cpp
 
+	tests/vr/EyeProjectionTest.h
+	tests/vr/EyeProjectionTest.cpp
+
 	tests/vr/FramePacingTest.h
 	tests/vr/FramePacingTest.cpp
 
@@ -58,6 +61,7 @@ set(arxtest_SOURCES
 	src/io/IniSection.cpp
 	src/io/log/FileLogger.cpp
 	src/io/resource/ResourcePath.cpp
+	src/vr/EyeProjection.cpp
 	src/vr/FramePacing.cpp
 
 	${arxtest_TESTCASES}

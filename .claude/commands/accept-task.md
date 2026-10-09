@@ -8,7 +8,7 @@ Read `docs/vr/WORKFLOW.md` first.
 1. Find the pull request: the one named in `$ARGUMENTS` (PR or issue number), otherwise the task in
    **Testing** (`.\scripts\dev\next-task.ps1`) and its open PR (`gh api "search/issues?q=repo:Arziburst/arx-fatalis-vr+is:pr+is:open+<issue number>"`).
    If more than one candidate exists, ask which one.
-2. Check CI: `.scriptsdevpr-checks.ps1 <pr>` (exit 0 = green). If it is not green, do not merge — tell the owner why.
+2. Check CI: `.\scripts\dev\pr-checks.ps1 <pr>` (exit 0 = green). If it is not green, do not merge — tell the owner why.
 3. Comment on the PR: "Tested in VR and accepted by the project owner." plus any notes from `$ARGUMENTS`.
 4. Merge: `gh pr merge <pr> --merge --delete-branch --subject "<PR title> (#<pr>)"`, then return the
    working copy to `main`:

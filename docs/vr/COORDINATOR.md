@@ -82,7 +82,7 @@ workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
 - **Keep the status page current:** the pinned issue **"ARXVR status"** (edited via REST each cycle):
   current block, running workers (task, model, state), PRs waiting for review or for the headset, the
   owner's open questions, weekly usage. The owner reads it in the browser; a new coordinator starts from it.
-- **Wait** — idle notices, background CI waits (`scriptsdevpr-checks.ps1 <pr> -Watch`, REST, or a small script with
+- **Wait** — idle notices, background CI waits (`scripts\dev\pr-checks.ps1 <pr> -Watch`, REST, or a small script with
   `run_in_background`) and the usage guard (a background script that exits at 80% weekly or 95% five-hour, and every
   ~45 min as a heartbeat to catch stuck workers) wake the coordinator. No sleep loops in the foreground,
   no "are you done?" messages.

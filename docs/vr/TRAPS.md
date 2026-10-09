@@ -8,6 +8,14 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — Backslashes vanish from Windows paths written through sed or a shell string (#186)
+
+**Symptom:** a doc or script line reads `.scriptsdevpr-checks.ps1` instead of `.\scripts\dev\pr-checks.ps1`.
+**Cause:** `sed 's#...#.\scripts\dev\x#'` in Git Bash, or any unquoted/double-quoted shell string, treats `\s`, `\d`, `\p`
+as escapes and drops the backslash; the edit still "succeeds".
+**Do:** edit files with the Edit/Write tools, not `sed` with Windows paths; after any scripted edit grep the changed
+lines for the path (`git diff -U0 | grep pr-checks`) before committing.
+
 ## 2026-10-09 — "GraphQL limit" errors from commands that look like plain REST (#186)
 
 **Symptom:** `API rate limit already exceeded` / `unknown owner type` from `gh issue view`, `gh pr view`, `gh pr list`,

@@ -8,6 +8,19 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — The body turned 45° by the numbers, the picture did not turn (#32)
+
+**Symptom:** on the simulated headset with `--loadlevel 10` (+ `setplayercontrols on`) a snap turn changed
+`player.yaw` and `camera.yaw` in `status.json` by exactly 45°, the `vr.turn.snap` game event was logged, and the
+eye shots before and after still looked down the same corridor (picture change ~4, barely over the floor);
+a head turn of the simulator did turn the picture.
+**Cause:** the trap of #24 again — level 10 is the intro conversation, whose camera is placed by
+`speechControlledCinematic()`, not from the player's yaw, so nothing the **body** does shows in the view.
+`status.json` → `camera.yaw` is the engine's `g_playerCamera`, not what the eyes render with.
+**Do:** check turning, walking, anything the body does, on a first-person save: `@save mvp-new-game` +
+`@args --loadslot 0` in the `.xrs` (snap turn there: picture change 16.9). Judge by the shots, not by
+`camera.yaw`.
+
 ## 2026-10-09 — A check of "what the button did" counts one event too many, or finds it before the press (#74)
 
 **Symptom:** a flat check of the VR buttons on level 10 sees `ui.inventory=3` after two presses of the

@@ -63,6 +63,9 @@ mark one
 '@
 Check 'a sequence parses' ($seq -isnot [string]) $seq
 Check 'launch directives are separated from the steps' ($seq.Sim -eq 'idle' -and "$($seq.Args)" -eq '--loadlevel 10' -and ($seq.Steps | Where-Object { $_.Kind -in 'sim', 'args' }).Count -eq 0)
+Check 'no save unless one is named' ($null -eq $seq.Save)
+$saved = Get-Parse "@sim idle`n@save mvp-new-game`n@args --loadslot 0`n@frames 1"
+Check '@save names the start save and is not a step' ($saved -isnot [string] -and $saved.Save -eq 'mvp-new-game' -and @($saved.Steps).Count -eq 1) $saved
 $kinds = ($seq.Steps | ForEach-Object Kind) -join ' '
 Check 'every directive has its kind' ($kinds -eq 'wait frames until assert remember assert mark log nolog shot diff key pending command command') $kinds
 Check 'the trailing comment is dropped' ($seq.Steps[0].Ms -eq 100)

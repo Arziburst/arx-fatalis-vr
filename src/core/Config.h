@@ -220,7 +220,10 @@ public:
 		bool improvedBowAim;
 		QuickLevelTransition quickLevelTransition;
 		bool allowConsole;
-		
+		bool vrSmoothTurn; //!< VR: the right stick turns smoothly instead of in snaps (#32)
+		float vrSnapTurnAngle; //!< VR: degrees per snap turn (#32)
+		float vrSmoothTurnSpeed; //!< VR: smooth turn degrees per second at full deflection (#32)
+
 	} input;
 	
 	// section 'key'

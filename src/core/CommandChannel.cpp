@@ -630,6 +630,19 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("moveY", game.move.y);
 		json.value("turn", game.turn);
 		json.end();
+		// What the turn axis did (#32): the settings, snaps so far and the total turned (degrees, right positive)
+		const vr::TurnSettings turnSettings = vr::turnSettings();
+		const vr::TurnController & turn = vr::turnState();
+		json.object("turn");
+		json.value("mode", vr::turnModeName(turnSettings.mode));
+		json.value("snapAngle", turnSettings.snapAngle);
+		json.value("smoothSpeed", turnSettings.smoothSpeed);
+		json.value("snaps", turn.snaps());
+		json.value("lastSnap", turn.lastSnap());
+		json.value("turned", turn.turned());
+		json.value("updates", turn.updates());
+		json.value("allowed", turn.allowed());
+		json.end();
 		json.end();
 	}
 	// The last rate / cadence report of the frame loop (#20, F-07): one per 3 s while the session runs

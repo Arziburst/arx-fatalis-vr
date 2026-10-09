@@ -38,6 +38,8 @@
 #                                  @pending is removed - an expectation cannot go stale.
 #   @sim <name> / @args <...>      launch information (xrs-run.ps1): the simulated-headset script and the arx.exe
 #                                  arguments of the run the sequence wants; ignored while running
+#   @save <name>                   launch information: start from this save of the test save library (#70,
+#                                  smoke-test.ps1 -Save) - with @args --loadslot 0; ignored while running
 #
 # A sequence stops at its first failed step (-ContinueOnError: runs on and lists them all).
 
@@ -100,10 +102,11 @@ function ConvertTo-XrsStep([string]$Line, [int]$Number) {
 		$step.Kind = 'pending'; $step.Issue = [int]$Matches[1]
 		if ($Matches[2] -match '^@pending') { throw '@pending cannot be nested' }
 		$step.Inner = ConvertTo-XrsStep $Matches[2] $Number
-		if ($step.Inner.Kind -in 'mark', 'wait', 'sim', 'args') { throw "@pending needs a step that can fail, not @$($step.Inner.Kind)" }
+		if ($step.Inner.Kind -in 'mark', 'wait', 'sim', 'args', 'save') { throw "@pending needs a step that can fail, not @$($step.Inner.Kind)" }
 	}
 	elseif ($Line -match '^@sim\s+(\S+)\s*$') { $step.Kind = 'sim'; $step.Name = $Matches[1] }
 	elseif ($Line -match '^@args\s+(.+?)\s*$') { $step.Kind = 'args'; $step.Args = @($Matches[1] -split '\s+') }
+	elseif ($Line -match '^@save\s+(\S+)\s*$') { $step.Kind = 'save'; $step.Name = $Matches[1] }
 	else { throw "unknown or malformed directive" }
 	[pscustomobject]$step
 }
@@ -126,12 +129,14 @@ function Read-ArxSequence([string]$Name) {
 	if (-not $steps) { throw "sequence $path has no steps" }
 	$sim = @($steps | Where-Object Kind -eq 'sim' | Select-Object -First 1)
 	$argsStep = @($steps | Where-Object Kind -eq 'args' | Select-Object -First 1)
+	$save = @($steps | Where-Object Kind -eq 'save' | Select-Object -First 1)
 	[pscustomobject]@{
 		Path  = $path
 		Name  = [IO.Path]::GetFileNameWithoutExtension($path)
-		Steps = @($steps | Where-Object { $_.Kind -notin 'sim', 'args' })
+		Steps = @($steps | Where-Object { $_.Kind -notin 'sim', 'args', 'save' })
 		Sim   = if ($sim) { $sim[0].Name } else { $null }
 		Args  = if ($argsStep) { $argsStep[0].Args } else { @() }
+		Save  = if ($save) { $save[0].Name } else { $null }
 	}
 }
 

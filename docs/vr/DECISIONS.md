@@ -302,7 +302,7 @@ Valve Index first; Quest 3 Touch the same (A/B on the right, X/Y on the left).
 | Action | Control |
 |---|---|
 | Walk | left stick, forward = where you look (D-008); **speed by deflection** — slightly = sneak / walk, fully = run; no run button |
-| Turn | right stick left / right; **snap 30° by default**, smooth turn selectable in the settings |
+| Turn | right stick left / right; ~~snap 30° by default~~ → **snap 45° by default, smooth turn ~120°/s as the option**; the angle and the speed adjustable in the settings (#178) *(owner, 2026-10-10, on #32)*; MVP: `cfg.ini` `vr_smooth_turn`, `vr_snap_turn_angle`, `vr_smooth_turn_speed` |
 | Jump | A (right) |
 | Crouch | physically (D-018) or a toggle on the right stick down |
 | Reticle per hand | a hidden ray from each hand; the reticle turns yellow with the item's name on an interactive object (D-016) |
@@ -338,7 +338,7 @@ new mechanics; the owner's key case — sword in the right hand, open the invent
 floor into it with the left hand — works with these buttons.
 
 ### Consequences
-#30 action set and #35 bindings follow this table; #32 snap 30° default + smooth option; #33 jump, crouch
+#30 action set and #35 bindings follow this table; #32 snap 45° default + smooth option (was 30°); #33 jump, crouch
 toggle, speed by deflection; #34 menu pointer for both hands; #37 / #38 the reticle rules (the proposal in
 RESEARCH-reference-mods.md 13g with these answers); #49 the centred panel for the inventory and the book.
 

@@ -46,6 +46,7 @@
 #include "util/String.h"
 
 #include "vr/MirrorGeometry.h"
+#include "vr/VRTurn.h"
 
 
 // To avoid conflicts with potential other classes/namespaces
@@ -118,7 +119,8 @@ constexpr const bool
 	rawMouseInput = true,
 	borderTurning = true,
 	useAltRuneRecognition = true,
-	improvedBowAim = true;
+	improvedBowAim = true,
+	vrSmoothTurn = false;
 
 #ifdef ARX_DEBUG
 const bool allowConsole = true;
@@ -137,7 +139,9 @@ constexpr const float
 	volume = 10.f,
 	sfxVolume = 10.f,
 	speechVolume = 10.f,
-	ambianceVolume = 10.f;
+	ambianceVolume = 10.f,
+	vrSnapTurnAngle = vr::DefaultSnapAngle,
+	vrSmoothTurnSpeed = vr::DefaultSmoothSpeed;
 
 constexpr const ActionKey actions[NUM_ACTION_KEY] = {
 	ActionKey(Keyboard::Key_Spacebar), // JUMP
@@ -280,7 +284,10 @@ constexpr const std::string_view
 	useAltRuneRecognition = "improved_rune_recognition",
 	improvedBowAim = "improved_bow_aim",
 	quickLevelTransition = "quick_level_transition",
-	allowConsole = "allow_console";
+	allowConsole = "allow_console",
+	vrSmoothTurn = "vr_smooth_turn",
+	vrSnapTurnAngle = "vr_snap_turn_angle",
+	vrSmoothTurnSpeed = "vr_smooth_turn_speed";
 
 // Input key options
 constexpr const std::string_view actions[NUM_ACTION_KEY] = {
@@ -546,6 +553,9 @@ bool Config::save() {
 	writer.writeKey(Key::useAltRuneRecognition, input.useAltRuneRecognition);
 	writer.writeKey(Key::improvedBowAim, input.improvedBowAim);
 	writer.writeKey(Key::quickLevelTransition, int(input.quickLevelTransition));
+	writer.writeKey(Key::vrSmoothTurn, input.vrSmoothTurn);
+	writer.writeKey(Key::vrSnapTurnAngle, input.vrSnapTurnAngle);
+	writer.writeKey(Key::vrSmoothTurnSpeed, input.vrSmoothTurnSpeed);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -692,6 +702,11 @@ bool Config::init(const fs::path & file) {
 	int quickLevelTransition = reader.getKey(Section::Input, Key::quickLevelTransition, Default::quickLevelTransition);
 	input.quickLevelTransition = QuickLevelTransition(glm::clamp(quickLevelTransition, 0, 2));
 	input.allowConsole = reader.getKey(Section::Input, Key::allowConsole, Default::allowConsole);
+	input.vrSmoothTurn = reader.getKey(Section::Input, Key::vrSmoothTurn, Default::vrSmoothTurn);
+	float vrSnapTurnAngle = reader.getKey(Section::Input, Key::vrSnapTurnAngle, Default::vrSnapTurnAngle);
+	input.vrSnapTurnAngle = glm::clamp(vrSnapTurnAngle, vr::MinSnapAngle, vr::MaxSnapAngle);
+	float vrSmoothTurnSpeed = reader.getKey(Section::Input, Key::vrSmoothTurnSpeed, Default::vrSmoothTurnSpeed);
+	input.vrSmoothTurnSpeed = glm::clamp(vrSmoothTurnSpeed, vr::MinSmoothSpeed, vr::MaxSmoothSpeed);
 	
 	// Get action key settings
 	for(size_t i = 0; i < NUM_ACTION_KEY; i++) {

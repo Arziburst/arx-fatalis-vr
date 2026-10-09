@@ -81,6 +81,7 @@ if ($Attach) {
 
 $smokeArgs = @{ Sequence = $parsed.Path; VrSim = $(if ($parsed.Sim) { $parsed.Sim } else { 'idle' }); Rebuild = $Rebuild }
 if ($TestDir) { $smokeArgs.TestDir = $TestDir }
+if ($parsed.Save) { $smokeArgs.Save = $parsed.Save }
 $launchArgs = if ($ArxArgs) { $ArxArgs } elseif ($parsed.Args) { $parsed.Args } else { @() }
 & (Join-Path $PSScriptRoot 'smoke-test.ps1') @smokeArgs @launchArgs
 exit $LASTEXITCODE

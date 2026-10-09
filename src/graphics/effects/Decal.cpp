@@ -275,21 +275,27 @@ void PolyBoomAddSplat(const Sphere & sp, const Color3f & col, long flags) {
 	
 }
 
-void PolyBoomDraw() {
-	
+void PolyBoomUpdate() {
+
 	ARX_PROFILE_FUNC();
-	
+
 	ShortGameDuration delta = g_gameTime.lastFrameDuration();
-	
+
 	for(Decal & decal : g_decals) {
 		arx_assume(decal.elapsed <= ShortGameDuration::max() / 2);
 		decal.elapsed += delta * (decal.fastdecay ? 3 : 1);
 	}
-	
+
 	util::unordered_remove_if(g_decals, [](const Decal & decal) {
 		return decal.elapsed >= decal.duration;
 	});
-	
+
+}
+
+void PolyBoomDraw() {
+
+	ARX_PROFILE_FUNC();
+
 	for(const Decal & decal : g_decals) {
 		
 		arx_assume(decal.duration > 0 && decal.duration <= ShortGameDuration::max() / 2);

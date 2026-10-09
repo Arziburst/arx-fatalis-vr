@@ -10,6 +10,54 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-014: Launch control for parallel workers — no SteamVR start, one game at a time, own fresh build, ledger, budget
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** project owner (relayed during #93, enforced by #147)
+
+### Decision
+Workers launch the game often and in parallel, on the owner's desktop. The rules, enforced by the
+launch scripts (`scripts/launch-lib.ps1`, used by `run-windows.ps1`, `smoke-test.ps1`, `test-pr.ps1`
+and the desktop shortcut), not by the workers' discipline:
+
+1. **No SteamVR start without the owner.** A launch without `--no-vr` would let the OpenXR loader
+   start SteamVR, which turns on the owner's headset and base stations. The scripts make such a
+   launch flat (`--no-vr` added, said in the output) when `vrserver.exe` is not already running;
+   `smoke-test.ps1 -Vr` is then *skipped* (exit 2). Only the owner's switch `-StartSteamVR`
+   (`run-windows.ps1`, `test-pr.ps1`) starts SteamVR. Workers never start or close SteamVR by hand
+   either (no `vrstartup.exe`, no `Stop-Process vrmonitor`).
+2. **One game at a time on this PC.** Every script launch, flat or VR, holds a machine-wide game lock
+   slot (`%LOCALAPPDATA%\ArxFatalisVR\game-<n>.lock`; a VR launch also `vr.lock`) while the game runs,
+   waits in line with a timeout and names the holder (working copy, branch, pid). A raw `arx.exe`
+   outside the lock counts as a holder. `settings.json` (`maxGames`) may allow 2 flat games later.
+3. **Only the working copy's own fresh build.** A launch refuses an `arx.exe` from another copy's
+   build directory, or whose `built-from.txt` does not name the copy's `HEAD` (`dirty` is allowed),
+   and says to build first (`-Rebuild` does it).
+4. **Launch ledger.** Every launch is one line in `%LOCALAPPDATA%\ArxFatalisVR\launches.log` (time,
+   copy, branch, build, flat or VR, pid, exit code, duration); `cycle-report.ps1` shows launches per
+   working copy, so the coordinator sees a worker that launches 20 times.
+5. **Launch budget:** at most **10 game launches per task**. Repeated-run evidence loops (`-Repeat`)
+   only after asking the coordinator, sequential and flat. Launches are announced in the narration.
+6. **Self-test windows do not take the focus** from the owner's work (SDL shows them without
+   activation).
+
+Replaces the #123 rule that isolated flat runs may run side by side: isolation of *files* stays
+(own user, config and channel directories per copy), but game *runs* are one at a time.
+
+### Why
+On 2026-10-08/09 unannounced loops of launches confused the owner, and a worker of #93 started
+SteamVR for 15 VR runs, waking the headset; two games at once also fight for the GPU and the desktop.
+The owner wants the desktop quiet while workers run, and the headset untouched unless they put it on.
+
+### Consequences
+- `scripts/vr-lock.ps1` became `scripts/launch-lib.ps1` (the VR lock is part of the game lock).
+- The VR self-test exists only while the owner has SteamVR running; otherwise the PR says so and
+  the simulated VR backend (#112) is the long-term answer for VR evidence without the headset.
+- TESTING.md, WORKFLOW.md "Parallel work" and `.claude/commands/next-task.md` carry the rules.
+
+---
+
 ## D-013: The coordinator runs development on its own, in blocks, within a usage budget
 
 - **Date:** 2026-10-09

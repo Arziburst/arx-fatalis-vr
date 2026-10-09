@@ -19,6 +19,7 @@
 
 #include "core/CommandChannel.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cctype>
 #include <cmath>
@@ -239,6 +240,19 @@ struct State {
 	std::string lastCapture;
 	std::string pendingCapture;
 
+	//! drawcheck: the scene view drawn twice per frame with the same camera must give one picture
+	struct DrawCheck {
+		unsigned seq = 0;            //!< Checks started so far
+		unsigned framesLeft = 0;     //!< Frames still to check; 0 when no check runs
+		unsigned frames = 0;         //!< Frames checked by the current or last check
+		unsigned framesDiffering = 0;
+		size_t pixels = 0;           //!< Pixels per picture
+		size_t maxPixelsDiffering = 0;
+		unsigned maxDelta = 0;       //!< Largest difference of one color channel, 0-255
+		std::string capture;         //!< First differing pair, saved as <capture>_a.bmp / _b.bmp
+		Image first;                 //!< The first view of the current frame
+	} drawCheck;
+
 };
 
 State g;
@@ -329,6 +343,20 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("lastCmdError", g.lastCmdError);
 	json.value("captureSeq", g.captureSeq);
 	json.value("lastCapture", g.lastCapture);
+
+	if(g.drawCheck.seq != 0) {
+		const State::DrawCheck & check = g.drawCheck;
+		json.object("drawCheck");
+		json.value("seq", check.seq);
+		json.value("running", check.framesLeft != 0);
+		json.value("frames", check.frames);
+		json.value("framesDiffering", check.framesDiffering);
+		json.value("pixels", check.pixels);
+		json.value("maxPixelsDiffering", check.maxPixelsDiffering);
+		json.value("maxDelta", check.maxDelta);
+		json.value("capture", check.capture);
+		json.end();
+	}
 
 	return json.str();
 }
@@ -439,6 +467,33 @@ std::string execute(std::string_view line) {
 
 	if(word == "recenter") {
 		return refuse("recenter: not implemented yet (#28)");
+	}
+
+	if(word == "drawcheck") {
+		long frames = 1;
+		if(!rest.empty() && (!parseIndex(rest, frames) || frames < 1 || frames > 100000)) {
+			return refuse("drawcheck: expected a frame count 1-100000, got \"" + std::string(rest) + "\"");
+		}
+		if(g.drawCheck.framesLeft != 0) {
+			return refuse("drawcheck: check " + std::to_string(g.drawCheck.seq) + " still runs ("
+			              + std::to_string(g.drawCheck.framesLeft) + " frames left)");
+		}
+		if(currentState() != GameState::Gameplay) {
+			return refuse(std::string("drawcheck: needs a level on screen (state ")
+			              + gameStateName(currentState()) + ")");
+		}
+		State::DrawCheck & check = g.drawCheck;
+		check.seq++;
+		check.framesLeft = unsigned(frames);
+		check.frames = 0;
+		check.framesDiffering = 0;
+		check.pixels = 0;
+		check.maxPixelsDiffering = 0;
+		check.maxDelta = 0;
+		check.capture.clear();
+		LogInfo << "[render] drawcheck " << check.seq << ": drawing the scene twice per frame for "
+		        << frames << " frames";
+		return std::string();
 	}
 
 	if(word == "loadslot") {
@@ -623,6 +678,81 @@ void afterRender() {
 	LogInfo << "[channel] shot " << file << " (" << image.getWidth() << 'x' << image.getHeight() << ")";
 
 	writeStatus(platform::getTime());
+}
+
+size_t sceneViewCount() {
+	return (g.enabled && g.drawCheck.framesLeft != 0) ? 2 : 1;
+}
+
+void afterSceneView(size_t view) {
+
+	State::DrawCheck & check = g.drawCheck;
+	if(!g.enabled || check.framesLeft == 0 || !GRenderer) {
+		return;
+	}
+
+	if(view == 0) {
+		GRenderer->getSnapshot(check.first);
+		return;
+	}
+
+	Image second;
+	GRenderer->getSnapshot(second);
+
+	const Image & first = check.first;
+	arx_assert(first.getFormat() == second.getFormat() && first.getSize() == second.getSize());
+	size_t channels = first.getNumChannels();
+	size_t pixels = first.getWidth() * first.getHeight();
+	size_t differing = 0;
+	unsigned delta = 0;
+	const unsigned char * a = first.getData();
+	const unsigned char * b = second.getData();
+	for(size_t i = 0; i < pixels; i++, a += channels, b += channels) {
+		bool differs = false;
+		for(size_t c = 0; c < channels; c++) {
+			unsigned d = unsigned(std::abs(int(a[c]) - int(b[c])));
+			if(d != 0) {
+				differs = true;
+				delta = std::max(delta, d);
+			}
+		}
+		if(differs) {
+			differing++;
+		}
+	}
+
+	check.frames++;
+	check.framesLeft--;
+	check.pixels = pixels;
+	check.maxDelta = std::max(check.maxDelta, delta);
+	if(differing != 0) {
+		check.framesDiffering++;
+		if(check.capture.empty()) {
+			// Only the first differing frame is logged: a broken view differs every frame
+			LogInfo << "[render] drawcheck " << check.seq << " frame " << check.frames << ": " << differing
+			        << " of " << pixels << " pixels differ between the two views (max delta " << delta << ")";
+		}
+		if(differing > check.maxPixelsDiffering) {
+			// Keep the pair that differs most
+			fs::path dir = g.dir / "capture";
+			fs::create_directories(dir);
+			fs::path base = dir / ("drawcheck" + std::to_string(check.seq));
+			check.capture = base.string();
+			first.save(base.string() + "_a.bmp");
+			second.save(base.string() + "_b.bmp");
+		}
+	}
+	check.maxPixelsDiffering = std::max(check.maxPixelsDiffering, differing);
+
+	if(check.framesLeft == 0) {
+		LogInfo << "[render] drawcheck " << check.seq << " done: " << check.framesDiffering << " of "
+		        << check.frames << " frames differ (max " << check.maxPixelsDiffering << " of " << pixels
+		        << " pixels, max delta " << check.maxDelta << ")"
+		        << (check.capture.empty() ? "" : ", most differing pair: " + check.capture + "_a.bmp / _b.bmp");
+		check.first.reset();
+		writeStatus(platform::getTime());
+	}
+
 }
 
 void notifyLoading(AreaId area) {

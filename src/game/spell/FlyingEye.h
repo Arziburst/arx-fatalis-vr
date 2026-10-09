@@ -45,10 +45,18 @@ public:
 	
 	void reset();
 	void launch();
+	//! Fly the eye - called by the spell while it is active
 	void update();
+	/*!
+	 * Advance the eyeball's disappearance and the Magic Sight fade - once per frame, whether or
+	 * not the spell still runs: both are visible after FlyingEyeSpell::Update() stopped
+	 */
+	void updateFading();
+	//! Draw the Magic Sight overlay - once per view
 	void drawMagicSightInterface();
 	void end();
-	
+
+	//! Draw the eyeball while it appears or disappears - once per view
 	void render();
 	
 private:

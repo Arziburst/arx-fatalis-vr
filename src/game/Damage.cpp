@@ -211,8 +211,9 @@ public:
 	
 	void reset();
 	void hit(float strength);
+	void update();
 	void render();
-	
+
 };
 
 static ScreenFxBloodSplash g_screenFxBloodSplash;
@@ -231,12 +232,36 @@ void ScreenFxBloodSplash::hit(float strength) {
 	}
 }
 
-void ScreenFxBloodSplash::render() {
-	
-	Color color;
+void ScreenFxBloodSplash::update() {
+
 	if(Blood_Pos > 2.f) { // end of blood flash
 		Blood_Pos = 0.f;
 		duration = 0;
+	}
+
+	if(Blood_Pos > 0.f) {
+		if(Blood_Pos > 1.f) {
+			if(Last_Blood_Pos <= 1.f) {
+				Blood_Pos = 1.0001f;
+				duration = 0;
+			}
+			if(duration > Blood_Duration) {
+				Blood_Pos += g_gameTime.lastFrameDuration() / 300ms;
+			}
+			duration += g_gameTime.lastFrameDuration();
+		} else {
+			Blood_Pos += g_gameTime.lastFrameDuration() / 40ms;
+		}
+	}
+
+	Last_Blood_Pos = Blood_Pos;
+}
+
+void ScreenFxBloodSplash::render() {
+
+	Color color;
+	if(Blood_Pos > 2.f) {
+		// End of the blood flash, reset by the next update()
 	} else if(Blood_Pos > 1.f) {
 		
 		if(player.poison > 1.f)
@@ -256,27 +281,15 @@ void ScreenFxBloodSplash::render() {
 		UseRenderState state(render2D().blend(BlendZero, BlendSrcColor));
 		EERIEDrawBitmap(Rectf(g_size), 0.00009f, nullptr, color);
 	}
-	
-	if(Blood_Pos > 0.f) {
-		if(Blood_Pos > 1.f) {
-			if(Last_Blood_Pos <= 1.f) {
-				Blood_Pos = 1.0001f;
-				duration = 0;
-			}
-			if(duration > Blood_Duration) {
-				Blood_Pos += g_gameTime.lastFrameDuration() / 300ms;
-			}
-			duration += g_gameTime.lastFrameDuration();
-		} else {
-			Blood_Pos += g_gameTime.lastFrameDuration() / 40ms;
-		}
-	}
-	
-	Last_Blood_Pos = Blood_Pos;
+
 }
 
 void ARX_DAMAGE_Reset_Blood_Info() {
 	g_screenFxBloodSplash.reset();
+}
+
+void ARX_DAMAGE_Update_Hit_Blood() {
+	g_screenFxBloodSplash.update();
 }
 
 void ARX_DAMAGE_Show_Hit_Blood() {

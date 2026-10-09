@@ -45,6 +45,7 @@ public:
 	void Launch() override;
 	void End() override;
 	void Update() override;
+	void Render() override;
 	
 	Vec3f getPosition() const override;
 	
@@ -87,6 +88,7 @@ public:
 	void Launch() override;
 	void End() override;
 	void Update() override;
+	void Render() override;
 	
 	Vec3f getPosition() const override;
 	

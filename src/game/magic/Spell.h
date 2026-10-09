@@ -144,7 +144,10 @@ public:
 		return true;
 	}
 	virtual void Launch() = 0;
+	//! Advance the spell by one frame - game state only, runs once per frame
 	virtual void Update() { }
+	//! Draw the spell's effects for the current camera - no state changes, runs once per view
+	virtual void Render() { }
 	virtual void End() { }
 	
 	virtual Vec3f getPosition() const;

@@ -132,6 +132,8 @@ void TryToCastSpell(Entity * io, SpellType spellType, long level, EntityHandle t
 bool ARX_SPELLS_Launch(SpellType typ, Entity & source, SpellcastFlags flags, long level,
                        Entity * target, GameDuration duration);
 void ARX_SPELLS_Update();
+//! Draw the effects of all active spells - once per view, after ARX_SPELLS_Update()
+void ARX_SPELLS_Render();
 
 void ARX_SPELLS_Fizzle(Spell * spell);
 

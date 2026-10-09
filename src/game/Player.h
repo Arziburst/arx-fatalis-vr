@@ -426,7 +426,10 @@ void ARX_PLAYER_ClickedOnTorch(Entity * io);
 void ARX_PLAYER_RectifyPosition();
 void ARX_PLAYER_Frame_Update();
 void ARX_PLAYER_Manage_Movement();
+//! Death sequence: release paralysis, launch the menu when the fade is over - once per frame
 void ARX_PLAYER_Manage_Death();
+//! Draw the fade to white of the death sequence - once per view
+void ARX_PLAYER_Render_Death();
 void ARX_PLAYER_Quest_Add(std::string_view quest);
 void ARX_PLAYER_Quest_Init();
 Vec3f ARX_PLAYER_FrontPos();

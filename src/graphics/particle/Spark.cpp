@@ -101,18 +101,34 @@ void ParticleSparkUpdate() {
 	}
 	
 	ShortGameDuration delta = g_gameTime.lastFrameDuration();
-	
-	RenderMaterial sparkMaterial;
-	sparkMaterial.setBlendType(RenderMaterial::Additive);
-	
+
 	for(SparkParticle & spark : g_sparkParticles) {
-		
 		arx_assume(spark.duration > 0 && spark.duration <= ShortGameDuration::max() / 2);
 		arx_assume(spark.elapsed >= 0 && spark.elapsed <= spark.duration);
-		
-		float t = spark.elapsed / 100ms;
 		spark.elapsed += delta;
-		
+	}
+
+	util::unordered_remove_if(g_sparkParticles, [](const SparkParticle & spark) {
+		return spark.elapsed > spark.duration;
+	});
+
+}
+
+void ParticleSparkRender() {
+
+	ARX_PROFILE_FUNC();
+
+	if(g_sparkParticles.empty()) {
+		return;
+	}
+
+	RenderMaterial sparkMaterial;
+	sparkMaterial.setBlendType(RenderMaterial::Additive);
+
+	for(const SparkParticle & spark : g_sparkParticles) {
+
+		float t = spark.elapsed / 100ms;
+
 		Vec3f pos = spark.pos + spark.move * t;
 		
 		TexturedVertex tv[3];
@@ -133,11 +149,7 @@ void ParticleSparkUpdate() {
 		worldToClipSpace(temp2, tv[2]);
 		
 		g_renderBatcher.add(sparkMaterial, tv);
-		
+
 	}
-	
-	util::unordered_remove_if(g_sparkParticles, [](const SparkParticle & spark) {
-		return spark.elapsed > spark.duration;
-	});
-	
+
 }

@@ -11,17 +11,27 @@
 	  CLEANUP         remote branches whose PR is merged or closed, or that have no PR
 	  WORKTREES       the worker worktrees: branch, uncommitted changes, PR state, removable or not
 	  WORKING COPY    branch and uncommitted changes in the owner's working copy
+	  LAUNCHES        game launches per working copy in the last -LaunchHours hours, from the launch
+	                  ledger (%LOCALAPPDATA%\ArxFatalisVR\launches.log, D-014) - a worker past the budget
+	                  of 10 launches per task is marked; the locks held right now
 	  NEXT            the next task from the MVP queue (same logic as next-task.ps1)
 
 .PARAMETER WorkingCopy
 	The owner's working copy to inspect. Default: C:\Users\arzib\OneDrive\Desktop\arx-fatalis-vr.
+
+.PARAMETER LaunchHours
+	How many hours of the launch ledger to summarize (default 12).
 #>
 [CmdletBinding()]
-param([string]$WorkingCopy = 'C:\Users\arzib\OneDrive\Desktop\arx-fatalis-vr')
+param(
+	[string]$WorkingCopy = 'C:\Users\arzib\OneDrive\Desktop\arx-fatalis-vr',
+	[double]$LaunchHours = 12
+)
 
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot 'board.ps1')
+. (Join-Path $PSScriptRoot '..\launch-lib.ps1')
 
 function Section([string]$Name) { Write-Host ''; Write-Host "== $Name" -ForegroundColor Cyan }
 
@@ -132,6 +142,21 @@ if (Test-Path (Join-Path $WorkingCopy '.git')) {
 	$merged = git -C $WorkingCopy branch --merged origin/main --format '%(refname:short)' | Where-Object { $_ -notin 'main', 'master' }
 	if ($merged) { "local branches already merged into main: $($merged -join ', ')" }
 } else { "$WorkingCopy not found" }
+
+# --- Launches (the ledger of D-014) ----------------------------------------------------------------
+Section 'LAUNCHES'
+$records = @(Get-ArxLaunchRecords -SinceHours $LaunchHours)
+if (-not $records) { "no game launches in the last $LaunchHours h ($(Get-ArxLaunchLogPath))" }
+foreach ($group in ($records | Group-Object copy | Sort-Object Count -Descending)) {
+	$vr = @($group.Group | Where-Object mode -eq 'vr').Count
+	$failed = @($group.Group | Where-Object { $_.exit -ne '0' }).Count
+	$last = ($group.Group | Sort-Object Time | Select-Object -Last 1)
+	$branches = ($group.Group | Select-Object -ExpandProperty branch -Unique) -join ', '
+	$budget = if ($group.Count -gt 10) { ' -> OVER THE BUDGET of 10 launches per task (WORKFLOW.md): ask the worker why' } else { '' }
+	"$($group.Name) : $($group.Count) launch(es) ($vr VR, $failed with exit <> 0), last $($last.Time.ToString('HH:mm')) by $($last.script), branch $branches$budget"
+}
+$held = @(Get-ArxLockHolders)
+if ($held) { foreach ($line in $held) { "lock held now: $line" } } else { 'no game runs under the lock right now' }
 
 # --- Next ------------------------------------------------------------------------------------------
 Section 'NEXT'

@@ -22,6 +22,48 @@ reflog is a dependency again). The banner's `[W] built-from.txt names commit …
 carries version information from …` says when a build id lies: rebuild, and if it persists,
 reconfigure (`build-windows.ps1 -Clean`).
 
+## 2026-10-09 — `status.json` says `window.focused: true` for a window that never got the focus
+
+**Symptom:** a self-test started without activation (`SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN=1`, #147)
+reports `window.focused: true` in `status.json`, although the foreground window (user32
+`GetForegroundWindow`) is still the terminal and the game never took the keyboard.
+**Cause:** `SDL2Window::initialize()` called `onFocus(true)` unconditionally after `SDL_ShowWindow`
+— an assumption from the days when a shown window was always the active one. The flag was never
+read from SDL; `SDL_WINDOWEVENT_FOCUS_GAINED` fixes it only when the focus really changes later.
+**Do:** fixed in #147 (`onFocus(SDL_GetWindowFlags(m_window) & SDL_WINDOW_INPUT_FOCUS)`), so
+`window.focused` is now evidence. In general: when `status.json` and an OS-level probe disagree,
+suspect the engine's bookkeeping before the probe, and check where the value is *set*, not where it
+is reported.
+
+## 2026-10-09 — SteamVR starts, and the headset wakes up, from "just a test launch"
+
+**Symptom:** the owner's Index and base stations turn on, SteamVR's window appears, although nobody
+asked for VR — only a worker's test ran.
+**Cause:** the OpenXR loader starts the active runtime (SteamVR) inside `xrCreateInstance`. The
+engine's guard (#17) refuses when the runtime manifest names SteamVR and `vrserver.exe` is not
+running, but anything that bypasses the guard starts SteamVR anyway: `xr_hello --start-runtime`,
+another active runtime, a raw `arx.exe` of a build without the guard, and, worst, a worker starting
+`vrstartup.exe` by hand to get VR evidence (it happened in #93 — 15 VR runs, someone closed SteamVR
+two minutes later).
+**Do:** launch only through the scripts: `run-windows.ps1` and `smoke-test.ps1` add `--no-vr` while
+`vrserver.exe` is not running and say so; `smoke-test.ps1 -Vr` is skipped (exit 2). Never run
+`vrstartup.exe`, never stop `vrmonitor` / `vrserver`; VR evidence without the owner's SteamVR is the
+simulator's job (#112). Only the owner passes `-StartSteamVR` (D-014).
+## 2026-10-09 — A `shot` taken right after `GAMEPLAY` is all black
+
+**Symptom:** `smoke-test.ps1 -Commands 'shot level10'` with `--loadlevel 10` saves a 640×480 capture
+in which every pixel is black (frame 15, 0.15 s after `state GAMEPLAY`), while `status.json` reports
+`GAMEPLAY`, 0 errors and a normal frame rate — as if nothing were rendered.
+**Cause:** the level starts behind a fade from black. A capture from frame 86 on (0.9 s) shows the
+scene (58 % of sampled pixels non-black in the draw-check captures and in a `shot` at frame 517,
+#71). The only code path that starts a fade is the `worldfade` script command (`fadeRequestStart`),
+so this is the level script's own fade-in, not the renderer; the first `-Commands` line runs the
+moment the state flips, i.e. inside that fade.
+**Do:** take `shot` captures at least a second after `GAMEPLAY` — put a few `status` lines in front
+of the `shot` (each ack takes ≈ 0.25 s) or wait first; judge "is anything rendered" by a non-black
+pixel count over several frames, never by one early capture. An early black shot is no evidence
+against the renderer.
+
 ## 2026-10-09 — The obvious owner fix for #93 changed nothing: the sword was linked to a mesh the NPC no longer used
 
 **Symptom:** the exit crash #93 reads a freed owner through `m_owner`; releasing the NPC weapon

@@ -63,6 +63,8 @@ mark one
 '@
 Check 'a sequence parses' ($seq -isnot [string]) $seq
 Check 'launch directives are separated from the steps' ($seq.Sim -eq 'idle' -and "$($seq.Args)" -eq '--loadlevel 10' -and ($seq.Steps | Where-Object { $_.Kind -in 'sim', 'args' }).Count -eq 0)
+$oneWord = Get-Parse "@sim idle`n@args --skiplogo`n@wait 1"
+Check 'a one-word @args stays one argument (#178: it splatted as "- - s k i p l o g o")' ($oneWord -isnot [string] -and $oneWord.Args -is [array] -and $oneWord.Args.Count -eq 1 -and $oneWord.Args[0] -eq '--skiplogo') "$($oneWord.Args)"
 $kinds = ($seq.Steps | ForEach-Object Kind) -join ' '
 Check 'every directive has its kind' ($kinds -eq 'wait frames until assert remember assert mark log nolog shot diff key pending command command') $kinds
 Check 'the trailing comment is dropped' ($seq.Steps[0].Ms -eq 100)

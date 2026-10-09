@@ -92,7 +92,14 @@ Run `.\scripts\dev\next-task.ps1`.
 
 ## 6. CI and merge
 - Wait for CI: `gh pr checks <pr> --watch`. If it fails, fix and push until it is green.
-- **No `needs-vr-test` label, CI green** → merge:
+- **Review before merge (D-021):** with CI green, message the coordinator (SendMessage to
+  "ARXVR Coordinator") `PR #<pr> ready for review` and wait. An independent reviewer checks your
+  Definition of done and the decisions and posts **PASS** or **GAPS** on the PR; on GAPS fix them, push,
+  and say "ready for review" again. Merge only after the coordinator passes on the PASS. If you run
+  without a coordinator (the owner started you by hand), skip this step.
+- Use the REST API for GitHub where you can (`gh api repos/Arziburst/arx-fatalis-vr/...`): the GraphQL
+  quota is shared by every session.
+- **No `needs-vr-test` label, CI green, review PASS** → merge:
   `gh pr merge <pr> --merge --delete-branch --subject "<PR title> (#<pr>)"`;
   `.\scripts\dev\set-status.ps1 -Issue <n> -Status Done`; `git switch main; git pull --ff-only`.
 - **`needs-vr-test`, CI green** → `.\scripts\dev\set-status.ps1 -Issue <n> -Status Testing`. Leave the

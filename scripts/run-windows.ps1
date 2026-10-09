@@ -172,4 +172,16 @@ try {
 	Add-ArxLaunchRecord -Script 'run-windows.ps1' -Copy $SourceDir -Branch $copy.Branch -Build $stamp -Vr $vr.Vr `
 		-GamePid $(if ($process) { $process.Id } else { 0 }) -ExitCode $code -DurationSec ((Get-Date) - $started).TotalSeconds -ArxArgs $ArxArgs -Time $started
 }
+
+# The run digest and automatic bug filing (#131): after the game closed, never in the owner's way - the digest is
+# local and quick, the GitHub part goes to a detached background process, and a failure here only warns.
+if ($process) {
+	try {
+		$digestUserDir = if ($Isolated) { $UserDir } else { Get-SharedUserDir }
+		& (Join-Path $PSScriptRoot 'dev\log-digest.ps1') -UserDir $digestUserDir -Since $started -Source 'run-windows.ps1' `
+			-ExitCode $code -DurationSec ((Get-Date) - $started).TotalSeconds -Copy $SourceDir -Detach
+	} catch {
+		Write-Warning "run digest failed (the game's exit code is unaffected): $($_.Exception.Message)"
+	}
+}
 exit $code

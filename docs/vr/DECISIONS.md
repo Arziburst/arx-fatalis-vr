@@ -10,7 +10,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-021: One frame clock in VR — `xrWaitFrame` paces the game; pose-matched submission; an orderly exit
+## D-022: One frame clock in VR — `xrWaitFrame` paces the game; pose-matched submission; an orderly exit
 
 - **Date:** 2026-10-09
 - **Status:** Accepted
@@ -55,6 +55,33 @@ without a headset session (F-07).
   `submitFrame`, take the poses from `frameViews()`. The loader frame pump of F-117 (keep the
   compositor fed through a level load) comes after the MVP.
 - `vr_frame_divisor` becomes a row of the VR Video settings after the MVP (#181).
+---
+
+## D-021: Quality and automation package — review before merge, CI gates, a safety hook, automatic order, research radar
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** project owner (all ten proposals of the coordinator)
+
+### Decision
+1. **Every PR is reviewed before merge** by an independent reviewer session (`/review-pr`, Sonnet): each
+   Definition-of-done item and coordinator addition needs evidence; decisions are checked. Workers wait
+   for PASS (three "done" claims with a missing item on 2026-10-09: #141, #151, #71).
+2. **CI is the automatic gate**: the flat smoke test, host unit tests, `drawcheck` and the spell draw
+   check on every PR (#127).
+3. **A safety hook** blocks dangerous commands of every session even with prompts off (#185).
+4. **Automatic task order**: `plan-next.ps1` computes the tasks ready to start (#187).
+5. **The dev scripts survive the GitHub GraphQL limit** (REST first, a board cache) (#186).
+6. **Session control and spend**: a per-session ledger from the status line; stuck or overfull workers are
+   caught; spend per task calibrates model choice.
+7. **A status page**: the pinned issue "ARXVR status", updated by the coordinator every cycle.
+8. **Research radar**: one reference project per block, OpenMW VR first (#188).
+9. **A VR game checklist** to audit the plan against (#189).
+10. **The owner's impressions** after each headset test are collected and triaged.
+
+### Why
+The owner wants development to run on its own with the quality checked automatically and unknown
+features found through research, not by chance. Details: [COORDINATOR.md](COORDINATOR.md) §3, §4, §4b.
 
 ---
 

@@ -50,7 +50,11 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "graphics/Renderer.h"
 
+#include "math/Types.h"
+
 #include "window/Window.h"
+
+struct Camera;
 
 class ArxGame final : public Application, public Window::Listener, public Renderer::Listener {
 	
@@ -97,6 +101,7 @@ private:
 	void updateFirstPersonCamera();
 	void speechControlledCinematic();
 	void handlePlayerDeath();
+	void restoreEngineCamera();
 	void updateActiveCamera();
 	
 	//! Advance the level by one frame - everything that changes game state, run once per frame
@@ -131,6 +136,14 @@ private:
 	PlatformInstant m_frameStart;
 	PlatformDuration m_frameDelta;
 	bool m_vrPacing; //!< the window's vsync and the fps limiter are off: the headset paces the frames
+
+	//! The camera the head pose was put on this frame and where the engine had left it (#24)
+	struct HeadView {
+		Camera * camera = nullptr;
+		Vec3f enginePos = Vec3f(0.f);
+		Anglef engineAngle;
+	};
+	HeadView m_headView;
 };
 
 enum InfoPanels {

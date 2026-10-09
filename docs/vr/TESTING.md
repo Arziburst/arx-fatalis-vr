@@ -205,6 +205,8 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | 2026-10-09, #71: the same after the split | `PASS`, **0 of 120 frames differ** (max 0 pixels, delta 0), 0 errors, 0 warnings |
 | 2026-10-09, #71: 26 spells cast on the player (`spellcast -fs 5 <spell> self`, the list in [The draw check](#the-draw-check-drawcheck)), then `drawcheck 240` | `PASS`, **0 of 240 frames differ**, every `spellcast` acknowledged with `errors=0`, 0 errors, 0 warnings |
 | 2026-10-09, #71: **the check can fail** — a build with `ARX_PARTICLES_Update()` deliberately moved back into `renderSceneView()`, `drawcheck 120` on level 10 | `FAIL`, **35 of 120 frames differ** (max 10 of 307200 pixels, max delta 97), the most differing pair saved as `capture\drawcheck1_a.bmp` / `_b.bmp`; the other six checks stay `[ok]` — only the draw check catches this class of bug |
+| 2026-10-09, #71: the committed code — `shot level10`, the 26 spells plus `negate_magic`, `drawcheck 120` | `PASS`, **0 of 120 frames differ**, 0 errors, 0 warnings. The `shot` at frame 15 was **all black**: the level's fade-in, not the renderer (TRAPS.md) |
+| 2026-10-09, #71: 20 × `status` (≈ 5 s), `shot level10-after-fade`, `drawcheck 120` | `PASS`, **0 of 120 frames differ**; the shot at frame 517 shows the scene (58 % of sampled pixels non-black, the same as the draw-check captures from frame 86 on) |
 
 Conclusions:
 
@@ -223,7 +225,8 @@ Conclusions:
 1. Start with the state you need: `--loadlevel N`, `--loadslot N` (saves from #70) or a plain launch.
 2. Put the game where the feature is: `teleport -p <marker>`, `loadlevel`, `spawn`.
 3. `mark <name>` before the action, do it, then assert on numbers (`status.json`, the ack) or on
-   `shot` captures (`capture\*.bmp`, compared by #113's `img-diff`).
+   `shot` captures (`capture\*.bmp`, compared by #113's `img-diff`). Not in the first second after
+   `GAMEPLAY`: the level fades in from black and an early `shot` is all black (TRAPS.md).
 4. Prove the check can fail once (break the thing on purpose) before trusting it.
 5. Quote the verdict lines in the PR's *How verified*.
 

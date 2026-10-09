@@ -8,6 +8,21 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — A `shot` taken right after `GAMEPLAY` is all black
+
+**Symptom:** `smoke-test.ps1 -Commands 'shot level10'` with `--loadlevel 10` saves a 640×480 capture
+in which every pixel is black (frame 15, 0.15 s after `state GAMEPLAY`), while `status.json` reports
+`GAMEPLAY`, 0 errors and a normal frame rate — as if nothing were rendered.
+**Cause:** the level starts behind a fade from black. A capture from frame 86 on (0.9 s) shows the
+scene (58 % of sampled pixels non-black in the draw-check captures and in a `shot` at frame 517,
+#71). The only code path that starts a fade is the `worldfade` script command (`fadeRequestStart`),
+so this is the level script's own fade-in, not the renderer; the first `-Commands` line runs the
+moment the state flips, i.e. inside that fade.
+**Do:** take `shot` captures at least a second after `GAMEPLAY` — put a few `status` lines in front
+of the `shot` (each ack takes ≈ 0.25 s) or wait first; judge "is anything rendered" by a non-black
+pixel count over several frames, never by one early capture. An early black shot is no evidence
+against the renderer.
+
 ## 2026-10-09 — A crash report folder is dated "yesterday" and the VR self-test crashes where the flat one is clean
 
 **Symptom:** a run at 01:52 local time leaves `crashes\2026-10-08-22-52-43-00`; looking for a report

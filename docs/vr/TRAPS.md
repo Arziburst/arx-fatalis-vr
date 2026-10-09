@@ -21,6 +21,15 @@ a head turn of the simulator did turn the picture.
 `@args --loadslot 0` in the `.xrs` (snap turn there: picture change 16.9). Judge by the shots, not by
 `camera.yaw`.
 
+## 2026-10-10 — A channel-driven check times out with `ack.txt` holding only `quit`, though the game ran (#258)
+
+**Symptom:** `body-check.ps1` fails with "timed out after 180 s waiting for gameplay"; no command of the check
+reached the game. **Cause:** `smoke-test.ps1` first waits up to 300 s for the game lock (D-014); the check's
+own timeout counted that wait as game start-up. **Do:** a check that drives the game from outside calls
+`Clear-ArxLaunchMarker` before it starts the smoke test job and `Wait-ArxGameLaunched $job $dir` before any
+timeout of its own — `smoke-test.ps1` writes `launched.txt` into the test folder right after the game started.
+`false` means the smoke test ended without a launch (lock skip = exit 2). Covered by `test-wait-launch.ps1`.
+
 ## 2026-10-09 — In the headset the camera floats far above the body (#24, #27)
 
 **Symptom:** looking down in the headset, the character's body is far below the eyes, although the camera

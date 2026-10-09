@@ -33,6 +33,7 @@
 #include "io/log/Logger.h"
 #include "platform/Time.h"
 #include "util/Number.h"
+#include "vr/HeadTracking.h"
 #include "vr/VRSystem.h"
 
 namespace vr {
@@ -252,10 +253,18 @@ void updateInput() {
 	// Events -> the engine's actions, mouse buttons and keys (#74); nothing while the VR settings
 	// capture a binding, so pressing the menu's or the inventory's control only binds it (#178)
 	// - also in the update that ends it, whose events were resolved with the old layout
-	const GameInputState & state = g_input.game.update(g_input.resolver, g_input.input);
+	const GameInputState & resolved = g_input.game.update(g_input.resolver, g_input.input);
 	const bool capturing = g_input.capture.active();
 	updateCapture(toMsi(platform::getTime()));
-	applyToEngine(capturing || g_input.capture.active() ? GameInputState() : state);
+	const GameInputState game = capturing || g_input.capture.active() ? GameInputState() : resolved;
+	applyToEngine(game);
+
+	// Recenter (#28, D-019: a long press of the left stick click): the head as it is at the next sample
+	// becomes the character's eye and facing - horizontal and height, standing or seated (D-018). Any
+	// time, menus included: the reference is taken as soon as there is a head to take it from
+	if(game.recenter) {
+		resetHeadReference("button");
+	}
 }
 
 const GameInputState & gameInput() {

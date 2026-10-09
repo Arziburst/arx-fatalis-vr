@@ -27,10 +27,9 @@ vr-input capture jump
 @frames 2
 @assert vr.input.capture.state eq waiting
 @assert vr.input.capture.event eq jump
-vr-input down right.b
-@frames 5
-@assert vr.input.capture.state eq holding
-vr-input up right.b
+# A tap: a down / up pair through the channel can take longer than the 0.5 s of a long press (a round trip is
+# about 0.6 s), which the capture rightly records as one
+vr-input tap right.b
 @until vr.input.capture.state eq done 5s
 @assert vr.input.layout.jump eq right.b
 @assert vr.input.remapped eq true
@@ -47,12 +46,11 @@ vr-input capture magic_mode
 @frames 2
 vr-input down left.grip
 @frames 5
-vr-input down left.a
-@frames 5
-@assert vr.input.capture.binding eq left.grip+left.a
-vr-input up left.a
-vr-input up left.grip
+@assert vr.input.capture.binding eq left.grip
+# The second control tapped (held through the channel it could pass 0.5 s: a long chord)
+vr-input tap left.a
 @until vr.input.capture.state eq done 5s
+vr-input up left.grip
 @assert vr.input.layout.magic_mode eq left.grip+left.a
 @assert vr.input.conflicts eq 1
 
@@ -60,6 +58,8 @@ vr-input up left.grip
 vr-input capture crouch_toggle
 @frames 2
 vr-input down right.stick_click
+@frames 2
+@assert vr.input.capture.state eq holding
 @wait 800
 vr-input up right.stick_click
 @until vr.input.capture.state eq done 5s

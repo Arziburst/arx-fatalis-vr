@@ -50,7 +50,7 @@ and the next task of the MVP queue.
     (D-015, COORDINATOR.md §6: Opus by default, Sonnet for build / docs, `-Model fable` only for really
     hard tasks; `-Effort` to match the task). Subscribe to each worker's idle notice (SendMessage `notify_when_idle`);
     `claude agents --json` shows which workers still run; idle with its PR merged = finished.
-  - **usage** (D-013): read the limits from `~/.claude/statusline/last.json` (`rate_limits`); at **70%** of
+  - **usage** (D-022): read the limits from `~/.claude/statusline/last.json` (`rate_limits`); at **90%** of
     the common weekly limit start no new workers and let the running ones finish; the 5-hour limit and
     Fable's limit may be used up. Fable's limit is not in the status line — ask the owner for a Usage
     screenshot when unsure.

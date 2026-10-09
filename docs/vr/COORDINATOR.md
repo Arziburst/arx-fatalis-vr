@@ -47,11 +47,15 @@ Between the owner's messages the coordinator keeps going on its own, woken by ev
 workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
 
 **Act**
-- **Review before merge (D-021):** a worker whose PR is ready (CI green) messages "PR #<n> ready for
-  review" and waits. Start an independent reviewer: `scripts\dev\start-reviewer.ps1 <pr>` (Sonnet, runs
-  `/review-pr`, posts **PASS** or **GAPS** on the PR and messages back). PASS → tell the worker to merge (or,
-  `needs-vr-test`, it goes to the owner's headset batch); GAPS → forward the list to the worker, review
-  again after the fix. Docs-only coordinator PRs skip the reviewer.
+- **Review before merge (D-021, balanced by D-022):** a worker whose PR is ready (CI green) messages
+  "PR #<n> ready for review" and waits. The coordinator decides:
+  - **independent reviewer** (`scripts\dev\start-reviewer.ps1 <pr>`, Sonnet, effort **medium**, checks the
+    Definition of done and the decisions only — not a general code review) for **risky PRs**: engine / VR
+    code, `needs-vr-test`, tasks with several Definition-of-done items or a history of gaps;
+  - **no reviewer** — read the PR body against the Definition of done yourself and say "merge" — for
+    docs, research (the owner decides the catalog anyway) and small script changes.
+  PASS → the worker merges (or, `needs-vr-test`, it goes to the owner's headset batch); GAPS → forward the
+  list, re-check after the fix.
 - **Merge** green, reviewed PRs without `needs-vr-test` (the worker merges, D-005); docs-only PRs after
   a short look. After a merge, bring other open PRs up to date (`gh pr update-branch`).
 - **Clean up** a worker whose PR is merged: `claude stop <id>`, `claude rm <id>`,
@@ -79,7 +83,7 @@ workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
   current block, running workers (task, model, state), PRs waiting for review or for the headset, the
   owner's open questions, weekly usage. The owner reads it in the browser; a new coordinator starts from it.
 - **Wait** — idle notices, background CI waits (`gh pr checks --watch` or a small script with
-  `run_in_background`) and the usage guard (a background script that exits at 70% weekly, and every
+  `run_in_background`) and the usage guard (a background script that exits at 90% weekly or 95% five-hour, and every
   ~45 min as a heartbeat to catch stuck workers) wake the coordinator. No sleep loops in the foreground,
   no "are you done?" messages.
 - **Parallel tooling:** two build-area tasks may run together when their files do not overlap (e.g. a
@@ -118,8 +122,14 @@ workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
   the plan against it at the end of each checkpoint.
 
 ## 5. Budget
-- **Common weekly limit: up to 70%.** At 70% no new workers start; running ones finish their PRs.
-- **5-hour limit: may be used up** — sessions wait for the reset and continue (`autoContinueAtUsageLimit`).
+- **Common weekly limit: up to 90%** (D-022). At 90% no new workers start; running ones finish their PRs.
+- **5-hour limit: up to 95%** (D-022). At 95% the coordinator **stops the non-Fable workers**
+  (`claude stop <id>`, their work stays in the worktree and the transcript), waits for the reset
+  (`rate_limits.five_hour.resets_at`), then **resumes them** (`claude respawn <id>`). The last 5% are the
+  coordinator's, to keep watching. Fable workers go on.
+- **The coordinator's own context** is spent with care: short command output (filters, `-Last N`), no
+  whole large files, details read once and summarised; the pinned status issue is its external memory —
+  update it before long waits, so an automatic compaction or a new coordinator loses nothing.
 - **Fable's weekly limit: may be used up.** Claude Code does not report it; a Fable worker that stops
   making progress with a usage-limit message has hit it → restart its task on Opus.
 - Reading the limits: `~/.claude/statusline/last.json` → `rate_limits.five_hour` / `seven_day`

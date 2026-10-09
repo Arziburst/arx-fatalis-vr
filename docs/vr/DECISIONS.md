@@ -10,6 +10,33 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-022: Budget raised to 90% weekly / 95% five-hour; checks kept in balance with time and usage
+
+- **Date:** 2026-10-09
+- **Status:** Accepted (replaces the budget of D-013; refines points 1–3 of D-021)
+- **Decided by:** project owner
+
+### Decision
+- **Weekly limit: up to 90%** (was 70%). At 90% no new workers; running ones finish.
+- **Five-hour limit: up to 95%.** At 95% the coordinator stops the non-Fable workers, waits for the reset
+  and resumes them; the last 5% are for the coordinator to keep watching. Fable workers go on.
+- **The safety hook never stops a task**: it denies only the dangerous command, says what to do instead,
+  and logs the denial for the coordinator; work goes on while there is budget.
+- **CI is balanced with time**: GitHub-hosted runners are out (their minutes would run out); the
+  self-hosted runner on the owner's PC costs task time. Every PR gets the **fast set** (build, host unit
+  tests, one flat smoke test — a few minutes); the heavy checks (`drawcheck`, the spell draw check, longer
+  runs) only when the PR touches the code they guard (path filters) or on demand.
+- **Independent reviews are selective**: they spend usage, so only risky PRs get a reviewer, it checks
+  the Definition of done and the decisions only (Sonnet, effort medium), and the coordinator checks small
+  PRs itself.
+- **The coordinator watches its own context**: short outputs, the status issue as external memory.
+
+### Why
+The owner wants the work to keep moving while there is budget, with quality checks that pay for
+themselves in time and usage.
+
+---
+
 ## D-021: Quality and automation package — review before merge, CI gates, a safety hook, automatic order, research radar
 
 - **Date:** 2026-10-09

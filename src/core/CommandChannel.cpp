@@ -60,6 +60,9 @@
 #include "io/log/LogBackend.h"
 #include "io/log/Logger.h"
 #include "platform/Environment.h"
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+#include "platform/WindowsUtils.h"
+#endif
 #include "platform/Process.h"
 #include "platform/ProgramOptions.h"
 #include "platform/Time.h"
@@ -274,6 +277,9 @@ struct State {
 };
 
 State g;
+
+//! When the delayed deliberate crash of "crash steal" fires (#132); zero = none pending
+PlatformInstant g_crashAt = PlatformInstant(0);
 
 const s64 PollIntervalMs = 100;
 const s64 StatusIntervalMs = 250;
@@ -900,6 +906,28 @@ std::string execute(std::string_view line) {
 		return error.empty() ? error : refuse("vr-sim: " + error);
 	}
 
+	if(word == "crash") {
+		// A deliberate crash for the crash-report checks (#132): "crash" faults on the main thread;
+		// "crash steal" replaces the exception filter the way an overlay would and crashes 3 s later,
+		// after the game has put its own filter back (it does so every second)
+		std::string mode(rest);
+		util::makeLowercase(mode);
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+		if(mode == "steal") {
+			SetUnhandledExceptionFilter([](PEXCEPTION_POINTERS) -> LONG { return EXCEPTION_CONTINUE_SEARCH; });
+			g_crashAt = platform::getTime() + std::chrono::seconds(3);
+			return std::string();
+		}
+#endif
+		if(!mode.empty()) {
+			return refuse("crash: expected nothing or steal, got \"" + std::string(rest) + "\"");
+		}
+		LogWarning << "[crash] deliberate crash requested through the test channel";
+		volatile int * nothing = nullptr;
+		*nothing = 1;
+		return std::string();
+	}
+
 	if(word == "comfort") {
 		// Who decides the VR comfort policy (#76): auto = the VR session, on / off force the VR rules
 		std::string mode(rest);
@@ -1306,6 +1334,12 @@ void update() {
 
 	g.frame++;
 	PlatformInstant now = platform::getTime();
+
+	if(g_crashAt != PlatformInstant(0) && toUs(now - g_crashAt) >= 0) {
+		LogWarning << "[crash] deliberate crash requested through the test channel";
+		volatile int * nothing = nullptr;
+		*nothing = 1;
+	}
 
 	GameState state = currentState();
 	if(state != g.state) {

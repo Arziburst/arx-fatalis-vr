@@ -121,7 +121,7 @@ the headset".
   tests a batch.
 - **Plain lane** — everything else: build, CI, tooling, tests, refactoring, engine plumbing, docs,
   research. Merged on green CI, no owner involvement.
-- Overall at most **3 workers at once** (start with 2 and raise it when merges stay clean).
+- No fixed worker cap (D-027): every runnable task runs until the usage caps stop it; the game lock and the launch budget handle contention.
 
 **Which tasks may run together** — the coordinator decides in `/new-cycle` and hands out one prompt per
 worker. Two tasks may run at the same time only if (1) both have their dependencies merged, and (2)

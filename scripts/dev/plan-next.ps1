@@ -12,7 +12,7 @@
 	A task is ready when: it is Todo; it has no `needs-design` label (D-017 - the owner's design talk comes first);
 	no PR and no worker is on it; every dependency is Done; its wave is the earliest open wave (+ -WaveLookahead); no
 	running or already chosen task shares its area; the VR lane has room (at most 2 in progress and 4 in Testing); and
-	fewer than 3 workers run. Model: Sonnet for area:build / area:docs only, Opus otherwise, Fable only with the
+	(only with -MaxWorkers) fewer workers than that run. Model: Sonnet for area:build / area:docs only, Opus otherwise, Fable only with the
 	`model:fable` label the coordinator sets (D-015).
 
 	GitHub is read the way the other dev scripts do (github-lib.ps1, #186): REST for the PRs, the board from its cache.
@@ -20,7 +20,7 @@
 	a board that cannot be read at all stops the script (it never plans on an empty board).
 
 .PARAMETER MaxWorkers
-	Workers at once (default 3, WORKFLOW.md "Parallel work").
+	Optional worker cap; default 0 = none (D-027: every runnable task runs until the usage caps stop it).
 
 .PARAMETER WaveLookahead
 	Waves after the earliest open one that may start already (default 0: the rule of the plan).
@@ -37,7 +37,7 @@
 #>
 [CmdletBinding()]
 param(
-	[int]$MaxWorkers = 3,
+	[int]$MaxWorkers = 0,
 	[int]$WaveLookahead = 0,
 	[switch]$Json,
 	[string]$Offline,
@@ -77,7 +77,7 @@ if ($Json) { $result | ConvertTo-Json -Depth 8; return }
 
 function Format-Task($t) { "#$($t.Number) $($t.Title)" }
 $l = $result.Limits
-"PLAN  workers $($l.Workers)/$($l.MaxWorkers) | VR in progress $($l.VrInProgress)/$($l.MaxVrInProgress) | VR in Testing $($l.VrTesting)/$($l.MaxVrTesting) | earliest open wave: $(if ($null -ne $l.CurrentWave) { $l.CurrentWave } else { 'none' })$(if ($l.WaveLookahead) { " (+$($l.WaveLookahead))" })"
+"PLAN  workers $($l.Workers)$(if ($l.MaxWorkers) { "/$($l.MaxWorkers)" }) | VR in progress $($l.VrInProgress)/$($l.MaxVrInProgress) | VR in Testing $($l.VrTesting)/$($l.MaxVrTesting) | earliest open wave: $(if ($null -ne $l.CurrentWave) { $l.CurrentWave } else { 'none' })$(if ($l.WaveLookahead) { " (+$($l.WaveLookahead))" })"
 foreach ($w in $result.Warnings) { "WARNING $w" }
 ''
 "READY ($($result.Ready.Count))"

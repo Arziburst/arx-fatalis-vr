@@ -762,7 +762,7 @@ fades in (TRAPS.md); the scripts shoot 3 s in (`@270`).
 
 ### The two-eyes check (`eye-check.ps1`, F-06)
 
-One `--vr-sim` launch with `scripts\dev\vrsim\eye-check.vrsim` (two shots with the head still, one
+One `--vr-sim` launch with `scripts\dev\vrsim\eye-check.vrsim` (two shots of one frame with the head still, one
 after a 25° yaw), judged by `scripts\dev\eye-check-lib.ps1` (self-test `test-eye-check.ps1`):
 
 | Leg | Passes when |
@@ -770,7 +770,7 @@ after a 25° yaw), judged by `scripts\dev\eye-check-lib.ps1` (self-test `test-ey
 | `world` | both eyes' verdict is `world` in the still shot |
 | `pairing` | every frame showed both eye images from one frame, no stale eye |
 | `separation` | the eyes are the IPD apart (± 0.5 mm) |
-| `difference` | left vs right > 3 × the same-eye floor (two still shots of one eye) and > 0.5, < 60 luma levels |
+| `difference` | left vs right > 3 × the same-eye floor (two shots of one eye taken in the same frame: no game time passes between them, so slow frames cannot raise it, #232) and > 0.5, < 60 luma levels |
 | `parallax` | the left picture is shifted right of the right one |
 | `yaw` | both eyes turned 25° (± 0.5°) and both pictures changed above the floor |
 
@@ -1046,3 +1046,22 @@ Measured (owner's PC, 2026-10-09, #123):
 | the same, flat `smoke-test.ps1` | `PASS` — a flat run ignored the VR lock *(since #147 a flat run waits for the game lock too)* |
 | the holder is killed (`Stop-Process`) | the lock is free at once; after a release no `vr.lock` file is left |
 | `smoke-test.ps1 -Vr` with SteamVR running, headset idle, lock free (3 runs) | the lock is taken and released, VR `enabled=True session=ready` in all three; **2 of 3 crashed on exit** with the #93 stack (`Entity::cleanReferences` ← `DanaeClearLevel`), no cinematic loaded — the VR exit path is exposed to #93 where the flat path is clean (4 of 4 the same hour), so `-Vr` is **not a gate** until #93 is fixed (evidence on the issue). *#93 fixed on 2026-10-09: 0 exit crashes in 13 VR exits; `-Vr` stays best effort because of #146* |
+
+## Crash reports under SteamVR and the symbol archive (D4, #132)
+
+- **The crash filter is taken back.** The engine reports crashes through `SetUnhandledExceptionFilter`; an overlay, the
+  OpenXR runtime or a driver loaded into the process can replace it and silence every report. `ArxGame::doFrame` calls
+  `CrashHandler::rearm()` once a second: if another filter is installed, ours is restored and `arx.log` gets
+  `[W] [crash] the unhandled exception filter was replaced by another module, restored`. No vectored-exception fallback
+  (research F-93): add it only if a tester's crash is ever missing a report while that warning is absent.
+- **Check without a headset.** Channel `crash` faults on the main thread; `crash steal` replaces the filter the way an overlay
+  would and faults 3 s later (after the re-arm). Run: `smoke-test.ps1 -VrSim basic -Commands 'crash steal'` - expected
+  `FAIL` (the game is meant to die) with a new `crashes\<utc>\crash.txt` (`ACCESS_VIOLATION`, stack with file:line), the
+  re-arm warning and the deliberate-crash warning in the log. 2026-10-09: 2 of 2 runs wrote the report on the simulated
+  headset (session focused, 270 frames). A run with `[crash] deliberate crash requested` in its log is digested but never
+  filed as an auto-report. The real SteamVR overlay is not simulated: the first tester crash under SteamVR confirms it.
+- **Symbols per build.** `package-tester.ps1` writes the exe's SHA-256 into `BUILD.txt` (`arx.exe sha256:`), packs
+  `arx.pdb` + `BUILD.txt` into `*-symbols.zip` and keeps a copy in `%LOCALAPPDATA%\ArxFatalisVR\symbols\<sha256>\`. CI uploads
+  the zip as the artifact `tester-symbols` (90 days). A tester's support bundle (`system.txt`, `BUILD.txt`) names the hash of
+  the exe that crashed: take the pdb of that hash, nothing else matches.
+- **The support bundle** already holds `arx.log` + previous runs and `crashes\` (#88); it now also has the exe hash and `BUILD.txt`.

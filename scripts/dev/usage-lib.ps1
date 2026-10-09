@@ -127,64 +127,61 @@ function Get-TaskCostEstimate($TaskCosts, [string]$Model, [string]$Effort, [stri
 	[pscustomobject]@{ Median = Get-Median $usd; P80 = Get-Percentile $usd 0.8; N = $pool.Count; Basis = $basis }
 }
 
-# How many workers to run, from the budget and the cost rates.
+# How many workers to keep running, and how far the caps are. NOT pacing (D-027): the week is not stretched to its reset -
+# every runnable task runs until a cap stops it.
 #   Week / FiveHour    @{ Pct; ResetsAt }  (epoch seconds)
 #   WeekPerUsd / FivePerUsd   % of the limit per dollar (calibration); $null = unknown
 #   WorkerUsdPerHour   what one worker burns
 #   BurnUsdPerHour     what everything burns now (workers + coordinator + reviewers + the owner's own sessions)
 #   RunningWorkers     workers running now
-#   QueueUsd           the forecast cost (dollars) of the queued tasks, in start order
-# The base load (burn minus the running workers) is kept fixed; the workers are added on top of it. The week may use
-# up to WeekCap % by its reset, the 5-hour window up to FiveCap % by its reset - but at least MinHours of spread, so
-# a window about to roll over does not look like an unlimited budget.
+#   ReadyCount         runnable (READY) tasks not started yet; $null = unknown (then only the running ones are counted)
+#   QueueUsd           the forecast cost (dollars, p80) of the READY tasks, in start order
+# Workers = RunningWorkers + ReadyCount, bounded by MaxWorkers only when it is > 0 (default 0 = no cap, D-027); 0 when a cap is already reached.
+# Per limit: EtaHours = hours until the cap at the current burn, EtaHoursWithN = the same with Workers workers on top of the
+# base load (burn minus the running workers), Fit = how many READY tasks fit before the cap at their p80 cost.
 function Get-UsageRecommendation {
 	param(
 		$Week, $FiveHour, $WeekPerUsd, $FivePerUsd, [double]$WorkerUsdPerHour, [double]$BurnUsdPerHour,
-		[int]$RunningWorkers, [double[]]$QueueUsd = @(), [double]$Now, [int]$MaxWorkers = 3,
-		[double]$WeekCap = 80, [double]$FiveCap = 95, [double]$MinHours = 1
+		[int]$RunningWorkers, $ReadyCount = $null, [double[]]$QueueUsd = @(), [double]$Now, [int]$MaxWorkers = 0,
+		[double]$WeekCap = 80, [double]$FiveCap = 95
 	)
 	$base = [math]::Max(0.0, $BurnUsdPerHour - $RunningWorkers * $WorkerUsdPerHour)
-	$result = [ordered]@{ Workers = $MaxWorkers; Binding = 'none'; Week = $null; Five = $null; Fit = $null; Notes = @() }
+	$ready = if ($null -ne $ReadyCount) { [int]$ReadyCount } else { $null }
+	$wanted = if ($null -ne $ready) { $RunningWorkers + $ready } else { $RunningWorkers }; if ($MaxWorkers -gt 0) { $wanted = [int][math]::Min($MaxWorkers, $wanted) }
+	$result = [ordered]@{ Workers = $wanted; Binding = $(if ($MaxWorkers -gt 0 -and $wanted -ge $MaxWorkers) { 'worker cap' } else { 'ready tasks' }); Week = $null; Five = $null; Fit = $null; EtaHours = $null; EtaHoursWithN = $null; Notes = @() }
 
 	$limits = @(
 		@{ Key = 'Week'; Name = 'weekly'; L = $Week; PerUsd = $WeekPerUsd; Cap = $WeekCap }
 		@{ Key = 'Five'; Name = '5-hour'; L = $FiveHour; PerUsd = $FivePerUsd; Cap = $FiveCap }
 	)
+	$capped = $false
 	foreach ($x in $limits) {
 		if (-not $x.L) { $result.Notes += "$($x.Name) limit unknown"; continue }
-		$hours = [math]::Max($MinHours, ([double]$x.L.ResetsAt - $Now) / 3600)
 		$room = [double]$x.Cap - [double]$x.L.Pct
-		$info = [ordered]@{ Pct = [double]$x.L.Pct; Cap = $x.Cap; Room = $room; HoursToReset = [math]::Round(($x.L.ResetsAt - $Now) / 3600, 1); Workers = $null; ProjectedAtReset = $null }
-		if ($null -eq $x.PerUsd) {
-			$result.Notes += "$($x.Name): no calibration yet, limit not used for the count"
+		$info = [ordered]@{ Pct = [double]$x.L.Pct; Cap = $x.Cap; Room = $room; HoursToReset = [math]::Round(($x.L.ResetsAt - $Now) / 3600, 1); EtaHours = $null; EtaHoursWithN = $null; BudgetUsd = $null; Fit = $null; WorkerPctPerHour = $null }
+		if ($room -le 0) { $capped = $true; $info.EtaHours = 0; $info.EtaHoursWithN = 0; $info.BudgetUsd = 0; $info.Fit = 0 }
+		elseif ($null -eq $x.PerUsd) {
+			$result.Notes += "$($x.Name): no calibration yet, no ETA to the cap"
 		} else {
-			$workerRate = $WorkerUsdPerHour * $x.PerUsd                      # % of the limit per hour per worker
-			$baseRate = $base * $x.PerUsd
-			$allowed = $room / $hours                                         # % per hour the budget allows
-			$info.Workers = if ($room -le 0) { 0 } elseif ($workerRate -le 0) { $MaxWorkers } else { [int][math]::Max(0.0, [math]::Floor(($allowed - $baseRate) / $workerRate)) }
-			$info.ProjectedAtReset = [math]::Round([double]$x.L.Pct + ($baseRate + $RunningWorkers * $workerRate) * (($x.L.ResetsAt - $Now) / 3600), 0)
-			$info.BudgetUsd = [math]::Max(0.0, ($room - $baseRate * $hours) / $x.PerUsd)   # dollars of worker spend left before the cap
-			$info.WorkerPctPerHour = [math]::Round($workerRate, 2)
+			$info.WorkerPctPerHour = [math]::Round($WorkerUsdPerHour * $x.PerUsd, 2)
+			$cur = $BurnUsdPerHour * $x.PerUsd                                   # % of the limit per hour now
+			$withN = ($base + $wanted * $WorkerUsdPerHour) * $x.PerUsd           # ... with the advised workers
+			$info.EtaHours = if ($cur -gt 0) { [math]::Round($room / $cur, 1) } else { $null }
+			$info.EtaHoursWithN = if ($withN -gt 0) { [math]::Round($room / $withN, 1) } else { $null }
+			$info.BudgetUsd = $room / $x.PerUsd                                  # dollars until the cap
+			$left = $info.BudgetUsd; $fit = 0
+			foreach ($c in $QueueUsd) { if ($left -ge $c) { $left -= $c; $fit++ } else { break } }
+			$info.Fit = $fit
 		}
 		$result[$x.Key] = [pscustomobject]$info
 	}
-	$counts = @(); foreach ($k in 'Week', 'Five') { if ($result[$k] -and $null -ne $result[$k].Workers) { $counts += [pscustomobject]@{ Key = $k; N = $result[$k].Workers } } }
-	if ($counts.Count) {
-		$min = ($counts | Measure-Object N -Minimum).Minimum
-		$result.Workers = [int][math]::Min($MaxWorkers, $min)
-		$bound = @($counts | Where-Object N -eq $min | ForEach-Object Key)
-		$result.Binding = if ($min -ge $MaxWorkers) { 'worker cap' } elseif ($bound.Count -gt 1) { 'both' } elseif ($bound[0] -eq 'Week') { 'weekly' } else { '5-hour' }
-	} else {
-		$result.Workers = [math]::Min($MaxWorkers, 1); $result.Binding = 'unknown'
-		$result.Notes += 'no calibration: running one worker until the samples cover a few percent'
-	}
-	# queued tasks that fit before the weekly reset (the tighter of the two budgets)
-	$budgets = @($result.Week, $result.Five | Where-Object { $_ -and $null -ne $_.Workers } | ForEach-Object BudgetUsd)
-	if ($budgets.Count) {
-		$left = ($budgets | Measure-Object -Minimum).Minimum; $fit = 0
-		foreach ($c in $QueueUsd) { if ($left -ge $c) { $left -= $c; $fit++ } else { break } }
-		$result.Fit = $fit
-	}
+	if ($capped) { $result.Workers = 0; $result.Binding = 'cap reached' }
+	$etas = @($result.Week, $result.Five | Where-Object { $_ -and $null -ne $_.EtaHours } | ForEach-Object EtaHours)
+	$etasN = @($result.Week, $result.Five | Where-Object { $_ -and $null -ne $_.EtaHoursWithN } | ForEach-Object EtaHoursWithN)
+	if ($etas.Count) { $result.EtaHours = ($etas | Measure-Object -Minimum).Minimum }
+	if ($etasN.Count) { $result.EtaHoursWithN = ($etasN | Measure-Object -Minimum).Minimum }
+	$fits = @($result.Week, $result.Five | Where-Object { $_ -and $null -ne $_.Fit } | ForEach-Object Fit)
+	if ($fits.Count) { $result.Fit = ($fits | Measure-Object -Minimum).Minimum }
 	[pscustomobject]$result
 }
 

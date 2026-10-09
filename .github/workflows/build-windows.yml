@@ -51,3 +51,8 @@ jobs:
     - name: Build
       shell: pwsh
       run: ./scripts/build-windows.ps1 -Config Release
+
+    # Self-tests of dev scripts that decide something (no game, no network): a red one fails the PR.
+    - name: Script self-tests (plan-next)
+      shell: pwsh
+      run: ./scripts/dev/test-plan-next.ps1

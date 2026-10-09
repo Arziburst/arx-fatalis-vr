@@ -25,6 +25,23 @@ re-applies the viewport and the scissor against that height, snapshots read that
 `SetAntialiasing(true)` is refused off the window so the alpha cutout path falls back to the alpha test.
 `vr::beginEyeRender()` / `endEyeRender()` and the flat frame target do this; a new offscreen target must too.
 
+## 2026-10-10 — "use" fires from just holding the Index controller (a closed hand flickers, #30)
+
+**Symptom:** the log shows `[vr] input: use_right (right.grip)` several times (×6 in the owner's headset run)
+although the player only held the controller and made one grip + trigger chord; with a game reaction (#74)
+that is a right click on whatever the reticle is on.
+**Cause:** the Index's `input/squeeze/value` measures how far the hand is closed around the handle. A relaxed
+closed hand sits around 0.6 – 0.7, right on the 0.70 / 0.55 threshold borrowed from Dishonored VR (F-41), so
+it crossed it back and forth; each dip was a release of the grip — which leads the stash chord, so its own
+binding fired as a tap on release. A "firm" threshold is the wrong model too: the Index is strapped on, a
+light close is the grip and an open hand is none (D-019, owner 2026-10-10) — `squeeze/force` (a hard
+squeeze) was tried in round 2 and dropped before a headset run for that reason.
+**Do:** the Index grip stays on `squeeze/value` with a low press and a wide gap (`IndexGripThreshold`
+0.50 / 0.30); a chord leader's release is debounced (`ControlResolver::releaseDebounceMs`), so a flicker is
+one hold; "use" fires when the hand opens without a trigger (D-019). Every grip crossing is logged with its
+value (`[vr] input: right grip down at 0.55 (threshold 0.5 / 0.3)`), and `status.json` → `vr.input.grip`
+shows it live — tune the threshold from those numbers, not by feel.
+
 ## 2026-10-09 — A non-Steam shortcut written into `shortcuts.vdf` disappears
 
 **Symptom:** a script (or a hand edit) adds a shortcut to `<Steam>\userdata\<account>\config\shortcuts.vdf`,

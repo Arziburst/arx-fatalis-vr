@@ -22,6 +22,7 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 .\scripts\dev\smoke-test.ps1 -Commands 'drawcheck 120'         # two draws of the scene per frame must give one picture (#71)
 .\scripts\dev\comfort-check.ps1                               # shake, FOV zoom and bob with the VR comfort policy off and on, one run (#76)
 .\scripts\dev\spell-drawcheck.ps1                             # the 26 spells of #71 really launched, then drawcheck 240 (#155)
+.\scripts\dev\input-check.ps1                                 # the VR controls' table (#30): taps, chords, a remap and a reset through vr-input, one flat run
 .\scripts\dev\run-script-tests.ps1                            # the PowerShell self-tests of the dev scripts (seconds, no game); CI runs them first
 .\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence      # what CI runs after the build: smoke test + drawcheck, spell draw check, evidence in one folder (#127)
 .\scripts\run-windows.ps1 -Isolated -TestChannel -- --no-vr --loadlevel 10   # a manual run with the channel, in this copy's own user dir
@@ -133,6 +134,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `setpos <x> <y> <z> [yaw]` | put the player at exact coordinates, optionally facing `yaw`. `y` is the **eye**: the floor is 170 units lower (a `y` at floor level puts the eye in the floor: black screen). About 100 units are a metre. Refused outside gameplay (#70) |
 | `lookat <entity>` | turn the player (yaw and pitch) towards an entity, aiming 40 units above its floor position. The pitch is not kept by a save and does not matter in VR (the head decides); the yaw is kept (#70) |
 | `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
+| `vr-input down\|up\|tap <control>`, `vr-input bind <event> <binding>`, `vr-input reset` | the VR controls' table without a headset (#30, `vr/VRInput.h`): a control (`right.a`, `left.grip`, `right.stick_down` …) held, let go or tapped as if a controller did it, merged into what OpenXR reports and resolved by the same table at the next frame; `bind` remaps one event (`bind jump left.grip+left.a`, `bind menu left.b:long`, `bind magic_mode none`); `reset` restores the default layout for the current controllers and lets go of everything. Refused with the reason for an unknown control, event or binding. `vr.input` in the status; one `[vr] input: <event> (<binding>)` log line per event press, one `[vr] input: layout …` line per layout change |
 | `recenter` | refused with `not implemented yet (#28)` until recentering exists |
 | `comfort auto\|on\|off` | who decides the VR comfort policy (#76, `vr::comfort()`): `auto` = the VR session (the default: view bobbing, screen shake and FOV zoom off in VR, `cfg.ini` decides in flat mode), `on` / `off` force the VR rules on or off — so a flat run can measure them. `comfort` and `camera` in the status; one `[vr] comfort:` log line per change |
 | anything else | the **script console**: `[entity.]command args`, exactly as typed in the in-game console (`` ` ``). Context defaults to the player. Refused (and counted in the ack) when the entity or the command is unknown |
@@ -167,8 +169,13 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
  "comfort":{"mode":"auto","active":false,"viewBobbing":true,"screenShake":true,"fovZoom":true},
  "window":{"width":640,"height":480,"focused":true,"minimized":false,"fullscreen":false},
  "vr":{"supported":true,"enabled":false,"sessionState":"none","frames":0,"shownFrames":0,
-       "resubmittedFrames":0,"discardedFrames":0,"frameGaps":0,"frameDivisor":1,"runtime":"",
+       "resubmittedFrames":0,"discardedFrames":0,"frameGaps":0,"frameDivisor":1,
+       "mirror":{"state":"flat mode","eye":"right","frames":0},"runtime":"",
        "manifest":"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json",
+       "input":{"controllers":"index","profile":{"left":"/interaction_profiles/valve/index_controller","right":"…"},
+                "syncs":5120,"down":"right.grip","active":"","trigger":{"left":0.0,"right":0.12},
+                "grip":{"left":0.0,"right":0.81},"presses":{"interact_left":0,…,"jump":2,…},
+                "layout":{"interact_left":"left.trigger",…,"jump":"right.a",…}},
        "pacing":{"reports":3,"seconds":3.0,"frames":241,"shown":1,"divisor":1,"periodMs":12.5,
                  "slotsPerSecond":80.0,"framesPerSecond":80.0,"waitMeanMs":11.9,"waitMaxMs":13.1,
                  "endMeanMs":0.3,"endMaxMs":0.9,"budgetMeanMs":12.2,"budgetMaxMs":13.4,
@@ -205,6 +212,13 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   `vr.frameGaps`: frames that came at least 80 ms and 2.5× the mean interval after the previous one
   (level loads produce them; in gameplay each one is a felt hitch); `vr.frameDivisor`: the expected
   display slots per frame (`vr_frame_divisor`, 1 = every slot).
+- `vr.mirror` (#21): the desktop mirror — `state` is `on` while the window shows what one eye sees,
+  `eye` which one (`right` by default — the owner's choice of 2026-10-10; `vr_mirror_eye` in
+  `cfg.ini`: 0 = left, 1 = right; `vr_mirror = 0` or `--no-vr-mirror` keeps the flat frame in the
+  window), otherwise why not (`flat mode`, `off: --no-vr-mirror`, `off: vr_mirror = 0 in cfg.ini`,
+  `off: OpenGL has no glCopyImageSubData ...`, `off: the VR session ended`); `frames` grows with
+  `vr.shownFrames` while it is `on` (0 in flat mode). One `[vr] desktop mirror:` log line per session
+  names the eye size, the crop and where the flat frame quad lands in the window.
 - `vr.pacing` (#20): the last rate / cadence report — present once the first 3 s window of a
   session closed (a shorter session gets its partial window at the end). See
   [The frame loop and the rate line](#the-frame-loop-and-the-rate-line-20) for every field and the
@@ -238,6 +252,16 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
 - `vr.runtime`: the OpenXR runtime that answered this run (`SteamVR/OpenXR 2.17.10`), empty while no
   instance was created; `vr.manifest`: the runtime manifest the loader uses (`XR_RUNTIME_JSON`, then
   the registry), empty when no runtime is installed — the same values as the banner's runtime lines.
+- `vr.input` (#30): the controllers and the game's control table. `controllers`: the type the layout
+  is for (`index`, `touch`, `simple`; `unknown` until a runtime reports a profile — always in a flat
+  run), `profile.left` / `profile.right`: the OpenXR interaction profile per hand (empty: no device for
+  that hand yet — SteamVR binds a few frames after the session is `focused`, so an idle headset never
+  shows one), `syncs`: action syncs while focused, `down`: the controls held after the last frame
+  (space separated), `active`: the events on now, `trigger` / `grip`: the analog values per hand
+  (`squeeze/value`: on the Index how far the strapped hand is closed — TRAPS.md), `presses`: how often
+  each event came on since the start, `layout`: the binding of every event (`none`, `right.a`, `left.grip+left.trigger`,
+  `left.stick_click:long`). Nothing in the game reacts to the events yet (#74); `input-check.ps1`
+  asserts on `presses` and `layout`.
 - `drawCheck` appears once a `drawcheck` was requested: `{"seq":1,"running":false,"frames":120,
   "framesDiffering":0,"pixels":307200,"maxPixelsDiffering":0,"maxDelta":0,"capture":""}` —
   `frames` compared so far, `framesDiffering` of them with at least one differing pixel,
@@ -606,9 +630,11 @@ the eyes by its alpha (research rows F-115, F-162, F-163; the design is D-025):
   size during the draw, so full-screen effects and sprite sizes follow the eye image.
 - `vr::submitFrame()` submits the eye images as the projection layer with the frame's poses and
   the quad in front; a frame whose scene was not drawn (a menu) clears both eyes to the dark
-  background — both eyes or none (F-116). The window shows the left eye fitted into it (the
-  desktop mirror of #21 replaces this). With an idle headset (`shouldRender` false) the game draws
-  into the window as in flat mode and the frame is ended without layers.
+  background — both eyes or none (F-116). The desktop mirror (#21) copies the mirrored eye in
+  `endEyeRender()` and the quad before its release and draws them into the window (the quad
+  blended by its alpha); with `vr_mirror = 0` the window shows the flat frame alone. With an idle
+  headset (`shouldRender` false) the game draws into the window as in flat mode and the frame is
+  ended without layers.
 
 The log says once per session what the eyes are:
 
@@ -673,6 +699,8 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | 2026-10-09, #129, **the test can fail**: `FileLoggerTest` built with both flushes removed on purpose | `Run: 39  Failures: 2`: `testWarningIsOnDiskAtOnce` and `testInfoIsOnDiskWithinTheInterval` (after its 2 s wait); `testExplicitFlush` and the three rotation tests stay green, as they should. Restored: `OK (39 tests)` |
 | 2026-10-09, #155: `spell-drawcheck.ps1` — the 26 spells of #71 **really launched** (23 by the player with `-fsm`, `summon_creature` / `raise_dead` / `fake_summon` by `human_base_0033` on the player), then `drawcheck 240` on level 10 | `PASS`: **26 of 26** in `spells.launchedByType`, each in the `status.json` write right after its own command; **24 spell types active during the check** (all but `harm` and `mana_drain`, which had ended), **0 of 240 frames differ** (max 0 of 307200 pixels, delta 0), 0 errors, 0 warnings. The #71 split holds with every spell effect on screen — no bug to file against it |
 | 2026-10-09, #155: the same with `-Flags fs` — the cast of the #71 rows, the broken state on purpose | `FAIL` of the check (the smoke test passed, 0 of 240 frames differ): **0 of 23** player spells launched; the NPC's 3 launched one command later through the NPC rune drawing. The launch evidence catches the #71 mistake |
+| 2026-10-09, #30: `input-check.ps1` — one flat run on level 10, 12 `vr-input` commands: a tap of `right.a`; `right.grip` held + a tap of `right.trigger`; a tap of `right.grip`; `bind jump left.b+left.a`, then `left.b` held + a tap of `left.a`; a tap of `left.b`; a tap of `right.stick_down`; `reset` | `PASS`: presses `jump` **2**, `stash_right` **1**, `use_right` **1**, `book` **1**, `crouch_toggle` **1**, every other event **0** (the chord neither clicked nor used, the chord's leader tapped on its release, the remapped chord did not open the book); `layout.jump` = `right.a` after `reset`, nothing held at the end; smoke test `PASS`, 0 errors. One `[vr] input:` line per press, none per frame |
+| 2026-10-09, #30: the same with `-Unbind` (`bind jump none` first) — the broken state on purpose | `FAIL` of the check (the smoke test passed): `jump fired 1 times, expected 2`. The host tests of the table (`VRControlsTest`, 13 tests) failed **4 of 13** with the deferral of a chord leader's own binding removed on purpose; restored, `OK (59 tests)` |
 | 2026-10-09, #155: the player's own `summon_creature` and `raise_dead` (`-fsm`): at the start point; after `teleport -ap 0/90/180/270 player`; after `teleport -p human_base_0033` | **never launched** — `CanLaunch` finds no valid spot 3 m ahead on level 10, a silent fizzle; hence the NPC caster above |
 | 2026-10-09, #20: `FramePacingTest` (11 cases over synthetic frame timings, see [The frame loop and the rate line](#the-frame-loop-and-the-rate-line-20)) | `OK (57 tests)`. **The suite can fail:** with `UnderSubmitFactor` set to 0 and `EvenMaxSdSlots` to 10 on purpose, `Run: 57 Failures: 3` — exactly the UNDER case and the two UNEVEN cases (half rate without the cap, 9 / 16 ms jitter, 1 / 2 slot alternation); the other 8 stay green. Restored: `OK (57 tests)` |
 | 2026-10-09, #20: flat smoke test, `-Seconds 8` with 6 `status` + `mark`, channel quit; then `-Seconds 5 -CloseWindow` | **2 of 2** `PASS`, 0 errors (1 warning in the first: no `cfg.ini` yet in the fresh isolated directory). Flat mode untouched: 1175 frames in 10.6 s (the engine's limiter and vsync as before), `vr.enabled=false`, `vr.frameDivisor=1`, no `vr.pacing`, no `[vr] pacing:` line — the VR clock never engages without a session |
@@ -743,6 +771,27 @@ How the runner differs from a worker's copy — none of it needs action, all of 
 
 Run it by hand: `.\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence` (needs a fresh build of the
 copy; `-Phase smoke|spells` runs one half; exit 0 pass, 1 fail, 2 skipped, 3 cannot run here).
+
+## The tester package (#88)
+
+`.\scripts\package-tester.ps1` writes `dist\ArxFatalisVR-<version>-<sha>.zip` (version = number in `VERSION`, `-dirty`
+appended for an uncommitted tree; `-symbols.zip` next to it). Inside: `arx.exe`, every DLL of
+the build, the MSVC runtime copied app-local from the Visual Studio redistributable folder, `data/core` copied **next to
+`arx.exe`** (the engine looks there, `RUNTIME_DATADIR=.`), `Start Arx Fatalis VR.cmd`, `Start flat (no VR).cmd`
+(`--no-vr`, the kill switch), `Collect support bundle.cmd` + `collect-support.ps1` (logs, cfg, crashes, SteamVR logs,
+OpenXR `ActiveRuntime`, GPU and driver into one zip on the Desktop, nothing uploaded), `HOW-TO-USE.txt`,
+`BUG-REPORT-TEMPLATE.md`, `BUILD.txt` (commit, branch, tag). Sources of the tester files: `scripts/tester/`.
+No `data.dirs` (CMake writes it for the build directory and it names a path in the working copy) and no game data:
+the tester's game finds Arx Fatalis in their Steam libraries (#79).
+
+The script fails (exit 1) on: an import (`dumpbin /dependents`, recursively) that is neither in the package nor a Windows
+DLL; no OpenXR loader; `data.dirs` or `*.pak` in the zip; and — the real proof — the **extracted** zip, started from a
+clean temp folder with `PATH` reduced to the Windows folders, not reaching `GAMEPLAY`, exiting ≠ 0, lacking
+`Clean shutdown`, writing an `[E]` line or a crash report, or an `arx.log` that mentions the working copy's path. That is
+one game launch (game lock, ledger). `-SkipVerify` stops after the numeric checks; `-NoBuild` refuses to build.
+
+CI runs it after the game checks (`-NoBuild`) and uploads the zip as the artifact `tester-build` (14 days). The `-symbols.zip`
+(`arx.pdb` + `BUILD.txt`, ~7 MB) is for reading tester crash reports and is not uploaded by CI.
 
 ## Isolation and the game lock (parallel work)
 

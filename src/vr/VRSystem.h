@@ -29,6 +29,7 @@
 #include "platform/Platform.h"
 #include "vr/EyeProjection.h"
 #include "vr/FramePacing.h"
+#include "vr/VRControls.h"
 
 /*!
  * \brief VR runtime integration (OpenXR)
@@ -123,7 +124,9 @@ bool beginFrame(const Vec2i & windowSize);
  * in front of them, blended by its alpha (F-20); when the scene was not drawn (a menu, a loading
  * screen) both eyes are cleared to a uniform dark background instead - both eyes or none (F-116).
  * Frames the runtime does not want rendered are ended without layers. Afterwards the window is the
- * render target again and shows the left eye (until the desktop mirror of #21).
+ * render target again, and the desktop mirror (#21, F-24) draws into it what one eye (the right
+ * one by default, \c vr_mirror_eye) sees: its image cropped to the window, the flat frame where
+ * the quad appears in that eye; with the mirror off the window shows the flat frame alone.
  * Does nothing while no OpenXR session is running.
  *
  * \param windowSize size of the window's back buffer
@@ -229,6 +232,15 @@ u32 pacingReports();
 //! \return the expected display slots per frame: 1 for every slot, 2 for every second slot, ...
 u32 frameDivisor();
 
+//! The desktop mirror (#21): the window shows what one eye sees - for status.json
+struct MirrorStatus {
+	std::string state = "flat mode"; //!< "on", or why the window shows the flat frame ("off: ...")
+	std::string eye = "right";       //!< the mirrored eye (vr_mirror_eye; right by default)
+	u64 frames = 0;                  //!< frames mirrored into the window since the game started
+};
+
+MirrorStatus mirrorStatus();
+
 /*!
  * \return the OpenXR runtime that answered this run, as "<name> <version>" - empty while no
  *         instance was created (for status.json; stays set after \ref shutdown)
@@ -240,6 +252,20 @@ std::string runtimeName();
  *         (\c XR_RUNTIME_JSON, then the registry on Windows) - empty when no runtime is installed
  */
 std::string runtimeManifest();
+
+/*!
+ * \brief Sync the OpenXR actions and read every physical control (#30)
+ *
+ * For \ref updateInput, which turns the controls into gameplay events. Returns false with an
+ * empty \a input while no session runs or the session is not focused.
+ */
+bool readControllers(ControllerInput & input);
+
+//! The OpenXR interaction profile path per hand, empty while there is none - for status.json
+std::array<std::string, HandCount> controllerProfiles();
+
+//! How often the controllers were read while the session was focused
+u64 controllerSyncs();
 
 /*!
  * \brief End the session in order and destroy the OpenXR session and instance (if any)

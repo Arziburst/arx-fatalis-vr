@@ -44,6 +44,12 @@ set(arxtest_TESTCASES
 
 	tests/vr/FramePacingTest.h
 	tests/vr/FramePacingTest.cpp
+	tests/vr/MirrorGeometryTest.h
+	tests/vr/MirrorGeometryTest.cpp
+
+	tests/vr/VRControlsTest.h
+	tests/vr/VRControlsTest.cpp
+
 
 )
 
@@ -63,6 +69,8 @@ set(arxtest_SOURCES
 	src/io/resource/ResourcePath.cpp
 	src/vr/EyeProjection.cpp
 	src/vr/FramePacing.cpp
+	src/vr/VRControls.cpp
+
 
 	${arxtest_TESTCASES}
 	

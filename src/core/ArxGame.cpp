@@ -173,6 +173,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "util/String.h"
 
 #include "vr/VRComfort.h"
+#include "vr/VRInput.h"
 #include "vr/VRSystem.h"
 
 #include "Configure.h"
@@ -1248,6 +1249,10 @@ void ArxGame::doFrame() {
 	ARX_PROFILE_FUNC();
 	
 	updateTime();
+
+	// Controllers -> gameplay events through the control table (#30), synced after xrWaitFrame;
+	// the game reacts to them in #74
+	vr::updateInput();
 
 	// Game event log: state and UI changes (before the channel, which reports the same state);
 	// the OpenXR events were polled at the top of the frame, before vr::beginFrame()

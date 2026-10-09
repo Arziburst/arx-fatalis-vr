@@ -44,8 +44,19 @@ and the next task of the MVP queue.
     pick tasks from the queue whose dependencies are merged and whose **areas differ** from every task
     in progress; **start a worker for each** with the owner's copy's
     `C:\Users\arzib\OneDrive\Desktop\arx-fatalis-vr\scripts\dev\start-worker.ps1 <n> [-Type <type>]`
-    (worktree + background session running `/next-task <n>`, decision D-011). `claude agents --json`
-    shows which workers are still running; a worker that is idle with its PR merged is finished.
+    (worktree + background session running `/next-task <n>`, decision D-011). The model follows the
+    task's area (D-013: build / docs → Sonnet, everything else → Fable; `-Model opus` once Fable's
+    limit is used up). Subscribe to each worker's idle notice (SendMessage `notify_when_idle`);
+    `claude agents --json` shows which workers still run; idle with its PR merged = finished.
+  - **usage** (D-013): read the limits from `~/.claude/statusline/last.json` (`rate_limits`); at **70%** of
+    the common weekly limit start no new workers and let the running ones finish; the 5-hour limit and
+    Fable's limit may be used up. Fable's limit is not in the status line — ask the owner for a Usage
+    screenshot when unsure.
+
+**Autonomous mode (D-013):** between the owner's messages the coordinator keeps going on its own —
+idle notices and finished CI wake it; it merges, triages, refills slots and answers workers' questions
+(cross-session messages) without asking the owner. It reports and waits only when the block is done,
+a PR needs a headset test (other work goes on), or the budget is reached.
 
 ## 2b. Headset test batch
 If PRs wait in **Testing**, list them as a batch for the owner: per PR the one question from its

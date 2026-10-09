@@ -81,6 +81,12 @@ void resetHeadReference(const char * reason);
  */
 void setCharacterEyeHeight(float units);
 
+/*!
+ * \return the head sample \ref applyHeadPose will use this frame (hmd, held or sim), without
+ *         changing any state - for the body (#36), which is posed before the camera is placed
+ */
+bool peekHead(HeadSample & head);
+
 //! Use \a head when no headset pose is available (test channel)
 void setSimulatedHead(const HeadSample & head);
 void clearSimulatedHead();

@@ -316,7 +316,7 @@ Helper scripts used by the commands:
 - `scripts/dev/cycle-report.ps1` — the coordinator's report: PRs, board, leftovers, worktrees, next task
 - `scripts/dev/plan-next.ps1` — the coordinator's task order by rule (#187): the tasks ready to start now (dependencies Done,
   earliest open wave, free area, VR lane and worker limits, no `needs-design`), each with its `start-worker.ps1` line, and the
-  reason every other Todo task waits; rules in `scripts/dev/plan-next-lib.ps1`, self-test `test-plan-next.ps1` (run by CI)
+  reason every other Todo task waits; rules in `scripts/dev/plan-next-lib.ps1`, self-test `test-plan-next.ps1` (run by CI via run-script-tests.ps1)
 
 ## Task lifecycle
 
@@ -343,6 +343,12 @@ human in a headset:
 - **CI runs on a self-hosted runner on the owner's PC** (Windows service, label `arxvr`, installed in
   `C:\actions-runner`). vcpkg and the build directory persist there, so a typical PR builds in minutes.
   If the PC is off, CI waits in the queue — that is expected, not a failure.
+- **CI is the automatic gate (D-021, #127):** the script self-tests (`scripts/dev/test-*.ps1`), the build
+  with the host unit tests, then the flat game checks — smoke test with the draw check and the spell
+  draw check — run on every PR, a few minutes in total. A red step blocks the merge; a game check that
+  was skipped (game lock busy) is red too. A new `scripts/dev/test-*.ps1` must be added to
+  `scripts/dev/run-script-tests.ps1`. The game runs in the runner service's session; evidence is the
+  artifact `game-checks` — see [TESTING.md](TESTING.md#the-ci-gate-127).
 - **One vcpkg for the whole machine:** `C:\vcpkg-shared` holds the vcpkg checkout, source downloads and
   binary packages, used by CI (workflow `env`) and by the owner's builds (user environment variables
   `VCPKG_ROOT`, `VCPKG_DOWNLOADS`, `VCPKG_DEFAULT_BINARY_CACHE`). A dependency built once — locally or

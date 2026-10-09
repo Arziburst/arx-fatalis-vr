@@ -21,6 +21,7 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 .\scripts\dev\comfort-check.ps1                               # shake, FOV zoom and bob with the VR comfort policy off and on, one run (#76)
 .\scripts\dev\spell-drawcheck.ps1                             # the 26 spells of #71 really launched, then drawcheck 240 (#155)
 .\scripts\run-windows.ps1 -Isolated -TestChannel -- --no-vr --loadlevel 10   # a manual run with the channel, in this copy's own user dir
+.\scripts\dev\log-digest.ps1 -Print                           # the last run in a screenful + automatic bug filing; runs by itself after every launch (#131), never cat arx.log
 .\scripts\dev\game-status.ps1 -Watch                          # live state line
 .\scripts\dev\game-cmd.ps1 'shot before' 'teleport -p marker_0001' 'shot after'
 .\scripts\dev\game-cmd.ps1 quit
@@ -227,6 +228,65 @@ The VR runtime follows a few lines later, **on every run, flat ones included**:
 - `OpenXR runtime answered` appears once an instance exists. When the runtime that answered is not
   the one the manifest path suggests (SteamVR, Oculus, Windows Mixed Reality, Varjo, Monado, Virtual
   Desktop), a `[W]` names both.
+
+## The run digest (#131)
+
+**Never `cat` an `arx.log` — read the digest.** After **every** game exit started by our tools
+(`run-windows.ps1` — so the desktop shortcut and `test-pr.ps1` too — and `smoke-test.ps1`) the script
+`scripts/dev/log-digest.ps1` runs by itself and prints 3–6 lines: the digest path, build and branch, exit
+code, duration, errors/warnings (how many are **new**), crashes. The owner does nothing.
+
+```powershell
+.\scripts\dev\log-digest.ps1 -Print                  # the last run of this working copy (isolated dir, else Saved Games), digest on screen
+.\scripts\dev\log-digest.ps1 -Id                     # who wrote this log: the banner lines, nothing else
+.\scripts\dev\log-digest.ps1 -Find 'OpenXR' -Last 5  # the last 5 lines of the run matching a regex
+.\scripts\dev\log-digest.ps1 -Condense               # the log in a screenful (logdig, F-112)
+.\scripts\dev\log-digest.ps1 -DryRun -Log "$env:USERPROFILE\Saved Games\Arx Libertatis\arx.2.log"   # an older run, nothing written or filed
+.\scripts\dev\log-digest.ps1 -Flush                  # send the queued reports now (a run does this itself)
+.\scripts\dev\test-log-digest.ps1                    # the self-test: fixture logs, a fake GitHub, no game, no network
+```
+
+**What it writes:** `%LOCALAPPDATA%\ArxFatalisVR\runs\<yyyyMMdd-HHmmss>-pid<pid>\` with `digest.md` (build and
+branch from the banner, command line, exit code, duration, `Clean shutdown` yes/no, crash reports with their top
+frames, errors and warnings **grouped by signature** with the count, *NEW* or "seen in N runs" and the issue,
+a timeline of the state lines, and the log in a screenful), `digest.json` (the same as data), a copy of
+`arx.log` and of each new `crash.txt`. The last 30 run folders are kept. The log has no timestamps, so the
+timeline is in log order; the game-state events of D2 (#130) join it by adding their pattern to
+`$script:ArxTimelinePatterns` in `log-digest-lib.ps1`.
+
+**The screenful** (the `logdig` of F-112): lines are grouped into *families* (numbers, hex and paths replaced
+by `N` / `<path>`); a family seen fewer than 6 times is printed in full and in order, a common one as
+`count x last sample`. A 9,000-line log reads in one screen and the rare lines are where the answers are.
+
+**Signatures.** A problem is a `[W]`, `[E]` or `[C]` line, or a crash report. Its signature is the
+level + the source file (not the line number, which moves with every edit) + the message with numbers,
+hex, ids and paths normalised, hashed to 12 hex digits; for a crash the title, the exception and the top
+four frames of `arx.exe` without line numbers. `%LOCALAPPDATA%\ArxFatalisVR\signatures.json` remembers
+every signature (first and last seen, in how many runs, the issue number). A run that is digested twice
+counts once.
+
+**Automatic bug filing** — fully automatic, GitHub **REST** only (`gh api`; never GraphQL, whose quota the
+sessions share), only into the private repository (the flush checks `private` first):
+
+| Situation | What happens |
+|---|---|
+| A new `[E]` / `[C]` signature, or a crash | An issue labeled `bug` + `auto-reported`: title from the signature, body with the build and branch, command line, exit code, how often, the stack or a log excerpt around the first occurrence, the digest; the user-profile part of every path is replaced by `<user>`. A hidden marker `arxvr-auto-report: sig=<hash>` in the body |
+| A new `[W]` signature | Nothing yet — filed only when it shows up in a **second** run (new *and* repeated) |
+| A known signature with an issue | A "Seen again" comment, at most **once per 24 h** per issue; the first comment waits a day after the issue was created. A **closed** issue whose problem comes back is **reopened** with a comment — close noise together with an allow-list line |
+| More than 5 new problems in one run | One root cause logs several lines and a broken build hundreds: at most 5 new issues per run (crashes first); the rest stay in the digest (*new, not filed*) and are filed by a later run if they come back |
+| A line that matches `scripts/dev/log-digest-allowlist.txt` | Shown in the digest, never filed. One .NET regex per line against `[W] Context:12  message`; add a line when you close an auto-reported issue as noise |
+| `signatures.json` was lost, or a second machine | The open and closed `auto-reported` issues are searched by the marker before anything is created — no duplicate |
+| No network, or the rate limit is spent | The report stays in `%LOCALAPPDATA%\ArxFatalisVR\pending-reports\` and the next run sends it (exactly once; a lock serialises two senders) |
+
+It **never blocks the owner**: the digest is local and takes a moment; `run-windows.ps1` starts the GitHub
+part as a hidden background process (`-Detach`), the smoke test sends after it released the game lock; any
+failure is only a warning, the game's exit code and the smoke verdict are unchanged. After an unclean exit
+it waits up to 20 s for the crash processor (`arx.exe --crashinfo`) to write its report. Opt out for one
+shell with `$env:ARXVR_AUTOREPORT = 0` (digest only, nothing queued) or `-NoReport`; `-DryRun` also files
+nothing and writes nothing outside a scratch folder.
+
+**Triage** is the coordinator's (WORKFLOW.md, *Development diagnostics*): confirm or close as noise (and
+extend the allow-list), link the issue to its epic, set the milestone.
 
 ## The draw check (`drawcheck`)
 

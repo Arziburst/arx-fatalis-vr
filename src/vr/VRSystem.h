@@ -107,6 +107,8 @@ bool beginFrame();
  * from outside the game loop): a uniform dark background in the per-eye swapchains as a projection
  * layer with the poses located for this frame, and in front of it a copy of the back buffer on a
  * head-locked quad (F-20). Frames the runtime does not want rendered are ended without layers.
+ * Then the desktop mirror (#21, F-24) replaces the back buffer with what the left eye sees: the
+ * left eye image cropped to the window, the flat frame where the quad appears in that eye.
  * Does nothing while no OpenXR session is running.
  *
  * \param windowSize size of the window's back buffer
@@ -165,6 +167,14 @@ u32 pacingReports();
 
 //! \return the expected display slots per frame: 1 for every slot, 2 for every second slot, ...
 u32 frameDivisor();
+
+//! The desktop mirror (#21): the window shows what the left eye sees - for status.json
+struct MirrorStatus {
+	std::string state = "flat mode"; //!< "on", or why the window shows the flat frame ("off: ...")
+	u64 frames = 0;                  //!< frames mirrored into the window since the game started
+};
+
+MirrorStatus mirrorStatus();
 
 /*!
  * \return the OpenXR runtime that answered this run, as "<name> <version>" - empty while no

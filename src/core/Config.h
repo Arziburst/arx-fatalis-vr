@@ -132,6 +132,7 @@ public:
 		int vsync;
 		int fpsLimit;
 		int vrFrameDivisor; //!< VR: submit every n-th display slot (the even-cadence cap, #20); 1 = every slot
+		bool vrMirror; //!< VR: the desktop window shows what the left eye sees (#21); off = the flat frame
 
 		float fov;
 		bool viewBobbing;

@@ -95,6 +95,7 @@ constexpr const int
 
 constexpr const bool
 	fullscreen = true,
+	vrMirror = true,
 	viewBobbing = true,
 	screenShake = true,
 	showCrosshair = true,
@@ -217,6 +218,7 @@ constexpr const std::string_view
 	vsync = "vsync",
 	fpsLimit = "fps_limit",
 	vrFrameDivisor = "vr_frame_divisor",
+	vrMirror = "vr_mirror",
 	fov = "fov",
 	viewBobbing = "view_bobbing",
 	screenShake = "screen_shake",
@@ -477,6 +479,7 @@ bool Config::save() {
 	writer.writeKey(Key::vsync, video.vsync);
 	writer.writeKey(Key::fpsLimit, video.fpsLimit);
 	writer.writeKey(Key::vrFrameDivisor, video.vrFrameDivisor);
+	writer.writeKey(Key::vrMirror, video.vrMirror);
 	writer.writeKey(Key::fov, video.fov);
 	writer.writeKey(Key::viewBobbing, video.viewBobbing);
 	writer.writeKey(Key::screenShake, video.screenShake);
@@ -610,6 +613,7 @@ bool Config::init(const fs::path & file) {
 	video.fpsLimit = std::max(fpsLimit, -1);
 	int vrFrameDivisor = reader.getKey(Section::Video, Key::vrFrameDivisor, Default::vrFrameDivisor);
 	video.vrFrameDivisor = glm::clamp(vrFrameDivisor, 1, 8);
+	video.vrMirror = reader.getKey(Section::Video, Key::vrMirror, Default::vrMirror);
 	float fov = reader.getKey(Section::Video, Key::fov, Default::fov);
 	video.fov = std::max(fov, 10.f);
 	video.viewBobbing = reader.getKey(Section::Video, Key::viewBobbing, Default::viewBobbing);

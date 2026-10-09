@@ -167,7 +167,8 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
  "comfort":{"mode":"auto","active":false,"viewBobbing":true,"screenShake":true,"fovZoom":true},
  "window":{"width":640,"height":480,"focused":true,"minimized":false,"fullscreen":false},
  "vr":{"supported":true,"enabled":false,"sessionState":"none","frames":0,"shownFrames":0,
-       "resubmittedFrames":0,"discardedFrames":0,"frameGaps":0,"frameDivisor":1,"runtime":"",
+       "resubmittedFrames":0,"discardedFrames":0,"frameGaps":0,"frameDivisor":1,
+       "mirror":{"state":"flat mode","frames":0},"runtime":"",
        "manifest":"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json",
        "pacing":{"reports":3,"seconds":3.0,"frames":241,"shown":1,"divisor":1,"periodMs":12.5,
                  "slotsPerSecond":80.0,"framesPerSecond":80.0,"waitMeanMs":11.9,"waitMaxMs":13.1,
@@ -205,6 +206,11 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   `vr.frameGaps`: frames that came at least 80 ms and 2.5× the mean interval after the previous one
   (level loads produce them; in gameplay each one is a felt hitch); `vr.frameDivisor`: the expected
   display slots per frame (`vr_frame_divisor`, 1 = every slot).
+- `vr.mirror` (#21): the desktop mirror — `state` is `on` while the window shows what the left eye
+  sees, otherwise why not (`flat mode`, `off: --no-vr-mirror`, `off: vr_mirror = 0 in cfg.ini`,
+  `off: OpenGL has no glCopyImageSubData ...`, `off: the VR session ended`); `frames` grows with
+  `vr.shownFrames` while it is `on` (0 in flat mode). One `[vr] desktop mirror:` log line per session
+  names the eye size, the crop and where the flat frame quad lands in the window.
 - `vr.pacing` (#20): the last rate / cadence report — present once the first 3 s window of a
   session closed (a shorter session gets its partial window at the end). See
   [The frame loop and the rate line](#the-frame-loop-and-the-rate-line-20) for every field and the

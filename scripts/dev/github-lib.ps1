@@ -59,12 +59,22 @@ function Wait-ArxGh([double]$Seconds) {
 
 # Cross-process lock around the cache and queue files (several sessions run these scripts at once).
 function Use-ArxGhLock([scriptblock]$Action) {
-	$mutex = [Threading.Mutex]::new($false, 'Global\ArxVrGithubState')
+	# Several Windows accounts run these scripts (the owner, the workers, the CI runner service): the mutex is
+	# created open to Everyone, or the account that did not create it gets "Access ... is denied" (#205). If it
+	# still cannot be opened (created earlier by an older script of another account), go on without it: the
+	# files are replaced atomically (Write-ArxGhFile), the lock only avoids lost updates between sessions.
+	$mutex = $null
+	try {
+		$security = [Security.AccessControl.MutexSecurity]::new()
+		$security.AddAccessRule([Security.AccessControl.MutexAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'FullControl', 'Allow'))
+		$created = $false
+		$mutex = [Threading.MutexAcl]::Create($false, 'Global\ArxVrGithubState', [ref]$created, $security)
+	} catch [UnauthorizedAccessException] { }
 	$held = $false
 	try {
-		try { $held = $mutex.WaitOne(15000) } catch [Threading.AbandonedMutexException] { $held = $true }
+		if ($mutex) { try { $held = $mutex.WaitOne(15000) } catch [Threading.AbandonedMutexException] { $held = $true } }
 		& $Action
-	} finally { if ($held) { try { $mutex.ReleaseMutex() } catch {} }; $mutex.Dispose() }
+	} finally { if ($held) { try { $mutex.ReleaseMutex() } catch {} }; if ($mutex) { $mutex.Dispose() } }
 }
 
 function Write-ArxGhFile([string]$Path, $Object) {

@@ -249,6 +249,14 @@ std::string formatLayout(const ControlLayout & layout);
 std::string formatLayoutChanges(const ControlLayout & layout, const ControlLayout & base);
 
 /*!
+ * A saved layout (#178): \a text (what \ref formatLayoutChanges wrote) read over the default of \a type.
+ * A broken text - a line without "=", an unknown event, an unknown control - changes nothing: the
+ * default layout comes back, with the reason (and the line) in \a error, so the game stays playable.
+ * \return whether \a text was read
+ */
+bool readSavedLayout(std::string_view text, ControllerType type, ControlLayout & layout, std::string * error = nullptr);
+
+/*!
  * Read "event = binding" lines (empty lines and lines starting with '#' are skipped) into \a layout;
  * events not named keep their binding.
  * \return false with the reason (and the line number) in \a error; \a layout is then unchanged

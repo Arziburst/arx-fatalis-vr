@@ -266,6 +266,34 @@ void BindingCaptureTest::labelTest() {
 	                     bindingLabel(Binding::hold(CapLeftStickClick), ControllerType::Index));
 }
 
+void BindingCaptureTest::brokenLayoutFileTest() {
+
+	const ControlLayout index = defaultLayout(ControllerType::Index);
+
+	// A good first line does not survive a broken later one: the whole file is ignored, the default stays
+	const struct { const char * text; const char * reason; } broken[] = {
+		{ "jump = right.b\nfly = left.a\n", "unknown event" },
+		{ "jump = right.b\nbook = left.elbow\n", "unknown control" },
+		{ "jump = right.b\ninventory right.a\n", "expected \"event = binding\"" },
+	};
+	for(const auto & file : broken) {
+		ControlLayout layout;
+		layout[Event::Book] = Binding::single(CapRightA); // whatever was there before is replaced
+		std::string error;
+		CPPUNIT_ASSERT(!readSavedLayout(file.text, ControllerType::Index, layout, &error));
+		CPPUNIT_ASSERT_MESSAGE(file.text, !error.empty());
+		CPPUNIT_ASSERT_MESSAGE(error, error.find(file.reason) != std::string::npos);
+		CPPUNIT_ASSERT_MESSAGE(error, error.find("line 2") != std::string::npos);
+		CPPUNIT_ASSERT_MESSAGE(file.text, layout == index);
+		CPPUNIT_ASSERT_EQUAL(std::string("right.a"), formatBinding(layout[Event::Jump]));
+	}
+
+	// An empty file (only comments) is the default, read fine
+	ControlLayout layout;
+	CPPUNIT_ASSERT(readSavedLayout("# nothing remapped\n", ControllerType::Index, layout));
+	CPPUNIT_ASSERT(layout == index);
+}
+
 void BindingCaptureTest::layoutChangesTest() {
 
 	const ControlLayout base = defaultLayout(ControllerType::Index);
@@ -283,6 +311,13 @@ void BindingCaptureTest::layoutChangesTest() {
 	std::string error;
 	CPPUNIT_ASSERT(parseLayout("# a comment\n" + text, loaded, &error));
 	CPPUNIT_ASSERT(loaded == layout);
+
+	// The saved file of the Touch read over its default
+	ControlLayout saved;
+	CPPUNIT_ASSERT(readSavedLayout("# remapped\njump = right.b\n", ControllerType::Touch, saved, &error));
+	ControlLayout touch = defaultLayout(ControllerType::Touch);
+	touch[Event::Jump] = Binding::single(CapRightB);
+	CPPUNIT_ASSERT(saved == touch);
 
 	// Jump on right B now shares it with the inventory: shown as a conflict
 	CPPUNIT_ASSERT(findConflicts(layout).size() == 1);

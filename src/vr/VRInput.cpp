@@ -108,10 +108,10 @@ ControlLayout playerLayout(ControllerType type, std::string & why) {
 	}
 
 	std::string error;
-	if(!parseLayout(fs::read(file), layout, &error)) {
+	if(!readSavedLayout(fs::read(file), type, layout, &error)) {
 		// The default layout keeps the game playable; the file stays for the player to look at
 		LogWarning << "[vr] input: ignoring the saved layout " << file << ": " << error;
-		return defaultLayout(type);
+		return layout;
 	}
 
 	why = std::string("saved for ") + controllerTypeName(type) + " (" + file.string() + ")";

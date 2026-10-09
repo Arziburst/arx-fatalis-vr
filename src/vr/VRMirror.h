@@ -80,13 +80,17 @@ public:
 	//! Copy the acquired flat frame quad image; call before it is released
 	void copyFlatFrame(const Swapchain & quad);
 
-	//! The head-locked flat frame quad as submitted, in the head (view) space
+	/*!
+	 * The flat frame quad as submitted, in the space the eye pose is given in: the head (view) space
+	 * for the head-locked quad, the world-locked space for the floating panel (#49)
+	 */
 	struct Quad {
 		bool shown = false;
 		bool blended = false; //!< the image is the 2D interface over transparency (#19), drawn with its alpha
 		float width = 0.f;    //!< meters
 		float height = 0.f;   //!< meters
-		float distance = 0.f; //!< in front of the head, meters
+		Vec3f position = Vec3f(0.f); //!< the quad's centre, meters
+		glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f); //!< the quad faces its +z axis
 	};
 
 	/*!
@@ -96,8 +100,8 @@ public:
 	 * carried this frame's mirrored eye (\ref copyEye).
 	 *
 	 * \param fov            the mirrored eye's field of view for this frame
-	 * \param eyePosition    the mirrored eye's position in the head (view) space, for placing the quad
-	 * \param eyeOrientation the mirrored eye's orientation in the head (view) space
+	 * \param eyePosition    the mirrored eye's position in the quad's space, for placing the quad
+	 * \param eyeOrientation the mirrored eye's orientation in the quad's space
 	 */
 	void draw(const Vec2i & windowSize, const MirrorFov & fov, const Vec3f & eyePosition,
 	          const glm::quat & eyeOrientation, const Quad & quad);

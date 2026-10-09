@@ -58,6 +58,7 @@
 #include "vr/HeadTracking.h"
 #include "vr/InterfaceSize.h"
 #include "vr/OpenXRUtil.h"
+#include "vr/UIPanel.h"
 #include "vr/VRActions.h"
 #include "vr/VRMirror.h"
 #include "vr/VRSimulator.h"
@@ -190,6 +191,16 @@ struct OpenXRState {
 		size_t eyeInRender = size_t(-1);    //!< the eye whose image is bound right now, or none
 		Vec2i windowSize = Vec2i(0);        //!< the window, i.e. the flat frame, this frame
 	} frame;
+
+	//! The floating UI panel (#49): the engine's menu state and where the 2D interface's quad is shown
+	struct Panel {
+		std::string menu;      //!< the open menu (setMenuOpen), empty for none
+		PanelAnchor anchor;
+		PanelParams params;
+		PanelPlacement lastPlacement = PanelPlacement::None;
+		PanelMode loggedMode = PanelMode::HeadLocked;
+		Vec2f size = Vec2f(0.f); //!< the panel as last submitted, meters
+	} panel;
 
 	//! The stereo render as status.json reports it; \c active is the current frame's, the rest the last stereo frame's
 	StereoStatus stereo;
@@ -1182,7 +1193,9 @@ bool describeEyeLayer(OpenXRState::Layers & layers) {
 }
 
 /*!
- * Describe the head-locked quad that shows the flat frame swapchain's most recently released image.
+ * Describe the quad that shows the flat frame swapchain's most recently released image: the
+ * floating panel in the world-locked space while a menu is open (#49), otherwise the head-locked
+ * quad in front of the eyes.
  *
  * \param layerFlags \c XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT when the image holds the
  *                   2D interface over a transparent background (a stereo frame): the renderer
@@ -1196,22 +1209,89 @@ void describeQuadLayer(OpenXRState::Layers & layers, XrCompositionLayerFlags lay
 	XrCompositionLayerQuad & layer = layers.quad;
 	layer = { XR_TYPE_COMPOSITION_LAYER_QUAD };
 	layer.layerFlags = layerFlags;
-	layer.space = g_xr.viewSpace;
 	layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
 	layer.subImage.swapchain = swapchain.handle();
 	layer.subImage.imageRect = swapchain.rect();
 	layer.subImage.imageArrayIndex = 0;
-	layer.pose.orientation.x = 0.f;
-	layer.pose.orientation.y = 0.f;
-	layer.pose.orientation.z = 0.f;
-	layer.pose.orientation.w = 1.f;
-	layer.pose.position.x = 0.f;
-	layer.pose.position.y = 0.f;
-	layer.pose.position.z = -QuadDistance;
-	layer.size.width = QuadWidth;
-	layer.size.height = QuadWidth * float(swapchain.size().y) / float(swapchain.size().x);
+
+	if(g_xr.panel.anchor.mode() == PanelMode::World) {
+		const PanelPose & pose = g_xr.panel.anchor.pose();
+		const Vec2f size = panelSize(g_xr.panel.params.width, swapchain.size());
+		layer.space = g_xr.localSpace;
+		layer.pose.orientation.x = pose.orientation.x;
+		layer.pose.orientation.y = pose.orientation.y;
+		layer.pose.orientation.z = pose.orientation.z;
+		layer.pose.orientation.w = pose.orientation.w;
+		layer.pose.position.x = pose.position.x;
+		layer.pose.position.y = pose.position.y;
+		layer.pose.position.z = pose.position.z;
+		layer.size.width = size.x;
+		layer.size.height = size.y;
+		g_xr.panel.size = size;
+	} else {
+		layer.space = g_xr.viewSpace;
+		layer.pose.orientation.x = 0.f;
+		layer.pose.orientation.y = 0.f;
+		layer.pose.orientation.z = 0.f;
+		layer.pose.orientation.w = 1.f;
+		layer.pose.position.x = 0.f;
+		layer.pose.position.y = 0.f;
+		layer.pose.position.z = -QuadDistance;
+		layer.size.width = QuadWidth;
+		layer.size.height = QuadWidth * float(swapchain.size().y) / float(swapchain.size().x);
+	}
 
 	layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
+}
+
+//! The panel settings from cfg.ini (clamped when read)
+PanelParams panelParams() {
+	PanelParams params;
+	params.distance = config.video.vrPanelDistance;
+	params.drop = config.video.vrPanelDrop;
+	params.width = config.video.vrPanelWidth;
+	return params;
+}
+
+/*!
+ * The floating UI panel for this frame (#49): the engine's menu state (setMenuOpen) and the head
+ * this frame renders with place it or keep it (vr/UIPanel.h). Logged as game events on placement
+ * and on every change between the panel and the head-locked quad - never per frame.
+ */
+void updatePanel() {
+
+	OpenXRState::Panel & panel = g_xr.panel;
+	const OpenXRState::Frame & frame = g_xr.frame;
+
+	HeadSample head;
+	const HeadSample * tracked = nullptr;
+	if(frame.views.valid) {
+		const EyeView & left = frame.views.eyes[0];
+		const EyeView & right = frame.views.eyes[1];
+		head = headFromEyes(left.position, left.orientation, right.position, right.orientation);
+		tracked = &head;
+	}
+
+	panel.params = panelParams();
+	const s64 nowUs = s64(frame.state.predictedDisplayTime / 1000); // OpenXR nanoseconds
+	const PanelPlacement placed = panel.anchor.update(!panel.menu.empty(), nowUs, tracked, panel.params);
+
+	if(placed != PanelPlacement::None) {
+		panel.lastPlacement = placed;
+		const PanelPose & pose = panel.anchor.pose();
+		const Vec3f heading = pose.orientation * Vec3f(0.f, 0.f, -1.f);
+		gameevent::Event("vr.panel.placed")("reason", panelPlacementName(placed))("menu", panel.menu)
+			("x", pose.position.x, 2)("y", pose.position.y, 2)("z", pose.position.z, 2)
+			("yawDeg", glm::degrees(std::atan2(-heading.x, -heading.z)), 1)
+			("distanceM", panel.params.distance, 2)("dropM", panel.params.drop, 2)("widthM", panel.params.width, 2)
+			("headY", head.position.y, 2);
+	}
+
+	const PanelMode mode = panel.anchor.mode();
+	if(mode != panel.loggedMode) {
+		panel.loggedMode = mode;
+		gameevent::Event("vr.panel")("mode", panelModeName(mode))("menu", panel.menu.empty() ? "none" : panel.menu);
+	}
 }
 
 /*!
@@ -1319,7 +1399,7 @@ void logStereoBanner(const OpenXRState::Frame & frame, const Vec2i & eyeSize) {
 	    << "union fov L " << glm::degrees(frame.unionFov.left) << " R " << glm::degrees(frame.unionFov.right)
 	    << " U " << glm::degrees(frame.unionFov.up) << " D " << glm::degrees(frame.unionFov.down)
 	    << " deg (one cull for both eyes), near " << std::setprecision(2) << NearClipMeters << " m = "
-	    << std::setprecision(1) << NearClipMeters * EyeRigParams().unitsPerMeter << " units; the 2D interface stays on the head-locked quad ("
+	    << std::setprecision(1) << NearClipMeters * EyeRigParams().unitsPerMeter << " units; the 2D interface on the head-locked quad, menus on the floating panel ("
 	    << interfaceTargetSize(frame.windowSize).x << 'x' << interfaceTargetSize(frame.windowSize).y
 	    << ", blended by its alpha)";
 	LogInfo << oss.str();
@@ -1446,9 +1526,10 @@ void beginStereo(OpenXRState::Frame & frame) {
 
 /*!
  * The desktop mirror (#21): draw what the mirrored eye (vr_mirror_eye, the right one by default)
- * saw in this frame into the window's back buffer. The flat frame quad lives in the head (view)
- * space, so the eye is located there for the frame's display time - the same eye the projection
- * layer was submitted with, seen from the head instead of the room.
+ * saw in this frame into the window's back buffer. The head-locked flat frame quad lives in the head
+ * (view) space, so the eye is located there for the frame's display time - the same eye the
+ * projection layer was submitted with, seen from the head instead of the room; the floating panel
+ * (#49) lives in the room, where the eye was located for the frame already.
  */
 void drawMirror(const Vec2i & windowSize, bool flatFrame) {
 
@@ -1465,7 +1546,22 @@ void drawMirror(const Vec2i & windowSize, bool flatFrame) {
 	DesktopMirror::Quad quad;
 	Vec3f position(0.f);
 	glm::quat orientation(1.f, 0.f, 0.f, 0.f);
-	if(flatFrame) {
+	// The 2D interface drawn into the quad (#19) is blended by its alpha, a copied window is opaque
+	quad.blended = (g_xr.layers.quad.layerFlags & XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT) != 0;
+	quad.width = g_xr.layers.quad.size.width;
+	quad.height = g_xr.layers.quad.size.height;
+	if(flatFrame && g_xr.layers.quad.space == g_xr.localSpace) {
+		// The floating panel (#49) lives in the world-locked space the eyes were located in for this frame
+		if(frame.views.valid) {
+			const XrPosef & pose = g_xr.layers.quad.pose;
+			position = Vec3f(mirrored.pose.position.x, mirrored.pose.position.y, mirrored.pose.position.z);
+			orientation = glm::quat(mirrored.pose.orientation.w, mirrored.pose.orientation.x,
+			                        mirrored.pose.orientation.y, mirrored.pose.orientation.z);
+			quad.position = Vec3f(pose.position.x, pose.position.y, pose.position.z);
+			quad.orientation = glm::quat(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
+			quad.shown = true;
+		}
+	} else if(flatFrame) {
 		XrViewLocateInfo locateInfo = { XR_TYPE_VIEW_LOCATE_INFO };
 		locateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
 		locateInfo.displayTime = frame.state.predictedDisplayTime;
@@ -1482,11 +1578,7 @@ void drawMirror(const Vec2i & windowSize, bool flatFrame) {
 			position = Vec3f(pose.position.x, pose.position.y, pose.position.z);
 			orientation = glm::quat(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
 			quad.shown = true;
-			quad.width = g_xr.layers.quad.size.width;
-			quad.height = g_xr.layers.quad.size.height;
-			quad.distance = QuadDistance;
-			// The 2D interface drawn into the quad (#19) is blended by its alpha, a copied window is opaque
-			quad.blended = (g_xr.layers.quad.layerFlags & XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT) != 0;
+			quad.position = Vec3f(0.f, 0.f, -QuadDistance);
 		} else if(XR_FAILED(result)) {
 			logFrameFailure("xrLocateViews (head space, desktop mirror)", result);
 		}
@@ -1966,6 +2058,9 @@ void submitFrame(const Vec2i & windowSize) {
 		updateQuadSwapchain(windowSize);
 	}
 
+	// Where the 2D interface goes this frame: the floating panel while a menu is open (#49)
+	updatePanel();
+
 	// Not visible: the window still shows the flat frame drawn into the quad
 	if(!frame.state.shouldRender && frame.quadAcquired) {
 		blitToWindow(g_xr.quad, frame.windowSize);
@@ -2008,8 +2103,11 @@ void submitFrame(const Vec2i & windowSize) {
 		std::ostringstream oss;
 		oss << "First VR frame shown: " << (eyes ? "the scene per eye" : background ? "dark background" : "no background");
 		if(flatFrame) {
-			oss << ", flat frame " << g_xr.quad.size().x << 'x' << g_xr.quad.size().y << " on a head-locked quad "
-			    << g_xr.layers.quad.size.width << " x " << g_xr.layers.quad.size.height << " m at " << QuadDistance
+			const bool world = g_xr.layers.quad.space == g_xr.localSpace;
+			oss << ", flat frame " << g_xr.quad.size().x << 'x' << g_xr.quad.size().y
+			    << (world ? " on the floating panel " : " on a head-locked quad ") << g_xr.layers.quad.size.width
+			    << " x " << g_xr.layers.quad.size.height << " m at "
+			    << (world ? g_xr.panel.params.distance : QuadDistance)
 			    << " m" << (g_xr.layers.quad.layerFlags & XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT
 			                ? " (2D interface, blended by its alpha)" : " (a copy of the window)");
 		} else {
@@ -2127,6 +2225,48 @@ MirrorStatus mirrorStatus() {
 	status.eye = g_xr.mirror.eyeName();
 	status.frames = g_xr.mirror.frames();
 	return status;
+}
+
+void setMenuOpen(const char * menu) {
+	g_xr.panel.menu = menu ? menu : "";
+}
+
+PanelStatus panelStatus() {
+	const OpenXRState::Panel & panel = g_xr.panel;
+	PanelStatus status;
+	status.mode = panelModeName(panel.anchor.mode());
+	status.menu = panel.menu;
+	status.placements = panel.anchor.placements();
+	status.lastPlacement = panelPlacementName(panel.lastPlacement);
+	const PanelPose & pose = panel.anchor.pose();
+	const Vec3f heading = pose.orientation * Vec3f(0.f, 0.f, -1.f);
+	const Vec3f face = pose.orientation * Vec3f(0.f, 0.f, 1.f);
+	status.position = pose.position;
+	status.yawDeg = glm::degrees(std::atan2(-heading.x, -heading.z));
+	status.tiltDeg = glm::degrees(std::asin(std::clamp(face.y, -1.f, 1.f)));
+	status.size = panel.size;
+	status.distance = panel.params.distance;
+	status.drop = panel.params.drop;
+	return status;
+}
+
+bool panelHit(const Vec3f & origin, const Vec3f & direction, Vec2f & pixel) {
+	const OpenXRState::Panel & panel = g_xr.panel;
+	if(!g_xr.running || panel.anchor.mode() != PanelMode::World || !g_xr.quad.isValid()) {
+		return false;
+	}
+	Vec2f uv(0.f);
+	float distance = 0.f;
+	if(!vr::panelHit(panel.anchor.pose(), panelSize(panel.params.width, g_xr.quad.size()), origin, direction,
+	                 uv, distance)) {
+		return false;
+	}
+	pixel = uv * Vec2f(g_xr.quad.size());
+	return true;
+}
+
+void recenterPanel() {
+	g_xr.panel.anchor.recenter();
 }
 
 std::string runtimeName() {
@@ -2259,6 +2399,18 @@ u32 frameDivisor() {
 MirrorStatus mirrorStatus() {
 	return MirrorStatus();
 }
+
+void setMenuOpen(const char * /* menu */) { }
+
+PanelStatus panelStatus() {
+	return PanelStatus();
+}
+
+bool panelHit(const Vec3f & /* origin */, const Vec3f & /* direction */, Vec2f & /* pixel */) {
+	return false;
+}
+
+void recenterPanel() { }
 
 std::string runtimeName() {
 	return std::string();

@@ -81,18 +81,18 @@ Check 'an explicit -MaxWorkers 3 still caps' ($capped3.Workers -eq 3 -and $cappe
 $young = Rec 20 120 5 4 4 1 5
 Check 'a week at 20% with 5 days left still advises every READY task (no pacing)' ($young.Workers -eq 6) $young.Workers
 $hot = Rec 60 48 20 4 12.5 2
-Check 'a week on pace to exceed 80% at reset is NOT throttled' ($hot.Workers -eq 12) $hot.Workers
-Check 'ETA to the weekly cap = room / burn rate (20% / (12.5 USD/h * 0.05) = 32 h)' ($hot.Week.EtaHours -eq 32) $hot.Week.EtaHours
+Check 'a week on pace to exceed 90% at reset is NOT throttled' ($hot.Workers -eq 12) $hot.Workers
+Check 'ETA to the weekly cap = room / burn rate (30% / (12.5 USD/h * 0.05) = 48 h)' ($hot.Week.EtaHours -eq 48) $hot.Week.EtaHours
 $eta = Rec 10 100 5 4 4 1
 Check 'ETA to the 5h cap = (95-5)% / (4 USD/h * 0.5 %/USD) = 45 h' ($eta.Five.EtaHours -eq 45) $eta.Five.EtaHours
-Check 'ETA to the weekly cap = (80-10)% / (4 * 0.05) = 350 h' ($eta.Week.EtaHours -eq 350) $eta.Week.EtaHours
+Check 'ETA to the weekly cap = (90-10)% / (4 * 0.05) = 400 h' ($eta.Week.EtaHours -eq 400) $eta.Week.EtaHours
 Check 'ETA with N workers is shorter than at the current burn' ($eta.EtaHoursWithN -lt $eta.EtaHours) "$($eta.EtaHoursWithN) vs $($eta.EtaHours)"
 $full = Rec 20 150 96 3 0 0
 Check 'over the 5-hour cap -> 0 workers' ($full.Workers -eq 0 -and $full.Binding -eq 'cap reached')
-$wfull = Rec 81 150 10 3 0 0
+$wfull = Rec 91 150 10 3 0 0
 Check 'over the weekly cap -> 0 workers' ($wfull.Workers -eq 0)
 $fit = Rec 10 100 5 4 1 0 4 @(100, 100, 100, 5000)
-Check 'queue: tasks that fit before the cap are counted in order (budget 70% / 0.05 = 1400 USD week; 5h 90 / 0.5 = 180 USD)' ($fit.Five.Fit -eq 1 -and $fit.Week.Fit -eq 3 -and $fit.Fit -eq 1) "$($fit.Five.Fit) $($fit.Week.Fit) $($fit.Fit)"
+Check 'queue: tasks that fit before the cap are counted in order (budget 80% / 0.05 = 1600 USD week; 5h 90 / 0.5 = 180 USD)' ($fit.Five.Fit -eq 1 -and $fit.Week.Fit -eq 3 -and $fit.Fit -eq 1) "$($fit.Five.Fit) $($fit.Week.Fit) $($fit.Fit)"
 $unk = Get-UsageRecommendation -Week @{ Pct = 10; ResetsAt = $t0 + 360000 } -FiveHour @{ Pct = 5; ResetsAt = $t0 + 7200 } -WeekPerUsd 0.05 -FivePerUsd 0.5 `
 	-WorkerUsdPerHour 4 -BurnUsdPerHour 0 -RunningWorkers 0 -Now $t0
 Check 'READY count unknown -> only the running ones (0 here)' ($unk.Workers -eq 0)

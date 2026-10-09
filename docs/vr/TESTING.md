@@ -648,6 +648,8 @@ color). `lr` has the left/right difference (mean luma levels on a 160-column gri
 shift of the left picture against the right one (> 0 is right) and the eye separation; `versus` the
 difference of each eye to every earlier shot. `vr.sim` also has the rig, the eye poses as last
 located (`eyes`, with `separation`) and the timeline's state; a `vr.sim.shot` game event per shot.
+A shot stalls its frame for about 100 ms (read-back, composition, three BMPs at eye size): the rate
+line of a run with shots shows those frames as gaps — judge pacing from a run without shots.
 
 **The black world of #215 is visible here:** a level that did not load (`--loadslot 0` without a
 save, before #24's fix) shows the HUD on black — verdict `black` (97 % black in the middle), where

@@ -171,6 +171,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "util/String.h"
 
+#include "vr/VRComfort.h"
 #include "vr/VRSystem.h"
 
 #include "Configure.h"
@@ -1359,7 +1360,10 @@ void ArxGame::updateFirstPersonCamera() {
 				g_playerCameraStablePos = skeleton.bones[viewGroup].anim(io->obj->vertexlocal[viewVertex]);
 			}
 			
-			if(!config.video.viewBobbing) {
+			// View bobbing: the camera follows the animated head of the walking model. Off by cfg.ini in
+			// flat mode, always off in VR (#76) - the head-mounted display is the head, so the camera stays
+			// at the stable position of the paused animation
+			if(!vr::comfort().viewBobbing) {
 				g_playerCamera.m_pos = g_playerCameraStablePos;
 			}
 			
@@ -1840,14 +1844,31 @@ void ArxGame::updateLevel() {
 		
 		g_playerCamera.setFov(glm::radians(config.video.fov));
 		
+		// FOV zoom: Magic Sight widens the view a little, the bow aim narrows it - changes of the focal
+		// length. On a monitor a cue, in a headset a change of the eyes' field of view: the VR comfort
+		// policy keeps the focal at the configured FOV (#76; the per-eye projection itself is #19)
+		float focalZoom = 0.f;
+		
 		Spell * spell = spells.getSpellByCaster(EntityHandle_Player, SPELL_MAGIC_SIGHT);
 		if(spell) {
 			GameDuration duration = g_gameTime.now() - spell->m_timcreation;
-			g_playerCamera.focal -= 30.f * glm::clamp(duration / 500ms, 0.f, 1.f);
+			focalZoom -= 30.f * glm::clamp(duration / 500ms, 0.f, 1.f);
 		}
 		
-		g_playerCamera.focal += 177.5f * player.m_bowAimRatio;
-
+		focalZoom += 177.5f * player.m_bowAimRatio;
+		
+		static bool s_zoomSuppressedLogged = false;
+		if(focalZoom == 0.f) {
+			s_zoomSuppressedLogged = false;
+		} else if(vr::comfort().fovZoom) {
+			g_playerCamera.focal += focalZoom;
+		} else if(!s_zoomSuppressedLogged) {
+			// Once per zoom episode (the spell cast, the bow drawn), not per frame
+			s_zoomSuppressedLogged = true;
+			LogInfo << "[vr] comfort: FOV zoom suppressed - focal " << (focalZoom > 0.f ? "+" : "") << focalZoom
+			        << (spell ? " (Magic Sight)" : "") << (player.m_bowAimRatio != 0.f ? " (bow aim)" : "");
+		}
+		
 	}
 
 	// Effects that used to advance while the level was drawn - once per frame here, so the scene

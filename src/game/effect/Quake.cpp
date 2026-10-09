@@ -19,11 +19,12 @@
 
 #include "game/effect/Quake.h"
 
-#include "core/Config.h"
 #include "core/GameTime.h"
 #include "game/Camera.h"
+#include "io/log/Logger.h"
 #include "math/RandomVector.h"
 #include "scene/GameSound.h"
+#include "vr/VRComfort.h"
 
 struct QUAKE_FX_STRUCT {
 	float intensity;
@@ -67,16 +68,27 @@ void RemoveQuakeFX() {
 	QuakeFx.intensity = 0.f;
 }
 
+static float g_quakeAmplitude = 0.f;
+
 void ManageQuakeFX(Camera * cam) {
+	g_quakeAmplitude = 0.f;
 	if(QuakeFx.intensity > 0.f) {
 		GameDuration tim = g_gameTime.now() - QuakeFx.start;
-
+		
 		if(tim >= QuakeFx.duration) {
 			QuakeFx.intensity = 0.f;
 			return;
 		}
 		
-		if(!config.video.screenShake) {
+		if(!vr::comfort().screenShake) {
+			// Removed at the source (#76): the quake keeps its timing, the camera never moves.
+			// One line per quake, not per frame - merged quakes (AddQuakeFX while one runs) keep their start.
+			static GameInstant s_loggedQuake;
+			if(QuakeFx.start != s_loggedQuake) {
+				s_loggedQuake = QuakeFx.start;
+				LogInfo << "[vr] comfort: screen shake suppressed - intensity " << QuakeFx.intensity << ", "
+				        << toMsi(QuakeFx.duration) << " ms, period " << QuakeFx.frequency;
+			}
 			return;
 		}
 		
@@ -89,10 +101,15 @@ void ManageQuakeFX(Camera * cam) {
 		
 		float truepower = periodicity * QuakeFx.intensity * itmod * 0.01f;
 		float halfpower = truepower * .5f;
+		g_quakeAmplitude = glm::abs(truepower);
 		
 		cam->m_pos += arx::randomVec(-halfpower, halfpower);
 		cam->angle.setPitch(cam->angle.getPitch() + Random::getf() * truepower - halfpower);
 		cam->angle.setYaw(cam->angle.getYaw() + Random::getf() * truepower - halfpower);
 		cam->angle.setRoll(cam->angle.getRoll() + Random::getf() * truepower - halfpower);
 	}
+}
+
+float quakeAmplitude() {
+	return g_quakeAmplitude;
 }

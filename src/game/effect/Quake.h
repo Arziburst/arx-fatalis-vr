@@ -27,6 +27,10 @@ struct Camera;
 void AddQuakeFX(float intensity, GameDuration duration, float period, bool sound);
 void RemoveQuakeFX();
 
+//! Apply the running quake to the camera - unless the VR comfort policy keeps the camera still (#76)
 void ManageQuakeFX(Camera * cam);
+
+//! \return the jitter amplitude the last \ref ManageQuakeFX applied, 0 when no quake runs or it was suppressed
+float quakeAmplitude();
 
 #endif // ARX_GAME_EFFECT_QUAKE_H

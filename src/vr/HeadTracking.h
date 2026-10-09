@@ -20,8 +20,11 @@
 #ifndef ARX_VR_HEADTRACKING_H
 #define ARX_VR_HEADTRACKING_H
 
+#include <string>
+
 #include "math/Types.h"
 #include "vr/HeadPose.h"
+#include "vr/HeadReferenceGate.h"
 
 /*!
  * \brief Head tracking: the headset drives the first-person camera (#24, D-018)
@@ -39,10 +42,17 @@
  *  - \c sim: a pose set through the test channel (\c headpose), for checks without a headset
  *  - \c none: flat mode, the camera stays the engine's
  *
- * The reference is taken from the first sample after a reset: at startup, on every level load, when
- * a session begins, when the runtime moves the LOCAL space (its own recenter), and on the test
- * channel's \c recenter. The button chord is #28; the standing head = the character's eye height
- * is #27 (until then the head at the reference is the character's eye and 1 m = 100 units).
+ * Recenter is the calibration (D-018): the head at the reference is the character's eye, standing or
+ * seated, at 1 m = 100 units (WorldScale.h), and looking that way is the character's facing. A new
+ * reference is wanted at startup, on every level load, when a session begins, when the runtime moves
+ * the LOCAL space (its own recenter), on the test channel's \c recenter and on the player's recenter
+ * (#28, D-019: a long press of the left stick click, read in \ref updateInput).
+ *
+ * The reference must be the worn head (#27, \ref HeadReferenceGate): while the headset is not worn
+ * (session neither visible nor focused - lying on the desk during a load) only a provisional reference
+ * is taken; when it is put on, the settled one comes once the head has been still for a moment - again
+ * every time it is put back on. Auto-raise: a head above the reference lifts it (D-018); the crouch
+ * threshold below it is #100.
  *
  * Leaning and real steps (#26, D-018, HeadLean.h): the head's horizontal movement is split between
  * the body and the camera. The body - the player's collision cylinder - stays while the head is within
@@ -69,8 +79,15 @@ namespace vr {
  */
 bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw);
 
-//! Take a new reference from the next head sample; \a reason goes into the game event
+//! Take a new reference (the next settled head, a provisional one meanwhile); \a reason goes into the game event
 void resetHeadReference(const char * reason);
+
+/*!
+ * \brief The character's eye above its feet (game units) for the next \ref applyHeadPose - set by the
+ *        first-person camera before it, so the reference event and status.json show the character's
+ *        eye height next to the player's; not set for other cameras
+ */
+void setCharacterEyeHeight(float units);
 
 //! Use \a head when no headset pose is available (test channel)
 void setSimulatedHead(const HeadSample & head);
@@ -81,7 +98,15 @@ struct HeadStatus {
 	const char * source = "none"; //!< hmd, held, sim or none
 	bool referenced = false;      //!< a reference was taken
 	u64 references = 0;           //!< references taken since the game started
+	std::string reason;           //!< why the last one was taken: startup, level, source ..., runtime, button, channel
 	HeadReference reference;
+	ReferenceKind referenceKind = ReferenceKind::None; //!< provisional until the worn head settled
+	bool pending = true;          //!< a settled reference is still wanted
+	bool worn = false;            //!< the headset is on a head (session visible or focused, or simulated)
+	float referenceAboveFloor = -1.f; //!< the head above the room's floor at the reference, meters; -1 unknown (no STAGE)
+	float aboveFloor = -1.f;      //!< the head above the floor now, meters; -1 unknown
+	float raised = 0.f;           //!< how far auto-raise lifted the reference since it was taken, meters
+	float eyeAboveFeet = -1.f;    //!< the character's eye above its feet, game units; -1 for a camera that is not the player's
 	Anglef head;                  //!< the head's own angles in LOCAL (engine degrees)
 	Vec3f position = Vec3f(0.f);  //!< the head in LOCAL, meters
 	Vec3f offset = Vec3f(0.f);    //!< the camera offset from the character's eye, game units

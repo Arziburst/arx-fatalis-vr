@@ -86,6 +86,15 @@ HeadReference makeHeadReference(const HeadSample & head) {
 	return reference;
 }
 
+float raiseHeadReference(HeadReference & reference, const HeadSample & head) {
+	const float raise = head.position.y - reference.position.y;
+	if(raise <= 0.f) {
+		return 0.f;
+	}
+	reference.position.y = head.position.y;
+	return raise;
+}
+
 HeadCamera headToCamera(const HeadSample & head, const HeadReference & reference, float bodyYaw,
                         const Vec2f & anchor, const HeadCameraParams & params) {
 

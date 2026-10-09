@@ -24,6 +24,7 @@
 
 #include "math/Angle.h"
 #include "math/Types.h"
+#include "vr/WorldScale.h"
 
 /*!
  * \brief The head pose → the engine camera (#24, D-018)
@@ -76,6 +77,18 @@ struct HeadReference {
 //! \return the reference for the head as it is now: looking this way = the character's facing
 HeadReference makeHeadReference(const HeadSample & head);
 
+/*!
+ * \brief Auto-raise (the owner's calibration model, D-018): the head never sees from above the
+ *        character's eye - a head higher than the reference lifts the reference to it
+ *
+ * The reference height is the character's eye; a player who recentered seated or crouched and then
+ * stands up, or whose reference came from a headset still being lifted, would otherwise look from
+ * above the character's head. Only the height moves; the heading and the horizontal position stay.
+ *
+ * \return how far the reference was raised, meters (0 when the head is not above it)
+ */
+float raiseHeadReference(HeadReference & reference, const HeadSample & head);
+
 //! The first-person camera driven by the head
 struct HeadCamera {
 	Anglef angle;              //!< engine degrees, each wrapped to [0, 360) like the engine's angles
@@ -85,7 +98,7 @@ struct HeadCamera {
 
 //! How the head moves the camera
 struct HeadCameraParams {
-	float unitsPerMeter = 100.f; //!< world scale (#27 calibrates it)
+	float unitsPerMeter = UnitsPerMeter; //!< world scale (WorldScale.h)
 };
 
 /*!

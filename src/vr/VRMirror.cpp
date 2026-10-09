@@ -146,8 +146,8 @@ void DesktopMirror::draw(const Vec2i & windowSize, const MirrorFov & fov, const 
 
 	MirrorRect crop = mirrorCrop(fov, m_eyeSize, windowSize);
 
-	// Where the head-locked quad appears in the mirrored eye: its corners projected, each with its depth
-	// for a perspective-correct texture (q = 1 / depth)
+	// Where the quad appears in the mirrored eye: its corners projected, each with its depth for a
+	// perspective-correct texture (q = 1 / depth); a corner behind the eye leaves the quad out
 	struct Corner {
 		Vec2f window;
 		float s, t, q;
@@ -156,8 +156,8 @@ void DesktopMirror::draw(const Vec2i & windowSize, const MirrorFov & fov, const 
 	if(haveFlat) {
 		const float x = quad.width * 0.5f, y = quad.height * 0.5f;
 		const Vec3f points[4] = {
-			Vec3f(-x, -y, -quad.distance), Vec3f(x, -y, -quad.distance),
-			Vec3f(-x, y, -quad.distance), Vec3f(x, y, -quad.distance),
+			quad.position + quad.orientation * Vec3f(-x, -y, 0.f), quad.position + quad.orientation * Vec3f(x, -y, 0.f),
+			quad.position + quad.orientation * Vec3f(-x, y, 0.f), quad.position + quad.orientation * Vec3f(x, y, 0.f),
 		};
 		for(size_t i = 0; i < corners.size() && haveFlat; i++) {
 			Vec2f uv(0.f);

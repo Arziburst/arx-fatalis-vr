@@ -92,6 +92,7 @@ Check 'dotted and quoted paths' ((Get-XrsValue $obj 'a.b.c') -eq 5 -and (Get-Xrs
 $ctx = New-XrsContext $work $null
 $ctx.Vars['yaw0'] = 10.5
 Check '{name} and {name+N}' ((Expand-XrsValue $ctx '{yaw0}') -eq '10.5' -and (Expand-XrsValue $ctx '{yaw0+30}') -eq '40.5' -and (Expand-XrsValue $ctx '{yaw0-0.5}') -eq '10' -and (Expand-XrsValue $ctx '7') -eq '7')
+Check '{name*K}: a relative threshold' ((Expand-XrsValue $ctx '{yaw0*2}') -eq '21' -and (Expand-XrsValue $ctx '{yaw0*0.9}') -eq '9.45')
 Check 'an unknown {name} is an error' ($(try { Expand-XrsValue $ctx '{nope}' } catch { "$_" }) -match "no remembered value 'nope'")
 
 # --- img-diff --------------------------------------------------------------------------------------------------

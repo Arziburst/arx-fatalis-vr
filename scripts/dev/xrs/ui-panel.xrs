@@ -1,0 +1,110 @@
+# Floating UI panel (#49): with no menu open the 2D interface is the head-locked quad (the HUD); the
+# inventory opens on a panel 0.9 m ahead and 0.3 m below the eyes on the head's heading, turned to face
+# the eyes, and the panel stays where it was placed when the head turns. Opened again, or on a recenter,
+# it is placed where the head looks now. The simulated head starts at the room origin looking down -z.
+#
+# Runs on the test save mvp-new-game (#70: controls free, the bag closed, the HUD drawn):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game
+# Level 10 does not do: its start holds the player, and once released the bag it shows opens again
+# right after every close (measured for #49, TRAPS.md).
+@sim idle
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert player.inventoryOpen eq false
+@assert vr.panel.mode eq head
+@assert vr.panel.placements eq 0
+
+# Gameplay: the head-locked quad covers the same pixels whatever the head does
+@shot hudahead
+vr-sim head rot 40 0 0
+@frames 10
+@shot hudturned
+@remember hudq vr.sim.shots.hudahead.left.quadPixels
+@assert vr.sim.shots.hudturned.left.quadPixels ge {hudq-1000}
+@assert vr.sim.shots.hudturned.left.quadPixels le {hudq+1000}
+vr-sim head rot 0 0 0
+@frames 10
+
+# The inventory opens: the panel is placed ahead of the head, below the eyes, facing them
+ui inventory open
+@frames 5
+@assert vr.panel.mode eq world
+@assert vr.panel.menu eq inventory
+@assert vr.panel.lastPlacement eq open
+@assert vr.panel.placements eq 1
+@assert vr.panel.x gt -0.01
+@assert vr.panel.x lt 0.01
+@assert vr.panel.y gt -0.31
+@assert vr.panel.y lt -0.29
+@assert vr.panel.z gt -0.91
+@assert vr.panel.z lt -0.89
+@assert vr.panel.yaw gt -0.5
+@assert vr.panel.yaw lt 0.5
+@assert vr.panel.tilt gt 18
+@assert vr.panel.tilt lt 19
+@assert vr.panel.width eq 1
+@assert events.byName."vr.panel.placed" eq 1
+@shot panelahead
+
+# The head turns 40 degrees left: the panel stays in the play space, so it slides to the right of the view
+vr-sim head rot 40 0 0
+@frames 10
+@assert vr.panel.placements eq 1
+@assert vr.panel.x gt -0.01
+@assert vr.panel.x lt 0.01
+@assert vr.panel.z gt -0.91
+@assert vr.panel.z lt -0.89
+@shot panelturned
+@remember openq vr.sim.shots.panelahead.left.quadPixels
+# quadPixels counts the eye pixels the drawn interface covers: the head-locked HUD above covers exactly the
+# same with the head turned; the panel leaves the view (measured on mvp-new-game: 152703 -> 110911 before
+# #73, 78209 -> 63588 with the interface at its own resolution: -27 % / -19 %; the absolute numbers follow the
+# interface size, so the threshold is relative - at least 10 % less)
+@assert vr.sim.shots.panelturned.left.quadPixels lt {openq*0.9}
+@assert vr.sim.shots.panelturned.left.quadPixels gt 0
+
+# The head comes back: the panel is where it was
+vr-sim head rot 0 0 0
+@frames 10
+@shot panelback
+@assert vr.sim.shots.panelback.left.quadPixels ge {openq-1000}
+@assert vr.sim.shots.panelback.left.quadPixels le {openq+1000}
+
+# Closed: back to the head-locked quad
+ui inventory close
+@until vr.panel.mode eq head 5s              # the bag slides away on the panel first
+# (Opened again within 250 ms - inventory -> book - the panel keeps its place. The channel's round trip is
+# longer than that, measured about 600 ms: host test UIPanelTest::testShortCloseKeepsThePose covers it.)
+
+# Opened again looking 30 degrees left: placed anew where the head looks
+vr-sim head rot 30 0 0
+@frames 5
+ui inventory open
+@frames 5
+@assert vr.panel.mode eq world
+@assert vr.panel.placements eq 2
+@assert vr.panel.lastPlacement eq open
+@assert vr.panel.yaw gt 29.5
+@assert vr.panel.yaw lt 30.5
+@assert vr.panel.x lt -0.44
+
+# Turned 30 degrees right it stays; a recenter places it where the head looks now
+vr-sim head rot -30 0 0
+@frames 10
+@assert vr.panel.placements eq 2
+@assert vr.panel.yaw gt 29.5
+recenter
+@frames 5
+@assert vr.panel.placements eq 3
+@assert vr.panel.lastPlacement eq recenter
+@assert vr.panel.yaw gt -30.5
+@assert vr.panel.yaw lt -29.5
+@assert vr.panel.x gt 0.44
+
+ui inventory close
+vr-sim head rot 0 0 0
+@until vr.panel.mode eq head 5s
+@assert errors eq 0

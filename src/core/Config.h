@@ -140,6 +140,9 @@ public:
 		float vrHeadFarStart; //!< VR: meters from the body where a head too far starts to fade the world (#26)
 		float vrHeadFarFull; //!< VR: meters from the body where it is black (#26)
 		bool vrRealStepNoise; //!< VR: the body walking after the head makes footstep noise like walking (#26)
+		float vrPanelDistance; //!< VR: the menu panel this far ahead of the head, meters (#49)
+		float vrPanelDrop; //!< VR: the menu panel's centre this far below the eyes, meters (#49)
+		float vrPanelWidth; //!< VR: the menu panel's width, meters (#49)
 
 		float fov;
 		bool viewBobbing;

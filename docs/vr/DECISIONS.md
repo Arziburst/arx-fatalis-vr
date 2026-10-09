@@ -10,6 +10,47 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-033: Remapping in the VR settings — captured on release, conflicts shown, saved as changes per controller type
+
+- **Date:** 2026-10-10
+- **Status:** Accepted
+- **Decided by:** worker of #178 (technical internals, D-017), within D-020 and D-029; the split of #178 and the
+  "VR" entry after "Input" in Options approved by the coordinator; research rows F-171, F-172, F-194
+
+### Decision
+- **The VR page** is an entry "VR" after "Input" in the game's Options list (the pause menu is the same menu, so both
+  reach it), rows like the game's Customize Controls pages: the event left, its binding right; a click captures.
+- **A capture ends when the player lets go** (`src/vr/BindingCapture.h`): released → single; held ≥ 0.5 s (the
+  control table's own long-press time) → long press; a second control of the same hand while the first is held →
+  chord (held together ≥ 0.5 s → long chord). Ending on release, not at 0.5 s, keeps "close the grip, then pull the
+  trigger" a chord however slowly it is done; releases are debounced like the table's (150 ms, the Index grip).
+  Controls held when the capture starts (the trigger that clicked) are ignored until released; nothing pressed for
+  8 s cancels; while capturing, the controls reach nothing else in the game.
+- **Not remappable:** the left stick's directions (walking, D-008) and the right stick's left / right (turning,
+  #32) — refused with the reason. The right stick's down / up and every button are.
+- **Conflicts are shown, not refused** (D-020: "conflicts are shown"): two events with the same binding both fire;
+  both rows turn red and the page names them. Unlike OpenMW VR, which refuses the rebind (F-171): refusing would
+  make swapping two buttons impossible without a free button in between. The table's own rules already let a
+  control lead a chord, have a long press and a single binding at once, so only identical bindings conflict.
+- **Saved per controller type** as `vr-controls-<type>.ini` next to `cfg.ini`, holding **only the events that
+  differ from the default** (`formatLayoutChanges`): a later change of #35's defaults reaches every event the
+  player did not touch. An unknown controller uses (and saves) the Index layout, as its default already is the
+  Index's. A broken file is ignored with a warning (the default keeps the game playable); "reset to default"
+  removes it. The test channel's `bind` / `reset` stay unsaved.
+- **Way out of a bad layout (F-171):** the page's "reset to default" works with the mouse and keyboard too, and
+  remapping never unbinds an event — the game menu and the clicks can be moved, never removed.
+
+### Why
+D-020 asks for single / chord / long press, shown conflicts and layouts per controller type; ending the capture on
+release is the one rule that makes all three distinguishable without a mode switch on the page.
+
+### Rules out
+A mode toggle on the page for "chord" / "long press", refusing conflicting binds, saving the whole layout (it would
+freeze today's defaults into every player's file), remapping the walk and turn sticks before #261 (left-handed mode
+swaps them as a whole).
+
+---
+
 ## D-030: The interface has its own resolution in VR — the headset's pixel density, not the window's
 
 - **Date:** 2026-10-09

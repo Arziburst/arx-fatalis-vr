@@ -58,6 +58,8 @@ set(arxtest_TESTCASES
 
 	tests/vr/VRControlsTest.h
 	tests/vr/VRControlsTest.cpp
+	tests/vr/BindingCaptureTest.h
+	tests/vr/BindingCaptureTest.cpp
 
 	tests/vr/VRGameInputTest.h
 	tests/vr/VRGameInputTest.cpp
@@ -94,6 +96,7 @@ set(arxtest_SOURCES
 	src/vr/VRBindings.cpp
 	src/vr/HeadPose.cpp
 	src/vr/VRControls.cpp
+	src/vr/BindingCapture.cpp
 	src/vr/VRGameInput.cpp
 	src/vr/EyeImage.cpp
 	src/vr/SimRig.cpp

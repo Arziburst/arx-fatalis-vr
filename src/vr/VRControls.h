@@ -135,7 +135,7 @@ const size_t EventCount = size_t(Event::Count);
 //! The text form of an event, e.g. "jump", "interact_left" - for cfg files, the log and status.json
 const char * eventName(Event event);
 
-//! The name players read, e.g. "Click / drag (left hand)"
+//! The name players read on the VR settings page (#178), short enough for its row, e.g. "Click / drag, left"
 const char * eventLabel(Event event);
 
 std::optional<Event> parseEvent(std::string_view name);
@@ -227,8 +227,26 @@ struct ControlLayout {
  */
 ControlLayout defaultLayout(ControllerType type);
 
+/*!
+ * The name players read for a control on these controllers, e.g. "Right A", "Left Y" (the upper
+ * button of the left Touch), "Left stick click"
+ */
+std::string controlLabel(Control control, ControllerType type);
+
+/*!
+ * The name players read for a binding, e.g. "Right B", "Left grip + Left trigger",
+ * "Left stick click (hold)"; "---" when unbound (the game's own Customize Controls pages)
+ */
+std::string bindingLabel(const Binding & binding, ControllerType type);
+
 //! One "event = binding" line per event, in the order of \ref Event
 std::string formatLayout(const ControlLayout & layout);
+
+/*!
+ * One "event = binding" line per event whose binding differs from \a base - what a saved layout
+ * keeps (#178), so a later change of a default reaches the events the player did not remap
+ */
+std::string formatLayoutChanges(const ControlLayout & layout, const ControlLayout & base);
 
 /*!
  * Read "event = binding" lines (empty lines and lines starting with '#' are skipped) into \a layout;

@@ -2,10 +2,10 @@
 # stereo frame, mouse picking still reads the head camera's screen data at the interface's size (not the last
 # eye's), and the screen-space particles are on the flat frame, where they add light without covering the world.
 # The spot is the mvp-items scenario of the test save library (scripts\dev\test-saves\scenarios.txt).
-# Run with the save: scripts/dev/smoke-test.ps1 -VrSim idle -Sequence tl-reprojection -Save mvp-items (xrs-run.ps1 has no -Save;
-# @args is what a run without a save gets: level 1 from its start, where the scene differs)
+#   .\scripts\dev\xrs-run.ps1 tl-reprojection
 @sim idle
-@args --loadlevel 1
+@save mvp-items
+@args --loadslot 0
 
 @until state eq GAMEPLAY 60s
 setpos 10700 2935 11400; lookat key_base_0005

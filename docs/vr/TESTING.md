@@ -743,7 +743,7 @@ items and projectiles; animated entities are projected again for the eye. What #
   alpha, so the black around an additive particle hid the world as a dark square.
 
 `scripts\dev\xrs\tl-reprojection.xrs` is the check, on the simulated headset with the `mvp-items`
-save: `.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence tl-reprojection -Save mvp-items` (see
+save: `.\scripts\dev\xrs-run.ps1 tl-reprojection` (`@save mvp-items`; see
 [What was measured](#what-was-measured-owners-pc-index-steamvr-21710-2026-10-08)). Still with the
 head camera: the visibility test of light flares (raycast from the head, once per frame) and the
 interface itself; screen-space picking with the mouse stays until #37 replaces it with hand
@@ -878,7 +878,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `walk-forward` | the player stands still without input; the stick is held and let go | #31: the player moves |
 | `stand-up` | flat, on the test save `mvp-new-game` (`smoke-test.ps1 -Sequence stand-up -Save mvp-new-game`): `crouch on` / `crouch off` in the start cell — the character crouches (eye 170.1 → 122.7) and stands up where it stood (eye 170.1, same x/z); crouched inside the cell's portcullis it stays down with one `player.standup.blocked` event, and stands up once back at the start spot (#263) | — |
 | `recenter` | a head offset is set and read back; `recenter` is accepted (#28) | — |
-| `tl-reprojection` | picking reads the head camera after the eyes, the book icon's particles are on the quad and add no coverage (#72); run with `-Save mvp-items` through the smoke test (`xrs-run.ps1` has no `-Save`) | — |
+| `tl-reprojection` | picking reads the head camera after the eyes, the book icon's particles are on the quad and add no coverage (#72), on the save `mvp-items` | — |
 | `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by

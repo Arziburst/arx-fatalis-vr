@@ -8,6 +8,21 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — A press page says a closed-source mod is "MIT", or that a feature exists the code removed
+
+**Symptom:** research on a reference mod finds two accounts of the same fact: MoguraVR's summary table
+lists CircuitLord's Titanfall 2 VR as "MIT" and two pages say a player can copy their flat-game saves
+into the VR profile, while the author's README says "the mods are closed source … all rights reserved"
+and the installer's own test asserts that the "copy save" button does not exist.
+**Cause:** summaries repeat each other and the tool's earlier versions; the installer's MIT licence is
+read as the mod's, and a feature removed in v1.2.4 lives on in pages written before it. A licence
+line or a feature list copied from a press page into the reference catalog would put a wrong
+"copy this" or "this exists" into a decision.
+**Do:** for a licence, read `LICENSE` and the README of the repository that ships the thing, and the
+installer's third-party notices; for a feature of a closed mod, prefer the author's text and the
+installer's code and tests over articles, and label every catalog row with its evidence (code, docs,
+add-on, report). When primary and secondary sources disagree, say so in the row.
+
 ## 2026-10-09 — `next-task.ps1` says the MVP queue is empty; `set-status.ps1` fails to move a task
 
 **Symptom:** `.\scripts\dev\next-task.ps1` prints `NEXT none — the MVP queue is empty` although

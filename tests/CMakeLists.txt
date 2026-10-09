@@ -44,6 +44,9 @@ set(arxtest_TESTCASES
 	tests/vr/MirrorGeometryTest.h
 	tests/vr/MirrorGeometryTest.cpp
 
+	tests/vr/VRBindingsTest.h
+	tests/vr/VRBindingsTest.cpp
+
 	tests/vr/HeadPoseTest.h
 	tests/vr/HeadPoseTest.cpp
 
@@ -76,6 +79,7 @@ set(arxtest_SOURCES
 	src/io/log/FileLogger.cpp
 	src/io/resource/ResourcePath.cpp
 	src/vr/FramePacing.cpp
+	src/vr/VRBindings.cpp
 	src/vr/HeadPose.cpp
 	src/vr/VRControls.cpp
 	src/vr/VRGameInput.cpp

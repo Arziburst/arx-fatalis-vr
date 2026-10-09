@@ -1,0 +1,143 @@
+# The rune trail (#43, D-010): the magic button held (the Index's left trackpad, D-019) is the casting
+# stance; the trigger of a hand draws a stroke with that hand, and the engine's magic flares are put at the
+# point 8 cm ahead of the grip - not at the cursor. The trigger alone is a click (no stroke), the stance
+# alone draws nothing; the point follows the hand's position and its orientation; one hand draws at a time.
+# Needs the first-person save (level 10's conversation camera is nowhere near the hands, TRAPS.md):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence rune-trail -Save mvp-new-game
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.input.controllers eq index
+@assert vr.magic.handsDraw eq true
+@assert vr.magic.stance eq false
+@assert vr.magic.strokes eq 0
+
+# The right hand in front of the face, the controller pointing ahead; the left lower, out of the view
+vr-sim hand right pos 0.12 -0.12 -0.45
+vr-sim hand right rot 0 0 0
+@frames 15
+@assert vr.magic.right.located eq true
+@assert vr.magic.left.located eq true
+@shot trail-still-a
+@shot trail-still-b
+
+# The trigger alone is the click of D-019: no stroke, no flare
+vr-sim action trigger right 1
+@frames 10
+@assert vr.magic.stance eq false
+@assert vr.magic.strokes eq 0
+@assert vr.magic.flares eq 0
+vr-sim action trigger right 0
+@frames 10
+
+# The stance alone draws nothing
+vr-sim action trackpad_press left 1
+@frames 10
+@assert vr.magic.stance eq true
+@assert vr.magic.drawing eq false
+@assert vr.magic.flares eq 0
+@log GameEvent:.*magic\.stance state=on hands=true
+
+# The trigger in the stance draws with the right hand, at the point ahead of its grip
+vr-sim action trigger right 1
+@frames 10
+@assert vr.magic.drawing eq true
+@assert vr.magic.hand eq right
+@assert vr.magic.strokes eq 1
+@assert vr.magic.flares gt 3
+@log GameEvent:.*magic\.stroke state=start hand=right
+@remember pointX vr.magic.point.x
+@remember pointY vr.magic.point.y
+@remember pointZ vr.magic.point.z
+# The trail is where the hand would draw, and the last flare where the trail is
+@assert vr.magic.right.point.x eq {pointX}
+@assert vr.magic.lastFlare.x eq {pointX}
+@assert vr.magic.lastFlare.y eq {pointY}
+@assert vr.magic.lastFlare.z eq {pointZ}
+@shot trail-drawn
+
+# The hand moves 30 cm to the right in six steps: the stroke's path is 30 units (1 unit = 1 cm), the flares
+# fill it, the point is where the hand is
+@remember flares0 vr.magic.flares
+vr-sim hand right pos 0.17 -0.12 -0.45
+@frames 4
+vr-sim hand right pos 0.22 -0.12 -0.45
+@frames 4
+vr-sim hand right pos 0.27 -0.12 -0.45
+@frames 4
+vr-sim hand right pos 0.32 -0.12 -0.45
+@frames 4
+vr-sim hand right pos 0.37 -0.12 -0.45
+@frames 4
+vr-sim hand right pos 0.42 -0.12 -0.45
+@frames 10
+@assert vr.magic.drawing eq true
+@assert vr.magic.length gt 29.5
+@assert vr.magic.length lt 30.5
+@assert vr.magic.flares gt {flares0+20}
+@assert vr.magic.point.y gt {pointY-0.1}
+@assert vr.magic.point.y lt {pointY+0.1}
+@remember movedX vr.magic.point.x
+@remember movedZ vr.magic.point.z
+@assert vr.magic.lastFlare.x eq {movedX}
+@assert vr.magic.lastFlare.z eq {movedZ}
+@shot trail-line
+
+# Pitched up by 90 degrees about the grip, the controller points up: the point rises by its 8 cm
+# (engine y is down) - it is the controller's tip, not the grip
+vr-sim hand right rot 0 90 0
+@frames 10
+@assert vr.magic.point.y lt {pointY-7.5}
+@assert vr.magic.point.y gt {pointY-8.5}
+vr-sim hand right rot 0 0 0
+@frames 5
+
+# The other hand's trigger does nothing while the right one draws
+vr-sim action trigger left 1
+@frames 10
+@assert vr.magic.hand eq right
+@assert vr.magic.left.ignored eq true
+@assert vr.magic.strokes eq 1
+
+# The trigger's release ends the rune; the left trigger, pressed while the right drew, still waits for its
+# release; no flare is added after the stroke
+vr-sim action trigger right 0
+@frames 10
+@assert vr.magic.drawing eq false
+@assert vr.magic.lastEnd eq trigger
+@log GameEvent:.*magic\.stroke state=end hand=right reason=trigger
+@remember flaresEnd vr.magic.flares
+@frames 10
+@assert vr.magic.flares eq {flaresEnd}
+@assert vr.magic.strokes eq 1
+vr-sim action trigger left 0
+@frames 5
+
+# A second rune with the left hand, then the stance released while drawing: the stroke ends, the runes cast
+vr-sim action trigger left 1
+@frames 10
+@assert vr.magic.drawing eq true
+@assert vr.magic.hand eq left
+@assert vr.magic.strokes eq 2
+vr-sim action trackpad_press left 0
+@frames 10
+@assert vr.magic.stance eq false
+@assert vr.magic.drawing eq false
+@assert vr.magic.lastEnd eq stance
+@log GameEvent:.*magic\.stance state=off
+vr-sim action trigger left 0
+@frames 5
+
+# The trail shows in both eyes: the drawn pictures differ from the still pair by more than its floor
+@diff trail-still-a trail-still-b lt 1.5 left
+@diff trail-still-a trail-still-b lt 1.5 right
+@diff trail-still-a trail-drawn gt 1.5 left
+@diff trail-still-a trail-drawn gt 1.5 right
+@diff trail-still-a trail-line gt 1.5 left
+@diff trail-still-a trail-line gt 1.5 right
+
+@assert errors eq 0

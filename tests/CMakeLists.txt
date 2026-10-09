@@ -79,6 +79,9 @@ set(arxtest_TESTCASES
 	tests/vr/ArmIKTest.h
 	tests/vr/ArmIKTest.cpp
 
+	tests/vr/RuneTrailTest.h
+	tests/vr/RuneTrailTest.cpp
+
 
 )
 
@@ -110,6 +113,7 @@ set(arxtest_SOURCES
 	src/vr/UIPanel.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/ArmIK.cpp
+	src/vr/RuneTrail.cpp
 
 
 	${arxtest_TESTCASES}

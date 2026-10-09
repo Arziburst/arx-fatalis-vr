@@ -72,6 +72,7 @@
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
+#include "vr/VRRunes.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 #include "vr/WorldScale.h"
@@ -705,6 +706,30 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("error", arm.error);
 			json.value("slide", arm.slide);
 			json.value("stretched", arm.stretched);
+			json.end();
+		}
+		json.end();
+	}
+	// The rune trail (#43): the stance, the stroke the hand draws and the flares put at it
+	{
+		const vr::RuneTrailStatus & magic = vr::runeTrailStatus();
+		json.object("magic");
+		json.value("handsDraw", magic.handsDraw);
+		json.value("stance", magic.stance);
+		json.value("drawing", magic.drawing);
+		json.value("hand", magic.hand);
+		json.value("strokes", magic.strokes);
+		json.value("length", magic.length);
+		json.value("ms", magic.durationMs);
+		json.value("lastEnd", magic.lastEnd);
+		writeVec(json, "point", magic.point);
+		json.value("flares", magic.flares);
+		writeVec(json, "lastFlare", magic.lastFlare);
+		for(size_t hand = 0; hand < vr::HandCount; hand++) {
+			json.object(vr::handName(vr::Hand(hand)));
+			json.value("located", magic.located[hand]);
+			json.value("ignored", magic.ignored[hand]);
+			writeVec(json, "point", magic.points[hand]);
 			json.end();
 		}
 		json.end();

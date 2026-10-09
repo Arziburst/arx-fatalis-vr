@@ -100,6 +100,12 @@ bool handLandmarks(Hand hand, Vec3f & palm, Vec3f & tip);
 void setSimulatedHand(Hand hand, const HandSample & sample);
 void clearSimulatedHand(Hand hand);
 
+/*!
+ * \brief A hand's controller for this frame: located with the eyes (F-21), else the simulated one
+ * \return the source - "xr" or "sim" - or nullptr when the hand has neither
+ */
+const char * controllerSample(Hand hand, HandSample & sample);
+
 //! One arm as status.json reports it
 struct PlayerArmStatus {
 	const char * source = "none"; //!< xr (a located controller), sim (handpose), none

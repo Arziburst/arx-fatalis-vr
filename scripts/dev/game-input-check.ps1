@@ -8,15 +8,16 @@
 	the game reacts to the events. Runs smoke-test.ps1 (flat, --loadlevel 10, isolated, every launch
 	rule of D-014) with 'vr-input' commands - controls pressed as if a controller did it, no headset:
 	  setplayercontrols on, cinemascope off      the level 10 start holds the player (TESTING.md)
-	  tap right.b, tap right.b                   inventory open, closed       (ui.inventory = 2)
+	  tap right.b, tap right.b                   inventory closed, open (the level start shows the bag)
 	  tap left.b, tap left.b                     book open, closed            (ui.book = 2)
 	  tap right.stick_down x2                    crouch toggle on, off        (player.crouch = 2)
 	  tap right.a                                a jump                       (player.jump = 1)
 	  stick left 0 1                             the move vector: forward 1   (vr.input.game.moveY)
 	  tap left.a, tap left.a                     the game menu, and back      (game.state MENU, GAMEPLAY)
 	'mark' lines between the steps give the game frames to finish one before the next.
-	The counts come from the final status.json (smoke-test -ExpectEvents), the menu round trip from
-	the game.state lines after the 'mark game menu' line in arx.log, the move vector and the event
+	The counts come from the final status.json (smoke-test -ExpectEvents); the order from arx.log:
+	after the first '[vr] input: <event>' line of a button, its game events must change state twice,
+	each the opposite of the one before (the menu: MENU, then GAMEPLAY); the move vector and the event
 	presses from vr.input in the final status.json.
 
 	-Unbind sends 'vr-input bind inventory none' first: the broken state on purpose, the check must FAIL.
@@ -62,7 +63,8 @@ $commands += Step 'stick left 0 1' 'move forward'
 $commands += Step 'tap left.a' 'game menu'
 $commands += Step 'tap left.a' 'back in the game'
 
-$expectEvents = @('ui.inventory=2', 'ui.book=2', 'player.crouch=2', 'player.jump=1')
+# At least: the level start shows the inventory bag (one more ui.inventory); the order is checked below
+$expectEvents = @('ui.inventory>=2', 'ui.book=2', 'player.crouch=2', 'player.jump=1')
 # Event presses in the control table: the zeros catch a button that fired a second event
 $expectedPresses = [ordered]@{
 	inventory = 2; book = 2; crouch_toggle = 2; jump = 1; menu = 2
@@ -85,24 +87,36 @@ if ($smokeExit -eq 2) {
 $reasons = @()
 if ($smokeExit -ne 0) { $reasons += "smoke test exit code $smokeExit (see its game events line)" }
 
-# The game menu round trip: after the 'mark game menu' line, the state goes to MENU and back to GAMEPLAY
+# What each button changed, in arx.log order: the game event lines after the button's first
+# '[vr] input: <event>' line (the event is resolved, then the game reacts in the same frame)
+function Get-StatesAfter([string[]]$lines, [string]$event, [string]$pattern) {
+	$press = $lines | Select-String -SimpleMatch "[vr] input: $event (" | Select-Object -First 1
+	if (-not $press) { return $null }
+	$after = $lines[($press.LineNumber - 1)..($lines.Count - 1)]
+	return @($after | Select-String -Pattern $pattern | ForEach-Object { $_.Matches[0].Groups[1].Value })
+}
+
 $log = Get-ArxLogPath (Get-ArxUserDir)
 if (-not (Test-Path $log) -or (Get-Item $log).LastWriteTime -lt $launchStart) {
 	$reasons += "no fresh arx.log at $log"
 } else {
 	$lines = Get-Content $log
-	$markLine = ($lines | Select-String -SimpleMatch '[mark] game menu' | Select-Object -First 1)
-	if (-not $markLine) {
-		$reasons += "no '[mark] game menu' line in arx.log"
-	} else {
-		$after = $lines[($markLine.LineNumber)..($lines.Count - 1)]
-		$states = @($after | Select-String -Pattern 'game\.state to=(\w+)' | ForEach-Object { $_.Matches[0].Groups[1].Value })
-		Write-Host "game states after the menu button: $($states -join ' -> ')"
-		$toMenu = [array]::IndexOf($states, 'MENU')
-		$back = if ($toMenu -ge 0) { [array]::IndexOf($states, 'GAMEPLAY', $toMenu) } else { -1 }
-		if ($toMenu -lt 0) { $reasons += 'the menu button did not open the game menu (no game.state MENU)' }
-		elseif ($back -lt 0) { $reasons += 'the second menu press did not return to the game (no game.state GAMEPLAY after MENU)' }
+	# The inventory and the book: two presses, two changes of state, each the opposite of the one before.
+	# The level 10 start already shows the inventory bag (open) once the controls are given back.
+	foreach ($check in @(@('inventory', 'ui\.inventory state=(\w+)'), @('book', 'ui\.book state=(\w+)'), @('crouch_toggle', 'player\.crouch state=(\w+)'))) {
+		$states = Get-StatesAfter $lines $check[0] $check[1]
+		Write-Host "$($check[0]) after its first press: $(if ($states) { $states -join ' -> ' } else { '(nothing)' })"
+		if (-not $states -or $states.Count -ne 2 -or $states[0] -eq $states[1]) {
+			$reasons += "$($check[0]): expected two opposite state changes after its presses, got '$($states -join ' -> ')'"
+		}
 	}
+	# The game menu round trip: the state goes to MENU and back to GAMEPLAY
+	$states = Get-StatesAfter $lines 'menu' 'game\.state to=(\w+)'
+	Write-Host "game states after the menu button: $(if ($states) { $states -join ' -> ' } else { '(nothing)' })"
+	$toMenu = if ($states) { [array]::IndexOf($states, 'MENU') } else { -1 }
+	$back = if ($toMenu -ge 0) { [array]::IndexOf($states, 'GAMEPLAY', $toMenu) } else { -1 }
+	if ($toMenu -lt 0) { $reasons += 'the menu button did not open the game menu (no game.state MENU)' }
+	elseif ($back -lt 0) { $reasons += 'the second menu press did not return to the game (no game.state GAMEPLAY after MENU)' }
 }
 
 $status = Read-ArxStatus (Get-ArxTestDir)

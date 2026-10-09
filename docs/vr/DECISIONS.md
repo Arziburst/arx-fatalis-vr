@@ -94,7 +94,7 @@ replace a seated mode the player would have to choose.
 - **Decided by:** project owner (recorded by #231)
 
 ### Decision
-- **No pacing:** every task that can run, runs, until the weekly 80% or the 5-hour 95% cap stops it;
+- **No pacing:** every task that can run, runs, until the weekly 90% or the 5-hour 95% cap stops it;
   work is not stretched until a limit resets. The coordinator is blocked only by a headset test or the
   limits, finds more work itself when few tasks run, and asks UX questions (D-017) ahead of time.
   Owner: "ты не должен растягивать задачи до сброса лимитов… сделать максимальное количество работы,
@@ -294,7 +294,7 @@ without a headset session (F-07).
 - **Decided by:** project owner
 
 ### Decision
-- **Weekly limit: up to 80%** (was 70%; 20% stay for the owner's other project). At 80% no new workers; running ones finish.
+- **Weekly limit: up to 90%** (was 70%, then 80%; raised to 90% by the owner on 2026-10-10: "повышай недельную планку до 90%", #256; 10% stay for the owner's other project). At 90% no new workers; running ones finish.
 - **Five-hour limit: up to 95%.** At 95% the coordinator stops the non-Fable workers, waits for the reset
   and resumes them; the last 5% are for the coordinator to keep watching. Fable workers go on.
 - **Going over a limit only with the owner's explicit permission**, given for that occasion; without it the coordinator stops at the limits above and reports.
@@ -311,11 +311,11 @@ without a headset session (F-07).
 - **Worker count from measured usage (#217):** the coordinator plans the number of workers from data, not guesses -
   `scripts\dev\usage-plan.ps1` (samples of both limits and of every session's cost, the calibration "% of a limit per dollar",
   the cost of finished tasks per model / effort / size, a forecast for the READY tasks). Run every cycle and before starting a worker; it
-  names the binding limit and the number of workers that keeps the week at <= 80% by its reset and the 5-hour window < 95%.
+  names the binding limit and the number of workers that keeps the week at <= 90% by its reset and the 5-hour window < 95%.
   The coordinator starts no more than it recommends; one line of its output goes to the status page (#193).
 - **Autopilot (owner, 2026-10-10):** the coordinator runs the work on its own while the limits last. It reads the limits and
   `usage-plan.ps1` on a timer (about every 30 minutes) and before starting a worker, starts every unblocked task the budget
-  allows with a sensible model / effort, loads a 5-hour window that has headroom before its reset, but paces the week to <= 80%
+  allows with a sensible model / effort, loads a 5-hour window that has headroom before its reset, but paces the week to <= 90%
   at its reset. The owner's part is only VR tests, opinions and decisions on how things look and work (D-017).
   Owner: "сам определял расходы, сколько есть, кого можем запустить… от меня только тестирование и моё мнение… ты идёшь вперёд, пока есть лимиты".
 ### Why

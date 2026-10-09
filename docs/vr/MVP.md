@@ -213,7 +213,8 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #178 VR settings: Controls | ui | VR | #30, #35, #49, #34, #32, #33, #28, #100 |
 | #34 menu pointer | ui | VR | #49, #74 |
 | #33 jump, crouch toggle, stealth | input | VR | #74 |
-| #70 test saves | build | plain | #99, #123 || #36 full body with IK arms | render | VR | #72, #24, #74, decisions on #118 / #120 |
+| #70 test saves | build | plain | #99, #123 |
+| #36 full body with IK arms | render | VR | #72, #24, #74, decisions on #118 / #120 |
 | #116 wrist vitals | ui | VR | #36 |
 | #166 research: VHVR world interaction | docs | plain | — (owner's decisions before #37 / #38) |
 | #37 a reticle per hand: drag, into the inventory | combat | VR | #74, #166 (no longer #36, D-016) |

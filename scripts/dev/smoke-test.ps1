@@ -98,6 +98,12 @@
 	Channel commands to send once the game is in the expected state, e.g. 'shot start', 'mark hello',
 	'player.setplayerpos 0 0 0' (see docs/vr/TESTING.md). Each must be acknowledged without an error.
 
+.PARAMETER Sequence
+	A scripted sequence (#113, scripts\dev\xrs\*.xrs: a name or a path) run on the game once it is in the expected
+	state, after -Commands: channel commands with asserts on status.json and arx.log, shots and their comparison
+	(docs/vr/TESTING.md, "Scripted sequences"). A failed step fails the run. The sequence is parsed before the game
+	starts. With a sequence -Seconds defaults to 0: the sequence decides how long the game runs.
+
 .PARAMETER ExpectEvents
 	Game event counts the final status.json must report (events.byName, #130), each 'name=N' (exactly N)
 	or 'name>=N' (at least N), e.g. 'spell.cast=1','ui.book=2','game.state>=3'. Every run also checks the
@@ -146,6 +152,7 @@ param(
 	[int]$Repeat = 1,
 	[int]$StartTimeoutSec = 90,
 	[string[]]$Commands = @(),
+	[string]$Sequence,
 	[string[]]$ExpectEvents = @(),
 	[switch]$CloseWindow,
 	[Parameter(ValueFromRemainingArguments)]
@@ -155,6 +162,10 @@ param(
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot 'test-lib.ps1')
+. (Join-Path $PSScriptRoot 'xrs-lib.ps1')
+
+# A sequence with a syntax error costs no launch
+$sequenceToRun = if ($Sequence) { Read-ArxSequence $Sequence } else { $null }
 
 # Game event counts to assert (#130): the event log's own baseline first, then -ExpectEvents
 $eventChecks = @(
@@ -286,7 +297,13 @@ function Invoke-SmokeRun([int]$Run) {
 				if ($ack -notmatch 'errors=0 ') { $reasons.Add("command '$command' failed: $ack") }
 			}
 
-			Start-Sleep -Seconds $Seconds
+			if ($sequenceToRun) {
+				$sequenceResult = Invoke-ArxSequence $sequenceToRun -TestDir $TestDir -LogPath $log
+				foreach ($failure in $sequenceResult.Failures) { $reasons.Add("sequence $($sequenceResult.Name): $failure") }
+				Write-Check $sequenceResult.Passed "sequence $($sequenceResult.Name): $($sequenceResult.Ran) of $($sequenceResult.Steps) steps run, $($sequenceResult.Failures.Count) failed, $($sequenceResult.Pending.Count) pending"
+				foreach ($p in $sequenceResult.Pending) { Write-Host "         pending $p" -ForegroundColor Yellow }
+			}
+			Start-Sleep -Seconds $(if ($sequenceToRun -and -not $PSBoundParameters.ContainsKey('Seconds')) { 0 } else { $Seconds })
 			$status = Read-ArxStatus $TestDir
 			if ($sim -and $status -and $status.vr.sim -and -not $process.HasExited) {
 				# The script's timeline and its shots finish before the quit

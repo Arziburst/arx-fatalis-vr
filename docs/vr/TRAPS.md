@@ -701,3 +701,10 @@ high); `[datetime]::Parse($obj.updated)` on a JSON field gave a date a month off
 **Symptom:** the `crash` / `crash steal` channel check (#132) opened an `auto-reported` issue (#235).
 **Cause:** the run digest files every new crash signature (#131).
 **Do:** the digest skips filing for a run whose log has `[crash] deliberate crash requested`; if another deliberate fault is added, log the same marker line first.
+
+## 2026-10-09 — .xrs: a timeout without its `s` was part of the value; `$g` and `$G` are one variable
+
+**Symptom:** `@until state eq GAMEPLAY 60` waited 30 s and failed with "never became eq GAMEPLAY 60" while the game was in GAMEPLAY;
+a PowerShell test helper with parameter `$G` and a local `$g` failed with "cannot convert Graphics to Int32".
+**Cause:** the runner took everything after the operator as the value; PowerShell variable names are case-insensitive, so `$g` and `$G` are one variable.
+**Do:** write timeouts as `60s` (the parser now rejects a value with a trailing bare number); never name two variables in one scope by letters that differ only in case.

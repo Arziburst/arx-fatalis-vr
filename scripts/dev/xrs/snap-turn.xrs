@@ -1,0 +1,23 @@
+# Snap turn (#113): a flick of the right stick turns the player by a fixed angle (#32). The control reaches the game
+# today (vr-input, #30); the turn itself is @pending until #32.
+@sim idle
+@args --loadlevel 10
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 120 60s
+setplayercontrols on
+@remember yaw0 camera.yaw
+@remember syncs0 vr.sim.compositor.syncs
+
+# The stick is pushed right and let go: the game saw the input, and the player turned
+vr-input tap right.stick_right
+@frames 10
+@assert vr.sim.compositor.syncs gt {syncs0}
+@assert errors eq 0
+@pending #32 @assert camera.yaw ne {yaw0}
+
+# A second flick turns him again, to the same side
+@remember yaw1 camera.yaw
+vr-input tap right.stick_right
+@frames 10
+@pending #32 @assert camera.yaw ne {yaw1}

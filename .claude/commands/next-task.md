@@ -99,6 +99,10 @@ Run `.\scripts\dev\next-task.ps1`.
   without a coordinator (the owner started you by hand), skip this step.
 - Use the REST API for GitHub where you can (`gh api repos/Arziburst/arx-fatalis-vr/...`): the GraphQL
   quota is shared by every session.
+- **New decisions (#274):** never pick a `D-0xx` yourself — write `## D-NEW: <title>` in DECISIONS.md and refer to it as `D-NEW`
+  (`D-NEW-<tag>` for a second one). <!-- d-new-literal --> Right before the merge: `git fetch origin; git merge origin/main`, then
+  `.\scripts\dev\number-decisions.ps1 -Pr <pr>`, commit `ARXVR-<n> docs: number the decisions`, push, wait for green CI again.
+  <!-- d-new-literal -->
 - **No `needs-vr-test` label, CI green, review PASS** → merge:
   `gh pr merge <pr> --merge --delete-branch --subject "<PR title> (#<pr>)"`;
   `.\scripts\dev\set-status.ps1 -Issue <n> -Status Done`; `git switch main; git pull --ff-only`.

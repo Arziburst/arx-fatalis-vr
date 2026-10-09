@@ -103,6 +103,7 @@ dependencies are met; when a task is split, replace it with its parts.
 7. #131 — Diagnostics D3: automatic log digest after every run and automatic bug filing (`auto-reported`)
 7. #130 — Diagnostics D2: game event log — one line per game and VR state change
 7. #127 — Flat smoke test in CI on the self-hosted runner (follow-up of #99)
+7. #147 — Launch control for parallel workers: never start SteamVR, one game at a time, own fresh build, launch ledger (D-014)
 8. #18 — Per-eye swapchains; first visible result: the flat frame on a head-locked quad (F-20)
 9. #20 — Frame loop with pose-matched submission and a rate / cadence line (F-07, F-21, F-26)
 10. #21 — Desktop mirror = a copy of the left eye (F-24)
@@ -177,6 +178,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #131 D3 auto digest and bug filing | build | plain | #129, #115, #123 |
 | #130 D2 game event log | core | plain | #129 |
 | #127 smoke test in CI | build | plain | #99, #131 |
+| #147 launch control: no SteamVR start, game lock, fresh build, ledger (D-014) | build | plain | #123 |
 | #18 swapchains, quad first | vr-runtime | VR | — |
 | #20 frame loop | vr-runtime | VR | #18 |
 | #21 desktop mirror | vr-runtime | VR | #20 |
@@ -223,7 +225,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | Wave | VR lane (needs the headset) | Plain lane (no headset) |
 |---|---|---|
 | **0** — sequential, until #123 is merged | — | #99 → #124 → #123 |
-| **1** | #18 → #20 → #21 | #93, #71, #114, #115 → #129, #76, #118, #120, #79 |
+| **1** | #18 → #20 → #21 | #147, #93, #71, #114, #115 → #129, #76, #118, #120, #79 |
 | **2** | #24, #19 | #112 → #113, #30, #131, #130 |
 | **3** | #74, #72, #27, #25, #35 | #73, #70, #127 |
 | **4** — finishes checkpoint A | #28, #100, #31, #32, #42 | #80 |

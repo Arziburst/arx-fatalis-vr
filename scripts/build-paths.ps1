@@ -62,9 +62,8 @@ function Get-SteamPath {
 	(Get-ItemProperty -Path 'HKCU:\Software\Valve\Steam' -Name SteamPath -ErrorAction SilentlyContinue).SteamPath
 }
 
-# The Arx Fatalis (Steam app 1700) install folder in any Steam library, or $null.
-# Until the engine finds the data itself (task #79), the scripts do the lookup.
-function Find-ArxFatalisSteamInstall {
+# The install folder of a Steam app (by app id) in any Steam library, or $null.
+function Find-SteamAppInstall([int]$AppId) {
 	$steam = Get-SteamPath
 	if (-not $steam) { return $null }
 	$libraries = @($steam)
@@ -75,7 +74,7 @@ function Find-ArxFatalisSteamInstall {
 		}
 	}
 	foreach ($library in ($libraries | Select-Object -Unique)) {
-		$manifest = Join-Path $library 'steamapps\appmanifest_1700.acf'
+		$manifest = Join-Path $library "steamapps\appmanifest_$AppId.acf"
 		if (-not (Test-Path $manifest)) { continue }
 		if ((Get-Content -Raw $manifest) -match '"installdir"\s+"([^"]+)"') {
 			$dir = Join-Path $library "steamapps\common\$($Matches[1])"
@@ -84,3 +83,7 @@ function Find-ArxFatalisSteamInstall {
 	}
 	return $null
 }
+
+# The Arx Fatalis (Steam app 1700) install folder in any Steam library, or $null.
+# Until the engine finds the data itself (task #79), the scripts do the lookup.
+function Find-ArxFatalisSteamInstall { Find-SteamAppInstall -AppId 1700 }

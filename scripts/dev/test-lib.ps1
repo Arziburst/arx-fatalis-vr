@@ -6,7 +6,7 @@
 # Paths are per working copy (build-paths.ps1), so parallel workers never share them.
 
 . (Join-Path $PSScriptRoot '..\build-paths.ps1')
-. (Join-Path $PSScriptRoot '..\vr-lock.ps1')
+. (Join-Path $PSScriptRoot '..\launch-lib.ps1')
 
 # The working copy these scripts belong to (the repository root above scripts\dev)
 $ArxSourceDir = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)

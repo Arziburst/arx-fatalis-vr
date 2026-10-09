@@ -14,7 +14,9 @@
 	  5. prints the PR's "How to test" section and the build id (the commit to quote in the verdict);
 	  6. launches the game from that worktree: run-windows.ps1 -- --skiplogo --loadslot 0 by default,
 	     i.e. with the owner's own saves (shared user directory) and in VR when SteamVR is running;
-	     arguments after -- replace the default ones. The VR lock applies (one game in VR at a time).
+	     arguments after -- replace the default ones. Launch control applies (D-014): with SteamVR off
+	     the game starts flat unless -StartSteamVR, the owner's switch, starts SteamVR first; the game
+	     lock makes it wait for any other game on this PC (one at a time).
 	The verdict goes to /accept-task <pr> or /reject-task <pr> <what is wrong>, with the build id.
 
 .PARAMETER Pr
@@ -25,6 +27,9 @@
 
 .PARAMETER NoLaunch
 	Prepare (worktree, build) and print the test question, but do not start the game.
+
+.PARAMETER StartSteamVR
+	Start SteamVR when it is not running, then launch in VR (the owner's switch - it turns the headset on).
 
 .PARAMETER Isolated
 	Launch with the worktree's isolated user directory instead of the owner's saves
@@ -48,6 +53,7 @@ param(
 	[Parameter(Mandatory, Position = 0)] [int]$Pr,
 	[switch]$Rebuild,
 	[switch]$NoLaunch,
+	[switch]$StartSteamVR,
 	[switch]$Isolated,
 	[string[]]$Saves,
 	[ValidateSet('Release', 'RelWithDebInfo', 'Debug')] [string]$Config = 'Release',
@@ -127,6 +133,10 @@ Write-Host "==> Build id: $(Short $head)$(if ($dirty) { ' + uncommitted changes'
 if ($NoLaunch) { return }
 if (-not $ArxArgs) { $ArxArgs = @('--skiplogo', '--loadslot', '0') }
 $runArgs = @{ Config = $Config; ArxArgs = $ArxArgs }
+if ($StartSteamVR) { $runArgs.StartSteamVR = $true }
+elseif ($ArxArgs -notcontains '--no-vr' -and -not (Get-Process vrserver -ErrorAction SilentlyContinue)) {
+	Write-Host '    SteamVR is not running: the game will start flat. For the headset start SteamVR first, or pass -StartSteamVR.' -ForegroundColor Yellow
+}
 if ($Isolated) { $runArgs.Isolated = $true }
 if ($Saves) { $runArgs.Isolated = $true; $runArgs.Saves = $Saves }
 & (Join-Path $wt 'scripts\run-windows.ps1') @runArgs

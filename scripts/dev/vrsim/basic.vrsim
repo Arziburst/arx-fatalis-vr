@@ -1,0 +1,20 @@
+# The simulated headset's defaults, written out (#112, docs/vr/TESTING.md "The simulated headset").
+# Set-up lines run at the start; "@<frame> <command>" lines run at that frame of the timeline, whose
+# frame 0 is the first frame the game is playable. The command language is in src/vr/SimRig.h.
+
+rate 90                        # Hz; 0 = no pacing (xrWaitFrame returns at once)
+eye-size 1440 1600             # pixels per eye (the Valve Index panel)
+ipd 0.064                      # meters
+# Field of view per eye in degrees, OpenXR signs (left/down negative), from research row F-165:
+# asymmetric - more to the outside than to the nose - and mirrored between the eyes
+fov left -49.27 44.69 45.84 -45.84
+fov right -44.69 49.27 45.84 -45.84
+timeline gameplay
+
+head pos 0 0 0                 # the room's LOCAL space: x right, y up, -z forward, meters
+head rot 0 0 0                 # yaw (+ turns left), pitch (+ looks up), roll (+ tilts left), degrees
+hand left pos -0.2 -0.45 -0.35
+hand right pos 0.2 -0.45 -0.35
+profile index                  # index, touch, simple, none, or an interaction profile path
+
+@270 shot start                # 3 s in (past the level fade-in): both eyes and the flat frame, judged, into <test dir>\capture

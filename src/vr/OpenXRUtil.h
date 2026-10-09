@@ -44,10 +44,24 @@
 #include "graphics/opengl/OpenGLUtil.h"
 
 #define XR_USE_GRAPHICS_API_OPENGL
+// No global prototypes: the VR module calls OpenXR through the runtime interface below (#112)
+#ifndef XR_NO_PROTOTYPES
+#define XR_NO_PROTOTYPES
+#endif
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
 namespace vr {
+
+/*
+ * The runtime interface (#112): one function pointer per OpenXR function the module uses, named
+ * like the function (vr/XRFunctions.h). Code in namespace vr calls xrWaitFrame(...) as usual and
+ * reaches the OpenXR loader - the real runtime, the default - or the simulated runtime that
+ * --vr-sim installs (vr/VRSimulator.h).
+ */
+#define ARX_XR_FUNCTION(name) extern PFN_##name name;
+#include "vr/XRFunctions.h"
+#undef ARX_XR_FUNCTION
 
 //! \return the name of an OpenXR result code, e.g. "XR_ERROR_SESSION_LOST"
 std::string resultName(XrResult result);

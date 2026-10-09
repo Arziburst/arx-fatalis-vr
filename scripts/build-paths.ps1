@@ -85,5 +85,6 @@ function Find-SteamAppInstall([int]$AppId) {
 }
 
 # The Arx Fatalis (Steam app 1700) install folder in any Steam library, or $null.
-# Until the engine finds the data itself (task #79), the scripts do the lookup.
+# The game finds its data itself (#79, src/io/fs/SteamLibrary.cpp); the scripts use this only for
+# checks of the machine (setup-coordinator.ps1).
 function Find-ArxFatalisSteamInstall { Find-SteamAppInstall -AppId 1700 }

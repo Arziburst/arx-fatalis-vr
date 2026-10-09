@@ -1489,6 +1489,21 @@ u32 frameDivisor() {
 	return g_xr.divisor;
 }
 
+float flatFrameFov(const Vec2i & windowSize) {
+	if(g_xr.session == XR_NULL_HANDLE) {
+		return 0.f;
+	}
+	float fov = headLockedQuadFov(QuadWidth, QuadDistance, windowSize);
+	static Vec2i s_logged(0);
+	if(windowSize != s_logged) {
+		s_logged = windowSize;
+		LogInfo << "[vr] camera: vertical fov " << glm::degrees(fov) << " deg = the head-locked quad " << QuadWidth
+		        << " m at " << QuadDistance << " m for a " << windowSize.x << 'x' << windowSize.y
+		        << " frame, so the head-tracked view is not magnified (#24, until #19 renders per eye)";
+	}
+	return fov;
+}
+
 std::string runtimeName() {
 	return g_xr.runtime;
 }
@@ -1557,6 +1572,10 @@ u32 pacingReports() {
 
 u32 frameDivisor() {
 	return 1;
+}
+
+float flatFrameFov(const Vec2i & /* windowSize */) {
+	return 0.f;
 }
 
 std::string runtimeName() {

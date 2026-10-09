@@ -243,3 +243,17 @@ void HeadPoseTest::testWrapDegrees() {
 	CPPUNIT_ASSERT_EQUAL(10.f, vr::wrapDegrees(730.f));
 	CPPUNIT_ASSERT(vr::wrapDegrees(-1e-7f) < 360.f);
 }
+
+void HeadPoseTest::testQuadFovFillsTheQuad() {
+	// The 2.4 m wide quad at 1.75 m of #18 with a 16:9 and a 4:3 frame: the engine's projection keeps the
+	// vertical FOV and widens it by the aspect ratio, so both directions must cover the quad exactly
+	const Vec2i frames[] = { Vec2i(1280, 720), Vec2i(640, 480) };
+	for(const Vec2i & frame : frames) {
+		float fov = vr::headLockedQuadFov(2.4f, 1.75f, frame);
+		float halfHeight = 2.4f * float(frame.y) / float(frame.x) / 2.f;
+		CPPUNIT_ASSERT_DOUBLES_EQUAL(double(halfHeight / 1.75f), double(std::tan(fov / 2.f)), 1e-6);
+		float horizontal = std::tan(fov / 2.f) * float(frame.x) / float(frame.y);
+		CPPUNIT_ASSERT_DOUBLES_EQUAL(1.2 / 1.75, double(horizontal), 1e-6);
+	}
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(42.2, double(glm::degrees(vr::headLockedQuadFov(2.4f, 1.75f, Vec2i(1280, 720)))), 0.1);
+}

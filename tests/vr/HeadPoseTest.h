@@ -42,6 +42,7 @@ class HeadPoseTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testLeanIsClamped);
 	CPPUNIT_TEST(testHeadBetweenTheEyes);
 	CPPUNIT_TEST(testWrapDegrees);
+	CPPUNIT_TEST(testQuadFovFillsTheQuad);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -56,6 +57,7 @@ public:
 	void testLeanIsClamped();
 	void testHeadBetweenTheEyes();
 	void testWrapDegrees();
+	void testQuadFovFillsTheQuad();
 
 };
 

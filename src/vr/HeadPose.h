@@ -102,6 +102,21 @@ struct HeadCameraParams {
 HeadCamera headToCamera(const HeadSample & head, const HeadReference & reference, float bodyYaw,
                         const HeadCameraParams & params = HeadCameraParams());
 
+/*!
+ * \brief The camera field of view that fills a head-locked quad one to one
+ *
+ * While the flat frame is shown on a quad in front of the eyes (until #19 renders per eye), the
+ * world seen through the quad stays where the head-tracked camera put it only if the camera sees
+ * exactly the angle the quad covers. The quad has the frame's aspect ratio, so matching the
+ * vertical angle matches the horizontal one too (the engine's projection keeps the vertical FOV).
+ *
+ * \param quadWidth the quad's width in meters
+ * \param distance the quad's distance from the eyes in meters
+ * \param frameSize the size of the frame shown on it (pixels)
+ * \return the vertical field of view in radians
+ */
+float headLockedQuadFov(float quadWidth, float distance, const Vec2i & frameSize);
+
 //! \return \a degrees wrapped to [0, 360)
 float wrapDegrees(float degrees);
 

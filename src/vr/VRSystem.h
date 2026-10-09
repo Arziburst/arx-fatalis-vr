@@ -167,6 +167,13 @@ u32 pacingReports();
 u32 frameDivisor();
 
 /*!
+ * \return the vertical field of view (radians) that makes the flat frame fill the head-locked quad
+ *         one to one, for a window of \a windowSize - the camera's FOV while a session exists and
+ *         the frame is shown on the quad (#24, until #19 renders per eye); 0 without a session
+ */
+float flatFrameFov(const Vec2i & windowSize);
+
+/*!
  * \return the OpenXR runtime that answered this run, as "<name> <version>" - empty while no
  *         instance was created (for status.json; stays set after \ref shutdown)
  */

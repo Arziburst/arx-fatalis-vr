@@ -1909,8 +1909,11 @@ void ArxGame::updateLevel() {
 	
 	{
 		
-		g_playerCamera.setFov(glm::radians(config.video.fov));
-		
+		// In VR the flat frame is shown on a head-locked quad: the camera sees exactly the angle the quad
+		// covers, so the head-tracked world is not magnified or shrunk (#24, until #19 renders per eye)
+		float vrFov = vr::flatFrameFov(m_MainWindow->getSize());
+		g_playerCamera.setFov(vrFov > 0.f ? vrFov : glm::radians(config.video.fov));
+
 		// FOV zoom: Magic Sight widens the view a little, the bow aim narrows it - changes of the focal
 		// length. On a monitor a cue, in a headset a change of the eyes' field of view: the VR comfort
 		// policy keeps the focal at the configured FOV (#76; the per-eye projection itself is #19)

@@ -19,6 +19,7 @@
 
 #include "vr/HeadPose.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include <glm/glm.hpp>
@@ -113,6 +114,11 @@ HeadCamera headToCamera(const HeadSample & head, const HeadReference & reference
 	}
 
 	return camera;
+}
+
+float headLockedQuadFov(float quadWidth, float distance, const Vec2i & frameSize) {
+	const float height = quadWidth * float(frameSize.y) / std::max(float(frameSize.x), 1.f);
+	return 2.f * std::atan(height / 2.f / distance);
 }
 
 float wrapDegrees(float degrees) {

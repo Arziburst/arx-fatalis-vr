@@ -52,6 +52,8 @@ set(arxtest_TESTCASES
 
 	tests/vr/HeadPoseTest.h
 	tests/vr/HeadPoseTest.cpp
+	tests/vr/HeadReferenceGateTest.h
+	tests/vr/HeadReferenceGateTest.cpp
 
 	tests/vr/VRControlsTest.h
 	tests/vr/VRControlsTest.cpp
@@ -85,6 +87,7 @@ set(arxtest_SOURCES
 	src/vr/FramePacing.cpp
 	src/vr/VRBindings.cpp
 	src/vr/HeadPose.cpp
+	src/vr/HeadReferenceGate.cpp
 	src/vr/VRControls.cpp
 	src/vr/VRGameInput.cpp
 	src/vr/EyeImage.cpp

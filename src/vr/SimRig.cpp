@@ -365,10 +365,11 @@ std::string Simulation::parse(std::string_view line, Command & command) const {
 	if(word == "session") {
 		command.op = Command::Session;
 		const std::string state = words.size() == 2 ? lowercase(words[1]) : std::string();
-		if(state != "focused" && state != "visible") {
-			return "session: expected focused or visible";
+		if(state != "focused" && state != "visible" && state != "idle") {
+			return "session: expected focused, visible or idle";
 		}
 		command.flag = (state == "focused");
+		command.index = (state == "idle") ? 0 : 1; // worn
 		return std::string();
 	}
 
@@ -464,12 +465,21 @@ void Simulation::apply(const Command & command) {
 			rig.profile = command.text;
 			m_requests.profileChanged = true;
 			return;
-		case Command::Session:
-			if(rig.focused != command.flag) {
+		case Command::Session: {
+			const bool worn = (command.index != 0);
+			if(!worn) {
+				// The headset idle on the desk: the session falls back to synchronized; the focus stays as it was
+				if(rig.worn) {
+					rig.worn = false;
+					m_requests.focusChanged = true;
+				}
+			} else if(!rig.worn || rig.focused != command.flag) {
+				rig.worn = true;
 				rig.focused = command.flag;
 				m_requests.focusChanged = true;
 			}
 			return;
+		}
 		case Command::Shot:
 			m_shots++;
 			m_requests.shots.push_back(command.text.empty() ? "sim" + std::to_string(m_shots) : command.text);

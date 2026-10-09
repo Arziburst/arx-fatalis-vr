@@ -70,6 +70,7 @@
 #include "vr/VRInput.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
+#include "vr/WorldScale.h"
 #include "window/RenderWindow.h"
 
 extern bool START_NEW_QUEST;
@@ -456,6 +457,9 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("roll", g_playerCamera.angle.getRoll());
 		json.value("fov", glm::degrees(g_playerCamera.fov()));
 		json.value("bob", glm::distance(g_playerCamera.m_pos, g_playerCameraStablePos));
+		// Where the view is above the character's feet (game units, y down): the character's eye in flat
+		// mode; in VR the eye plus the head's movement since its reference (#27)
+		json.value("eyeAboveFeet", player.basePosition().y - g_playerCameraStablePos.y);
 		json.value("shake", quakeAmplitude());
 		json.end();
 		// Spells by type: active now, and launched since the level was loaded - the evidence that a spellcast
@@ -568,6 +572,17 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("reason", head.reason);
 		json.value("refY", head.reference.position.y);
 		json.value("refYaw", head.reference.yaw);
+		// The reference is the worn, settled head (#27): its kind, whether a new one is still wanted, the
+		// headset worn, the head above the room's floor (meters, -1 without a STAGE space) at the reference
+		// and now, the character's eye above its feet (game units, -1 when the camera is not the player's)
+		json.value("referenceKind", vr::referenceKindName(head.referenceKind));
+		json.value("pending", head.pending);
+		json.value("worn", head.worn);
+		json.value("refAboveFloor", head.referenceAboveFloor);
+		json.value("aboveFloor", head.aboveFloor);
+		json.value("raised", head.raised);
+		json.value("eyeAboveFeet", head.eyeAboveFeet);
+		json.value("unitsPerMeter", vr::UnitsPerMeter);
 		json.value("pitch", head.head.getPitch());
 		json.value("yaw", head.head.getYaw());
 		json.value("roll", head.head.getRoll());

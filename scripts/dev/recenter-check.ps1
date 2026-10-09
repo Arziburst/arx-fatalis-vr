@@ -15,8 +15,8 @@
 	  recentered  the same head                                  reason "button", one more reference,
 	                                                             offset 0, turned 0, eye height 0.40 lower
 	  back        head back at the start                         the same reference; 26.9 units aside,
-	                                                             turned -40 (the height is auto-raise's,
-	                                                             #27: not judged here)
+	                                                             turned -40; 40 cm above the seated eye:
+	                                                             auto-raise (#27) lifts it - eye height 0, offset y 0
 
 	"Turned" is the head's yaw against the reference's (the camera's yaw against the body's in first
 	person; level 10 opens on a conversation camera, so the head numbers are compared, not the camera's).
@@ -142,10 +142,13 @@ if ($last.Count -eq $windows.Count) {
 	Expect 'recentered' 'turned' 0 $recentered.turned $tolAngle -Angle
 	Expect 'recentered' 'eye height' -0.40 $recentered.refY $tolMeters
 
-	# Back at the start: measured from the seated calibration (the height is auto-raise's, #27)
+	# Back at the start: measured from the seated calibration, the height raised with the head (#27)
 	Expect 'back' 'references' $recentered.references $back.references 0
 	Expect 'back' 'offset aside' ([math]::Sqrt(25 * 25 + 10 * 10)) (Aside $back) $tolUnits
 	Expect 'back' 'turned' -40 $back.turned $tolAngle -Angle
+	# 40 cm above the seated calibration: auto-raise (#27) took the eye height up with the head
+	Expect 'back' 'eye height (auto-raise)' 0 $back.refY $tolMeters
+	Expect 'back' 'offset down' 0 $back.oy $tolUnits
 }
 
 $log = Get-ArxLogPath

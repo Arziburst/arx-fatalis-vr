@@ -142,6 +142,8 @@ struct OpenXRState {
 
 	XrSpace viewSpace = XR_NULL_HANDLE;  //!< head-locked: the flat frame quad lives here
 	XrSpace localSpace = XR_NULL_HANDLE; //!< world-locked: the eyes are located and submitted here
+	XrSpace stageSpace = XR_NULL_HANDLE; //!< the room, floor at y = 0: how high LOCAL is (#27); null without one
+	bool loggedStage = false;            //!< the first located floor was logged
 	s64 colorFormat = 0;
 	std::array<Swapchain, 2> eyes;
 	Swapchain quad;
@@ -742,6 +744,12 @@ void destroySession() {
 		g_xr.localSpace = XR_NULL_HANDLE;
 	}
 
+	if(g_xr.stageSpace != XR_NULL_HANDLE) {
+		xrDestroySpace(g_xr.stageSpace);
+		g_xr.stageSpace = XR_NULL_HANDLE;
+	}
+	g_xr.loggedStage = false;
+
 	if(g_xr.viewSpace != XR_NULL_HANDLE) {
 		xrDestroySpace(g_xr.viewSpace);
 		g_xr.viewSpace = XR_NULL_HANDLE;
@@ -799,8 +807,19 @@ bool createSessionResources() {
 		}
 		bool stage = XR_SUCCEEDED(result)
 		             && std::find(spaces.begin(), spaces.end(), XR_REFERENCE_SPACE_TYPE_STAGE) != spaces.end();
+		if(stage) {
+			// Only to measure the floor under LOCAL: the head's height above the floor is evidence for the eye
+			// height (#27); the camera still takes the head from LOCAL
+			spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
+			result = xrCreateReferenceSpace(g_xr.session, &spaceInfo, &g_xr.stageSpace);
+			if(XR_FAILED(result)) {
+				g_xr.stageSpace = XR_NULL_HANDLE;
+				LogWarning << "Could not create the OpenXR stage space: " << resultName(result)
+				           << " - the head's height above the floor stays unknown";
+			}
+		}
 		LogInfo << "OpenXR reference spaces: view (flat frame quad), local (eye poses)"
-		        << (stage ? ", stage available" : ", no stage space (seated runtime or no room setup)");
+		        << (stage ? ", stage (the floor under the head)" : ", no stage space (seated runtime or no room setup)");
 	}
 
 	g_xr.colorFormat = chooseSwapchainFormat(g_xr.session);
@@ -1014,6 +1033,21 @@ void locateFrameViews(XrTime displayTime) {
 	}
 
 	frame.views.valid = true;
+
+	// How high the LOCAL origin is above the room's floor (#27): both spaces are gravity-aligned, so a head
+	// at height y in LOCAL is y + localAboveFloor above the floor
+	if(g_xr.stageSpace != XR_NULL_HANDLE) {
+		XrSpaceLocation location = { XR_TYPE_SPACE_LOCATION };
+		result = xrLocateSpace(g_xr.localSpace, g_xr.stageSpace, displayTime, &location);
+		if(XR_SUCCEEDED(result) && (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT)) {
+			frame.views.floorValid = true;
+			frame.views.localAboveFloor = location.pose.position.y;
+			if(!g_xr.loggedStage) {
+				LogInfo << "[vr] stage: the LOCAL origin is " << location.pose.position.y << " m above the floor";
+				g_xr.loggedStage = true;
+			}
+		}
+	}
 }
 
 /*!
@@ -1955,6 +1989,11 @@ const char * sessionStateString() {
 	return sessionStateName(g_xr.sessionState);
 }
 
+bool isWorn() {
+	return g_xr.session != XR_NULL_HANDLE
+	       && (g_xr.sessionState == XR_SESSION_STATE_VISIBLE || g_xr.sessionState == XR_SESSION_STATE_FOCUSED);
+}
+
 FrameCounters frameCounters() {
 	return g_xr.frames;
 }
@@ -2079,6 +2118,10 @@ const FrameViews & frameViews() {
 
 const char * sessionStateString() {
 	return "none";
+}
+
+bool isWorn() {
+	return false;
 }
 
 const PacingReport & lastPacingReport() {

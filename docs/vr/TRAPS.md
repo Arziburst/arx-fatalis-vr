@@ -8,6 +8,20 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — In the headset the camera floats far above the body (#24, #27)
+
+**Symptom:** looking down in the headset, the character's body is far below the eyes, although the camera
+math is right and every flat or simulated check passes.
+**Cause:** the head's reference (the head there = the character's eye) was taken from the first tracked
+sample after the level load — and the owner starts a test at the desk: the session runs `synchronized`
+with the headset lying there (the runtime still locates it), and it is put on 50–80 s later
+(`vr.session state=visible` in arx.log). The worn head was ~0.8 m above the desk reference, so the camera
+was 80 units above the eye.
+**Do:** read `vr.head.reference` in arx.log: `kind`, `wornS` and `headAboveFloorM` say when and from what
+the reference came; `status.json` → `vr.head.worn` / `referenceKind`. Since #27 the settled reference
+only comes from a worn headset (D-030). To reproduce without a headset: `session idle` in a `--vr-sim`
+script (`scripts/dev/vrsim/eye-height.vrsim`).
+
 ## 2026-10-09 — A check of "what the button did" counts one event too many, or finds it before the press (#74)
 
 **Symptom:** a flat check of the VR buttons on level 10 sees `ui.inventory=3` after two presses of the

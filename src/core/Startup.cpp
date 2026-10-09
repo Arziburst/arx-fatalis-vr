@@ -34,7 +34,9 @@
 
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
 #include <windows.h>
+#include <tlhelp32.h>
 #include <stdlib.h>
+#include "platform/WindowsUtils.h"
 #endif
 
 #include <boost/version.hpp>
@@ -96,6 +98,115 @@ std::string formatTime(std::time_t time, bool utc) {
 		return "?";
 	}
 	return buffer;
+}
+
+/*!
+ * DLLs that overlays, injectors and graphics mods drop next to a game executable to hook into it
+ * (research row F-146; opengl32.dll is ReShade's OpenGL mode). None of them ships with this build.
+ */
+const char * const ProxyDlls[] = {
+	"opengl32.dll", "dxgi.dll", "d3d9.dll", "d3d11.dll", "dinput8.dll", "version.dll", "winmm.dll"
+};
+
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+
+//! The parent process: "<exe>" (pid <n>), or why it is unknown
+std::string describeParentProcess() {
+
+	DWORD self = GetCurrentProcessId();
+	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if(snapshot == INVALID_HANDLE_VALUE) {
+		return "unknown (" + platform::getErrorString() + ")";
+	}
+
+	PROCESSENTRY32W entry;
+	entry.dwSize = sizeof(entry);
+	DWORD parent = 0;
+	bool found = false;
+	if(Process32FirstW(snapshot, &entry)) {
+		do {
+			if(entry.th32ProcessID == self) {
+				parent = entry.th32ParentProcessID;
+				found = true;
+				break;
+			}
+		} while(Process32NextW(snapshot, &entry));
+	}
+
+	std::string name;
+	if(found && Process32FirstW(snapshot, &entry)) {
+		do {
+			if(entry.th32ProcessID == parent) {
+				name = platform::WideString::toUTF8(entry.szExeFile);
+				break;
+			}
+		} while(Process32NextW(snapshot, &entry));
+	}
+	CloseHandle(snapshot);
+
+	if(!found) {
+		return "unknown (not in the process list)";
+	}
+	std::ostringstream oss;
+	if(name.empty()) {
+		oss << "exited";
+	} else {
+		oss << '"' << name << '"';
+	}
+	oss << " (pid " << parent << ')';
+	return oss.str();
+}
+
+//! "yes" / "no" for an elevated (administrator) process token, or why it is unknown
+std::string describeElevation() {
+	HANDLE token = nullptr;
+	if(!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+		return "unknown (" + platform::getErrorString() + ")";
+	}
+	TOKEN_ELEVATION elevation = { };
+	DWORD size = 0;
+	bool ok = GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size) != FALSE;
+	std::string error = ok ? std::string() : platform::getErrorString();
+	CloseHandle(token);
+	if(!ok) {
+		return "unknown (" + error + ")";
+	}
+	return elevation.TokenIsElevated ? "yes" : "no";
+}
+
+#endif
+
+/*!
+ * Launch: parent "<exe>" (pid <n>), elevated yes|no, proxy DLLs next to the executable: none|<names>
+ * (research row F-146): how the game was started, and whether something hooks into it, so a
+ * tester's "it does not work" log names the launcher and the injector. A proxy DLL is also a [W].
+ */
+void logLaunchEnvironment() {
+
+	std::ostringstream oss;
+	oss << "Launch: ";
+	#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+	oss << "parent " << describeParentProcess() << ", elevated " << describeElevation() << ", ";
+	#endif
+
+	std::string found;
+	fs::path exe = platform::getExecutablePath();
+	if(!exe.empty()) {
+		for(const char * dll : ProxyDlls) {
+			if(fs::is_regular_file(exe.parent() / dll)) {
+				found += (found.empty() ? "" : " ") + std::string(dll);
+			}
+		}
+	}
+	oss << "proxy DLLs next to the executable: "
+	    << (exe.empty() ? std::string("unknown (no executable path)") : found.empty() ? std::string("none") : found);
+	LogInfo << oss.str();
+
+	if(!found.empty()) {
+		LogWarning << "Found " << found << " next to " << exe.filename() << " in " << exe.parent()
+		           << " - an overlay, injector or graphics mod hooks into the game this way and can break"
+		              " rendering or VR; remove it if the game misbehaves (see docs/vr/TESTING.md)";
+	}
 }
 
 /*!
@@ -192,6 +303,8 @@ void logStartupBanner(int argc, char ** argv, const fs::path & logFile,
 		}
 		LogInfo << oss.str();
 	}
+
+	logLaunchEnvironment();
 
 	// Log: "<path>", previous runs kept as <name>.1.<ext> .. <name>.N.<ext> | appended to the previous run's log
 	if(!logFile.empty()) {

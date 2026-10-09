@@ -109,7 +109,9 @@ public:
 	[[nodiscard]] bool isVisible() const noexcept;
 	[[nodiscard]] bool isOpen() const noexcept;
 	[[nodiscard]] bool isOpen(const Entity * container) const noexcept;
-	
+	//! The container whose inventory is open, nullptr when none is (game event log, #130)
+	[[nodiscard]] const Entity * openContainer() const noexcept { return m_open ? m_container : nullptr; }
+
 	void clear(const Entity * container);
 	
 	void updateFader();

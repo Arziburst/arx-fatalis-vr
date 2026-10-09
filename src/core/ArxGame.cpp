@@ -65,6 +65,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "core/Config.h"
 #include "core/Core.h"
 #include "core/FpsCounter.h"
+#include "core/GameEvent.h"
 #include "core/GameTime.h"
 #include "core/Localisation.h"
 #include "core/SaveGame.h"
@@ -238,6 +239,8 @@ bool ArxGame::initialize() {
 	// The OpenXR session is bound to the OpenGL context created by the window;
 	// on failure this logs the reason and the game continues in flat mode
 	vr::createSession();
+	// One line with the outcome; the lines before it say why when it is flat
+	gameevent::Event("vr.mode")("mode", vr::isEnabled() ? "vr" : "flat");
 
 	init = initGameData();
 	if(!init) {
@@ -995,7 +998,8 @@ void ArxGame::shutdown() {
 
 	Application::shutdown();
 
-	// Final status (state EXITED, cleanShutdown true) for the test channel, if enabled
+	// game.state to=EXITED, then the final status (cleanShutdown true) for the test channel, if enabled
+	gameevent::shutdown();
 	channel::shutdown();
 
 	LogInfo << "Clean shutdown";
@@ -1197,6 +1201,9 @@ void ArxGame::doFrame() {
 	updateTime();
 
 	vr::pollEvents();
+
+	// Game event log: state and UI changes (before the channel, which reports the same state)
+	gameevent::update();
 
 	// Test channel: frame counter, command file, status.json (no-op without --test-dir)
 	channel::update();

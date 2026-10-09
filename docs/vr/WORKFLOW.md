@@ -253,7 +253,11 @@ on the issue.
 **Logging rules for VR code** (`arx.log` is the instrument every test and every tester sends back):
 log state changes, not frames — nothing unbounded per frame (log once, every N ms, or the first N);
 every guard that refuses something logs why, with the values; name the owner of a decision before the
-result; an expected zero says so explicitly.
+result; an expected zero says so explicitly. A state change a player or tester causes (a feature
+switching on, a gesture recognised, an attack refused and why) is a **game event**:
+`gameevent::Event("<area>.<what>")("key", value)` (`src/core/GameEvent.h`), one greppable
+`GameEvent:` line with a `t=` time and a count in `status.json` — see "The game event log" in
+[TESTING.md](TESTING.md) (#130).
 
 **Pure VR decision cores get host tests.** Logic that decides something from numbers — swing detector,
 rune stroke projection, snap turn, crouch threshold — lives in a header that takes positions and

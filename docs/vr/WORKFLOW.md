@@ -20,7 +20,7 @@ commit messages, pull requests, and code comments.
 | Current goal: the MVP | [MVP.md](MVP.md) |
 | Research and scope of playable v1 | [RESEARCH-playable-v1.md](RESEARCH-playable-v1.md) |
 | Research: controllers (Valve Index, Quest 3) | [RESEARCH-controllers.md](RESEARCH-controllers.md) |
-| Research: reference VR mods (Dishonored VR, VHVR, Titanfall 2 VR, OpenMW VR) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |
+| Research: reference VR mods (Dishonored VR, VHVR, Titanfall 2 VR, OpenMW VR, Skyrim VR mods) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |
 | VR game checklist: what players expect from a VR game, audited against our plan — gaps for the owner's decision | [VR-CHECKLIST.md](VR-CHECKLIST.md) |
 | SteamVR app manifest: name and tile on the loading card | [STEAMVR.md](STEAMVR.md) |
 | Testing without a headset: smoke test, command channel, `status.json`, `xr_hello` — what is reliable and what is not | [TESTING.md](TESTING.md) |
@@ -199,6 +199,42 @@ the PR's worker. After each merge the coordinator updates the other open PRs in 
 2. The owner answers per PR, e.g. "#131 ok, #133 judder when turning".
 3. The coordinator merges the accepted ones (`/accept-task <pr>` works from any session), posts the
    feedback on the rejected ones and gives a `/reject-task <pr> <feedback>` prompt for a worker.
+
+### The safety hook (#185, D-021)
+
+Workers run without permission prompts (D-011), but Claude Code hooks still run. A `PreToolUse` hook in
+`.claude/settings.json` (`scripts/dev/hooks/safety-guard.sh` → `safety-guard.ps1`) checks every Bash,
+PowerShell, Edit, Write and NotebookEdit call of **every** session in this repository and denies exactly
+these, with a reason that names the safe alternative:
+
+| Rule (in the denial) | Denied | Instead |
+|---|---|---|
+| `push-main` | `git push` to `main` / `master` in any spelling (`HEAD:main`, `:main`, `--delete main`, a URL as the remote, `--all`, a push from a copy that is on `main`); `gh api` that changes the `main` ref | push the task branch, merge the PR with `gh pr merge` |
+| `force-push` | `--force`, `--force-with-lease`, `-f`, `+refspec`, `--mirror` | `git fetch` + `git merge origin/main`, push normally; rewriting a remote branch only via the coordinator |
+| `delete-outside` | a recursive delete (`rm -rf`, `Remove-Item -Recurse`, `rd /s`) of a path outside the session's own worktree and its job tmp dir (`$env:CLAUDE_JOB_DIR\tmp`) | delete inside the worktree; `build-windows.ps1 -Clean` for build output |
+| `owner-write` | a write (redirection, `Set-Content`, `Copy-Item` to, `Remove-Item`, `git add/commit/pull/...`, the Edit / Write tools) into the owner's copy from a session whose directory is another worktree | work in your own worktree |
+| `owner-discard` | `git reset --hard`, `git clean -f`, `git checkout -- .` / `-f`, `git restore .` in a main working copy: the owner's copy, also reached with `git -C` from a session in another clone | report uncommitted work to the coordinator; never discard it |
+
+**It never stops a task.** Everything else passes: branch pushes (`git push -u origin <branch>`), `gh pr merge`
+and REST merges, builds, game launches, writes and deletes inside the own worktree, reading the owner's copy,
+`new-worktree.ps1 -Remove` and the coordinator's other scripts (the hook sees the command line, not what a
+script does inside). On its own error it **fails open** (the call goes through; the error is logged).
+Text inside quotes, here-strings and heredocs (commit messages, PR bodies) is not a command.
+
+**Seeing why.** The denial message in the session starts with `Blocked [<rule>]:`. Every denial and every
+fail-open error is one line in `%LOCALAPPDATA%\ArxFatalisVR\safety-hook.log` (time, rule, session, working
+directory, command); the coordinator reads it in `/new-cycle`. A false positive is reported to the
+coordinator, who fixes the rule and adds the case to the test — never worked around by splitting the command.
+
+**Speed.** `safety-guard.sh` is a bash front door (~30 ms) that lets a call through unless it contains a word
+a rule cares about (`push`, `reset`/`clean`/`checkout`/`restore`/`switch`, a delete command, `cd`, `-C`/`-c`,
+`iex`, the folder name `arx-fatalis-vr`, `git/refs`); only those go to PowerShell (~0.4–0.5 s, mostly the
+start of `pwsh`). The owner's copy must therefore keep the repository's folder name `arx-fatalis-vr`.
+
+**Limits.** It is a guard rail against mistakes, not a sandbox: a path built in a variable it cannot resolve
+(`Remove-Item -Recurse $dir`), a pipeline that feeds `Remove-Item`, or what a script does internally is let
+through. Test: `.\scripts\dev\hooks\test-safety-guard.ps1` (159 sample commands, the hook process, fail-open,
+the log, the timing); extend its table when a rule changes.
 
 ### Worker sessions prepare everything themselves
 

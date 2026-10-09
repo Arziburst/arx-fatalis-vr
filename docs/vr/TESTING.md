@@ -715,7 +715,7 @@ copy; `-Phase smoke|spells` runs one half; exit 0 pass, 1 fail, 2 skipped, 3 can
 ## The tester package (#88)
 
 `.\scripts\package-tester.ps1` writes `dist\ArxFatalisVR-<version>-<sha>.zip` (version = number in `VERSION`, `-dirty`
-appended for an uncommitted tree; `-symbols.zip` next to it when the build has a `.pdb`). Inside: `arx.exe`, every DLL of
+appended for an uncommitted tree; `-symbols.zip` next to it). Inside: `arx.exe`, every DLL of
 the build, the MSVC runtime copied app-local from the Visual Studio redistributable folder, `data/core` copied **next to
 `arx.exe`** (the engine looks there, `RUNTIME_DATADIR=.`), `Start Arx Fatalis VR.cmd`, `Start flat (no VR).cmd`
 (`--no-vr`, the kill switch), `Collect support bundle.cmd` + `collect-support.ps1` (logs, cfg, crashes, SteamVR logs,
@@ -730,8 +730,8 @@ clean temp folder with `PATH` reduced to the Windows folders, not reaching `GAME
 `Clean shutdown`, writing an `[E]` line or a crash report, or an `arx.log` that mentions the working copy's path. That is
 one game launch (game lock, ledger). `-SkipVerify` stops after the numeric checks; `-NoBuild` refuses to build.
 
-CI runs it after the game checks (`-NoBuild`) and uploads the zip as the artifact `tester-build` (14 days). The Release
-build has no `.pdb`; build `RelWithDebInfo` (`-Config RelWithDebInfo`) to get a symbols zip.
+CI runs it after the game checks (`-NoBuild`) and uploads the zip as the artifact `tester-build` (14 days). The `-symbols.zip`
+(`arx.pdb` + `BUILD.txt`, ~7 MB) is for reading tester crash reports and is not uploaded by CI.
 
 ## Isolation and the game lock (parallel work)
 

@@ -1,0 +1,49 @@
+# Crouch and stand up again where the character stood (#263), flat: the crouch toggle through the channel.
+# In the start cell of mvp-new-game the standing cylinder grazes the sloped floor; the game used to keep the
+# character crouched there for good. Something in the way of the head (the cell's portcullis) still keeps it down.
+#   .\scripts\dev\smoke-test.ps1 -Sequence stand-up -Save mvp-new-game
+@args --loadslot 0 --no-vr
+
+@until state eq GAMEPLAY 60s
+@wait 3000                                   # past the level's fade-in
+@assert player.controlsBlocked eq false
+@assert player.crouched eq false
+@remember eye camera.eyeAboveFeet
+@remember x player.x
+@remember z player.z
+@shot standing
+
+crouch on
+@until player.crouched eq true 5s
+@wait 1500                                   # the crouch animation ends
+@assert camera.eyeAboveFeet le {eye-20}
+@shot crouched
+
+crouch off
+@until player.crouched eq false 5s
+@wait 1500                                   # the getting-up animation ends
+@assert player.crouched eq false
+@assert camera.eyeAboveFeet ge {eye-1}       # standing at full height again
+@assert camera.eyeAboveFeet le {eye+1}
+@assert player.x ge {x-1}                    # where it stood
+@assert player.x le {x+1}
+@assert player.z ge {z-1}
+@assert player.z le {z+1}
+@shot stood-up
+
+# Something in the way of the head still keeps the character down: crouched inside the cell's portcullis
+crouch on
+@until player.crouched eq true 5s
+@wait 1500
+setpos 8543 3105.1 9089.3
+@frames 10
+crouch off
+@wait 1500
+@assert player.crouched eq true
+@assert events.byName."player.standup.blocked" eq 1
+
+# Back at the start spot it stands up
+setpos 8540 3105.1 8460
+@until player.crouched eq false 5s
+
+@assert errors eq 0

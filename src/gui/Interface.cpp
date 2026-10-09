@@ -133,6 +133,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "util/Range.h"
 
 #include "vr/HeadTracking.h"
+#include "vr/VRInput.h"
 
 #include "window/RenderWindow.h"
 
@@ -1412,7 +1413,13 @@ void ArxGame::manageKeyMouse() {
 	if(bRestoreCoordMouse) {
 		DANAEMouse = GInput->getMousePosition();
 	}
-	
+
+	// VR: the right stick turns the body (#32); the head's own yaw stays on top of it (#24), so the
+	// play-space heading turns. Updated every frame so a stick held through a menu does not snap after it
+	const bool vrTurnAllowed = !BLOCK_PLAYER_CONTROLS && ARXmenu.mode() == Mode_InGame && !isInCinematic()
+	                           && !(player.Interface & INTER_PLAYERBOOK);
+	const float vrTurn = vr::updateTurn(toMsf(g_platformTime.lastFrameDuration()) / 1000.f, vrTurnAllowed);
+
 	// Player/Eyeball Freelook Management
 	if(!BLOCK_PLAYER_CONTROLS) {
 		
@@ -1595,6 +1602,15 @@ void ArxGame::manageKeyMouse() {
 				
 				player.desiredangle.setYaw(player.angle.getYaw());
 				player.desiredangle.setYaw(MAKEANGLE(player.desiredangle.getYaw() - rotation.x));
+			}
+		}
+
+		// After the mouse, which sets the yaw from the current angle; turning right lowers the yaw
+		if(vrTurn != 0.f) {
+			if(eyeball.isActive()) {
+				eyeball.turn(Anglef(0.f, -vrTurn, 0.f));
+			} else {
+				player.desiredangle.setYaw(MAKEANGLE(player.desiredangle.getYaw() - vrTurn));
 			}
 		}
 	}

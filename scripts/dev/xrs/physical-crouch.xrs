@@ -3,9 +3,9 @@
 # works. The view stays the head: the character's crouch never lowers it a second time on top of the head's
 # own drop - it is the head, but never above the crouched eye. The simulated head starts at the reference.
 #
-# Runs on the test save mvp-items (#70: controls free, room to stand up). Not mvp-new-game: in its start
-# cell the character cannot stand up again after any crouch, the button's too (#263):
-#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence physical-crouch -Save mvp-items
+# Runs on the test save mvp-new-game (#70: controls free; the start cell lets a crouched character stand up
+# again since #263):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence physical-crouch -Save mvp-new-game
 @sim idle
 @args --loadslot 0
 

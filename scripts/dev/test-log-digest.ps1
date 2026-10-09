@@ -274,6 +274,14 @@ Check ($cli.Exit -eq 0 -and $cli.Text -match 'Entity' -and $cli.Text -match 'ARX
 $cli = Invoke-DigestCli @('-Log', (Join-Path $userDir 'no-such.log'), '-Id')
 Check ($cli.Exit -ne 0 -and $cli.Text -match 'no log at') 'a missing log is an error, not an empty answer'
 
+Write-Host '8. the signatures mutex is open to every Windows account (#272)' -ForegroundColor Cyan
+# The CI runner service is another account than the owner and the workers: a mutex created with the default
+# security is denied to it. While the store is held, the mutex must carry an Everyone rule.
+$acl = Use-ArxStore { param($s)
+	$m = [Threading.MutexAcl]::OpenExisting('Global\ArxFatalisVR-signatures', [Security.AccessControl.MutexRights]::ReadPermissions)
+	try { [System.Threading.ThreadingAclExtensions]::GetAccessControl($m).GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]) | ForEach-Object { "$($_.IdentityReference.Value) $($_.AccessControlType)" } } finally { $m.Dispose() }
+}
+Check (@($acl) -contains 'S-1-1-0 Allow') 'the mutex grants Everyone (S-1-1-0) access'
 Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item Env:ARXVR_DIGEST_ROOT
 if ($failures) { Write-Host "log digest self-test: $failures check(s) FAILED" -ForegroundColor Red; exit 1 }

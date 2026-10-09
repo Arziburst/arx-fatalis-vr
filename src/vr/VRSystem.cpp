@@ -56,6 +56,7 @@
 #include "vr/OpenXRUtil.h"
 #include "vr/VRActions.h"
 #include "vr/VRMirror.h"
+#include "vr/VRSimulator.h"
 #include "vr/VRSwapchain.h"
 
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
@@ -107,9 +108,6 @@ namespace {
 //! The head-locked quad that shows the flat frame (F-20): its width and distance in meters
 const float QuadWidth = 2.4f;
 const float QuadDistance = 1.75f;
-
-//! Uniform background of the eye swapchains, sRGB-encoded: dark grey, so it is told apart from "no layer"
-const GLfloat BackgroundColor[4] = { 0.15f, 0.15f, 0.15f, 1.f };
 
 //! Frame loop failures logged per session before it goes quiet (they repeat every frame)
 const u32 MaxLoggedFrameFailures = 5;
@@ -976,7 +974,7 @@ bool renderBackground(OpenXRState::Layers & layers) {
 			return false;
 		}
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, swapchain.framebuffer());
-		glClearBufferfv(GL_COLOR, 0, BackgroundColor);
+		glClearBufferfv(GL_COLOR, 0, EyeBackgroundColor);
 		if(eye == g_xr.mirror.eye()) {
 			g_xr.mirror.copyEye(swapchain);
 		}
@@ -1238,12 +1236,20 @@ bool initialize() {
 	g_xr.manifest = manifest.path;
 	logRuntimeSelection(manifest);
 
-	if(g_disableVR) {
+	if(simRequested()) {
+		// The simulated headset (#112) never contacts a runtime, so --no-vr - which the launch scripts
+		// add while SteamVR is off (D-014) - does not stop it; a broken script means flat, never the runtime
+		if(g_disableVR) {
+			LogInfo << "[vr] sim: --vr-sim wins over --no-vr: the simulator runs, no OpenXR runtime is used";
+		}
+		if(!installSimulator()) {
+			return false;
+		}
+		g_xr.manifest = "--vr-sim";
+	} else if(g_disableVR) {
 		LogInfo << "VR disabled on the command line (--no-vr), starting in flat mode";
 		return false;
-	}
-
-	if(!runtimeIsReady()) {
+	} else if(!runtimeIsReady()) {
 		return false;
 	}
 

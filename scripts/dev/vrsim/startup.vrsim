@@ -1,0 +1,8 @@
+# Shots counted from the first frame of the session, not from gameplay (#112): for screens the game
+# never calls playable - the main menu, a level that did not load (the black world of #215, which
+# a --loadslot of a missing save produced: state STARTUP, HUD only).
+
+timeline session
+
+@180 shot session-2s
+@+270 shot session-5s

@@ -76,6 +76,12 @@
 	Start in VR (no --no-vr). SteamVR must already be running - the test never starts it (D-014) and is
 	SKIPPED otherwise; the result records the OpenXR session state.
 
+.PARAMETER VrSim
+	Run in VR on the simulated headset (#112): arx.exe --vr-sim <script>, no runtime and no SteamVR, so it
+	runs any time (still one game at a time). A bare name is looked up in scripts\dev\vrsim (e.g. basic,
+	eye-check). The test waits for the session to be focused, lets the script's timeline finish before it
+	quits (up to -Seconds plus 60 s) and prints every shot's verdicts (docs/vr/TESTING.md).
+
 .PARAMETER Menu
 	A plain launch that expects the main menu (no --loadlevel 10 default); combine with -Commands 'loadslot 0'.
 
@@ -108,6 +114,8 @@
 .EXAMPLE
 	.\scripts\dev\smoke-test.ps1 -Vr -- --loadslot 0
 .EXAMPLE
+	.\scripts\dev\smoke-test.ps1 -VrSim basic -Commands 'vr-sim head rot 30 0 0','vr-sim shot turned'
+.EXAMPLE
 	.\scripts\dev\smoke-test.ps1 -Commands 'shot start','mark after-shot' -- --loadlevel 11
 .EXAMPLE
 	.\scripts\dev\smoke-test.ps1 -Save mvp-goblin-fight
@@ -132,6 +140,7 @@ param(
 	[int]$LockTimeoutSec = 300,
 	[switch]$Rebuild,
 	[switch]$Vr,
+	[string]$VrSim,
 	[switch]$Menu,
 	[int]$Seconds = 10,
 	[int]$Repeat = 1,
@@ -165,6 +174,13 @@ if ($UserDir -and $Shared) { throw '-UserDir and -Shared exclude each other' }
 if (-not $UserDir) { $UserDir = Get-ArxUserDir -Shared:$Shared }
 if ($Shared -and ($Saves -or $Save)) { throw '-Saves / -Save copy saves into the isolated user directory; they cannot be combined with -Shared' }
 if ($Save -and $Saves) { throw '-Save and -Saves exclude each other' }
+# The simulated headset (#112): a script path, or a name in scripts\dev\vrsim
+$simScript = $null
+if ($VrSim) {
+	if ($Vr) { throw '-Vr and -VrSim exclude each other: the simulator replaces the runtime' }
+	$simScript = Resolve-ArxSimScript $VrSim
+}
+$sim = [bool]$simScript
 # -Save <name>: that library save is the only save of the isolated user directory, so slot 0 is it
 if ($Save -and -not $ArxArgs) { $ArxArgs = @('--loadslot', '0') }
 if (-not $ArxArgs -and -not $Menu) { $ArxArgs = @('--loadlevel', '10') }
@@ -206,6 +222,8 @@ function Invoke-SmokeRun([int]$Run) {
 		$argList += '--windowed', '--test-dir', "`"$TestDir`""
 		if (-not $Shared) { $argList += '--user-dir', "`"$UserDir`"", '--config-dir', "`"$UserDir`"" }
 		if (-not $Vr) { $argList += '--no-vr' }
+		# --vr-sim wins over --no-vr in the game; --no-vr stays, so a broken script means flat, never the runtime
+		if ($sim) { $argList += '--vr-sim', "`"$simScript`"" }
 		$argList += $ArxArgs
 		Write-Host "=== run $Run/$Repeat`: arx.exe $($argList -join ' ')" -ForegroundColor Cyan
 		$env:ARX_UNATTENDED = '1'
@@ -252,6 +270,15 @@ function Invoke-SmokeRun([int]$Run) {
 				Write-Host "  VR: enabled=$($status.vr.enabled) session=$($status.vr.sessionState) frames=$($status.vr.frames) shown=$($status.vr.shownFrames)"
 				if (-not $status.vr.enabled) { $reasons.Add('VR requested but the game runs flat (see the log for the reason)') }
 			}
+			if ($sim) {
+				# The simulated headset is focused at once; frames follow within a frame or two
+				try { $status = Wait-ArxStatus { param($s) $s.vr.sessionState -eq 'focused' -and [int64]$s.vr.frames -gt 0 } -TimeoutSec 15 -Dir $TestDir -What 'a focused simulated session' } catch { }
+				$status = Read-ArxStatus $TestDir
+				$result.VR = "sim/$($status.vr.sessionState)/$($status.vr.frames)"
+				Write-Host "  VR (simulated): enabled=$($status.vr.enabled) session=$($status.vr.sessionState) frames=$($status.vr.frames) runtime=$($status.vr.runtime) timeline=$($status.vr.sim.timeline)"
+				if (-not $status.vr.enabled -or -not $status.vr.sim) { $reasons.Add('--vr-sim given but the game runs flat (see the log: a script error names its line)') }
+				elseif ($status.vr.sessionState -ne 'focused') { $reasons.Add("the simulated session is not focused (state $($status.vr.sessionState))") }
+			}
 
 			foreach ($command in $Commands) {
 				$ack = Send-ArxCommand -Lines @($command) -Dir $TestDir
@@ -261,6 +288,12 @@ function Invoke-SmokeRun([int]$Run) {
 
 			Start-Sleep -Seconds $Seconds
 			$status = Read-ArxStatus $TestDir
+			if ($sim -and $status -and $status.vr.sim -and -not $process.HasExited) {
+				# The script's timeline and its shots finish before the quit
+				try {
+					$status = Wait-ArxStatus { param($s) $s.vr.sim -and [int]$s.vr.sim.pending -eq 0 -and [int]$s.vr.sim.pendingShots -eq 0 } -TimeoutSec 60 -Dir $TestDir -What 'the simulator timeline to finish'
+				} catch { $reasons.Add("$_ (timeline $($status.vr.sim.timeline), $($status.vr.sim.pending) lines pending)") }
+			}
 			if ($process.HasExited) { $reasons.Add("the game exited on its own with code $($process.ExitCode) while it should have been running") }
 
 			# A 'drawcheck' sent through -Commands draws the scene twice per frame with the same camera
@@ -332,7 +365,21 @@ function Invoke-SmokeRun([int]$Run) {
 		Write-Check ($byName -and $failedEvents.Count -eq 0) "game events as expected ($eventsText; total=$(if ($final -and $final.events) { $final.events.total } else { '?' }))"
 		if (-not $byName) { $reasons.Add('status.json has no events (game event log, #130)') }
 		elseif ($failedEvents) { $reasons.Add("game events: $($failedEvents -join ', ')") }
-		if ($Vr -and $final) {
+		if ($sim -and $final -and $final.vr.sim) {
+			$c = $final.vr.sim.compositor
+			$paired = [int64]$c.pairedFrames -eq [int64]$c.projectionFrames
+			Write-Check ([int64]$c.projectionFrames -gt 0 -and $paired) "simulated compositor: $($c.projectionFrames) frames with both eyes, $($c.pairedFrames) paired, $($c.staleFrames) with a stale eye, $($c.quadFrames) with the flat frame quad"
+			if ([int64]$c.projectionFrames -eq 0) { $reasons.Add('the simulated compositor got no frame with both eyes') }
+			elseif (-not $paired) { $reasons.Add("$($c.staleFrames) frames showed eye images of different frames (a stale eye)") }
+			foreach ($p in $final.vr.sim.shots.PSObject.Properties) {
+				$shot = $p.Value
+				Write-Host ("  shot {0} (frame {1}): left {2}, right {3}, flat frame {4}; L/R diff {5}, shift {6}{7}" -f $p.Name, $shot.frame,
+					$shot.left.scene.verdict, $shot.right.scene.verdict, $(if ($shot.quad.shown) { $shot.quad.stats.verdict } else { 'not shown' }),
+					$shot.lr.diff, $shot.lr.shift, $(if ($shot.swapEyes) { ' (swap-eyes fault)' } else { '' }))
+			}
+			Write-Host "  shots saved in $(Join-Path $TestDir 'capture')"
+		}
+		if (($Vr -or $sim) -and $final) {
 			# The session runs and submits frames even with nobody in the headset (synchronized, never focused)
 			Write-Check ([int64]$final.vr.frames -gt 0) "VR frames submitted (frames=$($final.vr.frames), shown=$($final.vr.shownFrames), session=$($final.vr.sessionState))"
 			if ($final.vr.enabled -and [int64]$final.vr.frames -eq 0) { $reasons.Add('no VR frame was submitted (the session never ran, or xrWaitFrame / xrEndFrame failed - see the log)') }
@@ -375,7 +422,7 @@ function Invoke-SmokeRun([int]$Run) {
 
 	# The launch ledger (D-014): one line per run
 	if ($process) {
-		Add-ArxLaunchRecord -Script 'smoke-test.ps1' -Copy $ArxSourceDir -Branch $copy.Branch -Build $stamp -Vr $Vr -GamePid $process.Id `
+		Add-ArxLaunchRecord -Script 'smoke-test.ps1' -Copy $ArxSourceDir -Branch $copy.Branch -Build $stamp -Vr $Vr -Sim $sim -GamePid $process.Id `
 			-ExitCode $(if ($process.HasExited) { $process.ExitCode } else { $null }) -DurationSec ((Get-Date) - $launchTime).TotalSeconds -ArxArgs $ArxArgs -Time $launchTime
 		# The run digest (#131): local and quick; the queued GitHub reports are sent once after the game lock is released
 		try {

@@ -45,6 +45,8 @@
 #include "util/Number.h"
 #include "util/String.h"
 
+#include "vr/MirrorGeometry.h"
+
 
 // To avoid conflicts with potential other classes/namespaces
 namespace {
@@ -79,6 +81,7 @@ constexpr const int
 	vsync = -1,
 	fpsLimit = -1,
 	vrFrameDivisor = 1,
+	vrMirrorEye = vr::DefaultMirrorEye,
 	maxAnisotropicFiltering = 9001,
 	alphaCutoutAntialiasing = 2,
 	cinematicWidescreenMode = CinematicFadeEdges,
@@ -95,6 +98,7 @@ constexpr const int
 
 constexpr const bool
 	fullscreen = true,
+	vrMirror = true,
 	viewBobbing = true,
 	screenShake = true,
 	showCrosshair = true,
@@ -217,6 +221,8 @@ constexpr const std::string_view
 	vsync = "vsync",
 	fpsLimit = "fps_limit",
 	vrFrameDivisor = "vr_frame_divisor",
+	vrMirror = "vr_mirror",
+	vrMirrorEye = "vr_mirror_eye",
 	fov = "fov",
 	viewBobbing = "view_bobbing",
 	screenShake = "screen_shake",
@@ -477,6 +483,8 @@ bool Config::save() {
 	writer.writeKey(Key::vsync, video.vsync);
 	writer.writeKey(Key::fpsLimit, video.fpsLimit);
 	writer.writeKey(Key::vrFrameDivisor, video.vrFrameDivisor);
+	writer.writeKey(Key::vrMirror, video.vrMirror);
+	writer.writeKey(Key::vrMirrorEye, video.vrMirrorEye);
 	writer.writeKey(Key::fov, video.fov);
 	writer.writeKey(Key::viewBobbing, video.viewBobbing);
 	writer.writeKey(Key::screenShake, video.screenShake);
@@ -610,6 +618,9 @@ bool Config::init(const fs::path & file) {
 	video.fpsLimit = std::max(fpsLimit, -1);
 	int vrFrameDivisor = reader.getKey(Section::Video, Key::vrFrameDivisor, Default::vrFrameDivisor);
 	video.vrFrameDivisor = glm::clamp(vrFrameDivisor, 1, 8);
+	video.vrMirror = reader.getKey(Section::Video, Key::vrMirror, Default::vrMirror);
+	int vrMirrorEye = reader.getKey(Section::Video, Key::vrMirrorEye, Default::vrMirrorEye);
+	video.vrMirrorEye = glm::clamp(vrMirrorEye, 0, 1);
 	float fov = reader.getKey(Section::Video, Key::fov, Default::fov);
 	video.fov = std::max(fov, 10.f);
 	video.viewBobbing = reader.getKey(Section::Video, Key::viewBobbing, Default::viewBobbing);

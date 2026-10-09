@@ -56,6 +56,7 @@
 #include "vr/HeadTracking.h"
 #include "vr/OpenXRUtil.h"
 #include "vr/VRActions.h"
+#include "vr/VRMirror.h"
 #include "vr/VRSwapchain.h"
 
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
@@ -85,6 +86,16 @@ static void setFrameDivisor(u32 divisor) {
 ARX_PROGRAM_OPTION_ARG("vr-frame-divisor", nullptr,
                        "Submit every n-th display slot in VR (even-cadence cap, overrides vr_frame_divisor in cfg.ini)",
                        &setFrameDivisor, "N")
+
+//! The desktop mirror switched off on the command line, see DesktopMirror
+static bool g_disableMirror = false;
+
+static void disableMirror() {
+	g_disableMirror = true;
+}
+ARX_PROGRAM_OPTION("no-vr-mirror", nullptr,
+                   "In VR, keep the flat frame in the desktop window instead of what one eye sees (overrides vr_mirror in cfg.ini)",
+                   &disableMirror)
 
 #if ARX_HAVE_OPENXR
 
@@ -135,6 +146,7 @@ struct OpenXRState {
 	std::array<Swapchain, 2> eyes;
 	Swapchain quad;
 	Vec2i quadFailedSize = Vec2i(0); //!< a window size the quad swapchain could not be created for
+	DesktopMirror mirror;            //!< the window shows what the left eye sees (#21)
 
 	FrameCounters frames;
 	u32 frameFailures = 0;
@@ -664,6 +676,7 @@ void destroySession() {
 	}
 	g_xr.quad.destroy();
 	g_xr.quadFailedSize = Vec2i(0);
+	g_xr.mirror.destroy();
 	g_xr.colorFormat = 0;
 
 	g_xr.actions.detach();
@@ -776,6 +789,11 @@ void beginSession() {
 	                                      : u32(std::clamp(config.video.vrFrameDivisor, 1, 8));
 	g_xr.pacing.setDivisor(g_xr.divisor);
 	g_xr.pacing.reset();
+
+	// The desktop mirror (#21): the command line first, then cfg.ini
+	g_xr.mirror.begin(!g_disableMirror && config.video.vrMirror,
+	                  g_disableMirror ? "--no-vr-mirror" : "vr_mirror = 0 in cfg.ini",
+	                  size_t(std::clamp(config.video.vrMirrorEye, 0, 1)));
 
 	LogInfo << "OpenXR session running, submitting frames: xrWaitFrame paces the game";
 	if(g_xr.divisor > 1) {
@@ -960,6 +978,9 @@ bool renderBackground(OpenXRState::Layers & layers) {
 		}
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, swapchain.framebuffer());
 		glClearBufferfv(GL_COLOR, 0, BackgroundColor);
+		if(eye == g_xr.mirror.eye()) {
+			g_xr.mirror.copyEye(swapchain);
+		}
 		swapchain.release();
 
 		views[eye] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
@@ -1001,6 +1022,7 @@ bool copyFlatFrame(OpenXRState::Layers & layers) {
 	glReadBuffer(GL_BACK);
 	glBindTexture(GL_TEXTURE_2D, swapchain.texture());
 	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, swapchain.size().x, swapchain.size().y);
+	g_xr.mirror.copyFlatFrame(swapchain);
 	swapchain.release();
 
 	XrCompositionLayerQuad & layer = layers.quad;
@@ -1024,6 +1046,55 @@ bool copyFlatFrame(OpenXRState::Layers & layers) {
 	layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
 
 	return true;
+}
+
+/*!
+ * The desktop mirror (#21): draw what the mirrored eye (vr_mirror_eye, the right one by default)
+ * saw in this frame into the window's back buffer. The flat frame quad lives in the head (view)
+ * space, so the eye is located there for the frame's display time - the same eye the projection
+ * layer was submitted with, seen from the head instead of the room.
+ */
+void drawMirror(const Vec2i & windowSize, bool flatFrame) {
+
+	const OpenXRState::Frame & frame = g_xr.frame;
+	const size_t eye = g_xr.mirror.eye();
+	const XrView & mirrored = frame.located[eye];
+
+	MirrorFov fov;
+	fov.left = mirrored.fov.angleLeft;
+	fov.right = mirrored.fov.angleRight;
+	fov.up = mirrored.fov.angleUp;
+	fov.down = mirrored.fov.angleDown;
+
+	DesktopMirror::Quad quad;
+	Vec3f position(0.f);
+	glm::quat orientation(1.f, 0.f, 0.f, 0.f);
+	if(flatFrame) {
+		XrViewLocateInfo locateInfo = { XR_TYPE_VIEW_LOCATE_INFO };
+		locateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+		locateInfo.displayTime = frame.state.predictedDisplayTime;
+		locateInfo.space = g_xr.viewSpace;
+		XrViewState viewState = { XR_TYPE_VIEW_STATE };
+		std::array<XrView, 2> inHead;
+		inHead.fill({ XR_TYPE_VIEW });
+		uint32_t count = 0;
+		XrResult result = xrLocateViews(g_xr.session, &locateInfo, &viewState, u32(inHead.size()), &count,
+		                                inHead.data());
+		const XrViewStateFlags valid = XR_VIEW_STATE_ORIENTATION_VALID_BIT | XR_VIEW_STATE_POSITION_VALID_BIT;
+		if(XR_SUCCEEDED(result) && count == inHead.size() && (viewState.viewStateFlags & valid) == valid) {
+			const XrPosef & pose = inHead[eye].pose;
+			position = Vec3f(pose.position.x, pose.position.y, pose.position.z);
+			orientation = glm::quat(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
+			quad.shown = true;
+			quad.width = g_xr.layers.quad.size.width;
+			quad.height = g_xr.layers.quad.size.height;
+			quad.distance = QuadDistance;
+		} else if(XR_FAILED(result)) {
+			logFrameFailure("xrLocateViews (head space, desktop mirror)", result);
+		}
+	}
+
+	g_xr.mirror.draw(windowSize, fov, position, orientation, quad);
 }
 
 /*!
@@ -1465,6 +1536,11 @@ void submitFrame(const Vec2i & windowSize) {
 		return;
 	}
 
+	if(background && g_xr.mirror.isOn()) {
+		GLStateGuard state;
+		drawMirror(windowSize, flatFrame);
+	}
+
 	if(shownBefore == 0 && g_xr.frames.shown == 1) {
 		if(flatFrame) {
 			LogInfo << "First VR frame shown: " << (background ? "dark background, " : "no background, ")
@@ -1522,6 +1598,14 @@ float flatFrameFov(const Vec2i & windowSize) {
 		        << " frame, so the head-tracked view is not magnified (#24, until #19 renders per eye)";
 	}
 	return fov;
+}
+
+MirrorStatus mirrorStatus() {
+	MirrorStatus status;
+	status.state = g_xr.mirror.state();
+	status.eye = g_xr.mirror.eyeName();
+	status.frames = g_xr.mirror.frames();
+	return status;
 }
 
 std::string runtimeName() {
@@ -1613,6 +1697,10 @@ u32 frameDivisor() {
 
 float flatFrameFov(const Vec2i & /* windowSize */) {
 	return 0.f;
+}
+
+MirrorStatus mirrorStatus() {
+	return MirrorStatus();
 }
 
 std::string runtimeName() {

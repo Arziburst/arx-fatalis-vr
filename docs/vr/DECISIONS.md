@@ -187,7 +187,7 @@ the controls are the base of the VR settings that grow later (sound, graphics).
 
 ## D-019: The MVP control scheme
 
-- **Date:** 2026-10-09 (game menu, recenter and the grip rule added 2026-10-10)
+- **Date:** 2026-10-09 (game menu, recenter and the grip rule added 2026-10-10; other controllers, #35)
 - **Status:** Accepted
 - **Decided by:** project owner (agreed by questions, D-017; builds on D-008, D-010, D-016, D-018)
 
@@ -213,6 +213,19 @@ Valve Index first; Quest 3 Touch the same (A/B on the right, X/Y on the left).
 | Recenter | ~~hold a button chord (F-34)~~ → **long press of the left stick click** *(owner, 2026-10-10, after the #30 headset run)* |
 | Runes | drawn in the air with the hand (D-010); the button that starts casting is decided with the magic block (#43–#45) |
 | Left-handed mode | ~~after the MVP~~ → in the MVP, in the VR settings (D-020) |
+
+**Other controllers (#35, 2026-10-10).** Default layouts for controllers other than the Index are the
+coordinator's call, because players remap them in the game (#178) — the owner's exception to D-017
+(2026-10-10):
+- **Quest 3 Touch Plus** (SteamVR reports `oculus/touch_controller`): the table above with **X / Y in
+  the places of left A / B**; the game menu on the **left menu button**, so **X stays free**; recenter is
+  the same long press of the left stick click. The grip is a squeeze (`squeeze/value` 0.70 / 0.55, F-41) —
+  the Touch is held, not strapped on.
+- **Simple controller** (`khr/simple_controller`, select and menu per hand): select = click / drag of
+  that hand; **left menu = game menu, long = recenter; right menu = inventory, long = book**; no jump,
+  crouch toggle, use or stash on this controller.
+- **Any other controller** gets the Index layout: SteamVR's automatic rebinding presents it as one of the
+  three profiles above.
 
 ### Why
 The original's mouse model stays the engine's (each hand produces the cursor), so the controls add little

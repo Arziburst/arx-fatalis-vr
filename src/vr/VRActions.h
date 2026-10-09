@@ -27,6 +27,7 @@
 #include <array>
 #include <string>
 
+#include "vr/VRBindings.h"
 #include "vr/VRControls.h"
 
 namespace vr {
@@ -99,6 +100,8 @@ private:
 	};
 
 	XrAction createAction(const char * name, const char * label, XrActionType type);
+	//! The action of a physical control of the suggestion table (VRBindings.h)
+	XrAction action(PhysicalAction id) const;
 	void suggestBindings();
 	void updateProfiles();
 	void checkHandedness(XrSpace viewSpace, XrTime time);

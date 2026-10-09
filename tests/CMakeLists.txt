@@ -42,6 +42,9 @@ set(arxtest_TESTCASES
 	tests/vr/FramePacingTest.h
 	tests/vr/FramePacingTest.cpp
 
+	tests/vr/VRBindingsTest.h
+	tests/vr/VRBindingsTest.cpp
+
 	tests/vr/VRControlsTest.h
 	tests/vr/VRControlsTest.cpp
 
@@ -63,6 +66,7 @@ set(arxtest_SOURCES
 	src/io/log/FileLogger.cpp
 	src/io/resource/ResourcePath.cpp
 	src/vr/FramePacing.cpp
+	src/vr/VRBindings.cpp
 	src/vr/VRControls.cpp
 
 

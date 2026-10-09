@@ -138,6 +138,7 @@ workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
   (`rate_limits.five_hour.resets_at`), then **resumes them** (`claude respawn <id>`). The last 5% are the
   coordinator's, to keep watching. Fable workers go on.
 - **Over a limit only with the owner's explicit permission** (D-022), for that occasion; otherwise stop at the limit and report.
+- **Plan the workers from data (#217, D-022):** `pwsh scripts\dev\usage-plan.ps1` every cycle and before `start-worker.ps1`.\r\n  It reads `~/.claude/statusline/usage.jsonl` (written by the status line, one sample a minute: both limits and the cost of\r\n  every live session), calibrates % of each limit per dollar, records every finished session into `tasks.jsonl` (cost, peak\r\n  context, launches, % of week / 5 h, reviewers counted to their task; the coordinator is its own line), and prints NOW /\r\n  BUDGET / TASKS / ADVICE: how many workers to run, which limit binds, how many READY tasks fit at their p80 cost.\r\n  Start no more workers than ADVICE says; put its `SUMMARY` line on the status page #193. Until the samples cover a few\r\n  percent the ratio is a rough prior and ADVICE is conservative (it says so). `-Record` only records finished sessions,\r\n  `-Json` is for scripts.
 - **The coordinator's own context** is spent with care: short command output (filters, `-Last N`), no
   whole large files, details read once and summarised; the pinned status issue is its external memory —
   update it before long waits, so an automatic compaction or a new coordinator loses nothing.

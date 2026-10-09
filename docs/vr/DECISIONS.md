@@ -110,6 +110,7 @@ without a headset session (F-07).
   the Definition of done and the decisions only (Sonnet, effort medium), and the coordinator checks small
   PRs itself.
 - **The coordinator watches its own context**: short outputs, the status issue as external memory.
+- **Worker count from measured usage (#217):** the coordinator plans the number of workers from data, not guesses -\r\n  `scripts\dev\usage-plan.ps1` (samples of both limits and of every session's cost, the calibration "% of a limit per dollar",\r\n  the cost of finished tasks per model, a forecast for the READY tasks). Run every cycle and before starting a worker; it\r\n  names the binding limit and the number of workers that keeps the week at <= 80% by its reset and the 5-hour window < 95%.\r\n  The coordinator starts no more than it recommends; one line of its output goes to the status page (#193).
 
 ### Why
 The owner wants the work to keep moving while there is budget, with quality checks that pay for

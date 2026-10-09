@@ -254,6 +254,16 @@ void SimRigTest::testFocusAndFault() {
 	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("session visible"));
 	CPPUNIT_ASSERT(!sim.rig.focused);
 	CPPUNIT_ASSERT(sim.takeRequests().focusChanged);
+	// The headset taken off and put on again (#27)
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("session idle"));
+	CPPUNIT_ASSERT(!sim.rig.worn);
+	CPPUNIT_ASSERT(sim.takeRequests().focusChanged);
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("session idle"));
+	CPPUNIT_ASSERT(!sim.takeRequests().focusChanged);
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("session focused"));
+	CPPUNIT_ASSERT(sim.rig.worn && sim.rig.focused);
+	CPPUNIT_ASSERT(sim.takeRequests().focusChanged);
+	CPPUNIT_ASSERT(!sim.execute("session asleep").empty());
 	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("fault swap-eyes on"));
 	CPPUNIT_ASSERT(sim.rig.swapEyes);
 	CPPUNIT_ASSERT(!sim.execute("fault melt on").empty());

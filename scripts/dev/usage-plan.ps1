@@ -20,11 +20,13 @@
 	The statusline folder (default ~/.claude/statusline) - for what-if runs and the self-test.
 .PARAMETER NoQueue
 	Do not call plan-next.ps1 (no forecast for queued tasks).
+.PARAMETER Offline
+	Do not call GitHub for issue sizes (cache only).
 .PARAMETER MaxWorkers
 	Worker cap (default 3).
 #>
 [CmdletBinding()]
-param([switch]$Record, [switch]$Json, [string]$Dir, [switch]$NoQueue, [int]$MaxWorkers = 3)
+param([switch]$Record, [switch]$Json, [string]$Dir, [switch]$NoQueue, [int]$MaxWorkers = 3, [switch]$Offline)
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'usage-lib.ps1')
@@ -71,7 +73,24 @@ $burnSince = $null
 if ($five) { $burnSince = Get-UsageBurn $samples $now ([math]::Max(0.1, 5 - ($five.ResetsAt - $now) / 3600)) }
 
 $liveWorkers = @($ledger | Where-Object { $_.name -notmatch 'Coordinator|review' -and $_.branch -match '^ARXVR-' -and $now - (ConvertTo-Epoch $_.updated) -lt 600 })
-$taskCosts = @(Get-TaskCosts $recorded)
+# Size of an issue (S/M/L, Get-TaskSize), cached in sizes.json: the finished tasks and the queued ones are compared by size.
+$sizeCacheFile = Join-Path $Dir 'sizes.json'
+$sizeCache = @{}
+try { foreach ($p in (Get-Content $sizeCacheFile -Raw | ConvertFrom-Json).PSObject.Properties) { $sizeCache[$p.Name] = $p.Value } } catch {}
+function Get-IssueSize([int]$Number, [bool]$Refresh = $false) {
+	if (-not $Refresh -and $sizeCache.ContainsKey("$Number")) { return $sizeCache["$Number"] }
+	if ($Offline) { return $null }
+	try {
+		$i = gh api "repos/Arziburst/arx-fatalis-vr/issues/$Number" | ConvertFrom-Json
+		$s = Get-TaskSize $i.body @($i.labels | ForEach-Object name)
+		$v = [pscustomobject]@{ Size = $s.Size; Basis = $s.Basis }
+		if ($s.Size) { $sizeCache["$Number"] = $v; $script:sizeDirty = $true }
+		$v
+	} catch { $null }
+}
+$sizes = @{}
+if (-not $NoQueue) { foreach ($r in ($recorded | Where-Object issue | Select-Object -ExpandProperty issue -Unique)) { $s = Get-IssueSize ([int]$r); if ($s) { $sizes[[int]$r] = $s.Size } } }
+$taskCosts = @(Get-TaskCosts $recorded $sizes)
 $workerRates = @($taskCosts | Where-Object { $_.Hours -gt 0.2 } | ForEach-Object { $_.Usd / $_.Hours })
 $workerUsdPerHour = Get-Median $workerRates; $rateBasis = "median of $($workerRates.Count) finished task(s)"
 if ($null -eq $workerUsdPerHour) {
@@ -86,13 +105,15 @@ if (-not $NoQueue) {
 	try {
 		$plan = (& (Join-Path $PSScriptRoot 'plan-next.ps1') -Json) -join "`n" | ConvertFrom-Json
 		foreach ($t in $plan.Ready) {
-			$e = Get-TaskCostEstimate $taskCosts $t.Model $t.Effort
+			$sz = Get-IssueSize ([int]$t.Number) $true
+			$e = Get-TaskCostEstimate $taskCosts $t.Model $t.Effort $sz.Size
 			if (-not $e) { $e = [pscustomobject]@{ Median = $workerUsdPerHour * 1.5; P80 = $workerUsdPerHour * 2.5; N = 0; Basis = 'default' } }
-			$queue += [pscustomobject]@{ Number = $t.Number; Title = $t.Title; Model = $t.Model; Effort = $t.Effort; Median = $e.Median; P80 = $e.P80; Basis = $e.Basis; N = $e.N }
+			$queue += [pscustomobject]@{ Number = $t.Number; Title = $t.Title; Model = $t.Model; Effort = $t.Effort; Size = $sz.Size; SizeBasis = $sz.Basis; Median = $e.Median; P80 = $e.P80; Basis = $e.Basis; N = $e.N }
 		}
 	} catch { $queueError = $_.Exception.Message }
 }
 
+if ($sizeDirty) { try { $sizeCache | ConvertTo-Json | Set-Content $sizeCacheFile -Encoding utf8 } catch {} }
 $rec = Get-UsageRecommendation -Week $week -FiveHour $five -WeekPerUsd $weekPerUsd -FivePerUsd $fivePerUsd `
 	-WorkerUsdPerHour $workerUsdPerHour -BurnUsdPerHour ([double]$burn) -RunningWorkers $liveWorkers.Count `
 	-QueueUsd @($queue | ForEach-Object P80) -Now $now -MaxWorkers $MaxWorkers
@@ -127,7 +148,7 @@ if ($taskCosts.Count) {
 		"TASKS   {0}: {1} done, median {2:0.0} USD, p80 {3:0.0} USD{4}" -f $g.Name, $g.Count, (Get-Median $usd), (Get-Percentile $usd 0.8), $(if ($weekPerUsd) { ' (~{0:0.0}% / {1:0.0}% of the week)' -f ((Get-Median $usd) * $weekPerUsd), ((Get-Percentile $usd 0.8) * $weekPerUsd) } else { '' })
 	}
 } else { 'TASKS   no finished task recorded yet (sessions are recorded 20 min after their last activity)' }
-foreach ($q in $queue) { "        next #{0} {1} {2}: ~{3:0.0} USD (p80 {4:0.0}; basis {5}, n={6})" -f $q.Number, $q.Model, $q.Effort, $q.Median, $q.P80, $q.Basis, $q.N }
+foreach ($q in $queue) { "        next #{0} {1} {2} size {7} ({8}): ~{3:0.0} USD (p80 {4:0.0}; basis {5}, n={6})" -f $q.Number, $q.Model, $q.Effort, $q.Median, $q.P80, $q.Basis, $q.N, $(if ($q.Size) { $q.Size } else { '?' }), $(if ($q.SizeBasis) { $q.SizeBasis } else { 'unknown' }) }
 if ($queueError) { "        queue forecast unavailable: $queueError" }
 if ($null -eq $burn) { "NOTE    burn unknown: assuming the running workers burn at the median rate (conservative until usage.jsonl has an hour of samples)" }
 if ($weekNote -like 'prior*') { "NOTE    week ratio is a rough prior (it includes the owner's other use); it is replaced by the sampled ratio as usage.jsonl fills" }

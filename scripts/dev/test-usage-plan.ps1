@@ -104,5 +104,28 @@ $w = $out | Where-Object session_id -eq 'w1'
 Check 'worker record: issue, peak context, launches, % of week and 5h' ($w.issue -eq 5 -and $w.ctx_peak_pct -eq 55 -and $w.launches -eq 3 -and $w.week_pct -eq 1 -and $w.five_hour_pct -eq 10) ($w | ConvertTo-Json -Compress)
 Check 'reviewer counts to the PR task' (($out | Where-Object session_id -eq 'r1').issue -eq 5 -and ($out | Where-Object session_id -eq 'r1').role -eq 'reviewer')
 
+Write-Host 'task size and the size-aware forecast'
+$small = "Fix one thing.`n- a`n- b"
+$big = "Goal`n" + (((1..14) | ForEach-Object { "- item $_ depends on #$($_ + 100)" }) -join "`n")
+Check 'size label wins over the text' ((Get-TaskSize $big @('size:S')).Size -eq 'S')
+Check 'short issue is S' ((Get-TaskSize $small).Size -eq 'S')
+Check 'many bullets and references -> L' ((Get-TaskSize $big).Size -eq 'L') (Get-TaskSize $big).Score
+Check 'no text, no label -> unknown size' ($null -eq (Get-TaskSize '').Size)
+function Done($n, $model, $effort, $size, $usd) { [pscustomobject]@{ Issue = $n; Model = $model; Effort = $effort; Size = $size; Usd = $usd; Hours = 1 } }
+$done = @(
+	(Done 1 'sonnet' 'high' 'S' 2), (Done 2 'sonnet' 'high' 'S' 3), (Done 3 'sonnet' 'high' 'S' 4),
+	(Done 4 'sonnet' 'high' 'L' 20), (Done 5 'sonnet' 'high' 'L' 24), (Done 6 'sonnet' 'high' 'L' 28),
+	(Done 7 'opus' 'high' 'M' 10)
+)
+$eS = Get-TaskCostEstimate $done 'sonnet' 'high' 'S'; $eL = Get-TaskCostEstimate $done 'sonnet' 'high' 'L'
+Check 'size S forecast is the S median' ($eS.Median -eq 3 -and $eS.Basis -eq 'sonnet high size S') "$($eS.Median) $($eS.Basis)"
+Check 'size L forecast is the L median' ($eL.Median -eq 24 -and $eL.Basis -eq 'sonnet high size L') "$($eL.Median) $($eL.Basis)"
+$eM = Get-TaskCostEstimate $done 'sonnet' 'high' 'M'
+Check 'size with too few finished tasks falls back to the model median, and says so' ($eM.Basis -like 'sonnet high*' -and $eM.N -eq 6) "$($eM.Basis) $($eM.N)"
+$eU = Get-TaskCostEstimate $done 'sonnet' 'high' ''
+Check 'unknown size uses the model / effort pool' ($eU.N -eq 6 -and $eU.Basis -eq 'sonnet high') $eU.Basis
+Check 'unseen model falls back to all tasks' ((Get-TaskCostEstimate $done 'fable' 'xhigh' 'S').Basis -eq 'all models')
+$sz = @(Get-TaskCosts @([pscustomobject]@{ session_id = 'x'; issue = 9; role = 'worker'; model = 'Sonnet 5.5'; effort = 'high'; cost_usd = 3; duration_h = 1 }) @{ 9 = 'S' })
+Check 'Get-TaskCosts carries the size of the issue' ($sz[0].Size -eq 'S')
 if ($script:failures) { Write-Host "`n$script:failures check(s) failed" -ForegroundColor Red; exit 1 }
 Write-Host "`nall checks passed" -ForegroundColor Green

@@ -81,25 +81,47 @@ function Get-UsageBurn($Samples, [double]$Now, [double]$Hours = 1) {
 	$usd / $span
 }
 
+# Task size S / M / L: a size:S|M|L label wins; otherwise a score from the issue text - scope bullets (list items), length
+# (one point per 600 characters) and distinct #N references (dependencies / related tasks, one point each).
+function Get-TaskSize([string]$Body, [string[]]$Labels = @()) {
+	$label = @($Labels | Where-Object { $_ -match '^size:([SML])$' } | ForEach-Object { $Matches[1] }) | Select-Object -First 1
+	if ($label) { return [pscustomobject]@{ Size = $label; Score = $null; Basis = "label size:$label" } }
+	if (-not $Body) { return [pscustomobject]@{ Size = $null; Score = $null; Basis = 'no issue text' } }
+	$bullets = ([regex]::Matches($Body, '(?m)^\s*(?:[-*]|\d+\.)\s+\S')).Count
+	$refs = @([regex]::Matches($Body, '#(\d+)') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique).Count
+	$score = $bullets + [math]::Floor($Body.Length / 600) + $refs
+	$size = if ($score -lt 8) { 'S' } elseif ($score -lt 16) { 'M' } else { 'L' }
+	[pscustomobject]@{ Size = $size; Score = $score; Basis = "text score $score ($bullets bullets, $($Body.Length) chars, $refs refs)" }
+}
+
 # The cost of finished tasks by issue (workers and reviewers of a PR count to the task), in dollars.
-function Get-TaskCosts($TaskRecords) {
+function Get-TaskCosts($TaskRecords, $Sizes = @{}) {
 	@($TaskRecords | Group-Object session_id | ForEach-Object { $_.Group[-1] }) | Where-Object { $_.issue -and $_.role -ne 'coordinator' } | Group-Object issue | ForEach-Object {
 		$workers = @($_.Group | Where-Object role -eq 'worker')
 		$first = if ($workers.Count) { $workers[0] } else { $_.Group[0] }
 		[pscustomobject]@{
-			Issue = [int]$_.Name; Model = ("$($first.model)" -split ' ')[0].ToLower(); Effort = $first.effort
+			Issue = [int]$_.Name; Size = $Sizes[[int]$_.Name]; Model = ("$($first.model)" -split ' ')[0].ToLower(); Effort = $first.effort
 			Usd = [double](($_.Group | Measure-Object cost_usd -Sum).Sum)
 			Hours = [double](($workers | Measure-Object duration_h -Sum).Sum)
 		}
 	}
 }
 
-# Median and p80 task cost (dollars) for a model / effort; falls back to the model, then to all tasks.
-function Get-TaskCostEstimate($TaskCosts, [string]$Model, [string]$Effort) {
+# Median and p80 task cost (dollars) for a model / effort / size. The pool narrows from the most specific match (model +
+# effort + size) to the model alone and finally to all tasks; a pool needs at least 3 finished tasks. The basis says which was used.
+function Get-TaskCostEstimate($TaskCosts, [string]$Model, [string]$Effort, [string]$Size = '') {
 	$tc = @($TaskCosts)
-	$pool = @($tc | Where-Object { $_.Model -eq $Model -and $_.Effort -eq $Effort }); $basis = "$Model $Effort"
-	if ($pool.Count -lt 3) { $pool = @($tc | Where-Object { $_.Model -eq $Model }); $basis = $Model }
-	if ($pool.Count -lt 3) { $pool = $tc; $basis = 'all models' }
+	$tiers = @()
+	if ($Size) {
+		$tiers += , @("$Model $Effort size $Size", @($tc | Where-Object { $_.Model -eq $Model -and $_.Effort -eq $Effort -and $_.Size -eq $Size }))
+		$tiers += , @("$Model size $Size", @($tc | Where-Object { $_.Model -eq $Model -and $_.Size -eq $Size }))
+	}
+	$tiers += , @("$Model $Effort", @($tc | Where-Object { $_.Model -eq $Model -and $_.Effort -eq $Effort }))
+	$tiers += , @("$Model (model median$(if (-not $Size) { '' } else { ', size unknown or too few' }))", @($tc | Where-Object { $_.Model -eq $Model }))
+	$tiers += , @('all models', $tc)
+	$pool = @(); $basis = ''
+	foreach ($tier in $tiers) { if ($tier[1].Count -ge 3) { $pool = $tier[1]; $basis = $tier[0]; break } }
+	if (-not $pool.Count) { $pool = $tc; $basis = 'all models' }
 	if (-not $pool.Count) { return $null }
 	$usd = @($pool | ForEach-Object Usd)
 	[pscustomobject]@{ Median = Get-Median $usd; P80 = Get-Percentile $usd 0.8; N = $pool.Count; Basis = $basis }

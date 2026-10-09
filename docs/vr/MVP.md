@@ -139,7 +139,7 @@ dependencies are met; when a task is split, replace it with its parts.
 30. #34 — Menu pointer only while a menu or the inventory is open (D-010, F-81)
 30. #178 — VR settings screen with the Controls section: remapping, turning, crouch and height, left-handed (D-020)
 31. #33 — Jump on A, crouch toggle on right stick down, stealth by partial deflection (F-47)
-32. #70 — Test save library for MVP scenarios *(scripts via the #99 channel where possible; the owner records the rest)*
+32. #70 — Test save library for MVP scenarios *(done: new game, items, goblin fight; levers, doors and chests are #210, recorded by the owner)*
 33. #36 — Full body: the player model with arms driven by the controllers via IK (D-009, F-52, F-49)
 34. #116 — Health and mana as two bars on the left wrist (F-83)
 35. #166 — Research: world interaction in Valheim VR — the reference for D-016, #37, #38
@@ -214,6 +214,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #34 menu pointer | ui | VR | #49, #74 |
 | #33 jump, crouch toggle, stealth | input | VR | #74 |
 | #70 test saves | build | plain | #99, #123 |
+| #210 saves for a lever, a door and a chest | build | plain (the owner records them) | #70; before #38 |
 | #36 full body with IK arms | render | VR | #72, #24, #74, decisions on #118 / #120 |
 | #116 wrist vitals | ui | VR | #36 |
 | #166 research: VHVR world interaction | docs | plain | — (owner's decisions before #37 / #38) |

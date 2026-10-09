@@ -46,9 +46,9 @@ and the next task of the MVP queue.
     pick tasks from the queue whose dependencies are merged and whose **areas differ** from every task
     in progress; **start a worker for each** with the owner's copy's (the main working copy's)
     `scripts\dev\start-worker.ps1 <n> [-Type <type>]`
-    (worktree + background session running `/next-task <n>`, decision D-011). The model follows the
-    task's area (D-013: build / docs → Sonnet, everything else → Fable; `-Model opus` once Fable's
-    limit is used up). Subscribe to each worker's idle notice (SendMessage `notify_when_idle`);
+    (worktree + background session running `/next-task <n>`, decision D-011). Pick model and effort per task
+    (D-015, COORDINATOR.md §6: Opus by default, Sonnet for build / docs, `-Model fable` only for really
+    hard tasks; `-Effort` to match the task). Subscribe to each worker's idle notice (SendMessage `notify_when_idle`);
     `claude agents --json` shows which workers still run; idle with its PR merged = finished.
   - **usage** (D-013): read the limits from `~/.claude/statusline/last.json` (`rate_limits`); at **70%** of
     the common weekly limit start no new workers and let the running ones finish; the 5-hour limit and

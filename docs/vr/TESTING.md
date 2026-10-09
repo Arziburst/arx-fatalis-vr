@@ -242,8 +242,9 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   run), `profile.left` / `profile.right`: the OpenXR interaction profile per hand (empty: no device for
   that hand yet — SteamVR binds a few frames after the session is `focused`, so an idle headset never
   shows one), `syncs`: action syncs while focused, `down`: the controls held after the last frame
-  (space separated), `active`: the events on now, `presses`: how often each event came on since the
-  start, `layout`: the binding of every event (`none`, `right.a`, `left.grip+left.trigger`,
+  (space separated), `active`: the events on now, `trigger` / `grip`: the analog values per hand
+  (the Index grip is `squeeze/force`, the others `squeeze/value` — TRAPS.md), `presses`: how often
+  each event came on since the start, `layout`: the binding of every event (`none`, `right.a`, `left.grip+left.trigger`,
   `left.stick_click:long`). Nothing in the game reacts to the events yet (#74); `input-check.ps1`
   asserts on `presses` and `layout`.
 - `drawCheck` appears once a `drawcheck` was requested: `{"seq":1,"running":false,"frames":120,

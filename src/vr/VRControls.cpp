@@ -319,6 +319,10 @@ std::vector<Conflict> findConflicts(const ControlLayout & layout) {
 	return conflicts;
 }
 
+const Hysteresis & gripThreshold(ControllerType type) {
+	return type == ControllerType::Index ? IndexGripForceThreshold : GripThreshold;
+}
+
 void updateStickDirections(ControlSet & down, Hand hand, float x, float y) {
 
 	const Control up = control(hand, ControlKind::StickUp);
@@ -456,7 +460,7 @@ void ControlResolver::holdLong(s64 timeMs) {
 		}
 
 		ControlState & state = m_controls[binding.first];
-		if(m_down[binding.first] && !state.consumed && timeMs - state.since >= longPressMs) {
+		if(m_down[binding.first] && state.upSince < 0 && !state.consumed && timeMs - state.since >= longPressMs) {
 			state.consumed = true;
 			activate(Event(i));
 		}
@@ -501,8 +505,25 @@ void ControlResolver::update(s64 timeMs, const ControlSet & down, const ControlS
 		}
 	}
 
-	const ControlSet pressed = (down & ~m_down) | (taps & ~down & ~m_down);
-	const ControlSet released = (m_down & ~down) | (taps & ~down & ~m_down);
+	// A deferred control seen up is still held until it stayed up for the debounce window; seen down
+	// again inside the window, it is the same hold (the press time and a chord it made are kept)
+	ControlSet held = down;
+	for(size_t i = 0; i < ControlCount; i++) {
+		ControlState & state = m_controls[i];
+		if(down[i]) {
+			state.upSince = -1;
+		} else if(m_down[i] && m_deferred[i]) {
+			// A tap inside the window was the control down again: the window starts over
+			if(state.upSince < 0 || taps[i]) {
+				state.upSince = timeMs;
+			}
+			held[i] = (timeMs - state.upSince < releaseDebounceMs);
+		}
+	}
+
+	const ControlSet tapped = taps & ~held & ~m_down;
+	const ControlSet pressed = (held & ~m_down) | tapped;
+	const ControlSet released = (m_down & ~held) | (tapped & ~m_deferred);
 
 	// Presses in the same update count as simultaneous: the controls that lead chords go first
 	for(size_t i = 0; i < ControlCount; i++) {
@@ -520,7 +541,12 @@ void ControlResolver::update(s64 timeMs, const ControlSet & down, const ControlS
 
 	for(size_t i = 0; i < ControlCount; i++) {
 		if(released[i]) {
-			release(Control(i), timeMs);
+			// A deferred control was really released when it was first seen up
+			const s64 upSince = m_controls[i].upSince;
+			release(Control(i), upSince >= 0 ? upSince : timeMs);
+		} else if(tapped[i] && m_deferred[i]) {
+			// Pressed and released between two updates: its release waits for the window like any other
+			m_controls[i].upSince = timeMs;
 		}
 	}
 }

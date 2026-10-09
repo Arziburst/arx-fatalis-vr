@@ -14,6 +14,8 @@
 	  tap left.b                                book (now a tap on the release)
 	  tap right.stick_down                      crouch_toggle (a stick direction)
 	  reset                                     the default layout again
+	A 'mark' after the release of a chord's leader lets its release debounce window (150 ms) pass,
+	so the next tap is a new press and not the same hold.
 	Then reads the final status.json (written when the game exits) and compares vr.input.presses
 	and vr.input.layout with the expected numbers.
 
@@ -46,10 +48,10 @@ $commands = @()
 if ($Unbind) { $commands += 'vr-input bind jump none' }
 $commands += @(
 	'vr-input tap right.a',
-	'vr-input down right.grip', 'vr-input tap right.trigger', 'vr-input up right.grip',
+	'vr-input down right.grip', 'vr-input tap right.trigger', 'vr-input up right.grip', 'mark release debounce (150 ms)',
 	'vr-input tap right.grip',
 	'vr-input bind jump left.b+left.a',
-	'vr-input down left.b', 'vr-input tap left.a', 'vr-input up left.b',
+	'vr-input down left.b', 'vr-input tap left.a', 'vr-input up left.b', 'mark release debounce (150 ms)',
 	'vr-input tap left.b',
 	'vr-input tap right.stick_down',
 	'vr-input reset'

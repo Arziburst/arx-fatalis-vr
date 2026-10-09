@@ -147,12 +147,13 @@ void ActionSet::suggestBindings() {
 	};
 	std::vector<Profile> profiles(3);
 
-	// Valve Index - the owner's controllers (D-019); grip on squeeze/value with a firm threshold (F-41)
+	// Valve Index - the owner's controllers (D-019). The grip is squeeze/force, the pressure after the
+	// fingers closed: squeeze/value comes from finger contact and fires from just holding the controller
 	profiles[0].path = IndexProfile;
 	{
 		std::vector<Suggestion> & list = profiles[0].list;
 		addBoth(list, a.trigger, "input/trigger/value");
-		addBoth(list, a.grip, "input/squeeze/value");
+		addBoth(list, a.grip, "input/squeeze/force");
 		addBoth(list, a.a, "input/a/click");
 		addBoth(list, a.b, "input/b/click");
 		addBoth(list, a.stick, "input/thumbstick");
@@ -479,7 +480,8 @@ bool ActionSet::sync(ControllerInput & input, XrSpace viewSpace, XrTime time) {
 
 		struct { XrAction action; ControlKind kind; const Hysteresis & threshold; float * value; } analog[] = {
 			{ m_actions.trigger, ControlKind::Trigger, TriggerThreshold, &input.trigger[i] },
-			{ m_actions.grip, ControlKind::Grip, GripThreshold, &input.grip[i] },
+			// The Index reports the grip as squeeze/force, the others as squeeze/value
+			{ m_actions.grip, ControlKind::Grip, gripThreshold(controllerTypeFromProfile(m_profiles[i])), &input.grip[i] },
 			{ m_actions.trackpad, ControlKind::Trackpad, TrackpadThreshold, nullptr },
 		};
 		for(const auto & entry : analog) {
@@ -487,6 +489,11 @@ bool ActionSet::sync(ControllerInput & input, XrSpace viewSpace, XrTime time) {
 			float value = readFloat(entry.action, hand, isActive);
 			bound[c] = isActive;
 			down[c] = entry.threshold.update(m_down[c], value);
+			if(entry.kind == ControlKind::Grip && down[c] != m_down[c]) {
+				// The grip threshold is the one judged in the headset: every crossing with its value
+				LogInfo << "[vr] input: " << handName(hand) << " grip " << (down[c] ? "down" : "up") << " at "
+				        << value << " (threshold " << entry.threshold.press << " / " << entry.threshold.release << ')';
+			}
 			if(entry.value) {
 				*entry.value = value;
 			}

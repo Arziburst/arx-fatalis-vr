@@ -416,6 +416,15 @@ std::string buildStatus(PlatformInstant now) {
 			}
 		}
 		json.value("active", active);
+		const vr::ControllerInput & analog = vr::controllerInput();
+		json.object("trigger");
+		json.value("left", analog.trigger[size_t(vr::Hand::Left)]);
+		json.value("right", analog.trigger[size_t(vr::Hand::Right)]);
+		json.end();
+		json.object("grip");
+		json.value("left", analog.grip[size_t(vr::Hand::Left)]);
+		json.value("right", analog.grip[size_t(vr::Hand::Right)]);
+		json.end();
 		json.object("presses");
 		for(size_t i = 0; i < vr::EventCount; i++) {
 			json.value(vr::eventName(vr::Event(i)), controls.presses(vr::Event(i)));

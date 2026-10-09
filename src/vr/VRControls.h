@@ -47,6 +47,8 @@
  *  - a chord fires when its second control is pressed while the first is held; both controls are
  *    then consumed until released (no tap, no long press, no single binding of the second);
  *  - a long press fires once, when the control has been held for \ref ControlResolver::longPressMs;
+ *  - the release of a control that leads a chord or has a long press counts only after it stayed up
+ *    for \ref ControlResolver::releaseDebounceMs: a flicker is one hold, not a series of taps;
  *  - a press and release between two updates is delivered once (OpenXR's changedSinceLastSync);
  *  - an event that starts and ends in one update stays active for that update, so a game that
  *    polls once per frame sees it;
@@ -253,8 +255,17 @@ struct Hysteresis {
 };
 
 const Hysteresis TriggerThreshold = { 0.55f, 0.40f };
-//! Index grips report a value from just holding the controller, so the grip press needs a firm squeeze (F-41)
+//! The grip as squeeze/value (Touch, simple controller): a firm squeeze (F-41)
 const Hysteresis GripThreshold = { 0.70f, 0.55f };
+/*!
+ * The Index grip as squeeze/force - the pressure after the fingers closed. Its squeeze/value comes
+ * from finger contact and crossed 0.70 / 0.55 from just holding the controller (the owner's headset
+ * run of #30: six "use" taps nobody made, TRAPS.md).
+ */
+const Hysteresis IndexGripForceThreshold = { 0.40f, 0.25f };
+
+//! The grip threshold for the controllers of one hand, by the value their binding reports
+const Hysteresis & gripThreshold(ControllerType type);
 const Hysteresis TrackpadThreshold = { 0.40f, 0.25f };
 const Hysteresis StickDirectionThreshold = { 0.70f, 0.50f };
 
@@ -288,6 +299,15 @@ public:
 	//! How long a control is held for a long press, and the longest press that is still a tap
 	s64 longPressMs = 500;
 
+	/*!
+	 * How long a control that leads a chord or has a long press must stay up before its release
+	 * counts. A flicker of an analog control around its threshold (the Index grip from just holding
+	 * the controller) is one hold that can still become the chord, not a series of taps; a press
+	 * of the chord's second control inside the window still makes the chord. Controls with only a
+	 * single binding are released at once.
+	 */
+	s64 releaseDebounceMs = 150;
+
 	explicit ControlResolver(const ControlLayout & layout = ControlLayout());
 
 	/*!
@@ -320,6 +340,7 @@ private:
 
 	struct ControlState {
 		s64 since = 0;          //!< when the control was pressed
+		s64 upSince = -1;       //!< a deferred control seen up since then, not released yet (-1: down)
 		bool consumed = false;  //!< used by a chord or a long press - does nothing more until released
 	};
 

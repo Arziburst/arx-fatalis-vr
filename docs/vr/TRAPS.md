@@ -8,6 +8,21 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — "use" fires from just holding the Index controller (squeeze/value is not a grip press, #30)
+
+**Symptom:** the log shows `[vr] input: use_right (right.grip)` several times (×6 in the owner's headset run)
+although the player only held the controller and made one grip + trigger chord; with a game reaction (#74)
+that is a right click on whatever the reticle is on.
+**Cause:** the Index's `input/squeeze/value` measures finger contact on the grip sensor, not a squeeze: just
+holding the controller moves it across a 0.70 / 0.55 threshold (the Dishonored VR setting, F-41), and each
+short dip was a release of the grip — which leads the stash chord, so its own binding fires as a tap on
+release. A threshold that "looks firm" on `squeeze/value` is still holding, not pressing.
+**Do:** bind the Index grip to `input/squeeze/force` (the pressure after the fingers closed) with its own
+threshold (`IndexGripForceThreshold`); the release of a chord leader is debounced
+(`ControlResolver::releaseDebounceMs`), so a flicker is one hold. Every grip crossing is logged with its value
+(`[vr] input: right grip down at 0.43 (threshold 0.4 / 0.25)`), and `status.json` → `vr.input.grip` shows it
+live — tune the threshold from those numbers, not by feel.
+
 ## 2026-10-09 — "Blocked [rule]: ..." on a command that looks harmless (the safety hook)
 
 **Symptom:** a Bash / PowerShell / Edit call is refused with `Blocked [push-main|force-push|delete-outside|

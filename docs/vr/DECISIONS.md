@@ -187,7 +187,7 @@ the controls are the base of the VR settings that grow later (sound, graphics).
 
 ## D-019: The MVP control scheme
 
-- **Date:** 2026-10-09
+- **Date:** 2026-10-09 (game menu and recenter added 2026-10-10)
 - **Status:** Accepted
 - **Decided by:** project owner (agreed by questions, D-017; builds on D-008, D-010, D-016, D-018)
 
@@ -208,8 +208,9 @@ Valve Index first; Quest 3 Touch the same (A/B on the right, X/Y on the left).
 | Inventory | **B on the right**; the panel opens in the centre of the view and stays where it appeared while open; **the weapon stays in the hand** (no sheathing in VR) |
 | Character book (stats, map, diary, spells) | **B on the left** (Y on Quest), on the same centred panel |
 | Menus | a pointer only while a menu is open (D-010); both hands can use it |
+| Game menu (open / close) | **A on the left** on the Index (free in this table; the Index has no menu button), the **left menu button** on the Touch *(owner, 2026-10-10, after the #30 headset run)* |
 | Two reticles on different items | the name shown is the one of the **hand that moved last** |
-| Recenter | hold a button chord (F-34) |
+| Recenter | ~~hold a button chord (F-34)~~ → **long press of the left stick click** *(owner, 2026-10-10, after the #30 headset run)* |
 | Runes | drawn in the air with the hand (D-010); the button that starts casting is decided with the magic block (#43–#45) |
 | Left-handed mode | ~~after the MVP~~ → in the MVP, in the VR settings (D-020) |
 

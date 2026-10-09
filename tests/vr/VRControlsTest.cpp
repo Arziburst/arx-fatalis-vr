@@ -89,10 +89,13 @@ void VRControlsTest::tapBetweenUpdatesTest() {
 	CPPUNIT_ASSERT(resolver.released(Event::Jump));
 	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::Jump));
 
-	// The same for a control whose single binding waits for the release (the grip leads a chord)
+	// The same for a control whose single binding waits for the release (the grip leads a chord),
+	// after the release debounce window
 	resolver.update(32, controls(), controls({ RightGrip }));
+	CPPUNIT_ASSERT(!resolver.active(Event::UseRight));
+	resolver.update(32 + resolver.releaseDebounceMs, controls());
 	CPPUNIT_ASSERT(resolver.pressed(Event::UseRight));
-	resolver.update(48, controls());
+	resolver.update(48 + resolver.releaseDebounceMs, controls());
 	CPPUNIT_ASSERT(resolver.released(Event::UseRight));
 	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::UseRight));
 }
@@ -113,12 +116,14 @@ void VRControlsTest::chordTest() {
 
 	// Both controls were used by the chord: releasing the grip is no tap
 	resolver.update(48, controls());
+	resolver.update(48 + resolver.releaseDebounceMs, controls());
+	CPPUNIT_ASSERT(!resolver.down()[RightGrip]);
 	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::StashRight));
 	CPPUNIT_ASSERT_EQUAL(u32(0), resolver.presses(Event::UseRight));
 	CPPUNIT_ASSERT_EQUAL(u32(0), resolver.presses(Event::InteractRight));
 
 	// The trigger alone clicks again
-	resolver.update(64, controls({ RightTrigger }));
+	resolver.update(300, controls({ RightTrigger }));
 	CPPUNIT_ASSERT(resolver.pressed(Event::InteractRight));
 	CPPUNIT_ASSERT(!resolver.active(Event::StashRight));
 }
@@ -132,15 +137,18 @@ void VRControlsTest::chordLeaderTapTest() {
 	resolver.update(100, controls({ RightGrip }));
 	CPPUNIT_ASSERT(!resolver.active(Event::UseRight));
 	resolver.update(200, controls());
+	CPPUNIT_ASSERT(!resolver.active(Event::UseRight)); // the release waits for the debounce window
+	resolver.update(200 + resolver.releaseDebounceMs, controls());
 	CPPUNIT_ASSERT(resolver.pressed(Event::UseRight));
 	CPPUNIT_ASSERT(resolver.active(Event::UseRight));
-	resolver.update(216, controls());
+	resolver.update(216 + resolver.releaseDebounceMs, controls());
 	CPPUNIT_ASSERT(resolver.released(Event::UseRight));
 	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::UseRight));
 
 	// Held longer than a tap: nothing
-	resolver.update(300, controls({ RightGrip }));
-	resolver.update(300 + resolver.longPressMs, controls());
+	resolver.update(1000, controls({ RightGrip }));
+	resolver.update(1000 + resolver.longPressMs, controls());
+	resolver.update(1000 + resolver.longPressMs + resolver.releaseDebounceMs, controls());
 	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::UseRight));
 }
 
@@ -153,7 +161,79 @@ void VRControlsTest::simultaneousChordTest() {
 	CPPUNIT_ASSERT(resolver.pressed(Event::StashRight));
 	CPPUNIT_ASSERT(!resolver.active(Event::InteractRight));
 	resolver.update(16, controls());
+	resolver.update(16 + resolver.releaseDebounceMs, controls());
 	CPPUNIT_ASSERT_EQUAL(u32(0), resolver.presses(Event::UseRight));
+}
+
+void VRControlsTest::gripFlickerTest() {
+
+	ControlResolver resolver(defaultLayout(ControllerType::Index));
+
+	// The owner's headset run of #30: the grip flickers around its threshold before the chord.
+	// One hold, then the chord - and not a single "use"
+	resolver.update(0, controls({ RightGrip }));
+	resolver.update(40, controls());
+	resolver.update(80, controls({ RightGrip }));
+	resolver.update(120, controls());
+	resolver.update(160, controls({ RightGrip }));
+	CPPUNIT_ASSERT(resolver.down()[RightGrip]);
+	CPPUNIT_ASSERT_EQUAL(u32(0), resolver.presses(Event::UseRight));
+	resolver.update(300, controls({ RightGrip, RightTrigger }));
+	CPPUNIT_ASSERT(resolver.pressed(Event::StashRight));
+	resolver.update(400, controls());
+	resolver.update(400 + resolver.releaseDebounceMs, controls());
+	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::StashRight));
+	CPPUNIT_ASSERT_EQUAL(u32(0), resolver.presses(Event::UseRight));
+	CPPUNIT_ASSERT_EQUAL(u32(0), resolver.presses(Event::InteractRight));
+
+	// A flicker inside the window, even as taps between updates, is the same hold
+	resolver.update(1000, controls({ RightGrip }));
+	resolver.update(1040, controls());
+	resolver.update(1100, controls(), controls({ RightGrip }));
+	resolver.update(1240, controls());
+	CPPUNIT_ASSERT(resolver.down()[RightGrip]);
+	CPPUNIT_ASSERT_EQUAL(u32(0), resolver.presses(Event::UseRight));
+
+	// ... and ends as one tap of "use" once the grip stays up
+	resolver.update(1100 + resolver.releaseDebounceMs, controls());
+	CPPUNIT_ASSERT(resolver.pressed(Event::UseRight));
+	resolver.update(2000, controls());
+	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::UseRight));
+
+	// The chord's second control pressed inside the window still makes the chord
+	resolver.update(3000, controls({ RightGrip }));
+	resolver.update(3040, controls());
+	resolver.update(3100, controls({ RightTrigger }));
+	CPPUNIT_ASSERT(resolver.pressed(Event::StashRight));
+	CPPUNIT_ASSERT(!resolver.active(Event::InteractRight));
+
+	// A control with only a single binding is not debounced: released at once
+	resolver.update(4000, controls({ RightA }));
+	resolver.update(4016, controls());
+	CPPUNIT_ASSERT(resolver.released(Event::Jump));
+}
+
+void VRControlsTest::indexGripThresholdTest() {
+
+	// The Index grip is squeeze/force: holding the controller stays below the press threshold
+	const Hysteresis & index = gripThreshold(ControllerType::Index);
+	bool down = false;
+	for(float force : { 0.f, 0.08f, 0.15f, 0.30f, 0.22f, 0.38f, 0.10f }) {
+		down = index.update(down, force);
+		CPPUNIT_ASSERT(!down);
+	}
+	down = index.update(down, 0.45f); // a firm squeeze
+	CPPUNIT_ASSERT(down);
+	down = index.update(down, 0.30f);
+	CPPUNIT_ASSERT(down);
+	down = index.update(down, 0.20f);
+	CPPUNIT_ASSERT(!down);
+
+	// The others keep squeeze/value with 0.70 / 0.55 (F-41)
+	CPPUNIT_ASSERT(&gripThreshold(ControllerType::Touch) == &GripThreshold);
+	CPPUNIT_ASSERT(&gripThreshold(ControllerType::Simple) == &GripThreshold);
+	CPPUNIT_ASSERT(&gripThreshold(ControllerType::Unknown) == &GripThreshold);
+	CPPUNIT_ASSERT(&gripThreshold(ControllerType::Index) == &IndexGripForceThreshold);
 }
 
 void VRControlsTest::longPressTest() {
@@ -168,6 +248,7 @@ void VRControlsTest::longPressTest() {
 	resolver.update(0, controls({ LeftB }));
 	CPPUNIT_ASSERT(!resolver.active(Event::Book));
 	resolver.update(100, controls());
+	resolver.update(100 + resolver.releaseDebounceMs, controls());
 	CPPUNIT_ASSERT(resolver.pressed(Event::Book));
 	CPPUNIT_ASSERT(!resolver.active(Event::Menu));
 
@@ -181,6 +262,7 @@ void VRControlsTest::longPressTest() {
 	CPPUNIT_ASSERT(resolver.active(Event::Menu));
 	CPPUNIT_ASSERT(!resolver.pressed(Event::Menu));
 	resolver.update(2100, controls());
+	resolver.update(2100 + resolver.releaseDebounceMs, controls());
 	CPPUNIT_ASSERT(resolver.released(Event::Menu));
 	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::Menu));
 	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::Book));

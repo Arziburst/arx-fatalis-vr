@@ -1,9 +1,12 @@
-# VR settings in flat mode (#178): the main menu's Options list has "VR" after "Input", and the VR page lists every
-# event with its binding. Flat, no headset: run with smoke-test.ps1 -Menu -Sequence vr-settings-flat (not xrs-run.ps1,
-# which starts the simulated headset).
+# VR settings from the main menu (#178): a plain launch on the simulated headset - the main menu's Options list has
+# "VR" after "Input", and the VR page lists every event with its binding for the simulated Index controllers.
+# (vr-remap.xrs reaches the same page through the pause menu.) The name is historical: the first version ran flat.
+@sim idle
+@args --skiplogo
+
 @until state eq MENU 60s
 @assert menuMode eq mainmenu
-@assert vr.enabled eq false
+@until vr.input.controllers eq index 30s
 
 menu options
 @until menuPage eq options 10s
@@ -13,8 +16,7 @@ menu options
 menu vr
 @until menuPage eq vr 10s
 @frames 30
-@shot vr-flat
-@assert vr.input.remapped eq false
+@shot vr-menu
 @assert vr.input.layout.jump eq right.a
 @assert vr.input.conflicts eq 0
 

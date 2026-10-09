@@ -66,6 +66,8 @@ Check 'launch directives are separated from the steps' ($seq.Sim -eq 'idle' -and
 Check 'no save unless one is named' ($null -eq $seq.Save)
 $saved = Get-Parse "@sim idle`n@save mvp-new-game`n@args --loadslot 0`n@frames 1"
 Check '@save names the start save and is not a step' ($saved -isnot [string] -and $saved.Save -eq 'mvp-new-game' -and @($saved.Steps).Count -eq 1) $saved
+$oneWord = Get-Parse "@sim idle`n@args --skiplogo`n@wait 1"
+Check 'a one-word @args stays one argument (#178: it splatted as "- - s k i p l o g o")' ($oneWord -isnot [string] -and $oneWord.Args -is [array] -and $oneWord.Args.Count -eq 1 -and $oneWord.Args[0] -eq '--skiplogo') "$($oneWord.Args)"
 $kinds = ($seq.Steps | ForEach-Object Kind) -join ' '
 Check 'every directive has its kind' ($kinds -eq 'wait frames until assert remember assert mark log nolog shot diff key pending command command') $kinds
 Check 'the trailing comment is dropped' ($seq.Steps[0].Ms -eq 100)

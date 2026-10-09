@@ -2,6 +2,7 @@
 # In the start cell of mvp-new-game the standing cylinder grazes the sloped floor; the game used to keep the
 # character crouched there for good. Something in the way of the head (the cell's portcullis) still keeps it down.
 #   .\scripts\dev\smoke-test.ps1 -Sequence stand-up -Save mvp-new-game
+@save mvp-new-game
 @args --loadslot 0 --no-vr
 
 @until state eq GAMEPLAY 60s

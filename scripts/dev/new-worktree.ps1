@@ -103,8 +103,8 @@ if ($PSCmdlet.ParameterSetName -eq 'Task') {
 		else { Write-Host "no worktree for #$Issue"; return }
 	} else {
 		if (-not $Name) {
-			$title = gh issue view $Issue -R $Repo --json title -q .title
-			if ($LASTEXITCODE -or -not $title) { throw "could not read the title of #$Issue - pass -Name" }
+			$title = try { (Get-GhIssue $Issue).Title } catch { throw "could not read the title of #$Issue ($($_.Exception.Message)) - pass -Name" }
+			if (-not $title) { throw "could not read the title of #$Issue - pass -Name" }
 			$Name = ConvertTo-Slug $title
 		}
 		$Branch = "ARXVR-$Issue-$Type-$(ConvertTo-Slug $Name)"

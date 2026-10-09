@@ -45,6 +45,10 @@ struct InputState {
 	GameInputMapper game;
 	TurnController turn;
 	bool smoothTurning = false; //!< a smooth turn is under way (for its start / stop game events)
+	//! The push of the last snap (#285): when its first snap was made, its repeats, their mean interval
+	PlatformInstant pushStart = 0;
+	u64 pushRepeats = 0;
+	float repeatInterval = 0.f;
 
 	//! Controls set by the test channel, merged into what the controllers report
 	ControlSet injectedDown;
@@ -194,6 +198,17 @@ float updateTurn(float seconds, bool allowed) {
 
 	// A snap is a player action: one event each; a smooth turn is an episode: logged when it starts and stops
 	if(g_input.turn.snaps() != snaps) {
+		// The repeat measured by the clock: a test reads it instead of a count of snaps, which depends on when
+		// the stick is let go (#285)
+		const PlatformInstant now = platform::getTime();
+		if(g_input.turn.lastSnapRepeated()) {
+			g_input.pushRepeats++;
+			g_input.repeatInterval = toS(now - g_input.pushStart) / float(g_input.pushRepeats);
+		} else {
+			g_input.pushStart = now;
+			g_input.pushRepeats = 0;
+			g_input.repeatInterval = 0.f;
+		}
 		gameevent::Event("vr.turn.snap", 1000)("dir", g_input.turn.lastSnap() > 0 ? "right" : "left")
 			("deg", settings.snapAngle, 1)("repeat", g_input.turn.lastSnapRepeated() ? "yes" : "no")
 			("count", g_input.turn.snaps());
@@ -210,6 +225,14 @@ float updateTurn(float seconds, bool allowed) {
 
 const TurnController & turnState() {
 	return g_input.turn;
+}
+
+u64 snapPushRepeats() {
+	return g_input.pushRepeats;
+}
+
+float snapRepeatInterval() {
+	return g_input.repeatInterval;
 }
 
 namespace {

@@ -35,8 +35,8 @@
  *  - logs every game state change as \c [game] \c state: \c MENU|LOADING|GAMEPLAY|CINEMATIC.
  *
  * Channel commands: \c status, \c shot \c [name], \c quit, \c mark \c <text>, \c loadslot \c <n>,
- * \c loadlevel \c <n>, \c recenter (refused until #28). Any other line goes to the script console
- * exactly as if typed there: \c [entity.]command \c args.
+ * \c loadlevel \c <n>, \c drawcheck \c [frames], \c recenter (refused until #28). Any other line goes
+ * to the script console exactly as if typed there: \c [entity.]command \c args.
  *
  * See docs/vr/TESTING.md for the protocol and scripts/dev/smoke-test.ps1 for the first client.
  */
@@ -53,6 +53,15 @@ void update();
 
 //! Take a pending screenshot - call after the frame was rendered and before it is shown
 void afterRender();
+
+/*!
+ * How many times to draw the scene view in this level frame: 2 while a \c drawcheck runs, else 1.
+ * The two views use the same camera; afterSceneView() compares their pictures.
+ */
+size_t sceneViewCount();
+
+//! Scene view \a view of this frame is in the back buffer - the draw check reads it back
+void afterSceneView(size_t view);
 
 //! The game started loading a level - logs \c [game] \c state: \c LOADING and writes the status now
 void notifyLoading(AreaId area);

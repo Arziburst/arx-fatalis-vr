@@ -16,6 +16,7 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 .\scripts\dev\smoke-test.ps1 -Saves save0000 -- --loadslot 0  # copy a save into the isolated user directory, then load it
 .\scripts\dev\smoke-test.ps1 -Commands 'shot a','mark x' -- --loadslot 0
 .\scripts\dev\smoke-test.ps1 -Menu -Commands 'loadslot 0'       # plain launch (main menu), then a save through the channel
+.\scripts\dev\smoke-test.ps1 -Commands 'drawcheck 120'         # two draws of the scene per frame must give one picture (#71)
 .\scripts\run-windows.ps1 -Isolated -TestChannel -- --no-vr --loadlevel 10   # a manual run with the channel, in this copy's own user dir
 .\scripts\dev\game-status.ps1 -Watch                          # live state line
 .\scripts\dev\game-cmd.ps1 'shot before' 'teleport -p marker_0001' 'shot after'
@@ -51,6 +52,7 @@ above) plus `--no-vr` unless `-Vr`, and `--loadlevel 10` unless other `arx.exe` 
 | no crash | new directories in the user directory's `crashes\` | one appeared |
 | no errors | `[E]` / `[C]` lines in the log **and** `errors` in `status.json` | any |
 | commands | every `-Commands` ack has `errors=0` | a command was refused |
+| draw check | `drawCheck` in `status.json`, when a `drawcheck` was among the commands | it did not finish, or `framesDiffering ≠ 0` |
 
 It prints the state timeline (`+1.1s state GAMEPLAY (frame 2)`), the acks, the `[E]`/`[W]` lines,
 the last lines of the log, the head of a new crash report, and `PASS` / `FAIL` with every reason.
@@ -92,6 +94,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `quit` | ask the game to quit at the end of the frame (the same path as closing the window) |
 | `loadslot <n>` | load save slot `n` (from the menu or in-game), refused with the slot count if it does not exist |
 | `loadlevel <n> [target]` | change to level `n` in a running game (refused from the menu: start with `--loadlevel` or `loadslot`) |
+| `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
 | `recenter` | refused with `not implemented yet (#28)` until recentering exists |
 | anything else | the **script console**: `[entity.]command args`, exactly as typed in the in-game console (`` ` ``). Context defaults to the player. Refused (and counted in the ack) when the entity or the command is unknown |
 
@@ -127,6 +130,49 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   (`idle`, `ready`, `synchronized`, `visible`, `focused`, `stopping`, …).
 - `player` is present only while a level is loaded. More fields (per-eye frame ids, the rate line)
   come with #20; the `.xrs` runner (#113) asserts on these keys with `@modassert`.
+- `drawCheck` appears once a `drawcheck` was requested: `{"seq":1,"running":false,"frames":120,
+  "framesDiffering":0,"pixels":307200,"maxPixelsDiffering":0,"maxDelta":0,"capture":""}` —
+  `frames` compared so far, `framesDiffering` of them with at least one differing pixel,
+  `maxPixelsDiffering` the worst frame, `maxDelta` the largest difference of one color channel
+  (0–255), `capture` the base name of the most differing pair (`<capture>_a.bmp` / `_b.bmp`).
+
+## The draw check (`drawcheck`)
+
+In VR the scene is drawn once per eye, so a level frame is *simulate once, draw per view* (#71):
+`ArxGame::updateLevel()` advances the game, `renderSceneView()` draws the 3D world for the current
+camera and may run any number of times, `renderInterface()` draws the HUD once. Anything that still
+advances while drawing — a particle aging, a random walk, a light moving, a spell applying damage —
+would run once per eye and give the eyes two different pictures.
+
+`drawcheck [frames]` is the instrument: for the next `frames` level frames the scene view is drawn
+**twice** with the same camera (`channel::sceneViewCount()` returns 2) and the two back buffers are
+read back and compared pixel by pixel. The expected result is **0 differing pixels in every frame**;
+the numbers land in `drawCheck` of `status.json`, one `[render] drawcheck N done:` line in the log,
+and the most differing pair is saved as `capture\drawcheckN_a.bmp` / `_b.bmp` for a look. The smoke
+test treats a `drawcheck` among its `-Commands` as a gate (it waits for the check to finish and fails
+on `framesDiffering ≠ 0`).
+
+What the check relies on and what it cannot see:
+
+- **Random numbers.** Draw code jitters things on purpose (missile trails, lightning bolts, halos,
+  the fissure's edges). `renderLevel()` saves the generator (`Random::getState()`) before the first
+  view and restores it before every further view, so each view draws the same random numbers. That is
+  also what the eyes need: the same flicker in both. A random *walk* that accumulates in draw code
+  (`x += random`) still differs, and is a bug the check finds.
+- **Per-view culling and projection** (`worldToClipSpace`, `VisibleSphere`) are fine in draw code:
+  the same camera gives the same result. Game decisions that used to depend on the camera (a blood
+  splat lands only in view, a field animates only in view) now use the frame's camera in the update.
+- It compares the whole scene view, screen-space overlays included (hit blood, Magic Sight, the
+  paralysis tint), but **not** the interface, which is drawn once per frame anyway.
+- It cannot see state that only affects the *next* frame (a counter incremented in a draw path and
+  read later). Those show up as a visibly faster effect, not as a differing pair.
+
+A typical check exercises the systems that were split, all at once:
+
+```powershell
+$spells = 'magic_missile','fireball','ice_projectile','poison_projectile','lightning_strike','mass_lightning_strike','speed','heal','levitate','bless','fire_field','ice_field','rune_of_guarding','create_field','repel_undead','curse','confuse','summon_creature','raise_dead','harm','mana_drain','life_drain','cure_poison','create_food','fake_summon','explosion'
+.\scripts\dev\smoke-test.ps1 -Seconds 8 -Commands (@('invulnerability on') + ($spells | ForEach-Object { "spellcast -fs 5 $_ self" }) + @('drawcheck 240'))
+```
 
 ## `xr_hello` — the runtime alone
 
@@ -155,6 +201,9 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | `smoke-test.ps1 -Menu -Commands 'loadslot 0'` (plain launch, then a save through the channel) | `MENU` 0.8 s after launch; `loadslot 0` refused with `no save in slot 0 (have 0)` — the owner's machine has no saves yet (#70), so the success path of `loadslot` is **not verified** here; it is the same `LOADQUEST_SLOT` path as `--loadslot` |
 | 2026-10-09, #124: `--loadlevel 10` with the intro `.cin` **loaded** (preloaded by the level 10 script, never played), `-CloseWindow -Repeat 5` | **2 of 5 crashed** in `Entity::cleanReferences` (#93); the channel `quit` was 5 of 5 clean on the same build. A loaded cinematic is enough for #93, so the development skip never loads the file |
 | 2026-10-09, #124: cinematics skipped without loading — default `-CloseWindow -Repeat 3`; `-Commands 'cine play' -CloseWindow -Repeat 2`; `-Commands 'cine play','cine akbaa_dream_a' -Repeat 2` | **3 of 3, 2 of 2, 2 of 2** `PASS`; one `Skipping cinematic <name>` line per cinematic, state never `CINEMATIC`, 0 errors. With `--cinematics` (or `cine play` with `--intro`) the state becomes `CINEMATIC` — the check can fail |
+| 2026-10-09, #71: `-Commands 'drawcheck 120'` on level 10 **before** the simulate / draw split (`renderLevel()` still aged particles, flares, decals and spells while drawing) | **23 of 120 frames differ** between the two draws (max 3558 of 307200 pixels, max delta 59) — the torches' fire particles advance once per draw |
+| 2026-10-09, #71: the same after the split | `PASS`, **0 of 120 frames differ** (max 0 pixels, delta 0), 0 errors, 0 warnings |
+| 2026-10-09, #71: 26 spells cast on the player (`spellcast -fs 5 <spell> self`, the list in [The draw check](#the-draw-check-drawcheck)), then `drawcheck 240` | `PASS`, **0 of 240 frames differ**, every `spellcast` acknowledged with `errors=0`, 0 errors, 0 warnings |
 
 Conclusions:
 

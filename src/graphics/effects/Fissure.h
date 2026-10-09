@@ -67,8 +67,9 @@ private:
 	float fBetaRadSin;
 	
 	void Split(Vec3f * v, int a, int b, float yo);
+	void UpdateRays();
 	void RenderFissure();
-	
+
 	TextureContainer * tex_light;
 	int end;
 	int iSize;

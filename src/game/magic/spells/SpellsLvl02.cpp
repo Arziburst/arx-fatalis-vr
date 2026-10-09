@@ -81,6 +81,10 @@ void HealSpell::End() {
 	
 }
 
+void HealSpell::Render() {
+	m_particles.Render();
+}
+
 void HealSpell::Update() {
 	
 	if(m_caster == EntityHandle_Player) {
@@ -116,8 +120,7 @@ void HealSpell::Update() {
 	
 	m_particles.SetPos(m_pos);
 	m_particles.Update(g_gameTime.lastFrameDuration());
-	m_particles.Render();
-	
+
 	for(Entity & npc : entities.inScene(IO_NPC)) {
 		
 		if(!(npc.gameFlags & GFLAG_ISINTREATZONE) || npc._npcdata->lifePool.current <= 0.f) {
@@ -368,6 +371,10 @@ void HarmSpell::End() {
 	
 	ARX_SOUND_Stop(m_snd_loop);
 	m_snd_loop = audio::SourcedSample();
+}
+
+void HarmSpell::Render() {
+	m_cabal.render();
 }
 
 void HarmSpell::Update() {

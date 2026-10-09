@@ -130,6 +130,10 @@ void ManaDrainSpell::End() {
 	m_snd_loop = audio::SourcedSample();
 }
 
+void ManaDrainSpell::Render() {
+	m_cabal.render();
+}
+
 void ManaDrainSpell::Update() {
 	
 	float scaley = 90.f;
@@ -286,6 +290,10 @@ void LifeDrainSpell::End() {
 	m_snd_loop = audio::SourcedSample();
 	
 	m_cabal.end();
+}
+
+void LifeDrainSpell::Render() {
+	m_cabal.render();
 }
 
 void LifeDrainSpell::Update() {

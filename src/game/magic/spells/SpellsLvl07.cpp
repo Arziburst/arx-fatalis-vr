@@ -263,6 +263,17 @@ void FireFieldSpell::End() {
 	ARX_SOUND_PlaySFX(g_snd.SPELL_FIRE_FIELD_END);
 }
 
+void FireFieldSpell::Render() {
+
+	if(!VisibleSphere(Sphere(m_pos - Vec3f(0.f, 120.f, 0.f), 350.f))) {
+		return;
+	}
+
+	pPSStream.Render();
+	pPSStream1.Render();
+
+}
+
 void FireFieldSpell::Update() {
 	
 	pPSStream.Update(g_gameTime.lastFrameDuration());
@@ -282,9 +293,6 @@ void FireFieldSpell::Update() {
 	if(!VisibleSphere(Sphere(m_pos - Vec3f(0.f, 120.f, 0.f), 350.f))) {
 		return;
 	}
-	
-	pPSStream.Render();
-	pPSStream1.Render();
 	
 	size_t count = size_t(m_quantizer.update(toMsf(g_gameTime.lastFrameDuration()) * 0.125f));
 	for(size_t i = 0; i < count; i++) {
@@ -413,6 +421,31 @@ void IceFieldSpell::End() {
 	ARX_SOUND_PlaySFX(g_snd.SPELL_ICE_FIELD_END);
 }
 
+void IceFieldSpell::Render() {
+
+	if(!VisibleSphere(Sphere(m_pos - Vec3f(0.f, 120.f, 0.f), 350.f))) {
+		return;
+	}
+
+	RenderMaterial mat;
+	mat.setDepthTest(true);
+	mat.setBlendType(RenderMaterial::Additive);
+
+	for(int i = 0; i < iMax; i++) {
+
+		Anglef stiteangle(0.f, glm::cos(glm::radians(tPos[i].x)) * 360, 0.f);
+		Vec3f stitepos(tPos[i].x, m_pos.y, tPos[i].z);
+		Vec3f stitescale(tSize[i].z, tSize[i].y, tSize[i].x);
+		Color3f stitecolor = Color3f(0.7f, 0.7f, 0.9f) * tSizeMax[i].y;
+		stitecolor = componentwise_min(stitecolor, Color3f(1.f, 1.f, 1.f));
+
+		EERIE_3DOBJ * obj = (tType[i] == 0) ? smotte.get() : stite.get();
+
+		Draw3DObject(obj, stiteangle, stitepos, stitescale, stitecolor, mat);
+	}
+
+}
+
 void IceFieldSpell::Update() {
 	
 	EERIE_LIGHT * el = dynLightCreate(m_light);
@@ -430,37 +463,11 @@ void IceFieldSpell::Update() {
 		return;
 	}
 	
-	RenderMaterial mat;
-	mat.setDepthTest(true);
-	mat.setBlendType(RenderMaterial::Additive);
-	
 	for(int i = 0; i < iMax; i++) {
-		
 		tSize[i] += Vec3f(0.1f);
 		tSize[i] = glm::min(tSize[i], tSizeMax[i]);
-		
-		Anglef stiteangle(0.f, glm::cos(glm::radians(tPos[i].x)) * 360, 0.f);
-		Vec3f stitepos(tPos[i].x, m_pos.y, tPos[i].z);
-		Vec3f stitescale(tSize[i].z, tSize[i].y, tSize[i].x);
-		Color3f stitecolor = Color3f(0.7f, 0.7f, 0.9f) * tSizeMax[i].y;
-		
-		if(stitecolor.r > 1) {
-			stitecolor.r = 1;
-		}
-		
-		if(stitecolor.g > 1) {
-			stitecolor.g = 1;
-		}
-		
-		if(stitecolor.b > 1) {
-			stitecolor.b = 1;
-		}
-		
-		EERIE_3DOBJ * obj = (tType[i] == 0) ? smotte.get() : stite.get();
-		
-		Draw3DObject(obj, stiteangle, stitepos, stitescale, stitecolor, mat);
 	}
-	
+
 	if(m_quantizer.update(toMsf(g_gameTime.lastFrameDuration()) * 0.03f) < 1) {
 		return;
 	}
@@ -552,6 +559,10 @@ static Vec3f GetChestPos(EntityHandle num) {
 	return io->pos + Vec3f(0.f, -120.f, 0.f);
 }
 
+void LightningStrikeSpell::Render() {
+	m_lightning.Render();
+}
+
 void LightningStrikeSpell::Update() {
 	
 	float fBeta = 0.f;
@@ -591,8 +602,7 @@ void LightningStrikeSpell::Update() {
 	m_lightning.m_fDamage = m_level * 1.067f;
 	
 	m_lightning.Update(g_gameTime.lastFrameDuration());
-	m_lightning.Render();
-	
+
 	if(caster) {
 		ARX_SOUND_RefreshPosition(m_snd_loop, caster->pos);
 	}
@@ -642,6 +652,16 @@ void ConfuseSpell::End() {
 	endLightDelayed(m_light, 500ms);
 }
 
+void ConfuseSpell::Render() {
+
+	if(!entities.get(m_target)) {
+		return;
+	}
+
+	EERIEDrawAnimQuatRender(spapi.get(), eCurPos, nullptr, 0.f);
+
+}
+
 void ConfuseSpell::Update() {
 	
 	Entity * target = entities.get(m_target);
@@ -659,12 +679,7 @@ void ConfuseSpell::Update() {
 	}
 	
 	eCurPos = pos;
-	
-	RenderMaterial mat;
-	mat.setDepthTest(false);
-	mat.setBlendType(RenderMaterial::Additive);
-	mat.setTexture(tex_trail);
-	
+
 	float rot = timeWaveSaw(g_gameTime.now(), 3142ms) * 360.f;
 	
 	Anglef stiteangle = Anglef(0.f, -rot, 0.f);
@@ -672,7 +687,6 @@ void ConfuseSpell::Update() {
 	{
 		AnimationDuration delta = toAnimationDuration(g_gameTime.lastFrameDuration());
 		EERIEDrawAnimQuatUpdate(spapi.get(), animlayer, stiteangle, eCurPos, delta, nullptr, false);
-		EERIEDrawAnimQuatRender(spapi.get(), eCurPos, nullptr, 0.f);
 	}
 	
 	size_t count = m_quantizer.update(toMsf(g_gameTime.lastFrameDuration()) * 0.18f);

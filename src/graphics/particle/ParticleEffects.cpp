@@ -704,32 +704,31 @@ void spawn2DFireParticle(const Vec2f & pos, float scale) {
 
 
 void ARX_PARTICLES_Update()  {
-	
+
 	ARX_PROFILE_FUNC();
-	
+
 	if(!g_tiles) {
 		return;
 	}
-	
+
 	if(ParticleCount == 0) {
 		return;
 	}
-	
-	const GameInstant now = g_gameTime.now();
-	
+
 	ShortGameDuration delta = g_gameTime.lastFrameDuration();
-	
+
 	long pcc = ParticleCount;
-	
+
 	for(size_t i = 0; i < MAX_PARTICLES && pcc > 0; i++) {
-		
+
 		PARTICLE_DEF * part = &g_particles[i];
 		if(!part->exist) {
 			continue;
 		}
-		
+		pcc--;
+
 		arx_assume(part->duration > 0 && part->duration <= ShortGameDuration::max() / 2);
-		
+
 		ShortGameDuration elapsed = part->elapsed;
 		part->elapsed += delta;
 		if(elapsed < 0) {
@@ -744,13 +743,13 @@ void ARX_PARTICLES_Update()  {
 			}
 			continue;
 		}
-		
+
 		if(!(part->m_flags & PARTICLE_2D) && !g_tiles->isInActiveTile(part->ov)) {
 			part->exist = false;
 			ParticleCount--;
 			continue;
 		}
-		
+
 		if(elapsed >= part->duration) {
 			if((part->m_flags & FIRE_TO_SMOKE) && Random::getf() > 0.7f) {
 				part->ov += part->move;
@@ -769,71 +768,57 @@ void ARX_PARTICLES_Update()  {
 				continue;
 			}
 		}
-		
-		float val = elapsed / 100ms;
-		
-		Vec3f in = part->ov + part->move * val;
-		
-		if(part->m_flags & GRAVITY) {
-			in.y += 1.47f * val * val;
-		}
-		
-		float fd = elapsed / part->duration;
-		
-		float r = 1.f - fd;
-		if(part->m_flags & FADE_IN_AND_OUT) {
-			r = (fd <= 0.5f) ? 2.f * fd : 2.f - 2.f * fd;
-		}
-		
-		float size = part->size + part->sizeDelta * fd;
-		
-		if(!(part->m_flags & PARTICLE_2D)) {
-			
-			Sphere sp;
-			sp.origin = in;
-			
+
+		if(!(part->m_flags & PARTICLE_2D) && (part->m_flags & (SPLAT_GROUND | SPLAT_WATER))) {
+
+			// A splat lands only while the particle is in front of the frame's camera and within
+			// fog range - the same rule as when this ran while drawing
+			float val = elapsed / 100ms;
+			Vec3f in = part->ov + part->move * val;
+			if(part->m_flags & GRAVITY) {
+				in.y += 1.47f * val * val;
+			}
+
 			Vec4f p = worldToClipSpace(in);
 			float z = p.z / p.w;
-			if(p.w <= 0.f || z > g_camera->cdepth * fZFogEnd) {
-				continue;
-			}
-			
-			if(part->m_flags & SPLAT_GROUND) {
-				sp.radius = size * 10.f;
-				if(CheckAnythingInSphere(sp, entities.player(), CAS_NO_NPC_COL)) {
-					if(Random::getf() < 0.9f) {
-						Color3f rgb = part->rgb;
-						PolyBoomAddSplat(sp, rgb, 0);
+			if(p.w > 0.f && z <= g_camera->cdepth * fZFogEnd) {
+
+				float fd = elapsed / part->duration;
+				float size = part->size + part->sizeDelta * fd;
+
+				Sphere sp;
+				sp.origin = in;
+
+				if(part->m_flags & SPLAT_GROUND) {
+					sp.radius = size * 10.f;
+					if(CheckAnythingInSphere(sp, entities.player(), CAS_NO_NPC_COL)) {
+						if(Random::getf() < 0.9f) {
+							Color3f rgb = part->rgb;
+							PolyBoomAddSplat(sp, rgb, 0);
+						}
+						part->exist = false;
+						ParticleCount--;
+						continue;
 					}
-					part->exist = false;
-					ParticleCount--;
-					continue;
 				}
-			}
-			
-			if(part->m_flags & SPLAT_WATER) {
-				sp.radius = size * Random::getf(10.f, 30.f);
-				if(CheckAnythingInSphere(sp, entities.player(), CAS_NO_NPC_COL)) {
-					if(Random::getf() < 0.9f) {
-						Color3f rgb = part->rgb * 0.5f;
-						PolyBoomAddSplat(sp, rgb, 2);
+
+				if(part->m_flags & SPLAT_WATER) {
+					sp.radius = size * Random::getf(10.f, 30.f);
+					if(CheckAnythingInSphere(sp, entities.player(), CAS_NO_NPC_COL)) {
+						if(Random::getf() < 0.9f) {
+							Color3f rgb = part->rgb * 0.5f;
+							PolyBoomAddSplat(sp, rgb, 2);
+						}
+						part->exist = false;
+						ParticleCount--;
+						continue;
 					}
-					part->exist = false;
-					ParticleCount--;
-					continue;
 				}
+
 			}
-			
-			if((part->m_flags & DISSIPATING) && z < 0.05f) {
-				r *= z * 20.f;
-			}
+
 		}
-		
-		if(r <= 0.f) {
-			pcc--;
-			continue;
-		}
-		
+
 		if(part->m_flags & PARTICLE_GOLDRAIN) {
 			float v = Random::getf(-0.1f, 0.1f);
 			if(part->rgb.r + v <= 1.f && part->rgb.r + v > 0.f
@@ -842,22 +827,90 @@ void ARX_PARTICLES_Update()  {
 				part->rgb = Color3f(part->rgb.r + v, part->rgb.g + v, part->rgb.b + v);
 			}
 		}
-		
+
+	}
+}
+
+void ARX_PARTICLES_Render() {
+
+	ARX_PROFILE_FUNC();
+
+	if(!g_tiles) {
+		return;
+	}
+
+	if(ParticleCount == 0) {
+		return;
+	}
+
+	const GameInstant now = g_gameTime.now();
+
+	long pcc = ParticleCount;
+
+	for(size_t i = 0; i < MAX_PARTICLES && pcc > 0; i++) {
+
+		const PARTICLE_DEF * part = &g_particles[i];
+		if(!part->exist) {
+			continue;
+		}
+		pcc--;
+
+		ShortGameDuration elapsed = part->elapsed;
+		if(elapsed < 0) {
+			// Not born yet
+			continue;
+		}
+
+		float val = elapsed / 100ms;
+
+		Vec3f in = part->ov + part->move * val;
+
+		if(part->m_flags & GRAVITY) {
+			in.y += 1.47f * val * val;
+		}
+
+		float fd = elapsed / part->duration;
+
+		float r = 1.f - fd;
+		if(part->m_flags & FADE_IN_AND_OUT) {
+			r = (fd <= 0.5f) ? 2.f * fd : 2.f - 2.f * fd;
+		}
+
+		float size = part->size + part->sizeDelta * fd;
+
+		if(!(part->m_flags & PARTICLE_2D)) {
+
+			Vec4f p = worldToClipSpace(in);
+			float z = p.z / p.w;
+			if(p.w <= 0.f || z > g_camera->cdepth * fZFogEnd) {
+				continue;
+			}
+
+			if((part->m_flags & DISSIPATING) && z < 0.05f) {
+				r *= z * 20.f;
+			}
+
+		}
+
+		if(r <= 0.f) {
+			continue;
+		}
+
 		Color color(part->rgb * r);
 		if(player.m_improve) {
 			color.g = 0;
 		}
-		
+
 		TextureContainer * tc = part->tc;
 		if(tc == g_particleTextures.explo[0] && (part->m_flags & PARTICLE_ANIMATED)) {
 			long animrange = g_particleTextures.MAX_EXPLO - 1;
 			tc = g_particleTextures.explo[glm::clamp(long(fd * float(animrange)), 0l, animrange)];
 		}
-		
+
 		RenderMaterial mat;
 		mat.setTexture(tc);
 		mat.setDepthTest(!(part->m_flags & PARTICLE_NOZBUFFER));
-		
+
 		if(part->m_flags & PARTICLE_SUB2) {
 			mat.setBlendType(RenderMaterial::Subtractive2);
 			color.a = Color::Traits::convert(r * 1.5f);
@@ -866,9 +919,9 @@ void ARX_PARTICLES_Update()  {
 		} else {
 			mat.setBlendType(RenderMaterial::Additive);
 		}
-		
+
 		float zpos = (part->m_flags & PARTICLE_ZDEC) ? 0.0001f : 2.f;
-		
+
 		if(part->m_flags & PARTICLE_2D) {
 			EERIEAddBitmap(mat, in, size, size, tc, color);
 		} else if(part->m_flags & ROTATING) {
@@ -877,8 +930,7 @@ void ARX_PARTICLES_Update()  {
 		} else {
 			EERIEAddSprite(mat, in, size, color, zpos);
 		}
-		
-		pcc--;
+
 	}
 }
 

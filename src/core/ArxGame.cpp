@@ -47,6 +47,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
+#include <optional>
 #include <sstream>
 #include <string_view>
 
@@ -98,6 +99,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "graphics/data/FTL.h"
 #include "graphics/data/Mesh.h"
 #include "graphics/data/TextureContainer.h"
+#include "graphics/effects/Decal.h"
 #include "graphics/effects/Fade.h"
 #include "graphics/effects/Fog.h"
 #include "graphics/effects/LightFlare.h"
@@ -132,6 +134,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "input/Keyboard.h"
 
 #include "math/Angle.h"
+#include "math/Random.h"
 #include "math/Types.h"
 #include "math/Rectangle.h"
 #include "math/Vector.h"
@@ -1844,16 +1847,64 @@ void ArxGame::updateLevel() {
 		}
 		
 		g_playerCamera.focal += 177.5f * player.m_bowAimRatio;
-		
+
 	}
-	
+
+	// Effects that used to advance while the level was drawn - once per frame here, so the scene
+	// can be drawn once per eye without running the game twice (#71)
+	ARX_PARTICLES_Update();
+	ParticleSparkUpdate();
+	ARX_MAGICAL_FLARES_Update();
+	PolyBoomUpdate();
+	ARX_DAMAGE_Update_Hit_Blood();
+	eyeball.updateFading();
+	ARX_SPELLS_Update();
+	updateLightFlares();
+	ARX_PLAYER_Manage_Death();
+
 	ARX_INTERACTIVE_DestroyIOdelayedExecute();
 }
 
 void ArxGame::renderLevel() {
-	
+
 	ARX_PROFILE_FUNC();
-	
+
+	// updateLevel() advanced the game; from here on the frame is only drawn. The scene view may be
+	// drawn more than once per frame (once per eye in VR, twice for the test channel's drawcheck):
+	// every view must see the same state, and the same random numbers for the same flicker.
+	size_t views = channel::sceneViewCount();
+	#ifdef ARX_DEBUG
+	if(g_debugToggles[9]) {
+		views = std::max(views, size_t(2));
+	}
+	#endif
+
+	std::optional<Random::State> random;
+	if(views > 1) {
+		random = Random::getState();
+	}
+	for(size_t view = 0; view < views; view++) {
+		if(view > 0) {
+			Random::setState(*random);
+		}
+		renderSceneView();
+		channel::afterSceneView(view);
+	}
+
+	renderInterface();
+
+}
+
+void ArxGame::renderSceneView() {
+
+	ARX_PROFILE_FUNC();
+
+	// Everything batched from here on belongs to this view
+	g_renderBatcher.clear();
+
+	// The previous view may have left the cinematic border's scissor
+	GRenderer->SetScissor(Rect());
+
 	// Clear screen & Z buffers
 	GRenderer->Clear(Renderer::ColorBuffer | Renderer::DepthBuffer, g_fogColor);
 	
@@ -1870,15 +1921,15 @@ void ArxGame::renderLevel() {
 
 	// Begin Particles
 	g_particleManager.Render();
-	
-	ARX_PARTICLES_Update();
-	ParticleSparkUpdate();
+
+	ARX_PARTICLES_Render();
+	ParticleSparkRender();
 	
 	// End Particles
 
 	// Renders Magical Flares
 	if(!((player.Interface & INTER_PLAYERBOOK) && !(player.Interface & INTER_COMBATMODE))) {
-		ARX_MAGICAL_FLARES_Update();
+		ARX_MAGICAL_FLARES_Render();
 	}
 
 	// Checks some specific spell FX
@@ -1898,8 +1949,8 @@ void ArxGame::renderLevel() {
 	// Red screen fade for damages.
 	ARX_DAMAGE_Show_Hit_Blood();
 
-	// Update spells
-	ARX_SPELLS_Update();
+	// Draw spells
+	ARX_SPELLS_Render();
 
 	GRenderer->SetFogColor(Color());
 	g_renderBatcher.render();
@@ -1907,15 +1958,19 @@ void ArxGame::renderLevel() {
 	
 	GRenderer->SetAntialiasing(false);
 
-	updateLightFlares();
 	renderLightFlares();
-	
-	// Manage Death visual & Launch menu...
-	ARX_PLAYER_Manage_Death();
 
-	// INTERFACE
+	// Death visual
+	ARX_PLAYER_Render_Death();
+
+}
+
+void ArxGame::renderInterface() {
+
+	ARX_PROFILE_FUNC();
+
 	g_renderBatcher.clear();
-	
+
 	// Draw game interface if needed
 	if(ARXmenu.mode() == Mode_InGame && !cinematicBorder.isActive()) {
 	
@@ -1925,7 +1980,7 @@ void ArxGame::renderLevel() {
 		g_hudRoot.draw();
 		
 		if((player.Interface & INTER_PLAYERBOOK) && !(player.Interface & INTER_COMBATMODE)) {
-			ARX_MAGICAL_FLARES_Update();
+			ARX_MAGICAL_FLARES_Render();
 			g_renderBatcher.render();
 		}
 		
@@ -2025,11 +2080,6 @@ void ArxGame::render() {
 		benchmark::begin(cinematicBorder.CINEMA_DECAL != 0.f ? benchmark::Cutscene : benchmark::Scene);
 		updateLevel();
 		renderLevel();
-		#ifdef ARX_DEBUG
-		if(g_debugToggles[9]) {
-			renderLevel();
-		}
-		#endif
 	}
 	
 	if(g_debugInfo != InfoPanelNone) {

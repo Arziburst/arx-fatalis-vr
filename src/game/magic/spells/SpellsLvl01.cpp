@@ -242,6 +242,14 @@ void MagicMissileSpell::End() {
 	snd_loop = audio::SourcedSample();
 }
 
+void MagicMissileSpell::Render() {
+
+	for(CMagicMissile & missile : util::dereference(m_missiles)) {
+		missile.Render();
+	}
+
+}
+
 void MagicMissileSpell::Update() {
 	
 	for(CMagicMissile & missile : util::dereference(m_missiles)) {
@@ -311,11 +319,7 @@ void MagicMissileSpell::Update() {
 			requestEnd();
 		}
 	}
-	
-	for(CMagicMissile & missile : util::dereference(m_missiles)) {
-		missile.Render();
-	}
-	
+
 }
 
 

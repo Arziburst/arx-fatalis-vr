@@ -174,7 +174,7 @@ void logStartupBanner(int argc, char ** argv) {
 			std::string_view arg = argv[i];
 			// Readable, not shell-exact: quote what has spaces, leave the rest alone
 			if(arg.find_first_of(" \t\"") != std::string_view::npos) {
-				oss << " \"" << util::escapeString(std::string(arg), "\\\"") << '"';
+				oss << " \"" << util::escapeString(std::string(arg), "\"") << '"';
 			} else {
 				oss << ' ' << arg;
 			}

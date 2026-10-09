@@ -8,6 +8,17 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — PowerShell rules code that silently matches nothing: int keys, doubles, Write-Host (#187)
+
+**Symptom:** a lookup by issue number or wave finds nothing (a reason prints `wave 1 still has #` with the list empty), a
+dictionary hands out the wrong entry, or a test harness that captures a script's output sees an empty string and "0 failing".
+**Cause:** (1) `[ordered]@{}` is an `OrderedDictionary`: `$d[1]` with an **int** key is read as *position* 1, not key 1 —
+use a plain `@{}` and sort afterwards. (2) `Measure-Object -Minimum` answers a **double**; `$hashtable[1.0]` does not find
+the int key `1` — cast with `[int]`. (3) `Write-Host` goes to the information stream: `& script 2>&1` does not capture
+it, `*>&1` does.
+**Do:** cast numbers to `[int]` before using them as keys; no int keys in `[ordered]` tables; capture a script's whole output
+with `*>&1`; and break the rule once on purpose to see the test fail (test-plan-next.ps1 was checked that way).
+
 ## 2026-10-09 — The CI game is another Windows account: its log, lock and build are not in your profile (#127)
 
 **Symptom:** a CI game check failed (or passed) but `%LOCALAPPDATA%\ArxFatalisVR\userdirs\…\arx.log` and `launches.log`

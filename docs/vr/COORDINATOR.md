@@ -77,8 +77,13 @@ workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
   (`~/.claude/statusline/sessions/<id>.json`: task branch, model, effort, context %, spend, duration).
   A worker over ~60% context or busy for hours without a commit → read its log, help, or split the task;
   the spend per task calibrates the model choice (§6).
-- **Pick the order by rule:** `scripts\dev\plan-next.ps1` (#187, once merged) lists the tasks ready to
-  start; tasks labelled `needs-design` wait for the owner's design talk (D-017).
+- **Pick the order by rule:** `scripts\dev\plan-next.ps1` (#187) lists the tasks ready to start, each with its
+  `start-worker.ps1` line (model and effort by D-015), and for every other Todo task the reason it waits
+  ("waits for #20 (In Progress)", "area render busy (#19)", "VR lane full"). It reads the Dependencies and Waves
+  tables of MVP.md, the board, the open PRs and `claude agents`, so keep those tables and the `area:*` / `lane:vr`
+  labels current. Tasks labelled `needs-design` wait for the owner's design talk (D-017); put `model:fable` on an
+  issue to get Fable for it (D-015). A worker waiting for the owner's verdict on a Testing task holds no slot. Options:
+  `-WaveLookahead 1` (let the next wave start early), `-MaxWorkers`, `-Json`.
 - **Keep the status page current:** the pinned issue **"ARXVR status"** (edited via REST each cycle):
   current block, running workers (task, model, state), PRs waiting for review or for the headset, the
   owner's open questions, weekly usage. The owner reads it in the browser; a new coordinator starts from it.

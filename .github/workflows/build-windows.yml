@@ -51,3 +51,8 @@ jobs:
     - name: Build
       shell: pwsh
       run: ./scripts/build-windows.ps1 -Config Release
+
+    # Script self-tests that need neither the game nor Steam (they work on scratch copies).
+    - name: Steam shortcut self-test
+      shell: pwsh
+      run: ./scripts/dev/test-steam-shortcut.ps1

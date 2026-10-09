@@ -8,6 +8,24 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — A non-Steam shortcut written into `shortcuts.vdf` disappears
+
+**Symptom:** a script (or a hand edit) adds a shortcut to `<Steam>\userdata\<account>\config\shortcuts.vdf`,
+the file has it, yet the Steam library does not show it — and after the next Steam exit the entry is gone.
+**Cause:** Steam reads `shortcuts.vdf` once at start, keeps the shortcuts in memory and writes the
+whole file back when they change or when it exits; an edit made while Steam runs is overwritten.
+**Do:** exit Steam first (Steam > Exit, not just closing the window), write, then start Steam.
+`scripts/add-steam-shortcut.ps1` refuses while `steam.exe` runs (#80).
+
+## 2026-10-09 — A hex literal like `0x80000000` is negative in PowerShell
+
+**Symptom:** `[uint32]0x80000000` throws "Value was either too large or too small for a UInt32";
+a CRC32 written in PowerShell gives wrong values or the same error mid-loop.
+**Cause:** PowerShell parses a hex literal as `int` when it fits in 32 bits as a bit pattern, so
+`0x80000000` is `-2147483648` and `0xEDB88320` is negative; `-bxor`/`-shr` then work on signed values.
+**Do:** suffix 32-bit constants with `L` (`0x80000000L`, `0xEDB88320L`), compute in `[long]`, and cast
+to `[uint32]` only at the end (`scripts/steam-shortcuts-lib.ps1`, #80).
+
 ## 2026-10-09 — On `--loadlevel 10` the inventory never closes, `dodamage player` does nothing, and the game goes to the menu after a minute
 
 **Symptom:** a smoke test on the default `--loadlevel 10` opens the inventory through the channel

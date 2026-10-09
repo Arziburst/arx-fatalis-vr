@@ -2254,6 +2254,19 @@ u64 controllerSyncs() {
 	return g_xr.actions.syncs();
 }
 
+bool vibrate(Hand hand, const HapticPulse & pulse) {
+	if(!g_xr.running || !g_xr.actions.isAttached()) {
+		return false;
+	}
+	return g_xr.actions.vibrate(hand, pulse);
+}
+
+void stopHaptics() {
+	if(g_xr.actions.isAttached()) {
+		g_xr.actions.stopHaptics();
+	}
+}
+
 void shutdown() {
 
 	requestExit();
@@ -2389,6 +2402,12 @@ std::array<std::string, HandCount> controllerProfiles() {
 u64 controllerSyncs() {
 	return 0;
 }
+
+bool vibrate(Hand /* hand */, const HapticPulse & /* pulse */) {
+	return false;
+}
+
+void stopHaptics() { }
 
 bool isEnabled() {
 	return false;

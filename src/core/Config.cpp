@@ -45,6 +45,7 @@
 #include "util/Number.h"
 #include "util/String.h"
 
+#include "vr/Haptics.h"
 #include "vr/MirrorGeometry.h"
 #include "vr/UIPanel.h"
 
@@ -131,6 +132,7 @@ constexpr const float
 	vrPanelDistance = vr::DefaultPanelDistance,
 	vrPanelDrop = vr::DefaultPanelDrop,
 	vrPanelWidth = vr::DefaultPanelWidth,
+	vrHapticStrength = vr::DefaultHapticStrength,
 	fogDistance = 10.f,
 	gamma = 5.f,
 	fov = 75.f,
@@ -287,6 +289,7 @@ constexpr const std::string_view
 	useAltRuneRecognition = "improved_rune_recognition",
 	improvedBowAim = "improved_bow_aim",
 	quickLevelTransition = "quick_level_transition",
+	vrHapticStrength = "vr_haptic_strength",
 	allowConsole = "allow_console";
 
 // Input key options
@@ -556,6 +559,7 @@ bool Config::save() {
 	writer.writeKey(Key::useAltRuneRecognition, input.useAltRuneRecognition);
 	writer.writeKey(Key::improvedBowAim, input.improvedBowAim);
 	writer.writeKey(Key::quickLevelTransition, int(input.quickLevelTransition));
+	writer.writeKey(Key::vrHapticStrength, input.vrHapticStrength);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -707,6 +711,8 @@ bool Config::init(const fs::path & file) {
 	input.improvedBowAim = reader.getKey(Section::Input, Key::improvedBowAim, Default::improvedBowAim);
 	int quickLevelTransition = reader.getKey(Section::Input, Key::quickLevelTransition, Default::quickLevelTransition);
 	input.quickLevelTransition = QuickLevelTransition(glm::clamp(quickLevelTransition, 0, 2));
+	float vrHapticStrength = reader.getKey(Section::Input, Key::vrHapticStrength, Default::vrHapticStrength);
+	input.vrHapticStrength = glm::clamp(vrHapticStrength, 0.f, 2.f);
 	input.allowConsole = reader.getKey(Section::Input, Key::allowConsole, Default::allowConsole);
 	
 	// Get action key settings

@@ -44,6 +44,7 @@
 #include "platform/profiler/Profiler.h"
 #include "scene/GameSound.h"
 #include "scene/Interactive.h"
+#include "vr/VRInput.h"
 
 EntityDragStatus g_dragStatus = EntityDragStatus_Invalid;
 Entity * g_draggedEntity = nullptr;
@@ -65,6 +66,8 @@ void setDraggedEntity(Entity * entity) {
 		if(entity != g_draggedEntity) {
 			gameevent::Event("item.take")("item", gameevent::entityName(entity))
 				("from", g_draggedItemPreviousPosition ? "inventory" : "world");
+			// A tick in the hand whose click took it (#42)
+			vr::haptic(vr::HapticEvent::ItemGrabbed);
 		}
 		entity->setOwner(nullptr);
 		if(entity->obj && entity->show == SHOW_FLAG_IN_SCENE && (entity->gameFlags & GFLAG_ISINTREATZONE)

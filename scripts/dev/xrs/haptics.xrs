@@ -1,0 +1,39 @@
+# Haptic feedback (#42, D-031): the table's pulse reaches the runtime's xrApplyHapticFeedback on the right hand,
+# the strongest request of a frame wins, and a real hit taken vibrates both hands.
+@sim idle
+@args --loadlevel 10
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 120 60s
+setplayercontrols on
+@remember r0 vr.sim.haptics.right.pulses
+@remember l0 vr.sim.haptics.left.pulses
+@remember merged0 vr.haptics.merged
+
+# The weapon hit, as the game asks for it: the weapon hand (right), 0.5 for 150 ms at 100 Hz, the left hand untouched
+vr-input haptic weapon_hit
+@until vr.sim.haptics.right.pulses eq {r0+1} 5s
+@assert vr.sim.haptics.left.pulses eq {l0}
+@assert vr.sim.haptics.right.amplitude eq 0.5
+@assert vr.sim.haptics.right.ms ge 149
+@assert vr.sim.haptics.right.ms le 151
+@assert vr.sim.haptics.right.hz eq 100
+@log haptic\.request event=weapon_hit hand=right amplitude=0\.50 ms=150 outcome=queued
+
+# A grab tick and a weapon hit in the same frame on one hand: one pulse, the stronger one
+@wait 300
+vr-input haptic item_grabbed right; vr-input haptic weapon_hit right
+@until vr.sim.haptics.right.pulses eq {r0+2} 5s
+@assert vr.sim.haptics.right.amplitude eq 0.5
+@assert vr.haptics.merged eq {merged0+1}
+
+# The real path: an NPC hurts the player -> the ouch -> both hands, stronger than the base
+@wait 300
+human_base_0033.dodamage player 10
+@until vr.sim.haptics.left.pulses eq {l0+1} 5s
+@assert vr.sim.haptics.right.pulses eq {r0+3}
+@assert vr.sim.haptics.left.amplitude gt 0.3
+@assert vr.sim.haptics.left.ms ge 199
+@assert vr.haptics.requests.hit_taken eq 1
+@log haptic\.request event=hit_taken hand=both
+@assert errors eq 0

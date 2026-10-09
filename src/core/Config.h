@@ -223,6 +223,7 @@ public:
 		bool improvedBowAim;
 		QuickLevelTransition quickLevelTransition;
 		bool allowConsole;
+		float vrHapticStrength; //!< VR: the master strength of the controllers' vibration (#42); 0 = off, 1 = the table
 		
 	} input;
 	

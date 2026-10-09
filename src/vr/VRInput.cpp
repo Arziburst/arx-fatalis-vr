@@ -23,6 +23,7 @@
 #include <array>
 
 #include "core/Config.h"
+#include "core/GameEvent.h"
 #include "core/TimeTypes.h"
 #include "gui/Menu.h"
 #include "input/Input.h"
@@ -51,6 +52,53 @@ struct InputState {
 };
 
 InputState g_input;
+
+struct HapticState {
+	HapticMixer mixer;
+	bool focused = false;  //!< the controllers were read in the last update
+	Hand pointer = Hand::Right;
+	HapticStatus status;
+};
+
+HapticState g_haptics;
+
+//! The hand that clicked, used or stashed last is the one that holds what it took (D-016)
+void updatePointerHand(const ControlResolver & resolver) {
+	for(Event event : { Event::InteractLeft, Event::UseLeft, Event::StashLeft }) {
+		if(resolver.pressed(event)) {
+			g_haptics.pointer = Hand::Left;
+		}
+	}
+	for(Event event : { Event::InteractRight, Event::UseRight, Event::StashRight }) {
+		if(resolver.pressed(event)) {
+			g_haptics.pointer = Hand::Right;
+		}
+	}
+}
+
+//! Send what the mixer has for this frame - right after the sync, on the frame thread (F-44)
+void sendHaptics(bool focused) {
+
+	g_haptics.mixer.strength = config.input.vrHapticStrength;
+
+	if(!focused) {
+		if(g_haptics.focused) {
+			// The runtime stops the pulses itself; what was queued is stale by the time focus is back
+			g_haptics.mixer.clear();
+		}
+		g_haptics.focused = false;
+		return;
+	}
+	g_haptics.focused = true;
+
+	const auto pulses = g_haptics.mixer.take(double(toMsi(platform::getTime())) / 1000.0);
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		if(pulses[hand] && vibrate(Hand(hand), *pulses[hand])) {
+			g_haptics.status.sent[hand]++;
+			g_haptics.status.lastAmplitude[hand] = pulses[hand]->amplitude;
+		}
+	}
+}
 
 //! The right hand decides (the trigger hand of most players), the left one when the right has no profile
 ControllerType typeFromProfiles(const std::array<std::string, HandCount> & profiles) {
@@ -114,7 +162,8 @@ void applyToEngine(const GameInputState & state) {
 void updateInput() {
 
 	ControllerInput input;
-	readControllers(input);
+	const bool focused = readControllers(input);
+	sendHaptics(focused);
 
 	// The layout follows the controllers (saved layouts per type: #178)
 	ControllerType type = typeFromProfiles(controllerProfiles());
@@ -135,6 +184,7 @@ void updateInput() {
 
 	g_input.resolver.update(toMsi(platform::getTime()), input.down, input.taps);
 	g_input.input = input;
+	updatePointerHand(g_input.resolver);
 
 	// A press is a state change made by the player: one line each, bounded by how fast hands are
 	for(size_t i = 0; i < EventCount; i++) {
@@ -162,6 +212,59 @@ ControllerType controllerType() {
 
 const ControllerInput & controllerInput() {
 	return g_input.input;
+}
+
+void haptic(HapticEvent event, float intensity) {
+	haptic(event, hapticHand(event), intensity);
+}
+
+void haptic(HapticEvent event, HapticHand hand, float intensity) {
+
+	HapticStatus & status = g_haptics.status;
+	status.requests[size_t(event)]++;
+
+	const HapticPulse pulse = hapticPulse(event, intensity);
+	std::array<bool, HandCount> hands = { };
+	switch(hand) {
+		case HapticHand::Left: hands[size_t(Hand::Left)] = true; break;
+		case HapticHand::Right: hands[size_t(Hand::Right)] = true; break;
+		case HapticHand::Both: hands = { true, true }; break;
+		case HapticHand::Pointer: hands[size_t(g_haptics.pointer)] = true; break;
+		// The left-handed setting (#178) will move the weapon to the left hand
+		case HapticHand::Weapon: hands[size_t(Hand::Right)] = true; break;
+	}
+
+	const char * outcome = "queued";
+	if(!isEnabled()) {
+		outcome = "flat";
+	} else if(!g_haptics.focused) {
+		outcome = "not-focused";
+	} else {
+		g_haptics.mixer.strength = config.input.vrHapticStrength;
+		for(size_t i = 0; i < HandCount; i++) {
+			if(hands[i] && !g_haptics.mixer.request(Hand(i), pulse)) {
+				outcome = "off";
+			}
+		}
+	}
+	if(std::string_view(outcome) != "queued") {
+		status.refused++;
+	}
+
+	// Bounded by the callers: hits taken at most every 500 ms, one per swing, one per click
+	gameevent::Event("haptic.request")("event", hapticEventName(event))
+		("hand", hands[0] && hands[1] ? "both" : handName(hands[0] ? Hand::Left : Hand::Right))
+		("amplitude", pulse.amplitude * g_haptics.mixer.strength, 2)("ms", u32(pulse.seconds * 1000.f + 0.5f))
+		("outcome", outcome);
+}
+
+HapticStatus hapticStatus() {
+	HapticStatus status = g_haptics.status;
+	status.strength = config.input.vrHapticStrength;
+	status.masked = g_haptics.mixer.masked();
+	status.merged = g_haptics.mixer.merged();
+	status.pointer = g_haptics.pointer;
+	return status;
 }
 
 namespace {
@@ -234,6 +337,28 @@ std::string inputCommand(std::string_view arguments) {
 		return std::string();
 	}
 
+	if(verb == "haptic") {
+		std::string_view name = nextWord(rest);
+		std::optional<HapticEvent> event = parseHapticEvent(name);
+		if(!event) {
+			return "vr-input haptic: unknown event \"" + std::string(name) + "\" (e.g. hit_taken, weapon_hit, item_grabbed)";
+		}
+		std::string_view hand = nextWord(rest);
+		std::string_view intensity = nextWord(rest);
+		std::optional<float> value = intensity.empty() ? std::optional<float>(0.f) : util::toFloat(intensity);
+		if(!value) {
+			return "vr-input haptic: the intensity must be a number from 0 to 1";
+		}
+		if(hand.empty() || hand == "table") {
+			haptic(*event, *value);
+		} else if(hand == "left" || hand == "right" || hand == "both") {
+			haptic(*event, hand == "left" ? HapticHand::Left : hand == "right" ? HapticHand::Right : HapticHand::Both, *value);
+		} else {
+			return "vr-input haptic: expected <event> [left|right|both|table] [intensity]";
+		}
+		return std::string();
+	}
+
 	if(verb == "reset") {
 		g_input.injectedDown.reset();
 		g_input.injectedTaps.reset();
@@ -242,7 +367,7 @@ std::string inputCommand(std::string_view arguments) {
 		return std::string();
 	}
 
-	return "vr-input: expected down|up|tap <control>, stick <hand> <x> <y>, bind <event> <binding> or reset, got \""
+	return "vr-input: expected down|up|tap <control>, stick <hand> <x> <y>, bind <event> <binding>, haptic <event> [hand] or reset, got \""
 	       + std::string(arguments) + "\"";
 }
 

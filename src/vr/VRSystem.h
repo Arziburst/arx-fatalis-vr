@@ -29,6 +29,7 @@
 #include "platform/Platform.h"
 #include "vr/EyeProjection.h"
 #include "vr/FramePacing.h"
+#include "vr/Haptics.h"
 #include "vr/VRControls.h"
 
 /*!
@@ -335,6 +336,15 @@ std::array<std::string, HandCount> controllerProfiles();
 
 //! How often the controllers were read while the session was focused
 u64 controllerSyncs();
+
+/*!
+ * \brief Vibrate a hand's controller now (#42) - for the haptics mixer in \ref updateInput
+ * \return false while no session runs, it is not focused, or the runtime refused the pulse
+ */
+bool vibrate(Hand hand, const HapticPulse & pulse);
+
+//! Stop the vibration of both hands, if a session runs
+void stopHaptics();
 
 /*!
  * \brief End the session in order and destroy the OpenXR session and instance (if any)

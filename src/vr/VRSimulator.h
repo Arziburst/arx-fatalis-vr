@@ -118,6 +118,15 @@ struct SimStatus {
 	u64 freshFrames = 0;
 	u64 quadFrames = 0;
 	u64 syncs = 0;         //!< xrSyncActions while focused
+	//! The controllers' vibration per hand (#42): pulses played, stops, the last pulse
+	struct Haptics {
+		u64 pulses = 0;
+		u64 stops = 0;
+		float amplitude = 0.f;
+		float ms = 0.f;
+		float hz = 0.f; //!< 0: the runtime's choice
+	};
+	std::array<Haptics, 2> haptics;
 	std::vector<SimShot> shots;
 	size_t pendingShots = 0;
 };

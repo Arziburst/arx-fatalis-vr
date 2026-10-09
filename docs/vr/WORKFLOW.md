@@ -87,7 +87,7 @@ and the terminal tab.
   Since D-013 it runs the work **on its own, in blocks** (waves of [MVP.md](MVP.md#waves)): it writes the
   tasks, starts and follows the workers, triages what they find and refills the slots; it does not
   investigate or fix anything itself. It stops and reports when the block is done, when a PR needs the
-  owner's headset test (headset-free work goes on), or at 70% of the weekly usage limit. The owner
+  owner's headset test (headset-free work goes on), or at the budget (80% weekly, 95% five-hour — D-022). The owner
   talks only to the coordinator — VR verdicts included. Its full playbook, for a new coordinator session
   on any machine (`/coordinator`): [COORDINATOR.md](COORDINATOR.md).
 - **Worker session** — a fresh session per task, possibly with a different model. It implements exactly

@@ -8,6 +8,18 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — The sneak covered more ground than the run (#33)
+
+**Symptom:** on `mvp-new-game` a slight stick push (the stealth walk) moved the player 355 units in 1.5 s and the
+full push right after it only 201; with `@frames 40` instead the sneak covered 136-151 and the run 163-197 — the
+ratio changed from run to run.
+**Cause:** a distance measures the room and the clock, not the walk: the second walk ran into the cell's far end,
+and `@frames n` is n frames, whose length swings with the frame rate of the moment (36-90 fps in these runs).
+**Do:** compare walk speeds with `player.animSpeed` (the current animation's own units per second, what the engine
+moves the player by: run 192, stealth 135.6); use positions only for "it moved", from a known start.
+
+---
+
 ## 2026-10-09 — In the headset the camera floats far above the body (#24, #27)
 
 **Symptom:** looking down in the headset, the character's body is far below the eyes, although the camera

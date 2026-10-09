@@ -69,6 +69,12 @@ protected:
 	void shutdownGame();
 	
 	void doFrame();
+
+	//! The engine's own frame limiter (cfg.ini fps_limit); not used while VR paces the frames
+	void limitFrameRate();
+
+	//! Switch the window's vsync and the fps limiter off while an OpenXR session exists, and back
+	void applyVRPacing();
 	void render();
 
 	void manageKeyMouse();
@@ -122,6 +128,7 @@ private:
 	
 	PlatformInstant m_frameStart;
 	PlatformDuration m_frameDelta;
+	bool m_vrPacing; //!< the window's vsync and the fps limiter are off: the headset paces the frames
 };
 
 enum InfoPanels {

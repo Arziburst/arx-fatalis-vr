@@ -78,6 +78,7 @@ constexpr const int
 	levelOfDetail = 2,
 	vsync = -1,
 	fpsLimit = -1,
+	vrFrameDivisor = 1,
 	maxAnisotropicFiltering = 9001,
 	alphaCutoutAntialiasing = 2,
 	cinematicWidescreenMode = CinematicFadeEdges,
@@ -215,6 +216,7 @@ constexpr const std::string_view
 	gamma = "gamma",
 	vsync = "vsync",
 	fpsLimit = "fps_limit",
+	vrFrameDivisor = "vr_frame_divisor",
 	fov = "fov",
 	viewBobbing = "view_bobbing",
 	screenShake = "screen_shake",
@@ -474,6 +476,7 @@ bool Config::save() {
 	writer.writeKey(Key::gamma, video.gamma);
 	writer.writeKey(Key::vsync, video.vsync);
 	writer.writeKey(Key::fpsLimit, video.fpsLimit);
+	writer.writeKey(Key::vrFrameDivisor, video.vrFrameDivisor);
 	writer.writeKey(Key::fov, video.fov);
 	writer.writeKey(Key::viewBobbing, video.viewBobbing);
 	writer.writeKey(Key::screenShake, video.screenShake);
@@ -605,6 +608,8 @@ bool Config::init(const fs::path & file) {
 	video.vsync = glm::clamp(vsync, -1, 1);
 	int fpsLimit = reader.getKey(Section::Video, Key::fpsLimit, Default::fpsLimit);
 	video.fpsLimit = std::max(fpsLimit, -1);
+	int vrFrameDivisor = reader.getKey(Section::Video, Key::vrFrameDivisor, Default::vrFrameDivisor);
+	video.vrFrameDivisor = glm::clamp(vrFrameDivisor, 1, 8);
 	float fov = reader.getKey(Section::Video, Key::fov, Default::fov);
 	video.fov = std::max(fov, 10.f);
 	video.viewBobbing = reader.getKey(Section::Video, Key::viewBobbing, Default::viewBobbing);

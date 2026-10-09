@@ -19,7 +19,9 @@
 
 #include "vr/VRSystem.h"
 
+#include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -34,6 +36,7 @@
 #include "platform/Platform.h"
 #include "Configure.h"
 
+#include "core/Config.h"
 #include "core/GameEvent.h"
 #include "core/Version.h"
 #include "gui/Credits.h"
@@ -42,6 +45,8 @@
 #include "io/log/Logger.h"
 #include "platform/CrashHandler.h"
 #include "platform/ProgramOptions.h"
+#include "platform/Thread.h"
+#include "platform/Time.h"
 #include "platform/profiler/Profiler.h"
 #include "util/String.h"
 
@@ -70,6 +75,16 @@ static void disableVR() {
 ARX_PROGRAM_OPTION("no-vr", nullptr, "Force flat (non-VR) mode even if a VR headset is available",
                    &disableVR)
 
+//! The even-cadence cap from the command line (0: cfg.ini decides), see beginFrame()
+static u32 g_frameDivisorOverride = 0;
+
+static void setFrameDivisor(u32 divisor) {
+	g_frameDivisorOverride = std::clamp(divisor, u32(1), u32(8));
+}
+ARX_PROGRAM_OPTION_ARG("vr-frame-divisor", nullptr,
+                       "Submit every n-th display slot in VR (even-cadence cap, overrides vr_frame_divisor in cfg.ini)",
+                       &setFrameDivisor, "N")
+
 #if ARX_HAVE_OPENXR
 
 bool isSupported() {
@@ -88,6 +103,15 @@ const GLfloat BackgroundColor[4] = { 0.15f, 0.15f, 0.15f, 1.f };
 //! Frame loop failures logged per session before it goes quiet (they repeat every frame)
 const u32 MaxLoggedFrameFailures = 5;
 
+//! Frame gaps logged per run before they are only counted (level loads produce them by the dozen)
+const u64 MaxLoggedFrameGaps = 10;
+
+//! The rate / cadence report window (F-07)
+const s64 PacingWindowUs = 3000000;
+
+//! How long an orderly exit may take: xrRequestExitSession to EXITING
+const std::chrono::milliseconds ExitTimeout(2000);
+
 struct OpenXRState {
 
 	XrInstance instance = XR_NULL_HANDLE;
@@ -104,7 +128,8 @@ struct OpenXRState {
 	std::array<XrViewConfigurationView, 2> views = { };
 	Vec2i maxSwapchainSize = Vec2i(0);
 
-	XrSpace viewSpace = XR_NULL_HANDLE;
+	XrSpace viewSpace = XR_NULL_HANDLE;  //!< head-locked: the flat frame quad lives here
+	XrSpace localSpace = XR_NULL_HANDLE; //!< world-locked: the eyes are located and submitted here
 	s64 colorFormat = 0;
 	std::array<Swapchain, 2> eyes;
 	Swapchain quad;
@@ -118,6 +143,37 @@ struct OpenXRState {
 
 	//! One action per physical control (#30); created with the instance, attached to the session
 	ActionSet actions;
+
+	//! The current OpenXR frame, from beginFrame (xrWaitFrame) to its xrEndFrame
+	struct Frame {
+		bool begun = false;
+		XrFrameState state = { XR_TYPE_FRAME_STATE };
+		FrameTiming timing;
+		s64 period = 0;                     //!< the predicted display period in microseconds
+		bool haveLastWait = false;
+		PlatformInstant lastWaitReturn = PlatformInstant(0); //!< when xrWaitFrame last returned: the cap sleeps relative to it
+		std::array<XrView, 2> located = { };
+		FrameViews views;                   //!< the located eyes, for the renderer and for the layer
+	} frame;
+
+	//! The layers of the last frame that was shown, kept for frames ended without a new picture
+	struct Layers {
+		std::array<XrCompositionLayerProjectionView, 2> projectionViews = { };
+		XrCompositionLayerProjection projection = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
+		XrCompositionLayerQuad quad = { XR_TYPE_COMPOSITION_LAYER_QUAD };
+		std::array<const XrCompositionLayerBaseHeader *, 2> list = { };
+		u32 count = 0;
+	} layers;
+
+	//! The rate / cadence instrument (F-07) and the even-cadence cap (F-26)
+	PacingWindow pacing { PacingWindowUs };
+	PacingReport lastReport;
+	u32 divisor = 1;        //!< expected display slots per frame
+	u32 gapsInWindow = 0;   //!< frame gaps since the last report
+
+	//! Orderly exit: xrRequestExitSession was sent, and the runtime answered with EXITING
+	bool exitRequested = false;
+	bool exited = false;
 
 	//! The active runtime manifest the loader uses (empty: none installed) - kept for status.json
 	std::string manifest;
@@ -585,6 +641,20 @@ bool findSystem() {
 	return true;
 }
 
+bool endFrame(bool resubmit);
+
+/*!
+ * The last rate / cadence report of a session that ends before its first window closed: a short
+ * run still leaves numbers in status.json. A session with full reports keeps its last full window
+ * - a partial one would skew the verdict.
+ */
+void flushPacing() {
+	if(g_xr.pacing.reports() == 0 && g_xr.pacing.flush()) {
+		g_xr.lastReport = g_xr.pacing.report();
+		LogInfo << "[vr] rate: " << formatReport(g_xr.lastReport) << " (partial window at session end)";
+	}
+}
+
 void destroySession() {
 
 	// The swapchains' OpenGL objects go first, while the context the session is bound to is current
@@ -598,12 +668,18 @@ void destroySession() {
 	g_xr.actions.detach();
 	g_xr.lastDisplayTime = 0;
 
+	if(g_xr.localSpace != XR_NULL_HANDLE) {
+		xrDestroySpace(g_xr.localSpace);
+		g_xr.localSpace = XR_NULL_HANDLE;
+	}
+
 	if(g_xr.viewSpace != XR_NULL_HANDLE) {
 		xrDestroySpace(g_xr.viewSpace);
 		g_xr.viewSpace = XR_NULL_HANDLE;
 	}
 
 	if(g_xr.session != XR_NULL_HANDLE) {
+		flushPacing();
 		xrDestroySession(g_xr.session);
 		g_xr.session = XR_NULL_HANDLE;
 		LogInfo << "OpenXR session destroyed" << (g_xr.running ? " while running" : "")
@@ -611,11 +687,18 @@ void destroySession() {
 	}
 	g_xr.sessionState = XR_SESSION_STATE_UNKNOWN;
 	g_xr.running = false;
+	g_xr.frame = OpenXRState::Frame();
+	g_xr.layers = OpenXRState::Layers();
+	g_xr.exitRequested = false;
+	g_xr.exited = false;
 }
 
 /*!
- * The swapchains and the space the frames are submitted in; the per-eye swapchains are sized from
- * the runtime's recommended view sizes and get a framebuffer object per image to render into.
+ * The spaces and the swapchains of the session: a head-locked VIEW space for the flat frame quad,
+ * a world-locked LOCAL space the eyes are located and submitted in (STAGE, the room-scale space
+ * with the floor at the origin, is only probed and logged - which space the camera uses is #24 /
+ * #27); the per-eye swapchains are sized from the runtime's recommended view sizes and get a
+ * framebuffer object per image to render into.
  */
 bool createSessionResources() {
 
@@ -627,6 +710,27 @@ bool createSessionResources() {
 		g_xr.viewSpace = XR_NULL_HANDLE;
 		LogError << "Could not create the OpenXR view space: " << resultName(result);
 		return false;
+	}
+
+	spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
+	result = xrCreateReferenceSpace(g_xr.session, &spaceInfo, &g_xr.localSpace);
+	if(XR_FAILED(result)) {
+		g_xr.localSpace = XR_NULL_HANDLE;
+		LogError << "Could not create the OpenXR local space: " << resultName(result);
+		return false;
+	}
+
+	{
+		uint32_t count = 0;
+		result = xrEnumerateReferenceSpaces(g_xr.session, 0, &count, nullptr);
+		std::vector<XrReferenceSpaceType> spaces(count);
+		if(XR_SUCCEEDED(result)) {
+			result = xrEnumerateReferenceSpaces(g_xr.session, count, &count, spaces.data());
+		}
+		bool stage = XR_SUCCEEDED(result)
+		             && std::find(spaces.begin(), spaces.end(), XR_REFERENCE_SPACE_TYPE_STAGE) != spaces.end();
+		LogInfo << "OpenXR reference spaces: view (flat frame quad), local (eye poses)"
+		        << (stage ? ", stage available" : ", no stage space (seated runtime or no room setup)");
 	}
 
 	g_xr.colorFormat = chooseSwapchainFormat(g_xr.session);
@@ -662,7 +766,22 @@ void beginSession() {
 	g_xr.running = true;
 	g_xr.frameFailures = 0;
 	g_xr.loggedInvalidViews = false;
-	LogInfo << "OpenXR session running, submitting frames";
+	g_xr.frame = OpenXRState::Frame();
+	g_xr.layers = OpenXRState::Layers();
+	g_xr.gapsInWindow = 0;
+
+	// The even-cadence cap (F-26): the command line first, then cfg.ini; 1 = every display slot
+	g_xr.divisor = g_frameDivisorOverride ? g_frameDivisorOverride
+	                                      : u32(std::clamp(config.video.vrFrameDivisor, 1, 8));
+	g_xr.pacing.setDivisor(g_xr.divisor);
+	g_xr.pacing.reset();
+
+	LogInfo << "OpenXR session running, submitting frames: xrWaitFrame paces the game";
+	if(g_xr.divisor > 1) {
+		LogInfo << "[vr] frame cap: every " << g_xr.divisor << ". display slot (vr_frame_divisor "
+		        << g_xr.divisor << " from " << (g_frameDivisorOverride ? "--vr-frame-divisor" : "cfg.ini")
+		        << "), the rate line must read EVEN at 1/" << g_xr.divisor << " of the refresh rate";
+	}
 }
 
 void endSession() {
@@ -671,6 +790,12 @@ void endSession() {
 		return;
 	}
 
+	// A frame begun before the runtime asked to stop is ended first, so the session stops clean
+	if(g_xr.frame.begun) {
+		endFrame(true);
+	}
+
+	flushPacing();
 	g_xr.running = false;
 
 	XrResult result = xrEndSession(g_xr.session);
@@ -764,37 +889,68 @@ void updateQuadSwapchain(const Vec2i & size) {
 }
 
 /*!
- * Clear both eye images to the background color through their framebuffers and describe them as a
- * projection layer with this frame's eye poses (relative to the head: the background is head-locked).
+ * Locate the eyes for the frame's predicted display time in the world-locked space: the poses this
+ * frame renders with and is submitted with (F-21, F-116 - never the current locate at submission).
+ * Without valid tracking the views are marked invalid and the projection layer is left out.
  */
-bool renderBackground(XrTime displayTime, std::array<XrCompositionLayerProjectionView, 2> & views,
-                      XrCompositionLayerProjection & layer) {
+void locateFrameViews(XrTime displayTime) {
+
+	OpenXRState::Frame & frame = g_xr.frame;
+	frame.views = FrameViews();
+	frame.views.displayTime = displayTime;
 
 	XrViewLocateInfo locateInfo = { XR_TYPE_VIEW_LOCATE_INFO };
 	locateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
 	locateInfo.displayTime = displayTime;
-	locateInfo.space = g_xr.viewSpace;
+	locateInfo.space = g_xr.localSpace;
 	XrViewState viewState = { XR_TYPE_VIEW_STATE };
-	std::array<XrView, 2> located;
-	located.fill({ XR_TYPE_VIEW });
+	frame.located.fill({ XR_TYPE_VIEW });
 	uint32_t count = 0;
-	XrResult result = xrLocateViews(g_xr.session, &locateInfo, &viewState, u32(located.size()), &count,
-	                                located.data());
+	XrResult result = xrLocateViews(g_xr.session, &locateInfo, &viewState, u32(frame.located.size()), &count,
+	                                frame.located.data());
 	if(XR_FAILED(result)) {
 		logFrameFailure("xrLocateViews", result);
-		return false;
+		return;
 	}
 
 	const XrViewStateFlags valid = XR_VIEW_STATE_ORIENTATION_VALID_BIT | XR_VIEW_STATE_POSITION_VALID_BIT;
-	if(count != located.size() || (viewState.viewStateFlags & valid) != valid) {
+	if(count != frame.located.size() || (viewState.viewStateFlags & valid) != valid) {
 		if(!g_xr.loggedInvalidViews) {
 			LogWarning << "OpenXR eye poses not available (" << count << " views, flags 0x" << std::hex
 			           << viewState.viewStateFlags << std::dec << "), the background layer is left out";
 			g_xr.loggedInvalidViews = true;
 		}
+		return;
+	}
+
+	for(size_t eye = 0; eye < frame.located.size(); eye++) {
+		const XrView & view = frame.located[eye];
+		EyeView & out = frame.views.eyes[eye];
+		out.position = Vec3f(view.pose.position.x, view.pose.position.y, view.pose.position.z);
+		out.orientation = glm::quat(view.pose.orientation.w, view.pose.orientation.x,
+		                            view.pose.orientation.y, view.pose.orientation.z);
+		out.fovLeft = view.fov.angleLeft;
+		out.fovRight = view.fov.angleRight;
+		out.fovUp = view.fov.angleUp;
+		out.fovDown = view.fov.angleDown;
+	}
+
+	frame.views.valid = true;
+}
+
+/*!
+ * Clear both eye images to the background color through their framebuffers and describe them as a
+ * projection layer with the poses located for this frame. Both eyes or none (F-116): one stale
+ * eye against a live one is the bug class the two-eyes check exists for.
+ */
+bool renderBackground(OpenXRState::Layers & layers) {
+
+	const OpenXRState::Frame & frame = g_xr.frame;
+	if(!frame.views.valid) {
 		return false;
 	}
 
+	std::array<XrCompositionLayerProjectionView, 2> & views = layers.projectionViews;
 	for(size_t eye = 0; eye < views.size(); eye++) {
 
 		Swapchain & swapchain = g_xr.eyes[eye];
@@ -806,18 +962,22 @@ bool renderBackground(XrTime displayTime, std::array<XrCompositionLayerProjectio
 		swapchain.release();
 
 		views[eye] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
-		views[eye].pose = located[eye].pose;
-		views[eye].fov = located[eye].fov;
+		views[eye].pose = frame.located[eye].pose;
+		views[eye].fov = frame.located[eye].fov;
 		views[eye].subImage.swapchain = swapchain.handle();
 		views[eye].subImage.imageRect = swapchain.rect();
 		views[eye].subImage.imageArrayIndex = 0;
 
 	}
 
+	XrCompositionLayerProjection & layer = layers.projection;
+	layer = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
 	layer.layerFlags = 0;
-	layer.space = g_xr.viewSpace;
+	layer.space = g_xr.localSpace;
 	layer.viewCount = u32(views.size());
 	layer.views = views.data();
+
+	layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
 
 	return true;
 }
@@ -829,7 +989,7 @@ bool renderBackground(XrTime displayTime, std::array<XrCompositionLayerProjectio
  * resolving blit requires identical source and destination formats (RGB8 vs. SRGB8_ALPHA8 here),
  * while glCopyTexSubImage2D resolves the default framebuffer and stores the values unchanged.
  */
-bool copyFlatFrame(XrCompositionLayerQuad & layer) {
+bool copyFlatFrame(OpenXRState::Layers & layers) {
 
 	Swapchain & swapchain = g_xr.quad;
 	if(!swapchain.isValid() || !swapchain.acquire()) {
@@ -842,6 +1002,8 @@ bool copyFlatFrame(XrCompositionLayerQuad & layer) {
 	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, swapchain.size().x, swapchain.size().y);
 	swapchain.release();
 
+	XrCompositionLayerQuad & layer = layers.quad;
+	layer = { XR_TYPE_COMPOSITION_LAYER_QUAD };
 	layer.layerFlags = 0;
 	layer.space = g_xr.viewSpace;
 	layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
@@ -858,7 +1020,121 @@ bool copyFlatFrame(XrCompositionLayerQuad & layer) {
 	layer.size.width = QuadWidth;
 	layer.size.height = QuadWidth * float(swapchain.size().y) / float(swapchain.size().x);
 
+	layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
+
 	return true;
+}
+
+/*!
+ * Hand the current frame to the compositor (xrEndFrame) and feed the pacing instrument.
+ *
+ * With \a resubmit no new picture was drawn for this frame: the layers of the last shown frame
+ * are sent again, with the poses their images were rendered with (F-116) - the compositor shows
+ * the most recently released image of each swapchain, so nothing is acquired. Zero layers would
+ * mean "show nothing", not "hold the picture" (F-117). Frames the runtime did not want rendered
+ * carry no layers either way.
+ *
+ * \return false when xrEndFrame failed (logged)
+ */
+bool endFrame(bool resubmit) {
+
+	OpenXRState::Frame & frame = g_xr.frame;
+	OpenXRState::Layers & layers = g_xr.layers;
+	arx_assert(frame.begun);
+
+	u32 count = frame.state.shouldRender ? layers.count : 0;
+
+	XrFrameEndInfo endInfo = { XR_TYPE_FRAME_END_INFO };
+	endInfo.displayTime = frame.state.predictedDisplayTime;
+	endInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+	endInfo.layerCount = count;
+	endInfo.layers = count ? layers.list.data() : nullptr;
+
+	frame.timing.endStart = toUs(platform::getTime());
+	XrResult result = xrEndFrame(g_xr.session, &endInfo);
+	frame.timing.endEnd = toUs(platform::getTime());
+	frame.begun = false;
+	if(XR_FAILED(result)) {
+		logFrameFailure("xrEndFrame", result);
+		return false;
+	}
+	frame.timing.shown = count != 0;
+
+	g_xr.frames.submitted++;
+	if(g_xr.frames.submitted == 1) {
+		LogInfo << "First OpenXR frame submitted, headset display period "
+		        << float(frame.state.predictedDisplayPeriod) / 1e6f << " ms";
+	}
+	if(count) {
+		g_xr.frames.shown++;
+		if(resubmit) {
+			g_xr.frames.resubmitted++;
+			if(g_xr.frames.resubmitted <= 3) {
+				LogInfo << "OpenXR frame ended with the previous picture: no new frame was shown"
+				        << (g_xr.frames.resubmitted == 3 ? " (not logged again)" : "");
+			}
+		}
+	}
+
+	// The rate / cadence instrument (F-07): one line per window, gaps as they happen
+	FrameGap gap;
+	bool report = g_xr.pacing.add(frame.timing, &gap);
+	if(gap.detected) {
+		g_xr.frames.gaps++;
+		g_xr.gapsInWindow++;
+		if(g_xr.frames.gaps <= MaxLoggedFrameGaps) {
+			LogInfo << "[vr] frame gap: " << gap.ms << " ms between frames (mean " << gap.meanMs << " ms), in the "
+			        << gap.phase << " phase" << (g_xr.frames.gaps == MaxLoggedFrameGaps ? " (further gaps are only counted)" : "");
+		}
+	}
+	if(report) {
+		g_xr.lastReport = g_xr.pacing.report();
+		LogInfo << "[vr] rate: " << formatReport(g_xr.lastReport)
+		        << (g_xr.gapsInWindow ? ", " + std::to_string(g_xr.gapsInWindow) + " frame gaps" : "");
+		g_xr.gapsInWindow = 0;
+	}
+
+	return true;
+}
+
+/*!
+ * Ask the runtime to end the session in order (xrRequestExitSession) and wait, briefly, for it to
+ * do so: STOPPING (then xrEndSession, from pollEvents) and EXITING. The runtime then sees a normal
+ * exit instead of an application that vanished with its session running.
+ */
+void requestExit() {
+
+	if(g_xr.session == XR_NULL_HANDLE || !g_xr.running) {
+		return;
+	}
+
+	if(g_xr.frame.begun) {
+		endFrame(true);
+	}
+
+	XrResult result = xrRequestExitSession(g_xr.session);
+	if(XR_FAILED(result)) {
+		LogWarning << "Could not request the OpenXR session exit (" << resultName(result)
+		           << "), destroying the session while running";
+		return;
+	}
+	g_xr.exitRequested = true;
+
+	PlatformInstant start = platform::getTime();
+	while(!g_xr.exited && g_xr.session != XR_NULL_HANDLE
+	      && platform::getTime() - start < PlatformDuration(ExitTimeout)) {
+		pollEvents();
+		Thread::sleep(std::chrono::milliseconds(1));
+	}
+
+	PlatformDuration took = platform::getTime() - start;
+	if(g_xr.exited) {
+		LogInfo << "OpenXR session exited in order after " << toMsi(took) << " ms";
+	} else if(g_xr.session != XR_NULL_HANDLE) {
+		LogWarning << "OpenXR session did not reach exiting within " << toMsi(took) << " ms (state "
+		           << sessionStateName(g_xr.sessionState) << "), destroying it"
+		           << (g_xr.running ? " while running" : "");
+	}
 }
 
 XrVersion currentOpenGLVersion() {
@@ -1029,6 +1305,9 @@ void pollEvents() {
 					beginSession();
 				} else if(changed.state == XR_SESSION_STATE_STOPPING) {
 					endSession();
+				} else if(changed.state == XR_SESSION_STATE_EXITING && g_xr.exitRequested) {
+					// Our own exit (requestExit): shutdown destroys the session
+					g_xr.exited = true;
 				} else if(changed.state == XR_SESSION_STATE_LOSS_PENDING || changed.state == XR_SESSION_STATE_EXITING) {
 					LogWarning << "OpenXR session ended by the runtime, continuing in flat mode";
 					destroySession();
@@ -1038,6 +1317,8 @@ void pollEvents() {
 
 			case XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING: {
 				LogWarning << "OpenXR runtime is shutting down, continuing in flat mode";
+				// No orderly exit from a dying runtime: the session goes first, then the instance
+				destroySession();
 				shutdown();
 				return;
 			}
@@ -1081,6 +1362,71 @@ void pollEvents() {
 
 }
 
+bool beginFrame() {
+
+	if(!g_xr.running) {
+		return false;
+	}
+
+	ARX_PROFILE_FUNC();
+
+	OpenXRState::Frame & frame = g_xr.frame;
+
+	if(frame.begun) {
+		// A frame begun but never shown (a level load that drew no frame): ended with the previous
+		// picture, so the compositor is not left waiting for it
+		endFrame(true);
+	}
+
+	// The even-cadence cap (F-26): sleep past the slots to skip, so that xrWaitFrame - the only
+	// display clock, a timer of our own slips (F-117) - hands out every n-th slot, not the next one
+	if(g_xr.divisor > 1 && frame.haveLastWait && frame.period > 0) {
+		s64 skipUs = s64((double(g_xr.divisor) - 0.5) * double(frame.period));
+		PlatformInstant deadline = frame.lastWaitReturn + PlatformDuration(std::chrono::microseconds(skipUs));
+		PlatformDuration left = deadline - platform::getTime();
+		if(left > 0) {
+			Thread::sleep(left);
+		}
+	}
+
+	frame.timing = FrameTiming();
+	frame.timing.waitStart = toUs(platform::getTime());
+
+	XrFrameWaitInfo waitInfo = { XR_TYPE_FRAME_WAIT_INFO };
+	frame.state = { XR_TYPE_FRAME_STATE };
+	XrResult result = xrWaitFrame(g_xr.session, &waitInfo, &frame.state);
+	PlatformInstant waited = platform::getTime();
+	frame.timing.waitEnd = toUs(waited);
+	if(XR_FAILED(result)) {
+		logFrameFailure("xrWaitFrame", result);
+		return false;
+	}
+	g_xr.lastDisplayTime = frame.state.predictedDisplayTime;
+	frame.period = frame.state.predictedDisplayPeriod / 1000; // OpenXR nanoseconds
+	frame.timing.displayPeriod = frame.period;
+	frame.lastWaitReturn = waited;
+	frame.haveLastWait = true;
+
+	XrFrameBeginInfo beginInfo = { XR_TYPE_FRAME_BEGIN_INFO };
+	result = xrBeginFrame(g_xr.session, &beginInfo);
+	if(XR_FAILED(result)) {
+		logFrameFailure("xrBeginFrame", result);
+		return false;
+	}
+	if(result == XR_FRAME_DISCARDED) {
+		g_xr.frames.discarded++;
+		if(g_xr.frames.discarded <= MaxLoggedFrameFailures) {
+			LogWarning << "OpenXR runtime discarded the previous frame (xrBeginFrame before its xrEndFrame)"
+			           << (g_xr.frames.discarded == MaxLoggedFrameFailures ? " (not logged again)" : "");
+		}
+	}
+	frame.begun = true;
+
+	locateFrameViews(frame.state.predictedDisplayTime);
+
+	return true;
+}
+
 void submitFrame(const Vec2i & windowSize) {
 
 	if(!g_xr.running) {
@@ -1089,73 +1435,46 @@ void submitFrame(const Vec2i & windowSize) {
 
 	ARX_PROFILE_FUNC();
 
+	OpenXRState::Frame & frame = g_xr.frame;
+
+	// A frame shown from outside the game loop (the loading screen) begins its own OpenXR frame
+	if(!frame.begun && !beginFrame()) {
+		return;
+	}
+
 	updateQuadSwapchain(windowSize);
 
-	XrFrameWaitInfo waitInfo = { XR_TYPE_FRAME_WAIT_INFO };
-	XrFrameState frameState = { XR_TYPE_FRAME_STATE };
-	XrResult result = xrWaitFrame(g_xr.session, &waitInfo, &frameState);
-	if(XR_FAILED(result)) {
-		logFrameFailure("xrWaitFrame", result);
-		return;
-	}
-	g_xr.lastDisplayTime = frameState.predictedDisplayTime;
-
-	XrFrameBeginInfo beginInfo = { XR_TYPE_FRAME_BEGIN_INFO };
-	result = xrBeginFrame(g_xr.session, &beginInfo);
-	if(XR_FAILED(result)) {
-		logFrameFailure("xrBeginFrame", result);
-		return;
-	}
-
-	std::array<XrCompositionLayerProjectionView, 2> projectionViews;
-	XrCompositionLayerProjection projection = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
-	XrCompositionLayerQuad quad = { XR_TYPE_COMPOSITION_LAYER_QUAD };
-	std::array<const XrCompositionLayerBaseHeader *, 2> layers = { };
-	u32 layerCount = 0;
 	bool background = false;
 	bool flatFrame = false;
 
 	// Not visible (headset idle, another app in front): frames still keep the timing, without layers
-	if(frameState.shouldRender) {
+	if(frame.state.shouldRender) {
 		GLStateGuard state;
-		background = renderBackground(frameState.predictedDisplayTime, projectionViews, projection);
-		if(background) {
-			layers[layerCount++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&projection);
-		}
-		flatFrame = copyFlatFrame(quad);
-		if(flatFrame) {
-			layers[layerCount++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&quad);
-		}
+		g_xr.layers.count = 0;
+		background = renderBackground(g_xr.layers);
+		flatFrame = copyFlatFrame(g_xr.layers);
 	}
 
-	XrFrameEndInfo endInfo = { XR_TYPE_FRAME_END_INFO };
-	endInfo.displayTime = frameState.predictedDisplayTime;
-	endInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
-	endInfo.layerCount = layerCount;
-	endInfo.layers = layerCount ? layers.data() : nullptr;
-	result = xrEndFrame(g_xr.session, &endInfo);
-	if(XR_FAILED(result)) {
-		logFrameFailure("xrEndFrame", result);
+	u64 shownBefore = g_xr.frames.shown;
+	if(!endFrame(false)) {
 		return;
 	}
 
-	g_xr.frames.submitted++;
-	if(g_xr.frames.submitted == 1) {
-		LogInfo << "First OpenXR frame submitted, headset display period "
-		        << float(frameState.predictedDisplayPeriod) / 1e6f << " ms";
-	}
-
-	if(layerCount) {
-		g_xr.frames.shown++;
-		if(g_xr.frames.shown == 1 && flatFrame) {
+	if(shownBefore == 0 && g_xr.frames.shown == 1) {
+		if(flatFrame) {
 			LogInfo << "First VR frame shown: " << (background ? "dark background, " : "no background, ")
 			        << "flat frame " << g_xr.quad.size().x << 'x' << g_xr.quad.size().y << " on a head-locked quad "
-			        << quad.size.width << " x " << quad.size.height << " m at " << QuadDistance << " m";
-		} else if(g_xr.frames.shown == 1) {
+			        << g_xr.layers.quad.size.width << " x " << g_xr.layers.quad.size.height << " m at "
+			        << QuadDistance << " m";
+		} else {
 			LogInfo << "First VR frame shown: dark background only, no flat frame";
 		}
 	}
 
+}
+
+const FrameViews & frameViews() {
+	return g_xr.frame.views;
 }
 
 bool isEnabled() {
@@ -1171,6 +1490,18 @@ const char * sessionStateString() {
 
 FrameCounters frameCounters() {
 	return g_xr.frames;
+}
+
+const PacingReport & lastPacingReport() {
+	return g_xr.lastReport;
+}
+
+u32 pacingReports() {
+	return g_xr.pacing.reports();
+}
+
+u32 frameDivisor() {
+	return g_xr.divisor;
 }
 
 std::string runtimeName() {
@@ -1199,6 +1530,7 @@ u64 controllerSyncs() {
 
 void shutdown() {
 
+	requestExit();
 	destroySession();
 	g_xr.actions.destroy();
 
@@ -1231,10 +1563,32 @@ bool createSession() {
 
 void pollEvents() { }
 
+bool beginFrame() {
+	return false;
+}
+
 void submitFrame(const Vec2i & /* windowSize */) { }
+
+const FrameViews & frameViews() {
+	static const FrameViews none;
+	return none;
+}
 
 const char * sessionStateString() {
 	return "none";
+}
+
+const PacingReport & lastPacingReport() {
+	static const PacingReport none;
+	return none;
+}
+
+u32 pacingReports() {
+	return 0;
+}
+
+u32 frameDivisor() {
+	return 1;
 }
 
 std::string runtimeName() {

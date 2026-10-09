@@ -115,6 +115,50 @@ which special-cases both.
 **Do:** never call `ScriptEventName::toString()` without handling `SM_EXECUTELINE` / `SM_DUMMY`
 first (see `script.error` in `ScriptEvent.cpp`, #130), or print through `operator<<`.
 
+## 2026-10-09 — A lever, a chest, a door cannot be found by coordinates (#70)
+
+**Symptoms:** `setpos` next to `lever_0012` / `chest_metal_0052` and a screenshot shows a bare wall, a
+black screen, the player's own feet, or a goblin; the entity is nowhere in the picture. About 6 of
+the 13 launches of #70 went into it before this was written down.
+**Causes, all measured:** (1) an entity's `pos` — from `entities` — is its **floor** position, so
+looking at "the entity" from 2 m with pitch 0 aims 1.7 m above it; `lookat` now aims 40 units above the
+floor and sets the pitch. (2) `setpos` / `player.pos` is the **eye**: `y` = floor − 170; a floor-level
+`y` puts the eye in the floor (black or a wall's back) until gravity pulls the player up. (3) The
+level is narrow corridors and cells: many points 1.5-2.5 m away on a ring around an object are
+inside a wall or in another room (black or wall-only screenshots in the contact sheets of the 4
+compass points around each of 7 objects); which ones are valid cannot be told without a picture. (4) The pick that decides what a click acts on is not exposed: `FlyingOverIO` is cleared in
+mouse look (`ArxGame::render`: `PLAYER_MOUSELOOK_ON`), and `FlyingOverObject(screen centre)` read from
+the channel found nothing from any of the 20 level markers within 700 units of the levers, chests and
+portcullises either (3 hits for `note_0004` with `FlyingOverIO`, on the rings). Why is not known.
+**Do:** place the player for **items and NPCs** by coordinates and a screenshot (what `mvp-items` and
+`mvp-goblin-fight` do, `docs/vr/TESTING.md`); for a lever, chest or door the owner records the save by
+hand in flat mode (`--loadlevel 1`, walk there, F5/save), or a task adds a way to see what the engine
+picks (log `InterClick` at the centre with the distances it tests: `InterClick` needs the entity within
+360 units of the **eye**, i.e. about 3.2 m along the floor, and its bounding box under the cursor). Do not
+spend launches on ring or marker searches again.
+
+## 2026-10-09 — The awakening of a new game blocks the controls for 30-40 s; a save made then is no use (#70)
+
+**Symptom:** a save made right after `newgame` loads into a hero lying on the floor with the letterbox
+on, the camera at the floor, and nothing responds (`player.y` 2837 instead of 2935).
+**Cause:** the level 1 script plays the awakening; `BLOCK_PLAYER_CONTROLS` stays `true` (status.json
+`player.controlsBlocked`) for 30-42 s (3 runs). It is not a `.cin`: the cinematic skip of #124 does
+not apply, and no `Skipping cinematic` line is logged. A save keeps the blocked state.
+**Do:** wait for `player.controlsBlocked` to be `false` before the first `save` (`@until
+player.controlsBlocked False` in a scenario); never infer "playable" from `state: GAMEPLAY`.
+
+## 2026-10-09 — `--loadslot N` is the Nth newest save, not a folder; and a console `equip` does nothing (#70)
+
+**Symptoms:** (1) after another save was copied or made, `--loadslot 1` loads something else; (2)
+`equip short_sword_0030` is acked `errors=0` and the sword is not equipped.
+**Causes:** (1) the list of saves is sorted by the save file's time, **newest first**, at one-second
+resolution (`SaveGameList::update`): a slot number is a position, and two saves made in the same second
+swap. (2) `equip <target>` is the **item's** command (`ARX_EQUIPMENT_Equip(target, context entity)`):
+typed for the player it asks to equip the player on the sword, which does nothing and says nothing.
+**Do:** (1) to load a given save, make it the only one — `smoke-test.ps1 -Save <name>` /
+`run-windows.ps1 -Isolated -Save <name>` do — and keep a second between saves of a scenario script;
+(2) `short_sword_0030.equip player`, and check `entities short_sword_0030` says `show=6`.
+
 ## 2026-10-09 — Scripting a launch from PowerShell: three tools that quietly do the wrong thing
 
 **Symptoms:** (1) `pwsh -File run-windows.ps1 ... -- --no-vr` fails with "parameter name '' is ambiguous";
@@ -281,7 +325,8 @@ moment the state flips, i.e. inside that fade.
 **Do:** take `shot` captures at least a second after `GAMEPLAY` — put a few `status` lines in front
 of the `shot` (each ack takes ≈ 0.25 s) or wait first; judge "is anything rendered" by a non-black
 pixel count over several frames, never by one early capture. An early black shot is no evidence
-against the renderer.
+against the renderer. (The save verification of #70 waits 4 s after a `loadslot` before its `shot`;
+the dark room of `mvp-items` stays dark at that time too — it is the level, not the fade.)
 
 ## 2026-10-09 — The obvious owner fix for #93 changed nothing: the sword was linked to a mesh the NPC no longer used
 

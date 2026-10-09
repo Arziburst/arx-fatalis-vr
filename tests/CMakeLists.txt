@@ -38,10 +38,14 @@ set(arxtest_TESTCASES
 	
 	tests/util/StringTest.h
 	tests/util/StringTest.cpp
-	
+
+	tests/vr/FramePacingTest.h
+	tests/vr/FramePacingTest.cpp
+
 	tests/vr/VRControlsTest.h
 	tests/vr/VRControlsTest.cpp
-	
+
+
 )
 
 # CppUnit requires RTTI and does not work with libstdc++'s debug mode
@@ -58,8 +62,10 @@ set(arxtest_SOURCES
 	src/io/IniSection.cpp
 	src/io/log/FileLogger.cpp
 	src/io/resource/ResourcePath.cpp
+	src/vr/FramePacing.cpp
 	src/vr/VRControls.cpp
-	
+
+
 	${arxtest_TESTCASES}
 	
 )

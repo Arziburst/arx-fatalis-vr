@@ -18,6 +18,7 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 .\scripts\dev\smoke-test.ps1 -Commands 'shot a','mark x' -- --loadslot 0
 .\scripts\dev\smoke-test.ps1 -Menu -Commands 'loadslot 0'       # plain launch (main menu), then a save through the channel
 .\scripts\dev\smoke-test.ps1 -Commands 'drawcheck 120'         # two draws of the scene per frame must give one picture (#71)
+.\scripts\dev\comfort-check.ps1                               # shake, FOV zoom and bob with the VR comfort policy off and on, one run (#76)
 .\scripts\run-windows.ps1 -Isolated -TestChannel -- --no-vr --loadlevel 10   # a manual run with the channel, in this copy's own user dir
 .\scripts\dev\game-status.ps1 -Watch                          # live state line
 .\scripts\dev\game-cmd.ps1 'shot before' 'teleport -p marker_0001' 'shot after'
@@ -104,6 +105,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `loadlevel <n> [target]` | change to level `n` in a running game (refused from the menu: start with `--loadlevel` or `loadslot`) |
 | `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
 | `recenter` | refused with `not implemented yet (#28)` until recentering exists |
+| `comfort auto\|on\|off` | who decides the VR comfort policy (#76, `vr::comfort()`): `auto` = the VR session (the default: view bobbing, screen shake and FOV zoom off in VR, `cfg.ini` decides in flat mode), `on` / `off` force the VR rules on or off — so a flat run can measure them. `comfort` and `camera` in the status; one `[vr] comfort:` log line per change |
 | anything else | the **script console**: `[entity.]command args`, exactly as typed in the in-game console (`` ` ``). Context defaults to the player. Refused (and counted in the ack) when the entity or the command is unknown |
 
 Useful script-console commands for test scenes (the full list is what `ScriptEvent` registers,
@@ -124,6 +126,8 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
  "frame":618,"uptimeMs":6240,"fps":120.2,"errors":0,"warnings":0,
  "menuMode":"ingame","area":10,"paused":false,"cinematic":false,
  "player":{"x":...,"y":...,"z":...,"yaw":...,"life":...,"lifeMax":...,"mana":...,"manaMax":...},
+ "camera":{"x":...,"y":...,"z":...,"pitch":...,"yaw":...,"roll":...,"fov":75.0,"bob":0.0,"shake":0.0},
+ "comfort":{"mode":"auto","active":false,"viewBobbing":true,"screenShake":true,"fovZoom":true},
  "window":{"width":640,"height":480,"focused":true,"minimized":false,"fullscreen":false},
  "vr":{"supported":true,"enabled":false,"sessionState":"none","runtime":"",
        "manifest":"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json"},
@@ -141,6 +145,13 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   (`idle`, `ready`, `synchronized`, `visible`, `focused`, `stopping`, …).
 - `player` is present only while a level is loaded. More fields (per-eye frame ids, the rate line)
   come with #20; the `.xrs` runner (#113) asserts on these keys with `@modassert`.
+- `camera` (with `player`): the first-person camera as the frame before left it — position, angles,
+  `fov` in degrees, `bob` = its distance from the stable head position of the paused animation (view
+  bobbing; 0 when off), `shake` = the quake amplitude applied that frame (0 without a quake or when
+  screen shake is off). `comfort`: who decides the VR comfort policy (`mode`: `auto` / `on` / `off`),
+  whether the VR rules apply (`active`) and what is allowed right now (#76). The status is written
+  at the **start** of a frame, so the write that acknowledges a `comfort` command still carries the
+  previous policy's camera — a check skips that sample (`comfort-check.ps1`).
 - `build`: the same build identification as the [log banner](#the-log-banner): the full commit and
   the branch compiled into `Version.cpp` (`branch` empty when detached), the CMake configuration.
 - `vr.runtime`: the OpenXR runtime that answered this run (`SteamVR/OpenXR 2.17.10`), empty while no
@@ -239,8 +250,13 @@ A typical check exercises the systems that were split, all at once:
 
 ```powershell
 $spells = 'magic_missile','fireball','ice_projectile','poison_projectile','lightning_strike','mass_lightning_strike','speed','heal','levitate','bless','fire_field','ice_field','rune_of_guarding','create_field','repel_undead','curse','confuse','summon_creature','raise_dead','harm','mana_drain','life_drain','cure_poison','create_food','fake_summon','explosion'
-.\scripts\dev\smoke-test.ps1 -Seconds 8 -Commands (@('invulnerability on') + ($spells | ForEach-Object { "spellcast -fs 5 $_ self" }) + @('drawcheck 240'))
+.\scripts\dev\smoke-test.ps1 -Seconds 8 -Commands (@('invulnerability on') + ($spells | ForEach-Object { "spellcast -fsm 5 $_ self" }) + @('drawcheck 240'))
 ```
+
+The flags matter: on the **player** a `spellcast` launches at once only with `-s` **and** `-m`
+(`NOANIM` + `NODRAW`); with `-fs` alone it is queued for the rune drawing, which skips the player,
+so nothing is cast and every later `spellcast` on the player is ignored (TRAPS.md, found in #76).
+The #71 rows below used `-fs`: their spells never launched, #155 re-runs them.
 
 ## `xr_hello` — the runtime alone
 
@@ -279,6 +295,8 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | 2026-10-09, #93 after the fix: `-Repeat 10 -Seconds 3` (channel quit) | **10 of 10** `PASS`, 0 errors, 0 warnings; the detector reports nothing |
 | 2026-10-09, #93 after the fix: `-Repeat 10 -Seconds 3 -CloseWindow -- --no-vr --loadlevel 10 --intro` (intro `.cin` loaded, window closed — 2 of 5 crashed in #124) | **10 of 10** `PASS` |
 | 2026-10-09, #93 after the fix: `-Vr -Repeat 10` + `-Vr -Repeat 5`, SteamVR running, headset idle | **13 of 15** `PASS`, **0** exit crashes (before: 2 of 3); 2 runs ended mid-run with exit code -1 and no crash report — a different problem, #146 |
+| 2026-10-09, #76: `comfort-check.ps1` — one flat run, `comfort off` then `comfort on`, in each phase `quake 300 3000 400` and Magic Sight, status sampled every 100 ms (`camera.shake`, `camera.roll`, `camera.fov`, `camera.bob`) | smoke test `PASS`, 0 errors. **off** (18 samples): shake max **2.622**, roll max 0.428°, fov **75.00 → 80.65**, bob max **1.472** (the idle animation moves the head too). **on** (27 samples): shake **0**, roll **0**, fov **75.00** in every sample, bob **0**. Log: one `[vr] comfort:` line per policy change, one `screen shake suppressed - intensity 300, 3000 ms, period 400` and one `FOV zoom suppressed - focal -30 (Magic Sight)` per episode, nothing per frame. The `off` phase is the broken state on purpose: the instrument sees each of the three motions, so the check can fail |
+| 2026-10-09, #76: the first version of the same check, Magic Sight cast with `spellcast -fsx 5 magic_sight self` | `FAIL` of the check only (the smoke test passed): fov **75.00 in both phases** — the spell never launched. On the player `spellcast` without `-m` is queued for the rune drawing, which skips the player (TRAPS.md); `-fsmx` zooms (row above). The same `-fs` cast the #71 spell rows above — #155 re-runs them |
 | 2026-10-09, #115 log banner: flat smoke test, then `status.json` and the first log lines asserted by script | `PASS`; `build.commit` = `git rev-parse HEAD` of the worktree **after a commit and a rebuild** (before #115 a worktree kept its first build's commit), `build.branch`, `build.config` = `Release`, `vr.manifest` = the SteamVR manifest from `HKLM`, `vr.runtime` = `""` in a flat run; the four banner lines match their documented shape. `XR_RUNTIME_JSON` → a missing file (flat, `--no-vr`): the manifest line says `from XR_RUNTIME_JSON, overriding the registry's "…steamxr_win64.json"`, exactly **1** `[W] … does not exist`, `vr.manifest` = that path, `PASS`. `built-from.txt` edited to another commit: exactly **1** `[W] built-from.txt names commit …`, `PASS`. The `OpenXR runtime answered` line needs an instance (SteamVR running): not exercised in that session, it is the renamed `Using OpenXR runtime` line |
 | 2026-10-09, #129 **before** (the `main` build): `run-windows.ps1 -Isolated -Background -- --no-vr --loadlevel 10`, no channel, `Stop-Process` long after the level had loaded | `arx.log` = **4137 bytes, 42 lines, cut mid-line** (`[I] Localisation` and nothing after it): the `ofstream` buffer; the end of the level load lost, no `Clean shutdown` |
 | 2026-10-09, #129 **after**: the same, killed 15.5 s after the start | `arx.log` = **4787 bytes, 49 complete lines**, last line `[I] LoadLevel:511  Done loading level` (the last line the game wrote), ends with a newline; the previous run's truncated log sits in `arx.1.log`; banner `Log: "…\arx.log", previous runs kept as arx.1.log .. arx.9.log` |
@@ -288,7 +306,8 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 
 Conclusions:
 
-- **Reliable, used as a gate:** the flat smoke test (start, level, channel commands, quit, evidence).
+- **Reliable, used as a gate:** the flat smoke test (start, level, channel commands, quit, evidence),
+  the draw check (#71) and the comfort check (#76) on top of it.
 - **Reliable for what it covers:** the VR launch with an idle headset proves instance / session
   creation, the OpenGL binding and the shutdown order. With nobody wearing the headset SteamVR runs
   the frame loop in `SYNCHRONIZED` but never grants `VISIBLE`/`FOCUSED`, so anything that needs

@@ -21,7 +21,7 @@ newgame
 @describe New game: the hero stands in the start cell of level 1 after the awakening, controls free, nothing equipped.
 shot mvp-new-game
 @wait 1
-savegame mvp-new-game
+save mvp-new-game
 
 # The next scenarios fight and pick things up: a sword in the right hand (demo step 3), and the player
 # cannot be killed while the script walks him around (switched off again before every save).
@@ -39,7 +39,7 @@ invulnerability off
 @describe Items: a sword equipped; a table with key_base_0005, note_0004 and blank_form_0001 2.3 m ahead (demo step 3, pick up and drag into the inventory).
 shot mvp-items
 @wait 1
-savegame mvp-items
+save mvp-items
 invulnerability on
 
 # --- mvp-goblin-fight: a goblin 3.5 m ahead in the corridor ---------------------------------------------------------
@@ -50,4 +50,4 @@ invulnerability off
 @describe Goblin fight: a sword equipped; goblin_base_0036 3.5 m ahead in the corridor (demo step 5, melee).
 shot mvp-goblin-fight
 @wait 1
-savegame mvp-goblin-fight
+save mvp-goblin-fight

@@ -11,7 +11,9 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot 'board.ps1')
 
-$items = Get-BoardItems
+$items = @(Get-BoardItems) # a board that cannot be read throws (or comes from the cache, with a warning) - never "empty"
+if (-not $items) { throw 'the board has no items - refusing to say the queue is empty' }
+foreach ($line in (Get-BoardQueueSummary)) { "PENDING      $line" }
 $byNumber = @{}; foreach ($i in $items) { $byNumber[$i.Number] = $i }
 $tasks = $items | Where-Object { $_.Labels -contains 'task' -or $_.Labels -contains 'bug' }
 

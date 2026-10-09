@@ -37,6 +37,7 @@
 #include "core/Application.h"
 #include "core/ArxGame.h"
 #include "core/Core.h"
+#include "core/GameEvent.h"
 #include "core/GameTime.h"
 #include "core/SaveGame.h"
 #include "core/TimeTypes.h"
@@ -51,6 +52,7 @@
 #include "graphics/Renderer.h"
 #include "graphics/image/Image.h"
 #include "gui/Console.h"
+#include "gui/Interface.h"
 #include "gui/Menu.h"
 #include "io/fs/FilePath.h"
 #include "io/fs/Filesystem.h"
@@ -73,26 +75,9 @@ namespace channel {
 
 namespace {
 
-enum class GameState {
-	Startup,   //!< Before the first level or menu
-	Menu,      //!< Main menu, pause menu, credits, character creation
-	Loading,   //!< A level is being loaded (set by \ref notifyLoading, synchronous within a frame)
-	Gameplay,
-	Cinematic,
-	Exited     //!< Clean shutdown reached
-};
-
-const char * gameStateName(GameState state) {
-	switch(state) {
-		case GameState::Startup:   return "STARTUP";
-		case GameState::Menu:      return "MENU";
-		case GameState::Loading:   return "LOADING";
-		case GameState::Gameplay:  return "GAMEPLAY";
-		case GameState::Cinematic: return "CINEMATIC";
-		case GameState::Exited:    return "EXITED";
-	}
-	return "UNKNOWN";
-}
+// The game state is the event log's (#130): it logs every change as a game.state event
+using gameevent::GameState;
+using gameevent::gameStateName;
 
 const char * menuModeName(MenuMode mode) {
 	switch(mode) {
@@ -280,16 +265,7 @@ ARX_PROGRAM_OPTION_ARG("test-dir", nullptr,
                        &setTestDir, "DIR")
 
 GameState currentState() {
-	if(ARXmenu.mode() != Mode_InGame) {
-		return GameState::Menu;
-	}
-	if(!g_currentArea) {
-		return GameState::Startup;
-	}
-	if(isInCinematic()) {
-		return GameState::Cinematic;
-	}
-	return GameState::Gameplay;
+	return gameevent::detectGameState();
 }
 
 std::string buildStatus(PlatformInstant now) {
@@ -412,6 +388,16 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("manifest", vr::runtimeManifest());
 	json.end();
 
+	// Game event log (#130): how many events of each name happened, logged or not
+	json.object("events");
+	json.value("total", u64(gameevent::total()));
+	json.object("byName");
+	for(const auto & [name, count] : gameevent::counts()) {
+		json.value(name, u64(count));
+	}
+	json.end();
+	json.end();
+
 	json.value("cmdSeq", g.cmdSeq);
 	json.value("lastCmd", g.lastCmd);
 	json.value("lastCmdError", g.lastCmdError);
@@ -469,8 +455,8 @@ void writeAck(unsigned errors) {
 }
 
 void setState(GameState state) {
+	// Logged by the event log (game.state), which saw the change earlier in this frame
 	g.state = state;
-	LogInfo << "[game] state: " << gameStateName(state);
 	writeStatus(platform::getTime());
 }
 
@@ -617,17 +603,35 @@ std::string execute(std::string_view line) {
 		return std::string();
 	}
 
-	if(word == "savegame") {
-		// A new save slot with this name, made right now: the way the test save library is produced (#70)
+	if(word == "ui") {
+		// What the inventory key does, for tests without a keyboard (#130); the book has the
+		// script command "book open|close"
+		std::string what(rest);
+		util::makeLowercase(what);
 		if(ARXmenu.mode() != Mode_InGame || !g_currentArea) {
-			return refuse("savegame: needs a running game");
+			return refuse("ui: needs a running game");
 		}
+		if(what == "inventory open") {
+			InventoryOpenClose(1);
+		} else if(what == "inventory close") {
+			InventoryOpenClose(2);
+		} else {
+			return refuse("ui: expected \"inventory open\" or \"inventory close\", got \"" + std::string(rest) + "\"");
+		}
+		return std::string();
+	}
+
+	if(word == "save") {
+		// A new save without a thumbnail; the newest save is slot 0 for loadslot (#130)
 		if(rest.empty()) {
-			return refuse("savegame: expected a name");
+			return refuse("save: expected a save name");
 		}
-		LogInfo << "[channel] saving \"" << rest << "\" in area " << g_currentArea;
+		if(ARXmenu.mode() != Mode_InGame || !g_currentArea) {
+			return refuse("save: needs a running game (start with --loadlevel N or use loadslot)");
+		}
+		LogInfo << "[channel] saving as \"" << rest << '"';
 		if(!savegames.save(rest, SavegameHandle(), Image())) {
-			return refuse("savegame: saving \"" + std::string(rest) + "\" failed");
+			return refuse("save: the game could not save (see the save event and the lines before it)");
 		}
 		return std::string();
 	}
@@ -965,8 +969,9 @@ void notifyLoading(AreaId area) {
 		return;
 	}
 
+	// Logged by the event log (game.state to=LOADING area=N)
+	ARX_UNUSED(area);
 	g.state = GameState::Loading;
-	LogInfo << "[game] state: LOADING level " << u32(area);
 	writeStatus(platform::getTime());
 }
 
@@ -978,7 +983,6 @@ void shutdown() {
 
 	g.state = GameState::Exited;
 	g.cleanShutdown = true;
-	LogInfo << "[game] state: EXITED";
 	writeStatus(platform::getTime());
 
 	g.enabled = false;

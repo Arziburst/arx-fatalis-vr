@@ -33,12 +33,14 @@
  *    \c status.json.tmp then rename),
  *  - flushes \c arx.log at the same cadence (the file logger flushes on its own every second and
  *    after every warning or error, #129; a test wants the log fresher than that),
- *  - logs every game state change as \c [game] \c state: \c MENU|LOADING|GAMEPLAY|CINEMATIC.
+ *  - reports the game state, which the game event log (core/GameEvent.h, #130) logs on every
+ *    change as \c game.state \c to=MENU|LOADING|GAMEPLAY|CINEMATIC, and the event counts.
  *
- * Channel commands: \c status, \c shot \c [name], \c quit, \c mark \c <text>, \c loadslot \c <n>,
- * \c loadlevel \c <n>, \c newgame, \c savegame \c <name>, \c entities \c [filter],
- * \c setpos \c <x> \c <y> \c <z> \c [yaw], \c lookat \c <entity>, \c drawcheck \c [frames], \c recenter (refused until #28). Any other line goes
- * to the script console exactly as if typed there: \c [entity.]command \c args.
+ * Channel commands: \c status, \c shot \c [name], \c quit, \c mark \c <text>, \c save \c <name>,
+ * \c loadslot \c <n>, \c loadlevel \c <n>, \c newgame, \c entities \c [filter],
+ * \c setpos \c <x> \c <y> \c <z> \c [yaw], \c lookat \c <entity>, \c ui \c inventory \c open|close,
+ * \c drawcheck \c [frames], \c recenter (refused until #28). Any other line goes to the script
+ * console exactly as if typed there: \c [entity.]command \c args.
  *
  * See docs/vr/TESTING.md for the protocol and scripts/dev/smoke-test.ps1 for the first client.
  */
@@ -65,7 +67,7 @@ size_t sceneViewCount();
 //! Scene view \a view of this frame is in the back buffer - the draw check reads it back
 void afterSceneView(size_t view);
 
-//! The game started loading a level - logs \c [game] \c state: \c LOADING and writes the status now
+//! The game started loading a level - writes the status (state \c LOADING) now
 void notifyLoading(AreaId area);
 
 //! Write the final status (\c state: \c EXITED) and stop - call after "Clean shutdown" was logged

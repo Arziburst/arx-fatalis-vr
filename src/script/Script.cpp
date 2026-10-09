@@ -62,6 +62,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "core/GameTime.h"
 #include "core/Core.h"
+#include "core/GameEvent.h"
 #include "core/Config.h"
 
 #include "game/Camera.h"
@@ -1597,7 +1598,12 @@ ScriptResult SendIOScriptEvent(Entity * sender, Entity * entity, const ScriptEve
 	if(!entities[num]) {
 		return REFUSE;
 	}
-	
+
+	if(event.getId() == SM_INVENTORYUSE && sender == entities.player()) {
+		// Every way the player uses an item (inventory, book, weapon switch, in the world) ends here
+		gameevent::Event("item.use")("item", gameevent::entityName(entity));
+	}
+
 	// Send the event to the instance script first
 	if(entities[num]->over_script.valid) {
 		ScriptResult ret = ScriptEvent::send(&entities[num]->over_script, sender, entities[num], event, parameters);

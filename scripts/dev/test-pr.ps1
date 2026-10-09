@@ -70,8 +70,7 @@ function Short([string]$Sha) { if ($Sha -and $Sha.Length -gt 9) { $Sha.Substring
 # --- The pull request --------------------------------------------------------------------------------
 # ($pull, not $pr: PowerShell variable names ignore case, and $Pr is the [int] parameter)
 
-$pull = gh pr view $Pr -R $Repo --json number,title,headRefName,headRefOid,body,state,labels,url | ConvertFrom-Json
-if ($LASTEXITCODE -or -not $pull) { throw "could not read PR #$Pr" }
+$pull = Get-GhPull $Pr # REST (github-lib.ps1, #186)
 $branch = $pull.headRefName
 $labels = @($pull.labels.name)
 

@@ -6,7 +6,7 @@
 	One flat game run, driven through the test channel (docs/vr/TESTING.md): the scenario file
 	(scripts/dev/test-saves/scenarios.txt) starts a new game from the main menu, puts the player at each
 	scenario point with channel commands (setpos, lookat, script-console commands) and saves there with
-	the channel command `savegame <name>`. Then the same game loads every save again and checks it (the
+	the channel command `save <name>`. Then the same game loads every save again and checks it (the
 	level, the player where it was saved, the controls free, a screenshot). The saves are copied into
 	the library, one folder per scenario:
 
@@ -22,7 +22,7 @@
 	produce (it needs real play, or a spot that cannot be reached by coordinates) is recorded by the
 	owner in flat mode and copied into the library by hand.
 
-	Scenario file lines: `#` comments; `@describe <text>` describes the next `savegame`; `@state
+	Scenario file lines: `#` comments; `@describe <text>` describes the next `save`; `@state
 	<STATE> [timeout s]` waits for GAMEPLAY / MENU; `@level <n> [timeout s]` waits for gameplay in
 	level n; `@wait <seconds>`; `@until <status path> <value> [timeout s]` waits until status.json
 	has that value; `@print <status paths>` shows values from status.json; `@expect <status path>
@@ -111,13 +111,13 @@ foreach ($raw in $scenarioLines) {
 		$steps.Add([pscustomobject]@{ Kind = $word.Substring(1).ToLowerInvariant(); Text = "$rest".Trim(); Line = $lineNo })
 	} else {
 		$steps.Add([pscustomobject]@{ Kind = 'command'; Text = $line; Line = $lineNo })
-		if ($line -match '^savegame\s+(\S.*)$') {
+		if ($line -match '^save\s+(\S.*)$') {
 			if ($saveNames -contains $Matches[1].Trim()) { throw "$Script`:$lineNo`: save name '$($Matches[1].Trim())' is used twice" }
 			$saveNames.Add($Matches[1].Trim())
 		}
 	}
 }
-if (-not $Verify -and $saveNames.Count -eq 0) { throw "$Script has no savegame command" }
+if (-not $Verify -and $saveNames.Count -eq 0) { throw "$Script has no save command" }
 foreach ($name in $saveNames) { if ($name -notmatch '^[A-Za-z0-9._-]+$') { throw "save name '$name': use letters, digits, . _ - only (it is a folder name)" } }
 
 # The steps that check saves: load slot <slot> through the channel, then the level, the player where it was
@@ -232,7 +232,7 @@ function Invoke-Steps($stepList) {
 				$ok = $ack -match 'errors=0 '
 				Write-Host "  > $($step.Text)$(if (-not $ok) { "`n    $ack" })" -ForegroundColor $(if ($ok) { 'Gray' } else { 'Red' })
 				if (-not $ok) { $failures.Add("$where`: '$($step.Text)' was refused: $ack") }
-				if ($ok -and $step.Text -match '^savegame\s+(\S.*)$') {
+				if ($ok -and $step.Text -match '^save\s+(\S.*)$') {
 					$status = Read-ArxStatus $TestDir
 					$manifest.Add([pscustomobject][ordered]@{
 						name = $Matches[1].Trim(); description = $script:pendingDescription; area = [int]$status.area
@@ -324,11 +324,11 @@ if ($Verify) {
 # --- Into the library ------------------------------------------------------------------------------------------
 $folders = @(Get-ChildItem (Join-Path $UserDir 'save') -Directory -ErrorAction SilentlyContinue | Sort-Object Name)
 if ($manifest.Count -ne $folders.Count) {
-	$failures.Add("$($manifest.Count) savegame command(s) acknowledged but $($folders.Count) save folder(s) in $UserDir\save")
+	$failures.Add("$($manifest.Count) save command(s) acknowledged but $($folders.Count) save folder(s) in $UserDir\save")
 }
 if ($failures.Count -eq 0) {
 	New-Item -ItemType Directory -Force $Library | Out-Null
-	# The game numbers new save folders from the first free number, so the i-th savegame is the i-th folder
+	# The game numbers new save folders from the first free number, so the i-th save is the i-th folder
 	for ($i = 0; $i -lt $manifest.Count; $i++) {
 		$target = Join-Path $Library $manifest[$i].name
 		if (Test-Path $target) { Remove-Item -Recurse -Force $target }

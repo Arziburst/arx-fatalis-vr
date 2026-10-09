@@ -8,6 +8,94 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — PowerShell rules code that silently matches nothing: int keys, doubles, Write-Host (#187)
+
+**Symptom:** a lookup by issue number or wave finds nothing (a reason prints `wave 1 still has #` with the list empty), a
+dictionary hands out the wrong entry, or a test harness that captures a script's output sees an empty string and "0 failing".
+**Cause:** (1) `[ordered]@{}` is an `OrderedDictionary`: `$d[1]` with an **int** key is read as *position* 1, not key 1 —
+use a plain `@{}` and sort afterwards. (2) `Measure-Object -Minimum` answers a **double**; `$hashtable[1.0]` does not find
+the int key `1` — cast with `[int]`. (3) `Write-Host` goes to the information stream: `& script 2>&1` does not capture
+it, `*>&1` does.
+**Do:** cast numbers to `[int]` before using them as keys; no int keys in `[ordered]` tables; capture a script's whole output
+with `*>&1`; and break the rule once on purpose to see the test fail (test-plan-next.ps1 was checked that way).
+
+## 2026-10-09 — The CI game is another Windows account: its log, lock and build are not in your profile (#127)
+
+**Symptom:** a CI game check failed (or passed) but `%LOCALAPPDATA%\ArxFatalisVR\userdirs\…\arx.log` and `launches.log`
+show nothing about it; or a smoke test of yours and the CI game ran together although "one game at a time" holds.
+**Cause:** the runner service is `NT AUTHORITY\NETWORK SERVICE` (session 0). Its `%LOCALAPPDATA%` is
+`C:\Windows\ServiceProfiles\NetworkService\AppData\Local`, so CI has its own build, user directory, channel, game lock and
+ledger; the lock does not span accounts (#205). It also has no Steam registry entry of the owner, hence `ARXVR_DATA_DIR`.
+The game itself runs fine there: no desktop, window and OpenGL context are created anyway (measured: `GAMEPLAY` after ~1 s).
+**Do:** read the evidence from the workflow artifact `game-checks` (logs, `status.json`, crash reports, digest), not from
+your profile. Do not "fix" a CI failure by starting an interactive runner before the artifact says the window was the problem.
+
+## 2026-10-09 — Backslashes vanish from Windows paths written through sed or a shell string (#186)
+
+**Symptom:** a doc or script line reads `.scriptsdevpr-checks.ps1` instead of `.\scripts\dev\pr-checks.ps1`.
+**Cause:** `sed 's#...#.\scripts\dev\x#'` in Git Bash, or any unquoted/double-quoted shell string, treats `\s`, `\d`, `\p`
+as escapes and drops the backslash; the edit still "succeeds".
+**Do:** edit files with the Edit/Write tools, not `sed` with Windows paths; after any scripted edit grep the changed
+lines for the path (`git diff -U0 | grep pr-checks`) before committing.
+
+## 2026-10-09 — "GraphQL limit" errors from commands that look like plain REST (#186)
+
+**Symptom:** `API rate limit already exceeded` / `unknown owner type` from `gh issue view`, `gh pr view`, `gh pr list`,
+`gh pr checks --watch`, `gh issue list` or a dev script, while `gh api repos/...` calls work and
+`gh api rate_limit` shows `core` untouched; `gh api rate_limit` may even show thousands of `graphql` points left.
+**Cause:** every high-level `gh` command except `gh api` with a `repos/...` path is GraphQL (`gh project ...` the
+heaviest), and the GraphQL quota (hourly points plus a secondary, short-term limit) is shared by every session of the
+account. A board query that fails is easy to read as "nothing there" (`next-task.ps1` said the queue was empty).
+**Do:** use `gh api repos/Arziburst/arx-fatalis-vr/...` (REST) or the helpers in `scripts/dev/github-lib.ps1`
+(`Get-GhIssue`, `Get-GhPull`, `Get-GhCommitChecks`, ...) and `scripts/dev/pr-checks.ps1 <pr> -Watch`; the board comes from
+the 5-minute cache (`board-cache.json`) and a spent limit queues the move (`board-queue.json`, `set-status.ps1 -Flush`).
+`ARXVR_FORCE_GRAPHQL_ERROR=1` makes every GraphQL call fail like a spent limit, to try the degraded paths. Also:
+PowerShell 7 turns ISO date strings of `ConvertFrom-Json` into `DateTime` — the cache stores epoch seconds instead.
+
+## 2026-10-09 — A reference project's manual and settings screen describe a feature its code no longer has
+
+**Symptom:** research on OpenMW VR finds two accounts of the same facts. The manual says controllers "vibrate in
+response to successful hits, and to being hit", and the game's VR page has a *haptics enabled* setting; it also says
+the bindings screen "does NOT do any sanity checking". The code: the hit haptics are commented out (`TODO: Port to
+lua`), the setting is read by nothing, no shipped script calls the haptics function; and the rebinding code refuses
+a conflicting binding with a message. A config comment says the hand-offset sliders run "0 = -1 meters, 1 = 1
+meters"; the code computes `(v - 0.5)` m. The `player height` setting is read into a scale that nothing applies.
+**Cause:** the manual, the settings window and the config comments were written before a port or refactor (combat
+code moving to Lua, the bindings screen becoming a script page) and not updated; a screen that lists a setting
+proves nothing about what the code does with it.
+**Do:** for every catalog row that rests on "the project does X", search the code for the *use* of the setting or the
+call, not its declaration, and say which of manual, screen and code the row rests on; when they disagree the row
+follows the code and names the disagreement (RESEARCH-reference-mods.md, F-44, F-167, F-171, F-174).
+
+## 2026-10-09 — On `--loadlevel 10` the inventory never closes, `dodamage player` does nothing, and the game goes to the menu after a minute
+
+**Symptom:** a smoke test on the default `--loadlevel 10` opens the inventory through the channel
+(`ui inventory open`), but `ui inventory close` never produces `ui.inventory state=closed`;
+`dodamage player 1000` leaves the player alive; a `shot` shows a letterboxed picture; and a run
+longer than about a minute ends with `game.state to=MENU` at t=58 s although nobody touched the menu.
+**Cause:** `--loadlevel 10` starts a **new game**, and level 10 is the scripted intro, not a playable
+start: the script blocks the player's controls (`BLOCK_PLAYER_CONTROLS`, so damage to the player is
+not applied) and shows cinema borders (`cinemascope`, so `renderInterface()` skips the HUD whose
+update finishes the inventory's closing animation — `player.Interface` keeps `INTER_INVENTORY`). The
+intro (`cinematic.skip` at t=29.55, NPC spells at t=52–56) ends in the main menu at t=58.4. Damage
+from the player's own `dodamage` is also ignored: the source must be another entity.
+**Do:** for anything that needs the player in control, send `setplayercontrols on` and
+`cinemascope off` first, damage the player from an NPC (`human_base_0033.dodamage player 1000`), and
+keep level 10 runs under 50 s — or start from a playable save (`-Saves`, the test save library #70).
+The game event log (#130) shows all of it with `t=` times; read it before suspecting the feature.
+
+## 2026-10-09 — The game crashes in `ScriptEventName::toString()` for a console command
+
+**Symptom:** a new log line that names the script event of a failing command crashed the game
+(`ACCESS_VIOLATION`, stack `Script.cpp:180` ← `ScriptEvent.cpp` ← `Console.cpp`) the moment a
+console / channel command failed; the same line was fine for commands failing inside real scripts.
+**Cause:** console lines run as the pseudo-event `SM_EXECUTELINE` (and jumps as `SM_DUMMY`), which
+have no `"on <name>"` entry; `toString()` asserts on that (a no-op in Release) and takes
+`substr(3)` of whatever came back. The engine itself only prints events through `operator<<`,
+which special-cases both.
+**Do:** never call `ScriptEventName::toString()` without handling `SM_EXECUTELINE` / `SM_DUMMY`
+first (see `script.error` in `ScriptEvent.cpp`, #130), or print through `operator<<`.
+
 ## 2026-10-09 — Scripting a launch from PowerShell: three tools that quietly do the wrong thing
 
 **Symptoms:** (1) `pwsh -File run-windows.ps1 ... -- --no-vr` fails with "parameter name '' is ambiguous";
@@ -51,6 +139,9 @@ add-on, report). When primary and secondary sources disagree, say so in the row.
 
 ## 2026-10-09 — `next-task.ps1` says the MVP queue is empty; `set-status.ps1` fails to move a task
 
+*Resolved for the dev scripts by #186: a board that cannot be read is the cache (with a warning) or an error, never
+"empty"; `set-status.ps1` queues the move. The cause below stays true for any hand-typed `gh project ...`.*
+
 **Symptom:** `.\scripts\dev\next-task.ps1` prints `NEXT none — the MVP queue is empty` although
 `docs/vr/MVP.md` and the board are full of Todo tasks, and `.\scripts\dev\set-status.ps1` throws
 `Failed to move #N to <status>`; both outputs start with `GraphQL: API rate limit exceeded for
@@ -80,6 +171,9 @@ touched `TESTING.md` / `TRAPS.md` next to this task's lines.
 asking why CI is quiet; `gh pr merge` would also refuse a `CONFLICTING` PR.
 
 ## 2026-10-09 — `set-status.ps1` fails with "API rate limit exceeded" although `gh api rate_limit` shows thousands left
+
+*Resolved for the dev scripts by #186 (cached board, one mutation, queue, "secondary limit" recognised and waited for or
+queued). Still true for hand-typed `gh project ...`.*
 
 **Symptom:** `set-status.ps1 -Issue <n> -Status Backlog` prints `Issue #<n> is not on the board yet,
 adding it` and then `Failed to move #<n>`; run by hand, `gh project item-list` / `field-list` answer

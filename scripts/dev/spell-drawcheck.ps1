@@ -49,6 +49,12 @@
 .PARAMETER Rebuild
 	Build this working copy first when its build is stale (passed to smoke-test.ps1).
 
+.PARAMETER DataDir
+	The Arx Fatalis install folder (passed to smoke-test.ps1; default: found in the Steam libraries).
+
+.PARAMETER LockTimeoutSec
+	How long to wait for the game lock before the check is skipped (passed to smoke-test.ps1, default 300).
+
 .EXAMPLE
 	.\scripts\dev\spell-drawcheck.ps1
 .EXAMPLE
@@ -67,7 +73,9 @@ param(
 	[string[]]$Setup = @(),
 	[string]$Flags = 'fsm',
 	[int]$Frames = 240,
-	[switch]$Rebuild
+	[switch]$Rebuild,
+	[string]$DataDir,
+	[int]$LockTimeoutSec = 300
 )
 
 $ErrorActionPreference = 'Stop'
@@ -84,6 +92,8 @@ $allSpells = @($NpcSpells) + @($Spells)
 $smokeTest = Join-Path $PSScriptRoot 'smoke-test.ps1'
 $jobArgs = @{ Commands = $commands; Seconds = 2 }
 if ($Rebuild) { $jobArgs.Rebuild = $true }
+if ($DataDir) { $jobArgs.DataDir = $DataDir }
+$jobArgs.LockTimeoutSec = $LockTimeoutSec
 
 Write-Host "==> spell draw check: $($Spells.Count) spells cast on the player and $($NpcSpells.Count) by $NpcCaster with -$Flags, drawcheck $Frames, sampling $testDir\status.json"
 $job = Start-Job -ScriptBlock {

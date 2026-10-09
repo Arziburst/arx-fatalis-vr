@@ -19,6 +19,7 @@
 
 #include "vr/VRSystem.h"
 
+#include <array>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -38,24 +39,19 @@
 #include "io/log/Logger.h"
 #include "platform/CrashHandler.h"
 #include "platform/ProgramOptions.h"
+#include "platform/profiler/Profiler.h"
 #include "util/String.h"
 
 #if ARX_HAVE_OPENXR
 
+// OpenXR with the OpenGL binding (and windows.h on Windows)
+#include "vr/OpenXRUtil.h"
+#include "vr/VRSwapchain.h"
+
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
-// The OpenGL binding for OpenXR on Windows is the window's device context and WGL context
-#include <windows.h>
 #include <tlhelp32.h>
 #include "platform/WindowsUtils.h"
-#define XR_USE_PLATFORM_WIN32
 #endif
-
-// OpenGL headers (GLEW) for querying the context version
-#include "graphics/opengl/OpenGLUtil.h"
-
-#define XR_USE_GRAPHICS_API_OPENGL
-#include <openxr/openxr.h>
-#include <openxr/openxr_platform.h>
 
 #endif // ARX_HAVE_OPENXR
 
@@ -78,6 +74,16 @@ bool isSupported() {
 
 namespace {
 
+//! The head-locked quad that shows the flat frame (F-20): its width and distance in meters
+const float QuadWidth = 2.4f;
+const float QuadDistance = 1.75f;
+
+//! Uniform background of the eye swapchains, sRGB-encoded: dark grey, so it is told apart from "no layer"
+const GLfloat BackgroundColor[4] = { 0.15f, 0.15f, 0.15f, 1.f };
+
+//! Frame loop failures logged per session before it goes quiet (they repeat every frame)
+const u32 MaxLoggedFrameFailures = 5;
+
 struct OpenXRState {
 
 	XrInstance instance = XR_NULL_HANDLE;
@@ -85,11 +91,30 @@ struct OpenXRState {
 	XrSession session = XR_NULL_HANDLE;
 	XrSessionState sessionState = XR_SESSION_STATE_UNKNOWN;
 
+	//! Between xrBeginSession and xrEndSession: every shown game frame must be submitted
+	bool running = false;
+
 	PFN_xrGetOpenGLGraphicsRequirementsKHR getOpenGLGraphicsRequirements = nullptr;
+
+	//! Per eye (left, right), from xrEnumerateViewConfigurationViews
+	std::array<XrViewConfigurationView, 2> views = { };
+	Vec2i maxSwapchainSize = Vec2i(0);
+
+	XrSpace viewSpace = XR_NULL_HANDLE;
+	s64 colorFormat = 0;
+	std::array<Swapchain, 2> eyes;
+	Swapchain quad;
+	Vec2i quadFailedSize = Vec2i(0); //!< a window size the quad swapchain could not be created for
+
+	FrameCounters frames;
+	u32 frameFailures = 0;
+	bool loggedInvalidViews = false;
 
 };
 
 OpenXRState g_xr;
+
+} // anonymous namespace
 
 std::string resultName(XrResult result) {
 	if(g_xr.instance != XR_NULL_HANDLE) {
@@ -100,6 +125,8 @@ std::string resultName(XrResult result) {
 	}
 	return "XrResult(" + std::to_string(int(result)) + ")";
 }
+
+namespace {
 
 std::string versionString(XrVersion version) {
 	std::ostringstream oss;
@@ -304,6 +331,8 @@ bool findSystem() {
 		        << 'x' << properties.graphicsProperties.maxSwapchainImageHeight
 		        << ", " << properties.graphicsProperties.maxLayerCount << " layers";
 		CrashHandler::setVariable("VR headset", util::loadString(properties.systemName));
+		g_xr.maxSwapchainSize = Vec2i(s32(properties.graphicsProperties.maxSwapchainImageWidth),
+		                              s32(properties.graphicsProperties.maxSwapchainImageHeight));
 	} else {
 		LogWarning << "Could not query VR headset properties: " << resultName(result);
 	}
@@ -330,35 +359,306 @@ bool findSystem() {
 		return false;
 	}
 
+	// The eye swapchains are sized from these
+	g_xr.views.fill({ XR_TYPE_VIEW_CONFIGURATION_VIEW });
 	count = 0;
 	result = xrEnumerateViewConfigurationViews(g_xr.instance, g_xr.systemId,
 	                                           XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 0, &count, nullptr);
-	std::vector<XrViewConfigurationView> views(count, { XR_TYPE_VIEW_CONFIGURATION_VIEW });
-	if(XR_SUCCEEDED(result)) {
-		result = xrEnumerateViewConfigurationViews(g_xr.instance, g_xr.systemId,
-		                                           XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, count, &count, views.data());
+	if(XR_SUCCEEDED(result) && count != g_xr.views.size()) {
+		LogWarning << "VR headset reports " << count << " stereo views instead of " << g_xr.views.size()
+		           << ", starting in flat mode";
+		return false;
 	}
 	if(XR_SUCCEEDED(result)) {
-		for(size_t i = 0; i < count; i++) {
-			LogInfo << "VR eye " << i << ": recommended " << views[i].recommendedImageRectWidth
-			        << 'x' << views[i].recommendedImageRectHeight
-			        << " (max " << views[i].maxImageRectWidth << 'x' << views[i].maxImageRectHeight << ")"
-			        << ", " << views[i].recommendedSwapchainSampleCount << "x MSAA recommended";
-		}
-	} else {
-		LogWarning << "Could not query OpenXR view sizes: " << resultName(result);
+		result = xrEnumerateViewConfigurationViews(g_xr.instance, g_xr.systemId, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
+		                                           count, &count, g_xr.views.data());
+	}
+	if(XR_FAILED(result)) {
+		LogWarning << "Could not query OpenXR view sizes (" << resultName(result) << "), starting in flat mode";
+		return false;
+	}
+	for(size_t i = 0; i < g_xr.views.size(); i++) {
+		const XrViewConfigurationView & view = g_xr.views[i];
+		LogInfo << "VR eye " << i << ": recommended " << view.recommendedImageRectWidth
+		        << 'x' << view.recommendedImageRectHeight
+		        << " (max " << view.maxImageRectWidth << 'x' << view.maxImageRectHeight << ")"
+		        << ", " << view.recommendedSwapchainSampleCount << "x MSAA recommended";
 	}
 
 	return true;
 }
 
 void destroySession() {
+
+	// The swapchains' OpenGL objects go first, while the context the session is bound to is current
+	for(Swapchain & eye : g_xr.eyes) {
+		eye.destroy();
+	}
+	g_xr.quad.destroy();
+	g_xr.quadFailedSize = Vec2i(0);
+	g_xr.colorFormat = 0;
+
+	if(g_xr.viewSpace != XR_NULL_HANDLE) {
+		xrDestroySpace(g_xr.viewSpace);
+		g_xr.viewSpace = XR_NULL_HANDLE;
+	}
+
 	if(g_xr.session != XR_NULL_HANDLE) {
 		xrDestroySession(g_xr.session);
 		g_xr.session = XR_NULL_HANDLE;
-		LogInfo << "OpenXR session destroyed";
+		LogInfo << "OpenXR session destroyed" << (g_xr.running ? " while running" : "")
+		        << " after " << g_xr.frames.submitted << " frames (" << g_xr.frames.shown << " shown)";
 	}
 	g_xr.sessionState = XR_SESSION_STATE_UNKNOWN;
+	g_xr.running = false;
+}
+
+/*!
+ * The swapchains and the space the frames are submitted in; the per-eye swapchains are sized from
+ * the runtime's recommended view sizes and get a framebuffer object per image to render into.
+ */
+bool createSessionResources() {
+
+	XrReferenceSpaceCreateInfo spaceInfo = { XR_TYPE_REFERENCE_SPACE_CREATE_INFO };
+	spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
+	spaceInfo.poseInReferenceSpace.orientation.w = 1.f;
+	XrResult result = xrCreateReferenceSpace(g_xr.session, &spaceInfo, &g_xr.viewSpace);
+	if(XR_FAILED(result)) {
+		g_xr.viewSpace = XR_NULL_HANDLE;
+		LogError << "Could not create the OpenXR view space: " << resultName(result);
+		return false;
+	}
+
+	g_xr.colorFormat = chooseSwapchainFormat(g_xr.session);
+	if(!g_xr.colorFormat) {
+		return false;
+	}
+
+	const char * const names[] = { "left eye", "right eye" };
+	for(size_t i = 0; i < g_xr.eyes.size(); i++) {
+		Vec2i size(s32(g_xr.views[i].recommendedImageRectWidth), s32(g_xr.views[i].recommendedImageRectHeight));
+		if(!g_xr.eyes[i].create(g_xr.session, g_xr.colorFormat, size, true, names[i])) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void beginSession() {
+
+	if(g_xr.running) {
+		return;
+	}
+
+	XrSessionBeginInfo beginInfo = { XR_TYPE_SESSION_BEGIN_INFO };
+	beginInfo.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+	XrResult result = xrBeginSession(g_xr.session, &beginInfo);
+	if(XR_FAILED(result)) {
+		LogError << "Could not begin the OpenXR session (" << resultName(result) << "), the headset stays dark";
+		return;
+	}
+
+	g_xr.running = true;
+	g_xr.frameFailures = 0;
+	g_xr.loggedInvalidViews = false;
+	LogInfo << "OpenXR session running, submitting frames";
+}
+
+void endSession() {
+
+	if(!g_xr.running) {
+		return;
+	}
+
+	g_xr.running = false;
+
+	XrResult result = xrEndSession(g_xr.session);
+	if(XR_FAILED(result)) {
+		LogWarning << "Could not end the OpenXR session: " << resultName(result);
+		return;
+	}
+
+	LogInfo << "OpenXR session stopped after " << g_xr.frames.submitted << " frames ("
+	        << g_xr.frames.shown << " shown)";
+}
+
+void logFrameFailure(const char * call, XrResult result) {
+	g_xr.frameFailures++;
+	if(g_xr.frameFailures <= MaxLoggedFrameFailures) {
+		LogError << call << " failed: " << resultName(result)
+		         << (g_xr.frameFailures == MaxLoggedFrameFailures ? " (further frame failures are not logged)" : "");
+	}
+}
+
+/*!
+ * The OpenGL state the VR frame code changes, restored afterwards: the renderer caches its own
+ * view of the scissor and the texture bindings and would not notice a change.
+ */
+class GLStateGuard {
+
+	GLint m_drawFramebuffer = 0;
+	GLint m_readFramebuffer = 0;
+	GLint m_readBuffer = 0;
+	GLint m_texture = 0;
+	GLboolean m_scissor = GL_FALSE;
+	GLboolean m_colorMask[4] = { GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE };
+
+public:
+
+	GLStateGuard() {
+		glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &m_drawFramebuffer);
+		glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &m_readFramebuffer);
+		glGetIntegerv(GL_READ_BUFFER, &m_readBuffer);
+		glGetIntegerv(GL_TEXTURE_BINDING_2D, &m_texture);
+		m_scissor = glIsEnabled(GL_SCISSOR_TEST);
+		glGetBooleanv(GL_COLOR_WRITEMASK, m_colorMask);
+		// Clears respect both
+		glDisable(GL_SCISSOR_TEST);
+		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	}
+
+	~GLStateGuard() {
+		glColorMask(m_colorMask[0], m_colorMask[1], m_colorMask[2], m_colorMask[3]);
+		if(m_scissor) {
+			glEnable(GL_SCISSOR_TEST);
+		}
+		glBindTexture(GL_TEXTURE_2D, GLuint(m_texture));
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, GLuint(m_readFramebuffer));
+		glReadBuffer(GLenum(m_readBuffer));
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, GLuint(m_drawFramebuffer));
+	}
+
+	GLStateGuard(const GLStateGuard &) = delete;
+	GLStateGuard & operator=(const GLStateGuard &) = delete;
+
+};
+
+/*!
+ * The quad shows the back buffer 1:1, so its swapchain follows the window size. A size the
+ * swapchain could not be created for is not retried every frame.
+ */
+void updateQuadSwapchain(const Vec2i & size) {
+
+	if((g_xr.quad.isValid() && g_xr.quad.size() == size) || size == g_xr.quadFailedSize) {
+		return;
+	}
+
+	g_xr.quad.destroy();
+	g_xr.quadFailedSize = Vec2i(0);
+
+	if(size.x <= 0 || size.y <= 0) {
+		return;
+	}
+
+	if(size.x > g_xr.maxSwapchainSize.x || size.y > g_xr.maxSwapchainSize.y) {
+		LogWarning << "Window " << size.x << 'x' << size.y << " is larger than the biggest OpenXR swapchain "
+		           << g_xr.maxSwapchainSize.x << 'x' << g_xr.maxSwapchainSize.y << ", the flat frame is not shown in VR";
+		g_xr.quadFailedSize = size;
+		return;
+	}
+
+	if(!g_xr.quad.create(g_xr.session, g_xr.colorFormat, size, false, "flat frame quad")) {
+		g_xr.quadFailedSize = size;
+	}
+}
+
+/*!
+ * Clear both eye images to the background color through their framebuffers and describe them as a
+ * projection layer with this frame's eye poses (relative to the head: the background is head-locked).
+ */
+bool renderBackground(XrTime displayTime, std::array<XrCompositionLayerProjectionView, 2> & views,
+                      XrCompositionLayerProjection & layer) {
+
+	XrViewLocateInfo locateInfo = { XR_TYPE_VIEW_LOCATE_INFO };
+	locateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+	locateInfo.displayTime = displayTime;
+	locateInfo.space = g_xr.viewSpace;
+	XrViewState viewState = { XR_TYPE_VIEW_STATE };
+	std::array<XrView, 2> located;
+	located.fill({ XR_TYPE_VIEW });
+	uint32_t count = 0;
+	XrResult result = xrLocateViews(g_xr.session, &locateInfo, &viewState, u32(located.size()), &count,
+	                                located.data());
+	if(XR_FAILED(result)) {
+		logFrameFailure("xrLocateViews", result);
+		return false;
+	}
+
+	const XrViewStateFlags valid = XR_VIEW_STATE_ORIENTATION_VALID_BIT | XR_VIEW_STATE_POSITION_VALID_BIT;
+	if(count != located.size() || (viewState.viewStateFlags & valid) != valid) {
+		if(!g_xr.loggedInvalidViews) {
+			LogWarning << "OpenXR eye poses not available (" << count << " views, flags 0x" << std::hex
+			           << viewState.viewStateFlags << std::dec << "), the background layer is left out";
+			g_xr.loggedInvalidViews = true;
+		}
+		return false;
+	}
+
+	for(size_t eye = 0; eye < views.size(); eye++) {
+
+		Swapchain & swapchain = g_xr.eyes[eye];
+		if(!swapchain.acquire()) {
+			return false;
+		}
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, swapchain.framebuffer());
+		glClearBufferfv(GL_COLOR, 0, BackgroundColor);
+		swapchain.release();
+
+		views[eye] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
+		views[eye].pose = located[eye].pose;
+		views[eye].fov = located[eye].fov;
+		views[eye].subImage.swapchain = swapchain.handle();
+		views[eye].subImage.imageRect = swapchain.rect();
+		views[eye].subImage.imageArrayIndex = 0;
+
+	}
+
+	layer.layerFlags = 0;
+	layer.space = g_xr.viewSpace;
+	layer.viewCount = u32(views.size());
+	layer.views = views.data();
+
+	return true;
+}
+
+/*!
+ * Copy the window's back buffer into the quad swapchain and describe the head-locked quad.
+ *
+ * A copy from the default framebuffer, not a blit: the window is usually multisampled, and a
+ * resolving blit requires identical source and destination formats (RGB8 vs. SRGB8_ALPHA8 here),
+ * while glCopyTexSubImage2D resolves the default framebuffer and stores the values unchanged.
+ */
+bool copyFlatFrame(XrCompositionLayerQuad & layer) {
+
+	Swapchain & swapchain = g_xr.quad;
+	if(!swapchain.isValid() || !swapchain.acquire()) {
+		return false;
+	}
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+	glReadBuffer(GL_BACK);
+	glBindTexture(GL_TEXTURE_2D, swapchain.texture());
+	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, swapchain.size().x, swapchain.size().y);
+	swapchain.release();
+
+	layer.layerFlags = 0;
+	layer.space = g_xr.viewSpace;
+	layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+	layer.subImage.swapchain = swapchain.handle();
+	layer.subImage.imageRect = swapchain.rect();
+	layer.subImage.imageArrayIndex = 0;
+	layer.pose.orientation.x = 0.f;
+	layer.pose.orientation.y = 0.f;
+	layer.pose.orientation.z = 0.f;
+	layer.pose.orientation.w = 1.f;
+	layer.pose.position.x = 0.f;
+	layer.pose.position.y = 0.f;
+	layer.pose.position.z = -QuadDistance;
+	layer.size.width = QuadWidth;
+	layer.size.height = QuadWidth * float(swapchain.size().y) / float(swapchain.size().x);
+
+	return true;
 }
 
 XrVersion currentOpenGLVersion() {
@@ -463,6 +763,12 @@ bool createSession() {
 	g_xr.sessionState = XR_SESSION_STATE_IDLE;
 	LogInfo << "OpenXR session created";
 
+	if(!createSessionResources()) {
+		LogError << "Could not set up OpenXR rendering, continuing in flat mode";
+		shutdown();
+		return false;
+	}
+
 	return true;
 
 	#else
@@ -502,8 +808,11 @@ void pollEvents() {
 				}
 				g_xr.sessionState = changed.state;
 				LogInfo << "OpenXR session state: " << sessionStateName(changed.state);
-				// TODO(#20) begin the session on ready and run the frame loop; end it on stopping
-				if(changed.state == XR_SESSION_STATE_LOSS_PENDING || changed.state == XR_SESSION_STATE_EXITING) {
+				if(changed.state == XR_SESSION_STATE_READY) {
+					beginSession();
+				} else if(changed.state == XR_SESSION_STATE_STOPPING) {
+					endSession();
+				} else if(changed.state == XR_SESSION_STATE_LOSS_PENDING || changed.state == XR_SESSION_STATE_EXITING) {
 					LogWarning << "OpenXR session ended by the runtime, continuing in flat mode";
 					destroySession();
 				}
@@ -533,6 +842,82 @@ void pollEvents() {
 
 }
 
+void submitFrame(const Vec2i & windowSize) {
+
+	if(!g_xr.running) {
+		return;
+	}
+
+	ARX_PROFILE_FUNC();
+
+	updateQuadSwapchain(windowSize);
+
+	XrFrameWaitInfo waitInfo = { XR_TYPE_FRAME_WAIT_INFO };
+	XrFrameState frameState = { XR_TYPE_FRAME_STATE };
+	XrResult result = xrWaitFrame(g_xr.session, &waitInfo, &frameState);
+	if(XR_FAILED(result)) {
+		logFrameFailure("xrWaitFrame", result);
+		return;
+	}
+
+	XrFrameBeginInfo beginInfo = { XR_TYPE_FRAME_BEGIN_INFO };
+	result = xrBeginFrame(g_xr.session, &beginInfo);
+	if(XR_FAILED(result)) {
+		logFrameFailure("xrBeginFrame", result);
+		return;
+	}
+
+	std::array<XrCompositionLayerProjectionView, 2> projectionViews;
+	XrCompositionLayerProjection projection = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
+	XrCompositionLayerQuad quad = { XR_TYPE_COMPOSITION_LAYER_QUAD };
+	std::array<const XrCompositionLayerBaseHeader *, 2> layers = { };
+	u32 layerCount = 0;
+	bool background = false;
+	bool flatFrame = false;
+
+	// Not visible (headset idle, another app in front): frames still keep the timing, without layers
+	if(frameState.shouldRender) {
+		GLStateGuard state;
+		background = renderBackground(frameState.predictedDisplayTime, projectionViews, projection);
+		if(background) {
+			layers[layerCount++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&projection);
+		}
+		flatFrame = copyFlatFrame(quad);
+		if(flatFrame) {
+			layers[layerCount++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&quad);
+		}
+	}
+
+	XrFrameEndInfo endInfo = { XR_TYPE_FRAME_END_INFO };
+	endInfo.displayTime = frameState.predictedDisplayTime;
+	endInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+	endInfo.layerCount = layerCount;
+	endInfo.layers = layerCount ? layers.data() : nullptr;
+	result = xrEndFrame(g_xr.session, &endInfo);
+	if(XR_FAILED(result)) {
+		logFrameFailure("xrEndFrame", result);
+		return;
+	}
+
+	g_xr.frames.submitted++;
+	if(g_xr.frames.submitted == 1) {
+		LogInfo << "First OpenXR frame submitted, headset display period "
+		        << float(frameState.predictedDisplayPeriod) / 1e6f << " ms";
+	}
+
+	if(layerCount) {
+		g_xr.frames.shown++;
+		if(g_xr.frames.shown == 1 && flatFrame) {
+			LogInfo << "First VR frame shown: " << (background ? "dark background, " : "no background, ")
+			        << "flat frame " << g_xr.quad.size().x << 'x' << g_xr.quad.size().y << " on a head-locked quad "
+			        << quad.size.width << " x " << quad.size.height << " m at " << QuadDistance << " m";
+		} else if(g_xr.frames.shown == 1) {
+			LogInfo << "First VR frame shown: dark background only, no flat frame";
+		}
+	}
+
+}
+
 bool isEnabled() {
 	return g_xr.session != XR_NULL_HANDLE;
 }
@@ -542,6 +927,10 @@ const char * sessionStateString() {
 		return "none";
 	}
 	return sessionStateName(g_xr.sessionState);
+}
+
+FrameCounters frameCounters() {
+	return g_xr.frames;
 }
 
 void shutdown() {
@@ -577,12 +966,18 @@ bool createSession() {
 
 void pollEvents() { }
 
+void submitFrame(const Vec2i & /* windowSize */) { }
+
 const char * sessionStateString() {
 	return "none";
 }
 
 bool isEnabled() {
 	return false;
+}
+
+FrameCounters frameCounters() {
+	return FrameCounters();
 }
 
 void shutdown() { }

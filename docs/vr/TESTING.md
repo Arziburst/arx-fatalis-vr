@@ -112,7 +112,7 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
  "menuMode":"ingame","area":10,"paused":false,"cinematic":false,
  "player":{"x":...,"y":...,"z":...,"yaw":...,"life":...,"lifeMax":...,"mana":...,"manaMax":...},
  "window":{"width":640,"height":480,"focused":true,"minimized":false,"fullscreen":false},
- "vr":{"supported":true,"enabled":false,"sessionState":"none"},
+ "vr":{"supported":true,"enabled":false,"sessionState":"none","frames":0,"shownFrames":0},
  "cmdSeq":3,"lastCmd":"mark hello","lastCmdError":"","captureSeq":1,"lastCapture":"...\\first.bmp"}
 ```
 
@@ -125,8 +125,14 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
 - `fps`: frames over the last status interval (0 in the final status).
 - `vr.sessionState`: `none` without a session, else the OpenXR state as the runtime reported it
   (`idle`, `ready`, `synchronized`, `visible`, `focused`, `stopping`, …).
-- `player` is present only while a level is loaded. More fields (per-eye frame ids, the rate line)
-  come with #20; the `.xrs` runner (#113) asserts on these keys with `@modassert`.
+- `vr.frames`: OpenXR frames submitted with `xrEndFrame` since the start (one per shown game frame
+  while the session runs, #18); `vr.shownFrames`: of those, the frames that carried layers, i.e. the
+  runtime asked for rendering (`shouldRender`). With an idle headset the session stays
+  `synchronized`, SteamVR sets `shouldRender` only for the first frame, and `shownFrames` stays at 1
+  while `frames` grows — expected, not a broken frame loop (see TRAPS.md). `smoke-test.ps1 -Vr`
+  fails a run with `vr.enabled` and `vr.frames == 0`.
+- `player` is present only while a level is loaded. More fields (the rate line) come with #20; the
+  `.xrs` runner (#113) asserts on these keys with `@modassert`.
 
 ## `xr_hello` — the runtime alone
 
@@ -151,7 +157,8 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | The same, closed with WM_CLOSE (`-CloseWindow -Repeat 5`) | **5 of 5** `PASS` |
 | A refused command (`bogus_command 1`) | the run is `FAIL` with the ack as the reason — the gate can fail |
 | `xr_hello --frames 120` with SteamVR running and the headset idle on the desk | exit 0: `IDLE → READY` at once, `SYNCHRONIZED` after 0.13 s, 120 frames in 1.48 s (display period 12.5 ms = 80 Hz), orderly `STOPPING → IDLE → EXITING`; **never `VISIBLE` or `FOCUSED`** |
-| `smoke-test.ps1 -Vr` with SteamVR running and the headset idle | `PASS`: instance, system and session created, state `ready` (the game does not begin the session until #20), clean shutdown with the session destroyed before the window |
+| `smoke-test.ps1 -Vr` with SteamVR running and the headset idle | `PASS`: instance, system and session created, state `ready` (the game did not begin the session before #18), clean shutdown with the session destroyed before the window |
+| `smoke-test.ps1 -Vr`, headset idle, after #18 (2026-10-09) | `PASS`: eye swapchains 2468x2740 `GL_SRGB8_ALPHA8` with complete framebuffers, `ready → running → synchronized`, quad swapchain 640x480, display period 12.5 ms (80 Hz), **834 frames submitted in ~10 s, 1 shown** (`shouldRender` only on the first frame with an idle headset — see TRAPS.md), 0 `[E]`, clean shutdown with the session destroyed while running (no `STOPPING` before our quit) |
 | `smoke-test.ps1 -Menu -Commands 'loadslot 0'` (plain launch, then a save through the channel) | `MENU` 0.8 s after launch; `loadslot 0` refused with `no save in slot 0 (have 0)` — the owner's machine has no saves yet (#70), so the success path of `loadslot` is **not verified** here; it is the same `LOADQUEST_SLOT` path as `--loadslot` |
 | 2026-10-09, #124: `--loadlevel 10` with the intro `.cin` **loaded** (preloaded by the level 10 script, never played), `-CloseWindow -Repeat 5` | **2 of 5 crashed** in `Entity::cleanReferences` (#93); the channel `quit` was 5 of 5 clean on the same build. A loaded cinematic is enough for #93, so the development skip never loads the file |
 | 2026-10-09, #124: cinematics skipped without loading — default `-CloseWindow -Repeat 3`; `-Commands 'cine play' -CloseWindow -Repeat 2`; `-Commands 'cine play','cine akbaa_dream_a' -Repeat 2` | **3 of 3, 2 of 2, 2 of 2** `PASS`; one `Skipping cinematic <name>` line per cinematic, state never `CINEMATIC`, 0 errors. With `--cinematics` (or `cine play` with `--intro`) the state becomes `CINEMATIC` — the check can fail |

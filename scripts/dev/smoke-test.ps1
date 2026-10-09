@@ -203,11 +203,12 @@ function Invoke-SmokeRun([int]$Run) {
 
 		if ($reached) {
 			if ($Vr) {
-				# Give the runtime a moment to move the session past idle
+				# Give the runtime a moment to move the session past idle; frames follow once it is ready (#18)
 				try { $status = Wait-ArxStatus { param($s) $s.vr.sessionState -ne 'idle' } -TimeoutSec 10 -Dir $TestDir -What 'a session state' } catch { }
+				try { $status = Wait-ArxStatus { param($s) [int64]$s.vr.frames -gt 0 } -TimeoutSec 10 -Dir $TestDir -What 'a submitted VR frame' } catch { }
 				$status = Read-ArxStatus $TestDir
-				$result.VR = "$($status.vr.enabled)/$($status.vr.sessionState)"
-				Write-Host "  VR: enabled=$($status.vr.enabled) session=$($status.vr.sessionState)"
+				$result.VR = "$($status.vr.enabled)/$($status.vr.sessionState)/$($status.vr.frames)"
+				Write-Host "  VR: enabled=$($status.vr.enabled) session=$($status.vr.sessionState) frames=$($status.vr.frames) shown=$($status.vr.shownFrames)"
 				if (-not $status.vr.enabled) { $reasons.Add('VR requested but the game runs flat (see the log for the reason)') }
 			}
 
@@ -243,7 +244,7 @@ function Invoke-SmokeRun([int]$Run) {
 		$final = Read-ArxStatus $TestDir
 		if ($final) {
 			$result.Errors = $final.errors; $result.Warnings = $final.warnings
-			if ($Vr) { $result.VR = "$($final.vr.enabled)/$($final.vr.sessionState)" }
+			if ($Vr) { $result.VR = "$($final.vr.enabled)/$($final.vr.sessionState)/$($final.vr.frames)" }
 		}
 		$logFresh = (Test-Path $log) -and ((Get-Item $log).LastWriteTime -ge $launchTime)
 		$clean = $logFresh -and [bool](Select-String -Path $log -Pattern 'Clean shutdown' -Quiet)
@@ -259,6 +260,11 @@ function Invoke-SmokeRun([int]$Run) {
 		Write-Check ($newCrashes.Count -eq 0) "no new crash report ($($crashesAfter.Count) in $crashDir)"
 		Write-Check ($errorLines.Count -eq 0) "no [E] line in arx.log ($($errorLines.Count) found, $($warningLines.Count) warnings)"
 		Write-Check ($final -and [int]$final.errors -eq 0) "status.json errors == 0 (errors=$(if ($final) { $final.errors } else { '?' }), cleanShutdown=$(if ($final) { $final.cleanShutdown } else { '?' }))"
+		if ($Vr -and $final) {
+			# The session runs and submits frames even with nobody in the headset (synchronized, never focused)
+			Write-Check ([int64]$final.vr.frames -gt 0) "VR frames submitted (frames=$($final.vr.frames), shown=$($final.vr.shownFrames), session=$($final.vr.sessionState))"
+			if ($final.vr.enabled -and [int64]$final.vr.frames -eq 0) { $reasons.Add('no VR frame was submitted (the session never ran, or xrWaitFrame / xrEndFrame failed - see the log)') }
+		}
 		if ($process.ExitCode -ne 0) { $reasons.Add("exit code $($process.ExitCode)") }
 		if (-not $logFresh) { $reasons.Add('arx.log was not written by this run (the game died before shutdown, or never started)') }
 		elseif (-not $clean) { $reasons.Add("no 'Clean shutdown' in arx.log") }

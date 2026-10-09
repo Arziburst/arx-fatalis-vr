@@ -314,6 +314,9 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("supported", vr::isSupported());
 	json.value("enabled", vr::isEnabled());
 	json.value("sessionState", vr::sessionStateString());
+	vr::FrameCounters frames = vr::frameCounters();
+	json.value("frames", frames.submitted);
+	json.value("shownFrames", frames.shown);
 	json.end();
 
 	json.value("cmdSeq", g.cmdSeq);

@@ -33,8 +33,11 @@ set(VERSION_STRING_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/VersionScript.cmake")
 #
 # - GIT_COMMIT: The current git commit. (not defined if there is no GIT_DIR directory)
 # - GIT_COMMIT_PREFIX_${i}: The first ${i} characters of GIT_COMMIT (i=0..39)
+# - GIT_BRANCH: The checked-out branch (empty when HEAD is detached or there is no GIT_DIR)
+# - BUILD_TYPE: The build configuration ($<CONFIG>: Release, Debug, ...; empty if none is set)
 # For the exact syntax of SRC see the documentation of the configure_file() cmake command.
 # The version file is regenerated whenever VERSION_FILE or the current commit changes.
+# GIT_DIR may be a worktree's .git *file* ("gitdir: <path>"); it is resolved to the real directory.
 function(version_file SRC DST VERSION_SOURCES GIT_DIR)
 	
 	set(MODE_VARIABLE 0)
@@ -68,7 +71,26 @@ function(version_file SRC DST VERSION_SOURCES GIT_DIR)
 		set(defines ${ARGV4})
 	endif()
 	
+	set(git_common_dir "")
 	if(EXISTS "${abs_git_dir}")
+		# In a git worktree (scripts/dev/new-worktree.ps1) .git is a *file* - "gitdir: <path>" - and
+		# HEAD, logs/HEAD and packed-refs live elsewhere. Resolve it, or the version is generated once
+		# and never refreshed when HEAD changes: a stale commit in the log banner (docs/vr/TRAPS.md).
+		if(NOT IS_DIRECTORY "${abs_git_dir}")
+			file(READ "${abs_git_dir}" gitfile)
+			if(gitfile MATCHES "gitdir:[ \t]*([^\r\n]+)")
+				string(STRIP "${CMAKE_MATCH_1}" gitfile_dir)
+				get_filename_component(gitfile_base "${abs_git_dir}" DIRECTORY)
+				get_filename_component(abs_git_dir "${gitfile_dir}" ABSOLUTE BASE_DIR "${gitfile_base}")
+			endif()
+		endif()
+		# A worktree's refs and packed-refs are in the common directory of the main checkout
+		set(git_common_dir "${abs_git_dir}")
+		if(EXISTS "${abs_git_dir}/commondir")
+			file(READ "${abs_git_dir}/commondir" commondir)
+			string(STRIP "${commondir}" commondir)
+			get_filename_component(git_common_dir "${commondir}" ABSOLUTE BASE_DIR "${abs_git_dir}")
+		endif()
 		find_program(GIT_COMMAND git)
 		if(GIT_COMMAND)
 			list(APPEND dependencies "${GIT_COMMAND}")
@@ -76,16 +98,17 @@ function(version_file SRC DST VERSION_SOURCES GIT_DIR)
 		if(EXISTS "${abs_git_dir}/HEAD")
 			list(APPEND dependencies "${abs_git_dir}/HEAD")
 		endif()
-		if(EXISTS "${abs_git_dir}/packed-refs")
-			list(APPEND dependencies "${abs_git_dir}/packed-refs")
+		if(EXISTS "${git_common_dir}/packed-refs")
+			list(APPEND dependencies "${git_common_dir}/packed-refs")
 		endif()
+		# The reflog grows with every commit, checkout and reset - the dependency that tracks HEAD
 		if(EXISTS "${abs_git_dir}/logs/HEAD")
 			list(APPEND dependencies "${abs_git_dir}/logs/HEAD")
 		endif()
 	else()
 		set(abs_git_dir "")
 	endif()
-	
+
 	add_custom_command(
 		OUTPUT
 			"${abs_dst}"
@@ -95,7 +118,9 @@ function(version_file SRC DST VERSION_SOURCES GIT_DIR)
 			"-DOUTPUT=${abs_dst}"
 			"-DVERSION_SOURCES=${args}"
 			"-DGIT_DIR=${abs_git_dir}"
+			"-DGIT_COMMON_DIR=${git_common_dir}"
 			"-DGIT_COMMAND=${GIT_COMMAND}"
+			"-DBUILD_TYPE=$<CONFIG>"
 			${defines}
 			-P "${VERSION_STRING_SCRIPT}"
 		COMMAND

@@ -110,7 +110,16 @@ without a headset session (F-07).
   the Definition of done and the decisions only (Sonnet, effort medium), and the coordinator checks small
   PRs itself.
 - **The coordinator watches its own context**: short outputs, the status issue as external memory.
-
+- **Worker count from measured usage (#217):** the coordinator plans the number of workers from data, not guesses -
+  `scripts\dev\usage-plan.ps1` (samples of both limits and of every session's cost, the calibration "% of a limit per dollar",
+  the cost of finished tasks per model / effort / size, a forecast for the READY tasks). Run every cycle and before starting a worker; it
+  names the binding limit and the number of workers that keeps the week at <= 80% by its reset and the 5-hour window < 95%.
+  The coordinator starts no more than it recommends; one line of its output goes to the status page (#193).
+- **Autopilot (owner, 2026-10-10):** the coordinator runs the work on its own while the limits last. It reads the limits and
+  `usage-plan.ps1` on a timer (about every 30 minutes) and before starting a worker, starts every unblocked task the budget
+  allows with a sensible model / effort, loads a 5-hour window that has headroom before its reset, but paces the week to <= 80%
+  at its reset. The owner's part is only VR tests, opinions and decisions on how things look and work (D-017).
+  Owner: "сам определял расходы, сколько есть, кого можем запустить… от меня только тестирование и моё мнение… ты идёшь вперёд, пока есть лимиты".
 ### Why
 The owner wants the work to keep moving while there is budget, with quality checks that pay for
 themselves in time and usage.

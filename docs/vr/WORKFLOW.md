@@ -78,20 +78,11 @@ and the terminal tab.
 
 ### Roles
 
-- **Coordinator session** — one long-running session that plans and does not write feature code.
-  It hands out the next task (in the order of the [task queue](MVP.md#task-queue)) as a ready-to-paste
-  prompt, and after the owner reports a task done it checks that the PR is merged and `main` is green,
-  tests whatever can be tested without a headset, updates the plan, and hands out the next task.
-  The owner triggers this with **"новый цикл"** (or `/new-cycle`): the coordinator runs
-  `scripts/dev/cycle-report.ps1`, merges what is ready, fixes board inconsistencies, deletes leftover
-  branches, syncs the owner's working copy, and then gives either the next task's prompt or the reason
-  progress is blocked (a PR waiting for a VR test, red CI, a blocking bug, a decision needed).
-  Since D-013 it runs the work **on its own, in blocks** (waves of [MVP.md](MVP.md#waves)): it writes the
-  tasks, starts and follows the workers, triages what they find and refills the slots; it does not
-  investigate or fix anything itself. It stops and reports when the block is done, when a PR needs the
-  owner's headset test (headset-free work goes on), or at the budget (80% weekly, 95% five-hour — D-022). The owner
-  talks only to the coordinator — VR verdicts included. Its full playbook, for a new coordinator session
-  on any machine (`/coordinator`): [COORDINATOR.md](COORDINATOR.md).
+- **Coordinator session** — one long-running session that plans and does not write feature code or
+  investigate. It writes the tasks, starts, briefs and follows the workers, triages, merges, cleans up
+  and runs the work on its own while the usage limits last (D-013, D-022, D-027); the owner talks only
+  to it, VR verdicts included, and triggers a cycle with **"новый цикл"** (or `/new-cycle`). Its
+  complete rule set: [COORDINATOR.md](COORDINATOR.md) (`/coordinator` on any machine).
 - **Worker session** — a fresh session per task, possibly with a different model. It implements exactly
   one task in its own PR (`/next-task <n>`), and handles the owner's verdict (`/accept-task`, `/reject-task`).
   In parallel mode the coordinator starts workers itself as background sessions
@@ -194,13 +185,9 @@ test station.
 `main` and green on that state (`gh pr update-branch <pr>`, wait for CI). Conflicts are resolved by
 the PR's worker. After each merge the coordinator updates the other open PRs in `/new-cycle`.
 
-**Headset tests in batches** — the owner tests when it suits them, several PRs in one sitting:
-1. "новый цикл" → the coordinator lists the PRs in **Testing**, each with its **one question** and the
-   command to run it: `.\scripts\dev\test-pr.ps1 <pr>` (from the owner's copy; builds and launches
-   that PR's working copy, #123).
-2. The owner answers per PR, e.g. "#131 ok, #133 judder when turning".
-3. The coordinator merges the accepted ones (`/accept-task <pr>` works from any session), posts the
-   feedback on the rejected ones and gives a `/reject-task <pr> <feedback>` prompt for a worker.
+**Headset tests in batches** — the owner tests several PRs in one sitting, run by the coordinator
+(`test-pr.ps1 <pr> -Saves mvp-new-game -StartSteamVR`, one question per PR); the procedure, accept and
+reject: [COORDINATOR.md §6](COORDINATOR.md#6-headset-tests).
 
 ### The safety hook (#185, D-021)
 

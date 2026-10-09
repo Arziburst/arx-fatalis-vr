@@ -136,7 +136,7 @@ function Invoke-Phase([string]$Name, [string]$Script, [hashtable]$Params) {
 $results = @()
 try {
 	if ($Phase -in 'all', 'smoke') {
-		$p = @{ Config = $Config; Seconds = 3; Commands = @('drawcheck 120'); LockTimeoutSec = $LockTimeoutSec } + $dataArgs
+		$p = @{ Config = $Config; Seconds = 3; Commands = @('drawcheck 120'); ExpectEvents = @('spell.cast=99'); LockTimeoutSec = $LockTimeoutSec } + $dataArgs
 		$results += Invoke-Phase 'smoke-test' 'smoke-test.ps1' $p
 	}
 	if ($Phase -in 'all', 'spells') {

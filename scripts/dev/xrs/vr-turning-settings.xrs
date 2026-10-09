@@ -37,6 +37,34 @@ menu step angle right
 @assert vr.input.turn.snapAngle eq 90
 @log vr\.settings row=angle value=90
 
+# The turning row: snap -> smooth -> snap (the cycle wraps)
+menu step turn right
+@frames 2
+@assert vr.input.turn.mode eq smooth
+@log vr\.settings row=turn value=smooth
+menu step turn right
+@frames 2
+@assert vr.input.turn.mode eq snap
+@log vr\.settings row=turn value=snap
+
+# The smooth speed row: 120 -> 150 -> 120 deg/s
+menu step speed right
+@frames 2
+@assert vr.input.turn.smoothSpeed eq 150
+@log vr\.settings row=speed value=150
+menu step speed left
+@frames 2
+@assert vr.input.turn.smoothSpeed eq 120
+
+# The repeat row: off -> 0.25 s -> off (the held push below must stay one snap)
+menu step repeat right
+@frames 2
+@assert vr.input.turn.snapRepeat eq 0.25
+@log vr\.settings row=repeat value=0\.25
+menu step repeat left
+@frames 2
+@assert vr.input.turn.snapRepeat eq 0
+
 # The height row: five clicks right -> +10 cm
 menu step height right
 menu step height right

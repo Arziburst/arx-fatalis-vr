@@ -721,3 +721,9 @@ high); `[datetime]::Parse($obj.updated)` on a JSON field gave a date a month off
 a PowerShell test helper with parameter `$G` and a local `$g` failed with "cannot convert Graphics to Int32".
 **Cause:** the runner took everything after the operator as the value; PowerShell variable names are case-insensitive, so `$g` and `$G` are one variable.
 **Do:** write timeouts as `60s` (the parser now rejects a value with a trailing bare number); never name two variables in one scope by letters that differ only in case.
+
+## 2026-10-09 - Send-ArxCommand returned the previous batch's ack
+
+**Symptom:** `test-xrs.ps1` failed only on the slow CI runner: the ack of a check's first command read `last=refuse this`, the command of the check before (#250).
+**Cause:** the game writes `ack.txt` first and `status.json` later; `Send-ArxCommand` took its baseline `cmdSeq` from `status.json` and waited for it to advance, so the late status update of the *previous* batch ended the wait and the old ack was returned.
+**Do:** the baseline is the newest seq of ack.txt and status.json, and the answer is `ack.txt` itself advancing (`Read-ArxAck` in `scripts/dev/test-lib.ps1`). After a send, `status.json` may still lag behind the ack - wait for the state you assert on (`@until`, `@frames`).

@@ -172,6 +172,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "util/String.h"
 
 #include "vr/VRComfort.h"
+#include "vr/VRInput.h"
 #include "vr/VRSystem.h"
 
 #include "Configure.h"
@@ -1197,6 +1198,9 @@ void ArxGame::doFrame() {
 	updateTime();
 
 	vr::pollEvents();
+
+	// Controllers -> gameplay events through the control table (#30); the game reacts to them in #74
+	vr::updateInput();
 
 	// Test channel: frame counter, command file, status.json (no-op without --test-dir)
 	channel::update();

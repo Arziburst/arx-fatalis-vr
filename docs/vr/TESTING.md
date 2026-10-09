@@ -20,6 +20,7 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 .\scripts\dev\smoke-test.ps1 -Commands 'drawcheck 120'         # two draws of the scene per frame must give one picture (#71)
 .\scripts\dev\comfort-check.ps1                               # shake, FOV zoom and bob with the VR comfort policy off and on, one run (#76)
 .\scripts\dev\spell-drawcheck.ps1                             # the 26 spells of #71 really launched, then drawcheck 240 (#155)
+.\scripts\dev\input-check.ps1                                 # the VR controls' table (#30): taps, chords, a remap and a reset through vr-input, one flat run
 .\scripts\run-windows.ps1 -Isolated -TestChannel -- --no-vr --loadlevel 10   # a manual run with the channel, in this copy's own user dir
 .\scripts\dev\log-digest.ps1 -Print                           # the last run in a screenful + automatic bug filing; runs by itself after every launch (#131), never cat arx.log
 .\scripts\dev\game-status.ps1 -Watch                          # live state line
@@ -106,6 +107,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `loadslot <n>` | load save slot `n` (from the menu or in-game), refused with the slot count if it does not exist |
 | `loadlevel <n> [target]` | change to level `n` in a running game (refused from the menu: start with `--loadlevel` or `loadslot`) |
 | `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
+| `vr-input down\|up\|tap <control>`, `vr-input bind <event> <binding>`, `vr-input reset` | the VR controls' table without a headset (#30, `vr/VRInput.h`): a control (`right.a`, `left.grip`, `right.stick_down` …) held, let go or tapped as if a controller did it, merged into what OpenXR reports and resolved by the same table at the next frame; `bind` remaps one event (`bind jump left.grip+left.a`, `bind menu left.b:long`, `bind magic_mode none`); `reset` restores the default layout for the current controllers and lets go of everything. Refused with the reason for an unknown control, event or binding. `vr.input` in the status; one `[vr] input: <event> (<binding>)` log line per event press, one `[vr] input: layout …` line per layout change |
 | `recenter` | refused with `not implemented yet (#28)` until recentering exists |
 | `comfort auto\|on\|off` | who decides the VR comfort policy (#76, `vr::comfort()`): `auto` = the VR session (the default: view bobbing, screen shake and FOV zoom off in VR, `cfg.ini` decides in flat mode), `on` / `off` force the VR rules on or off — so a flat run can measure them. `comfort` and `camera` in the status; one `[vr] comfort:` log line per change |
 | anything else | the **script console**: `[entity.]command args`, exactly as typed in the in-game console (`` ` ``). Context defaults to the player. Refused (and counted in the ack) when the entity or the command is unknown |
@@ -134,7 +136,10 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
  "comfort":{"mode":"auto","active":false,"viewBobbing":true,"screenShake":true,"fovZoom":true},
  "window":{"width":640,"height":480,"focused":true,"minimized":false,"fullscreen":false},
  "vr":{"supported":true,"enabled":false,"sessionState":"none","frames":0,"shownFrames":0,"runtime":"",
-       "manifest":"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json"},
+       "manifest":"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json",
+       "input":{"controllers":"index","profile":{"left":"/interaction_profiles/valve/index_controller","right":"…"},
+                "syncs":5120,"down":"right.grip","active":"","presses":{"interact_left":0,…,"jump":2,…},
+                "layout":{"interact_left":"left.trigger",…,"jump":"right.a",…}}},
  "cmdSeq":3,"lastCmd":"mark hello","lastCmdError":"","captureSeq":1,"lastCapture":"...\\first.bmp"}
 ```
 
@@ -171,6 +176,15 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
 - `vr.runtime`: the OpenXR runtime that answered this run (`SteamVR/OpenXR 2.17.10`), empty while no
   instance was created; `vr.manifest`: the runtime manifest the loader uses (`XR_RUNTIME_JSON`, then
   the registry), empty when no runtime is installed — the same values as the banner's runtime lines.
+- `vr.input` (#30): the controllers and the game's control table. `controllers`: the type the layout
+  is for (`index`, `touch`, `simple`; `unknown` until a runtime reports a profile — always in a flat
+  run), `profile.left` / `profile.right`: the OpenXR interaction profile per hand (empty: no device for
+  that hand yet — SteamVR binds a few frames after the session is `focused`, so an idle headset never
+  shows one), `syncs`: action syncs while focused, `down`: the controls held after the last frame
+  (space separated), `active`: the events on now, `presses`: how often each event came on since the
+  start, `layout`: the binding of every event (`none`, `right.a`, `left.grip+left.trigger`,
+  `left.stick_click:long`). Nothing in the game reacts to the events yet (#74); `input-check.ps1`
+  asserts on `presses` and `layout`.
 - `drawCheck` appears once a `drawcheck` was requested: `{"seq":1,"running":false,"frames":120,
   "framesDiffering":0,"pixels":307200,"maxPixelsDiffering":0,"maxDelta":0,"capture":""}` —
   `frames` compared so far, `framesDiffering` of them with at least one differing pixel,
@@ -393,6 +407,8 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | 2026-10-09, #129, **the test can fail**: `FileLoggerTest` built with both flushes removed on purpose | `Run: 39  Failures: 2`: `testWarningIsOnDiskAtOnce` and `testInfoIsOnDiskWithinTheInterval` (after its 2 s wait); `testExplicitFlush` and the three rotation tests stay green, as they should. Restored: `OK (39 tests)` |
 | 2026-10-09, #155: `spell-drawcheck.ps1` — the 26 spells of #71 **really launched** (23 by the player with `-fsm`, `summon_creature` / `raise_dead` / `fake_summon` by `human_base_0033` on the player), then `drawcheck 240` on level 10 | `PASS`: **26 of 26** in `spells.launchedByType`, each in the `status.json` write right after its own command; **24 spell types active during the check** (all but `harm` and `mana_drain`, which had ended), **0 of 240 frames differ** (max 0 of 307200 pixels, delta 0), 0 errors, 0 warnings. The #71 split holds with every spell effect on screen — no bug to file against it |
 | 2026-10-09, #155: the same with `-Flags fs` — the cast of the #71 rows, the broken state on purpose | `FAIL` of the check (the smoke test passed, 0 of 240 frames differ): **0 of 23** player spells launched; the NPC's 3 launched one command later through the NPC rune drawing. The launch evidence catches the #71 mistake |
+| 2026-10-09, #30: `input-check.ps1` — one flat run on level 10, 12 `vr-input` commands: a tap of `right.a`; `right.grip` held + a tap of `right.trigger`; a tap of `right.grip`; `bind jump left.b+left.a`, then `left.b` held + a tap of `left.a`; a tap of `left.b`; a tap of `right.stick_down`; `reset` | `PASS`: presses `jump` **2**, `stash_right` **1**, `use_right` **1**, `book` **1**, `crouch_toggle` **1**, every other event **0** (the chord neither clicked nor used, the chord's leader tapped on its release, the remapped chord did not open the book); `layout.jump` = `right.a` after `reset`, nothing held at the end; smoke test `PASS`, 0 errors. One `[vr] input:` line per press, none per frame |
+| 2026-10-09, #30: the same with `-Unbind` (`bind jump none` first) — the broken state on purpose | `FAIL` of the check (the smoke test passed): `jump fired 1 times, expected 2`. The host tests of the table (`VRControlsTest`, 13 tests) failed **4 of 13** with the deferral of a chord leader's own binding removed on purpose; restored, `OK (59 tests)` |
 | 2026-10-09, #155: the player's own `summon_creature` and `raise_dead` (`-fsm`): at the start point; after `teleport -ap 0/90/180/270 player`; after `teleport -p human_base_0033` | **never launched** — `CanLaunch` finds no valid spot 3 m ahead on level 10, a silent fizzle; hence the NPC caster above |
 
 Conclusions:

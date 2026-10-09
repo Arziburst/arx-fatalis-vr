@@ -48,6 +48,7 @@
 
 // OpenXR with the OpenGL binding (and windows.h on Windows)
 #include "vr/OpenXRUtil.h"
+#include "vr/VRActions.h"
 #include "vr/VRSwapchain.h"
 
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
@@ -111,6 +112,11 @@ struct OpenXRState {
 	FrameCounters frames;
 	u32 frameFailures = 0;
 	bool loggedInvalidViews = false;
+	//! The display time of the last frame - for locating the controllers outside the frame (0: none yet)
+	XrTime lastDisplayTime = 0;
+
+	//! One action per physical control (#30); created with the instance, attached to the session
+	ActionSet actions;
 
 	//! The active runtime manifest the loader uses (empty: none installed) - kept for status.json
 	std::string manifest;
@@ -505,6 +511,9 @@ void destroySession() {
 	g_xr.quadFailedSize = Vec2i(0);
 	g_xr.colorFormat = 0;
 
+	g_xr.actions.detach();
+	g_xr.lastDisplayTime = 0;
+
 	if(g_xr.viewSpace != XR_NULL_HANDLE) {
 		xrDestroySpace(g_xr.viewSpace);
 		g_xr.viewSpace = XR_NULL_HANDLE;
@@ -816,6 +825,11 @@ bool initialize() {
 		return false;
 	}
 
+	// Actions and their suggested bindings must exist before the session; VR works without them
+	if(!g_xr.actions.create(g_xr.instance)) {
+		LogWarning << "[vr] input: no OpenXR actions, the controllers do nothing";
+	}
+
 	LogInfo << "Starting in VR";
 
 	return true;
@@ -881,6 +895,8 @@ bool createSession() {
 		return false;
 	}
 
+	g_xr.actions.attach(g_xr.session);
+
 	return true;
 
 	#else
@@ -937,6 +953,13 @@ void pollEvents() {
 				return;
 			}
 
+			case XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED: {
+				// SteamVR binds the controllers a few frames after the session is focused
+				LogInfo << "[vr] input: the runtime reports an interaction profile change";
+				g_xr.actions.profilesChanged();
+				break;
+			}
+
 			case XR_TYPE_EVENT_DATA_EVENTS_LOST: {
 				const XrEventDataEventsLost & lost = *reinterpret_cast<const XrEventDataEventsLost *>(&event);
 				LogWarning << "Lost " << lost.lostEventCount << " OpenXR events";
@@ -971,6 +994,7 @@ void submitFrame(const Vec2i & windowSize) {
 		logFrameFailure("xrWaitFrame", result);
 		return;
 	}
+	g_xr.lastDisplayTime = frameState.predictedDisplayTime;
 
 	XrFrameBeginInfo beginInfo = { XR_TYPE_FRAME_BEGIN_INFO };
 	result = xrBeginFrame(g_xr.session, &beginInfo);
@@ -1053,9 +1077,26 @@ std::string runtimeManifest() {
 	return g_xr.manifest;
 }
 
+bool readControllers(ControllerInput & input) {
+	if(!g_xr.running || !g_xr.actions.isAttached()) {
+		input = ControllerInput();
+		return false;
+	}
+	return g_xr.actions.sync(input, g_xr.viewSpace, g_xr.lastDisplayTime);
+}
+
+std::array<std::string, HandCount> controllerProfiles() {
+	return g_xr.actions.profiles();
+}
+
+u64 controllerSyncs() {
+	return g_xr.actions.syncs();
+}
+
 void shutdown() {
 
 	destroySession();
+	g_xr.actions.destroy();
 
 	if(g_xr.instance != XR_NULL_HANDLE) {
 		xrDestroyInstance(g_xr.instance);
@@ -1098,6 +1139,19 @@ std::string runtimeName() {
 
 std::string runtimeManifest() {
 	return std::string();
+}
+
+bool readControllers(ControllerInput & input) {
+	input = ControllerInput();
+	return false;
+}
+
+std::array<std::string, HandCount> controllerProfiles() {
+	return { };
+}
+
+u64 controllerSyncs() {
+	return 0;
 }
 
 bool isEnabled() {

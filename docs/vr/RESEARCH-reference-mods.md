@@ -26,6 +26,17 @@
   [section 12](#12-circuitlords-titanfall-2-vr-120), and the `CLVR` sources appended to older rows
   mark what it adds to them. Do not confuse the two Titanfall 2 projects: `TF2VR` is
   TinyBlackDog's (#118), `CLVR` is CircuitLord's.
+- **Continued (#166, 2026-10-09):** VHVR again, this time only **how it does world interaction** — the
+  reference for D-016, #37 and #38. Read at commit `5a47f823f` (branch `master`, pushed 2026-10-08;
+  newer than `d4d7b9523` above, line numbers below are from this commit). Its rows are **F-153 to
+  F-161**, its notes are in [section 13](#13-world-interaction-in-vhvr-166), and the `VHVR` sources of
+  older rows (F-54, F-57, F-81, F-87) point there. The proposal for #37 / #38 is in
+  [13g](#13g-proposal-for-37--38-within-d-016); it is also posted as notes on those issues.
+  **D-016 was corrected by the owner while this was written** (now recorded in
+  [DECISIONS.md](DECISIONS.md)): there is no "left drags, right takes to the inventory" — both hands
+  emulate the whole mouse, each with its own reticle, and the inventory opens as a panel in the centre
+  of the view. The section follows the corrected version, with the weapon-hand-plus-inventory case as
+  its test.
 
 ## The projects in short
 
@@ -237,7 +248,8 @@ file or doc the row comes from; the [detailed notes](#detailed-notes-per-area) h
 L a week or more), **Depends on** (our issues or other IDs), **Fits** (MVP now / after MVP /
 later / probably not, with why), **Decision** — empty, for the owner. Rows **F-111 to F-134**
 come from Titanfall 2 VR (#118, [section 11](#11-titanfall-2-vr-118)), rows **F-135 to F-152** from
-CircuitLord's (#120, [section 12](#12-circuitlords-titanfall-2-vr-120)); a `TF2VR` or `CLVR` source
+CircuitLord's (#120, [section 12](#12-circuitlords-titanfall-2-vr-120)), rows **F-153 to F-161**
+from VHVR's world interaction (#166, [section 13](#13-world-interaction-in-vhvr-166)); a `TF2VR` or `CLVR` source
 appended to an older row marks a duplicate, and what it adds is in that section. Rows built on a
 closed mod say what kind of **evidence** they rest on: *code* (the installer), *docs* (the author's
 README and release notes), *add-on* (a community add-on's README), *report* (press and guides) —
@@ -340,10 +352,10 @@ and the IK rows say plainly what is not known.
 | F-51 | **Wrist-cut recipe** for the first-person arm mesh (plane square to the bone axis, clip straddling triangles, two-sided flat-colour cap, forearm weights pinned to the hand bone) | DVR [ARM_HAND_SPLIT.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/ARM_HAND_SPLIT.md); TF2VR [KNOWN-ISSUES.md 3](https://github.com/kyus2001/titanfall2vr/blob/main/KNOWN-ISSUES.md) (its hands-only mode still shows the forearm — the gauntlet is one mesh and "hands-only would need a custom model"; the full body avoids the cut) | Floating hands from Arx's existing arm model instead of a new mesh | reference | M | #36 | **after MVP** | Not needed — full body, D-009 |
 | F-52 | **Full-arm IK** (shoulders 16 cm back, 25 cm down, 38 cm apart from the head frame; body yaw with a 25° dead zone and 1.5 s relaxation; shoulder slides when out of reach) | DVR [ARM_IK.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/ARM_IK.md) (MIT); CLVR (full-body IK as the headline feature of a closed mod — no parameters known, F-135) | Arms, if ever wanted | reference | L | F-51 | **later** | **Take** → #36 — full body with IK arms in the MVP, D-009 |
 | F-53 | **"Who owns the body" hand-back**: a read-only ownership flag from the animation state, immediate in, 250 ms out, hands blended 250 ms in / 350 ms out with smootherstep and a straight palm path | DVR [ANIM-HANDOFF-PLAN.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/ANIM-HANDOFF-PLAN.md) | Knockdowns, death, ladders and scripted moments without hands stuck to the controllers | reference | M | #75 | **after MVP** | Later |
-| F-54 | **Inter-hand item transfer** (hands within 0.2 m, forwards aligned, both grips, release one) | VHVR [InterhandItemTransfer.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/InterhandItemTransfer.cs) | Left-handed play and torch/weapon swaps without the panel | port | S | #37 | **after MVP** | Later |
+| F-54 | **Inter-hand item transfer** (hands within 0.2 m, forwards aligned, both grips, release one) | VHVR [InterhandItemTransfer.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/InterhandItemTransfer.cs) (#166: the weapon hand and the free hand — [13e](#13e-the-weapon-hand-and-the-inventory--the-key-case)) | Left-handed play and torch/weapon swaps without the panel | port | S | #37 | **after MVP** | Later |
 | F-55 | **Holster / draw zones** at the shoulders and waist (head-relative bands, release grip to holster, press at the shoulder to draw, no body tracking) | VHVR [Utilities/Pose.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Utilities/Pose.cs); CLVR (release the grip to holster — F-137) | Sheathing and bow draw without a belt UI | port | S | #75, #40 | **after MVP** | Later |
 | F-56 | **Open empty hand pose** with a 250 ms equipment-state debounce | DVR [HAND_POSE.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/HAND_POSE.md) | No fist with nothing in it | reference | S | #36 | **after MVP** | Later |
-| F-57 | **Physical pickup by reach**: the engine's own "what is under the cursor" test aimed along the hand ray at the nearest item within 60 cm, the grip = the click, time hysteresis (2 frames in, 150 ms out), worst-frame bound on the sweep | DVR [PLAN-physical-interaction.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/PLAN-physical-interaction.md); TF2VR [hands/use_target.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/use_target.h) (the engine's own use-search wrapped to take the hand's angles — rung 1 — then the hand's origin too — rung 2; every rung counts its calls so a dead stage is named) | Grabbing instead of pointing, with the engine still deciding | reference | M | #37, #38 | **after MVP** — the MVP picks up by ray | ~~**Take** → #37, #38 — grab by reach, no rays (D-010)~~ → **Changed** (D-016, 2026-10-09): aim with a reticle from either hand, the engine's cursor test at the reticle; no grab by reach |
+| F-57 | **Physical pickup by reach**: the engine's own "what is under the cursor" test aimed along the hand ray at the nearest item within 60 cm, the grip = the click, time hysteresis (2 frames in, 150 ms out), worst-frame bound on the sweep | DVR [PLAN-physical-interaction.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/PLAN-physical-interaction.md); TF2VR [hands/use_target.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/use_target.h) (the engine's own use-search wrapped to take the hand's angles — rung 1 — then the hand's origin too — rung 2; every rung counts its calls so a dead stage is named); VHVR (#166: the hidden ray + per-hand reticle that D-016 took instead — F-153, F-154, F-155, no hysteresis — F-160) | Grabbing instead of pointing, with the engine still deciding | reference | M | #37, #38 | **after MVP** — the MVP picks up by ray | ~~**Take** → #37, #38 — grab by reach, no rays (D-010)~~ → **Changed** (D-016, 2026-10-09): aim with a reticle from either hand, the engine's cursor test at the reticle; no grab by reach |
 | F-125 | **Hand-to-world composition rules**: position from the **grip** pose, direction from the **aim** pose (a grip-forward barrel sat 45° up); the hand as an offset from a **fixed room reference** (the recentre position), not from the live head — the head pivots about the neck, so a turn translates the eyes and "the gun slid the opposite way"; rotated by the **body's** yaw, never the applied view yaw; the same reference yaw the view uses (else the hand is off the view by the reference after every recentre); composed and consumed **in one frame** — a composition one frame stale in body yaw lagged by exactly the turn rate (8° per frame at full stick) and differed per eye, which was a flicker | TF2VR [hands/hand_pose.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/hand_pose.h), [hand_pose.cpp `ComposeWorld`, `PublishHandPoseForFrame`, "THE YAW RE-BASE"](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/hand_pose.cpp) | The IK targets for #36 and the held weapon for #75 placed without the four bugs they paid for; F-21's "one head sample for eyes and hands" extended to the body yaw | reference | S | #36, #75, #24 | **MVP now** → #36, #75 | |
 | F-126 | **Live grip calibration**: the grip offset is expressed in the **weapon's own frame** and rotated with it, so it is also the pivot a wrist rotation turns about ("the model origin sits wherever it must"); a separate position offset in the player's frame and angle offsets applied last; a *pivot nudge* moves the pivot without moving the gun (nudge the grip, subtract `R · delta` from the player-frame offset in the same press); the three grip rows move the weapon live in the panel while it is held and save on change; a per-weapon term from the model's own hand attachment, latched at idle and **refused** when further than 9 / 4 / 5 units from the reference | TF2VR [core/config.h `NudgePivotOffset`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/config.h), [hand_pose.cpp `NudgePivotOffset`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/hand_pose.cpp), [ads/ads_probe.h "PER-WEAPON GRIP"](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/ads/ads_probe.h), [KNOWN-ISSUES 13](https://github.com/kyus2001/titanfall2vr/blob/main/KNOWN-ISSUES.md) | For #75: Arx's weapons already carry their grip vertex (`primary_attach`), so the per-weapon term is data; the one constant to dial is the controller's grip pose → the model's palm (F-49's trims), once, live in the headset | reference | S | #75, F-49 | **after MVP** — the MVP holds the weapon at the model's attachment | |
 | F-135 | **Full-body IK — what is actually known, and what is not.** Known (docs, report): it is the headline feature — the author's announcement and the installer README both lead with "full body IK, manual reloads"; the pilot's body is visible when you look down (arvrtips); MoguraVR: it "estimates the whole posture from head and hand movement". **Not known: every parameter** — no source, in code or prose, gives shoulder offsets, body-yaw rule, what the legs do while walking or crouching, arm reach limits or how the body hands back to scripted animations; whether the *legs* are tracked or animated is **unverified** (one search for it found nothing). Evidence: the author's text and two secondary reports; no code | CLVR [README](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/README.md), [MoguraVR](https://www.moguravr.com/?p=378357), [arvrtips](https://arvrtips.com/titanfall-2-vr-mod/); the author's announcement ("Fullbody IK, manual reloading, and so much more", seen as a search snippet of [x.com/CircuitLord/status/2105099559391416752](https://x.com/CircuitLord/status/2105099559391416752); the page itself would not load) | Nothing to adopt: it confirms that a **solo-built** mod put full-body IK first and that players noticed it — the same bet as D-009 — and it confirms that the numbers must come from Dishonored VR's `ARM_IK.md` (F-52) and VHVR's VRIK, not from here. Do not wait for more: the mod's behaviour can only be learnt by playing it | reference (none) | — | #36 | **MVP now** — confirms #36; no new input | |
@@ -351,6 +363,15 @@ and the IK rows say plainly what is not known.
 | F-137 | **Grip semantics for weapons**: the grip holds the weapon and **releasing it holsters**; the off hand on the front of a rifle **steadies** it (two-handed); raising the gun to the eye aims down its sights; a **closed fist punches** (physical melee punching); trigger fires. The Better Bindings add-on moves "reload grab" to the trigger so the grip only ever holds. Evidence: report (arvrtips), add-on | CLVR [arvrtips](https://arvrtips.com/titanfall-2-vr-mod/), [TF2VRBetterBindings](https://github.com/Fdrph/TF2VRBetterBindings) (MIT) | A second shipped example of release-to-holster (F-55) and off-hand support (F-73). The new bit is the **unarmed punch**: Arx has an unarmed attack, so #39's swing detector could drive it with no weapon in hand — a decision for #39, not a feature to add | reference | S | #39, F-55, F-73 | **after MVP** (holster); the unarmed case is a question for #39 | |
 | F-138 | **Distance grab ("force pull") add-on**: an open hand pointed at a weapon or grenade, then a flick toward yourself, and the item flies to the palm. The numbers from its README: targeting cone **3.0 m** long, **0.6 m** radius at the far end (the mod's own stock cone, in `tf2vr_pickups.gnut`, is **1.0 m**); a flick is a hand speed ≥ **2.0 m/s**; the item flies at **8 m/s** — moved by the server with `SetOrigin` to a point before the palm; it hovers **1.5 s** then drops; a second mode holds the point for 0.6 s instead of a flick; line of sight is required; only weapon entities. **Traps it recorded (2026-10-01):** pulls from over 1 m stopped 28–37 cm short of the palm until the flying item was made non-solid; a single-player checkpoint keeps the old server script, so a change takes effect only from a fresh mission. Evidence: add-on README (no licence stated — reference only) | CLVR [djnewage/tf2vr-mods](https://github.com/djnewage/tf2vr-mods) (`TF2VR.DistanceGrab`) | Starting numbers for #37 beyond arm reach (items on a high shelf or a low floor, seated play) and a number for the stock reach to compare with DVR's 60 cm (F-57). **It conflicts with D-010 in spirit:** you *point* at the item — a ray in everything but name — so it needs the owner's call before it is a task | reference | S | #37, D-010 | **after MVP** — and only if the owner accepts it against D-010 | **No** (D-016, 2026-10-09) — items are taken with the hand-aimed reticle and the engine's own drag, not pulled by a gesture |
 | F-151 | **Titan cockpit, embark and rodeo**: embark by holding the right trigger, abilities on four grip directions inside a cockpit, boarding the Titan by touch; "touch and board BT up close" is what players praise. Evidence: report | CLVR [arvrtips](https://arvrtips.com/titanfall-2-vr-mod/), [Inven](https://www.invenglobal.com/articles/26827/i-am-jack-cooper-titanfall-2-vr-mod-causes-a-stir) | Nothing: Arx has no mounts or vehicles. Recorded so the catalog does not read as if it were missed | — | — | — | **not applicable** | n/a |
+| F-153 | **A hidden hand ray per hand feeds the game's own hover test.** Every hover update casts `RaycastAll` from each hand's pointer (origin and rotation of the controller's pointer holder) with the game's **own interaction layer mask**, up to **50 m**, sorts by distance, skips the player's own body, and takes the **first** hit; the object is the hit collider's hoverable (or its rigidbody's root). The game's **reach** is then a distance check on the hit point from the eye (`>= m_maxInteractDistance` → nothing hovered; the value is the game's own, not in the repository), so the ray is long but the reach is the game's. There are **two hovers**, one per hand, recomputed every update with **no hysteresis and no smoothing**. The beam exists but is drawn **only while a menu wants a cursor** (`Cursor.visible`) — in the world it is invisible. Evidence: code | VHVR [HandBasedInteractionPatches.cs:152-227](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Patches/HandBasedInteractionPatches.cs), [VRPlayer.cs:796-812](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/VRPlayer.cs), [SteamVR_LaserPointer.cs:142-143](https://github.com/brandonmousseau/vhvr-mod/blob/master/Unity/ValheimVR/Assets/SteamVR/Extras/SteamVR_LaserPointer.cs) | Exactly the shape D-016 asks for: a beamless ray, the engine decides what is hovered. Our engine's test is a **screen-space** pick (`FlyingOverObject(mouse)` → `GetFirstInterAtPos`: 2D bounding box, then the projected faces, nearest to the player within 350 units), so the hand ray has to become a **screen position** (project the hit point, or intersect the ray with the view plane) — [13f](#13f-what-maps-onto-arxs-own-mechanics) | port the rules | M | #74, #37 | **MVP now** | |
+| F-154 | **A world-space reticle at each hand's hit point.** A canvas per hand is put **at the ray's hit point**, turned to face the camera, and **scaled with distance** (constant angular size: scale = `0.1 × CrosshairScale / canvas width × distance`, the user setting 0.8–2.5, default 1.0); a ray that hits nothing puts it at the 50 m limit. The reticle is **white at 50 % alpha** and turns **yellow when the hovered object has a hover text**, and the hover **name** is printed next to it (the game's own text, cloned onto the per-hand canvas). A setting turns the always-visible reticle off. This is the whole feedback — **no outline, no highlight, no hand pose change, no sound, no haptic** on hover (see F-160). The head-locked crosshair of the vanilla game stays for the weapon sight. Evidence: code | VHVR [CrosshairManager.cs:303-343, 15-17](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/CrosshairManager.cs), [HandBasedInteractionPatches.cs:66-110](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Patches/HandBasedInteractionPatches.cs) (the left hand's clone: text and colour from the left hover) | The visible half of D-016 with numbers; the reticle does not pass through walls because it sits on the first hit | port the rules | S | F-153, #37 | **MVP now** | |
+| F-155 | **"Use" per hand, with the game's own interact call.** The right trigger is read through the game's input as its **Use** button (so the game's own hover and interact run); the left trigger is a patch that calls the game's `Interact(leftHover, hold: false)` on press and `Interact(leftHover, hold: true)` every update while held. If the right hover is empty, `UseItem` falls back to the **left hover** (the right hand wins when both hit). Neither works **while that hand's menu pointer is up** (a click meant for a panel must not also act on what the ray hits behind it) nor **while a two-handed weapon is aimed** (bow, crossbow, staff — their triggers fire). The sword hand is **not** gated: attacks are made by collision, so its trigger is free to interact. Evidence: code | VHVR [HandBasedInteractionPatches.cs:28-64, 112-148](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Patches/HandBasedInteractionPatches.cs), [VRControls.cs:474-480, 538-545, 592-597](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRControls.cs), [LocalWeaponWield.cs:128-148](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/LocalWeaponWield.cs) | The gating rules: which states mute a hand's "click" | reference | S | F-153, #37, #38 | **MVP now** (the rules) | |
+| F-156 | **One menu pointer, not two.** When the game wants a cursor, **one** hand's pointer is active: the dominant-hand setting if both controllers are tracked, otherwise whichever hand is tracked; the other is off. Nothing looks at what the hand holds — a **sword in the dominant hand does not move the pointer to the free hand**. The active hand's world interaction is off meanwhile; the other hand's world hover still runs. Its chord actions on the pointer (move the item under it to the open container, split a stack, add a map pin) are extra buttons held with the trigger, with the plain click hidden where it would collide. **A gap against the owner's correction of D-016** (both hands usable in the inventory) — [13e](#13e-the-weapon-hand-and-the-inventory--the-key-case) | VHVR [VRPlayer.cs:726-756](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/VRPlayer.cs), [LaserPointerChords.cs:8-32, 120-131](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/LaserPointerChords.cs) | What **not** to copy for the two-hand inventory, and the chord idea for modifiers | reference | S | #34 | **MVP now** (decision for #34) | |
+| F-157 | **The inventory is the same UI panel; it opens on a button and stays put.** The inventory button (on Index: **a press of the right trackpad**) shows the game's inventory on the one 3 m panel (F-80); while it is open the panel is **frozen where it was** (`LockGuiPositionWhenMenuOpen`, default on) and, closed, re-seeded from the head — unless the default alternative is on, the **inventory held in the non-dominant hand** (`AttachInventoryToHand`, default on), which puts a **0.375 m**-tall copy of the panel in that hand at **(0, 0.0625, 0.125) m** from the controller, tilted by Euler (75, 270, 300) on the left hand and is used with the pointer of the other hand; it **detaches to the big panel** at once when a container or a crafting station opens, a keyboard opens or the map is large. There is **no world-item-to-inventory drag** in Valheim, so VHVR never solved it (F-158). Evidence: code | VHVR [VRGUI.cs:87-89, 296-301, 358-372, 450-512, 590-640, 912-925](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRGUI.cs), [VHVRConfig.cs:677-679, 796-799](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Utilities/VHVRConfig.cs), [bindings_knuckles.json](https://github.com/brandonmousseau/vhvr-mod/blob/master/Unity/ValheimVR/Assets/StreamingAssets/SteamVR/bindings_knuckles.json) | Both placements with numbers: a fixed centre panel (the owner's "for now") and a hand-held panel as the later option | reference | S | #34, #49 | **MVP now** (frozen panel while open); hand-held **later** | |
+| F-158 | **Picking a world item up is one click, straight to the inventory; nothing is carried.** Valheim has no drag of a world item, so the hover + Use is "take it" (an item goes into the inventory, or a message when full); an auto-pickup toggle exists. Dragging **inside** the inventory is the pointer's drag with a click dead zone (F-81). So the case the owner wants — **drag a floor item into an open inventory with the free hand** — has **no VHVR answer**; Arx has the mechanism (the engine's own drag, [13f](#13f-what-maps-onto-arxs-own-mechanics)). Evidence: code | VHVR [VRControls.cs:918](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRControls.cs) (`AutoPickup`), [LaserPointerChords.cs:150-158](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/LaserPointerChords.cs) | A negative result: the carry-and-place half of D-016 is entirely ours | — | — | #37 | **MVP now** (the gap is known) | |
+| F-159 | **Physical hand extras while the hand is free and the grip is held:** pull a **plant** off by grabbing it and moving the hand away at > 0.5 m/s (the grab drops if the hand ends up > 0.5 m from where it closed); **push a door open** with hand speed ≥ 2 m/s within 30° of the door's normal; operate a **drawbridge** by its counterweight (grab radius 0.15 m, pull 0.25 m up or down); **pet** an animal (hand speed > 0.5 m/s, 3 s apart). Grab haptic: 0.25 s, 100 Hz, amplitude 0.5. These are *additions* on top of the ray, never replacements. Evidence: code | VHVR [FistCollision.cs:56-109, 258-285](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/FistCollision.cs), [DrawbridgeCounterweightGrab.cs:12-85](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/DrawbridgeCounterweightGrab.cs) | Door-push and pull-to-pick are the nicest "by hand" touches; D-016 says doors use the reticle, so they are an option for later | reference | M | #38 | **later** | |
+| F-160 | **What VHVR does *not* do: no hover or use haptics, no hysteresis.** A search of the whole mod for haptic calls finds them only on grab, bow, shield, fishing, the build-rotation tick and the drawbridge — **none on hover or on a ray "use"**; the hover is recomputed from scratch every update (a thin object under a moving hand flickers). For ours: the hover/click hysteresis numbers already catalogued (F-57: 2 frames in, 150 ms out) and a short hover tick are **additions**, not VHVR behaviour; DVR/TF2VR's hysteresis is the reference | VHVR (absence, searched `hapticAction` and `TriggerHapticPulse` over `ValheimVRMod/`); DVR [PLAN-physical-interaction.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/PLAN-physical-interaction.md) | Stops us from assuming VHVR solved flicker | reference | S | F-153 | **MVP now** (add hysteresis from F-57) | |
+| F-161 | **Placing with the hand: the building ray and the "ground hand".** Build-mode placement is cast from the **dominant pointer** (the same hidden ray, F-153), and for the cultivator the **free hand** held within **0.125 m** of the ground casts straight down from 0.25 m above itself — the nearest thing VHVR has to "set it down by hand". Its ray is the whole placement; there is no carried object. Evidence: code | VHVR [PlaceModeRayVectorProvider.cs:30-60, 88-160](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/PlaceModeRayVectorProvider.cs) | Confirms that "carry and set down" is not something to learn from VHVR; ours is the engine's drag | — | — | #37 | **not applicable** | |
 
 ### Combat
 
@@ -390,13 +411,13 @@ and the IK rows say plainly what is not known.
 | ID | Feature | Source | What it gives us | How to adopt | Effort | Depends on | Fits | Decision |
 |---|---|---|---|---|---|---|---|---|
 | F-80 | **The one UI panel**: a 1920×1080 texture on a quad (VHVR 3 m tall at 3 m, 1 m up; DVR 1.25 m at 1.3 m for in-game screens), re-facing only when movement starts or the head turns > 75° (50° while moving) at 180°/s, frozen while a menu is open, re-seeded at the head yaw when a menu reopens after > 250 ms | VHVR [VRGUI.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRGUI.cs); DVR [MONO_ANCHOR_UI_STATE.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/MONO_ANCHOR_UI_STATE.md), [HUD_ANCHORS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/HUD_ANCHORS.md); TF2VR [xr_context.cpp `CaptureMenuPose`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.cpp) (a quad captured once at summon from the head's yaw only, 1.7 m wide at 1.5 m, facing *back* along the view — the `atan2` sign that read as "angled slightly to my left"; placed at the origin, and said so, when the head pose is invalid at summon — F-128) | #49 with tested placement rules | port the rules | M | #49, #73 | **MVP now** | **Take** → #49 |
-| F-81 | **Laser as mouse**: the analytic ray / plane hit fed into the engine's mouse coordinates (the 2D UI untouched); one laser, only while the game wants a cursor; click dead zone 5 mm and 16 px; trigger > 0.5 clicks; the stick's dominant axis scrolls with a 0.25 dead zone per second; those inputs muted for the game | VHVR [VRGUI.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRGUI.cs), [SoftwareCursor.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/SoftwareCursor.cs); DVR [F10_MOTION_CONTROLS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/F10_MOTION_CONTROLS.md) | #34 | port the rules | S | #34, F-75 | **MVP now** | **Take** → #34 — pointer only while a menu is open (D-010) |
+| F-81 | **Laser as mouse**: the analytic ray / plane hit fed into the engine's mouse coordinates (the 2D UI untouched); one laser, only while the game wants a cursor; click dead zone 5 mm and 16 px; trigger > 0.5 clicks; the stick's dominant axis scrolls with a 0.25 dead zone per second; those inputs muted for the game | VHVR [VRGUI.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRGUI.cs), [SoftwareCursor.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/SoftwareCursor.cs); DVR [F10_MOTION_CONTROLS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/F10_MOTION_CONTROLS.md); VHVR (#166: only **one** hand's pointer is up at a time — F-156 — which the owner's corrected D-016 does not accept) | #34 | port the rules | S | #34, F-75 | **MVP now** | **Take** → #34 — pointer only while a menu is open (D-010) |
 | F-82 | **UI state from the engine**: "a menu is open" read from the menu system, loading released by the engine's own completion, never a timer; the panel armed on game state, never on a per-eye tag | DVR [MONO_ANCHOR_UI_STATE.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/MONO_ANCHOR_UI_STATE.md) | No flicker between panel and world | reference | S | #49 | **MVP now** (rule) | **Take** → #49 (rule) |
 | F-83 | **Wrist vitals** (health and mana on the backs of the hands, drawn in-engine at the hand node, fading when not facing the eyes) | DVR [HUD_ANCHORS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/HUD_ANCHORS.md) vitals; VHVR [VRHud.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRHud.cs) | A HUD without a panel | reference | M | epic #7 | **after MVP** | **Take** → #116 — two bars on the left wrist, in the MVP |
 | F-84 | **Per-element HUD anchors** (`off / frame / window / world / handL / handR`, with alpha repair and a world window that re-parks per menu) | DVR [HUD_ANCHORS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/HUD_ANCHORS.md); TF2VR [CONTROLS.md "HUD"](https://github.com/kyus2001/titanfall2vr/blob/main/CONTROLS.md) (72 settings, about 30 of them HUD placement — a slider per element is what this design costs — F-129) | The full diegetic HUD design | reference | L | F-83 | **later** | Later |
 | F-85 | **Hand-held book and notes** with a fixed grip-relative pose, one tilt slider, pages turned by the stick | DVR [HUD_ANCHORS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/HUD_ANCHORS.md) notes; VHVR inventory on the off hand (0.375 m) | The Arx book in the hand | reference | M | epic #7 | **after MVP** | Later |
 | F-86 | **Radial hand menu** (seeded at the grip, 15 mm dead zone, 120 mm full travel or a 0.1 m ring, depth does not select, haptic tick on sector change, release selects) | DVR weapon dial; VHVR [QuickAbstract.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/QuickAbstract.cs) | Quick spells and items without the panel | reference | M | epic #7 | **after MVP** | Later |
-| F-87 | **World-space crosshair, hover names and enemy health** at the hit distance, scaled by distance; NPC speech bubbles above the speaker | VHVR [CrosshairManager.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/CrosshairManager.cs), [EnemyHudManager.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/EnemyHudManager.cs), [NpcTextBubble.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/NpcTextBubble.cs) | Interaction prompts and dialogue off the panel | reference | M | epic #7 | **after MVP** | Later |
+| F-87 | **World-space crosshair, hover names and enemy health** at the hit distance, scaled by distance; NPC speech bubbles above the speaker | VHVR [CrosshairManager.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/CrosshairManager.cs), [EnemyHudManager.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/EnemyHudManager.cs), [NpcTextBubble.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/NpcTextBubble.cs) (#166: the per-hand reticle and hover name in detail — F-154, **MVP now** there) | Interaction prompts and dialogue off the panel | reference | M | epic #7 | **after MVP** | Later |
 | F-88 | **SteamVR keyboard** for text input (save names) in minimal mode with the game keeping its own text buffer | VHVR [TextInputPatches.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Patches/TextInputPatches.cs) | Naming a save without the keyboard | reference | S | #49 | **after MVP** | Later (save names are pre-filled) |
 | F-89 | **Cinematics on a flat screen** (video on a world-space quad with letterbox and subtitles) | VHVR [VRCinematicScreen.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRCinematicScreen.cs); CLVR (the same default — F-140) | The intro and in-game cinematics | reference | S | F-80 | **after MVP** | Later (cheap after F-20) |
 | F-128 | **Menus driven by the sticks, no pointer at all**: the settings panel is ImGui on a private 3072×2304 texture in its own swapchain, shown on a **world-fixed quad** (1.7 m wide at 1.5 m) whose pose is captured once at summon from the head's *yaw only*, facing back along the view; the sticks feed ImGui's gamepad nav as **levels** (ImGui repeats), ignored until both sticks have returned to centre once after opening; A activates, B backs out, the grips change category, the right stick scrolls; one category at a time, tabs across the top; the footer shows the focused row's help or "N changes pending"; the panel build runs inside an SEH guard that names the row and disables the overlay instead of crashing; the D3D state is saved and restored around ImGui; gameplay input is suppressed while open and the game is **not** paused (opening the game's pause menu for that was measured wrong) | TF2VR [ui/menu_overlay.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/ui/menu_overlay.cpp), [xr_context.cpp `CaptureMenuPose`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.cpp), [CONTROLS.md](https://github.com/kyus2001/titanfall2vr/blob/main/CONTROLS.md) | The alternative to F-81's laser for #34: a 2D menu that needs no ray at all; Arx's menus are mouse-built, so it costs a keyboard-navigation layer in `src/gui/` | decision | M | #49, #34 | **MVP now** — decide in #34: laser as mouse (F-81) or stick navigation | |
@@ -2086,6 +2107,242 @@ author's README win; the entry is in [TRAPS.md](TRAPS.md).
 - **Decide against D-010 first:** F-138 (pointing at an item to pull it).
 - **Nothing to take:** F-135 (no IK parameters exist outside the mod), F-151, F-152.
 
+### 13. World interaction in VHVR (#166)
+
+The question (owner, 2026-10-09: "world interaction is described and shown very well in Valheim VR; we
+should learn a lot from there"): how does VHVR let the player point at, take, use and carry things,
+and what does that mean for D-016 (both hands work as the mouse, each with its own reticle; the
+inventory opens in the centre of the view), #37 and #38? Read at commit `5a47f823f`; the rows are
+**F-153 to F-161**. Nothing was run — this is a source read; no videos were needed because every
+behaviour below is in code. Where a number is the **game's** (Valheim's) and not in the mod, it says so.
+
+**Licence and what is worth taking.** GPL-3.0, compatible with our engine (see
+[the table above](#the-license-answer)): rules and numbers may be ported with attribution. But almost
+nothing here is *code* to translate: VHVR is Harmony patches that redirect Valheim's own hover and
+interact functions, and ours is a different engine with a screen-space pick. What carries over is the
+**shape** (a hidden ray per hand feeding the engine's own hover test; a reticle at the hit point; which
+states mute a hand), plus a clear list of what VHVR does *not* have (13b, 13d, 13e).
+
+#### 13a. Targeting and feedback (F-153, F-154, F-160)
+
+- **How an object is chosen.** Not a cone, not a sphere at the hand, not Valheim's camera test: the
+  game's `FindHoverObject` is **patched** so that after it runs, a physics ray is cast from **each**
+  hand — origin and rotation of the controller's pointer holder — with the game's own interaction
+  mask, 50 m long, nearest hit first, the player's own body skipped
+  ([HandBasedInteractionPatches.cs:171-226](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Patches/HandBasedInteractionPatches.cs)).
+  The hit collider's hoverable (or its rigidbody root) is the hovered object; one result per hand
+  (`hover` for the right, a private `leftHover` for the left).
+- **Reach.** Two separate numbers: the ray is 50 m long, the *reach* is the game's own
+  `m_maxInteractDistance` (not in the mod) measured from the **eye** to the hit point — beyond it the
+  hand hovers nothing, but the reticle is still drawn at the hit. The hand's position does not matter
+  for reach, only where it points. That is the same model as Arx's (13f): the pick range is a
+  distance from the *player*, not from the hand.
+- **What the player sees.** Only the reticle (F-154): a canvas placed on the hit point facing the
+  eyes, scaled with distance so it keeps one angular size, white at half alpha, **yellow when there is
+  something to interact with**, with the object's name next to it. No outline, no highlight, no change
+  of the hand model or pose, no sound. The beam is not drawn in the world: the same pointer component
+  shows its mesh only when `Cursor.visible` (a menu is open) —
+  [VRPlayer.cs:796-812](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/VRPlayer.cs).
+  So VHVR confirms D-016's "a crosshair, no beam" is a shipped, well-liked design.
+- **Comfort.** None built in: hover is recomputed each update with no hysteresis (a narrow object under
+  a trembling hand flickers between hovered and not), and there is **no haptic on hover or on a ray
+  "use"** — haptics exist for grab, bow, shield, fishing, build-rotation and the drawbridge only (F-160).
+  For us, the F-57 numbers (2 frames in, 150 ms out) are the starting hysteresis; a very short tick on
+  the hovering hand when a new target appears is an **addition** worth a headset question, not a
+  VHVR feature.
+
+#### 13b. Pick up, carry, place, drop, throw (F-158, F-159, F-161)
+
+- **Valheim has no carried item.** Using a dropped item moves it straight into the inventory (the
+  game's own behaviour; an auto-pickup toggle also exists —
+  [VRControls.cs:918](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRControls.cs)).
+  There is no drag from the world, so there is nothing about "carry it over a surface and set it down"
+  to learn here: that half of D-016 is the engine's own drag (13f). Throwing in VHVR is only for
+  throwable weapons already held (F-72).
+- **Physical extras.** With the grip held and the hand free, VHVR also lets the hand do a few things
+  *by touch* (F-159): pull a plant off, push a door open, work a drawbridge's counterweight, pet an
+  animal. Constants: pull-off needs > 0.5 m/s of hand speed and the hand within 0.5 m of where it
+  grabbed; a door opens when the hand moves ≥ 2 m/s within 30° of the door's normal; counterweight grab
+  radius 0.15 m and pull 0.25 m; a grab pulses the controller 0.25 s at 100 Hz, amplitude 0.5
+  ([FistCollision.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/FistCollision.cs),
+  [DrawbridgeCounterweightGrab.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/DrawbridgeCounterweightGrab.cs)).
+  They are *in addition to* the ray (a door can be opened either way), which is also how we could add
+  them after the MVP without touching the reticle path.
+- **Placing.** Building uses the same hidden ray from the dominant hand; the cultivator adds a
+  "ground hand" (F-161). No object is ever carried.
+
+#### 13c. Use: doors, chests, levers, beds, stations, characters (F-155)
+
+All of them are one thing in Valheim: the **interact** call on the hovered object. VHVR feeds it from
+two triggers (F-155): the right trigger *is* the game's Use button (read through the game's input, so
+nothing else changes); the left trigger is a patch that calls `Interact` on the left hover on press and
+again with `hold = true` every update while held, and `UseItem` falls back to the left hover when the
+right one is empty. What a press and what a hold mean is the game's own decision per object (the mod only
+forwards both; the right grip or both triggers held count as the game's "alt" use —
+[VRControls.cs:572-575](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRControls.cs)).
+There is no separate confirmation step and no per-object UI; the hover name already told the player
+what the press will do. Beds, stations and characters open their game panels the same way and then the
+panel rules (13d) apply.
+
+#### 13d. The inventory in VR (F-156, F-157, F-158)
+
+- **Opening.** A button (on Index: a press of the right trackpad) toggles the game's own inventory
+  window onto the single UI panel
+  ([VRControls.cs:111-124](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRControls.cs),
+  [VRGUI.cs:358-372](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRGUI.cs)).
+  The panel is 3 m tall at 3 m ahead in the base layout (F-80); while any menu is open it is
+  **frozen in place** (default on) so it does not swim with the head, and it re-centres only when it
+  closes and the head has turned (F-80's numbers).
+- **Hand-held alternative (default on in VHVR).** The inventory can instead be shown as a 0.375 m
+  panel in the non-dominant hand (offset (0, 0.0625, 0.125) m from the controller), used with the other
+  hand's pointer. It detaches to the big panel when a container or crafting opens. The owner chose the
+  **centre** panel for now (D-016), so this is the later option; its numbers are in F-157.
+- **Use.** The pointer (13e below) clicks and drags inside the 2D window as a mouse (F-81, with a
+  5 mm / 16 px click dead zone so pulling the trigger does not slide the cursor off the item). Two
+  extra buttons held with the trigger do "move to the open container / drop" and "split stack"
+  (F-156): modifier chords on the pointer, the equivalent of Arx's modifier-click.
+- **Taking a world item into the inventory.** Not applicable — see 13b; VHVR does it in one click
+  without opening the inventory. **There is no precedent in VHVR for dragging a floor item into an
+  open inventory** (F-158).
+
+#### 13e. The weapon hand and the inventory — the key case
+
+The case that matters (D-016): *the right hand holds a sword in a fight; the player opens the
+inventory, drags an item from the floor into it with the left hand, closes it and fights on.*
+
+What VHVR does, and does not:
+
+- **Two hands at once.** In the world, **both** hands hover and both can "use" (F-155). The hand that
+  holds a one-handed weapon is **not** muted: the sword attacks by collision, so its trigger is free.
+  Only a *two-handed aim* (bow, crossbow, staff) mutes both triggers because they then fire
+  ([LocalWeaponWield.cs:128-148](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/LocalWeaponWield.cs)).
+  Nothing in the hover code looks at what a hand holds.
+- **In menus, one hand.** Only one pointer is up (F-156): the dominant-hand setting wins when both
+  controllers are tracked, **even if that hand holds the weapon**, and then that hand's world
+  interaction is off. A player who wants the free hand to point has to change the dominant-hand
+  setting. So VHVR **does not** solve "use the free hand while the weapon hand keeps the weapon"
+  — it treats the dominant hand as the mouse.
+- **The weapon stays in hand.** Opening the inventory does not holster anything in VHVR; holstering is
+  a deliberate hand gesture ([Pose.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Utilities/Pose.cs),
+  F-55). Nor does the mod pause anything: Valheim's inventory is real-time (the game's behaviour).
+- **Two hands for the item itself.** A held item can be handed from one hand to the other with both
+  grips (F-54); there is no item carried by the pointer.
+
+What this means for D-016, from our own code (13f): **opening the inventory in Arx puts the weapon
+away** (`Interface.cpp:1109-1112` — the inventory key turns combat mode off), and the game keeps
+a single mouse, a single button state and a single dragged entity. So the case needs four decisions
+that VHVR cannot give: (1) the inventory-open command must **not** sheathe in VR (or the player must
+be told it does); (2) a rule for **which hand is the cursor** when two reticles are up; (3) the drag
+must **stay with the hand that started it** across the moment the inventory panel appears; (4) a
+sword swing must not be read as a click. They are written out in 13g.
+
+#### 13f. What maps onto Arx's own mechanics
+
+This is the engine as read in the working copy (files and lines at commit `4676e5835`).
+
+| Need | Arx mechanism | Where | Notes for the hand-aimed version |
+|---|---|---|---|
+| What is under the cursor | `FlyingOverObject(pos)`: the dragged entity first, then the secondary and player inventory HUD, then `InterClick(pos)` | [Core.cpp:258-282](../../src/core/Core.cpp) | One 2D position (`DANAEMouse`) in; one entity out |
+| The world pick | `GetFirstInterAtPos`: for every interactive entity in the treat zone, a 2D bounding-box test then a per-face projected-triangle test, nearest to the **player** within **350** units (850 with telekinesis); `InterClick` then requires **360** (550 when choosing a spell target) for NPCs and ordinary items, any distance with telekinesis, and no limit for what the player wears | [Interactive.cpp:1627-1735](../../src/scene/Interactive.cpp) | The pick is **screen-space** and uses the **player's** distance — the same two properties as Valheim's reach, so the VHVR model (a ray to a hit, then a distance check from the body) maps directly. To use it, project the hand-ray's hit point (or a point 1 000 units along the ray) into the view and feed that as the cursor. Whole-model face tests mean a reticle on a thin object is a hit if the projected triangle covers it — no extra tolerance needed, but F-160's hysteresis helps |
+| Click, double click | `eeMouseUp1` on an entity sends `SM_CLICKED`; **a double click** on an entity opens a container, starts a dialogue (`SM_CHAT`) or sends `SM_ACTION` to a scripted fixture — **that is how doors, levers and chests are used**; right-button up on an item sends `SM_INVENTORYUSE` (eat, equip, use) | [Interface.cpp:1723-1731](../../src/gui/Interface.cpp), [Interface.cpp:640-715](../../src/gui/Interface.cpp), [Interface.cpp:1289-1357](../../src/gui/Interface.cpp) | **A single trigger press must mean "double click" on a usable fixture**, or #38 is unusable: the engine's interval for a double click is in the input layer, and a synthetic double click on the first press is simplest. Needs a headset question: does a single press feel right on a lever |
+| Drag a world item | Mouse 1 held and moved > 5 px (the test `DRAGGING`) with the cursor over an item calls `setDraggedEntity`; stealth-key + drag gathers a stack; NPCs and fixed objects are not draggable; the item shows as being on the player until released | [Interface.cpp:1671-1685](../../src/gui/Interface.cpp), [Interface.cpp:1860-1921](../../src/gui/Interface.cpp), [Dragging.cpp:55-98](../../src/gui/Dragging.cpp) | The 5 px threshold is a mouse number; with a trembling hand it needs a dead zone in *pixels at the reticle* (VHVR's 16 px is the reference), else every trigger pull starts a drag |
+| Where the dragged item goes | `updateDraggedEntity`: while dragged, the cursor over the player inventory or the open container **drops it there on release**; over the book uses it; over gold adds it; otherwise a ray through the cursor finds a spot **within 300 units of the player** (`Sphere limit`), snaps to the ground up to 12 units, and either drops it, sets it on a surface or **throws** it if there is no collision within range | [Dragging.cpp:187-354](../../src/gui/Dragging.cpp) | The world half already works along *any* ray from the camera position (`screenToWorldSpace(mouse)` and the stable camera origin, `Dragging.cpp:247-256`); with a hand it should start from the hand's ray instead, so the item follows the hand. The HUD half is pixel hit-testing, so it needs the panel-to-pixel mapping of F-81 (the same one the menus need) |
+| Take straight to the inventory | Stealth key held + click on a world item inserts it into the player inventory (and keeps taking the next item under the cursor while there is room) | [Interface.cpp:1737-1758](../../src/gui/Interface.cpp) | "Take to the inventory" exists in the original as a **modifier-click**, so a second button on the hand can stand for it (13g), without the player opening anything |
+| Open the inventory | `CONTROLS_CUST_INVENTORY`: **turns combat mode off first**, then toggles the inventory; the open window closes a container in combat mode | [Interface.cpp:1109-1121](../../src/gui/Interface.cpp), [Interface.cpp:372-400](../../src/gui/Interface.cpp), [Interface.cpp:1687-1689](../../src/gui/Interface.cpp) | The sheathing must be bypassed for the case in 13e |
+| Cursor look | The cursor image changes on hover (`cursorSetInteraction`, target and combine cursors, the dragged item's icon at the cursor, the hover description text drawn in the HUD) | [Cursor.cpp](../../src/gui/Cursor.cpp), [Interface.cpp:1603-1650](../../src/gui/Interface.cpp) | The reticle is a *replacement* for the cursor image in the world; the dragged item's icon and the description text are 2D HUD — decide where they appear (at the reticle, as VHVR's name text does) |
+
+The shortest path to D-016 is therefore **"each hand produces a cursor position for the engine's existing
+mouse model"**, not a new interaction layer: a hidden ray per hand → a projected 2D point → the engine's
+`DANAEMouse` plus a button state. What is *new* work, in order of size: the cursor arbiter (one engine
+mouse, two hands), the panel-to-pixel mapping for the inventory in the centre of the view (shared with
+#34 and #49), the hand-rooted ray for the dragged item's placement, and the single-press double click.
+
+#### 13g. Proposal for #37 / #38 within D-016
+
+> This is a **proposal for the owner** (D-017: player-experience design is agreed with the owner before
+> work starts). Everything below the numbers is a starting point to test in the headset, not a decision.
+> The corrected D-016 is the frame. It creates no tasks; the coordinator does.
+
+**One idea:** the engine has **one** mouse. Each hand makes a cursor; **one hand at a time owns the
+mouse**; the other hand's reticle stays visible and takes the mouse when it is pressed.
+
+*Reticle (both hands, always, F-153/F-154).* A hidden ray from each controller's aim pose. The reticle
+sits on the first hit (or at a fixed far distance on nothing), faces the eyes, keeps a constant
+angular size (start from VHVR's rule — the canvas spans `0.1 × scale` radians, about 5.7° at scale 1.0, the crosshair sprite inside it is smaller; the scale a setting, 0.8–2.5), **white at 50 % alpha**, **yellow when the engine's pick found an interactive entity**
+within its range. The entity name (the engine's description text) next to it; while a drag is on, the
+dragged item's icon at the reticle. No beam, no outline. Hysteresis from F-57: 2 frames to take a
+target, 150 ms to lose it.
+
+*Who owns the mouse (the arbiter).* Rule of thumb: **the hand that pressed last owns it until it
+releases and the drag is over.** Concretely: (a) with nothing pressed, each hand's reticle hovers
+independently and the engine's hover (`FlyingOverIO`) follows the hand that **moved last** (so the
+description text does not flicker between two reticles); (b) a trigger press on a hand makes it the
+owner; (c) a hand that holds a drag keeps ownership until release even if the other hand presses
+(that press is ignored, a short tick on it says so); (d) a hand whose weapon is swinging
+(the #39 swing detector says "attack") is **not a candidate** for the owner role, and its trigger is
+not a click — a sword hand can still point and click when it is idle (VHVR's behaviour, F-155).
+
+*Buttons (per hand, mirrored; Index is the first target, [RESEARCH-controllers.md](RESEARCH-controllers.md) lists the physical mapping).*
+- **Trigger = mouse 1.** Press on an item and keep the trigger down while moving the hand more than
+  the dead zone = **drag** (the engine's own); release = drop it where the engine says (inventory,
+  ground, surface, throw). Press and release without moving = a click; on a **usable fixture or
+  character** a single press is sent as a **double click** (13f) so doors, levers, chests and bodies
+  open and NPCs talk.
+- **Grip (force) = mouse 2 and the stealth modifier.** A grip press on an item = the original's right
+  click, "use" (`SM_INVENTORYUSE`: eat, equip). A **grip held while the trigger is pressed** on an item =
+  the stealth-click: **take the item straight into the inventory** (13f). This keeps the controllers
+  document's "Grab / USE = grip" and gives the "right hand takes to the inventory" idea of the first D-016
+  without splitting the hands. (Alternative to test: the face button of the same hand.)
+- **Inventory button** (suggested: B on the right controller, as in the controllers document) opens and
+  closes the panel **without sheathing the weapon** and **without moving the mouse owner**.
+
+*The inventory panel (centre of the view, for now).* A world-space quad in front of the eyes, frozen at
+the place it appeared (VHVR default, F-157), at a distance where the 2D window is readable with the
+pointer; **opened, the player can still walk and see around it**; the player's world reticles hide
+while a hand's ray is on the panel (VHVR shows the beam there, we show a pointer dot, D-010/#34). Both
+hands can use it, by the same owner rule. VHVR's hand-held panel is the later option (F-157: 0.375 m
+tall, offset (0, 0.0625, 0.125) m from the controller).
+
+*The key case, step by step* (to be written into the headset script of #37):
+1. Fight; right hand swinging (not a candidate), left hand idle with its reticle on a potion on the floor.
+2. Press the inventory button: the panel appears in the centre of the view; the weapon stays drawn
+   (**new**: bypass `Interface.cpp:1109-1112` while in VR).
+3. Left trigger on the potion and move: the drag starts, the potion's icon is at the left reticle; the
+   panel is still in front of the eyes.
+4. Move the left reticle onto the inventory grid and release: the engine drops it into the first free
+   slot (`PlayerInventoryHud::dropEntity`).
+5. Inventory button again: the panel closes. Right hand never stopped being the weapon hand.
+   Report: did the right hand flinch into a click at step 3; did the drag stay with the left hand; did
+   the panel get in the way of the fight.
+
+*Doors, levers, chests, bodies, characters (#38).* The same reticle and trigger: hover turns the
+reticle yellow with the name; one trigger press opens or talks (double click, above). Within the engine's
+reach (**360 units** for items and NPCs, the 350 pick plus the distance check; 550 when choosing a
+spell target). Bodies and containers open the **secondary inventory**, which is also a HUD window,
+so it shares the panel and the arbiter with the player inventory.
+
+*Numbers to start from*, all to be confirmed in the headset: ray origin = the controller's aim pose
+(not the palm); reticle at the first hit, at the ray limit when nothing is hit (VHVR: 50 m); reticle
+size as VHVR's above, to be tuned against Arx's small items; hysteresis 2 frames in, 150 ms out; drag dead zone 16 px at the reticle (VHVR's value for
+the same job) and 5 mm on the panel; pick range and drop range are the engine's (360 / 300 units); the
+single-press double click is a synthetic event sent on the press, not on release.
+
+*What this does not need:* a new carry-and-place system, a ray from the hands drawn in the world, hands
+that must touch the object, the "left drags, right takes" split. *What it does need that nobody has
+built yet:* the arbiter, the sheathing bypass, the panel-to-pixel mapping for the centre panel, a
+hand-rooted placement ray for the dragged item, and the single-press double click. Each is small
+and testable without a headset (the simulated VR backend and `status.json`), except the *feel* of the
+numbers above.
+
+**Open questions for the owner** (what the proposal cannot answer from code):
+1. Should a trigger press on a lever/door act at once (single press = the original's double click), or
+   should the player hold briefly? (Proposal: at once.)
+2. Do you want **grip + trigger** as the "take into the inventory" gesture, or a face button?
+3. May the inventory button leave the weapon drawn in VR (the original sheathes it)? (Proposal: yes,
+   in VR only; it changes a fight but the case needs it.)
+4. When both reticles hover different items, which one does the description text show? (Proposal: the
+   hand that moved last.)
+
 ## Sources
 
 Dishonored VR (branch `VR-Main`, commit `b15e4d32a`):
@@ -2183,6 +2440,14 @@ ProjectilePatches, BowAndFishingPatches, BHapticsPatches, ControlPatches, EquipP
 EyeRotationPatch, RoomscalePatches, FixPatches, InteractionPatches, UIPatches, TextInputPatches;
 `Unity/ValheimVR/Assets/StreamingAssets/SteamVR/` actions.json, bindings_knuckles.json,
 bindings_oculus_touch.json; `ValheimVRMod.cs`, `ValheimVRMod.csproj`, `make-release.cmd`.
+Read again for #166 (world interaction, commit `5a47f823f`, 2026-10-09): `Patches/` HandBasedInteractionPatches,
+InteractionPatches; `Scripts/` FistCollision, DrawbridgeCounterweightGrab, InterhandItemTransfer,
+LocalWeaponWield (the aiming state), BuildingManager (haptic call); `VRCore/` VRPlayer (pointer choice),
+`VRCore/UI/` CrosshairManager, LaserPointerChords, PlaceModeRayVectorProvider, VRGUI (inventory panel,
+dead zone), VRControls (use, alt, inventory); `Utilities/VHVRConfig.cs`; `Unity/ValheimVR/Assets/SteamVR/Extras/SteamVR_LaserPointer.cs`;
+`Unity/ValheimVR/Assets/StreamingAssets/SteamVR/bindings_knuckles.json`. Arx Libertatis side (our working
+copy): `src/core/Core.cpp`, `src/scene/Interactive.cpp`, `src/gui/Interface.cpp`, `src/gui/Dragging.cpp`,
+`src/gui/Cursor.cpp`, `src/gui/hud/PlayerInventory.cpp`.
 
 Alternatives for headless testing:
 [Monado](https://monado.freedesktop.org/) and its

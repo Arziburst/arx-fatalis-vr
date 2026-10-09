@@ -371,12 +371,19 @@ void Input::reset() {
 		iMouseTime[i][0] = 0;
 		iMouseTime[i][1] = 0;
 		iMouseTimeSet[i] = 0;
-		bMouseButton[i] = bOldMouseButton[i] = false;
+		bMouseButton[i] = bOldMouseButton[i] = m_realMouseButton[i] = false;
 		iOldNumClick[i] = 0;
 	}
 	
 	iKeyId = -1;
 	std::fill(std::begin(keysStates), std::end(keysStates), 0);
+	
+	m_virtualKeysSet.reset();
+	m_virtualKeys.reset();
+	m_virtualMouseButtonsSet.reset();
+	m_virtualActionsSet.reset();
+	m_virtualActions.reset();
+	m_oldVirtualActions.reset();
 	
 	EERIEMouseButton = 0;
 	iWheelDir = 0;
@@ -436,6 +443,11 @@ void Input::update(float time) {
 
 	backend->update();
 
+	// The virtual input set since the last update counts from now on
+	m_virtualKeys = m_virtualKeysSet;
+	m_oldVirtualActions = m_virtualActions;
+	m_virtualActions = m_virtualActionsSet;
+
 	bool keyJustPressed = false;
 	iKeyId = -1;
 	int modifier = 0;
@@ -490,21 +502,23 @@ void Input::update(float time) {
 		
 		iOldNumClick[i] += iNumClick + iNumUnClick;
 		
-		if(!bMouseButton[i] && iOldNumClick[i] == iNumUnClick) {
+		if(!m_realMouseButton[i] && iOldNumClick[i] == iNumUnClick) {
 			iOldNumClick[i] = 0;
 		}
 		
 		bOldMouseButton[i] = bMouseButton[i];
 		
-		if(bMouseButton[i]) {
+		if(m_realMouseButton[i]) {
 			if(iOldNumClick[i]) {
-				bMouseButton[i] = false;
+				m_realMouseButton[i] = false;
 			}
 		} else {
 			if(iOldNumClick[i]) {
-				bMouseButton[i] = true;
+				m_realMouseButton[i] = true;
 			}
 		}
+		
+		bMouseButton[i] = m_realMouseButton[i] || m_virtualMouseButtonsSet[i];
 		
 		if(iOldNumClick[i]) {
 			iOldNumClick[i]--;
@@ -756,19 +770,37 @@ void Input::setInvertMouseY(bool invert) {
 bool Input::isKeyPressed(int keyId) const {
 	arx_assert(keyId >= Keyboard::KeyBase && keyId < Keyboard::KeyMax);
 
-	return backend->isKeyboardKeyPressed(keyId);
+	return backend->isKeyboardKeyPressed(keyId) || m_virtualKeys[keyId - Keyboard::KeyBase];
 }
 
 bool Input::isKeyPressedNowPressed(int keyId) const {
 	arx_assert(keyId >= Keyboard::KeyBase && keyId < Keyboard::KeyMax);
 
-	return backend->isKeyboardKeyPressed(keyId) && (keysStates[keyId] == 1);
+	return isKeyPressed(keyId) && (keysStates[keyId] == 1);
 }
 
 bool Input::isKeyPressedNowUnPressed(int keyId) const {
 	arx_assert(keyId >= Keyboard::KeyBase && keyId < Keyboard::KeyMax);
 
-	return !backend->isKeyboardKeyPressed(keyId) && (keysStates[keyId] == 1);
+	return !isKeyPressed(keyId) && (keysStates[keyId] == 1);
+}
+
+void Input::setVirtualKey(int keyId, bool down) {
+	arx_assert(keyId >= Keyboard::KeyBase && keyId < Keyboard::KeyMax);
+
+	m_virtualKeysSet[keyId - Keyboard::KeyBase] = down;
+}
+
+void Input::setVirtualMouseButton(int buttonId, bool down) {
+	arx_assert(buttonId >= Mouse::ButtonBase && buttonId < Mouse::ButtonMax);
+
+	m_virtualMouseButtonsSet[buttonId - Mouse::ButtonBase] = down;
+}
+
+void Input::setVirtualAction(ControlAction actionId, bool down) {
+	arx_assert(actionId >= 0 && actionId < NUM_ACTION_KEY);
+
+	m_virtualActionsSet[actionId] = down;
 }
 
 void Input::startTextInput(const Rect & box, TextInputHandler * handler) {
@@ -834,6 +866,10 @@ int Input::getMouseButtonClicked() const {
 
 bool Input::actionNowPressed(ControlAction actionId) const {
 	
+	if(m_virtualActions[actionId] && !m_oldVirtualActions[actionId]) {
+		return true;
+	}
+	
 	for(size_t j = 0; j < std::size(config.actions[actionId].key); j++) {
 		
 		InputKeyId key = config.actions[actionId].key[j];
@@ -878,6 +914,10 @@ bool Input::actionPressed(ControlAction actionId) const {
 	
 	if(actionId == CONTROLS_CUST_USE || actionId == CONTROLS_CUST_ACTION) {
 		return false;
+	}
+	
+	if(m_virtualActions[actionId]) {
+		return true;
 	}
 	
 	for(size_t j = 0; j < std::size(config.actions[actionId].key); j++) {
@@ -974,6 +1014,10 @@ bool Input::actionPressed(ControlAction actionId) const {
 }
 
 bool Input::actionNowReleased(ControlAction actionId) const {
+	
+	if(!m_virtualActions[actionId] && m_oldVirtualActions[actionId]) {
+		return true;
+	}
 	
 	for(size_t j = 0; j < std::size(config.actions[actionId].key); j++) {
 		

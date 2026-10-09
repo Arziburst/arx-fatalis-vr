@@ -19,11 +19,16 @@
 
 #include "vr/VRInput.h"
 
+#include <algorithm>
 #include <array>
 
+#include "core/Config.h"
 #include "core/TimeTypes.h"
+#include "gui/Menu.h"
+#include "input/Input.h"
 #include "io/log/Logger.h"
 #include "platform/Time.h"
+#include "util/Number.h"
 #include "vr/VRSystem.h"
 
 namespace vr {
@@ -35,10 +40,13 @@ struct InputState {
 	ControllerType type = ControllerType::Unknown;
 	ControlResolver resolver = ControlResolver(defaultLayout(ControllerType::Unknown));
 	ControllerInput input;
+	GameInputMapper game;
 
 	//! Controls set by the test channel, merged into what the controllers report
 	ControlSet injectedDown;
 	ControlSet injectedTaps;
+	//! Stick deflections set by the test channel, added to the controllers' (directions: down / up)
+	std::array<Stick, HandCount> injectedSticks;
 
 };
 
@@ -69,6 +77,38 @@ void applyLayout(const ControlLayout & layout, const char * why) {
 	logConflicts(layout);
 }
 
+ControlAction engineAction(GameAction action) {
+	switch(action) {
+		case GameAction::Jump: return CONTROLS_CUST_JUMP;
+		case GameAction::CrouchToggle: return CONTROLS_CUST_CROUCHTOGGLE;
+		case GameAction::Inventory: return CONTROLS_CUST_INVENTORY;
+		case GameAction::Book: return CONTROLS_CUST_BOOK;
+		case GameAction::MagicMode: return CONTROLS_CUST_MAGICMODE;
+		case GameAction::Stealth: return CONTROLS_CUST_STEALTHMODE;
+		case GameAction::Use: return CONTROLS_CUST_USE;
+		case GameAction::Count: break;
+	}
+	arx_unreachable();
+}
+
+//! Hand the snapshot to the engine's input, which applies it in its next update (this frame)
+void applyToEngine(const GameInputState & state) {
+
+	if(!GInput) {
+		return;
+	}
+
+	// Both hands work as the mouse (D-016): the left button clicks, drags and double-clicks
+	GInput->setVirtualMouseButton(Mouse::Button_0, state.click);
+	// The original's right click: the use action in game, the right button in the menus (in game
+	// the right button is free look)
+	GInput->setVirtualMouseButton(Mouse::Button_1, state.use && ARXmenu.mode() != Mode_InGame);
+	GInput->setVirtualKey(Keyboard::Key_Escape, state.escape);
+	for(size_t i = 0; i < GameActionCount; i++) {
+		GInput->setVirtualAction(engineAction(GameAction(i)), state.actions[i]);
+	}
+}
+
 } // anonymous namespace
 
 void updateInput() {
@@ -87,6 +127,11 @@ void updateInput() {
 	input.down |= g_input.injectedDown;
 	input.taps |= g_input.injectedTaps & ~input.down;
 	g_input.injectedTaps.reset();
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		Stick & stick = input.sticks[hand];
+		stick.x = std::clamp(stick.x + g_input.injectedSticks[hand].x, -1.f, 1.f);
+		stick.y = std::clamp(stick.y + g_input.injectedSticks[hand].y, -1.f, 1.f);
+	}
 
 	g_input.resolver.update(toMsi(platform::getTime()), input.down, input.taps);
 	g_input.input = input;
@@ -98,6 +143,13 @@ void updateInput() {
 			LogInfo << "[vr] input: " << eventName(event) << " (" << formatBinding(g_input.resolver.layout()[event]) << ')';
 		}
 	}
+
+	// Events -> the engine's actions, mouse buttons and keys (#74)
+	applyToEngine(g_input.game.update(g_input.resolver, g_input.input));
+}
+
+const GameInputState & gameInput() {
+	return g_input.game.state();
 }
 
 const ControlResolver & controls() {
@@ -169,14 +221,28 @@ std::string inputCommand(std::string_view arguments) {
 		return std::string();
 	}
 
+	if(verb == "stick") {
+		std::string_view hand = nextWord(rest);
+		std::optional<float> x = util::toFloat(nextWord(rest));
+		std::optional<float> y = util::toFloat(nextWord(rest));
+		if((hand != "left" && hand != "right") || !x || !y) {
+			return "vr-input stick: expected left|right <x> <y>, each -1 to 1 (e.g. stick left 0 1)";
+		}
+		Stick & stick = g_input.injectedSticks[size_t(hand == "left" ? Hand::Left : Hand::Right)];
+		stick.x = std::clamp(*x, -1.f, 1.f);
+		stick.y = std::clamp(*y, -1.f, 1.f);
+		return std::string();
+	}
+
 	if(verb == "reset") {
 		g_input.injectedDown.reset();
 		g_input.injectedTaps.reset();
+		g_input.injectedSticks = { };
 		applyLayout(defaultLayout(g_input.type), "reset to the default (test channel)");
 		return std::string();
 	}
 
-	return "vr-input: expected down|up|tap <control>, bind <event> <binding> or reset, got \""
+	return "vr-input: expected down|up|tap <control>, stick <hand> <x> <y>, bind <event> <binding> or reset, got \""
 	       + std::string(arguments) + "\"";
 }
 

@@ -48,6 +48,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #define ARX_INPUT_INPUT_H
 
 #include <stddef.h>
+#include <bitset>
 #include <string_view>
 
 #include "core/Config.h"
@@ -171,6 +172,19 @@ public:
 	 */
 	void stopTextInput();
 	
+	// Virtual input: the VR controllers (#74), OR-ed with the keyboard and the mouse
+	
+	/*!
+	 * Hold or release a key, a mouse button or an action as if a device did it
+	 *
+	 * The state takes effect at the next \ref update, which also derives the "now pressed" and
+	 * "now released" edges from it, the same way as for the real devices: a virtual mouse button
+	 * clicks, drags and double-clicks like the real one. It stays as set until changed.
+	 */
+	void setVirtualKey(int keyId, bool down);
+	void setVirtualMouseButton(int buttonId, bool down);
+	void setVirtualAction(ControlAction actionId, bool down);
+	
 private:
 	
 	void centerMouse();
@@ -191,8 +205,9 @@ private:
 	bool  m_invertMouseY;
 	int   iWheelDir;
 	
-	bool  bMouseButton[Mouse::ButtonCount];
+	bool  bMouseButton[Mouse::ButtonCount];    // the real and the virtual mouse
 	bool  bOldMouseButton[Mouse::ButtonCount];
+	bool  m_realMouseButton[Mouse::ButtonCount];
 	
 	PlatformInstant iMouseTime[Mouse::ButtonCount][2];
 	int   iMouseTimeSet[Mouse::ButtonCount];
@@ -202,6 +217,14 @@ private:
 	
 	int   iKeyId;                         // Id of the key pressed in the last update
 	int   keysStates[Keyboard::KeyCount]; // 0: up, 1: just pressed/released, 2: pressed
+	
+	// Virtual input: as set, and as applied by the last update
+	std::bitset<Keyboard::KeyCount> m_virtualKeysSet;
+	std::bitset<Keyboard::KeyCount> m_virtualKeys;
+	std::bitset<Mouse::ButtonCount> m_virtualMouseButtonsSet;
+	std::bitset<NUM_ACTION_KEY> m_virtualActionsSet;
+	std::bitset<NUM_ACTION_KEY> m_virtualActions;
+	std::bitset<NUM_ACTION_KEY> m_oldVirtualActions;
 	
 };
 

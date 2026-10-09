@@ -34,6 +34,8 @@
 #include "io/log/Logger.h"
 #include "platform/Time.h"
 
+extern bool bGCroucheToggle;
+
 namespace gameevent {
 
 namespace {
@@ -48,6 +50,8 @@ struct UiState {
 	std::string containerName;
 	bool note = false;
 	bool combat = false;
+	bool jumping = false;
+	bool crouchToggle = false;
 };
 
 struct State {
@@ -100,6 +104,8 @@ void updateUi() {
 	now.container = g_secondaryInventoryHud.openContainer();
 	now.note = g_note.isOpen();
 	now.combat = (player.Interface & INTER_COMBATMODE) != 0;
+	now.jumping = player.jumpphase != NotJumping;
+	now.crouchToggle = bGCroucheToggle;
 
 	UiState & was = g.ui;
 
@@ -139,6 +145,15 @@ void updateUi() {
 	if(now.combat != was.combat) {
 		Event("player.combat")("state", now.combat ? "on" : "off")
 			("weapon", entityName(entities.get(player.equiped[EQUIP_SLOT_WEAPON])));
+	}
+
+	// The jump and the crouch toggle: what the jump and crouch keys / VR buttons did (#74)
+	if(now.jumping && !was.jumping) {
+		Event("player.jump");
+	}
+
+	if(now.crouchToggle != was.crouchToggle) {
+		Event("player.crouch")("state", now.crouchToggle ? "on" : "off");
 	}
 
 	was = now;

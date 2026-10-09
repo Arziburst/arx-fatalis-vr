@@ -47,11 +47,17 @@ set(arxtest_TESTCASES
 	tests/vr/MirrorGeometryTest.h
 	tests/vr/MirrorGeometryTest.cpp
 
+	tests/vr/VRBindingsTest.h
+	tests/vr/VRBindingsTest.cpp
+
 	tests/vr/HeadPoseTest.h
 	tests/vr/HeadPoseTest.cpp
 
 	tests/vr/VRControlsTest.h
 	tests/vr/VRControlsTest.cpp
+
+	tests/vr/VRGameInputTest.h
+	tests/vr/VRGameInputTest.cpp
 
 	tests/vr/EyeImageTest.h
 	tests/vr/EyeImageTest.cpp
@@ -77,8 +83,10 @@ set(arxtest_SOURCES
 	src/io/resource/ResourcePath.cpp
 	src/vr/EyeProjection.cpp
 	src/vr/FramePacing.cpp
+	src/vr/VRBindings.cpp
 	src/vr/HeadPose.cpp
 	src/vr/VRControls.cpp
+	src/vr/VRGameInput.cpp
 	src/vr/EyeImage.cpp
 	src/vr/SimRig.cpp
 

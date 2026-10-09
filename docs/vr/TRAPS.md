@@ -8,6 +8,19 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — A check of "what the button did" counts one event too many, or finds it before the press (#74)
+
+**Symptom:** a flat check of the VR buttons on level 10 sees `ui.inventory=3` after two presses of the
+inventory button, and a `game.state to=MENU` that is not after the `[mark] game menu` sent right after the
+menu button — "the menu never opened", although it did.
+**Cause:** (1) the level 10 start shows the inventory bag: once `setplayercontrols on` / `cinemascope off`
+give the controls back, a `ui.inventory state=open` is logged with no button pressed — the first press
+*closes* it. (2) A `vr-input` tap is resolved at the start of the next frame and the game reacts in that
+frame, so its game event can be logged before the ack of the command and before the next `mark` line.
+**Do:** anchor on the button's own `[vr] input: <event> (…)` log line (it comes first in the frame, before the
+game events) and check the order of the state changes after it, not their total — as
+`scripts/dev/game-input-check.ps1` does.
+
 ## 2026-10-09 — A shot in the first second after a level load is black (#112)
 
 **Symptom:** a `--vr-sim` shot (or a channel `shot`) taken right after `status.json` says `GAMEPLAY` judges

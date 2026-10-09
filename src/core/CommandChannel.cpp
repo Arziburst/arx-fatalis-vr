@@ -260,14 +260,14 @@ struct State {
 	//! pick: what mouse picking finds on the window (#72)
 	struct Pick {
 		unsigned seq = 0;            //!< Picks done so far
-		std::string center;          //!< The entity at the window's center; empty when nothing is there
+		std::string center;          //!< The entity at the interface's center; empty when nothing is there
 		//! The whole window on a grid: "<entity> <hits> <center x> <center y>" per entity found, most hits
 		//! first, comma separated
 		std::string scan;
 		unsigned scanPoints = 0;
 		std::string target;          //!< The entity asked for, if any
 		unsigned targetHits = 0;     //!< Grid points where picking finds it
-		Vec2f targetHit = Vec2f(-1.f);   //!< The middle of those points, window pixels
+		Vec2f targetHit = Vec2f(-1.f);   //!< The middle of those points, interface pixels
 		Vec2f targetSeen = Vec2f(-1.f);  //!< Where the camera sees the middle of its bounding box
 		float targetOffset = -1.f;   //!< Distance between the two; -1 when either is missing
 		std::string targetBox;       //!< Its bbox2D, "x0 y0 x1 y1": what picking tests first
@@ -572,6 +572,20 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("down", glm::degrees(entry.fov.down));
 			json.end();
 		}
+		json.end();
+	}
+	// The interface's virtual screen (#73): the window in flat mode, the quad's own resolution in VR
+	{
+		vr::StereoStatus stereo = vr::stereoStatus();
+		json.object("interface");
+		json.value("width", g_size.width());
+		json.value("height", g_size.height());
+		const Vec2i window = (mainApp && mainApp->getWindow()) ? mainApp->getWindow()->getSize() : Vec2i(0);
+		json.value("windowWidth", window.x);
+		json.value("windowHeight", window.y);
+		json.value("quadWidth", stereo.interfaceSize.x);
+		json.value("quadHeight", stereo.interfaceSize.y);
+		json.value("eyePxPerDeg", stereo.eyePixelsPerDegree);
 		json.end();
 	}
 	// The desktop mirror (#21): "on" while the window shows what one eye sees
@@ -975,8 +989,8 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "pick") {
-		// pick [<entity>]: what the mouse would hover, on an 8 pixel grid over the window - after a stereo
-		// frame the screen data picking reads must be the head camera's at the window's size (#72). For an
+		// pick [<entity>]: what the mouse would hover, on an 8 pixel grid over the interface's screen - after a
+		// stereo frame the screen data picking reads must be the head camera's at the interface's size (#72). For an
 		// entity: where picking finds it against where the camera sees it
 		if(currentState() != GameState::Gameplay) {
 			return refuse(std::string("pick: needs a level on screen (state ") + gameStateName(currentState()) + ")");
@@ -1040,7 +1054,7 @@ std::string execute(std::string_view line) {
 				pick.targetHits = it->count;
 				pick.targetHit = it->sum / float(it->count);
 			}
-			// The camera prepared last: the head camera at the window's size, which the interface is drawn with
+			// The camera prepared last: the head camera at the interface's size (#73), which the interface is drawn with
 			Vec4f p = worldToClipSpace((target->bbox3D.min + target->bbox3D.max) / 2.f);
 			if(p.w > 0.f) {
 				pick.targetSeen = Vec2f(p) / p.w;
@@ -1051,7 +1065,7 @@ std::string execute(std::string_view line) {
 			}
 		}
 		std::ostringstream log;
-		log << "[channel] pick: " << (pick.center.empty() ? "nothing" : pick.center) << " at the window's center; "
+		log << "[channel] pick: " << (pick.center.empty() ? "nothing" : pick.center) << " at the interface's center; "
 		    << pick.scanPoints << " grid points: " << (pick.scan.empty() ? "nothing" : pick.scan);
 		if(target) {
 			log << "; " << pick.target << " picked at " << pick.targetHits << " points around " << pick.targetHit.x << ' '

@@ -1,7 +1,9 @@
 # Per-eye re-projection of CPU-projected geometry (#72), on the simulated headset: after the two eye draws of a
-# stereo frame, mouse picking still reads the head camera's screen data at the window's size (not the last
+# stereo frame, mouse picking still reads the head camera's screen data at the interface's size (not the last
 # eye's), and the screen-space particles are on the flat frame, where they add light without covering the world.
 # The spot is the mvp-items scenario of the test save library (scripts\dev\test-saves\scenarios.txt).
+# Run with the save: scripts/dev/smoke-test.ps1 -VrSim idle -Sequence tl-reprojection -Save mvp-items (xrs-run.ps1 has no -Save;
+# @args is what a run without a save gets: level 1 from its start, where the scene differs)
 @sim idle
 @args --loadlevel 1
 
@@ -10,7 +12,7 @@ setpos 10700 2935 11400; lookat key_base_0005
 @until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
 @assert vr.stereo.active eq true
 
-# Picking reads the head camera's screen data at the window's size; before #72 the clip positions and the
+# Picking reads the head camera's screen data at the interface's size; before #72 the clip positions and the
 # items' bbox2D were the right eye's at the eye image's size. The key is too thin for the 8 pixel grid of
 # pick, so it only shows the box test; the form beside it is found on the grid where the camera sees it
 vr-sim head rot 0 -35 0                      # look down at the table

@@ -161,7 +161,7 @@ extern bool g_reprojectEntitiesPerView;
  *
  * Mouse picking (FlyingOverObject()) tests the cursor against each entity's bbox2D and the clip positions
  * of its vertices. Drawn once per eye (#19), those are the last eye's, at the eye image's size; after the
- * eyes this projects them again with the head camera at the window's size, where the cursor is (#72).
+ * eyes this projects them again with the head camera at the interface's size (#73), where the cursor is (#72).
  */
 void ProjectEntitiesForPicking();
 void SetWeapon_On(Entity * io);

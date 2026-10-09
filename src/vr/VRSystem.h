@@ -138,6 +138,27 @@ bool beginFrame(const Vec2i & windowSize);
 void submitFrame(const Vec2i & windowSize);
 
 /*!
+ * \brief The interface's virtual screen: what \c g_size is laid out on (#73)
+ *
+ * The window's size in flat mode. While a session runs, from its first located eyes on, the
+ * head-locked quad's own resolution: the headset's pixel density at the quad's angle with the
+ * window's aspect ratio (vr/InterfaceSize.h) - everything 2D is then drawn into the quad's image
+ * at that size, whatever the window's size, and the window shows it scaled.
+ */
+Vec2i interfaceSize(const Vec2i & windowSize);
+
+/*!
+ * \brief Begin a frame of the 2D interface drawn from outside the game loop (the loading screen)
+ *
+ * Call before drawing it: the frame is begun (\c xrWaitFrame paces it like a game frame) and the
+ * quad's image becomes the render target, cleared to opaque black, so the picture is drawn at the
+ * interface's size; \ref submitFrame then shows it. Inside the game loop's frame nothing changes.
+ *
+ * \return true while a session runs and the frame is begun
+ */
+bool beginInterfaceFrame(const Vec2i & windowSize);
+
+/*!
  * \return true while the current frame is drawn in stereo: the session runs, the runtime wants the
  *         frame rendered and the eyes were located - the scene must then be drawn once per eye with
  *         \ref beginEyeRender / \ref endEyeRender, and everything 2D goes to the flat frame quad
@@ -179,6 +200,8 @@ struct StereoStatus {
 	EyeFov unionFov;            //!< the culling frustum of the last stereo frame
 	float eyeSeparationM = 0.f; //!< the distance between the eyes in meters
 	float cantDeg = 0.f;        //!< the angle between the eyes' view directions in degrees
+	Vec2i interfaceSize = Vec2i(0); //!< the interface's own resolution on the quad (#73), 0 before it is known
+	float eyePixelsPerDegree = 0.f; //!< the eyes' pixel density straight ahead, which sets it
 };
 
 StereoStatus stereoStatus();

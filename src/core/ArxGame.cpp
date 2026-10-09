@@ -1276,6 +1276,12 @@ void ArxGame::doFrame() {
 
 	updateInput();
 
+	// The interface's virtual screen follows the window, and in VR the quad's own resolution (#73):
+	// entering or leaving a session lays the interface out again like a resized window
+	if(vr::interfaceSize(m_MainWindow->getSize()) != g_size.size()) {
+		m_wasResized = true;
+	}
+
 	if(m_wasResized) {
 		LogDebug("was resized");
 		m_wasResized = false;
@@ -2067,9 +2073,9 @@ void ArxGame::renderLevel() {
  * the headset's field of view (research rows F-115, F-162). Both eyes draw the same frame of the
  * game (#71) with the same random numbers. The eye image is the screen for everything drawn into
  * it: full-screen effects, sprite sizes and their culling measure themselves against g_size, which
- * is the eye's size during the draw (#73 separates the interface size from the scene's for good).
- * Afterwards the head camera is prepared again for the interface, at the window's size, and the
- * entities' screen data for mouse picking is the head camera's again (#72).
+ * is the eye's size during the draw. Afterwards the head camera is prepared again for the
+ * interface, at its own size on the quad (#73), which is neither the eye's nor the window's, and
+ * the entities' screen data for mouse picking is the head camera's again (#72).
  */
 void ArxGame::renderStereoViews() {
 

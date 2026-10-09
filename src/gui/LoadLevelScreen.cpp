@@ -76,6 +76,9 @@ void LoadLevelScreen(AreaId area ) {
 		
 		ratio = glm::clamp(ratio, 0.f, 1.f);
 
+		// In VR the loading screen is drawn into the head-locked quad at the interface's size (#73)
+		vr::beginInterfaceFrame(mainApp->getWindow()->getSize());
+
 		GRenderer->Clear(Renderer::ColorBuffer);
 		
 		UseRenderState state(render2D().noBlend());

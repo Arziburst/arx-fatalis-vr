@@ -555,6 +555,20 @@ std::string buildStatus(PlatformInstant now) {
 		}
 		json.end();
 	}
+	// The interface's virtual screen (#73): the window in flat mode, the quad's own resolution in VR
+	{
+		vr::StereoStatus stereo = vr::stereoStatus();
+		json.object("interface");
+		json.value("width", g_size.width());
+		json.value("height", g_size.height());
+		const Vec2i window = (mainApp && mainApp->getWindow()) ? mainApp->getWindow()->getSize() : Vec2i(0);
+		json.value("windowWidth", window.x);
+		json.value("windowHeight", window.y);
+		json.value("quadWidth", stereo.interfaceSize.x);
+		json.value("quadHeight", stereo.interfaceSize.y);
+		json.value("eyePxPerDeg", stereo.eyePixelsPerDegree);
+		json.end();
+	}
 	// The desktop mirror (#21): "on" while the window shows what one eye sees
 	vr::MirrorStatus mirror = vr::mirrorStatus();
 	json.object("mirror");

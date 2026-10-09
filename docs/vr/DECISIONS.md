@@ -10,6 +10,39 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-030: The interface has its own resolution in VR — the headset's pixel density, not the window's
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** worker of #73 (technical internals, D-017); refines D-025's "the 2D interface at the window's size"
+
+### Decision
+- The interface's virtual screen (`g_size`, `g_sizeRatio`, fonts, HUD scale) is the window in flat
+  mode and, while an OpenXR session runs (from its first located eyes), **the quad's own
+  resolution**: the eye image's pixels per tangent unit times the quad's tangent width, with the
+  window's aspect ratio, 640…4096 px wide (`src/vr/InterfaceSize.h`). On the Index: 1528 px wide,
+  about 19 px per degree, like the eyes.
+- **Everything 2D in a session is drawn straight into the quad's image** at that size: stereo frames
+  (blended, D-025), and also frames without stereo (idle headset, no located eyes, the loading
+  screen via `vr::beginInterfaceFrame()`), which are opaque. The window only shows a scaled copy;
+  the mouse is mapped from the window to the interface.
+- The quad's size, distance and shape stay as they were — only its sharpness changes. Not a look
+  decision; the panel's look is D-029 (#49), which will reuse the same density rule for its own
+  angular size.
+
+### Why
+The owner saw the HUD quad as a little blurry: it had the window's pixels (a 640×480 test window
+spread over 69°, about 9 px per degree against the displays' 19). The scene was already decoupled
+from the window (#19); the interface was the remaining coupling. Tying the interface to the headset
+instead of the window also makes the VR picture independent of how the desktop window is sized.
+
+### Rules out
+Laying out the interface at the eye size (the quad covers only part of the eye's field of view: more
+pixels than the displays can show at that angle, for nothing), and keeping the window as the
+interface in VR.
+
+---
+
 ## D-029: The look of block B — the floating panel, wrist bars, hand reticle, settings screen
 
 - **Date:** 2026-10-10

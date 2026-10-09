@@ -10,6 +10,29 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-017: Player-experience design is agreed with the owner before any work starts
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** project owner
+
+### Decision
+- Anything the player experiences — controls and bindings, world interaction, locomotion and comfort,
+  where UI sits and how it looks (position, colour, shape, size, behaviour), feedback (haptics, sounds,
+  highlights) — is **discussed with the owner before** its issue is written or changed and before a
+  worker starts: the coordinator sends a short design summary with concrete questions, plays the design
+  back in its own words, and waits for a yes. The agreed design is recorded here as a decision.
+- **Technical internals** — where a value comes from, how it is updated and rendered, architecture,
+  tooling — the coordinator and the workers decide on their own.
+- Example: the HP bar — its place, colour and shape are the owner's; reading HP from the engine and
+  redrawing the bar are technical.
+
+### Why
+D-016 was first recorded as "left hand drags, right hand takes to the inventory" when the owner meant
+"both hands work as the mouse". Agreeing the design first avoids building the wrong thing.
+
+---
+
 ## D-016: World interaction — both hands work as the mouse, each with its own reticle; the inventory opens in the centre of the view
 
 - **Date:** 2026-10-09

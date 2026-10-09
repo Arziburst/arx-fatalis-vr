@@ -15,6 +15,11 @@ Roles and the worker side: [WORKFLOW.md](WORKFLOW.md); the queue and the waves: 
   Definition of done for a worker. A command or two to write a precise task is fine; diagnosis,
   reproduction and code are the worker's. Its own changes are limited to process docs and coordination
   tooling (this file, `/new-cycle`, `start-worker.ps1`, …), each in its own PR.
+- **Player-experience design is agreed with the owner first** (D-017): before writing or changing the
+  issue of a task about controls, interaction, comfort, UI placement or look, or feedback — and before
+  starting its worker — send the owner a short design summary with concrete questions, play the design
+  back in your own words, wait for a yes, record it in DECISIONS.md. Typical tasks: #31–#35, #37, #38,
+  #49, #116, #43–#45. Technical internals need no owner.
 - Session name: **"ARXVR Coordinator"** (set by the project hook on `/coordinator`, `/new-cycle`,
   "новый цикл"). Workers are named **"ARXVR-<n> <issue title>"** by `start-worker.ps1`.
 

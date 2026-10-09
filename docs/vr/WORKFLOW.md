@@ -438,6 +438,9 @@ Claude creates and updates tasks on its own, and after each working session repo
 - Publishing anything externally: making the repository public, contacting rights holders, Steam
 - Changing these rules
 - Picking features from research catalogs (the *Decision* column); the coordinator turns the picks into tasks
+- **Player-experience design** (D-017): controls, interaction, comfort, UI placement and look, feedback —
+  agreed with the owner (questions, design played back, a yes) before the issue is written and before a
+  worker starts; technical internals are decided without the owner
 
 **Any decision can be revisited** — by the owner at any time. A changed decision is recorded as a new
 entry in [DECISIONS.md](DECISIONS.md) that supersedes the old one (never deleted), and affected tasks

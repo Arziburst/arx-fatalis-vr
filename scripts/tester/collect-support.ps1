@@ -52,6 +52,10 @@ $sys = [Collections.Generic.List[string]]::new()
 $sys.Add("collected: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
 $buildFile = Join-Path $root 'BUILD.txt'
 $sys.Add("package: $(if (Test-Path $buildFile) { (Get-Content $buildFile -TotalCount 1) } else { 'unknown (no BUILD.txt)' })")
+# The hash of the exe that crashed picks the matching arx.pdb (symbols are kept per exe hash, #132)
+$arxExe = Join-Path $root 'arx.exe'
+$sys.Add("arx.exe sha256: $(if (Test-Path $arxExe) { (Get-FileHash -Algorithm SHA256 $arxExe).Hash.ToLowerInvariant() } else { 'arx.exe not next to this script' })")
+if (Test-Path $buildFile) { Copy-Item -Force $buildFile (Join-Path $stage 'BUILD.txt') }
 $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
 if ($os) { $sys.Add("windows: $($os.Caption) $($os.Version) build $($os.BuildNumber)") }
 foreach ($gpu in @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue)) {

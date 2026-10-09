@@ -43,6 +43,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "animation/AnimationRender.h"
 
+#include "vr/VRBody.h"
+
 #include <stddef.h>
 #include <cstdlib>
 #include <cstring>
@@ -1403,7 +1405,14 @@ static void animateSkeleton(EERIE_3DOBJ * eobj, AnimLayer * animlayer,
 	TransformInfo t(pos, rotation, scale);
 	t.pos = t(ftr);
 	Cedric_ConcatenateTM(skeleton, t);
-	
+
+	// The VR body (#36, D-009): the player's own skeleton is drawn under the tracked head and gets
+	// its arms from the controllers on top of the engine's animation; the copies animated for the
+	// camera's stable position (updateFirstPersonCamera) and the book stay the engine's
+	if(io && io == entities.player() && &skeleton == eobj->m_skeleton.get()) {
+		vr::posePlayerBody(eobj, skeleton, io);
+	}
+
 }
 
 void animateSkeleton(Entity * entity, AnimLayer * animlayer, Skeleton & skeleton) {

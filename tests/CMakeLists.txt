@@ -64,6 +64,9 @@ set(arxtest_TESTCASES
 	tests/vr/SimRigTest.h
 	tests/vr/SimRigTest.cpp
 
+	tests/vr/ArmIKTest.h
+	tests/vr/ArmIKTest.cpp
+
 
 )
 
@@ -89,6 +92,7 @@ set(arxtest_SOURCES
 	src/vr/VRGameInput.cpp
 	src/vr/EyeImage.cpp
 	src/vr/SimRig.cpp
+	src/vr/ArmIK.cpp
 
 
 	${arxtest_TESTCASES}

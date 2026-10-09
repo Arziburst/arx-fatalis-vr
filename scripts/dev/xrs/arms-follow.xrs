@@ -1,0 +1,104 @@
+# The full body (#36, D-009): the player model is drawn under the tracked head and both arms are posed
+# by the IK towards the simulated controllers (held in front of the body by the idle rig). Two poses per
+# hand are in status.json (F-185): the controller and the posed wrist; "error" is the distance between the
+# wrist and where it should be for the model's palm to sit on the controller.
+# Needs a first-person save: level 10 is the scripted intro, whose conversation camera is nowhere near the
+# body (TRAPS.md). Run it through the smoke test with the test save library (#70):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence arms-follow -Save mvp-new-game
+@sim idle
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.sim.eyes.located eq true
+
+# Both arm chains were found on the model and both arms are posed from the located controllers
+@assert vr.body.bound eq true
+@assert vr.body.active eq true
+@assert vr.body.left.source eq xr
+@assert vr.body.right.source eq xr
+@assert vr.body.left.posed eq true
+@assert vr.body.right.posed eq true
+@assert vr.body.left.error lt 1
+@assert vr.body.right.error lt 1
+@assert vr.body.right.stretched eq false
+@assert vr.body.right.slide eq 0
+
+# The hand takes the controller's orientation: the idle rig holds the grips upright (identity), so the
+# fingers (grip +Y) point up - the fingertips (curled by the wait animation) are above the wrist (engine y
+# is down) and the wrist sits below the grip by the palm's distance from it (7.9 units on human_base)
+@remember rightGrip0Y vr.body.right.controller.y
+@remember rightWrist0Y vr.body.right.wrist.y
+@assert vr.body.right.wrist.y gt {rightGrip0Y+5}
+@assert vr.body.right.tip.y lt {rightWrist0Y-5}
+# Pitched forward by 90 degrees the fingers point ahead: the wrist and the fingertips level with the grip
+vr-sim hand right rot 0 -90 0
+@frames 10
+@assert vr.body.right.wrist.y lt {rightGrip0Y+3}
+@assert vr.body.right.wrist.y gt {rightGrip0Y-3}
+@assert vr.body.right.tip.y lt {rightGrip0Y+6}
+@assert vr.body.right.tip.y gt {rightGrip0Y-6}
+@assert vr.body.right.error lt 1
+vr-sim hand right rot 0 0 0
+@frames 5
+
+# Looking down at the body with the hands in front: a still pair gives the picture's own floor
+# (measured 0.65 - 0.7 in the start cell; a hand moved 30 cm changes the pictures by 2.4 / 6.7)
+vr-sim head rot 0 -70 0
+@frames 15
+@shot body-down-a
+@shot body-down-b
+@diff body-down-a body-down-b lt 1.5 left
+@diff body-down-a body-down-b lt 1.5 right
+
+# The right hand goes 25 cm up and 30 cm out: the wrist target rises by 25 units (engine y is down) and
+# the model's wrist follows it; the picture of both eyes changes more than the still floor
+@remember rightWristY vr.body.right.wrist.y
+@remember rightTargetY vr.body.right.target.y
+vr-sim hand right pos 0.5 -0.2 -0.45
+@frames 15
+@assert vr.body.right.posed eq true
+@assert vr.body.right.target.y lt {rightTargetY-20}
+@assert vr.body.right.wrist.y lt {rightWristY-20}
+@assert vr.body.right.error lt 1
+@shot body-hand-up
+@diff body-down-a body-hand-up gt 2 left
+@diff body-down-a body-hand-up gt 2 right
+
+# Out of reach: a hand 1.2 m to the right stretches the arm at it after the shoulder slid its 20 units
+vr-sim hand right pos 1.2 -0.3 -0.45
+@frames 10
+@assert vr.body.right.stretched eq true
+@assert vr.body.right.slide eq 20
+@assert vr.body.right.error gt 10
+
+# A controller that is not tracked gives its arm back to the engine; the other arm stays posed
+vr-sim hand right off
+@frames 10
+@assert vr.body.right.tracked eq false
+@assert vr.body.right.posed eq false
+@assert vr.body.left.posed eq true
+@assert vr.body.active eq true
+vr-sim hand right on
+vr-sim hand right pos 0.2 -0.45 -0.35
+@frames 10
+@assert vr.body.right.posed eq true
+@assert vr.body.right.error lt 1
+
+# A lean of 30 cm moves the body with the head (the same offset the camera takes) and keeps the hands
+# rigid with the head
+vr-sim head rot 0 0 0
+vr-sim head pos 0.3 0 0
+@frames 10
+@remember leanX vr.head.offsetX
+@remember leanZ vr.head.offsetZ
+@assert vr.body.shiftX eq {leanX}
+@assert vr.body.shiftZ eq {leanZ}
+@assert vr.body.right.error lt 1
+@assert vr.body.left.error lt 1
+vr-sim head pos 0 0 0
+@frames 5
+@assert vr.body.shiftX eq 0
+
+@assert errors eq 0

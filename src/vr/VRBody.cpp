@@ -19,10 +19,14 @@
 
 #include "vr/VRBody.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <iomanip>
+#include <map>
+#include <set>
 #include <sstream>
+#include <utility>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -79,6 +83,7 @@ struct BodyState {
 	std::string inactiveBefore;
 	std::vector<char> touched;                    //!< scratch: bones recomputed after the chain
 	std::vector<char> headVertex;                 //!< per vertex of the bound model: in the head or the neck
+	size_t capStart = 0;                          //!< the first cap face added to the bound model (its face count without one)
 	PlayerBodyStatus status;
 };
 
@@ -184,7 +189,137 @@ ArmChain findChain(const EERIE_3DOBJ * obj, Hand hand) {
 	return chain;
 }
 
-void bind(const EERIE_3DOBJ * obj) {
+/*!
+ * \brief Close the opening the hidden head and neck leave in the torso
+ *
+ * Under a tracked head the model is drawn two-sided and the eyes sit above the chest, so looking down
+ * meets the neck opening and the hollow torso behind it. The boundary between the hidden faces (any
+ * vertex in the head or the neck) and the visible ones is walked as loops, and each loop is closed by
+ * a triangle fan with the material and texture coordinates of the visible faces on it. The cap faces are
+ * appended to the model's face list and drawn only under a tracked head (\ref bodyCapStart).
+ */
+void addNeckCap(EERIE_3DOBJ * obj) {
+
+	g_body.capStart = obj->facelist.size();
+	if(g_body.headVertex.size() != obj->vertexlist.size()) {
+		return;
+	}
+
+	typedef std::pair<size_t, size_t> EdgeKey;
+	struct EdgeUse {
+		size_t hidden = 0;
+		size_t visible = 0;
+		size_t visibleFace = 0;
+	};
+	auto edgeKey = [](size_t a, size_t b) { return EdgeKey(std::min(a, b), std::max(a, b)); };
+
+	std::map<EdgeKey, EdgeUse> edges;
+	for(size_t f = 0; f < obj->facelist.size(); f++) {
+		const EERIE_FACE & face = obj->facelist[f];
+		if(!face.material) {
+			continue;
+		}
+		bool hidden = false;
+		for(VertexId vertex : face.vid) {
+			hidden = hidden || g_body.headVertex[size_t(vertex)];
+		}
+		for(size_t k = 0; k < 3; k++) {
+			const size_t a = size_t(face.vid[k]);
+			const size_t b = size_t(face.vid[(k + 1) % 3]);
+			if(a == b) {
+				continue;
+			}
+			EdgeUse & use = edges[edgeKey(a, b)];
+			if(hidden) {
+				use.hidden++;
+			} else {
+				use.visible++;
+				use.visibleFace = f;
+			}
+		}
+	}
+
+	// The boundary: edges with a hidden face on one side and a visible one on the other
+	std::map<size_t, std::vector<size_t>> neighbours;
+	std::map<EdgeKey, size_t> boundaryFace;
+	for(const auto & entry : edges) {
+		if(entry.second.hidden && entry.second.visible) {
+			neighbours[entry.first.first].push_back(entry.first.second);
+			neighbours[entry.first.second].push_back(entry.first.first);
+			boundaryFace[entry.first] = entry.second.visibleFace;
+		}
+	}
+
+	// A vertex's texture coordinates on the visible side: from a visible boundary face holding it
+	auto cornerOf = [&](size_t vertex, size_t neighbour, float & u, float & v, MaterialId & material) {
+		const EERIE_FACE & face = obj->facelist[boundaryFace[edgeKey(vertex, neighbour)]];
+		material = face.material;
+		for(size_t k = 0; k < 3; k++) {
+			if(size_t(face.vid[k]) == vertex) {
+				u = face.u[k];
+				v = face.v[k];
+				return;
+			}
+		}
+		u = v = 0.f;
+	};
+
+	std::set<EdgeKey> used;
+	size_t loops = 0;
+	size_t capFaces = 0;
+	for(const auto & start : neighbours) {
+		for(size_t first : start.second) {
+			if(used.count(edgeKey(start.first, first))) {
+				continue;
+			}
+			used.insert(edgeKey(start.first, first));
+			std::vector<size_t> loop;
+			loop.push_back(start.first);
+			size_t current = first;
+			while(current != start.first && loop.size() < obj->vertexlist.size()) {
+				loop.push_back(current);
+				size_t next = size_t(-1);
+				for(size_t candidate : neighbours[current]) {
+					if(!used.count(edgeKey(current, candidate))) {
+						next = candidate;
+						used.insert(edgeKey(current, candidate));
+						break;
+					}
+				}
+				if(next == size_t(-1)) {
+					break;
+				}
+				current = next;
+			}
+			if(loop.size() < 3) {
+				continue;
+			}
+			// A fan from the loop's first vertex; the material of the visible faces on the loop
+			for(size_t i = 1; i + 1 < loop.size(); i++) {
+				EERIE_FACE face;
+				face.facetype = POLY_DOUBLESIDED;
+				const size_t corners[3] = { loop[0], loop[i], loop[i + 1] };
+				const size_t along[3] = { loop[1], loop[i + 1], loop[i] };
+				for(size_t k = 0; k < 3; k++) {
+					face.vid[k] = VertexId(corners[k]);
+					MaterialId material;
+					cornerOf(corners[k], along[k], face.u[k], face.v[k], material);
+					if(k == 0 || !face.material) {
+						face.material = material;
+					}
+				}
+				obj->facelist.push_back(face);
+				capFaces++;
+			}
+			loops++;
+		}
+	}
+
+	LogInfo << "[vr] body: neck opening closed with " << capFaces << " cap face(s) over " << loops
+	        << " boundary loop(s) (" << boundaryFace.size() << " boundary edges); drawn under a tracked head only";
+}
+
+void bind(EERIE_3DOBJ * obj) {
 
 	PlayerBodyStatus & status = g_body.status;
 
@@ -281,6 +416,8 @@ void bind(const EERIE_3DOBJ * obj) {
 		status.chains += std::string(hand ? "; " : "") + name + ": " + chain.names;
 		status.bound = true;
 	}
+
+	addNeckCap(obj);
 
 	gameevent::Event("vr.body.model")("model", status.model)("chains", status.chains)("bound", status.bound);
 }
@@ -506,7 +643,7 @@ bool hidesHeadOnly() {
 	return std::strcmp(headStatus().source, "none") != 0;
 }
 
-bool isHeadVertex(const EERIE_3DOBJ * obj, VertexId vertex) {
+bool isHeadVertex(EERIE_3DOBJ * obj, VertexId vertex) {
 	if(!obj || !obj->m_skeleton) {
 		return false;
 	}
@@ -515,6 +652,10 @@ bool isHeadVertex(const EERIE_3DOBJ * obj, VertexId vertex) {
 		bind(obj);
 	}
 	return size_t(vertex) < g_body.headVertex.size() && g_body.headVertex[size_t(vertex)];
+}
+
+size_t bodyCapStart(const EERIE_3DOBJ * obj) {
+	return (obj && obj == g_body.boundObject) ? g_body.capStart : (obj ? obj->facelist.size() : 0);
 }
 
 bool handLandmarks(Hand hand, Vec3f & palm, Vec3f & tip) {

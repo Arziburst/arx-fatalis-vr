@@ -42,6 +42,14 @@ How D-009's full body is built (#36):
 - **Hidden under a tracked head: the head and the neck only.** The engine's first-person selection
   (`1st`) hides the chest and the belt too; while a head drives the camera the first-person hiding uses
   the head's bone subtree plus the neck, and goes back to `1st` in flat mode.
+- **The model is drawn two-sided under a tracked head.** The eyes sit inside the model, above the
+  chest, so looking down meets the torso's inner side; culled, the body reads hollow and see-through
+  (the owner's #27 run). The player model skips the engine's face cull while a head drives the camera
+  (`Cedric_RenderObject`; `render3D()` has no GPU cull), so the chest reads solid from above — and the
+  opening the hidden head and neck leave in the torso is **closed by a cap**: the boundary between the
+  hidden faces and the visible ones is walked as loops at bind time and each loop is fanned with the
+  material and texture coordinates of the visible faces on it (5 faces over one 7-edge loop on
+  `human_base`); the cap faces are appended to the model and drawn only in that view.
 - **The model is drawn under the tracked head** — the head's horizontal movement since the reference
   shifts every bone, the camera takes the shift off again — until #26 moves the real player there; and it
   faces #25's body yaw (the heading plus the body's offset after the head), turned about the vertical

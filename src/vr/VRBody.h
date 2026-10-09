@@ -79,7 +79,14 @@ Vec3f bodyShift();
 bool hidesHeadOnly();
 
 //! \return true for a vertex of the player model's head (the head group and everything under it) or neck
-bool isHeadVertex(const EERIE_3DOBJ * obj, VertexId vertex);
+bool isHeadVertex(EERIE_3DOBJ * obj, VertexId vertex);
+
+/*!
+ * \return the index of the first face the body added to the player model to close the neck opening the
+ *         hidden head leaves (a fan over the boundary of the hidden faces, drawn only under a tracked
+ *         head, where the model is drawn two-sided), or the face count of a model without one
+ */
+size_t bodyCapStart(const EERIE_3DOBJ * obj);
 
 /*!
  * \brief Where the posed hand ended up, after the vertices were transformed - for status.json

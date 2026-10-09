@@ -1017,14 +1017,26 @@ static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io,
 		}
 	}
 	
+	// The VR body (#36): under a tracked head the player's eyes sit inside the model, above the chest
+	// and in the hidden head, so looking down meets the torso's inner side - culled, the body reads
+	// hollow and see-through. The player model is drawn two-sided there (render3D() has no GPU cull;
+	// this is the only cull), so the chest reads solid from above.
+	const bool twoSided = use_io && use_io == entities.player() && !IN_BOOK_DRAW && vr::hidesHeadOnly();
+	// The faces the body added to close the neck opening (vr::bodyCapStart) exist only for that view
+	const size_t capStart = twoSided ? eobj->facelist.size() : vr::bodyCapStart(eobj);
+
 	for(size_t i = 0; i < eobj->facelist.size(); i++) {
 		const EERIE_FACE & face = eobj->facelist[i];
-		
+
+		if(i >= capStart) {
+			break;
+		}
+
 		if((face.facetype & POLY_HIDE) && !IN_BOOK_DRAW) {
 			continue;
 		}
-		
-		if(CullFace(eobj, face) || !face.material) {
+
+		if((!twoSided && CullFace(eobj, face)) || !face.material) {
 			continue;
 		}
 		

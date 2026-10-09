@@ -56,6 +56,14 @@ vr-sim head rot 0 -70 0
 @diff body-down-a body-down-b lt 1.5 left
 @diff body-down-a body-down-b lt 1.5 right
 
+# Straight down: the body under the eyes reads solid - the model is drawn two-sided under a tracked head,
+# so the hollow torso's inner side shows instead of the floor through it (judged on the capture)
+vr-sim head rot 0 -89 0
+@frames 15
+@shot body-straight-down
+vr-sim head rot 0 -70 0
+@frames 15
+
 # The right hand goes 25 cm up and 30 cm out: the wrist target rises by 25 units (engine y is down) and
 # the model's wrist follows it; the picture of both eyes changes more than the still floor
 @remember rightWristY vr.body.right.wrist.y

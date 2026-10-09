@@ -204,6 +204,7 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | 2026-10-09, #71: `-Commands 'drawcheck 120'` on level 10 **before** the simulate / draw split (`renderLevel()` still aged particles, flares, decals and spells while drawing) | **23 of 120 frames differ** between the two draws (max 3558 of 307200 pixels, max delta 59) — the torches' fire particles advance once per draw |
 | 2026-10-09, #71: the same after the split | `PASS`, **0 of 120 frames differ** (max 0 pixels, delta 0), 0 errors, 0 warnings |
 | 2026-10-09, #71: 26 spells cast on the player (`spellcast -fs 5 <spell> self`, the list in [The draw check](#the-draw-check-drawcheck)), then `drawcheck 240` | `PASS`, **0 of 240 frames differ**, every `spellcast` acknowledged with `errors=0`, 0 errors, 0 warnings |
+| 2026-10-09, #71: **the check can fail** — a build with `ARX_PARTICLES_Update()` deliberately moved back into `renderSceneView()`, `drawcheck 120` on level 10 | `FAIL`, **35 of 120 frames differ** (max 10 of 307200 pixels, max delta 97), the most differing pair saved as `capture\drawcheck1_a.bmp` / `_b.bmp`; the other six checks stay `[ok]` — only the draw check catches this class of bug |
 
 Conclusions:
 

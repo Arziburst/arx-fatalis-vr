@@ -94,7 +94,7 @@ void setSimulatedHand(Hand hand, const HandSample & sample);
 void clearSimulatedHand(Hand hand);
 
 //! One arm as status.json reports it
-struct BodyHandStatus {
+struct PlayerArmStatus {
 	const char * source = "none"; //!< xr (a located controller), sim (handpose), none
 	bool tracked = false;         //!< a controller pose was available this frame
 	bool posed = false;           //!< the arm was posed by the IK this frame (else the engine's animation)
@@ -111,8 +111,8 @@ struct BodyHandStatus {
 	bool stretched = false;
 };
 
-//! The body as status.json reports it
-struct BodyStatus {
+//! The body as status.json reports it (the look and the body yaw of #25 are vr::BodyStatus in HeadTracking.h)
+struct PlayerBodyStatus {
 	bool bound = false;           //!< arm chains were found on the player model
 	std::string model;            //!< the model file bound to
 	std::string chains;           //!< the group names of both chains, e.g. "left: left_arm>left_forearm>left_hand; right: ..."
@@ -120,10 +120,11 @@ struct BodyStatus {
 	const char * inactive = "";   //!< why not, when not
 	u64 posedFrames = 0;          //!< frames with at least one posed arm since the game started
 	Vec3f shift = Vec3f(0.f);     //!< this frame's horizontal shift of the body (units)
-	std::array<BodyHandStatus, HandCount> hands; //!< left, right
+	float facingYaw = 0.f;        //!< engine degrees [0, 360): where the model was turned to face (#25's body yaw)
+	std::array<PlayerArmStatus, HandCount> hands; //!< left, right
 };
 
-const BodyStatus & bodyStatus();
+const PlayerBodyStatus & playerBodyStatus();
 
 } // namespace vr
 

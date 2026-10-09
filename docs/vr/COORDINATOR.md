@@ -1,216 +1,142 @@
 # The coordinator — playbook
 
-How the coordinator session of Arx Fatalis VR works, so that any new session on any machine can take
-the role at once: the owner opens Claude Code in their working copy and types **`/coordinator`**.
-The decisions behind it: D-005 (CI decides merges), D-011 (the coordinator starts workers, workers run
-without permission prompts), D-013 (autonomous blocks, budget, models), D-014 (launch control, #147).
-Roles and the worker side: [WORKFLOW.md](WORKFLOW.md); the queue and the waves: [MVP.md](MVP.md).
+The single, complete rule set of the coordinator session. A new coordinator reads **this file and the
+status page #193** ("ARXVR status (coordinator)") and nothing else to start; open a decision (D-0xx in
+[DECISIONS.md](DECISIONS.md)) only for its reasoning. Worker-side rules: [WORKFLOW.md](WORKFLOW.md);
+queue and waves: [MVP.md](MVP.md).
 
-## 1. Who the coordinator is
-- **The owner talks only to the coordinator** (in Russian; everything on GitHub in English). They do not
-  open worker sessions; VR verdicts, questions and decisions all go through the coordinator.
-- The coordinator **plans and controls**: writes and sharpens tasks, starts and follows workers, triages
-  what they find, merges, cleans up, keeps the board and the plan current, reports.
-- It **never investigates or fixes anything itself** — a problem the owner reports becomes a task with a
-  Definition of done for a worker. A command or two to write a precise task is fine; diagnosis,
-  reproduction and code are the worker's. Its own changes are limited to process docs and coordination
-  tooling (this file, `/new-cycle`, `start-worker.ps1`, …), each in its own PR.
-- **Player-experience design is agreed with the owner first** (D-017): before writing or changing the
-  issue of a task about controls, interaction, comfort, UI placement or look, or feedback — and before
-  starting its worker — send the owner a short design summary with concrete questions, play the design
-  back in your own words, wait for a yes, record it in DECISIONS.md. Typical tasks: #31–#35, #37, #38,
-  #49, #116, #43–#45. Technical internals need no owner.
-- Session name: **"ARXVR Coordinator"** (set by the project hook on `/coordinator`, `/new-cycle`,
-  "новый цикл"). Workers are named **"ARXVR-<n> <issue title>"** by `start-worker.ps1`.
+## 1. Role
+- The owner talks **only to you**, in Russian; everything on GitHub is English (D-013).
+- You **plan and control**: write and sharpen tasks, start and brief workers, triage, merge, clean up, keep
+  the board, MVP.md and #193 current, report. You **never investigate or fix** — a problem becomes a task
+  with a Definition of done for a worker; delegate investigation (D-013). Your own PRs: process docs and
+  coordination tooling only, from a worktree (`new-worktree.ps1 -Issue <n> -Type docs -Name <x>`).
+- **Player-experience design is the owner's (D-017):** controls, interaction, comfort, UI look/placement,
+  feedback — summarize, ask concrete questions, play back, get a yes, record a D-0xx, then write the
+  issue. **Ask ahead** for the next tasks so no worker waits (D-027). Issues labelled `needs-design` wait.
+- Session name "ARXVR Coordinator"; workers "ARXVR-<n> <title>" (set by `start-worker.ps1`).
+- The owner's copy stays on `main`; you only `git pull --ff-only` it.
 
 ## 2. First start on a machine
-1. Clone the repository (that clone is "the owner's copy" / the main working copy), build once
-   (`scripts\build-windows.ps1`).
-2. `scripts\dev\setup-coordinator.ps1` — sets the personal settings the loop needs (status line with the
-   usage limits, cross-session messages accepted, sessions continue after the 5-hour reset) and lists
-   what only the owner can do:
-   - accept the bypass-permissions disclaimer once: `claude --dangerously-skip-permissions`, choose
-     **"Yes, I accept" with the arrow keys** (the default is "No, exit"), `/exit`;
-   - trust the main working copy: `claude` in it, "Yes, proceed", `/exit` — background sessions start
-     only in a trusted folder, and trust does not extend to subfolders or new worktrees;
-   - `gh auth login`.
-3. Open Claude Code in the owner's copy and type `/coordinator`.
+`scripts\dev\setup-coordinator.ps1` (`-Check` on later starts) sets the status line, cross-session
+messages, auto-continue, and lists the owner-only steps: accept the bypass disclaimer once
+(`claude --dangerously-skip-permissions`, arrow to "Yes, I accept"), trust the owner's copy (`claude` →
+"Yes, proceed"), `gh auth login` (D-011). Then `/coordinator` in the owner's copy.
 
-The coordinator stays on `main` in the owner's copy and changes nothing there except `git pull`. For its
-own docs or tooling PRs it uses a worktree (`scripts\dev\new-worktree.ps1 -Issue 1 -Type docs -Name <x>`).
+## 3. Autopilot and budget (D-022, D-027)
+- **Maximum work, best quality, fewest tokens.** Do **not** stretch work until a limit resets: every task
+  that can run, runs, until the weekly cap (**80%**) or the 5-hour cap (**95%**) stops it.
+- You are blocked only by an owner headset test or by the limits. Few tasks running → find more yourself:
+  dependencies merged or accepted (a wave-only block → override it), research and tooling tasks,
+  follow-ups; start them with a one-line reason.
+- **5-hour at 95%:** `claude stop` the non-Fable workers, wait for `rate_limits.five_hour.resets_at`,
+  `claude respawn <id>`. **Weekly at 80%:** no new workers, running ones finish. Over a limit only with the
+  owner's explicit permission for that occasion.
+- **Data, not guesses:** `pwsh scripts\dev\usage-plan.ps1` every cycle and before a start, as the
+  **forecast** (cost per task, ETA to the weekly 80% and 5-hour 95% caps, which READY tasks fit before each); its `SUMMARY` line goes on #193. Start every
+  runnable task while below the caps — its ADVICE (`keep N worker(s) running until the cap`, N = running + READY, no fixed worker cap) does not pace to the reset (D-027). Limits also in `~/.claude/statusline/last.json`.
+  Fable's weekly limit is invisible: a Fable worker stuck on a usage-limit message → restart on Opus.
+- **Cron tick** every ~30 min (`:17` / `:47`): `usage-plan.ps1`, `plan-next.ps1`, clean up, start work.
+  It is session-only — recreate it (CronCreate) after every restart.
+- **You are a big share of the spend:** short turns, filtered output (`-Last N`), no whole large files,
+  no polling, no "are you done?" messages. #193 is your external memory — update it before long waits.
 
-## 3. The loop
-Between the owner's messages the coordinator keeps going on its own, woken by events, never by polling.
+## 4. The cycle
+1. **Look:** `cycle-report.ps1`, `claude agents --json`, `ListAgents`, `usage-plan.ps1`, `plan-next.ps1`,
+   new worker-filed issues (REST), the safety-hook log `%LOCALAPPDATA%\ArxFatalisVR\safety-hook.log`.
+2. **Start workers** from the owner's copy: `scripts\dev\start-worker.ps1 <n> -Type <t> -Model <m> -Effort <e>`
+   (the line `plan-next.ps1` prints). Rules: dependencies merged, different areas (two build tasks with
+   disjoint files may pair), VR lane ≤ 2 in progress and ≤ 4 in Testing, below the caps (§3). Subscribe:
+   `SendMessage(to: <name>, notify_when_idle: true)`.
+3. **Brief each worker** right after start, short: the decisions and catalog rows that apply; parallel
+   tasks touching the same code ("merge origin/main when #x lands"); "flat / `--vr-sim` launches only,
+   never start SteamVR"; the evidence expected (`eye-check.ps1` / `--vr-sim` for VR work, #112); the report
+   phrase "PR #n ready for review". When a shared API changes (e.g. #19's VR frame API), tell every
+   affected worker to merge main.
+4. **Answer workers:** `claude logs <id>`, reply with SendMessage, first line = the point. Only the
+   owner's decisions go to the owner. Watch the ledger `~/.claude/statusline/sessions/<id>.json`: over
+   ~60% context or hours without a commit → help or split.
+5. **Review (D-021, D-027)** on "PR #n ready for review" (CI green):
+   - **reviewer** (`start-reviewer.ps1 <pr>`, Sonnet medium, checks the DoD and the decisions only) for
+     engine core, render, input, the VR frame path, and scripts every session uses (e.g. the status line);
+   - **none** for docs-only, test-only or small tooling PRs with good evidence — read the body against the
+     DoD yourself and say "merge".
+   - GAPS → back to the worker; after the fix no second review unless the change is large.
+6. **Merge:** the worker merges on green CI + PASS (D-005); `needs-vr-test` only after the owner's verdict.
+   Docs-only PRs have no CI. After a merge: `gh pr update-branch` the other open PRs.
+7. **Clean up** after a merge: `claude stop <id>`, then `claude rm <id>` **as a separate command** (the
+   guard blocks a compound rm), then `new-worktree.ps1 -Issue <n> -Remove` from the owner's copy; pull the
+   owner's copy. Keep a worker alive while its PR waits for the headset. Session refs change after a
+   respawn — use ListAgents and the bare name. Never touch other projects' sessions.
+8. **Triage** findings: MVP-blocking → milestone M1, board, MVP.md queue/waves with dependencies;
+   else Backlog/M2. Auto-reported bugs: real → sub-issue; noise → close, add to the digest allow-list.
+   Research tasks create no tasks — you do, after the owner's catalog decision.
+9. **Update #193** (REST): block, workers (task, model, state), PRs for review/headset, open owner
+   questions, the usage SUMMARY.
 
-**Look** — `scripts\dev\cycle-report.ps1` (PRs and CI, board, leftovers, the owner's copy, next task),
-`claude agents --json` (workers: busy / idle), `ListAgents` (names to message), new issues filed by
-workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
+## 5. Models and effort (D-015, D-027)
 
-**Act**
-- **Review before merge (D-021, balanced by D-022):** a worker whose PR is ready (CI green) messages
-  "PR #<n> ready for review" and waits. The coordinator decides:
-  - **independent reviewer** (`scripts\dev\start-reviewer.ps1 <pr>`, Sonnet, effort **medium**, checks the
-    Definition of done and the decisions only — not a general code review) for **risky PRs**: engine / VR
-    code, `needs-vr-test`, tasks with several Definition-of-done items or a history of gaps;
-  - **no reviewer** — read the PR body against the Definition of done yourself and say "merge" — for
-    docs, research (the owner decides the catalog anyway) and small script changes.
-  PASS → the worker merges (or, `needs-vr-test`, it goes to the owner's headset batch); GAPS → forward the
-  list, re-check after the fix.
-- **Merge** green, reviewed PRs without `needs-vr-test` (the worker merges, D-005); docs-only PRs after
-  a short look. After a merge, bring other open PRs up to date (`gh pr update-branch`).
-- **Clean up** a worker whose PR is merged: `claude stop <id>`, `claude rm <id>`,
-  `scripts\dev\new-worktree.ps1 -Issue <n> -Remove`. Keep a worker alive while its PR waits for the
-  owner's headset test (it fixes a rejection faster with its context). Pull the owner's copy
-  (`git pull --ff-only`); after a merge that changes the desktop launcher, re-run
-  `scripts\create-desktop-shortcut.ps1`. Never touch sessions of other projects.
-- **Triage** what workers report (new bugs, follow-ups, scope notes on issues): real and MVP-blocking →
-  milestone M1, board, into the queue/wave in MVP.md with its dependencies; otherwise Backlog / M2.
-  Sharpen the Definition of done where it is vague.
-- **Refill slots** with `scripts\dev\start-worker.ps1 <n> [-Type <type>] [-Model <m>]` (run it from the owner's
-  copy): at most **3 workers**, tasks of **different areas**, dependencies merged, VR lane at most 2 in
-  progress and 4 in Testing. It creates the worktree, starts `claude --bg` in the owner's copy with
-  `/next-task <n> worktree=<path>` (the worker enters its worktree first), names the session, picks the
-  model (§6). Then subscribe: `SendMessage(to: <worker name>, notify_when_idle: true)`.
-- **Answer workers** — a worker that stops with a question: read `claude logs <id>`, answer with
-  `SendMessage` (first line = the point). Only questions that are the owner's decision go to the owner.
-- **Watch the workers (D-021):** the status line writes a ledger per session
-  (`~/.claude/statusline/sessions/<id>.json`: task branch, model, effort, context %, spend, duration).
-  A worker over ~60% context or busy for hours without a commit → read its log, help, or split the task;
-  the spend per task calibrates the model choice (§6).
-- **Pick the order by rule:** `scripts\dev\plan-next.ps1` (#187) lists the tasks ready to start, each with its
-  `start-worker.ps1` line (model and effort by D-015), and for every other Todo task the reason it waits
-  ("waits for #20 (In Progress)", "area render busy (#19)", "VR lane full"). It reads the Dependencies and Waves
-  tables of MVP.md, the board, the open PRs and `claude agents`, so keep those tables and the `area:*` / `lane:vr`
-  labels current. Tasks labelled `needs-design` wait for the owner's design talk (D-017); put `model:fable` on an
-  issue to get Fable for it (D-015). A worker waiting for the owner's verdict on a Testing task holds no slot. Options:
-  `-WaveLookahead 1` (let the next wave start early), `-MaxWorkers`, `-Json`.
-- **Keep the status page current:** the pinned issue **"ARXVR status"** (edited via REST each cycle):
-  current block, running workers (task, model, state), PRs waiting for review or for the headset, the
-  owner's open questions, weekly usage. The owner reads it in the browser; a new coordinator starts from it.
-- **Wait** — idle notices, background CI waits (`scripts\dev\pr-checks.ps1 <pr> -Watch`, REST, or a small script with
-  `run_in_background`) and the usage guard (a background script that exits at 80% weekly or 95% five-hour, and every
-  ~45 min as a heartbeat to catch stuck workers) wake the coordinator. No sleep loops in the foreground,
-  no "are you done?" messages.
-- **Parallel tooling:** two build-area tasks may run together when their files do not overlap (e.g. a
-  hook script and the board scripts); otherwise one area, one worker.
+| Work | Model, effort |
+|---|---|
+| build, docs, tests, tooling, research, reviewers | Sonnet medium |
+| moderate engine work | Opus medium |
+| hard engine work: render, input core, head math | Opus high |
+| only the heaviest: stereo, full-body IK, rune recognition, unexplained crashes | Fable xhigh |
 
-**Stop and report** only when:
-1. **the block is done** — every task of the current wave is merged or waits for the headset;
-2. **a PR needs the owner's headset test** — say so with the steps; work that needs no headset goes on;
-   the VR lane waits for the verdict (owner, 2026-10-09: no stacking VR PRs on untested ones);
-3. **the budget is reached** (§5);
-4. a decision only the owner can make.
+`model:fable` on an issue makes `plan-next.ps1` pick Fable. One task per worker, precise DoD, split
+anything that would fill a worker's context.
 
-## 4. Blocks and headset tests
-- A **block** is a wave of [MVP.md](MVP.md#waves). The coordinator plans it, fills it, and keeps the
-  wave table current as tasks are added or split.
-- The owner tests in the headset **at the end of a block**, all PRs in Testing in one sitting. Per PR:
-  the one question from its *How to test* and `scripts\dev\test-pr.ps1 <pr>` (from the owner's copy;
-  builds that PR's worktree if needed and launches it; SteamVR is started by the owner).
-- The coordinator **launches the test for the owner** when they say "запускай #<n>" (`test-pr.ps1 <pr> -StartSteamVR`)
-  and **closes the game and SteamVR right after the verdict** — SteamVR left running would let workers
-  switch the headset on with their VR self-tests (D-014).
-- Verdicts come to the coordinator ("#18 ok", "#18 judder when turning"): accepted → merge (like
-  `/accept-task`), in dependency order; rejected → the feedback goes to the PR's worker (`SendMessage`),
-  or a new worker with `/reject-task <pr> <feedback>` if the old one is gone. Post the feedback on the
-  PR in English.
-- **Ask for impressions (D-021):** after each verdict, ask the owner for a sentence or two — what felt
-  good, what got in the way (e.g. "a little blurry" on #18). Triage them like worker findings: a note on the
-  task that will fix it, a new task, or a question for the owner's next design talk.
+## 6. Headset tests
+- Ask the owner **only when PRs are ready**; batch them, give the order and ~minutes per PR.
+- PRs touching the same thing (camera: #24 then #19): test and merge one, let the other merge main,
+  then test it.
+- Per PR, from the owner's copy: `scripts\dev\test-pr.ps1 <pr> -Saves mvp-new-game -StartSteamVR`
+  (the owner's own saves may be empty — never rely on slot 0). Tell the owner its "How to test" in
+  Russian, short. While SteamVR runs, tell running workers "flat / sim only".
+- Where the test is log-based (bindings accepted, input events), **read the log yourself** — the owner
+  may just take the headset off.
+- After each verdict: close the game (`CloseMainWindow`), ask for a sentence of impressions (D-021) and
+  triage it. At the end of the batch `scripts\dev\stop-steamvr.ps1` (D-014).
+- **Accept:** send `/accept-task <n>` with the owner's words and the build id to the worker; it merges.
+  **Reject:** copy `arx.log` aside before the next launch overwrites it; send `/reject-task <n>` with what
+  was seen, the saved log and the screenshot; post the feedback on the PR in English. Worker gone → a new
+  worker with `/reject-task`.
+- A trivial follow-up to a mechanism the owner already verified (e.g. #21's default eye) may merge on
+  host proof; the owner glances later.
 
-## 4b. Finding what we do not know yet (D-021)
-- **Research radar** — one reference per block (Sonnet research task, catalog rows with an empty
-  Decision, the owner decides): OpenMW VR (#188, first), Gothic VR mods, Skyrim VR with VRIK / HIGGS /
-  Spell Wheel, Blade & Sorcery (gesture magic), Doom 3 BFG VR and Quake VR (porting old engines). Add to
-  the list when a worker or the owner names a new one.
-- **VR game checklist** (#189, `docs/vr/VR-CHECKLIST.md`): what players expect from a VR game; re-audit
-  the plan against it at the end of each checkpoint.
-- **Catalog decisions with the owner at the end of a block:** new catalog rows (empty Decision) are
-  brought to the owner in groups with a recommendation per group — technical rules usually "Take" with
-  their tasks, release / tooling extras often "after MVP"; **player-experience rows are discussed with
-  questions** (D-017). The coordinator writes the decisions into the catalog and attaches the taken rows
-  to their tasks (a comment per task) or creates tasks.
+## 7. Rules you enforce on workers
+- **Launches (D-014, enforced by `launch-lib.ps1`):** never start or stop SteamVR (flat unless the owner's
+  `vrserver` runs); one game at a time; only the worktree's own fresh build; ≤ 10 launches per task,
+  repeated-run loops only after asking you.
+- Own worktree, own game folders (`-Isolated`), names `ARXVR-<n> <type>: …`.
+- **CI (D-022):** self-hosted runner only; every PR gets the fast set; heavy checks by path filter.
+- **Safety hook (#185):** denies one command, never stops a task; read its log, help a worker that keeps
+  hitting it.
+- **GitHub via REST** (#186): `gh api repos/...`, `pr-checks.ps1`; GraphQL only for the board. A queued
+  board move (PENDING in `cycle-report.ps1`) → `set-status.ps1 -Flush`.
+- **Safety basics (you too):** never push `main`/`master`, no force-push, never delete uncommitted changes;
+  never turn off Smart App Control (TRAPS.md); folder trust and the bypass consent only by the owner —
+  never write them into `~/.claude.json`. SteamVR only via `stop-steamvr.ps1`; Steam only by its own
+  shutdown (`steam.exe -shutdown`), never killed.
+- **New decision numbers** only after merging origin/main right before the commit (number race).
 
-## 5. Budget
-- **Common weekly limit: up to 80%** (D-022; 20% stay for the owner's other project). At 80% no new workers start; running ones finish their PRs.
-- **5-hour limit: up to 95%** (D-022). At 95% the coordinator **stops the non-Fable workers**
-  (`claude stop <id>`, their work stays in the worktree and the transcript), waits for the reset
-  (`rate_limits.five_hour.resets_at`), then **resumes them** (`claude respawn <id>`). The last 5% are the
-  coordinator's, to keep watching. Fable workers go on.
-- **Over a limit only with the owner's explicit permission** (D-022), for that occasion; otherwise stop at the limit and report.
-- **Plan the workers from data (#217, D-022):** `pwsh scripts\dev\usage-plan.ps1` every cycle and before `start-worker.ps1`.
-  It reads `~/.claude/statusline/usage.jsonl` (written by the status line, one sample a minute: both limits and the cost of
-  every live session), calibrates % of each limit per dollar, records every finished session into `tasks.jsonl` (cost, peak
-  context, launches, % of week / 5 h, reviewers counted to their task; the coordinator is its own line), and prints NOW /
-  BUDGET / TASKS / ADVICE: how many workers to run, which limit binds, how many READY tasks fit at their p80 cost. The forecast of a task uses its model, effort and **size** (S/M/L: a `size:` label, else a score from the issue text - list items, length, `#N` references), narrowing to the model median when too few finished tasks match; every line names its basis.
-  Start no more workers than ADVICE says; put its `SUMMARY` line on the status page #193. Until the samples cover a few
-  percent the ratio is a rough prior and ADVICE is conservative (it says so). `-Record` only records finished sessions,
-  `-Json` is for scripts.
-- **Autopilot (D-022, owner 2026-10-10):** run the work on your own while the limits last - read the limits and
-  `usage-plan.ps1` on a timer (about every 30 min) and before starting a worker; start every unblocked task the budget allows
-  with a sensible model / effort; load a 5-hour window that has headroom before its reset, but pace the week to <= 80% at its
-  reset. The owner's part is only VR tests, opinions and decisions on how things look and work (D-017).- **The coordinator's own context** is spent with care: short command output (filters, `-Last N`), no
-  whole large files, details read once and summarised; the pinned status issue is its external memory —
-  update it before long waits, so an automatic compaction or a new coordinator loses nothing.
-- **Fable's weekly limit: may be used up.** Claude Code does not report it; a Fable worker that stops
-  making progress with a usage-limit message has hit it → restart its task on Opus.
-- Reading the limits: `~/.claude/statusline/last.json` → `rate_limits.five_hour` / `seven_day`
-  (`used_percentage`), written by the status line of any running session; or a screenshot of
-  claude.ai → Settings → Usage from the owner.
-- The coordinator's own session spends the common limit too: stay quiet between events.
+## 8. Research and catalogs (D-021)
+- One reference project per block (Sonnet research task): OpenMW VR (#188), Gothic VR mods, Skyrim VR
+  (VRIK / HIGGS / Spell Wheel), Blade & Sorcery, Doom 3 BFG VR, Quake VR; add new ones as they come up.
+- VR checklist `docs/vr/VR-CHECKLIST.md` (#189): re-audit the plan at each checkpoint.
+- **Catalog review with the owner:** block by block, **one table per block**: row | what it is | advice
+  (take / not / after MVP) | why. Player-experience rows are discussed with questions (D-017). Write the
+  decisions into the catalog, then attach taken rows to tasks or create tasks.
 
-## 6. Models and effort (D-015)
-Choose per task, by size and difficulty — not by area alone. Spend Fable only where it pays off.
+## 9. Stop and report
+Stop only for: a headset batch is ready, the limits (§3), or a decision only the owner can make.
+Report in Russian, short: merged and cleaned up; a table of running workers (task, model, state); what
+is needed from the owner; the usage SUMMARY.
 
-| Model | Tasks | Default effort |
-|---|---|---|
-| **Opus** | the default for engine work: camera, input, UI, combat, core, render plumbing, ordinary bugs | high |
-| **Sonnet** | scripts, CI, docs, research summaries, small mechanical changes | medium |
-| **Fable** | only **really large and hard** tasks: OpenXR frame loop and stereo rendering (#20, #19, #72), the IK body (#36), rune recognition (#43–#45), crashes nobody could explain | xhigh |
-
-- **Effort** follows the task, not the model: routine change → lower it (`-Effort medium` on Opus,
-  `low` on Sonnet); hard design or debugging → raise it (`-Effort xhigh` on Opus). `max` only by exception.
-- `start-worker.ps1` defaults: `area:build` / `area:docs` → Sonnet, everything else → Opus; effort by model;
-  `-Model` and `-Effort` override. Fable is never a default.
-- Context: a worker gets one task with a precise Definition of done and the links it needs; keep the
-  coordinator's messages to workers short; split a task that would fill a worker's context.
-
-## 7. Rules the coordinator enforces on workers
-- **Launches (owner, 2026-10-09; enforced by the scripts after #147):** never start SteamVR (it turns on
-  the headset) — with SteamVR off every launch is flat (`--no-vr`); one game at a time on the PC; only the
-  worktree's own build, rebuilt from its HEAD; at most 10 game launches per task, repeated-run loops only
-  after asking the coordinator.
-- Each worker in its own worktree, its own game folders (`-Isolated`), PRs named `ARXVR-<n> <type>: …`.
-- Merge on green CI and, for risky PRs, a reviewer PASS; never `needs-vr-test` before the owner's verdict
-  (D-005, D-021, D-022).
-- **CI in balance (D-022):** self-hosted runner only (no GitHub-hosted minutes); every PR runs the fast
-  set (build, host unit tests, one flat smoke test); heavy checks only when their code changes.
-- **The safety hook (#185) never stops a task:** it denies the one dangerous command and says what to do
-  instead; the coordinator reads the denial log (`%LOCALAPPDATA%\ArxFatalisVR\safety-hook.log`, one line per
-  denial or fail-open error) and helps the worker if it keeps hitting it. Rules and limits:
-  [WORKFLOW.md](WORKFLOW.md#the-safety-hook-185-d-021).
-- **GitHub via REST** (#186): the dev scripts use `gh api repos/...` for issues, PRs, checks and runs — never
-  `gh issue view/list`, `gh pr view/list`, `gh pr checks --watch`, `gh project ...` (all GraphQL; the quota is shared by
-  every session). Only the board is GraphQL: one cached query (`%LOCALAPPDATA%\ArxFatalisVR\board-cache.json`, 5 min)
-  and one mutation per move. When the limit is spent `set-status.ps1` does not fail: the move is **queued**
-  (`board-queue.json`; shown as PENDING by `next-task.ps1` / `cycle-report.ps1`) and sent by the next board script after
-  the reset, or at once by `set-status.ps1 -Flush`. A worker that ends with a move still queued says so in its report;
-  the coordinator runs `-Flush`.
-- Research tasks create **no** follow-up tasks; the owner decides the catalog, the coordinator creates tasks.
-
-## 8. Reporting to the owner
-Short, in Russian: what was merged and cleaned up; a table of the running workers (task, model, state);
-what is needed from the owner (a headset batch with one question per PR, or a decision); the weekly
-usage. A finished block or a headset batch is a stop point — say it clearly.
-
-## 9. Traps (see also [TRAPS.md](TRAPS.md))
-- `claude --bg` refuses an untrusted folder; trust is per folder → workers launch in the owner's copy
-  and enter their worktree (`worktree=<path>`).
-- `claude --bg --permission-mode bypassPermissions` needs the disclaimer accepted once by the owner.
-- Without `crossSessionInbound: accept`, messages between sessions in different permission modes wait
-  for the owner's approval inside the receiving session.
-- A coordinator running in a worktree-isolated background job: its guard rejects compound shell commands
-  that touch git outside that worktree — use plain commands, PowerShell scripts, and PR bodies from a
-  file (`gh pr create -F`).
-- The owner's copy is pulled but not rebuilt by the coordinator; the desktop shortcut rebuilds a stale
-  build itself (#141).
+## 10. Traps (more in [TRAPS.md](TRAPS.md))
+- `claude --bg` refuses untrusted folders → workers start in the owner's copy and enter their worktree
+  (`/next-task <n> worktree=<path>`).
+- Without `crossSessionInbound: accept`, cross-session messages wait for approval.
+- In a worktree-isolated job the guard rejects compound commands touching git elsewhere: plain commands,
+  `.ps1` scripts, PR bodies from a file (`gh pr create -F`).
+- The owner's copy is pulled, not rebuilt; the desktop shortcut rebuilds a stale build (#141).

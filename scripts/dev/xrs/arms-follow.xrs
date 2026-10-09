@@ -25,6 +25,10 @@
 @assert vr.body.right.stretched eq false
 @assert vr.body.right.slide eq 0
 
+# The model faces #25's body yaw (the heading plus the body's offset after the head)
+@remember bodyYaw vr.head.bodyYaw
+@assert vr.body.facingYaw eq {bodyYaw}
+
 # The hand takes the controller's orientation: the idle rig holds the grips upright (identity), so the
 # fingers (grip +Y) point up - the fingertips (curled by the wait animation) are above the wrist (engine y
 # is down) and the wrist sits below the grip by the palm's distance from it (7.9 units on human_base)

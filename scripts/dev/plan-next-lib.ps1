@@ -146,11 +146,11 @@ function Join-Limited([string[]]$Parts, [int]$Max = 5) {
 #   status Todo, no needs-design label (D-017), no open PR and no live worker already on it, an area label to check against,
 #   every dependency Done on the board, its wave not later than the earliest open wave (+ $WaveLookahead);
 #   then capacity: no running or already chosen task in the same area, the VR lane (at most $MaxVrInProgress in progress,
-#   at most $MaxVrTesting waiting in Testing), and a free worker slot ($MaxWorkers). Ready tasks go in wave, queue order.
+#   at most $MaxVrTesting waiting in Testing), and, only when $MaxWorkers > 0, a free worker slot (0 = no worker cap, D-027). Ready tasks go in wave, queue order.
 function Get-NextPlan {
 	param(
 		$Plan, $Items, $PullRequests = @(), $Agents = $null,
-		[int]$MaxWorkers = 3, [int]$MaxVrInProgress = 2, [int]$MaxVrTesting = 4, [int]$WaveLookahead = 0
+		[int]$MaxWorkers = 0, [int]$MaxVrInProgress = 2, [int]$MaxVrTesting = 4, [int]$WaveLookahead = 0
 	)
 	$item = @{}; foreach ($i in @($Items)) { $item[[int]$i.Number] = $i }
 	$planTask = @{}; foreach ($t in $Plan.Tasks) { $planTask[[int]$t.Number] = $t }
@@ -249,7 +249,7 @@ function Get-NextPlan {
 			}
 			if ($vr -and $vrRunning -ge $MaxVrInProgress) { $reasons.Add("VR lane full: $vrRunning of $MaxVrInProgress in progress") }
 			if ($vr -and $vrTesting -ge $MaxVrTesting) { $reasons.Add("VR lane paused: $vrTesting PRs wait in Testing for the owner (limit $MaxVrTesting)") }
-			if ($slotsUsed -ge $MaxWorkers) { $reasons.Add("no free worker slot ($slotsUsed of $MaxWorkers in use)") }
+			if ($MaxWorkers -gt 0 -and $slotsUsed -ge $MaxWorkers) { $reasons.Add("no free worker slot ($slotsUsed of $MaxWorkers in use)") }
 		}
 		if ($reasons.Count) {
 			$waiting.Add([pscustomobject]@{ Number = $n; Title = $c.Item.Title; Reasons = @($reasons); Notes = @($notes) })
@@ -271,7 +271,7 @@ function Get-NextPlan {
 		})
 		Testing = $testing
 		Limits = [pscustomobject]@{
-			Workers = $running.Count; MaxWorkers = $MaxWorkers; FreeSlots = [math]::Max(0, $MaxWorkers - $running.Count)
+			Workers = $running.Count; MaxWorkers = $MaxWorkers; FreeSlots = $(if ($MaxWorkers -gt 0) { [math]::Max(0, $MaxWorkers - $running.Count) } else { $null })
 			VrInProgress = @($running.Values | Where-Object Vr).Count; MaxVrInProgress = $MaxVrInProgress
 			VrTesting = $vrTesting; MaxVrTesting = $MaxVrTesting; CurrentWave = $currentWave; WaveLookahead = $WaveLookahead
 		}

@@ -79,7 +79,7 @@ struct BodyState {
 	std::string inactiveBefore;
 	std::vector<char> touched;                    //!< scratch: bones recomputed after the chain
 	std::vector<char> headVertex;                 //!< per vertex of the bound model: in the head or the neck
-	BodyStatus status;
+	PlayerBodyStatus status;
 };
 
 BodyState g_body;
@@ -186,7 +186,7 @@ ArmChain findChain(const EERIE_3DOBJ * obj, Hand hand) {
 
 void bind(const EERIE_3DOBJ * obj) {
 
-	BodyStatus & status = g_body.status;
+	PlayerBodyStatus & status = g_body.status;
 
 	g_body.boundObject = obj;
 	g_body.boundGroups = obj->grouplist.size();
@@ -300,7 +300,7 @@ void noteArm(size_t hand, bool posed, const char * source) {
 }
 
 void noteBody(bool active, const char * inactive) {
-	BodyStatus & status = g_body.status;
+	PlayerBodyStatus & status = g_body.status;
 	status.active = active;
 	status.inactive = inactive;
 	if(active != g_body.activeBefore || (!active && g_body.inactiveBefore != inactive)) {
@@ -314,7 +314,7 @@ void noteBody(bool active, const char * inactive) {
 
 void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 
-	BodyStatus & status = g_body.status;
+	PlayerBodyStatus & status = g_body.status;
 
 	if(!eobj || !io || !eobj->m_skeleton) {
 		return;
@@ -328,7 +328,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	g_body.shift = Vec3f(0.f);
 	status.shift = Vec3f(0.f);
 	for(size_t hand = 0; hand < HandCount; hand++) {
-		BodyHandStatus & arm = status.hands[hand];
+		PlayerArmStatus & arm = status.hands[hand];
 		arm.source = "none";
 		arm.tracked = false;
 		arm.posed = false;
@@ -371,8 +371,23 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	}
 	const Vec3f headCamera = eye + Vec3f(0.f, camera.offset.y, 0.f);
 
+	// The model faces where the body yaw of #25 says - the heading plus the body's offset after the
+	// head - not the heading the engine built the skeleton with: every bone turns about the vertical
+	// through the model's origin (the eye above was read before the turn: the camera does not turn)
+	const float facingOffset = bodyStatus().offset;
+	if(std::abs(facingOffset) > 0.01f) {
+		const Vec3f root = skeleton.bones.front().anim.trans;
+		const glm::quat turn = glm::angleAxis(-glm::radians(facingOffset), Vec3f(0.f, 1.f, 0.f));
+		for(Bone & bone : skeleton.bones) {
+			bone.anim.trans = root + turnAboutVertical(bone.anim.trans - root, facingOffset);
+			bone.anim.quat = turn * bone.anim.quat;
+		}
+	}
+	const float facingYaw = bodyYaw + facingOffset;
+	status.facingYaw = wrapDegrees(facingYaw);
+
 	// The body's axes for the elbow hints: engine x right, y down, z forward
-	const float yaw = glm::radians(bodyYaw);
+	const float yaw = glm::radians(facingYaw);
 	const Vec3f forward(-std::sin(yaw), 0.f, std::cos(yaw));
 	const Vec3f right(std::cos(yaw), 0.f, std::sin(yaw));
 	const Vec3f down(0.f, 1.f, 0.f);
@@ -382,7 +397,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	bool any = false;
 	for(size_t hand = 0; hand < HandCount; hand++) {
 
-		BodyHandStatus & arm = status.hands[hand];
+		PlayerArmStatus & arm = status.hands[hand];
 		const ArmChain & chain = g_body.chains[hand];
 
 		// Where the controller is: located this frame, else the simulated one
@@ -525,7 +540,7 @@ void clearSimulatedHand(Hand hand) {
 	g_body.haveSim[size_t(hand)] = false;
 }
 
-const BodyStatus & bodyStatus() {
+const PlayerBodyStatus & playerBodyStatus() {
 	return g_body.status;
 }
 

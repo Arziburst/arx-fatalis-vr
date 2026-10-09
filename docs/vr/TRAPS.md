@@ -115,8 +115,8 @@ first (see `script.error` in `ScriptEvent.cpp`, #130), or print through `operato
 ## 2026-10-09 — A lever, a chest, a door cannot be found by coordinates (#70)
 
 **Symptoms:** `setpos` next to `lever_0012` / `chest_metal_0052` and a screenshot shows a bare wall, a
-black screen, the player's own feet, or a goblin; the entity is nowhere in the picture. About 7 of
-the 12 launches of #70 went into it before this was written down.
+black screen, the player's own feet, or a goblin; the entity is nowhere in the picture. About 6 of
+the 13 launches of #70 went into it before this was written down.
 **Causes, all measured:** (1) an entity's `pos` — from `entities` — is its **floor** position, so
 looking at "the entity" from 2 m with pitch 0 aims 1.7 m above it; `lookat` now aims 40 units above the
 floor and sets the pitch. (2) `setpos` / `player.pos` is the **eye**: `y` = floor − 170; a floor-level

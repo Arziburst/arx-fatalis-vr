@@ -28,8 +28,10 @@
 #   @nolog <regex>                 fail if a log line since the mark matches. Does not move the mark.
 #   @shot <name>                   capture: on the simulated headset both eyes and the flat frame
 #                                  (capture\<name>-left.bmp, -right.bmp, -quad.bmp), else the frame (capture\<name>.bmp)
-#   @diff <a> <b> <op> <v> [eye]   img-diff.ps1 of two shots: the mean absolute per-channel difference (0-255),
-#                                  eye = left (default) | right | quad on the simulated headset. A still scene
+#   @diff <a> <b> [max] <op> <v> [eye]  img-diff.ps1 of two shots: the mean absolute per-channel difference (0-255),
+#                                  or with max the largest change of one channel (a small bright effect),
+#                                  eye = left (default) | right | quad | left-layer | right-layer (the eye without the quad,
+#                                  after `vr-sim layers on`, #72) on the simulated headset. A still scene
 #                                  shot twice is below ~0.5; a head turn is several levels.
 #   @key <name> [n] [ms]           press a key n times (default 1), ms apart (default 300), in the game window,
 #                                  without taking the focus (a posted keyboard message): Escape, Enter, Space, A-Z, 0-9, F1-F12 ...
@@ -84,9 +86,10 @@ function ConvertTo-XrsStep([string]$Line, [int]$Number) {
 		try { $null = [regex]::new($step.Regex) } catch { throw "bad regular expression /$($step.Regex)/: $($_.Exception.Message)" }
 	}
 	elseif ($Line -match '^@shot\s+([\w.-]+)\s*$') { $step.Kind = 'shot'; $step.Name = $Matches[1] }
-	elseif ($Line -match "^@diff\s+([\w.-]+)\s+([\w.-]+)\s+($script:XrsOps)\s+(\S+)(?:\s+(left|right|quad))?\s*$") {
-		$step.Kind = 'diff'; $step.A = $Matches[1]; $step.B = $Matches[2]; $step.Op = $Matches[3]; $step.Value = $Matches[4]
-		$step.Eye = if ($Matches[5]) { $Matches[5] } else { 'left' }
+	elseif ($Line -match "^@diff\s+([\w.-]+)\s+([\w.-]+)\s+(?:(mean|max)\s+)?($script:XrsOps)\s+(\S+)(?:\s+(left-layer|right-layer|left|right|quad))?\s*$") {
+		$step.Kind = 'diff'; $step.A = $Matches[1]; $step.B = $Matches[2]; $step.Op = $Matches[4]; $step.Value = $Matches[5]
+		$step.Metric = if ($Matches[3]) { $Matches[3] } else { 'mean' }
+		$step.Eye = if ($Matches[6]) { $Matches[6] } else { 'left' }
 		$d = 0.0
 		if (-not [double]::TryParse($step.Value, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$d)) { throw "@diff compares with a number, got '$($step.Value)'" }
 	}
@@ -356,7 +359,8 @@ function Invoke-XrsStep($Context, $Step) {
 			$b = Get-XrsShotFile $dir $Step.B $Step.Eye
 			$d = & (Join-Path $PSScriptRoot 'img-diff.ps1') -A $a -B $b -PassThru
 			Write-XrsLine $Context "      $($Step.A) vs $($Step.B) ($($Step.Eye)): mean $($d.Mean), max channel $($d.Max), $($d.PctChanged)% of the channels changed" 'DarkGray'
-			if (-not (Test-XrsCondition $d.Mean $Step.Op $Step.Value)) { throw "DIFF FAILED: $($Step.A) vs $($Step.B) ($($Step.Eye)) mean difference $($d.Mean) $($Step.Op) $($Step.Value)" }
+			$measured = if ($Step.Metric -eq 'max') { $d.Max } else { $d.Mean }
+			if (-not (Test-XrsCondition $measured $Step.Op $Step.Value)) { throw "DIFF FAILED: $($Step.A) vs $($Step.B) ($($Step.Eye)) $($Step.Metric) difference $measured $($Step.Op) $($Step.Value)" }
 		}
 		'key' {
 			$status = Read-ArxStatus $dir

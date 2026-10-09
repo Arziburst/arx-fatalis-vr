@@ -937,6 +937,10 @@ void takeShot(const std::string & name, const XrCompositionLayerProjection & pro
 
 		composed[eye] = readImage(it->second);
 		out.layer = pixelStats(composed[eye], region, background);
+		if(s.sim.rig.saveLayers) {
+			// What the game drew into the eye itself, before the quad goes on top (#72)
+			saveImage(composed[eye], name + "-" + EyeNames[eye] + "-layer");
+		}
 
 		// The eye as submitted, in the room, and as seen from the quad's space
 		Vec3f position = layerPosition + layerOrientation * toVec(view.pose.position);

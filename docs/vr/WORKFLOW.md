@@ -212,7 +212,7 @@ these, with a reason that names the safe alternative:
 | `force-push` | `--force`, `--force-with-lease`, `-f`, `+refspec`, `--mirror` | `git fetch` + `git merge origin/main`, push normally; rewriting a remote branch only via the coordinator |
 | `delete-outside` | a recursive delete (`rm -rf`, `Remove-Item -Recurse`, `rd /s`) of a path outside the session's own worktree and its job tmp dir (`$env:CLAUDE_JOB_DIR\tmp`) | delete inside the worktree; `build-windows.ps1 -Clean` for build output |
 | `owner-write` | a write (redirection, `Set-Content`, `Copy-Item` to, `Remove-Item`, `git add/commit/pull/...`, the Edit / Write tools) into the owner's copy from a session whose directory is another worktree | work in your own worktree |
-| `owner-discard` | `git reset --hard`, `git clean -f`, `git checkout -- .` / `-f`, `git restore .` in the owner's copy | report uncommitted work to the coordinator; never discard it |
+| `owner-discard` | `git reset --hard`, `git clean -f`, `git checkout -- .` / `-f`, `git restore .` in a main working copy: the owner's copy, also reached with `git -C` from a session in another clone | report uncommitted work to the coordinator; never discard it |
 
 **It never stops a task.** Everything else passes: branch pushes (`git push -u origin <branch>`), `gh pr merge`
 and REST merges, builds, game launches, writes and deletes inside the own worktree, reading the owner's copy,
@@ -232,7 +232,7 @@ start of `pwsh`). The owner's copy must therefore keep the repository's folder n
 
 **Limits.** It is a guard rail against mistakes, not a sandbox: a path built in a variable it cannot resolve
 (`Remove-Item -Recurse $dir`), a pipeline that feeds `Remove-Item`, or what a script does internally is let
-through. Test: `.\scripts\dev\hooks\test-safety-guard.ps1` (144 sample commands, the hook process, fail-open,
+through. Test: `.\scripts\dev\hooks\test-safety-guard.ps1` (159 sample commands, the hook process, fail-open,
 the log, the timing); extend its table when a rule changes.
 
 ### Worker sessions prepare everything themselves

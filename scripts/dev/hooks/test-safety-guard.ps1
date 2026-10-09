@@ -29,8 +29,11 @@ $I = Join-Path $O '.claude\worktrees\inner'           # a worktree inside the ow
 $E = Join-Path $root 'elsewhere'                      # any other folder
 $J = Join-Path $root 'job'                            # CLAUDE_JOB_DIR; its tmp subfolder is allowed
 
-function New-Fixture-Worktree([string]$Dir, [string]$Name, [string]$Branch) {
-	$gitDir = Join-Path $O ".git\worktrees\$Name"
+$K = Join-Path $root 'other-clone'                    # another clone of a repository (the coordinator's); its main copy
+$C = Join-Path $K '.claude\worktrees\vr-port'         # ... and the worktree the coordinator runs in
+
+function New-Fixture-Worktree([string]$Dir, [string]$Name, [string]$Branch, [string]$Repo = $O) {
+	$gitDir = Join-Path $Repo ".git\worktrees\$Name"
 	New-Item -ItemType Directory -Force $gitDir, $Dir | Out-Null
 	Set-Content -LiteralPath (Join-Path $gitDir 'HEAD') "ref: refs/heads/$Branch"
 	Set-Content -LiteralPath (Join-Path $gitDir 'commondir') '../..'
@@ -40,13 +43,16 @@ New-Item -ItemType Directory -Force (Join-Path $O '.git'), $E, (Join-Path $J 'tm
 Set-Content -LiteralPath (Join-Path $O '.git\HEAD') 'ref: refs/heads/main'
 New-Fixture-Worktree $W 'wt1' 'ARXVR-1-feat-x'
 New-Fixture-Worktree $I 'inner' 'ARXVR-2-fix-y'
+New-Item -ItemType Directory -Force (Join-Path $K '.git') | Out-Null
+Set-Content -LiteralPath (Join-Path $K '.git\HEAD') 'ref: refs/heads/main'
+New-Fixture-Worktree $C 'vr-port' 'vr-port' $K
 
 $savedLocal = $env:LOCALAPPDATA; $savedJob = $env:CLAUDE_JOB_DIR
 $env:LOCALAPPDATA = Join-Path $root 'local'           # the denial log goes into the fixture
 $env:CLAUDE_JOB_DIR = $J
 . $guard
 
-$cwds = @{ W = $W; O = $O; I = $I }
+$cwds = @{ W = $W; O = $O; I = $I; C = $C }
 
 # Cwd, expectation (allow, or the rule that must fire), tool, command. {O} {W} {I} {E} {J} are the fixture folders.
 $cases = @(
@@ -198,7 +204,23 @@ $cases = @(
 	@('W', 'allow', 'Get-ChildItem -Recurse | Select-String x'),
 	@('W', 'allow', 'Start-Process notepad'),
 	@('W', 'allow', 'echo $(date) > /dev/null'),
-	@('E', 'allow', 'rm -rf {E}\x')
+	@('E', 'allow', 'rm -rf {E}\x'),
+	# --- the coordinator running from another clone's worktree, acting on the owner's copy ---------------
+	@('C', 'allow', 'git -C {O} fetch -q origin'),
+	@('C', 'allow', 'git -C {O} pull -q --ff-only'),
+	@('C', 'allow', "& '{O}\scripts\dev\new-worktree.ps1' -Issue 1 -Remove"),
+	@('C', 'allow', "& '{O}\scripts\dev\start-worker.ps1' 1 -DryRun"),
+	@('C', 'allow', "& '{O}\scripts\dev\start-reviewer.ps1' 1 -DryRun"),
+	@('C', 'allow', 'claude stop abc123'),
+	@('C', 'allow', 'claude rm abc123'),
+	@('C', 'allow', 'gh api -X PUT repos/Arziburst/arx-fatalis-vr/pulls/1/merge -f merge_method=merge'),
+	@('C', 'owner-discard', 'git -C {O} reset --hard'),
+	@('C', 'owner-discard', 'git -C {O} reset --hard origin/main'),
+	@('C', 'owner-discard', 'git -C {O} clean -fd'),
+	@('C', 'owner-discard', 'git -C {O} checkout -- .'),
+	@('C', 'push-main', 'git -C {O} push origin main'),
+	@('C', 'allow', 'git reset --hard'),
+	@('C', 'allow', 'git -C {W} reset --hard origin/main')
 )
 $cwds['E'] = $E
 

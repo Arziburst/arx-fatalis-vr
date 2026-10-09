@@ -130,6 +130,13 @@ function Test-OwnerPath([string]$Path, $Ctx) {
 	[bool]($info -and $info.Top.Equals($Ctx.Owner, 'OrdinalIgnoreCase'))
 }
 
+# The main working copy (not a worktree) that contains $Dir, or $null.
+function Get-MainCopy([string]$Dir) {
+	$info = Get-RepoInfo $Dir
+	if ($info -and $info.Owner -and $info.Top.Equals($info.Owner, 'OrdinalIgnoreCase')) { return $info.Top }
+	$null
+}
+
 function Test-InOwnerCopy([string]$Dir, $Ctx) {
 	if (-not $Ctx.Owner -or -not $Dir) { return $false }
 	$info = Get-RepoInfo $Dir
@@ -284,7 +291,10 @@ function Test-Git($Tokens, $Ctx) {
 	if ($sub -eq 'push') { return Test-GitPush $rest $dir }
 
 	$inOwner = $dir -and (Test-InOwnerCopy $dir $Ctx)
-	if ($inOwner) {
+	# Discarding work is refused in any main working copy, not only the session's own owner copy: the
+	# coordinator may run from another clone and act on this repository's owner copy with `git -C`.
+	$mainCopy = if ($dir) { Get-MainCopy $dir } else { $null }
+	if ($mainCopy) {
 		$restLower = @($rest | ForEach-Object { $_.ToLowerInvariant() })
 		$discard = $false
 		switch ($sub) {
@@ -304,7 +314,7 @@ function Test-Git($Tokens, $Ctx) {
 			}
 		}
 		if ($discard) {
-			return New-Deny 'owner-discard' ("`git $sub` here would throw away uncommitted work in the owner's copy ($($Ctx.Owner)). Never discard anything there: report what is uncommitted to the coordinator, or work in your own worktree." + $script:Footer)
+			return New-Deny 'owner-discard' ("`git $sub` here would throw away uncommitted work in the owner's copy ($mainCopy). Never discard anything there: report what is uncommitted to the coordinator, or work in your own worktree." + $script:Footer)
 		}
 	}
 	if ($inOwner -and $Ctx.Top -and -not $Ctx.Top.Equals($Ctx.Owner, 'OrdinalIgnoreCase') -and

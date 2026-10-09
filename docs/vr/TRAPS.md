@@ -743,3 +743,9 @@ a PowerShell test helper with parameter `$G` and a local `$g` failed with "canno
 **Symptom:** `test-xrs.ps1` failed only on the slow CI runner: the ack of a check's first command read `last=refuse this`, the command of the check before (#250).
 **Cause:** the game writes `ack.txt` first and `status.json` later; `Send-ArxCommand` took its baseline `cmdSeq` from `status.json` and waited for it to advance, so the late status update of the *previous* batch ended the wait and the old ack was returned.
 **Do:** the baseline is the newest seq of ack.txt and status.json, and the answer is `ack.txt` itself advancing (`Read-ArxAck` in `scripts/dev/test-lib.ps1`). After a send, `status.json` may still lag behind the ack - wait for the state you assert on (`@until`, `@frames`).
+
+## 2026-10-10 - Crouched on mvp-new-game, the character never stands up again
+
+**Symptom:** a crouch sequence on the test save `mvp-new-game` failed at `@until player.crouched eq false`: the toggle went off (`player.crouch state=off`), `player.crouched` stayed true - with the crouch button as well as the physical crouch (#100).
+**Cause:** not the VR code: at that spot of the start cell the game's own stand-up check (`CheckAnythingInCylinder` on the standing cylinder, `src/game/Player.cpp`) finds it blocked; the same sequence on `mvp-items` stands up (#263).
+**Do:** test crouching on `mvp-items`; before blaming a crouch change, let the crouch button crouch and stand at the same spot first (`physical-crouch.xrs` does).

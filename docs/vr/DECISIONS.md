@@ -782,6 +782,19 @@ sees **their whole body**, not floating hands:
 hidden first-person arms (#36, #75). Hand-back to engine animations (death, ladders — F-53) is after
 the MVP.
 
+**How the body follows the head (#25, 2026-10-09, the coordinator for the owner — the F-52 defaults;
+the owner judges them in the headset once #36 shows the body).** Yaw only; the body following the head's
+*position* with collision is #26 (D-018).
+- The body's yaw is kept relative to the **heading** — the yaw the stick and the mouse turn
+  (`player.angle`) — so a snap or smooth turn turns head and body together.
+- A head more than **25°** from the body drags the body along at once, so the gap never exceeds 25°.
+- Inside 25° the body relaxes toward the head and **settles in ~1.5 s** (exponential, 5% of the gap left):
+  a glance barely moves it, looking somewhere for a while turns it there.
+- A new head reference (recenter, level load, a new session) faces the body forward at once.
+- The player model faces the body; the camera stays on the head — the body turning never moves it.
+- The values are named constants (`BodyFollowParams`, `src/vr/BodyYaw.h`), so the VR settings (#178)
+  can expose them. F-168 (OpenMW VR locks the body to the head) is the warning against the simpler way.
+
 ### Why
 The owner wants the game to feel like VHVR, which shows the full body; Arx has the model and
 animations already. Doing it before combat means the weapon is held by the model's hand from the

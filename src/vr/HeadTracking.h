@@ -65,7 +65,8 @@ namespace vr {
  *
  * \param position the camera position, the engine's eye on entry; the head on return
  * \param angle the camera angles, replaced by the head's
- * \param bodyYaw the engine camera's yaw (engine degrees): the character's yaw in first person
+ * \param bodyYaw the engine camera's yaw (engine degrees): the character's yaw in first person - the
+ *        heading the stick and the mouse turn; the player model faces \ref bodyStatus instead (#25)
  * \return false when there is no head (flat mode without a simulated pose): nothing changed
  */
 bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw);
@@ -105,6 +106,23 @@ struct HeadStatus {
 };
 
 const HeadStatus & headStatus();
+
+/*!
+ * \brief Where the head looks and where the body faces (#25, D-008, D-009)
+ *
+ * Updated by \ref applyHeadPose. The heading is the yaw the stick and the mouse turn (\c player.angle);
+ * the head's yaw since the reference is added to it for the look, and the body follows the look after
+ * \ref followHead (BodyYaw.h). Without a head all three are the heading.
+ */
+struct BodyStatus {
+	float lookYaw = 0.f;  //!< engine degrees [0, 360): where the camera looks - the stick's forward (#31)
+	float bodyYaw = 0.f;  //!< engine degrees [0, 360): where the player model faces (#36)
+	float offset = 0.f;   //!< body yaw - heading, in (-180, 180]; 0 without a head
+	bool dragged = false; //!< the head is at the dead zone's edge, pulling the body along
+	u64 drags = 0;        //!< drag episodes since the game started
+};
+
+const BodyStatus & bodyStatus();
 
 } // namespace vr
 

@@ -19,11 +19,14 @@
 
 #include "vr/HeadTracking.h"
 
+#include <cmath>
 #include <cstring>
 #include <string>
 
 #include "core/GameEvent.h"
+#include "core/GameTime.h"
 #include "platform/Time.h"
+#include "vr/BodyYaw.h"
 #include "vr/HeadReferenceGate.h"
 #include "vr/VRSystem.h"
 #include "vr/WorldScale.h"
@@ -48,14 +51,53 @@ struct HeadTrackingState {
 	float raising = 0.f; //!< meters the reference was raised in the current auto-raise episode
 
 	HeadStatus status;
+	BodyStatus body;
 
 };
 
 HeadTrackingState g_head;
 
-double seconds() {
+double nowSeconds() {
 	static const PlatformInstant start = platform::getTime();
 	return double(toUs(platform::getTime() - start)) / 1e6;
+}
+
+//! A drag episode ends only this far inside the dead zone, so a head held at its edge is one episode
+const float DragEndMarginDegrees = 5.f;
+
+/*!
+ * The body after the head (#25): \a headYaw is the head's turn since the reference; the body keeps its
+ * own turn from the heading, so turning the heading turns both
+ */
+void updateBody(float headYaw, float heading, float lookYaw) {
+
+	BodyStatus & body = g_head.body;
+	const BodyFollowParams params;
+	const float seconds = toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
+	const BodyFollow follow = followHead(body.offset, headYaw, seconds, params);
+
+	const float gap = std::abs(wrapSignedDegrees(headYaw - follow.yaw));
+	const bool dragged = follow.dragged || (body.dragged && gap > params.deadZoneDegrees - DragEndMarginDegrees);
+	if(dragged != body.dragged) {
+		if(dragged) {
+			body.drags++;
+		}
+		// An episode, not a frame: the head reached the dead zone's edge and pulls the body, or let it go
+		gameevent::Event("vr.body.drag", 100)("state", dragged ? "start" : "end")
+			("head", headYaw, 1)("body", follow.yaw, 1)("deadZone", params.deadZoneDegrees, 0);
+	}
+
+	body.offset = follow.yaw;
+	body.dragged = dragged;
+	body.lookYaw = wrapDegrees(lookYaw);
+	body.bodyYaw = wrapDegrees(heading + body.offset);
+}
+
+void resetBody(float heading) {
+	BodyStatus & body = g_head.body;
+	body.offset = 0.f;
+	body.dragged = false;
+	body.lookYaw = body.bodyYaw = wrapDegrees(heading);
 }
 
 } // anonymous namespace
@@ -112,6 +154,7 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 	if(std::strcmp(source, "none") == 0) {
 		status.clamped = false;
 		status.worn = false;
+		resetBody(bodyYaw);
 		return false;
 	}
 
@@ -120,7 +163,7 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 
 	// The reference is the worn, settled head (#27): a held pose (tracking lost) feeds nothing into the gate
 	if(std::strcmp(source, "held") != 0) {
-		const double now = seconds();
+		const double now = nowSeconds();
 		if(worn != status.worn) {
 			gameevent::Event("vr.head.worn")("state", worn ? "on" : "off")("session", sessionStateString())
 				("source", source);
@@ -138,6 +181,8 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 			status.reason = g_head.resetReason;
 			status.raised = 0.f;
 			g_head.raising = 0.f;
+			// The new forward is where the body faces (#25)
+			resetBody(bodyYaw);
 			status.referenceAboveFloor = (localAboveFloor >= 0.f) ? localAboveFloor + head.position.y : -1.f;
 			// The head at the reference is the character's eye: the player's eye height above the floor
 			// (STAGE, when the runtime has one) against the character's eye above its feet, in meters at the
@@ -191,6 +236,8 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 	status.offset = camera.offset;
 	status.clamped = camera.clamped;
 
+	updateBody(wrapSignedDegrees(status.head.getYaw() - status.reference.yaw), bodyYaw, camera.angle.getYaw());
+
 	position += camera.offset;
 	angle = camera.angle;
 
@@ -213,6 +260,10 @@ void clearSimulatedHead() {
 
 const HeadStatus & headStatus() {
 	return g_head.status;
+}
+
+const BodyStatus & bodyStatus() {
+	return g_head.body;
 }
 
 } // namespace vr

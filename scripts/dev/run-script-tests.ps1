@@ -24,6 +24,7 @@ $tests = @(
 	'test-github-lib.ps1'     # the GitHub access of the dev scripts (#186): REST first, the board cache, rate limits, the move queue
 	'test-launch-lib.ps1'     # the machine-wide game lock (#205): the lock folder and its ACL, old and new location, holders, stale files
 	'test-log-digest.ps1'    # the run digest and the automatic bug filing (#131): fixture logs, a fake GitHub, the command line modes
+	'test-plan-next.ps1'     # the coordinator's task order (#187): MVP.md parsing and every start rule
 )
 # test-*.ps1 files that are libraries or tools, not tests
 $notTests = @(

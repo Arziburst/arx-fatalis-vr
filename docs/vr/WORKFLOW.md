@@ -315,6 +315,9 @@ Helper scripts used by the commands:
 - `scripts/dev/test-pr.ps1 <pr>` — the owner's test station: the PR's worktree, built if needed, its
   *How to test*, the build id, launch
 - `scripts/dev/cycle-report.ps1` — the coordinator's report: PRs, board, leftovers, worktrees, next task
+- `scripts/dev/plan-next.ps1` — the coordinator's task order by rule (#187): the tasks ready to start now (dependencies Done,
+  earliest open wave, free area, VR lane and worker limits, no `needs-design`), each with its `start-worker.ps1` line, and the
+  reason every other Todo task waits; rules in `scripts/dev/plan-next-lib.ps1`, self-test `test-plan-next.ps1` (run by CI via run-script-tests.ps1)
 
 ## Task lifecycle
 

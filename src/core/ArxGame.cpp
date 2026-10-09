@@ -1298,6 +1298,17 @@ void ArxGame::doFrame() {
 	if(LOADQUEST_SLOT != SavegameHandle() && LOADQUEST_SLOT.handleData() < long(savegames.size())) {
 		ARX_LoadGame(savegames[LOADQUEST_SLOT]);
 		LOADQUEST_SLOT = SavegameHandle();
+	} else if(LOADQUEST_SLOT != SavegameHandle()) {
+		// --loadslot of a save that does not exist: the launch already switched to the game, which then runs
+		// with no level at all - a black world with only the HUD, in VR as on the monitor (TRAPS.md, #24).
+		// Say so and start at the main menu instead
+		LogError << "--loadslot " << LOADQUEST_SLOT.handleData() << ": no such save, " << savegames.size()
+		         << " save(s) in the save game dir - starting at the main menu instead of an empty level";
+		LOADQUEST_SLOT = SavegameHandle();
+		if(!g_currentArea) {
+			ARXmenu.requestMode(Mode_MainMenu);
+			ARX_MENU_Launch(false);
+		}
 	}
 	
 	if(!g_saveToLoad.empty()) {

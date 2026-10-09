@@ -107,12 +107,15 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
 ### `status.json`
 
 ```json
-{"pid":34120,"version":"0.1-dev + cead4a3","state":"GAMEPLAY","cleanShutdown":false,
+{"pid":34120,"version":"0.1-dev + cead4a3",
+ "build":{"commit":"cead4a3…(40 hex)","branch":"ARXVR-115-feat-log-banner-runtime","config":"Release"},
+ "state":"GAMEPLAY","cleanShutdown":false,
  "frame":618,"uptimeMs":6240,"fps":120.2,"errors":0,"warnings":0,
  "menuMode":"ingame","area":10,"paused":false,"cinematic":false,
  "player":{"x":...,"y":...,"z":...,"yaw":...,"life":...,"lifeMax":...,"mana":...,"manaMax":...},
  "window":{"width":640,"height":480,"focused":true,"minimized":false,"fullscreen":false},
- "vr":{"supported":true,"enabled":false,"sessionState":"none"},
+ "vr":{"supported":true,"enabled":false,"sessionState":"none","runtime":"",
+       "manifest":"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json"},
  "cmdSeq":3,"lastCmd":"mark hello","lastCmdError":"","captureSeq":1,"lastCapture":"...\\first.bmp"}
 ```
 
@@ -127,6 +130,51 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   (`idle`, `ready`, `synchronized`, `visible`, `focused`, `stopping`, …).
 - `player` is present only while a level is loaded. More fields (per-eye frame ids, the rate line)
   come with #20; the `.xrs` runner (#113) asserts on these keys with `@modassert`.
+- `build`: the same build identification as the [log banner](#the-log-banner): the full commit and
+  the branch compiled into `Version.cpp` (`branch` empty when detached), the CMake configuration.
+- `vr.runtime`: the OpenXR runtime that answered this run (`SteamVR/OpenXR 2.17.10`), empty while no
+  instance was created; `vr.manifest`: the runtime manifest the loader uses (`XR_RUNTIME_JSON`, then
+  the registry), empty when no runtime is installed — the same values as the banner's runtime lines.
+
+## The log banner
+
+Every `arx.log` starts with four `Key: value` lines (#115, research rows F-18 and F-98), so a log says
+which build wrote it and how it was started before anything else; the run digest (#131) reads them.
+Keep their shape when touching them.
+
+```
+[I] Startup:252  Starting Arx Fatalis VR 0.1-dev + f8b3585
+[I] Startup:111  Build: f8b3585637414910c931b733d27661cb8f4c407f on ARXVR-115-feat-log-banner-runtime, Release, MSVC 19.44, x86_64
+[I] Startup:141  Executable: "C:\Users\…\Release\arx.exe", linked 2026-10-09 14:02:55, built from f8b3585637414910c931b733d27661cb8f4c407f dirty
+[I] Startup:163  Run: 2026-10-09 15:10:03 local (12:10:03 UTC), pid 1234, command line: --windowed --no-vr --loadlevel 10
+```
+
+- `Build:` the commit and branch compiled into `Version.cpp` (`(detached)` without a branch), the
+  CMake configuration, the compiler and the architecture. A Debug build, or a Release build with
+  debug output (`-DDEBUG=ON`), ends with `performance numbers not comparable`: its timings are never
+  compared with a release build's.
+- `Executable:` the path and link time of `arx.exe` and `built from <sha>[ dirty]` as
+  `built-from.txt` next to it says (written by `build-windows.ps1`; `unknown` without the file). A
+  `[W] built-from.txt names commit … but the executable carries version information from …` follows
+  when the two commits differ: the compiled-in version is stale — rebuild (see [TRAPS.md](TRAPS.md)).
+- `Run:` the start time in local time and in UTC (crash report folders are named in UTC), the pid
+  and the command line.
+
+The VR runtime follows a few lines later, **on every run, flat ones included**:
+
+```
+[I] VRSystem:…  OpenXR runtime manifest: "C:\Program Files (x86)\Steam\steamapps\common\SteamVR\steamxr_win64.json" (from HKLM\SOFTWARE\Khronos\OpenXR\1\ActiveRuntime)
+[I] VRSystem:…  OpenXR runtime answered: SteamVR/OpenXR 2.17.10
+```
+
+- The manifest line names the file the loader will use and where it was selected from:
+  `XR_RUNTIME_JSON` (then also the registry value it overrides) or the registry key
+  (`HKLM`/`HKCU\SOFTWARE\Khronos\OpenXR\1\ActiveRuntime`); `No OpenXR runtime manifest` when none is
+  installed. A manifest file that does not exist is a `[W]` — a leftover `XR_RUNTIME_JSON` is the
+  classic reason for "it started flat".
+- `OpenXR runtime answered` appears once an instance exists. When the runtime that answered is not
+  the one the manifest path suggests (SteamVR, Oculus, Windows Mixed Reality, Varjo, Monado, Virtual
+  Desktop), a `[W]` names both.
 
 ## `xr_hello` — the runtime alone
 

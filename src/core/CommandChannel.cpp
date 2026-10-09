@@ -273,6 +273,12 @@ std::string buildStatus(PlatformInstant now) {
 
 	json.value("pid", u64(platform::getProcessId()));
 	json.value("version", arx_version);
+	// The same build identification as the log banner (#115) - assert on these, not on the log
+	json.object("build");
+	json.value("commit", arx_git_commit);
+	json.value("branch", arx_git_branch);
+	json.value("config", arx_build_type);
+	json.end();
 	json.value("state", gameStateName(g.state));
 	json.value("cleanShutdown", g.cleanShutdown);
 	json.value("frame", g.frame);
@@ -314,6 +320,8 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("supported", vr::isSupported());
 	json.value("enabled", vr::isEnabled());
 	json.value("sessionState", vr::sessionStateString());
+	json.value("runtime", vr::runtimeName());
+	json.value("manifest", vr::runtimeManifest());
 	json.end();
 
 	json.value("cmdSeq", g.cmdSeq);

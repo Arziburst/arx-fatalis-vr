@@ -42,6 +42,12 @@ const std::string arx_release_codename = "${VERSION_6}";
 const std::string arx_release_codename;
 #endif
 
+// Build identification for the log banner and status.json (#115): the full commit, the branch
+// checked out at build time and the CMake configuration (see cmake/VersionString.cmake)
+const std::string arx_git_commit = "${GIT_COMMIT}";
+const std::string arx_git_branch = "${GIT_BRANCH}";
+const std::string arx_build_type = "${BUILD_TYPE}";
+
 // TODO move this to an external file once we ship our own resources
 const std::string arx_credits = "${AUTHORS}";
 const std::string arx_copyright = "${COPYING}";

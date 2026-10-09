@@ -30,6 +30,13 @@ extern const std::string arx_version;
 extern const u64 arx_version_number;
 extern const std::string arx_release_codename;
 
+//! The full git commit the version information was generated from (empty without git)
+extern const std::string arx_git_commit;
+//! The branch checked out when the version information was generated (empty when detached)
+extern const std::string arx_git_branch;
+//! The CMake build configuration: Release, Debug, RelWithDebInfo, ... (empty if none was set)
+extern const std::string arx_build_type;
+
 extern const std::string arx_credits;
 extern const std::string arx_copyright;
 

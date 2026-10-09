@@ -20,12 +20,15 @@
 
 #include <stddef.h>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <list>
 #include <set>
 #include <sstream>
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
+#include <ctime>
 
 #include "platform/Platform.h"
 
@@ -48,6 +51,7 @@
 #include "gui/Console.h"
 #include "gui/Credits.h"
 
+#include "io/fs/FilePath.h"
 #include "io/fs/Filesystem.h"
 #include "io/fs/SystemPaths.h"
 #include "io/log/CriticalLogger.h"
@@ -56,8 +60,11 @@
 
 #include "math/Random.h"
 
+#include "platform/Architecture.h"
 #include "platform/Compiler.h"
 #include "platform/CrashHandler.h"
+#include "platform/Environment.h"
+#include "platform/Process.h"
 #include "platform/profiler/Profiler.h"
 #include "platform/Thread.h"
 #include "platform/Time.h"
@@ -77,8 +84,113 @@
 	#undef main /* in case SDL.h was already included */
 #endif
 
+namespace {
+
+std::string formatTime(std::time_t time, bool utc) {
+	std::tm * tm = utc ? std::gmtime(&time) : std::localtime(&time);
+	char buffer[32];
+	if(!tm || !std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm)) {
+		return "?";
+	}
+	return buffer;
+}
+
+/*!
+ * The log banner (#115, research row F-18): right after "Starting <name> <version>" the log says
+ * which build wrote it and how it was started, so every log a tester sends is self-describing.
+ * The lines keep the "Key: value" shape on purpose - the run digest (#131) reads them; their
+ * meaning is documented in docs/vr/TESTING.md.
+ */
+void logStartupBanner(int argc, char ** argv) {
+
+	// Build: <commit> on <branch>, <configuration>, <compiler>, <architecture>
+	{
+		std::ostringstream oss;
+		oss << "Build: " << (arx_git_commit.empty() ? std::string("unknown commit") : arx_git_commit);
+		if(!arx_git_branch.empty()) {
+			oss << " on " << arx_git_branch;
+		} else if(!arx_git_commit.empty()) {
+			oss << " (detached)";
+		}
+		oss << ", " << (arx_build_type.empty() ? std::string("unknown configuration") : arx_build_type);
+		bool notComparable = (arx_build_type == "Debug");
+		#ifdef ARX_DEBUG
+		if(!notComparable) {
+			oss << " with debug output";
+		}
+		notComparable = true;
+		#endif
+		oss << ", " << ARX_COMPILER_VERNAME << ", " << ARX_ARCH_NAME;
+		if(notComparable) {
+			// Research row F-18: timings of a debug build must never be compared with release ones
+			oss << " - performance numbers not comparable";
+		}
+		LogInfo << oss.str();
+	}
+
+	// Executable: "<path>", linked <time>, built from <built-from.txt>
+	{
+		fs::path exe = platform::getExecutablePath();
+		std::ostringstream oss;
+		oss << "Executable: ";
+		std::string builtCommit;
+		if(exe.empty()) {
+			oss << "unknown path";
+		} else {
+			oss << '"' << exe.string() << '"';
+			if(std::time_t linked = fs::last_write_time(exe)) {
+				oss << ", linked " << formatTime(linked, false);
+			}
+			// scripts/build-windows.ps1 leaves built-from.txt next to arx.exe: "<sha>" or "<sha> dirty"
+			fs::path stamp = exe.parent() / "built-from.txt";
+			std::string builtFrom = fs::is_regular_file(stamp) ? fs::read(stamp) : std::string();
+			while(!builtFrom.empty() && std::isspace(static_cast<unsigned char>(builtFrom.back()))) {
+				builtFrom.pop_back();
+			}
+			if(builtFrom.empty()) {
+				oss << ", built from unknown (no built-from.txt next to the executable)";
+			} else {
+				oss << ", built from " << builtFrom;
+				builtCommit = builtFrom.substr(0, builtFrom.find(' '));
+			}
+		}
+		LogInfo << oss.str();
+		// built-from.txt names the commit of the last build, the compiled-in commit is refreshed only
+		// when the version rule runs: a mismatch means the build id in this log is a lie
+		if(!builtCommit.empty() && !arx_git_commit.empty() && builtCommit != arx_git_commit) {
+			LogWarning << "built-from.txt names commit " << builtCommit << " but the executable carries version"
+			              " information from " << arx_git_commit << " - the build id in this log is stale"
+			              " (see docs/vr/TRAPS.md)";
+		}
+	}
+
+	// Run: <local time> (<UTC>), pid <n>, command line: <arguments>
+	{
+		std::time_t now = std::time(nullptr);
+		std::ostringstream oss;
+		oss << "Run: " << formatTime(now, false) << " local (" << formatTime(now, true) << " UTC), pid "
+		    << platform::getProcessId() << ", command line:";
+		for(int i = 1; i < argc; i++) {
+			std::string_view arg = argv[i];
+			// Readable, not shell-exact: quote what has spaces, leave the rest alone
+			if(arg.find_first_of(" \t\"") != std::string_view::npos) {
+				oss << " \"" << util::escapeString(std::string(arg), "\\\"") << '"';
+			} else {
+				oss << ' ' << arg;
+			}
+		}
+		if(argc <= 1) {
+			oss << " (none)";
+		}
+		LogInfo << oss.str();
+	}
+
+}
+
+} // anonymous namespace
+
 int utf8_main(int argc, char ** argv) {
-	
+
 	// GCC -ffast-math disables denormal before main() - do the same for other compilers
 	Thread::disableFloatDenormals();
 	
@@ -162,6 +274,7 @@ int utf8_main(int argc, char ** argv) {
 		
 		// 14: Start the game already!
 		LogInfo << "Starting " << arx_name << ' ' << arx_version;
+		logStartupBanner(argc, argv);
 		runGame();
 		
 	}

@@ -20,6 +20,8 @@
 #ifndef ARX_VR_HEADTRACKING_H
 #define ARX_VR_HEADTRACKING_H
 
+#include <string>
+
 #include "math/Types.h"
 #include "vr/HeadPose.h"
 
@@ -41,8 +43,12 @@
  *
  * The reference is taken from the first sample after a reset: at startup, on every level load, when
  * a session begins, when the runtime moves the LOCAL space (its own recenter), and on the test
- * channel's \c recenter. The button chord is #28; the standing head = the character's eye height
- * is #27 (until then the head at the reference is the character's eye and 1 m = 100 units).
+ * channel's \c recenter, and on the player's recenter (#28, D-019: a long press of the left stick
+ * click, read in \ref updateInput). Recenter is the calibration (D-018): the head at the reference is
+ * the character's eye, standing or seated, and looking that way is the character's facing. Auto-raise:
+ * a head above the reference takes its height up with it at once (\ref raiseHeadReference), so the
+ * camera is never above the character's eyes; a lower head is not followed (crouch, #100). The world
+ * scale is #27 (until then 1 m = 100 units).
  */
 namespace vr {
 
@@ -72,7 +78,9 @@ struct HeadStatus {
 	const char * source = "none"; //!< hmd, held, sim or none
 	bool referenced = false;      //!< a reference was taken
 	u64 references = 0;           //!< references taken since the game started
-	HeadReference reference;
+	std::string reason;           //!< why the last one was taken: startup, level, source ..., runtime, button, channel
+	u64 raises = 0;               //!< auto-raise episodes: the head rose above the eye height (D-018)
+	HeadReference reference;      //!< its height follows a head above it (auto-raise)
 	Anglef head;                  //!< the head's own angles in LOCAL (engine degrees)
 	Vec3f position = Vec3f(0.f);  //!< the head in LOCAL, meters
 	Vec3f offset = Vec3f(0.f);    //!< the camera offset from the character's eye, game units

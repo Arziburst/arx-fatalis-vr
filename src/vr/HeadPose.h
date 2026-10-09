@@ -76,6 +76,18 @@ struct HeadReference {
 //! \return the reference for the head as it is now: looking this way = the character's facing
 HeadReference makeHeadReference(const HeadSample & head);
 
+/*!
+ * \brief Auto-raise (#28, D-018): the camera is never above the character's eyes
+ *
+ * The reference height is the character's eye height (recenter is the calibration). A head above it -
+ * calibrated seated, then stood up - takes the reference up with it at once, so the head is the eye
+ * again; a head below it is not followed (that is crouching, #100; after sitting down again the
+ * player recalibrates).
+ *
+ * \return how far the reference was raised, meters (0 when the head is not above it)
+ */
+float raiseHeadReference(HeadReference & reference, const HeadSample & head);
+
 //! The first-person camera driven by the head
 struct HeadCamera {
 	Anglef angle;              //!< engine degrees, each wrapped to [0, 360) like the engine's angles

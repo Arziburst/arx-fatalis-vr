@@ -37,6 +37,8 @@ struct HeadTrackingState {
 	bool haveSim = false;
 	HeadSample sim;
 
+	float raising = 0.f;    //!< meters the reference rose in the current auto-raise episode
+
 	bool resetPending = true;
 	std::string resetReason = "startup";
 
@@ -92,11 +94,27 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 		status.reference = makeHeadReference(head);
 		status.referenced = true;
 		status.references++;
+		status.reason = g_head.resetReason;
 		g_head.resetPending = false;
+		g_head.raising = 0.f;
 		gameevent::Event("vr.head.reference")("reason", g_head.resetReason)("source", source)
 			("yaw", status.reference.yaw, 1)("bodyYaw", bodyYaw, 1)
 			("x", status.reference.position.x, 3)("y", status.reference.position.y, 3)
 			("z", status.reference.position.z, 3);
+	}
+
+	// Auto-raise (D-018): a head above the calibrated eye height takes it up with it. An episode (stood up)
+	// is logged once, when the head stops rising, with how far it went
+	const float raised = raiseHeadReference(status.reference, head);
+	if(raised > 0.f) {
+		if(g_head.raising == 0.f) {
+			status.raises++;
+		}
+		g_head.raising += raised;
+	} else if(g_head.raising > 0.f) {
+		gameevent::Event("vr.head.raise")("source", source)("byM", g_head.raising, 3)
+			("y", status.reference.position.y, 3);
+		g_head.raising = 0.f;
 	}
 
 	HeadCamera camera = headToCamera(head, status.reference, bodyYaw);

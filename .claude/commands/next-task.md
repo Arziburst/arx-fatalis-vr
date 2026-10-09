@@ -19,8 +19,21 @@ in parallel mode (next paragraph).
 under `C:\Users\arzib\arx-fatalis-vr-wt\`, that folder is yours alone — it was created from `origin/main`
 on your task's branch. Do not switch it to `main`; bring it up to date with `git fetch origin` +
 `git merge origin/main` instead. Never work in the owner's copy in parallel mode. Self-test launches
-use `run-windows.ps1 -Isolated` (own log, config and saves); VR launches respect the VR lock and are
-skipped with a note when the lock is busy.
+use `run-windows.ps1 -Isolated` (own log, config and saves).
+
+**Launch rules (D-014, enforced by the scripts — do not work around them):**
+- **Never start SteamVR, never close it.** Launch only through `smoke-test.ps1` / `run-windows.ps1`:
+  while `vrserver.exe` is not running they make the launch flat and `smoke-test.ps1 -Vr` is skipped
+  (exit 2) — write that in the PR. No `vrstartup.exe`, no `Stop-Process vrmonitor`, no `-StartSteamVR`
+  (the owner's switch).
+- **One game at a time on this PC:** a launch waits for the game lock and names the holder; a skipped
+  smoke test (exit 2) is run again later, not forced.
+- **Only your own fresh build:** a launch refuses a build of another copy or of another commit than
+  `HEAD`; build first (or `-Rebuild`).
+- **Launch budget: at most 10 game launches per task.** `-Repeat N` is N launches. Say in the
+  narration how many launches are coming before starting them. A repeated-run evidence loop (more
+  than the budget) only after asking the coordinator, sequential and flat. Every launch is in the
+  ledger `%LOCALAPPDATA%\ArxFatalisVR\launches.log`, which the coordinator reads.
 
 The owner does not prepare anything before a task — you do. Do all of this without asking:
 - `git fetch --prune origin`.
@@ -62,10 +75,11 @@ Run `.\scripts\dev\next-task.ps1`.
   gate: a failure caused by the task must be fixed (or filed as a bug, if unrelated) before the PR.
   Add `-Commands '<channel or script-console command>',...` and `-- --loadslot <n>` to exercise what the
   task changed; assert on `status.json` numbers and `shot` screenshots, not on reading the log by eye.
-  When SteamVR is running, also run `.\scripts\dev\smoke-test.ps1 -Vr` (best effort: with nobody
-  wearing the headset the session stays short of FOCUSED; `xr_hello.exe` next to `arx.exe` tells
-  whether the runtime itself is fine). If a self-test cannot run, say so in *How verified* rather than
-  blocking on it. Quote the smoke test's verdict lines in the PR.
+  Only when the owner already has SteamVR running (`Get-Process vrserver`; never start it yourself,
+  D-014), also run `.\scripts\dev\smoke-test.ps1 -Vr` (best effort: with nobody wearing the headset
+  the session stays short of FOCUSED; `xr_hello.exe` next to `arx.exe` tells whether the runtime
+  itself is fine). If a self-test cannot run, say so in *How verified* rather than blocking on it.
+  Quote the smoke test's verdict lines in the PR. Stay within the launch budget (10 per task).
 - Record new problems you find as tasks or bugs (sub-issues of the right epic, on the board).
 
 ## 5. Pull request

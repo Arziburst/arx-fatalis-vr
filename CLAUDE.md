@@ -55,9 +55,11 @@ Dependencies come from vcpkg in manifest mode (`vcpkg.json`, triplet `x64-window
 .\scripts\dev\test-pr.ps1 131            # owner's test station: build the PR's worktree if needed, print its How to test, launch it
 ```
 
-- A launch that may start in VR (no `--no-vr`) holds the machine-wide VR lock (`scripts/vr-lock.ps1`)
-  while the game runs: one game in VR at a time. The smoke test skips its VR run (exit 2) when the lock
-  stays busy; flat launches need no lock.
+- Launch rules (D-014, `scripts/launch-lib.ps1`): the scripts never start SteamVR — without
+  `vrserver.exe` running a launch is made flat and `smoke-test.ps1 -Vr` is skipped (exit 2); only the
+  owner passes `-StartSteamVR`. One game at a time on this PC: every launch holds the game lock and
+  waits for the holder. Only the working copy's own fresh build runs (`-Rebuild` builds first). Every
+  launch goes into `%LOCALAPPDATA%\ArxFatalisVR\launches.log`; the budget is 10 launches per task.
 
 - SteamVR shows "Arx Fatalis VR" and the tile only for a registered build: run `register-steamvr.ps1`
   once per working copy / config and restart SteamVR — see [docs/vr/STEAMVR.md](docs/vr/STEAMVR.md).

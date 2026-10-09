@@ -357,6 +357,9 @@ Helper scripts used by the commands:
   `vrserver` + `vrcompositor` before the game starts in VR; `-StopSteamVR` (the owner's switch) quits SteamVR after the
   game exits the way its own "Exit SteamVR" does (`vrmonitor://quit`, nothing killed) so the headset powers down
 - `scripts/dev/stop-steamvr.ps1` — the same SteamVR quit on its own (the owner's switch; workers never run it)
+- `scripts/package-tester.ps1` — the tester zip (#88): `arx.exe` + DLLs (MSVC runtime app-local) + `data/core` + launchers +
+  `HOW-TO-USE.txt` + support bundle script (sources in `scripts/tester/`); checks the DLL closure and starts the **extracted**
+  game with a Windows-only `PATH` (1 launch, game lock). CI runs it and uploads the artifact `tester-build`. Details: [TESTING.md](TESTING.md#the-tester-package-88)
 - `scripts/dev/cycle-report.ps1` — the coordinator's report: PRs, board, leftovers, worktrees, next task
 - `scripts/dev/plan-next.ps1` — the coordinator's task order by rule (#187): the tasks ready to start now (dependencies Done,
   earliest open wave, free area, VR lane and worker limits, no `needs-design`), each with its `start-worker.ps1` line, and the

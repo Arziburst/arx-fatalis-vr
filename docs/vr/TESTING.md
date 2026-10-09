@@ -19,6 +19,7 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 .\scripts\dev\smoke-test.ps1 -Menu -Commands 'loadslot 0'       # plain launch (main menu), then a save through the channel
 .\scripts\dev\smoke-test.ps1 -Commands 'drawcheck 120'         # two draws of the scene per frame must give one picture (#71)
 .\scripts\dev\comfort-check.ps1                               # shake, FOV zoom and bob with the VR comfort policy off and on, one run (#76)
+.\scripts\dev\spell-drawcheck.ps1                             # the 26 spells of #71 really launched, then drawcheck 240 (#155)
 .\scripts\run-windows.ps1 -Isolated -TestChannel -- --no-vr --loadlevel 10   # a manual run with the channel, in this copy's own user dir
 .\scripts\dev\game-status.ps1 -Watch                          # live state line
 .\scripts\dev\game-cmd.ps1 'shot before' 'teleport -p marker_0001' 'shot after'
@@ -127,6 +128,8 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
  "menuMode":"ingame","area":10,"paused":false,"cinematic":false,
  "player":{"x":...,"y":...,"z":...,"yaw":...,"life":...,"lifeMax":...,"mana":...,"manaMax":...},
  "camera":{"x":...,"y":...,"z":...,"pitch":...,"yaw":...,"roll":...,"fov":75.0,"bob":0.0,"shake":0.0},
+ "spells":{"active":2,"launched":3,"activeByType":{"speed":1,"fire_field":1},
+           "launchedByType":{"speed":1,"heal":1,"fire_field":1}},
  "comfort":{"mode":"auto","active":false,"viewBobbing":true,"screenShake":true,"fovZoom":true},
  "window":{"width":640,"height":480,"focused":true,"minimized":false,"fullscreen":false},
  "vr":{"supported":true,"enabled":false,"sessionState":"none","runtime":"",
@@ -152,6 +155,10 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   whether the VR rules apply (`active`) and what is allowed right now (#76). The status is written
   at the **start** of a frame, so the write that acknowledges a `comfort` command still carries the
   previous policy's camera — a check skips that sample (`comfort-check.ps1`).
+- `spells` (with `player`, #155): `active` spells right now and `launched` since the level was loaded
+  (the spell manager is cleared on a level change), each also by type (script names, only the types
+  with a non-zero count). A spell counts as launched once it passed its own `CanLaunch` and started —
+  the evidence that a `spellcast` did something, which the ack never is (TRAPS.md).
 - `build`: the same build identification as the [log banner](#the-log-banner): the full commit and
   the branch compiled into `Version.cpp` (`branch` empty when detached), the CMake configuration.
 - `vr.runtime`: the OpenXR runtime that answered this run (`SteamVR/OpenXR 2.17.10`), empty while no
@@ -246,17 +253,31 @@ What the check relies on and what it cannot see:
 - It cannot see state that only affects the *next* frame (a counter incremented in a draw path and
   read later). Those show up as a visibly faster effect, not as a differing pair.
 
-A typical check exercises the systems that were split, all at once:
+A typical check exercises the systems that were split, all at once — the spells check (#155):
 
 ```powershell
-$spells = 'magic_missile','fireball','ice_projectile','poison_projectile','lightning_strike','mass_lightning_strike','speed','heal','levitate','bless','fire_field','ice_field','rune_of_guarding','create_field','repel_undead','curse','confuse','summon_creature','raise_dead','harm','mana_drain','life_drain','cure_poison','create_food','fake_summon','explosion'
-.\scripts\dev\smoke-test.ps1 -Seconds 8 -Commands (@('invulnerability on') + ($spells | ForEach-Object { "spellcast -fsm 5 $_ self" }) + @('drawcheck 240'))
+.\scripts\dev\spell-drawcheck.ps1              # PASS: 26 of 26 spells launched, 0 differing frames
+.\scripts\dev\spell-drawcheck.ps1 -Flags fs    # the broken cast of #71 on purpose: must FAIL
 ```
 
-The flags matter: on the **player** a `spellcast` launches at once only with `-s` **and** `-m`
-(`NOANIM` + `NODRAW`); with `-fs` alone it is queued for the rune drawing, which skips the player,
-so nothing is cast and every later `spellcast` on the player is ignored (TRAPS.md, found in #76).
-The #71 rows below used `-fs`: their spells never launched, #155 re-runs them.
+It runs the smoke test with `invulnerability on`, 23 spells the player casts on itself
+(`spellcast -fsm 5 <spell> self`), the other 3 cast on the player by an NPC
+(`human_base_0033.spellcast -fsm 5 <spell> player`) and `drawcheck 240`; it samples `status.json`
+meanwhile and fails unless every spell shows up in `spells.launchedByType`, some spells are in
+`spells.activeByType` while the check runs, and the smoke test (with its draw check gate) passed. It
+prints which command launched each spell and which spells were on screen during the check.
+
+- **The flags matter:** on the **player** a `spellcast` launches at once only with `-s` **and** `-m`
+  (`NOANIM` + `NODRAW`); with `-fs` alone it is queued for the rune drawing, which skips the player,
+  so nothing is cast and every later `spellcast` on the player is ignored (TRAPS.md, found in #76).
+  The first #71 spell row below used `-fs`: its spells never launched; #155 re-ran it.
+- **Three spells need an NPC caster.** `fake_summon` launches only for a caster other than the
+  player (`FakeSummonSpell::CanLaunch`). `summon_creature` and `raise_dead` cast by the player on
+  level 10 never launch: their `CanLaunch` finds no valid spot 3 m ahead
+  (`ARX_INTERACTIVE_ConvertToValidPosForIO`) — tried at the start point facing 0°, 90°, 180° and
+  270°, and next to `human_base_0033`. Cast by that NPC they launch; the fissure drawn is the same.
+- Order: the long-lived spells first, the projectiles and the NPC's summons last, so they are still
+  in flight or open when the check starts (`harm` and `mana_drain` end on their own before that).
 
 ## `xr_hello` — the runtime alone
 
@@ -287,9 +308,9 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | 2026-10-09, #124: cinematics skipped without loading — default `-CloseWindow -Repeat 3`; `-Commands 'cine play' -CloseWindow -Repeat 2`; `-Commands 'cine play','cine akbaa_dream_a' -Repeat 2` | **3 of 3, 2 of 2, 2 of 2** `PASS`; one `Skipping cinematic <name>` line per cinematic, state never `CINEMATIC`, 0 errors. With `--cinematics` (or `cine play` with `--intro`) the state becomes `CINEMATIC` — the check can fail |
 | 2026-10-09, #71: `-Commands 'drawcheck 120'` on level 10 **before** the simulate / draw split (`renderLevel()` still aged particles, flares, decals and spells while drawing) | **23 of 120 frames differ** between the two draws (max 3558 of 307200 pixels, max delta 59) — the torches' fire particles advance once per draw |
 | 2026-10-09, #71: the same after the split | `PASS`, **0 of 120 frames differ** (max 0 pixels, delta 0), 0 errors, 0 warnings |
-| 2026-10-09, #71: 26 spells cast on the player (`spellcast -fs 5 <spell> self`, the list in [The draw check](#the-draw-check-drawcheck)), then `drawcheck 240` | `PASS`, **0 of 240 frames differ**, every `spellcast` acknowledged with `errors=0`, 0 errors, 0 warnings |
+| 2026-10-09, #71: 26 spells cast on the player (`spellcast -fs 5 <spell> self`, the list in [The draw check](#the-draw-check-drawcheck)), then `drawcheck 240` | `PASS`, **0 of 240 frames differ**, every `spellcast` acknowledged with `errors=0`, 0 errors, 0 warnings. **No spell was active:** with `-fs` a spell on the player is queued and never launched (TRAPS.md), so this row covers the level without spells — superseded by the #155 rows below |
 | 2026-10-09, #71: **the check can fail** — a build with `ARX_PARTICLES_Update()` deliberately moved back into `renderSceneView()`, `drawcheck 120` on level 10 | `FAIL`, **35 of 120 frames differ** (max 10 of 307200 pixels, max delta 97), the most differing pair saved as `capture\drawcheck1_a.bmp` / `_b.bmp`; the other six checks stay `[ok]` — only the draw check catches this class of bug |
-| 2026-10-09, #71: the committed code — `shot level10`, the 26 spells plus `negate_magic`, `drawcheck 120` | `PASS`, **0 of 120 frames differ**, 0 errors, 0 warnings. The `shot` at frame 15 was **all black**: the level's fade-in, not the renderer (TRAPS.md) |
+| 2026-10-09, #71: the committed code — `shot level10`, the 26 spells plus `negate_magic`, `drawcheck 120` | `PASS`, **0 of 120 frames differ**, 0 errors, 0 warnings. The `shot` at frame 15 was **all black**: the level's fade-in, not the renderer (TRAPS.md). The spells were cast with `-fs` like the row above: none launched |
 | 2026-10-09, #71: 20 × `status` (≈ 5 s), `shot level10-after-fade`, `drawcheck 120` | `PASS`, **0 of 120 frames differ**; the shot at frame 517 shows the scene (58 % of sampled pixels non-black, the same as the draw-check captures from frame 86 on) |
 | 2026-10-09, #93 before the fix: a detector in `~Entity` (log every entity whose `owner()` is the one being deleted) | **1 of 1** exits from level 10 report `human_base_0033` deleted while it still owns `long_sword_0021` — the dangling owner is there on every exit, the crash only depends on the heap |
 | 2026-10-09, #93 after the fix: `-Repeat 10 -Seconds 3` (channel quit) | **10 of 10** `PASS`, 0 errors, 0 warnings; the detector reports nothing |
@@ -303,6 +324,9 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | 2026-10-09, #129: `smoke-test.ps1 -Seconds 5 -Commands 'mark flush-check'`, then `-Seconds 3` on the final build | `PASS` both, 0 errors, 0 warnings; after the second run the history reads `arx.log` (pid 35468) ← `arx.1.log` ← `arx.2.log` (the killed `main` run), each `Run:` line one run older — the smoke test no longer deletes `arx.log` before a run |
 | 2026-10-09, #129, **the degraded path**: `arx.1.log` held open by PowerShell (`FileShare::ReadWrite`, no delete sharing) during `smoke-test.ps1 -Seconds 3` | `PASS` with exactly **1** warning: `[W] Startup:211  Log rotation failed: could not move "…\arx.1.log" to "…\arx.2.log" - nothing was deleted, this run appends to the previous log`; `Log: …, appended to the previous run's log`; `arx.log` grew from 5114 to 10583 bytes with two `Starting` lines, `arx.1.log` untouched. `fs::rename` retries 10 × 100 ms first (its `[W] Failed to move file … 32 = … being used by another process` lines go to stderr — the file logger does not exist yet), so `STARTUP` came at +1.0 s instead of +0.3 s |
 | 2026-10-09, #129, **the test can fail**: `FileLoggerTest` built with both flushes removed on purpose | `Run: 39  Failures: 2`: `testWarningIsOnDiskAtOnce` and `testInfoIsOnDiskWithinTheInterval` (after its 2 s wait); `testExplicitFlush` and the three rotation tests stay green, as they should. Restored: `OK (39 tests)` |
+| 2026-10-09, #155: `spell-drawcheck.ps1` — the 26 spells of #71 **really launched** (23 by the player with `-fsm`, `summon_creature` / `raise_dead` / `fake_summon` by `human_base_0033` on the player), then `drawcheck 240` on level 10 | `PASS`: **26 of 26** in `spells.launchedByType`, each in the `status.json` write right after its own command; **24 spell types active during the check** (all but `harm` and `mana_drain`, which had ended), **0 of 240 frames differ** (max 0 of 307200 pixels, delta 0), 0 errors, 0 warnings. The #71 split holds with every spell effect on screen — no bug to file against it |
+| 2026-10-09, #155: the same with `-Flags fs` — the cast of the #71 rows, the broken state on purpose | `FAIL` of the check (the smoke test passed, 0 of 240 frames differ): **0 of 23** player spells launched; the NPC's 3 launched one command later through the NPC rune drawing. The launch evidence catches the #71 mistake |
+| 2026-10-09, #155: the player's own `summon_creature` and `raise_dead` (`-fsm`): at the start point; after `teleport -ap 0/90/180/270 player`; after `teleport -p human_base_0033` | **never launched** — `CanLaunch` finds no valid spot 3 m ahead on level 10, a silent fizzle; hence the NPC caster above |
 
 Conclusions:
 

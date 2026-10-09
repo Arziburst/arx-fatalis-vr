@@ -98,42 +98,15 @@ $log = Get-ArxLogPath $UserDir
 $crashDir = Get-ArxCrashDir $UserDir
 
 # --- Parse the scenario file -------------------------------------------------------------------------------
+# The parser, the verification steps and the slot order are in scenario-lib.ps1: host-tested by
+# scripts/dev/test-save-library.ps1 (run-script-tests.ps1, CI)
+. (Join-Path $PSScriptRoot 'test-saves\scenario-lib.ps1')
 $steps = [Collections.Generic.List[object]]::new()
-$saveNames = [Collections.Generic.List[string]]::new()
-$lineNo = 0
-$scenarioLines = if ($Verify) { @() } else { Get-Content $Script }
-foreach ($raw in $scenarioLines) {
-	$lineNo++
-	$line = $raw.Trim()
-	if (-not $line -or $line.StartsWith('#')) { continue }
-	if ($line.StartsWith('@')) {
-		$word, $rest = $line -split '\s+', 2
-		$steps.Add([pscustomobject]@{ Kind = $word.Substring(1).ToLowerInvariant(); Text = "$rest".Trim(); Line = $lineNo })
-	} else {
-		$steps.Add([pscustomobject]@{ Kind = 'command'; Text = $line; Line = $lineNo })
-		if ($line -match '^save\s+(\S.*)$') {
-			if ($saveNames -contains $Matches[1].Trim()) { throw "$Script`:$lineNo`: save name '$($Matches[1].Trim())' is used twice" }
-			$saveNames.Add($Matches[1].Trim())
-		}
-	}
-}
-if (-not $Verify -and $saveNames.Count -eq 0) { throw "$Script has no save command" }
-foreach ($name in $saveNames) { if ($name -notmatch '^[A-Za-z0-9._-]+$') { throw "save name '$name': use letters, digits, . _ - only (it is a folder name)" } }
-
-# The steps that check saves: load slot <slot> through the channel, then the level, the player where it was
-# saved, the controls free, a screenshot. $entries are in slot order (the loop below walks them as given).
-function New-VerifySteps($entries, [int[]]$slots) {
-	for ($k = 0; $k -lt $entries.Count; $k++) {
-		$e = $entries[$k]
-		if ($slots[$k] -ge 0) { [pscustomobject]@{ Kind = 'command'; Text = "loadslot $($slots[$k])"; Line = 0 } }
-		[pscustomobject]@{ Kind = 'level'; Text = "$($e.area)"; Line = 0 }
-		[pscustomobject]@{ Kind = 'near'; Text = "$($e.player.x) $($e.player.z) 100"; Line = 0 }
-		# A level fades in from black after a load: an earlier screenshot is black (TRAPS.md)
-		[pscustomobject]@{ Kind = 'wait'; Text = '4'; Line = 0 }
-		[pscustomobject]@{ Kind = 'expect'; Text = 'player.controlsBlocked False'; Line = 0 }
-		[pscustomobject]@{ Kind = 'command'; Text = "shot verify-$($e.name)"; Line = 0 }
-		[pscustomobject]@{ Kind = 'wait'; Text = '1'; Line = 0 }
-	}
+$saveNames = @()
+if (-not $Verify) {
+	$scenario = Read-ArxScenario (Get-Content $Script) $Script
+	foreach ($s in $scenario.Steps) { $steps.Add($s) }
+	$saveNames = @($scenario.SaveNames)
 }
 
 # -Verify: slots are numbered newest first by the save file's time, which a copy keeps - the order is
@@ -141,11 +114,10 @@ function New-VerifySteps($entries, [int[]]$slots) {
 # in position from the one before, so "the player is there" cannot be true before the load happened.
 if ($Verify) {
 	$entries = @(Get-Content -Raw (Join-Path $Library 'manifest.json') | ConvertFrom-Json)
-	$ordered = @($entries | Where-Object { Test-Path (Join-Path $Library "$($_.name)\gsave.sav") } |
-		Sort-Object { (Get-Item (Join-Path $Library "$($_.name)\gsave.sav")).LastWriteTime } -Descending)
+	$ordered = @(Get-ArxVerifyOrder $entries $Library)
 	if ($ordered.Count -eq 0) { throw "no save of manifest.json is in $Library" }
 	$slots = @(0..($ordered.Count - 1) | ForEach-Object { if ($_ -eq 0) { -1 } else { $_ } })
-	foreach ($s in (New-VerifySteps $ordered $slots)) { $steps.Add($s) }
+	foreach ($s in (New-ArxVerifySteps $ordered $slots)) { $steps.Add($s) }
 }
 
 # --- The run -------------------------------------------------------------------------------------------------
@@ -280,7 +252,7 @@ try {
 		$n = $manifest.Count
 		$slots = @(($n - 1)..0)
 		$inOrder = @($slots | ForEach-Object { $manifest[$n - 1 - $_] })
-		Invoke-Steps (New-VerifySteps $inOrder $slots)
+		Invoke-Steps (New-ArxVerifySteps $inOrder $slots)
 	}
 } catch {
 	$failures.Add("$_")

@@ -257,7 +257,18 @@ loads every save again** (`loadslot`, oldest first) and checks the level, that t
 was saved (within 1 m) and that the controls are free, with a screenshot per save. The script **fails**
 (nothing is copied into the library) when a command is refused, the game ends unclean, or a check fails.
 A scenario file has `@`-directives (`@until`, `@expect`, `@near`, `@entity`, `@print`, …) — the header of
-the script lists them.
+the script lists them. The parser (`scripts/dev/test-saves/scenario-lib.ps1`) rejects what would only
+fail after a minute in the game — an unknown directive, a missing or non-numeric argument, a save name
+used twice or unusable as a folder name — with the file and line, before any launch.
+
+**Host test** (`scripts/dev/test-save-library.ps1`, run by `run-script-tests.ps1`, so by CI): the real
+scenario file, the parser and its 13 error cases, the verification steps (no `loadslot` for the slot the
+command line loaded, the position formatted the same in every culture), the slot order (newest save
+file first), and `Use-ArxSave` / `Get-ArxSaveLibrary` (exactly one save left, the file time kept, a
+missing name names what the library has). It was shown to fail with 7 deliberate breaks, one check
+each: the duplicate-name check removed, the old saves not removed, the slot order reversed, the
+position formatted with the current culture (`8540,5`), unknown directives accepted, any save name
+accepted, the copy losing the file time.
 
 What a save does and does not keep (measured, #70): the position, the yaw, the inventory and what is
 equipped, the entities' state (the goblin's patrol goes on from where it was). Not the pitch of the view

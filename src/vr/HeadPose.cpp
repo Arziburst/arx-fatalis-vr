@@ -86,16 +86,6 @@ HeadReference makeHeadReference(const HeadSample & head) {
 	return reference;
 }
 
-float raiseHeadReference(HeadReference & reference, const HeadSample & head) {
-	// OpenXR LOCAL: y is up
-	const float above = head.position.y - reference.position.y;
-	if(!(above > 0.f)) {
-		return 0.f;
-	}
-	reference.position.y = head.position.y;
-	return above;
-}
-
 HeadCamera headToCamera(const HeadSample & head, const HeadReference & reference, float bodyYaw,
                         const HeadCameraParams & params) {
 

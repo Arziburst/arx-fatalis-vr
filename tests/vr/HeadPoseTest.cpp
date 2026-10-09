@@ -237,29 +237,6 @@ void HeadPoseTest::testRecenterIsTheEye() {
 	CPPUNIT_ASSERT(std::abs(camera.angle.getYaw() - 90.f) < 1e-3f);
 }
 
-void HeadPoseTest::testAutoRaise() {
-	vr::HeadReference reference = vr::makeHeadReference(head(0.f, 0.f, 0.f, Vec3f(0.f, 1.2f, 0.f)));
-
-	// Lower: not followed, the camera goes down (crouch is #100)
-	CPPUNIT_ASSERT_EQUAL(0.f, vr::raiseHeadReference(reference, head(0.f, 0.f, 0.f, Vec3f(0.f, 1.0f, 0.f))));
-	CPPUNIT_ASSERT_EQUAL(1.2f, reference.position.y);
-
-	// Stood up 45 cm and stepped aside: the height follows at once, the horizontal does not
-	vr::HeadSample standing = head(0.f, 0.f, 0.f, Vec3f(0.3f, 1.65f, 0.f));
-	float raised = vr::raiseHeadReference(reference, standing);
-	CPPUNIT_ASSERT(std::abs(raised - 0.45f) < 1e-5f);
-	CPPUNIT_ASSERT_EQUAL(1.65f, reference.position.y);
-	CPPUNIT_ASSERT_EQUAL(0.f, reference.position.x);
-	vr::HeadCamera camera = vr::headToCamera(standing, reference, 0.f);
-	checkVector("standing: at the eye, moved aside", Vec3f(30.f, 0.f, 0.f), camera.offset);
-
-	// Down again: not followed, 20 cm below the new eye height
-	vr::HeadSample lower = head(0.f, 0.f, 0.f, Vec3f(0.f, 1.45f, 0.f));
-	CPPUNIT_ASSERT_EQUAL(0.f, vr::raiseHeadReference(reference, lower));
-	camera = vr::headToCamera(lower, reference, 0.f);
-	checkVector("lower again", Vec3f(0.f, 20.f, 0.f), camera.offset);
-}
-
 void HeadPoseTest::testHeadBetweenTheEyes() {
 	glm::quat orientation = vr::headOrientationFromDegrees(30.f, -10.f, 5.f);
 	vr::HeadSample sample = vr::headFromEyes(Vec3f(-0.032f, 1.6f, 0.1f), orientation, Vec3f(0.032f, 1.62f, 0.1f),

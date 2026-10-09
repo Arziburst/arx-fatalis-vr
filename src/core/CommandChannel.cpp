@@ -543,7 +543,6 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("referenced", head.referenced);
 		json.value("references", head.references);
 		json.value("reason", head.reason);
-		json.value("raises", head.raises);
 		json.value("refY", head.reference.position.y);
 		json.value("refYaw", head.reference.yaw);
 		json.value("pitch", head.head.getPitch());

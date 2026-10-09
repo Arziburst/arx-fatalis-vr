@@ -141,10 +141,11 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `setpos <x> <y> <z> [yaw]` | put the player at exact coordinates, optionally facing `yaw`. `y` is the **eye**: the floor is 170 units lower (a `y` at floor level puts the eye in the floor: black screen). About 100 units are a metre. Refused outside gameplay (#70) |
 | `lookat <entity>` | turn the player (yaw and pitch) towards an entity, aiming 40 units above its floor position. The pitch is not kept by a save and does not matter in VR (the head decides); the yaw is kept (#70) |
 | `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
-| `vr-input down\|up\|tap <control>`, `vr-input stick left\|right <x> <y>`, `vr-input bind <event> <binding>`, `vr-input reset` | the VR controls' table without a headset (#30, `vr/VRInput.h`): a control (`right.a`, `left.grip`, `right.stick_down` …) held, let go or tapped as if a controller did it, merged into what OpenXR reports and resolved by the same table at the next frame; the game then reacts as to the controllers (#74: inventory, book, jump, crouch toggle, the game menu, the mouse buttons). `stick` holds a stick deflected (the analog value only — its direction controls are `down` / `up`), seen in `vr.input.game.moveX/moveY/turn`; `bind` remaps one event (`bind jump left.grip+left.a`, `bind menu left.b:long`, `bind magic_mode none`); `reset` restores the default layout for the current controllers and lets go of everything. Refused with the reason for an unknown control, event or binding. `vr.input` in the status (`vr.input.game.held`: the actions, buttons and keys the engine is given); one `[vr] input: <event> (<binding>)` log line per event press, one `[vr] input: layout …` line per layout change |
+| `vr-input down\|up\|tap <control>`, `vr-input stick left\|right <x> <y>`, `vr-input bind <event> <binding>`, `vr-input reset`, `vr-input turn snap\|smooth\|angle <deg>\|speed <deg/s>\|repeat <s>` | the VR controls' table without a headset (#30, `vr/VRInput.h`): a control (`right.a`, `left.grip`, `right.stick_down` …) held, let go or tapped as if a controller did it, merged into what OpenXR reports and resolved by the same table at the next frame; the game then reacts as to the controllers (#74: inventory, book, jump, crouch toggle, the game menu, the mouse buttons). `stick` holds a stick deflected (the analog value only — its direction controls are `down` / `up`), seen in `vr.input.game.moveX/moveY/turn`; `bind` remaps one event (`bind jump left.grip+left.a`, `bind menu left.b:long`, `bind magic_mode none`); `reset` restores the default layout for the current controllers and lets go of everything; `turn` sets the turn settings as `cfg.ini` does (#32: mode, snap angle, the repeat pause of a held stick (0 = none), smooth speed — `vr.input.turn` shows them with `snaps`, `lastSnap`, `turned` degrees right positive, `allowed`; one `vr.turn.snap … repeat=no|yes` game event per snap, `vr.turn.smooth` at the start and stop of a smooth turn). Refused with the reason for an unknown control, event or binding. `vr.input` in the status (`vr.input.game.held`: the actions, buttons and keys the engine is given); one `[vr] input: <event> (<binding>)` log line per event press, one `[vr] input: layout …` line per layout change |
 | `recenter` | the head is measured from its next sample: a new head reference (#24; the player's button chord is #28). A `vr.head.reference reason=channel` event once a head is there |
 | `headpose <yaw> <pitch> <roll> [<x> <y> <z>]` / `headpose off` | a simulated head for checks without a headset (#24): degrees as a person says them — yaw left, pitch up, roll left positive — and optionally the position in metres in the OpenXR LOCAL space (x right, y up, z back). It drives the first-person camera exactly like the headset (`vr.head` and `camera` in the status); the first pose takes the reference, later ones move the camera from it. A real headset pose wins over it; `off` removes it |
 | `vr-sim <command>` | a command of the simulated headset (#112), only in a `--vr-sim` run: `head rot 25 0 0`, `head pos 0 -0.3 0`, `action trigger right 1`, `shot <name>`, `session visible`, `fault swap-eyes on`, … — now, or `@+<n> <command>` n frames from now on its timeline. See [The simulated headset](#the-simulated-headset---vr-sim-112) |
+| `crouch on\|off` | the crouch toggle without an input device, for flat runs (#263): `on` crouches the character, `off` lets it stand up when there is room for its head. `player.crouchToggle` / `player.crouched` in the status |
 | `comfort auto\|on\|off` | who decides the VR comfort policy (#76, `vr::comfort()`): `auto` = the VR session (the default: view bobbing, screen shake and FOV zoom off in VR, `cfg.ini` decides in flat mode), `on` / `off` force the VR rules on or off — so a flat run can measure them. `comfort` and `camera` in the status; one `[vr] comfort:` log line per change |
 | anything else | the **script console**: `[entity.]command args`, exactly as typed in the in-game console (`` ` ``). Context defaults to the player. Refused (and counted in the ack) when the entity or the command is unknown |
 
@@ -269,10 +270,14 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   `player.controlsBlocked` is `BLOCK_PLAYER_CONTROLS`: scripts set it during scripted scenes — the
   awakening of a new game on level 1 holds it for 30-40 s — and a save made while it is `true` is not
   playable (#70): wait for `false` (`@until player.controlsBlocked False` in a save scenario).
-  `player.crouched` / `player.stealth`: the stance of this update's movement (any crouch: the toggle,
-  the key, the physical one; the stealth walk). `player.animSpeed`: how fast the current body
-  animation moves the player, units per second — the walk speed the engine uses, independent of walls
-  and the frame rate (run 192, the stealth walk 135.6 on `mvp-new-game`, #33).
+  `player.crouchToggle` is the crouch toggle (the button, `crouch on|off`); `player.crouched` is the
+  character actually crouching (`PLAYER_CROUCH`) — it stays `true` after the toggle goes off while
+  something is in the way of the head, and every refused stand-up logs one `player.standup.blocked`
+  event naming what is there (#263).
+  `player.stealth`: this update's movement is the stealth walk (the key or a slight stick push, #33).
+  `player.animSpeed`: how fast the current body animation moves the player, units per second — the
+  walk speed the engine uses, independent of walls and the frame rate (run 192, the stealth walk 135.6
+  on `mvp-new-game`, #33).
 - `camera` (with `player`): the first-person camera as the frame before left it — position, angles,
   `fov` in degrees, `bob` = its distance from the stable head position of the paused animation (view
   bobbing; 0 when off), `shake` = the quake amplitude applied that frame (0 without a quake or when
@@ -846,6 +851,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 | `@key <name> [n] [ms]` | a keyboard message posted to the game window, no focus change (Escape, Enter, Space, A-Z, 0-9, F1-F12 …). **Not yet run against a live game** — verify it with a first sequence that needs it |
 | `@pending #<issue> <step>` | a step the game cannot pass yet, because issue N builds the feature. Its failure is printed as `pending`; **once it passes the run fails** until the `@pending` is removed, so an expectation cannot go stale. Pick a step that fails for the right reason (a first version of `snap-turn` had a "turned back" step that passed trivially) |
 | `@sim <name>`, `@args <...>` | what `xrs-run.ps1` launches: the `scripts\dev\vrsim` script (default `idle`: no timed lines, no shots) and the arx.exe arguments (default `--loadlevel 10`); ignored while running |
+| `@save <name>` | start from this save of the test save library (#70; `smoke-test.ps1 -Save`, the only save of the isolated user directory), with `@args --loadslot 0`. Anything the **body** does — turning, walking — needs a first-person save: on level 10 the intro conversation's camera owns the view (TRAPS.md) |
 
 Rules: a sequence waits for `state eq GAMEPLAY` and for `vr.sim.timelineFrame ge 270` (3 s) before its
 first shot — the level fades in from black (TRAPS.md). A timeout must carry its `s` (`60s`); a bare
@@ -854,12 +860,13 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 
 | Sequence | Real today | `@pending` until |
 |---|---|---|
-| `look-around` | the rig and both located eyes follow a 40° yaw and a pitch; two shots of a still head agree | #24: the pictures change with the head |
-| `snap-turn` | `vr-input tap right.stick_right` reaches the game (syncs advance), no errors | #32: the player turns |
+| `look-around` | the rig and both located eyes follow a 40° yaw and a pitch; two shots of a still head agree; the pictures change with the head (#24) | — |
+| `snap-turn` | on `mvp-new-game`, the repeat off: the right stick held for a second turns the body exactly 45° once (`vr.turn.snap`), the view turns (picture change 16.9), the head turned back 45° gives the first view again (5.3, HUD and lights); a second push, a push left, a half push that does nothing; the repeat 0.4 s on: held 1.8 s → the snap + 4 repeats; smooth turn by time and no snaps in it (#32) | — |
 | `walk-forward` | on `mvp-new-game` (`-Save`; level 10 never moves the player, TRAPS.md): still without input, the stick held forward moves him | — (#31) |
 | `walk-look` | on `mvp-new-game`: with the head turned ±90° the stick walks where the head looks (D-008), with the head ahead along the heading; the heading stays, one `vr.walk` start / end per push (`vr.input.walk` in status.json) | — (#31) |
 | `sneak-jump-crouch` | on `mvp-new-game`: a full push runs, a slight one sneaks (`player.stealth`, `player.animSpeed` < 0.8 × the run's), the hysteresis band keeps a run, below it the walk turns into a sneak; `right.a` jumps; `right.stick_down` with the stick drifting sideways toggles the crouch on without turning, a tap toggles it off | — (#33) |
-| `recenter` | a head offset is set and read back | #28: `recenter` is accepted (it logs one expected `[W]`) |
+| `stand-up` | flat, on the test save `mvp-new-game` (`smoke-test.ps1 -Sequence stand-up -Save mvp-new-game`): `crouch on` / `crouch off` in the start cell — the character crouches (eye 170.1 → 122.7) and stands up where it stood (eye 170.1, same x/z); crouched inside the cell's portcullis it stays down with one `player.standup.blocked` event, and stands up once back at the start spot (#263) | — |
+| `recenter` | a head offset is set and read back; `recenter` is accepted (#28) | — |
 | `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
@@ -968,13 +975,23 @@ self-hosted runner (D-021: CI is the automatic gate; a red step blocks the merge
 | Script self-tests | `scripts/dev/run-script-tests.ps1`: every `scripts/dev/test-*.ps1` in its own pwsh (`test-log-digest.ps1` incl. the `-Id` / `-Find` / `-Condense` / `-Print` modes on a fixture log, `test-github-lib.ps1`, `test-launch-lib.ps1`) | a test exits non-zero, or a `test-*.ps1` is in neither list of the script (a new test cannot be forgotten) |
 | Build | `build-windows.ps1 -Config Release`, which also builds and runs the host unit tests (`arxtest`) | the build, or a CppUnit test, fails |
 | Game checks | `scripts/dev/ci-smoke.ps1`: `smoke-test.ps1 -Seconds 3 -Commands 'drawcheck 120'`, then `spell-drawcheck.ps1` — the same scripts a worker runs, flat, `--loadlevel 10` | either returns `FAIL`, **or was skipped** (exit 2: the game lock stayed busy for 15 min) — a gate that did not run is not a pass, re-run the job |
+| Sequences (#255) | the same script, phase `sequences`: every `scripts/dev/xrs/*.xrs` (`look-around`, `snap-turn`, `walk-forward`, `stand-up`, `recenter`, `ui-panel`, see [Scripted sequences](#scripted-sequences-xrs-113)) as one launch each — `smoke-test.ps1 -Sequence <name>` with the `@sim` / `@args` / `@save` the file declares (idle simulated headset by default, flat when its `@args` say `--no-vr`) | a step fails, **a `@pending` step starts passing** (remove the `@pending`), or the launch was skipped (exit 2). A new `.xrs` file is picked up by itself |
 | Upload | the artifact `game-checks`, also when a step failed | — |
 
-`game-checks` holds, per phase (`smoke-test`, `spell-drawcheck`): the transcript (`<phase>.log`), then
+**The save library on the runner (#255).** Sequences with a `@save` (`snap-turn`, `stand-up`, `ui-panel`: `mvp-new-game`)
+need the test saves (D-023: derived from the game's data, generated per machine, never committed). The phase
+`save-library` runs first: in the service's own profile (`C:\Windows\ServiceProfiles\NetworkService\AppData\Local\ArxFatalisVR\savelib`)
+it runs `make-test-saves.ps1 -Verify` (one launch, ~20 s: a fresh game loads every save); when the library is missing, lacks a
+save a sequence names, or `-Verify` fails (an engine save format change made the saves stale), it runs
+`make-test-saves.ps1` (one launch, ~1 min) and the library is regenerated — nothing to do by hand. A sequence whose save the phase could
+not provide fails (not skipped).
+
+`game-checks` holds, per phase (`smoke-test`, `spell-drawcheck`, `save-library`, `xrs-<sequence>`): the transcript (`<phase>.log`), then
 in `<phase>\` every `arx*.log`, `status.json`, `ack.txt`, `stdout.txt` / `stderr.txt` of the channel,
-`capture\` (the most differing draw check pair as `.bmp`), `crashes\` and the run `digest\`. Read the
-digest, not the log. A whole green job takes about two minutes on the owner's PC (script tests 6 s, an
-incremental build about a minute, game checks 17 s).
+`capture\` (the draw check pair as `.bmp`; a sequence's `@shot` pictures), `crashes\` and the run `digest\`. Read the
+digest, not the log; the failing step of a sequence is the `FAIL` line of `xrs-<sequence>.log`. A whole green job takes about
+four minutes on the owner's PC (script tests 6 s, an incremental build about a minute, game checks 17 s, sequences
+about 1.5 min, plus ~20 s to verify the save library; ~1 min more when it is regenerated).
 
 How the runner differs from a worker's copy — none of it needs action, all of it explains a surprise:
 - **The runner service is `NT AUTHORITY\NETWORK SERVICE` in session 0** (no desktop), and the game runs

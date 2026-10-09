@@ -10,6 +10,34 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-012: Worker model by task difficulty — Fable, Opus, Sonnet
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** project owner
+
+### Decision
+`scripts/dev/start-worker.ps1` picks the worker's model from the issue's area label; the coordinator
+overrides it with `-Model` when a task is harder or easier than its area suggests.
+
+| Model | Areas | Typical tasks |
+|---|---|---|
+| **Fable** | `area:vr-runtime`, `area:render` | swapchains, frame loop, stereo rendering, IK body; hard crashes (override) |
+| **Opus** | everything else (`core`, `camera`, `input`, `ui`, `combat`, `magic`) | engine work: camera, input, UI, combat |
+| **Sonnet** | only `area:build` / `area:docs` | scripts, CI, docs, research |
+
+Usage is watched in `/new-cycle`: the plan's limits (the session, the week, and Fable's separate weekly
+limit) are read from the status line's last input (`~/.claude/statusline/last.json`, if Claude Code
+passes them) or from the owner's screenshot of claude.ai → Settings → Usage. When the weekly use runs
+ahead of the week, the coordinator runs fewer workers at once (2 instead of 3) or moves tasks to the
+model with room left. The one-time free full reset is kept for a week that runs out mid-wave.
+
+### Why
+Fable has its own weekly limit, so giving it the hardest tasks spends a separate budget and keeps the
+common one for the rest; three workers in parallel spend about three times one.
+
+---
+
 ## D-011: The coordinator starts worker sessions itself; workers run without permission prompts
 
 - **Date:** 2026-10-09

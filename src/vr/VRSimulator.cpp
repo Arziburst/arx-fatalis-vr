@@ -482,9 +482,11 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrBeginSession(XrSession /* session */, const
 	g_sim->sim.lockSetup();
 	g_sim->nextSlot = 0;
 	setState(XR_SESSION_STATE_SYNCHRONIZED);
-	setState(XR_SESSION_STATE_VISIBLE);
-	if(g_sim->sim.rig.focused) {
-		setState(XR_SESSION_STATE_FOCUSED);
+	if(g_sim->sim.rig.worn) {
+		setState(XR_SESSION_STATE_VISIBLE);
+		if(g_sim->sim.rig.focused) {
+			setState(XR_SESSION_STATE_FOCUSED);
+		}
 	}
 	return XR_SUCCESS;
 }
@@ -717,11 +719,27 @@ void runRequests() {
 	}
 	if(requests.focusChanged && g_sim->running) {
 		const bool focused = g_sim->sim.rig.focused;
-		LogInfo << "[vr] sim: the runtime " << (focused ? "gives the input focus back" : "takes the input focus (another app in front)");
-		if(focused && g_sim->state == XR_SESSION_STATE_VISIBLE) {
-			setState(XR_SESSION_STATE_FOCUSED);
-		} else if(!focused && g_sim->state == XR_SESSION_STATE_FOCUSED) {
-			setState(XR_SESSION_STATE_VISIBLE);
+		const bool worn = g_sim->sim.rig.worn;
+		// The states are stepped through one at a time, as a runtime does: focused - visible - synchronized
+		if(!worn) {
+			LogInfo << "[vr] sim: the headset is taken off (idle, nothing displayed)";
+			if(g_sim->state == XR_SESSION_STATE_FOCUSED) {
+				setState(XR_SESSION_STATE_VISIBLE);
+			}
+			if(g_sim->state == XR_SESSION_STATE_VISIBLE) {
+				setState(XR_SESSION_STATE_SYNCHRONIZED);
+			}
+		} else {
+			LogInfo << "[vr] sim: the headset is worn, the runtime "
+			        << (focused ? "gives the input focus" : "takes the input focus (another app in front)");
+			if(g_sim->state == XR_SESSION_STATE_SYNCHRONIZED) {
+				setState(XR_SESSION_STATE_VISIBLE);
+			}
+			if(focused && g_sim->state == XR_SESSION_STATE_VISIBLE) {
+				setState(XR_SESSION_STATE_FOCUSED);
+			} else if(!focused && g_sim->state == XR_SESSION_STATE_FOCUSED) {
+				setState(XR_SESSION_STATE_VISIBLE);
+			}
 		}
 	}
 	if(requests.profileChanged) {

@@ -10,6 +10,37 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-031: The head reference comes from a worn headset; one world scale of 100 units per meter
+
+- **Date:** 2026-10-09
+- **Status:** Accepted (implements the height model of D-018 / D-028 together with #28)
+- **Decided by:** worker of #27 (technical, within D-018; agreed with the coordinator)
+
+### Decision
+- **Worn = the session is `visible` or `focused`.** An idle headset on the desk keeps the session
+  `synchronized` (measured, TESTING.md), so a reference taken then is only **provisional**. When the
+  headset is **put on**, the **settled** reference is taken once the head has stayed within 3 cm for 0.5 s
+  (at most 3 s after putting it on); taking it off and putting it on again takes a new one — the
+  standing or seated head of whoever wears it now. A reset while it is worn (level load, recenter) is
+  settled at once (one reference, so a head that turns meanwhile never turns the view twice).
+- **Auto-raise** (D-028) is part of the head math: a head above the reference lifts the reference's height.
+- **World scale: 1 m = 100 game units**, one constant (`src/vr/WorldScale.h`) for the head offset, the
+  eye offsets and the near plane. The engine is in centimeters: its audio listener uses 0.01 m per unit,
+  the player's collision cylinder is 170 units, and the character's eye is 170 units above its feet.
+
+### Why
+The owner's #24 headset run: "the camera is much higher than the body". The owner's logs show the save
+loading with the headset idle (`synchronized`) and the headset put on 50–80 s later; the reference came
+from the desk, ~0.8 m below the worn head.
+
+### Consequences
+`status.json` → `vr.head`: `referenceKind`, `pending`, `worn`, `refY`, `raised`, `refAboveFloor` /
+`aboveFloor` (meters above the STAGE floor, -1 without one), `eyeAboveFeet`; `camera.eyeAboveFeet`. The
+simulated headset gets `session idle` (headset off). Real-height calibration and a height offset stay
+post-MVP (#101).
+
+---
+
 ## D-030: The interface has its own resolution in VR — the headset's pixel density, not the window's
 
 - **Date:** 2026-10-09
@@ -484,6 +515,18 @@ RESEARCH-reference-mods.md 13g with these answers); #49 the centred panel for th
 - **Player height:** at recenter the player's **standing head is mapped to the character's eye height**,
   so tall and short players see the world from the character's eyes and doors and tables keep their size.
   Seated play: recentering while seated does the same (#28).
+- **Calibration, auto-raise and crouch — the height model** *(owner, 2026-10-10, for #28; like other VR
+  games)*:
+  - **Recenter is the calibration** (a long press of the left stick click, D-019; in menus too): the
+    headset's current height becomes the character's eye height and where the player looks becomes the
+    character's facing. It works the same seated or standing — **there is no seated / standing setting**.
+  - **Auto-raise:** a headset that rises above the calibrated eye height (calibrated seated, then stood
+    up) takes the calibration up with it at once — the camera is **never above the character's eyes**
+    (#27).
+  - **Going down is not followed:** after sitting down again the player recalibrates. Below the eye height
+    the physical crouch applies (#100): the character crouches when the head is **~30 cm below** the
+    calibrated eye height and stands up again at **~20 cm** (hysteresis); leaning forward far enough while
+    seated also crouches (accepted). The crouch toggle on the right stick (D-019) works either way.
 
 ### Why
 Immersion: real crouching, leaning and stepping are what make VR feel physical; the owner tried the

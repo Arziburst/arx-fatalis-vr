@@ -1,0 +1,27 @@
+# Eye height (#27, D-018): the owner's #24 run on the simulated headset, checked by eye-height-check.ps1.
+# The save loads with the headset idle on the desk; it is put on and the player stands; crouches 20 cm;
+# rises 10 cm above the reference (auto-raise); takes the headset off and puts it on again seated.
+# The room: the LOCAL origin is the standing head; the simulated floor (STAGE) is 1.7 m below it.
+
+timeline gameplay
+session idle                   # the headset lies on the desk: the session stays synchronized
+head pos 0.3 -0.9 -0.4         # 80 cm above the floor, off to the side
+head rot 70 -60 0              # pointing anywhere
+
+@120 mark eye-height: on the desk
+@200 session focused           # put on
+@200-260 head pos 0 0 0        # lifted to the standing head over 2/3 s
+@200-260 head rot 0 0 0
+@360 mark eye-height: standing # the settle (0.5 s still) ended near frame 305
+@360 shot standing
+@+1-30 head pos 0 -0.2 0       # crouch 20 cm
+@+45 mark eye-height: crouch 20 cm
+@+1-30 head pos 0 0.1 0        # 10 cm above the reference: auto-raise lifts it
+@+45 mark eye-height: raised 10 cm
+@+1-30 head pos 0 0 0          # back to the old height: now 10 cm below the raised reference
+@+45 mark eye-height: back
+@+1 session idle               # taken off
+@+30 head pos 0 -0.5 0         # sitting down
+@+30 session focused           # put on again, seated
+@+90 mark eye-height: seated
+@+10 shot seated

@@ -13,6 +13,52 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: The weapon in VR is held by the IK hand — always in the hand, the controller's handle is the hilt, no engine arm clips
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (MVP defaults; the owner judges them in the headset)
+- **Decided by:** coordinator for the owner (player-facing, D-017), proposed by the worker of #75; builds on D-009, D-019, D-032
+
+### Decision
+- **Always in the hand.** While the IK drives the right arm, an equipped dagger, one- or two-handed
+  weapon is linked to the model's right hand (`primary_attach`), **outside the engine's combat mode too**:
+  D-019 has no draw or sheathe control ("the weapon stays in the hand"), so the trigger stays a click
+  and #39's swings do the hits. When the right arm goes back to the engine (no tracked controller, flat
+  mode) the weapon goes back to where the engine keeps it — the back, or the hand in combat mode. Bows are
+  the engine's (not in the MVP); a two-handed weapon is held by the right hand alone (F-73 is later).
+- **The controller's handle is the hilt** (F-48). The engine draws a linked weapon in the hand bone's
+  frame, so its angle in the fist is the asset's. The blade's axis is read from the weapon's mesh (its
+  principal axis, pointing at the side that reaches further from the attach vertex) and turned by the
+  shortest arc onto the hand's thumb axis — which the IK puts on the grip's **-Z**, the OpenXR "little
+  finger to thumb" ray — about the attach point, so the hilt stays on the palm. Daggers the same way (no
+  reverse grip in the MVP). No per-class trims yet (F-49, from zero). Measured on the short sword
+  (`short_sword_0030`): the asset's blade is **9.1°** off the handle axis; drawn, the blade is 0.1° from
+  grip -Z.
+- **No engine arm clips while the IK drives the arms** (F-67). The player's arm animation layer (layer 1:
+  ready, unready, strike, cast) is not applied to the player's own skeleton while the body was posed in the
+  last frame; its timing and game logic still run (the engine's combat mode, reachable only by a key,
+  still strikes — #39 owns attacks in VR). The combat mode's fight stance is layer 0, the body's, and stays
+  (D-009: the torso keeps the engine's animations).
+
+### Why
+The owner's scenario (D-019: sword in the right hand, open the inventory, drag with the left) has the sword in the right hand the whole time; a draw button
+would be a control nobody asked for, and the engine's combat mode turns the trigger into an attack. The
+handle-is-the-hilt rule is what VHVR and the other reference mods converge on (F-48), and it is right by
+construction for every weapon mesh instead of a table of angles tuned by eye. Suppressing the arm layer
+keeps the engine's clips from pulling the shoulders the IK starts from.
+
+### Rules out
+A draw / sheathe gesture or button in the MVP; per-weapon angle constants before the owner felt the default;
+the engine's strike clip on the VR hand (F-67's "trigger attack plays the clip" variant).
+
+### Consequences
+- `vr.weapon` in status.json (`place`, `assetAngle`, `bladeAngle`, `bladeGrip`, `armAnimSuppressed`) and
+  the `weapon-hold` sequence are the acceptance checks; the channel's `combat on|off` drives the combat mode.
+- #39 reads the blade from `vr.weapon` (`hilt`, `tip`) for its hit volume; F-49's trims go on top of the
+  correction rotation (`vr::heldWeaponRotation`).
+
+---
+
 ## D-031: The head reference comes from a worn headset; one world scale of 100 units per meter
 
 - **Date:** 2026-10-09

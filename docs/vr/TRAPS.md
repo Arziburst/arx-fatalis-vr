@@ -8,6 +8,17 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — The arm clips are "suppressed", yet the shoulder moves 10 units when the combat mode starts (#75)
+
+**Symptom:** `vr.weapon.armAnimSuppressed` is `true` and every `vr.body.armAnim` event says `suppressed`, but
+`vr.body.right.shoulder` jumps by ~10 units between before `combat on` and after the strike.
+**Cause:** the combat mode also switches the **body's** layer 0 to the fight stance (`ANIM_FIGHT_WAIT`,
+`ARX_PLAYER_Manage_Visual`), which turns the torso; only layer 1 (the arm clips) is suppressed (D-009: the body
+keeps the engine's animations). **Do:** measure what the arm layer does from a settled stance — take the
+shoulder after `combat on` + 60 frames (300 ms of blend), then strike, as `weapon-hold.xrs` does. Also: never
+ask `entities.player()` while writing `status.json` before a level exists (the first `weapon-hold` run crashed
+at start-up on it, #286) — check this module's own state first.
+
 ## 2026-10-10 — `test-xrs.ps1` fails once in a while: "timed out waiting for the game to acknowledge" (#275)
 
 **Symptom:** one check of 73 fails on the CI runner (a `@shot`/`@diff` step), the rerun of the same commit passes.

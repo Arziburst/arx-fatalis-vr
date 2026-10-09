@@ -18,6 +18,7 @@ commit messages, pull requests, and code comments.
 | Rules | this file |
 | Decisions and their reasoning | [DECISIONS.md](DECISIONS.md) |
 | Current goal: the MVP | [MVP.md](MVP.md) |
+| Developer guide: prerequisites, build, run, tests, CI, worktrees | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | Research and scope of playable v1 | [RESEARCH-playable-v1.md](RESEARCH-playable-v1.md) |
 | Research: controllers (Valve Index, Quest 3) | [RESEARCH-controllers.md](RESEARCH-controllers.md) |
 | Research: reference VR mods (Dishonored VR, VHVR, Titanfall 2 VR, OpenMW VR, Skyrim VR mods) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |
@@ -357,6 +358,9 @@ Helper scripts used by the commands:
   `vrserver` + `vrcompositor` before the game starts in VR; `-StopSteamVR` (the owner's switch) quits SteamVR after the
   game exits the way its own "Exit SteamVR" does (`vrmonitor://quit`, nothing killed) so the headset powers down
 - `scripts/dev/stop-steamvr.ps1` — the same SteamVR quit on its own (the owner's switch; workers never run it)
+- `scripts/package-tester.ps1` — the tester zip (#88): `arx.exe` + DLLs (MSVC runtime app-local) + `data/core` + launchers +
+  `HOW-TO-USE.txt` + support bundle script (sources in `scripts/tester/`); checks the DLL closure and starts the **extracted**
+  game with a Windows-only `PATH` (1 launch, game lock). CI runs it and uploads the artifact `tester-build`. Details: [TESTING.md](TESTING.md#the-tester-package-88)
 - `scripts/dev/cycle-report.ps1` — the coordinator's report: PRs, board, leftovers, worktrees, next task
 - `scripts/dev/plan-next.ps1` — the coordinator's task order by rule (#187): the tasks ready to start now (dependencies Done,
   earliest open wave, free area, VR lane and worker limits, no `needs-design`), each with its `start-worker.ps1` line, and the

@@ -1259,6 +1259,7 @@ set(VR_SOURCES
 	src/vr/VRComfort.cpp
 	src/vr/VRControls.cpp
 	src/vr/VRInput.cpp
+	src/vr/VRMirror.cpp
 	src/vr/VRSwapchain.cpp
 	src/vr/VRSystem.cpp
 )

@@ -169,7 +169,8 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
  "comfort":{"mode":"auto","active":false,"viewBobbing":true,"screenShake":true,"fovZoom":true},
  "window":{"width":640,"height":480,"focused":true,"minimized":false,"fullscreen":false},
  "vr":{"supported":true,"enabled":false,"sessionState":"none","frames":0,"shownFrames":0,
-       "resubmittedFrames":0,"discardedFrames":0,"frameGaps":0,"frameDivisor":1,"runtime":"",
+       "resubmittedFrames":0,"discardedFrames":0,"frameGaps":0,"frameDivisor":1,
+       "mirror":{"state":"flat mode","eye":"right","frames":0},"runtime":"",
        "manifest":"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json",
        "input":{"controllers":"index","profile":{"left":"/interaction_profiles/valve/index_controller","right":"…"},
                 "syncs":5120,"down":"right.grip","active":"","trigger":{"left":0.0,"right":0.12},
@@ -211,6 +212,13 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   `vr.frameGaps`: frames that came at least 80 ms and 2.5× the mean interval after the previous one
   (level loads produce them; in gameplay each one is a felt hitch); `vr.frameDivisor`: the expected
   display slots per frame (`vr_frame_divisor`, 1 = every slot).
+- `vr.mirror` (#21): the desktop mirror — `state` is `on` while the window shows what one eye sees,
+  `eye` which one (`right` by default — the owner's choice of 2026-10-10; `vr_mirror_eye` in
+  `cfg.ini`: 0 = left, 1 = right; `vr_mirror = 0` or `--no-vr-mirror` keeps the flat frame in the
+  window), otherwise why not (`flat mode`, `off: --no-vr-mirror`, `off: vr_mirror = 0 in cfg.ini`,
+  `off: OpenGL has no glCopyImageSubData ...`, `off: the VR session ended`); `frames` grows with
+  `vr.shownFrames` while it is `on` (0 in flat mode). One `[vr] desktop mirror:` log line per session
+  names the eye size, the crop and where the flat frame quad lands in the window.
 - `vr.pacing` (#20): the last rate / cadence report — present once the first 3 s window of a
   session closed (a shorter session gets its partial window at the end). See
   [The frame loop and the rate line](#the-frame-loop-and-the-rate-line-20) for every field and the
@@ -711,6 +719,27 @@ How the runner differs from a worker's copy — none of it needs action, all of 
 
 Run it by hand: `.\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence` (needs a fresh build of the
 copy; `-Phase smoke|spells` runs one half; exit 0 pass, 1 fail, 2 skipped, 3 cannot run here).
+
+## The tester package (#88)
+
+`.\scripts\package-tester.ps1` writes `dist\ArxFatalisVR-<version>-<sha>.zip` (version = number in `VERSION`, `-dirty`
+appended for an uncommitted tree; `-symbols.zip` next to it). Inside: `arx.exe`, every DLL of
+the build, the MSVC runtime copied app-local from the Visual Studio redistributable folder, `data/core` copied **next to
+`arx.exe`** (the engine looks there, `RUNTIME_DATADIR=.`), `Start Arx Fatalis VR.cmd`, `Start flat (no VR).cmd`
+(`--no-vr`, the kill switch), `Collect support bundle.cmd` + `collect-support.ps1` (logs, cfg, crashes, SteamVR logs,
+OpenXR `ActiveRuntime`, GPU and driver into one zip on the Desktop, nothing uploaded), `HOW-TO-USE.txt`,
+`BUG-REPORT-TEMPLATE.md`, `BUILD.txt` (commit, branch, tag). Sources of the tester files: `scripts/tester/`.
+No `data.dirs` (CMake writes it for the build directory and it names a path in the working copy) and no game data:
+the tester's game finds Arx Fatalis in their Steam libraries (#79).
+
+The script fails (exit 1) on: an import (`dumpbin /dependents`, recursively) that is neither in the package nor a Windows
+DLL; no OpenXR loader; `data.dirs` or `*.pak` in the zip; and — the real proof — the **extracted** zip, started from a
+clean temp folder with `PATH` reduced to the Windows folders, not reaching `GAMEPLAY`, exiting ≠ 0, lacking
+`Clean shutdown`, writing an `[E]` line or a crash report, or an `arx.log` that mentions the working copy's path. That is
+one game launch (game lock, ledger). `-SkipVerify` stops after the numeric checks; `-NoBuild` refuses to build.
+
+CI runs it after the game checks (`-NoBuild`) and uploads the zip as the artifact `tester-build` (14 days). The `-symbols.zip`
+(`arx.pdb` + `BUILD.txt`, ~7 MB) is for reading tester crash reports and is not uploaded by CI.
 
 ## Isolation and the game lock (parallel work)
 

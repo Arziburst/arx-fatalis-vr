@@ -20,6 +20,7 @@ a changed decision keeps its history in that cell.
 - **Weekly limit: up to 80%** (was 70%; 20% stay for the owner's other project). At 80% no new workers; running ones finish.
 - **Five-hour limit: up to 95%.** At 95% the coordinator stops the non-Fable workers, waits for the reset
   and resumes them; the last 5% are for the coordinator to keep watching. Fable workers go on.
+- **Going over a limit only with the owner's explicit permission**, given for that occasion; without it the coordinator stops at the limits above and reports.
 - **The safety hook never stops a task**: it denies only the dangerous command, says what to do instead,
   and logs the denial for the coordinator; work goes on while there is budget.
 - **CI is balanced with time**: GitHub-hosted runners are out (their minutes would run out); the

@@ -127,6 +127,7 @@ workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
   (`claude stop <id>`, their work stays in the worktree and the transcript), waits for the reset
   (`rate_limits.five_hour.resets_at`), then **resumes them** (`claude respawn <id>`). The last 5% are the
   coordinator's, to keep watching. Fable workers go on.
+- **Over a limit only with the owner's explicit permission** (D-022), for that occasion; otherwise stop at the limit and report.
 - **The coordinator's own context** is spent with care: short command output (filters, `-Last N`), no
   whole large files, details read once and summarised; the pinned status issue is its external memory —
   update it before long waits, so an automatic compaction or a new coordinator loses nothing.

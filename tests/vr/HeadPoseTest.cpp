@@ -101,7 +101,7 @@ void HeadPoseTest::testIdentityIsTheBodyCamera() {
 	checkAngle("yaw", 0.f, camera.angle.getYaw());
 	checkAngle("roll", 0.f, camera.angle.getRoll());
 	checkVector("offset", Vec3f(0.f), camera.offset);
-	CPPUNIT_ASSERT(!camera.clamped);
+	checkVector("moved", Vec3f(0.f), camera.moved);
 
 	// The body's yaw alone turns the camera with it
 	camera = vr::headToCamera(head(0.f, 0.f, 0.f), vr::HeadReference(), 123.f);
@@ -216,16 +216,21 @@ void HeadPoseTest::testMovementIsTurnedWithTheBody() {
 	checkVector("forward of a turned reference", Vec3f(0.f, 0.f, 20.f), camera.offset);
 }
 
-void HeadPoseTest::testLeanIsClamped() {
+void HeadPoseTest::testAnchorIsTheBodysPart() {
 	vr::HeadReference reference;
-	vr::HeadCamera camera = vr::headToCamera(head(0.f, 0.f, 0.f, Vec3f(0.5f, -0.1f, 0.f)), reference, 0.f);
-	CPPUNIT_ASSERT(!camera.clamped);
-	checkVector("lean within the limit", Vec3f(50.f, 10.f, 0.f), camera.offset);
+	// No lean limit any more (#26): 1 m away is 1 m of offset while the body did not follow
+	vr::HeadCamera camera = vr::headToCamera(head(0.f, 0.f, 0.f, Vec3f(0.8f, -0.1f, -0.6f)), reference, 0.f);
+	checkVector("unclamped", Vec3f(80.f, 10.f, 60.f), camera.offset);
+	checkVector("moved, reference frame", Vec3f(0.8f, 0.1f, 0.6f), camera.moved);
 
-	camera = vr::headToCamera(head(0.f, 0.f, 0.f, Vec3f(0.8f, -0.1f, -0.6f)), reference, 0.f);
-	CPPUNIT_ASSERT(camera.clamped);
-	// 1 m along (0.8, 0.6) shortened to 0.6 m, the height untouched
-	checkVector("lean clamped", Vec3f(48.f, 10.f, 36.f), camera.offset);
+	// The body walked 0.7 m right and 0.5 m forward of it: the camera keeps the rest, the height untouched
+	camera = vr::headToCamera(head(0.f, 0.f, 0.f, Vec3f(0.8f, -0.1f, -0.6f)), reference, 0.f, Vec2f(0.7f, 0.5f));
+	checkVector("lean after the body", Vec3f(10.f, 10.f, 10.f), camera.offset);
+	checkVector("moved is the head's own", Vec3f(0.8f, 0.1f, 0.6f), camera.moved);
+
+	// The anchor is in the reference frame: with the body at yaw 90 the rest turns with it
+	camera = vr::headToCamera(head(0.f, 0.f, 0.f, Vec3f(0.f, 0.f, -0.5f)), reference, 90.f, Vec2f(0.f, 0.4f));
+	checkVector("turned rest", 10.f * angleToVector(Anglef(0.f, 90.f, 0.f)), camera.offset);
 }
 
 void HeadPoseTest::testHeadBetweenTheEyes() {

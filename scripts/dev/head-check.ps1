@@ -11,10 +11,12 @@
 	  flat    comfort on (no view bobbing)        no head: the camera is the engine's (yaw = body)
 	  ahead   headpose 0 0 0  0 1.7 0             the reference is taken: camera = body, offset 0
 	  turn    headpose 30 -20 10  0 1.7 0         yaw +30 (left), pitch 20 down, roll 10 left; no offset
-	  move    headpose 0 0 0  0.3 1.5 0           30 cm right, 20 cm lower: offset (30, 20, 0) turned
-	                                              with the body's yaw, the camera moved by it
-	  lean    headpose 0 0 0  1.0 1.7 0           1 m to the right: clamped to the 0.6 m lean limit
-	  recenter recenter                           a new reference from the leaning head: offset 0
+	  move    headpose 0 0 0  0.3 1.5 0           30 cm right, 20 cm lower: the camera moves (30, 20, 0)
+	                                              turned with the body's yaw; the body walks 20 cm after
+	                                              the head (#26), the offset keeps the 10 cm follow radius
+	  step    headpose 0 0 0  1.0 1.7 0           1 m to the right: the body walks after the head (#26), the
+	                                              camera is 1 m right, the offset stays at the 10 cm radius
+	  recenter recenter                           a new reference from the head: offset 0
 	  off     headpose off                        no head again: the camera is the engine's
 
 	A sample belongs to a phase when its cmdSeq points at a 'status' after the phase's command (the
@@ -46,7 +48,7 @@ $phases = [ordered]@{
 	ahead    = 'headpose 0 0 0 0 1.7 0'
 	turn     = 'headpose 30 -20 10 0 1.7 0'
 	move     = 'headpose 0 0 0 0.3 1.5 0'
-	lean     = 'headpose 0 0 0 1.0 1.7 0'
+	step     = 'headpose 0 0 0 1.0 1.7 0'
 	recenter = 'recenter'
 	off      = 'headpose off'
 }
@@ -92,10 +94,10 @@ while ($job.State -eq 'Running') {
 			$h = $s.vr.head
 			$samples.Add([pscustomobject]@{
 				phase = $phase; frame = [int]$s.frame
-				bodyYaw = [double]$s.player.yaw
+				bodyYaw = [double]$s.player.yaw; py = [double]$s.player.y; px = [double]$s.player.x; pz = [double]$s.player.z
 				x = [double]$s.camera.x; y = [double]$s.camera.y; z = [double]$s.camera.z
 				pitch = [double]$s.camera.pitch; yaw = [double]$s.camera.yaw; roll = [double]$s.camera.roll
-				source = [string]$h.source; references = [int]$h.references; clamped = [bool]$h.clamped
+				source = [string]$h.source; references = [int]$h.references; leanM = [double]$h.leanM
 				ox = [double]$h.offsetX; oy = [double]$h.offsetY; oz = [double]$h.offsetZ
 			})
 		}
@@ -127,13 +129,13 @@ $tolAngle = 0.05
 $tolUnits = 0.5
 $byPhase = @{}
 Write-Host ''
-Write-Host ("{0,-9} {1,4} {2,-5} {3,4} {4,8} {5,8} {6,8} {7,8} {8,8} {9,8} {10,8} {11,5}" -f 'phase', 'n', 'src', 'refs', 'bodyYaw', 'pitch', 'yaw', 'roll', 'offX', 'offY', 'offZ', 'clamp')
+Write-Host ("{0,-9} {1,4} {2,-5} {3,4} {4,8} {5,8} {6,8} {7,8} {8,8} {9,8} {10,8} {11,5}" -f 'phase', 'n', 'src', 'refs', 'bodyYaw', 'pitch', 'yaw', 'roll', 'offX', 'offY', 'offZ', 'leanM')
 foreach ($name in $phases.Keys) {
 	$rows = @($samples | Where-Object { $_.phase -eq $name })
 	if ($rows.Count -eq 0) { $reasons.Add("no samples in phase $name"); continue }
 	$last = $rows[-1]
 	$byPhase[$name] = $last
-	Write-Host ("{0,-9} {1,4} {2,-5} {3,4} {4,8:0.00} {5,8:0.00} {6,8:0.00} {7,8:0.00} {8,8:0.00} {9,8:0.00} {10,8:0.00} {11,5}" -f $name, $rows.Count, $last.source, $last.references, $last.bodyYaw, $last.pitch, $last.yaw, $last.roll, $last.ox, $last.oy, $last.oz, $last.clamped)
+	Write-Host ("{0,-9} {1,4} {2,-5} {3,4} {4,8:0.00} {5,8:0.00} {6,8:0.00} {7,8:0.00} {8,8:0.00} {9,8:0.00} {10,8:0.00} {11,6:0.000}" -f $name, $rows.Count, $last.source, $last.references, $last.bodyYaw, $last.pitch, $last.yaw, $last.roll, $last.ox, $last.oy, $last.oz, $last.leanM)
 	# Every sample of a phase must agree with its last one (the camera is steady while the head is)
 	foreach ($r in $rows) {
 		if ((AngleDiff $r.yaw $last.yaw) -gt $tolAngle -or (AngleDiff $r.pitch $last.pitch) -gt $tolAngle -or
@@ -150,7 +152,7 @@ function Expect([string]$phase, [string]$what, [double]$expected, [double]$actua
 
 if ($byPhase.Count -eq $phases.Count) {
 	$flat = $byPhase['flat']; $ahead = $byPhase['ahead']; $turn = $byPhase['turn']; $move = $byPhase['move']
-	$lean = $byPhase['lean']; $recenter = $byPhase['recenter']; $off = $byPhase['off']
+	$step = $byPhase['step']; $recenter = $byPhase['recenter']; $off = $byPhase['off']
 	$body = $ahead.bodyYaw
 
 	if ($flat.source -ne 'none') { $reasons.Add("flat: source $($flat.source) (expected none)") }
@@ -169,23 +171,31 @@ if ($byPhase.Count -eq $phases.Count) {
 	Expect 'turn' 'camera y' $ahead.y $turn.y $tolUnits
 	Expect 'turn' 'camera z' $ahead.z $turn.z $tolUnits
 
-	# 30 cm right and 20 cm down, turned by the body's yaw: x = 30 cos, z = 30 sin, y = +20 (y is down)
+	# 30 cm right and 20 cm down, turned by the body's yaw: x = 30 cos, z = 30 sin, y = +20 (y is down). The body
+	# walks 20 cm of it (#26): the offset from the character's eye is the 10 cm follow radius, the camera moved 30
 	$t = $body * [math]::PI / 180
 	$ex = 30 * [math]::Cos($t); $ez = 30 * [math]::Sin($t)
-	Expect 'move' 'offset x' $ex $move.ox 0.05
+	Expect 'move' 'offset x' ($ex / 3) $move.ox 0.05
 	Expect 'move' 'offset y' 20 $move.oy 0.05
-	Expect 'move' 'offset z' $ez $move.oz 0.05
+	Expect 'move' 'offset z' ($ez / 3) $move.oz 0.05
+	Expect 'move' 'lean' 0.1 $move.leanM 0.001
 	Expect 'move' 'camera dx' $ex ($move.x - $ahead.x) $tolUnits
-	Expect 'move' 'camera dy' 20 ($move.y - $ahead.y) $tolUnits
+	# The body's own height may change where it walked to (the floor): the head adds 20 to it
+	Write-Host ("body moved: move ({0:0.00}, {1:0.00}, {2:0.00}), step ({3:0.00}, {4:0.00}, {5:0.00}) from ahead" -f `
+		($move.px - $ahead.px), ($move.py - $ahead.py), ($move.pz - $ahead.pz), ($step.px - $ahead.px), ($step.py - $ahead.py), ($step.pz - $ahead.pz))
+	Expect 'move' 'body dx' ($ex * 2 / 3) ($move.px - $ahead.px) $tolUnits
+	Expect 'move' 'camera dy' (20 + $move.py - $ahead.py) ($move.y - $ahead.y) $tolUnits
 	Expect 'move' 'camera dz' $ez ($move.z - $ahead.z) $tolUnits
 	Expect 'move' 'yaw' $body $move.yaw $tolAngle -Angle
 
-	if (-not $lean.clamped) { $reasons.Add('lean: not clamped at 1 m') }
-	Expect 'lean' 'horizontal offset' 60 ([math]::Sqrt($lean.ox * $lean.ox + $lean.oz * $lean.oz)) 0.05
+	# 1 m right: no lean limit any more - the body walked 0.9 m, the camera is 1 m right of where it started
+	Expect 'step' 'horizontal offset' 10 ([math]::Sqrt($step.ox * $step.ox + $step.oz * $step.oz)) 0.05
+	Expect 'step' 'camera dx' (100 * [math]::Cos($t)) ($step.x - $ahead.x) $tolUnits
+	Expect 'step' 'camera dz' (100 * [math]::Sin($t)) ($step.z - $ahead.z) $tolUnits
 
-	Expect 'recenter' 'references' ($lean.references + 1) $recenter.references 0
+	Expect 'recenter' 'references' ($step.references + 1) $recenter.references 0
 	Expect 'recenter' 'offset' 0 ([math]::Sqrt($recenter.ox * $recenter.ox + $recenter.oy * $recenter.oy + $recenter.oz * $recenter.oz)) 0.01
-	if ($recenter.clamped) { $reasons.Add('recenter: still clamped') }
+	Expect 'recenter' 'lean' 0 $recenter.leanM 0.001
 
 	if ($off.source -ne 'none') { $reasons.Add("off: source $($off.source) (expected none)") }
 	Expect 'off' 'yaw' $off.bodyYaw $off.yaw $tolAngle -Angle
@@ -203,7 +213,7 @@ Write-Host "screenshots: $capture\head-ahead.bmp, $capture\head-turn.bmp"
 
 Write-Host ''
 if ($reasons.Count -eq 0) {
-	Write-Host "==> PASS head check: $($samples.Count) samples; the simulated head turns (yaw +30, pitch 20, roll 350), moves (offset $([math]::Round($ex, 2)), 20, $([math]::Round($ez, 2))), is clamped at 0.6 m and recentred; without it the camera is the engine's"
+	Write-Host "==> PASS head check: $($samples.Count) samples; the simulated head turns (yaw +30, pitch 20, roll 350), moves the camera ($([math]::Round($ex, 2)), 20, $([math]::Round($ez, 2))) with the body walking after it (offset at the 10 cm radius, 1 m step) and is recentred; without it the camera is the engine's"
 	exit 0
 }
 Write-Host "==> FAIL head check: $($reasons -join '; ')"

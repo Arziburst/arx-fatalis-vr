@@ -599,7 +599,23 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("offsetX", head.offset.x);
 		json.value("offsetY", head.offset.y);
 		json.value("offsetZ", head.offset.z);
-		json.value("clamped", head.clamped);
+		// Leaning and real steps, the wall fade (#26): the head against the body, what the body walked after it
+		json.value("leanX", head.lean.x);
+		json.value("leanZ", head.lean.y);
+		json.value("leanM", head.leanDistance);
+		json.value("anchorX", head.anchor.x);
+		json.value("anchorZ", head.anchor.y);
+		json.value("walkedM", head.walked);
+		json.value("stepping", head.stepping);
+		json.value("steps", head.steps);
+		json.value("bodyBlocked", head.bodyBlocked);
+		json.value("blocks", head.blocks);
+		const vr::FadeStatus & fade = vr::fadeStatus();
+		json.value("fade", fade.fade);
+		json.value("wall", fade.wall ? fade.wall : "");
+		json.value("walls", fade.walls);
+		json.value("farFade", fade.farFade);
+		json.value("fars", fade.fars);
 		// The look and the body (#25): where the stick's forward is and where the model faces
 		const vr::BodyStatus & body = vr::bodyStatus();
 		json.value("lookYaw", body.lookYaw);

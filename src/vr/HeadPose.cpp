@@ -87,7 +87,7 @@ HeadReference makeHeadReference(const HeadSample & head) {
 }
 
 HeadCamera headToCamera(const HeadSample & head, const HeadReference & reference, float bodyYaw,
-                        const HeadCameraParams & params) {
+                        const Vec2f & anchor, const HeadCameraParams & params) {
 
 	HeadCamera camera;
 
@@ -98,20 +98,14 @@ HeadCamera headToCamera(const HeadSample & head, const HeadReference & reference
 	camera.angle = Anglef(wrapDegrees(own.getPitch()), wrapDegrees(own.getYaw() + turn),
 	                      wrapDegrees(own.getRoll()));
 
-	// The same turn for the movement since the reference (view-to-world rotation Ry(-turn))
-	const Vec3f moved = toEngineAxes(head.position - reference.position) * params.unitsPerMeter;
+	// The same turn for the movement since the reference (view-to-world rotation Ry(-turn)), less what the
+	// body already walked of it (#26)
+	camera.moved = toEngineAxes(head.position - reference.position);
+	const Vec3f lean = Vec3f(camera.moved.x - anchor.x, camera.moved.y, camera.moved.z - anchor.y) * params.unitsPerMeter;
 	const float t = glm::radians(turn);
 	const float c = std::cos(t);
 	const float s = std::sin(t);
-	camera.offset = Vec3f(c * moved.x - s * moved.z, moved.y, s * moved.x + c * moved.z);
-
-	const float horizontal = std::sqrt(camera.offset.x * camera.offset.x + camera.offset.z * camera.offset.z);
-	const float limit = params.maxLeanMeters * params.unitsPerMeter;
-	if(horizontal > limit) {
-		camera.offset.x *= limit / horizontal;
-		camera.offset.z *= limit / horizontal;
-		camera.clamped = true;
-	}
+	camera.offset = Vec3f(c * lean.x - s * lean.z, lean.y, s * lean.x + c * lean.z);
 
 	return camera;
 }

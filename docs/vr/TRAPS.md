@@ -8,6 +8,19 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — A head pressed into a wall is "not in geometry": `CheckBackgroundInSphere` misses the middle of a wall (#26)
+
+**Symptom:** the simulated head is moved into the start cell's side wall — the body is blocked at the wall, the eye
+shot shows the wall face filling half the view at a few centimetres — and the near-plane sphere test
+(`CheckBackgroundInSphere(Sphere(head, 12.5))`) says nothing is there; once the head is past the wall the ray test
+finds it at once.
+**Cause:** the engine's `IsPolyInSphere` does not measure the distance to a polygon: it only tests whether the
+polygon's corners, edge midpoints and a few points towards its centre lie in the sphere (it was made for the
+50-unit cylinders of NPCs). A small sphere in front of the middle of a large wall polygon contains none of them.
+**Do:** for anything smaller than a body, measure the distance to the polygon's triangles —
+`vr::distanceToTriangle` (HeadLean.h), used by `backgroundCloserThan` in `ArxGame.cpp`; `raycastScene` is exact
+for a segment.
+
 ## 2026-10-09 — A check of "what the button did" counts one event too many, or finds it before the press (#74)
 
 **Symptom:** a flat check of the VR buttons on level 10 sees `ui.inventory=3` after two presses of the

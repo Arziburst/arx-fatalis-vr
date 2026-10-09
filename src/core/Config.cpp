@@ -99,6 +99,7 @@ constexpr const int
 constexpr const bool
 	fullscreen = true,
 	vrMirror = true,
+	vrRealStepNoise = true,
 	viewBobbing = true,
 	screenShake = true,
 	showCrosshair = true,
@@ -130,6 +131,11 @@ constexpr const float
 	fogDistance = 10.f,
 	gamma = 5.f,
 	fov = 75.f,
+	vrBodyFollowRadius = 0.10f,
+	vrWallFadeOut = 0.15f,
+	vrWallFadeIn = 0.25f,
+	vrHeadFarStart = 0.7f,
+	vrHeadFarFull = 1.0f,
 	hudScale = 0.5f,
 	bookScale = 1.f,
 	cursorScale = 0.5f,
@@ -223,6 +229,12 @@ constexpr const std::string_view
 	vrFrameDivisor = "vr_frame_divisor",
 	vrMirror = "vr_mirror",
 	vrMirrorEye = "vr_mirror_eye",
+	vrBodyFollowRadius = "vr_body_follow_radius",
+	vrWallFadeOut = "vr_wall_fade_out",
+	vrWallFadeIn = "vr_wall_fade_in",
+	vrHeadFarStart = "vr_head_far_start",
+	vrHeadFarFull = "vr_head_far_full",
+	vrRealStepNoise = "vr_real_step_noise",
 	fov = "fov",
 	viewBobbing = "view_bobbing",
 	screenShake = "screen_shake",
@@ -485,6 +497,12 @@ bool Config::save() {
 	writer.writeKey(Key::vrFrameDivisor, video.vrFrameDivisor);
 	writer.writeKey(Key::vrMirror, video.vrMirror);
 	writer.writeKey(Key::vrMirrorEye, video.vrMirrorEye);
+	writer.writeKey(Key::vrBodyFollowRadius, video.vrBodyFollowRadius);
+	writer.writeKey(Key::vrWallFadeOut, video.vrWallFadeOut);
+	writer.writeKey(Key::vrWallFadeIn, video.vrWallFadeIn);
+	writer.writeKey(Key::vrHeadFarStart, video.vrHeadFarStart);
+	writer.writeKey(Key::vrHeadFarFull, video.vrHeadFarFull);
+	writer.writeKey(Key::vrRealStepNoise, video.vrRealStepNoise);
 	writer.writeKey(Key::fov, video.fov);
 	writer.writeKey(Key::viewBobbing, video.viewBobbing);
 	writer.writeKey(Key::screenShake, video.screenShake);
@@ -621,6 +639,18 @@ bool Config::init(const fs::path & file) {
 	video.vrMirror = reader.getKey(Section::Video, Key::vrMirror, Default::vrMirror);
 	int vrMirrorEye = reader.getKey(Section::Video, Key::vrMirrorEye, Default::vrMirrorEye);
 	video.vrMirrorEye = glm::clamp(vrMirrorEye, 0, 1);
+	// Leaning and real steps (#26): the defaults the owner judges in the headset
+	float vrBodyFollowRadius = reader.getKey(Section::Video, Key::vrBodyFollowRadius, Default::vrBodyFollowRadius);
+	video.vrBodyFollowRadius = glm::clamp(vrBodyFollowRadius, 0.f, 1.f);
+	float vrWallFadeOut = reader.getKey(Section::Video, Key::vrWallFadeOut, Default::vrWallFadeOut);
+	video.vrWallFadeOut = glm::clamp(vrWallFadeOut, 0.f, 5.f);
+	float vrWallFadeIn = reader.getKey(Section::Video, Key::vrWallFadeIn, Default::vrWallFadeIn);
+	video.vrWallFadeIn = glm::clamp(vrWallFadeIn, 0.f, 5.f);
+	float vrHeadFarStart = reader.getKey(Section::Video, Key::vrHeadFarStart, Default::vrHeadFarStart);
+	video.vrHeadFarStart = glm::clamp(vrHeadFarStart, 0.f, 10.f);
+	float vrHeadFarFull = reader.getKey(Section::Video, Key::vrHeadFarFull, Default::vrHeadFarFull);
+	video.vrHeadFarFull = glm::clamp(vrHeadFarFull, video.vrHeadFarStart, 10.f);
+	video.vrRealStepNoise = reader.getKey(Section::Video, Key::vrRealStepNoise, Default::vrRealStepNoise);
 	float fov = reader.getKey(Section::Video, Key::fov, Default::fov);
 	video.fov = std::max(fov, 10.f);
 	video.viewBobbing = reader.getKey(Section::Video, Key::viewBobbing, Default::viewBobbing);

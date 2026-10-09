@@ -243,7 +243,16 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   reference was taken / how many since the start; `refYaw`: its heading (engine degrees). `pitch`,
   `yaw`, `roll`: the head's own angles in LOCAL, engine convention (positive pitch looks down, yaw grows
   to the left); `x`, `y`, `z`: the head in LOCAL, metres; `offsetX/Y/Z`: what the head adds to the
-  character's eye, game units (y down); `clamped`: the lean is at the interim 0.6 m limit (#26).
+  character's eye, game units (y down). Leaning and real steps (#26, D-018): `leanX` / `leanZ` / `leanM` —
+  the head from the body (metres, the reference frame: x right, z forward; within `vr_body_follow_radius`
+  = 0.1 m while the body can follow); `anchorX` / `anchorZ` — what the body walked after the head since the
+  reference; `walkedM` — metres walked after the head since the start; `stepping` / `steps` — the body is
+  walking after the head / episodes; `bodyBlocked` / `blocks` — the collision holds the body while the head
+  goes on / episodes; `fade` (0..1) — how black the world is drawn; `wall` — `inside` (the head's near plane
+  touches geometry the game's eye does not), `behind` (a wall between the character's eye and the head) or
+  empty; `walls` — episodes; `farFade` / `fars` — the part of the fade a head too far from the body asks for
+  (0.7 → 1.0 m) / episodes. Game events: `vr.body.step`, `vr.body.blocked`, `vr.head.wall`, `vr.head.far`
+  (start / end, never per frame).
   The camera angles themselves are in `camera` (`camera.yaw` = heading + head yaw − `refYaw`, the
   heading being `player.yaw`, what the stick and the mouse turn). The body (#25, D-009): `lookYaw` =
   `camera.yaw`, the stick's forward (D-008); `bodyYaw` = heading + `bodyOffset`, where the player model
@@ -834,6 +843,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `snap-turn` | `vr-input tap right.stick_right` reaches the game (syncs advance), no errors | #32: the player turns |
 | `walk-forward` | the player stands still without input; the stick is held and let go | #31: the player moves |
 | `recenter` | a head offset is set and read back | #28: `recenter` is accepted (it logs one expected `[W]`) |
+| `real-steps` (#26; run with `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence real-steps`) | 8 cm is a lean (the body stays); 1 m forward is a real step (the body walks 0.9 m, the lean stays 0.1 m, no fade); into the cell wall the body is held, the head goes `inside` then `behind` it, both eyes black; back out, the fade clears | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
 `scripts\dev\test-xrs.ps1` (a fake game answering the channel files; in `run-script-tests.ps1`, so in CI).

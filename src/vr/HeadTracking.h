@@ -43,6 +43,14 @@
  * a session begins, when the runtime moves the LOCAL space (its own recenter), and on the test
  * channel's \c recenter. The button chord is #28; the standing head = the character's eye height
  * is #27 (until then the head at the reference is the character's eye and 1 m = 100 units).
+ *
+ * Leaning and real steps (#26, D-018, HeadLean.h): the head's horizontal movement is split between
+ * the body and the camera. The body - the player's collision cylinder - stays while the head is within
+ * the follow radius of it and steps after it beyond, through the engine's collision (\ref takeBodyStep,
+ * \ref bodyStepped); the camera adds only the rest, the lean. A body held by a wall leaves a growing
+ * lean, and a head that ends up in geometry, or too far from the body, fades the world to black
+ * (\ref updateWallFade). The defaults are cfg.ini keys (\c vr_body_follow_radius, \c vr_wall_fade_out,
+ * \c vr_wall_fade_in, \c vr_head_far_start, \c vr_head_far_full).
  */
 namespace vr {
 
@@ -77,10 +85,51 @@ struct HeadStatus {
 	Anglef head;                  //!< the head's own angles in LOCAL (engine degrees)
 	Vec3f position = Vec3f(0.f);  //!< the head in LOCAL, meters
 	Vec3f offset = Vec3f(0.f);    //!< the camera offset from the character's eye, game units
-	bool clamped = false;         //!< the lean is at the interim limit (#26)
+	// Leaning and real steps (#26, HeadLean.h)
+	Vec2f anchor = Vec2f(0.f);    //!< meters the body walked after the head since the reference (reference frame)
+	Vec2f lean = Vec2f(0.f);      //!< meters the head is from the body (reference frame)
+	float leanDistance = 0.f;     //!< meters, the length of \c lean
+	float walked = 0.f;           //!< meters the body walked after the head since the game started
+	bool stepping = false;        //!< the body is walking after the head
+	u64 steps = 0;                //!< stepping episodes since the game started
+	bool bodyBlocked = false;     //!< the body was asked to step but the collision held it
+	u64 blocks = 0;               //!< blocked episodes since the game started
 };
 
 const HeadStatus & headStatus();
+
+/*!
+ * \brief Real steps (#26): the step the body is asked to take after the head, game units in the
+ *        world (x, z) - taken once; zero when there is none
+ *
+ * Asked by \ref applyHeadPose, taken by the player's movement (ARX_PLAYER_Manage_Movement), which
+ * moves the collision cylinder through the engine's collision and answers with \ref bodyStepped.
+ * A step nobody took (the controls are blocked, the player jumps) is replaced by next frame's.
+ */
+Vec2f takeBodyStep();
+
+//! What the collision let the body walk of the step taken by \ref takeBodyStep, game units (x, z)
+void bodyStepped(const Vec2f & moved);
+
+/*!
+ * \brief The wall fade (#26, D-018): call once per frame after \ref applyHeadPose with whether the head
+ *        is inside geometry or behind it as seen from the character's eye
+ *
+ * \param blocked why the head is in geometry (\c inside, \c behind), nullptr when it is not
+ * \param seconds the frame's duration
+ */
+void updateWallFade(const char * blocked, float seconds);
+
+//! The wall fade after the last \ref updateWallFade - for status.json and the eyes
+struct FadeStatus {
+	float fade = 0.f;            //!< 0..1: how black the world is drawn
+	const char * wall = nullptr; //!< why the head is in geometry (\c inside, \c behind), nullptr when it is not
+	u64 walls = 0;               //!< head-in-geometry episodes since the game started
+	float farFade = 0.f;         //!< 0..1: the part of the fade a head too far from the body asks for
+	u64 fars = 0;                //!< too-far episodes since the game started
+};
+
+const FadeStatus & fadeStatus();
 
 /*!
  * \brief Where the head looks and where the body faces (#25, D-008, D-009)

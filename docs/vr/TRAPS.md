@@ -65,8 +65,13 @@ either. The #71 "26 spells, 0 of 240 frames differ" rows were accepted on exactl
 `castingspell != SPELL_NONE` makes every later `spellcast` on the player return at the first line.
 There is no error anywhere: the script command succeeded, the launch simply never comes.
 **Do:** cast on the player with `-fsm` (`spellcast -fsm 5 <spell> self`) and prove the spell is active
-with a number (`camera.fov` 80.65 for Magic Sight, a `[vr] comfort:` line, life / mana, a `shot`),
-never with the ack alone. #155 re-runs the #71 spells check with a working cast.
+with a number — `spells.launchedByType` / `spells.activeByType` in `status.json` (#155), or the
+spell's own effect (`camera.fov` 80.65 for Magic Sight, life / mana, a `shot`) — never with the ack
+alone. `scripts/dev/spell-drawcheck.ps1` re-ran the #71 spells check that way (#155).
+**Even `-fsm` can launch nothing:** every spell has its own `CanLaunch`, and a refusal is silent too
+(at most a fizzle sound). Found in #155: `fake_summon` refuses the player as caster, and the player's
+`summon_creature` / `raise_dead` find no valid spot 3 m ahead anywhere tried on level 10. Cast those
+from an NPC (`human_base_0033.spellcast -fsm 5 <spell> player`) — and check `launchedByType`.
 
 ## 2026-10-09 — A worktree build keeps the commit of its first build in the log and the window title
 

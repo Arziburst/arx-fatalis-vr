@@ -20,6 +20,7 @@
 #include "core/CommandChannel.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cctype>
 #include <cmath>
@@ -42,6 +43,7 @@
 #include "core/Version.h"
 #include "game/Camera.h"
 #include "game/Player.h"
+#include "game/Spells.h"
 #include "game/effect/Quake.h"
 #include "graphics/Renderer.h"
 #include "graphics/image/Image.h"
@@ -333,6 +335,39 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("fov", glm::degrees(g_playerCamera.fov()));
 		json.value("bob", glm::distance(g_playerCamera.m_pos, g_playerCameraStablePos));
 		json.value("shake", quakeAmplitude());
+		json.end();
+		// Spells by type: active now, and launched since the level was loaded - the evidence that a spellcast
+		// really started a spell (#155: queued casts on the player never launch, TRAPS.md)
+		std::array<size_t, SPELL_TYPES_COUNT> active = {};
+		size_t activeTotal = 0;
+		for(const Spell & spell : spells) {
+			if(spell.m_type >= 0 && size_t(spell.m_type) < active.size()) {
+				active[size_t(spell.m_type)]++;
+			}
+			activeTotal++;
+		}
+		size_t launchedTotal = 0;
+		for(size_t i = 0; i < SPELL_TYPES_COUNT; i++) {
+			launchedTotal += spells.launchedCount(SpellType(i));
+		}
+		json.object("spells");
+		json.value("active", activeTotal);
+		json.value("launched", launchedTotal);
+		json.object("activeByType");
+		for(size_t i = 0; i < SPELL_TYPES_COUNT; i++) {
+			if(const char * name = getSpellName(SpellType(i)); name && active[i] != 0) {
+				json.value(name, active[i]);
+			}
+		}
+		json.end();
+		json.object("launchedByType");
+		for(size_t i = 0; i < SPELL_TYPES_COUNT; i++) {
+			const char * name = getSpellName(SpellType(i));
+			if(size_t count = spells.launchedCount(SpellType(i)); name && count != 0) {
+				json.value(name, count);
+			}
+		}
+		json.end();
 		json.end();
 	}
 

@@ -84,6 +84,12 @@ and the terminal tab.
   `scripts/dev/cycle-report.ps1`, merges what is ready, fixes board inconsistencies, deletes leftover
   branches, syncs the owner's working copy, and then gives either the next task's prompt or the reason
   progress is blocked (a PR waiting for a VR test, red CI, a blocking bug, a decision needed).
+  Since D-013 it runs the work **on its own, in blocks** (waves of [MVP.md](MVP.md#waves)): it writes the
+  tasks, starts and follows the workers, triages what they find and refills the slots; it does not
+  investigate or fix anything itself. It stops and reports when the block is done, when a PR needs the
+  owner's headset test (headset-free work goes on), or at 70% of the weekly usage limit. The owner
+  talks only to the coordinator — VR verdicts included. Its full playbook, for a new coordinator session
+  on any machine (`/coordinator`): [COORDINATOR.md](COORDINATOR.md).
 - **Worker session** — a fresh session per task, possibly with a different model. It implements exactly
   one task in its own PR (`/next-task <n>`), and handles the owner's verdict (`/accept-task`, `/reject-task`).
   In parallel mode the coordinator starts workers itself as background sessions
@@ -238,8 +244,8 @@ its branch stays checked out and freshly built there, so the owner tests exactly
 .\scripts\run-windows.ps1 -- --skiplogo --loadslot 0
 ```
 
-Or double-click the **Arx Fatalis VR** desktop shortcut (created by `scripts/create-desktop-shortcut.ps1`):
-it runs the latest build of whatever branch is checked out in the owner's working copy and shows the
+Or double-click the **Arx Fatalis VR** desktop shortcut (created by `scripts/create-desktop-shortcut.ps1`, runs `scripts/launch-shortcut.ps1`):
+it rebuilds first when the build is stale (no `built-from.txt`, another commit than HEAD, uncommitted changes; the game never starts on a failed build), then runs whatever branch is checked out in the owner's working copy and shows the
 branch name in its console window.
 
 `--loadslot <n>` starts straight into a saved game (recorded in flat mode) — needed until the in-VR

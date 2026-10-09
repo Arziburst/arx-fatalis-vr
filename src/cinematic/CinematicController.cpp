@@ -88,9 +88,9 @@ static bool skipCinematic(std::string_view name) {
 /*!
  * Ends a skipped cinematic (LAST_LAUNCHED_CINE) through the engine's own skip path - cinematicEnd(),
  * what Esc calls - so the scripts get their cine_end event and the game state is the same as after
- * a real cinematic. The .cin file itself is never loaded: a loaded cinematic, even one that never
- * plays (the level 10 script preloads the intro), brings back the exit crash #93 - measured in #124:
- * 2 of 5 window closes crashed with it loaded, 0 of 5 without.
+ * a real cinematic. The .cin file itself is never loaded: there is nothing to show, and before #93
+ * was fixed a loaded cinematic, even one that never played (the level 10 script preloads the intro),
+ * made its exit crash likely - measured in #124: 2 of 5 window closes crashed with it loaded.
  * Callers must not touch WILL_LAUNCH_CINE afterwards: a cine_end handler may prepare the next one.
  */
 static void endSkippedCinematic() {

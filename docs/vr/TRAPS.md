@@ -22,6 +22,30 @@ moment the state flips, i.e. inside that fade.
 of the `shot` (each ack takes ≈ 0.25 s) or wait first; judge "is anything rendered" by a non-black
 pixel count over several frames, never by one early capture. An early black shot is no evidence
 against the renderer.
+## 2026-10-09 — The obvious owner fix for #93 changed nothing: the sword was linked to a mesh the NPC no longer used
+
+**Symptom:** the exit crash #93 reads a freed owner through `m_owner`; releasing the NPC weapon
+(`_npcdata->weapon`) before the NPC is deleted looked like the fix, yet a detector in `~Entity` still
+reported `human_base_0033` deleted while it owned `long_sword_0021` on every exit from level 10 —
+an entity that is not the NPC's weapon, not in its inventory and, by `isEntityLinked()`, not linked.
+**Cause:** the level 10 script links the sword to the NPC and then applies a full mesh tweak
+(`HEAD|TORSO|LEGS`): `EERIE_MESH_TWEAK_Do()` swaps in a new mesh **without** the links and keeps the
+old one as `tweaky` (restored by `TWEAK_REMOVE`). The sword keeps `show = LINKED` and its owner, but
+the link exists only in `tweaky`, which `destroy()`, `UnlinkAllLinkedObjects()` and `isEntityLinked()`
+never look at.
+**Do:** do not trust a guess about *which* relation owns an entity — log what the owned entity looks
+like (`show`, `scriptload`, linked / in inventory / weapon) and trace `setOwner()` before fixing. The
+fix releases every entity whose `owner()` is the dying one, whatever the relation (#93).
+
+## 2026-10-09 — `smoke-test.ps1 -Commands 'loadlevel N'` fails with "null-valued expression" and kills the game
+
+**Symptom:** `=> FAIL You cannot call a method on a null-valued expression.`; the game disappears in
+the middle of loading the new level, with no crash report — it looks like the level change crashed.
+**Cause:** a test-tool bug, not the game: the channel's `loadlevel` runs synchronously, the level
+change writes `status.json` with the new `cmdSeq` before `ack.txt` exists, `Send-ArxCommand` reads a
+missing ack, throws, and the smoke test kills the game in its error handler (#142).
+**Do:** until #142 is fixed, change levels with `-- --loadlevel N` (one launch per level), not with
+the channel command.
 
 ## 2026-10-09 — A crash report folder is dated "yesterday" and the VR self-test crashes where the flat one is clean
 
@@ -37,6 +61,8 @@ changes the heap layout enough for the dangling `m_owner` read to fault without 
 user directory the run used (the smoke test prints it). Treat a `-Vr` exit crash with the
 `Entity::cleanReferences` ← `DanaeClearLevel` stack as #93, not as a VR bug — and remember `-Vr` is
 not a gate until #93 is fixed.
+*Resolved for the exit crash: #93 is fixed (no exit crash in 13 VR exits after the fix); `-Vr` is
+still not a reliable gate because of #146 (the game exits with code -1 mid-run in 2 of 15 VR runs).*
 
 ## 2026-10-09 — The exit crash #93 needs no playing cinematic — a loaded one is enough
 
@@ -51,6 +77,8 @@ ending them at once — and brought the crash back.
 **Do:** a skipped cinematic must never be loaded (#124 ends it through `cinematicEnd()` without
 loading the file). Test exits with `-CloseWindow` as well as with the channel quit: they fail
 differently. `--intro` / `--cinematics` remain exposed to #93 until it is fixed.
+*Resolved: #93 is fixed — the loaded intro with `-CloseWindow` was 10 of 10 clean after the fix. The
+cinematic only changed the heap layout; the dangling owner was there on every exit.*
 
 ## 2026-10-09 — An issue body edited from PowerShell lost all its line breaks
 
@@ -73,6 +101,7 @@ closing during the cinematic is bug #93 (an entity owner is destroyed before its
 **Do:** development launches now skip the intro cinematic (`--intro` plays it; #92 restores it for
 players), so `--loadlevel 10` lands in GAMEPLAY after ~1 s and closing is clean (10/10 with the
 channel's `quit`, measured in #99). #93 itself is still open for the `--intro` / player path.
+*Resolved: #93 is fixed (an entity linked to a swapped-out tweak mesh kept a dangling owner).*
 
 ## 2026-10-08 — `arx.log` is empty or stale while the game runs
 

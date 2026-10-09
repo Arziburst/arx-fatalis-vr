@@ -91,14 +91,21 @@ workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
   claude.ai → Settings → Usage from the owner.
 - The coordinator's own session spends the common limit too: stay quiet between events.
 
-## 6. Models (D-013)
-| Model | Tasks |
-|---|---|
-| **Fable** | every engine task (any `area:*` except build and docs) while its limit lasts; hard bugs and foundation tooling by override |
-| **Sonnet** | `area:build`, `area:docs`: scripts, CI, docs, research |
-| **Opus** | fallback when Fable's limit is used up (`-Model opus`) |
+## 6. Models and effort (D-015)
+Choose per task, by size and difficulty — not by area alone. Spend Fable only where it pays off.
 
-`start-worker.ps1` applies the table from the issue's area labels; `-Model` overrides.
+| Model | Tasks | Default effort |
+|---|---|---|
+| **Opus** | the default for engine work: camera, input, UI, combat, core, render plumbing, ordinary bugs | high |
+| **Sonnet** | scripts, CI, docs, research summaries, small mechanical changes | medium |
+| **Fable** | only **really large and hard** tasks: OpenXR frame loop and stereo rendering (#20, #19, #72), the IK body (#36), rune recognition (#43–#45), crashes nobody could explain | xhigh |
+
+- **Effort** follows the task, not the model: routine change → lower it (`-Effort medium` on Opus,
+  `low` on Sonnet); hard design or debugging → raise it (`-Effort xhigh` on Opus). `max` only by exception.
+- `start-worker.ps1` defaults: `area:build` / `area:docs` → Sonnet, everything else → Opus; effort by model;
+  `-Model` and `-Effort` override. Fable is never a default.
+- Context: a worker gets one task with a precise Definition of done and the links it needs; keep the
+  coordinator's messages to workers short; split a task that would fill a worker's context.
 
 ## 7. Rules the coordinator enforces on workers
 - **Launches (owner, 2026-10-09; enforced by the scripts after #147):** never start SteamVR (it turns on

@@ -10,6 +10,27 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-015: Model and effort by task size — Opus by default, Fable only for really hard tasks
+
+- **Date:** 2026-10-09
+- **Status:** Accepted (replaces the model part of D-013)
+- **Decided by:** project owner
+
+### Decision
+- **Opus** is the default model for engine work, **Sonnet** for scripts, CI, docs and research summaries.
+- **Fable** only for really large and hard tasks (the OpenXR frame loop and stereo rendering, the IK body,
+  rune recognition, crashes nobody could explain) — chosen by the coordinator per task, never by default.
+- **Effort** is set per task by the coordinator (`start-worker.ps1 -Effort`): lower for routine work,
+  higher for hard design or debugging; defaults Sonnet medium, Opus high, Fable xhigh.
+- Context is spent carefully but fully: one task per worker with a precise Definition of done, short
+  coordinator messages, big tasks split.
+
+### Why
+Half of Fable's weekly limit went in the first hours with Fable on every engine task (D-013); most of
+those tasks did not need it. The playbook table: [COORDINATOR.md §6](COORDINATOR.md#6-models-and-effort-d-015).
+
+---
+
 ## D-014: Launch control for parallel workers — no SteamVR start, one game at a time, own fresh build, ledger, budget
 
 - **Date:** 2026-10-09
@@ -78,7 +99,7 @@ The owner wants the desktop quiet while workers run, and the headset untouched u
 - **Budget:** the common weekly limit up to **70%** — from there no new workers start, running ones finish
   their PRs; the 5-hour limit may be used up (sessions wait for its reset and continue,
   `autoContinueAtUsageLimit`); Fable's separate weekly limit may be used up.
-- **Models** (replaces D-012's table): **Fable** for every engine task (any area except build and docs)
+- *(Superseded by D-015: Opus by default, Fable only for really hard tasks.)* **Models** (replaced D-012's table): **Fable** for every engine task (any area except build and docs)
   while its limit lasts, **Sonnet** for build, CI, scripts, docs and research, **Opus** when Fable's limit
   runs out (`start-worker.ps1 -Model opus`).
 

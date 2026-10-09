@@ -142,6 +142,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `vr-input down\|up\|tap <control>`, `vr-input stick left\|right <x> <y>`, `vr-input bind <event> <binding>`, `vr-input reset` | the VR controls' table without a headset (#30, `vr/VRInput.h`): a control (`right.a`, `left.grip`, `right.stick_down` …) held, let go or tapped as if a controller did it, merged into what OpenXR reports and resolved by the same table at the next frame; the game then reacts as to the controllers (#74: inventory, book, jump, crouch toggle, the game menu, the mouse buttons). `stick` holds a stick deflected (the analog value only — its direction controls are `down` / `up`), seen in `vr.input.game.moveX/moveY/turn`; `bind` remaps one event (`bind jump left.grip+left.a`, `bind menu left.b:long`, `bind magic_mode none`); `reset` restores the default layout for the current controllers and lets go of everything. Refused with the reason for an unknown control, event or binding. `vr.input` in the status (`vr.input.game.held`: the actions, buttons and keys the engine is given); one `[vr] input: <event> (<binding>)` log line per event press, one `[vr] input: layout …` line per layout change |
 | `recenter` | the head is measured from its next sample: a new head reference (#24; the player's button chord is #28). A `vr.head.reference reason=channel` event once a head is there |
 | `headpose <yaw> <pitch> <roll> [<x> <y> <z>]` / `headpose off` | a simulated head for checks without a headset (#24): degrees as a person says them — yaw left, pitch up, roll left positive — and optionally the position in metres in the OpenXR LOCAL space (x right, y up, z back). It drives the first-person camera exactly like the headset (`vr.head` and `camera` in the status); the first pose takes the reference, later ones move the camera from it. A real headset pose wins over it; `off` removes it |
+| `vr-point left\|right item [<dx> <dy>]`, `vr-point left\|right <x> <y>` | a simulated hand (`--vr-sim` only) turned so its aim ray hits the floating panel (#34) at the first item of the shown inventory bag (optionally that many pixels beside it — a hand moving while the trigger is held) or at a pixel of the 2D interface; only aims — what the pointer makes of the ray is the game's path. The target is in `ui.target`, `ui.targetX/Y`. Refused without the simulator, without a panel shown, or with no item in the bag |
 | `vr-sim <command>` | a command of the simulated headset (#112), only in a `--vr-sim` run: `head rot 25 0 0`, `head pos 0 -0.3 0`, `action trigger right 1`, `shot <name>`, `session visible`, `fault swap-eyes on`, … — now, or `@+<n> <command>` n frames from now on its timeline. See [The simulated headset](#the-simulated-headset---vr-sim-112) |
 | `comfort auto\|on\|off` | who decides the VR comfort policy (#76, `vr::comfort()`): `auto` = the VR session (the default: view bobbing, screen shake and FOV zoom off in VR, `cfg.ini` decides in flat mode), `on` / `off` force the VR rules on or off — so a flat run can measure them. `comfort` and `camera` in the status; one `[vr] comfort:` log line per change |
 | anything else | the **script console**: `[entity.]command args`, exactly as typed in the in-game console (`` ` ``). Context defaults to the player. Refused (and counted in the ack) when the entity or the command is unknown |
@@ -235,6 +236,16 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   `tilt` how far its face turns up to the eyes (18.4° for the defaults), `width` / `height` as last
   submitted, and the settings `distance` / `drop` (`vr_panel_distance`, `vr_panel_drop`, `vr_panel_width`
   in `cfg.ini`).
+- `vr.pointer` (#34): the menu pointer. `shown`: the panel is shown, so the pointer is on; `active`: the
+  owning hand's aim ray is on the panel — the engine's mouse is `x`, `y` (the 2D interface's pixels) and the
+  beam is requested; `owner`: `left` / `right`, the hand whose trigger was pressed last (or that took over
+  an idle cursor); `beam`: the beam was in the last submitted frame; `leftOnPanel` / `rightOnPanel`: each
+  ray hits the panel; `clicks`: presses on the panel; `offPanelPresses`: presses with the ray off it,
+  kept from the engine; `ownerChanges`.
+- `ui` (#34): the 2D interface under the mouse. `mouseX`, `mouseY`: the engine's mouse on the interface
+  (in VR the pointer's pixel while it is active); `mouseInWindow`; `hover`: the item under the mouse
+  (`FlyingOverIO`) or `none`; `drag`: the item being dragged or `none`; `target`, `targetX`, `targetY`:
+  what the last `vr-point` aimed at.
 - `vr.pacing` (#20): the last rate / cadence report — present once the first 3 s window of a
   session closed (a shorter session gets its partial window at the end). See
   [The frame loop and the rate line](#the-frame-loop-and-the-rate-line-20) for every field and the
@@ -466,6 +477,10 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.head.lean` | the lean reaches the interim limit, and when it is back within (#24, until #26) | `state=clamped\|free`, `limitM` (limit 100) |
 | `vr.panel.placed` | the floating UI panel was placed (#49): a menu opened (after > 250 ms closed), a recenter while it was open, or the head came back to tracking | `reason=open\|recenter\|tracking`, `menu`, `x`, `y`, `z` (LOCAL, metres), `yawDeg`, `distanceM`, `dropM`, `widthM`, `headY` |
 | `vr.panel` | the 2D interface moved between the panel and the head-locked quad (#49) | `mode=world\|head`, `menu` (`none` when closed) |
+| `vr.pointer` | the menu pointer went on or off with the panel (#34) | `state=on\|off`, `hand` (the owner), `tracked` (hands with an aim pose, 0-2) |
+| `vr.pointer.owner` | the other hand took the cursor: its trigger, or the owner pointed away (#34) | `hand` |
+| `vr.pointer.click` | a trigger pressed with the ray on the panel: the engine clicks there (#34) | `hand`, `x`, `y` (the 2D interface's pixels) |
+| `vr.pointer.muted` | a trigger pressed with the ray off the panel: no click reaches the engine (#34) | `hand`, `reason` |
 | `vr.body.drag` | the head reached the 25° dead zone and pulls the body along, and when it let go (5° inside) (#25) | `state=start\|end`, `head`, `body` (degrees from the heading), `deadZone` (limit 100) |
 
 Not here yet, by design: melee attacks *refused* by a gate (F-66) come with the VR swing detector
@@ -773,7 +788,9 @@ stereo world, #19 — with under 10 % coverage in its middle; the compositor ble
 its alpha plane, premultiplied, like the runtime does, so the eyes show through where nothing is
 drawn). `lr` has the left/right difference (mean luma levels on a 160-column grid), the horizontal
 shift of the left picture against the right one (> 0 is right) and the eye separation; `versus` the
-difference of each eye to every earlier shot. `vr.sim` also has the rig, the eye poses as last
+difference of each eye to every earlier shot. Per eye, `quadPixels` counts the eye pixels the first quad
+(the flat frame / the floating panel) covers and `overlayPixels` those of every later quad layer, drawn
+over it in order — the menu pointer's beam (#34). `vr.sim` also has the rig, the eye poses as last
 located (`eyes`, with `separation`) and the timeline's state; a `vr.sim.shot` game event per shot.
 A shot stalls its frame for about 100 ms (read-back, composition, three BMPs at eye size): the rate
 line of a run with shots shows those frames as gaps — judge pacing from a run without shots.
@@ -846,6 +863,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `walk-forward` | the player stands still without input; the stick is held and let go | #31: the player moves |
 | `recenter` | a head offset is set and read back | #28: `recenter` is accepted (it logs one expected `[W]`) |
 | `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
+| `menu-pointer` | the menu pointer (#34) on the test save `mvp-items` — run with `smoke-test.ps1 -VrSim idle -Sequence menu-pointer -Save mvp-items`: no pointer and no beam without a menu (`overlayPixels` 0); the key from the table put in the bag, the inventory opened, the right hand aimed at it (`vr-point right item`): the engine's mouse on the key's pixel (192, 606 = the target), `ui.hover` the key, the beam drawn above the panel (`overlayPixels` 2125 left / 1997 right); the trigger clicks (`vr.pointer.click`), a hand move of 8 px keeps the cursor on the key (dead zone, no drag), 40 px drags **the key the click landed on**; released over the bag it goes back; the left hand's trigger takes the cursor and its click lands on the key too; both hands pointing up: no cursor, no beam, a press is muted (`offPanelPresses` 1, nothing dragged); closed: the pointer goes. Host test `MenuPointerTest` | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
 `scripts\dev\test-xrs.ps1` (a fake game answering the channel files; in `run-script-tests.ps1`, so in CI).

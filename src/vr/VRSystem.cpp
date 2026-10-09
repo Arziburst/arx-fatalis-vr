@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -57,6 +58,7 @@
 // OpenXR with the OpenGL binding (and windows.h on Windows)
 #include "vr/HeadTracking.h"
 #include "vr/InterfaceSize.h"
+#include "vr/MenuPointer.h"
 #include "vr/OpenXRUtil.h"
 #include "vr/UIPanel.h"
 #include "vr/VRActions.h"
@@ -148,6 +150,8 @@ struct OpenXRState {
 	std::array<Swapchain, 2> eyes;
 	Swapchain quad;
 	Vec2i quadFailedSize = Vec2i(0); //!< a size the quad swapchain could not be created for
+	Swapchain beam;                  //!< the menu pointer's beam image (#34), made the first time it is shown
+	bool beamFailed = false;         //!< the beam swapchain could not be made: not retried this session
 
 	/*!
 	 * The interface's own resolution (#73): from the session's first located eyes on, the 2D
@@ -200,6 +204,14 @@ struct OpenXRState {
 		Vec2f size = Vec2f(0.f); //!< the panel as last submitted, meters
 	} panel;
 
+	//! The menu pointer's beam (#34), set by the input module every frame
+	struct PointerBeam {
+		bool requested = false;
+		Vec3f from = Vec3f(0.f); //!< the hand, LOCAL space
+		Vec3f to = Vec3f(0.f);   //!< its hit on the panel
+		bool submitted = false;  //!< part of the last frame's layers
+	} pointer;
+
 	//! The stereo render as status.json reports it; \c active is the current frame's, the rest the last stereo frame's
 	StereoStatus stereo;
 	bool stereoLogged = false; //!< the stereo banner was logged for this session
@@ -209,7 +221,8 @@ struct OpenXRState {
 		std::array<XrCompositionLayerProjectionView, 2> projectionViews = { };
 		XrCompositionLayerProjection projection = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
 		XrCompositionLayerQuad quad = { XR_TYPE_COMPOSITION_LAYER_QUAD };
-		std::array<const XrCompositionLayerBaseHeader *, 2> list = { };
+		XrCompositionLayerQuad beam = { XR_TYPE_COMPOSITION_LAYER_QUAD }; //!< the menu pointer, above the panel (#34)
+		std::array<const XrCompositionLayerBaseHeader *, 3> list = { };
 		u32 count = 0;
 	} layers;
 
@@ -753,6 +766,9 @@ void destroySession() {
 	}
 	g_xr.quad.destroy();
 	g_xr.quadFailedSize = Vec2i(0);
+	g_xr.beam.destroy();
+	g_xr.beamFailed = false;
+	g_xr.pointer = OpenXRState::PointerBeam();
 	g_xr.mirror.destroy();
 	g_xr.colorFormat = 0;
 
@@ -1158,6 +1174,94 @@ bool describeEyeLayer(OpenXRState::Layers & layers) {
 	return true;
 }
 
+//! The beam image: narrow and long, its bottom row at the hand (#34)
+const Vec2i BeamImageSize(8, 64);
+
+/*!
+ * The menu pointer's beam image, made once per session: white, premultiplied by its alpha, which runs
+ * from PointerBeamAlpha at the hand (the bottom row) to nothing at the panel (the top row), with
+ * softer long edges. Filled once: the compositor keeps showing the last released image.
+ */
+bool makeBeamImage() {
+
+	if(g_xr.beam.isValid()) {
+		return true;
+	}
+	if(g_xr.beamFailed) {
+		return false;
+	}
+	if(!g_xr.beam.create(g_xr.session, g_xr.colorFormat, BeamImageSize, false, "menu pointer beam")
+	   || !g_xr.beam.acquire()) {
+		g_xr.beam.destroy();
+		g_xr.beamFailed = true;
+		LogWarning << "[vr] menu pointer: no beam image, the pointer shows only the cursor";
+		return false;
+	}
+
+	std::vector<u8> pixels(size_t(BeamImageSize.x * BeamImageSize.y) * 4);
+	for(s32 y = 0; y < BeamImageSize.y; y++) {
+		const float along = 1.f - (float(y) + 0.5f) / float(BeamImageSize.y);
+		for(s32 x = 0; x < BeamImageSize.x; x++) {
+			const bool edge = (x == 0 || x == BeamImageSize.x - 1);
+			const float alpha = PointerBeamAlpha * along * (edge ? 0.4f : 1.f);
+			const u8 value = u8(std::lround(alpha * 255.f));
+			u8 * pixel = &pixels[size_t(y * BeamImageSize.x + x) * 4];
+			pixel[0] = pixel[1] = pixel[2] = pixel[3] = value;
+		}
+	}
+
+	glBindTexture(GL_TEXTURE_2D, g_xr.beam.texture());
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, BeamImageSize.x, BeamImageSize.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+	glBindTexture(GL_TEXTURE_2D, 0);
+	g_xr.beam.release();
+
+	LogInfo << "[vr] menu pointer: beam image " << BeamImageSize.x << 'x' << BeamImageSize.y << ", "
+	        << PointerBeamWidth * 1000.f << " mm wide, fading towards the panel";
+	return true;
+}
+
+/*!
+ * The menu pointer's beam above the floating panel (#34), when the input module asked for one this
+ * frame: a quad from the hand to its hit, turned towards the eyes. A later layer is drawn over the
+ * panel, which would hide a beam drawn into the scene.
+ */
+void describeBeamLayer(OpenXRState::Layers & layers) {
+
+	OpenXRState::PointerBeam & pointer = g_xr.pointer;
+	const FrameViews & views = g_xr.frame.views;
+	if(!pointer.requested || !views.valid || layers.count >= layers.list.size() || !makeBeamImage()) {
+		return;
+	}
+
+	const Vec3f eye = (views.eyes[0].position + views.eyes[1].position) * 0.5f;
+	BeamQuad beam;
+	if(!beamQuad(pointer.from, pointer.to, eye, PointerBeamWidth, beam)) {
+		return;
+	}
+
+	XrCompositionLayerQuad & layer = layers.beam;
+	layer = { XR_TYPE_COMPOSITION_LAYER_QUAD };
+	layer.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+	layer.space = g_xr.localSpace;
+	layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+	layer.subImage.swapchain = g_xr.beam.handle();
+	layer.subImage.imageRect = g_xr.beam.rect();
+	layer.subImage.imageArrayIndex = 0;
+	layer.pose.orientation.x = beam.orientation.x;
+	layer.pose.orientation.y = beam.orientation.y;
+	layer.pose.orientation.z = beam.orientation.z;
+	layer.pose.orientation.w = beam.orientation.w;
+	layer.pose.position.x = beam.center.x;
+	layer.pose.position.y = beam.center.y;
+	layer.pose.position.z = beam.center.z;
+	layer.size.width = beam.size.x;
+	layer.size.height = beam.size.y;
+
+	layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
+	pointer.submitted = true;
+}
+
 /*!
  * Describe the quad that shows the flat frame swapchain's most recently released image: the
  * floating panel in the world-locked space while a menu is open (#49), otherwise the head-locked
@@ -1208,6 +1312,10 @@ void describeQuadLayer(OpenXRState::Layers & layers, XrCompositionLayerFlags lay
 	}
 
 	layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
+
+	if(layer.space == g_xr.localSpace) {
+		describeBeamLayer(layers);
+	}
 }
 
 //! The panel settings from cfg.ini (clamped when read)
@@ -2040,6 +2148,7 @@ void submitFrame(const Vec2i & windowSize) {
 	if(frame.state.shouldRender) {
 		GLStateGuard state;
 		g_xr.layers.count = 0;
+		g_xr.pointer.submitted = false;
 		eyes = describeEyeLayer(g_xr.layers);
 		if(!eyes) {
 			background = renderBackground(g_xr.layers);
@@ -2211,7 +2320,7 @@ PanelStatus panelStatus() {
 	return status;
 }
 
-bool panelHit(const Vec3f & origin, const Vec3f & direction, Vec2f & pixel) {
+bool panelHit(const Vec3f & origin, const Vec3f & direction, Vec2f & pixel, Vec3f * point) {
 	const OpenXRState::Panel & panel = g_xr.panel;
 	if(!g_xr.running || panel.anchor.mode() != PanelMode::World || !g_xr.quad.isValid()) {
 		return false;
@@ -2223,7 +2332,50 @@ bool panelHit(const Vec3f & origin, const Vec3f & direction, Vec2f & pixel) {
 		return false;
 	}
 	pixel = uv * Vec2f(g_xr.quad.size());
+	if(point) {
+		*point = origin + direction * distance;
+	}
 	return true;
+}
+
+bool panelShown() {
+	return g_xr.running && g_xr.panel.anchor.mode() == PanelMode::World && g_xr.quad.isValid();
+}
+
+bool panelPoint(const Vec2f & pixel, Vec3f & point) {
+	const OpenXRState::Panel & panel = g_xr.panel;
+	if(!g_xr.running || panel.anchor.mode() != PanelMode::World || !g_xr.quad.isValid()) {
+		return false;
+	}
+	point = vr::panelPoint(panel.anchor.pose(), panelSize(panel.params.width, g_xr.quad.size()),
+	                       pixel / Vec2f(g_xr.quad.size()));
+	return true;
+}
+
+std::array<HandAim, HandCount> handAims() {
+	std::array<HandAim, HandCount> aims;
+	if(!g_xr.running) {
+		return aims;
+	}
+	const std::array<ActionSet::AimPose, HandCount> poses = g_xr.actions.locateAim(g_xr.localSpace, g_xr.lastDisplayTime);
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		if(poses[hand].valid) {
+			aims[hand].valid = true;
+			aims[hand].origin = poses[hand].position;
+			aims[hand].direction = glm::normalize(poses[hand].orientation * Vec3f(0.f, 0.f, -1.f));
+		}
+	}
+	return aims;
+}
+
+void setPointerBeam(bool shown, const Vec3f & from, const Vec3f & to) {
+	g_xr.pointer.requested = shown;
+	g_xr.pointer.from = from;
+	g_xr.pointer.to = to;
+}
+
+bool pointerBeamShown() {
+	return g_xr.pointer.submitted;
 }
 
 void recenterPanel() {
@@ -2363,7 +2515,25 @@ PanelStatus panelStatus() {
 	return PanelStatus();
 }
 
-bool panelHit(const Vec3f & /* origin */, const Vec3f & /* direction */, Vec2f & /* pixel */) {
+bool panelHit(const Vec3f & /* origin */, const Vec3f & /* direction */, Vec2f & /* pixel */, Vec3f * /* point */) {
+	return false;
+}
+
+bool panelShown() {
+	return false;
+}
+
+bool panelPoint(const Vec2f & /* pixel */, Vec3f & /* point */) {
+	return false;
+}
+
+std::array<HandAim, HandCount> handAims() {
+	return std::array<HandAim, HandCount>();
+}
+
+void setPointerBeam(bool /* shown */, const Vec3f & /* from */, const Vec3f & /* to */) { }
+
+bool pointerBeamShown() {
 	return false;
 }
 

@@ -49,6 +49,7 @@ The desktop window mirrors one eye, so the demo can be recorded and shown.
 | Interaction | Both hands work as the mouse, each with its own reticle and no visible beam: drag items over surfaces and into the inventory (which opens in the centre of the view), use doors / levers / chests / bodies (D-016; reference: VHVR, #166) |
 | Melee | The weapon in the model's hand; hits by contact plus a swing detector; damage from swing speed; haptics |
 | Magic | Runes drawn in the air with the hand, fed into the existing recognizer; spell direction from the hand, invisible |
+| VR settings | Our own VR settings, opened from the main and pause menus: in the MVP the **Controls** section — remapping (button, chord, long press per event; per controller type; reset to default), turning, crouch and height, left-handed mode (D-020); sound and graphics stay in the game's settings |
 | UI | Menus, inventory, book, map, dialogs and notes on one floating panel with a pointer only while it is open; health and mana on the left wrist |
 | Comfort | Head bob, screen shake and FOV zoom disabled |
 | Testing | Workers verify without the headset first: smoke test and command channel, simulated VR backend with scripted sequences, host unit tests |
@@ -136,6 +137,7 @@ dependencies are met; when a task is split, replace it with its parts.
 *(the owner decides on the new catalog rows before #36, #116, #49 and #88)*
 29. #49 — Floating UI panel for menus, inventory, book, map (F-80, F-82)
 30. #34 — Menu pointer only while a menu or the inventory is open (D-010, F-81)
+30. #178 — VR settings screen with the Controls section: remapping, turning, crouch and height, left-handed (D-020)
 31. #33 — Jump on A, crouch toggle on right stick down, stealth by partial deflection (F-47)
 32. #70 — Test save library for MVP scenarios *(scripts via the #99 channel where possible; the owner records the rest)*
 33. #36 — Full body: the player model with arms driven by the controllers via IK (D-009, F-52, F-49)
@@ -208,6 +210,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #32 turning | input | VR | #74 |
 | #118, #120 research | docs | plain | — (decisions before #36, #116, #49, #88) |
 | #49 UI panel | ui | VR | #73 |
+| #178 VR settings: Controls | ui | VR | #30, #35, #49, #34, #32, #33, #28, #100 |
 | #34 menu pointer | ui | VR | #49, #74 |
 | #33 jump, crouch toggle, stealth | input | VR | #74 |
 | #70 test saves | build | plain | #99, #123 |
@@ -237,7 +240,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | **3** | #74, #72, #27, #25, #35 | #73, #70, #127 |
 | **4** — finishes checkpoint A | #28, #100, #26, #31, #32, #42 | #80 |
 | **5** — checkpoint B | #49, #33, #36 | #88 → #132 *(after the owner's decisions on #118 / #120)* |
-| **6** | #34, #116, #37, #75 | — |
+| **6** | #34, #116, #37, #75, #178 | — |
 | **7** — checkpoints C, D | #38, #39, #43 → #44 → #45 | #16 |
 | **8** — MVP done | #77 | — |
 

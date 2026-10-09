@@ -400,8 +400,41 @@ std::string buildStatus(PlatformInstant now) {
 	vr::FrameCounters frames = vr::frameCounters();
 	json.value("frames", frames.submitted);
 	json.value("shownFrames", frames.shown);
+	json.value("resubmittedFrames", frames.resubmitted);
+	json.value("discardedFrames", frames.discarded);
+	json.value("frameGaps", frames.gaps);
+	json.value("frameDivisor", vr::frameDivisor());
 	json.value("runtime", vr::runtimeName());
 	json.value("manifest", vr::runtimeManifest());
+	// The last rate / cadence report of the frame loop (#20, F-07): one per 3 s while the session runs
+	const vr::PacingReport & pacing = vr::lastPacingReport();
+	if(pacing.valid) {
+		json.object("pacing");
+		json.value("reports", vr::pacingReports());
+		json.value("seconds", float(pacing.seconds));
+		json.value("frames", pacing.frames);
+		json.value("shown", pacing.shown);
+		json.value("divisor", pacing.divisor);
+		json.value("periodMs", float(pacing.periodMs));
+		json.value("slotsPerSecond", float(pacing.slotsPerSecond));
+		json.value("framesPerSecond", float(pacing.framesPerSecond));
+		json.value("waitMeanMs", float(pacing.waitMeanMs));
+		json.value("waitMaxMs", float(pacing.waitMaxMs));
+		json.value("endMeanMs", float(pacing.endMeanMs));
+		json.value("endMaxMs", float(pacing.endMaxMs));
+		json.value("budgetMeanMs", float(pacing.budgetMeanMs));
+		json.value("budgetMaxMs", float(pacing.budgetMaxMs));
+		json.value("gameMeanMs", float(pacing.gameMeanMs));
+		json.value("gameMaxMs", float(pacing.gameMaxMs));
+		json.value("slotsPerFrame", float(pacing.slotsPerFrame));
+		json.value("cadenceSdMs", float(pacing.cadenceSdMs));
+		json.value("worstFrameMs", float(pacing.worstFrameMs));
+		json.value("worstRunFrames", pacing.worstRunFrames);
+		json.value("worstRunMs", float(pacing.worstRunMs));
+		json.value("verdict", vr::verdictName(pacing.verdict));
+		json.value("cadence", vr::cadenceName(pacing.cadence));
+		json.end();
+	}
 	json.end();
 
 	json.value("cmdSeq", g.cmdSeq);

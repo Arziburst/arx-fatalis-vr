@@ -132,8 +132,15 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
            "launchedByType":{"speed":1,"heal":1,"fire_field":1}},
  "comfort":{"mode":"auto","active":false,"viewBobbing":true,"screenShake":true,"fovZoom":true},
  "window":{"width":640,"height":480,"focused":true,"minimized":false,"fullscreen":false},
- "vr":{"supported":true,"enabled":false,"sessionState":"none","frames":0,"shownFrames":0,"runtime":"",
-       "manifest":"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json"},
+ "vr":{"supported":true,"enabled":false,"sessionState":"none","frames":0,"shownFrames":0,
+       "resubmittedFrames":0,"discardedFrames":0,"frameGaps":0,"frameDivisor":1,"runtime":"",
+       "manifest":"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json",
+       "pacing":{"reports":3,"seconds":3.0,"frames":241,"shown":1,"divisor":1,"periodMs":12.5,
+                 "slotsPerSecond":80.0,"framesPerSecond":80.0,"waitMeanMs":11.9,"waitMaxMs":13.1,
+                 "endMeanMs":0.3,"endMaxMs":0.9,"budgetMeanMs":12.2,"budgetMaxMs":13.4,
+                 "gameMeanMs":0.3,"gameMaxMs":1.2,"slotsPerFrame":1.0,"cadenceSdMs":0.2,
+                 "worstFrameMs":13.5,"worstRunFrames":0,"worstRunMs":0.0,
+                 "verdict":"MATCHED","cadence":"EVEN"}},
  "cmdSeq":3,"lastCmd":"mark hello","lastCmdError":"","captureSeq":1,"lastCapture":"...\\first.bmp"}
 ```
 
@@ -152,8 +159,18 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   `synchronized`, SteamVR sets `shouldRender` only for the first frame, and `shownFrames` stays at 1
   while `frames` grows — expected, not a broken frame loop (see TRAPS.md). `smoke-test.ps1 -Vr`
   fails a run with `vr.enabled` and `vr.frames == 0`.
-- `player` is present only while a level is loaded. More fields (the rate line)
-  come with #20; the `.xrs` runner (#113) asserts on these keys with `@modassert`.
+- `vr.resubmittedFrames` (#20): frames ended with the previous picture because no new one was drawn
+  (a level load, a session stop — expected to be a handful per run); `vr.discardedFrames`: frames
+  the runtime discarded (an `xrBeginFrame` before the previous `xrEndFrame` — expected 0);
+  `vr.frameGaps`: frames that came at least 80 ms and 2.5× the mean interval after the previous one
+  (level loads produce them; in gameplay each one is a felt hitch); `vr.frameDivisor`: the expected
+  display slots per frame (`vr_frame_divisor`, 1 = every slot).
+- `vr.pacing` (#20): the last rate / cadence report — present once the first 3 s window of a
+  session closed (a shorter session gets its partial window at the end). See
+  [The frame loop and the rate line](#the-frame-loop-and-the-rate-line-20) for every field and the
+  verdicts; the two to assert on are `verdict` (`MATCHED`) and `cadence` (`EVEN`).
+- `player` is present only while a level is loaded; the `.xrs` runner (#113) asserts on these keys
+  with `@modassert`.
 - `camera` (with `player`): the first-person camera as the frame before left it — position, angles,
   `fov` in degrees, `bob` = its distance from the stable head position of the paused animation (view
   bobbing; 0 when off), `shake` = the quake amplitude applied that frame (0 without a quake or when
@@ -285,6 +302,53 @@ prints which command launched each spell and which spells were on screen during 
 - Order: the long-lived spells first, the projectiles and the NPC's summons last, so they are still
   in flight or open when the check starts (`harm` and `mana_drain` end on their own before that).
 
+## The frame loop and the rate line (#20)
+
+In VR one game frame is one OpenXR frame (D-021): `vr::beginFrame()` at the top of
+`ArxGame::doFrame` blocks in `xrWaitFrame` until the headset wants the next frame — **the only
+thing that paces the game in VR**: the window's vsync and the engine's `fps_limit` are off while a
+session exists (`[vr] pacing:` log line) — then `xrBeginFrame` and `xrLocateViews` for the frame's
+predicted display time; the game simulates and renders; `vr::submitFrame()` ends the frame with
+exactly those poses in the projection layer (pose-matched submission, F-21 / F-116). A frame drawn
+outside the loop (the loading screen) begins its own; a frame begun but never shown is ended with
+the previous picture (`vr.resubmittedFrames`). On quit, `xrRequestExitSession` → `stopping` →
+`xrEndSession` → `exiting` within 2 s (`OpenXR session exited in order after N ms`), else a warning
+and the session is destroyed while running.
+
+**The rate line** — one `[vr] rate:` line per 3 s window while the session runs (research row F-07),
+the same numbers in `status.json` → `vr.pacing`:
+
+```
+[vr] rate: 241 frames in 3.00 s = 80.0/s on 80.0 slots/s (hmd 12.50 ms), 1 shown | wait+end 12.2 mean / 13.4 max ms (wait 11.9, end 0.3; game 0.3 mean / 1.2 max) | 1.00 slots/frame, sd 0.21 ms: EVEN CADENCE | MATCHED | worst frame 13.5 ms, worst run 0 frames 0 ms
+```
+
+| Part | Meaning |
+|---|---|
+| `N frames in S s = F/s on R slots/s (hmd P ms)`, `shown` | frames submitted per second against the headset's display slots per second (`periodMs` = one slot); `shown` = frames with layers |
+| `wait+end mean / max` | `xrWaitFrame` + `xrEndFrame` of one frame: **one pacing budget** (F-117) — the runtime may put its wait into either call, so judge the sum against the period and read the split (`wait`, `end`) only as detail; `game` = from `xrEndFrame` to the next `xrWaitFrame`, the time the game itself takes |
+| `slots/frame, sd` | the mean interval between frames in display slots and its jitter (`cadenceSdMs`) |
+| `EVEN CADENCE` / `UNEVEN CADENCE` | EVEN: a whole number of slots per frame (within 0.1) with a jitter under 0.2 slot; UNEVEN is what ghosts on head turns (F-26: 1.05–1.11 slots at 120 Hz) |
+| `MATCHED` / `OVER-SUBMITTING` / `UNDER-SUBMITTING` | frames against expected slots (slots / `divisor`, 5 % tolerance): MATCHED is healthy; OVER means nothing paces the loop (not synchronized, or the runtime does not block); UNDER means slots go unfilled — the game's work does not fit, look at `game` |
+| `worst frame`, `worst run` | the longest interval, and the longest run of consecutive late frames (over 1.5 expected slots) with its total time — a pause the wearer feels is a run, which no mean shows |
+| `(cap: every n. slot)` | `vr_frame_divisor` > 1 |
+
+Between the lines, `[vr] frame gap: 143.2 ms between frames (mean 12.5 ms), in the game phase`
+names a frame that came at least 80 ms and 2.5× the mean interval late and the phase the time sat
+in (`wait`, `end` or `game`); the first 10 are logged, the rest counted (`vr.frameGaps`, and
+`, N frame gaps` on the rate line). Level loads produce gaps by design; in gameplay each one is a
+hitch to explain.
+
+**The even-cadence cap** (F-26): when the native rate does not hold evenly, `vr_frame_divisor = 2`
+in `cfg.ini` (`[video]`; `--vr-frame-divisor 2` on the command line overrides it) makes the game take
+every second display slot: `beginFrame` sleeps past the slots to skip and lets `xrWaitFrame` snap
+to the next one, so the clock stays the runtime's. The rate line must then read `2.00 slots/frame
+… EVEN CADENCE | MATCHED (cap: every 2. slot)`. 1 = every slot (default), up to 8.
+
+The verdict logic is pure (`src/vr/FramePacing.h`: timestamps in, report out) and covered by
+`tests/vr/FramePacingTest.cpp` (`arxtest`, run by `build-windows.ps1` and CI): a healthy loop, the
+cap, half rate without the cap (UNDER), 9 / 16 ms jitter at 80 fps (MATCHED but UNEVEN), 1 / 2 slot
+alternation, an unpaced loop (OVER), a late run, the gap phases, the window boundary.
+
 ## `xr_hello` — the runtime alone
 
 `xr_hello.exe` is built next to `arx.exe` (CMake option `BUILD_XR_HELLO`, on by default with OpenXR;
@@ -334,6 +398,9 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | 2026-10-09, #155: `spell-drawcheck.ps1` — the 26 spells of #71 **really launched** (23 by the player with `-fsm`, `summon_creature` / `raise_dead` / `fake_summon` by `human_base_0033` on the player), then `drawcheck 240` on level 10 | `PASS`: **26 of 26** in `spells.launchedByType`, each in the `status.json` write right after its own command; **24 spell types active during the check** (all but `harm` and `mana_drain`, which had ended), **0 of 240 frames differ** (max 0 of 307200 pixels, delta 0), 0 errors, 0 warnings. The #71 split holds with every spell effect on screen — no bug to file against it |
 | 2026-10-09, #155: the same with `-Flags fs` — the cast of the #71 rows, the broken state on purpose | `FAIL` of the check (the smoke test passed, 0 of 240 frames differ): **0 of 23** player spells launched; the NPC's 3 launched one command later through the NPC rune drawing. The launch evidence catches the #71 mistake |
 | 2026-10-09, #155: the player's own `summon_creature` and `raise_dead` (`-fsm`): at the start point; after `teleport -ap 0/90/180/270 player`; after `teleport -p human_base_0033` | **never launched** — `CanLaunch` finds no valid spot 3 m ahead on level 10, a silent fizzle; hence the NPC caster above |
+| 2026-10-09, #20: `FramePacingTest` (11 cases over synthetic frame timings, see [The frame loop and the rate line](#the-frame-loop-and-the-rate-line-20)) | `OK (57 tests)`. **The suite can fail:** with `UnderSubmitFactor` set to 0 and `EvenMaxSdSlots` to 10 on purpose, `Run: 57 Failures: 3` — exactly the UNDER case and the two UNEVEN cases (half rate without the cap, 9 / 16 ms jitter, 1 / 2 slot alternation); the other 8 stay green. Restored: `OK (57 tests)` |
+| 2026-10-09, #20: flat smoke test, `-Seconds 8` with 6 `status` + `mark`, channel quit; then `-Seconds 5 -CloseWindow` | **2 of 2** `PASS`, 0 errors (1 warning in the first: no `cfg.ini` yet in the fresh isolated directory). Flat mode untouched: 1175 frames in 10.6 s (the engine's limiter and vsync as before), `vr.enabled=false`, `vr.frameDivisor=1`, no `vr.pacing`, no `[vr] pacing:` line — the VR clock never engages without a session |
+| 2026-10-09, #20: `smoke-test.ps1 -Vr` | **SKIPPED** (exit 2): SteamVR was off the whole session and a worker never starts it (D-014). The VR frame loop (xrWaitFrame at the frame start, the rate line, the orderly exit) is **not measured** in this task — the owner's headset run and the next worker's `-Vr` self-test with SteamVR running are the evidence; the expected lines are in the section above |
 
 Conclusions:
 

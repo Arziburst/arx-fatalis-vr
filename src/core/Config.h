@@ -131,7 +131,8 @@ public:
 		
 		int vsync;
 		int fpsLimit;
-		
+		int vrFrameDivisor; //!< VR: submit every n-th display slot (the even-cadence cap, #20); 1 = every slot
+
 		float fov;
 		bool viewBobbing;
 		bool screenShake;

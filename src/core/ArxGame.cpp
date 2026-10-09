@@ -212,6 +212,7 @@ ArxGame::ArxGame()
 	, m_gameInitialized(false)
 	, m_frameStart(0)
 	, m_frameDelta(0)
+	, m_vrPacing(false)
 { }
 
 bool ArxGame::initialize() {
@@ -1159,44 +1160,90 @@ void ArxGame::run() {
 }
 
 /*!
+ * \brief The engine's own frame limiter: sleep towards cfg.ini fps_limit (or the monitor's rate)
+ */
+void ArxGame::limitFrameRate() {
+	
+	if(!config.video.fpsLimit || benchmark::isEnabled()) {
+		return;
+	}
+	
+	PlatformInstant now = platform::getTime();
+	
+	PlatformDuration lastDuration = now - m_frameStart;
+	m_frameStart = now;
+	
+	int targetFps = config.video.fpsLimit;
+	if(targetFps <= 0) {
+		targetFps = m_MainWindow->getDisplayMode().refresh;
+		if(targetFps <= 0) {
+			targetFps = 60;
+		}
+		if(config.video.vsync) {
+			// Give Vsync some headroom in case the refresh rate was rounded down
+			targetFps += 1;
+		}
+	}
+	PlatformDuration targetDuration = std::chrono::microseconds(1s) / targetFps;
+	
+	PlatformDuration min = -targetDuration.value();
+	m_frameDelta = arx::clamp(m_frameDelta + targetDuration - lastDuration, min, targetDuration);
+	
+	if(m_frameDelta > 0) {
+		Thread::sleep(m_frameDelta);
+	}
+	
+}
+	
+/*!
+ * \brief One frame clock in VR (D-021, research row F-117)
+ *
+ * While an OpenXR session exists the headset's xrWaitFrame (vr::beginFrame) paces the game; the
+ * window's vsync and the engine's fps limiter would pace it a second time, so both are off, and
+ * restored when the session goes away. cfg.ini is not modified.
+ */
+void ArxGame::applyVRPacing() {
+	
+	bool vr = vr::isEnabled();
+	if(vr == m_vrPacing) {
+		return;
+	}
+	m_vrPacing = vr;
+	
+	m_MainWindow->setVSync((vr || benchmark::isEnabled()) ? 0 : config.video.vsync);
+	
+	if(vr) {
+		LogInfo << "[vr] pacing: window vsync off and the fps limiter disabled - the headset's xrWaitFrame"
+		           " paces the game" << (config.video.fpsLimit > 0
+		                                 ? " (cfg.ini fps_limit=" + std::to_string(config.video.fpsLimit)
+		                                   + " is ignored in VR; vr_frame_divisor caps the rate)" : "");
+	} else {
+		LogInfo << "[vr] pacing: flat mode - window vsync " << config.video.vsync << " and fps_limit "
+		        << config.video.fpsLimit << " from cfg.ini apply again";
+	}
+	
+	m_frameDelta = PlatformDuration(0);
+	m_frameStart = platform::getTime();
+	
+}
+	
+/*!
  * \brief Draws the scene.
  */
 void ArxGame::doFrame() {
 	
-	if(config.video.fpsLimit && !benchmark::isEnabled()) {
-		
-		PlatformInstant now = platform::getTime();
-		
-		PlatformDuration lastDuration = now - m_frameStart;
-		m_frameStart = now;
-		
-		int targetFps = config.video.fpsLimit;
-		if(targetFps <= 0) {
-			targetFps = m_MainWindow->getDisplayMode().refresh;
-			if(targetFps <= 0) {
-				targetFps = 60;
-			}
-			if(config.video.vsync) {
-				// Give Vsync some headroom in case the refresh rate was rounded down
-				targetFps += 1;
-			}
-		}
-		PlatformDuration targetDuration = std::chrono::microseconds(1s) / targetFps;
-		
-		PlatformDuration min = -targetDuration.value();
-		m_frameDelta = arx::clamp(m_frameDelta + targetDuration - lastDuration, min, targetDuration);
-		
-		if(m_frameDelta > 0) {
-			Thread::sleep(m_frameDelta);
-		}
-		
+	vr::pollEvents();
+	
+	// In VR the frame starts when the headset wants it (xrWaitFrame, the only frame clock - D-021);
+	// otherwise the engine paces itself as before
+	applyVRPacing();
+	if(!vr::beginFrame()) {
+		limitFrameRate();
 	}
 	
 	ARX_PROFILE_FUNC();
 	
 	updateTime();
-
-	vr::pollEvents();
 
 	// Test channel: frame counter, command file, status.json (no-op without --test-dir)
 	channel::update();

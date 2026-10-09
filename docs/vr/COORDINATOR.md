@@ -120,6 +120,11 @@ workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
   the list when a worker or the owner names a new one.
 - **VR game checklist** (#189, `docs/vr/VR-CHECKLIST.md`): what players expect from a VR game; re-audit
   the plan against it at the end of each checkpoint.
+- **Catalog decisions with the owner at the end of a block:** new catalog rows (empty Decision) are
+  brought to the owner in groups with a recommendation per group — technical rules usually "Take" with
+  their tasks, release / tooling extras often "after MVP"; **player-experience rows are discussed with
+  questions** (D-017). The coordinator writes the decisions into the catalog and attaches the taken rows
+  to their tasks (a comment per task) or creates tasks.
 
 ## 5. Budget
 - **Common weekly limit: up to 80%** (D-022; 20% stay for the owner's other project). At 80% no new workers start; running ones finish their PRs.
@@ -160,7 +165,15 @@ Choose per task, by size and difficulty — not by area alone. Spend Fable only 
   worktree's own build, rebuilt from its HEAD; at most 10 game launches per task, repeated-run loops only
   after asking the coordinator.
 - Each worker in its own worktree, its own game folders (`-Isolated`), PRs named `ARXVR-<n> <type>: …`.
-- Merge on green CI except `needs-vr-test` (D-005).
+- Merge on green CI and, for risky PRs, a reviewer PASS; never `needs-vr-test` before the owner's verdict
+  (D-005, D-021, D-022).
+- **CI in balance (D-022):** self-hosted runner only (no GitHub-hosted minutes); every PR runs the fast
+  set (build, host unit tests, one flat smoke test); heavy checks only when their code changes.
+- **The safety hook (#185) never stops a task:** it denies the one dangerous command and says what to do
+  instead; the coordinator reads the denial log and helps the worker if it keeps hitting it.
+- **GitHub via REST** where possible (`gh api repos/...`): the GraphQL quota is shared by all sessions;
+  board moves (GraphQL only) may fail on the limit — the worker says so and the coordinator sets them later.
+- Research tasks create **no** follow-up tasks; the owner decides the catalog, the coordinator creates tasks.
 
 ## 8. Reporting to the owner
 Short, in Russian: what was merged and cleaned up; a table of the running workers (task, model, state);

@@ -372,7 +372,8 @@ void ArmIKTest::testHandFrameFromMesh() {
 void ArmIKTest::testHandToGripPutsTheAxesOnTheGrip() {
 
 	// For any (right-handed) hand frame, the rotation puts the palm on the grip's +X, the knuckles on
-	// its +Y (engine -y) and the thumb on its +Z (engine -z)
+	// its -Y (engine +y) and the thumb on its -Z (engine +z) - the OpenXR grip pose: -Z runs through
+	// the fingers' tube from the little finger to the thumb, +Y follows by the right-hand rule
 	const vr::HandFrame frames[] = {
 		vr::handFrameFromMesh(handMesh(1.f)),
 		vr::handFrameFromMesh(handMesh(-1.f)),
@@ -381,14 +382,23 @@ void ArmIKTest::testHandToGripPutsTheAxesOnTheGrip() {
 		const glm::quat q = vr::handToGrip(frame);
 		armCheckFloat("unit", 1.f, glm::length(q));
 		armCheckVector("palm -> +X", Vec3f(1.f, 0.f, 0.f), q * frame.palm);
-		armCheckVector("knuckles -> +Y (engine -y)", Vec3f(0.f, -1.f, 0.f), q * frame.knuckles);
-		armCheckVector("thumb -> +Z (engine -z)", Vec3f(0.f, 0.f, -1.f), q * frame.thumb);
+		armCheckVector("knuckles -> -Y (engine +y)", Vec3f(0.f, 1.f, 0.f), q * frame.knuckles);
+		armCheckVector("thumb -> -Z (engine +z)", Vec3f(0.f, 0.f, 1.f), q * frame.thumb);
 	}
 
-	// A hand already in the grip's layout (palm +x, knuckles engine -y, thumb engine -z) needs no turn
+	// A hand already in the grip's layout (palm +x, knuckles engine +y, thumb engine +z) needs no turn
 	vr::HandFrame aligned;
 	aligned.palm = Vec3f(1.f, 0.f, 0.f);
-	aligned.knuckles = Vec3f(0.f, -1.f, 0.f);
-	aligned.thumb = Vec3f(0.f, 0.f, -1.f);
+	aligned.knuckles = Vec3f(0.f, 1.f, 0.f);
+	aligned.thumb = Vec3f(0.f, 0.f, 1.f);
 	armCheckFloat("identity", 1.f, std::abs(vr::handToGrip(aligned).w));
+
+	// An identity grip in a room that looks the reference way: the hand hangs with the fingers down
+	// (grip -Y is the room's -y) and the thumb forward (grip -Z is the room's forward, engine +z)
+	vr::HeadReference reference;
+	const vr::HeadSample head = headSample(0.f, 0.f, 0.f);
+	vr::HandSample hand;
+	const glm::quat world = vr::handToWorld(hand, head, reference, 0.f).orientation * vr::handToGrip(frames[0]);
+	armCheckVector("fingers down", Vec3f(0.f, 1.f, 0.f), world * frames[0].knuckles, 0.002f);
+	armCheckVector("thumb forward", Vec3f(0.f, 0.f, 1.f), world * frames[0].thumb, 0.002f);
 }

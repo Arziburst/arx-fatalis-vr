@@ -34,7 +34,8 @@ How D-009's full body is built (#36):
   included — so a hand 30 cm right of the head is 30 units right of the camera, and #27's scale and #28's
   recenter apply to hands and head alike. The model's palm attach point lands on the controller's grip.
 - **The hand frame is read from the mesh**, no calibration constants: the long axis from the wrist to the
-  palm attach vertex (OpenXR grip +Y), the lateral axis towards the model's thumb group (+Z), the palm
+  palm attach vertex (OpenXR grip −Y), the lateral axis towards the model's thumb group (grip −Z: the
+  spec's "ray through the tube of the non-thumb fingers from the little finger to the thumb"), the palm
   normal their cross product (+X); the wrist bone's rotation is the grip's rotation through that frame.
   Per-hand trims are F-49, later, and start from zero.
 - **Out of reach** (F-52): the shoulder slides towards the target by up to 20 units, then the arm points

@@ -55,6 +55,7 @@
 // OpenXR with the OpenGL binding (and windows.h on Windows)
 #include "vr/HeadTracking.h"
 #include "vr/OpenXRUtil.h"
+#include "vr/VRActions.h"
 #include "vr/VRSwapchain.h"
 
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
@@ -138,6 +139,11 @@ struct OpenXRState {
 	FrameCounters frames;
 	u32 frameFailures = 0;
 	bool loggedInvalidViews = false;
+	//! The display time of the last frame - for locating the controllers outside the frame (0: none yet)
+	XrTime lastDisplayTime = 0;
+
+	//! One action per physical control (#30); created with the instance, attached to the session
+	ActionSet actions;
 
 	//! The current OpenXR frame, from beginFrame (xrWaitFrame) to its xrEndFrame
 	struct Frame {
@@ -660,6 +666,9 @@ void destroySession() {
 	g_xr.quadFailedSize = Vec2i(0);
 	g_xr.colorFormat = 0;
 
+	g_xr.actions.detach();
+	g_xr.lastDisplayTime = 0;
+
 	if(g_xr.localSpace != XR_NULL_HANDLE) {
 		xrDestroySpace(g_xr.localSpace);
 		g_xr.localSpace = XR_NULL_HANDLE;
@@ -1177,6 +1186,11 @@ bool initialize() {
 		return false;
 	}
 
+	// Actions and their suggested bindings must exist before the session; VR works without them
+	if(!g_xr.actions.create(g_xr.instance)) {
+		LogWarning << "[vr] input: no OpenXR actions, the controllers do nothing";
+	}
+
 	LogInfo << "Starting in VR";
 
 	return true;
@@ -1241,6 +1255,8 @@ bool createSession() {
 		shutdown();
 		return false;
 	}
+
+	g_xr.actions.attach(g_xr.session);
 
 	return true;
 
@@ -1309,8 +1325,11 @@ void pollEvents() {
 			}
 
 			case XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED: {
-				// Which controllers the runtime binds now; "error:XR_ERROR_ACTIONSET_NOT_ATTACHED" until
-				// the game has actions (#30)
+				// SteamVR binds the controllers a few frames after the session is focused
+				LogInfo << "[vr] input: the runtime reports an interaction profile change";
+				g_xr.actions.profilesChanged();
+				// Which controllers the runtime binds now ("error:XR_ERROR_ACTIONSET_NOT_ATTACHED" without
+				// the action set)
 				if(g_xr.session != XR_NULL_HANDLE) {
 					gameevent::Event("vr.profile")("left", currentInteractionProfile("/user/hand/left"))
 						("right", currentInteractionProfile("/user/hand/right"));
@@ -1387,6 +1406,7 @@ bool beginFrame() {
 		logFrameFailure("xrWaitFrame", result);
 		return false;
 	}
+	g_xr.lastDisplayTime = frame.state.predictedDisplayTime;
 	frame.period = frame.state.predictedDisplayPeriod / 1000; // OpenXR nanoseconds
 	frame.timing.displayPeriod = frame.period;
 	frame.lastWaitReturn = waited;
@@ -1512,10 +1532,27 @@ std::string runtimeManifest() {
 	return g_xr.manifest;
 }
 
+bool readControllers(ControllerInput & input) {
+	if(!g_xr.running || !g_xr.actions.isAttached()) {
+		input = ControllerInput();
+		return false;
+	}
+	return g_xr.actions.sync(input, g_xr.viewSpace, g_xr.lastDisplayTime);
+}
+
+std::array<std::string, HandCount> controllerProfiles() {
+	return g_xr.actions.profiles();
+}
+
+u64 controllerSyncs() {
+	return g_xr.actions.syncs();
+}
+
 void shutdown() {
 
 	requestExit();
 	destroySession();
+	g_xr.actions.destroy();
 
 	if(g_xr.instance != XR_NULL_HANDLE) {
 		xrDestroyInstance(g_xr.instance);
@@ -1584,6 +1621,19 @@ std::string runtimeName() {
 
 std::string runtimeManifest() {
 	return std::string();
+}
+
+bool readControllers(ControllerInput & input) {
+	input = ControllerInput();
+	return false;
+}
+
+std::array<std::string, HandCount> controllerProfiles() {
+	return { };
+}
+
+u64 controllerSyncs() {
+	return 0;
 }
 
 bool isEnabled() {

@@ -1257,7 +1257,10 @@ set(VR_SOURCES
 	src/vr/FramePacing.cpp
 	src/vr/HeadPose.cpp
 	src/vr/HeadTracking.cpp
+	src/vr/VRActions.cpp
 	src/vr/VRComfort.cpp
+	src/vr/VRControls.cpp
+	src/vr/VRInput.cpp
 	src/vr/VRSwapchain.cpp
 	src/vr/VRSystem.cpp
 )

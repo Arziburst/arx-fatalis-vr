@@ -8,6 +8,41 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — "use" fires from just holding the Index controller (a closed hand flickers, #30)
+
+**Symptom:** the log shows `[vr] input: use_right (right.grip)` several times (×6 in the owner's headset run)
+although the player only held the controller and made one grip + trigger chord; with a game reaction (#74)
+that is a right click on whatever the reticle is on.
+**Cause:** the Index's `input/squeeze/value` measures how far the hand is closed around the handle. A relaxed
+closed hand sits around 0.6 – 0.7, right on the 0.70 / 0.55 threshold borrowed from Dishonored VR (F-41), so
+it crossed it back and forth; each dip was a release of the grip — which leads the stash chord, so its own
+binding fired as a tap on release. A "firm" threshold is the wrong model too: the Index is strapped on, a
+light close is the grip and an open hand is none (D-019, owner 2026-10-10) — `squeeze/force` (a hard
+squeeze) was tried in round 2 and dropped before a headset run for that reason.
+**Do:** the Index grip stays on `squeeze/value` with a low press and a wide gap (`IndexGripThreshold`
+0.50 / 0.30); a chord leader's release is debounced (`ControlResolver::releaseDebounceMs`), so a flicker is
+one hold; "use" fires when the hand opens without a trigger (D-019). Every grip crossing is logged with its
+value (`[vr] input: right grip down at 0.55 (threshold 0.5 / 0.3)`), and `status.json` → `vr.input.grip`
+shows it live — tune the threshold from those numbers, not by feel.
+
+## 2026-10-09 — A non-Steam shortcut written into `shortcuts.vdf` disappears
+
+**Symptom:** a script (or a hand edit) adds a shortcut to `<Steam>\userdata\<account>\config\shortcuts.vdf`,
+the file has it, yet the Steam library does not show it — and after the next Steam exit the entry is gone.
+**Cause:** Steam reads `shortcuts.vdf` once at start, keeps the shortcuts in memory and writes the
+whole file back when they change or when it exits; an edit made while Steam runs is overwritten.
+**Do:** exit Steam first (Steam > Exit, not just closing the window), write, then start Steam.
+`scripts/add-steam-shortcut.ps1` refuses while `steam.exe` runs (#80).
+
+## 2026-10-09 — A hex literal like `0x80000000` is negative in PowerShell
+
+**Symptom:** `[uint32]0x80000000` throws "Value was either too large or too small for a UInt32";
+a CRC32 written in PowerShell gives wrong values or the same error mid-loop.
+**Cause:** PowerShell parses a hex literal as `int` when it fits in 32 bits as a bit pattern, so
+`0x80000000` is `-2147483648` and `0xEDB88320` is negative; `-bxor`/`-shr` then work on signed values.
+**Do:** suffix 32-bit constants with `L` (`0x80000000L`, `0xEDB88320L`), compute in `[long]`, and cast
+to `[uint32]` only at the end (`scripts/steam-shortcuts-lib.ps1`, #80).
+
 ## 2026-10-09 — The headset test cannot start: "could not read PR", or the game starts flat with SteamVR off (#171)
 
 **Symptom:** `test-pr.ps1 <pr> -StartSteamVR` stops at once with `API rate limit already exceeded` /

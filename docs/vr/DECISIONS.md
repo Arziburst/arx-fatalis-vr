@@ -187,7 +187,7 @@ the controls are the base of the VR settings that grow later (sound, graphics).
 
 ## D-019: The MVP control scheme
 
-- **Date:** 2026-10-09
+- **Date:** 2026-10-09 (game menu, recenter and the grip rule added 2026-10-10)
 - **Status:** Accepted
 - **Decided by:** project owner (agreed by questions, D-017; builds on D-008, D-010, D-016, D-018)
 
@@ -202,14 +202,15 @@ Valve Index first; Quest 3 Touch the same (A/B on the right, X/Y on the left).
 | Crouch | physically (D-018) or a toggle on the right stick down |
 | Reticle per hand | a hidden ray from each hand; the reticle turns yellow with the item's name on an interactive object (D-016) |
 | Click / drag | the trigger of either hand: press = click; hold and move = drag; release = drop where the game says (inventory, floor, surface, throw) |
-| Use an item (eat, equip) | grip on the item (the original's right click) |
-| Straight into the inventory | **grip held + trigger** on a world item (the original's stealth-click), one hand, without opening the inventory |
+| Use an item (eat, equip) | grip on the item (the original's right click). **The grip is a closed hand:** the Index is strapped on, so a **light squeeze = grab, an open hand = nothing** (no hard squeeze needed); **"use" fires when the hand opens again** if no trigger came while it was closed, however long it was closed *(owner, 2026-10-10, after the #30 headset run)* |
+| Straight into the inventory | **grip held + trigger** on a world item (the original's stealth-click), one hand, without opening the inventory; the hand closed + the trigger = **stash only, never a use** *(owner, 2026-10-10)* |
 | Doors, levers, chests, bodies, talking | **one trigger press acts at once** (sent to the game as its double click) |
 | Inventory | **B on the right**; the panel opens in the centre of the view and stays where it appeared while open; **the weapon stays in the hand** (no sheathing in VR) |
 | Character book (stats, map, diary, spells) | **B on the left** (Y on Quest), on the same centred panel |
 | Menus | a pointer only while a menu is open (D-010); both hands can use it |
+| Game menu (open / close) | **A on the left** on the Index (free in this table; the Index has no menu button), the **left menu button** on the Touch *(owner, 2026-10-10, after the #30 headset run)* |
 | Two reticles on different items | the name shown is the one of the **hand that moved last** |
-| Recenter | hold a button chord (F-34) |
+| Recenter | ~~hold a button chord (F-34)~~ → **long press of the left stick click** *(owner, 2026-10-10, after the #30 headset run)* |
 | Runes | drawn in the air with the hand (D-010); the button that starts casting is decided with the magic block (#43–#45) |
 | Left-handed mode | ~~after the MVP~~ → in the MVP, in the VR settings (D-020) |
 

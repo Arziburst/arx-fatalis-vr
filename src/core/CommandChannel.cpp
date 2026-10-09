@@ -67,6 +67,7 @@
 #include "util/String.h"
 #include "vr/HeadTracking.h"
 #include "vr/VRComfort.h"
+#include "vr/VRInput.h"
 #include "vr/VRSystem.h"
 #include "window/RenderWindow.h"
 
@@ -411,6 +412,52 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("clamped", head.clamped);
 		json.end();
 	}
+	{
+		// The controllers and the control table (#30): profiles per hand, held controls, events
+		const vr::ControlResolver & controls = vr::controls();
+		const std::array<std::string, vr::HandCount> profiles = vr::controllerProfiles();
+		json.object("input");
+		json.value("controllers", vr::controllerTypeName(vr::controllerType()));
+		json.object("profile");
+		json.value("left", profiles[size_t(vr::Hand::Left)]);
+		json.value("right", profiles[size_t(vr::Hand::Right)]);
+		json.end();
+		json.value("syncs", vr::controllerSyncs());
+		std::string down;
+		for(size_t i = 0; i < vr::ControlCount; i++) {
+			if(controls.down()[i]) {
+				down += (down.empty() ? "" : " ") + vr::controlName(vr::Control(i));
+			}
+		}
+		json.value("down", down);
+		std::string active;
+		for(size_t i = 0; i < vr::EventCount; i++) {
+			if(controls.active(vr::Event(i))) {
+				active += (active.empty() ? "" : " ") + std::string(vr::eventName(vr::Event(i)));
+			}
+		}
+		json.value("active", active);
+		const vr::ControllerInput & analog = vr::controllerInput();
+		json.object("trigger");
+		json.value("left", analog.trigger[size_t(vr::Hand::Left)]);
+		json.value("right", analog.trigger[size_t(vr::Hand::Right)]);
+		json.end();
+		json.object("grip");
+		json.value("left", analog.grip[size_t(vr::Hand::Left)]);
+		json.value("right", analog.grip[size_t(vr::Hand::Right)]);
+		json.end();
+		json.object("presses");
+		for(size_t i = 0; i < vr::EventCount; i++) {
+			json.value(vr::eventName(vr::Event(i)), controls.presses(vr::Event(i)));
+		}
+		json.end();
+		json.object("layout");
+		for(size_t i = 0; i < vr::EventCount; i++) {
+			json.value(vr::eventName(vr::Event(i)), vr::formatBinding(controls.layout()[vr::Event(i)]));
+		}
+		json.end();
+		json.end();
+	}
 	// The last rate / cadence report of the frame loop (#20, F-07): one per 3 s while the session runs
 	const vr::PacingReport & pacing = vr::lastPacingReport();
 	if(pacing.valid) {
@@ -624,6 +671,12 @@ std::string execute(std::string_view line) {
 		}
 		vr::setSimulatedHead(head);
 		return std::string();
+	}
+
+	if(word == "vr-input") {
+		// The controllers' control table without a headset (#30): down|up|tap <control>, bind, reset
+		std::string error = vr::inputCommand(rest);
+		return error.empty() ? error : refuse(error);
 	}
 
 	if(word == "comfort") {

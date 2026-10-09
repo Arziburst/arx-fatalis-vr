@@ -336,6 +336,13 @@ function Invoke-SmokeRun([int]$Run) {
 			# The session runs and submits frames even with nobody in the headset (synchronized, never focused)
 			Write-Check ([int64]$final.vr.frames -gt 0) "VR frames submitted (frames=$($final.vr.frames), shown=$($final.vr.shownFrames), session=$($final.vr.sessionState))"
 			if ($final.vr.enabled -and [int64]$final.vr.frames -eq 0) { $reasons.Add('no VR frame was submitted (the session never ran, or xrWaitFrame / xrEndFrame failed - see the log)') }
+			# The rate / cadence verdict of the frame loop (#20, docs/vr/TESTING.md): printed, not a gate until measured with the headset
+			if ($final.vr.pacing) {
+				$p = $final.vr.pacing
+				Write-Host "  VR pacing: $($p.verdict) / $($p.cadence) cadence - $($p.framesPerSecond)/s on $($p.slotsPerSecond) slots/s, $($p.slotsPerFrame) slots/frame (sd $($p.cadenceSdMs) ms), wait+end $($p.budgetMeanMs) mean / $($p.budgetMaxMs) max ms, worst frame $($p.worstFrameMs) ms, worst run $($p.worstRunFrames) frames; $($p.reports) reports, gaps=$($final.vr.frameGaps) resubmitted=$($final.vr.resubmittedFrames) discarded=$($final.vr.discardedFrames)"
+			} elseif ($final.vr.enabled) {
+				Write-Host "  VR pacing: no report (the session ran shorter than one 3 s window and fewer than 2 frames)"
+			}
 		}
 		if ($process.ExitCode -ne 0) { $reasons.Add("exit code $($process.ExitCode)") }
 		if (-not $logFresh) { $reasons.Add('arx.log was not written by this run (the game died before shutdown, or never started)') }

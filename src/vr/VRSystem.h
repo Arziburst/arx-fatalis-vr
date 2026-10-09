@@ -20,10 +20,14 @@
 #ifndef ARX_VR_VRSYSTEM_H
 #define ARX_VR_VRSYSTEM_H
 
+#include <array>
 #include <string>
+
+#include <glm/gtc/quaternion.hpp>
 
 #include "math/Types.h"
 #include "platform/Platform.h"
+#include "vr/FramePacing.h"
 
 /*!
  * \brief VR runtime integration (OpenXR)
@@ -37,8 +41,16 @@
  *  1. \ref initialize - create the OpenXR instance and find the headset (no OpenGL needed yet)
  *  2. the window and the OpenGL context are created
  *  3. \ref createSession - bind the OpenXR session to that OpenGL context, create the swapchains
- *  4. \ref pollEvents every frame (begins and ends the session as the runtime asks),
- *     \ref submitFrame before every buffer swap, \ref shutdown at exit
+ *  4. every frame: \ref pollEvents (begins and ends the session as the runtime asks),
+ *     \ref beginFrame at the start of the frame, \ref submitFrame before the buffer swap;
+ *     \ref shutdown at exit
+ *
+ * The frame loop (#20): while the session runs, \ref beginFrame waits for the headset's next
+ * display slot (\c xrWaitFrame - the only clock that paces the game in VR, D-024), begins the
+ * frame and locates the eye poses for its predicted display time; the game simulates and renders;
+ * \ref submitFrame hands the frame to the compositor with exactly those poses (pose-matched
+ * submission, research rows F-21 and F-116). A frame shown from outside the game loop (the
+ * loading screen) begins its own frame inside \ref submitFrame.
  */
 namespace vr {
 
@@ -74,17 +86,56 @@ bool createSession();
 void pollEvents();
 
 /*!
+ * \brief Start a game frame in VR: wait for the headset's next display slot and locate the eyes
+ *
+ * Blocks in \c xrWaitFrame until the runtime wants the next frame rendered - this is what paces
+ * the game in VR, so the caller skips its own frame limiter when this returns true. With the
+ * even-cadence cap (\c vr_frame_divisor, F-26) the call first sleeps past the slots to skip, so
+ * the runtime hands out every n-th slot. Then \c xrBeginFrame and \c xrLocateViews for the frame's
+ * predicted display time: the poses in \ref frameViews are the ones this frame must render with.
+ *
+ * \return true while an OpenXR session runs and the frame was begun; false in flat mode, while
+ *         the session is not running, or when the runtime refused (logged)
+ */
+bool beginFrame();
+
+/*!
  * \brief Show the finished flat frame in the headset
  *
  * Call after the frame was rendered into the window's back buffer and before the buffers are
- * swapped. Submits one OpenXR frame: a uniform dark background from the per-eye swapchains and,
- * in front of it, a copy of the back buffer on a head-locked quad (F-20 in
- * docs/vr/RESEARCH-reference-mods.md). Waits for the headset's frame timing (\c xrWaitFrame).
+ * swapped. Ends the OpenXR frame begun by \ref beginFrame (or begins one first, for frames shown
+ * from outside the game loop): a uniform dark background in the per-eye swapchains as a projection
+ * layer with the poses located for this frame, and in front of it a copy of the back buffer on a
+ * head-locked quad (F-20). Frames the runtime does not want rendered are ended without layers.
  * Does nothing while no OpenXR session is running.
  *
  * \param windowSize size of the window's back buffer
  */
 void submitFrame(const Vec2i & windowSize);
+
+//! One eye as located for the current frame, in the world-locked reference space (meters)
+struct EyeView {
+	Vec3f position = Vec3f(0.f);
+	glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f);
+	float fovLeft = 0.f;  //!< field of view half-angles in radians, OpenXR convention
+	float fovRight = 0.f; //!< (left and down are negative)
+	float fovUp = 0.f;
+	float fovDown = 0.f;
+};
+
+//! The eye poses the current frame renders with and is submitted with (F-21, F-116)
+struct FrameViews {
+	bool valid = false;         //!< the runtime located both eyes with a valid pose
+	s64 displayTime = 0;        //!< the frame's predicted display time, OpenXR nanoseconds
+	std::array<EyeView, 2> eyes; //!< left, right
+};
+
+/*!
+ * \return the eye poses located by \ref beginFrame for the current frame - the sample the camera
+ *         (#24) and the per-eye render (#19) take; \c valid is false in flat mode and before the
+ *         first frame
+ */
+const FrameViews & frameViews();
 
 //! \return true while the game runs in VR, i.e. an OpenXR session exists
 bool isEnabled();
@@ -96,9 +147,24 @@ const char * sessionStateString();
 struct FrameCounters {
 	u64 submitted = 0; //!< frames ended with \c xrEndFrame
 	u64 shown = 0;     //!< of those, frames the runtime wanted rendered and that carried layers
+	u64 resubmitted = 0; //!< of those, frames ended with the previous picture because no new one was shown
+	u64 discarded = 0; //!< frames the runtime discarded (\c xrBeginFrame called twice)
+	u64 gaps = 0;      //!< frame gaps detected (see \ref FrameGap)
 };
 
 FrameCounters frameCounters();
+
+/*!
+ * \return the last rate / cadence report of the frame loop (F-07): one per 3 s window while the
+ *         session runs, kept after it ended; \c valid is false before the first window closed
+ */
+const PacingReport & lastPacingReport();
+
+//! \return how many rate / cadence reports were produced since the game started
+u32 pacingReports();
+
+//! \return the expected display slots per frame: 1 for every slot, 2 for every second slot, ...
+u32 frameDivisor();
 
 /*!
  * \return the OpenXR runtime that answered this run, as "<name> <version>" - empty while no
@@ -112,7 +178,13 @@ std::string runtimeName();
  */
 std::string runtimeManifest();
 
-//! Destroy the OpenXR session and instance (if any)
+/*!
+ * \brief End the session in order and destroy the OpenXR session and instance (if any)
+ *
+ * A running session is asked to exit (\c xrRequestExitSession) and given a moment to reach
+ * \c STOPPING (then \c xrEndSession) and \c EXITING, so the runtime sees an orderly exit instead
+ * of a session destroyed while running.
+ */
 void shutdown();
 
 } // namespace vr

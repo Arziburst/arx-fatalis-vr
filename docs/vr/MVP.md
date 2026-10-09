@@ -137,10 +137,12 @@ dependencies are met; when a task is split, replace it with its parts.
 *(the owner decides on the new catalog rows before #36, #116, #49 and #88)*
 29. #49 — Floating UI panel for menus, inventory, book, map (F-80, F-82)
 30. #34 — Menu pointer only while a menu or the inventory is open (D-010, F-81)
-30. #178 — VR settings screen with the Controls section: remapping, turning, crouch and height, left-handed (D-020)
+30. #178 — VR settings screen with the Controls section: remapping (button, chord, long press) per controller type (D-020, D-035)
+30. #260 — VR settings, Controls: turning rows and character height up / down (after #32, #27)
 31. #33 — Jump on A, crouch toggle on right stick down, stealth by partial deflection (F-47)
 32. #70 — Test save library for MVP scenarios *(done: new game, items, goblin fight; levers, doors and chests are #210, recorded by the owner)*
 33. #36 — Full body: the player model with arms driven by the controllers via IK (D-009, F-52, F-49)
+33. #261 — VR settings, Controls: left-handed mode, physical crouch rows, grip input (after #100, #36)
 34. #116 — Health and mana as two bars on the left wrist (F-83)
 35. #166 — Research: world interaction in Valheim VR — the reference for D-016, #37, #38
 35. #37 — Items with a reticle per hand: both hands work as the mouse — drag, set down, into the inventory (D-016, F-57, F-72)
@@ -209,7 +211,9 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #32 turning | input | VR | #74 |
 | #118, #120 research | docs | plain | — (decisions before #36, #116, #49, #88) |
 | #49 UI panel | ui | VR | #73 |
-| #178 VR settings: Controls | ui | VR | #30, #35, #49, #34, #32, #33, #28, #100 |
+| #178 VR settings: Controls, remapping | ui | VR | #30, #35, #49 |
+| #260 VR settings: turning, height | ui | VR | #178, #32, #27 |
+| #261 VR settings: left-handed, crouch, grip | ui | VR | #178, #100, #36 |
 | #34 menu pointer | ui | VR | #49, #74 |
 | #33 jump, crouch toggle, stealth | input | VR | #74 |
 | #70 test saves | build | plain | #99, #123 |
@@ -239,7 +243,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | **3** | #74, #72, #27, #25, #35 | #73, #70, #127 |
 | **4** — finishes checkpoint A | #28, #100, #26, #31, #32, #42 | #80 |
 | **5** — checkpoint B | #49, #33, #36 | #88 → #132 *(after the owner's decisions on #118 / #120)* |
-| **6** | #34, #116, #37, #75, #178 | — |
+| **6** | #34, #116, #37, #75, #178 → #260, #261 | — |
 | **7** — checkpoints C, D | #38, #39, #43 → #44 → #45 | #16 |
 | **8** — MVP done | #77 | — |
 

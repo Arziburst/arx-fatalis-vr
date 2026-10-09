@@ -23,6 +23,7 @@
 #include <string>
 #include <string_view>
 
+#include "vr/BindingCapture.h"
 #include "vr/VRControls.h"
 #include "vr/VRGameInput.h"
 #include "vr/VRTurn.h"
@@ -33,7 +34,7 @@
  * Every frame the physical controls are read from OpenXR (\ref readControllers) and the game's
  * control table turns them into gameplay events (\ref ControlResolver). The layout follows the
  * controllers: when the interaction profile changes, the default layout for that controller type
- * is applied (saved layouts per type come with the settings screen, #178).
+ * is applied (or the layout the player saved for that type in the VR settings, #178).
  *
  * The events then become what the engine sees (\ref GameInputMapper, #74): its actions, the mouse's
  * buttons and the Escape key, OR-ed with the keyboard and the mouse; the analog axes are kept for
@@ -78,16 +79,61 @@ float updateTurn(float seconds, bool allowed);
 const TurnController & turnState();
 
 /*!
+ * The controller type a remapped layout is saved for: an unknown controller uses the Index layout
+ * (\ref defaultLayout), so it also uses the Index's saved one
+ */
+ControllerType layoutType(ControllerType type);
+
+/*!
+ * The file a remapped layout of these controllers is saved in (#178): \c vr-controls-<type>.ini in
+ * the config directory, next to cfg.ini - only the events that differ from the default (\ref formatLayoutChanges)
+ */
+std::string layoutFileName(ControllerType type);
+
+//! Whether the current controllers have a saved, remapped layout
+bool layoutRemapped();
+
+/*!
+ * The player's remapping in the VR settings (#178): bind \a event, apply it at once and save the
+ * layout for the current controllers
+ */
+void setPlayerBinding(Event event, const Binding & binding);
+
+//! The VR settings' "reset to default": #35's layout for the current controllers, the saved file removed
+void restoreDefaultLayout();
+
+/*!
+ * Start capturing what the player presses for \a event (\ref BindingCapture): the controls then do
+ * nothing else until the capture ends, and its result is bound with \ref setPlayerBinding.
+ * In flat mode only the test channel's controls (\c vr-input \c down) can answer it.
+ */
+void startCapture(Event event);
+
+void cancelCapture();
+
+//! The capture of the VR settings page: its state, what is held so far, the last refusal
+const BindingCapture & capture();
+
+//! The event being captured (or captured last)
+Event captureEvent();
+
+//! How many captures ended with a binding since the start
+u32 captureCount();
+
+/*!
  * \brief The test channel's \c vr-input command
  *
  * \c down|up|tap \c <control> (e.g. \c tap \c right.a) - a control as if the controller pressed it;
  * \c stick \c left|right \c <x> \c <y> (e.g. \c stick \c left \c 0 \c 1) - hold a stick deflected
  * (the analog value only; its direction controls are \c down / \c up);
  * \c bind \c <event> \c <binding> (e.g. \c bind \c jump \c left.grip+left.a) - remap one event;
- * \c reset - the default layout for the current controllers;
+ * \c reset - the default layout for the current controllers, not saved;
  * \c turn \c snap|smooth, \c turn \c angle \c <degrees>, \c turn \c speed \c <degrees per second>,
  * \c turn \c repeat \c <seconds> -
- * the turn settings, as cfg.ini would set them (#32).
+ * the turn settings, as cfg.ini would set them (#32);
+ * \c capture \c <event> - what the VR settings page does when the player selects the event
+ * (\ref startCapture); \c cancel - end the capture; \c default - the page's "reset to default"
+ * (\ref restoreDefaultLayout).
  *
  * \return an empty string on success, otherwise the reason it was refused
  */

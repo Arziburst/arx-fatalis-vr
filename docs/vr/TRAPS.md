@@ -8,6 +8,15 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — A remap through the channel records a long press nobody made (#178)
+
+**Symptom:** `vr-remap.xrs` captured `jump` as `right.b:long` after `vr-input down right.b` … `vr-input up right.b`;
+the same sequence had passed an hour earlier. **Cause:** every channel step is a round trip of about 0.6 s, so a
+`down` and an `up` in separate steps hold the control longer than the 0.5 s of a long press — the capture (and the
+control table) correctly records a long press; on a quiet machine it may just stay under. **Do:** a short press in a
+sequence is `vr-input tap` (pressed and released within one update), the second control of a short chord too; a
+`down` / `up` pair only for a press that is meant to be long (with a `@wait` well above 0.5 s).
+
 ## 2026-10-09 — The body turned 45° by the numbers, the picture did not turn (#32)
 
 **Symptom:** on the simulated headset with `--loadlevel 10` (+ `setplayercontrols on`) a snap turn changed

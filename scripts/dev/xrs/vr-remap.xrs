@@ -1,0 +1,84 @@
+# VR settings, remapping (#178): the VR page of the pause menu; a single press, a chord and a long press captured as
+# the page does it; a conflict shown and counted; the walk stick refused. The layout is saved for the controllers
+# (vr-controls-index.ini in the config directory) - vr-remap-saved.xrs checks the next start and the reset.
+@sim idle
+@args --loadlevel 10
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 120 60s
+@assert vr.input.controllers eq index
+# A clean start: a layout left over from an earlier run is reset
+vr-input default
+@frames 2
+@assert vr.input.remapped eq false
+@assert vr.input.layout.jump eq right.a
+
+# The pause menu, then Options -> VR
+menu pause
+@until menuMode eq mainmenu 10s
+menu vr
+@until menuPage eq vr 10s
+@frames 30
+@shot vr-page
+
+# Jump on right B with a single press: right B opens the inventory, so the two conflict - shown and counted
+@mark
+vr-input capture jump
+@frames 2
+@assert vr.input.capture.state eq waiting
+@assert vr.input.capture.event eq jump
+# A tap: a down / up pair through the channel can take longer than the 0.5 s of a long press (a round trip is
+# about 0.6 s), which the capture rightly records as one
+vr-input tap right.b
+@until vr.input.capture.state eq done 5s
+@assert vr.input.layout.jump eq right.b
+@assert vr.input.remapped eq true
+@assert vr.input.conflicts eq 1
+@assert vr.input.conflictList eq jump+inventory
+@assert vr.input.capture.count eq 1
+@log GameEvent:\d+\s+vr\.remap event=jump binding="?right\.b
+@log \[vr\] input: layout jump = right\.b \(VR settings\)
+@frames 10
+@shot vr-conflict
+
+# A chord: hold the left grip, press left A
+vr-input capture magic_mode
+@frames 2
+vr-input down left.grip
+@frames 5
+@assert vr.input.capture.binding eq left.grip
+# The second control tapped (held through the channel it could pass 0.5 s: a long chord)
+vr-input tap left.a
+@until vr.input.capture.state eq done 5s
+vr-input up left.grip
+@assert vr.input.layout.magic_mode eq left.grip+left.a
+@assert vr.input.conflicts eq 1
+
+# A long press: right stick click held for 0.8 s
+vr-input capture crouch_toggle
+@frames 2
+vr-input down right.stick_click
+@frames 2
+@assert vr.input.capture.state eq holding
+@wait 800
+vr-input up right.stick_click
+@until vr.input.capture.state eq done 5s
+@assert vr.input.layout.crouch_toggle eq right.stick_click:long
+
+# The walk stick is refused with the reason; nothing pressed is cancelled
+vr-input capture book
+@frames 2
+vr-input down left.stick_up
+@frames 5
+@assert vr.input.capture.state eq waiting
+@assert vr.input.capture.refused eq left.stick_up
+vr-input up left.stick_up
+vr-input cancel
+@frames 2
+@assert vr.input.capture.state eq cancelled
+@assert vr.input.layout.book eq left.b
+@assert vr.input.capture.count eq 3
+
+menu none
+@frames 10
+@assert errors eq 0

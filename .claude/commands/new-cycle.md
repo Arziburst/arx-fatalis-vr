@@ -42,7 +42,8 @@ and the next task of the MVP queue.
   - remove worktrees of merged tasks (`scripts\dev\new-worktree.ps1 -Remove`);
   - fill the free worker slots (at most 3 workers; VR lane at most 2 in progress and 4 in Testing):
     pick tasks from the queue whose dependencies are merged and whose **areas differ** from every task
-    in progress; **start a worker for each** with `scripts\dev\start-worker.ps1 <n> [-Type <type>]`
+    in progress; **start a worker for each** with the owner's copy's
+    `C:\Users\arzib\OneDrive\Desktop\arx-fatalis-vr\scripts\dev\start-worker.ps1 <n> [-Type <type>]`
     (worktree + background session running `/next-task <n>`, decision D-011). `claude agents --json`
     shows which workers are still running; a worker that is idle with its PR merged is finished.
 

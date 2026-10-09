@@ -9,6 +9,12 @@ Read `CLAUDE.md`, `docs/vr/WORKFLOW.md` and `docs/vr/MVP.md` before anything els
 All artifacts (code comments, commits, PRs, issue comments) are in English; talk to the owner in Russian.
 
 ## 1. Prepare the working copy yourself
+**Started with `worktree=<path>`** (the coordinator's `scripts/dev/start-worker.ps1` does that): your
+**very first action**, before reading files or running any command, is the EnterWorktree tool with
+`path` = that folder. You were launched in the owner's copy only because Claude Code starts background
+sessions only in a trusted folder; never change anything in the owner's copy. After entering, you are
+in parallel mode (next paragraph).
+
 **Parallel mode** (see "Parallel work" in `docs/vr/WORKFLOW.md`): if this session runs in a worktree
 under `C:\Users\arzib\arx-fatalis-vr-wt\`, that folder is yours alone — it was created from `origin/main`
 on your task's branch. Do not switch it to `main`; bring it up to date with `git fetch origin` +

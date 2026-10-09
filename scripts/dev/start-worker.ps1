@@ -4,12 +4,17 @@
 
 .DESCRIPTION
 	What the coordinator runs to hand out a task in parallel mode (docs/vr/WORKFLOW.md, "Parallel work";
-	decision D-011). It
+	decision D-011). Run it from the owner's copy (C:\Users\arzib\OneDrive\Desktop\arx-fatalis-vr\scripts\dev\),
+	so the worktree belongs to the owner's repository. It
 	  1. creates the task's worktree with new-worktree.ps1 (from origin/main, outside OneDrive), or reuses it;
-	  2. starts `claude --bg` in that worktree, named "ARXVR-<n> <issue title>", with the prompt
-	     "/next-task <n>" and the permission mode the owner chose for workers (bypassPermissions);
+	  2. starts `claude --bg` named "ARXVR-<n> <issue title>" with the prompt "/next-task <n> worktree=<path>"
+	     and the permission mode the owner chose for workers (bypassPermissions);
 	  3. prints the session id and how to look at it.
-	A background session that already runs in that worktree is not started twice.
+	The session is launched in the repository's main working copy (the owner's copy), not in the worktree:
+	Claude Code starts a background session only in a folder the owner trusted, and that trust is per
+	folder - it does not extend to new worktrees. /next-task enters the worktree (EnterWorktree) as its
+	very first step when it gets worktree=<path>.
+	A worker that already runs for that worktree or under that name is not started twice.
 
 	The owner follows the workers with `claude agents` and opens one with `claude attach <id>` - to answer
 	a question, or to reply /accept-task or /reject-task after a VR test.
@@ -30,7 +35,7 @@
 	Permission mode of the worker session. Default: bypassPermissions (D-011).
 
 .PARAMETER Prompt
-	The first prompt. Default: "/next-task <Issue>".
+	The first prompt. Default: "/next-task <Issue> worktree=<path of the worktree>".
 
 .PARAMETER DryRun
 	Create the worktree and print the claude command line without starting the session.
@@ -63,32 +68,39 @@ if ($Name) { $wtArgs.Name = $Name }
 $path = & (Join-Path $PSScriptRoot 'new-worktree.ps1') @wtArgs | Select-Object -Last 1
 if (-not $path -or -not (Test-Path $path)) { throw "new-worktree.ps1 returned no worktree for #$Issue" }
 
-# One worker per worktree: a live background session there means the task is already being worked on
-$running = @(claude agents --json 2>$null | ConvertFrom-Json) |
-	Where-Object { $_.kind -eq 'background' -and $_.cwd -and ($_.cwd.TrimEnd('\') -ieq $path.TrimEnd('\')) }
-if ($running) {
-	Write-Host "a background session already runs in ${path}: $($running[0].id) '$($running[0].name)' ($($running[0].status))" -ForegroundColor Yellow
-	Write-Host "open it: claude attach $($running[0].id)"
-	return
-}
+# The main working copy of this repository (first entry of the worktree list): trusted, so --bg may start there
+$repoDir = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$launchDir = (git -C $repoDir worktree list --porcelain | Select-Object -First 1) -replace '^worktree ', '' -replace '/', '\'
+if (-not (Test-Path $launchDir)) { throw "could not find the main working copy of $repoDir" }
 
 # Same form as scripts/dev/hooks/session-title.ps1 sets for /next-task
 $session = "ARXVR-$Issue $title"
 if ($session.Length -gt 80) { $session = $session.Substring(0, 77) + '...' }
-if (-not $Prompt) { $Prompt = "/next-task $Issue" }
+
+# One worker per task: a live background session in the worktree or under the same name is already on it
+$running = @(claude agents --json 2>$null | ConvertFrom-Json) | Where-Object {
+	$_.kind -eq 'background' -and (($_.cwd -and $_.cwd.TrimEnd('\') -ieq $path.TrimEnd('\')) -or $_.name -eq $session)
+}
+if ($running) {
+	Write-Host "a worker for #$Issue already runs: $($running[0].id) '$($running[0].name)' ($($running[0].status))" -ForegroundColor Yellow
+	Write-Host "open it: claude attach $($running[0].id)"
+	return
+}
+
+if (-not $Prompt) { $Prompt = "/next-task $Issue worktree=$path" }
 
 $claudeArgs = @('--bg', '-n', $session, '--permission-mode', $PermissionMode)
 if ($Model) { $claudeArgs += '--model', $Model }
 $claudeArgs += $Prompt
 
 if ($DryRun) {
-	Write-Host "would run in ${path}:"
+	Write-Host "would run in ${launchDir}:"
 	$shown = $claudeArgs | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }
 	Write-Host "  claude $($shown -join ' ')"
 	return
 }
 
-Push-Location $path
+Push-Location $launchDir
 try { $out = & claude @claudeArgs 2>&1 } finally { Pop-Location }
 if ($LASTEXITCODE) {
 	if ("$out" -match 'disclaimer') {

@@ -25,7 +25,10 @@ a changed decision keeps its history in that cell.
 - The owner follows them with `claude agents`, opens one with `claude attach <id>` (questions,
   `/accept-task`, `/reject-task`); the coordinator can message them and stop them.
 - Prerequisite: the owner accepts the bypass-mode disclaimer once (`claude --dangerously-skip-permissions`,
-  interactively); nobody can do that for them.
+  interactively, choosing "Yes, I accept" — the default is "No, exit"); nobody can do that for them.
+- Workers are launched in the owner's copy (a trusted folder) and enter their worktree as their first
+  step (`/next-task <n> worktree=<path>`): Claude Code's workspace trust is per folder and does not
+  extend to new worktrees, and asking the owner to trust every worktree would defeat the point.
 
 ### Why
 The owner wants the loop to run without copying prompts and without babysitting permission dialogs;

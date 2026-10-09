@@ -68,6 +68,7 @@
 #include "vr/HeadTracking.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
+#include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 #include "window/RenderWindow.h"
 
@@ -268,6 +269,135 @@ ARX_PROGRAM_OPTION_ARG("test-dir", nullptr,
 
 GameState currentState() {
 	return gameevent::detectGameState();
+}
+
+void writeVec(JsonWriter & json, std::string_view name, const Vec3f & v) {
+	json.object(name);
+	json.value("x", v.x);
+	json.value("y", v.y);
+	json.value("z", v.z);
+	json.end();
+}
+
+void writeAngles(JsonWriter & json, std::string_view name, const Vec3f & angles) {
+	json.object(name);
+	json.value("yaw", angles.x);
+	json.value("pitch", angles.y);
+	json.value("roll", angles.z);
+	json.end();
+}
+
+void writePixelStats(JsonWriter & json, std::string_view name, const vr::PixelStats & stats) {
+	json.object(name);
+	json.value("verdict", vr::imageVerdictName(stats.verdict));
+	json.value("mean", stats.mean);
+	json.value("stddev", stats.stddev);
+	json.value("black", stats.black);
+	json.value("background", stats.background);
+	json.end();
+}
+
+void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
+
+	json.object("sim");
+	json.value("script", sim.script);
+	json.value("timeline", sim.timeline);
+	json.value("frame", sim.frame);
+	json.value("timelineFrame", sim.timelineFrame);
+	json.value("pending", u64(sim.pending));
+
+	json.object("view");
+	json.value("eyeWidth", sim.view.eyeSize.x);
+	json.value("eyeHeight", sim.view.eyeSize.y);
+	json.value("ipd", sim.view.ipd);
+	json.value("rate", sim.view.rate);
+	json.end();
+
+	json.object("rig");
+	writeVec(json, "head", sim.rig.head.position);
+	writeAngles(json, "headRot", sim.rig.head.angles);
+	writeVec(json, "leftHand", sim.rig.hands[0].position);
+	writeVec(json, "rightHand", sim.rig.hands[1].position);
+	json.value("profile", sim.rig.profile);
+	json.value("focused", sim.rig.focused);
+	json.value("swapEyes", sim.rig.swapEyes);
+	json.object("actions");
+	for(const auto & [name, values] : sim.rig.actions) {
+		json.object(name);
+		json.value("left", values[0].x);
+		json.value("right", values[1].x);
+		json.end();
+	}
+	json.end();
+	json.end();
+
+	// The eyes as the runtime located them last, in the room (meters; yaw / pitch in degrees)
+	json.object("eyes");
+	json.value("located", sim.located);
+	writeVec(json, "left", sim.eyes[0].position);
+	writeVec(json, "right", sim.eyes[1].position);
+	writeAngles(json, "leftRot", vr::simAngles(sim.eyes[0].orientation));
+	writeAngles(json, "rightRot", vr::simAngles(sim.eyes[1].orientation));
+	json.value("separation", glm::length(sim.eyes[1].position - sim.eyes[0].position));
+	json.end();
+
+	// The compositor: both eye images of a frame must come from one frame (F-06, F-116)
+	json.object("compositor");
+	json.value("endedFrames", sim.endedFrames);
+	json.value("projectionFrames", sim.projectionFrames);
+	json.value("pairedFrames", sim.pairedFrames);
+	json.value("staleFrames", sim.staleFrames);
+	json.value("freshFrames", sim.freshFrames);
+	json.value("quadFrames", sim.quadFrames);
+	json.value("syncs", sim.syncs);
+	json.end();
+
+	json.value("pendingShots", u64(sim.pendingShots));
+	json.value("shotCount", u64(sim.shots.size()));
+	json.object("shots");
+	for(const vr::SimShot & shot : sim.shots) {
+		json.object(shot.name);
+		json.value("frame", shot.frame);
+		json.value("timelineFrame", shot.timelineFrame);
+		json.value("swapEyes", shot.swapEyes);
+		for(size_t eye = 0; eye < 2; eye++) {
+			const vr::SimShotEye & e = shot.eyes[eye];
+			json.object(eye == 0 ? "left" : "right");
+			json.value("file", e.file);
+			writePixelStats(json, "scene", e.scene);
+			writePixelStats(json, "layer", e.layer);
+			writeVec(json, "position", e.position);
+			writeAngles(json, "rot", e.angles);
+			json.value("imageFrame", e.imageFrame);
+			json.value("quadPixels", u64(shot.quadPixels[eye]));
+			json.end();
+		}
+		json.object("quad");
+		json.value("shown", shot.quadShown);
+		json.value("file", shot.quadFile);
+		writePixelStats(json, "stats", shot.quad);
+		json.end();
+		json.object("lr");
+		json.value("diff", shot.lrDiff);
+		json.value("shift", shot.lrShift.cells);
+		json.value("shiftFraction", shot.lrShift.fraction);
+		json.value("residual", shot.lrShift.residual);
+		json.value("unshifted", shot.lrShift.unshifted);
+		json.value("separation", glm::length(shot.eyes[1].position - shot.eyes[0].position));
+		json.end();
+		json.object("versus");
+		for(const auto & [other, diff] : shot.versus) {
+			json.object(other);
+			json.value("left", diff[0]);
+			json.value("right", diff[1]);
+			json.end();
+		}
+		json.end();
+		json.end();
+	}
+	json.end();
+
+	json.end();
 }
 
 std::string buildStatus(PlatformInstant now) {
@@ -494,6 +624,10 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("cadence", vr::cadenceName(pacing.cadence));
 		json.end();
 	}
+	// The simulated headset (#112): rig, eye poses, how the eye images paired up, the shots
+	if(vr::isSimulated()) {
+		writeSimStatus(json, vr::simStatus());
+	}
 	json.end();
 
 	// Game event log (#130): how many events of each name happened, logged or not
@@ -684,6 +818,12 @@ std::string execute(std::string_view line) {
 		// The controllers' control table without a headset (#30): down|up|tap <control>, bind, reset
 		std::string error = vr::inputCommand(rest);
 		return error.empty() ? error : refuse(error);
+	}
+
+	if(word == "vr-sim") {
+		// The simulated headset (#112): any script command, now or @<frame> on its timeline
+		std::string error = vr::simCommand(rest);
+		return error.empty() ? error : refuse("vr-sim: " + error);
 	}
 
 	if(word == "comfort") {
@@ -981,6 +1121,9 @@ void initialize() {
 
 	g.counter = new LogCounter;
 	Logger::add(g.counter);
+
+	// The simulated headset's shots go next to the channel's own
+	vr::setSimCaptureDir((g.dir / "capture").string());
 
 	// Inherited by the crash processor: an automated run has nobody to click the crash dialog
 	platform::setEnvironmentVariable("ARX_UNATTENDED", "1");

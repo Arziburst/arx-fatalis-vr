@@ -73,6 +73,20 @@ jobs:
       shell: pwsh
       run: ./scripts/dev/ci-smoke.ps1 -OutDir "$env:GITHUB_WORKSPACE/ci-artifacts"
 
+    # The tester package (#88): the zip built from this build, extracted into a clean folder and started with a
+    # PATH of only Windows folders. Fails when a DLL is missing from the zip or the extracted game does not run.
+    - name: Tester package (zip, extracted-game check)
+      shell: pwsh
+      run: ./scripts/package-tester.ps1 -NoBuild -OutDir "$env:GITHUB_WORKSPACE/dist"
+
+    - name: Upload tester package
+      uses: actions/upload-artifact@v4
+      with:
+        name: tester-build
+        path: dist/*.zip
+        if-no-files-found: error
+        retention-days: 14
+
     - name: Upload game check evidence
       if: always()
       uses: actions/upload-artifact@v4

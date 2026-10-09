@@ -10,6 +10,47 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-026: The VR runtime interface is a table of OpenXR function pointers; the simulated headset is a runtime behind it
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** worker of #112 (technical internals, D-017), from research rows F-04, F-06, F-09, F-165
+
+### Decision
+- **The `vr::` backend interface is the OpenXR API itself.** Every OpenXR function the VR module calls
+  is listed once in `src/vr/XRFunctions.h`; `vr/OpenXRUtil.h` turns the list into function pointers in
+  namespace `vr` named like the functions (`vr::xrWaitFrame`) and hides the loader's global prototypes
+  (`XR_NO_PROTOTYPES`). Code in `src/vr` keeps calling `xrWaitFrame(...)`; a call of an unlisted
+  function does not compile. The default table is the OpenXR loader (`src/vr/XRDispatch.cpp`) —
+  the real path is unchanged.
+- **The simulated headset (`--vr-sim <script>`) is a second implementation of that table**
+  (`src/vr/VRSimulator.cpp`), installed before the first OpenXR call: session states, a 90 Hz display
+  clock, swapchains of real OpenGL textures, eye and hand poses and action values from a script
+  (`src/vr/SimRig.h`), and a compositor that pairs the eye images per frame and, on `shot`, composes
+  and judges what each eye sees (`src/vr/EyeImage.h`). It never contacts a runtime, so it wins over
+  `--no-vr`; a broken script means flat mode, never the real runtime.
+- **The fixed custom stereo view of F-165 is a mode of the simulator**, not a separate render path:
+  a script with set-up lines only (eye size, IPD, the four angles per eye) and no motion.
+
+### Why
+A higher-level backend class (begin frame / render eye / submit) would put a second implementation
+of `VRSystem.cpp`'s frame loop, layers and mirror next to the real one — the simulator would then
+test itself, and every VR task (#19, #24, #74 …) would have to write its OpenXR use twice. Behind the
+OpenXR calls, the game's real VR code runs in the simulator unchanged, including code written after
+it. A full simulated runtime DLL loaded through `XR_RUNTIME_JSON` (F-09) would do the same from the
+outside, at the cost of a second binary and an inter-process way to ask for shots; it stays for
+runtime-side faults (session loss, swapchain failure, pacing modes) when one needs reproducing.
+
+### Consequences
+- A new OpenXR function in `src/vr` is added to `XRFunctions.h` and implemented by the simulator
+  (`sim_<name>`, or the build fails at link time).
+- Every VR task climbs to tier 2 (WORKFLOW.md, *Verification tiers*) with
+  `smoke-test.ps1 -VrSim <script>` and `eye-check.ps1` before the owner's headset; the two-eyes check
+  is the acceptance of #19 and #72. The `.xrs` sequence runner with assertions (#113) builds on the
+  same scripts and channel command (`vr-sim`).
+
+---
+
 ## D-024: One frame clock in VR — `xrWaitFrame` paces the game; pose-matched submission; an orderly exit
 
 - **Date:** 2026-10-09
@@ -110,7 +151,16 @@ without a headset session (F-07).
   the Definition of done and the decisions only (Sonnet, effort medium), and the coordinator checks small
   PRs itself.
 - **The coordinator watches its own context**: short outputs, the status issue as external memory.
-
+- **Worker count from measured usage (#217):** the coordinator plans the number of workers from data, not guesses -
+  `scripts\dev\usage-plan.ps1` (samples of both limits and of every session's cost, the calibration "% of a limit per dollar",
+  the cost of finished tasks per model / effort / size, a forecast for the READY tasks). Run every cycle and before starting a worker; it
+  names the binding limit and the number of workers that keeps the week at <= 80% by its reset and the 5-hour window < 95%.
+  The coordinator starts no more than it recommends; one line of its output goes to the status page (#193).
+- **Autopilot (owner, 2026-10-10):** the coordinator runs the work on its own while the limits last. It reads the limits and
+  `usage-plan.ps1` on a timer (about every 30 minutes) and before starting a worker, starts every unblocked task the budget
+  allows with a sensible model / effort, loads a 5-hour window that has headroom before its reset, but paces the week to <= 80%
+  at its reset. The owner's part is only VR tests, opinions and decisions on how things look and work (D-017).
+  Owner: "сам определял расходы, сколько есть, кого можем запустить… от меня только тестирование и моё мнение… ты идёшь вперёд, пока есть лимиты".
 ### Why
 The owner wants the work to keep moving while there is budget, with quality checks that pay for
 themselves in time and usage.

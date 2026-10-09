@@ -175,6 +175,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "vr/HeadTracking.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
+#include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 
 #include "Configure.h"
@@ -243,7 +244,7 @@ bool ArxGame::initialize() {
 	// on failure this logs the reason and the game continues in flat mode
 	vr::createSession();
 	// One line with the outcome; the lines before it say why when it is flat
-	gameevent::Event("vr.mode")("mode", vr::isEnabled() ? "vr" : "flat");
+	gameevent::Event("vr.mode")("mode", vr::isEnabled() ? "vr" : "flat")("simulated", vr::isSimulated());
 
 	init = initGameData();
 	if(!init) {

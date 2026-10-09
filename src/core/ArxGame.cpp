@@ -172,6 +172,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "util/String.h"
 
+#include "vr/HeadTracking.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
 #include "vr/VRSimulator.h"
@@ -1303,6 +1304,17 @@ void ArxGame::doFrame() {
 	if(LOADQUEST_SLOT != SavegameHandle() && LOADQUEST_SLOT.handleData() < long(savegames.size())) {
 		ARX_LoadGame(savegames[LOADQUEST_SLOT]);
 		LOADQUEST_SLOT = SavegameHandle();
+	} else if(LOADQUEST_SLOT != SavegameHandle()) {
+		// --loadslot of a save that does not exist: the launch already switched to the game, which then runs
+		// with no level at all - a black world with only the HUD, in VR as on the monitor (TRAPS.md, #24).
+		// Say so and start at the main menu instead
+		LogError << "--loadslot " << LOADQUEST_SLOT.handleData() << ": no such save, " << savegames.size()
+		         << " save(s) in the save game dir - starting at the main menu instead of an empty level";
+		LOADQUEST_SLOT = SavegameHandle();
+		if(!g_currentArea) {
+			ARXmenu.requestMode(Mode_MainMenu);
+			ARX_MENU_Launch(false);
+		}
 	}
 	
 	if(!g_saveToLoad.empty()) {
@@ -1442,7 +1454,7 @@ void ArxGame::updateFirstPersonCamera() {
 		} else {
 			g_playerCameraStablePos = g_playerCamera.m_pos = player.basePosition();
 		}
-		
+
 	}
 	
 	if(EXTERNALVIEW) {
@@ -1608,6 +1620,26 @@ void ArxGame::handlePlayerDeath() {
 	
 }
 
+/*!
+ * \brief Take last frame's head pose off the camera it was put on (#24)
+ *
+ * The head is a view on top of the engine's camera, not part of its state: the engine's own camera code
+ * reads last frame's camera (the external view and the death camera interpolate from it, a conversation
+ * keeps its last position), and would otherwise feed the head back into itself every frame.
+ */
+void ArxGame::restoreEngineCamera() {
+
+	const HeadView view = m_headView;
+	m_headView = HeadView();
+	// The camera of a camera entity may be gone with its entity: only a camera that is still in use
+	Camera * cam = view.camera;
+	if(cam && (cam == &g_playerCamera || (g_cameraEntity && cam == &g_cameraEntity->_camdata->cam))) {
+		cam->m_pos = view.enginePos;
+		cam->angle = view.engineAngle;
+	}
+
+}
+
 void ArxGame::updateActiveCamera() {
 	
 	ARX_PROFILE_FUNC();
@@ -1622,7 +1654,21 @@ void ArxGame::updateActiveCamera() {
 	} else {
 		cam = &g_playerCamera;
 	}
-	
+
+	// The headset is the head (#24, D-018): whatever camera the engine chose this frame - first person, a
+	// conversation's camera, the death camera - takes the head's orientation and movement on top, after
+	// everything the engine did to it (F-31); a camera that ignored the head would glue the world to the
+	// face. The stable position moves with the player's camera, so drag rays start where the player looks
+	// from. restoreEngineCamera() takes it off again before the engine updates its cameras next frame
+	Vec3f enginePos = cam->m_pos;
+	Anglef engineAngle = cam->angle;
+	if(vr::applyHeadPose(cam->m_pos, cam->angle, engineAngle.getYaw())) {
+		m_headView = HeadView{ cam, enginePos, engineAngle };
+		if(cam == &g_playerCamera) {
+			g_playerCameraStablePos += cam->m_pos - enginePos;
+		}
+	}
+
 	ManageQuakeFX(cam);
 	
 	PrepareCamera(cam, g_size);
@@ -1824,8 +1870,10 @@ void ArxGame::updateLevel() {
 			ManageCombatModeAnimationsEND();
 	}
 
+	restoreEngineCamera();
+
 	updateFirstPersonCamera();
-	
+
 	ARX_SCRIPT_Timer_Check();
 
 	speechControlledCinematic();
@@ -1906,8 +1954,11 @@ void ArxGame::updateLevel() {
 	
 	{
 		
-		g_playerCamera.setFov(glm::radians(config.video.fov));
-		
+		// In VR the flat frame is shown on a head-locked quad: the camera sees exactly the angle the quad
+		// covers, so the head-tracked world is not magnified or shrunk (#24, until #19 renders per eye)
+		float vrFov = vr::flatFrameFov(m_MainWindow->getSize());
+		g_playerCamera.setFov(vrFov > 0.f ? vrFov : glm::radians(config.video.fov));
+
 		// FOV zoom: Magic Sight widens the view a little, the bow aim narrows it - changes of the focal
 		// length. On a monitor a cue, in a headset a change of the eyes' field of view: the VR comfort
 		// policy keeps the focal at the configured FOV (#76; the per-eye projection itself is #19)

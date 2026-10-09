@@ -149,6 +149,9 @@ if ($Save) {
 	Use-ArxSave -Name $Save -UserDir $UserDir -Library $SaveLibrary
 	if (-not $ArxArgs) { $ArxArgs = @('--loadslot', '0') }
 }
+# A --loadslot of a save that is not there loads nothing: refuse before the game (and the headset) starts
+$slotProblem = Get-ArxLoadSlotProblem -ArxArgs $ArxArgs -UserDir $(if ($Isolated) { $UserDir } else { Get-SharedUserDir })
+if ($slotProblem) { throw $slotProblem }
 
 # No SteamVR start without the owner: flat unless SteamVR already runs (or -StartSteamVR)
 $vr = Resolve-ArxVrMode -ArxArgs $ArxArgs -StartSteamVR:$StartSteamVR

@@ -104,6 +104,38 @@ by the owner's run only.
 
 ---
 
+## 2026-10-09 — The head turns, the picture does not: the camera of a conversation owns the view (#24)
+
+**Symptom:** on the simulated headset `eye-check.ps1` failed its yaw leg on the #24 branch although the head
+drove the camera — the `yaw25` shot's flat frame was **identical** to `still-a` (picture change 1.34, floor 0.81),
+while the flat `head-check.ps1` on `mvp-new-game` passed.
+**Cause:** `--loadlevel 10` (the default of the smoke test and of `eye-check.ps1`) plays the intro conversation:
+`speechControlledCinematic()` places `g_playerCamera` itself **after** `updateFirstPersonCamera()`, so a head pose
+applied there was overwritten every frame. In the headset that glues the world to the face during every
+conversation, death and external view.
+**Fixed:** the head is applied in `updateActiveCamera()` to whatever camera the frame renders with, and taken off
+again (`restoreEngineCamera()`) before the engine updates its cameras next frame, so the engine's interpolations
+never read it back. Yaw leg after the fix: picture change 4.25.
+**Do:** a head-tracking check needs both a first-person save (`mvp-new-game`) and level 10 (a scripted camera);
+"PASS in one" proves only that path.
+
+## 2026-10-09 — The world is black in the headset, only the HUD shows: no level was loaded (#24)
+
+**Symptom:** the owner's headset run of #215 (`test-pr.ps1 215`, `--skiplogo --loadslot 0`, the shared user dir)
+showed a black world with the inventory bar, the health and mana orbs and the icons on top, in the headset and in
+the desktop window. It looked like the new head-tracked camera was inside a wall or had broken the projection.
+**Cause:** the owner's `Saved Games\Arx Libertatis\save` was **empty**. `--loadslot N` switches the game flow to
+"in game" at once and loads slot N only if it exists; without it nothing was loaded and nothing was said — the
+game ran with **no level at all**: the HUD is drawn, the world is not. The log shows it plainly: `game.state` never
+leaves `STARTUP` (`game.state to=EXITED was=STARTUP`), no `level.loading` / `level.loaded`, and the frame loop's rate
+line says `game 0.1 mean` ms (a level costs several ms). The #21 run minutes before had the same log — no level either.
+**Fixed:** `arx.exe` now logs `[E] --loadslot N: no such save, M save(s) in the save game dir - starting at the main
+menu instead of an empty level` and opens the main menu; `run-windows.ps1` (so `test-pr.ps1` too) refuses to start a
+`--loadslot` the user dir has no save for, before the headset is involved, and names the test save to use.
+**Do:** for a headset test without saves of your own, load a test save: `test-pr.ps1 <pr> -Saves mvp-new-game` (or
+`run-windows.ps1 -Isolated -Save mvp-new-game`). Before suspecting rendering, check `game.state` / `level.loaded` in
+the log or `state` / `area` in `status.json`: "black world" with `area` 0 is not a rendering bug.
+
 ## 2026-10-09 — "Blocked [rule]: ..." on a command that looks harmless (the safety hook)
 
 **Symptom:** a Bash / PowerShell / Edit call is refused with `Blocked [push-main|force-push|delete-outside|

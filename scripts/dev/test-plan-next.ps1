@@ -155,11 +155,11 @@ Check 'the area of an open PR is busy for others' ((Reason $r 30) -match 'area b
 $r = Get-NextPlan -Plan $plan -Items (@((Item 10 'Done'), (Item 15 'Testing' @('task', 'area:build')), (Item 30 'Todo' @('bug', 'area:build')))) -PullRequests @((Pull 7 'ARXVR-15-build-sim')) -Agents @()
 Check 'a PR waiting in Testing does not hold its area' ((Ready $r) -contains 30) ((Ready $r) -join ',')
 $items3 = @((Item 10 'Done'), (Item 40 'In Progress' @('task', 'area:core')), (Item 41 'In Progress' @('task', 'area:input')), (Item 42 'In Progress' @('task', 'area:camera')), (Item 14 'Todo' @('task', 'area:docs')))
-$r = Get-NextPlan -Plan $plan -Items $items3 -Agents @()
-Check 'three workers running: no free slot' ((Reason $r 14) -match 'no free worker slot \(3 of 3 in use\)') (Reason $r 14)
+$r = Get-NextPlan -Plan $plan -Items $items3 -Agents @() -MaxWorkers 3
+Check 'three workers running, -MaxWorkers 3: no free slot' ((Reason $r 14) -match 'no free worker slot \(3 of 3 in use\)') (Reason $r 14)
 $r = Get-NextPlan -Plan $plan -Items $items3 -Agents @() -MaxWorkers 4
 Check '-MaxWorkers 4 frees one' ((Ready $r) -contains 14) ((Ready $r) -join ',')
-$r = Get-NextPlan -Plan $plan -Items @((Item 10 'Done'), (Item 40 'In Progress' @('task', 'area:core')), (Item 41 'In Progress' @('task', 'area:input')), (Item 14 'Todo' @('task', 'area:docs')), (Item 15 'Todo' @('task', 'area:build'))) -Agents @()
+$r = Get-NextPlan -Plan $plan -Items @((Item 10 'Done'), (Item 40 'In Progress' @('task', 'area:core')), (Item 41 'In Progress' @('task', 'area:input')), (Item 14 'Todo' @('task', 'area:docs')), (Item 15 'Todo' @('task', 'area:build'))) -Agents @() -MaxWorkers 3
 Check 'the slots are counted with the tasks chosen in the same run (two running + #14 fills the last, #15 waits)' (((Ready $r) -join ',' -eq '14') -and (Reason $r 15) -match 'no free worker slot') "$(Ready $r) / $(Reason $r 15)"
 $r = Get-NextPlan -Plan $plan -Items @((Item 10 'Done'), (Item 40 'In Progress' @('task', 'area:core')), (Item 14 'Todo' @('task', 'area:docs'))) -Agents $null
 Check 'unreadable sessions are reported, not read as "no workers"' (($r.Warnings -join ' ') -match 'could not be read' -and (Ready $r) -contains 14)
@@ -199,9 +199,10 @@ try {
 	Check 'text: RUNNING shows the live worker of #40' ($text -match 'RUNNING \(1\)[\s\S]*#40 Task 40[\s\S]*worker w1') $text
 	Check 'text: WAITING names the design gate for #15' ($text -match "#15 Task 15\s+- waits for the owner's design talk") $text
 	$json = (& $pwsh -NoProfile -File (Join-Path $PSScriptRoot 'plan-next.ps1') -Offline $dir -Mvp $mvp -Json) -join "`n" | ConvertFrom-Json
-	Check '-Json: the same answer as data' ((@($json.Ready | ForEach-Object Number) -join ',' -eq '14') -and $json.Limits.Workers -eq 1 -and $json.Limits.MaxWorkers -eq 3) ($json | ConvertTo-Json -Compress -Depth 3)
+	Check '-Json: the same answer as data' ((@($json.Ready | ForEach-Object Number) -join ',' -eq '14') -and $json.Limits.Workers -eq 1 -and $json.Limits.MaxWorkers -eq 0) ($json | ConvertTo-Json -Compress -Depth 3)
 } finally { Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue }
 
 Write-Host ''
 if ($script:failures) { Write-Host "$script:failures of $script:checks checks FAILED" -ForegroundColor Red; exit 1 }
 Write-Host "all $script:checks checks passed" -ForegroundColor Green
+

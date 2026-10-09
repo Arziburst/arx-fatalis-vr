@@ -180,12 +180,15 @@ if (-not $loader) { $problems.Add('openxr_loader.dll is missing') }
 
 # --- 5. BUILD.txt, the zips ------------------------------------------------------------------------------------------
 
+# The exe's hash ties a crash report or a support bundle to the symbols kept for this build (D4, #132)
+$exeHash = (Get-FileHash -Algorithm SHA256 (Join-Path $stage 'arx.exe')).Hash.ToLowerInvariant()
 $buildTxt = @(
 	"$name",
 	"version: $version",
 	"commit: $head$(if ($dirty) { ' (uncommitted changes in the tree)' })",
 	"branch: $branch$(if ($tag) { "  tag: $tag" })",
 	"config: $Config",
+	"arx.exe sha256: $exeHash",
 	"packaged: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))"
 )
 [IO.File]::WriteAllText((Join-Path $stage 'BUILD.txt'), (($buildTxt -join "`r`n") + "`r`n"), [Text.UTF8Encoding]::new($false))
@@ -204,6 +207,11 @@ Write-Step "Writing $zip"
 [IO.Compression.ZipFile]::CreateFromDirectory($stage, $zip, [IO.Compression.CompressionLevel]::Optimal, $true)
 if (@(Get-ChildItem $pdbStage -Filter '*.pdb').Count) {
 	[IO.Compression.ZipFile]::CreateFromDirectory($pdbStage, $symbolsZip, [IO.Compression.CompressionLevel]::Optimal, $false)
+	# The symbol archive: every package's arx.pdb stays on this PC under the exe hash, whatever happens to dist\
+	$archiveDir = Join-Path $env:LOCALAPPDATA "ArxFatalisVR\symbols\$exeHash"
+	New-Item -ItemType Directory -Force $archiveDir | Out-Null
+	Copy-Item -Force (Join-Path $pdbStage '*') $archiveDir
+	Write-Host "  symbols: $symbolsZip; archived under $archiveDir"
 } else {
 	Write-Host "  (no arx.pdb in $buildDir - the $Config build has no debug symbols; build RelWithDebInfo for a symbols zip)" -ForegroundColor Yellow
 }

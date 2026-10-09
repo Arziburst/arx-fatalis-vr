@@ -87,6 +87,15 @@ jobs:
         if-no-files-found: error
         retention-days: 14
 
+    # The debug symbols of this exact exe (BUILD.txt holds its sha256), kept long enough to read a tester crash (#132)
+    - name: Upload debug symbols
+      uses: actions/upload-artifact@v4
+      with:
+        name: tester-symbols
+        path: dist/*-symbols.zip
+        if-no-files-found: error
+        retention-days: 90
+
     - name: Upload game check evidence
       if: always()
       uses: actions/upload-artifact@v4

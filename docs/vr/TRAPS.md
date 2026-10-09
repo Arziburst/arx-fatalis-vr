@@ -696,6 +696,12 @@ high); `[datetime]::Parse($obj.updated)` on a JSON field gave a date a month off
 **Do:** write `[math]::Max(0.0, $x)`; take a field that may be a `DateTime` or a string through a helper
 (`ConvertTo-Epoch` in `scripts/dev/usage-lib.ps1`).
 
+## 2026-10-09 - A deliberate crash check files a bug issue
+
+**Symptom:** the `crash` / `crash steal` channel check (#132) opened an `auto-reported` issue (#235).
+**Cause:** the run digest files every new crash signature (#131).
+**Do:** the digest skips filing for a run whose log has `[crash] deliberate crash requested`; if another deliberate fault is added, log the same marker line first.
+
 ## 2026-10-09 — .xrs: a timeout without its `s` was part of the value; `$g` and `$G` are one variable
 
 **Symptom:** `@until state eq GAMEPLAY 60` waited 30 s and failed with "never became eq GAMEPLAY 60" while the game was in GAMEPLAY;

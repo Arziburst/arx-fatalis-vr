@@ -156,6 +156,17 @@ bool CrashHandler::isInitialized() {
 #endif
 }
 
+bool CrashHandler::rearm() {
+#if ARX_HAVE_CRASHHANDLER_WINDOWS
+	if(!isInitialized()) {
+		return false;
+	}
+	return static_cast<CrashHandlerWindows *>(gCrashHandlerImpl)->rearm();
+#else
+	return false;
+#endif
+}
+
 bool CrashHandler::addAttachedFile(const fs::path & file) {
 #if ARX_HAVE_CRASHHANDLER
 	if(!isInitialized()) {

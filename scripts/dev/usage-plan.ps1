@@ -6,9 +6,9 @@
 	Reads the samples the status line writes (~/.claude/statusline/usage.jsonl) and the session ledger, records the cost
 	of finished sessions per task (tasks.jsonl), and prints a short plan:
 	  NOW       week % and 5-hour % with their resets, the burn rate, the calibration (% of a limit per dollar, with confidence)
-	  BUDGET    % left to the caps (week 80, 5-hour 95), the projected % at reset
+	  BUDGET    % left to the caps (week 80, 5-hour 95), the ETA to each cap at the current burn and with the advised workers
 	  TASKS     median / p80 cost of a finished task per model, the forecast for the READY tasks of plan-next.ps1
-	  ADVICE    workers to run now, the binding limit, how many queued tasks fit
+	  ADVICE    keep every runnable (READY) task running until a cap - no pacing to the reset (D-027); which queued tasks fit before each cap
 	The coordinator runs it every cycle and before starting a worker; its one-line summary goes to the status page (#193).
 	With no samples yet the weekly ratio comes from a rough prior (cost of this week's sessions / week %).
 
@@ -23,10 +23,10 @@
 .PARAMETER Offline
 	Do not call GitHub for issue sizes (cache only).
 .PARAMETER MaxWorkers
-	Worker cap (default 3).
+	Optional worker cap (default 0 = none, D-027).
 #>
 [CmdletBinding()]
-param([switch]$Record, [switch]$Json, [string]$Dir, [switch]$NoQueue, [int]$MaxWorkers = 3, [switch]$Offline)
+param([switch]$Record, [switch]$Json, [string]$Dir, [switch]$NoQueue, [int]$MaxWorkers = 0, [switch]$Offline)
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'usage-lib.ps1')
@@ -116,7 +116,7 @@ if (-not $NoQueue) {
 if ($sizeDirty) { try { $sizeCache | ConvertTo-Json | Set-Content $sizeCacheFile -Encoding utf8 } catch {} }
 $rec = Get-UsageRecommendation -Week $week -FiveHour $five -WeekPerUsd $weekPerUsd -FivePerUsd $fivePerUsd `
 	-WorkerUsdPerHour $workerUsdPerHour -BurnUsdPerHour ([double]$burn) -RunningWorkers $liveWorkers.Count `
-	-QueueUsd @($queue | ForEach-Object P80) -Now $now -MaxWorkers $MaxWorkers
+	-ReadyCount $(if ($NoQueue -or $queueError) { $null } else { $queue.Count }) -QueueUsd @($queue | ForEach-Object P80) -Now $now -MaxWorkers $MaxWorkers
 
 $out = [pscustomobject]@{
 	Now = $now; Week = $week; FiveHour = $five; BurnUsdPerHour = $burn; BurnSinceWindowStart = $burnSince
@@ -137,9 +137,10 @@ if ($null -ne $burnSince) { $burnText += ', {0:0.0} USD/h since the 5h window be
 "        burn $burnText; $($liveWorkers.Count) live worker(s), one worker ~ $('{0:0.0}' -f $workerUsdPerHour) USD/h ($rateBasis)"
 "        week calibration: $(Fmt-Cal $weekCal $weekPerUsd $weekNote)"
 "        5h   calibration: $(Fmt-Cal $fiveCal $fivePerUsd $fiveCal.Confidence)"
+function Fmt-Eta($h) { if ($null -eq $h) { return 'n/a' }; if ($h -ge 48) { '{0:0.0}d' -f ($h / 24) } else { '{0:0.0}h' -f $h } }
 foreach ($k in 'Week', 'Five') {
 	$b = $rec.$k; if (-not $b) { continue }
-	"BUDGET  $(if ($k -eq 'Week') { 'week' } else { '5h  ' }) {0:0}% of cap {1}%: room {2:0.#}% in {3} h$(if ($null -ne $b.Workers) { "; at the current pace -> {0:0}% at reset; fits {1} worker(s)" -f $b.ProjectedAtReset, $b.Workers } else { '; not calibrated' })" -f $b.Pct, $b.Cap, $b.Room, $b.HoursToReset
+	"BUDGET  $(if ($k -eq 'Week') { 'week' } else { '5h  ' }) {0:0}% of cap {1}%: room {2:0.#}%, resets in {3} h$(if ($null -ne $b.BudgetUsd) { "; cap in {0} at the current burn, {1} with {2} worker(s); {3} of {4} READY task(s) fit before it at p80" -f (Fmt-Eta $b.EtaHours), (Fmt-Eta $b.EtaHoursWithN), $rec.Workers, $b.Fit, $queue.Count } else { '; not calibrated' })" -f $b.Pct, $b.Cap, $b.Room, $b.HoursToReset
 }
 if ($taskCosts.Count) {
 	$byModel = $taskCosts | Group-Object { "$($_.Model) $($_.Effort)" }
@@ -153,5 +154,8 @@ if ($queueError) { "        queue forecast unavailable: $queueError" }
 if ($null -eq $burn) { "NOTE    burn unknown: assuming the running workers burn at the median rate (conservative until usage.jsonl has an hour of samples)" }
 if ($weekNote -like 'prior*') { "NOTE    week ratio is a rough prior (it includes the owner's other use); it is replaced by the sampled ratio as usage.jsonl fills" }
 foreach ($n in $rec.Notes) { "NOTE    $n" }
-"ADVICE  run $($rec.Workers) worker(s) now (running $($liveWorkers.Count); binding limit: $($rec.Binding))$(if ($null -ne $rec.Fit) { "; $($rec.Fit) of $($queue.Count) READY task(s) fit the budget at p80 cost" })"
-"SUMMARY week $(if ($week) { '{0:0}%' -f $week.Pct }) / 5h $(if ($five) { '{0:0}%' -f $five.Pct }) | burn $(if ($null -ne $burn) { '{0:0.0}' -f $burn } else { '?' }) USD/h | workers $($liveWorkers.Count) -> $($rec.Workers) ($($rec.Binding))"
+"ADVICE  keep $($rec.Workers) worker(s) running until the cap (running $($liveWorkers.Count); $($queue.Count) READY task(s); limit: $($rec.Binding)); no pacing to the reset (D-027)$(if ($null -ne $rec.EtaHours) { "; cap in $(Fmt-Eta $rec.EtaHours) now, $(Fmt-Eta $rec.EtaHoursWithN) with $($rec.Workers)" })"
+$cum = 0.0
+foreach ($q in $queue) { $cum += $q.P80; $fw = if ($rec.Week -and $null -ne $rec.Week.BudgetUsd) { $cum -le $rec.Week.BudgetUsd } else { $null }; $ff = if ($rec.Five -and $null -ne $rec.Five.BudgetUsd) { $cum -le $rec.Five.BudgetUsd } else { $null }
+	"        fits #{0}: week {1}, 5h {2} (cumulative p80 {3:0.0} USD)" -f $q.Number, $(if ($null -eq $fw) { '?' } elseif ($fw) { 'yes' } else { 'no' }), $(if ($null -eq $ff) { '?' } elseif ($ff) { 'yes' } else { 'no' }), $cum }
+"SUMMARY week $(if ($week) { '{0:0}%' -f $week.Pct }) / 5h $(if ($five) { '{0:0}%' -f $five.Pct }) | burn $(if ($null -ne $burn) { '{0:0.0}' -f $burn } else { '?' }) USD/h | workers $($liveWorkers.Count) -> $($rec.Workers) ($($rec.Binding)) | cap ETA week $(if ($rec.Week) { Fmt-Eta $rec.Week.EtaHours } else { '?' }) / 5h $(if ($rec.Five) { Fmt-Eta $rec.Five.EtaHours } else { '?' }) (with $($rec.Workers): $(if ($rec.Week) { Fmt-Eta $rec.Week.EtaHoursWithN } else { '?' }) / $(if ($rec.Five) { Fmt-Eta $rec.Five.EtaHoursWithN } else { '?' }))"

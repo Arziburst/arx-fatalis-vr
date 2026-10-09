@@ -134,6 +134,21 @@ bool CrashHandlerWindows::registerCrashHandlers() {
 	return registerThreadCrashHandlersImpl();
 }
 
+bool CrashHandlerWindows::rearm() {
+	
+	if(!m_pPreviousCrashHandlers) {
+		return false;
+	}
+	
+	LPTOP_LEVEL_EXCEPTION_FILTER previous = SetUnhandledExceptionFilter(SEHHandler);
+	if(previous == SEHHandler) {
+		return false;
+	}
+	
+	LogWarning << "[crash] the unhandled exception filter was replaced by another module, restored";
+	return true;
+}
+
 void CrashHandlerWindows::unregisterCrashHandlers() {
 	
 	unregisterThreadCrashHandlersImpl();

@@ -24,6 +24,11 @@ and implements it in its own PR; `/accept-task` and `/reject-task` handle the ow
 Merge on your own when CI is green, except `needs-vr-test` PRs — those wait for the owner
 (see [Pull requests, CI and merging](docs/vr/WORKFLOW.md#pull-requests-ci-and-merging)).
 
+**Coordinator:** the owner talks to one coordinator session ("ARXVR Coordinator", started with
+`/coordinator`), which runs the work in blocks, starts and controls the worker sessions
+(`scripts/dev/start-worker.ps1`) and reports — playbook: [docs/vr/COORDINATOR.md](docs/vr/COORDINATOR.md).
+A new machine is prepared with `scripts/dev/setup-coordinator.ps1`.
+
 **All project artifacts (docs, issues, commits, PRs, code comments) are in English.**
 Conversation with the project owner is in Russian.
 

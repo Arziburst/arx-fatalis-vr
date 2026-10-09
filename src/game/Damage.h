@@ -137,6 +137,9 @@ void doSphericDamage(const Sphere & sphere, float dmg, DamageArea flags, Spell *
                      Entity * source = nullptr);
 
 void ARX_DAMAGE_Reset_Blood_Info();
+//! Advance the red hit flash - once per frame
+void ARX_DAMAGE_Update_Hit_Blood();
+//! Draw the red hit flash over the scene - once per view
 void ARX_DAMAGE_Show_Hit_Blood();
 void ARX_DAMAGES_Reset();
  

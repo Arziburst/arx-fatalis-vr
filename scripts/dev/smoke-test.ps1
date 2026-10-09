@@ -160,7 +160,7 @@ function Write-Check([bool]$Ok, [string]$Text) {
 
 function Invoke-SmokeRun([int]$Run) {
 	$reasons = [Collections.Generic.List[string]]::new()
-	$result = [ordered]@{ Run = $Run; Result = 'FAIL'; Exit = $null; State = '-'; Frames = 0; Fps = 0; VR = '-'; Errors = '-'; Warnings = '-'; Crash = '-'; Reasons = '' }
+	$result = [ordered]@{ Run = $Run; Result = 'FAIL'; Exit = $null; State = '-'; Frames = 0; Fps = 0; VR = '-'; Errors = '-'; Warnings = '-'; Crash = '-'; DrawCheck = '-'; Reasons = '' }
 	$process = $null
 	$launchTime = Get-Date
 	try {
@@ -230,6 +230,18 @@ function Invoke-SmokeRun([int]$Run) {
 			Start-Sleep -Seconds $Seconds
 			$status = Read-ArxStatus $TestDir
 			if ($process.HasExited) { $reasons.Add("the game exited on its own with code $($process.ExitCode) while it should have been running") }
+
+			# A 'drawcheck' sent through -Commands draws the scene twice per frame with the same camera
+			# (docs/vr/TESTING.md): it must finish, and the two pictures must be identical in every frame
+			if ($status -and $status.drawCheck -and -not $process.HasExited) {
+				try {
+					$status = Wait-ArxStatus { param($s) $s.drawCheck -and -not $s.drawCheck.running } -TimeoutSec 60 -Dir $TestDir -What 'the draw check to finish'
+				} catch { $reasons.Add("$_") }
+				$dc = $status.drawCheck
+				$result.DrawCheck = "$($dc.framesDiffering)/$($dc.frames)"
+				Write-Check ([int]$dc.framesDiffering -eq 0 -and -not $dc.running) "drawcheck: $($dc.framesDiffering) of $($dc.frames) frames differ between two draws of the scene (max $($dc.maxPixelsDiffering) of $($dc.pixels) pixels, max delta $($dc.maxDelta))"
+				if ([int]$dc.framesDiffering -ne 0) { $reasons.Add("drawcheck: $($dc.framesDiffering) of $($dc.frames) frames differ (most differing pair: $($dc.capture)_a.bmp / _b.bmp)") }
+			}
 		}
 
 		# Quit

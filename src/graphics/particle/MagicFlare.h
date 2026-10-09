@@ -34,6 +34,9 @@ void ARX_MAGICAL_FLARES_KillAll();
 void MagicFlareChangeColor();
 void AddFlare(const Vec2f & pos, float sm, short typ, Entity * io = nullptr, bool bookDraw = false);
 void FlareLine(Vec2f pos0, Vec2f pos1, Entity * io = nullptr);
+//! Age the flares, drop the dead ones, update their lights - once per frame
 void ARX_MAGICAL_FLARES_Update();
+//! Draw the flares into the render batcher - once per view
+void ARX_MAGICAL_FLARES_Render();
 
 #endif // ARX_GRAPHICS_PARTICLE_MAGICFLARE_H

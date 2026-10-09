@@ -34,6 +34,9 @@ void ParticleSparkSpawn(const Vec3f & pos, size_t count,
 void ParticleSparkSpawnContinous(const Vec3f & pos, unsigned rate,
                                  ColorRGBA color = Color3f(.3f, .3f, 0.f).toRGB());
 
+//! Age the sparks and drop the dead ones - once per frame
 void ParticleSparkUpdate();
+//! Draw the sparks for the current camera - once per view
+void ParticleSparkRender();
 
 #endif // ARX_GRAPHICS_PARTICLE_SPARK_H

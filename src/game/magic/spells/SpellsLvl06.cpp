@@ -142,6 +142,16 @@ void RaiseDeadSpell::End() {
 	endLightDelayed(m_light, 500ms);
 }
 
+void RaiseDeadSpell::Render() {
+
+	if(m_creationFailed) {
+		return;
+	}
+
+	m_fissure.Render();
+
+}
+
 void RaiseDeadSpell::Update() {
 	
 	if(m_creationFailed) {
@@ -153,8 +163,7 @@ void RaiseDeadSpell::Update() {
 	m_duration += 200ms;
 	
 	m_fissure.Update(g_gameTime.lastFrameDuration());
-	m_fissure.Render();
-	
+
 	EERIE_LIGHT * light = lightHandleGet(m_light);
 	if(light) {
 		light->intensity = 0.7f + 2.3f;
@@ -339,6 +348,14 @@ void CreateFieldSpell::End() {
 	delete entities.get(m_entity);
 }
 
+void CreateFieldSpell::Render() {
+
+	if(entities.get(m_entity)) {
+		m_field.Render();
+	}
+
+}
+
 void CreateFieldSpell::Update() {
 	
 	Entity * io = entities.get(m_entity);
@@ -350,7 +367,6 @@ void CreateFieldSpell::Update() {
 		}
 		
 		m_field.Update(g_gameTime.lastFrameDuration());
-		m_field.Render();
 	}
 }
 

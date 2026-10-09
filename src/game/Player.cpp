@@ -2288,7 +2288,14 @@ void ARX_PLAYER_Manage_Death() {
 		ARX_MENU_Launch(false);
 		player.DeadTime = 0;
 	}
-	
+}
+
+void ARX_PLAYER_Render_Death() {
+	if(player.DeadTime <= 2s)
+		return;
+
+	float ratio = (player.DeadTime - 2s) / 5s;
+
 	UseRenderState state(render2D().blend(BlendZero, BlendInvSrcColor));
 	EERIEDrawBitmap(Rectf(g_size), 0.000091f, nullptr, Color::gray(ratio));
 }

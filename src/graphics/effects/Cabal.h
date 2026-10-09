@@ -57,16 +57,20 @@ public:
 	void end();
 	
 	/*!
-	* Update and draw the cabal effect.
+	* Update the cabal effect: move it with the caster, turn the rings, flicker the light.
+	* Once per frame.
 	*
 	* \return the position of the ringset
 	*/
 	Vec3f update(Vec3f casterPos);
-	
+
+	//! Draw the rings at the position of the last update() - once per view
+	void render();
+
 private:
-	
+
 	Color3f randomizeLightColor() const;
-	
+
 	LightHandle m_lightHandle;
 	float m_yaw;
 	float m_scaleY;
@@ -77,7 +81,8 @@ private:
 	bool m_hasTwoRingSets;
 	size_t m_ringCount;
 	Color3f m_ringColors[4];
-	
+	Vec3f m_casterPos;
+
 };
 
 #endif // ARX_GRAPHICS_EFFECTS_CABAL_H

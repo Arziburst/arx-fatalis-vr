@@ -1041,9 +1041,19 @@ void ARX_SPELLS_Update() {
 		}
 		
 		spell.Update();
-		
+
 	}
-	
+
+}
+
+void ARX_SPELLS_Render() {
+
+	ARX_PROFILE_FUNC();
+
+	for(Spell & spell : spells) {
+		spell.Render();
+	}
+
 }
 
 void TryToCastSpell(Entity * io, SpellType spellType, long level, EntityHandle target, SpellcastFlags flags, GameDuration duration)

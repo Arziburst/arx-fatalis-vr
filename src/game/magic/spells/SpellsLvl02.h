@@ -35,6 +35,7 @@ public:
 	void Launch() override;
 	void End() override;
 	void Update() override;
+	void Render() override;
 	
 private:
 	
@@ -91,6 +92,7 @@ public:
 	void Launch() override;
 	void End() override;
 	void Update() override;
+	void Render() override;
 	
 private:
 	

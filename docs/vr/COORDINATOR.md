@@ -175,7 +175,9 @@ Choose per task, by size and difficulty — not by area alone. Spend Fable only 
 - **CI in balance (D-022):** self-hosted runner only (no GitHub-hosted minutes); every PR runs the fast
   set (build, host unit tests, one flat smoke test); heavy checks only when their code changes.
 - **The safety hook (#185) never stops a task:** it denies the one dangerous command and says what to do
-  instead; the coordinator reads the denial log and helps the worker if it keeps hitting it.
+  instead; the coordinator reads the denial log (`%LOCALAPPDATA%\ArxFatalisVR\safety-hook.log`, one line per
+  denial or fail-open error) and helps the worker if it keeps hitting it. Rules and limits:
+  [WORKFLOW.md](WORKFLOW.md#the-safety-hook-185-d-021).
 - **GitHub via REST** (#186): the dev scripts use `gh api repos/...` for issues, PRs, checks and runs — never
   `gh issue view/list`, `gh pr view/list`, `gh pr checks --watch`, `gh project ...` (all GraphQL; the quota is shared by
   every session). Only the board is GraphQL: one cached query (`%LOCALAPPDATA%\ArxFatalisVR\board-cache.json`, 5 min)

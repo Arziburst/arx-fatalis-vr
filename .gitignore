@@ -1,6 +1,7 @@
 .*
 !.gitignore
 !.editorconfig
+!/.gitattributes
 !/.mailmap
 !/.travis.yml
 !/.github

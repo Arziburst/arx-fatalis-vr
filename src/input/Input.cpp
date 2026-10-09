@@ -581,9 +581,16 @@ void Input::update(float time) {
 			m_mouseMovement.y *= -1.f;
 		}
 		
+		// An unfocused window reports this every frame: warn once per episode
+		static bool cursorEscapeLogged = false;
 		if(!mouseInWindow) {
-			LogWarning << "Cursor escaped the window while in relative input mode";
+			if(!cursorEscapeLogged) {
+				LogWarning << "Cursor escaped the window while in relative input mode";
+				cursorEscapeLogged = true;
+			}
 			centerMouse();
+		} else {
+			cursorEscapeLogged = false;
 		}
 		
 	} else {

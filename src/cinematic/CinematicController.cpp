@@ -23,6 +23,7 @@
 
 #include "core/Application.h"
 #include "core/Core.h"
+#include "core/GameEvent.h"
 #include "core/GameTime.h"
 
 #include "io/log/Logger.h"
@@ -94,7 +95,8 @@ static bool skipCinematic(std::string_view name) {
  * Callers must not touch WILL_LAUNCH_CINE afterwards: a cine_end handler may prepare the next one.
  */
 static void endSkippedCinematic() {
-	LogInfo << "Skipping cinematic " << LAST_LAUNCHED_CINE << " (development launch, --cinematics shows it)";
+	// One line in the event stream (#130); --cinematics shows it
+	gameevent::Event("cinematic.skip")("name", LAST_LAUNCHED_CINE)("reason", "development-launch");
 	SKIPPED_CINE_PENDING = false;
 	cinematicEnd();
 }

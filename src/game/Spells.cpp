@@ -60,6 +60,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "core/Application.h"
 #include "core/Config.h"
 #include "core/Core.h"
+#include "core/GameEvent.h"
 #include "core/GameTime.h"
 #include "core/Localisation.h"
 
@@ -839,8 +840,18 @@ bool ARX_SPELLS_Launch(SpellType typ, Entity & source, SpellcastFlags flags, lon
 		level = std::max(level, 15l);
 	}
 	
+	// Game event log (#130): spell.cast, spell.precast or, for the player, spell.refused and why.
+	// A spell that waits for a click on its target logs nothing here: it comes back with the target.
+	const bool byPlayer = (source == *entities.player());
+	auto refused = [&](const char * reason) {
+		if(byPlayer) {
+			gameevent::Event("spell.refused")("spell", getSpellName(typ))("reason", reason);
+		}
+	};
+	
 	if(source == *entities.player() && !(flags & SPELLCAST_FLAG_NOCHECKCANCAST) &&
 	   !player.hasAllRunes(SpellSymbol)) {
+		refused("runes-not-learned");
 		ARX_SOUND_PlaySpeech("player_cantcast");
 		CurrSpellSymbol = 0;
 		ARX_SPELLS_ResetRecognition();
@@ -875,6 +886,7 @@ bool ARX_SPELLS_Launch(SpellType typ, Entity & source, SpellcastFlags flags, lon
 		
 		SpellcastFlags flgs = flags;
 		flgs &= ~SPELLCAST_FLAG_PRECAST;
+		gameevent::Event("spell.precast")("spell", getSpellName(typ))("level", l);
 		ARX_SPELLS_Precast_Add(typ, l, flgs, duration);
 		return true;
 	}
@@ -922,6 +934,7 @@ bool ARX_SPELLS_Launch(SpellType typ, Entity & source, SpellcastFlags flags, lon
 					}
 				}
 				if(tcount == 0) {
+					refused("no-demon-within-900");
 					ARX_SOUND_PlaySFX(g_snd.MAGIC_FIZZLE, &cpos);
 					return false;
 				}
@@ -947,6 +960,7 @@ bool ARX_SPELLS_Launch(SpellType typ, Entity & source, SpellcastFlags flags, lon
 	
 	std::unique_ptr<Spell> spell = createSpellInstance(typ);
 	if(!spell) {
+		refused("not-implemented");
 		return false;
 	}
 	
@@ -986,6 +1000,10 @@ bool ARX_SPELLS_Launch(SpellType typ, Entity & source, SpellcastFlags flags, lon
 	spell->m_launchDuration = duration;
 	
 	if(!CanPayMana(spell.get(), ARX_SPELLS_GetManaCost(typ, spell->m_level))) {
+		if(byPlayer) {
+			gameevent::Event("spell.refused")("spell", getSpellName(typ))("reason", "no-mana")
+				("mana", player.manaPool.current, 1)("cost", ARX_SPELLS_GetManaCost(typ, spell->m_level), 1);
+		}
 		if(spell->m_caster == EntityHandle_Player) {
 			notification_add("player_cantcast");
 			ARX_SPEECH_AddSpeech(*entities.player(), "player_cantcast", ANIM_TALK_NEUTRAL);
@@ -995,13 +1013,19 @@ bool ARX_SPELLS_Launch(SpellType typ, Entity & source, SpellcastFlags flags, lon
 	}
 	
 	if(!GLOBAL_MAGIC_MODE) {
+		refused("magic-disabled-by-level");
 		ARX_SPELLS_Fizzle(spell.get());
 		return false;
 	}
 	
 	if(!spell->CanLaunch()) {
+		// The spell's own check (a target, a free spot, a caster it accepts) - silent in the game
+		refused("spell-cannot-launch");
 		return false;
 	}
+	
+	gameevent::Event("spell.cast")("spell", getSpellName(typ))("caster", gameevent::entityName(&source))
+		("level", spell->m_level, 1)("target", gameevent::entityName(entities.get(spell->m_target)));
 	
 	spell->Launch();
 	

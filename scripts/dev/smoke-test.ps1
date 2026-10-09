@@ -12,6 +12,7 @@
 	  - no new crash report appeared in the user directory's crashes\ folder
 	  - arx.log has no [E] line and status.json reports errors == 0
 	  - every -Commands line was acknowledged without an error
+	  - the game event counts in status.json (events.byName, #130): vr.mode=1, game.state>=2, -ExpectEvents
 	Prints the state timeline, the [E]/[W] log lines, the tail of the log and a PASS / FAIL verdict
 	per run. Exit code 0 when every run passed, 1 otherwise, 2 when the test was SKIPPED: -Vr while
 	SteamVR is not running, or the game lock stayed busy for -LockTimeoutSec.
@@ -56,8 +57,14 @@
 	Save slots to copy into the isolated user directory before the runs, e.g. save0000. Source:
 	-SaveLibrary, $env:ARXVR_SAVE_LIBRARY, or the player's save folder (see build-paths.ps1).
 
+.PARAMETER Save
+	A save of the test save library (#70, scripts\dev\make-test-saves.ps1), e.g. mvp-goblin-fight: it becomes
+	the ONLY save of the isolated user directory (slots are numbered newest first, so a given save has no
+	stable slot among several), and `--loadslot 0` is the default arx.exe argument.
+
 .PARAMETER SaveLibrary
-	Folder holding the save slots for -Saves (the test save library, #70).
+	Folder holding the saves for -Saves / -Save (the test save library, #70). Default: $env:ARXVR_SAVE_LIBRARY
+	or %LOCALAPPDATA%\ArxFatalisVR\savelib.
 
 .PARAMETER LockTimeoutSec
 	How long to wait for the game lock (and with -Vr the VR lock) before skipping the test (default 300).
@@ -85,6 +92,11 @@
 	Channel commands to send once the game is in the expected state, e.g. 'shot start', 'mark hello',
 	'player.setplayerpos 0 0 0' (see docs/vr/TESTING.md). Each must be acknowledged without an error.
 
+.PARAMETER ExpectEvents
+	Game event counts the final status.json must report (events.byName, #130), each 'name=N' (exactly N)
+	or 'name>=N' (at least N), e.g. 'spell.cast=1','ui.book=2','game.state>=3'. Every run also checks the
+	event log itself: vr.mode=1 and game.state>=2 (a start and EXITED), whatever -ExpectEvents says.
+
 .PARAMETER CloseWindow
 	Quit with WM_CLOSE (what a player does) instead of the channel's quit command.
 
@@ -97,6 +109,9 @@
 	.\scripts\dev\smoke-test.ps1 -Vr -- --loadslot 0
 .EXAMPLE
 	.\scripts\dev\smoke-test.ps1 -Commands 'shot start','mark after-shot' -- --loadlevel 11
+.EXAMPLE
+	.\scripts\dev\smoke-test.ps1 -Save mvp-goblin-fight
+	# a scenario of the test save library: the only save of the isolated directory, loaded with --loadslot 0
 .EXAMPLE
 	.\scripts\dev\smoke-test.ps1 -Saves save0000 -- --loadslot 0
 	# the save comes from the library (or the player's save folder) into the isolated user directory
@@ -111,6 +126,7 @@ param(
 	[string]$UserDir,
 	[switch]$Shared,
 	[string[]]$Saves,
+	[string]$Save,
 	[string]$SaveLibrary,
 	[Alias('VrLockTimeoutSec')]
 	[int]$LockTimeoutSec = 300,
@@ -121,6 +137,7 @@ param(
 	[int]$Repeat = 1,
 	[int]$StartTimeoutSec = 90,
 	[string[]]$Commands = @(),
+	[string[]]$ExpectEvents = @(),
 	[switch]$CloseWindow,
 	[Parameter(ValueFromRemainingArguments)]
 	[string[]]$ArxArgs
@@ -130,6 +147,14 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot 'test-lib.ps1')
 
+# Game event counts to assert (#130): the event log's own baseline first, then -ExpectEvents
+$eventChecks = @(
+	foreach ($spec in @('vr.mode=1', 'game.state>=2') + $ExpectEvents) {
+		if ($spec -notmatch '^\s*([\w.]+)\s*(>=|=)\s*(\d+)\s*$') { throw "-ExpectEvents: expected 'name=N' or 'name>=N', got '$spec'" }
+		[pscustomobject]@{ Name = $Matches[1]; AtLeast = ($Matches[2] -eq '>='); Count = [int]$Matches[3] }
+	}
+)
+
 if (-not $BuildDir) { $BuildDir = Get-DefaultBuildDir $ArxSourceDir $Config }
 # Only this working copy's own fresh build (D-014)
 $copy = Get-ArxWorkingCopyInfo $ArxSourceDir
@@ -138,7 +163,10 @@ $exe = Join-Path $BuildDir 'arx.exe'
 if (-not $TestDir) { $TestDir = Get-ArxTestDir }
 if ($UserDir -and $Shared) { throw '-UserDir and -Shared exclude each other' }
 if (-not $UserDir) { $UserDir = Get-ArxUserDir -Shared:$Shared }
-if ($Shared -and $Saves) { throw '-Saves copies saves into the isolated user directory; it cannot be combined with -Shared' }
+if ($Shared -and ($Saves -or $Save)) { throw '-Saves / -Save copy saves into the isolated user directory; they cannot be combined with -Shared' }
+if ($Save -and $Saves) { throw '-Save and -Saves exclude each other' }
+# -Save <name>: that library save is the only save of the isolated user directory, so slot 0 is it
+if ($Save -and -not $ArxArgs) { $ArxArgs = @('--loadslot', '0') }
 if (-not $ArxArgs -and -not $Menu) { $ArxArgs = @('--loadlevel', '10') }
 if (-not $ArxArgs) { $ArxArgs = @() }
 
@@ -150,6 +178,7 @@ $crashDir = Get-ArxCrashDir $UserDir
 if (-not $Shared) {
 	New-Item -ItemType Directory -Force $UserDir | Out-Null
 	if ($Saves) { Copy-ArxSaves -Names $Saves -UserDir $UserDir -Library $SaveLibrary }
+	if ($Save) { Use-ArxSave -Name $Save -UserDir $UserDir -Library $SaveLibrary }
 }
 Write-Host "build: $(ConvertTo-ShortSha $stamp) ($($copy.Branch));  user dir: $UserDir ($(if ($Shared) { 'shared' } else { 'isolated' }));  test channel: $TestDir"
 
@@ -292,6 +321,17 @@ function Invoke-SmokeRun([int]$Run) {
 		Write-Check ($newCrashes.Count -eq 0) "no new crash report ($($crashesAfter.Count) in $crashDir)"
 		Write-Check ($errorLines.Count -eq 0) "no [E] line in arx.log ($($errorLines.Count) found, $($warningLines.Count) warnings)"
 		Write-Check ($final -and [int]$final.errors -eq 0) "status.json errors == 0 (errors=$(if ($final) { $final.errors } else { '?' }), cleanShutdown=$(if ($final) { $final.cleanShutdown } else { '?' }))"
+		# The game event log (#130): counts from status.json events.byName, never from reading the log
+		$byName = if ($final -and $final.events) { $final.events.byName } else { $null }
+		$failedEvents = @(foreach ($check in $eventChecks) {
+			$have = if ($byName -and $byName.PSObject.Properties[$check.Name]) { [int]$byName.($check.Name) } else { 0 }
+			$ok = if ($check.AtLeast) { $have -ge $check.Count } else { $have -eq $check.Count }
+			if (-not $ok) { "$($check.Name)=$have (expected $(if ($check.AtLeast) { '>=' } else { '' })$($check.Count))" }
+		})
+		$eventsText = ($eventChecks | ForEach-Object { "$($_.Name)$(if ($_.AtLeast) { '>=' } else { '=' })$($_.Count)" }) -join ', '
+		Write-Check ($byName -and $failedEvents.Count -eq 0) "game events as expected ($eventsText; total=$(if ($final -and $final.events) { $final.events.total } else { '?' }))"
+		if (-not $byName) { $reasons.Add('status.json has no events (game event log, #130)') }
+		elseif ($failedEvents) { $reasons.Add("game events: $($failedEvents -join ', ')") }
 		if ($Vr -and $final) {
 			# The session runs and submits frames even with nobody in the headset (synchronized, never focused)
 			Write-Check ([int64]$final.vr.frames -gt 0) "VR frames submitted (frames=$($final.vr.frames), shown=$($final.vr.shownFrames), session=$($final.vr.sessionState))"
@@ -367,7 +407,7 @@ if (-not $lock) {
 	foreach ($line in Get-ArxLockHolders) { Write-Host "  held: $line" -ForegroundColor Yellow }
 	exit 2
 }
-Write-Host "game lock: slot $($lock.Slot)$(if ($lock.Vr) { ' + VR lock' }) ($(Get-ArxAppDataDir))"
+Write-Host "game lock: slot $($lock.Slot)$(if ($lock.Vr) { ' + VR lock' }) ($(Get-ArxLockDir))"
 
 $results = @()
 try {

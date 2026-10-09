@@ -65,6 +65,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "core/Localisation.h"
 #include "core/GameTime.h"
 #include "core/Core.h"
+#include "core/GameEvent.h"
 
 #include "game/Damage.h"
 #include "game/EntityManager.h"
@@ -897,6 +898,7 @@ static void ARX_PLAYER_LEVEL_UP() {
 	player.lifePool.current = player.m_lifeMaxWithoutMods;
 	player.manaPool.current = player.m_manaMaxWithoutMods;
 	player.m_skillOld = player.m_skill;
+	gameevent::Event("player.levelup")("level", player.level)("xp", player.xp);
 	SendIOScriptEvent(nullptr, entities.player(), "level_up");
 }
 

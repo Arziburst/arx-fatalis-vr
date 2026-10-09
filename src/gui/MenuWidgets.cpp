@@ -60,6 +60,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "core/Benchmark.h"
 #include "core/Config.h"
 #include "core/Core.h"
+#include "core/GameEvent.h"
 #include "core/GameTime.h"
 #include "core/Localisation.h"
 #include "core/SaveGame.h"
@@ -115,7 +116,11 @@ void ARX_QuickSave() {
 }
 
 void ARX_LoadGame(const SaveGame & save) {
-	
+
+	// The slot is the save's directory (save0003): the name the scripts and --loadslot do not show
+	gameevent::Event("load")("slot", save.savefile.parent().filename())("name", save.name)
+		("area", u32(save.area))("quick", save.quicksave);
+
 	ARXmenu.requestMode(Mode_InGame);
 	
 	ARX_SOUND_MixerPause(ARX_SOUND_MixerMenu);

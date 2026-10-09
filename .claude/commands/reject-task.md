@@ -17,6 +17,6 @@ Read `CLAUDE.md` and `docs/vr/WORKFLOW.md` first.
    SteamVR is running, and `-Commands` / `scripts\dev\game-cmd.ps1` for the state the feedback is
    about — see `docs/vr/TESTING.md`), push. Update **How to test** in the PR description so it covers
    the fixes.
-6. Wait for CI to be green (`gh pr checks <pr> --watch`), then
+6. Wait for CI to be green (`.\scripts\dev\pr-checks.ps1 <pr> -Watch`), then
    `.\scripts\dev\set-status.ps1 -Issue <n> -Status Testing`.
 7. Report in Russian: what you changed for each point of feedback, and what to re-test in the headset.

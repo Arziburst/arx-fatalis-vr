@@ -37,17 +37,22 @@
 #include "core/Application.h"
 #include "core/ArxGame.h"
 #include "core/Core.h"
+#include "core/GameEvent.h"
 #include "core/GameTime.h"
 #include "core/SaveGame.h"
 #include "core/TimeTypes.h"
 #include "core/Version.h"
 #include "game/Camera.h"
+#include "game/EntityManager.h"
+#include "game/NPC.h"
 #include "game/Player.h"
 #include "game/Spells.h"
 #include "game/effect/Quake.h"
+#include "graphics/Math.h"
 #include "graphics/Renderer.h"
 #include "graphics/image/Image.h"
 #include "gui/Console.h"
+#include "gui/Interface.h"
 #include "gui/Menu.h"
 #include "io/fs/FilePath.h"
 #include "io/fs/Filesystem.h"
@@ -58,35 +63,21 @@
 #include "platform/ProgramOptions.h"
 #include "platform/Time.h"
 #include "scene/ChangeLevel.h"
+#include "scene/Interactive.h"
 #include "util/String.h"
 #include "vr/VRComfort.h"
 #include "vr/VRSystem.h"
 #include "window/RenderWindow.h"
 
+extern bool START_NEW_QUEST;
+
 namespace channel {
 
 namespace {
 
-enum class GameState {
-	Startup,   //!< Before the first level or menu
-	Menu,      //!< Main menu, pause menu, credits, character creation
-	Loading,   //!< A level is being loaded (set by \ref notifyLoading, synchronous within a frame)
-	Gameplay,
-	Cinematic,
-	Exited     //!< Clean shutdown reached
-};
-
-const char * gameStateName(GameState state) {
-	switch(state) {
-		case GameState::Startup:   return "STARTUP";
-		case GameState::Menu:      return "MENU";
-		case GameState::Loading:   return "LOADING";
-		case GameState::Gameplay:  return "GAMEPLAY";
-		case GameState::Cinematic: return "CINEMATIC";
-		case GameState::Exited:    return "EXITED";
-	}
-	return "UNKNOWN";
-}
+// The game state is the event log's (#130): it logs every change as a game.state event
+using gameevent::GameState;
+using gameevent::gameStateName;
 
 const char * menuModeName(MenuMode mode) {
 	switch(mode) {
@@ -274,16 +265,7 @@ ARX_PROGRAM_OPTION_ARG("test-dir", nullptr,
                        &setTestDir, "DIR")
 
 GameState currentState() {
-	if(ARXmenu.mode() != Mode_InGame) {
-		return GameState::Menu;
-	}
-	if(!g_currentArea) {
-		return GameState::Startup;
-	}
-	if(isInCinematic()) {
-		return GameState::Cinematic;
-	}
-	return GameState::Gameplay;
+	return gameevent::detectGameState();
 }
 
 std::string buildStatus(PlatformInstant now) {
@@ -321,6 +303,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("lifeMax", player.lifePool.max);
 		json.value("mana", player.manaPool.current);
 		json.value("manaMax", player.manaPool.max);
+		// Scripts block the controls during scripted scenes (the awakening of a new game): a save made then is not playable (#70)
+		json.value("controlsBlocked", BLOCK_PLAYER_CONTROLS);
 		json.end();
 		// The first-person camera after this frame's effects: bob = how far the camera left the stable head
 		// position (view bobbing), shake = the quake amplitude applied, fov in degrees (zoom) - the numbers
@@ -437,6 +421,16 @@ std::string buildStatus(PlatformInstant now) {
 	}
 	json.end();
 
+	// Game event log (#130): how many events of each name happened, logged or not
+	json.object("events");
+	json.value("total", u64(gameevent::total()));
+	json.object("byName");
+	for(const auto & [name, count] : gameevent::counts()) {
+		json.value(name, u64(count));
+	}
+	json.end();
+	json.end();
+
 	json.value("cmdSeq", g.cmdSeq);
 	json.value("lastCmd", g.lastCmd);
 	json.value("lastCmdError", g.lastCmdError);
@@ -494,8 +488,8 @@ void writeAck(unsigned errors) {
 }
 
 void setState(GameState state) {
+	// Logged by the event log (game.state), which saw the change earlier in this frame
 	g.state = state;
-	LogInfo << "[game] state: " << gameStateName(state);
 	writeStatus(platform::getTime());
 }
 
@@ -624,6 +618,138 @@ std::string execute(std::string_view line) {
 		}
 		LogInfo << "[channel] loading save slot " << slot;
 		LOADQUEST_SLOT = SavegameHandle(slot);
+		return std::string();
+	}
+
+	if(word == "newgame") {
+		// What the menu does for "New game" and the end of the character creation, without the screens (#70)
+		if(ARXmenu.mode() != Mode_MainMenu) {
+			return refuse(std::string("newgame: needs the main menu (a plain launch), mode is ")
+			              + menuModeName(ARXmenu.mode()));
+		}
+		LogInfo << "[channel] starting a new game (average hero)";
+		ARX_MENU_Clicked_NEWQUEST();
+		ARX_PLAYER_MakeAverageHero();
+		START_NEW_QUEST = true;
+		g_canResumeGame = true;
+		ARX_MENU_Clicked_QUIT();
+		return std::string();
+	}
+
+	if(word == "ui") {
+		// What the inventory key does, for tests without a keyboard (#130); the book has the
+		// script command "book open|close"
+		std::string what(rest);
+		util::makeLowercase(what);
+		if(ARXmenu.mode() != Mode_InGame || !g_currentArea) {
+			return refuse("ui: needs a running game");
+		}
+		if(what == "inventory open") {
+			InventoryOpenClose(1);
+		} else if(what == "inventory close") {
+			InventoryOpenClose(2);
+		} else {
+			return refuse("ui: expected \"inventory open\" or \"inventory close\", got \"" + std::string(rest) + "\"");
+		}
+		return std::string();
+	}
+
+	if(word == "save") {
+		// A new save without a thumbnail; the newest save is slot 0 for loadslot (#130)
+		if(rest.empty()) {
+			return refuse("save: expected a save name");
+		}
+		if(ARXmenu.mode() != Mode_InGame || !g_currentArea) {
+			return refuse("save: needs a running game (start with --loadlevel N or use loadslot)");
+		}
+		LogInfo << "[channel] saving as \"" << rest << '"';
+		if(!savegames.save(rest, SavegameHandle(), Image())) {
+			return refuse("save: the game could not save (see the save event and the lines before it)");
+		}
+		return std::string();
+	}
+
+	if(word == "entities") {
+		// One line per entity into <dir>\entities.txt: where the scenarios of the test saves put the player
+		std::string filter(rest);
+		util::makeLowercase(filter);
+		std::ostringstream oss;
+		size_t count = 0;
+		for(const Entity & entity : entities) {
+			std::string id = entity.idString();
+			std::string lower = id;
+			util::makeLowercase(lower);
+			if(!filter.empty() && lower.find(filter) == std::string::npos) {
+				continue;
+			}
+			const char * kind = "other";
+			if(entity.ioflags & IO_NPC) {
+				kind = "npc";
+			} else if(entity.ioflags & IO_ITEM) {
+				kind = "item";
+			} else if(entity.ioflags & IO_FIX) {
+				kind = "fix";
+			} else if(entity.ioflags & IO_MARKER) {
+				kind = "marker";
+			} else if(entity.ioflags & IO_CAMERA) {
+				kind = "camera";
+			}
+			oss << id << ' ' << kind << " show=" << int(entity.show) << " pos=" << std::fixed << std::setprecision(1)
+			    << entity.pos.x << ' ' << entity.pos.y << ' ' << entity.pos.z;
+			if((entity.ioflags & IO_NPC) && entity._npcdata) {
+				oss << " life=" << entity._npcdata->lifePool.current;
+			}
+			oss << '\n';
+			count++;
+		}
+		if(!fs::write(g.dir / "entities.txt", oss.str())) {
+			return refuse("entities: could not write " + (g.dir / "entities.txt").string());
+		}
+		LogInfo << "[channel] entities: " << count << " written to " << (g.dir / "entities.txt");
+		return std::string();
+	}
+
+	if(word == "setpos") {
+		// setpos <x> <y> <z> [yaw]: the player to exact coordinates (entities.txt lists them), for scenario saves
+		std::istringstream iss{std::string(rest)};
+		float x = 0.f, y = 0.f, z = 0.f, yaw = 0.f;
+		if(!(iss >> x >> y >> z)) {
+			return refuse("setpos: expected x y z [yaw], got \"" + std::string(rest) + "\"");
+		}
+		bool hasYaw = bool(iss >> yaw);
+		if(currentState() != GameState::Gameplay || !entities.player()) {
+			return refuse(std::string("setpos: needs a level on screen (state ") + gameStateName(currentState()) + ")");
+		}
+		if(hasYaw) {
+			player.desiredangle.setYaw(yaw);
+			player.angle.setYaw(yaw);
+		}
+		ARX_INTERACTIVE_Teleport(entities.player(), Vec3f(x, y, z));
+		LogInfo << "[channel] player to " << x << " " << y << " " << z;
+		return std::string();
+	}
+
+	if(word == "lookat") {
+		// lookat <entity>: turn the player towards an entity. An entity's position is on the floor (levers,
+		// chests, items), so the aim is 40 units above it, seen from the player's eyes (player.pos is the eye)
+		if(currentState() != GameState::Gameplay || !entities.player()) {
+			return refuse(std::string("lookat: needs a level on screen (state ") + gameStateName(currentState()) + ")");
+		}
+		Entity * target = entities.getById(rest);
+		if(!target) {
+			return refuse("lookat: unknown entity \"" + std::string(rest) + "\"");
+		}
+		Vec3f delta = target->pos - player.pos;
+		delta.y -= 40.f;
+		if(glm::length(Vec2f(delta.x, delta.z)) < 1.f) {
+			return refuse("lookat: \"" + std::string(rest) + "\" is where the player stands");
+		}
+		Anglef angle = vectorToAngle(glm::normalize(delta));
+		player.desiredangle.setYaw(angle.getYaw());
+		player.angle.setYaw(angle.getYaw());
+		player.desiredangle.setPitch(angle.getPitch());
+		player.angle.setPitch(angle.getPitch());
+		LogInfo << "[channel] player looks at " << rest << " (yaw " << angle.getYaw() << ", pitch " << angle.getPitch() << ")";
 		return std::string();
 	}
 
@@ -876,8 +1002,9 @@ void notifyLoading(AreaId area) {
 		return;
 	}
 
+	// Logged by the event log (game.state to=LOADING area=N)
+	ARX_UNUSED(area);
 	g.state = GameState::Loading;
-	LogInfo << "[game] state: LOADING level " << u32(area);
 	writeStatus(platform::getTime());
 }
 
@@ -889,7 +1016,6 @@ void shutdown() {
 
 	g.state = GameState::Exited;
 	g.cleanShutdown = true;
-	LogInfo << "[game] state: EXITED";
 	writeStatus(platform::getTime());
 
 	g.enabled = false;

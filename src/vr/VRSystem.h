@@ -46,7 +46,7 @@
  *     \ref shutdown at exit
  *
  * The frame loop (#20): while the session runs, \ref beginFrame waits for the headset's next
- * display slot (\c xrWaitFrame - the only clock that paces the game in VR, D-023), begins the
+ * display slot (\c xrWaitFrame - the only clock that paces the game in VR, D-024), begins the
  * frame and locates the eye poses for its predicted display time; the game simulates and renders;
  * \ref submitFrame hands the frame to the compositor with exactly those poses (pose-matched
  * submission, research rows F-21 and F-116). A frame shown from outside the game loop (the

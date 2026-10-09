@@ -355,7 +355,8 @@ float updateTurn(float seconds, bool allowed) {
 	const TurnSettings settings = turnSettings();
 	const float axis = g_input.game.state().turn;
 	const u64 snaps = g_input.turn.snaps();
-	const float yaw = g_input.turn.update(settings, axis, seconds, allowed);
+	// A capture of the VR settings takes the controls: the turn stick does not turn meanwhile (#178)
+	const float yaw = g_input.turn.update(settings, axis, seconds, allowed && !g_input.capture.active());
 
 	// A snap is a player action: one event each; a smooth turn is an episode: logged when it starts and stops
 	if(g_input.turn.snaps() != snaps) {

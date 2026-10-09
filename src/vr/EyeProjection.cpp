@@ -31,12 +31,12 @@ namespace vr {
 namespace {
 
 //! OpenXR view axes (y up, z back) to engine view axes (y down, z forward): a half turn about x
-Vec3f toEngineAxes(const Vec3f & v) {
+Vec3f projectionEngineAxes(const Vec3f & v) {
 	return Vec3f(v.x, -v.y, -v.z);
 }
 
 //! The same half turn applied to a rotation: conjugation by the half turn flips the y and z parts
-glm::quat toEngineAxes(const glm::quat & q) {
+glm::quat projectionEngineAxes(const glm::quat & q) {
 	return glm::quat(q.w, q.x, -q.y, -q.z);
 }
 
@@ -103,8 +103,8 @@ std::array<EyeRig, 2> eyeRig(const LocatedEye & left, const LocatedEye & right, 
 		// The eye in the head's own frame (OpenXR axes), then in engine axes and game units
 		const Vec3f offset = localToHead * (eye.position - headPosition);
 		const glm::quat rotation = glm::normalize(localToHead * eye.orientation);
-		rig[i].offset = toEngineAxes(offset) * params.unitsPerMeter;
-		rig[i].rotation = toEngineAxes(rotation);
+		rig[i].offset = projectionEngineAxes(offset) * params.unitsPerMeter;
+		rig[i].rotation = projectionEngineAxes(rotation);
 		rig[i].fov = eye.fov;
 	}
 

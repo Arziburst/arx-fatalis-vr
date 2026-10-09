@@ -1037,8 +1037,15 @@ void OpenGLRenderer::flushState() {
 				 * that is composited by its alpha later (the flat frame over the stereo world in
 				 * VR, #19) holds premultiplied color with the right alpha. No draw reads the
 				 * destination alpha, and the window never shows it: flat rendering is unchanged.
+				 * A blend that keeps all of the destination (additive glows, particles, flares)
+				 * only adds light and covers nothing: its alpha would turn the world behind an
+				 * additive texture's black into a dark square (#72).
 				 */
-				glBlendFuncSeparate(glblendSrc, glblendDst, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+				if(glblendDst == GL_ONE) {
+					glBlendFuncSeparate(glblendSrc, glblendDst, GL_ZERO, GL_ONE);
+				} else {
+					glBlendFuncSeparate(glblendSrc, glblendDst, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+				}
 				m_glblendSrc = glblendSrc;
 				m_glblendDst = glblendDst;
 			}

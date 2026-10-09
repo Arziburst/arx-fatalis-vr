@@ -102,6 +102,9 @@ struct PreparedCamera {
 	Vec2f m_center;
 	Vec2f m_screenToView;
 	
+	//! Screen pixels per view-space unit at depth 1 (vertical), see projectionPixelsPerUnit()
+	float m_pixelsPerUnit;
+	
 	PreparedCamera()
 		: m_worldToView(1.f)
 		, m_viewToClip(1.f)
@@ -110,6 +113,7 @@ struct PreparedCamera {
 		, m_viewToWorld(1.f)
 		, m_center(0.f)
 		, m_screenToView(0.f)
+		, m_pixelsPerUnit(0.f)
 	{ }
 	
 };
@@ -140,6 +144,17 @@ void PrepareCamera(Camera * cam, const Rect & viewport, const glm::mat4x4 & worl
 
 //! \return the world-to-view matrix of \a cam as PrepareCamera() derives it from its angle and position
 glm::mat4x4 cameraWorldToView(const Camera & cam);
+
+/*!
+ * \brief Screen pixels per view-space unit at depth 1, vertically, of \a viewToClip drawn into a
+ *        viewport of \a viewportSize pixels
+ *
+ * The scale of everything the engine sizes on the screen by distance (sprites, particles, light
+ * flares). For the engine's own symmetric projection it is exactly min(width, height) / 480 * focal,
+ * the formula the sprites used; for an eye's off-axis projection (#19) in a portrait eye image it is
+ * the eye's own vertical scale, which that formula misses by the image's aspect (#72).
+ */
+float projectionPixelsPerUnit(const glm::mat4x4 & viewToClip, const Vec2f & viewportSize);
 
 void SetActiveCamera(Camera * cam);
 

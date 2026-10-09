@@ -2057,7 +2057,8 @@ void ArxGame::renderLevel() {
  * game (#71) with the same random numbers. The eye image is the screen for everything drawn into
  * it: full-screen effects, sprite sizes and their culling measure themselves against g_size, which
  * is the eye's size during the draw (#73 separates the interface size from the scene's for good).
- * Afterwards the head camera is prepared again for the interface, at the window's size.
+ * Afterwards the head camera is prepared again for the interface, at the window's size, and the
+ * entities' screen data for mouse picking is the head camera's again (#72).
  */
 void ArxGame::renderStereoViews() {
 
@@ -2116,6 +2117,9 @@ void ArxGame::renderStereoViews() {
 
 	prepareStereoHeadCamera(cam);
 
+	// The eyes left their screen positions in the entities: picking reads the head camera's (#72)
+	ProjectEntitiesForPicking();
+
 }
 
 void ArxGame::renderSceneView() {
@@ -2145,7 +2149,8 @@ void ArxGame::renderSceneView() {
 	// Begin Particles
 	g_particleManager.Render();
 
-	ARX_PARTICLES_Render();
+	// In VR the screen-space particles go to the flat frame with the interface (#72)
+	ARX_PARTICLES_Render(vr::stereoActive() ? ParticleLayer::World : ParticleLayer::All);
 	ParticleSparkRender();
 	
 	// End Particles
@@ -2193,6 +2198,16 @@ void ArxGame::renderInterface() {
 	ARX_PROFILE_FUNC();
 
 	g_renderBatcher.clear();
+
+	if(vr::stereoActive()) {
+		// The screen-space particles (the book icon's FX, the book's fire) are window coordinates:
+		// under the interface on the flat frame, where the scene pass drew them in flat mode (#72)
+		ARX_PARTICLES_Render(ParticleLayer::Screen);
+		GRenderer->SetFogColor(Color());
+		g_renderBatcher.render();
+		GRenderer->SetFogColor(g_fogColor);
+		g_renderBatcher.clear();
+	}
 
 	// Draw game interface if needed
 	if(ARXmenu.mode() == Mode_InGame && !cinematicBorder.isActive()) {

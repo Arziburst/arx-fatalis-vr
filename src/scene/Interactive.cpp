@@ -1975,6 +1975,45 @@ void UpdateInter() {
 
 bool g_reprojectEntitiesPerView = false;
 
+//! The entities RenderInter() draws
+static bool isRenderedInScene(const Entity & entity) {
+	return (entity.gameFlags & GFLAG_ISINTREATZONE)
+	       && !(entity.ioflags & (IO_CAMERA | IO_MARKER))
+	       && entity != *entities.player();
+}
+
+//! Where RenderInter() puts an entity without animation
+static TransformInfo staticEntityTransform(const Entity & entity) {
+	Anglef angle = entity.angle;
+	angle.setYaw(MAKEANGLE(270.f - angle.getYaw()));
+	return TransformInfo(entity.pos, toQuaternion(angle), entity.scale);
+}
+
+void ProjectEntitiesForPicking() {
+
+	ARX_PROFILE_FUNC();
+
+	for(Entity & entity : entities.inScene()) {
+
+		if(!isRenderedInScene(entity) || !entity.obj) {
+			continue;
+		}
+
+		if(entity.animlayer[0].cur_anim) {
+			// bbox2D is still the update's; the pixel test reads the clip positions the eyes replaced
+			DrawEERIEInter_ViewProjectTransform(entity.obj);
+		} else if(!(entity.ioflags & IO_NPC)) {
+			// The draw set both from the last eye. The model transform is done again: gold coins share
+			// their objects, the last coin drawn left its world positions in them
+			entity.bbox2D.min.x = 9999;
+			entity.bbox2D.max.x = -1;
+			DrawEERIEInter_Prepare(entity.obj, staticEntityTransform(entity), &entity, false);
+		}
+
+	}
+
+}
+
 void RenderInter() {
 
 	ARX_PROFILE_FUNC();
@@ -1983,9 +2022,7 @@ void RenderInter() {
 
 	for(Entity & entity : entities.inScene()) {
 
-		if(!(entity.gameFlags & GFLAG_ISINTREATZONE)
-		   || (entity.ioflags & (IO_CAMERA | IO_MARKER))
-		   || entity == *entities.player()) {
+		if(!isRenderedInScene(entity)) {
 			continue;
 		}
 
@@ -2000,7 +2037,8 @@ void RenderInter() {
 
 			if(g_reprojectEntitiesPerView && entity.obj) {
 				// The world positions are the update's; the screen positions follow this view's
-				// camera (an eye, #19). bbox2D stays the head camera's for picking.
+				// camera (an eye, #19). bbox2D stays the head camera's for picking, the clip positions
+				// go back to it in ProjectEntitiesForPicking() (#72)
 				DrawEERIEInter_ViewProjectTransform(entity.obj);
 			}
 
@@ -2016,11 +2054,7 @@ void RenderInter() {
 			}
 			
 			if(!(entity.ioflags & IO_NPC) && entity.obj) {
-				Anglef angle = entity.angle;
-				angle.setYaw(MAKEANGLE(270.f - angle.getYaw()));
-				glm::quat rotation = toQuaternion(angle);
-				TransformInfo t(entity.pos, rotation, entity.scale);
-				DrawEERIEInter(entity.obj, t, &entity, false, invisibility);
+				DrawEERIEInter(entity.obj, staticEntityTransform(entity), &entity, false, invisibility);
 			}
 			
 		}

@@ -702,3 +702,21 @@ high); `[datetime]::Parse($obj.updated)` on a JSON field gave a date a month off
 a PowerShell test helper with parameter `$G` and a local `$g` failed with "cannot convert Graphics to Int32".
 **Cause:** the runner took everything after the operator as the value; PowerShell variable names are case-insensitive, so `$g` and `$G` are one variable.
 **Do:** write timeouts as `60s` (the parser now rejects a value with a trailing bare number); never name two variables in one scope by letters that differ only in case.
+
+## 2026-10-09 — VR: picking finds nothing although the item is in the middle of the view
+
+**Symptom:** in a stereo frame (`--vr-sim` or the headset) the mouse hovers nothing — no highlight, `pick` finds nothing on
+the whole window — while the item is plainly on screen; the item's `bbox2D` is in the thousands (`597 1066 657 1113` in a
+640x480 window).
+**Cause:** the scene is drawn once per eye, and drawing an entity stores its screen data (clip positions, items'
+`bbox2D`) for the camera of the draw — the last eye, at the eye image's size. Mouse picking reads that data next frame
+against window coordinates (#72).
+**Do:** anything that keeps screen positions from a draw must be projected again with the head camera after the eyes
+(`ProjectEntitiesForPicking()` after `renderStereoViews()`); check with `pick <entity>` (`targetSeenInBox`).
+
+## 2026-10-09 — `specialfx newspell` logs `[W] unexpected newline`
+
+**Symptom:** the script command `specialfx newspell` (the book icon's FX) works, but adds a `[W] ScriptUtils … [player:N] :
+unexpected newline`, which the run digest reports as a new warning.
+**Cause:** the command skips one word after `newspell`; with nothing after it, it reads the end of the line.
+**Do:** send `specialfx newspell 1`.

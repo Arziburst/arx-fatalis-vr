@@ -138,6 +138,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `setpos <x> <y> <z> [yaw]` | put the player at exact coordinates, optionally facing `yaw`. `y` is the **eye**: the floor is 170 units lower (a `y` at floor level puts the eye in the floor: black screen). About 100 units are a metre. Refused outside gameplay (#70) |
 | `lookat <entity>` | turn the player (yaw and pitch) towards an entity, aiming 40 units above its floor position. The pitch is not kept by a save and does not matter in VR (the head decides); the yaw is kept (#70) |
 | `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
+| `pick [<entity>]` | what mouse picking (`FlyingOverObject`) finds, on an 8-pixel grid over the window (#72): `pick.center` (the entity at the window's center), `pick.scan` (`<entity> <hits> <x> <y>` per entity found, most hits first) and, for an entity, `targetHits`, `targetHitX/Y` (the middle of its hits), `targetSeenX/Y` (where the camera prepared last — the head camera at the window's size — sees the middle of its bounding box), `targetOffset` (the distance between the two), `targetBox` (its `bbox2D`) and `targetSeenInBox`. A thin item (a key) can fall between the grid points: `targetSeenInBox` still tests its box. Refused outside gameplay or for an unknown entity; one `[channel] pick:` log line |
 | `vr-input down\|up\|tap <control>`, `vr-input stick left\|right <x> <y>`, `vr-input bind <event> <binding>`, `vr-input reset` | the VR controls' table without a headset (#30, `vr/VRInput.h`): a control (`right.a`, `left.grip`, `right.stick_down` …) held, let go or tapped as if a controller did it, merged into what OpenXR reports and resolved by the same table at the next frame; the game then reacts as to the controllers (#74: inventory, book, jump, crouch toggle, the game menu, the mouse buttons). `stick` holds a stick deflected (the analog value only — its direction controls are `down` / `up`), seen in `vr.input.game.moveX/moveY/turn`; `bind` remaps one event (`bind jump left.grip+left.a`, `bind menu left.b:long`, `bind magic_mode none`); `reset` restores the default layout for the current controllers and lets go of everything. Refused with the reason for an unknown control, event or binding. `vr.input` in the status (`vr.input.game.held`: the actions, buttons and keys the engine is given); one `[vr] input: <event> (<binding>)` log line per event press, one `[vr] input: layout …` line per layout change |
 | `recenter` | the head is measured from its next sample: a new head reference (#24; the player's button chord is #28). A `vr.head.reference reason=channel` event once a head is there |
 | `headpose <yaw> <pitch> <roll> [<x> <y> <z>]` / `headpose off` | a simulated head for checks without a headset (#24): degrees as a person says them — yaw left, pitch up, roll left positive — and optionally the position in metres in the OpenXR LOCAL space (x right, y up, z back). It drives the first-person camera exactly like the headset (`vr.head` and `camera` in the status); the first pose takes the reference, later ones move the camera from it. A real headset pose wins over it; `off` removes it |
@@ -154,7 +155,8 @@ Useful script-console commands for test scenes (the full list is what `ScriptEve
 Commands that drive the [game event log](#the-game-event-log) (verified in #130): `book open|close`,
 `inventory playeradd magic/potion_life/potion_life`, `addxp 3000` (a level-up), `spellcast -fsm 5
 magic_sight self` (a cast), `spellcast -fsm 5 fake_summon self` (a refused cast),
-`human_base_0033.dodamage player 1000` on level 10 after `setplayercontrols on` (the player's death;
+`specialfx newspell 1` (the book icon's screen-space particles; the command reads a word after
+`newspell`, without it a `[W] unexpected newline`), `human_base_0033.dodamage player 1000` on level 10 after `setplayercontrols on` (the player's death;
 self-inflicted `dodamage` and damage while the controls are blocked do nothing), `attachnpctoplayer`
 (an obsolete command: a `[W]` and a `script.error` event, no `[E]`).
 A refused line costs nothing: `[W] [channel] script command failed: Unknown command: …` and
@@ -648,7 +650,8 @@ the eyes by its alpha (research rows F-115, F-162, F-163; the design is D-025):
   cant, the projection is the eye's own off-axis matrix straight from its `XrFovf`
   (`src/vr/EyeProjection.h`, pure math, host tests in `tests/vr/EyeProjectionTest.cpp`); animated
   entities are projected again for the eye (`g_reprojectEntitiesPerView`); `g_size` is the eye's
-  size during the draw, so full-screen effects and sprite sizes follow the eye image.
+  size during the draw, so full-screen effects follow the eye image; sprite sizes follow the eye's
+  projection (#72, below).
 - `vr::submitFrame()` submits the eye images as the projection layer with the frame's poses and
   the quad in front; a frame whose scene was not drawn (a menu) clears both eyes to the dark
   background — both eyes or none (F-116). The desktop mirror (#21) copies the mirrored eye in
@@ -667,10 +670,30 @@ plus one `vr.stereo` game event with the same numbers, and `status.json` → `vr
 (`active`, `frames`, the sizes and angles). `OpenXR session stopped after N frames (M shown, K in
 stereo)` counts the stereo frames at the end.
 
-What stays with the head camera until #72 / #73 (and looks flat or misplaced in the headset):
-particles, sparks, light flares and the mouse-drawn rune sparkles (update-phase 2D data at the
-window's size); screen-space picking with the mouse (#37 replaces it with hand reticles). The
-draw check is refused in a stereo frame: its two views would be the two eyes.
+**CPU-projected geometry per eye (#72).** Everything the scene pass projects on the CPU is projected
+while it is drawn, so with the eye's camera: world sprites, particles, sparks, light flares, the
+magic flares of rune drawing (world points 75 units in front of the head), spell effects, trails,
+items and projectiles; animated entities are projected again for the eye. What #72 added:
+- **Sprite size from the projection.** `EERIECreateSprite` scales by the prepared camera's
+  `m_pixelsPerUnit` (`projectionPixelsPerUnit()`, `game/Camera.h`): exactly the old
+  `min(width, height) / 480 · focal` for the engine's own camera, the eye's own vertical scale in a
+  portrait eye image, where the old formula was 10 % short (host tests in `EyeProjectionTest`).
+- **Picking reads the head camera.** The eyes leave their clip positions (and the items' `bbox2D`)
+  in the entities, at the eye image's size; after the eyes `ProjectEntitiesForPicking()` projects
+  them again with the head camera at the window's size, where the mouse is. `pick` measures it.
+- **Screen-space particles on the flat frame.** `PARTICLE_2D` particles (the book icon's FX, the
+  book's fire and rune sparkles) are window coordinates: in a stereo frame they are drawn with the
+  interface on the quad (`ParticleLayer::Screen`), not into the eyes.
+- **Additive light on the quad covers nothing.** A blend that keeps the destination (`dst = ONE`:
+  additive glows and particles) leaves the quad's alpha as it is; it used to write the texture's
+  alpha, so the black around an additive particle hid the world as a dark square.
+
+`scripts\dev\xrs\tl-reprojection.xrs` is the check, on the simulated headset with the `mvp-items`
+save: `.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence tl-reprojection -Save mvp-items` (see
+[What was measured](#what-was-measured-owners-pc-index-steamvr-21710-2026-10-08)). Still with the
+head camera: the visibility test of light flares (raycast from the head, once per frame) and the
+interface itself; screen-space picking with the mouse stays until #37 replaces it with hand
+reticles. The draw check is refused in a stereo frame: its two views would be the two eyes.
 
 **Without a headset:** the per-eye path runs unchanged on the simulated headset (`--vr-sim`,
 below), and `eye-check.ps1` is its acceptance. Measured on #19 alone (2026-10-09, before #24): `world`
@@ -724,7 +747,8 @@ luma ≤ 4), `background` (≥ 90 % the eyes' clear color: the eye got no pictur
 color), `transparent` (a quad the game submits blended by its alpha — the 2D interface over the
 stereo world, #19 — with under 10 % coverage in its middle; the compositor blends such a quad by
 its alpha plane, premultiplied, like the runtime does, so the eyes show through where nothing is
-drawn). `lr` has the left/right difference (mean luma levels on a 160-column grid), the horizontal
+drawn); `quad.covered` counts the flat frame's pixels that cover the eyes (alpha at least half, #72).
+`lr` has the left/right difference (mean luma levels on a 160-column grid), the horizontal
 shift of the left picture against the right one (> 0 is right) and the eye separation; `versus` the
 difference of each eye to every earlier shot. `vr.sim` also has the rig, the eye poses as last
 located (`eyes`, with `separation`) and the timeline's state; a `vr.sim.shot` game event per shot.
@@ -798,6 +822,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `snap-turn` | `vr-input tap right.stick_right` reaches the game (syncs advance), no errors | #32: the player turns |
 | `walk-forward` | the player stands still without input; the stick is held and let go | #31: the player moves |
 | `recenter` | a head offset is set and read back | #28: `recenter` is accepted (it logs one expected `[W]`) |
+| `tl-reprojection` | picking reads the head camera after the eyes, the book icon's particles are on the quad and add no coverage (#72); run with `-Save mvp-items` through the smoke test (`xrs-run.ps1` has no `-Save`) | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
 `scripts\dev\test-xrs.ps1` (a fake game answering the channel files; in `run-script-tests.ps1`, so in CI).
@@ -842,6 +867,10 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | 2026-10-09, #76: `comfort-check.ps1` — one flat run, `comfort off` then `comfort on`, in each phase `quake 300 3000 400` and Magic Sight, status sampled every 100 ms (`camera.shake`, `camera.roll`, `camera.fov`, `camera.bob`) | smoke test `PASS`, 0 errors. **off** (18 samples): shake max **2.622**, roll max 0.428°, fov **75.00 → 80.65**, bob max **1.472** (the idle animation moves the head too). **on** (27 samples): shake **0**, roll **0**, fov **75.00** in every sample, bob **0**. Log: one `[vr] comfort:` line per policy change, one `screen shake suppressed - intensity 300, 3000 ms, period 400` and one `FOV zoom suppressed - focal -30 (Magic Sight)` per episode, nothing per frame. The `off` phase is the broken state on purpose: the instrument sees each of the three motions, so the check can fail |
 | 2026-10-09, #76: the first version of the same check, Magic Sight cast with `spellcast -fsx 5 magic_sight self` | `FAIL` of the check only (the smoke test passed): fov **75.00 in both phases** — the spell never launched. On the player `spellcast` without `-m` is queued for the rune drawing, which skips the player (TRAPS.md); `-fsmx` zooms (row above). The same `-fs` cast the #71 spell rows above — #155 re-runs them |
 | 2026-10-09, #24: `head-check.ps1` — one flat run on `mvp-new-game`, phases `comfort on` (flat), `headpose 0 0 0 0 1.7 0`, `headpose 30 -20 10 0 1.7 0`, `headpose 0 0 0 0.3 1.5 0`, `headpose 0 0 0 1.0 1.7 0`, `recenter`, `headpose off`, status sampled every 100 ms | `PASS`, 25 samples, smoke test 0 errors. Body yaw 359.75 throughout. **flat**: source `none`, camera yaw 359.75 = body. **ahead**: source `sim`, 1 reference, camera = body, offset 0. **turn**: camera yaw **29.75** (+30), pitch **20.00**, roll **350.00**, position unchanged. **move**: offset **(30.00, 20.00, −0.13)** = 30 cm right and 20 cm down turned by the body's yaw, and the camera moved by it. **lean** (1 m): **clamped**, horizontal offset **60.00**. **recenter**: 2 references, offset 0. **off**: source `none`, camera = body again. Six `vr.head*` events, nothing per frame. The shots `head-ahead` / `head-turn` show the cell door moving right and the floor coming into view. The plain smoke test (`--loadlevel 10`) logs no `vr.head` event at all: flat play is untouched. The host tests (`HeadPoseTest`, 10 cases) fail 5 of 10 with the yaw turn's sign flipped on purpose. After the VR-only FOV of the quad was added, `comfort-check.ps1` still `PASS` with fov **75.00** in flat mode (46 samples): the quad FOV needs a session. The quad FOV itself (a VR session) was not exercised: the owner's headset tests held SteamVR, workers ran flat only |
+| 2026-10-09, #72: `smoke-test.ps1 -VrSim idle -Sequence tl-reprojection -Save mvp-items` (simulated Index, 640x480 window, head pitched 35° down at the table) | `PASS`, 24 of 24 steps. `pick key_base_0005`: seen at **308, 327**, its `bbox2D` **296 320 – 320 334** contains it (the key is too thin for the grid). `pick blank_form_0001`: **4** grid hits around 280, 304, seen at 283, 307 — **3.9 px** apart. `specialfx newspell 1`: the quad changes by **0.56** (two still quads: **0**), `quad.covered` **6315 → 6315** |
+| 2026-10-09, #72: **the checks can fail** — the same sequence on a build without `ProjectEntitiesForPicking()` | `FAIL` at `targetSeenInBox`: the key's `bbox2D` is **597 1066 – 657 1113** (the right eye's, at 1440x1600) against 308, 327 seen in the window, and the whole 4800-point grid finds **nothing** |
+| 2026-10-09, #72: the same on a build with the old quad alpha (`GL_ONE, GL_ONE_MINUS_SRC_ALPHA` for every blend) | `FAIL` at the coverage step: `quad.covered` **6347 → 8626** — the book icon's additive particles cover 2279 more pixels of the eyes (dark squares around them) |
+| 2026-10-09, #72: `eye-check.ps1`; `smoke-test.ps1 -Commands 'drawcheck 120'` (flat) | `PASS` on all six legs: pairing 428 / 428, separation 64 mm, difference 4.42 over a floor of 0.96, parallax +14 columns, yaw 25° with the pictures changed by 6.5 / 6.9. Flat: `PASS`, **0 of 120** frames differ, 0 errors, 0 warnings |
 | 2026-10-09, #24: the owner's headset run of #215 (`test-pr.ps1 215`, shared user dir, `--skiplogo --loadslot 0`) showed a **black world with only the HUD** | Not the camera: the shared save folder was empty, so no level was loaded — `game.state` stayed `STARTUP` for the whole run, no `level.loaded`, rate line `game 0.1 mean` ms (the #21 run before it: the same). After the fix, flat `smoke-test.ps1 -- --skiplogo --loadslot 5` with one save: state **`MENU`** at 0.8 s (before: an empty level), one `[E] --loadslot 5: no such save, 1 save(s) in the save game dir - starting at the main menu instead of an empty level` (the smoke test fails on it, as it should). `test-save-library.ps1`: `Get-ArxLoadSlotProblem` refuses `--loadslot 0` with no saves and `--loadslot 1` with one, accepts `--loadslot 0` with one (6 new checks) |
 | 2026-10-09, #24 on the simulated headset (#112): `eye-check.ps1` (level 10), then `smoke-test.ps1 -VrSim head-motion`, then `head-check.ps1` again | **Before** (the head applied in `updateFirstPersonCamera`): eye check `FAIL (yaw)` — both eyes turned 25°, picture changed **1.34** (floor 0.81, needs > 2.42); the `yaw25` flat frame identical to `still-a`: level 10's intro conversation camera overwrote the head (TRAPS.md). **After** (the head applied in `updateActiveCamera` to the camera the frame renders with, taken off again next frame): eye check **`PASS`** — world, pairing 428/428, separation 64 mm, difference 5.887 vs floor 0.844, parallax 16 columns, **yaw: picture changed 4.246 / 4.245**. `head-motion`: shots `center`, `right10cm`, `crouch30cm`, `turned` all **left world, right world, flat frame world**; the `turned` frame faces the right wall and more floor, `crouch30cm` sits lower. `head-check.ps1` still `PASS` with the same numbers |
 | 2026-10-09, #115 log banner: flat smoke test, then `status.json` and the first log lines asserted by script | `PASS`; `build.commit` = `git rev-parse HEAD` of the worktree **after a commit and a rebuild** (before #115 a worktree kept its first build's commit), `build.branch`, `build.config` = `Release`, `vr.manifest` = the SteamVR manifest from `HKLM`, `vr.runtime` = `""` in a flat run; the four banner lines match their documented shape. `XR_RUNTIME_JSON` → a missing file (flat, `--no-vr`): the manifest line says `from XR_RUNTIME_JSON, overriding the registry's "…steamxr_win64.json"`, exactly **1** `[W] … does not exist`, `vr.manifest` = that path, `PASS`. `built-from.txt` edited to another commit: exactly **1** `[W] built-from.txt names commit …`, `PASS`. The `OpenXR runtime answered` line needs an instance (SteamVR running): not exercised in that session, it is the renamed `Using OpenXR runtime` line |

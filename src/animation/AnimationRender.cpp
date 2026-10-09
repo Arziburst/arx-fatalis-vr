@@ -748,20 +748,14 @@ void DrawEERIEInter_Render(EERIE_3DOBJ * eobj, const TransformInfo & t, Entity *
 	}
 }
 
-void DrawEERIEInter(EERIE_3DOBJ * eobj,
-                    const TransformInfo & t,
-                    Entity * io,
-                    bool forceDraw,
-                    float invisibility
-) {
-	ARX_PROFILE_FUNC();
-	
+bool DrawEERIEInter_Prepare(EERIE_3DOBJ * eobj, const TransformInfo & t, Entity * io, bool forceDraw) {
+
 	if(!eobj)
-		return;
+		return false;
 
 	// Avoids To treat an object that isn't Visible
 	if(!forceDraw && io && io != entities.player() && !Cedric_IO_Visible(t.pos))
-		return;
+		return false;
 
 	DrawEERIEInter_ModelTransform(eobj, t);
 	if(io) {
@@ -773,10 +767,20 @@ void DrawEERIEInter(EERIE_3DOBJ * eobj,
 		io->bbox2D = UpdateBbox2d(*eobj);
 	}
 
-	if(!forceDraw && ARX_SCENE_PORTAL_ClipIO(io, t.pos))
-		return;
+	return forceDraw || !ARX_SCENE_PORTAL_ClipIO(io, t.pos);
+}
 
-	DrawEERIEInter_Render(eobj, t, io, invisibility);
+void DrawEERIEInter(EERIE_3DOBJ * eobj,
+                    const TransformInfo & t,
+                    Entity * io,
+                    bool forceDraw,
+                    float invisibility
+) {
+	ARX_PROFILE_FUNC();
+
+	if(DrawEERIEInter_Prepare(eobj, t, io, forceDraw)) {
+		DrawEERIEInter_Render(eobj, t, io, invisibility);
+	}
 }
 
 

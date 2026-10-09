@@ -8,6 +8,21 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — A reference project's manual and settings screen describe a feature its code no longer has
+
+**Symptom:** research on OpenMW VR finds two accounts of the same facts. The manual says controllers "vibrate in
+response to successful hits, and to being hit", and the game's VR page has a *haptics enabled* setting; it also says
+the bindings screen "does NOT do any sanity checking". The code: the hit haptics are commented out (`TODO: Port to
+lua`), the setting is read by nothing, no shipped script calls the haptics function; and the rebinding code refuses
+a conflicting binding with a message. A config comment says the hand-offset sliders run "0 = -1 meters, 1 = 1
+meters"; the code computes `(v - 0.5)` m. The `player height` setting is read into a scale that nothing applies.
+**Cause:** the manual, the settings window and the config comments were written before a port or refactor (combat
+code moving to Lua, the bindings screen becoming a script page) and not updated; a screen that lists a setting
+proves nothing about what the code does with it.
+**Do:** for every catalog row that rests on "the project does X", search the code for the *use* of the setting or the
+call, not its declaration, and say which of manual, screen and code the row rests on; when they disagree the row
+follows the code and names the disagreement (RESEARCH-reference-mods.md, F-44, F-167, F-171, F-174).
+
 ## 2026-10-09 — Scripting a launch from PowerShell: three tools that quietly do the wrong thing
 
 **Symptoms:** (1) `pwsh -File run-windows.ps1 ... -- --no-vr` fails with "parameter name '' is ambiguous";

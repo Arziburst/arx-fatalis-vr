@@ -27,7 +27,8 @@
 	worker's runs never touch the player's files in Saved Games\Arx Libertatis; -Saves copies save
 	slots into it.
 
-	Until the engine finds the data itself (task #79), this script does the lookup (Find-ArxFatalisSteamInstall in build-paths.ps1).
+	The game finds the Arx Fatalis data in the Steam libraries itself (#79, arx.log line "Steam data:");
+	-DataDir passes another install folder as --data-dir.
 
 .PARAMETER Config
 	Which build to run: Release (default), RelWithDebInfo or Debug.
@@ -37,7 +38,8 @@
 	Must be a build directory of this working copy.
 
 .PARAMETER DataDir
-	Arx Fatalis install folder. Default: found automatically in the Steam libraries.
+	Arx Fatalis install folder, passed as --data-dir. Default: none - the game finds the install in the
+	Steam libraries itself (#79).
 
 .PARAMETER Fullscreen
 	Do not force windowed mode; use the fullscreen setting from cfg.ini.
@@ -114,8 +116,8 @@ $copy = Get-ArxWorkingCopyInfo $SourceDir
 $stamp = Assert-ArxFreshBuild -SourceDir $SourceDir -BuildDir $BuildDir -Config $Config -Head $copy.Head -Rebuild:$Rebuild
 $exe = Join-Path $BuildDir 'arx.exe'
 
-if (-not $DataDir) { $DataDir = Find-ArxFatalisSteamInstall }
-if (-not $DataDir) { throw 'Arx Fatalis (Steam app 1700) was not found in any Steam library. Install it, or pass -DataDir.' }
+# The game finds the data in the Steam libraries itself (#79); --data-dir only for -DataDir
+$dataArgs = if ($DataDir) { @('--data-dir', $DataDir) } else { @() }
 
 $modeArgs = @()
 if (-not $Fullscreen) { $modeArgs += '--windowed' }
@@ -133,7 +135,7 @@ if ($TestChannel) { $dirArgs += '--test-dir', (Get-DefaultTestDir $SourceDir) }
 
 Write-Host "==> Running $exe" -ForegroundColor Cyan
 Write-Host "    build: $(ConvertTo-ShortSha $stamp) ($($copy.Branch))"
-Write-Host "    data: $DataDir"
+Write-Host "    data: $(if ($DataDir) { "$DataDir (--data-dir)" } else { 'found by the game in the Steam libraries (arx.log: Steam data)' })"
 if ($Isolated) { Write-Host "    user dir: $UserDir (isolated)" } else { Write-Host "    user dir: $(Get-SharedUserDir) (shared)" }
 if ($TestChannel) { Write-Host "    test channel: $(Get-DefaultTestDir $SourceDir)" }
 if ($Saves) { Copy-ArxSaves -Names $Saves -UserDir $UserDir -Library $SaveLibrary }
@@ -153,7 +155,7 @@ Write-Host "    game lock: slot $($lock.Slot)$(if ($lock.Vr) { ' + VR lock' })"
 
 # Start-Process does not quote arguments: paths with spaces need explicit quotes (docs/vr/TRAPS.md)
 $quote = { param($a) if ("$a" -match '\s') { '"' + $a + '"' } else { "$a" } }
-$argList = @(@('--data-dir', $DataDir) + $modeArgs + $dirArgs + $ArxArgs | ForEach-Object { & $quote $_ })
+$argList = @($dataArgs + $modeArgs + $dirArgs + $ArxArgs | ForEach-Object { & $quote $_ })
 $code = $null
 $process = $null
 $started = Get-Date

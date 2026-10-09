@@ -133,6 +133,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "script/Script.h"
 
+#include "vr/HeadTracking.h"
+
 extern bool REQUEST_SPEECH_SKIP;
 extern bool DONT_ERASE_PLAYER;
 extern bool GLOBAL_MAGIC_MODE;
@@ -1274,7 +1276,9 @@ void ARX_PLAYER_Manage_Visual() {
 	}
 	
 	if(player.lifePool.current > 0) {
-		io->angle = Anglef(0.f, 180.f - player.angle.getYaw(), 0.f);
+		// In VR the model faces the body, which follows the head on its own (#25); the heading
+		// (player.angle) still steers the engine's movement. Without a head the offset is 0
+		io->angle = Anglef(0.f, 180.f - (player.angle.getYaw() + vr::bodyStatus().offset), 0.f);
 	}
 	
 	io->gameFlags |= GFLAG_ISINTREATZONE;

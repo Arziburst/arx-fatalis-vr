@@ -82,7 +82,7 @@ workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
 - **Keep the status page current:** the pinned issue **"ARXVR status"** (edited via REST each cycle):
   current block, running workers (task, model, state), PRs waiting for review or for the headset, the
   owner's open questions, weekly usage. The owner reads it in the browser; a new coordinator starts from it.
-- **Wait** — idle notices, background CI waits (`gh pr checks --watch` or a small script with
+- **Wait** — idle notices, background CI waits (`scripts\dev\pr-checks.ps1 <pr> -Watch`, REST, or a small script with
   `run_in_background`) and the usage guard (a background script that exits at 80% weekly or 95% five-hour, and every
   ~45 min as a heartbeat to catch stuck workers) wake the coordinator. No sleep loops in the foreground,
   no "are you done?" messages.
@@ -173,8 +173,13 @@ Choose per task, by size and difficulty — not by area alone. Spend Fable only 
   instead; the coordinator reads the denial log (`%LOCALAPPDATA%\ArxFatalisVR\safety-hook.log`, one line per
   denial or fail-open error) and helps the worker if it keeps hitting it. Rules and limits:
   [WORKFLOW.md](WORKFLOW.md#the-safety-hook-185-d-021).
-- **GitHub via REST** where possible (`gh api repos/...`): the GraphQL quota is shared by all sessions;
-  board moves (GraphQL only) may fail on the limit — the worker says so and the coordinator sets them later.
+- **GitHub via REST** (#186): the dev scripts use `gh api repos/...` for issues, PRs, checks and runs — never
+  `gh issue view/list`, `gh pr view/list`, `gh pr checks --watch`, `gh project ...` (all GraphQL; the quota is shared by
+  every session). Only the board is GraphQL: one cached query (`%LOCALAPPDATA%\ArxFatalisVR\board-cache.json`, 5 min)
+  and one mutation per move. When the limit is spent `set-status.ps1` does not fail: the move is **queued**
+  (`board-queue.json`; shown as PENDING by `next-task.ps1` / `cycle-report.ps1`) and sent by the next board script after
+  the reset, or at once by `set-status.ps1 -Flush`. A worker that ends with a move still queued says so in its report;
+  the coordinator runs `-Flush`.
 - Research tasks create **no** follow-up tasks; the owner decides the catalog, the coordinator creates tasks.
 
 ## 8. Reporting to the owner

@@ -67,13 +67,14 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $repo = 'Arziburst/arx-fatalis-vr'
 
-$info = gh issue view $Issue -R $repo --json title,labels | ConvertFrom-Json
-if ($LASTEXITCODE -or -not $info.title) { throw "could not read #$Issue" }
-$title = $info.title
+. (Join-Path $PSScriptRoot 'github-lib.ps1') # REST instead of `gh issue view` (#186); the lib reads $repo (variable names ignore case)
+$info = Get-GhIssue $Issue
+if (-not $info.Title) { throw "could not read #$Issue" }
+$title = $info.Title
 
 # D-015: build and docs -> Sonnet, other engine work -> Opus; Fable only when the coordinator asks for it
 if (-not $Model) {
-	$areas = @($info.labels.name | Where-Object { $_ -like 'area:*' })
+	$areas = @($info.Labels | Where-Object { $_ -like 'area:*' })
 	$Model = if ($areas -and -not ($areas | Where-Object { $_ -notin 'area:build', 'area:docs' })) { 'sonnet' } else { 'opus' }
 	Write-Host "model:    $Model (D-015, labels: $(if ($areas) { $areas -join ', ' } else { 'no area' }))"
 }

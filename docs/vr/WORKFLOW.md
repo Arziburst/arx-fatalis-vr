@@ -20,7 +20,8 @@ commit messages, pull requests, and code comments.
 | Current goal: the MVP | [MVP.md](MVP.md) |
 | Research and scope of playable v1 | [RESEARCH-playable-v1.md](RESEARCH-playable-v1.md) |
 | Research: controllers (Valve Index, Quest 3) | [RESEARCH-controllers.md](RESEARCH-controllers.md) |
-| Research: reference VR mods (Dishonored VR, VHVR, Titanfall 2 VR) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |
+| Research: reference VR mods (Dishonored VR, VHVR, Titanfall 2 VR, OpenMW VR) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |
+| VR game checklist: what players expect from a VR game, audited against our plan — gaps for the owner's decision | [VR-CHECKLIST.md](VR-CHECKLIST.md) |
 | SteamVR app manifest: name and tile on the loading card | [STEAMVR.md](STEAMVR.md) |
 | Testing without a headset: smoke test, command channel, `status.json`, `xr_hello` — what is reliable and what is not | [TESTING.md](TESTING.md) |
 | Traps: misleading symptoms that already cost time — **read before debugging** | [TRAPS.md](TRAPS.md) |
@@ -330,7 +331,11 @@ After `/accept-task` the worker merges and switches the copy back to `main`.
 
 Helper scripts used by the commands:
 - `scripts/dev/next-task.ps1` — which task is next (Testing / In Progress first, then the queue)
-- `scripts/dev/set-status.ps1 -Issue <n> -Status <column>` — move a task on the board
+- `scripts/dev/set-status.ps1 -Issue <n> -Status <column>` — move a task on the board; under the GraphQL limit the move
+  is queued and sent later (`-Flush` sends it now). GitHub access of all dev scripts: `scripts/dev/github-lib.ps1` +
+  `board.ps1` (#186) — REST for everything but the board, a 5-minute board cache, rate-limit errors with the reset time;
+  `scripts/dev/test-github-lib.ps1` is the self-test
+- `scripts/dev/pr-checks.ps1 <pr> [-Watch]` — CI of a PR over REST (replaces `gh pr checks --watch`)
 - `scripts/build-windows.ps1`, `scripts/run-windows.ps1` — build and run (`-Isolated`: this copy's
   own user directory; `-Background`: no focus; `-StartSteamVR`: the owner's switch; `-Rebuild`)
 - `scripts/launch-lib.ps1` — launch control shared by every launch script (D-014): SteamVR guard,
@@ -371,6 +376,12 @@ human in a headset:
 - **CI runs on a self-hosted runner on the owner's PC** (Windows service, label `arxvr`, installed in
   `C:\actions-runner`). vcpkg and the build directory persist there, so a typical PR builds in minutes.
   If the PC is off, CI waits in the queue — that is expected, not a failure.
+- **CI is the automatic gate (D-021, #127):** the script self-tests (`scripts/dev/test-*.ps1`), the build
+  with the host unit tests, then the flat game checks — smoke test with the draw check and the spell
+  draw check — run on every PR, a few minutes in total. A red step blocks the merge; a game check that
+  was skipped (game lock busy) is red too. A new `scripts/dev/test-*.ps1` must be added to
+  `scripts/dev/run-script-tests.ps1`. The game runs in the runner service's session; evidence is the
+  artifact `game-checks` — see [TESTING.md](TESTING.md#the-ci-gate-127).
 - **One vcpkg for the whole machine:** `C:\vcpkg-shared` holds the vcpkg checkout, source downloads and
   binary packages, used by CI (workflow `env`) and by the owner's builds (user environment variables
   `VCPKG_ROOT`, `VCPKG_DOWNLOADS`, `VCPKG_DEFAULT_BINARY_CACHE`). A dependency built once — locally or

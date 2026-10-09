@@ -20,6 +20,8 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 .\scripts\dev\smoke-test.ps1 -Commands 'drawcheck 120'         # two draws of the scene per frame must give one picture (#71)
 .\scripts\dev\comfort-check.ps1                               # shake, FOV zoom and bob with the VR comfort policy off and on, one run (#76)
 .\scripts\dev\spell-drawcheck.ps1                             # the 26 spells of #71 really launched, then drawcheck 240 (#155)
+.\scripts\dev\run-script-tests.ps1                            # the PowerShell self-tests of the dev scripts (seconds, no game); CI runs them first
+.\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence      # what CI runs after the build: smoke test + drawcheck, spell draw check, evidence in one folder (#127)
 .\scripts\run-windows.ps1 -Isolated -TestChannel -- --no-vr --loadlevel 10   # a manual run with the channel, in this copy's own user dir
 .\scripts\dev\log-digest.ps1 -Print                           # the last run in a screenful + automatic bug filing; runs by itself after every launch (#131), never cat arx.log
 .\scripts\dev\game-status.ps1 -Watch                          # live state line
@@ -335,6 +337,7 @@ code, duration, errors/warnings (how many are **new**), crashes. The owner does 
 .\scripts\dev\log-digest.ps1 -DryRun -Log "$env:USERPROFILE\Saved Games\Arx Libertatis\arx.2.log"   # an older run, nothing written or filed
 .\scripts\dev\log-digest.ps1 -Flush                  # send the queued reports now (a run does this itself)
 .\scripts\dev\test-log-digest.ps1                    # the self-test: fixture logs, a fake GitHub, no game, no network
+.\scripts\dev\test-github-lib.ps1                    # self-test of the dev scripts' GitHub access (#186): REST, board cache, rate limit, move queue
 ```
 
 **What it writes:** `%LOCALAPPDATA%\ArxFatalisVR\runs\<yyyyMMdd-HHmmss>-pid<pid>\` with `digest.md` (build and
@@ -513,6 +516,40 @@ Conclusions:
 Scripts share `scripts/dev/test-lib.ps1` (`Get-ArxTestDir`, `Get-ArxUserDir`, `Read-ArxStatus`,
 `Wait-ArxStatus`, `Send-ArxCommand`); the channel directory is `$env:ARXVR_TEST_DIR` or
 `%LOCALAPPDATA%\ArxFatalisVR\test\<key>` of the working copy the scripts belong to.
+
+## The CI gate (#127)
+
+Every pull request that touches more than docs runs `.github/workflows/build-windows.yml` on the
+self-hosted runner (D-021: CI is the automatic gate; a red step blocks the merge). The steps, fast ones first:
+
+| Step | What | Fails when |
+|---|---|---|
+| Script self-tests | `scripts/dev/run-script-tests.ps1`: every `scripts/dev/test-*.ps1` in its own pwsh (`test-log-digest.ps1` incl. the `-Id` / `-Find` / `-Condense` / `-Print` modes on a fixture log, `test-github-lib.ps1`) | a test exits non-zero, or a `test-*.ps1` is in neither list of the script (a new test cannot be forgotten) |
+| Build | `build-windows.ps1 -Config Release`, which also builds and runs the host unit tests (`arxtest`) | the build, or a CppUnit test, fails |
+| Game checks | `scripts/dev/ci-smoke.ps1`: `smoke-test.ps1 -Seconds 3 -Commands 'drawcheck 120'`, then `spell-drawcheck.ps1` — the same scripts a worker runs, flat, `--loadlevel 10` | either returns `FAIL`, **or was skipped** (exit 2: the game lock stayed busy for 15 min) — a gate that did not run is not a pass, re-run the job |
+| Upload | the artifact `game-checks`, also when a step failed | — |
+
+`game-checks` holds, per phase (`smoke-test`, `spell-drawcheck`): the transcript (`<phase>.log`), then
+in `<phase>\` every `arx*.log`, `status.json`, `ack.txt`, `stdout.txt` / `stderr.txt` of the channel,
+`capture\` (the most differing draw check pair as `.bmp`), `crashes\` and the run `digest\`. Read the
+digest, not the log. A whole green job takes about two minutes on the owner's PC (script tests 6 s, an
+incremental build about a minute, game checks 17 s).
+
+How the runner differs from a worker's copy — none of it needs action, all of it explains a surprise:
+- **The runner service is `NT AUTHORITY\NETWORK SERVICE` in session 0** (no desktop), and the game runs
+  there: it creates its window and OpenGL context, reaches `GAMEPLAY` in about a second, 120 fps. No
+  interactive runner is needed.
+- Its `%LOCALAPPDATA%` is `C:\Windows\ServiceProfiles\NetworkService\AppData\Local`: the build, user
+  directory (`arx.log`, `crashes\`), test channel, **game lock** and `launches.log` of CI are there, not
+  in the owner's profile. CI therefore does not wait for a game the owner or a worker runs, and they do
+  not wait for CI (#205). CI's own jobs never overlap (one runner).
+- The service has no Steam registry entry of the owner, so the workflow passes the install folder:
+  `ARXVR_DATA_DIR` in the workflow `env` (read by `ci-smoke.ps1`, passed as `--data-dir`).
+- `ARXVR_AUTOREPORT=0`: a CI run files no bug issues by itself (#131); the failed step is the report.
+- The cleanup stops only `arx.exe` processes that run from the CI build directory, never a game it did not start.
+
+Run it by hand: `.\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence` (needs a fresh build of the
+copy; `-Phase smoke|spells` runs one half; exit 0 pass, 1 fail, 2 skipped, 3 cannot run here).
 
 ## Isolation and the game lock (parallel work)
 

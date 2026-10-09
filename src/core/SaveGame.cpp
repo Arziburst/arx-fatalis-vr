@@ -24,6 +24,7 @@
 #include <algorithm>
 
 #include "core/Config.h"
+#include "core/GameEvent.h"
 #include "io/fs/Filesystem.h"
 #include "io/fs/SystemPaths.h"
 #include "io/log/Logger.h"
@@ -232,7 +233,10 @@ bool SaveGameList::save(std::string_view name, SavegameHandle overwrite, const I
 		savefile /= SAVEGAME_NAME;
 	}
 	
-	if(!ARX_CHANGELEVEL_Save(name, savefile)) {
+	bool success = ARX_CHANGELEVEL_Save(name, savefile);
+	// A failed save already logged why ([W] / [E] just before this line)
+	gameevent::Event("save")("slot", savefile.parent().filename())("name", name)("ok", success);
+	if(!success) {
 		return false;
 	}
 	

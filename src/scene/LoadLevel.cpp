@@ -60,6 +60,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "core/Application.h"
 #include "core/CommandChannel.h"
+#include "core/GameEvent.h"
 #include "core/GameTime.h"
 #include "core/Config.h"
 #include "core/Core.h"
@@ -221,7 +222,7 @@ static void loadLighting(const char * dat, size_t & pos, bool compact, bool skip
 	
 }
 
-bool DanaeLoadLevel(AreaId area, bool loadEntities) {
+static bool loadLevel(AreaId area, bool loadEntities) {
 	
 	arx_assume(area);
 	
@@ -231,6 +232,7 @@ bool DanaeLoadLevel(AreaId area, bool loadEntities) {
 	const res::path file = "graph/levels/level" + levelId + "/level" + levelId + ".dlf";
 	
 	LogInfo << "Loading level " << file;
+	gameevent::levelLoading(area);
 	channel::notifyLoading(area);
 
 	res::path lightingFileName = res::path(file).set_ext("llf");
@@ -509,9 +511,16 @@ bool DanaeLoadLevel(AreaId area, bool loadEntities) {
 	USE_PLAYERCOLLISIONS = true;
 	
 	LogInfo << "Done loading level";
-	
+
 	return true;
-	
+
+}
+
+bool DanaeLoadLevel(AreaId area, bool loadEntities) {
+	bool success = loadLevel(area, loadEntities);
+	// level.loaded with the time since level.load, also when the level file was refused (#130)
+	gameevent::levelLoaded(area, success);
+	return success;
 }
 
 void DanaeClearLevel() {

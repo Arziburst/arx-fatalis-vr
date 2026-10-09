@@ -66,7 +66,31 @@ the eye pixels the **drawn** interface covers (alpha > 0), not the quad's area: 
 **Do:** for anything about the HUD or the menus use the test save `mvp-new-game` (#70: controls free, the
 bag closed) — `smoke-test.ps1 -VrSim idle -Sequence <name> -Save mvp-new-game`, as `ui-panel.xrs` does.
 
----
+## 2026-10-09 — The body is nowhere in a `--vr-sim` shot that looks down, although `vr.body` says both arms are posed with `error` 0 (#36)
+
+**Symptom:** the first two runs of `arms-follow` on the default `--loadlevel 10` had every status number right
+(chains found, wrists on their targets) and both eyes' pictures showed a bare floor from a standing height —
+no torso, no arms, and the picture even drifted between two "still" shots.
+**Cause:** level 10 is the scripted intro: its conversation camera (`speechControlledCinematic`, see the #24
+entry below) is a camera somewhere in the cell, not the model's eyes, and it moves with the speech; the head
+pose is applied on top of it. The model stands elsewhere, correctly posed.
+**Do:** anything that must *see* the body runs on a first-person save: `smoke-test.ps1 -VrSim idle -Sequence
+arms-follow -Save mvp-new-game`. Status numbers prove the pose; only a first-person save proves the picture.
+
+## 2026-10-09 — The arm chain found from the hand is one joint short, and the hand ignores the controller's pitch (#36)
+
+**Symptoms:** (1) walking up from the group that holds `primary_attach` gave `right_elbow > right_wrist >
+right_hand` with bone lengths `30.5 + 0.0`, so the "arm" reached only 30 units and the shoulder slid 17.6 units
+towards a controller held comfortably in front. (2) With the wrist bone set to the controller's orientation the
+fingertips stayed at the same height whether the grip was upright or pitched 90° forward.
+**Cause:** `human_base` keeps the hand as a **zero-length child group** of the wrist (`right_hand < right_wrist`,
+same origin), and the engine's animations bend that hand group on the wrist (the wait animation curls it). The
+wrist joint is therefore one group up, and the hand mesh belongs to the child group, whose rotation the
+concatenation rebuilds from the animation after the wrist was set.
+**Do:** the wrist joint is the first ancestor with a non-zero `transinit_global` (climb the zero-length bones);
+the zero-length groups between it and the hand's group are made rigid with the wrist (`ArmChain::rigid`,
+`vr/VRBody.cpp`). Check a chain by its lengths in the `[vr] body:` bind line (`27.6 + 30.5` on `human_base`) and
+a hand by `vr.body.<hand>.tip` against `wrist` / `controller`, not by the picture alone.
 
 ## 2026-10-09 — A check of "what the button did" counts one event too many, or finds it before the press (#74)
 

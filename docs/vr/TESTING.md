@@ -848,6 +848,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `walk-forward` | the player stands still without input; the stick is held and let go | #31: the player moves |
 | `recenter` | a head offset is set and read back | #28: `recenter` is accepted (it logs one expected `[W]`) |
 | `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
+| `physical-crouch` | physical crouch (#100, D-033) on `mvp-new-game` — `smoke-test.ps1 -VrSim idle -Sequence physical-crouch -Save mvp-new-game`: the head 25 cm down follows the view and stands, 35 cm crouches the character (one `vr.head.crouch` episode), back at 25 cm stays crouched, 15 cm stands; the view never above the head nor twice as low; the crouch button still crouches and stands with the head up | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
 `scripts\dev\test-xrs.ps1` (a fake game answering the channel files; in `run-script-tests.ps1`, so in CI).

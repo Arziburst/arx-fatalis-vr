@@ -453,6 +453,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("inventoryOpen", (player.Interface & INTER_INVENTORY) != 0);
 		json.value("bookOpen", (player.Interface & INTER_PLAYERBOOK) != 0);
 		json.value("crouchToggle", bGCroucheToggle);
+		// The character crouches - the button, the toggle, the head (#100) or a low ceiling
+		json.value("crouched", (player.m_currentMovement & PLAYER_CROUCH) != 0);
 		json.value("jumping", player.jumpphase != NotJumping);
 		json.end();
 		// The first-person camera after this frame's effects: bob = how far the camera left the stable head
@@ -636,6 +638,12 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("offsetY", head.offset.y);
 		json.value("offsetZ", head.offset.z);
 		json.value("clamped", head.clamped);
+		// Physical crouch (#100): the head crouching the character, its depth below the reference (meters), the
+		// episodes, and how far the character's crouch lowered its eye (game units)
+		json.value("crouch", head.crouch);
+		json.value("crouchDepth", head.crouchDepth);
+		json.value("crouches", head.crouches);
+		json.value("characterDrop", head.characterDrop);
 		// The look and the body (#25): where the stick's forward is and where the model faces
 		const vr::BodyStatus & body = vr::bodyStatus();
 		json.value("lookYaw", body.lookYaw);

@@ -1,0 +1,81 @@
+# Physical crouch (#100, D-018): the head 30 cm below the calibrated eye crouches the character, it stands up
+# again once the head is back above 20 cm (hysteresis); the crouch button (right stick down, D-019) still
+# works. The view stays the head: the character's crouch never lowers it a second time on top of the head's
+# own drop - it is the head, but never above the crouched eye. The simulated head starts at the reference.
+#
+# Runs on the test save mvp-new-game (#70: controls free):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence physical-crouch -Save mvp-new-game
+@sim idle
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.head.referenced eq true
+@assert vr.head.crouch eq false
+@assert player.crouched eq false
+@assert vr.head.characterDrop eq 0
+@remember eye camera.eyeAboveFeet
+@shot standing
+
+# 25 cm down: not deep enough - the view follows the head, the character stands
+vr-sim head pos 0 -0.25 0
+@frames 30
+@assert vr.head.crouch eq false
+@assert player.crouched eq false
+@assert vr.head.crouchDepth gt 0.24
+@assert camera.eyeAboveFeet le {eye-24}
+@assert camera.eyeAboveFeet ge {eye-26}
+
+# 35 cm down: the character crouches; the view is the head until the crouched eye is lower than it
+vr-sim head pos 0 -0.35 0
+@frames 10
+@assert vr.head.crouch eq true
+@assert vr.head.crouches eq 1
+@assert events.byName."vr.head.crouch" eq 1
+@until player.crouched eq true 5s
+@wait 2000                                   # the crouch animation ends
+@assert player.crouched eq true
+@assert vr.head.characterDrop gt 20
+@remember drop vr.head.characterDrop
+@assert camera.eyeAboveFeet le {eye-34}      # never above the head
+@remember crouchedEye camera.eyeAboveFeet
+@shot crouched
+
+# Back to 25 cm: still crouched (the exit is 20 cm), the view does not move
+vr-sim head pos 0 -0.25 0
+@frames 30
+@assert vr.head.crouch eq true
+@assert player.crouched eq true
+@assert camera.eyeAboveFeet le {crouchedEye+1}
+@assert camera.eyeAboveFeet ge {crouchedEye-1}
+
+# 15 cm: the character stands up; the view is the head again
+vr-sim head pos 0 -0.15 0
+@frames 10
+@assert vr.head.crouch eq false
+@assert events.byName."vr.head.crouch" eq 2
+@until player.crouched eq false 5s
+@wait 2000                                   # the getting-up animation ends
+@assert vr.head.characterDrop lt 1
+@assert camera.eyeAboveFeet le {eye-14}
+@assert camera.eyeAboveFeet ge {eye-16}
+@assert vr.head.crouches eq 1
+
+# Standing straight, the crouch button still crouches and stands; the head does not
+vr-sim head pos 0 0 0
+@frames 10
+vr-input tap right.stick_down
+@until player.crouched eq true 5s
+@assert player.crouchToggle eq true
+@assert vr.head.crouch eq false
+@wait 2000
+@assert vr.head.characterDrop ge {drop-1}    # the button's crouch: the same crouched eye, as the game has it
+@assert vr.head.characterDrop le {drop+1}
+@assert vr.head.offsetY eq 0
+vr-input tap right.stick_down
+@until player.crouched eq false 5s
+@assert player.crouchToggle eq false
+@assert vr.head.crouches eq 1
+
+@assert errors eq 0

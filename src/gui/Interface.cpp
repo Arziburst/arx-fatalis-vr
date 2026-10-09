@@ -132,6 +132,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "util/Cast.h"
 #include "util/Range.h"
 
+#include "vr/HeadTracking.h"
+
 #include "window/RenderWindow.h"
 
 
@@ -891,7 +893,8 @@ void ArxGame::managePlayerControls() {
 		bGCroucheToggle = !bGCroucheToggle;
 	}
 
-	if(GInput->actionPressed(CONTROLS_CUST_CROUCH) || bGCroucheToggle) {
+	// In VR the head going down crouches too (#100, D-018), alongside the crouch button (D-019)
+	if(GInput->actionPressed(CONTROLS_CUST_CROUCH) || bGCroucheToggle || vr::physicalCrouch()) {
 		player.m_currentMovement |= PLAYER_CROUCH;
 	}
 

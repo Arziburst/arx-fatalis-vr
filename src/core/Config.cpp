@@ -46,6 +46,7 @@
 #include "util/String.h"
 
 #include "vr/MirrorGeometry.h"
+#include "vr/PhysicalCrouch.h"
 #include "vr/UIPanel.h"
 
 
@@ -100,6 +101,7 @@ constexpr const int
 constexpr const bool
 	fullscreen = true,
 	vrMirror = true,
+	vrPhysicalCrouch = vr::DefaultPhysicalCrouch,
 	viewBobbing = true,
 	screenShake = true,
 	showCrosshair = true,
@@ -131,6 +133,8 @@ constexpr const float
 	vrPanelDistance = vr::DefaultPanelDistance,
 	vrPanelDrop = vr::DefaultPanelDrop,
 	vrPanelWidth = vr::DefaultPanelWidth,
+	vrCrouchEnter = vr::DefaultCrouchEnter,
+	vrCrouchExit = vr::DefaultCrouchExit,
 	fogDistance = 10.f,
 	gamma = 5.f,
 	fov = 75.f,
@@ -230,6 +234,9 @@ constexpr const std::string_view
 	vrPanelDistance = "vr_panel_distance",
 	vrPanelDrop = "vr_panel_drop",
 	vrPanelWidth = "vr_panel_width",
+	vrPhysicalCrouch = "vr_physical_crouch",
+	vrCrouchEnter = "vr_crouch_enter",
+	vrCrouchExit = "vr_crouch_exit",
 	fov = "fov",
 	viewBobbing = "view_bobbing",
 	screenShake = "screen_shake",
@@ -495,6 +502,9 @@ bool Config::save() {
 	writer.writeKey(Key::vrPanelDistance, video.vrPanelDistance);
 	writer.writeKey(Key::vrPanelDrop, video.vrPanelDrop);
 	writer.writeKey(Key::vrPanelWidth, video.vrPanelWidth);
+	writer.writeKey(Key::vrPhysicalCrouch, video.vrPhysicalCrouch);
+	writer.writeKey(Key::vrCrouchEnter, video.vrCrouchEnter);
+	writer.writeKey(Key::vrCrouchExit, video.vrCrouchExit);
 	writer.writeKey(Key::fov, video.fov);
 	writer.writeKey(Key::viewBobbing, video.viewBobbing);
 	writer.writeKey(Key::screenShake, video.screenShake);
@@ -637,6 +647,12 @@ bool Config::init(const fs::path & file) {
 	video.vrPanelDrop = glm::clamp(vrPanelDrop, -0.5f, 1.f);
 	float vrPanelWidth = reader.getKey(Section::Video, Key::vrPanelWidth, Default::vrPanelWidth);
 	video.vrPanelWidth = glm::clamp(vrPanelWidth, 0.2f, 4.f);
+	// Physical crouch (#100): the head this far below the calibrated eye crouches, back above the exit stands
+	video.vrPhysicalCrouch = reader.getKey(Section::Video, Key::vrPhysicalCrouch, Default::vrPhysicalCrouch);
+	float vrCrouchEnter = reader.getKey(Section::Video, Key::vrCrouchEnter, Default::vrCrouchEnter);
+	video.vrCrouchEnter = glm::clamp(vrCrouchEnter, 0.05f, 1.5f);
+	float vrCrouchExit = reader.getKey(Section::Video, Key::vrCrouchExit, Default::vrCrouchExit);
+	video.vrCrouchExit = glm::clamp(vrCrouchExit, 0.f, video.vrCrouchEnter);
 	float fov = reader.getKey(Section::Video, Key::fov, Default::fov);
 	video.fov = std::max(fov, 10.f);
 	video.viewBobbing = reader.getKey(Section::Video, Key::viewBobbing, Default::viewBobbing);

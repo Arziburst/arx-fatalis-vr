@@ -130,7 +130,7 @@ u32 captureCount();
  * \c reset - the default layout for the current controllers, not saved;
  * \c capture \c <event> - what the VR settings page does when the player selects the event
  * (\ref startCapture); \c cancel - end the capture; \c default - the page's "reset to default"
- * (\ref restoreDefaultLayout);
+ * (\ref restoreDefaultLayout); \c reload - read the saved layout again, as at a start;
  * \c turn \c snap|smooth, \c turn \c angle \c <degrees>, \c turn \c speed \c <degrees per second>,
  * \c turn \c repeat \c <seconds> -
  * the turn settings, as cfg.ini would set them (#32).

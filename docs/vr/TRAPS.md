@@ -8,6 +8,15 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — A sequence passes alone and fails in CI with a value it never set (#178)
+
+**Symptom:** in CI `vr-remap-saved` found `remapped` false and `vr-settings-flat` found `jump` = `right.b`, both passing
+with `xrs-run.ps1` alone. **Cause:** CI's game checks run every shipped `.xrs`, in alphabetical order, in **one**
+user and config directory: `vr-remap-saved` ran before the `vr-remap` it expected, and `vr-remap` left its saved layout
+(`vr-controls-index.ini`) for `vr-settings-flat`. **Do:** a sequence sets up what it needs and leaves the user
+directory as it found it (here: `vr-input default` at the start and the end; `vr-input reload` instead of a second
+start). Anything a sequence saves (cfg, layouts, saves) is shared with the next one.
+
 ## 2026-10-10 — A remap through the channel records a long press nobody made (#178)
 
 **Symptom:** `vr-remap.xrs` captured `jump` as `right.b:long` after `vr-input down right.b` … `vr-input up right.b`;

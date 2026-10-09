@@ -1,6 +1,7 @@
 # VR settings, remapping (#178): the VR page of the pause menu; a single press, a chord and a long press captured as
 # the page does it; a conflict shown and counted; the walk stick refused. The layout is saved for the controllers
-# (vr-controls-index.ini in the config directory) - vr-remap-saved.xrs checks the next start and the reset.
+# (vr-controls-index.ini in the config directory) - vr-remap-saved.xrs checks reading it back. Self-contained: it starts
+# and ends with the default layout (CI runs every sequence in one user directory, in any order).
 @sim idle
 @args --loadlevel 10
 
@@ -81,4 +82,8 @@ vr-input cancel
 
 menu none
 @frames 10
+# Leave no saved layout behind for the next sequence
+vr-input default
+@frames 2
+@assert vr.input.remapped eq false
 @assert errors eq 0

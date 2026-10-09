@@ -468,6 +468,13 @@ std::string inputCommand(std::string_view arguments) {
 		return std::string();
 	}
 
+	if(verb == "reload") {
+		// Read the saved layout again at the next update, as when the controllers are detected at a start
+		cancelCapture();
+		g_input.loaded = false;
+		return std::string();
+	}
+
 	if(verb == "turn") {
 		// The turn settings as cfg.ini sets them (#32); the settings screen is #178
 		std::string_view what = nextWord(rest);
@@ -505,7 +512,7 @@ std::string inputCommand(std::string_view arguments) {
 	}
 
 	return "vr-input: expected down|up|tap <control>, stick <hand> <x> <y>, bind <event> <binding>, turn <setting>,"
-	       " reset, capture <event>, cancel or default, got \"" + std::string(arguments) + "\"";
+	       " reset, capture <event>, cancel, default or reload, got \"" + std::string(arguments) + "\"";
 }
 
 } // namespace vr

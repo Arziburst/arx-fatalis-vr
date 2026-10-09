@@ -1250,8 +1250,8 @@ void ArxGame::doFrame() {
 	
 	updateTime();
 
-	// Controllers -> gameplay events through the control table (#30), synced after xrWaitFrame;
-	// the game reacts to them in #74
+	// Controllers -> gameplay events through the control table (#30), synced after xrWaitFrame, and the
+	// events -> the engine's actions, mouse buttons and keys (#74), applied by GInput->update() below
 	vr::updateInput();
 
 	// Game event log: state and UI changes (before the channel, which reports the same state);

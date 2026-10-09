@@ -1258,6 +1258,7 @@ set(VR_SOURCES
 	src/vr/VRActions.cpp
 	src/vr/VRComfort.cpp
 	src/vr/VRControls.cpp
+	src/vr/VRGameInput.cpp
 	src/vr/VRInput.cpp
 	src/vr/VRSwapchain.cpp
 	src/vr/VRSystem.cpp

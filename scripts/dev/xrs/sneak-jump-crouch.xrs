@@ -12,29 +12,36 @@ setplayercontrols on
 @assert player.yaw gt 345                    # the save's heading: the z steps below assume it
 @remember heading player.yaw
 
-# A slight push (0.5: 0.375 past the dead zone): the walk sneaks, the engine walks in stealth
+# A full push: the walk runs, at the speed of the run animation
 @remember z0 player.z
+vr-input stick left 0 1
+@frames 30
+@assert vr.input.walk.walking eq true
+@assert vr.input.walk.sneak eq false
+@assert player.stealth eq false
+@assert player.animSpeed gt 0
+@remember run player.animSpeed
+@log GameEvent:.*vr\.walk state=start .*pace=run
+vr-input stick left 0 0
+@frames 10
+@assert vr.input.walk.walking eq false
+@assert player.z gt {z0+10}
+
+# A slight push (0.5: 0.375 past the dead zone): a new walk that sneaks - the engine's stealth walk, whose
+# animation moves clearly slower than the run (a distance depends on walls and the frame rate, the speed not)
+@remember z1 player.z
 vr-input stick left 0 0.5
-@frames 40
+@frames 30
 @assert vr.input.walk.walking eq true
 @assert vr.input.walk.sneak eq true
 @assert player.stealth eq true
+@assert player.animSpeed gt 0
+@assert player.animSpeed lt {run*0.8}
 @log GameEvent:.*vr\.walk state=start .*pace=sneak
 vr-input stick left 0 0
 @frames 10
 @assert vr.input.walk.walking eq false
-@assert player.z gt {z0+10}                  # it moved ...
-@assert player.z lt {z0+120}                 # ... less than the run below in the same time
-
-# A full push: the walk runs
-@remember z1 player.z
-vr-input stick left 0 1
-@frames 40
-@assert vr.input.walk.sneak eq false
-@assert player.stealth eq false
-vr-input stick left 0 0
-@frames 10
-@assert player.z gt {z1+120}
+@assert player.z gt {z1+5}
 
 # The pace within one walk: full -> the band (0.72: 0.65) stays a run -> below (0.65: 0.5625) sneaks
 @remember changes vr.input.walk.paceChanges

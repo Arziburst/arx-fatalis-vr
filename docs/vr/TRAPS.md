@@ -8,6 +8,19 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — A shipped `.xrs` sequence is red in CI only because of the sequence that ran before it (#296, from #178)
+
+**Symptom:** the CI game check fails a sequence that passes alone: `vr-remap-saved` expected the file `vr-remap` saved
+(it ran *after* it alphabetically), `vr-settings-flat` found the `vr-controls-index.ini` that `vr-remap` left. Rename or add
+a sequence and the order — and the verdict — changes.
+**Cause:** `ci-smoke.ps1` ran every sequence in the runner account's single user dir, so config, saves and ini files leaked
+from one sequence into the next.
+**Do:** every sequence now runs in its own fresh user dir (`New-ArxSequenceUserDir` in `xrs-lib.ps1`, passed to
+`smoke-test.ps1 -UserDir`; its `@save` is copied in as before; the dir is removed after the run and its logs are in the
+phase's evidence). A sequence that needs a file from another one is wrong: set the state up in its own `@save` / commands.
+Checked by `test-xrs.ps1` ("fresh user dir per sequence"). Locally, `smoke-test.ps1 -Sequence` already used the isolated dir of
+the working copy: run two sequences by hand with `-UserDir` pointing at different folders for the same effect.
+
 ## 2026-10-10 — `test-xrs.ps1` fails once in a while: "timed out waiting for the game to acknowledge" (#275)
 
 **Symptom:** one check of 73 fails on the CI runner (a `@shot`/`@diff` step), the rerun of the same commit passes.

@@ -272,6 +272,25 @@ foreach ($file in $shipped) {
 }
 Check 'the simulator script the sequences use exists' (Test-Path (Join-Path $PSScriptRoot 'vrsim\idle.vrsim'))
 
+# --- a fresh user dir per sequence (#296) ------------------------------------------------------------------------
+Write-Host 'fresh user dir per sequence'
+# Two "sequences": the first leaves a file behind (a saved file, a controls ini), the second fails when it sees it
+$ciDirs = Join-Path $work 'ci-userdirs'
+$second = { param($dir) if (Test-Path (Join-Path $dir 'vr-controls-index.ini')) { 1 } else { 0 } }
+$dirA = New-ArxSequenceUserDir $ciDirs 'vr-remap'
+Set-Content (Join-Path $dirA 'vr-controls-index.ini') 'left over'
+# One shared dir (the old behaviour): the second sequence sees the file of the first
+Check 'a shared dir leaks the first sequence into the second' ((& $second $dirA) -eq 1)
+# A fresh dir per sequence: it does not
+$dirB = New-ArxSequenceUserDir $ciDirs 'vr-settings-flat'
+Check 'the second sequence gets its own dir' ($dirB -ne $dirA)
+Check 'the second sequence does not see the first one''s file' ((& $second $dirB) -eq 0)
+# The same name again (a re-run) starts empty too
+$dirA2 = New-ArxSequenceUserDir $ciDirs 'vr-remap'
+Check 'a re-run of a sequence starts from an empty dir' ($dirA2 -eq $dirA -and -not (Test-Path (Join-Path $dirA2 'vr-controls-index.ini')))
+$ciSource = Get-Content -Raw (Join-Path $PSScriptRoot 'ci-smoke.ps1')
+Check 'ci-smoke runs every sequence in such a dir' ($ciSource -match 'New-ArxSequenceUserDir' -and $ciSource -match '\$p\.UserDir = \$seqUserDir')
+
 Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ''
 if ($script:failures) { Write-Host "test-xrs: $($script:failures) of $($script:checks) checks FAILED" -ForegroundColor Red; exit 1 }

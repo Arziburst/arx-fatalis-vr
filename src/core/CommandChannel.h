@@ -31,7 +31,8 @@
  *  - answers every batch in \c DIR/ack.txt (\c seq=N \c frame=F \c errors=E \c last=... \c error=...),
  *  - rewrites \c DIR/status.json a few times per second and after every batch (atomically:
  *    \c status.json.tmp then rename),
- *  - flushes \c arx.log at the same cadence, so the log can be read while the game runs,
+ *  - flushes \c arx.log at the same cadence (the file logger flushes on its own every second and
+ *    after every warning or error, #129; a test wants the log fresher than that),
  *  - logs every game state change as \c [game] \c state: \c MENU|LOADING|GAMEPLAY|CINEMATIC.
  *
  * Channel commands: \c status, \c shot \c [name], \c quit, \c mark \c <text>, \c loadslot \c <n>,

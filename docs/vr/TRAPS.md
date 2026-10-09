@@ -170,3 +170,13 @@ also refuses `git -C <owner copy>` and commands with runtime-computed paths: use
 **Symptom:** the build stops at `arx-version.rc` with `RC1203: invalid language ID`.
 **Cause:** C/C++-only MSVC flags added with `add_definitions()` reach the resource compiler.
 **Do:** add compiler-only flags with `add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:...>)` (fixed in #12).
+
+## 2026-10-09 — `claude --bg` refuses a worker's worktree: "Workspace not trusted"
+
+**Symptom:** `start-worker.ps1` fails with `Workspace not trusted. Run claude in <worktree> once and accept
+the trust prompt`, even after the owner trusted the parent folder `C:\Users\arzib\arx-fatalis-vr-wt`.
+**Cause:** Claude Code's workspace trust is checked for the launch folder itself; trusting a parent does
+not cover a new subfolder. Every worktree is a new folder.
+**Do:** launch workers in the owner's copy (trusted) and let them enter the worktree first —
+`start-worker.ps1` passes `/next-task <n> worktree=<path>` (D-011). Never write trust flags into
+`~/.claude.json` by hand: the owner gives trust.

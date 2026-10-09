@@ -41,6 +41,8 @@ set(arxtest_TESTCASES
 
 	tests/vr/FramePacingTest.h
 	tests/vr/FramePacingTest.cpp
+	tests/vr/MirrorGeometryTest.h
+	tests/vr/MirrorGeometryTest.cpp
 
 	tests/vr/VRControlsTest.h
 	tests/vr/VRControlsTest.cpp

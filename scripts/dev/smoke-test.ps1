@@ -400,7 +400,7 @@ if (-not $lock) {
 	foreach ($line in Get-ArxLockHolders) { Write-Host "  held: $line" -ForegroundColor Yellow }
 	exit 2
 }
-Write-Host "game lock: slot $($lock.Slot)$(if ($lock.Vr) { ' + VR lock' }) ($(Get-ArxAppDataDir))"
+Write-Host "game lock: slot $($lock.Slot)$(if ($lock.Vr) { ' + VR lock' }) ($(Get-ArxLockDir))"
 
 $results = @()
 try {

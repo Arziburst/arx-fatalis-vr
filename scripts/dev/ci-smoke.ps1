@@ -67,7 +67,7 @@ $env:ARXVR_AUTOREPORT = '0'
 $session = [Diagnostics.Process]::GetCurrentProcess().SessionId
 Write-Host "ci-smoke: user $([Security.Principal.WindowsIdentity]::GetCurrent().Name), session id $session, interactive=$([Environment]::UserInteractive), host $env:COMPUTERNAME"
 Write-Host "ci-smoke: working copy $ArxSourceDir"
-Write-Host "ci-smoke: app data $(Get-ArxAppDataDir)"
+Write-Host "ci-smoke: app data $(Get-ArxAppDataDir), lock folder $(Get-ArxLockDir)"
 
 $buildDir = Get-DefaultBuildDir $ArxSourceDir $Config
 $userDir = Get-ArxUserDir

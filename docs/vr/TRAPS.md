@@ -21,6 +21,167 @@ layer path (acquire, clear, copy, release, two layers in `xrEndFrame`) ran witho
 question. A `shownFrames` that grows with an idle headset would mean the runtime changed its
 behaviour, not that the game got better.
 
+## 2026-10-09 — A press page says a closed-source mod is "MIT", or that a feature exists the code removed
+
+**Symptom:** research on a reference mod finds two accounts of the same fact: MoguraVR's summary table
+lists CircuitLord's Titanfall 2 VR as "MIT" and two pages say a player can copy their flat-game saves
+into the VR profile, while the author's README says "the mods are closed source … all rights reserved"
+and the installer's own test asserts that the "copy save" button does not exist.
+**Cause:** summaries repeat each other and the tool's earlier versions; the installer's MIT licence is
+read as the mod's, and a feature removed in v1.2.4 lives on in pages written before it. A licence
+line or a feature list copied from a press page into the reference catalog would put a wrong
+"copy this" or "this exists" into a decision.
+**Do:** for a licence, read `LICENSE` and the README of the repository that ships the thing, and the
+installer's third-party notices; for a feature of a closed mod, prefer the author's text and the
+installer's code and tests over articles, and label every catalog row with its evidence (code, docs,
+add-on, report). When primary and secondary sources disagree, say so in the row.
+
+## 2026-10-09 — `next-task.ps1` says the MVP queue is empty; `set-status.ps1` fails to move a task
+
+**Symptom:** `.\scripts\dev\next-task.ps1` prints `NEXT none — the MVP queue is empty` although
+`docs/vr/MVP.md` and the board are full of Todo tasks, and `.\scripts\dev\set-status.ps1` throws
+`Failed to move #N to <status>`; both outputs start with `GraphQL: API rate limit exceeded for
+user ID …`.
+**Cause:** the board scripts read the project through `gh`'s GraphQL API, and that hourly quota is
+shared by every session of the owner's account (the coordinator, every worker, `cycle-report.ps1`).
+When it is spent the project query returns nothing and the scripts read "nothing" as "no tasks".
+`set-status.ps1` may still have landed the move: its `#N -> <status>` line is printed before a
+trailing query fails.
+**Do:** read the reset time with `gh api rate_limit --jq '.resources.graphql'` and retry after it;
+never conclude "queue empty" or "move failed" from an output that carries the rate-limit line; check
+the board in the browser when in doubt.
+
+## 2026-10-09 — A new PR gets no CI run: `gh pr checks` says "no checks reported" for minutes
+
+**Symptom:** the PR is open, other PRs got their `Build (Windows)` run within a minute, but this one
+has none after 6 minutes (`gh run list --branch <branch>` is empty); closing and reopening the PR
+changes nothing, `gh workflow run build-windows.yml --ref <branch>` runs green but is not attached
+to the PR as a check.
+**Cause:** the PR **conflicts with `main`** (`gh pr view <pr> --json mergeStateStatus,mergeable` →
+`DIRTY` / `CONFLICTING`). A `pull_request` workflow runs on the merge ref (`refs/pull/N/merge`), and
+GitHub cannot create it for a conflicting PR, so no run is created at all — silently, nothing on
+the PR page says why. Here two PRs merged into `main` while the task ran (#153, #154) and both
+touched `TESTING.md` / `TRAPS.md` next to this task's lines.
+**Do:** when a PR shows no checks, look at `mergeStateStatus` first. `git fetch origin`,
+`git merge origin/main`, resolve, push — the run starts on the push. Check `mergeable` again before
+asking why CI is quiet; `gh pr merge` would also refuse a `CONFLICTING` PR.
+
+## 2026-10-09 — `set-status.ps1` fails with "API rate limit exceeded" although `gh api rate_limit` shows thousands left
+
+**Symptom:** `set-status.ps1 -Issue <n> -Status Backlog` prints `Issue #<n> is not on the board yet,
+adding it` and then `Failed to move #<n>`; run by hand, `gh project item-list` / `field-list` answer
+`GraphQL: API rate limit exceeded for user ID …`, while `gh api rate_limit` reports
+`graphql.remaining` in the thousands. Repeats for a quarter of an hour, then works.
+**Cause:** the Projects commands are heavy GraphQL queries (`item-list` with the whole board), and
+several sessions of the same account poll the board (`cycle-report.ps1`, `next-task.ps1`, workers'
+`set-status.ps1`); GitHub's secondary / points limit for the account trips before the hourly
+counter does. `item-add` went through each time, so the issue **is** on the board — without a status.
+**Do:** retry later (minutes, not seconds); do not add the item again by hand (`item-add` is
+idempotent, but every retry is another query). Mention the un-set status in the report if the limit
+does not lift before the task ends. A board script should treat this error as "try again later",
+not as "not on the board".
+
+## 2026-10-09 — A `spellcast` on the player from the console casts nothing
+
+**Symptom:** `spellcast -fs 5 magic_sight self` through the test channel is acknowledged with
+`errors=0`, no `[W]`, yet nothing happens: no spell sound, no effect, `camera.fov` in `status.json`
+stays at 75.00 although Magic Sight should widen it; a second `spellcast` on the player does nothing
+either. The #71 "26 spells, 0 of 240 frames differ" rows were accepted on exactly this command.
+**Cause:** `TryToCastSpell` launches a script-cast spell at once only with `NOANIM` **and** `NODRAW`
+(`-s` and `-m`). Otherwise it is queued in `spellcast_data` for the rune-drawing loop
+(`RuneDraw.cpp`), which skips the player entity — the spell never starts, and the queued
+`castingspell != SPELL_NONE` makes every later `spellcast` on the player return at the first line.
+There is no error anywhere: the script command succeeded, the launch simply never comes.
+**Do:** cast on the player with `-fsm` (`spellcast -fsm 5 <spell> self`) and prove the spell is active
+with a number — `spells.launchedByType` / `spells.activeByType` in `status.json` (#155), or the
+spell's own effect (`camera.fov` 80.65 for Magic Sight, life / mana, a `shot`) — never with the ack
+alone. `scripts/dev/spell-drawcheck.ps1` re-ran the #71 spells check that way (#155).
+**Even `-fsm` can launch nothing:** every spell has its own `CanLaunch`, and a refusal is silent too
+(at most a fizzle sound). Found in #155: `fake_summon` refuses the player as caster, and the player's
+`summon_creature` / `raise_dead` find no valid spot 3 m ahead anywhere tried on level 10. Cast those
+from an NPC (`human_base_0033.spellcast -fsm 5 <spell> player`) — and check `launchedByType`.
+
+## 2026-10-09 — A worktree build keeps the commit of its first build in the log and the window title
+
+**Symptom:** `arx.log` says `Starting Arx Fatalis VR 0.1-dev + a7e4255` (so does `status.json`
+`version` and the window title) although the worktree is several commits further; `built-from.txt`
+next to `arx.exe` names the right commit.
+**Cause:** `Version.cpp` is generated by a custom command whose dependencies are git's `HEAD`,
+`logs/HEAD` and `packed-refs` — but in a worktree `.git` is a *file* (`gitdir: <path>`), those files
+live under the main checkout's `.git/worktrees/<name>/`, and the rule depended on nothing that changes
+with a commit. The owner's copy (a real `.git` directory) never showed it, every worker's copy did.
+**Do:** fixed in #115 (`cmake/VersionString.cmake` resolves the gitfile and the common dir, so the
+reflog is a dependency again). The banner's `[W] built-from.txt names commit … but the executable
+carries version information from …` says when a build id lies: rebuild, and if it persists,
+reconfigure (`build-windows.ps1 -Clean`).
+
+## 2026-10-09 — `status.json` says `window.focused: true` for a window that never got the focus
+
+**Symptom:** a self-test started without activation (`SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN=1`, #147)
+reports `window.focused: true` in `status.json`, although the foreground window (user32
+`GetForegroundWindow`) is still the terminal and the game never took the keyboard.
+**Cause:** `SDL2Window::initialize()` called `onFocus(true)` unconditionally after `SDL_ShowWindow`
+— an assumption from the days when a shown window was always the active one. The flag was never
+read from SDL; `SDL_WINDOWEVENT_FOCUS_GAINED` fixes it only when the focus really changes later.
+**Do:** fixed in #147 (`onFocus(SDL_GetWindowFlags(m_window) & SDL_WINDOW_INPUT_FOCUS)`), so
+`window.focused` is now evidence. In general: when `status.json` and an OS-level probe disagree,
+suspect the engine's bookkeeping before the probe, and check where the value is *set*, not where it
+is reported.
+
+## 2026-10-09 — SteamVR starts, and the headset wakes up, from "just a test launch"
+
+**Symptom:** the owner's Index and base stations turn on, SteamVR's window appears, although nobody
+asked for VR — only a worker's test ran.
+**Cause:** the OpenXR loader starts the active runtime (SteamVR) inside `xrCreateInstance`. The
+engine's guard (#17) refuses when the runtime manifest names SteamVR and `vrserver.exe` is not
+running, but anything that bypasses the guard starts SteamVR anyway: `xr_hello --start-runtime`,
+another active runtime, a raw `arx.exe` of a build without the guard, and, worst, a worker starting
+`vrstartup.exe` by hand to get VR evidence (it happened in #93 — 15 VR runs, someone closed SteamVR
+two minutes later).
+**Do:** launch only through the scripts: `run-windows.ps1` and `smoke-test.ps1` add `--no-vr` while
+`vrserver.exe` is not running and say so; `smoke-test.ps1 -Vr` is skipped (exit 2). Never run
+`vrstartup.exe`, never stop `vrmonitor` / `vrserver`; VR evidence without the owner's SteamVR is the
+simulator's job (#112). Only the owner passes `-StartSteamVR` (D-014).
+## 2026-10-09 — A `shot` taken right after `GAMEPLAY` is all black
+
+**Symptom:** `smoke-test.ps1 -Commands 'shot level10'` with `--loadlevel 10` saves a 640×480 capture
+in which every pixel is black (frame 15, 0.15 s after `state GAMEPLAY`), while `status.json` reports
+`GAMEPLAY`, 0 errors and a normal frame rate — as if nothing were rendered.
+**Cause:** the level starts behind a fade from black. A capture from frame 86 on (0.9 s) shows the
+scene (58 % of sampled pixels non-black in the draw-check captures and in a `shot` at frame 517,
+#71). The only code path that starts a fade is the `worldfade` script command (`fadeRequestStart`),
+so this is the level script's own fade-in, not the renderer; the first `-Commands` line runs the
+moment the state flips, i.e. inside that fade.
+**Do:** take `shot` captures at least a second after `GAMEPLAY` — put a few `status` lines in front
+of the `shot` (each ack takes ≈ 0.25 s) or wait first; judge "is anything rendered" by a non-black
+pixel count over several frames, never by one early capture. An early black shot is no evidence
+against the renderer.
+
+## 2026-10-09 — The obvious owner fix for #93 changed nothing: the sword was linked to a mesh the NPC no longer used
+
+**Symptom:** the exit crash #93 reads a freed owner through `m_owner`; releasing the NPC weapon
+(`_npcdata->weapon`) before the NPC is deleted looked like the fix, yet a detector in `~Entity` still
+reported `human_base_0033` deleted while it owned `long_sword_0021` on every exit from level 10 —
+an entity that is not the NPC's weapon, not in its inventory and, by `isEntityLinked()`, not linked.
+**Cause:** the level 10 script links the sword to the NPC and then applies a full mesh tweak
+(`HEAD|TORSO|LEGS`): `EERIE_MESH_TWEAK_Do()` swaps in a new mesh **without** the links and keeps the
+old one as `tweaky` (restored by `TWEAK_REMOVE`). The sword keeps `show = LINKED` and its owner, but
+the link exists only in `tweaky`, which `destroy()`, `UnlinkAllLinkedObjects()` and `isEntityLinked()`
+never look at.
+**Do:** do not trust a guess about *which* relation owns an entity — log what the owned entity looks
+like (`show`, `scriptload`, linked / in inventory / weapon) and trace `setOwner()` before fixing. The
+fix releases every entity whose `owner()` is the dying one, whatever the relation (#93).
+
+## 2026-10-09 — `smoke-test.ps1 -Commands 'loadlevel N'` fails with "null-valued expression" and kills the game
+
+**Symptom:** `=> FAIL You cannot call a method on a null-valued expression.`; the game disappears in
+the middle of loading the new level, with no crash report — it looks like the level change crashed.
+**Cause:** a test-tool bug, not the game: the channel's `loadlevel` runs synchronously, the level
+change writes `status.json` with the new `cmdSeq` before `ack.txt` exists, `Send-ArxCommand` reads a
+missing ack, throws, and the smoke test kills the game in its error handler (#142).
+**Do:** until #142 is fixed, change levels with `-- --loadlevel N` (one launch per level), not with
+the channel command.
+
 ## 2026-10-09 — A crash report folder is dated "yesterday" and the VR self-test crashes where the flat one is clean
 
 **Symptom:** a run at 01:52 local time leaves `crashes\2026-10-08-22-52-43-00`; looking for a report
@@ -35,6 +196,8 @@ changes the heap layout enough for the dangling `m_owner` read to fault without 
 user directory the run used (the smoke test prints it). Treat a `-Vr` exit crash with the
 `Entity::cleanReferences` ← `DanaeClearLevel` stack as #93, not as a VR bug — and remember `-Vr` is
 not a gate until #93 is fixed.
+*Resolved for the exit crash: #93 is fixed (no exit crash in 13 VR exits after the fix); `-Vr` is
+still not a reliable gate because of #146 (the game exits with code -1 mid-run in 2 of 15 VR runs).*
 
 ## 2026-10-09 — The exit crash #93 needs no playing cinematic — a loaded one is enough
 
@@ -49,6 +212,8 @@ ending them at once — and brought the crash back.
 **Do:** a skipped cinematic must never be loaded (#124 ends it through `cinematicEnd()` without
 loading the file). Test exits with `-CloseWindow` as well as with the channel quit: they fail
 differently. `--intro` / `--cinematics` remain exposed to #93 until it is fixed.
+*Resolved: #93 is fixed — the loaded intro with `-CloseWindow` was 10 of 10 clean after the fix. The
+cinematic only changed the heap layout; the dangling owner was there on every exit.*
 
 ## 2026-10-09 — An issue body edited from PowerShell lost all its line breaks
 
@@ -71,6 +236,7 @@ closing during the cinematic is bug #93 (an entity owner is destroyed before its
 **Do:** development launches now skip the intro cinematic (`--intro` plays it; #92 restores it for
 players), so `--loadlevel 10` lands in GAMEPLAY after ~1 s and closing is clean (10/10 with the
 channel's `quit`, measured in #99). #93 itself is still open for the `--intro` / player path.
+*Resolved: #93 is fixed (an entity linked to a swapped-out tweak mesh kept a dangling owner).*
 
 ## 2026-10-08 — `arx.log` is empty or stale while the game runs
 
@@ -81,6 +247,11 @@ closes it (so a crashed run *does* leave a log, without `Clean shutdown`).
 **Do:** start the game with `--test-dir <dir>`: the test channel flushes the log every 250 ms together
 with `status.json`, and `[game] state:` / `[mark] <text>` lines give a script fixed anchors. Without
 the channel, read the log only after the process exited.
+*Resolved: since #129 the file logger flushes a warning or error at once and everything else at
+least once a second from its own flush thread (so a stuck main thread does not stop it). A
+`Stop-Process` 15 s into a flat run without the channel left a complete log ending with `Done
+loading level`, where the old logger left 4137 bytes cut mid-line. The channel's 250 ms flush stays
+for tests that want the log fresher than a second.*
 
 ## 2026-10-08 — The crash dialog outlives the game and opens Explorer when dismissed
 
@@ -148,6 +319,11 @@ owner's call). Relevant for tester builds too (#88): unsigned builds may be bloc
 shutdown**; a launch that failed (or was killed) leaves the previous run's log in place.
 **Do:** compare the log's `LastWriteTime` with the launch time (or delete it first), and close the game
 with `Process.CloseMainWindow()`, never `Stop-Process`.
+*Resolved for the log: since #129 the previous run's log is rotated to `arx.1.log` at startup and the
+current run's lines reach the disk within a second, so a killed run leaves its own log (the `Run:`
+banner line names the pid and the start time; the smoke test no longer deletes `arx.log` before a run,
+the history would go with it). `Stop-Process` still skips `Clean shutdown` and the channel's final
+status: close the game properly whenever those are the evidence you need.*
 
 ## 2026-10-08 — `--data-dir` with the Steam path breaks the command line
 

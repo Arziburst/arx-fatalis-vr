@@ -39,3 +39,19 @@ void Random::shutdown() {
 	delete rng;
 	rng = nullptr;
 }
+
+Random::State Random::getState() {
+	if(!rng) {
+		seed();
+	}
+	State state;
+	state.m_generator = *rng;
+	return state;
+}
+
+void Random::setState(const State & state) {
+	if(!rng) {
+		seed();
+	}
+	*rng = state.m_generator;
+}

@@ -10,12 +10,16 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 ## In one minute
 
 ```powershell
+.\scripts\build-windows.ps1                                   # builds AND runs the host unit tests (arxtest, CppUnit, tests/); -SkipTests to skip the run
 .\scripts\dev\smoke-test.ps1                                  # flat, --loadlevel 10: PASS / FAIL + evidence
-.\scripts\dev\smoke-test.ps1 -Vr                              # the same in VR (SteamVR running; SKIPPED, exit 2, while another game holds the VR lock)
+.\scripts\dev\smoke-test.ps1 -Vr                              # the same in VR - only while the owner has SteamVR running (SKIPPED, exit 2, otherwise; never starts it)
 .\scripts\dev\smoke-test.ps1 -Repeat 10 -Seconds 5            # a table of 10 runs
 .\scripts\dev\smoke-test.ps1 -Saves save0000 -- --loadslot 0  # copy a save into the isolated user directory, then load it
 .\scripts\dev\smoke-test.ps1 -Commands 'shot a','mark x' -- --loadslot 0
 .\scripts\dev\smoke-test.ps1 -Menu -Commands 'loadslot 0'       # plain launch (main menu), then a save through the channel
+.\scripts\dev\smoke-test.ps1 -Commands 'drawcheck 120'         # two draws of the scene per frame must give one picture (#71)
+.\scripts\dev\comfort-check.ps1                               # shake, FOV zoom and bob with the VR comfort policy off and on, one run (#76)
+.\scripts\dev\spell-drawcheck.ps1                             # the 26 spells of #71 really launched, then drawcheck 240 (#155)
 .\scripts\run-windows.ps1 -Isolated -TestChannel -- --no-vr --loadlevel 10   # a manual run with the channel, in this copy's own user dir
 .\scripts\dev\game-status.ps1 -Watch                          # live state line
 .\scripts\dev\game-cmd.ps1 'shot before' 'teleport -p marker_0001' 'shot after'
@@ -23,16 +27,17 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 & "$buildDir\xr_hello.exe"                                    # the runtime alone: exit 0 / 1 / 2
 ```
 
-`smoke-test.ps1` exits 0 only when every run passed (1: a run failed; 2: a VR run was skipped because
-another game holds the VR lock); a worker quotes its verdict lines in the PR's *How verified*.
+`smoke-test.ps1` exits 0 only when every run passed (1: a run failed; 2: the test was skipped — `-Vr`
+while SteamVR is not running, or the game lock stayed busy); a worker quotes its verdict lines in the
+PR's *How verified*. Every launch counts against the budget of 10 per task (WORKFLOW.md, D-014).
 
 Every path a test run touches is **per working copy** (the key `<folder>-<hash>` of
 `scripts/build-paths.ps1`, the same one the build directory uses): the game's user and config
 directory `%LOCALAPPDATA%\ArxFatalisVR\userdirs\<key>` (`arx.log`, `cfg.ini`, saves, crash reports)
 and the channel directory `%LOCALAPPDATA%\ArxFatalisVR\test\<key>`. Parallel workers therefore never
 read each other's log or overwrite each other's `status.json`, and never touch the player's
-`%USERPROFILE%\Saved Games\Arx Libertatis` (`-Shared` opts into it on purpose). See
-[Isolation and the VR lock](#isolation-and-the-vr-lock-parallel-work).
+`%USERPROFILE%\Saved Games\Arx Libertatis` (`-Shared` opts into it on purpose). Game *runs*, however,
+are one at a time on the PC. See [Isolation and the game lock](#isolation-and-the-game-lock-parallel-work).
 
 ## The smoke test (`scripts/dev/smoke-test.ps1`)
 
@@ -51,16 +56,21 @@ above) plus `--no-vr` unless `-Vr`, and `--loadlevel 10` unless other `arx.exe` 
 | no crash | new directories in the user directory's `crashes\` | one appeared |
 | no errors | `[E]` / `[C]` lines in the log **and** `errors` in `status.json` | any |
 | commands | every `-Commands` ack has `errors=0` | a command was refused |
+| draw check | `drawCheck` in `status.json`, when a `drawcheck` was among the commands | it did not finish, or `framesDiffering ≠ 0` |
 
 It prints the state timeline (`+1.1s state GAMEPLAY (frame 2)`), the acks, the `[E]`/`[W]` lines,
 the last lines of the log, the head of a new crash report, and `PASS` / `FAIL` with every reason.
 `-Repeat N` adds a table and a `passed X/N` line. The game runs with `ARX_UNATTENDED=1`: a crash
 writes its report and exits instead of waiting for someone to click the crash dialog.
 
-The test refuses to start while an `arx.exe` **from the same build** runs (same channel directory,
-same log, and a rebuild could not relink it); with `-Shared` while *any* `arx.exe` runs (they would
-all write the player's log); and, with `-Vr`, while `vrserver.exe` is not running (the game would
-start flat). A fresh isolated directory has no `cfg.ini` yet, so the first run logs one warning
+Before the first run the test applies the launch rules of D-014 (`scripts/launch-lib.ps1`): it runs
+only this working copy's own build made from its `HEAD` (`built-from.txt`; `-Rebuild` builds first),
+is **skipped** (exit 2) with `-Vr` while `vrserver.exe` is not running — it never starts SteamVR —
+and holds the machine-wide **game lock** for all its runs, waiting up to `-LockTimeoutSec` (300 s)
+while another game runs, printing the holder, and skipping (exit 2) when the wait runs out. The game
+window is shown without taking the focus (`window: focused=False` in the output; `status.json` says
+the same). Every run is one line in the ledger `%LOCALAPPDATA%\ArxFatalisVR\launches.log`.
+A fresh isolated directory has no `cfg.ini` yet, so the first run logs one warning
 (`Could not read config files cfg.ini and cfg_default.ini, using defaults`) and writes the file;
 `-Saves <slots>` copies save folders into it (`save0000`, … from `-SaveLibrary`, `$env:ARXVR_SAVE_LIBRARY`
 or the player's `save` folder) for `-- --loadslot` runs.
@@ -77,8 +87,10 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
   last=<last line> error=<reason or ->`.
 - **rewrites `<dir>\status.json`** every 250 ms, after every batch and on every state change —
   atomically (`status.json.tmp`, then rename), so a reader sees whole files only.
-- **flushes `arx.log`** at the same cadence (the file logger never flushes on its own, see
-  [TRAPS.md](TRAPS.md)), so `[game] state:` and `[mark]` lines are readable while the game runs.
+- **flushes `arx.log`** at the same cadence, so `[game] state:` and `[mark]` lines are readable
+  while the game runs (since #129 the file logger flushes on its own after every warning or error
+  and at least once a second — see *Log:* in [The log banner](#the-log-banner); the channel only
+  makes it fresher).
 - **logs `[game] state: STARTUP|MENU|LOADING level N|GAMEPLAY|CINEMATIC|EXITED`** on every change.
 - sets `ARX_UNATTENDED=1` in its own environment, inherited by the crash processor: no crash dialog.
 
@@ -92,7 +104,9 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `quit` | ask the game to quit at the end of the frame (the same path as closing the window) |
 | `loadslot <n>` | load save slot `n` (from the menu or in-game), refused with the slot count if it does not exist |
 | `loadlevel <n> [target]` | change to level `n` in a running game (refused from the menu: start with `--loadlevel` or `loadslot`) |
+| `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
 | `recenter` | refused with `not implemented yet (#28)` until recentering exists |
+| `comfort auto\|on\|off` | who decides the VR comfort policy (#76, `vr::comfort()`): `auto` = the VR session (the default: view bobbing, screen shake and FOV zoom off in VR, `cfg.ini` decides in flat mode), `on` / `off` force the VR rules on or off — so a flat run can measure them. `comfort` and `camera` in the status; one `[vr] comfort:` log line per change |
 | anything else | the **script console**: `[entity.]command args`, exactly as typed in the in-game console (`` ` ``). Context defaults to the player. Refused (and counted in the ack) when the entity or the command is unknown |
 
 Useful script-console commands for test scenes (the full list is what `ScriptEvent` registers,
@@ -107,12 +121,19 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
 ### `status.json`
 
 ```json
-{"pid":34120,"version":"0.1-dev + cead4a3","state":"GAMEPLAY","cleanShutdown":false,
+{"pid":34120,"version":"0.1-dev + cead4a3",
+ "build":{"commit":"cead4a3…(40 hex)","branch":"ARXVR-115-feat-log-banner-runtime","config":"Release"},
+ "state":"GAMEPLAY","cleanShutdown":false,
  "frame":618,"uptimeMs":6240,"fps":120.2,"errors":0,"warnings":0,
  "menuMode":"ingame","area":10,"paused":false,"cinematic":false,
  "player":{"x":...,"y":...,"z":...,"yaw":...,"life":...,"lifeMax":...,"mana":...,"manaMax":...},
+ "camera":{"x":...,"y":...,"z":...,"pitch":...,"yaw":...,"roll":...,"fov":75.0,"bob":0.0,"shake":0.0},
+ "spells":{"active":2,"launched":3,"activeByType":{"speed":1,"fire_field":1},
+           "launchedByType":{"speed":1,"heal":1,"fire_field":1}},
+ "comfort":{"mode":"auto","active":false,"viewBobbing":true,"screenShake":true,"fovZoom":true},
  "window":{"width":640,"height":480,"focused":true,"minimized":false,"fullscreen":false},
- "vr":{"supported":true,"enabled":false,"sessionState":"none","frames":0,"shownFrames":0},
+ "vr":{"supported":true,"enabled":false,"sessionState":"none","frames":0,"shownFrames":0,"runtime":"",
+       "manifest":"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json"},
  "cmdSeq":3,"lastCmd":"mark hello","lastCmdError":"","captureSeq":1,"lastCapture":"...\\first.bmp"}
 ```
 
@@ -131,8 +152,138 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   `synchronized`, SteamVR sets `shouldRender` only for the first frame, and `shownFrames` stays at 1
   while `frames` grows — expected, not a broken frame loop (see TRAPS.md). `smoke-test.ps1 -Vr`
   fails a run with `vr.enabled` and `vr.frames == 0`.
-- `player` is present only while a level is loaded. More fields (the rate line) come with #20; the
-  `.xrs` runner (#113) asserts on these keys with `@modassert`.
+- `player` is present only while a level is loaded. More fields (the rate line)
+  come with #20; the `.xrs` runner (#113) asserts on these keys with `@modassert`.
+- `camera` (with `player`): the first-person camera as the frame before left it — position, angles,
+  `fov` in degrees, `bob` = its distance from the stable head position of the paused animation (view
+  bobbing; 0 when off), `shake` = the quake amplitude applied that frame (0 without a quake or when
+  screen shake is off). `comfort`: who decides the VR comfort policy (`mode`: `auto` / `on` / `off`),
+  whether the VR rules apply (`active`) and what is allowed right now (#76). The status is written
+  at the **start** of a frame, so the write that acknowledges a `comfort` command still carries the
+  previous policy's camera — a check skips that sample (`comfort-check.ps1`).
+- `spells` (with `player`, #155): `active` spells right now and `launched` since the level was loaded
+  (the spell manager is cleared on a level change), each also by type (script names, only the types
+  with a non-zero count). A spell counts as launched once it passed its own `CanLaunch` and started —
+  the evidence that a `spellcast` did something, which the ack never is (TRAPS.md).
+- `build`: the same build identification as the [log banner](#the-log-banner): the full commit and
+  the branch compiled into `Version.cpp` (`branch` empty when detached), the CMake configuration.
+- `vr.runtime`: the OpenXR runtime that answered this run (`SteamVR/OpenXR 2.17.10`), empty while no
+  instance was created; `vr.manifest`: the runtime manifest the loader uses (`XR_RUNTIME_JSON`, then
+  the registry), empty when no runtime is installed — the same values as the banner's runtime lines.
+- `drawCheck` appears once a `drawcheck` was requested: `{"seq":1,"running":false,"frames":120,
+  "framesDiffering":0,"pixels":307200,"maxPixelsDiffering":0,"maxDelta":0,"capture":""}` —
+  `frames` compared so far, `framesDiffering` of them with at least one differing pixel,
+  `maxPixelsDiffering` the worst frame, `maxDelta` the largest difference of one color channel
+  (0–255), `capture` the base name of the most differing pair (`<capture>_a.bmp` / `_b.bmp`).
+
+## The log banner
+
+Every `arx.log` starts with five `Key: value` lines (#115 and #129, research rows F-18, F-98 and
+F-92), so a log says which build wrote it, how it was started and where it is written before anything
+else; the run digest (#131) reads them. Keep their shape when touching them.
+
+```
+[I] Startup:252  Starting Arx Fatalis VR 0.1-dev + f8b3585
+[I] Startup:111  Build: f8b3585637414910c931b733d27661cb8f4c407f on ARXVR-115-feat-log-banner-runtime, Release, MSVC 19.44, x86_64
+[I] Startup:141  Executable: "C:\Users\…\Release\arx.exe", linked 2026-10-09 14:02:55, built from f8b3585637414910c931b733d27661cb8f4c407f dirty
+[I] Startup:163  Run: 2026-10-09 15:10:03 local (12:10:03 UTC), pid 1234, command line: --windowed --no-vr --loadlevel 10
+[I] Startup:208  Log: "C:\Users\…\arx.log", previous runs kept as arx.1.log .. arx.9.log
+```
+
+- `Build:` the commit and branch compiled into `Version.cpp` (`(detached)` without a branch), the
+  CMake configuration, the compiler and the architecture. A Debug build, or a Release build with
+  debug output (`-DDEBUG=ON`), ends with `performance numbers not comparable`: its timings are never
+  compared with a release build's.
+- `Executable:` the path and link time of `arx.exe` and `built from <sha>[ dirty]` as
+  `built-from.txt` next to it says (written by `build-windows.ps1`; `unknown` without the file). A
+  `[W] built-from.txt names commit … but the executable carries version information from …` follows
+  when the two commits differ: the compiled-in version is stale — rebuild (see [TRAPS.md](TRAPS.md)).
+- `Run:` the start time in local time and in UTC (crash report folders are named in UTC), the pid
+  and the command line.
+- `Log:` the file this run writes and what became of the previous runs (#129, research row F-92).
+  At startup `arx.log` → `arx.1.log` → … → `arx.9.log`, the oldest dropped: **ten runs** per user
+  directory (an isolated self-test directory rotates its own; the smoke test no longer deletes
+  `arx.log` before a run). When a file cannot be moved — another process holds it open — nothing is
+  deleted: the line says `appended to the previous run's log`, a `[W] Log rotation failed: could not
+  move … to …` names the files, and this run's banner is simply the next `Starting` line in the same
+  file. The log is **kept on disk while the game runs**: a warning, error or critical line is flushed
+  at once, everything else by the logger's own flush thread at least once a second (also while the
+  main thread sits in a level load or a hang), so a hang, a `Stop-Process` or a crash loses at most
+  the last second. Info lines are not flushed one by one on purpose: a flush per line was a measured
+  stutter source in Dishonored VR.
+
+The VR runtime follows a few lines later, **on every run, flat ones included**:
+
+```
+[I] VRSystem:…  OpenXR runtime manifest: "C:\Program Files (x86)\Steam\steamapps\common\SteamVR\steamxr_win64.json" (from HKLM\SOFTWARE\Khronos\OpenXR\1\ActiveRuntime)
+[I] VRSystem:…  OpenXR runtime answered: SteamVR/OpenXR 2.17.10
+```
+
+- The manifest line names the file the loader will use and where it was selected from:
+  `XR_RUNTIME_JSON` (then also the registry value it overrides) or the registry key
+  (`HKLM`/`HKCU\SOFTWARE\Khronos\OpenXR\1\ActiveRuntime`); `No OpenXR runtime manifest` when none is
+  installed. A manifest file that does not exist is a `[W]` — a leftover `XR_RUNTIME_JSON` is the
+  classic reason for "it started flat".
+- `OpenXR runtime answered` appears once an instance exists. When the runtime that answered is not
+  the one the manifest path suggests (SteamVR, Oculus, Windows Mixed Reality, Varjo, Monado, Virtual
+  Desktop), a `[W]` names both.
+
+## The draw check (`drawcheck`)
+
+In VR the scene is drawn once per eye, so a level frame is *simulate once, draw per view* (#71):
+`ArxGame::updateLevel()` advances the game, `renderSceneView()` draws the 3D world for the current
+camera and may run any number of times, `renderInterface()` draws the HUD once. Anything that still
+advances while drawing — a particle aging, a random walk, a light moving, a spell applying damage —
+would run once per eye and give the eyes two different pictures.
+
+`drawcheck [frames]` is the instrument: for the next `frames` level frames the scene view is drawn
+**twice** with the same camera (`channel::sceneViewCount()` returns 2) and the two back buffers are
+read back and compared pixel by pixel. The expected result is **0 differing pixels in every frame**;
+the numbers land in `drawCheck` of `status.json`, one `[render] drawcheck N done:` line in the log,
+and the most differing pair is saved as `capture\drawcheckN_a.bmp` / `_b.bmp` for a look. The smoke
+test treats a `drawcheck` among its `-Commands` as a gate (it waits for the check to finish and fails
+on `framesDiffering ≠ 0`).
+
+What the check relies on and what it cannot see:
+
+- **Random numbers.** Draw code jitters things on purpose (missile trails, lightning bolts, halos,
+  the fissure's edges). `renderLevel()` saves the generator (`Random::getState()`) before the first
+  view and restores it before every further view, so each view draws the same random numbers. That is
+  also what the eyes need: the same flicker in both. A random *walk* that accumulates in draw code
+  (`x += random`) still differs, and is a bug the check finds.
+- **Per-view culling and projection** (`worldToClipSpace`, `VisibleSphere`) are fine in draw code:
+  the same camera gives the same result. Game decisions that used to depend on the camera (a blood
+  splat lands only in view, a field animates only in view) now use the frame's camera in the update.
+- It compares the whole scene view, screen-space overlays included (hit blood, Magic Sight, the
+  paralysis tint), but **not** the interface, which is drawn once per frame anyway.
+- It cannot see state that only affects the *next* frame (a counter incremented in a draw path and
+  read later). Those show up as a visibly faster effect, not as a differing pair.
+
+A typical check exercises the systems that were split, all at once — the spells check (#155):
+
+```powershell
+.\scripts\dev\spell-drawcheck.ps1              # PASS: 26 of 26 spells launched, 0 differing frames
+.\scripts\dev\spell-drawcheck.ps1 -Flags fs    # the broken cast of #71 on purpose: must FAIL
+```
+
+It runs the smoke test with `invulnerability on`, 23 spells the player casts on itself
+(`spellcast -fsm 5 <spell> self`), the other 3 cast on the player by an NPC
+(`human_base_0033.spellcast -fsm 5 <spell> player`) and `drawcheck 240`; it samples `status.json`
+meanwhile and fails unless every spell shows up in `spells.launchedByType`, some spells are in
+`spells.activeByType` while the check runs, and the smoke test (with its draw check gate) passed. It
+prints which command launched each spell and which spells were on screen during the check.
+
+- **The flags matter:** on the **player** a `spellcast` launches at once only with `-s` **and** `-m`
+  (`NOANIM` + `NODRAW`); with `-fs` alone it is queued for the rune drawing, which skips the player,
+  so nothing is cast and every later `spellcast` on the player is ignored (TRAPS.md, found in #76).
+  The first #71 spell row below used `-fs`: its spells never launched; #155 re-ran it.
+- **Three spells need an NPC caster.** `fake_summon` launches only for a caster other than the
+  player (`FakeSummonSpell::CanLaunch`). `summon_creature` and `raise_dead` cast by the player on
+  level 10 never launch: their `CanLaunch` finds no valid spot 3 m ahead
+  (`ARX_INTERACTIVE_ConvertToValidPosForIO`) — tried at the start point facing 0°, 90°, 180° and
+  270°, and next to `human_base_0033`. Cast by that NPC they launch; the fissure drawn is the same.
+- Order: the long-lived spells first, the projectiles and the NPC's summons last, so they are still
+  in flight or open when the check starts (`harm` and `mana_drain` end on their own before that).
 
 ## `xr_hello` — the runtime alone
 
@@ -162,10 +313,32 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | `smoke-test.ps1 -Menu -Commands 'loadslot 0'` (plain launch, then a save through the channel) | `MENU` 0.8 s after launch; `loadslot 0` refused with `no save in slot 0 (have 0)` — the owner's machine has no saves yet (#70), so the success path of `loadslot` is **not verified** here; it is the same `LOADQUEST_SLOT` path as `--loadslot` |
 | 2026-10-09, #124: `--loadlevel 10` with the intro `.cin` **loaded** (preloaded by the level 10 script, never played), `-CloseWindow -Repeat 5` | **2 of 5 crashed** in `Entity::cleanReferences` (#93); the channel `quit` was 5 of 5 clean on the same build. A loaded cinematic is enough for #93, so the development skip never loads the file |
 | 2026-10-09, #124: cinematics skipped without loading — default `-CloseWindow -Repeat 3`; `-Commands 'cine play' -CloseWindow -Repeat 2`; `-Commands 'cine play','cine akbaa_dream_a' -Repeat 2` | **3 of 3, 2 of 2, 2 of 2** `PASS`; one `Skipping cinematic <name>` line per cinematic, state never `CINEMATIC`, 0 errors. With `--cinematics` (or `cine play` with `--intro`) the state becomes `CINEMATIC` — the check can fail |
+| 2026-10-09, #71: `-Commands 'drawcheck 120'` on level 10 **before** the simulate / draw split (`renderLevel()` still aged particles, flares, decals and spells while drawing) | **23 of 120 frames differ** between the two draws (max 3558 of 307200 pixels, max delta 59) — the torches' fire particles advance once per draw |
+| 2026-10-09, #71: the same after the split | `PASS`, **0 of 120 frames differ** (max 0 pixels, delta 0), 0 errors, 0 warnings |
+| 2026-10-09, #71: 26 spells cast on the player (`spellcast -fs 5 <spell> self`, the list in [The draw check](#the-draw-check-drawcheck)), then `drawcheck 240` | `PASS`, **0 of 240 frames differ**, every `spellcast` acknowledged with `errors=0`, 0 errors, 0 warnings. **No spell was active:** with `-fs` a spell on the player is queued and never launched (TRAPS.md), so this row covers the level without spells — superseded by the #155 rows below |
+| 2026-10-09, #71: **the check can fail** — a build with `ARX_PARTICLES_Update()` deliberately moved back into `renderSceneView()`, `drawcheck 120` on level 10 | `FAIL`, **35 of 120 frames differ** (max 10 of 307200 pixels, max delta 97), the most differing pair saved as `capture\drawcheck1_a.bmp` / `_b.bmp`; the other six checks stay `[ok]` — only the draw check catches this class of bug |
+| 2026-10-09, #71: the committed code — `shot level10`, the 26 spells plus `negate_magic`, `drawcheck 120` | `PASS`, **0 of 120 frames differ**, 0 errors, 0 warnings. The `shot` at frame 15 was **all black**: the level's fade-in, not the renderer (TRAPS.md). The spells were cast with `-fs` like the row above: none launched |
+| 2026-10-09, #71: 20 × `status` (≈ 5 s), `shot level10-after-fade`, `drawcheck 120` | `PASS`, **0 of 120 frames differ**; the shot at frame 517 shows the scene (58 % of sampled pixels non-black, the same as the draw-check captures from frame 86 on) |
+| 2026-10-09, #93 before the fix: a detector in `~Entity` (log every entity whose `owner()` is the one being deleted) | **1 of 1** exits from level 10 report `human_base_0033` deleted while it still owns `long_sword_0021` — the dangling owner is there on every exit, the crash only depends on the heap |
+| 2026-10-09, #93 after the fix: `-Repeat 10 -Seconds 3` (channel quit) | **10 of 10** `PASS`, 0 errors, 0 warnings; the detector reports nothing |
+| 2026-10-09, #93 after the fix: `-Repeat 10 -Seconds 3 -CloseWindow -- --no-vr --loadlevel 10 --intro` (intro `.cin` loaded, window closed — 2 of 5 crashed in #124) | **10 of 10** `PASS` |
+| 2026-10-09, #93 after the fix: `-Vr -Repeat 10` + `-Vr -Repeat 5`, SteamVR running, headset idle | **13 of 15** `PASS`, **0** exit crashes (before: 2 of 3); 2 runs ended mid-run with exit code -1 and no crash report — a different problem, #146 |
+| 2026-10-09, #76: `comfort-check.ps1` — one flat run, `comfort off` then `comfort on`, in each phase `quake 300 3000 400` and Magic Sight, status sampled every 100 ms (`camera.shake`, `camera.roll`, `camera.fov`, `camera.bob`) | smoke test `PASS`, 0 errors. **off** (18 samples): shake max **2.622**, roll max 0.428°, fov **75.00 → 80.65**, bob max **1.472** (the idle animation moves the head too). **on** (27 samples): shake **0**, roll **0**, fov **75.00** in every sample, bob **0**. Log: one `[vr] comfort:` line per policy change, one `screen shake suppressed - intensity 300, 3000 ms, period 400` and one `FOV zoom suppressed - focal -30 (Magic Sight)` per episode, nothing per frame. The `off` phase is the broken state on purpose: the instrument sees each of the three motions, so the check can fail |
+| 2026-10-09, #76: the first version of the same check, Magic Sight cast with `spellcast -fsx 5 magic_sight self` | `FAIL` of the check only (the smoke test passed): fov **75.00 in both phases** — the spell never launched. On the player `spellcast` without `-m` is queued for the rune drawing, which skips the player (TRAPS.md); `-fsmx` zooms (row above). The same `-fs` cast the #71 spell rows above — #155 re-runs them |
+| 2026-10-09, #115 log banner: flat smoke test, then `status.json` and the first log lines asserted by script | `PASS`; `build.commit` = `git rev-parse HEAD` of the worktree **after a commit and a rebuild** (before #115 a worktree kept its first build's commit), `build.branch`, `build.config` = `Release`, `vr.manifest` = the SteamVR manifest from `HKLM`, `vr.runtime` = `""` in a flat run; the four banner lines match their documented shape. `XR_RUNTIME_JSON` → a missing file (flat, `--no-vr`): the manifest line says `from XR_RUNTIME_JSON, overriding the registry's "…steamxr_win64.json"`, exactly **1** `[W] … does not exist`, `vr.manifest` = that path, `PASS`. `built-from.txt` edited to another commit: exactly **1** `[W] built-from.txt names commit …`, `PASS`. The `OpenXR runtime answered` line needs an instance (SteamVR running): not exercised in that session, it is the renamed `Using OpenXR runtime` line |
+| 2026-10-09, #129 **before** (the `main` build): `run-windows.ps1 -Isolated -Background -- --no-vr --loadlevel 10`, no channel, `Stop-Process` long after the level had loaded | `arx.log` = **4137 bytes, 42 lines, cut mid-line** (`[I] Localisation` and nothing after it): the `ofstream` buffer; the end of the level load lost, no `Clean shutdown` |
+| 2026-10-09, #129 **after**: the same, killed 15.5 s after the start | `arx.log` = **4787 bytes, 49 complete lines**, last line `[I] LoadLevel:511  Done loading level` (the last line the game wrote), ends with a newline; the previous run's truncated log sits in `arx.1.log`; banner `Log: "…\arx.log", previous runs kept as arx.1.log .. arx.9.log` |
+| 2026-10-09, #129: `smoke-test.ps1 -Seconds 5 -Commands 'mark flush-check'`, then `-Seconds 3` on the final build | `PASS` both, 0 errors, 0 warnings; after the second run the history reads `arx.log` (pid 35468) ← `arx.1.log` ← `arx.2.log` (the killed `main` run), each `Run:` line one run older — the smoke test no longer deletes `arx.log` before a run |
+| 2026-10-09, #129, **the degraded path**: `arx.1.log` held open by PowerShell (`FileShare::ReadWrite`, no delete sharing) during `smoke-test.ps1 -Seconds 3` | `PASS` with exactly **1** warning: `[W] Startup:211  Log rotation failed: could not move "…\arx.1.log" to "…\arx.2.log" - nothing was deleted, this run appends to the previous log`; `Log: …, appended to the previous run's log`; `arx.log` grew from 5114 to 10583 bytes with two `Starting` lines, `arx.1.log` untouched. `fs::rename` retries 10 × 100 ms first (its `[W] Failed to move file … 32 = … being used by another process` lines go to stderr — the file logger does not exist yet), so `STARTUP` came at +1.0 s instead of +0.3 s |
+| 2026-10-09, #129, **the test can fail**: `FileLoggerTest` built with both flushes removed on purpose | `Run: 39  Failures: 2`: `testWarningIsOnDiskAtOnce` and `testInfoIsOnDiskWithinTheInterval` (after its 2 s wait); `testExplicitFlush` and the three rotation tests stay green, as they should. Restored: `OK (39 tests)` |
+| 2026-10-09, #155: `spell-drawcheck.ps1` — the 26 spells of #71 **really launched** (23 by the player with `-fsm`, `summon_creature` / `raise_dead` / `fake_summon` by `human_base_0033` on the player), then `drawcheck 240` on level 10 | `PASS`: **26 of 26** in `spells.launchedByType`, each in the `status.json` write right after its own command; **24 spell types active during the check** (all but `harm` and `mana_drain`, which had ended), **0 of 240 frames differ** (max 0 of 307200 pixels, delta 0), 0 errors, 0 warnings. The #71 split holds with every spell effect on screen — no bug to file against it |
+| 2026-10-09, #155: the same with `-Flags fs` — the cast of the #71 rows, the broken state on purpose | `FAIL` of the check (the smoke test passed, 0 of 240 frames differ): **0 of 23** player spells launched; the NPC's 3 launched one command later through the NPC rune drawing. The launch evidence catches the #71 mistake |
+| 2026-10-09, #155: the player's own `summon_creature` and `raise_dead` (`-fsm`): at the start point; after `teleport -ap 0/90/180/270 player`; after `teleport -p human_base_0033` | **never launched** — `CanLaunch` finds no valid spot 3 m ahead on level 10, a silent fizzle; hence the NPC caster above |
 
 Conclusions:
 
-- **Reliable, used as a gate:** the flat smoke test (start, level, channel commands, quit, evidence).
+- **Reliable, used as a gate:** the flat smoke test (start, level, channel commands, quit, evidence),
+  the draw check (#71) and the comfort check (#76) on top of it.
 - **Reliable for what it covers:** the VR launch with an idle headset proves instance / session
   creation, the OpenGL binding and the shutdown order. With nobody wearing the headset SteamVR runs
   the frame loop in `SYNCHRONIZED` but never grants `VISIBLE`/`FOCUSED`, so anything that needs
@@ -173,14 +346,15 @@ Conclusions:
   backend's job (#112, #113) or the owner's. The SteamVR null driver (F-03) is **not needed**: an
   idle Index already runs frames; the driver would not reach `FOCUSED` either without input.
 - **Manual, not automated:** anything visual in VR, performance at the headset's rate, and the
-  `--intro` / `--cinematics` paths (#93 is still open there).
+  `--intro` / `--cinematics` paths (no longer exposed to the exit crash #93, fixed on 2026-10-09).
 
 ## Writing a channel-driven check
 
 1. Start with the state you need: `--loadlevel N`, `--loadslot N` (saves from #70) or a plain launch.
 2. Put the game where the feature is: `teleport -p <marker>`, `loadlevel`, `spawn`.
 3. `mark <name>` before the action, do it, then assert on numbers (`status.json`, the ack) or on
-   `shot` captures (`capture\*.bmp`, compared by #113's `img-diff`).
+   `shot` captures (`capture\*.bmp`, compared by #113's `img-diff`). Not in the first second after
+   `GAMEPLAY`: the level fades in from black and an early `shot` is all black (TRAPS.md).
 4. Prove the check can fail once (break the thing on purpose) before trusting it.
 5. Quote the verdict lines in the PR's *How verified*.
 
@@ -188,37 +362,54 @@ Scripts share `scripts/dev/test-lib.ps1` (`Get-ArxTestDir`, `Get-ArxUserDir`, `R
 `Wait-ArxStatus`, `Send-ArxCommand`); the channel directory is `$env:ARXVR_TEST_DIR` or
 `%LOCALAPPDATA%\ArxFatalisVR\test\<key>` of the working copy the scripts belong to.
 
-## Isolation and the VR lock (parallel work)
+## Isolation and the game lock (parallel work)
 
-Several workers build and test at the same time ([WORKFLOW.md](WORKFLOW.md), *Parallel work*; #123).
-What keeps their runs apart — all derived from the working copy's key `<folder>-<hash>`
-(`scripts/build-paths.ps1`):
+Several workers build and test at the same time ([WORKFLOW.md](WORKFLOW.md), *Parallel work*; #123,
+launch rules D-014 / #147). What keeps their runs apart — all derived from the working copy's key
+`<folder>-<hash>` (`scripts/build-paths.ps1`):
 
 | Shared before | Now |
 |---|---|
-| the build | `%LOCALAPPDATA%\ArxFatalisVR\build\<key>\<Config>`; `built-from.txt` in it records the commit a build came from (`<sha>` or `<sha> dirty`), read by `test-pr.ps1` to decide whether to rebuild |
+| the build | `%LOCALAPPDATA%\ArxFatalisVR\build\<key>\<Config>`; `built-from.txt` in it records the commit a build came from (`<sha>` or `<sha> dirty`), read by `test-pr.ps1` to decide whether to rebuild and by every launch script, which refuses a build of another copy or of another commit than `HEAD` (`-Rebuild` builds first) |
 | `arx.log`, `cfg.ini`, saves, crash reports | `run-windows.ps1 -Isolated` and the smoke test pass `--user-dir` / `--config-dir` = `…\userdirs\<key>`. The player's `Saved Games\Arx Libertatis` is touched only by a plain `run-windows.ps1` (the owner's headset test, `test-pr.ps1`) or `smoke-test.ps1 -Shared` |
 | the channel (`status.json`, `command.txt`) | `--test-dir` = `…\test\<key>`; a copy's `game-cmd.ps1` / `game-status.ps1` talk to that copy's game; `run-windows.ps1 -TestChannel` starts a manual run with it |
 | saves for `--loadslot` | `-Saves save0000` copies slots into the isolated directory from `-SaveLibrary`, `$env:ARXVR_SAVE_LIBRARY` or the player's `save` folder (#70 defines the library) |
-| the headset | the VR lock below |
+| the PC (GPU, desktop) and the headset | the game lock below: one game at a time, flat or VR |
+| SteamVR | nobody but the owner starts it: a launch without `--no-vr` is made flat while `vrserver.exe` is not running; `-StartSteamVR` is the owner's switch |
+| the owner's focus | self-test windows are shown without activation (`SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN` from the environment; `run-windows.ps1 -Background`, always in the smoke test) |
+| who launched what | the ledger `%LOCALAPPDATA%\ArxFatalisVR\launches.log`, one line per launch; `cycle-report.ps1` → `LAUNCHES` |
 
-**The VR lock** (`scripts/vr-lock.ps1`): `%LOCALAPPDATA%\ArxFatalisVR\vr.lock`, opened for writing
-without write sharing by the launching script and held until the game exits. Windows drops the handle
-with the process, so a crash or a kill cannot leave a stale lock. The holder writes
-`pid=… since=… what=…` into the file; whoever finds the lock busy prints that line. Rules: every
-launch that *may* start in VR (no `--no-vr`) takes it — `run-windows.ps1` waits `-VrLockTimeoutSec`
-(default 120 s) and then fails naming the holder; `smoke-test.ps1 -Vr` waits (default 60 s) and then
-**skips** with exit 2 (the VR self-test is best effort — say so in the PR); flat launches (`--no-vr`)
-never take it.
+**The game lock** (`scripts/launch-lib.ps1`): `%LOCALAPPDATA%\ArxFatalisVR\game-<n>.lock` (slots
+`1..maxGames`, `maxGames` = 1 unless `settings.json` next to it says otherwise) plus `vr.lock` for a
+VR launch — each a file opened for writing without write sharing by the launching script and held
+until the game exits. Windows drops the handle with the process, so a crash or a kill cannot leave a
+stale lock. The holder writes `pid=<script> game=<arx.exe pid> since=… what=… copy=… branch=…` into the
+file; whoever finds the lock busy prints those lines. An `arx.exe` that no lock names (started by
+hand) counts as a holder too; the crash processor (`arx.exe --crashinfo`) does not. Rules: **every**
+launch takes a slot — `run-windows.ps1` waits `-LockTimeoutSec` (default 300 s) and then fails naming
+the holders; `smoke-test.ps1` waits the same and then **skips** with exit 2. The old `vr-lock.ps1`
+(#123, VR launches only) is gone.
+
+Measured (owner's PC, 2026-10-09, #147 — SteamVR off the whole time, `vrserver.exe` absent before and after every row):
+
+| Scenario | Result |
+|---|---|
+| `run-windows.ps1 -Isolated -TestChannel -Background` **without** `--no-vr`, SteamVR off | `SteamVR is not running and this script never starts it (D-014): launching flat (--no-vr added)`; the log says `VR disabled on the command line (--no-vr)`; the foreground window stayed the owner's terminal; ledger line `mode=flat … args=--no-vr` |
+| `smoke-test.ps1 -Vr`, SteamVR off | `SKIPPED - -Vr given but SteamVR (vrserver.exe) is not running, and a worker never starts it`, exit 2, no launch |
+| two smoke tests started 4 s apart from the same copy | the second printed `game lock busy (all 1 game slot(s) are held) … held: game-1.lock: pid=30384 game=35904 … branch=ARXVR-147-…`, waited, then ran; **2 of 2** `PASS`, both in the ledger; no `.lock` left behind |
+| a lock held by another process, `smoke-test.ps1 -LockTimeoutSec 3` | `SKIPPED - another game kept the game lock for 3 s`, exit 2, holder printed; after `Stop-Process` on the holder the lock was free at once |
+| `built-from.txt` edited to another sha | `stale build: built from 012345678, HEAD is 7de3879d0. Build first … or pass -Rebuild`, no launch; with the stamp restored the launch runs |
+| `-BuildDir` of the owner's copy | `… is not a build of this working copy. Launches run only the copy's own build …`, no launch |
+| the no-focus window | before #147 `status.json` said `window.focused: true` while the foreground window was the terminal — `SDL2Window` assumed focus after `SDL_ShowWindow` (TRAPS.md); now `window: focused=False minimized=False 640x480` in both smoke runs, 120 fps, `GAMEPLAY` after 0.8 s and 1.2 s |
 
 Measured (owner's PC, 2026-10-09, #123):
 
 | Scenario | Result |
 |---|---|
 | `smoke-test.ps1` (isolated by default) | `PASS`; `arx.log`, `cfg.ini`, `save\`, `crashes\` appear in `userdirs\<key>`; the player's `Saved Games\Arx Libertatis\arx.log` keeps its `LastWriteTime`. First run in a fresh directory: 1 warning (no `cfg.ini` yet), later runs 0 |
-| **Two smoke tests at the same time** (this worktree's build and the owner's build, separate user and channel directories), `-Seconds 8` each | **2 of 2** `PASS`, both done in 11 s; `GAMEPLAY` after 0.5 s and 1.1 s, 0 errors — **no second-instance limit**, so the lock covers VR launches only (the fallback of WORKFLOW.md is not needed) |
+| **Two smoke tests at the same time** (this worktree's build and the owner's build, separate user and channel directories), `-Seconds 8` each | **2 of 2** `PASS`, both done in 11 s; `GAMEPLAY` after 0.5 s and 1.1 s, 0 errors — **no second-instance limit** in the engine. *Superseded by D-014 (#147): the owner wants one game at a time anyway, so every launch takes the game lock now and the second test waits* |
 | VR lock held by another process: `smoke-test.ps1 -Vr -VrLockTimeoutSec 3` | `SKIPPED`, exit 2, holder printed: `pid=2580 since=… what=lock-test holder` |
 | the same, `run-windows.ps1 -VrLockTimeoutSec 2` without `--no-vr` | fails: `another game is running in VR (pid=2580 … what=lock-test holder). Wait for it to end, or add --no-vr` |
-| the same, flat `smoke-test.ps1` | `PASS` — a flat run ignores the lock |
+| the same, flat `smoke-test.ps1` | `PASS` — a flat run ignored the VR lock *(since #147 a flat run waits for the game lock too)* |
 | the holder is killed (`Stop-Process`) | the lock is free at once; after a release no `vr.lock` file is left |
-| `smoke-test.ps1 -Vr` with SteamVR running, headset idle, lock free (3 runs) | the lock is taken and released, VR `enabled=True session=ready` in all three; **2 of 3 crashed on exit** with the #93 stack (`Entity::cleanReferences` ← `DanaeClearLevel`), no cinematic loaded — the VR exit path is exposed to #93 where the flat path is clean (4 of 4 the same hour), so `-Vr` is **not a gate** until #93 is fixed (evidence on the issue) |
+| `smoke-test.ps1 -Vr` with SteamVR running, headset idle, lock free (3 runs) | the lock is taken and released, VR `enabled=True session=ready` in all three; **2 of 3 crashed on exit** with the #93 stack (`Entity::cleanReferences` ← `DanaeClearLevel`), no cinematic loaded — the VR exit path is exposed to #93 where the flat path is clean (4 of 4 the same hour), so `-Vr` is **not a gate** until #93 is fixed (evidence on the issue). *#93 fixed on 2026-10-09: 0 exit crashes in 13 VR exits; `-Vr` stays best effort because of #146* |

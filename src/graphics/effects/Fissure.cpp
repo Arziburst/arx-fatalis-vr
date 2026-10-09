@@ -260,6 +260,56 @@ void CRiseDead::RenderFissure() {
 	
 	for(int i = 0; i < end - 1; i++) {
 		
+		if(i < m_visibleNotches) {
+			vt[0] = va[i];
+			vt[1] = va[i + 1];
+			vt[2].x = va[i].x;
+			vt[2].y = va[i].y + (va[i].y - target.y) * 2;
+			vt[2].z = va[i].z;
+			vt[3].x = va[i + 1].x;
+			vt[3].y = va[i + 1].y + (va[i + 1].y - target.y) * 2;
+			vt[3].z = va[i + 1].z;
+			vr[0].color = (m_colorRays1 * tfRaysa[i]).toRGB();
+			vr[1].color = (m_colorRays1 * tfRaysa[i + 1]).toRGB();
+			vr[2].color = (m_colorRays2 * tfRaysa[i]).toRGB();
+			vr[3].color = (m_colorRays2 * tfRaysa[i + 1]).toRGB();
+			vr[0].p = vt[0];
+			vr[1].p = vt[1];
+			vr[2].p = vt[2];
+			vr[3].p = vt[3];
+			drawTriangle(mat, &vr[0]);
+			drawTriangle(mat, &vr[1]);
+		}
+		
+		if(i < m_visibleNotches) {
+			vt[0] = vb[i + 1];
+			vt[1] = vb[i];
+			vt[2].x = vb[i + 1].x;
+			vt[2].y = vb[i + 1].y + (vb[i + 1].y - target.y) * 2;
+			vt[2].z = vb[i + 1].z;
+			vt[3].x = vb[i].x;
+			vt[3].y = vb[i].y + (vb[i].y - target.y) * 2;
+			vt[3].z = vb[i].z;
+			vr[0].color = (m_colorRays1 * tfRaysb[i]).toRGB();
+			vr[1].color = (m_colorRays1 * tfRaysb[i + 1]).toRGB();
+			vr[2].color = (m_colorRays2 * tfRaysb[i]).toRGB();
+			vr[3].color = (m_colorRays2 * tfRaysb[i + 1]).toRGB();
+			vr[0].p = vt[0];
+			vr[1].p = vt[1];
+			vr[2].p = vt[2];
+			vr[3].p = vt[3];
+			drawTriangle(mat, &vr[0]);
+			drawTriangle(mat, &vr[1]);
+		}
+		
+	}
+}
+
+// Flicker the rays of the tearing: a random walk per notch, once per frame
+void CRiseDead::UpdateRays() {
+	
+	for(int i = 0; i < end - 1; i++) {
+		
 		float t = Random::getf();
 		if(t <= 0.15f) {
 			if(tfRaysa[i] < 1.f) {
@@ -320,49 +370,8 @@ void CRiseDead::RenderFissure() {
 			}
 		}
 		
-		if(i < m_visibleNotches) {
-			vt[0] = va[i];
-			vt[1] = va[i + 1];
-			vt[2].x = va[i].x;
-			vt[2].y = va[i].y + (va[i].y - target.y) * 2;
-			vt[2].z = va[i].z;
-			vt[3].x = va[i + 1].x;
-			vt[3].y = va[i + 1].y + (va[i + 1].y - target.y) * 2;
-			vt[3].z = va[i + 1].z;
-			vr[0].color = (m_colorRays1 * tfRaysa[i]).toRGB();
-			vr[1].color = (m_colorRays1 * tfRaysa[i + 1]).toRGB();
-			vr[2].color = (m_colorRays2 * tfRaysa[i]).toRGB();
-			vr[3].color = (m_colorRays2 * tfRaysa[i + 1]).toRGB();
-			vr[0].p = vt[0];
-			vr[1].p = vt[1];
-			vr[2].p = vt[2];
-			vr[3].p = vt[3];
-			drawTriangle(mat, &vr[0]);
-			drawTriangle(mat, &vr[1]);
-		}
-		
-		if(i < m_visibleNotches) {
-			vt[0] = vb[i + 1];
-			vt[1] = vb[i];
-			vt[2].x = vb[i + 1].x;
-			vt[2].y = vb[i + 1].y + (vb[i + 1].y - target.y) * 2;
-			vt[2].z = vb[i + 1].z;
-			vt[3].x = vb[i].x;
-			vt[3].y = vb[i].y + (vb[i].y - target.y) * 2;
-			vt[3].z = vb[i].z;
-			vr[0].color = (m_colorRays1 * tfRaysb[i]).toRGB();
-			vr[1].color = (m_colorRays1 * tfRaysb[i + 1]).toRGB();
-			vr[2].color = (m_colorRays2 * tfRaysb[i]).toRGB();
-			vr[3].color = (m_colorRays2 * tfRaysb[i + 1]).toRGB();
-			vr[0].p = vt[0];
-			vr[1].p = vt[1];
-			vr[2].p = vt[2];
-			vr[3].p = vt[3];
-			drawTriangle(mat, &vr[0]);
-			drawTriangle(mat, &vr[1]);
-		}
-		
 	}
+	
 }
 
 void CRiseDead::Update(ShortGameDuration timeDelta) {
@@ -370,6 +379,10 @@ void CRiseDead::Update(ShortGameDuration timeDelta) {
 	arx_assume(timeDelta >= 0 && timeDelta <= GameTime::MaxFrameDuration);
 	
 	m_elapsed += timeDelta;
+	
+	if(m_elapsed < m_duration) {
+		UpdateRays();
+	}
 	
 	m_stones.Update(timeDelta, m_eSrc, m_elapsed < m_duration);
 	

@@ -120,14 +120,18 @@ void MassLightningStrikeSpell::End() {
 	
 }
 
+void MassLightningStrikeSpell::Render() {
+
+	for(CLightning & arc : util::dereference(m_arcs)) {
+		arc.Render();
+	}
+
+}
+
 void MassLightningStrikeSpell::Update() {
 	
 	for(CLightning & arc : util::dereference(m_arcs)) {
 		arc.Update(g_gameTime.lastFrameDuration());
-	}
-	
-	for(CLightning & arc : util::dereference(m_arcs)) {
-		arc.Render();
 	}
 	
 	Vec3f position = m_pos + arx::randomVec(-250.f, 250.f);

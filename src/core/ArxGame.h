@@ -93,8 +93,14 @@ private:
 	void handlePlayerDeath();
 	void updateActiveCamera();
 	
+	//! Advance the level by one frame - everything that changes game state, run once per frame
 	void updateLevel();
+	//! Draw the level: the scene once per view, then the interface once
 	void renderLevel();
+	//! Draw the 3D world for the current camera without changing game state - once per eye in VR
+	void renderSceneView();
+	//! Draw the HUD and other 2D interface on top of the scene - once per frame
+	void renderInterface();
 	
 	void onWindowGotFocus(const Window & window) override;
 	void onWindowLostFocus(const Window & window) override;

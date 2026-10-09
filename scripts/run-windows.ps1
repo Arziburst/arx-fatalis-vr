@@ -11,23 +11,35 @@
 	to the main menu and every .cin cinematic is skipped; add --intro to see the publisher logos and
 	the intro cinematic, --cinematics to see all cinematics (new-game intro, in-game cutscenes).
 
-	Parallel work (docs/vr/WORKFLOW.md): -Isolated gives this working copy its own user and config
-	directory (%LOCALAPPDATA%\ArxFatalisVR\userdirs\<folder>-<hash>: arx.log, cfg.ini, saves, crash
-	reports), so a worker's runs never touch the player's files in Saved Games\Arx Libertatis; -Saves
-	copies save slots into it. A launch that may start in VR (no --no-vr) takes the machine-wide VR
-	lock (scripts/vr-lock.ps1) for as long as the game runs: only one game in VR at a time. The lock
-	is waited for up to -VrLockTimeoutSec; a flat launch (--no-vr) needs no lock.
+	Launch control (docs/vr/WORKFLOW.md "Parallel work", decision D-014; scripts/launch-lib.ps1):
+	  - no SteamVR start: without --no-vr the game may start in VR only when SteamVR (vrserver.exe) is
+	    already running; otherwise the launch is made flat (--no-vr) with a note. -StartSteamVR, the
+	    owner's switch, starts SteamVR first (the headset turns on) and is never used by a worker.
+	  - one game at a time on this PC: the launch holds a game lock slot while the game runs (a VR
+	    launch also the VR lock), waits up to -LockTimeoutSec for the holder and names it.
+	  - only this working copy's own fresh build: an arx.exe from another copy, or whose built-from.txt
+	    does not name the copy's HEAD, is refused ("dirty" is fine); -Rebuild builds first.
+	  - the launch is written to the ledger %LOCALAPPDATA%\ArxFatalisVR\launches.log.
+	  - -Background shows the window without taking the focus (self-tests).
 
-	Until the engine finds the data itself (task #79), this script does the lookup (Find-ArxFatalisSteamInstall in build-paths.ps1).
+	Parallel work: -Isolated gives this working copy its own user and config directory
+	(%LOCALAPPDATA%\ArxFatalisVR\userdirs\<folder>-<hash>: arx.log, cfg.ini, saves, crash reports), so a
+	worker's runs never touch the player's files in Saved Games\Arx Libertatis; -Saves copies save
+	slots into it.
+
+	The game finds the Arx Fatalis data in the Steam libraries itself (#79, arx.log line "Steam data:");
+	-DataDir passes another install folder as --data-dir.
 
 .PARAMETER Config
 	Which build to run: Release (default), RelWithDebInfo or Debug.
 
 .PARAMETER BuildDir
 	Build directory containing arx.exe. Default: the one build-windows.ps1 uses for this working copy.
+	Must be a build directory of this working copy.
 
 .PARAMETER DataDir
-	Arx Fatalis install folder. Default: found automatically in the Steam libraries.
+	Arx Fatalis install folder, passed as --data-dir. Default: none - the game finds the install in the
+	Steam libraries itself (#79).
 
 .PARAMETER Fullscreen
 	Do not force windowed mode; use the fullscreen setting from cfg.ini.
@@ -50,8 +62,17 @@
 	Start with the test channel (--test-dir) of this working copy, so scripts/dev/game-status.ps1 and
 	game-cmd.ps1 can talk to the game (docs/vr/TESTING.md).
 
-.PARAMETER VrLockTimeoutSec
-	How long to wait for the VR lock when another game runs in VR (default 120). 0: do not wait.
+.PARAMETER StartSteamVR
+	The owner's switch: start SteamVR when it is not running, then launch in VR. Workers never pass it.
+
+.PARAMETER Rebuild
+	Build this working copy first when its build is stale (or missing).
+
+.PARAMETER Background
+	Show the game window without activating it, so the launch does not take the focus (self-tests).
+
+.PARAMETER LockTimeoutSec
+	How long to wait for the game lock when another game runs (default 300). 0: do not wait.
 
 .EXAMPLE
 	.\scripts\run-windows.ps1
@@ -60,7 +81,7 @@
 .EXAMPLE
 	.\scripts\run-windows.ps1 -Fullscreen -Config Debug -- --no-vr
 .EXAMPLE
-	.\scripts\run-windows.ps1 -Isolated -Saves save0000 -TestChannel -- --no-vr --loadslot 0
+	.\scripts\run-windows.ps1 -Isolated -Saves save0000 -TestChannel -Background -- --no-vr --loadslot 0
 #>
 # PositionalBinding=$false: after "--" everything is positional, and without this "--skiplogo" would bind to -Config.
 [CmdletBinding(PositionalBinding = $false)]
@@ -75,23 +96,28 @@ param(
 	[string[]]$Saves,
 	[string]$SaveLibrary,
 	[switch]$TestChannel,
-	[int]$VrLockTimeoutSec = 120,
+	[switch]$StartSteamVR,
+	[switch]$Rebuild,
+	[switch]$Background,
+	[Alias('VrLockTimeoutSec')]
+	[int]$LockTimeoutSec = 300,
 	[Parameter(ValueFromRemainingArguments)]
 	[string[]]$ArxArgs
 )
 
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'build-paths.ps1')
-. (Join-Path $PSScriptRoot 'vr-lock.ps1')
+. (Join-Path $PSScriptRoot 'launch-lib.ps1')
 $SourceDir = Split-Path -Parent $PSScriptRoot
 if (-not $BuildDir) { $BuildDir = Get-DefaultBuildDir $SourceDir $Config }
 if (-not $ArxArgs) { $ArxArgs = @() }
 
+# Only this working copy's own fresh build (D-014)
+$copy = Get-ArxWorkingCopyInfo $SourceDir
+$stamp = Assert-ArxFreshBuild -SourceDir $SourceDir -BuildDir $BuildDir -Config $Config -Head $copy.Head -Rebuild:$Rebuild
 $exe = Join-Path $BuildDir 'arx.exe'
-if (-not (Test-Path $exe)) { throw "$exe not found. Build first: .\scripts\build-windows.ps1 -Config $Config" }
 
-if (-not $DataDir) { $DataDir = Find-ArxFatalisSteamInstall }
-if (-not $DataDir) { throw 'Arx Fatalis (Steam app 1700) was not found in any Steam library. Install it, or pass -DataDir.' }
+# The game finds the data in the Steam libraries itself (#79); --data-dir only for -DataDir
+$dataArgs = if ($DataDir) { @('--data-dir', $DataDir) } else { @() }
 
 $modeArgs = @()
 if (-not $Fullscreen) { $modeArgs += '--windowed' }
@@ -108,25 +134,42 @@ if ($Isolated) {
 if ($TestChannel) { $dirArgs += '--test-dir', (Get-DefaultTestDir $SourceDir) }
 
 Write-Host "==> Running $exe" -ForegroundColor Cyan
-Write-Host "    data: $DataDir"
+Write-Host "    build: $(ConvertTo-ShortSha $stamp) ($($copy.Branch))"
+Write-Host "    data: $(if ($DataDir) { "$DataDir (--data-dir)" } else { 'found by the game in the Steam libraries (arx.log: Steam data)' })"
 if ($Isolated) { Write-Host "    user dir: $UserDir (isolated)" } else { Write-Host "    user dir: $(Get-SharedUserDir) (shared)" }
 if ($TestChannel) { Write-Host "    test channel: $(Get-DefaultTestDir $SourceDir)" }
 if ($Saves) { Copy-ArxSaves -Names $Saves -UserDir $UserDir -Library $SaveLibrary }
 
-# One game in VR at a time: a launch without --no-vr may start in VR, so it holds the lock while it runs
-$lock = $null
-if ($ArxArgs -notcontains '--no-vr') {
-	$lock = Enter-VrLock -What "run-windows.ps1 in $SourceDir" -TimeoutSec $VrLockTimeoutSec
-	if (-not $lock) {
-		throw "another game is running in VR ($(Get-VrLockHolder)). Wait for it to end, or add --no-vr for a flat launch."
-	}
-	Write-Host "    VR lock: taken ($(Get-VrLockPath))"
-}
+# No SteamVR start without the owner: flat unless SteamVR already runs (or -StartSteamVR)
+$vr = Resolve-ArxVrMode -ArxArgs $ArxArgs -StartSteamVR:$StartSteamVR
+$ArxArgs = $vr.Args
+Write-Host "    mode: $(if ($vr.Vr) { 'VR' } else { 'flat' }) ($($vr.Reason))"
+Write-ArxLaunchBudgetNote -Copy $SourceDir -Branch $copy.Branch
 
+# One game at a time: hold a game lock slot (and the VR lock for a VR launch) while the game runs
+$lock = Enter-ArxGameLock -What 'run-windows.ps1' -Copy $SourceDir -Branch $copy.Branch -Vr:$vr.Vr -TimeoutSec $LockTimeoutSec
+if (-not $lock) {
+	throw "another game is running on this PC (one at a time, D-014):`n  $((Get-ArxLockHolders) -join "`n  ")`nWait for it to end, then launch again."
+}
+Write-Host "    game lock: slot $($lock.Slot)$(if ($lock.Vr) { ' + VR lock' })"
+
+# Start-Process does not quote arguments: paths with spaces need explicit quotes (docs/vr/TRAPS.md)
+$quote = { param($a) if ("$a" -match '\s') { '"' + $a + '"' } else { "$a" } }
+$argList = @($dataArgs + $modeArgs + $dirArgs + $ArxArgs | ForEach-Object { & $quote $_ })
+$code = $null
+$process = $null
+$started = Get-Date
+$previousHint = $null
+if ($Background) { $previousHint = Set-ArxBackgroundWindow }
 try {
-	& $exe --data-dir $DataDir @modeArgs @dirArgs @ArxArgs
-	$code = $LASTEXITCODE
+	$process = Start-Process -FilePath $exe -ArgumentList $argList -PassThru -NoNewWindow
+	Set-ArxGameLockGame $lock $process.Id
+	$process.WaitForExit()
+	$code = $process.ExitCode
 } finally {
-	Exit-VrLock $lock
+	if ($Background) { Restore-ArxBackgroundWindow $previousHint }
+	Exit-ArxGameLock $lock
+	Add-ArxLaunchRecord -Script 'run-windows.ps1' -Copy $SourceDir -Branch $copy.Branch -Build $stamp -Vr $vr.Vr `
+		-GamePid $(if ($process) { $process.Id } else { 0 }) -ExitCode $code -DurationSec ((Get-Date) - $started).TotalSeconds -ArxArgs $ArxArgs -Time $started
 }
 exit $code

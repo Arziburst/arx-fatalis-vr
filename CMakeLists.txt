@@ -1141,6 +1141,7 @@ set(IO_FILESYSTEM_SOURCES
 	src/io/fs/FilePath.cpp
 	src/io/fs/FileStream.cpp
 	src/io/fs/Filesystem.cpp
+	src/io/fs/SteamLibrary.cpp
 	src/io/fs/SystemPaths.cpp
 )
 set(IO_FILESYSTEM_BOOST_SOURCES src/io/fs/FilesystemBoost.cpp)
@@ -1252,6 +1253,7 @@ set(UTIL_MD5_SOURCES
 list(APPEND IO_RESOURCE_SOURCES ${UTIL_MD5_SOURCES})
 
 set(VR_SOURCES
+	src/vr/VRComfort.cpp
 	src/vr/VRSwapchain.cpp
 	src/vr/VRSystem.cpp
 )

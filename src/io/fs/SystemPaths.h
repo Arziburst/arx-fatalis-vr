@@ -20,6 +20,7 @@
 #ifndef ARX_IO_FS_SYSTEMPATHS_H
 #define ARX_IO_FS_SYSTEMPATHS_H
 
+#include <string>
 #include <vector>
 #include <ostream>
 
@@ -43,6 +44,12 @@ const path & getConfigDir();
 
 //! \return Directories for data files
 const std::vector<path> & getDataDirs();
+
+/*!
+ * \return What the lookup of Arx Fatalis in the Steam libraries found (the folder and the library),
+ *         or why it found nothing — for the startup banner
+ */
+const std::string & getSteamDataStatus();
 
 /*!
  * \brief Get a list of all data search paths

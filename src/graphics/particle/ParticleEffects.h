@@ -143,7 +143,10 @@ PARTICLE_DEF * createParticle(bool allocateWhilePaused = false);
 long getParticleCount();
 
 void ARX_PARTICLES_ClearAll();
+//! Age the particles, drop the dead ones, land splats - once per frame
 void ARX_PARTICLES_Update();
+//! Draw the particles into the render batcher for the current camera - once per view
+void ARX_PARTICLES_Render();
 void ARX_PARTICLES_Spawn_Blood(const Vec3f & pos, float dmgs, EntityHandle source);
 void ARX_PARTICLES_Spawn_Blood2(const Vec3f & pos, float dmgs, Color col, Entity * io);
 void ARX_PARTICLES_Spawn_Lava_Burn(Vec3f pos, Entity * io = nullptr);

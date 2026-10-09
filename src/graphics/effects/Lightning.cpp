@@ -280,29 +280,28 @@ void CLightning::ReCreate(float rootSize) {
 }
 
 void CLightning::Update(ShortGameDuration timeDelta) {
-	
+
 	arx_assume(timeDelta >= 0 && timeDelta <= GameTime::MaxFrameDuration);
-	
+
 	m_elapsed += timeDelta;
 	m_iTTL -= timeDelta;
-	
-	fTotoro += m_quantizer.update(toMsf(timeDelta) * 0.24f);
-	
-	fMySize = std::max(0.3f, fMySize - toMsf(timeDelta) * 0.003f);
-	
-}
 
-void CLightning::Render()
-{
-	if(m_elapsed >= m_duration)
+	fTotoro += m_quantizer.update(toMsf(timeDelta) * 0.24f);
+
+	fMySize = std::max(0.3f, fMySize - toMsf(timeDelta) * 0.003f);
+
+	if(m_elapsed >= m_duration) {
 		return;
-	
+	}
+
 	if(m_iTTL <= 0) {
 		fTotoro = 0;
 		fMySize = 2;
 		ReCreate(8);
 	}
-	
+
+	// The bolt is jittered and its damage applied once per frame here; Render() only draws it
+
 	Vec3f ePos(0.f);
 	float fBeta = 0.f;
 	float falpha = 0.f;
@@ -311,36 +310,28 @@ void CLightning::Render()
 		fBeta = m_beta;
 		falpha = m_alpha;
 	}
-	
+
 	float f = 1.5f * fMySize;
 	m_nodes[0].f = arx::randomVec(-f, f);
-	
-	RenderMaterial mat;
-	mat.setBlendType(RenderMaterial::Additive);
-	
-	float fbeta = fBeta + Random::getf(0.f, 2.f) * fMySize;
+
+	m_fbeta = fBeta + Random::getf(0.f, 2.f) * fMySize;
 
 	for(size_t i = 0; i < m_nodes.size() && i <= fTotoro; i++) {
 		CLightningNode & node = m_nodes[i];
-		
-		Vec3f astart = m_nodes[node.parent].pos + m_nodes[node.parent].f;
+
+		// The segment starts at the parent's jittered position (for the root: before its own jitter)
+		node.fStart = m_nodes[node.parent].f;
 		float temp = 1.5f * fMySize;
-		Vec3f z_z = m_nodes[node.parent].f + arx::randomVec(-temp, temp);
-		float zz = node.size + node.size * Random::getf(0.f, 0.3f);
-		float xx = node.size * glm::cos(glm::radians(-fbeta));
-		node.f = z_z;
-		
-		Vec3f a = node.pos + z_z;
-		if(!m_isMassLightning) {
-			Vec3f vv1 = VRotateX(astart, (falpha));
-			astart = VRotateY(vv1, 180.f - MAKEANGLE(fBeta));
-			Vec3f vv2 = VRotateX(a, (falpha));
-			a = VRotateY(vv2, 180.f - MAKEANGLE(fBeta));
-			astart += ePos;
-			a += ePos;
-		}
-		
+		node.f = m_nodes[node.parent].f + arx::randomVec(-temp, temp);
+		node.sizeJitter = node.size * Random::getf(0.f, 0.3f);
+
 		if(i % 4 == 0 && !(m_spell->m_flags & SPELLCAST_FLAG_NODAMAGE)) {
+			Vec3f a = node.pos + node.f;
+			if(!m_isMassLightning) {
+				Vec3f vv2 = VRotateX(a, (falpha));
+				a = VRotateY(vv2, 180.f - MAKEANGLE(fBeta));
+				a += ePos;
+			}
 			Sphere sphere;
 			sphere.origin = a;
 			sphere.radius = std::min(node.size, 50.f);
@@ -359,7 +350,47 @@ void CLightning::Render()
 				node.damage = { };
 			}
 		}
-		
+
+	}
+
+}
+
+void CLightning::Render()
+{
+	if(m_elapsed >= m_duration)
+		return;
+
+	Vec3f ePos(0.f);
+	float fBeta = 0.f;
+	float falpha = 0.f;
+	if(!m_isMassLightning) {
+		ePos = m_pos;
+		fBeta = m_beta;
+		falpha = m_alpha;
+	}
+
+	RenderMaterial mat;
+	mat.setBlendType(RenderMaterial::Additive);
+
+	float fbeta = m_fbeta;
+
+	for(size_t i = 0; i < m_nodes.size() && i <= fTotoro; i++) {
+		const CLightningNode & node = m_nodes[i];
+
+		Vec3f astart = m_nodes[node.parent].pos + node.fStart;
+		float zz = node.size + node.sizeJitter;
+		float xx = node.size * glm::cos(glm::radians(-fbeta));
+
+		Vec3f a = node.pos + node.f;
+		if(!m_isMassLightning) {
+			Vec3f vv1 = VRotateX(astart, (falpha));
+			astart = VRotateY(vv1, 180.f - MAKEANGLE(fBeta));
+			Vec3f vv2 = VRotateX(a, (falpha));
+			a = VRotateY(vv2, 180.f - MAKEANGLE(fBeta));
+			astart += ePos;
+			a += ePos;
+		}
+
 		{
 		TexturedQuad q;
 		

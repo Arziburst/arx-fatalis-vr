@@ -1,4 +1,4 @@
-# Research: Reference VR Mods — Dishonored VR and VHVR (Valheim VR)
+# Research: Reference VR Mods — Dishonored VR, VHVR (Valheim VR) and Titanfall 2 VR
 
 - **Date:** 2026-10-08
 - **Question:** Two released VR mods are close to what we build. What do they do that we can use — from
@@ -13,8 +13,32 @@
 - **Output:** the [feature catalog](#feature-catalog) below. **The project owner decides from the
   catalog what we build** (the *Decision* column is theirs); the coordinator then creates the tasks and
   orders the queue. This document creates no tasks.
+- **Continued (#118, 2026-10-09):** a third project, TinyBlackDog's **Titanfall 2 VR**, read at
+  commit `8c50a7d` (branch `main`, release v0.1.1, the repository's only commit). Its summary is
+  below, its licence is in the table, its rows are **F-111 to F-134**, its notes are in
+  [section 11](#11-titanfall-2-vr-118), and the `TF2VR` sources appended to older rows mark what
+  it adds to them.
+- **Continued (#120, 2026-10-09):** a fourth project, CircuitLord's **Titanfall 2 VR** (released
+  2026-09-30), whose mod is **closed source** — researched by observation: the MIT installer read
+  in full at commit `b493821a6` (branch `main`, v1.2.9), its manifest and release notes, the
+  community add-ons, and the press and guides. Its summary is below, its licence line is in the
+  table, its rows are **F-135 to F-152**, its notes are in
+  [section 12](#12-circuitlords-titanfall-2-vr-120), and the `CLVR` sources appended to older rows
+  mark what it adds to them. Do not confuse the two Titanfall 2 projects: `TF2VR` is
+  TinyBlackDog's (#118), `CLVR` is CircuitLord's.
+- **Continued (#166, 2026-10-09):** VHVR again, this time only **how it does world interaction** — the
+  reference for D-016, #37 and #38. Read at commit `5a47f823f` (branch `master`, pushed 2026-10-08;
+  newer than `d4d7b9523` above, line numbers below are from this commit). Its rows are **F-153 to
+  F-161**, its notes are in [section 13](#13-world-interaction-in-vhvr-166), and the `VHVR` sources of
+  older rows (F-54, F-57, F-81, F-87) point there. The proposal for #37 / #38 is in
+  [13g](#13g-proposal-for-37--38-within-d-016); it is also posted as notes on those issues.
+  **D-016 was corrected by the owner while this was written** (now recorded in
+  [DECISIONS.md](DECISIONS.md)): there is no "left drags, right takes to the inventory" — both hands
+  emulate the whole mouse, each with its own reticle, and the inventory opens as a panel in the centre
+  of the view. The section follows the corrected version, with the weapon-hand-plus-inventory case as
+  its test.
 
-## The two projects in short
+## The projects in short
 
 ### Dishonored VR
 
@@ -47,15 +71,77 @@ tracking with VRIK, bHaptics. Mature (since 2021, v0.11.0, 193 stars), the proje
 No automated tests and no CI in the repository; releases are packaged by a `.cmd` script and
 published on Nexus/Thunderstore.
 
+### Titanfall 2 VR (TinyBlackDog)
+
+[kyus2001/titanfall2vr](https://github.com/kyus2001/titanfall2vr) — C++20, 64-bit, a **Northstar
+client plugin** (one DLL and one ini) for Titanfall 2's single-player campaign. It hooks the game's
+Direct3D 11 renderer and camera through byte-verified detours and vtable slot swaps, drives them
+from an OpenXR session (`XR_KHR_D3D11_enable`, API 1.0 requested on purpose, the loader fetched by
+CMake at `release-1.1.62`), and presents the controllers to the game as an XInput gamepad at the
+game's own input seam. Stereo is **alternate-frame**: one eye per game frame, each eye submitted
+with the pose it was rendered with; same-frame stereo by re-entering the scene draw is compiled in
+and off because it hangs the engine after about 129 doubled frames. On top: 6DoF head tracking
+with a neck model, an eye height applied at the engine's own eye getter, the weapon on the right
+controller (grip pose for position, aim pose for direction) with live grip calibration, ADS
+behaviours, snap and smooth turn with a response curve and axis dominance, haptics from the game's
+own rumble, a 72-setting ImGui panel on a world-fixed quad driven by the sticks, and per-element
+HUD placement. Alpha v0.1.1 (2026-09-12), developed and tested by one person on a Meta Quest 3 and
+a Play For Dream MR through Virtual Desktop's VDXR; other runtimes are "untested rather than
+unsupported" — the suggested bindings cover only `oculus/touch_controller` and
+`khr/simple_controller`, so a Valve Index on SteamVR would depend on the runtime's own remapping.
+Written almost entirely by an AI agent with the author as "the wearer": the comments carry dated
+measurements from 2026-08-14 to 2026-09-11, about 75,000 lines of C++ in four weeks, and the git
+history is one squashed commit. Roughly a third of the tree is instrumentation — a crash recorder,
+a stall watchdog, a frame-spike window, censuses and probes — and the comments are the project's
+memory, Dishonored VR's `docs/` folder written inline.
+
+What it is **not**: like Dishonored VR it does not render in-engine (the frame is the game's
+backbuffer copied into a swapchain), so its render-target censuses, scene re-entry rungs,
+temporal-history levers and D3D11 pacing-thread designs answer a problem we do not have; and its
+controller model — a synthetic XInput pad, engine key latches, a patched `CreateMove` — is specific
+to a Source-derived engine with no input API. What carries over is the OpenXR session code, the
+input and comfort maths, the hand composition rules, the settings and diagnostics design, and a
+list of traps paid for in headset runs.
+
+### Titanfall 2 VR (CircuitLord)
+
+[CircuitLord/CircuitLordVRModInstaller](https://github.com/CircuitLord/CircuitLordVRModInstaller) —
+the only open part of a full-conversion mod for the Titanfall 2 **campaign**, released free on
+2026-09-30 by a solo developer (per MoguraVR the founder of a VR studio) and covered by UploadVR,
+Road to VR and others. The mod itself is a native OpenXR plugin (`Titanfall2VR.dll`) loaded by
+**Northstar** (the community mod loader, pinned to v1.31.13) in a separate `TF2VR` profile, with
+Northstar script mods (`.gnut` files, e.g. `Titanfall2VR.Cockpit`) for the cockpit and pickups. The announcement
+lists "stereo rendering, **full body IK**, manual reloads, Titan controls, and more"; reports add
+6DoF head tracking, hand-aimed weapons with working scopes, a reload for every gun, physical
+punching, a cockpit for the Titans, snap turn, and cutscenes on a 2D panel by default. It runs on
+any OpenXR runtime (SteamVR, Meta Horizon Link, VDXR); the author's claim is "any OpenXR compatible
+headset", the shipped bindings are for the **Valve Index and Oculus Touch** only (per the Linux
+port's README). The installer is a 350 KB single-file C# / WPF exe: it finds the game, checks the
+EA app, installs Northstar and the mod, offers **Launch in VR**, and keeps every normal launch
+unmodded — UploadVR calls it "the best selling point". Around it, within two weeks: a Linux / Proton
+port, a bHaptics add-on, a force-grab add-on, an auto-reload add-on and a bindings add-on, all by
+other people.
+
+What it is **not** for us: there is no mod source, so everything about the IK, the weapon
+handling and the rendering is *observation* — the rows say what is verified (installer code,
+manifest, release notes, add-on READMEs), what is reported (press and guides) and what is not known
+(every IK parameter). The engine, the injection and the Titan mechanics are Titanfall's. What
+carries over is the **distribution and launch discipline** — a section no other reference covers
+in code — and a few design facts.
+
 ### The license answer
 
 | Project | License | What we may do |
 |---|---|---|
 | Dishonored VR | **zlib/libpng** for the whole repository ([LICENSE](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/LICENSE): DXVK's license, the VR modifications "provided under the same zlib/libpng license"). Parts come from the maintainer's BioShock trilogy VR mod under **MIT** ([THIRD_PARTY_NOTICES.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/THIRD_PARTY_NOTICES.md)): the OpenXR runtime layer `src/core/vr`, the simulated runtime `src/tools/xrsim`, the smoke client `src/tools/xr_hello32`, the harness scripts `tools/*.ps1`, the documentation templates. The arm IK is MIT from `bioshock-trilogy-vr-lefthand` ([docs/licenses/bioshock-arm-ik.txt](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/licenses/bioshock-arm-ik.txt)). | Both zlib and MIT are compatible with our GPLv3+ engine: **code may be copied and modified** as long as the original notice stays in the copied files and we do not misrepresent the origin (zlib: altered versions must be marked as such). Attribution: keep the license header in each copied file and add a line to our third-party notices. **Exception:** `src/tools/ovrshim` (the SteamVR shim) is adapted from BioVRDev's Bioshock-Remastered-VR, which has **no license file** and was copied with a personal permission given to the BioShock project — do not reuse it (we do not need it: SteamVR has a 64-bit OpenXR runtime). |
 | VHVR | **GPL-3.0** ([LICENSE](https://github.com/brandonmousseau/vhvr-mod/blob/master/LICENSE)). | Same license family as our engine (GPLv3+): **algorithms and logic may be ported** and code fragments translated from C# to C++ with attribution (file header naming the source file and the project, a line in our third-party notices, and the GPL obligations we already carry). The Unity assets in `Unity/` (prefabs, shaders, Amplify Occlusion) are not ours to take: Amplify Occlusion is a third-party package and the rest is Unity-specific. |
+| Titanfall 2 VR (TinyBlackDog) | **MIT** for the whole repository ([LICENSE](https://github.com/kyus2001/titanfall2vr/blob/main/LICENSE)), except the two controller diagrams `docs/images/controls-*.svg`, which embed Meta's Touch Plus artwork under Meta's own terms ([THIRD_PARTY_NOTICES.md](https://github.com/kyus2001/titanfall2vr/blob/main/THIRD_PARTY_NOTICES.md)). Dear ImGui is vendored (MIT, v1.92.8); the OpenXR loader is Apache-2.0 and its licence text ships in the zip; the ImGui overlay is adapted from bioshock-trilogy-vr (MIT) and the plugin ABI header from NorthstarLauncher (MIT); byte patterns from InjectableGenericCameraSystem (MIT) are cited, not copied. | MIT is compatible with our GPLv3+ engine: **code may be copied and modified** with the copyright line and permission notice kept in each copied file and a line in our third-party notices. Do not reuse the two SVGs (Meta's artwork; our tester README needs Index art anyway, F-46). Nothing in the tree is game data or game code. |
+| Titanfall 2 VR (CircuitLord) | **Installer: MIT** ([LICENSE](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/LICENSE); Northstar MIT and BepInEx LGPL-2.1 are downloaded, not bundled — [THIRD-PARTY-NOTICES.md](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/THIRD-PARTY-NOTICES.md)). **The mod: closed source, "all rights reserved. Do not redistribute them without permission"** ([README](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/README.md)). Community add-ons: Better Bindings **MIT**, tf2vr-linux **MIT**; `djnewage/tf2vr-mods` and the bHaptics add-on **state no licence**. | The installer's C# could be copied under MIT, but it is .NET Framework 4.8 / WPF and we have no use for the code as written (see the table below): treat it as **reference**. **Nothing of the mod may be taken**, and its behaviour is reference only. **Trap:** MoguraVR's summary table lists the mod as "MIT"; the author's own README says the opposite — a press page is not licence evidence ([TRAPS.md](TRAPS.md)). The add-ons without a licence file are reference only. |
 
-Both projects are references for *mechanics* more than for code: Dishonored VR's C++ lives inside a
-D3D9 proxy with its own frame path, VHVR's C# lives inside Unity's component model. The rows below
+All four projects are references for *mechanics* more than for code: Dishonored VR's C++ lives
+inside a D3D9 proxy with its own frame path, VHVR's C# inside Unity's component model, TinyBlackDog's
+Titanfall 2 VR C++ inside a D3D11 proxy over a Source engine, CircuitLord's installer C# over a
+mod that is not ours to read. The rows below
 say per feature whether the code itself is worth taking (the simulator, the harness scripts, pure
 decision cores) or only the design.
 
@@ -118,35 +204,77 @@ positions, velocities and directions; translated line by line they behave as in 
 Everything else in VHVR (the Harmony patches, VRIK, the Unity cameras and canvases, the SteamVR
 Interaction System) is Unity plumbing: **reference** only.
 
+### Titanfall 2 VR: blocks that can be copied
+
+MIT, so the same terms as the Dishonored VR blocks. The plugin's engine adapters (`camera/`,
+`render/`, `hud/`, most of `input/` and `hands/`) read Titanfall's memory and are not copyable;
+the blocks below are the ones with no engine inside them.
+
+| Block | License, size, dependencies | What to change | Rows |
+|---|---|---|---|
+| [`plugin/src/xr/asym_projection.h`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/asym_projection.h) + [`tools/asym-projection-check.cpp`](https://github.com/kyus2001/titanfall2vr/blob/main/tools/asym-projection-check.cpp) — tangent-space frustum extents (`TanExtents`, `IsSymmetric`, `ShearForCentre`, `ShiftedExtents`, `ClampToRendered`, `WindowToRect`) and the offline check with a **negative control** (the same conversion without the Y flip must fail) | MIT; 140 + ~250 lines; `<cmath>` only; namespace `tf2vr` | our #19 builds an off-axis matrix straight from `XrFovf`, so only `TanExtents`, `IsSymmetric` and the *shape* of the test are needed; feed it the Index's four angles from our banner | F-115, F-08 |
+| [`plugin/src/xr/xr_input.cpp`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_input.cpp) + [`.h`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_input.h) — the action set, the Touch and simple-controller suggestions with the atomic-rejection fallback, the per-hand seqlock publication, the bound-profile poll, the `changedSinceLastSync` press latch, the handedness check, `TriggerHaptic` | MIT; 933 + 172 lines; depends on `Tf2VrLog` and the OpenXR → Source axis helpers in the header | the log call; the axis conversion (ours is in `src/vr`); add the Index profile to the suggestion lists (Dishonored VR's `openxr_input.cpp` has it, F-41); the published globals become our action snapshot (#74) | F-122, F-123, F-41, F-44 |
+| [`plugin/src/input/dpad_gesture.cpp`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/dpad_gesture.cpp) — the hand-beside-the-head modifier | MIT; 249 lines; reads the published grip pose and head position | the two reads and the haptic call | F-124 |
+| The right-stick arithmetic in [`input/vr_input.cpp`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/vr_input.cpp) (`Latch`, the axis-dominance gate with its release factor) and the turn curve in [`input/xinput_pad.cpp` `ComposeGamepad`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/xinput_pad.cpp) | MIT; ~80 lines inside engine-specific functions | lift the arithmetic into a header; it is the model for the #32 / #33 decision core (F-08) | F-121 |
+| [`hands/hand_pose.cpp` `ApplyAdsBrace`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/hand_pose.cpp) — the aim brace | MIT; ~140 lines; `GetTickCount64`, the log | the clock and the log; takes pitch/yaw in and out | F-127 |
+| [`core/settings_registry.h`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/settings_registry.h) and, in [`core/config.cpp`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/config.cpp), the `kSettings[]` table, `RunSettingsRegistrySelfCheck` and `PersistSettingToIni` | MIT; a design plus ~300 lines | Arx has its own `Config` / `ConfigWriter`; take the design (one table, one write path, a self-check with a positive control, staged edits, a surgical rewrite) | F-113 |
+| [`core/crash_recorder.cpp`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/crash_recorder.cpp), [`diag/xr_breadcrumb.h`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/diag/xr_breadcrumb.h), [`engine/hook_registry.h`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/engine/hook_registry.h), [`diag/stall_watchdog.cpp`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/diag/stall_watchdog.cpp) | MIT; 605 + ~100 + ~80 + 337 lines; Win32 only | Arx has an SEH crash handler and reporter; add the arm-state bitmask, the XR breadcrumb and the watchdog thread to it | F-131, F-132 |
+| [`core/diagnostics.cpp`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/diagnostics.cpp) — rotation with the rotation report as line 1, the quiet-mode allowlist, the 250 ms flusher | MIT; 461 lines | Arx's logger already rotates (#129); the allowlist and the "rotation incomplete" line | F-92, F-105 |
+| [`tools/logdig`](https://github.com/kyus2001/titanfall2vr/blob/main/tools/logdig), [`tools/defaults-vs-ini.py`](https://github.com/kyus2001/titanfall2vr/blob/main/tools/defaults-vs-ini.py), [`tools/orphan-statements.py`](https://github.com/kyus2001/titanfall2vr/blob/main/tools/orphan-statements.py), [`tools/bmpdiff/bmpdiff.cpp`](https://github.com/kyus2001/titanfall2vr/blob/main/tools/bmpdiff/bmpdiff.cpp), [`tools/bmpcrop/bmpcrop.cpp`](https://github.com/kyus2001/titanfall2vr/blob/main/tools/bmpcrop/bmpcrop.cpp), [`tools/bmpshift/bmpshift.cpp`](https://github.com/kyus2001/titanfall2vr/blob/main/tools/bmpshift/bmpshift.cpp) | MIT; sh / Python / C++; the Python ones parse `config.cpp` by regex | `logdig` → a PowerShell digest over `arx.log` (#131); `defaults-vs-ini` → `cfg.ini` and our defaults; `bmpdiff` → our PNG shots (F-14) | F-112, F-114, F-15, F-14 |
+| [`plugin/cmake/version_stamp.cmake`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/cmake/version_stamp.cmake), [`tools/build.ps1`](https://github.com/kyus2001/titanfall2vr/blob/main/tools/build.ps1), [`tools/install.ps1`](https://github.com/kyus2001/titanfall2vr/blob/main/tools/install.ps1), [`tools/package.ps1`](https://github.com/kyus2001/titanfall2vr/blob/main/tools/package.ps1), [`tools/cleanprofile/enter-clean-profile.ps1`](https://github.com/kyus2001/titanfall2vr/blob/main/tools/cleanprofile/enter-clean-profile.ps1) | MIT; CMake / PowerShell | the paths; `build-windows.ps1` already stamps `built-from.txt` (D-014); the package gates — placeholders, the documented hash, nothing personal, every licence — for #88 | F-96, F-18 |
+
+### CircuitLord's Titanfall 2 VR: blocks that could be ported
+
+The mod is closed, so there is nothing to copy from it. The MIT installer is C# on .NET Framework 4.8
+(WPF); our tooling is PowerShell and our game is C++. Nothing below compiles in our tree — these are
+the pieces whose **logic** is short and exact enough to restate:
+
+| Block | License, size | What it decides | Rows |
+|---|---|---|---|
+| [`Services/LaunchPermissions.cs`](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Services/LaunchPermissions.cs) — `IsElevated(pid)` and the Steam / EA app / installer check | MIT; 57 lines; `OpenProcess` + `OpenProcessToken` + `GetTokenInformation(TokenElevation)` | whether the process that will start the game runs as administrator | F-146 |
+| [`Installers/Titanfall2Installer.cs`](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Installers/Titanfall2Installer.cs) `Play()`, `VrProcess()`, `CanWriteGameFolder()`, `GrantGameFolderAccess()` | MIT; about 80 lines of the 310 | the pre-launch checklist: proxy DLLs beside the exe, inherited VR variables, a write probe, one UAC prompt that grants Modify | F-146 |
+| [`Services/CrashReportService.cs`](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Services/CrashReportService.cs) `CreateTitanfall` | MIT; 123 lines | which files go into a shareable report, `report.json` with the build hash | F-147, F-91 |
+| [`Services/RepoClient.cs`](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Services/RepoClient.cs) `Download`, `CachedDownload` and [`PackageInstaller.cs`](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Services/PackageInstaller.cs) | MIT; 123 + 130 lines | the HTTPS + SHA-256 contract, the zip-slip guard, `preserve` / `tokenize`, stale-file cleanup | F-142, F-143 |
+| [`tests/InstallerValidation/Program.cs`](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/tests/InstallerValidation/Program.cs) | MIT; 602 lines | a console test per refusal and per "this must not change" (see F-152) | F-152 |
+
 ## Feature catalog
 
 One table per category; IDs are stable across tables, so an answer like "take F-03, F-07" is
-enough. Columns: **Source** (DVR = Dishonored VR, VHVR = Valheim VR, with the file or doc the
-row comes from; the [detailed notes](#detailed-notes-per-area) hold the full references),
+enough. Columns: **Source** (DVR = Dishonored VR, VHVR = Valheim VR, TF2VR = TinyBlackDog's Titanfall 2 VR,
+CLVR = CircuitLord's Titanfall 2 VR, with the
+file or doc the row comes from; the [detailed notes](#detailed-notes-per-area) hold the full references),
 **How to adopt** (*copy* / *copy + adapt* / *port* / *reference*, as defined
 [above](#copy-port-or-reimplement--what-works-immediately)), **Effort** (S ≤ 1 day, M a few days,
 L a week or more), **Depends on** (our issues or other IDs), **Fits** (MVP now / after MVP /
-later / probably not, with why), **Decision** — empty, for the owner.
+later / probably not, with why), **Decision** — empty, for the owner. Rows **F-111 to F-134**
+come from Titanfall 2 VR (#118, [section 11](#11-titanfall-2-vr-118)), rows **F-135 to F-152** from
+CircuitLord's (#120, [section 12](#12-circuitlords-titanfall-2-vr-120)), rows **F-153 to F-161**
+from VHVR's world interaction (#166, [section 13](#13-world-interaction-in-vhvr-166)); a `TF2VR` or `CLVR` source
+appended to an older row marks a duplicate, and what it adds is in that section. Rows built on a
+closed mod say what kind of **evidence** they rest on: *code* (the installer), *docs* (the author's
+README and release notes), *add-on* (a community add-on's README), *report* (press and guides) —
+and the IK rows say plainly what is not known.
 
 ### Testing
 
 | ID | Feature | Source | What it gives us | How to adopt | Effort | Depends on | Fits | Decision |
 |---|---|---|---|---|---|---|---|---|
 | F-01 | **Flat smoke test with a command channel and `status.json`** — a file the game polls (feeding the existing script console plus `status`, `shot`, `recenter`), a `status.json` with game state, frame counters, VR session state, and a `[game] state:` log line | DVR [tools/game-cmd.ps1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/tools/game-cmd.ps1), [VERIFICATION.md §1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/VERIFICATION.md) | Every worker self-test and every later script asserts on numbers instead of reading a log by eye | reference | S | #99 | **MVP now** — it is #99's shape | **Take** → #99 |
-| F-02 | **`xr_hello` runtime probe**, 64-bit OpenGL: instance, system, session, 60 empty frames; exit 0 / 1 / 2 | DVR [xr_hello32/main.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/tools/xr_hello32/main.cpp) (MIT) | "Is the runtime the problem or the game?" in one command; measures what SteamVR does with an idle Index before #99 automates anything | copy + adapt (D3D11 → OpenGL binding) | S | — | **MVP now** — #99 step 1 | **Take** → #99 (step 1) |
+| F-02 | **`xr_hello` runtime probe**, 64-bit OpenGL: instance, system, session, 60 empty frames; exit 0 / 1 / 2 | DVR [xr_hello32/main.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/tools/xr_hello32/main.cpp) (MIT); CLVR ships the same idea as `TF2VR\tools\xr_probe.exe` (F-146) | "Is the runtime the problem or the game?" in one command; measures what SteamVR does with an idle Index before #99 automates anything | copy + adapt (D3D11 → OpenGL binding) | S | — | **MVP now** — #99 step 1 | **Take** → #99 (step 1) |
 | F-03 | **SteamVR null driver recipe** for a VR launch with no headset (`driver_null` enabled, `forcedDriver: null`, `activateMultipleDrivers`) | web (section 1e) | The real runtime path (OpenGL, FOCUSED session) with no headset; zero code | reference (config) | S | F-01 | **MVP now** — if #99 finds an idle Index never reaches FOCUSED; needs a SteamVR restart to switch | **Take** → #99 (only if an idle Index never reaches FOCUSED) |
 | F-04 | **In-engine simulated VR backend** (`--vr-sim <script>`): a `vr::` interface with an OpenXR and a scripted implementation; head/hand poses and action states from a script, offscreen per-eye captures, a status file | DVR xrsim's rig and commands ([xrsim_common.h](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/tools/xrsim/xrsim_common.h)) as the model | Every VR task (camera, locomotion, swing, runes) tested without a headset or a runtime, in CI even as a service | reference | S–M | #18, F-05 | **MVP now** — from #18 on, the worker's main self-test | **Take** → #112 |
 | F-05 | **`.xrs` scripted sequence runner** with `@assert` on `status.json`, `@log` / `@nolog` on `arx.log`, `@shot`, `@frames`, `@key` | DVR [tools/xrsim-run.ps1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/tools/xrsim-run.ps1), [tools/xrsim/*.xrs](https://github.com/VR-Stereo-Hub/Dishonored-VR/tree/VR-Main/tools/xrsim) (MIT) | Repeatable sequences per feature (`swing-edge`, `snap-turn`, `world-6dof`) a worker runs before handing over | copy (script) | S | F-01, F-04 | **MVP now** | **Take** → #113 |
 | F-06 | **"Two eyes are two pictures" instrument**: per-frame per-eye image ids, left-vs-right difference against a same-eye floor, parallax sign, plus the five-leg eye check (pairing rate, eye separation, L/R diff band, a 25° yaw moves both eyes) | DVR `stereo: frameid`, [tools/eye-check.ps1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/tools/eye-check.ps1) | Catches swapped, stale or identical eyes that no flat screenshot shows — the bug class that cost them weeks | reference | S | #19, F-04 | **MVP now** — checkpoint A acceptance without the headset | **Take** → #112 (acceptance of #19) |
-| F-07 | **Rate / cadence verdict line** every 3 s (display period, presents/s, `xrEndFrame` mean/max, OVER / MATCHED / UNDER-SUBMITTING, EVEN / UNEVEN CADENCE in display slots) plus `frame gap` and `mark` | DVR `stereo: rate`, [VERIFICATION.md §1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/VERIFICATION.md) | The MVP's "holds the refresh rate" judged from a log; ghosting on head turns explained by uneven cadence | reference | S | #20 | **MVP now** | **Take** → #20 |
+| F-07 | **Rate / cadence verdict line** every 3 s (display period, presents/s, `xrEndFrame` mean/max, OVER / MATCHED / UNDER-SUBMITTING, EVEN / UNEVEN CADENCE in display slots) plus `frame gap` and `mark` | DVR `stereo: rate`, [VERIFICATION.md §1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/VERIFICATION.md); TF2VR [xr_context.cpp spike window](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.cpp) (read WAIT+END as one budget, the split is phase; the worst frame and the worst *run* per 10 s window, never the mean; a SPIKE MARK key dumps the last 360 frames) | The MVP's "holds the refresh rate" judged from a log; ghosting on head turns explained by uneven cadence | reference | S | #20 | **MVP now** | **Take** → #20 |
 | F-08 | **Host tests of pure decision cores** in `arxtest` (CppUnit): swing detector, rune projection, snap turn, crouch threshold, each as a header taking positions and timestamps | DVR [tools/*-host.ps1 + *-tests.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/tree/VR-Main/tools) | VR logic verified in CI with no game; "a suite that does not compile is not a passing suite" | reference | S per core | #39, #44, #32, #100 | **MVP now** — a rule for every VR core | **Take** → #114 + rule in WORKFLOW.md |
 | F-09 | **Port `dvr_xrsim32` to 64-bit OpenGL**: a full simulated OpenXR runtime with scripted rig, pacing modes, fault injection (session lost, swapchain fail), focus policies, compositor captures | DVR [src/tools/xrsim](https://github.com/VR-Stereo-Hub/Dishonored-VR/tree/VR-Main/src/tools/xrsim) (MIT) | The only option that scripts the *runtime* side; reproduces session-state and pacing bugs | copy + adapt (GL swapchains) | M minimal, L parity | F-02 | **later** — when a runtime-level bug needs reproducing; F-04 covers the engine side first | Later |
 | F-10 | **OpenVR sample driver** with scripted HMD and controllers through the real SteamVR | Valve [samples/driver_sample](https://github.com/ValveSoftware/openvr/tree/master/samples/driver_sample) (BSD-3) | Scripted poses on the real runtime | reference | M | F-03 | **probably not** — F-09 does the same without SteamVR | No |
 | F-11 | **Monado on Windows** as a simulated runtime | [winbuild.md](https://gitlab.freedesktop.org/monado/monado/-/blob/main/doc/winbuild.md) | An open-source runtime with simulated devices | — | M | — | **probably not** — "work in progress", simulated drivers only, OpenGL on Windows unverified | No |
 | F-12 | **Meta XR Simulator** | [native docs](https://developers.meta.com/horizon/documentation/native/xrsim-intro/) | Session record/replay, CLI | — | — | — | **not applicable** — no OpenGL support | No |
 | F-13 | **Soak test** (`soak.ps1 -Minutes N`: exit 2 = log stalled, 4 = process died) | DVR [tools/soak.ps1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/tools/soak.ps1) (MIT) | Wedges and leaks found before a tester does | copy (script) | S | F-01 | **after MVP** — before the tester build #88 | Later (with #88) |
-| F-14 | **`img-diff` screenshot comparison** (mean absolute difference, per-cent changed, noise floor ~0.4) | DVR [tools/img-diff.ps1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/tools/img-diff.ps1) (MIT) | Flat-visual assertions for F-05 shots (head look moved the picture, stereo differs) | copy (script) | S | F-05 | **MVP now** | **Take** → #113 |
-| F-15 | **Golden default-config check** (the default config generated from code and compared in CI) | DVR [tests/golden](https://github.com/VR-Stereo-Hub/Dishonored-VR/tree/VR-Main/tests/golden), `tools/ini-golden.py` | A changed default never ships unnoticed | reference | S | — | **later** — once VR settings exist (post-MVP) | Later |
+| F-14 | **`img-diff` screenshot comparison** (mean absolute difference, per-cent changed, noise floor ~0.4) | DVR [tools/img-diff.ps1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/tools/img-diff.ps1) (MIT); TF2VR [tools/bmpdiff](https://github.com/kyus2001/titanfall2vr/blob/main/tools/bmpdiff/bmpdiff.cpp) (an 8×6 per-cell brightness table and a difference bitmap; `bmpcrop` never resamples — "a downscale destroys exactly the evidence being judged"; `bmpshift` refuses to report a disparity until it has found a known one) | Flat-visual assertions for F-05 shots (head look moved the picture, stereo differs) | copy (script) | S | F-05 | **MVP now** | **Take** → #113 |
+| F-15 | **Golden default-config check** (the default config generated from code and compared in CI) | DVR [tests/golden](https://github.com/VR-Stereo-Hub/Dishonored-VR/tree/VR-Main/tests/golden), `tools/ini-golden.py`; TF2VR [tools/defaults-vs-ini.py](https://github.com/kyus2001/titanfall2vr/blob/main/tools/defaults-vs-ini.py) (DIVERGENCE / DISCARDED / NO CODE DEFAULT against the wearer's own ini; exit 1 gates the release) | A changed default never ships unnoticed | reference | S | — | **later** — once VR settings exist (post-MVP) | Later |
+| F-111 | **Synthetic head pose with motion and a tilted reference**: a constant pose (static), a sweep (yaw ±25° at 1.2 rad/s on the wall clock, so two runs compare), and a pitched or rolled pose *at the recentre* — a composition that bakes the reference's pitch into the camera is invisible while the reference is level; "arm head tracking at yaw 0, then step the yaw, or the correction is never under load" | TF2VR [core/flat_harness.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/flat_harness.cpp), [camera_hook.cpp "HEADING IS REFERENCED"](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/camera/camera_hook.cpp) | Three `.xrs` cases for #112 / #113: a still head gives identical view matrices every frame; a sweep shows no velocity-proportional error; a recentre while pitched 18° leaves no permanent tilt (#24, #28) | reference | S | #112, #113 | **MVP now** — test cases, no new code | |
 
 ### Tooling
 
@@ -154,66 +282,96 @@ later / probably not, with why), **Decision** — empty, for the owner.
 |---|---|---|---|---|---|---|---|---|
 | F-16 | **Script-console command seam**: the file channel of F-01 feeds Arx's script commands (teleport, spawn, give item) so test saves become scripts | DVR command seam + Arx `src/gui/Console.cpp` | Scenario setup without hand-made saves (#70 partly) | reference | S | F-01 | **MVP now** — alongside #70 | **Take** → #99 |
 | F-17 | **Subsystem bisect switches** (`DVR_SKIP=hands,blink,overlay`-style: disable a VR feature by environment variable without a rebuild) | DVR [TESTING.md "Crash triage"](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/TESTING.md) | Crash triage on the owner's or a tester's machine | reference | S | — | **after MVP** — with #88 | Later (with #88) |
-| F-18 | **Log banner and conventions**: first line = build id, git hash, config (Debug perf lines tagged "not comparable"), `.prev.log` rotation, one `VR:` category | DVR [VERIFICATION.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/VERIFICATION.md) rows VR-160 / VR-180 | Every log a tester sends says which build wrote it | reference | S | — | **MVP now** — cheap, pays off at #88 | **Take** → #115 |
-| F-19 | **In-headset settings and debug overlay** (ImGui, pointed at with the laser; Basic / Advanced / Debug tiers; every lever a live A/B that fails soft) | DVR [F10_MOTION_CONTROLS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/F10_MOTION_CONTROLS.md) | Tuning thresholds (swing speed, panel distance) in the headset without a relaunch | reference | M | #49, #34 | **after MVP** — the MVP has no VR settings menu by decision | Later |
+| F-18 | **Log banner and conventions**: first line = build id, git hash, config (Debug perf lines tagged "not comparable"), `.prev.log` rotation, one `VR:` category | DVR [VERIFICATION.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/VERIFICATION.md) rows VR-160 / VR-180; TF2VR [plugin.cpp `HostOnInit`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/host/plugin.cpp), [cmake/version_stamp.cmake](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/cmake/version_stamp.cmake) (the sha stamped at build time, `+` when the tree is dirty, the DLL's own write time beside `__DATE__`; the line forced past the quiet filter — F-133) | Every log a tester sends says which build wrote it | reference | S | — | **MVP now** — cheap, pays off at #88 | **Take** → #115 |
+| F-19 | **In-headset settings and debug overlay** (ImGui, pointed at with the laser; Basic / Advanced / Debug tiers; every lever a live A/B that fails soft) | DVR [F10_MOTION_CONTROLS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/F10_MOTION_CONTROLS.md); TF2VR [ui/menu_overlay.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/ui/menu_overlay.cpp) (driven by the sticks on a world-fixed quad, edits staged and saved on close — F-128, F-113) | Tuning thresholds (swing speed, panel distance) in the headset without a relaunch | reference | M | #49, #34 | **after MVP** — the MVP has no VR settings menu by decision | Later |
+| F-112 | **`logdig`, a log digest for agents**: lines with the timestamp, hex and numbers replaced by `N` become families; families seen fewer than 6 times are printed in full and in order, the rest as `count × last sample`; `id` prints the run identity, `f <pattern> [n]` the last n matches; "never cat the log — reading it whole costs 25–40 % of an agent's context in a single call" | TF2VR [tools/logdig](https://github.com/kyus2001/titanfall2vr/blob/main/tools/logdig) (MIT, 60 lines of sh / awk) | #131's digest in one script: a 9,000-line `arx.log` read in a screenful, and the rare lines are where the answers are | copy + adapt (PowerShell, `arx.log` paths) | S | #129 | **MVP now** — #131 is in the queue | |
+| F-113 | **Settings registry**: one table row per setting (key, label, tooltip, lock-free getter, min, max, default, widget, tier *live / restart / careful*, category); the ini and the panel take the **same** write path; a startup self-check feeds every key through it at its current value and round-trips the getter, after a **deliberately bogus key proves the check can fail**; panel edits are staged and applied on close; the ini is rewritten line by line (comments kept, a duplicate key commented out as "superseded"), temp file then rename; a per-headset cache for the one setting that is per headset | TF2VR [core/settings_registry.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/settings_registry.h), [config.cpp `RunSettingsRegistrySelfCheck`, `PersistSettingToIni`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/config.cpp), [render_resolution.cpp (headset cache)](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/render_resolution.cpp) | The design for F-19's panel and for every VR setting we add to `cfg.ini` (Arx's `Config` already has defaults and a writer) | reference | M | F-19, a VR config | **after MVP** — with F-19 | |
+| F-114 | **Orphan-statement lint**: a statement indented deeper than the complete statement above it, with no brace between them, is unconditional yet reads as controlled — three settings toggled themselves every frame after an `if` line was deleted; the lint exits 1 | TF2VR [tools/orphan-statements.py](https://github.com/kyus2001/titanfall2vr/blob/main/tools/orphan-statements.py) (MIT) | One CI step over `src/vr/` | copy (script) | S | — | **after MVP** — cheap, but noisy on the upstream tree unless scoped | |
 
 ### Rendering and performance
 
 | ID | Feature | Source | What it gives us | How to adopt | Effort | Depends on | Fits | Decision |
 |---|---|---|---|---|---|---|---|---|
 | F-20 | **Rung 1 first: the flat frame on a head-locked quad in both eyes** (`XrCompositionLayerQuad`, 2.4 m wide at 1.75 m) before any stereo exists | DVR [ARCHITECTURE.md "The stereo ladder"](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/ARCHITECTURE.md) | Swapchains, frame loop, mirror and head tracking verified with one readback; reused later for menus and loading screens | reference | S | #18, #20 | **MVP now** — the first thing the owner can see in checkpoint A | **Take** → #18 |
-| F-21 | **Pose-matched submission**: render and submit each eye with that frame's `xrLocateViews` pose; place hands and weapon from the same head sample | DVR [RESEARCH.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/RESEARCH.md), [HEAD_MOTION_120HZ.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/HEAD_MOTION_120HZ.md) | No judder or ghosting on head turns; their "exceptional improvement in world stability" | reference (a rule) | S | #20 | **MVP now** — design rule for #20 / #24 | **Take** → #20, #24 (rule) |
+| F-21 | **Pose-matched submission**: render and submit each eye with that frame's `xrLocateViews` pose; place hands and weapon from the same head sample | DVR [RESEARCH.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/RESEARCH.md), [HEAD_MOTION_120HZ.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/HEAD_MOTION_120HZ.md); TF2VR [xr_context.h `renderedView_`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.h) (the pose each eye was rendered with, kept apart from the current locate — F-116) | No judder or ghosting on head turns; their "exceptional improvement in world stability" | reference (a rule) | S | #20 | **MVP now** — design rule for #20 / #24 | **Take** → #20, #24 (rule) |
 | F-22 | **Per-eye draw = re-enter the scene draw with the other eye's camera** (simulate once, draw twice) | DVR `reentry` method | Confirms #71's shape; nothing to copy | reference | — | #71 | **MVP now** (already planned) | **Take** → #71 (already planned) |
 | F-23 | **Screen-space effects at a comfortable depth** (damage flash, fades, magic tint, fog and flares on a quad at a fixed depth or per eye with the eye's projection) | DVR README, `[Lens] Distance=18` | Removes the "effects look wrong in stereo" accepted problem | reference | S–M | #72, #73 | **after MVP** — accepted problem for the MVP | Later |
 | F-24 | **Desktop mirror = a copy of the left eye**, optional and cheap, never a third render | DVR [DESKTOP_MIRROR.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/DESKTOP_MIRROR.md); VHVR `MirrorMode` | #21 done right the first time (their window alternated eyes for months) | reference | S | #21 | **MVP now** | **Take** → #21 |
-| F-25 | **Render scale 50–200 %** with quality presets, changed live | DVR README "The launcher" | Performance headroom per PC (the tester's Quest 3 PC) | reference | S | #18 | **after MVP** — MVP renders at native size | Later |
+| F-25 | **Render scale 50–200 %** with quality presets, changed live | DVR README "The launcher"; TF2VR [xr/render_resolution.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/render_resolution.h) (one `render.scale`, both axes together so the aspect cannot drift; ships at 0.75 because nothing measures the GPU; a per-headset geometry cache keyed by runtime, system name, recommended size and tangents, which wins over the ini) | Performance headroom per PC (the tester's Quest 3 PC) | reference | S | #18 | **after MVP** — MVP renders at native size | Later |
 | F-26 | **Even cadence**: a frame cap that divides the refresh rate, slots-per-frame measured; "a higher refresh rate can be worse" | DVR [KNOWN_ISSUES.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/KNOWN_ISSUES.md) ghosting entry | Judder-free head turns on the Index at 90 / 120 / 144 Hz | reference | S | #20, F-07 | **MVP now** — definition of done "holds the refresh rate" | **Take** → #20 |
-| F-27 | **Performance instruments**: per-frame phase split every 3 s, PACE-BOUND vs STARVED verdict, GPU timestamp ring, `perf-tick-stats` over marked windows | DVR [VERIFICATION.md §1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/VERIFICATION.md) perf rows | Epic #8's "no dropped frames" judged from logs | reference | M | F-07 | **after MVP** — epic #8 | Later |
+| F-27 | **Performance instruments**: per-frame phase split every 3 s, PACE-BOUND vs STARVED verdict, GPU timestamp ring, `perf-tick-stats` over marked windows | DVR [VERIFICATION.md §1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/VERIFICATION.md) perf rows; TF2VR [diag/plugin_cost.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/diag/plugin_cost.h) (rdtsc scopes per seam with the probe's own cost calibrated and subtracted — "a probe that does not state its own cost is asking to be believed"; a HITCH line when one frame spends over 4 ms in the mod survives quiet mode) | Epic #8's "no dropped frames" judged from logs | reference | M | F-07 | **after MVP** — epic #8 | Later |
 | F-28 | AFW / "mod spacewarp", DLSS in a 64-bit helper, custom TAA | DVR `PLAN-mod-spacewarp.md`, `PLAN-motion-vectors-dlss.md` | — | — | — | — | **probably not** — answers to their readback pipeline and a wireless link; SteamVR has motion smoothing | No |
+| F-115 | **Off-axis per-eye projection from `XrFovf`, canted eyes allowed, verified offline**: each eye's projection from its own four tangents (a Quest 3 reports L −54° R 40° U 44° D −55°, mirrored between the eyes; the Index is asymmetric too) and its own view orientation. TF2VR could not (a symmetric engine frustum): it renders the symmetric cover and *shears* the frustum to the lens centre, with the Y flip "verified by construction" — an offline check fed a symmetric headset's numbers (must be an identity) and an asymmetric one's (the top edge must move *down* in image space), plus the no-flip variant as a negative control; the banner says when the two eyes' orientations differ (canted panels) | TF2VR [xr/asym_projection.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/asym_projection.h), [tools/asym-projection-check.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/tools/asym-projection-check.cpp), [xr_context.cpp `LogHeadsetBanner`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.cpp) | #19 done right the first time: no symmetric cover, no cropped lens on an asymmetric headset; a host test with the Index's angles and a wrong-sign control | reference + copy the test's shape (MIT) | S | #19, #112, F-08 | **MVP now** — #19 and its host test | |
+| F-116 | **Alternate-frame stereo — the two rules it taught, not the method**: (1) a projection layer is submitted with the pose **each eye was rendered with**, never the current locate (they keep `renderedView_[2]` beside `locatedView_[2]`); (2) **nothing is submitted until both eyes hold an image** (`eyeHasImage_`) — one stale or blank eye against a live one is the bug class F-06 catches. Their same-frame alternative, re-entering the engine's scene draw with the other eye's camera, hangs after about 129 doubled frames because the engine's per-frame latches, job group and temporal history are shared by both passes: the #71 split must move every per-frame side effect out of the draw before #19 draws twice | TF2VR [xr/xr_context.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.h), [render/scene_reentry.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/render/scene_reentry.h), [render/stereo_targets.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/render/stereo_targets.h), README "In development" | Half-rate eyes are judder by construction (not for us); the rules go to #20 / #19 and the warning to #71 | reference (rules) | — | #19, #20, #71 | **MVP now** (rules) | |
+| F-117 | **Keep the compositor fed while the game stalls** (level loads): a gap-filling pacing thread re-submits the last image with a fresh pose when the game has not presented for a display period. Two designs failed first and left rules: **one thread owns `xrWaitFrame` / `xrBeginFrame` / `xrEndFrame`** (a mutex around two callers broke the runtime's pacing); **never acquire a swapchain image you will not write** (the compositor shows the most recently *released* image, so an untouched acquire jumps back in time); **zero layers means "show nothing", not "hold the last picture"**; a loop paced by our own timer slips a frame every 50 (12.75 ± 0.52 ms against 12.50) — only `xrWaitFrame` is the display clock; it "does not shorten the load and must never be sold as if it does" | TF2VR [xr/xr_context.h "F3"](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.h), [xr_context.cpp `SubmitFrameCore`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.cpp), [KNOWN-ISSUES 5](https://github.com/kyus2001/titanfall2vr/blob/main/KNOWN-ISSUES.md) | A loading screen that stays up instead of SteamVR's grid; the rules for #20 now, a frame pump from Arx's load-progress callback after | reference | S (rules), M (the pump) | #20, #18 | **MVP now** (rules) → #20; the loader pump **after MVP** | |
+| F-118 | **Session events as evidence**: every `XrSessionState` transition logged by name with its meaning (SYNCHRONIZED = not displayed = "the runtime is entitled to pace us as slowly as it likes"); on leaving FOCUSED the Windows foreground window, pid, class and title are logged (another pid → the game lost desktop focus and the runtime followed; our pid → the runtime took focus for its own overlay); `XR_SESSION_NOT_FOCUSED` from `xrSyncActions` named as "every action reads inactive — nothing is wrong with the bindings"; `XR_ERROR_FORM_FACTOR_UNAVAILABLE` named as "no headset: the game runs at full speed and looks identical to a good run"; `REFERENCE_SPACE_CHANGE_PENDING` re-seeds the mod's own recentre reference | TF2VR [xr/xr_context.cpp `PollEvents`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.cpp), [xr_input.cpp `XrInputSync`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_input.cpp) | One line each in `arx.log` (#130 D2) and `status.json`; the runtime's own recentre works through #28 | reference | S | #17, #28, #130 | **MVP now** — #130 and #28 | |
 
 ### Camera and comfort
 
 | ID | Feature | Source | What it gives us | How to adopt | Effort | Depends on | Fits | Decision |
 |---|---|---|---|---|---|---|---|---|
 | F-29 | **Physical crouch**: a head drop of ~20 cm held 250 ms sets the engine's crouch; VHVR's 70 % / 75 % of calibrated height hysteresis; stance read back from the engine with a settle time | DVR [crouch.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/game/dishonored/crouch.cpp); VHVR [VRPlayer.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/VRPlayer.cs) `RoomScaleSneakHeight` | #100 with tested constants | port the rule | S | #100 | **MVP now** — #100 is queued | **Take** → #100 |
-| F-30 | **Eye-height calibration**: clamp the measured height to [1.2, 1.9] m, move the character's eye point to match within [−0.75, +0.25] m; tune height trim and world scale together | VHVR [VRPlayer.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/VRPlayer.cs); DVR `[Tracking] HeightOffsetM` + `[PosTrack] Scale` | #101 (seated play, real height) | reference | S | #27, #101 | **after MVP** — D-006 | Later (#101) |
-| F-31 | **Shake, bob and pop-smoothing removed at the source per kind**; the HMD pose applied *after* every engine camera smoothing (or the smoothing disabled) | DVR `[CameraShake]`, [PLAN-VR-165](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/PLAN-VR-165-camera-displacement.md) | #76 without the "camera leaves the body" class of bug | reference | S | #76 | **MVP now** | **Take** → #76, #24 |
-| F-32 | **Snap turn as a body-yaw step**: 45° at 0.6 stick, re-arm at 0.3, once per push, blocked while a menu owns the stick; optional "smooth snap" at 10° per 10 ms; the step logged FIRED / APPLIED | DVR [snap_turn.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/game/dishonored/snap_turn.cpp); VHVR [ControlPatches.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Patches/ControlPatches.cs) | #32 with tested constants; both ship smooth turn as the default | reference | S | #32 | **MVP now** | **Take** → #32 |
+| F-30 | **Eye-height calibration**: clamp the measured height to [1.2, 1.9] m, move the character's eye point to match within [−0.75, +0.25] m; tune height trim and world scale together | VHVR [VRPlayer.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/VRPlayer.cs); DVR `[Tracking] HeightOffsetM` + `[PosTrack] Scale`; TF2VR [xr_context.cpp `LocateViews`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.cpp) (eye height from `XR_REFERENCE_SPACE_TYPE_STAGE`, settled over 5 samples within 1 cm inside [0.8, 2.0] m — and two runtimes read the same seated wearer 0.3 m apart, so it drives nothing: F-119) | #101 (seated play, real height) | reference | S | #27, #101 | **after MVP** — D-006 | Later (#101) |
+| F-31 | **Shake, bob and pop-smoothing removed at the source per kind**; the HMD pose applied *after* every engine camera smoothing (or the smoothing disabled) | DVR `[CameraShake]`, [PLAN-VR-165](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/PLAN-VR-165-camera-displacement.md); TF2VR [hands/weapon_settings.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/weapon_settings.h) (weapon sway zeroed in its per-weapon source data, not cancelled at the camera — "no camera-matrix correction can cancel an animation") | #76 without the "camera leaves the body" class of bug | reference | S | #76 | **MVP now** | **Take** → #76, #24 |
+| F-32 | **Snap turn as a body-yaw step**: 45° at 0.6 stick, re-arm at 0.3, once per push, blocked while a menu owns the stick; optional "smooth snap" at 10° per 10 ms; the step logged FIRED / APPLIED | DVR [snap_turn.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/game/dishonored/snap_turn.cpp); VHVR [ControlPatches.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Patches/ControlPatches.cs); TF2VR [input/aim_cmd.h `RequestSnapYaw`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/aim_cmd.h) (their first snap held the turn button for degrees ÷ yaw speed seconds — a fast *sweep*, the thing snap exists to avoid; now one angle write between two frames, requests replace rather than queue, re-armed at centre; 30° by default) | #32 with tested constants; both ship smooth turn as the default | reference | S | #32 | **MVP now** | **Take** → #32 |
 | F-33 | **Decision: the stick's frame is the head** ("stick forward = where you look") in both mods; the decoupled body only decides where hands and the UI anchor live | DVR `HeadBasedMovement`; VHVR `JoyStickForwardDirection=LookDirection` | Settles #25 / #31 before they are built (Dishonored's body-relative mode kept drifting) | decision | — | #25, #31 | **MVP now** — decide before #31 | **Decided:** look direction — D-008 (#25, #31) |
-| F-34 | **Recenter as a hold on a chord** (tap = panel), also re-seeding the UI anchor; VHVR's "hands in front of the face for 3 s" pose as an alternative | DVR [F10_MOTION_CONTROLS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/F10_MOTION_CONTROLS.md); VHVR [VRControls.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRControls.cs) | #28 | reference | S | #28 | **MVP now** | **Take** → #28 |
+| F-34 | **Recenter as a hold on a chord** (tap = panel), also re-seeding the UI anchor; VHVR's "hands in front of the face for 3 s" pose as an alternative | DVR [F10_MOTION_CONTROLS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/F10_MOTION_CONTROLS.md); VHVR [VRControls.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRControls.cs); TF2VR [xr_context.cpp `PollEvents`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.cpp) (the runtime's own recentre arrives as `REFERENCE_SPACE_CHANGE_PENDING` and re-seeds the mod's reference; an automatic recentre 300 ticks after the world is up — F-120) | #28 | reference | S | #28 | **MVP now** | **Take** → #28 |
 | F-35 | **Fades**: 0.2 s to black on loads, teleports and death, 0.15 s back, room offset re-centred on the way back; a low-health pulse instead of a full-screen flash | VHVR [FadingManager.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/FadingManager.cs) | Comfortable level loads and death | reference | S | — | **after MVP** — MVP accepts death and fades behaving badly | Later |
-| F-36 | **Cinematics**: HMD rotation composed over the authored camera (one sample for both eyes), forced pitch / roll / FOV locked, controls parked with a 300 ms hold-to-skip | DVR [CINEMATIC_HEAD_TRACKING.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/CINEMATIC_HEAD_TRACKING.md), `[Cine]` keys | Cutscenes and scripted cameras without nausea | reference | M | #24 | **after MVP** — accepted problem for the MVP | Later |
-| F-37 | **Camera = the tracked eye, no neck model**; pitch clamped away from the pole; never cancel an arc the current camera owner did not generate | DVR `[Neck]`, [STANDING_PITCH_ROLL_ARC.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/STANDING_PITCH_ROLL_ARC.md) | A rule for #24 (Arx has no neck to cancel — do not add one) | reference | S | #24 | **MVP now** | **Take** → #24 (rule) |
+| F-36 | **Cinematics**: HMD rotation composed over the authored camera (one sample for both eyes), forced pitch / roll / FOV locked, controls parked with a 300 ms hold-to-skip | DVR [CINEMATIC_HEAD_TRACKING.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/CINEMATIC_HEAD_TRACKING.md), `[Cine]` keys; TF2VR [KNOWN-ISSUES.md 15](https://github.com/kyus2001/titanfall2vr/blob/main/KNOWN-ISSUES.md) (ships with cutscene cameras pinned to the head — "the one thing in this alpha that can make you feel ill"); CLVR (cutscenes on a 2D panel by default, "force 3D cutscenes" an off-by-default option — F-140) | Cutscenes and scripted cameras without nausea | reference | M | #24 | **after MVP** — accepted problem for the MVP | Later |
+| F-37 | **Camera = the tracked eye, no neck model**; pitch clamped away from the pole; never cancel an arc the current camera owner did not generate | DVR `[Neck]`, [STANDING_PITCH_ROLL_ARC.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/STANDING_PITCH_ROLL_ARC.md); TF2VR [camera_hook.cpp neck model](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/camera/camera_hook.cpp) (a 0.10 m forward / 0.10 m up neck model, needed only because its positional tracking is a lean *offset* on a camera that does not otherwise translate; with the HMD pose applied in full there is nothing to cancel) | A rule for #24 (Arx has no neck to cancel — do not add one) | reference | S | #24 | **MVP now** | **Take** → #24 (rule) |
 | F-38 | **Room-scale**: the character follows the headset (activation 0.125 m, 4 m/s clamp), a drift fix when it creeps with no input, optional fade when movement is blocked | VHVR [VRPlayer.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/VRPlayer.cs), [RoomscalePatches.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Patches/RoomscalePatches.cs) | #26 | reference | M | #26 | **after MVP** | Later (#26) |
 | F-39 | **Near clip 0.09 m** so hands and a raised weapon do not clip at the face | VHVR `NearClipPlane` | A check for #75 | reference | S | #75 | **MVP now** (check) | **Take** → #19, #75 |
 | F-40 | **No vignette / tunnelling** in either mod; VHVR's comfort options (immersive ship camera, dodge roll) ship off | VHVR config, DVR README | Supports leaving the vignette out of the MVP | — | — | — | **MVP now** (confirms the plan) | Confirmed — no vignette in the MVP |
+| F-119 | **Eye height is one engine quantity**: raise it where the engine defines the eye (their `EyePosition` getter, a vtable slot swap that refuses on a prologue mismatch) so the camera, the weapon, the shot origin and the reticle move together; raising the render camera alone put impacts below the reticle by atan(raise / distance), and writing the view offset per tick fought prediction and "vibrated the gun"; the raise is a **constant** (8 units — the game's eye sits at 83 % of the hull, a human's at 93 %), never a measured height: two runtimes read the same seated wearer 0.3 m apart | TF2VR [camera/player_eye_hook.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/camera/player_eye_hook.h), [camera/player_eye.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/camera/player_eye.h), [camera_hook.cpp "THE MEASUREMENT DRIVES NOTHING"](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/camera/camera_hook.cpp) | A rule for #27 and #101: a height trim goes into the player's eye point (what spells, reach and the view all derive from), never into the view matrix alone; D-006's "eye height = the character's camera" is this rule already | reference | S | #27, #101 | **MVP now** (rule) → #27 | |
+| F-120 | **Recentre = heading only; three recentre paths; the mid-load trap**: the head pose comes from the gravity-aligned LOCAL space, so pitch and roll are absolute and only the **yaw** needs a reference — subtracting the reference's pitch and roll baked an 18° tilt into every frame that the world never showed (the compositor reprojects with the true pose) but every screen-anchored panel did, "a boat riding a wave" as the body turned; the reference is re-seeded by the runtime's own recentre event, by a key, and **automatically 300 ticks after the world is up** ("a height sampled during the loading screen is wrong for the whole session"); the engine's view pitch is **always** the head's absolute pitch and nothing else writes it (a stick axis that could ratcheted the body pitch to the ±89° clamp and broke aiming) | TF2VR [camera/camera_hook.cpp `AdvanceHeadTracking`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/camera/camera_hook.cpp), [host/plugin.cpp `recentre_on_spawn`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/host/plugin.cpp), [KNOWN-ISSUES 6](https://github.com/kyus2001/titanfall2vr/blob/main/KNOWN-ISSUES.md) | #28 (re-seed on the runtime's event and after a load) and #24 (a yaw-only reference, pitch owned by the head) with their traps named | reference | S | #24, #28 | **MVP now** → #24, #28 | |
 
 ### Controls
 
 | ID | Feature | Source | What it gives us | How to adopt | Effort | Depends on | Fits | Decision |
 |---|---|---|---|---|---|---|---|---|
-| F-41 | **Index binding facts**: menu on a firm trackpad press (`trackpad/force`), grips on `squeeze/value` with 0.70 / 0.55 hysteresis, A/B on both hands, never bind `system/click`, no thumbrest (stick click as the modifier); VHVR: trackpad force 0.3 for menu / inventory, trackpad scroll for the panel | DVR [openxr_input.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/core/vr/openxr_input.cpp); VHVR [bindings_knuckles.json](https://github.com/brandonmousseau/vhvr-mod/blob/master/Unity/ValheimVR/Assets/StreamingAssets/SteamVR/bindings_knuckles.json) | #35 with two shipped Index bindings to compare against | reference | S | #35 | **MVP now** | **Take** → #35 |
+| F-41 | **Index binding facts**: menu on a firm trackpad press (`trackpad/force`), grips on `squeeze/value` with 0.70 / 0.55 hysteresis, A/B on both hands, never bind `system/click`, no thumbrest (stick click as the modifier); VHVR: trackpad force 0.3 for menu / inventory, trackpad scroll for the panel | DVR [openxr_input.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/core/vr/openxr_input.cpp); VHVR [bindings_knuckles.json](https://github.com/brandonmousseau/vhvr-mod/blob/master/Unity/ValheimVR/Assets/StreamingAssets/SteamVR/bindings_knuckles.json); TF2VR [xr/xr_input.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_input.cpp), [input/xinput_pad.cpp grips](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/xinput_pad.cpp) (grips 0.60 / 0.45 on `squeeze/value`; suggestions for `oculus/touch_controller` and `khr/simple_controller` only — no Index profile, so no third Index binding to compare); CLVR (bindings for the Index and Touch only — F-139) | #35 with two shipped Index bindings to compare against | reference | S | #35 | **MVP now** | **Take** → #35 |
 | F-42 | **Physical → logical action snapshot** with chords resolved below the remap, motion gestures OR-ed into the same logical actions, one "motion off" switch | DVR [CONTROLLER_BINDS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/CONTROLLER_BINDS.md), [CONTROLLER_EMULATION.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/CONTROLLER_EMULATION.md) | #74's structure; the trigger always still works when a gesture misfires | reference | S–M | #30, #74 | **MVP now** — design for #74 | **Take** → #74 |
-| F-43 | **Tap / hold splits on shared buttons** (350 ms tap vs 600 ms hold; 0.3 s hold when a button doubles as a UI click) and "stop gestures on any touch" | DVR F10 chord; VHVR quick menus | Fewer buttons on the Index without misfires | reference | S | #74 | **MVP now** | **Take** → #74 |
-| F-44 | **Haptics**: one queue applied on the frame thread, the game's hit/damage events mapped to VHVR's table (hit 0.2 s / 100 Hz / 0.5, parry 0.7 / 100 / 0.3, block 0.2 / 100 / 0.2, stagger 0.1 / 20 / 0.1 for 1.2 s, draw, release, grab, menu tick) | VHVR §6 of the combat notes; DVR [melee.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/game/dishonored/melee.cpp) | #42 with a tested starting table | port the table | S | #42 | **MVP now** — #42 is queued | **Take** → #42 |
+| F-43 | **Tap / hold splits on shared buttons** (350 ms tap vs 600 ms hold; 0.3 s hold when a button doubles as a UI click) and "stop gestures on any touch" | DVR F10 chord; VHVR quick menus; TF2VR [input/xinput_pad.cpp Y long-press](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/xinput_pad.cpp) (the tap is emitted on *release* — nothing can know a press will stay short; held ≥ 350 ms is the other action and never the tap; the tap is held a few frames so the game's own poll sees it) | Fewer buttons on the Index without misfires | reference | S | #74 | **MVP now** | **Take** → #74 |
+| F-44 | **Haptics**: one queue applied on the frame thread, the game's hit/damage events mapped to VHVR's table (hit 0.2 s / 100 Hz / 0.5, parry 0.7 / 100 / 0.3, block 0.2 / 100 / 0.2, stagger 0.1 / 20 / 0.1 for 1.2 s, draw, release, grab, menu tick) | VHVR §6 of the combat notes; DVR [melee.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/game/dishonored/melee.cpp); TF2VR [input/xinput_pad.cpp `ApplyMotorsToHaptics`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/xinput_pad.cpp), [xr/xr_input.cpp `TriggerHaptic`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_input.cpp) (a change applied the instant it arrives — the game animates envelopes faster than 40 ms — and a 40 ms sustain tick re-firing 60 ms pulses so they overlap; frequency 160–260 Hz from the heavy / light motor balance; the slider stops at 100 % because the spec clamps amplitude at 1.0 — "a range that cannot act is a lie about what the control does") | #42 with a tested starting table | port the table | S | #42 | **MVP now** — #42 is queued | **Take** → #42 |
 | F-45 | **Missing-bindings prompt**: open SteamVR's binding UI when a required action is still unbound 5 s after the controllers appear | VHVR [MissingBindingsPrompt.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/MissingBindingsPrompt.cs) | Testers with other controllers (Quest 3) are not stuck | port | S | #35 | **after MVP** — with #88 | Later (with #88) |
 | F-46 | **Controller layout diagrams** (PNG + editable source) shipped with the game and shown in the launcher / panel | VHVR [diagrams](https://github.com/brandonmousseau/vhvr-mod/tree/master/ValheimVRMod/diagrams); DVR launcher "Bindings" page | The tester README | reference | S | #35 | **after MVP** — #88 | Later (with #88) |
-| F-47 | **Crouch on the right stick's south touch, run toggle on north** (VHVR) versus a toggle button (DVR B) | VHVR bindings; DVR README | An alternative for #33 that frees A/B | decision | — | #33 | **MVP now** — decide in #35 | **Decided:** VHVR layout — jump on A, crouch toggle on right stick down (#33, #35) |
+| F-47 | **Crouch on the right stick's south touch, run toggle on north** (VHVR) versus a toggle button (DVR B) | VHVR bindings; DVR README; TF2VR [CONTROLS.md](https://github.com/kyus2001/titanfall2vr/blob/main/CONTROLS.md) (jump on A and crouch on B after the right stick's vertical was found to clip turns; three crouch modes — hold, the engine's own toggle, the mod's toggle — kept "to save a headset run: one ini digit rather than a rebuild") | An alternative for #33 that frees A/B | decision | — | #33 | **MVP now** — decide in #35 | **Decided:** VHVR layout — jump on A, crouch toggle on right stick down (#33, #35) |
+| F-121 | **Right-stick maths**: the deadzone is subtracted and the remainder **rescaled** to full travel, then a power curve (`past^2.0`, the maximum unchanged — "linear after a large deadzone spends the travel near the top, which reads as an abrupt ramp"); a turn-speed scale where **70 = the game's own rate** and 0 the slowest usable; **axis dominance** so one diagonal cannot turn *and* crouch — an axis counts only if ≥ 0.6 × the other, with hysteresis on the ratio as well as the magnitude, and a deliberate band where both still fire; separate deadzones per axis (turn 0.45, vertical 0.60) | TF2VR [input/vr_input.cpp "THE RIGHT STICK'S TWO AXES"](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/vr_input.cpp), [input/xinput_pad.cpp `ComposeGamepad`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/xinput_pad.cpp), [CONTROLS.md](https://github.com/kyus2001/titanfall2vr/blob/main/CONTROLS.md) | #31 / #32 smooth-turn feel, and #33's crouch on right-stick-down (F-47) without clipping a turn | port (~80 lines, MIT) | S | #32, #33, F-08 | **MVP now** → #32, #33 | |
+| F-122 | **Press and chord rules**: a press that starts and ends between two `xrSyncActions` is caught with `changedSinceLastSync` and delivered once (measured: one of three A presses lost on a 40 fps loading screen); a chord puts **no timing gate on the first press** ("a quarter second of latency on melee is unacceptable, and no menu convenience buys it") — the second press and both releases are consumed until both are up, and *lead with the harmless button*; a button still held when a menu opens or closes is consumed until released (B closed the menu *and* reloaded); a signal read on both sides of a mode switch has **one** edge detector; **one owner per action** (B reached the game by two routes and did two things) | TF2VR [xr/xr_input.cpp (the latch)](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_input.cpp), [vr_input.cpp "THE L3+R3 SUMMON CHORD"](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/vr_input.cpp), [input/xinput_pad.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/xinput_pad.cpp) | #74's snapshot and #28's recentre chord without lost or doubled presses | reference; copy the latch | S | #74, #28, #34 | **MVP now** → #74 | |
+| F-123 | **Binding liveness**: `xrSuggestInteractionProfileBindings` is atomic — one path the runtime does not define rejects the whole profile, silently — so suggest the richer list first and fall back to a list without the optional path, logging "N bindings suggested → accepted / REJECTED" per profile (the count is the falsifier: 19 without the thumbrest row, 21 with); poll `xrGetCurrentInteractionProfile` per hand every 30 frames and log on change, with `XR_NULL_PATH` explained ("no device for that hand — switch the controller on"); "bound" is `isActive`, not "suggested"; **handedness measured**: the right hand's offset from the left, projected on the head's right axis, must be positive | TF2VR [xr/xr_input.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_input.cpp) | #30 / #35 on the Index and on a Quest 3 (#87) without a run spent on "the controllers do nothing" | copy + adapt (MIT) | S | #30, #35 | **MVP now** → #30 | |
+| F-124 | **Hand-beside-the-head modifier**: the left controller raised to chin height (grip y ≥ head y − 0.15 m) within 0.45 m of the head turns the left stick into a d-pad while held; held means held (a dwell timer was tried and rejected — a deliberate, hesitant use must not expire); a haptic pulse on engage; movement *released*, not frozen; the status line counts "evaluated / skipped: no grip pose / no head pose" so a gesture that never fires says which half is missing | TF2VR [input/dpad_gesture.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/dpad_gesture.cpp) | A shift key on the Index for when the MVP's buttons run out (quick items, a spell wheel) | port (MIT, 250 lines) | S | #74 | **later** — the MVP has buttons to spare | |
+| F-139 | **Every gameplay concept is its own action, remapped in SteamVR; posture instead of a button where it fits.** The Better Bindings add-on adds actions to the mod — reload grab, sprint, tactical ability, crouch (toggle *or* hold; a jump while crouched stands up and jumps), grenade toggle — and the player binds them in SteamVR's binding UI; the add-on's own README says "bind the actions in SteamVR" and that it was tested on Index controllers. The mod itself ships full bindings only for the **Valve Index and Oculus / Meta Touch** (per the Linux port's README: other controllers on Monado or WiVRn "may get no input"). **Sprint by posture:** lowering the gun below the eyes while moving sprints, raising it to aim stops — no button. Evidence: add-on, report | CLVR [TF2VRBetterBindings](https://github.com/Fdrph/TF2VRBetterBindings) (MIT), [tf2vr-linux](https://github.com/Monkellie/tf2vr-linux) (MIT) | Two things for #30 / #35: (1) one OpenXR action per concept lets the owner and testers rebind in SteamVR with no rebinding UI of ours — [RESEARCH-controllers.md](RESEARCH-controllers.md) design rules 4 and 6 already say so; this is a released mod where a third party then **added** actions on top, which is the evidence the approach holds (keep crouch and jump separate actions even though the defaults are fixed, F-47); (2) the shipped-bindings priority of a successful release was Index + Touch, i.e. our own order (Index, then Quest 3). The posture idea is optional for run / sneak in Arx (the engine has both) | reference | S | #30, #35, F-41, F-47 | **MVP now** (a rule for #30 / #35); posture sprint is an idea | |
 
 ### Hands
 
 | ID | Feature | Source | What it gives us | How to adopt | Effort | Depends on | Fits | Decision |
 |---|---|---|---|---|---|---|---|---|
-| F-48 | **Weapon placement from the controller**: per-weapon-class grip offset along the blade, hand centre 0.08 m behind the controller, blade axis and length from the mesh bounds, 180° "ulnar" flip for daggers | VHVR [WeaponWield.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/WeaponWield.cs), [WeaponUtils.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Utilities/WeaponUtils.cs) | #75 with the numbers to start from | port | S | #75 | **MVP now** | **Take** → #75 |
-| F-49 | **Hand + weapon as one rigid assembly**; per-eye corrections tagged with their eye; per-hand trims stored in the palm frame, edited in the view frame; a second trim for the casting hand | DVR [VR-33-HANDS-AND-WEAPONS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/VR-33-HANDS-AND-WEAPONS.md) | Rules that avoid their first-design bugs (bolt pulled out of the crossbow, hand a whole IPD off) | reference | S | #75, #36 | **MVP now** (rules); trims **after MVP** | **Take** (rules) → #75, #36; trims later |
+| F-48 | **Weapon placement from the controller**: per-weapon-class grip offset along the blade, hand centre 0.08 m behind the controller, blade axis and length from the mesh bounds, 180° "ulnar" flip for daggers | VHVR [WeaponWield.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/WeaponWield.cs), [WeaponUtils.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Utilities/WeaponUtils.cs); TF2VR [ads/ads_probe.h per-weapon grip](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/ads/ads_probe.h) (the per-weapon term read from the model's own hand attachment, latched at idle, refused when implausible — F-126) | #75 with the numbers to start from | port | S | #75 | **MVP now** | **Take** → #75 |
+| F-49 | **Hand + weapon as one rigid assembly**; per-eye corrections tagged with their eye; per-hand trims stored in the palm frame, edited in the view frame; a second trim for the casting hand | DVR [VR-33-HANDS-AND-WEAPONS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/VR-33-HANDS-AND-WEAPONS.md); TF2VR [core/config.h `NudgePivotOffset`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/config.h) (the pivot nudge: move what the weapon rotates about without moving the weapon — F-126) | Rules that avoid their first-design bugs (bolt pulled out of the crossbow, hand a whole IPD off) | reference | S | #75, #36 | **MVP now** (rules); trims **after MVP** | **Take** (rules) → #75, #36; trims later |
 | F-50 | **Index finger tracking** copied onto a hand mesh's finger bones when the hand is free | VHVR [HandGesture.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/HandGesture.cs) | Real hands after the placeholders | reference | M | #36, a hand mesh | **later** — needs our own hand model | Later |
-| F-51 | **Wrist-cut recipe** for the first-person arm mesh (plane square to the bone axis, clip straddling triangles, two-sided flat-colour cap, forearm weights pinned to the hand bone) | DVR [ARM_HAND_SPLIT.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/ARM_HAND_SPLIT.md) | Floating hands from Arx's existing arm model instead of a new mesh | reference | M | #36 | **after MVP** | Not needed — full body, D-009 |
-| F-52 | **Full-arm IK** (shoulders 16 cm back, 25 cm down, 38 cm apart from the head frame; body yaw with a 25° dead zone and 1.5 s relaxation; shoulder slides when out of reach) | DVR [ARM_IK.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/ARM_IK.md) (MIT) | Arms, if ever wanted | reference | L | F-51 | **later** | **Take** → #36 — full body with IK arms in the MVP, D-009 |
+| F-51 | **Wrist-cut recipe** for the first-person arm mesh (plane square to the bone axis, clip straddling triangles, two-sided flat-colour cap, forearm weights pinned to the hand bone) | DVR [ARM_HAND_SPLIT.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/ARM_HAND_SPLIT.md); TF2VR [KNOWN-ISSUES.md 3](https://github.com/kyus2001/titanfall2vr/blob/main/KNOWN-ISSUES.md) (its hands-only mode still shows the forearm — the gauntlet is one mesh and "hands-only would need a custom model"; the full body avoids the cut) | Floating hands from Arx's existing arm model instead of a new mesh | reference | M | #36 | **after MVP** | Not needed — full body, D-009 |
+| F-52 | **Full-arm IK** (shoulders 16 cm back, 25 cm down, 38 cm apart from the head frame; body yaw with a 25° dead zone and 1.5 s relaxation; shoulder slides when out of reach) | DVR [ARM_IK.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/ARM_IK.md) (MIT); CLVR (full-body IK as the headline feature of a closed mod — no parameters known, F-135) | Arms, if ever wanted | reference | L | F-51 | **later** | **Take** → #36 — full body with IK arms in the MVP, D-009 |
 | F-53 | **"Who owns the body" hand-back**: a read-only ownership flag from the animation state, immediate in, 250 ms out, hands blended 250 ms in / 350 ms out with smootherstep and a straight palm path | DVR [ANIM-HANDOFF-PLAN.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/ANIM-HANDOFF-PLAN.md) | Knockdowns, death, ladders and scripted moments without hands stuck to the controllers | reference | M | #75 | **after MVP** | Later |
-| F-54 | **Inter-hand item transfer** (hands within 0.2 m, forwards aligned, both grips, release one) | VHVR [InterhandItemTransfer.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/InterhandItemTransfer.cs) | Left-handed play and torch/weapon swaps without the panel | port | S | #37 | **after MVP** | Later |
-| F-55 | **Holster / draw zones** at the shoulders and waist (head-relative bands, release grip to holster, press at the shoulder to draw, no body tracking) | VHVR [Utilities/Pose.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Utilities/Pose.cs) | Sheathing and bow draw without a belt UI | port | S | #75, #40 | **after MVP** | Later |
+| F-54 | **Inter-hand item transfer** (hands within 0.2 m, forwards aligned, both grips, release one) | VHVR [InterhandItemTransfer.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/InterhandItemTransfer.cs) (#166: the weapon hand and the free hand — [13e](#13e-the-weapon-hand-and-the-inventory--the-key-case)) | Left-handed play and torch/weapon swaps without the panel | port | S | #37 | **after MVP** | Later |
+| F-55 | **Holster / draw zones** at the shoulders and waist (head-relative bands, release grip to holster, press at the shoulder to draw, no body tracking) | VHVR [Utilities/Pose.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Utilities/Pose.cs); CLVR (release the grip to holster — F-137) | Sheathing and bow draw without a belt UI | port | S | #75, #40 | **after MVP** | Later |
 | F-56 | **Open empty hand pose** with a 250 ms equipment-state debounce | DVR [HAND_POSE.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/HAND_POSE.md) | No fist with nothing in it | reference | S | #36 | **after MVP** | Later |
-| F-57 | **Physical pickup by reach**: the engine's own "what is under the cursor" test aimed along the hand ray at the nearest item within 60 cm, the grip = the click, time hysteresis (2 frames in, 150 ms out), worst-frame bound on the sweep | DVR [PLAN-physical-interaction.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/PLAN-physical-interaction.md) | Grabbing instead of pointing, with the engine still deciding | reference | M | #37, #38 | **after MVP** — the MVP picks up by ray | **Take** → #37, #38 — grab by reach, no rays (D-010) |
+| F-57 | **Physical pickup by reach**: the engine's own "what is under the cursor" test aimed along the hand ray at the nearest item within 60 cm, the grip = the click, time hysteresis (2 frames in, 150 ms out), worst-frame bound on the sweep | DVR [PLAN-physical-interaction.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/PLAN-physical-interaction.md); TF2VR [hands/use_target.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/use_target.h) (the engine's own use-search wrapped to take the hand's angles — rung 1 — then the hand's origin too — rung 2; every rung counts its calls so a dead stage is named); VHVR (#166: the hidden ray + per-hand reticle that D-016 took instead — F-153, F-154, F-155, no hysteresis — F-160) | Grabbing instead of pointing, with the engine still deciding | reference | M | #37, #38 | **after MVP** — the MVP picks up by ray | ~~**Take** → #37, #38 — grab by reach, no rays (D-010)~~ → **Changed** (D-016, 2026-10-09): aim with a reticle from either hand, the engine's cursor test at the reticle; no grab by reach |
+| F-125 | **Hand-to-world composition rules**: position from the **grip** pose, direction from the **aim** pose (a grip-forward barrel sat 45° up); the hand as an offset from a **fixed room reference** (the recentre position), not from the live head — the head pivots about the neck, so a turn translates the eyes and "the gun slid the opposite way"; rotated by the **body's** yaw, never the applied view yaw; the same reference yaw the view uses (else the hand is off the view by the reference after every recentre); composed and consumed **in one frame** — a composition one frame stale in body yaw lagged by exactly the turn rate (8° per frame at full stick) and differed per eye, which was a flicker | TF2VR [hands/hand_pose.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/hand_pose.h), [hand_pose.cpp `ComposeWorld`, `PublishHandPoseForFrame`, "THE YAW RE-BASE"](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/hand_pose.cpp) | The IK targets for #36 and the held weapon for #75 placed without the four bugs they paid for; F-21's "one head sample for eyes and hands" extended to the body yaw | reference | S | #36, #75, #24 | **MVP now** → #36, #75 | |
+| F-126 | **Live grip calibration**: the grip offset is expressed in the **weapon's own frame** and rotated with it, so it is also the pivot a wrist rotation turns about ("the model origin sits wherever it must"); a separate position offset in the player's frame and angle offsets applied last; a *pivot nudge* moves the pivot without moving the gun (nudge the grip, subtract `R · delta` from the player-frame offset in the same press); the three grip rows move the weapon live in the panel while it is held and save on change; a per-weapon term from the model's own hand attachment, latched at idle and **refused** when further than 9 / 4 / 5 units from the reference | TF2VR [core/config.h `NudgePivotOffset`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/config.h), [hand_pose.cpp `NudgePivotOffset`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/hand_pose.cpp), [ads/ads_probe.h "PER-WEAPON GRIP"](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/ads/ads_probe.h), [KNOWN-ISSUES 13](https://github.com/kyus2001/titanfall2vr/blob/main/KNOWN-ISSUES.md) | For #75: Arx's weapons already carry their grip vertex (`primary_attach`), so the per-weapon term is data; the one constant to dial is the controller's grip pose → the model's palm (F-49's trims), once, live in the headset | reference | S | #75, F-49 | **after MVP** — the MVP holds the weapon at the model's attachment | |
+| F-135 | **Full-body IK — what is actually known, and what is not.** Known (docs, report): it is the headline feature — the author's announcement and the installer README both lead with "full body IK, manual reloads"; the pilot's body is visible when you look down (arvrtips); MoguraVR: it "estimates the whole posture from head and hand movement". **Not known: every parameter** — no source, in code or prose, gives shoulder offsets, body-yaw rule, what the legs do while walking or crouching, arm reach limits or how the body hands back to scripted animations; whether the *legs* are tracked or animated is **unverified** (one search for it found nothing). Evidence: the author's text and two secondary reports; no code | CLVR [README](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/README.md), [MoguraVR](https://www.moguravr.com/?p=378357), [arvrtips](https://arvrtips.com/titanfall-2-vr-mod/); the author's announcement ("Fullbody IK, manual reloading, and so much more", seen as a search snippet of [x.com/CircuitLord/status/2105099559391416752](https://x.com/CircuitLord/status/2105099559391416752); the page itself would not load) | Nothing to adopt: it confirms that a **solo-built** mod put full-body IK first and that players noticed it — the same bet as D-009 — and it confirms that the numbers must come from Dishonored VR's `ARM_IK.md` (F-52) and VHVR's VRIK, not from here. Do not wait for more: the mod's behaviour can only be learnt by playing it | reference (none) | — | #36 | **MVP now** — confirms #36; no new input | |
+| F-136 | **Manual reload as a body-anchored grab, with a highlight.** B starts a manual reload; the magazine is taken from a zone on the body, inserted, and the slide or bolt racked; guns that need a reload are **highlighted**; the Wingman reloads by a gesture; every weapon has one. The plugin does the steps; the game's scripts only own the clip and reserve counts (the auto-reload add-on moves ammo between them and cancels if a manual reload starts). **Day-one feedback (issue #18, 2026-09-30):** the grab zone "feels somewhat unintuitive to locate" and resembles Half-Life: Alyx's abstract body inventory — the reporter asks for the zone to be shown in a tutorial, a temporary indicator, a bigger zone and optional calibration. Evidence: report, docs, add-on | CLVR [arvrtips](https://arvrtips.com/titanfall-2-vr-mod/), [Road to VR](https://roadtovr.com/titanfall-2-vr-mod-circuitlord/), [issue #18](https://github.com/CircuitLord/CircuitLordVRModInstaller/issues/18), [tf2vr-mods AutoReload](https://github.com/djnewage/tf2vr-mods) | Arx has no ammo, so the reload itself is not ours. What transfers is the **rule for any body-anchored zone** (quiver and arrow for the bow F-70, potion and quick-item slots, holster F-55): show it (highlight), teach it once, make it a little larger than feels right, and expect it to be the first complaint | reference (a rule) | S | F-55, F-70 | **after MVP** — with the bow and holster zones | |
+| F-137 | **Grip semantics for weapons**: the grip holds the weapon and **releasing it holsters**; the off hand on the front of a rifle **steadies** it (two-handed); raising the gun to the eye aims down its sights; a **closed fist punches** (physical melee punching); trigger fires. The Better Bindings add-on moves "reload grab" to the trigger so the grip only ever holds. Evidence: report (arvrtips), add-on | CLVR [arvrtips](https://arvrtips.com/titanfall-2-vr-mod/), [TF2VRBetterBindings](https://github.com/Fdrph/TF2VRBetterBindings) (MIT) | A second shipped example of release-to-holster (F-55) and off-hand support (F-73). The new bit is the **unarmed punch**: Arx has an unarmed attack, so #39's swing detector could drive it with no weapon in hand — a decision for #39, not a feature to add | reference | S | #39, F-55, F-73 | **after MVP** (holster); the unarmed case is a question for #39 | |
+| F-138 | **Distance grab ("force pull") add-on**: an open hand pointed at a weapon or grenade, then a flick toward yourself, and the item flies to the palm. The numbers from its README: targeting cone **3.0 m** long, **0.6 m** radius at the far end (the mod's own stock cone, in `tf2vr_pickups.gnut`, is **1.0 m**); a flick is a hand speed ≥ **2.0 m/s**; the item flies at **8 m/s** — moved by the server with `SetOrigin` to a point before the palm; it hovers **1.5 s** then drops; a second mode holds the point for 0.6 s instead of a flick; line of sight is required; only weapon entities. **Traps it recorded (2026-10-01):** pulls from over 1 m stopped 28–37 cm short of the palm until the flying item was made non-solid; a single-player checkpoint keeps the old server script, so a change takes effect only from a fresh mission. Evidence: add-on README (no licence stated — reference only) | CLVR [djnewage/tf2vr-mods](https://github.com/djnewage/tf2vr-mods) (`TF2VR.DistanceGrab`) | Starting numbers for #37 beyond arm reach (items on a high shelf or a low floor, seated play) and a number for the stock reach to compare with DVR's 60 cm (F-57). **It conflicts with D-010 in spirit:** you *point* at the item — a ray in everything but name — so it needs the owner's call before it is a task | reference | S | #37, D-010 | **after MVP** — and only if the owner accepts it against D-010 | **No** (D-016, 2026-10-09) — items are taken with the hand-aimed reticle and the engine's own drag, not pulled by a gesture |
+| F-151 | **Titan cockpit, embark and rodeo**: embark by holding the right trigger, abilities on four grip directions inside a cockpit, boarding the Titan by touch; "touch and board BT up close" is what players praise. Evidence: report | CLVR [arvrtips](https://arvrtips.com/titanfall-2-vr-mod/), [Inven](https://www.invenglobal.com/articles/26827/i-am-jack-cooper-titanfall-2-vr-mod-causes-a-stir) | Nothing: Arx has no mounts or vehicles. Recorded so the catalog does not read as if it were missed | — | — | — | **not applicable** | n/a |
+| F-153 | **A hidden hand ray per hand feeds the game's own hover test.** Every hover update casts `RaycastAll` from each hand's pointer (origin and rotation of the controller's pointer holder) with the game's **own interaction layer mask**, up to **50 m**, sorts by distance, skips the player's own body, and takes the **first** hit; the object is the hit collider's hoverable (or its rigidbody's root). The game's **reach** is then a distance check on the hit point from the eye (`>= m_maxInteractDistance` → nothing hovered; the value is the game's own, not in the repository), so the ray is long but the reach is the game's. There are **two hovers**, one per hand, recomputed every update with **no hysteresis and no smoothing**. The beam exists but is drawn **only while a menu wants a cursor** (`Cursor.visible`) — in the world it is invisible. Evidence: code | VHVR [HandBasedInteractionPatches.cs:152-227](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Patches/HandBasedInteractionPatches.cs), [VRPlayer.cs:796-812](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/VRPlayer.cs), [SteamVR_LaserPointer.cs:142-143](https://github.com/brandonmousseau/vhvr-mod/blob/master/Unity/ValheimVR/Assets/SteamVR/Extras/SteamVR_LaserPointer.cs) | Exactly the shape D-016 asks for: a beamless ray, the engine decides what is hovered. Our engine's test is a **screen-space** pick (`FlyingOverObject(mouse)` → `GetFirstInterAtPos`: 2D bounding box, then the projected faces, nearest to the player within 350 units), so the hand ray has to become a **screen position** (project the hit point, or intersect the ray with the view plane) — [13f](#13f-what-maps-onto-arxs-own-mechanics) | port the rules | M | #74, #37 | **MVP now** | |
+| F-154 | **A world-space reticle at each hand's hit point.** A canvas per hand is put **at the ray's hit point**, turned to face the camera, and **scaled with distance** (constant angular size: scale = `0.1 × CrosshairScale / canvas width × distance`, the user setting 0.8–2.5, default 1.0); a ray that hits nothing puts it at the 50 m limit. The reticle is **white at 50 % alpha** and turns **yellow when the hovered object has a hover text**, and the hover **name** is printed next to it (the game's own text, cloned onto the per-hand canvas). A setting turns the always-visible reticle off. This is the whole feedback — **no outline, no highlight, no hand pose change, no sound, no haptic** on hover (see F-160). The head-locked crosshair of the vanilla game stays for the weapon sight. Evidence: code | VHVR [CrosshairManager.cs:303-343, 15-17](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/CrosshairManager.cs), [HandBasedInteractionPatches.cs:66-110](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Patches/HandBasedInteractionPatches.cs) (the left hand's clone: text and colour from the left hover) | The visible half of D-016 with numbers; the reticle does not pass through walls because it sits on the first hit | port the rules | S | F-153, #37 | **MVP now** | |
+| F-155 | **"Use" per hand, with the game's own interact call.** The right trigger is read through the game's input as its **Use** button (so the game's own hover and interact run); the left trigger is a patch that calls the game's `Interact(leftHover, hold: false)` on press and `Interact(leftHover, hold: true)` every update while held. If the right hover is empty, `UseItem` falls back to the **left hover** (the right hand wins when both hit). Neither works **while that hand's menu pointer is up** (a click meant for a panel must not also act on what the ray hits behind it) nor **while a two-handed weapon is aimed** (bow, crossbow, staff — their triggers fire). The sword hand is **not** gated: attacks are made by collision, so its trigger is free to interact. Evidence: code | VHVR [HandBasedInteractionPatches.cs:28-64, 112-148](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Patches/HandBasedInteractionPatches.cs), [VRControls.cs:474-480, 538-545, 592-597](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRControls.cs), [LocalWeaponWield.cs:128-148](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/LocalWeaponWield.cs) | The gating rules: which states mute a hand's "click" | reference | S | F-153, #37, #38 | **MVP now** (the rules) | |
+| F-156 | **One menu pointer, not two.** When the game wants a cursor, **one** hand's pointer is active: the dominant-hand setting if both controllers are tracked, otherwise whichever hand is tracked; the other is off. Nothing looks at what the hand holds — a **sword in the dominant hand does not move the pointer to the free hand**. The active hand's world interaction is off meanwhile; the other hand's world hover still runs. Its chord actions on the pointer (move the item under it to the open container, split a stack, add a map pin) are extra buttons held with the trigger, with the plain click hidden where it would collide. **A gap against the owner's correction of D-016** (both hands usable in the inventory) — [13e](#13e-the-weapon-hand-and-the-inventory--the-key-case) | VHVR [VRPlayer.cs:726-756](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/VRPlayer.cs), [LaserPointerChords.cs:8-32, 120-131](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/LaserPointerChords.cs) | What **not** to copy for the two-hand inventory, and the chord idea for modifiers | reference | S | #34 | **MVP now** (decision for #34) | |
+| F-157 | **The inventory is the same UI panel; it opens on a button and stays put.** The inventory button (on Index: **a press of the right trackpad**) shows the game's inventory on the one 3 m panel (F-80); while it is open the panel is **frozen where it was** (`LockGuiPositionWhenMenuOpen`, default on) and, closed, re-seeded from the head — unless the default alternative is on, the **inventory held in the non-dominant hand** (`AttachInventoryToHand`, default on), which puts a **0.375 m**-tall copy of the panel in that hand at **(0, 0.0625, 0.125) m** from the controller, tilted by Euler (75, 270, 300) on the left hand and is used with the pointer of the other hand; it **detaches to the big panel** at once when a container or a crafting station opens, a keyboard opens or the map is large. There is **no world-item-to-inventory drag** in Valheim, so VHVR never solved it (F-158). Evidence: code | VHVR [VRGUI.cs:87-89, 296-301, 358-372, 450-512, 590-640, 912-925](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRGUI.cs), [VHVRConfig.cs:677-679, 796-799](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Utilities/VHVRConfig.cs), [bindings_knuckles.json](https://github.com/brandonmousseau/vhvr-mod/blob/master/Unity/ValheimVR/Assets/StreamingAssets/SteamVR/bindings_knuckles.json) | Both placements with numbers: a fixed centre panel (the owner's "for now") and a hand-held panel as the later option | reference | S | #34, #49 | **MVP now** (frozen panel while open); hand-held **later** | |
+| F-158 | **Picking a world item up is one click, straight to the inventory; nothing is carried.** Valheim has no drag of a world item, so the hover + Use is "take it" (an item goes into the inventory, or a message when full); an auto-pickup toggle exists. Dragging **inside** the inventory is the pointer's drag with a click dead zone (F-81). So the case the owner wants — **drag a floor item into an open inventory with the free hand** — has **no VHVR answer**; Arx has the mechanism (the engine's own drag, [13f](#13f-what-maps-onto-arxs-own-mechanics)). Evidence: code | VHVR [VRControls.cs:918](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRControls.cs) (`AutoPickup`), [LaserPointerChords.cs:150-158](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/LaserPointerChords.cs) | A negative result: the carry-and-place half of D-016 is entirely ours | — | — | #37 | **MVP now** (the gap is known) | |
+| F-159 | **Physical hand extras while the hand is free and the grip is held:** pull a **plant** off by grabbing it and moving the hand away at > 0.5 m/s (the grab drops if the hand ends up > 0.5 m from where it closed); **push a door open** with hand speed ≥ 2 m/s within 30° of the door's normal; operate a **drawbridge** by its counterweight (grab radius 0.15 m, pull 0.25 m up or down); **pet** an animal (hand speed > 0.5 m/s, 3 s apart). Grab haptic: 0.25 s, 100 Hz, amplitude 0.5. These are *additions* on top of the ray, never replacements. Evidence: code | VHVR [FistCollision.cs:56-109, 258-285](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/FistCollision.cs), [DrawbridgeCounterweightGrab.cs:12-85](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/DrawbridgeCounterweightGrab.cs) | Door-push and pull-to-pick are the nicest "by hand" touches; D-016 says doors use the reticle, so they are an option for later | reference | M | #38 | **later** | |
+| F-160 | **What VHVR does *not* do: no hover or use haptics, no hysteresis.** A search of the whole mod for haptic calls finds them only on grab, bow, shield, fishing, the build-rotation tick and the drawbridge — **none on hover or on a ray "use"**; the hover is recomputed from scratch every update (a thin object under a moving hand flickers). For ours: the hover/click hysteresis numbers already catalogued (F-57: 2 frames in, 150 ms out) and a short hover tick are **additions**, not VHVR behaviour; DVR/TF2VR's hysteresis is the reference | VHVR (absence, searched `hapticAction` and `TriggerHapticPulse` over `ValheimVRMod/`); DVR [PLAN-physical-interaction.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/PLAN-physical-interaction.md) | Stops us from assuming VHVR solved flicker | reference | S | F-153 | **MVP now** (add hysteresis from F-57) | |
+| F-161 | **Placing with the hand: the building ray and the "ground hand".** Build-mode placement is cast from the **dominant pointer** (the same hidden ray, F-153), and for the cultivator the **free hand** held within **0.125 m** of the ground casts straight down from 0.25 m above itself — the nearest thing VHVR has to "set it down by hand". Its ray is the whole placement; there is no carried object. Evidence: code | VHVR [PlaceModeRayVectorProvider.cs:30-60, 88-160](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/PlaceModeRayVectorProvider.cs) | Confirms that "carry and set down" is not something to learn from VHVR; ours is the engine's drag | — | — | #37 | **not applicable** | |
 
 ### Combat
 
@@ -246,37 +404,53 @@ later / probably not, with why), **Decision** — empty, for the owner.
 | F-77 | **Rune stroke sampling**: arm on press, sample while held, finish on release; a stroke counts after 0.2 m / 400 ms, straightness ratio and forward dot as stroke-quality measures, the plane in a head-yaw-only frame, no stroke while a UI pointer is up | DVR stab core (`swing_core.h`), VHVR `MagicStaffUtils.IsCastTriggerHeld` | #43 / #44 with tested gesture measures | reference | S | #43, #44 | **MVP now** | **Take** → #43, #44 — stroke at the hand (D-010) |
 | F-78 | **Haptic progress ticks** while a gesture is being recognised (VHVR's summon: a tick every physics step while the hand keeps rising) and a distinct pulse on recognition | VHVR [SummonerManager.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/SummonerManager.cs) | Feedback while drawing a rune | reference | S | #45, #42 | **after MVP** | Later |
 | F-79 | **Staff aim-and-shoot and swing-launch** (fire on release when the tip's peak speed reached 3.5 m/s) | VHVR [SwingableStaffManager.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/SwingableStaffManager.cs), [SwingLaunchManager.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/SwingLaunchManager.cs) | — | port | M | — | **probably not** — Arx has no staff casting | No |
+| F-127 | **Aim brace**: `aim = anchor + (hand − anchor) · gain` inside a cone (4°), ramping to 1 at a release angle (12°) beyond which the anchor is dragged, all in the same frame — a gain, never a filter, so nothing is ever delayed; its own falsifier counts "hand moved, gun did not" frames (must be 0) and anchor drift while still | TF2VR [hands/hand_pose.cpp `ApplyAdsBrace`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/hand_pose.cpp) | Steadier Magic Missile aim from the hand (#44, #45), or a bow later, without latency | port (MIT, 140 lines) | S | #44 | **later** — only if #45 finds hand aim too jittery | |
 
 ### UI
 
 | ID | Feature | Source | What it gives us | How to adopt | Effort | Depends on | Fits | Decision |
 |---|---|---|---|---|---|---|---|---|
-| F-80 | **The one UI panel**: a 1920×1080 texture on a quad (VHVR 3 m tall at 3 m, 1 m up; DVR 1.25 m at 1.3 m for in-game screens), re-facing only when movement starts or the head turns > 75° (50° while moving) at 180°/s, frozen while a menu is open, re-seeded at the head yaw when a menu reopens after > 250 ms | VHVR [VRGUI.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRGUI.cs); DVR [MONO_ANCHOR_UI_STATE.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/MONO_ANCHOR_UI_STATE.md), [HUD_ANCHORS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/HUD_ANCHORS.md) | #49 with tested placement rules | port the rules | M | #49, #73 | **MVP now** | **Take** → #49 |
-| F-81 | **Laser as mouse**: the analytic ray / plane hit fed into the engine's mouse coordinates (the 2D UI untouched); one laser, only while the game wants a cursor; click dead zone 5 mm and 16 px; trigger > 0.5 clicks; the stick's dominant axis scrolls with a 0.25 dead zone per second; those inputs muted for the game | VHVR [VRGUI.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRGUI.cs), [SoftwareCursor.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/SoftwareCursor.cs); DVR [F10_MOTION_CONTROLS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/F10_MOTION_CONTROLS.md) | #34 | port the rules | S | #34, F-75 | **MVP now** | **Take** → #34 — pointer only while a menu is open (D-010) |
+| F-80 | **The one UI panel**: a 1920×1080 texture on a quad (VHVR 3 m tall at 3 m, 1 m up; DVR 1.25 m at 1.3 m for in-game screens), re-facing only when movement starts or the head turns > 75° (50° while moving) at 180°/s, frozen while a menu is open, re-seeded at the head yaw when a menu reopens after > 250 ms | VHVR [VRGUI.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRGUI.cs); DVR [MONO_ANCHOR_UI_STATE.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/MONO_ANCHOR_UI_STATE.md), [HUD_ANCHORS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/HUD_ANCHORS.md); TF2VR [xr_context.cpp `CaptureMenuPose`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.cpp) (a quad captured once at summon from the head's yaw only, 1.7 m wide at 1.5 m, facing *back* along the view — the `atan2` sign that read as "angled slightly to my left"; placed at the origin, and said so, when the head pose is invalid at summon — F-128) | #49 with tested placement rules | port the rules | M | #49, #73 | **MVP now** | **Take** → #49 |
+| F-81 | **Laser as mouse**: the analytic ray / plane hit fed into the engine's mouse coordinates (the 2D UI untouched); one laser, only while the game wants a cursor; click dead zone 5 mm and 16 px; trigger > 0.5 clicks; the stick's dominant axis scrolls with a 0.25 dead zone per second; those inputs muted for the game | VHVR [VRGUI.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRGUI.cs), [SoftwareCursor.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/SoftwareCursor.cs); DVR [F10_MOTION_CONTROLS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/F10_MOTION_CONTROLS.md); VHVR (#166: only **one** hand's pointer is up at a time — F-156 — which the owner's corrected D-016 does not accept) | #34 | port the rules | S | #34, F-75 | **MVP now** | **Take** → #34 — pointer only while a menu is open (D-010) |
 | F-82 | **UI state from the engine**: "a menu is open" read from the menu system, loading released by the engine's own completion, never a timer; the panel armed on game state, never on a per-eye tag | DVR [MONO_ANCHOR_UI_STATE.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/MONO_ANCHOR_UI_STATE.md) | No flicker between panel and world | reference | S | #49 | **MVP now** (rule) | **Take** → #49 (rule) |
 | F-83 | **Wrist vitals** (health and mana on the backs of the hands, drawn in-engine at the hand node, fading when not facing the eyes) | DVR [HUD_ANCHORS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/HUD_ANCHORS.md) vitals; VHVR [VRHud.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRHud.cs) | A HUD without a panel | reference | M | epic #7 | **after MVP** | **Take** → #116 — two bars on the left wrist, in the MVP |
-| F-84 | **Per-element HUD anchors** (`off / frame / window / world / handL / handR`, with alpha repair and a world window that re-parks per menu) | DVR [HUD_ANCHORS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/HUD_ANCHORS.md) | The full diegetic HUD design | reference | L | F-83 | **later** | Later |
+| F-84 | **Per-element HUD anchors** (`off / frame / window / world / handL / handR`, with alpha repair and a world window that re-parks per menu) | DVR [HUD_ANCHORS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/HUD_ANCHORS.md); TF2VR [CONTROLS.md "HUD"](https://github.com/kyus2001/titanfall2vr/blob/main/CONTROLS.md) (72 settings, about 30 of them HUD placement — a slider per element is what this design costs — F-129) | The full diegetic HUD design | reference | L | F-83 | **later** | Later |
 | F-85 | **Hand-held book and notes** with a fixed grip-relative pose, one tilt slider, pages turned by the stick | DVR [HUD_ANCHORS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/dishonored/HUD_ANCHORS.md) notes; VHVR inventory on the off hand (0.375 m) | The Arx book in the hand | reference | M | epic #7 | **after MVP** | Later |
 | F-86 | **Radial hand menu** (seeded at the grip, 15 mm dead zone, 120 mm full travel or a 0.1 m ring, depth does not select, haptic tick on sector change, release selects) | DVR weapon dial; VHVR [QuickAbstract.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/QuickAbstract.cs) | Quick spells and items without the panel | reference | M | epic #7 | **after MVP** | Later |
-| F-87 | **World-space crosshair, hover names and enemy health** at the hit distance, scaled by distance; NPC speech bubbles above the speaker | VHVR [CrosshairManager.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/CrosshairManager.cs), [EnemyHudManager.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/EnemyHudManager.cs), [NpcTextBubble.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/NpcTextBubble.cs) | Interaction prompts and dialogue off the panel | reference | M | epic #7 | **after MVP** | Later |
+| F-87 | **World-space crosshair, hover names and enemy health** at the hit distance, scaled by distance; NPC speech bubbles above the speaker | VHVR [CrosshairManager.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/CrosshairManager.cs), [EnemyHudManager.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/EnemyHudManager.cs), [NpcTextBubble.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/NpcTextBubble.cs) (#166: the per-hand reticle and hover name in detail — F-154, **MVP now** there) | Interaction prompts and dialogue off the panel | reference | M | epic #7 | **after MVP** | Later |
 | F-88 | **SteamVR keyboard** for text input (save names) in minimal mode with the game keeping its own text buffer | VHVR [TextInputPatches.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Patches/TextInputPatches.cs) | Naming a save without the keyboard | reference | S | #49 | **after MVP** | Later (save names are pre-filled) |
-| F-89 | **Cinematics on a flat screen** (video on a world-space quad with letterbox and subtitles) | VHVR [VRCinematicScreen.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRCinematicScreen.cs) | The intro and in-game cinematics | reference | S | F-80 | **after MVP** | Later (cheap after F-20) |
+| F-89 | **Cinematics on a flat screen** (video on a world-space quad with letterbox and subtitles) | VHVR [VRCinematicScreen.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRCinematicScreen.cs); CLVR (the same default — F-140) | The intro and in-game cinematics | reference | S | F-80 | **after MVP** | Later (cheap after F-20) |
+| F-128 | **Menus driven by the sticks, no pointer at all**: the settings panel is ImGui on a private 3072×2304 texture in its own swapchain, shown on a **world-fixed quad** (1.7 m wide at 1.5 m) whose pose is captured once at summon from the head's *yaw only*, facing back along the view; the sticks feed ImGui's gamepad nav as **levels** (ImGui repeats), ignored until both sticks have returned to centre once after opening; A activates, B backs out, the grips change category, the right stick scrolls; one category at a time, tabs across the top; the footer shows the focused row's help or "N changes pending"; the panel build runs inside an SEH guard that names the row and disables the overlay instead of crashing; the D3D state is saved and restored around ImGui; gameplay input is suppressed while open and the game is **not** paused (opening the game's pause menu for that was measured wrong) | TF2VR [ui/menu_overlay.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/ui/menu_overlay.cpp), [xr_context.cpp `CaptureMenuPose`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.cpp), [CONTROLS.md](https://github.com/kyus2001/titanfall2vr/blob/main/CONTROLS.md) | The alternative to F-81's laser for #34: a 2D menu that needs no ray at all; Arx's menus are mouse-built, so it costs a keyboard-navigation layer in `src/gui/` | decision | M | #49, #34 | **MVP now** — decide in #34: laser as mouse (F-81) or stick navigation | |
+| F-129 | **The flat HUD pass in a headset**: scale it about the view centre to a comfortable angular size (TF2VR ships the pass at **0.28** of the frame, the lower-left group at 0.55, name labels at 0.5) and move the edge elements **inward separately** — a scale about the centre pulls corners in but shrinks them, so size and position need two controls; prompts that were readable on a monitor need enlarging (1.82×, 2.1×); fades and full-screen overlays belong to the head, never to the aim (theirs draw as a rectangle in front of the right hand) | TF2VR [core/config.cpp `kSettings[]` HUD rows](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/config.cpp), [hud/world_marker.h "THE A/B THAT SHOULD HAVE COME FIRST"](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hud/world_marker.h), [KNOWN-ISSUES 11](https://github.com/kyus2001/titanfall2vr/blob/main/KNOWN-ISSUES.md) | #73's starting numbers: the UI virtual screen smaller than the eye image and centred, with Arx's edge elements (gauges, hotbar, icons) pulled in | reference | S | #73 | **MVP now** → #73 | |
+| F-140 | **The smallest set of VR settings a well-received release shipped.** Reported: snap turning in the options; a "VR menu" in the options with **HUD, Titan HUD and gun angle**; a **cutscene mode toggle** — cutscenes on a 2D panel by default, "force 3D cutscenes" off by default because it "can cause odd camera moments" (UploadVR: the full-VR option can cause jerkiness; Inven: cutscenes play in 2D "because of mod limitations"). Nothing else is reported. A guide adds a first-run trap: the **texture streaming budget defaults to the lowest** setting after install and is worth raising, and the per-eye resolution should be lowered in the *runtime* before the in-game graphics. Compare TinyBlackDog's 72 settings (F-19). Evidence: report | CLVR [arvrtips](https://arvrtips.com/titanfall-2-vr-mod/), [UploadVR](https://www.uploadvr.com/titanfall-2s-vr-mod-is-stellar-and-its-installer-is-the-best-thing-about-it/), [Inven](https://www.invenglobal.com/articles/26827/i-am-jack-cooper-titanfall-2-vr-mod-causes-a-stir) | The scope for our post-MVP settings menu is **four things**: turn mode (#32), HUD / UI placement and size (#73, F-129), a hand-to-weapon offset (the "gun angle", F-126), cutscene mode (F-36, F-89). And a rule for the first run: a default that is too low costs more than a missing option — pick the shipped defaults deliberately, on the owner's PC and a lower-end one. Cutscenes: the flat panel as the default is now the choice of two released mods (F-89) | reference | S | #32, #73, F-19 | **after MVP** — the MVP has no VR settings menu; the *defaults* list is MVP | |
+| F-150 | **First-use gesture prompts, a controls reference page and VR button glyphs.** Issue #18 (a tester after several hours): "some abilities use VR gestures that aren't obvious" — it asks for a prompt on first use with hand / gesture visuals and a controls / gestures reference page. The mod already replaces gamepad glyphs ("LB", "R3") with VR controller prompts (UploadVR) and highlights guns that need a reload (F-136). Evidence: report, issue | CLVR [issue #18](https://github.com/CircuitLord/CircuitLordVRModInstaller/issues/18), [UploadVR](https://www.uploadvr.com/titanfall-2s-vr-mod-is-stellar-and-its-installer-is-the-best-thing-about-it/) | **Runes drawn in the air (#43–#45) are the least discoverable thing we ship.** Plan a first-cast prompt that animates the hand path of the rune, a reference page in the tester README (F-148), and, wherever Arx's own hints name a key or a mouse button, name the controller's instead | reference | S–M | #43, #88, #116 | **README: MVP now** (checkpoint B tester); in-game prompts **after MVP** | |
 
 ### Distribution
 
 | ID | Feature | Source | What it gives us | How to adopt | Effort | Depends on | Fits | Decision |
 |---|---|---|---|---|---|---|---|---|
 | F-90 | **SteamVR application manifest registered by the game at every launch** (`app_key steam.app.<appid>`, `steam://launch/<appid>/VR`, `AddApplicationManifest` + `IdentifyApplication`, errors only logged) | VHVR [ApplicationManifestHelper.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Utilities/ApplicationManifestHelper.cs) | #80 from inside `arx.exe` instead of `register-steamvr.ps1` by hand; the name and art on the loading card | port | S | #89 (done), #80 | **MVP now** — #80 is in the queue | No — keep `register-steamvr.ps1`; Steam does it for a Steam app |
-| F-91 | **Support bundle collector** (`Collect-Support.ps1` + `.cmd`): allowlist of `arx.log` history, config, crash reports, SteamVR logs, the OpenXR `ActiveRuntime` value, system facts, the exe hash; a 24 MB cap; `manifest.json`; no upload | DVR [tools/collect-support.ps1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/tools/collect-support.ps1) (MIT) | "What to report" for the tester README becomes one double-click | copy (script) | S–M | #88 | **after MVP** — with #88 | **Take** → #88 |
-| F-92 | **Log rotation ten deep** with append-and-say-why on failure, a per-run header in the crash file, the banner of F-18 | DVR [log.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/core/util/log.cpp), [crash.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/core/util/crash.cpp) | A tester's second crash does not overwrite the first (`arx.log` is written once per run today) | reference | S | #88 | **after MVP** | Later |
-| F-93 | **VEH crash fallback** re-armed from the frame loop, named threads, a fault budget our own probes cannot spend | DVR [crash.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/core/util/crash.cpp) | Crash reports that survive the Steam overlay and SteamVR injecting into the process | reference | S–M | — | **after MVP** — first check whether Arx's SEH handler fires under SteamVR | Later |
+| F-91 | **Support bundle collector** (`Collect-Support.ps1` + `.cmd`): allowlist of `arx.log` history, config, crash reports, SteamVR logs, the OpenXR `ActiveRuntime` value, system facts, the exe hash; a 24 MB cap; `manifest.json`; no upload | DVR [tools/collect-support.ps1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/tools/collect-support.ps1) (MIT); CLVR (a crash-report button with the build hash inside — F-147) | "What to report" for the tester README becomes one double-click | copy (script) | S–M | #88 | **after MVP** — with #88 | **Take** → #88 |
+| F-92 | **Log rotation ten deep** with append-and-say-why on failure, a per-run header in the crash file, the banner of F-18 | DVR [log.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/core/util/log.cpp), [crash.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/core/util/crash.cpp); TF2VR [core/diagnostics.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/diagnostics.cpp) (eight sessions kept, the rotation reported as line 1 of the new file, "ROTATION INCOMPLETE" when a second game instance holds the file; `%LOCALAPPDATA%` rather than `%TEMP%`, which Storage Sense sweeps) | A tester's second crash does not overwrite the first (`arx.log` is written once per run today) | reference | S | #88 | **after MVP** | Later |
+| F-93 | **VEH crash fallback** re-armed from the frame loop, named threads, a fault budget our own probes cannot spend | DVR [crash.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/core/util/crash.cpp); TF2VR [core/crash_recorder.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/crash_recorder.cpp) (vectored handler first, UEF chained, at most four records so a caught first-chance exception cannot spend the only slot — F-131) | Crash reports that survive the Steam overlay and SteamVR injecting into the process | reference | S–M | — | **after MVP** — first check whether Arx's SEH handler fires under SteamVR | Later |
 | F-94 | **External dump capture** with ProcDump attached by PID for freezes (`-e -t -mm`), then the collector | DVR [tools/watch-crashes.ps1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/tools/watch-crashes.ps1) (MIT) | A freeze during the owner's session becomes a dump | copy (script) | S | F-91 | **after MVP** | Later |
 | F-95 | **Symbol archive** per tester build keyed by the exe's hash (`arx.pdb` kept with every zip) | DVR `archive-symbols.ps1`, [CRASH_SUPPORT.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/CRASH_SUPPORT.md) | Readable crash dumps from a tester | reference | S | #88 | **after MVP** | Later |
-| F-96 | **Tester package discipline**: version from CMake so the zip name, log banner and git tag agree; built from a tag; `HOW-TO-USE.txt`; a `.cmd` wrapper for every `.ps1`; a kill switch (`--no-vr`) documented | DVR [tools/package.ps1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/tools/package.ps1), `release/HOW-TO-USE.txt` | "Which build did the tester run" answerable from git | reference | S | #88 | **after MVP** — #88 | **Take** → #88 |
-| F-97 | **Steam discovery details**: `HKCU` then `HKLM`, both registry views, `libraryfolders.vdf` without a regex, `appmanifest_1700.acf` → `installdir`, a `why` string on failure, a hand-picked folder normalised | DVR [steam.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/tools/installer/sys/steam.cpp), [discovery.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/tools/installer/sys/discovery.cpp) | #79 in C++ with the edge cases our PowerShell already handles | reference | S | #79 | **MVP now** — #79 is in the queue | **Take** → #79 |
-| F-98 | **Runtime selection logged**: the runtime that answered, where `XR_RUNTIME_JSON` came from, a warning when another runtime answered than expected; no pinned manifest path ever ships | DVR `tools/vr-runtime.ps1`, [TROUBLESHOOTING.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/TROUBLESHOOTING.md) | One less class of "it started flat" support question | reference | S | #17 | **MVP now** (one log line) | **Take** → #115 |
-| F-99 | **Installer behaviours** for a non-Steam tester build: refuse while the game runs, atomic writes with backups, idempotent baseline, an install record JSON, self-update under a `sha256` asset contract | DVR [INSTALLER.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/INSTALLER.md) | — | reference | M | #88 | **later** — a Steam app needs none of it; a zip does | Later |
+| F-96 | **Tester package discipline**: version from CMake so the zip name, log banner and git tag agree; built from a tag; `HOW-TO-USE.txt`; a `.cmd` wrapper for every `.ps1`; a kill switch (`--no-vr`) documented | DVR [tools/package.ps1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/tools/package.ps1), `release/HOW-TO-USE.txt`; TF2VR [tools/package.ps1](https://github.com/kyus2001/titanfall2vr/blob/main/tools/package.ps1), [tools/install.ps1](https://github.com/kyus2001/titanfall2vr/blob/main/tools/install.ps1), [tools/cleanprofile/enter-clean-profile.ps1](https://github.com/kyus2001/titanfall2vr/blob/main/tools/cleanprofile/enter-clean-profile.ps1) (refuses placeholders in the docs, a documented SHA-256 that does not match the DLL, and `.pdb` / `.log` / `.bak` / `.bmp` / `.cache` in the box; `-TestBuild` names the zip TEST; install refuses while the game runs and hashes both sides; a clean-profile run installs exactly the zip before a release); CLVR (no game data in the package — F-145; the hash in the README — F-142) | "Which build did the tester run" answerable from git | reference | S | #88 | **after MVP** — #88 | **Take** → #88 |
+| F-97 | **Steam discovery details**: `HKCU` then `HKLM`, both registry views, `libraryfolders.vdf` without a regex, `appmanifest_1700.acf` → `installdir`, a `why` string on failure, a hand-picked folder normalised | DVR [steam.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/tools/installer/sys/steam.cpp), [discovery.cpp](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/src/tools/installer/sys/discovery.cpp); CLVR [SteamGameLocator.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Services/SteamGameLocator.cs) (the same chain with the game's own registry key first and a regex over the vdf; it never reads `appmanifest` — F-144) | #79 in C++ with the edge cases our PowerShell already handles | reference | S | #79 | **MVP now** — #79 is in the queue | **Take** → #79 |
+| F-98 | **Runtime selection logged**: the runtime that answered, where `XR_RUNTIME_JSON` came from, a warning when another runtime answered than expected; no pinned manifest path ever ships | DVR `tools/vr-runtime.ps1`, [TROUBLESHOOTING.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/TROUBLESHOOTING.md); TF2VR [xr_context.cpp `Initialize`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.cpp) (runtime name and version, the system name "as the runtime's claim" — VDXR reports a Quest 3 for a Play For Dream — vendorId / systemId, STAGE availability, and the per-eye geometry and IPD in one forced HEADSET line); CLVR (the launcher scrubs an inherited `XR_RUNTIME_JSON` before every launch — F-146) | One less class of "it started flat" support question | reference | S | #17 | **MVP now** (one log line) | **Take** → #115 |
+| F-99 | **Installer behaviours** for a non-Steam tester build: refuse while the game runs, atomic writes with backups, idempotent baseline, an install record JSON, self-update under a `sha256` asset contract | DVR [INSTALLER.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/INSTALLER.md); CLVR (a smaller installer with an ownership record and a rename-swap self-update — F-143) | — | reference | M | #88 | **later** — a Steam app needs none of it; a zip does | Later |
 | F-100 | **Tester bug-report template**: build id, headset and runtime, refresh rate, "in flat mode?" and "fresh config?" dropdowns, the log attached, no footage; blank issues off | DVR [bug_report.yml](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/.github/ISSUE_TEMPLATE/bug_report.yml) | Reports a worker can act on | port | S | #88 | **after MVP** | **Take** → #88 |
+| F-130 | **`KNOWN-ISSUES.md` for testers**: per issue a severity, *what you see*, *workaround*, *where it stands* with a status word (OPEN / FIXED, wearer-confirmed / FIX SHIPPED, UNCONFIRMED / BY DESIGN / NO LONGER OBSERVED — "a defect that stopped appearing rather than one that was repaired"), the measurement so far, and what a report should contain; a table of the five worst in the README | TF2VR [KNOWN-ISSUES.md](https://github.com/kyus2001/titanfall2vr/blob/main/KNOWN-ISSUES.md), [README](https://github.com/kyus2001/titanfall2vr/blob/main/README.md) | The tester README for #88 and the friend's Quest 3 (#87); the honest status words keep a tester's report useful | reference | S | #88 | **after MVP** → #88 | |
+| F-131 | **A crash record that attributes**: a vectored handler registered *last* (the front of the chain, ahead of the host's and the overlay's) plus the chained filter; one line with the exception, module + RVA, thread, frames published, and the **arm state as a bitmask the tick publishes every frame** (no getters inside the handler — one took a mutex the crashing thread could hold); the access violation's read / write address; the **XR breadcrumb** — the last XR call we were inside, the textures handed to the runtime this frame, a swapchain epoch — so a crash inside the runtime's DLL with none of our frames on the stack can still be attributed to a stale resource we submitted; a hook-site registry names "PC is in bytes we patched"; `VirtualQuery` describes memory in no module; a linker map ships; a self-test key behind an ini flag faults on purpose | TF2VR [core/crash_recorder.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/crash_recorder.cpp), [diag/xr_breadcrumb.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/diag/xr_breadcrumb.h), [engine/hook_registry.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/engine/hook_registry.h), [CMakeLists.txt `/MAP`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/CMakeLists.txt) | Arx's crash reporter plus the VR state and the XR breadcrumb in the report (#132 D4); SteamVR injects into our process too | reference | S–M | #132, #131 | **after MVP** → #132 | |
+| F-132 | **Stall watchdog**: a separate thread that, when a bracketed section has been open for 2 s, suspends the stuck thread, reads its instruction pointer, resolves module + RVA, walks the stack for return addresses inside loaded modules, resumes it and logs — "a probe driven by the thread that stalls cannot report the stall" | TF2VR [diag/stall_watchdog.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/diag/stall_watchdog.h), [stall_watchdog.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/diag/stall_watchdog.cpp) | The hang class our `[E]`-line and crash checks cannot see (D3 / D4): a frozen `arx.exe` names the instruction | copy + adapt (MIT) | S | #131, #132 | **after MVP** → #132 | |
+| F-141 | **A separate profile and separate VR saves; an install never touches the base game.** Normal launches stay unmodded: Northstar's launcher is copied beside the original as `Titanfall2VRLauncher.exe`, the mod lives in a `TF2VR/` profile folder, and the VR user data (profile, saves, settings) lives in `%LOCALAPPDATA%\Respawn\Titanfall2_VR` — moved there from Documents because **Controlled Folder Access blocks the launcher in Documents** (code comment, mod 1.0.4+). The installer tests assert the negatives: "install created a VR save" must fail, "default checkpoint changed" must fail, "untracked user file changed" must fail, "uninstall changed VR progress" must fail. **No import of base-game saves**: the current tests assert the "copy save" button is *absent* ("base game save import remains") and v1.2.4 notes "the VR campaign always starts a new save" — two press pages (MoguraVR, PCVR Central) still say progress can be copied; the code and release notes disagree with them. Evidence: code, docs | CLVR [Titanfall2Installer.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Installers/Titanfall2Installer.cs) (`SaveDirectory`, `Install`), [tests/InstallerValidation/Program.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/tests/InstallerValidation/Program.cs), [releases](https://github.com/CircuitLord/CircuitLordVRModInstaller/releases) v1.2.4 / v1.2.5 | A decision point and a trap for #88 and epic #9. **D-007 keeps Arx Libertatis' user directory**, so flat and VR share `Saved Games\Arx Libertatis` — the owner's flat-mode saves (`--loadslot`) work in VR, which the MVP relies on; Titanfall had a reason to split (its VR campaign flow differs), we have found none. The trap: never write logs, config or saves under Documents / Desktop / Pictures, which Controlled Folder Access protects by default (Saved Games is, as far as we know, not on the default list — check on the owner's PC before relying on it) | reference | S | D-007, #88, epic #9 | **MVP now** — a one-line confirmation of D-007 for VR, no code | |
+| F-142 | **A manifest with a SHA-256 per release, release channels, and a test seam.** `manifest-v3.json` (`schemaVersion` 3): the installer `{version, url, sha256, commit}`, the loader, and per mod `{id, version, url, sha256, size, preserve[], tokenize[], channels[]}`. Rules in `RepoClient`: HTTPS only; a 64-hex SHA-256 is required **before** any transfer; the whole payload is hashed in memory and **discarded on mismatch**; the manifest is fetched with a `t=<unix time>` query because raw.githubusercontent caches for minutes; a package is cached on disk as `<sha256>.zip` and a corrupt cache is not reused (tested); the env var `CIRCUITLORD_LOCAL_MANIFEST` points at a local file (and only then may a `file://` URL be used). Older manifests stay frozen so old installers can still self-update. A channel is listed only while newer than stable — in the manifest as read, stable is 1.0.15 and beta 1.0.12, so the beta is hidden. Northstar is pinned in code with URL, hash and size. Evidence: code | CLVR [manifest-v3.json](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/manifest-v3.json), [RepoClient.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Services/RepoClient.cs), [README "How it works"](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/README.md) | For #88 (one zip for one friend) only the hash discipline carries over: print the zip's SHA-256 in the README and check it in the package gate (F-96). A Steam app gets update channels from Steam **branches** (a beta branch), so the rest is not needed. The environment override as a test seam is worth copying as a habit (F-152) | reference | S | #88, F-96 | **after MVP** — #88 only; Steam branches replace the rest | |
+| F-143 | **An ownership record, stale-file cleanup and a zip-slip guard.** Every install writes `.circuitlord-vr-mods/<id>.json` in the game folder with `{id, version, northstarVersion, runtime, channel, custom, files[]}`; an update deletes the files the previous release shipped and this one does not (and prunes emptied directories); uninstall deletes exactly the recorded files and the record; `ResolveInside` throws "package tried to write outside the game folder"; `preserve` entries are recorded as owned but not overwritten if present. The order is the good part: the game-derived assets are built **before** anything in the game folder changes, and a test proves a failed patch leaves the launcher and plugin as they were. **Weak spots in the code, so do not copy it as it is:** files are written in place with no staging or rollback; delete errors are swallowed; a corrupt record reads as "none" (stale cleanup silently does nothing) in the Big Walk path; the record stores no hashes, so a file the user edited is deleted anyway. Evidence: code | CLVR [OwnedFileStore.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Services/OwnedFileStore.cs), [InstallerFileSystem.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Services/InstallerFileSystem.cs), [PackageInstaller.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Services/PackageInstaller.cs), [Titanfall2Installer.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Installers/Titanfall2Installer.cs) `Install` | If #88 ever becomes "unzip over the game folder", a file list for uninstall is the cheap half; DVR's installer (F-99) is the stricter model (atomic writes, backups). A Steam app needs none of it | reference | S | #88, F-99 | **later** — Steam installs and removes the files | |
+| F-144 | **Prerequisites as a checklist with one button each.** The installer shows three steps: (1) *game found* — the game's own registry key `HKLM\SOFTWARE\Respawn\Titanfall2 "Install Dir"` (and its `WOW6432Node` view), then every Steam library from `libraryfolders.vdf` (regex `"path"\s+"(.+?)"`) plus `steamapps\common\Titanfall2\Titanfall2.exe`, canonical casing, else a hand-picked folder that must contain the exe (the Steam root falls back to `C:\Program Files (x86)\Steam`; `appmanifest` files are **not** read); (2) *EA app installed and signed in* — `HKLM\SOFTWARE\WOW6432Node\Origin ClientPath`, opened **visibly** so the sign-in happens on the desktop, and if it is missing `steam.exe -applaunch 1237970` makes Steam install it and link the account; (3) *Install*, then **Launch in VR**, which expects the runtime to be running already. UploadVR calls it "the best selling point" and describes the flow as "simply press the play button with SteamVR open". Evidence: code, report | CLVR [Titanfall2Installer.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Installers/Titanfall2Installer.cs), [SteamGameLocator.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Services/SteamGameLocator.cs), [UploadVR](https://www.uploadvr.com/titanfall-2s-vr-mod-is-stellar-and-its-installer-is-the-best-thing-about-it/) | Epic #9's definition of done — "without Arx Fatalis installed, the app shows a clear message and a link to the store page" — is this checklist with one step: say *what* is missing and give a button for it (the store page, or Steam's install dialog: `steam://install/1700` — an untested assumption), plus "start SteamVR first" when no runtime answers (D-004's flat fallback already runs in that case). Discovery itself is F-97 (#79); this is the message around it | reference | S | #79, #80, epic #9, D-004 | **with #79** (the message); the buttons **after MVP** | |
+| F-145 | **No game data in the package: patches applied to the player's own install.** The mod zip (73.9 MB) carries `asset_patcher.exe` and a `patches/` folder; the installer extracts them to a temp folder, runs `asset_patcher apply "<game dir>" "<patches>" "<out>"` (it prints `progress <read> <total>`; the build is 80 % of the installer's progress bar), copies the result into `TF2VR/`, and deletes the temp folder. The code comment: "game derived files ship as patches, the patcher builds them from the installed game and writes them only once every file verifies"; a test asserts the patcher is **not** left installed. Whether the patches are binary deltas or scripts is not visible — the patcher is closed. Evidence: code | CLVR [Titanfall2Installer.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Installers/Titanfall2Installer.cs) `BuildGameAssets`, [tests](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/tests/InstallerValidation/Program.cs) | The legal shape for anything we might ever need to change in Arx's data (an arm animation, a texture): **ship deltas, build them on the owner's machine from their copy of app 1700, never ship originals** — a pattern epic #9's talks with the rights holders can point to. Today the engine reads the original `.pak` files in place, so we need nothing; the rule belongs in #88's package gate (F-96): the zip contains no game data | reference (a rule) | S | #88, epic #9 | **MVP now** — one line in the #88 gate | |
+| F-146 | **Pre-launch checks that name the cause.** Before launching, the installer: (a) **refuses** if `dxgi.dll` or `d3d11.dll` sits in the game root or `bin\x64_retail` — "Another mod replaced DirectX files, which breaks VR rendering. Remove these files and launch again" followed by the paths (v1.2.6); (b) **warns** when Steam, the EA app or the installer itself runs *elevated*, by reading each process token (`OpenProcessToken`, `TokenElevation`; v1.2.9, test seam `CIRCUITLORD_TEST_ELEVATED_APPS`) — the source gives no reason, a plausible one is that an elevated parent cannot hand the game to a non-elevated runtime; (c) probes write access with a file and, if denied (Program Files), raises **one UAC prompt** that grants the user Modify on the game folder, inherited, so installs, launches and the game's own logs work without admin; (d) **scrubs inherited variables** — `TF2VR_*`, `VR_PATHREG_OVERRIDE`, `VR_CONFIG_PATH`, `VR_LOG_PATH`, `XR_RUNTIME_JSON` — and sets its own `TF2VR_OPENXR=1`; (e) writes `launcher.txt` first: UTC time, installer version, OS, each key binary's existence and size, then `monitor_started pid=…` or `launch_error=… win32_error=…`; (f) the headset check lives in the mod (`xr_probe.exe`, v1.2.6 "mods check headset startup themselves"), and v1.2.3 "explains OpenXR launch failures". Evidence: code, release notes | CLVR [Titanfall2Installer.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Installers/Titanfall2Installer.cs) `Play`, `VrProcess`, [LaunchPermissions.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Services/LaunchPermissions.cs), [releases](https://github.com/CircuitLord/CircuitLordVRModInstaller/releases) | The OpenGL twin of (a) is **`opengl32.dll`** (ReShade's OpenGL mode, overlay injectors) beside `arx.exe` — not checked against our build. All six are one-line facts for the log banner (#115) before they are a dialog: *proxy DLL found*, *elevated: yes/no*, *XR_RUNTIME_JSON set to …* (F-98), *launched by …*. A user-facing refusal comes with the tester build (#88) | reference; port `IsElevated` (57 lines) | S | #115, #88, F-98 | **MVP now** — banner lines in #115 / #130; dialogs **after MVP** | |
+| F-147 | **A parent process as the crash witness, and a one-click crash report.** The game is started *by* `crash_monitor.exe` (arguments: profile folder, launcher path, launch arguments), which writes a capture folder per session — `session.json`, `monitor.txt`, `stderr.txt`, `exceptions.txt`, `stacks.txt`, `memory.txt`, `diagnostics.txt`, `frames.csv`, and `incident.txt` as the "something happened" marker — beside the plugin's own `engine.txt`, `events.txt`, `runtime.txt`, `frames.csv`. The installer's **crash report** button zips the newest session with an `incident.txt`, the latest session, the newest Northstar log, `launcher.txt` and a `report.json` (installer, mod and Northstar versions, **SHA-256 of the plugin DLL**, OS, which session was captured and the DLL hash recorded then) to the Desktop. **Memory dumps are left out so the zip can be shared publicly**; nothing is redacted, so the Windows user name in paths stays (the guide says to review it). The Big Walk side detects a crash with a `GameSession.lock` written at start and deleted on clean exit. Release-week timeline: v1.2.4 game exit reasons, v1.2.7 launcher errors, v1.2.8 session diagnostics were added to the report. Evidence: code, release notes | CLVR [CrashReportService.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Services/CrashReportService.cs), [Titanfall2Installer.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Installers/Titanfall2Installer.cs) `CreateLaunchInfo`, [releases](https://github.com/CircuitLord/CircuitLordVRModInstaller/releases) | Complements F-91 (the collector), F-94 (ProcDump) and F-132 (in-process watchdog): a **parent that outlives the crash** works when the in-process handler dies under SteamVR's injection (the doubt in F-93), and the **build hash inside the report** ties a report to the symbols kept by #132 (F-95). Our `launch-lib.ps1` already is a parent for our own launches — the shipped build has none | reference | M | #131, #132, F-91, F-95 | **after MVP** → #132 | |
+| F-148 | **What a tester page has to say, from the field.** Collected from the guides and the author's pages: start the runtime *first* and launch **only** through the VR button — any other launch is flat; Quest 3 via Link, Air Link or Virtual Desktop, and for Link set Meta Horizon Link as the active OpenXR runtime; Index, Pimax, Beyond and PSVR2 through SteamVR; lower the per-eye resolution in the runtime before the in-game graphics; the common errors with the fix each — *EA App Not Found*, *can't write to the game folder*, *another mod replaced DirectX files*, *headset not detected → it started flat*, *game can't be found → point to the folder with the exe*, *crashes → crash report, review it before sharing*; start with 15–20 minute sessions (a guide's advice). **What is not said is as telling:** the creator publishes no PC specs and no frame-rate target (VR.org), PCVR Central lists no tested headset, and the claim "any OpenXR compatible headset" sits beside bindings for two controller families. Evidence: report | CLVR [arvrtips](https://arvrtips.com/titanfall-2-vr-mod/), [VR.org](https://vr.org/articles/titanfall-2-vr-mod-how-to-install-circuitlord-northstar-2026), [PCVR Central](https://pcvrcentral.com/mods/titanfall-2-circuitlord-vr), [MoguraVR](https://www.moguravr.com/?p=378357) | The content list for #88's tester README (the friend has a Quest 3 — one line per connection path, one line on the active runtime), and a reminder to state *what we tested* (Index) and what we did not, instead of a blanket claim | reference | S | #88, #87 | **after MVP** — #88 (checkpoint B tester) | |
 
 ### Process
 
@@ -285,13 +459,17 @@ later / probably not, with why), **Decision** — empty, for the owner.
 | F-101 | **Non-goals and ordered pass criteria in every task**: flat / simulator checks first, the headset check last with the A/B that would disprove it; "a ticket with no pass criteria cannot be finished, only abandoned" | DVR [LINEAR_AND_GITHUB.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/LINEAR_AND_GITHUB.md) | Our Definition of done, made measurable | reference | S | WORKFLOW.md | **MVP now** | **Take** → WORKFLOW.md, task template |
 | F-102 | **PR template sections**: *Evidence* (a measurement; "a falsified hypothesis is a result"), *Levers and defaults* (off unless there is a reason, with a live A/B), *What is deliberately not here* (each fault found and not fixed gets a ticket), "the installed build is the built build" | DVR [PULL_REQUEST_TEMPLATE.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/.github/PULL_REQUEST_TEMPLATE.md) | *How verified* with numbers; new bugs always filed | reference | S | WORKFLOW.md | **MVP now** | **Take** → PR template |
 | F-103 | **One question per headset launch**: a `needs-vr-test` PR states one clearly defined question, the expected result and what each outcome means; the verdict and the build id go on the issue | DVR [AGENTS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/AGENTS.md), review rules | The owner's headset time spent on one judgement, not a tour | reference | S | WORKFLOW.md | **MVP now** | **Take** → WORKFLOW.md |
-| F-104 | **`docs/vr/TRAPS.md`**: a dated, never-deleted record of stale-setting faults, instruments that could not fail their own hypothesis, plans tried and failed — written in the same PR as the work | DVR [TRAPS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/TRAPS.md) | Each worker session starts with what already cost a headset run (our memory notes do this ad hoc) | reference | S | — | **MVP now** | **Take** → TRAPS.md |
-| F-105 | **Logging rules for VR lines**: log generously, nothing unbounded per frame (`ONCE` / `EVERY_MS` / `FIRST_N`), log state changes, name the owner before the result, every refused guard says why with the values, an expected zero says so | DVR [CLAUDE.md "Logging"](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/CLAUDE.md) | `arx.log` as the instrument every test and every tester sends back | reference | S | #17 onwards | **MVP now** | **Take** → WORKFLOW.md |
-| F-106 | **Verification tiers as a working rule**: numeric → flat visual → headset; "asking the user to put the headset on for a question the simulator could answer is a wasted session"; prove each gate can fail once | DVR [VERIFICATION.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/VERIFICATION.md) | The self-test rule in WORKFLOW.md, sharpened | reference | — | F-01…F-08 | **MVP now** | **Take** → WORKFLOW.md |
-| F-107 | **Levers and defaults**: every tunable ships off with a live A/B and fails soft; headset-tested values become the shipped defaults as a byte copy; a changed default migrates installed configs once per key instead of resetting them | DVR `CLAUDE.md` hard rules, [TRAPS.md §1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/TRAPS.md) | Tuning without losing the owner's settings | reference | S | a VR config | **after MVP** — when VR settings exist | Later |
+| F-104 | **`docs/vr/TRAPS.md`**: a dated, never-deleted record of stale-setting faults, instruments that could not fail their own hypothesis, plans tried and failed — written in the same PR as the work | DVR [TRAPS.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/TRAPS.md); TF2VR (the same traps as dated comments beside the fix and in KNOWN-ISSUES.md — F-130, F-134) | Each worker session starts with what already cost a headset run (our memory notes do this ad hoc) | reference | S | — | **MVP now** | **Take** → TRAPS.md |
+| F-105 | **Logging rules for VR lines**: log generously, nothing unbounded per frame (`ONCE` / `EVERY_MS` / `FIRST_N`), log state changes, name the owner before the result, every refused guard says why with the values, an expected zero says so | DVR [CLAUDE.md "Logging"](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/CLAUDE.md); TF2VR [core/diagnostics.cpp `KeepWhenQuiet`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/diagnostics.cpp) (quiet by default with an allowlist measured against a real log — 56 of 9,559 lines kept, zero during steady play; identity lines forced; `diag.verbose = 1` for a dev run) | `arx.log` as the instrument every test and every tester sends back | reference | S | #17 onwards | **MVP now** | **Take** → WORKFLOW.md |
+| F-106 | **Verification tiers as a working rule**: numeric → flat visual → headset; "asking the user to put the headset on for a question the simulator could answer is a wasted session"; prove each gate can fail once | DVR [VERIFICATION.md](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/VERIFICATION.md); TF2VR (every self-check runs a positive control first — a bogus key, a no-flip conversion; "read the counts, not the word PASS": a gate once passed with three empty lists) | The self-test rule in WORKFLOW.md, sharpened | reference | — | F-01…F-08 | **MVP now** | **Take** → WORKFLOW.md |
+| F-107 | **Levers and defaults**: every tunable ships off with a live A/B and fails soft; headset-tested values become the shipped defaults as a byte copy; a changed default migrates installed configs once per key instead of resetting them | DVR `CLAUDE.md` hard rules, [TRAPS.md §1](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/TRAPS.md); TF2VR [plugin/titanfall2vr.ini.example](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/titanfall2vr.ini.example) (the shipped ini documents the wearer's tested values with every line commented out, and `defaults-vs-ini.py` proves the code's defaults equal them — F-15) | Tuning without losing the owner's settings | reference | S | a VR config | **after MVP** — when VR settings exist | Later |
 | F-108 | **Batch project update** on the MVP epic (Shipped with the number that proves it, Open, Risks, Blocked, health) | DVR [LINEAR_AND_GITHUB.md "Project updates"](https://github.com/VR-Stereo-Hub/Dishonored-VR/blob/VR-Main/docs/LINEAR_AND_GITHUB.md) | A 30-second status for the owner from the coordinator | reference | S | `/new-cycle` | **after MVP** | Later |
 | F-109 | **Research tasks close with a measurement and a written verdict**, not code; the board is the work, `docs/` is the memory | DVR ticket types | Confirms this task's shape and DECISIONS.md | reference | — | — | **MVP now** (already so) | Confirmed |
 | F-110 | **VHVR's process**: none — a maintainer and a community, no tests, no CI, manual headset checks, post-build copy into the game | VHVR repo | Nothing to take; confirms that the harness side has to come from Dishonored VR | — | — | — | **not applicable** | n/a |
+| F-133 | **The run's identity in the log**: the config's path, the directive count, an **FNV-1a content hash** and the applied `key=value` list on one forced line ("a run of an unchanged config looks exactly like a successful fix"); every ignored config line named with its line number; the banner forced past the quiet filter with the version tag, the git sha stamped at *build* time (`+` when the tree was dirty — a configure-time sha "announced a commit from hours earlier"), `__DATE__ __TIME__` and the DLL's own write time ("the installed build is the built build") | TF2VR [config.cpp `ParseConfigFile`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/config.cpp), [host/plugin.cpp `HostOnInit`](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/host/plugin.cpp), [cmake/version_stamp.cmake](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/cmake/version_stamp.cmake) | #115's banner plus the `cfg.ini` hash: a tester's log says which config ran | reference | S | #115, #129 | **MVP now** — one line in #129 | |
+| F-134 | **TF2VR's process**: one maintainer in the headset ("the wearer") and an AI agent writing the code; **headset runs are the unit of cost** and are counted ("fourteen headset runs went into this"); every instrument prints a line *either way* and proves it can fail (a bogus key, a no-flip control; "an instrument that reads exactly zero everywhere is broken, not lucky"); "a fix never ships in the same run as the measurement that justifies it"; levers default to the wearer's tested values; the traps are written beside the fix in the code and in KNOWN-ISSUES; the pre-commit gates (`registry-crosscheck.sh`, `scrub.sh`) and `uninstall.ps1` named in BUILDING.md are **absent from the repository**; no CI, no unit tests, offline checks only; a single squashed commit | TF2VR [BUILDING.md](https://github.com/kyus2001/titanfall2vr/blob/main/BUILDING.md), [README](https://github.com/kyus2001/titanfall2vr/blob/main/README.md), the code's comments | Confirms D-014's launch budget and F-101 … F-106; the process shape is Dishonored VR's again, with the same kind of agent | — | — | — | **not applicable** (confirms the plan) | n/a |
+| F-149 | **What breaks in the first week of a popular release** — read off the installer's versions v1.2.0 to v1.2.9 in eight days (2026-09-29 to 10-06; the mod itself went from v1.0.8 on one directory page to 1.0.15 in the manifest, within the same week) and the first tester issue. By theme: **launch** (OpenXR launch failures explained, the headset check moved into the mod, DirectX proxies refused, admin warnings, updates run before launch and then made optional), **permissions** (Program Files → one UAC prompt), **saves** (the location moved twice, "always a new save"), **diagnostics** (crash reports extended three times), **packaging** (licence files installed, Northstar cached). Issue #18, opened 2026-09-30 after several hours of play: a **scripted-sequence softlock** (a Data Knife interaction on certain robots returns to the main menu), **stuck after a scripted step** (cannot dismount the friendly Titan), **gesture discoverability**, **grab-zone discoverability** (F-136), and **unexplained crashes in long sessions**. Evidence: docs, issue | CLVR [releases](https://github.com/CircuitLord/CircuitLordVRModInstaller/releases), [issue #18](https://github.com/CircuitLord/CircuitLordVRModInstaller/issues/18), [manifest-v3.json](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/manifest-v3.json), [PCVR Central](https://pcvrcentral.com/mods/titanfall-2-circuitlord-vr) | A checklist of where our tester build will bleed, in order: install and launch (F-144, F-146), permissions and save location (F-141), diagnostics (F-147), then **interactions gated by scripts** — dialogue- and cutscene-locked doors and levers, ladders and any state where the engine owns the body (D-009's hand-back is after the MVP) — and **long sessions** (a soak run, F-13). Feeds #70 (which saves to record: one before a scripted interaction, one on a ladder) and #88 | reference | S | #70, #88, F-13 | **MVP now** — the list for #70 / #88 | |
+| F-152 | **CircuitLord's process**: a solo developer; closed-source mod, MIT installer; bugs arrive as GitHub issues and on a Discord linked from the README; support through Ko-fi. The installer repo has `tests/InstallerValidation/Program.cs` (602 lines, a console program with `Assert(condition, message)`): every refusal and every "this must not change" has a case — a failed patch must leave the launcher unchanged, an uninstall must not touch VR progress, a stale owned file must go, a corrupt cached download must not be reused — and **environment overrides are the test seams** (`CIRCUITLORD_LOCAL_MANIFEST`, `CIRCUITLORD_TEST_ELEVATED_APPS`) instead of mocks; `repotools/` holds the publish scripts. No CI workflow is visible in the repository listing. Evidence: code | CLVR [tests/InstallerValidation](https://github.com/CircuitLord/CircuitLordVRModInstaller/tree/main/tests/InstallerValidation), [repotools](https://github.com/CircuitLord/CircuitLordVRModInstaller/tree/main/repotools), [README](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/README.md) | Nothing new for WORKFLOW.md: it is F-106 again ("prove the gate can fail") and the same habit D-014 chose for the launch scripts — a refusal without a test that makes it fire is a claim. The one transferable habit: a guard's test setup is an environment variable, so the production code path is the one tested | — | — | — | **not applicable** (confirms the plan) | n/a |
 
 ## Detailed notes per area
 
@@ -1334,6 +1512,837 @@ with a 43 KB `CLAUDE.md`. The parts that fit a one-owner, one-headset project:
   "launch from SteamVR" needs from inside `arx.exe`. Also the **`flatScreenMode=auto`** policy (VR
   only if SteamVR is already running, the same DLL runs flat on any failure) — our D-004.
 
+### 11. Titanfall 2 VR (#118)
+
+Sources: [README](https://github.com/kyus2001/titanfall2vr/blob/main/README.md),
+[CONTROLS.md](https://github.com/kyus2001/titanfall2vr/blob/main/CONTROLS.md),
+[INSTALL.md](https://github.com/kyus2001/titanfall2vr/blob/main/INSTALL.md),
+[BUILDING.md](https://github.com/kyus2001/titanfall2vr/blob/main/BUILDING.md),
+[KNOWN-ISSUES.md](https://github.com/kyus2001/titanfall2vr/blob/main/KNOWN-ISSUES.md),
+[CHANGELOG.md](https://github.com/kyus2001/titanfall2vr/blob/main/CHANGELOG.md),
+[THIRD_PARTY_NOTICES.md](https://github.com/kyus2001/titanfall2vr/blob/main/THIRD_PARTY_NOTICES.md),
+[plugin/titanfall2vr.ini.example](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/titanfall2vr.ini.example),
+and the files named per area below. Read at commit `8c50a7d` (v0.1.1, the repository's only
+commit); no line numbers, because a squashed history may be replaced. Quotes are from the code's
+own comments, which are dated and carry the measurements.
+
+The seven questions #118 asked, in its order. Numbers in the rows F-111 … F-134 are theirs; the
+decisions are the owner's.
+
+#### 11a. OpenXR integration in C++ (vs `src/vr/VRSystem.cpp`; #18, #20, #30, #74)
+
+Sources: [xr/xr_context.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.cpp),
+[xr/xr_context.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.h),
+[xr/xr_input.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_input.cpp),
+[xr/render_resolution.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/render_resolution.cpp),
+[render/present_hook.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/render/present_hook.h),
+[host/plugin.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/host/plugin.cpp).
+
+What they do, in the order a session runs, with what ours does today in brackets:
+
+- **Instance.** `XR_KHR_D3D11_enable`; the API version requested is **1.0, deliberately** — a
+  1.1.x loader against VDXR's 1.0 runtime failed `xrCreateInstance` before the graphics extension
+  could be negotiated [ours asks for 1.0 first as well, `VRSystem.cpp`]. `XR_ERROR_FORM_FACTOR_
+  UNAVAILABLE` is named in the log as "NO HEADSET — the game will run at full speed with VR doing
+  nothing, which looks identical to a good run"; one headset run was spent on that [ours names it,
+  #17]. Runtime name and version, the system name ("the runtime's claim, not a detection": VDXR
+  calls a Play For Dream a Quest 3), vendorId and systemId go in the banner (F-98 note); the view
+  configuration's recommended and maximum sizes are logged once.
+- **Actions before the session, attached once after it** (F-123): one action set `gameplay`, one
+  action per concept with two subaction paths (aim pose, grip pose, thumbstick click, thumbstick,
+  trigger, primary and secondary button *by position* — X/A, Y/B — squeeze value, menu on the left
+  hand only because the right Touch button belongs to the dashboard, thumbrest touch, haptic
+  output). Suggestions for the Touch profile with the thumbrest, then without it if rejected, then
+  `khr/simple_controller` with the two poses; each result logged with its count. No Index profile —
+  Dishonored VR's block (F-41) has it. Action spaces are session-scoped and remade with the session.
+- **Spaces.** LOCAL (the pose source), VIEW (the head, for the handedness check and the menu quad),
+  and **STAGE**, enumerated first and created only when offered — the floor, "the quantity that was
+  never in the program" until then (F-30 note).
+- **Session events** (F-118): READY → `xrBeginSession`, STOPPING → `xrEndSession`, EXITING or
+  LOSS_PENDING → disable; every transition logged by name with its meaning; on leaving FOCUSED the
+  Windows foreground window, pid, class and title are logged — a different pid means the game lost
+  desktop focus and the runtime followed, our pid means the runtime took it for an overlay (the
+  player died, the session dropped to VISIBLE and stayed there for 26 s of zero-layer frames, "a
+  black rectangle that follows the head"); `REFERENCE_SPACE_CHANGE_PENDING` re-seeds the mod's own
+  recentre reference (F-120) [ours polls and names the states, #17; the rest is #28 and #130].
+- **The frame** (`SubmitFrameCore`): `xrWaitFrame` → `xrBeginFrame` → on real game frames publish
+  the head pose and `xrSyncActions` with the frame's `predictedDisplayTime` → `xrLocateViews` for
+  both eyes (the midpoint of the two positions, each eye's four FOV angles, the IPD from the two
+  positions, the eye height in STAGE) → acquire, wait, copy, release this eye's image → `xrEndFrame`
+  with a projection layer whose two views carry the pose **each eye was rendered with** (F-116)
+  plus a quad layer for the menu; `shouldRender == false` → zero layers. The trap stated loudest:
+  `xrWaitFrame` and `xrEndFrame` are **one pacing budget** — across every archived run WAIT + END is
+  a per-run constant (11.9 ms healthy, 98 ms stalled) while the split between them wanders, so "an
+  88 ms xrEndFrame next to a 10 ms xrWaitFrame is the app being paced at 10 Hz with the wait landing
+  in END, not a stall inside xrEndFrame"; three sessions went into that premise. Our #20 rate line
+  (F-07 note) should print the sum against `predictedDisplayPeriod`, and the worst frame and the
+  worst *run* per window rather than a mean — "a pause the wearer can feel is a RUN, which no single
+  worst-frame number can show".
+- **Swapchains.** Created from the game's backbuffer description; a runtime routinely returns a
+  TYPELESS image for a typed request and `CopyResource` is happy across the family — a format check
+  "rejected every copy on a healthy session and turned the headset black"; a resize of the game's
+  buffer is detected by size and the swapchains rebuilt (a `CopyResource` between mismatched sizes
+  is a silent no-op: "the headset shows the last good frame forever while the desktop carries on");
+  every create and destroy bumps an epoch the crash record reads (F-131).
+- **Loading screens** (F-117): the gap-filling pacing thread is the third design; the first two
+  replaced the working loop and failed (`ID3D11Multithread` swapped a vtable the byte matcher
+  relied on, so stereo silently never armed for a whole run; an image acquired by one thread and
+  released by another blocked the runtime 79 ms inside `xrEndFrame` and the headset went black).
+  The rules it left are in the row. Arx's loading is synchronous on the main thread with a progress
+  callback (`LoadLevelScreen`), which is where an `xrWaitFrame` / `xrEndFrame` pump could live after
+  the MVP.
+- **Haptics.** `xrApplyHapticFeedback` with an explicit duration and frequency,
+  `xrStopHapticFeedback` on zero (F-44 note).
+- **Resolution.** One `render.scale` (0.5–2.0, default 0.75) multiplies the runtime's recommended
+  per-eye height; the width follows the headset's tangent ratio so the aspect cannot drift; the
+  learned geometry is cached per headset (runtime name, system name, recommended size, tangents to
+  three decimals) so the next launch starts right; applied live when windowed — a fullscreen mode
+  change replaces the swapchain. Our #18 renders at the recommended size (F-25 note).
+- **Eye height in STAGE** (F-30 note): averaged over both eyes, settled when five consecutive
+  samples agree within 1 cm inside [0.8, 2.0] m; measured, logged, and **not used** — the Quest 3
+  and the Play For Dream read the same seated wearer at 1.22–1.25 m and 1.54–1.60 m. The height fix
+  is a game constant instead (F-119).
+- **Asymmetric and canted optics** (F-115): the Quest 3 reports L −54° R 40° U 44° D −55° per eye
+  with the horizontal asymmetry mirrored between the eyes; a symmetric engine frustum had to render
+  the cover (the larger half of each axis) and *shear* the frustum to the lens centre — a
+  translation in NDC that costs no draw calls — with the Y flip proven offline. We build the
+  projection from the four tangents directly, so the only thing to carry is the test with a negative
+  control and the banner's cant check (the two eyes' orientations differ on canted panels).
+
+#### 11b. Weapon aim and grip calibration (#75, #36)
+
+Sources: [hands/hand_pose.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/hand_pose.h),
+[hands/hand_pose.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/hand_pose.cpp),
+[core/config.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/config.h) (`NudgePivotOffset`, `CalibrationTarget`),
+[ads/ads_probe.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/ads/ads_probe.h),
+[ads/ads_lock.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/ads/ads_lock.h),
+[hands/use_target.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/use_target.h),
+[hands/weapon_settings.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/weapon_settings.h),
+[hands/arms_collapse.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hands/arms_collapse.h),
+KNOWN-ISSUES 2, 3, 13.
+
+- **Composition** (F-125). Position from the **grip** pose, orientation from the **aim** pose (the
+  grip's forward runs along the handle: a rifle sat pitched 45° up on the first headset run). The
+  hand is an offset *head reference → hand* in room metres, mapped to engine units through one axis
+  convention reused from the head path "so a sign error here cannot disagree with a sign convention
+  that is already right", rotated by the **body's** yaw (the engine's view before head tracking adds
+  the headset's rotation) minus the **same yaw reference the view uses** — without that the gun sat
+  off the view by exactly the reference after every recentre, "aim that drifts as you play and needs
+  a headset reset to fix". The anchor is the origin the view is built from, not the camera base
+  (the base leaps a whole stair step in one frame while the view eases into it). The offset is
+  taken from the **recentre reference position**, not the live head: turning the head translates
+  the eyes about the neck and "the gun slid the opposite way". The composition is formed on the
+  plugin frame and consumed on the render frame; measured, that left the hand one frame stale in
+  body yaw — `lag == turn` to three decimals, 8° per frame at full stick, different in each eye
+  under alternate-frame stereo, "which is the flicker" — and the fix adds the base movement since
+  composition at the point of consumption, at *both* consumers (the drawn gun and the aim write),
+  "or a turn-rate-proportional gap opens between where the gun is drawn and where it shoots". For
+  us the rule is simpler and stricter: compose the IK targets (#36) and the held weapon (#75) from
+  the same frame's head and hand samples and the same body yaw (F-21), on the thread that renders
+  them.
+- **Grip = pivot** (F-126). Three offsets in the **weapon's** frame (`hand.grip_*`, rotated by the
+  final weapon orientation and applied last, so the weapon pivots about the hand instead of
+  swinging on a lever from a model origin authored near the eye), three in the **player's** frame
+  (`hand.off_fwd / left / up`, applied before the body-yaw rotation so "forward" means forward
+  whichever way the player faces), three angles applied after the composition (so they mean
+  "rotate the model relative to the hand", which is what someone dialling them in a headset
+  expects), two axis gates (`use_pitch`, `use_roll` — "not free to toggle once a grip is dialled
+  in: the offset is rotated by the gun's orientation, so turning roll off moves the gun"). The
+  **pivot nudge**: nudging the grip moves the pivot *and* translates the gun by `R · delta`, which
+  is all the wearer can see ("the tooling moved the GUN; I want to move the PIVOT"), so the nudge
+  subtracts `R · delta` from the player-frame offset in the same press — the gun stays, only what it
+  swings about changes. Keyboard calibration keys were replaced by panel rows that move the weapon
+  live while it is held and save on change; the ini's "START HERE ON NEW HARDWARE" block is the grip.
+- **Per weapon.** A census at the gun range measured where each weapon model puts its own `R_HAND`
+  attachment; the grip becomes one user calibration plus *(the reference weapon's R_HAND − this
+  weapon's R_HAND)*, latched from the first idle second the weapon is held (an animated hand bone is
+  only the grip point at idle), refused outright when further than 9 / 4 / 5 units from the
+  reference, never applied in a Titan (a different rig). The first campaign weapon ever to run the
+  measurement in anger put the rifle "two feet above and a foot left of the hand" for fifteen
+  seconds (KNOWN-ISSUES 13): the latch had accepted the first *steady* second, which in a firefight
+  was a combat pose, and a latch is first-wins for the session. Arx's weapon meshes carry their own
+  grip vertex (`primary_attach`, used by the engine's equip code), so the per-weapon term is data
+  for us; what remains to dial is the constant from the Index controller's grip pose to the model's
+  palm (F-49), once, live.
+- **ADS, kept as a design principle only** (Arx has no guns): "the mechanism is a removal, not an
+  addition" — in ADS the overrides stand down and the engine's own canonical pose returns, "no
+  canonical offset to calibrate, no sight-line solve, nothing new that can be wrong per weapon";
+  the brace (F-127) is a gain inside a cone, never a filter, so nothing is ever late; one predicate
+  with hysteresis answers "are we in ADS" for all three consumers "so the gun, the aim and the turn
+  can never disagree about it for a frame".
+- **Use targeting** (F-57 note): the engine's own "which item am I pointing at" search is wrapped to
+  take the hand's angles (rung 1) or the hand's origin too (rung 2), with per-stage counters and a
+  5 s heartbeat that names the dead stage — the same shape as D-010's "the engine's own test aimed
+  along the hand".
+- **The body.** `body.show`: weapon only (every arm bone's 3×3 zeroed so the mesh rasterises
+  nothing), weapon + hands (the two hand chains kept — but the gauntlet mesh carries the forearm,
+  KNOWN-ISSUES 3: "hands-only would need a custom model"), full body. The weapon's own sway is
+  zeroed in its per-weapon settings data, "the engine's own animation, which no camera-matrix
+  correction can cancel" (F-31 note). The gun trailing the hand by a frame in hip fire
+  (KNOWN-ISSUES 2) is the "sample the hand at the display's predicted time" rule we get from one
+  `xrLocateViews` per frame.
+
+#### 11c. Eye height (D-006, #27, #101)
+
+Sources: [camera/player_eye_hook.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/camera/player_eye_hook.h),
+[camera/player_eye_hook.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/camera/player_eye_hook.cpp),
+[camera/player_eye.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/camera/player_eye.h),
+[camera/camera_hook.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/camera/camera_hook.cpp) (`AdvanceHeadTracking`),
+[host/plugin.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/host/plugin.cpp) (`recentre_on_spawn`),
+CONTROLS.md "View", CHANGELOG v0.1.1 "World scale".
+
+- **The defect and the fix** (F-119). The game seats the camera at the neck: the view offset is 60
+  of a 72-unit hull (83 %) where a human eye is at 93 %, "the same on every headset". Three fixes
+  were tried in order, and the first two are the traps: raising the **render camera** fixed the
+  height and broke the aim (the round still leaves the game's eye, so impacts sit below the reticle
+  by `atan(raise / distance)` — "parallax, it varies with range, and no reticle nudge can cancel
+  it"); writing the player's **view offset per tick** fought prediction and "vibrated the gun"; the
+  fix that shipped swaps the vtable slot of the engine's own `EyePosition` getter on both the client
+  and the server and adds a **constant** 8 units — the camera, the gun, the shot origin and the
+  reticle all read that one getter. The install refuses unless the slot and the function's prologue
+  match the bytes read offline, so a game patch degrades to "no height change", never to a wrong
+  write; the hook counts calls per side and prints its first callers so the log names the camera
+  path and the fire path.
+- **Why not the measured height.** STAGE gives the wearer's real eye height (F-30 note) and it
+  drives nothing: the two runtimes disagree by a third of a metre about one unmoved seated wearer,
+  and "what needs correcting is the GAME seating its camera at the neck, a constant, not how tall
+  the wearer is". Our D-006 ("eye height follows the character") is the same conclusion; #101's
+  real-height option would scale the world (F-30), not move the eye.
+- **Recentre** (F-120). The yaw reference is captured once and re-seeded three ways: the runtime's
+  own recentre (the event), a key, and automatically 300 ticks after a world is up — "a height
+  sampled during the loading screen is wrong for the whole session, and the moment a level finishes
+  loading is the moment the wearer is least likely to be sitting the way they mean to play". Pitch
+  and roll are never referenced (LOCAL is gravity-aligned); subtracting the reference's 18.48° pitch
+  and 5.21° roll had baked a constant tilt into the engine camera that the world never showed (the
+  compositor reprojects with the true pose) but every screen-anchored panel did. The engine's pitch
+  is the head's absolute pitch, clamped at ±89° as a safety only; a stick axis that once also wrote
+  it ratcheted the body pitch to the clamp across crouch cycles. For Arx: the player's pitch comes
+  from the HMD each frame and nothing else may write it; the recentre is yaw only; #28 listens to
+  the runtime's event.
+- **World scale** is a separate knob from height (`view.world_scale` 0.5–2.0): the world is sized
+  from the runtime's IPD at one game unit per inch; "lower it if hands and weapons look oversized —
+  the depth strengthens as you do, because both come from the same number". Its first
+  implementation scaled the eye separation and the units-per-metre by the same factor, which cancel
+  exactly, so it did nothing for a release (CHANGELOG v0.1.1, "World scale actually does
+  something") — the kind of lever F-106's "prove it can fail" catches.
+
+#### 11d. HUD per-element placement (#73, #49, #116)
+
+Sources: [core/config.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/config.cpp) (`kSettings[]`, the HUD rows),
+CONTROLS.md "HUD",
+[hud/world_marker.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hud/world_marker.h),
+[hud/lock_hud.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hud/lock_hud.h),
+[hud/crosshair_scale.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hud/crosshair_scale.h),
+[hud/hudwarp.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/hud/hudwarp.h),
+KNOWN-ISSUES 7, 11, 12, 16.
+
+- **What they ended up with** (F-129). The engine's flat HUD pass (reticle, fades, overlays) is
+  scaled about its centre by `hud2d.zoom` = **0.28** and shifted in render pixels; the lower-left
+  weapon and ammo group at **0.55** with its own sideways shift, "because the size control scales
+  about the screen centre, so it cannot bring a group in from the edge without also shrinking it —
+  this separates the two"; name labels at 0.5; the top-left cluster pulled in through the engine's
+  own safe-area inset; prompts that were readable on a monitor enlarged (the dialogue prompt 1.82×,
+  the pickup highlight 2.1×); Titan-only widgets (cockpit surround, dash bars, lock rings) each with
+  a size and a shift. Grouped in the panel "by which mechanism moves them, not by where they sit
+  on screen, because that is the thing a wearer has to know to pick the right control". The cost
+  is visible in the count: about 30 of the 72 settings are HUD placement (F-84 note).
+- **Anchors.** The flat pass follows the **aim** angles the mod writes for the hand, so fades,
+  loading overlays and the damage border draw as a rectangle in front of the right controller
+  (KNOWN-ISSUES 11); an ini switch moves the pass to the head at the cost of the reticle leaving the
+  gun. World markers (waypoints, pickups) are projected by the engine in the body-yaw frame while
+  the eye renders in the head's, so they ride the head by the delta; the fix rotates the marker's
+  world position by −(head yaw delta) about the view origin before the engine projects it, yaw only
+  — the first version also corrected pitch and the wearer saw a "flattened U". A Titan HUD
+  correction gated on the camera sitting within 2.5 cm of the origin lost itself on 40 % of frames,
+  because a head turn swings the eyes ten centimetres about the neck (KNOWN-ISSUES 7). A reticle
+  scale hook was "measured closed": the float it scaled reached the draw and was not the size, and
+  the row is kept in the panel labelled as doing nothing "because it is real and reversible".
+- **For #73.** Arx draws its 2D layer into a virtual screen; the numbers to start from are TF2VR's:
+  the whole pass at roughly a quarter to half of the eye image, centred, with the corner elements
+  (gauges, the hotbar, the book icon, the cursor) moved inward separately rather than only scaled;
+  fades and full-screen effects on the head, never on a hand; anything meant to be read (notes,
+  dialogue, the "halo" messages) larger than on a monitor. The wrist vitals (#116) and the panel
+  (#49) are the diegetic answer the catalog already has (F-83, F-80); TF2VR's screen-space HUD shows
+  what the fallback costs.
+
+#### 11e. Controls (#30, #31, #32, #33, #35, #74; [RESEARCH-controllers.md](RESEARCH-controllers.md))
+
+Sources: CONTROLS.md,
+[input/vr_input.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/vr_input.h),
+[input/vr_input.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/vr_input.cpp),
+[input/xinput_pad.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/xinput_pad.h),
+[input/xinput_pad.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/xinput_pad.cpp),
+[input/dpad_gesture.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/dpad_gesture.cpp),
+[input/aim_cmd.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/input/aim_cmd.h),
+[xr/xr_input.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_input.cpp).
+
+| Action | Titanfall 2 VR (Touch) | Ours (D-008, F-47, RESEARCH-controllers.md) |
+|---|---|---|
+| Move | left stick (digital key latches on the engine route, analogue through the synthetic pad) | left stick, look-relative |
+| Turn | right stick X: smooth with a response curve, or snap 30° | right stick X, smooth and snap (#32) |
+| Jump / crouch | A / B (the right stick's vertical answers two-option prompts and nothing else: "in no scenario should moving the right stick up/down alter the direction we are facing") | A / right stick down (#33) |
+| Fire / ADS | right trigger / left trigger | right trigger = attack |
+| Use / reload | X tap and hold; Y tap = weapon, Y held 350 ms = objectives | grip = grab (D-010) |
+| Abilities | left grip = tactical, right grip = ordnance, 0.60 / 0.45 hysteresis ("which is which is not configurable — rebind the shoulders in the game") | — |
+| Sprint / melee | L3 / R3 | — |
+| Menu | left menu button = the game's pause menu | left B |
+| Settings panel | L3 + R3 within 400 ms | — (F-19, later) |
+| Recentre | the headset's own recentre (the event re-seeds the mod) plus a keyboard chord | a held chord (#28) |
+| Modifier | thumbrest touch, or the left controller raised beside the head | — |
+
+- **Input route.** Two closed routes are written at the top of `vr_input.h` so nobody re-derives
+  them (the game's input system does not import XInput at all; the server's usercmd is
+  delta-compressed and unsound to write); the route that shipped drives the engine's own key latches
+  and, later, one synthetic gamepad resolved at the game's own `GetProcAddress` seam, because every
+  reference mod (Halo MCC, BioShock, Cyberpunk) "presents ONE synthetic pad and lets the game's own
+  binding and menu code do the rest". **One owner per action**: when both routes delivered B it
+  reloaded *and* crouched; when both delivered the grips, one squeeze fired both abilities; when
+  both delivered the stick clicks the summon chord fired sprint and melee "about half the time". For
+  #74 the equivalent is one snapshot and one consumer per logical action, with the engine's own
+  bindings untouched.
+- **The right stick** (F-121): deadzone subtracted and the remainder rescaled, a power curve on the
+  normalised travel (2.0 by default), a turn-speed scale where **70 = the game's own rate** because
+  "the old scale spent its bottom half on speeds nobody would choose", and axis dominance with
+  hysteresis on the ratio (0.6) and the magnitudes (turn 0.45, vertical 0.60) — the wearer reported
+  the diagonal problem from both sides, and the fix deliberately keeps a band where both fire.
+- **Snap turn** (F-32 note): the first version held the engine's turn button for
+  `degrees / yawspeed` seconds — a 17-frame sweep at 80 Hz, "exactly what snap turning exists to
+  avoid: a quick smooth turn can make a motion-sick player worse"; the shipped one writes the view
+  angle once between two frames and the engine keeps it; requests replace rather than queue so a
+  double flick turns once; re-armed only when the stick returns to centre; in snap mode the analogue
+  turn is sent as zero so a stick underneath cannot make it a sweep again.
+- **Presses and chords** (F-122): the OpenXR boolean's `changedSinceLastSync` latches a press that
+  started and ended between two syncs (one of three A presses was lost on a 40 fps loading screen,
+  "indistinguishable from a screen that ignored one"); the summon chord has **no timing gate** on
+  the first click — the second click and both releases are consumed, and the order matters: "lead
+  with L3; a leaked L3 is a brief sprint, a leaked R3 is a melee swing"; a button still held when
+  the panel closes is consumed until released; the menu button has one edge detector above the
+  mode branch, because two (one per branch) double-fired across the switch.
+- **Tap versus hold** (F-43 note): a tap of Y is emitted on *release* and held for a few frames so
+  the game's own poll cannot miss it; a hold past 350 ms sends the other button and never the tap —
+  the wearer's constraint ("if that is going to fire a Y normal press as well, DON'T DO IT"), with
+  the cost written beside it and the ini key that turns it off.
+- **The modifier** (F-124): a mode over the left stick entered with an input nothing else owns — the
+  capacitive thumbrest on Touch (a runtime without it reports the action inactive, which reads
+  "never fires" rather than a fault) or the left controller raised to chin height within 0.45 m of
+  the head. "Held means held": an earlier draft armed the modifier for a window and let it expire,
+  "which would have made a correct, deliberate use fail — touch, hesitate, push, and find the mode
+  gone". Movement is released, not frozen, while engaged; a haptic pulse announces the mode; the
+  status line counts "evaluated / skipped: no grip pose / no head pose" because a gesture that is
+  never *evaluated* reads exactly like one that is evaluated and rejected — "`head gesture seen=0`
+  was read for four sessions as the wearer never tried it".
+- **Haptics** (F-44 note): the game's `XInputSetState` is the source; changes go to the controllers
+  the instant they arrive because the game animates its own envelopes (65535 → 29490 → 28418 … and
+  a low tail) faster than a 40 ms timer, and the timer only *sustains* with 60 ms pulses that
+  overlap; the frequency carries the heavy / light motor balance (160–260 Hz); the strength slider
+  stops at 100 % because `XrHapticVibration::amplitude` is clamped to 1.0 by the specification and
+  "the wearer reported the top two thirds of the range as indistinguishable".
+- **Binding liveness** (F-123) is in 11a. Crouch has three modes kept for the headset-run economy
+  (F-47 note).
+
+#### 11f. The settings panel in the headset (F-19)
+
+Sources: [ui/menu_overlay.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/ui/menu_overlay.cpp),
+[ui/menu_overlay.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/ui/menu_overlay.h),
+[core/settings_registry.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/settings_registry.h),
+[core/config.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/config.cpp),
+[xr/xr_context.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/xr/xr_context.cpp) (`EnsureMenuSwapchain`, `CaptureMenuPose`, `PrepareMenuLayer`),
+CONTROLS.md.
+
+- **Presentation** (F-128). One ImGui context, two adapters: flat (the game's backbuffer, for a desk
+  run) and VR (a private 3072×2304 texture copied into its own `XrSwapchain` and shown as an
+  `XrCompositionLayerQuad`, 1.7 m wide at 1.5 m, posed once at summon in LOCAL space from the head's
+  yaw only — "I really want this fixed in front of me and not pinned to my head"). ImGui's DX11
+  backend does not restore pipeline state, so the game image corrupted until a full state backup
+  wrapped the draw; the render-target view is keyed on the backbuffer pointer so a resolution change
+  rebuilds it; the font is re-rasterised at the panel's scale (`FontScaleMain`, ImGui 1.92's dynamic
+  fonts) rather than magnified — "the REALLY blurry the wearer reported" was a 9 px atlas scaled up.
+- **Navigation.** The sticks feed ImGui's gamepad nav as **levels** (ImGui does its own repeat;
+  synthesised edges would fight it); `ImGuiBackendFlags_HasGamepad` is set every frame, because
+  without it ImGui discards every gamepad key — "the whole reason the panel could be summoned, drawn
+  and focused and still not be driven"; directions are ignored until both sticks have returned to
+  centre once after opening; A activates, B backs out, the grips step the category (the tab row is
+  not focusable, so the stick never has to cross windows), the right stick scrolls; the parent
+  window's scroll is pinned to zero every frame or navigation scrolled the tab row off the top. A
+  once-a-second readout prints `hasgamepad / navactive / navvisible / armed`, because three failures
+  look identical from inside a headset.
+- **Content.** Every control is a registry row (F-113) — "a control with no setting behind it is a
+  second store by another name"; one category at a time with tabs across the top (a sidebar "was
+  eating a quarter of the width to show eight short words"); rows grouped by mechanism with units in
+  the label, honest precision (`%.0f`, not `%.2f` on everything), one note under the last row of a
+  group instead of a tooltip per row, rows hidden when the mode that uses them is off ("a control
+  that provably cannot act is worse than a hidden one" — Halo MCC VR's convention), a `reset` button
+  only beside the focused row, the tier printed on the control for anything not live. Edits are
+  **staged** and applied on close ("the game is live behind the panel; a slider that applied on
+  every frame of a drag would be changing the world while the wearer was still deciding"), then
+  written to the ini line by line and, for the one per-headset setting, to the cache that wins over
+  the ini — the first panel edit of the resolution "applied, persisted to the ini, and was then
+  silently overridden on the next launch by a cache nothing had updated".
+- **Safety.** The panel build runs inside an SEH guard that names the registry row being drawn and
+  disables the overlay for the session instead of crashing — "a crash costs the wearer a whole run
+  to learn one bit". Gameplay input is suppressed while the panel is up by the panel's own flag; the
+  first design opened the game's pause menu to get that for free, and the run proved the predicate
+  it relied on was a cursor-visibility test that never fired in VR, so the game is **not** paused
+  ("the wearer is stationary and cannot act, but is not invulnerable").
+- **For us.** F-19 stays post-MVP; when it comes, this is the design, and the stick navigation
+  without a laser is the alternative the owner can pick for #34 now (F-128).
+
+#### 11g. Docs, testing and process
+
+Sources: BUILDING.md, INSTALL.md, KNOWN-ISSUES.md, CHANGELOG.md, README.md,
+[tools/](https://github.com/kyus2001/titanfall2vr/tree/main/tools),
+[core/flat_harness.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/flat_harness.cpp),
+[core/diagnostics.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/diagnostics.cpp),
+[core/crash_recorder.cpp](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/core/crash_recorder.cpp),
+[diag/stall_watchdog.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/diag/stall_watchdog.h),
+[diag/plugin_cost.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/diag/plugin_cost.h),
+[diag/xr_breadcrumb.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/diag/xr_breadcrumb.h),
+[diag/resource_watch.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/diag/resource_watch.h),
+[engine/hook_registry.h](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/src/engine/hook_registry.h),
+[plugin/CMakeLists.txt](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/CMakeLists.txt),
+[plugin/cmake/version_stamp.cmake](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/cmake/version_stamp.cmake).
+
+- **Testing without a headset.** `profile = 1` is the flat gate: the plugin comes up, the hooks
+  install, everything that needs no headset runs on the monitor; a synthetic head pose (static,
+  sweeping or tilted) is written into the same globals the OpenXR path publishes, "so nothing
+  downstream knows or cares where a pose came from, which is what makes this a fair test rather
+  than a parallel one" (F-111); a synthetic fixed hand offset proves the hand composition flat ("the
+  gun must sit at one place relative to the player and stay there while they walk and turn");
+  scripted flat sessions drive the weapon pin and capture named backbuffer shots pinned to one eye,
+  because under alternate-frame stereo two captures a second apart are usually different eyes and
+  "every pixel comparison was meaningless". Pure geometry (`asym_projection.h`,
+  `world_rect_gate.h`) is compiled by offline checks from the same headers with known headset
+  numbers and a negative control (F-115). There is no simulated runtime (Dishonored's `xrsim`,
+  F-09), no CI and no unit-test suite; the self-checks run at startup in the shipped build (the
+  registry self-check with its bogus key, the hook registry's positive and negative halves).
+- **Instruments that cannot lie quietly.** The rules, stated in the code and paid for: *every
+  instrument prints a line either way* ("silence never means the instrument stopped"); *a zero
+  everywhere is a broken instrument, not luck* (three spike columns read 0.00 across fourteen
+  windows because a patch never wired them); *a null needs the instrument to have reached its
+  target* (the d-pad's "evaluated / skipped" counters); *read the counts, not the word PASS* (a
+  cross-check passed with three empty lists after a file move); *a write that reads back proves
+  nothing* (the engine's `VerifyUserCmd` reverted every late write before the wire); *a run of an
+  unchanged config looks exactly like a successful fix* (hence the content hash, F-133); *the
+  installed build is the built build* (hence the DLL's write time in the banner and an installer
+  that refuses while the game runs). Our F-101 … F-106 say the same; TF2VR adds the built-in
+  positive controls.
+- **Logs** (F-92, F-105, F-112, F-133 notes). Quiet by default with an allowlist tightened against a
+  real log; `diag.verbose` for a dev run; a 250 ms flusher thread so a hang loses at most a quarter
+  second; rotation `prev-1 … prev-8` with the rotation report as line 1 and an explicit "APPENDED to
+  the previous session" when a second game instance holds the file; `%LOCALAPPDATA%`, not `%TEMP%`,
+  "because Storage Sense sweeps `%TEMP%` and a log a scheduled task can throw away is not a record";
+  `logdig` for reading it. The banner: the version tag, the git sha stamped at **build** time with a
+  `+` for a dirty tree (a configure-time sha "announced a commit from hours earlier"),
+  `__DATE__ __TIME__` and the DLL's own write time, forced past the filter — "the one line that says
+  WHICH BUILD THIS IS was absent from every log a user could ever send" until it was.
+- **Crashes and hangs** (F-131, F-132). A vectored handler at the front of the chain plus the
+  chained filter, four records at most, the arm state as a bitmask the tick publishes (no getters in
+  the handler — one took a mutex the crashing thread could hold), the XR breadcrumb, the hook-site
+  registry, `VirtualQuery` on an address in no module (and the PE export name read from the mapped
+  image, for an unloaded DLL), a linker map, a self-test fault behind an ini flag; a stall watchdog
+  thread that suspends the stuck thread after 2 s and names the instruction; a resource watch that
+  logs failed D3D creations and the video-memory budget. KNOWN-ISSUES 10 is the model of an honest
+  hang report: six sightings, the fault lands in the runtime's own D3D11 path 39–43 s *after* the
+  loop stops, the mod's share of a frame 0.6 %, and "two honest caveats, because 'not ours' without
+  proof is how this kind of bug survives a release".
+- **Release discipline** (F-96 note, F-130, F-134). The version in one CMake line read by the
+  header, the banner, the panel and the packager; `build.ps1` never deploys and `install.ps1`
+  refuses while the game runs and prints the hash on both sides; `package.ps1` refuses placeholders,
+  a documented hash that does not match the DLL, and anything personal in the box, generates
+  `README-FIRST.txt` from a template, ships every licence, and prints the inventory; a clean-profile
+  pair of scripts parks the development folder and installs exactly the zip; the shipped ini
+  documents the wearer's tested defaults with every line commented out and a script proves the code
+  agrees (F-15 note). KNOWN-ISSUES carries severity, what you see, workaround and where it stands per
+  issue. Documentation drift exists too: BUILDING.md names two pre-commit gates and an uninstall
+  script that are not in the repository, and INSTALL.md says sixty settings where CONTROLS.md says
+  seventy-two.
+- **Process shape.** One wearer, one agent, headset runs as the currency ("fourteen headset runs
+  went into this", "a whole headset run was spent on that once"), measurement before fix, a lever
+  for every change with its A/B, the history squashed to one commit so the comments are the only
+  record — Dishonored VR's process (F-101 … F-109) without its docs folder, board or CI. Nothing
+  here changes our WORKFLOW.md; it confirms D-014's launch budget and the "prove the gate can fail"
+  rule.
+
+**What to take for the queue, by ID:** F-115, F-116, F-117 and F-118 into #18 / #19 / #20 and
+#130; F-119 and F-120 into #24, #27 and #28; F-121, F-122 and F-123 into #30, #32, #33 and #74;
+F-125 into #36 and #75; F-129 into #73; F-111 into #112 / #113; F-112 and F-133 into #129 / #131;
+F-128 is a decision for #34. After the MVP: F-113 and F-126 (with F-19 and F-49), F-130, F-131 and
+F-132 (with #88 and #132), F-114; later: F-124, F-127.
+
+### 12. CircuitLord's Titanfall 2 VR (#120)
+
+Read on 2026-10-09 for #120. **The mod is closed source**, so this section is research by
+observation, and every row says what its evidence is. What was read in full: the installer repository
+at commit `b493821a6` (branch `main`, installer v1.2.9) — the README, `manifest-v3.json`, `LICENSE`,
+`THIRD-PARTY-NOTICES.md`, `Titanfall2Installer.cs` (310 lines), `PackageInstaller.cs`,
+`SteamGameLocator.cs`, `RepoClient.cs`, `CrashReportService.cs`, `LaunchPermissions.cs`,
+`SelfUpdater.cs`, `OwnedFileStore.cs`, `InstallerFileSystem.cs` and `tests/InstallerValidation/Program.cs`;
+the release notes (v1.1.1–v1.2.9); issue #18; the READMEs of the four add-ons; and the press and
+guides listed in [Sources](#sources). **What could not be read:** the mod and its zip (73.9 MB;
+closed), the author's X posts (the page answers HTTP 402; the announcement text was seen only as
+a search snippet), his Discord and videos. Line numbers are omitted because the installer changes
+every few days (v1.2.0 to v1.2.9 in eight days).
+
+#### 12a. Full-body IK — the question that cannot be answered from outside (#36, D-009)
+
+| Question | Answer | Evidence |
+|---|---|---|
+| Does the mod have full-body IK? | Yes; it is the first feature in the README and the announcement | docs |
+| Is the body visible? | Yes, "you see your pilot's body when you look down" | report (arvrtips) |
+| What drives it? | Head and both hands ("estimates the whole posture from head and hand movement") | report (MoguraVR) |
+| Shoulder offsets, body-yaw rule, arm reach, elbow pole | **not known** | — |
+| Legs while walking, crouching, wall-running, sliding | **not known**; whether they are tracked or animated is unverified | — |
+| Hand-back to scripted animation (cutscenes, Titan embark) | **not known**; cutscenes play on a 2D panel by default | report |
+| Calibration / body-size settings | not mentioned anywhere; the options menu is reported as HUD, Titan HUD, gun angle | report |
+
+The practical answer for #36: nothing in this row set changes D-009; the numbers come from
+Dishonored VR's `ARM_IK.md` (F-52) and VHVR's VRIK, and the only way to learn what CircuitLord's body
+does is to play the mod (it is free, the base game is cheap in sales) — a question for the owner, not a
+task this research creates.
+
+#### 12b. Weapons, manual reload and the add-ons (#75, #39, #37; the bow later)
+
+- **What the mod does** (reports): hands aim the guns, scopes work when the gun is raised to the eye,
+  a manual reload exists for every gun (B starts it; the magazine is grabbed from the body, inserted,
+  the slide or bolt racked; the Wingman reloads by a gesture), a closed fist punches, the grip holds
+  and releasing it holsters, the off hand on the front of a rifle steadies it (F-136, F-137).
+- **What the add-ons reveal about the architecture** (add-on READMEs): the native plugin passes the
+  hand positions to the game's script **every frame**; scripts own clip and reserve counts and the
+  pickup cone (`tf2vr_pickups.gnut` in `Titanfall2VR.Cockpit`, load priority 2; the add-on overrides it
+  at 3); a flick is detected in script from hand speed, the pull is a server-side `SetOrigin`; the
+  auto-reload add-on works because "the engine's clip and reserve counts are plain script values".
+  The reload *steps* stay in the plugin. This is the opposite of our situation (we own the engine),
+  but it confirms the shape of #37 / #75: a thin native layer that publishes hand poses each frame,
+  and game rules that read them.
+- **The one weapon-handling gap for Arx** is the unarmed punch (F-137); nothing here helps with the
+  swing detector — that stays Dishonored VR's `swing_core.h` (F-59).
+
+#### 12c. Installer and distribution (#88, #79, #80, #132, epic #9) — the open half, in code
+
+The launch sequence, as the code does it (F-144 … F-147):
+
+1. **Find the game**: registry key → Steam libraries → hand-picked folder (must contain the exe).
+2. **Check prerequisites** (the EA app, signed in) with a visible fix for each.
+3. **Install** into a `TF2VR` profile (F-141): the mod zip and Northstar are downloaded over HTTPS,
+   hashed (F-142), the **game-derived assets are built from the player's own install** by a patcher
+   *before* the game folder changes (F-145), then files are extracted, stale files of the previous
+   release removed, and an ownership record written (F-143).
+4. **Launch in VR**: refuse on proxy DLLs, warn on elevated launchers, scrub inherited VR variables,
+   write `launcher.txt`, start `crash_monitor.exe`, which starts the game (F-146, F-147).
+5. **After a crash**: one button zips the evidence, without dumps (F-147).
+
+What this tells us about the shape of #88 / #80 (nothing here is a decision):
+
+| Our task | What the installer shows | Difference for us |
+|---|---|---|
+| #79 find the data | registry-first discovery plus a vdf regex, no `appmanifest` | we read `appmanifest_1700.acf` (F-97) and have it in PowerShell already |
+| #80 launch from SteamVR | Titanfall's flow is the reverse: the installer launches the game, the runtime must already run | ours is a Steam app: SteamVR starts it (D-004, `register-steamvr.ps1`) |
+| #88 tester build | a 350 KB exe + a 74 MB zip, hash-checked | a zip for one friend: README with the hash (F-142), the gate "no game data" (F-145), the checklist (F-148, F-149) |
+| #132 D4 crash reports | a parent monitor + report with the build hash | in-process handler first; the parent is an option (F-147) |
+| epic #9 legal | the mod ships patches, never the game's files | our engine reads the player's `.pak` files in place — the strongest possible form of the same rule |
+
+Release notes, by theme (installer; v1.1.1 / v1.1.2 in August are Big Walk only):
+
+| Version | Date (2026) | What changed |
+|---|---|---|
+| v1.2.0 | 09-29 | multi-game support, Titanfall 2 VR first |
+| v1.2.3 | 09-30 | OpenXR launch failures explained; admin request when the game is in Program Files |
+| v1.2.4 | 09-30 | updates before launch; install progress bar; game exit reasons in crash reports; the VR campaign always starts a new save |
+| v1.2.5 | 09-30 | campaign saves open from the new LocalAppData location |
+| v1.2.6 | 10-01 | the mods check the headset startup themselves; launch stops when another mod replaced `dxgi.dll` / `d3d11.dll`; Northstar download cached |
+| v1.2.7 | 10-02 | launcher errors in crash reports; ZIP installs return to the version menu; mod licence files installed |
+| v1.2.8 | 10-03 | release channels come from the download list; crash reports include the latest session diagnostics |
+| v1.2.9 | 10-06 | warns before launch if Steam, the EA app or the installer runs as admin; mod updates optional at launch |
+
+**Smaller facts worth keeping.** The installer is one 350 KB exe that updates itself by renaming the
+running exe to `.old.exe`, writing the new one, rolling back the rename on failure, and retrying the
+delete 12 × 500 ms at the next start (`SelfUpdater.cs`) — irrelevant to a Steam app. The Big Walk side
+of the same installer waits for BepInEx's log line `Chainloader startup complete` to know the mod is up
+and treats a leftover `GameSession.lock` as a crash — the cheap version of our "Clean shutdown" line.
+
+#### 12d. Controls — against [RESEARCH-controllers.md](RESEARCH-controllers.md)
+
+Reported layout (arvrtips; the author publishes none): right trigger fires, **B** starts a manual
+reload, grips hold and holster, thumbsticks move and turn, a closed fist punches, abilities on four
+grip directions in the Titan cockpit; snap turn is an option. Nothing contradicts the proposed default
+layout in RESEARCH-controllers.md. Two facts help #30 / #35: (1) a release that bound **Index and
+Touch only** (per the Linux port's README) was well received and a third party filled the rest with
+SteamVR actions (F-139) — the order Index → Quest 3 is the order of the successful release; (2) the
+bindings add-on keeps the **grip for holding** and puts its new "reload grab" on the trigger — one
+more example that the grip means "hold", as in our design rule 3 and the proposed layout (grab on the
+right grip). The one collision is semantic: B is "reload" there and "inventory" for us; irrelevant across games.
+
+#### 12e. The ecosystem around a closed mod
+
+Within two weeks other people wrote a Linux / Proton port (MIT), a bHaptics add-on, a force-grab
+add-on, an auto-reload add-on and a bindings add-on. What made that possible: an MIT installer with
+published hashes, a data-driven launch (`launch.json` next to `crash_monitor.exe`, with placeholders
+for profile, width, height and sound), a script layer (Northstar mods) and a documented place to drop
+packages (`TF2VR\packages\`; the bindings add-on says the first launch only registers it and it works
+from the second). The Linux README documents the launch chain end to end — `crash_monitor.exe` →
+`Titanfall2VRLauncher.exe`, `SteamGameId=1237970` to enable Proton's OpenXR bridge, DXVK required,
+EA sign-in timing, a patched `mmdevapi.dll` for an audio-capture request — which is also a map of
+everything Windows-specific in the launch. Arx Libertatis is cross-platform, but our development and test setup is
+Windows with SteamVR (CLAUDE.md); a Linux / Steam Deck VR build is not on the list, and this is the
+evidence of what it would take if it is ever asked for.
+
+#### 12f. Trust: press pages are not licence evidence
+
+MoguraVR's summary table lists the mod as "MIT"; the author's README says "the mods are closed
+source and not covered by the MIT license. All rights reserved." Two press pages (MoguraVR, PCVR
+Central) also say a player can copy existing saves; the installer's own test asserts that the copy
+button does **not** exist (F-141). When primary and secondary sources disagree, the code and the
+author's README win; the entry is in [TRAPS.md](TRAPS.md).
+
+**What to take for the queue, by ID** (the owner decides — this research creates no tasks):
+- **Before checkpoint B / #88:** F-145 (no game data in the zip — a line in the gate), F-146 (the
+  proxy-DLL / elevation / environment facts as log banner lines in #115 and the launch scripts),
+  F-148 (the tester README's content), F-149 (the checklist of what breaks first, for #70 and #88),
+  F-141 (confirm D-007 for VR saves; never write under Documents).
+- **With #79 / epic #9:** F-144 (the message and the button for "app 1700 is missing").
+- **With #30 / #35:** F-139 (a released example of the per-concept action approach).
+- **With #43–#45 / #34:** F-150 (first-cast prompt, reference page).
+- **After the MVP:** F-147 (a crash witness), F-140 (the four-setting menu), F-136 (zones need a
+  highlight), F-142 / F-143 (only if an unzip-over-game package ever ships).
+- **Decide against D-010 first:** F-138 (pointing at an item to pull it).
+- **Nothing to take:** F-135 (no IK parameters exist outside the mod), F-151, F-152.
+
+### 13. World interaction in VHVR (#166)
+
+The question (owner, 2026-10-09: "world interaction is described and shown very well in Valheim VR; we
+should learn a lot from there"): how does VHVR let the player point at, take, use and carry things,
+and what does that mean for D-016 (both hands work as the mouse, each with its own reticle; the
+inventory opens in the centre of the view), #37 and #38? Read at commit `5a47f823f`; the rows are
+**F-153 to F-161**. Nothing was run — this is a source read; no videos were needed because every
+behaviour below is in code. Where a number is the **game's** (Valheim's) and not in the mod, it says so.
+
+**Licence and what is worth taking.** GPL-3.0, compatible with our engine (see
+[the table above](#the-license-answer)): rules and numbers may be ported with attribution. But almost
+nothing here is *code* to translate: VHVR is Harmony patches that redirect Valheim's own hover and
+interact functions, and ours is a different engine with a screen-space pick. What carries over is the
+**shape** (a hidden ray per hand feeding the engine's own hover test; a reticle at the hit point; which
+states mute a hand), plus a clear list of what VHVR does *not* have (13b, 13d, 13e).
+
+#### 13a. Targeting and feedback (F-153, F-154, F-160)
+
+- **How an object is chosen.** Not a cone, not a sphere at the hand, not Valheim's camera test: the
+  game's `FindHoverObject` is **patched** so that after it runs, a physics ray is cast from **each**
+  hand — origin and rotation of the controller's pointer holder — with the game's own interaction
+  mask, 50 m long, nearest hit first, the player's own body skipped
+  ([HandBasedInteractionPatches.cs:171-226](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Patches/HandBasedInteractionPatches.cs)).
+  The hit collider's hoverable (or its rigidbody root) is the hovered object; one result per hand
+  (`hover` for the right, a private `leftHover` for the left).
+- **Reach.** Two separate numbers: the ray is 50 m long, the *reach* is the game's own
+  `m_maxInteractDistance` (not in the mod) measured from the **eye** to the hit point — beyond it the
+  hand hovers nothing, but the reticle is still drawn at the hit. The hand's position does not matter
+  for reach, only where it points. That is the same model as Arx's (13f): the pick range is a
+  distance from the *player*, not from the hand.
+- **What the player sees.** Only the reticle (F-154): a canvas placed on the hit point facing the
+  eyes, scaled with distance so it keeps one angular size, white at half alpha, **yellow when there is
+  something to interact with**, with the object's name next to it. No outline, no highlight, no change
+  of the hand model or pose, no sound. The beam is not drawn in the world: the same pointer component
+  shows its mesh only when `Cursor.visible` (a menu is open) —
+  [VRPlayer.cs:796-812](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/VRPlayer.cs).
+  So VHVR confirms D-016's "a crosshair, no beam" is a shipped, well-liked design.
+- **Comfort.** None built in: hover is recomputed each update with no hysteresis (a narrow object under
+  a trembling hand flickers between hovered and not), and there is **no haptic on hover or on a ray
+  "use"** — haptics exist for grab, bow, shield, fishing, build-rotation and the drawbridge only (F-160).
+  For us, the F-57 numbers (2 frames in, 150 ms out) are the starting hysteresis; a very short tick on
+  the hovering hand when a new target appears is an **addition** worth a headset question, not a
+  VHVR feature.
+
+#### 13b. Pick up, carry, place, drop, throw (F-158, F-159, F-161)
+
+- **Valheim has no carried item.** Using a dropped item moves it straight into the inventory (the
+  game's own behaviour; an auto-pickup toggle also exists —
+  [VRControls.cs:918](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRControls.cs)).
+  There is no drag from the world, so there is nothing about "carry it over a surface and set it down"
+  to learn here: that half of D-016 is the engine's own drag (13f). Throwing in VHVR is only for
+  throwable weapons already held (F-72).
+- **Physical extras.** With the grip held and the hand free, VHVR also lets the hand do a few things
+  *by touch* (F-159): pull a plant off, push a door open, work a drawbridge's counterweight, pet an
+  animal. Constants: pull-off needs > 0.5 m/s of hand speed and the hand within 0.5 m of where it
+  grabbed; a door opens when the hand moves ≥ 2 m/s within 30° of the door's normal; counterweight grab
+  radius 0.15 m and pull 0.25 m; a grab pulses the controller 0.25 s at 100 Hz, amplitude 0.5
+  ([FistCollision.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/FistCollision.cs),
+  [DrawbridgeCounterweightGrab.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/DrawbridgeCounterweightGrab.cs)).
+  They are *in addition to* the ray (a door can be opened either way), which is also how we could add
+  them after the MVP without touching the reticle path.
+- **Placing.** Building uses the same hidden ray from the dominant hand; the cultivator adds a
+  "ground hand" (F-161). No object is ever carried.
+
+#### 13c. Use: doors, chests, levers, beds, stations, characters (F-155)
+
+All of them are one thing in Valheim: the **interact** call on the hovered object. VHVR feeds it from
+two triggers (F-155): the right trigger *is* the game's Use button (read through the game's input, so
+nothing else changes); the left trigger is a patch that calls `Interact` on the left hover on press and
+again with `hold = true` every update while held, and `UseItem` falls back to the left hover when the
+right one is empty. What a press and what a hold mean is the game's own decision per object (the mod only
+forwards both; the right grip or both triggers held count as the game's "alt" use —
+[VRControls.cs:572-575](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRControls.cs)).
+There is no separate confirmation step and no per-object UI; the hover name already told the player
+what the press will do. Beds, stations and characters open their game panels the same way and then the
+panel rules (13d) apply.
+
+#### 13d. The inventory in VR (F-156, F-157, F-158)
+
+- **Opening.** A button (on Index: a press of the right trackpad) toggles the game's own inventory
+  window onto the single UI panel
+  ([VRControls.cs:111-124](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRControls.cs),
+  [VRGUI.cs:358-372](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/VRCore/UI/VRGUI.cs)).
+  The panel is 3 m tall at 3 m ahead in the base layout (F-80); while any menu is open it is
+  **frozen in place** (default on) so it does not swim with the head, and it re-centres only when it
+  closes and the head has turned (F-80's numbers).
+- **Hand-held alternative (default on in VHVR).** The inventory can instead be shown as a 0.375 m
+  panel in the non-dominant hand (offset (0, 0.0625, 0.125) m from the controller), used with the other
+  hand's pointer. It detaches to the big panel when a container or crafting opens. The owner chose the
+  **centre** panel for now (D-016), so this is the later option; its numbers are in F-157.
+- **Use.** The pointer (13e below) clicks and drags inside the 2D window as a mouse (F-81, with a
+  5 mm / 16 px click dead zone so pulling the trigger does not slide the cursor off the item). Two
+  extra buttons held with the trigger do "move to the open container / drop" and "split stack"
+  (F-156): modifier chords on the pointer, the equivalent of Arx's modifier-click.
+- **Taking a world item into the inventory.** Not applicable — see 13b; VHVR does it in one click
+  without opening the inventory. **There is no precedent in VHVR for dragging a floor item into an
+  open inventory** (F-158).
+
+#### 13e. The weapon hand and the inventory — the key case
+
+The case that matters (D-016): *the right hand holds a sword in a fight; the player opens the
+inventory, drags an item from the floor into it with the left hand, closes it and fights on.*
+
+What VHVR does, and does not:
+
+- **Two hands at once.** In the world, **both** hands hover and both can "use" (F-155). The hand that
+  holds a one-handed weapon is **not** muted: the sword attacks by collision, so its trigger is free.
+  Only a *two-handed aim* (bow, crossbow, staff) mutes both triggers because they then fire
+  ([LocalWeaponWield.cs:128-148](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Scripts/LocalWeaponWield.cs)).
+  Nothing in the hover code looks at what a hand holds.
+- **In menus, one hand.** Only one pointer is up (F-156): the dominant-hand setting wins when both
+  controllers are tracked, **even if that hand holds the weapon**, and then that hand's world
+  interaction is off. A player who wants the free hand to point has to change the dominant-hand
+  setting. So VHVR **does not** solve "use the free hand while the weapon hand keeps the weapon"
+  — it treats the dominant hand as the mouse.
+- **The weapon stays in hand.** Opening the inventory does not holster anything in VHVR; holstering is
+  a deliberate hand gesture ([Pose.cs](https://github.com/brandonmousseau/vhvr-mod/blob/master/ValheimVRMod/Utilities/Pose.cs),
+  F-55). Nor does the mod pause anything: Valheim's inventory is real-time (the game's behaviour).
+- **Two hands for the item itself.** A held item can be handed from one hand to the other with both
+  grips (F-54); there is no item carried by the pointer.
+
+What this means for D-016, from our own code (13f): **opening the inventory in Arx puts the weapon
+away** (`Interface.cpp:1109-1112` — the inventory key turns combat mode off), and the game keeps
+a single mouse, a single button state and a single dragged entity. So the case needs four decisions
+that VHVR cannot give: (1) the inventory-open command must **not** sheathe in VR (or the player must
+be told it does); (2) a rule for **which hand is the cursor** when two reticles are up; (3) the drag
+must **stay with the hand that started it** across the moment the inventory panel appears; (4) a
+sword swing must not be read as a click. They are written out in 13g.
+
+#### 13f. What maps onto Arx's own mechanics
+
+This is the engine as read in the working copy (files and lines at commit `4676e5835`).
+
+| Need | Arx mechanism | Where | Notes for the hand-aimed version |
+|---|---|---|---|
+| What is under the cursor | `FlyingOverObject(pos)`: the dragged entity first, then the secondary and player inventory HUD, then `InterClick(pos)` | [Core.cpp:258-282](../../src/core/Core.cpp) | One 2D position (`DANAEMouse`) in; one entity out |
+| The world pick | `GetFirstInterAtPos`: for every interactive entity in the treat zone, a 2D bounding-box test then a per-face projected-triangle test, nearest to the **player** within **350** units (850 with telekinesis); `InterClick` then requires **360** (550 when choosing a spell target) for NPCs and ordinary items, any distance with telekinesis, and no limit for what the player wears | [Interactive.cpp:1627-1735](../../src/scene/Interactive.cpp) | The pick is **screen-space** and uses the **player's** distance — the same two properties as Valheim's reach, so the VHVR model (a ray to a hit, then a distance check from the body) maps directly. To use it, project the hand-ray's hit point (or a point 1 000 units along the ray) into the view and feed that as the cursor. Whole-model face tests mean a reticle on a thin object is a hit if the projected triangle covers it — no extra tolerance needed, but F-160's hysteresis helps |
+| Click, double click | `eeMouseUp1` on an entity sends `SM_CLICKED`; **a double click** on an entity opens a container, starts a dialogue (`SM_CHAT`) or sends `SM_ACTION` to a scripted fixture — **that is how doors, levers and chests are used**; right-button up on an item sends `SM_INVENTORYUSE` (eat, equip, use) | [Interface.cpp:1723-1731](../../src/gui/Interface.cpp), [Interface.cpp:640-715](../../src/gui/Interface.cpp), [Interface.cpp:1289-1357](../../src/gui/Interface.cpp) | **A single trigger press must mean "double click" on a usable fixture**, or #38 is unusable: the engine's interval for a double click is in the input layer, and a synthetic double click on the first press is simplest. Needs a headset question: does a single press feel right on a lever |
+| Drag a world item | Mouse 1 held and moved > 5 px (the test `DRAGGING`) with the cursor over an item calls `setDraggedEntity`; stealth-key + drag gathers a stack; NPCs and fixed objects are not draggable; the item shows as being on the player until released | [Interface.cpp:1671-1685](../../src/gui/Interface.cpp), [Interface.cpp:1860-1921](../../src/gui/Interface.cpp), [Dragging.cpp:55-98](../../src/gui/Dragging.cpp) | The 5 px threshold is a mouse number; with a trembling hand it needs a dead zone in *pixels at the reticle* (VHVR's 16 px is the reference), else every trigger pull starts a drag |
+| Where the dragged item goes | `updateDraggedEntity`: while dragged, the cursor over the player inventory or the open container **drops it there on release**; over the book uses it; over gold adds it; otherwise a ray through the cursor finds a spot **within 300 units of the player** (`Sphere limit`), snaps to the ground up to 12 units, and either drops it, sets it on a surface or **throws** it if there is no collision within range | [Dragging.cpp:187-354](../../src/gui/Dragging.cpp) | The world half already works along *any* ray from the camera position (`screenToWorldSpace(mouse)` and the stable camera origin, `Dragging.cpp:247-256`); with a hand it should start from the hand's ray instead, so the item follows the hand. The HUD half is pixel hit-testing, so it needs the panel-to-pixel mapping of F-81 (the same one the menus need) |
+| Take straight to the inventory | Stealth key held + click on a world item inserts it into the player inventory (and keeps taking the next item under the cursor while there is room) | [Interface.cpp:1737-1758](../../src/gui/Interface.cpp) | "Take to the inventory" exists in the original as a **modifier-click**, so a second button on the hand can stand for it (13g), without the player opening anything |
+| Open the inventory | `CONTROLS_CUST_INVENTORY`: **turns combat mode off first**, then toggles the inventory; the open window closes a container in combat mode | [Interface.cpp:1109-1121](../../src/gui/Interface.cpp), [Interface.cpp:372-400](../../src/gui/Interface.cpp), [Interface.cpp:1687-1689](../../src/gui/Interface.cpp) | The sheathing must be bypassed for the case in 13e |
+| Cursor look | The cursor image changes on hover (`cursorSetInteraction`, target and combine cursors, the dragged item's icon at the cursor, the hover description text drawn in the HUD) | [Cursor.cpp](../../src/gui/Cursor.cpp), [Interface.cpp:1603-1650](../../src/gui/Interface.cpp) | The reticle is a *replacement* for the cursor image in the world; the dragged item's icon and the description text are 2D HUD — decide where they appear (at the reticle, as VHVR's name text does) |
+
+The shortest path to D-016 is therefore **"each hand produces a cursor position for the engine's existing
+mouse model"**, not a new interaction layer: a hidden ray per hand → a projected 2D point → the engine's
+`DANAEMouse` plus a button state. What is *new* work, in order of size: the cursor arbiter (one engine
+mouse, two hands), the panel-to-pixel mapping for the inventory in the centre of the view (shared with
+#34 and #49), the hand-rooted ray for the dragged item's placement, and the single-press double click.
+
+#### 13g. Proposal for #37 / #38 within D-016
+
+> This is a **proposal for the owner** (D-017: player-experience design is agreed with the owner before
+> work starts). Everything below the numbers is a starting point to test in the headset, not a decision.
+> The corrected D-016 is the frame. It creates no tasks; the coordinator does.
+
+**One idea:** the engine has **one** mouse. Each hand makes a cursor; **one hand at a time owns the
+mouse**; the other hand's reticle stays visible and takes the mouse when it is pressed.
+
+*Reticle (both hands, always, F-153/F-154).* A hidden ray from each controller's aim pose. The reticle
+sits on the first hit (or at a fixed far distance on nothing), faces the eyes, keeps a constant
+angular size (start from VHVR's rule — the canvas spans `0.1 × scale` radians, about 5.7° at scale 1.0, the crosshair sprite inside it is smaller; the scale a setting, 0.8–2.5), **white at 50 % alpha**, **yellow when the engine's pick found an interactive entity**
+within its range. The entity name (the engine's description text) next to it; while a drag is on, the
+dragged item's icon at the reticle. No beam, no outline. Hysteresis from F-57: 2 frames to take a
+target, 150 ms to lose it.
+
+*Who owns the mouse (the arbiter).* Rule of thumb: **the hand that pressed last owns it until it
+releases and the drag is over.** Concretely: (a) with nothing pressed, each hand's reticle hovers
+independently and the engine's hover (`FlyingOverIO`) follows the hand that **moved last** (so the
+description text does not flicker between two reticles); (b) a trigger press on a hand makes it the
+owner; (c) a hand that holds a drag keeps ownership until release even if the other hand presses
+(that press is ignored, a short tick on it says so); (d) a hand whose weapon is swinging
+(the #39 swing detector says "attack") is **not a candidate** for the owner role, and its trigger is
+not a click — a sword hand can still point and click when it is idle (VHVR's behaviour, F-155).
+
+*Buttons (per hand, mirrored; Index is the first target, [RESEARCH-controllers.md](RESEARCH-controllers.md) lists the physical mapping).*
+- **Trigger = mouse 1.** Press on an item and keep the trigger down while moving the hand more than
+  the dead zone = **drag** (the engine's own); release = drop it where the engine says (inventory,
+  ground, surface, throw). Press and release without moving = a click; on a **usable fixture or
+  character** a single press is sent as a **double click** (13f) so doors, levers, chests and bodies
+  open and NPCs talk.
+- **Grip (force) = mouse 2 and the stealth modifier.** A grip press on an item = the original's right
+  click, "use" (`SM_INVENTORYUSE`: eat, equip). A **grip held while the trigger is pressed** on an item =
+  the stealth-click: **take the item straight into the inventory** (13f). This keeps the controllers
+  document's "Grab / USE = grip" and gives the "right hand takes to the inventory" idea of the first D-016
+  without splitting the hands. (Alternative to test: the face button of the same hand.)
+- **Inventory button** (suggested: B on the right controller, as in the controllers document) opens and
+  closes the panel **without sheathing the weapon** and **without moving the mouse owner**.
+
+*The inventory panel (centre of the view, for now).* A world-space quad in front of the eyes, frozen at
+the place it appeared (VHVR default, F-157), at a distance where the 2D window is readable with the
+pointer; **opened, the player can still walk and see around it**; the player's world reticles hide
+while a hand's ray is on the panel (VHVR shows the beam there, we show a pointer dot, D-010/#34). Both
+hands can use it, by the same owner rule. VHVR's hand-held panel is the later option (F-157: 0.375 m
+tall, offset (0, 0.0625, 0.125) m from the controller).
+
+*The key case, step by step* (to be written into the headset script of #37):
+1. Fight; right hand swinging (not a candidate), left hand idle with its reticle on a potion on the floor.
+2. Press the inventory button: the panel appears in the centre of the view; the weapon stays drawn
+   (**new**: bypass `Interface.cpp:1109-1112` while in VR).
+3. Left trigger on the potion and move: the drag starts, the potion's icon is at the left reticle; the
+   panel is still in front of the eyes.
+4. Move the left reticle onto the inventory grid and release: the engine drops it into the first free
+   slot (`PlayerInventoryHud::dropEntity`).
+5. Inventory button again: the panel closes. Right hand never stopped being the weapon hand.
+   Report: did the right hand flinch into a click at step 3; did the drag stay with the left hand; did
+   the panel get in the way of the fight.
+
+*Doors, levers, chests, bodies, characters (#38).* The same reticle and trigger: hover turns the
+reticle yellow with the name; one trigger press opens or talks (double click, above). Within the engine's
+reach (**360 units** for items and NPCs, the 350 pick plus the distance check; 550 when choosing a
+spell target). Bodies and containers open the **secondary inventory**, which is also a HUD window,
+so it shares the panel and the arbiter with the player inventory.
+
+*Numbers to start from*, all to be confirmed in the headset: ray origin = the controller's aim pose
+(not the palm); reticle at the first hit, at the ray limit when nothing is hit (VHVR: 50 m); reticle
+size as VHVR's above, to be tuned against Arx's small items; hysteresis 2 frames in, 150 ms out; drag dead zone 16 px at the reticle (VHVR's value for
+the same job) and 5 mm on the panel; pick range and drop range are the engine's (360 / 300 units); the
+single-press double click is a synthetic event sent on the press, not on release.
+
+*What this does not need:* a new carry-and-place system, a ray from the hands drawn in the world, hands
+that must touch the object, the "left drags, right takes" split. *What it does need that nobody has
+built yet:* the arbiter, the sheathing bypass, the panel-to-pixel mapping for the centre panel, a
+hand-rooted placement ray for the dragged item, and the single-press double click. Each is small
+and testable without a headset (the simulated VR backend and `status.json`), except the *feel* of the
+numbers above.
+
+**Open questions for the owner** (what the proposal cannot answer from code):
+1. Should a trigger press on a lever/door act at once (single press = the original's double click), or
+   should the player hold briefly? (Proposal: at once.)
+2. Do you want **grip + trigger** as the "take into the inventory" gesture, or a face button?
+3. May the inventory button leave the weapon drawn in VR (the original sheathes it)? (Proposal: yes,
+   in VR only; it changes a fight but the case needs it.)
+4. When both reticles hover different items, which one does the description text show? (Proposal: the
+   hand that moved last.)
+
 ## Sources
 
 Dishonored VR (branch `VR-Main`, commit `b15e4d32a`):
@@ -1431,6 +2440,14 @@ ProjectilePatches, BowAndFishingPatches, BHapticsPatches, ControlPatches, EquipP
 EyeRotationPatch, RoomscalePatches, FixPatches, InteractionPatches, UIPatches, TextInputPatches;
 `Unity/ValheimVR/Assets/StreamingAssets/SteamVR/` actions.json, bindings_knuckles.json,
 bindings_oculus_touch.json; `ValheimVRMod.cs`, `ValheimVRMod.csproj`, `make-release.cmd`.
+Read again for #166 (world interaction, commit `5a47f823f`, 2026-10-09): `Patches/` HandBasedInteractionPatches,
+InteractionPatches; `Scripts/` FistCollision, DrawbridgeCounterweightGrab, InterhandItemTransfer,
+LocalWeaponWield (the aiming state), BuildingManager (haptic call); `VRCore/` VRPlayer (pointer choice),
+`VRCore/UI/` CrosshairManager, LaserPointerChords, PlaceModeRayVectorProvider, VRGUI (inventory panel,
+dead zone), VRControls (use, alt, inventory); `Utilities/VHVRConfig.cs`; `Unity/ValheimVR/Assets/SteamVR/Extras/SteamVR_LaserPointer.cs`;
+`Unity/ValheimVR/Assets/StreamingAssets/SteamVR/bindings_knuckles.json`. Arx Libertatis side (our working
+copy): `src/core/Core.cpp`, `src/scene/Interactive.cpp`, `src/gui/Interface.cpp`, `src/gui/Dragging.cpp`,
+`src/gui/Cursor.cpp`, `src/gui/hud/PlayerInventory.cpp`.
 
 Alternatives for headless testing:
 [Monado](https://monado.freedesktop.org/) and its
@@ -1441,3 +2458,69 @@ SteamVR null driver: [Valve wiki — steamvr.vrsettings](https://developer.valve
 [SteamVRNoHeadset](https://github.com/username223/SteamVRNoHeadset);
 [OpenVR SDK `samples/driver_sample`](https://github.com/ValveSoftware/openvr/tree/master/samples/driver_sample);
 OpenXR loader runtime discovery (`XR_RUNTIME_JSON`): [OpenXR-SDK loader docs](https://github.com/KhronosGroup/OpenXR-SDK-Source/blob/main/specification/loader/runtime.adoc).
+
+Titanfall 2 VR (branch `main`, commit `8c50a7d`, v0.1.1; read on 2026-10-09 for #118):
+[README](https://github.com/kyus2001/titanfall2vr/blob/main/README.md),
+[LICENSE](https://github.com/kyus2001/titanfall2vr/blob/main/LICENSE),
+[THIRD_PARTY_NOTICES.md](https://github.com/kyus2001/titanfall2vr/blob/main/THIRD_PARTY_NOTICES.md),
+[BUILDING.md](https://github.com/kyus2001/titanfall2vr/blob/main/BUILDING.md),
+[INSTALL.md](https://github.com/kyus2001/titanfall2vr/blob/main/INSTALL.md),
+[CONTROLS.md](https://github.com/kyus2001/titanfall2vr/blob/main/CONTROLS.md),
+[KNOWN-ISSUES.md](https://github.com/kyus2001/titanfall2vr/blob/main/KNOWN-ISSUES.md),
+[CHANGELOG.md](https://github.com/kyus2001/titanfall2vr/blob/main/CHANGELOG.md),
+[plugin/CMakeLists.txt](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/CMakeLists.txt),
+[plugin/cmake/version_stamp.cmake](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/cmake/version_stamp.cmake),
+[plugin/titanfall2vr.ini.example](https://github.com/kyus2001/titanfall2vr/blob/main/plugin/titanfall2vr.ini.example),
+[tools/](https://github.com/kyus2001/titanfall2vr/tree/main/tools) (`build.ps1`, `install.ps1`, `package.ps1`, `logdig`, `defaults-vs-ini.py`, `orphan-statements.py`, `asym-projection-check.cpp`, `bmpdiff/`, `bmpcrop/`, `bmpshift/`, `cleanprofile/`, `pescan/`, `package/`).
+Files read in full under [plugin/src/](https://github.com/kyus2001/titanfall2vr/tree/main/plugin/src):
+`host/host.h`, `host/plugin.cpp` (the arm ladder, init and the frame body); `xr/xr_context.h`,
+`xr/xr_context.cpp` (init, events, head pose, banner, views, the frame core, pacing, the menu quad,
+the spike ring), `xr/xr_input.h`, `xr/xr_input.cpp`, `xr/asym_projection.h`,
+`xr/render_resolution.h`, `xr/render_resolution.cpp` (scale, cache, derived setup);
+`input/vr_input.h`, `input/vr_input.cpp` (the frame body and the turn settings),
+`input/xinput_pad.h`, `input/xinput_pad.cpp` (the pad composition and haptics),
+`input/dpad_gesture.h`, `input/dpad_gesture.cpp`, `input/aim_cmd.h`; `hands/hand_pose.h`,
+`hands/hand_pose.cpp` (brace, composition, publish, pivot nudge), `hands/weapon_settings.h`,
+`hands/placement_pin.h`, `hands/use_target.h`, `hands/viewmodel_hide.h`, `hands/arms_collapse.h`,
+`hands/viewmodel_visibility.h`, `hands/viewmodel_bones.h`, `hands/titan_state.h`;
+`camera/player_eye.h`, `camera/player_eye_hook.h`, `camera/player_eye_hook.cpp`,
+`camera/camera_hook.h`, `camera/camera_hook.cpp` (recentre, head tracking, neck model),
+`camera/view_build_hook.h`, `camera/placement_watchpoint.h`; `ads/ads_lock.h`, `ads/ads_zoom.h`,
+`ads/ads_probe.h`; `core/config.h`, `core/config.cpp` (parser, settings table, self-check,
+staging, persistence), `core/settings_registry.h`, `core/flat_harness.h`, `core/flat_harness.cpp`,
+`core/diagnostics.h`, `core/diagnostics.cpp`, `core/crash_recorder.h`, `core/crash_recorder.cpp`;
+`ui/menu_overlay.h`, `ui/menu_overlay.cpp`; `render/stereo_targets.h`, `render/scene_reentry.h`,
+`render/temporal_lever.h`, `render/present_hook.h`, `render/stereo_experiment.h`,
+`render/world_rect_gate.h`; `hud/hudwarp.h`, `hud/crosshair_scale.h`, `hud/world_marker.h`,
+`hud/lock_hud.h`, `hud/rui_immediate.h`; `diag/stall_watchdog.h`, `diag/plugin_cost.h`,
+`diag/xr_breadcrumb.h`, `diag/resource_watch.h`; `engine/hook_registry.h`.
+
+CircuitLord's Titanfall 2 VR (installer: branch `main`, commit `b493821a6`, v1.2.9; read on 2026-10-09 for #120).
+The installer, in full or in the parts the rows name:
+[README](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/README.md),
+[LICENSE](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/LICENSE),
+[THIRD-PARTY-NOTICES.md](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/THIRD-PARTY-NOTICES.md),
+[manifest-v3.json](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/manifest-v3.json),
+[releases](https://github.com/CircuitLord/CircuitLordVRModInstaller/releases),
+[issue #18](https://github.com/CircuitLord/CircuitLordVRModInstaller/issues/18),
+[src/Installer/Installers/Titanfall2Installer.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/src/Installer/Installers/Titanfall2Installer.cs),
+[src/Installer/Services/](https://github.com/CircuitLord/CircuitLordVRModInstaller/tree/main/src/Installer/Services)
+(`PackageInstaller`, `SteamGameLocator`, `RepoClient`, `CrashReportService`, `LaunchPermissions`,
+`SelfUpdater`, `OwnedFileStore`, `InstallerFileSystem`, `GameStartupWatcher`),
+[tests/InstallerValidation/Program.cs](https://github.com/CircuitLord/CircuitLordVRModInstaller/blob/main/tests/InstallerValidation/Program.cs),
+[repotools/](https://github.com/CircuitLord/CircuitLordVRModInstaller/tree/main/repotools).
+Community add-ons:
+[djnewage/tf2vr-mods](https://github.com/djnewage/tf2vr-mods) (`TF2VR.DistanceGrab`, `TF2VR.AutoReload`; no licence stated),
+[Fdrph/TF2VRBetterBindings](https://github.com/Fdrph/TF2VRBetterBindings) (MIT),
+[floh-bhaptics/Titanfall2VR_bhaptics](https://github.com/floh-bhaptics/Titanfall2VR_bhaptics) (no licence stated),
+[Monkellie/tf2vr-linux](https://github.com/Monkellie/tf2vr-linux) (MIT).
+Press and guides (secondary; checked against the code where the code could answer):
+[UploadVR](https://www.uploadvr.com/titanfall-2s-vr-mod-is-stellar-and-its-installer-is-the-best-thing-about-it/),
+[Road to VR](https://roadtovr.com/titanfall-2-vr-mod-circuitlord/),
+[MoguraVR](https://www.moguravr.com/?p=378357),
+[Inven Global](https://www.invenglobal.com/articles/26827/i-am-jack-cooper-titanfall-2-vr-mod-causes-a-stir),
+[VR.org](https://vr.org/articles/titanfall-2-vr-mod-how-to-install-circuitlord-northstar-2026),
+[arvrtips](https://arvrtips.com/titanfall-2-vr-mod/),
+[PCVR Central](https://pcvrcentral.com/mods/titanfall-2-circuitlord-vr).
+Not readable: the mod itself (closed), the author's X posts
+([announcement](https://x.com/CircuitLord/status/2105099559391416752) — HTTP 402; the text was seen only as a search snippet), his Discord and videos.

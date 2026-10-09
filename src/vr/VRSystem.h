@@ -20,6 +20,8 @@
 #ifndef ARX_VR_VRSYSTEM_H
 #define ARX_VR_VRSYSTEM_H
 
+#include <string>
+
 #include "math/Types.h"
 #include "platform/Platform.h"
 
@@ -97,6 +99,18 @@ struct FrameCounters {
 };
 
 FrameCounters frameCounters();
+
+/*!
+ * \return the OpenXR runtime that answered this run, as "<name> <version>" - empty while no
+ *         instance was created (for status.json; stays set after \ref shutdown)
+ */
+std::string runtimeName();
+
+/*!
+ * \return the active OpenXR runtime manifest the loader uses, found the way the loader finds it
+ *         (\c XR_RUNTIME_JSON, then the registry on Windows) - empty when no runtime is installed
+ */
+std::string runtimeManifest();
 
 //! Destroy the OpenXR session and instance (if any)
 void shutdown();

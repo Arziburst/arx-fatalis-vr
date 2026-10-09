@@ -28,12 +28,27 @@ foreach(arg IN LISTS VERSION_SOURCES)
 	endif()
 endforeach()
 
-# Check for a git directory and fill in the git commit hash if one exists.
+# Check for a git directory and fill in the git commit hash and branch if one exists.
+# GIT_DIR is the repository's (or the worktree's own) git directory, GIT_COMMON_DIR the directory
+# holding refs and packed-refs (the same as GIT_DIR outside a worktree) - see VersionString.cmake.
 unset(GIT_COMMIT)
+set(GIT_BRANCH "")
 if(NOT GIT_DIR STREQUAL "")
-	
+
+	if((NOT DEFINED GIT_COMMON_DIR) OR (GIT_COMMON_DIR STREQUAL ""))
+		set(GIT_COMMON_DIR "${GIT_DIR}")
+	endif()
+
+	# The branch comes straight from HEAD: "ref: refs/heads/<branch>", or a commit when detached
+	if(EXISTS "${GIT_DIR}/HEAD")
+		file(READ "${GIT_DIR}/HEAD" git_head_file)
+		if(git_head_file MATCHES "^[ \t\r\n]*ref:[ \t]*refs/heads/([^\r\n]+)")
+			string(STRIP "${CMAKE_MATCH_1}" GIT_BRANCH)
+		endif()
+	endif()
+
 	unset(git_head)
-	
+
 	if(GIT_COMMAND)
 		execute_process(
 			COMMAND "${GIT_COMMAND}" "--git-dir=${GIT_DIR}" "rev-parse" "HEAD"
@@ -44,31 +59,33 @@ if(NOT GIT_DIR STREQUAL "")
 			unset(git_head)
 		endif()
 	endif()
-	
+
 	if(NOT git_head AND EXISTS "${GIT_DIR}/HEAD")
-		
+
 		file(READ "${GIT_DIR}/HEAD" git_head)
-		
+
 		if(git_head MATCHES "^[ \t\r\n]*ref\\:(.*)$")
-			
+
 			# Remove the first for characters from git_head to get git_ref.
 			# We can't use a length of -1 for string(SUBSTRING) as cmake < 2.8.5 doesn't support it.
 			string(LENGTH "${git_head}" git_head_length)
 			math(EXPR git_ref_length "${git_head_length} - 4")
 			string(SUBSTRING "${git_head}" 4 ${git_ref_length} git_ref)
 			string(STRIP "${git_ref}" git_ref)
-			
+
 			unset(git_head)
-			if(EXISTS "${GIT_DIR}/${git_ref}")
+			if(EXISTS "${GIT_COMMON_DIR}/${git_ref}")
+				file(READ "${GIT_COMMON_DIR}/${git_ref}" git_head)
+			elseif(EXISTS "${GIT_DIR}/${git_ref}")
 				file(READ "${GIT_DIR}/${git_ref}" git_head)
-			elseif(EXISTS "${GIT_DIR}/packed-refs")
-				file(READ "${GIT_DIR}/packed-refs" git_refs)
+			elseif(EXISTS "${GIT_COMMON_DIR}/packed-refs")
+				file(READ "${GIT_COMMON_DIR}/packed-refs" git_refs)
 				string(REGEX REPLACE "[^0-9A-Za-z]" "\\\\\\0" git_ref "${git_ref}")
 				string(REGEX MATCH "[^\r\n]* ${git_ref}( [^\r\n])?" git_head "${git_refs}")
 			endif()
-			
+
 		endif()
-		
+
 	endif()
 	
 	# Create variables for all prefixes of the git commit ID.
@@ -85,5 +102,8 @@ if(NOT GIT_DIR STREQUAL "")
 	endif()
 	
 endif()
+
+# Strings that end up inside C++ string literals
+_version_escape(GIT_BRANCH "${GIT_BRANCH}")
 
 configure_file("${INPUT}" "${OUTPUT}")

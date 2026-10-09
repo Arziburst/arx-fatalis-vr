@@ -46,6 +46,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #define ARX_GAME_SPELLS_H
 
 #include <stddef.h>
+#include <array>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -117,10 +118,16 @@ public:
 	
 	[[nodiscard]] Spell * getById(std::string_view idString) const noexcept;
 	
+	//! Spells of this type launched since the spells were last cleared (level load) - test channel evidence (#155)
+	[[nodiscard]] size_t launchedCount(SpellType type) const noexcept {
+		return (type >= 0 && size_t(type) < m_launched.size()) ? m_launched[size_t(type)] : 0;
+	}
+	
 private:
 	
 	std::vector<std::unique_ptr<Spell>> m_spells;
 	size_t m_nextInstance;
+	std::array<size_t, SPELL_TYPES_COUNT> m_launched = {};
 	
 };
 
@@ -132,6 +139,8 @@ void TryToCastSpell(Entity * io, SpellType spellType, long level, EntityHandle t
 bool ARX_SPELLS_Launch(SpellType typ, Entity & source, SpellcastFlags flags, long level,
                        Entity * target, GameDuration duration);
 void ARX_SPELLS_Update();
+//! Draw the effects of all active spells - once per view, after ARX_SPELLS_Update()
+void ARX_SPELLS_Render();
 
 void ARX_SPELLS_Fizzle(Spell * spell);
 

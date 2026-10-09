@@ -84,6 +84,7 @@ private:
 	Spell * m_spell;
 	u32 fTotoro;
 	float fMySize;
+	float m_fbeta = 0.f; //!< This frame's jittered yaw of the bolt, set by Update() for Render()
 	int m_lNbSegments;
 	float m_invNbSegments;
 	float m_fLengthMin;
@@ -101,6 +102,8 @@ private:
 		size_t parent;
 		Vec3f f;
 		DamageHandle damage;
+		Vec3f fStart = Vec3f(0.f); //!< The parent's jitter when this node's segment was jittered
+		float sizeJitter = 0.f;    //!< This frame's random addition to \ref size
 	};
 	
 	static const size_t MAX_NODES = 2000;

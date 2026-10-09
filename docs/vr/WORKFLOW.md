@@ -20,7 +20,7 @@ commit messages, pull requests, and code comments.
 | Current goal: the MVP | [MVP.md](MVP.md) |
 | Research and scope of playable v1 | [RESEARCH-playable-v1.md](RESEARCH-playable-v1.md) |
 | Research: controllers (Valve Index, Quest 3) | [RESEARCH-controllers.md](RESEARCH-controllers.md) |
-| Research: reference VR mods (Dishonored VR, VHVR) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |
+| Research: reference VR mods (Dishonored VR, VHVR, Titanfall 2 VR) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |
 | SteamVR app manifest: name and tile on the loading card | [STEAMVR.md](STEAMVR.md) |
 | Testing without a headset: smoke test, command channel, `status.json`, `xr_hello` — what is reliable and what is not | [TESTING.md](TESTING.md) |
 | Traps: misleading symptoms that already cost time — **read before debugging** | [TRAPS.md](TRAPS.md) |
@@ -84,6 +84,12 @@ and the terminal tab.
   `scripts/dev/cycle-report.ps1`, merges what is ready, fixes board inconsistencies, deletes leftover
   branches, syncs the owner's working copy, and then gives either the next task's prompt or the reason
   progress is blocked (a PR waiting for a VR test, red CI, a blocking bug, a decision needed).
+  Since D-013 it runs the work **on its own, in blocks** (waves of [MVP.md](MVP.md#waves)): it writes the
+  tasks, starts and follows the workers, triages what they find and refills the slots; it does not
+  investigate or fix anything itself. It stops and reports when the block is done, when a PR needs the
+  owner's headset test (headset-free work goes on), or at 70% of the weekly usage limit. The owner
+  talks only to the coordinator — VR verdicts included. Its full playbook, for a new coordinator session
+  on any machine (`/coordinator`): [COORDINATOR.md](COORDINATOR.md).
 - **Worker session** — a fresh session per task, possibly with a different model. It implements exactly
   one task in its own PR (`/next-task <n>`), and handles the owner's verdict (`/accept-task`, `/reject-task`).
   In parallel mode the coordinator starts workers itself as background sessions
@@ -106,8 +112,8 @@ parallel except the moments the real headset is used.
 | Stage of a task | In parallel? |
 |---|---|
 | Writing code, building, host unit tests | Yes — each worker in its own working copy |
-| Checks without a headset: flat launch, the simulated VR backend (#112), scripted sequences (#113), the two-eyes check | Yes |
-| A worker's self-test in real VR (SteamVR running, nobody wearing the headset) | **One at a time** — VR launch lock, a few minutes each |
+| Checks without a headset: flat launch, the simulated VR backend (#112), scripted sequences (#113), the two-eyes check | Code and files yes; **game runs one at a time** on the PC (the game lock, D-014) — a launch waits for the running game |
+| A worker's self-test in real VR (only while the owner has SteamVR running; nobody wearing the headset) | **One at a time** — the game lock plus the VR lock, a few minutes each; skipped when SteamVR is off |
 | The owner's test in the headset | **One at a time**, in batches |
 
 The owner's headset is the bottleneck by design; the rules shrink it: the simulator answers "does it
@@ -151,14 +157,35 @@ test station.
 - Self-test launches use their own user and config folders (`run-windows.ps1 -Isolated` →
   `--user-dir` / `--config-dir` per working copy, #123), so workers never share `arx.log`, `cfg.ini`
   or saves with each other or with the owner.
-- **One game in VR at a time:** VR launches take a machine-wide lock (#123). A worker that cannot get
-  it in time skips its VR self-test and says so (best effort). Flat launches need no lock.
-- **No workarounds for a second-instance limit** (owner's rule): the engine has no single-instance
-  check, so isolated flat and simulated runs should work side by side — #123 proves it. If they do
-  not, the lock covers **every** game launch and game runs are always one at a time; only code,
-  builds and host tests run in parallel.
 - CI has one runner on the owner's PC: parallel PRs queue for it (about a minute each). A second
   runner can be added if the queue gets long.
+
+**Launch rules (D-014, enforced by `scripts/launch-lib.ps1` in every launch script — #147)**
+- **Never start SteamVR, never close it.** A launch without `--no-vr` may run in VR only when
+  `vrserver.exe` is already running (the owner started SteamVR); otherwise the scripts make it flat
+  (`--no-vr` added, said in the output) and `smoke-test.ps1 -Vr` is skipped (exit 2). Only the owner
+  passes `-StartSteamVR` (`run-windows.ps1`, `test-pr.ps1`). Workers do not run `vrstartup.exe` or
+  stop `vrmonitor` / `vrserver` by hand.
+- **One game at a time on this PC.** Every launch, flat or VR, holds a game lock slot
+  (`%LOCALAPPDATA%\ArxFatalisVR\game-<n>.lock`; VR launches also `vr.lock`) while the game runs. A
+  second launch waits (default 300 s) and prints the holder — working copy, branch, pid; the smoke
+  test is skipped (exit 2) when the wait runs out, `run-windows.ps1` fails naming the holder. The OS
+  releases a lock when its holder dies; a raw `arx.exe` outside the lock is treated as a holder.
+  `%LOCALAPPDATA%\ArxFatalisVR\settings.json` with `{"maxGames": 2}` allows two flat games (owner's
+  call); replaces the #123 rule of isolated flat runs side by side.
+- **Only your own fresh build.** A launch runs only the working copy's own build directory, and only
+  when its `built-from.txt` names the copy's `HEAD` (`<sha> dirty` is fine for uncommitted work).
+  Otherwise it refuses and says to build first; `-Rebuild` on `run-windows.ps1` / `smoke-test.ps1` does it.
+- **Launch ledger.** Every launch appends one line to `%LOCALAPPDATA%\ArxFatalisVR\launches.log`
+  (`time= script= copy= branch= build= mode=flat|vr pid= exit= duration= args=`);
+  `cycle-report.ps1` shows launches per working copy in the last hours and marks a copy over budget.
+- **Launch budget: at most 10 game launches per task.** Plan them: a flat smoke test is one launch,
+  `-Repeat 10` is ten. Repeated-run evidence loops only after asking the coordinator, sequential and
+  flat. Say in the narration how many launches are coming before starting them. The scripts print a
+  note past the budget; the coordinator sees the count in `/new-cycle`.
+- **Self-test windows stay in the background:** the smoke test and `run-windows.ps1 -Background`
+  show the game window without activating it (SDL hint), so a test never takes the focus from the
+  owner's work; `status.json` → `window.focused` is `false` for such a run.
 
 **Merging parallel PRs** — first green, first merged. Before merging, a PR must be up to date with
 `main` and green on that state (`gh pr update-branch <pr>`, wait for CI). Conflicts are resolved by
@@ -200,15 +227,18 @@ line, `errors ≠ 0` in `status.json`. The flat run is a **gate**: a failure cau
 (`-Commands 'shot before','teleport -p marker_0001','shot after'`, `scripts/dev/game-cmd.ps1`), so a
 worker asserts on `status.json` numbers and screenshots instead of reading the log by eye.
 
-The VR run is **best effort**: with nobody wearing the headset the OpenXR session is created but
-stays short of `FOCUSED` (measured in #99, numbers in TESTING.md), so it proves the VR start-up and
-shutdown paths, not the rendering. `xr_hello.exe` (built next to `arx.exe`) answers "is the runtime
-or the game at fault?" without the game. When a self-test cannot run (SteamVR off, no headset), the
-worker says so in the PR's *How verified* instead of blocking the task on it, and the owner's test decides.
-The owner's headset time is for judging how it feels in VR, not for finding crashes.
+The VR run is **best effort and only while the owner has SteamVR running** (D-014: a worker never
+starts SteamVR; `smoke-test.ps1 -Vr` is skipped with exit 2 otherwise): with nobody wearing the
+headset the OpenXR session is created but stays short of `FOCUSED` (measured in #99, numbers in
+TESTING.md), so it proves the VR start-up and shutdown paths, not the rendering. `xr_hello.exe`
+(built next to `arx.exe`) answers "is the runtime or the game at fault?" without the game — it
+refuses to start SteamVR too. When a self-test cannot run (SteamVR off, no headset), the worker says
+so in the PR's *How verified* instead of blocking the task on it, and the owner's test decides.
+The owner's headset time is for judging how it feels in VR, not for finding crashes. Every launch
+counts against the **budget of 10 per task** ([Launch rules](#parallel-work)).
 
 **Verification tiers** — always climb in this order and stop at the lowest tier that answers the question:
-1. **Numbers**: host unit tests of pure logic (#114), `status.json` and log assertions (#99).
+1. **Numbers**: host unit tests of pure logic (`arxtest`, run by `build-windows.ps1` and CI), `status.json` and log assertions (#99).
 2. **Flat or simulated visuals**: flat launch, the simulated VR backend (#112) with scripted
    sequences and per-eye screenshots (#113), the two-eyes check.
 3. **The owner in the headset** — last, for how it *feels*. Asking the owner to put the headset on for
@@ -225,6 +255,15 @@ log state changes, not frames — nothing unbounded per frame (log once, every N
 every guard that refuses something logs why, with the values; name the owner of a decision before the
 result; an expected zero says so explicitly.
 
+**Pure VR decision cores get host tests.** Logic that decides something from numbers — swing detector,
+rune stroke projection, snap turn, crouch threshold — lives in a header that takes positions and
+timestamps (no engine globals, no OpenXR, no clock reads) and is covered by a CppUnit test in `tests/`
+(add the files to `arxtest_TESTCASES` in `tests/CMakeLists.txt`). `build-windows.ps1` builds `arxtest`
+and runs it, so CI runs it on every PR: a red suite fails the build. A suite that does not compile is
+not a passing suite — if a test cannot be built, the PR is not ready. Prove a new test can fail
+(break the code on purpose once) before trusting it. `s32`/`u32` are `long` on MSVC, so cast expected
+values: `CPPUNIT_ASSERT_EQUAL(u32(0), x)`.
+
 **Traps.** Before debugging something that makes no sense, read [TRAPS.md](TRAPS.md). When a task
 hits a new trap (a misleading symptom, stale state, an instrument that lied), add an entry in the same PR.
 
@@ -238,8 +277,8 @@ its branch stays checked out and freshly built there, so the owner tests exactly
 .\scripts\run-windows.ps1 -- --skiplogo --loadslot 0
 ```
 
-Or double-click the **Arx Fatalis VR** desktop shortcut (created by `scripts/create-desktop-shortcut.ps1`):
-it runs the latest build of whatever branch is checked out in the owner's working copy and shows the
+Or double-click the **Arx Fatalis VR** desktop shortcut (created by `scripts/create-desktop-shortcut.ps1`, runs `scripts/launch-shortcut.ps1`):
+it rebuilds first when the build is stale (no `built-from.txt`, another commit than HEAD, uncommitted changes; the game never starts on a failed build), then runs whatever branch is checked out in the owner's working copy and shows the
 branch name in its console window.
 
 `--loadslot <n>` starts straight into a saved game (recorded in flat mode) — needed until the in-VR
@@ -253,7 +292,9 @@ Helper scripts used by the commands:
 - `scripts/dev/next-task.ps1` — which task is next (Testing / In Progress first, then the queue)
 - `scripts/dev/set-status.ps1 -Issue <n> -Status <column>` — move a task on the board
 - `scripts/build-windows.ps1`, `scripts/run-windows.ps1` — build and run (`-Isolated`: this copy's
-  own user directory; a launch without `--no-vr` holds the VR lock, `scripts/vr-lock.ps1`)
+  own user directory; `-Background`: no focus; `-StartSteamVR`: the owner's switch; `-Rebuild`)
+- `scripts/launch-lib.ps1` — launch control shared by every launch script (D-014): SteamVR guard,
+  game lock, fresh-build check, ledger, budget note, background window
 - `scripts/dev/smoke-test.ps1` — the worker's self-test: start, play, quit, check the evidence
 - `scripts/dev/game-cmd.ps1`, `scripts/dev/game-status.ps1` — talk to a running game through the
   test channel (`--test-dir`), see [TESTING.md](TESTING.md)
@@ -397,6 +438,9 @@ Claude creates and updates tasks on its own, and after each working session repo
 - Publishing anything externally: making the repository public, contacting rights holders, Steam
 - Changing these rules
 - Picking features from research catalogs (the *Decision* column); the coordinator turns the picks into tasks
+- **Player-experience design** (D-017): controls, interaction, comfort, UI placement and look, feedback —
+  agreed with the owner (questions, design played back, a yes) before the issue is written and before a
+  worker starts; technical internals are decided without the owner
 
 **Any decision can be revisited** — by the owner at any time. A changed decision is recorded as a new
 entry in [DECISIONS.md](DECISIONS.md) that supersedes the old one (never deleted), and affected tasks

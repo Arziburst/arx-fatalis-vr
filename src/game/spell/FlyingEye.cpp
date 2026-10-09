@@ -138,16 +138,30 @@ void FlyingEye::drawMagicSightInterface() {
 	}
 
 	EERIEDrawBitmap(Rectf(g_size), 0.0001f, m_eyeTex, Color::gray(col));
-	
+
 	if(MagicSightFader > 0.f) {
 		col = MagicSightFader;
 		EERIEDrawBitmap(Rectf(g_size), 0.0001f, nullptr, Color::gray(col));
+	}
+
+}
+
+void FlyingEye::updateFading() {
+
+	if(m_state == EYEBALL_DISAPPEAR && m_eyeballobj) {
+		m_progress--;
+		if(m_progress == 0) {
+			m_state = EYEBALL_INACTIVE;
+		}
+	}
+
+	if(m_eyeTex && m_state != EYEBALL_INACTIVE && MagicSightFader > 0.f) {
 		MagicSightFader -= g_platformTime.lastFrameDuration() / 400ms;
 		if(MagicSightFader < 0.f) {
 			MagicSightFader = 0.f;
 		}
 	}
-	
+
 }
 
 void FlyingEye::end() {
@@ -159,18 +173,8 @@ void FlyingEye::render() {
 	if((m_state != EYEBALL_APPEAR && m_state != EYEBALL_DISAPPEAR) || !m_eyeballobj) {
 		return;
 	}
-	
-	/* TODO This would normally be included in update() but as the FlyingEyeSpell
-	   doesn't call update() after the spell has ended it has to be in render()
-	   as it gets called from ARX_Scene_Render() even when the spell is not active
-	   */
-	if(m_state == EYEBALL_DISAPPEAR) {
-		m_progress--;
-		if(m_progress == 0) {
-			m_state = EYEBALL_INACTIVE;
-		}
-	}
-	
+
+	// The disappearance advances in updateFading(), once per frame: this may run once per eye
 	float d = m_progress * (1.0f / 100);
 	
 	Anglef angle = m_angle;

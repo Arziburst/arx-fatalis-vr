@@ -128,8 +128,8 @@ void StringTest::safeGetExactTest() {
 	bool resultOk = util::safeGet(resultValue, dataPtr, remaining);
 	
 	CPPUNIT_ASSERT_EQUAL(true, resultOk);
-	CPPUNIT_ASSERT_EQUAL(0u, remaining);
-	CPPUNIT_ASSERT_EQUAL(-1431655766, resultValue);
+	CPPUNIT_ASSERT_EQUAL(u32(0), remaining);
+	CPPUNIT_ASSERT_EQUAL(s32(-1431655766), resultValue);
 }
 
 void StringTest::safeGetTooSmallTest() {
@@ -142,6 +142,6 @@ void StringTest::safeGetTooSmallTest() {
 	bool resultOk = util::safeGet(resultValue, dataPtr, remaining);
 	
 	CPPUNIT_ASSERT_EQUAL(false, resultOk);
-	CPPUNIT_ASSERT_EQUAL(3u, remaining);
-	CPPUNIT_ASSERT_EQUAL(-1, resultValue);
+	CPPUNIT_ASSERT_EQUAL(u32(3), remaining);
+	CPPUNIT_ASSERT_EQUAL(s32(-1), resultValue);
 }

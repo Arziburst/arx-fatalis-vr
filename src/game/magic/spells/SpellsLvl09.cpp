@@ -140,6 +140,18 @@ void SummonCreatureSpell::End() {
 	m_summonedEntity = EntityHandle();
 }
 
+void SummonCreatureSpell::Render() {
+
+	if(g_gameTime.isPaused()) {
+		return;
+	}
+
+	if(m_elapsed <= 4s) {
+		m_fissure.Render();
+	}
+
+}
+
 void SummonCreatureSpell::Update() {
 	
 	if(g_gameTime.isPaused()) {
@@ -153,8 +165,7 @@ void SummonCreatureSpell::Update() {
 		}
 		
 		m_fissure.Update(g_gameTime.lastFrameDuration());
-		m_fissure.Render();
-		
+
 		m_requestSummon = true;
 		m_summonedEntity = EntityHandle();
 
@@ -291,6 +302,10 @@ void FakeSummonSpell::End() {
 	lightHandleDestroy(m_light);
 }
 
+void FakeSummonSpell::Render() {
+	m_fissure.Render();
+}
+
 void FakeSummonSpell::Update() {
 	
 	if(!g_gameTime.isPaused()) {
@@ -301,7 +316,6 @@ void FakeSummonSpell::Update() {
 	}
 	
 	m_fissure.Update(g_gameTime.lastFrameDuration());
-	m_fissure.Render();
 }
 
 NegateMagicSpell::NegateMagicSpell()
@@ -334,6 +348,32 @@ void NegateMagicSpell::End() {
 	
 }
 
+void NegateMagicSpell::Render() {
+
+	Vec3f stitepos = m_pos - Vec3f(0.f, 10.f, 0.f);
+
+	RenderMaterial mat;
+	mat.setLayer(RenderMaterial::Decal);
+	mat.setDepthTest(true);
+	mat.setTexture(tex_sol);
+	mat.setBlendType(RenderMaterial::Additive);
+	Anglef stiteangle(0.f, -timeWaveSaw(g_gameTime.now(), 18s) * 360.f, 0.f);
+	float scalediff = timeWaveSin(g_gameTime.now(), 500ms * glm::pi<float>());
+
+	{
+		Color3f stitecolor = Color3f::gray(.4f);
+		Vec3f stitescale = Vec3f(3.f + 0.5f * scalediff);
+		Draw3DObject(ssol.get(), stiteangle, stitepos, stitescale, stitecolor, mat);
+	}
+
+	{
+		Color3f stitecolor = Color3f(.5f, 0.f, .5f);
+		Vec3f stitescale = Vec3f(3.1f + 0.2f * scalediff);
+		Draw3DObject(ssol.get(), stiteangle, stitepos, stitescale, stitecolor, mat);
+	}
+
+}
+
 void NegateMagicSpell::Update() {
 	
 	LaunchAntiMagicField();
@@ -360,27 +400,7 @@ void NegateMagicSpell::Update() {
 		pd->m_flags = FADE_IN_AND_OUT | ROTATING | DISSIPATING | SUBSTRACT;
 		pd->m_rotation = 0.0000001f;
 	}
-	
-	RenderMaterial mat;
-	mat.setLayer(RenderMaterial::Decal);
-	mat.setDepthTest(true);
-	mat.setTexture(tex_sol);
-	mat.setBlendType(RenderMaterial::Additive);
-	Anglef stiteangle(0.f, -timeWaveSaw(g_gameTime.now(), 18s) * 360.f, 0.f);
-	float scalediff = timeWaveSin(g_gameTime.now(), 500ms * glm::pi<float>());
-	
-	{
-		Color3f stitecolor = Color3f::gray(.4f);
-		Vec3f stitescale = Vec3f(3.f + 0.5f * scalediff);
-		Draw3DObject(ssol.get(), stiteangle, stitepos, stitescale, stitecolor, mat);
-	}
-	
-	{
-		Color3f stitecolor = Color3f(.5f, 0.f, .5f);
-		Vec3f stitescale = Vec3f(3.1f + 0.2f * scalediff);
-		Draw3DObject(ssol.get(), stiteangle, stitepos, stitescale, stitecolor, mat);
-	}
-	
+
 }
 
 void NegateMagicSpell::LaunchAntiMagicField() {

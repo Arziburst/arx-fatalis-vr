@@ -19,6 +19,8 @@
 
 #include "core/CommandChannel.h"
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <cctype>
 #include <cmath>
@@ -39,7 +41,10 @@
 #include "core/SaveGame.h"
 #include "core/TimeTypes.h"
 #include "core/Version.h"
+#include "game/Camera.h"
 #include "game/Player.h"
+#include "game/Spells.h"
+#include "game/effect/Quake.h"
 #include "graphics/Renderer.h"
 #include "graphics/image/Image.h"
 #include "gui/Console.h"
@@ -54,6 +59,7 @@
 #include "platform/Time.h"
 #include "scene/ChangeLevel.h"
 #include "util/String.h"
+#include "vr/VRComfort.h"
 #include "vr/VRSystem.h"
 #include "window/RenderWindow.h"
 
@@ -239,6 +245,19 @@ struct State {
 	std::string lastCapture;
 	std::string pendingCapture;
 
+	//! drawcheck: the scene view drawn twice per frame with the same camera must give one picture
+	struct DrawCheck {
+		unsigned seq = 0;            //!< Checks started so far
+		unsigned framesLeft = 0;     //!< Frames still to check; 0 when no check runs
+		unsigned frames = 0;         //!< Frames checked by the current or last check
+		unsigned framesDiffering = 0;
+		size_t pixels = 0;           //!< Pixels per picture
+		size_t maxPixelsDiffering = 0;
+		unsigned maxDelta = 0;       //!< Largest difference of one color channel, 0-255
+		std::string capture;         //!< First differing pair, saved as <capture>_a.bmp / _b.bmp
+		Image first;                 //!< The first view of the current frame
+	} drawCheck;
+
 };
 
 State g;
@@ -273,6 +292,12 @@ std::string buildStatus(PlatformInstant now) {
 
 	json.value("pid", u64(platform::getProcessId()));
 	json.value("version", arx_version);
+	// The same build identification as the log banner (#115) - assert on these, not on the log
+	json.object("build");
+	json.value("commit", arx_git_commit);
+	json.value("branch", arx_git_branch);
+	json.value("config", arx_build_type);
+	json.end();
 	json.value("state", gameStateName(g.state));
 	json.value("cleanShutdown", g.cleanShutdown);
 	json.value("frame", g.frame);
@@ -297,6 +322,64 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("mana", player.manaPool.current);
 		json.value("manaMax", player.manaPool.max);
 		json.end();
+		// The first-person camera after this frame's effects: bob = how far the camera left the stable head
+		// position (view bobbing), shake = the quake amplitude applied, fov in degrees (zoom) - the numbers
+		// the VR comfort policy (#76) keeps at 0 / cfg.ini fov
+		json.object("camera");
+		json.value("x", g_playerCamera.m_pos.x);
+		json.value("y", g_playerCamera.m_pos.y);
+		json.value("z", g_playerCamera.m_pos.z);
+		json.value("pitch", g_playerCamera.angle.getPitch());
+		json.value("yaw", g_playerCamera.angle.getYaw());
+		json.value("roll", g_playerCamera.angle.getRoll());
+		json.value("fov", glm::degrees(g_playerCamera.fov()));
+		json.value("bob", glm::distance(g_playerCamera.m_pos, g_playerCameraStablePos));
+		json.value("shake", quakeAmplitude());
+		json.end();
+		// Spells by type: active now, and launched since the level was loaded - the evidence that a spellcast
+		// really started a spell (#155: queued casts on the player never launch, TRAPS.md)
+		std::array<size_t, SPELL_TYPES_COUNT> active = {};
+		size_t activeTotal = 0;
+		for(const Spell & spell : spells) {
+			if(spell.m_type >= 0 && size_t(spell.m_type) < active.size()) {
+				active[size_t(spell.m_type)]++;
+			}
+			activeTotal++;
+		}
+		size_t launchedTotal = 0;
+		for(size_t i = 0; i < SPELL_TYPES_COUNT; i++) {
+			launchedTotal += spells.launchedCount(SpellType(i));
+		}
+		json.object("spells");
+		json.value("active", activeTotal);
+		json.value("launched", launchedTotal);
+		json.object("activeByType");
+		for(size_t i = 0; i < SPELL_TYPES_COUNT; i++) {
+			if(const char * name = getSpellName(SpellType(i)); name && active[i] != 0) {
+				json.value(name, active[i]);
+			}
+		}
+		json.end();
+		json.object("launchedByType");
+		for(size_t i = 0; i < SPELL_TYPES_COUNT; i++) {
+			const char * name = getSpellName(SpellType(i));
+			if(size_t count = spells.launchedCount(SpellType(i)); name && count != 0) {
+				json.value(name, count);
+			}
+		}
+		json.end();
+		json.end();
+	}
+
+	{
+		const vr::ComfortPolicy & policy = vr::comfort();
+		json.object("comfort");
+		json.value("mode", vr::comfortModeName(vr::comfortMode()));
+		json.value("active", vr::comfortActive());
+		json.value("viewBobbing", policy.viewBobbing);
+		json.value("screenShake", policy.screenShake);
+		json.value("fovZoom", policy.fovZoom);
+		json.end();
 	}
 
 	if(mainApp && mainApp->getWindow()) {
@@ -317,6 +400,8 @@ std::string buildStatus(PlatformInstant now) {
 	vr::FrameCounters frames = vr::frameCounters();
 	json.value("frames", frames.submitted);
 	json.value("shownFrames", frames.shown);
+	json.value("runtime", vr::runtimeName());
+	json.value("manifest", vr::runtimeManifest());
 	json.end();
 
 	json.value("cmdSeq", g.cmdSeq);
@@ -324,6 +409,20 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("lastCmdError", g.lastCmdError);
 	json.value("captureSeq", g.captureSeq);
 	json.value("lastCapture", g.lastCapture);
+
+	if(g.drawCheck.seq != 0) {
+		const State::DrawCheck & check = g.drawCheck;
+		json.object("drawCheck");
+		json.value("seq", check.seq);
+		json.value("running", check.framesLeft != 0);
+		json.value("frames", check.frames);
+		json.value("framesDiffering", check.framesDiffering);
+		json.value("pixels", check.pixels);
+		json.value("maxPixelsDiffering", check.maxPixelsDiffering);
+		json.value("maxDelta", check.maxDelta);
+		json.value("capture", check.capture);
+		json.end();
+	}
 
 	return json.str();
 }
@@ -348,7 +447,7 @@ void writeStatus(PlatformInstant now) {
 		LogWarning << "[channel] could not write " << file;
 	}
 
-	// The file logger only flushes on shutdown; a test wants to read arx.log while the game runs
+	// The file logger flushes on its own every second (#129); a test reading arx.log wants it fresher
 	Logger::flush();
 }
 
@@ -434,6 +533,49 @@ std::string execute(std::string_view line) {
 
 	if(word == "recenter") {
 		return refuse("recenter: not implemented yet (#28)");
+	}
+
+	if(word == "comfort") {
+		// Who decides the VR comfort policy (#76): auto = the VR session, on / off force the VR rules
+		std::string mode(rest);
+		util::makeLowercase(mode);
+		if(mode == "auto") {
+			vr::setComfortMode(vr::ComfortMode::Auto);
+		} else if(mode == "on") {
+			vr::setComfortMode(vr::ComfortMode::On);
+		} else if(mode == "off") {
+			vr::setComfortMode(vr::ComfortMode::Off);
+		} else {
+			return refuse("comfort: expected auto, on or off, got \"" + std::string(rest) + "\"");
+		}
+		return std::string();
+	}
+
+	if(word == "drawcheck") {
+		long frames = 1;
+		if(!rest.empty() && (!parseIndex(rest, frames) || frames < 1 || frames > 100000)) {
+			return refuse("drawcheck: expected a frame count 1-100000, got \"" + std::string(rest) + "\"");
+		}
+		if(g.drawCheck.framesLeft != 0) {
+			return refuse("drawcheck: check " + std::to_string(g.drawCheck.seq) + " still runs ("
+			              + std::to_string(g.drawCheck.framesLeft) + " frames left)");
+		}
+		if(currentState() != GameState::Gameplay) {
+			return refuse(std::string("drawcheck: needs a level on screen (state ")
+			              + gameStateName(currentState()) + ")");
+		}
+		State::DrawCheck & check = g.drawCheck;
+		check.seq++;
+		check.framesLeft = unsigned(frames);
+		check.frames = 0;
+		check.framesDiffering = 0;
+		check.pixels = 0;
+		check.maxPixelsDiffering = 0;
+		check.maxDelta = 0;
+		check.capture.clear();
+		LogInfo << "[render] drawcheck " << check.seq << ": drawing the scene twice per frame for "
+		        << frames << " frames";
+		return std::string();
 	}
 
 	if(word == "loadslot") {
@@ -618,6 +760,81 @@ void afterRender() {
 	LogInfo << "[channel] shot " << file << " (" << image.getWidth() << 'x' << image.getHeight() << ")";
 
 	writeStatus(platform::getTime());
+}
+
+size_t sceneViewCount() {
+	return (g.enabled && g.drawCheck.framesLeft != 0) ? 2 : 1;
+}
+
+void afterSceneView(size_t view) {
+
+	State::DrawCheck & check = g.drawCheck;
+	if(!g.enabled || check.framesLeft == 0 || !GRenderer) {
+		return;
+	}
+
+	if(view == 0) {
+		GRenderer->getSnapshot(check.first);
+		return;
+	}
+
+	Image second;
+	GRenderer->getSnapshot(second);
+
+	const Image & first = check.first;
+	arx_assert(first.getFormat() == second.getFormat() && first.getSize() == second.getSize());
+	size_t channels = first.getNumChannels();
+	size_t pixels = first.getWidth() * first.getHeight();
+	size_t differing = 0;
+	unsigned delta = 0;
+	const unsigned char * a = first.getData();
+	const unsigned char * b = second.getData();
+	for(size_t i = 0; i < pixels; i++, a += channels, b += channels) {
+		bool differs = false;
+		for(size_t c = 0; c < channels; c++) {
+			unsigned d = unsigned(std::abs(int(a[c]) - int(b[c])));
+			if(d != 0) {
+				differs = true;
+				delta = std::max(delta, d);
+			}
+		}
+		if(differs) {
+			differing++;
+		}
+	}
+
+	check.frames++;
+	check.framesLeft--;
+	check.pixels = pixels;
+	check.maxDelta = std::max(check.maxDelta, delta);
+	if(differing != 0) {
+		check.framesDiffering++;
+		if(check.capture.empty()) {
+			// Only the first differing frame is logged: a broken view differs every frame
+			LogInfo << "[render] drawcheck " << check.seq << " frame " << check.frames << ": " << differing
+			        << " of " << pixels << " pixels differ between the two views (max delta " << delta << ")";
+		}
+		if(differing > check.maxPixelsDiffering) {
+			// Keep the pair that differs most
+			fs::path dir = g.dir / "capture";
+			fs::create_directories(dir);
+			fs::path base = dir / ("drawcheck" + std::to_string(check.seq));
+			check.capture = base.string();
+			first.save(base.string() + "_a.bmp");
+			second.save(base.string() + "_b.bmp");
+		}
+	}
+	check.maxPixelsDiffering = std::max(check.maxPixelsDiffering, differing);
+
+	if(check.framesLeft == 0) {
+		LogInfo << "[render] drawcheck " << check.seq << " done: " << check.framesDiffering << " of "
+		        << check.frames << " frames differ (max " << check.maxPixelsDiffering << " of " << pixels
+		        << " pixels, max delta " << check.maxDelta << ")"
+		        << (check.capture.empty() ? "" : ", most differing pair: " + check.capture + "_a.bmp / _b.bmp");
+		check.first.reset();
+		writeStatus(platform::getTime());
+	}
+
 }
 
 void notifyLoading(AreaId area) {

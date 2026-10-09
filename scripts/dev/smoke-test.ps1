@@ -13,19 +13,24 @@
 	  - arx.log has no [E] line and status.json reports errors == 0
 	  - every -Commands line was acknowledged without an error
 	Prints the state timeline, the [E]/[W] log lines, the tail of the log and a PASS / FAIL verdict
-	per run. Exit code 0 when every run passed, 1 otherwise, 2 when a VR run was skipped because
-	another game holds the VR lock.
+	per run. Exit code 0 when every run passed, 1 otherwise, 2 when the test was SKIPPED: -Vr while
+	SteamVR is not running, or the game lock stayed busy for -LockTimeoutSec.
 
-	The game runs in a window (--windowed) and without the crash dialog (ARX_UNATTENDED=1), so a
-	crash leaves a report in crashes\ and the test fails instead of waiting for a click.
+	The game runs in a window (--windowed) that is shown without taking the focus, and without the
+	crash dialog (ARX_UNATTENDED=1), so a crash leaves a report in crashes\ and the test fails instead
+	of waiting for a click.
 
 	Isolation (docs/vr/WORKFLOW.md, "Parallel work"): the game gets this working copy's own user and
 	config directory (--user-dir / --config-dir = %LOCALAPPDATA%\ArxFatalisVR\userdirs\<folder>-<hash>)
 	and its own test channel directory, so parallel workers never share arx.log, cfg.ini, saves or
 	status.json with each other or with the player's Saved Games\Arx Libertatis (-Shared opts out).
-	-Saves copies save slots into the isolated directory for -- --loadslot runs. A -Vr run takes the
-	machine-wide VR lock (scripts/vr-lock.ps1) for the whole test; when another game holds it for
-	longer than -VrLockTimeoutSec the test is SKIPPED (exit 2), not failed. Flat runs need no lock.
+	-Saves copies save slots into the isolated directory for -- --loadslot runs.
+
+	Launch control (decision D-014, scripts/launch-lib.ps1): the test never starts SteamVR - a -Vr test
+	is SKIPPED (exit 2) unless vrserver.exe already runs; it holds the machine-wide game lock for all
+	its runs (one game at a time on this PC; a -Vr test also the VR lock), waiting up to
+	-LockTimeoutSec for the holder named in the output; it runs only this working copy's own build made
+	from its HEAD (-Rebuild builds first); every run is one line in %LOCALAPPDATA%\ArxFatalisVR\launches.log.
 
 .PARAMETER Config
 	Which build to run: Release (default), RelWithDebInfo or Debug.
@@ -34,7 +39,8 @@
 	Build directory containing arx.exe. Default: the one build-windows.ps1 uses for this working copy.
 
 .PARAMETER DataDir
-	Arx Fatalis install folder. Default: found automatically in the Steam libraries.
+	Arx Fatalis install folder, passed as --data-dir. Default: none - the game finds the install in the
+	Steam libraries itself (#79), and the test checks the "Steam data:" line of arx.log.
 
 .PARAMETER TestDir
 	The test channel directory. Default: $env:ARXVR_TEST_DIR or %LOCALAPPDATA%\ArxFatalisVR\test\<folder>-<hash>.
@@ -53,11 +59,15 @@
 .PARAMETER SaveLibrary
 	Folder holding the save slots for -Saves (the test save library, #70).
 
-.PARAMETER VrLockTimeoutSec
-	With -Vr: how long to wait for the VR lock before skipping the test (default 60).
+.PARAMETER LockTimeoutSec
+	How long to wait for the game lock (and with -Vr the VR lock) before skipping the test (default 300).
+
+.PARAMETER Rebuild
+	Build this working copy first when its build is stale (or missing).
 
 .PARAMETER Vr
-	Start in VR (no --no-vr). SteamVR must be running; the result records the OpenXR session state.
+	Start in VR (no --no-vr). SteamVR must already be running - the test never starts it (D-014) and is
+	SKIPPED otherwise; the result records the OpenXR session state.
 
 .PARAMETER Menu
 	A plain launch that expects the main menu (no --loadlevel 10 default); combine with -Commands 'loadslot 0'.
@@ -102,7 +112,9 @@ param(
 	[switch]$Shared,
 	[string[]]$Saves,
 	[string]$SaveLibrary,
-	[int]$VrLockTimeoutSec = 60,
+	[Alias('VrLockTimeoutSec')]
+	[int]$LockTimeoutSec = 300,
+	[switch]$Rebuild,
 	[switch]$Vr,
 	[switch]$Menu,
 	[int]$Seconds = 10,
@@ -119,10 +131,10 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'test-lib.ps1')
 
 if (-not $BuildDir) { $BuildDir = Get-DefaultBuildDir $ArxSourceDir $Config }
+# Only this working copy's own fresh build (D-014)
+$copy = Get-ArxWorkingCopyInfo $ArxSourceDir
+$stamp = Assert-ArxFreshBuild -SourceDir $ArxSourceDir -BuildDir $BuildDir -Config $Config -Head $copy.Head -Rebuild:$Rebuild
 $exe = Join-Path $BuildDir 'arx.exe'
-if (-not (Test-Path $exe)) { throw "$exe not found. Build first: .\scripts\build-windows.ps1 -Config $Config" }
-if (-not $DataDir) { $DataDir = Find-ArxFatalisSteamInstall }
-if (-not $DataDir) { throw 'Arx Fatalis (Steam app 1700) was not found in any Steam library. Install it, or pass -DataDir.' }
 if (-not $TestDir) { $TestDir = Get-ArxTestDir }
 if ($UserDir -and $Shared) { throw '-UserDir and -Shared exclude each other' }
 if (-not $UserDir) { $UserDir = Get-ArxUserDir -Shared:$Shared }
@@ -139,7 +151,7 @@ if (-not $Shared) {
 	New-Item -ItemType Directory -Force $UserDir | Out-Null
 	if ($Saves) { Copy-ArxSaves -Names $Saves -UserDir $UserDir -Library $SaveLibrary }
 }
-Write-Host "user dir: $UserDir ($(if ($Shared) { 'shared' } else { 'isolated' }));  test channel: $TestDir"
+Write-Host "build: $(ConvertTo-ShortSha $stamp) ($($copy.Branch));  user dir: $UserDir ($(if ($Shared) { 'shared' } else { 'isolated' }));  test channel: $TestDir"
 
 function Write-Check([bool]$Ok, [string]$Text) {
 	if ($Ok) { Write-Host "  [ok]   $Text" -ForegroundColor Green } else { Write-Host "  [FAIL] $Text" -ForegroundColor Red }
@@ -147,37 +159,35 @@ function Write-Check([bool]$Ok, [string]$Text) {
 
 function Invoke-SmokeRun([int]$Run) {
 	$reasons = [Collections.Generic.List[string]]::new()
-	$result = [ordered]@{ Run = $Run; Result = 'FAIL'; Exit = $null; State = '-'; Frames = 0; Fps = 0; VR = '-'; Errors = '-'; Warnings = '-'; Crash = '-'; Reasons = '' }
+	$result = [ordered]@{ Run = $Run; Result = 'FAIL'; Exit = $null; State = '-'; Frames = 0; Fps = 0; VR = '-'; Errors = '-'; Warnings = '-'; Crash = '-'; DrawCheck = '-'; Reasons = '' }
 	$process = $null
+	$launchTime = Get-Date
 	try {
-		# Isolated runs only clash with a game from the same build (same exe to relink, same channel);
-		# a shared run clashes with every game, because they would all write the same arx.log.
-		$running = @(Get-Process arx -ErrorAction SilentlyContinue | Where-Object { $Shared -or $_.Path -eq $exe })
-		if ($running) {
-			$what = if ($Shared) { 'another arx.exe' } else { 'arx.exe from this build' }
-			throw "$what is already running (pid $($running.Id -join ', ')) - close it first"
-		}
-		if ($Vr -and -not (Get-Process vrserver -ErrorAction SilentlyContinue)) {
-			throw '-Vr given but SteamVR (vrserver.exe) is not running - the game would start flat'
-		}
-
 		New-Item -ItemType Directory -Force $TestDir | Out-Null
 		foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt') {
 			Remove-Item (Join-Path $TestDir $f) -Force -ErrorAction SilentlyContinue
 		}
-		if (Test-Path $log) { Remove-Item $log -Force }
+		# arx.log is not deleted here: the game rotates the previous run to arx.1.log itself (#129), and
+		# deleting it would throw that history away. "Fresh" is judged by LastWriteTime >= launch time.
 		$crashesBefore = @(Get-ChildItem $crashDir -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
 
 		# Start-Process does not quote arguments: paths with spaces need explicit quotes
-		$argList = @('--data-dir', "`"$DataDir`"", '--windowed', '--test-dir', "`"$TestDir`"")
+		$argList = @()
+		if ($DataDir) { $argList += '--data-dir', "`"$DataDir`"" }
+		$argList += '--windowed', '--test-dir', "`"$TestDir`""
 		if (-not $Shared) { $argList += '--user-dir', "`"$UserDir`"", '--config-dir', "`"$UserDir`"" }
 		if (-not $Vr) { $argList += '--no-vr' }
 		$argList += $ArxArgs
 		Write-Host "=== run $Run/$Repeat`: arx.exe $($argList -join ' ')" -ForegroundColor Cyan
 		$env:ARX_UNATTENDED = '1'
 		$launchTime = Get-Date
-		$process = Start-Process -FilePath $exe -ArgumentList $argList -PassThru `
-			-RedirectStandardOutput (Join-Path $TestDir 'stdout.txt') -RedirectStandardError (Join-Path $TestDir 'stderr.txt')
+		# Shown without taking the focus (SDL hint from the environment, restored right after the start)
+		$previousHint = Set-ArxBackgroundWindow
+		try {
+			$process = Start-Process -FilePath $exe -ArgumentList $argList -PassThru `
+				-RedirectStandardOutput (Join-Path $TestDir 'stdout.txt') -RedirectStandardError (Join-Path $TestDir 'stderr.txt')
+		} finally { Restore-ArxBackgroundWindow $previousHint }
+		Set-ArxGameLockGame $lock $process.Id
 
 		# Wait for the expected state, printing the timeline
 		$deadline = (Get-Date).AddSeconds($StartTimeoutSec)
@@ -202,6 +212,8 @@ function Invoke-SmokeRun([int]$Run) {
 		$result.State = if ($status) { $status.state } else { '-' }
 
 		if ($reached) {
+			# Evidence for the no-focus rule (D-014): the window of a self-test must not take the focus
+			if ($status.window) { Write-Host "  window: focused=$($status.window.focused) minimized=$($status.window.minimized) $($status.window.width)x$($status.window.height)" }
 			if ($Vr) {
 				# Give the runtime a moment to move the session past idle; frames follow once it is ready (#18)
 				try { $status = Wait-ArxStatus { param($s) $s.vr.sessionState -ne 'idle' } -TimeoutSec 10 -Dir $TestDir -What 'a session state' } catch { }
@@ -221,6 +233,18 @@ function Invoke-SmokeRun([int]$Run) {
 			Start-Sleep -Seconds $Seconds
 			$status = Read-ArxStatus $TestDir
 			if ($process.HasExited) { $reasons.Add("the game exited on its own with code $($process.ExitCode) while it should have been running") }
+
+			# A 'drawcheck' sent through -Commands draws the scene twice per frame with the same camera
+			# (docs/vr/TESTING.md): it must finish, and the two pictures must be identical in every frame
+			if ($status -and $status.drawCheck -and -not $process.HasExited) {
+				try {
+					$status = Wait-ArxStatus { param($s) $s.drawCheck -and -not $s.drawCheck.running } -TimeoutSec 60 -Dir $TestDir -What 'the draw check to finish'
+				} catch { $reasons.Add("$_") }
+				$dc = $status.drawCheck
+				$result.DrawCheck = "$($dc.framesDiffering)/$($dc.frames)"
+				Write-Check ([int]$dc.framesDiffering -eq 0 -and -not $dc.running) "drawcheck: $($dc.framesDiffering) of $($dc.frames) frames differ between two draws of the scene (max $($dc.maxPixelsDiffering) of $($dc.pixels) pixels, max delta $($dc.maxDelta))"
+				if ([int]$dc.framesDiffering -ne 0) { $reasons.Add("drawcheck: $($dc.framesDiffering) of $($dc.frames) frames differ (most differing pair: $($dc.capture)_a.bmp / _b.bmp)") }
+			}
 		}
 
 		# Quit
@@ -257,6 +281,14 @@ function Invoke-SmokeRun([int]$Run) {
 		Write-Check ($process.ExitCode -eq 0) "exit code $($process.ExitCode)"
 		Write-Check $logFresh "arx.log written after the launch"
 		Write-Check $clean "'Clean shutdown' in arx.log"
+		if (-not $DataDir) {
+			# The game found the data in the Steam libraries itself (#79)
+			$steamLine = if ($logFresh) { Select-String -Path $log -Pattern 'Steam data: ' | Select-Object -First 1 -ExpandProperty Line } else { $null }
+			$steamFound = [bool]$steamLine -and ($steamLine -notmatch 'Steam data: (Arx Fatalis .* not found|not searched)')
+			$steamText = if ($steamLine) { $steamLine -replace '^.*Steam data: ', '' } else { 'no "Steam data:" line' }
+			Write-Check $steamFound "data found in the Steam libraries: $steamText"
+			if ($logFresh -and -not $steamFound) { $reasons.Add("Arx Fatalis data not found in the Steam libraries: $steamText") }
+		}
 		Write-Check ($newCrashes.Count -eq 0) "no new crash report ($($crashesAfter.Count) in $crashDir)"
 		Write-Check ($errorLines.Count -eq 0) "no [E] line in arx.log ($($errorLines.Count) found, $($warningLines.Count) warnings)"
 		Write-Check ($final -and [int]$final.errors -eq 0) "status.json errors == 0 (errors=$(if ($final) { $final.errors } else { '?' }), cleanShutdown=$(if ($final) { $final.cleanShutdown } else { '?' }))"
@@ -294,6 +326,12 @@ function Invoke-SmokeRun([int]$Run) {
 		if ($process -and -not $process.HasExited) { try { $process.Kill() } catch { } }
 	}
 
+	# The launch ledger (D-014): one line per run
+	if ($process) {
+		Add-ArxLaunchRecord -Script 'smoke-test.ps1' -Copy $ArxSourceDir -Branch $copy.Branch -Build $stamp -Vr $Vr -GamePid $process.Id `
+			-ExitCode $(if ($process.HasExited) { $process.ExitCode } else { $null }) -DurationSec ((Get-Date) - $launchTime).TotalSeconds -ArxArgs $ArxArgs -Time $launchTime
+	}
+
 	$result.Reasons = $reasons -join '; '
 	$result.Result = if ($reasons.Count -eq 0) { 'PASS' } else { 'FAIL' }
 	$color = if ($result.Result -eq 'PASS') { 'Green' } else { 'Red' }
@@ -301,16 +339,21 @@ function Invoke-SmokeRun([int]$Run) {
 	[pscustomobject]$result
 }
 
-# One game in VR at a time: a VR test holds the machine-wide lock for all its runs, or is skipped
-$lock = $null
-if ($Vr) {
-	$lock = Enter-VrLock -What "smoke-test.ps1 -Vr in $ArxSourceDir" -TimeoutSec $VrLockTimeoutSec
-	if (-not $lock) {
-		Write-Host "smoke test: SKIPPED - the VR lock stayed busy for $VrLockTimeoutSec s ($(Get-VrLockHolder)); the VR self-test is best effort, say so in the PR" -ForegroundColor Yellow
-		exit 2
-	}
-	Write-Host "VR lock: taken ($(Get-VrLockPath))"
+# No SteamVR start without the owner (D-014): a VR test needs SteamVR already running, or is skipped
+if ($Vr -and -not (Test-SteamVrRunning)) {
+	Write-Host 'smoke test: SKIPPED - -Vr given but SteamVR (vrserver.exe) is not running, and a worker never starts it (D-014); say so in the PR and run the flat test instead' -ForegroundColor Yellow
+	exit 2
 }
+Write-ArxLaunchBudgetNote -Copy $ArxSourceDir -Branch $copy.Branch -Launches $Repeat
+
+# One game at a time on this PC: the test holds a game lock slot (and for -Vr the VR lock) for all its runs, or is skipped
+$lock = Enter-ArxGameLock -What "smoke-test.ps1$(if ($Vr) { ' -Vr' })" -Copy $ArxSourceDir -Branch $copy.Branch -Vr:$Vr -TimeoutSec $LockTimeoutSec
+if (-not $lock) {
+	Write-Host "smoke test: SKIPPED - another game kept the game lock for $LockTimeoutSec s (one game at a time, D-014); run the test again when it is free:" -ForegroundColor Yellow
+	foreach ($line in Get-ArxLockHolders) { Write-Host "  held: $line" -ForegroundColor Yellow }
+	exit 2
+}
+Write-Host "game lock: slot $($lock.Slot)$(if ($lock.Vr) { ' + VR lock' }) ($(Get-ArxAppDataDir))"
 
 $results = @()
 try {
@@ -319,7 +362,7 @@ try {
 		if ($run -lt $Repeat) { Start-Sleep -Seconds 2 }
 	}
 } finally {
-	Exit-VrLock $lock
+	Exit-ArxGameLock $lock
 }
 
 $passed = @($results | Where-Object Result -eq 'PASS').Count

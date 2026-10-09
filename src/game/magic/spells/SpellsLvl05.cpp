@@ -84,6 +84,41 @@ void RuneOfGuardingSpell::End() {
 	endLightDelayed(m_light, 500ms);
 }
 
+void RuneOfGuardingSpell::Render() {
+
+	Vec3f pos = m_pos + Vec3f(0.f, -20.f, 0.f);
+
+	RenderMaterial mat;
+	mat.setDepthTest(true);
+	mat.setBlendType(RenderMaterial::Additive);
+
+	Anglef stiteangle;
+	Color3f stitecolor;
+
+	float stiteangleb = m_elapsed / 100ms;
+	stiteangle.setPitch(0);
+	stiteangle.setRoll(0);
+
+	stiteangle.setYaw(stiteangleb * 0.1f);
+	stitecolor = Color3f(0.4f, 0.4f, 0.6f);
+	float scale = std::sin(m_elapsed / (GameDuration(200ms) / 3));
+	Vec3f stitescale = Vec3f(1.f, -0.1f, 1.f);
+
+	Draw3DObject(slight.get(), stiteangle, pos, stitescale, stitecolor, mat);
+
+	stiteangle.setYaw(stiteangleb);
+	stitecolor = Color3f(0.6f, 0.f, 0.f);
+	stitescale = Vec3f(2.f) * (1.f + 0.01f * scale);
+
+	Draw3DObject(ssol.get(), stiteangle, pos, stitescale, stitecolor, mat);
+
+	stitecolor = Color3f(0.6f, 0.3f, 0.45f);
+	stitescale = Vec3f(1.8f) * (1.f + 0.02f * scale);
+
+	Draw3DObject(srune.get(), stiteangle, pos, stitescale, stitecolor, mat);
+
+}
+
 void RuneOfGuardingSpell::Update() {
 	
 	EERIE_LIGHT * light = lightHandleGet(m_light);
@@ -98,36 +133,7 @@ void RuneOfGuardingSpell::Update() {
 	}
 	
 	Vec3f pos = m_pos + Vec3f(0.f, -20.f, 0.f);
-	
-	RenderMaterial mat;
-	mat.setDepthTest(true);
-	mat.setBlendType(RenderMaterial::Additive);
-	
-	Anglef stiteangle;
-	Color3f stitecolor;
-	
-	float stiteangleb = m_elapsed / 100ms;
-	stiteangle.setPitch(0);
-	stiteangle.setRoll(0);
-	
-	stiteangle.setYaw(stiteangleb * 0.1f);
-	stitecolor = Color3f(0.4f, 0.4f, 0.6f);
-	float scale = std::sin(m_elapsed / (GameDuration(200ms) / 3));
-	Vec3f stitescale = Vec3f(1.f, -0.1f, 1.f);
-	
-	Draw3DObject(slight.get(), stiteangle, pos, stitescale, stitecolor, mat);
-	
-	stiteangle.setYaw(stiteangleb);
-	stitecolor = Color3f(0.6f, 0.f, 0.f);
-	stitescale = Vec3f(2.f) * (1.f + 0.01f * scale);
-	
-	Draw3DObject(ssol.get(), stiteangle, pos, stitescale, stitecolor, mat);
-	
-	stitecolor = Color3f(0.6f, 0.3f, 0.45f);
-	stitescale = Vec3f(1.8f) * (1.f + 0.02f * scale);
-	
-	Draw3DObject(srune.get(), stiteangle, pos, stitescale, stitecolor, mat);
-	
+
 	size_t count = m_quantizer.update(toMsf(g_gameTime.lastFrameDuration()) * 0.12f);
 	for(size_t i = 0; i < count; i++) {
 		PARTICLE_DEF * pd = createParticle(true);
@@ -221,6 +227,14 @@ void LevitateSpell::End() {
 		player.levitate = false;
 }
 
+void LevitateSpell::Render() {
+
+	cone1.Render();
+	cone2.Render();
+	m_stones.DrawStone();
+
+}
+
 void LevitateSpell::Update() {
 	
 	Vec3f target = m_caster_pos;
@@ -253,11 +267,7 @@ void LevitateSpell::Update() {
 	for(size_t i = 0; i < dustParticles; i++) {
 		createDustParticle();
 	}
-	
-	cone1.Render();
-	cone2.Render();
-	m_stones.DrawStone();
-	
+
 	ARX_SOUND_RefreshPosition(m_snd_loop, entities[m_target]->pos);
 }
 
@@ -323,6 +333,10 @@ void CurePoisonSpell::Launch() {
 	}
 }
 
+void CurePoisonSpell::Render() {
+	m_particles.Render();
+}
+
 void CurePoisonSpell::Update() {
 	
 	m_pos = entities[m_target]->pos;
@@ -362,8 +376,7 @@ void CurePoisonSpell::Update() {
 		light->creationTime = g_gameTime.now();
 		light->extras = 0;
 	}
-	
-	m_particles.Render();
+
 }
 
 RepelUndeadSpell::RepelUndeadSpell()
@@ -402,6 +415,24 @@ void RepelUndeadSpell::End() {
 	endLightDelayed(m_light, 500ms);
 }
 
+void RepelUndeadSpell::Render() {
+
+	RenderMaterial mat;
+	mat.setDepthTest(true);
+	mat.setBlendType(RenderMaterial::Additive);
+
+	Anglef eObjAngle;
+	eObjAngle.setYaw(m_yaw);
+	eObjAngle.setPitch(0);
+	eObjAngle.setRoll(0);
+
+	float wave = timeWaveSin(g_gameTime.now(), 2s * glm::pi<float>());
+	float vv = (1.f + wave) * 0.5f + 1.1f;
+
+	Draw3DObject(ssol.get(), eObjAngle, m_pos + Vec3f(0.f, -5.f, 0.f), Vec3f(vv), Color3f(0.6f, 0.6f, 0.8f), mat);
+
+}
+
 void RepelUndeadSpell::Update() {
 	
 	Vec3f pos = entities[m_target]->pos;
@@ -415,23 +446,11 @@ void RepelUndeadSpell::Update() {
 	
 	m_pos = pos;
 	m_yaw = rot;
-	
-	RenderMaterial mat;
-	mat.setDepthTest(true);
-	mat.setBlendType(RenderMaterial::Additive);
-	
-	Anglef  eObjAngle;
 
-	eObjAngle.setYaw(m_yaw);
-	eObjAngle.setPitch(0);
-	eObjAngle.setRoll(0);
-	
 	float wave = timeWaveSin(g_gameTime.now(), 2s * glm::pi<float>());
-	
+
 	float vv = (1.f + wave) * 0.5f + 1.1f;
-	
-	Draw3DObject(ssol.get(), eObjAngle, m_pos + Vec3f(0.f, -5.f, 0.f), Vec3f(vv), Color3f(0.6f, 0.6f, 0.8f), mat);
-	
+
 	size_t count = m_quantizer.update(toMsf(g_gameTime.lastFrameDuration()) * 0.12f);
 	for(size_t i = 0; i < count; i++) {
 		PARTICLE_DEF * pd = createParticle(true);
@@ -558,6 +577,14 @@ void PoisonProjectileSpell::End() {
 	
 }
 
+void PoisonProjectileSpell::Render() {
+
+	for(CPoisonProjectile & projectile : util::dereference(m_projectiles)) {
+		projectile.Render();
+	}
+
+}
+
 void PoisonProjectileSpell::Update() {
 	
 	for(CPoisonProjectile & projectile : util::dereference(m_projectiles)) {
@@ -565,9 +592,7 @@ void PoisonProjectileSpell::Update() {
 	}
 	
 	for(CPoisonProjectile & projectile : util::dereference(m_projectiles)) {
-		
-		projectile.Render();
-		
+
 		EERIE_LIGHT * light = lightHandleGet(projectile.lLightId);
 		if(light) {
 			light->intensity = 2.3f * projectile.lightIntensityFactor;

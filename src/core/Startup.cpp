@@ -20,12 +20,15 @@
 
 #include <stddef.h>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <list>
 #include <set>
 #include <sstream>
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
+#include <ctime>
 
 #include "platform/Platform.h"
 
@@ -48,6 +51,7 @@
 #include "gui/Console.h"
 #include "gui/Credits.h"
 
+#include "io/fs/FilePath.h"
 #include "io/fs/Filesystem.h"
 #include "io/fs/SystemPaths.h"
 #include "io/log/CriticalLogger.h"
@@ -56,8 +60,11 @@
 
 #include "math/Random.h"
 
+#include "platform/Architecture.h"
 #include "platform/Compiler.h"
 #include "platform/CrashHandler.h"
+#include "platform/Environment.h"
+#include "platform/Process.h"
 #include "platform/profiler/Profiler.h"
 #include "platform/Thread.h"
 #include "platform/Time.h"
@@ -77,8 +84,144 @@
 	#undef main /* in case SDL.h was already included */
 #endif
 
+namespace {
+
+//! Runs whose logs are kept: arx.log plus arx.1.log .. arx.<LogHistory-1>.log (#129, research row F-92)
+constexpr size_t LogHistory = 10;
+
+std::string formatTime(std::time_t time, bool utc) {
+	std::tm * tm = utc ? std::gmtime(&time) : std::localtime(&time);
+	char buffer[32];
+	if(!tm || !std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm)) {
+		return "?";
+	}
+	return buffer;
+}
+
+/*!
+ * The log banner (#115, research row F-18): right after "Starting <name> <version>" the log says
+ * which build wrote it, how it was started and where it is logging to, so every log a tester
+ * sends is self-describing. The lines keep the "Key: value" shape on purpose - the run digest
+ * (#131) reads them; their meaning is documented in docs/vr/TESTING.md.
+ *
+ * \param logFile          The log file of this run (empty when there is none).
+ * \param logRotationError What logger::rotateLogs() reported, empty when the previous runs were
+ *                         rotated away cleanly - otherwise this run appends to the previous log.
+ */
+void logStartupBanner(int argc, char ** argv, const fs::path & logFile,
+                      const std::string & logRotationError) {
+
+	// Build: <commit> on <branch>, <configuration>, <compiler>, <architecture>
+	{
+		std::ostringstream oss;
+		oss << "Build: " << (arx_git_commit.empty() ? std::string("unknown commit") : arx_git_commit);
+		if(!arx_git_branch.empty()) {
+			oss << " on " << arx_git_branch;
+		} else if(!arx_git_commit.empty()) {
+			oss << " (detached)";
+		}
+		oss << ", " << (arx_build_type.empty() ? std::string("unknown configuration") : arx_build_type);
+		bool notComparable = (arx_build_type == "Debug");
+		#ifdef ARX_DEBUG
+		if(!notComparable) {
+			oss << " with debug output";
+		}
+		notComparable = true;
+		#endif
+		oss << ", " << ARX_COMPILER_VERNAME << ", " << ARX_ARCH_NAME;
+		if(notComparable) {
+			// Research row F-18: timings of a debug build must never be compared with release ones
+			oss << " - performance numbers not comparable";
+		}
+		LogInfo << oss.str();
+	}
+
+	// Executable: "<path>", linked <time>, built from <built-from.txt>
+	{
+		fs::path exe = platform::getExecutablePath();
+		std::ostringstream oss;
+		oss << "Executable: ";
+		std::string builtCommit;
+		if(exe.empty()) {
+			oss << "unknown path";
+		} else {
+			oss << '"' << exe.string() << '"';
+			if(std::time_t linked = fs::last_write_time(exe)) {
+				oss << ", linked " << formatTime(linked, false);
+			}
+			// scripts/build-windows.ps1 leaves built-from.txt next to arx.exe: "<sha>" or "<sha> dirty"
+			fs::path stamp = exe.parent() / "built-from.txt";
+			std::string builtFrom = fs::is_regular_file(stamp) ? fs::read(stamp) : std::string();
+			while(!builtFrom.empty() && std::isspace(static_cast<unsigned char>(builtFrom.back()))) {
+				builtFrom.pop_back();
+			}
+			if(builtFrom.empty()) {
+				oss << ", built from unknown (no built-from.txt next to the executable)";
+			} else {
+				oss << ", built from " << builtFrom;
+				builtCommit = builtFrom.substr(0, builtFrom.find(' '));
+			}
+		}
+		LogInfo << oss.str();
+		// built-from.txt names the commit of the last build, the compiled-in commit is refreshed only
+		// when the version rule runs: a mismatch means the build id in this log is a lie
+		if(!builtCommit.empty() && !arx_git_commit.empty() && builtCommit != arx_git_commit) {
+			LogWarning << "built-from.txt names commit " << builtCommit << " but the executable carries version"
+			              " information from " << arx_git_commit << " - the build id in this log is stale"
+			              " (see docs/vr/TRAPS.md)";
+		}
+	}
+
+	// Run: <local time> (<UTC>), pid <n>, command line: <arguments>
+	{
+		std::time_t now = std::time(nullptr);
+		std::ostringstream oss;
+		oss << "Run: " << formatTime(now, false) << " local (" << formatTime(now, true) << " UTC), pid "
+		    << platform::getProcessId() << ", command line:";
+		for(int i = 1; i < argc; i++) {
+			std::string_view arg = argv[i];
+			// Readable, not shell-exact: quote what has spaces, leave the rest alone
+			if(arg.find_first_of(" \t\"") != std::string_view::npos) {
+				oss << " \"" << util::escapeString(std::string(arg), "\"") << '"';
+			} else {
+				oss << ' ' << arg;
+			}
+		}
+		if(argc <= 1) {
+			oss << " (none)";
+		}
+		LogInfo << oss.str();
+	}
+
+	// Log: "<path>", previous runs kept as <name>.1.<ext> .. <name>.N.<ext> | appended to the previous run's log
+	if(!logFile.empty()) {
+		std::ostringstream oss;
+		oss << "Log: " << logFile;
+		if(logRotationError.empty()) {
+			std::string_view base = logFile.basename();
+			std::string_view ext = logFile.ext();
+			oss << ", previous runs kept as " << base << ".1" << ext << " .. " << base << '.'
+			    << (LogHistory - 1) << ext;
+		} else {
+			oss << ", appended to the previous run's log";
+		}
+		LogInfo << oss.str();
+		if(!logRotationError.empty()) {
+			// Research row F-92: never truncate the previous run when a locked archive stops the rotation
+			LogWarning << "Log rotation failed: " << logRotationError << " - nothing was deleted, this run"
+			              " appends to the previous log (see docs/vr/TESTING.md)";
+		}
+	}
+
+	// Steam data: "<folder>" (Steam library <library>) | not found: <why> (#79, D-004)
+	LogInfo << "Steam data: " << fs::getSteamDataStatus();
+
+}
+
+} // anonymous namespace
+
 int utf8_main(int argc, char ** argv) {
-	
+
 	// GCC -ffast-math disables denormal before main() - do the same for other compilers
 	Thread::disableFloatDenormals();
 	
@@ -150,18 +293,26 @@ int utf8_main(int argc, char ** argv) {
 		CrashHandler::deleteOldReports(/* nb to keep = */1);
 		
 		// Now that data directories are initialized, create a log file
+		fs::path logFile = fs::getUserDir() / "arx.log";
+		std::string logRotationError;
 		{
-			fs::path logFile = fs::getUserDir() / "arx.log";
-			Logger::add(new logger::File(logFile));
+			// Keep the last runs (#129, research row F-92): a tester's second crash must not
+			// overwrite the first. When a file cannot be moved nothing is deleted - this run
+			// appends to the previous log and the banner says why.
+			logRotationError = logger::rotateLogs(logFile, LogHistory);
+			std::ios_base::openmode mode = std::ios_base::out;
+			mode |= logRotationError.empty() ? std::ios_base::trunc : std::ios_base::app;
+			Logger::add(new logger::File(logFile, mode));
 			CrashHandler::addAttachedFile(logFile);
 		}
-		
+
 		Logger::add(new MemoryLogger(&g_console.buffer()));
-		
+
 		profiler::initialize();
-		
+
 		// 14: Start the game already!
 		LogInfo << "Starting " << arx_name << ' ' << arx_version;
+		logStartupBanner(argc, argv, logFile, logRotationError);
 		runGame();
 		
 	}

@@ -584,8 +584,12 @@ bool SDL2Window::initialize() {
 	updateSize(true);
 	
 	onShow(true);
-	onFocus(true);
-	
+	// The window may have been shown without activation (SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN,
+	// set by the self-test scripts so a test run does not take the focus from the owner's work, see
+	// docs/vr/WORKFLOW.md "Parallel work"): report the focus SDL actually has instead of assuming it,
+	// so status.json "window.focused" tells the truth. A later focus change arrives as an SDL event.
+	onFocus((SDL_GetWindowFlags(m_window) & SDL_WINDOW_INPUT_FOCUS) != 0);
+
 	return true;
 }
 

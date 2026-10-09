@@ -153,20 +153,15 @@ void CCreateField::RenderSubDivFace(Vec3f * b, Vec3f * t, int b1, int b2, int t1
 }
 
 void CCreateField::Update(ShortGameDuration timeDelta) {
-	
-	arx_assume(timeDelta >= 0 && timeDelta <= ShortGameDuration::max() / 2);
-	
-	m_elapsed += timeDelta;
-	
-}
 
-void CCreateField::Render()
-{
+	arx_assume(timeDelta >= 0 && timeDelta <= ShortGameDuration::max() / 2);
+
+	m_elapsed += timeDelta;
+
+	// The field animates only while it is in view, as it did when this ran while drawing
 	if(!VisibleSphere(Sphere(eSrc - Vec3f(0.f, 120.f, 0.f), 400.f)))
 		return;
-	
-	//-------------------------------------------------------------------------
-	// rendu
+
 	if(youp) {
 		fglow += 0.5f;
 
@@ -180,9 +175,9 @@ void CCreateField::Render()
 			youp = true;
 		}
 	}
-	
+
 	float ysize = std::min(1.0f, m_elapsed / 1s);
-	
+
 	if(ysize >= 1.0f) {
 		size = std::min(1.0f, (m_elapsed - 1s) / 1s);
 		size = std::max(size, 0.1f);
@@ -197,42 +192,12 @@ void CCreateField::Render()
 
 	falpha = glm::sin(glm::radians(fglow)) + Random::getf(0.f, 0.2f);
 	falpha = glm::clamp(falpha, 0.f, 1.f);
-	
-	float smul = 100 * size;
 
-	// bottom points
-	Vec3f b[4] = {
-		eSrc + Vec3f(-smul, 0.f, -smul),
-		eSrc + Vec3f(smul, 0.f, -smul),
-		eSrc + Vec3f(smul, 0.f, smul),
-		eSrc + Vec3f(-smul, 0.f, smul)
-	};
-	
-	// top points
-	Vec3f t[4] = {
-		b[0] + Vec3f(0.f, -250 * ysize, 0.f),
-		b[1] + Vec3f(0.f, -250 * ysize, 0.f),
-		b[2] + Vec3f(0.f, -250 * ysize, 0.f),
-		b[3] + Vec3f(0.f, -250 * ysize, 0.f)
-	};
-	
 	fwrap -= 5.0f; // TODO ignores the frame delay
 	while(fwrap < 0) {
 		fwrap += 360;
 	}
-	
-	RenderMaterial mat;
-	mat.setTexture(tex_jelly);
-	mat.setDepthTest(true);
-	mat.setBlendType(RenderMaterial::Additive);
-	
-	RenderSubDivFace(b, b, 0, 1, 2, 3, mat);
-	RenderSubDivFace(t, t, 0, 3, 2, 1, mat);
-	RenderSubDivFace(b, t, 1, 0, 0, 1, mat);
-	RenderSubDivFace(b, t, 3, 2, 2, 3, mat);
-	RenderSubDivFace(b, t, 0, 3, 3, 0, mat);
-	RenderSubDivFace(b, t, 2, 1, 1, 2, mat);
-	
+
 	EERIE_LIGHT * light = lightHandleGet(lLightId);
 	if(light) {
 		light->intensity = 0.7f + 2.3f * falpha;
@@ -242,5 +207,44 @@ void CCreateField::Render()
 		light->pos = eSrc + Vec3f(0.f, -150.f, 0.f);
 		light->duration = 800ms;
 	}
-	
+
+}
+
+void CCreateField::Render()
+{
+	if(!VisibleSphere(Sphere(eSrc - Vec3f(0.f, 120.f, 0.f), 400.f)))
+		return;
+
+	float ysize = std::min(1.0f, m_elapsed / 1s);
+
+	float smul = 100 * size;
+
+	// bottom points
+	Vec3f b[4] = {
+		eSrc + Vec3f(-smul, 0.f, -smul),
+		eSrc + Vec3f(smul, 0.f, -smul),
+		eSrc + Vec3f(smul, 0.f, smul),
+		eSrc + Vec3f(-smul, 0.f, smul)
+	};
+
+	// top points
+	Vec3f t[4] = {
+		b[0] + Vec3f(0.f, -250 * ysize, 0.f),
+		b[1] + Vec3f(0.f, -250 * ysize, 0.f),
+		b[2] + Vec3f(0.f, -250 * ysize, 0.f),
+		b[3] + Vec3f(0.f, -250 * ysize, 0.f)
+	};
+
+	RenderMaterial mat;
+	mat.setTexture(tex_jelly);
+	mat.setDepthTest(true);
+	mat.setBlendType(RenderMaterial::Additive);
+
+	RenderSubDivFace(b, b, 0, 1, 2, 3, mat);
+	RenderSubDivFace(t, t, 0, 3, 2, 1, mat);
+	RenderSubDivFace(b, t, 1, 0, 0, 1, mat);
+	RenderSubDivFace(b, t, 3, 2, 2, 3, mat);
+	RenderSubDivFace(b, t, 0, 3, 3, 0, mat);
+	RenderSubDivFace(b, t, 2, 1, 1, 2, mat);
+
 }

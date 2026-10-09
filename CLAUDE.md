@@ -17,12 +17,18 @@ Naming: commits and PR titles `ARXVR-<issue> <type>: <description>`, branches `A
 Create new tasks and bugs discovered during work yourself and list them in your report.
 Before debugging something that makes no sense, read [docs/vr/TRAPS.md](docs/vr/TRAPS.md); add new traps there in the same PR.
 Design decisions that shape every VR task: stick forward = look direction (D-008), full body with IK arms (D-009),
-no rays from the hands — runes drawn in the air with the hand, grab by reach, a pointer only in menus (D-010).
+no rays from the hands — runes drawn in the air with the hand, a pointer only in menus (D-010); world interaction
+— both hands work as the mouse, each with its own reticle; the inventory opens in the centre of the view (D-016).
 
 **Development loop:** `/next-task` takes the next task from the queue in [docs/vr/MVP.md](docs/vr/MVP.md#task-queue)
 and implements it in its own PR; `/accept-task` and `/reject-task` handle the owner's VR test verdict.
 Merge on your own when CI is green, except `needs-vr-test` PRs — those wait for the owner
 (see [Pull requests, CI and merging](docs/vr/WORKFLOW.md#pull-requests-ci-and-merging)).
+
+**Coordinator:** the owner talks to one coordinator session ("ARXVR Coordinator", started with
+`/coordinator`), which runs the work in blocks, starts and controls the worker sessions
+(`scripts/dev/start-worker.ps1`) and reports — playbook: [docs/vr/COORDINATOR.md](docs/vr/COORDINATOR.md).
+A new machine is prepared with `scripts/dev/setup-coordinator.ps1`.
 
 **All project artifacts (docs, issues, commits, PRs, code comments) are in English.**
 Conversation with the project owner is in Russian.
@@ -45,7 +51,7 @@ Dependencies come from vcpkg in manifest mode (`vcpkg.json`, triplet `x64-window
 ```powershell
 .\scripts\build-windows.ps1              # Release build of this working copy
 .\scripts\build-windows.ps1 -Config Debug -Clean
-.\scripts\run-windows.ps1                # runs the build with Arx Fatalis data found in the Steam libraries
+.\scripts\run-windows.ps1                # runs the build; the game finds the Arx Fatalis data in the Steam libraries itself (#79)
 .\scripts\run-windows.ps1 -- --skiplogo --loadslot 0   # extra arguments go to arx.exe; load save slot 0 directly
 .\scripts\run-windows.ps1 -Fullscreen    # test runs are windowed by default (arx.exe --windowed); this opts out
 .\scripts\run-windows.ps1 -Isolated      # this working copy's own user dir (log, config, saves) instead of Saved Games; -Saves save0000 copies a save in
@@ -55,9 +61,11 @@ Dependencies come from vcpkg in manifest mode (`vcpkg.json`, triplet `x64-window
 .\scripts\dev\test-pr.ps1 131            # owner's test station: build the PR's worktree if needed, print its How to test, launch it
 ```
 
-- A launch that may start in VR (no `--no-vr`) holds the machine-wide VR lock (`scripts/vr-lock.ps1`)
-  while the game runs: one game in VR at a time. The smoke test skips its VR run (exit 2) when the lock
-  stays busy; flat launches need no lock.
+- Launch rules (D-014, `scripts/launch-lib.ps1`): the scripts never start SteamVR — without
+  `vrserver.exe` running a launch is made flat and `smoke-test.ps1 -Vr` is skipped (exit 2); only the
+  owner passes `-StartSteamVR`. One game at a time on this PC: every launch holds the game lock and
+  waits for the holder. Only the working copy's own fresh build runs (`-Rebuild` builds first). Every
+  launch goes into `%LOCALAPPDATA%\ArxFatalisVR\launches.log`; the budget is 10 launches per task.
 
 - SteamVR shows "Arx Fatalis VR" and the tile only for a registered build: run `register-steamvr.ps1`
   once per working copy / config and restart SteamVR — see [docs/vr/STEAMVR.md](docs/vr/STEAMVR.md).

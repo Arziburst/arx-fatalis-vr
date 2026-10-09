@@ -9,8 +9,8 @@
 	of the manifests listed in <Steam>\config\appconfig.json.
 
 	This script fills the manifest template data\vr\arx-fatalis-vr.vrmanifest with the absolute path
-	of this working copy's arx.exe, the 460x215 tile data\vr\steamvr-tile.png and the --data-dir
-	argument (Arx Fatalis found in the Steam libraries), writes it to
+	of this working copy's arx.exe and the 460x215 tile data\vr\steamvr-tile.png (no arguments: the
+	game finds Arx Fatalis in the Steam libraries itself, #79; -DataDir adds --data-dir), writes it to
 	%LOCALAPPDATA%\ArxFatalisVR\steamvr\arx-fatalis-vr.vrmanifest and adds that path to SteamVR's
 	appconfig.json. The game itself does not depend on OpenVR.
 
@@ -25,7 +25,7 @@
 	Build directory containing arx.exe. Default: the one build-windows.ps1 uses for this working copy.
 
 .PARAMETER DataDir
-	Arx Fatalis install folder passed as --data-dir. Default: found automatically in the Steam libraries.
+	Arx Fatalis install folder passed as --data-dir. Default: none - the game finds it in the Steam libraries.
 
 .PARAMETER Unregister
 	Remove the manifest from appconfig.json and delete it.
@@ -103,11 +103,8 @@ if (-not (Test-Path $exe)) { throw "$exe not found. Build first: .\scripts\build
 if (-not (Test-Path $Template)) { throw "Manifest template $Template not found." }
 if (-not (Test-Path $Tile)) { throw "Tile image $Tile not found." }
 
-if (-not $DataDir) { $DataDir = Find-ArxFatalisSteamInstall }
-if (-not $DataDir) { throw 'Arx Fatalis (Steam app 1700) was not found in any Steam library. Install it, or pass -DataDir.' }
-
-# Until the engine finds the data itself (task #79), launching from SteamVR needs --data-dir.
-$arguments = "--data-dir `"$DataDir`""
+# The game finds the data in the Steam libraries itself (#79): no arguments unless -DataDir is given
+$arguments = if ($DataDir) { "--data-dir `"$DataDir`"" } else { '' }
 
 $manifest = Get-Content -Raw $Template
 $manifest = $manifest.Replace('@BINARY_PATH_WINDOWS@', (ConvertTo-JsonString ([IO.Path]::GetFullPath($exe))))

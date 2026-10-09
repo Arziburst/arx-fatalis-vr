@@ -33,6 +33,7 @@ CabalFx::CabalFx()
 	, m_offset(60)
 	, m_hasTwoRingSets(true)
 	, m_ringCount(0)
+	, m_casterPos(0.f)
 {
 }
 
@@ -90,15 +91,17 @@ Color3f CabalFx::randomizeLightColor() const {
 }
 
 Vec3f CabalFx::update(Vec3f casterPos) {
-	
+
+	m_casterPos = casterPos;
+
 	float mov = timeWaveSin(g_gameTime.now(), 1600ms * glm::pi<float>()) * m_scaleY;
-	
+
 	Vec3f cabalpos = casterPos + Vec3f(0.f, m_offset - mov, 0.f);
 	float refpos = casterPos.y + m_offset;
-	
+
 	GameDuration timeOffset = std::chrono::duration<float, std::milli>(glm::radians(m_scaleY) * 800.f);
 	float Es = timeWaveSin(g_gameTime.now() + timeOffset, 1600ms * glm::pi<float>());
-	
+
 	EERIE_LIGHT * light = lightHandleGet(m_lightHandle);
 	if(light) {
 		light->pos.x = cabalpos.x;
@@ -107,15 +110,32 @@ Vec3f CabalFx::update(Vec3f casterPos) {
 		light->rgb = randomizeLightColor();
 		light->fallstart = Es * 1.5f;
 	}
-	
-	RenderMaterial mat;
-	mat.setDepthTest(true);
-	mat.setBlendType(RenderMaterial::Additive);
-	
+
 	Anglef cabalangle(0.f, 0.f, 0.f);
 	cabalangle.setYaw(m_yaw + g_framedelay * 0.1f);
 	m_yaw = cabalangle.getYaw();
-	
+
+	return cabalpos;
+}
+
+void CabalFx::render() {
+
+	// The same wave as update() in this frame, so the rings sit where the light is
+	float mov = timeWaveSin(g_gameTime.now(), 1600ms * glm::pi<float>()) * m_scaleY;
+
+	Vec3f cabalpos = m_casterPos + Vec3f(0.f, m_offset - mov, 0.f);
+	float refpos = m_casterPos.y + m_offset;
+
+	GameDuration timeOffset = std::chrono::duration<float, std::milli>(glm::radians(m_scaleY) * 800.f);
+	float Es = timeWaveSin(g_gameTime.now() + timeOffset, 1600ms * glm::pi<float>());
+
+	RenderMaterial mat;
+	mat.setDepthTest(true);
+	mat.setBlendType(RenderMaterial::Additive);
+
+	Anglef cabalangle(0.f, 0.f, 0.f);
+	cabalangle.setYaw(m_yaw);
+
 	Vec3f cabalscale = Vec3f(Es);
 	Color3f cabalcolor;
 	
@@ -146,7 +166,7 @@ Vec3f CabalFx::update(Vec3f casterPos) {
 			Draw3DObject(cabal.get(), cabalangle, cabalpos, cabalscale, cabalcolor, mat);
 		}
 	}
-	return cabalpos;
+
 }
 
 void CabalFx::create(Vec3f casterPos) {

@@ -30,6 +30,7 @@
 
 #include "io/fs/Filesystem.h"
 #include "io/fs/PathConstants.h"
+#include "io/fs/SteamLibrary.h"
 #include "io/log/Logger.h"
 
 #include "platform/Environment.h"
@@ -77,7 +78,9 @@ struct SystemPaths {
 	path m_userDir; //!< Directory for saves and user-specific data files
 	path m_configDir; //!< Directory for config files
 	std::vector<path> m_dataDirs; //!< Directories for data files
-	
+	path m_steamDataDir; //!< The Arx Fatalis install found in the Steam libraries, if any
+	std::string m_steamDataStatus; //!< What the Steam lookup found, or why it found nothing
+
 	/*!
 	 * \brief Initialize the system resource paths using the specified parameters
 	 *
@@ -327,7 +330,16 @@ std::vector<path> SystemPaths::getSearchPaths(bool filter) const {
 			LogDebug("ignoring data dir from registry: \"" << value.value() << "\" = " << dir);
 		}
 	}
-	
+
+	// The Arx Fatalis install in the Steam libraries (D-004: the player never configures paths)
+	if(!m_steamDataDir.empty()) {
+		if(addSearchPath(result, m_steamDataDir, filter)) {
+			LogDebug("got data dir from Steam: " << m_steamDataDir);
+		} else {
+			LogDebug("ignoring data dir from Steam: " << m_steamDataDir);
+		}
+	}
+
 	// Search standard locations
 	std::vector<path> prefixes = parsePathList(data_dir_prefixes);
 	std::vector<path> suffixes = parsePathList(data_dir);
@@ -360,7 +372,21 @@ ExitStatus SystemPaths::init(const InitParams & initParams) {
 	m_additionalDataDirs = initParams.dataDirs;
 	
 	m_findDataDirs = initParams.findData;
-	
+
+	// Looked up once: the logger is not set up yet, the startup banner reports the status
+	if(m_findDataDirs) {
+		steam::AppInstall install = steam::findAppInstall(steam::ArxFatalisAppId, steam::getSteamRoots());
+		m_steamDataDir = install.dir;
+		if(install.dir.empty()) {
+			m_steamDataStatus = "Arx Fatalis (app " + std::to_string(steam::ArxFatalisAppId)
+			                    + ") not found: " + install.why;
+		} else {
+			m_steamDataStatus = install.dir.string() + " (" + install.why + ")";
+		}
+	} else {
+		m_steamDataStatus = "not searched (--no-data-dir)";
+	}
+
 	m_dataDirs = getSearchPaths(true);
 	
 	if(initParams.displaySearchDirs) {
@@ -473,7 +499,10 @@ void SystemPaths::list(std::ostream & os, std::string_view forceUser,
 	std::string exevar = getSearchPathVar(platform::getExecutablePath());
 	os << " - Paths specified in \"" << exevar << "\"\n";
 	os << " - The directory containing the game executable\n";
-	listDirectoriesFor(os, "DataDir", platform::NoPath, data_dir_prefixes, data_dir);
+	listDirectoriesFor(os, "DataDir", platform::NoPath);
+	os << " - Arx Fatalis (Steam app " << steam::ArxFatalisAppId << ") in the Steam libraries\n";
+	os << "   = " << m_steamDataStatus << '\n';
+	listDirectoriesFor(os, "", platform::NoPath, data_dir_prefixes, data_dir);
 	os << "For all of these (except those specified via --data-dir),\n";
 	os << "the \"data\" subdirectory or file will also be searched.\n";
 	os << "selected:";
@@ -505,6 +534,10 @@ const path & getConfigDir() {
 
 const std::vector<path> & getDataDirs() {
 	return g_systemPaths.m_dataDirs;
+}
+
+const std::string & getSteamDataStatus() {
+	return g_systemPaths.m_steamDataStatus;
 }
 
 std::vector<path> getDataSearchPaths() {

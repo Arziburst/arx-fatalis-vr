@@ -10,6 +10,192 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-017: Player-experience design is agreed with the owner before any work starts
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** project owner
+
+### Decision
+- Anything the player experiences — controls and bindings, world interaction, locomotion and comfort,
+  where UI sits and how it looks (position, colour, shape, size, behaviour), feedback (haptics, sounds,
+  highlights) — is **discussed with the owner before** its issue is written or changed and before a
+  worker starts: the coordinator sends a short design summary with concrete questions, plays the design
+  back in its own words, and waits for a yes. The agreed design is recorded here as a decision.
+- **Technical internals** — where a value comes from, how it is updated and rendered, architecture,
+  tooling — the coordinator and the workers decide on their own.
+- Example: the HP bar — its place, colour and shape are the owner's; reading HP from the engine and
+  redrawing the bar are technical.
+
+### Why
+D-016 was first recorded as "left hand drags, right hand takes to the inventory" when the owner meant
+"both hands work as the mouse". Agreeing the design first avoids building the wrong thing.
+
+---
+
+## D-016: World interaction — both hands work as the mouse, each with its own reticle; the inventory opens in the centre of the view
+
+- **Date:** 2026-10-09
+- **Status:** Accepted (replaces the "world interaction by reach" point of D-010). Corrected the same day:
+  the first wording split the hands ("left drags, right takes to the inventory") — a misreading of the
+  owner; the decision below is the owner's intent.
+- **Decided by:** project owner
+
+### Decision
+- **Both hands emulate the mouse fully.** Each hand has its own **reticle** — a small crosshair where the
+  hand points, with **no visible beam** — within the engine's own interaction distance; the engine's own
+  "what is under the cursor" test runs at the reticle (the hidden hand ray of F-57 replaces the mouse).
+- With either hand the player does what the mouse does in the original: pick an item up and **drag** it,
+  move it over surfaces and set it down on any plane, drag it **into the open inventory**, use doors,
+  levers, chests, bodies and characters (the trigger is the game's click).
+- **The inventory opens as a panel in the centre of the player's view** (for now; the panel itself is #49).
+- **Design case:** the right hand holds a sword in a fight → the player opens the inventory, drags an
+  item from the floor into it with the left hand, closes it and fights on.
+- Unchanged from D-010: no rays or lasers from the hands, runes drawn in the air with the hand, spell
+  direction from the hand, a pointer only while a menu or the inventory is open (#34).
+
+### Why
+In the original the player walks up to an item, aims the mouse at it and drags it over surfaces or into
+the inventory. Grabbing with the hand and placing by hand would need new carry-and-place mechanics and
+much more work; a reticle keeps the game's own logic and is what VR ports commonly do. Two hands keep it
+natural. The reference to learn from is **Valheim VR (VHVR)** — its world interaction is studied in detail
+before #37 / #38.
+
+### Consequences
+- #37 and #38 become "a reticle per hand + the engine's drag / use" instead of reach-and-grab; #49 opens
+  the inventory in the centre of the view; #36 (full body with IK arms) no longer has to hold items in
+  the palm.
+- Catalog: F-57 changed (reticle, no grab by reach); F-138 (distance-grab gesture) not taken.
+
+---
+
+## D-015: Model and effort by task size — Opus by default, Fable only for really hard tasks
+
+- **Date:** 2026-10-09
+- **Status:** Accepted (replaces the model part of D-013)
+- **Decided by:** project owner
+
+### Decision
+- **Opus** is the default model for engine work, **Sonnet** for scripts, CI, docs and research summaries.
+- **Fable** only for really large and hard tasks (the OpenXR frame loop and stereo rendering, the IK body,
+  rune recognition, crashes nobody could explain) — chosen by the coordinator per task, never by default.
+- **Effort** is set per task by the coordinator (`start-worker.ps1 -Effort`): lower for routine work,
+  higher for hard design or debugging; defaults Sonnet medium, Opus high, Fable xhigh.
+- Context is spent carefully but fully: one task per worker with a precise Definition of done, short
+  coordinator messages, big tasks split.
+
+### Why
+Half of Fable's weekly limit went in the first hours with Fable on every engine task (D-013); most of
+those tasks did not need it. The playbook table: [COORDINATOR.md §6](COORDINATOR.md#6-models-and-effort-d-015).
+
+---
+
+## D-014: Launch control for parallel workers — no SteamVR start, one game at a time, own fresh build, ledger, budget
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** project owner (relayed during #93, enforced by #147)
+
+### Decision
+Workers launch the game often and in parallel, on the owner's desktop. The rules, enforced by the
+launch scripts (`scripts/launch-lib.ps1`, used by `run-windows.ps1`, `smoke-test.ps1`, `test-pr.ps1`
+and the desktop shortcut), not by the workers' discipline:
+
+1. **No SteamVR start without the owner.** A launch without `--no-vr` would let the OpenXR loader
+   start SteamVR, which turns on the owner's headset and base stations. The scripts make such a
+   launch flat (`--no-vr` added, said in the output) when `vrserver.exe` is not already running;
+   `smoke-test.ps1 -Vr` is then *skipped* (exit 2). Only the owner's switch `-StartSteamVR`
+   (`run-windows.ps1`, `test-pr.ps1`) starts SteamVR. Workers never start or close SteamVR by hand
+   either (no `vrstartup.exe`, no `Stop-Process vrmonitor`).
+2. **One game at a time on this PC.** Every script launch, flat or VR, holds a machine-wide game lock
+   slot (`%LOCALAPPDATA%\ArxFatalisVR\game-<n>.lock`; a VR launch also `vr.lock`) while the game runs,
+   waits in line with a timeout and names the holder (working copy, branch, pid). A raw `arx.exe`
+   outside the lock counts as a holder. `settings.json` (`maxGames`) may allow 2 flat games later.
+3. **Only the working copy's own fresh build.** A launch refuses an `arx.exe` from another copy's
+   build directory, or whose `built-from.txt` does not name the copy's `HEAD` (`dirty` is allowed),
+   and says to build first (`-Rebuild` does it).
+4. **Launch ledger.** Every launch is one line in `%LOCALAPPDATA%\ArxFatalisVR\launches.log` (time,
+   copy, branch, build, flat or VR, pid, exit code, duration); `cycle-report.ps1` shows launches per
+   working copy, so the coordinator sees a worker that launches 20 times.
+5. **Launch budget:** at most **10 game launches per task**. Repeated-run evidence loops (`-Repeat`)
+   only after asking the coordinator, sequential and flat. Launches are announced in the narration.
+6. **Self-test windows do not take the focus** from the owner's work (SDL shows them without
+   activation).
+
+Replaces the #123 rule that isolated flat runs may run side by side: isolation of *files* stays
+(own user, config and channel directories per copy), but game *runs* are one at a time.
+
+### Why
+On 2026-10-08/09 unannounced loops of launches confused the owner, and a worker of #93 started
+SteamVR for 15 VR runs, waking the headset; two games at once also fight for the GPU and the desktop.
+The owner wants the desktop quiet while workers run, and the headset untouched unless they put it on.
+
+### Consequences
+- `scripts/vr-lock.ps1` became `scripts/launch-lib.ps1` (the VR lock is part of the game lock).
+- The VR self-test exists only while the owner has SteamVR running; otherwise the PR says so and
+  the simulated VR backend (#112) is the long-term answer for VR evidence without the headset.
+- TESTING.md, WORKFLOW.md "Parallel work" and `.claude/commands/next-task.md` carry the rules.
+
+---
+
+## D-013: The coordinator runs development on its own, in blocks, within a usage budget
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** project owner
+
+### Decision
+- **The owner talks only to the coordinator.** The coordinator picks the tasks of the current block
+  (a wave of [MVP.md](MVP.md#waves)), writes or sharpens their issues, starts the workers
+  (`start-worker.ps1`), follows them (idle notices, `claude logs`, cross-session messages), triages
+  what they find (new bugs and follow-ups → issues, into the queue if they block the MVP), merges and
+  cleans up, and keeps the slots full — without the owner opening worker sessions.
+- **The coordinator does not investigate or fix things itself**: a problem becomes a task for a worker.
+- **It stops and reports** only when (1) the block is done, (2) a PR needs the owner's headset test —
+  work that needs no headset goes on meanwhile — or (3) the budget is reached. The owner gives VR
+  verdicts to the coordinator ("#18 ok" / what is wrong); the coordinator merges or passes the feedback
+  to the worker.
+- **Budget:** the common weekly limit up to **70%** — from there no new workers start, running ones finish
+  their PRs; the 5-hour limit may be used up (sessions wait for its reset and continue,
+  `autoContinueAtUsageLimit`); Fable's separate weekly limit may be used up.
+- *(Superseded by D-015: Opus by default, Fable only for really hard tasks.)* **Models** (replaced D-012's table): **Fable** for every engine task (any area except build and docs)
+  while its limit lasts, **Sonnet** for build, CI, scripts, docs and research, **Opus** when Fable's limit
+  runs out (`start-worker.ps1 -Model opus`).
+
+### Why
+The owner wants continuous progress without babysitting sessions or prompts, and a hard ceiling on the
+week's usage; Fable's separate limit is spent first to spare the common one.
+
+---
+
+## D-012: Worker model by task difficulty — Fable, Opus, Sonnet
+
+- **Date:** 2026-10-09
+- **Status:** Superseded by D-013 — the owner gave Fable every engine task, not only VR runtime and rendering
+- **Decided by:** project owner
+
+### Decision
+`scripts/dev/start-worker.ps1` picks the worker's model from the issue's area label; the coordinator
+overrides it with `-Model` when a task is harder or easier than its area suggests.
+
+| Model | Areas | Typical tasks |
+|---|---|---|
+| **Fable** | `area:vr-runtime`, `area:render` | swapchains, frame loop, stereo rendering, IK body; hard crashes (override) |
+| **Opus** | everything else (`core`, `camera`, `input`, `ui`, `combat`, `magic`) | engine work: camera, input, UI, combat |
+| **Sonnet** | only `area:build` / `area:docs` | scripts, CI, docs, research |
+
+Usage is watched in `/new-cycle`: the plan's limits (the session, the week, and Fable's separate weekly
+limit) are read from the status line's last input (`~/.claude/statusline/last.json`, if Claude Code
+passes them) or from the owner's screenshot of claude.ai → Settings → Usage. When the weekly use runs
+ahead of the week, the coordinator runs fewer workers at once (2 instead of 3) or moves tasks to the
+model with room left. The one-time free full reset is kept for a week that runs out mid-wave.
+
+### Why
+Fable has its own weekly limit, so giving it the hardest tasks spends a separate budget and keeps the
+common one for the rest; three workers in parallel spend about three times one.
+
+---
+
 ## D-011: The coordinator starts worker sessions itself; workers run without permission prompts
 
 - **Date:** 2026-10-09
@@ -45,7 +231,7 @@ the coordinator already knows which tasks may run together.
 ## D-010: No rays from the hands; runes drawn in the air with the hand; grab by reach
 
 - **Date:** 2026-10-08
-- **Status:** Accepted
+- **Status:** Accepted, except "world interaction by reach" — superseded by D-016 (a hand-aimed reticle from either hand)
 - **Decided by:** project owner (while deciding on [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md))
 
 ### Decision

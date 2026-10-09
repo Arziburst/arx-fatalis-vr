@@ -149,12 +149,14 @@ void SpellManager::init() {
 	ARX_SPELLS_Init_Rects();
 	
 	m_nextInstance = 1;
+	m_launched = {};
 	
 }
 
 void SpellManager::clearAll() {
 	m_spells.clear();
 	m_nextInstance = 1;
+	m_launched = {};
 }
 
 Spell * SpellManager::operator[](const SpellHandle handle) const noexcept {
@@ -266,6 +268,9 @@ Spell & SpellManager::addSpell(std::unique_ptr<Spell> spell) {
 	arx_assert(spell);
 	
 	spell->m_instance = m_nextInstance++;
+	if(spell->m_type >= 0 && size_t(spell->m_type) < m_launched.size()) {
+		m_launched[size_t(spell->m_type)]++;
+	}
 	
 	for(size_t i = 0; i < m_spells.size(); i++) {
 		if(!m_spells[i]) {
@@ -1041,9 +1046,19 @@ void ARX_SPELLS_Update() {
 		}
 		
 		spell.Update();
-		
+
 	}
-	
+
+}
+
+void ARX_SPELLS_Render() {
+
+	ARX_PROFILE_FUNC();
+
+	for(Spell & spell : spells) {
+		spell.Render();
+	}
+
 }
 
 void TryToCastSpell(Entity * io, SpellType spellType, long level, EntityHandle target, SpellcastFlags flags, GameDuration duration)

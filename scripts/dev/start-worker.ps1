@@ -29,7 +29,13 @@
 	The short name of the branch. Default: from the issue title (new-worktree.ps1).
 
 .PARAMETER Model
-	The model of the worker session. Default: the owner's default model.
+	The model of the worker session (fable, opus, sonnet or a model id). Default (decision D-015): only
+	area:build / area:docs -> sonnet; any other area -> opus. Fable only when the coordinator passes
+	-Model fable for a really large and hard task.
+
+.PARAMETER Effort
+	Effort level of the worker session (low, medium, high, xhigh, max). Default by model: sonnet -> medium,
+	opus -> high, fable -> xhigh. The coordinator raises it for hard tasks and lowers it for routine ones.
 
 .PARAMETER PermissionMode
 	Permission mode of the worker session. Default: bypassPermissions (D-011).
@@ -51,6 +57,7 @@ param(
 	[ValidateSet('feat', 'fix', 'perf', 'refactor', 'build', 'ci', 'docs', 'test', 'chore')] [string]$Type = 'feat',
 	[string]$Name,
 	[string]$Model,
+	[ValidateSet('low', 'medium', 'high', 'xhigh', 'max')] [string]$Effort,
 	[ValidateSet('acceptEdits', 'auto', 'bypassPermissions', 'manual', 'dontAsk')] [string]$PermissionMode = 'bypassPermissions',
 	[string]$Prompt,
 	[switch]$DryRun
@@ -60,8 +67,18 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $repo = 'Arziburst/arx-fatalis-vr'
 
-$title = gh issue view $Issue -R $repo --json title -q .title
-if ($LASTEXITCODE -or -not $title) { throw "could not read the title of #$Issue" }
+$info = gh issue view $Issue -R $repo --json title,labels | ConvertFrom-Json
+if ($LASTEXITCODE -or -not $info.title) { throw "could not read #$Issue" }
+$title = $info.title
+
+# D-015: build and docs -> Sonnet, other engine work -> Opus; Fable only when the coordinator asks for it
+if (-not $Model) {
+	$areas = @($info.labels.name | Where-Object { $_ -like 'area:*' })
+	$Model = if ($areas -and -not ($areas | Where-Object { $_ -notin 'area:build', 'area:docs' })) { 'sonnet' } else { 'opus' }
+	Write-Host "model:    $Model (D-015, labels: $(if ($areas) { $areas -join ', ' } else { 'no area' }))"
+}
+if (-not $Effort) { $Effort = switch -Wildcard ($Model) { '*sonnet*' { 'medium' } '*fable*' { 'xhigh' } default { 'high' } } }
+Write-Host "effort:   $Effort"
 
 $wtArgs = @{ Issue = $Issue; Type = $Type; PassThru = $true }
 if ($Name) { $wtArgs.Name = $Name }
@@ -89,9 +106,7 @@ if ($running) {
 
 if (-not $Prompt) { $Prompt = "/next-task $Issue worktree=$path" }
 
-$claudeArgs = @('--bg', '-n', $session, '--permission-mode', $PermissionMode)
-if ($Model) { $claudeArgs += '--model', $Model }
-$claudeArgs += $Prompt
+$claudeArgs = @('--bg', '-n', $session, '--permission-mode', $PermissionMode, '--model', $Model, '--effort', $Effort, $Prompt)
 
 if ($DryRun) {
 	Write-Host "would run in ${launchDir}:"
@@ -111,6 +126,6 @@ if ($LASTEXITCODE) {
 }
 
 Write-Host ($out -join "`n")
-Write-Host "worker:   $session" -ForegroundColor Cyan
+Write-Host "worker:   $session ($Model, effort $Effort)" -ForegroundColor Cyan
 Write-Host "worktree: $path"
 Write-Host "follow:   claude agents   |   claude attach <id>   |   claude logs <id>"

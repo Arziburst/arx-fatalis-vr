@@ -228,17 +228,6 @@ Entity::~Entity() {
 		delete _camdata;
 	}
 	
-	g_secondaryInventoryHud.clear(this);
-	
-	if(inventory) {
-		for(auto slot : inventory->slots()) {
-			if(slot.entity) {
-				slot.entity->pos = GetItemWorldPosition(slot.entity);
-				removeFromInventories(slot.entity);
-			}
-		}
-	}
-	
 	if(m_index != size_t(-1)) {
 		entities.remove(m_index);
 	}
@@ -348,6 +337,30 @@ void Entity::cleanReferences() {
 	ARX_INTERACTIVE_DestroyDynamicInfo(this);
 	
 	setOwner(nullptr);
+	
+	// Release what this entity owns while it is still whole. Inventory items first: they get a world
+	// position, and Inventory::remove() reads this entity's _npcdata, which the destructor deletes.
+	g_secondaryInventoryHud.clear(this);
+	if(inventory) {
+		for(auto slot : inventory->slots()) {
+			if(slot.entity) {
+				slot.entity->pos = GetItemWorldPosition(slot.entity);
+				removeFromInventories(slot.entity);
+			}
+		}
+	}
+	
+	// Then everything else that still points back to this entity as its owner: the NPC weapon and
+	// linked entities, including those linked to the mesh that a full tweak swapped out (tweaky),
+	// which neither destroy() nor UnlinkAllLinkedObjects() see. DanaeClearLevel() deletes entities
+	// in index order without destroy(), so an owner deleted first left them with a dangling owner,
+	// and deleting them read the freed owner - the exit crash of #93.
+	for(Entity & entity : entities) {
+		if(entity.owner() == this) {
+			LogDebug("releasing " << entity.idString() << " owned by " << idString());
+			entity.setOwner(nullptr);
+		}
+	}
 	
 	ARX_SCRIPT_Timer_Clear_For_IO(this);
 	

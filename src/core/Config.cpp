@@ -46,6 +46,8 @@
 #include "util/String.h"
 
 #include "vr/MirrorGeometry.h"
+#include "vr/UIPanel.h"
+#include "vr/VRTurn.h"
 
 
 // To avoid conflicts with potential other classes/namespaces
@@ -118,7 +120,8 @@ constexpr const bool
 	rawMouseInput = true,
 	borderTurning = true,
 	useAltRuneRecognition = true,
-	improvedBowAim = true;
+	improvedBowAim = true,
+	vrSmoothTurn = false;
 
 #ifdef ARX_DEBUG
 const bool allowConsole = true;
@@ -127,6 +130,9 @@ const bool allowConsole = false;
 #endif
 
 constexpr const float
+	vrPanelDistance = vr::DefaultPanelDistance,
+	vrPanelDrop = vr::DefaultPanelDrop,
+	vrPanelWidth = vr::DefaultPanelWidth,
 	fogDistance = 10.f,
 	gamma = 5.f,
 	fov = 75.f,
@@ -137,7 +143,10 @@ constexpr const float
 	volume = 10.f,
 	sfxVolume = 10.f,
 	speechVolume = 10.f,
-	ambianceVolume = 10.f;
+	ambianceVolume = 10.f,
+	vrSnapTurnAngle = vr::DefaultSnapAngle,
+	vrSmoothTurnSpeed = vr::DefaultSmoothSpeed,
+	vrSnapTurnRepeat = vr::DefaultSnapRepeat;
 
 constexpr const ActionKey actions[NUM_ACTION_KEY] = {
 	ActionKey(Keyboard::Key_Spacebar), // JUMP
@@ -223,6 +232,9 @@ constexpr const std::string_view
 	vrFrameDivisor = "vr_frame_divisor",
 	vrMirror = "vr_mirror",
 	vrMirrorEye = "vr_mirror_eye",
+	vrPanelDistance = "vr_panel_distance",
+	vrPanelDrop = "vr_panel_drop",
+	vrPanelWidth = "vr_panel_width",
 	fov = "fov",
 	viewBobbing = "view_bobbing",
 	screenShake = "screen_shake",
@@ -280,7 +292,11 @@ constexpr const std::string_view
 	useAltRuneRecognition = "improved_rune_recognition",
 	improvedBowAim = "improved_bow_aim",
 	quickLevelTransition = "quick_level_transition",
-	allowConsole = "allow_console";
+	allowConsole = "allow_console",
+	vrSmoothTurn = "vr_smooth_turn",
+	vrSnapTurnAngle = "vr_snap_turn_angle",
+	vrSmoothTurnSpeed = "vr_smooth_turn_speed",
+	vrSnapTurnRepeat = "vr_snap_turn_repeat";
 
 // Input key options
 constexpr const std::string_view actions[NUM_ACTION_KEY] = {
@@ -485,6 +501,9 @@ bool Config::save() {
 	writer.writeKey(Key::vrFrameDivisor, video.vrFrameDivisor);
 	writer.writeKey(Key::vrMirror, video.vrMirror);
 	writer.writeKey(Key::vrMirrorEye, video.vrMirrorEye);
+	writer.writeKey(Key::vrPanelDistance, video.vrPanelDistance);
+	writer.writeKey(Key::vrPanelDrop, video.vrPanelDrop);
+	writer.writeKey(Key::vrPanelWidth, video.vrPanelWidth);
 	writer.writeKey(Key::fov, video.fov);
 	writer.writeKey(Key::viewBobbing, video.viewBobbing);
 	writer.writeKey(Key::screenShake, video.screenShake);
@@ -546,6 +565,10 @@ bool Config::save() {
 	writer.writeKey(Key::useAltRuneRecognition, input.useAltRuneRecognition);
 	writer.writeKey(Key::improvedBowAim, input.improvedBowAim);
 	writer.writeKey(Key::quickLevelTransition, int(input.quickLevelTransition));
+	writer.writeKey(Key::vrSmoothTurn, input.vrSmoothTurn);
+	writer.writeKey(Key::vrSnapTurnAngle, input.vrSnapTurnAngle);
+	writer.writeKey(Key::vrSmoothTurnSpeed, input.vrSmoothTurnSpeed);
+	writer.writeKey(Key::vrSnapTurnRepeat, input.vrSnapTurnRepeat);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -621,6 +644,12 @@ bool Config::init(const fs::path & file) {
 	video.vrMirror = reader.getKey(Section::Video, Key::vrMirror, Default::vrMirror);
 	int vrMirrorEye = reader.getKey(Section::Video, Key::vrMirrorEye, Default::vrMirrorEye);
 	video.vrMirrorEye = glm::clamp(vrMirrorEye, 0, 1);
+	float vrPanelDistance = reader.getKey(Section::Video, Key::vrPanelDistance, Default::vrPanelDistance);
+	video.vrPanelDistance = glm::clamp(vrPanelDistance, 0.3f, 3.f);
+	float vrPanelDrop = reader.getKey(Section::Video, Key::vrPanelDrop, Default::vrPanelDrop);
+	video.vrPanelDrop = glm::clamp(vrPanelDrop, -0.5f, 1.f);
+	float vrPanelWidth = reader.getKey(Section::Video, Key::vrPanelWidth, Default::vrPanelWidth);
+	video.vrPanelWidth = glm::clamp(vrPanelWidth, 0.2f, 4.f);
 	float fov = reader.getKey(Section::Video, Key::fov, Default::fov);
 	video.fov = std::max(fov, 10.f);
 	video.viewBobbing = reader.getKey(Section::Video, Key::viewBobbing, Default::viewBobbing);
@@ -692,6 +721,13 @@ bool Config::init(const fs::path & file) {
 	int quickLevelTransition = reader.getKey(Section::Input, Key::quickLevelTransition, Default::quickLevelTransition);
 	input.quickLevelTransition = QuickLevelTransition(glm::clamp(quickLevelTransition, 0, 2));
 	input.allowConsole = reader.getKey(Section::Input, Key::allowConsole, Default::allowConsole);
+	input.vrSmoothTurn = reader.getKey(Section::Input, Key::vrSmoothTurn, Default::vrSmoothTurn);
+	float vrSnapTurnAngle = reader.getKey(Section::Input, Key::vrSnapTurnAngle, Default::vrSnapTurnAngle);
+	input.vrSnapTurnAngle = glm::clamp(vrSnapTurnAngle, vr::MinSnapAngle, vr::MaxSnapAngle);
+	float vrSmoothTurnSpeed = reader.getKey(Section::Input, Key::vrSmoothTurnSpeed, Default::vrSmoothTurnSpeed);
+	input.vrSmoothTurnSpeed = glm::clamp(vrSmoothTurnSpeed, vr::MinSmoothSpeed, vr::MaxSmoothSpeed);
+	float vrSnapTurnRepeat = reader.getKey(Section::Input, Key::vrSnapTurnRepeat, Default::vrSnapTurnRepeat);
+	input.vrSnapTurnRepeat = glm::clamp(vrSnapTurnRepeat, 0.f, vr::MaxSnapRepeat);
 	
 	// Get action key settings
 	for(size_t i = 0; i < NUM_ACTION_KEY; i++) {

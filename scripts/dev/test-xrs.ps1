@@ -63,6 +63,9 @@ mark one
 '@
 Check 'a sequence parses' ($seq -isnot [string]) $seq
 Check 'launch directives are separated from the steps' ($seq.Sim -eq 'idle' -and "$($seq.Args)" -eq '--loadlevel 10' -and ($seq.Steps | Where-Object { $_.Kind -in 'sim', 'args' }).Count -eq 0)
+Check 'no save unless one is named' ($null -eq $seq.Save)
+$saved = Get-Parse "@sim idle`n@save mvp-new-game`n@args --loadslot 0`n@frames 1"
+Check '@save names the start save and is not a step' ($saved -isnot [string] -and $saved.Save -eq 'mvp-new-game' -and @($saved.Steps).Count -eq 1) $saved
 $kinds = ($seq.Steps | ForEach-Object Kind) -join ' '
 Check 'every directive has its kind' ($kinds -eq 'wait frames until assert remember assert mark log nolog shot diff key pending command command') $kinds
 Check 'the trailing comment is dropped' ($seq.Steps[0].Ms -eq 100)
@@ -92,6 +95,7 @@ Check 'dotted and quoted paths' ((Get-XrsValue $obj 'a.b.c') -eq 5 -and (Get-Xrs
 $ctx = New-XrsContext $work $null
 $ctx.Vars['yaw0'] = 10.5
 Check '{name} and {name+N}' ((Expand-XrsValue $ctx '{yaw0}') -eq '10.5' -and (Expand-XrsValue $ctx '{yaw0+30}') -eq '40.5' -and (Expand-XrsValue $ctx '{yaw0-0.5}') -eq '10' -and (Expand-XrsValue $ctx '7') -eq '7')
+Check '{name*K}: a relative threshold' ((Expand-XrsValue $ctx '{yaw0*2}') -eq '21' -and (Expand-XrsValue $ctx '{yaw0*0.9}') -eq '9.45')
 Check 'an unknown {name} is an error' ($(try { Expand-XrsValue $ctx '{nope}' } catch { "$_" }) -match "no remembered value 'nope'")
 
 # --- img-diff --------------------------------------------------------------------------------------------------
@@ -139,8 +143,11 @@ $fake = {
 		$last = ''; $lineErrors = 0
 		$cmd = Join-Path $Dir 'command.txt'
 		if (Test-Path $cmd) {
-			$lines = @(Get-Content $cmd)
-			Remove-Item $cmd -Force
+			# A transient sharing violation (the test's own read, a scanner on the runner) must not lose the batch:
+			# the file is removed only after it was read, and a failed read is tried again on the next pass (#275).
+			$lines = $null
+			try { $lines = @([IO.File]::ReadAllLines($cmd)); Remove-Item $cmd -Force -ErrorAction Stop } catch { $lines = $null }
+			if ($null -eq $lines) { Start-Sleep -Milliseconds 30; continue }
 			foreach ($l in $lines) {
 				$l = $l.Trim(); if (-not $l) { continue }
 				$last = $l
@@ -154,7 +161,10 @@ $fake = {
 				elseif ($l -match '^refuse') { $lineErrors++ }
 			}
 			$seq++
-			Set-Content (Join-Path $Dir 'ack.txt') "seq=$seq frame=$frame errors=$lineErrors last=$last error=-"
+			# The test reads ack.txt every 50 ms; a write that hits its open handle is retried, never dropped (#275).
+			for ($try = 0; $try -lt 50; $try++) {
+				try { [IO.File]::WriteAllText((Join-Path $Dir 'ack.txt'), "seq=$seq frame=$frame errors=$lineErrors last=$last error=-"); break } catch { Start-Sleep -Milliseconds 20 }
+			}
 		}
 		$frame += 3
 		$status = @{ pid = 1; state = 'GAMEPLAY'; frame = $frame; errors = $errors; cmdSeq = $seq; captureSeq = $capture
@@ -255,7 +265,8 @@ foreach ($file in $shipped) {
 	$parsed = try { Read-ArxSequence $file.FullName } catch { "$_" }
 	Check "  $($file.Name) parses" ($parsed -isnot [string]) $parsed
 	if ($parsed -isnot [string]) {
-		Check "  $($file.Name) names its start" ($parsed.Sim -and $parsed.Args)
+		# A simulator script, or a flat run said outright (--no-vr in @args, stand-up.xrs #263)
+		Check "  $($file.Name) names its start" (($parsed.Sim -or $parsed.Args -contains '--no-vr') -and $parsed.Args)
 		Check "  $($file.Name) names the issue behind every @pending" (@($parsed.Steps | Where-Object { $_.Kind -eq 'pending' -and $_.Issue -gt 0 }).Count -eq @($parsed.Steps | Where-Object Kind -eq 'pending').Count)
 	}
 }

@@ -48,6 +48,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include <algorithm>
 #include <limits>
+#include <sstream>
 
 #include <boost/range/adaptor/strided.hpp>
 
@@ -609,13 +610,9 @@ static void CheckAnythingInCylinder_Inner(const Cylinder & cylinder, Entity * so
 	
 }
 
-// Returns 0 if nothing in cyl
-// Else returns Y Offset to put cylinder in a proper place
-float CheckAnythingInCylinder(const Cylinder & cylinder, Entity * source, CollisionFlags flags) {
-	
-	ARX_PROFILE_FUNC();
-	
-	NPC_IN_CYLINDER = 0;
+// The highest background point in the cylinder (999999 = none); hit = the polygon that has it
+static float CheckBackgroundInCylinder(const Cylinder & cylinder, CollisionFlags flags,
+                                       const EERIEPOLY ** hit = nullptr) {
 	
 	float anything = 999999.f;
 	
@@ -649,7 +646,13 @@ float CheckAnythingInCylinder(const Cylinder & cylinder, Entity * source, Collis
 			}
 			
 			if(ep.min.y < anything) {
-				anything = std::min(anything, IsPolyInCylinder(ep, cylinder, flags));
+				float y = IsPolyInCylinder(ep, cylinder, flags);
+				if(y < anything) {
+					anything = y;
+					if(hit) {
+						*hit = &ep;
+					}
+				}
 				if(POLYIN && (ep.type & POLY_CLIMB)) {
 					COLLIDED_CLIMB_POLY = 1;
 				}
@@ -658,6 +661,19 @@ float CheckAnythingInCylinder(const Cylinder & cylinder, Entity * source, Collis
 		}
 		
 	}
+	
+	return anything;
+}
+
+// Returns 0 if nothing in cyl
+// Else returns Y Offset to put cylinder in a proper place
+float CheckAnythingInCylinder(const Cylinder & cylinder, Entity * source, CollisionFlags flags) {
+	
+	ARX_PROFILE_FUNC();
+	
+	NPC_IN_CYLINDER = 0;
+	
+	float anything = CheckBackgroundInCylinder(cylinder, flags);
 	
 	float tempo;
 	if(CheckInPoly(cylinder.origin + Vec3f(0.f, cylinder.height, 0.f), &tempo)) {
@@ -681,6 +697,52 @@ float CheckAnythingInCylinder(const Cylinder & cylinder, Entity * source, Collis
 	}
 	
 	return anything - cylinder.origin.y;
+}
+
+std::string describeCylinderBlocker(const Cylinder & cylinder, Entity * source) {
+	
+	// The three parts of CheckAnythingInCylinder, each as its offset from the feet (< 0 = above them)
+	std::ostringstream oss;
+	oss.setf(std::ios::fixed);
+	oss.precision(1);
+	
+	long climb = COLLIDED_CLIMB_POLY;
+	const EERIEPOLY * poly = nullptr;
+	float background = CheckBackgroundInCylinder(cylinder, CFLAG_JUST_TEST, &poly);
+	COLLIDED_CLIMB_POLY = climb;
+	if(poly) {
+		oss << "background=" << (background - cylinder.origin.y) << " poly=(" << poly->center.x << ' '
+		    << poly->center.y << ' ' << poly->center.z << ") normY=" << poly->norm.y << " area=" << poly->area;
+	} else {
+		oss << "background=none";
+	}
+	
+	float top;
+	if(CheckInPoly(cylinder.origin + Vec3f(0.f, cylinder.height, 0.f), &top)) {
+		oss << " underTop=" << (top - cylinder.origin.y);
+	} else {
+		oss << " underTop=none";
+	}
+	
+	long npcInCylinder = NPC_IN_CYLINDER;
+	const Entity * blocker = nullptr;
+	float nearest = 999999.f;
+	for(const auto & entry : treatio) {
+		float anything = 999999.f;
+		CheckAnythingInCylinder_Inner(cylinder, source, CFLAG_JUST_TEST, entry.io, anything);
+		if(anything < nearest) {
+			nearest = anything;
+			blocker = entry.io;
+		}
+	}
+	NPC_IN_CYLINDER = npcInCylinder;
+	if(blocker) {
+		oss << " entity=" << blocker->idString() << ' ' << (nearest - cylinder.origin.y);
+	} else {
+		oss << " entity=none";
+	}
+	
+	return oss.str();
 }
 
 static bool InExceptionList(EntityHandle val) {

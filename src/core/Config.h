@@ -134,6 +134,9 @@ public:
 		int vrFrameDivisor; //!< VR: submit every n-th display slot (the even-cadence cap, #20); 1 = every slot
 		bool vrMirror; //!< VR: the desktop window shows what one eye sees (#21); off = the flat frame
 		int vrMirrorEye; //!< VR: the eye the desktop mirror shows: 0 = left, 1 = right (default, the owner's choice)
+		float vrPanelDistance; //!< VR: the menu panel this far ahead of the head, meters (#49)
+		float vrPanelDrop; //!< VR: the menu panel's centre this far below the eyes, meters (#49)
+		float vrPanelWidth; //!< VR: the menu panel's width, meters (#49)
 
 		float fov;
 		bool viewBobbing;
@@ -220,7 +223,11 @@ public:
 		bool improvedBowAim;
 		QuickLevelTransition quickLevelTransition;
 		bool allowConsole;
-		
+		bool vrSmoothTurn; //!< VR: the right stick turns smoothly instead of in snaps (#32)
+		float vrSnapTurnAngle; //!< VR: degrees per snap turn (#32)
+		float vrSmoothTurnSpeed; //!< VR: smooth turn degrees per second at full deflection (#32)
+		float vrSnapTurnRepeat; //!< VR: seconds between snaps while the stick is held; 0 = no repeat (#32)
+
 	} input;
 	
 	// section 'key'

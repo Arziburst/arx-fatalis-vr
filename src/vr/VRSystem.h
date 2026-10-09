@@ -222,6 +222,8 @@ struct FrameViews {
 	bool valid = false;         //!< the runtime located both eyes with a valid pose
 	s64 displayTime = 0;        //!< the frame's predicted display time, OpenXR nanoseconds
 	std::array<EyeView, 2> eyes; //!< left, right
+	bool floorValid = false;    //!< the runtime has a STAGE space and located the floor this frame (#27)
+	float localAboveFloor = 0.f; //!< the reference space's origin above the room's floor, meters
 };
 
 /*!
@@ -249,6 +251,13 @@ bool isEnabled();
 
 //! \return the current OpenXR session state as text ("none" without a session) - for status.json
 const char * sessionStateString();
+
+/*!
+ * \return true while the headset is on someone's head: the session is \c visible or \c focused (#27).
+ *         An idle headset on the desk keeps the session \c synchronized (TESTING.md); the dashboard
+ *         over the game is \c visible, still worn
+ */
+bool isWorn();
 
 //! OpenXR frame counters since the game started - for status.json
 struct FrameCounters {
@@ -281,6 +290,48 @@ struct MirrorStatus {
 };
 
 MirrorStatus mirrorStatus();
+
+/*!
+ * \brief The engine's menu state, once per frame, for the floating UI panel (#49)
+ *
+ * While a menu is open (the main or pause menu, the inventory, the book, a container, a note -
+ * the engine's own state, never a timer: F-82) the 2D interface's quad is the floating panel: placed
+ * ahead of the player at chest height where they look when it opens, then fixed in the play space
+ * (vr/UIPanel.h). With no menu open it is the head-locked quad (the HUD, until #116 moves it to the
+ * wrist).
+ *
+ * \param menu the open menu's name for the log ("inventory", "book", ...), or nullptr for none
+ */
+void setMenuOpen(const char * menu);
+
+//! The floating UI panel as status.json reports it (#49)
+struct PanelStatus {
+	std::string mode = "head";     //!< "world" while the panel is placed for an open menu, else "head"
+	std::string menu;              //!< the open menu's name, empty for none
+	u64 placements = 0;            //!< how often the panel was placed since the game started
+	std::string lastPlacement = "none"; //!< why it was placed last: "open", "recenter", "tracking"
+	Vec3f position = Vec3f(0.f);   //!< the panel's centre in the LOCAL space, meters
+	float yawDeg = 0.f;            //!< the panel's heading, degrees (0 = -z, + turns left)
+	float tiltDeg = 0.f;           //!< how far its face is turned up towards the eyes, degrees
+	Vec2f size = Vec2f(0.f);       //!< meters
+	float distance = 0.f;          //!< the settings: ahead of the head, meters
+	float drop = 0.f;              //!< below the eyes, meters
+};
+
+PanelStatus panelStatus();
+
+/*!
+ * \brief Where a ray hits the floating panel - the hook for the menu pointer (#34)
+ *
+ * \param origin    in the OpenXR LOCAL space (the space the eyes are located in), meters
+ * \param direction in the same space
+ * \param pixel     receives the hit in the 2D interface's pixels (x right, y down)
+ * \return false when no panel is shown for an open menu or the ray misses it
+ */
+bool panelHit(const Vec3f & origin, const Vec3f & direction, Vec2f & pixel);
+
+//! Place the panel anew at the head on the next frame while a menu is open (a recenter, F-180)
+void recenterPanel();
 
 /*!
  * \return the OpenXR runtime that answered this run, as "<name> <version>" - empty while no

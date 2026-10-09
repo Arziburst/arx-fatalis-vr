@@ -50,6 +50,29 @@ function Read-ArxStatus([string]$Dir = (Get-ArxTestDir)) {
 	return $null
 }
 
+# The marker smoke-test.ps1 writes into the test channel folder right after it started the game (#258): until
+# it exists the smoke test may still be waiting for the game lock (D-014, up to -LockTimeoutSec), which is not
+# the game's start-up. A check that drives the game from outside starts its own timeouts only after the marker.
+function Get-ArxLaunchMarker([string]$Dir = (Get-ArxTestDir)) { Join-Path $Dir 'launched.txt' }
+
+# Delete the marker of an earlier run; a check does it before it starts the smoke test job
+function Clear-ArxLaunchMarker([string]$Dir = (Get-ArxTestDir)) {
+	Remove-Item (Get-ArxLaunchMarker $Dir) -Force -ErrorAction SilentlyContinue
+}
+
+# Wait until the game was started (the marker exists): $true. Returns $false when the job ended first - the
+# smoke test was skipped (lock busy, exit 2) or failed before the launch; the caller then goes on to the job's
+# verdict instead of waiting for a game that never starts. No timeout of its own: the lock wait is bounded by
+# smoke-test.ps1 (-LockTimeoutSec), and $Job leaving the Running state is the end of it.
+function Wait-ArxGameLaunched($Job, [string]$Dir = (Get-ArxTestDir), [int]$PollMs = 200) {
+	$marker = Get-ArxLaunchMarker $Dir
+	while ($true) {
+		if (Test-Path -LiteralPath $marker) { return $true }
+		if ($Job.State -ne 'Running') { return (Test-Path -LiteralPath $marker) }
+		Start-Sleep -Milliseconds $PollMs
+	}
+}
+
 # Poll status.json until $Until (a script block that gets the status) returns true.
 # Returns the status; throws after $TimeoutSec seconds.
 function Wait-ArxStatus(
@@ -77,8 +100,12 @@ function Send-ArxCommand(
 	[string]$Dir = (Get-ArxTestDir),
 	[int]$TimeoutSec = 10
 ) {
+	# The game writes ack.txt first and status.json later, so status.json can still show the batch before the
+	# previous one: a baseline taken from it alone lets that late update (and the previous ack) pass for the
+	# answer to this batch (#250). The baseline is the newest seq of both files; the answer is the ack file itself.
 	$before = Read-ArxStatus $Dir
 	$seq = if ($before) { [int]$before.cmdSeq } else { 0 }
+	$seq = [Math]::Max($seq, (Read-ArxAckSeq $Dir))
 	$file = Join-Path $Dir 'command.txt'
 	$tmp = Join-Path $Dir 'command.txt.tmp'
 	$text = ($Lines -join "`n") + "`n"
@@ -93,7 +120,26 @@ function Send-ArxCommand(
 		}
 	}
 	if (-not $written) { throw "could not write $file" }
-	$null = Wait-ArxStatus { param($s) [int]$s.cmdSeq -gt $seq } -TimeoutSec $TimeoutSec -Dir $Dir `
-		-What "the game to acknowledge '$($Lines -join '; ')'"
-	(Get-Content (Join-Path $Dir 'ack.txt') -Raw -ErrorAction SilentlyContinue).Trim()
+	$deadline = (Get-Date).AddSeconds($TimeoutSec)
+	do {
+		$ack = Read-ArxAck $Dir
+		if ($ack -and [int]$ack.Seq -gt $seq) { return $ack.Text }
+		Start-Sleep -Milliseconds 50
+	} while ((Get-Date) -lt $deadline)
+	$last = if ($before) { $before | ConvertTo-Json -Compress -Depth 4 } else { 'none' }
+	throw "timed out after $TimeoutSec s waiting for the game to acknowledge '$($Lines -join '; ')' (last ack seq $seq; status before: $last)"
+}
+
+# ack.txt as { Seq; Text }, or $null when it is missing, half-written or unreadable.
+function Read-ArxAck([string]$Dir) {
+	try {
+		$text = (Get-Content (Join-Path $Dir 'ack.txt') -Raw -ErrorAction Stop).Trim()
+		if ($text -match '^seq=(\d+) ') { return [pscustomobject]@{ Seq = [int]$Matches[1]; Text = $text } }
+	} catch { }
+	$null
+}
+
+function Read-ArxAckSeq([string]$Dir) {
+	$ack = Read-ArxAck $Dir
+	if ($ack) { $ack.Seq } else { 0 }
 }

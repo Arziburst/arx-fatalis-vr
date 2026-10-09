@@ -46,6 +46,7 @@ if ($Rebuild) { $jobArgs.Rebuild = $true }
 
 # A status.json left by an earlier run must not be mistaken for this one
 Remove-Item (Join-Path $testDir 'status.json') -ErrorAction SilentlyContinue
+Clear-ArxLaunchMarker $testDir
 
 Write-Host "==> body check: simulated head through the test channel, sampling $testDir\status.json"
 $job = Start-Job -ScriptBlock {
@@ -95,6 +96,9 @@ function Phase([string]$Name, [string]$Command, [double]$Seconds) {
 $reasons = New-Object System.Collections.Generic.List[string]
 $ackFrame = @{}
 try {
+	# The smoke test may wait for the game lock first (D-014): the gameplay timeout counts from the launch
+	# (#258). A smoke test that ended without launching is judged below (skipped = exit 2).
+	if (-not (Wait-ArxGameLaunched $job $testDir)) { throw 'the smoke test ended without launching the game' }
 	$null = Wait-ArxStatus { param($s) $s.state -eq 'GAMEPLAY' -and $s.vr.sim -and $s.vr.head.source -eq 'hmd' -and $s.player } `
 		-TimeoutSec 180 -Dir $testDir -What 'gameplay on the simulated headset'
 	# Past the level's fade-in and the first reference

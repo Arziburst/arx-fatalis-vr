@@ -20,7 +20,7 @@
 #   @assert <path> <op> <v>        status.json, read fresh now. path: dotted, "quoted" where a key holds a dot
 #                                  (events.byName."spell.cast"); op: eq ne gt ge lt le
 #   @remember <name> <path>        keep a status.json value; a later @assert / @until value can be {name} or {name+5} / {name-5}
-#                                  (the yaw before a turn, the position before a walk)
+#                                  / {name*0.9} (the yaw before a turn, the position before a walk; *: relative)
 #   @mark                          forget the arx.log written so far: @log and @nolog only look at what the
 #                                  game wrote after the last mark (the start of the sequence is the first mark)
 #   @log <regex> [<n>s]            wait up to n seconds (default 5) for a log line since the mark to match; a
@@ -38,6 +38,8 @@
 #                                  @pending is removed - an expectation cannot go stale.
 #   @sim <name> / @args <...>      launch information (xrs-run.ps1): the simulated-headset script and the arx.exe
 #                                  arguments of the run the sequence wants; ignored while running
+#   @save <name>                   launch information: start from this save of the test save library (#70,
+#                                  smoke-test.ps1 -Save) - with @args --loadslot 0; ignored while running
 #
 # A sequence stops at its first failed step (-ContinueOnError: runs on and lists them all).
 
@@ -100,10 +102,11 @@ function ConvertTo-XrsStep([string]$Line, [int]$Number) {
 		$step.Kind = 'pending'; $step.Issue = [int]$Matches[1]
 		if ($Matches[2] -match '^@pending') { throw '@pending cannot be nested' }
 		$step.Inner = ConvertTo-XrsStep $Matches[2] $Number
-		if ($step.Inner.Kind -in 'mark', 'wait', 'sim', 'args') { throw "@pending needs a step that can fail, not @$($step.Inner.Kind)" }
+		if ($step.Inner.Kind -in 'mark', 'wait', 'sim', 'args', 'save') { throw "@pending needs a step that can fail, not @$($step.Inner.Kind)" }
 	}
 	elseif ($Line -match '^@sim\s+(\S+)\s*$') { $step.Kind = 'sim'; $step.Name = $Matches[1] }
 	elseif ($Line -match '^@args\s+(.+?)\s*$') { $step.Kind = 'args'; $step.Args = @($Matches[1] -split '\s+') }
+	elseif ($Line -match '^@save\s+(\S+)\s*$') { $step.Kind = 'save'; $step.Name = $Matches[1] }
 	else { throw "unknown or malformed directive" }
 	[pscustomobject]$step
 }
@@ -126,12 +129,14 @@ function Read-ArxSequence([string]$Name) {
 	if (-not $steps) { throw "sequence $path has no steps" }
 	$sim = @($steps | Where-Object Kind -eq 'sim' | Select-Object -First 1)
 	$argsStep = @($steps | Where-Object Kind -eq 'args' | Select-Object -First 1)
+	$save = @($steps | Where-Object Kind -eq 'save' | Select-Object -First 1)
 	[pscustomobject]@{
 		Path  = $path
 		Name  = [IO.Path]::GetFileNameWithoutExtension($path)
-		Steps = @($steps | Where-Object { $_.Kind -notin 'sim', 'args' })
+		Steps = @($steps | Where-Object { $_.Kind -notin 'sim', 'args', 'save' })
 		Sim   = if ($sim) { $sim[0].Name } else { $null }
 		Args  = if ($argsStep) { $argsStep[0].Args } else { @() }
+		Save  = if ($save) { $save[0].Name } else { $null }
 	}
 }
 
@@ -174,16 +179,17 @@ function Test-XrsCondition($Actual, [string]$Op, [string]$Expected) {
 	}
 }
 
-# {name} and {name+5} / {name-5} in a value: what @remember kept, with a number added
+# {name} and {name+5} / {name-5} / {name*0.9} in a value: what @remember kept, with a number added or
+# multiplied by one (a relative threshold: "at least 10 % less" is {name*0.9})
 function Expand-XrsValue($Context, [string]$Value) {
-	[regex]::Replace($Value, '\{(\w+)(?:([+-])([\d.]+))?\}', {
+	[regex]::Replace($Value, '\{(\w+)(?:([-+*])([\d.]+))?\}', {
 		param($m)
 		if (-not $Context.Vars.ContainsKey($m.Groups[1].Value)) { throw "no remembered value '$($m.Groups[1].Value)' - an @remember must come first" }
 		$v = $Context.Vars[$m.Groups[1].Value]
 		if (-not $m.Groups[2].Success) { return Format-XrsValue $v }
 		$d = [double]::Parse($m.Groups[3].Value, [Globalization.CultureInfo]::InvariantCulture)
-		if ($m.Groups[2].Value -eq '-') { $d = -$d }
-		return ([double]$v + $d).ToString('0.####', [Globalization.CultureInfo]::InvariantCulture)
+		$result = switch ($m.Groups[2].Value) { '*' { [double]$v * $d } '-' { [double]$v - $d } default { [double]$v + $d } }
+		return $result.ToString('0.####', [Globalization.CultureInfo]::InvariantCulture)
 	})
 }
 

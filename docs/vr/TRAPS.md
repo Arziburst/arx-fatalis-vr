@@ -33,6 +33,65 @@ concatenation rebuilds from the animation after the wrist was set.
 the zero-length groups between it and the hand's group are made rigid with the wrist (`ArmChain::rigid`,
 `vr/VRBody.cpp`). Check a chain by its lengths in the `[vr] body:` bind line (`27.6 + 30.5` on `human_base`) and
 a hand by `vr.body.<hand>.tip` against `wrist` / `controller`, not by the picture alone.
+## 2026-10-10 — `test-xrs.ps1` fails once in a while: "timed out waiting for the game to acknowledge" (#275)
+
+**Symptom:** one check of 73 fails on the CI runner (a `@shot`/`@diff` step), the rerun of the same commit passes.
+**Cause (most likely, not reproduced in 20 local runs):** the fake game read `command.txt` with `Get-Content` and
+wrote `ack.txt` with `Set-Content`, whose errors are non-terminating — a sharing violation with the test's own
+50 ms polling (or a scanner on a loaded runner) silently lost the batch or its ack, so nothing was acknowledged.
+**Do:** the fake game removes `command.txt` only after reading it and retries both the read and the ack write.
+When a channel check times out with the game alive, suspect a dropped file operation before a slow game.
+
+## 2026-10-09 — The body turned 45° by the numbers, the picture did not turn (#32)
+
+**Symptom:** on the simulated headset with `--loadlevel 10` (+ `setplayercontrols on`) a snap turn changed
+`player.yaw` and `camera.yaw` in `status.json` by exactly 45°, the `vr.turn.snap` game event was logged, and the
+eye shots before and after still looked down the same corridor (picture change ~4, barely over the floor);
+a head turn of the simulator did turn the picture.
+**Cause:** the trap of #24 again — level 10 is the intro conversation, whose camera is placed by
+`speechControlledCinematic()`, not from the player's yaw, so nothing the **body** does shows in the view.
+`status.json` → `camera.yaw` is the engine's `g_playerCamera`, not what the eyes render with.
+**Do:** check turning, walking, anything the body does, on a first-person save: `@save mvp-new-game` +
+`@args --loadslot 0` in the `.xrs` (snap turn there: picture change 16.9). Judge by the shots, not by
+`camera.yaw`.
+
+## 2026-10-10 — A channel-driven check times out with `ack.txt` holding only `quit`, though the game ran (#258)
+
+**Symptom:** `body-check.ps1` fails with "timed out after 180 s waiting for gameplay"; no command of the check
+reached the game. **Cause:** `smoke-test.ps1` first waits up to 300 s for the game lock (D-014); the check's
+own timeout counted that wait as game start-up. **Do:** a check that drives the game from outside calls
+`Clear-ArxLaunchMarker` before it starts the smoke test job and `Wait-ArxGameLaunched $job $dir` before any
+timeout of its own — `smoke-test.ps1` writes `launched.txt` into the test folder right after the game started.
+`false` means the smoke test ended without a launch (lock skip = exit 2). Covered by `test-wait-launch.ps1`.
+
+## 2026-10-09 — In the headset the camera floats far above the body (#24, #27)
+
+**Symptom:** looking down in the headset, the character's body is far below the eyes, although the camera
+math is right and every flat or simulated check passes.
+**Cause:** the head's reference (the head there = the character's eye) was taken from the first tracked
+sample after the level load — and the owner starts a test at the desk: the session runs `synchronized`
+with the headset lying there (the runtime still locates it), and it is put on 50–80 s later
+(`vr.session state=visible` in arx.log). The worn head was ~0.8 m above the desk reference, so the camera
+was 80 units above the eye.
+**Do:** read `vr.head.reference` in arx.log: `kind`, `wornS` and `headAboveFloorM` say when and from what
+the reference came; `status.json` → `vr.head.worn` / `referenceKind`. Since #27 the settled reference
+only comes from a worn headset (D-031). To reproduce without a headset: `session idle` in a `--vr-sim`
+script (`scripts/dev/vrsim/eye-height.vrsim`).
+
+## 2026-10-10 — The 2D interface is empty in `--vr-sim` shots, or the inventory "never closes", on level 10 (#49)
+
+**Symptom:** on `--loadlevel 10` every shot's flat frame is `transparent` and `quadPixels` is **0** — no HUD,
+no inventory, even after `ui inventory open`. After `setplayercontrols on` / `cinemascope off` the
+inventory opens by itself, and a `ui inventory close` is followed by `ui.inventory state=closed` and,
+one frame later, `state=open` again: `player.inventoryOpen` never becomes false.
+**Cause:** (1) while the level 10 start holds the player the HUD is not drawn at all (TESTING.md, the
+`ui` command). (2) Released, the level's start shows the bag and opens it again after every close (seen
+flat and in VR, #49; the cause in the level's script was not chased). (3) `quadPixels` of a shot counts
+the eye pixels the **drawn** interface covers (alpha > 0), not the quad's area: an empty blended quad is 0.
+**Do:** for anything about the HUD or the menus use the test save `mvp-new-game` (#70: controls free, the
+bag closed) — `smoke-test.ps1 -VrSim idle -Sequence <name> -Save mvp-new-game`, as `ui-panel.xrs` does.
+
+---
 
 ## 2026-10-09 — A check of "what the button did" counts one event too many, or finds it before the press (#74)
 
@@ -734,3 +793,15 @@ high); `[datetime]::Parse($obj.updated)` on a JSON field gave a date a month off
 a PowerShell test helper with parameter `$G` and a local `$g` failed with "cannot convert Graphics to Int32".
 **Cause:** the runner took everything after the operator as the value; PowerShell variable names are case-insensitive, so `$g` and `$G` are one variable.
 **Do:** write timeouts as `60s` (the parser now rejects a value with a trailing bare number); never name two variables in one scope by letters that differ only in case.
+
+## 2026-10-09 - Send-ArxCommand returned the previous batch's ack
+
+**Symptom:** `test-xrs.ps1` failed only on the slow CI runner: the ack of a check's first command read `last=refuse this`, the command of the check before (#250).
+**Cause:** the game writes `ack.txt` first and `status.json` later; `Send-ArxCommand` took its baseline `cmdSeq` from `status.json` and waited for it to advance, so the late status update of the *previous* batch ended the wait and the old ack was returned.
+**Do:** the baseline is the newest seq of ack.txt and status.json, and the answer is `ack.txt` itself advancing (`Read-ArxAck` in `scripts/dev/test-lib.ps1`). After a send, `status.json` may still lag behind the ack - wait for the state you assert on (`@until`, `@frames`).
+
+## 2026-10-10 - Crouched in the start cell, the character never stood up again
+
+**Symptom:** on the test save `mvp-new-game` the character crouched (button, toggle or the head, #100) and never stood up: the toggle went off (`player.crouch state=off`), `PLAYER_CROUCH` stayed set for good; on `mvp-items` the same sequence stood up (#263).
+**Cause:** the engine's own stand-up check, not VR code - flat Arx Libertatis did the same. `ARX_PLAYER_Manage_Visual` checked the **whole** standing cylinder with `CheckAnythingInCylinder`, and at the awakening spot that cylinder grazes a sloped floor polygon 21 units above the feet (`background=-21.0 ... normY=-0.3`). Standing there is fine - the check runs only to stand up - but the crouched character could never pass it.
+**Do:** the stand-up (and the jump from a crouch) now checks only the part of the standing cylinder above the crouched one (`standUpCylinder()` in `src/game/Player.cpp`). A refused stand-up logs one `player.standup.blocked` event with what is in the way (`describeCylinderBlocker`); read it before blaming crouch code. `stand-up.xrs` checks both directions.

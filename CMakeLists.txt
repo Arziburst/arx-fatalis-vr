@@ -1260,9 +1260,11 @@ set(VR_SOURCES
 	src/vr/EyeProjection.cpp
 	src/vr/FramePacing.cpp
 	src/vr/HeadPose.cpp
+	src/vr/HeadReferenceGate.cpp
 	src/vr/HeadTracking.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/SimRig.cpp
+	src/vr/UIPanel.cpp
 	src/vr/VRActions.cpp
 	src/vr/VRBindings.cpp
 	src/vr/VRBody.cpp
@@ -1274,6 +1276,7 @@ set(VR_SOURCES
 	src/vr/VRSimulator.cpp
 	src/vr/VRSwapchain.cpp
 	src/vr/VRSystem.cpp
+	src/vr/VRTurn.cpp
 	src/vr/XRDispatch.cpp
 )
 

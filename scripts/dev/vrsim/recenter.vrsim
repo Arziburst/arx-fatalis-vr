@@ -1,0 +1,20 @@
+# The player's recenter = calibration (#28, D-018, D-019): run by scripts/dev/recenter-check.ps1, which
+# samples status.json in the windows named below and judges the head numbers.
+# Calibrated standing at the start; the head sits down (40 cm lower), moves and turns; the left stick
+# click is held for a second (a long press: recenter = calibrate seated); the head goes back to where it
+# started. Frames at 90 Hz.
+
+timeline gameplay
+
+@270 shot start                       # 3 s after the level is playable: past its fade-in
+@300 head pos 0.25 -0.40 0.10         # sat down: 25 cm right, 40 cm lower, 10 cm back
+@300 head rot 40 0 0                  # turned 40 degrees left
+                                      # window "seated": frames 330-370
+@380 action thumbstick_click left 1   # hold the left stick click for 90 frames (1 s; a long press is 0.5 s)
+@470 action thumbstick_click left 0
+                                      # window "recentered": frames 490-530
+@500 shot recentered
+@540 head pos 0 0 0                   # back where the first reference was taken
+@540 head rot 0 0 0
+                                      # window "back": frames 570-610
+@580 shot back

@@ -74,6 +74,7 @@
 #include "vr/VRInput.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
+#include "vr/WorldScale.h"
 #include "window/RenderWindow.h"
 
 extern bool START_NEW_QUEST;
@@ -453,6 +454,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("inventoryOpen", (player.Interface & INTER_INVENTORY) != 0);
 		json.value("bookOpen", (player.Interface & INTER_PLAYERBOOK) != 0);
 		json.value("crouchToggle", bGCroucheToggle);
+		// The character crouches - the button, the toggle, the head (#100) or a low ceiling
+		json.value("crouched", (player.m_currentMovement & PLAYER_CROUCH) != 0);
 		json.value("jumping", player.jumpphase != NotJumping);
 		json.end();
 		// The first-person camera after this frame's effects: bob = how far the camera left the stable head
@@ -467,6 +470,9 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("roll", g_playerCamera.angle.getRoll());
 		json.value("fov", glm::degrees(g_playerCamera.fov()));
 		json.value("bob", glm::distance(g_playerCamera.m_pos, g_playerCameraStablePos));
+		// Where the view is above the character's feet (game units, y down): the character's eye in flat
+		// mode; in VR the eye plus the head's movement since its reference (#27)
+		json.value("eyeAboveFeet", player.basePosition().y - g_playerCameraStablePos.y);
 		json.value("shake", quakeAmplitude());
 		json.end();
 		// Spells by type: active now, and launched since the level was loaded - the evidence that a spellcast
@@ -581,6 +587,25 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("eye", mirror.eye);
 	json.value("frames", mirror.frames);
 	json.end();
+	// The floating UI panel (#49): "world" while an open menu's panel is placed, its pose in the LOCAL space
+	{
+		vr::PanelStatus panel = vr::panelStatus();
+		json.object("panel");
+		json.value("mode", panel.mode);
+		json.value("menu", panel.menu);
+		json.value("placements", panel.placements);
+		json.value("lastPlacement", panel.lastPlacement);
+		json.value("x", panel.position.x);
+		json.value("y", panel.position.y);
+		json.value("z", panel.position.z);
+		json.value("yaw", panel.yawDeg);
+		json.value("tilt", panel.tiltDeg);
+		json.value("width", panel.size.x);
+		json.value("height", panel.size.y);
+		json.value("distance", panel.distance);
+		json.value("drop", panel.drop);
+		json.end();
+	}
 	json.value("runtime", vr::runtimeName());
 	json.value("manifest", vr::runtimeManifest());
 	// Head tracking (#24): where the head comes from, its reference and what it does to the camera
@@ -590,7 +615,20 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("source", head.source);
 		json.value("referenced", head.referenced);
 		json.value("references", head.references);
+		json.value("reason", head.reason);
+		json.value("refY", head.reference.position.y);
 		json.value("refYaw", head.reference.yaw);
+		// The reference is the worn, settled head (#27): its kind, whether a new one is still wanted, the
+		// headset worn, the head above the room's floor (meters, -1 without a STAGE space) at the reference
+		// and now, the character's eye above its feet (game units, -1 when the camera is not the player's)
+		json.value("referenceKind", vr::referenceKindName(head.referenceKind));
+		json.value("pending", head.pending);
+		json.value("worn", head.worn);
+		json.value("refAboveFloor", head.referenceAboveFloor);
+		json.value("aboveFloor", head.aboveFloor);
+		json.value("raised", head.raised);
+		json.value("eyeAboveFeet", head.eyeAboveFeet);
+		json.value("unitsPerMeter", vr::UnitsPerMeter);
 		json.value("pitch", head.head.getPitch());
 		json.value("yaw", head.head.getYaw());
 		json.value("roll", head.head.getRoll());
@@ -722,6 +760,20 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("moveX", game.move.x);
 		json.value("moveY", game.move.y);
 		json.value("turn", game.turn);
+		json.end();
+		// What the turn axis did (#32): the settings, snaps so far and the total turned (degrees, right positive)
+		const vr::TurnSettings turnSettings = vr::turnSettings();
+		const vr::TurnController & turn = vr::turnState();
+		json.object("turn");
+		json.value("mode", vr::turnModeName(turnSettings.mode));
+		json.value("snapAngle", turnSettings.snapAngle);
+		json.value("smoothSpeed", turnSettings.smoothSpeed);
+		json.value("snapRepeat", turnSettings.snapRepeat);
+		json.value("snaps", turn.snaps());
+		json.value("lastSnap", turn.lastSnap());
+		json.value("turned", turn.turned());
+		json.value("updates", turn.updates());
+		json.value("allowed", turn.allowed());
 		json.end();
 		json.end();
 	}
@@ -916,7 +968,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "recenter") {
-		// The head is measured from its next sample (#24); the button chord for the player is #28
+		// The head is measured from its next sample (#24); the player's is a long press of the left stick (#28)
 		vr::resetHeadReference("channel");
 		return std::string();
 	}
@@ -1023,6 +1075,20 @@ std::string execute(std::string_view line) {
 			vr::setComfortMode(vr::ComfortMode::Off);
 		} else {
 			return refuse("comfort: expected auto, on or off, got \"" + std::string(rest) + "\"");
+		}
+		return std::string();
+	}
+
+	if(word == "crouch") {
+		// The crouch toggle without an input device, for flat runs (#263)
+		std::string mode(rest);
+		util::makeLowercase(mode);
+		if(mode == "on") {
+			bGCroucheToggle = true;
+		} else if(mode == "off") {
+			bGCroucheToggle = false;
+		} else {
+			return refuse("crouch: expected on or off, got \"" + std::string(rest) + "\"");
 		}
 		return std::string();
 	}

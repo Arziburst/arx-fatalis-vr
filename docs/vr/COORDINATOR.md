@@ -25,15 +25,15 @@ messages, auto-continue, and lists the owner-only steps: accept the bypass discl
 
 ## 3. Autopilot and budget (D-022, D-027)
 - **Maximum work, best quality, fewest tokens.** Do **not** stretch work until a limit resets: every task
-  that can run, runs, until the weekly cap (**80%**) or the 5-hour cap (**95%**) stops it.
+  that can run, runs, until the weekly cap (**90%**) or the 5-hour cap (**95%**) stops it.
 - You are blocked only by an owner headset test or by the limits. Few tasks running → find more yourself:
   dependencies merged or accepted (a wave-only block → override it), research and tooling tasks,
   follow-ups; start them with a one-line reason.
 - **5-hour at 95%:** `claude stop` the non-Fable workers, wait for `rate_limits.five_hour.resets_at`,
-  `claude respawn <id>`. **Weekly at 80%:** no new workers, running ones finish. Over a limit only with the
+  `claude respawn <id>`. **Weekly at 90%:** no new workers, running ones finish. Over a limit only with the
   owner's explicit permission for that occasion.
 - **Data, not guesses:** `pwsh scripts\dev\usage-plan.ps1` every cycle and before a start, as the
-  **forecast** (cost per task, ETA to the weekly 80% and 5-hour 95% caps, which READY tasks fit before each); its `SUMMARY` line goes on #193. Start every
+  **forecast** (cost per task, ETA to the weekly 90% and 5-hour 95% caps, which READY tasks fit before each); its `SUMMARY` line goes on #193. Start every
   runnable task while below the caps — its ADVICE (`keep N worker(s) running until the cap`, N = running + READY, no fixed worker cap) does not pace to the reset (D-027). Limits also in `~/.claude/statusline/last.json`.
   Fable's weekly limit is invisible: a Fable worker stuck on a usage-limit message → restart on Opus.
 - **Cron tick** every ~30 min (`:17` / `:47`): `usage-plan.ps1`, `plan-next.ps1`, clean up, start work.
@@ -118,7 +118,10 @@ anything that would fill a worker's context.
   never turn off Smart App Control (TRAPS.md); folder trust and the bypass consent only by the owner —
   never write them into `~/.claude.json`. SteamVR only via `stop-steamvr.ps1`; Steam only by its own
   shutdown (`steam.exe -shutdown`), never killed.
-- **New decision numbers** only after merging origin/main right before the commit (number race).
+- **New decision numbers** (#274): workers write `D-NEW` / `D-NEW-<tag>` and never pick a number; <!-- d-new-literal -->
+  `scripts/dev/number-decisions.ps1 -Pr <pr>` numbers them after `git merge origin/main`, right before the merge
+  ([WORKFLOW.md](WORKFLOW.md#parallel-work)). No refereeing of clashes; the `Decision numbers` check fails a hand-numbered clash.
+  Your own decisions (owner agreements) take the next number straight from main in their own PR.
 
 ## 8. Research and catalogs (D-021)
 - One reference project per block (Sonnet research task): OpenMW VR (#188), Gothic VR mods, Skyrim VR

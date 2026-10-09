@@ -25,8 +25,11 @@
 
 #include "core/GameEvent.h"
 #include "core/GameTime.h"
+#include "platform/Time.h"
 #include "vr/BodyYaw.h"
+#include "vr/HeadReferenceGate.h"
 #include "vr/VRSystem.h"
+#include "vr/WorldScale.h"
 
 namespace vr {
 
@@ -40,8 +43,12 @@ struct HeadTrackingState {
 	bool haveSim = false;
 	HeadSample sim;
 
-	bool resetPending = true;
+	HeadReferenceGate gate;
 	std::string resetReason = "startup";
+
+	float eyeAboveFeet = -1.f;
+
+	float raising = 0.f; //!< meters the reference was raised in the current auto-raise episode
 
 	HeadStatus status;
 	BodyStatus body;
@@ -49,6 +56,11 @@ struct HeadTrackingState {
 };
 
 HeadTrackingState g_head;
+
+double nowSeconds() {
+	static const PlatformInstant start = platform::getTime();
+	return double(toUs(platform::getTime() - start)) / 1e6;
+}
 
 //! A drag episode ends only this far inside the dead zone, so a head held at its edge is one episode
 const float DragEndMarginDegrees = 5.f;
@@ -90,11 +102,20 @@ void resetBody(float heading) {
 
 } // anonymous namespace
 
+void setCharacterEyeHeight(float units) {
+	g_head.eyeAboveFeet = units;
+}
+
 bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 
 	HeadStatus & status = g_head.status;
 	const char * source = "none";
 	HeadSample head;
+	// The headset is on a head: the session is displayed (visible or focused) - an idle headset never is.
+	// A simulated head always counts as worn
+	bool worn = false;
+	// The LOCAL origin above the room's floor (STAGE), meters; negative while unknown
+	float localAboveFloor = -1.f;
 
 	if(!isEnabled()) {
 		g_head.haveHmd = false;
@@ -107,12 +128,17 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 		g_head.lastHmd = head;
 		g_head.haveHmd = true;
 		source = "hmd";
+		worn = isWorn();
+		if(views.floorValid) {
+			localAboveFloor = views.localAboveFloor;
+		}
 	} else if(isEnabled() && g_head.haveHmd) {
 		head = g_head.lastHmd;
 		source = "held";
 	} else if(g_head.haveSim) {
 		head = g_head.sim;
 		source = "sim";
+		worn = true;
 	}
 
 	if(std::strcmp(source, status.source) != 0) {
@@ -127,21 +153,73 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 
 	if(std::strcmp(source, "none") == 0) {
 		status.clamped = false;
+		status.worn = false;
 		resetBody(bodyYaw);
 		return false;
 	}
 
-	if(g_head.resetPending || !status.referenced) {
-		status.reference = makeHeadReference(head);
-		status.referenced = true;
-		status.references++;
-		g_head.resetPending = false;
-		// The new forward is where the body faces (#25)
-		resetBody(bodyYaw);
-		gameevent::Event("vr.head.reference")("reason", g_head.resetReason)("source", source)
-			("yaw", status.reference.yaw, 1)("bodyYaw", bodyYaw, 1)
-			("x", status.reference.position.x, 3)("y", status.reference.position.y, 3)
-			("z", status.reference.position.z, 3);
+	status.eyeAboveFeet = g_head.eyeAboveFeet;
+	g_head.eyeAboveFeet = -1.f;
+
+	// The reference is the worn, settled head (#27): a held pose (tracking lost) feeds nothing into the gate
+	if(std::strcmp(source, "held") != 0) {
+		const double now = nowSeconds();
+		if(worn != status.worn) {
+			gameevent::Event("vr.head.worn")("state", worn ? "on" : "off")("session", sessionStateString())
+				("source", source);
+			if(!worn) {
+				// The gate takes a new reference when it is put on again: say so in that reference's event
+				g_head.resetReason = "put on again";
+			}
+		}
+		ReferenceKind take = g_head.gate.update(now, head.position, worn, std::strcmp(source, "sim") == 0);
+		if(take != ReferenceKind::None) {
+			status.reference = makeHeadReference(head);
+			status.referenceKind = take;
+			status.referenced = true;
+			status.references++;
+			status.reason = g_head.resetReason;
+			status.raised = 0.f;
+			g_head.raising = 0.f;
+			// The new forward is where the body faces (#25)
+			resetBody(bodyYaw);
+			status.referenceAboveFloor = (localAboveFloor >= 0.f) ? localAboveFloor + head.position.y : -1.f;
+			// The head at the reference is the character's eye: the player's eye height above the floor
+			// (STAGE, when the runtime has one) against the character's eye above its feet, in meters at the
+			// world scale - what decides whether doors and tables keep their size
+			gameevent::Event e("vr.head.reference");
+			e("kind", referenceKindName(take))("reason", g_head.resetReason)("source", source)
+				("wornS", float(g_head.gate.wornSeconds(now)), 2)
+				("yaw", status.reference.yaw, 1)("bodyYaw", bodyYaw, 1)
+				("x", status.reference.position.x, 3)("y", status.reference.position.y, 3)
+				("z", status.reference.position.z, 3);
+			if(status.referenceAboveFloor >= 0.f) {
+				e("headAboveFloorM", status.referenceAboveFloor, 3);
+			} else {
+				e("headAboveFloorM", "unknown");
+			}
+			if(status.eyeAboveFeet >= 0.f) {
+				e("characterEyeM", status.eyeAboveFeet / UnitsPerMeter, 3);
+			} else {
+				e("characterEyeM", "unknown");
+			}
+		}
+		status.worn = worn;
+		status.pending = g_head.gate.pending();
+	}
+
+	// Auto-raise (D-018): a head above the reference lifts it, so the view never rises above the character's
+	// eye. Logged per episode - from the first raise until the head is back 2 cm below the reference
+	const float raised = raiseHeadReference(status.reference, head);
+	if(raised > 0.f) {
+		g_head.raising += raised;
+		status.raised += raised;
+	} else if(g_head.raising > 0.f && head.position.y < status.reference.position.y - 0.02f) {
+		if(g_head.raising >= 0.01f) {
+			gameevent::Event("vr.head.raised", 100)("byM", g_head.raising, 3)("sinceRefM", status.raised, 3)
+				("refY", status.reference.position.y, 3)("kind", referenceKindName(status.referenceKind));
+		}
+		g_head.raising = 0.f;
 	}
 
 	HeadCamera camera = headToCamera(head, status.reference, bodyYaw);
@@ -154,6 +232,7 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 
 	status.head = headAngles(head.orientation);
 	status.position = head.position;
+	status.aboveFloor = (localAboveFloor >= 0.f) ? localAboveFloor + head.position.y : -1.f;
 	status.offset = camera.offset;
 	status.clamped = camera.clamped;
 
@@ -166,8 +245,10 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 }
 
 void resetHeadReference(const char * reason) {
-	g_head.resetPending = true;
+	g_head.gate.reset();
 	g_head.resetReason = reason;
+	// An open menu's panel follows the recenter to where the player looks now (F-180)
+	recenterPanel();
 }
 
 bool peekHead(HeadSample & head) {

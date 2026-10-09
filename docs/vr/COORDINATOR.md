@@ -32,8 +32,10 @@ messages, auto-continue, and lists the owner-only steps: accept the bypass discl
 - **5-hour at 95%:** `claude stop` the non-Fable workers, wait for `rate_limits.five_hour.resets_at`,
   `claude respawn <id>`. **Weekly at 80%:** no new workers, running ones finish. Over a limit only with the
   owner's explicit permission for that occasion.
-- **Data, not guesses:** `pwsh scripts\dev\usage-plan.ps1` every cycle and before a start; start no more
-  than its ADVICE; its `SUMMARY` line goes on #193. Limits also in `~/.claude/statusline/last.json`.
+- **Data, not guesses:** `pwsh scripts\dev\usage-plan.ps1` every cycle and before a start, as the
+  **forecast** (cost per task, how close the caps are); its `SUMMARY` line goes on #193. Start every
+  runnable task while below the caps — its ADVICE still paces the week to the reset, ignore that part
+  until #236 changes it. Limits also in `~/.claude/statusline/last.json`.
   Fable's weekly limit is invisible: a Fable worker stuck on a usage-limit message → restart on Opus.
 - **Cron tick** every ~30 min (`:17` / `:47`): `usage-plan.ps1`, `plan-next.ps1`, clean up, start work.
   It is session-only — recreate it (CronCreate) after every restart.
@@ -45,7 +47,7 @@ messages, auto-continue, and lists the owner-only steps: accept the bypass discl
    new worker-filed issues (REST), the safety-hook log `%LOCALAPPDATA%\ArxFatalisVR\safety-hook.log`.
 2. **Start workers** from the owner's copy: `scripts\dev\start-worker.ps1 <n> -Type <t> -Model <m> -Effort <e>`
    (the line `plan-next.ps1` prints). Rules: dependencies merged, different areas (two build tasks with
-   disjoint files may pair), VR lane ≤ 2 in progress and ≤ 4 in Testing, count by ADVICE. Subscribe:
+   disjoint files may pair), VR lane ≤ 2 in progress and ≤ 4 in Testing, below the caps (§3). Subscribe:
    `SendMessage(to: <name>, notify_when_idle: true)`.
 3. **Brief each worker** right after start, short: the decisions and catalog rows that apply; parallel
    tasks touching the same code ("merge origin/main when #x lands"); "flat / `--vr-sim` launches only,
@@ -113,6 +115,10 @@ anything that would fill a worker's context.
   hitting it.
 - **GitHub via REST** (#186): `gh api repos/...`, `pr-checks.ps1`; GraphQL only for the board. A queued
   board move (PENDING in `cycle-report.ps1`) → `set-status.ps1 -Flush`.
+- **Safety basics (you too):** never push `main`/`master`, no force-push, never delete uncommitted changes;
+  never turn off Smart App Control (TRAPS.md); folder trust and the bypass consent only by the owner —
+  never write them into `~/.claude.json`. SteamVR only via `stop-steamvr.ps1`; Steam only by its own
+  shutdown (`steam.exe -shutdown`), never killed.
 - **New decision numbers** only after merging origin/main right before the commit (number race).
 
 ## 8. Research and catalogs (D-021)

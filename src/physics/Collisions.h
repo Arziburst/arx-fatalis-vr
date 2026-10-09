@@ -48,6 +48,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #define ARX_PHYSICS_COLLISIONS_H
 
 #include <stddef.h>
+#include <string>
 #include <vector>
 
 #include "game/Entity.h"
@@ -84,6 +85,8 @@ extern bool DIRECT_PATH;
 
 bool ARX_COLLISION_Move_Cylinder(IO_PHYSICS * ip, Entity * io, float MOVE_CYLINDER_STEP, CollisionFlags flags = 0);
 float CheckAnythingInCylinder(const Cylinder & cylinder, Entity * source, CollisionFlags flags = 0);
+//! What CheckAnythingInCylinder finds, part by part - for the log of a refused stand-up (#263)
+std::string describeCylinderBlocker(const Cylinder & cylinder, Entity * source);
 
 enum CheckAnythingInSphereFlag {
 	 CAS_NO_NPC_COL        = 1 << 0,

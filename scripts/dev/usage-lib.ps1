@@ -134,21 +134,21 @@ function Get-TaskCostEstimate($TaskCosts, [string]$Model, [string]$Effort, [stri
 #   WorkerUsdPerHour   what one worker burns
 #   BurnUsdPerHour     what everything burns now (workers + coordinator + reviewers + the owner's own sessions)
 #   RunningWorkers     workers running now
-#   ReadyCount         runnable (READY) tasks not started yet; $null = unknown (then the worker cap is used)
+#   ReadyCount         runnable (READY) tasks not started yet; $null = unknown (then only the running ones are counted)
 #   QueueUsd           the forecast cost (dollars, p80) of the READY tasks, in start order
-# Workers = RunningWorkers + ReadyCount, bounded only by MaxWorkers; 0 when a cap is already reached.
+# Workers = RunningWorkers + ReadyCount, bounded by MaxWorkers only when it is > 0 (default 0 = no cap, D-027); 0 when a cap is already reached.
 # Per limit: EtaHours = hours until the cap at the current burn, EtaHoursWithN = the same with Workers workers on top of the
 # base load (burn minus the running workers), Fit = how many READY tasks fit before the cap at their p80 cost.
 function Get-UsageRecommendation {
 	param(
 		$Week, $FiveHour, $WeekPerUsd, $FivePerUsd, [double]$WorkerUsdPerHour, [double]$BurnUsdPerHour,
-		[int]$RunningWorkers, $ReadyCount = $null, [double[]]$QueueUsd = @(), [double]$Now, [int]$MaxWorkers = 3,
+		[int]$RunningWorkers, $ReadyCount = $null, [double[]]$QueueUsd = @(), [double]$Now, [int]$MaxWorkers = 0,
 		[double]$WeekCap = 80, [double]$FiveCap = 95
 	)
 	$base = [math]::Max(0.0, $BurnUsdPerHour - $RunningWorkers * $WorkerUsdPerHour)
 	$ready = if ($null -ne $ReadyCount) { [int]$ReadyCount } else { $null }
-	$wanted = if ($null -ne $ready) { [int][math]::Min($MaxWorkers, $RunningWorkers + $ready) } else { $MaxWorkers }
-	$result = [ordered]@{ Workers = $wanted; Binding = $(if ($null -ne $ready -and $wanted -lt $MaxWorkers) { 'ready tasks' } else { 'worker cap' }); Week = $null; Five = $null; Fit = $null; EtaHours = $null; EtaHoursWithN = $null; Notes = @() }
+	$wanted = if ($null -ne $ready) { $RunningWorkers + $ready } else { $RunningWorkers }; if ($MaxWorkers -gt 0) { $wanted = [int][math]::Min($MaxWorkers, $wanted) }
+	$result = [ordered]@{ Workers = $wanted; Binding = $(if ($MaxWorkers -gt 0 -and $wanted -ge $MaxWorkers) { 'worker cap' } else { 'ready tasks' }); Week = $null; Five = $null; Fit = $null; EtaHours = $null; EtaHoursWithN = $null; Notes = @() }
 
 	$limits = @(
 		@{ Key = 'Week'; Name = 'weekly'; L = $Week; PerUsd = $WeekPerUsd; Cap = $WeekCap }

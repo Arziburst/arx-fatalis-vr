@@ -23,10 +23,10 @@
 .PARAMETER Offline
 	Do not call GitHub for issue sizes (cache only).
 .PARAMETER MaxWorkers
-	Worker cap (default 3).
+	Optional worker cap (default 0 = none, D-027).
 #>
 [CmdletBinding()]
-param([switch]$Record, [switch]$Json, [string]$Dir, [switch]$NoQueue, [int]$MaxWorkers = 3, [switch]$Offline)
+param([switch]$Record, [switch]$Json, [string]$Dir, [switch]$NoQueue, [int]$MaxWorkers = 0, [switch]$Offline)
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'usage-lib.ps1')

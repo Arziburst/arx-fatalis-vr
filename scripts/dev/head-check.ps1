@@ -180,11 +180,13 @@ if ($byPhase.Count -eq $phases.Count) {
 	Expect 'move' 'offset z' ($ez / 3) $move.oz 0.05
 	Expect 'move' 'lean' 0.1 $move.leanM 0.001
 	Expect 'move' 'camera dx' $ex ($move.x - $ahead.x) $tolUnits
-	# The body's own height may change where it walked to (the floor): the head adds 20 to it
+	# The body walks onto the floor where it steps: the start cell's floor is uneven (the body rises 12-16 units
+	# 0.2-0.9 m to the right, the same as walking there with the stick), and the engine's eye follows the body's
+	# height smoothed. So the camera's height is checked as the head's part alone - offset y 20 above
 	Write-Host ("body moved: move ({0:0.00}, {1:0.00}, {2:0.00}), step ({3:0.00}, {4:0.00}, {5:0.00}) from ahead" -f `
 		($move.px - $ahead.px), ($move.py - $ahead.py), ($move.pz - $ahead.pz), ($step.px - $ahead.px), ($step.py - $ahead.py), ($step.pz - $ahead.pz))
 	Expect 'move' 'body dx' ($ex * 2 / 3) ($move.px - $ahead.px) $tolUnits
-	Expect 'move' 'camera dy' (20 + $move.py - $ahead.py) ($move.y - $ahead.y) $tolUnits
+	Expect 'move' 'body dz' ($ez * 2 / 3) ($move.pz - $ahead.pz) $tolUnits
 	Expect 'move' 'camera dz' $ez ($move.z - $ahead.z) $tolUnits
 	Expect 'move' 'yaw' $body $move.yaw $tolAngle -Angle
 

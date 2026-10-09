@@ -21,6 +21,7 @@
 
 #if ARX_HAVE_OPENXR
 
+#include <algorithm>
 #include <sstream>
 
 #include "io/log/Logger.h"
@@ -96,7 +97,8 @@ s64 chooseSwapchainFormat(XrSession session) {
 	return 0;
 }
 
-bool Swapchain::create(XrSession session, s64 format, Vec2i size, bool framebuffers, const char * name) {
+bool Swapchain::create(XrSession session, s64 format, Vec2i size, bool framebuffers, const char * name,
+                       int samples) {
 
 	arx_assert(m_handle == XR_NULL_HANDLE);
 
@@ -147,8 +149,26 @@ bool Swapchain::create(XrSession session, s64 format, Vec2i size, bool framebuff
 		return false;
 	}
 
+	// Multisampling (#226) is the game's own buffer resolved into the image: the runtime recommends
+	// single-sample swapchains (the Index reports 1) and may refuse more
+	if(framebuffers && samples > 1) {
+		GLint maxSamples = 0;
+		glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+		m_samples = std::min(samples, int(maxSamples));
+		if(m_samples < samples) {
+			LogWarning << "VR " << m_name << ": " << samples << "x MSAA requested, the driver allows " << maxSamples;
+		}
+		if(m_samples > 1 && !createMultisampledFramebuffer(format)) {
+			LogWarning << "VR " << m_name << ": no multisampling, rendering into the swapchain images directly";
+			destroyMultisampledFramebuffer();
+		}
+	}
+
 	LogInfo << "VR swapchain for the " << m_name << ": " << size.x << 'x' << size.y << ' ' << glFormatName(format)
 	        << ", " << m_textures.size() << " images" << (framebuffers ? ", framebuffers complete" : "");
+	if(this->samples() > 1) {
+		LogInfo << "VR " << m_name << ": rendered with " << this->samples() << "x MSAA, resolved into the swapchain image";
+	}
 
 	return true;
 }
@@ -189,7 +209,61 @@ bool Swapchain::createFramebuffers() {
 	return complete;
 }
 
+bool Swapchain::createMultisampledFramebuffer(s64 format) {
+
+	GLint drawFramebuffer = 0, readFramebuffer = 0, renderbuffer = 0;
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFramebuffer);
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFramebuffer);
+	glGetIntegerv(GL_RENDERBUFFER_BINDING, &renderbuffer);
+
+	// The color buffer has the images' format: a resolving blit requires identical formats
+	glGenRenderbuffers(1, &m_msaaColor);
+	glBindRenderbuffer(GL_RENDERBUFFER, m_msaaColor);
+	glRenderbufferStorageMultisample(GL_RENDERBUFFER, m_samples, GLenum(format), m_size.x, m_size.y);
+
+	glGenRenderbuffers(1, &m_msaaDepth);
+	glBindRenderbuffer(GL_RENDERBUFFER, m_msaaDepth);
+	glRenderbufferStorageMultisample(GL_RENDERBUFFER, m_samples, GL_DEPTH_COMPONENT24, m_size.x, m_size.y);
+
+	glGenFramebuffers(1, &m_msaaFramebuffer);
+	glBindFramebuffer(GL_FRAMEBUFFER, m_msaaFramebuffer);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, m_msaaColor);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_msaaDepth);
+	GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+
+	glBindRenderbuffer(GL_RENDERBUFFER, GLuint(renderbuffer));
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, GLuint(drawFramebuffer));
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, GLuint(readFramebuffer));
+
+	if(status != GL_FRAMEBUFFER_COMPLETE) {
+		LogError << "The " << m_samples << "x multisampled framebuffer of the " << m_name << " is incomplete: 0x"
+		         << std::hex << status << std::dec;
+		return false;
+	}
+
+	return true;
+}
+
+void Swapchain::destroyMultisampledFramebuffer() {
+
+	if(m_msaaFramebuffer) {
+		glDeleteFramebuffers(1, &m_msaaFramebuffer);
+		m_msaaFramebuffer = 0;
+	}
+	if(m_msaaColor) {
+		glDeleteRenderbuffers(1, &m_msaaColor);
+		m_msaaColor = 0;
+	}
+	if(m_msaaDepth) {
+		glDeleteRenderbuffers(1, &m_msaaDepth);
+		m_msaaDepth = 0;
+	}
+	m_samples = 0;
+}
+
 void Swapchain::destroy() {
+
+	destroyMultisampledFramebuffer();
 
 	if(!m_framebuffers.empty()) {
 		glDeleteFramebuffers(GLsizei(m_framebuffers.size()), m_framebuffers.data());
@@ -253,6 +327,22 @@ GLuint Swapchain::texture() const {
 GLuint Swapchain::framebuffer() const {
 	arx_assert(m_acquired < m_framebuffers.size());
 	return m_framebuffers[m_acquired];
+}
+
+GLuint Swapchain::renderFramebuffer() const {
+	return m_msaaFramebuffer ? m_msaaFramebuffer : framebuffer();
+}
+
+void Swapchain::resolve() {
+
+	if(!m_msaaFramebuffer) {
+		return;
+	}
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, m_msaaFramebuffer);
+	glReadBuffer(GL_COLOR_ATTACHMENT0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer());
+	glBlitFramebuffer(0, 0, m_size.x, m_size.y, 0, 0, m_size.x, m_size.y, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 }
 
 void Swapchain::release() {

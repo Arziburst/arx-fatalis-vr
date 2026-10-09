@@ -47,6 +47,7 @@
 
 #include "vr/MirrorGeometry.h"
 #include "vr/UIPanel.h"
+#include "vr/VRSystem.h"
 #include "vr/VRTurn.h"
 
 
@@ -84,6 +85,7 @@ constexpr const int
 	fpsLimit = -1,
 	vrFrameDivisor = 1,
 	vrMirrorEye = vr::DefaultMirrorEye,
+	vrMsaa = vr::DefaultEyeMsaa,
 	maxAnisotropicFiltering = 9001,
 	alphaCutoutAntialiasing = 2,
 	cinematicWidescreenMode = CinematicFadeEdges,
@@ -232,6 +234,7 @@ constexpr const std::string_view
 	vrFrameDivisor = "vr_frame_divisor",
 	vrMirror = "vr_mirror",
 	vrMirrorEye = "vr_mirror_eye",
+	vrMsaa = "vr_msaa",
 	vrPanelDistance = "vr_panel_distance",
 	vrPanelDrop = "vr_panel_drop",
 	vrPanelWidth = "vr_panel_width",
@@ -501,6 +504,7 @@ bool Config::save() {
 	writer.writeKey(Key::vrFrameDivisor, video.vrFrameDivisor);
 	writer.writeKey(Key::vrMirror, video.vrMirror);
 	writer.writeKey(Key::vrMirrorEye, video.vrMirrorEye);
+	writer.writeKey(Key::vrMsaa, video.vrMsaa);
 	writer.writeKey(Key::vrPanelDistance, video.vrPanelDistance);
 	writer.writeKey(Key::vrPanelDrop, video.vrPanelDrop);
 	writer.writeKey(Key::vrPanelWidth, video.vrPanelWidth);
@@ -644,6 +648,8 @@ bool Config::init(const fs::path & file) {
 	video.vrMirror = reader.getKey(Section::Video, Key::vrMirror, Default::vrMirror);
 	int vrMirrorEye = reader.getKey(Section::Video, Key::vrMirrorEye, Default::vrMirrorEye);
 	video.vrMirrorEye = glm::clamp(vrMirrorEye, 0, 1);
+	int vrMsaa = reader.getKey(Section::Video, Key::vrMsaa, Default::vrMsaa);
+	video.vrMsaa = glm::clamp(vrMsaa, 0, vr::MaxEyeMsaa);
 	float vrPanelDistance = reader.getKey(Section::Video, Key::vrPanelDistance, Default::vrPanelDistance);
 	video.vrPanelDistance = glm::clamp(vrPanelDistance, 0.3f, 3.f);
 	float vrPanelDrop = reader.getKey(Section::Video, Key::vrPanelDrop, Default::vrPanelDrop);

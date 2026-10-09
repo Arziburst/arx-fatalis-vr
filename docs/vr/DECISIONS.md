@@ -10,10 +10,40 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-012: Worker model by task difficulty — Fable, Opus, Sonnet
+## D-013: The coordinator runs development on its own, in blocks, within a usage budget
 
 - **Date:** 2026-10-09
 - **Status:** Accepted
+- **Decided by:** project owner
+
+### Decision
+- **The owner talks only to the coordinator.** The coordinator picks the tasks of the current block
+  (a wave of [MVP.md](MVP.md#waves)), writes or sharpens their issues, starts the workers
+  (`start-worker.ps1`), follows them (idle notices, `claude logs`, cross-session messages), triages
+  what they find (new bugs and follow-ups → issues, into the queue if they block the MVP), merges and
+  cleans up, and keeps the slots full — without the owner opening worker sessions.
+- **The coordinator does not investigate or fix things itself**: a problem becomes a task for a worker.
+- **It stops and reports** only when (1) the block is done, (2) a PR needs the owner's headset test —
+  work that needs no headset goes on meanwhile — or (3) the budget is reached. The owner gives VR
+  verdicts to the coordinator ("#18 ok" / what is wrong); the coordinator merges or passes the feedback
+  to the worker.
+- **Budget:** the common weekly limit up to **70%** — from there no new workers start, running ones finish
+  their PRs; the 5-hour limit may be used up (sessions wait for its reset and continue,
+  `autoContinueAtUsageLimit`); Fable's separate weekly limit may be used up.
+- **Models** (replaces D-012's table): **Fable** for every engine task (any area except build and docs)
+  while its limit lasts, **Sonnet** for build, CI, scripts, docs and research, **Opus** when Fable's limit
+  runs out (`start-worker.ps1 -Model opus`).
+
+### Why
+The owner wants continuous progress without babysitting sessions or prompts, and a hard ceiling on the
+week's usage; Fable's separate limit is spent first to spare the common one.
+
+---
+
+## D-012: Worker model by task difficulty — Fable, Opus, Sonnet
+
+- **Date:** 2026-10-09
+- **Status:** Superseded by D-013 — the owner gave Fable every engine task, not only VR runtime and rendering
 - **Decided by:** project owner
 
 ### Decision

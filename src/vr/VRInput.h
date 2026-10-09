@@ -61,7 +61,8 @@ ControllerType controllerType();
 //! The controllers' state of the last update: sticks and analog values
 const ControllerInput & controllerInput();
 
-//! The turn settings of cfg.ini (\c vr_smooth_turn, \c vr_snap_turn_angle, \c vr_smooth_turn_speed - #32)
+//! The turn settings of cfg.ini (\c vr_smooth_turn, \c vr_snap_turn_angle, \c vr_snap_turn_repeat,
+//! \c vr_smooth_turn_speed - #32)
 TurnSettings turnSettings();
 
 /*!
@@ -84,7 +85,8 @@ const TurnController & turnState();
  * (the analog value only; its direction controls are \c down / \c up);
  * \c bind \c <event> \c <binding> (e.g. \c bind \c jump \c left.grip+left.a) - remap one event;
  * \c reset - the default layout for the current controllers;
- * \c turn \c snap|smooth, \c turn \c angle \c <degrees>, \c turn \c speed \c <degrees per second> -
+ * \c turn \c snap|smooth, \c turn \c angle \c <degrees>, \c turn \c speed \c <degrees per second>,
+ * \c turn \c repeat \c <seconds> -
  * the turn settings, as cfg.ini would set them (#32).
  *
  * \return an empty string on success, otherwise the reason it was refused

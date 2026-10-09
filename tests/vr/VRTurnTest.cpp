@@ -46,11 +46,12 @@ void VRTurnTest::snapOncePerPushTest() {
 
 	TurnController turn;
 	TurnSettings settings;
+	settings.snapRepeat = 0.f;
 
 	// Resting stick: nothing
 	CPPUNIT_ASSERT_EQUAL(0.f, hold(turn, settings, 0.f, 10));
 
-	// Pushed right and held for a second: one step of 45 degrees, no repeat
+	// Pushed right and held for a second with the repeat off: one step of 45 degrees
 	CPPUNIT_ASSERT_EQUAL(45.f, turn.update(settings, 1.f, TtFrame, true));
 	CPPUNIT_ASSERT_EQUAL(0.f, hold(turn, settings, 1.f, 90));
 	CPPUNIT_ASSERT_EQUAL(u64(1), turn.snaps());
@@ -61,6 +62,44 @@ void VRTurnTest::snapOncePerPushTest() {
 	CPPUNIT_ASSERT_EQUAL(45.f, hold(turn, settings, 1.f, 30));
 	CPPUNIT_ASSERT_EQUAL(u64(2), turn.snaps());
 	CPPUNIT_ASSERT_EQUAL(90.f, turn.turned());
+}
+
+void VRTurnTest::snapRepeatTest() {
+
+	TurnController turn;
+	TurnSettings settings;
+	CPPUNIT_ASSERT_EQUAL(0.4f, settings.snapRepeat);
+
+	// Held for 2 s: the snap, then a repeat 0.4 s later and every 0.4 s after it - 1 + 4 steps
+	CPPUNIT_ASSERT_EQUAL(45.f, turn.update(settings, 1.f, TtFrame, true));
+	CPPUNIT_ASSERT(!turn.lastSnapRepeated());
+	CPPUNIT_ASSERT_EQUAL(0.f, hold(turn, settings, 1.f, 35)); // 0.39 s: not yet
+	CPPUNIT_ASSERT_EQUAL(45.f, hold(turn, settings, 1.f, 2)); // 0.41 s: the first repeat
+	CPPUNIT_ASSERT(turn.lastSnapRepeated());
+	CPPUNIT_ASSERT_EQUAL(135.f, hold(turn, settings, 1.f, 142)); // to 2 s
+	CPPUNIT_ASSERT_EQUAL(u64(5), turn.snaps());
+
+	// Let go and pushed again: a new snap at once, its repeat counted from it
+	hold(turn, settings, 0.f, 1);
+	CPPUNIT_ASSERT_EQUAL(45.f, turn.update(settings, 1.f, TtFrame, true));
+	CPPUNIT_ASSERT(!turn.lastSnapRepeated());
+	CPPUNIT_ASSERT_EQUAL(0.f, hold(turn, settings, 1.f, 35));
+
+	// Eased back between the thresholds, the repeat waits and starts over when pushed again
+	hold(turn, settings, SnapRearm + 0.1f, 50);
+	CPPUNIT_ASSERT_EQUAL(0.f, hold(turn, settings, 1.f, 35));
+	CPPUNIT_ASSERT_EQUAL(45.f, hold(turn, settings, 1.f, 2));
+
+	// Held to the left: the repeats go left
+	hold(turn, settings, 0.f, 1);
+	CPPUNIT_ASSERT_EQUAL(-90.f, hold(turn, settings, -1.f, 38));
+	CPPUNIT_ASSERT_EQUAL(-1, turn.lastSnap());
+
+	// Another pause
+	settings.snapRepeat = 1.f;
+	hold(turn, settings, 0.f, 1);
+	CPPUNIT_ASSERT_EQUAL(45.f, hold(turn, settings, 1.f, 89));
+	CPPUNIT_ASSERT_EQUAL(45.f, hold(turn, settings, 1.f, 3));
 }
 
 void VRTurnTest::snapHysteresisTest() {
@@ -138,9 +177,19 @@ void VRTurnTest::blockedTest() {
 	TurnController turn;
 	TurnSettings settings;
 
-	// Pushed while blocked: nothing, and nothing when the block ends with the stick still pushed
+	// Pushed while blocked: nothing, and nothing when the block ends with the stick still pushed - not even
+	// a repeat after a second
 	CPPUNIT_ASSERT_EQUAL(0.f, hold(turn, settings, 1.f, 10, false));
-	CPPUNIT_ASSERT_EQUAL(0.f, hold(turn, settings, 1.f, 10));
+	CPPUNIT_ASSERT_EQUAL(0.f, hold(turn, settings, 1.f, 90));
+
+	// A block in the middle of a held snap stops its repeats
+	hold(turn, settings, 0.f, 1);
+	CPPUNIT_ASSERT_EQUAL(45.f, hold(turn, settings, 1.f, 10));
+	hold(turn, settings, 1.f, 1, false);
+	CPPUNIT_ASSERT_EQUAL(0.f, hold(turn, settings, 1.f, 90));
+	CPPUNIT_ASSERT_EQUAL(u64(1), turn.snaps());
+	hold(turn, settings, 0.f, 1);
+	turn = TurnController();
 	CPPUNIT_ASSERT_EQUAL(u64(0), turn.snaps());
 
 	// Back to the middle, then a push: one snap
@@ -161,7 +210,7 @@ void VRTurnTest::modeSwitchTest() {
 	// Smooth turning, then switched to snap with the stick still pushed: no snap until it comes back
 	hold(turn, settings, 1.f, 10);
 	settings.mode = TurnMode::Snap;
-	CPPUNIT_ASSERT_EQUAL(0.f, hold(turn, settings, 1.f, 10));
+	CPPUNIT_ASSERT_EQUAL(0.f, hold(turn, settings, 1.f, 90));
 	hold(turn, settings, 0.f, 1);
 	CPPUNIT_ASSERT_EQUAL(45.f, hold(turn, settings, 1.f, 10));
 }

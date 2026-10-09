@@ -668,6 +668,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("mode", vr::turnModeName(turnSettings.mode));
 		json.value("snapAngle", turnSettings.snapAngle);
 		json.value("smoothSpeed", turnSettings.smoothSpeed);
+		json.value("snapRepeat", turnSettings.snapRepeat);
 		json.value("snaps", turn.snaps());
 		json.value("lastSnap", turn.lastSnap());
 		json.value("turned", turn.turned());

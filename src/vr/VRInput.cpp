@@ -172,6 +172,7 @@ TurnSettings turnSettings() {
 	settings.mode = config.input.vrSmoothTurn ? TurnMode::Smooth : TurnMode::Snap;
 	settings.snapAngle = config.input.vrSnapTurnAngle;
 	settings.smoothSpeed = config.input.vrSmoothTurnSpeed;
+	settings.snapRepeat = config.input.vrSnapTurnRepeat;
 	return settings;
 }
 
@@ -185,7 +186,8 @@ float updateTurn(float seconds, bool allowed) {
 	// A snap is a player action: one event each; a smooth turn is an episode: logged when it starts and stops
 	if(g_input.turn.snaps() != snaps) {
 		gameevent::Event("vr.turn.snap", 1000)("dir", g_input.turn.lastSnap() > 0 ? "right" : "left")
-			("deg", settings.snapAngle, 1)("count", g_input.turn.snaps());
+			("deg", settings.snapAngle, 1)("repeat", g_input.turn.lastSnapRepeated() ? "yes" : "no")
+			("count", g_input.turn.snaps());
 	}
 	const bool smoothTurning = settings.mode == TurnMode::Smooth && yaw != 0.f;
 	if(smoothTurning != g_input.smoothTurning) {
@@ -276,23 +278,26 @@ std::string inputCommand(std::string_view arguments) {
 		std::string_view what = nextWord(rest);
 		if(std::optional<TurnMode> mode = parseTurnMode(what)) {
 			config.input.vrSmoothTurn = (*mode == TurnMode::Smooth);
-		} else if(what == "angle" || what == "speed") {
+		} else if(what == "angle" || what == "speed" || what == "repeat") {
 			std::optional<float> value = util::toFloat(nextWord(rest));
 			if(!value) {
 				return "vr-input turn " + std::string(what) + ": expected a number";
 			}
 			if(what == "angle") {
 				config.input.vrSnapTurnAngle = std::clamp(*value, MinSnapAngle, MaxSnapAngle);
+			} else if(what == "repeat") {
+				config.input.vrSnapTurnRepeat = std::clamp(*value, 0.f, MaxSnapRepeat);
 			} else {
 				config.input.vrSmoothTurnSpeed = std::clamp(*value, MinSmoothSpeed, MaxSmoothSpeed);
 			}
 		} else {
-			return "vr-input turn: expected snap, smooth, angle <degrees> or speed <degrees per second>, got \""
+			return "vr-input turn: expected snap, smooth, angle <degrees>, speed <degrees per second> or repeat <seconds>, got \""
 			       + std::string(what) + "\"";
 		}
 		const TurnSettings settings = turnSettings();
 		LogInfo << "[vr] input: turn " << turnModeName(settings.mode) << ", snap " << settings.snapAngle
-		        << " deg, smooth " << settings.smoothSpeed << " deg/s (test channel)";
+		        << " deg repeating every " << settings.snapRepeat << " s, smooth " << settings.smoothSpeed
+		        << " deg/s (test channel)";
 		return std::string();
 	}
 

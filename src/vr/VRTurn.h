@@ -30,9 +30,9 @@
  * \brief Snap turn and smooth turn from the turn axis (#32, F-32, D-019)
  *
  * The right stick's x past its dead zone (\ref GameInputState::turn, #74) turns the player:
- *  - snap (the default): one step of \ref TurnSettings::snapAngle per push - the step fires when the
- *    axis passes \ref SnapFire and re-arms only when it falls below \ref SnapRearm, so holding the
- *    stick never repeats;
+ *  - snap (the default): a step of \ref TurnSettings::snapAngle when the axis passes \ref SnapFire;
+ *    held past it, the step repeats every \ref TurnSettings::snapRepeat seconds (0: never); a new push
+ *    re-arms only when the axis falls below \ref SnapRearm;
  *  - smooth: \ref TurnSettings::smoothSpeed degrees per second at full deflection, linear in between.
  *
  * The result is a change of the body's yaw; the head keeps its own yaw on top of it (#24), so the
@@ -57,17 +57,23 @@ std::optional<TurnMode> parseTurnMode(std::string_view name);
 constexpr float DefaultSnapAngle = 45.f;
 constexpr float DefaultSmoothSpeed = 120.f;
 
+//! A held stick repeats the snap every this many seconds, the first time this long after the snap - "tick tick
+//! tick" (owner, 2026-10-10, after the #32 headset run); 0 = one snap per push
+constexpr float DefaultSnapRepeat = 0.4f;
+
 //! The ranges cfg.ini and the test channel clamp a setting to
 constexpr float MinSnapAngle = 5.f;
 constexpr float MaxSnapAngle = 180.f;
 constexpr float MinSmoothSpeed = 10.f;
 constexpr float MaxSmoothSpeed = 720.f;
+constexpr float MaxSnapRepeat = 2.f;
 
 //! The player's turn settings (cfg.ini now, the settings screen later: #178)
 struct TurnSettings {
 	TurnMode mode = TurnMode::Snap;
 	float snapAngle = DefaultSnapAngle;     //!< degrees per snap
 	float smoothSpeed = DefaultSmoothSpeed; //!< degrees per second at full deflection
+	float snapRepeat = DefaultSnapRepeat;   //!< seconds between snaps while the stick is held; 0 = no repeat
 };
 
 /*!
@@ -97,6 +103,9 @@ public:
 	//! The direction of the last snap: 1 right, -1 left, 0 none yet
 	int lastSnap() const { return m_lastSnap; }
 
+	//! The last snap was a repeat of a held stick, not a new push
+	bool lastSnapRepeated() const { return m_lastRepeated; }
+
 	//! All yaw changes since the start, degrees, right positive
 	float turned() const { return m_turned; }
 
@@ -109,6 +118,9 @@ private:
 	u64 m_updates = 0;
 	bool m_allowed = false;
 	bool m_armed = true;
+	float m_heldSeconds = 0.f; //!< since the last snap, while the stick stays past the fire threshold
+	bool m_lastRepeated = false;
+	bool m_repeating = false; //!< the stick is held since a snap of this push (not through a block)
 	u64 m_snaps = 0;
 	int m_lastSnap = 0;
 	float m_turned = 0.f;

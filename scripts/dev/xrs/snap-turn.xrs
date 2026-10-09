@@ -1,5 +1,6 @@
 # Snap turn and smooth turn (#32): the right stick turns the body; the head's yaw stays on top of it (#24).
-# Snap (the default): one 45 degree step per push, no repeat while the stick is held. Smooth: degrees per second.
+# Snap (the default): a 45 degree step per push, repeated every 0.4 s while the stick is held (0 = no repeat).
+# Smooth: degrees per second.
 # A first-person save: on level 10 the intro conversation's camera owns the view, so the body's yaw never shows
 @sim idle
 @save mvp-new-game
@@ -10,6 +11,8 @@
 @assert player.controlsBlocked eq false
 @assert vr.input.turn.mode eq snap
 @assert vr.input.turn.snapAngle eq 45
+@assert vr.input.turn.snapRepeat eq 0.4
+vr-input turn repeat 0                        # one step per push until the repeat is checked below
 @assert vr.input.turn.smoothSpeed eq 120
 @remember snaps0 vr.input.turn.snaps
 @remember turned0 vr.input.turn.turned
@@ -24,7 +27,7 @@ vr-input stick right 1 0
 @assert vr.input.game.turn gt 0.9
 @assert vr.input.turn.allowed eq true
 @assert vr.input.turn.snaps eq {snaps0+1}
-@log vr\.turn\.snap dir=right deg=45\.0 count=1
+@log vr\.turn\.snap dir=right deg=45\.0 repeat=no count=1
 @assert vr.input.turn.lastSnap eq 1
 @assert vr.input.turn.turned eq {turned0+45}
 @assert player.yaw eq {yaw0-45}
@@ -68,6 +71,23 @@ vr-input stick right 0 0
 @frames 5
 @assert vr.input.turn.snaps eq {snaps0+3}
 
+# The repeat (owner, 2026-10-10): held under 2 s, the snap and then one every 0.4 s - "tick tick tick", 1 + 4.
+# The commands reach the game a poll later and the runner adds its own time: a 1500 ms wait held the stick
+# about 1.76 s (a 1800 ms wait: 185 frames, 2.06 s - six snaps) - repeats at 0.4, 0.8, 1.2, 1.6 s
+vr-input turn repeat 0.4
+@mark
+vr-input stick right 1 0
+@wait 1500
+vr-input stick right 0 0
+@frames 5
+@assert vr.input.turn.snaps eq {snaps0+8}
+@assert vr.input.turn.turned eq {turned0+270}
+@log vr\.turn\.snap dir=right deg=45\.0 repeat=no
+@log vr\.turn\.snap dir=right deg=45\.0 repeat=yes
+@log vr\.turn\.snap dir=right deg=45\.0 repeat=yes
+@log vr\.turn\.snap dir=right deg=45\.0 repeat=yes
+@log vr\.turn\.snap dir=right deg=45\.0 repeat=yes
+
 # Smooth: about 120 degrees per second at full deflection, no snaps
 vr-input turn smooth
 @assert vr.input.turn.mode eq smooth
@@ -76,7 +96,7 @@ vr-input stick right 1 0
 @frames 90
 vr-input stick right 0 0
 @frames 5
-@assert vr.input.turn.snaps eq {snaps0+3}
+@assert vr.input.turn.snaps eq {snaps0+8}
 @assert vr.input.turn.turned gt {turned1+40}
 
 vr-input turn snap

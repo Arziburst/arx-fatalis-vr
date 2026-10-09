@@ -27,6 +27,7 @@ class VRTurnTest final : public CppUnit::TestFixture {
 
 	CPPUNIT_TEST_SUITE(VRTurnTest);
 	CPPUNIT_TEST(snapOncePerPushTest);
+	CPPUNIT_TEST(snapRepeatTest);
 	CPPUNIT_TEST(snapHysteresisTest);
 	CPPUNIT_TEST(snapLeftTest);
 	CPPUNIT_TEST(snapAngleTest);
@@ -39,6 +40,7 @@ class VRTurnTest final : public CppUnit::TestFixture {
 public:
 
 	void snapOncePerPushTest();
+	void snapRepeatTest();
 	void snapHysteresisTest();
 	void snapLeftTest();
 	void snapAngleTest();

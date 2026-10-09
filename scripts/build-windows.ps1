@@ -25,6 +25,10 @@
 .PARAMETER Clean
 	Delete the build directory before configuring.
 
+.PARAMETER SkipTests
+	Do not run the host unit tests (arxtest) after the build. They are always built; a failing suite
+	fails the script.
+
 .EXAMPLE
 	.\scripts\build-windows.ps1
 .EXAMPLE
@@ -36,7 +40,8 @@ param(
 	[string]$Config = 'Release',
 	[string]$BuildDir,
 	[string]$VcpkgRoot,
-	[switch]$Clean
+	[switch]$Clean,
+	[switch]$SkipTests
 )
 
 $ErrorActionPreference = 'Stop'
@@ -108,7 +113,7 @@ Write-Step "Configuring ($Config, $generator) in $BuildDir"
 	'-DUSE_STATIC_LIBS=OFF' `
 	'-DBUILD_TOOLS=OFF' `
 	'-DBUILD_CRASHREPORTER=OFF' `
-	'-DBUILD_TESTS=OFF' `
+	'-DBUILD_TESTS=ON' `
 	'-DICON_TYPE=none'
 if ($LASTEXITCODE) { throw 'CMake configure failed.' }
 
@@ -118,6 +123,17 @@ if ($LASTEXITCODE) { throw 'Build failed.' }
 
 $exe = Join-Path $BuildDir 'arx.exe'
 if (-not (Test-Path $exe)) { throw "Build finished but $exe was not found." }
+
+# Host unit tests (CppUnit, tests/): pure logic, no game data, a few seconds. A suite that does not
+# compile fails the build above; one that fails fails here.
+if (-not $SkipTests) {
+	$arxtest = Join-Path $BuildDir 'arxtest.exe'
+	if (-not (Test-Path $arxtest)) { throw "Build finished but $arxtest was not found." }
+	Write-Step 'Running host unit tests (arxtest)'
+	Push-Location $BuildDir
+	try { & $arxtest } finally { Pop-Location }
+	if ($LASTEXITCODE) { throw 'Host unit tests failed.' }
+}
 
 # The build stamp: which commit this build came from ("<sha>" or "<sha> dirty"), read by
 # scripts/dev/test-pr.ps1 to decide whether a worktree needs rebuilding.

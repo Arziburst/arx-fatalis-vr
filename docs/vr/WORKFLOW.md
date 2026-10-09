@@ -238,7 +238,7 @@ The owner's headset time is for judging how it feels in VR, not for finding cras
 counts against the **budget of 10 per task** ([Launch rules](#parallel-work)).
 
 **Verification tiers** — always climb in this order and stop at the lowest tier that answers the question:
-1. **Numbers**: host unit tests of pure logic (#114), `status.json` and log assertions (#99).
+1. **Numbers**: host unit tests of pure logic (`arxtest`, run by `build-windows.ps1` and CI), `status.json` and log assertions (#99).
 2. **Flat or simulated visuals**: flat launch, the simulated VR backend (#112) with scripted
    sequences and per-eye screenshots (#113), the two-eyes check.
 3. **The owner in the headset** — last, for how it *feels*. Asking the owner to put the headset on for
@@ -254,6 +254,15 @@ on the issue.
 log state changes, not frames — nothing unbounded per frame (log once, every N ms, or the first N);
 every guard that refuses something logs why, with the values; name the owner of a decision before the
 result; an expected zero says so explicitly.
+
+**Pure VR decision cores get host tests.** Logic that decides something from numbers — swing detector,
+rune stroke projection, snap turn, crouch threshold — lives in a header that takes positions and
+timestamps (no engine globals, no OpenXR, no clock reads) and is covered by a CppUnit test in `tests/`
+(add the files to `arxtest_TESTCASES` in `tests/CMakeLists.txt`). `build-windows.ps1` builds `arxtest`
+and runs it, so CI runs it on every PR: a red suite fails the build. A suite that does not compile is
+not a passing suite — if a test cannot be built, the PR is not ready. Prove a new test can fail
+(break the code on purpose once) before trusting it. `s32`/`u32` are `long` on MSVC, so cast expected
+values: `CPPUNIT_ASSERT_EQUAL(u32(0), x)`.
 
 **Traps.** Before debugging something that makes no sense, read [TRAPS.md](TRAPS.md). When a task
 hits a new trap (a misleading symptom, stale state, an instrument that lied), add an entry in the same PR.

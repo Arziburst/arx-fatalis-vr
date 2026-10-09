@@ -25,6 +25,48 @@ one hold; "use" fires when the hand opens without a trigger (D-019). Every grip 
 value (`[vr] input: right grip down at 0.55 (threshold 0.5 / 0.3)`), and `status.json` → `vr.input.grip`
 shows it live — tune the threshold from those numbers, not by feel.
 
+## 2026-10-09 — A non-Steam shortcut written into `shortcuts.vdf` disappears
+
+**Symptom:** a script (or a hand edit) adds a shortcut to `<Steam>\userdata\<account>\config\shortcuts.vdf`,
+the file has it, yet the Steam library does not show it — and after the next Steam exit the entry is gone.
+**Cause:** Steam reads `shortcuts.vdf` once at start, keeps the shortcuts in memory and writes the
+whole file back when they change or when it exits; an edit made while Steam runs is overwritten.
+**Do:** exit Steam first (Steam > Exit, not just closing the window), write, then start Steam.
+`scripts/add-steam-shortcut.ps1` refuses while `steam.exe` runs (#80).
+
+## 2026-10-09 — A hex literal like `0x80000000` is negative in PowerShell
+
+**Symptom:** `[uint32]0x80000000` throws "Value was either too large or too small for a UInt32";
+a CRC32 written in PowerShell gives wrong values or the same error mid-loop.
+**Cause:** PowerShell parses a hex literal as `int` when it fits in 32 bits as a bit pattern, so
+`0x80000000` is `-2147483648` and `0xEDB88320` is negative; `-bxor`/`-shr` then work on signed values.
+**Do:** suffix 32-bit constants with `L` (`0x80000000L`, `0xEDB88320L`), compute in `[long]`, and cast
+to `[uint32]` only at the end (`scripts/steam-shortcuts-lib.ps1`, #80).
+
+## 2026-10-09 — The headset test cannot start: "could not read PR", or the game starts flat with SteamVR off (#171)
+
+**Symptom:** `test-pr.ps1 <pr> -StartSteamVR` stops at once with `API rate limit already exceeded` /
+`could not read PR #<n>` although the PR's worktree and fresh build are on disk; a hand-made fallback launch
+(`run-windows.ps1` in that worktree) starts the game **flat** and no SteamVR process appears.
+**Cause:** the station read the PR through the GitHub API, whose quota every worker session shares; and nothing
+starts SteamVR on its own — the game's OpenXR call is not a reliable way to bring it up (and D-014 makes the
+scripts add `--no-vr` while `vrserver` is off anyway).
+**Do:** `test-pr.ps1` now falls back to `git ls-remote origin refs/pull/<n>/head` + the local worktree (`-Branch`
+when even git cannot reach GitHub), and `-StartSteamVR` starts SteamVR explicitly (`steam://rungameid/250820`,
+then `vrstartup.exe`) and waits for `vrserver` + `vrcompositor`. Never test the start logic by starting SteamVR as
+a worker: `scripts/dev/test-start-steamvr.ps1` proves it with stubs. A `Get-Process`-style stub for a cmdlet in a
+PowerShell self-test must be a function with `[CmdletBinding()]`, or `-ErrorAction` breaks it.
+
+**Stopping SteamVR (same task):** `CloseMainWindow` on `vrmonitor` plus `Stop-Process` on the rest took the software
+away while the Valve Index stayed on — the drivers never got their own shutdown. SteamVR's status window takes URL
+commands (`vrmonitor.exe` has the `quit` handler of the `vrmonitor://` protocol), so `stop-steamvr.ps1` /
+`test-pr.ps1 -StopSteamVR` send `vrmonitor://quit` — the request behind "Exit SteamVR" — and only wait for the
+processes to leave (60 s); they never kill. Found by reading the strings of `vrmonitor.exe` and the registry entry
+`HKCU\Software\Classes\vrmonitor`, not from documentation (there is none): the headset powering down is confirmed
+by the owner's run only.
+
+---
+
 ## 2026-10-09 — "Blocked [rule]: ..." on a command that looks harmless (the safety hook)
 
 **Symptom:** a Bash / PowerShell / Edit call is refused with `Blocked [push-main|force-push|delete-outside|

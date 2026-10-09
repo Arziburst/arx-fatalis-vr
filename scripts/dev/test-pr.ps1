@@ -31,6 +31,10 @@
 .PARAMETER StartSteamVR
 	Start SteamVR when it is not running, then launch in VR (the owner's switch - it turns the headset on).
 
+.PARAMETER StopSteamVR
+	After the game has exited, quit SteamVR the way its own "Exit SteamVR" does (stop-steamvr.ps1), so the headset
+	powers down. The owner's switch, like -StartSteamVR; workers never pass it (D-014).
+
 .PARAMETER Branch
 	The PR's branch, when even git cannot reach GitHub: the local branch (or origin/<branch>) is tested as it is,
 	without asking GitHub anything. Normally not needed: when the GitHub API does not answer (rate limit, no
@@ -59,6 +63,7 @@ param(
 	[switch]$Rebuild,
 	[switch]$NoLaunch,
 	[switch]$StartSteamVR,
+	[switch]$StopSteamVR,
 	[string]$Branch,
 	[switch]$Isolated,
 	[string[]]$Saves,
@@ -178,4 +183,11 @@ elseif ($ArxArgs -notcontains '--no-vr' -and -not (Get-Process vrserver -ErrorAc
 if ($Isolated) { $runArgs.Isolated = $true }
 if ($Saves) { $runArgs.Isolated = $true; $runArgs.Saves = $Saves }
 & (Join-Path $wt 'scripts\run-windows.ps1') @runArgs
-exit $LASTEXITCODE
+$gameExit = $LASTEXITCODE
+
+# The owner's switch: SteamVR quits the way its own "Exit SteamVR" does, so the headset powers down (#171)
+if ($StopSteamVR) {
+	. (Join-Path $wt 'scripts\launch-lib.ps1')
+	Stop-SteamVr
+}
+exit $gameExit

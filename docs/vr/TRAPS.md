@@ -22,6 +22,14 @@ then `vrstartup.exe`) and waits for `vrserver` + `vrcompositor`. Never test the 
 a worker: `scripts/dev/test-start-steamvr.ps1` proves it with stubs. A `Get-Process`-style stub for a cmdlet in a
 PowerShell self-test must be a function with `[CmdletBinding()]`, or `-ErrorAction` breaks it.
 
+**Stopping SteamVR (same task):** `CloseMainWindow` on `vrmonitor` plus `Stop-Process` on the rest took the software
+away while the Valve Index stayed on — the drivers never got their own shutdown. SteamVR's status window takes URL
+commands (`vrmonitor.exe` has the `quit` handler of the `vrmonitor://` protocol), so `stop-steamvr.ps1` /
+`test-pr.ps1 -StopSteamVR` send `vrmonitor://quit` — the request behind "Exit SteamVR" — and only wait for the
+processes to leave (60 s); they never kill. Found by reading the strings of `vrmonitor.exe` and the registry entry
+`HKCU\Software\Classes\vrmonitor`, not from documentation (there is none): the headset powering down is confirmed
+by the owner's run only.
+
 ---
 
 ## 2026-10-09 — Backslashes vanish from Windows paths written through sed or a shell string (#186)

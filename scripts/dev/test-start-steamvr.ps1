@@ -30,26 +30,34 @@ function Start-Sleep { param([int]$Seconds, [int]$Milliseconds) $fake.Now = $fak
 function Find-SteamVrStartup { if ($fake.Launcher) { $fake.Launcher } else { $null } }
 function Write-Host { param([Parameter(ValueFromRemainingArguments)]$Rest, $ForegroundColor) }
 function Get-Process {
-	[CmdletBinding()] param([string]$Name)
-	if ($Name -eq 'vrserver' -and $fake.Server) { [pscustomobject]@{ Name = 'vrserver' } }
-	elseif ($Name -eq 'vrcompositor' -and $fake.Compositor) { [pscustomobject]@{ Name = 'vrcompositor' } }
+	[CmdletBinding()] param([string[]]$Name)
+	foreach ($n in $Name) {
+		if ($n -eq 'vrserver' -and $fake.Server) { [pscustomobject]@{ Name = 'vrserver' } }
+		elseif ($n -eq 'vrcompositor' -and $fake.Compositor) { [pscustomobject]@{ Name = 'vrcompositor' } }
+		elseif ($n -in $fake.Extra) { [pscustomobject]@{ Name = $n } }
+	}
 }
+function Stop-Process { [CmdletBinding()] param([Parameter(ValueFromRemainingArguments)]$Rest) $fake.Killed++ }
+function Find-SteamVrBinary([string]$Name) { if ($fake.Monitor) { $fake.Monitor } else { $null } }
 function Start-Process {
-	[CmdletBinding()] param([string]$FilePath, [switch]$PassThru)
-	$fake.Started.Add($FilePath)
-	if ($FilePath -like 'steam://*') {
+	[CmdletBinding()] param([string]$FilePath, [string[]]$ArgumentList, [switch]$PassThru)
+	$fake.Started.Add($(if ($ArgumentList) { "$FilePath $ArgumentList" } else { $FilePath }))
+	if ($FilePath -like '*vrmonitor*') {
+		if ($null -ne $fake.QuitAfter) { $fake.QuitAt = $fake.Now.AddSeconds($fake.QuitAfter) }
+	} elseif ($FilePath -like 'steam://*') {
 		if ($fake.UrlThrows) { throw 'no handler for steam://' }
 		if ($null -ne $fake.UpAfterUrl) { $fake.Pending = @{ At = $fake.Now.AddSeconds($fake.UpAfterUrl); Compositor = $true } }
 	} elseif ($null -ne $fake.UpAfterLauncher) { $fake.Pending = @{ At = $fake.Now.AddSeconds($fake.UpAfterLauncher); Compositor = $true } }
 }
 # the start-up of the fake SteamVR: vrserver first, vrcompositor 3 s later (the real order)
 function Update-Fake {
+	if ($fake.QuitAt -and $fake.Now -ge $fake.QuitAt) { $fake.Server = $false; $fake.Compositor = $false; $fake.Extra = @(); $fake.QuitAt = $null; $fake.Pending = $null }
 	if ($fake.Pending) {
 		if ($fake.Now -ge $fake.Pending.At) { $fake.Server = $true }
 		if ($fake.Now -ge $fake.Pending.At.AddSeconds(3)) { $fake.Compositor = $fake.Pending.Compositor }
 	}
 }
-function Reset-Fake { $fake.Started.Clear(); $fake.Server = $false; $fake.Compositor = $false; $fake.Launcher = ''; $fake.UpAfterUrl = $null; $fake.UpAfterLauncher = $null; $fake.UrlThrows = $false; $fake.Pending = $null }
+function Reset-Fake { $fake.Extra = @(); $fake.Monitor = ''; $fake.QuitAfter = $null; $fake.QuitAt = $null; $fake.Killed = 0; $fake.Started.Clear(); $fake.Server = $false; $fake.Compositor = $false; $fake.Launcher = ''; $fake.UpAfterUrl = $null; $fake.UpAfterLauncher = $null; $fake.UrlThrows = $false; $fake.Pending = $null }
 
 $failures = 0
 function Check([string]$Name, [bool]$Ok, [string]$Detail = '') {
@@ -102,6 +110,36 @@ Check 'no -StartSteamVR: flat, nothing started' (-not $mode.Vr -and $mode.Args -
 Reset-Fake; $fake.UpAfterUrl = 8
 $mode = Resolve-ArxVrMode -ArxArgs @('--skiplogo') -StartSteamVR
 Check '-StartSteamVR: SteamVR started, launch is VR' ($mode.Vr -and $mode.Args -notcontains '--no-vr' -and $fake.Started.Count -eq 1) "$($fake.Started -join ',')"
+
+# --- Stopping (Stop-SteamVr): the quit request, a patient wait, no killing --------------------------------------------
+function Try-Stop { try { Stop-SteamVr -TimeoutSec 60 -SettleSec 1; $null } catch { $_.Exception.Message } }
+function Start-FakeSteamVr { $fake.Server = $true; $fake.Compositor = $true; $fake.Extra = @('vrmonitor', 'vrdashboard', 'vrservice') }
+
+# 10. SteamVR exits by itself after the quit request
+Reset-Fake; Start-FakeSteamVr; $fake.Monitor = 'C:\vr\vrmonitor.exe'; $fake.QuitAfter = 14
+$err = Try-Stop
+Check 'stop: vrmonitor://quit sent once, SteamVR exits, nothing killed' ($fake.Started.Count -eq 1 -and $fake.Started[0] -eq 'C:\vr\vrmonitor.exe vrmonitor://quit' -and $fake.Killed -eq 0 -and -not $err -and -not (Test-SteamVrRunning)) "$($fake.Started -join ',') killed=$($fake.Killed) $err"
+
+# 11. not running: nothing to do
+Reset-Fake
+$err = Try-Stop
+Check 'stop: SteamVR not running - nothing started' ($fake.Started.Count -eq 0 -and -not $err) "$($fake.Started -join ',') $err"
+
+# 12. no vrmonitor.exe found: the registered URL is opened instead
+Reset-Fake; Start-FakeSteamVr; $fake.QuitAfter = 5
+$err = Try-Stop
+Check 'stop: no vrmonitor.exe - the vrmonitor:// URL is opened' ($fake.Started.Count -eq 1 -and $fake.Started[0] -eq 'vrmonitor://quit' -and -not $err) "$($fake.Started -join ',') $err"
+
+# 13. SteamVR ignores the request: a clear error, still nothing killed
+Reset-Fake; Start-FakeSteamVr; $fake.Monitor = 'C:\vr\vrmonitor.exe'
+$err = Try-Stop
+Check 'stop: timeout error lists the processes, nothing killed' ($err -match 'did not exit within 60 s' -and $err -match 'vrserver' -and $err -match 'vrmonitor' -and $err -match 'Nothing was killed' -and $fake.Killed -eq 0) "killed=$($fake.Killed) $err"
+
+# 14. the quit request cannot be sent
+Reset-Fake; Start-FakeSteamVr; $fake.UrlThrows = $true; $fake.Monitor = ''
+function Start-Process { [CmdletBinding()] param([string]$FilePath, [string[]]$ArgumentList) throw 'no handler' }
+$err = Try-Stop
+Check 'stop: unsendable request is an error pointing to the menu' ($err -match 'could not send the quit request' -and $err -match 'Exit SteamVR') $err
 
 if ($failures) { Microsoft.PowerShell.Utility\Write-Host "$failures check(s) failed" -ForegroundColor Red; exit 1 }
 Microsoft.PowerShell.Utility\Write-Host 'all checks passed' -ForegroundColor Green

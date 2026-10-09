@@ -336,7 +336,8 @@ code, duration, errors/warnings (how many are **new**), crashes. The owner does 
 .\scripts\dev\log-digest.ps1 -Flush                  # send the queued reports now (a run does this itself)
 .\scripts\dev\test-log-digest.ps1                    # the self-test: fixture logs, a fake GitHub, no game, no network
 .\scripts\dev\test-github-lib.ps1                    # self-test of the dev scripts' GitHub access (#186): REST, board cache, rate limit, move queue
-.\scripts\dev\test-start-steamvr.ps1                 # self-test of how -StartSteamVR starts SteamVR (#171): stubbed processes and clock, SteamVR is not started
+.\scripts\dev\test-start-steamvr.ps1                 # self-test of how -StartSteamVR starts and -StopSteamVR quits SteamVR (#171): stubbed processes and clock, SteamVR is not touched
+.\scripts\dev\stop-steamvr.ps1                       # the OWNER's switch: quit SteamVR like its own "Exit SteamVR" so the headset powers down; workers never run it (D-014)
 $env:GH_HOST='bogus.invalid'; .\scripts\dev\test-pr.ps1 <pr> -NoLaunch   # the test station with the GitHub API unreachable (#171)
 ```
 

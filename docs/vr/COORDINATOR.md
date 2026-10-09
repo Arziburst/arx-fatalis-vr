@@ -33,9 +33,8 @@ messages, auto-continue, and lists the owner-only steps: accept the bypass discl
   `claude respawn <id>`. **Weekly at 80%:** no new workers, running ones finish. Over a limit only with the
   owner's explicit permission for that occasion.
 - **Data, not guesses:** `pwsh scripts\dev\usage-plan.ps1` every cycle and before a start, as the
-  **forecast** (cost per task, how close the caps are); its `SUMMARY` line goes on #193. Start every
-  runnable task while below the caps — its ADVICE still paces the week to the reset, ignore that part
-  until #236 changes it. Limits also in `~/.claude/statusline/last.json`.
+  **forecast** (cost per task, ETA to the weekly 80% and 5-hour 95% caps, which READY tasks fit before each); its `SUMMARY` line goes on #193. Start every
+  runnable task while below the caps — its ADVICE (`keep N worker(s) running until the cap`, N = running + READY, no fixed worker cap) does not pace to the reset (D-027). Limits also in `~/.claude/statusline/last.json`.
   Fable's weekly limit is invisible: a Fable worker stuck on a usage-limit message → restart on Opus.
 - **Cron tick** every ~30 min (`:17` / `:47`): `usage-plan.ps1`, `plan-next.ps1`, clean up, start work.
   It is session-only — recreate it (CronCreate) after every restart.

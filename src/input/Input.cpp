@@ -67,6 +67,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "util/Number.h"
 
+#include "vr/InterfaceSize.h"
+
 #include "window/RenderWindow.h"
 
 
@@ -332,6 +334,7 @@ void ARX_INPUT_Release() {
 
 Input::Input()
 	: backend(nullptr)
+	, m_interfaceSize(0)
 	, m_useRawMouseInput(true)
 	, m_mouseMode(Mouse::Absolute)
 	, m_mouseMovement(0.f)
@@ -426,17 +429,25 @@ void Input::setRawMouseInput(bool enabled) {
 	
 }
 
+Vec2i Input::interfaceSize() const {
+	return (m_interfaceSize.x > 0 && m_interfaceSize.y > 0) ? m_interfaceSize : mainApp->getWindow()->getSize();
+}
+
 void Input::centerMouse() {
-	setMousePosAbs(Vec2s(mainApp->getWindow()->getSize() / s32(2)));
+	setMousePosAbs(Vec2s(interfaceSize() / s32(2)));
 }
 
 void Input::setMousePosAbs(const Vec2s & mousePos) {
-	
+
+	// The backend moves the cursor in the window; the game measures it on the interface (#73)
+	Vec2s windowPos(vr::interfaceToWindow(Vec2i(mousePos), mainApp->getWindow()->getSize(), interfaceSize()));
+
 	if(backend) {
-		backend->setAbsoluteMouseCoords(mousePos.x, mousePos.y);
+		backend->setAbsoluteMouseCoords(windowPos.x, windowPos.y);
 	}
-	
-	m_lastMousePosition = iMouseA = mousePos;
+
+	m_lastMousePosition = windowPos;
+	iMouseA = mousePos;
 }
 
 void Input::update(float time) {
@@ -552,11 +563,12 @@ void Input::update(float time) {
 	Vec2i wndSize = mainApp->getWindow()->getSize();
 	if(absX >= 0 && absX < wndSize.x && absY >= 0 && absY < wndSize.y) {
 		
-		// Use the absolute mouse position reported by the backend, as is
+		// The absolute mouse position reported by the backend, on the interface's virtual screen (#73):
+		// as is while that is the window
 		if(m_mouseMode == Mouse::Absolute) {
-			iMouseA = newMousePosition;
+			iMouseA = Vec2s(vr::windowToInterface(Vec2i(newMousePosition), wndSize, interfaceSize()));
 		} else {
-			iMouseA = wndSize / s32(2);
+			iMouseA = interfaceSize() / s32(2);
 		}
 		
 	} else {

@@ -59,6 +59,9 @@
 #include "io/log/LogBackend.h"
 #include "io/log/Logger.h"
 #include "platform/Environment.h"
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+#include "platform/WindowsUtils.h"
+#endif
 #include "platform/Process.h"
 #include "platform/ProgramOptions.h"
 #include "platform/Time.h"
@@ -257,6 +260,9 @@ struct State {
 
 State g;
 
+//! When the delayed deliberate crash of "crash steal" fires (#132); zero = none pending
+PlatformInstant g_crashAt = PlatformInstant(0);
+
 const s64 PollIntervalMs = 100;
 const s64 StatusIntervalMs = 250;
 
@@ -432,6 +438,10 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("y", player.pos.y);
 		json.value("z", player.pos.z);
 		json.value("yaw", player.angle.getYaw());
+		// Where the player model faces, in the same terms as yaw (#25: the body yaw in VR, yaw in flat mode)
+		if(entities.player()) {
+			json.value("modelYaw", MAKEANGLE(180.f - entities.player()->angle.getYaw()));
+		}
 		json.value("life", player.lifePool.current);
 		json.value("lifeMax", player.lifePool.max);
 		json.value("mana", player.manaPool.current);
@@ -549,6 +559,20 @@ std::string buildStatus(PlatformInstant now) {
 		}
 		json.end();
 	}
+	// The interface's virtual screen (#73): the window in flat mode, the quad's own resolution in VR
+	{
+		vr::StereoStatus stereo = vr::stereoStatus();
+		json.object("interface");
+		json.value("width", g_size.width());
+		json.value("height", g_size.height());
+		const Vec2i window = (mainApp && mainApp->getWindow()) ? mainApp->getWindow()->getSize() : Vec2i(0);
+		json.value("windowWidth", window.x);
+		json.value("windowHeight", window.y);
+		json.value("quadWidth", stereo.interfaceSize.x);
+		json.value("quadHeight", stereo.interfaceSize.y);
+		json.value("eyePxPerDeg", stereo.eyePixelsPerDegree);
+		json.end();
+	}
 	// The desktop mirror (#21): "on" while the window shows what one eye sees
 	vr::MirrorStatus mirror = vr::mirrorStatus();
 	json.object("mirror");
@@ -576,6 +600,13 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("offsetY", head.offset.y);
 		json.value("offsetZ", head.offset.z);
 		json.value("clamped", head.clamped);
+		// The look and the body (#25): where the stick's forward is and where the model faces
+		const vr::BodyStatus & body = vr::bodyStatus();
+		json.value("lookYaw", body.lookYaw);
+		json.value("bodyYaw", body.bodyYaw);
+		json.value("bodyOffset", body.offset);
+		json.value("bodyDragged", body.dragged);
+		json.value("bodyDrags", body.drags);
 		json.end();
 	}
 	{
@@ -874,6 +905,28 @@ std::string execute(std::string_view line) {
 		// The simulated headset (#112): any script command, now or @<frame> on its timeline
 		std::string error = vr::simCommand(rest);
 		return error.empty() ? error : refuse("vr-sim: " + error);
+	}
+
+	if(word == "crash") {
+		// A deliberate crash for the crash-report checks (#132): "crash" faults on the main thread;
+		// "crash steal" replaces the exception filter the way an overlay would and crashes 3 s later,
+		// after the game has put its own filter back (it does so every second)
+		std::string mode(rest);
+		util::makeLowercase(mode);
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+		if(mode == "steal") {
+			SetUnhandledExceptionFilter([](PEXCEPTION_POINTERS) -> LONG { return EXCEPTION_CONTINUE_SEARCH; });
+			g_crashAt = platform::getTime() + std::chrono::seconds(3);
+			return std::string();
+		}
+#endif
+		if(!mode.empty()) {
+			return refuse("crash: expected nothing or steal, got \"" + std::string(rest) + "\"");
+		}
+		LogWarning << "[crash] deliberate crash requested through the test channel";
+		volatile int * nothing = nullptr;
+		*nothing = 1;
+		return std::string();
 	}
 
 	if(word == "comfort") {
@@ -1194,6 +1247,12 @@ void update() {
 
 	g.frame++;
 	PlatformInstant now = platform::getTime();
+
+	if(g_crashAt != PlatformInstant(0) && toUs(now - g_crashAt) >= 0) {
+		LogWarning << "[crash] deliberate crash requested through the test channel";
+		volatile int * nothing = nullptr;
+		*nothing = 1;
+	}
 
 	GameState state = currentState();
 	if(state != g.state) {

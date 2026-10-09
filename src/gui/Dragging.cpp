@@ -20,6 +20,7 @@
 #include "gui/Dragging.h"
 
 #include "core/Core.h"
+#include "core/GameEvent.h"
 #include "game/Camera.h"
 #include "game/Entity.h"
 #include "game/EntityManager.h"
@@ -61,6 +62,10 @@ void setDraggedEntity(Entity * entity) {
 	
 	if(entity) {
 		g_draggedItemPreviousPosition = locateInInventories(entity);
+		if(entity != g_draggedEntity) {
+			gameevent::Event("item.take")("item", gameevent::entityName(entity))
+				("from", g_draggedItemPreviousPosition ? "inventory" : "world");
+		}
 		entity->setOwner(nullptr);
 		if(entity->obj && entity->show == SHOW_FLAG_IN_SCENE && (entity->gameFlags & GFLAG_ISINTREATZONE)
 		   && !(entity->gameFlags & (GFLAG_INVISIBILITY | GFLAG_MEGAHIDE))) {
@@ -302,7 +307,12 @@ void updateDraggedEntity() {
 	entity->obj->pbox->active = 0;
 	entity->gameFlags &= ~GFLAG_NOCOMPUTATION;
 	setDraggedEntity(nullptr);
-	
+
+	gameevent::Event("item.drop")("item", gameevent::entityName(entity))
+		("how", g_dragStatus == EntityDragStatus_Throw ? "throw"
+		        : g_dragStatus == EntityDragStatus_Drop ? "drop" : "place")
+		("count", (entity->ioflags & IO_ITEM) ? long(entity->_itemdata->count) : 1l);
+
 	if((entity->ioflags & IO_ITEM) && entity->_itemdata->count > 1) {
 		
 		EERIE_3D_BBOX bbox;

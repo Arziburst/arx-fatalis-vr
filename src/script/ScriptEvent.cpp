@@ -49,6 +49,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "core/GameTime.h"
 #include "core/Core.h"
+#include "core/GameEvent.h"
 
 #include "game/Entity.h"
 #include "game/NPC.h"
@@ -325,7 +326,19 @@ ScriptResult ScriptEvent::send(const EERIE_SCRIPT * es, Entity * sender, Entity 
 			} else {
 				res = command.execute(context);
 			}
-			
+
+			if((res == script::Command::Failed || res == script::Command::AbortError)
+			   && !isSuppressed(context, command.getName())) {
+				// The command logged why ([W] / [E] just before); this says where, in the event stream.
+				// A script on a timer can fail every frame: the first 50 are logged, the rest counted.
+				// toString() has no name for the console's executeline and the dummy event (#130).
+				std::string_view eventName = event == SM_EXECUTELINE ? "executeline"
+				                           : event == SM_DUMMY ? "dummy" : event.toString();
+				gameevent::Event("script.error", 50)("entity", gameevent::entityName(entity))
+					("event", eventName)("command", command.getName())("pos", context.getPosition())
+					("abort", res == script::Command::AbortError);
+			}
+
 			if(res == script::Command::AbortAccept) {
 				ret = ACCEPT;
 				break;

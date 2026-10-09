@@ -8,6 +8,15 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — `test-xrs.ps1` fails once in a while: "timed out waiting for the game to acknowledge" (#275)
+
+**Symptom:** one check of 73 fails on the CI runner (a `@shot`/`@diff` step), the rerun of the same commit passes.
+**Cause (most likely, not reproduced in 20 local runs):** the fake game read `command.txt` with `Get-Content` and
+wrote `ack.txt` with `Set-Content`, whose errors are non-terminating — a sharing violation with the test's own
+50 ms polling (or a scanner on a loaded runner) silently lost the batch or its ack, so nothing was acknowledged.
+**Do:** the fake game removes `command.txt` only after reading it and retries both the read and the ack write.
+When a channel check times out with the game alive, suspect a dropped file operation before a slow game.
+
 ## 2026-10-10 — A channel-driven check times out with `ack.txt` holding only `quit`, though the game ran (#258)
 
 **Symptom:** `body-check.ps1` fails with "timed out after 180 s waiting for gameplay"; no command of the check

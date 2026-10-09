@@ -29,9 +29,9 @@
 	The short name of the branch. Default: from the issue title (new-worktree.ps1).
 
 .PARAMETER Model
-	The model of the worker session (fable, opus, sonnet or a model id). Default: by the issue's area label
-	(decision D-012) - area:vr-runtime and area:render -> fable; area:build and area:docs -> sonnet;
-	anything else -> opus. Pass -Model to override, e.g. fable for a hard crash.
+	The model of the worker session (fable, opus, sonnet or a model id). Default: by the issue's area labels
+	(decision D-013) - only area:build / area:docs -> sonnet; any other area -> fable. Pass -Model opus
+	when Fable's weekly limit is used up.
 
 .PARAMETER PermissionMode
 	Permission mode of the worker session. Default: bypassPermissions (D-011).
@@ -66,13 +66,11 @@ $info = gh issue view $Issue -R $repo --json title,labels | ConvertFrom-Json
 if ($LASTEXITCODE -or -not $info.title) { throw "could not read #$Issue" }
 $title = $info.title
 
-# D-012: the hardest areas get Fable (its own weekly limit), plumbing and docs get Sonnet, the rest Opus
+# D-013: engine work goes to Fable (its own weekly limit, spent first), build and docs to Sonnet
 if (-not $Model) {
 	$areas = @($info.labels.name | Where-Object { $_ -like 'area:*' })
-	$Model = if ($areas | Where-Object { $_ -in 'area:vr-runtime', 'area:render' }) { 'fable' }
-		elseif ($areas -and -not ($areas | Where-Object { $_ -notin 'area:build', 'area:docs' })) { 'sonnet' }
-		else { 'opus' }
-	Write-Host "model:    $Model (D-012, labels: $(if ($areas) { $areas -join ', ' } else { 'no area' }))"
+	$Model = if ($areas -and -not ($areas | Where-Object { $_ -notin 'area:build', 'area:docs' })) { 'sonnet' } else { 'fable' }
+	Write-Host "model:    $Model (D-013, labels: $(if ($areas) { $areas -join ', ' } else { 'no area' }))"
 }
 
 $wtArgs = @{ Issue = $Issue; Type = $Type; PassThru = $true }

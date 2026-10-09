@@ -100,6 +100,8 @@ with exact angles first, optimisation later.
   release) and blends the quad by its alpha; with the mirror off the window shows the flat frame.
 - The draw check (#71) is refused in a stereo frame — its two views would be the two eyes; the
   two-eyes check of the simulator (#112) is the acceptance of per-eye rendering without a headset.
+  The simulated compositor blends a quad flagged `BLEND_TEXTURE_SOURCE_ALPHA` by its alpha plane
+  like the real one, and a blended quad with nothing drawn in its middle is judged `transparent`.
 - MSAA on the eye targets is a new task (the runtime recommends 1 sample; the window's MSAA does
   not apply to framebuffer objects).
 ---

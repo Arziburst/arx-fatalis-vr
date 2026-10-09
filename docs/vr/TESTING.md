@@ -654,6 +654,13 @@ particles, sparks, light flares and the mouse-drawn rune sparkles (update-phase 
 window's size); screen-space picking with the mouse (#37 replaces it with hand reticles). The
 draw check is refused in a stereo frame: its two views would be the two eyes.
 
+**Without a headset:** the per-eye path runs unchanged on the simulated headset (`--vr-sim`,
+below), and `eye-check.ps1` is its acceptance. Measured on #19 alone (2026-10-09, before #24): `world`
+(both eyes `world`, the flat frame `transparent`), `pairing` 426 of 426, `separation` 64 mm,
+`difference` 4.24 over a floor of 0.96, `parallax` +14 of 160 columns pass; `yaw` fails until #24
+makes the camera follow the head (the pictures changed by 1.4 on a 25° turn). With `-Fault
+swap-eyes` the parallax leg reads −14 columns and fails: the check sees these eyes.
+
 ## The simulated headset (`--vr-sim`, #112)
 
 `arx.exe --vr-sim <script>` runs the game **in VR without a headset and without a runtime**: the VR
@@ -696,7 +703,10 @@ quad on top, ray by ray as a compositor would — and saves `<test dir>\capture\
 around where the eye looks (`scene`; `layer` is the projection layer alone; `quad.stats` the middle of
 the flat frame, away from the HUD): `world` (something with detail), `black` (≥ 90 % of the pixels at
 luma ≤ 4), `background` (≥ 90 % the eyes' clear color: the eye got no picture), `uniform` (one flat
-color). `lr` has the left/right difference (mean luma levels on a 160-column grid), the horizontal
+color), `transparent` (a quad the game submits blended by its alpha — the 2D interface over the
+stereo world, #19 — with under 10 % coverage in its middle; the compositor blends such a quad by
+its alpha plane, premultiplied, like the runtime does, so the eyes show through where nothing is
+drawn). `lr` has the left/right difference (mean luma levels on a 160-column grid), the horizontal
 shift of the left picture against the right one (> 0 is right) and the eye separation; `versus` the
 difference of each eye to every earlier shot. `vr.sim` also has the rig, the eye poses as last
 located (`eyes`, with `separation`) and the timeline's state; a `vr.sim.shot` game event per shot.

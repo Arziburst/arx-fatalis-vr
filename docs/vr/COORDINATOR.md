@@ -47,7 +47,12 @@ Between the owner's messages the coordinator keeps going on its own, woken by ev
 workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
 
 **Act**
-- **Merge** green PRs without `needs-vr-test` (workers usually merge their own, D-005); docs-only PRs after
+- **Review before merge (D-021):** a worker whose PR is ready (CI green) messages "PR #<n> ready for
+  review" and waits. Start an independent reviewer: `scripts\dev\start-reviewer.ps1 <pr>` (Sonnet, runs
+  `/review-pr`, posts **PASS** or **GAPS** on the PR and messages back). PASS → tell the worker to merge (or,
+  `needs-vr-test`, it goes to the owner's headset batch); GAPS → forward the list to the worker, review
+  again after the fix. Docs-only coordinator PRs skip the reviewer.
+- **Merge** green, reviewed PRs without `needs-vr-test` (the worker merges, D-005); docs-only PRs after
   a short look. After a merge, bring other open PRs up to date (`gh pr update-branch`).
 - **Clean up** a worker whose PR is merged: `claude stop <id>`, `claude rm <id>`,
   `scripts\dev\new-worktree.ps1 -Issue <n> -Remove`. Keep a worker alive while its PR waits for the
@@ -64,9 +69,21 @@ workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
   model (§6). Then subscribe: `SendMessage(to: <worker name>, notify_when_idle: true)`.
 - **Answer workers** — a worker that stops with a question: read `claude logs <id>`, answer with
   `SendMessage` (first line = the point). Only questions that are the owner's decision go to the owner.
+- **Watch the workers (D-021):** the status line writes a ledger per session
+  (`~/.claude/statusline/sessions/<id>.json`: task branch, model, effort, context %, spend, duration).
+  A worker over ~60% context or busy for hours without a commit → read its log, help, or split the task;
+  the spend per task calibrates the model choice (§6).
+- **Pick the order by rule:** `scripts\dev\plan-next.ps1` (#187, once merged) lists the tasks ready to
+  start; tasks labelled `needs-design` wait for the owner's design talk (D-017).
+- **Keep the status page current:** the pinned issue **"ARXVR status"** (edited via REST each cycle):
+  current block, running workers (task, model, state), PRs waiting for review or for the headset, the
+  owner's open questions, weekly usage. The owner reads it in the browser; a new coordinator starts from it.
 - **Wait** — idle notices, background CI waits (`gh pr checks --watch` or a small script with
-  `run_in_background`) and the usage guard (a background script that exits at 70% weekly) wake the
-  coordinator. No sleep loops in the foreground, no "are you done?" messages.
+  `run_in_background`) and the usage guard (a background script that exits at 70% weekly, and every
+  ~45 min as a heartbeat to catch stuck workers) wake the coordinator. No sleep loops in the foreground,
+  no "are you done?" messages.
+- **Parallel tooling:** two build-area tasks may run together when their files do not overlap (e.g. a
+  hook script and the board scripts); otherwise one area, one worker.
 
 **Stop and report** only when:
 1. **the block is done** — every task of the current wave is merged or waits for the headset;
@@ -88,6 +105,17 @@ workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
   `/accept-task`), in dependency order; rejected → the feedback goes to the PR's worker (`SendMessage`),
   or a new worker with `/reject-task <pr> <feedback>` if the old one is gone. Post the feedback on the
   PR in English.
+- **Ask for impressions (D-021):** after each verdict, ask the owner for a sentence or two — what felt
+  good, what got in the way (e.g. "a little blurry" on #18). Triage them like worker findings: a note on the
+  task that will fix it, a new task, or a question for the owner's next design talk.
+
+## 4b. Finding what we do not know yet (D-021)
+- **Research radar** — one reference per block (Sonnet research task, catalog rows with an empty
+  Decision, the owner decides): OpenMW VR (#188, first), Gothic VR mods, Skyrim VR with VRIK / HIGGS /
+  Spell Wheel, Blade & Sorcery (gesture magic), Doom 3 BFG VR and Quake VR (porting old engines). Add to
+  the list when a worker or the owner names a new one.
+- **VR game checklist** (#189, `docs/vr/VR-CHECKLIST.md`): what players expect from a VR game; re-audit
+  the plan against it at the end of each checkpoint.
 
 ## 5. Budget
 - **Common weekly limit: up to 70%.** At 70% no new workers start; running ones finish their PRs.

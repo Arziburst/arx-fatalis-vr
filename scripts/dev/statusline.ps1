@@ -12,6 +12,24 @@ Move-Item -Force $tmp (Join-Path $dir 'last.json')
 
 try { $j = $raw | ConvertFrom-Json } catch { 'Claude'; exit 0 }
 
+# Per-session ledger for the coordinator (D-021): which task, model, context and spend each session is at
+if ($j.session_id) {
+	$ledger = Join-Path $dir 'sessions'
+	New-Item -ItemType Directory -Force $ledger | Out-Null
+	[ordered]@{
+		session_id  = $j.session_id
+		name        = $j.session_name
+		branch      = $j.worktree.branch
+		model       = $j.model.display_name
+		effort      = $j.effort.level
+		context_pct = $j.context_window.used_percentage
+		cost_usd    = $j.cost.total_cost_usd
+		lines_added = $j.cost.total_lines_added
+		duration_ms = $j.cost.total_duration_ms
+		updated     = (Get-Date).ToString('s')
+	} | ConvertTo-Json -Compress | Set-Content (Join-Path $ledger "$($j.session_id).json") -Encoding utf8
+}
+
 function Format-Tokens([double]$n) { if ($n -ge 1e6) { '{0:0.#}M' -f ($n / 1e6) } elseif ($n -ge 1e3) { '{0:0}k' -f ($n / 1e3) } else { "$n" } }
 
 $parts = @()

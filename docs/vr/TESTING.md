@@ -87,11 +87,13 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
   last=<last line> error=<reason or ->`.
 - **rewrites `<dir>\status.json`** every 250 ms, after every batch and on every state change —
   atomically (`status.json.tmp`, then rename), so a reader sees whole files only.
-- **flushes `arx.log`** at the same cadence, so `[game] state:` and `[mark]` lines are readable
+- **flushes `arx.log`** at the same cadence, so `game.state` events and `[mark]` lines are readable
   while the game runs (since #129 the file logger flushes on its own after every warning or error
   and at least once a second — see *Log:* in [The log banner](#the-log-banner); the channel only
   makes it fresher).
-- **logs `[game] state: STARTUP|MENU|LOADING level N|GAMEPLAY|CINEMATIC|EXITED`** on every change.
+- reports the state that the [game event log](#the-game-event-log) logs on every change as
+  `game.state to=STARTUP|MENU|LOADING|GAMEPLAY|CINEMATIC|EXITED` — always, with or without the
+  channel (#130 replaced the channel's own `[game] state:` lines).
 - sets `ARX_UNATTENDED=1` in its own environment, inherited by the crash processor: no crash dialog.
 
 ### Commands
@@ -102,7 +104,9 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `shot [name]` | after the next rendered frame, save it as `<dir>\capture\<name>.bmp` (default `shot<N>`); `captureSeq` and `lastCapture` in the status |
 | `mark <text>` | `[mark] <text>` in the log — an anchor for "the line I wait for must come after this" |
 | `quit` | ask the game to quit at the end of the frame (the same path as closing the window) |
+| `save <name>` | save the running game as a new slot named `<name>` (no thumbnail); the newest save is slot 0, so `loadslot 0` loads it back. A `save slot=save000N name=<name> ok=yes\|no` event either way; refused outside a running game (#130) |
 | `loadslot <n>` | load save slot `n` (from the menu or in-game), refused with the slot count if it does not exist |
+| `ui inventory open\|close` | what the inventory key does (the book has the script command `book open\|close`); a `ui.inventory` event once the inventory is open / has finished closing. While a level script holds the player (the level 10 start: letterbox, controls blocked) the HUD is not drawn and a close never finishes — `setplayercontrols on` and `cinemascope off` first (#130) |
 | `loadlevel <n> [target]` | change to level `n` in a running game (refused from the menu: start with `--loadlevel` or `loadslot`) |
 | `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
 | `recenter` | refused with `not implemented yet (#28)` until recentering exists |
@@ -114,7 +118,13 @@ Useful script-console commands for test scenes (the full list is what `ScriptEve
 <object> <marker>`, `playeradd`, `addgold`, `addxp`, `setlife`, `invulnerability on`, `noclip`,
 `setplayercontrols off`, `herosay <text>`, `showvars`, `sendevent <event> <entity>`, `worldfade`,
 `cine <name>` (a `.cin` cinematic, e.g. `cine akbaa_dream_a`; development launches skip it with a
-`Skipping cinematic` log line and the state never shows `CINEMATIC` — `--cinematics` plays it, #124).
+`cinematic.skip` event and the state never shows `CINEMATIC` — `--cinematics` plays it, #124).
+Commands that drive the [game event log](#the-game-event-log) (verified in #130): `book open|close`,
+`inventory playeradd magic/potion_life/potion_life`, `addxp 3000` (a level-up), `spellcast -fsm 5
+magic_sight self` (a cast), `spellcast -fsm 5 fake_summon self` (a refused cast),
+`human_base_0033.dodamage player 1000` on level 10 after `setplayercontrols on` (the player's death;
+self-inflicted `dodamage` and damage while the controls are blocked do nothing), `attachnpctoplayer`
+(an obsolete command: a `[W]` and a `script.error` event, no `[E]`).
 A refused line costs nothing: `[W] [channel] script command failed: Unknown command: …` and
 `errors=1` in the ack, no `[E]`.
 
@@ -134,8 +144,14 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
  "window":{"width":640,"height":480,"focused":true,"minimized":false,"fullscreen":false},
  "vr":{"supported":true,"enabled":false,"sessionState":"none","frames":0,"shownFrames":0,"runtime":"",
        "manifest":"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json"},
+ "events":{"total":13,"byName":{"game.new":1,"game.state":2,"level.load":1,"level.loaded":1,
+           "spell.cast":1,"ui.book":2,"vr.mode":1}},
  "cmdSeq":3,"lastCmd":"mark hello","lastCmdError":"","captureSeq":1,"lastCapture":"...\\first.bmp"}
 ```
+
+- `events` (#130): how many [game events](#the-game-event-log) happened since the start, in all and
+  by name — **logged or not** (a kind with a limit is only counted past it). Assert on these numbers
+  (`events.byName.'spell.refused' -eq 1`) instead of grepping the log.
 
 - `state`: `STARTUP` (before the first level or menu), `MENU` (main menu, pause menu, credits,
   character creation), `LOADING` (written from inside the level loader — a level load is one long
@@ -178,15 +194,16 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
 
 ## The log banner
 
-Every `arx.log` starts with five `Key: value` lines (#115 and #129, research rows F-18, F-98 and
-F-92), so a log says which build wrote it, how it was started and where it is written before anything
-else; the run digest (#131) reads them. Keep their shape when touching them.
+Every `arx.log` starts with six `Key: value` lines (#115, #129 and #130, research rows F-18, F-98,
+F-92 and F-146), so a log says which build wrote it, how it was started and where it is written
+before anything else; the run digest (#131) reads them. Keep their shape when touching them.
 
 ```
 [I] Startup:252  Starting Arx Fatalis VR 0.1-dev + f8b3585
 [I] Startup:111  Build: f8b3585637414910c931b733d27661cb8f4c407f on ARXVR-115-feat-log-banner-runtime, Release, MSVC 19.44, x86_64
 [I] Startup:141  Executable: "C:\Users\…\Release\arx.exe", linked 2026-10-09 14:02:55, built from f8b3585637414910c931b733d27661cb8f4c407f dirty
 [I] Startup:163  Run: 2026-10-09 15:10:03 local (12:10:03 UTC), pid 1234, command line: --windowed --no-vr --loadlevel 10
+[I] Startup:203  Launch: parent "pwsh.exe" (pid 23768), elevated no, proxy DLLs next to the executable: none
 [I] Startup:208  Log: "C:\Users\…\arx.log", previous runs kept as arx.1.log .. arx.9.log
 ```
 
@@ -200,6 +217,14 @@ else; the run digest (#131) reads them. Keep their shape when touching them.
   when the two commits differ: the compiled-in version is stale — rebuild (see [TRAPS.md](TRAPS.md)).
 - `Run:` the start time in local time and in UTC (crash report folders are named in UTC), the pid
   and the command line.
+- `Launch:` (#130, research row F-146) the process that started the game (`pwsh.exe` for the
+  scripts, `steam.exe`, `explorer.exe` for a double-click, `vrmonitor.exe` / `vrstartup.exe` from
+  SteamVR), whether the game runs **elevated** (as administrator — an elevated game and a
+  non-elevated runtime do not mix well), and any **proxy DLL** next to `arx.exe` that overlays,
+  injectors and graphics mods use to hook into a game: `opengl32.dll` (ReShade's OpenGL mode),
+  `dxgi.dll`, `d3d9.dll`, `d3d11.dll`, `dinput8.dll`, `version.dll`, `winmm.dll` — none ships with
+  this build. A found one is also a `[W] Found <names> next to arx.exe in "<folder>" …`. Checked
+  with an empty `d3d9.dll` next to the build (#130): the line and the `[W]` appear, the run passes.
 - `Log:` the file this run writes and what became of the previous runs (#129, research row F-92).
   At startup `arx.log` → `arx.1.log` → … → `arx.9.log`, the oldest dropped: **ten runs** per user
   directory (an isolated self-test directory rotates its own; the smoke test no longer deletes
@@ -227,6 +252,59 @@ The VR runtime follows a few lines later, **on every run, flat ones included**:
 - `OpenXR runtime answered` appears once an instance exists. When the runtime that answered is not
   the one the manifest path suggests (SteamVR, Oculus, Windows Mixed Reality, Varjo, Monado, Virtual
   Desktop), a `[W]` names both.
+
+## The game event log
+
+One `arx.log` line per game and VR state change, **always on** (with or without the channel), so a
+log alone says what was happening before a problem (#130, diagnostics D2; research rows F-105, F-118).
+Every line comes from one place, so `GameEvent:` greps the whole stream:
+
+```
+[I] GameEvent:66   game.state to=GAMEPLAY was=LOADING area=10 t=0.54
+[I] GameEvent:66   spell.refused spell=fake_summon reason=spell-cannot-launch t=3.02
+```
+
+Shape: `<area>.<what>` followed by `key=value` fields, the last one `t=` = seconds since the first
+event of the run (`vr.mode`, at startup — `arx.log` lines carry no time of their own). Integers as
+they are, floats with fixed decimals, booleans `yes` / `no`, strings bare when they are one word,
+otherwise in double quotes with `"` and `\` escaped (`src/core/GameEventFormat.h`, host-tested by
+`GameEventTest`). Events are state changes, never per frame; a kind that a script can repeat without
+bound has a limit (`script.error`: the first 50, then one `event.limit name=script.error logged=50
+rest=counted` line). `status.json` `events` counts every event, logged or not.
+
+| Event | When | Fields |
+|---|---|---|
+| `vr.mode` | once at startup, after the VR decision | `mode=vr\|flat` (the lines before it say why it is flat) |
+| `game.state` | the state changes | `to`, `was` (`STARTUP`, `MENU`, `LOADING`, `GAMEPLAY`, `CINEMATIC`, `EXITED`), `area` with `LOADING` / `GAMEPLAY` |
+| `game.new` | a new playthrough starts (character creation or `--loadlevel`) | — |
+| `level.load` / `level.loaded` | a level starts / finishes loading (new game, save, level change) | `area`; `ok`, `ms` |
+| `save` / `load` | a save is written / a save starts loading | `slot` (`save0003`), `name`, `ok`; `area`, `quick` |
+| `cinematic.skip` | a development launch skips a `.cin` (#124) | `name`, `reason` |
+| `player.levelup` | the player gains a level | `level`, `xp` |
+| `player.death` | the player dies | `source` (entity id), `damage`, `type` (damage type flags) |
+| `player.combat` | the weapon is drawn / put away | `state=on\|off`, `weapon` |
+| `ui.inventory` / `ui.book` / `ui.container` / `ui.note` | opened or closed while playing | `state=open\|closed`; `bags=one\|all`, `page=stats\|spells\|map\|quests`, `entity` |
+| `rune.drawn` / `rune.unknown` | a stroke was recognised as a rune / was not | `rune`, `moves` (numpad directions the recognizer saw), `index` |
+| `spell.unknown` | the drawn runes are no spell | `runes` (`aam+yok`) |
+| `spell.cast` | a spell launches (player or NPC) | `spell`, `caster`, `level`, `target` |
+| `spell.precast` | the player stores a spell | `spell`, `level` |
+| `spell.refused` | the player's spell does not launch | `spell`, `reason` (`runes-not-learned`, `no-mana` with `mana` / `cost`, `magic-disabled-by-level`, `spell-cannot-launch` — the spell's own silent check, `no-demon-within-900`, `not-implemented`) |
+| `melee.hit` | a weapon strike reaches an NPC and the player is the attacker or the target — one per swing | `source`, `target`, `weapon`, `damage` (0 = the armour-class roll made it a miss), `aim` |
+| `item.take` / `item.drop` | an item goes onto / off the cursor | `item`, `from=world\|inventory`; `how=throw\|drop\|place`, `count` |
+| `item.toinventory` | an item enters the player's inventory or the container the player has open | `item`, `container` |
+| `item.use` / `item.equip` | the player uses / equips an item | `item` |
+| `script.error` | a script command fails (not the suppressed ones); the `[W]` / `[E]` before it says why | `entity`, `event`, `command`, `pos`, `abort` (limit 50) |
+| `vr.session` | the OpenXR session state changes (F-118) | `state`, `was`, `meaning` (e.g. `synchronized`: frames are timed but not displayed — the runtime may pace the game as slowly as it likes) |
+| `vr.focus` | the session leaves `focused` (Windows) | `state=lost`, `foregroundPid`, `own` (our process: the runtime's overlay took the input; another: the desktop focus went elsewhere), `class`, `title`, `hint` |
+| `vr.profile` | the runtime's interaction profile changed | `left`, `right` (`/interaction_profiles/valve/index_controller`, `none`, or `error:XR_ERROR_ACTIONSET_NOT_ATTACHED` until #30 adds actions) |
+| `vr.refspace` | the runtime moves a reference space (its own recenter, a new play area) | `space`, `poseValid` |
+
+Not here yet, by design: melee attacks *refused* by a gate (F-66) come with the VR swing detector
+(#39); recenter with #28; locomotion, interaction and rune-drawing in VR add their own events in the
+same shape (#31, #37, #44). Measured in #130 (flat, `--loadlevel 10`, 60 s idle): 13 events in the
+whole run, none per frame — after `GAMEPLAY` (t=0.54) only the level 10 intro script's own work:
+`cinematic.skip` at t=29.55, four NPC `spell.cast` between t=52.67 and t=56.39, and
+`game.state to=MENU` at t=58.41 — the intro sequence ends in the menu by itself (see TRAPS.md).
 
 ## The draw check (`drawcheck`)
 

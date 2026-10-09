@@ -959,6 +959,7 @@ set(CORE_SOURCES
 	src/core/Config.cpp
 	src/core/Core.cpp
 	src/core/FpsCounter.cpp
+	src/core/GameEvent.cpp
 	src/core/GameTime.cpp
 	src/core/Localisation.cpp
 	src/core/SaveGame.cpp

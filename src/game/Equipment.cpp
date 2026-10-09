@@ -54,6 +54,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "animation/Animation.h"
 
 #include "core/Core.h"
+#include "core/GameEvent.h"
 
 #include "game/Damage.h"
 #include "game/EntityManager.h"
@@ -665,7 +666,16 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 					if(!(flags & 1)) {
 						
 						dmgs = ARX_EQUIPMENT_ComputeDamages(io_source, target, ratioaim, &pos);
-						
+
+						if((target->ioflags & IO_NPC) && (io_source == entities.player() || target == entities.player())) {
+							// One per swing: a hit on an NPC (the player is one) returns true and the
+							// caller stops checking until the next swing; props would repeat every frame.
+							// damage=0 is a hit that the armour class roll turned into a miss.
+							gameevent::Event("melee.hit")("source", gameevent::entityName(io_source))
+								("target", gameevent::entityName(target))("weapon", gameevent::entityName(io_weapon))
+								("damage", dmgs, 1)("aim", ratioaim, 2);
+						}
+
 						if(target->ioflags & IO_NPC) {
 							ret = true;
 							target->spark_n_blood = 0;
@@ -872,7 +882,9 @@ void ARX_EQUIPMENT_Equip(Entity * target, Entity * toequip) {
 	if(!target || !toequip || target != entities.player()) {
 		return;
 	}
-	
+
+	gameevent::Event("item.equip")("item", gameevent::entityName(toequip));
+
 	toequip->setOwner(nullptr);
 	toequip->show = SHOW_FLAG_ON_PLAYER;
 	if(toequip == g_draggedEntity) {

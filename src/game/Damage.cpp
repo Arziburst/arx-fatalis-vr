@@ -60,6 +60,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "core/GameTime.h"
 #include "core/Core.h"
+#include "core/GameEvent.h"
 
 #include "game/Camera.h"
 #include "game/EntityManager.h"
@@ -472,6 +473,8 @@ float damagePlayer(float dmg, DamageType type, Entity * source) {
 		if(player.lifePool.current <= 0.f) {
 			player.lifePool.current = 0.f;
 			if(wasAlive) {
+				gameevent::Event("player.death")("source", gameevent::entityName(source))("damage", dmg, 1)
+					("type", u32(type));
 				ARX_PLAYER_BecomesDead();
 				if((type & DAMAGE_TYPE_FIRE) || (type & DAMAGE_TYPE_FAKEFIRE)) {
 					ARX_SOUND_PlayInterface(g_snd.PLAYER_DEATH_BY_FIRE);

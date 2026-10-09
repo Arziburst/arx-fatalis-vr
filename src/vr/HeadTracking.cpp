@@ -168,6 +168,8 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 void resetHeadReference(const char * reason) {
 	g_head.resetPending = true;
 	g_head.resetReason = reason;
+	// An open menu's panel follows the recenter to where the player looks now (F-180)
+	recenterPanel();
 }
 
 void setSimulatedHead(const HeadSample & head) {

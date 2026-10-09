@@ -46,6 +46,7 @@
 #include "util/String.h"
 
 #include "vr/MirrorGeometry.h"
+#include "vr/UIPanel.h"
 #include "vr/VRTurn.h"
 
 
@@ -129,6 +130,9 @@ const bool allowConsole = false;
 #endif
 
 constexpr const float
+	vrPanelDistance = vr::DefaultPanelDistance,
+	vrPanelDrop = vr::DefaultPanelDrop,
+	vrPanelWidth = vr::DefaultPanelWidth,
 	fogDistance = 10.f,
 	gamma = 5.f,
 	fov = 75.f,
@@ -228,6 +232,9 @@ constexpr const std::string_view
 	vrFrameDivisor = "vr_frame_divisor",
 	vrMirror = "vr_mirror",
 	vrMirrorEye = "vr_mirror_eye",
+	vrPanelDistance = "vr_panel_distance",
+	vrPanelDrop = "vr_panel_drop",
+	vrPanelWidth = "vr_panel_width",
 	fov = "fov",
 	viewBobbing = "view_bobbing",
 	screenShake = "screen_shake",
@@ -494,6 +501,9 @@ bool Config::save() {
 	writer.writeKey(Key::vrFrameDivisor, video.vrFrameDivisor);
 	writer.writeKey(Key::vrMirror, video.vrMirror);
 	writer.writeKey(Key::vrMirrorEye, video.vrMirrorEye);
+	writer.writeKey(Key::vrPanelDistance, video.vrPanelDistance);
+	writer.writeKey(Key::vrPanelDrop, video.vrPanelDrop);
+	writer.writeKey(Key::vrPanelWidth, video.vrPanelWidth);
 	writer.writeKey(Key::fov, video.fov);
 	writer.writeKey(Key::viewBobbing, video.viewBobbing);
 	writer.writeKey(Key::screenShake, video.screenShake);
@@ -634,6 +644,12 @@ bool Config::init(const fs::path & file) {
 	video.vrMirror = reader.getKey(Section::Video, Key::vrMirror, Default::vrMirror);
 	int vrMirrorEye = reader.getKey(Section::Video, Key::vrMirrorEye, Default::vrMirrorEye);
 	video.vrMirrorEye = glm::clamp(vrMirrorEye, 0, 1);
+	float vrPanelDistance = reader.getKey(Section::Video, Key::vrPanelDistance, Default::vrPanelDistance);
+	video.vrPanelDistance = glm::clamp(vrPanelDistance, 0.3f, 3.f);
+	float vrPanelDrop = reader.getKey(Section::Video, Key::vrPanelDrop, Default::vrPanelDrop);
+	video.vrPanelDrop = glm::clamp(vrPanelDrop, -0.5f, 1.f);
+	float vrPanelWidth = reader.getKey(Section::Video, Key::vrPanelWidth, Default::vrPanelWidth);
+	video.vrPanelWidth = glm::clamp(vrPanelWidth, 0.2f, 4.f);
 	float fov = reader.getKey(Section::Video, Key::fov, Default::fov);
 	video.fov = std::max(fov, 10.f);
 	video.viewBobbing = reader.getKey(Section::Video, Key::viewBobbing, Default::viewBobbing);

@@ -320,7 +320,7 @@ std::vector<Conflict> findConflicts(const ControlLayout & layout) {
 }
 
 const Hysteresis & gripThreshold(ControllerType type) {
-	return type == ControllerType::Index ? IndexGripForceThreshold : GripThreshold;
+	return type == ControllerType::Index ? IndexGripThreshold : GripThreshold;
 }
 
 void updateStickDirections(ControlSet & down, Hand hand, float x, float y) {
@@ -364,9 +364,13 @@ void ControlResolver::setLayout(const ControlLayout & layout) {
 	m_layout = layout;
 
 	m_deferred.reset();
+	m_hasLongPress.reset();
 	for(const Binding & binding : m_layout.bindings) {
 		if(binding.isBound() && (binding.isChord() || binding.longPress)) {
 			m_deferred[binding.first] = true;
+		}
+		if(binding.isBound() && !binding.isChord() && binding.longPress) {
+			m_hasLongPress[binding.first] = true;
 		}
 	}
 
@@ -479,7 +483,10 @@ void ControlResolver::release(Control control, s64 timeMs) {
 
 	// A tap of a control whose single binding had to wait for the release
 	const ControlState & state = m_controls[control];
-	if(m_deferred[control] && !state.consumed && timeMs - state.since < longPressMs) {
+	// A control with a long press of its own taps only when let go before it; a chord's leader taps
+	// after any hold the chord did not use (D-019: the hand opens without a trigger = use)
+	if(m_deferred[control] && !state.consumed
+	   && (!m_hasLongPress[control] || timeMs - state.since < longPressMs)) {
 		for(size_t i = 0; i < EventCount; i++) {
 			const Binding & binding = m_layout.bindings[i];
 			if(binding.first == control && !binding.isChord() && !binding.longPress) {

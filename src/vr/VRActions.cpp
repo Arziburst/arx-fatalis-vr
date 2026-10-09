@@ -147,13 +147,13 @@ void ActionSet::suggestBindings() {
 	};
 	std::vector<Profile> profiles(3);
 
-	// Valve Index - the owner's controllers (D-019). The grip is squeeze/force, the pressure after the
-	// fingers closed: squeeze/value comes from finger contact and fires from just holding the controller
+	// Valve Index - the owner's controllers (D-019). The grip is squeeze/value, how far the hand is closed:
+	// the controller is strapped on, a light close is the grip and an open hand is none (own threshold)
 	profiles[0].path = IndexProfile;
 	{
 		std::vector<Suggestion> & list = profiles[0].list;
 		addBoth(list, a.trigger, "input/trigger/value");
-		addBoth(list, a.grip, "input/squeeze/force");
+		addBoth(list, a.grip, "input/squeeze/value");
 		addBoth(list, a.a, "input/a/click");
 		addBoth(list, a.b, "input/b/click");
 		addBoth(list, a.stick, "input/thumbstick");
@@ -480,7 +480,7 @@ bool ActionSet::sync(ControllerInput & input, XrSpace viewSpace, XrTime time) {
 
 		struct { XrAction action; ControlKind kind; const Hysteresis & threshold; float * value; } analog[] = {
 			{ m_actions.trigger, ControlKind::Trigger, TriggerThreshold, &input.trigger[i] },
-			// The Index reports the grip as squeeze/force, the others as squeeze/value
+			// The Index grip is a light close of the strapped hand, the Touch grip a squeeze (D-019)
 			{ m_actions.grip, ControlKind::Grip, gripThreshold(controllerTypeFromProfile(m_profiles[i])), &input.grip[i] },
 			{ m_actions.trackpad, ControlKind::Trackpad, TrackpadThreshold, nullptr },
 		};

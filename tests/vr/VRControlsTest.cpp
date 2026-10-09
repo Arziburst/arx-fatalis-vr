@@ -145,11 +145,24 @@ void VRControlsTest::chordLeaderTapTest() {
 	CPPUNIT_ASSERT(resolver.released(Event::UseRight));
 	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::UseRight));
 
-	// Held longer than a tap: nothing
+	// The grip has no long press of its own: a hand kept closed for seconds and opened without a
+	// trigger is still one "use", when it opens (D-019, owner 2026-10-10)
 	resolver.update(1000, controls({ RightGrip }));
-	resolver.update(1000 + resolver.longPressMs, controls());
-	resolver.update(1000 + resolver.longPressMs + resolver.releaseDebounceMs, controls());
-	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::UseRight));
+	resolver.update(4000, controls({ RightGrip }));
+	CPPUNIT_ASSERT(!resolver.active(Event::UseRight));
+	resolver.update(5000, controls());
+	resolver.update(5000 + resolver.releaseDebounceMs, controls());
+	CPPUNIT_ASSERT(resolver.pressed(Event::UseRight));
+	CPPUNIT_ASSERT_EQUAL(u32(2), resolver.presses(Event::UseRight));
+
+	// ... and with a trigger while it was closed, at any time, only the stash
+	resolver.update(6000, controls({ RightGrip }));
+	resolver.update(8000, controls({ RightGrip, RightTrigger }));
+	CPPUNIT_ASSERT(resolver.pressed(Event::StashRight));
+	resolver.update(8100, controls());
+	resolver.update(9000, controls());
+	CPPUNIT_ASSERT_EQUAL(u32(2), resolver.presses(Event::UseRight));
+	CPPUNIT_ASSERT_EQUAL(u32(0), resolver.presses(Event::InteractRight));
 }
 
 void VRControlsTest::simultaneousChordTest() {
@@ -215,25 +228,37 @@ void VRControlsTest::gripFlickerTest() {
 
 void VRControlsTest::indexGripThresholdTest() {
 
-	// The Index grip is squeeze/force: holding the controller stays below the press threshold
+	// The Index grip is how far the strapped hand is closed (D-019, owner 2026-10-10):
+	// an open hand, fingers off or resting lightly, is no grip
 	const Hysteresis & index = gripThreshold(ControllerType::Index);
 	bool down = false;
-	for(float force : { 0.f, 0.08f, 0.15f, 0.30f, 0.22f, 0.38f, 0.10f }) {
-		down = index.update(down, force);
+	for(float value : { 0.f, 0.05f, 0.15f, 0.30f, 0.22f, 0.45f, 0.10f }) {
+		down = index.update(down, value);
 		CPPUNIT_ASSERT(!down);
 	}
-	down = index.update(down, 0.45f); // a firm squeeze
+	// A light close is the grip, and the relaxed closed hand's flicker around 0.6 - 0.7 (the owner's
+	// first headset run, six false "use" events against 0.70 / 0.55) keeps it closed
+	down = index.update(down, 0.55f);
 	CPPUNIT_ASSERT(down);
-	down = index.update(down, 0.30f);
-	CPPUNIT_ASSERT(down);
-	down = index.update(down, 0.20f);
+	for(float value : { 0.62f, 0.68f, 0.58f, 0.71f, 0.60f, 0.35f }) {
+		down = index.update(down, value);
+		CPPUNIT_ASSERT(down);
+	}
+	// Opening the hand lets go
+	down = index.update(down, 0.25f);
 	CPPUNIT_ASSERT(!down);
+
+	// The same flicker against the Touch's squeeze threshold would release and press again
+	bool touch = GripThreshold.update(false, 0.71f);
+	CPPUNIT_ASSERT(touch);
+	touch = GripThreshold.update(touch, 0.54f);
+	CPPUNIT_ASSERT(!touch);
 
 	// The others keep squeeze/value with 0.70 / 0.55 (F-41)
 	CPPUNIT_ASSERT(&gripThreshold(ControllerType::Touch) == &GripThreshold);
 	CPPUNIT_ASSERT(&gripThreshold(ControllerType::Simple) == &GripThreshold);
 	CPPUNIT_ASSERT(&gripThreshold(ControllerType::Unknown) == &GripThreshold);
-	CPPUNIT_ASSERT(&gripThreshold(ControllerType::Index) == &IndexGripForceThreshold);
+	CPPUNIT_ASSERT(&gripThreshold(ControllerType::Index) == &IndexGripThreshold);
 }
 
 void VRControlsTest::longPressTest() {

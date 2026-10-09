@@ -43,7 +43,9 @@
  * Press rules (F-122, F-43 in docs/vr/RESEARCH-reference-mods.md):
  *  - a single binding fires on the press, with no latency, unless its control also leads a chord
  *    or has a long press: then it fires on the release (a tap), and only if the control was not
- *    used by the chord or the long press and was held shorter than \ref ControlResolver::longPressMs;
+ *    used by the chord or the long press; with a long press of its own it must also have been held
+ *    shorter than \ref ControlResolver::longPressMs, a chord's leader taps after any hold (D-019:
+ *    the grip is a closed hand, "use" when it opens without a trigger, stash with one);
  *  - a chord fires when its second control is pressed while the first is held; both controls are
  *    then consumed until released (no tap, no long press, no single binding of the second);
  *  - a long press fires once, when the control has been held for \ref ControlResolver::longPressMs;
@@ -258,11 +260,13 @@ const Hysteresis TriggerThreshold = { 0.55f, 0.40f };
 //! The grip as squeeze/value (Touch, simple controller): a firm squeeze (F-41)
 const Hysteresis GripThreshold = { 0.70f, 0.55f };
 /*!
- * The Index grip as squeeze/force - the pressure after the fingers closed. Its squeeze/value comes
- * from finger contact and crossed 0.70 / 0.55 from just holding the controller (the owner's headset
- * run of #30: six "use" taps nobody made, TRAPS.md).
+ * The Index grip as squeeze/value - how far the hand is closed around the handle. The controller is
+ * strapped to the hand, so a light close is the grip and an open hand (the controller hanging on
+ * the strap) is none (D-019, owner 2026-10-10). The relaxed closed hand flickered around 0.6 - 0.7
+ * in the owner's first headset run of #30, against 0.70 / 0.55: six "use" events nobody made
+ * (TRAPS.md); a low press and a wide gap keep a closed hand closed.
  */
-const Hysteresis IndexGripForceThreshold = { 0.40f, 0.25f };
+const Hysteresis IndexGripThreshold = { 0.50f, 0.30f };
 
 //! The grip threshold for the controllers of one hand, by the value their binding reports
 const Hysteresis & gripThreshold(ControllerType type);
@@ -363,6 +367,8 @@ private:
 	ControlLayout m_layout;
 	//! Controls whose single binding waits for the release: they lead a chord or have a long press
 	ControlSet m_deferred;
+	//! Controls with a long press of their own: their tap must be shorter than \ref longPressMs
+	ControlSet m_hasLongPress;
 
 	ControlSet m_down;
 	std::array<ControlState, ControlCount> m_controls;

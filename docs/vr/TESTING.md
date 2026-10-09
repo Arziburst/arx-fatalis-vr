@@ -243,7 +243,7 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   that hand yet — SteamVR binds a few frames after the session is `focused`, so an idle headset never
   shows one), `syncs`: action syncs while focused, `down`: the controls held after the last frame
   (space separated), `active`: the events on now, `trigger` / `grip`: the analog values per hand
-  (the Index grip is `squeeze/force`, the others `squeeze/value` — TRAPS.md), `presses`: how often
+  (`squeeze/value`: on the Index how far the strapped hand is closed — TRAPS.md), `presses`: how often
   each event came on since the start, `layout`: the binding of every event (`none`, `right.a`, `left.grip+left.trigger`,
   `left.stick_click:long`). Nothing in the game reacts to the events yet (#74); `input-check.ps1`
   asserts on `presses` and `layout`.

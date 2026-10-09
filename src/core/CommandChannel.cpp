@@ -395,6 +395,13 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("discardedFrames", frames.discarded);
 	json.value("frameGaps", frames.gaps);
 	json.value("frameDivisor", vr::frameDivisor());
+	// The desktop mirror (#21): "on" while the window shows what one eye sees
+	vr::MirrorStatus mirror = vr::mirrorStatus();
+	json.object("mirror");
+	json.value("state", mirror.state);
+	json.value("eye", mirror.eye);
+	json.value("frames", mirror.frames);
+	json.end();
 	json.value("runtime", vr::runtimeName());
 	json.value("manifest", vr::runtimeManifest());
 	{

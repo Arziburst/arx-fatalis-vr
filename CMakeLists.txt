@@ -1260,6 +1260,7 @@ set(VR_SOURCES
 	src/vr/VRControls.cpp
 	src/vr/VRGameInput.cpp
 	src/vr/VRInput.cpp
+	src/vr/VRMirror.cpp
 	src/vr/VRSwapchain.cpp
 	src/vr/VRSystem.cpp
 )

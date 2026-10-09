@@ -556,6 +556,25 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("eye", mirror.eye);
 	json.value("frames", mirror.frames);
 	json.end();
+	// The floating UI panel (#49): "world" while an open menu's panel is placed, its pose in the LOCAL space
+	{
+		vr::PanelStatus panel = vr::panelStatus();
+		json.object("panel");
+		json.value("mode", panel.mode);
+		json.value("menu", panel.menu);
+		json.value("placements", panel.placements);
+		json.value("lastPlacement", panel.lastPlacement);
+		json.value("x", panel.position.x);
+		json.value("y", panel.position.y);
+		json.value("z", panel.position.z);
+		json.value("yaw", panel.yawDeg);
+		json.value("tilt", panel.tiltDeg);
+		json.value("width", panel.size.x);
+		json.value("height", panel.size.y);
+		json.value("distance", panel.distance);
+		json.value("drop", panel.drop);
+		json.end();
+	}
 	json.value("runtime", vr::runtimeName());
 	json.value("manifest", vr::runtimeManifest());
 	// Head tracking (#24): where the head comes from, its reference and what it does to the camera

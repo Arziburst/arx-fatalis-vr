@@ -63,6 +63,8 @@ set(arxtest_TESTCASES
 	tests/vr/EyeImageTest.cpp
 	tests/vr/SimRigTest.h
 	tests/vr/SimRigTest.cpp
+	tests/vr/UIPanelTest.h
+	tests/vr/UIPanelTest.cpp
 
 
 )
@@ -89,6 +91,7 @@ set(arxtest_SOURCES
 	src/vr/VRGameInput.cpp
 	src/vr/EyeImage.cpp
 	src/vr/SimRig.cpp
+	src/vr/UIPanel.cpp
 
 
 	${arxtest_TESTCASES}

@@ -1260,6 +1260,7 @@ set(VR_SOURCES
 	src/vr/HeadPose.cpp
 	src/vr/HeadTracking.cpp
 	src/vr/SimRig.cpp
+	src/vr/UIPanel.cpp
 	src/vr/VRActions.cpp
 	src/vr/VRBindings.cpp
 	src/vr/VRComfort.cpp

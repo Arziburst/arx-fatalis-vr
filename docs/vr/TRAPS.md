@@ -8,6 +8,18 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — A new test file breaks the build with `redefinition` of a name it defines once (#19)
+
+**Symptom:** `tests/vr/MirrorGeometryTest.cpp(30): error C2371: 'anonymous-namespace'::Epsilon': redefinition;
+different basic types` — in a file the task did not touch — right after adding a test file that has its own
+`const float Epsilon` in an anonymous namespace; the new file compiles alone.
+**Cause:** the Release build is a **unity build**: several `.cpp` files are concatenated into one translation unit,
+so anonymous-namespace names of different test (and source) files share one scope. `Near` / `Far` are also
+macros from `windows.h` on MSVC and cannot be used as identifiers in files that see it.
+**Do:** give file-local constants and helpers names that are unique across the group (`ProjectionEpsilon`,
+`NearDist`), or make them `static` members of the test class; read the error's file name as "which other file
+shares my translation unit", not as that file's fault.
+
 ## 2026-10-09 — A scene drawn into a framebuffer object lands at the wrong place, is clipped, or loses its alpha cutouts (#19)
 
 **Symptom:** rendering through the engine's renderer into an OpenGL framebuffer object of another

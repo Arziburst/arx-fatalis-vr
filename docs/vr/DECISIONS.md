@@ -13,6 +13,46 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: The rune trail — the engine's flares at the drawing hand, the engine's hold / release model
+
+- **Date:** 2026-10-10
+- **Status:** Accepted as the MVP default; the owner judges the look in the headset (#43)
+- **Decided by:** coordinator (default bindings are the coordinator's call, the owner's D-017 exception of
+  2026-10-10; proposed by the worker of #43), within D-010 and D-019
+
+### Decision
+- **Control model = the engine's** (Ctrl + mouse in flat mode): the **magic button held** is the casting
+  stance (D-019: the Index's **left trackpad pressed**, the Touch's **left X**; none on the simple
+  controller); while it is held, **the trigger of a hand draws one stroke** — one rune — with that hand;
+  **the trigger's release ends the rune**, **the magic button's release casts** what was drawn. A trigger
+  already held when the stance starts draws at once (as the engine's held mouse button does). In the
+  stance the trigger is the engine's mouse button as before: the engine draws with it and does not
+  interact with the world.
+- **One hand draws at a time:** the first trigger wins (both in the same frame: the right hand); the other
+  trigger is ignored until it is released. A stroke also ends when its hand is lost by the tracking.
+- **The trail is the engine's own magic flares** — textures, additive glow, the colour cycling purple →
+  yellow → red per rune, the lifetime (faster fade after the stance) — put at a point **8 cm ahead of the
+  grip along the controller** (about the index fingertip, a wand's tip), not at the palm. The path between
+  two updates is filled with the engine's line flares every 1.2 cm.
+- **Size:** half the engine's flare (`vr::RuneFlareScale` 0.5) — the cursor's flares are drawn at 75 units
+  in front of the camera, the hand draws nearer.
+- **Depth test off** as in flat mode: the trail is visible through the player's own hand and body.
+- **No cursor, no ray, no plane** while drawing (D-010): the magic cursor is not drawn when the hands draw,
+  and the cursor's 2D trail is not drawn in VR.
+
+### Why
+D-010 says the glow is where the hand moves; the engine already has the look, the colours and the
+lifetime players know, so only the place changes. The engine's hold / release model keeps multi-rune
+spells (Magic Missile = AAM + TAAR: several strokes in one stance) and the original recognition flow.
+
+### Consequences
+`vr/RuneTrail.h` (pure, host-tested), `vr/VRRunes.h` (`vr.magic` in `status.json`, `magic.stance` /
+`magic.stroke` game events), `AddFlareAt` in `MagicFlare.h`, the `rune-trail.xrs` sequence. What the
+engine recognises still comes from the cursor until #44 feeds the stroke into the recogniser. The look
+(size, tip distance, depth test) is tuned after the owner's headset test.
+
+---
+
 ## D-031: The head reference comes from a worn headset; one world scale of 100 units per meter
 
 - **Date:** 2026-10-09
@@ -536,14 +576,14 @@ Valve Index first; Quest 3 Touch the same (A/B on the right, X/Y on the left).
 | Game menu (open / close) | **A on the left** on the Index (free in this table; the Index has no menu button), the **left menu button** on the Touch *(owner, 2026-10-10, after the #30 headset run)* |
 | Two reticles on different items | the name shown is the one of the **hand that moved last** |
 | Recenter | ~~hold a button chord (F-34)~~ → **long press of the left stick click** *(owner, 2026-10-10, after the #30 headset run)* |
-| Runes | drawn in the air with the hand (D-010); the button that starts casting is decided with the magic block (#43–#45) |
+| Runes | drawn in the air with the hand (D-010); ~~the button that starts casting is decided with the magic block (#43–#45)~~ → **hold the left trackpad** (Index) / **left X** (Touch) = the casting stance; **the trigger of a hand draws a rune with that hand**, its release ends the rune, releasing the stance casts (D-NEW, #43; coordinator's default, remappable in #178) |
 | Left-handed mode | ~~after the MVP~~ → in the MVP, in the VR settings (D-020) |
 
 **Other controllers (#35, 2026-10-10).** Default layouts for controllers other than the Index are the
 coordinator's call, because players remap them in the game (#178) — the owner's exception to D-017
 (2026-10-10):
 - **Quest 3 Touch Plus** (SteamVR reports `oculus/touch_controller`): the table above with **X / Y in
-  the places of left A / B**; the game menu on the **left menu button**, so **X stays free**; recenter is
+  the places of left A / B**; the game menu on the **left menu button**, so **X stays free** (→ magic mode, #43); recenter is
   the same long press of the left stick click. The grip is a squeeze (`squeeze/value` 0.70 / 0.55, F-41) —
   the Touch is held, not strapped on.
 - **Simple controller** (`khr/simple_controller`, select and menu per hand): select = click / drag of

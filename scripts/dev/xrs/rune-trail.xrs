@@ -40,7 +40,7 @@ vr-sim action trackpad_press left 1
 @assert vr.magic.stance eq true
 @assert vr.magic.drawing eq false
 @assert vr.magic.flares eq 0
-@log GameEvent:.*magic\.stance state=on hands=true
+@log GameEvent:.*magic\.stance state=on hands=yes
 
 # The trigger in the stance draws with the right hand, at the point ahead of its grip
 vr-sim action trigger right 1

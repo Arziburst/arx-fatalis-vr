@@ -43,7 +43,25 @@ file (`ub_*.cpp`, sorted by path). An include guard opened by an earlier file ke
 file's anonymous namespace is the same one, so two test files with a helper `Epsilon` or `fov` collide —
 `arxtest` is a unity build too.
 **Do:** a file that needs the OpenXR loader's functions declares them itself from the `PFN_` types
-(`src/vr/XRDispatch.cpp`); give file-local helpers file-specific names (`ImageEpsilon`, `imageFov`).
+(`src/vr/XRDispatch.cpp`); give file-local helpers file-specific names (`ImageEpsilon`, `imageFov`). `Near` and
+`Far` are macros from `windows.h` on MSVC too (hit in #19's test): not identifiers in any file that sees it.
+
+## 2026-10-09 — A scene drawn into a framebuffer object lands at the wrong place, is clipped, or loses its alpha cutouts (#19)
+
+**Symptom:** rendering through the engine's renderer into an OpenGL framebuffer object of another
+size than the window (a VR eye image, 2468×2740) puts the picture in a corner or off the image;
+scissored draws (the cinematic border) cut the wrong band; `getSnapshot()` reads the window's size;
+fences and foliage with alpha cutouts come out as solid black quads on the eye image although they are
+fine in the window.
+**Cause:** `OpenGLRenderer::SetViewport` / `SetScissor` turn the engine's top-left rectangles into
+OpenGL's bottom-left ones with the **window's** height, and `getSnapshot` reads the window's size; and
+with MSAA on the window the renderer draws alpha cutouts with alpha-to-coverage or sample shading
+(`alpha_cutout_antialiasing`), which do nothing on a single-sample framebuffer object - the alpha test
+that would discard the transparent texels is off.
+**Do:** tell the renderer the bound target's size (`Renderer::setRenderTargetSize`, 0 = the window): it
+re-applies the viewport and the scissor against that height, snapshots read that size, and
+`SetAntialiasing(true)` is refused off the window so the alpha cutout path falls back to the alpha test.
+`vr::beginEyeRender()` / `endEyeRender()` and the flat frame target do this; a new offscreen target must too.
 
 ## 2026-10-10 — "use" fires from just holding the Index controller (a closed hand flickers, #30)
 

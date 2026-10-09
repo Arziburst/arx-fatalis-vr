@@ -38,18 +38,21 @@
  */
 namespace vr {
 
-//! An RGB8 picture, rows bottom-up
+//! An RGB8 picture, rows bottom-up, with an optional alpha plane (empty = opaque)
 struct RgbImage {
 
 	size_t width = 0;
 	size_t height = 0;
 	std::vector<u8> pixels;
+	std::vector<u8> alpha; //!< one byte per pixel when the picture has coverage (the blended quad, #19)
 
 	RgbImage() = default;
 	RgbImage(size_t w, size_t h) : width(w), height(h), pixels(w * h * 3, 0) { }
 
 	u8 * at(size_t x, size_t y) { return &pixels[(y * width + x) * 3]; }
 	const u8 * at(size_t x, size_t y) const { return &pixels[(y * width + x) * 3]; }
+	//! \return the pixel's alpha, 255 for a picture without an alpha plane
+	u8 alphaAt(size_t x, size_t y) const { return alpha.empty() ? u8(255) : alpha[y * width + x]; }
 	bool empty() const { return width == 0 || height == 0; }
 
 };
@@ -67,11 +70,12 @@ struct ImageRegion {
  * #215: the head-tracked world was black, only the HUD was drawn, and no flat check saw it)
  */
 enum class ImageVerdict {
-	Empty,      //!< no picture
-	World,      //!< something with detail is drawn
-	Black,      //!< (almost) every pixel is black: nothing was drawn, or the scene is missing
-	Background, //!< (almost) every pixel is the eye's background color: the eye got no picture
-	Uniform,    //!< one flat color that is neither: a clear color, a fade, a fog wall
+	Empty,       //!< no picture
+	World,       //!< something with detail is drawn
+	Black,       //!< (almost) every pixel is black: nothing was drawn, or the scene is missing
+	Background,  //!< (almost) every pixel is the eye's background color: the eye got no picture
+	Uniform,     //!< one flat color that is neither: a clear color, a fade, a fog wall
+	Transparent, //!< a blended picture with (almost) nothing drawn in the region: the world shows through (#19)
 };
 
 const char * imageVerdictName(ImageVerdict verdict);
@@ -98,6 +102,9 @@ const float UniformStddev = 1.5f;
  * \param background the eye's background color (the color the eyes are cleared to), RGB8
  */
 PixelStats pixelStats(const RgbImage & image, const ImageRegion & region, const u8 background[3]);
+
+//! \return the mean alpha of a region as a fraction 0..1 (1 for a picture without an alpha plane)
+float alphaCoverage(const RgbImage & image, const ImageRegion & region);
 
 //! \return the region of the eye image around where the eye looks straight ahead, \a half of the image each way
 ImageRegion forwardRegion(const MirrorFov & fov, float half);
@@ -138,18 +145,21 @@ ShiftEstimate horizontalShift(const LumaGrid & left, const LumaGrid & right, int
 struct QuadPlacement {
 	Vec3f position = Vec3f(0.f);
 	glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f);
-	float width = 0.f;  //!< meters
-	float height = 0.f; //!< meters
+	float width = 0.f;    //!< meters
+	float height = 0.f;   //!< meters
+	bool blended = false; //!< the layer is blended by its texture's alpha (premultiplied), not opaque
 };
 
 /*!
- * \brief Draw the quad layer's picture over an eye picture as an opaque compositor would
+ * \brief Draw the quad layer's picture over an eye picture as the compositor would
  *
  * Each eye pixel is a ray from the eye through its field of view; where the ray meets the quad,
- * the pixel takes the quad's picture (nearest sample).
+ * the pixel takes the quad's picture (nearest sample) - opaque, or, for a \c blended placement
+ * with an alpha plane, premultiplied over the eye (\c XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT,
+ * the 2D interface over the stereo world, #19).
  *
  * \param eyePosition,eyeOrientation the eye in the head (view) space
- * \return the number of eye pixels the quad covers
+ * \return the number of eye pixels the quad covers (blended: with any alpha at all)
  */
 size_t composeQuad(RgbImage & eye, const MirrorFov & fov, const Vec3f & eyePosition, const glm::quat & eyeOrientation,
                    const RgbImage & quad, const QuadPlacement & placement);

@@ -237,8 +237,13 @@ void DesktopMirror::draw(const Vec2i & windowSize, const MirrorFov & fov, const 
 	glVertex2f(1.f, 1.f);
 	glEnd();
 
-	// The flat frame where the mirrored eye sees the quad
+	// The flat frame where the mirrored eye sees the quad; the 2D interface drawn into it (#19) is
+	// premultiplied by its alpha and shows the eye through where nothing was drawn
 	if(haveFlat) {
+		if(quad.blended) {
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+		}
 		glBindTexture(GL_TEXTURE_2D, m_flatTexture);
 		glBegin(GL_TRIANGLE_STRIP);
 		for(const Corner & corner : corners) {
@@ -246,6 +251,9 @@ void DesktopMirror::draw(const Vec2i & windowSize, const MirrorFov & fov, const 
 			glVertex2f(corner.window.x, corner.window.y);
 		}
 		glEnd();
+		if(quad.blended) {
+			glDisable(GL_BLEND);
+		}
 	}
 
 	glMatrixMode(GL_MODELVIEW);

@@ -47,6 +47,7 @@ class EyeImageTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testQuadBehindTheEyeIsNotDrawn);
 	CPPUNIT_TEST(testQuadAppearsRightOfTheLeftEyesForward);
 	CPPUNIT_TEST(testComposedEyesHaveAPositiveShift);
+	CPPUNIT_TEST(testBlendedQuadShowsTheEyeThrough);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -65,6 +66,7 @@ public:
 	void testQuadBehindTheEyeIsNotDrawn();
 	void testQuadAppearsRightOfTheLeftEyesForward();
 	void testComposedEyesHaveAPositiveShift();
+	void testBlendedQuadShowsTheEyeThrough();
 
 };
 

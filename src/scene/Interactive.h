@@ -148,6 +148,13 @@ Entity * InterClick(const Vec2s & pos);
  
 void UpdateInter();
 void RenderInter();
+
+/*!
+ * While true, RenderInter() projects every animated entity's vertices again for the current camera
+ * before drawing it: UpdateInter() projected them once with the frame's head camera, and a view
+ * with another camera (an eye in VR, #19) draws them where that camera sees them.
+ */
+extern bool g_reprojectEntitiesPerView;
 void SetWeapon_On(Entity * io);
  
 void Prepare_SetWeapon(Entity * io, const res::path & temp);

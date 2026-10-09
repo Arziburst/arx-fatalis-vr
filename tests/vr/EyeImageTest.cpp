@@ -220,3 +220,50 @@ void EyeImageTest::testComposedEyesHaveAPositiveShift() {
 	CPPUNIT_ASSERT(shift.cells > 0);
 	CPPUNIT_ASSERT(vr::horizontalShift(r, l, 40).cells < 0);
 }
+
+void EyeImageTest::testBlendedQuadShowsTheEyeThrough() {
+
+	// The 2D interface on the quad (#19): premultiplied color with coverage in the alpha plane - a
+	// transparent middle leaves the eye as it is, an opaque pixel replaces it, a half-covered one mixes
+	vr::RgbImage quad = filledImage(16, 9, 200, 10, 10);
+	quad.alpha.assign(16 * 9, 0);
+	quad.alpha[4 * 16 + 2] = 255;                  // one opaque pixel, lower left of the middle
+	quad.alpha[4 * 16 + 13] = 128;                 // one half-covered pixel, right of the middle
+	for(size_t c = 0; c < 3; c++) {
+		quad.at(13, 4)[c] = u8(quad.at(13, 4)[c] / 2); // premultiplied by its alpha
+	}
+	vr::QuadPlacement blended = flatFrameQuad();
+	blended.blended = true;
+	vr::MirrorFov symmetric = imageFov(-0.8f, 0.8f, 0.8f, -0.8f);
+
+	vr::RgbImage eye = filledImage(100, 100, 38, 38, 38);
+	size_t covered = vr::composeQuad(eye, symmetric, Vec3f(0.f), ImageAhead, quad, blended);
+	CPPUNIT_ASSERT(covered > 0);
+	// The middle of the eye still shows the eye, not the quad's red
+	CPPUNIT_ASSERT_EQUAL(38, int(eye.at(50, 50)[0]));
+	// Somewhere left of the middle the opaque pixel replaced the eye; right of it the half pixel mixed
+	bool opaque = false, mixed = false;
+	for(size_t y = 0; y < 100; y++) {
+		for(size_t x = 0; x < 100; x++) {
+			const u8 * p = eye.at(x, y);
+			if(p[0] == 200 && p[1] == 10) {
+				opaque = true;
+			}
+			if(p[0] == 100 + 19 && p[1] == 5 + 19) {
+				mixed = true;
+			}
+		}
+	}
+	CPPUNIT_ASSERT(opaque);
+	CPPUNIT_ASSERT(mixed);
+
+	// The same quad drawn opaque paints the eye's middle red: the flag is what the compositor honours
+	vr::RgbImage opaqueEye = filledImage(100, 100, 38, 38, 38);
+	vr::composeQuad(opaqueEye, symmetric, Vec3f(0.f), ImageAhead, quad, flatFrameQuad());
+	CPPUNIT_ASSERT_EQUAL(200, int(opaqueEye.at(50, 50)[0]));
+
+	// Coverage: the quad is almost all transparent; a picture without an alpha plane is opaque
+	CPPUNIT_ASSERT(vr::alphaCoverage(quad, vr::ImageRegion()) < 0.02f);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.f, vr::alphaCoverage(eye, vr::ImageRegion()), 1e-6);
+	CPPUNIT_ASSERT_EQUAL(std::string("transparent"), std::string(vr::imageVerdictName(vr::ImageVerdict::Transparent)));
+}

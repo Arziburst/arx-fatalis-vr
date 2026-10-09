@@ -1973,29 +1973,37 @@ void UpdateInter() {
 	
 }
 
+bool g_reprojectEntitiesPerView = false;
+
 void RenderInter() {
-	
+
 	ARX_PROFILE_FUNC();
-	
+
 	UseTextureState textureState(TextureStage::FilterLinear, TextureStage::WrapClamp);
-	
+
 	for(Entity & entity : entities.inScene()) {
-		
+
 		if(!(entity.gameFlags & GFLAG_ISINTREATZONE)
 		   || (entity.ioflags & (IO_CAMERA | IO_MARKER))
 		   || entity == *entities.player()) {
 			continue;
 		}
-		
+
 		float invisibility = Cedric_GetInvisibility(&entity);
-		
+
 		if(entity.animlayer[0].cur_anim) {
-			
+
 			Vec3f pos = entity.pos;
 			if(entity.ioflags & IO_NPC) {
 				pos.y = entity._npcdata->vvpos;
 			}
-			
+
+			if(g_reprojectEntitiesPerView && entity.obj) {
+				// The world positions are the update's; the screen positions follow this view's
+				// camera (an eye, #19). bbox2D stays the head camera's for picking.
+				DrawEERIEInter_ViewProjectTransform(entity.obj);
+			}
+
 			EERIEDrawAnimQuatRender(entity.obj, pos, &entity, invisibility);
 			
 		} else {

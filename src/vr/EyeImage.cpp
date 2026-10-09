@@ -46,8 +46,34 @@ const char * imageVerdictName(ImageVerdict verdict) {
 		case ImageVerdict::Black: return "black";
 		case ImageVerdict::Background: return "background";
 		case ImageVerdict::Uniform: return "uniform";
+		case ImageVerdict::Transparent: return "transparent";
 	}
 	return "empty";
+}
+
+float alphaCoverage(const RgbImage & image, const ImageRegion & region) {
+
+	if(image.empty()) {
+		return 0.f;
+	}
+	if(image.alpha.empty()) {
+		return 1.f;
+	}
+
+	const size_t x0 = toPixel(region.x0, image.width), x1 = toPixel(region.x1, image.width);
+	const size_t y0 = toPixel(region.y0, image.height), y1 = toPixel(region.y1, image.height);
+	if(x1 <= x0 || y1 <= y0) {
+		return 0.f;
+	}
+
+	double sum = 0.0;
+	for(size_t y = y0; y < y1; y++) {
+		for(size_t x = x0; x < x1; x++) {
+			sum += double(image.alphaAt(x, y));
+		}
+	}
+
+	return float(sum / (255.0 * double((x1 - x0) * (y1 - y0))));
 }
 
 PixelStats pixelStats(const RgbImage & image, const ImageRegion & region, const u8 background[3]) {
@@ -234,9 +260,21 @@ size_t composeQuad(RgbImage & eye, const MirrorFov & fov, const Vec3f & eyePosit
 			const size_t qy = std::min(quad.height - 1, size_t(v * float(quad.height)));
 			const u8 * source = quad.at(qx, qy);
 			u8 * target = eye.at(x, y);
-			target[0] = source[0];
-			target[1] = source[1];
-			target[2] = source[2];
+			if(placement.blended) {
+				// Premultiplied source over the eye, as the compositor blends the layer
+				const u8 a = quad.alphaAt(qx, qy);
+				if(a == 0) {
+					continue;
+				}
+				const float keep = 1.f - float(a) / 255.f;
+				for(size_t c = 0; c < 3; c++) {
+					target[c] = u8(std::min(255, int(source[c]) + int(std::lround(float(target[c]) * keep))));
+				}
+			} else {
+				target[0] = source[0];
+				target[1] = source[1];
+				target[2] = source[2];
+			}
 			covered++;
 		}
 	}

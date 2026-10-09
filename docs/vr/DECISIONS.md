@@ -20,7 +20,8 @@ a changed decision keeps its history in that cell.
 - The head **30 cm** below the calibrated reference (recenter + auto-raise, D-031) crouches the character
   (`PLAYER_CROUCH`, next to the crouch button and toggle); it stands again once the head is back above
   **20 cm** below. A recenter measures from where the head is, so it stands; a headset that is not worn
-  (taken off, put on the desk, D-031) never crouches. A seated player leaning forward
+  (taken off, put on the desk, D-031) never crouches, nor does one while a settled reference is still
+  pending (put on again seated: the old reference is the standing head). A seated player leaning forward
   that far crouches too — accepted. `cfg.ini` [video]: `vr_physical_crouch`, `vr_crouch_enter`,
   `vr_crouch_exit` (settings screen #178). Getting up under a low ceiling stays the game's own rule.
 - **Camera:** the engine's crouch lowers the character's eye by its animation (the drop from the last

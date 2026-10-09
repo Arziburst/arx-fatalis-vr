@@ -243,11 +243,12 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 	// Physical crouch (#100, D-018): the head far enough below the calibrated eye crouches the character, back
 	// up past the exit depth it stands (the game keeps it crouched under a low ceiling). A held pose keeps the
 	// state; a new reference measures from the head where it is now, so a recenter stands up. A headset taken
-	// off and put down on the desk is not a crouching player
+	// off and put down on the desk is not a crouching player, nor is one who put it on again seated while the
+	// new reference is still settling (the old one is from the standing head)
 	status.crouchDepth = status.reference.position.y - head.position.y;
 	if(std::strcmp(source, "held") != 0) {
 		CrouchParams params;
-		params.enabled = config.video.vrPhysicalCrouch && worn;
+		params.enabled = config.video.vrPhysicalCrouch && worn && !status.pending;
 		params.enterMeters = config.video.vrCrouchEnter;
 		params.exitMeters = config.video.vrCrouchExit;
 		const bool crouch = updatePhysicalCrouch(status.crouch, status.crouchDepth, params);

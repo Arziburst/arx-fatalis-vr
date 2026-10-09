@@ -63,24 +63,49 @@ function Find-SteamVrStartup {
 	if (Test-Path $exe) { $exe } else { $null }
 }
 
-# Start SteamVR and wait until vrserver.exe and vrcompositor.exe run, plus -SettleSec for the OpenXR
-# runtime to be ready. The owner's path only (-StartSteamVR): a worker never calls this (D-014).
-function Start-SteamVr([int]$TimeoutSec = 90, [int]$SettleSec = 15) {
-	if (Test-SteamVrRunning) { return }
-	$exe = Find-SteamVrStartup
-	if (-not $exe) { throw 'SteamVR (Steam app 250820) was not found in any Steam library - start it by hand' }
-	Write-Host "==> Starting SteamVR on -StartSteamVR: $exe" -ForegroundColor Yellow
-	Start-Process -FilePath $exe | Out-Null
-	$deadline = (Get-Date).AddSeconds($TimeoutSec)
+# Wait until vrserver.exe and vrcompositor.exe both run: $true, or $false when $Sec ran out
+function Wait-SteamVrUp([int]$Sec) {
+	$deadline = (Get-Date).AddSeconds($Sec)
 	while ((Get-Date) -lt $deadline) {
-		if ((Test-SteamVrRunning) -and (Get-Process vrcompositor -ErrorAction SilentlyContinue)) {
-			Write-Host "    vrserver and vrcompositor are up; settling $SettleSec s"
-			Start-Sleep -Seconds $SettleSec
-			return
-		}
+		if ((Test-SteamVrRunning) -and (Get-Process vrcompositor -ErrorAction SilentlyContinue)) { return $true }
 		Start-Sleep -Milliseconds 500
 	}
-	throw "SteamVR did not come up within $TimeoutSec s (vrserver.exe / vrcompositor.exe not running)"
+	return $false
+}
+
+# Start SteamVR and wait until vrserver.exe and vrcompositor.exe run, plus -SettleSec for the OpenXR
+# runtime to be ready. The owner's path only (-StartSteamVR): a worker never calls this (D-014).
+# SteamVR is started explicitly, never left to the game's OpenXR call (#171: that did not bring it up and
+# the game started flat). First through Steam (steam://rungameid/250820 - it starts Steam too, the way the
+# owner starts SteamVR by hand); when SteamVR is not up after half the timeout, through SteamVR's own
+# vrstartup.exe.
+function Start-SteamVr([int]$TimeoutSec = 120, [int]$SettleSec = 15) {
+	if (Test-SteamVrRunning) { return }
+	$half = [Math]::Max(10, [int]($TimeoutSec / 2))
+	Write-Host '==> Starting SteamVR on -StartSteamVR: steam://rungameid/250820' -ForegroundColor Yellow
+	$up = $false
+	try {
+		Start-Process -FilePath 'steam://rungameid/250820' | Out-Null
+		$up = Wait-SteamVrUp $half
+	} catch {
+		Write-Host "    could not open the Steam URL: $($_.Exception.Message)" -ForegroundColor Yellow
+	}
+	if (-not $up) {
+		$exe = Find-SteamVrStartup
+		if ($exe) {
+			Write-Host "    SteamVR is not up after $half s - starting it with its own launcher: $exe" -ForegroundColor Yellow
+			Start-Process -FilePath $exe | Out-Null
+		} else {
+			Write-Host '    no SteamVR launcher to fall back on (Steam app 250820 is not in any Steam library); waiting on' -ForegroundColor Yellow
+		}
+		$up = Wait-SteamVrUp ($TimeoutSec - $half)
+	}
+	if (-not $up) {
+		$state = "vrserver.exe $(if (Test-SteamVrRunning) { 'runs' } else { 'does not run' }), vrcompositor.exe $(if (Get-Process vrcompositor -ErrorAction SilentlyContinue) { 'runs' } else { 'does not run' })"
+		throw "SteamVR did not come up within $TimeoutSec s ($state). Start it by hand (Steam > Library > SteamVR; check that the headset is connected and the base stations are on), then run again."
+	}
+	Write-Host "    vrserver and vrcompositor are up; settling $SettleSec s"
+	Start-Sleep -Seconds $SettleSec
 }
 
 # Decide whether a launch may run in VR. Returns Vr (bool), Args (the arx.exe arguments to use) and

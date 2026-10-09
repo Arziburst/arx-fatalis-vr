@@ -31,6 +31,11 @@
 .PARAMETER StartSteamVR
 	Start SteamVR when it is not running, then launch in VR (the owner's switch - it turns the headset on).
 
+.PARAMETER Branch
+	The PR's branch, when even git cannot reach GitHub: the local branch (or origin/<branch>) is tested as it is,
+	without asking GitHub anything. Normally not needed: when the GitHub API does not answer (rate limit, no
+	network), the script resolves the PR with `git ls-remote` and the local worktree by itself and says so (#171).
+
 .PARAMETER Isolated
 	Launch with the worktree's isolated user directory instead of the owner's saves
 	(run-windows.ps1 -Isolated); add -Saves to copy saves into it.
@@ -54,6 +59,7 @@ param(
 	[switch]$Rebuild,
 	[switch]$NoLaunch,
 	[switch]$StartSteamVR,
+	[string]$Branch,
 	[switch]$Isolated,
 	[string[]]$Saves,
 	[ValidateSet('Release', 'RelWithDebInfo', 'Debug')] [string]$Config = 'Release',
@@ -70,13 +76,44 @@ function Short([string]$Sha) { if ($Sha -and $Sha.Length -gt 9) { $Sha.Substring
 # --- The pull request --------------------------------------------------------------------------------
 # ($pull, not $pr: PowerShell variable names ignore case, and $Pr is the [int] parameter)
 
-$pull = Get-GhPull $Pr # REST (github-lib.ps1, #186)
+# The headset test must not depend on the GitHub API (#171: the shared quota ran out and the owner could not
+# test a PR whose worktree and build were on disk). When the API does not answer, the PR is resolved with git
+# alone: `git ls-remote` reads refs/pull/<n>/head over the git protocol (no API quota), and the branch is the
+# one whose tip is that commit. -Branch skips even that (no network at all: the local branch is tested as it is).
+function Resolve-PullWithoutGitHub([int]$Number, [string]$Why) {
+	Write-Host "    GitHub did not answer ($Why) - resolving PR #$Number with git and the local worktree" -ForegroundColor Yellow
+	$sha = $null
+	$lines = @(git ls-remote origin "refs/pull/$Number/head" 2>$null)
+	if ($lines -and "$($lines[0])" -match '^([0-9a-f]{40})\s') { $sha = $Matches[1] }
+	if (-not $sha) { throw "cannot resolve PR #${Number}: GitHub is unreachable ($Why) and so is the git remote. Pass the PR's branch: -Branch ARXVR-<issue>-<type>-<name> (the local branch is tested as it is)." }
+	git fetch -q origin 2>$null | Out-Null
+	$names = @(git for-each-ref --points-at $sha --format '%(refname:short)' refs/remotes/origin 2>$null |
+		ForEach-Object { $_ -replace '^origin/', '' } | Where-Object { $_ -match '^ARXVR-\d+-' })
+	if ($names.Count -ne 1) { throw "cannot resolve PR #$Number offline: head $(Short $sha) is the tip of $($names.Count) ARXVR branches on origin ($($names -join ', ')) - pass -Branch" }
+	[pscustomobject]@{ number = $Number; title = '(GitHub unavailable)'; url = "https://github.com/$Repo/pull/$Number"; body = ''; state = 'UNKNOWN'
+		headRefName = $names[0]; headRefOid = $sha; labels = @(); offline = $true }
+}
+
+if ($Branch) {
+	$tip = (git rev-parse --verify -q "origin/$Branch" 2>$null)
+	if (-not $tip) { $tip = (git rev-parse --verify -q $Branch 2>$null) }
+	if ($LASTEXITCODE -ne 0 -or -not $tip) { throw "no branch '$Branch' here (neither origin/$Branch nor a local one)" }
+	Write-Host '    -Branch given: not asking GitHub' -ForegroundColor Yellow
+	$pull = [pscustomobject]@{ number = $Pr; title = '(GitHub not asked)'; url = "https://github.com/$Repo/pull/$Pr"; body = ''; state = 'UNKNOWN'
+		headRefName = $Branch; headRefOid = "$tip".Trim(); labels = @(); offline = $true }
+} else {
+	try {
+		$pull = Get-GhPull $Pr # REST (github-lib.ps1, #186)
+	} catch {
+		$pull = Resolve-PullWithoutGitHub $Pr (($_.Exception.Message -split "`n" | Select-Object -First 1))
+	}
+}
 $branch = $pull.headRefName
 $labels = @($pull.labels.name)
 
 Write-Host "==> PR #$($pull.number) $($pull.title)" -ForegroundColor Cyan
 Write-Host "    $($pull.url)  [$($pull.state.ToLower())$(if ($labels) { ', ' + ($labels -join ', ') })]  branch $branch @ $(Short $pull.headRefOid)"
-if ($pull.state -ne 'OPEN') { Write-Host "    note: this PR is $($pull.state.ToLower())" -ForegroundColor Yellow }
+if ($pull.state -notin 'OPEN', 'UNKNOWN') { Write-Host "    note: this PR is $($pull.state.ToLower())" -ForegroundColor Yellow }
 
 # --- The worktree of its branch -------------------------------------------------------------------
 
@@ -123,7 +160,9 @@ if ($reason) {
 $how = [regex]::Match([string]$pull.body, '(?ms)^#{2,}\s*How to test\s*\r?\n(.*?)(?=^#{2,}\s|\z)').Groups[1].Value.Trim()
 Write-Host ''
 Write-Host '==> How to test (from the PR)' -ForegroundColor Cyan
-if ($how) { $how -split '\r?\n' | ForEach-Object { Write-Host "    $_" } } else { Write-Host '    (the PR has no "How to test" section)' -ForegroundColor Yellow }
+if ($how) { $how -split '\r?\n' | ForEach-Object { Write-Host "    $_" } }
+elseif ($pull.offline) { Write-Host "    (GitHub unavailable - read the PR's How to test at $($pull.url))" -ForegroundColor Yellow }
+else { Write-Host '    (the PR has no "How to test" section)' -ForegroundColor Yellow }
 Write-Host ''
 Write-Host "==> Build id: $(Short $head)$(if ($dirty) { ' + uncommitted changes' }) ($branch) - quote it in the verdict" -ForegroundColor Cyan
 

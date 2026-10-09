@@ -311,7 +311,10 @@ Helper scripts used by the commands:
 - `scripts/dev/new-worktree.ps1 -Issue <n> -Type <type> -Name <name>` — a worker's own working copy
   (a git worktree from `origin/main`, outside OneDrive); `-Remove` once the task is merged
 - `scripts/dev/test-pr.ps1 <pr>` — the owner's test station: the PR's worktree, built if needed, its
-  *How to test*, the build id, launch
+  *How to test*, the build id, launch. Needs no GitHub API (#171): when it does not answer (rate limit, no
+  network) the PR is resolved with `git ls-remote` + the local worktree (`-Branch` skips even that), and
+  `-StartSteamVR` (the owner's switch) starts SteamVR explicitly — Steam URL, then `vrstartup.exe` — and waits for
+  `vrserver` + `vrcompositor` before the game starts in VR
 - `scripts/dev/cycle-report.ps1` — the coordinator's report: PRs, board, leftovers, worktrees, next task
 
 ## Task lifecycle

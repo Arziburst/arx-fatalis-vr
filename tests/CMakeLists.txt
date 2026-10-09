@@ -64,6 +64,9 @@ set(arxtest_TESTCASES
 	tests/vr/VRGameInputTest.h
 	tests/vr/VRGameInputTest.cpp
 
+	tests/vr/VRTurnTest.h
+	tests/vr/VRTurnTest.cpp
+
 	tests/vr/EyeImageTest.h
 	tests/vr/EyeImageTest.cpp
 	tests/vr/SimRigTest.h
@@ -98,6 +101,7 @@ set(arxtest_SOURCES
 	src/vr/HeadReferenceGate.cpp
 	src/vr/VRControls.cpp
 	src/vr/VRGameInput.cpp
+	src/vr/VRTurn.cpp
 	src/vr/EyeImage.cpp
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp

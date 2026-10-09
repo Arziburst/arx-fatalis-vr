@@ -26,6 +26,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "math/Types.h"
+#include "vr/WorldScale.h"
 
 /*!
  * \file
@@ -108,7 +109,7 @@ struct EyeRig {
 
 //! How the located eyes become game-unit offsets
 struct EyeRigParams {
-	float unitsPerMeter = 100.f; //!< world scale, interim until #27 calibrates it (HeadCameraParams agrees)
+	float unitsPerMeter = UnitsPerMeter; //!< world scale (WorldScale.h), the same as the head's
 };
 
 //! \return the rig of both eyes (left, right) for one located frame

@@ -10,6 +10,37 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-031: The head reference comes from a worn headset; one world scale of 100 units per meter
+
+- **Date:** 2026-10-09
+- **Status:** Accepted (implements the height model of D-018 / D-028 together with #28)
+- **Decided by:** worker of #27 (technical, within D-018; agreed with the coordinator)
+
+### Decision
+- **Worn = the session is `visible` or `focused`.** An idle headset on the desk keeps the session
+  `synchronized` (measured, TESTING.md), so a reference taken then is only **provisional**. When the
+  headset is **put on**, the **settled** reference is taken once the head has stayed within 3 cm for 0.5 s
+  (at most 3 s after putting it on); taking it off and putting it on again takes a new one — the
+  standing or seated head of whoever wears it now. A reset while it is worn (level load, recenter) is
+  settled at once (one reference, so a head that turns meanwhile never turns the view twice).
+- **Auto-raise** (D-028) is part of the head math: a head above the reference lifts the reference's height.
+- **World scale: 1 m = 100 game units**, one constant (`src/vr/WorldScale.h`) for the head offset, the
+  eye offsets and the near plane. The engine is in centimeters: its audio listener uses 0.01 m per unit,
+  the player's collision cylinder is 170 units, and the character's eye is 170 units above its feet.
+
+### Why
+The owner's #24 headset run: "the camera is much higher than the body". The owner's logs show the save
+loading with the headset idle (`synchronized`) and the headset put on 50–80 s later; the reference came
+from the desk, ~0.8 m below the worn head.
+
+### Consequences
+`status.json` → `vr.head`: `referenceKind`, `pending`, `worn`, `refY`, `raised`, `refAboveFloor` /
+`aboveFloor` (meters above the STAGE floor, -1 without one), `eyeAboveFeet`; `camera.eyeAboveFeet`. The
+simulated headset gets `session idle` (headset off). Real-height calibration and a height offset stay
+post-MVP (#101).
+
+---
+
 ## D-030: The interface has its own resolution in VR — the headset's pixel density, not the window's
 
 - **Date:** 2026-10-09
@@ -53,6 +84,17 @@ interface in VR.
 - **Panel (#49):** menus, inventory and book open on a **flat panel ~0.8–1 m in front of the player at
   chest height**, placed where the player looks when it opens, then **fixed in the world** (it does not
   follow the head). Fits D-016 (inventory in the centre of the view).
+  The numbers and rules of #49 (confirmed by the coordinator within this envelope, 2026-10-10):
+  **0.9 m** ahead, its centre **0.3 m below the eyes**, **1 m wide** (the height follows the interface's
+  aspect), **turned to face the eyes** (about 18° back); placed on the head's **heading only** (looking down
+  when it opens does not put it on the floor); "fixed in the world" = **fixed in the play space** — it does
+  not follow the head, while the player's own stick walking and turning carry it along; placed anew when a
+  menu opens after **more than 250 ms** closed (inventory → book keeps it) and on a **recenter**. A menu is
+  the engine's state (F-82): main / pause menu, character creation, credits, a note, the book, a container,
+  the inventory — not loading screens or cinematics. With no menu open the HUD stays on the head-locked
+  quad until #116. Distance, drop and width are cfg.ini settings (`vr_panel_distance`, `vr_panel_drop`,
+  `vr_panel_width`; F-180). The panel is a compositor quad layer, always on top: never swallowed by walls
+  (F-179), but it covers the hands until #36 / #37 decide.
 - **Health and mana (#116):** **two vertical bars, red and blue, on the inner side of the left wrist**,
   read by raising the hand to the face like a watch.
 - **Hand reticle (#37):** a **small dot / ring where the hand points**, no ray (D-010); it **brightens over
@@ -94,7 +136,7 @@ replace a seated mode the player would have to choose.
 - **Decided by:** project owner (recorded by #231)
 
 ### Decision
-- **No pacing:** every task that can run, runs, until the weekly 80% or the 5-hour 95% cap stops it;
+- **No pacing:** every task that can run, runs, until the weekly 90% or the 5-hour 95% cap stops it;
   work is not stretched until a limit resets. The coordinator is blocked only by a headset test or the
   limits, finds more work itself when few tasks run, and asks UX questions (D-017) ahead of time.
   Owner: "ты не должен растягивать задачи до сброса лимитов… сделать максимальное количество работы,
@@ -294,7 +336,7 @@ without a headset session (F-07).
 - **Decided by:** project owner
 
 ### Decision
-- **Weekly limit: up to 80%** (was 70%; 20% stay for the owner's other project). At 80% no new workers; running ones finish.
+- **Weekly limit: up to 90%** (was 70%, then 80%; raised to 90% by the owner on 2026-10-10: "повышай недельную планку до 90%", #256; 10% stay for the owner's other project). At 90% no new workers; running ones finish.
 - **Five-hour limit: up to 95%.** At 95% the coordinator stops the non-Fable workers, waits for the reset
   and resumes them; the last 5% are for the coordinator to keep watching. Fable workers go on.
 - **Going over a limit only with the owner's explicit permission**, given for that occasion; without it the coordinator stops at the limits above and reports.
@@ -311,11 +353,11 @@ without a headset session (F-07).
 - **Worker count from measured usage (#217):** the coordinator plans the number of workers from data, not guesses -
   `scripts\dev\usage-plan.ps1` (samples of both limits and of every session's cost, the calibration "% of a limit per dollar",
   the cost of finished tasks per model / effort / size, a forecast for the READY tasks). Run every cycle and before starting a worker; it
-  names the binding limit and the number of workers that keeps the week at <= 80% by its reset and the 5-hour window < 95%.
+  names the binding limit and the number of workers that keeps the week at <= 90% by its reset and the 5-hour window < 95%.
   The coordinator starts no more than it recommends; one line of its output goes to the status page (#193).
 - **Autopilot (owner, 2026-10-10):** the coordinator runs the work on its own while the limits last. It reads the limits and
   `usage-plan.ps1` on a timer (about every 30 minutes) and before starting a worker, starts every unblocked task the budget
-  allows with a sensible model / effort, loads a 5-hour window that has headroom before its reset, but paces the week to <= 80%
+  allows with a sensible model / effort, loads a 5-hour window that has headroom before its reset, but paces the week to <= 90%
   at its reset. The owner's part is only VR tests, opinions and decisions on how things look and work (D-017).
   Owner: "сам определял расходы, сколько есть, кого можем запустить… от меня только тестирование и моё мнение… ты идёшь вперёд, пока есть лимиты".
 ### Why
@@ -464,6 +506,18 @@ RESEARCH-reference-mods.md 13g with these answers); #49 the centred panel for th
 - **Player height:** at recenter the player's **standing head is mapped to the character's eye height**,
   so tall and short players see the world from the character's eyes and doors and tables keep their size.
   Seated play: recentering while seated does the same (#28).
+- **Calibration, auto-raise and crouch — the height model** *(owner, 2026-10-10, for #28; like other VR
+  games)*:
+  - **Recenter is the calibration** (a long press of the left stick click, D-019; in menus too): the
+    headset's current height becomes the character's eye height and where the player looks becomes the
+    character's facing. It works the same seated or standing — **there is no seated / standing setting**.
+  - **Auto-raise:** a headset that rises above the calibrated eye height (calibrated seated, then stood
+    up) takes the calibration up with it at once — the camera is **never above the character's eyes**
+    (#27).
+  - **Going down is not followed:** after sitting down again the player recalibrates. Below the eye height
+    the physical crouch applies (#100): the character crouches when the head is **~30 cm below** the
+    calibrated eye height and stands up again at **~20 cm** (hysteresis); leaning forward far enough while
+    seated also crouches (accepted). The crouch toggle on the right stick (D-019) works either way.
 
 ### Why
 Immersion: real crouching, leaning and stepping are what make VR feel physical; the owner tried the
@@ -738,6 +792,19 @@ sees **their whole body**, not floating hands:
 **In the MVP, before combat** (checkpoint B). Replaces the earlier plan of placeholder hands and
 hidden first-person arms (#36, #75). Hand-back to engine animations (death, ladders — F-53) is after
 the MVP.
+
+**How the body follows the head (#25, 2026-10-09, the coordinator for the owner — the F-52 defaults;
+the owner judges them in the headset once #36 shows the body).** Yaw only; the body following the head's
+*position* with collision is #26 (D-018).
+- The body's yaw is kept relative to the **heading** — the yaw the stick and the mouse turn
+  (`player.angle`) — so a snap or smooth turn turns head and body together.
+- A head more than **25°** from the body drags the body along at once, so the gap never exceeds 25°.
+- Inside 25° the body relaxes toward the head and **settles in ~1.5 s** (exponential, 5% of the gap left):
+  a glance barely moves it, looking somewhere for a while turns it there.
+- A new head reference (recenter, level load, a new session) faces the body forward at once.
+- The player model faces the body; the camera stays on the head — the body turning never moves it.
+- The values are named constants (`BodyFollowParams`, `src/vr/BodyYaw.h`), so the VR settings (#178)
+  can expose them. F-168 (OpenMW VR locks the body to the head) is the warning against the simpler way.
 
 ### Why
 The owner wants the game to feel like VHVR, which shows the full body; Arx has the model and

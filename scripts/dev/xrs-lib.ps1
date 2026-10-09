@@ -20,7 +20,7 @@
 #   @assert <path> <op> <v>        status.json, read fresh now. path: dotted, "quoted" where a key holds a dot
 #                                  (events.byName."spell.cast"); op: eq ne gt ge lt le
 #   @remember <name> <path>        keep a status.json value; a later @assert / @until value can be {name} or {name+5} / {name-5}
-#                                  (the yaw before a turn, the position before a walk)
+#                                  / {name*0.9} (the yaw before a turn, the position before a walk; *: relative)
 #   @mark                          forget the arx.log written so far: @log and @nolog only look at what the
 #                                  game wrote after the last mark (the start of the sequence is the first mark)
 #   @log <regex> [<n>s]            wait up to n seconds (default 5) for a log line since the mark to match; a
@@ -177,16 +177,17 @@ function Test-XrsCondition($Actual, [string]$Op, [string]$Expected) {
 	}
 }
 
-# {name} and {name+5} / {name-5} in a value: what @remember kept, with a number added
+# {name} and {name+5} / {name-5} / {name*0.9} in a value: what @remember kept, with a number added or
+# multiplied by one (a relative threshold: "at least 10 % less" is {name*0.9})
 function Expand-XrsValue($Context, [string]$Value) {
-	[regex]::Replace($Value, '\{(\w+)(?:([+-])([\d.]+))?\}', {
+	[regex]::Replace($Value, '\{(\w+)(?:([-+*])([\d.]+))?\}', {
 		param($m)
 		if (-not $Context.Vars.ContainsKey($m.Groups[1].Value)) { throw "no remembered value '$($m.Groups[1].Value)' - an @remember must come first" }
 		$v = $Context.Vars[$m.Groups[1].Value]
 		if (-not $m.Groups[2].Success) { return Format-XrsValue $v }
 		$d = [double]::Parse($m.Groups[3].Value, [Globalization.CultureInfo]::InvariantCulture)
-		if ($m.Groups[2].Value -eq '-') { $d = -$d }
-		return ([double]$v + $d).ToString('0.####', [Globalization.CultureInfo]::InvariantCulture)
+		$result = switch ($m.Groups[2].Value) { '*' { [double]$v * $d } '-' { [double]$v - $d } default { [double]$v + $d } }
+		return $result.ToString('0.####', [Globalization.CultureInfo]::InvariantCulture)
 	})
 }
 

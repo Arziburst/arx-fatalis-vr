@@ -74,6 +74,7 @@
 #include "vr/VRInput.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
+#include "vr/WorldScale.h"
 #include "window/RenderWindow.h"
 
 extern bool START_NEW_QUEST;
@@ -457,6 +458,10 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("y", player.pos.y);
 		json.value("z", player.pos.z);
 		json.value("yaw", player.angle.getYaw());
+		// Where the player model faces, in the same terms as yaw (#25: the body yaw in VR, yaw in flat mode)
+		if(entities.player()) {
+			json.value("modelYaw", MAKEANGLE(180.f - entities.player()->angle.getYaw()));
+		}
 		json.value("life", player.lifePool.current);
 		json.value("lifeMax", player.lifePool.max);
 		json.value("mana", player.manaPool.current);
@@ -481,6 +486,9 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("roll", g_playerCamera.angle.getRoll());
 		json.value("fov", glm::degrees(g_playerCamera.fov()));
 		json.value("bob", glm::distance(g_playerCamera.m_pos, g_playerCameraStablePos));
+		// Where the view is above the character's feet (game units, y down): the character's eye in flat
+		// mode; in VR the eye plus the head's movement since its reference (#27)
+		json.value("eyeAboveFeet", player.basePosition().y - g_playerCameraStablePos.y);
 		json.value("shake", quakeAmplitude());
 		json.end();
 		// Spells by type: active now, and launched since the level was loaded - the evidence that a spellcast
@@ -595,6 +603,25 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("eye", mirror.eye);
 	json.value("frames", mirror.frames);
 	json.end();
+	// The floating UI panel (#49): "world" while an open menu's panel is placed, its pose in the LOCAL space
+	{
+		vr::PanelStatus panel = vr::panelStatus();
+		json.object("panel");
+		json.value("mode", panel.mode);
+		json.value("menu", panel.menu);
+		json.value("placements", panel.placements);
+		json.value("lastPlacement", panel.lastPlacement);
+		json.value("x", panel.position.x);
+		json.value("y", panel.position.y);
+		json.value("z", panel.position.z);
+		json.value("yaw", panel.yawDeg);
+		json.value("tilt", panel.tiltDeg);
+		json.value("width", panel.size.x);
+		json.value("height", panel.size.y);
+		json.value("distance", panel.distance);
+		json.value("drop", panel.drop);
+		json.end();
+	}
 	json.value("runtime", vr::runtimeName());
 	json.value("manifest", vr::runtimeManifest());
 	// Head tracking (#24): where the head comes from, its reference and what it does to the camera
@@ -604,7 +631,20 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("source", head.source);
 		json.value("referenced", head.referenced);
 		json.value("references", head.references);
+		json.value("reason", head.reason);
+		json.value("refY", head.reference.position.y);
 		json.value("refYaw", head.reference.yaw);
+		// The reference is the worn, settled head (#27): its kind, whether a new one is still wanted, the
+		// headset worn, the head above the room's floor (meters, -1 without a STAGE space) at the reference
+		// and now, the character's eye above its feet (game units, -1 when the camera is not the player's)
+		json.value("referenceKind", vr::referenceKindName(head.referenceKind));
+		json.value("pending", head.pending);
+		json.value("worn", head.worn);
+		json.value("refAboveFloor", head.referenceAboveFloor);
+		json.value("aboveFloor", head.aboveFloor);
+		json.value("raised", head.raised);
+		json.value("eyeAboveFeet", head.eyeAboveFeet);
+		json.value("unitsPerMeter", vr::UnitsPerMeter);
 		json.value("pitch", head.head.getPitch());
 		json.value("yaw", head.head.getYaw());
 		json.value("roll", head.head.getRoll());
@@ -615,6 +655,13 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("offsetY", head.offset.y);
 		json.value("offsetZ", head.offset.z);
 		json.value("clamped", head.clamped);
+		// The look and the body (#25): where the stick's forward is and where the model faces
+		const vr::BodyStatus & body = vr::bodyStatus();
+		json.value("lookYaw", body.lookYaw);
+		json.value("bodyYaw", body.bodyYaw);
+		json.value("bodyOffset", body.offset);
+		json.value("bodyDragged", body.dragged);
+		json.value("bodyDrags", body.drags);
 		json.end();
 	}
 	{
@@ -880,7 +927,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "recenter") {
-		// The head is measured from its next sample (#24); the button chord for the player is #28
+		// The head is measured from its next sample (#24); the player's is a long press of the left stick (#28)
 		vr::resetHeadReference("channel");
 		return std::string();
 	}

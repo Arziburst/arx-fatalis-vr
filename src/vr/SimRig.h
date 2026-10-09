@@ -62,7 +62,10 @@
  *  - \c profile \c index|touch|simple|none|<path>: the interaction profile of both hands
  *  - \c action \c <name> \c left|right|both \c <value> \c [<y>]: an OpenXR action of the game
  *    (\c trigger, \c grip, \c button_a, \c thumbstick, ... - vr/VRActions.cpp); booleans are 0 / 1
- *  - \c session \c focused|visible: the runtime gives or takes the input focus
+ *  - \c session \c focused|visible: the runtime gives or takes the input focus; \c session \c idle:
+ *    the headset is not worn (lies on the desk) - the session falls back to synchronized, frames are
+ *    timed and the eyes located but nothing is displayed, as on an idle Index (#27); \c focused or
+ *    \c visible puts it on again
  *  - \c shot \c [name]: capture both eyes and the flat frame quad at the next submitted frame
  *  - \c mark \c <text>: a line in arx.log; \c quit: ask the game to quit
  *  - \c fault \c swap-eyes \c on|off: the compositor shows each eye the other eye's image - the
@@ -132,6 +135,7 @@ struct SimRig {
 	//! Action values by OpenXR action name, per hand (x, and y for 2D actions)
 	std::map<std::string, std::array<Vec2f, 2>> actions;
 	bool focused = true;
+	bool worn = true;     //!< false: the headset lies idle, the session stays synchronized (#27)
 	bool swapEyes = false;
 	bool saveLayers = false; //!< shots also save each eye's projection layer alone (#72)
 	SimRig();

@@ -134,6 +134,9 @@ public:
 		int vrFrameDivisor; //!< VR: submit every n-th display slot (the even-cadence cap, #20); 1 = every slot
 		bool vrMirror; //!< VR: the desktop window shows what one eye sees (#21); off = the flat frame
 		int vrMirrorEye; //!< VR: the eye the desktop mirror shows: 0 = left, 1 = right (default, the owner's choice)
+		float vrPanelDistance; //!< VR: the menu panel this far ahead of the head, meters (#49)
+		float vrPanelDrop; //!< VR: the menu panel's centre this far below the eyes, meters (#49)
+		float vrPanelWidth; //!< VR: the menu panel's width, meters (#49)
 
 		float fov;
 		bool viewBobbing;

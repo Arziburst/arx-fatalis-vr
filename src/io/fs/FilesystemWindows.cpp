@@ -284,15 +284,21 @@ bool rename(const path & old_p, const path & new_p, bool overwrite) {
 			return false;
 		}
 		
-		LogWarning << "Failed to move file from " << old_p << " to " << new_p << ": " << error << " = "
-		           << platform::getErrorString(error) << " (try " << tries << ")";
-		
-		if(tries < 10 && (error == ERROR_ACCESS_DENIED || error == ERROR_SHARING_VIOLATION ||
-		                  error == ERROR_LOCK_VIOLATION)) {
+		bool transient = (error == ERROR_ACCESS_DENIED || error == ERROR_SHARING_VIOLATION ||
+		                  error == ERROR_LOCK_VIOLATION);
+
+		// A reader holding the target open (a script sampling status.json) clears within a retry or two:
+		// stay quiet about those, warn only when it lasts or is final
+		if(!transient || tries >= 3) {
+			LogWarning << "Failed to move file from " << old_p << " to " << new_p << ": " << error << " = "
+			           << platform::getErrorString(error) << " (try " << tries << ")";
+		}
+
+		if(tries < 10 && transient) {
 			Sleep(100);
 			continue;
 		}
-		
+
 		return false;
 	}
 	

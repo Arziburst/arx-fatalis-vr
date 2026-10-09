@@ -129,7 +129,9 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "gui/debug/DebugHud.h"
 #include "gui/debug/DebugHudAudio.h"
 #include "gui/debug/DebugHudCulling.h"
+#include "gui/Note.h"
 #include "gui/hud/PlayerInventory.h"
+#include "gui/hud/SecondaryInventory.h"
 
 #include "input/Input.h"
 #include "input/Keyboard.h"
@@ -1236,6 +1238,38 @@ void ArxGame::applyVRPacing() {
 }
 	
 /*!
+ * \brief The menu the player has open, from the engine's own state (research row F-82), or nullptr
+ *
+ * In VR the 2D interface of an open menu is shown on the floating panel (#49): the main and pause
+ * menu (and the screens behind it: character creation, credits), a note, the book (the map is a
+ * page of it), a container and the inventory. Loading screens and cinematics are no menu.
+ */
+static const char * openMenuName() {
+	switch(ARXmenu.mode()) {
+		case Mode_MainMenu:          return "mainmenu";
+		case Mode_CharacterCreation: return "charactercreation";
+		case Mode_Credits:           return "credits";
+		case Mode_InGame:            break;
+	}
+	if(!g_currentArea || !entities.player()) {
+		return nullptr;
+	}
+	if(g_note.isOpen()) {
+		return "note";
+	}
+	if(player.Interface & INTER_PLAYERBOOK) {
+		return "book";
+	}
+	if(g_secondaryInventoryHud.isOpen()) {
+		return "container";
+	}
+	if(player.Interface & (INTER_INVENTORY | INTER_INVENTORYALL)) {
+		return "inventory";
+	}
+	return nullptr;
+}
+
+/*!
  * \brief Draws the scene.
  */
 void ArxGame::doFrame() {
@@ -1275,6 +1309,10 @@ void ArxGame::doFrame() {
 	channel::update();
 
 	updateInput();
+
+	// In VR an open menu goes on the floating panel (#49); the state after this frame's input, the
+	// panel is placed when the frame is submitted
+	vr::setMenuOpen(openMenuName());
 
 	// The interface's virtual screen follows the window, and in VR the quad's own resolution (#73):
 	// entering or leaving a session lays the interface out again like a resized window
@@ -1452,7 +1490,15 @@ void ArxGame::updateFirstPersonCamera() {
 				animateSkeleton(io, animlayer, skeleton);
 				g_playerCameraStablePos = skeleton.bones[viewGroup].anim(io->obj->vertexlocal[viewVertex]);
 			}
-			
+
+			// The model faces the body, the camera the head (#25): the eye vertex turned with the model about
+			// its origin, so take the body's own turn off it again - the body turning never moves the camera
+			const float bodyTurn = vr::bodyStatus().offset;
+			if(bodyTurn != 0.f) {
+				g_playerCamera.m_pos = io->pos + VRotateY(g_playerCamera.m_pos - io->pos, bodyTurn);
+				g_playerCameraStablePos = io->pos + VRotateY(g_playerCameraStablePos - io->pos, bodyTurn);
+			}
+
 			// View bobbing: the camera follows the animated head of the walking model. Off by cfg.ini in
 			// flat mode, always off in VR (#76) - the head-mounted display is the head, so the camera stays
 			// at the stable position of the paused animation
@@ -1690,6 +1736,10 @@ void ArxGame::updateActiveCamera() {
 	// from. restoreEngineCamera() takes it off again before the engine updates its cameras next frame
 	Vec3f enginePos = cam->m_pos;
 	Anglef engineAngle = cam->angle;
+	if(cam == &g_playerCamera && !EXTERNALVIEW) {
+		// The character's eye height, which the head at its reference becomes (#27) - evidence for the scale
+		vr::setCharacterEyeHeight(player.basePosition().y - g_playerCameraStablePos.y);
+	}
 	if(vr::applyHeadPose(cam->m_pos, cam->angle, engineAngle.getYaw())) {
 		m_headView = HeadView{ cam, enginePos, engineAngle };
 		if(cam == &g_playerCamera) {

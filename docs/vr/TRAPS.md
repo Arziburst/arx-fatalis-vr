@@ -8,6 +8,30 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — The headset test cannot start: "could not read PR", or the game starts flat with SteamVR off (#171)
+
+**Symptom:** `test-pr.ps1 <pr> -StartSteamVR` stops at once with `API rate limit already exceeded` /
+`could not read PR #<n>` although the PR's worktree and fresh build are on disk; a hand-made fallback launch
+(`run-windows.ps1` in that worktree) starts the game **flat** and no SteamVR process appears.
+**Cause:** the station read the PR through the GitHub API, whose quota every worker session shares; and nothing
+starts SteamVR on its own — the game's OpenXR call is not a reliable way to bring it up (and D-014 makes the
+scripts add `--no-vr` while `vrserver` is off anyway).
+**Do:** `test-pr.ps1` now falls back to `git ls-remote origin refs/pull/<n>/head` + the local worktree (`-Branch`
+when even git cannot reach GitHub), and `-StartSteamVR` starts SteamVR explicitly (`steam://rungameid/250820`,
+then `vrstartup.exe`) and waits for `vrserver` + `vrcompositor`. Never test the start logic by starting SteamVR as
+a worker: `scripts/dev/test-start-steamvr.ps1` proves it with stubs. A `Get-Process`-style stub for a cmdlet in a
+PowerShell self-test must be a function with `[CmdletBinding()]`, or `-ErrorAction` breaks it.
+
+**Stopping SteamVR (same task):** `CloseMainWindow` on `vrmonitor` plus `Stop-Process` on the rest took the software
+away while the Valve Index stayed on — the drivers never got their own shutdown. SteamVR's status window takes URL
+commands (`vrmonitor.exe` has the `quit` handler of the `vrmonitor://` protocol), so `stop-steamvr.ps1` /
+`test-pr.ps1 -StopSteamVR` send `vrmonitor://quit` — the request behind "Exit SteamVR" — and only wait for the
+processes to leave (60 s); they never kill. Found by reading the strings of `vrmonitor.exe` and the registry entry
+`HKCU\Software\Classes\vrmonitor`, not from documentation (there is none): the headset powering down is confirmed
+by the owner's run only.
+
+---
+
 ## 2026-10-09 — "Blocked [rule]: ..." on a command that looks harmless (the safety hook)
 
 **Symptom:** a Bash / PowerShell / Edit call is refused with `Blocked [push-main|force-push|delete-outside|

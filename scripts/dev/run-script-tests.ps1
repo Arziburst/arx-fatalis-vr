@@ -26,6 +26,7 @@ $tests = @(
 	'test-log-digest.ps1'    # the run digest and the automatic bug filing (#131): fixture logs, a fake GitHub, the command line modes
 	'test-save-library.ps1'  # the test save library (#70): the scenario parser, the verification steps and slot order, Use-ArxSave
 	'test-plan-next.ps1'     # the coordinator's task order (#187): MVP.md parsing and every start rule
+	'test-start-steamvr.ps1' # starting and quitting SteamVR on the owner's switches (#171): stubbed processes and clock, SteamVR is not touched
 )
 # test-*.ps1 files that are libraries or tools, not tests
 $notTests = @(

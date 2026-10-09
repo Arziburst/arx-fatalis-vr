@@ -58,32 +58,104 @@ function Get-ArxWorkingCopyInfo([string]$SourceDir) {
 
 function Test-SteamVrRunning { [bool](Get-Process vrserver -ErrorAction SilentlyContinue) }
 
-# vrstartup.exe of the SteamVR install (Steam app 250820), or $null
-function Find-SteamVrStartup {
+# A tool of the SteamVR install (Steam app 250820), e.g. 'vrstartup.exe', or $null
+function Find-SteamVrBinary([string]$Name) {
 	$dir = Find-SteamAppInstall -AppId 250820
 	if (-not $dir) { return $null }
-	$exe = Join-Path $dir 'bin\win64\vrstartup.exe'
+	$exe = Join-Path $dir "bin\win64\$Name"
 	if (Test-Path $exe) { $exe } else { $null }
+}
+
+# vrstartup.exe of the SteamVR install, or $null
+function Find-SteamVrStartup { Find-SteamVrBinary 'vrstartup.exe' }
+
+# Wait until vrserver.exe and vrcompositor.exe both run: $true, or $false when $Sec ran out
+function Wait-SteamVrUp([int]$Sec) {
+	$deadline = (Get-Date).AddSeconds($Sec)
+	while ((Get-Date) -lt $deadline) {
+		if ((Test-SteamVrRunning) -and (Get-Process vrcompositor -ErrorAction SilentlyContinue)) { return $true }
+		Start-Sleep -Milliseconds 500
+	}
+	return $false
 }
 
 # Start SteamVR and wait until vrserver.exe and vrcompositor.exe run, plus -SettleSec for the OpenXR
 # runtime to be ready. The owner's path only (-StartSteamVR): a worker never calls this (D-014).
-function Start-SteamVr([int]$TimeoutSec = 90, [int]$SettleSec = 15) {
+# SteamVR is started explicitly, never left to the game's OpenXR call (#171: that did not bring it up and
+# the game started flat). First through Steam (steam://rungameid/250820 - it starts Steam too, the way the
+# owner starts SteamVR by hand); when SteamVR is not up after half the timeout, through SteamVR's own
+# vrstartup.exe.
+function Start-SteamVr([int]$TimeoutSec = 120, [int]$SettleSec = 15) {
 	if (Test-SteamVrRunning) { return }
-	$exe = Find-SteamVrStartup
-	if (-not $exe) { throw 'SteamVR (Steam app 250820) was not found in any Steam library - start it by hand' }
-	Write-Host "==> Starting SteamVR on -StartSteamVR: $exe" -ForegroundColor Yellow
-	Start-Process -FilePath $exe | Out-Null
-	$deadline = (Get-Date).AddSeconds($TimeoutSec)
+	$half = [Math]::Max(10, [int]($TimeoutSec / 2))
+	Write-Host '==> Starting SteamVR on -StartSteamVR: steam://rungameid/250820' -ForegroundColor Yellow
+	$up = $false
+	try {
+		Start-Process -FilePath 'steam://rungameid/250820' | Out-Null
+		$up = Wait-SteamVrUp $half
+	} catch {
+		Write-Host "    could not open the Steam URL: $($_.Exception.Message)" -ForegroundColor Yellow
+	}
+	if (-not $up) {
+		$exe = Find-SteamVrStartup
+		if ($exe) {
+			Write-Host "    SteamVR is not up after $half s - starting it with its own launcher: $exe" -ForegroundColor Yellow
+			Start-Process -FilePath $exe | Out-Null
+		} else {
+			Write-Host '    no SteamVR launcher to fall back on (Steam app 250820 is not in any Steam library); waiting on' -ForegroundColor Yellow
+		}
+		$up = Wait-SteamVrUp ($TimeoutSec - $half)
+	}
+	if (-not $up) {
+		$state = "vrserver.exe $(if (Test-SteamVrRunning) { 'runs' } else { 'does not run' }), vrcompositor.exe $(if (Get-Process vrcompositor -ErrorAction SilentlyContinue) { 'runs' } else { 'does not run' })"
+		throw "SteamVR did not come up within $TimeoutSec s ($state). Start it by hand (Steam > Library > SteamVR; check that the headset is connected and the base stations are on), then run again."
+	}
+	Write-Host "    vrserver and vrcompositor are up; settling $SettleSec s"
+	Start-Sleep -Seconds $SettleSec
+}
+
+# The SteamVR processes that make up a running SteamVR (vrwebhelper is left out: it lingers after the exit)
+$script:SteamVrCoreProcesses = @('vrmonitor', 'vrserver', 'vrcompositor', 'vrdashboard', 'vrservice', 'vrstartup')
+function Get-SteamVrCoreProcesses { @(Get-Process -Name $script:SteamVrCoreProcesses -ErrorAction SilentlyContinue) }
+
+# Quit SteamVR the way its own "Exit SteamVR" does, so the headset powers down (#171). SteamVR's status window
+# (vrmonitor.exe) takes URL commands - vrmonitor.exe contains the handler OnVRMonitorURL with the command `quit`
+# (OnQuit), and the vrmonitor:// protocol is registered for it - so `vrmonitor.exe vrmonitor://quit` hands the
+# running instance the same quit request as the menu item: vrmonitor tells the VR apps to quit, shuts the
+# drivers down (the Index display and the controllers go to standby by the drivers' own shutdown), and
+# vrserver exits last. Nothing is killed: stopping vrserver / vrmonitor from outside (CloseMainWindow plus
+# Stop-Process, the first attempt) took the software away while the Index stayed on. When SteamVR does not
+# exit in time the script says which processes remain and leaves them to the owner. The base stations are not
+# touched: SteamVR's own "base station power management" setting decides what they do.
+# The owner's path only (test-pr.ps1 -StopSteamVR, stop-steamvr.ps1): a worker never calls this (D-014).
+function Stop-SteamVr([int]$TimeoutSec = 60, [int]$SettleSec = 3) {
+	$running = Get-SteamVrCoreProcesses
+	if (-not $running) { Write-Host '==> SteamVR is not running - nothing to stop' -ForegroundColor Cyan; return }
+	Write-Host "==> Stopping SteamVR (vrmonitor://quit, SteamVR's own Exit): $((($running | ForEach-Object { $_.Name }) | Sort-Object -Unique) -join ', ')" -ForegroundColor Yellow
+	$exe = Find-SteamVrBinary 'vrmonitor.exe'
+	try {
+		if ($exe) { Start-Process -FilePath $exe -ArgumentList 'vrmonitor://quit' | Out-Null }
+		else { Start-Process -FilePath 'vrmonitor://quit' | Out-Null }
+	} catch {
+		throw "could not send the quit request to SteamVR ($($_.Exception.Message)) - exit it from its own menu (SteamVR status window > menu > Exit SteamVR)"
+	}
+	$started = Get-Date
+	$deadline = $started.AddSeconds($TimeoutSec)
+	$lastReport = $started
 	while ((Get-Date) -lt $deadline) {
-		if ((Test-SteamVrRunning) -and (Get-Process vrcompositor -ErrorAction SilentlyContinue)) {
-			Write-Host "    vrserver and vrcompositor are up; settling $SettleSec s"
+		$running = Get-SteamVrCoreProcesses
+		if (-not $running) {
+			Write-Host "    SteamVR exited after $([int]((Get-Date) - $started).TotalSeconds) s; settling $SettleSec s for the headset to power down"
 			Start-Sleep -Seconds $SettleSec
 			return
 		}
+		if (((Get-Date) - $lastReport).TotalSeconds -ge 10) {
+			Write-Host "    still running: $((($running | ForEach-Object { $_.Name }) | Sort-Object -Unique) -join ', ')"
+			$lastReport = Get-Date
+		}
 		Start-Sleep -Milliseconds 500
 	}
-	throw "SteamVR did not come up within $TimeoutSec s (vrserver.exe / vrcompositor.exe not running)"
+	throw "SteamVR did not exit within $TimeoutSec s; still running: $((($running | ForEach-Object { $_.Name }) | Sort-Object -Unique) -join ', '). Nothing was killed (a killed SteamVR leaves the headset on): exit it from its own menu (SteamVR status window > menu > Exit SteamVR)."
 }
 
 # Decide whether a launch may run in VR. Returns Vr (bool), Args (the arx.exe arguments to use) and

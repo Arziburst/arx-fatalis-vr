@@ -85,6 +85,12 @@ custom SteamVR binding); Steam Link and the Meta Quest Link app conflict if both
 
 ## Proposed default layout (to be finalized in #30 / #35)
 
+> **Superseded by D-019 / D-020 (2026-10-09), implemented in #30:** the OpenXR actions are one per
+> physical control (`src/vr/VRActions.cpp`, with the Index, Touch and simple-controller suggestions),
+> and the game's own control table maps them to gameplay events — single control, ordered chord or
+> long press, remappable in the game (`src/vr/VRControls.h`, `defaultLayout()` holds the D-019
+> table). Design rules 4 and 6 above are replaced by that; the table below is the original proposal.
+
 | Action | Index | Quest 3 |
 |---|---|---|
 | Move | Left thumbstick | Left thumbstick |

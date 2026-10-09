@@ -28,6 +28,7 @@
 #include "math/Types.h"
 #include "platform/Platform.h"
 #include "vr/FramePacing.h"
+#include "vr/VRControls.h"
 
 /*!
  * \brief VR runtime integration (OpenXR)
@@ -187,6 +188,20 @@ std::string runtimeName();
  *         (\c XR_RUNTIME_JSON, then the registry on Windows) - empty when no runtime is installed
  */
 std::string runtimeManifest();
+
+/*!
+ * \brief Sync the OpenXR actions and read every physical control (#30)
+ *
+ * For \ref updateInput, which turns the controls into gameplay events. Returns false with an
+ * empty \a input while no session runs or the session is not focused.
+ */
+bool readControllers(ControllerInput & input);
+
+//! The OpenXR interaction profile path per hand, empty while there is none - for status.json
+std::array<std::string, HandCount> controllerProfiles();
+
+//! How often the controllers were read while the session was focused
+u64 controllerSyncs();
 
 /*!
  * \brief End the session in order and destroy the OpenXR session and instance (if any)

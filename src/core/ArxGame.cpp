@@ -1736,6 +1736,10 @@ void ArxGame::updateActiveCamera() {
 	// from. restoreEngineCamera() takes it off again before the engine updates its cameras next frame
 	Vec3f enginePos = cam->m_pos;
 	Anglef engineAngle = cam->angle;
+	if(cam == &g_playerCamera && !EXTERNALVIEW) {
+		// The character's eye height, which the head at its reference becomes (#27) - evidence for the scale
+		vr::setCharacterEyeHeight(player.basePosition().y - g_playerCameraStablePos.y);
+	}
 	if(vr::applyHeadPose(cam->m_pos, cam->angle, engineAngle.getYaw())) {
 		m_headView = HeadView{ cam, enginePos, engineAngle };
 		if(cam == &g_playerCamera) {

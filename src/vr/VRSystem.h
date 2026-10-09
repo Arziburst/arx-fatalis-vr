@@ -221,6 +221,8 @@ struct FrameViews {
 	bool valid = false;         //!< the runtime located both eyes with a valid pose
 	s64 displayTime = 0;        //!< the frame's predicted display time, OpenXR nanoseconds
 	std::array<EyeView, 2> eyes; //!< left, right
+	bool floorValid = false;    //!< the runtime has a STAGE space and located the floor this frame (#27)
+	float localAboveFloor = 0.f; //!< the reference space's origin above the room's floor, meters
 };
 
 /*!
@@ -235,6 +237,13 @@ bool isEnabled();
 
 //! \return the current OpenXR session state as text ("none" without a session) - for status.json
 const char * sessionStateString();
+
+/*!
+ * \return true while the headset is on someone's head: the session is \c visible or \c focused (#27).
+ *         An idle headset on the desk keeps the session \c synchronized (TESTING.md); the dashboard
+ *         over the game is \c visible, still worn
+ */
+bool isWorn();
 
 //! OpenXR frame counters since the game started - for status.json
 struct FrameCounters {

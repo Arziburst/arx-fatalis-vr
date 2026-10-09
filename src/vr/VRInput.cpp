@@ -30,6 +30,7 @@
 #include "io/log/Logger.h"
 #include "platform/Time.h"
 #include "util/Number.h"
+#include "vr/HeadTracking.h"
 #include "vr/VRSystem.h"
 
 namespace vr {
@@ -148,7 +149,15 @@ void updateInput() {
 	}
 
 	// Events -> the engine's actions, mouse buttons and keys (#74)
-	applyToEngine(g_input.game.update(g_input.resolver, g_input.input));
+	const GameInputState & game = g_input.game.update(g_input.resolver, g_input.input);
+	applyToEngine(game);
+
+	// Recenter (#28, D-019: a long press of the left stick click): the head as it is at the next sample
+	// becomes the character's eye and facing - horizontal and height, standing or seated (D-018). Any
+	// time, menus included: the reference is taken as soon as there is a head to take it from
+	if(game.recenter) {
+		resetHeadReference("button");
+	}
 }
 
 const GameInputState & gameInput() {

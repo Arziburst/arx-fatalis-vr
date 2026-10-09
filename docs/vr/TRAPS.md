@@ -21,6 +21,20 @@ a head turn of the simulator did turn the picture.
 `@args --loadslot 0` in the `.xrs` (snap turn there: picture change 16.9). Judge by the shots, not by
 `camera.yaw`.
 
+## 2026-10-09 — In the headset the camera floats far above the body (#24, #27)
+
+**Symptom:** looking down in the headset, the character's body is far below the eyes, although the camera
+math is right and every flat or simulated check passes.
+**Cause:** the head's reference (the head there = the character's eye) was taken from the first tracked
+sample after the level load — and the owner starts a test at the desk: the session runs `synchronized`
+with the headset lying there (the runtime still locates it), and it is put on 50–80 s later
+(`vr.session state=visible` in arx.log). The worn head was ~0.8 m above the desk reference, so the camera
+was 80 units above the eye.
+**Do:** read `vr.head.reference` in arx.log: `kind`, `wornS` and `headAboveFloorM` say when and from what
+the reference came; `status.json` → `vr.head.worn` / `referenceKind`. Since #27 the settled reference
+only comes from a worn headset (D-031). To reproduce without a headset: `session idle` in a `--vr-sim`
+script (`scripts/dev/vrsim/eye-height.vrsim`).
+
 ## 2026-10-10 — The 2D interface is empty in `--vr-sim` shots, or the inventory "never closes", on level 10 (#49)
 
 **Symptom:** on `--loadlevel 10` every shot's flat frame is `transparent` and `quadPixels` is **0** — no HUD,

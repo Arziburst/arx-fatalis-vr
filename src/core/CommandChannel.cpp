@@ -73,6 +73,7 @@
 #include "window/RenderWindow.h"
 
 extern bool START_NEW_QUEST;
+extern bool bGCroucheToggle;
 
 namespace channel {
 
@@ -437,6 +438,11 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("manaMax", player.manaPool.max);
 		// Scripts block the controls during scripted scenes (the awakening of a new game): a save made then is not playable (#70)
 		json.value("controlsBlocked", BLOCK_PLAYER_CONTROLS);
+		// What the controls did (#74): the inventory and the book open, the crouch toggle, a jump under way
+		json.value("inventoryOpen", (player.Interface & INTER_INVENTORY) != 0);
+		json.value("bookOpen", (player.Interface & INTER_PLAYERBOOK) != 0);
+		json.value("crouchToggle", bGCroucheToggle);
+		json.value("jumping", player.jumpphase != NotJumping);
 		json.end();
 		// The first-person camera after this frame's effects: bob = how far the camera left the stable head
 		// position (view bobbing), shake = the quake amplitude applied, fov in degrees (zoom) - the numbers
@@ -592,6 +598,14 @@ std::string buildStatus(PlatformInstant now) {
 		for(size_t i = 0; i < vr::EventCount; i++) {
 			json.value(vr::eventName(vr::Event(i)), vr::formatBinding(controls.layout()[vr::Event(i)]));
 		}
+		json.end();
+		// What the engine was given (#74): held actions, buttons and keys; the move vector and turn axis
+		const vr::GameInputState & game = vr::gameInput();
+		json.object("game");
+		json.value("held", vr::formatGameInput(game));
+		json.value("moveX", game.move.x);
+		json.value("moveY", game.move.y);
+		json.value("turn", game.turn);
 		json.end();
 		json.end();
 	}
@@ -815,7 +829,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "vr-input") {
-		// The controllers' control table without a headset (#30): down|up|tap <control>, bind, reset
+		// The controllers' control table without a headset (#30): down|up|tap <control>, stick, bind, reset
 		std::string error = vr::inputCommand(rest);
 		return error.empty() ? error : refuse(error);
 	}

@@ -1,0 +1,35 @@
+# Look around (#113): the head turns and tilts; the simulated rig, the eyes the runtime located and the pictures follow.
+# The pictures only follow the head once the headset pose drives the camera (#24): that step is @pending until then.
+@sim idle
+@args --loadlevel 10
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert vr.sim.eyes.located eq true
+
+# The same eye twice with the head still: the noise floor of a picture (about 1.75 in the animated level 10)
+@shot look-0
+@shot look-0b
+@diff look-0 look-0b lt 3
+
+# 40 degrees to the left: the rig and both located eyes turn
+vr-sim head rot 40 0 0
+@frames 15
+@assert vr.sim.rig.headRot.yaw eq 40
+@assert vr.sim.eyes.leftRot.yaw gt 39
+@assert vr.sim.eyes.leftRot.yaw lt 41
+@shot look-left
+@pending #24 @diff look-0 look-left gt 6
+
+# Back, then right and down
+vr-sim head rot -40 -15 0
+@frames 15
+@assert vr.sim.rig.headRot.pitch eq -15
+@shot look-right-down
+@pending #24 @diff look-0 look-right-down gt 6
+@pending #24 @diff look-left look-right-down gt 6
+
+vr-sim head rot 0 0 0
+@frames 10
+@assert vr.sim.rig.headRot.yaw eq 0
+@assert errors eq 0

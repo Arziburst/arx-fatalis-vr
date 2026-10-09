@@ -1,0 +1,15 @@
+# Recenter (#113): the recenter control puts the head back at the middle of the play space (#28). The command is
+# refused until #28; the head offset the sequence sets is real today.
+@sim idle
+@args --loadlevel 10
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 120 60s
+
+# The head is 30 cm to the right of the middle of the room
+vr-sim head pos 0.30 0 0
+@frames 10
+@assert vr.sim.rig.head.x eq 0.3
+
+@pending #28 recenter
+@assert errors eq 0

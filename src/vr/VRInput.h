@@ -79,7 +79,7 @@ const ControllerInput & controllerInput();
 std::string inputCommand(std::string_view arguments);
 
 /*!
- * \brief Haptic feedback for a game event (#42, D-032) - safe to call in flat mode, where it does nothing
+ * \brief Haptic feedback for a game event (#42, D-034) - safe to call in flat mode, where it does nothing
  *
  * The table (vr/Haptics.h) gives the pulse and the hand; the pulse is queued and sent at the next
  * \ref updateInput, right after the controllers are synced. Each request is a \c haptic game event.

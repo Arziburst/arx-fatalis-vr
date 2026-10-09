@@ -713,7 +713,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.end();
 	}
 	{
-		// Haptic feedback (#42, D-032): requests per event (counted in flat mode too), pulses sent per hand
+		// Haptic feedback (#42, D-034): requests per event (counted in flat mode too), pulses sent per hand
 		const vr::HapticStatus haptics = vr::hapticStatus();
 		json.object("haptics");
 		json.value("strength", haptics.strength);

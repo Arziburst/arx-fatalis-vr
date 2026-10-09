@@ -1,4 +1,4 @@
-# Haptic feedback (#42, D-032): the table's pulse reaches the runtime's xrApplyHapticFeedback on the right hand,
+# Haptic feedback (#42, D-034): the table's pulse reaches the runtime's xrApplyHapticFeedback on the right hand,
 # the strongest request of a frame wins, and a real hit taken vibrates both hands.
 @sim idle
 @args --loadlevel 10

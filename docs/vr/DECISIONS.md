@@ -10,7 +10,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-032: Haptic feedback — the MVP table, one mixer on the frame thread
+## D-034: Haptic feedback — the MVP table, one mixer on the frame thread
 
 - **Date:** 2026-10-10
 - **Status:** Accepted

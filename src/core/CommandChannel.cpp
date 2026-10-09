@@ -565,6 +565,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("source", head.source);
 		json.value("referenced", head.referenced);
 		json.value("references", head.references);
+		json.value("reason", head.reason);
+		json.value("refY", head.reference.position.y);
 		json.value("refYaw", head.reference.yaw);
 		json.value("pitch", head.head.getPitch());
 		json.value("yaw", head.head.getYaw());
@@ -823,7 +825,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "recenter") {
-		// The head is measured from its next sample (#24); the button chord for the player is #28
+		// The head is measured from its next sample (#24); the player's is a long press of the left stick (#28)
 		vr::resetHeadReference("channel");
 		return std::string();
 	}

@@ -228,6 +228,15 @@ void HeadPoseTest::testLeanIsClamped() {
 	checkVector("lean clamped", Vec3f(48.f, 10.f, 36.f), camera.offset);
 }
 
+void HeadPoseTest::testRecenterIsTheEye() {
+	// Recenter taken seated and turned: the head there is the character's eye, facing the body's way
+	vr::HeadSample seated = head(40.f, 0.f, 0.f, Vec3f(0.25f, 1.2f, 0.1f));
+	vr::HeadReference reference = vr::makeHeadReference(seated);
+	vr::HeadCamera camera = vr::headToCamera(seated, reference, 90.f);
+	checkVector("recentered", Vec3f(0.f), camera.offset);
+	CPPUNIT_ASSERT(std::abs(camera.angle.getYaw() - 90.f) < 1e-3f);
+}
+
 void HeadPoseTest::testHeadBetweenTheEyes() {
 	glm::quat orientation = vr::headOrientationFromDegrees(30.f, -10.f, 5.f);
 	vr::HeadSample sample = vr::headFromEyes(Vec3f(-0.032f, 1.6f, 0.1f), orientation, Vec3f(0.032f, 1.62f, 0.1f),

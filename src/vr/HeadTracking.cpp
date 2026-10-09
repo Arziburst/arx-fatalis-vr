@@ -92,6 +92,7 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 		status.reference = makeHeadReference(head);
 		status.referenced = true;
 		status.references++;
+		status.reason = g_head.resetReason;
 		g_head.resetPending = false;
 		gameevent::Event("vr.head.reference")("reason", g_head.resetReason)("source", source)
 			("yaw", status.reference.yaw, 1)("bodyYaw", bodyYaw, 1)

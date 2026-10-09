@@ -431,6 +431,18 @@ RESEARCH-reference-mods.md 13g with these answers); #49 the centred panel for th
 - **Player height:** at recenter the player's **standing head is mapped to the character's eye height**,
   so tall and short players see the world from the character's eyes and doors and tables keep their size.
   Seated play: recentering while seated does the same (#28).
+- **Calibration, auto-raise and crouch — the height model** *(owner, 2026-10-10, for #28; like other VR
+  games)*:
+  - **Recenter is the calibration** (a long press of the left stick click, D-019; in menus too): the
+    headset's current height becomes the character's eye height and where the player looks becomes the
+    character's facing. It works the same seated or standing — **there is no seated / standing setting**.
+  - **Auto-raise:** a headset that rises above the calibrated eye height (calibrated seated, then stood
+    up) takes the calibration up with it at once — the camera is **never above the character's eyes**
+    (#27).
+  - **Going down is not followed:** after sitting down again the player recalibrates. Below the eye height
+    the physical crouch applies (#100): the character crouches when the head is **~30 cm below** the
+    calibrated eye height and stands up again at **~20 cm** (hysteresis); leaning forward far enough while
+    seated also crouches (accepted). The crouch toggle on the right stick (D-019) works either way.
 
 ### Why
 Immersion: real crouching, leaning and stepping are what make VR feel physical; the owner tried the

@@ -120,7 +120,7 @@ dependencies are met; when a task is split, replace it with its parts.
 17. #24 — HMD pose (orientation and position) → camera, no neck model (D-018, F-21, F-31, F-37)
 18. #27 — World scale; the standing head = the character's eye height (D-018)
 19. #76 — VR comfort defaults: no view bobbing, screen shake, FOV zoom (F-31)
-20. #28 — Recenter on a held button chord (F-34)
+20. #28 — Recenter = calibration on a long press of the left stick (D-018, D-019, F-34)
 21. #114 — Host unit tests in the build and CI (F-08)
 22. #100 — Physical crouch: the game crouch below a height threshold (D-018, F-29)
 22. #26 — Leaning and real steps: the body follows the head with collision; wall fade (D-018)
@@ -198,7 +198,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #24 HMD orientation → camera | camera | VR | #20 |
 | #27 scale and eye height | camera | VR | #24 |
 | #76 comfort defaults | camera | plain | — |
-| #28 recenter (button chord) | camera | VR | #24, #74 |
+| #28 recenter (calibration, long press) | camera | VR | #24, #74 |
 | #114 host unit tests in CI | build | plain | — |
 | #100 physical crouch | camera | VR | #24, #28, #114 |
 | #26 leaning, real steps, wall fade | camera | VR | #24, #25, #27 |

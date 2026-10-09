@@ -47,6 +47,9 @@ set(arxtest_TESTCASES
 	tests/vr/VRBindingsTest.h
 	tests/vr/VRBindingsTest.cpp
 
+	tests/vr/HeadPoseTest.h
+	tests/vr/HeadPoseTest.cpp
+
 	tests/vr/VRControlsTest.h
 	tests/vr/VRControlsTest.cpp
 
@@ -74,6 +77,7 @@ set(arxtest_SOURCES
 	src/io/resource/ResourcePath.cpp
 	src/vr/FramePacing.cpp
 	src/vr/VRBindings.cpp
+	src/vr/HeadPose.cpp
 	src/vr/VRControls.cpp
 	src/vr/EyeImage.cpp
 	src/vr/SimRig.cpp

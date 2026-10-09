@@ -163,6 +163,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "script/Script.h"
 
+#include "vr/HeadTracking.h"
+
 #include "window/RenderWindow.h"
 
 class TextManager;
@@ -304,7 +306,10 @@ void levelInit() {
 	arx_assert(entities.player());
 	
 	LogDebug("Initializing level ...");
-	
+
+	// A loaded level places the character anew: the head is measured from its first sample in it (#24)
+	vr::resetHeadReference("level");
+
 	g_particleTextures.init();
 	g_renderBatcher.reset();
 	

@@ -53,6 +53,7 @@
 #if ARX_HAVE_OPENXR
 
 // OpenXR with the OpenGL binding (and windows.h on Windows)
+#include "vr/HeadTracking.h"
 #include "vr/OpenXRUtil.h"
 #include "vr/VRActions.h"
 #include "vr/VRMirror.h"
@@ -707,8 +708,8 @@ void destroySession() {
 /*!
  * The spaces and the swapchains of the session: a head-locked VIEW space for the flat frame quad,
  * a world-locked LOCAL space the eyes are located and submitted in (STAGE, the room-scale space
- * with the floor at the origin, is only probed and logged - which space the camera uses is #24 /
- * #27); the per-eye swapchains are sized from the runtime's recommended view sizes and get a
+ * with the floor at the origin, is only probed and logged - the camera takes the head from LOCAL,
+ * #24; the standing height is #27); the per-eye swapchains are sized from the runtime's recommended view sizes and get a
  * framebuffer object per image to render into.
  */
 bool createSessionResources() {
@@ -1419,6 +1420,10 @@ void pollEvents() {
 					= *reinterpret_cast<const XrEventDataReferenceSpaceChangePending *>(&event);
 				gameevent::Event("vr.refspace")("space", referenceSpaceName(change.referenceSpaceType))
 					("poseValid", change.poseValid != XR_FALSE);
+				if(change.referenceSpaceType == XR_REFERENCE_SPACE_TYPE_LOCAL) {
+					// The runtime's own recenter moved the space the head is located in (F-120)
+					resetHeadReference("runtime");
+				}
 				break;
 			}
 
@@ -1586,6 +1591,21 @@ u32 frameDivisor() {
 	return g_xr.divisor;
 }
 
+float flatFrameFov(const Vec2i & windowSize) {
+	if(g_xr.session == XR_NULL_HANDLE) {
+		return 0.f;
+	}
+	float fov = headLockedQuadFov(QuadWidth, QuadDistance, windowSize);
+	static Vec2i s_logged(0);
+	if(windowSize != s_logged) {
+		s_logged = windowSize;
+		LogInfo << "[vr] camera: vertical fov " << glm::degrees(fov) << " deg = the head-locked quad " << QuadWidth
+		        << " m at " << QuadDistance << " m for a " << windowSize.x << 'x' << windowSize.y
+		        << " frame, so the head-tracked view is not magnified (#24, until #19 renders per eye)";
+	}
+	return fov;
+}
+
 MirrorStatus mirrorStatus() {
 	MirrorStatus status;
 	status.state = g_xr.mirror.state();
@@ -1679,6 +1699,10 @@ u32 pacingReports() {
 
 u32 frameDivisor() {
 	return 1;
+}
+
+float flatFrameFov(const Vec2i & /* windowSize */) {
+	return 0.f;
 }
 
 MirrorStatus mirrorStatus() {

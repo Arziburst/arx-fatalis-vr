@@ -143,8 +143,11 @@ $fake = {
 		$last = ''; $lineErrors = 0
 		$cmd = Join-Path $Dir 'command.txt'
 		if (Test-Path $cmd) {
-			$lines = @(Get-Content $cmd)
-			Remove-Item $cmd -Force
+			# A transient sharing violation (the test's own read, a scanner on the runner) must not lose the batch:
+			# the file is removed only after it was read, and a failed read is tried again on the next pass (#275).
+			$lines = $null
+			try { $lines = @([IO.File]::ReadAllLines($cmd)); Remove-Item $cmd -Force -ErrorAction Stop } catch { $lines = $null }
+			if ($null -eq $lines) { Start-Sleep -Milliseconds 30; continue }
 			foreach ($l in $lines) {
 				$l = $l.Trim(); if (-not $l) { continue }
 				$last = $l
@@ -158,7 +161,10 @@ $fake = {
 				elseif ($l -match '^refuse') { $lineErrors++ }
 			}
 			$seq++
-			Set-Content (Join-Path $Dir 'ack.txt') "seq=$seq frame=$frame errors=$lineErrors last=$last error=-"
+			# The test reads ack.txt every 50 ms; a write that hits its open handle is retried, never dropped (#275).
+			for ($try = 0; $try -lt 50; $try++) {
+				try { [IO.File]::WriteAllText((Join-Path $Dir 'ack.txt'), "seq=$seq frame=$frame errors=$lineErrors last=$last error=-"); break } catch { Start-Sleep -Milliseconds 20 }
+			}
 		}
 		$frame += 3
 		$status = @{ pid = 1; state = 'GAMEPLAY'; frame = $frame; errors = $errors; cmdSeq = $seq; captureSeq = $capture

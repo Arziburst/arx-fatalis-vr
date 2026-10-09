@@ -2,9 +2,11 @@
 description: Coordinator routine — review open PRs and the board, clean up after finished tasks, then hand out the next task or say what blocks progress
 ---
 
-You are the **coordinator** of Arx Fatalis VR (see "Roles" in `docs/vr/WORKFLOW.md`). The owner says
-"новый цикл" (new cycle) or runs `/new-cycle` after finishing, testing or merging work. You do not write
-feature code here. Talk to the owner in Russian; everything written to GitHub is in English.
+You are the **coordinator** of Arx Fatalis VR (see "Roles" in `docs/vr/WORKFLOW.md`; your full playbook
+is `docs/vr/COORDINATOR.md` — read it first if this session has not yet). The owner says "новый цикл"
+(new cycle) or runs `/new-cycle` after finishing, testing or merging work. You do not write feature code
+or investigate problems here — problems become worker tasks. Talk to the owner in Russian; everything
+written to GitHub is in English.
 
 ## 1. Look
 Run `.\scripts\dev\cycle-report.ps1` (read-only). It prints open PRs with CI state, the latest CI on
@@ -42,8 +44,8 @@ and the next task of the MVP queue.
   - remove worktrees of merged tasks (`scripts\dev\new-worktree.ps1 -Remove`);
   - fill the free worker slots (at most 3 workers; VR lane at most 2 in progress and 4 in Testing):
     pick tasks from the queue whose dependencies are merged and whose **areas differ** from every task
-    in progress; **start a worker for each** with the owner's copy's
-    `C:\Users\arzib\OneDrive\Desktop\arx-fatalis-vr\scripts\dev\start-worker.ps1 <n> [-Type <type>]`
+    in progress; **start a worker for each** with the owner's copy's (the main working copy's)
+    `scripts\dev\start-worker.ps1 <n> [-Type <type>]`
     (worktree + background session running `/next-task <n>`, decision D-011). The model follows the
     task's area (D-013: build / docs → Sonnet, everything else → Fable; `-Model opus` once Fable's
     limit is used up). Subscribe to each worker's idle notice (SendMessage `notify_when_idle`);

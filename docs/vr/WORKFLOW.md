@@ -88,7 +88,8 @@ and the terminal tab.
   tasks, starts and follows the workers, triages what they find and refills the slots; it does not
   investigate or fix anything itself. It stops and reports when the block is done, when a PR needs the
   owner's headset test (headset-free work goes on), or at 70% of the weekly usage limit. The owner
-  talks only to the coordinator — VR verdicts included.
+  talks only to the coordinator — VR verdicts included. Its full playbook, for a new coordinator session
+  on any machine (`/coordinator`): [COORDINATOR.md](COORDINATOR.md).
 - **Worker session** — a fresh session per task, possibly with a different model. It implements exactly
   one task in its own PR (`/next-task <n>`), and handles the owner's verdict (`/accept-task`, `/reject-task`).
   In parallel mode the coordinator starts workers itself as background sessions

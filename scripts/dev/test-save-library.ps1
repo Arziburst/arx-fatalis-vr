@@ -132,6 +132,20 @@ try {
 	$empty = Join-Path $root 'empty'
 	$message = Throws { Use-ArxSave -Name 'x' -UserDir $userDir -Library $empty 6>&1 }
 	Check ($message -like '*available: none*make-test-saves.ps1*') 'an empty library says to run make-test-saves.ps1' $message
+
+	# --loadslot of a save that is not there (#24: the owner's headset run with no saves showed a black world)
+	$noSaves = Join-Path $root 'nosaves'
+	Check ($null -eq (Get-ArxLoadSlotProblem -ArxArgs @('--skiplogo') -UserDir $noSaves)) 'no --loadslot: no problem'
+	$problem = Get-ArxLoadSlotProblem -ArxArgs @('--skiplogo', '--loadslot', '0') -UserDir $noSaves
+	Check ($problem -like '--loadslot 0:*has 0 save(s)*-Save mvp-new-game*') '--loadslot 0 without saves is refused and names the test save' $problem
+	New-Item -ItemType Directory -Force (Join-Path $noSaves 'save\empty-folder') | Out-Null
+	Check ($null -ne (Get-ArxLoadSlotProblem -ArxArgs @('--loadslot', '0') -UserDir $noSaves)) 'a save folder without gsave.sav is not a save'
+	$oneSave = Join-Path $root 'onesave'
+	$null = Use-ArxSave -Name 'mid' -UserDir $oneSave -Library $lib 6>&1
+	Check ($null -eq (Get-ArxLoadSlotProblem -ArxArgs @('--skiplogo', '--loadslot', '0') -UserDir $oneSave)) '--loadslot 0 with one save is fine'
+	$problem = Get-ArxLoadSlotProblem -ArxArgs @('--loadslot', '1') -UserDir $oneSave
+	Check ($problem -like '--loadslot 1:*has 1 save(s)*') '--loadslot 1 with one save is refused' $problem
+	Check ((Get-ArxLoadSlotProblem -ArxArgs @('--loadslot') -UserDir $oneSave) -eq '--loadslot needs a slot number') '--loadslot without a number is refused'
 } finally {
 	Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue
 }

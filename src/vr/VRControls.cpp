@@ -226,8 +226,14 @@ ControlLayout defaultLayout(ControllerType type) {
 	layout[Event::InteractRight] = Binding::single(rightTrigger);
 
 	if(type == ControllerType::Simple) {
-		// Select (bound to the trigger action) and menu are all a simple controller has
-		layout[Event::Menu] = Binding::single(control(Hand::Left, ControlKind::Menu));
+		// Select (bound to the trigger action) and menu on each hand are all a simple controller has: the
+		// menu buttons carry D-019's left-hand / right-hand split, the long press the less frequent event
+		const Control leftMenu = control(Hand::Left, ControlKind::Menu);
+		const Control rightMenu = control(Hand::Right, ControlKind::Menu);
+		layout[Event::Menu] = Binding::single(leftMenu);
+		layout[Event::Recenter] = Binding::hold(leftMenu);
+		layout[Event::Inventory] = Binding::single(rightMenu);
+		layout[Event::Book] = Binding::hold(rightMenu);
 		return layout;
 	}
 

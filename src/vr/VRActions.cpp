@@ -27,6 +27,7 @@
 
 #include "io/log/Logger.h"
 #include "util/String.h"
+#include "vr/VRBindings.h"
 
 namespace vr {
 
@@ -37,30 +38,6 @@ const u32 MaxLoggedSyncFailures = 5;
 
 //! How often the interaction profiles are read without a change event (F-123: every 30 frames)
 const u64 ProfilePollSyncs = 30;
-
-const char * const HandPaths[HandCount] = { "/user/hand/left", "/user/hand/right" };
-
-const char * const IndexProfile = "/interaction_profiles/valve/index_controller";
-const char * const TouchProfile = "/interaction_profiles/oculus/touch_controller";
-const char * const SimpleProfile = "/interaction_profiles/khr/simple_controller";
-
-//! One suggested binding: an action and a full input path
-struct Suggestion {
-	XrAction action;
-	std::string path;
-	bool optional; //!< left out when the runtime rejects the profile's list with it
-};
-
-//! The same component on both hands, e.g. "input/trigger/value"
-void addBoth(std::vector<Suggestion> & list, XrAction action, const char * component, bool optional = false) {
-	for(const char * hand : HandPaths) {
-		list.push_back({ action, std::string(hand) + '/' + component, optional });
-	}
-}
-
-void addOne(std::vector<Suggestion> & list, XrAction action, Hand hand, const char * component) {
-	list.push_back({ action, std::string(HandPaths[size_t(hand)]) + '/' + component, false });
-}
 
 } // anonymous namespace
 
@@ -90,9 +67,9 @@ bool ActionSet::create(XrInstance instance) {
 	m_instance = instance;
 
 	for(size_t hand = 0; hand < HandCount; hand++) {
-		XrResult result = xrStringToPath(m_instance, HandPaths[hand], &m_hands[hand]);
+		XrResult result = xrStringToPath(m_instance, handPath(Hand(hand)), &m_hands[hand]);
 		if(XR_FAILED(result)) {
-			LogError << "[vr] input: could not make the path " << HandPaths[hand] << ": " << resultName(result);
+			LogError << "[vr] input: could not make the path " << handPath(Hand(hand)) << ": " << resultName(result);
 			return false;
 		}
 	}
@@ -137,73 +114,42 @@ bool ActionSet::create(XrInstance instance) {
 	return true;
 }
 
+XrAction ActionSet::action(PhysicalAction id) const {
+	const Actions & a = m_actions;
+	switch(id) {
+		case PhysicalAction::Trigger: return a.trigger;
+		case PhysicalAction::Grip: return a.grip;
+		case PhysicalAction::A: return a.a;
+		case PhysicalAction::B: return a.b;
+		case PhysicalAction::Stick: return a.stick;
+		case PhysicalAction::StickClick: return a.stickClick;
+		case PhysicalAction::Trackpad: return a.trackpad;
+		case PhysicalAction::Menu: return a.menu;
+		case PhysicalAction::GripPose: return a.gripPose;
+		case PhysicalAction::AimPose: return a.aimPose;
+		case PhysicalAction::Haptic: return a.haptic;
+		case PhysicalAction::Count: break;
+	}
+	return XR_NULL_HANDLE;
+}
+
 void ActionSet::suggestBindings() {
 
-	const Actions & a = m_actions;
+	// The table per profile and its checks against the OpenXR spec: VRBindings.h, tests/vr/VRBindingsTest
+	for(ControllerType type : suggestedControllerTypes()) {
 
-	struct Profile {
-		const char * path;
-		std::vector<Suggestion> list;
-	};
-	std::vector<Profile> profiles(3);
+		const char * profilePath = interactionProfilePath(type);
+		const std::vector<SuggestedBinding> list = suggestedBindings(type);
 
-	// Valve Index - the owner's controllers (D-019). The grip is squeeze/value, how far the hand is closed:
-	// the controller is strapped on, a light close is the grip and an open hand is none (own threshold)
-	profiles[0].path = IndexProfile;
-	{
-		std::vector<Suggestion> & list = profiles[0].list;
-		addBoth(list, a.trigger, "input/trigger/value");
-		addBoth(list, a.grip, "input/squeeze/value");
-		addBoth(list, a.a, "input/a/click");
-		addBoth(list, a.b, "input/b/click");
-		addBoth(list, a.stick, "input/thumbstick");
-		addBoth(list, a.stickClick, "input/thumbstick/click");
-		addBoth(list, a.trackpad, "input/trackpad/force", true);
-		addBoth(list, a.gripPose, "input/grip/pose");
-		addBoth(list, a.aimPose, "input/aim/pose");
-		addBoth(list, a.haptic, "output/haptic");
-	}
-
-	// Oculus Touch - Quest 3 through SteamVR: X / Y on the left, A / B on the right, menu on the left
-	profiles[1].path = TouchProfile;
-	{
-		std::vector<Suggestion> & list = profiles[1].list;
-		addBoth(list, a.trigger, "input/trigger/value");
-		addBoth(list, a.grip, "input/squeeze/value");
-		addOne(list, a.a, Hand::Left, "input/x/click");
-		addOne(list, a.b, Hand::Left, "input/y/click");
-		addOne(list, a.a, Hand::Right, "input/a/click");
-		addOne(list, a.b, Hand::Right, "input/b/click");
-		addBoth(list, a.stick, "input/thumbstick");
-		addBoth(list, a.stickClick, "input/thumbstick/click");
-		addOne(list, a.menu, Hand::Left, "input/menu/click");
-		addBoth(list, a.gripPose, "input/grip/pose");
-		addBoth(list, a.aimPose, "input/aim/pose");
-		addBoth(list, a.haptic, "output/haptic");
-	}
-
-	// The minimal fallback: select works as the trigger
-	profiles[2].path = SimpleProfile;
-	{
-		std::vector<Suggestion> & list = profiles[2].list;
-		addBoth(list, a.trigger, "input/select/click");
-		addBoth(list, a.menu, "input/menu/click");
-		addBoth(list, a.gripPose, "input/grip/pose");
-		addBoth(list, a.aimPose, "input/aim/pose");
-		addBoth(list, a.haptic, "output/haptic");
-	}
-
-	for(const Profile & profile : profiles) {
-
-		XrPath profilePath = XR_NULL_PATH;
-		XrResult result = xrStringToPath(m_instance, profile.path, &profilePath);
+		XrPath profile = XR_NULL_PATH;
+		XrResult result = xrStringToPath(m_instance, profilePath, &profile);
 		if(XR_FAILED(result)) {
-			LogError << "[vr] input: " << profile.path << ": not a valid path: " << resultName(result);
+			LogError << "[vr] input: " << profilePath << ": not a valid path: " << resultName(result);
 			continue;
 		}
 
 		bool hasOptional = false;
-		for(const Suggestion & suggestion : profile.list) {
+		for(const SuggestedBinding & suggestion : list) {
 			hasOptional = hasOptional || suggestion.optional;
 		}
 
@@ -216,35 +162,36 @@ void ActionSet::suggestBindings() {
 
 			std::vector<XrActionSuggestedBinding> bindings;
 			std::string invalid;
-			for(const Suggestion & suggestion : profile.list) {
+			for(const SuggestedBinding & suggestion : list) {
 				if(suggestion.optional && !withOptional) {
 					continue;
 				}
-				XrPath path = XR_NULL_PATH;
-				if(XR_FAILED(xrStringToPath(m_instance, suggestion.path.c_str(), &path))) {
-					invalid += ' ' + suggestion.path;
+				const std::string path = bindingPath(suggestion);
+				XrPath xrPath = XR_NULL_PATH;
+				if(XR_FAILED(xrStringToPath(m_instance, path.c_str(), &xrPath))) {
+					invalid += ' ' + path;
 					continue;
 				}
-				bindings.push_back({ suggestion.action, path });
+				bindings.push_back({ action(suggestion.action), xrPath });
 			}
 			if(!invalid.empty()) {
-				LogError << "[vr] input: " << profile.path << ": invalid paths left out:" << invalid;
+				LogError << "[vr] input: " << profilePath << ": invalid paths left out:" << invalid;
 			}
 
 			XrInteractionProfileSuggestedBinding suggested = { XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING };
-			suggested.interactionProfile = profilePath;
+			suggested.interactionProfile = profile;
 			suggested.countSuggestedBindings = uint32_t(bindings.size());
 			suggested.suggestedBindings = bindings.data();
 			result = xrSuggestInteractionProfileBindings(m_instance, &suggested);
 
 			const char * which = withOptional ? "" : " (without the optional paths)";
 			if(XR_SUCCEEDED(result)) {
-				LogInfo << "[vr] input: " << profile.path << ": " << bindings.size() << " bindings suggested"
+				LogInfo << "[vr] input: " << profilePath << ": " << bindings.size() << " bindings suggested"
 				        << which << " -> accepted";
 				break;
 			}
 
-			LogWarning << "[vr] input: " << profile.path << ": " << bindings.size() << " bindings suggested" << which
+			LogWarning << "[vr] input: " << profilePath << ": " << bindings.size() << " bindings suggested" << which
 			           << " -> REJECTED (" << resultName(result) << ")"
 			           << (withOptional && hasOptional ? ", retrying without the optional paths"
 			                                           : " - these controllers get no input from us");

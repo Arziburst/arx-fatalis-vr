@@ -77,6 +77,25 @@ function Use-ArxSave([string]$Name, [string]$UserDir, [string]$Library) {
 	Copy-ArxSaves -Names @($Name) -UserDir $UserDir -Library $Library
 }
 
+# Why `--loadslot <n>` among the game's arguments would load nothing, or $null when there is no --loadslot or
+# slot n exists. The game numbers the folders of <user dir>\save that hold a gsave.sav, newest first; a slot
+# it does not have used to start the game with no level at all - a black world with only the HUD, which
+# looked like a rendering bug in the headset (TRAPS.md, #24).
+function Get-ArxLoadSlotProblem([string[]]$ArxArgs, [string]$UserDir) {
+	$args_ = @($ArxArgs)
+	$i = [array]::IndexOf([string[]]$args_, '--loadslot')
+	if ($i -lt 0) { return $null }
+	if ($i + 1 -ge $args_.Count -or $args_[$i + 1] -notmatch '^\d+$') { return '--loadslot needs a slot number' }
+	$slot = [int]$args_[$i + 1]
+	$saveDir = Join-Path $UserDir 'save'
+	$count = @(Get-ChildItem $saveDir -Directory -ErrorAction SilentlyContinue |
+	           Where-Object { Test-Path (Join-Path $_.FullName 'gsave.sav') }).Count
+	if ($slot -lt $count) { return $null }
+	"--loadslot ${slot}: $saveDir has $count save(s) (slot 0 = the newest), so there is nothing to load - the game " +
+	"would start at the main menu. Load a test save instead: -Isolated -Save mvp-new-game (the test save library, " +
+	"docs/vr/TESTING.md), or record a save in flat mode first"
+}
+
 # Steam's install folder as recorded in the registry (forward slashes, as Steam writes it), or $null.
 function Get-SteamPath {
 	(Get-ItemProperty -Path 'HKCU:\Software\Valve\Steam' -Name SteamPath -ErrorAction SilentlyContinue).SteamPath

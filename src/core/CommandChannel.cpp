@@ -65,6 +65,7 @@
 #include "scene/ChangeLevel.h"
 #include "scene/Interactive.h"
 #include "util/String.h"
+#include "vr/HeadTracking.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
 #include "vr/VRSimulator.h"
@@ -72,6 +73,7 @@
 #include "window/RenderWindow.h"
 
 extern bool START_NEW_QUEST;
+extern bool bGCroucheToggle;
 
 namespace channel {
 
@@ -436,6 +438,11 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("manaMax", player.manaPool.max);
 		// Scripts block the controls during scripted scenes (the awakening of a new game): a save made then is not playable (#70)
 		json.value("controlsBlocked", BLOCK_PLAYER_CONTROLS);
+		// What the controls did (#74): the inventory and the book open, the crouch toggle, a jump under way
+		json.value("inventoryOpen", (player.Interface & INTER_INVENTORY) != 0);
+		json.value("bookOpen", (player.Interface & INTER_PLAYERBOOK) != 0);
+		json.value("crouchToggle", bGCroucheToggle);
+		json.value("jumping", player.jumpphase != NotJumping);
 		json.end();
 		// The first-person camera after this frame's effects: bob = how far the camera left the stable head
 		// position (view bobbing), shake = the quake amplitude applied, fov in degrees (zoom) - the numbers
@@ -528,6 +535,26 @@ std::string buildStatus(PlatformInstant now) {
 	json.end();
 	json.value("runtime", vr::runtimeName());
 	json.value("manifest", vr::runtimeManifest());
+	// Head tracking (#24): where the head comes from, its reference and what it does to the camera
+	{
+		const vr::HeadStatus & head = vr::headStatus();
+		json.object("head");
+		json.value("source", head.source);
+		json.value("referenced", head.referenced);
+		json.value("references", head.references);
+		json.value("refYaw", head.reference.yaw);
+		json.value("pitch", head.head.getPitch());
+		json.value("yaw", head.head.getYaw());
+		json.value("roll", head.head.getRoll());
+		json.value("x", head.position.x);
+		json.value("y", head.position.y);
+		json.value("z", head.position.z);
+		json.value("offsetX", head.offset.x);
+		json.value("offsetY", head.offset.y);
+		json.value("offsetZ", head.offset.z);
+		json.value("clamped", head.clamped);
+		json.end();
+	}
 	{
 		// The controllers and the control table (#30): profiles per hand, held controls, events
 		const vr::ControlResolver & controls = vr::controls();
@@ -571,6 +598,14 @@ std::string buildStatus(PlatformInstant now) {
 		for(size_t i = 0; i < vr::EventCount; i++) {
 			json.value(vr::eventName(vr::Event(i)), vr::formatBinding(controls.layout()[vr::Event(i)]));
 		}
+		json.end();
+		// What the engine was given (#74): held actions, buttons and keys; the move vector and turn axis
+		const vr::GameInputState & game = vr::gameInput();
+		json.object("game");
+		json.value("held", vr::formatGameInput(game));
+		json.value("moveX", game.move.x);
+		json.value("moveY", game.move.y);
+		json.value("turn", game.turn);
 		json.end();
 		json.end();
 	}
@@ -715,6 +750,24 @@ bool parseIndex(std::string_view text, long & value) {
 	return end && *end == '\0' && value >= 0;
 }
 
+//! Whitespace-separated numbers; false if any word is not a finite number
+bool parseFloats(std::string_view text, std::vector<float> & values) {
+	values.clear();
+	std::string_view rest = text;
+	while(!rest.empty()) {
+		std::string_view next;
+		std::string word(firstWord(rest, next));
+		char * end = nullptr;
+		float value = std::strtof(word.c_str(), &end);
+		if(word.empty() || !end || *end != '\0' || !std::isfinite(value)) {
+			return false;
+		}
+		values.push_back(value);
+		rest = next;
+	}
+	return true;
+}
+
 /*!
  * Run one command line.
  * \return an empty string on success, otherwise the reason it was refused
@@ -747,11 +800,36 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "recenter") {
-		return refuse("recenter: not implemented yet (#28)");
+		// The head is measured from its next sample (#24); the button chord for the player is #28
+		vr::resetHeadReference("channel");
+		return std::string();
+	}
+
+	if(word == "headpose") {
+		// A simulated head for checks without a headset (#24): yaw, pitch, roll in degrees (left, up, left
+		// positive) and optionally x, y, z in meters (OpenXR LOCAL: right, up, back); "off" removes it.
+		// A real headset pose wins over it
+		std::string mode(rest);
+		util::makeLowercase(mode);
+		if(mode == "off") {
+			vr::clearSimulatedHead();
+			return std::string();
+		}
+		std::vector<float> values;
+		if(!parseFloats(rest, values) || (values.size() != 3 && values.size() != 6)) {
+			return refuse("headpose: expected <yaw> <pitch> <roll> [<x> <y> <z>] or off, got \"" + std::string(rest) + "\"");
+		}
+		vr::HeadSample head;
+		head.orientation = vr::headOrientationFromDegrees(values[0], values[1], values[2]);
+		if(values.size() == 6) {
+			head.position = Vec3f(values[3], values[4], values[5]);
+		}
+		vr::setSimulatedHead(head);
+		return std::string();
 	}
 
 	if(word == "vr-input") {
-		// The controllers' control table without a headset (#30): down|up|tap <control>, bind, reset
+		// The controllers' control table without a headset (#30): down|up|tap <control>, stick, bind, reset
 		std::string error = vr::inputCommand(rest);
 		return error.empty() ? error : refuse(error);
 	}

@@ -8,6 +8,22 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — "Blocked [rule]: ..." on a command that looks harmless (the safety hook)
+
+**Symptom:** a Bash / PowerShell / Edit call is refused with `Blocked [push-main|force-push|delete-outside|
+owner-write|owner-discard]: ...`, or a command is slow (~0.5 s) before it runs.
+**Cause:** the `PreToolUse` safety hook (#185, [WORKFLOW.md](WORKFLOW.md#the-safety-hook-185-d-021)) denies the
+five rules named in the message; the reason says what to do instead. It reads the command line, so a
+command that *names* the owner's copy or a path outside the worktree is judged by what it writes or deletes
+there. `cd <owner's copy>` followed by a write is `owner-write` even with relative paths. A call that
+contains `push`, `reset`, `clean`, `checkout`, `rm`/`del`/`rd`, `cd` or `arx-fatalis-vr` takes the slow path
+through PowerShell; that is normal. Hook errors never block (fail open) and are logged.
+**Do:** follow the "instead" in the message. Read `%LOCALAPPDATA%\ArxFatalisVR\safety-hook.log` for the exact
+command and rule. For a real false positive tell the coordinator (do not rewrite the command to dodge the
+rule): the fix is a rule change plus a row in `scripts/dev/hooks/test-safety-guard.ps1`. A new session picks
+up a changed `.claude/settings.json` only on start; a hook that "does nothing" in a session started from
+a copy without the file (the owner's copy before the merge) is not loaded at all.
+
 ## 2026-10-09 — Scripting a launch from PowerShell: three tools that quietly do the wrong thing
 
 **Symptoms:** (1) `pwsh -File run-windows.ps1 ... -- --no-vr` fails with "parameter name '' is ambiguous";

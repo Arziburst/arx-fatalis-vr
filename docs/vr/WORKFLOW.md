@@ -290,7 +290,11 @@ After `/accept-task` the worker merges and switches the copy back to `main`.
 
 Helper scripts used by the commands:
 - `scripts/dev/next-task.ps1` — which task is next (Testing / In Progress first, then the queue)
-- `scripts/dev/set-status.ps1 -Issue <n> -Status <column>` — move a task on the board
+- `scripts/dev/set-status.ps1 -Issue <n> -Status <column>` — move a task on the board; under the GraphQL limit the move
+  is queued and sent later (`-Flush` sends it now). GitHub access of all dev scripts: `scripts/dev/github-lib.ps1` +
+  `board.ps1` (#186) — REST for everything but the board, a 5-minute board cache, rate-limit errors with the reset time;
+  `scripts/dev/test-github-lib.ps1` is the self-test
+- `scripts/dev/pr-checks.ps1 <pr> [-Watch]` — CI of a PR over REST (replaces `gh pr checks --watch`)
 - `scripts/build-windows.ps1`, `scripts/run-windows.ps1` — build and run (`-Isolated`: this copy's
   own user directory; `-Background`: no focus; `-StartSteamVR`: the owner's switch; `-Rebuild`)
 - `scripts/launch-lib.ps1` — launch control shared by every launch script (D-014): SteamVR guard,

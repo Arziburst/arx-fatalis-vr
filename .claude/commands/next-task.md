@@ -91,7 +91,7 @@ Run `.\scripts\dev\next-task.ps1`.
 - Label the PR `needs-vr-test` if the result can only be judged in the headset.
 
 ## 6. CI and merge
-- Wait for CI: `gh pr checks <pr> --watch`. If it fails, fix and push until it is green.
+- Wait for CI: `.scriptsdevpr-checks.ps1 <pr> -Watch` (REST; `gh pr checks --watch` polls the shared GraphQL quota). If it fails, fix and push until it is green.
 - **Review before merge (D-021):** with CI green, message the coordinator (SendMessage to
   "ARXVR Coordinator") `PR #<pr> ready for review` and wait. An independent reviewer checks your
   Definition of done and the decisions and posts **PASS** or **GAPS** on the PR; on GAPS fix them, push,

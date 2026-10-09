@@ -8,6 +8,20 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — "GraphQL limit" errors from commands that look like plain REST (#186)
+
+**Symptom:** `API rate limit already exceeded` / `unknown owner type` from `gh issue view`, `gh pr view`, `gh pr list`,
+`gh pr checks --watch`, `gh issue list` or a dev script, while `gh api repos/...` calls work and
+`gh api rate_limit` shows `core` untouched; `gh api rate_limit` may even show thousands of `graphql` points left.
+**Cause:** every high-level `gh` command except `gh api` with a `repos/...` path is GraphQL (`gh project ...` the
+heaviest), and the GraphQL quota (hourly points plus a secondary, short-term limit) is shared by every session of the
+account. A board query that fails is easy to read as "nothing there" (`next-task.ps1` said the queue was empty).
+**Do:** use `gh api repos/Arziburst/arx-fatalis-vr/...` (REST) or the helpers in `scripts/dev/github-lib.ps1`
+(`Get-GhIssue`, `Get-GhPull`, `Get-GhCommitChecks`, ...) and `scripts/dev/pr-checks.ps1 <pr> -Watch`; the board comes from
+the 5-minute cache (`board-cache.json`) and a spent limit queues the move (`board-queue.json`, `set-status.ps1 -Flush`).
+`ARXVR_FORCE_GRAPHQL_ERROR=1` makes every GraphQL call fail like a spent limit, to try the degraded paths. Also:
+PowerShell 7 turns ISO date strings of `ConvertFrom-Json` into `DateTime` — the cache stores epoch seconds instead.
+
 ## 2026-10-09 — Scripting a launch from PowerShell: three tools that quietly do the wrong thing
 
 **Symptoms:** (1) `pwsh -File run-windows.ps1 ... -- --no-vr` fails with "parameter name '' is ambiguous";
@@ -51,6 +65,9 @@ add-on, report). When primary and secondary sources disagree, say so in the row.
 
 ## 2026-10-09 — `next-task.ps1` says the MVP queue is empty; `set-status.ps1` fails to move a task
 
+*Resolved for the dev scripts by #186: a board that cannot be read is the cache (with a warning) or an error, never
+"empty"; `set-status.ps1` queues the move. The cause below stays true for any hand-typed `gh project ...`.*
+
 **Symptom:** `.\scripts\dev\next-task.ps1` prints `NEXT none — the MVP queue is empty` although
 `docs/vr/MVP.md` and the board are full of Todo tasks, and `.\scripts\dev\set-status.ps1` throws
 `Failed to move #N to <status>`; both outputs start with `GraphQL: API rate limit exceeded for
@@ -80,6 +97,9 @@ touched `TESTING.md` / `TRAPS.md` next to this task's lines.
 asking why CI is quiet; `gh pr merge` would also refuse a `CONFLICTING` PR.
 
 ## 2026-10-09 — `set-status.ps1` fails with "API rate limit exceeded" although `gh api rate_limit` shows thousands left
+
+*Resolved for the dev scripts by #186 (cached board, one mutation, queue, "secondary limit" recognised and waited for or
+queued). Still true for hand-typed `gh project ...`.*
 
 **Symptom:** `set-status.ps1 -Issue <n> -Status Backlog` prints `Issue #<n> is not on the board yet,
 adding it` and then `Failed to move #<n>`; run by hand, `gh project item-list` / `field-list` answer

@@ -8,6 +8,9 @@ it, and the old one gets `Status: Superseded by D-xxx` with a one-line reason. T
 *Decision* column of research catalogs (e.g. [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md)):
 a changed decision keeps its history in that cell.
 
+<!-- d-new-literal -->**Numbering:** while a PR is open a new decision is `## D-NEW: <title>`; the number is assigned at merge by
+`scripts/dev/number-decisions.ps1` (see [WORKFLOW.md](WORKFLOW.md#parallel-work)). Do not pick one by hand.
+
 ---
 
 ## D-033: Physical crouch — hysteresis on the calibrated eye; the character's crouch never lowers the view twice

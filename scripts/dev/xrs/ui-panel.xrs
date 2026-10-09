@@ -8,6 +8,7 @@
 # Level 10 does not do: its start holds the player, and once released the bag it shows opens again
 # right after every close (measured for #49, TRAPS.md).
 @sim idle
+@save mvp-new-game
 @args --loadslot 0
 
 @until state eq GAMEPLAY 60s

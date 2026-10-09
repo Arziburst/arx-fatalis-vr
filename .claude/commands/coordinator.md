@@ -15,6 +15,6 @@ Talk to the owner in Russian; everything written to GitHub is in English.
    for the owner's headset batch.
 4. Work out the current block (the first wave in `docs/vr/MVP.md` with unfinished tasks), tell the owner
    in a few lines what you take over and what you will run, then run the loop of COORDINATOR.md §3
-   until a stop condition: block done, a headset test needed, the budget (90% weekly / 95% five-hour, D-022), or an owner decision.
+   until a stop condition: block done, a headset test needed, the budget (80% weekly / 95% five-hour, D-022), or an owner decision.
 
 $ARGUMENTS

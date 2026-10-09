@@ -10,14 +10,14 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-022: Budget raised to 90% weekly / 95% five-hour; checks kept in balance with time and usage
+## D-022: Budget raised to 80% weekly / 95% five-hour; checks kept in balance with time and usage
 
 - **Date:** 2026-10-09
 - **Status:** Accepted (replaces the budget of D-013; refines points 1–3 of D-021)
 - **Decided by:** project owner
 
 ### Decision
-- **Weekly limit: up to 90%** (was 70%). At 90% no new workers; running ones finish.
+- **Weekly limit: up to 80%** (was 70%; 20% stay for the owner's other project). At 80% no new workers; running ones finish.
 - **Five-hour limit: up to 95%.** At 95% the coordinator stops the non-Fable workers, waits for the reset
   and resumes them; the last 5% are for the coordinator to keep watching. Fable workers go on.
 - **The safety hook never stops a task**: it denies only the dangerous command, says what to do instead,

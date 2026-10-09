@@ -83,7 +83,7 @@ workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
   current block, running workers (task, model, state), PRs waiting for review or for the headset, the
   owner's open questions, weekly usage. The owner reads it in the browser; a new coordinator starts from it.
 - **Wait** — idle notices, background CI waits (`gh pr checks --watch` or a small script with
-  `run_in_background`) and the usage guard (a background script that exits at 90% weekly or 95% five-hour, and every
+  `run_in_background`) and the usage guard (a background script that exits at 80% weekly or 95% five-hour, and every
   ~45 min as a heartbeat to catch stuck workers) wake the coordinator. No sleep loops in the foreground,
   no "are you done?" messages.
 - **Parallel tooling:** two build-area tasks may run together when their files do not overlap (e.g. a
@@ -122,7 +122,7 @@ workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
   the plan against it at the end of each checkpoint.
 
 ## 5. Budget
-- **Common weekly limit: up to 90%** (D-022). At 90% no new workers start; running ones finish their PRs.
+- **Common weekly limit: up to 80%** (D-022; 20% stay for the owner's other project). At 80% no new workers start; running ones finish their PRs.
 - **5-hour limit: up to 95%** (D-022). At 95% the coordinator **stops the non-Fable workers**
   (`claude stop <id>`, their work stays in the worktree and the transcript), waits for the reset
   (`rate_limits.five_hour.resets_at`), then **resumes them** (`claude respawn <id>`). The last 5% are the

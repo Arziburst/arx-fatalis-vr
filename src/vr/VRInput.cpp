@@ -23,6 +23,7 @@
 #include <array>
 
 #include "core/Config.h"
+#include "core/GameEvent.h"
 #include "core/TimeTypes.h"
 #include "gui/Menu.h"
 #include "input/Input.h"
@@ -42,6 +43,8 @@ struct InputState {
 	ControlResolver resolver = ControlResolver(defaultLayout(ControllerType::Unknown));
 	ControllerInput input;
 	GameInputMapper game;
+	TurnController turn;
+	bool smoothTurning = false; //!< a smooth turn is under way (for its start / stop game events)
 
 	//! Controls set by the test channel, merged into what the controllers report
 	ControlSet injectedDown;
@@ -173,6 +176,42 @@ const ControllerInput & controllerInput() {
 	return g_input.input;
 }
 
+TurnSettings turnSettings() {
+	TurnSettings settings;
+	settings.mode = config.input.vrSmoothTurn ? TurnMode::Smooth : TurnMode::Snap;
+	settings.snapAngle = config.input.vrSnapTurnAngle;
+	settings.smoothSpeed = config.input.vrSmoothTurnSpeed;
+	settings.snapRepeat = config.input.vrSnapTurnRepeat;
+	return settings;
+}
+
+float updateTurn(float seconds, bool allowed) {
+
+	const TurnSettings settings = turnSettings();
+	const float axis = g_input.game.state().turn;
+	const u64 snaps = g_input.turn.snaps();
+	const float yaw = g_input.turn.update(settings, axis, seconds, allowed);
+
+	// A snap is a player action: one event each; a smooth turn is an episode: logged when it starts and stops
+	if(g_input.turn.snaps() != snaps) {
+		gameevent::Event("vr.turn.snap", 1000)("dir", g_input.turn.lastSnap() > 0 ? "right" : "left")
+			("deg", settings.snapAngle, 1)("repeat", g_input.turn.lastSnapRepeated() ? "yes" : "no")
+			("count", g_input.turn.snaps());
+	}
+	const bool smoothTurning = settings.mode == TurnMode::Smooth && yaw != 0.f;
+	if(smoothTurning != g_input.smoothTurning) {
+		gameevent::Event("vr.turn.smooth", 1000)("state", smoothTurning ? "start" : "stop")
+			("speed", settings.smoothSpeed, 1)("turnedDeg", g_input.turn.turned(), 1);
+		g_input.smoothTurning = smoothTurning;
+	}
+
+	return yaw;
+}
+
+const TurnController & turnState() {
+	return g_input.turn;
+}
+
 namespace {
 
 std::string_view nextWord(std::string_view & text) {
@@ -243,6 +282,34 @@ std::string inputCommand(std::string_view arguments) {
 		return std::string();
 	}
 
+	if(verb == "turn") {
+		// The turn settings as cfg.ini sets them (#32); the settings screen is #178
+		std::string_view what = nextWord(rest);
+		if(std::optional<TurnMode> mode = parseTurnMode(what)) {
+			config.input.vrSmoothTurn = (*mode == TurnMode::Smooth);
+		} else if(what == "angle" || what == "speed" || what == "repeat") {
+			std::optional<float> value = util::toFloat(nextWord(rest));
+			if(!value) {
+				return "vr-input turn " + std::string(what) + ": expected a number";
+			}
+			if(what == "angle") {
+				config.input.vrSnapTurnAngle = std::clamp(*value, MinSnapAngle, MaxSnapAngle);
+			} else if(what == "repeat") {
+				config.input.vrSnapTurnRepeat = std::clamp(*value, 0.f, MaxSnapRepeat);
+			} else {
+				config.input.vrSmoothTurnSpeed = std::clamp(*value, MinSmoothSpeed, MaxSmoothSpeed);
+			}
+		} else {
+			return "vr-input turn: expected snap, smooth, angle <degrees>, speed <degrees per second> or repeat <seconds>, got \""
+			       + std::string(what) + "\"";
+		}
+		const TurnSettings settings = turnSettings();
+		LogInfo << "[vr] input: turn " << turnModeName(settings.mode) << ", snap " << settings.snapAngle
+		        << " deg repeating every " << settings.snapRepeat << " s, smooth " << settings.smoothSpeed
+		        << " deg/s (test channel)";
+		return std::string();
+	}
+
 	if(verb == "reset") {
 		g_input.injectedDown.reset();
 		g_input.injectedTaps.reset();
@@ -251,7 +318,7 @@ std::string inputCommand(std::string_view arguments) {
 		return std::string();
 	}
 
-	return "vr-input: expected down|up|tap <control>, stick <hand> <x> <y>, bind <event> <binding> or reset, got \""
+	return "vr-input: expected down|up|tap <control>, stick <hand> <x> <y>, bind <event> <binding>, turn <setting> or reset, got \""
 	       + std::string(arguments) + "\"";
 }
 

@@ -63,6 +63,9 @@ mark one
 '@
 Check 'a sequence parses' ($seq -isnot [string]) $seq
 Check 'launch directives are separated from the steps' ($seq.Sim -eq 'idle' -and "$($seq.Args)" -eq '--loadlevel 10' -and ($seq.Steps | Where-Object { $_.Kind -in 'sim', 'args' }).Count -eq 0)
+Check 'no save unless one is named' ($null -eq $seq.Save)
+$saved = Get-Parse "@sim idle`n@save mvp-new-game`n@args --loadslot 0`n@frames 1"
+Check '@save names the start save and is not a step' ($saved -isnot [string] -and $saved.Save -eq 'mvp-new-game' -and @($saved.Steps).Count -eq 1) $saved
 $kinds = ($seq.Steps | ForEach-Object Kind) -join ' '
 Check 'every directive has its kind' ($kinds -eq 'wait frames until assert remember assert mark log nolog shot diff key pending command command') $kinds
 Check 'the trailing comment is dropped' ($seq.Steps[0].Ms -eq 100)
@@ -140,8 +143,11 @@ $fake = {
 		$last = ''; $lineErrors = 0
 		$cmd = Join-Path $Dir 'command.txt'
 		if (Test-Path $cmd) {
-			$lines = @(Get-Content $cmd)
-			Remove-Item $cmd -Force
+			# A transient sharing violation (the test's own read, a scanner on the runner) must not lose the batch:
+			# the file is removed only after it was read, and a failed read is tried again on the next pass (#275).
+			$lines = $null
+			try { $lines = @([IO.File]::ReadAllLines($cmd)); Remove-Item $cmd -Force -ErrorAction Stop } catch { $lines = $null }
+			if ($null -eq $lines) { Start-Sleep -Milliseconds 30; continue }
 			foreach ($l in $lines) {
 				$l = $l.Trim(); if (-not $l) { continue }
 				$last = $l
@@ -155,7 +161,10 @@ $fake = {
 				elseif ($l -match '^refuse') { $lineErrors++ }
 			}
 			$seq++
-			Set-Content (Join-Path $Dir 'ack.txt') "seq=$seq frame=$frame errors=$lineErrors last=$last error=-"
+			# The test reads ack.txt every 50 ms; a write that hits its open handle is retried, never dropped (#275).
+			for ($try = 0; $try -lt 50; $try++) {
+				try { [IO.File]::WriteAllText((Join-Path $Dir 'ack.txt'), "seq=$seq frame=$frame errors=$lineErrors last=$last error=-"); break } catch { Start-Sleep -Milliseconds 20 }
+			}
 		}
 		$frame += 3
 		$status = @{ pid = 1; state = 'GAMEPLAY'; frame = $frame; errors = $errors; cmdSeq = $seq; captureSeq = $capture

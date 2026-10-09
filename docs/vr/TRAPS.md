@@ -8,6 +8,28 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — `test-xrs.ps1` fails once in a while: "timed out waiting for the game to acknowledge" (#275)
+
+**Symptom:** one check of 73 fails on the CI runner (a `@shot`/`@diff` step), the rerun of the same commit passes.
+**Cause (most likely, not reproduced in 20 local runs):** the fake game read `command.txt` with `Get-Content` and
+wrote `ack.txt` with `Set-Content`, whose errors are non-terminating — a sharing violation with the test's own
+50 ms polling (or a scanner on a loaded runner) silently lost the batch or its ack, so nothing was acknowledged.
+**Do:** the fake game removes `command.txt` only after reading it and retries both the read and the ack write.
+When a channel check times out with the game alive, suspect a dropped file operation before a slow game.
+
+## 2026-10-09 — The body turned 45° by the numbers, the picture did not turn (#32)
+
+**Symptom:** on the simulated headset with `--loadlevel 10` (+ `setplayercontrols on`) a snap turn changed
+`player.yaw` and `camera.yaw` in `status.json` by exactly 45°, the `vr.turn.snap` game event was logged, and the
+eye shots before and after still looked down the same corridor (picture change ~4, barely over the floor);
+a head turn of the simulator did turn the picture.
+**Cause:** the trap of #24 again — level 10 is the intro conversation, whose camera is placed by
+`speechControlledCinematic()`, not from the player's yaw, so nothing the **body** does shows in the view.
+`status.json` → `camera.yaw` is the engine's `g_playerCamera`, not what the eyes render with.
+**Do:** check turning, walking, anything the body does, on a first-person save: `@save mvp-new-game` +
+`@args --loadslot 0` in the `.xrs` (snap turn there: picture change 16.9). Judge by the shots, not by
+`camera.yaw`.
+
 ## 2026-10-10 — A channel-driven check times out with `ack.txt` holding only `quit`, though the game ran (#258)
 
 **Symptom:** `body-check.ps1` fails with "timed out after 180 s waiting for gameplay"; no command of the check

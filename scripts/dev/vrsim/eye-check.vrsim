@@ -1,11 +1,12 @@
 # The two-eyes check (research row F-06, #112): run by scripts/dev/eye-check.ps1, which judges the shots.
-# Two shots with the head still give the same-eye floor (how much a picture changes by itself),
+# Two shots of one frame with the head still give the same-eye floor (how much a picture changes by itself
+# with no game time between them - so it does not grow when frames are slow, #232),
 # then the head turns 25 degrees and the third shot must differ from the first in both eyes.
 
 timeline gameplay
 
 @270 shot still-a                # 3 s after the level is playable: past its fade-in
-@+10 shot still-b
+@+0 shot still-b                # the same frame: no game time passes, so the floor is the renderer noise alone
 @+1 head rot 25 0 0
 @+20 shot yaw25
 @+1 head rot 0 0 0

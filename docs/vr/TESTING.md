@@ -738,7 +738,7 @@ fades in (TRAPS.md); the scripts shoot 3 s in (`@270`).
 
 ### The two-eyes check (`eye-check.ps1`, F-06)
 
-One `--vr-sim` launch with `scripts\dev\vrsim\eye-check.vrsim` (two shots with the head still, one
+One `--vr-sim` launch with `scripts\dev\vrsim\eye-check.vrsim` (two shots of one frame with the head still, one
 after a 25° yaw), judged by `scripts\dev\eye-check-lib.ps1` (self-test `test-eye-check.ps1`):
 
 | Leg | Passes when |
@@ -746,7 +746,7 @@ after a 25° yaw), judged by `scripts\dev\eye-check-lib.ps1` (self-test `test-ey
 | `world` | both eyes' verdict is `world` in the still shot |
 | `pairing` | every frame showed both eye images from one frame, no stale eye |
 | `separation` | the eyes are the IPD apart (± 0.5 mm) |
-| `difference` | left vs right > 3 × the same-eye floor (two still shots of one eye) and > 0.5, < 60 luma levels |
+| `difference` | left vs right > 3 × the same-eye floor (two shots of one eye taken in the same frame: no game time passes between them, so slow frames cannot raise it, #232) and > 0.5, < 60 luma levels |
 | `parallax` | the left picture is shifted right of the right one |
 | `yaw` | both eyes turned 25° (± 0.5°) and both pictures changed above the floor |
 

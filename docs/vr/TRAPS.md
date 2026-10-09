@@ -774,3 +774,9 @@ a PowerShell test helper with parameter `$G` and a local `$g` failed with "canno
 **Symptom:** `test-xrs.ps1` failed only on the slow CI runner: the ack of a check's first command read `last=refuse this`, the command of the check before (#250).
 **Cause:** the game writes `ack.txt` first and `status.json` later; `Send-ArxCommand` took its baseline `cmdSeq` from `status.json` and waited for it to advance, so the late status update of the *previous* batch ended the wait and the old ack was returned.
 **Do:** the baseline is the newest seq of ack.txt and status.json, and the answer is `ack.txt` itself advancing (`Read-ArxAck` in `scripts/dev/test-lib.ps1`). After a send, `status.json` may still lag behind the ack - wait for the state you assert on (`@until`, `@frames`).
+
+## 2026-10-10 - Crouched in the start cell, the character never stood up again
+
+**Symptom:** on the test save `mvp-new-game` the character crouched (button, toggle or the head, #100) and never stood up: the toggle went off (`player.crouch state=off`), `PLAYER_CROUCH` stayed set for good; on `mvp-items` the same sequence stood up (#263).
+**Cause:** the engine's own stand-up check, not VR code - flat Arx Libertatis did the same. `ARX_PLAYER_Manage_Visual` checked the **whole** standing cylinder with `CheckAnythingInCylinder`, and at the awakening spot that cylinder grazes a sloped floor polygon 21 units above the feet (`background=-21.0 ... normY=-0.3`). Standing there is fine - the check runs only to stand up - but the crouched character could never pass it.
+**Do:** the stand-up (and the jump from a crouch) now checks only the part of the standing cylinder above the crouched one (`standUpCylinder()` in `src/game/Player.cpp`). A refused stand-up logs one `player.standup.blocked` event with what is in the way (`describeCylinderBlocker`); read it before blaming crouch code. `stand-up.xrs` checks both directions.

@@ -8,6 +8,21 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — A `spellcast` on the player from the console casts nothing
+
+**Symptom:** `spellcast -fs 5 magic_sight self` through the test channel is acknowledged with
+`errors=0`, no `[W]`, yet nothing happens: no spell sound, no effect, `camera.fov` in `status.json`
+stays at 75.00 although Magic Sight should widen it; a second `spellcast` on the player does nothing
+either. The #71 "26 spells, 0 of 240 frames differ" rows were accepted on exactly this command.
+**Cause:** `TryToCastSpell` launches a script-cast spell at once only with `NOANIM` **and** `NODRAW`
+(`-s` and `-m`). Otherwise it is queued in `spellcast_data` for the rune-drawing loop
+(`RuneDraw.cpp`), which skips the player entity — the spell never starts, and the queued
+`castingspell != SPELL_NONE` makes every later `spellcast` on the player return at the first line.
+There is no error anywhere: the script command succeeded, the launch simply never comes.
+**Do:** cast on the player with `-fsm` (`spellcast -fsm 5 <spell> self`) and prove the spell is active
+with a number (`camera.fov` 80.65 for Magic Sight, a `[vr] comfort:` line, life / mana, a `shot`),
+never with the ack alone. #155 re-runs the #71 spells check with a working cast.
+
 ## 2026-10-09 — `status.json` says `window.focused: true` for a window that never got the focus
 
 **Symptom:** a self-test started without activation (`SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN=1`, #147)

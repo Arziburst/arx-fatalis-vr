@@ -40,7 +40,9 @@
 #include "core/SaveGame.h"
 #include "core/TimeTypes.h"
 #include "core/Version.h"
+#include "game/Camera.h"
 #include "game/Player.h"
+#include "game/effect/Quake.h"
 #include "graphics/Renderer.h"
 #include "graphics/image/Image.h"
 #include "gui/Console.h"
@@ -55,6 +57,7 @@
 #include "platform/Time.h"
 #include "scene/ChangeLevel.h"
 #include "util/String.h"
+#include "vr/VRComfort.h"
 #include "vr/VRSystem.h"
 #include "window/RenderWindow.h"
 
@@ -311,6 +314,31 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("mana", player.manaPool.current);
 		json.value("manaMax", player.manaPool.max);
 		json.end();
+		// The first-person camera after this frame's effects: bob = how far the camera left the stable head
+		// position (view bobbing), shake = the quake amplitude applied, fov in degrees (zoom) - the numbers
+		// the VR comfort policy (#76) keeps at 0 / cfg.ini fov
+		json.object("camera");
+		json.value("x", g_playerCamera.m_pos.x);
+		json.value("y", g_playerCamera.m_pos.y);
+		json.value("z", g_playerCamera.m_pos.z);
+		json.value("pitch", g_playerCamera.angle.getPitch());
+		json.value("yaw", g_playerCamera.angle.getYaw());
+		json.value("roll", g_playerCamera.angle.getRoll());
+		json.value("fov", glm::degrees(g_playerCamera.fov()));
+		json.value("bob", glm::distance(g_playerCamera.m_pos, g_playerCameraStablePos));
+		json.value("shake", quakeAmplitude());
+		json.end();
+	}
+
+	{
+		const vr::ComfortPolicy & policy = vr::comfort();
+		json.object("comfort");
+		json.value("mode", vr::comfortModeName(vr::comfortMode()));
+		json.value("active", vr::comfortActive());
+		json.value("viewBobbing", policy.viewBobbing);
+		json.value("screenShake", policy.screenShake);
+		json.value("fovZoom", policy.fovZoom);
+		json.end();
 	}
 
 	if(mainApp && mainApp->getWindow()) {
@@ -459,6 +487,22 @@ std::string execute(std::string_view line) {
 
 	if(word == "recenter") {
 		return refuse("recenter: not implemented yet (#28)");
+	}
+
+	if(word == "comfort") {
+		// Who decides the VR comfort policy (#76): auto = the VR session, on / off force the VR rules
+		std::string mode(rest);
+		util::makeLowercase(mode);
+		if(mode == "auto") {
+			vr::setComfortMode(vr::ComfortMode::Auto);
+		} else if(mode == "on") {
+			vr::setComfortMode(vr::ComfortMode::On);
+		} else if(mode == "off") {
+			vr::setComfortMode(vr::ComfortMode::Off);
+		} else {
+			return refuse("comfort: expected auto, on or off, got \"" + std::string(rest) + "\"");
+		}
+		return std::string();
 	}
 
 	if(word == "drawcheck") {

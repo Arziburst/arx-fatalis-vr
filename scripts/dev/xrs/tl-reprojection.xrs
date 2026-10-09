@@ -34,7 +34,7 @@ specialfx newspell 1                           # the script command reads one wo
 @frames 6
 @shot fx-after
 @diff table fx-before lt 0.05 quad             # the quad's own floor between two still shots (0)
-@diff fx-before fx-after gt 0.2 quad           # the FX is on the quad (0.41 measured)
+@diff fx-before fx-after gt 0.1 quad           # the FX is on the quad (0.56 on a 640x480 quad, 0.21 on 918x689)
 @remember covered vr.sim.shots.fx-before.quad.covered
 @assert vr.sim.shots.fx-after.quad.covered le {covered+50}
 @assert errors eq 0

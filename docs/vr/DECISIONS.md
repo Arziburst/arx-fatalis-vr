@@ -275,7 +275,7 @@ and the desktop shortcut), not by the workers' discipline:
    (`run-windows.ps1`, `test-pr.ps1`) starts SteamVR. Workers never start or close SteamVR by hand
    either (no `vrstartup.exe`, no `Stop-Process vrmonitor`).
 2. **One game at a time on this PC.** Every script launch, flat or VR, holds a machine-wide game lock
-   slot (`%LOCALAPPDATA%\ArxFatalisVR\game-<n>.lock`; a VR launch also `vr.lock`) while the game runs,
+   slot (`%LOCALAPPDATA%\ArxFatalisVR\game-<n>.lock`; since #205 `%ProgramData%\ArxFatalisVR\locks`, shared by every Windows account including the CI runner service; a VR launch also `vr.lock`) while the game runs,
    waits in line with a timeout and names the holder (working copy, branch, pid). A raw `arx.exe`
    outside the lock counts as a holder. `settings.json` (`maxGames`) may allow 2 flat games later.
 3. **Only the working copy's own fresh build.** A launch refuses an `arx.exe` from another copy's

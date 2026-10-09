@@ -1,6 +1,7 @@
 .*
 !.gitignore
 !.editorconfig
+!/.gitattributes
 !/.mailmap
 !/.travis.yml
 !/.github
@@ -10,3 +11,6 @@
 !/.claude/commands
 !/.claude/settings.json
 /build
+
+# CI evidence of the game checks (scripts/dev/ci-smoke.ps1)
+/ci-artifacts/

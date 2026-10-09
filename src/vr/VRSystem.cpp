@@ -34,6 +34,7 @@
 #include "platform/Platform.h"
 #include "Configure.h"
 
+#include "core/GameEvent.h"
 #include "core/Version.h"
 #include "gui/Credits.h"
 #include "io/fs/FilePath.h"
@@ -159,6 +160,89 @@ const char * sessionStateName(XrSessionState state) {
 		case XR_SESSION_STATE_LOSS_PENDING: return "loss pending";
 		case XR_SESSION_STATE_EXITING:      return "exiting";
 		default:                            return "(invalid)";
+	}
+}
+
+//! What a session state means for the game - logged with every change (research row F-118)
+const char * sessionStateMeaning(XrSessionState state) {
+	switch(state) {
+		case XR_SESSION_STATE_IDLE:         return "no frames wanted yet";
+		case XR_SESSION_STATE_READY:        return "the runtime wants the session to begin";
+		case XR_SESSION_STATE_SYNCHRONIZED: return "frames are timed but not displayed - the runtime may pace the game as slowly as it likes";
+		case XR_SESSION_STATE_VISIBLE:      return "frames are displayed, input goes elsewhere (dashboard or overlay)";
+		case XR_SESSION_STATE_FOCUSED:      return "displayed and receiving input";
+		case XR_SESSION_STATE_STOPPING:     return "the runtime asks the game to end the session";
+		case XR_SESSION_STATE_LOSS_PENDING: return "the session is about to be lost (runtime or headset gone)";
+		case XR_SESSION_STATE_EXITING:      return "the runtime asks the game to leave VR";
+		default:                            return "unknown";
+	}
+}
+
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+
+/*!
+ * Who has the desktop focus when the session leaves FOCUSED (F-118): another process means the
+ * game window lost the desktop focus and the runtime followed; our own process means the runtime
+ * took the focus for its own overlay (dashboard, system menu).
+ */
+void logFocusLost() {
+	HWND window = GetForegroundWindow();
+	DWORD pid = 0;
+	WCHAR className[256] = L"";
+	WCHAR title[256] = L"";
+	if(window) {
+		GetWindowThreadProcessId(window, &pid);
+		GetClassNameW(window, className, DWORD(std::size(className)));
+		GetWindowTextW(window, title, int(std::size(title)));
+	}
+	bool own = window && pid == GetCurrentProcessId();
+	gameevent::Event("vr.focus")("state", "lost")("foregroundPid", u64(pid))("own", own)
+		("class", platform::WideString::toUTF8(className))("title", platform::WideString::toUTF8(title))
+		("hint", !window ? "no foreground window" : own ? "runtime overlay took the input"
+		                                                : "another window has the desktop focus");
+}
+
+#else
+
+void logFocusLost() {
+	gameevent::Event("vr.focus")("state", "lost");
+}
+
+#endif
+
+//! The interaction profile the runtime uses for \a userPath now (/user/hand/left), or why not
+std::string currentInteractionProfile(const char * userPath) {
+
+	XrPath path = XR_NULL_PATH;
+	XrResult result = xrStringToPath(g_xr.instance, userPath, &path);
+	if(XR_FAILED(result)) {
+		return "error:" + resultName(result);
+	}
+
+	XrInteractionProfileState state = { XR_TYPE_INTERACTION_PROFILE_STATE };
+	result = xrGetCurrentInteractionProfile(g_xr.session, path, &state);
+	if(XR_FAILED(result)) {
+		return "error:" + resultName(result);
+	}
+	if(state.interactionProfile == XR_NULL_PATH) {
+		return "none";
+	}
+
+	char buffer[XR_MAX_PATH_LENGTH];
+	uint32_t count = 0;
+	result = xrPathToString(g_xr.instance, state.interactionProfile, uint32_t(sizeof(buffer)), &count, buffer);
+	if(XR_FAILED(result)) {
+		return "error:" + resultName(result);
+	}
+	return buffer;
+}
+
+const char * referenceSpaceName(XrReferenceSpaceType type) {
+	switch(type) {
+		case XR_REFERENCE_SPACE_TYPE_VIEW:  return "view";
+		case XR_REFERENCE_SPACE_TYPE_LOCAL: return "local";
+		case XR_REFERENCE_SPACE_TYPE_STAGE: return "stage";
+		default:                            return "other";
 	}
 }
 
@@ -934,8 +1018,13 @@ void pollEvents() {
 				if(changed.session != g_xr.session) {
 					break;
 				}
+				XrSessionState previous = g_xr.sessionState;
 				g_xr.sessionState = changed.state;
-				LogInfo << "OpenXR session state: " << sessionStateName(changed.state);
+				gameevent::Event("vr.session")("state", sessionStateName(changed.state))
+					("was", sessionStateName(previous))("meaning", sessionStateMeaning(changed.state));
+				if(previous == XR_SESSION_STATE_FOCUSED) {
+					logFocusLost();
+				}
 				if(changed.state == XR_SESSION_STATE_READY) {
 					beginSession();
 				} else if(changed.state == XR_SESSION_STATE_STOPPING) {
@@ -957,6 +1046,21 @@ void pollEvents() {
 				// SteamVR binds the controllers a few frames after the session is focused
 				LogInfo << "[vr] input: the runtime reports an interaction profile change";
 				g_xr.actions.profilesChanged();
+				// Which controllers the runtime binds now ("error:XR_ERROR_ACTIONSET_NOT_ATTACHED" without
+				// the action set)
+				if(g_xr.session != XR_NULL_HANDLE) {
+					gameevent::Event("vr.profile")("left", currentInteractionProfile("/user/hand/left"))
+						("right", currentInteractionProfile("/user/hand/right"));
+				}
+				break;
+			}
+
+			case XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING: {
+				// The runtime moves a space - its own recenter, or the play area changed (#28 re-seeds)
+				const XrEventDataReferenceSpaceChangePending & change
+					= *reinterpret_cast<const XrEventDataReferenceSpaceChangePending *>(&event);
+				gameevent::Event("vr.refspace")("space", referenceSpaceName(change.referenceSpaceType))
+					("poseValid", change.poseValid != XR_FALSE);
 				break;
 			}
 

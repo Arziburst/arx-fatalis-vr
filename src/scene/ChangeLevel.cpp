@@ -60,6 +60,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "core/Config.h"
 #include "core/Core.h"
+#include "core/GameEvent.h"
 #include "core/GameTime.h"
 #include "core/Version.h"
 
@@ -265,7 +266,9 @@ static bool openCurrentSavedGameFile() {
 }
 
 bool ARX_CHANGELEVEL_StartNew() {
-	
+
+	gameevent::Event("game.new");
+
 	g_currentPlathrough.startTime = std::time(nullptr);
 	g_currentPlathrough.uniqueId = Random::get(u64(1), std::numeric_limits<u64>::max());
 	g_currentPlathrough.oldestALVersion = arx_version_number;

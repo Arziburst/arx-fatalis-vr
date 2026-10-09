@@ -25,10 +25,12 @@
 #include <string>
 
 #include "core/Config.h"
+#include "core/GameEvent.h"
 
 #include "game/EntityManager.h"
 #include "game/Equipment.h"
 #include "game/Player.h"
+#include "game/magic/Rune.h"
 #include "game/magic/Spell.h"
 #include "game/spell/Cheat.h"
 
@@ -745,6 +747,9 @@ void ARX_SPELLS_Analyse() {
 }
 
 static void handleRuneDetection(Rune rune) {
+	// moves: the stroke as numpad directions - what the recognizer saw (#130, tuning in #45)
+	gameevent::Event("rune.drawn")("rune", runeInfos[rune].name)("moves", SpellMoves)
+		("index", CurrSpellSymbol);
 	SpellSymbol[CurrSpellSymbol++] = rune;
 
 	if(CurrSpellSymbol >= MAX_SPELL_SYMBOLS) {
@@ -761,7 +766,7 @@ static void unrecognizedRune() {
 	}
 	
 	LAST_FAILED_SEQUENCE = SpellMoves;
-	LogDebug("Unknown Symbol - " + SpellMoves);
+	gameevent::Event("rune.unknown")("moves", SpellMoves);
 	
 }
 
@@ -1125,6 +1130,11 @@ bool ARX_SPELLS_AnalyseSPELL() {
 	}
 	
 	if(spell == SPELL_NONE) {
+		std::string runes;
+		for(size_t i = 0; i < CurrSpellSymbol && i < SpellSymbol.size() && SpellSymbol[i] != RUNE_NONE; i++) {
+			runes += (runes.empty() ? "" : "+") + std::string(runeInfos[SpellSymbol[i]].name);
+		}
+		gameevent::Event("spell.unknown")("runes", runes.empty() ? std::string("none") : runes);
 		ARX_SOUND_PlaySFX(g_snd.MAGIC_FIZZLE);
 		
 		if(player.SpellToMemorize.bSpell) {

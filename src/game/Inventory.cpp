@@ -54,6 +54,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "core/Application.h"
 #include "core/Config.h"
+#include "core/GameEvent.h"
 
 #include "game/EntityManager.h"
 #include "game/Item.h"
@@ -61,6 +62,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "gui/Dragging.h"
 #include "gui/Interface.h"
+#include "gui/hud/SecondaryInventory.h"
 
 #include "graphics/GraphicsTypes.h"
 #include "graphics/Math.h"
@@ -134,6 +136,13 @@ static void ARX_INVENTORY_Declare_InventoryIn(Entity * io, Entity * container) {
 		io->ignition = 0;
 	}
 	
+	// Into the player's inventory, or into the container the player has open - not the inventories
+	// that level scripts fill while a level loads
+	if(container == entities.player() || container == g_secondaryInventoryHud.openContainer()) {
+		gameevent::Event("item.toinventory")("item", gameevent::entityName(io))
+			("container", gameevent::entityName(container));
+	}
+
 	SendIOScriptEvent(io, container, SM_INVENTORYIN);
 	if(container == entities.player()) {
 		// Items only receive the event when they are put in the player inventory because scripts expect that

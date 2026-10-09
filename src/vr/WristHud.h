@@ -53,7 +53,9 @@ struct WristVitalsStatus {
 	float alpha = 0.f;
 	u64 drawnViews = 0;        //!< views the bars were drawn into with alpha > 0
 	Vec3f center = Vec3f(0.f);
-	Vec3f normal = Vec3f(0.f);
+	Vec3f normal = Vec3f(0.f);   //!< out of the inner wrist
+	Vec3f across = Vec3f(0.f);   //!< the direction the bars fill (towards the thumb)
+	Vec3f along = Vec3f(0.f);    //!< elbow -> hand
 };
 
 const WristVitalsStatus & wristVitalsStatus();

@@ -140,6 +140,8 @@ void drawWristVitals() {
 	status.alpha = layout.valid ? layout.alpha : 0.f;
 	status.center = layout.center;
 	status.normal = layout.normal;
+	status.across = layout.across;
+	status.along = layout.along;
 	if(!layout.valid || layout.alpha <= 0.f) {
 		return;
 	}

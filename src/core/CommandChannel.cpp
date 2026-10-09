@@ -721,11 +721,17 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("facingDeg", wrist.facingDeg);
 		json.value("alpha", wrist.alpha);
 		json.value("drawnViews", wrist.drawnViews);
-		json.object("center");
-		json.value("x", wrist.center.x);
-		json.value("y", wrist.center.y);
-		json.value("z", wrist.center.z);
-		json.end();
+		// the middle of the bars (units) and their axes in the world (engine: x right, y down, z forward)
+		const struct { const char * name; const Vec3f & v; } vectors[] = {
+			{ "center", wrist.center }, { "normal", wrist.normal }, { "across", wrist.across }, { "along", wrist.along },
+		};
+		for(const auto & vector : vectors) {
+			json.object(vector.name);
+			json.value("x", vector.v.x);
+			json.value("y", vector.v.y);
+			json.value("z", vector.v.z);
+			json.end();
+		}
 		json.end();
 	}
 	{

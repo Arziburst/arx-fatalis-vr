@@ -8,6 +8,32 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — A new `status.json` key is `<absent>` though the code that writes it was just changed (#116)
+
+**Symptom:** `smoke-test.ps1 -Rebuild` ran, said nothing about building, and the sequence failed on a key
+added a minute ago: `vr.wrist.along.x (<absent>)`.
+**Cause:** the fresh-build check (D-014) compares `built-from.txt` with the commit only. A build of the
+clean `HEAD` followed by edits still counts as fresh, so `-Rebuild` does not rebuild and the old `arx.exe` runs.
+**Do:** after editing, run `.\scripts\build-windows.ps1` yourself before the launch (or commit first); it costs
+a launch from the budget otherwise.
+
+## 2026-10-10 — `@diff` of two still shots of the body is as large as a small HUD change (#116)
+
+**Symptom:** on `mvp-new-game`, looking down at the arms (`--vr-sim idle`), two shots of the same pose a few
+frames apart differ by **2.2** (left eye) — the change of the wrist bars from full to half was 2.1–2.8.
+**Cause:** the whole picture moves: the idle animation of the body and the right arm, the torch light.
+**Do:** a mean over the whole eye image cannot prove a change of a few hundred pixels; assert on the numbers
+in `status.json` and judge the captures. Measure a still pair in the same pose before trusting a threshold.
+
+## 2026-10-10 — The model's fingers are grip +Y, its thumb grip +Z (#36, #116)
+
+**Symptom:** wrist bars built on "thumb = grip +Y" lay along the fingers instead of across the wrist.
+**Cause:** the full body (#36, `HandFrame` in `src/vr/ArmIK.h`) puts the hand's long axis (wrist →
+knuckles) on grip **+Y** and the thumb side on grip **+Z**; the palm normal is +X. In engine axes (y down,
+z forward) a grip vector (x, y, z) is (x, −y, −z) before `PlayerArmStatus::grip` turns it into the world.
+**Do:** anything attached to the hand takes its axes from that convention, and a `--vr-sim` pose for "fingers
+to the right, palm to the face" is `hand left rot -90 -90 0`.
+
 ## 2026-10-10 — `test-xrs.ps1` fails once in a while: "timed out waiting for the game to acknowledge" (#275)
 
 **Symptom:** one check of 73 fails on the CI runner (a `@shot`/`@diff` step), the rerun of the same commit passes.

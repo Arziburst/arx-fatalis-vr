@@ -36,7 +36,8 @@
  *  - logs every game state change as \c [game] \c state: \c MENU|LOADING|GAMEPLAY|CINEMATIC.
  *
  * Channel commands: \c status, \c shot \c [name], \c quit, \c mark \c <text>, \c loadslot \c <n>,
- * \c loadlevel \c <n>, \c drawcheck \c [frames], \c recenter (refused until #28). Any other line goes
+ * \c loadlevel \c <n>, \c newgame, \c savegame \c <name>, \c entities \c [filter],
+ * \c setpos \c <x> \c <y> \c <z> \c [yaw], \c lookat \c <entity>, \c drawcheck \c [frames], \c recenter (refused until #28). Any other line goes
  * to the script console exactly as if typed there: \c [entity.]command \c args.
  *
  * See docs/vr/TESTING.md for the protocol and scripts/dev/smoke-test.ps1 for the first client.

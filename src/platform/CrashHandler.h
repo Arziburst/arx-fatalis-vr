@@ -77,6 +77,17 @@ public:
 	static bool isInitialized();
 
 	/*!
+	 * \brief Take the crash filter back if another module replaced it (Windows)
+	 *
+	 * The Steam overlay, the OpenXR runtime and graphics drivers load into the process and may call
+	 * SetUnhandledExceptionFilter after us, which silences our crash reports (#132). Cheap: call it
+	 * about once a second from the main thread.
+	 *
+	 * \return True if the filter had been replaced and was restored.
+	 */
+	static bool rearm();
+
+	/*!
 	 * \brief Add a file that will be included in the crash report
 	 *
 	 * Upon a crash, if this file is not found, it will simply be ignored.

@@ -644,7 +644,7 @@ the eyes by its alpha (research rows F-115, F-162, F-163; the design is D-025):
   target, cleared to transparent.
 - `ArxGame::updateActiveCamera()` prepares the head camera with the union projection and the VR
   near plane (0.09 m, F-39): rooms, portals and entities are culled once for both eyes, and the
-  update projects with it at the window's size.
+  update projects with it at the interface's size (`g_size`, the quad's own resolution, #73).
 - `ArxGame::renderStereoViews()` draws `renderSceneView()` per eye between `vr::beginEyeRender()`
   and `vr::endEyeRender()`: the eye's camera is the head camera moved to the eye and turned by its
   cant, the projection is the eye's own off-axis matrix straight from its `XrFovf`
@@ -655,23 +655,53 @@ the eyes by its alpha (research rows F-115, F-162, F-163; the design is D-025):
   the quad in front; a frame whose scene was not drawn (a menu) clears both eyes to the dark
   background — both eyes or none (F-116). The desktop mirror (#21) copies the mirrored eye in
   `endEyeRender()` and the quad before its release and draws them into the window (the quad
-  blended by its alpha); with `vr_mirror = 0` the window shows the flat frame alone. With an idle
-  headset (`shouldRender` false) the game draws into the window as in flat mode and the frame is
-  ended without layers.
+  blended by its alpha); with `vr_mirror = 0` the window shows the flat frame alone. Any other
+  frame while the session runs (an idle headset with `shouldRender` false, eyes not located, the
+  loading screen through `vr::beginInterfaceFrame()`) draws the flat frame straight into the quad's
+  image, cleared to opaque black, and the window shows it scaled; such a frame is ended without
+  layers when the runtime does not want it rendered.
 
 The log says once per session what the eyes are:
 
 ```
-[vr] stereo: the scene is drawn per eye - left 2468x2740 fov L -54.0 R 40.0 U 44.0 D -55.0 deg, right 2468x2740 fov L -40.0 R 54.0 U 44.0 D -55.0 deg, eye separation 64.0 mm, canted displays: 5.0 deg between the eyes, union fov L -59.0 R 59.0 U 46.3 D -57.1 deg (one cull for both eyes), near 0.09 m = 9.0 units; the 2D interface stays on the head-locked quad (640x480, blended by its alpha)
+[vr] stereo: the scene is drawn per eye - left 2468x2740 fov L -54.0 R 40.0 U 44.0 D -55.0 deg, right 2468x2740 fov L -40.0 R 54.0 U 44.0 D -55.0 deg, eye separation 64.0 mm, canted displays: 5.0 deg between the eyes, union fov L -59.0 R 59.0 U 46.3 D -57.1 deg (one cull for both eyes), near 0.09 m = 9.0 units; the 2D interface stays on the head-locked quad (1528x1146, blended by its alpha)
 ```
+
+### The interface's own resolution (#73)
+
+The 2D interface is laid out on a virtual screen, `g_size` / `g_sizeRatio` (fonts, HUD scale,
+menus). In flat mode that is the window. While an OpenXR session runs, from its first located eyes
+on, it is the **head-locked quad's own resolution**: the eye image's pixels per unit of tangent
+(`eyeWidth / (tan right − tan left)`) times the quad's tangent width (2.4 m / 1.75 m), with the
+window's aspect ratio, clamped to 640…4096 wide and to the largest swapchain
+(`src/vr/InterfaceSize.h`, host tests in `tests/vr/InterfaceSizeTest.cpp`). On the Index that is
+**1528 px wide** for a 4:3 window (1528×1146) at 19.4 px per degree, whatever the window's size —
+before #73 the quad had the window's pixels (a 640×480 test window: a blurry quad). Size, distance
+and shape of the quad are unchanged (D-030).
+
+- `ArxGame::doFrame()` compares `vr::interfaceSize(window)` with `g_size` after `vr::beginFrame()`
+  and lays the interface out again (`AdjustUI`, like a resized window) when the session starts and
+  stops: `Interface laid out at 1528x1146 (was 640x480, window 640x480)`.
+- The mouse is measured on the interface: `Input` maps the window's cursor to `g_size` and back
+  (`setMousePosAbs`), identity in flat mode.
+- The scene is still drawn at the eye size (#19): `g_size` is the eye's only inside
+  `renderSceneView()` per eye.
+- A frame drawn into the window while the quad has its own size (the first frame after a level
+  load ended the game loop's frame) goes without the quad for that one frame.
+
+Evidence, once per session and per change: `[vr] interface: 918x689 on the head-locked quad (2.40 m
+at 1.75 m, 11.7 px per degree like the eyes) instead of the window's 640x480` (the simulator's
+1440×1600 eyes), a `vr.interface` game event, and `status.json` → `vr.interface` (`width`/`height` =
+`g_size`, `quadWidth`/`quadHeight`, `eyePxPerDeg`). A `shot` in a VR run saves the quad's image at
+that size.
 
 plus one `vr.stereo` game event with the same numbers, and `status.json` → `vr.stereo`
 (`active`, `frames`, the sizes and angles). `OpenXR session stopped after N frames (M shown, K in
 stereo)` counts the stereo frames at the end.
 
-What stays with the head camera until #72 / #73 (and looks flat or misplaced in the headset):
+What stays with the head camera until #72 (and looks flat or misplaced in the headset):
 particles, sparks, light flares and the mouse-drawn rune sparkles (update-phase 2D data at the
-window's size); screen-space picking with the mouse (#37 replaces it with hand reticles). The
+interface's size); screen-space picking with the mouse (#37 replaces it with hand reticles). The
 draw check is refused in a stereo frame: its two views would be the two eyes.
 
 **Without a headset:** the per-eye path runs unchanged on the simulated headset (`--vr-sim`,
@@ -740,7 +770,7 @@ fades in (TRAPS.md); the scripts shoot 3 s in (`@270`).
 
 ### The two-eyes check (`eye-check.ps1`, F-06)
 
-One `--vr-sim` launch with `scripts\dev\vrsim\eye-check.vrsim` (two shots with the head still, one
+One `--vr-sim` launch with `scripts\dev\vrsim\eye-check.vrsim` (two shots of one frame with the head still, one
 after a 25° yaw), judged by `scripts\dev\eye-check-lib.ps1` (self-test `test-eye-check.ps1`):
 
 | Leg | Passes when |
@@ -748,7 +778,7 @@ after a 25° yaw), judged by `scripts\dev\eye-check-lib.ps1` (self-test `test-ey
 | `world` | both eyes' verdict is `world` in the still shot |
 | `pairing` | every frame showed both eye images from one frame, no stale eye |
 | `separation` | the eyes are the IPD apart (± 0.5 mm) |
-| `difference` | left vs right > 3 × the same-eye floor (two still shots of one eye) and > 0.5, < 60 luma levels |
+| `difference` | left vs right > 3 × the same-eye floor (two shots of one eye taken in the same frame: no game time passes between them, so slow frames cannot raise it, #232) and > 0.5, < 60 luma levels |
 | `parallax` | the left picture is shifted right of the right one |
 | `yaw` | both eyes turned 25° (± 0.5°) and both pictures changed above the floor |
 
@@ -1020,3 +1050,22 @@ Measured (owner's PC, 2026-10-09, #123):
 | the same, flat `smoke-test.ps1` | `PASS` — a flat run ignored the VR lock *(since #147 a flat run waits for the game lock too)* |
 | the holder is killed (`Stop-Process`) | the lock is free at once; after a release no `vr.lock` file is left |
 | `smoke-test.ps1 -Vr` with SteamVR running, headset idle, lock free (3 runs) | the lock is taken and released, VR `enabled=True session=ready` in all three; **2 of 3 crashed on exit** with the #93 stack (`Entity::cleanReferences` ← `DanaeClearLevel`), no cinematic loaded — the VR exit path is exposed to #93 where the flat path is clean (4 of 4 the same hour), so `-Vr` is **not a gate** until #93 is fixed (evidence on the issue). *#93 fixed on 2026-10-09: 0 exit crashes in 13 VR exits; `-Vr` stays best effort because of #146* |
+
+## Crash reports under SteamVR and the symbol archive (D4, #132)
+
+- **The crash filter is taken back.** The engine reports crashes through `SetUnhandledExceptionFilter`; an overlay, the
+  OpenXR runtime or a driver loaded into the process can replace it and silence every report. `ArxGame::doFrame` calls
+  `CrashHandler::rearm()` once a second: if another filter is installed, ours is restored and `arx.log` gets
+  `[W] [crash] the unhandled exception filter was replaced by another module, restored`. No vectored-exception fallback
+  (research F-93): add it only if a tester's crash is ever missing a report while that warning is absent.
+- **Check without a headset.** Channel `crash` faults on the main thread; `crash steal` replaces the filter the way an overlay
+  would and faults 3 s later (after the re-arm). Run: `smoke-test.ps1 -VrSim basic -Commands 'crash steal'` - expected
+  `FAIL` (the game is meant to die) with a new `crashes\<utc>\crash.txt` (`ACCESS_VIOLATION`, stack with file:line), the
+  re-arm warning and the deliberate-crash warning in the log. 2026-10-09: 2 of 2 runs wrote the report on the simulated
+  headset (session focused, 270 frames). A run with `[crash] deliberate crash requested` in its log is digested but never
+  filed as an auto-report. The real SteamVR overlay is not simulated: the first tester crash under SteamVR confirms it.
+- **Symbols per build.** `package-tester.ps1` writes the exe's SHA-256 into `BUILD.txt` (`arx.exe sha256:`), packs
+  `arx.pdb` + `BUILD.txt` into `*-symbols.zip` and keeps a copy in `%LOCALAPPDATA%\ArxFatalisVR\symbols\<sha256>\`. CI uploads
+  the zip as the artifact `tester-symbols` (90 days). A tester's support bundle (`system.txt`, `BUILD.txt`) names the hash of
+  the exe that crashed: take the pdb of that hash, nothing else matches.
+- **The support bundle** already holds `arx.log` + previous runs and `crashes\` (#88); it now also has the exe hash and `BUILD.txt`.

@@ -164,6 +164,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "script/Script.h"
 
 #include "vr/HeadTracking.h"
+#include "vr/VRSystem.h"
 
 #include "window/RenderWindow.h"
 
@@ -222,9 +223,18 @@ float PULSATE;
 
 bool AdjustUI() {
 	
-	// Sets Danae Screen size depending on windowed/full-screen state
-	g_size = Rect(mainApp->getWindow()->getSize().x, mainApp->getWindow()->getSize().y);
-		
+	// The interface's virtual screen: the window, or in VR the head-locked quad's own resolution (#73)
+	const Vec2i windowSize = mainApp->getWindow()->getSize();
+	const Vec2i interfaceSize = vr::interfaceSize(windowSize);
+	if(interfaceSize != g_size.size()) {
+		LogInfo << "Interface laid out at " << interfaceSize.x << 'x' << interfaceSize.y << " (was " << g_size.width()
+		        << 'x' << g_size.height() << ", window " << windowSize.x << 'x' << windowSize.y << ")";
+	}
+	g_size = Rect(interfaceSize.x, interfaceSize.y);
+	if(GInput) {
+		GInput->setInterfaceSize(interfaceSize);
+	}
+
 	// Computes X & Y screen ratios compared to a standard 640x480 screen
 	
 	g_sizeRatio.x = float(g_size.width()) / 640.f;

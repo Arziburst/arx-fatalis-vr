@@ -168,8 +168,7 @@ dependencies are met; when a task is split, replace it with its parts.
 
 How the queue splits into **waves** of tasks that can run at the same time (see "Parallel work" in
 [WORKFLOW.md](WORKFLOW.md)). Every task carries an area label (`area:…`) and, if it will need the
-owner's headset, `lane:vr`. Within a wave, tasks of **different areas** run together; at most 3
-workers, the VR lane at most 2 in progress and 4 in Testing. The queue order above stays the
+owner's headset, `lane:vr`. Within a wave, tasks of **different areas** run together; no worker cap (D-027), the VR lane at most 2 in progress and 4 in Testing. The queue order above stays the
 tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 
 ### Dependencies

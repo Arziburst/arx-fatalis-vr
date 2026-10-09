@@ -19,7 +19,7 @@ with the headset lying there (the runtime still locates it), and it is put on 50
 was 80 units above the eye.
 **Do:** read `vr.head.reference` in arx.log: `kind`, `wornS` and `headAboveFloorM` say when and from what
 the reference came; `status.json` → `vr.head.worn` / `referenceKind`. Since #27 the settled reference
-only comes from a worn headset (D-030). To reproduce without a headset: `session idle` in a `--vr-sim`
+only comes from a worn headset (D-031). To reproduce without a headset: `session idle` in a `--vr-sim`
 script (`scripts/dev/vrsim/eye-height.vrsim`).
 
 ## 2026-10-09 — A check of "what the button did" counts one event too many, or finds it before the press (#74)
@@ -709,6 +709,12 @@ high); `[datetime]::Parse($obj.updated)` on a JSON field gave a date a month off
 `ConvertFrom-Json` already returns ISO-8601 strings as `DateTime`, and parsing its culture-formatted string swaps day and month.
 **Do:** write `[math]::Max(0.0, $x)`; take a field that may be a `DateTime` or a string through a helper
 (`ConvertTo-Epoch` in `scripts/dev/usage-lib.ps1`).
+
+## 2026-10-09 - A deliberate crash check files a bug issue
+
+**Symptom:** the `crash` / `crash steal` channel check (#132) opened an `auto-reported` issue (#235).
+**Cause:** the run digest files every new crash signature (#131).
+**Do:** the digest skips filing for a run whose log has `[crash] deliberate crash requested`; if another deliberate fault is added, log the same marker line first.
 
 ## 2026-10-09 — .xrs: a timeout without its `s` was part of the value; `$g` and `$G` are one variable
 

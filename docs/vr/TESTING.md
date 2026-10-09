@@ -58,6 +58,19 @@ above) plus `--no-vr` unless `-Vr`, and `--loadlevel 10` unless other `arx.exe` 
 | no errors | `[E]` / `[C]` lines in the log **and** `errors` in `status.json` | any |
 | commands | every `-Commands` ack has `errors=0` | a command was refused |
 | draw check | `drawCheck` in `status.json`, when a `drawcheck` was among the commands | it did not finish, or `framesDiffering ≠ 0` |
+| game events | `events.byName` in the final `status.json` ([game event log](#the-game-event-log), #130): always `vr.mode=1` and `game.state>=2`, plus every `-ExpectEvents 'name=N'` (exactly) / `'name>=N'` (at least) | no `events` in the status, or a count differs (`game events: spell.cast=0 (expected 1)`) |
+
+The event check of #130, the one to re-run after touching anything that logs a game event:
+
+```powershell
+.\scripts\dev\smoke-test.ps1 -Commands 'setplayercontrols on','cinemascope off','book open','status','book close',
+  'ui inventory open','status','ui inventory close','status','status','inventory playeradd magic/potion_life/potion_life',
+  'addxp 3000','spellcast -fsm 5 magic_sight self','spellcast -fsm 5 fake_summon self','attachnpctoplayer',
+  'save eventtest','status','human_base_0033.dodamage player 1000','status','status' `
+  -ExpectEvents 'game.new=1','level.load=1','level.loaded=1','game.state>=3','ui.book=2','ui.inventory>=2',
+  'item.toinventory=1','player.levelup=1','spell.cast=1','spell.refused=1','script.error=1','save=1','player.death=1'
+# => [ok] game events as expected (...; total=21)   =>  PASS   (the attachnpctoplayer [W] is intended)
+```
 
 It prints the state timeline (`+1.1s state GAMEPLAY (frame 2)`), the acks, the `[E]`/`[W]` lines,
 the last lines of the log, the head of a new crash report, and `PASS` / `FAIL` with every reason.

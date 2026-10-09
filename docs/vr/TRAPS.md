@@ -8,6 +8,21 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — `next-task.ps1` says the MVP queue is empty; `set-status.ps1` fails to move a task
+
+**Symptom:** `.\scripts\dev\next-task.ps1` prints `NEXT none — the MVP queue is empty` although
+`docs/vr/MVP.md` and the board are full of Todo tasks, and `.\scripts\dev\set-status.ps1` throws
+`Failed to move #N to <status>`; both outputs start with `GraphQL: API rate limit exceeded for
+user ID …`.
+**Cause:** the board scripts read the project through `gh`'s GraphQL API, and that hourly quota is
+shared by every session of the owner's account (the coordinator, every worker, `cycle-report.ps1`).
+When it is spent the project query returns nothing and the scripts read "nothing" as "no tasks".
+`set-status.ps1` may still have landed the move: its `#N -> <status>` line is printed before a
+trailing query fails.
+**Do:** read the reset time with `gh api rate_limit --jq '.resources.graphql'` and retry after it;
+never conclude "queue empty" or "move failed" from an output that carries the rate-limit line; check
+the board in the browser when in doubt.
+
 ## 2026-10-09 — A new PR gets no CI run: `gh pr checks` says "no checks reported" for minutes
 
 **Symptom:** the PR is open, other PRs got their `Build (Windows)` run within a minute, but this one

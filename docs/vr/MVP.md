@@ -42,13 +42,14 @@ The desktop window mirrors one eye, so the demo can be recorded and shown.
 |---|---|
 | Launch | VR starts automatically when a headset is available; game data found in Steam libraries; launchable from SteamVR |
 | Rendering | OpenXR stereo at the headset's native rate; desktop mirror (a copy of the left eye) |
-| Camera | HMD orientation drives the view; eye height = the character's camera (D-006); correct world scale; recenter |
+| Camera | The camera is where the head is: HMD position and orientation; continuous height with a game crouch below a threshold; leaning and real steps with the body following and a wall fade; the standing head = the character's eye height; correct world scale; recenter, seated play (D-018) |
 | Body | The full player model: legs and torso animated by the engine, head hidden, arms driven by the controllers via IK (D-009) |
 | Locomotion | Thumbstick movement relative to the look direction, snap and smooth turn, physical crouch, crouch toggle (right stick down) and jump (A) |
 | Input | OpenXR actions with Index bindings, mapped onto the engine's existing actions; the trigger always works as a fallback |
 | Interaction | Both hands work as the mouse, each with its own reticle and no visible beam: drag items over surfaces and into the inventory (which opens in the centre of the view), use doors / levers / chests / bodies (D-016; reference: VHVR, #166) |
 | Melee | The weapon in the model's hand; hits by contact plus a swing detector; damage from swing speed; haptics |
 | Magic | Runes drawn in the air with the hand, fed into the existing recognizer; spell direction from the hand, invisible |
+| VR settings | Our own VR settings, opened from the main and pause menus: in the MVP the **Controls** section — remapping (button, chord, long press per event; per controller type; reset to default), turning, crouch and height, left-handed mode (D-020); sound and graphics stay in the game's settings |
 | UI | Menus, inventory, book, map, dialogs and notes on one floating panel with a pointer only while it is open; health and mana on the left wrist |
 | Comfort | Head bob, screen shake and FOV zoom disabled |
 | Testing | Workers verify without the headset first: smoke test and command channel, simulated VR backend with scripted sequences, host unit tests |
@@ -116,12 +117,13 @@ dependencies are met; when a task is split, replace it with its parts.
 14. #19 — Render the scene twice with per-eye view and projection; accepted by the two-eyes check (F-06, F-39)
 15. #72 — Per-eye re-projection of CPU-projected (TL) geometry
 16. #73 — Decouple the UI virtual screen size from the eye render target size
-17. #24 — HMD orientation → camera orientation, no neck model (F-21, F-31, F-37)
-18. #27 — World scale and eye height = the character's camera (D-006)
+17. #24 — HMD pose (orientation and position) → camera, no neck model (D-018, F-21, F-31, F-37)
+18. #27 — World scale; the standing head = the character's eye height (D-018)
 19. #76 — VR comfort defaults: no view bobbing, screen shake, FOV zoom (F-31)
 20. #28 — Recenter on a held button chord (F-34)
 21. #114 — Host unit tests in the build and CI (F-08)
-22. #100 — Physical crouch (D-006, F-29)
+22. #100 — Physical crouch: the game crouch below a height threshold (D-018, F-29)
+22. #26 — Leaning and real steps: the body follows the head with collision; wall fade (D-018)
 23. #30 — OpenXR action set with gameplay-named actions
 24. #35 — Suggested bindings: Index first, Quest 3, simple controller (F-41, F-47)
 25. #74 — VR input module: logical action snapshot, tap / hold (F-42, F-43)
@@ -135,6 +137,7 @@ dependencies are met; when a task is split, replace it with its parts.
 *(the owner decides on the new catalog rows before #36, #116, #49 and #88)*
 29. #49 — Floating UI panel for menus, inventory, book, map (F-80, F-82)
 30. #34 — Menu pointer only while a menu or the inventory is open (D-010, F-81)
+30. #178 — VR settings screen with the Controls section: remapping, turning, crouch and height, left-handed (D-020)
 31. #33 — Jump on A, crouch toggle on right stick down, stealth by partial deflection (F-47)
 32. #70 — Test save library for MVP scenarios *(scripts via the #99 channel where possible; the owner records the rest)*
 33. #36 — Full body: the player model with arms driven by the controllers via IK (D-009, F-52, F-49)
@@ -198,6 +201,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #28 recenter (button chord) | camera | VR | #24, #74 |
 | #114 host unit tests in CI | build | plain | — |
 | #100 physical crouch | camera | VR | #24, #28, #114 |
+| #26 leaning, real steps, wall fade | camera | VR | #24, #25, #27 |
 | #30 OpenXR action set | input | plain | — |
 | #35 bindings | input | VR | #30 |
 | #74 input module | input | VR | #30 |
@@ -206,6 +210,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #32 turning | input | VR | #74 |
 | #118, #120 research | docs | plain | — (decisions before #36, #116, #49, #88) |
 | #49 UI panel | ui | VR | #73 |
+| #178 VR settings: Controls | ui | VR | #30, #35, #49, #34, #32, #33, #28, #100 |
 | #34 menu pointer | ui | VR | #49, #74 |
 | #33 jump, crouch toggle, stealth | input | VR | #74 |
 | #70 test saves | build | plain | #99, #123 |
@@ -233,9 +238,9 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | **1** | #18 → #20 → #21 | #147, #93, #71, #114, #115 → #129, #76, #118, #120, #79, #141, #151, #155 |
 | **2** | #24, #19 | #112 → #113, #30, #131, #130, #166 |
 | **3** | #74, #72, #27, #25, #35 | #73, #70, #127 |
-| **4** — finishes checkpoint A | #28, #100, #31, #32, #42 | #80 |
+| **4** — finishes checkpoint A | #28, #100, #26, #31, #32, #42 | #80 |
 | **5** — checkpoint B | #49, #33, #36 | #88 → #132 *(after the owner's decisions on #118 / #120)* |
-| **6** | #34, #116, #37, #75 | — |
+| **6** | #34, #116, #37, #75, #178 | — |
 | **7** — checkpoints C, D | #38, #39, #43 → #44 → #45 | #16 |
 | **8** — MVP done | #77 | — |
 

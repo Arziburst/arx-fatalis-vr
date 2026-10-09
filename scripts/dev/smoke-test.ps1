@@ -330,6 +330,13 @@ function Invoke-SmokeRun([int]$Run) {
 	if ($process) {
 		Add-ArxLaunchRecord -Script 'smoke-test.ps1' -Copy $ArxSourceDir -Branch $copy.Branch -Build $stamp -Vr $Vr -GamePid $process.Id `
 			-ExitCode $(if ($process.HasExited) { $process.ExitCode } else { $null }) -DurationSec ((Get-Date) - $launchTime).TotalSeconds -ArxArgs $ArxArgs -Time $launchTime
+		# The run digest (#131): local and quick; the queued GitHub reports are sent once after the game lock is released
+		try {
+			& (Join-Path $PSScriptRoot 'log-digest.ps1') -UserDir $UserDir -Since $launchTime -Source 'smoke-test.ps1' `
+				-ExitCode $(if ($process.HasExited) { $process.ExitCode } else { $null }) -DurationSec ((Get-Date) - $launchTime).TotalSeconds -Copy $ArxSourceDir
+		} catch {
+			Write-Warning "run digest failed (the verdict is unaffected): $($_.Exception.Message)"
+		}
 	}
 
 	$result.Reasons = $reasons -join '; '
@@ -364,6 +371,9 @@ try {
 } finally {
 	Exit-ArxGameLock $lock
 }
+
+# Send what the digests of these runs queued (bug filing of #131; REST only, soft failure, no wait for the owner)
+try { & (Join-Path $PSScriptRoot 'log-digest.ps1') -Flush } catch { Write-Warning "sending the digest reports failed: $($_.Exception.Message)" }
 
 $passed = @($results | Where-Object Result -eq 'PASS').Count
 if ($Repeat -gt 1) { $results | Format-Table -AutoSize | Out-String | Write-Host }

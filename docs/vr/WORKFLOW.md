@@ -300,6 +300,8 @@ Helper scripts used by the commands:
 - `scripts/launch-lib.ps1` — launch control shared by every launch script (D-014): SteamVR guard,
   game lock, fresh-build check, ledger, budget note, background window
 - `scripts/dev/smoke-test.ps1` — the worker's self-test: start, play, quit, check the evidence
+- `scripts/dev/log-digest.ps1` — the run digest and automatic bug filing (#131); runs by itself after
+  every launch of `run-windows.ps1` / `smoke-test.ps1`; `test-log-digest.ps1` is its self-test
 - `scripts/dev/game-cmd.ps1`, `scripts/dev/game-status.ps1` — talk to a running game through the
   test channel (`--test-dir`), see [TESTING.md](TESTING.md)
 - `scripts/dev/new-worktree.ps1 -Issue <n> -Type <type> -Name <name>` — a worker's own working copy
@@ -412,6 +414,8 @@ Every game run is evidence, with nothing for the owner to do (plan decided on 20
 - **D3 (#131)** after **every** game exit started by our tools (desktop shortcut, `run-windows.ps1`,
   `test-pr.ps1`, the smoke test) a digest runs automatically; a **new** error signature or a crash is
   filed as an issue labeled `bug` + `auto-reported`, a known one gets a throttled "seen again" comment.
+  Read `scripts/dev/log-digest.ps1 -Print` instead of `arx.log` ([TESTING.md](TESTING.md#the-run-digest-131));
+  GitHub calls of the filing are REST only (the GraphQL quota is shared by all sessions).
 - **D4 (#132)** crash reports verified under SteamVR, debug symbols kept for every tester build.
 
 **Triage:** the coordinator goes through new `auto-reported` issues in every `/new-cycle`: confirm or

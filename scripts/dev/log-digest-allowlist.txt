@@ -1,0 +1,7 @@
+# Log lines that are known to be harmless: the run digest (scripts/dev/log-digest.ps1) shows them but never
+# files an issue for them. One .NET regular expression per line, matched against the whole log line as the
+# digest sees it: "[W] Context:123  message" (level, source file and line, message). Lines starting with # are
+# comments. Add a line here when you close an `auto-reported` issue as noise - and say why in a comment above it.
+
+# A fresh isolated user directory has no cfg.ini yet; the game writes defaults (docs/vr/TESTING.md, first run)
+^\[W\] ArxGame:\d+\s+Could not read config files cfg\.ini and cfg_default\.ini

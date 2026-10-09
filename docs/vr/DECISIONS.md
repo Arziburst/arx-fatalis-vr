@@ -10,6 +10,145 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-021: Quality and automation package — review before merge, CI gates, a safety hook, automatic order, research radar
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** project owner (all ten proposals of the coordinator)
+
+### Decision
+1. **Every PR is reviewed before merge** by an independent reviewer session (`/review-pr`, Sonnet): each
+   Definition-of-done item and coordinator addition needs evidence; decisions are checked. Workers wait
+   for PASS (three "done" claims with a missing item on 2026-10-09: #141, #151, #71).
+2. **CI is the automatic gate**: the flat smoke test, host unit tests, `drawcheck` and the spell draw
+   check on every PR (#127).
+3. **A safety hook** blocks dangerous commands of every session even with prompts off (#185).
+4. **Automatic task order**: `plan-next.ps1` computes the tasks ready to start (#187).
+5. **The dev scripts survive the GitHub GraphQL limit** (REST first, a board cache) (#186).
+6. **Session control and spend**: a per-session ledger from the status line; stuck or overfull workers are
+   caught; spend per task calibrates model choice.
+7. **A status page**: the pinned issue "ARXVR status", updated by the coordinator every cycle.
+8. **Research radar**: one reference project per block, OpenMW VR first (#188).
+9. **A VR game checklist** to audit the plan against (#189).
+10. **The owner's impressions** after each headset test are collected and triaged.
+
+### Why
+The owner wants development to run on its own with the quality checked automatically and unknown
+features found through research, not by chance. Details: [COORDINATOR.md](COORDINATOR.md) §3, §4, §4b.
+
+---
+
+## D-020: Our own VR settings — the MVP has the Controls section, with remapping
+
+- **Date:** 2026-10-09
+- **Status:** Accepted (moves the left-handed mode of D-019 into the MVP)
+- **Decided by:** project owner (agreed by questions, D-017)
+
+### Decision
+- The game gets **its own VR settings**, section by section. **The MVP has "Controls"**; sound,
+  graphics and the rest stay in the game's own settings for now and get VR sections later.
+- **Controls** in the MVP:
+  - **remapping:** a list of gameplay events (jump, inventory, book, crouch, use, …); for each event the
+    player assigns a **single button, a chord of two buttons on one hand, or a long press**; conflicts are
+    shown; "reset to the default layout";
+  - **turning:** snap or smooth, the snap angle (30 / 45 / 90, default 30, D-019), the smooth speed;
+  - **crouch and height:** physical crouch on / off and its threshold, seated mode, "calibrate height";
+  - **left-handed** mode (dominant hand).
+- **Default layouts per controller type**: the game detects the controllers (OpenXR interaction profile —
+  Index, Touch first) and offers the standard layout for them (the D-019 table); a remapped layout is
+  **saved per controller type** and picked automatically.
+- The VR settings open from the **main menu and the pause menu** (an entry "VR" next to the game's own
+  options), on the centred panel with the menu pointer.
+
+### Why
+Players should be able to fit the controls to themselves inside the game, on any supported controllers;
+the controls are the base of the VR settings that grow later (sound, graphics).
+
+### Consequences
+- **#30** builds the remapping into the action set from the start: one OpenXR action per physical
+  control, the game's own table maps controls (single / chord / long press) to gameplay events; the
+  interaction profile is detected. SteamVR's binding UI stays usable on top (F-139).
+- **#35** provides the default layouts per controller type as those tables.
+- A new task builds the **VR settings menu with the Controls section** (on #49's panel and #34's pointer):
+  #178.
+- **Later sections, agreed for after the MVP:** **Video** (#181) — render resolution %, MSAA, anisotropic
+  filtering, draw distance, VR brightness and gamma, desktop mirror mode, an FPS counter; **Comfort**
+  (#182) — a movement / turn vignette and world scale %. Not settings: FOV, foveated rendering, refresh
+  rate and motion smoothing (the headset's / SteamVR's).
+
+---
+
+## D-019: The MVP control scheme
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** project owner (agreed by questions, D-017; builds on D-008, D-010, D-016, D-018)
+
+### Decision
+Valve Index first; Quest 3 Touch the same (A/B on the right, X/Y on the left).
+
+| Action | Control |
+|---|---|
+| Walk | left stick, forward = where you look (D-008); **speed by deflection** — slightly = sneak / walk, fully = run; no run button |
+| Turn | right stick left / right; **snap 30° by default**, smooth turn selectable in the settings |
+| Jump | A (right) |
+| Crouch | physically (D-018) or a toggle on the right stick down |
+| Reticle per hand | a hidden ray from each hand; the reticle turns yellow with the item's name on an interactive object (D-016) |
+| Click / drag | the trigger of either hand: press = click; hold and move = drag; release = drop where the game says (inventory, floor, surface, throw) |
+| Use an item (eat, equip) | grip on the item (the original's right click) |
+| Straight into the inventory | **grip held + trigger** on a world item (the original's stealth-click), one hand, without opening the inventory |
+| Doors, levers, chests, bodies, talking | **one trigger press acts at once** (sent to the game as its double click) |
+| Inventory | **B on the right**; the panel opens in the centre of the view and stays where it appeared while open; **the weapon stays in the hand** (no sheathing in VR) |
+| Character book (stats, map, diary, spells) | **B on the left** (Y on Quest), on the same centred panel |
+| Menus | a pointer only while a menu is open (D-010); both hands can use it |
+| Two reticles on different items | the name shown is the one of the **hand that moved last** |
+| Recenter | hold a button chord (F-34) |
+| Runes | drawn in the air with the hand (D-010); the button that starts casting is decided with the magic block (#43–#45) |
+| Left-handed mode | ~~after the MVP~~ → in the MVP, in the VR settings (D-020) |
+
+### Why
+The original's mouse model stays the engine's (each hand produces the cursor), so the controls add little
+new mechanics; the owner's key case — sword in the right hand, open the inventory, drag an item from the
+floor into it with the left hand — works with these buttons.
+
+### Consequences
+#30 action set and #35 bindings follow this table; #32 snap 30° default + smooth option; #33 jump, crouch
+toggle, speed by deflection; #34 menu pointer for both hands; #37 / #38 the reticle rules (the proposal in
+RESEARCH-reference-mods.md 13g with these answers); #49 the centred panel for the inventory and the book.
+
+---
+
+## D-018: The camera is where the head is — full head tracking in the MVP
+
+- **Date:** 2026-10-09
+- **Status:** Accepted (replaces D-006)
+- **Decided by:** project owner (design agreed by questions, D-017)
+
+### Decision
+- The VR camera follows the **headset's position as well as its orientation** — "the camera flies where
+  the head is", as in other VR games. A fixed eye height kills VR.
+- **Height:** the camera moves with the head continuously (head 20 cm lower → camera 20 cm lower). When
+  the head drops below a threshold relative to the standing height, the character **also crouches in the
+  game** (stealth, low passages, hitbox); standing up makes it stand (#100).
+- **Leaning and steps:** horizontal head movement moves the camera — peek around a corner, take a few real
+  steps; the character's body follows the head with the game's collision. A head pushed into geometry
+  **fades the screen** (the usual VR rule) instead of seeing through walls.
+- **Player height:** at recenter the player's **standing head is mapped to the character's eye height**,
+  so tall and short players see the world from the character's eyes and doors and tables keep their size.
+  Seated play: recentering while seated does the same (#28).
+
+### Why
+Immersion: real crouching, leaning and stepping are what make VR feel physical; the owner tried the
+fixed height in thought and rejected it.
+
+### Consequences
+- #24 becomes "HMD pose (orientation and position) → camera"; #27 maps the standing head to the
+  character's eye height; #100 crouch threshold on top of the continuous height; #26 (leaning, room-scale,
+  wall fade) moves from M2 into the MVP; #25 makes the body follow the head with collision; #28 captures
+  the standing height at recenter and covers seated play.
+
+---
+
 ## D-017: Player-experience design is agreed with the owner before any work starts
 
 - **Date:** 2026-10-09
@@ -333,7 +472,7 @@ or adding a second VR API just for a tile image.
 ## D-006: Eye height follows the character for the MVP; real crouch = game crouch
 
 - **Date:** 2026-10-08
-- **Status:** Accepted
+- **Status:** Superseded by D-018 — the owner wants full head tracking: a fixed eye height kills VR
 - **Decided by:** project owner
 
 ### Decision

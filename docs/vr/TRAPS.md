@@ -8,6 +8,19 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — `vr.shownFrames` stays at 1 while `vr.frames` grows: the frame loop looks broken
+
+**Symptom:** a VR self-test with nobody in the headset reports `frames=834 shown=1`; the log has
+one `First VR frame shown` line and nothing after it, as if the layers stopped being submitted.
+**Cause:** with an idle headset the session reaches `synchronized` but never `visible`, and SteamVR
+sets `XrFrameState::shouldRender` only for the very first frame; the game then submits frames
+without layers (as the spec asks) to keep the timing. The one shown frame proves that the whole
+layer path (acquire, clear, copy, release, two layers in `xrEndFrame`) ran without an error.
+**Do:** judge the frame loop by `vr.frames` (must grow) and by the absence of `[E]` lines, not by
+`vr.shownFrames`; whether the picture is right is the simulated backend's (#112) or the owner's
+question. A `shownFrames` that grows with an idle headset would mean the runtime changed its
+behaviour, not that the game got better.
+
 ## 2026-10-09 — A press page says a closed-source mod is "MIT", or that a feature exists the code removed
 
 **Symptom:** research on a reference mod finds two accounts of the same fact: MoguraVR's summary table

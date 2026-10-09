@@ -29,6 +29,7 @@
 #include "graphics/Renderer.h"
 #include "graphics/texture/TextureStage.h"
 #include "graphics/data/TextureContainer.h"
+#include "vr/VRSystem.h"
 #include "window/RenderWindow.h"
 
 static float PROGRESS_BAR_TOTAL = 0;
@@ -114,6 +115,7 @@ void LoadLevelScreen(AreaId area ) {
 			EERIEDrawBitmap_uv(Rectf(pos, size.x, size.y), 0.f, pbar, Color::white, 0.f, 0.f, ratio, 1.f);
 		}
 		
+		vr::submitFrame(mainApp->getWindow()->getSize());
 		mainApp->getWindow()->showFrame();
 		
 		OLD_PROGRESS_BAR_COUNT = PROGRESS_BAR_COUNT;

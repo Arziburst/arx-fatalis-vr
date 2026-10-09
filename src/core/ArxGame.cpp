@@ -1213,6 +1213,7 @@ void ArxGame::doFrame() {
 
 	// Manages Splash Screens if needed
 	if(HandleGameFlowTransitions()) {
+		vr::submitFrame(m_MainWindow->getSize());
 		m_MainWindow->showFrame();
 		return;
 	}
@@ -1288,6 +1289,8 @@ void ArxGame::doFrame() {
 		render();
 		// A "shot" from the test channel reads the finished frame before it is shown
 		channel::afterRender();
+		// In VR: the finished flat frame on a head-locked quad in the headset (no-op in flat mode)
+		vr::submitFrame(m_MainWindow->getSize());
 		m_MainWindow->showFrame();
 	}
 }

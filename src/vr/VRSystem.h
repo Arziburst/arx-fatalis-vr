@@ -20,6 +20,11 @@
 #ifndef ARX_VR_VRSYSTEM_H
 #define ARX_VR_VRSYSTEM_H
 
+#include <string>
+
+#include "math/Types.h"
+#include "platform/Platform.h"
+
 /*!
  * \brief VR runtime integration (OpenXR)
  *
@@ -31,8 +36,9 @@
  * Startup order (see \ref ArxGame::initialize):
  *  1. \ref initialize - create the OpenXR instance and find the headset (no OpenGL needed yet)
  *  2. the window and the OpenGL context are created
- *  3. \ref createSession - bind the OpenXR session to that OpenGL context
- *  4. \ref pollEvents every frame, \ref shutdown at exit
+ *  3. \ref createSession - bind the OpenXR session to that OpenGL context, create the swapchains
+ *  4. \ref pollEvents every frame (begins and ends the session as the runtime asks),
+ *     \ref submitFrame before every buffer swap, \ref shutdown at exit
  */
 namespace vr {
 
@@ -60,14 +66,39 @@ bool initialize();
  */
 bool createSession();
 
-//! Poll OpenXR events (session state changes, instance loss) - call once per frame
+/*!
+ * \brief Poll OpenXR events (session state changes, instance loss) - call once per frame
+ *
+ * Begins the session when the runtime reports it ready and ends it when the runtime stops it.
+ */
 void pollEvents();
+
+/*!
+ * \brief Show the finished flat frame in the headset
+ *
+ * Call after the frame was rendered into the window's back buffer and before the buffers are
+ * swapped. Submits one OpenXR frame: a uniform dark background from the per-eye swapchains and,
+ * in front of it, a copy of the back buffer on a head-locked quad (F-20 in
+ * docs/vr/RESEARCH-reference-mods.md). Waits for the headset's frame timing (\c xrWaitFrame).
+ * Does nothing while no OpenXR session is running.
+ *
+ * \param windowSize size of the window's back buffer
+ */
+void submitFrame(const Vec2i & windowSize);
 
 //! \return true while the game runs in VR, i.e. an OpenXR session exists
 bool isEnabled();
 
 //! \return the current OpenXR session state as text ("none" without a session) - for status.json
 const char * sessionStateString();
+
+//! OpenXR frame counters since the game started - for status.json
+struct FrameCounters {
+	u64 submitted = 0; //!< frames ended with \c xrEndFrame
+	u64 shown = 0;     //!< of those, frames the runtime wanted rendered and that carried layers
+};
+
+FrameCounters frameCounters();
 
 /*!
  * \return the OpenXR runtime that answered this run, as "<name> <version>" - empty while no

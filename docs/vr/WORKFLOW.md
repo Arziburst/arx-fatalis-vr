@@ -243,8 +243,8 @@ its branch stays checked out and freshly built there, so the owner tests exactly
 .\scripts\run-windows.ps1 -- --skiplogo --loadslot 0
 ```
 
-Or double-click the **Arx Fatalis VR** desktop shortcut (created by `scripts/create-desktop-shortcut.ps1`):
-it runs the latest build of whatever branch is checked out in the owner's working copy and shows the
+Or double-click the **Arx Fatalis VR** desktop shortcut (created by `scripts/create-desktop-shortcut.ps1`, runs `scripts/launch-shortcut.ps1`):
+it rebuilds first when the build is stale (no `built-from.txt`, another commit than HEAD, uncommitted changes; the game never starts on a failed build), then runs whatever branch is checked out in the owner's working copy and shows the
 branch name in its console window.
 
 `--loadslot <n>` starts straight into a saved game (recorded in flat mode) — needed until the in-VR

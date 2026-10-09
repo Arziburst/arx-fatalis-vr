@@ -547,7 +547,7 @@ Agreed by the coordinator with the owner as defaults to judge in the headset (D-
   does not, or a wall is between the character's eye and the head.
 - **Head too far** from a body that cannot follow (blocked controls, a conversation camera, a ledge) — fade
   from `vr_head_far_start = 0.7` m to black at `vr_head_far_full = 1.0` m.
-- **Real steps make footstep noise** like walking — `vr_real_step_noise = 1` (stealth stays honest).
+- **Real steps make footstep noise** like walking — `vr_real_step_noise = 1` (stealth stays honest). **The owner decided: keep** (2026-10-10, before the headset test).
 
 ---
 

@@ -20,7 +20,7 @@ commit messages, pull requests, and code comments.
 | Current goal: the MVP | [MVP.md](MVP.md) |
 | Research and scope of playable v1 | [RESEARCH-playable-v1.md](RESEARCH-playable-v1.md) |
 | Research: controllers (Valve Index, Quest 3) | [RESEARCH-controllers.md](RESEARCH-controllers.md) |
-| Research: reference VR mods (Dishonored VR, VHVR, Titanfall 2 VR, OpenMW VR) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |
+| Research: reference VR mods (Dishonored VR, VHVR, Titanfall 2 VR, OpenMW VR, Skyrim VR mods) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |
 | VR game checklist: what players expect from a VR game, audited against our plan — gaps for the owner's decision | [VR-CHECKLIST.md](VR-CHECKLIST.md) |
 | SteamVR app manifest: name and tile on the loading card | [STEAMVR.md](STEAMVR.md) |
 | Testing without a headset: smoke test, command channel, `status.json`, `xr_hello` — what is reliable and what is not | [TESTING.md](TESTING.md) |

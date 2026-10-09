@@ -2060,6 +2060,9 @@ void ArxGame::renderStereoViews() {
 		vr::endEyeRender(eye);
 	}
 
+	// The cinematic border's scissor belongs to the eye images, not to the interface on the quad
+	GRenderer->SetScissor(Rect());
+
 	prepareStereoHeadCamera(cam);
 
 }

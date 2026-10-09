@@ -153,6 +153,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "io/log/CriticalLogger.h"
 #include "io/log/Logger.h"
 
+#include "platform/CrashHandler.h"
 #include "platform/Dialog.h"
 #include "platform/Platform.h"
 #include "platform/Process.h"
@@ -1293,6 +1294,16 @@ void ArxGame::doFrame() {
 	// Game event log: state and UI changes (before the channel, which reports the same state);
 	// the OpenXR events were polled at the top of the frame, before vr::beginFrame()
 	gameevent::update();
+
+	// Crash reports under SteamVR: the overlay or the runtime may replace our exception filter (#132)
+	{
+		static PlatformInstant lastRearm = 0;
+		const PlatformInstant now = platform::getTime();
+		if(toUs(now - lastRearm) >= 1000000) {
+			lastRearm = now;
+			CrashHandler::rearm();
+		}
+	}
 
 	// Test channel: frame counter, command file, status.json (no-op without --test-dir)
 	channel::update();

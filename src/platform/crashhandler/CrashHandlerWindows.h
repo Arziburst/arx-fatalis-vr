@@ -41,6 +41,8 @@ public:
 	void registerCrashCallback(CrashHandler::CrashCallback crashCallback);
 	void unregisterCrashCallback(CrashHandler::CrashCallback crashCallback);
 	
+	bool rearm();
+	
 	[[noreturn]] void handleCrash(int crashType, void * crashExtraInfo = 0, int fpeCode = 0);
 	
 	static CrashHandlerWindows & getInstance();

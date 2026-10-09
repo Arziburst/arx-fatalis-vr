@@ -10,6 +10,75 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-029: The look of block B — the floating panel, wrist bars, hand reticle, settings screen
+
+- **Date:** 2026-10-10
+- **Status:** Accepted
+- **Decided by:** project owner (D-017; exact wording in the coordinator's comments on #49, #116, #37, #178)
+
+### Decision
+- **Panel (#49):** menus, inventory and book open on a **flat panel ~0.8–1 m in front of the player at
+  chest height**, placed where the player looks when it opens, then **fixed in the world** (it does not
+  follow the head). Fits D-016 (inventory in the centre of the view).
+- **Health and mana (#116):** **two vertical bars, red and blue, on the inner side of the left wrist**,
+  read by raising the hand to the face like a watch.
+- **Hand reticle (#37):** a **small dot / ring where the hand points**, no ray (D-010); it **brightens over
+  an item that can be taken**.
+- **VR settings screen (#178):** in **the game's own menu style**, on the #49 panel, with the Controls
+  section (D-020).
+
+### Why
+The owner's answers to the design questions of block B (D-017).
+
+---
+
+## D-028: Comfort defaults — mirror eye, height calibration, turning, body yaw
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (amends the turning default of D-019 / D-020 and the seated mode of D-018 / D-020)
+- **Decided by:** project owner (relayed by the coordinator, recorded by #231)
+
+### Decision
+- **Desktop mirror** shows the **right eye** by default (#21).
+- **Height calibration:** recenter makes the headset height the character's eye height; when the head goes
+  above it, the calibration **raises itself**; **no seated / standing setting**. Physical crouch triggers
+  ~30 cm below the calibrated height and stands up again at ~20 cm below (#27, #28, #100).
+- **Turning:** **snap 45°** by default, smooth ~120°/s as the option; both the angle and the speed are
+  adjustable in the settings (#32, #178).
+- **Body yaw** follows the head with a **25° dead zone** and ~1.5 s relaxation by default (#25; judged
+  later in the headset).
+
+### Why
+The owner's answers to the design questions of these tasks (D-017); auto-raise and the crouch hysteresis
+replace a seated mode the player would have to choose.
+
+---
+
+## D-027: Coordinator practice — autopilot without pacing, selective review, models by difficulty
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (supersedes the pacing part of D-022's autopilot; refines D-015 and D-021)
+- **Decided by:** project owner (recorded by #231)
+
+### Decision
+- **No pacing:** every task that can run, runs, until the weekly 80% or the 5-hour 95% cap stops it;
+  work is not stretched until a limit resets. The coordinator is blocked only by a headset test or the
+  limits, finds more work itself when few tasks run, and asks UX questions (D-017) ahead of time.
+  Owner: "ты не должен растягивать задачи до сброса лимитов… сделать максимальное количество работы,
+  потратив минимум токенов, с максимальным качеством".
+- **Models:** Sonnet medium for build / docs / tests / tooling / research and reviewers; Opus medium for
+  moderate engine work; Opus high for hard engine work; Fable xhigh only for the heaviest (stereo, IK).
+- **Review:** none for docs-only, test-only and small tooling PRs with good evidence; a reviewer for engine
+  core, render, input, the VR frame path and widely used scripts; no second review after GAPS unless the
+  fix is large.
+- Worker briefs, the headset test procedure and cleanup as written in [COORDINATOR.md](COORDINATOR.md).
+
+### Why
+The owner wants the most work for the fewest tokens; idle budget at a reset is lost work, and reviews
+of trivial PRs cost more than they find.
+
+---
+
 ## D-026: The VR runtime interface is a table of OpenXR function pointers; the simulated headset is a runtime behind it
 
 - **Date:** 2026-10-09
@@ -188,7 +257,7 @@ without a headset session (F-07).
 ## D-022: Budget raised to 80% weekly / 95% five-hour; checks kept in balance with time and usage
 
 - **Date:** 2026-10-09
-- **Status:** Accepted (replaces the budget of D-013; refines points 1–3 of D-021)
+- **Status:** Accepted (replaces the budget of D-013; refines points 1–3 of D-021); pacing part superseded by D-027
 - **Decided by:** project owner
 
 ### Decision
@@ -246,7 +315,7 @@ themselves in time and usage.
 
 ### Why
 The owner wants development to run on its own with the quality checked automatically and unknown
-features found through research, not by chance. Details: [COORDINATOR.md](COORDINATOR.md) §3, §4, §4b.
+features found through research, not by chance. Details: [COORDINATOR.md](COORDINATOR.md) §4, §6, §8.
 
 ---
 
@@ -263,8 +332,8 @@ features found through research, not by chance. Details: [COORDINATOR.md](COORDI
   - **remapping:** a list of gameplay events (jump, inventory, book, crouch, use, …); for each event the
     player assigns a **single button, a chord of two buttons on one hand, or a long press**; conflicts are
     shown; "reset to the default layout";
-  - **turning:** snap or smooth, the snap angle (30 / 45 / 90, default 30, D-019), the smooth speed;
-  - **crouch and height:** physical crouch on / off and its threshold, seated mode, "calibrate height";
+  - **turning:** snap or smooth, the snap angle (30 / 45 / 90, default ~~30, D-019~~ → 45, D-028), the smooth speed;
+  - **crouch and height:** physical crouch on / off and its threshold, ~~seated mode~~ (none, D-028), "calibrate height";
   - **left-handed** mode (dominant hand).
 - **Default layouts per controller type**: the game detects the controllers (OpenXR interaction profile —
   Index, Touch first) and offers the standard layout for them (the D-019 table); a remapped layout is
@@ -302,7 +371,7 @@ Valve Index first; Quest 3 Touch the same (A/B on the right, X/Y on the left).
 | Action | Control |
 |---|---|
 | Walk | left stick, forward = where you look (D-008); **speed by deflection** — slightly = sneak / walk, fully = run; no run button |
-| Turn | right stick left / right; **snap 30° by default**, smooth turn selectable in the settings |
+| Turn | right stick left / right; **snap ~~30°~~ → 45° by default (D-028)**, smooth turn selectable in the settings |
 | Jump | A (right) |
 | Crouch | physically (D-018) or a toggle on the right stick down |
 | Reticle per hand | a hidden ray from each hand; the reticle turns yellow with the item's name on an interactive object (D-016) |
@@ -347,7 +416,7 @@ RESEARCH-reference-mods.md 13g with these answers); #49 the centred panel for th
 ## D-018: The camera is where the head is — full head tracking in the MVP
 
 - **Date:** 2026-10-09
-- **Status:** Accepted (replaces D-006)
+- **Status:** Accepted (replaces D-006); seated play and height calibration refined by D-028
 - **Decided by:** project owner (design agreed by questions, D-017)
 
 ### Decision
@@ -451,7 +520,7 @@ before #37 / #38.
 
 ### Why
 Half of Fable's weekly limit went in the first hours with Fable on every engine task (D-013); most of
-those tasks did not need it. The playbook table: [COORDINATOR.md §6](COORDINATOR.md#6-models-and-effort-d-015).
+those tasks did not need it. The playbook table: [COORDINATOR.md §5](COORDINATOR.md#5-models-and-effort-d-015-d-027).
 
 ---
 

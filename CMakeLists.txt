@@ -1254,6 +1254,7 @@ set(UTIL_MD5_SOURCES
 list(APPEND IO_RESOURCE_SOURCES ${UTIL_MD5_SOURCES})
 
 set(VR_SOURCES
+	src/vr/BodyYaw.cpp
 	src/vr/EyeImage.cpp
 	src/vr/EyeProjection.cpp
 	src/vr/FramePacing.cpp

@@ -1452,7 +1452,15 @@ void ArxGame::updateFirstPersonCamera() {
 				animateSkeleton(io, animlayer, skeleton);
 				g_playerCameraStablePos = skeleton.bones[viewGroup].anim(io->obj->vertexlocal[viewVertex]);
 			}
-			
+
+			// The model faces the body, the camera the head (#25): the eye vertex turned with the model about
+			// its origin, so take the body's own turn off it again - the body turning never moves the camera
+			const float bodyTurn = vr::bodyStatus().offset;
+			if(bodyTurn != 0.f) {
+				g_playerCamera.m_pos = io->pos + VRotateY(g_playerCamera.m_pos - io->pos, bodyTurn);
+				g_playerCameraStablePos = io->pos + VRotateY(g_playerCameraStablePos - io->pos, bodyTurn);
+			}
+
 			// View bobbing: the camera follows the animated head of the walking model. Off by cfg.ini in
 			// flat mode, always off in VR (#76) - the head-mounted display is the head, so the camera stays
 			// at the stable position of the paused animation

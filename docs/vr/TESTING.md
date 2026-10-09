@@ -795,6 +795,27 @@ How the runner differs from a worker's copy — none of it needs action, all of 
 Run it by hand: `.\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence` (needs a fresh build of the
 copy; `-Phase smoke|spells` runs one half; exit 0 pass, 1 fail, 2 skipped, 3 cannot run here).
 
+## The tester package (#88)
+
+`.\scripts\package-tester.ps1` writes `dist\ArxFatalisVR-<version>-<sha>.zip` (version = number in `VERSION`, `-dirty`
+appended for an uncommitted tree; `-symbols.zip` next to it). Inside: `arx.exe`, every DLL of
+the build, the MSVC runtime copied app-local from the Visual Studio redistributable folder, `data/core` copied **next to
+`arx.exe`** (the engine looks there, `RUNTIME_DATADIR=.`), `Start Arx Fatalis VR.cmd`, `Start flat (no VR).cmd`
+(`--no-vr`, the kill switch), `Collect support bundle.cmd` + `collect-support.ps1` (logs, cfg, crashes, SteamVR logs,
+OpenXR `ActiveRuntime`, GPU and driver into one zip on the Desktop, nothing uploaded), `HOW-TO-USE.txt`,
+`BUG-REPORT-TEMPLATE.md`, `BUILD.txt` (commit, branch, tag). Sources of the tester files: `scripts/tester/`.
+No `data.dirs` (CMake writes it for the build directory and it names a path in the working copy) and no game data:
+the tester's game finds Arx Fatalis in their Steam libraries (#79).
+
+The script fails (exit 1) on: an import (`dumpbin /dependents`, recursively) that is neither in the package nor a Windows
+DLL; no OpenXR loader; `data.dirs` or `*.pak` in the zip; and — the real proof — the **extracted** zip, started from a
+clean temp folder with `PATH` reduced to the Windows folders, not reaching `GAMEPLAY`, exiting ≠ 0, lacking
+`Clean shutdown`, writing an `[E]` line or a crash report, or an `arx.log` that mentions the working copy's path. That is
+one game launch (game lock, ledger). `-SkipVerify` stops after the numeric checks; `-NoBuild` refuses to build.
+
+CI runs it after the game checks (`-NoBuild`) and uploads the zip as the artifact `tester-build` (14 days). The `-symbols.zip`
+(`arx.pdb` + `BUILD.txt`, ~7 MB) is for reading tester crash reports and is not uploaded by CI.
+
 ## Isolation and the game lock (parallel work)
 
 Several workers build and test at the same time ([WORKFLOW.md](WORKFLOW.md), *Parallel work*; #123,

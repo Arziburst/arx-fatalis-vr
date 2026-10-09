@@ -623,3 +623,12 @@ not cover a new subfolder. Every worktree is a new folder.
 **Do:** launch workers in the owner's copy (trusted) and let them enter the worktree first —
 `start-worker.ps1` passes `/next-task <n> worktree=<path>` (D-011). Never write trust flags into
 `~/.claude.json` by hand: the owner gives trust.
+
+## 2026-10-09 — PowerShell: `[math]::Max(0, 4.5)` is 4, and `ConvertFrom-Json` turns date strings into DateTime
+
+**Symptom:** a rate computed with `[math]::Max(0, $double)` is rounded down to an integer (a worker count came out one too
+high); `[datetime]::Parse($obj.updated)` on a JSON field gave a date a month off.
+**Cause:** with an `int` literal first, PowerShell picks `Max(int,int)` and converts the double; PowerShell 7's
+`ConvertFrom-Json` already returns ISO-8601 strings as `DateTime`, and parsing its culture-formatted string swaps day and month.
+**Do:** write `[math]::Max(0.0, $x)`; take a field that may be a `DateTime` or a string through a helper
+(`ConvertTo-Epoch` in `scripts/dev/usage-lib.ps1`).

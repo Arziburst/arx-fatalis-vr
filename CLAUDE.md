@@ -59,6 +59,7 @@ Dependencies come from vcpkg in manifest mode (`vcpkg.json`, triplet `x64-window
 .\scripts\run-windows.ps1 -Isolated      # this working copy's own user dir (log, config, saves) instead of Saved Games; -Saves save0000 copies a save in
 .\scripts\register-steamvr.ps1           # tell SteamVR the name and tile of this build (loading card, SteamVR library)
 .\scripts\add-steam-shortcut.ps1         # add this build to Steam as a non-Steam game in the VR library (Steam exited first; docs/vr/STEAMVR.md)
+.\scripts\package-tester.ps1             # tester zip in dist\ (runs without the toolchain; checks the extracted copy), docs/vr/TESTING.md
 .\scripts\dev\smoke-test.ps1             # worker self-test: start, play, quit, check the evidence (docs/vr/TESTING.md); isolated by default
 .\scripts\dev\new-worktree.ps1 -Issue 18 -Type feat -Name per-eye-swapchains   # a worker's own working copy (worktree) from origin/main; -Remove when merged
 .\scripts\dev\test-pr.ps1 131            # owner's test station: build the PR's worktree if needed, print its How to test, launch it

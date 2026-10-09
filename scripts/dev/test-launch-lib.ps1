@@ -41,9 +41,11 @@ function Check([string]$Name, [bool]$Ok, [string]$Detail = '') {
 
 $pwsh = (Get-Process -Id $PID).Path
 $children = @()
+# the holder processes get the same stub as the test itself (see "Taking a lock"): a real game running on this
+# PC must not stop them taking the lock (#224)
 function Start-Holder([string]$Code) {
 	$libPath = (Resolve-Path (Join-Path $PSScriptRoot '..\launch-lib.ps1')).Path
-	$p = Start-Process $pwsh -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile', '-Command', ". '$libPath'; $Code")
+	$p = Start-Process $pwsh -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile', '-Command', ". '$libPath'; function Get-ArxGamesOutsideLock { @() }; $Code")
 	$script:children += $p
 	$p
 }

@@ -416,7 +416,7 @@ RESEARCH-reference-mods.md 13g with these answers); #49 the centred panel for th
 ## D-018: The camera is where the head is — full head tracking in the MVP
 
 - **Date:** 2026-10-09
-- **Status:** Accepted (replaces D-006)
+- **Status:** Accepted (replaces D-006); seated play and height calibration refined by D-028
 - **Decided by:** project owner (design agreed by questions, D-017)
 
 ### Decision

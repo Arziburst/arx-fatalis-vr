@@ -282,6 +282,12 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   the vertices were transformed, `reach` (shoulder to target), `armLength` (the model's, 58.1 units on
   `human_base`), `error` (wrist to target: 0 when the controller is reached), `slide` (the shoulder
   moved towards an out-of-reach target, up to 20) and `stretched`.
+- `vr.wrist` (#116, D-NEW): health and mana on the left wrist. `shown`: the left arm was posed from a
+  controller this frame, so the bars are on the wrist and the HUD's orbs are not drawn; else `hidden` says
+  why (`no left controller`, `left arm not posed`, `body not posed this frame`). `health`, `mana`: the
+  fractions drawn; `facingDeg`: the angle between the inner wrist's normal and the direction to the eye of
+  the last view drawn, `alpha` from it (1 within 50°, 0 from 80°); `drawnViews`: views the bars were drawn
+  into (two per frame in stereo); `center`: the middle of the bars in the world.
 - `player` is present only while a level is loaded; the `.xrs` runner (#113) asserts on these keys
   with `@modassert`.
   `player.y` is the **eye** (the camera is within a few units of it), not the feet.
@@ -495,6 +501,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.body.model` | the body bound to the player model: the arm chains found (once per model, also after an armor tweak) | `model`, `chains`, `bound` |
 | `vr.body` | the body starts being posed from the controllers, or stops and why (#36) | `state=posed\|engine`, `reason` (`no head`, `head not referenced yet`, `no tracked hand`, `no arm chain on the model`; limit 200) |
 | `vr.body.arm` | one arm switches between the IK and the engine's animation | `hand`, `posed`, `source=xr\|sim\|none` (limit 200) |
+| `vr.wrist` | health and mana move between the left wrist and the HUD's orbs (#116) | `state=wrist\|orbs`, `reason` (limit 200) |
 | `vr.body.drag` | the head reached the 25° dead zone and pulls the body along, and when it let go (5° inside) (#25) | `state=start\|end`, `head`, `body` (degrees from the heading), `deadZone` (limit 100) |
 
 Not here yet, by design: melee attacks *refused* by a gate (F-66) come with the VR swing detector
@@ -878,6 +885,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `recenter` | a head offset is set and read back; `recenter` is accepted (#28) | — |
 | `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
 | `arms-follow` | the full body (#36): both arm chains found, both arms posed from the idle rig's controllers with `error` 0; the hand takes the controller's orientation (grip upright: the wrist 8 units below the grip and the fingertips above the wrist; pitched 90° forward: wrist and fingertips level with the grip); a hand moved 30 cm moves the wrist with it and changes both eyes' pictures of the body seen from above (> 2, floor < 1.5); 1.2 m out: `stretched`, `slide` 20; a controller switched off gives its arm back to the engine; a 30 cm lean shifts the body by the camera's offset and keeps `error` 0. **Needs the first-person save** (level 10's conversation camera is nowhere near the body): `smoke-test.ps1 -VrSim idle -Sequence arms-follow -Save mvp-new-game` | — |
+| `wrist-vitals` | health and mana on the left wrist (#116): with the idle rig the bars are on the wrist (orbs off) at full value; the left hand raised in front of the face with the inner wrist turned away → `alpha` 0; turned to the eyes like a watch → `alpha` 1, drawn into both eyes; `specialfx heal -9` / `specialfx mana -6` → `vr.wrist.health` / `mana` drop and both eye pictures change; half turned → fading; the left controller off → `shown` false and the orbs back on the quad (quad picture changes). Needs the first-person save: `smoke-test.ps1 -VrSim idle -Sequence wrist-vitals -Save mvp-new-game` | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
 `scripts\dev\test-xrs.ps1` (a fake game answering the channel files; in `run-script-tests.ps1`, so in CI).

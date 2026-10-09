@@ -78,6 +78,8 @@ set(arxtest_TESTCASES
 
 	tests/vr/ArmIKTest.h
 	tests/vr/ArmIKTest.cpp
+	tests/vr/WristVitalsTest.h
+	tests/vr/WristVitalsTest.cpp
 
 
 )
@@ -110,6 +112,7 @@ set(arxtest_SOURCES
 	src/vr/UIPanel.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/ArmIK.cpp
+	src/vr/WristVitals.cpp
 
 
 	${arxtest_TESTCASES}

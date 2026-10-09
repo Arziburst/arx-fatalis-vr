@@ -75,6 +75,7 @@
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 #include "vr/WorldScale.h"
+#include "vr/WristHud.h"
 #include "window/RenderWindow.h"
 
 extern bool START_NEW_QUEST;
@@ -707,6 +708,24 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("stretched", arm.stretched);
 			json.end();
 		}
+		json.end();
+	}
+	{
+		// Health and mana on the left wrist (#116): shown instead of the orbs, and how visible from the eyes
+		const vr::WristVitalsStatus & wrist = vr::wristVitalsStatus();
+		json.object("wrist");
+		json.value("shown", wrist.shown);
+		json.value("hidden", wrist.hidden);
+		json.value("health", wrist.health);
+		json.value("mana", wrist.mana);
+		json.value("facingDeg", wrist.facingDeg);
+		json.value("alpha", wrist.alpha);
+		json.value("drawnViews", wrist.drawnViews);
+		json.object("center");
+		json.value("x", wrist.center.x);
+		json.value("y", wrist.center.y);
+		json.value("z", wrist.center.z);
+		json.end();
 		json.end();
 	}
 	{

@@ -21,12 +21,14 @@ $ErrorActionPreference = 'Stop'
 
 # The self-tests. Keep the list sorted.
 $tests = @(
+	'test-eye-check.ps1'      # the two-eyes check's judge (#112, F-06): every leg passes on good eyes, fails on its broken case
 	'test-github-lib.ps1'     # the GitHub access of the dev scripts (#186): REST first, the board cache, rate limits, the move queue
 	'test-launch-lib.ps1'     # the machine-wide game lock (#205): the lock folder and its ACL, old and new location, holders, stale files
 	'test-log-digest.ps1'    # the run digest and the automatic bug filing (#131): fixture logs, a fake GitHub, the command line modes
 	'test-steam-shortcut.ps1' # the non-Steam VR shortcut (#80): binary shortcuts.vdf round-trip, add / update / remove on copies
 	'test-save-library.ps1'  # the test save library (#70): the scenario parser, the verification steps and slot order, Use-ArxSave
 	'test-plan-next.ps1'     # the coordinator's task order (#187): MVP.md parsing and every start rule
+	'test-usage-plan.ps1'    # the usage accounting (#217): calibration, burn, task costs, the worker-count recommendation
 	'test-start-steamvr.ps1' # starting and quitting SteamVR on the owner's switches (#171): stubbed processes and clock, SteamVR is not touched
 )
 # test-*.ps1 files that are libraries or tools, not tests

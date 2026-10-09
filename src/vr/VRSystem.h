@@ -62,6 +62,10 @@
  * head camera. \ref submitFrame then submits the eyes as the projection layer and the quad in
  * front. In frames the runtime does not want rendered (an idle headset) the game draws into the
  * window as in flat mode and the frame is ended without layers.
+ *
+ * Every OpenXR call goes through the runtime interface (vr/XRFunctions.h): the OpenXR loader, or the
+ * simulated headset of \c --vr-sim (vr/VRSimulator.h, #112), which runs all of this without a
+ * runtime or a headset.
  */
 namespace vr {
 

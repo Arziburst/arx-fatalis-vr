@@ -1,0 +1,14 @@
+# Head poses with position offsets and a ramp (#112): what the camera (#24) and the per-eye render
+# (#19) must follow. Each shot's eye positions and angles are in status.json (vr.sim.shots).
+
+timeline gameplay
+
+@270 shot center                # 3 s after the level is playable: past its fade-in
+@+1 head pos 0.10 0 0          # 10 cm to the right
+@+10 shot right10cm
+@+1 head pos 0 -0.30 0         # crouch 30 cm
+@+10 shot crouch30cm
+@+1 head pos 0 0 0
+@+1-60 head rot -40 -15 0      # turn right and look down over one second
+@+1 shot turned
+@+1 head rot 0 0 0

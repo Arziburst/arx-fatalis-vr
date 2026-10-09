@@ -13,6 +13,8 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 .\scripts\build-windows.ps1                                   # builds AND runs the host unit tests (arxtest, CppUnit, tests/); -SkipTests to skip the run
 .\scripts\dev\smoke-test.ps1                                  # flat, --loadlevel 10: PASS / FAIL + evidence
 .\scripts\dev\smoke-test.ps1 -Vr                              # the same in VR - only while the owner has SteamVR running (SKIPPED, exit 2, otherwise; never starts it)
+.\scripts\dev\smoke-test.ps1 -VrSim basic                     # VR on the simulated headset (#112): no runtime, no SteamVR, any time; per-eye shots judged
+.\scripts\dev\eye-check.ps1                                   # the two-eyes check (F-06) on the simulated headset: six legs, one launch
 .\scripts\dev\smoke-test.ps1 -Repeat 10 -Seconds 5            # a table of 10 runs
 .\scripts\dev\smoke-test.ps1 -Saves save0000 -- --loadslot 0  # copy a save into the isolated user directory, then load it
 .\scripts\dev\smoke-test.ps1 -Save mvp-goblin-fight           # a scenario of the test save library (#70): the only save, --loadslot 0
@@ -135,6 +137,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `lookat <entity>` | turn the player (yaw and pitch) towards an entity, aiming 40 units above its floor position. The pitch is not kept by a save and does not matter in VR (the head decides); the yaw is kept (#70) |
 | `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
 | `vr-input down\|up\|tap <control>`, `vr-input bind <event> <binding>`, `vr-input reset` | the VR controls' table without a headset (#30, `vr/VRInput.h`): a control (`right.a`, `left.grip`, `right.stick_down` …) held, let go or tapped as if a controller did it, merged into what OpenXR reports and resolved by the same table at the next frame; `bind` remaps one event (`bind jump left.grip+left.a`, `bind menu left.b:long`, `bind magic_mode none`); `reset` restores the default layout for the current controllers and lets go of everything. Refused with the reason for an unknown control, event or binding. `vr.input` in the status; one `[vr] input: <event> (<binding>)` log line per event press, one `[vr] input: layout …` line per layout change |
+| `vr-sim <command>` | a command of the simulated headset (#112), only in a `--vr-sim` run: `head rot 25 0 0`, `head pos 0 -0.3 0`, `action trigger right 1`, `shot <name>`, `session visible`, `fault swap-eyes on`, … — now, or `@+<n> <command>` n frames from now on its timeline. See [The simulated headset](#the-simulated-headset---vr-sim-112) |
 | `recenter` | refused with `not implemented yet (#28)` until recentering exists |
 | `comfort auto\|on\|off` | who decides the VR comfort policy (#76, `vr::comfort()`): `auto` = the VR session (the default: view bobbing, screen shake and FOV zoom off in VR, `cfg.ini` decides in flat mode), `on` / `off` force the VR rules on or off — so a flat run can measure them. `comfort` and `camera` in the status; one `[vr] comfort:` log line per change |
 | anything else | the **script console**: `[entity.]command args`, exactly as typed in the in-game console (`` ` ``). Context defaults to the player. Refused (and counted in the ack) when the entity or the command is unknown |
@@ -650,6 +653,80 @@ What stays with the head camera until #72 / #73 (and looks flat or misplaced in 
 particles, sparks, light flares and the mouse-drawn rune sparkles (update-phase 2D data at the
 window's size); screen-space picking with the mouse (#37 replaces it with hand reticles). The
 draw check is refused in a stereo frame: its two views would be the two eyes.
+
+## The simulated headset (`--vr-sim`, #112)
+
+`arx.exe --vr-sim <script>` runs the game **in VR without a headset and without a runtime**: the VR
+module calls OpenXR through one table of function pointers (`src/vr/XRFunctions.h`), and `--vr-sim`
+puts a simulated runtime (`src/vr/VRSimulator.cpp`) behind it instead of the OpenXR loader. The game
+runs its real VR code — session states, `xrWaitFrame` pacing, swapchains (real OpenGL textures),
+the projection and quad layers, the desktop mirror, the controllers' actions — and the simulator
+answers from a script: head pose, hand poses, action values, focus. Code added to `src/vr` later
+(#19's per-eye render, #24's head tracking) runs in the simulator unchanged. It never contacts a
+runtime, so it runs whether SteamVR is on or off and wins over `--no-vr` (which the launch scripts
+add, D-014); a script with an error means flat mode, with the line named in the log.
+
+```powershell
+.\scripts\dev\smoke-test.ps1 -VrSim basic                                   # scripts\dev\vrsim\basic.vrsim: the defaults written out, one shot
+.\scripts\dev\smoke-test.ps1 -VrSim head-motion                             # head offsets (10 cm right, 30 cm crouch) and a turn ramp, shots
+.\scripts\dev\smoke-test.ps1 -VrSim basic -Commands 'vr-sim head rot 30 0 0','vr-sim @+30 shot turned'
+.\scripts\dev\smoke-test.ps1 -VrSim startup -StartTimeoutSec 9 -- --loadslot 0   # shots from the session start: menus, a level that never loads
+.\scripts\dev\eye-check.ps1                                                 # the two-eyes check, below
+```
+
+**The script** (`scripts\dev\vrsim\*.vrsim`; the language is in `src/vr/SimRig.h`): set-up lines run
+at once, `@<frame> <command>` at that frame of the timeline, `@<a>-<b> <command>` moves the numbers
+there linearly (a ramp), `@+<n>` counts from the previous timed line. Frame 0 of the timeline is the
+first frame the game is playable (`timeline gameplay`, the default) or of the session (`timeline
+session`). Commands: `rate <hz>` (0 = no pacing), `eye-size <w> <h>`, `ipd <m>`, `fov left|right <l>
+<r> <u> <d>` (degrees, OpenXR signs), `head pos <x> <y> <z>` (meters, the room's LOCAL space: x right,
+y up, −z forward), `head rot <yaw> <pitch> <roll>` (degrees: yaw + turns left, pitch + looks up),
+`hand left|right pos|rot …`, `hand left|right on|off`, `profile index|touch|simple|none|<path>`,
+`action <name> left|right|both <value> [<y>]` (the game's OpenXR action names: `trigger`, `grip`,
+`button_a`, `button_b`, `thumbstick`, `thumbstick_click`, `trackpad_press`, `menu`), `session
+focused|visible`, `shot [name]`, `mark <text>`, `quit`, `fault swap-eyes on|off`. The defaults: Index
+panel size 1440 × 1600, IPD 64 mm, 90 Hz, the asymmetric, mirrored field of view of research row
+F-165, both Index controllers in front of the body.
+
+**The compositor** counts, per submitted frame, whether both eye images were released in the same
+frame (`vr.sim.compositor`: `projectionFrames`, `pairedFrames`, `staleFrames`, `freshFrames`,
+`quadFrames`). A **shot** composes what each eye sees — the projection layer with the head-locked
+quad on top, ray by ray as a compositor would — and saves `<test dir>\capture\<name>-left.bmp`,
+`-right.bmp` and `-quad.bmp` (the flat frame). Each gets pixel stats and a **verdict** for the region
+around where the eye looks (`scene`; `layer` is the projection layer alone; `quad.stats` the middle of
+the flat frame, away from the HUD): `world` (something with detail), `black` (≥ 90 % of the pixels at
+luma ≤ 4), `background` (≥ 90 % the eyes' clear color: the eye got no picture), `uniform` (one flat
+color). `lr` has the left/right difference (mean luma levels on a 160-column grid), the horizontal
+shift of the left picture against the right one (> 0 is right) and the eye separation; `versus` the
+difference of each eye to every earlier shot. `vr.sim` also has the rig, the eye poses as last
+located (`eyes`, with `separation`) and the timeline's state; a `vr.sim.shot` game event per shot.
+A shot stalls its frame for about 100 ms (read-back, composition, three BMPs at eye size): the rate
+line of a run with shots shows those frames as gaps — judge pacing from a run without shots.
+
+**The black world of #215 is visible here:** a level that did not load (`--loadslot 0` without a
+save, before #24's fix) shows the HUD on black — verdict `black` (97 % black in the middle), where
+`--loadlevel 10` gives `world`. A shot in the first second after a level load is black too: the level
+fades in (TRAPS.md); the scripts shoot 3 s in (`@270`).
+
+### The two-eyes check (`eye-check.ps1`, F-06)
+
+One `--vr-sim` launch with `scripts\dev\vrsim\eye-check.vrsim` (two shots with the head still, one
+after a 25° yaw), judged by `scripts\dev\eye-check-lib.ps1` (self-test `test-eye-check.ps1`):
+
+| Leg | Passes when |
+|---|---|
+| `world` | both eyes' verdict is `world` in the still shot |
+| `pairing` | every frame showed both eye images from one frame, no stale eye |
+| `separation` | the eyes are the IPD apart (± 0.5 mm) |
+| `difference` | left vs right > 3 × the same-eye floor (two still shots of one eye) and > 0.5, < 60 luma levels |
+| `parallax` | the left picture is shifted right of the right one |
+| `yaw` | both eyes turned 25° (± 0.5°) and both pictures changed above the floor |
+
+It is the acceptance check of the per-eye render (#19) and the per-eye re-projection (#72). Measured
+on `main` with the flat frame on the head-locked quad (2026-10-09): world, pairing (410 / 410),
+separation (64 mm), difference (5.9 vs floor 0.8), parallax (+16 of 160 columns) pass; **yaw fails**
+(the pictures change by 1.3, the floor's noise) — the camera does not follow the head until #24.
+`-Fault swap-eyes` (each eye shown the other's picture) fails the parallax (−16): the check can fail.
 
 ## `xr_hello` — the runtime alone
 

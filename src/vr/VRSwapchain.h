@@ -32,6 +32,12 @@
 namespace vr {
 
 /*!
+ * Uniform background of the eye swapchains, sRGB-encoded: dark grey, so it is told apart from
+ * "no layer" - and the simulator's compositor tells "the eye got no picture" by it (#112)
+ */
+const GLfloat EyeBackgroundColor[4] = { 0.15f, 0.15f, 0.15f, 1.f };
+
+/*!
  * \brief Pick the color format for all swapchains of a session
  *
  * Prefers \c GL_SRGB8_ALPHA8: the game writes sRGB-encoded colors (it renders for a monitor without

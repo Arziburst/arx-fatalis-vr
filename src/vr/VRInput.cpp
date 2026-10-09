@@ -172,8 +172,14 @@ void reportWalk(const StickWalk & walk, float yaw, float heading) {
 		}
 		// An episode, not a frame: the stick left its dead zone, or came back to rest
 		gameevent::Event("vr.walk", 200)("state", walking ? "start" : "end")("yaw", yaw, 1)
-			("heading", heading, 1)("look", wrapSignedDegrees(yaw - heading), 1);
+			("heading", heading, 1)("look", wrapSignedDegrees(yaw - heading), 1)
+			("pace", walk.sneak ? "sneak" : "run");
+	} else if(walking && walk.sneak != status.sneak) {
+		// The deflection crossed a threshold of the pace (#33): one line per switch, not per frame
+		status.paceChanges++;
+		gameevent::Event("vr.walk", 200)("state", "pace")("pace", walk.sneak ? "sneak" : "run");
 	}
+	status.sneak = walking && walk.sneak;
 
 	status.walking = walking;
 	status.yaw = yaw;

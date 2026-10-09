@@ -888,12 +888,23 @@ void ArxGame::managePlayerControls() {
 		}
 
 		// The left stick walks where the player looks (#31, D-008), on top of the keys: the flags pick
-		// the animation and with it the game's own speed, the vector only the direction
+		// the animation and with it the game's own speed, the vector only the direction. A slight
+		// deflection sneaks - the stealth walk - and a full one runs (#33, D-019)
 		{
+			static vr::StickPacer pacer;
 			const vr::BodyStatus & body = vr::bodyStatus();
 			const float yaw = vr::stickWalkYaw(player.angle.getYaw(), body.lookYaw, body.bodyYaw, body.offset);
-			const vr::StickWalk walk = NOMOREMOVES ? vr::StickWalk() : vr::stickWalk(vr::gameInput().move, yaw);
+			vr::StickWalk walk = NOMOREMOVES ? vr::StickWalk() : vr::stickWalk(vr::gameInput().move, yaw);
+			vr::StickPace pace;
+			pace.sneakBelow = config.input.vrSneakBelow;
+			pace.runAbove = config.input.vrRunAbove;
+			const Vec2f move(vr::gameInput().move.x, vr::gameInput().move.y);
+			walk.sneak = pacer.update(walk.moving() ? glm::length(move) : 0.f, pace);
 			if(walk.moving()) {
+				if(walk.sneak) {
+					MoveDiv = 0.02f;
+					player.m_currentMovement |= PLAYER_MOVE_STEALTH;
+				}
 				float multi = 10.f * FD * MoveDiv;
 				if(walk.forward) {
 					player.m_strikeDirection = 2;

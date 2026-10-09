@@ -25,7 +25,8 @@
 
 /*!
  * Smooth stick locomotion of #31 (D-008): the stick's forward is the look yaw, the direction keeps the
- * stick's angle, the movement flags are the eight key directions, a turn of the heading in this frame counts.
+ * stick's angle, the movement flags are the eight key directions, a turn of the heading in this frame counts;
+ * the pace of #33: a slight deflection sneaks, a full one runs, with hysteresis.
  */
 class LocomotionTest final : public CppUnit::TestFixture {
 
@@ -36,6 +37,8 @@ class LocomotionTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testDiagonal);
 	CPPUNIT_TEST(testSectors);
 	CPPUNIT_TEST(testWalkYawFollowsTheHead);
+	CPPUNIT_TEST(testPaceByDeflection);
+	CPPUNIT_TEST(testPaceHysteresis);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -46,6 +49,8 @@ public:
 	void testDiagonal();
 	void testSectors();
 	void testWalkYawFollowsTheHead();
+	void testPaceByDeflection();
+	void testPaceHysteresis();
 
 };
 

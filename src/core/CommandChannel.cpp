@@ -453,6 +453,9 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("bookOpen", (player.Interface & INTER_PLAYERBOOK) != 0);
 		json.value("crouchToggle", bGCroucheToggle);
 		json.value("jumping", player.jumpphase != NotJumping);
+		// The stance the movement had in this update: crouched (toggle, key or physical), stealth (#33)
+		json.value("crouched", (player.m_currentMovement & PLAYER_CROUCH) != 0);
+		json.value("stealth", (player.m_currentMovement & PLAYER_MOVE_STEALTH) != 0);
 		json.end();
 		// The first-person camera after this frame's effects: bob = how far the camera left the stable head
 		// position (view bobbing), shake = the quake amplitude applied, fov in degrees (zoom) - the numbers
@@ -689,6 +692,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("dirX", walk.direction.x);
 		json.value("dirZ", walk.direction.z);
 		json.value("walks", walk.walks);
+		json.value("sneak", walk.sneak);
+		json.value("paceChanges", walk.paceChanges);
 		json.end();
 		json.end();
 	}

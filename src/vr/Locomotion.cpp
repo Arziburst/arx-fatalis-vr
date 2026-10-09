@@ -53,4 +53,18 @@ float stickWalkYaw(float heading, float lookYaw, float bodyYaw, float bodyOffset
 	return heading + wrapSignedDegrees(lookYaw - (bodyYaw - bodyOffset));
 }
 
+bool StickPacer::update(float deflection, const StickPace & pace) {
+
+	if(!(deflection > 0.f)) {
+		m_running = false;
+		return false;
+	}
+
+	if(m_running ? deflection < pace.sneakBelow : deflection >= pace.runAbove) {
+		m_running = !m_running;
+	}
+
+	return !m_running;
+}
+
 } // namespace vr

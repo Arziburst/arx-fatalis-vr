@@ -118,3 +118,43 @@ void LocomotionTest::testWalkYawFollowsTheHead() {
 	// Across the seam: heading 350, head 90 right (look 260), body 285 with offset -65
 	CPPUNIT_ASSERT_DOUBLES_EQUAL(260.f, vr::stickWalkYaw(350.f, 260.f, 285.f, -65.f), 0.001f);
 }
+
+void LocomotionTest::testPaceByDeflection() {
+	const vr::StickPace pace;
+	// A slight push sneaks, a full push runs (D-019)
+	vr::StickPacer slight;
+	CPPUNIT_ASSERT(slight.update(0.3f, pace));
+	CPPUNIT_ASSERT(slight.update(0.3f, pace));
+	vr::StickPacer full;
+	CPPUNIT_ASSERT(!full.update(1.f, pace));
+	// A push from rest passes the slight deflections first: a sneak until it reaches runAbove
+	vr::StickPacer push;
+	CPPUNIT_ASSERT(push.update(0.2f, pace));
+	CPPUNIT_ASSERT(push.update(0.69f, pace));
+	CPPUNIT_ASSERT(!push.update(0.7f, pace));
+	// A resting stick is no sneak, and ends the run: the next walk starts as a sneak again
+	CPPUNIT_ASSERT(!push.update(0.f, pace));
+	CPPUNIT_ASSERT(push.update(0.4f, pace));
+}
+
+void LocomotionTest::testPaceHysteresis() {
+	const vr::StickPace pace;
+	vr::StickPacer pacer;
+	CPPUNIT_ASSERT(!pacer.update(1.f, pace));
+	// Between the thresholds a run stays a run ...
+	CPPUNIT_ASSERT(!pacer.update(0.65f, pace));
+	CPPUNIT_ASSERT(!pacer.update(0.6f, pace));
+	// ... until the stick falls below sneakBelow
+	CPPUNIT_ASSERT(pacer.update(0.59f, pace));
+	// ... and a sneak stays a sneak in the band
+	CPPUNIT_ASSERT(pacer.update(0.65f, pace));
+	CPPUNIT_ASSERT(!pacer.update(0.7f, pace));
+	// Other thresholds from the config
+	vr::StickPace low;
+	low.sneakBelow = 0.2f;
+	low.runAbove = 0.3f;
+	vr::StickPacer lowPacer;
+	CPPUNIT_ASSERT(lowPacer.update(0.25f, low));
+	CPPUNIT_ASSERT(!lowPacer.update(0.3f, low));
+	CPPUNIT_ASSERT(!lowPacer.update(0.25f, low));
+}

@@ -62,6 +62,8 @@ struct WalkStatus {
 	float heading = 0.f; //!< engine degrees: the player's heading in that update
 	Vec3f direction = Vec3f(0.f);
 	u64 walks = 0;       //!< walk episodes since the game started
+	bool sneak = false;  //!< the walk sneaks: a slight deflection (#33)
+	u64 paceChanges = 0; //!< switches between sneak and run within a walk since the game started (#33)
 };
 
 const WalkStatus & walkStatus();

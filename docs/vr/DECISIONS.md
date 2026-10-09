@@ -41,7 +41,12 @@ the controls are the base of the VR settings that grow later (sound, graphics).
   control, the game's own table maps controls (single / chord / long press) to gameplay events; the
   interaction profile is detected. SteamVR's binding UI stays usable on top (F-139).
 - **#35** provides the default layouts per controller type as those tables.
-- A new task builds the **VR settings menu with the Controls section** (on #49's panel and #34's pointer).
+- A new task builds the **VR settings menu with the Controls section** (on #49's panel and #34's pointer):
+  #178.
+- **Later sections, agreed for after the MVP:** **Video** (#181) — render resolution %, MSAA, anisotropic
+  filtering, draw distance, VR brightness and gamma, desktop mirror mode, an FPS counter; **Comfort**
+  (#182) — a movement / turn vignette and world scale %. Not settings: FOV, foveated rendering, refresh
+  rate and motion smoothing (the headset's / SteamVR's).
 
 ---
 

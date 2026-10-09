@@ -10,6 +10,8 @@ Read `docs/vr/WORKFLOW.md` first.
    If more than one candidate exists, ask which one.
 2. Check CI: `.\scripts\dev\pr-checks.ps1 <pr>` (exit 0 = green). If it is not green, do not merge — tell the owner why.
 3. Comment on the PR: "Tested in VR and accepted by the project owner." plus any notes from `$ARGUMENTS`.
+3b. If the PR still carries a `D-NEW` decision (check `docs/vr/DECISIONS.md`): <!-- d-new-literal --> `git fetch origin; git merge origin/main`,
+   `.\scripts\dev\number-decisions.ps1 -Pr <pr>`, commit `ARXVR-<n> docs: number the decisions`, push and wait for green CI (step 2) again.
 4. Merge: `gh pr merge <pr> --merge --delete-branch --subject "<PR title> (#<pr>)"`, then return the
    working copy to `main`:
    `git switch main; git pull --ff-only`.

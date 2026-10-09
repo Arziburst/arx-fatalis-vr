@@ -26,6 +26,7 @@
 #include "vr/BindingCapture.h"
 #include "vr/VRControls.h"
 #include "vr/VRGameInput.h"
+#include "vr/VRTurn.h"
 
 /*!
  * \brief The controllers as gameplay events (#30, D-020)
@@ -60,6 +61,22 @@ ControllerType controllerType();
 
 //! The controllers' state of the last update: sticks and analog values
 const ControllerInput & controllerInput();
+
+//! The turn settings of cfg.ini (\c vr_smooth_turn, \c vr_snap_turn_angle, \c vr_snap_turn_repeat,
+//! \c vr_smooth_turn_speed - #32)
+TurnSettings turnSettings();
+
+/*!
+ * \brief The yaw the player turns by in this frame from the turn axis (#32) - call once per frame
+ *
+ * \param seconds the frame's duration
+ * \param allowed false while the player cannot turn (menus, cinematics, blocked controls)
+ * \return degrees, right positive
+ */
+float updateTurn(float seconds, bool allowed);
+
+//! Snaps and the total turned so far - for status.json
+const TurnController & turnState();
 
 /*!
  * The controller type a remapped layout is saved for: an unknown controller uses the Index layout
@@ -113,7 +130,10 @@ u32 captureCount();
  * \c reset - the default layout for the current controllers, not saved;
  * \c capture \c <event> - what the VR settings page does when the player selects the event
  * (\ref startCapture); \c cancel - end the capture; \c default - the page's "reset to default"
- * (\ref restoreDefaultLayout).
+ * (\ref restoreDefaultLayout);
+ * \c turn \c snap|smooth, \c turn \c angle \c <degrees>, \c turn \c speed \c <degrees per second>,
+ * \c turn \c repeat \c <seconds> -
+ * the turn settings, as cfg.ini would set them (#32).
  *
  * \return an empty string on success, otherwise the reason it was refused
  */

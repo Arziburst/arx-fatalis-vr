@@ -122,10 +122,14 @@ public:
 	
 	void setMouseMode(Mouse::Mode mode);
 	
+	//! The mouse on the interface's virtual screen (g_size), which in VR is not the window's size (#73)
 	const Vec2s & getMousePosition() const { return iMouseA; }
 	const Vec2f & getRelativeMouseMovement() const { return m_mouseMovement; }
 	bool isMouseInWindow() const { return mouseInWindow; }
+	//! Move the mouse to a position on the interface's virtual screen
 	void setMousePosAbs(const Vec2s & mousePos);
+	//! The interface's virtual screen the mouse position is measured on; 0 = the window
+	void setInterfaceSize(const Vec2i & size) { m_interfaceSize = size; }
 	
 	void setRawMouseInput(bool enabled);
 	
@@ -188,8 +192,11 @@ public:
 private:
 	
 	void centerMouse();
-	
+	Vec2i interfaceSize() const;
+
 	class InputBackend * backend;
+
+	Vec2i m_interfaceSize;
 	
 	// Mouse
 	

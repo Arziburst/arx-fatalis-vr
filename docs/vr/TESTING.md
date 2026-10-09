@@ -642,7 +642,7 @@ the eyes by its alpha (research rows F-115, F-162, F-163; the design is D-025):
   target, cleared to transparent.
 - `ArxGame::updateActiveCamera()` prepares the head camera with the union projection and the VR
   near plane (0.09 m, F-39): rooms, portals and entities are culled once for both eyes, and the
-  update projects with it at the window's size.
+  update projects with it at the interface's size (`g_size`, the quad's own resolution, #73).
 - `ArxGame::renderStereoViews()` draws `renderSceneView()` per eye between `vr::beginEyeRender()`
   and `vr::endEyeRender()`: the eye's camera is the head camera moved to the eye and turned by its
   cant, the projection is the eye's own off-axis matrix straight from its `XrFovf`
@@ -653,23 +653,53 @@ the eyes by its alpha (research rows F-115, F-162, F-163; the design is D-025):
   the quad in front; a frame whose scene was not drawn (a menu) clears both eyes to the dark
   background — both eyes or none (F-116). The desktop mirror (#21) copies the mirrored eye in
   `endEyeRender()` and the quad before its release and draws them into the window (the quad
-  blended by its alpha); with `vr_mirror = 0` the window shows the flat frame alone. With an idle
-  headset (`shouldRender` false) the game draws into the window as in flat mode and the frame is
-  ended without layers.
+  blended by its alpha); with `vr_mirror = 0` the window shows the flat frame alone. Any other
+  frame while the session runs (an idle headset with `shouldRender` false, eyes not located, the
+  loading screen through `vr::beginInterfaceFrame()`) draws the flat frame straight into the quad's
+  image, cleared to opaque black, and the window shows it scaled; such a frame is ended without
+  layers when the runtime does not want it rendered.
 
 The log says once per session what the eyes are:
 
 ```
-[vr] stereo: the scene is drawn per eye - left 2468x2740 fov L -54.0 R 40.0 U 44.0 D -55.0 deg, right 2468x2740 fov L -40.0 R 54.0 U 44.0 D -55.0 deg, eye separation 64.0 mm, canted displays: 5.0 deg between the eyes, union fov L -59.0 R 59.0 U 46.3 D -57.1 deg (one cull for both eyes), near 0.09 m = 9.0 units; the 2D interface stays on the head-locked quad (640x480, blended by its alpha)
+[vr] stereo: the scene is drawn per eye - left 2468x2740 fov L -54.0 R 40.0 U 44.0 D -55.0 deg, right 2468x2740 fov L -40.0 R 54.0 U 44.0 D -55.0 deg, eye separation 64.0 mm, canted displays: 5.0 deg between the eyes, union fov L -59.0 R 59.0 U 46.3 D -57.1 deg (one cull for both eyes), near 0.09 m = 9.0 units; the 2D interface stays on the head-locked quad (1528x1146, blended by its alpha)
 ```
+
+### The interface's own resolution (#73)
+
+The 2D interface is laid out on a virtual screen, `g_size` / `g_sizeRatio` (fonts, HUD scale,
+menus). In flat mode that is the window. While an OpenXR session runs, from its first located eyes
+on, it is the **head-locked quad's own resolution**: the eye image's pixels per unit of tangent
+(`eyeWidth / (tan right − tan left)`) times the quad's tangent width (2.4 m / 1.75 m), with the
+window's aspect ratio, clamped to 640…4096 wide and to the largest swapchain
+(`src/vr/InterfaceSize.h`, host tests in `tests/vr/InterfaceSizeTest.cpp`). On the Index that is
+**1528 px wide** for a 4:3 window (1528×1146) at 19.4 px per degree, whatever the window's size —
+before #73 the quad had the window's pixels (a 640×480 test window: a blurry quad). Size, distance
+and shape of the quad are unchanged (D-030).
+
+- `ArxGame::doFrame()` compares `vr::interfaceSize(window)` with `g_size` after `vr::beginFrame()`
+  and lays the interface out again (`AdjustUI`, like a resized window) when the session starts and
+  stops: `Interface laid out at 1528x1146 (was 640x480, window 640x480)`.
+- The mouse is measured on the interface: `Input` maps the window's cursor to `g_size` and back
+  (`setMousePosAbs`), identity in flat mode.
+- The scene is still drawn at the eye size (#19): `g_size` is the eye's only inside
+  `renderSceneView()` per eye.
+- A frame drawn into the window while the quad has its own size (the first frame after a level
+  load ended the game loop's frame) goes without the quad for that one frame.
+
+Evidence, once per session and per change: `[vr] interface: 918x689 on the head-locked quad (2.40 m
+at 1.75 m, 11.7 px per degree like the eyes) instead of the window's 640x480` (the simulator's
+1440×1600 eyes), a `vr.interface` game event, and `status.json` → `vr.interface` (`width`/`height` =
+`g_size`, `quadWidth`/`quadHeight`, `eyePxPerDeg`). A `shot` in a VR run saves the quad's image at
+that size.
 
 plus one `vr.stereo` game event with the same numbers, and `status.json` → `vr.stereo`
 (`active`, `frames`, the sizes and angles). `OpenXR session stopped after N frames (M shown, K in
 stereo)` counts the stereo frames at the end.
 
-What stays with the head camera until #72 / #73 (and looks flat or misplaced in the headset):
+What stays with the head camera until #72 (and looks flat or misplaced in the headset):
 particles, sparks, light flares and the mouse-drawn rune sparkles (update-phase 2D data at the
-window's size); screen-space picking with the mouse (#37 replaces it with hand reticles). The
+interface's size); screen-space picking with the mouse (#37 replaces it with hand reticles). The
 draw check is refused in a stereo frame: its two views would be the two eyes.
 
 **Without a headset:** the per-eye path runs unchanged on the simulated headset (`--vr-sim`,

@@ -10,6 +10,41 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-020: Our own VR settings — the MVP has the Controls section, with remapping
+
+- **Date:** 2026-10-09
+- **Status:** Accepted (moves the left-handed mode of D-019 into the MVP)
+- **Decided by:** project owner (agreed by questions, D-017)
+
+### Decision
+- The game gets **its own VR settings**, section by section. **The MVP has "Controls"**; sound,
+  graphics and the rest stay in the game's own settings for now and get VR sections later.
+- **Controls** in the MVP:
+  - **remapping:** a list of gameplay events (jump, inventory, book, crouch, use, …); for each event the
+    player assigns a **single button, a chord of two buttons on one hand, or a long press**; conflicts are
+    shown; "reset to the default layout";
+  - **turning:** snap or smooth, the snap angle (30 / 45 / 90, default 30, D-019), the smooth speed;
+  - **crouch and height:** physical crouch on / off and its threshold, seated mode, "calibrate height";
+  - **left-handed** mode (dominant hand).
+- **Default layouts per controller type**: the game detects the controllers (OpenXR interaction profile —
+  Index, Touch first) and offers the standard layout for them (the D-019 table); a remapped layout is
+  **saved per controller type** and picked automatically.
+- The VR settings open from the **main menu and the pause menu** (an entry "VR" next to the game's own
+  options), on the centred panel with the menu pointer.
+
+### Why
+Players should be able to fit the controls to themselves inside the game, on any supported controllers;
+the controls are the base of the VR settings that grow later (sound, graphics).
+
+### Consequences
+- **#30** builds the remapping into the action set from the start: one OpenXR action per physical
+  control, the game's own table maps controls (single / chord / long press) to gameplay events; the
+  interaction profile is detected. SteamVR's binding UI stays usable on top (F-139).
+- **#35** provides the default layouts per controller type as those tables.
+- A new task builds the **VR settings menu with the Controls section** (on #49's panel and #34's pointer).
+
+---
+
 ## D-019: The MVP control scheme
 
 - **Date:** 2026-10-09
@@ -36,7 +71,7 @@ Valve Index first; Quest 3 Touch the same (A/B on the right, X/Y on the left).
 | Two reticles on different items | the name shown is the one of the **hand that moved last** |
 | Recenter | hold a button chord (F-34) |
 | Runes | drawn in the air with the hand (D-010); the button that starts casting is decided with the magic block (#43–#45) |
-| Left-handed mode | after the MVP; SteamVR remapping covers it meanwhile (every gameplay concept is its own action, F-139) |
+| Left-handed mode | ~~after the MVP~~ → in the MVP, in the VR settings (D-020) |
 
 ### Why
 The original's mouse model stays the engine's (each hand produces the cursor), so the controls add little

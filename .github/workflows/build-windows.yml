@@ -3,6 +3,11 @@ name: Build (Windows)
 # Runs on the self-hosted runner on the project owner's PC (label "arxvr"). vcpkg and the build
 # directory persist there between runs (see scripts/build-paths.ps1), so builds are incremental.
 # If that PC is off, runs wait in the queue until it is back.
+#
+# The job is the automatic quality gate of every pull request (#127, decision D-021): the PowerShell
+# self-tests of the dev scripts, the build with the host unit tests (arxtest, run by build-windows.ps1),
+# then the flat game checks - smoke test with the draw check, and the spell draw check. A red step blocks
+# the merge. The evidence of the game checks is the artifact "game-checks".
 
 on:
   pull_request:
@@ -44,10 +49,35 @@ jobs:
       GIT_CONFIG_COUNT: '1'
       GIT_CONFIG_KEY_0: safe.directory
       GIT_CONFIG_VALUE_0: '*'
+      # The runner service is not the owner's account: the game cannot find the Steam libraries of the
+      # owner, so it is told where Arx Fatalis (Steam app 1700) is installed on this PC.
+      ARXVR_DATA_DIR: D:\games\SteamLibrary\steamapps\common\Arx Fatalis
 
     steps:
     - uses: actions/checkout@v4
 
+    # Seconds, no game: the PowerShell self-tests of the dev scripts (scripts/dev/test-*.ps1) first,
+    # so a broken tool fails before the build.
+    - name: Script self-tests
+      shell: pwsh
+      run: ./scripts/dev/run-script-tests.ps1
+
     - name: Build
       shell: pwsh
       run: ./scripts/build-windows.ps1 -Config Release
+
+    # Flat game on the runner: smoke test (start, play, draw check, quit, evidence) and the spell draw
+    # check. Fails the job on FAIL, and also when it could not run (exit 2: another game kept the game
+    # lock) - a gate that did not run is not a pass. Never leaves arx.exe behind.
+    - name: Game checks (smoke test, draw check, spell draw check)
+      shell: pwsh
+      run: ./scripts/dev/ci-smoke.ps1 -OutDir "$env:GITHUB_WORKSPACE/ci-artifacts"
+
+    - name: Upload game check evidence
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: game-checks
+        path: ci-artifacts
+        if-no-files-found: ignore
+        retention-days: 14

@@ -8,6 +8,17 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — The CI game is another Windows account: its log, lock and build are not in your profile (#127)
+
+**Symptom:** a CI game check failed (or passed) but `%LOCALAPPDATA%\ArxFatalisVR\userdirs\…\arx.log` and `launches.log`
+show nothing about it; or a smoke test of yours and the CI game ran together although "one game at a time" holds.
+**Cause:** the runner service is `NT AUTHORITY\NETWORK SERVICE` (session 0). Its `%LOCALAPPDATA%` is
+`C:\Windows\ServiceProfiles\NetworkService\AppData\Local`, so CI has its own build, user directory, channel, game lock and
+ledger; the lock does not span accounts (#205). It also has no Steam registry entry of the owner, hence `ARXVR_DATA_DIR`.
+The game itself runs fine there: no desktop, window and OpenGL context are created anyway (measured: `GAMEPLAY` after ~1 s).
+**Do:** read the evidence from the workflow artifact `game-checks` (logs, `status.json`, crash reports, digest), not from
+your profile. Do not "fix" a CI failure by starting an interactive runner before the artifact says the window was the problem.
+
 ## 2026-10-09 — Backslashes vanish from Windows paths written through sed or a shell string (#186)
 
 **Symptom:** a doc or script line reads `.scriptsdevpr-checks.ps1` instead of `.\scripts\dev\pr-checks.ps1`.

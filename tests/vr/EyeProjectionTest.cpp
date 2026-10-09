@@ -30,9 +30,9 @@ CppUnit::AutoRegisterSuite<EyeProjectionTest> g_registerEyeProjectionTest;
 
 namespace {
 
-const float Near = 9.f;      //!< 0.09 m at 100 units per meter (F-39)
-const float Far = 6000.f;    //!< a typical camera depth
-const float Epsilon = 1e-4f;
+const float NearDist = 9.f;      //!< 0.09 m at 100 units per meter (F-39)
+const float FarDist = 6000.f;    //!< a typical camera depth
+const float ProjectionEpsilon = 1e-4f;
 
 } // anonymous namespace
 
@@ -77,56 +77,56 @@ void EyeProjectionTest::testSymmetricFovIsTheEnginesProjection() {
 	symmetric.right = std::atan(halfTan * 640.f / 480.f);
 	symmetric.left = -symmetric.right;
 
-	glm::mat4x4 m = vr::eyeProjection(symmetric, Near, Far);
+	glm::mat4x4 m = vr::eyeProjection(symmetric, NearDist, FarDist);
 
 	const float h = std::cos(fov / 2.f) / std::sin(fov / 2.f);
 	const float w = (480.f / 640.f) * h;
-	const float Q = Far / (Far - Near);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(w, m[0][0], Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(-h, m[1][1], Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, m[2][0], Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, m[2][1], Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(Q, m[2][2], Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(-Q * Near, m[3][2], Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.f, m[2][3], Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, m[3][3], Epsilon);
+	const float Q = FarDist / (FarDist - NearDist);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(w, m[0][0], ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(-h, m[1][1], ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, m[2][0], ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, m[2][1], ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(Q, m[2][2], ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(-Q * NearDist, m[3][2], ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.f, m[2][3], ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, m[3][3], ProjectionEpsilon);
 
 	// The view axis is the image center
 	Vec3f center = project(m, Vec3f(0.f, 0.f, 100.f));
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, center.x, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, center.y, Epsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, center.x, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, center.y, ProjectionEpsilon);
 
 	// The equivalent symmetric angles are the angles themselves
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(fov, vr::verticalFov(symmetric), Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(2.f * symmetric.right, vr::horizontalFov(symmetric), Epsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(fov, vr::verticalFov(symmetric), ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(2.f * symmetric.right, vr::horizontalFov(symmetric), ProjectionEpsilon);
 }
 
 void EyeProjectionTest::testAsymmetricEdgesLandOnTheClipEdges() {
 
 	const vr::EyeFov fov = quest3Left();
 	const vr::FovTangents t = vr::tangents(fov);
-	glm::mat4x4 m = vr::eyeProjection(fov, Near, Far);
+	glm::mat4x4 m = vr::eyeProjection(fov, NearDist, FarDist);
 
 	// The four FOV edges at any depth: left and right on x = -1 / +1, down and up on y = -1 / +1
 	// (the engine's view space has y down, so the up edge is at -tan(up))
 	const float z = 250.f;
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(-1.f, project(m, Vec3f(t.left * z, 0.f, z)).x, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.f, project(m, Vec3f(t.right * z, 0.f, z)).x, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.f, project(m, Vec3f(0.f, -t.up * z, z)).y, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(-1.f, project(m, Vec3f(0.f, -t.down * z, z)).y, Epsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(-1.f, project(m, Vec3f(t.left * z, 0.f, z)).x, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.f, project(m, Vec3f(t.right * z, 0.f, z)).x, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.f, project(m, Vec3f(0.f, -t.up * z, z)).y, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(-1.f, project(m, Vec3f(0.f, -t.down * z, z)).y, ProjectionEpsilon);
 
 	// The view axis is off the image center: this eye sees more to the left (54° > 40°) and below
 	// (55° > 44°), so straight ahead lands right of and above the center
 	Vec3f axis = project(m, Vec3f(0.f, 0.f, z));
 	CPPUNIT_ASSERT(axis.x > 0.1f);
 	CPPUNIT_ASSERT(axis.y > 0.1f);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(-(t.right + t.left) / (t.right - t.left), axis.x, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(-(t.up + t.down) / (t.up - t.down), axis.y, Epsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(-(t.right + t.left) / (t.right - t.left), axis.x, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(-(t.up + t.down) / (t.up - t.down), axis.y, ProjectionEpsilon);
 
 	// The mirrored eye mirrors the shift
-	Vec3f axisRight = project(vr::eyeProjection(quest3Right(), Near, Far), Vec3f(0.f, 0.f, z));
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(-axis.x, axisRight.x, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(axis.y, axisRight.y, Epsilon);
+	Vec3f axisRight = project(vr::eyeProjection(quest3Right(), NearDist, FarDist), Vec3f(0.f, 0.f, z));
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(-axis.x, axisRight.x, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(axis.y, axisRight.y, ProjectionEpsilon);
 }
 
 void EyeProjectionTest::testWithoutTheYFlipTheUpEdgeIsAtTheBottom() {
@@ -136,27 +136,27 @@ void EyeProjectionTest::testWithoutTheYFlipTheUpEdgeIsAtTheBottom() {
 	// not be that matrix.
 	const vr::EyeFov fov = quest3Left();
 	const vr::FovTangents t = vr::tangents(fov);
-	glm::mat4x4 noFlip = vr::eyeProjection(fov, Near, Far);
+	glm::mat4x4 noFlip = vr::eyeProjection(fov, NearDist, FarDist);
 	noFlip[1][1] = -noFlip[1][1];
 	noFlip[2][1] = -noFlip[2][1];
 
 	const float z = 250.f;
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(-1.f, project(noFlip, Vec3f(0.f, -t.up * z, z)).y, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.f, project(vr::eyeProjection(fov, Near, Far), Vec3f(0.f, -t.up * z, z)).y, Epsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(-1.f, project(noFlip, Vec3f(0.f, -t.up * z, z)).y, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.f, project(vr::eyeProjection(fov, NearDist, FarDist), Vec3f(0.f, -t.up * z, z)).y, ProjectionEpsilon);
 }
 
 void EyeProjectionTest::testNearPlaneIsDepthZeroAndFarIsOne() {
 
-	glm::mat4x4 m = vr::eyeProjection(quest3Left(), Near, Far);
+	glm::mat4x4 m = vr::eyeProjection(quest3Left(), NearDist, FarDist);
 
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, project(m, Vec3f(0.f, 0.f, Near)).z, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.f, project(m, Vec3f(0.f, 0.f, Far)).z, Epsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, project(m, Vec3f(0.f, 0.f, NearDist)).z, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.f, project(m, Vec3f(0.f, 0.f, FarDist)).z, ProjectionEpsilon);
 
 	// Depth grows with distance, and so does clip w (the perspective divide the TL path relies on)
-	Vec4f closer = m * Vec4f(0.f, 0.f, 2.f * Near, 1.f);
-	Vec4f farther = m * Vec4f(0.f, 0.f, Far / 2.f, 1.f);
+	Vec4f closer = m * Vec4f(0.f, 0.f, 2.f * NearDist, 1.f);
+	Vec4f farther = m * Vec4f(0.f, 0.f, FarDist / 2.f, 1.f);
 	CPPUNIT_ASSERT(closer.z / closer.w < farther.z / farther.w);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(2.f * Near, closer.w, Epsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(2.f * NearDist, closer.w, ProjectionEpsilon);
 
 	// 0.09 m is the VR near plane
 	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.09f, vr::NearClipMeters, 1e-6f);
@@ -168,8 +168,8 @@ void EyeProjectionTest::testEquivalentFovsHaveTheSameExtent() {
 	// camera set to it scales sprites and fog as the eye's projection does
 	const vr::EyeFov fov = quest3Left();
 	const vr::FovTangents t = vr::tangents(fov);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL((t.up - t.down) / 2.f, std::tan(vr::verticalFov(fov) / 2.f), Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL((t.right - t.left) / 2.f, std::tan(vr::horizontalFov(fov) / 2.f), Epsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL((t.up - t.down) / 2.f, std::tan(vr::verticalFov(fov) / 2.f), ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL((t.right - t.left) / 2.f, std::tan(vr::horizontalFov(fov) / 2.f), ProjectionEpsilon);
 
 	// Not the sum of the angles: 44° + 55° is less than the extent says
 	CPPUNIT_ASSERT(vr::verticalFov(fov) > glm::radians(99.f));
@@ -181,12 +181,12 @@ void EyeProjectionTest::testParallelEyesHaveTheRightParallax() {
 	std::array<vr::EyeRig, 2> rig = vr::eyeRig(eyeAt(Vec3f(-0.032f, 0.f, 0.f), quest3Left()),
 	                                           eyeAt(Vec3f(0.032f, 0.f, 0.f), quest3Right()));
 
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(-3.2f, rig[0].offset.x, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(3.2f, rig[1].offset.x, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, rig[0].offset.y, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, rig[0].offset.z, Epsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(-3.2f, rig[0].offset.x, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(3.2f, rig[1].offset.x, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, rig[0].offset.y, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, rig[0].offset.z, ProjectionEpsilon);
 	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.064f, vr::eyeSeparationMeters(rig), 1e-5f);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, vr::cantAngle(rig), Epsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, vr::cantAngle(rig), ProjectionEpsilon);
 
 	// A head camera at the origin looking along the engine's +z; a point 2 m straight ahead
 	Camera head;
@@ -199,19 +199,19 @@ void EyeProjectionTest::testParallelEyesHaveTheRightParallax() {
 	// (F-06: parallax sign and eye separation)
 	Vec3f inLeft = Vec3f(vr::eyeWorldToView(headWorldToView, rig[0]) * Vec4f(point, 1.f));
 	Vec3f inRight = Vec3f(vr::eyeWorldToView(headWorldToView, rig[1]) * Vec4f(point, 1.f));
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(3.2f, inLeft.x, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(-3.2f, inRight.x, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(200.f, inLeft.z, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(200.f, inRight.z, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, inLeft.y, Epsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(3.2f, inLeft.x, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(-3.2f, inRight.x, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(200.f, inLeft.z, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(200.f, inRight.z, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.f, inLeft.y, ProjectionEpsilon);
 
 	// On the screen the left eye's image of the point is right of the right eye's
-	Vec3f ndcLeft = project(vr::eyeProjection(rig[0].fov, Near, Far), inLeft);
-	Vec3f ndcRight = project(vr::eyeProjection(rig[1].fov, Near, Far), inRight);
+	Vec3f ndcLeft = project(vr::eyeProjection(rig[0].fov, NearDist, FarDist), inLeft);
+	Vec3f ndcRight = project(vr::eyeProjection(rig[1].fov, NearDist, FarDist), inRight);
 	// Both eyes see straight ahead off their own image centers (asymmetric FOV), so compare the
 	// shift of the point against each eye's view axis
-	Vec3f axisLeft = project(vr::eyeProjection(rig[0].fov, Near, Far), Vec3f(0.f, 0.f, 200.f));
-	Vec3f axisRight = project(vr::eyeProjection(rig[1].fov, Near, Far), Vec3f(0.f, 0.f, 200.f));
+	Vec3f axisLeft = project(vr::eyeProjection(rig[0].fov, NearDist, FarDist), Vec3f(0.f, 0.f, 200.f));
+	Vec3f axisRight = project(vr::eyeProjection(rig[1].fov, NearDist, FarDist), Vec3f(0.f, 0.f, 200.f));
 	CPPUNIT_ASSERT(ndcLeft.x - axisLeft.x > 0.01f);
 	CPPUNIT_ASSERT(ndcRight.x - axisRight.x < -0.01f);
 }
@@ -316,18 +316,18 @@ void EyeProjectionTest::testUnionIsTheEyeFovForIdenticalEyes() {
 	std::array<vr::EyeRig, 2> rig = vr::eyeRig(eyeAt(Vec3f(-0.032f, 0.f, 0.f), quest3Left()),
 	                                           eyeAt(Vec3f(0.032f, 0.f, 0.f), quest3Left()));
 	vr::EyeFov fov = vr::unionFov(rig);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(quest3Left().left, fov.left, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(quest3Left().right, fov.right, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(quest3Left().up, fov.up, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(quest3Left().down, fov.down, Epsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(quest3Left().left, fov.left, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(quest3Left().right, fov.right, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(quest3Left().up, fov.up, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(quest3Left().down, fov.down, ProjectionEpsilon);
 
 	// Mirrored eyes: the union is symmetric with the outer angles
 	rig = vr::eyeRig(eyeAt(Vec3f(-0.032f, 0.f, 0.f), quest3Left()), eyeAt(Vec3f(0.032f, 0.f, 0.f), quest3Right()));
 	fov = vr::unionFov(rig);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(glm::radians(-54.f), fov.left, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(glm::radians(54.f), fov.right, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(glm::radians(44.f), fov.up, Epsilon);
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(glm::radians(-55.f), fov.down, Epsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(glm::radians(-54.f), fov.left, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(glm::radians(54.f), fov.right, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(glm::radians(44.f), fov.up, ProjectionEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(glm::radians(-55.f), fov.down, ProjectionEpsilon);
 }
 
 void EyeProjectionTest::testUnionContainsBothEyesWithCant() {
@@ -358,10 +358,10 @@ void EyeProjectionTest::testUnionContainsBothEyesWithCant() {
 			Vec3f d = eye.rotation * corner;
 			float x = d.x / d.z;
 			float y = -d.y / d.z; // up positive, like the FOV angles
-			CPPUNIT_ASSERT(x >= u.left - Epsilon);
-			CPPUNIT_ASSERT(x <= u.right + Epsilon);
-			CPPUNIT_ASSERT(y <= u.up + Epsilon);
-			CPPUNIT_ASSERT(y >= u.down - Epsilon);
+			CPPUNIT_ASSERT(x >= u.left - ProjectionEpsilon);
+			CPPUNIT_ASSERT(x <= u.right + ProjectionEpsilon);
+			CPPUNIT_ASSERT(y <= u.up + ProjectionEpsilon);
+			CPPUNIT_ASSERT(y >= u.down - ProjectionEpsilon);
 		}
 	}
 
@@ -377,10 +377,10 @@ void EyeProjectionTest::testUnionContainsBothEyesWithCant() {
 			Vec3f d = eye.rotation * corner;
 			float x = d.x / d.z;
 			float y = -d.y / d.z;
-			onLeft = onLeft || std::abs(x - u.left) < Epsilon;
-			onRight = onRight || std::abs(x - u.right) < Epsilon;
-			onUp = onUp || std::abs(y - u.up) < Epsilon;
-			onDown = onDown || std::abs(y - u.down) < Epsilon;
+			onLeft = onLeft || std::abs(x - u.left) < ProjectionEpsilon;
+			onRight = onRight || std::abs(x - u.right) < ProjectionEpsilon;
+			onUp = onUp || std::abs(y - u.up) < ProjectionEpsilon;
+			onDown = onDown || std::abs(y - u.down) < ProjectionEpsilon;
 		}
 	}
 	CPPUNIT_ASSERT(onLeft && onRight && onUp && onDown);

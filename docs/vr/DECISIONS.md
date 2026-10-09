@@ -10,20 +10,24 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-016: World interaction with a hand-aimed reticle from either hand — left drags, right takes to the inventory
+## D-016: World interaction — both hands work as the mouse, each with its own reticle; the inventory opens in the centre of the view
 
 - **Date:** 2026-10-09
-- **Status:** Accepted (replaces the "world interaction by reach" point of D-010)
+- **Status:** Accepted (replaces the "world interaction by reach" point of D-010). Corrected the same day:
+  the first wording split the hands ("left drags, right takes to the inventory") — a misreading of the
+  owner; the decision below is the owner's intent.
 - **Decided by:** project owner
 
 ### Decision
-- Items and world objects are targeted with a **reticle** — a small crosshair where the hand points, with
-  **no visible beam** — from **either hand**, within the engine's own interaction distance. The engine's
-  own "what is under the cursor" test runs at the reticle (the hidden hand ray of F-57 replaces the mouse).
-- **Left hand** trigger: **drag** the item with the engine's own drag — carry it, move it over surfaces,
-  set it down on any plane, as the mouse does in the original.
-- **Right hand** trigger: **take the item into the inventory**, where the game allows it.
-- Doors, levers, chests, bodies and characters: the same reticle; the trigger is the game's "use" click.
+- **Both hands emulate the mouse fully.** Each hand has its own **reticle** — a small crosshair where the
+  hand points, with **no visible beam** — within the engine's own interaction distance; the engine's own
+  "what is under the cursor" test runs at the reticle (the hidden hand ray of F-57 replaces the mouse).
+- With either hand the player does what the mouse does in the original: pick an item up and **drag** it,
+  move it over surfaces and set it down on any plane, drag it **into the open inventory**, use doors,
+  levers, chests, bodies and characters (the trigger is the game's click).
+- **The inventory opens as a panel in the centre of the player's view** (for now; the panel itself is #49).
+- **Design case:** the right hand holds a sword in a fight → the player opens the inventory, drags an
+  item from the floor into it with the left hand, closes it and fights on.
 - Unchanged from D-010: no rays or lasers from the hands, runes drawn in the air with the hand, spell
   direction from the hand, a pointer only while a menu or the inventory is open (#34).
 
@@ -35,8 +39,9 @@ natural. The reference to learn from is **Valheim VR (VHVR)** — its world inte
 before #37 / #38.
 
 ### Consequences
-- #37 and #38 become "reticle + the engine's drag / use" instead of reach-and-grab; #36 (full body with IK
-  arms) no longer has to hold items in the palm.
+- #37 and #38 become "a reticle per hand + the engine's drag / use" instead of reach-and-grab; #49 opens
+  the inventory in the centre of the view; #36 (full body with IK arms) no longer has to hold items in
+  the palm.
 - Catalog: F-57 changed (reticle, no grab by reach); F-138 (distance-grab gesture) not taken.
 
 ---

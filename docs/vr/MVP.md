@@ -8,7 +8,8 @@ as fast as possible, show it to people, and only invest in polish and the full g
 - **Rule of thumb:** if a task is not needed to play the demo scenario below, it is not MVP.
 - **Design decisions that shape the MVP:** stick forward = look direction (D-008), full body with IK
   arms (D-009), no rays from the hands — runes drawn in the air, a pointer only in menus (D-010); world
-  interaction with a hand-aimed reticle from either hand — left drags, right takes to the inventory (D-016). See [DECISIONS.md](DECISIONS.md); features taken from reference mods are in
+  interaction — both hands work as the mouse, each with its own reticle; the inventory opens in the
+  centre of the view (D-016). See [DECISIONS.md](DECISIONS.md); features taken from reference mods are in
   [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) (*Decision* column).
 
 ## Demo scenario (what the MVP must show)
@@ -22,8 +23,9 @@ first areas after it):
    looking down you see **your own body**, and your arms follow the controllers.
 2. Walk around with the thumbstick (forward = where you look), turn with snap or smooth turn, crouch
    (physically or with the right stick), jump (A).
-3. Pick up items, open doors and chests, pull a lever — **aiming a reticle with either hand**: the left
-   hand drags an item over surfaces, the right hand takes it into the inventory (D-016).
+3. Pick up items, open doors and chests, pull a lever — **each hand works as the mouse with its own
+   reticle**; with a sword in the right hand, open the inventory and drag an item from the floor into it
+   with the left hand (D-016).
 4. Open the inventory and character book on a **floating panel** and equip a weapon with the short
    pointer that appears only while a menu is open. Health and mana are **two bars on the left wrist**.
 5. Fight a goblin by **physically swinging** the weapon held in the character's hand; hits register
@@ -44,7 +46,7 @@ The desktop window mirrors one eye, so the demo can be recorded and shown.
 | Body | The full player model: legs and torso animated by the engine, head hidden, arms driven by the controllers via IK (D-009) |
 | Locomotion | Thumbstick movement relative to the look direction, snap and smooth turn, physical crouch, crouch toggle (right stick down) and jump (A) |
 | Input | OpenXR actions with Index bindings, mapped onto the engine's existing actions; the trigger always works as a fallback |
-| Interaction | A hand-aimed reticle from either hand, no visible beam: left drags an item over surfaces, right takes it into the inventory; doors / levers / chests / bodies with the same reticle (D-016; reference: VHVR, #166) |
+| Interaction | Both hands work as the mouse, each with its own reticle and no visible beam: drag items over surfaces and into the inventory (which opens in the centre of the view), use doors / levers / chests / bodies (D-016; reference: VHVR, #166) |
 | Melee | The weapon in the model's hand; hits by contact plus a swing detector; damage from swing speed; haptics |
 | Magic | Runes drawn in the air with the hand, fed into the existing recognizer; spell direction from the hand, invisible |
 | UI | Menus, inventory, book, map, dialogs and notes on one floating panel with a pointer only while it is open; health and mana on the left wrist |
@@ -138,7 +140,7 @@ dependencies are met; when a task is split, replace it with its parts.
 33. #36 — Full body: the player model with arms driven by the controllers via IK (D-009, F-52, F-49)
 34. #116 — Health and mana as two bars on the left wrist (F-83)
 35. #166 — Research: world interaction in Valheim VR — the reference for D-016, #37, #38
-35. #37 — Items with the hand-aimed reticle: left hand drags, right hand takes to the inventory (D-016, F-57, F-72)
+35. #37 — Items with a reticle per hand: both hands work as the mouse — drag, set down, into the inventory (D-016, F-57, F-72)
 36. #38 — Doors, levers, chests and bodies with the same reticle (D-016, F-57)
 37. #79 — Find the Arx Fatalis data automatically in Steam libraries (F-97)
 38. #88 — Tester build for a friend (F-91, F-96, F-100) *(then the friend tests on Quest 3 — #87, Backlog until then)*
@@ -210,7 +212,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #36 full body with IK arms | render | VR | #72, #24, #74, decisions on #118 / #120 |
 | #116 wrist vitals | ui | VR | #36 |
 | #166 research: VHVR world interaction | docs | plain | — (owner's decisions before #37 / #38) |
-| #37 reticle: drag, take to inventory | combat | VR | #74, #166 (no longer #36, D-016) |
+| #37 a reticle per hand: drag, into the inventory | combat | VR | #74, #166 (no longer #36, D-016) |
 | #38 doors, levers, chests | combat | VR | #37 |
 | #79 Steam data detection | core | plain | — |
 | #88 tester build | build | plain | #79, #123, decisions on #118 / #120 |

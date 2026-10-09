@@ -137,7 +137,7 @@ dependencies are met; when a task is split, replace it with its parts.
 *(the owner decides on the new catalog rows before #36, #116, #49 and #88)*
 29. #49 — Floating UI panel for menus, inventory, book, map (F-80, F-82)
 30. #34 — Menu pointer only while a menu or the inventory is open (D-010, F-81)
-30. #178 — VR settings screen with the Controls section: remapping (button, chord, long press) per controller type (D-020, D-033)
+30. #178 — VR settings screen with the Controls section: remapping (button, chord, long press) per controller type (D-020, D-035)
 30. #260 — VR settings, Controls: turning rows and character height up / down (after #32, #27)
 31. #33 — Jump on A, crouch toggle on right stick down, stealth by partial deflection (F-47)
 32. #70 — Test save library for MVP scenarios *(done: new game, items, goblin fight; levers, doors and chests are #210, recorded by the owner)*

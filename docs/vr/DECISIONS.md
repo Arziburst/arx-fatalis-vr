@@ -10,7 +10,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-033: Remapping in the VR settings — captured on release, conflicts shown, saved as changes per controller type
+## D-035: Remapping in the VR settings — captured on release, conflicts shown, saved as changes per controller type
 
 - **Date:** 2026-10-10
 - **Status:** Accepted

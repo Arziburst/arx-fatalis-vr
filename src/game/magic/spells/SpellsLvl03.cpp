@@ -104,6 +104,14 @@ void SpeedSpell::End() {
 	
 }
 
+void SpeedSpell::Render() {
+
+	for(SpeedTrail & trail : m_trails) {
+		trail.Render();
+	}
+
+}
+
 void SpeedSpell::Update() {
 	
 	if(m_caster == EntityHandle_Player)
@@ -114,11 +122,7 @@ void SpeedSpell::Update() {
 		trail.SetNextPosition(pos);
 		trail.Update(g_gameTime.lastFrameDuration());
 	}
-	
-	for(SpeedTrail & trail : m_trails) {
-		trail.Render();
-	}
-	
+
 }
 
 Vec3f SpeedSpell::getPosition() const {
@@ -331,6 +335,10 @@ void CreateFoodSpell::Launch() {
 
 void CreateFoodSpell::End() { }
 
+void CreateFoodSpell::Render() {
+	m_particles.Render();
+}
+
 void CreateFoodSpell::Update() {
 	
 	m_pos = entities.player()->pos;
@@ -355,9 +363,7 @@ void CreateFoodSpell::Update() {
 	
 	m_particles.SetPos(m_pos);
 	m_particles.Update(g_gameTime.lastFrameDuration());
-	
-	m_particles.Render();
-	
+
 }
 
 
@@ -459,6 +465,40 @@ void IceProjectileSpell::End() {
 	
 }
 
+void IceProjectileSpell::Render() {
+
+	float fColor = 1.f;
+	if(m_duration - m_elapsed < 1s) {
+		fColor = (m_duration - m_elapsed) / 1s;
+	}
+
+	RenderMaterial mat;
+	mat.setCulling(true);
+	mat.setDepthTest(true);
+	mat.setBlendType(RenderMaterial::Screen);
+
+	size_t iMax = std::min(m_icicles.size(), size_t(float(m_icicles.size()) * 2.f * (m_elapsed / m_duration)));
+
+	for(size_t i = 0; i < iMax; i++) {
+		const Icicle & icicle = m_icicles[i];
+
+		Anglef stiteangle;
+		stiteangle.setYaw(glm::cos(glm::radians(icicle.pos.x)) * 360);
+		stiteangle.setPitch(0);
+		stiteangle.setRoll(0);
+
+		float tt = icicle.sizeMax.y * fColor;
+		Color3f stitecolor = Color3f(0.7f, 0.7f, 0.9f) * tt;
+		stitecolor = componentwise_min(stitecolor, Color3f(1.f, 1.f, 1.f));
+
+		EERIE_3DOBJ * eobj = (icicle.type == 0) ? smotte.get() : stite.get();
+
+		Draw3DObject(eobj, stiteangle, icicle.pos, icicle.size, stitecolor, mat);
+
+	}
+
+}
+
 void IceProjectileSpell::Update() {
 	
 	float fColor = 1.f;
@@ -469,34 +509,14 @@ void IceProjectileSpell::Update() {
 		}
 	}
 	
-	RenderMaterial mat;
-	mat.setCulling(true);
-	mat.setDepthTest(true);
-	mat.setBlendType(RenderMaterial::Screen);
-	
 	size_t iMax = std::min(m_icicles.size(), size_t(float(m_icicles.size()) * 2.f * (m_elapsed / m_duration)));
-	
+
 	for(size_t i = 0; i < iMax; i++) {
 		Icicle & icicle = m_icicles[i];
-		
 		icicle.size += Vec3f(0.1f);
 		icicle.size = glm::clamp(icicle.size, Vec3f(0.f), icicle.sizeMax);
-		
-		Anglef stiteangle;
-		stiteangle.setYaw(glm::cos(glm::radians(icicle.pos.x)) * 360);
-		stiteangle.setPitch(0);
-		stiteangle.setRoll(0);
-		
-		float tt = icicle.sizeMax.y * fColor;
-		Color3f stitecolor = Color3f(0.7f, 0.7f, 0.9f) * tt;
-		stitecolor = componentwise_min(stitecolor, Color3f(1.f, 1.f, 1.f));
-		
-		EERIE_3DOBJ * eobj = (icicle.type == 0) ? smotte.get() : stite.get();
-		
-		Draw3DObject(eobj, stiteangle, icicle.pos, icicle.size, stitecolor, mat);
-		
 	}
-	
+
 	if(m_quantizer.update(toMsf(g_gameTime.lastFrameDuration()) * 0.03f) < 1) {
 		return;
 	}

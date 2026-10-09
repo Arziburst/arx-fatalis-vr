@@ -83,6 +83,42 @@ void BlessSpell::End() {
 	m_targets.clear();
 }
 
+void BlessSpell::Render() {
+
+	RenderMaterial mat;
+	mat.setBlendType(RenderMaterial::Additive);
+	mat.setDepthTest(true);
+	mat.setLayer(RenderMaterial::Decal);
+	mat.setTexture(tex_sol);
+	float fBetaRadCos = glm::cos(glm::radians(MAKEANGLE(m_yaw))) * m_scale;
+	float fBetaRadSin = glm::sin(glm::radians(MAKEANGLE(m_yaw))) * m_scale;
+	TexturedQuad q;
+	ColorRGBA color = Color::white.toRGB();
+	q.v[0].color = color;
+	q.v[1].color = color;
+	q.v[2].color = color;
+	q.v[3].color = color;
+	q.v[0].uv = Vec2f(0.f);
+	q.v[1].uv = Vec2f(1.f, 0.f);
+	q.v[2].uv = Vec2f(1.f);
+	q.v[3].uv = Vec2f(0.f, 1.f);
+	Vec3f pos = m_pos + Vec3f(0, -5, 0);
+	q.v[0].p.x = pos.x + fBetaRadCos - fBetaRadSin;
+	q.v[0].p.y = pos.y;
+	q.v[0].p.z = pos.z + fBetaRadSin + fBetaRadCos;
+	q.v[1].p.x = pos.x - fBetaRadCos - fBetaRadSin;
+	q.v[1].p.y = pos.y;
+	q.v[1].p.z = pos.z - fBetaRadSin + fBetaRadCos;
+	q.v[2].p.x = pos.x - fBetaRadCos + fBetaRadSin;
+	q.v[2].p.y = pos.y;
+	q.v[2].p.z = pos.z - fBetaRadSin - fBetaRadCos;
+	q.v[3].p.x = pos.x + fBetaRadCos + fBetaRadSin;
+	q.v[3].p.y = pos.y;
+	q.v[3].p.z = pos.z + fBetaRadSin - fBetaRadCos;
+	drawQuadRTP(mat, q);
+
+}
+
 void BlessSpell::Update() {
 	
 	fRot += g_gameTime.lastFrameDuration() / 4ms;
@@ -98,41 +134,7 @@ void BlessSpell::Update() {
 	}
 	
 	m_scale = (m_level + 10) * 6.f;
-	
-	{
-		RenderMaterial mat;
-		mat.setBlendType(RenderMaterial::Additive);
-		mat.setDepthTest(true);
-		mat.setLayer(RenderMaterial::Decal);
-		mat.setTexture(tex_sol);
-		float fBetaRadCos = glm::cos(glm::radians(MAKEANGLE(m_yaw))) * m_scale;
-		float fBetaRadSin = glm::sin(glm::radians(MAKEANGLE(m_yaw))) * m_scale;
-		TexturedQuad q;
-		ColorRGBA color = Color::white.toRGB();
-		q.v[0].color = color;
-		q.v[1].color = color;
-		q.v[2].color = color;
-		q.v[3].color = color;
-		q.v[0].uv = Vec2f(0.f);
-		q.v[1].uv = Vec2f(1.f, 0.f);
-		q.v[2].uv = Vec2f(1.f);
-		q.v[3].uv = Vec2f(0.f, 1.f);
-		Vec3f pos = m_pos + Vec3f(0, -5, 0);
-		q.v[0].p.x = pos.x + fBetaRadCos - fBetaRadSin;
-		q.v[0].p.y = pos.y;
-		q.v[0].p.z = pos.z + fBetaRadSin + fBetaRadCos;
-		q.v[1].p.x = pos.x - fBetaRadCos - fBetaRadSin;
-		q.v[1].p.y = pos.y;
-		q.v[1].p.z = pos.z - fBetaRadSin + fBetaRadCos;
-		q.v[2].p.x = pos.x - fBetaRadCos + fBetaRadSin;
-		q.v[2].p.y = pos.y;
-		q.v[2].p.z = pos.z - fBetaRadSin - fBetaRadCos;
-		q.v[3].p.x = pos.x + fBetaRadCos + fBetaRadSin;
-		q.v[3].p.y = pos.y;
-		q.v[3].p.z = pos.z + fBetaRadSin - fBetaRadCos;
-		drawQuadRTP(mat, q);
-	}
-	
+
 	size_t count = m_quantizer.update(toMsf(g_gameTime.lastFrameDuration()) * 0.36f);
 	for(size_t i = 0; i < count; i++) {
 		PARTICLE_DEF * pd = createParticle(true);
@@ -409,6 +411,17 @@ void CurseSpell::End() {
 	m_targets.clear();
 }
 
+void CurseSpell::Render() {
+
+	RenderMaterial mat;
+	mat.setCulling(true);
+	mat.setDepthTest(true);
+	mat.setBlendType(RenderMaterial::Opaque);
+
+	Draw3DObject(svoodoo.get(), Anglef(0, fRot, 0), m_pos, Vec3f(1.f), Color3f::white, mat);
+
+}
+
 void CurseSpell::Update() {
 	
 	fRot += g_gameTime.lastFrameDuration() / 4ms;
@@ -425,14 +438,7 @@ void CurseSpell::Update() {
 			target.y += targetIo->physics.cyl.height - 30.f;
 	}
 	m_pos = target;
-	
-	RenderMaterial mat;
-	mat.setCulling(true);
-	mat.setDepthTest(true);
-	mat.setBlendType(RenderMaterial::Opaque);
-	
-	Draw3DObject(svoodoo.get(), Anglef(0, fRot, 0), m_pos, Vec3f(1.f), Color3f::white, mat);
-	
+
 	size_t count = m_quantizer.update(toMsf(g_gameTime.lastFrameDuration()) * 0.12f);
 	for(size_t i = 0; i < count; i++) {
 		PARTICLE_DEF * pd = createParticle(true);

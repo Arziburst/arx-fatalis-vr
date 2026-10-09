@@ -81,11 +81,27 @@ public:
 	
 	//! Release all resources held by this threads random generator
 	static void shutdown();
-	
+
 private:
-	
+
 	typedef std::mt19937 Generator;
-	
+
+public:
+
+	//! A copy of this thread's generator, to draw the same numbers again
+	class State {
+		Generator m_generator;
+		friend class Random;
+	};
+
+	//! Remember where the sequence is, e.g. before drawing the first of several views of a frame
+	static State getState();
+
+	//! Continue the sequence from \a state - the next numbers repeat the ones drawn after getState()
+	static void setState(const State & state);
+
+private:
+
 	static thread_local Generator * rng;
 };
 

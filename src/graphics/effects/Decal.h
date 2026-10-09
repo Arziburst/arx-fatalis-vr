@@ -59,6 +59,9 @@ size_t PolyBoomCount();
 void PolyBoomAddScorch(const Vec3f & pos);
 void PolyBoomAddSplat(const Sphere & sp, const Color3f & col, long flags);
 
+//! Age the decals and drop the faded ones - once per frame
+void PolyBoomUpdate();
+//! Draw the decals - once per view
 void PolyBoomDraw();
 
 #endif // ARX_GRAPHICS_EFFECTS_DECAL_H

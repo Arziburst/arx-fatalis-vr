@@ -335,6 +335,24 @@ void FlareLine(Vec2f tmpPos0, Vec2f tmpPos1, Entity * io) {
 }
 
 
+//! Size of a flare on screen at life fraction \a z - shrinks for the shine and plasm types
+static float magicFlareSize(const MagicFlare & flare, float z) {
+	if(flare.type == 1) {
+		return flare.size * 2 * z;
+	} else if(flare.type == 4) {
+		return flare.size * 2.f * z * (4.0f / 3.0f);
+	}
+	return flare.size;
+}
+
+//! Color of a flare at life fraction \a z - the shine type never fades below 60 %
+static Color3f magicFlareColor(const MagicFlare & flare, float z) {
+	if(flare.type == 1 && z < 0.6f)  {
+		z = 0.6f;
+	}
+	return flare.rgb * z;
+}
+
 void ARX_MAGICAL_FLARES_Update() {
 
 	if(!g_magicFlaresCount)
@@ -344,16 +362,58 @@ void ARX_MAGICAL_FLARES_Update() {
 	if(shinum >= 10) {
 		shinum = 1;
 	}
-	
+
 	PlatformDuration diff = g_platformTime.lastFrameDuration();
-	
+
 	bool key = !GInput->actionPressed(CONTROLS_CUST_MAGICMODE);
+
+	EERIE_LIGHT * light = lightHandleGet(torchLightHandle);
+
+	for(size_t i = 0; i < g_magicFlaresMax; i++) {
+
+		MagicFlare & flare = g_magicFlares[i];
+
+		if(!flare.exist || flare.type < 1 || flare.type > 4) {
+			continue;
+		}
+
+		flare.tolive -= diff * 2;
+		if(flare.flags & 1) {
+			flare.tolive -= diff * 4;
+		} else if(key) {
+			flare.tolive -= diff * 6;
+		}
+
+		float z = flare.tolive / 4s;
+
+		if(flare.tolive <= 0 || flare.pos.y < -64.f || magicFlareSize(flare, z) < 3.f) {
+			removeFlare(flare);
+			continue;
+		}
+
+		Color3f color = magicFlareColor(flare, z);
+
+		light->rgb = componentwise_max(light->rgb, color);
+
+		EERIE_LIGHT * el = lightHandleGet(flare.dynlight);
+		if(el) {
+			el->pos = flare.p;
+			el->rgb = color;
+		}
+
+	}
+
+	light->rgb = componentwise_min(light->rgb, Color3f::white);
+}
+
+void ARX_MAGICAL_FLARES_Render() {
+
+	if(!g_magicFlaresCount)
+		return;
 
 	RenderMaterial mat;
 	mat.setBlendType(RenderMaterial::Additive);
-	
-	EERIE_LIGHT * light = lightHandleGet(torchLightHandle);
-	
+
 	for(long j = 1; j < 5; j++) {
 
 		TextureContainer * surf;
@@ -368,50 +428,18 @@ void ARX_MAGICAL_FLARES_Update() {
 
 		for(size_t i = 0; i < g_magicFlaresMax; i++) {
 
-			MagicFlare & flare = g_magicFlares[i];
+			const MagicFlare & flare = g_magicFlares[i];
 
 			if(!flare.exist || flare.type != j) {
 				continue;
 			}
-			
-			flare.tolive -= diff * 2;
-			if(flare.flags & 1) {
-				flare.tolive -= diff * 4;
-			} else if(key) {
-				flare.tolive -= diff * 6;
-			}
-			
+
 			float z = flare.tolive / 4s;
-			float size;
-			if(flare.type == 1) {
-				size = flare.size * 2 * z;
-			} else if(flare.type == 4) {
-				size = flare.size * 2.f * z * (4.0f / 3.0f);
-			} else {
-				size = flare.size;
-			}
-
-			if(flare.tolive <= 0 || flare.pos.y < -64.f || size < 3.f) {
-				removeFlare(flare);
-				continue;
-			}
-
-			if(flare.type == 1 && z < 0.6f)  {
-				z = 0.6f;
-			}
-
-			Color3f color = flare.rgb * z;
-
-			light->rgb = componentwise_max(light->rgb, color);
-			
-			EERIE_LIGHT * el = lightHandleGet(flare.dynlight);
-			if(el) {
-				el->pos = flare.p;
-				el->rgb = color;
-			}
+			float size = magicFlareSize(flare, z);
+			Color3f color = magicFlareColor(flare, z);
 
 			mat.setDepthTest(flare.io != nullptr);
-			
+
 			if(flare.bDrawBitmap) {
 				Vec3f pos = Vec3f(flare.p.x - size / 2.0f, flare.p.y - size / 2.0f, flare.p.z);
 				EERIEAddBitmap(mat, pos, size, size, surf, Color(color));
@@ -422,5 +450,4 @@ void ARX_MAGICAL_FLARES_Update() {
 		}
 	}
 
-	light->rgb = componentwise_min(light->rgb, Color3f::white);
 }

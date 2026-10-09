@@ -1,0 +1,24 @@
+# Walk forward (#113): the left stick pushed forward moves the player along his look direction (D-008, #31).
+# The control reaches the game today (vr-input, #30); the walking is @pending until #31.
+@sim idle
+@args --loadlevel 10
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 120 60s
+setplayercontrols on
+@assert player.controlsBlocked eq false
+@remember x0 player.x
+@remember z0 player.z
+
+# Nothing pushed: the player stands
+@frames 30
+@assert player.x eq {x0}
+@assert player.z eq {z0}
+
+# Pushed forward for a second and let go
+vr-input down left.stick_up
+@frames 90
+vr-input up left.stick_up
+@frames 10
+@pending #31 @assert player.z ne {z0}
+@assert errors eq 0

@@ -762,6 +762,51 @@ separation (64 mm), difference (5.9 vs floor 0.8), parallax (+16 of 160 columns)
 (the pictures change by 1.3, the floor's noise) — the camera does not follow the head until #24.
 `-Fault swap-eyes` (each eye shown the other's picture) fails the parallax (−16): the check can fail.
 
+## Scripted sequences (`.xrs`, #113)
+
+A sequence is a text file in `scripts\dev\xrs` — test-channel commands with asserts, log checks and
+shots — that runs against one launch of the game and fails the run at its first failed step. It is
+how a worker proves a VR behaviour (look around, snap turn, walk, recenter) repeatably instead of by
+eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`, MIT, `LICENSE.xrsim`).
+
+```powershell
+.\scripts\dev\xrs-run.ps1 look-around          # launches the game (idle simulated headset, --loadlevel 10), runs it, the usual smoke checks
+.\scripts\dev\xrs-run.ps1 -Check               # parse every sequence: syntax errors with their lines, no game
+.\scripts\dev\xrs-run.ps1 snap-turn -- --loadslot 0   # other arx.exe arguments replace the sequence's @args
+.\scripts\dev\xrs-run.ps1 recenter -Attach     # against a game that already runs with --test-dir (writing a sequence step by step)
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence walk-forward   # the same through the smoke test
+.\scripts\dev\img-diff.ps1 -A a.bmp -B b.bmp [-Grid 16 | -Bands 16]   # two shots: mean difference 0-255, which regions changed
+```
+
+| Line | Meaning |
+|---|---|
+| `# ...` | comment (also after a step, as ` # ...`) |
+| `<command>[; <command>]` | any [channel command](#commands) (`vr-sim head rot 25 0 0`, `vr-input tap right.a`, `loadlevel 10`, a script-console line); `;` makes one batch, applied in the same frame. A refused command fails the step |
+| `@wait <ms>` / `@frames <n>` | sleep / wait for n more rendered frames |
+| `@until <path> <op> <v> [<n>s]` | wait up to n s (default 30) until `status.json` satisfies the condition |
+| `@assert <path> <op> <v>` | `status.json` now. `path` is dotted, `"quoted"` where a key holds a dot (`events.byName."spell.cast"`); `op` is `eq ne gt ge lt le`; numbers compare as numbers, anything else as text |
+| `@remember <name> <path>` | keep a value; later `@assert` / `@until` values can be `{name}` or `{name+5}` (the yaw before a turn, the position before a walk) |
+| `@mark`, `@log <regex> [<n>s]`, `@nolog <regex>` | `arx.log` since the mark (the sequence start is the first mark): wait up to n s (default 5) for a matching line — a match moves the mark past it, so consecutive `@log` lines assert an order — / fail on a matching line |
+| `@shot <name>` | on the simulated headset both eyes and the flat frame (`capture\<name>-left.bmp`, `-right.bmp`, `-quad.bmp`), otherwise `capture\<name>.bmp` |
+| `@diff <a> <b> <op> <v> [left\|right\|quad]` | `img-diff` of two shots: the mean absolute per-channel difference. **The floor of a still shot of level 10 is about 1.8** (animated fire and HUD, measured), a 40° head turn with a following camera is far above; set thresholds against a still pair taken in the same sequence |
+| `@key <name> [n] [ms]` | a keyboard message posted to the game window, no focus change (Escape, Enter, Space, A-Z, 0-9, F1-F12 …). **Not yet run against a live game** — verify it with a first sequence that needs it |
+| `@pending #<issue> <step>` | a step the game cannot pass yet, because issue N builds the feature. Its failure is printed as `pending`; **once it passes the run fails** until the `@pending` is removed, so an expectation cannot go stale. Pick a step that fails for the right reason (a first version of `snap-turn` had a "turned back" step that passed trivially) |
+| `@sim <name>`, `@args <...>` | what `xrs-run.ps1` launches: the `scripts\dev\vrsim` script (default `idle`: no timed lines, no shots) and the arx.exe arguments (default `--loadlevel 10`); ignored while running |
+
+Rules: a sequence waits for `state eq GAMEPLAY` and for `vr.sim.timelineFrame ge 270` (3 s) before its
+first shot — the level fades in from black (TRAPS.md). A timeout must carry its `s` (`60s`); a bare
+number is rejected, not taken for part of the value. Shots stall their frame, so the pacing line of
+a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipped sequences:
+
+| Sequence | Real today | `@pending` until |
+|---|---|---|
+| `look-around` | the rig and both located eyes follow a 40° yaw and a pitch; two shots of a still head agree | #24: the pictures change with the head |
+| `snap-turn` | `vr-input tap right.stick_right` reaches the game (syncs advance), no errors | #32: the player turns |
+| `walk-forward` | the player stands still without input; the stick is held and let go | #31: the player moves |
+| `recenter` | a head offset is set and read back | #28: `recenter` is accepted (it logs one expected `[W]`) |
+
+A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
+`scripts\dev\test-xrs.ps1` (a fake game answering the channel files; in `run-script-tests.ps1`, so in CI).
 ## `xr_hello` — the runtime alone
 
 `xr_hello.exe` is built next to `arx.exe` (CMake option `BUILD_XR_HELLO`, on by default with OpenXR;

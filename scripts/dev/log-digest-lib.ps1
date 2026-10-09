@@ -383,6 +383,9 @@ function Invoke-ArxRunDigest(
 	if ($DurationSec -lt 0) { $DurationSec = [Math]::Max(0, ($logItem.LastWriteTime - $started).TotalSeconds) }
 	$clean = [bool]($run.Entries | Where-Object { $_.Text -eq 'Clean shutdown' } | Select-Object -First 1)
 
+	# A run that crashed on purpose (channel command `crash`, #132) is a check, not a bug: digest only, nothing filed
+	if ($run.Entries | Where-Object { $_.Text -like '`[crash`] deliberate crash requested*' } | Select-Object -First 1) { $NoReport = $true }
+
 	# The crash processor (arx.exe --crashinfo) writes the report after the game process is gone: after an unclean
 	# exit give it time to finish before looking for the report
 	$crashDir = Join-Path $UserDir 'crashes'

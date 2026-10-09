@@ -18,6 +18,7 @@ commit messages, pull requests, and code comments.
 | Rules | this file |
 | Decisions and their reasoning | [DECISIONS.md](DECISIONS.md) |
 | Current goal: the MVP | [MVP.md](MVP.md) |
+| Developer guide: prerequisites, build, run, tests, CI, worktrees | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | Research and scope of playable v1 | [RESEARCH-playable-v1.md](RESEARCH-playable-v1.md) |
 | Research: controllers (Valve Index, Quest 3) | [RESEARCH-controllers.md](RESEARCH-controllers.md) |
 | Research: reference VR mods (Dishonored VR, VHVR, Titanfall 2 VR, OpenMW VR, Skyrim VR mods) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |

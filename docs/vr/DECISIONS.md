@@ -10,6 +10,37 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-018: The camera is where the head is — full head tracking in the MVP
+
+- **Date:** 2026-10-09
+- **Status:** Accepted (replaces D-006)
+- **Decided by:** project owner (design agreed by questions, D-017)
+
+### Decision
+- The VR camera follows the **headset's position as well as its orientation** — "the camera flies where
+  the head is", as in other VR games. A fixed eye height kills VR.
+- **Height:** the camera moves with the head continuously (head 20 cm lower → camera 20 cm lower). When
+  the head drops below a threshold relative to the standing height, the character **also crouches in the
+  game** (stealth, low passages, hitbox); standing up makes it stand (#100).
+- **Leaning and steps:** horizontal head movement moves the camera — peek around a corner, take a few real
+  steps; the character's body follows the head with the game's collision. A head pushed into geometry
+  **fades the screen** (the usual VR rule) instead of seeing through walls.
+- **Player height:** at recenter the player's **standing head is mapped to the character's eye height**,
+  so tall and short players see the world from the character's eyes and doors and tables keep their size.
+  Seated play: recentering while seated does the same (#28).
+
+### Why
+Immersion: real crouching, leaning and stepping are what make VR feel physical; the owner tried the
+fixed height in thought and rejected it.
+
+### Consequences
+- #24 becomes "HMD pose (orientation and position) → camera"; #27 maps the standing head to the
+  character's eye height; #100 crouch threshold on top of the continuous height; #26 (leaning, room-scale,
+  wall fade) moves from M2 into the MVP; #25 makes the body follow the head with collision; #28 captures
+  the standing height at recenter and covers seated play.
+
+---
+
 ## D-017: Player-experience design is agreed with the owner before any work starts
 
 - **Date:** 2026-10-09
@@ -333,7 +364,7 @@ or adding a second VR API just for a tile image.
 ## D-006: Eye height follows the character for the MVP; real crouch = game crouch
 
 - **Date:** 2026-10-08
-- **Status:** Accepted
+- **Status:** Superseded by D-018 — the owner wants full head tracking: a fixed eye height kills VR
 - **Decided by:** project owner
 
 ### Decision

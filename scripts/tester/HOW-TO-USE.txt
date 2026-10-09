@@ -1,0 +1,42 @@
+Arx Fatalis VR - tester build
+==============================
+
+Build: see BUILD.txt (give this id in every report).
+
+You need
+--------
+ * Arx Fatalis, installed from Steam on the same Windows account (Steam app 1700).
+   The game finds it in your Steam libraries by itself. This package contains no game data.
+ * A headset that works through SteamVR:
+     - Valve Index: just start SteamVR.
+     - Quest 3: run it through SteamVR (Steam Link or Quest Link with SteamVR).
+       Close the "Meta Quest Link" desktop app when you use Steam Link - two runtimes fight each other.
+ * Windows 10/11, 64-bit, a GPU with OpenGL 3.3 or newer.
+   No Visual Studio, no redistributables, no other tools are needed: everything the game uses is in this folder.
+
+Start
+-----
+ 1. Start SteamVR and put the headset on (the SteamVR status window shows the headset as ready).
+ 2. Double-click "Start Arx Fatalis VR.cmd". The game starts in VR when SteamVR is running,
+    otherwise in a normal window.
+ 3. If anything is wrong, try "Start flat (no VR).cmd": the same game in a window, without the headset.
+    It is the kill switch for VR (the same as the command-line option --no-vr).
+
+If the game says it cannot find the game data, start it once from a command prompt with
+    arx.exe --data-dir "D:\path\to\Arx Fatalis"
+(the folder that holds the original game's .pak files).
+
+Where the log is
+----------------
+ %USERPROFILE%\Saved Games\Arx Libertatis\arx.log   (arx.1.log ... are the previous runs)
+
+Reporting a problem
+-------------------
+ 1. Double-click "Collect support bundle.cmd" - it writes a zip to your Desktop (logs, settings, SteamVR logs,
+    OpenXR runtime, GPU and driver). Nothing is uploaded; look inside if you like.
+ 2. Fill in BUG-REPORT-TEMPLATE.md and send it together with the zip.
+ What helps most: the exact steps, whether it also happens with "Start flat (no VR).cmd",
+ your headset and how it is connected, and the build id from BUILD.txt.
+
+This is an early, rough build: expect missing features and rough edges (the menus are flat 2D panels,
+cutscenes may misbehave). Tell us how it FEELS - comfort, tracking, scale - as much as what breaks.

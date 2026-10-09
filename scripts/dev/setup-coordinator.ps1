@@ -47,6 +47,7 @@ $want = [ordered]@{
 	statusLine               = [pscustomobject]@{ type = 'command'; command = "pwsh -NoProfile -ExecutionPolicy Bypass -File `"$statusScript`"" }
 	crossSessionInbound      = 'accept'
 	autoContinueAtUsageLimit = $true
+	autoCompactWindow        = 900000   # compact at 900k of the 1M context: the coordinator lives long (#217)
 }
 $changed = $false
 foreach ($key in $want.Keys) {

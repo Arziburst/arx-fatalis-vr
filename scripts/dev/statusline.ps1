@@ -16,6 +16,9 @@ try { $j = $raw | ConvertFrom-Json } catch { 'Claude'; exit 0 }
 if ($j.session_id) {
 	$ledger = Join-Path $dir 'sessions'
 	New-Item -ItemType Directory -Force $ledger | Out-Null
+	$ledgerFile = Join-Path $ledger "$($j.session_id).json"
+	$peak = [double]$j.context_window.used_percentage
+	try { $old = Get-Content $ledgerFile -Raw | ConvertFrom-Json; if ($old.context_peak -gt $peak) { $peak = [double]$old.context_peak } } catch {}
 	[ordered]@{
 		session_id  = $j.session_id
 		name        = $j.session_name
@@ -23,12 +26,33 @@ if ($j.session_id) {
 		model       = $j.model.display_name
 		effort      = $j.effort.level
 		context_pct = $j.context_window.used_percentage
+		context_peak = $peak
 		cost_usd    = $j.cost.total_cost_usd
 		lines_added = $j.cost.total_lines_added
 		duration_ms = $j.cost.total_duration_ms
 		updated     = (Get-Date).ToString('s')
-	} | ConvertTo-Json -Compress | Set-Content (Join-Path $ledger "$($j.session_id).json") -Encoding utf8
+	} | ConvertTo-Json -Compress | Set-Content $ledgerFile -Encoding utf8
 }
+
+# Usage sampler (#217): at most one line a minute in usage.jsonl - the limits and the cost of the live sessions -
+# the history that usage-plan.ps1 calibrates "% of a limit per dollar" from. Never fails or slows the status line.
+try {
+	$rl0 = $j.rate_limits
+	$stamp = Join-Path $dir 'usage.stamp'
+	$nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+	$due = $true
+	if (Test-Path $stamp) { $due = ($nowEpoch - [long](Get-Content $stamp -Raw)) -ge 60 }
+	if ($due -and ($rl0.five_hour -or $rl0.seven_day)) {
+		Set-Content $stamp $nowEpoch -NoNewline
+		$live = [ordered]@{}
+		foreach ($f in Get-ChildItem (Join-Path $dir 'sessions') -Filter '*.json' | Where-Object { $_.LastWriteTime -gt (Get-Date).AddMinutes(-10) }) {
+			$s = Get-Content $f.FullName -Raw | ConvertFrom-Json
+			if ($null -ne $s.cost_usd) { $live[$s.session_id] = [math]::Round([double]$s.cost_usd, 4) }
+		}
+		$line = [ordered]@{ t = $nowEpoch; fh = $rl0.five_hour.used_percentage; fhr = $rl0.five_hour.resets_at; wk = $rl0.seven_day.used_percentage; wkr = $rl0.seven_day.resets_at; s = $live } | ConvertTo-Json -Compress -Depth 4
+		Add-Content -Path (Join-Path $dir 'usage.jsonl') -Value $line -Encoding utf8
+	}
+} catch {}
 
 function Format-Tokens([double]$n) { if ($n -ge 1e6) { '{0:0.#}M' -f ($n / 1e6) } elseif ($n -ge 1e3) { '{0:0}k' -f ($n / 1e3) } else { "$n" } }
 

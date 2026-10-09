@@ -25,6 +25,16 @@ function Get-ArxCrashDir([string]$UserDir = (Get-ArxUserDir)) { Join-Path $UserD
 # otherwise %LOCALAPPDATA%\ArxFatalisVR\test\<folder>-<hash> of this working copy
 function Get-ArxTestDir { Get-DefaultTestDir $ArxSourceDir }
 
+# A simulated headset script (--vr-sim, #112): a path, or a name in scripts\dev\vrsim (".vrsim" optional)
+function Resolve-ArxSimScript([string]$Name) {
+	$candidates = @($Name, (Join-Path $ArxSourceDir "scripts\dev\vrsim\$Name"), (Join-Path $ArxSourceDir "scripts\dev\vrsim\$Name.vrsim"))
+	foreach ($candidate in $candidates) {
+		if (Test-Path -LiteralPath $candidate -PathType Leaf) { return (Resolve-Path -LiteralPath $candidate).Path }
+	}
+	$known = @(Get-ChildItem (Join-Path $ArxSourceDir 'scripts\dev\vrsim') -Filter '*.vrsim' -ErrorAction SilentlyContinue | ForEach-Object BaseName)
+	throw "no simulator script '$Name' (a path, or one of: $($known -join ', '))"
+}
+
 # status.json as an object, or $null while it does not exist or is being replaced right now
 function Read-ArxStatus([string]$Dir = (Get-ArxTestDir)) {
 	$file = Join-Path $Dir 'status.json'

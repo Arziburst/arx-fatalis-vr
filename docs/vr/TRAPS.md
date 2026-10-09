@@ -8,6 +8,30 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — A shot in the first second after a level load is black (#112)
+
+**Symptom:** a `--vr-sim` shot (or a channel `shot`) taken right after `status.json` says `GAMEPLAY` judges
+`black` on `--loadlevel 10` — the same verdict as the real black-world bug of #215 — and a shot a second later
+on the same level says `world`. An eye-check run with early shots "passes" its yaw leg because the first shot
+is black and the later one is not.
+**Cause:** the level fades in from black for about a second after it is playable; nothing is wrong with the
+render. The game state is `GAMEPLAY` from the first frame of the fade.
+**Do:** shoot 3 s in: the `scripts\dev\vrsim\*.vrsim` scripts start at `@270` (90 Hz). A real black world
+stays black: compare two shots seconds apart before calling it a bug.
+
+## 2026-10-09 — A unity build sees one file's macros and helper names in every file after it (#112)
+
+**Symptom:** a build fails with `'::xrWaitFrame': undeclared` in a file that includes `<openxr/openxr.h>`
+itself, or `C2374 'anonymous-namespace'::Epsilon': redefinition` / `fov ... already has a body` in a test
+file that compiled fine alone.
+**Cause:** `UNITY_BUILD` (on by default, off only with `DEVELOPER`) compiles all sources of a target as one
+file (`ub_*.cpp`, sorted by path). An include guard opened by an earlier file keeps its macros: once
+`vr/OpenXRUtil.h` defined `XR_NO_PROTOTYPES`, a later `#include <openxr/openxr.h>` adds nothing. And every
+file's anonymous namespace is the same one, so two test files with a helper `Epsilon` or `fov` collide —
+`arxtest` is a unity build too.
+**Do:** a file that needs the OpenXR loader's functions declares them itself from the `PFN_` types
+(`src/vr/XRDispatch.cpp`); give file-local helpers file-specific names (`ImageEpsilon`, `imageFov`).
+
 ## 2026-10-10 — "use" fires from just holding the Index controller (a closed hand flickers, #30)
 
 **Symptom:** the log shows `[vr] input: use_right (right.grip)` several times (×6 in the owner's headset run)
@@ -599,3 +623,12 @@ not cover a new subfolder. Every worktree is a new folder.
 **Do:** launch workers in the owner's copy (trusted) and let them enter the worktree first —
 `start-worker.ps1` passes `/next-task <n> worktree=<path>` (D-011). Never write trust flags into
 `~/.claude.json` by hand: the owner gives trust.
+
+## 2026-10-09 — PowerShell: `[math]::Max(0, 4.5)` is 4, and `ConvertFrom-Json` turns date strings into DateTime
+
+**Symptom:** a rate computed with `[math]::Max(0, $double)` is rounded down to an integer (a worker count came out one too
+high); `[datetime]::Parse($obj.updated)` on a JSON field gave a date a month off.
+**Cause:** with an `int` literal first, PowerShell picks `Max(int,int)` and converts the double; PowerShell 7's
+`ConvertFrom-Json` already returns ISO-8601 strings as `DateTime`, and parsing its culture-formatted string swaps day and month.
+**Do:** write `[math]::Max(0.0, $x)`; take a field that may be a `DateTime` or a string through a helper
+(`ConvertTo-Epoch` in `scripts/dev/usage-lib.ps1`).

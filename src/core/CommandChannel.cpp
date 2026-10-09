@@ -65,6 +65,7 @@
 #include "scene/ChangeLevel.h"
 #include "scene/Interactive.h"
 #include "util/String.h"
+#include "vr/HeadTracking.h"
 #include "vr/VRComfort.h"
 #include "vr/VRSystem.h"
 #include "window/RenderWindow.h"
@@ -390,6 +391,26 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("frameDivisor", vr::frameDivisor());
 	json.value("runtime", vr::runtimeName());
 	json.value("manifest", vr::runtimeManifest());
+	// Head tracking (#24): where the head comes from, its reference and what it does to the camera
+	{
+		const vr::HeadStatus & head = vr::headStatus();
+		json.object("head");
+		json.value("source", head.source);
+		json.value("referenced", head.referenced);
+		json.value("references", head.references);
+		json.value("refYaw", head.reference.yaw);
+		json.value("pitch", head.head.getPitch());
+		json.value("yaw", head.head.getYaw());
+		json.value("roll", head.head.getRoll());
+		json.value("x", head.position.x);
+		json.value("y", head.position.y);
+		json.value("z", head.position.z);
+		json.value("offsetX", head.offset.x);
+		json.value("offsetY", head.offset.y);
+		json.value("offsetZ", head.offset.z);
+		json.value("clamped", head.clamped);
+		json.end();
+	}
 	// The last rate / cadence report of the frame loop (#20, F-07): one per 3 s while the session runs
 	const vr::PacingReport & pacing = vr::lastPacingReport();
 	if(pacing.valid) {
@@ -527,6 +548,24 @@ bool parseIndex(std::string_view text, long & value) {
 	return end && *end == '\0' && value >= 0;
 }
 
+//! Whitespace-separated numbers; false if any word is not a finite number
+bool parseFloats(std::string_view text, std::vector<float> & values) {
+	values.clear();
+	std::string_view rest = text;
+	while(!rest.empty()) {
+		std::string_view next;
+		std::string word(firstWord(rest, next));
+		char * end = nullptr;
+		float value = std::strtof(word.c_str(), &end);
+		if(word.empty() || !end || *end != '\0' || !std::isfinite(value)) {
+			return false;
+		}
+		values.push_back(value);
+		rest = next;
+	}
+	return true;
+}
+
 /*!
  * Run one command line.
  * \return an empty string on success, otherwise the reason it was refused
@@ -559,7 +598,32 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "recenter") {
-		return refuse("recenter: not implemented yet (#28)");
+		// The head is measured from its next sample (#24); the button chord for the player is #28
+		vr::resetHeadReference("channel");
+		return std::string();
+	}
+
+	if(word == "headpose") {
+		// A simulated head for checks without a headset (#24): yaw, pitch, roll in degrees (left, up, left
+		// positive) and optionally x, y, z in meters (OpenXR LOCAL: right, up, back); "off" removes it.
+		// A real headset pose wins over it
+		std::string mode(rest);
+		util::makeLowercase(mode);
+		if(mode == "off") {
+			vr::clearSimulatedHead();
+			return std::string();
+		}
+		std::vector<float> values;
+		if(!parseFloats(rest, values) || (values.size() != 3 && values.size() != 6)) {
+			return refuse("headpose: expected <yaw> <pitch> <roll> [<x> <y> <z>] or off, got \"" + std::string(rest) + "\"");
+		}
+		vr::HeadSample head;
+		head.orientation = vr::headOrientationFromDegrees(values[0], values[1], values[2]);
+		if(values.size() == 6) {
+			head.position = Vec3f(values[3], values[4], values[5]);
+		}
+		vr::setSimulatedHead(head);
+		return std::string();
 	}
 
 	if(word == "comfort") {

@@ -172,6 +172,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "util/String.h"
 
+#include "vr/HeadTracking.h"
 #include "vr/VRComfort.h"
 #include "vr/VRSystem.h"
 
@@ -1436,7 +1437,15 @@ void ArxGame::updateFirstPersonCamera() {
 		} else {
 			g_playerCameraStablePos = g_playerCamera.m_pos = player.basePosition();
 		}
-		
+
+		// The headset is the head (#24, D-018): the camera takes the head's orientation and its movement
+		// from the character's eye, after everything the engine did to the camera (F-31). The stable
+		// position moves with it, so drag rays start where the player looks from
+		Vec3f eye = g_playerCamera.m_pos;
+		if(vr::applyHeadPose(g_playerCamera.m_pos, g_playerCamera.angle, player.angle.getYaw())) {
+			g_playerCameraStablePos += g_playerCamera.m_pos - eye;
+		}
+
 	}
 	
 	if(EXTERNALVIEW) {

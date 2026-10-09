@@ -53,6 +53,7 @@
 #if ARX_HAVE_OPENXR
 
 // OpenXR with the OpenGL binding (and windows.h on Windows)
+#include "vr/HeadTracking.h"
 #include "vr/OpenXRUtil.h"
 #include "vr/VRSwapchain.h"
 
@@ -687,8 +688,8 @@ void destroySession() {
 /*!
  * The spaces and the swapchains of the session: a head-locked VIEW space for the flat frame quad,
  * a world-locked LOCAL space the eyes are located and submitted in (STAGE, the room-scale space
- * with the floor at the origin, is only probed and logged - which space the camera uses is #24 /
- * #27); the per-eye swapchains are sized from the runtime's recommended view sizes and get a
+ * with the floor at the origin, is only probed and logged - the camera takes the head from LOCAL,
+ * #24; the standing height is #27); the per-eye swapchains are sized from the runtime's recommended view sizes and get a
  * framebuffer object per image to render into.
  */
 bool createSessionResources() {
@@ -1323,6 +1324,10 @@ void pollEvents() {
 					= *reinterpret_cast<const XrEventDataReferenceSpaceChangePending *>(&event);
 				gameevent::Event("vr.refspace")("space", referenceSpaceName(change.referenceSpaceType))
 					("poseValid", change.poseValid != XR_FALSE);
+				if(change.referenceSpaceType == XR_REFERENCE_SPACE_TYPE_LOCAL) {
+					// The runtime's own recenter moved the space the head is located in (F-120)
+					resetHeadReference("runtime");
+				}
 				break;
 			}
 

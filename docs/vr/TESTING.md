@@ -21,6 +21,7 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 .\scripts\dev\smoke-test.ps1 -Menu -Commands 'loadslot 0'       # plain launch (main menu), then a save through the channel
 .\scripts\dev\smoke-test.ps1 -Commands 'drawcheck 120'         # two draws of the scene per frame must give one picture (#71)
 .\scripts\dev\comfort-check.ps1                               # shake, FOV zoom and bob with the VR comfort policy off and on, one run (#76)
+.\scripts\dev\head-check.ps1                                  # a simulated head pose drives the camera: turn, move, lean limit, recenter, off - one run (#24)
 .\scripts\dev\spell-drawcheck.ps1                             # the 26 spells of #71 really launched, then drawcheck 240 (#155)
 .\scripts\dev\run-script-tests.ps1                            # the PowerShell self-tests of the dev scripts (seconds, no game); CI runs them first
 .\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence      # what CI runs after the build: smoke test + drawcheck, spell draw check, evidence in one folder (#127)
@@ -133,7 +134,8 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `setpos <x> <y> <z> [yaw]` | put the player at exact coordinates, optionally facing `yaw`. `y` is the **eye**: the floor is 170 units lower (a `y` at floor level puts the eye in the floor: black screen). About 100 units are a metre. Refused outside gameplay (#70) |
 | `lookat <entity>` | turn the player (yaw and pitch) towards an entity, aiming 40 units above its floor position. The pitch is not kept by a save and does not matter in VR (the head decides); the yaw is kept (#70) |
 | `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
-| `recenter` | refused with `not implemented yet (#28)` until recentering exists |
+| `recenter` | the head is measured from its next sample: a new head reference (#24; the player's button chord is #28). A `vr.head.reference reason=channel` event once a head is there |
+| `headpose <yaw> <pitch> <roll> [<x> <y> <z>]` / `headpose off` | a simulated head for checks without a headset (#24): degrees as a person says them — yaw left, pitch up, roll left positive — and optionally the position in metres in the OpenXR LOCAL space (x right, y up, z back). It drives the first-person camera exactly like the headset (`vr.head` and `camera` in the status); the first pose takes the reference, later ones move the camera from it. A real headset pose wins over it; `off` removes it |
 | `comfort auto\|on\|off` | who decides the VR comfort policy (#76, `vr::comfort()`): `auto` = the VR session (the default: view bobbing, screen shake and FOV zoom off in VR, `cfg.ini` decides in flat mode), `on` / `off` force the VR rules on or off — so a flat run can measure them. `comfort` and `camera` in the status; one `[vr] comfort:` log line per change |
 | anything else | the **script console**: `[entity.]command args`, exactly as typed in the in-game console (`` ` ``). Context defaults to the player. Refused (and counted in the ack) when the entity or the command is unknown |
 
@@ -209,6 +211,14 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   session closed (a shorter session gets its partial window at the end). See
   [The frame loop and the rate line](#the-frame-loop-and-the-rate-line-20) for every field and the
   verdicts; the two to assert on are `verdict` (`MATCHED`) and `cadence` (`EVEN`).
+- `vr.head` (#24): head tracking after the last first-person camera update. `source`: `hmd` (the
+  eyes located for that frame), `held` (the last headset pose while the runtime has none), `sim` (the
+  channel's `headpose`), `none` (flat: the camera is the engine's). `referenced` / `references`: a
+  reference was taken / how many since the start; `refYaw`: its heading (engine degrees). `pitch`,
+  `yaw`, `roll`: the head's own angles in LOCAL, engine convention (positive pitch looks down, yaw grows
+  to the left); `x`, `y`, `z`: the head in LOCAL, metres; `offsetX/Y/Z`: what the head adds to the
+  character's eye, game units (y down); `clamped`: the lean is at the interim 0.6 m limit (#26).
+  The camera angles themselves are in `camera` (`camera.yaw` = body yaw + head yaw − `refYaw`).
 - `player` is present only while a level is loaded; the `.xrs` runner (#113) asserts on these keys
   with `@modassert`.
   `player.y` is the **eye** (the camera is within a few units of it), not the feet.
@@ -397,10 +407,13 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.session` | the OpenXR session state changes (F-118) | `state`, `was`, `meaning` (e.g. `synchronized`: frames are timed but not displayed — the runtime may pace the game as slowly as it likes) |
 | `vr.focus` | the session leaves `focused` (Windows) | `state=lost`, `foregroundPid`, `own` (our process: the runtime's overlay took the input; another: the desktop focus went elsewhere), `class`, `title`, `hint` |
 | `vr.profile` | the runtime's interaction profile changed | `left`, `right` (`/interaction_profiles/valve/index_controller`, `none`, or `error:XR_ERROR_ACTIONSET_NOT_ATTACHED` until #30 adds actions) |
-| `vr.refspace` | the runtime moves a reference space (its own recenter, a new play area) | `space`, `poseValid` |
+| `vr.refspace` | the runtime moves a reference space (its own recenter, a new play area); for `local` the head reference is taken again (#24) | `space`, `poseValid` |
+| `vr.head` | where the head that drives the camera comes from changed (#24) | `source=hmd\|held\|sim\|none`, `was` |
+| `vr.head.reference` | a head reference was taken: the first head sample after the start, a level load, a new source, the runtime's recenter, the channel's `recenter` | `reason` (`level`, `runtime`, `channel`, `source hmd`, …), `source`, `yaw` (the head's heading, engine degrees), `bodyYaw`, `x`, `y`, `z` (the head in LOCAL, metres) |
+| `vr.head.lean` | the lean reaches the interim limit, and when it is back within (#24, until #26) | `state=clamped\|free`, `limitM` (limit 100) |
 
 Not here yet, by design: melee attacks *refused* by a gate (F-66) come with the VR swing detector
-(#39); recenter with #28; locomotion, interaction and rune-drawing in VR add their own events in the
+(#39); the recenter chord with #28; locomotion, interaction and rune-drawing in VR add their own events in the
 same shape (#31, #37, #44). Measured in #130 (flat, `--loadlevel 10`, 60 s idle): 13 events in the
 whole run, none per frame — after `GAMEPLAY` (t=0.54) only the level 10 intro script's own work:
 `cinematic.skip` at t=29.55, four NPC `spell.cast` between t=52.67 and t=56.39, and
@@ -612,6 +625,7 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | 2026-10-09, #93 after the fix: `-Vr -Repeat 10` + `-Vr -Repeat 5`, SteamVR running, headset idle | **13 of 15** `PASS`, **0** exit crashes (before: 2 of 3); 2 runs ended mid-run with exit code -1 and no crash report — a different problem, #146 |
 | 2026-10-09, #76: `comfort-check.ps1` — one flat run, `comfort off` then `comfort on`, in each phase `quake 300 3000 400` and Magic Sight, status sampled every 100 ms (`camera.shake`, `camera.roll`, `camera.fov`, `camera.bob`) | smoke test `PASS`, 0 errors. **off** (18 samples): shake max **2.622**, roll max 0.428°, fov **75.00 → 80.65**, bob max **1.472** (the idle animation moves the head too). **on** (27 samples): shake **0**, roll **0**, fov **75.00** in every sample, bob **0**. Log: one `[vr] comfort:` line per policy change, one `screen shake suppressed - intensity 300, 3000 ms, period 400` and one `FOV zoom suppressed - focal -30 (Magic Sight)` per episode, nothing per frame. The `off` phase is the broken state on purpose: the instrument sees each of the three motions, so the check can fail |
 | 2026-10-09, #76: the first version of the same check, Magic Sight cast with `spellcast -fsx 5 magic_sight self` | `FAIL` of the check only (the smoke test passed): fov **75.00 in both phases** — the spell never launched. On the player `spellcast` without `-m` is queued for the rune drawing, which skips the player (TRAPS.md); `-fsmx` zooms (row above). The same `-fs` cast the #71 spell rows above — #155 re-runs them |
+| 2026-10-09, #24: `head-check.ps1` — one flat run on `mvp-new-game`, phases `comfort on` (flat), `headpose 0 0 0 0 1.7 0`, `headpose 30 -20 10 0 1.7 0`, `headpose 0 0 0 0.3 1.5 0`, `headpose 0 0 0 1.0 1.7 0`, `recenter`, `headpose off`, status sampled every 100 ms | `PASS`, 25 samples, smoke test 0 errors. Body yaw 359.75 throughout. **flat**: source `none`, camera yaw 359.75 = body. **ahead**: source `sim`, 1 reference, camera = body, offset 0. **turn**: camera yaw **29.75** (+30), pitch **20.00**, roll **350.00**, position unchanged. **move**: offset **(30.00, 20.00, −0.13)** = 30 cm right and 20 cm down turned by the body's yaw, and the camera moved by it. **lean** (1 m): **clamped**, horizontal offset **60.00**. **recenter**: 2 references, offset 0. **off**: source `none`, camera = body again. Six `vr.head*` events, nothing per frame. The shots `head-ahead` / `head-turn` show the cell door moving right and the floor coming into view. The plain smoke test (`--loadlevel 10`) logs no `vr.head` event at all: flat play is untouched. The host tests (`HeadPoseTest`, 10 cases) fail 5 of 10 with the yaw turn's sign flipped on purpose |
 | 2026-10-09, #115 log banner: flat smoke test, then `status.json` and the first log lines asserted by script | `PASS`; `build.commit` = `git rev-parse HEAD` of the worktree **after a commit and a rebuild** (before #115 a worktree kept its first build's commit), `build.branch`, `build.config` = `Release`, `vr.manifest` = the SteamVR manifest from `HKLM`, `vr.runtime` = `""` in a flat run; the four banner lines match their documented shape. `XR_RUNTIME_JSON` → a missing file (flat, `--no-vr`): the manifest line says `from XR_RUNTIME_JSON, overriding the registry's "…steamxr_win64.json"`, exactly **1** `[W] … does not exist`, `vr.manifest` = that path, `PASS`. `built-from.txt` edited to another commit: exactly **1** `[W] built-from.txt names commit …`, `PASS`. The `OpenXR runtime answered` line needs an instance (SteamVR running): not exercised in that session, it is the renamed `Using OpenXR runtime` line |
 | 2026-10-09, #129 **before** (the `main` build): `run-windows.ps1 -Isolated -Background -- --no-vr --loadlevel 10`, no channel, `Stop-Process` long after the level had loaded | `arx.log` = **4137 bytes, 42 lines, cut mid-line** (`[I] Localisation` and nothing after it): the `ofstream` buffer; the end of the level load lost, no `Clean shutdown` |
 | 2026-10-09, #129 **after**: the same, killed 15.5 s after the start | `arx.log` = **4787 bytes, 49 complete lines**, last line `[I] LoadLevel:511  Done loading level` (the last line the game wrote), ends with a newline; the previous run's truncated log sits in `arx.1.log`; banner `Log: "…\arx.log", previous runs kept as arx.1.log .. arx.9.log` |

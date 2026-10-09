@@ -133,6 +133,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "util/Range.h"
 
 #include "vr/VRInput.h"
+#include "vr/VRReticle.h"
+#include "vr/VRSystem.h"
 
 #include "window/RenderWindow.h"
 
@@ -1269,7 +1271,8 @@ void ArxGame::manageKeyMouse() {
 				// mode systemshock
 				if(config.input.mouseLookToggle && config.input.autoReadyWeapon != AlwaysAutoReadyWeapon) {
 					
-					DANAEMouse = g_size.center();
+					// VR (#37): the exploration mode's crosshair is the hand that owns the mouse, not the screen centre
+					DANAEMouse = vr::reticlesOn() ? GInput->getMousePosition() : Vec2s(g_size.center());
 					
 					pIO = FlyingOverObject(DANAEMouse);
 					if(pIO) {
@@ -1497,7 +1500,9 @@ void ArxGame::manageKeyMouse() {
 			static bool mouseInBorder = false;
 			static PlatformInstant mouseInBorderTime = 0;
 			
-			if(!bRenderInCursorMode || (!dragging && !GInput->isMouseInWindow())) {
+			// VR: the head turns the view and the hands are the mouse (#34, #37) - a cursor near an edge of the
+			// panel, or a world reticle's mouse position right of the interface, must not turn the player
+			if(!bRenderInCursorMode || (!dragging && !GInput->isMouseInWindow()) || vr::stereoActive()) {
 				mouseInBorder = false;
 			} else {
 				
@@ -1681,6 +1686,7 @@ void ArxGame::manageEditorControls() {
 	if(   TRUE_PLAYER_MOUSELOOK_ON
 	   && config.input.autoReadyWeapon != AlwaysAutoReadyWeapon
 	   && config.input.mouseLookToggle
+	   && !vr::reticlesOn() // VR (#37): the hand that owns the mouse is the crosshair
 	) {
 		DANAEMouse = g_size.center();
 	}

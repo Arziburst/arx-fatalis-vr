@@ -362,6 +362,18 @@ void setPointerBeam(bool shown, const Vec3f & from = Vec3f(0.f), const Vec3f & t
 //! The beam was part of the last submitted frame
 bool pointerBeamShown();
 
+/*!
+ * \brief A hand's reticle for this frame (#37): a small ring where its hidden ray hits the world
+ *
+ * Drawn as a quad layer at \a hit (LOCAL space, meters), facing the eyes, the same angular size at any
+ * distance (vr/HandReticle.h); \a bright over an item that can be taken (D-029). Only in stereo frames,
+ * where the world is drawn per eye. Set every frame - \c shown false hides it.
+ */
+void setHandReticle(Hand hand, bool shown, const Vec3f & hit = Vec3f(0.f), bool bright = false);
+
+//! The hand's reticle was part of the last submitted frame
+bool handReticleShown(Hand hand);
+
 //! Place the panel anew at the head on the next frame while a menu is open (a recenter, F-180)
 void recenterPanel();
 

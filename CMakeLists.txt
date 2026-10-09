@@ -1259,6 +1259,7 @@ set(VR_SOURCES
 	src/vr/EyeImage.cpp
 	src/vr/EyeProjection.cpp
 	src/vr/FramePacing.cpp
+	src/vr/HandReticle.cpp
 	src/vr/HeadPose.cpp
 	src/vr/HeadReferenceGate.cpp
 	src/vr/HeadTracking.cpp
@@ -1274,6 +1275,7 @@ set(VR_SOURCES
 	src/vr/VRGameInput.cpp
 	src/vr/VRInput.cpp
 	src/vr/VRMirror.cpp
+	src/vr/VRReticle.cpp
 	src/vr/VRSimulator.cpp
 	src/vr/VRSwapchain.cpp
 	src/vr/VRSystem.cpp

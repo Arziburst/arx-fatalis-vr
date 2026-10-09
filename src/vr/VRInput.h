@@ -86,7 +86,9 @@ struct PointerStatus {
 	Vec2f cursor = Vec2f(0.f);   //!< the mouse it gives, the 2D interface's pixels
 	bool beam = false;           //!< the beam was in the last submitted frame
 	std::array<bool, HandCount> onPanel = { }; //!< each hand's ray hits the panel
+	std::array<bool, HandCount> onWorld = { }; //!< each hand's reticle is a world target (#37)
 	u64 clicks = 0;              //!< trigger presses on the panel
+	u64 worldClicks = 0;         //!< trigger presses with the reticle in the world (#37)
 	u64 offPanelPresses = 0;     //!< presses off it, kept from the engine
 	u64 ownerChanges = 0;
 };

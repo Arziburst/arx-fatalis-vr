@@ -151,6 +151,7 @@ dependencies are met; when a task is split, replace it with its parts.
 
 ### C. Fight
 39. #75 — Weapon held by the IK hand; no engine arm attack animation while IK drives the arms (F-48, F-67)
+39. #288 — Hand reticles with the weapon drawn: the trigger is the mouse in combat mode, the inventory keeps the weapon drawn (D-019; follow-up of #37)
 40. #39 — Melee: contact hits, swing detector, stab rule, per-target cooldown, damage from swing speed (F-58–F-63, F-66, F-74)
 41. #42 — Haptic feedback (F-44)
 
@@ -222,6 +223,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #88 tester build | build | plain | #79, #123, decisions on #118 / #120 |
 | #132 D4 crash reports under SteamVR, symbols | build | plain | #88, #131 |
 | #75 weapon in the IK hand | combat | VR | #36 |
+| #288 reticles with the weapon drawn | combat | VR | #37, #75 |
 | #39 melee | combat | VR | #75, #114 |
 | #42 haptics | input | VR | #74 |
 | #43, #44, #45 runes | magic | VR | #36, #74 |
@@ -240,7 +242,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | **4** — finishes checkpoint A | #28, #100, #26, #31, #32, #42 | #80 |
 | **5** — checkpoint B | #49, #33, #36 | #88 → #132 *(after the owner's decisions on #118 / #120)* |
 | **6** | #34, #116, #37, #75, #178 | — |
-| **7** — checkpoints C, D | #38, #39, #43 → #44 → #45 | #16 |
+| **7** — checkpoints C, D | #38, #288, #39, #43 → #44 → #45 | #16 |
 | **8** — MVP done | #77 | — |
 
 ## Estimate

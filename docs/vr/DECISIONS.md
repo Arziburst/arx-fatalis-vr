@@ -10,6 +10,85 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-024: One frame clock in VR — `xrWaitFrame` paces the game; pose-matched submission; an orderly exit
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** worker of #20 (technical internals, D-017), from research rows F-07, F-21, F-26, F-116, F-117
+
+### Decision
+- **While an OpenXR session exists, the headset's `xrWaitFrame` is the only thing that paces the
+  game.** The frame starts with it (`vr::beginFrame()` at the top of `ArxGame::doFrame`), so the
+  simulation runs on the runtime's predicted display time; the window's vsync and the engine's own
+  frame limiter (`fps_limit`) are switched off for the session and restored when it ends — `cfg.ini`
+  is not modified, the menu's vsync choice is kept for flat mode.
+- **Pose-matched submission.** The eyes are located once per frame, right after `xrWaitFrame`, for
+  that frame's predicted display time in the world-locked `LOCAL` space; the renderer (#19, #24) and
+  the projection layer both use exactly that sample (`vr::frameViews()`), never a fresh locate at
+  submission. Both eyes or none in the layer. A frame that must be ended without a new picture (a
+  level load, a session stop) re-submits the last shown layers with their render poses — zero layers
+  would show nothing, not hold the picture.
+- **Even cadence over raw rate.** `vr_frame_divisor` in `cfg.ini` (`--vr-frame-divisor N` overrides
+  it; default 1) makes the game take every n-th display slot by sleeping past the slots to skip and
+  letting `xrWaitFrame` snap to the next one — never a timer of our own as the clock.
+- **The rate / cadence line is the instrument.** One `[vr] rate:` line per 3 s window (frames
+  against display slots, `xrWaitFrame` + `xrEndFrame` as one budget, slots per frame with the
+  jitter, the worst frame and the worst run, MATCHED / OVER-SUBMITTING / UNDER-SUBMITTING and EVEN /
+  UNEVEN), the same numbers in `status.json` → `vr.pacing`, frame gaps as they happen. Its decision
+  core is pure logic with host tests (`src/vr/FramePacing.h`, `tests/vr/FramePacingTest.cpp`).
+- **An orderly exit.** On quit the session is asked to exit (`xrRequestExitSession`) and given up to
+  2 s to reach `STOPPING` (`xrEndSession`) and `EXITING` before it is destroyed.
+
+### Why
+Two clocks (the monitor's vsync or a sleep-based limiter next to `xrWaitFrame`) pace the headset
+twice: the Index's 80–144 Hz against a 60 Hz monitor, or a cap that slips a frame every 50 against
+the display period (Titanfall 2 VR, F-117). Dishonored VR's "exceptional improvement in world
+stability" came from submitting with the pose each eye was rendered with (F-21); their ghosting at
+120 Hz came from frames landing 1.05–1.11 slots apart, fixed by an even cadence at a lower rate
+(F-26). A log that says MATCHED / EVEN or names the phase of a gap settles "does it hold the rate"
+without a headset session (F-07).
+
+### Consequences
+- The MVP's "holds the headset's refresh rate" is judged from the rate line: MATCHED and EVEN at the
+  native rate, or EVEN at a clean divisor of it.
+- #21 (desktop mirror) and #19 (stereo) keep this loop: render between `beginFrame` and
+  `submitFrame`, take the poses from `frameViews()`. The loader frame pump of F-117 (keep the
+  compositor fed through a level load) comes after the MVP.
+- `vr_frame_divisor` becomes a row of the VR Video settings after the MVP (#181).
+---
+
+## D-023: The test save library is generated on each machine, not committed
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** worker (technical, #70); the owner can revisit
+
+### Decision
+- The test saves (`mvp-new-game`, `mvp-items`, `mvp-goblin-fight`, …) are **produced by a script**
+  (`scripts/dev/make-test-saves.ps1`, scenarios in `scripts/dev/test-saves/scenarios.txt`), in one flat
+  launch, into `%LOCALAPPDATA%\ArxFatalisVR\savelib`; they are **not committed**.
+- A worker uses one with `smoke-test.ps1 -Save <name>` / `run-windows.ps1 -Isolated -Save <name>`: it is
+  made the **only** save of the isolated user directory, so slot 0 is it.
+- `make-test-saves.ps1 -Verify` checks the whole library in a fresh game; regenerate after a change to
+  the engine's save format.
+- What the script cannot place (a lever, chest or door in reach) is recorded by the owner in flat mode
+  and copied into the library by hand.
+
+### Why
+- A save is a snapshot of the original game's level data and of the engine's save format: committing
+  ~0.3 MB binaries per scenario would put game-derived data into a repository that may become public
+  (the project requires the owner's own copy of Arx Fatalis, CLAUDE.md), and every save-format change
+  would silently rot them.
+- A script is reviewable, regenerates in about 2.5 minutes, and doubles as a test of `newgame`, `save`
+  and `loadslot` themselves (the same game loads each save again and checks it).
+- Slot numbers are positions in a list sorted by file time (newest first): only a single-save directory
+  makes "this scenario" a stable `--loadslot 0`.
+
+### Rules out
+- Saves in git or in release assets; scripts that assume `--loadslot 1` is a given scenario.
+
+---
+
 ## D-022: Budget raised to 80% weekly / 95% five-hour; checks kept in balance with time and usage
 
 - **Date:** 2026-10-09
@@ -275,7 +354,7 @@ and the desktop shortcut), not by the workers' discipline:
    (`run-windows.ps1`, `test-pr.ps1`) starts SteamVR. Workers never start or close SteamVR by hand
    either (no `vrstartup.exe`, no `Stop-Process vrmonitor`).
 2. **One game at a time on this PC.** Every script launch, flat or VR, holds a machine-wide game lock
-   slot (`%LOCALAPPDATA%\ArxFatalisVR\game-<n>.lock`; a VR launch also `vr.lock`) while the game runs,
+   slot (`%LOCALAPPDATA%\ArxFatalisVR\game-<n>.lock`; since #205 `%ProgramData%\ArxFatalisVR\locks`, shared by every Windows account including the CI runner service; a VR launch also `vr.lock`) while the game runs,
    waits in line with a timeout and names the holder (working copy, branch, pid). A raw `arx.exe`
    outside the lock counts as a holder. `settings.json` (`maxGames`) may allow 2 flat games later.
 3. **Only the working copy's own fresh build.** A launch refuses an `arx.exe` from another copy's

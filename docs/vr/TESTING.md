@@ -15,11 +15,15 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 .\scripts\dev\smoke-test.ps1 -Vr                              # the same in VR - only while the owner has SteamVR running (SKIPPED, exit 2, otherwise; never starts it)
 .\scripts\dev\smoke-test.ps1 -Repeat 10 -Seconds 5            # a table of 10 runs
 .\scripts\dev\smoke-test.ps1 -Saves save0000 -- --loadslot 0  # copy a save into the isolated user directory, then load it
+.\scripts\dev\smoke-test.ps1 -Save mvp-goblin-fight           # a scenario of the test save library (#70): the only save, --loadslot 0
+.\scripts\dev\make-test-saves.ps1                             # produce the test save library, one launch; -Verify loads it all in a fresh game (#70)
 .\scripts\dev\smoke-test.ps1 -Commands 'shot a','mark x' -- --loadslot 0
 .\scripts\dev\smoke-test.ps1 -Menu -Commands 'loadslot 0'       # plain launch (main menu), then a save through the channel
 .\scripts\dev\smoke-test.ps1 -Commands 'drawcheck 120'         # two draws of the scene per frame must give one picture (#71)
 .\scripts\dev\comfort-check.ps1                               # shake, FOV zoom and bob with the VR comfort policy off and on, one run (#76)
 .\scripts\dev\spell-drawcheck.ps1                             # the 26 spells of #71 really launched, then drawcheck 240 (#155)
+.\scripts\dev\run-script-tests.ps1                            # the PowerShell self-tests of the dev scripts (seconds, no game); CI runs them first
+.\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence      # what CI runs after the build: smoke test + drawcheck, spell draw check, evidence in one folder (#127)
 .\scripts\run-windows.ps1 -Isolated -TestChannel -- --no-vr --loadlevel 10   # a manual run with the channel, in this copy's own user dir
 .\scripts\dev\log-digest.ps1 -Print                           # the last run in a screenful + automatic bug filing; runs by itself after every launch (#131), never cat arx.log
 .\scripts\dev\game-status.ps1 -Watch                          # live state line
@@ -86,8 +90,10 @@ window is shown without taking the focus (`window: focused=False` in the output;
 the same). Every run is one line in the ledger `%LOCALAPPDATA%\ArxFatalisVR\launches.log`.
 A fresh isolated directory has no `cfg.ini` yet, so the first run logs one warning
 (`Could not read config files cfg.ini and cfg_default.ini, using defaults`) and writes the file;
-`-Saves <slots>` copies save folders into it (`save0000`, … from `-SaveLibrary`, `$env:ARXVR_SAVE_LIBRARY`
-or the player's `save` folder) for `-- --loadslot` runs.
+`-Saves <slots>` copies save folders into it (from `-SaveLibrary`, `$env:ARXVR_SAVE_LIBRARY`,
+`%LOCALAPPDATA%\ArxFatalisVR\savelib`; a name that is not there but is in the player's own `save` folder
+is taken from there) for `-- --loadslot` runs; `-Save <name>` makes one library save the **only** save of
+the directory and defaults the arguments to `--loadslot 0` (see [The test save library](#the-test-save-library-70)).
 
 ## The test command channel (`--test-dir DIR`)
 
@@ -122,6 +128,10 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `loadslot <n>` | load save slot `n` (from the menu or in-game), refused with the slot count if it does not exist |
 | `ui inventory open\|close` | what the inventory key does (the book has the script command `book open\|close`); a `ui.inventory` event once the inventory is open / has finished closing. While a level script holds the player (the level 10 start: letterbox, controls blocked) the HUD is not drawn and a close never finishes — `setplayercontrols on` and `cinemascope off` first (#130) |
 | `loadlevel <n> [target]` | change to level `n` in a running game (refused from the menu: start with `--loadlevel` or `loadslot`) |
+| `newgame` | what the menu does for "New game" and the end of the character creation, without the screens: an average hero (all attributes 10, skills 2, nothing to distribute), level 1. Refused outside the main menu (a plain launch). The hero then lies in the start cell and `player.controlsBlocked` stays `true` for 30-40 s while the level script plays the awakening (#70) |
+| `entities [filter]` | write one line per entity to `<dir>\entities.txt`: `<id> npc\|item\|fix\|marker\|camera\|other show=<n> pos=<x> <y> <z> [life=<n>]`; `filter` is a substring of the id. `show` is the engine's `EntityShowState`: 0 in the scene, 2 in an inventory, 6 equipped by the player. The position of a floor object (lever, chest, item) is on the **floor** (#70) |
+| `setpos <x> <y> <z> [yaw]` | put the player at exact coordinates, optionally facing `yaw`. `y` is the **eye**: the floor is 170 units lower (a `y` at floor level puts the eye in the floor: black screen). About 100 units are a metre. Refused outside gameplay (#70) |
+| `lookat <entity>` | turn the player (yaw and pitch) towards an entity, aiming 40 units above its floor position. The pitch is not kept by a save and does not matter in VR (the head decides); the yaw is kept (#70) |
 | `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
 | `recenter` | refused with `not implemented yet (#28)` until recentering exists |
 | `comfort auto\|on\|off` | who decides the VR comfort policy (#76, `vr::comfort()`): `auto` = the VR session (the default: view bobbing, screen shake and FOV zoom off in VR, `cfg.ini` decides in flat mode), `on` / `off` force the VR rules on or off — so a flat run can measure them. `comfort` and `camera` in the status; one `[vr] comfort:` log line per change |
@@ -150,14 +160,21 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
  "state":"GAMEPLAY","cleanShutdown":false,
  "frame":618,"uptimeMs":6240,"fps":120.2,"errors":0,"warnings":0,
  "menuMode":"ingame","area":10,"paused":false,"cinematic":false,
- "player":{"x":...,"y":...,"z":...,"yaw":...,"life":...,"lifeMax":...,"mana":...,"manaMax":...},
+ "player":{"x":...,"y":...,"z":...,"yaw":...,"life":...,"lifeMax":...,"mana":...,"manaMax":...,"controlsBlocked":false},
  "camera":{"x":...,"y":...,"z":...,"pitch":...,"yaw":...,"roll":...,"fov":75.0,"bob":0.0,"shake":0.0},
  "spells":{"active":2,"launched":3,"activeByType":{"speed":1,"fire_field":1},
            "launchedByType":{"speed":1,"heal":1,"fire_field":1}},
  "comfort":{"mode":"auto","active":false,"viewBobbing":true,"screenShake":true,"fovZoom":true},
  "window":{"width":640,"height":480,"focused":true,"minimized":false,"fullscreen":false},
- "vr":{"supported":true,"enabled":false,"sessionState":"none","frames":0,"shownFrames":0,"runtime":"",
-       "manifest":"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json"},
+ "vr":{"supported":true,"enabled":false,"sessionState":"none","frames":0,"shownFrames":0,
+       "resubmittedFrames":0,"discardedFrames":0,"frameGaps":0,"frameDivisor":1,"runtime":"",
+       "manifest":"C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR\\steamxr_win64.json",
+       "pacing":{"reports":3,"seconds":3.0,"frames":241,"shown":1,"divisor":1,"periodMs":12.5,
+                 "slotsPerSecond":80.0,"framesPerSecond":80.0,"waitMeanMs":11.9,"waitMaxMs":13.1,
+                 "endMeanMs":0.3,"endMaxMs":0.9,"budgetMeanMs":12.2,"budgetMaxMs":13.4,
+                 "gameMeanMs":0.3,"gameMaxMs":1.2,"slotsPerFrame":1.0,"cadenceSdMs":0.2,
+                 "worstFrameMs":13.5,"worstRunFrames":0,"worstRunMs":0.0,
+                 "verdict":"MATCHED","cadence":"EVEN"}},
  "events":{"total":13,"byName":{"game.new":1,"game.state":2,"level.load":1,"level.loaded":1,
            "spell.cast":1,"ui.book":2,"vr.mode":1}},
  "cmdSeq":3,"lastCmd":"mark hello","lastCmdError":"","captureSeq":1,"lastCapture":"...\\first.bmp"}
@@ -182,8 +199,22 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   `synchronized`, SteamVR sets `shouldRender` only for the first frame, and `shownFrames` stays at 1
   while `frames` grows — expected, not a broken frame loop (see TRAPS.md). `smoke-test.ps1 -Vr`
   fails a run with `vr.enabled` and `vr.frames == 0`.
-- `player` is present only while a level is loaded. More fields (the rate line)
-  come with #20; the `.xrs` runner (#113) asserts on these keys with `@modassert`.
+- `vr.resubmittedFrames` (#20): frames ended with the previous picture because no new one was drawn
+  (a level load, a session stop — expected to be a handful per run); `vr.discardedFrames`: frames
+  the runtime discarded (an `xrBeginFrame` before the previous `xrEndFrame` — expected 0);
+  `vr.frameGaps`: frames that came at least 80 ms and 2.5× the mean interval after the previous one
+  (level loads produce them; in gameplay each one is a felt hitch); `vr.frameDivisor`: the expected
+  display slots per frame (`vr_frame_divisor`, 1 = every slot).
+- `vr.pacing` (#20): the last rate / cadence report — present once the first 3 s window of a
+  session closed (a shorter session gets its partial window at the end). See
+  [The frame loop and the rate line](#the-frame-loop-and-the-rate-line-20) for every field and the
+  verdicts; the two to assert on are `verdict` (`MATCHED`) and `cadence` (`EVEN`).
+- `player` is present only while a level is loaded; the `.xrs` runner (#113) asserts on these keys
+  with `@modassert`.
+  `player.y` is the **eye** (the camera is within a few units of it), not the feet.
+  `player.controlsBlocked` is `BLOCK_PLAYER_CONTROLS`: scripts set it during scripted scenes — the
+  awakening of a new game on level 1 holds it for 30-40 s — and a save made while it is `true` is not
+  playable (#70): wait for `false` (`@until player.controlsBlocked False` in a save scenario).
 - `camera` (with `player`): the first-person camera as the frame before left it — position, angles,
   `fov` in degrees, `bob` = its distance from the stable head position of the paused animation (view
   bobbing; 0 when off), `shake` = the quake amplitude applied that frame (0 without a quake or when
@@ -205,6 +236,61 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   `frames` compared so far, `framesDiffering` of them with at least one differing pixel,
   `maxPixelsDiffering` the worst frame, `maxDelta` the largest difference of one color channel
   (0–255), `capture` the base name of the most differing pair (`<capture>_a.bmp` / `_b.bmp`).
+
+## The test save library (#70)
+
+Saves that put a worker at an MVP scenario point at once, so a task about picking things up or fighting
+does not start with a minute of walking. **Not in the repository** (D-023): they derive from the
+original game's data and go stale with the engine's save format; they are produced on the machine that
+needs them, by one script and one game launch.
+
+```powershell
+.\scripts\dev\make-test-saves.ps1                    # produce the library: one launch, ~2.5 min (30-40 s of it the awakening)
+.\scripts\dev\make-test-saves.ps1 -Verify            # a FRESH game (--loadslot 0) loads every save and checks it: one launch
+.\scripts\dev\smoke-test.ps1 -Save mvp-goblin-fight  # a worker's use: that save, nothing else, --loadslot 0
+.\scripts\run-windows.ps1 -Isolated -Save mvp-items -TestChannel -- --no-vr   # the same by hand, in a window
+```
+
+The library is `%LOCALAPPDATA%\ArxFatalisVR\savelib` (`$env:ARXVR_SAVE_LIBRARY` or `-SaveLibrary`
+elsewhere): one folder per scenario with `gsave.sav`, and `manifest.json` (name, description, level,
+player position, commit, date). It is shared by every working copy of the machine. **Regenerate it**
+(`make-test-saves.ps1`) when the engine's save format changes, or a save fails to load; `-Verify` says
+which.
+
+| Save | Where the player stands (level 1, the goblin prison) | For |
+|---|---|---|
+| `mvp-new-game` | in the start cell after the awakening, controls free, nothing equipped | demo step 1-2: look, walk, turn |
+| `mvp-items` | a sword equipped; 2.3 m from a table with a key, a note and a form (`key_base_0005`, `note_0004`, `blank_form_0001`); dark room, the items are low in the view | demo step 3: pick up, drag into the inventory (#37) |
+| `mvp-goblin-fight` | a sword equipped; `goblin_base_0036` 3.5 m ahead in a corridor, walking away | demo step 5: melee (#39) |
+
+**Not in the library: levers, doors, chests.** Nothing could put the player where one is in reach and
+visible; the owner records those by hand (follow-up #210). What that attempt
+learned is in TRAPS.md ("A lever, a chest, a door cannot be found by coordinates").
+
+**How a save is made** (`scripts/dev/make-test-saves.ps1`, scenario file
+`scripts/dev/test-saves/scenarios.txt`): one flat game from the main menu; `newgame`; `@until
+player.controlsBlocked False`; per scenario `setpos` + `lookat` + `save <name>`; then the **same game
+loads every save again** (`loadslot`, oldest first) and checks the level, that the player stands where it
+was saved (within 1 m) and that the controls are free, with a screenshot per save. The script **fails**
+(nothing is copied into the library) when a command is refused, the game ends unclean, or a check fails.
+A scenario file has `@`-directives (`@until`, `@expect`, `@near`, `@entity`, `@print`, …) — the header of
+the script lists them. The parser (`scripts/dev/test-saves/scenario-lib.ps1`) rejects what would only
+fail after a minute in the game — an unknown directive, a missing or non-numeric argument, a save name
+used twice or unusable as a folder name — with the file and line, before any launch.
+
+**Host test** (`scripts/dev/test-save-library.ps1`, run by `run-script-tests.ps1`, so by CI): the real
+scenario file, the parser and its 13 error cases, the verification steps (no `loadslot` for the slot the
+command line loaded, the position formatted the same in every culture), the slot order (newest save
+file first), and `Use-ArxSave` / `Get-ArxSaveLibrary` (exactly one save left, the file time kept, a
+missing name names what the library has). It was shown to fail with 7 deliberate breaks, one check
+each: the duplicate-name check removed, the old saves not removed, the slot order reversed, the
+position formatted with the current culture (`8540,5`), unknown directives accepted, any save name
+accepted, the copy losing the file time.
+
+What a save does and does not keep (measured, #70): the position, the yaw, the inventory and what is
+equipped, the entities' state (the goblin's patrol goes on from where it was). Not the pitch of the view
+(irrelevant in VR). The verification waits 4 s after a `loadslot` before its screenshot (the level fades
+in from black, TRAPS.md).
 
 ## The log banner
 
@@ -339,6 +425,7 @@ code, duration, errors/warnings (how many are **new**), crashes. The owner does 
 .\scripts\dev\test-start-steamvr.ps1                 # self-test of how -StartSteamVR starts and -StopSteamVR quits SteamVR (#171): stubbed processes and clock, SteamVR is not touched
 .\scripts\dev\stop-steamvr.ps1                       # the OWNER's switch: quit SteamVR like its own "Exit SteamVR" so the headset powers down; workers never run it (D-014)
 $env:GH_HOST='bogus.invalid'; .\scripts\dev\test-pr.ps1 <pr> -NoLaunch   # the test station with the GitHub API unreachable (#171)
+.\scripts\dev\test-plan-next.ps1                     # self-test of plan-next.ps1 (#187): MVP.md parsing and every start rule; CI runs it with the other script tests (run-script-tests.ps1)
 ```
 
 **What it writes:** `%LOCALAPPDATA%\ArxFatalisVR\runs\<yyyyMMdd-HHmmss>-pid<pid>\` with `digest.md` (build and
@@ -441,6 +528,53 @@ prints which command launched each spell and which spells were on screen during 
 - Order: the long-lived spells first, the projectiles and the NPC's summons last, so they are still
   in flight or open when the check starts (`harm` and `mana_drain` end on their own before that).
 
+## The frame loop and the rate line (#20)
+
+In VR one game frame is one OpenXR frame (D-024): `vr::beginFrame()` at the top of
+`ArxGame::doFrame` blocks in `xrWaitFrame` until the headset wants the next frame — **the only
+thing that paces the game in VR**: the window's vsync and the engine's `fps_limit` are off while a
+session exists (`[vr] pacing:` log line) — then `xrBeginFrame` and `xrLocateViews` for the frame's
+predicted display time; the game simulates and renders; `vr::submitFrame()` ends the frame with
+exactly those poses in the projection layer (pose-matched submission, F-21 / F-116). A frame drawn
+outside the loop (the loading screen) begins its own; a frame begun but never shown is ended with
+the previous picture (`vr.resubmittedFrames`). On quit, `xrRequestExitSession` → `stopping` →
+`xrEndSession` → `exiting` within 2 s (`OpenXR session exited in order after N ms`), else a warning
+and the session is destroyed while running.
+
+**The rate line** — one `[vr] rate:` line per 3 s window while the session runs (research row F-07),
+the same numbers in `status.json` → `vr.pacing`:
+
+```
+[vr] rate: 241 frames in 3.00 s = 80.0/s on 80.0 slots/s (hmd 12.50 ms), 1 shown | wait+end 12.2 mean / 13.4 max ms (wait 11.9, end 0.3; game 0.3 mean / 1.2 max) | 1.00 slots/frame, sd 0.21 ms: EVEN CADENCE | MATCHED | worst frame 13.5 ms, worst run 0 frames 0 ms
+```
+
+| Part | Meaning |
+|---|---|
+| `N frames in S s = F/s on R slots/s (hmd P ms)`, `shown` | frames submitted per second against the headset's display slots per second (`periodMs` = one slot); `shown` = frames with layers |
+| `wait+end mean / max` | `xrWaitFrame` + `xrEndFrame` of one frame: **one pacing budget** (F-117) — the runtime may put its wait into either call, so judge the sum against the period and read the split (`wait`, `end`) only as detail; `game` = from `xrEndFrame` to the next `xrWaitFrame`, the time the game itself takes |
+| `slots/frame, sd` | the mean interval between frames in display slots and its jitter (`cadenceSdMs`) |
+| `EVEN CADENCE` / `UNEVEN CADENCE` | EVEN: a whole number of slots per frame (within 0.1) with a jitter under 0.2 slot; UNEVEN is what ghosts on head turns (F-26: 1.05–1.11 slots at 120 Hz) |
+| `MATCHED` / `OVER-SUBMITTING` / `UNDER-SUBMITTING` | frames against expected slots (slots / `divisor`, 5 % tolerance): MATCHED is healthy; OVER means nothing paces the loop (not synchronized, or the runtime does not block); UNDER means slots go unfilled — the game's work does not fit, look at `game` |
+| `worst frame`, `worst run` | the longest interval, and the longest run of consecutive late frames (over 1.5 expected slots) with its total time — a pause the wearer feels is a run, which no mean shows |
+| `(cap: every n. slot)` | `vr_frame_divisor` > 1 |
+
+Between the lines, `[vr] frame gap: 143.2 ms between frames (mean 12.5 ms), in the game phase`
+names a frame that came at least 80 ms and 2.5× the mean interval late and the phase the time sat
+in (`wait`, `end` or `game`); the first 10 are logged, the rest counted (`vr.frameGaps`, and
+`, N frame gaps` on the rate line). Level loads produce gaps by design; in gameplay each one is a
+hitch to explain.
+
+**The even-cadence cap** (F-26): when the native rate does not hold evenly, `vr_frame_divisor = 2`
+in `cfg.ini` (`[video]`; `--vr-frame-divisor 2` on the command line overrides it) makes the game take
+every second display slot: `beginFrame` sleeps past the slots to skip and lets `xrWaitFrame` snap
+to the next one, so the clock stays the runtime's. The rate line must then read `2.00 slots/frame
+… EVEN CADENCE | MATCHED (cap: every 2. slot)`. 1 = every slot (default), up to 8.
+
+The verdict logic is pure (`src/vr/FramePacing.h`: timestamps in, report out) and covered by
+`tests/vr/FramePacingTest.cpp` (`arxtest`, run by `build-windows.ps1` and CI): a healthy loop, the
+cap, half rate without the cap (UNDER), 9 / 16 ms jitter at 80 fps (MATCHED but UNEVEN), 1 / 2 slot
+alternation, an unpaced loop (OVER), a late run, the gap phases, the window boundary.
+
 ## `xr_hello` — the runtime alone
 
 `xr_hello.exe` is built next to `arx.exe` (CMake option `BUILD_XR_HELLO`, on by default with OpenXR;
@@ -466,7 +600,7 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | `xr_hello --frames 120` with SteamVR running and the headset idle on the desk | exit 0: `IDLE → READY` at once, `SYNCHRONIZED` after 0.13 s, 120 frames in 1.48 s (display period 12.5 ms = 80 Hz), orderly `STOPPING → IDLE → EXITING`; **never `VISIBLE` or `FOCUSED`** |
 | `smoke-test.ps1 -Vr` with SteamVR running and the headset idle | `PASS`: instance, system and session created, state `ready` (the game did not begin the session before #18), clean shutdown with the session destroyed before the window |
 | `smoke-test.ps1 -Vr`, headset idle, after #18 (2026-10-09) | `PASS`: eye swapchains 2468x2740 `GL_SRGB8_ALPHA8` with complete framebuffers, `ready → running → synchronized`, quad swapchain 640x480, display period 12.5 ms (80 Hz), **834 frames submitted in ~10 s, 1 shown** (`shouldRender` only on the first frame with an idle headset — see TRAPS.md), 0 `[E]`, clean shutdown with the session destroyed while running (no `STOPPING` before our quit) |
-| `smoke-test.ps1 -Menu -Commands 'loadslot 0'` (plain launch, then a save through the channel) | `MENU` 0.8 s after launch; `loadslot 0` refused with `no save in slot 0 (have 0)` — the owner's machine has no saves yet (#70), so the success path of `loadslot` is **not verified** here; it is the same `LOADQUEST_SLOT` path as `--loadslot` |
+| `smoke-test.ps1 -Menu -Commands 'loadslot 0'` (plain launch, then a save through the channel) | `MENU` 0.8 s after launch; `loadslot 0` refused with `no save in slot 0 (have 0)` — the owner's machine has no saves yet (#70), so the success path of `loadslot` is **not verified** here; it is the same `LOADQUEST_SLOT` path as `--loadslot` *(verified in #70: see the rows below)* |
 | 2026-10-09, #124: `--loadlevel 10` with the intro `.cin` **loaded** (preloaded by the level 10 script, never played), `-CloseWindow -Repeat 5` | **2 of 5 crashed** in `Entity::cleanReferences` (#93); the channel `quit` was 5 of 5 clean on the same build. A loaded cinematic is enough for #93, so the development skip never loads the file |
 | 2026-10-09, #124: cinematics skipped without loading — default `-CloseWindow -Repeat 3`; `-Commands 'cine play' -CloseWindow -Repeat 2`; `-Commands 'cine play','cine akbaa_dream_a' -Repeat 2` | **3 of 3, 2 of 2, 2 of 2** `PASS`; one `Skipping cinematic <name>` line per cinematic, state never `CINEMATIC`, 0 errors. With `--cinematics` (or `cine play` with `--intro`) the state becomes `CINEMATIC` — the check can fail |
 | 2026-10-09, #71: `-Commands 'drawcheck 120'` on level 10 **before** the simulate / draw split (`renderLevel()` still aged particles, flares, decals and spells while drawing) | **23 of 120 frames differ** between the two draws (max 3558 of 307200 pixels, max delta 59) — the torches' fire particles advance once per draw |
@@ -490,6 +624,13 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | 2026-10-09, #155: `spell-drawcheck.ps1` — the 26 spells of #71 **really launched** (23 by the player with `-fsm`, `summon_creature` / `raise_dead` / `fake_summon` by `human_base_0033` on the player), then `drawcheck 240` on level 10 | `PASS`: **26 of 26** in `spells.launchedByType`, each in the `status.json` write right after its own command; **24 spell types active during the check** (all but `harm` and `mana_drain`, which had ended), **0 of 240 frames differ** (max 0 of 307200 pixels, delta 0), 0 errors, 0 warnings. The #71 split holds with every spell effect on screen — no bug to file against it |
 | 2026-10-09, #155: the same with `-Flags fs` — the cast of the #71 rows, the broken state on purpose | `FAIL` of the check (the smoke test passed, 0 of 240 frames differ): **0 of 23** player spells launched; the NPC's 3 launched one command later through the NPC rune drawing. The launch evidence catches the #71 mistake |
 | 2026-10-09, #155: the player's own `summon_creature` and `raise_dead` (`-fsm`): at the start point; after `teleport -ap 0/90/180/270 player`; after `teleport -p human_base_0033` | **never launched** — `CanLaunch` finds no valid spot 3 m ahead on level 10, a silent fizzle; hence the NPC caster above |
+| 2026-10-09, #20: `FramePacingTest` (11 cases over synthetic frame timings, see [The frame loop and the rate line](#the-frame-loop-and-the-rate-line-20)) | `OK (57 tests)`. **The suite can fail:** with `UnderSubmitFactor` set to 0 and `EvenMaxSdSlots` to 10 on purpose, `Run: 57 Failures: 3` — exactly the UNDER case and the two UNEVEN cases (half rate without the cap, 9 / 16 ms jitter, 1 / 2 slot alternation); the other 8 stay green. Restored: `OK (57 tests)` |
+| 2026-10-09, #20: flat smoke test, `-Seconds 8` with 6 `status` + `mark`, channel quit; then `-Seconds 5 -CloseWindow` | **2 of 2** `PASS`, 0 errors (1 warning in the first: no `cfg.ini` yet in the fresh isolated directory). Flat mode untouched: 1175 frames in 10.6 s (the engine's limiter and vsync as before), `vr.enabled=false`, `vr.frameDivisor=1`, no `vr.pacing`, no `[vr] pacing:` line — the VR clock never engages without a session |
+| 2026-10-09, #20: `smoke-test.ps1 -Vr` | **SKIPPED** (exit 2): SteamVR was off the whole session and a worker never starts it (D-014). The VR frame loop (xrWaitFrame at the frame start, the rate line, the orderly exit) is **not measured** in this task — the owner's headset run and the next worker's `-Vr` self-test with SteamVR running are the evidence; the expected lines are in the section above |
+| 2026-10-09, #70: `make-test-saves.ps1` on `main` + the task — `newgame` from the main menu, wait for `player.controlsBlocked False`, `inventory playeraddfromscene short_sword_0030`, `short_sword_0030.equip player`, `setpos` + `lookat` + `save` for `mvp-items` and `mvp-goblin-fight`, then every save loaded again in the same game | `PASS`: `GAMEPLAY` 12 s after the launch, **controls free after 30-42 s** (3 runs), 3 saves of **0.3 MB** each, `short_sword_0030` `show=6` (equipped), each reload ended `gameplay in level 1`, the player within 100 units of the saved position, `controlsBlocked` false; 0 errors, clean shutdown |
+| 2026-10-09, #70: `make-test-saves.ps1 -Verify` — a fresh game with `--loadslot 0`, then `loadslot 1` and `loadslot 2` through the channel | `PASS` (3 of 3): slot 0 = `mvp-goblin-fight` (the newest), slot 1 = `mvp-items`, slot 2 = `mvp-new-game` — the slot order is the file time, newest first; the first state `GAMEPLAY` 25 s after the launch, 0 errors, clean shutdown |
+| 2026-10-09, #70: `equip short_sword_0030` as a console line (a player-context command) | acked `errors=0`, nothing equipped (`show=2`): `equip <target>` is the **item's** command (`ARX_EQUIPMENT_Equip(target, context entity)`); `short_sword_0030.equip player` equips (`show=6`) |
+| 2026-10-09, #70: a `status.json` field `hover` (the entity under the reticle) read at 160 positions on rings of 150 / 250 units around 5 levers, 2 chests, 2 portcullises and a key, then at the 20 level markers within 700 units of those (twice) — `hover` = `FlyingOverIO`, then `FlyingOverObject(screen centre)` | **0 hits** for a lever, chest, portcullis or the key in all three passes (3 hits for `note_0004` on the rings, with `FlyingOverIO`); `FlyingOverIO` is cleared in mouse look, and the pick at the centre found nothing either; the mechanism was dropped, see TRAPS.md |
 
 Conclusions:
 
@@ -518,6 +659,41 @@ Scripts share `scripts/dev/test-lib.ps1` (`Get-ArxTestDir`, `Get-ArxUserDir`, `R
 `Wait-ArxStatus`, `Send-ArxCommand`); the channel directory is `$env:ARXVR_TEST_DIR` or
 `%LOCALAPPDATA%\ArxFatalisVR\test\<key>` of the working copy the scripts belong to.
 
+## The CI gate (#127)
+
+Every pull request that touches more than docs runs `.github/workflows/build-windows.yml` on the
+self-hosted runner (D-021: CI is the automatic gate; a red step blocks the merge). The steps, fast ones first:
+
+| Step | What | Fails when |
+|---|---|---|
+| Script self-tests | `scripts/dev/run-script-tests.ps1`: every `scripts/dev/test-*.ps1` in its own pwsh (`test-log-digest.ps1` incl. the `-Id` / `-Find` / `-Condense` / `-Print` modes on a fixture log, `test-github-lib.ps1`, `test-launch-lib.ps1`) | a test exits non-zero, or a `test-*.ps1` is in neither list of the script (a new test cannot be forgotten) |
+| Build | `build-windows.ps1 -Config Release`, which also builds and runs the host unit tests (`arxtest`) | the build, or a CppUnit test, fails |
+| Game checks | `scripts/dev/ci-smoke.ps1`: `smoke-test.ps1 -Seconds 3 -Commands 'drawcheck 120'`, then `spell-drawcheck.ps1` — the same scripts a worker runs, flat, `--loadlevel 10` | either returns `FAIL`, **or was skipped** (exit 2: the game lock stayed busy for 15 min) — a gate that did not run is not a pass, re-run the job |
+| Upload | the artifact `game-checks`, also when a step failed | — |
+
+`game-checks` holds, per phase (`smoke-test`, `spell-drawcheck`): the transcript (`<phase>.log`), then
+in `<phase>\` every `arx*.log`, `status.json`, `ack.txt`, `stdout.txt` / `stderr.txt` of the channel,
+`capture\` (the most differing draw check pair as `.bmp`), `crashes\` and the run `digest\`. Read the
+digest, not the log. A whole green job takes about two minutes on the owner's PC (script tests 6 s, an
+incremental build about a minute, game checks 17 s).
+
+How the runner differs from a worker's copy — none of it needs action, all of it explains a surprise:
+- **The runner service is `NT AUTHORITY\NETWORK SERVICE` in session 0** (no desktop), and the game runs
+  there: it creates its window and OpenGL context, reaches `GAMEPLAY` in about a second, 120 fps. No
+  interactive runner is needed.
+- Its `%LOCALAPPDATA%` is `C:\Windows\ServiceProfiles\NetworkService\AppData\Local`: the build, user
+  directory (`arx.log`, `crashes\`), test channel and `launches.log` of CI are there, not in the owner's
+  profile. The **game lock** is not: it lives in `%ProgramData%\ArxFatalisVR\locks`, which both accounts
+  can write, so CI waits for a game the owner or a worker runs and they wait for CI (#205, see
+  [the game lock](#isolation-and-the-game-lock-parallel-work)). CI's own jobs never overlap (one runner).
+- The service has no Steam registry entry of the owner, so the workflow passes the install folder:
+  `ARXVR_DATA_DIR` in the workflow `env` (read by `ci-smoke.ps1`, passed as `--data-dir`).
+- `ARXVR_AUTOREPORT=0`: a CI run files no bug issues by itself (#131); the failed step is the report.
+- The cleanup stops only `arx.exe` processes that run from the CI build directory, never a game it did not start.
+
+Run it by hand: `.\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence` (needs a fresh build of the
+copy; `-Phase smoke|spells` runs one half; exit 0 pass, 1 fail, 2 skipped, 3 cannot run here).
+
 ## Isolation and the game lock (parallel work)
 
 Several workers build and test at the same time ([WORKFLOW.md](WORKFLOW.md), *Parallel work*; #123,
@@ -535,11 +711,28 @@ launch rules D-014 / #147). What keeps their runs apart — all derived from the
 | the owner's focus | self-test windows are shown without activation (`SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN` from the environment; `run-windows.ps1 -Background`, always in the smoke test) |
 | who launched what | the ledger `%LOCALAPPDATA%\ArxFatalisVR\launches.log`, one line per launch; `cycle-report.ps1` → `LAUNCHES` |
 
-**The game lock** (`scripts/launch-lib.ps1`): `%LOCALAPPDATA%\ArxFatalisVR\game-<n>.lock` (slots
+**The game lock** (`scripts/launch-lib.ps1`): `%ProgramData%\ArxFatalisVR\locks\game-<n>.lock` (slots
 `1..maxGames`, `maxGames` = 1 unless `settings.json` next to it says otherwise) plus `vr.lock` for a
 VR launch — each a file opened for writing without write sharing by the launching script and held
 until the game exits. Windows drops the handle with the process, so a crash or a kill cannot leave a
-stale lock. The holder writes `pid=<script> game=<arx.exe pid> since=… what=… copy=… branch=…` into the
+stale lock.
+
+*Between Windows accounts (#205).* The folder is machine-wide because the CI runner service
+(`NETWORK SERVICE`) and the owner are different accounts with different `%LOCALAPPDATA%`. The first
+launch creates it with an ACL that gives Authenticated Users and `BUILTIN\Users` an inheritable
+**Modify** rule, so a lock file created by one account can be opened, and deleted, by the other: a file
+left behind by a killed process is simply free for everyone (the open handle, not the file's owner,
+decides). Nothing to set up; no password or admin right is needed. `$env:ARXVR_LOCK_DIR` points the
+scripts at another folder (the self-test uses it; set it the same for every account if you ever need
+to). The old `%LOCALAPPDATA%\ArxFatalisVR\game-<n>.lock` is **still taken and checked together with the
+new one**, so a working copy that has not merged `main` yet (older `launch-lib.ps1`) keeps seeing the
+locks of the other copies of its own account; the transition ends when no such copy is left (then the
+old location can be dropped). A game started by an *older* script (in another account's
+lock folder) is seen by the new scripts as a game outside the lock (WMI, not `Get-Process`: the
+`.Path` of another account's process is empty), so the new scripts wait for it as well; the older
+scripts do not see games of another account - merge `main` into a copy that still has them. `settings.json` is read from the lock
+folder first. `scripts/dev/test-launch-lib.ps1` covers the folder, the ACL, both locations, holders,
+stale files and games outside the lock without a second account (CI runs it). The holder writes `pid=<script> game=<arx.exe pid> since=… what=… copy=… branch=…` into the
 file; whoever finds the lock busy prints those lines. An `arx.exe` that no lock names (started by
 hand) counts as a holder too; the crash processor (`arx.exe --crashinfo`) does not. Rules: **every**
 launch takes a slot — `run-windows.ps1` waits `-LockTimeoutSec` (default 300 s) and then fails naming

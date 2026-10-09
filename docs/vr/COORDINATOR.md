@@ -77,8 +77,13 @@ workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
   (`~/.claude/statusline/sessions/<id>.json`: task branch, model, effort, context %, spend, duration).
   A worker over ~60% context or busy for hours without a commit → read its log, help, or split the task;
   the spend per task calibrates the model choice (§6).
-- **Pick the order by rule:** `scripts\dev\plan-next.ps1` (#187, once merged) lists the tasks ready to
-  start; tasks labelled `needs-design` wait for the owner's design talk (D-017).
+- **Pick the order by rule:** `scripts\dev\plan-next.ps1` (#187) lists the tasks ready to start, each with its
+  `start-worker.ps1` line (model and effort by D-015), and for every other Todo task the reason it waits
+  ("waits for #20 (In Progress)", "area render busy (#19)", "VR lane full"). It reads the Dependencies and Waves
+  tables of MVP.md, the board, the open PRs and `claude agents`, so keep those tables and the `area:*` / `lane:vr`
+  labels current. Tasks labelled `needs-design` wait for the owner's design talk (D-017); put `model:fable` on an
+  issue to get Fable for it (D-015). A worker waiting for the owner's verdict on a Testing task holds no slot. Options:
+  `-WaveLookahead 1` (let the next wave start early), `-MaxWorkers`, `-Json`.
 - **Keep the status page current:** the pinned issue **"ARXVR status"** (edited via REST each cycle):
   current block, running workers (task, model, state), PRs waiting for review or for the headset, the
   owner's open questions, weekly usage. The owner reads it in the browser; a new coordinator starts from it.
@@ -170,7 +175,9 @@ Choose per task, by size and difficulty — not by area alone. Spend Fable only 
 - **CI in balance (D-022):** self-hosted runner only (no GitHub-hosted minutes); every PR runs the fast
   set (build, host unit tests, one flat smoke test); heavy checks only when their code changes.
 - **The safety hook (#185) never stops a task:** it denies the one dangerous command and says what to do
-  instead; the coordinator reads the denial log and helps the worker if it keeps hitting it.
+  instead; the coordinator reads the denial log (`%LOCALAPPDATA%\ArxFatalisVR\safety-hook.log`, one line per
+  denial or fail-open error) and helps the worker if it keeps hitting it. Rules and limits:
+  [WORKFLOW.md](WORKFLOW.md#the-safety-hook-185-d-021).
 - **GitHub via REST** (#186): the dev scripts use `gh api repos/...` for issues, PRs, checks and runs — never
   `gh issue view/list`, `gh pr view/list`, `gh pr checks --watch`, `gh project ...` (all GraphQL; the quota is shared by
   every session). Only the board is GraphQL: one cached query (`%LOCALAPPDATA%\ArxFatalisVR\board-cache.json`, 5 min)

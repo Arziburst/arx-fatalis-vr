@@ -243,6 +243,37 @@ $info = Digest
 Check ($info.Problems.Count -eq 7 -and $info.Queued -eq $script:ArxMaxNewIssuesPerRun) "7 new error signatures, at most $script:ArxMaxNewIssuesPerRun are queued"
 Check (@($info.Problems | Where-Object { $_.Action -like 'new, not filed*' }).Count -eq 2) 'the other two are in the digest, marked as not filed'
 
+Write-Host '11. the command line modes (-Id, -Find, -Condense, -Print) on a fixture log' -ForegroundColor Cyan
+# The script runs in a child process, as a person or CI runs it; the scratch store is inherited from the environment
+$pwsh = (Get-Process -Id $PID).Path
+$digestScript = Join-Path $PSScriptRoot 'log-digest.ps1'
+function Invoke-DigestCli([string[]]$CliArgs) {
+	$out = & $pwsh -NoProfile -File $digestScript @CliArgs 2>&1 | ForEach-Object { "$_" }
+	[pscustomobject]@{ Exit = $LASTEXITCODE; Text = ($out -join "`n") }
+}
+function Count-Matching($Text, [string]$Pattern) { @($Text -split "`n" | Where-Object { $_ -match $Pattern }).Count }
+$null = New-FixtureRun @(
+	'[E] Entity:259           Entity human_base_0033 not found at "C:\Users\tester\x\level10.dlf" (code 0x80004005)',
+	'[W] Audio:40             Sample 17 is silent',
+	'[I] Game:1               Rare line that appears once')
+$logFile = Join-Path $userDir 'arx.log'
+$cli = Invoke-DigestCli @('-Log', $logFile, '-Id')
+Check ($cli.Exit -eq 0 -and $cli.Text -match 'Starting Arx Fatalis VR 0\.1-dev' -and $cli.Text -match 'ARXVR-999-feat-fixture' -and $cli.Text -match 'command line: --windowed --no-vr --loadlevel 10') '-Id prints the build, the branch and the command line'
+Check ($cli.Text -match '\d+ lines in this run') '-Id says how many lines the run has'
+$cli = Invoke-DigestCli @('-Log', $logFile, '-Find', 'not found|silent', '-Last', '5')
+Check ($cli.Exit -eq 0 -and $cli.Text -match '2 match\(es\) for' -and $cli.Text -match 'Entity human_base_0033 not found' -and $cli.Text -match 'Sample 17 is silent' -and $cli.Text -notmatch 'Loaded PAK') '-Find prints the matching lines and only those'
+$cli = Invoke-DigestCli @('-Log', $logFile, '-Find', 'PAK', '-Last', '3')
+Check ($cli.Exit -eq 0 -and $cli.Text -match '40 match\(es\) for' -and (Count-Matching $cli.Text 'Loaded PAK') -eq 3) '-Find -Last 3 prints the last 3 of 40 matches'
+$cli = Invoke-DigestCli @('-Log', $logFile, '-Find', 'no such line anywhere')
+Check ($cli.Exit -eq 0 -and $cli.Text -match '0 match\(es\)') '-Find with no match says 0 matches'
+$cli = Invoke-DigestCli @('-Log', $logFile, '-Condense')
+Check ($cli.Exit -eq 0 -and $cli.Text -match 'Rare line that appears once' -and $cli.Text -match 'Sample 17 is silent' -and $cli.Text -match '--- common families ---') '-Condense prints the rare lines in full, then the common families'
+Check ($cli.Text -match '\s40 x .*Loaded PAK' -and (Count-Matching $cli.Text 'Loaded PAK') -eq 1) '-Condense folds the 40 PAK lines into one family line'
+$cli = Invoke-DigestCli @('-UserDir', $userDir, '-NoReport', '-Print', '-Quiet')
+Check ($cli.Exit -eq 0 -and $cli.Text -match 'Entity' -and $cli.Text -match 'ARXVR-999-feat-fixture') '-Print prints digest.md with the error and the branch'
+$cli = Invoke-DigestCli @('-Log', (Join-Path $userDir 'no-such.log'), '-Id')
+Check ($cli.Exit -ne 0 -and $cli.Text -match 'no log at') 'a missing log is an error, not an empty answer'
+
 Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item Env:ARXVR_DIGEST_ROOT
 if ($failures) { Write-Host "log digest self-test: $failures check(s) FAILED" -ForegroundColor Red; exit 1 }

@@ -13,6 +13,39 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: The eyes are multisampled in a buffer of ours, resolved into single-sample swapchains; 4x by default
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (refines D-025: "MSAA stays with the window")
+- **Decided by:** worker of #226 (technical; the coordinator asked for a cfg key with a measured default)
+
+### Decision
+- Each eye swapchain gets one **multisampled framebuffer object** (color in the swapchain's format +
+  depth); the game renders the eye into it and `endEyeRender` **resolves** it into the acquired
+  single-sample image with `glBlitFramebuffer` before the desktop mirror's copy and the release.
+  The swapchains stay `sampleCount = 1`, as the runtime recommends (the Index reports 1).
+- The renderer learns the target's multisampling with its size (`setRenderTargetSize(size, samples)`):
+  on a multisampled target `SetAntialiasing(true)` works again, so alpha cutouts (fences, foliage,
+  hair) use alpha to coverage / sample shading in the eyes like in the window; a single-sample target
+  keeps the alpha test. The window's `antialiasing` setting is not the eyes' switch.
+- **`vr_msaa`** in `cfg.ini` (samples per pixel, 0 = off, at most 8), `--vr-msaa N` overrides it;
+  **default 4**.
+
+### Why
+Multisampled swapchains are what OpenXR offers, but SteamVR recommends 1 sample and a runtime may
+refuse more; a buffer of our own works with any runtime and leaves the compositor's images untouched.
+4x: on the owner's PC (RX 6800 XT) at the Index's recommended 2468×2740 per eye, unpaced on the
+simulated headset, 4x costs less than the run-to-run noise (0x 650–765 frames/s, 4x 650–980 frames/s:
+under ~0.5 ms against the 11.1 ms budget at 90 Hz) and removes ~70 % of the hard stair steps on edges;
+8x dropped to 59–95 frames/s in the same run — below the Index's 90 Hz.
+
+### Consequences
+- Every eye frame pays one resolve blit per eye; the shared buffers take
+  2 × 4 × 2468 × 2740 × 8 bytes ≈ 430 MB of video memory at 4x.
+- The Video settings after the MVP (#181) get an MSAA row backed by `vr_msaa`.
+
+---
+
 ## D-031: The head reference comes from a worn headset; one world scale of 100 units per meter
 
 - **Date:** 2026-10-09

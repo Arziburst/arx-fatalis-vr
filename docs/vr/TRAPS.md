@@ -120,8 +120,11 @@ with MSAA on the window the renderer draws alpha cutouts with alpha-to-coverage 
 that would discard the transparent texels is off.
 **Do:** tell the renderer the bound target's size (`Renderer::setRenderTargetSize`, 0 = the window): it
 re-applies the viewport and the scissor against that height, snapshots read that size, and
-`SetAntialiasing(true)` is refused off the window so the alpha cutout path falls back to the alpha test.
+`SetAntialiasing(true)` is refused on a single-sample offscreen target so the alpha cutout path falls
+back to the alpha test (a multisampled one names its samples too, `setRenderTargetSize(size, samples)`, #226).
 `vr::beginEyeRender()` / `endEyeRender()` and the flat frame target do this; a new offscreen target must too.
+With eye MSAA (`vr_msaa`, D-NEW) the eye is drawn into a multisampled buffer, not the swapchain image:
+the image holds the picture only after `Swapchain::resolve()` in `endEyeRender` - read eye pixels after it.
 
 ## 2026-10-10 — "use" fires from just holding the Index controller (a closed hand flickers, #30)
 

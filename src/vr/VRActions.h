@@ -27,6 +27,9 @@
 #include <array>
 #include <string>
 
+#include <glm/gtc/quaternion.hpp>
+
+#include "math/Types.h"
 #include "vr/VRBindings.h"
 #include "vr/VRControls.h"
 #include "vr/VRSystem.h"
@@ -90,6 +93,19 @@ public:
 	//! How often the actions were synced while focused
 	u64 syncs() const { return m_syncs; }
 
+	//! A hand's aim pose: the pointer ray starts at \c position and runs along the orientation's -z
+	struct AimPose {
+		bool valid = false; //!< position and orientation are tracked
+		Vec3f position = Vec3f(0.f);
+		glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f);
+	};
+
+	/*!
+	 * Locate both hands' aim poses (the menu pointer, #34) in \a base at \a time; a hand without a
+	 * tracked position and orientation is not valid
+	 */
+	std::array<AimPose, HandCount> locateAim(XrSpace base, XrTime time) const;
+
 private:
 
 	struct Actions {
@@ -123,6 +139,7 @@ private:
 	std::array<XrPath, HandCount> m_hands = { };
 	std::array<XrSpace, HandCount> m_gripSpaces = { };
 	std::array<bool, HandCount> m_handTracked = { }; //!< the last located state per hand, for the tracked / lost events
+	std::array<XrSpace, HandCount> m_aimSpaces = { };
 
 	ControlSet m_down;     //!< after the last sync, for the thresholds' hysteresis
 	ControlSet m_bound;    //!< the controls the runtime reported active, logged when it changes

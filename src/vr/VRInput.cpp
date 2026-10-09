@@ -21,6 +21,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <optional>
 
 #include "core/Config.h"
 #include "core/GameEvent.h"
@@ -31,6 +33,7 @@
 #include "platform/Time.h"
 #include "util/Number.h"
 #include "vr/HeadTracking.h"
+#include "vr/MenuPointer.h"
 #include "vr/VRSystem.h"
 
 namespace vr {
@@ -51,6 +54,12 @@ struct InputState {
 	ControlSet injectedTaps;
 	//! Stick deflections set by the test channel, added to the controllers' (directions: down / up)
 	std::array<Stick, HandCount> injectedSticks;
+
+	//! The menu pointer (#34): the hand on the floating panel is the mouse
+	MenuPointer pointer;
+	bool panelShown = false;
+	std::array<PointerRay, HandCount> rays;
+	u64 loggedOffPanelPresses = 0;
 
 };
 
@@ -102,14 +111,76 @@ void applyToEngine(const GameInputState & state) {
 		return;
 	}
 
-	// Both hands work as the mouse (D-016): the left button clicks, drags and double-clicks
-	GInput->setVirtualMouseButton(Mouse::Button_0, state.click);
+	// Both hands work as the mouse (D-016): the left button clicks, drags and double-clicks; on the
+	// floating panel the pointing hand's pixel is the mouse, and a press off the panel clicks nothing (#34)
+	GInput->setVirtualMouseButton(Mouse::Button_0, state.click && !g_input.pointer.suppressClick());
+	if(g_input.pointer.active()) {
+		const Vec2f cursor = g_input.pointer.cursor();
+		GInput->setVirtualMousePosition(Vec2s(s16(std::lround(cursor.x)), s16(std::lround(cursor.y))));
+	} else {
+		GInput->setVirtualMousePosition(std::nullopt);
+	}
 	// The original's right click: the use action in game, the right button in the menus (in game
 	// the right button is free look)
 	GInput->setVirtualMouseButton(Mouse::Button_1, state.use && ARXmenu.mode() != Mode_InGame);
 	GInput->setVirtualKey(Keyboard::Key_Escape, state.escape);
 	for(size_t i = 0; i < GameActionCount; i++) {
 		GInput->setVirtualAction(engineAction(GameAction(i)), state.actions[i]);
+	}
+}
+
+/*!
+ * The menu pointer (#34): where each hand's aim ray hits the floating panel this frame, which hand
+ * owns the cursor (vr/MenuPointer.h) and the beam from it. Game events on the panel appearing and
+ * going, on an owner change and on every press - bounded by the player's hands, never per frame.
+ */
+void updatePointer() {
+
+	const bool shown = panelShown();
+	const std::array<HandAim, HandCount> aims = handAims();
+	std::array<Vec3f, HandCount> hits = { };
+	std::array<bool, HandCount> trigger = { };
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		PointerRay & ray = g_input.rays[hand];
+		ray = PointerRay();
+		if(shown && aims[hand].valid) {
+			ray.onPanel = panelHit(aims[hand].origin, aims[hand].direction, ray.pixel, &hits[hand]);
+		}
+	}
+	trigger[size_t(Hand::Left)] = g_input.resolver.active(Event::InteractLeft) || g_input.resolver.active(Event::StashLeft);
+	trigger[size_t(Hand::Right)] = g_input.resolver.active(Event::InteractRight) || g_input.resolver.active(Event::StashRight);
+
+	MenuPointer & pointer = g_input.pointer;
+	pointer.update(shown, g_input.rays, trigger);
+
+	const size_t owner = size_t(pointer.owner());
+	if(pointer.active()) {
+		setPointerBeam(true, aims[owner].origin, hits[owner]);
+	} else {
+		setPointerBeam(false);
+	}
+
+	if(shown != g_input.panelShown) {
+		g_input.panelShown = shown;
+		gameevent::Event("vr.pointer")("state", shown ? "on" : "off")("hand", handName(pointer.owner()))
+			("tracked", int(aims[0].valid) + int(aims[1].valid));
+	}
+	if(!shown) {
+		return;
+	}
+	if(pointer.ownerChanged()) {
+		gameevent::Event("vr.pointer.owner")("hand", handName(pointer.owner()));
+	}
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		const bool pressed = trigger[hand] && pointer.pressedOnPanel(Hand(hand));
+		if(pressed) {
+			gameevent::Event("vr.pointer.click")("hand", handName(Hand(hand)))
+				("x", g_input.rays[hand].pixel.x, 0)("y", g_input.rays[hand].pixel.y, 0);
+		}
+	}
+	if(pointer.offPanelPresses() != g_input.loggedOffPanelPresses) {
+		g_input.loggedOffPanelPresses = pointer.offPanelPresses();
+		gameevent::Event("vr.pointer.muted")("hand", handName(pointer.owner()))("reason", "off the panel");
 	}
 }
 
@@ -148,6 +219,10 @@ void updateInput() {
 		}
 	}
 
+	// The hands on the floating panel (#34), before the events reach the engine: a press moves the
+	// cursor under the pressing hand in the same update, so the click lands where it points
+	updatePointer();
+
 	// Events -> the engine's actions, mouse buttons and keys (#74)
 	const GameInputState & game = g_input.game.update(g_input.resolver, g_input.input);
 	applyToEngine(game);
@@ -158,6 +233,21 @@ void updateInput() {
 	if(game.recenter) {
 		resetHeadReference("button");
 	}
+}
+
+PointerStatus pointerStatus() {
+	const MenuPointer & pointer = g_input.pointer;
+	PointerStatus status;
+	status.shown = g_input.panelShown;
+	status.active = pointer.active();
+	status.owner = handName(pointer.owner());
+	status.cursor = pointer.cursor();
+	status.beam = pointerBeamShown();
+	status.onPanel = { g_input.rays[0].onPanel, g_input.rays[1].onPanel };
+	status.clicks = pointer.clicks();
+	status.offPanelPresses = pointer.offPanelPresses();
+	status.ownerChanges = pointer.ownerChanges();
+	return status;
 }
 
 const GameInputState & gameInput() {

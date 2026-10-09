@@ -68,6 +68,8 @@ set(arxtest_TESTCASES
 	tests/vr/SimRigTest.cpp
 	tests/vr/InterfaceSizeTest.h
 	tests/vr/InterfaceSizeTest.cpp
+	tests/vr/LocomotionTest.h
+	tests/vr/LocomotionTest.cpp
 
 
 )
@@ -96,6 +98,7 @@ set(arxtest_SOURCES
 	src/vr/EyeImage.cpp
 	src/vr/SimRig.cpp
 	src/vr/InterfaceSize.cpp
+	src/vr/Locomotion.cpp
 
 
 	${arxtest_TESTCASES}

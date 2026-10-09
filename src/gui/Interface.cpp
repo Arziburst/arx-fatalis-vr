@@ -132,6 +132,10 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "util/Cast.h"
 #include "util/Range.h"
 
+#include "vr/HeadTracking.h"
+#include "vr/Locomotion.h"
+#include "vr/VRInput.h"
+
 #include "window/RenderWindow.h"
 
 
@@ -882,7 +886,37 @@ void ArxGame::managePlayerControls() {
 		} else if(MOVE_PRECEDENCE == PLAYER_MOVE_STRAFE_RIGHT) {
 			MOVE_PRECEDENCE = 0;
 		}
-		
+
+		// The left stick walks where the player looks (#31, D-008), on top of the keys: the flags pick
+		// the animation and with it the game's own speed, the vector only the direction
+		{
+			const vr::BodyStatus & body = vr::bodyStatus();
+			const float yaw = vr::stickWalkYaw(player.angle.getYaw(), body.lookYaw, body.bodyYaw, body.offset);
+			const vr::StickWalk walk = NOMOREMOVES ? vr::StickWalk() : vr::stickWalk(vr::gameInput().move, yaw);
+			if(walk.moving()) {
+				float multi = 10.f * FD * MoveDiv;
+				if(walk.forward) {
+					player.m_strikeDirection = 2;
+					player.m_currentMovement |= PLAYER_MOVE_WALK_FORWARD;
+				}
+				if(walk.backward) {
+					player.m_strikeDirection = 3;
+					player.m_currentMovement |= PLAYER_MOVE_WALK_BACKWARD;
+					multi = 5.f * FD * MoveDiv;
+				}
+				if(walk.left) {
+					player.m_strikeDirection = 0;
+					player.m_currentMovement |= PLAYER_MOVE_STRAFE_LEFT;
+				}
+				if(walk.right) {
+					player.m_strikeDirection = 1;
+					player.m_currentMovement |= PLAYER_MOVE_STRAFE_RIGHT;
+				}
+				tm += walk.direction * multi;
+			}
+			vr::reportWalk(walk, yaw, player.angle.getYaw());
+		}
+
 		g_moveto = player.pos + tm;
 	}
 	

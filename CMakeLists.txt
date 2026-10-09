@@ -1261,6 +1261,7 @@ set(VR_SOURCES
 	src/vr/HeadPose.cpp
 	src/vr/HeadTracking.cpp
 	src/vr/InterfaceSize.cpp
+	src/vr/Locomotion.cpp
 	src/vr/SimRig.cpp
 	src/vr/VRActions.cpp
 	src/vr/VRBindings.cpp

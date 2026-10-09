@@ -708,3 +708,11 @@ high); `[datetime]::Parse($obj.updated)` on a JSON field gave a date a month off
 a PowerShell test helper with parameter `$G` and a local `$g` failed with "cannot convert Graphics to Int32".
 **Cause:** the runner took everything after the operator as the value; PowerShell variable names are case-insensitive, so `$g` and `$G` are one variable.
 **Do:** write timeouts as `60s` (the parser now rejects a value with a trailing bare number); never name two variables in one scope by letters that differ only in case.
+
+## 2026-10-09 — The stick walk is applied on level 10, but the player does not move
+
+**Symptom:** `walk-forward.xrs` on `--loadlevel 10` with `setplayercontrols on`: `vr.walk state=start` / `end` are logged
+and `vr.input.walk.walking` is true, yet `player.x` / `player.z` stay exactly the same.
+**Cause:** level 10 is the scripted intro (see "On `--loadlevel 10` the inventory never closes" above): the movement
+the controls ask for is not applied to the player there - not a locomotion bug.
+**Do:** check walking on a playable save: `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence walk-forward` (#31).

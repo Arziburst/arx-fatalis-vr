@@ -284,6 +284,9 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   each event came on since the start, `layout`: the binding of every event (`none`, `right.a`, `left.grip+left.trigger`,
   `left.stick_click:long`). Nothing in the game reacts to the events yet (#74); `input-check.ps1`
   asserts on `presses` and `layout`.
+  `walk` (#31): the stick walk the player controls applied in the last update — `walking`, `yaw` (the
+  stick's forward, engine degrees [0, 360): the look, D-008), `heading` (`player.yaw` then), `dirX` / `dirZ`
+  (the world direction, unit length), `walks` (episodes since the start).
 - `drawCheck` appears once a `drawcheck` was requested: `{"seq":1,"running":false,"frames":120,
   "framesDiffering":0,"pixels":307200,"maxPixelsDiffering":0,"maxDelta":0,"capture":""}` —
   `frames` compared so far, `framesDiffering` of them with at least one differing pixel,
@@ -456,6 +459,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.head.reference` | a head reference was taken: the first head sample after the start, a level load, a new source, the runtime's recenter, the channel's `recenter` | `reason` (`level`, `runtime`, `channel`, `source hmd`, …), `source`, `yaw` (the head's heading, engine degrees), `bodyYaw`, `x`, `y`, `z` (the head in LOCAL, metres) |
 | `vr.head.lean` | the lean reaches the interim limit, and when it is back within (#24, until #26) | `state=clamped\|free`, `limitM` (limit 100) |
 | `vr.body.drag` | the head reached the 25° dead zone and pulls the body along, and when it let go (5° inside) (#25) | `state=start\|end`, `head`, `body` (degrees from the heading), `deadZone` (limit 100) |
+| `vr.walk` | the left stick left its dead zone and the player walks, and when it came back to rest (#31) | `state=start\|end`, `yaw` (the stick's forward = the look), `heading`, `look` (yaw − heading, the head's turn) (limit 200) |
 
 Not here yet, by design: melee attacks *refused* by a gate (F-66) come with the VR swing detector
 (#39); the recenter chord with #28; locomotion, interaction and rune-drawing in VR add their own events in the
@@ -804,7 +808,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 .\scripts\dev\xrs-run.ps1 -Check               # parse every sequence: syntax errors with their lines, no game
 .\scripts\dev\xrs-run.ps1 snap-turn -- --loadslot 0   # other arx.exe arguments replace the sequence's @args
 .\scripts\dev\xrs-run.ps1 recenter -Attach     # against a game that already runs with --test-dir (writing a sequence step by step)
-.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence walk-forward   # the same through the smoke test
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence walk-forward   # the same through the smoke test, on a test save
 .\scripts\dev\img-diff.ps1 -A a.bmp -B b.bmp [-Grid 16 | -Bands 16]   # two shots: mean difference 0-255, which regions changed
 ```
 
@@ -832,7 +836,8 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 |---|---|---|
 | `look-around` | the rig and both located eyes follow a 40° yaw and a pitch; two shots of a still head agree | #24: the pictures change with the head |
 | `snap-turn` | `vr-input tap right.stick_right` reaches the game (syncs advance), no errors | #32: the player turns |
-| `walk-forward` | the player stands still without input; the stick is held and let go | #31: the player moves |
+| `walk-forward` | on `mvp-new-game` (`-Save`; level 10 never moves the player, TRAPS.md): still without input, the stick held forward moves him | — (#31) |
+| `walk-look` | on `mvp-new-game`: with the head turned ±90° the stick walks where the head looks (D-008), with the head ahead along the heading; the heading stays, one `vr.walk` start / end per push (`vr.input.walk` in status.json) | — (#31) |
 | `recenter` | a head offset is set and read back | #28: `recenter` is accepted (it logs one expected `[W]`) |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by

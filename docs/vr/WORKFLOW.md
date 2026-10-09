@@ -165,8 +165,8 @@ test station.
 - **Never start SteamVR, never close it.** A launch without `--no-vr` may run in VR only when
   `vrserver.exe` is already running (the owner started SteamVR); otherwise the scripts make it flat
   (`--no-vr` added, said in the output) and `smoke-test.ps1 -Vr` is skipped (exit 2). Only the owner
-  passes `-StartSteamVR` (`run-windows.ps1`, `test-pr.ps1`). Workers do not run `vrstartup.exe` or
-  stop `vrmonitor` / `vrserver` by hand.
+  passes `-StartSteamVR` (`run-windows.ps1`, `test-pr.ps1`) and `-StopSteamVR` (`test-pr.ps1`,
+  `scripts/dev/stop-steamvr.ps1`). Workers do not run `vrstartup.exe` or stop `vrmonitor` / `vrserver` by hand.
 - **One game at a time on this PC.** Every launch, flat or VR, holds a game lock slot
   (`%ProgramData%\ArxFatalisVR\locks\game-<n>.lock`, writable by every Windows account so the CI runner
   service shares it with the owner and the workers, #205; VR launches also `vr.lock`) while the game runs. A
@@ -349,7 +349,12 @@ Helper scripts used by the commands:
 - `scripts/dev/new-worktree.ps1 -Issue <n> -Type <type> -Name <name>` — a worker's own working copy
   (a git worktree from `origin/main`, outside OneDrive); `-Remove` once the task is merged
 - `scripts/dev/test-pr.ps1 <pr>` — the owner's test station: the PR's worktree, built if needed, its
-  *How to test*, the build id, launch
+  *How to test*, the build id, launch. Needs no GitHub API (#171): when it does not answer (rate limit, no
+  network) the PR is resolved with `git ls-remote` + the local worktree (`-Branch` skips even that), and
+  `-StartSteamVR` (the owner's switch) starts SteamVR explicitly — Steam URL, then `vrstartup.exe` — and waits for
+  `vrserver` + `vrcompositor` before the game starts in VR; `-StopSteamVR` (the owner's switch) quits SteamVR after the
+  game exits the way its own "Exit SteamVR" does (`vrmonitor://quit`, nothing killed) so the headset powers down
+- `scripts/dev/stop-steamvr.ps1` — the same SteamVR quit on its own (the owner's switch; workers never run it)
 - `scripts/dev/cycle-report.ps1` — the coordinator's report: PRs, board, leftovers, worktrees, next task
 - `scripts/dev/plan-next.ps1` — the coordinator's task order by rule (#187): the tasks ready to start now (dependencies Done,
   earliest open wave, free area, VR lane and worker limits, no `needs-design`), each with its `start-worker.ps1` line, and the

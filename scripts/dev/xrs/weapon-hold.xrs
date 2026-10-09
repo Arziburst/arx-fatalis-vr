@@ -93,7 +93,8 @@ vr-sim hand right on
 # the IK starts from does not move with the strike, and the sword stays in the hand. (VR has no control for
 # the combat mode, D-019; the channel's "combat on" is the weapon key. The combat mode's fight stance is
 # layer 0 - the body's, like walking (D-009) - and turns the torso: measured 10 units at the shoulder, so the
-# shoulder is taken once the stance has settled, 300 ms of blend)
+# shoulder is taken once the stance has settled, 300 ms of blend). Measured: the shoulder moves 0.25 units over
+# the strike with the arm layer suppressed, 2.25 with it applied (the check broken on purpose) - 1 apart either way
 @remember suppressed0 vr.weapon.suppressedFrames
 combat on
 @until vr.weapon.combatMode eq true 5s
@@ -110,12 +111,12 @@ vr-sim action trigger right 0
 @frames 10
 @log vr\.body\.armAnim.*suppressed.*strike 5s
 @assert vr.weapon.armAnimSuppressed eq true
-@assert vr.body.right.shoulder.x gt {shoulderX-2}
-@assert vr.body.right.shoulder.x lt {shoulderX+2}
-@assert vr.body.right.shoulder.y gt {shoulderY-2}
-@assert vr.body.right.shoulder.y lt {shoulderY+2}
-@assert vr.body.right.shoulder.z gt {shoulderZ-2}
-@assert vr.body.right.shoulder.z lt {shoulderZ+2}
+@assert vr.body.right.shoulder.x gt {shoulderX-1}
+@assert vr.body.right.shoulder.x lt {shoulderX+1}
+@assert vr.body.right.shoulder.y gt {shoulderY-1}
+@assert vr.body.right.shoulder.y lt {shoulderY+1}
+@assert vr.body.right.shoulder.z gt {shoulderZ-1}
+@assert vr.body.right.shoulder.z lt {shoulderZ+1}
 @assert vr.weapon.place eq hand
 @assert vr.weapon.bladeAngle lt 2
 combat off

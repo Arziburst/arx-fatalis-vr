@@ -39,7 +39,8 @@
 	Build directory containing arx.exe. Default: the one build-windows.ps1 uses for this working copy.
 
 .PARAMETER DataDir
-	Arx Fatalis install folder. Default: found automatically in the Steam libraries.
+	Arx Fatalis install folder, passed as --data-dir. Default: none - the game finds the install in the
+	Steam libraries itself (#79), and the test checks the "Steam data:" line of arx.log.
 
 .PARAMETER TestDir
 	The test channel directory. Default: $env:ARXVR_TEST_DIR or %LOCALAPPDATA%\ArxFatalisVR\test\<folder>-<hash>.
@@ -134,8 +135,6 @@ if (-not $BuildDir) { $BuildDir = Get-DefaultBuildDir $ArxSourceDir $Config }
 $copy = Get-ArxWorkingCopyInfo $ArxSourceDir
 $stamp = Assert-ArxFreshBuild -SourceDir $ArxSourceDir -BuildDir $BuildDir -Config $Config -Head $copy.Head -Rebuild:$Rebuild
 $exe = Join-Path $BuildDir 'arx.exe'
-if (-not $DataDir) { $DataDir = Find-ArxFatalisSteamInstall }
-if (-not $DataDir) { throw 'Arx Fatalis (Steam app 1700) was not found in any Steam library. Install it, or pass -DataDir.' }
 if (-not $TestDir) { $TestDir = Get-ArxTestDir }
 if ($UserDir -and $Shared) { throw '-UserDir and -Shared exclude each other' }
 if (-not $UserDir) { $UserDir = Get-ArxUserDir -Shared:$Shared }
@@ -173,7 +172,9 @@ function Invoke-SmokeRun([int]$Run) {
 		$crashesBefore = @(Get-ChildItem $crashDir -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
 
 		# Start-Process does not quote arguments: paths with spaces need explicit quotes
-		$argList = @('--data-dir', "`"$DataDir`"", '--windowed', '--test-dir', "`"$TestDir`"")
+		$argList = @()
+		if ($DataDir) { $argList += '--data-dir', "`"$DataDir`"" }
+		$argList += '--windowed', '--test-dir', "`"$TestDir`""
 		if (-not $Shared) { $argList += '--user-dir', "`"$UserDir`"", '--config-dir', "`"$UserDir`"" }
 		if (-not $Vr) { $argList += '--no-vr' }
 		$argList += $ArxArgs
@@ -279,6 +280,14 @@ function Invoke-SmokeRun([int]$Run) {
 		Write-Check ($process.ExitCode -eq 0) "exit code $($process.ExitCode)"
 		Write-Check $logFresh "arx.log written after the launch"
 		Write-Check $clean "'Clean shutdown' in arx.log"
+		if (-not $DataDir) {
+			# The game found the data in the Steam libraries itself (#79)
+			$steamLine = if ($logFresh) { Select-String -Path $log -Pattern 'Steam data: ' | Select-Object -First 1 -ExpandProperty Line } else { $null }
+			$steamFound = [bool]$steamLine -and ($steamLine -notmatch 'Steam data: (Arx Fatalis .* not found|not searched)')
+			$steamText = if ($steamLine) { $steamLine -replace '^.*Steam data: ', '' } else { 'no "Steam data:" line' }
+			Write-Check $steamFound "data found in the Steam libraries: $steamText"
+			if ($logFresh -and -not $steamFound) { $reasons.Add("Arx Fatalis data not found in the Steam libraries: $steamText") }
+		}
 		Write-Check ($newCrashes.Count -eq 0) "no new crash report ($($crashesAfter.Count) in $crashDir)"
 		Write-Check ($errorLines.Count -eq 0) "no [E] line in arx.log ($($errorLines.Count) found, $($warningLines.Count) warnings)"
 		Write-Check ($final -and [int]$final.errors -eq 0) "status.json errors == 0 (errors=$(if ($final) { $final.errors } else { '?' }), cleanShutdown=$(if ($final) { $final.cleanShutdown } else { '?' }))"

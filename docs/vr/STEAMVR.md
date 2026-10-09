@@ -35,8 +35,8 @@ script ran. The manifest points at one `arx.exe` (this working copy, this config
 matches the *running executable path* against `binary_path_windows`, so after switching to another
 working copy or build type, run the script again.
 
-The manifest also carries `--data-dir <Arx Fatalis install>` in `arguments`, so the entry in the
-SteamVR library can start the game until the engine finds the data itself (#79). Launching from
+The manifest carries no `arguments`: the game finds the Arx Fatalis data in the Steam libraries
+itself (#79; `-DataDir` on the script adds `--data-dir` for another install). Launching from
 SteamVR proper is task #80.
 
 ## What SteamVR shows

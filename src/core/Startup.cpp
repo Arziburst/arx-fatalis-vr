@@ -213,6 +213,9 @@ void logStartupBanner(int argc, char ** argv, const fs::path & logFile,
 		}
 	}
 
+	// Steam data: "<folder>" (Steam library <library>) | not found: <why> (#79, D-004)
+	LogInfo << "Steam data: " << fs::getSteamDataStatus();
+
 }
 
 } // anonymous namespace

@@ -136,7 +136,8 @@ if ($Remove) {
 	}
 	Invoke-Git 'fetch', '-q', '--prune', 'origin' | Out-Null
 	$merged = @(Invoke-Git 'branch', '--merged', 'origin/main', '--format', '%(refname:short)') -contains $Branch
-	if ($merged) { Invoke-Git 'branch', '-d', $Branch | Out-Null; Write-Host "deleted local branch $Branch (merged into origin/main)" }
+	# -D: the merged check above is against origin/main; `-d` would check the (possibly behind) local main / upstream
+	if ($merged) { Invoke-Git 'branch', '-D', $Branch | Out-Null; Write-Host "deleted local branch $Branch (merged into origin/main)" }
 	elseif (@(Invoke-Git 'branch', '--list', $Branch)) { Write-Host "kept local branch $Branch - not merged into origin/main (git branch -D $Branch to drop it)" }
 	return
 }

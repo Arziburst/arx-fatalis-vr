@@ -50,7 +50,7 @@ Dependencies come from vcpkg in manifest mode (`vcpkg.json`, triplet `x64-window
 ```powershell
 .\scripts\build-windows.ps1              # Release build of this working copy
 .\scripts\build-windows.ps1 -Config Debug -Clean
-.\scripts\run-windows.ps1                # runs the build with Arx Fatalis data found in the Steam libraries
+.\scripts\run-windows.ps1                # runs the build; the game finds the Arx Fatalis data in the Steam libraries itself (#79)
 .\scripts\run-windows.ps1 -- --skiplogo --loadslot 0   # extra arguments go to arx.exe; load save slot 0 directly
 .\scripts\run-windows.ps1 -Fullscreen    # test runs are windowed by default (arx.exe --windowed); this opts out
 .\scripts\run-windows.ps1 -Isolated      # this working copy's own user dir (log, config, saves) instead of Saved Games; -Saves save0000 copies a save in

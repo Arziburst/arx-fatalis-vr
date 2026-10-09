@@ -17,6 +17,9 @@ set(arxtest_TESTCASES
 	tests/io/fs/FilesystemTest.h
 	tests/io/fs/FilesystemTest.cpp
 
+	tests/io/fs/SteamLibraryTest.h
+	tests/io/fs/SteamLibraryTest.cpp
+
 	tests/io/log/FileLoggerTest.h
 	tests/io/log/FileLoggerTest.cpp
 

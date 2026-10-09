@@ -35,6 +35,8 @@
 
 #include "core/Version.h"
 #include "gui/Credits.h"
+#include "io/fs/FilePath.h"
+#include "io/fs/Filesystem.h"
 #include "io/log/Logger.h"
 #include "platform/CrashHandler.h"
 #include "platform/ProgramOptions.h"
@@ -87,6 +89,11 @@ struct OpenXRState {
 
 	PFN_xrGetOpenGLGraphicsRequirementsKHR getOpenGLGraphicsRequirements = nullptr;
 
+	//! The active runtime manifest the loader uses (empty: none installed) - kept for status.json
+	std::string manifest;
+	//! "<name> <version>" of the runtime that answered xrCreateInstance - kept after shutdown
+	std::string runtime;
+
 };
 
 OpenXRState g_xr;
@@ -122,33 +129,125 @@ const char * sessionStateName(XrSessionState state) {
 	}
 }
 
+/*!
+ * Where the OpenXR loader will look for the runtime, found the way the loader finds it:
+ * the XR_RUNTIME_JSON environment variable first, then (on Windows) the registry.
+ */
+struct RuntimeManifest {
+	std::string path;     //!< the manifest file, empty when no runtime is installed
+	std::string source;   //!< where \ref path was selected from, for the log
+	std::string registry; //!< the registry's own ActiveRuntime when XR_RUNTIME_JSON overrides it
+};
+
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
 
-/*!
- * Path of the active OpenXR runtime manifest, the same way the loader finds it:
- * the XR_RUNTIME_JSON environment variable first, then the registry.
- */
-std::string activeRuntimeManifest() {
+//! The registry's ActiveRuntime (HKLM first, then HKCU, like the loader) and the key it came from
+std::string registryActiveRuntime(std::string & key) {
 
-	if(const char * env = std::getenv("XR_RUNTIME_JSON")) {
-		if(*env) {
-			return env;
-		}
-	}
-
-	const HKEY roots[] = { HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER };
-	for(HKEY root : roots) {
+	const struct { HKEY root; const char * name; } roots[] = {
+		{ HKEY_LOCAL_MACHINE, "HKLM" },
+		{ HKEY_CURRENT_USER, "HKCU" },
+	};
+	for(const auto & root : roots) {
 		WCHAR buffer[2 * MAX_PATH];
 		DWORD size = sizeof(buffer);
-		LSTATUS status = RegGetValueW(root, L"SOFTWARE\\Khronos\\OpenXR\\1", L"ActiveRuntime",
+		LSTATUS status = RegGetValueW(root.root, L"SOFTWARE\\Khronos\\OpenXR\\1", L"ActiveRuntime",
 		                              RRF_RT_REG_SZ, nullptr, buffer, &size);
 		if(status == ERROR_SUCCESS) {
+			key = std::string(root.name) + "\\SOFTWARE\\Khronos\\OpenXR\\1\\ActiveRuntime";
 			return platform::WideString::toUTF8(buffer);
 		}
 	}
 
 	return std::string();
 }
+
+#endif
+
+RuntimeManifest findRuntimeManifest() {
+
+	RuntimeManifest manifest;
+
+	std::string registry;
+	std::string registryKey;
+	#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+	registry = registryActiveRuntime(registryKey);
+	#endif
+
+	const char * env = std::getenv("XR_RUNTIME_JSON");
+	if(env && *env) {
+		manifest.path = env;
+		manifest.source = "XR_RUNTIME_JSON";
+		if(!registry.empty() && !boost::iequals(registry, manifest.path)) {
+			manifest.registry = registry;
+		}
+	} else if(!registry.empty()) {
+		manifest.path = registry;
+		manifest.source = registryKey;
+	}
+
+	return manifest;
+}
+
+/*!
+ * One line per run naming the runtime manifest and where it was selected from - flat runs
+ * included, so every log answers "which runtime, and why" (#115, research row F-98). A leftover
+ * XR_RUNTIME_JSON is the classic reason for "it started flat": it is named, with what it overrides.
+ */
+void logRuntimeSelection(const RuntimeManifest & manifest) {
+
+	if(manifest.path.empty()) {
+		#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+		LogInfo << "No OpenXR runtime manifest: XR_RUNTIME_JSON is not set and the registry has no"
+		           " SOFTWARE\\Khronos\\OpenXR\\1\\ActiveRuntime (HKLM or HKCU)";
+		#else
+		LogInfo << "OpenXR runtime manifest: XR_RUNTIME_JSON is not set, the loader searches its default locations";
+		#endif
+		return;
+	}
+
+	std::ostringstream oss;
+	oss << "OpenXR runtime manifest: \"" << manifest.path << "\" (from " << manifest.source;
+	if(!manifest.registry.empty()) {
+		oss << ", overriding the registry's \"" << manifest.registry << '"';
+	}
+	oss << ')';
+	LogInfo << oss.str();
+
+	if(!fs::is_regular_file(fs::path(manifest.path))) {
+		LogWarning << "OpenXR runtime manifest \"" << manifest.path << "\" does not exist - the loader will find"
+		              " no runtime" << (manifest.source == "XR_RUNTIME_JSON"
+		                                ? " (unset XR_RUNTIME_JSON to use the registry's runtime)" : "");
+	}
+
+}
+
+/*!
+ * What the name of the runtime that answers should contain, judged by its manifest path - only
+ * for the runtimes we know; nullptr when the manifest does not tell.
+ */
+const char * expectedRuntimeToken(const std::string & manifest) {
+
+	static const struct { const char * pathToken; const char * nameToken; } known[] = {
+		{ "steamvr", "SteamVR" },
+		{ "steamxr", "SteamVR" },
+		{ "oculus", "Oculus" },
+		{ "mixedreality", "Mixed Reality" },
+		{ "windowsmr", "Mixed Reality" },
+		{ "varjo", "Varjo" },
+		{ "monado", "Monado" },
+		{ "virtualdesktop", "VirtualDesktop" },
+	};
+	for(const auto & entry : known) {
+		if(boost::icontains(manifest, entry.pathToken)) {
+			return entry.nameToken;
+		}
+	}
+
+	return nullptr;
+}
+
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
 
 bool isProcessRunning(const WCHAR * executable) {
 
@@ -183,14 +282,12 @@ bool isProcessRunning(const WCHAR * executable) {
  */
 bool runtimeIsReady() {
 
-	std::string manifest = activeRuntimeManifest();
-	if(manifest.empty()) {
+	if(g_xr.manifest.empty()) {
 		LogInfo << "No OpenXR runtime is installed, starting in flat mode";
 		return false;
 	}
-	LogDebug("Active OpenXR runtime: " << manifest);
 
-	if(boost::icontains(manifest, "steamvr") && !isProcessRunning(L"vrserver.exe")) {
+	if(boost::icontains(g_xr.manifest, "steamvr") && !isProcessRunning(L"vrserver.exe")) {
 		LogInfo << "SteamVR is the OpenXR runtime but is not running - start SteamVR first to play in VR."
 		           " Starting in flat mode";
 		return false;
@@ -267,9 +364,19 @@ bool createInstance() {
 
 	std::string runtime = std::string(util::loadString(properties.runtimeName)) + " "
 	                      + versionString(properties.runtimeVersion);
-	LogInfo << "Using OpenXR runtime " << runtime;
+	g_xr.runtime = runtime;
+	LogInfo << "OpenXR runtime answered: " << runtime;
 	CrashHandler::setVariable("OpenXR runtime", runtime);
 	credits::setLibraryCredits("vr", "OpenXR (" + runtime + ")");
+
+	// The runtime that answered should be the one the manifest names (research row F-98)
+	if(const char * expected = expectedRuntimeToken(g_xr.manifest)) {
+		if(!boost::icontains(runtime, expected)) {
+			LogWarning << "OpenXR runtime that answered (" << runtime << ") is not the one the manifest"
+			              " names (" << expected << ", \"" << g_xr.manifest << "\") - check XR_RUNTIME_JSON"
+			              " and the registry";
+		}
+	}
 
 	result = xrGetInstanceProcAddr(g_xr.instance, "xrGetOpenGLGraphicsRequirementsKHR",
 	                               reinterpret_cast<PFN_xrVoidFunction *>(&g_xr.getOpenGLGraphicsRequirements));
@@ -385,6 +492,11 @@ XrVersion currentOpenGLVersion() {
 bool initialize() {
 
 	arx_assert(g_xr.instance == XR_NULL_HANDLE);
+
+	// Which runtime the loader would use and where that was decided - on every run, flat included
+	RuntimeManifest manifest = findRuntimeManifest();
+	g_xr.manifest = manifest.path;
+	logRuntimeSelection(manifest);
 
 	if(g_disableVR) {
 		LogInfo << "VR disabled on the command line (--no-vr), starting in flat mode";
@@ -544,6 +656,14 @@ const char * sessionStateString() {
 	return sessionStateName(g_xr.sessionState);
 }
 
+std::string runtimeName() {
+	return g_xr.runtime;
+}
+
+std::string runtimeManifest() {
+	return g_xr.manifest;
+}
+
 void shutdown() {
 
 	destroySession();
@@ -579,6 +699,14 @@ void pollEvents() { }
 
 const char * sessionStateString() {
 	return "none";
+}
+
+std::string runtimeName() {
+	return std::string();
+}
+
+std::string runtimeManifest() {
+	return std::string();
 }
 
 bool isEnabled() {

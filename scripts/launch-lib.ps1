@@ -7,7 +7,8 @@
 #      --no-vr) when vrserver.exe is not running and says so; only -StartSteamVR (the owner's switch)
 #      starts SteamVR, through Start-SteamVr.
 #   2. One game at a time on this machine. Every launch, flat or VR, holds a game lock slot
-#      (%LOCALAPPDATA%\ArxFatalisVR\game-<n>.lock) while the game runs; a VR launch holds vr.lock as
+#      (%ProgramData%\ArxFatalisVR\locks\game-<n>.lock, writable by every account, so the CI runner
+#      service and the owner see each other; #205) while the game runs; a VR launch holds vr.lock as
 #      well. A launch waits in line with a timeout and names the holders (working copy, branch, pid).
 #      Like the VR lock of #123, a lock is a file opened without write sharing: Windows releases the
 #      handle when the holder dies, so a crash or a kill leaves no stale lock. A game that runs outside
@@ -26,12 +27,14 @@ function Get-ArxAppDataDir { Join-Path $env:LOCALAPPDATA 'ArxFatalisVR' }
 
 function ConvertTo-ShortSha([string]$Sha) { if ($Sha -and $Sha.Length -gt 9) { $Sha.Substring(0, 9) } else { $Sha } }
 
-# Machine-wide launch settings: %LOCALAPPDATA%\ArxFatalisVR\settings.json, e.g. { "maxGames": 2 }
-# (how many games may run at once; default 1 - the owner's rule). Missing file or key: the defaults.
+# Machine-wide launch settings: settings.json in the lock folder (%ProgramData%\ArxFatalisVR\locks, so the
+# CI runner service reads the same file), else the old %LOCALAPPDATA%\ArxFatalisVR\settings.json, e.g.
+# { "maxGames": 2 } (how many games may run at once; default 1 - the owner's rule). Missing file or key:
+# the defaults.
 function Get-ArxLaunchSettings {
 	$settings = @{ maxGames = 1 }
-	$file = Join-Path (Get-ArxAppDataDir) 'settings.json'
-	if (Test-Path $file) {
+	$file = @(Get-ArxLockDirs | ForEach-Object { Join-Path $_ 'settings.json' } | Where-Object { Test-Path $_ })[0]
+	if ($file) {
 		try {
 			$json = Get-Content $file -Raw | ConvertFrom-Json
 			if ($json.maxGames) { $settings.maxGames = [Math]::Max(1, [int]$json.maxGames) }
@@ -133,8 +136,67 @@ function Assert-ArxFreshBuild([string]$SourceDir, [string]$BuildDir, [string]$Co
 
 # --- 2. The game lock ------------------------------------------------------------------------------------
 
-function Get-VrLockPath { Join-Path (Get-ArxAppDataDir) 'vr.lock' }
-function Get-GameLockPath([int]$Slot) { Join-Path (Get-ArxAppDataDir) "game-$Slot.lock" }
+# The lock files live in a machine-wide folder, not in %LOCALAPPDATA%: the CI runner service is another
+# Windows account (NT AUTHORITY\NETWORK SERVICE) with another %LOCALAPPDATA%, and its game must queue
+# behind the owner's and the workers' games and the other way round (#205).
+#   %ProgramData%\ArxFatalisVR\locks   ($env:ARXVR_LOCK_DIR overrides it, for tests and odd machines)
+# The folder gets an ACL that lets every user create, open and delete the lock files (Modify, inherited by
+# the files), so a file left behind by one account is not stuck for another. The old location
+# (%LOCALAPPDATA%\ArxFatalisVR) is still taken and checked next to the new one, so a working copy that
+# runs an older launch-lib.ps1 keeps seeing every lock of this account; drop it once no such copy is left.
+function Get-ArxLockDir {
+	if ($env:ARXVR_LOCK_DIR) { return $env:ARXVR_LOCK_DIR }
+	Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'ArxFatalisVR\locks'
+}
+
+# The lock folders in use: the machine-wide one, then the old per-account one
+function Get-ArxLockDirs {
+	$dirs = @(Get-ArxLockDir)
+	$legacy = Get-ArxAppDataDir
+	if ($legacy -ine $dirs[0]) { $dirs += $legacy }
+	$dirs
+}
+
+function Get-VrLockPath { Join-Path (Get-ArxLockDir) 'vr.lock' }
+function Get-GameLockPath([int]$Slot) { Join-Path (Get-ArxLockDir) "game-$Slot.lock" }
+
+# The SIDs that must be able to create, open and delete lock files: Authenticated Users (which the
+# NETWORK SERVICE token includes) and BUILTIN\Users
+$script:ArxLockDirSids = @('S-1-5-11', 'S-1-5-32-545')
+
+# Which of $script:ArxLockDirSids have no inheritable Modify rule on $Dir (empty when the folder is fine)
+function Get-ArxLockDirMissingSids([string]$Dir) {
+	$modify = [Security.AccessControl.FileSystemRights]::Modify
+	$both = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit
+	$have = @()
+	foreach ($r in (Get-Acl -LiteralPath $Dir).Access) {
+		if ($r.AccessControlType -ne 'Allow' -or ($r.FileSystemRights -band $modify) -ne $modify -or ($r.InheritanceFlags -band $both) -ne $both) { continue }
+		if ($r.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) { continue }
+		try { $have += $r.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } catch { }
+	}
+	@($script:ArxLockDirSids | Where-Object { $_ -notin $have })
+}
+
+# Create the machine-wide lock folder with the ACL above (or add the missing rules to an existing one).
+# Whoever creates the folder owns it and may change the ACL; another account that finds the folder
+# without the rules cannot repair it - then it only warns, and taking a lock fails with the real error.
+function Initialize-ArxLockDir([string]$Dir) {
+	[IO.Directory]::CreateDirectory($Dir) | Out-Null
+	$missing = @(Get-ArxLockDirMissingSids $Dir)
+	if (-not $missing) { return }
+	try {
+		# only the DACL section: Set-Acl would also write the owner, group and audit rules, which needs privileges
+		$info = [IO.DirectoryInfo]::new($Dir)
+		$acl = [IO.FileSystemAclExtensions]::GetAccessControl($info, [Security.AccessControl.AccessControlSections]::Access)
+		foreach ($sid in $missing) {
+			$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+				[Security.Principal.SecurityIdentifier]::new($sid), 'Modify', 'ContainerInherit,ObjectInherit', 'None', 'Allow'))
+		}
+		[IO.FileSystemAclExtensions]::SetAccessControl($info, $acl)
+	} catch {
+		Write-Warning "cannot open the lock folder $Dir to all users ($($_.Exception.Message)); a game started by another Windows account may not see the locks"
+	}
+}
 
 # What a lock file says ("pid=... game=... since=... what=... copy=... branch=..."), or a note
 function Read-ArxLockHolder([string]$Path) {
@@ -150,39 +212,57 @@ function Read-ArxLockHolder([string]$Path) {
 	}
 }
 
-# Everything the lock files say right now: one line per held lock (free files are skipped)
+# Everything the lock files say right now: one line per held lock (free files are skipped; a lock taken in
+# both folders is listed once)
 function Get-ArxLockHolders {
 	$lines = @()
-	foreach ($file in Get-ChildItem (Get-ArxAppDataDir) -Filter '*.lock' -File -ErrorAction SilentlyContinue) {
-		$held = $true
-		try {
-			# a file we can open without sharing is free (left behind by a holder that died)
-			$probe = [IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
-			$probe.Dispose()
-			$held = $false
-		} catch [IO.IOException] { }
-		if ($held) { $lines += "$($file.Name): $(Read-ArxLockHolder $file.FullName)" }
+	foreach ($dir in Get-ArxLockDirs) {
+		foreach ($file in Get-ChildItem $dir -Filter '*.lock' -File -ErrorAction SilentlyContinue) {
+			$held = $true
+			try {
+				# a file we can open without sharing is free (left behind by a holder that died)
+				$probe = [IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+				$probe.Dispose()
+				$held = $false
+			} catch [IO.IOException] { }
+			if ($held) { $lines += "$($file.Name): $(Read-ArxLockHolder $file.FullName)" }
+		}
 	}
-	$lines
+	$lines | Select-Object -Unique
 }
 
 # arx.exe processes that no lock names (started by hand, or by a script before it recorded the pid);
-# the crash processor (arx.exe --crashinfo=...) is not a game
+# the crash processor (arx.exe --crashinfo=...) is not a game. The process list comes from WMI, not from
+# Get-Process: the .Path of a process of another account (the CI runner service) is empty there (#205).
 function Get-ArxGamesOutsideLock {
-	$games = @(Get-Process arx -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.EndsWith('\arx.exe', [StringComparison]::OrdinalIgnoreCase) })
-	if (-not $games) { return @() }
 	$known = @()
-	foreach ($file in Get-ChildItem (Get-ArxAppDataDir) -Filter '*.lock' -File -ErrorAction SilentlyContinue) {
-		if ((Read-ArxLockHolder $file.FullName) -match 'game=(\d+)') { $known += [int]$Matches[1] }
+	foreach ($dir in Get-ArxLockDirs) {
+		foreach ($file in Get-ChildItem $dir -Filter '*.lock' -File -ErrorAction SilentlyContinue) {
+			if ((Read-ArxLockHolder $file.FullName) -match 'game=(\d+)') { $known += [int]$Matches[1] }
+		}
 	}
-	$commandLines = @{}
-	foreach ($p in (Get-CimInstance Win32_Process -Filter "Name='arx.exe'" -ErrorAction SilentlyContinue)) { $commandLines[[int]$p.ProcessId] = "$($p.CommandLine)" }
-	@($games | Where-Object { $_.Id -notin $known -and $commandLines[[int]$_.Id] -notmatch '--crashinfo' })
+	@(Get-CimInstance Win32_Process -Filter "Name='arx.exe'" -ErrorAction SilentlyContinue | Where-Object {
+		[int]$_.ProcessId -notin $known -and "$($_.CommandLine)" -notmatch '--crashinfo' -and
+		(-not $_.ExecutablePath -or $_.ExecutablePath.EndsWith('\arx.exe', [StringComparison]::OrdinalIgnoreCase))
+	} | ForEach-Object { [pscustomobject]@{ Id = [int]$_.ProcessId; Path = "$($_.ExecutablePath)" } })
 }
 
 function Open-ArxLockFile([string]$Path) {
 	$stream = [IO.File]::Open($Path, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::Read)
 	[pscustomobject]@{ Path = $Path; Stream = $stream; Writer = [IO.StreamWriter]::new($stream, [Text.UTF8Encoding]::new($false)) }
+}
+
+# Take the lock file $Name in every lock folder (machine-wide and old). Throws an IOException, with nothing
+# left open, when one of them is held.
+function Open-ArxLockFiles([string]$Name) {
+	$opened = @()
+	try {
+		foreach ($dir in Get-ArxLockDirs) { $opened += Open-ArxLockFile (Join-Path $dir $Name) }
+	} catch {
+		Close-ArxLockFiles $opened
+		throw
+	}
+	$opened
 }
 
 function Write-ArxLockFile($File, [string]$Text) {
@@ -203,7 +283,7 @@ function Close-ArxLockFiles($Files) {
 # is held or a game runs outside the lock. Prints the holders while waiting. Returns the lock object
 # (keep it, pass it to Set-ArxGameLockGame and Exit-ArxGameLock) or $null when the wait timed out.
 function Enter-ArxGameLock([string]$What, [string]$Copy, [string]$Branch, [switch]$Vr, [int]$TimeoutSec = 300) {
-	New-Item -ItemType Directory -Force (Get-ArxAppDataDir) | Out-Null
+	foreach ($dir in Get-ArxLockDirs) { Initialize-ArxLockDir $dir }
 	$maxGames = (Get-ArxLaunchSettings).maxGames
 	$deadline = (Get-Date).AddSeconds($TimeoutSec)
 	$lastReport = [DateTime]::MinValue
@@ -213,11 +293,11 @@ function Enter-ArxGameLock([string]$What, [string]$Copy, [string]$Branch, [switc
 		$busy = $null
 		try {
 			if ($Vr) {
-				try { $taken += Open-ArxLockFile (Get-VrLockPath) } catch [IO.IOException] { $busy = 'the VR lock is held' }
+				try { $taken += Open-ArxLockFiles 'vr.lock' } catch [IO.IOException] { $busy = 'the VR lock is held' }
 			}
 			if (-not $busy) {
 				for ($s = 1; $s -le $maxGames -and -not $slot; $s++) {
-					try { $taken += Open-ArxLockFile (Get-GameLockPath $s); $slot = $s } catch [IO.IOException] { }
+					try { $taken += Open-ArxLockFiles "game-$s.lock"; $slot = $s } catch [IO.IOException] { }
 				}
 				if (-not $slot) { $busy = "all $maxGames game slot(s) are held" }
 			}

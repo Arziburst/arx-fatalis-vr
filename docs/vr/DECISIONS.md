@@ -8,6 +8,9 @@ it, and the old one gets `Status: Superseded by D-xxx` with a one-line reason. T
 *Decision* column of research catalogs (e.g. [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md)):
 a changed decision keeps its history in that cell.
 
+<!-- d-new-literal -->**Numbering:** while a PR is open a new decision is `## D-NEW: <title>`; the number is assigned at merge by
+`scripts/dev/number-decisions.ps1` (see [WORKFLOW.md](WORKFLOW.md#parallel-work)). Do not pick one by hand.
+
 ---
 
 ## D-031: The head reference comes from a worn headset; one world scale of 100 units per meter
@@ -128,7 +131,10 @@ The owner's answers to the design questions of block B (D-017).
   above it, the calibration **raises itself**; **no seated / standing setting**. Physical crouch triggers
   ~30 cm below the calibrated height and stands up again at ~20 cm below (#27, #28, #100).
 - **Turning:** **snap 45°** by default, smooth ~120°/s as the option; both the angle and the speed are
-  adjustable in the settings (#32, #178).
+  adjustable in the settings (#32, #178). **A held stick repeats the snap** — "tick tick tick": the first
+  repeat 0.4 s after the snap, then every 0.4 s while held; the pause is adjustable, 0 = one snap per push
+  (`cfg.ini` `vr_snap_turn_repeat`) *(owner, 2026-10-10, after the #32 headset run: "поворот работает
+  отлично, рывок удобный", but holding should keep turning)*.
 - **Body yaw** follows the head with a **25° dead zone** and ~1.5 s relaxation by default (#25; judged
   later in the headset).
 
@@ -455,7 +461,7 @@ Valve Index first; Quest 3 Touch the same (A/B on the right, X/Y on the left).
 | Action | Control |
 |---|---|
 | Walk | left stick, forward = where you look (D-008); **speed by deflection** — slightly = sneak / walk, fully = run; no run button |
-| Turn | right stick left / right; **snap ~~30°~~ → 45° by default (D-028)**, smooth turn selectable in the settings |
+| Turn | right stick left / right; **snap ~~30°~~ → 45° by default (D-028)**, repeated every 0.4 s while held (D-028, owner 2026-10-10), smooth turn selectable in the settings (MVP: `cfg.ini` `vr_smooth_turn`, `vr_snap_turn_angle`, `vr_snap_turn_repeat`, `vr_smooth_turn_speed`, #32) |
 | Jump | A (right) |
 | Crouch | physically (D-018) or a toggle on the right stick down |
 | Reticle per hand | a hidden ray from each hand; the reticle turns yellow with the item's name on an interactive object (D-016) |
@@ -491,7 +497,7 @@ new mechanics; the owner's key case — sword in the right hand, open the invent
 floor into it with the left hand — works with these buttons.
 
 ### Consequences
-#30 action set and #35 bindings follow this table; #32 snap 30° default + smooth option; #33 jump, crouch
+#30 action set and #35 bindings follow this table; #32 snap 45° default + smooth option (was 30°); #33 jump, crouch
 toggle, speed by deflection; #34 menu pointer for both hands; #37 / #38 the reticle rules (the proposal in
 RESEARCH-reference-mods.md 13g with these answers); #49 the centred panel for the inventory and the book.
 

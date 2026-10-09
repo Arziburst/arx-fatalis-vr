@@ -50,6 +50,29 @@ function Read-ArxStatus([string]$Dir = (Get-ArxTestDir)) {
 	return $null
 }
 
+# The marker smoke-test.ps1 writes into the test channel folder right after it started the game (#258): until
+# it exists the smoke test may still be waiting for the game lock (D-014, up to -LockTimeoutSec), which is not
+# the game's start-up. A check that drives the game from outside starts its own timeouts only after the marker.
+function Get-ArxLaunchMarker([string]$Dir = (Get-ArxTestDir)) { Join-Path $Dir 'launched.txt' }
+
+# Delete the marker of an earlier run; a check does it before it starts the smoke test job
+function Clear-ArxLaunchMarker([string]$Dir = (Get-ArxTestDir)) {
+	Remove-Item (Get-ArxLaunchMarker $Dir) -Force -ErrorAction SilentlyContinue
+}
+
+# Wait until the game was started (the marker exists): $true. Returns $false when the job ended first - the
+# smoke test was skipped (lock busy, exit 2) or failed before the launch; the caller then goes on to the job's
+# verdict instead of waiting for a game that never starts. No timeout of its own: the lock wait is bounded by
+# smoke-test.ps1 (-LockTimeoutSec), and $Job leaving the Running state is the end of it.
+function Wait-ArxGameLaunched($Job, [string]$Dir = (Get-ArxTestDir), [int]$PollMs = 200) {
+	$marker = Get-ArxLaunchMarker $Dir
+	while ($true) {
+		if (Test-Path -LiteralPath $marker) { return $true }
+		if ($Job.State -ne 'Running') { return (Test-Path -LiteralPath $marker) }
+		Start-Sleep -Milliseconds $PollMs
+	}
+}
+
 # Poll status.json until $Until (a script block that gets the status) returns true.
 # Returns the status; throws after $TimeoutSec seconds.
 function Wait-ArxStatus(

@@ -27,6 +27,7 @@
 #include "math/Types.h"
 #include "vr/VRControls.h"
 #include "vr/VRGameInput.h"
+#include "vr/VRTurn.h"
 
 /*!
  * \brief The controllers as gameplay events (#30, D-020)
@@ -77,6 +78,22 @@ struct PointerStatus {
 
 PointerStatus pointerStatus();
 
+//! The turn settings of cfg.ini (\c vr_smooth_turn, \c vr_snap_turn_angle, \c vr_snap_turn_repeat,
+//! \c vr_smooth_turn_speed - #32)
+TurnSettings turnSettings();
+
+/*!
+ * \brief The yaw the player turns by in this frame from the turn axis (#32) - call once per frame
+ *
+ * \param seconds the frame's duration
+ * \param allowed false while the player cannot turn (menus, cinematics, blocked controls)
+ * \return degrees, right positive
+ */
+float updateTurn(float seconds, bool allowed);
+
+//! Snaps and the total turned so far - for status.json
+const TurnController & turnState();
+
 /*!
  * \brief The test channel's \c vr-input command
  *
@@ -84,7 +101,10 @@ PointerStatus pointerStatus();
  * \c stick \c left|right \c <x> \c <y> (e.g. \c stick \c left \c 0 \c 1) - hold a stick deflected
  * (the analog value only; its direction controls are \c down / \c up);
  * \c bind \c <event> \c <binding> (e.g. \c bind \c jump \c left.grip+left.a) - remap one event;
- * \c reset - the default layout for the current controllers.
+ * \c reset - the default layout for the current controllers;
+ * \c turn \c snap|smooth, \c turn \c angle \c <degrees>, \c turn \c speed \c <degrees per second>,
+ * \c turn \c repeat \c <seconds> -
+ * the turn settings, as cfg.ini would set them (#32).
  *
  * \return an empty string on success, otherwise the reason it was refused
  */

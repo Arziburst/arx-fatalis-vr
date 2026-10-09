@@ -463,6 +463,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("inventoryOpen", (player.Interface & INTER_INVENTORY) != 0);
 		json.value("bookOpen", (player.Interface & INTER_PLAYERBOOK) != 0);
 		json.value("crouchToggle", bGCroucheToggle);
+		// The character crouches - the button, the toggle, the head (#100) or a low ceiling
+		json.value("crouched", (player.m_currentMovement & PLAYER_CROUCH) != 0);
 		json.value("jumping", player.jumpphase != NotJumping);
 		json.end();
 		// The first-person camera after this frame's effects: bob = how far the camera left the stable head
@@ -738,6 +740,20 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("moveY", game.move.y);
 		json.value("turn", game.turn);
 		json.end();
+		// What the turn axis did (#32): the settings, snaps so far and the total turned (degrees, right positive)
+		const vr::TurnSettings turnSettings = vr::turnSettings();
+		const vr::TurnController & turn = vr::turnState();
+		json.object("turn");
+		json.value("mode", vr::turnModeName(turnSettings.mode));
+		json.value("snapAngle", turnSettings.snapAngle);
+		json.value("smoothSpeed", turnSettings.smoothSpeed);
+		json.value("snapRepeat", turnSettings.snapRepeat);
+		json.value("snaps", turn.snaps());
+		json.value("lastSnap", turn.lastSnap());
+		json.value("turned", turn.turned());
+		json.value("updates", turn.updates());
+		json.value("allowed", turn.allowed());
+		json.end();
 		json.end();
 	}
 	// The last rate / cadence report of the frame loop (#20, F-07): one per 3 s while the session runs
@@ -1005,6 +1021,20 @@ std::string execute(std::string_view line) {
 			vr::setComfortMode(vr::ComfortMode::Off);
 		} else {
 			return refuse("comfort: expected auto, on or off, got \"" + std::string(rest) + "\"");
+		}
+		return std::string();
+	}
+
+	if(word == "crouch") {
+		// The crouch toggle without an input device, for flat runs (#263)
+		std::string mode(rest);
+		util::makeLowercase(mode);
+		if(mode == "on") {
+			bGCroucheToggle = true;
+		} else if(mode == "off") {
+			bGCroucheToggle = false;
+		} else {
+			return refuse("crouch: expected on or off, got \"" + std::string(rest) + "\"");
 		}
 		return std::string();
 	}

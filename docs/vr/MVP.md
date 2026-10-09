@@ -7,8 +7,8 @@ as fast as possible, show it to people, and only invest in polish and the full g
 - **Board:** every MVP task is in **Todo** with milestone `M1 MVP`; everything else is in **Backlog**.
 - **Rule of thumb:** if a task is not needed to play the demo scenario below, it is not MVP.
 - **Design decisions that shape the MVP:** stick forward = look direction (D-008), full body with IK
-  arms (D-009), no rays from the hands — runes drawn in the air, grab by reach, a pointer only in menus
-  (D-010). See [DECISIONS.md](DECISIONS.md); features taken from reference mods are in
+  arms (D-009), no rays from the hands — runes drawn in the air, a pointer only in menus (D-010); world
+  interaction with a hand-aimed reticle from either hand — left drags, right takes to the inventory (D-016). See [DECISIONS.md](DECISIONS.md); features taken from reference mods are in
   [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) (*Decision* column).
 
 ## Demo scenario (what the MVP must show)
@@ -22,7 +22,8 @@ first areas after it):
    looking down you see **your own body**, and your arms follow the controllers.
 2. Walk around with the thumbstick (forward = where you look), turn with snap or smooth turn, crouch
    (physically or with the right stick), jump (A).
-3. Pick up items, open doors and chests, pull a lever — **by reaching and grabbing with the hand**.
+3. Pick up items, open doors and chests, pull a lever — **aiming a reticle with either hand**: the left
+   hand drags an item over surfaces, the right hand takes it into the inventory (D-016).
 4. Open the inventory and character book on a **floating panel** and equip a weapon with the short
    pointer that appears only while a menu is open. Health and mana are **two bars on the left wrist**.
 5. Fight a goblin by **physically swinging** the weapon held in the character's hand; hits register
@@ -43,7 +44,7 @@ The desktop window mirrors one eye, so the demo can be recorded and shown.
 | Body | The full player model: legs and torso animated by the engine, head hidden, arms driven by the controllers via IK (D-009) |
 | Locomotion | Thumbstick movement relative to the look direction, snap and smooth turn, physical crouch, crouch toggle (right stick down) and jump (A) |
 | Input | OpenXR actions with Index bindings, mapped onto the engine's existing actions; the trigger always works as a fallback |
-| Interaction | Reach and grab with the hand: pick up, throw, use doors / levers / chests / bodies — no rays (D-010) |
+| Interaction | A hand-aimed reticle from either hand, no visible beam: left drags an item over surfaces, right takes it into the inventory; doors / levers / chests / bodies with the same reticle (D-016; reference: VHVR, #166) |
 | Melee | The weapon in the model's hand; hits by contact plus a swing detector; damage from swing speed; haptics |
 | Magic | Runes drawn in the air with the hand, fed into the existing recognizer; spell direction from the hand, invisible |
 | UI | Menus, inventory, book, map, dialogs and notes on one floating panel with a pointer only while it is open; health and mana on the left wrist |
@@ -76,7 +77,7 @@ Tasks are done strictly one after another, each tested before the next starts.
 | Checkpoint | What the owner can do in the headset |
 |---|---|
 | **A. Walk in VR** *(current)* | Stereo view, look around with the head, correct scale, walk and turn with the sticks, physical crouch. Started with `--skiplogo --loadslot <n>`, no in-VR menu yet |
-| **B. Body and interaction** | Floating panel with menus, inventory and book; pointer in menus; your full body with arms following the controllers; health and mana on the left wrist; grab items, doors, chests, levers by hand; start a new game from the menu in VR; tester build for a friend |
+| **B. Body and interaction** | Floating panel with menus, inventory and book; pointer in menus; your full body with arms following the controllers; health and mana on the left wrist; items, doors, chests, levers with the hand-aimed reticle; start a new game from the menu in VR; tester build for a friend |
 | **C. Fight** | Weapon in the character's hand, physical swings, haptics on hit |
 | **D. Cast** | Draw runes in the air with the hand to cast spells |
 | **E. MVP done** | Launch from SteamVR with no setup, demo scenario end to end, gameplay video |
@@ -136,8 +137,9 @@ dependencies are met; when a task is split, replace it with its parts.
 32. #70 — Test save library for MVP scenarios *(scripts via the #99 channel where possible; the owner records the rest)*
 33. #36 — Full body: the player model with arms driven by the controllers via IK (D-009, F-52, F-49)
 34. #116 — Health and mana as two bars on the left wrist (F-83)
-35. #37 — Pick up, use and throw items with the hand — reach and grab, no ray (D-010, F-57, F-72)
-36. #38 — Doors, levers, chests and bodies with the hand (D-010, F-57)
+35. #166 — Research: world interaction in Valheim VR — the reference for D-016, #37, #38
+35. #37 — Items with the hand-aimed reticle: left hand drags, right hand takes to the inventory (D-016, F-57, F-72)
+36. #38 — Doors, levers, chests and bodies with the same reticle (D-016, F-57)
 37. #79 — Find the Arx Fatalis data automatically in Steam libraries (F-97)
 38. #88 — Tester build for a friend (F-91, F-96, F-100) *(then the friend tests on Quest 3 — #87, Backlog until then)*
 38. #132 — Diagnostics D4: crash reports under SteamVR, debug symbols kept for every tester build
@@ -207,7 +209,8 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #70 test saves | build | plain | #99, #123 |
 | #36 full body with IK arms | render | VR | #72, #24, #74, decisions on #118 / #120 |
 | #116 wrist vitals | ui | VR | #36 |
-| #37 grab and throw | combat | VR | #36, #74 |
+| #166 research: VHVR world interaction | docs | plain | — (owner's decisions before #37 / #38) |
+| #37 reticle: drag, take to inventory | combat | VR | #74, #166 (no longer #36, D-016) |
 | #38 doors, levers, chests | combat | VR | #37 |
 | #79 Steam data detection | core | plain | — |
 | #88 tester build | build | plain | #79, #123, decisions on #118 / #120 |
@@ -225,8 +228,8 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | Wave | VR lane (needs the headset) | Plain lane (no headset) |
 |---|---|---|
 | **0** — sequential, until #123 is merged | — | #99 → #124 → #123 |
-| **1** | #18 → #20 → #21 | #147, #93, #71, #114, #115 → #129, #76, #118, #120, #79 |
-| **2** | #24, #19 | #112 → #113, #30, #131, #130 |
+| **1** | #18 → #20 → #21 | #147, #93, #71, #114, #115 → #129, #76, #118, #120, #79, #141, #151, #155 |
+| **2** | #24, #19 | #112 → #113, #30, #131, #130, #166 |
 | **3** | #74, #72, #27, #25, #35 | #73, #70, #127 |
 | **4** — finishes checkpoint A | #28, #100, #31, #32, #42 | #80 |
 | **5** — checkpoint B | #49, #33, #36 | #88 → #132 *(after the owner's decisions on #118 / #120)* |

@@ -10,6 +10,37 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-016: World interaction with a hand-aimed reticle from either hand — left drags, right takes to the inventory
+
+- **Date:** 2026-10-09
+- **Status:** Accepted (replaces the "world interaction by reach" point of D-010)
+- **Decided by:** project owner
+
+### Decision
+- Items and world objects are targeted with a **reticle** — a small crosshair where the hand points, with
+  **no visible beam** — from **either hand**, within the engine's own interaction distance. The engine's
+  own "what is under the cursor" test runs at the reticle (the hidden hand ray of F-57 replaces the mouse).
+- **Left hand** trigger: **drag** the item with the engine's own drag — carry it, move it over surfaces,
+  set it down on any plane, as the mouse does in the original.
+- **Right hand** trigger: **take the item into the inventory**, where the game allows it.
+- Doors, levers, chests, bodies and characters: the same reticle; the trigger is the game's "use" click.
+- Unchanged from D-010: no rays or lasers from the hands, runes drawn in the air with the hand, spell
+  direction from the hand, a pointer only while a menu or the inventory is open (#34).
+
+### Why
+In the original the player walks up to an item, aims the mouse at it and drags it over surfaces or into
+the inventory. Grabbing with the hand and placing by hand would need new carry-and-place mechanics and
+much more work; a reticle keeps the game's own logic and is what VR ports commonly do. Two hands keep it
+natural. The reference to learn from is **Valheim VR (VHVR)** — its world interaction is studied in detail
+before #37 / #38.
+
+### Consequences
+- #37 and #38 become "reticle + the engine's drag / use" instead of reach-and-grab; #36 (full body with IK
+  arms) no longer has to hold items in the palm.
+- Catalog: F-57 changed (reticle, no grab by reach); F-138 (distance-grab gesture) not taken.
+
+---
+
 ## D-015: Model and effort by task size — Opus by default, Fable only for really hard tasks
 
 - **Date:** 2026-10-09
@@ -172,7 +203,7 @@ the coordinator already knows which tasks may run together.
 ## D-010: No rays from the hands; runes drawn in the air with the hand; grab by reach
 
 - **Date:** 2026-10-08
-- **Status:** Accepted
+- **Status:** Accepted, except "world interaction by reach" — superseded by D-016 (a hand-aimed reticle from either hand)
 - **Decided by:** project owner (while deciding on [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md))
 
 ### Decision

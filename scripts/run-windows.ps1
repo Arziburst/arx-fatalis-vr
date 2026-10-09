@@ -55,8 +55,13 @@
 	Save slots to copy into the isolated user directory before the launch, e.g. save0000 (needs
 	-Isolated). Source: -SaveLibrary, $env:ARXVR_SAVE_LIBRARY, or the player's save folder.
 
+.PARAMETER Save
+	A save of the test save library (#70, scripts\dev\make-test-saves.ps1), e.g. mvp-goblin-fight (needs
+	-Isolated): the ONLY save of the isolated user directory, and `--loadslot 0` is the default argument.
+
 .PARAMETER SaveLibrary
-	Folder holding the save slots for -Saves (the test save library, #70).
+	Folder holding the saves for -Saves / -Save (the test save library, #70). Default:
+	$env:ARXVR_SAVE_LIBRARY or %LOCALAPPDATA%\ArxFatalisVR\savelib.
 
 .PARAMETER TestChannel
 	Start with the test channel (--test-dir) of this working copy, so scripts/dev/game-status.ps1 and
@@ -94,6 +99,7 @@ param(
 	[switch]$Isolated,
 	[string]$UserDir,
 	[string[]]$Saves,
+	[string]$Save,
 	[string]$SaveLibrary,
 	[switch]$TestChannel,
 	[switch]$StartSteamVR,
@@ -128,8 +134,8 @@ if ($UserDir) { $Isolated = $true } elseif ($Isolated) { $UserDir = Get-DefaultU
 if ($Isolated) {
 	New-Item -ItemType Directory -Force $UserDir | Out-Null
 	$dirArgs += '--user-dir', $UserDir, '--config-dir', $UserDir
-} elseif ($Saves) {
-	throw '-Saves copies saves into an isolated user directory: add -Isolated (the player''s own saves are never touched)'
+} elseif ($Saves -or $Save) {
+	throw '-Saves / -Save copy saves into an isolated user directory: add -Isolated (the player''s own saves are never touched)'
 }
 if ($TestChannel) { $dirArgs += '--test-dir', (Get-DefaultTestDir $SourceDir) }
 
@@ -139,6 +145,10 @@ Write-Host "    data: $(if ($DataDir) { "$DataDir (--data-dir)" } else { 'found 
 if ($Isolated) { Write-Host "    user dir: $UserDir (isolated)" } else { Write-Host "    user dir: $(Get-SharedUserDir) (shared)" }
 if ($TestChannel) { Write-Host "    test channel: $(Get-DefaultTestDir $SourceDir)" }
 if ($Saves) { Copy-ArxSaves -Names $Saves -UserDir $UserDir -Library $SaveLibrary }
+if ($Save) {
+	Use-ArxSave -Name $Save -UserDir $UserDir -Library $SaveLibrary
+	if (-not $ArxArgs) { $ArxArgs = @('--loadslot', '0') }
+}
 
 # No SteamVR start without the owner: flat unless SteamVR already runs (or -StartSteamVR)
 $vr = Resolve-ArxVrMode -ArxArgs $ArxArgs -StartSteamVR:$StartSteamVR

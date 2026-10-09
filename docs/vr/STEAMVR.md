@@ -80,8 +80,13 @@ no game lock, no launch ledger, no fresh-build check (D-014 binds the scripts, n
 player's path, so it is meant for the owner; rebuild the working copy before playing. The vrmanifest
 of `register-steamvr.ps1` is independent of the shortcut: it names the loading card.
 
-Whether the shortcut shows up in the SteamVR dashboard and starts in VR from there is the headset
-check of #80; the result goes here. If it does not show up, the fallback flow is: SteamVR running,
+**Result of the headset test (#80, 2026-10-09): it works.** With the shortcut written by the script
+(app id 3841125220, "VR library: yes") and Steam restarted, "Arx Fatalis VR" is in the SteamVR
+dashboard library and starts from there in VR. Known wrinkle: the dashboard shows several tile
+variants for the game — probably the vrmanifest of `register-steamvr.ps1` and the shortcut as two
+entries — and the one that worked had no picture; sorting that out is #213.
+
+If the shortcut ever stops showing up in the dashboard, the fallback flow is: SteamVR running,
 start "Arx Fatalis VR" from the Steam library (desktop or Big Picture) — the game detects the
 headset by itself (D-004).
 ## What SteamVR shows

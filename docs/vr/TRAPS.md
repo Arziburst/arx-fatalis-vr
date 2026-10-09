@@ -26,6 +26,84 @@ a CRC32 written in PowerShell gives wrong values or the same error mid-loop.
 **Do:** suffix 32-bit constants with `L` (`0x80000000L`, `0xEDB88320L`), compute in `[long]`, and cast
 to `[uint32]` only at the end (`scripts/steam-shortcuts-lib.ps1`, #80).
 
+## 2026-10-09 — "Blocked [rule]: ..." on a command that looks harmless (the safety hook)
+
+**Symptom:** a Bash / PowerShell / Edit call is refused with `Blocked [push-main|force-push|delete-outside|
+owner-write|owner-discard]: ...`, or a command is slow (~0.5 s) before it runs.
+**Cause:** the `PreToolUse` safety hook (#185, [WORKFLOW.md](WORKFLOW.md#the-safety-hook-185-d-021)) denies the
+five rules named in the message; the reason says what to do instead. It reads the command line, so a
+command that *names* the owner's copy or a path outside the worktree is judged by what it writes or deletes
+there. `cd <owner's copy>` followed by a write is `owner-write` even with relative paths. A call that
+contains `push`, `reset`, `clean`, `checkout`, `rm`/`del`/`rd`, `cd` or `arx-fatalis-vr` takes the slow path
+through PowerShell; that is normal. Hook errors never block (fail open) and are logged.
+**Do:** follow the "instead" in the message. Read `%LOCALAPPDATA%\ArxFatalisVR\safety-hook.log` for the exact
+command and rule. For a real false positive tell the coordinator (do not rewrite the command to dodge the
+rule): the fix is a rule change plus a row in `scripts/dev/hooks/test-safety-guard.ps1`. A new session picks
+up a changed `.claude/settings.json` only on start; a hook that "does nothing" in a session started from
+a copy without the file (the owner's copy before the merge) is not loaded at all.
+
+## 2026-10-09 — PowerShell rules code that silently matches nothing: int keys, doubles, Write-Host (#187)
+
+**Symptom:** a lookup by issue number or wave finds nothing (a reason prints `wave 1 still has #` with the list empty), a
+dictionary hands out the wrong entry, or a test harness that captures a script's output sees an empty string and "0 failing".
+**Cause:** (1) `[ordered]@{}` is an `OrderedDictionary`: `$d[1]` with an **int** key is read as *position* 1, not key 1 —
+use a plain `@{}` and sort afterwards. (2) `Measure-Object -Minimum` answers a **double**; `$hashtable[1.0]` does not find
+the int key `1` — cast with `[int]`. (3) `Write-Host` goes to the information stream: `& script 2>&1` does not capture
+it, `*>&1` does.
+**Do:** cast numbers to `[int]` before using them as keys; no int keys in `[ordered]` tables; capture a script's whole output
+with `*>&1`; and break the rule once on purpose to see the test fail (test-plan-next.ps1 was checked that way).
+
+## 2026-10-09 — The CI game is another Windows account: its log, lock and build are not in your profile (#127)
+
+**Symptom:** a CI game check failed (or passed) but `%LOCALAPPDATA%\ArxFatalisVR\userdirs\…\arx.log` and `launches.log`
+show nothing about it; or a smoke test of yours and the CI game ran together although "one game at a time" holds.
+**Cause:** the runner service is `NT AUTHORITY\NETWORK SERVICE` (session 0). Its `%LOCALAPPDATA%` is
+`C:\Windows\ServiceProfiles\NetworkService\AppData\Local`, so CI has its own build, user directory, channel, game lock and
+ledger. (Until #205 the game lock was per account too and did not span accounts; it now lives in `%ProgramData%\ArxFatalisVR\locks`,
+shared by both. A working copy that has not merged `main` since still has the old launch-lib: its launches do not see a CI game
+(they look in their own account only), while CI sees its `arx.exe` through WMI and waits - merge `main` into such a copy.) It also
+has no Steam registry entry of the owner, hence `ARXVR_DATA_DIR`.
+The game itself runs fine there: no desktop, window and OpenGL context are created anyway (measured: `GAMEPLAY` after ~1 s).
+**Do:** read the evidence from the workflow artifact `game-checks` (logs, `status.json`, crash reports, digest), not from
+your profile. Do not "fix" a CI failure by starting an interactive runner before the artifact says the window was the problem.
+
+## 2026-10-09 — Backslashes vanish from Windows paths written through sed or a shell string (#186)
+
+**Symptom:** a doc or script line reads `.scriptsdevpr-checks.ps1` instead of `.\scripts\dev\pr-checks.ps1`.
+**Cause:** `sed 's#...#.\scripts\dev\x#'` in Git Bash, or any unquoted/double-quoted shell string, treats `\s`, `\d`, `\p`
+as escapes and drops the backslash; the edit still "succeeds".
+**Do:** edit files with the Edit/Write tools, not `sed` with Windows paths; after any scripted edit grep the changed
+lines for the path (`git diff -U0 | grep pr-checks`) before committing.
+
+## 2026-10-09 — "GraphQL limit" errors from commands that look like plain REST (#186)
+
+**Symptom:** `API rate limit already exceeded` / `unknown owner type` from `gh issue view`, `gh pr view`, `gh pr list`,
+`gh pr checks --watch`, `gh issue list` or a dev script, while `gh api repos/...` calls work and
+`gh api rate_limit` shows `core` untouched; `gh api rate_limit` may even show thousands of `graphql` points left.
+**Cause:** every high-level `gh` command except `gh api` with a `repos/...` path is GraphQL (`gh project ...` the
+heaviest), and the GraphQL quota (hourly points plus a secondary, short-term limit) is shared by every session of the
+account. A board query that fails is easy to read as "nothing there" (`next-task.ps1` said the queue was empty).
+**Do:** use `gh api repos/Arziburst/arx-fatalis-vr/...` (REST) or the helpers in `scripts/dev/github-lib.ps1`
+(`Get-GhIssue`, `Get-GhPull`, `Get-GhCommitChecks`, ...) and `scripts/dev/pr-checks.ps1 <pr> -Watch`; the board comes from
+the 5-minute cache (`board-cache.json`) and a spent limit queues the move (`board-queue.json`, `set-status.ps1 -Flush`).
+`ARXVR_FORCE_GRAPHQL_ERROR=1` makes every GraphQL call fail like a spent limit, to try the degraded paths. Also:
+PowerShell 7 turns ISO date strings of `ConvertFrom-Json` into `DateTime` — the cache stores epoch seconds instead.
+
+## 2026-10-09 — A reference project's manual and settings screen describe a feature its code no longer has
+
+**Symptom:** research on OpenMW VR finds two accounts of the same facts. The manual says controllers "vibrate in
+response to successful hits, and to being hit", and the game's VR page has a *haptics enabled* setting; it also says
+the bindings screen "does NOT do any sanity checking". The code: the hit haptics are commented out (`TODO: Port to
+lua`), the setting is read by nothing, no shipped script calls the haptics function; and the rebinding code refuses
+a conflicting binding with a message. A config comment says the hand-offset sliders run "0 = -1 meters, 1 = 1
+meters"; the code computes `(v - 0.5)` m. The `player height` setting is read into a scale that nothing applies.
+**Cause:** the manual, the settings window and the config comments were written before a port or refactor (combat
+code moving to Lua, the bindings screen becoming a script page) and not updated; a screen that lists a setting
+proves nothing about what the code does with it.
+**Do:** for every catalog row that rests on "the project does X", search the code for the *use* of the setting or the
+call, not its declaration, and say which of manual, screen and code the row rests on; when they disagree the row
+follows the code and names the disagreement (RESEARCH-reference-mods.md, F-44, F-167, F-171, F-174).
+
 ## 2026-10-09 — On `--loadlevel 10` the inventory never closes, `dodamage player` does nothing, and the game goes to the menu after a minute
 
 **Symptom:** a smoke test on the default `--loadlevel 10` opens the inventory through the channel
@@ -54,6 +132,50 @@ have no `"on <name>"` entry; `toString()` asserts on that (a no-op in Release) a
 which special-cases both.
 **Do:** never call `ScriptEventName::toString()` without handling `SM_EXECUTELINE` / `SM_DUMMY`
 first (see `script.error` in `ScriptEvent.cpp`, #130), or print through `operator<<`.
+
+## 2026-10-09 — A lever, a chest, a door cannot be found by coordinates (#70)
+
+**Symptoms:** `setpos` next to `lever_0012` / `chest_metal_0052` and a screenshot shows a bare wall, a
+black screen, the player's own feet, or a goblin; the entity is nowhere in the picture. About 6 of
+the 13 launches of #70 went into it before this was written down.
+**Causes, all measured:** (1) an entity's `pos` — from `entities` — is its **floor** position, so
+looking at "the entity" from 2 m with pitch 0 aims 1.7 m above it; `lookat` now aims 40 units above the
+floor and sets the pitch. (2) `setpos` / `player.pos` is the **eye**: `y` = floor − 170; a floor-level
+`y` puts the eye in the floor (black or a wall's back) until gravity pulls the player up. (3) The
+level is narrow corridors and cells: many points 1.5-2.5 m away on a ring around an object are
+inside a wall or in another room (black or wall-only screenshots in the contact sheets of the 4
+compass points around each of 7 objects); which ones are valid cannot be told without a picture. (4) The pick that decides what a click acts on is not exposed: `FlyingOverIO` is cleared in
+mouse look (`ArxGame::render`: `PLAYER_MOUSELOOK_ON`), and `FlyingOverObject(screen centre)` read from
+the channel found nothing from any of the 20 level markers within 700 units of the levers, chests and
+portcullises either (3 hits for `note_0004` with `FlyingOverIO`, on the rings). Why is not known.
+**Do:** place the player for **items and NPCs** by coordinates and a screenshot (what `mvp-items` and
+`mvp-goblin-fight` do, `docs/vr/TESTING.md`); for a lever, chest or door the owner records the save by
+hand in flat mode (`--loadlevel 1`, walk there, F5/save), or a task adds a way to see what the engine
+picks (log `InterClick` at the centre with the distances it tests: `InterClick` needs the entity within
+360 units of the **eye**, i.e. about 3.2 m along the floor, and its bounding box under the cursor). Do not
+spend launches on ring or marker searches again.
+
+## 2026-10-09 — The awakening of a new game blocks the controls for 30-40 s; a save made then is no use (#70)
+
+**Symptom:** a save made right after `newgame` loads into a hero lying on the floor with the letterbox
+on, the camera at the floor, and nothing responds (`player.y` 2837 instead of 2935).
+**Cause:** the level 1 script plays the awakening; `BLOCK_PLAYER_CONTROLS` stays `true` (status.json
+`player.controlsBlocked`) for 30-42 s (3 runs). It is not a `.cin`: the cinematic skip of #124 does
+not apply, and no `Skipping cinematic` line is logged. A save keeps the blocked state.
+**Do:** wait for `player.controlsBlocked` to be `false` before the first `save` (`@until
+player.controlsBlocked False` in a scenario); never infer "playable" from `state: GAMEPLAY`.
+
+## 2026-10-09 — `--loadslot N` is the Nth newest save, not a folder; and a console `equip` does nothing (#70)
+
+**Symptoms:** (1) after another save was copied or made, `--loadslot 1` loads something else; (2)
+`equip short_sword_0030` is acked `errors=0` and the sword is not equipped.
+**Causes:** (1) the list of saves is sorted by the save file's time, **newest first**, at one-second
+resolution (`SaveGameList::update`): a slot number is a position, and two saves made in the same second
+swap. (2) `equip <target>` is the **item's** command (`ARX_EQUIPMENT_Equip(target, context entity)`):
+typed for the player it asks to equip the player on the sword, which does nothing and says nothing.
+**Do:** (1) to load a given save, make it the only one — `smoke-test.ps1 -Save <name>` /
+`run-windows.ps1 -Isolated -Save <name>` do — and keep a second between saves of a scenario script;
+(2) `short_sword_0030.equip player`, and check `entities short_sword_0030` says `show=6`.
 
 ## 2026-10-09 — Scripting a launch from PowerShell: three tools that quietly do the wrong thing
 
@@ -98,6 +220,9 @@ add-on, report). When primary and secondary sources disagree, say so in the row.
 
 ## 2026-10-09 — `next-task.ps1` says the MVP queue is empty; `set-status.ps1` fails to move a task
 
+*Resolved for the dev scripts by #186: a board that cannot be read is the cache (with a warning) or an error, never
+"empty"; `set-status.ps1` queues the move. The cause below stays true for any hand-typed `gh project ...`.*
+
 **Symptom:** `.\scripts\dev\next-task.ps1` prints `NEXT none — the MVP queue is empty` although
 `docs/vr/MVP.md` and the board are full of Todo tasks, and `.\scripts\dev\set-status.ps1` throws
 `Failed to move #N to <status>`; both outputs start with `GraphQL: API rate limit exceeded for
@@ -127,6 +252,9 @@ touched `TESTING.md` / `TRAPS.md` next to this task's lines.
 asking why CI is quiet; `gh pr merge` would also refuse a `CONFLICTING` PR.
 
 ## 2026-10-09 — `set-status.ps1` fails with "API rate limit exceeded" although `gh api rate_limit` shows thousands left
+
+*Resolved for the dev scripts by #186 (cached board, one mutation, queue, "secondary limit" recognised and waited for or
+queued). Still true for hand-typed `gh project ...`.*
 
 **Symptom:** `set-status.ps1 -Issue <n> -Status Backlog` prints `Issue #<n> is not on the board yet,
 adding it` and then `Failed to move #<n>`; run by hand, `gh project item-list` / `field-list` answer
@@ -215,7 +343,8 @@ moment the state flips, i.e. inside that fade.
 **Do:** take `shot` captures at least a second after `GAMEPLAY` — put a few `status` lines in front
 of the `shot` (each ack takes ≈ 0.25 s) or wait first; judge "is anything rendered" by a non-black
 pixel count over several frames, never by one early capture. An early black shot is no evidence
-against the renderer.
+against the renderer. (The save verification of #70 waits 4 s after a `loadslot` before its `shot`;
+the dark room of `mvp-items` stays dark at that time too — it is the level, not the fade.)
 
 ## 2026-10-09 — The obvious owner fix for #93 changed nothing: the sword was linked to a mesh the NPC no longer used
 

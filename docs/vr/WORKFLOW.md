@@ -20,7 +20,8 @@ commit messages, pull requests, and code comments.
 | Current goal: the MVP | [MVP.md](MVP.md) |
 | Research and scope of playable v1 | [RESEARCH-playable-v1.md](RESEARCH-playable-v1.md) |
 | Research: controllers (Valve Index, Quest 3) | [RESEARCH-controllers.md](RESEARCH-controllers.md) |
-| Research: reference VR mods (Dishonored VR, VHVR, Titanfall 2 VR) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |
+| Research: reference VR mods (Dishonored VR, VHVR, Titanfall 2 VR, OpenMW VR, Skyrim VR mods) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |
+| VR game checklist: what players expect from a VR game, audited against our plan — gaps for the owner's decision | [VR-CHECKLIST.md](VR-CHECKLIST.md) |
 | SteamVR app manifest: name and tile on the loading card | [STEAMVR.md](STEAMVR.md) |
 | Testing without a headset: smoke test, command channel, `status.json`, `xr_hello` — what is reliable and what is not | [TESTING.md](TESTING.md) |
 | Traps: misleading symptoms that already cost time — **read before debugging** | [TRAPS.md](TRAPS.md) |
@@ -167,11 +168,12 @@ test station.
   passes `-StartSteamVR` (`run-windows.ps1`, `test-pr.ps1`). Workers do not run `vrstartup.exe` or
   stop `vrmonitor` / `vrserver` by hand.
 - **One game at a time on this PC.** Every launch, flat or VR, holds a game lock slot
-  (`%LOCALAPPDATA%\ArxFatalisVR\game-<n>.lock`; VR launches also `vr.lock`) while the game runs. A
+  (`%ProgramData%\ArxFatalisVR\locks\game-<n>.lock`, writable by every Windows account so the CI runner
+  service shares it with the owner and the workers, #205; VR launches also `vr.lock`) while the game runs. A
   second launch waits (default 300 s) and prints the holder — working copy, branch, pid; the smoke
   test is skipped (exit 2) when the wait runs out, `run-windows.ps1` fails naming the holder. The OS
   releases a lock when its holder dies; a raw `arx.exe` outside the lock is treated as a holder.
-  `%LOCALAPPDATA%\ArxFatalisVR\settings.json` with `{"maxGames": 2}` allows two flat games (owner's
+  `%ProgramData%\ArxFatalisVR\locks\settings.json` with `{"maxGames": 2}` allows two flat games (owner's
   call); replaces the #123 rule of isolated flat runs side by side.
 - **Only your own fresh build.** A launch runs only the working copy's own build directory, and only
   when its `built-from.txt` names the copy's `HEAD` (`<sha> dirty` is fine for uncommitted work).
@@ -198,6 +200,42 @@ the PR's worker. After each merge the coordinator updates the other open PRs in 
 2. The owner answers per PR, e.g. "#131 ok, #133 judder when turning".
 3. The coordinator merges the accepted ones (`/accept-task <pr>` works from any session), posts the
    feedback on the rejected ones and gives a `/reject-task <pr> <feedback>` prompt for a worker.
+
+### The safety hook (#185, D-021)
+
+Workers run without permission prompts (D-011), but Claude Code hooks still run. A `PreToolUse` hook in
+`.claude/settings.json` (`scripts/dev/hooks/safety-guard.sh` → `safety-guard.ps1`) checks every Bash,
+PowerShell, Edit, Write and NotebookEdit call of **every** session in this repository and denies exactly
+these, with a reason that names the safe alternative:
+
+| Rule (in the denial) | Denied | Instead |
+|---|---|---|
+| `push-main` | `git push` to `main` / `master` in any spelling (`HEAD:main`, `:main`, `--delete main`, a URL as the remote, `--all`, a push from a copy that is on `main`); `gh api` that changes the `main` ref | push the task branch, merge the PR with `gh pr merge` |
+| `force-push` | `--force`, `--force-with-lease`, `-f`, `+refspec`, `--mirror` | `git fetch` + `git merge origin/main`, push normally; rewriting a remote branch only via the coordinator |
+| `delete-outside` | a recursive delete (`rm -rf`, `Remove-Item -Recurse`, `rd /s`) of a path outside the session's own worktree and its job tmp dir (`$env:CLAUDE_JOB_DIR\tmp`) | delete inside the worktree; `build-windows.ps1 -Clean` for build output |
+| `owner-write` | a write (redirection, `Set-Content`, `Copy-Item` to, `Remove-Item`, `git add/commit/pull/...`, the Edit / Write tools) into the owner's copy from a session whose directory is another worktree | work in your own worktree |
+| `owner-discard` | `git reset --hard`, `git clean -f`, `git checkout -- .` / `-f`, `git restore .` in a main working copy: the owner's copy, also reached with `git -C` from a session in another clone | report uncommitted work to the coordinator; never discard it |
+
+**It never stops a task.** Everything else passes: branch pushes (`git push -u origin <branch>`), `gh pr merge`
+and REST merges, builds, game launches, writes and deletes inside the own worktree, reading the owner's copy,
+`new-worktree.ps1 -Remove` and the coordinator's other scripts (the hook sees the command line, not what a
+script does inside). On its own error it **fails open** (the call goes through; the error is logged).
+Text inside quotes, here-strings and heredocs (commit messages, PR bodies) is not a command.
+
+**Seeing why.** The denial message in the session starts with `Blocked [<rule>]:`. Every denial and every
+fail-open error is one line in `%LOCALAPPDATA%\ArxFatalisVR\safety-hook.log` (time, rule, session, working
+directory, command); the coordinator reads it in `/new-cycle`. A false positive is reported to the
+coordinator, who fixes the rule and adds the case to the test — never worked around by splitting the command.
+
+**Speed.** `safety-guard.sh` is a bash front door (~30 ms) that lets a call through unless it contains a word
+a rule cares about (`push`, `reset`/`clean`/`checkout`/`restore`/`switch`, a delete command, `cd`, `-C`/`-c`,
+`iex`, the folder name `arx-fatalis-vr`, `git/refs`); only those go to PowerShell (~0.4–0.5 s, mostly the
+start of `pwsh`). The owner's copy must therefore keep the repository's folder name `arx-fatalis-vr`.
+
+**Limits.** It is a guard rail against mistakes, not a sandbox: a path built in a variable it cannot resolve
+(`Remove-Item -Recurse $dir`), a pipeline that feeds `Remove-Item`, or what a script does internally is let
+through. Test: `.\scripts\dev\hooks\test-safety-guard.ps1` (159 sample commands, the hook process, fail-open,
+the log, the timing); extend its table when a rule changes.
 
 ### Worker sessions prepare everything themselves
 
@@ -294,7 +332,11 @@ After `/accept-task` the worker merges and switches the copy back to `main`.
 
 Helper scripts used by the commands:
 - `scripts/dev/next-task.ps1` — which task is next (Testing / In Progress first, then the queue)
-- `scripts/dev/set-status.ps1 -Issue <n> -Status <column>` — move a task on the board
+- `scripts/dev/set-status.ps1 -Issue <n> -Status <column>` — move a task on the board; under the GraphQL limit the move
+  is queued and sent later (`-Flush` sends it now). GitHub access of all dev scripts: `scripts/dev/github-lib.ps1` +
+  `board.ps1` (#186) — REST for everything but the board, a 5-minute board cache, rate-limit errors with the reset time;
+  `scripts/dev/test-github-lib.ps1` is the self-test
+- `scripts/dev/pr-checks.ps1 <pr> [-Watch]` — CI of a PR over REST (replaces `gh pr checks --watch`)
 - `scripts/build-windows.ps1`, `scripts/run-windows.ps1` — build and run (`-Isolated`: this copy's
   own user directory; `-Background`: no focus; `-StartSteamVR`: the owner's switch; `-Rebuild`)
 - `scripts/launch-lib.ps1` — launch control shared by every launch script (D-014): SteamVR guard,
@@ -311,6 +353,9 @@ Helper scripts used by the commands:
 - `scripts/dev/test-pr.ps1 <pr>` — the owner's test station: the PR's worktree, built if needed, its
   *How to test*, the build id, launch
 - `scripts/dev/cycle-report.ps1` — the coordinator's report: PRs, board, leftovers, worktrees, next task
+- `scripts/dev/plan-next.ps1` — the coordinator's task order by rule (#187): the tasks ready to start now (dependencies Done,
+  earliest open wave, free area, VR lane and worker limits, no `needs-design`), each with its `start-worker.ps1` line, and the
+  reason every other Todo task waits; rules in `scripts/dev/plan-next-lib.ps1`, self-test `test-plan-next.ps1` (run by CI via run-script-tests.ps1)
 
 ## Task lifecycle
 
@@ -337,6 +382,12 @@ human in a headset:
 - **CI runs on a self-hosted runner on the owner's PC** (Windows service, label `arxvr`, installed in
   `C:\actions-runner`). vcpkg and the build directory persist there, so a typical PR builds in minutes.
   If the PC is off, CI waits in the queue — that is expected, not a failure.
+- **CI is the automatic gate (D-021, #127):** the script self-tests (`scripts/dev/test-*.ps1`), the build
+  with the host unit tests, then the flat game checks — smoke test with the draw check and the spell
+  draw check — run on every PR, a few minutes in total. A red step blocks the merge; a game check that
+  was skipped (game lock busy) is red too. A new `scripts/dev/test-*.ps1` must be added to
+  `scripts/dev/run-script-tests.ps1`. The game runs in the runner service's session; evidence is the
+  artifact `game-checks` — see [TESTING.md](TESTING.md#the-ci-gate-127).
 - **One vcpkg for the whole machine:** `C:\vcpkg-shared` holds the vcpkg checkout, source downloads and
   binary packages, used by CI (workflow `env`) and by the owner's builds (user environment variables
   `VCPKG_ROOT`, `VCPKG_DOWNLOADS`, `VCPKG_DEFAULT_BINARY_CACHE`). A dependency built once — locally or

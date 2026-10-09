@@ -25,12 +25,10 @@ $command = $Matches[1]
 $number = [int]$Matches[2]
 
 $name = $null
-$issue = gh issue view $number -R $repo --json title,url 2>$null | ConvertFrom-Json
-if ($issue -and $issue.url -match '/issues/') {
-	$name = "ARXVR-$number $($issue.title)"
-} else {
-	$pr = gh pr view $number -R $repo --json title 2>$null | ConvertFrom-Json
-	if ($pr) { $name = $pr.title }
+# REST (the issues endpoint answers for pull requests too): the GraphQL quota is shared by all sessions (#186)
+$issue = gh api "repos/$repo/issues/$number" 2>$null | ConvertFrom-Json
+if ($issue -and $issue.title) {
+	$name = if ($issue.pull_request) { $issue.title } else { "ARXVR-$number $($issue.title)" }
 }
 if (-not $name) { $name = "ARXVR-$number" }
 if ($command -eq 'reject-task') { $name = "$name (fix)" }

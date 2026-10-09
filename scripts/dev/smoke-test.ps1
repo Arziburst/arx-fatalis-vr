@@ -57,8 +57,14 @@
 	Save slots to copy into the isolated user directory before the runs, e.g. save0000. Source:
 	-SaveLibrary, $env:ARXVR_SAVE_LIBRARY, or the player's save folder (see build-paths.ps1).
 
+.PARAMETER Save
+	A save of the test save library (#70, scripts\dev\make-test-saves.ps1), e.g. mvp-goblin-fight: it becomes
+	the ONLY save of the isolated user directory (slots are numbered newest first, so a given save has no
+	stable slot among several), and `--loadslot 0` is the default arx.exe argument.
+
 .PARAMETER SaveLibrary
-	Folder holding the save slots for -Saves (the test save library, #70).
+	Folder holding the saves for -Saves / -Save (the test save library, #70). Default: $env:ARXVR_SAVE_LIBRARY
+	or %LOCALAPPDATA%\ArxFatalisVR\savelib.
 
 .PARAMETER LockTimeoutSec
 	How long to wait for the game lock (and with -Vr the VR lock) before skipping the test (default 300).
@@ -104,6 +110,9 @@
 .EXAMPLE
 	.\scripts\dev\smoke-test.ps1 -Commands 'shot start','mark after-shot' -- --loadlevel 11
 .EXAMPLE
+	.\scripts\dev\smoke-test.ps1 -Save mvp-goblin-fight
+	# a scenario of the test save library: the only save of the isolated directory, loaded with --loadslot 0
+.EXAMPLE
 	.\scripts\dev\smoke-test.ps1 -Saves save0000 -- --loadslot 0
 	# the save comes from the library (or the player's save folder) into the isolated user directory
 #>
@@ -117,6 +126,7 @@ param(
 	[string]$UserDir,
 	[switch]$Shared,
 	[string[]]$Saves,
+	[string]$Save,
 	[string]$SaveLibrary,
 	[Alias('VrLockTimeoutSec')]
 	[int]$LockTimeoutSec = 300,
@@ -153,7 +163,10 @@ $exe = Join-Path $BuildDir 'arx.exe'
 if (-not $TestDir) { $TestDir = Get-ArxTestDir }
 if ($UserDir -and $Shared) { throw '-UserDir and -Shared exclude each other' }
 if (-not $UserDir) { $UserDir = Get-ArxUserDir -Shared:$Shared }
-if ($Shared -and $Saves) { throw '-Saves copies saves into the isolated user directory; it cannot be combined with -Shared' }
+if ($Shared -and ($Saves -or $Save)) { throw '-Saves / -Save copy saves into the isolated user directory; they cannot be combined with -Shared' }
+if ($Save -and $Saves) { throw '-Save and -Saves exclude each other' }
+# -Save <name>: that library save is the only save of the isolated user directory, so slot 0 is it
+if ($Save -and -not $ArxArgs) { $ArxArgs = @('--loadslot', '0') }
 if (-not $ArxArgs -and -not $Menu) { $ArxArgs = @('--loadlevel', '10') }
 if (-not $ArxArgs) { $ArxArgs = @() }
 
@@ -165,6 +178,7 @@ $crashDir = Get-ArxCrashDir $UserDir
 if (-not $Shared) {
 	New-Item -ItemType Directory -Force $UserDir | Out-Null
 	if ($Saves) { Copy-ArxSaves -Names $Saves -UserDir $UserDir -Library $SaveLibrary }
+	if ($Save) { Use-ArxSave -Name $Save -UserDir $UserDir -Library $SaveLibrary }
 }
 Write-Host "build: $(ConvertTo-ShortSha $stamp) ($($copy.Branch));  user dir: $UserDir ($(if ($Shared) { 'shared' } else { 'isolated' }));  test channel: $TestDir"
 
@@ -322,6 +336,13 @@ function Invoke-SmokeRun([int]$Run) {
 			# The session runs and submits frames even with nobody in the headset (synchronized, never focused)
 			Write-Check ([int64]$final.vr.frames -gt 0) "VR frames submitted (frames=$($final.vr.frames), shown=$($final.vr.shownFrames), session=$($final.vr.sessionState))"
 			if ($final.vr.enabled -and [int64]$final.vr.frames -eq 0) { $reasons.Add('no VR frame was submitted (the session never ran, or xrWaitFrame / xrEndFrame failed - see the log)') }
+			# The rate / cadence verdict of the frame loop (#20, docs/vr/TESTING.md): printed, not a gate until measured with the headset
+			if ($final.vr.pacing) {
+				$p = $final.vr.pacing
+				Write-Host "  VR pacing: $($p.verdict) / $($p.cadence) cadence - $($p.framesPerSecond)/s on $($p.slotsPerSecond) slots/s, $($p.slotsPerFrame) slots/frame (sd $($p.cadenceSdMs) ms), wait+end $($p.budgetMeanMs) mean / $($p.budgetMaxMs) max ms, worst frame $($p.worstFrameMs) ms, worst run $($p.worstRunFrames) frames; $($p.reports) reports, gaps=$($final.vr.frameGaps) resubmitted=$($final.vr.resubmittedFrames) discarded=$($final.vr.discardedFrames)"
+			} elseif ($final.vr.enabled) {
+				Write-Host "  VR pacing: no report (the session ran shorter than one 3 s window and fewer than 2 frames)"
+			}
 		}
 		if ($process.ExitCode -ne 0) { $reasons.Add("exit code $($process.ExitCode)") }
 		if (-not $logFresh) { $reasons.Add('arx.log was not written by this run (the game died before shutdown, or never started)') }
@@ -386,7 +407,7 @@ if (-not $lock) {
 	foreach ($line in Get-ArxLockHolders) { Write-Host "  held: $line" -ForegroundColor Yellow }
 	exit 2
 }
-Write-Host "game lock: slot $($lock.Slot)$(if ($lock.Vr) { ' + VR lock' }) ($(Get-ArxAppDataDir))"
+Write-Host "game lock: slot $($lock.Slot)$(if ($lock.Vr) { ' + VR lock' }) ($(Get-ArxLockDir))"
 
 $results = @()
 try {

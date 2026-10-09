@@ -37,15 +37,24 @@ function Section([string]$Name) { Write-Host ''; Write-Host "== $Name" -Foregrou
 
 # --- Pull requests ---------------------------------------------------------------------------------
 Section 'PULL REQUESTS'
-$prs = gh pr list -R $Repo --state open --limit 50 --json number,title,headRefName,labels,mergeable,isDraft,statusCheckRollup,updatedAt |
-	ConvertFrom-Json
-if (-not $prs) { 'none open' }
+# All GitHub reads here are REST (github-lib.ps1, #186); only the board is GraphQL, from the cache.
+# A part that cannot be read prints why instead of ending the report.
+$ghFailures = @()
+function Read-Part([string]$Name, [scriptblock]$Read) {
+	try { & $Read } catch { $script:ghFailures += "$Name : $($_.Exception.Message)"; $null }
+}
+
+$prs = Read-Part 'open pull requests' { @(Get-GhPulls 'open' 2 -WithMergeable) }
+if ($null -ne $prs -and -not $prs) { 'none open' }
 foreach ($pr in $prs) {
-	$checks = @($pr.statusCheckRollup)
-	$ci = if (-not $checks) { 'no CI (docs-only or not started)' }
-		elseif ($checks | Where-Object { $_.status -ne 'COMPLETED' }) { 'CI running/queued' }
-		elseif ($checks | Where-Object { $_.conclusion -notin 'SUCCESS', 'SKIPPED', 'NEUTRAL' }) { 'CI FAILED' }
-		else { 'CI green' }
+	$checks = Read-Part "checks of #$($pr.number)" { Get-GhCommitChecks $pr.headRefOid }
+	$ci = switch ($checks.State) {
+		'none'    { 'no CI (docs-only or not started)' }
+		'running' { 'CI running/queued' }
+		'failed'  { 'CI FAILED' }
+		'green'   { 'CI green' }
+		default   { 'CI unknown' }
+	}
 	$vr = if ($pr.labels.name -contains 'needs-vr-test') { ' needs-vr-test' } else { '' }
 	$draft = if ($pr.isDraft) { ' draft' } else { '' }
 	"#$($pr.number) [$ci$vr$draft, $($pr.mergeable)] $($pr.title)  ($($pr.headRefName))"
@@ -53,24 +62,30 @@ foreach ($pr in $prs) {
 
 # --- main ------------------------------------------------------------------------------------------
 Section 'MAIN'
-$run = gh run list -R $Repo --branch main --limit 1 --json status,conclusion,headSha,displayTitle | ConvertFrom-Json
-if ($run) { "latest CI on main: $($run[0].status) $($run[0].conclusion) $($run[0].headSha.Substring(0,9)) $($run[0].displayTitle)" }
+$run = Read-Part 'latest run on main' { Get-GhLatestRun 'main' }
+if ($run) { "latest CI on main: $($run.Status) $($run.Conclusion) $($run.HeadSha.Substring(0,9)) $($run.Title)" }
+elseif ($ghFailures -match '^latest run') { 'unknown (could not be read, see GITHUB below)' }
 else { 'no CI runs on main' }
 
 # --- Board -----------------------------------------------------------------------------------------
-$items = Get-BoardItems
-$issues = gh issue list -R $Repo --state all --limit 500 --json number,state,title,labels,milestone | ConvertFrom-Json
+$items = @(Read-Part 'the board' { Get-BoardItems })
+$issues = @(Read-Part 'the issue list' { Get-GhIssues 'all' })
 $issueByNumber = @{}; foreach ($i in $issues) { $issueByNumber[[int]$i.number] = $i }
 $itemByNumber = @{}; foreach ($i in $items) { $itemByNumber[$i.Number] = $i }
+$haveBoard = $items.Count -gt 0
+$haveIssues = $issues.Count -gt 0
 
 Section 'BOARD'
+if (-not $haveBoard) { 'the board could not be read (no cache either) - nothing below about the board is true' }
 foreach ($status in 'Testing', 'In Progress') {
 	$list = $items | Where-Object { $_.Status -eq $status -and ($_.Labels -contains 'task' -or $_.Labels -contains 'bug') }
-	foreach ($t in $list) { "$($status.ToUpper().PadRight(12)) #$($t.Number) $($t.Title)" }
+	foreach ($t in $list) { "$($status.ToUpper().PadRight(12)) #$($t.Number) $($t.Title)$(if ($t.Pending) { '  [queued move, not on GitHub yet]' })" }
 }
+foreach ($line in (Get-BoardQueueSummary)) { "PENDING      $line" }
 
 Section 'INCONSISTENT'
 $problems = @()
+if (-not ($haveBoard -and $haveIssues)) { $items = @(); $issues = @() } # nothing is concluded from a part that could not be read
 foreach ($t in $items) {
 	$issue = $issueByNumber[$t.Number]
 	if (-not $issue) { continue }
@@ -87,13 +102,15 @@ foreach ($i in $issues) {
 		$problems += "#$($i.number) has no milestone -> M1 MVP or later"
 	}
 }
-if ($problems) { $problems } else { 'none' }
+if ($problems) { $problems } elseif ($haveBoard -and $haveIssues) { 'none' } else { 'not checked: the board or the issue list could not be read (see GITHUB below)' }
 
 # --- Cleanup ---------------------------------------------------------------------------------------
 Section 'CLEANUP'
-$branches = gh api "repos/$Repo/branches?per_page=100" --paginate -q '.[].name' | Where-Object { $_ -notin 'main', 'master' }
-$allPrs = gh pr list -R $Repo --state all --limit 200 --json number,state,headRefName | ConvertFrom-Json
+$branchList = Read-Part 'remote branches' { Invoke-ArxGhRestPages "repos/$Repo/branches" '' 3 }
+$branches = @($branchList | ForEach-Object { $_.name }) | Where-Object { $_ -notin 'main', 'master' }
+$allPrs = @(Read-Part 'all pull requests' { Get-GhPulls 'all' 3 })
 $found = $false
+if (-not $branchList -or -not $allPrs) { 'not checked: branches or pull requests could not be read (see GITHUB below)'; $found = $true; $branches = @() }
 foreach ($b in $branches) {
 	$pr = $allPrs | Where-Object headRefName -eq $b | Select-Object -First 1
 	if (-not $pr) { "branch '$b' has no PR"; $found = $true }
@@ -160,4 +177,11 @@ if ($held) { foreach ($line in $held) { "lock held now: $line" } } else { 'no ga
 
 # --- Next ------------------------------------------------------------------------------------------
 Section 'NEXT'
-& (Join-Path $PSScriptRoot 'next-task.ps1')
+try { & (Join-Path $PSScriptRoot 'next-task.ps1') } catch { $ghFailures += "next task : $($_.Exception.Message)"; 'unknown - the board could not be read (see GITHUB below)' }
+
+# --- GitHub ----------------------------------------------------------------------------------------
+if ($ghFailures) {
+	Section 'GITHUB'
+	'parts of this report are missing because GitHub could not be read (rate limit / network); run it again after the reset:'
+	$ghFailures
+}

@@ -78,6 +78,7 @@
 #include "util/Number.h"
 #include "util/Unicode.h"
 
+#include "vr/VRSystem.h"
 #include "window/RenderWindow.h"
 
 
@@ -728,7 +729,10 @@ public:
 			auto cb = std::make_unique<CycleTextWidget>(sliderSize(), hFontMenu, label);
 			cb->valueChanged = [](int pos, std::string_view /* string */) {
 				config.video.vsync = pos > 1 ? -1 : pos;
-				mainApp->getWindow()->setVSync(config.video.vsync);
+				// In VR the window's vsync stays off: the headset paces the frames (ArxGame::applyVRPacing)
+				if(!vr::isEnabled()) {
+					mainApp->getWindow()->setVSync(config.video.vsync);
+				}
 			};
 			cb->addEntry(getLocalised("system_menus_options_video_vsync_off"));
 			if(benchmark::isEnabled()) {

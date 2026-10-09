@@ -52,6 +52,10 @@
  * \ref submitFrame hands the frame to the compositor with exactly those poses (pose-matched
  * submission, research rows F-21 and F-116). A frame shown from outside the game loop (the
  * loading screen) begins its own frame inside \ref submitFrame.
+ *
+ * Every OpenXR call goes through the runtime interface (vr/XRFunctions.h): the OpenXR loader, or the
+ * simulated headset of \c --vr-sim (vr/VRSimulator.h, #112), which runs all of this without a
+ * runtime or a headset.
  */
 namespace vr {
 

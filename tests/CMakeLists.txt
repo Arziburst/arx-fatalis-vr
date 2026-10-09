@@ -47,6 +47,11 @@ set(arxtest_TESTCASES
 	tests/vr/VRControlsTest.h
 	tests/vr/VRControlsTest.cpp
 
+	tests/vr/EyeImageTest.h
+	tests/vr/EyeImageTest.cpp
+	tests/vr/SimRigTest.h
+	tests/vr/SimRigTest.cpp
+
 
 )
 
@@ -66,6 +71,8 @@ set(arxtest_SOURCES
 	src/io/resource/ResourcePath.cpp
 	src/vr/FramePacing.cpp
 	src/vr/VRControls.cpp
+	src/vr/EyeImage.cpp
+	src/vr/SimRig.cpp
 
 
 	${arxtest_TESTCASES}

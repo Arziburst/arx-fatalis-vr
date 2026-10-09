@@ -3,9 +3,11 @@
 # hand are in status.json (F-185): the controller and the posed wrist; "error" is the distance between the
 # wrist and where it should be for the model's palm to sit on the controller.
 # Needs a first-person save: level 10 is the scripted intro, whose conversation camera is nowhere near the
-# body (TRAPS.md). Run it through the smoke test with the test save library (#70):
+# body (TRAPS.md) - @save names it (the test save library, #70; CI generates the library on the runner, #255):
+#   .\scripts\dev\xrs-run.ps1 arms-follow
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence arms-follow -Save mvp-new-game
 @sim idle
+@save mvp-new-game
 @args --loadslot 0
 
 @until state eq GAMEPLAY 60s

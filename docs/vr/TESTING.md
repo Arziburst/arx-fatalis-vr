@@ -364,7 +364,7 @@ prints which command launched each spell and which spells were on screen during 
 
 ## The frame loop and the rate line (#20)
 
-In VR one game frame is one OpenXR frame (D-022): `vr::beginFrame()` at the top of
+In VR one game frame is one OpenXR frame (D-023): `vr::beginFrame()` at the top of
 `ArxGame::doFrame` blocks in `xrWaitFrame` until the headset wants the next frame — **the only
 thing that paces the game in VR**: the window's vsync and the engine's `fps_limit` are off while a
 session exists (`[vr] pacing:` log line) — then `xrBeginFrame` and `xrLocateViews` for the frame's

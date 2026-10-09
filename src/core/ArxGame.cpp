@@ -1196,7 +1196,7 @@ void ArxGame::limitFrameRate() {
 }
 	
 /*!
- * \brief One frame clock in VR (D-022, research row F-117)
+ * \brief One frame clock in VR (D-023, research row F-117)
  *
  * While an OpenXR session exists the headset's xrWaitFrame (vr::beginFrame) paces the game; the
  * window's vsync and the engine's fps limiter would pace it a second time, so both are off, and
@@ -1234,7 +1234,7 @@ void ArxGame::doFrame() {
 	
 	vr::pollEvents();
 	
-	// In VR the frame starts when the headset wants it (xrWaitFrame, the only frame clock - D-022);
+	// In VR the frame starts when the headset wants it (xrWaitFrame, the only frame clock - D-023);
 	// otherwise the engine paces itself as before
 	applyVRPacing();
 	if(!vr::beginFrame()) {

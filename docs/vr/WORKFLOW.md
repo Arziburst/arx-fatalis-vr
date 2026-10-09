@@ -344,6 +344,8 @@ Helper scripts used by the commands:
 - `scripts/dev/smoke-test.ps1` — the worker's self-test: start, play, quit, check the evidence
 - `scripts/dev/log-digest.ps1` — the run digest and automatic bug filing (#131); runs by itself after
   every launch of `run-windows.ps1` / `smoke-test.ps1`; `test-log-digest.ps1` is its self-test
+- `scripts/add-steam-shortcut.ps1` — the game as a non-Steam shortcut in the Steam / SteamVR library (#80,
+  [STEAMVR.md](STEAMVR.md#launching-from-steamvr)); `scripts/dev/test-steam-shortcut.ps1` is its self-test
 - `scripts/dev/game-cmd.ps1`, `scripts/dev/game-status.ps1` — talk to a running game through the
   test channel (`--test-dir`), see [TESTING.md](TESTING.md)
 - `scripts/dev/new-worktree.ps1 -Issue <n> -Type <type> -Name <name>` — a worker's own working copy

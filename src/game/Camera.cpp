@@ -19,6 +19,7 @@
 
 #include "game/Camera.h"
 
+#include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "graphics/Math.h"
@@ -75,37 +76,73 @@ static glm::mat4x4 createProjectionMatrix(const Vec2f & size, const Vec2f & cent
 	return centerShift * projectionMatrix;
 }
 
-void PrepareCamera(Camera * cam, const Rect & viewport, const Vec2i & projectionCenter) {
-	
-	SetActiveCamera(cam);
-	
-	glm::mat4x4 rotation = toRotationMatrix(cam->angle);
-	g_preparedCamera.m_worldToView = glm::translate(rotation, -cam->m_pos);
+/*!
+ * The part of PrepareCamera() that follows from the matrices: the screen transforms, the viewport
+ * and the inverse of the projection for screenToWorldSpace(). \a projectionCenter is where the view
+ * axis lands, in absolute screen coordinates.
+ */
+static void finishPreparedCamera(const Rect & viewport, const Vec2f & projectionCenter) {
+
 	GRenderer->SetViewMatrix(g_preparedCamera.m_worldToView);
-	
-	const Vec2f center = Vec2f(projectionCenter - viewport.topLeft());
-	g_preparedCamera.m_viewToClip = createProjectionMatrix(Vec2f(viewport.size()), center, cam);
 	GRenderer->SetProjectionMatrix(g_preparedCamera.m_viewToClip);
-	
+
 	// Change coordinate system from [-1, 1] x [-1, 1] to [0, width] x [0, height] and flip the y axis
 	glm::mat4x4 ndcToScreen(1.f);
 	ndcToScreen = glm::scale(ndcToScreen, Vec3f(Vec2f(viewport.size()) / 2.f, 1.f));
 	ndcToScreen = glm::translate(ndcToScreen, Vec3f(1.f, 1.f, 0.f));
 	ndcToScreen = glm::scale(ndcToScreen, Vec3f(1.f, -1.f, 1.f));
 	g_preparedCamera.m_viewToScreen = ndcToScreen * g_preparedCamera.m_viewToClip;
-	
+
 	g_preparedCamera.m_worldToScreen = g_preparedCamera.m_viewToScreen * g_preparedCamera.m_worldToView;
-	
+
 	GRenderer->SetViewport(viewport);
-	
-	// Equivalent to glm::inverse(g_preparedCamera.m_worldToView) but more stable and efficient
-	g_preparedCamera.m_viewToWorld = glm::translate(glm::mat4x4(1.f), cam->m_pos) * glm::transpose(rotation);
-	
+
 	// Equivalent to glm::inverse(g_preparedCamera.m_viewToScreen)
-	g_preparedCamera.m_center = Vec2f(projectionCenter);
+	g_preparedCamera.m_center = projectionCenter;
 	Vec2f defov = Vec2f(g_preparedCamera.m_viewToClip[0][0], -g_preparedCamera.m_viewToClip[1][1]);
 	g_preparedCamera.m_screenToView = 2.f / (Vec2f(viewport.size()) * defov);
-	
+
+}
+
+glm::mat4x4 cameraWorldToView(const Camera & cam) {
+	return glm::translate(toRotationMatrix(cam.angle), -cam.m_pos);
+}
+
+void PrepareCamera(Camera * cam, const Rect & viewport, const Vec2i & projectionCenter) {
+
+	SetActiveCamera(cam);
+
+	glm::mat4x4 rotation = toRotationMatrix(cam->angle);
+	g_preparedCamera.m_worldToView = glm::translate(rotation, -cam->m_pos);
+
+	const Vec2f center = Vec2f(projectionCenter - viewport.topLeft());
+	g_preparedCamera.m_viewToClip = createProjectionMatrix(Vec2f(viewport.size()), center, cam);
+
+	// Equivalent to glm::inverse(g_preparedCamera.m_worldToView) but more stable and efficient
+	g_preparedCamera.m_viewToWorld = glm::translate(glm::mat4x4(1.f), cam->m_pos) * glm::transpose(rotation);
+
+	finishPreparedCamera(viewport, Vec2f(projectionCenter));
+
+}
+
+void PrepareCamera(Camera * cam, const Rect & viewport, const glm::mat4x4 & worldToView,
+                   const glm::mat4x4 & viewToClip) {
+
+	SetActiveCamera(cam);
+
+	g_preparedCamera.m_worldToView = worldToView;
+	g_preparedCamera.m_viewToClip = viewToClip;
+	g_preparedCamera.m_viewToWorld = glm::affineInverse(worldToView);
+
+	// Where the view axis lands in the viewport: the image center for a symmetric projection, off
+	// it for an off-axis one
+	Vec4f axis = viewToClip * Vec4f(0.f, 0.f, 1.f, 1.f);
+	Vec2f ndc = (axis.w != 0.f) ? Vec2f(axis) / axis.w : Vec2f(0.f);
+	Vec2f center = Vec2f(viewport.topLeft())
+	               + Vec2f(viewport.size()) * Vec2f((1.f + ndc.x) / 2.f, (1.f - ndc.y) / 2.f);
+
+	finishPreparedCamera(viewport, center);
+
 }
 
 void SetActiveCamera(Camera * cam) {

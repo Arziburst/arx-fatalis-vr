@@ -807,7 +807,11 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrBeginFrame(XrSession /* session */, const X
 	return discarded ? XR_FRAME_DISCARDED : XR_SUCCESS;
 }
 
-RgbImage readImage(const SimSwapchain & swapchain) {
+/*!
+ * \param withAlpha read the alpha plane too: for a layer the compositor blends by its alpha (the 2D
+ *                  interface on the quad, #19)
+ */
+RgbImage readImage(const SimSwapchain & swapchain, bool withAlpha = false) {
 
 	RgbImage image(size_t(swapchain.size.x), size_t(swapchain.size.y));
 	if(swapchain.released < 0) {
@@ -822,7 +826,19 @@ RgbImage readImage(const SimSwapchain & swapchain) {
 	glPixelStorei(GL_PACK_ALIGNMENT, 1);
 	glBindTexture(GL_TEXTURE_2D, swapchain.textures[size_t(swapchain.released)]);
 	// The stored values, no sRGB decoding: they are sRGB-encoded like the window
-	glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, image.pixels.data());
+	if(withAlpha) {
+		std::vector<u8> rgba(image.width * image.height * 4);
+		glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+		image.alpha.resize(image.width * image.height);
+		for(size_t i = 0; i < image.alpha.size(); i++) {
+			image.pixels[i * 3] = rgba[i * 4];
+			image.pixels[i * 3 + 1] = rgba[i * 4 + 1];
+			image.pixels[i * 3 + 2] = rgba[i * 4 + 2];
+			image.alpha[i] = rgba[i * 4 + 3];
+		}
+	} else {
+		glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, image.pixels.data());
+	}
 	glBindTexture(GL_TEXTURE_2D, GLuint(bound));
 	glPixelStorei(GL_PACK_ALIGNMENT, alignment);
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, GLuint(packBuffer));
@@ -879,13 +895,19 @@ void takeShot(const std::string & name, const XrCompositionLayerProjection & pro
 	if(quadLayer) {
 		auto it = s.swapchains.find(fromHandle(quadLayer->subImage.swapchain));
 		if(it != s.swapchains.end() && roomPose(quadLayer->space, quadSpacePosition, quadSpaceOrientation)) {
-			quad = readImage(it->second);
+			// The 2D interface over transparency (#19) is blended by its alpha; a copied window is opaque
+			placement.blended = (quadLayer->layerFlags & XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT) != 0;
+			quad = readImage(it->second, placement.blended);
 			placement.position = toVec(quadLayer->pose.position);
 			placement.orientation = toQuat(quadLayer->pose.orientation);
 			placement.width = quadLayer->size.width;
 			placement.height = quadLayer->size.height;
 			shot.quadShown = true;
 			shot.quad = pixelStats(quad, QuadRegion, background);
+			if(placement.blended && alphaCoverage(quad, QuadRegion) < 0.1f) {
+				// Nothing drawn in the middle of a blended quad: the world shows through, not a black frame
+				shot.quad.verdict = ImageVerdict::Transparent;
+			}
 			shot.quadFile = saveImage(quad, name + "-quad");
 		}
 	}

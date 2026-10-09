@@ -51,6 +51,61 @@ runtime-side faults (session loss, swapchain failure, pacing modes) when one nee
 
 ---
 
+## D-025: Stereo by drawing the scene once per eye; one cull for both eyes; the 2D interface on the alpha-blended quad until the floating panel
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** worker of #19 (technical internals, D-017), from research rows F-06, F-39, F-115, F-116, F-162, F-163
+
+### Decision
+- **Brute-force stereo.** The 3D scene is drawn once per eye into the eye swapchains, each eye with
+  its own view matrix and its own **off-axis projection built straight from the four `XrFovf`
+  angles** (F-115) — no symmetric cover, canted displays allowed (the eye's orientation relative to
+  the head is part of the view). No multiview, no geometry-shader stereo (F-162: the engine is
+  fixed-function OpenGL; the one-pass tricks are where OpenMW VR's support cost went).
+- **One cull for both eyes** (F-163): the head camera's projection in the update is the union of
+  both eyes' frusta (cant included); rooms, portals and entities are culled once with it, each eye
+  only draws. The VR near plane is 0.09 m (F-39).
+- **The eyes relative to the head camera, whatever the camera is.** `vr/EyeProjection.h` turns the
+  located eyes into a rig relative to the head between them (the same head #24's camera takes:
+  midpoint, orientation halfway) and applies it to the engine's camera: with #24 the camera is the
+  head and the eyes land exactly where they were located; before it, the body camera gets correct
+  stereo without head tracking. Pure math with host tests, like the frame pacing (D-024).
+- **The 2D interface stays on the head-locked quad, blended by its alpha.** In a stereo frame
+  everything 2D is drawn into the flat frame quad's swapchain image (cleared to transparent) and the
+  compositor blends it over the eyes; menus, loading screens and cinematics keep working untouched
+  at the window's size. The renderer accumulates coverage in the alpha channel
+  (`glBlendFuncSeparate`), so the quad is premultiplied as the compositor expects. The floating
+  panel (#49) and the UI size split (#73) replace this; it is not the MVP's UI design.
+- **Render targets are the VR module's business.** The renderer only learns the size of the bound
+  target (`Renderer::setRenderTargetSize`), so viewports, scissors and snapshots are measured
+  against it; MSAA stays with the window (alpha cutouts use the alpha test off the window).
+- **Both eyes or none** (F-116): a frame whose scene did not reach both eyes clears both to the
+  background; a stale eye against a live one is never submitted.
+
+### Why
+The queue separates the matrices (#19) from the per-eye re-projection of CPU-projected geometry
+(#72) and the UI size (#73), and the headset test of #18 showed the 640×480 quad as blurry. Drawing
+the scene at the eye size with the runtime's own angles answers "stereo and sharp" first; the
+alpha quad keeps the game playable (menus, saves, the HUD the owner reads for sharpness) without
+touching the UI code, which #49 rewrites anyway. OpenMW VR's three generations of stereo (F-162)
+and Titanfall 2 VR's symmetric cover with a shear (F-115) are the cautionary tales: per-eye draw
+with exact angles first, optimisation later.
+
+### Consequences
+- #72 does the rest of the CPU-projected geometry per eye (particles, sparks, flares, the
+  update-phase 2D data); animated entities are already re-projected per eye here because one call
+  does it. #73 decides the UI size against the eye size; #49 moves the interface off the quad.
+- The desktop mirror (#21) copies the mirrored eye and the quad while they are ours (before the
+  release) and blends the quad by its alpha; with the mirror off the window shows the flat frame.
+- The draw check (#71) is refused in a stereo frame — its two views would be the two eyes; the
+  two-eyes check of the simulator (#112) is the acceptance of per-eye rendering without a headset.
+  The simulated compositor blends a quad flagged `BLEND_TEXTURE_SOURCE_ALPHA` by its alpha plane
+  like the real one, and a blended quad with nothing drawn in its middle is judged `transparent`.
+- MSAA on the eye targets is a new task (the runtime recommends 1 sample; the window's MSAA does
+  not apply to framebuffer objects).
+---
+
 ## D-024: One frame clock in VR — `xrWaitFrame` paces the game; pose-matched submission; an orderly exit
 
 - **Date:** 2026-10-09

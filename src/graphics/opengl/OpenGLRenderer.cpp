@@ -73,6 +73,7 @@ OpenGLRenderer::OpenGLRenderer()
 	, m_hasSampleShading(false)
 	, m_hasFogx(false)
 	, m_hasFogDistanceMode(false)
+	, m_renderTargetSize(0)
 	, m_currentTransform(GL_UnsetTransform)
 	, m_projection(1.f)
 	, m_view(1.f)
@@ -567,45 +568,77 @@ Texture * OpenGLRenderer::createTexture() {
 	return texture;
 }
 
+Vec2i OpenGLRenderer::renderTargetSize() const {
+	if(m_renderTargetSize.x > 0 && m_renderTargetSize.y > 0) {
+		return m_renderTargetSize;
+	}
+	return mainApp->getWindow()->getSize();
+}
+
+void OpenGLRenderer::setRenderTargetSize(const Vec2i & size) {
+
+	if(size == m_renderTargetSize) {
+		return;
+	}
+
+	// Multisampling belongs to the window; the alpha cutout state that relies on it is flushed
+	if(size != Vec2i(0) && m_hasMSAA) {
+		SetAntialiasing(false);
+	}
+
+	m_renderTargetSize = size;
+
+	// The viewport and the scissor are measured from the top of the target: the same rectangles
+	// land elsewhere in a target of another height, so they are set again
+	int height = renderTargetSize().y;
+	if(viewport.isValid()) {
+		glViewport(viewport.left, height - viewport.bottom, viewport.width(), viewport.height());
+	}
+	if(m_scissor.isValid()) {
+		glScissor(m_scissor.left, height - m_scissor.bottom, m_scissor.width(), m_scissor.height());
+	}
+
+}
+
 void OpenGLRenderer::SetViewport(const Rect & _viewport) {
-	
+
 	if(_viewport == viewport) {
 		return;
 	}
-	
+
 	viewport = _viewport;
-	
+
 	// TODO maybe it's better to always have the viewport cover the whole window and use glScissor instead?
-	
-	int height = mainApp->getWindow()->getSize().y;
-	
+
+	int height = renderTargetSize().y;
+
 	glViewport(viewport.left, height - viewport.bottom, viewport.width(), viewport.height());
-	
+
 	if(m_currentTransform == GL_NoTransform) {
 		m_currentTransform = GL_UnsetTransform;
 	}
 }
 
 void OpenGLRenderer::SetScissor(const Rect & rect) {
-	
+
 	if(m_scissor == rect) {
 		return;
 	}
-	
+
 	if(rect.isValid()) {
 		if(!m_scissor.isValid()) {
 			glEnable(GL_SCISSOR_TEST);
 		}
-		int height = mainApp->getWindow()->getSize().y;
+		int height = renderTargetSize().y;
 		glScissor(rect.left, height - rect.bottom, rect.width(), rect.height());
 	} else {
 		if(m_scissor.isValid()) {
 			glDisable(GL_SCISSOR_TEST);
 		}
 	}
-	
+
 	m_scissor = rect;
-	
+
 }
 
 void OpenGLRenderer::Clear(BufferFlags bufferFlags, Color clearColor, float clearDepth, size_t nrects, Rect * rect) {
@@ -686,7 +719,13 @@ void OpenGLRenderer::SetAntialiasing(bool enable) {
 	if(enable && !config.video.antialiasing) {
 		return;
 	}
-	
+
+	// An offscreen target (a VR eye image, #19) has no multisampling: the alpha cutout path must
+	// not rely on alpha to coverage or sample shading there
+	if(enable && m_renderTargetSize != Vec2i(0)) {
+		return;
+	}
+
 	if(enable == m_hasMSAA) {
 		return;
 	}
@@ -860,8 +899,8 @@ void OpenGLRenderer::drawIndexed(Primitive primitive, const TexturedVertex * ver
 }
 
 bool OpenGLRenderer::getSnapshot(Image & image) {
-	
-	Vec2i size = mainApp->getWindow()->getSize();
+
+	Vec2i size = renderTargetSize();
 	
 	image.create(size_t(size.x), size_t(size.y), Image::Format_R8G8B8);
 	
@@ -993,7 +1032,13 @@ void OpenGLRenderer::flushState() {
 			GLenum glblendSrc = arxToGlBlendFactor[blendSrc];
 			GLenum glblendDst = arxToGlBlendFactor[blendDst];
 			if(m_glblendSrc != glblendSrc || m_glblendDst != glblendDst) {
-				glBlendFunc(glblendSrc, glblendDst);
+				/*
+				 * The alpha channel accumulates coverage whatever the color blend is, so a target
+				 * that is composited by its alpha later (the flat frame over the stereo world in
+				 * VR, #19) holds premultiplied color with the right alpha. No draw reads the
+				 * destination alpha, and the window never shows it: flat rendering is unchanged.
+				 */
+				glBlendFuncSeparate(glblendSrc, glblendDst, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 				m_glblendSrc = glblendSrc;
 				m_glblendDst = glblendDst;
 			}

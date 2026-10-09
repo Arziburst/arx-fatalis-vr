@@ -83,6 +83,7 @@ public:
 	//! The head-locked flat frame quad as submitted, in the head (view) space
 	struct Quad {
 		bool shown = false;
+		bool blended = false; //!< the image is the 2D interface over transparency (#19), drawn with its alpha
 		float width = 0.f;    //!< meters
 		float height = 0.f;   //!< meters
 		float distance = 0.f; //!< in front of the head, meters

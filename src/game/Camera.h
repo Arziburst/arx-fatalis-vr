@@ -125,6 +125,22 @@ inline void PrepareCamera(Camera * cam, const Rect & viewport) {
 	PrepareCamera(cam, viewport, viewport.center());
 }
 
+/*!
+ * \brief Prepare \a cam with given view and projection matrices instead of the ones derived from
+ *        its angle, position and field of view
+ *
+ * For a view that is not the camera's own symmetric projection: an eye in VR (#19) has its own
+ * off-axis projection from the headset's field of view and a view matrix offset from the head
+ * camera. \a cam still provides the position, angle, focal length and depth the engine reads for
+ * distances, sorting and sprite sizes. The projection's principal point (where the view axis lands
+ * in the viewport) is derived from \a viewToClip for screenToWorldSpace().
+ */
+void PrepareCamera(Camera * cam, const Rect & viewport, const glm::mat4x4 & worldToView,
+                   const glm::mat4x4 & viewToClip);
+
+//! \return the world-to-view matrix of \a cam as PrepareCamera() derives it from its angle and position
+glm::mat4x4 cameraWorldToView(const Camera & cam);
+
 void SetActiveCamera(Camera * cam);
 
 Vec3f screenToWorldSpace(Vec2f pos, float depth = 1.f);

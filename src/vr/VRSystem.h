@@ -27,6 +27,7 @@
 
 #include "math/Types.h"
 #include "platform/Platform.h"
+#include "vr/EyeProjection.h"
 #include "vr/FramePacing.h"
 #include "vr/VRControls.h"
 
@@ -52,6 +53,15 @@
  * \ref submitFrame hands the frame to the compositor with exactly those poses (pose-matched
  * submission, research rows F-21 and F-116). A frame shown from outside the game loop (the
  * loading screen) begins its own frame inside \ref submitFrame.
+ *
+ * Stereo (#19): in a frame the runtime wants rendered, \ref beginFrame makes the flat frame quad's
+ * swapchain image the render target, so everything 2D the game draws (menus, HUD, loading screens,
+ * cinematics) lands on the head-locked quad, composited over the world by its alpha; the 3D scene
+ * is drawn once per eye into the eye swapchains between \ref beginEyeRender and \ref endEyeRender,
+ * each eye with its own view and off-axis projection (vr/EyeProjection.h, F-115) relative to the
+ * head camera. \ref submitFrame then submits the eyes as the projection layer and the quad in
+ * front. In frames the runtime does not want rendered (an idle headset) the game draws into the
+ * window as in flat mode and the frame is ended without layers.
  *
  * Every OpenXR call goes through the runtime interface (vr/XRFunctions.h): the OpenXR loader, or the
  * simulated headset of \c --vr-sim (vr/VRSimulator.h, #112), which runs all of this without a
@@ -99,27 +109,79 @@ void pollEvents();
  * the runtime hands out every n-th slot. Then \c xrBeginFrame and \c xrLocateViews for the frame's
  * predicted display time: the poses in \ref frameViews are the ones this frame must render with.
  *
+ * Then, if the runtime wants this frame rendered and the eyes were located, the flat frame quad's
+ * image becomes the render target (see \ref stereoActive) and the renderer is told its size.
+ *
+ * \param windowSize size of the window's back buffer: the size of the flat frame
  * \return true while an OpenXR session runs and the frame was begun; false in flat mode, while
  *         the session is not running, or when the runtime refused (logged)
  */
-bool beginFrame();
+bool beginFrame(const Vec2i & windowSize);
 
 /*!
- * \brief Show the finished flat frame in the headset
+ * \brief Show the finished frame in the headset
  *
- * Call after the frame was rendered into the window's back buffer and before the buffers are
- * swapped. Ends the OpenXR frame begun by \ref beginFrame (or begins one first, for frames shown
- * from outside the game loop): a uniform dark background in the per-eye swapchains as a projection
- * layer with the poses located for this frame, and in front of it a copy of the back buffer on a
- * head-locked quad (F-20). Frames the runtime does not want rendered are ended without layers.
- * Then the desktop mirror (#21, F-24) replaces the back buffer with what one eye (the right one
- * by default, \c vr_mirror_eye) sees: its image cropped to the window, the flat frame where the
- * quad appears in that eye.
+ * Call after the frame was rendered and before the window's buffers are swapped. Ends the OpenXR
+ * frame begun by \ref beginFrame (or begins one first, for frames shown from outside the game
+ * loop). In a stereo frame (\ref stereoActive) the eye images the scene was drawn into are
+ * submitted as the projection layer with the poses located for this frame, and the flat frame quad
+ * in front of them, blended by its alpha (F-20); when the scene was not drawn (a menu, a loading
+ * screen) both eyes are cleared to a uniform dark background instead - both eyes or none (F-116).
+ * Frames the runtime does not want rendered are ended without layers. Afterwards the window is the
+ * render target again, and the desktop mirror (#21, F-24) draws into it what one eye (the right
+ * one by default, \c vr_mirror_eye) sees: its image cropped to the window, the flat frame where
+ * the quad appears in that eye; with the mirror off the window shows the flat frame alone.
  * Does nothing while no OpenXR session is running.
  *
  * \param windowSize size of the window's back buffer
  */
 void submitFrame(const Vec2i & windowSize);
+
+/*!
+ * \return true while the current frame is drawn in stereo: the session runs, the runtime wants the
+ *         frame rendered and the eyes were located - the scene must then be drawn once per eye with
+ *         \ref beginEyeRender / \ref endEyeRender, and everything 2D goes to the flat frame quad
+ */
+bool stereoActive();
+
+/*!
+ * \return this frame's eyes relative to the head camera (left, right): offsets in game units,
+ *         rotations and fields of view - valid while \ref stereoActive
+ */
+const std::array<EyeRig, 2> & eyeRigs();
+
+//! \return the frustum both eyes are culled with, in the head camera's axes (F-163) - valid while \ref stereoActive
+const EyeFov & unionEyeFov();
+
+//! \return the size of the eye swapchain images in pixels (0 without a session)
+Vec2i eyeRenderSize();
+
+/*!
+ * \brief Make an eye's swapchain image the render target for the scene
+ *
+ * Acquires the image, binds its framebuffer and names its size to the renderer; the caller
+ * prepares the eye's camera and draws the scene, then calls \ref endEyeRender.
+ *
+ * \return false when the frame is not a stereo frame or the image could not be acquired (logged):
+ *         the eye is then left out of this frame
+ */
+bool beginEyeRender(size_t eye);
+
+//! Hand the eye's image back and make the flat frame the render target again
+void endEyeRender(size_t eye);
+
+//! The stereo render as status.json reports it (#19)
+struct StereoStatus {
+	bool active = false;        //!< the current frame is drawn per eye
+	u64 frames = 0;             //!< frames whose scene was drawn into both eyes since the game started
+	Vec2i eyeSize = Vec2i(0);   //!< the eye images in pixels
+	std::array<EyeFov, 2> fov;  //!< the eyes' fields of view of the last stereo frame
+	EyeFov unionFov;            //!< the culling frustum of the last stereo frame
+	float eyeSeparationM = 0.f; //!< the distance between the eyes in meters
+	float cantDeg = 0.f;        //!< the angle between the eyes' view directions in degrees
+};
+
+StereoStatus stereoStatus();
 
 //! One eye as located for the current frame, in the world-locked reference space (meters)
 struct EyeView {
@@ -182,13 +244,6 @@ struct MirrorStatus {
 };
 
 MirrorStatus mirrorStatus();
-
-/*!
- * \return the vertical field of view (radians) that makes the flat frame fill the head-locked quad
- *         one to one, for a window of \a windowSize - the camera's FOV while a session exists and
- *         the frame is shown on the quad (#24, until #19 renders per eye); 0 without a session
- */
-float flatFrameFov(const Vec2i & windowSize);
 
 /*!
  * \return the OpenXR runtime that answered this run, as "<name> <version>" - empty while no

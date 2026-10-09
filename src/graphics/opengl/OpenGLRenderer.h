@@ -58,6 +58,8 @@ public:
 	
 	// Viewport
 	void SetViewport(const Rect & viewport) override;
+
+	void setRenderTargetSize(const Vec2i & size) override;
 	
 	void SetScissor(const Rect & rect) override;
 	
@@ -117,7 +119,13 @@ private:
 	void reinit();
 	
 	Rect viewport;
-	
+
+	//! The size of the bound render target when it is not the window (VR eye and flat frame images, #19)
+	Vec2i m_renderTargetSize;
+
+	//! \return the size of the current render target: the window unless setRenderTargetSize() named another
+	Vec2i renderTargetSize() const;
+
 	void flushState();
 	
 	template <class Vertex>

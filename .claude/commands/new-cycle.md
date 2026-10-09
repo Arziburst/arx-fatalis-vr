@@ -44,8 +44,13 @@ and the next task of the MVP queue.
     pick tasks from the queue whose dependencies are merged and whose **areas differ** from every task
     in progress; **start a worker for each** with the owner's copy's
     `C:\Users\arzib\OneDrive\Desktop\arx-fatalis-vr\scripts\dev\start-worker.ps1 <n> [-Type <type>]`
-    (worktree + background session running `/next-task <n>`, decision D-011). `claude agents --json`
-    shows which workers are still running; a worker that is idle with its PR merged is finished.
+    (worktree + background session running `/next-task <n>`, decision D-011). The model follows the
+    task's area (D-012: vr-runtime / render → Fable, build / docs → Sonnet, the rest → Opus); pass
+    `-Model` to override. `claude agents --json` shows which workers are still running; a worker that is
+    idle with its PR merged is finished.
+  - **usage** (D-012): read the limits from `~/.claude/statusline/last.json` (`rate_limits`, if present)
+    or ask the owner for a screenshot of the Usage page when unsure; if the week runs ahead of time,
+    start fewer workers or shift tasks to the model with room left, and say so in the report.
 
 ## 2b. Headset test batch
 If PRs wait in **Testing**, list them as a batch for the owner: per PR the one question from its

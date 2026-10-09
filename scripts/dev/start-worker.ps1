@@ -29,7 +29,9 @@
 	The short name of the branch. Default: from the issue title (new-worktree.ps1).
 
 .PARAMETER Model
-	The model of the worker session. Default: the owner's default model.
+	The model of the worker session (fable, opus, sonnet or a model id). Default: by the issue's area label
+	(decision D-012) - area:vr-runtime and area:render -> fable; area:build and area:docs -> sonnet;
+	anything else -> opus. Pass -Model to override, e.g. fable for a hard crash.
 
 .PARAMETER PermissionMode
 	Permission mode of the worker session. Default: bypassPermissions (D-011).
@@ -60,8 +62,18 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $repo = 'Arziburst/arx-fatalis-vr'
 
-$title = gh issue view $Issue -R $repo --json title -q .title
-if ($LASTEXITCODE -or -not $title) { throw "could not read the title of #$Issue" }
+$info = gh issue view $Issue -R $repo --json title,labels | ConvertFrom-Json
+if ($LASTEXITCODE -or -not $info.title) { throw "could not read #$Issue" }
+$title = $info.title
+
+# D-012: the hardest areas get Fable (its own weekly limit), plumbing and docs get Sonnet, the rest Opus
+if (-not $Model) {
+	$areas = @($info.labels.name | Where-Object { $_ -like 'area:*' })
+	$Model = if ($areas | Where-Object { $_ -in 'area:vr-runtime', 'area:render' }) { 'fable' }
+		elseif ($areas -and -not ($areas | Where-Object { $_ -notin 'area:build', 'area:docs' })) { 'sonnet' }
+		else { 'opus' }
+	Write-Host "model:    $Model (D-012, labels: $(if ($areas) { $areas -join ', ' } else { 'no area' }))"
+}
 
 $wtArgs = @{ Issue = $Issue; Type = $Type; PassThru = $true }
 if ($Name) { $wtArgs.Name = $Name }
@@ -89,9 +101,7 @@ if ($running) {
 
 if (-not $Prompt) { $Prompt = "/next-task $Issue worktree=$path" }
 
-$claudeArgs = @('--bg', '-n', $session, '--permission-mode', $PermissionMode)
-if ($Model) { $claudeArgs += '--model', $Model }
-$claudeArgs += $Prompt
+$claudeArgs = @('--bg', '-n', $session, '--permission-mode', $PermissionMode, '--model', $Model, $Prompt)
 
 if ($DryRun) {
 	Write-Host "would run in ${launchDir}:"
@@ -111,6 +121,6 @@ if ($LASTEXITCODE) {
 }
 
 Write-Host ($out -join "`n")
-Write-Host "worker:   $session" -ForegroundColor Cyan
+Write-Host "worker:   $session ($Model)" -ForegroundColor Cyan
 Write-Host "worktree: $path"
 Write-Host "follow:   claude agents   |   claude attach <id>   |   claude logs <id>"

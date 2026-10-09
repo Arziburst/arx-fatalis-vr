@@ -19,10 +19,13 @@
 
 #include "vr/HeadTracking.h"
 
+#include <cmath>
 #include <cstring>
 #include <string>
 
 #include "core/GameEvent.h"
+#include "core/GameTime.h"
+#include "vr/BodyYaw.h"
 #include "vr/VRSystem.h"
 
 namespace vr {
@@ -41,10 +44,49 @@ struct HeadTrackingState {
 	std::string resetReason = "startup";
 
 	HeadStatus status;
+	BodyStatus body;
 
 };
 
 HeadTrackingState g_head;
+
+//! A drag episode ends only this far inside the dead zone, so a head held at its edge is one episode
+const float DragEndMarginDegrees = 5.f;
+
+/*!
+ * The body after the head (#25): \a headYaw is the head's turn since the reference; the body keeps its
+ * own turn from the heading, so turning the heading turns both
+ */
+void updateBody(float headYaw, float heading, float lookYaw) {
+
+	BodyStatus & body = g_head.body;
+	const BodyFollowParams params;
+	const float seconds = toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
+	const BodyFollow follow = followHead(body.offset, headYaw, seconds, params);
+
+	const float gap = std::abs(wrapSignedDegrees(headYaw - follow.yaw));
+	const bool dragged = follow.dragged || (body.dragged && gap > params.deadZoneDegrees - DragEndMarginDegrees);
+	if(dragged != body.dragged) {
+		if(dragged) {
+			body.drags++;
+		}
+		// An episode, not a frame: the head reached the dead zone's edge and pulls the body, or let it go
+		gameevent::Event("vr.body.drag", 100)("state", dragged ? "start" : "end")
+			("head", headYaw, 1)("body", follow.yaw, 1)("deadZone", params.deadZoneDegrees, 0);
+	}
+
+	body.offset = follow.yaw;
+	body.dragged = dragged;
+	body.lookYaw = wrapDegrees(lookYaw);
+	body.bodyYaw = wrapDegrees(heading + body.offset);
+}
+
+void resetBody(float heading) {
+	BodyStatus & body = g_head.body;
+	body.offset = 0.f;
+	body.dragged = false;
+	body.lookYaw = body.bodyYaw = wrapDegrees(heading);
+}
 
 } // anonymous namespace
 
@@ -85,6 +127,7 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 
 	if(std::strcmp(source, "none") == 0) {
 		status.clamped = false;
+		resetBody(bodyYaw);
 		return false;
 	}
 
@@ -93,6 +136,8 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 		status.referenced = true;
 		status.references++;
 		g_head.resetPending = false;
+		// The new forward is where the body faces (#25)
+		resetBody(bodyYaw);
 		gameevent::Event("vr.head.reference")("reason", g_head.resetReason)("source", source)
 			("yaw", status.reference.yaw, 1)("bodyYaw", bodyYaw, 1)
 			("x", status.reference.position.x, 3)("y", status.reference.position.y, 3)
@@ -111,6 +156,8 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 	status.position = head.position;
 	status.offset = camera.offset;
 	status.clamped = camera.clamped;
+
+	updateBody(wrapSignedDegrees(status.head.getYaw() - status.reference.yaw), bodyYaw, camera.angle.getYaw());
 
 	position += camera.offset;
 	angle = camera.angle;
@@ -136,6 +183,10 @@ void clearSimulatedHead() {
 
 const HeadStatus & headStatus() {
 	return g_head.status;
+}
+
+const BodyStatus & bodyStatus() {
+	return g_head.body;
 }
 
 } // namespace vr

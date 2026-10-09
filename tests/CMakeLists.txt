@@ -39,6 +39,9 @@ set(arxtest_TESTCASES
 	tests/util/StringTest.h
 	tests/util/StringTest.cpp
 
+	tests/vr/BodyYawTest.h
+	tests/vr/BodyYawTest.cpp
+
 	tests/vr/EyeProjectionTest.h
 	tests/vr/EyeProjectionTest.cpp
 
@@ -65,6 +68,8 @@ set(arxtest_TESTCASES
 	tests/vr/SimRigTest.cpp
 	tests/vr/UIPanelTest.h
 	tests/vr/UIPanelTest.cpp
+	tests/vr/InterfaceSizeTest.h
+	tests/vr/InterfaceSizeTest.cpp
 
 
 )
@@ -83,6 +88,7 @@ set(arxtest_SOURCES
 	src/io/IniSection.cpp
 	src/io/log/FileLogger.cpp
 	src/io/resource/ResourcePath.cpp
+	src/vr/BodyYaw.cpp
 	src/vr/EyeProjection.cpp
 	src/vr/FramePacing.cpp
 	src/vr/VRBindings.cpp
@@ -92,6 +98,7 @@ set(arxtest_SOURCES
 	src/vr/EyeImage.cpp
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
+	src/vr/InterfaceSize.cpp
 
 
 	${arxtest_TESTCASES}

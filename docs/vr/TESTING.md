@@ -24,6 +24,7 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 .\scripts\dev\smoke-test.ps1 -Commands 'drawcheck 120'         # two draws of the scene per frame must give one picture (#71)
 .\scripts\dev\comfort-check.ps1                               # shake, FOV zoom and bob with the VR comfort policy off and on, one run (#76)
 .\scripts\dev\head-check.ps1                                  # a simulated head pose drives the camera: turn, move, lean limit, recenter, off - one run (#24)
+.\scripts\dev\body-check.ps1                                  # the body after the head on the simulated headset: ±40° drag, ~1.5 s settle, camera still, heading turn, recenter - one run (#25)
 .\scripts\dev\spell-drawcheck.ps1                             # the 26 spells of #71 really launched, then drawcheck 240 (#155)
 .\scripts\dev\input-check.ps1                                 # the VR controls' table (#30): taps, chords, a remap and a reset through vr-input, one flat run
 .\scripts\dev\game-input-check.ps1                            # the VR input module (#74): VR buttons -> inventory, book, crouch, jump, game menu; the move vector; one flat run
@@ -252,7 +253,11 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   `yaw`, `roll`: the head's own angles in LOCAL, engine convention (positive pitch looks down, yaw grows
   to the left); `x`, `y`, `z`: the head in LOCAL, metres; `offsetX/Y/Z`: what the head adds to the
   character's eye, game units (y down); `clamped`: the lean is at the interim 0.6 m limit (#26).
-  The camera angles themselves are in `camera` (`camera.yaw` = body yaw + head yaw − `refYaw`).
+  The camera angles themselves are in `camera` (`camera.yaw` = heading + head yaw − `refYaw`, the
+  heading being `player.yaw`, what the stick and the mouse turn). The body (#25, D-009): `lookYaw` =
+  `camera.yaw`, the stick's forward (D-008); `bodyYaw` = heading + `bodyOffset`, where the player model
+  faces (`player.modelYaw` shows the model really does); `bodyDragged` / `bodyDrags`: the head is at the
+  25° dead zone's edge pulling the body / how many such episodes. Without a head all three are the heading.
   `camera.fov` stays cfg.ini's `fov` (the flat camera's): in a stereo frame the eyes render with
   their own projection from the headset's angles, reported in `vr.stereo` (#19; the quad-angle FOV
   #24 used while the flat frame was on the quad is gone).
@@ -461,6 +466,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.head.lean` | the lean reaches the interim limit, and when it is back within (#24, until #26) | `state=clamped\|free`, `limitM` (limit 100) |
 | `vr.panel.placed` | the floating UI panel was placed (#49): a menu opened (after > 250 ms closed), a recenter while it was open, or the head came back to tracking | `reason=open\|recenter\|tracking`, `menu`, `x`, `y`, `z` (LOCAL, metres), `yawDeg`, `distanceM`, `dropM`, `widthM`, `headY` |
 | `vr.panel` | the 2D interface moved between the panel and the head-locked quad (#49) | `mode=world\|head`, `menu` (`none` when closed) |
+| `vr.body.drag` | the head reached the 25° dead zone and pulls the body along, and when it let go (5° inside) (#25) | `state=start\|end`, `head`, `body` (degrees from the heading), `deadZone` (limit 100) |
 
 Not here yet, by design: melee attacks *refused* by a gate (F-66) come with the VR swing detector
 (#39); the recenter chord with #28; locomotion, interaction and rune-drawing in VR add their own events in the
@@ -653,7 +659,7 @@ the eyes by its alpha (research rows F-115, F-162, F-163; the design is D-025):
   target, cleared to transparent.
 - `ArxGame::updateActiveCamera()` prepares the head camera with the union projection and the VR
   near plane (0.09 m, F-39): rooms, portals and entities are culled once for both eyes, and the
-  update projects with it at the window's size.
+  update projects with it at the interface's size (`g_size`, the quad's own resolution, #73).
 - `ArxGame::renderStereoViews()` draws `renderSceneView()` per eye between `vr::beginEyeRender()`
   and `vr::endEyeRender()`: the eye's camera is the head camera moved to the eye and turned by its
   cant, the projection is the eye's own off-axis matrix straight from its `XrFovf`
@@ -664,23 +670,53 @@ the eyes by its alpha (research rows F-115, F-162, F-163; the design is D-025):
   the quad in front; a frame whose scene was not drawn (a menu) clears both eyes to the dark
   background — both eyes or none (F-116). The desktop mirror (#21) copies the mirrored eye in
   `endEyeRender()` and the quad before its release and draws them into the window (the quad
-  blended by its alpha); with `vr_mirror = 0` the window shows the flat frame alone. With an idle
-  headset (`shouldRender` false) the game draws into the window as in flat mode and the frame is
-  ended without layers.
+  blended by its alpha); with `vr_mirror = 0` the window shows the flat frame alone. Any other
+  frame while the session runs (an idle headset with `shouldRender` false, eyes not located, the
+  loading screen through `vr::beginInterfaceFrame()`) draws the flat frame straight into the quad's
+  image, cleared to opaque black, and the window shows it scaled; such a frame is ended without
+  layers when the runtime does not want it rendered.
 
 The log says once per session what the eyes are:
 
 ```
-[vr] stereo: the scene is drawn per eye - left 2468x2740 fov L -54.0 R 40.0 U 44.0 D -55.0 deg, right 2468x2740 fov L -40.0 R 54.0 U 44.0 D -55.0 deg, eye separation 64.0 mm, canted displays: 5.0 deg between the eyes, union fov L -59.0 R 59.0 U 46.3 D -57.1 deg (one cull for both eyes), near 0.09 m = 9.0 units; the 2D interface stays on the head-locked quad (640x480, blended by its alpha)
+[vr] stereo: the scene is drawn per eye - left 2468x2740 fov L -54.0 R 40.0 U 44.0 D -55.0 deg, right 2468x2740 fov L -40.0 R 54.0 U 44.0 D -55.0 deg, eye separation 64.0 mm, canted displays: 5.0 deg between the eyes, union fov L -59.0 R 59.0 U 46.3 D -57.1 deg (one cull for both eyes), near 0.09 m = 9.0 units; the 2D interface stays on the head-locked quad (1528x1146, blended by its alpha)
 ```
+
+### The interface's own resolution (#73)
+
+The 2D interface is laid out on a virtual screen, `g_size` / `g_sizeRatio` (fonts, HUD scale,
+menus). In flat mode that is the window. While an OpenXR session runs, from its first located eyes
+on, it is the **head-locked quad's own resolution**: the eye image's pixels per unit of tangent
+(`eyeWidth / (tan right − tan left)`) times the quad's tangent width (2.4 m / 1.75 m), with the
+window's aspect ratio, clamped to 640…4096 wide and to the largest swapchain
+(`src/vr/InterfaceSize.h`, host tests in `tests/vr/InterfaceSizeTest.cpp`). On the Index that is
+**1528 px wide** for a 4:3 window (1528×1146) at 19.4 px per degree, whatever the window's size —
+before #73 the quad had the window's pixels (a 640×480 test window: a blurry quad). Size, distance
+and shape of the quad are unchanged (D-030).
+
+- `ArxGame::doFrame()` compares `vr::interfaceSize(window)` with `g_size` after `vr::beginFrame()`
+  and lays the interface out again (`AdjustUI`, like a resized window) when the session starts and
+  stops: `Interface laid out at 1528x1146 (was 640x480, window 640x480)`.
+- The mouse is measured on the interface: `Input` maps the window's cursor to `g_size` and back
+  (`setMousePosAbs`), identity in flat mode.
+- The scene is still drawn at the eye size (#19): `g_size` is the eye's only inside
+  `renderSceneView()` per eye.
+- A frame drawn into the window while the quad has its own size (the first frame after a level
+  load ended the game loop's frame) goes without the quad for that one frame.
+
+Evidence, once per session and per change: `[vr] interface: 918x689 on the head-locked quad (2.40 m
+at 1.75 m, 11.7 px per degree like the eyes) instead of the window's 640x480` (the simulator's
+1440×1600 eyes), a `vr.interface` game event, and `status.json` → `vr.interface` (`width`/`height` =
+`g_size`, `quadWidth`/`quadHeight`, `eyePxPerDeg`). A `shot` in a VR run saves the quad's image at
+that size.
 
 plus one `vr.stereo` game event with the same numbers, and `status.json` → `vr.stereo`
 (`active`, `frames`, the sizes and angles). `OpenXR session stopped after N frames (M shown, K in
 stereo)` counts the stereo frames at the end.
 
-What stays with the head camera until #72 / #73 (and looks flat or misplaced in the headset):
+What stays with the head camera until #72 (and looks flat or misplaced in the headset):
 particles, sparks, light flares and the mouse-drawn rune sparkles (update-phase 2D data at the
-window's size); screen-space picking with the mouse (#37 replaces it with hand reticles). The
+interface's size); screen-space picking with the mouse (#37 replaces it with hand reticles). The
 draw check is refused in a stereo frame: its two views would be the two eyes.
 
 **Without a headset:** the per-eye path runs unchanged on the simulated headset (`--vr-sim`,
@@ -856,6 +892,7 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | 2026-10-09, #24: `head-check.ps1` — one flat run on `mvp-new-game`, phases `comfort on` (flat), `headpose 0 0 0 0 1.7 0`, `headpose 30 -20 10 0 1.7 0`, `headpose 0 0 0 0.3 1.5 0`, `headpose 0 0 0 1.0 1.7 0`, `recenter`, `headpose off`, status sampled every 100 ms | `PASS`, 25 samples, smoke test 0 errors. Body yaw 359.75 throughout. **flat**: source `none`, camera yaw 359.75 = body. **ahead**: source `sim`, 1 reference, camera = body, offset 0. **turn**: camera yaw **29.75** (+30), pitch **20.00**, roll **350.00**, position unchanged. **move**: offset **(30.00, 20.00, −0.13)** = 30 cm right and 20 cm down turned by the body's yaw, and the camera moved by it. **lean** (1 m): **clamped**, horizontal offset **60.00**. **recenter**: 2 references, offset 0. **off**: source `none`, camera = body again. Six `vr.head*` events, nothing per frame. The shots `head-ahead` / `head-turn` show the cell door moving right and the floor coming into view. The plain smoke test (`--loadlevel 10`) logs no `vr.head` event at all: flat play is untouched. The host tests (`HeadPoseTest`, 10 cases) fail 5 of 10 with the yaw turn's sign flipped on purpose. After the VR-only FOV of the quad was added, `comfort-check.ps1` still `PASS` with fov **75.00** in flat mode (46 samples): the quad FOV needs a session. The quad FOV itself (a VR session) was not exercised: the owner's headset tests held SteamVR, workers ran flat only |
 | 2026-10-09, #24: the owner's headset run of #215 (`test-pr.ps1 215`, shared user dir, `--skiplogo --loadslot 0`) showed a **black world with only the HUD** | Not the camera: the shared save folder was empty, so no level was loaded — `game.state` stayed `STARTUP` for the whole run, no `level.loaded`, rate line `game 0.1 mean` ms (the #21 run before it: the same). After the fix, flat `smoke-test.ps1 -- --skiplogo --loadslot 5` with one save: state **`MENU`** at 0.8 s (before: an empty level), one `[E] --loadslot 5: no such save, 1 save(s) in the save game dir - starting at the main menu instead of an empty level` (the smoke test fails on it, as it should). `test-save-library.ps1`: `Get-ArxLoadSlotProblem` refuses `--loadslot 0` with no saves and `--loadslot 1` with one, accepts `--loadslot 0` with one (6 new checks) |
 | 2026-10-09, #24 on the simulated headset (#112): `eye-check.ps1` (level 10), then `smoke-test.ps1 -VrSim head-motion`, then `head-check.ps1` again | **Before** (the head applied in `updateFirstPersonCamera`): eye check `FAIL (yaw)` — both eyes turned 25°, picture changed **1.34** (floor 0.81, needs > 2.42); the `yaw25` flat frame identical to `still-a`: level 10's intro conversation camera overwrote the head (TRAPS.md). **After** (the head applied in `updateActiveCamera` to the camera the frame renders with, taken off again next frame): eye check **`PASS`** — world, pairing 428/428, separation 64 mm, difference 5.887 vs floor 0.844, parallax 16 columns, **yaw: picture changed 4.246 / 4.245**. `head-motion`: shots `center`, `right10cm`, `crouch30cm`, `turned` all **left world, right world, flat frame world**; the `turned` frame faces the right wall and more floor, `crouch30cm` sits lower. `head-check.ps1` still `PASS` with the same numbers |
+| 2026-10-09, #25: `body-check.ps1` — one run on the simulated headset (`-VrSim basic`, `mvp-new-game`), the head turned through the channel (`vr-sim head rot 0 / 40 / -40`), then `setpos` here with heading + 90°, then `recenter`; status sampled every 50 ms | `PASS`, 49 samples, smoke test 0 errors. **ahead**: offset 0, model = heading 359.75. **left** (+40°): `vr.body.drag start head=40.0 body=15.0` in that frame, then the body settles on the head — offset 38.76 at 1.47 s, 39.95 at 3 s; look = camera yaw = 39.75 throughout; camera position unchanged. **right** (−40°): dragged to −15.0, settled at −39.98. **heading** 89.75: offset kept (−39.99), body = model = 49.76. **recenter**: offset 0, body = model = heading. Every frame: look = heading + head, the head ≤ 25° from the body. Proven to fail: with the eye compensation switched off the camera moved **1.11** units at ±40° → `FAIL`. `head-check.ps1` still `PASS` (same numbers as #24), `eye-check.ps1` `PASS` on the second run (the first failed only `difference` on a loaded PC, #232), flat smoke test `PASS`. `BodyYawTest` 8 cases in `arxtest` |
 | 2026-10-09, #115 log banner: flat smoke test, then `status.json` and the first log lines asserted by script | `PASS`; `build.commit` = `git rev-parse HEAD` of the worktree **after a commit and a rebuild** (before #115 a worktree kept its first build's commit), `build.branch`, `build.config` = `Release`, `vr.manifest` = the SteamVR manifest from `HKLM`, `vr.runtime` = `""` in a flat run; the four banner lines match their documented shape. `XR_RUNTIME_JSON` → a missing file (flat, `--no-vr`): the manifest line says `from XR_RUNTIME_JSON, overriding the registry's "…steamxr_win64.json"`, exactly **1** `[W] … does not exist`, `vr.manifest` = that path, `PASS`. `built-from.txt` edited to another commit: exactly **1** `[W] built-from.txt names commit …`, `PASS`. The `OpenXR runtime answered` line needs an instance (SteamVR running): not exercised in that session, it is the renamed `Using OpenXR runtime` line |
 | 2026-10-09, #129 **before** (the `main` build): `run-windows.ps1 -Isolated -Background -- --no-vr --loadlevel 10`, no channel, `Stop-Process` long after the level had loaded | `arx.log` = **4137 bytes, 42 lines, cut mid-line** (`[I] Localisation` and nothing after it): the `ofstream` buffer; the end of the level load lost, no `Clean shutdown` |
 | 2026-10-09, #129 **after**: the same, killed 15.5 s after the start | `arx.log` = **4787 bytes, 49 complete lines**, last line `[I] LoadLevel:511  Done loading level` (the last line the game wrote), ends with a newline; the previous run's truncated log sits in `arx.1.log`; banner `Log: "…\arx.log", previous runs kept as arx.1.log .. arx.9.log` |

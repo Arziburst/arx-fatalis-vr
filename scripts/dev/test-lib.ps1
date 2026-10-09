@@ -77,8 +77,12 @@ function Send-ArxCommand(
 	[string]$Dir = (Get-ArxTestDir),
 	[int]$TimeoutSec = 10
 ) {
+	# The game writes ack.txt first and status.json later, so status.json can still show the batch before the
+	# previous one: a baseline taken from it alone lets that late update (and the previous ack) pass for the
+	# answer to this batch (#250). The baseline is the newest seq of both files; the answer is the ack file itself.
 	$before = Read-ArxStatus $Dir
 	$seq = if ($before) { [int]$before.cmdSeq } else { 0 }
+	$seq = [Math]::Max($seq, (Read-ArxAckSeq $Dir))
 	$file = Join-Path $Dir 'command.txt'
 	$tmp = Join-Path $Dir 'command.txt.tmp'
 	$text = ($Lines -join "`n") + "`n"
@@ -93,7 +97,26 @@ function Send-ArxCommand(
 		}
 	}
 	if (-not $written) { throw "could not write $file" }
-	$null = Wait-ArxStatus { param($s) [int]$s.cmdSeq -gt $seq } -TimeoutSec $TimeoutSec -Dir $Dir `
-		-What "the game to acknowledge '$($Lines -join '; ')'"
-	(Get-Content (Join-Path $Dir 'ack.txt') -Raw -ErrorAction SilentlyContinue).Trim()
+	$deadline = (Get-Date).AddSeconds($TimeoutSec)
+	do {
+		$ack = Read-ArxAck $Dir
+		if ($ack -and [int]$ack.Seq -gt $seq) { return $ack.Text }
+		Start-Sleep -Milliseconds 50
+	} while ((Get-Date) -lt $deadline)
+	$last = if ($before) { $before | ConvertTo-Json -Compress -Depth 4 } else { 'none' }
+	throw "timed out after $TimeoutSec s waiting for the game to acknowledge '$($Lines -join '; ')' (last ack seq $seq; status before: $last)"
+}
+
+# ack.txt as { Seq; Text }, or $null when it is missing, half-written or unreadable.
+function Read-ArxAck([string]$Dir) {
+	try {
+		$text = (Get-Content (Join-Path $Dir 'ack.txt') -Raw -ErrorAction Stop).Trim()
+		if ($text -match '^seq=(\d+) ') { return [pscustomobject]@{ Seq = [int]$Matches[1]; Text = $text } }
+	} catch { }
+	$null
+}
+
+function Read-ArxAckSeq([string]$Dir) {
+	$ack = Read-ArxAck $Dir
+	if ($ack) { $ack.Seq } else { 0 }
 }

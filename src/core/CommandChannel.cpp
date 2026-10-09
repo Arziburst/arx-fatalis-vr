@@ -680,6 +680,16 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("moveY", game.move.y);
 		json.value("turn", game.turn);
 		json.end();
+		// The stick walk the player controls applied (#31): its forward is the look (D-008)
+		const vr::WalkStatus & walk = vr::walkStatus();
+		json.object("walk");
+		json.value("walking", walk.walking);
+		json.value("yaw", walk.yaw);
+		json.value("heading", walk.heading);
+		json.value("dirX", walk.direction.x);
+		json.value("dirZ", walk.direction.z);
+		json.value("walks", walk.walks);
+		json.end();
 		json.end();
 	}
 	// The last rate / cadence report of the frame loop (#20, F-07): one per 3 s while the session runs

@@ -21,14 +21,17 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 #include "core/Config.h"
+#include "core/GameEvent.h"
 #include "core/TimeTypes.h"
 #include "gui/Menu.h"
 #include "input/Input.h"
 #include "io/log/Logger.h"
 #include "platform/Time.h"
 #include "util/Number.h"
+#include "vr/BodyYaw.h"
 #include "vr/VRSystem.h"
 
 namespace vr {
@@ -47,6 +50,8 @@ struct InputState {
 	ControlSet injectedTaps;
 	//! Stick deflections set by the test channel, added to the controllers' (directions: down / up)
 	std::array<Stick, HandCount> injectedSticks;
+
+	WalkStatus walk;
 
 };
 
@@ -150,6 +155,30 @@ void updateInput() {
 
 const GameInputState & gameInput() {
 	return g_input.game.state();
+}
+
+const WalkStatus & walkStatus() {
+	return g_input.walk;
+}
+
+void reportWalk(const StickWalk & walk, float yaw, float heading) {
+
+	WalkStatus & status = g_input.walk;
+	yaw -= 360.f * std::floor(yaw / 360.f);
+	const bool walking = walk.moving();
+	if(walking != status.walking) {
+		if(walking) {
+			status.walks++;
+		}
+		// An episode, not a frame: the stick left its dead zone, or came back to rest
+		gameevent::Event("vr.walk", 200)("state", walking ? "start" : "end")("yaw", yaw, 1)
+			("heading", heading, 1)("look", wrapSignedDegrees(yaw - heading), 1);
+	}
+
+	status.walking = walking;
+	status.yaw = yaw;
+	status.heading = heading;
+	status.direction = walk.direction;
 }
 
 const ControlResolver & controls() {

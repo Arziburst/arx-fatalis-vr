@@ -729,3 +729,11 @@ a PowerShell test helper with parameter `$G` and a local `$g` failed with "canno
 **Symptom:** `test-xrs.ps1` failed only on the slow CI runner: the ack of a check's first command read `last=refuse this`, the command of the check before (#250).
 **Cause:** the game writes `ack.txt` first and `status.json` later; `Send-ArxCommand` took its baseline `cmdSeq` from `status.json` and waited for it to advance, so the late status update of the *previous* batch ended the wait and the old ack was returned.
 **Do:** the baseline is the newest seq of ack.txt and status.json, and the answer is `ack.txt` itself advancing (`Read-ArxAck` in `scripts/dev/test-lib.ps1`). After a send, `status.json` may still lag behind the ack - wait for the state you assert on (`@until`, `@frames`).
+
+## 2026-10-09 — The stick walk is applied on level 10, but the player does not move
+
+**Symptom:** `walk-forward.xrs` on `--loadlevel 10` with `setplayercontrols on`: `vr.walk state=start` / `end` are logged
+and `vr.input.walk.walking` is true, yet `player.x` / `player.z` stay exactly the same.
+**Cause:** level 10 is the scripted intro (see "On `--loadlevel 10` the inventory never closes" above): the movement
+the controls ask for is not applied to the player there - not a locomotion bug.
+**Do:** check walking on a playable save: `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence walk-forward` (#31).

@@ -6,7 +6,7 @@
 	Reads the samples the status line writes (~/.claude/statusline/usage.jsonl) and the session ledger, records the cost
 	of finished sessions per task (tasks.jsonl), and prints a short plan:
 	  NOW       week % and 5-hour % with their resets, the burn rate, the calibration (% of a limit per dollar, with confidence)
-	  BUDGET    % left to the caps (week 80, 5-hour 95), the ETA to each cap at the current burn and with the advised workers
+	  BUDGET    % left to the caps (week 90, 5-hour 95), the ETA to each cap at the current burn and with the advised workers
 	  TASKS     median / p80 cost of a finished task per model, the forecast for the READY tasks of plan-next.ps1
 	  ADVICE    keep every runnable (READY) task running until a cap - no pacing to the reset (D-027); which queued tasks fit before each cap
 	The coordinator runs it every cycle and before starting a worker; its one-line summary goes to the status page (#193).

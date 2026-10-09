@@ -143,7 +143,7 @@ function Get-UsageRecommendation {
 	param(
 		$Week, $FiveHour, $WeekPerUsd, $FivePerUsd, [double]$WorkerUsdPerHour, [double]$BurnUsdPerHour,
 		[int]$RunningWorkers, $ReadyCount = $null, [double[]]$QueueUsd = @(), [double]$Now, [int]$MaxWorkers = 0,
-		[double]$WeekCap = 80, [double]$FiveCap = 95
+		[double]$WeekCap = 90, [double]$FiveCap = 95
 	)
 	$base = [math]::Max(0.0, $BurnUsdPerHour - $RunningWorkers * $WorkerUsdPerHour)
 	$ready = if ($null -ne $ReadyCount) { [int]$ReadyCount } else { $null }

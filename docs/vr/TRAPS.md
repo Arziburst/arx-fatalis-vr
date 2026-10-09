@@ -8,6 +8,36 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — A new PR gets no CI run: `gh pr checks` says "no checks reported" for minutes
+
+**Symptom:** the PR is open, other PRs got their `Build (Windows)` run within a minute, but this one
+has none after 6 minutes (`gh run list --branch <branch>` is empty); closing and reopening the PR
+changes nothing, `gh workflow run build-windows.yml --ref <branch>` runs green but is not attached
+to the PR as a check.
+**Cause:** the PR **conflicts with `main`** (`gh pr view <pr> --json mergeStateStatus,mergeable` →
+`DIRTY` / `CONFLICTING`). A `pull_request` workflow runs on the merge ref (`refs/pull/N/merge`), and
+GitHub cannot create it for a conflicting PR, so no run is created at all — silently, nothing on
+the PR page says why. Here two PRs merged into `main` while the task ran (#153, #154) and both
+touched `TESTING.md` / `TRAPS.md` next to this task's lines.
+**Do:** when a PR shows no checks, look at `mergeStateStatus` first. `git fetch origin`,
+`git merge origin/main`, resolve, push — the run starts on the push. Check `mergeable` again before
+asking why CI is quiet; `gh pr merge` would also refuse a `CONFLICTING` PR.
+
+## 2026-10-09 — `set-status.ps1` fails with "API rate limit exceeded" although `gh api rate_limit` shows thousands left
+
+**Symptom:** `set-status.ps1 -Issue <n> -Status Backlog` prints `Issue #<n> is not on the board yet,
+adding it` and then `Failed to move #<n>`; run by hand, `gh project item-list` / `field-list` answer
+`GraphQL: API rate limit exceeded for user ID …`, while `gh api rate_limit` reports
+`graphql.remaining` in the thousands. Repeats for a quarter of an hour, then works.
+**Cause:** the Projects commands are heavy GraphQL queries (`item-list` with the whole board), and
+several sessions of the same account poll the board (`cycle-report.ps1`, `next-task.ps1`, workers'
+`set-status.ps1`); GitHub's secondary / points limit for the account trips before the hourly
+counter does. `item-add` went through each time, so the issue **is** on the board — without a status.
+**Do:** retry later (minutes, not seconds); do not add the item again by hand (`item-add` is
+idempotent, but every retry is another query). Mention the un-set status in the report if the limit
+does not lift before the task ends. A board script should treat this error as "try again later",
+not as "not on the board".
+
 ## 2026-10-09 — A `spellcast` on the player from the console casts nothing
 
 **Symptom:** `spellcast -fs 5 magic_sight self` through the test channel is acknowledged with

@@ -26,9 +26,9 @@
 #include "vr/MirrorGeometry.h"
 
 /*!
- * The desktop mirror (#21) takes its picture from the left eye image by geometry alone: where the
- * eye looks ahead in its asymmetric field of view, which part of the image fills the window, and
- * where the head-locked flat frame quad appears in that eye.
+ * The desktop mirror (#21) takes its picture from one eye image (the right one by default) by
+ * geometry alone: where the eye looks ahead in its asymmetric field of view, which part of the
+ * image fills the window, and where the head-locked flat frame quad appears in that eye.
  */
 class MirrorGeometryTest final : public CppUnit::TestFixture {
 
@@ -44,6 +44,9 @@ class MirrorGeometryTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testPointBehindTheEyeIsRefused);
 	CPPUNIT_TEST(testHeadCenterAppearsRightOfTheLeftEyesForward);
 	CPPUNIT_TEST(testCropCornersAreTheWindowCorners);
+	CPPUNIT_TEST(testRightEyeLooksLeftOfTheCenter);
+	CPPUNIT_TEST(testHeadCenterAppearsLeftOfTheRightEyesForward);
+	CPPUNIT_TEST(testTheDefaultIsTheRightEye);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -59,6 +62,9 @@ public:
 	void testPointBehindTheEyeIsRefused();
 	void testHeadCenterAppearsRightOfTheLeftEyesForward();
 	void testCropCornersAreTheWindowCorners();
+	void testRightEyeLooksLeftOfTheCenter();
+	void testHeadCenterAppearsLeftOfTheRightEyesForward();
+	void testTheDefaultIsTheRightEye();
 
 };
 

@@ -34,14 +34,14 @@ namespace vr {
 class Swapchain;
 
 /*!
- * \brief The desktop mirror (#21, research row F-24): the window shows what the left eye sees
+ * \brief The desktop mirror (#21, research row F-24): the window shows what one eye sees
  *
- * Never a third render: while the left eye image and the flat frame quad image are acquired, they
+ * Never a third render: while the mirrored eye image and the flat frame quad image are acquired, they
  * are copied raw (\c glCopyImageSubData, no sRGB conversion - the images hold sRGB-encoded values
- * like the window) into two textures of the mirror; after the frame was submitted, the left eye is
+ * like the window) into two textures of the mirror; after the frame was submitted, the mirrored eye is
  * drawn into the window's back buffer, cropped to the window's aspect (\ref mirrorCrop), and the
  * flat frame on top where the head-locked quad appears in that eye. The window then shows the
- * same picture as the left eye, minus the lens distortion.
+ * same picture as that eye, minus the lens distortion.
  *
  * The draw saves and restores the whole fixed-function OpenGL state it touches (\c glPushAttrib),
  * so the renderer's cached state stays true.
@@ -53,20 +53,28 @@ class DesktopMirror {
 public:
 
 	/*!
-	 * \brief Decide for a new session whether the window mirrors the left eye
+	 * \brief Decide for a new session whether the window mirrors an eye
 	 *
 	 * \param wanted false when switched off (\c vr_mirror in cfg.ini, \c --no-vr-mirror)
 	 * \param why    what switched it off, for the log and status.json
+	 * \param eye    the eye to mirror: 0 = left, 1 = right (\c vr_mirror_eye in cfg.ini; right by
+	 *               default - the owner's choice of 2026-10-10)
 	 */
-	void begin(bool wanted, const char * why);
+	void begin(bool wanted, const char * why, size_t eye);
+
+	//! \return the mirrored eye: 0 = left, 1 = right
+	size_t eye() const { return m_eye; }
+
+	//! \return "left" or "right"
+	const char * eyeName() const { return m_eye == 0 ? "left" : "right"; }
 
 	//! Delete the OpenGL objects; needs the session's OpenGL context
 	void destroy();
 
-	//! \return true if this session mirrors the left eye
+	//! \return true if this session mirrors an eye
 	bool isOn() const { return m_on; }
 
-	//! Copy the acquired left eye image; call before it is released
+	//! Copy the acquired image of the mirrored eye (\ref eye); call before it is released
 	void copyEye(const Swapchain & eye);
 
 	//! Copy the acquired flat frame quad image; call before it is released
@@ -81,14 +89,14 @@ public:
 	};
 
 	/*!
-	 * \brief Draw what the left eye sees into the window's back buffer
+	 * \brief Draw what the mirrored eye sees into the window's back buffer
 	 *
 	 * Call after the frame was submitted and before the buffers are swapped, only for frames that
-	 * carried this frame's left eye (\ref copyEye).
+	 * carried this frame's mirrored eye (\ref copyEye).
 	 *
-	 * \param fov            the left eye's field of view for this frame
-	 * \param eyePosition    the left eye's position in the head (view) space, for placing the quad
-	 * \param eyeOrientation the left eye's orientation in the head (view) space
+	 * \param fov            the mirrored eye's field of view for this frame
+	 * \param eyePosition    the mirrored eye's position in the head (view) space, for placing the quad
+	 * \param eyeOrientation the mirrored eye's orientation in the head (view) space
 	 */
 	void draw(const Vec2i & windowSize, const MirrorFov & fov, const Vec3f & eyePosition,
 	          const glm::quat & eyeOrientation, const Quad & quad);
@@ -106,9 +114,10 @@ private:
 	void stop(const std::string & why);
 
 	bool m_on = false;
+	size_t m_eye = 1;
 	std::string m_state = "flat mode";
 	u64 m_frames = 0;
-	bool m_haveEye = false;   //!< the eye texture holds this frame's left eye
+	bool m_haveEye = false;   //!< the eye texture holds this frame's mirrored eye
 	bool m_haveFlat = false;  //!< the flat texture holds this frame's flat frame
 	bool m_logged = false;    //!< the geometry of the first mirrored frame was logged
 

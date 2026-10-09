@@ -93,7 +93,7 @@ static void disableMirror() {
 	g_disableMirror = true;
 }
 ARX_PROGRAM_OPTION("no-vr-mirror", nullptr,
-                   "In VR, keep the flat frame in the desktop window instead of what the left eye sees (overrides vr_mirror in cfg.ini)",
+                   "In VR, keep the flat frame in the desktop window instead of what one eye sees (overrides vr_mirror in cfg.ini)",
                    &disableMirror)
 
 #if ARX_HAVE_OPENXR
@@ -791,7 +791,8 @@ void beginSession() {
 
 	// The desktop mirror (#21): the command line first, then cfg.ini
 	g_xr.mirror.begin(!g_disableMirror && config.video.vrMirror,
-	                  g_disableMirror ? "--no-vr-mirror" : "vr_mirror = 0 in cfg.ini");
+	                  g_disableMirror ? "--no-vr-mirror" : "vr_mirror = 0 in cfg.ini",
+	                  size_t(std::clamp(config.video.vrMirrorEye, 0, 1)));
 
 	LogInfo << "OpenXR session running, submitting frames: xrWaitFrame paces the game";
 	if(g_xr.divisor > 1) {
@@ -976,7 +977,7 @@ bool renderBackground(OpenXRState::Layers & layers) {
 		}
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, swapchain.framebuffer());
 		glClearBufferfv(GL_COLOR, 0, BackgroundColor);
-		if(eye == 0) {
+		if(eye == g_xr.mirror.eye()) {
 			g_xr.mirror.copyEye(swapchain);
 		}
 		swapchain.release();
@@ -1047,21 +1048,22 @@ bool copyFlatFrame(OpenXRState::Layers & layers) {
 }
 
 /*!
- * The desktop mirror (#21): draw what the left eye saw in this frame into the window's back
- * buffer. The flat frame quad lives in the head (view) space, so the left eye is located there
- * for the frame's display time - the same eye the projection layer was submitted with, seen from
- * the head instead of the room.
+ * The desktop mirror (#21): draw what the mirrored eye (vr_mirror_eye, the right one by default)
+ * saw in this frame into the window's back buffer. The flat frame quad lives in the head (view)
+ * space, so the eye is located there for the frame's display time - the same eye the projection
+ * layer was submitted with, seen from the head instead of the room.
  */
 void drawMirror(const Vec2i & windowSize, bool flatFrame) {
 
 	const OpenXRState::Frame & frame = g_xr.frame;
-	const XrView & leftEye = frame.located[0];
+	const size_t eye = g_xr.mirror.eye();
+	const XrView & mirrored = frame.located[eye];
 
 	MirrorFov fov;
-	fov.left = leftEye.fov.angleLeft;
-	fov.right = leftEye.fov.angleRight;
-	fov.up = leftEye.fov.angleUp;
-	fov.down = leftEye.fov.angleDown;
+	fov.left = mirrored.fov.angleLeft;
+	fov.right = mirrored.fov.angleRight;
+	fov.up = mirrored.fov.angleUp;
+	fov.down = mirrored.fov.angleDown;
 
 	DesktopMirror::Quad quad;
 	Vec3f position(0.f);
@@ -1079,7 +1081,7 @@ void drawMirror(const Vec2i & windowSize, bool flatFrame) {
 		                                inHead.data());
 		const XrViewStateFlags valid = XR_VIEW_STATE_ORIENTATION_VALID_BIT | XR_VIEW_STATE_POSITION_VALID_BIT;
 		if(XR_SUCCEEDED(result) && count == inHead.size() && (viewState.viewStateFlags & valid) == valid) {
-			const XrPosef & pose = inHead[0].pose;
+			const XrPosef & pose = inHead[eye].pose;
 			position = Vec3f(pose.position.x, pose.position.y, pose.position.z);
 			orientation = glm::quat(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
 			quad.shown = true;
@@ -1581,6 +1583,7 @@ u32 frameDivisor() {
 MirrorStatus mirrorStatus() {
 	MirrorStatus status;
 	status.state = g_xr.mirror.state();
+	status.eye = g_xr.mirror.eyeName();
 	status.frames = g_xr.mirror.frames();
 	return status;
 }

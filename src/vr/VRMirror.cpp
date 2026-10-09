@@ -29,8 +29,9 @@
 
 namespace vr {
 
-void DesktopMirror::begin(bool wanted, const char * why) {
+void DesktopMirror::begin(bool wanted, const char * why, size_t eye) {
 
+	m_eye = eye == 0 ? 0 : 1;
 	m_haveEye = false;
 	m_haveFlat = false;
 	m_logged = false;
@@ -53,8 +54,9 @@ void DesktopMirror::begin(bool wanted, const char * why) {
 
 	m_on = true;
 	m_state = "on";
-	LogInfo << "[vr] desktop mirror on: the window shows what the left eye sees";
-	gameevent::Event("vr.mirror")("state", "on");
+	LogInfo << "[vr] desktop mirror on: the window shows what the " << eyeName() << " eye sees (vr_mirror_eye "
+	        << m_eye << ")";
+	gameevent::Event("vr.mirror")("state", "on")("eye", eyeName());
 }
 
 void DesktopMirror::stop(const std::string & why) {
@@ -144,7 +146,7 @@ void DesktopMirror::draw(const Vec2i & windowSize, const MirrorFov & fov, const 
 
 	MirrorRect crop = mirrorCrop(fov, m_eyeSize, windowSize);
 
-	// Where the head-locked quad appears in the left eye: its corners projected, each with its depth
+	// Where the head-locked quad appears in the mirrored eye: its corners projected, each with its depth
 	// for a perspective-correct texture (q = 1 / depth)
 	struct Corner {
 		Vec2f window;
@@ -170,7 +172,7 @@ void DesktopMirror::draw(const Vec2i & windowSize, const MirrorFov & fov, const 
 
 	if(!m_logged) {
 		m_logged = true;
-		LogInfo << "[vr] desktop mirror: left eye " << m_eyeSize.x << 'x' << m_eyeSize.y << ", crop u "
+		LogInfo << "[vr] desktop mirror: " << eyeName() << " eye " << m_eyeSize.x << 'x' << m_eyeSize.y << ", crop u "
 		        << crop.u0 << ".." << crop.u1 << " v " << crop.v0 << ".." << crop.v1 << " into the window "
 		        << windowSize.x << 'x' << windowSize.y
 		        << (haveFlat ? "" : ", no flat frame quad");
@@ -222,7 +224,7 @@ void DesktopMirror::draw(const Vec2i & windowSize, const MirrorFov & fov, const 
 	glPushMatrix();
 	glLoadIdentity();
 
-	// The left eye, cropped to the window
+	// The mirrored eye, cropped to the window
 	glBindTexture(GL_TEXTURE_2D, m_eyeTexture);
 	glBegin(GL_TRIANGLE_STRIP);
 	glTexCoord2f(crop.u0, crop.v0);
@@ -235,7 +237,7 @@ void DesktopMirror::draw(const Vec2i & windowSize, const MirrorFov & fov, const 
 	glVertex2f(1.f, 1.f);
 	glEnd();
 
-	// The flat frame where the left eye sees the quad
+	// The flat frame where the mirrored eye sees the quad
 	if(haveFlat) {
 		glBindTexture(GL_TEXTURE_2D, m_flatTexture);
 		glBegin(GL_TRIANGLE_STRIP);

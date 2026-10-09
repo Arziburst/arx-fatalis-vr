@@ -32,11 +32,25 @@
  * \brief Where the desktop mirror (#21, research row F-24) takes its picture from
  *
  * Pure geometry: no OpenXR, no OpenGL, no engine globals, so it is covered by a host unit test
- * (tests/vr/MirrorGeometryTest.cpp). The mirror shows what the left eye sees - its swapchain image,
+ * (tests/vr/MirrorGeometryTest.cpp). The mirror shows what one eye sees - its swapchain image,
  * cropped to the window's aspect, with the head-locked flat frame quad drawn where it appears in
  * that eye. Image coordinates are OpenGL texture coordinates: u to the right, v up, 0..1.
  */
 namespace vr {
+
+//! The eyes as OpenXR orders the stereo views; the value of \c vr_mirror_eye in cfg.ini
+enum MirrorEye {
+	MirrorLeftEye = 0,
+	MirrorRightEye = 1,
+};
+
+/*!
+ * The eye the desktop mirror shows unless \c vr_mirror_eye says otherwise: the right one - the
+ * owner's choice of 2026-10-10 ("the mirror shows the right eye by default") after testing the
+ * left-eye mirror of #21 in the headset. The one place to change the default; the VR settings
+ * (#178 / #181) expose \c vr_mirror_eye later.
+ */
+const int DefaultMirrorEye = MirrorRightEye;
 
 //! Field of view half-angles in radians, OpenXR convention (left and down are negative)
 struct MirrorFov {

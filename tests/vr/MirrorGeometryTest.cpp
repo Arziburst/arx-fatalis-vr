@@ -43,6 +43,11 @@ vr::MirrorFov indexLeftEye() {
 	return fov(std::atan(-1.4f), std::atan(1.0f), std::atan(1.2f), std::atan(-1.2f));
 }
 
+//! The matching right eye: more field of view to the outside (right)
+vr::MirrorFov indexRightEye() {
+	return fov(std::atan(-1.0f), std::atan(1.4f), std::atan(1.2f), std::atan(-1.2f));
+}
+
 const glm::quat Ahead(1.f, 0.f, 0.f, 0.f);
 const Vec2i IndexEye(2016, 2240);
 const Vec2i TestWindow(1280, 720);
@@ -149,4 +154,28 @@ void MirrorGeometryTest::testCropCornersAreTheWindowCorners() {
 	CPPUNIT_ASSERT_DOUBLES_EQUAL(-1.0, bottomLeft.y, Epsilon);
 	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.0, topRight.x, Epsilon);
 	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.0, topRight.y, Epsilon);
+}
+
+void MirrorGeometryTest::testRightEyeLooksLeftOfTheCenter() {
+	// The right eye mirrors the left one: more field of view to the outside, which is now the right
+	Vec2f forward = vr::mirrorForwardPoint(indexRightEye());
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.0 / 2.4, forward.x, Epsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.5, forward.y, Epsilon);
+}
+
+void MirrorGeometryTest::testHeadCenterAppearsLeftOfTheRightEyesForward() {
+	// The flat frame quad is centered in front of the head; the right eye sits 32 mm to the right
+	vr::MirrorFov eye = indexRightEye();
+	Vec2f uv(0.f);
+	float depth = 0.f;
+	CPPUNIT_ASSERT(vr::mirrorProject(Vec3f(0.f, 0.f, -1.75f), Vec3f(0.032f, 0.f, 0.f), Ahead, eye, uv, depth));
+	Vec2f forward = vr::mirrorForwardPoint(eye);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(forward.x - (0.032 / 1.75) / 2.4, uv.x, Epsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(forward.y, uv.y, Epsilon);
+}
+
+void MirrorGeometryTest::testTheDefaultIsTheRightEye() {
+	// The owner's choice of 2026-10-10: the mirror shows the right eye unless vr_mirror_eye says otherwise
+	CPPUNIT_ASSERT_EQUAL(int(vr::MirrorRightEye), vr::DefaultMirrorEye);
+	CPPUNIT_ASSERT_EQUAL(1, int(vr::MirrorRightEye)); // OpenXR stereo views: left, right
 }

@@ -60,8 +60,9 @@ vr-sim head rot 40 0 0
 @shot panelturned
 @remember openq vr.sim.shots.panelahead.left.quadPixels
 # quadPixels counts the eye pixels the drawn interface covers: the head-locked HUD above covers exactly the
-# same with the head turned; the panel leaves the view (measured 152703 -> 110911 on mvp-new-game)
-@assert vr.sim.shots.panelturned.left.quadPixels lt {openq-20000}
+# same with the head turned; the panel leaves the view (measured on mvp-new-game: 152703 -> 110911 before
+# #73, 78209 -> 63588 with the interface at its own resolution - the absolute numbers follow the interface size)
+@assert vr.sim.shots.panelturned.left.quadPixels lt {openq-5000}
 @assert vr.sim.shots.panelturned.left.quadPixels gt 0
 
 # The head comes back: the panel is where it was

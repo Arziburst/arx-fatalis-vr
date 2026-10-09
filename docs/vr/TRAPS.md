@@ -8,6 +8,19 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-09 — Scripting a launch from PowerShell: three tools that quietly do the wrong thing
+
+**Symptoms:** (1) `pwsh -File run-windows.ps1 ... -- --no-vr` fails with "parameter name '' is ambiguous";
+(2) a script waiting for `status.json` to say `MENU` times out although the game just started — the
+first thing it reads is `"state":"EXITED"` of the **previous** run; (3) a date written to a JSON store
+with `ToString('o')` comes back from `ConvertFrom-Json` as a `DateTime` and `[DateTime]::Parse(...)` of it
+throws or loses the precision.
+**Cause:** (1) `pwsh -File` consumes the `--` itself; (2) `run-windows.ps1` does not clear the test
+channel directory (the smoke test does); (3) PowerShell 7 turns ISO date strings into objects.
+**Do:** (1) start such a launch with `pwsh -Command "& .\scripts\run-windows.ps1 ... -- --no-vr"`;
+(2) delete `status.json` before launching and wait for a state *and* the new pid; (3) store epoch seconds
+(`log-digest-lib.ps1` does), never date strings, in JSON read back with `ConvertFrom-Json`.
+
 ## 2026-10-09 — `vr.shownFrames` stays at 1 while `vr.frames` grows: the frame loop looks broken
 
 **Symptom:** a VR self-test with nobody in the headset reports `frames=834 shown=1`; the log has

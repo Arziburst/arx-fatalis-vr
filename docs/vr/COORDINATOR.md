@@ -118,7 +118,10 @@ anything that would fill a worker's context.
   never turn off Smart App Control (TRAPS.md); folder trust and the bypass consent only by the owner —
   never write them into `~/.claude.json`. SteamVR only via `stop-steamvr.ps1`; Steam only by its own
   shutdown (`steam.exe -shutdown`), never killed.
-- **New decision numbers** only after merging origin/main right before the commit (number race).
+- **New decision numbers** (#274): workers write `D-NEW` / `D-NEW-<tag>` and never pick a number; <!-- d-new-literal -->
+  `scripts/dev/number-decisions.ps1 -Pr <pr>` numbers them after `git merge origin/main`, right before the merge
+  ([WORKFLOW.md](WORKFLOW.md#parallel-work)). No refereeing of clashes; the `Decision numbers` check fails a hand-numbered clash.
+  Your own decisions (owner agreements) take the next number straight from main in their own PR.
 
 ## 8. Research and catalogs (D-021)
 - One reference project per block (Sonnet research task): OpenMW VR (#188), Gothic VR mods, Skyrim VR

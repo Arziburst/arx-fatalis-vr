@@ -1,0 +1,30 @@
+name: Decision numbers
+
+# A PR that touches docs/vr/DECISIONS.md must not add a numbered D-0xx that main already has (#274).
+# New decisions are written as D-NEW and numbered by scripts/dev/number-decisions.ps1 right before the merge.
+# Separate from the build workflow because that one ignores docs-only changes. Takes seconds, no build.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'docs/vr/DECISIONS.md'
+      - 'scripts/dev/number-decisions.ps1'
+
+jobs:
+  numbers:
+    name: Decision numbers
+    runs-on: [ self-hosted, Windows, arxvr ]
+    timeout-minutes: 5
+    env:
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: '*'
+    steps:
+    - uses: actions/checkout@v4
+    - name: Fetch main
+      shell: pwsh
+      run: git fetch --no-tags origin main:refs/remotes/origin/main
+    - name: No clashing decision numbers
+      shell: pwsh
+      run: ./scripts/dev/number-decisions.ps1 -Check

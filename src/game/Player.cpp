@@ -1217,6 +1217,22 @@ static void ARX_PLAYER_Manage_Visual_End(ANIM_HANDLE * request0_anim, ANIM_HANDL
 }
 
 /*!
+ * The room a crouched character needs to stand up: the part of the standing cylinder above the crouched one.
+ * What the crouched cylinder already touches - a sloped floor, the edge of a step - is no reason to stay
+ * down: the game checked the whole standing cylinder, so a character that crouched where its standing
+ * cylinder grazed the ground never stood up there again (#263). Something in this part (a low ceiling, a
+ * beam, a creature) still keeps it crouched; < 0 = blocked, as CheckAnythingInCylinder.
+ */
+static Cylinder standUpCylinder() {
+	Cylinder cyl(player.basePosition(), player.physics.cyl.radius, player.baseHeight() - player.crouchHeight());
+	cyl.origin.y += player.crouchHeight();
+	return cyl;
+}
+
+//! The stand-up below was refused and logged; cleared when the character stands up (#263)
+static bool g_standUpRefused = false;
+
+/*!
  * \brief Choose the set of animations to use to represent current player situation.
  */
 void ARX_PLAYER_Manage_Visual() {
@@ -1269,10 +1285,19 @@ void ARX_PLAYER_Manage_Visual() {
 		float old = player.physics.cyl.height;
 		player.physics.cyl.height = player.baseHeight();
 		player.physics.cyl.origin = player.basePosition();
-		float anything = CheckAnythingInCylinder(player.physics.cyl, entities.player());
+		Cylinder room = standUpCylinder();
+		float anything = CheckAnythingInCylinder(room, entities.player());
 		if(anything < 0.f) {
+			// Once per refused stand-up: what is in the way, relative to the crouched head (#263)
+			if(!g_standUpRefused) {
+				g_standUpRefused = true;
+				gameevent::Event("player.standup.blocked", 20)("aboveCrouchedHead", -anything, 1)
+					("what", describeCylinderBlocker(room, entities.player()));
+			}
 			player.m_currentMovement |= PLAYER_CROUCH;
 			player.physics.cyl.height = old;
+		} else {
+			g_standUpRefused = false;
 		}
 	}
 	
@@ -1803,7 +1828,8 @@ static void PlayerMovementIterate(float DeltaTime) {
 				float old = player.physics.cyl.height;
 				player.physics.cyl.height = player.baseHeight();
 				player.physics.cyl.origin = player.basePosition();
-				float anything = CheckAnythingInCylinder(player.physics.cyl, entities.player(), CFLAG_JUST_TEST);
+				// The same room to stand up as without a jump (#263)
+				float anything = CheckAnythingInCylinder(standUpCylinder(), entities.player(), CFLAG_JUST_TEST);
 				if(anything < 0.f) {
 					player.m_currentMovement |= PLAYER_CROUCH;
 					player.physics.cyl.height = old;

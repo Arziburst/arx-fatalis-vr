@@ -220,7 +220,7 @@ function Invoke-SmokeRun([int]$Run) {
 	$launchTime = Get-Date
 	try {
 		New-Item -ItemType Directory -Force $TestDir | Out-Null
-		foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt') {
+		foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt', 'launched.txt') {
 			Remove-Item (Join-Path $TestDir $f) -Force -ErrorAction SilentlyContinue
 		}
 		# arx.log is not deleted here: the game rotates the previous run to arx.1.log itself (#129), and
@@ -246,6 +246,8 @@ function Invoke-SmokeRun([int]$Run) {
 				-RedirectStandardOutput (Join-Path $TestDir 'stdout.txt') -RedirectStandardError (Join-Path $TestDir 'stderr.txt')
 		} finally { Restore-ArxBackgroundWindow $previousHint }
 		Set-ArxGameLockGame $lock $process.Id
+		# The game is running: a check driving it from outside starts its timeouts only now, not during the lock wait (#258)
+		Set-Content -LiteralPath (Get-ArxLaunchMarker $TestDir) -Value "pid=$($process.Id) run=$Run" -Encoding ascii
 
 		# Wait for the expected state, printing the timeline
 		$deadline = (Get-Date).AddSeconds($StartTimeoutSec)

@@ -189,11 +189,21 @@ function Read-ArxAllowList([string]$Path = (Join-Path $PSScriptRoot 'log-digest-
 # signatures.json is shared by the digest of one run and the detached flush of another: every read-modify-write
 # holds a named mutex.
 function Use-ArxStore([scriptblock]$Body) {
-	$mutex = [Threading.Mutex]::new($false, 'Global\ArxFatalisVR-signatures')
+	# Several Windows accounts run the digest (the owner, the workers, the CI runner service): the mutex is created
+	# open to Everyone, or the account that did not create it gets "Access ... is denied" (#272, same as #205). A
+	# mutex that still cannot be opened (created earlier by an older script of another account) is skipped: the
+	# store is replaced atomically below, the lock only avoids lost updates between concurrent digests.
+	$mutex = $null
+	try {
+		$security = [Security.AccessControl.MutexSecurity]::new()
+		$security.AddAccessRule([Security.AccessControl.MutexAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'FullControl', 'Allow'))
+		$created = $false
+		$mutex = [Threading.MutexAcl]::Create($false, 'Global\ArxFatalisVR-signatures', [ref]$created, $security)
+	} catch [UnauthorizedAccessException] { Write-Warning 'the signatures mutex belongs to another account; going on without it' }
 	$held = $false
 	try {
-		try { $held = $mutex.WaitOne(30000) } catch [Threading.AbandonedMutexException] { $held = $true }
-		if (-not $held) { throw 'signatures.json is locked by another process for more than 30 s' }
+		if ($mutex) { try { $held = $mutex.WaitOne(30000) } catch [Threading.AbandonedMutexException] { $held = $true } }
+		if ($mutex -and -not $held) { throw 'signatures.json is locked by another process for more than 30 s' }
 		$path = Get-ArxSignatureStorePath
 		$store = [ordered]@{}
 		if (Test-Path $path) {
@@ -209,8 +219,8 @@ function Use-ArxStore([scriptblock]$Body) {
 		Move-Item -LiteralPath $tmp -Destination $path -Force
 		$result
 	} finally {
-		if ($held) { $mutex.ReleaseMutex() }
-		$mutex.Dispose()
+		if ($held) { try { $mutex.ReleaseMutex() } catch {} }
+		if ($mutex) { $mutex.Dispose() }
 	}
 }
 

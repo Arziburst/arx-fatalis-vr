@@ -81,6 +81,9 @@ workers (`gh issue list --search "created:>=<date>"`), the usage limits (§5).
 - The owner tests in the headset **at the end of a block**, all PRs in Testing in one sitting. Per PR:
   the one question from its *How to test* and `scripts\dev\test-pr.ps1 <pr>` (from the owner's copy;
   builds that PR's worktree if needed and launches it; SteamVR is started by the owner).
+- The coordinator **launches the test for the owner** when they say "запускай #<n>" (`test-pr.ps1 <pr> -StartSteamVR`)
+  and **closes the game and SteamVR right after the verdict** — SteamVR left running would let workers
+  switch the headset on with their VR self-tests (D-014).
 - Verdicts come to the coordinator ("#18 ok", "#18 judder when turning"): accepted → merge (like
   `/accept-task`), in dependency order; rejected → the feedback goes to the PR's worker (`SendMessage`),
   or a new worker with `/reject-task <pr> <feedback>` if the old one is gone. Post the feedback on the

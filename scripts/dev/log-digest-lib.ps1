@@ -268,8 +268,8 @@ $script:ArxTimelinePatterns = @(
 
 function Get-ArxTimeline($Run) {
 	$pattern = [regex]($script:ArxTimelinePatterns -join '|')
-	# Game-state events of D2 (#130) are timeline entries too: add their pattern here when the format is fixed
-	@($Run.Entries | Where-Object { $_.Level -ne 'D' -and $pattern.IsMatch($_.Text) })
+	# Every game event of D2 (#130) is a timeline entry: "[I] GameEvent:N  <name> key=value ... t=<s>"
+	@($Run.Entries | Where-Object { $_.Level -ne 'D' -and ($_.Context -eq 'GameEvent' -or $pattern.IsMatch($_.Text)) })
 }
 
 # logdig (F-112): families of lines (numbers, hex, paths normalised); rare ones in full and in order, the common
@@ -340,7 +340,7 @@ function Format-ArxDigest($Info) {
 		$null = $o.AppendLine('None - no [W], [E] or [C] line in this run.').AppendLine()
 	}
 
-	$null = $o.AppendLine('## Timeline (log order; the log has no timestamps)').AppendLine().AppendLine('```')
+	$null = $o.AppendLine('## Timeline (log order; game events carry t= seconds since startup)').AppendLine().AppendLine('```')
 	foreach ($e in (Get-ArxTimeline $Info.Run | Select-Object -First 60)) { $null = $o.AppendLine(("{0,6}  {1}" -f $e.Index, (Format-ArxEntry $e))) }
 	$null = $o.AppendLine('```').AppendLine()
 

@@ -20,7 +20,7 @@ commit messages, pull requests, and code comments.
 | Current goal: the MVP | [MVP.md](MVP.md) |
 | Research and scope of playable v1 | [RESEARCH-playable-v1.md](RESEARCH-playable-v1.md) |
 | Research: controllers (Valve Index, Quest 3) | [RESEARCH-controllers.md](RESEARCH-controllers.md) |
-| Research: reference VR mods (Dishonored VR, VHVR, Titanfall 2 VR) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |
+| Research: reference VR mods (Dishonored VR, VHVR, Titanfall 2 VR, OpenMW VR) — feature catalog, headless testing | [RESEARCH-reference-mods.md](RESEARCH-reference-mods.md) |
 | SteamVR app manifest: name and tile on the loading card | [STEAMVR.md](STEAMVR.md) |
 | Testing without a headset: smoke test, command channel, `status.json`, `xr_hello` — what is reliable and what is not | [TESTING.md](TESTING.md) |
 | Traps: misleading symptoms that already cost time — **read before debugging** | [TRAPS.md](TRAPS.md) |
@@ -253,7 +253,11 @@ on the issue.
 **Logging rules for VR code** (`arx.log` is the instrument every test and every tester sends back):
 log state changes, not frames — nothing unbounded per frame (log once, every N ms, or the first N);
 every guard that refuses something logs why, with the values; name the owner of a decision before the
-result; an expected zero says so explicitly.
+result; an expected zero says so explicitly. A state change a player or tester causes (a feature
+switching on, a gesture recognised, an attack refused and why) is a **game event**:
+`gameevent::Event("<area>.<what>")("key", value)` (`src/core/GameEvent.h`), one greppable
+`GameEvent:` line with a `t=` time and a count in `status.json` — see "The game event log" in
+[TESTING.md](TESTING.md) (#130).
 
 **Pure VR decision cores get host tests.** Logic that decides something from numbers — swing detector,
 rune stroke projection, snap turn, crouch threshold — lives in a header that takes positions and

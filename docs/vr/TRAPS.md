@@ -30,6 +30,50 @@ the 5-minute cache (`board-cache.json`) and a spent limit queues the move (`boar
 `ARXVR_FORCE_GRAPHQL_ERROR=1` makes every GraphQL call fail like a spent limit, to try the degraded paths. Also:
 PowerShell 7 turns ISO date strings of `ConvertFrom-Json` into `DateTime` — the cache stores epoch seconds instead.
 
+## 2026-10-09 — A reference project's manual and settings screen describe a feature its code no longer has
+
+**Symptom:** research on OpenMW VR finds two accounts of the same facts. The manual says controllers "vibrate in
+response to successful hits, and to being hit", and the game's VR page has a *haptics enabled* setting; it also says
+the bindings screen "does NOT do any sanity checking". The code: the hit haptics are commented out (`TODO: Port to
+lua`), the setting is read by nothing, no shipped script calls the haptics function; and the rebinding code refuses
+a conflicting binding with a message. A config comment says the hand-offset sliders run "0 = -1 meters, 1 = 1
+meters"; the code computes `(v - 0.5)` m. The `player height` setting is read into a scale that nothing applies.
+**Cause:** the manual, the settings window and the config comments were written before a port or refactor (combat
+code moving to Lua, the bindings screen becoming a script page) and not updated; a screen that lists a setting
+proves nothing about what the code does with it.
+**Do:** for every catalog row that rests on "the project does X", search the code for the *use* of the setting or the
+call, not its declaration, and say which of manual, screen and code the row rests on; when they disagree the row
+follows the code and names the disagreement (RESEARCH-reference-mods.md, F-44, F-167, F-171, F-174).
+
+## 2026-10-09 — On `--loadlevel 10` the inventory never closes, `dodamage player` does nothing, and the game goes to the menu after a minute
+
+**Symptom:** a smoke test on the default `--loadlevel 10` opens the inventory through the channel
+(`ui inventory open`), but `ui inventory close` never produces `ui.inventory state=closed`;
+`dodamage player 1000` leaves the player alive; a `shot` shows a letterboxed picture; and a run
+longer than about a minute ends with `game.state to=MENU` at t=58 s although nobody touched the menu.
+**Cause:** `--loadlevel 10` starts a **new game**, and level 10 is the scripted intro, not a playable
+start: the script blocks the player's controls (`BLOCK_PLAYER_CONTROLS`, so damage to the player is
+not applied) and shows cinema borders (`cinemascope`, so `renderInterface()` skips the HUD whose
+update finishes the inventory's closing animation — `player.Interface` keeps `INTER_INVENTORY`). The
+intro (`cinematic.skip` at t=29.55, NPC spells at t=52–56) ends in the main menu at t=58.4. Damage
+from the player's own `dodamage` is also ignored: the source must be another entity.
+**Do:** for anything that needs the player in control, send `setplayercontrols on` and
+`cinemascope off` first, damage the player from an NPC (`human_base_0033.dodamage player 1000`), and
+keep level 10 runs under 50 s — or start from a playable save (`-Saves`, the test save library #70).
+The game event log (#130) shows all of it with `t=` times; read it before suspecting the feature.
+
+## 2026-10-09 — The game crashes in `ScriptEventName::toString()` for a console command
+
+**Symptom:** a new log line that names the script event of a failing command crashed the game
+(`ACCESS_VIOLATION`, stack `Script.cpp:180` ← `ScriptEvent.cpp` ← `Console.cpp`) the moment a
+console / channel command failed; the same line was fine for commands failing inside real scripts.
+**Cause:** console lines run as the pseudo-event `SM_EXECUTELINE` (and jumps as `SM_DUMMY`), which
+have no `"on <name>"` entry; `toString()` asserts on that (a no-op in Release) and takes
+`substr(3)` of whatever came back. The engine itself only prints events through `operator<<`,
+which special-cases both.
+**Do:** never call `ScriptEventName::toString()` without handling `SM_EXECUTELINE` / `SM_DUMMY`
+first (see `script.error` in `ScriptEvent.cpp`, #130), or print through `operator<<`.
+
 ## 2026-10-09 — Scripting a launch from PowerShell: three tools that quietly do the wrong thing
 
 **Symptoms:** (1) `pwsh -File run-windows.ps1 ... -- --no-vr` fails with "parameter name '' is ambiguous";

@@ -11,6 +11,9 @@ set(arxtest_TESTCASES
 	tests/graphics/ColorTest.h
 	tests/graphics/ColorTest.cpp
 	
+	tests/core/GameEventTest.h
+	tests/core/GameEventTest.cpp
+	
 	tests/io/fs/FilePathTest.h
 	tests/io/fs/FilePathTest.cpp
 	

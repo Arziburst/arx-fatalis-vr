@@ -14,7 +14,10 @@ Format: **symptom** — what is really going on — what to do.
 show nothing about it; or a smoke test of yours and the CI game ran together although "one game at a time" holds.
 **Cause:** the runner service is `NT AUTHORITY\NETWORK SERVICE` (session 0). Its `%LOCALAPPDATA%` is
 `C:\Windows\ServiceProfiles\NetworkService\AppData\Local`, so CI has its own build, user directory, channel, game lock and
-ledger; the lock does not span accounts (#205). It also has no Steam registry entry of the owner, hence `ARXVR_DATA_DIR`.
+ledger. (Until #205 the game lock was per account too and did not span accounts; it now lives in `%ProgramData%\ArxFatalisVR\locks`,
+shared by both. A working copy that has not merged `main` since still has the old launch-lib: its launches do not see a CI game
+(they look in their own account only), while CI sees its `arx.exe` through WMI and waits - merge `main` into such a copy.) It also
+has no Steam registry entry of the owner, hence `ARXVR_DATA_DIR`.
 The game itself runs fine there: no desktop, window and OpenGL context are created anyway (measured: `GAMEPLAY` after ~1 s).
 **Do:** read the evidence from the workflow artifact `game-checks` (logs, `status.json`, crash reports, digest), not from
 your profile. Do not "fix" a CI failure by starting an interactive runner before the artifact says the window was the problem.

@@ -524,7 +524,7 @@ self-hosted runner (D-021: CI is the automatic gate; a red step blocks the merge
 
 | Step | What | Fails when |
 |---|---|---|
-| Script self-tests | `scripts/dev/run-script-tests.ps1`: every `scripts/dev/test-*.ps1` in its own pwsh (`test-log-digest.ps1` incl. the `-Id` / `-Find` / `-Condense` / `-Print` modes on a fixture log, `test-github-lib.ps1`) | a test exits non-zero, or a `test-*.ps1` is in neither list of the script (a new test cannot be forgotten) |
+| Script self-tests | `scripts/dev/run-script-tests.ps1`: every `scripts/dev/test-*.ps1` in its own pwsh (`test-log-digest.ps1` incl. the `-Id` / `-Find` / `-Condense` / `-Print` modes on a fixture log, `test-github-lib.ps1`, `test-launch-lib.ps1`) | a test exits non-zero, or a `test-*.ps1` is in neither list of the script (a new test cannot be forgotten) |
 | Build | `build-windows.ps1 -Config Release`, which also builds and runs the host unit tests (`arxtest`) | the build, or a CppUnit test, fails |
 | Game checks | `scripts/dev/ci-smoke.ps1`: `smoke-test.ps1 -Seconds 3 -Commands 'drawcheck 120'`, then `spell-drawcheck.ps1` — the same scripts a worker runs, flat, `--loadlevel 10` | either returns `FAIL`, **or was skipped** (exit 2: the game lock stayed busy for 15 min) — a gate that did not run is not a pass, re-run the job |
 | Upload | the artifact `game-checks`, also when a step failed | — |
@@ -540,9 +540,10 @@ How the runner differs from a worker's copy — none of it needs action, all of 
   there: it creates its window and OpenGL context, reaches `GAMEPLAY` in about a second, 120 fps. No
   interactive runner is needed.
 - Its `%LOCALAPPDATA%` is `C:\Windows\ServiceProfiles\NetworkService\AppData\Local`: the build, user
-  directory (`arx.log`, `crashes\`), test channel, **game lock** and `launches.log` of CI are there, not
-  in the owner's profile. CI therefore does not wait for a game the owner or a worker runs, and they do
-  not wait for CI (#205). CI's own jobs never overlap (one runner).
+  directory (`arx.log`, `crashes\`), test channel and `launches.log` of CI are there, not in the owner's
+  profile. The **game lock** is not: it lives in `%ProgramData%\ArxFatalisVR\locks`, which both accounts
+  can write, so CI waits for a game the owner or a worker runs and they wait for CI (#205, see
+  [the game lock](#isolation-and-the-game-lock-parallel-work)). CI's own jobs never overlap (one runner).
 - The service has no Steam registry entry of the owner, so the workflow passes the install folder:
   `ARXVR_DATA_DIR` in the workflow `env` (read by `ci-smoke.ps1`, passed as `--data-dir`).
 - `ARXVR_AUTOREPORT=0`: a CI run files no bug issues by itself (#131); the failed step is the report.
@@ -568,11 +569,28 @@ launch rules D-014 / #147). What keeps their runs apart — all derived from the
 | the owner's focus | self-test windows are shown without activation (`SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN` from the environment; `run-windows.ps1 -Background`, always in the smoke test) |
 | who launched what | the ledger `%LOCALAPPDATA%\ArxFatalisVR\launches.log`, one line per launch; `cycle-report.ps1` → `LAUNCHES` |
 
-**The game lock** (`scripts/launch-lib.ps1`): `%LOCALAPPDATA%\ArxFatalisVR\game-<n>.lock` (slots
+**The game lock** (`scripts/launch-lib.ps1`): `%ProgramData%\ArxFatalisVR\locks\game-<n>.lock` (slots
 `1..maxGames`, `maxGames` = 1 unless `settings.json` next to it says otherwise) plus `vr.lock` for a
 VR launch — each a file opened for writing without write sharing by the launching script and held
 until the game exits. Windows drops the handle with the process, so a crash or a kill cannot leave a
-stale lock. The holder writes `pid=<script> game=<arx.exe pid> since=… what=… copy=… branch=…` into the
+stale lock.
+
+*Between Windows accounts (#205).* The folder is machine-wide because the CI runner service
+(`NETWORK SERVICE`) and the owner are different accounts with different `%LOCALAPPDATA%`. The first
+launch creates it with an ACL that gives Authenticated Users and `BUILTIN\Users` an inheritable
+**Modify** rule, so a lock file created by one account can be opened, and deleted, by the other: a file
+left behind by a killed process is simply free for everyone (the open handle, not the file's owner,
+decides). Nothing to set up; no password or admin right is needed. `$env:ARXVR_LOCK_DIR` points the
+scripts at another folder (the self-test uses it; set it the same for every account if you ever need
+to). The old `%LOCALAPPDATA%\ArxFatalisVR\game-<n>.lock` is **still taken and checked together with the
+new one**, so a working copy that has not merged `main` yet (older `launch-lib.ps1`) keeps seeing the
+locks of the other copies of its own account; the transition ends when no such copy is left (then the
+old location can be dropped). A game started by an *older* script (in another account's
+lock folder) is seen by the new scripts as a game outside the lock (WMI, not `Get-Process`: the
+`.Path` of another account's process is empty), so the new scripts wait for it as well; the older
+scripts do not see games of another account - merge `main` into a copy that still has them. `settings.json` is read from the lock
+folder first. `scripts/dev/test-launch-lib.ps1` covers the folder, the ACL, both locations, holders,
+stale files and games outside the lock without a second account (CI runs it). The holder writes `pid=<script> game=<arx.exe pid> since=… what=… copy=… branch=…` into the
 file; whoever finds the lock busy prints those lines. An `arx.exe` that no lock names (started by
 hand) counts as a holder too; the crash processor (`arx.exe --crashinfo`) does not. Rules: **every**
 launch takes a slot — `run-windows.ps1` waits `-LockTimeoutSec` (default 300 s) and then fails naming

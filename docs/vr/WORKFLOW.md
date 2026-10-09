@@ -168,11 +168,12 @@ test station.
   passes `-StartSteamVR` (`run-windows.ps1`, `test-pr.ps1`). Workers do not run `vrstartup.exe` or
   stop `vrmonitor` / `vrserver` by hand.
 - **One game at a time on this PC.** Every launch, flat or VR, holds a game lock slot
-  (`%LOCALAPPDATA%\ArxFatalisVR\game-<n>.lock`; VR launches also `vr.lock`) while the game runs. A
+  (`%ProgramData%\ArxFatalisVR\locks\game-<n>.lock`, writable by every Windows account so the CI runner
+  service shares it with the owner and the workers, #205; VR launches also `vr.lock`) while the game runs. A
   second launch waits (default 300 s) and prints the holder — working copy, branch, pid; the smoke
   test is skipped (exit 2) when the wait runs out, `run-windows.ps1` fails naming the holder. The OS
   releases a lock when its holder dies; a raw `arx.exe` outside the lock is treated as a holder.
-  `%LOCALAPPDATA%\ArxFatalisVR\settings.json` with `{"maxGames": 2}` allows two flat games (owner's
+  `%ProgramData%\ArxFatalisVR\locks\settings.json` with `{"maxGames": 2}` allows two flat games (owner's
   call); replaces the #123 rule of isolated flat runs side by side.
 - **Only your own fresh build.** A launch runs only the working copy's own build directory, and only
   when its `built-from.txt` names the copy's `HEAD` (`<sha> dirty` is fine for uncommitted work).

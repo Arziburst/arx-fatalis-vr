@@ -10,6 +10,38 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-023: The test save library is generated on each machine, not committed
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** worker (technical, #70); the owner can revisit
+
+### Decision
+- The test saves (`mvp-new-game`, `mvp-items`, `mvp-goblin-fight`, …) are **produced by a script**
+  (`scripts/dev/make-test-saves.ps1`, scenarios in `scripts/dev/test-saves/scenarios.txt`), in one flat
+  launch, into `%LOCALAPPDATA%\ArxFatalisVR\savelib`; they are **not committed**.
+- A worker uses one with `smoke-test.ps1 -Save <name>` / `run-windows.ps1 -Isolated -Save <name>`: it is
+  made the **only** save of the isolated user directory, so slot 0 is it.
+- `make-test-saves.ps1 -Verify` checks the whole library in a fresh game; regenerate after a change to
+  the engine's save format.
+- What the script cannot place (a lever, chest or door in reach) is recorded by the owner in flat mode
+  and copied into the library by hand.
+
+### Why
+- A save is a snapshot of the original game's level data and of the engine's save format: committing
+  ~0.3 MB binaries per scenario would put game-derived data into a repository that may become public
+  (the project requires the owner's own copy of Arx Fatalis, CLAUDE.md), and every save-format change
+  would silently rot them.
+- A script is reviewable, regenerates in about 2.5 minutes, and doubles as a test of `newgame`, `save`
+  and `loadslot` themselves (the same game loads each save again and checks it).
+- Slot numbers are positions in a list sorted by file time (newest first): only a single-save directory
+  makes "this scenario" a stable `--loadslot 0`.
+
+### Rules out
+- Saves in git or in release assets; scripts that assume `--loadslot 1` is a given scenario.
+
+---
+
 ## D-022: Budget raised to 80% weekly / 95% five-hour; checks kept in balance with time and usage
 
 - **Date:** 2026-10-09

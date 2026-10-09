@@ -35,26 +35,46 @@ function Get-SharedUserDir {
 	Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Saved Games\Arx Libertatis'
 }
 
-# Copy save slots (folders like save0000, each with gsave.sav) from a save library into the save
-# folder of an isolated user directory. Library: -Library, else $env:ARXVR_SAVE_LIBRARY, else the
-# shared user directory's save folder (the owner's saves) until the test save library exists (#70).
+# The test save library (#70, scripts/dev/make-test-saves.ps1): one folder per scenario, each with
+# gsave.sav. $env:ARXVR_SAVE_LIBRARY if set, else %LOCALAPPDATA%\ArxFatalisVR\savelib. Not in the
+# repository: saves derive from the original game's data and go stale with the engine's save format.
+function Get-ArxSaveLibrary {
+	if ($env:ARXVR_SAVE_LIBRARY) { return $env:ARXVR_SAVE_LIBRARY }
+	Join-Path $env:LOCALAPPDATA 'ArxFatalisVR\savelib'
+}
+
+# Copy save slots (folders like mvp-new-game, each with gsave.sav) from a save library into the save
+# folder of an isolated user directory. Library: -Library, else Get-ArxSaveLibrary. A name that is not
+# in the library but is in the player's own save folder (save0000, ...) is taken from there.
 function Copy-ArxSaves([string[]]$Names, [string]$UserDir, [string]$Library) {
-	if (-not $Library) {
-		$Library = if ($env:ARXVR_SAVE_LIBRARY) { $env:ARXVR_SAVE_LIBRARY } else { Join-Path (Get-SharedUserDir) 'save' }
-	}
+	$explicitLibrary = [bool]$Library
+	if (-not $Library) { $Library = Get-ArxSaveLibrary }
 	$target = Join-Path $UserDir 'save'
 	New-Item -ItemType Directory -Force $target | Out-Null
 	foreach ($name in $Names) {
 		$source = Join-Path $Library $name
 		if (-not (Test-Path (Join-Path $source 'gsave.sav'))) {
-			$have = @(Get-ChildItem $Library -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
-			throw "save '$name' not found in $Library (no $name\gsave.sav; available: $(if ($have) { $have -join ', ' } else { 'none' }))"
+			$own = Join-Path (Get-SharedUserDir) "save\$name"
+			if (-not $explicitLibrary -and (Test-Path (Join-Path $own 'gsave.sav'))) {
+				$source = $own
+			} else {
+				$have = @(Get-ChildItem $Library -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
+				throw "save '$name' not found in $Library (no $name\gsave.sav; available: $(if ($have) { $have -join ', ' } else { 'none - run scripts\dev\make-test-saves.ps1' }))"
+			}
 		}
 		$dest = Join-Path $target $name
 		if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
 		Copy-Item -Recurse $source $dest
 		Write-Host "    save: $name <- $source"
 	}
+}
+
+# Make one library save the ONLY save of an isolated user directory, so `--loadslot 0` loads it
+# (slots are numbered newest first, so with several saves the slot of a given one is not stable).
+function Use-ArxSave([string]$Name, [string]$UserDir, [string]$Library) {
+	$saves = Join-Path $UserDir 'save'
+	if (Test-Path $saves) { Remove-Item -Recurse -Force $saves }
+	Copy-ArxSaves -Names @($Name) -UserDir $UserDir -Library $Library
 }
 
 # Steam's install folder as recorded in the registry (forward slashes, as Steam writes it), or $null.

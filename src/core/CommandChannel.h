@@ -37,9 +37,10 @@
  *    change as \c game.state \c to=MENU|LOADING|GAMEPLAY|CINEMATIC, and the event counts.
  *
  * Channel commands: \c status, \c shot \c [name], \c quit, \c mark \c <text>, \c save \c <name>,
- * \c loadslot \c <n>, \c loadlevel \c <n>, \c ui \c inventory \c open|close, \c drawcheck \c [frames],
- * \c recenter (refused until #28). Any other line goes to the script console exactly as if typed
- * there: \c [entity.]command \c args.
+ * \c loadslot \c <n>, \c loadlevel \c <n>, \c newgame, \c entities \c [filter],
+ * \c setpos \c <x> \c <y> \c <z> \c [yaw], \c lookat \c <entity>, \c ui \c inventory \c open|close,
+ * \c drawcheck \c [frames], \c recenter (refused until #28). Any other line goes to the script
+ * console exactly as if typed there: \c [entity.]command \c args.
  *
  * See docs/vr/TESTING.md for the protocol and scripts/dev/smoke-test.ps1 for the first client.
  */

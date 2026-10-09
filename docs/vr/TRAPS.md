@@ -8,6 +8,21 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — The 2D interface is empty in `--vr-sim` shots, or the inventory "never closes", on level 10 (#49)
+
+**Symptom:** on `--loadlevel 10` every shot's flat frame is `transparent` and `quadPixels` is **0** — no HUD,
+no inventory, even after `ui inventory open`. After `setplayercontrols on` / `cinemascope off` the
+inventory opens by itself, and a `ui inventory close` is followed by `ui.inventory state=closed` and,
+one frame later, `state=open` again: `player.inventoryOpen` never becomes false.
+**Cause:** (1) while the level 10 start holds the player the HUD is not drawn at all (TESTING.md, the
+`ui` command). (2) Released, the level's start shows the bag and opens it again after every close (seen
+flat and in VR, #49; the cause in the level's script was not chased). (3) `quadPixels` of a shot counts
+the eye pixels the **drawn** interface covers (alpha > 0), not the quad's area: an empty blended quad is 0.
+**Do:** for anything about the HUD or the menus use the test save `mvp-new-game` (#70: controls free, the
+bag closed) — `smoke-test.ps1 -VrSim idle -Sequence <name> -Save mvp-new-game`, as `ui-panel.xrs` does.
+
+---
+
 ## 2026-10-09 — A check of "what the button did" counts one event too many, or finds it before the press (#74)
 
 **Symptom:** a flat check of the VR buttons on level 10 sees `ui.inventory=3` after two presses of the

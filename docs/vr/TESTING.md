@@ -226,6 +226,15 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   `off: OpenGL has no glCopyImageSubData ...`, `off: the VR session ended`); `frames` grows with
   `vr.shownFrames` while it is `on` (0 in flat mode). One `[vr] desktop mirror:` log line per session
   names the eye size, the crop and where the flat frame quad lands in the window.
+- `vr.panel` (#49): the floating UI panel. `mode`: `world` while a menu is open and the panel is placed
+  in the play space, `head` otherwise (the HUD on the head-locked quad; also while a menu waits for a
+  tracked head); `menu`: the open menu (`mainmenu`, `charactercreation`, `credits`, `note`, `book`,
+  `container`, `inventory`) or empty; `placements` since the start and `lastPlacement` (`open`,
+  `recenter`, `tracking`); `x`, `y`, `z` the panel's centre in LOCAL (metres; the simulated head starts at
+  the origin, so `0, -0.3, -0.9` straight ahead with the defaults), `yaw` its heading (degrees, + left),
+  `tilt` how far its face turns up to the eyes (18.4° for the defaults), `width` / `height` as last
+  submitted, and the settings `distance` / `drop` (`vr_panel_distance`, `vr_panel_drop`, `vr_panel_width`
+  in `cfg.ini`).
 - `vr.pacing` (#20): the last rate / cadence report — present once the first 3 s window of a
   session closed (a shorter session gets its partial window at the end). See
   [The frame loop and the rate line](#the-frame-loop-and-the-rate-line-20) for every field and the
@@ -455,6 +464,8 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.head` | where the head that drives the camera comes from changed (#24) | `source=hmd\|held\|sim\|none`, `was` |
 | `vr.head.reference` | a head reference was taken: the first head sample after the start, a level load, a new source, the runtime's recenter, the channel's `recenter` | `reason` (`level`, `runtime`, `channel`, `source hmd`, …), `source`, `yaw` (the head's heading, engine degrees), `bodyYaw`, `x`, `y`, `z` (the head in LOCAL, metres) |
 | `vr.head.lean` | the lean reaches the interim limit, and when it is back within (#24, until #26) | `state=clamped\|free`, `limitM` (limit 100) |
+| `vr.panel.placed` | the floating UI panel was placed (#49): a menu opened (after > 250 ms closed), a recenter while it was open, or the head came back to tracking | `reason=open\|recenter\|tracking`, `menu`, `x`, `y`, `z` (LOCAL, metres), `yawDeg`, `distanceM`, `dropM`, `widthM`, `headY` |
+| `vr.panel` | the 2D interface moved between the panel and the head-locked quad (#49) | `mode=world\|head`, `menu` (`none` when closed) |
 | `vr.body.drag` | the head reached the 25° dead zone and pulls the body along, and when it let go (5° inside) (#25) | `state=start\|end`, `head`, `body` (degrees from the heading), `deadZone` (limit 100) |
 
 Not here yet, by design: melee attacks *refused* by a gate (F-66) come with the VR swing detector
@@ -815,7 +826,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 | `@wait <ms>` / `@frames <n>` | sleep / wait for n more rendered frames |
 | `@until <path> <op> <v> [<n>s]` | wait up to n s (default 30) until `status.json` satisfies the condition |
 | `@assert <path> <op> <v>` | `status.json` now. `path` is dotted, `"quoted"` where a key holds a dot (`events.byName."spell.cast"`); `op` is `eq ne gt ge lt le`; numbers compare as numbers, anything else as text |
-| `@remember <name> <path>` | keep a value; later `@assert` / `@until` values can be `{name}` or `{name+5}` (the yaw before a turn, the position before a walk) |
+| `@remember <name> <path>` | keep a value; later `@assert` / `@until` values can be `{name}`, `{name+5}` / `{name-5}` (the yaw before a turn, the position before a walk) or `{name*0.9}` (a relative threshold: "at least 10 % less") |
 | `@mark`, `@log <regex> [<n>s]`, `@nolog <regex>` | `arx.log` since the mark (the sequence start is the first mark): wait up to n s (default 5) for a matching line — a match moves the mark past it, so consecutive `@log` lines assert an order — / fail on a matching line |
 | `@shot <name>` | on the simulated headset both eyes and the flat frame (`capture\<name>-left.bmp`, `-right.bmp`, `-quad.bmp`), otherwise `capture\<name>.bmp` |
 | `@diff <a> <b> <op> <v> [left\|right\|quad]` | `img-diff` of two shots: the mean absolute per-channel difference. **The floor of a still shot of level 10 is about 1.8** (animated fire and HUD, measured), a 40° head turn with a following camera is far above; set thresholds against a still pair taken in the same sequence |
@@ -834,6 +845,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `snap-turn` | `vr-input tap right.stick_right` reaches the game (syncs advance), no errors | #32: the player turns |
 | `walk-forward` | the player stands still without input; the stick is held and let go | #31: the player moves |
 | `recenter` | a head offset is set and read back | #28: `recenter` is accepted (it logs one expected `[W]`) |
+| `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
 `scripts\dev\test-xrs.ps1` (a fake game answering the channel files; in `run-script-tests.ps1`, so in CI).

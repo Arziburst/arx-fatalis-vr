@@ -53,6 +53,17 @@ interface in VR.
 - **Panel (#49):** menus, inventory and book open on a **flat panel ~0.8–1 m in front of the player at
   chest height**, placed where the player looks when it opens, then **fixed in the world** (it does not
   follow the head). Fits D-016 (inventory in the centre of the view).
+  The numbers and rules of #49 (confirmed by the coordinator within this envelope, 2026-10-10):
+  **0.9 m** ahead, its centre **0.3 m below the eyes**, **1 m wide** (the height follows the interface's
+  aspect), **turned to face the eyes** (about 18° back); placed on the head's **heading only** (looking down
+  when it opens does not put it on the floor); "fixed in the world" = **fixed in the play space** — it does
+  not follow the head, while the player's own stick walking and turning carry it along; placed anew when a
+  menu opens after **more than 250 ms** closed (inventory → book keeps it) and on a **recenter**. A menu is
+  the engine's state (F-82): main / pause menu, character creation, credits, a note, the book, a container,
+  the inventory — not loading screens or cinematics. With no menu open the HUD stays on the head-locked
+  quad until #116. Distance, drop and width are cfg.ini settings (`vr_panel_distance`, `vr_panel_drop`,
+  `vr_panel_width`; F-180). The panel is a compositor quad layer, always on top: never swallowed by walls
+  (F-179), but it covers the hands until #36 / #37 decide.
 - **Health and mana (#116):** **two vertical bars, red and blue, on the inner side of the left wrist**,
   read by raising the hand to the face like a watch.
 - **Hand reticle (#37):** a **small dot / ring where the hand points**, no ray (D-010); it **brightens over

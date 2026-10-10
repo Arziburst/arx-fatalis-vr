@@ -6,7 +6,7 @@
 # points (the aim follows the hand's pitch and yaw). A stroke behind the head or at the knee is refused by
 # the view gate and never reaches the recogniser. The runes are added with the console's "rune -a".
 # Needs the first-person save (level 10's conversation camera is nowhere near the hands, TRAPS.md):
-#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence rune-cast-hand -Save mvp-new-game
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence rune-cast-hand -Save mvp-new-game -- --loadslot 0 --vr-spell-aim hand
 @sim idle
 @save mvp-new-game
 @args --loadslot 0 --vr-spell-aim hand

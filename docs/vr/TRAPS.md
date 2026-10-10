@@ -26,6 +26,35 @@ control table) correctly records a long press; on a quiet machine it may just st
 sequence is `vr-input tap` (pressed and released within one update), the second control of a short chord too; a
 `down` / `up` pair only for a press that is meant to be long (with a `@wait` well above 0.5 s).
 
+## 2026-10-10 — A new `status.json` key is `<absent>` though the code that writes it was just changed (#116)
+
+**Symptom:** `smoke-test.ps1 -Rebuild` ran, said nothing about building, and the sequence failed on a key
+added a minute ago: `vr.wrist.along.x (<absent>)`.
+**Cause:** the fresh-build check (D-014) compares `built-from.txt` with the commit only. A build of the
+clean `HEAD` followed by edits still counts as fresh, so `-Rebuild` does not rebuild and the old `arx.exe` runs.
+**Do:** after editing, run `.\scripts\build-windows.ps1` yourself before the launch (or commit first); it costs
+a launch from the budget otherwise.
+
+## 2026-10-10 — `@diff` of two still shots of the body is as large as a small HUD change (#116)
+
+**Symptom:** on `mvp-new-game`, looking down at the arms (`--vr-sim idle`), two shots of the same pose a few
+frames apart differ by **2.2** (left eye) — the change of the wrist bars from full to half was 2.1–2.8.
+**Cause:** the whole picture moves: the idle animation of the body and the right arm, the torch light.
+**Do:** a mean over the whole eye image cannot prove a change of a few hundred pixels; assert on the numbers
+in `status.json` and judge the captures. Measure a still pair in the same pose before trusting a threshold.
+
+## 2026-10-10 — Which grip axis is the thumb: the hand's convention moved under the wrist bars (#36, #116)
+
+**Symptom:** wrist bars built on "thumb = grip +Y" lay along the fingers instead of across the wrist; then,
+after #36 was corrected to the OpenXR spec, bars built on "thumb = grip +Z" would fill the wrong way.
+**Cause:** the full body (#36, `HandFrame` in `src/vr/ArmIK.h`) defines the hand's axes on the grip: since
+`234ea0cc2` the knuckles (wrist → fingers) lie on grip **−Y**, the thumb side on grip **−Z**, the palm normal
+on **+X** (the OpenXR grip pose). In engine axes (y down, z forward) a grip vector (x, y, z) is (x, −y, −z)
+before `PlayerArmStatus::grip` turns it into the world.
+**Do:** anything attached to the hand takes its axes from `HandFrame`'s comment, not from memory; a `--vr-sim`
+pose for "knuckles to the right, palm to the face, thumb up" is `hand left rot -90 90 0`, "palm down,
+knuckles to the right" `hand left rot 180 0 -90`. Assert the axes in `status.json` (`vr.wrist.across`).
+
 ## 2026-10-10 — In VR an item on the floor is not picked where the cursor is, or a far one is (#37)
 
 **Symptom:** with a mouse position projected from a 3D point in a VR run, `FlyingOverObject` finds nothing over

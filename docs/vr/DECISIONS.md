@@ -87,6 +87,42 @@ swaps them as a whole).
 
 ---
 
+## D-037: The wrist bars — size, order, fade, and when they replace the orbs
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (refines D-029's "two vertical bars, red and blue, on the inner side of the left wrist")
+- **Decided by:** worker of #116, proposed to and approved by the coordinator as the MVP default (D-017)
+
+### Decision
+- **Geometry:** two bars, each **1 cm wide × 5 cm long**, **0.6 cm apart**, flat on the **palm side** of the
+  full body's left wrist (#36): 3 cm out from the wrist joint, 4 cm back from it towards the elbow. Each bar
+  runs **across the wrist** and fills towards the thumb, so both stand upright when the wrist is raised to the
+  face like a watch. **Health (red) towards the elbow, mana (blue) towards the hand** — red left, blue right
+  for a left forearm held across the face, as on the flat HUD. The empty part is dark and a little see-through.
+- **Placement source:** the model's posed elbow and wrist (where the player sees the arm) and the controller's
+  grip axes as #36 gives them to the model's hand (palm normal = grip +X, thumb side = grip -Z, knuckles = -Y;
+  `HandFrame` in `src/vr/ArmIK.h`), not the raw controller.
+- **Fade:** fully visible while the inner wrist faces the eye within **50°**, fading linearly to invisible at
+  **80°**; drawn in the world, against the scene's depth (walls and the other hand cover them), without fog.
+- **Who shows health and mana:** the bars while the **left arm is posed from a controller** (a located one, or
+  the test channel's `handpose`); the HUD's orbs then are neither drawn nor clickable. No posed left arm
+  (flat mode, the left controller off, a model without arm chains) → the orbs as before. Everything else of
+  the HUD stays on the head-locked quad.
+- Sizes and angles are named constants (`WristVitalsParams` in `src/vr/WristVitals.h`), not settings.
+
+### Why
+D-029 fixed the place and the colours; the details were proposed by the worker and approved by the
+coordinator for the MVP. Thin bars across the wrist read like a watch face; keeping the flat HUD's left/right
+order means nothing to relearn; the orbs staying whenever the bars cannot be shown means health and mana are
+never invisible.
+
+### Consequences
+`status.json` → `vr.wrist` (`shown`, `hidden`, `health`, `mana`, `facingDeg`, `alpha`, `drawnViews`,
+`center`); game event `vr.wrist state=wrist|orbs reason=…`. Left-handed mode (#178) and a body-zone registry
+(F-198) may move or extend this later.
+
+---
+
 ## D-036: The hand reticles pick the world in 3D; one mouse arbiter for the panel and the world
 
 - **Date:** 2026-10-10
@@ -948,7 +984,7 @@ before #37 / #38.
 
 ### Why
 Half of Fable's weekly limit went in the first hours with Fable on every engine task (D-013); most of
-those tasks did not need it. The playbook table: [COORDINATOR.md §5](COORDINATOR.md#5-models-and-effort-d-015-d-027).
+those tasks did not need it. The playbook table: [COORDINATOR.md §B5](COORDINATOR.md#b5-models-d-015-d-027).
 
 ---
 

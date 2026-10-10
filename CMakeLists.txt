@@ -1289,6 +1289,8 @@ set(VR_SOURCES
 	src/vr/VRSystem.cpp
 	src/vr/VRTurn.cpp
 	src/vr/WeaponGrip.cpp
+	src/vr/WristHud.cpp
+	src/vr/WristVitals.cpp
 	src/vr/XRDispatch.cpp
 )
 

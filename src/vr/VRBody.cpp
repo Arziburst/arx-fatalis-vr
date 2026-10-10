@@ -462,6 +462,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		bind(eobj);
 	}
 
+	status.poseCalls++;
 	g_body.shift = Vec3f(0.f);
 	status.shift = Vec3f(0.f);
 	for(size_t hand = 0; hand < HandCount; hand++) {
@@ -616,6 +617,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 
 		arm.posed = true;
 		arm.controller = grip;
+		arm.grip = placement.orientation;
 		arm.target = target;
 		arm.shoulder = pose.shoulder;
 		arm.elbow = pose.elbow;

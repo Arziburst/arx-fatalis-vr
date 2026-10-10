@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: Physical melee — the swing is the strike, the trigger charges it with the game's own charge
+## D-038: Physical melee — the swing is the strike, the trigger charges it with the game's own charge
 
 - **Date:** 2026-10-10
 - **Status:** Accepted (the owner's design; the numbers are MVP defaults the owner tunes in the headset)

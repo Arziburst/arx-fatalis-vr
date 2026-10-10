@@ -30,7 +30,7 @@
 
 /*!
  * \file
- * \brief The decision core of physical melee (#39, D-NEW): is the weapon swung, how hard, is the strike charged
+ * \brief The decision core of physical melee (#39, D-038): is the weapon swung, how hard, is the strike charged
  *
  * The owner's design (2026-10-10): a physical swing of the weapon hits; a plain swing is a weak, fast
  * hit; holding the trigger charges the strike with the game's own charge (the time the attack button

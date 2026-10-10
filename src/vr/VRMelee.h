@@ -27,7 +27,7 @@
 #include "vr/MeleeSwing.h"
 
 /*!
- * \brief Physical melee (#39, D-NEW): the weapon in the IK hand hits what it is swung into
+ * \brief Physical melee (#39, D-038): the weapon in the IK hand hits what it is swung into
  *
  * While the IK hand holds a melee weapon (vr/VRWeapon.h), once per frame after the body was posed:
  *  - the right trigger charges the strike with the game's own charge - the time held against the

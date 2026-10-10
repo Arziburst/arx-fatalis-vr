@@ -1,4 +1,4 @@
-# Physical melee (#39, D-NEW): a swing of the sword in the IK hand hits; a plain swing is weak, the trigger held charges
+# Physical melee (#39, D-038): a swing of the sword in the IK hand hits; a plain swing is weak, the trigger held charges
 # the strike with the game's own charge (the time held against Full_AimTime) and a swing then hits at full strength;
 # a charged hit spends the charge until the trigger is released and pressed again. The trigger alone never starts the
 # engine's strike while the IK hand holds the weapon.

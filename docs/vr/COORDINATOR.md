@@ -140,7 +140,24 @@ Reference projects are studied one per block as research tasks; findings go into
 reviews it **one table per block**: row | what it is | advice (take / not / later) | why. Product-
 experience rows are discussed with questions (A1). Decisions go into the catalog, then into tasks.
 
-## A9. Stop and report
+## A9. Tracker, pull requests and documentation
+The coordinator owns the project's bookkeeping on the code host and holds workers to it:
+- **Every piece of work is an issue** in the tracker: a task or a bug under its epic, with a milestone,
+  type and area labels, and a Definition of done. New findings — the owner's wishes, workers' discoveries,
+  test verdicts — become issues at once.
+- **The board shows the truth:** statuses move with the work (Backlog → Todo → In Progress → Testing →
+  Done, or the project's equivalent); blocked work goes back with a comment saying what blocks it;
+  labels mark what waits for the owner (test, design).
+- **Every change is a pull request linked to its issue** (the closing keyword in the body), named per
+  the workflow, with what / how verified / how to test.
+- **Progress is written where it happens:** after each meaningful push to an open PR (a fix after review
+  or an owner verdict, a change of approach, a hard merge) a short PR comment says what was done or fixed
+  and how it was verified; trivial pushes need none. Verdicts and decisions are posted on the PR/issue.
+- **Documentation stays current:** the plan, the decision log, the traps list, test docs and this
+  playbook are updated in the same PR as the change that affects them; the coordinator updates the
+  process docs itself (A1).
+
+## A10. Stop and report
 Stop only for: an owner test batch is ready, the limits, or a decision only the owner can make. Report
 in the owner's language, short: merged and cleaned up; running workers (task, model, state); what is
 needed from the owner; the usage summary.
@@ -158,7 +175,7 @@ needed from the owner; the usage summary.
 |---|---|
 | Goal, milestone | VR port of Arx Fatalis; milestone **M1 MVP** — [MVP.md](MVP.md) (queue, waves) |
 | Owner's language / project language | Russian / English (D-013) |
-| Tracker | GitHub issues (sub-issues of epics), board https://github.com/users/Arziburst/projects/3; statuses Backlog / Todo / In Progress / Testing / Done |
+| Tracker | GitHub issues (sub-issues of epics), board https://github.com/users/Arziburst/projects/3; statuses Backlog / Todo / In Progress / Testing / Done; move with `scripts\dev\set-status.ps1 -Issue <n> -Status <s>`; labels `epic` / `task` / `bug`, area `area:*`, `lane:vr`, `needs-vr-test`, `needs-design`, `model:fable`; milestone `M1 MVP`; naming and `Closes #N` per [WORKFLOW.md](WORKFLOW.md#task-lifecycle) |
 | Status page | pinned issue **#193** "ARXVR status (coordinator)", updated via REST |
 | Workflow, decisions, traps | [WORKFLOW.md](WORKFLOW.md), [DECISIONS.md](DECISIONS.md), [TRAPS.md](TRAPS.md), [CLAUDE.md](../../CLAUDE.md) |
 | Owner test | the **headset test** (Valve Index, SteamVR); PRs labelled `needs-vr-test` |

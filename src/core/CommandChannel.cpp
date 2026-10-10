@@ -711,6 +711,7 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("state", mirror.state);
 	json.value("eye", mirror.eye);
 	json.value("frames", mirror.frames);
+	json.value("overlays", mirror.overlays);
 	json.end();
 	// The floating UI panel (#49): "world" while an open menu's panel is placed, its pose in the LOCAL space
 	{

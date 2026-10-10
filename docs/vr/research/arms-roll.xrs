@@ -1,0 +1,50 @@
+# #298 baseline: #36's arms with the right controller rolled about the forearm
+# Run: .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence docs\vr\research\arms-roll.xrs -Save mvp-new-game
+# Kept out of scripts\dev\xrs (CI runs those): it asserts nothing about the twist, it only takes the eight shots
+# of docs\vr\RESEARCH-reference-mods.md section 16g - a fix is judged against them.
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s
+@assert vr.body.active eq true
+@assert vr.body.right.posed eq true
+
+# Look down-forward at the right hand in front of the chest
+vr-sim head rot 0 -40 0
+vr-sim hand left off
+vr-sim hand right pos 0.15 -0.3 -0.4
+
+# A) the hand hanging down (fingers down): the forearm is vertical, so a yaw is a roll about it
+vr-sim hand right rot 0 0 0
+@frames 15
+@shot down-roll000
+vr-sim hand right rot 45 0 0
+@frames 15
+@shot down-roll045
+vr-sim hand right rot 90 0 0
+@frames 15
+@shot down-roll090
+vr-sim hand right rot 180 0 0
+@frames 15
+@shot down-roll180
+@assert vr.body.right.error lt 1
+
+# B) the hand pointing forward (fingers ahead, thumb up), rolled about the forward axis: 0, 90, -90, 180
+# (yaw pitch roll compose as Ry * Rx * Rz: Rz(90) * Rx(90) = Ry(90) * Rz(90), Rz(180) * Rx(90) = Ry(180) * Rx(-90))
+vr-sim hand right rot 0 90 0
+@frames 15
+@shot fwd-roll000
+vr-sim hand right rot 90 0 90
+@frames 15
+@shot fwd-roll090
+vr-sim hand right rot -90 0 -90
+@frames 15
+@shot fwd-roll-090
+vr-sim hand right rot 180 -90 0
+@frames 15
+@shot fwd-roll180
+@assert vr.body.right.error lt 1
+
+@assert errors eq 0

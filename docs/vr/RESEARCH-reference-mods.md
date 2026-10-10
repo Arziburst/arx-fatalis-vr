@@ -2939,7 +2939,16 @@ The questions for the owner (D-017 — player-facing; the coordinator shows the 
 
 #### 16g. The baseline to beat
 
-BASELINE-CAPTURES
+#36's rig as merged (`b0ba4a5e8`), on the simulated headset (`smoke-test.ps1 -VrSim idle -Save mvp-new-game` and the
+sequence [`docs/vr/research/arms-roll.xrs`](research/arms-roll.xrs) — kept out of `scripts/dev/xrs`, which CI runs: head pitched −40°, the left controller off, the right one 15 cm right, 30 cm down,
+40 cm ahead of the head), the right eye. Top row: the hand hanging down (the forearm vertical), rolled about it by
+0 / 45 / 90 / 180°. Bottom row: the hand pointing forward (thumb up), rolled about the forward axis by
+0 / +90 / −90 / 180°. The sequence asserted `vr.body.right.error < 1` in every pose — **every joint is where it should be
+while the mesh wrings**: at 90° and 180° the wrist band of the hanging hand is a flat ribbon up to the elbow, and the
+forward hand at 180° kinks where the forearm meets the wrist. A fix is judged against this sheet: the same sequence, the
+same eight shots.
+
+![#36's arm rolled 0 / 45 / 90 / 180 degrees](images/arms-298-baseline.jpg)
 
 ## Sources
 

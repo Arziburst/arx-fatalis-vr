@@ -1,0 +1,129 @@
+# Hand reticles (#37, D-016, D-019, D-029): in the game each hand's hidden ray puts a small ring where it hits the
+# world, brighter over an item that can be taken; the hand that owns the mouse is the engine's cursor - the hover,
+# the click, the drag (the item goes where the ring is) and the drop, into the open bag on the panel too.
+# vr-point <hand> entity <id> / at <x> <y> <z> turns a simulated hand so its aim ray points at a place of the world.
+#
+# Runs on the test save mvp-items (#70: a note, a form and a key by a table). The save stands the player on the
+# wall top above the table's room, where nothing is within the engine's 300 units for putting an item down, so the
+# sequence first puts the player on the room's floor by the table (TRAPS.md):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence hand-reticle -Save mvp-items
+@sim idle
+@save mvp-items
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+
+# In the game the reticles are on: the hands point ahead at the wall - a ring each, dim, nothing hovered
+@until vr.reticle.on eq true 5s
+@frames 5
+@assert vr.reticle.right.ring eq true
+@assert vr.reticle.left.ring eq true
+@assert vr.reticle.right.bright eq false
+@assert vr.reticle.right.entity eq none
+@assert ui.hover eq none
+@assert vr.pointer.shown eq false
+@shot wall
+@assert vr.sim.shots.wall.left.overlayPixels gt 0
+@assert vr.sim.shots.wall.right.overlayPixels gt 0
+@assert vr.pointer.beam eq false
+
+# On the floor by the table, facing it
+setpos 10600 3100 11420 72
+@frames 30
+watch note_0004
+
+# The right hand at the note: the ring brightens, the engine hovers the note under it
+vr-point right entity note_0004
+@frames 10
+@assert vr.reticle.right.under eq note_0004
+@assert vr.reticle.right.entity eq note_0004
+@assert vr.reticle.right.bright eq true
+@assert vr.reticle.cursor eq true
+@assert vr.reticle.cursorEntity eq note_0004
+@assert ui.hover eq note_0004
+@shot item
+@assert vr.sim.shots.item.left.overlayPixels gt 0
+@assert vr.sim.shots.item.right.overlayPixels gt 0
+
+# The left hand moves onto the form: it names what is under it now (D-019: the hand that moved last)
+vr-point left entity blank_form_0001
+@frames 10
+@assert vr.reticle.left.entity eq blank_form_0001
+@assert vr.reticle.left.bright eq true
+@assert vr.pointer.owner eq left
+@assert ui.hover eq blank_form_0001
+
+# The right trigger takes the note back to the right hand; moved, the note follows the ring onto the floor
+@remember nx watch.x
+vr-sim action trigger right 1
+@frames 5
+@assert vr.pointer.owner eq right
+@assert vr.reticle.presses eq 1
+@assert vr.pointer.worldClicks eq 1
+@assert events.byName."vr.reticle.press" eq 1
+vr-point right at 10560 3100 11470
+@frames 10
+@assert ui.drag eq note_0004
+@assert watch.dragged eq true
+@assert events.byName."item.take" eq 1
+@assert watch.x gt {nx+40}
+# Released: set down on the floor where the ring is
+vr-sim action trigger right 0
+@until ui.drag eq none 5s
+@log item\.drop item=note_0004 how=place
+@assert watch.inScene eq true
+@assert watch.x gt {nx+60}
+
+# The bag open on the panel: the left hand drags the form from the table into it
+watch blank_form_0001
+ui inventory open
+@until vr.panel.mode eq world 5s
+@frames 60
+vr-point left entity blank_form_0001
+@frames 10
+@assert vr.reticle.left.onWorld eq true
+@assert vr.reticle.left.entity eq blank_form_0001
+vr-sim action trigger left 1
+@frames 5
+vr-point left 250 620                        # the bag on the panel (the first slot is at 192, 606)
+@frames 10
+@assert ui.drag eq blank_form_0001
+@assert vr.pointer.owner eq left
+@assert vr.pointer.leftOnPanel eq true
+@assert vr.pointer.beam eq true
+vr-sim action trigger left 0
+@until ui.drag eq none 5s
+@assert watch.inInventory eq true
+@log item\.toinventory item=blank_form_0001
+ui inventory close
+@until vr.panel.mode eq head 5s
+
+# Grip held + trigger on the note on the floor: straight into the bag, without opening it (D-019)
+watch note_0004
+vr-point right entity note_0004
+@frames 10
+@assert vr.reticle.right.entity eq note_0004
+vr-sim action grip right 1
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+vr-sim action grip right 0
+@until watch.inInventory eq true 5s
+@log item\.toinventory item=note_0004
+@assert ui.drag eq none
+
+# A menu that is not the bag (the book) takes the hands off the world: no rings
+vr-input tap left.b
+@until player.bookOpen eq true 5s
+@frames 5
+@assert vr.reticle.on eq false
+@assert vr.reticle.off eq book
+@assert vr.reticle.right.ring eq false
+vr-input tap left.b
+@until player.bookOpen eq false 5s
+@until vr.reticle.on eq true 5s
+@assert errors eq 0

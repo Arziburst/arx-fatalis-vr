@@ -8,6 +8,44 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — In VR an item on the floor is not picked where the cursor is, or a far one is (#37)
+
+**Symptom:** with a mouse position projected from a 3D point in a VR run, `FlyingOverObject` finds nothing over
+an item lying in the world, or something beside it. **Cause:** the engine's pick is a 2D test against each
+entity's `bbox2D` and projected faces (`vertexClipPositions`). Animated entities are projected with the head
+camera in the update, but a **static item** (no animation: what lies on floors and tables) is projected in
+`DrawEERIEInter` while it is drawn — once per **eye**, into the eye image's pixels — so after a stereo frame
+its box is the right eye's, in another pixel space than the interface the mouse lives in. *Resolved for the
+screen data by #72* (picking reads the head camera's at the interface's size again). **Do:** in VR the world is
+still picked by the hands' rays in 3D (`vr/VRReticle.cpp`) — a hand's ray is not a ray through the eye, so a
+projected pixel lands on whatever the head sees there, not on what the hand points at; the engine's
+`GetFirstInterAtPos` asks the reticle module what a world reticle's mouse position stands for
+(`vr::reticlePickAt`), and an interface position never picks the world while the reticles are on. The test
+channel's `pick` checks the engine's own screen pick under `vr::EnginePickOnly`.
+
+## 2026-10-10 — The inventory opens by itself, or the player spins, when a VR hand becomes the mouse (#37)
+
+**Symptom:** forcing the engine out of mouse look so the hand could be the mouse opened the inventory at
+once; later, with the inventory open, the player kept turning (`player.yaw` 113 → 56 → 159 → 261 in two
+seconds) with nobody touching anything. **Cause:** (1) in Arx the cursor mode *is* the inventory: leaving
+mouse look shows it unless the inventory key inverted that (`bInverseInventory`, `ArxGame::manageKeyMouse`).
+(2) In the cursor mode a mouse within 50 px of an edge of the interface turns the player (edge scrolling,
+`Interface.cpp`); a world reticle's mouse position is right of the interface (`vr/HandReticle.h`), and a
+panel pointer near the panel's edge is near the interface's edge. **Do:** keep the engine's mouse-look state
+as it is (the hand's position is applied in the relative mode too, `Input::setVirtualMousePosition`); the
+edge turning is off while a VR session renders.
+
+## 2026-10-10 — On `mvp-items` an item can be picked from the table but not put back on it (#37)
+
+**Symptom:** a drag started from the table (`item.take`), but the item never landed where the hand pointed:
+it stayed in front of the player or was dropped on the floor; the floor in front of the player was not hit
+by any ray. **Cause:** the save stands the player on the **wall top above the table's room**: the eye is at
+`y` 2765, the room's floor at 3100 (y down), the table top at 3018. The engine picks within 350 units of the
+player but puts down only within **300** (`updateDraggedEntity`), and nothing below the player is within 300;
+the key on the floor (399 units away) is not even pickable. **Do:** put the player on the room's floor by
+the table first — `setpos 10600 3100 11420 72` (as `hand-reticle.xrs` does); the note and the form are then
+~1.5 m away, both for picking and for putting down. Mind the goblin in that room.
+
 ## 2026-10-10 — A head pressed into a wall is "not in geometry": `CheckBackgroundInSphere` misses the middle of a wall (#26)
 
 **Symptom:** the simulated head is moved into the start cell's side wall — the body is blocked at the wall, the eye
@@ -49,6 +87,7 @@ keeps the engine's animations). **Do:** measure what the arm layer does from a s
 shoulder after `combat on` + 60 frames (300 ms of blend), then strike, as `weapon-hold.xrs` does. Also: never
 ask `entities.player()` while writing `status.json` before a level exists (the first `weapon-hold` run crashed
 at start-up on it, #286) — check this module's own state first.
+
 ## 2026-10-10 — .xrs: a count of what a held input did passes locally and fails on the CI runner (#285)
 
 **Symptom:** `snap-turn.xrs` held the stick until the 5th snap, let go and allowed one more snap; locally it

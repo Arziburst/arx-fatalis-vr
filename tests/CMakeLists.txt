@@ -90,6 +90,9 @@ set(arxtest_TESTCASES
 	tests/vr/WeaponGripTest.h
 	tests/vr/WeaponGripTest.cpp
 
+	tests/vr/HandReticleTest.h
+	tests/vr/HandReticleTest.cpp
+
 
 )
 
@@ -124,6 +127,7 @@ set(arxtest_SOURCES
 	src/vr/MenuPointer.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/ArmIK.cpp
+	src/vr/HandReticle.cpp
 	src/vr/WeaponGrip.cpp
 	src/vr/Locomotion.cpp
 

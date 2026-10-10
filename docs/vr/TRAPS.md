@@ -18,6 +18,16 @@ keeps the engine's animations). **Do:** measure what the arm layer does from a s
 shoulder after `combat on` + 60 frames (300 ms of blend), then strike, as `weapon-hold.xrs` does. Also: never
 ask `entities.player()` while writing `status.json` before a level exists (the first `weapon-hold` run crashed
 at start-up on it, #286) — check this module's own state first.
+## 2026-10-10 — .xrs: a count of what a held input did passes locally and fails on the CI runner (#285)
+
+**Symptom:** `snap-turn.xrs` held the stick until the 5th snap, let go and allowed one more snap; locally it
+passed, on the CI runner it counted 10 to 12 (`ASSERT FAILED: vr.input.turn.snaps (12) le 9`).
+**Cause:** a channel command reaches the game a poll after the runner sends it, and the runner's round trip on a
+loaded machine is longer than a repeat (0.4 s), so the release came 2–4 repeats late. An upper bound on a count
+after a release is a bound on the runner's speed.
+**Do:** let the game measure the timing by its own clock and assert on that (`vr.input.turn.repeatInterval`);
+in a sequence, bound only what the game decides, never how many times something happened before a later command.
+
 ## 2026-10-10 — The arms twist outward and wrap into spirals from the shoulder and the elbow when the wrist turns (#36, owner's headset run of PR #254)
 
 **Symptom:** the body, the solid torso and the hands following the controllers are right in the headset

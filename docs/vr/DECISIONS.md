@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: The wrist bars — size, order, fade, and when they replace the orbs
+## D-037: The wrist bars — size, order, fade, and when they replace the orbs
 
 - **Date:** 2026-10-10
 - **Status:** Accepted (refines D-029's "two vertical bars, red and blue, on the inner side of the left wrist")

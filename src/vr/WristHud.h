@@ -24,7 +24,7 @@
 #include "vr/WristVitals.h"
 
 /*!
- * \brief The wrist bars in the game (#116, D-029, D-NEW): health and mana drawn in the world on the
+ * \brief The wrist bars in the game (#116, D-029, D-037): health and mana drawn in the world on the
  *        inner side of the left wrist of the full body (#36)
  *
  * The bars are shown while the left arm is posed from a controller (a located one or the test

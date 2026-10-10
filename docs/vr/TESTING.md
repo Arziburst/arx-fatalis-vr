@@ -325,7 +325,7 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   the vertices were transformed, `reach` (shoulder to target), `armLength` (the model's, 58.1 units on
   `human_base`), `error` (wrist to target: 0 when the controller is reached), `slide` (the shoulder
   moved towards an out-of-reach target, up to 20) and `stretched`.
-- `vr.wrist` (#116, D-NEW): health and mana on the left wrist. `shown`: the left arm was posed from a
+- `vr.wrist` (#116, D-037): health and mana on the left wrist. `shown`: the left arm was posed from a
   controller this frame, so the bars are on the wrist and the HUD's orbs are not drawn; else `hidden` says
   why (`no left controller`, `left arm not posed`, `body not posed this frame`). `health`, `mana`: the
   fractions drawn; `facingDeg`: the angle between the inner wrist's normal and the direction to the eye of

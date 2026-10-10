@@ -25,7 +25,7 @@
 #include "math/Types.h"
 
 /*!
- * \brief Health and mana as two bars on the inner side of the left wrist (#116, D-029, D-NEW)
+ * \brief Health and mana as two bars on the inner side of the left wrist (#116, D-029, D-037)
  *
  * The pure layout: where the two bars are and how visible they are, from the posed arm and the
  * eye - no engine globals, so it is covered by host tests. The bars lie flat on the palm side of
@@ -37,7 +37,7 @@
  */
 namespace vr {
 
-//! The look of the wrist bars (owner-approved MVP defaults, D-NEW)
+//! The look of the wrist bars (owner-approved MVP defaults, D-037)
 struct WristVitalsParams {
 	float unitsPerMeter = 100.f;
 	float barWidthM = 0.01f;     //!< each bar, along the forearm

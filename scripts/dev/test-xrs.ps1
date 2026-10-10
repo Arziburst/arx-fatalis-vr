@@ -74,6 +74,8 @@ Check 'the trailing comment is dropped' ($seq.Steps[0].Ms -eq 100)
 Check '@until has its timeout, @assert a quoted path' ($seq.Steps[2].Seconds -eq 20 -and $seq.Steps[3].Path -eq 'events.byName."spell.cast"')
 Check '@log has its regex and seconds' ($seq.Steps[7].Regex -eq 'hello (world)?' -and $seq.Steps[7].Seconds -eq 3)
 Check '@diff has its eye' ($seq.Steps[10].Eye -eq 'right' -and $seq.Steps[10].Value -eq '2.5')
+$metric = Get-Parse "@diff a b max lt 64 left-layer`n@diff a b lt 1"
+Check '@diff takes the max metric and a layer (#72), mean by default' ($metric -isnot [string] -and $metric.Steps[0].Metric -eq 'max' -and $metric.Steps[0].Eye -eq 'left-layer' -and $metric.Steps[0].Value -eq '64' -and $metric.Steps[1].Metric -eq 'mean' -and $metric.Steps[1].Eye -eq 'left') $metric
 Check '@key has its count and delay' ($seq.Steps[11].Count -eq 2 -and $seq.Steps[11].DelayMs -eq 100)
 Check '@pending wraps a step' ($seq.Steps[12].Issue -eq 24 -and $seq.Steps[12].Inner.Kind -eq 'diff')
 Check "';' groups commands into one batch" ($seq.Steps[13].Commands.Count -eq 2 -and $seq.Steps[14].Commands.Count -eq 1)
@@ -269,10 +271,31 @@ foreach ($file in $shipped) {
 	if ($parsed -isnot [string]) {
 		# A simulator script, or a flat run said outright (--no-vr in @args, stand-up.xrs #263)
 		Check "  $($file.Name) names its start" (($parsed.Sim -or $parsed.Args -contains '--no-vr') -and $parsed.Args)
+		# CI gives every sequence a fresh user dir (#296): a slot to load exists only when the sequence says which save
+		Check "  $($file.Name) declares the @save its --loadslot needs" (-not ($parsed.Args -contains '--loadslot') -or [bool]$parsed.Save)
 		Check "  $($file.Name) names the issue behind every @pending" (@($parsed.Steps | Where-Object { $_.Kind -eq 'pending' -and $_.Issue -gt 0 }).Count -eq @($parsed.Steps | Where-Object Kind -eq 'pending').Count)
 	}
 }
 Check 'the simulator script the sequences use exists' (Test-Path (Join-Path $PSScriptRoot 'vrsim\idle.vrsim'))
+
+# --- a fresh user dir per sequence (#296) ------------------------------------------------------------------------
+Write-Host 'fresh user dir per sequence'
+# Two "sequences": the first leaves a file behind (a saved file, a controls ini), the second fails when it sees it
+$ciDirs = Join-Path $work 'ci-userdirs'
+$second = { param($dir) if (Test-Path (Join-Path $dir 'vr-controls-index.ini')) { 1 } else { 0 } }
+$dirA = New-ArxSequenceUserDir $ciDirs 'vr-remap'
+Set-Content (Join-Path $dirA 'vr-controls-index.ini') 'left over'
+# One shared dir (the old behaviour): the second sequence sees the file of the first
+Check 'a shared dir leaks the first sequence into the second' ((& $second $dirA) -eq 1)
+# A fresh dir per sequence: it does not
+$dirB = New-ArxSequenceUserDir $ciDirs 'vr-settings-flat'
+Check 'the second sequence gets its own dir' ($dirB -ne $dirA)
+Check 'the second sequence does not see the first one''s file' ((& $second $dirB) -eq 0)
+# The same name again (a re-run) starts empty too
+$dirA2 = New-ArxSequenceUserDir $ciDirs 'vr-remap'
+Check 'a re-run of a sequence starts from an empty dir' ($dirA2 -eq $dirA -and -not (Test-Path (Join-Path $dirA2 'vr-controls-index.ini')))
+$ciSource = Get-Content -Raw (Join-Path $PSScriptRoot 'ci-smoke.ps1')
+Check 'ci-smoke runs every sequence in such a dir' ($ciSource -match 'New-ArxSequenceUserDir' -and $ciSource -match '\$p\.UserDir = \$seqUserDir')
 
 Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ''

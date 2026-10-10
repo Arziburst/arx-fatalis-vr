@@ -831,7 +831,7 @@ void ARX_PARTICLES_Update()  {
 	}
 }
 
-void ARX_PARTICLES_Render() {
+void ARX_PARTICLES_Render(ParticleLayer layer) {
 
 	ARX_PROFILE_FUNC();
 
@@ -854,6 +854,11 @@ void ARX_PARTICLES_Render() {
 			continue;
 		}
 		pcc--;
+
+		if(layer != ParticleLayer::All
+		   && (layer == ParticleLayer::Screen) != bool(part->m_flags & PARTICLE_2D)) {
+			continue;
+		}
 
 		ShortGameDuration elapsed = part->elapsed;
 		if(elapsed < 0) {

@@ -358,8 +358,12 @@ public:
 	 * target. The default is the window. In VR (#19) the VR module binds an eye swapchain image or
 	 * the flat frame image as a framebuffer object and names its size here; \c Vec2i(0) means the
 	 * window again.
+	 *
+	 * \a samples is the target's multisampling (0 = single-sample; ignored for the window, whose own
+	 * MSAA counts): only a multisampled target lets \ref SetAntialiasing turn multisampling on, so
+	 * alpha cutouts use alpha to coverage / sample shading there and the alpha test elsewhere (#226).
 	 */
-	virtual void setRenderTargetSize(const Vec2i & size) = 0;
+	virtual void setRenderTargetSize(const Vec2i & size, int samples = 0) = 0;
 	
 	// Fog
 	virtual void SetFogColor(Color color) = 0;

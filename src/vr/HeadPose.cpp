@@ -118,7 +118,7 @@ float raiseHeadReference(HeadReference & reference, const HeadSample & head) {
 }
 
 HeadCamera headToCamera(const HeadSample & head, const HeadReference & reference, float bodyYaw,
-                        const HeadCameraParams & params) {
+                        const Vec2f & anchor, const HeadCameraParams & params) {
 
 	HeadCamera camera;
 
@@ -129,16 +129,11 @@ HeadCamera headToCamera(const HeadSample & head, const HeadReference & reference
 	camera.angle = Anglef(wrapDegrees(own.getPitch()), wrapDegrees(own.getYaw() + turn),
 	                      wrapDegrees(own.getRoll()));
 
-	// The same turn for the movement since the reference (view-to-world rotation Ry(-turn))
-	camera.offset = turnAboutVertical(toEngineAxes(head.position - reference.position) * params.unitsPerMeter, turn);
-
-	const float horizontal = std::sqrt(camera.offset.x * camera.offset.x + camera.offset.z * camera.offset.z);
-	const float limit = params.maxLeanMeters * params.unitsPerMeter;
-	if(horizontal > limit) {
-		camera.offset.x *= limit / horizontal;
-		camera.offset.z *= limit / horizontal;
-		camera.clamped = true;
-	}
+	// The same turn for the movement since the reference (view-to-world rotation Ry(-turn)), less what the
+	// body already walked of it (#26)
+	camera.moved = toEngineAxes(head.position - reference.position);
+	const Vec3f lean(camera.moved.x - anchor.x, camera.moved.y, camera.moved.z - anchor.y);
+	camera.offset = turnAboutVertical(lean * params.unitsPerMeter, turn);
 
 	return camera;
 }

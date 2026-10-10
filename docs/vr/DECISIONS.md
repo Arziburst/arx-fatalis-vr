@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: The weapon in VR is held by the IK hand — always in the hand, the controller's handle is the hilt, no engine arm clips
+## D-033: The weapon in VR is held by the IK hand — always in the hand, the controller's handle is the hilt, no engine arm clips
 
 - **Date:** 2026-10-10
 - **Status:** Accepted (MVP defaults; the owner judges them in the headset)

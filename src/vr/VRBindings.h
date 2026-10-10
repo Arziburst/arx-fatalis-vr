@@ -50,6 +50,7 @@ enum class PhysicalAction : u8 {
 	GripPose,
 	AimPose,
 	Haptic,
+	ThumbTouch, //!< the thumb rests on a thumbstick, trackpad or face button: closes the model's thumb (#305), no gameplay event
 	Count
 };
 

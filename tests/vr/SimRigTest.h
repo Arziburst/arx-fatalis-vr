@@ -51,6 +51,7 @@ class SimRigTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testChannelTimedLineCountsFromNow);
 	CPPUNIT_TEST(testShotCannotBeARamp);
 	CPPUNIT_TEST(testFocusAndFault);
+	CPPUNIT_TEST(testFingers);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -74,6 +75,7 @@ public:
 	void testChannelTimedLineCountsFromNow();
 	void testShotCannotBeARamp();
 	void testFocusAndFault();
+	void testFingers();
 
 };
 

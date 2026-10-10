@@ -80,7 +80,9 @@
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
+#include "vr/VRMelee.h"
 #include "vr/VRReticle.h"
+#include "vr/VRRunes.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 #include "vr/VRWeapon.h"
@@ -389,6 +391,15 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 	json.value("profile", sim.rig.profile);
 	json.value("focused", sim.rig.focused);
 	json.value("swapEyes", sim.rig.swapEyes);
+	// The real fingers the simulated hand trackers show (#305): joints on or off, how far closed (0 - 1)
+	for(size_t hand = 0; hand < 2; hand++) {
+		json.object(hand ? "rightFingers" : "leftFingers");
+		json.value("joints", sim.rig.fingers[hand].joints);
+		json.value("thumb", sim.rig.fingers[hand].curl.x);
+		json.value("index", sim.rig.fingers[hand].curl.y);
+		json.value("rest", sim.rig.fingers[hand].curl.z);
+		json.end();
+	}
 	json.object("actions");
 	for(const auto & [name, values] : sim.rig.actions) {
 		json.object(name);
@@ -702,6 +713,7 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("state", mirror.state);
 	json.value("eye", mirror.eye);
 	json.value("frames", mirror.frames);
+	json.value("overlays", mirror.overlays);
 	json.end();
 	// The floating UI panel (#49): "world" while an open menu's panel is placed, its pose in the LOCAL space
 	{
@@ -881,23 +893,87 @@ std::string buildStatus(PlatformInstant now) {
 				json.end();
 			}
 			// where the posed hand's palm and fingertips ended up (after the vertices were transformed)
-			Vec3f palm(0.f);
-			Vec3f tip(0.f);
-			if(vr::handLandmarks(vr::Hand(hand), palm, tip)) {
-				const struct { const char * name; const Vec3f & point; } landmarks[] = { { "palm", palm }, { "tip", tip } };
-				for(const auto & landmark : landmarks) {
+			vr::HandLandmarks landmarks;
+			if(vr::handLandmarks(vr::Hand(hand), landmarks)) {
+				const struct { const char * name; const Vec3f & point; } points2[] = {
+					{ "palm", landmarks.palm }, { "tip", landmarks.tip }
+				};
+				for(const auto & landmark : points2) {
 					json.object(landmark.name);
 					json.value("x", landmark.point.x);
 					json.value("y", landmark.point.y);
 					json.value("z", landmark.point.z);
 					json.end();
 				}
+				json.value("tipAlong", landmarks.tipAlong);
+				json.value("tipOut", landmarks.tipOut);
 			}
 			json.value("reach", arm.reach);
 			json.value("armLength", arm.armLength);
 			json.value("error", arm.error);
 			json.value("slide", arm.slide);
 			json.value("stretched", arm.stretched);
+			// The fingers (#305): what they follow and how far each segment is bent (degrees)
+			json.object("fingers");
+			json.value("source", arm.fingerSource);
+			json.value("groups", arm.fingerGroups);
+			json.value("joints", arm.joints);
+			json.value("holds", arm.holds);
+			const struct { const char * name; const vr::FingerCurl & curl; } curls[] = {
+				{ "curl", arm.curl }, { "target", arm.curlTarget }
+			};
+			for(const auto & entry : curls) {
+				json.object(entry.name);
+				json.value("thumb", entry.curl.thumb);
+				json.value("indexRoot", entry.curl.indexRoot);
+				json.value("indexTip", entry.curl.indexTip);
+				json.value("fingersRoot", entry.curl.fingersRoot);
+				json.value("fingersTip", entry.curl.fingersTip);
+				json.end();
+			}
+			json.end();
+			json.end();
+		}
+		json.value("fingerGroups", body.fingers);
+		json.end();
+	}
+	// XR_EXT_hand_tracking (#305): whether the runtime gives hand joints and how often it did
+	{
+		const vr::HandJointsStatus & hands = vr::handJointsStatus();
+		json.object("hands");
+		json.value("extension", hands.extension);
+		json.value("supported", hands.supported);
+		json.value("trackers", hands.trackers);
+		json.value("locates", hands.locates);
+		json.value("failures", hands.failures);
+		for(size_t hand = 0; hand < vr::HandCount; hand++) {
+			json.object(vr::handName(vr::Hand(hand)));
+			json.value("active", hands.active[hand]);
+			json.value("activeFrames", hands.activeFrames[hand]);
+			json.end();
+		}
+		json.end();
+	}
+	// The rune trail (#43): the stance, the stroke the hand draws and the flares put at it
+	{
+		const vr::RuneTrailStatus & magic = vr::runeTrailStatus();
+		json.object("magic");
+		json.value("handsDraw", magic.handsDraw);
+		json.value("stance", magic.stance);
+		json.value("drawing", magic.drawing);
+		json.value("hand", magic.hand);
+		json.value("strokes", magic.strokes);
+		json.value("length", magic.length);
+		json.value("ms", magic.durationMs);
+		json.value("lastEnd", magic.lastEnd);
+		writeVec(json, "point", magic.point);
+		json.value("flares", magic.flares);
+		writeVec(json, "lastFlare", magic.lastFlare);
+		for(size_t hand = 0; hand < vr::HandCount; hand++) {
+			json.object(vr::handName(vr::Hand(hand)));
+			json.value("located", magic.located[hand]);
+			json.value("ignored", magic.ignored[hand]);
+			writeVec(json, "point", magic.points[hand]);
 			json.end();
 		}
 		json.end();
@@ -930,16 +1006,68 @@ std::string buildStatus(PlatformInstant now) {
 		}
 		// Distance from the hilt to the right palm, both taken in this one status write: a check that remembers
 		// the palm and asserts the hilt later compares two frames of a moving idle rig (#316)
-		Vec3f palm(0.f);
-		Vec3f palmTip(0.f);
-		if(vr::handLandmarks(vr::Hand::Right, palm, palmTip)) {
-			json.value("hiltToPalm", glm::distance(weapon.hilt, palm));
+		vr::HandLandmarks palm;
+		if(vr::handLandmarks(vr::Hand::Right, palm)) {
+			json.value("hiltToPalm", glm::distance(weapon.hilt, palm.palm));
 		}
 		json.value("bladeAngle", weapon.bladeAngle);
 		json.value("armAnimSuppressed", weapon.armAnimSuppressed);
 		json.value("armAnimation", weapon.armAnimation);
 		json.value("suppressedFrames", weapon.suppressedFrames);
 		json.value("combatMode", (player.Interface & INTER_COMBATMODE) != 0);
+		json.end();
+	}
+	// Physical melee (#39): the swing detector, the charge, the hits
+	{
+		const vr::MeleeStatus & melee = vr::meleeStatus();
+		json.object("melee");
+		json.value("active", melee.active);
+		json.value("refused", melee.refused);
+		json.value("swinging", melee.swinging);
+		json.value("kind", melee.kind);
+		json.value("speed", melee.speed);
+		json.value("peak", melee.peak);
+		json.value("factor", melee.factor);
+		json.value("swings", melee.swings);
+		json.value("gaps", melee.gaps);
+		json.value("jumps", melee.jumps);
+		json.value("nearMisses", melee.nearMisses);
+		json.value("lastNearMiss", melee.lastNearMiss);
+		json.object("charge");
+		json.value("held", melee.chargeHeld);
+		json.value("charging", melee.charging);
+		json.value("spent", melee.chargeSpent);
+		json.value("seconds", melee.chargeSeconds);
+		json.value("ratio", melee.chargeRatio);
+		json.value("fullAimSeconds", melee.fullAimSeconds);
+		json.end();
+		json.value("hits", melee.hits);
+		json.value("contacts", melee.contacts);
+		json.value("chargedHits", melee.chargedHits);
+		json.object("last");
+		json.value("target", melee.lastTarget);
+		json.value("aim", melee.lastAim);
+		json.value("damage", melee.lastDamage);
+		json.value("charged", melee.lastCharged);
+		json.value("speed", melee.lastSpeed);
+		json.value("swing", melee.lastSwing);
+		json.end();
+		json.object("params");
+		json.value("swingSpeed", melee.params.startSpeed);
+		json.value("endSpeed", melee.params.endSpeed);
+		json.value("fullSpeed", melee.params.fullSpeed);
+		json.value("weakAim", melee.params.weakAim);
+		json.value("targetCooldown", melee.params.targetCooldown);
+		json.end();
+		json.value("placed", melee.placed);
+		const struct { const char * name; const Vec3f & point; } points[] = { { "hilt", melee.hilt }, { "tip", melee.tip } };
+		for(const auto & point : points) {
+			json.object(point.name);
+			json.value("x", point.point.x);
+			json.value("y", point.point.y);
+			json.value("z", point.point.z);
+			json.end();
+		}
 		json.end();
 	}
 	{
@@ -999,6 +1127,10 @@ std::string buildStatus(PlatformInstant now) {
 		json.object("grip");
 		json.value("left", analog.grip[size_t(vr::Hand::Left)]);
 		json.value("right", analog.grip[size_t(vr::Hand::Right)]);
+		json.end();
+		json.object("thumbTouch");
+		json.value("left", analog.thumbTouch[size_t(vr::Hand::Left)]);
+		json.value("right", analog.thumbTouch[size_t(vr::Hand::Right)]);
 		json.end();
 		json.object("presses");
 		for(size_t i = 0; i < vr::EventCount; i++) {
@@ -1887,6 +2019,34 @@ std::string execute(std::string_view line) {
 		player.desiredangle.setPitch(angle.getPitch());
 		player.angle.setPitch(angle.getPitch());
 		LogInfo << "[channel] player looks at " << rest << " (yaw " << angle.getYaw() << ", pitch " << angle.getPitch() << ")";
+		return std::string();
+	}
+
+	if(word == "place") {
+		// place <entity> <ahead> [<right>]: an entity on the floor ahead of the player (units along the player's
+		// heading, and to its right), facing the player - a target in reach for melee checks (#39)
+		if(currentState() != GameState::Gameplay || !entities.player()) {
+			return refuse(std::string("place: needs a level on screen (state ") + gameStateName(currentState()) + ")");
+		}
+		std::istringstream iss{std::string(rest)};
+		std::string id;
+		float ahead = 0.f, right = 0.f;
+		if(!(iss >> id >> ahead)) {
+			return refuse("place: expected <entity> <ahead> [<right>], got \"" + std::string(rest) + "\"");
+		}
+		iss >> right;
+		Entity * target = entities.getById(id);
+		if(!target || target == entities.player()) {
+			return refuse("place: unknown entity \"" + id + "\"");
+		}
+		const float yaw = player.angle.getYaw();
+		const Vec3f forward = angleToVectorXZ(yaw);
+		const Vec3f side = angleToVectorXZ(yaw - 90.f);
+		const Vec3f pos = player.basePosition() + forward * ahead + side * right;
+		ARX_INTERACTIVE_Teleport(target, pos);
+		target->angle.setYaw(MAKEANGLE(yaw + 180.f));
+		LogInfo << "[channel] " << id << " placed at " << pos.x << " " << pos.y << " " << pos.z << " (" << ahead
+		        << " ahead, " << right << " right of the player)";
 		return std::string();
 	}
 

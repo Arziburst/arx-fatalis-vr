@@ -126,7 +126,7 @@ enum class Event : u8 {
 	Book,          //!< the character book: stats, map, diary, spells
 	Menu,          //!< the game menu
 	Recenter,
-	MagicMode,     //!< start drawing runes - the control is decided with the magic tasks (#43)
+	MagicMode,     //!< held: the casting stance - a trigger draws runes with its hand (#43)
 	Count
 };
 
@@ -322,6 +322,7 @@ struct ControllerInput {
 	std::array<Stick, HandCount> sticks;
 	std::array<float, HandCount> trigger = { };
 	std::array<float, HandCount> grip = { };
+	std::array<bool, HandCount> thumbTouch = { }; //!< the thumb rests on a stick, trackpad or button (#305: closes the model's thumb)
 };
 
 //! Turns the controls held each update into gameplay events, by the rules at the top of this file

@@ -46,7 +46,88 @@ Showing °/s to the player; ◀ ▶ clicking for the ranged turning values.
 
 ---
 
-## D-NEW: Remapping in the VR settings — captured on release, conflicts shown, saved as changes per controller type
+## D-041: The model's fingers follow the real fingers — hand joints first, the controls as the fallback, closed on a held weapon
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (the owner's pick from #298's table, row F-218; implemented by #305)
+- **Decided by:** the owner (fingers in the MVP, real finger tracking, a held weapon closes the hand), the worker of #305 for the internals
+
+### Decision
+- **Real finger tracking in the MVP.** The player model's five finger groups per hand — the thumb (one segment), the
+  index finger (two) and the middle, ring and little finger as one block (two) — bend with the player's real fingers:
+  the 26 hand joints of `XR_EXT_hand_tracking`, located every frame in the same space and for the same time as the
+  grip poses (F-21). The curl of a group is read from the **angles between the joints** (the knuckle's flexion bends
+  the root segment, the two outer joints together the tip, the thumb's two joints the thumb), scaled so the model's
+  segment reaches its limit when the real finger reaches a fist; the limits per segment are named constants
+  (`vr/FingerCurl.h`, `FingerCurlLimits`: thumb 60°, roots 90°, tips 95°) tuned from the headset in one place.
+- **Fallback without joints.** A runtime that lists no extension, a headset that reports no support, or a hand whose
+  joints are not active this frame falls back to the controller's values: the trigger is the index finger, the grip the
+  three-finger block, the thumb resting on a stick, trackpad or face button (a new boolean action `thumb_touch`, bound
+  to the touch paths) a closed thumb. The simple controller has no touch: its thumb stays open.
+- **A hand holding a weapon is closed on the grip** — not tracked while it holds (F-190's one owner, the coordinator's
+  advice the owner accepted): the right hand with an equipped dagger, one- or two-handed weapon (#75's rule).
+- **The engine's animation no longer moves the finger groups of a posed arm**; the bend approaches what the tracking
+  says at a bounded speed (720°/s, a fist in 0.15 s) so a source change never snaps the fingers.
+- **What the simulator gives:** the simulated runtime has the extension; its trackers return a synthetic hand closed as
+  the script says (`hand right fingers <thumb> <index> <rest>`, `fingers off` for a runtime without joints), so the
+  joint-to-curl path runs end to end without a headset.
+
+### Why
+The owner asked for Valheim VR's hands (2026-10-10): the Index's finger sensors are what players use to point, wave and
+grab, and SteamVR exposes them through `XR_EXT_hand_tracking` v4 on the owner's PC (`supportsHandTracking = 1`,
+measured in #298). Arx's own hand mesh has the finger groups, so no new hand model is needed; three curls are what it can
+show. Angles between joints are independent of the runtime's joint orientation conventions and of the space the joints
+are located in, so one mapping serves every runtime. The fallback keeps the hands alive on a Quest through SteamVR or
+Virtual Desktop, which was not verified to give joints.
+
+### Consequences
+- `status.json` → `vr.hands` (extension, support, trackers, active joints per hand, locate counts) and
+  `vr.body.<hand>.fingers` (`source` = joints / controls / held / none, the five segment angles and their target);
+  `vr.body.<hand>.tipAlong` / `tipOut` show the fingertip vertex coming back along the hand and out towards the palm as
+  the fingers close. Game events `vr.hands.joints` (per hand, active / inactive) and `vr.body.fingers` (source change).
+- One finger per bone (the ring or little finger alone), thumb opposition tuned per pose, gestures as input,
+  `XR_EXT_hand_joints_motion_range` (a fist shaped to the controller) and the left hand holding anything stay post-MVP.
+
+---
+
+## D-040: The rune trail — the engine's flares at the drawing hand, the engine's hold / release model
+
+- **Date:** 2026-10-10
+- **Status:** Accepted as the MVP default; the owner judges the look in the headset (#43)
+- **Decided by:** coordinator (default bindings are the coordinator's call, the owner's D-017 exception of
+  2026-10-10; proposed by the worker of #43), within D-010 and D-019
+
+### Decision
+- **Control model = the engine's** (Ctrl + mouse in flat mode): the **magic button held** is the casting
+  stance (D-019: the Index's **left trackpad pressed**, the Touch's **left X**; none on the simple
+  controller); while it is held, **the trigger of a hand draws one stroke** — one rune — with that hand;
+  **the trigger's release ends the rune**, **the magic button's release casts** what was drawn. A trigger
+  already held when the stance starts draws at once (as the engine's held mouse button does). In the
+  stance the trigger is the engine's mouse button as before: the engine draws with it and does not
+  interact with the world.
+- **One hand draws at a time:** the first trigger wins (both in the same frame: the right hand); the other
+  trigger is ignored until it is released. A stroke also ends when its hand is lost by the tracking.
+- **The trail is the engine's own magic flares** — textures, additive glow, the colour cycling purple →
+  yellow → red per rune, the lifetime (faster fade after the stance) — put at a point **8 cm ahead of the
+  grip along the controller** (about the index fingertip, a wand's tip), not at the palm. The path between
+  two updates is filled with the engine's line flares every 1.2 cm.
+- **Size:** half the engine's flare (`vr::RuneFlareScale` 0.5) — the cursor's flares are drawn at 75 units
+  in front of the camera, the hand draws nearer.
+- **Depth test off** as in flat mode: the trail is visible through the player's own hand and body.
+- **No cursor, no ray, no plane** while drawing (D-010): the magic cursor is not drawn when the hands draw,
+  and the cursor's 2D trail is not drawn in VR.
+
+### Why
+D-010 says the glow is where the hand moves; the engine already has the look, the colours and the
+lifetime players know, so only the place changes. The engine's hold / release model keeps multi-rune
+spells (Magic Missile = AAM + TAAR: several strokes in one stance) and the original recognition flow.
+
+### Consequences
+`vr/RuneTrail.h` (pure, host-tested), `vr/VRRunes.h` (`vr.magic` in `status.json`, `magic.stance` /
+`magic.stroke` game events), `AddFlareAt` in `MagicFlare.h`, the `rune-trail.xrs` sequence. What the
+engine recognises still comes from the cursor until #44 feeds the stroke into the recogniser. The look
+(size, tip distance, depth test) is tuned after the owner's headset test.
+## D-039: Remapping in the VR settings — captured on release, conflicts shown, saved as changes per controller type
 
 - **Date:** 2026-10-10
 - **Status:** Accepted
@@ -84,6 +165,60 @@ release is the one rule that makes all three distinguishable without a mode swit
 A mode toggle on the page for "chord" / "long press", refusing conflicting binds, saving the whole layout (it would
 freeze today's defaults into every player's file), remapping the walk and turn sticks before #261 (left-handed mode
 swaps them as a whole).
+## D-038: Physical melee — the swing is the strike, the trigger charges it with the game's own charge
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (the owner's design; the numbers are MVP defaults the owner tunes in the headset)
+- **Decided by:** the owner (after a headset fight with #75's sword, relayed by the coordinator on #39); the
+  mechanism by the worker of #39; builds on D-009, D-016, D-019, D-032 (the body) and D-033 (the weapon in the IK hand, #75)
+
+### Decision
+- **A physical swing hits; the trigger does not strike.** While the IK hand holds a melee weapon, a swing of the
+  right controller is the strike. During the swing the weapon is placed where the hand holds it this frame and
+  the engine's own strike check runs on it every frame (`ARX_EQUIPMENT_Strike_Check`: the weapon's hit
+  spheres, the to-hit roll, damage, armour, knockback, blood, sounds, durability — F-58: the engine keeps the
+  rules). The engine's own strike (combat mode: press, charge, release — in VR it hit without any animation)
+  no longer starts from the attack button while the IK hand holds the weapon.
+- **Plain swing = weak; trigger held = the game's charge; a charged hit spends it.** The right trigger held
+  charges with the engine's own numbers — the time held against the player's `Full_AimTime`, the ratio 0.1..1 of
+  `StrikeAimtime`, shown on the HUD's hit strength gauge. A hit's aim ratio (the engine's damage = attack ×
+  ratio) is the charge (never below a plain swing's) or **0.25** without one, times a **speed factor**
+  0.5..1 (F-63: 2.5 → 6 m/s). The first contact of a charged swing spends the charge; it stays empty until the
+  trigger is released and pressed again. A charged swing that touches nothing keeps the charge (the owner's
+  words: "after a charged hit"); letting go of the trigger before a swing drops it.
+- **The swing detector** (`vr/MeleeSwing.h`, pure, host-tested): the speed of a point 0.125 m along the blade
+  (F-61's lever: wrist flicks do not swing), relative to the head (stepping or leaning with a still arm is no
+  swing; the stick's walk and turn never move the controller in the room), from the median of three positions
+  (F-59); a swing starts at **2.5 m/s** and ends below 1.5 m/s or after 1 s; a thrust of 0.2 m along the blade
+  within 0.25 s at 2 m/s is a stab (F-61); a time step outside 4–100 ms or a speed above 20 m/s starts it over.
+  One hit per target per swing and a **0.25 s** per-target cooldown (F-62, PLANCK's per-target 0.25 s of F-74).
+- **Gates** (F-66): a weapon in the IK hand, the right controller tracked, no menu / inventory / book, nothing
+  dragged, the controls not blocked, alive. A swing start does what the engine's strike start does: the player
+  becomes visible, the `strike` script event, the strike speech of a nearly full charge.
+- **The numbers are cfg.ini keys:** `vr_melee_swing_speed` (2.5), `vr_melee_full_speed` (6), `vr_melee_weak_aim`
+  (0.25), `vr_melee_target_cooldown` (0.25).
+
+### Why
+The owner fought an orc with #75's sword: swinging did nothing, and the trigger aimed at the enemy struck with
+no animation. The owner asked for swings that hit, spam-able but weak, and the game's charge for the strong ones — so
+the charge mechanic and the damage rules stay Arx's and only the trigger's release is replaced by the swing.
+2.5 m/s sits between F-178's 1 m/s (the game's roll filters) and PLANCK's 4.5–5 m/s (F-195), measured at a
+short lever; 0.25 s instead of "the weapon's attack duration" (F-62) because the owner wants plain swings fast
+and spam-able. Contact through the engine's check (not a ray or a cone) keeps hits where the blade really is.
+
+### Rules out
+The engine's click attack while a weapon is in the VR hand; damage from swing speed alone without the charge
+(VHVR's curve is only the speed factor here); hits from the trigger, from wrist flicks, or from moving the body.
+
+### Consequences
+- `vr.melee` in status.json (detector, charge, hits, the last hit's aim and damage, the thresholds); game events
+  `melee.swing` (one per swing: kind, result, peak, factor, charge, aim, hits), `melee.charge` (start, full,
+  spent, released), `melee.nearMiss` (F-60: motions that peaked within 20 % below the swing speed — the census to
+  tune the swing speed on the owner's arm), `melee.state`; the engine's `melee.hit` per hit.
+- Haptics come from #42 (PR #264) inside the strike check; bare hands, bows, shields, the left hand, a swish
+  sound by strength (F-178) and the per-target outline (F-62) are later tasks.
+- `weapon-hold.xrs` no longer sees a strike clip in combat mode; `melee-swing.xrs` proves the design on
+  `mvp-goblin-fight`.
 
 ---
 
@@ -823,14 +958,14 @@ Valve Index first; Quest 3 Touch the same (A/B on the right, X/Y on the left).
 | Game menu (open / close) | **A on the left** on the Index (free in this table; the Index has no menu button), the **left menu button** on the Touch *(owner, 2026-10-10, after the #30 headset run)* |
 | Two reticles on different items | the name shown is the one of the **hand that moved last** |
 | Recenter | ~~hold a button chord (F-34)~~ → **long press of the left stick click** *(owner, 2026-10-10, after the #30 headset run)* |
-| Runes | drawn in the air with the hand (D-010); the button that starts casting is decided with the magic block (#43–#45) |
+| Runes | drawn in the air with the hand (D-010); ~~the button that starts casting is decided with the magic block (#43–#45)~~ → **hold the left trackpad** (Index) / **left X** (Touch) = the casting stance; **the trigger of a hand draws a rune with that hand**, its release ends the rune, releasing the stance casts (D-040, #43; coordinator's default, remappable in #178) |
 | Left-handed mode | ~~after the MVP~~ → in the MVP, in the VR settings (D-020) |
 
 **Other controllers (#35, 2026-10-10).** Default layouts for controllers other than the Index are the
 coordinator's call, because players remap them in the game (#178) — the owner's exception to D-017
 (2026-10-10):
 - **Quest 3 Touch Plus** (SteamVR reports `oculus/touch_controller`): the table above with **X / Y in
-  the places of left A / B**; the game menu on the **left menu button**, so **X stays free**; recenter is
+  the places of left A / B**; the game menu on the **left menu button**, so **X stays free** (→ magic mode, #43); recenter is
   the same long press of the left stick click. The grip is a squeeze (`squeeze/value` 0.70 / 0.55, F-41) —
   the Touch is held, not strapped on.
 - **Simple controller** (`khr/simple_controller`, select and menu per hand): select = click / drag of

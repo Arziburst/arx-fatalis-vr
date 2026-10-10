@@ -57,7 +57,8 @@ The desktop window mirrors one eye, so the demo can be recorded and shown.
 ## Accepted for the MVP (known problems we live with)
 
 - The menus are the original 2D interface on a flat floating panel — functional, not pretty.
-- No finger tracking; the arms follow the controllers, but engine animations that take over the body
+- The arms follow the controllers and the fingers the real fingers (#305; three curls per hand — the model has
+  the middle, ring and little finger as one block), but engine animations that take over the body
   (death, ladders, knockdowns) may look wrong.
 - Bow, shield, prepared spells, spell book in VR: not in MVP (they may work through the panel, or not).
 - Cutscenes, death camera and scripted cameras may behave badly.
@@ -137,7 +138,7 @@ dependencies are met; when a task is split, replace it with its parts.
 *(the owner decides on the new catalog rows before #36, #116, #49 and #88)*
 29. #49 — Floating UI panel for menus, inventory, book, map (F-80, F-82)
 30. #34 — Menu pointer only while a menu or the inventory is open (D-010, F-81)
-30. #178 — VR settings screen with the Controls section: remapping (button, chord, long press) per controller type (D-020, D-NEW)
+30. #178 — VR settings screen with the Controls section: remapping (button, chord, long press) per controller type (D-020, D-039)
 30. #260 — VR settings, Controls: turning rows and character height up / down (after #32, #27)
 31. #33 — Jump on A, crouch toggle on right stick down, stealth by partial deflection (F-47)
 32. #70 — Test save library for MVP scenarios *(done: new game, items, goblin fight; levers, doors and chests are #210, recorded by the owner)*

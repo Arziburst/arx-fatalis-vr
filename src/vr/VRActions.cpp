@@ -99,8 +99,9 @@ bool ActionSet::create(XrInstance instance) {
 	a.gripPose = createAction("grip_pose", "Hand pose", XR_ACTION_TYPE_POSE_INPUT);
 	a.aimPose = createAction("aim_pose", "Pointer pose", XR_ACTION_TYPE_POSE_INPUT);
 	a.haptic = createAction("haptic", "Haptic feedback", XR_ACTION_TYPE_VIBRATION_OUTPUT);
+	a.thumbTouch = createAction("thumb_touch", "Thumb resting on a control", XR_ACTION_TYPE_BOOLEAN_INPUT);
 	for(XrAction action : { a.trigger, a.grip, a.a, a.b, a.stick, a.stickClick, a.trackpad, a.menu,
-	                        a.gripPose, a.aimPose, a.haptic }) {
+	                        a.gripPose, a.aimPose, a.haptic, a.thumbTouch }) {
 		if(action == XR_NULL_HANDLE) {
 			destroy();
 			return false;
@@ -109,8 +110,8 @@ bool ActionSet::create(XrInstance instance) {
 
 	suggestBindings();
 
-	LogInfo << "[vr] input: action set \"controls\" created - 11 actions per hand (one per physical control);"
-	           " the game's control table maps them to gameplay events";
+	LogInfo << "[vr] input: action set \"controls\" created - 12 actions per hand (one per physical control,"
+	           " the thumb's rest for the fingers); the game's control table maps them to gameplay events";
 
 	return true;
 }
@@ -129,6 +130,7 @@ XrAction ActionSet::action(PhysicalAction id) const {
 		case PhysicalAction::GripPose: return a.gripPose;
 		case PhysicalAction::AimPose: return a.aimPose;
 		case PhysicalAction::Haptic: return a.haptic;
+		case PhysicalAction::ThumbTouch: return a.thumbTouch;
 		case PhysicalAction::Count: break;
 	}
 	return XR_NULL_HANDLE;
@@ -533,6 +535,12 @@ bool ActionSet::sync(ControllerInput & input, XrSpace viewSpace, XrTime time) {
 			down[c] = readBoolean(entry.action, hand, isActive, tapped);
 			bound[c] = isActive;
 			input.taps[c] = tapped && !m_down[c];
+		}
+
+		// The thumb's rest (#305): not a control, only the fingers read it
+		{
+			bool tapped = false;
+			input.thumbTouch[i] = readBoolean(m_actions.thumbTouch, hand, isActive, tapped);
 		}
 
 		XrActionStateGetInfo info = { XR_TYPE_ACTION_STATE_GET_INFO };

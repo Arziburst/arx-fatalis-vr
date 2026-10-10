@@ -252,7 +252,10 @@ ControlLayout defaultLayout(ControllerType type) {
 	layout[Event::Menu] = Binding::single(control(Hand::Left, type == ControllerType::Touch ? ControlKind::Menu
 	                                                                                         : ControlKind::A));
 	layout[Event::Recenter] = Binding::hold(control(Hand::Left, ControlKind::StickClick));
-	// Magic mode: decided with the magic tasks (#43), unbound until then
+	// Magic mode (#43, D-019): held by the left hand while a trigger draws - the engine's Ctrl. The Index's
+	// left trackpad pressed; the Touch has no trackpad, its X is free (the game menu is on its menu button)
+	layout[Event::MagicMode] = Binding::single(control(Hand::Left, type == ControllerType::Touch ? ControlKind::A
+	                                                                                              : ControlKind::Trackpad));
 
 	return layout;
 }

@@ -96,9 +96,17 @@ set(arxtest_TESTCASES
 	tests/vr/WristVitalsTest.cpp
 	tests/vr/WeaponGripTest.h
 	tests/vr/WeaponGripTest.cpp
+	tests/vr/MeleeSwingTest.h
+	tests/vr/MeleeSwingTest.cpp
 
 	tests/vr/HandReticleTest.h
 	tests/vr/HandReticleTest.cpp
+
+	tests/vr/RuneTrailTest.h
+	tests/vr/RuneTrailTest.cpp
+
+	tests/vr/FingerCurlTest.h
+	tests/vr/FingerCurlTest.cpp
 
 
 )
@@ -140,6 +148,9 @@ set(arxtest_SOURCES
 	src/vr/HandReticle.cpp
 	src/vr/WeaponGrip.cpp
 	src/vr/Locomotion.cpp
+	src/vr/FingerCurl.cpp
+	src/vr/RuneTrail.cpp
+	src/vr/MeleeSwing.cpp
 
 
 	${arxtest_TESTCASES}

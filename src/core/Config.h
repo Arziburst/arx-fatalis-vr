@@ -229,6 +229,10 @@ public:
 		float vrSnapTurnAngle; //!< VR: degrees per snap turn (#32)
 		float vrSmoothTurnSpeed; //!< VR: smooth turn degrees per second at full deflection (#32)
 		float vrSnapTurnRepeat; //!< VR: seconds between snaps while the stick is held; 0 = no repeat (#32)
+		float vrMeleeSwingSpeed; //!< VR: m/s a weapon swing hits from (#39, vr/MeleeSwing.h)
+		float vrMeleeFullSpeed; //!< VR: m/s a swing has its full damage at (#39)
+		float vrMeleeWeakAim; //!< VR: the damage ratio of an uncharged swing; a full charge is 1 (#39)
+		float vrMeleeTargetCooldown; //!< VR: seconds before a new swing can hit the same target (#39)
 
 	} input;
 	

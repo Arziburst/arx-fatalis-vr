@@ -1264,11 +1264,13 @@ set(VR_SOURCES
 	src/vr/HeadTracking.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/Locomotion.cpp
+	src/vr/MeleeSwing.cpp
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
 	src/vr/VRActions.cpp
 	src/vr/VRBindings.cpp
 	src/vr/VRBody.cpp
+	src/vr/VRMelee.cpp
 	src/vr/VRWeapon.cpp
 	src/vr/VRComfort.cpp
 	src/vr/VRControls.cpp

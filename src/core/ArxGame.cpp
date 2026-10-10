@@ -114,6 +114,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "gui/Console.h"
 #include "gui/Cursor.h"
+#include "gui/Dragging.h"
 #include "gui/Hud.h"
 #include "gui/Interface.h"
 #include "gui/LoadLevelScreen.h"
@@ -179,6 +180,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
+#include "vr/VRMelee.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 #include "vr/VRWeapon.h"
@@ -1958,6 +1960,19 @@ void ArxGame::updateLevel() {
 
 	// The weapon in the IK hand (#75): after this frame's body pose and the combat mode's links
 	vr::updateHeldWeapon();
+
+	// Physical melee (#39): swings of the held weapon hit - not with a menu open, an item dragged, the controls blocked
+	{
+		const char * refusal = openMenuName();
+		if(!refusal && BLOCK_PLAYER_CONTROLS) {
+			refusal = "controls blocked";
+		} else if(!refusal && g_draggedEntity) {
+			refusal = "an item is dragged";
+		} else if(!refusal && player.lifePool.current <= 0.f) {
+			refusal = "dead";
+		}
+		vr::updateMelee(refusal);
+	}
 
 	restoreEngineCamera();
 

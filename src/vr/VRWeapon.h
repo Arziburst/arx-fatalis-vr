@@ -63,6 +63,21 @@ bool heldWeaponRotation(const Entity * linked, glm::quat & rotation);
  */
 bool suppressArmAnimation(const Entity * io, const std::string & armAnimation);
 
+//! \return the weapon the IK hand held at the last \ref updateHeldWeapon, or nullptr
+Entity * weaponInHand();
+
+/*!
+ * \brief Put the held weapon's vertices where the hand holds it now (#39)
+ *
+ * The engine places a linked object's vertices only when it draws it; a hit check in the update (melee,
+ * #39) needs this frame's pose - after the body was posed - also for a weapon out of the eyes' view.
+ * The same transform as the draw (the hand bone, the blade correction, the attach points).
+ *
+ * \param hilt, tip the weapon's attach vertex and blade tip in the world, when placed
+ * \return false when no weapon is held by the IK hand or the link is gone
+ */
+bool placeHeldWeapon(Vec3f & hilt, Vec3f & tip);
+
 //! The held weapon as status.json reports it
 struct HeldWeaponStatus {
 	std::string item;              //!< the equipped weapon's id, empty without one

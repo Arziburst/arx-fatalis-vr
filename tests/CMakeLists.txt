@@ -82,6 +82,8 @@ set(arxtest_TESTCASES
 	tests/vr/ArmIKTest.cpp
 	tests/vr/WeaponGripTest.h
 	tests/vr/WeaponGripTest.cpp
+	tests/vr/MeleeSwingTest.h
+	tests/vr/MeleeSwingTest.cpp
 
 
 )
@@ -116,6 +118,7 @@ set(arxtest_SOURCES
 	src/vr/Locomotion.cpp
 	src/vr/ArmIK.cpp
 	src/vr/WeaponGrip.cpp
+	src/vr/MeleeSwing.cpp
 
 
 	${arxtest_TESTCASES}

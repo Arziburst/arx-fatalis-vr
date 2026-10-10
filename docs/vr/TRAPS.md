@@ -8,6 +8,23 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — A check broken on purpose still passes: `-Rebuild` did not rebuild (#39)
+
+**Symptom:** with the charge spend commented out, `smoke-test.ps1 -Rebuild -Sequence melee-swing` passed all 92 steps,
+including "the charge is spent".
+**Cause:** `-Rebuild` (and the launch scripts' fresh-build check) compare `built-from.txt` with `HEAD` and the
+*dirty* flag only: a build of `<sha> dirty` counts as fresh for any later uncommitted change on the same commit, so
+the game ran the previous build. **Do:** after editing uncommitted code, run `.\scripts\build-windows.ps1` yourself
+before a launch (it always builds what changed); a break-on-purpose run is only valid after an explicit build.
+
+## 2026-10-10 — `player.pos + player.baseOffset()` is not the feet: an NPC placed there floats (#39)
+
+**Symptom:** the channel's new `place` put the goblin 170 units *above* the player's eye; it hung in the air and
+`setspeed 1` did not drop it.
+**Cause:** `player.pos` is the eye and y grows downwards; `baseOffset()` is `(0, -170, 0)`, so adding it goes up.
+The feet are `player.basePosition()` (`pos.y - baseHeight()`). **Do:** use `basePosition()` for the floor under the
+player; check a placed entity's `y` against the player's feet in `entities.txt` (the floor is the eye + 170).
+
 ## 2026-10-10 — The sneak covered more ground than the run (#33)
 
 **Symptom:** on `mvp-new-game` a slight stick push (the stealth walk) moved the player 355 units in 1.5 s and the

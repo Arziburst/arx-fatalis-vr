@@ -13,6 +13,61 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW-melee: Physical melee — the swing is the strike, the trigger charges it with the game's own charge
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (the owner's design; the numbers are MVP defaults the owner tunes in the headset)
+- **Decided by:** the owner (after a headset fight with #75's sword, relayed by the coordinator on #39); the
+  mechanism by the worker of #39; builds on D-009, D-016, D-019 and the weapon in the IK hand (#75)
+
+### Decision
+- **A physical swing hits; the trigger does not strike.** While the IK hand holds a melee weapon, a swing of the
+  right controller is the strike. During the swing the weapon is placed where the hand holds it this frame and
+  the engine's own strike check runs on it every frame (`ARX_EQUIPMENT_Strike_Check`: the weapon's hit
+  spheres, the to-hit roll, damage, armour, knockback, blood, sounds, durability — F-58: the engine keeps the
+  rules). The engine's own strike (combat mode: press, charge, release — in VR it hit without any animation)
+  no longer starts from the attack button while the IK hand holds the weapon.
+- **Plain swing = weak; trigger held = the game's charge; a charged hit spends it.** The right trigger held
+  charges with the engine's own numbers — the time held against the player's `Full_AimTime`, the ratio 0.1..1 of
+  `StrikeAimtime`, shown on the HUD's hit strength gauge. A hit's aim ratio (the engine's damage = attack ×
+  ratio) is the charge (never below a plain swing's) or **0.25** without one, times a **speed factor**
+  0.5..1 (F-63: 2.5 → 6 m/s). The first contact of a charged swing spends the charge; it stays empty until the
+  trigger is released and pressed again. A charged swing that touches nothing keeps the charge (the owner's
+  words: "after a charged hit"); letting go of the trigger before a swing drops it.
+- **The swing detector** (`vr/MeleeSwing.h`, pure, host-tested): the speed of a point 0.125 m along the blade
+  (F-61's lever: wrist flicks do not swing), relative to the head (stepping or leaning with a still arm is no
+  swing; the stick's walk and turn never move the controller in the room), from the median of three positions
+  (F-59); a swing starts at **2.5 m/s** and ends below 1.5 m/s or after 1 s; a thrust of 0.2 m along the blade
+  within 0.25 s at 2 m/s is a stab (F-61); a time step outside 4–100 ms or a speed above 20 m/s starts it over.
+  One hit per target per swing and a **0.25 s** per-target cooldown (F-62, PLANCK's per-target 0.25 s of F-74).
+- **Gates** (F-66): a weapon in the IK hand, the right controller tracked, no menu / inventory / book, nothing
+  dragged, the controls not blocked, alive. A swing start does what the engine's strike start does: the player
+  becomes visible, the `strike` script event, the strike speech of a nearly full charge.
+- **The numbers are cfg.ini keys:** `vr_melee_swing_speed` (2.5), `vr_melee_full_speed` (6), `vr_melee_weak_aim`
+  (0.25), `vr_melee_target_cooldown` (0.25).
+
+### Why
+The owner fought an orc with #75's sword: swinging did nothing, and the trigger aimed at the enemy struck with
+no animation. The owner asked for swings that hit, spam-able but weak, and the game's charge for the strong ones — so
+the charge mechanic and the damage rules stay Arx's and only the trigger's release is replaced by the swing.
+2.5 m/s sits between F-178's 1 m/s (the game's roll filters) and PLANCK's 4.5–5 m/s (F-195), measured at a
+short lever; 0.25 s instead of "the weapon's attack duration" (F-62) because the owner wants plain swings fast
+and spam-able. Contact through the engine's check (not a ray or a cone) keeps hits where the blade really is.
+
+### Rules out
+The engine's click attack while a weapon is in the VR hand; damage from swing speed alone without the charge
+(VHVR's curve is only the speed factor here); hits from the trigger, from wrist flicks, or from moving the body.
+
+### Consequences
+- `vr.melee` in status.json (detector, charge, hits, the last hit's aim and damage, the thresholds); game events
+  `melee.swing` (one per swing: kind, result, peak, factor, charge, aim, hits), `melee.charge` (start, full,
+  spent, released), `melee.nearMiss` (F-60: motions that peaked within 20 % below the swing speed — the census to
+  tune the swing speed on the owner's arm), `melee.state`; the engine's `melee.hit` per hit.
+- Haptics come from #42 (PR #264) inside the strike check; bare hands, bows, shields, the left hand, a swish
+  sound by strength (F-178) and the per-target outline (F-62) are later tasks.
+- `weapon-hold.xrs` no longer sees a strike clip in combat mode; `melee-swing.xrs` proves the design on
+  `mvp-goblin-fight`.
+
 ## D-NEW: The weapon in VR is held by the IK hand — always in the hand, the controller's handle is the hilt, no engine arm clips
 
 - **Date:** 2026-10-10

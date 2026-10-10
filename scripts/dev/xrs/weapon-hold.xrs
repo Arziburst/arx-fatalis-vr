@@ -88,7 +88,7 @@ vr-sim hand right on
 @assert vr.weapon.place eq hand
 @assert vr.weapon.inHand eq true
 
-# F-67: the engine's combat mode plays its arm clips (ready, then a strike on the trigger) - none of them
+# F-67: the engine's combat mode plays its arm clips (ready, wait; a strike on the trigger before #39) - none of them
 # reaches the skeleton while the IK drives the arms: the arm layer is counted as suppressed, the shoulder
 # the IK starts from does not move with the strike, and the sword stays in the hand. (VR has no control for
 # the combat mode, D-019; the channel's "combat on" is the weapon key. The combat mode's fight stance is
@@ -109,7 +109,9 @@ vr-sim action trigger right 1
 @frames 40
 vr-sim action trigger right 0
 @frames 10
-@log vr\.body\.armAnim.*suppressed.*strike 5s
+# Since #39 the trigger does not start the engine's strike while the IK hand holds the weapon (the physical swing is
+# the strike, melee-swing.xrs): no strike clip at all, and the suppressed wait clip leaves the shoulder alone
+@nolog vr\.body\.armAnim.*strike
 @assert vr.weapon.armAnimSuppressed eq true
 @assert vr.body.right.shoulder.x gt {shoulderX-1}
 @assert vr.body.right.shoulder.x lt {shoulderX+1}

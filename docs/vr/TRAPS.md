@@ -133,7 +133,7 @@ re-applies the viewport and the scissor against that height, snapshots read that
 `SetAntialiasing(true)` is refused on a single-sample offscreen target so the alpha cutout path falls
 back to the alpha test (a multisampled one names its samples too, `setRenderTargetSize(size, samples)`, #226).
 `vr::beginEyeRender()` / `endEyeRender()` and the flat frame target do this; a new offscreen target must too.
-With eye MSAA (`vr_msaa`, D-032) the eye is drawn into a multisampled buffer, not the swapchain image:
+With eye MSAA (`vr_msaa`, D-NEW) the eye is drawn into a multisampled buffer, not the swapchain image:
 the image holds the picture only after `Swapchain::resolve()` in `endEyeRender` - read eye pixels after it.
 
 ## 2026-10-10 — "use" fires from just holding the Index controller (a closed hand flickers, #30)

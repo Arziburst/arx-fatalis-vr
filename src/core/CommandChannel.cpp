@@ -663,6 +663,12 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("offsetY", head.offset.y);
 		json.value("offsetZ", head.offset.z);
 		json.value("clamped", head.clamped);
+		// Physical crouch (#100): the head crouching the character, its depth below the reference (meters), the
+		// episodes, and how far the character's crouch lowered its eye (game units)
+		json.value("crouch", head.crouch);
+		json.value("crouchDepth", head.crouchDepth);
+		json.value("crouches", head.crouches);
+		json.value("characterDrop", head.characterDrop);
 		// The look and the body (#25): where the stick's forward is and where the model faces
 		const vr::BodyStatus & body = vr::bodyStatus();
 		json.value("lookYaw", body.lookYaw);

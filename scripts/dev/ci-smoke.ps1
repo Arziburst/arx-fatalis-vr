@@ -7,7 +7,9 @@
 	Runs on the self-hosted runner after the build (.github/workflows/build-windows.yml), and by hand:
 	  1. smoke-test.ps1 -Seconds 3 -Commands 'drawcheck 120'   flat, --loadlevel 10: start, play, draw check, quit
 	  2. spell-drawcheck.ps1                                   the 26 spells of #71 cast, drawn twice per frame
-	Both are the same scripts the workers run (docs/vr/TESTING.md); a FAIL of either fails this script.
+	  3. every scripts\dev\xrs\*.xrs sequence (#255)           one launch each, with the @sim / @args / @save it declares; the
+	                                                           test save library of this account is verified (or generated) first
+	All are the same scripts the workers run (docs/vr/TESTING.md); a FAIL of any fails this script.
 
 	Evidence, in -OutDir: one transcript per phase (smoke-test.log, spell-drawcheck.log), and after each phase the
 	game's arx.log files, status.json / ack.txt / stdout / stderr of the test channel, the crash reports, the
@@ -37,7 +39,7 @@
 	Which build to run (default Release, what the workflow builds).
 
 .PARAMETER Phase
-	smoke, spells, or all (default). One phase is for trying the CI setup in pieces.
+	smoke, spells, sequences, or all (default). One phase is for trying the CI setup in pieces.
 
 .EXAMPLE
 	.\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence
@@ -49,13 +51,14 @@ param(
 	[int]$LockTimeoutSec = 900,
 	[ValidateSet('Release', 'RelWithDebInfo', 'Debug')]
 	[string]$Config = 'Release',
-	[ValidateSet('all', 'smoke', 'spells')]
+	[ValidateSet('all', 'smoke', 'spells', 'sequences')]
 	[string]$Phase = 'all'
 )
 
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot 'test-lib.ps1')
+. (Join-Path $PSScriptRoot 'xrs-lib.ps1')
 
 if (-not $OutDir) { $OutDir = Join-Path $ArxSourceDir 'ci-artifacts' }
 New-Item -ItemType Directory -Force $OutDir | Out-Null
@@ -112,7 +115,7 @@ function Clear-OldEvidence {
 	Remove-Item (Join-Path $testDir 'capture') -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-function Invoke-Phase([string]$Name, [string]$Script, [hashtable]$Params) {
+function Invoke-Phase([string]$Name, $Script, [hashtable]$Params) {
 	Write-Host ''
 	Write-Host "==> ci-smoke phase '$Name'" -ForegroundColor Cyan
 	Clear-OldEvidence
@@ -120,7 +123,9 @@ function Invoke-Phase([string]$Name, [string]$Script, [hashtable]$Params) {
 	$started = Get-Date
 	$exit = 1
 	try {
-		& (Join-Path $PSScriptRoot $Script) @Params *>&1 | Tee-Object -FilePath $transcript | ForEach-Object { Write-Host $_ }
+		# A script name with its parameters, or a script block (the save library phase: verify, else generate)
+		$run = if ($Script -is [scriptblock]) { $Script } else { { & (Join-Path $PSScriptRoot $Script) @Params } }
+		& $run *>&1 | Tee-Object -FilePath $transcript | ForEach-Object { Write-Host $_ }
 		$exit = $LASTEXITCODE
 	} catch {
 		Write-Host "ci-smoke: phase '$Name' threw: $_" -ForegroundColor Red
@@ -142,6 +147,44 @@ try {
 	if ($Phase -in 'all', 'spells') {
 		$p = @{ LockTimeoutSec = $LockTimeoutSec } + $dataArgs
 		$results += Invoke-Phase 'spell-drawcheck' 'spell-drawcheck.ps1' $p
+	}
+	if ($Phase -in 'all', 'sequences') {
+		# Every shipped sequence (#255), parsed first: a syntax error costs no launch
+		$sequences = @(Get-ChildItem (Join-Path $PSScriptRoot 'xrs') -Filter '*.xrs' | Sort-Object Name | ForEach-Object { Read-ArxSequence $_.FullName })
+		$needed = @($sequences | Where-Object Save | ForEach-Object Save | Sort-Object -Unique)
+		$libraryOk = $true
+		if ($needed) {
+			# The test save library of this account (D-023, derived from the game's data, never committed): checked by a
+			# fresh game that loads every save (-Verify, one launch); generated again when it is missing, lacks a save a
+			# sequence names, or no longer loads (an engine save format change)
+			$library = Get-ArxSaveLibrary
+			$libScript = {
+				$verifyArgs = @{ Library = $library; LockTimeoutSec = $LockTimeoutSec } + $dataArgs
+				$have = @()
+				$manifest = Join-Path $library 'manifest.json'
+				if (Test-Path $manifest) { $have = @(Get-Content -Raw $manifest | ConvertFrom-Json | Where-Object { Test-Path (Join-Path $library "$($_.name)\gsave.sav") } | ForEach-Object name) }
+				$missing = @($needed | Where-Object { $_ -notin $have })
+				if ($missing) { Write-Host "ci-smoke: the save library $library lacks $($missing -join ', ') - generating it" }
+				else {
+					& (Join-Path $PSScriptRoot 'make-test-saves.ps1') -Verify @verifyArgs
+					if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 2) { return }
+					Write-Host 'ci-smoke: the saves of the library no longer load - generating it again'
+				}
+				& (Join-Path $PSScriptRoot 'make-test-saves.ps1') @verifyArgs
+			}
+			$libResult = Invoke-Phase 'save-library' $libScript @{}
+			$results += $libResult
+			$libraryOk = ($libResult.Exit -eq 0)
+		}
+		foreach ($seq in $sequences) {
+			if ($seq.Save -and -not $libraryOk) { Write-Host "ci-smoke: sequence '$($seq.Name)' needs the save $($seq.Save), which the library phase did not provide - not run" -ForegroundColor Red; $results += [pscustomobject]@{ Name = "xrs-$($seq.Name)"; Exit = 1; Verdict = 'FAIL' }; continue }
+			$p = @{ Config = $Config; Sequence = $seq.Path; LockTimeoutSec = $LockTimeoutSec } + $dataArgs
+			# A flat sequence says so (--no-vr in its @args, no @sim); the others run on the idle simulated headset
+			if ($seq.Sim) { $p.VrSim = $seq.Sim } elseif ($seq.Args -notcontains '--no-vr') { $p.VrSim = 'idle' }
+			if ($seq.Save) { $p.Save = $seq.Save }
+			if ($seq.Args) { $p.ArxArgs = @($seq.Args) }
+			$results += Invoke-Phase "xrs-$($seq.Name)" 'smoke-test.ps1' $p
+		}
 	}
 } finally {
 	# Never leave a game behind - but only ours: the ones that run from this working copy's build directory

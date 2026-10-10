@@ -79,7 +79,9 @@ if ($Attach) {
 	exit 1
 }
 
-$smokeArgs = @{ Sequence = $parsed.Path; VrSim = $(if ($parsed.Sim) { $parsed.Sim } else { 'idle' }); Rebuild = $Rebuild }
+$smokeArgs = @{ Sequence = $parsed.Path; Rebuild = $Rebuild }
+# A flat sequence says so: --no-vr in its @args and no @sim (stand-up.xrs); every other one runs on the idle simulated headset
+if ($parsed.Sim) { $smokeArgs.VrSim = $parsed.Sim } elseif ($parsed.Args -notcontains '--no-vr') { $smokeArgs.VrSim = 'idle' }
 if ($TestDir) { $smokeArgs.TestDir = $TestDir }
 if ($parsed.Save) { $smokeArgs.Save = $parsed.Save }
 $launchArgs = @(if ($ArxArgs) { $ArxArgs } elseif ($parsed.Args) { $parsed.Args })

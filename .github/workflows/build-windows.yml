@@ -69,7 +69,9 @@ jobs:
     # Flat game on the runner: smoke test (start, play, draw check, quit, evidence) and the spell draw
     # check. Fails the job on FAIL, and also when it could not run (exit 2: another game kept the game
     # lock) - a gate that did not run is not a pass. Never leaves arx.exe behind.
-    - name: Game checks (smoke test, draw check, spell draw check)
+    # Then (#255) every shipped .xrs sequence, one launch each, on the test save library of the service account
+    # (verified, or generated when missing or stale).
+    - name: Game checks (smoke test, draw check, spell draw check, .xrs sequences)
       shell: pwsh
       run: ./scripts/dev/ci-smoke.ps1 -OutDir "$env:GITHUB_WORKSPACE/ci-artifacts"
 

@@ -49,6 +49,63 @@ never invisible.
 
 ---
 
+## D-036: The hand reticles pick the world in 3D; one mouse arbiter for the panel and the world
+
+- **Date:** 2026-10-10
+- **Status:** Accepted
+- **Decided by:** worker of #37 (technical, within D-016, D-019, D-029; plan approved by the coordinator)
+
+### Decision
+- **The world is picked by each hand's hidden ray in 3D**, not by the engine's 2D pick: the aim pose, rigid
+  with the head camera like the body's hands (#36, F-185: the controller where it is, not the posed hand),
+  is cast against the level (`raycastScene`, transparent polygons included — plank floors and gratings stop
+  it, water and non-colliding ones do not) and the entities' faces; the nearest interactive entity within the
+  engine's reach (350 units from the player, 850 with telekinesis) is the hand's hover, with the hysteresis of
+  F-57 (2 frames in, 150 ms out). Reason: the engine's pick is a 2D test along rays through the eye, and a
+  hand's ray is another ray (before #72 the screen boxes were partly the last eye's too, TRAPS.md).
+- **The engine still decides everything else.** The owning hand's hit becomes the engine's mouse position:
+  its projection with the head camera moved **16384 px right of the interface** (the "world band"), where no
+  2D widget is — so the inventory drawn at the bottom of the screen never answers for an item seen there,
+  distances between such positions stay the projection's (the 16 px click dead zone, the engine's 5 px drag
+  threshold), and `GetFirstInterAtPos` asks the reticle module what a band position stands for (a short
+  history of the positions given to the engine, and each hand's press). While the reticles are on, an
+  interface position never picks the world. Highlight, click, use, drag, stash and drop are the engine's own.
+- **One arbiter for the panel and the world:** #34's menu pointer takes world targets too (`PointerRay.onWorld`):
+  the panel wins where both are hit; the hand that pressed last owns the mouse until its trigger is up; while
+  idle, a hand whose reticle moved onto something new, or whose use button fired, takes it (D-019: the name of
+  the hand that moved last); a press on no target is muted.
+- **A drag puts the item where the ring is, along the line from the head:** the engine steps the item along a
+  ray until it collides; from the hand it would collide at once whenever the hand is in or behind a table edge
+  or a wall, the head is always in free space. The engine's 300-unit limit for putting down stays.
+- **The engine's modes stay:** the exploration mode (mouse look) is kept — leaving it would open the inventory
+  — and the hand's position is given to the engine in the relative mouse mode too; the exploration mode's
+  crosshair is the owning hand. The cursor-mode edge turning is off while a VR session renders.
+- **The rings** (D-029, numbers approved by the coordinator for the owner): a ring with a dot, white, 1.5°
+  wide at any distance, alpha 0.45, **1.0 over an item** (`IO_ITEM`) in reach; a compositor quad layer per
+  hand on the first hit, facing the eyes, on top of everything. No ring for a ray on the panel (the panel has
+  the engine's cursor and #34's beam). The engine's own cursor is not drawn while the mouse is in the world.
+- **Off** (the game's own clicks, as before): outside a session, in menus other than the inventory and
+  containers, cinematics, blocked controls, a camera that is not first person, the book, a note, magic, and
+  **combat mode** — the weapon drawn keeps the engine's attack on the trigger until the follow-up of #37
+  (after #75) changes it.
+
+### Why
+D-016 asks for both hands as the mouse with the engine's own logic; the engine's pick cannot be fed from a
+3D hand in stereo, everything after the pick can. One arbiter avoids two hands and two pointers fighting over
+one engine mouse (F-175: one mapping from hit to pixel for highlight and click; F-204: one owner per press).
+
+### Rules out
+Grab by reach (F-57 before D-016); a visible ray in the world (D-010); the engine's screen-space pick in VR;
+leaving the exploration mode to get an absolute mouse.
+
+### Consequences
+`vr.reticle` in `status.json`, `vr-point <hand> entity|at`, `watch` (TESTING.md); `hand-reticle.xrs` and
+`HandReticleTest`; `menu-pointer.xrs` points the hands behind the head where it needs "no target". #38 uses
+the same reticles for doors, levers, chests and bodies; the follow-up task makes them work with the weapon
+drawn; #271 draws the quad layers into the desktop mirror.
+
+---
+
 ## D-035: The eyes are multisampled in a buffer of ours, resolved into single-sample swapchains; 4x by default
 
 - **Date:** 2026-10-10

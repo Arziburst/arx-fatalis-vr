@@ -45,6 +45,7 @@
 #include "core/Version.h"
 #include "game/Camera.h"
 #include "game/EntityManager.h"
+#include "game/Inventory.h"
 #include "game/NPC.h"
 #include "game/Player.h"
 #include "game/Spells.h"
@@ -77,6 +78,7 @@
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
+#include "vr/VRReticle.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 #include "vr/VRWeapon.h"
@@ -287,6 +289,9 @@ struct State {
 		std::string id = "none";     //!< the item's id, "pixel" for a bare pixel
 		Vec2f pixel = Vec2f(0.f);    //!< in the 2D interface's pixels
 	} pointTarget;
+
+	//! watch: the entity whose place status.json reports (#37), empty for none
+	std::string watch;
 
 };
 
@@ -589,6 +594,24 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("targetY", g.pointTarget.pixel.y);
 	json.end();
 
+	// One entity followed by the watch command (#37): where it is and whether it is in an inventory
+	{
+		Entity * watched = g.watch.empty() ? nullptr : entities.getById(g.watch);
+		json.object("watch");
+		json.value("id", g.watch.empty() ? std::string("none") : g.watch);
+		json.value("found", watched != nullptr);
+		if(watched) {
+			json.value("show", int(watched->show));
+			json.value("inScene", watched->show == SHOW_FLAG_IN_SCENE);
+			json.value("inInventory", bool(locateInInventories(watched)));
+			json.value("dragged", watched == g_draggedEntity);
+			json.value("x", watched->pos.x);
+			json.value("y", watched->pos.y);
+			json.value("z", watched->pos.z);
+		}
+		json.end();
+	}
+
 	if(mainApp && mainApp->getWindow()) {
 		const RenderWindow & window = *mainApp->getWindow();
 		json.object("window");
@@ -689,6 +712,43 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("clicks", pointer.clicks);
 		json.value("offPanelPresses", pointer.offPanelPresses);
 		json.value("ownerChanges", pointer.ownerChanges);
+		json.value("leftOnWorld", pointer.onWorld[0]);
+		json.value("rightOnWorld", pointer.onWorld[1]);
+		json.value("worldClicks", pointer.worldClicks);
+		json.end();
+	}
+	// The hand reticles in the world (#37): each hand's hidden ray, what it hits and hovers, the ring
+	{
+		const vr::ReticleStatus & reticle = vr::reticleStatus();
+		json.object("reticle");
+		json.value("on", reticle.on);
+		json.value("off", reticle.off);
+		json.value("cursor", reticle.cursor);
+		json.value("cursorEntity", reticle.cursorEntity);
+		json.value("presses", reticle.presses);
+		json.value("hoverChanges", reticle.hoverChanges);
+		json.value("picks", reticle.picks);
+		json.value("blocked", reticle.blocked);
+		const char * const names[] = { "left", "right" };
+		for(size_t hand = 0; hand < reticle.hands.size(); hand++) {
+			const vr::ReticleHandStatus & h = reticle.hands[hand];
+			json.object(names[hand]);
+			json.value("aimed", h.aimed);
+			json.value("hit", h.hit);
+			json.value("onWorld", h.onWorld);
+			json.value("ring", h.ring);
+			json.value("shown", h.shown);
+			json.value("bright", h.bright);
+			json.value("under", h.under);
+			json.value("entity", h.entity);
+			json.value("distance", h.distance);
+			json.value("pixelX", int(h.pixel.x));
+			json.value("pixelY", int(h.pixel.y));
+			writeVec(json, "origin", h.origin);
+			writeVec(json, "direction", h.direction);
+			writeVec(json, "point", h.point);
+			json.end();
+		}
 		json.end();
 	}
 	json.value("runtime", vr::runtimeName());
@@ -1360,6 +1420,8 @@ std::string execute(std::string_view line) {
 		}
 		State::Pick & pick = g.pick;
 		pick.seq++;
+		// The engine's own screen pick, not the hand reticles' (#37), which own world picking while they are on
+		const vr::EnginePickOnly enginePickOnly;
 		Entity * centered = FlyingOverObject(Vec2s(g_size.center()));
 		pick.center = centered ? centered->idString() : std::string();
 		struct Hits {
@@ -1496,6 +1558,44 @@ std::string execute(std::string_view line) {
 			return refuse("vr-point: needs the simulated headset (--vr-sim)");
 		}
 		State::PointTarget target;
+		if(what == "entity" || what == "at") {
+			// vr-point <hand> entity <id> [<dx> <dy> <dz>]: the hand's hidden ray at the middle of an entity's
+			// box in the world, optionally that many game units beside it (#37) - a hand that drags it away;
+			// vr-point <hand> at <x> <y> <z>: at a point of the world (game units, y down)
+			std::string id = "point";
+			Vec3f point(0.f);
+			if(what == "entity") {
+				Vec3f offset(0.f);
+				iss >> id;
+				Entity * entity = (id.empty() || id == "point") ? nullptr : entities.getById(id);
+				if(!entity) {
+					return refuse("vr-point entity: no entity \"" + id + "\"");
+				}
+				if(iss >> offset.x && !(iss >> offset.y >> offset.z)) {
+					return refuse("vr-point entity: expected entity <id> [<dx> <dy> <dz>], got \"" + std::string(rest) + "\"");
+				}
+				point = (entity->bbox3D.min + entity->bbox3D.max) * 0.5f + offset;
+			} else if(!(iss >> point.x >> point.y >> point.z)) {
+				return refuse("vr-point at: expected at <x> <y> <z> in game units, got \"" + std::string(rest) + "\"");
+			}
+			float yaw = 0.f;
+			float pitch = 0.f;
+			std::string error;
+			if(!vr::aimAtWorldPoint(hand == "left" ? vr::Hand::Left : vr::Hand::Right, point, yaw, pitch, error)) {
+				return refuse("vr-point entity: " + error);
+			}
+			std::ostringstream command;
+			command << "hand " << hand << " rot " << yaw << ' ' << pitch << " 0";
+			error = vr::simCommand(command.str());
+			if(!error.empty()) {
+				return refuse("vr-point: " + error);
+			}
+			LogInfo << "[channel] vr-point: the " << hand << " hand aimed at " << id << " (" << point.x << ", "
+			        << point.y << ", " << point.z << "): yaw " << yaw << ", pitch " << pitch;
+			target.id = id;
+			g.pointTarget = target;
+			return std::string();
+		}
 		if(what == "item") {
 			if(!(player.Interface & INTER_INVENTORY) || !entities.player()) {
 				return refuse("vr-point item: needs the inventory open");
@@ -1572,6 +1672,23 @@ std::string execute(std::string_view line) {
 		if(!savegames.save(rest, SavegameHandle(), Image())) {
 			return refuse("save: the game could not save (see the save event and the lines before it)");
 		}
+		return std::string();
+	}
+
+	if(word == "watch") {
+		// watch <id> | watch off: report one entity's place in status.json (watch.*), e.g. an item dragged by a hand (#37)
+		const std::string id(rest);
+		if(id.empty()) {
+			return refuse("watch: expected an entity id or off");
+		}
+		if(id == "off") {
+			g.watch.clear();
+			return std::string();
+		}
+		if(!entities.getById(id)) {
+			return refuse("watch: no entity \"" + id + "\"");
+		}
+		g.watch = id;
 		return std::string();
 	}
 

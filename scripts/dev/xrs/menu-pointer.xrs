@@ -14,7 +14,11 @@
 @until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
 @assert player.controlsBlocked eq false
 
-# Gameplay: no menu, no pointer, no beam
+# Gameplay: no menu, no pointer, no beam. The hands point behind the head: in the game each hand's ray in
+# front of it is a reticle in the world (#37), whose ring is a quad layer too
+vr-sim hand left rot 180 0 0
+vr-sim hand right rot 180 0 0
+@frames 5
 @assert vr.panel.mode eq head
 @assert vr.pointer.shown eq false
 @assert vr.pointer.active eq false
@@ -88,9 +92,9 @@ vr-point left item 40 0
 vr-sim action trigger left 0
 @until ui.drag eq none 5s
 
-# Both hands point up, off the panel: no cursor, no beam; a press there clicks nothing
-vr-sim hand left rot 0 60 0
-vr-sim hand right rot 0 60 0
+# Both hands point behind the head, off the panel and at nothing in front (#37): no cursor, no beam; a press there clicks nothing
+vr-sim hand left rot 180 0 0
+vr-sim hand right rot 180 0 0
 @frames 5
 @assert vr.pointer.active eq false
 @assert vr.pointer.leftOnPanel eq false
@@ -106,9 +110,7 @@ vr-sim action trigger right 1
 vr-sim action trigger right 0
 @frames 5
 
-# Closed: the pointer goes with the panel
-vr-sim hand left rot 0 0 0
-vr-sim hand right rot 0 0 0
+# Closed: the pointer goes with the panel (the hands still behind the head, so no ring is in view either)
 ui inventory close
 @until vr.panel.mode eq head 5s
 @frames 5

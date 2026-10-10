@@ -50,13 +50,22 @@
  *    the ray again (a drag).
  *  - **A press off the panel never clicks:** the engine would click at the last cursor pixel, on
  *    whatever button is there. Such a press is muted until its trigger comes up.
+ *
+ * **The world (#37, D-016):** in the game, each hand's hidden ray also has a target in the world - its
+ * reticle (vr/HandReticle.h). The same rules hold with "on a target" for "on the panel": the panel
+ * wins where both are hit (it is drawn on top), a press with the reticle on the world clicks there,
+ * a press on neither is muted. And while no trigger of the owner is held, a hand whose reticle moved
+ * onto something new **claims** the cursor (D-019: the hand that moved last names what is under it).
  */
 namespace vr {
 
-//! Where one hand's aim ray hits the panel this frame
+//! Where one hand's aim ray points this frame
 struct PointerRay {
 	bool onPanel = false;     //!< the hand is tracked and its ray hits the shown panel
-	Vec2f pixel = Vec2f(0.f); //!< the hit in the 2D interface's pixels (x right, y down)
+	bool onWorld = false;     //!< not on the panel: the hand's reticle is in the world (#37)
+	Vec2f pixel = Vec2f(0.f); //!< the engine mouse for the hit (on the panel: the 2D interface's pixels)
+
+	bool onTarget() const { return onPanel || onWorld; }
 };
 
 struct PointerParams {
@@ -94,15 +103,25 @@ class MenuPointer {
 public:
 
 	/*!
-	 * \param panelShown the floating panel is shown for an open menu
-	 * \param rays       where each hand's ray hits it
+	 * \param on         the pointer is on: the floating panel is shown for an open menu, or the hand
+	 *                   reticles are on in the game (#37)
+	 * \param rays       where each hand's ray hits the panel or the world
 	 * \param trigger    each hand's click / drag event held now (the trigger by default)
+	 * \param claims     each hand asks for an idle cursor (its reticle moved onto something new, or its
+	 *                   use button fired) - granted while the owner's trigger is up and the hand is on a target
 	 */
-	void update(bool panelShown, const std::array<PointerRay, HandCount> & rays,
-	            const std::array<bool, HandCount> & trigger, const PointerParams & params = PointerParams());
+	void update(bool on, const std::array<PointerRay, HandCount> & rays,
+	            const std::array<bool, HandCount> & trigger, const PointerParams & params = PointerParams(),
+	            const std::array<bool, HandCount> & claims = { });
 
-	//! The owner's ray is on the shown panel: the cursor is \ref cursor and the beam is shown
+	//! The owner's ray is on a target: the cursor is \ref cursor
 	bool active() const { return m_active; }
+
+	//! The owner's ray is on the panel: the beam is shown (otherwise the cursor is a world reticle)
+	bool onPanel() const { return m_active && m_onPanel; }
+
+	//! The cursor holds the pixel of the owner's press (the click dead zone)
+	bool holding() const { return m_holding; }
 
 	Hand owner() const { return m_owner; }
 
@@ -118,8 +137,12 @@ public:
 	//! The hand pressed its trigger on the panel in the last update (a click the engine sees there)
 	bool pressedOnPanel(Hand hand) const { return m_pressedOnPanel[size_t(hand)]; }
 
+	//! The hand pressed its trigger with its reticle in the world in the last update (#37)
+	bool pressedOnWorld(Hand hand) const { return m_pressedOnWorld[size_t(hand)]; }
+
 	u64 clicks() const { return m_clicks; }                   //!< presses on the panel
-	u64 offPanelPresses() const { return m_offPanelPresses; } //!< presses off it, muted
+	u64 worldClicks() const { return m_worldClicks; }         //!< presses with the reticle in the world
+	u64 offPanelPresses() const { return m_offPanelPresses; } //!< presses on no target, muted
 	u64 ownerChanges() const { return m_ownerChanges; }
 
 private:
@@ -127,6 +150,7 @@ private:
 	void setOwner(Hand hand);
 
 	bool m_active = false;
+	bool m_onPanel = false;
 	Hand m_owner = Hand::Right;
 	Vec2f m_cursor = Vec2f(0.f);
 	bool m_holding = false;         //!< the cursor holds the press pixel (the click dead zone)
@@ -134,8 +158,10 @@ private:
 	std::array<bool, HandCount> m_trigger = { };
 	std::array<bool, HandCount> m_muted = { };
 	std::array<bool, HandCount> m_pressedOnPanel = { };
+	std::array<bool, HandCount> m_pressedOnWorld = { };
 	bool m_ownerChanged = false;
 	u64 m_clicks = 0;
+	u64 m_worldClicks = 0;
 	u64 m_offPanelPresses = 0;
 	u64 m_ownerChanges = 0;
 

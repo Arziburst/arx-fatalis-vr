@@ -8,6 +8,16 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — The arm clips are "suppressed", yet the shoulder moves 10 units when the combat mode starts (#75)
+
+**Symptom:** `vr.weapon.armAnimSuppressed` is `true` and every `vr.body.armAnim` event says `suppressed`, but
+`vr.body.right.shoulder` jumps by ~10 units between before `combat on` and after the strike.
+**Cause:** the combat mode also switches the **body's** layer 0 to the fight stance (`ANIM_FIGHT_WAIT`,
+`ARX_PLAYER_Manage_Visual`), which turns the torso; only layer 1 (the arm clips) is suppressed (D-009: the body
+keeps the engine's animations). **Do:** measure what the arm layer does from a settled stance — take the
+shoulder after `combat on` + 60 frames (300 ms of blend), then strike, as `weapon-hold.xrs` does. Also: never
+ask `entities.player()` while writing `status.json` before a level exists (the first `weapon-hold` run crashed
+at start-up on it, #286) — check this module's own state first.
 ## 2026-10-10 — .xrs: a count of what a held input did passes locally and fails on the CI runner (#285)
 
 **Symptom:** `snap-turn.xrs` held the stick until the 5th snap, let go and allowed one more snap; locally it
@@ -187,7 +197,7 @@ re-applies the viewport and the scissor against that height, snapshots read that
 `SetAntialiasing(true)` is refused on a single-sample offscreen target so the alpha cutout path falls
 back to the alpha test (a multisampled one names its samples too, `setRenderTargetSize(size, samples)`, #226).
 `vr::beginEyeRender()` / `endEyeRender()` and the flat frame target do this; a new offscreen target must too.
-With eye MSAA (`vr_msaa`, D-033) the eye is drawn into a multisampled buffer, not the swapchain image:
+With eye MSAA (`vr_msaa`, D-NEW) the eye is drawn into a multisampled buffer, not the swapchain image:
 the image holds the picture only after `Swapchain::resolve()` in `endEyeRender` - read eye pixels after it.
 
 ## 2026-10-10 — "use" fires from just holding the Index controller (a closed hand flickers, #30)

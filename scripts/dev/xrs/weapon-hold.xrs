@@ -1,0 +1,127 @@
+# The weapon in the IK hand (#75, D-033): the equipped sword is held by the model's right hand while the
+# IK drives that arm - outside the combat mode too (VR has no draw / sheathe control, D-019) - with the
+# hilt on the palm and the blade along the controller's handle (grip -Z, out of the thumb side of the
+# fist). It follows the hand, goes back to the engine (the back) when the controller is lost, and while
+# the IK drives the arms the engine's arm layer (ready, strike) is not applied to the skeleton (F-67).
+# Runs on the test save mvp-items (#70: a sword equipped, first person, controls free):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence weapon-hold -Save mvp-items
+@sim idle
+@save mvp-items
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.body.right.posed eq true
+
+# Held without the combat mode: in the right hand, the blade read from the mesh and turned onto the handle
+@assert vr.weapon.kind eq 1h
+@assert vr.weapon.combatMode eq false
+@assert vr.weapon.place eq hand
+@assert vr.weapon.inHand eq true
+@assert vr.weapon.measured eq true
+@assert vr.weapon.bladeLength gt 30
+@assert vr.weapon.drawn eq true
+@assert vr.weapon.bladeAngle lt 2
+@assert vr.weapon.bladeGrip.z lt -0.99
+@assert events.byName."vr.weapon.grip" ge 1
+# The hilt on the palm: the weapon's attach vertex is the model's palm attach point
+@remember palmX vr.body.right.palm.x
+@remember palmY vr.body.right.palm.y
+@remember palmZ vr.body.right.palm.z
+@assert vr.weapon.hilt.x gt {palmX-0.5}
+@assert vr.weapon.hilt.x lt {palmX+0.5}
+@assert vr.weapon.hilt.y gt {palmY-0.5}
+@assert vr.weapon.hilt.y lt {palmY+0.5}
+@assert vr.weapon.hilt.z gt {palmZ-0.5}
+@assert vr.weapon.hilt.z lt {palmZ+0.5}
+# The idle rig holds the grip at identity: the handle points ahead, so the blade is level with the hilt
+@remember hiltY vr.weapon.hilt.y
+@assert vr.weapon.tip.y gt {hiltY-3}
+@assert vr.weapon.tip.y lt {hiltY+3}
+
+# Looking at the hand: the sword in the model's fist, both eyes (judged on the capture)
+vr-sim head rot 0 -35 0
+@frames 15
+@shot sword-ahead
+@shot sword-ahead-still
+
+# The handle up (pitched 90 degrees): the blade points up - the tip above the hilt by the blade's length
+# (engine y is down) - and still lies on the grip's -Z
+vr-sim hand right rot 0 90 0
+@frames 10
+@remember hiltUpY vr.weapon.hilt.y
+@assert vr.weapon.tip.y lt {hiltUpY-30}
+@assert vr.weapon.bladeAngle lt 2
+@shot sword-up
+@diff sword-ahead sword-ahead-still lt 1.5 left
+@diff sword-ahead sword-up gt 2 left
+
+# The hand moves 30 cm right: the hilt goes with the palm, the blade stays on the handle
+@remember hiltX0 vr.weapon.hilt.x
+vr-sim hand right pos 0.5 -0.45 -0.35
+@frames 10
+@assert vr.body.right.error lt 1
+@assert vr.weapon.bladeAngle lt 2
+@remember palmX2 vr.body.right.palm.x
+@assert vr.weapon.hilt.x gt {palmX2-0.5}
+@assert vr.weapon.hilt.x lt {palmX2+0.5}
+
+# The raised sword near the face does not clip at the near plane (F-39, 0.09 m; judged on the capture)
+vr-sim head rot 0 0 0
+vr-sim hand right pos 0.12 -0.1 -0.2
+@frames 10
+@shot sword-at-face
+vr-sim hand right rot 0 0 0
+vr-sim hand right pos 0.2 -0.45 -0.35
+@frames 10
+
+# The right controller lost: the arm goes back to the engine, so does the sword (to the back, unseen in
+# first person); found again, it is back in the hand
+vr-sim hand right off
+@frames 10
+@assert vr.body.right.posed eq false
+@assert vr.weapon.place eq engine
+@assert vr.weapon.inHand eq false
+vr-sim hand right on
+@frames 10
+@assert vr.weapon.place eq hand
+@assert vr.weapon.inHand eq true
+
+# F-67: the engine's combat mode plays its arm clips (ready, then a strike on the trigger) - none of them
+# reaches the skeleton while the IK drives the arms: the arm layer is counted as suppressed, the shoulder
+# the IK starts from does not move with the strike, and the sword stays in the hand. (VR has no control for
+# the combat mode, D-019; the channel's "combat on" is the weapon key. The combat mode's fight stance is
+# layer 0 - the body's, like walking (D-009) - and turns the torso: measured 10 units at the shoulder, so the
+# shoulder is taken once the stance has settled, 300 ms of blend). Measured: the shoulder moves 0.25 units over
+# the strike with the arm layer suppressed, 2.25 with it applied (the check broken on purpose) - 1 apart either way
+@remember suppressed0 vr.weapon.suppressedFrames
+combat on
+@until vr.weapon.combatMode eq true 5s
+@frames 60
+@assert vr.weapon.armAnimSuppressed eq true
+@assert vr.weapon.suppressedFrames gt {suppressed0+40}
+@assert vr.weapon.place eq hand
+@remember shoulderX vr.body.right.shoulder.x
+@remember shoulderY vr.body.right.shoulder.y
+@remember shoulderZ vr.body.right.shoulder.z
+vr-sim action trigger right 1
+@frames 40
+vr-sim action trigger right 0
+@frames 10
+@log vr\.body\.armAnim.*suppressed.*strike 5s
+@assert vr.weapon.armAnimSuppressed eq true
+@assert vr.body.right.shoulder.x gt {shoulderX-1}
+@assert vr.body.right.shoulder.x lt {shoulderX+1}
+@assert vr.body.right.shoulder.y gt {shoulderY-1}
+@assert vr.body.right.shoulder.y lt {shoulderY+1}
+@assert vr.body.right.shoulder.z gt {shoulderZ-1}
+@assert vr.body.right.shoulder.z lt {shoulderZ+1}
+@assert vr.weapon.place eq hand
+@assert vr.weapon.bladeAngle lt 2
+combat off
+@frames 60
+@assert vr.weapon.combatMode eq false
+@assert vr.weapon.place eq hand
+
+@assert errors eq 0

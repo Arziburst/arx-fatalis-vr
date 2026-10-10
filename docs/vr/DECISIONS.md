@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: Physical crouch — hysteresis on the calibrated eye; the character's crouch never lowers the view twice
+## D-033: Physical crouch — hysteresis on the calibrated eye; the character's crouch never lowers the view twice
 
 - **Date:** 2026-10-10
 - **Status:** Accepted (implements the crouch part of D-028 / D-018)

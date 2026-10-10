@@ -26,14 +26,36 @@
 
 namespace vr {
 
-namespace {
-
-//! OpenXR axes (y up, z back) to engine axes (y down, z forward): a half turn about x
 Vec3f toEngineAxes(const Vec3f & v) {
+	// OpenXR axes (y up, z back) to engine axes (y down, z forward): a half turn about x
 	return Vec3f(v.x, -v.y, -v.z);
 }
 
-} // anonymous namespace
+Vec3f turnAboutVertical(const Vec3f & v, float turnDegrees) {
+	// The view-to-world rotation of a yaw is Ry(-yaw): the same turn headToCamera gives the movement
+	const float t = glm::radians(turnDegrees);
+	const float c = std::cos(t);
+	const float s = std::sin(t);
+	return Vec3f(c * v.x - s * v.z, v.y, s * v.x + c * v.z);
+}
+
+glm::quat orientationToEngine(const glm::quat & q, float turnDegrees) {
+	// The axes change is the half turn about x (its matrix is its own inverse): conjugating by it
+	// gives the same rotation in engine axes; then the turn about the vertical (turnAboutVertical)
+	const glm::quat halfTurnX(0.f, 1.f, 0.f, 0.f);
+	const glm::quat inEngine = halfTurnX * q * glm::conjugate(halfTurnX);
+	const glm::quat turn = glm::angleAxis(-glm::radians(turnDegrees), Vec3f(0.f, 1.f, 0.f));
+	return glm::normalize(turn * inEngine);
+}
+
+HandPlacement handToWorld(const HandSample & hand, const HeadSample & head, const HeadReference & reference,
+                          float bodyYaw, const HeadCameraParams & params) {
+	HandPlacement placement;
+	const float turn = bodyYaw - reference.yaw;
+	placement.offset = turnAboutVertical(toEngineAxes(hand.position - head.position) * params.unitsPerMeter, turn);
+	placement.orientation = orientationToEngine(hand.orientation, turn);
+	return placement;
+}
 
 HeadSample headFromEyes(const Vec3f & leftPosition, const glm::quat & leftOrientation,
                         const Vec3f & rightPosition, const glm::quat & rightOrientation) {
@@ -110,11 +132,8 @@ HeadCamera headToCamera(const HeadSample & head, const HeadReference & reference
 	// The same turn for the movement since the reference (view-to-world rotation Ry(-turn)), less what the
 	// body already walked of it (#26)
 	camera.moved = toEngineAxes(head.position - reference.position);
-	const Vec3f lean = Vec3f(camera.moved.x - anchor.x, camera.moved.y, camera.moved.z - anchor.y) * params.unitsPerMeter;
-	const float t = glm::radians(turn);
-	const float c = std::cos(t);
-	const float s = std::sin(t);
-	camera.offset = Vec3f(c * lean.x - s * lean.z, lean.y, s * lean.x + c * lean.z);
+	const Vec3f lean(camera.moved.x - anchor.x, camera.moved.y, camera.moved.z - anchor.y);
+	camera.offset = turnAboutVertical(lean * params.unitsPerMeter, turn);
 
 	return camera;
 }

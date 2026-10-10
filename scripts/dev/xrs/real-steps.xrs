@@ -5,6 +5,7 @@
 # world units, 100 per meter). Defaults: follow radius 0.10 m, fade out 0.15 s / in 0.25 s, far fade 0.7 - 1.0 m.
 @sim idle
 @args --loadslot 0
+@save mvp-new-game
 
 @until state eq GAMEPLAY 60s
 @until vr.sim.timelineFrame ge 270 60s       # 3 s in: past the level's fade-in (TRAPS.md)

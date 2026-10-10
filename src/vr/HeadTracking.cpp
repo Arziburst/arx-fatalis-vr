@@ -316,6 +316,25 @@ void resetHeadReference(const char * reason) {
 	recenterPanel();
 }
 
+bool peekHead(HeadSample & head) {
+	// The same choice as applyHeadPose, without its bookkeeping
+	const FrameViews & views = frameViews();
+	if(isEnabled() && views.valid) {
+		head = headFromEyes(views.eyes[0].position, views.eyes[0].orientation,
+		                    views.eyes[1].position, views.eyes[1].orientation);
+		return true;
+	}
+	if(isEnabled() && g_head.haveHmd) {
+		head = g_head.lastHmd;
+		return true;
+	}
+	if(g_head.haveSim) {
+		head = g_head.sim;
+		return true;
+	}
+	return false;
+}
+
 void setSimulatedHead(const HeadSample & head) {
 	g_head.sim = head;
 	g_head.haveSim = true;

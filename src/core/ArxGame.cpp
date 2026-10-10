@@ -180,6 +180,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "vr/EyeProjection.h"
 #include "vr/HeadLean.h"
 #include "vr/HeadTracking.h"
+#include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
 #include "vr/VRSimulator.h"
@@ -1475,8 +1476,10 @@ void ArxGame::updateFirstPersonCamera() {
 		g_playerCamera.angle = player.angle;
 		
 		if(VertexId viewVertex = io->obj->fastaccess.view_attach) {
-			
-			g_playerCameraStablePos = g_playerCamera.m_pos = io->obj->vertexWorldPositions[viewVertex].v;
+
+			// The VR body is drawn under the tracked head (#36): its shift is the head's own lean,
+			// which the head pose adds to the camera itself - so the engine's eye is the unshifted one
+			g_playerCameraStablePos = g_playerCamera.m_pos = io->obj->vertexWorldPositions[viewVertex].v - vr::bodyShift();
 			
 			if(VertexGroupId viewGroup = getGroupForVertex(io->obj, viewVertex)) {
 				AnimLayer animlayer[MAX_ANIM_LAYERS];

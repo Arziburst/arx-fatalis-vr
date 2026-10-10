@@ -42,6 +42,9 @@ set(arxtest_TESTCASES
 	tests/vr/BodyYawTest.h
 	tests/vr/BodyYawTest.cpp
 
+	tests/vr/HeadLeanTest.h
+	tests/vr/HeadLeanTest.cpp
+
 	tests/vr/EyeProjectionTest.h
 	tests/vr/EyeProjectionTest.cpp
 
@@ -108,6 +111,7 @@ set(arxtest_SOURCES
 	src/vr/EyeProjection.cpp
 	src/vr/FramePacing.cpp
 	src/vr/VRBindings.cpp
+	src/vr/HeadLean.cpp
 	src/vr/HeadPose.cpp
 	src/vr/HeadReferenceGate.cpp
 	src/vr/PhysicalCrouch.cpp

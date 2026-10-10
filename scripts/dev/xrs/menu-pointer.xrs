@@ -7,6 +7,7 @@
 # Runs on the test save mvp-items (#70: controls free, a key on the table, the bag closed):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence menu-pointer -Save mvp-items
 @sim idle
+@save mvp-items
 @args --loadslot 0
 
 @until state eq GAMEPLAY 60s

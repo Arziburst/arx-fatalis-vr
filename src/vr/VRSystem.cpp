@@ -105,6 +105,16 @@ ARX_PROGRAM_OPTION("no-vr-mirror", nullptr,
                    "In VR, keep the flat frame in the desktop window instead of what one eye sees (overrides vr_mirror in cfg.ini)",
                    &disableMirror)
 
+//! The eyes' multisampling from the command line (-1: cfg.ini decides), see createSessionObjects()
+static int g_msaaOverride = -1;
+
+static void setMsaa(u32 samples) {
+	g_msaaOverride = int(std::min(samples, u32(MaxEyeMsaa)));
+}
+ARX_PROGRAM_OPTION_ARG("vr-msaa", nullptr,
+                       "Multisampling of the VR eye images: samples per pixel, 0 = off (overrides vr_msaa in cfg.ini)",
+                       &setMsaa, "N")
+
 #if ARX_HAVE_OPENXR
 
 bool isSupported() {
@@ -743,11 +753,11 @@ void restoreWindowTarget() {
 	}
 }
 
-//! Make a framebuffer object of \a size the render target for the engine
-void bindTarget(GLuint framebuffer, const Vec2i & size) {
+//! Make a framebuffer object of \a size with \a samples (0 = single-sample) the render target for the engine
+void bindTarget(GLuint framebuffer, const Vec2i & size, int samples = 0) {
 	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
 	if(GRenderer) {
-		GRenderer->setRenderTargetSize(size);
+		GRenderer->setRenderTargetSize(size, samples);
 	}
 }
 
@@ -884,10 +894,15 @@ bool createSessionResources() {
 		return false;
 	}
 
+	// Multisampling of the eyes (#226): the command line first, then cfg.ini; 0 or 1 = off
+	const int samples = g_msaaOverride >= 0 ? g_msaaOverride : std::clamp(config.video.vrMsaa, 0, MaxEyeMsaa);
+	LogInfo << "[vr] eye MSAA: " << (samples > 1 ? samples : 0) << "x from "
+	        << (g_msaaOverride >= 0 ? "--vr-msaa" : "vr_msaa in cfg.ini");
+
 	const char * const names[] = { "left eye", "right eye" };
 	for(size_t i = 0; i < g_xr.eyes.size(); i++) {
 		Vec2i size(s32(g_xr.views[i].recommendedImageRectWidth), s32(g_xr.views[i].recommendedImageRectHeight));
-		if(!g_xr.eyes[i].create(g_xr.session, g_xr.colorFormat, size, true, names[i])) {
+		if(!g_xr.eyes[i].create(g_xr.session, g_xr.colorFormat, size, true, names[i], samples)) {
 			return false;
 		}
 	}
@@ -2386,7 +2401,7 @@ bool beginEyeRender(size_t eye) {
 	}
 
 	frame.eyeInRender = eye;
-	bindTarget(swapchain.framebuffer(), swapchain.size());
+	bindTarget(swapchain.renderFramebuffer(), swapchain.size(), swapchain.samples());
 
 	return true;
 }
@@ -2399,6 +2414,11 @@ void endEyeRender(size_t eye) {
 	}
 
 	Swapchain & swapchain = g_xr.eyes[eye];
+	if(swapchain.samples() > 1) {
+		// The multisampled picture reaches the image before anyone reads it (#226)
+		GLStateGuard state;
+		swapchain.resolve();
+	}
 	if(eye == g_xr.mirror.eye()) {
 		// The desktop mirror (#21) takes its copy while the image is ours
 		g_xr.mirror.copyEye(swapchain);

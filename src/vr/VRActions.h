@@ -138,8 +138,8 @@ private:
 	Actions m_actions;
 	std::array<XrPath, HandCount> m_hands = { };
 	std::array<XrSpace, HandCount> m_gripSpaces = { };
-	std::array<bool, HandCount> m_handTracked = { }; //!< the last located state per hand, for the tracked / lost events
 	std::array<XrSpace, HandCount> m_aimSpaces = { };
+	std::array<bool, HandCount> m_handTracked = { }; //!< the last located state per hand, for the tracked / lost events
 
 	ControlSet m_down;     //!< after the last sync, for the thresholds' hysteresis
 	ControlSet m_bound;    //!< the controls the runtime reported active, logged when it changes

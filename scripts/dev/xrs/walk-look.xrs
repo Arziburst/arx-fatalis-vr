@@ -3,6 +3,7 @@
 # about 0 (yaw 0 walks +z, a larger yaw turns left: -x):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence walk-look
 @sim idle
+@save mvp-new-game
 @args --loadslot 0
 
 @until state eq GAMEPLAY 60s

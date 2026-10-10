@@ -76,6 +76,13 @@ float alphaCoverage(const RgbImage & image, const ImageRegion & region) {
 	return float(sum / (255.0 * double((x1 - x0) * (y1 - y0))));
 }
 
+size_t coveredPixels(const RgbImage & image) {
+	if(image.alpha.empty()) {
+		return image.empty() ? 0 : image.width * image.height;
+	}
+	return size_t(std::count_if(image.alpha.begin(), image.alpha.end(), [](u8 a) { return a >= 128; }));
+}
+
 PixelStats pixelStats(const RgbImage & image, const ImageRegion & region, const u8 background[3]) {
 
 	PixelStats stats;

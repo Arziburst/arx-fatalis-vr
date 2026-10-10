@@ -52,6 +52,7 @@
 #include "game/effect/Quake.h"
 #include "graphics/Math.h"
 #include "graphics/Renderer.h"
+#include "graphics/data/Mesh.h"
 #include "graphics/image/Image.h"
 #include "gui/Console.h"
 #include "gui/Dragging.h"
@@ -80,6 +81,7 @@
 #include "vr/VRReticle.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
+#include "vr/VRWeapon.h"
 #include "vr/WorldScale.h"
 #include "window/RenderWindow.h"
 
@@ -264,6 +266,23 @@ struct State {
 		Image first;                 //!< The first view of the current frame
 	} drawCheck;
 
+	//! pick: what mouse picking finds on the window (#72)
+	struct Pick {
+		unsigned seq = 0;            //!< Picks done so far
+		std::string center;          //!< The entity at the interface's center; empty when nothing is there
+		//! The whole window on a grid: "<entity> <hits> <center x> <center y>" per entity found, most hits
+		//! first, comma separated
+		std::string scan;
+		unsigned scanPoints = 0;
+		std::string target;          //!< The entity asked for, if any
+		unsigned targetHits = 0;     //!< Grid points where picking finds it
+		Vec2f targetHit = Vec2f(-1.f);   //!< The middle of those points, interface pixels
+		Vec2f targetSeen = Vec2f(-1.f);  //!< Where the camera sees the middle of its bounding box
+		float targetOffset = -1.f;   //!< Distance between the two; -1 when either is missing
+		std::string targetBox;       //!< Its bbox2D, "x0 y0 x1 y1": what picking tests first
+		bool targetSeenInBox = false; //!< Where the camera sees it is inside that box
+	} pick;
+
 	//! vr-point: the widget a simulated hand was last aimed at (#34)
 	struct PointTarget {
 		std::string id = "none";     //!< the item's id, "pixel" for a bare pixel
@@ -401,6 +420,7 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 		json.value("shown", shot.quadShown);
 		json.value("file", shot.quadFile);
 		writePixelStats(json, "stats", shot.quad);
+		json.value("covered", u64(shot.quadCovered));
 		json.end();
 		json.object("lr");
 		json.value("diff", shot.lrDiff);
@@ -500,6 +520,18 @@ std::string buildStatus(PlatformInstant now) {
 		// mode; in VR the eye plus the head's movement since its reference (#27)
 		json.value("eyeAboveFeet", player.basePosition().y - g_playerCameraStablePos.y);
 		json.value("shake", quakeAmplitude());
+		// The camera the last frame's interface pass ended with (the status is written before this
+		// frame's update prepares a new one): the projection's scale (m00, m11) and off-axis shift
+		// (m20, m21) and the viewport - in VR the head camera's union projection, also with the book
+		// open (#247)
+		json.object("prepared");
+		json.value("m00", g_preparedCamera.m_viewToClip[0][0]);
+		json.value("m11", g_preparedCamera.m_viewToClip[1][1]);
+		json.value("m20", g_preparedCamera.m_viewToClip[2][0]);
+		json.value("m21", g_preparedCamera.m_viewToClip[2][1]);
+		json.value("width", g_preparedCamera.m_viewport.width());
+		json.value("height", g_preparedCamera.m_viewport.height());
+		json.end();
 		json.end();
 		// Spells by type: active now, and launched since the level was loaded - the evidence that a spellcast
 		// really started a spell (#155: queued casts on the player never launch, TRAPS.md)
@@ -750,7 +782,29 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("offsetX", head.offset.x);
 		json.value("offsetY", head.offset.y);
 		json.value("offsetZ", head.offset.z);
-		json.value("clamped", head.clamped);
+		// Leaning and real steps, the wall fade (#26): the head against the body, what the body walked after it
+		json.value("leanX", head.lean.x);
+		json.value("leanZ", head.lean.y);
+		json.value("leanM", head.leanDistance);
+		json.value("anchorX", head.anchor.x);
+		json.value("anchorZ", head.anchor.y);
+		json.value("walkedM", head.walked);
+		json.value("stepping", head.stepping);
+		json.value("steps", head.steps);
+		json.value("bodyBlocked", head.bodyBlocked);
+		json.value("blocks", head.blocks);
+		const vr::FadeStatus & fade = vr::fadeStatus();
+		json.value("fade", fade.fade);
+		json.value("wall", fade.wall ? fade.wall : "");
+		json.value("walls", fade.walls);
+		json.value("farFade", fade.farFade);
+		json.value("fars", fade.fars);
+		// Physical crouch (#100): the head crouching the character, its depth below the reference (meters), the
+		// episodes, and how far the character's crouch lowered its eye (game units)
+		json.value("crouch", head.crouch);
+		json.value("crouchDepth", head.crouchDepth);
+		json.value("crouches", head.crouches);
+		json.value("characterDrop", head.characterDrop);
 		// The look and the body (#25): where the stick's forward is and where the model faces
 		const vr::BodyStatus & body = vr::bodyStatus();
 		json.value("lookYaw", body.lookYaw);
@@ -819,6 +873,46 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("stretched", arm.stretched);
 			json.end();
 		}
+		json.end();
+	}
+	// The weapon in the IK hand (#75): where it is, how the blade sits on the controller's handle, and the
+	// engine's arm layer that is not applied while the IK drives the arms (F-67)
+	{
+		const vr::HeldWeaponStatus & weapon = vr::heldWeaponStatus();
+		json.object("weapon");
+		json.value("item", weapon.item);
+		json.value("kind", weapon.kind);
+		json.value("place", weapon.place);
+		json.value("inHand", weapon.inHand);
+		json.value("handFrames", weapon.handFrames);
+		json.value("relinks", weapon.relinks);
+		json.value("measured", weapon.measured);
+		json.value("bladeLength", weapon.bladeLength);
+		json.value("assetAngle", weapon.assetAngle);
+		json.value("correction", weapon.correction);
+		json.value("drawn", weapon.drawn);
+		const struct { const char * name; const Vec3f & point; } points[] = {
+			{ "hilt", weapon.hilt }, { "tip", weapon.tip }, { "bladeGrip", weapon.bladeGrip },
+		};
+		for(const auto & point : points) {
+			json.object(point.name);
+			json.value("x", point.point.x);
+			json.value("y", point.point.y);
+			json.value("z", point.point.z);
+			json.end();
+		}
+		// Distance from the hilt to the right palm, both taken in this one status write: a check that remembers
+		// the palm and asserts the hilt later compares two frames of a moving idle rig (#316)
+		Vec3f palm(0.f);
+		Vec3f palmTip(0.f);
+		if(vr::handLandmarks(vr::Hand::Right, palm, palmTip)) {
+			json.value("hiltToPalm", glm::distance(weapon.hilt, palm));
+		}
+		json.value("bladeAngle", weapon.bladeAngle);
+		json.value("armAnimSuppressed", weapon.armAnimSuppressed);
+		json.value("armAnimation", weapon.armAnimation);
+		json.value("suppressedFrames", weapon.suppressedFrames);
+		json.value("combatMode", (player.Interface & INTER_COMBATMODE) != 0);
 		json.end();
 	}
 	{
@@ -965,6 +1059,24 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("maxPixelsDiffering", check.maxPixelsDiffering);
 		json.value("maxDelta", check.maxDelta);
 		json.value("capture", check.capture);
+		json.end();
+	}
+
+	if(g.pick.seq != 0) {
+		json.object("pick");
+		json.value("seq", g.pick.seq);
+		json.value("center", g.pick.center);
+		json.value("scanPoints", g.pick.scanPoints);
+		json.value("scan", g.pick.scan);
+		json.value("target", g.pick.target);
+		json.value("targetHits", g.pick.targetHits);
+		json.value("targetHitX", g.pick.targetHit.x);
+		json.value("targetHitY", g.pick.targetHit.y);
+		json.value("targetSeenX", g.pick.targetSeen.x);
+		json.value("targetSeenY", g.pick.targetSeen.y);
+		json.value("targetOffset", g.pick.targetOffset);
+		json.value("targetBox", g.pick.targetBox);
+		json.value("targetSeenInBox", g.pick.targetSeenInBox);
 		json.end();
 	}
 
@@ -1205,6 +1317,24 @@ std::string execute(std::string_view line) {
 		return std::string();
 	}
 
+	if(word == "combat") {
+		// The engine's combat mode without the mouse (#75): what the weapon key does - "on" draws the
+		// weapon, "off" puts it away; the strike is the mouse button / the trigger
+		std::string mode(rest);
+		util::makeLowercase(mode);
+		if(currentState() != GameState::Gameplay || !entities.player()) {
+			return refuse("combat: needs a level");
+		}
+		if(mode == "on") {
+			ARX_INTERFACE_setCombatMode(COMBAT_MODE_DRAW_WEAPON);
+		} else if(mode == "off") {
+			ARX_INTERFACE_setCombatMode(COMBAT_MODE_OFF);
+		} else {
+			return refuse("combat: expected on or off, got \"" + std::string(rest) + "\"");
+		}
+		return std::string();
+	}
+
 	if(word == "crouch") {
 		// The crouch toggle without an input device, for flat runs (#263)
 		std::string mode(rest);
@@ -1246,6 +1376,94 @@ std::string execute(std::string_view line) {
 		check.capture.clear();
 		LogInfo << "[render] drawcheck " << check.seq << ": drawing the scene twice per frame for "
 		        << frames << " frames";
+		return std::string();
+	}
+
+	if(word == "pick") {
+		// pick [<entity>]: what the mouse would hover, on an 8 pixel grid over the interface's screen - after a
+		// stereo frame the screen data picking reads must be the head camera's at the interface's size (#72). For an
+		// entity: where picking finds it against where the camera sees it
+		if(currentState() != GameState::Gameplay) {
+			return refuse(std::string("pick: needs a level on screen (state ") + gameStateName(currentState()) + ")");
+		}
+		Entity * target = nullptr;
+		if(!rest.empty()) {
+			target = entities.getById(rest);
+			if(!target) {
+				return refuse("pick: unknown entity \"" + std::string(rest) + "\"");
+			}
+		}
+		State::Pick & pick = g.pick;
+		pick.seq++;
+		Entity * centered = FlyingOverObject(Vec2s(g_size.center()));
+		pick.center = centered ? centered->idString() : std::string();
+		struct Hits {
+			Entity * entity;
+			unsigned count;
+			Vec2f sum;
+		};
+		std::vector<Hits> hits;
+		pick.scanPoints = 0;
+		const int step = 8;
+		for(int y = g_size.top + step / 2; y < g_size.bottom; y += step) {
+			for(int x = g_size.left + step / 2; x < g_size.right; x += step) {
+				pick.scanPoints++;
+				Entity * found = FlyingOverObject(Vec2s(s16(x), s16(y)));
+				if(!found) {
+					continue;
+				}
+				auto it = std::find_if(hits.begin(), hits.end(), [found](const Hits & h) { return h.entity == found; });
+				if(it == hits.end()) {
+					hits.push_back(Hits{ found, 0, Vec2f(0.f) });
+					it = hits.end() - 1;
+				}
+				it->count++;
+				it->sum += Vec2f(float(x), float(y));
+			}
+		}
+		std::sort(hits.begin(), hits.end(), [](const Hits & a, const Hits & b) { return a.count > b.count; });
+		std::ostringstream scan;
+		for(const Hits & h : hits) {
+			Vec2f center = h.sum / float(h.count);
+			scan << (scan.tellp() > 0 ? ", " : "") << h.entity->idString() << ' ' << h.count << ' '
+			     << std::lround(center.x) << ' ' << std::lround(center.y);
+		}
+		pick.scan = scan.str();
+		pick.target = target ? target->idString() : std::string();
+		pick.targetHits = 0;
+		pick.targetHit = pick.targetSeen = Vec2f(-1.f);
+		pick.targetOffset = -1.f;
+		pick.targetBox.clear();
+		pick.targetSeenInBox = false;
+		if(target) {
+			std::ostringstream box;
+			box << std::fixed << std::setprecision(0) << target->bbox2D.min.x << ' ' << target->bbox2D.min.y << ' '
+			    << target->bbox2D.max.x << ' ' << target->bbox2D.max.y;
+			pick.targetBox = box.str();
+			auto it = std::find_if(hits.begin(), hits.end(), [target](const Hits & h) { return h.entity == target; });
+			if(it != hits.end()) {
+				pick.targetHits = it->count;
+				pick.targetHit = it->sum / float(it->count);
+			}
+			// The camera prepared last: the head camera at the interface's size (#73), which the interface is drawn with
+			Vec4f p = worldToClipSpace((target->bbox3D.min + target->bbox3D.max) / 2.f);
+			if(p.w > 0.f) {
+				pick.targetSeen = Vec2f(p) / p.w;
+				pick.targetSeenInBox = target->bbox2D.valid() && target->bbox2D.toRect().contains(pick.targetSeen);
+				if(pick.targetHits > 0) {
+					pick.targetOffset = glm::distance(pick.targetHit, pick.targetSeen);
+				}
+			}
+		}
+		std::ostringstream log;
+		log << "[channel] pick: " << (pick.center.empty() ? "nothing" : pick.center) << " at the interface's center; "
+		    << pick.scanPoints << " grid points: " << (pick.scan.empty() ? "nothing" : pick.scan);
+		if(target) {
+			log << "; " << pick.target << " picked at " << pick.targetHits << " points around " << pick.targetHit.x << ' '
+			    << pick.targetHit.y << ", seen at " << pick.targetSeen.x << ' ' << pick.targetSeen.y << ", bbox2D "
+			    << pick.targetBox;
+		}
+		LogInfo << log.str();
 		return std::string();
 	}
 

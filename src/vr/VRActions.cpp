@@ -395,6 +395,33 @@ void ActionSet::checkHandedness(XrSpace viewSpace, XrTime time) {
 	}
 }
 
+std::array<ActionSet::AimPose, HandCount> ActionSet::locateAim(XrSpace base, XrTime time) const {
+
+	std::array<AimPose, HandCount> poses;
+	if(m_session == XR_NULL_HANDLE || base == XR_NULL_HANDLE || time == 0 || !m_focused) {
+		return poses;
+	}
+
+	const XrSpaceLocationFlags tracked = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		if(m_aimSpaces[hand] == XR_NULL_HANDLE) {
+			continue;
+		}
+		XrSpaceLocation located = { XR_TYPE_SPACE_LOCATION };
+		if(XR_FAILED(xrLocateSpace(m_aimSpaces[hand], base, time, &located))
+		   || (located.locationFlags & tracked) != tracked) {
+			continue;
+		}
+		AimPose & pose = poses[hand];
+		pose.valid = true;
+		pose.position = Vec3f(located.pose.position.x, located.pose.position.y, located.pose.position.z);
+		pose.orientation = glm::quat(located.pose.orientation.w, located.pose.orientation.x,
+		                             located.pose.orientation.y, located.pose.orientation.z);
+	}
+
+	return poses;
+}
+
 void ActionSet::locateHands(XrSpace space, XrTime time, FrameHands & hands) {
 
 	hands = FrameHands();
@@ -425,33 +452,7 @@ void ActionSet::locateHands(XrSpace space, XrTime time, FrameHands & hands) {
 			gameevent::Event("vr.hand", 200)("hand", handName(Hand(hand)))("state", tracked ? "tracked" : "lost");
 		}
 	}
-}
 
-std::array<ActionSet::AimPose, HandCount> ActionSet::locateAim(XrSpace base, XrTime time) const {
-
-	std::array<AimPose, HandCount> poses;
-	if(m_session == XR_NULL_HANDLE || base == XR_NULL_HANDLE || time == 0 || !m_focused) {
-		return poses;
-	}
-
-	const XrSpaceLocationFlags tracked = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
-	for(size_t hand = 0; hand < HandCount; hand++) {
-		if(m_aimSpaces[hand] == XR_NULL_HANDLE) {
-			continue;
-		}
-		XrSpaceLocation located = { XR_TYPE_SPACE_LOCATION };
-		if(XR_FAILED(xrLocateSpace(m_aimSpaces[hand], base, time, &located))
-		   || (located.locationFlags & tracked) != tracked) {
-			continue;
-		}
-		AimPose & pose = poses[hand];
-		pose.valid = true;
-		pose.position = Vec3f(located.pose.position.x, located.pose.position.y, located.pose.position.z);
-		pose.orientation = glm::quat(located.pose.orientation.w, located.pose.orientation.x,
-		                             located.pose.orientation.y, located.pose.orientation.z);
-	}
-
-	return poses;
 }
 
 bool ActionSet::sync(ControllerInput & input, XrSpace viewSpace, XrTime time) {

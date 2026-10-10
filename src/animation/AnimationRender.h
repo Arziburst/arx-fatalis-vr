@@ -98,6 +98,13 @@ void DrawEERIEInter_ViewProjectTransform(EERIE_3DOBJ * eobj);
 
 void DrawEERIEInter_Render(EERIE_3DOBJ * eobj, const TransformInfo & t, Entity * io, float invisibility = 0.f);
 
+/*!
+ * \brief Everything DrawEERIEInter() does before drawing: world and screen positions with the current
+ *        camera, the entity's bounding boxes and the portal clip
+ * \return true if the object is to be drawn
+ */
+bool DrawEERIEInter_Prepare(EERIE_3DOBJ * eobj, const TransformInfo & t, Entity * io, bool forceDraw);
+
 void DrawEERIEInter(EERIE_3DOBJ * eobj,
                     const TransformInfo & t,
                     Entity * io,

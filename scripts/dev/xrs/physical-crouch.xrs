@@ -7,6 +7,7 @@
 # again since #263):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence physical-crouch -Save mvp-new-game
 @sim idle
+@save mvp-new-game
 @args --loadslot 0
 
 @until state eq GAMEPLAY 60s

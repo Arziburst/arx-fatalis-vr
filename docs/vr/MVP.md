@@ -57,7 +57,8 @@ The desktop window mirrors one eye, so the demo can be recorded and shown.
 ## Accepted for the MVP (known problems we live with)
 
 - The menus are the original 2D interface on a flat floating panel — functional, not pretty.
-- No finger tracking; the arms follow the controllers, but engine animations that take over the body
+- The arms follow the controllers and the fingers the real fingers (#305; three curls per hand — the model has
+  the middle, ring and little finger as one block), but engine animations that take over the body
   (death, ladders, knockdowns) may look wrong.
 - Bow, shield, prepared spells, spell book in VR: not in MVP (they may work through the panel, or not).
 - Cutscenes, death camera and scripted cameras may behave badly.

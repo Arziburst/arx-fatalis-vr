@@ -56,6 +56,7 @@
 #if ARX_HAVE_OPENXR
 
 // OpenXR with the OpenGL binding (and windows.h on Windows)
+#include "vr/HandTracking.h"
 #include "vr/HandReticle.h"
 #include "vr/HeadTracking.h"
 #include "vr/InterfaceSize.h"
@@ -187,6 +188,9 @@ struct OpenXRState {
 
 	//! One action per physical control (#30); created with the instance, attached to the session
 	ActionSet actions;
+
+	//! XR_EXT_hand_tracking (#305): bound with the instance, a tracker per hand on the session
+	HandTracking handTracking;
 
 	//! The current OpenXR frame, from beginFrame (xrWaitFrame) to its xrEndFrame
 	struct Frame {
@@ -564,19 +568,22 @@ bool runtimeIsReady() {
 
 #endif
 
-bool hasExtension(const char * name) {
+//! Whether the runtime lists an extension; \a failure gets the result of a failed enumeration (nothing is logged)
+bool extensionListed(const char * name, XrResult & failure) {
+
+	failure = XR_SUCCESS;
 
 	uint32_t count = 0;
 	XrResult result = xrEnumerateInstanceExtensionProperties(nullptr, 0, &count, nullptr);
 	if(XR_FAILED(result)) {
-		LogWarning << "OpenXR runtime unavailable (" << resultName(result) << "), starting in flat mode";
+		failure = result;
 		return false;
 	}
 
 	std::vector<XrExtensionProperties> extensions(count, { XR_TYPE_EXTENSION_PROPERTIES });
 	result = xrEnumerateInstanceExtensionProperties(nullptr, count, &count, extensions.data());
 	if(XR_FAILED(result)) {
-		LogWarning << "Could not enumerate OpenXR extensions (" << resultName(result) << "), starting in flat mode";
+		failure = result;
 		return false;
 	}
 
@@ -586,13 +593,39 @@ bool hasExtension(const char * name) {
 		}
 	}
 
-	LogWarning << "OpenXR runtime does not support " << name << ", starting in flat mode";
+	return false;
+}
+
+//! An extension VR cannot start without
+bool hasExtension(const char * name) {
+
+	XrResult failure = XR_SUCCESS;
+	if(extensionListed(name, failure)) {
+		return true;
+	}
+
+	if(XR_FAILED(failure)) {
+		LogWarning << "OpenXR runtime unavailable or its extensions could not be enumerated (" << resultName(failure)
+		           << "), starting in flat mode";
+	} else {
+		LogWarning << "OpenXR runtime does not support " << name << ", starting in flat mode";
+	}
 	return false;
 }
 
 bool createInstance() {
 
-	const char * extensions[] = { XR_KHR_OPENGL_ENABLE_EXTENSION_NAME };
+	// The OpenGL binding is required; hand tracking (#305) is taken when the runtime lists it and
+	// the fingers follow the controls otherwise
+	std::vector<const char *> extensions = { XR_KHR_OPENGL_ENABLE_EXTENSION_NAME };
+	XrResult listFailure = XR_SUCCESS;
+	const bool handTracking = extensionListed(HandTracking::extensionName(), listFailure);
+	if(handTracking) {
+		extensions.push_back(HandTracking::extensionName());
+	} else {
+		LogInfo << "[vr] hands: the runtime does not list " << HandTracking::extensionName()
+		        << " - the fingers follow the controls (trigger, grip, thumb)";
+	}
 
 	XrInstanceCreateInfo createInfo = { XR_TYPE_INSTANCE_CREATE_INFO };
 	util::storeStringTerminated(createInfo.applicationInfo.applicationName, arx_name);
@@ -605,14 +638,18 @@ bool createInstance() {
 	#else
 	createInfo.applicationInfo.apiVersion = XR_CURRENT_API_VERSION;
 	#endif
-	createInfo.enabledExtensionCount = uint32_t(std::size(extensions));
-	createInfo.enabledExtensionNames = extensions;
+	createInfo.enabledExtensionCount = uint32_t(extensions.size());
+	createInfo.enabledExtensionNames = extensions.data();
 
 	XrResult result = xrCreateInstance(&createInfo, &g_xr.instance);
 	if(XR_FAILED(result)) {
 		g_xr.instance = XR_NULL_HANDLE;
 		LogWarning << "Could not create OpenXR instance (" << resultName(result) << "), starting in flat mode";
 		return false;
+	}
+
+	if(handTracking) {
+		g_xr.handTracking.bind(g_xr.instance);
 	}
 
 	XrInstanceProperties properties = { XR_TYPE_INSTANCE_PROPERTIES };
@@ -662,14 +699,22 @@ bool findSystem() {
 	}
 
 	XrSystemProperties properties = { XR_TYPE_SYSTEM_PROPERTIES };
+	// Whether this headset gives hand joints (#305): asked along with the rest when the extension is on
+	XrSystemHandTrackingPropertiesEXT handProperties = { XR_TYPE_SYSTEM_HAND_TRACKING_PROPERTIES_EXT };
+	if(g_xr.handTracking.status().extension) {
+		properties.next = &handProperties;
+	}
 	result = xrGetSystemProperties(g_xr.instance, g_xr.systemId, &properties);
 	if(XR_SUCCEEDED(result)) {
+		g_xr.handTracking.setSupported(handProperties.supportsHandTracking == XR_TRUE);
 		LogInfo << "VR headset: " << util::loadString(properties.systemName)
 		        << " (vendor " << properties.vendorId << ")"
 		        << (properties.trackingProperties.positionTracking ? ", positional tracking" : ", orientation tracking only")
 		        << ", max swapchain " << properties.graphicsProperties.maxSwapchainImageWidth
 		        << 'x' << properties.graphicsProperties.maxSwapchainImageHeight
-		        << ", " << properties.graphicsProperties.maxLayerCount << " layers";
+		        << ", " << properties.graphicsProperties.maxLayerCount << " layers"
+		        << (g_xr.handTracking.status().extension
+		            ? (handProperties.supportsHandTracking ? ", hand tracking" : ", no hand tracking") : "");
 		CrashHandler::setVariable("VR headset", util::loadString(properties.systemName));
 		g_xr.maxSwapchainSize = Vec2i(s32(properties.graphicsProperties.maxSwapchainImageWidth),
 		                              s32(properties.graphicsProperties.maxSwapchainImageHeight));
@@ -803,6 +848,7 @@ void destroySession() {
 	g_xr.mirror.destroy();
 	g_xr.colorFormat = 0;
 
+	g_xr.handTracking.destroy();
 	g_xr.actions.detach();
 	g_xr.lastDisplayTime = 0;
 
@@ -2073,6 +2119,7 @@ bool createSession() {
 	}
 
 	g_xr.actions.attach(g_xr.session);
+	g_xr.handTracking.create(g_xr.session);
 
 	return true;
 
@@ -2255,6 +2302,7 @@ bool beginFrameFor(const Vec2i & windowSize, FrameTargets targets) {
 	// The hands for the same display time in the same space as the eyes: the body is posed with the
 	// sample the frame is submitted with (#36, F-21)
 	g_xr.actions.locateHands(g_xr.localSpace, frame.state.predictedDisplayTime, frame.hands);
+	g_xr.handTracking.locate(g_xr.localSpace, frame.state.predictedDisplayTime, frame.hands);
 
 	beginFrameTargets(windowSize, targets);
 
@@ -2609,11 +2657,16 @@ u64 controllerSyncs() {
 	return g_xr.actions.syncs();
 }
 
+const HandJointsStatus & handJointsStatus() {
+	return g_xr.handTracking.status();
+}
+
 void shutdown() {
 
 	requestExit();
 	destroySession();
 	g_xr.actions.destroy();
+	g_xr.handTracking.unbind();
 
 	if(g_xr.instance != XR_NULL_HANDLE) {
 		xrDestroyInstance(g_xr.instance);
@@ -2776,6 +2829,11 @@ std::array<std::string, HandCount> controllerProfiles() {
 
 u64 controllerSyncs() {
 	return 0;
+}
+
+const HandJointsStatus & handJointsStatus() {
+	static const HandJointsStatus none;
+	return none;
 }
 
 bool isEnabled() {

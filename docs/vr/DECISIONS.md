@@ -13,6 +13,50 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-041: The model's fingers follow the real fingers — hand joints first, the controls as the fallback, closed on a held weapon
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (the owner's pick from #298's table, row F-218; implemented by #305)
+- **Decided by:** the owner (fingers in the MVP, real finger tracking, a held weapon closes the hand), the worker of #305 for the internals
+
+### Decision
+- **Real finger tracking in the MVP.** The player model's five finger groups per hand — the thumb (one segment), the
+  index finger (two) and the middle, ring and little finger as one block (two) — bend with the player's real fingers:
+  the 26 hand joints of `XR_EXT_hand_tracking`, located every frame in the same space and for the same time as the
+  grip poses (F-21). The curl of a group is read from the **angles between the joints** (the knuckle's flexion bends
+  the root segment, the two outer joints together the tip, the thumb's two joints the thumb), scaled so the model's
+  segment reaches its limit when the real finger reaches a fist; the limits per segment are named constants
+  (`vr/FingerCurl.h`, `FingerCurlLimits`: thumb 60°, roots 90°, tips 95°) tuned from the headset in one place.
+- **Fallback without joints.** A runtime that lists no extension, a headset that reports no support, or a hand whose
+  joints are not active this frame falls back to the controller's values: the trigger is the index finger, the grip the
+  three-finger block, the thumb resting on a stick, trackpad or face button (a new boolean action `thumb_touch`, bound
+  to the touch paths) a closed thumb. The simple controller has no touch: its thumb stays open.
+- **A hand holding a weapon is closed on the grip** — not tracked while it holds (F-190's one owner, the coordinator's
+  advice the owner accepted): the right hand with an equipped dagger, one- or two-handed weapon (#75's rule).
+- **The engine's animation no longer moves the finger groups of a posed arm**; the bend approaches what the tracking
+  says at a bounded speed (720°/s, a fist in 0.15 s) so a source change never snaps the fingers.
+- **What the simulator gives:** the simulated runtime has the extension; its trackers return a synthetic hand closed as
+  the script says (`hand right fingers <thumb> <index> <rest>`, `fingers off` for a runtime without joints), so the
+  joint-to-curl path runs end to end without a headset.
+
+### Why
+The owner asked for Valheim VR's hands (2026-10-10): the Index's finger sensors are what players use to point, wave and
+grab, and SteamVR exposes them through `XR_EXT_hand_tracking` v4 on the owner's PC (`supportsHandTracking = 1`,
+measured in #298). Arx's own hand mesh has the finger groups, so no new hand model is needed; three curls are what it can
+show. Angles between joints are independent of the runtime's joint orientation conventions and of the space the joints
+are located in, so one mapping serves every runtime. The fallback keeps the hands alive on a Quest through SteamVR or
+Virtual Desktop, which was not verified to give joints.
+
+### Consequences
+- `status.json` → `vr.hands` (extension, support, trackers, active joints per hand, locate counts) and
+  `vr.body.<hand>.fingers` (`source` = joints / controls / held / none, the five segment angles and their target);
+  `vr.body.<hand>.tipAlong` / `tipOut` show the fingertip vertex coming back along the hand and out towards the palm as
+  the fingers close. Game events `vr.hands.joints` (per hand, active / inactive) and `vr.body.fingers` (source change).
+- One finger per bone (the ring or little finger alone), thumb opposition tuned per pose, gestures as input,
+  `XR_EXT_hand_joints_motion_range` (a fist shaped to the controller) and the left hand holding anything stay post-MVP.
+
+---
+
 ## D-040: The rune trail — the engine's flares at the drawing hand, the engine's hold / release model
 
 - **Date:** 2026-10-10

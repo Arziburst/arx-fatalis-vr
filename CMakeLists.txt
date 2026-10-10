@@ -1260,7 +1260,9 @@ set(VR_SOURCES
 	src/vr/BodyYaw.cpp
 	src/vr/EyeImage.cpp
 	src/vr/EyeProjection.cpp
+	src/vr/FingerCurl.cpp
 	src/vr/FramePacing.cpp
+	src/vr/HandTracking.cpp
 	src/vr/HandReticle.cpp
 	src/vr/HeadLean.cpp
 	src/vr/HeadPose.cpp

@@ -30,14 +30,20 @@ pick blank_form_0001
 # Screen-space particles: a new spell sends the book icon's FX (PARTICLE_2D). They belong to the flat frame:
 # the quad changes, the eyes see the FX through it, the eyes' own layers do not change beyond the scene's
 # flicker (before #72 the scene pass drew them into each eye at interface coordinates), and the quad covers
-# no more of the eyes than before - additive light has no coverage
+# no more of the eyes than before - additive light has no coverage. The player's own body (#36) must be out of
+# view for this part - its arms follow the controllers and move between shots (max 121 on one channel looking
+# down, 86 looking level with the hands in front): the head looks level and the hands hang down by the sides
+vr-sim head rot 0 0 0; vr-sim hand left pos -0.25 -0.9 0.1; vr-sim hand right pos 0.25 -0.9 0.1
+@frames 20
+@shot fx-floor
 @shot fx-before
 specialfx newspell 1                           # the script command reads one word after newspell
 @frames 6
 @shot fx-after
-@diff table fx-before lt 0.05 quad             # the quad's own floor between two still shots (0)
+@diff fx-floor fx-before lt 0.05 quad          # the quad's own floor between two still shots (0)
 @diff fx-before fx-after gt 0.1 quad           # the FX is on the quad (0.56 on a 640x480 quad, 0.21 on 918x689)
-@diff table fx-before max lt 64 left-layer     # the scene's own floor: lighting flicker (max 4 measured)
+@diff fx-floor fx-before max lt 64 left-layer  # the scene's own floor: lighting flicker (max 2-7 measured)
+@diff fx-floor fx-before max lt 64 right-layer
 @diff fx-before fx-after max gt 64 left        # the eye sees the FX - through the quad (max 245; 124 with the #49 panel)
 @diff fx-before fx-after max lt 64 left-layer  # ... but nothing of it is in the eye's own image
 @diff fx-before fx-after max lt 64 right-layer

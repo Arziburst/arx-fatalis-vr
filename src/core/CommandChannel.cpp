@@ -1395,6 +1395,8 @@ std::string execute(std::string_view line) {
 		}
 		State::Pick & pick = g.pick;
 		pick.seq++;
+		// The engine's own screen pick, not the hand reticles' (#37), which own world picking while they are on
+		const vr::EnginePickOnly enginePickOnly;
 		Entity * centered = FlyingOverObject(Vec2s(g_size.center()));
 		pick.center = centered ? centered->idString() : std::string();
 		struct Hits {

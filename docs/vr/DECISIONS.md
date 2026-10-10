@@ -25,8 +25,8 @@ a changed decision keeps its history in that cell.
   is cast against the level (`raycastScene`, transparent polygons included — plank floors and gratings stop
   it, water and non-colliding ones do not) and the entities' faces; the nearest interactive entity within the
   engine's reach (350 units from the player, 850 with telekinesis) is the hand's hover, with the hysteresis of
-  F-57 (2 frames in, 150 ms out). Reason: the engine's pick tests screen boxes that are partly in the last
-  eye's pixels in VR (TRAPS.md).
+  F-57 (2 frames in, 150 ms out). Reason: the engine's pick is a 2D test along rays through the eye, and a
+  hand's ray is another ray (before #72 the screen boxes were partly the last eye's too, TRAPS.md).
 - **The engine still decides everything else.** The owning hand's hit becomes the engine's mouse position:
   its projection with the head camera moved **16384 px right of the interface** (the "world band"), where no
   2D widget is — so the inventory drawn at the bottom of the screen never answers for an item seen there,

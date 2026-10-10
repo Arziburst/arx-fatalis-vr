@@ -15,10 +15,13 @@ an item lying in the world, or something beside it. **Cause:** the engine's pick
 entity's `bbox2D` and projected faces (`vertexClipPositions`). Animated entities are projected with the head
 camera in the update, but a **static item** (no animation: what lies on floors and tables) is projected in
 `DrawEERIEInter` while it is drawn — once per **eye**, into the eye image's pixels — so after a stereo frame
-its box is the right eye's, in another pixel space than the interface the mouse lives in. **Do:** in VR the
-world is picked by the hands' rays in 3D (`vr/VRReticle.cpp`); the engine's `GetFirstInterAtPos` asks it
-what a world reticle's mouse position stands for (`vr::reticlePickAt`). Do not feed a projected pixel into
-the engine's own pick and expect it to hit.
+its box is the right eye's, in another pixel space than the interface the mouse lives in. *Resolved for the
+screen data by #72* (picking reads the head camera's at the interface's size again). **Do:** in VR the world is
+still picked by the hands' rays in 3D (`vr/VRReticle.cpp`) — a hand's ray is not a ray through the eye, so a
+projected pixel lands on whatever the head sees there, not on what the hand points at; the engine's
+`GetFirstInterAtPos` asks the reticle module what a world reticle's mouse position stands for
+(`vr::reticlePickAt`), and an interface position never picks the world while the reticles are on. The test
+channel's `pick` checks the engine's own screen pick under `vr::EnginePickOnly`.
 
 ## 2026-10-10 — The inventory opens by itself, or the player spins, when a VR hand becomes the mouse (#37)
 

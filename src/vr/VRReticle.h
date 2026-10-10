@@ -88,6 +88,18 @@ enum class ReticlePick {
 
 ReticlePick reticlePickAt(const Vec2s & pos, Entity *& entity);
 
+/*!
+ * While it lives, \ref reticlePickAt leaves every position to the engine's own screen pick - for the test
+ * channel's \c pick, which checks the engine's screen data (#72) whatever the hands do
+ */
+class EnginePickOnly {
+public:
+	EnginePickOnly();
+	~EnginePickOnly();
+	EnginePickOnly(const EnginePickOnly &) = delete;
+	EnginePickOnly & operator=(const EnginePickOnly &) = delete;
+};
+
 //! The ray a dragged entity is placed along, while the reticles are on: from the head camera to the owning hand's ring
 bool reticleDragRay(Vec3f & origin, Vec3f & direction);
 

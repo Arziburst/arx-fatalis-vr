@@ -80,6 +80,7 @@ struct ReticleState {
 	Hand owner = Hand::Right;
 	bool cursorOnWorld = false;
 	bool cursorOnPanel = false;
+	int enginePickOnly = 0; //!< EnginePickOnly scopes alive
 	ReticleStatus status;
 
 };
@@ -395,10 +396,18 @@ void afterPointer(const MenuPointer & pointer, const std::array<PointerRay, Hand
 	}
 }
 
+EnginePickOnly::EnginePickOnly() {
+	g_reticle.enginePickOnly++;
+}
+
+EnginePickOnly::~EnginePickOnly() {
+	g_reticle.enginePickOnly--;
+}
+
 ReticlePick reticlePickAt(const Vec2s & pos, Entity *& entity) {
 
 	entity = nullptr;
-	if(!g_reticle.on) {
+	if(!g_reticle.on || g_reticle.enginePickOnly > 0) {
 		return ReticlePick::NotMine;
 	}
 

@@ -46,6 +46,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "scene/Interactive.h"
 
+#include "vr/VRBody.h"
+
 #include <cstdlib>
 #include <iomanip>
 #include <algorithm>
@@ -240,16 +242,31 @@ void ARX_INTERACTIVE_Show_Hide_1st(Entity * io, bool hide1st) {
 	
 	ARX_PROFILE_FUNC();
 	
-	if(!io || HERO_SHOW_1ST == long(hide1st)) {
+	// Under a tracked head the body is the player's own (D-009, #36): only the head and the neck are
+	// hidden, the torso stays - the engine's "1st" selection hides the chest and the belt as well
+	static bool HERO_HIDE_HEAD_ONLY = false;
+	const bool headOnly = vr::hidesHeadOnly();
+
+	if(!io || (HERO_SHOW_1ST == long(hide1st) && HERO_HIDE_HEAD_ONLY == headOnly)) {
 		return;
 	}
-	
+
+	// Another set of faces: show everything the old set hid before hiding the new one
+	if(HERO_HIDE_HEAD_ONLY != headOnly) {
+		for(EERIE_FACE & face : io->obj->facelist) {
+			face.facetype &= ~POLY_HIDE;
+		}
+	}
+
 	HERO_SHOW_1ST = long(hide1st);
-	
-	if(VertexSelectionId selection = EERIE_OBJECT_GetSelection(io->obj, "1st")) {
+	HERO_HIDE_HEAD_ONLY = headOnly;
+
+	VertexSelectionId selection = headOnly ? VertexSelectionId() : EERIE_OBJECT_GetSelection(io->obj, "1st");
+	if(headOnly || selection) {
 		for(EERIE_FACE & face : io->obj->facelist) {
 			for(VertexId vertex : face.vid) {
-				if(IsInSelection(io->obj, vertex, selection)) {
+				const bool inSet = headOnly ? vr::isHeadVertex(io->obj, vertex) : IsInSelection(io->obj, vertex, selection);
+				if(inSet) {
 					if(hide1st) {
 						face.facetype |= POLY_HIDE;
 					} else {
@@ -260,7 +277,7 @@ void ARX_INTERACTIVE_Show_Hide_1st(Entity * io, bool hide1st) {
 			}
 		}
 	}
-	
+
 	ARX_INTERACTIVE_HideGore(entities.player(), false);
 	
 }

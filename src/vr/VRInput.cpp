@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 #include "core/Config.h"
 #include "core/GameEvent.h"
@@ -30,6 +31,7 @@
 #include "io/log/Logger.h"
 #include "platform/Time.h"
 #include "util/Number.h"
+#include "vr/BodyYaw.h"
 #include "vr/HeadTracking.h"
 #include "vr/VRSystem.h"
 
@@ -45,12 +47,18 @@ struct InputState {
 	GameInputMapper game;
 	TurnController turn;
 	bool smoothTurning = false; //!< a smooth turn is under way (for its start / stop game events)
+	//! The push of the last snap (#285): when its first snap was made, its repeats, their mean interval
+	PlatformInstant pushStart = 0;
+	u64 pushRepeats = 0;
+	float repeatInterval = 0.f;
 
 	//! Controls set by the test channel, merged into what the controllers report
 	ControlSet injectedDown;
 	ControlSet injectedTaps;
 	//! Stick deflections set by the test channel, added to the controllers' (directions: down / up)
 	std::array<Stick, HandCount> injectedSticks;
+
+	WalkStatus walk;
 
 };
 
@@ -164,6 +172,36 @@ const GameInputState & gameInput() {
 	return g_input.game.state();
 }
 
+const WalkStatus & walkStatus() {
+	return g_input.walk;
+}
+
+void reportWalk(const StickWalk & walk, float yaw, float heading) {
+
+	WalkStatus & status = g_input.walk;
+	yaw -= 360.f * std::floor(yaw / 360.f);
+	const bool walking = walk.moving();
+	if(walking != status.walking) {
+		if(walking) {
+			status.walks++;
+		}
+		// An episode, not a frame: the stick left its dead zone, or came back to rest
+		gameevent::Event("vr.walk", 200)("state", walking ? "start" : "end")("yaw", yaw, 1)
+			("heading", heading, 1)("look", wrapSignedDegrees(yaw - heading), 1)
+			("pace", walk.sneak ? "sneak" : "run");
+	} else if(walking && walk.sneak != status.sneak) {
+		// The deflection crossed a threshold of the pace (#33): one line per switch, not per frame
+		status.paceChanges++;
+		gameevent::Event("vr.walk", 200)("state", "pace")("pace", walk.sneak ? "sneak" : "run");
+	}
+	status.sneak = walking && walk.sneak;
+
+	status.walking = walking;
+	status.yaw = yaw;
+	status.heading = heading;
+	status.direction = walk.direction;
+}
+
 const ControlResolver & controls() {
 	return g_input.resolver;
 }
@@ -194,6 +232,17 @@ float updateTurn(float seconds, bool allowed) {
 
 	// A snap is a player action: one event each; a smooth turn is an episode: logged when it starts and stops
 	if(g_input.turn.snaps() != snaps) {
+		// The repeat measured by the clock: a test reads it instead of a count of snaps, which depends on when
+		// the stick is let go (#285)
+		const PlatformInstant now = platform::getTime();
+		if(g_input.turn.lastSnapRepeated()) {
+			g_input.pushRepeats++;
+			g_input.repeatInterval = toS(now - g_input.pushStart) / float(g_input.pushRepeats);
+		} else {
+			g_input.pushStart = now;
+			g_input.pushRepeats = 0;
+			g_input.repeatInterval = 0.f;
+		}
 		gameevent::Event("vr.turn.snap", 1000)("dir", g_input.turn.lastSnap() > 0 ? "right" : "left")
 			("deg", settings.snapAngle, 1)("repeat", g_input.turn.lastSnapRepeated() ? "yes" : "no")
 			("count", g_input.turn.snaps());
@@ -210,6 +259,14 @@ float updateTurn(float seconds, bool allowed) {
 
 const TurnController & turnState() {
 	return g_input.turn;
+}
+
+u64 snapPushRepeats() {
+	return g_input.pushRepeats;
+}
+
+float snapRepeatInterval() {
+	return g_input.repeatInterval;
 }
 
 namespace {

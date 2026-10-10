@@ -29,6 +29,7 @@
 
 #include "vr/VRBindings.h"
 #include "vr/VRControls.h"
+#include "vr/VRSystem.h"
 
 namespace vr {
 
@@ -77,6 +78,12 @@ public:
 	 */
 	bool sync(ControllerInput & input, XrSpace viewSpace, XrTime time);
 
+	/*!
+	 * Locate both hands' grip poses in \a space for \a time (#36): \a hands gets each hand's pose
+	 * and whether its position was valid; nothing is tracked without a session, a space or a time
+	 */
+	void locateHands(XrSpace space, XrTime time, FrameHands & hands);
+
 	//! The interaction profile path per hand, empty while there is none
 	const std::array<std::string, HandCount> & profiles() const { return m_profiles; }
 
@@ -115,6 +122,7 @@ private:
 	Actions m_actions;
 	std::array<XrPath, HandCount> m_hands = { };
 	std::array<XrSpace, HandCount> m_gripSpaces = { };
+	std::array<bool, HandCount> m_handTracked = { }; //!< the last located state per hand, for the tracked / lost events
 
 	ControlSet m_down;     //!< after the last sync, for the thresholds' hysteresis
 	ControlSet m_bound;    //!< the controls the runtime reported active, logged when it changes

@@ -785,7 +785,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		FingerCurl curlTarget;
 		const char * fingerSource = "none";
 		const bool holds = handHoldsWeapon(Hand(hand));
-		const HandJoints & joints = located.joints[hand];
+		const HandJoints & joints = frameHands().joints[hand];
 		if(chain.haveFingers) {
 			if(holds) {
 				fingerSource = "held";

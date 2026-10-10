@@ -22,7 +22,7 @@ while the wrist takes the controller's full orientation. The roll about the arm'
 the animation plus the swing leave — nothing distributes the hand's roll along the forearm or keeps the
 upper arm's roll tied to the elbow — and the low-poly arm, a flat-ish slab, shows every stray roll as a spiral.
 A joint-position check cannot see it.
-**Do:** accepted as the interim body (D-NEW / #36); the arm rework is a research task (how Valheim VR builds
+**Do:** accepted as the interim body (D-032 / #36); the arm rework is a research task (how Valheim VR builds
 its arms, what Arx's model and textures allow: twist bones, roll limits, a separate VR arm rig). Until then,
 judge arms in the headset or on a capture with the controllers *rolled*, not from `vr.body` alone; the
 `arms-follow` sequence rolls nothing.

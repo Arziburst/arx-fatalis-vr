@@ -8,6 +8,24 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — A shipped `.xrs` sequence is red in CI only because of the sequence that ran before it (#296, from #178)
+
+**Symptom:** the CI game check fails a sequence that passes alone: `vr-remap-saved` expected the file `vr-remap` saved
+(it ran *after* it alphabetically), `vr-settings-flat` found the `vr-controls-index.ini` that `vr-remap` left. Rename or add
+a sequence and the order — and the verdict — changes.
+**Cause:** `ci-smoke.ps1` ran every sequence in the runner account's single user dir, so config, saves and ini files leaked
+from one sequence into the next.
+**Do:** every sequence now runs in its own fresh user dir (`New-ArxSequenceUserDir` in `xrs-lib.ps1`, passed to
+`smoke-test.ps1 -UserDir`; its `@save` is copied in as before; the dir is removed after the run and its logs are in the
+phase's evidence). A sequence that needs a file from another one is wrong: set the state up in its own `@save` / commands.
+The first fresh-dir CI run found it at once: `walk-forward`, `walk-look` and `sneak-jump-crouch` had `@args --loadslot 0` but no
+`@save`, and had only ever passed on the save an earlier sequence left in the shared dir ("no such save, 0 save(s)"). They
+declare `@save mvp-new-game` now, and `test-xrs.ps1` fails a shipped sequence with `--loadslot` and no `@save`.
+Checked by `test-xrs.ps1` ("fresh user dir per sequence"). Locally, `smoke-test.ps1 -Sequence` already used the isolated dir of
+the working copy: run two sequences by hand with `-UserDir` pointing at different folders for the same effect.
+
+
+
 ## 2026-10-10 — The arm clips are "suppressed", yet the shoulder moves 10 units when the combat mode starts (#75)
 
 **Symptom:** `vr.weapon.armAnimSuppressed` is `true` and every `vr.body.armAnim` event says `suppressed`, but

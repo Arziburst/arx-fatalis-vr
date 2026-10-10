@@ -910,7 +910,7 @@ before #37 / #38.
 
 ### Why
 Half of Fable's weekly limit went in the first hours with Fable on every engine task (D-013); most of
-those tasks did not need it. The playbook table: [COORDINATOR.md §5](COORDINATOR.md#5-models-and-effort-d-015-d-027).
+those tasks did not need it. The playbook table: [COORDINATOR.md §B5](COORDINATOR.md#b5-models-d-015-d-027).
 
 ---
 

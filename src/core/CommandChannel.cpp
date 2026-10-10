@@ -76,6 +76,7 @@
 #include "vr/VRInput.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
+#include "vr/VRWeapon.h"
 #include "vr/WorldScale.h"
 #include "window/RenderWindow.h"
 
@@ -681,6 +682,12 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("offsetY", head.offset.y);
 		json.value("offsetZ", head.offset.z);
 		json.value("clamped", head.clamped);
+		// Physical crouch (#100): the head crouching the character, its depth below the reference (meters), the
+		// episodes, and how far the character's crouch lowered its eye (game units)
+		json.value("crouch", head.crouch);
+		json.value("crouchDepth", head.crouchDepth);
+		json.value("crouches", head.crouches);
+		json.value("characterDrop", head.characterDrop);
 		// The look and the body (#25): where the stick's forward is and where the model faces
 		const vr::BodyStatus & body = vr::bodyStatus();
 		json.value("lookYaw", body.lookYaw);
@@ -749,6 +756,39 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("stretched", arm.stretched);
 			json.end();
 		}
+		json.end();
+	}
+	// The weapon in the IK hand (#75): where it is, how the blade sits on the controller's handle, and the
+	// engine's arm layer that is not applied while the IK drives the arms (F-67)
+	{
+		const vr::HeldWeaponStatus & weapon = vr::heldWeaponStatus();
+		json.object("weapon");
+		json.value("item", weapon.item);
+		json.value("kind", weapon.kind);
+		json.value("place", weapon.place);
+		json.value("inHand", weapon.inHand);
+		json.value("handFrames", weapon.handFrames);
+		json.value("relinks", weapon.relinks);
+		json.value("measured", weapon.measured);
+		json.value("bladeLength", weapon.bladeLength);
+		json.value("assetAngle", weapon.assetAngle);
+		json.value("correction", weapon.correction);
+		json.value("drawn", weapon.drawn);
+		const struct { const char * name; const Vec3f & point; } points[] = {
+			{ "hilt", weapon.hilt }, { "tip", weapon.tip }, { "bladeGrip", weapon.bladeGrip },
+		};
+		for(const auto & point : points) {
+			json.object(point.name);
+			json.value("x", point.point.x);
+			json.value("y", point.point.y);
+			json.value("z", point.point.z);
+			json.end();
+		}
+		json.value("bladeAngle", weapon.bladeAngle);
+		json.value("armAnimSuppressed", weapon.armAnimSuppressed);
+		json.value("armAnimation", weapon.armAnimation);
+		json.value("suppressedFrames", weapon.suppressedFrames);
+		json.value("combatMode", (player.Interface & INTER_COMBATMODE) != 0);
 		json.end();
 	}
 	{
@@ -1149,6 +1189,24 @@ std::string execute(std::string_view line) {
 			vr::setComfortMode(vr::ComfortMode::Off);
 		} else {
 			return refuse("comfort: expected auto, on or off, got \"" + std::string(rest) + "\"");
+		}
+		return std::string();
+	}
+
+	if(word == "combat") {
+		// The engine's combat mode without the mouse (#75): what the weapon key does - "on" draws the
+		// weapon, "off" puts it away; the strike is the mouse button / the trigger
+		std::string mode(rest);
+		util::makeLowercase(mode);
+		if(currentState() != GameState::Gameplay || !entities.player()) {
+			return refuse("combat: needs a level");
+		}
+		if(mode == "on") {
+			ARX_INTERFACE_setCombatMode(COMBAT_MODE_DRAW_WEAPON);
+		} else if(mode == "off") {
+			ARX_INTERFACE_setCombatMode(COMBAT_MODE_OFF);
+		} else {
+			return refuse("combat: expected on or off, got \"" + std::string(rest) + "\"");
 		}
 		return std::string();
 	}

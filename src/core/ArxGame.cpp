@@ -181,6 +181,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "vr/VRInput.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
+#include "vr/VRWeapon.h"
 
 #include "Configure.h"
 
@@ -1740,8 +1741,14 @@ void ArxGame::updateActiveCamera() {
 	Vec3f enginePos = cam->m_pos;
 	Anglef engineAngle = cam->angle;
 	if(cam == &g_playerCamera && !EXTERNALVIEW) {
-		// The character's eye height, which the head at its reference becomes (#27) - evidence for the scale
-		vr::setCharacterEyeHeight(player.basePosition().y - g_playerCameraStablePos.y);
+		// The character's eye height, which the head at its reference becomes (#27) - evidence for the scale;
+		// and whether it is the standing eye: crouching, getting up and levitating lower or raise it (#100)
+		const Entity * io = entities.player();
+		const bool crouching = ((player.m_currentMovement | player.m_lastMovement) & PLAYER_CROUCH)
+		                       || (io && io->animlayer[0].cur_anim
+		                           && io->animlayer[0].cur_anim == io->anims[ANIM_CROUCH_END]);
+		vr::setCharacterEyeHeight(player.basePosition().y - g_playerCameraStablePos.y,
+		                          !crouching && !player.levitate);
 	}
 	if(vr::applyHeadPose(cam->m_pos, cam->angle, engineAngle.getYaw())) {
 		m_headView = HeadView{ cam, enginePos, engineAngle };
@@ -1954,6 +1961,9 @@ void ArxGame::updateLevel() {
 		if(entities.player()->animlayer[1].cur_anim)
 			ManageCombatModeAnimationsEND();
 	}
+
+	// The weapon in the IK hand (#75): after this frame's body pose and the combat mode's links
+	vr::updateHeldWeapon();
 
 	restoreEngineCamera();
 

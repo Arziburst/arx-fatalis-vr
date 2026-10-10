@@ -672,6 +672,11 @@ bool handLandmarks(Hand hand, Vec3f & palm, Vec3f & tip) {
 	return true;
 }
 
+const HandFrame * handRestFrame(Hand hand) {
+	const ArmChain & chain = g_body.chains[size_t(hand)];
+	return (g_body.boundObject && chain.valid && chain.frame.valid) ? &chain.frame : nullptr;
+}
+
 void setSimulatedHand(Hand hand, const HandSample & sample) {
 	g_body.sim[size_t(hand)] = sample;
 	g_body.haveSim[size_t(hand)] = true;

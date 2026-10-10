@@ -8,6 +8,34 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — A shipped `.xrs` sequence is red in CI only because of the sequence that ran before it (#296, from #178)
+
+**Symptom:** the CI game check fails a sequence that passes alone: `vr-remap-saved` expected the file `vr-remap` saved
+(it ran *after* it alphabetically), `vr-settings-flat` found the `vr-controls-index.ini` that `vr-remap` left. Rename or add
+a sequence and the order — and the verdict — changes.
+**Cause:** `ci-smoke.ps1` ran every sequence in the runner account's single user dir, so config, saves and ini files leaked
+from one sequence into the next.
+**Do:** every sequence now runs in its own fresh user dir (`New-ArxSequenceUserDir` in `xrs-lib.ps1`, passed to
+`smoke-test.ps1 -UserDir`; its `@save` is copied in as before; the dir is removed after the run and its logs are in the
+phase's evidence). A sequence that needs a file from another one is wrong: set the state up in its own `@save` / commands.
+The first fresh-dir CI run found it at once: `walk-forward`, `walk-look` and `sneak-jump-crouch` had `@args --loadslot 0` but no
+`@save`, and had only ever passed on the save an earlier sequence left in the shared dir ("no such save, 0 save(s)"). They
+declare `@save mvp-new-game` now, and `test-xrs.ps1` fails a shipped sequence with `--loadslot` and no `@save`.
+Checked by `test-xrs.ps1` ("fresh user dir per sequence"). Locally, `smoke-test.ps1 -Sequence` already used the isolated dir of
+the working copy: run two sequences by hand with `-UserDir` pointing at different folders for the same effect.
+
+
+
+## 2026-10-10 — The arm clips are "suppressed", yet the shoulder moves 10 units when the combat mode starts (#75)
+
+**Symptom:** `vr.weapon.armAnimSuppressed` is `true` and every `vr.body.armAnim` event says `suppressed`, but
+`vr.body.right.shoulder` jumps by ~10 units between before `combat on` and after the strike.
+**Cause:** the combat mode also switches the **body's** layer 0 to the fight stance (`ANIM_FIGHT_WAIT`,
+`ARX_PLAYER_Manage_Visual`), which turns the torso; only layer 1 (the arm clips) is suppressed (D-009: the body
+keeps the engine's animations). **Do:** measure what the arm layer does from a settled stance — take the
+shoulder after `combat on` + 60 frames (300 ms of blend), then strike, as `weapon-hold.xrs` does. Also: never
+ask `entities.player()` while writing `status.json` before a level exists (the first `weapon-hold` run crashed
+at start-up on it, #286) — check this module's own state first.
 ## 2026-10-10 — .xrs: a count of what a held input did passes locally and fails on the CI runner (#285)
 
 **Symptom:** `snap-turn.xrs` held the stick until the 5th snap, let go and allowed one more snap; locally it

@@ -1,0 +1,79 @@
+# Health and mana on the left wrist (#116, D-029, D-037): two bars, red towards the elbow and blue towards the
+# hand, on the inner side of the left wrist of the full body (#36); read by raising the wrist to the face like
+# a watch, faded out when it turns away. While they are on the wrist the HUD's orbs are not drawn.
+# Needs a first-person save (TRAPS.md: level 10's conversation camera is nowhere near the body):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence wrist-vitals -Save mvp-new-game
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.body.left.posed eq true
+
+# The idle rig holds the left grip upright, the palm facing right: the bars are on the wrist (the orbs step
+# aside); how much of them shows depends on how the inner wrist meets the eyes
+@assert vr.wrist.shown eq true
+@assert vr.wrist.health eq 1
+@assert vr.wrist.mana eq 1
+
+# The left hand in front of the chest, right of the middle, the knuckles to the right, so the forearm runs
+# across the view (elbow on the left); the head looks at it. First the back of the hand up (the palm down,
+# the thumb towards the player): the inner wrist faces away from the eyes, nothing is drawn
+vr-sim head rot -20 -45 0
+vr-sim hand left pos 0.12 -0.3 -0.3
+vr-sim hand left rot 180 0 -90
+@frames 15
+@assert vr.body.left.posed eq true
+@assert vr.wrist.facingDeg gt 80
+@assert vr.wrist.alpha eq 0
+@shot wrist-away
+
+# The watch pose: the palm turned to the eyes, the thumb up - fully visible, drawn into both eyes
+vr-sim hand left rot -90 90 0
+@frames 15
+@assert vr.body.left.posed eq true
+@assert vr.wrist.shown eq true
+@assert vr.wrist.facingDeg lt 50
+@assert vr.wrist.alpha eq 1
+# The forearm runs to the right (health, towards the elbow, is the left bar); the bars fill upwards (engine
+# y is down), towards the thumb, across the forearm (measured: along 0.71 / -0.56 / 0.43, across -0.62 /
+# -0.78 / 0.00 - the forearm rises 34 degrees, so "up" leans left with it); the inner wrist faces back
+# towards the eyes (normal z -0.90)
+@assert vr.wrist.along.x gt 0.5
+@assert vr.wrist.across.y lt -0.6
+@assert vr.wrist.normal.z lt -0.7
+@remember drawn vr.wrist.drawnViews
+@frames 5
+@assert vr.wrist.drawnViews ge {drawn+10}
+@shot wrist-full
+
+# Damage and spent mana: the fractions follow the player's pools. The picture is judged on the captures, not
+# by @diff: two still shots of this pose already differ by 2.2 (the idle animation), as much as the bars do
+specialfx heal -9
+specialfx mana -6
+@frames 10
+@assert vr.wrist.health lt 0.9
+@assert vr.wrist.mana lt 0.9
+@shot wrist-hurt
+
+# Half turned away (the palm turned 30 degrees further from the eyes): fading
+vr-sim hand left rot -90 90 -30
+@frames 10
+@assert vr.wrist.alpha gt 0
+@assert vr.wrist.alpha lt 1
+@shot wrist-fading
+
+# Without a left controller the arm goes back to the engine and the orbs come back
+vr-sim hand left off
+@frames 10
+@assert vr.body.left.posed eq false
+@assert vr.wrist.shown eq false
+@shot orbs-back
+@diff wrist-hurt orbs-back gt 0.15 quad
+vr-sim hand left on
+@frames 10
+@assert vr.wrist.shown eq true
+
+@assert errors eq 0

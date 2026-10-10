@@ -87,6 +87,8 @@ set(arxtest_TESTCASES
 
 	tests/vr/ArmIKTest.h
 	tests/vr/ArmIKTest.cpp
+	tests/vr/WristVitalsTest.h
+	tests/vr/WristVitalsTest.cpp
 	tests/vr/WeaponGripTest.h
 	tests/vr/WeaponGripTest.cpp
 
@@ -94,6 +96,8 @@ set(arxtest_TESTCASES
 	tests/vr/RuneTrailTest.cpp
 	tests/vr/RuneProjectionTest.h
 	tests/vr/RuneProjectionTest.cpp
+	tests/vr/HandReticleTest.h
+	tests/vr/HandReticleTest.cpp
 
 
 )
@@ -129,6 +133,8 @@ set(arxtest_SOURCES
 	src/vr/MenuPointer.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/ArmIK.cpp
+	src/vr/WristVitals.cpp
+	src/vr/HandReticle.cpp
 	src/vr/WeaponGrip.cpp
 	src/vr/Locomotion.cpp
 	src/vr/RuneTrail.cpp

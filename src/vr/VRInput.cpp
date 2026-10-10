@@ -35,6 +35,7 @@
 #include "vr/BodyYaw.h"
 #include "vr/HeadTracking.h"
 #include "vr/MenuPointer.h"
+#include "vr/VRReticle.h"
 #include "vr/VRSystem.h"
 
 namespace vr {
@@ -122,7 +123,9 @@ void applyToEngine(const GameInputState & state) {
 	GInput->setVirtualMouseButton(Mouse::Button_0, state.click && !g_input.pointer.suppressClick());
 	if(g_input.pointer.active()) {
 		const Vec2f cursor = g_input.pointer.cursor();
-		GInput->setVirtualMousePosition(Vec2s(s16(std::lround(cursor.x)), s16(std::lround(cursor.y))));
+		// A world reticle (#37) is the exploration mode's crosshair too: also in the relative mouse mode
+		GInput->setVirtualMousePosition(Vec2s(s16(std::lround(cursor.x)), s16(std::lround(cursor.y))),
+		                                !g_input.pointer.onPanel());
 	} else {
 		GInput->setVirtualMousePosition(std::nullopt);
 	}
@@ -144,23 +147,37 @@ void updatePointer() {
 
 	const bool shown = panelShown();
 	const std::array<HandAim, HandCount> aims = handAims();
+
+	// The hands' hidden rays in the world (#37): their reticles are targets of the same mouse
+	updateReticles(aims, double(toUs(platform::getTime())) / 1000000.0);
+	const bool world = reticlesOn();
+
 	std::array<Vec3f, HandCount> hits = { };
 	std::array<bool, HandCount> trigger = { };
+	std::array<bool, HandCount> claims = { };
 	for(size_t hand = 0; hand < HandCount; hand++) {
 		PointerRay & ray = g_input.rays[hand];
 		ray = PointerRay();
 		if(shown && aims[hand].valid) {
 			ray.onPanel = panelHit(aims[hand].origin, aims[hand].direction, ray.pixel, &hits[hand]);
 		}
+		if(!ray.onPanel) {
+			reticleTarget(Hand(hand), ray);
+		}
+		claims[hand] = reticleClaims(Hand(hand));
 	}
 	trigger[size_t(Hand::Left)] = g_input.resolver.active(Event::InteractLeft) || g_input.resolver.active(Event::StashLeft);
 	trigger[size_t(Hand::Right)] = g_input.resolver.active(Event::InteractRight) || g_input.resolver.active(Event::StashRight);
+	// The grip's use acts under its own hand (D-019): the hand that uses takes an idle cursor
+	claims[size_t(Hand::Left)] = claims[size_t(Hand::Left)] || g_input.resolver.pressed(Event::UseLeft);
+	claims[size_t(Hand::Right)] = claims[size_t(Hand::Right)] || g_input.resolver.pressed(Event::UseRight);
 
 	MenuPointer & pointer = g_input.pointer;
-	pointer.update(shown, g_input.rays, trigger);
+	pointer.update(shown || world, g_input.rays, trigger, PointerParams(), claims);
+	afterPointer(pointer, g_input.rays);
 
 	const size_t owner = size_t(pointer.owner());
-	if(pointer.active()) {
+	if(pointer.onPanel()) {
 		setPointerBeam(true, aims[owner].origin, hits[owner]);
 	} else {
 		setPointerBeam(false);
@@ -171,7 +188,7 @@ void updatePointer() {
 		gameevent::Event("vr.pointer")("state", shown ? "on" : "off")("hand", handName(pointer.owner()))
 			("tracked", int(aims[0].valid) + int(aims[1].valid));
 	}
-	if(!shown) {
+	if(!shown && !world) {
 		return;
 	}
 	if(pointer.ownerChanged()) {
@@ -186,7 +203,8 @@ void updatePointer() {
 	}
 	if(pointer.offPanelPresses() != g_input.loggedOffPanelPresses) {
 		g_input.loggedOffPanelPresses = pointer.offPanelPresses();
-		gameevent::Event("vr.pointer.muted")("hand", handName(pointer.owner()))("reason", "off the panel");
+		gameevent::Event("vr.pointer.muted")("hand", handName(pointer.owner()))
+			("reason", world ? "no target" : "off the panel");
 	}
 }
 
@@ -250,7 +268,9 @@ PointerStatus pointerStatus() {
 	status.cursor = pointer.cursor();
 	status.beam = pointerBeamShown();
 	status.onPanel = { g_input.rays[0].onPanel, g_input.rays[1].onPanel };
+	status.onWorld = { g_input.rays[0].onWorld, g_input.rays[1].onWorld };
 	status.clicks = pointer.clicks();
+	status.worldClicks = pointer.worldClicks();
 	status.offPanelPresses = pointer.offPanelPresses();
 	status.ownerChanges = pointer.ownerChanges();
 	return status;

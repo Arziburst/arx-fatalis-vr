@@ -39,15 +39,22 @@ vr-sim hand left off
 vr-sim hand right pos 0.15 -0.3 -0.4
 
 # A) the hand hanging down (fingers down): the forearm is vertical, so a yaw is a roll about it.
-# At the identity grip the hand hangs as the model was made: nothing rolls, the elbow is not swung
+# The identity grip hangs the hand the way the model's rest pose holds it (palm to the thigh, thumb
+# ahead), but this is not the rest relation: the arm hangs ahead of the chest and its bend plane is
+# the pole's (down, back, a little out), 30 degrees from the hand's - the host test has the true rest
+# relation at 0. So the roll is shared from here too: the elbow swung 10 degrees, each band under 6
 vr-sim hand right rot 0 0 0
 @frames 15
 @assert vr.body.right.error lt 1
 @remember down0HandRoll vr.body.right.handRoll
-@assert vr.body.right.wristTwist lt 12
-@assert vr.body.right.wristTwist gt -12
-@assert vr.body.right.elbowTwist lt 12
-@assert vr.body.right.elbowTwist gt -12
+@assert vr.body.right.handRoll lt 40
+@assert vr.body.right.handRoll gt 20
+@assert vr.body.right.wristTwist lt 6
+@assert vr.body.right.wristTwist gt -6
+@assert vr.body.right.elbowTwist lt 6
+@assert vr.body.right.elbowTwist gt -6
+@assert vr.body.right.upperRoll lt 6
+@assert vr.body.right.upperRoll gt -6
 @shot down-roll000
 
 # 45 degrees: the hand's roll moved against the rest pose - by less than 45 and the other way round

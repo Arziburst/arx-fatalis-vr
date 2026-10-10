@@ -181,6 +181,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "vr/VRInput.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
+#include "vr/VRWeapon.h"
 
 #include "Configure.h"
 
@@ -1954,6 +1955,9 @@ void ArxGame::updateLevel() {
 		if(entities.player()->animlayer[1].cur_anim)
 			ManageCombatModeAnimationsEND();
 	}
+
+	// The weapon in the IK hand (#75): after this frame's body pose and the combat mode's links
+	vr::updateHeldWeapon();
 
 	restoreEngineCamera();
 

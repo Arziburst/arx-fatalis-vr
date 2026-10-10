@@ -191,6 +191,7 @@ struct OpenXRState {
 		PlatformInstant lastWaitReturn = PlatformInstant(0); //!< when xrWaitFrame last returned: the cap sleeps relative to it
 		std::array<XrView, 2> located = { };
 		FrameViews views;                   //!< the located eyes, for the renderer and for the layer
+		FrameHands hands;                   //!< the located controllers, for the body (#36)
 
 		//! Stereo (#19): the scene is drawn per eye into the eye swapchains, everything 2D into the quad
 		bool stereo = false;
@@ -2021,6 +2022,9 @@ bool beginFrameFor(const Vec2i & windowSize, FrameTargets targets) {
 	frame.begun = true;
 
 	locateFrameViews(frame.state.predictedDisplayTime);
+	// The hands for the same display time in the same space as the eyes: the body is posed with the
+	// sample the frame is submitted with (#36, F-21)
+	g_xr.actions.locateHands(g_xr.localSpace, frame.state.predictedDisplayTime, frame.hands);
 
 	beginFrameTargets(windowSize, targets);
 
@@ -2205,6 +2209,10 @@ StereoStatus stereoStatus() {
 
 const FrameViews & frameViews() {
 	return g_xr.frame.views;
+}
+
+const FrameHands & frameHands() {
+	return g_xr.frame.hands;
 }
 
 bool isEnabled() {
@@ -2392,6 +2400,11 @@ StereoStatus stereoStatus() {
 
 const FrameViews & frameViews() {
 	static const FrameViews none;
+	return none;
+}
+
+const FrameHands & frameHands() {
+	static const FrameHands none;
 	return none;
 }
 

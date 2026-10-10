@@ -29,6 +29,7 @@
 #include "platform/Platform.h"
 #include "vr/EyeProjection.h"
 #include "vr/FramePacing.h"
+#include "vr/HeadPose.h"
 #include "vr/VRControls.h"
 
 /*!
@@ -238,6 +239,19 @@ struct FrameViews {
  *         first frame
  */
 const FrameViews & frameViews();
+
+//! The controllers' grip poses located for the current frame, in the same space and for the same display time as the eyes (#36)
+struct FrameHands {
+	std::array<bool, HandCount> tracked = { { false, false } }; //!< the runtime located the hand with a valid position
+	std::array<HandSample, HandCount> hands;                   //!< left, right - in the OpenXR LOCAL space
+};
+
+/*!
+ * \return the hands located by \ref beginFrame for the current frame (F-21: the body is posed with
+ *         the sample the frame is submitted with); nothing tracked in flat mode, before the first
+ *         frame, or while a controller is off
+ */
+const FrameHands & frameHands();
 
 //! \return true while the game runs in VR, i.e. an OpenXR session exists
 bool isEnabled();

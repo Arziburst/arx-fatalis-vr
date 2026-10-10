@@ -838,6 +838,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("snapRepeat", turnSettings.snapRepeat);
 		json.value("snaps", turn.snaps());
 		json.value("lastSnap", turn.lastSnap());
+		json.value("pushRepeats", vr::snapPushRepeats());
+		json.value("repeatInterval", vr::snapRepeatInterval());
 		json.value("turned", turn.turned());
 		json.value("updates", turn.updates());
 		json.value("allowed", turn.allowed());

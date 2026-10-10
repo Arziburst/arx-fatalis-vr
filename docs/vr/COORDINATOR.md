@@ -35,7 +35,7 @@ messages, auto-continue, and lists the owner-only steps: accept the bypass discl
 - **Data, not guesses:** `pwsh scripts\dev\usage-plan.ps1` every cycle and before a start, as the
   **forecast** (cost per task, ETA to the weekly 90% and 5-hour 95% caps, which READY tasks fit before each); its `SUMMARY` line goes on #193. Start every
   runnable task while below the caps — its ADVICE (`keep N worker(s) running until the cap`, N = running + READY, no fixed worker cap) does not pace to the reset (D-027). Limits also in `~/.claude/statusline/last.json`.
-  Fable's weekly limit is invisible: a Fable worker stuck on a usage-limit message → restart on Opus.
+  Fable's weekly limit is invisible (the owner reads it; ask when it matters): a Fable worker stuck on a usage-limit message → restart on Opus. When the main week is tight and Fable has room, put the heaviest tasks on Fable (xhigh) to spare Opus.
 - **Cron tick** every ~30 min (`:17` / `:47`): `usage-plan.ps1`, `plan-next.ps1`, clean up, start work.
   It is session-only — recreate it (CronCreate) after every restart.
 - **You are a big share of the spend:** short turns, filtered output (`-Last N`), no whole large files,
@@ -64,6 +64,17 @@ messages, auto-continue, and lists the owner-only steps: accept the bypass discl
    - GAPS → back to the worker; after the fix no second review unless the change is large.
 6. **Merge:** the worker merges on green CI + PASS (D-005); `needs-vr-test` only after the owner's verdict.
    Docs-only PRs have no CI. After a merge: `gh pr update-branch` the other open PRs.
+   - **Never tell a worker to merge over a red or pending check, even a known flake** — WORKFLOW.md's
+     "never merge with failing or pending CI" is the owner's rule and only the owner can waive it. Fix the
+     flake first or ask the owner.
+   - **Merge queue** (many open PRs): one PR merges at a time; keep an ordered list (a red-main fix first,
+     then dependencies before dependents, then the rest) and tell the next worker "your turn" when one
+     lands. Parallel merges thrash on the TESTING.md / TRAPS.md table conflicts — serialise.
+   - **One self-hosted runner:** owner-accepted PRs get CI first — cancel queued runs of not-yet-accepted
+     PRs and tell those workers "no push / re-run until your turn". A red `main` blocks everything: its
+     fix gets the runner first.
+   - Workers never poll CI in loops (16 sessions polling trip GitHub's secondary rate limit): at most one
+     `gh run watch <id> --interval 120`.
 7. **Clean up** after a merge: `claude stop <id>`, then `claude rm <id>` **as a separate command** (the
    guard blocks a compound rm), then `new-worktree.ps1 -Issue <n> -Remove` from the owner's copy; pull the
    owner's copy. Keep a worker alive while its PR waits for the headset. Session refs change after a
@@ -101,8 +112,14 @@ anything that would fill a worker's context.
   **Reject:** copy `arx.log` aside before the next launch overwrites it; send `/reject-task <n>` with what
   was seen, the saved log and the screenshot; post the feedback on the PR in English. Worker gone → a new
   worker with `/reject-task`.
-- A trivial follow-up to a mechanism the owner already verified (e.g. #21's default eye) may merge on
-  host proof; the owner glances later.
+- **A test that ends with a change request is re-tested in the headset after the change; the PR is
+  never merged on host or sim proof** (owner rule, 2026-10-10 — no "trivial follow-up" exception). PRs
+  already merged on host proof before the rule (#21 right-eye mirror, #32 snap repeat): have the owner
+  glance at them in the next batch.
+- **Keep the PC quiet during a headset test:** tell workers "no builds / launches / CI pushes" until
+  "batch done" (FPS dips were seen while CI and workers ran). The performance log is always on (#327).
+- Once the test playground (#321: all weapons, all enemies, max-level hero, damage numbers) exists, **all
+  combat and magic headset tests run there**.
 
 ## 7. Rules you enforce on workers
 - **Launches (D-014, enforced by `launch-lib.ps1`):** never start or stop SteamVR (flat unless the owner's
@@ -135,6 +152,13 @@ anything that would fill a worker's context.
 Stop only for: a headset batch is ready, the limits (§3), or a decision only the owner can make.
 Report in Russian, short: merged and cleaned up; a table of running workers (task, model, state); what
 is needed from the owner; the usage SUMMARY.
+- **MVP progress line:** after each merged task the report ends with one short line, e.g.
+  "MVP ≈ 72% (80/111 tasks)" = closed / all issues of milestone "M1 MVP"
+  (`gh api repos/Arziburst/arx-fatalis-vr/milestones?state=all`), rounded, approximate on purpose (it
+  drops when tasks are added). Also on #193. Not in pure tracking messages or limit notices.
+- **Desktop build per block:** after each successfully closed block, pull the owner's copy (`main`) and
+  run a Release build there (`scripts\build-windows.ps1`) so the desktop icon starts the latest game;
+  say so in the block report. At the block's end, not after every PR.
 
 ## 10. Traps (more in [TRAPS.md](TRAPS.md))
 - `claude --bg` refuses untrusted folders → workers start in the owner's copy and enter their worktree
@@ -142,4 +166,4 @@ is needed from the owner; the usage SUMMARY.
 - Without `crossSessionInbound: accept`, cross-session messages wait for approval.
 - In a worktree-isolated job the guard rejects compound commands touching git elsewhere: plain commands,
   `.ps1` scripts, PR bodies from a file (`gh pr create -F`).
-- The owner's copy is pulled, not rebuilt; the desktop shortcut rebuilds a stale build (#141).
+- The owner's copy is pulled, not rebuilt per PR (Release build only per closed block, §9); the desktop shortcut rebuilds a stale build (#141).

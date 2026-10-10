@@ -59,6 +59,11 @@
  *  - \c head \c pos \c <x> \c <y> \c <z>; \c head \c rot \c <yaw> \c <pitch> \c <roll> - yaw + turns
  *    left, pitch + looks up, roll + tilts the head to the left
  *  - \c hand \c left|right \c pos|rot \c ...; \c hand \c left|right \c on|off (tracked or not)
+ *  - \c hand \c left|right \c fingers \c <thumb> \c <index> \c <rest>: how far the real fingers are
+ *    closed, 0 open to 1 a fist (the thumb, the index finger, the other three) - the hand joints of
+ *    XR_EXT_hand_tracking the simulated runtime gives (#305); \c hand \c left|right \c fingers
+ *    \c off|on: no joints for that hand (a runtime that cannot read fingers: the game falls back to
+ *    the action values), or joints again. Default: joints, open
  *  - \c profile \c index|touch|simple|none|<path>: the interaction profile of both hands
  *  - \c action \c <name> \c left|right|both \c <value> \c [<y>]: an OpenXR action of the game
  *    (\c trigger, \c grip, \c button_a, \c thumbstick, ... - vr/VRActions.cpp); booleans are 0 / 1
@@ -124,11 +129,18 @@ enum class SimTimeline {
 	Session,  //!< frame 0 = the first frame of the session
 };
 
+//! The real fingers of one simulated hand (#305): what its XR_EXT_hand_tracking joints show
+struct SimFingers {
+	bool joints = true;        //!< the runtime gives joints for this hand
+	Vec3f curl = Vec3f(0.f);   //!< how far the thumb (x), the index finger (y) and the other three (z) are closed, 0 - 1
+};
+
 //! The state of the simulated headset, controllers and runtime that commands change
 struct SimRig {
 	SimPose head;
 	std::array<SimPose, 2> hands;
 	std::array<bool, 2> handTracked = { true, true };
+	std::array<SimFingers, 2> fingers;
 	std::string profile; //!< interaction profile path of both hands, empty = none
 	//! Action values by OpenXR action name, per hand (x, and y for 2D actions)
 	std::map<std::string, std::array<Vec2f, 2>> actions;

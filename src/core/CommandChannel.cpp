@@ -331,6 +331,15 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 	json.value("profile", sim.rig.profile);
 	json.value("focused", sim.rig.focused);
 	json.value("swapEyes", sim.rig.swapEyes);
+	// The real fingers the simulated hand trackers show (#305): joints on or off, how far closed (0 - 1)
+	for(size_t hand = 0; hand < 2; hand++) {
+		json.object(hand ? "rightFingers" : "leftFingers");
+		json.value("joints", sim.rig.fingers[hand].joints);
+		json.value("thumb", sim.rig.fingers[hand].curl.x);
+		json.value("index", sim.rig.fingers[hand].curl.y);
+		json.value("rest", sim.rig.fingers[hand].curl.z);
+		json.end();
+	}
 	json.object("actions");
 	for(const auto & [name, values] : sim.rig.actions) {
 		json.object(name);
@@ -699,23 +708,63 @@ std::string buildStatus(PlatformInstant now) {
 				json.end();
 			}
 			// where the posed hand's palm and fingertips ended up (after the vertices were transformed)
-			Vec3f palm(0.f);
-			Vec3f tip(0.f);
-			if(vr::handLandmarks(vr::Hand(hand), palm, tip)) {
-				const struct { const char * name; const Vec3f & point; } landmarks[] = { { "palm", palm }, { "tip", tip } };
-				for(const auto & landmark : landmarks) {
+			vr::HandLandmarks landmarks;
+			if(vr::handLandmarks(vr::Hand(hand), landmarks)) {
+				const struct { const char * name; const Vec3f & point; } points2[] = {
+					{ "palm", landmarks.palm }, { "tip", landmarks.tip }
+				};
+				for(const auto & landmark : points2) {
 					json.object(landmark.name);
 					json.value("x", landmark.point.x);
 					json.value("y", landmark.point.y);
 					json.value("z", landmark.point.z);
 					json.end();
 				}
+				json.value("tipAlong", landmarks.tipAlong);
+				json.value("tipOut", landmarks.tipOut);
 			}
 			json.value("reach", arm.reach);
 			json.value("armLength", arm.armLength);
 			json.value("error", arm.error);
 			json.value("slide", arm.slide);
 			json.value("stretched", arm.stretched);
+			// The fingers (#305): what they follow and how far each segment is bent (degrees)
+			json.object("fingers");
+			json.value("source", arm.fingerSource);
+			json.value("groups", arm.fingerGroups);
+			json.value("joints", arm.joints);
+			json.value("holds", arm.holds);
+			const struct { const char * name; const vr::FingerCurl & curl; } curls[] = {
+				{ "curl", arm.curl }, { "target", arm.curlTarget }
+			};
+			for(const auto & entry : curls) {
+				json.object(entry.name);
+				json.value("thumb", entry.curl.thumb);
+				json.value("indexRoot", entry.curl.indexRoot);
+				json.value("indexTip", entry.curl.indexTip);
+				json.value("fingersRoot", entry.curl.fingersRoot);
+				json.value("fingersTip", entry.curl.fingersTip);
+				json.end();
+			}
+			json.end();
+			json.end();
+		}
+		json.value("fingerGroups", body.fingers);
+		json.end();
+	}
+	// XR_EXT_hand_tracking (#305): whether the runtime gives hand joints and how often it did
+	{
+		const vr::HandJointsStatus & hands = vr::handJointsStatus();
+		json.object("hands");
+		json.value("extension", hands.extension);
+		json.value("supported", hands.supported);
+		json.value("trackers", hands.trackers);
+		json.value("locates", hands.locates);
+		json.value("failures", hands.failures);
+		for(size_t hand = 0; hand < vr::HandCount; hand++) {
+			json.object(vr::handName(vr::Hand(hand)));
+			json.value("active", hands.active[hand]);
+			json.value("activeFrames", hands.activeFrames[hand]);
 			json.end();
 		}
 		json.end();
@@ -753,6 +802,10 @@ std::string buildStatus(PlatformInstant now) {
 		json.object("grip");
 		json.value("left", analog.grip[size_t(vr::Hand::Left)]);
 		json.value("right", analog.grip[size_t(vr::Hand::Right)]);
+		json.end();
+		json.object("thumbTouch");
+		json.value("left", analog.thumbTouch[size_t(vr::Hand::Left)]);
+		json.value("right", analog.thumbTouch[size_t(vr::Hand::Right)]);
 		json.end();
 		json.object("presses");
 		for(size_t i = 0; i < vr::EventCount; i++) {

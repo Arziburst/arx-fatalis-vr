@@ -81,6 +81,9 @@ set(arxtest_TESTCASES
 	tests/vr/ArmIKTest.h
 	tests/vr/ArmIKTest.cpp
 
+	tests/vr/FingerCurlTest.h
+	tests/vr/FingerCurlTest.cpp
+
 
 )
 
@@ -113,6 +116,7 @@ set(arxtest_SOURCES
 	src/vr/InterfaceSize.cpp
 	src/vr/ArmIK.cpp
 	src/vr/Locomotion.cpp
+	src/vr/FingerCurl.cpp
 
 
 	${arxtest_TESTCASES}

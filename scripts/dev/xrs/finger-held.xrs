@@ -1,0 +1,62 @@
+# A hand holding a weapon closes its fingers on the grip (#305, D-NEW; the weapon in the IK hand is #75):
+# on mvp-items a short sword is equipped, so the right hand's fingers are closed whatever its tracked
+# fingers do, while the left hand still follows its joints.
+#   .\scripts\dev\xrs-run.ps1 finger-held
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence finger-held -Save mvp-items
+@sim idle
+@save mvp-items
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.body.active eq true
+@assert vr.body.right.posed eq true
+@assert vr.body.left.posed eq true
+
+# The right hand holds the sword: closed on the grip; the left hand follows its (open) joints
+@assert vr.body.right.fingers.holds eq true
+@assert vr.body.right.fingers.source eq held
+@assert vr.body.right.fingers.curl.thumb gt 59
+@assert vr.body.right.fingers.curl.indexRoot gt 89
+@assert vr.body.right.fingers.curl.indexTip gt 94
+@assert vr.body.right.fingers.curl.fingersRoot gt 89
+@assert vr.body.right.fingers.curl.fingersTip gt 94
+@assert vr.body.left.fingers.holds eq false
+@assert vr.body.left.fingers.source eq joints
+@assert vr.body.left.fingers.curl.indexRoot lt 1
+
+# The tracked fingers of the right hand say open: the hand stays closed on the grip
+vr-sim hand right fingers 0 0 0
+@frames 30
+@assert vr.hands.right.active eq true
+@assert vr.body.right.fingers.joints eq true
+@assert vr.body.right.fingers.source eq held
+@assert vr.body.right.fingers.curl.indexRoot gt 89
+
+# The left hand closing is still the left hand's own business
+vr-sim hand left fingers 1 1 1
+@frames 30
+@assert vr.body.left.fingers.source eq joints
+@assert vr.body.left.fingers.curl.indexRoot gt 89
+vr-sim hand left fingers 0 0 0
+
+# The right hand before the face: the fist on the hilt (judged on the capture)
+vr-sim hand right pos 0.12 -0.1 -0.35
+vr-sim hand right rot 0 90 0
+vr-sim head rot 0 -15 0
+@frames 20
+@assert vr.body.right.error lt 1
+@shot sword-fist
+
+# Without the right controller the arm and its fingers go back to the engine; with it, the grip again
+vr-sim hand right off
+@frames 15
+@assert vr.body.right.posed eq false
+@assert vr.body.right.fingers.source eq none
+vr-sim hand right on
+@frames 30
+@assert vr.body.right.posed eq true
+@assert vr.body.right.fingers.source eq held
+
+@assert errors eq 0

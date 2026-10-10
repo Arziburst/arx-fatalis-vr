@@ -84,6 +84,9 @@ std::vector<SuggestedBinding> suggestedBindings(ControllerType type) {
 			addBoth(list, PhysicalAction::Stick, "input/thumbstick");
 			addBoth(list, PhysicalAction::StickClick, "input/thumbstick/click");
 			addBoth(list, PhysicalAction::Trackpad, "input/trackpad/force", true);
+			// The thumb's rest (#305): the stick, where the thumb lies while walking or turning (one path
+			// per action and hand - the runtime would OR several, the game reads one control)
+			addBoth(list, PhysicalAction::ThumbTouch, "input/thumbstick/touch");
 			addPosesAndHaptics(list);
 			break;
 		}
@@ -100,6 +103,8 @@ std::vector<SuggestedBinding> suggestedBindings(ControllerType type) {
 			addBoth(list, PhysicalAction::Stick, "input/thumbstick");
 			addBoth(list, PhysicalAction::StickClick, "input/thumbstick/click");
 			addOne(list, PhysicalAction::Menu, Hand::Left, "input/menu/click");
+			// The thumb's rest (#305): the stick, as on the Index
+			addBoth(list, PhysicalAction::ThumbTouch, "input/thumbstick/touch");
 			addPosesAndHaptics(list);
 			break;
 		}
@@ -142,6 +147,7 @@ ControlSet suggestedControls(ControllerType type) {
 			case PhysicalAction::GripPose:
 			case PhysicalAction::AimPose:
 			case PhysicalAction::Haptic:
+			case PhysicalAction::ThumbTouch: // the fingers' input, not a control of the game's table
 			case PhysicalAction::Count: break;
 		}
 	}

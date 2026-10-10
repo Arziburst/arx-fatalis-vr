@@ -268,3 +268,30 @@ void SimRigTest::testFocusAndFault() {
 	CPPUNIT_ASSERT(sim.rig.swapEyes);
 	CPPUNIT_ASSERT(!sim.execute("fault melt on").empty());
 }
+
+void SimRigTest::testFingers() {
+	vr::Simulation sim;
+	// The default: joints for both hands, open
+	CPPUNIT_ASSERT(sim.rig.fingers[0].joints && sim.rig.fingers[1].joints);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.0, sim.rig.fingers[1].curl.y, RigEpsilon);
+	// How far the thumb, the index finger and the other three are closed (#305)
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("hand right fingers 0.2 1 0.5"));
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.2, sim.rig.fingers[1].curl.x, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.0, sim.rig.fingers[1].curl.y, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.5, sim.rig.fingers[1].curl.z, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.0, sim.rig.fingers[0].curl.y, RigEpsilon);
+	CPPUNIT_ASSERT(!sim.execute("hand right fingers 1.5 0 0").empty());
+	CPPUNIT_ASSERT(!sim.execute("hand right fingers 1 0").empty());
+	CPPUNIT_ASSERT(!sim.execute("hand both fingers 1 1 1").empty());
+	// No joints for a hand, and joints again
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("hand left fingers off"));
+	CPPUNIT_ASSERT(!sim.rig.fingers[0].joints && sim.rig.fingers[1].joints);
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("hand left fingers on"));
+	CPPUNIT_ASSERT(sim.rig.fingers[0].joints);
+	// A ramp closes the hand over frames
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.load("@10-20 hand left fingers 1 1 1\n"));
+	sim.advance(15);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.5, sim.rig.fingers[0].curl.x, RigEpsilon);
+	sim.advance(20);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.0, sim.rig.fingers[0].curl.z, RigEpsilon);
+}

@@ -43,6 +43,7 @@
 #include "platform/Time.h"
 
 #if ARX_HAVE_OPENXR
+#include "vr/FingerCurl.h"
 #include "vr/OpenXRUtil.h"
 #include "vr/VRSwapchain.h"
 #include <openxr/openxr_reflection.h>
@@ -137,6 +138,7 @@ struct SimRuntime {
 	std::map<u64, SimAction> actions;
 	std::set<u64> actionSets;
 	bool attached = false;
+	std::map<u64, size_t> handTrackers; //!< XR_EXT_hand_tracking trackers by handle: the hand (#305)
 
 	// The frame loop
 	u64 frames = 0;
@@ -318,18 +320,30 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrEnumerateInstanceExtensionProperties(const 
 	if(layerName) {
 		return XR_ERROR_API_LAYER_NOT_PRESENT;
 	}
-	*count = 1;
+	// The OpenGL binding and hand tracking (#305): the extensions the simulated runtime has
+	const struct { const char * name; uint32_t version; } extensions[] = {
+		{ XR_KHR_OPENGL_ENABLE_EXTENSION_NAME, XR_KHR_opengl_enable_SPEC_VERSION },
+		{ XR_EXT_HAND_TRACKING_EXTENSION_NAME, XR_EXT_hand_tracking_SPEC_VERSION },
+	};
+	*count = uint32_t(std::size(extensions));
 	if(capacity == 0) {
 		return XR_SUCCESS;
 	}
-	std::strncpy(properties[0].extensionName, XR_KHR_OPENGL_ENABLE_EXTENSION_NAME, XR_MAX_EXTENSION_NAME_SIZE - 1);
-	properties[0].extensionVersion = XR_KHR_opengl_enable_SPEC_VERSION;
+	if(capacity < *count) {
+		return XR_ERROR_SIZE_INSUFFICIENT;
+	}
+	for(size_t i = 0; i < std::size(extensions); i++) {
+		std::strncpy(properties[i].extensionName, extensions[i].name, XR_MAX_EXTENSION_NAME_SIZE - 1);
+		properties[i].extensionName[XR_MAX_EXTENSION_NAME_SIZE - 1] = '\0';
+		properties[i].extensionVersion = extensions[i].version;
+	}
 	return XR_SUCCESS;
 }
 
 XRAPI_ATTR XrResult XRAPI_CALL sim_xrCreateInstance(const XrInstanceCreateInfo * info, XrInstance * instance) {
 	for(uint32_t i = 0; i < info->enabledExtensionCount; i++) {
-		if(std::strcmp(info->enabledExtensionNames[i], XR_KHR_OPENGL_ENABLE_EXTENSION_NAME) != 0) {
+		if(std::strcmp(info->enabledExtensionNames[i], XR_KHR_OPENGL_ENABLE_EXTENSION_NAME) != 0
+		   && std::strcmp(info->enabledExtensionNames[i], XR_EXT_HAND_TRACKING_EXTENSION_NAME) != 0) {
 			LogError << "[vr] sim: the game asks for the extension " << info->enabledExtensionNames[i]
 			         << ", which the simulator does not have - add it to vr/VRSimulator.cpp";
 			return XR_ERROR_EXTENSION_NOT_PRESENT;
@@ -344,6 +358,70 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrDestroyInstance(XrInstance /* instance */) 
 	g_sim->instance = false;
 	g_sim->actionSets.clear();
 	g_sim->actions.clear();
+	g_sim->handTrackers.clear();
+	return XR_SUCCESS;
+}
+
+// XR_EXT_hand_tracking (#305): a tracker per hand; the joints are a synthetic hand closed as the
+// script's "hand <side> fingers" says, on the hand's grip pose - inactive while the hand is not
+// tracked or its fingers are "off" (a runtime without joints for this controller)
+
+XRAPI_ATTR XrResult XRAPI_CALL sim_xrCreateHandTrackerEXT(XrSession /* session */, const XrHandTrackerCreateInfoEXT * info,
+                                                          XrHandTrackerEXT * tracker) {
+	if(!g_sim->session) {
+		return XR_ERROR_HANDLE_INVALID;
+	}
+	if(info->handJointSet != XR_HAND_JOINT_SET_DEFAULT_EXT) {
+		return XR_ERROR_VALIDATION_FAILURE;
+	}
+	const size_t hand = (info->hand == XR_HAND_LEFT_EXT) ? 0 : (info->hand == XR_HAND_RIGHT_EXT) ? 1 : 2;
+	if(hand > 1) {
+		return XR_ERROR_VALIDATION_FAILURE;
+	}
+	*tracker = newHandle<XrHandTrackerEXT>();
+	g_sim->handTrackers[fromHandle(*tracker)] = hand;
+	return XR_SUCCESS;
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL sim_xrDestroyHandTrackerEXT(XrHandTrackerEXT tracker) {
+	return g_sim->handTrackers.erase(fromHandle(tracker)) ? XR_SUCCESS : XR_ERROR_HANDLE_INVALID;
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL sim_xrLocateHandJointsEXT(XrHandTrackerEXT tracker, const XrHandJointsLocateInfoEXT * info,
+                                                         XrHandJointLocationsEXT * locations) {
+	auto it = g_sim->handTrackers.find(fromHandle(tracker));
+	if(it == g_sim->handTrackers.end()) {
+		return XR_ERROR_HANDLE_INVALID;
+	}
+	if(locations->jointCount != XR_HAND_JOINT_COUNT_EXT) {
+		return XR_ERROR_VALIDATION_FAILURE;
+	}
+	const size_t hand = it->second;
+	const SimRig & rig = g_sim->sim.rig;
+	locations->isActive = XR_FALSE;
+	Vec3f basePosition(0.f);
+	glm::quat baseOrientation(1.f, 0.f, 0.f, 0.f);
+	if(!handTracked(hand) || !rig.fingers[hand].joints || !roomPose(info->baseSpace, basePosition, baseOrientation)) {
+		for(uint32_t i = 0; i < locations->jointCount; i++) {
+			locations->jointLocations[i].locationFlags = 0;
+		}
+		return XR_SUCCESS;
+	}
+	HandShape shape;
+	shape.thumb = rig.fingers[hand].curl.x;
+	shape.index = rig.fingers[hand].curl.y;
+	shape.fingers = rig.fingers[hand].curl.z;
+	const HandJoints joints = synthesizeHandJoints(Hand(hand), shape, rig.hands[hand].position, rig.hands[hand].orientation());
+	for(uint32_t i = 0; i < locations->jointCount; i++) {
+		Vec3f position = joints.position[i];
+		glm::quat orientation = rig.hands[hand].orientation();
+		poseInSpace(basePosition, baseOrientation, position, orientation);
+		locations->jointLocations[i].pose = toPose(position, orientation);
+		locations->jointLocations[i].radius = 0.01f;
+		locations->jointLocations[i].locationFlags = XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_POSITION_VALID_BIT
+		                                             | XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT | XR_SPACE_LOCATION_POSITION_TRACKED_BIT;
+	}
+	locations->isActive = XR_TRUE;
 	return XR_SUCCESS;
 }
 
@@ -399,6 +477,12 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrGetSystemProperties(XrInstance /* instance 
 	properties->graphicsProperties.maxLayerCount = 16;
 	properties->trackingProperties.orientationTracking = XR_TRUE;
 	properties->trackingProperties.positionTracking = XR_TRUE;
+	// Hand tracking (#305): the simulated headset has it
+	for(XrBaseOutStructure * next = static_cast<XrBaseOutStructure *>(properties->next); next; next = next->next) {
+		if(next->type == XR_TYPE_SYSTEM_HAND_TRACKING_PROPERTIES_EXT) {
+			reinterpret_cast<XrSystemHandTrackingPropertiesEXT *>(next)->supportsHandTracking = XR_TRUE;
+		}
+	}
 	return XR_SUCCESS;
 }
 
@@ -1278,6 +1362,19 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrGetInstanceProcAddr(XrInstance /* instance 
 	#undef ARX_XR_FUNCTION
 	if(std::strcmp(name, "xrGetOpenGLGraphicsRequirementsKHR") == 0) {
 		*function = reinterpret_cast<PFN_xrVoidFunction>(&sim_xrGetOpenGLGraphicsRequirementsKHR);
+		return XR_SUCCESS;
+	}
+	// XR_EXT_hand_tracking (#305): extension functions come through here, like the loader's
+	if(std::strcmp(name, "xrCreateHandTrackerEXT") == 0) {
+		*function = reinterpret_cast<PFN_xrVoidFunction>(&sim_xrCreateHandTrackerEXT);
+		return XR_SUCCESS;
+	}
+	if(std::strcmp(name, "xrDestroyHandTrackerEXT") == 0) {
+		*function = reinterpret_cast<PFN_xrVoidFunction>(&sim_xrDestroyHandTrackerEXT);
+		return XR_SUCCESS;
+	}
+	if(std::strcmp(name, "xrLocateHandJointsEXT") == 0) {
+		*function = reinterpret_cast<PFN_xrVoidFunction>(&sim_xrLocateHandJointsEXT);
 		return XR_SUCCESS;
 	}
 	return XR_ERROR_FUNCTION_UNSUPPORTED;

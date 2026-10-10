@@ -282,6 +282,20 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   the vertices were transformed, `reach` (shoulder to target), `armLength` (the model's, 58.1 units on
   `human_base`), `error` (wrist to target: 0 when the controller is reached), `slide` (the shoulder
   moved towards an out-of-reach target, up to 20) and `stretched`.
+  The fingers (#305, D-NEW), per hand under `fingers`: `source` — `joints` (the hand joints of
+  `XR_EXT_hand_tracking`), `controls` (no joints: the trigger is the index finger, the grip the three-finger
+  block, the thumb's rest a closed thumb), `held` (a weapon in the hand: closed on the grip whatever the
+  fingers do), `none` (the arm is the engine's, or the model has no finger groups — `groups`); `joints`
+  (the runtime located this hand's joints this frame), `holds`; `curl` — the bend of each segment in degrees
+  (`thumb`, `indexRoot`, `indexTip`, `fingersRoot`, `fingersTip`; the limits are 60 / 90 / 95 / 90 / 95, a fist)
+  approaching `target` (what the source asked for) at 720°/s. `tipAlong` / `tipOut` next to the landmarks: the
+  fingertip vertex from the wrist along the hand's long axis and out towards the palm's face (units) — a closing
+  hand brings the tip back and out. `fingerGroups` names the groups found per hand (`human_base`: `thumb
+  right_hand_thumb, index right_hand_index_root>right_hand_index_tip, block right_hand_fingers_root>right_hand_finger_tip`).
+- `vr.hands` (#305): `XR_EXT_hand_tracking` — `extension` (the runtime lists it and the instance has its
+  functions), `supported` (the headset reports hand tracking), `trackers` (one per hand on the session),
+  `locates` / `failures`, and per hand `active` (joints located in the last frame) and `activeFrames`. All
+  false in flat mode and on a runtime without the extension: the fingers then follow the controls.
 - `player` is present only while a level is loaded; the `.xrs` runner (#113) asserts on these keys
   with `@modassert`.
   `player.y` is the **eye** (the camera is within a few units of it), not the feet.
@@ -318,7 +332,8 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   that hand yet — SteamVR binds a few frames after the session is `focused`, so an idle headset never
   shows one), `syncs`: action syncs while focused, `down`: the controls held after the last frame
   (space separated), `active`: the events on now, `trigger` / `grip`: the analog values per hand
-  (`squeeze/value`: on the Index how far the strapped hand is closed — TRAPS.md), `presses`: how often
+  (`squeeze/value`: on the Index how far the strapped hand is closed — TRAPS.md), `thumbTouch`: the thumb
+  rests on the thumbstick (the `thumb_touch` action, #305: the fingers' fallback, no gameplay event), `presses`: how often
   each event came on since the start, `layout`: the binding of every event (`none`, `right.a`, `left.grip+left.trigger`,
   `left.stick_click:long`). Nothing in the game reacts to the events yet (#74); `input-check.ps1`
   asserts on `presses` and `layout`.
@@ -503,6 +518,9 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.body.model` | the body bound to the player model: the arm chains found (once per model, also after an armor tweak) | `model`, `chains`, `bound` |
 | `vr.body` | the body starts being posed from the controllers, or stops and why (#36) | `state=posed\|engine`, `reason` (`no head`, `head not referenced yet`, `no tracked hand`, `no arm chain on the model`; limit 200) |
 | `vr.body.arm` | one arm switches between the IK and the engine's animation | `hand`, `posed`, `source=xr\|sim\|none` (limit 200) |
+| `vr.body.fingers` | a hand's fingers change what they follow (#305) | `hand`, `source=joints\|controls\|held\|none`, `holds` (limit 200) |
+| `vr.hands.trackers` | the `XR_EXT_hand_tracking` trackers were created on the session (#305) | `state=created` |
+| `vr.hands.joints` | the runtime starts or stops giving a hand's joints (#305) | `hand`, `state=active\|inactive` (limit 200) |
 | `vr.panel.placed` | the floating UI panel was placed (#49): a menu opened (after > 250 ms closed), a recenter while it was open, or the head came back to tracking | `reason=open\|recenter\|tracking`, `menu`, `x`, `y`, `z` (LOCAL, metres), `yawDeg`, `distanceM`, `dropM`, `widthM`, `headY` |
 | `vr.panel` | the 2D interface moved between the panel and the head-locked quad (#49) | `mode=world\|head`, `menu` (`none` when closed) |
 | `vr.body.drag` | the head reached the 25° dead zone and pulls the body along, and when it let go (5° inside) (#25) | `state=start\|end`, `head`, `body` (degrees from the heading), `deadZone` (limit 100) |
@@ -793,9 +811,12 @@ first frame the game is playable (`timeline gameplay`, the default) or of the se
 session`). Commands: `rate <hz>` (0 = no pacing), `eye-size <w> <h>`, `ipd <m>`, `fov left|right <l>
 <r> <u> <d>` (degrees, OpenXR signs), `head pos <x> <y> <z>` (meters, the room's LOCAL space: x right,
 y up, −z forward), `head rot <yaw> <pitch> <roll>` (degrees: yaw + turns left, pitch + looks up),
-`hand left|right pos|rot …`, `hand left|right on|off`, `profile index|touch|simple|none|<path>`,
+`hand left|right pos|rot …`, `hand left|right on|off`, `hand left|right fingers <thumb> <index> <rest>`
+(how far the real fingers are closed, 0 open to 1 a fist — the hand joints the simulated runtime's
+`XR_EXT_hand_tracking` trackers give, #305; `hand left|right fingers off|on`: no joints for that hand, as
+on a runtime that cannot read fingers, or joints again), `profile index|touch|simple|none|<path>`,
 `action <name> left|right|both <value> [<y>]` (the game's OpenXR action names: `trigger`, `grip`,
-`button_a`, `button_b`, `thumbstick`, `thumbstick_click`, `trackpad_press`, `menu`), `session
+`button_a`, `button_b`, `thumbstick`, `thumbstick_click`, `trackpad_press`, `menu`, `thumb_touch`), `session
 focused|visible|idle` (`idle`: the headset is taken off - the session falls back to `synchronized`, the eyes are still located, nothing is shown, #27), `shot [name]`, `mark <text>`, `quit`, `fault swap-eyes on|off`. The defaults: Index
 panel size 1440 × 1600, IPD 64 mm, 90 Hz, the asymmetric, mirrored field of view of research row
 F-165, both Index controllers in front of the body.
@@ -886,6 +907,8 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `snap-turn` | on `mvp-new-game`, the repeat off: the right stick held for a second turns the body exactly 45° once (`vr.turn.snap`), the view turns (picture change 16.9), the head turned back 45° gives the first view again (5.3, HUD and lights); a second push, a push left, a half push that does nothing; the repeat 0.4 s on: held 1.8 s → the snap + 4 repeats; smooth turn by time and no snaps in it (#32) | — |
 | `walk-forward` | the player stands still without input; the stick is held and let go | #31: the player moves |
 | `recenter` | a head offset is set and read back | #28: `recenter` is accepted (it logs one expected `[W]`) |
+| `finger-tracking` | the fingers follow the real fingers (#305): on `mvp-new-game` the simulated runtime's hand trackers are on (`vr.hands`), finger groups are found under both hands, the open hand bends nothing; pointing (`hand right fingers 1 0 1`) closes the thumb and the block to their limits and leaves the index finger straight, a fist closes every segment and brings the fingertip vertex back along the hand and out towards the palm (`tipAlong`, `tipOut`), half closed is half; with joints the trigger does nothing; `fingers off` → `source=controls`: a trigger pulled 0.4 bends the index finger to 36°, a grip of 0.45 the block to 40.5°, `thumb_touch` the thumb to 60°; `fingers on` gives the joints back; a controller off gives the whole arm back. Shots `hand-open-a/b`, `hand-point`, `hand-fist` of the hand before the face: `smoke-test.ps1 -VrSim idle -Sequence finger-tracking -Save mvp-new-game` | — |
+| `finger-held` | a hand holding a weapon is closed on the grip (#305, #75): on `mvp-items` (a short sword equipped) the right hand's `source=held` with every segment at its limit whatever its joints say, the left hand follows its own joints; the right controller off gives the arm back, on holds again; shot `sword-fist`: `smoke-test.ps1 -VrSim idle -Sequence finger-held -Save mvp-items` | — |
 | `arms-follow` | the full body (#36): both arm chains found, both arms posed from the idle rig's controllers with `error` 0; the hand takes the controller's orientation (the identity grip is a hand hanging down in the OpenXR grip pose: the wrist 8 units above the grip and the fingertips below the wrist; pitched up 90°, fingers ahead and thumb up: wrist and fingertips level with the grip); a hand moved 30 cm moves the wrist with it and changes both eyes' pictures of the body seen from above (> 2, floor < 1.5); 1.2 m out: `stretched`, `slide` 20; a controller switched off gives its arm back to the engine; a 30 cm lean shifts the body by the camera's offset and keeps `error` 0. **Needs the first-person save** (level 10's conversation camera is nowhere near the body): `smoke-test.ps1 -VrSim idle -Sequence arms-follow -Save mvp-new-game` | — |
 | `walk-forward` | on `mvp-new-game` (`-Save`; level 10 never moves the player, TRAPS.md): still without input, the stick held forward moves him | — (#31) |
 | `walk-look` | on `mvp-new-game`: with the head turned ±90° the stick walks where the head looks (D-008), with the head ahead along the heading; the heading stays, one `vr.walk` start / end per push (`vr.input.walk` in status.json) | — (#31) |

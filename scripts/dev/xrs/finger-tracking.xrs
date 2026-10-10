@@ -1,0 +1,157 @@
+# Finger tracking (#305, D-NEW): the model's finger groups - the thumb, the index finger and the three-finger
+# block - follow the real fingers. The simulated runtime has XR_EXT_hand_tracking: its hand trackers give the
+# 26 joints of a synthetic hand closed as "vr-sim hand <side> fingers <thumb> <index> <rest>" says (0 open,
+# 1 a fist), and the body reads the curl of each group off the angles between the joints (vr/FingerCurl.h).
+# Without joints ("fingers off") the fingers follow the controls: the trigger is the index finger, the grip
+# the three-finger block, the thumb's rest on a control (thumb_touch) a closed thumb.
+# Needs a first-person save (level 10's conversation camera is nowhere near the body, TRAPS.md):
+#   .\scripts\dev\xrs-run.ps1 finger-tracking
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence finger-tracking -Save mvp-new-game
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.body.active eq true
+@assert vr.body.right.posed eq true
+@assert vr.body.left.posed eq true
+
+# The runtime: the extension is on, the headset supports it, a tracker per hand, joints every frame
+@assert vr.hands.extension eq true
+@assert vr.hands.supported eq true
+@assert vr.hands.trackers eq true
+@assert vr.hands.left.active eq true
+@assert vr.hands.right.active eq true
+@assert vr.hands.locates gt 100
+@assert vr.hands.failures eq 0
+
+# Finger groups were found under both hands (human_base: thumb, index root > tip, fingers root > tip);
+# the simulated hands start open: no segment is bent
+@assert vr.body.right.fingers.groups eq true
+@assert vr.body.left.fingers.groups eq true
+@assert vr.body.right.fingers.source eq joints
+@assert vr.body.left.fingers.source eq joints
+@assert vr.body.right.fingers.joints eq true
+@assert vr.body.right.fingers.holds eq false
+@assert vr.body.right.fingers.curl.thumb lt 1
+@assert vr.body.right.fingers.curl.indexRoot lt 1
+@assert vr.body.right.fingers.curl.indexTip lt 1
+@assert vr.body.right.fingers.curl.fingersRoot lt 1
+@assert vr.body.right.fingers.curl.fingersTip lt 1
+
+# The right hand before the face for the pictures: 35 cm ahead, 10 cm below the eyes, pitched up 90
+# degrees (the fingers ahead, the thumb up); the head looks a little down at it
+vr-sim hand right pos 0.12 -0.1 -0.35
+vr-sim hand right rot 0 90 0
+vr-sim head rot 0 -15 0
+@frames 20
+@assert vr.body.right.error lt 1
+@remember openAlong vr.body.right.tipAlong
+@remember openOut vr.body.right.tipOut
+@shot hand-open-a
+@shot hand-open-b
+@diff hand-open-a hand-open-b lt 2 right
+
+# Pointing: the thumb and the block close to their limits, the index finger stays straight
+vr-sim hand right fingers 1 0 1
+@frames 30
+@assert vr.body.right.fingers.source eq joints
+@assert vr.body.right.fingers.target.indexRoot lt 1
+@assert vr.body.right.fingers.curl.indexRoot lt 1
+@assert vr.body.right.fingers.curl.indexTip lt 1
+@assert vr.body.right.fingers.curl.thumb gt 59
+@assert vr.body.right.fingers.curl.fingersRoot gt 89
+@assert vr.body.right.fingers.curl.fingersTip gt 94
+@shot hand-point
+
+# A fist: every segment at its limit; the fingertip vertex comes back towards the wrist along the hand
+# and moves out towards the palm's face
+vr-sim hand right fingers 1 1 1
+@frames 30
+@assert vr.body.right.fingers.curl.indexRoot gt 89
+@assert vr.body.right.fingers.curl.indexTip gt 94
+@assert vr.body.right.fingers.curl.fingersRoot gt 89
+@assert vr.body.right.fingers.curl.fingersTip gt 94
+@assert vr.body.right.fingers.curl.thumb gt 59
+@assert vr.body.right.tipAlong lt {openAlong-3}
+@assert vr.body.right.tipOut gt {openOut+3}
+@shot hand-fist
+@diff hand-open-a hand-fist gt 2 right
+
+# Half closed: the knuckles at half their limit; the left hand is its own hand and stays open
+vr-sim hand right fingers 0.5 0.5 0.5
+@frames 30
+@assert vr.body.right.fingers.curl.indexRoot gt 44
+@assert vr.body.right.fingers.curl.indexRoot lt 46
+@assert vr.body.right.fingers.curl.fingersRoot gt 44
+@assert vr.body.right.fingers.curl.fingersRoot lt 46
+@assert vr.body.left.fingers.curl.fingersRoot lt 1
+@assert vr.body.left.fingers.curl.thumb lt 1
+
+# With joints the controls do nothing to the fingers (a trigger pulled below its press threshold)
+vr-sim action trigger right 0.4
+@frames 30
+@assert vr.input.trigger.right gt 0.39
+@assert vr.body.right.fingers.source eq joints
+@assert vr.body.right.fingers.curl.indexRoot gt 44
+vr-sim action trigger right 0
+
+# No joints for the right hand (a runtime that cannot read its fingers): the fingers follow the controls -
+# the trigger is the index finger, the grip the three-finger block, the thumb's rest a closed thumb;
+# values below the press thresholds, so no gameplay event fires
+vr-sim hand right fingers off
+@frames 30
+@assert vr.hands.right.active eq false
+@assert vr.hands.left.active eq true
+@assert vr.body.right.fingers.source eq controls
+@assert vr.body.right.fingers.joints eq false
+@assert vr.body.right.fingers.curl.indexRoot lt 1
+@assert vr.body.right.fingers.curl.thumb lt 1
+@assert vr.body.left.fingers.source eq joints
+vr-sim action trigger right 0.4
+@frames 30
+@assert vr.body.right.fingers.curl.indexRoot gt 35
+@assert vr.body.right.fingers.curl.indexRoot lt 37
+@assert vr.body.right.fingers.curl.indexTip gt 37
+@assert vr.body.right.fingers.curl.indexTip lt 39
+@assert vr.body.right.fingers.curl.fingersRoot lt 1
+vr-sim action grip right 0.45
+@frames 30
+@assert vr.body.right.fingers.curl.fingersRoot gt 40
+@assert vr.body.right.fingers.curl.fingersRoot lt 41
+@assert vr.body.right.fingers.curl.fingersTip gt 42
+@assert vr.body.right.fingers.curl.fingersTip lt 43
+vr-sim action thumb_touch right 1
+@frames 30
+@assert vr.input.thumbTouch.right eq true
+@assert vr.body.right.fingers.curl.thumb gt 59
+vr-sim action trigger right 0
+vr-sim action grip right 0
+vr-sim action thumb_touch right 0
+@frames 30
+@assert vr.body.right.fingers.curl.indexRoot lt 1
+@assert vr.body.right.fingers.curl.fingersRoot lt 1
+@assert vr.body.right.fingers.curl.thumb lt 1
+
+# Joints again: the real fingers are back
+vr-sim hand right fingers on
+vr-sim hand right fingers 0 1 0
+@frames 30
+@assert vr.hands.right.active eq true
+@assert vr.body.right.fingers.source eq joints
+@assert vr.body.right.fingers.curl.indexRoot gt 89
+@assert vr.body.right.fingers.curl.fingersRoot lt 1
+vr-sim hand right fingers 0 0 0
+
+# A controller that is not tracked gives its whole arm, fingers included, back to the engine
+vr-sim hand right off
+@frames 15
+@assert vr.body.right.posed eq false
+@assert vr.body.right.fingers.source eq none
+vr-sim hand right on
+@frames 15
+@assert vr.body.right.fingers.source eq joints
+
+@assert errors eq 0

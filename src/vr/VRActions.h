@@ -104,6 +104,7 @@ private:
 		XrAction gripPose = XR_NULL_HANDLE;
 		XrAction aimPose = XR_NULL_HANDLE;
 		XrAction haptic = XR_NULL_HANDLE;
+		XrAction thumbTouch = XR_NULL_HANDLE; //!< the thumb resting on a control (#305): the fingers' fallback
 	};
 
 	XrAction createAction(const char * name, const char * label, XrActionType type);

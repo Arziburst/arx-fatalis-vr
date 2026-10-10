@@ -31,7 +31,8 @@
  * symmetric case is the engine's own projection, asymmetric angles land on the clip edges with the
  * engine's y flip (a conversion without the flip is the negative control), the near plane maps to
  * depth 0, the eye rig has the right parallax sign and separation under any head yaw, a canted eye
- * turns its view, and the union frustum contains both eyes.
+ * turns its view, and the union frustum contains both eyes. The screen scale sprites are sized with
+ * (#72) is the engine's old formula for its own projection and the eye's vertical scale for an eye.
  */
 class EyeProjectionTest final : public CppUnit::TestFixture {
 
@@ -47,6 +48,8 @@ class EyeProjectionTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testCantedEyeTurnsItsView);
 	CPPUNIT_TEST(testUnionIsTheEyeFovForIdenticalEyes);
 	CPPUNIT_TEST(testUnionContainsBothEyesWithCant);
+	CPPUNIT_TEST(testPixelsPerUnitOfTheEnginesProjection);
+	CPPUNIT_TEST(testPixelsPerUnitOfAnEyeIsItsVerticalScale);
 	CPPUNIT_TEST_SUITE_END();
 
 	//! The Quest 3's left eye as reported by its runtime (F-115), in radians
@@ -73,6 +76,8 @@ public:
 	void testCantedEyeTurnsItsView();
 	void testUnionIsTheEyeFovForIdenticalEyes();
 	void testUnionContainsBothEyesWithCant();
+	void testPixelsPerUnitOfTheEnginesProjection();
+	void testPixelsPerUnitOfAnEyeIsItsVerticalScale();
 
 };
 

@@ -145,8 +145,19 @@ long getParticleCount();
 void ARX_PARTICLES_ClearAll();
 //! Age the particles, drop the dead ones, land splats - once per frame
 void ARX_PARTICLES_Update();
-//! Draw the particles into the render batcher for the current camera - once per view
-void ARX_PARTICLES_Render();
+//! Which particles a draw takes: those in the world, those in screen space (PARTICLE_2D), or both
+enum class ParticleLayer {
+	All,
+	World,
+	Screen,
+};
+
+/*!
+ * Draw the particles into the render batcher for the current camera - once per view. In VR the
+ * screen-space particles (the book icon's FX, the book's fire and sparkles) are window coordinates:
+ * they go to the flat frame with the interface, not into the eyes (#72).
+ */
+void ARX_PARTICLES_Render(ParticleLayer layer = ParticleLayer::All);
 void ARX_PARTICLES_Spawn_Blood(const Vec3f & pos, float dmgs, EntityHandle source);
 void ARX_PARTICLES_Spawn_Blood2(const Vec3f & pos, float dmgs, Color col, Entity * io);
 void ARX_PARTICLES_Spawn_Lava_Burn(Vec3f pos, Entity * io = nullptr);

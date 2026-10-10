@@ -92,17 +92,18 @@ if ($DataDir) {
 }
 
 # --- Evidence ---------------------------------------------------------------------------------------------------
-function Save-Evidence([string]$Name) {
+function Save-Evidence([string]$Name, [string]$UserDir = $userDir) {
 	$dest = Join-Path $OutDir $Name
 	New-Item -ItemType Directory -Force $dest | Out-Null
-	foreach ($log in Get-ChildItem $userDir -Filter 'arx*.log' -File -ErrorAction SilentlyContinue) { Copy-Item $log.FullName $dest -Force }
+	foreach ($log in Get-ChildItem $UserDir -Filter 'arx*.log' -File -ErrorAction SilentlyContinue) { Copy-Item $log.FullName $dest -Force }
 	foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt') {
 		$p = Join-Path $testDir $f
 		if (Test-Path $p) { Copy-Item $p $dest -Force }
 	}
 	$capture = Join-Path $testDir 'capture'
 	if (Test-Path $capture) { Copy-Item $capture (Join-Path $dest 'capture') -Recurse -Force }
-	if (Test-Path $crashDir) { Copy-Item $crashDir (Join-Path $dest 'crashes') -Recurse -Force }
+	$crashes = Get-ArxCrashDir $UserDir
+	if (Test-Path $crashes) { Copy-Item $crashes (Join-Path $dest 'crashes') -Recurse -Force }
 	$runs = Join-Path (Get-ArxAppDataDir) 'runs'
 	if (Test-Path $runs) {
 		$latest = Get-ChildItem $runs -Directory | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -115,7 +116,7 @@ function Clear-OldEvidence {
 	Remove-Item (Join-Path $testDir 'capture') -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-function Invoke-Phase([string]$Name, $Script, [hashtable]$Params) {
+function Invoke-Phase([string]$Name, $Script, [hashtable]$Params, [string]$EvidenceUserDir = $userDir) {
 	Write-Host ''
 	Write-Host "==> ci-smoke phase '$Name'" -ForegroundColor Cyan
 	Clear-OldEvidence
@@ -132,7 +133,7 @@ function Invoke-Phase([string]$Name, $Script, [hashtable]$Params) {
 		"threw: $_" | Add-Content $transcript
 		$exit = 1
 	}
-	Save-Evidence $Name
+	Save-Evidence $Name $EvidenceUserDir
 	$verdict = switch ($exit) { 0 { 'PASS' } 2 { 'SKIPPED' } default { 'FAIL' } }
 	Write-Host ("==> ci-smoke phase '{0}': {1} (exit {2}, {3:0} s)" -f $Name, $verdict, $exit, ((Get-Date) - $started).TotalSeconds) -ForegroundColor $(if ($exit -eq 0) { 'Green' } else { 'Red' })
 	[pscustomobject]@{ Name = $Name; Exit = $exit; Verdict = $verdict }
@@ -176,14 +177,19 @@ try {
 			$results += $libResult
 			$libraryOk = ($libResult.Exit -eq 0)
 		}
+		$sequenceUserDirs = Join-Path (Get-ArxAppDataDir) 'ci-userdirs'
 		foreach ($seq in $sequences) {
 			if ($seq.Save -and -not $libraryOk) { Write-Host "ci-smoke: sequence '$($seq.Name)' needs the save $($seq.Save), which the library phase did not provide - not run" -ForegroundColor Red; $results += [pscustomobject]@{ Name = "xrs-$($seq.Name)"; Exit = 1; Verdict = 'FAIL' }; continue }
 			$p = @{ Config = $Config; Sequence = $seq.Path; LockTimeoutSec = $LockTimeoutSec } + $dataArgs
 			# A flat sequence says so (--no-vr in its @args, no @sim); the others run on the idle simulated headset
 			if ($seq.Sim) { $p.VrSim = $seq.Sim } elseif ($seq.Args -notcontains '--no-vr') { $p.VrSim = 'idle' }
+			# A fresh user dir per sequence (#296): nothing one sequence leaves behind reaches the next, the order is free
+			$seqUserDir = New-ArxSequenceUserDir $sequenceUserDirs $seq.Name
+			$p.UserDir = $seqUserDir
 			if ($seq.Save) { $p.Save = $seq.Save }
 			if ($seq.Args) { $p.ArxArgs = @($seq.Args) }
-			$results += Invoke-Phase "xrs-$($seq.Name)" 'smoke-test.ps1' $p
+			$results += Invoke-Phase "xrs-$($seq.Name)" 'smoke-test.ps1' $p $seqUserDir
+			Remove-Item -LiteralPath $seqUserDir -Recurse -Force -ErrorAction SilentlyContinue
 		}
 	}
 } finally {

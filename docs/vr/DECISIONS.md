@@ -50,6 +50,113 @@ spells (Magic Missile = AAM + TAAR: several strokes in one stance) and the origi
 `magic.stroke` game events), `AddFlareAt` in `MagicFlare.h`, the `rune-trail.xrs` sequence. What the
 engine recognises still comes from the cursor until #44 feeds the stroke into the recogniser. The look
 (size, tip distance, depth test) is tuned after the owner's headset test.
+## D-035: The eyes are multisampled in a buffer of ours, resolved into single-sample swapchains; 4x by default
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (refines D-025: "MSAA stays with the window")
+- **Decided by:** worker of #226 (technical; the coordinator asked for a cfg key with a measured default)
+
+### Decision
+- Each eye swapchain gets one **multisampled framebuffer object** (color in the swapchain's format +
+  depth); the game renders the eye into it and `endEyeRender` **resolves** it into the acquired
+  single-sample image with `glBlitFramebuffer` before the desktop mirror's copy and the release.
+  The swapchains stay `sampleCount = 1`, as the runtime recommends (the Index reports 1).
+- The renderer learns the target's multisampling with its size (`setRenderTargetSize(size, samples)`):
+  on a multisampled target `SetAntialiasing(true)` works again, so alpha cutouts (fences, foliage,
+  hair) use alpha to coverage / sample shading in the eyes like in the window; a single-sample target
+  keeps the alpha test. The window's `antialiasing` setting is not the eyes' switch.
+- **`vr_msaa`** in `cfg.ini` (samples per pixel, 0 = off, at most 8), `--vr-msaa N` overrides it;
+  **default 4**.
+
+### Why
+Multisampled swapchains are what OpenXR offers, but SteamVR recommends 1 sample and a runtime may
+refuse more; a buffer of our own works with any runtime and leaves the compositor's images untouched.
+4x: on the owner's PC (RX 6800 XT) at the Index's recommended 2468×2740 per eye, unpaced on the
+simulated headset, 4x costs less than the run-to-run noise (0x 650–765 frames/s, 4x 650–980 frames/s:
+under ~0.5 ms against the 11.1 ms budget at 90 Hz) and removes ~70 % of the hard stair steps on edges;
+8x dropped to 59–95 frames/s in the same run — below the Index's 90 Hz.
+
+### Consequences
+- Every eye frame pays one resolve blit per eye; the shared buffers take
+  2 × 4 × 2468 × 2740 × 8 bytes ≈ 430 MB of video memory at 4x.
+- The Video settings after the MVP (#181) get an MSAA row backed by `vr_msaa`.
+
+---
+
+## D-034: Physical crouch — hysteresis on the calibrated eye; the character's crouch never lowers the view twice
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (implements the crouch part of D-028 / D-018)
+- **Decided by:** owner (thresholds, relayed by the coordinator on #100); worker of #100 (the camera rule, technical within D-018)
+
+### Decision
+- The head **30 cm** below the calibrated reference (recenter + auto-raise, D-031) crouches the character
+  (`PLAYER_CROUCH`, next to the crouch button and toggle); it stands again once the head is back above
+  **20 cm** below. A recenter measures from where the head is, so it stands; a headset that is not worn
+  (taken off, put on the desk, D-031) never crouches, nor does one while a settled reference is still
+  pending (put on again seated: the old reference is the standing head). A seated player leaning forward
+  that far crouches too — accepted. `cfg.ini` [video]: `vr_physical_crouch`, `vr_crouch_enter`,
+  `vr_crouch_exit` (settings screen #178). Getting up under a low ceiling stays the game's own rule.
+- **Camera:** the engine's crouch lowers the character's eye by its animation (the drop from the last
+  standing eye, `vr.head.characterDrop`); the head's drop moves the camera only below that:
+  `offset.y = headDrop − clamp(characterDrop, 0, headDrop)` — the view is the head, but never above the
+  character's eye. Applies to every crouch (the button's too), so getting up has no jump.
+
+### Why
+Adding both drops puts the view of a player who crouched 35 cm about a meter down, inside the character's
+knees. Following only the head would leave the view above the crouched cylinder, through the ceiling of
+a passage the crouch lets the character into. The rule is continuous while the animation runs.
+
+### Consequences
+A seated player who crouched with the button and leans down sees no lower until the head is below the
+crouched eye. `status.json`: `vr.head.crouch` / `crouchDepth` / `crouches` / `characterDrop`,
+`player.crouched`; event `vr.head.crouch` per episode. Sequence `physical-crouch.xrs`.
+
+---
+
+## D-033: The weapon in VR is held by the IK hand — always in the hand, the controller's handle is the hilt, no engine arm clips
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (MVP defaults; the owner judges them in the headset)
+- **Decided by:** coordinator for the owner (player-facing, D-017), proposed by the worker of #75; builds on D-009, D-019, D-032
+
+### Decision
+- **Always in the hand.** While the IK drives the right arm, an equipped dagger, one- or two-handed
+  weapon is linked to the model's right hand (`primary_attach`), **outside the engine's combat mode too**:
+  D-019 has no draw or sheathe control ("the weapon stays in the hand"), so the trigger stays a click
+  and #39's swings do the hits. When the right arm goes back to the engine (no tracked controller, flat
+  mode) the weapon goes back to where the engine keeps it — the back, or the hand in combat mode. Bows are
+  the engine's (not in the MVP); a two-handed weapon is held by the right hand alone (F-73 is later).
+- **The controller's handle is the hilt** (F-48). The engine draws a linked weapon in the hand bone's
+  frame, so its angle in the fist is the asset's. The blade's axis is read from the weapon's mesh (its
+  principal axis, pointing at the side that reaches further from the attach vertex) and turned by the
+  shortest arc onto the hand's thumb axis — which the IK puts on the grip's **-Z**, the OpenXR "little
+  finger to thumb" ray — about the attach point, so the hilt stays on the palm. Daggers the same way (no
+  reverse grip in the MVP). No per-class trims yet (F-49, from zero). Measured on the short sword
+  (`short_sword_0030`): the asset's blade is **9.1°** off the handle axis; drawn, the blade is 0.1° from
+  grip -Z.
+- **No engine arm clips while the IK drives the arms** (F-67). The player's arm animation layer (layer 1:
+  ready, unready, strike, cast) is not applied to the player's own skeleton while the body was posed in the
+  last frame; its timing and game logic still run (the engine's combat mode, reachable only by a key,
+  still strikes — #39 owns attacks in VR). The combat mode's fight stance is layer 0, the body's, and stays
+  (D-009: the torso keeps the engine's animations).
+
+### Why
+The owner's scenario (D-019: sword in the right hand, open the inventory, drag with the left) has the sword in the right hand the whole time; a draw button
+would be a control nobody asked for, and the engine's combat mode turns the trigger into an attack. The
+handle-is-the-hilt rule is what VHVR and the other reference mods converge on (F-48), and it is right by
+construction for every weapon mesh instead of a table of angles tuned by eye. Suppressing the arm layer
+keeps the engine's clips from pulling the shoulders the IK starts from.
+
+### Rules out
+A draw / sheathe gesture or button in the MVP; per-weapon angle constants before the owner felt the default;
+the engine's strike clip on the VR hand (F-67's "trigger attack plays the clip" variant).
+
+### Consequences
+- `vr.weapon` in status.json (`place`, `assetAngle`, `bladeAngle`, `bladeGrip`, `armAnimSuppressed`) and
+  the `weapon-hold` sequence are the acceptance checks; the channel's `combat on|off` drives the combat mode.
+- #39 reads the blade from `vr.weapon` (`hilt`, `tip`) for its hit volume; F-49's trims go on top of the
+  correction rotation (`vr::heldWeaponRotation`).
 
 ---
 
@@ -104,8 +211,8 @@ How D-009's full body is built (#36):
   chain keeps the engine's arms and says why in the log. The zero-length hand group is rigid on the
   wrist, so the hand mesh takes the controller's orientation and not the animation's bend of the hand.
 - **Hands rigid with the head camera** (`handToWorld`, HeadPose.h): a hand is placed from the head the
-  way the head is placed from its reference — the same turn, the same units per metre, the lean clamp
-  included — so a hand 30 cm right of the head is 30 units right of the camera, and #27's scale and #28's
+  way the head is placed from its reference — the same turn, the same units per metre, relative to the head
+  (so the body walking after it, #26, does not matter) — so a hand 30 cm right of the head is 30 units right of the camera, and #27's scale and #28's
   recenter apply to hands and head alike. The model's palm attach point lands on the controller's grip.
 - **The hand frame is read from the mesh**, no calibration constants: the long axis from the wrist to the
   palm attach vertex (OpenXR grip −Y), the lateral axis towards the model's thumb group (grip −Z: the
@@ -209,6 +316,15 @@ interface in VR.
   quad until #116. Distance, drop and width are cfg.ini settings (`vr_panel_distance`, `vr_panel_drop`,
   `vr_panel_width`; F-180). The panel is a compositor quad layer, always on top: never swallowed by walls
   (F-179), but it covers the hands until #36 / #37 decide.
+- **Menu pointer (#34)** *(proposed by the worker, approved by the coordinator for the owner as the MVP
+  default, 2026-10-10; the owner judges it in the headset)*: only while the panel is shown (D-010), either
+  hand points (D-016, D-019). A **thin white beam, 3 mm, from the pointing hand to the panel, fading out
+  towards the panel**, drawn as a compositor quad layer above the panel; the **dot is the game's own
+  cursor** on the panel, no second one. **Only the hand that owns the cursor shows a beam:** the hand whose
+  trigger was pressed last; the other hand's trigger takes it over and clicks under that hand; an owner
+  pointing away hands an idle cursor to the other hand on the panel. Nothing when no menu is open or the
+  ray misses the panel. The click holds still for **16 px** after a press, then drags (F-81); a press with
+  the ray off the panel clicks nothing.
 - **Health and mana (#116):** **two vertical bars, red and blue, on the inner side of the left wrist**,
   read by raising the hand to the face like a watch.
 - **Hand reticle (#37):** a **small dot / ring where the hand points**, no ray (D-010); it **brightens over
@@ -608,7 +724,7 @@ RESEARCH-reference-mods.md 13g with these answers); #49 the centred panel for th
 ## D-018: The camera is where the head is — full head tracking in the MVP
 
 - **Date:** 2026-10-09
-- **Status:** Accepted (replaces D-006); seated play and height calibration refined by D-028
+- **Status:** Accepted (replaces D-006); seated play and height calibration refined by D-028; leaning and real steps: defaults in the amendment below (#26)
 - **Decided by:** project owner (design agreed by questions, D-017)
 
 ### Decision
@@ -645,6 +761,20 @@ fixed height in thought and rejected it.
   character's eye height; #100 crouch threshold on top of the continuous height; #26 (leaning, room-scale,
   wall fade) moves from M2 into the MVP; #25 makes the body follow the head with collision; #28 captures
   the standing height at recenter and covers seated play.
+
+### Amendment (2026-10-10, #26): leaning and real steps — the defaults
+Agreed by the coordinator with the owner as defaults to judge in the headset (D-017); each is a `cfg.ini` key
+(`[video]`), so the owner's verdict tunes it without a rebuild:
+- **Body lag** — `vr_body_follow_radius = 0.1` m: the body (the collision cylinder) stays put while the head
+  is within 10 cm of it horizontally; beyond that it walks after the head through the game's collision, so
+  the head stays at most 10 cm off. Held by a wall, a table or a corner, the body stops and the head goes on
+  (a lean). The interim 0.6 m lean clamp of #24 is gone.
+- **Wall fade** — `vr_wall_fade_out = 0.15` s to black, `vr_wall_fade_in = 0.25` s back; black; the world
+  only (the interface panel stays readable). When the head's near plane touches geometry the game's own eye
+  does not, or a wall is between the character's eye and the head.
+- **Head too far** from a body that cannot follow (blocked controls, a conversation camera, a ledge) — fade
+  from `vr_head_far_start = 0.7` m to black at `vr_head_far_full = 1.0` m.
+- **Real steps make footstep noise** like walking — `vr_real_step_noise = 1` (stealth stays honest). **The owner decided: keep** (2026-10-10, before the headset test).
 
 ---
 

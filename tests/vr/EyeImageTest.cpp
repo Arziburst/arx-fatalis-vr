@@ -265,5 +265,8 @@ void EyeImageTest::testBlendedQuadShowsTheEyeThrough() {
 	// Coverage: the quad is almost all transparent; a picture without an alpha plane is opaque
 	CPPUNIT_ASSERT(vr::alphaCoverage(quad, vr::ImageRegion()) < 0.02f);
 	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.f, vr::alphaCoverage(eye, vr::ImageRegion()), 1e-6);
+	// Covered pixels (#72): the opaque one and the half-covered one, every pixel without an alpha plane
+	CPPUNIT_ASSERT_EQUAL(size_t(2), vr::coveredPixels(quad));
+	CPPUNIT_ASSERT_EQUAL(size_t(100 * 100), vr::coveredPixels(eye));
 	CPPUNIT_ASSERT_EQUAL(std::string("transparent"), std::string(vr::imageVerdictName(vr::ImageVerdict::Transparent)));
 }

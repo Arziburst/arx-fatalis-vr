@@ -70,6 +70,7 @@
 #include "scene/Interactive.h"
 #include "util/String.h"
 #include "vr/HeadTracking.h"
+#include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
 #include "vr/VRSimulator.h"
@@ -658,6 +659,67 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("bodyDrags", body.drags);
 		json.end();
 	}
+	// The full body (#36): the body under the head, both arms posed towards the controllers; per hand the
+	// controller (where the player's hand is) and the posed joints (where the model's hand is), F-185
+	{
+		const vr::PlayerBodyStatus & body = vr::playerBodyStatus();
+		json.object("body");
+		json.value("bound", body.bound);
+		json.value("model", body.model);
+		json.value("chains", body.chains);
+		json.value("active", body.active);
+		json.value("inactive", body.inactive);
+		json.value("posedFrames", body.posedFrames);
+		json.value("shiftX", body.shift.x);
+		json.value("shiftZ", body.shift.z);
+		json.value("facingYaw", body.facingYaw);
+		for(size_t hand = 0; hand < vr::HandCount; hand++) {
+			const vr::PlayerArmStatus & arm = body.hands[hand];
+			json.object(vr::handName(vr::Hand(hand)));
+			json.value("source", arm.source);
+			json.value("tracked", arm.tracked);
+			json.value("posed", arm.posed);
+			// the controller in the OpenXR LOCAL space (meters) and in the world (units)
+			json.value("x", arm.sample.position.x);
+			json.value("y", arm.sample.position.y);
+			json.value("z", arm.sample.position.z);
+			const Anglef angles = vr::headAngles(arm.sample.orientation);
+			json.value("yaw", angles.getYaw());
+			json.value("pitch", angles.getPitch());
+			json.value("roll", angles.getRoll());
+			const struct { const char * name; const Vec3f & point; } points[] = {
+				{ "controller", arm.controller }, { "target", arm.target }, { "shoulder", arm.shoulder },
+				{ "elbow", arm.elbow }, { "wrist", arm.wrist },
+			};
+			for(const auto & point : points) {
+				json.object(point.name);
+				json.value("x", point.point.x);
+				json.value("y", point.point.y);
+				json.value("z", point.point.z);
+				json.end();
+			}
+			// where the posed hand's palm and fingertips ended up (after the vertices were transformed)
+			Vec3f palm(0.f);
+			Vec3f tip(0.f);
+			if(vr::handLandmarks(vr::Hand(hand), palm, tip)) {
+				const struct { const char * name; const Vec3f & point; } landmarks[] = { { "palm", palm }, { "tip", tip } };
+				for(const auto & landmark : landmarks) {
+					json.object(landmark.name);
+					json.value("x", landmark.point.x);
+					json.value("y", landmark.point.y);
+					json.value("z", landmark.point.z);
+					json.end();
+				}
+			}
+			json.value("reach", arm.reach);
+			json.value("armLength", arm.armLength);
+			json.value("error", arm.error);
+			json.value("slide", arm.slide);
+			json.value("stretched", arm.stretched);
+			json.end();
+		}
+		json.end();
+	}
 	{
 		// The controllers and the control table (#30): profiles per hand, held controls, events
 		const vr::ControlResolver & controls = vr::controls();
@@ -954,6 +1016,39 @@ std::string execute(std::string_view line) {
 			head.position = Vec3f(values[3], values[4], values[5]);
 		}
 		vr::setSimulatedHead(head);
+		return std::string();
+	}
+
+	if(word == "handpose") {
+		// A simulated controller for the body without one (#36): left|right, then yaw, pitch, roll in
+		// degrees (left, up, left positive) and optionally x, y, z in meters (OpenXR LOCAL: right, up,
+		// back); "left off" / "right off" removes it. A located controller wins over it
+		std::string_view args;
+		std::string handWord(firstWord(rest, args)); // the hand; the rest are the numbers or "off"
+		util::makeLowercase(handWord);
+		vr::Hand hand = vr::Hand::Left;
+		if(handWord == "right") {
+			hand = vr::Hand::Right;
+		} else if(handWord != "left") {
+			return refuse("handpose: expected left or right first, got \"" + std::string(rest) + "\"");
+		}
+		std::string mode(args);
+		util::makeLowercase(mode);
+		if(mode == "off") {
+			vr::clearSimulatedHand(hand);
+			return std::string();
+		}
+		std::vector<float> values;
+		if(!parseFloats(args, values) || (values.size() != 3 && values.size() != 6)) {
+			return refuse("handpose: expected left|right <yaw> <pitch> <roll> [<x> <y> <z>] or off, got \""
+			              + std::string(rest) + "\"");
+		}
+		vr::HandSample sample;
+		sample.orientation = vr::headOrientationFromDegrees(values[0], values[1], values[2]);
+		if(values.size() == 6) {
+			sample.position = Vec3f(values[3], values[4], values[5]);
+		}
+		vr::setSimulatedHand(hand, sample);
 		return std::string();
 	}
 

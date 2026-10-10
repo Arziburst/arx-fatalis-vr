@@ -138,6 +138,23 @@ void UIPanelTest::testRayToPixel() {
 	checkPanelNear("distance", glm::length(point - origin), distance);
 }
 
+void UIPanelTest::testPointIsTheInverseOfTheHit() {
+	const vr::HeadSample h = standingHead(-35.f, -10.f, 0.f);
+	const vr::PanelPose pose = vr::placePanel(h);
+	const Vec2f size = vr::panelSize(1.2f, Vec2i(1600, 900));
+	const Vec3f hand = h.position + Vec3f(0.2f, -0.35f, -0.1f);
+	for(const Vec2f & uv : { Vec2f(0.5f, 0.5f), Vec2f(0.1f, 0.9f), Vec2f(0.8f, 0.2f), Vec2f(0.01f, 0.01f) }) {
+		const Vec3f point = vr::panelPoint(pose, size, uv);
+		Vec2f hit(-1.f);
+		float distance = 0.f;
+		CPPUNIT_ASSERT(vr::panelHit(pose, size, hand, point - hand, hit, distance));
+		checkPanelNear("u back", uv.x, hit.x);
+		checkPanelNear("v back", uv.y, hit.y);
+		checkPanelNear("at the point", 1.f, distance);
+	}
+	checkPanelVector("the centre", pose.position, vr::panelPoint(pose, size, Vec2f(0.5f)));
+}
+
 void UIPanelTest::testRayMisses() {
 	const vr::HeadSample h = standingHead(0.f);
 	const vr::PanelPose pose = vr::placePanel(h);

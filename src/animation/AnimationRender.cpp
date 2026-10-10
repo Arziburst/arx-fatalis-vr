@@ -44,6 +44,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "animation/AnimationRender.h"
 
 #include "vr/VRBody.h"
+#include "vr/VRWeapon.h"
 
 #include <stddef.h>
 #include <cstdlib>
@@ -1114,9 +1115,12 @@ static void Cedric_AnimateDrawEntityRender(EERIE_3DOBJ * eobj, const Vec3f & pos
 			continue;
 		}
 		
-		TransformInfo t(eobj->vertexWorldPositions[link.lidx].v,
-		                eobj->m_skeleton->bones[link.lgroup].anim.quat,
-		                link.io ? link.io->scale : 1.f);
+		glm::quat rotation = eobj->m_skeleton->bones[link.lgroup].anim.quat;
+		if(io && io == entities.player()) {
+			// The weapon in the VR hand (#75): the blade turned onto the controller's handle
+			vr::heldWeaponRotation(link.io, rotation);
+		}
+		TransformInfo t(eobj->vertexWorldPositions[link.lidx].v, rotation, link.io ? link.io->scale : 1.f);
 		t.pos = t(link.obj->vertexlist[link.obj->origin].v - link.obj->vertexlist[link.lidx2].v);
 		
 		DrawEERIEInter(link.obj, t, link.io, true, invisibility);
@@ -1397,7 +1401,19 @@ static void animateSkeleton(EERIE_3DOBJ * eobj, AnimLayer * animlayer,
 	}
 	
 	// Perform animation in Local space
-	Cedric_AnimateObject(&skeleton, animlayer);
+	// The VR body (#75, F-67): while the IK drives the arms the arm layer's clips (ready, strike, cast) are
+	// not applied to the player's own skeleton - its timing and game logic still run
+	const bool ownPlayerSkeleton = io && io == entities.player() && &skeleton == eobj->m_skeleton.get();
+	if(ownPlayerSkeleton && vr::suppressArmAnimation(io, animlayer[1].cur_anim ? animlayer[1].cur_anim->path.string()
+	                                                                          : std::string())) {
+		// A copy without the arm layer (the frame clamps Cedric_AnimateObject writes are redone every frame)
+		std::array<AnimLayer, MAX_ANIM_LAYERS> layers;
+		std::copy(animlayer, animlayer + MAX_ANIM_LAYERS, layers.begin());
+		layers[1].cur_anim = nullptr;
+		Cedric_AnimateObject(&skeleton, layers.data());
+	} else {
+		Cedric_AnimateObject(&skeleton, animlayer);
+	}
 	
 	if(BH_MODE && eobj->fastaccess.head_group) {
 		Bone & bone = skeleton.bones[eobj->fastaccess.head_group];

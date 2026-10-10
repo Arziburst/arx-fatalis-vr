@@ -299,7 +299,9 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
 - `camera` (with `player`): the first-person camera as the frame before left it — position, angles,
   `fov` in degrees, `bob` = its distance from the stable head position of the paused animation (view
   bobbing; 0 when off), `shake` = the quake amplitude applied that frame (0 without a quake or when
-  screen shake is off). `comfort`: who decides the VR comfort policy (`mode`: `auto` / `on` / `off`),
+  screen shake is off). `camera.prepared`: the camera the last frame's interface pass ended with —
+  its projection's scale `m00`/`m11`, off-axis shift `m20`/`m21` and viewport `width`/`height`; in
+  VR the head camera's union projection, the same with the book open as closed (#247). `comfort`: who decides the VR comfort policy (`mode`: `auto` / `on` / `off`),
   whether the VR rules apply (`active`) and what is allowed right now (#76). The status is written
   at the **start** of a frame, so the write that acknowledges a `comfort` command still carries the
   previous policy's camera — a check skips that sample (`comfort-check.ps1`).

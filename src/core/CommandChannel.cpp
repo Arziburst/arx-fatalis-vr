@@ -485,6 +485,18 @@ std::string buildStatus(PlatformInstant now) {
 		// mode; in VR the eye plus the head's movement since its reference (#27)
 		json.value("eyeAboveFeet", player.basePosition().y - g_playerCameraStablePos.y);
 		json.value("shake", quakeAmplitude());
+		// The camera the last frame's interface pass ended with (the status is written before this
+		// frame's update prepares a new one): the projection's scale (m00, m11) and off-axis shift
+		// (m20, m21) and the viewport - in VR the head camera's union projection, also with the book
+		// open (#247)
+		json.object("prepared");
+		json.value("m00", g_preparedCamera.m_viewToClip[0][0]);
+		json.value("m11", g_preparedCamera.m_viewToClip[1][1]);
+		json.value("m20", g_preparedCamera.m_viewToClip[2][0]);
+		json.value("m21", g_preparedCamera.m_viewToClip[2][1]);
+		json.value("width", g_preparedCamera.m_viewport.width());
+		json.value("height", g_preparedCamera.m_viewport.height());
+		json.end();
 		json.end();
 		// Spells by type: active now, and launched since the level was loaded - the evidence that a spellcast
 		// really started a spell (#155: queued casts on the player never launch, TRAPS.md)

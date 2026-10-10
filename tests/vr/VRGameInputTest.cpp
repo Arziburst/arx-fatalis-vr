@@ -258,3 +258,21 @@ void VRGameInputTest::sticksTest() {
 	CPPUNIT_ASSERT(resting.actions.none());
 	CPPUNIT_ASSERT_EQUAL(std::string(), formatGameInput(resting));
 }
+
+void VRGameInputTest::crouchDoesNotTurnTest() {
+
+	Frames f;
+
+	// The right stick pushed down for the crouch toggle, drifting sideways past the turn dead zone:
+	// the crouch toggle, and no turn (F-121 axis dominance, #33)
+	f.input.sticks[size_t(Hand::Right)] = Stick{ 0.4f, -0.9f };
+	const GameInputState & down = f.frame(downSet({ GiRightStickDown }));
+	CPPUNIT_ASSERT(down.action(GameAction::CrouchToggle));
+	CPPUNIT_ASSERT(down.turn == 0.f);
+
+	// A diagonal with x at least 0.6 of y still turns
+	f.input.sticks[size_t(Hand::Right)] = Stick{ 0.6f, -0.9f };
+	CPPUNIT_ASSERT(f.frame(downSet()).turn > 0.f);
+	f.input.sticks[size_t(Hand::Right)] = Stick{ -0.9f, 0.4f };
+	CPPUNIT_ASSERT(f.frame(downSet()).turn < 0.f);
+}

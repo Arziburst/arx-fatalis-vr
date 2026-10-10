@@ -12,12 +12,18 @@ name: Build (Windows)
 on:
   pull_request:
     branches: [ main ]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - '.claude/**'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/pull_request_template.md'
+    # Docs-only changes skip the build, except the two files of the light decision-number check (#274, folded in
+    # here by #296 so it does not take a runner slot of its own): there the "Scope" step skips the heavy steps and
+    # only the check runs. Later patterns re-include what an earlier one excluded.
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!**/*.md'
+      - '!.claude/**'
+      - '!.github/ISSUE_TEMPLATE/**'
+      - '!.github/pull_request_template.md'
+      - 'docs/vr/DECISIONS.md'
+      - 'scripts/dev/number-decisions.ps1'
   push:
     branches: [ main ]
     paths-ignore:
@@ -56,30 +62,62 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    # Seconds (#274, #296): a PR must not add a numbered D-0xx that main already has; new decisions are D-NEW and
+    # numbered by scripts/dev/number-decisions.ps1 right before the merge. Only for a PR that touches those files.
+    - name: Decision numbers
+      if: github.event_name == 'pull_request'
+      shell: pwsh
+      run: |
+        git fetch --no-tags origin main:refs/remotes/origin/main
+        $changed = @(git diff --name-only origin/main HEAD)
+        if ($changed -contains 'docs/vr/DECISIONS.md' -or $changed -contains 'scripts/dev/number-decisions.ps1') { ./scripts/dev/number-decisions.ps1 -Check }
+        else { Write-Host 'decision numbers: DECISIONS.md untouched, nothing to check' }
+
+    # A pull request that changes only docs (and DECISIONS.md, which wakes this workflow) needs no build: the
+    # heavy steps below run only when something outside the docs-only set changed (push / manual runs: always).
+    - name: Scope
+      id: scope
+      shell: pwsh
+      run: |
+        $heavy = $true
+        if ('${{ github.event_name }}' -eq 'pull_request') {
+          $light = '^(docs/|\.claude/|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md$)|\.md$'
+          $heavy = [bool]@(git diff --name-only origin/main HEAD | Where-Object { $_ -notmatch $light }).Count
+        }
+        "heavy=$($heavy.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+        Write-Host "heavy steps: $heavy"
+
     # Seconds, no game: the PowerShell self-tests of the dev scripts (scripts/dev/test-*.ps1) first,
     # so a broken tool fails before the build.
     - name: Script self-tests
+      if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
       run: ./scripts/dev/run-script-tests.ps1
 
     - name: Build
+      if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
       run: ./scripts/build-windows.ps1 -Config Release
 
     # Flat game on the runner: smoke test (start, play, draw check, quit, evidence) and the spell draw
     # check. Fails the job on FAIL, and also when it could not run (exit 2: another game kept the game
     # lock) - a gate that did not run is not a pass. Never leaves arx.exe behind.
-    - name: Game checks (smoke test, draw check, spell draw check)
+    # Then (#255) every shipped .xrs sequence, one launch each, on the test save library of the service account
+    # (verified, or generated when missing or stale).
+    - name: Game checks (smoke test, draw check, spell draw check, .xrs sequences)
+      if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
       run: ./scripts/dev/ci-smoke.ps1 -OutDir "$env:GITHUB_WORKSPACE/ci-artifacts"
 
     # The tester package (#88): the zip built from this build, extracted into a clean folder and started with a
     # PATH of only Windows folders. Fails when a DLL is missing from the zip or the extracted game does not run.
     - name: Tester package (zip, extracted-game check)
+      if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
       run: ./scripts/package-tester.ps1 -NoBuild -OutDir "$env:GITHUB_WORKSPACE/dist"
 
     - name: Upload tester package
+      if: steps.scope.outputs.heavy == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: tester-build
@@ -89,6 +127,7 @@ jobs:
 
     # The debug symbols of this exact exe (BUILD.txt holds its sha256), kept long enough to read a tester crash (#132)
     - name: Upload debug symbols
+      if: steps.scope.outputs.heavy == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: tester-symbols

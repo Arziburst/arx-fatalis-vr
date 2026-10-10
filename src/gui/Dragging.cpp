@@ -45,6 +45,7 @@
 #include "scene/GameSound.h"
 #include "scene/Interactive.h"
 #include "vr/VRInput.h"
+#include "vr/VRReticle.h"
 
 EntityDragStatus g_dragStatus = EntityDragStatus_Invalid;
 Entity * g_draggedEntity = nullptr;
@@ -253,15 +254,22 @@ void updateDraggedEntity() {
 	g_dragStartAngle = g_camera->angle.getYaw();
 	
 	Vec3f origin = g_camera->m_pos;
-	Vec3f dest = screenToWorldSpace(mouse + g_draggedObjectOffset, 1000.f);
+	Vec3f dir;
 	
-	if(g_camera == &g_playerCamera) {
-		// Use stable camera position so the dragged entity does not move around with the player head animation
-		dest = dest - origin + g_playerCameraStablePos;
-		origin = g_playerCameraStablePos;
-	}
+	if(!vr::reticleDragRay(origin, dir)) {
+		
+		Vec3f dest = screenToWorldSpace(mouse + g_draggedObjectOffset, 1000.f);
+		
+		if(g_camera == &g_playerCamera) {
+			// Use stable camera position so the dragged entity does not move around with the player head animation
+			dest = dest - origin + g_playerCameraStablePos;
+			origin = g_playerCameraStablePos;
+		}
+		
+		dir = glm::normalize(dest - origin);
 	
-	Vec3f dir = glm::normalize(dest - origin);
+	} // else VR (#37): the entity goes along the ray of the hand that drags it
+	
 	
 	// Only allow dropping entities near the player
 	Sphere limit(player.pos, 300.f);

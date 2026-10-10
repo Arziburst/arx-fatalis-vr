@@ -8,6 +8,172 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — In VR an item on the floor is not picked where the cursor is, or a far one is (#37)
+
+**Symptom:** with a mouse position projected from a 3D point in a VR run, `FlyingOverObject` finds nothing over
+an item lying in the world, or something beside it. **Cause:** the engine's pick is a 2D test against each
+entity's `bbox2D` and projected faces (`vertexClipPositions`). Animated entities are projected with the head
+camera in the update, but a **static item** (no animation: what lies on floors and tables) is projected in
+`DrawEERIEInter` while it is drawn — once per **eye**, into the eye image's pixels — so after a stereo frame
+its box is the right eye's, in another pixel space than the interface the mouse lives in. *Resolved for the
+screen data by #72* (picking reads the head camera's at the interface's size again). **Do:** in VR the world is
+still picked by the hands' rays in 3D (`vr/VRReticle.cpp`) — a hand's ray is not a ray through the eye, so a
+projected pixel lands on whatever the head sees there, not on what the hand points at; the engine's
+`GetFirstInterAtPos` asks the reticle module what a world reticle's mouse position stands for
+(`vr::reticlePickAt`), and an interface position never picks the world while the reticles are on. The test
+channel's `pick` checks the engine's own screen pick under `vr::EnginePickOnly`.
+
+## 2026-10-10 — The inventory opens by itself, or the player spins, when a VR hand becomes the mouse (#37)
+
+**Symptom:** forcing the engine out of mouse look so the hand could be the mouse opened the inventory at
+once; later, with the inventory open, the player kept turning (`player.yaw` 113 → 56 → 159 → 261 in two
+seconds) with nobody touching anything. **Cause:** (1) in Arx the cursor mode *is* the inventory: leaving
+mouse look shows it unless the inventory key inverted that (`bInverseInventory`, `ArxGame::manageKeyMouse`).
+(2) In the cursor mode a mouse within 50 px of an edge of the interface turns the player (edge scrolling,
+`Interface.cpp`); a world reticle's mouse position is right of the interface (`vr/HandReticle.h`), and a
+panel pointer near the panel's edge is near the interface's edge. **Do:** keep the engine's mouse-look state
+as it is (the hand's position is applied in the relative mode too, `Input::setVirtualMousePosition`); the
+edge turning is off while a VR session renders.
+
+## 2026-10-10 — On `mvp-items` an item can be picked from the table but not put back on it (#37)
+
+**Symptom:** a drag started from the table (`item.take`), but the item never landed where the hand pointed:
+it stayed in front of the player or was dropped on the floor; the floor in front of the player was not hit
+by any ray. **Cause:** the save stands the player on the **wall top above the table's room**: the eye is at
+`y` 2765, the room's floor at 3100 (y down), the table top at 3018. The engine picks within 350 units of the
+player but puts down only within **300** (`updateDraggedEntity`), and nothing below the player is within 300;
+the key on the floor (399 units away) is not even pickable. **Do:** put the player on the room's floor by
+the table first — `setpos 10600 3100 11420 72` (as `hand-reticle.xrs` does); the note and the form are then
+~1.5 m away, both for picking and for putting down. Mind the goblin in that room.
+
+## 2026-10-10 — A head pressed into a wall is "not in geometry": `CheckBackgroundInSphere` misses the middle of a wall (#26)
+
+**Symptom:** the simulated head is moved into the start cell's side wall — the body is blocked at the wall, the eye
+shot shows the wall face filling half the view at a few centimetres — and the near-plane sphere test
+(`CheckBackgroundInSphere(Sphere(head, 12.5))`) says nothing is there; once the head is past the wall the ray test
+finds it at once.
+**Cause:** the engine's `IsPolyInSphere` does not measure the distance to a polygon: it only tests whether the
+polygon's corners, edge midpoints and a few points towards its centre lie in the sphere (it was made for the
+50-unit cylinders of NPCs). A small sphere in front of the middle of a large wall polygon contains none of them.
+**Do:** for anything smaller than a body, measure the distance to the polygon's triangles —
+`vr::distanceToTriangle` (HeadLean.h), used by `backgroundCloserThan` in `ArxGame.cpp`; `raycastScene` is exact
+for a segment.
+
+## 2026-10-10 — A shipped `.xrs` sequence is red in CI only because of the sequence that ran before it (#296, from #178)
+
+**Symptom:** the CI game check fails a sequence that passes alone: `vr-remap-saved` expected the file `vr-remap` saved
+(it ran *after* it alphabetically), `vr-settings-flat` found the `vr-controls-index.ini` that `vr-remap` left. Rename or add
+a sequence and the order — and the verdict — changes.
+**Cause:** `ci-smoke.ps1` ran every sequence in the runner account's single user dir, so config, saves and ini files leaked
+from one sequence into the next.
+**Do:** every sequence now runs in its own fresh user dir (`New-ArxSequenceUserDir` in `xrs-lib.ps1`, passed to
+`smoke-test.ps1 -UserDir`; its `@save` is copied in as before; the dir is removed after the run and its logs are in the
+phase's evidence). A sequence that needs a file from another one is wrong: set the state up in its own `@save` / commands.
+The first fresh-dir CI run found it at once: `walk-forward`, `walk-look` and `sneak-jump-crouch` had `@args --loadslot 0` but no
+`@save`, and had only ever passed on the save an earlier sequence left in the shared dir ("no such save, 0 save(s)"). They
+declare `@save mvp-new-game` now, and `test-xrs.ps1` fails a shipped sequence with `--loadslot` and no `@save`.
+Checked by `test-xrs.ps1` ("fresh user dir per sequence"). Locally, `smoke-test.ps1 -Sequence` already used the isolated dir of
+the working copy: run two sequences by hand with `-UserDir` pointing at different folders for the same effect.
+
+
+
+## 2026-10-10 — The arm clips are "suppressed", yet the shoulder moves 10 units when the combat mode starts (#75)
+
+**Symptom:** `vr.weapon.armAnimSuppressed` is `true` and every `vr.body.armAnim` event says `suppressed`, but
+`vr.body.right.shoulder` jumps by ~10 units between before `combat on` and after the strike.
+**Cause:** the combat mode also switches the **body's** layer 0 to the fight stance (`ANIM_FIGHT_WAIT`,
+`ARX_PLAYER_Manage_Visual`), which turns the torso; only layer 1 (the arm clips) is suppressed (D-009: the body
+keeps the engine's animations). **Do:** measure what the arm layer does from a settled stance — take the
+shoulder after `combat on` + 60 frames (300 ms of blend), then strike, as `weapon-hold.xrs` does. Also: never
+ask `entities.player()` while writing `status.json` before a level exists (the first `weapon-hold` run crashed
+at start-up on it, #286) — check this module's own state first.
+
+## 2026-10-10 — .xrs: a count of what a held input did passes locally and fails on the CI runner (#285)
+
+**Symptom:** `snap-turn.xrs` held the stick until the 5th snap, let go and allowed one more snap; locally it
+passed, on the CI runner it counted 10 to 12 (`ASSERT FAILED: vr.input.turn.snaps (12) le 9`).
+**Cause:** a channel command reaches the game a poll after the runner sends it, and the runner's round trip on a
+loaded machine is longer than a repeat (0.4 s), so the release came 2–4 repeats late. An upper bound on a count
+after a release is a bound on the runner's speed.
+**Do:** let the game measure the timing by its own clock and assert on that (`vr.input.turn.repeatInterval`);
+in a sequence, bound only what the game decides, never how many times something happened before a later command.
+
+## 2026-10-10 — The arms twist outward and wrap into spirals from the shoulder and the elbow when the wrist turns (#36, owner's headset run of PR #254)
+
+**Symptom:** the body, the solid torso and the hands following the controllers are right in the headset
+("руки работают"), but as soon as a controller rolls, the upper arm and the forearm of the model twist into
+flat spirals between the shoulder and the hand (`C:\Users\arzib\arx-fatalis-vr-wt\arms-twist-owner.png`:
+both arms reach in from the sides as twisted ribbons while the hands themselves look fine). Every number in
+`status.json` is still perfect — `error` 0, the wrist on its target — because the numbers describe joints,
+not the mesh between them.
+**Cause:** the engine's skeleton has no twist model: a group's vertices turn rigidly with the bone's quaternion,
+and the IK of #36 only *swings* each bone onto its joints (`rotationBetween` on top of the animated quaternion)
+while the wrist takes the controller's full orientation. The roll about the arm's axis is therefore whatever
+the animation plus the swing leave — nothing distributes the hand's roll along the forearm or keeps the
+upper arm's roll tied to the elbow — and the low-poly arm, a flat-ish slab, shows every stray roll as a spiral.
+A joint-position check cannot see it.
+**Do:** accepted as the interim body (D-032 / #36); the arm rework is a research task (how Valheim VR builds
+its arms, what Arx's model and textures allow: twist bones, roll limits, a separate VR arm rig). Until then,
+judge arms in the headset or on a capture with the controllers *rolled*, not from `vr.body` alone; the
+`arms-follow` sequence rolls nothing.
+
+## 2026-10-09 — The body is nowhere in a `--vr-sim` shot that looks down, although `vr.body` says both arms are posed with `error` 0 (#36)
+
+**Symptom:** the first two runs of `arms-follow` on the default `--loadlevel 10` had every status number right
+(chains found, wrists on their targets) and both eyes' pictures showed a bare floor from a standing height —
+no torso, no arms, and the picture even drifted between two "still" shots.
+**Cause:** level 10 is the scripted intro: its conversation camera (`speechControlledCinematic`, see the #24
+entry below) is a camera somewhere in the cell, not the model's eyes, and it moves with the speech; the head
+pose is applied on top of it. The model stands elsewhere, correctly posed.
+**Do:** anything that must *see* the body runs on a first-person save: `smoke-test.ps1 -VrSim idle -Sequence
+arms-follow -Save mvp-new-game`. Status numbers prove the pose; only a first-person save proves the picture.
+
+## 2026-10-09 — The arm chain found from the hand is one joint short, and the hand ignores the controller's pitch (#36)
+
+**Symptoms:** (1) walking up from the group that holds `primary_attach` gave `right_elbow > right_wrist >
+right_hand` with bone lengths `30.5 + 0.0`, so the "arm" reached only 30 units and the shoulder slid 17.6 units
+towards a controller held comfortably in front. (2) With the wrist bone set to the controller's orientation the
+fingertips stayed at the same height whether the grip was upright or pitched 90° forward.
+**Cause:** `human_base` keeps the hand as a **zero-length child group** of the wrist (`right_hand < right_wrist`,
+same origin), and the engine's animations bend that hand group on the wrist (the wait animation curls it). The
+wrist joint is therefore one group up, and the hand mesh belongs to the child group, whose rotation the
+concatenation rebuilds from the animation after the wrist was set.
+**Do:** the wrist joint is the first ancestor with a non-zero `transinit_global` (climb the zero-length bones);
+the zero-length groups between it and the hand's group are made rigid with the wrist (`ArmChain::rigid`,
+`vr/VRBody.cpp`). Check a chain by its lengths in the `[vr] body:` bind line (`27.6 + 30.5` on `human_base`) and
+a hand by `vr.body.<hand>.tip` against `wrist` / `controller`, not by the picture alone.
+## 2026-10-10 — The sneak covered more ground than the run (#33)
+
+**Symptom:** on `mvp-new-game` a slight stick push (the stealth walk) moved the player 355 units in 1.5 s and the
+full push right after it only 201; with `@frames 40` instead the sneak covered 136-151 and the run 163-197 — the
+ratio changed from run to run.
+**Cause:** a distance measures the room and the clock, not the walk: the second walk ran into the cell's far end,
+and `@frames n` is n frames, whose length swings with the frame rate of the moment (36-90 fps in these runs).
+**Do:** compare walk speeds with `player.animSpeed` (the current animation's own units per second, what the engine
+moves the player by: run 192, stealth 135.6); use positions only for "it moved", from a known start.
+
+## 2026-10-10 — `test-xrs.ps1` fails once in a while: "timed out waiting for the game to acknowledge" (#275)
+
+**Symptom:** one check of 73 fails on the CI runner (a `@shot`/`@diff` step), the rerun of the same commit passes.
+**Cause (most likely, not reproduced in 20 local runs):** the fake game read `command.txt` with `Get-Content` and
+wrote `ack.txt` with `Set-Content`, whose errors are non-terminating — a sharing violation with the test's own
+50 ms polling (or a scanner on a loaded runner) silently lost the batch or its ack, so nothing was acknowledged.
+**Do:** the fake game removes `command.txt` only after reading it and retries both the read and the ack write.
+When a channel check times out with the game alive, suspect a dropped file operation before a slow game.
+
+## 2026-10-09 — The body turned 45° by the numbers, the picture did not turn (#32)
+
+**Symptom:** on the simulated headset with `--loadlevel 10` (+ `setplayercontrols on`) a snap turn changed
+`player.yaw` and `camera.yaw` in `status.json` by exactly 45°, the `vr.turn.snap` game event was logged, and the
+eye shots before and after still looked down the same corridor (picture change ~4, barely over the floor);
+a head turn of the simulator did turn the picture.
+**Cause:** the trap of #24 again — level 10 is the intro conversation, whose camera is placed by
+`speechControlledCinematic()`, not from the player's yaw, so nothing the **body** does shows in the view.
+`status.json` → `camera.yaw` is the engine's `g_playerCamera`, not what the eyes render with.
+**Do:** check turning, walking, anything the body does, on a first-person save: `@save mvp-new-game` +
+`@args --loadslot 0` in the `.xrs` (snap turn there: picture change 16.9). Judge by the shots, not by
+`camera.yaw`.
+
 ## 2026-10-10 — A channel-driven check times out with `ack.txt` holding only `quit`, though the game ran (#258)
 
 **Symptom:** `body-check.ps1` fails with "timed out after 180 s waiting for gameplay"; no command of the check
@@ -98,8 +264,11 @@ with MSAA on the window the renderer draws alpha cutouts with alpha-to-coverage 
 that would discard the transparent texels is off.
 **Do:** tell the renderer the bound target's size (`Renderer::setRenderTargetSize`, 0 = the window): it
 re-applies the viewport and the scissor against that height, snapshots read that size, and
-`SetAntialiasing(true)` is refused off the window so the alpha cutout path falls back to the alpha test.
+`SetAntialiasing(true)` is refused on a single-sample offscreen target so the alpha cutout path falls
+back to the alpha test (a multisampled one names its samples too, `setRenderTargetSize(size, samples)`, #226).
 `vr::beginEyeRender()` / `endEyeRender()` and the flat frame target do this; a new offscreen target must too.
+With eye MSAA (`vr_msaa`, D-035) the eye is drawn into a multisampled buffer, not the swapchain image:
+the image holds the picture only after `Swapchain::resolve()` in `endEyeRender` - read eye pixels after it.
 
 ## 2026-10-10 — "use" fires from just holding the Index controller (a closed hand flickers, #30)
 
@@ -747,8 +916,39 @@ a PowerShell test helper with parameter `$G` and a local `$g` failed with "canno
 **Cause:** the runner took everything after the operator as the value; PowerShell variable names are case-insensitive, so `$g` and `$G` are one variable.
 **Do:** write timeouts as `60s` (the parser now rejects a value with a trailing bare number); never name two variables in one scope by letters that differ only in case.
 
+## 2026-10-09 — VR: picking finds nothing although the item is in the middle of the view
+
+**Symptom:** in a stereo frame (`--vr-sim` or the headset) the mouse hovers nothing — no highlight, `pick` finds nothing on
+the whole window — while the item is plainly on screen; the item's `bbox2D` is in the thousands (`597 1066 657 1113` in a
+640x480 window).
+**Cause:** the scene is drawn once per eye, and drawing an entity stores its screen data (clip positions, items'
+`bbox2D`) for the camera of the draw — the last eye, at the eye image's size. Mouse picking reads that data next frame
+against window coordinates (#72).
+**Do:** anything that keeps screen positions from a draw must be projected again with the head camera after the eyes
+(`ProjectEntitiesForPicking()` after `renderStereoViews()`); check with `pick <entity>` (`targetSeenInBox`).
+
+## 2026-10-09 — `specialfx newspell` logs `[W] unexpected newline`
+
+**Symptom:** the script command `specialfx newspell` (the book icon's FX) works, but adds a `[W] ScriptUtils … [player:N] :
+unexpected newline`, which the run digest reports as a new warning.
+**Cause:** the command skips one word after `newspell`; with nothing after it, it reads the end of the line.
+**Do:** send `specialfx newspell 1`.
+
 ## 2026-10-09 - Send-ArxCommand returned the previous batch's ack
 
 **Symptom:** `test-xrs.ps1` failed only on the slow CI runner: the ack of a check's first command read `last=refuse this`, the command of the check before (#250).
 **Cause:** the game writes `ack.txt` first and `status.json` later; `Send-ArxCommand` took its baseline `cmdSeq` from `status.json` and waited for it to advance, so the late status update of the *previous* batch ended the wait and the old ack was returned.
 **Do:** the baseline is the newest seq of ack.txt and status.json, and the answer is `ack.txt` itself advancing (`Read-ArxAck` in `scripts/dev/test-lib.ps1`). After a send, `status.json` may still lag behind the ack - wait for the state you assert on (`@until`, `@frames`).
+
+## 2026-10-09 — The stick walk is applied on level 10, but the player does not move
+
+**Symptom:** `walk-forward.xrs` on `--loadlevel 10` with `setplayercontrols on`: `vr.walk state=start` / `end` are logged
+and `vr.input.walk.walking` is true, yet `player.x` / `player.z` stay exactly the same.
+**Cause:** level 10 is the scripted intro (see "On `--loadlevel 10` the inventory never closes" above): the movement
+the controls ask for is not applied to the player there - not a locomotion bug.
+**Do:** check walking on a playable save: `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence walk-forward` (#31).
+
+## 2026-10-10 - Crouched in the start cell, the character never stood up again
+**Symptom:** on the test save `mvp-new-game` the character crouched (button, toggle or the head, #100) and never stood up: the toggle went off (`player.crouch state=off`), `PLAYER_CROUCH` stayed set for good; on `mvp-items` the same sequence stood up (#263).
+**Cause:** the engine's own stand-up check, not VR code - flat Arx Libertatis did the same. `ARX_PLAYER_Manage_Visual` checked the **whole** standing cylinder with `CheckAnythingInCylinder`, and at the awakening spot that cylinder grazes a sloped floor polygon 21 units above the feet (`background=-21.0 ... normY=-0.3`). Standing there is fine - the check runs only to stand up - but the crouched character could never pass it.
+**Do:** the stand-up (and the jump from a crouch) now checks only the part of the standing cylinder above the crouched one (`standUpCylinder()` in `src/game/Player.cpp`). A refused stand-up logs one `player.standup.blocked` event with what is in the way (`describeCylinderBlocker`); read it before blaming crouch code. `stand-up.xrs` checks both directions.

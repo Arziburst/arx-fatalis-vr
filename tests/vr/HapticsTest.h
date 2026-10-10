@@ -24,7 +24,7 @@
 #include <cppunit/extensions/HelperMacros.h>
 
 /*!
- * Haptic feedback of #42 (D-034): the event table, the master strength, and the per-hand mixer -
+ * Haptic feedback of #42 (D-NEW): the event table, the master strength, and the per-hand mixer -
  * the strongest request of a frame wins, a weaker pulse never cuts a stronger one still playing.
  */
 class HapticsTest final : public CppUnit::TestFixture {

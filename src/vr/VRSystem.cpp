@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -55,8 +56,10 @@
 #if ARX_HAVE_OPENXR
 
 // OpenXR with the OpenGL binding (and windows.h on Windows)
+#include "vr/HandReticle.h"
 #include "vr/HeadTracking.h"
 #include "vr/InterfaceSize.h"
+#include "vr/MenuPointer.h"
 #include "vr/OpenXRUtil.h"
 #include "vr/UIPanel.h"
 #include "vr/VRActions.h"
@@ -101,6 +104,16 @@ static void disableMirror() {
 ARX_PROGRAM_OPTION("no-vr-mirror", nullptr,
                    "In VR, keep the flat frame in the desktop window instead of what one eye sees (overrides vr_mirror in cfg.ini)",
                    &disableMirror)
+
+//! The eyes' multisampling from the command line (-1: cfg.ini decides), see createSessionObjects()
+static int g_msaaOverride = -1;
+
+static void setMsaa(u32 samples) {
+	g_msaaOverride = int(std::min(samples, u32(MaxEyeMsaa)));
+}
+ARX_PROGRAM_OPTION_ARG("vr-msaa", nullptr,
+                       "Multisampling of the VR eye images: samples per pixel, 0 = off (overrides vr_msaa in cfg.ini)",
+                       &setMsaa, "N")
 
 #if ARX_HAVE_OPENXR
 
@@ -150,6 +163,10 @@ struct OpenXRState {
 	std::array<Swapchain, 2> eyes;
 	Swapchain quad;
 	Vec2i quadFailedSize = Vec2i(0); //!< a size the quad swapchain could not be created for
+	Swapchain beam;                  //!< the menu pointer's beam image (#34), made the first time it is shown
+	bool beamFailed = false;         //!< the beam swapchain could not be made: not retried this session
+	std::array<Swapchain, 2> reticleImages; //!< the hand reticle's ring, dim and bright (#37), made when first shown
+	bool reticleFailed = false;      //!< the reticle swapchains could not be made: not retried this session
 
 	/*!
 	 * The interface's own resolution (#73): from the session's first located eyes on, the 2D
@@ -181,6 +198,7 @@ struct OpenXRState {
 		PlatformInstant lastWaitReturn = PlatformInstant(0); //!< when xrWaitFrame last returned: the cap sleeps relative to it
 		std::array<XrView, 2> located = { };
 		FrameViews views;                   //!< the located eyes, for the renderer and for the layer
+		FrameHands hands;                   //!< the located controllers, for the body (#36)
 
 		//! Stereo (#19): the scene is drawn per eye into the eye swapchains, everything 2D into the quad
 		bool stereo = false;
@@ -202,6 +220,23 @@ struct OpenXRState {
 		Vec2f size = Vec2f(0.f); //!< the panel as last submitted, meters
 	} panel;
 
+	//! The menu pointer's beam (#34), set by the input module every frame
+	struct PointerBeam {
+		bool requested = false;
+		Vec3f from = Vec3f(0.f); //!< the hand, LOCAL space
+		Vec3f to = Vec3f(0.f);   //!< its hit on the panel
+		bool submitted = false;  //!< part of the last frame's layers
+	} pointer;
+
+	//! The hand reticles (#37), set by the input module every frame
+	struct HandReticle {
+		bool requested = false;
+		Vec3f hit = Vec3f(0.f); //!< LOCAL space
+		bool bright = false;
+		bool submitted = false; //!< part of the last frame's layers
+	};
+	std::array<HandReticle, HandCount> reticles;
+
 	//! The stereo render as status.json reports it; \c active is the current frame's, the rest the last stereo frame's
 	StereoStatus stereo;
 	bool stereoLogged = false; //!< the stereo banner was logged for this session
@@ -211,7 +246,9 @@ struct OpenXRState {
 		std::array<XrCompositionLayerProjectionView, 2> projectionViews = { };
 		XrCompositionLayerProjection projection = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
 		XrCompositionLayerQuad quad = { XR_TYPE_COMPOSITION_LAYER_QUAD };
-		std::array<const XrCompositionLayerBaseHeader *, 2> list = { };
+		XrCompositionLayerQuad beam = { XR_TYPE_COMPOSITION_LAYER_QUAD }; //!< the menu pointer, above the panel (#34)
+		std::array<XrCompositionLayerQuad, HandCount> reticles = { }; //!< the hand reticles, on top (#37)
+		std::array<const XrCompositionLayerBaseHeader *, 3 + HandCount> list = { };
 		u32 count = 0;
 	} layers;
 
@@ -716,11 +753,11 @@ void restoreWindowTarget() {
 	}
 }
 
-//! Make a framebuffer object of \a size the render target for the engine
-void bindTarget(GLuint framebuffer, const Vec2i & size) {
+//! Make a framebuffer object of \a size with \a samples (0 = single-sample) the render target for the engine
+void bindTarget(GLuint framebuffer, const Vec2i & size, int samples = 0) {
 	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
 	if(GRenderer) {
-		GRenderer->setRenderTargetSize(size);
+		GRenderer->setRenderTargetSize(size, samples);
 	}
 }
 
@@ -755,6 +792,14 @@ void destroySession() {
 	}
 	g_xr.quad.destroy();
 	g_xr.quadFailedSize = Vec2i(0);
+	g_xr.beam.destroy();
+	g_xr.beamFailed = false;
+	g_xr.pointer = OpenXRState::PointerBeam();
+	for(Swapchain & image : g_xr.reticleImages) {
+		image.destroy();
+	}
+	g_xr.reticleFailed = false;
+	g_xr.reticles = { };
 	g_xr.mirror.destroy();
 	g_xr.colorFormat = 0;
 
@@ -849,10 +894,15 @@ bool createSessionResources() {
 		return false;
 	}
 
+	// Multisampling of the eyes (#226): the command line first, then cfg.ini; 0 or 1 = off
+	const int samples = g_msaaOverride >= 0 ? g_msaaOverride : std::clamp(config.video.vrMsaa, 0, MaxEyeMsaa);
+	LogInfo << "[vr] eye MSAA: " << (samples > 1 ? samples : 0) << "x from "
+	        << (g_msaaOverride >= 0 ? "--vr-msaa" : "vr_msaa in cfg.ini");
+
 	const char * const names[] = { "left eye", "right eye" };
 	for(size_t i = 0; i < g_xr.eyes.size(); i++) {
 		Vec2i size(s32(g_xr.views[i].recommendedImageRectWidth), s32(g_xr.views[i].recommendedImageRectHeight));
-		if(!g_xr.eyes[i].create(g_xr.session, g_xr.colorFormat, size, true, names[i])) {
+		if(!g_xr.eyes[i].create(g_xr.session, g_xr.colorFormat, size, true, names[i], samples)) {
 			return false;
 		}
 	}
@@ -1192,6 +1242,195 @@ bool describeEyeLayer(OpenXRState::Layers & layers) {
 	return true;
 }
 
+//! The beam image: narrow and long, its bottom row at the hand (#34)
+const Vec2i BeamImageSize(8, 64);
+
+/*!
+ * The menu pointer's beam image, made once per session: white, premultiplied by its alpha, which runs
+ * from PointerBeamAlpha at the hand (the bottom row) to nothing at the panel (the top row), with
+ * softer long edges. Filled once: the compositor keeps showing the last released image.
+ */
+bool makeBeamImage() {
+
+	if(g_xr.beam.isValid()) {
+		return true;
+	}
+	if(g_xr.beamFailed) {
+		return false;
+	}
+	if(!g_xr.beam.create(g_xr.session, g_xr.colorFormat, BeamImageSize, false, "menu pointer beam")
+	   || !g_xr.beam.acquire()) {
+		g_xr.beam.destroy();
+		g_xr.beamFailed = true;
+		LogWarning << "[vr] menu pointer: no beam image, the pointer shows only the cursor";
+		return false;
+	}
+
+	std::vector<u8> pixels(size_t(BeamImageSize.x * BeamImageSize.y) * 4);
+	for(s32 y = 0; y < BeamImageSize.y; y++) {
+		const float along = 1.f - (float(y) + 0.5f) / float(BeamImageSize.y);
+		for(s32 x = 0; x < BeamImageSize.x; x++) {
+			const bool edge = (x == 0 || x == BeamImageSize.x - 1);
+			const float alpha = PointerBeamAlpha * along * (edge ? 0.4f : 1.f);
+			const u8 value = u8(std::lround(alpha * 255.f));
+			u8 * pixel = &pixels[size_t(y * BeamImageSize.x + x) * 4];
+			pixel[0] = pixel[1] = pixel[2] = pixel[3] = value;
+		}
+	}
+
+	glBindTexture(GL_TEXTURE_2D, g_xr.beam.texture());
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, BeamImageSize.x, BeamImageSize.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+	glBindTexture(GL_TEXTURE_2D, 0);
+	g_xr.beam.release();
+
+	LogInfo << "[vr] menu pointer: beam image " << BeamImageSize.x << 'x' << BeamImageSize.y << ", "
+	        << PointerBeamWidth * 1000.f << " mm wide, fading towards the panel";
+	return true;
+}
+
+/*!
+ * The menu pointer's beam above the floating panel (#34), when the input module asked for one this
+ * frame: a quad from the hand to its hit, turned towards the eyes. A later layer is drawn over the
+ * panel, which would hide a beam drawn into the scene.
+ */
+void describeBeamLayer(OpenXRState::Layers & layers) {
+
+	OpenXRState::PointerBeam & pointer = g_xr.pointer;
+	const FrameViews & views = g_xr.frame.views;
+	if(!pointer.requested || !views.valid || layers.count >= layers.list.size() || !makeBeamImage()) {
+		return;
+	}
+
+	const Vec3f eye = (views.eyes[0].position + views.eyes[1].position) * 0.5f;
+	BeamQuad beam;
+	if(!beamQuad(pointer.from, pointer.to, eye, PointerBeamWidth, beam)) {
+		return;
+	}
+
+	XrCompositionLayerQuad & layer = layers.beam;
+	layer = { XR_TYPE_COMPOSITION_LAYER_QUAD };
+	layer.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+	layer.space = g_xr.localSpace;
+	layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+	layer.subImage.swapchain = g_xr.beam.handle();
+	layer.subImage.imageRect = g_xr.beam.rect();
+	layer.subImage.imageArrayIndex = 0;
+	layer.pose.orientation.x = beam.orientation.x;
+	layer.pose.orientation.y = beam.orientation.y;
+	layer.pose.orientation.z = beam.orientation.z;
+	layer.pose.orientation.w = beam.orientation.w;
+	layer.pose.position.x = beam.center.x;
+	layer.pose.position.y = beam.center.y;
+	layer.pose.position.z = beam.center.z;
+	layer.size.width = beam.size.x;
+	layer.size.height = beam.size.y;
+
+	layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
+	pointer.submitted = true;
+}
+
+//! The hand reticle's image: a ring with a dot in its middle (#37, D-029)
+const s32 ReticleImageSize = 64;
+
+/*!
+ * The hand reticle's two images, made once per session: white, premultiplied by the alpha - a ring
+ * (radius 0.32 to 0.46 of the image) and a dot (0.12) with soft edges, at ReticleDimAlpha and at
+ * ReticleBrightAlpha. Filled once: the compositor keeps showing the last released image.
+ */
+bool makeReticleImages() {
+
+	if(g_xr.reticleImages[0].isValid() && g_xr.reticleImages[1].isValid()) {
+		return true;
+	}
+	if(g_xr.reticleFailed) {
+		return false;
+	}
+
+	const Vec2i size(ReticleImageSize, ReticleImageSize);
+	const char * const names[] = { "hand reticle (dim)", "hand reticle (bright)" };
+	const float alphas[] = { ReticleDimAlpha, ReticleBrightAlpha };
+	std::vector<u8> pixels(size_t(size.x * size.y) * 4);
+	for(size_t i = 0; i < g_xr.reticleImages.size(); i++) {
+		Swapchain & image = g_xr.reticleImages[i];
+		if(!image.create(g_xr.session, g_xr.colorFormat, size, false, names[i]) || !image.acquire()) {
+			for(Swapchain & failed : g_xr.reticleImages) {
+				failed.destroy();
+			}
+			g_xr.reticleFailed = true;
+			LogWarning << "[vr] reticle: no reticle image, the hands aim without a visible mark";
+			return false;
+		}
+		for(s32 y = 0; y < size.y; y++) {
+			for(s32 x = 0; x < size.x; x++) {
+				const float dx = (float(x) + 0.5f) / float(size.x) - 0.5f;
+				const float dy = (float(y) + 0.5f) / float(size.y) - 0.5f;
+				const float r = std::sqrt(dx * dx + dy * dy);
+				const float soft = 1.5f / float(size.x); // the edges fade over about a pixel and a half
+				const float ring = std::clamp((r - 0.32f) / soft + 0.5f, 0.f, 1.f) * std::clamp((0.46f - r) / soft + 0.5f, 0.f, 1.f);
+				const float dot = std::clamp((0.12f - r) / soft + 0.5f, 0.f, 1.f);
+				const float alpha = alphas[i] * std::max(ring, dot);
+				const u8 value = u8(std::lround(alpha * 255.f));
+				u8 * pixel = &pixels[size_t(y * size.x + x) * 4];
+				pixel[0] = pixel[1] = pixel[2] = pixel[3] = value;
+			}
+		}
+		glBindTexture(GL_TEXTURE_2D, image.texture());
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, size.x, size.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+		glBindTexture(GL_TEXTURE_2D, 0);
+		image.release();
+	}
+
+	LogInfo << "[vr] reticle: ring images " << size.x << 'x' << size.y << ", " << ReticleAngleDegrees
+	        << " deg wide, alpha " << ReticleDimAlpha << " / " << ReticleBrightAlpha;
+	return true;
+}
+
+/*!
+ * The hand reticles (#37): a small ring where each hand's hidden ray hits the world, as a quad layer
+ * on top of everything (the ring sits on the first hit, so nothing in the world is in front of it).
+ */
+void describeReticleLayers(OpenXRState::Layers & layers) {
+
+	const FrameViews & views = g_xr.frame.views;
+	if(!views.valid) {
+		return;
+	}
+	const Vec3f eye = (views.eyes[0].position + views.eyes[1].position) * 0.5f;
+
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		OpenXRState::HandReticle & reticle = g_xr.reticles[hand];
+		if(!reticle.requested || layers.count >= layers.list.size() || !makeReticleImages()) {
+			continue;
+		}
+		ReticleQuad quad;
+		if(!reticleQuad(reticle.hit, eye, ReticleAngleDegrees, quad)) {
+			continue;
+		}
+		const Swapchain & image = g_xr.reticleImages[reticle.bright ? 1 : 0];
+		XrCompositionLayerQuad & layer = layers.reticles[hand];
+		layer = { XR_TYPE_COMPOSITION_LAYER_QUAD };
+		layer.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+		layer.space = g_xr.localSpace;
+		layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+		layer.subImage.swapchain = image.handle();
+		layer.subImage.imageRect = image.rect();
+		layer.subImage.imageArrayIndex = 0;
+		layer.pose.orientation.x = quad.orientation.x;
+		layer.pose.orientation.y = quad.orientation.y;
+		layer.pose.orientation.z = quad.orientation.z;
+		layer.pose.orientation.w = quad.orientation.w;
+		layer.pose.position.x = quad.center.x;
+		layer.pose.position.y = quad.center.y;
+		layer.pose.position.z = quad.center.z;
+		layer.size.width = quad.size;
+		layer.size.height = quad.size;
+		layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
+		reticle.submitted = true;
+	}
+}
+
 /*!
  * Describe the quad that shows the flat frame swapchain's most recently released image: the
  * floating panel in the world-locked space while a menu is open (#49), otherwise the head-locked
@@ -1242,6 +1481,10 @@ void describeQuadLayer(OpenXRState::Layers & layers, XrCompositionLayerFlags lay
 	}
 
 	layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
+
+	if(layer.space == g_xr.localSpace) {
+		describeBeamLayer(layers);
+	}
 }
 
 //! The panel settings from cfg.ini (clamped when read)
@@ -1376,6 +1619,9 @@ bool finishFlatFrame(OpenXRState::Layers & layers) {
 	frame.quadAcquired = false;
 
 	describeQuadLayer(layers, frame.stereo ? XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT : 0);
+	if(frame.stereo) {
+		describeReticleLayers(layers);
+	}
 
 	return true;
 }
@@ -2006,6 +2252,9 @@ bool beginFrameFor(const Vec2i & windowSize, FrameTargets targets) {
 	frame.begun = true;
 
 	locateFrameViews(frame.state.predictedDisplayTime);
+	// The hands for the same display time in the same space as the eyes: the body is posed with the
+	// sample the frame is submitted with (#36, F-21)
+	g_xr.actions.locateHands(g_xr.localSpace, frame.state.predictedDisplayTime, frame.hands);
 
 	beginFrameTargets(windowSize, targets);
 
@@ -2074,6 +2323,10 @@ void submitFrame(const Vec2i & windowSize) {
 	if(frame.state.shouldRender) {
 		GLStateGuard state;
 		g_xr.layers.count = 0;
+		g_xr.pointer.submitted = false;
+		for(OpenXRState::HandReticle & reticle : g_xr.reticles) {
+			reticle.submitted = false;
+		}
 		eyes = describeEyeLayer(g_xr.layers);
 		if(!eyes) {
 			background = renderBackground(g_xr.layers);
@@ -2148,7 +2401,7 @@ bool beginEyeRender(size_t eye) {
 	}
 
 	frame.eyeInRender = eye;
-	bindTarget(swapchain.framebuffer(), swapchain.size());
+	bindTarget(swapchain.renderFramebuffer(), swapchain.size(), swapchain.samples());
 
 	return true;
 }
@@ -2161,6 +2414,11 @@ void endEyeRender(size_t eye) {
 	}
 
 	Swapchain & swapchain = g_xr.eyes[eye];
+	if(swapchain.samples() > 1) {
+		// The multisampled picture reaches the image before anyone reads it (#226)
+		GLStateGuard state;
+		swapchain.resolve();
+	}
 	if(eye == g_xr.mirror.eye()) {
 		// The desktop mirror (#21) takes its copy while the image is ours
 		g_xr.mirror.copyEye(swapchain);
@@ -2185,6 +2443,10 @@ StereoStatus stereoStatus() {
 
 const FrameViews & frameViews() {
 	return g_xr.frame.views;
+}
+
+const FrameHands & frameHands() {
+	return g_xr.frame.hands;
 }
 
 bool isEnabled() {
@@ -2250,7 +2512,7 @@ PanelStatus panelStatus() {
 	return status;
 }
 
-bool panelHit(const Vec3f & origin, const Vec3f & direction, Vec2f & pixel) {
+bool panelHit(const Vec3f & origin, const Vec3f & direction, Vec2f & pixel, Vec3f * point) {
 	const OpenXRState::Panel & panel = g_xr.panel;
 	if(!g_xr.running || panel.anchor.mode() != PanelMode::World || !g_xr.quad.isValid()) {
 		return false;
@@ -2262,7 +2524,61 @@ bool panelHit(const Vec3f & origin, const Vec3f & direction, Vec2f & pixel) {
 		return false;
 	}
 	pixel = uv * Vec2f(g_xr.quad.size());
+	if(point) {
+		*point = origin + direction * distance;
+	}
 	return true;
+}
+
+bool panelShown() {
+	return g_xr.running && g_xr.panel.anchor.mode() == PanelMode::World && g_xr.quad.isValid();
+}
+
+bool panelPoint(const Vec2f & pixel, Vec3f & point) {
+	const OpenXRState::Panel & panel = g_xr.panel;
+	if(!g_xr.running || panel.anchor.mode() != PanelMode::World || !g_xr.quad.isValid()) {
+		return false;
+	}
+	point = vr::panelPoint(panel.anchor.pose(), panelSize(panel.params.width, g_xr.quad.size()),
+	                       pixel / Vec2f(g_xr.quad.size()));
+	return true;
+}
+
+std::array<HandAim, HandCount> handAims() {
+	std::array<HandAim, HandCount> aims;
+	if(!g_xr.running) {
+		return aims;
+	}
+	const std::array<ActionSet::AimPose, HandCount> poses = g_xr.actions.locateAim(g_xr.localSpace, g_xr.lastDisplayTime);
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		if(poses[hand].valid) {
+			aims[hand].valid = true;
+			aims[hand].origin = poses[hand].position;
+			aims[hand].direction = glm::normalize(poses[hand].orientation * Vec3f(0.f, 0.f, -1.f));
+		}
+	}
+	return aims;
+}
+
+void setPointerBeam(bool shown, const Vec3f & from, const Vec3f & to) {
+	g_xr.pointer.requested = shown;
+	g_xr.pointer.from = from;
+	g_xr.pointer.to = to;
+}
+
+bool pointerBeamShown() {
+	return g_xr.pointer.submitted;
+}
+
+void setHandReticle(Hand hand, bool shown, const Vec3f & hit, bool bright) {
+	OpenXRState::HandReticle & reticle = g_xr.reticles[size_t(hand)];
+	reticle.requested = shown;
+	reticle.hit = hit;
+	reticle.bright = bright;
+}
+
+bool handReticleShown(Hand hand) {
+	return g_xr.reticles[size_t(hand)].submitted;
 }
 
 void recenterPanel() {
@@ -2388,6 +2704,11 @@ const FrameViews & frameViews() {
 	return none;
 }
 
+const FrameHands & frameHands() {
+	static const FrameHands none;
+	return none;
+}
+
 const char * sessionStateString() {
 	return "none";
 }
@@ -2419,7 +2740,31 @@ PanelStatus panelStatus() {
 	return PanelStatus();
 }
 
-bool panelHit(const Vec3f & /* origin */, const Vec3f & /* direction */, Vec2f & /* pixel */) {
+bool panelHit(const Vec3f & /* origin */, const Vec3f & /* direction */, Vec2f & /* pixel */, Vec3f * /* point */) {
+	return false;
+}
+
+bool panelShown() {
+	return false;
+}
+
+bool panelPoint(const Vec2f & /* pixel */, Vec3f & /* point */) {
+	return false;
+}
+
+std::array<HandAim, HandCount> handAims() {
+	return std::array<HandAim, HandCount>();
+}
+
+void setPointerBeam(bool /* shown */, const Vec3f & /* from */, const Vec3f & /* to */) { }
+
+bool pointerBeamShown() {
+	return false;
+}
+
+void setHandReticle(Hand /* hand */, bool /* shown */, const Vec3f & /* hit */, bool /* bright */) { }
+
+bool handReticleShown(Hand /* hand */) {
 	return false;
 }
 

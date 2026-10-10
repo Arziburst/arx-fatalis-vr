@@ -63,12 +63,17 @@ mark one
 '@
 Check 'a sequence parses' ($seq -isnot [string]) $seq
 Check 'launch directives are separated from the steps' ($seq.Sim -eq 'idle' -and "$($seq.Args)" -eq '--loadlevel 10' -and ($seq.Steps | Where-Object { $_.Kind -in 'sim', 'args' }).Count -eq 0)
+Check 'no save unless one is named' ($null -eq $seq.Save)
+$saved = Get-Parse "@sim idle`n@save mvp-new-game`n@args --loadslot 0`n@frames 1"
+Check '@save names the start save and is not a step' ($saved -isnot [string] -and $saved.Save -eq 'mvp-new-game' -and @($saved.Steps).Count -eq 1) $saved
 $kinds = ($seq.Steps | ForEach-Object Kind) -join ' '
 Check 'every directive has its kind' ($kinds -eq 'wait frames until assert remember assert mark log nolog shot diff key pending command command') $kinds
 Check 'the trailing comment is dropped' ($seq.Steps[0].Ms -eq 100)
 Check '@until has its timeout, @assert a quoted path' ($seq.Steps[2].Seconds -eq 20 -and $seq.Steps[3].Path -eq 'events.byName."spell.cast"')
 Check '@log has its regex and seconds' ($seq.Steps[7].Regex -eq 'hello (world)?' -and $seq.Steps[7].Seconds -eq 3)
 Check '@diff has its eye' ($seq.Steps[10].Eye -eq 'right' -and $seq.Steps[10].Value -eq '2.5')
+$metric = Get-Parse "@diff a b max lt 64 left-layer`n@diff a b lt 1"
+Check '@diff takes the max metric and a layer (#72), mean by default' ($metric -isnot [string] -and $metric.Steps[0].Metric -eq 'max' -and $metric.Steps[0].Eye -eq 'left-layer' -and $metric.Steps[0].Value -eq '64' -and $metric.Steps[1].Metric -eq 'mean' -and $metric.Steps[1].Eye -eq 'left') $metric
 Check '@key has its count and delay' ($seq.Steps[11].Count -eq 2 -and $seq.Steps[11].DelayMs -eq 100)
 Check '@pending wraps a step' ($seq.Steps[12].Issue -eq 24 -and $seq.Steps[12].Inner.Kind -eq 'diff')
 Check "';' groups commands into one batch" ($seq.Steps[13].Commands.Count -eq 2 -and $seq.Steps[14].Commands.Count -eq 1)
@@ -140,8 +145,11 @@ $fake = {
 		$last = ''; $lineErrors = 0
 		$cmd = Join-Path $Dir 'command.txt'
 		if (Test-Path $cmd) {
-			$lines = @(Get-Content $cmd)
-			Remove-Item $cmd -Force
+			# A transient sharing violation (the test's own read, a scanner on the runner) must not lose the batch:
+			# the file is removed only after it was read, and a failed read is tried again on the next pass (#275).
+			$lines = $null
+			try { $lines = @([IO.File]::ReadAllLines($cmd)); Remove-Item $cmd -Force -ErrorAction Stop } catch { $lines = $null }
+			if ($null -eq $lines) { Start-Sleep -Milliseconds 30; continue }
 			foreach ($l in $lines) {
 				$l = $l.Trim(); if (-not $l) { continue }
 				$last = $l
@@ -155,7 +163,10 @@ $fake = {
 				elseif ($l -match '^refuse') { $lineErrors++ }
 			}
 			$seq++
-			Set-Content (Join-Path $Dir 'ack.txt') "seq=$seq frame=$frame errors=$lineErrors last=$last error=-"
+			# The test reads ack.txt every 50 ms; a write that hits its open handle is retried, never dropped (#275).
+			for ($try = 0; $try -lt 50; $try++) {
+				try { [IO.File]::WriteAllText((Join-Path $Dir 'ack.txt'), "seq=$seq frame=$frame errors=$lineErrors last=$last error=-"); break } catch { Start-Sleep -Milliseconds 20 }
+			}
 		}
 		$frame += 3
 		$status = @{ pid = 1; state = 'GAMEPLAY'; frame = $frame; errors = $errors; cmdSeq = $seq; captureSeq = $capture
@@ -256,11 +267,33 @@ foreach ($file in $shipped) {
 	$parsed = try { Read-ArxSequence $file.FullName } catch { "$_" }
 	Check "  $($file.Name) parses" ($parsed -isnot [string]) $parsed
 	if ($parsed -isnot [string]) {
-		Check "  $($file.Name) names its start" ($parsed.Sim -and $parsed.Args)
+		# A simulator script, or a flat run said outright (--no-vr in @args, stand-up.xrs #263)
+		Check "  $($file.Name) names its start" (($parsed.Sim -or $parsed.Args -contains '--no-vr') -and $parsed.Args)
+		# CI gives every sequence a fresh user dir (#296): a slot to load exists only when the sequence says which save
+		Check "  $($file.Name) declares the @save its --loadslot needs" (-not ($parsed.Args -contains '--loadslot') -or [bool]$parsed.Save)
 		Check "  $($file.Name) names the issue behind every @pending" (@($parsed.Steps | Where-Object { $_.Kind -eq 'pending' -and $_.Issue -gt 0 }).Count -eq @($parsed.Steps | Where-Object Kind -eq 'pending').Count)
 	}
 }
 Check 'the simulator script the sequences use exists' (Test-Path (Join-Path $PSScriptRoot 'vrsim\idle.vrsim'))
+
+# --- a fresh user dir per sequence (#296) ------------------------------------------------------------------------
+Write-Host 'fresh user dir per sequence'
+# Two "sequences": the first leaves a file behind (a saved file, a controls ini), the second fails when it sees it
+$ciDirs = Join-Path $work 'ci-userdirs'
+$second = { param($dir) if (Test-Path (Join-Path $dir 'vr-controls-index.ini')) { 1 } else { 0 } }
+$dirA = New-ArxSequenceUserDir $ciDirs 'vr-remap'
+Set-Content (Join-Path $dirA 'vr-controls-index.ini') 'left over'
+# One shared dir (the old behaviour): the second sequence sees the file of the first
+Check 'a shared dir leaks the first sequence into the second' ((& $second $dirA) -eq 1)
+# A fresh dir per sequence: it does not
+$dirB = New-ArxSequenceUserDir $ciDirs 'vr-settings-flat'
+Check 'the second sequence gets its own dir' ($dirB -ne $dirA)
+Check 'the second sequence does not see the first one''s file' ((& $second $dirB) -eq 0)
+# The same name again (a re-run) starts empty too
+$dirA2 = New-ArxSequenceUserDir $ciDirs 'vr-remap'
+Check 'a re-run of a sequence starts from an empty dir' ($dirA2 -eq $dirA -and -not (Test-Path (Join-Path $dirA2 'vr-controls-index.ini')))
+$ciSource = Get-Content -Raw (Join-Path $PSScriptRoot 'ci-smoke.ps1')
+Check 'ci-smoke runs every sequence in such a dir' ($ciSource -match 'New-ArxSequenceUserDir' -and $ciSource -match '\$p\.UserDir = \$seqUserDir')
 
 Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ''

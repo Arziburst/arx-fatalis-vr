@@ -74,6 +74,7 @@ OpenGLRenderer::OpenGLRenderer()
 	, m_hasFogx(false)
 	, m_hasFogDistanceMode(false)
 	, m_renderTargetSize(0)
+	, m_renderTargetSamples(0)
 	, m_currentTransform(GL_UnsetTransform)
 	, m_projection(1.f)
 	, m_view(1.f)
@@ -575,18 +576,24 @@ Vec2i OpenGLRenderer::renderTargetSize() const {
 	return mainApp->getWindow()->getSize();
 }
 
-void OpenGLRenderer::setRenderTargetSize(const Vec2i & size) {
+void OpenGLRenderer::setRenderTargetSize(const Vec2i & size, int samples) {
 
-	if(size == m_renderTargetSize) {
+	if(size == Vec2i(0)) {
+		samples = 0;
+	}
+
+	if(size == m_renderTargetSize && samples == m_renderTargetSamples) {
 		return;
 	}
 
-	// Multisampling belongs to the window; the alpha cutout state that relies on it is flushed
-	if(size != Vec2i(0) && m_hasMSAA) {
+	// Multisampling belongs to the target: the alpha cutout state that relies on it is flushed, and
+	// the next SetAntialiasing(true) turns it on again if the new target has it
+	if(m_hasMSAA) {
 		SetAntialiasing(false);
 	}
 
 	m_renderTargetSize = size;
+	m_renderTargetSamples = samples;
 
 	// The viewport and the scissor are measured from the top of the target: the same rectangles
 	// land elsewhere in a target of another height, so they are set again
@@ -712,18 +719,14 @@ void OpenGLRenderer::SetFogParams(float fogStart, float fogEnd) {
 
 void OpenGLRenderer::SetAntialiasing(bool enable) {
 	
-	if(m_MSAALevel <= 0) {
-		return;
-	}
-	
-	if(enable && !config.video.antialiasing) {
-		return;
-	}
-
-	// An offscreen target (a VR eye image, #19) has no multisampling: the alpha cutout path must
-	// not rely on alpha to coverage or sample shading there
-	if(enable && m_renderTargetSize != Vec2i(0)) {
-		return;
+	// An offscreen target (a VR eye or the flat frame image, #19) has its own multisampling (#226) -
+	// the window's antialiasing setting is not its switch. A single-sample target must not rely on
+	// alpha to coverage or sample shading for alpha cutouts.
+	if(enable) {
+		const bool offscreen = (m_renderTargetSize != Vec2i(0));
+		if(offscreen ? m_renderTargetSamples <= 1 : (m_MSAALevel <= 0 || !config.video.antialiasing)) {
+			return;
+		}
 	}
 
 	if(enable == m_hasMSAA) {
@@ -1037,8 +1040,15 @@ void OpenGLRenderer::flushState() {
 				 * that is composited by its alpha later (the flat frame over the stereo world in
 				 * VR, #19) holds premultiplied color with the right alpha. No draw reads the
 				 * destination alpha, and the window never shows it: flat rendering is unchanged.
+				 * A blend that keeps all of the destination (additive glows, particles, flares)
+				 * only adds light and covers nothing: its alpha would turn the world behind an
+				 * additive texture's black into a dark square (#72).
 				 */
-				glBlendFuncSeparate(glblendSrc, glblendDst, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+				if(glblendDst == GL_ONE) {
+					glBlendFuncSeparate(glblendSrc, glblendDst, GL_ZERO, GL_ONE);
+				} else {
+					glBlendFuncSeparate(glblendSrc, glblendDst, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+				}
 				m_glblendSrc = glblendSrc;
 				m_glblendDst = glblendDst;
 			}

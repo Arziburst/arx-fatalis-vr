@@ -574,7 +574,14 @@ void Input::update(float time) {
 	} else {
 		mouseInWindow = false;
 	}
-	
+
+	// The VR menu pointer (#34): the hand on the floating panel is the mouse; a hand reticle in the world
+	// (#37) also in the exploration mode
+	if(m_virtualMousePosition && (m_mouseMode == Mouse::Absolute || m_virtualMouseInRelativeMode)) {
+		iMouseA = *m_virtualMousePosition;
+		mouseInWindow = true;
+	}
+
 	int relX, relY;
 	backend->getRelativeMouseCoords(relX, relY, iWheelDir);
 	

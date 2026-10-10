@@ -1,0 +1,83 @@
+# Speed by deflection, jump and the crouch toggle (#33, D-019): a slight push of the left stick sneaks (the stealth
+# walk, slower), a full push runs, the band between keeps the pace; right A jumps; right stick down toggles the crouch
+# and does not turn even when it drifts sideways (F-121). Run on the test save mvp-new-game (heading about 0: +z):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence sneak-jump-crouch
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s in: past the fade-in, the head reference taken
+setplayercontrols on
+@assert player.controlsBlocked eq false
+@assert player.yaw gt 345                    # the save's heading: the z steps below assume it
+@remember heading player.yaw
+
+# A full push: the walk runs, at the speed of the run animation
+@remember z0 player.z
+vr-input stick left 0 1
+@frames 30
+@assert vr.input.walk.walking eq true
+@assert vr.input.walk.sneak eq false
+@assert player.stealth eq false
+@assert player.animSpeed gt 0
+@remember run player.animSpeed
+@log GameEvent:.*vr\.walk state=start .*pace=run
+vr-input stick left 0 0
+@frames 10
+@assert vr.input.walk.walking eq false
+@assert player.z gt {z0+10}
+
+# A slight push (0.5: 0.375 past the dead zone): a new walk that sneaks - the engine's stealth walk, whose
+# animation moves clearly slower than the run (a distance depends on walls and the frame rate, the speed not)
+@remember z1 player.z
+vr-input stick left 0 0.5
+@frames 30
+@assert vr.input.walk.walking eq true
+@assert vr.input.walk.sneak eq true
+@assert player.stealth eq true
+@assert player.animSpeed gt 0
+@assert player.animSpeed lt {run*0.8}
+@log GameEvent:.*vr\.walk state=start .*pace=sneak
+vr-input stick left 0 0
+@frames 10
+@assert vr.input.walk.walking eq false
+@assert player.z gt {z1+5}
+
+# The pace within one walk: full -> the band (0.72: 0.65) stays a run -> below (0.65: 0.5625) sneaks
+@remember changes vr.input.walk.paceChanges
+vr-input stick left 0 1
+@frames 10
+vr-input stick left 0 0.72
+@frames 10
+@assert vr.input.walk.sneak eq false
+@assert vr.input.walk.paceChanges eq {changes}
+vr-input stick left 0 0.65
+@frames 10
+@assert vr.input.walk.sneak eq true
+@assert vr.input.walk.paceChanges eq {changes+1}
+@log GameEvent:.*vr\.walk state=pace pace=sneak
+vr-input stick left 0 0
+@frames 10
+
+# Right A: a jump
+@assert player.jumping eq false
+vr-input tap right.a
+@until player.jumping eq true 2s
+@until player.jumping eq false 5s
+
+# Right stick down, drifting sideways past the turn dead zone: the crouch toggles on, the heading stays
+@assert player.crouchToggle eq false
+vr-input stick right 0.4 -0.9; vr-input down right.stick_down
+@frames 20
+vr-input up right.stick_down; vr-input stick right 0 0
+@frames 10
+@assert player.crouchToggle eq true
+@assert player.crouched eq true
+@assert player.yaw eq {heading}
+# ... and off again
+vr-input tap right.stick_down
+@frames 10
+@assert player.crouchToggle eq false
+@assert player.crouched eq false
+@assert errors eq 0

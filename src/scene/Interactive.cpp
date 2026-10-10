@@ -46,6 +46,9 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "scene/Interactive.h"
 
+#include "vr/VRBody.h"
+#include "vr/VRReticle.h"
+
 #include <cstdlib>
 #include <iomanip>
 #include <algorithm>
@@ -240,16 +243,31 @@ void ARX_INTERACTIVE_Show_Hide_1st(Entity * io, bool hide1st) {
 	
 	ARX_PROFILE_FUNC();
 	
-	if(!io || HERO_SHOW_1ST == long(hide1st)) {
+	// Under a tracked head the body is the player's own (D-009, #36): only the head and the neck are
+	// hidden, the torso stays - the engine's "1st" selection hides the chest and the belt as well
+	static bool HERO_HIDE_HEAD_ONLY = false;
+	const bool headOnly = vr::hidesHeadOnly();
+
+	if(!io || (HERO_SHOW_1ST == long(hide1st) && HERO_HIDE_HEAD_ONLY == headOnly)) {
 		return;
 	}
-	
+
+	// Another set of faces: show everything the old set hid before hiding the new one
+	if(HERO_HIDE_HEAD_ONLY != headOnly) {
+		for(EERIE_FACE & face : io->obj->facelist) {
+			face.facetype &= ~POLY_HIDE;
+		}
+	}
+
 	HERO_SHOW_1ST = long(hide1st);
-	
-	if(VertexSelectionId selection = EERIE_OBJECT_GetSelection(io->obj, "1st")) {
+	HERO_HIDE_HEAD_ONLY = headOnly;
+
+	VertexSelectionId selection = headOnly ? VertexSelectionId() : EERIE_OBJECT_GetSelection(io->obj, "1st");
+	if(headOnly || selection) {
 		for(EERIE_FACE & face : io->obj->facelist) {
 			for(VertexId vertex : face.vid) {
-				if(IsInSelection(io->obj, vertex, selection)) {
+				const bool inSet = headOnly ? vr::isHeadVertex(io->obj, vertex) : IsInSelection(io->obj, vertex, selection);
+				if(inSet) {
 					if(hide1st) {
 						face.facetype |= POLY_HIDE;
 					} else {
@@ -260,7 +278,7 @@ void ARX_INTERACTIVE_Show_Hide_1st(Entity * io, bool hide1st) {
 			}
 		}
 	}
-	
+
 	ARX_INTERACTIVE_HideGore(entities.player(), false);
 	
 }
@@ -1636,6 +1654,14 @@ Entity * GetFirstInterAtPos(const Vec2s & pos) {
 		fMaxDist = 850;
 	}
 	
+	// VR (#37): the world is picked by the hands' rays in 3D; a world reticle's mouse position stands for
+	// what its ray hit, and a position on the 2D interface never picks the world
+	Entity * reticleEntity = nullptr;
+	const vr::ReticlePick reticle = vr::reticlePickAt(pos, reticleEntity);
+	if(reticle == vr::ReticlePick::Found) {
+		return reticleEntity;
+	}
+	
 	for(Entity & entity : entities) {
 		
 		if(entity.ioflags & (IO_CAMERA | IO_MARKER) || !(entity.gameFlags & GFLAG_INTERACTIVITY)) {
@@ -1647,6 +1673,9 @@ Entity * GetFirstInterAtPos(const Vec2s & pos) {
 		}
 		
 		bool bPlayerEquiped = IsEquipedByPlayer(&entity);
+		if(reticle == vr::ReticlePick::Blocked && !(bPlayerEquiped && (player.Interface & INTER_PLAYERBOOK))) {
+			continue;
+		}
 		if(!((bPlayerEquiped && (player.Interface & INTER_PLAYERBOOK))
 		   || (entity.gameFlags & GFLAG_ISINTREATZONE))) {
 			continue;
@@ -1975,6 +2004,45 @@ void UpdateInter() {
 
 bool g_reprojectEntitiesPerView = false;
 
+//! The entities RenderInter() draws
+static bool isRenderedInScene(const Entity & entity) {
+	return (entity.gameFlags & GFLAG_ISINTREATZONE)
+	       && !(entity.ioflags & (IO_CAMERA | IO_MARKER))
+	       && entity != *entities.player();
+}
+
+//! Where RenderInter() puts an entity without animation
+static TransformInfo staticEntityTransform(const Entity & entity) {
+	Anglef angle = entity.angle;
+	angle.setYaw(MAKEANGLE(270.f - angle.getYaw()));
+	return TransformInfo(entity.pos, toQuaternion(angle), entity.scale);
+}
+
+void ProjectEntitiesForPicking() {
+
+	ARX_PROFILE_FUNC();
+
+	for(Entity & entity : entities.inScene()) {
+
+		if(!isRenderedInScene(entity) || !entity.obj) {
+			continue;
+		}
+
+		if(entity.animlayer[0].cur_anim) {
+			// bbox2D is still the update's; the pixel test reads the clip positions the eyes replaced
+			DrawEERIEInter_ViewProjectTransform(entity.obj);
+		} else if(!(entity.ioflags & IO_NPC)) {
+			// The draw set both from the last eye. The model transform is done again: gold coins share
+			// their objects, the last coin drawn left its world positions in them
+			entity.bbox2D.min.x = 9999;
+			entity.bbox2D.max.x = -1;
+			DrawEERIEInter_Prepare(entity.obj, staticEntityTransform(entity), &entity, false);
+		}
+
+	}
+
+}
+
 void RenderInter() {
 
 	ARX_PROFILE_FUNC();
@@ -1983,9 +2051,7 @@ void RenderInter() {
 
 	for(Entity & entity : entities.inScene()) {
 
-		if(!(entity.gameFlags & GFLAG_ISINTREATZONE)
-		   || (entity.ioflags & (IO_CAMERA | IO_MARKER))
-		   || entity == *entities.player()) {
+		if(!isRenderedInScene(entity)) {
 			continue;
 		}
 
@@ -2000,7 +2066,8 @@ void RenderInter() {
 
 			if(g_reprojectEntitiesPerView && entity.obj) {
 				// The world positions are the update's; the screen positions follow this view's
-				// camera (an eye, #19). bbox2D stays the head camera's for picking.
+				// camera (an eye, #19). bbox2D stays the head camera's for picking, the clip positions
+				// go back to it in ProjectEntitiesForPicking() (#72)
 				DrawEERIEInter_ViewProjectTransform(entity.obj);
 			}
 
@@ -2016,11 +2083,7 @@ void RenderInter() {
 			}
 			
 			if(!(entity.ioflags & IO_NPC) && entity.obj) {
-				Anglef angle = entity.angle;
-				angle.setYaw(MAKEANGLE(270.f - angle.getYaw()));
-				glm::quat rotation = toQuaternion(angle);
-				TransformInfo t(entity.pos, rotation, entity.scale);
-				DrawEERIEInter(entity.obj, t, &entity, false, invisibility);
+				DrawEERIEInter(entity.obj, staticEntityTransform(entity), &entity, false, invisibility);
 			}
 			
 		}

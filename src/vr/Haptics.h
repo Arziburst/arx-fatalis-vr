@@ -29,14 +29,14 @@
 
 /*!
  * \file
- * \brief Haptic feedback: the event table and the per-hand mixer (#42, F-44, F-193, D-034)
+ * \brief Haptic feedback: the event table and the per-hand mixer (#42, F-44, F-193, D-NEW)
  *
  * The game asks for a pulse by event (\ref HapticEvent); the table turns it into a strength, a
  * duration and a frequency, and \ref HapticMixer decides per hand what is actually sent: the
  * strongest request of a frame wins, and a weaker pulse never cuts a stronger one that is still
  * playing. vr/VRInput.cpp drains the mixer on the frame thread right after the actions are synced.
  *
- * The numbers are the MVP defaults the coordinator approved (D-034) from VHVR's and HIGGS' tables;
+ * The numbers are the MVP defaults the coordinator approved (D-NEW) from VHVR's and HIGGS' tables;
  * the owner judges them in the headset. Pure logic - no OpenXR, no engine globals, no clock reads -
  * covered by tests/vr/HapticsTest.
  */
@@ -81,7 +81,7 @@ struct HapticPulse {
 	bool empty() const { return amplitude <= 0.f || seconds <= 0.f; }
 };
 
-// The MVP table (D-034). HitTaken: amplitude = base + perLife x (damage / max life), clamped
+// The MVP table (D-NEW). HitTaken: amplitude = base + perLife x (damage / max life), clamped
 constexpr float HitTakenBase = 0.3f;
 constexpr float HitTakenPerLife = 1.5f;
 constexpr float HitTakenMax = 0.9f;

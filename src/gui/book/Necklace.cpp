@@ -135,6 +135,7 @@ void ARX_INTERFACE_ManageOpenedBook_Finish(const Vec2f & mousePos, Rectf rect, f
 	RecalcLight(light);
 	
 	Camera * oldcam = g_camera;
+	const PreparedCamera oldPrepared = g_preparedCamera;
 	
 	g_culledDynamicLights[0] = light;
 	g_culledDynamicLightsCount = 1;
@@ -235,7 +236,7 @@ void ARX_INTERFACE_ManageOpenedBook_Finish(const Vec2f & mousePos, Rectf rect, f
 	
 	*light = tl;
 	
-	PrepareCamera(oldcam, g_size);
+	RestorePreparedCamera(oldcam, oldPrepared);
 	
 	GRenderer->SetAntialiasing(false);
 	

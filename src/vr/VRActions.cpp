@@ -26,6 +26,7 @@
 #include <sstream>
 #include <vector>
 
+#include "core/GameEvent.h"
 #include "io/log/Logger.h"
 #include "util/String.h"
 #include "vr/VRBindings.h"
@@ -239,6 +240,14 @@ bool ActionSet::attach(XrSession session) {
 			LogWarning << "[vr] input: could not create the " << handName(Hand(hand)) << " hand's pose space: "
 			           << resultName(result);
 		}
+		// The pointer ray of the menu pointer (#34)
+		spaceInfo.action = m_actions.aimPose;
+		result = xrCreateActionSpace(session, &spaceInfo, &m_aimSpaces[hand]);
+		if(XR_FAILED(result)) {
+			m_aimSpaces[hand] = XR_NULL_HANDLE;
+			LogWarning << "[vr] input: could not create the " << handName(Hand(hand)) << " hand's aim space, no menu"
+			              " pointer for it: " << resultName(result);
+		}
 	}
 
 	LogInfo << "[vr] input: action set attached to the session - the interaction profiles follow once the"
@@ -298,6 +307,12 @@ void ActionSet::detach() {
 	stopHaptics();
 
 	for(XrSpace & space : m_gripSpaces) {
+		if(space != XR_NULL_HANDLE) {
+			xrDestroySpace(space);
+			space = XR_NULL_HANDLE;
+		}
+	}
+	for(XrSpace & space : m_aimSpaces) {
 		if(space != XR_NULL_HANDLE) {
 			xrDestroySpace(space);
 			space = XR_NULL_HANDLE;
@@ -427,6 +442,66 @@ void ActionSet::checkHandedness(XrSpace viewSpace, XrTime time) {
 		           << " m LEFT of the left one along the head's right axis - hands crossed, or the runtime"
 		              " swapped the hands";
 	}
+}
+
+std::array<ActionSet::AimPose, HandCount> ActionSet::locateAim(XrSpace base, XrTime time) const {
+
+	std::array<AimPose, HandCount> poses;
+	if(m_session == XR_NULL_HANDLE || base == XR_NULL_HANDLE || time == 0 || !m_focused) {
+		return poses;
+	}
+
+	const XrSpaceLocationFlags tracked = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		if(m_aimSpaces[hand] == XR_NULL_HANDLE) {
+			continue;
+		}
+		XrSpaceLocation located = { XR_TYPE_SPACE_LOCATION };
+		if(XR_FAILED(xrLocateSpace(m_aimSpaces[hand], base, time, &located))
+		   || (located.locationFlags & tracked) != tracked) {
+			continue;
+		}
+		AimPose & pose = poses[hand];
+		pose.valid = true;
+		pose.position = Vec3f(located.pose.position.x, located.pose.position.y, located.pose.position.z);
+		pose.orientation = glm::quat(located.pose.orientation.w, located.pose.orientation.x,
+		                             located.pose.orientation.y, located.pose.orientation.z);
+	}
+
+	return poses;
+}
+
+void ActionSet::locateHands(XrSpace space, XrTime time, FrameHands & hands) {
+
+	hands = FrameHands();
+
+	if(m_session == XR_NULL_HANDLE || space == XR_NULL_HANDLE || time == 0) {
+		return;
+	}
+
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		bool tracked = false;
+		if(m_gripSpaces[hand] != XR_NULL_HANDLE) {
+			XrSpaceLocation located = { XR_TYPE_SPACE_LOCATION };
+			XrResult result = xrLocateSpace(m_gripSpaces[hand], space, time, &located);
+			const XrSpaceLocationFlags valid = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+			// A failed call counts as untracked: said once per episode below, like a lost controller
+			if(XR_SUCCEEDED(result) && (located.locationFlags & valid) == valid) {
+				tracked = true;
+				hands.hands[hand].position = Vec3f(located.pose.position.x, located.pose.position.y,
+				                                   located.pose.position.z);
+				hands.hands[hand].orientation = glm::quat(located.pose.orientation.w, located.pose.orientation.x,
+				                                          located.pose.orientation.y, located.pose.orientation.z);
+			}
+		}
+		hands.tracked[hand] = tracked;
+		// An episode, not a frame: a controller coming into tracking or leaving it
+		if(tracked != m_handTracked[hand]) {
+			m_handTracked[hand] = tracked;
+			gameevent::Event("vr.hand", 200)("hand", handName(Hand(hand)))("state", tracked ? "tracked" : "lost");
+		}
+	}
+
 }
 
 bool ActionSet::sync(ControllerInput & input, XrSpace viewSpace, XrTime time) {

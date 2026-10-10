@@ -26,8 +26,11 @@
 
 #include "platform/Platform.h"
 #include "vr/Haptics.h"
+#include "math/Types.h"
+#include "vr/Locomotion.h"
 #include "vr/VRControls.h"
 #include "vr/VRGameInput.h"
+#include "vr/VRTurn.h"
 
 /*!
  * \brief The controllers as gameplay events (#30, D-020)
@@ -57,11 +60,64 @@ const ControlResolver & controls();
 //! What the engine was given in the last update: actions, buttons, the move vector, the turn axis
 const GameInputState & gameInput();
 
+//! The stick walk of the last game update (#31): what status.json reports
+struct WalkStatus {
+	bool walking = false;
+	float yaw = 0.f;     //!< engine degrees [0, 360): where the stick's forward pointed (the look, D-008)
+	float heading = 0.f; //!< engine degrees: the player's heading in that update
+	Vec3f direction = Vec3f(0.f);
+	u64 walks = 0;       //!< walk episodes since the game started
+	bool sneak = false;  //!< the walk sneaks: a slight deflection (#33)
+	u64 paceChanges = 0; //!< switches between sneak and run within a walk since the game started (#33)
+};
+
+const WalkStatus & walkStatus();
+
+//! Called by the game's player controls every update with the stick walk it applied
+void reportWalk(const StickWalk & walk, float yaw, float heading);
+
 //! The controllers the current layout is for
 ControllerType controllerType();
 
 //! The controllers' state of the last update: sticks and analog values
 const ControllerInput & controllerInput();
+
+//! The turn settings of cfg.ini (\c vr_smooth_turn, \c vr_snap_turn_angle, \c vr_snap_turn_repeat,
+//! \c vr_smooth_turn_speed - #32)
+TurnSettings turnSettings();
+
+/*!
+ * \brief The yaw the player turns by in this frame from the turn axis (#32) - call once per frame
+ *
+ * \param seconds the frame's duration
+ * \param allowed false while the player cannot turn (menus, cinematics, blocked controls)
+ * \return degrees, right positive
+ */
+float updateTurn(float seconds, bool allowed);
+
+//! Snaps and the total turned so far - for status.json
+const TurnController & turnState();
+//! The menu pointer (#34) as status.json reports it
+struct PointerStatus {
+	bool shown = false;          //!< the floating panel is shown: the pointer is on
+	bool active = false;         //!< the owning hand's ray is on the panel: the cursor follows it
+	const char * owner = "right"; //!< the hand that owns the cursor
+	Vec2f cursor = Vec2f(0.f);   //!< the mouse it gives, the 2D interface's pixels
+	bool beam = false;           //!< the beam was in the last submitted frame
+	std::array<bool, HandCount> onPanel = { }; //!< each hand's ray hits the panel
+	std::array<bool, HandCount> onWorld = { }; //!< each hand's reticle is a world target (#37)
+	u64 clicks = 0;              //!< trigger presses on the panel
+	u64 worldClicks = 0;         //!< trigger presses with the reticle in the world (#37)
+	u64 offPanelPresses = 0;     //!< presses off it, kept from the engine
+	u64 ownerChanges = 0;
+};
+
+PointerStatus pointerStatus();
+
+//! The repeats of the last snap push (0: a single snap) and their mean interval in seconds of the clock, from
+//! the push's first snap to its last repeat (0 without a repeat) - for status.json (#285)
+u64 snapPushRepeats();
+float snapRepeatInterval();
 
 /*!
  * \brief The test channel's \c vr-input command
@@ -72,14 +128,17 @@ const ControllerInput & controllerInput();
  * \c bind \c <event> \c <binding> (e.g. \c bind \c jump \c left.grip+left.a) - remap one event;
  * \c haptic \c <event> \c [left|right|both] \c [intensity] (e.g. \c haptic \c weapon_hit) - a pulse as the
  * game would ask for it (#42);
- * \c reset - the default layout for the current controllers.
+ * \c reset - the default layout for the current controllers;
+ * \c turn \c snap|smooth, \c turn \c angle \c <degrees>, \c turn \c speed \c <degrees per second>,
+ * \c turn \c repeat \c <seconds> -
+ * the turn settings, as cfg.ini would set them (#32).
  *
  * \return an empty string on success, otherwise the reason it was refused
  */
 std::string inputCommand(std::string_view arguments);
 
 /*!
- * \brief Haptic feedback for a game event (#42, D-034) - safe to call in flat mode, where it does nothing
+ * \brief Haptic feedback for a game event (#42, D-NEW) - safe to call in flat mode, where it does nothing
  *
  * The table (vr/Haptics.h) gives the pulse and the hand; the pulse is queued and sent at the next
  * \ref updateInput, right after the controllers are synced. Each request is a \c haptic game event.

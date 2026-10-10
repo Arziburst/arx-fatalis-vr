@@ -1,10 +1,12 @@
 # Walk forward (#113): the left stick pushed forward moves the player along his look direction (D-008, #31).
-# The control reaches the game today (vr-input, #30); the walking is @pending until #31.
+# The direction relative to a turned head: walk-look.xrs. Level 10 is the scripted intro, where nothing moves the player
+# (TRAPS.md), so this runs on the test save: .\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence walk-forward
 @sim idle
-@args --loadlevel 10
+@save mvp-new-game
+@args --loadslot 0
 
 @until state eq GAMEPLAY 60s
-@until vr.sim.timelineFrame ge 120 60s
+@until vr.sim.timelineFrame ge 270 60s
 setplayercontrols on
 @assert player.controlsBlocked eq false
 @remember x0 player.x
@@ -16,9 +18,9 @@ setplayercontrols on
 @assert player.z eq {z0}
 
 # Pushed forward for a second and let go
-vr-input down left.stick_up
+vr-input stick left 0 1
 @frames 90
-vr-input up left.stick_up
+vr-input stick left 0 0
 @frames 10
-@pending #31 @assert player.z ne {z0}
+@assert player.z ne {z0}
 @assert errors eq 0

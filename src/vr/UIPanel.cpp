@@ -98,6 +98,11 @@ bool panelHit(const PanelPose & pose, const Vec2f & size, const Vec3f & origin, 
 	return true;
 }
 
+Vec3f panelPoint(const PanelPose & pose, const Vec2f & size, const Vec2f & uv) {
+	const Vec3f local((uv.x - 0.5f) * size.x, (0.5f - uv.y) * size.y, 0.f);
+	return pose.position + pose.orientation * local;
+}
+
 const char * panelModeName(PanelMode mode) {
 	switch(mode) {
 		case PanelMode::HeadLocked: return "head";

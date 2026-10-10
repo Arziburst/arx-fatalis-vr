@@ -1,0 +1,121 @@
+# Menu pointer (#34): with no menu open there is no pointer and no beam; with the inventory open on the
+# floating panel (#49) either hand's aim ray is the mouse, the trigger clicks where the ray points and a
+# thin beam is drawn from the owning hand above the panel. The click holds still for 16 px (the dead zone)
+# and then drags; a press off the panel never clicks. The simulated hands start below the head, 35 cm ahead,
+# both rays on the panel; vr-point turns a hand to aim at the first item of the bag.
+#
+# Runs on the test save mvp-items (#70: controls free, a key on the table, the bag closed):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence menu-pointer -Save mvp-items
+@sim idle
+@save mvp-items
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+
+# Gameplay: no menu, no pointer, no beam. The hands point behind the head: in the game each hand's ray in
+# front of it is a reticle in the world (#37), whose ring is a quad layer too
+vr-sim hand left rot 180 0 0
+vr-sim hand right rot 180 0 0
+@frames 5
+@assert vr.panel.mode eq head
+@assert vr.pointer.shown eq false
+@assert vr.pointer.active eq false
+@shot nomenu
+@assert vr.sim.shots.nomenu.left.overlayPixels eq 0
+@assert vr.pointer.beam eq false
+
+# The key from the table into the bag, the bag open on the panel
+inventory playeraddfromscene key_base_0005
+@frames 5
+ui inventory open
+@until vr.panel.mode eq world 5s
+@frames 60                                   # the bag slides up
+@assert vr.pointer.shown eq true
+@assert events.byName."vr.pointer" ge 1
+
+# The right hand aims at the key: the mouse is there, the key is under it, the beam is drawn
+vr-point right item
+@frames 5
+@assert ui.target eq key_base_0005
+@assert vr.pointer.active eq true
+@assert vr.pointer.owner eq right
+@assert vr.pointer.rightOnPanel eq true
+@remember tx ui.targetX
+@remember ty ui.targetY
+@assert ui.mouseX ge {tx-2}
+@assert ui.mouseX le {tx+2}
+@assert ui.mouseY ge {ty-2}
+@assert ui.mouseY le {ty+2}
+@assert ui.mouseInWindow eq true
+@assert ui.hover eq key_base_0005
+@assert vr.pointer.beam eq true
+@shot pointing
+@assert vr.sim.shots.pointing.left.overlayPixels gt 0
+@assert vr.sim.shots.pointing.right.overlayPixels gt 0
+
+# The trigger: a click on the key. The hand moves 8 px - inside the dead zone the cursor stays on the key
+# and no drag starts; 40 px - the cursor follows and the key the click landed on is dragged
+vr-sim action trigger right 1
+@frames 5
+@assert vr.pointer.clicks eq 1
+@assert events.byName."vr.pointer.click" eq 1
+vr-point right item 8 0
+@frames 5
+@assert ui.mouseX ge {tx-2}
+@assert ui.mouseX le {tx+2}
+@assert ui.drag eq none
+vr-point right item 40 0
+@frames 5
+@assert ui.mouseX ge {tx+38}
+@assert ui.drag eq key_base_0005
+# Released over the bag: back in it
+vr-sim action trigger right 0
+@until ui.drag eq none 5s
+@frames 5
+
+# The left hand aims and presses: it owns the cursor now, and its click lands on the key
+vr-point left item
+@frames 5
+vr-sim action trigger left 1
+@frames 5
+@assert vr.pointer.owner eq left
+@assert vr.pointer.clicks eq 2
+@assert vr.pointer.ownerChanges ge 1
+@remember lx ui.targetX
+@assert ui.mouseX ge {lx-2}
+@assert ui.mouseX le {lx+2}
+vr-point left item 40 0
+@frames 5
+@assert ui.drag eq key_base_0005
+vr-sim action trigger left 0
+@until ui.drag eq none 5s
+
+# Both hands point behind the head, off the panel and at nothing in front (#37): no cursor, no beam; a press there clicks nothing
+vr-sim hand left rot 180 0 0
+vr-sim hand right rot 180 0 0
+@frames 5
+@assert vr.pointer.active eq false
+@assert vr.pointer.leftOnPanel eq false
+@assert vr.pointer.rightOnPanel eq false
+@assert vr.pointer.beam eq false
+@shot offpanel
+@assert vr.sim.shots.offpanel.left.overlayPixels eq 0
+vr-sim action trigger right 1
+@frames 5
+@assert vr.pointer.offPanelPresses eq 1
+@assert vr.pointer.clicks eq 2
+@assert ui.drag eq none
+vr-sim action trigger right 0
+@frames 5
+
+# Closed: the pointer goes with the panel (the hands still behind the head, so no ring is in view either)
+ui inventory close
+@until vr.panel.mode eq head 5s
+@frames 5
+@assert vr.pointer.shown eq false
+@assert vr.pointer.active eq false
+@shot closed
+@assert vr.sim.shots.closed.left.overlayPixels eq 0
+@assert errors eq 0

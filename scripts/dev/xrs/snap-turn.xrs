@@ -1,23 +1,108 @@
-# Snap turn (#113): a flick of the right stick turns the player by a fixed angle (#32). The control reaches the game
-# today (vr-input, #30); the turn itself is @pending until #32.
+# Snap turn and smooth turn (#32): the right stick turns the body; the head's yaw stays on top of it (#24).
+# Snap (the default): a 45 degree step per push, repeated every 0.4 s while the stick is held (0 = no repeat).
+# Smooth: degrees per second.
+# A first-person save: on level 10 the intro conversation's camera owns the view, so the body's yaw never shows
 @sim idle
-@args --loadlevel 10
+@save mvp-new-game
+@args --loadslot 0
 
 @until state eq GAMEPLAY 60s
-@until vr.sim.timelineFrame ge 120 60s
-setplayercontrols on
-@remember yaw0 camera.yaw
-@remember syncs0 vr.sim.compositor.syncs
+@until vr.sim.timelineFrame ge 270 60s       # past the level's fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.input.turn.mode eq snap
+@assert vr.input.turn.snapAngle eq 45
+@assert vr.input.turn.snapRepeat eq 0.4
+vr-input turn repeat 0                        # one step per push until the repeat is checked below
+@assert vr.input.turn.smoothSpeed eq 120
+@remember snaps0 vr.input.turn.snaps
+@remember turned0 vr.input.turn.turned
+@remember yaw0 player.yaw
+@remember camYaw0 camera.yaw
+@shot turn-0
+@mark
 
-# The stick is pushed right and let go: the game saw the input, and the player turned
-vr-input tap right.stick_right
+# The stick pushed right and held for a second: exactly one 45 degree step, the body and the view turn
+vr-input stick right 1 0
+@frames 90
+@assert vr.input.game.turn gt 0.9
+@assert vr.input.turn.allowed eq true
+@assert vr.input.turn.snaps eq {snaps0+1}
+@log vr\.turn\.snap dir=right deg=45\.0 repeat=no count=1
+@assert vr.input.turn.lastSnap eq 1
+@assert vr.input.turn.turned eq {turned0+45}
+@assert player.yaw eq {yaw0-45}
+@assert camera.yaw eq {camYaw0-45}
+@shot turn-right
+@diff turn-0 turn-right gt 12                 # measured 16.9 on mvp-new-game (2026-10-09)
+vr-input stick right 0 0
+@frames 5
+
+# The head turned 45 degrees left undoes the snap: the same view as before it - head and body add up (#24)
+vr-sim head rot 45 0 0
+@until vr.head.yaw eq 45 5s
+@assert player.yaw eq {yaw0-45}
 @frames 10
-@assert vr.sim.compositor.syncs gt {syncs0}
+@shot turn-back
+@diff turn-0 turn-back lt 8                   # measured 5.3: the same view, the HUD and the lights changed
+@diff turn-right turn-back gt 12
+vr-sim head rot 0 0 0
+@frames 10
+
+# A second push turns again, to the same side
+vr-input stick right 1 0
+@frames 10
+vr-input stick right 0 0
+@frames 5
+@assert vr.input.turn.snaps eq {snaps0+2}
+@assert vr.input.turn.turned eq {turned0+90}
+
+# A push to the left: one step back
+vr-input stick right -1 0
+@frames 10
+vr-input stick right 0 0
+@frames 5
+@assert vr.input.turn.lastSnap eq -1
+@assert vr.input.turn.turned eq {turned0+45}
+
+# A half push below the fire threshold (raw 0.5 -> 0.375 past the dead zone): nothing
+vr-input stick right 0.5 0
+@frames 20
+vr-input stick right 0 0
+@frames 5
+@assert vr.input.turn.snaps eq {snaps0+3}
+
+# The repeat (owner, 2026-10-10): held, the snap and then one every 0.4 s - "tick tick tick".
+# How many repeats a hold gives depends on when the release reaches the game: the commands arrive a poll later
+# and the runner adds its own time (CI counted 2 to 4 extra repeats after the 5th snap, #285). So the hold
+# lasts until the 5th snap is made, and the repeat is judged by the interval the game measures by its clock
+# from the push's first snap to its last repeat (vr.input.turn.repeatInterval), not by a count
+vr-input turn repeat 0.4
+@mark
+vr-input stick right 1 0
+@until vr.input.turn.snaps ge {snaps0+8} 5s
+vr-input stick right 0 0
+@frames 5
+@assert vr.input.turn.pushRepeats ge 4
+@assert vr.input.turn.repeatInterval ge 0.38   # 0.4 s of frames add up to a little more by the clock
+@assert vr.input.turn.repeatInterval le 0.6    # a repeat per frame or a slower one fails
+@assert vr.input.turn.turned ge {turned0+270}
+@remember snaps1 vr.input.turn.snaps
+@log vr\.turn\.snap dir=right deg=45\.0 repeat=no
+@log vr\.turn\.snap dir=right deg=45\.0 repeat=yes
+@log vr\.turn\.snap dir=right deg=45\.0 repeat=yes
+@log vr\.turn\.snap dir=right deg=45\.0 repeat=yes
+@log vr\.turn\.snap dir=right deg=45\.0 repeat=yes
+
+# Smooth: about 120 degrees per second at full deflection, no snaps
+vr-input turn smooth
+@assert vr.input.turn.mode eq smooth
+@remember turned1 vr.input.turn.turned
+vr-input stick right 1 0
+@frames 90
+vr-input stick right 0 0
+@frames 5
+@assert vr.input.turn.snaps eq {snaps1}
+@assert vr.input.turn.turned gt {turned1+40}
+
+vr-input turn snap
 @assert errors eq 0
-@pending #32 @assert camera.yaw ne {yaw0}
-
-# A second flick turns him again, to the same side
-@remember yaw1 camera.yaw
-vr-input tap right.stick_right
-@frames 10
-@pending #32 @assert camera.yaw ne {yaw1}

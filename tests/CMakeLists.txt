@@ -42,6 +42,9 @@ set(arxtest_TESTCASES
 	tests/vr/BodyYawTest.h
 	tests/vr/BodyYawTest.cpp
 
+	tests/vr/HeadLeanTest.h
+	tests/vr/HeadLeanTest.cpp
+
 	tests/vr/EyeProjectionTest.h
 	tests/vr/EyeProjectionTest.cpp
 
@@ -57,6 +60,8 @@ set(arxtest_TESTCASES
 	tests/vr/HeadPoseTest.cpp
 	tests/vr/HeadReferenceGateTest.h
 	tests/vr/HeadReferenceGateTest.cpp
+	tests/vr/PhysicalCrouchTest.h
+	tests/vr/PhysicalCrouchTest.cpp
 
 	tests/vr/VRControlsTest.h
 	tests/vr/VRControlsTest.cpp
@@ -64,16 +69,31 @@ set(arxtest_TESTCASES
 	tests/vr/VRGameInputTest.h
 	tests/vr/VRGameInputTest.cpp
 
+	tests/vr/VRTurnTest.h
+	tests/vr/VRTurnTest.cpp
+
 	tests/vr/EyeImageTest.h
 	tests/vr/EyeImageTest.cpp
 	tests/vr/SimRigTest.h
 	tests/vr/SimRigTest.cpp
 	tests/vr/UIPanelTest.h
 	tests/vr/UIPanelTest.cpp
+	tests/vr/MenuPointerTest.h
+	tests/vr/MenuPointerTest.cpp
 	tests/vr/InterfaceSizeTest.h
 	tests/vr/InterfaceSizeTest.cpp
 	tests/vr/HapticsTest.h
 	tests/vr/HapticsTest.cpp
+	tests/vr/LocomotionTest.h
+	tests/vr/LocomotionTest.cpp
+
+	tests/vr/ArmIKTest.h
+	tests/vr/ArmIKTest.cpp
+	tests/vr/WeaponGripTest.h
+	tests/vr/WeaponGripTest.cpp
+
+	tests/vr/HandReticleTest.h
+	tests/vr/HandReticleTest.cpp
 
 
 )
@@ -96,15 +116,23 @@ set(arxtest_SOURCES
 	src/vr/EyeProjection.cpp
 	src/vr/FramePacing.cpp
 	src/vr/VRBindings.cpp
+	src/vr/HeadLean.cpp
 	src/vr/HeadPose.cpp
 	src/vr/HeadReferenceGate.cpp
+	src/vr/PhysicalCrouch.cpp
 	src/vr/VRControls.cpp
 	src/vr/VRGameInput.cpp
+	src/vr/VRTurn.cpp
 	src/vr/EyeImage.cpp
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
+	src/vr/MenuPointer.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/Haptics.cpp
+	src/vr/ArmIK.cpp
+	src/vr/HandReticle.cpp
+	src/vr/WeaponGrip.cpp
+	src/vr/Locomotion.cpp
 
 
 	${arxtest_TESTCASES}

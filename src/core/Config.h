@@ -134,9 +134,19 @@ public:
 		int vrFrameDivisor; //!< VR: submit every n-th display slot (the even-cadence cap, #20); 1 = every slot
 		bool vrMirror; //!< VR: the desktop window shows what one eye sees (#21); off = the flat frame
 		int vrMirrorEye; //!< VR: the eye the desktop mirror shows: 0 = left, 1 = right (default, the owner's choice)
+		int vrMsaa; //!< VR: multisampling of the eye images, samples per pixel; 0 = off (#226)
+		float vrBodyFollowRadius; //!< VR: meters the head may be from the body before the body steps after it (#26)
+		float vrWallFadeOut; //!< VR: seconds to black when the head enters geometry or gets too far from the body (#26)
+		float vrWallFadeIn; //!< VR: seconds back from black (#26)
+		float vrHeadFarStart; //!< VR: meters from the body where a head too far starts to fade the world (#26)
+		float vrHeadFarFull; //!< VR: meters from the body where it is black (#26)
+		bool vrRealStepNoise; //!< VR: the body walking after the head makes footstep noise like walking (#26)
 		float vrPanelDistance; //!< VR: the menu panel this far ahead of the head, meters (#49)
 		float vrPanelDrop; //!< VR: the menu panel's centre this far below the eyes, meters (#49)
 		float vrPanelWidth; //!< VR: the menu panel's width, meters (#49)
+		bool vrPhysicalCrouch; //!< VR: the head going down crouches the character (#100)
+		float vrCrouchEnter; //!< VR: the head this far below the calibrated eye crouches, meters (#100)
+		float vrCrouchExit; //!< VR: the character stands again once the head is back above this depth, meters (#100)
 
 		float fov;
 		bool viewBobbing;
@@ -221,10 +231,16 @@ public:
 		bool borderTurning;
 		bool useAltRuneRecognition;
 		bool improvedBowAim;
+		float vrSneakBelow; //!< VR: a running stick walk sneaks below this deflection (#33, D-019)
+		float vrRunAbove; //!< VR: a sneaking stick walk runs at this deflection or more (#33, D-019)
 		QuickLevelTransition quickLevelTransition;
 		bool allowConsole;
 		float vrHapticStrength; //!< VR: the master strength of the controllers' vibration (#42); 0 = off, 1 = the table
-		
+		bool vrSmoothTurn; //!< VR: the right stick turns smoothly instead of in snaps (#32)
+		float vrSnapTurnAngle; //!< VR: degrees per snap turn (#32)
+		float vrSmoothTurnSpeed; //!< VR: smooth turn degrees per second at full deflection (#32)
+		float vrSnapTurnRepeat; //!< VR: seconds between snaps while the stick is held; 0 = no repeat (#32)
+
 	} input;
 	
 	// section 'key'

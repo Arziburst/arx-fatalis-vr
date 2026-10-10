@@ -132,6 +132,12 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "util/Cast.h"
 #include "util/Range.h"
 
+#include "vr/HeadTracking.h"
+#include "vr/Locomotion.h"
+#include "vr/VRInput.h"
+#include "vr/VRReticle.h"
+#include "vr/VRSystem.h"
+
 #include "window/RenderWindow.h"
 
 
@@ -882,7 +888,48 @@ void ArxGame::managePlayerControls() {
 		} else if(MOVE_PRECEDENCE == PLAYER_MOVE_STRAFE_RIGHT) {
 			MOVE_PRECEDENCE = 0;
 		}
-		
+
+		// The left stick walks where the player looks (#31, D-008), on top of the keys: the flags pick
+		// the animation and with it the game's own speed, the vector only the direction. A slight
+		// deflection sneaks - the stealth walk - and a full one runs (#33, D-019)
+		{
+			static vr::StickPacer pacer;
+			const vr::BodyStatus & body = vr::bodyStatus();
+			const float yaw = vr::stickWalkYaw(player.angle.getYaw(), body.lookYaw, body.bodyYaw, body.offset);
+			vr::StickWalk walk = NOMOREMOVES ? vr::StickWalk() : vr::stickWalk(vr::gameInput().move, yaw);
+			vr::StickPace pace;
+			pace.sneakBelow = config.input.vrSneakBelow;
+			pace.runAbove = config.input.vrRunAbove;
+			const Vec2f move(vr::gameInput().move.x, vr::gameInput().move.y);
+			walk.sneak = pacer.update(walk.moving() ? glm::length(move) : 0.f, pace);
+			if(walk.moving()) {
+				if(walk.sneak) {
+					MoveDiv = 0.02f;
+					player.m_currentMovement |= PLAYER_MOVE_STEALTH;
+				}
+				float multi = 10.f * FD * MoveDiv;
+				if(walk.forward) {
+					player.m_strikeDirection = 2;
+					player.m_currentMovement |= PLAYER_MOVE_WALK_FORWARD;
+				}
+				if(walk.backward) {
+					player.m_strikeDirection = 3;
+					player.m_currentMovement |= PLAYER_MOVE_WALK_BACKWARD;
+					multi = 5.f * FD * MoveDiv;
+				}
+				if(walk.left) {
+					player.m_strikeDirection = 0;
+					player.m_currentMovement |= PLAYER_MOVE_STRAFE_LEFT;
+				}
+				if(walk.right) {
+					player.m_strikeDirection = 1;
+					player.m_currentMovement |= PLAYER_MOVE_STRAFE_RIGHT;
+				}
+				tm += walk.direction * multi;
+			}
+			vr::reportWalk(walk, yaw, player.angle.getYaw());
+		}
+
 		g_moveto = player.pos + tm;
 	}
 	
@@ -891,7 +938,8 @@ void ArxGame::managePlayerControls() {
 		bGCroucheToggle = !bGCroucheToggle;
 	}
 
-	if(GInput->actionPressed(CONTROLS_CUST_CROUCH) || bGCroucheToggle) {
+	// In VR the head going down crouches too (#100, D-018), alongside the crouch button (D-019)
+	if(GInput->actionPressed(CONTROLS_CUST_CROUCH) || bGCroucheToggle || vr::physicalCrouch()) {
 		player.m_currentMovement |= PLAYER_CROUCH;
 	}
 
@@ -1267,7 +1315,8 @@ void ArxGame::manageKeyMouse() {
 				// mode systemshock
 				if(config.input.mouseLookToggle && config.input.autoReadyWeapon != AlwaysAutoReadyWeapon) {
 					
-					DANAEMouse = g_size.center();
+					// VR (#37): the exploration mode's crosshair is the hand that owns the mouse, not the screen centre
+					DANAEMouse = vr::reticlesOn() ? GInput->getMousePosition() : Vec2s(g_size.center());
 					
 					pIO = FlyingOverObject(DANAEMouse);
 					if(pIO) {
@@ -1409,7 +1458,13 @@ void ArxGame::manageKeyMouse() {
 	if(bRestoreCoordMouse) {
 		DANAEMouse = GInput->getMousePosition();
 	}
-	
+
+	// VR: the right stick turns the body (#32); the head's own yaw stays on top of it (#24), so the
+	// play-space heading turns. Updated every frame so a stick held through a menu does not snap after it
+	const bool vrTurnAllowed = !BLOCK_PLAYER_CONTROLS && ARXmenu.mode() == Mode_InGame && !isInCinematic()
+	                           && !(player.Interface & INTER_PLAYERBOOK);
+	const float vrTurn = vr::updateTurn(toMsf(g_platformTime.lastFrameDuration()) / 1000.f, vrTurnAllowed);
+
 	// Player/Eyeball Freelook Management
 	if(!BLOCK_PLAYER_CONTROLS) {
 		
@@ -1489,7 +1544,9 @@ void ArxGame::manageKeyMouse() {
 			static bool mouseInBorder = false;
 			static PlatformInstant mouseInBorderTime = 0;
 			
-			if(!bRenderInCursorMode || (!dragging && !GInput->isMouseInWindow())) {
+			// VR: the head turns the view and the hands are the mouse (#34, #37) - a cursor near an edge of the
+			// panel, or a world reticle's mouse position right of the interface, must not turn the player
+			if(!bRenderInCursorMode || (!dragging && !GInput->isMouseInWindow()) || vr::stereoActive()) {
 				mouseInBorder = false;
 			} else {
 				
@@ -1594,6 +1651,15 @@ void ArxGame::manageKeyMouse() {
 				player.desiredangle.setYaw(MAKEANGLE(player.desiredangle.getYaw() - rotation.x));
 			}
 		}
+
+		// After the mouse, which sets the yaw from the current angle; turning right lowers the yaw
+		if(vrTurn != 0.f) {
+			if(eyeball.isActive()) {
+				eyeball.turn(Anglef(0.f, -vrTurn, 0.f));
+			} else {
+				player.desiredangle.setYaw(MAKEANGLE(player.desiredangle.getYaw() - vrTurn));
+			}
+		}
 	}
 	
 	manageEntityDescription();
@@ -1664,6 +1730,7 @@ void ArxGame::manageEditorControls() {
 	if(   TRUE_PLAYER_MOUSELOOK_ON
 	   && config.input.autoReadyWeapon != AlwaysAutoReadyWeapon
 	   && config.input.mouseLookToggle
+	   && !vr::reticlesOn() // VR (#37): the hand that owns the mouse is the crosshair
 	) {
 		DANAEMouse = g_size.center();
 	}

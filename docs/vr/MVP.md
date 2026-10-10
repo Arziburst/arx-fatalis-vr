@@ -241,7 +241,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | **3** | #74, #72, #27, #25, #35 | #73, #70, #127 |
 | **4** — finishes checkpoint A | #28, #100, #26, #31, #32, #42 | #80 |
 | **5** — checkpoint B | #49, #33, #36 | #88 → #132 *(after the owner's decisions on #118 / #120)* |
-| **6** | #34, #116, #37, #75, #178 | — |
+| **6** | #34, #116, #37, #75, #304, #178 | — |
 | **7** — checkpoints C, D | #38, #39, #43 → #44 → #45 | #16 |
 | **8** — MVP done | #77 | — |
 

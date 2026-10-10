@@ -80,7 +80,7 @@ post-MVP (#101).
 
 ---
 
-## D-NEW: The VR body is the engine's player model on its own skeleton — arms by IK after the animation, the head and neck hidden, the model drawn under the head
+## D-032: The VR body is the engine's player model on its own skeleton — arms by IK after the animation, the head and neck hidden, the model drawn under the head
 
 - **Date:** 2026-10-09
 - **Status:** Accepted

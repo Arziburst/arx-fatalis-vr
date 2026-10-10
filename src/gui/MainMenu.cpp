@@ -55,6 +55,7 @@
 #include "gui/widget/CheckboxWidget.h"
 #include "gui/widget/CycleTextWidget.h"
 #include "gui/widget/KeybindWidget.h"
+#include "gui/widget/NotchSliderWidget.h"
 #include "gui/widget/PanelWidget.h"
 #include "gui/widget/SaveSlotWidget.h"
 #include "gui/widget/SliderWidget.h"
@@ -1845,11 +1846,14 @@ private:
 
 };
 
+
 /*!
- * The VR settings' Controls section, second page (#260, D-028): turning and the character height, in the
- * game's own menu style (D-029). Each row edits its cfg.ini key (#32: vr_smooth_turn, vr_snap_turn_angle,
+ * The VR settings' Controls section, second page (#260, D-028, D-NEW-turning): turning and the character height, in
+ * the game's own menu style (D-029). Each row edits its cfg.ini key (#32: vr_smooth_turn, vr_snap_turn_angle,
  * vr_smooth_turn_speed, vr_snap_turn_repeat; vr_height_offset), which applies at once - the turn and the head
- * camera read it every frame. The choices are vr/VRSettingsRows.h.
+ * camera read it every frame. The turning values are sliders the player drags (owner, 2026-10-10): the snap
+ * angle 30 to 90 degrees in 5 degree steps, the smooth speed as named presets, the repeat of a held snap; the
+ * snap / smooth switch and the height stay rows with left / right arrows. The choices are vr/VRSettingsRows.h.
  */
 class VRTurningMenuPage final : public MenuPage {
 
@@ -1857,7 +1861,9 @@ public:
 
 	VRTurningMenuPage()
 		: MenuPage(Page_OptionsVRTurning)
-		, m_rows()
+		, m_mode(nullptr)
+		, m_height(nullptr)
+		, m_sliders()
 	{ }
 
 	void init() override {
@@ -1872,55 +1878,62 @@ public:
 		}
 
 		{
-			auto cb = makeRow(Row::Mode, "system_menus_options_vr_turn_mode", "Turning");
+			auto cb = std::make_unique<CycleTextWidget>(sliderSize(), hFontMenu,
+			                                            getLocalised("system_menus_options_vr_turn_mode", "Turning"));
 			cb->addEntry(getLocalised("system_menus_options_vr_turn_snap", "Snap"));
 			cb->addEntry(getLocalised("system_menus_options_vr_turn_smooth", "Smooth"));
 			cb->valueChanged = [](int pos, std::string_view /* string */) {
 				config.input.vrSmoothTurn = (pos == 1);
 				gameevent::Event("vr.settings")("row", "turn")("value", config.input.vrSmoothTurn ? "smooth" : "snap");
 			};
+			m_mode = cb.get();
 			addCenter(std::move(cb));
 		}
 
 		{
-			auto cb = makeRow(Row::SnapAngle, "system_menus_options_vr_snap_angle", "Snap angle");
+			// The menu font has no degree sign
+			auto slider = makeSlider(Slider::SnapAngle, "system_menus_options_vr_snap_angle", "Snap angle");
 			for(float angle : vr::snapAngleChoices()) {
-				cb->addEntry(std::to_string(int(angle)) + " deg"); // the menu font has no degree sign
+				slider->addNotch(std::to_string(int(angle)) + " deg");
 			}
-			cb->valueChanged = [](int pos, std::string_view /* string */) {
-				config.input.vrSnapTurnAngle = vr::snapAngleChoices()[size_t(pos)];
+			slider->valueChanged = [](int notch) {
+				config.input.vrSnapTurnAngle = vr::snapAngleChoices()[size_t(notch)];
 				gameevent::Event("vr.settings")("row", "angle")("value", config.input.vrSnapTurnAngle, 0);
 			};
-			addCenter(std::move(cb));
+			addCenter(std::move(slider));
 		}
 
 		{
-			auto cb = makeRow(Row::SmoothSpeed, "system_menus_options_vr_smooth_speed", "Smooth speed");
-			for(float speed : vr::smoothSpeedChoices()) {
-				cb->addEntry(std::to_string(int(speed)) + " deg/s");
+			// Names, not degrees per second: players do not think in them (owner, 2026-10-10)
+			auto slider = makeSlider(Slider::SmoothSpeed, "system_menus_options_vr_smooth_speed", "Smooth speed");
+			for(size_t i = 0; i < vr::smoothSpeedChoices().size(); i++) {
+				std::string key = "system_menus_options_vr_smooth_speed_" + std::to_string(i);
+				slider->addNotch(getLocalised(key, vr::smoothSpeedName(i)));
 			}
-			cb->valueChanged = [](int pos, std::string_view /* string */) {
-				config.input.vrSmoothTurnSpeed = vr::smoothSpeedChoices()[size_t(pos)];
-				gameevent::Event("vr.settings")("row", "speed")("value", config.input.vrSmoothTurnSpeed, 0);
+			slider->valueChanged = [](int notch) {
+				config.input.vrSmoothTurnSpeed = vr::smoothSpeedChoices()[size_t(notch)];
+				gameevent::Event("vr.settings")("row", "speed")("value", config.input.vrSmoothTurnSpeed, 0)
+					("preset", vr::smoothSpeedName(size_t(notch)));
 			};
-			addCenter(std::move(cb));
+			addCenter(std::move(slider));
 		}
 
 		{
-			auto cb = makeRow(Row::SnapRepeat, "system_menus_options_vr_snap_repeat", "Repeat held snap");
+			auto slider = makeSlider(Slider::SnapRepeat, "system_menus_options_vr_snap_repeat", "Repeat held snap");
 			for(float repeat : vr::snapRepeatChoices()) {
-				cb->addEntry(repeat > 0.f ? vr::formatSnapRepeat(repeat)
-				                          : std::string(getLocalised("system_menus_options_vr_snap_repeat_off", "Off")));
+				slider->addNotch(repeat > 0.f ? vr::formatSnapRepeat(repeat)
+				                              : std::string(getLocalised("system_menus_options_vr_snap_repeat_off", "Off")));
 			}
-			cb->valueChanged = [](int pos, std::string_view /* string */) {
-				config.input.vrSnapTurnRepeat = vr::snapRepeatChoices()[size_t(pos)];
+			slider->valueChanged = [](int notch) {
+				config.input.vrSnapTurnRepeat = vr::snapRepeatChoices()[size_t(notch)];
 				gameevent::Event("vr.settings")("row", "repeat")("value", config.input.vrSnapTurnRepeat, 2);
 			};
-			addCenter(std::move(cb));
+			addCenter(std::move(slider));
 		}
 
 		{
-			auto cb = makeRow(Row::Height, "system_menus_options_vr_height", "Character height");
+			auto cb = std::make_unique<CycleTextWidget>(sliderSize(), hFontMenu,
+			                                            getLocalised("system_menus_options_vr_height", "Character height"));
 			for(float offset : vr::heightOffsetChoices()) {
 				cb->addEntry(vr::formatHeightOffset(offset));
 			}
@@ -1928,6 +1941,7 @@ public:
 				config.input.vrHeightOffset = vr::heightOffsetChoices()[size_t(pos)];
 				gameevent::Event("vr.settings")("row", "height")("value", config.input.vrHeightOffset, 2);
 			};
+			m_height = cb.get();
 			addCenter(std::move(cb));
 		}
 
@@ -1944,61 +1958,98 @@ public:
 	}
 
 	/*!
-	 * What the left or right arrow of a row does (\a delta -1 or +1), for the test channel's
-	 * \c menu \c step: the same change, game event and cfg value as a click
+	 * For the test channel: \c menu \c step - a row's left / right arrow, or a slider's arrow key (\a delta -1 or +1);
+	 * \c menu \c drag - a slider's dot dragged to \a fraction of its bar and let go. The same change, game event
+	 * and cfg value as the player's.
 	 * \return an empty string, or why it was refused
 	 */
 	std::string step(std::string_view name, int delta) {
-		for(size_t i = 0; i < size_t(Row::Count); i++) {
-			if(name == RowNames[i]) {
-				if(!m_rows[i]) {
-					return "the page has not been opened yet";
-				}
-				m_rows[i]->step(delta);
-				return std::string();
-			}
+		if(!m_mode) {
+			return "the page has not been opened yet";
 		}
-		return "unknown row \"" + std::string(name) + "\", expected turn, angle, speed, repeat or height";
+		if(name == "turn") {
+			m_mode->step(delta);
+		} else if(name == "height") {
+			m_height->step(delta);
+		} else if(NotchSliderWidget * slider = findSlider(name)) {
+			slider->step(delta);
+		} else {
+			return "unknown row \"" + std::string(name) + "\", expected turn, angle, speed, repeat or height";
+		}
+		return std::string();
+	}
+
+	std::string drag(std::string_view name, float fraction) {
+		if(!m_mode) {
+			return "the page has not been opened yet";
+		}
+		NotchSliderWidget * slider = findSlider(name);
+		if(!slider) {
+			return "no slider \"" + std::string(name) + "\", expected angle, speed or repeat";
+		}
+		slider->dragTo(fraction);
+		return std::string();
 	}
 
 private:
 
-	enum class Row : u8 { Mode, SnapAngle, SmoothSpeed, SnapRepeat, Height, Count };
+	enum class Slider : u8 { SnapAngle, SmoothSpeed, SnapRepeat, Count };
 
-	static constexpr const char * RowNames[size_t(Row::Count)] = { "turn", "angle", "speed", "repeat", "height" };
+	static constexpr const char * SliderNames[size_t(Slider::Count)] = { "angle", "speed", "repeat" };
 
-	std::unique_ptr<CycleTextWidget> makeRow(Row row, std::string_view key, std::string_view label) {
-		auto cb = std::make_unique<CycleTextWidget>(sliderSize(), hFontMenu, getLocalised(key, label));
-		m_rows[size_t(row)] = cb.get();
-		return cb;
+	std::unique_ptr<NotchSliderWidget> makeSlider(Slider slider, std::string_view key, std::string_view label) {
+		auto widget = std::make_unique<NotchSliderWidget>(sliderSize(), hFontMenu, getLocalised(key, label),
+		                                                  hFontControls);
+		m_sliders[size_t(slider)] = widget.get();
+		return widget;
+	}
+
+	NotchSliderWidget * findSlider(std::string_view name) const {
+		for(size_t i = 0; i < size_t(Slider::Count); i++) {
+			if(name == SliderNames[i]) {
+				return m_sliders[i];
+			}
+		}
+		return nullptr;
 	}
 
 	void refresh() {
-		if(!m_rows[0]) {
+		if(!m_mode) {
 			return;
 		}
-		m_rows[size_t(Row::Mode)]->setValue(config.input.vrSmoothTurn ? 1 : 0);
-		m_rows[size_t(Row::SnapAngle)]->setValue(int(vr::nearestChoice(vr::snapAngleChoices(),
-		                                                                  config.input.vrSnapTurnAngle)));
-		m_rows[size_t(Row::SmoothSpeed)]->setValue(int(vr::nearestChoice(vr::smoothSpeedChoices(),
-		                                                                    config.input.vrSmoothTurnSpeed)));
-		m_rows[size_t(Row::SnapRepeat)]->setValue(int(vr::nearestChoice(vr::snapRepeatChoices(),
-		                                                                   config.input.vrSnapTurnRepeat)));
-		m_rows[size_t(Row::Height)]->setValue(int(vr::nearestChoice(vr::heightOffsetChoices(),
-		                                                               config.input.vrHeightOffset)));
+		m_mode->setValue(config.input.vrSmoothTurn ? 1 : 0);
+		m_sliders[size_t(Slider::SnapAngle)]->setValue(int(vr::nearestChoice(vr::snapAngleChoices(),
+		                                                                       config.input.vrSnapTurnAngle)));
+		m_sliders[size_t(Slider::SmoothSpeed)]->setValue(int(vr::nearestChoice(vr::smoothSpeedChoices(),
+		                                                                         config.input.vrSmoothTurnSpeed)));
+		m_sliders[size_t(Slider::SnapRepeat)]->setValue(int(vr::nearestChoice(vr::snapRepeatChoices(),
+		                                                                        config.input.vrSnapTurnRepeat)));
+		m_height->setValue(int(vr::nearestChoice(vr::heightOffsetChoices(), config.input.vrHeightOffset)));
 	}
 
-	std::array<CycleTextWidget *, size_t(Row::Count)> m_rows;
+	CycleTextWidget * m_mode;
+	CycleTextWidget * m_height;
+	std::array<NotchSliderWidget *, size_t(Slider::Count)> m_sliders;
 
 };
 
-std::string stepVRSettingRow(std::string_view row, int delta) {
+static VRTurningMenuPage * openVRTurningPage() {
 	if(!g_mainMenu || !g_mainMenu->m_window || g_mainMenu->m_window->currentPageId() != Page_OptionsVRTurning) {
-		return "menu step: needs the VR turning page open (menu vr-turning)";
+		return nullptr;
 	}
-	auto * page = static_cast<VRTurningMenuPage *>(g_mainMenu->m_window->getPage(Page_OptionsVRTurning));
-	return page->step(row, delta);
+	return static_cast<VRTurningMenuPage *>(g_mainMenu->m_window->getPage(Page_OptionsVRTurning));
 }
+
+std::string stepVRSettingRow(std::string_view row, int delta) {
+	VRTurningMenuPage * page = openVRTurningPage();
+	return page ? page->step(row, delta) : "menu step: needs the VR turning page open (menu vr-turning)";
+}
+
+std::string dragVRSettingSlider(std::string_view row, float fraction) {
+	VRTurningMenuPage * page = openVRTurningPage();
+	return page ? page->drag(row, fraction) : "menu drag: needs the VR turning page open (menu vr-turning)";
+}
+
 
 class QuitConfirmMenuPage final : public MenuPage {
 	

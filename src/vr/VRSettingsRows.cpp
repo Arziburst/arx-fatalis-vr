@@ -19,7 +19,9 @@
 
 #include "vr/VRSettingsRows.h"
 
+#include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <sstream>
 
 #include "vr/HeadPose.h"
@@ -27,13 +29,24 @@
 namespace vr {
 
 const std::vector<float> & snapAngleChoices() {
-	static const std::vector<float> choices = { 30.f, 45.f, 90.f };
+	static const std::vector<float> choices = [] {
+		std::vector<float> result;
+		for(int angle = 30; angle <= 90; angle += 5) {
+			result.push_back(float(angle));
+		}
+		return result;
+	}();
 	return choices;
 }
 
 const std::vector<float> & smoothSpeedChoices() {
-	static const std::vector<float> choices = { 60.f, 90.f, 120.f, 150.f, 180.f, 240.f };
+	static const std::vector<float> choices = { 60.f, 90.f, 120.f, 180.f, 240.f };
 	return choices;
+}
+
+const char * smoothSpeedName(size_t index) {
+	static const char * const names[] = { "very slow", "slow", "medium", "fast", "very fast" };
+	return index < std::size(names) ? names[index] : "";
 }
 
 const std::vector<float> & snapRepeatChoices() {
@@ -80,6 +93,21 @@ std::string formatSnapRepeat(float seconds) {
 	std::ostringstream oss;
 	oss << seconds << " s";
 	return oss.str();
+}
+
+size_t notchAt(float fraction, size_t count) {
+	if(count < 2 || !std::isfinite(fraction)) {
+		return 0;
+	}
+	const float clamped = std::min(std::max(fraction, 0.f), 1.f);
+	return size_t(std::lround(clamped * float(count - 1)));
+}
+
+float notchFraction(size_t index, size_t count) {
+	if(count < 2) {
+		return 0.f;
+	}
+	return float(std::min(index, count - 1)) / float(count - 1);
 }
 
 } // namespace vr

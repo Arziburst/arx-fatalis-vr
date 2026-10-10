@@ -36,11 +36,17 @@
  */
 namespace vr {
 
-//! Snap turn angles, degrees (D-028: 45 is the default)
+//! Snap turn angles, degrees: 30 to 90 in 5 degree steps (owner, 2026-10-10; D-028: 45 is the default)
 const std::vector<float> & snapAngleChoices();
 
-//! Smooth turn speeds, degrees per second at full deflection (120 is the default)
+/*!
+ * Smooth turn speeds, degrees per second at full deflection, slowest first - the player sees only their names
+ * (\ref smoothSpeedName: "very slow" to "very fast", owner 2026-10-10); "medium" is #32's 120
+ */
 const std::vector<float> & smoothSpeedChoices();
+
+//! The name of smooth speed preset \a index ("very slow", "slow", "medium", "fast", "very fast")
+const char * smoothSpeedName(size_t index);
 
 //! The pause between snaps while the stick is held, seconds; 0 = one snap per push (0.4 is the default)
 const std::vector<float> & snapRepeatChoices();
@@ -56,6 +62,16 @@ std::string formatHeightOffset(float meters);
 
 //! A snap repeat as the row shows it: "off", "0.4 s"
 std::string formatSnapRepeat(float seconds);
+
+/*!
+ * The slider's notches (NotchSliderWidget): \a count notches evenly along the bar, the first at its left end
+ * (fraction 0), the last at its right end (1)
+ * \return the notch nearest to \a fraction, clamped to the bar; 0 for fewer than two notches
+ */
+size_t notchAt(float fraction, size_t count);
+
+//! \return where notch \a index of \a count is along the bar, 0 to 1 (0 for fewer than two notches)
+float notchFraction(size_t index, size_t count);
 
 } // namespace vr
 

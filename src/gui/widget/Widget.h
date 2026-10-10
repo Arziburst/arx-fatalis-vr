@@ -62,6 +62,7 @@ enum WidgetType {
 	WidgetType_SaveSlot,
 	WidgetType_VRBinding,
 	WidgetType_VRInfo,
+	WidgetType_NotchSlider,
 };
 
 class Widget {

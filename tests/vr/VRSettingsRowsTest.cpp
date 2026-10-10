@@ -37,10 +37,20 @@ void VRSettingsRowsTest::defaultsAreChoicesTest() {
 	                     smoothSpeedChoices()[nearestChoice(smoothSpeedChoices(), DefaultSmoothSpeed)]);
 	CPPUNIT_ASSERT_EQUAL(DefaultSnapRepeat, snapRepeatChoices()[nearestChoice(snapRepeatChoices(), DefaultSnapRepeat)]);
 	CPPUNIT_ASSERT(std::abs(heightOffsetChoices()[nearestChoice(heightOffsetChoices(), 0.f)]) < 1e-6f);
-	// The owner's snap angles
-	CPPUNIT_ASSERT_EQUAL(size_t(3), snapAngleChoices().size());
+	// The owner's snap angles: 30 to 90 in 5 degree steps
+	CPPUNIT_ASSERT_EQUAL(size_t(13), snapAngleChoices().size());
 	CPPUNIT_ASSERT_EQUAL(30.f, snapAngleChoices()[0]);
-	CPPUNIT_ASSERT_EQUAL(90.f, snapAngleChoices()[2]);
+	CPPUNIT_ASSERT_EQUAL(35.f, snapAngleChoices()[1]);
+	CPPUNIT_ASSERT_EQUAL(90.f, snapAngleChoices()[12]);
+	// The smooth speed presets: five, by name, "medium" is #32's 120, slowest first
+	CPPUNIT_ASSERT_EQUAL(size_t(5), smoothSpeedChoices().size());
+	CPPUNIT_ASSERT_EQUAL(std::string("medium"), std::string(smoothSpeedName(nearestChoice(smoothSpeedChoices(), 120.f))));
+	CPPUNIT_ASSERT_EQUAL(std::string("very slow"), std::string(smoothSpeedName(0)));
+	CPPUNIT_ASSERT_EQUAL(std::string("very fast"), std::string(smoothSpeedName(4)));
+	CPPUNIT_ASSERT_EQUAL(std::string(), std::string(smoothSpeedName(5)));
+	for(size_t i = 1; i < smoothSpeedChoices().size(); i++) {
+		CPPUNIT_ASSERT(smoothSpeedChoices()[i] > smoothSpeedChoices()[i - 1]);
+	}
 	// Each list lies within the range cfg.ini clamps to
 	for(float angle : snapAngleChoices()) {
 		CPPUNIT_ASSERT(angle >= MinSnapAngle && angle <= MaxSnapAngle);
@@ -55,8 +65,9 @@ void VRSettingsRowsTest::defaultsAreChoicesTest() {
 
 void VRSettingsRowsTest::nearestChoiceTest() {
 	// A hand-edited cfg.ini value shows as its neighbour
-	CPPUNIT_ASSERT_EQUAL(size_t(1), nearestChoice(snapAngleChoices(), 50.f));
-	CPPUNIT_ASSERT_EQUAL(size_t(2), nearestChoice(snapAngleChoices(), 180.f));
+	CPPUNIT_ASSERT_EQUAL(size_t(4), nearestChoice(snapAngleChoices(), 50.f));
+	CPPUNIT_ASSERT_EQUAL(size_t(4), nearestChoice(snapAngleChoices(), 51.f));
+	CPPUNIT_ASSERT_EQUAL(size_t(12), nearestChoice(snapAngleChoices(), 180.f));
 	CPPUNIT_ASSERT_EQUAL(size_t(0), nearestChoice(snapAngleChoices(), 5.f));
 	// Halfway: the first of the two
 	CPPUNIT_ASSERT_EQUAL(size_t(0), nearestChoice(std::vector<float>{ 10.f, 20.f }, 15.f));
@@ -86,4 +97,29 @@ void VRSettingsRowsTest::formatTest() {
 	CPPUNIT_ASSERT_EQUAL(std::string("off"), formatSnapRepeat(0.f));
 	CPPUNIT_ASSERT_EQUAL(std::string("0.4 s"), formatSnapRepeat(0.4f));
 	CPPUNIT_ASSERT_EQUAL(std::string("0.25 s"), formatSnapRepeat(0.25f));
+}
+
+void VRSettingsRowsTest::notchTest() {
+	// 13 snap angles along the bar: the ends are the first and the last, the middle is the seventh (60 degrees)
+	CPPUNIT_ASSERT_EQUAL(size_t(0), notchAt(0.f, 13));
+	CPPUNIT_ASSERT_EQUAL(size_t(12), notchAt(1.f, 13));
+	CPPUNIT_ASSERT_EQUAL(size_t(6), notchAt(0.5f, 13));
+	CPPUNIT_ASSERT_EQUAL(60.f, snapAngleChoices()[notchAt(0.5f, snapAngleChoices().size())]);
+	// A drag past the ends stays on them; a dot let go between two notches goes to the nearer one
+	CPPUNIT_ASSERT_EQUAL(size_t(0), notchAt(-0.4f, 13));
+	CPPUNIT_ASSERT_EQUAL(size_t(12), notchAt(1.7f, 13));
+	CPPUNIT_ASSERT_EQUAL(size_t(1), notchAt(0.1f, 13));  // 1.2 notches
+	CPPUNIT_ASSERT_EQUAL(size_t(2), notchAt(0.13f, 13)); // 1.56 notches
+	// Five speed presets: a quarter of the bar each
+	CPPUNIT_ASSERT_EQUAL(size_t(3), notchAt(0.75f, 5));
+	CPPUNIT_ASSERT_EQUAL(std::string("fast"), std::string(smoothSpeedName(notchAt(0.7f, 5))));
+	// Where a notch is, and back
+	for(size_t i = 0; i < 13; i++) {
+		CPPUNIT_ASSERT_EQUAL(i, notchAt(notchFraction(i, 13), 13));
+	}
+	CPPUNIT_ASSERT_EQUAL(0.25f, notchFraction(1, 5));
+	// Degenerate bars
+	CPPUNIT_ASSERT_EQUAL(size_t(0), notchAt(0.8f, 1));
+	CPPUNIT_ASSERT_EQUAL(size_t(0), notchAt(0.8f, 0));
+	CPPUNIT_ASSERT_EQUAL(0.f, notchFraction(3, 1));
 }

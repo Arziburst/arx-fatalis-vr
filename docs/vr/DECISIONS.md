@@ -13,6 +13,39 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW-turning: Turning settings are sliders the player drags; the smooth speed is named presets
+
+- **Date:** 2026-10-10
+- **Status:** Accepted
+- **Decided by:** the owner, in the headset run of PR #281 (build ab495ac35), relayed by the coordinator; the
+  player-experience call is the owner's (D-017)
+
+### Decision
+- **In the owner's words:** the turning settings as a **slider** — "a bar with a dot the player drags between
+  notches, not ◀▶ clicks"; the snap angle **30°…90° in 5° steps**; the smooth turn speed as **named presets**
+  "very slow / slow / medium / fast / very fast" — "no °/s shown, players don't get it"; the presets map to
+  degrees per second inside, **medium ≈ today's 120** (#32).
+- **The widget** is reusable (`src/gui/widget/NotchSliderWidget`): a label, a bar with one notch per value, a dot
+  that snaps to the nearest notch, the value's text right of the bar. Pressing on the bar (or the dot overhanging
+  its ends) puts the dot there and keeps dragging while the button is held — the mouse in flat mode, a hand's
+  reticle and trigger in VR (D-016); the arrow keys and the wheel step one notch. The page of #178 may use it later.
+- **The values** (`src/vr/VRSettingsRows`): snap angle 30, 35 … 90 (13 notches, default 45, D-028); smooth speed
+  very slow 60, slow 90, medium 120, fast 180, very fast 240 °/s; the repeat of a held snap off, 0.25, 0.4, 0.6,
+  0.8, 1 s (default 0.4) — a slider too. cfg.ini keeps the numbers (#32's keys); a hand-edited value shows on its
+  nearest notch.
+- **Not sliders:** snap / smooth (two values, a ◀ ▶ row) and the character height (−20 … +20 cm in 2 cm steps,
+  #260: kept as it is, the owner judges it in a later run).
+
+### Why
+The owner tried the ◀ ▶ rows in the headset: stepping through values one click at a time with a hand's reticle is
+slow, and a number of degrees per second means nothing to a player. A dot on a bar shows the range at a glance and
+is one motion to set.
+
+### Rules out
+Showing °/s to the player; ◀ ▶ clicking for the ranged turning values.
+
+---
+
 ## D-NEW: Remapping in the VR settings — captured on release, conflicts shown, saved as changes per controller type
 
 - **Date:** 2026-10-10

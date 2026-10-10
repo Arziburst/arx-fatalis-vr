@@ -80,4 +80,11 @@ extern MainMenu * g_mainMenu;
  */
 std::string stepVRSettingRow(std::string_view row, int delta);
 
+/*!
+ * The dot of a slider of the VR turning page (#260) - angle, speed or repeat - dragged to \a fraction of its
+ * bar (0 left end, 1 right end) and let go there, for the test channel; the page must be open
+ * \return an empty string, or why it was refused
+ */
+std::string dragVRSettingSlider(std::string_view row, float fraction);
+
 #endif // ARX_GUI_MAINMENU_H

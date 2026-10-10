@@ -1,5 +1,5 @@
 # VR settings, turning and character height (#260): the second page of the VR controls in the pause menu. Each row
-# edits its cfg.ini key and applies at once: the snap angle row changes the next snap's step, the height row moves the
+# edits its cfg.ini key and applies at once: the snap angle slider (its dot dragged) changes the next snap's step, the height row moves the
 # view up by the offset. cfg.ini holds the values after the quit (checked by the caller - the run's config directory).
 # A first-person save: on level 10 the intro conversation's camera owns the view (TRAPS.md, #32)
 @sim idle
@@ -13,6 +13,7 @@
 vr-input turn snap
 vr-input turn angle 45
 vr-input turn repeat 0
+vr-input turn speed 120
 vr-input height 0
 @frames 5
 @assert vr.input.turn.snapAngle eq 45
@@ -30,12 +31,25 @@ menu vr-turning
 @frames 30
 @shot vr-turning-page
 
-# The snap angle row: one click right -> 90 degrees, at once
+# The snap angle slider (owner, 2026-10-10: 30 to 90 degrees in 5 degree steps, a dot dragged along a bar): the dot
+# let go at the middle of the bar is 60, at its right end 90, past it still 90; the arrow key steps 5 degrees
 @mark
-menu step angle right
+menu drag angle 0.5
+@frames 2
+@assert vr.input.turn.snapAngle eq 60
+@log vr\.settings row=angle value=60
+menu drag angle 1
 @frames 2
 @assert vr.input.turn.snapAngle eq 90
 @log vr\.settings row=angle value=90
+menu step angle left
+@frames 2
+@assert vr.input.turn.snapAngle eq 85
+menu drag angle 1.4
+@frames 2
+@assert vr.input.turn.snapAngle eq 90
+@frames 10
+@shot vr-turning-angle-90
 
 # The turning row: snap -> smooth -> snap (the cycle wraps)
 menu step turn right
@@ -47,21 +61,23 @@ menu step turn right
 @assert vr.input.turn.mode eq snap
 @log vr\.settings row=turn value=snap
 
-# The smooth speed row: 120 -> 150 -> 120 deg/s
-menu step speed right
+# The smooth speed slider: five named presets, no degrees shown; the right end is "very fast" (240 deg/s), the
+# middle "medium" (#32's 120)
+menu drag speed 1
 @frames 2
-@assert vr.input.turn.smoothSpeed eq 150
-@log vr\.settings row=speed value=150
-menu step speed left
+@assert vr.input.turn.smoothSpeed eq 240
+@log vr\.settings row=speed value=240 preset="?very fast
+menu drag speed 0.5
 @frames 2
 @assert vr.input.turn.smoothSpeed eq 120
+@log vr\.settings row=speed value=120 preset="?medium
 
-# The repeat row: off -> 0.25 s -> off (the held push below must stay one snap)
-menu step repeat right
+# The repeat slider: off -> 0.25 s -> off (the held push below must stay one snap)
+menu drag repeat 0.2
 @frames 2
 @assert vr.input.turn.snapRepeat eq 0.25
 @log vr\.settings row=repeat value=0\.25
-menu step repeat left
+menu drag repeat 0
 @frames 2
 @assert vr.input.turn.snapRepeat eq 0
 

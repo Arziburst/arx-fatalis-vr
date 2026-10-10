@@ -30,6 +30,7 @@ class VRSettingsRowsTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(nearestChoiceTest);
 	CPPUNIT_TEST(heightChoicesTest);
 	CPPUNIT_TEST(formatTest);
+	CPPUNIT_TEST(notchTest);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -38,6 +39,7 @@ public:
 	void nearestChoiceTest();
 	void heightChoicesTest();
 	void formatTest();
+	void notchTest();
 
 };
 

@@ -71,6 +71,13 @@
  */
 namespace vr {
 
+/*!
+ * Multisampling of the eye images (#226), samples per pixel (\c vr_msaa in cfg.ini, \c --vr-msaa):
+ * the eyes render into a multisampled buffer resolved into the swapchain image; 0 or 1 = off
+ */
+const int DefaultEyeMsaa = 4;
+const int MaxEyeMsaa = 8;
+
 //! \return true if the game was built with OpenXR support
 bool isSupported();
 
@@ -336,15 +343,47 @@ struct PanelStatus {
 
 PanelStatus panelStatus();
 
+//! The floating panel is shown for an open menu in a running session (#49) - the menu pointer is on (#34)
+bool panelShown();
+
 /*!
  * \brief Where a ray hits the floating panel - the hook for the menu pointer (#34)
  *
  * \param origin    in the OpenXR LOCAL space (the space the eyes are located in), meters
  * \param direction in the same space
  * \param pixel     receives the hit in the 2D interface's pixels (x right, y down)
+ * \param point     if not null, receives the hit in the LOCAL space
  * \return false when no panel is shown for an open menu or the ray misses it
  */
-bool panelHit(const Vec3f & origin, const Vec3f & direction, Vec2f & pixel);
+bool panelHit(const Vec3f & origin, const Vec3f & direction, Vec2f & pixel, Vec3f * point = nullptr);
+
+/*!
+ * \brief The point on the shown floating panel at a pixel of the 2D interface, in the LOCAL space -
+ *        the inverse of \ref panelHit, for aiming a simulated hand at a widget (the test channel)
+ * \return false when no panel is shown for an open menu
+ */
+bool panelPoint(const Vec2f & pixel, Vec3f & point);
+
+//! A hand's pointer ray (its aim pose, #34) in the LOCAL space
+struct HandAim {
+	bool valid = false;           //!< the hand is tracked and the session focused
+	Vec3f origin = Vec3f(0.f);    //!< meters
+	Vec3f direction = Vec3f(0.f); //!< unit
+};
+
+//! Both hands' pointer rays for this frame's display time (invalid outside a session)
+std::array<HandAim, HandCount> handAims();
+
+/*!
+ * \brief The menu pointer's beam for this frame (#34): from the hand to its hit on the panel
+ *
+ * Drawn as a thin quad layer above the panel, turned towards the eyes and fading towards the panel;
+ * only while the panel is shown. Set every frame - \c shown false hides it.
+ */
+void setPointerBeam(bool shown, const Vec3f & from = Vec3f(0.f), const Vec3f & to = Vec3f(0.f));
+
+//! The beam was part of the last submitted frame
+bool pointerBeamShown();
 
 //! Place the panel anew at the head on the next frame while a menu is open (a recenter, F-180)
 void recenterPanel();

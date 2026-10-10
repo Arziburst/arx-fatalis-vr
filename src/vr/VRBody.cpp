@@ -682,9 +682,10 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		return;
 	}
 
-	// The body under the head: the lean (clamped like the camera's) moves every bone
+	// The body under the head: the lean - the head's movement less what the collision cylinder already walked
+	// after it (#26), the same offset the camera takes - moves every bone
 	const float bodyYaw = player.angle.getYaw();
-	const HeadCamera camera = headToCamera(head, headState.reference, bodyYaw);
+	const HeadCamera camera = headToCamera(head, headState.reference, bodyYaw, headState.anchor);
 	const Vec3f shift(camera.offset.x, 0.f, camera.offset.z);
 	for(Bone & bone : skeleton.bones) {
 		bone.anim.trans += shift;
@@ -927,6 +928,11 @@ bool handLandmarks(Hand hand, HandLandmarks & landmarks) {
 		landmarks.tipOut = 0.f;
 	}
 	return true;
+}
+
+const HandFrame * handRestFrame(Hand hand) {
+	const ArmChain & chain = g_body.chains[size_t(hand)];
+	return (g_body.boundObject && chain.valid && chain.frame.valid) ? &chain.frame : nullptr;
 }
 
 void setSimulatedHand(Hand hand, const HandSample & sample) {

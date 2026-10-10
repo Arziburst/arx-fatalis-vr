@@ -197,7 +197,7 @@ std::string simProfilePath(std::string_view name) {
 struct Simulation::Command {
 	enum Op {
 		Rate, EyeSize, Ipd, Fov, Timeline, HeadPos, HeadRot, HandPos, HandRot, HandTracked, HandFingers, HandJoints,
-		Profile, Action, Session, Shot, Mark, Quit, Fault,
+		Profile, Action, Session, Shot, Mark, Quit, Fault, Layers,
 	};
 	Op op = Rate;
 	size_t index = 0; //!< eye or hand; 2 = both hands
@@ -423,6 +423,16 @@ std::string Simulation::parse(std::string_view line, Command & command) const {
 		return std::string();
 	}
 
+	if(word == "layers") {
+		command.op = Command::Layers;
+		const std::string state = words.size() == 2 ? lowercase(words[1]) : std::string();
+		if(state != "on" && state != "off") {
+			return "layers: expected on or off";
+		}
+		command.flag = (state == "on");
+		return std::string();
+	}
+
 	return "unknown command \"" + std::string(words[0]) + "\"";
 }
 
@@ -507,6 +517,7 @@ void Simulation::apply(const Command & command) {
 		case Command::Mark: m_requests.marks.push_back(command.text); return;
 		case Command::Quit: m_requests.quit = true; return;
 		case Command::Fault: rig.swapEyes = command.flag; return;
+		case Command::Layers: rig.saveLayers = command.flag; return;
 		default: break;
 	}
 

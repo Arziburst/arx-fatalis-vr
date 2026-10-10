@@ -104,6 +104,9 @@ Vec2f panelSize(float width, const Vec2i & imageSize);
 bool panelHit(const PanelPose & pose, const Vec2f & size, const Vec3f & origin, const Vec3f & direction,
               Vec2f & uv, float & distance);
 
+//! \return the point on the panel at \a uv (u right, v down, 0..1) - the inverse of \ref panelHit
+Vec3f panelPoint(const PanelPose & pose, const Vec2f & size, const Vec2f & uv);
+
 //! Where the 2D interface's quad is shown
 enum class PanelMode {
 	HeadLocked, //!< no menu open: in front of the eyes, moving with the head (the HUD)

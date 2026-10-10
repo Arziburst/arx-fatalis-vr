@@ -63,7 +63,7 @@ The desktop window mirrors one eye, so the demo can be recorded and shown.
 - Bow, shield, prepared spells, spell book in VR: not in MVP (they may work through the panel, or not).
 - Cutscenes, death camera and scripted cameras may behave badly.
 - Screen-space effects (flares, fog, fades) may look wrong in stereo.
-- No positional tracking safeguards (leaning into walls), no vignette, no VR settings menu.
+- No vignette, no VR settings menu.
 - No Steam build.
 
 ## Definition of done

@@ -19,6 +19,7 @@
 
 #include "vr/EyeProjectionTest.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -384,4 +385,42 @@ void EyeProjectionTest::testUnionContainsBothEyesWithCant() {
 		}
 	}
 	CPPUNIT_ASSERT(onLeft && onRight && onUp && onDown);
+}
+
+void EyeProjectionTest::testPixelsPerUnitOfTheEnginesProjection() {
+
+	// The engine's own projection (createProjectionMatrix() in game/Camera.cpp) for the default focal: the
+	// scale must be what the sprites computed before #72, min(width, height) / 480 * focal, in a landscape
+	// window and in a portrait one
+	const float focal = 350.f;
+	const float cot = 1.f / std::tan(Camera::focalToFov(focal) / 2.f);
+	const Vec2f sizes[2] = { Vec2f(1920.f, 1080.f), Vec2f(1080.f, 1920.f) };
+	for(const Vec2f & size : sizes) {
+		glm::mat4x4 m(1.f);
+		m[0][0] = ((size.y < size.x) ? size.y / size.x : 1.f) * cot;
+		m[1][1] = -((size.y < size.x) ? 1.f : size.x / size.y) * cot;
+		const float expected = std::min(size.x, size.y) / 480.f * focal;
+		CPPUNIT_ASSERT_DOUBLES_EQUAL(expected, projectionPixelsPerUnit(m, size), expected * 1e-5f);
+	}
+}
+
+void EyeProjectionTest::testPixelsPerUnitOfAnEyeIsItsVerticalScale() {
+
+	// An Index-sized portrait eye image with the Quest 3's asymmetric angles: a unit at depth 1 spans
+	// height / (tan up - tan down) pixels vertically - measured by projecting one
+	const vr::EyeFov fov = quest3Left();
+	const Vec2f size(2468.f, 2740.f);
+	const glm::mat4x4 m = vr::eyeProjection(fov, NearDist, FarDist);
+	const float depth = 100.f;
+	const float y0 = project(m, Vec3f(0.f, 0.f, depth)).y;
+	const float y1 = project(m, Vec3f(0.f, 1.f, depth)).y;
+	const float measured = std::abs(y1 - y0) * size.y / 2.f * depth;
+	const vr::FovTangents t = vr::tangents(fov);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(size.y / (t.up - t.down), measured, measured * 1e-4f);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(measured, projectionPixelsPerUnit(m, size), measured * 1e-4f);
+
+	// The formula before #72 with the eye camera's focal reads the narrow side of the image: ~10 % too small
+	const float focal = Camera::fovToFocal(vr::verticalFov(fov));
+	const float before = std::min(size.x, size.y) / 480.f * focal;
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(size.x / size.y, before / measured, 1e-4f);
 }

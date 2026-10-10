@@ -19,15 +19,21 @@
 
 #include "vr/HeadTracking.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <string>
 
+#include <glm/glm.hpp>
+
+#include "core/Config.h"
 #include "core/GameEvent.h"
 #include "core/GameTime.h"
 #include "platform/Time.h"
 #include "vr/BodyYaw.h"
+#include "vr/HeadLean.h"
 #include "vr/HeadReferenceGate.h"
+#include "vr/PhysicalCrouch.h"
 #include "vr/VRSystem.h"
 #include "vr/WorldScale.h"
 
@@ -47,15 +53,77 @@ struct HeadTrackingState {
 	std::string resetReason = "startup";
 
 	float eyeAboveFeet = -1.f;
+	bool eyeStanding = false;   //!< \c eyeAboveFeet is the standing eye
+	float standingEye = -1.f;   //!< the character's last standing eye above its feet, game units; -1 unknown
 
 	float raising = 0.f; //!< meters the reference was raised in the current auto-raise episode
 
 	HeadStatus status;
 	BodyStatus body;
 
+	// Real steps (#26): the step asked of the body, in the world, and the turn it was asked with
+	Vec2f step = Vec2f(0.f);
+	bool stepWanted = false;
+	Vec2f stepAsked = Vec2f(0.f); //!< the step the player's movement took, until it answers
+	float stepTurn = 0.f;
+	PlatformInstant lastStepMove;
+	float episodeWalked = 0.f;    //!< meters walked in the current stepping episode
+	float farFade = 0.f;          //!< the far fade of the last applyHeadPose
+	bool haveHead = false;        //!< the last applyHeadPose had a head
+
+	FadeStatus fade;
+
 };
 
 HeadTrackingState g_head;
+
+//! A stepping episode ends when the body has not moved after the head for this long
+const PlatformDuration StepEpisodeGap = 500ms;
+
+//! A step the collision cut to less than this part is a blocked body (game units below 1 are noise)
+const float BlockedPart = 0.5f;
+const float MinStepUnits = 1.f;
+
+LeanParams leanParams() {
+	LeanParams params;
+	params.followRadius = config.video.vrBodyFollowRadius;
+	params.farStart = config.video.vrHeadFarStart;
+	params.farFull = config.video.vrHeadFarFull;
+	return params;
+}
+
+void resetLean() {
+	g_head.status.anchor = Vec2f(0.f);
+	g_head.stepWanted = false;
+	g_head.step = Vec2f(0.f);
+	g_head.stepAsked = Vec2f(0.f);
+}
+
+//! The lean of this frame (#26): what the camera keeps, and the step that brings the body after the head
+void updateLean(const Vec3f & moved, float turn) {
+
+	HeadStatus & status = g_head.status;
+	const HeadLean lean = leanHead(Vec2f(moved.x, moved.z), status.anchor, leanParams());
+	status.lean = lean.lean;
+	status.leanDistance = lean.distance;
+	g_head.farFade = lean.farFade;
+
+	g_head.step = turnToWorld(lean.step, turn) * HeadCameraParams().unitsPerMeter;
+	g_head.stepWanted = glm::length(g_head.step) > 0.f;
+	g_head.stepTurn = turn;
+
+	if(!g_head.stepWanted && status.bodyBlocked) {
+		// Back within the radius: nothing holds the body any more
+		status.bodyBlocked = false;
+		gameevent::Event("vr.body.blocked", 100)("state", "end")("leanM", lean.distance, 3);
+	}
+
+	if(status.stepping && g_platformTime.frameStart() - g_head.lastStepMove > StepEpisodeGap) {
+		status.stepping = false;
+		gameevent::Event("vr.body.step", 100)("state", "end")("walkedM", g_head.episodeWalked, 3)
+			("leanM", lean.distance, 3);
+	}
+}
 
 double nowSeconds() {
 	static const PlatformInstant start = platform::getTime();
@@ -102,8 +170,13 @@ void resetBody(float heading) {
 
 } // anonymous namespace
 
-void setCharacterEyeHeight(float units) {
+void setCharacterEyeHeight(float units, bool standing) {
 	g_head.eyeAboveFeet = units;
+	g_head.eyeStanding = standing;
+}
+
+bool physicalCrouch() {
+	return g_head.status.crouch;
 }
 
 bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
@@ -152,14 +225,27 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 	}
 
 	if(std::strcmp(source, "none") == 0) {
-		status.clamped = false;
+		if(status.crouch) {
+			gameevent::Event("vr.head.crouch")("state", "off")("reason", "no head");
+		}
+		status.crouch = false;
 		status.worn = false;
 		resetBody(bodyYaw);
+		resetLean();
+		status.lean = Vec2f(0.f);
+		status.leanDistance = 0.f;
+		g_head.farFade = 0.f;
+		g_head.haveHead = false;
 		return false;
 	}
+	g_head.haveHead = true;
 
 	status.eyeAboveFeet = g_head.eyeAboveFeet;
+	if(g_head.eyeStanding && status.eyeAboveFeet >= 0.f) {
+		g_head.standingEye = status.eyeAboveFeet;
+	}
 	g_head.eyeAboveFeet = -1.f;
+	g_head.eyeStanding = false;
 
 	// The reference is the worn, settled head (#27): a held pose (tracking lost) feeds nothing into the gate
 	if(std::strcmp(source, "held") != 0) {
@@ -181,8 +267,9 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 			status.reason = g_head.resetReason;
 			status.raised = 0.f;
 			g_head.raising = 0.f;
-			// The new forward is where the body faces (#25)
+			// The new forward is where the body faces (#25), the head is over the body again (#26)
 			resetBody(bodyYaw);
+			resetLean();
 			status.referenceAboveFloor = (localAboveFloor >= 0.f) ? localAboveFloor + head.position.y : -1.f;
 			// The head at the reference is the character's eye: the player's eye height above the floor
 			// (STAGE, when the runtime has one) against the character's eye above its feet, in meters at the
@@ -222,19 +309,44 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 		g_head.raising = 0.f;
 	}
 
-	HeadCamera camera = headToCamera(head, status.reference, bodyYaw);
-
-	if(camera.clamped != status.clamped) {
-		// An episode, not a frame: logged when the lean reaches the interim limit and when it is back within
-		gameevent::Event("vr.head.lean", 100)("state", camera.clamped ? "clamped" : "free")
-			("limitM", HeadCameraParams().maxLeanMeters, 2);
+	// Physical crouch (#100, D-018): the head far enough below the calibrated eye crouches the character, back
+	// up past the exit depth it stands (the game keeps it crouched under a low ceiling). A held pose keeps the
+	// state; a new reference measures from the head where it is now, so a recenter stands up. A headset taken
+	// off and put down on the desk is not a crouching player, nor is one who put it on again seated while the
+	// new reference is still settling (the old one is from the standing head)
+	status.crouchDepth = status.reference.position.y - head.position.y;
+	if(std::strcmp(source, "held") != 0) {
+		CrouchParams params;
+		params.enabled = config.video.vrPhysicalCrouch && worn && !status.pending;
+		params.enterMeters = config.video.vrCrouchEnter;
+		params.exitMeters = config.video.vrCrouchExit;
+		const bool crouch = updatePhysicalCrouch(status.crouch, status.crouchDepth, params);
+		if(crouch != status.crouch) {
+			if(crouch) {
+				status.crouches++;
+			}
+			gameevent::Event("vr.head.crouch")("state", crouch ? "on" : "off")("depthM", status.crouchDepth, 3)
+				("enterM", params.enterMeters, 2)("exitM", params.exitMeters, 2);
+		}
+		status.crouch = crouch;
 	}
+
+	// The body's part of the head's movement (#26) is the anchor the camera leaves out
+	HeadCamera camera = headToCamera(head, status.reference, bodyYaw, status.anchor);
+	updateLean(camera.moved, bodyYaw - status.reference.yaw);
+
+	// The character's crouch - the head's, the button's - already lowered the eye the camera starts from: the
+	// head's own drop moves the camera only below that (#100), so the view is never twice as low
+	status.characterDrop = 0.f;
+	if(g_head.standingEye >= 0.f && status.eyeAboveFeet >= 0.f) {
+		status.characterDrop = std::max(0.f, g_head.standingEye - status.eyeAboveFeet);
+	}
+	camera.offset.y = headDropOnCamera(camera.offset.y, status.characterDrop);
 
 	status.head = headAngles(head.orientation);
 	status.position = head.position;
 	status.aboveFloor = (localAboveFloor >= 0.f) ? localAboveFloor + head.position.y : -1.f;
 	status.offset = camera.offset;
-	status.clamped = camera.clamped;
 
 	updateBody(wrapSignedDegrees(status.head.getYaw() - status.reference.yaw), bodyYaw, camera.angle.getYaw());
 
@@ -285,6 +397,96 @@ const HeadStatus & headStatus() {
 
 const BodyStatus & bodyStatus() {
 	return g_head.body;
+}
+
+Vec2f takeBodyStep() {
+	if(!g_head.stepWanted) {
+		return Vec2f(0.f);
+	}
+	g_head.stepWanted = false;
+	g_head.stepAsked = g_head.step;
+	return g_head.step;
+}
+
+void bodyStepped(const Vec2f & moved) {
+
+	HeadStatus & status = g_head.status;
+	const float unitsPerMeter = HeadCameraParams().unitsPerMeter;
+	status.anchor = anchorAfterStep(status.anchor, moved, g_head.stepTurn, unitsPerMeter);
+
+	const float asked = glm::length(g_head.stepAsked);
+	const float walked = glm::length(moved);
+	g_head.stepAsked = Vec2f(0.f);
+
+	if(walked > 0.f) {
+		status.walked += walked / unitsPerMeter;
+		g_head.episodeWalked += walked / unitsPerMeter;
+		g_head.lastStepMove = g_platformTime.frameStart();
+		if(!status.stepping) {
+			status.stepping = true;
+			status.steps++;
+			g_head.episodeWalked = walked / unitsPerMeter;
+			// An episode, not a frame: the body starts walking after the head (it ends after a pause)
+			gameevent::Event("vr.body.step", 100)("state", "start")("leanM", status.leanDistance, 3);
+		}
+	}
+
+	if(asked >= MinStepUnits) {
+		const bool blocked = walked < asked * BlockedPart;
+		if(blocked != status.bodyBlocked) {
+			if(blocked) {
+				status.blocks++;
+			}
+			// The collision holds the body (a wall, a table, a corner) while the head goes on - or lets it go
+			gameevent::Event("vr.body.blocked", 100)("state", blocked ? "start" : "end")
+				("askedCm", asked, 1)("movedCm", walked, 1)("leanM", status.leanDistance, 3);
+			status.bodyBlocked = blocked;
+		}
+	}
+}
+
+void updateWallFade(const char * blocked, float seconds) {
+
+	FadeStatus & fade = g_head.fade;
+
+	if(!g_head.haveHead) {
+		// No head, no fade: flat play is never darkened
+		fade = FadeStatus{ 0.f, nullptr, fade.walls, 0.f, fade.fars };
+		return;
+	}
+
+	const bool wasWall = (fade.wall != nullptr);
+	if((blocked != nullptr) != wasWall || (blocked && std::strcmp(blocked, fade.wall) != 0)) {
+		if(blocked && !wasWall) {
+			fade.walls++;
+		}
+		// An episode, not a frame: the head went into geometry (inside a wall, or behind one seen from the
+		// character's eye), or came out
+		gameevent::Event("vr.head.wall", 100)("state", blocked ? blocked : "clear")
+			("leanM", g_head.status.leanDistance, 3)("fade", fade.fade, 2);
+	}
+	fade.wall = blocked;
+
+	const bool tooFar = (g_head.farFade > 0.f);
+	if(tooFar != (fade.farFade > 0.f)) {
+		if(tooFar) {
+			fade.fars++;
+		}
+		// The head is so far from a body that cannot follow that the world fades
+		gameevent::Event("vr.head.far", 100)("state", tooFar ? "start" : "end")
+			("leanM", g_head.status.leanDistance, 3)("startM", config.video.vrHeadFarStart, 2);
+	}
+	fade.farFade = g_head.farFade;
+
+	FadeParams params;
+	params.outSeconds = config.video.vrWallFadeOut;
+	params.inSeconds = config.video.vrWallFadeIn;
+	const float target = blocked ? 1.f : fade.farFade;
+	fade.fade = stepFade(fade.fade, target, seconds, params);
+}
+
+const FadeStatus & fadeStatus() {
+	return g_head.fade;
 }
 
 } // namespace vr

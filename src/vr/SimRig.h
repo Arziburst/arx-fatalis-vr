@@ -75,6 +75,8 @@
  *  - \c mark \c <text>: a line in arx.log; \c quit: ask the game to quit
  *  - \c fault \c swap-eyes \c on|off: the compositor shows each eye the other eye's image - the
  *    bug class the two-eyes check (F-06) must catch
+ *  - \c layers \c on|off: shots also save each eye's projection layer without the quad
+ *    (\c <name>-left-layer.bmp, \c -right-layer.bmp): what the game drew into the eyes themselves (#72)
  */
 namespace vr {
 
@@ -147,6 +149,7 @@ struct SimRig {
 	bool focused = true;
 	bool worn = true;     //!< false: the headset lies idle, the session stays synchronized (#27)
 	bool swapEyes = false;
+	bool saveLayers = false; //!< shots also save each eye's projection layer alone (#72)
 	SimRig();
 };
 

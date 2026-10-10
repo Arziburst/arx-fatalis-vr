@@ -367,6 +367,8 @@ Helper scripts used by the commands:
 2. **Branch**: `ARXVR-<issue>-<type>-<short-name>` (e.g. `ARXVR-12-fix-rc-flags`), from `main`.
 3. **Commits** follow the [naming convention](#commit-and-pull-request-naming): `ARXVR-12 fix: ...`, `Refs #12` in the body.
 4. **Pull request** into `main`: title in the same format, PR template body with `Closes #12`, *What*, *How verified*, *How to test*.
+   After each meaningful push to an open PR (a fix after review or a headset verdict, a change of approach, a merge with
+   conflicts), add a short PR comment: what was done or fixed and how it was verified. Trivial pushes (typos, a re-run) need none.
 5. **CI and merge** — see [Pull requests, CI and merging](#pull-requests-ci-and-merging).
 6. **Done** = the definition of done is met and verified (build, launch, in-headset check — whatever applies). The task is closed and moves to *Done*.
 7. If a task is blocked, comment on it with exactly what blocks it and move it back to *Todo* / *Backlog*.

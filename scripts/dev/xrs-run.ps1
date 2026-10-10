@@ -84,6 +84,6 @@ $smokeArgs = @{ Sequence = $parsed.Path; Rebuild = $Rebuild }
 if ($parsed.Sim) { $smokeArgs.VrSim = $parsed.Sim } elseif ($parsed.Args -notcontains '--no-vr') { $smokeArgs.VrSim = 'idle' }
 if ($TestDir) { $smokeArgs.TestDir = $TestDir }
 if ($parsed.Save) { $smokeArgs.Save = $parsed.Save }
-$launchArgs = if ($ArxArgs) { $ArxArgs } elseif ($parsed.Args) { $parsed.Args } else { @() }
+$launchArgs = @(if ($ArxArgs) { $ArxArgs } elseif ($parsed.Args) { $parsed.Args })
 & (Join-Path $PSScriptRoot 'smoke-test.ps1') @smokeArgs @launchArgs
 exit $LASTEXITCODE

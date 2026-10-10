@@ -1102,6 +1102,7 @@ set(GUI_SOURCES
 	src/gui/widget/SliderWidget.cpp
 	src/gui/widget/TextInputWidget.cpp
 	src/gui/widget/TextWidget.cpp
+	src/gui/widget/VRBindingWidget.cpp
 	src/gui/widget/Widget.cpp
 	src/gui/widget/WidgetContainer.cpp
 )
@@ -1254,6 +1255,7 @@ set(UTIL_MD5_SOURCES
 list(APPEND IO_RESOURCE_SOURCES ${UTIL_MD5_SOURCES})
 
 set(VR_SOURCES
+	src/vr/BindingCapture.cpp
 	src/vr/ArmIK.cpp
 	src/vr/BodyYaw.cpp
 	src/vr/EyeImage.cpp

@@ -57,6 +57,7 @@
 #include "gui/Console.h"
 #include "gui/Dragging.h"
 #include "gui/Interface.h"
+#include "gui/MainMenu.h"
 #include "gui/Menu.h"
 #include "gui/hud/PlayerInventory.h"
 #include "input/Input.h"
@@ -106,6 +107,27 @@ const char * menuModeName(MenuMode mode) {
 		case Mode_CharacterCreation: return "charactercreation";
 	}
 	return "unknown";
+}
+
+//! The main menu's pages a test can open and read back (#178)
+const struct { MENUSTATE page; const char * name; } MenuPages[] = {
+	{ Page_None, "none" },
+	{ Page_Options, "options" },
+	{ Page_OptionsInput, "input" },
+	{ Page_OptionsVR, "vr" },
+};
+
+const char * menuPageName(MENUSTATE page) {
+	for(const auto & entry : MenuPages) {
+		if(entry.page == page) {
+			return entry.name;
+		}
+	}
+	return "other";
+}
+
+MENUSTATE currentMenuPage() {
+	return (g_mainMenu && g_mainMenu->m_window) ? g_mainMenu->m_window->currentPageId() : Page_None;
 }
 
 //! Counts logged errors and warnings so a test can assert on numbers without parsing the log
@@ -468,6 +490,7 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("warnings", g.counter ? g.counter->warnings.load() : 0u);
 
 	json.value("menuMode", menuModeName(ARXmenu.mode()));
+	json.value("menuPage", ARXmenu.mode() == Mode_MainMenu ? menuPageName(currentMenuPage()) : "none");
 	json.value("area", g_currentArea ? u32(g_currentArea) : 0u);
 	json.value("paused", g_gameTime.isPaused() != 0);
 	json.value("cinematic", isInCinematic());
@@ -1038,6 +1061,39 @@ std::string buildStatus(PlatformInstant now) {
 			json.value(vr::eventName(vr::Event(i)), vr::formatBinding(controls.layout()[vr::Event(i)]));
 		}
 		json.end();
+		// The player's remapping in the VR settings (#178): saved per controller type, conflicts, the capture
+		json.value("remapped", vr::layoutRemapped());
+		json.value("layoutFile", vr::layoutFileName(vr::controllerType()));
+		{
+			const std::vector<vr::Conflict> conflicts = vr::findConflicts(controls.layout());
+			std::string list;
+			for(const vr::Conflict & conflict : conflicts) {
+				list += (list.empty() ? "" : " ") + std::string(vr::eventName(conflict.first)) + '+'
+				        + vr::eventName(conflict.second);
+			}
+			json.value("conflicts", conflicts.size());
+			json.value("conflictList", list);
+		}
+		{
+			const vr::BindingCapture & capture = vr::capture();
+			const char * state = "idle";
+			switch(capture.state()) {
+				case vr::BindingCapture::State::Idle: state = "idle"; break;
+				case vr::BindingCapture::State::Waiting: state = "waiting"; break;
+				case vr::BindingCapture::State::Holding: state = "holding"; break;
+				case vr::BindingCapture::State::Done: state = "done"; break;
+				case vr::BindingCapture::State::Cancelled: state = "cancelled"; break;
+			}
+			json.object("capture");
+			json.value("state", state);
+			json.value("event", vr::eventName(vr::captureEvent()));
+			json.value("binding", vr::formatBinding(capture.binding()));
+			json.value("refused", capture.refused() == vr::Binding::None ? std::string()
+			                                                            : vr::controlName(capture.refused()));
+			json.value("why", capture.refusedWhy());
+			json.value("count", vr::captureCount());
+			json.end();
+		}
 		// What the engine was given (#74): held actions, buttons and keys; the move vector and turn axis
 		const vr::GameInputState & game = vr::gameInput();
 		json.object("game");
@@ -1577,6 +1633,30 @@ std::string execute(std::string_view line) {
 		g_canResumeGame = true;
 		ARX_MENU_Clicked_QUIT();
 		return std::string();
+	}
+
+	if(word == "menu") {
+		// Open a page of the main / pause menu as a click on its entry would (#178): none, options, input,
+		// vr; "pause" opens the pause menu from the game, as Escape does
+		std::string name(rest);
+		util::makeLowercase(name);
+		if(name == "pause") {
+			if(ARXmenu.mode() != Mode_InGame || !g_currentArea) {
+				return refuse("menu pause: needs a running game");
+			}
+			ARX_MENU_Launch(true);
+			return std::string();
+		}
+		if(ARXmenu.mode() != Mode_MainMenu || !g_mainMenu) {
+			return refuse(std::string("menu: needs the main or pause menu, mode is ") + menuModeName(ARXmenu.mode()));
+		}
+		for(const auto & entry : MenuPages) {
+			if(name == entry.name) {
+				g_mainMenu->requestPage(entry.page);
+				return std::string();
+			}
+		}
+		return refuse("menu: expected pause, none, options, input or vr, got \"" + name + "\"");
 	}
 
 	if(word == "ui") {

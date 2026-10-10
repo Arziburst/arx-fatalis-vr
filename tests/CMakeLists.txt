@@ -60,6 +60,8 @@ set(arxtest_TESTCASES
 	tests/vr/HeadPoseTest.cpp
 	tests/vr/HeadReferenceGateTest.h
 	tests/vr/HeadReferenceGateTest.cpp
+	tests/vr/PhysicalCrouchTest.h
+	tests/vr/PhysicalCrouchTest.cpp
 
 	tests/vr/VRControlsTest.h
 	tests/vr/VRControlsTest.cpp
@@ -83,6 +85,8 @@ set(arxtest_TESTCASES
 
 	tests/vr/ArmIKTest.h
 	tests/vr/ArmIKTest.cpp
+	tests/vr/WeaponGripTest.h
+	tests/vr/WeaponGripTest.cpp
 
 
 )
@@ -108,6 +112,7 @@ set(arxtest_SOURCES
 	src/vr/HeadLean.cpp
 	src/vr/HeadPose.cpp
 	src/vr/HeadReferenceGate.cpp
+	src/vr/PhysicalCrouch.cpp
 	src/vr/VRControls.cpp
 	src/vr/VRGameInput.cpp
 	src/vr/VRTurn.cpp
@@ -116,6 +121,7 @@ set(arxtest_SOURCES
 	src/vr/UIPanel.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/ArmIK.cpp
+	src/vr/WeaponGrip.cpp
 	src/vr/Locomotion.cpp
 
 

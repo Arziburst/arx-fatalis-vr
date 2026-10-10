@@ -51,8 +51,8 @@
  * The reference must be the worn head (#27, \ref HeadReferenceGate): while the headset is not worn
  * (session neither visible nor focused - lying on the desk during a load) only a provisional reference
  * is taken; when it is put on, the settled one comes once the head has been still for a moment - again
- * every time it is put back on. Auto-raise: a head above the reference lifts it (D-018); the crouch
- * threshold below it is #100.
+ * every time it is put back on. Auto-raise: a head above the reference lifts it (D-018); a head far
+ * enough below it crouches the character (#100, PhysicalCrouch.h).
  *
  * Leaning and real steps (#26, D-018, HeadLean.h): the head's horizontal movement is split between
  * the body and the camera. The body - the player's collision cylinder - stays while the head is within
@@ -92,8 +92,16 @@ bool peekHead(HeadSample & head);
  * \brief The character's eye above its feet (game units) for the next \ref applyHeadPose - set by the
  *        first-person camera before it, so the reference event and status.json show the character's
  *        eye height next to the player's; not set for other cameras
+ * \param standing the character stands (not crouching, getting up or levitating): its eye now is the
+ *        standing eye, which a crouch lowers the eye from (#100)
  */
-void setCharacterEyeHeight(float units);
+void setCharacterEyeHeight(float units, bool standing);
+
+/*!
+ * \return the head is far enough below its reference to crouch the character (#100, PhysicalCrouch.h):
+ *         read by the player's controls next to the crouch button; false without a head
+ */
+bool physicalCrouch();
 
 //! Use \a head when no headset pose is available (test channel)
 void setSimulatedHead(const HeadSample & head);
@@ -125,6 +133,10 @@ struct HeadStatus {
 	u64 steps = 0;                //!< stepping episodes since the game started
 	bool bodyBlocked = false;     //!< the body was asked to step but the collision held it
 	u64 blocks = 0;               //!< blocked episodes since the game started
+	bool crouch = false;          //!< the head crouches the character (#100)
+	float crouchDepth = 0.f;      //!< the head below its reference, meters (negative above it)
+	u64 crouches = 0;             //!< physical crouch episodes since the game started
+	float characterDrop = 0.f;    //!< the character's eye below its standing eye, game units (its crouch)
 };
 
 const HeadStatus & headStatus();

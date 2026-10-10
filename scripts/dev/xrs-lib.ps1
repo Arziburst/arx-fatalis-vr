@@ -412,3 +412,13 @@ function Invoke-ArxSequence($Sequence, [string]$TestDir, [string]$LogPath, [swit
 		Ran      = $i
 	}
 }
+
+# A fresh user / config directory for one sequence run (#296): CI runs every shipped sequence in its own, so what one
+# sequence leaves behind (a saved file, a remapped controls ini, a changed setting) can never reach the next, and the
+# order of the sequences does not matter. Whatever an earlier run left under the same name is removed first.
+function New-ArxSequenceUserDir([string]$Root, [string]$Name) {
+	$dir = Join-Path $Root $Name
+	if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
+	New-Item -ItemType Directory -Force $dir | Out-Null
+	$dir
+}

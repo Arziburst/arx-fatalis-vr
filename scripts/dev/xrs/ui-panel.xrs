@@ -71,8 +71,16 @@ vr-sim head rot 40 0 0
 vr-sim head rot 0 0 0
 @frames 10
 @shot panelback
-@assert vr.sim.shots.panelback.left.quadPixels ge {openq-1000}
-@assert vr.sim.shots.panelback.left.quadPixels le {openq+1000}
+# Exactly where it was: not placed anew (the pose is the strict check, the pixel count only a coarse one)
+@assert vr.panel.placements eq 1
+@assert vr.panel.x gt -0.01
+@assert vr.panel.x lt 0.01
+@assert vr.panel.z gt -0.91
+@assert vr.panel.z lt -0.89
+# quadPixels follows the animated scene behind the panel: measured panelback vs open on the runner 364 and 2471
+# px apart (0.5 % / 3.2 % of ~76000), so the band is 5 %; the turned shot is at least 10 % below open
+@assert vr.sim.shots.panelback.left.quadPixels ge {openq*0.95}
+@assert vr.sim.shots.panelback.left.quadPixels le {openq*1.05}
 
 # Closed: back to the head-locked quad
 ui inventory close

@@ -1262,6 +1262,7 @@ set(VR_SOURCES
 	src/vr/HeadLean.cpp
 	src/vr/HeadPose.cpp
 	src/vr/HeadReferenceGate.cpp
+	src/vr/PhysicalCrouch.cpp
 	src/vr/HeadTracking.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/Locomotion.cpp
@@ -1270,6 +1271,7 @@ set(VR_SOURCES
 	src/vr/VRActions.cpp
 	src/vr/VRBindings.cpp
 	src/vr/VRBody.cpp
+	src/vr/VRWeapon.cpp
 	src/vr/VRComfort.cpp
 	src/vr/VRControls.cpp
 	src/vr/VRGameInput.cpp
@@ -1279,6 +1281,7 @@ set(VR_SOURCES
 	src/vr/VRSwapchain.cpp
 	src/vr/VRSystem.cpp
 	src/vr/VRTurn.cpp
+	src/vr/WeaponGrip.cpp
 	src/vr/XRDispatch.cpp
 )
 

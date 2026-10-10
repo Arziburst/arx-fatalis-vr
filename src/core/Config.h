@@ -143,6 +143,9 @@ public:
 		float vrPanelDistance; //!< VR: the menu panel this far ahead of the head, meters (#49)
 		float vrPanelDrop; //!< VR: the menu panel's centre this far below the eyes, meters (#49)
 		float vrPanelWidth; //!< VR: the menu panel's width, meters (#49)
+		bool vrPhysicalCrouch; //!< VR: the head going down crouches the character (#100)
+		float vrCrouchEnter; //!< VR: the head this far below the calibrated eye crouches, meters (#100)
+		float vrCrouchExit; //!< VR: the character stands again once the head is back above this depth, meters (#100)
 
 		float fov;
 		bool viewBobbing;

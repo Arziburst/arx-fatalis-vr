@@ -19,6 +19,7 @@
 
 #include "vr/HeadTracking.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -32,6 +33,7 @@
 #include "vr/BodyYaw.h"
 #include "vr/HeadLean.h"
 #include "vr/HeadReferenceGate.h"
+#include "vr/PhysicalCrouch.h"
 #include "vr/VRSystem.h"
 #include "vr/WorldScale.h"
 
@@ -51,6 +53,8 @@ struct HeadTrackingState {
 	std::string resetReason = "startup";
 
 	float eyeAboveFeet = -1.f;
+	bool eyeStanding = false;   //!< \c eyeAboveFeet is the standing eye
+	float standingEye = -1.f;   //!< the character's last standing eye above its feet, game units; -1 unknown
 
 	float raising = 0.f; //!< meters the reference was raised in the current auto-raise episode
 
@@ -166,8 +170,13 @@ void resetBody(float heading) {
 
 } // anonymous namespace
 
-void setCharacterEyeHeight(float units) {
+void setCharacterEyeHeight(float units, bool standing) {
 	g_head.eyeAboveFeet = units;
+	g_head.eyeStanding = standing;
+}
+
+bool physicalCrouch() {
+	return g_head.status.crouch;
 }
 
 bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
@@ -216,6 +225,10 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 	}
 
 	if(std::strcmp(source, "none") == 0) {
+		if(status.crouch) {
+			gameevent::Event("vr.head.crouch")("state", "off")("reason", "no head");
+		}
+		status.crouch = false;
 		status.worn = false;
 		resetBody(bodyYaw);
 		resetLean();
@@ -228,7 +241,11 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 	g_head.haveHead = true;
 
 	status.eyeAboveFeet = g_head.eyeAboveFeet;
+	if(g_head.eyeStanding && status.eyeAboveFeet >= 0.f) {
+		g_head.standingEye = status.eyeAboveFeet;
+	}
 	g_head.eyeAboveFeet = -1.f;
+	g_head.eyeStanding = false;
 
 	// The reference is the worn, settled head (#27): a held pose (tracking lost) feeds nothing into the gate
 	if(std::strcmp(source, "held") != 0) {
@@ -292,9 +309,39 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 		g_head.raising = 0.f;
 	}
 
+	// Physical crouch (#100, D-018): the head far enough below the calibrated eye crouches the character, back
+	// up past the exit depth it stands (the game keeps it crouched under a low ceiling). A held pose keeps the
+	// state; a new reference measures from the head where it is now, so a recenter stands up. A headset taken
+	// off and put down on the desk is not a crouching player, nor is one who put it on again seated while the
+	// new reference is still settling (the old one is from the standing head)
+	status.crouchDepth = status.reference.position.y - head.position.y;
+	if(std::strcmp(source, "held") != 0) {
+		CrouchParams params;
+		params.enabled = config.video.vrPhysicalCrouch && worn && !status.pending;
+		params.enterMeters = config.video.vrCrouchEnter;
+		params.exitMeters = config.video.vrCrouchExit;
+		const bool crouch = updatePhysicalCrouch(status.crouch, status.crouchDepth, params);
+		if(crouch != status.crouch) {
+			if(crouch) {
+				status.crouches++;
+			}
+			gameevent::Event("vr.head.crouch")("state", crouch ? "on" : "off")("depthM", status.crouchDepth, 3)
+				("enterM", params.enterMeters, 2)("exitM", params.exitMeters, 2);
+		}
+		status.crouch = crouch;
+	}
+
 	// The body's part of the head's movement (#26) is the anchor the camera leaves out
 	HeadCamera camera = headToCamera(head, status.reference, bodyYaw, status.anchor);
 	updateLean(camera.moved, bodyYaw - status.reference.yaw);
+
+	// The character's crouch - the head's, the button's - already lowered the eye the camera starts from: the
+	// head's own drop moves the camera only below that (#100), so the view is never twice as low
+	status.characterDrop = 0.f;
+	if(g_head.standingEye >= 0.f && status.eyeAboveFeet >= 0.f) {
+		status.characterDrop = std::max(0.f, g_head.standingEye - status.eyeAboveFeet);
+	}
+	camera.offset.y = headDropOnCamera(camera.offset.y, status.characterDrop);
 
 	status.head = headAngles(head.orientation);
 	status.position = head.position;

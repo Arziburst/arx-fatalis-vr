@@ -18,6 +18,9 @@ from one sequence into the next.
 **Do:** every sequence now runs in its own fresh user dir (`New-ArxSequenceUserDir` in `xrs-lib.ps1`, passed to
 `smoke-test.ps1 -UserDir`; its `@save` is copied in as before; the dir is removed after the run and its logs are in the
 phase's evidence). A sequence that needs a file from another one is wrong: set the state up in its own `@save` / commands.
+The first fresh-dir CI run found it at once: `walk-forward`, `walk-look` and `sneak-jump-crouch` had `@args --loadslot 0` but no
+`@save`, and had only ever passed on the save an earlier sequence left in the shared dir ("no such save, 0 save(s)"). They
+declare `@save mvp-new-game` now, and `test-xrs.ps1` fails a shipped sequence with `--loadslot` and no `@save`.
 Checked by `test-xrs.ps1` ("fresh user dir per sequence"). Locally, `smoke-test.ps1 -Sequence` already used the isolated dir of
 the working copy: run two sequences by hand with `-UserDir` pointing at different folders for the same effect.
 

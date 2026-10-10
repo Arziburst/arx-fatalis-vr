@@ -267,6 +267,8 @@ foreach ($file in $shipped) {
 	if ($parsed -isnot [string]) {
 		# A simulator script, or a flat run said outright (--no-vr in @args, stand-up.xrs #263)
 		Check "  $($file.Name) names its start" (($parsed.Sim -or $parsed.Args -contains '--no-vr') -and $parsed.Args)
+		# CI gives every sequence a fresh user dir (#296): a slot to load exists only when the sequence says which save
+		Check "  $($file.Name) declares the @save its --loadslot needs" (-not ($parsed.Args -contains '--loadslot') -or [bool]$parsed.Save)
 		Check "  $($file.Name) names the issue behind every @pending" (@($parsed.Steps | Where-Object { $_.Kind -eq 'pending' -and $_.Issue -gt 0 }).Count -eq @($parsed.Steps | Where-Object Kind -eq 'pending').Count)
 	}
 }

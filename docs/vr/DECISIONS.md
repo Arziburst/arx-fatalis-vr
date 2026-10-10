@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: The eyes are multisampled in a buffer of ours, resolved into single-sample swapchains; 4x by default
+## D-032: The eyes are multisampled in a buffer of ours, resolved into single-sample swapchains; 4x by default
 
 - **Date:** 2026-10-10
 - **Status:** Accepted (refines D-025: "MSAA stays with the window")

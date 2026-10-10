@@ -43,6 +43,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "animation/AnimationRender.h"
 
+#include "vr/VRBody.h"
+
 #include <stddef.h>
 #include <cstdlib>
 #include <cstring>
@@ -1015,14 +1017,26 @@ static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io,
 		}
 	}
 	
+	// The VR body (#36): under a tracked head the player's eyes sit inside the model, above the chest
+	// and in the hidden head, so looking down meets the torso's inner side - culled, the body reads
+	// hollow and see-through. The player model is drawn two-sided there (render3D() has no GPU cull;
+	// this is the only cull), so the chest reads solid from above.
+	const bool twoSided = use_io && use_io == entities.player() && !IN_BOOK_DRAW && vr::hidesHeadOnly();
+	// The faces the body added to close the neck opening (vr::bodyCapStart) exist only for that view
+	const size_t capStart = twoSided ? eobj->facelist.size() : vr::bodyCapStart(eobj);
+
 	for(size_t i = 0; i < eobj->facelist.size(); i++) {
 		const EERIE_FACE & face = eobj->facelist[i];
-		
+
+		if(i >= capStart) {
+			break;
+		}
+
 		if((face.facetype & POLY_HIDE) && !IN_BOOK_DRAW) {
 			continue;
 		}
-		
-		if(CullFace(eobj, face) || !face.material) {
+
+		if((!twoSided && CullFace(eobj, face)) || !face.material) {
 			continue;
 		}
 		
@@ -1403,7 +1417,14 @@ static void animateSkeleton(EERIE_3DOBJ * eobj, AnimLayer * animlayer,
 	TransformInfo t(pos, rotation, scale);
 	t.pos = t(ftr);
 	Cedric_ConcatenateTM(skeleton, t);
-	
+
+	// The VR body (#36, D-009): the player's own skeleton is drawn under the tracked head and gets
+	// its arms from the controllers on top of the engine's animation; the copies animated for the
+	// camera's stable position (updateFirstPersonCamera) and the book stay the engine's
+	if(io && io == entities.player() && &skeleton == eobj->m_skeleton.get()) {
+		vr::posePlayerBody(eobj, skeleton, io);
+	}
+
 }
 
 void animateSkeleton(Entity * entity, AnimLayer * animlayer, Skeleton & skeleton) {

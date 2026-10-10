@@ -25,6 +25,7 @@
 #include <sstream>
 #include <vector>
 
+#include "core/GameEvent.h"
 #include "io/log/Logger.h"
 #include "util/String.h"
 #include "vr/VRBindings.h"
@@ -419,6 +420,39 @@ std::array<ActionSet::AimPose, HandCount> ActionSet::locateAim(XrSpace base, XrT
 	}
 
 	return poses;
+}
+
+void ActionSet::locateHands(XrSpace space, XrTime time, FrameHands & hands) {
+
+	hands = FrameHands();
+
+	if(m_session == XR_NULL_HANDLE || space == XR_NULL_HANDLE || time == 0) {
+		return;
+	}
+
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		bool tracked = false;
+		if(m_gripSpaces[hand] != XR_NULL_HANDLE) {
+			XrSpaceLocation located = { XR_TYPE_SPACE_LOCATION };
+			XrResult result = xrLocateSpace(m_gripSpaces[hand], space, time, &located);
+			const XrSpaceLocationFlags valid = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+			// A failed call counts as untracked: said once per episode below, like a lost controller
+			if(XR_SUCCEEDED(result) && (located.locationFlags & valid) == valid) {
+				tracked = true;
+				hands.hands[hand].position = Vec3f(located.pose.position.x, located.pose.position.y,
+				                                   located.pose.position.z);
+				hands.hands[hand].orientation = glm::quat(located.pose.orientation.w, located.pose.orientation.x,
+				                                          located.pose.orientation.y, located.pose.orientation.z);
+			}
+		}
+		hands.tracked[hand] = tracked;
+		// An episode, not a frame: a controller coming into tracking or leaving it
+		if(tracked != m_handTracked[hand]) {
+			m_handTracked[hand] = tracked;
+			gameevent::Event("vr.hand", 200)("hand", handName(Hand(hand)))("state", tracked ? "tracked" : "lost");
+		}
+	}
+
 }
 
 bool ActionSet::sync(ControllerInput & input, XrSpace viewSpace, XrTime time) {

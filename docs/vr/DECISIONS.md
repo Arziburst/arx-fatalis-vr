@@ -44,6 +44,77 @@ post-MVP (#101).
 
 ---
 
+## D-032: The VR body is the engine's player model on its own skeleton — arms by IK after the animation, the head and neck hidden, the model drawn under the head
+
+- **Date:** 2026-10-09
+- **Status:** Accepted
+- **Decided by:** worker session (#36), within D-009; the owner judges the result in the headset
+
+### Decision
+How D-009's full body is built (#36):
+- **One skeleton, the engine's.** The body is `human_base` on the skeleton the engine animates; legs, torso
+  and head keep the engine's animations. The two arms are re-posed once per frame *after* the engine's
+  animation and concatenation (`Cedric_ConcatenateTM`) and *before* the vertices are transformed, for the
+  player's own skeleton only — the copies animated for the camera's stable position and for the book stay
+  the engine's (`vr::posePlayerBody`, called from `animateSkeleton`).
+- **The arm chains come from the model, not from names.** The group holding the palm attach vertex
+  (`primary_attach` / `left_attach`), the wrist joint it sits on (climbing zero-length bones: `human_base`
+  keeps the hand as a zero-length child of `right_wrist`), its father (the elbow) and its grandfather
+  (the shoulder joint): `right_arm > right_elbow > right_wrist > right_hand`. A model without such a
+  chain keeps the engine's arms and says why in the log. The zero-length hand group is rigid on the
+  wrist, so the hand mesh takes the controller's orientation and not the animation's bend of the hand.
+- **Hands rigid with the head camera** (`handToWorld`, HeadPose.h): a hand is placed from the head the
+  way the head is placed from its reference — the same turn, the same units per metre, the lean clamp
+  included — so a hand 30 cm right of the head is 30 units right of the camera, and #27's scale and #28's
+  recenter apply to hands and head alike. The model's palm attach point lands on the controller's grip.
+- **The hand frame is read from the mesh**, no calibration constants: the long axis from the wrist to the
+  palm attach vertex (OpenXR grip −Y), the lateral axis towards the model's thumb group (grip −Z: the
+  spec's "ray through the tube of the non-thumb fingers from the little finger to the thumb"), the palm
+  normal their cross product (+X); the wrist bone's rotation is the grip's rotation through that frame.
+  Per-hand trims are F-49, later, and start from zero.
+- **Out of reach** (F-52): the shoulder slides towards the target by up to 20 units, then the arm points
+  at it stretched; the elbow bends down, a little outward and back.
+- **Hidden under a tracked head: the head and the neck only.** The engine's first-person selection
+  (`1st`) hides the chest and the belt too; while a head drives the camera the first-person hiding uses
+  the head's bone subtree plus the neck, and goes back to `1st` in flat mode.
+- **The model is drawn two-sided under a tracked head.** The eyes sit inside the model, above the
+  chest, so looking down meets the torso's inner side; culled, the body reads hollow and see-through
+  (the owner's #27 run). The player model skips the engine's face cull while a head drives the camera
+  (`Cedric_RenderObject`; `render3D()` has no GPU cull), so the chest reads solid from above — and the
+  opening the hidden head and neck leave in the torso is **closed by a cap**: the boundary between the
+  hidden faces and the visible ones is walked as loops at bind time and each loop is fanned with the
+  material and texture coordinates of the visible faces on it (5 faces over one 7-edge loop on
+  `human_base`); the cap faces are appended to the model and drawn only in that view.
+- **The model is drawn under the tracked head** — the head's horizontal movement since the reference
+  shifts every bone, the camera takes the shift off again — until #26 moves the real player there; and it
+  faces #25's body yaw (the heading plus the body's offset after the head), turned about the vertical
+  through the model's origin.
+- **Two poses per hand are kept** (F-185) and shown in `status.json`: the controller (where the player's
+  hand is) and the posed wrist (where the model's hand is), with the error between them.
+
+### Why
+Arx has a full model with arms, so the body is the model itself rather than a rig of floating hands
+(F-174's lesson: hands "quite a lot off" with offset sliders as the repair). Reading the chains and the
+hand frame from the model's own landmarks means no name guessing and no constant calibrated by eye; the
+owner's first headset run judges the result, and trims (F-49) come on top of a frame that is right by
+construction. Posing after the engine's animation keeps every other animation (walk, crouch, jump) and
+lets F-53's hand-back later be a blend of the same bones.
+
+### Rules out
+Placeholder hands or a wrist-cut model (F-51); an IK on a separate rig; the engine's `1st` selection in
+VR; a hand frame tuned by constants before the owner saw the body.
+
+### Consequences
+- #75 attaches the weapon through the same wrist bone and hand frame (the frame's +Z is the blade's
+  direction, F-49); #116 anchors the wrist bars on the left wrist bone; #43 / #44 take the hand's position
+  from `vr.body.<hand>.controller` or `palm`.
+- #26 removes the drawn shift once the player follows the head; F-53's hand-back blends `posed` arms
+  back to the animation.
+- `scripts/dev/xrs/arms-follow.xrs` (on `mvp-new-game`) and `ArmIKTest` are the acceptance checks; the
+  channel's `handpose` lets the flat CI run exercise the IK.
+
+---
+
 ## D-030: The interface has its own resolution in VR — the headset's pixel density, not the window's
 
 - **Date:** 2026-10-09

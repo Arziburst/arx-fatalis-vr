@@ -32,6 +32,7 @@
 #include "io/log/Logger.h"
 #include "platform/Time.h"
 #include "util/Number.h"
+#include "vr/BodyYaw.h"
 #include "vr/HeadTracking.h"
 #include "vr/MenuPointer.h"
 #include "vr/VRSystem.h"
@@ -60,6 +61,7 @@ struct InputState {
 	bool panelShown = false;
 	std::array<PointerRay, HandCount> rays;
 	u64 loggedOffPanelPresses = 0;
+	WalkStatus walk;
 
 };
 
@@ -252,6 +254,36 @@ PointerStatus pointerStatus() {
 
 const GameInputState & gameInput() {
 	return g_input.game.state();
+}
+
+const WalkStatus & walkStatus() {
+	return g_input.walk;
+}
+
+void reportWalk(const StickWalk & walk, float yaw, float heading) {
+
+	WalkStatus & status = g_input.walk;
+	yaw -= 360.f * std::floor(yaw / 360.f);
+	const bool walking = walk.moving();
+	if(walking != status.walking) {
+		if(walking) {
+			status.walks++;
+		}
+		// An episode, not a frame: the stick left its dead zone, or came back to rest
+		gameevent::Event("vr.walk", 200)("state", walking ? "start" : "end")("yaw", yaw, 1)
+			("heading", heading, 1)("look", wrapSignedDegrees(yaw - heading), 1)
+			("pace", walk.sneak ? "sneak" : "run");
+	} else if(walking && walk.sneak != status.sneak) {
+		// The deflection crossed a threshold of the pace (#33): one line per switch, not per frame
+		status.paceChanges++;
+		gameevent::Event("vr.walk", 200)("state", "pace")("pace", walk.sneak ? "sneak" : "run");
+	}
+	status.sneak = walking && walk.sneak;
+
+	status.walking = walking;
+	status.yaw = yaw;
+	status.heading = heading;
+	status.direction = walk.direction;
 }
 
 const ControlResolver & controls() {

@@ -28,7 +28,7 @@
 #include "vr/VRControls.h"
 
 /*!
- * \brief The rune trail at the hand (#43, D-010, D-NEW)
+ * \brief The rune trail at the hand (#43, D-010, D-040)
  *
  * In flat mode the engine draws the magic flares where the mouse cursor is, projected 75 units in
  * front of the camera. In VR the hand draws: while the casting stance is on (the magic button held,
@@ -40,7 +40,7 @@
  */
 namespace vr {
 
-//! The size of a trail flare in VR, relative to the engine's flare at the cursor (D-NEW)
+//! The size of a trail flare in VR, relative to the engine's flare at the cursor (D-040)
 const float RuneFlareScale = 0.5f;
 
 //! The spacing of the flares that fill the trail between two frames (units = cm)

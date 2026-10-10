@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: The rune trail — the engine's flares at the drawing hand, the engine's hold / release model
+## D-040: The rune trail — the engine's flares at the drawing hand, the engine's hold / release model
 
 - **Date:** 2026-10-10
 - **Status:** Accepted as the MVP default; the owner judges the look in the headset (#43)
@@ -881,7 +881,7 @@ Valve Index first; Quest 3 Touch the same (A/B on the right, X/Y on the left).
 | Game menu (open / close) | **A on the left** on the Index (free in this table; the Index has no menu button), the **left menu button** on the Touch *(owner, 2026-10-10, after the #30 headset run)* |
 | Two reticles on different items | the name shown is the one of the **hand that moved last** |
 | Recenter | ~~hold a button chord (F-34)~~ → **long press of the left stick click** *(owner, 2026-10-10, after the #30 headset run)* |
-| Runes | drawn in the air with the hand (D-010); ~~the button that starts casting is decided with the magic block (#43–#45)~~ → **hold the left trackpad** (Index) / **left X** (Touch) = the casting stance; **the trigger of a hand draws a rune with that hand**, its release ends the rune, releasing the stance casts (D-NEW, #43; coordinator's default, remappable in #178) |
+| Runes | drawn in the air with the hand (D-010); ~~the button that starts casting is decided with the magic block (#43–#45)~~ → **hold the left trackpad** (Index) / **left X** (Touch) = the casting stance; **the trigger of a hand draws a rune with that hand**, its release ends the rune, releasing the stance casts (D-040, #43; coordinator's default, remappable in #178) |
 | Left-handed mode | ~~after the MVP~~ → in the MVP, in the VR settings (D-020) |
 
 **Other controllers (#35, 2026-10-10).** Default layouts for controllers other than the Index are the

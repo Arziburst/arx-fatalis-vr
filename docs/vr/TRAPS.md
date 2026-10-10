@@ -25,6 +25,99 @@ the same sequence had passed an hour earlier. **Cause:** every channel step is a
 control table) correctly records a long press; on a quiet machine it may just stay under. **Do:** a short press in a
 sequence is `vr-input tap` (pressed and released within one update), the second control of a short chord too; a
 `down` / `up` pair only for a press that is meant to be long (with a `@wait` well above 0.5 s).
+## 2026-10-10 — A check broken on purpose still passes: `-Rebuild` did not rebuild (#39)
+
+**Symptom:** with the charge spend commented out, `smoke-test.ps1 -Rebuild -Sequence melee-swing` passed all 92 steps,
+including "the charge is spent".
+**Cause:** `-Rebuild` (and the launch scripts' fresh-build check) compare `built-from.txt` with `HEAD` and the
+*dirty* flag only: a build of `<sha> dirty` counts as fresh for any later uncommitted change on the same commit, so
+the game ran the previous build. **Do:** after editing uncommitted code, run `.\scripts\build-windows.ps1` yourself
+before a launch (it always builds what changed); a break-on-purpose run is only valid after an explicit build.
+
+## 2026-10-10 — `player.pos + player.baseOffset()` is not the feet: an NPC placed there floats (#39)
+
+**Symptom:** the channel's new `place` put the goblin 170 units *above* the player's eye; it hung in the air and
+`setspeed 1` did not drop it.
+**Cause:** `player.pos` is the eye and y grows downwards; `baseOffset()` is `(0, -170, 0)`, so adding it goes up.
+The feet are `player.basePosition()` (`pos.y - baseHeight()`). **Do:** use `basePosition()` for the floor under the
+player; check a placed entity's `y` against the player's feet in `entities.txt` (the floor is the eye + 170).
+
+## 2026-10-10 — The sneak covered more ground than the run (#33)
+
+**Symptom:** on `mvp-new-game` a slight stick push (the stealth walk) moved the player 355 units in 1.5 s and the
+full push right after it only 201; with `@frames 40` instead the sneak covered 136-151 and the run 163-197 — the
+ratio changed from run to run.
+**Cause:** a distance measures the room and the clock, not the walk: the second walk ran into the cell's far end,
+and `@frames n` is n frames, whose length swings with the frame rate of the moment (36-90 fps in these runs).
+**Do:** compare walk speeds with `player.animSpeed` (the current animation's own units per second, what the engine
+moves the player by: run 192, stealth 135.6); use positions only for "it moved", from a known start.
+
+## 2026-10-10 — A new `status.json` key is `<absent>` though the code that writes it was just changed (#116)
+
+**Symptom:** `smoke-test.ps1 -Rebuild` ran, said nothing about building, and the sequence failed on a key
+added a minute ago: `vr.wrist.along.x (<absent>)`.
+**Cause:** the fresh-build check (D-014) compares `built-from.txt` with the commit only. A build of the
+clean `HEAD` followed by edits still counts as fresh, so `-Rebuild` does not rebuild and the old `arx.exe` runs.
+**Do:** after editing, run `.\scripts\build-windows.ps1` yourself before the launch (or commit first); it costs
+a launch from the budget otherwise.
+
+## 2026-10-10 — `@diff` of two still shots of the body is as large as a small HUD change (#116)
+
+**Symptom:** on `mvp-new-game`, looking down at the arms (`--vr-sim idle`), two shots of the same pose a few
+frames apart differ by **2.2** (left eye) — the change of the wrist bars from full to half was 2.1–2.8.
+**Cause:** the whole picture moves: the idle animation of the body and the right arm, the torch light.
+**Do:** a mean over the whole eye image cannot prove a change of a few hundred pixels; assert on the numbers
+in `status.json` and judge the captures. Measure a still pair in the same pose before trusting a threshold.
+
+## 2026-10-10 — Which grip axis is the thumb: the hand's convention moved under the wrist bars (#36, #116)
+
+**Symptom:** wrist bars built on "thumb = grip +Y" lay along the fingers instead of across the wrist; then,
+after #36 was corrected to the OpenXR spec, bars built on "thumb = grip +Z" would fill the wrong way.
+**Cause:** the full body (#36, `HandFrame` in `src/vr/ArmIK.h`) defines the hand's axes on the grip: since
+`234ea0cc2` the knuckles (wrist → fingers) lie on grip **−Y**, the thumb side on grip **−Z**, the palm normal
+on **+X** (the OpenXR grip pose). In engine axes (y down, z forward) a grip vector (x, y, z) is (x, −y, −z)
+before `PlayerArmStatus::grip` turns it into the world.
+**Do:** anything attached to the hand takes its axes from `HandFrame`'s comment, not from memory; a `--vr-sim`
+pose for "knuckles to the right, palm to the face, thumb up" is `hand left rot -90 90 0`, "palm down,
+knuckles to the right" `hand left rot 180 0 -90`. Assert the axes in `status.json` (`vr.wrist.across`).
+
+## 2026-10-10 — In VR an item on the floor is not picked where the cursor is, or a far one is (#37)
+
+**Symptom:** with a mouse position projected from a 3D point in a VR run, `FlyingOverObject` finds nothing over
+an item lying in the world, or something beside it. **Cause:** the engine's pick is a 2D test against each
+entity's `bbox2D` and projected faces (`vertexClipPositions`). Animated entities are projected with the head
+camera in the update, but a **static item** (no animation: what lies on floors and tables) is projected in
+`DrawEERIEInter` while it is drawn — once per **eye**, into the eye image's pixels — so after a stereo frame
+its box is the right eye's, in another pixel space than the interface the mouse lives in. *Resolved for the
+screen data by #72* (picking reads the head camera's at the interface's size again). **Do:** in VR the world is
+still picked by the hands' rays in 3D (`vr/VRReticle.cpp`) — a hand's ray is not a ray through the eye, so a
+projected pixel lands on whatever the head sees there, not on what the hand points at; the engine's
+`GetFirstInterAtPos` asks the reticle module what a world reticle's mouse position stands for
+(`vr::reticlePickAt`), and an interface position never picks the world while the reticles are on. The test
+channel's `pick` checks the engine's own screen pick under `vr::EnginePickOnly`.
+
+## 2026-10-10 — The inventory opens by itself, or the player spins, when a VR hand becomes the mouse (#37)
+
+**Symptom:** forcing the engine out of mouse look so the hand could be the mouse opened the inventory at
+once; later, with the inventory open, the player kept turning (`player.yaw` 113 → 56 → 159 → 261 in two
+seconds) with nobody touching anything. **Cause:** (1) in Arx the cursor mode *is* the inventory: leaving
+mouse look shows it unless the inventory key inverted that (`bInverseInventory`, `ArxGame::manageKeyMouse`).
+(2) In the cursor mode a mouse within 50 px of an edge of the interface turns the player (edge scrolling,
+`Interface.cpp`); a world reticle's mouse position is right of the interface (`vr/HandReticle.h`), and a
+panel pointer near the panel's edge is near the interface's edge. **Do:** keep the engine's mouse-look state
+as it is (the hand's position is applied in the relative mode too, `Input::setVirtualMousePosition`); the
+edge turning is off while a VR session renders.
+
+## 2026-10-10 — On `mvp-items` an item can be picked from the table but not put back on it (#37)
+
+**Symptom:** a drag started from the table (`item.take`), but the item never landed where the hand pointed:
+it stayed in front of the player or was dropped on the floor; the floor in front of the player was not hit
+by any ray. **Cause:** the save stands the player on the **wall top above the table's room**: the eye is at
+`y` 2765, the room's floor at 3100 (y down), the table top at 3018. The engine picks within 350 units of the
+player but puts down only within **300** (`updateDraggedEntity`), and nothing below the player is within 300;
+the key on the floor (399 units away) is not even pickable. **Do:** put the player on the room's floor by
+the table first — `setpos 10600 3100 11420 72` (as `hand-reticle.xrs` does); the note and the form are then
+~1.5 m away, both for picking and for putting down. Mind the goblin in that room.
 
 ## 2026-10-10 — A head pressed into a wall is "not in geometry": `CheckBackgroundInSphere` misses the middle of a wall (#26)
 
@@ -67,6 +160,7 @@ keeps the engine's animations). **Do:** measure what the arm layer does from a s
 shoulder after `combat on` + 60 frames (300 ms of blend), then strike, as `weapon-hold.xrs` does. Also: never
 ask `entities.player()` while writing `status.json` before a level exists (the first `weapon-hold` run crashed
 at start-up on it, #286) — check this module's own state first.
+
 ## 2026-10-10 — .xrs: a count of what a held input did passes locally and fails on the CI runner (#285)
 
 **Symptom:** `snap-turn.xrs` held the stick until the 5th snap, let go and allowed one more snap; locally it
@@ -121,16 +215,6 @@ concatenation rebuilds from the animation after the wrist was set.
 the zero-length groups between it and the hand's group are made rigid with the wrist (`ArmChain::rigid`,
 `vr/VRBody.cpp`). Check a chain by its lengths in the `[vr] body:` bind line (`27.6 + 30.5` on `human_base`) and
 a hand by `vr.body.<hand>.tip` against `wrist` / `controller`, not by the picture alone.
-## 2026-10-10 — The sneak covered more ground than the run (#33)
-
-**Symptom:** on `mvp-new-game` a slight stick push (the stealth walk) moved the player 355 units in 1.5 s and the
-full push right after it only 201; with `@frames 40` instead the sneak covered 136-151 and the run 163-197 — the
-ratio changed from run to run.
-**Cause:** a distance measures the room and the clock, not the walk: the second walk ran into the cell's far end,
-and `@frames n` is n frames, whose length swings with the frame rate of the moment (36-90 fps in these runs).
-**Do:** compare walk speeds with `player.animSpeed` (the current animation's own units per second, what the engine
-moves the player by: run 192, stealth 135.6); use positions only for "it moved", from a known start.
-
 ## 2026-10-10 — `test-xrs.ps1` fails once in a while: "timed out waiting for the game to acknowledge" (#275)
 
 **Symptom:** one check of 73 fails on the CI runner (a `@shot`/`@diff` step), the rerun of the same commit passes.

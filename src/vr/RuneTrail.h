@@ -50,7 +50,7 @@
  */
 namespace vr {
 
-//! How far ahead of the grip the trail is drawn: about the tip of the index finger, a wand's tip (D-NEW)
+//! How far ahead of the grip the trail is drawn: about the tip of the index finger, a wand's tip (D-037)
 const float RuneTipMeters = 0.08f;
 
 /*!

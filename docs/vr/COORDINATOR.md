@@ -32,6 +32,9 @@ has no general principle, it belongs only in Part B.
   instructions file, shared test conventions, shared scripts' usage) is reviewed by the coordinator and
   merged **out of the merge queue, first**; right after the merge every running session it concerns is
   told to pull the main branch and follow it.
+- **Strict mode:** any change, novelty or departure from the agreed plan, rules or task scope — however
+  small — is stopped before it happens and brought to the owner (what, why, the alternative); work on it
+  continues only after the owner's approval. Autopilot runs only the approved plan.
 - **Product-experience design is the owner's:** how the product feels and looks to its user (controls,
   interaction, layout, look, feedback, comfort) — summarize, ask concrete questions, play the answer back,
   get a yes, record a decision, then write the task. **Ask ahead** for upcoming tasks so no worker waits.
@@ -70,18 +73,23 @@ Then run the cycle (A4).
 ## A4. The cycle
 1. **Look:** running sessions, the usage forecast, the next runnable tasks, new worker-filed issues,
    open PRs and CI, the safety log.
-2. **Start workers:** dependencies done, different code areas (disjoint files may pair), within the
+2. **Conflict foresight** before every start: list the open PRs and running tasks, check what the new
+   task will touch (files, shared tables, docs tables, schemas); overlap → order the work, or brief the
+   worker "PR #x touches the same files — merge main as soon as it lands" and queue both in that order.
+   After every merge tell exactly the sessions it affects to pull main now. A conflict at merge time is a
+   planning miss — record the lesson.
+3. **Start workers:** dependencies done, different code areas (disjoint files may pair), within the
    lane limits and the caps. Subscribe to each worker's idle notice.
-3. **Brief each worker** right after start, short: the decisions that apply; parallel tasks touching the
+4. **Brief each worker** right after start, short: the decisions that apply; parallel tasks touching the
    same code ("merge main when #x lands"); launch/test limits; the evidence expected; the report phrase
    ("PR #n ready for review"). When a shared API changes, tell every affected worker to merge main.
-4. **Answer workers:** read their output, reply with the point first. Only the owner's decisions go to
+5. **Answer workers:** read their output, reply with the point first. Only the owner's decisions go to
    the owner. A worker near its context limit or long without a commit → help or split the task.
-5. **Review** on "ready for review" with green CI: an **independent reviewer** (cheap model, checks the
+6. **Review** on "ready for review" with green CI: an **independent reviewer** (cheap model, checks the
    Definition of done and the decisions only) for core code and scripts every session uses; **none** for
    docs-only, test-only or small tooling PRs with good evidence — the coordinator reads the PR against the
    Definition of done itself. Gaps → back to the worker; no second review unless the change is large.
-6. **Merge:** the worker merges on green CI + review pass; PRs needing an owner test only after the
+7. **Merge:** the worker merges on green CI + review pass; PRs needing an owner test only after the
    owner's verdict.
    - **Never merge — or tell anyone to merge — over a red or pending check, even a known flake.** Only
      the owner can waive this. Fix the flake first.
@@ -92,13 +100,13 @@ Then run the cycle (A4).
      workers "no push / re-run until your turn". A red main blocks everything: its fix goes first.
    - Workers never poll CI in loops (many sessions polling trip the host's rate limits): one long-interval
      watch at most.
-7. **Clean up** after a merge: stop the worker session, remove it, remove its working copy and build
+8. **Clean up** after a merge: stop the worker session, remove it, remove its working copy and build
    folders, pull the owner's copy. Keep a worker alive while its PR waits for the owner test. Never touch
    other projects' sessions.
-8. **Triage** findings: blocking the current milestone → into the milestone and the queue with
+9. **Triage** findings: blocking the current milestone → into the milestone and the queue with
    dependencies; else the backlog. Real auto-reported bugs → tasks; noise → closed. Research tasks create
    no tasks — the coordinator does, after the owner's decision on the findings.
-9. **Update the status page:** current block, workers (task, model, state), PRs for review / owner test,
+10. **Update the status page:** current block, workers (task, model, state), PRs for review / owner test,
    open owner questions, the usage summary.
 
 ## A5. Models and effort
@@ -117,7 +125,7 @@ Definition of done; split anything that would fill a worker's context.
 - **Keep the machine quiet during the test:** workers do no builds, launches or CI pushes until "batch
   done"; the performance log is on.
 - After each verdict: close the product, ask for a sentence of impressions, triage it into tasks.
-  **Accept** → the worker merges (A4.6). **Reject** → save the logs and screenshots first, send the worker
+  **Accept** → the worker merges (A4.7). **Reject** → save the logs and screenshots first, send the worker
   what was seen, post it on the PR.
 - **A test that ends with a change request is re-tested by the owner after the change; that PR is never
   merged on the coordinator's or CI's proof alone.**

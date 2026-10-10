@@ -231,12 +231,12 @@ HandFrame handFrameFromMesh(const std::vector<Vec3f> & vertices, const Vec3f * p
 }
 
 glm::quat handToGrip(const HandFrame & frame) {
-	// The hand's axes as columns (palm, knuckles, thumb) make a rotation B from the grip's own axes
-	// (X, Y, Z in OpenXR terms) to the bone's rest frame; the grip's axes in engine terms are
-	// (+X, -Y, -Z), so bone -> grip (engine) is G * B^T
+	// The hand's axes as columns (palm, knuckles, thumb) make a rotation B from the grip's axes they
+	// lie on - OpenXR +X, -Y, -Z (the spec's grip pose: +X normal to the palm, -Z through the fingers'
+	// tube from the little finger to the thumb, +Y by the right-hand rule) - to the bone's rest frame.
+	// In engine terms those three grip axes are +x, +y, +z, so bone -> grip (engine) is B^T
 	const glm::mat3 bone(frame.palm, frame.knuckles, frame.thumb);
-	const glm::mat3 grip(1.f, 0.f, 0.f, 0.f, -1.f, 0.f, 0.f, 0.f, -1.f);
-	return glm::normalize(glm::quat_cast(grip * glm::transpose(bone)));
+	return glm::normalize(glm::quat_cast(glm::transpose(bone)));
 }
 
 } // namespace vr

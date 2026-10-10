@@ -110,11 +110,11 @@ void updateWristVitals() {
 	}
 
 	// The model's hand takes the grip's axes (HandFrame in vr/ArmIK.h): the palm normal is grip +X
-	// (engine +X), the thumb's side grip +Z (engine -Z); +Y runs through the knuckles
+	// (engine +X), the thumb's side grip -Z (engine +Z); the knuckles lie on grip -Y
 	g_wrist.frame.elbow = arm.elbow;
 	g_wrist.frame.wrist = arm.wrist;
 	g_wrist.frame.palmNormal = arm.grip * Vec3f(1.f, 0.f, 0.f);
-	g_wrist.frame.thumb = arm.grip * Vec3f(0.f, 0.f, -1.f);
+	g_wrist.frame.thumb = arm.grip * Vec3f(0.f, 0.f, 1.f);
 
 	g_wrist.status.health = poolFraction(player.lifePool);
 	g_wrist.status.mana = poolFraction(player.manaPool);

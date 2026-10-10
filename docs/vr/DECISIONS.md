@@ -26,7 +26,7 @@ a changed decision keeps its history in that cell.
   face like a watch. **Health (red) towards the elbow, mana (blue) towards the hand** — red left, blue right
   for a left forearm held across the face, as on the flat HUD. The empty part is dark and a little see-through.
 - **Placement source:** the model's posed elbow and wrist (where the player sees the arm) and the controller's
-  grip axes as #36 gives them to the model's hand (palm normal = grip +X, thumb side = grip +Z, knuckles = +Y;
+  grip axes as #36 gives them to the model's hand (palm normal = grip +X, thumb side = grip -Z, knuckles = -Y;
   `HandFrame` in `src/vr/ArmIK.h`), not the raw controller.
 - **Fade:** fully visible while the inner wrist faces the eye within **50°**, fading linearly to invisible at
   **80°**; drawn in the world, against the scene's depth (walls and the other hand cover them), without fog.
@@ -80,7 +80,7 @@ post-MVP (#101).
 
 ---
 
-## D-032: The VR body is the engine's player model on its own skeleton — arms by IK after the animation, the head and neck hidden, the model drawn under the head
+## D-NEW: The VR body is the engine's player model on its own skeleton — arms by IK after the animation, the head and neck hidden, the model drawn under the head
 
 - **Date:** 2026-10-09
 - **Status:** Accepted
@@ -104,7 +104,8 @@ How D-009's full body is built (#36):
   included — so a hand 30 cm right of the head is 30 units right of the camera, and #27's scale and #28's
   recenter apply to hands and head alike. The model's palm attach point lands on the controller's grip.
 - **The hand frame is read from the mesh**, no calibration constants: the long axis from the wrist to the
-  palm attach vertex (OpenXR grip +Y), the lateral axis towards the model's thumb group (+Z), the palm
+  palm attach vertex (OpenXR grip −Y), the lateral axis towards the model's thumb group (grip −Z: the
+  spec's "ray through the tube of the non-thumb fingers from the little finger to the thumb"), the palm
   normal their cross product (+X); the wrist bone's rotation is the grip's rotation through that frame.
   Per-hand trims are F-49, later, and start from zero.
 - **Out of reach** (F-52): the shoulder slides towards the target by up to 20 units, then the arm points

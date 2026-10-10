@@ -54,7 +54,7 @@ struct WristFrame {
 	Vec3f elbow = Vec3f(0.f);
 	Vec3f wrist = Vec3f(0.f);
 	Vec3f palmNormal = Vec3f(0.f); //!< out of the palm (the grip's +X for the left hand)
-	Vec3f thumb = Vec3f(0.f);      //!< towards the thumb across the wrist (the grip's +Z)
+	Vec3f thumb = Vec3f(0.f);      //!< towards the thumb across the wrist (the grip's -Z)
 };
 
 //! One bar: corners empty end (elbow side, hand side), then full end (hand side, elbow side); two triangles 012, 023

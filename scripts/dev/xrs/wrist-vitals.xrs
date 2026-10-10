@@ -22,7 +22,7 @@
 # the thumb towards the player): the inner wrist faces away from the eyes, nothing is drawn
 vr-sim head rot -20 -45 0
 vr-sim hand left pos 0.12 -0.3 -0.3
-vr-sim hand left rot 0 0 -90
+vr-sim hand left rot 180 0 -90
 @frames 15
 @assert vr.body.left.posed eq true
 @assert vr.wrist.facingDeg gt 80
@@ -30,7 +30,7 @@ vr-sim hand left rot 0 0 -90
 @shot wrist-away
 
 # The watch pose: the palm turned to the eyes, the thumb up - fully visible, drawn into both eyes
-vr-sim hand left rot -90 -90 0
+vr-sim hand left rot -90 90 0
 @frames 15
 @assert vr.body.left.posed eq true
 @assert vr.wrist.shown eq true
@@ -58,7 +58,7 @@ specialfx mana -6
 @shot wrist-hurt
 
 # Half turned away (the palm turned 30 degrees further from the eyes): fading
-vr-sim hand left rot -90 -90 30
+vr-sim hand left rot -90 90 -30
 @frames 10
 @assert vr.wrist.alpha gt 0
 @assert vr.wrist.alpha lt 1

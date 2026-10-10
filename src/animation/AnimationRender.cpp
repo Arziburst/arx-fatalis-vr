@@ -43,6 +43,9 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "animation/AnimationRender.h"
 
+#include "vr/VRBody.h"
+#include "vr/VRWeapon.h"
+
 #include <stddef.h>
 #include <cstdlib>
 #include <cstring>
@@ -1015,14 +1018,26 @@ static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io,
 		}
 	}
 	
+	// The VR body (#36): under a tracked head the player's eyes sit inside the model, above the chest
+	// and in the hidden head, so looking down meets the torso's inner side - culled, the body reads
+	// hollow and see-through. The player model is drawn two-sided there (render3D() has no GPU cull;
+	// this is the only cull), so the chest reads solid from above.
+	const bool twoSided = use_io && use_io == entities.player() && !IN_BOOK_DRAW && vr::hidesHeadOnly();
+	// The faces the body added to close the neck opening (vr::bodyCapStart) exist only for that view
+	const size_t capStart = twoSided ? eobj->facelist.size() : vr::bodyCapStart(eobj);
+
 	for(size_t i = 0; i < eobj->facelist.size(); i++) {
 		const EERIE_FACE & face = eobj->facelist[i];
-		
+
+		if(i >= capStart) {
+			break;
+		}
+
 		if((face.facetype & POLY_HIDE) && !IN_BOOK_DRAW) {
 			continue;
 		}
-		
-		if(CullFace(eobj, face) || !face.material) {
+
+		if((!twoSided && CullFace(eobj, face)) || !face.material) {
 			continue;
 		}
 		
@@ -1100,9 +1115,12 @@ static void Cedric_AnimateDrawEntityRender(EERIE_3DOBJ * eobj, const Vec3f & pos
 			continue;
 		}
 		
-		TransformInfo t(eobj->vertexWorldPositions[link.lidx].v,
-		                eobj->m_skeleton->bones[link.lgroup].anim.quat,
-		                link.io ? link.io->scale : 1.f);
+		glm::quat rotation = eobj->m_skeleton->bones[link.lgroup].anim.quat;
+		if(io && io == entities.player()) {
+			// The weapon in the VR hand (#75): the blade turned onto the controller's handle
+			vr::heldWeaponRotation(link.io, rotation);
+		}
+		TransformInfo t(eobj->vertexWorldPositions[link.lidx].v, rotation, link.io ? link.io->scale : 1.f);
 		t.pos = t(link.obj->vertexlist[link.obj->origin].v - link.obj->vertexlist[link.lidx2].v);
 		
 		DrawEERIEInter(link.obj, t, link.io, true, invisibility);
@@ -1383,7 +1401,19 @@ static void animateSkeleton(EERIE_3DOBJ * eobj, AnimLayer * animlayer,
 	}
 	
 	// Perform animation in Local space
-	Cedric_AnimateObject(&skeleton, animlayer);
+	// The VR body (#75, F-67): while the IK drives the arms the arm layer's clips (ready, strike, cast) are
+	// not applied to the player's own skeleton - its timing and game logic still run
+	const bool ownPlayerSkeleton = io && io == entities.player() && &skeleton == eobj->m_skeleton.get();
+	if(ownPlayerSkeleton && vr::suppressArmAnimation(io, animlayer[1].cur_anim ? animlayer[1].cur_anim->path.string()
+	                                                                          : std::string())) {
+		// A copy without the arm layer (the frame clamps Cedric_AnimateObject writes are redone every frame)
+		std::array<AnimLayer, MAX_ANIM_LAYERS> layers;
+		std::copy(animlayer, animlayer + MAX_ANIM_LAYERS, layers.begin());
+		layers[1].cur_anim = nullptr;
+		Cedric_AnimateObject(&skeleton, layers.data());
+	} else {
+		Cedric_AnimateObject(&skeleton, animlayer);
+	}
 	
 	if(BH_MODE && eobj->fastaccess.head_group) {
 		Bone & bone = skeleton.bones[eobj->fastaccess.head_group];
@@ -1403,7 +1433,14 @@ static void animateSkeleton(EERIE_3DOBJ * eobj, AnimLayer * animlayer,
 	TransformInfo t(pos, rotation, scale);
 	t.pos = t(ftr);
 	Cedric_ConcatenateTM(skeleton, t);
-	
+
+	// The VR body (#36, D-009): the player's own skeleton is drawn under the tracked head and gets
+	// its arms from the controllers on top of the engine's animation; the copies animated for the
+	// camera's stable position (updateFirstPersonCamera) and the book stay the engine's
+	if(io && io == entities.player() && &skeleton == eobj->m_skeleton.get()) {
+		vr::posePlayerBody(eobj, skeleton, io);
+	}
+
 }
 
 void animateSkeleton(Entity * entity, AnimLayer * animlayer, Skeleton & skeleton) {

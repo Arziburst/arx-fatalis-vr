@@ -176,10 +176,12 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "util/String.h"
 
 #include "vr/HeadTracking.h"
+#include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
+#include "vr/VRWeapon.h"
 
 #include "Configure.h"
 
@@ -1471,8 +1473,10 @@ void ArxGame::updateFirstPersonCamera() {
 		g_playerCamera.angle = player.angle;
 		
 		if(VertexId viewVertex = io->obj->fastaccess.view_attach) {
-			
-			g_playerCameraStablePos = g_playerCamera.m_pos = io->obj->vertexWorldPositions[viewVertex].v;
+
+			// The VR body is drawn under the tracked head (#36): its shift is the head's own lean,
+			// which the head pose adds to the camera itself - so the engine's eye is the unshifted one
+			g_playerCameraStablePos = g_playerCamera.m_pos = io->obj->vertexWorldPositions[viewVertex].v - vr::bodyShift();
 			
 			if(VertexGroupId viewGroup = getGroupForVertex(io->obj, viewVertex)) {
 				AnimLayer animlayer[MAX_ANIM_LAYERS];
@@ -1951,6 +1955,9 @@ void ArxGame::updateLevel() {
 		if(entities.player()->animlayer[1].cur_anim)
 			ManageCombatModeAnimationsEND();
 	}
+
+	// The weapon in the IK hand (#75): after this frame's body pose and the combat mode's links
+	vr::updateHeldWeapon();
 
 	restoreEngineCamera();
 

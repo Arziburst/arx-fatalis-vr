@@ -78,6 +78,11 @@ set(arxtest_TESTCASES
 	tests/vr/LocomotionTest.h
 	tests/vr/LocomotionTest.cpp
 
+	tests/vr/ArmIKTest.h
+	tests/vr/ArmIKTest.cpp
+	tests/vr/WeaponGripTest.h
+	tests/vr/WeaponGripTest.cpp
+
 
 )
 
@@ -109,6 +114,8 @@ set(arxtest_SOURCES
 	src/vr/UIPanel.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/Locomotion.cpp
+	src/vr/ArmIK.cpp
+	src/vr/WeaponGrip.cpp
 
 
 	${arxtest_TESTCASES}

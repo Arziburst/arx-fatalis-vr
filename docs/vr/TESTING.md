@@ -860,7 +860,7 @@ separation (64 mm), difference (5.9 vs floor 0.8), parallax (+16 of 160 columns)
 
 ### Eye MSAA (`msaa.vrsim`, #226)
 
-`vr_msaa` in `cfg.ini` (samples per pixel, 0 = off, default 4, D-NEW) or `--vr-msaa N`. The log says
+`vr_msaa` in `cfg.ini` (samples per pixel, 0 = off, default 4, D-035) or `--vr-msaa N`. The log says
 `[vr] eye MSAA: 4x from vr_msaa in cfg.ini` and, per eye, `rendered with 4x MSAA, resolved into the
 swapchain image`. `scripts\dev\vrsim\msaa.vrsim` draws the eyes at the Index's 2468×2740 **unpaced**
 (`rate 0`): the `[vr] rate:` lines then show how many frames per second the PC draws (judge the

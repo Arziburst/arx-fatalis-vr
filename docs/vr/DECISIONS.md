@@ -36,13 +36,15 @@ a changed decision keeps its history in that cell.
   **0.9 m below** the head (the hips) or more than **0.5 m above** it is **no rune**: the recogniser gets
   nothing, the log says why with the numbers (`magic.stroke.refused`). A trigger squeezed with the hand at
   the hip or behind the back casts nothing by accident.
-- **One aim for the spells that fly (F-75), the casting hand replaces the view at the engine's input
-  (F-76):** Magic Missile, Fireball, Ice Projectile, Poison Projectile and Lightning Strike read their pitch
-  and yaw from `vr::spellAim` instead of `player.angle` — **the axis of the casting hand's controller**, the
-  same axis the trail's tip is on (a wand: the spell flies along it), the hand of the last stroke, or the
-  other hand when the tracking lost it, the view when neither is tracked. The engine's own target, range and
-  collision stay. Nothing is drawn (D-010). Placement spells (fields, runes of guarding, summons) keep the
-  view's direction for now.
+- **One aim for the spells that fly (F-75, F-76) — the centre of the view by default (owner, 2026-10-10):**
+  Magic Missile, Fireball, Ice Projectile, Poison Projectile and Lightning Strike read their pitch and yaw
+  from `vr::spellAim`. **Default `vr_spell_aim = view`: the spell flies where the centre of the view looks**
+  (the engine's own `player.angle`; the owner's headset run found a spell aimed by the hand flying "who knows
+  where"). **`vr_spell_aim = hand`** (cfg.ini [video], `--vr-spell-aim hand`) opts in the axis of the casting
+  hand's controller (the trail's tip is on it; the hand of the last stroke, or the other hand when the
+  tracking lost it, the view when neither is tracked) — a setting for later. The engine's own target, range
+  and collision stay. Nothing is drawn (D-010). Placement spells (fields, runes of guarding, summons) keep
+  the view's direction.
 - **No plane, no symbol is shown** (D-010): the only feedback is the engine's — the rune's chime, the colour
   change of the trail, the spell. Showing the recognised symbol (F-202 rule 2) waits for the UI work.
 

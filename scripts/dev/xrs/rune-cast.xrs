@@ -1,8 +1,8 @@
 # Rune recognition from the hand and the spell's aim (#44, D-010, D-NEW-recognition, F-75, F-76, F-202): the
 # stroke of #43 is projected onto the plane of the look at its start and fed into the engine's own recogniser
 # in place of the cursor's points, so a line drawn to the right is AAM, right-down-right is TAAR, up is MEGA,
-# down is RHAA; AAM + TAAR with the stance released cast Magic Missile, aimed where the right controller
-# points (the aim follows the hand's pitch and yaw). A stroke behind the head or at the knee is refused by
+# down is RHAA; AAM + TAAR with the stance released cast Magic Missile, aimed along the view (default,
+# vr_spell_aim = view; the hand aim is rune-cast-hand). A stroke behind the head or at the knee is refused by
 # the view gate and never reaches the recogniser. The runes are added with the console's "rune -a".
 # Needs the first-person save (level 10's conversation camera is nowhere near the hands, TRAPS.md):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence rune-cast -Save mvp-new-game
@@ -34,30 +34,20 @@ vr-sim hand right pos 0.00 -0.15 -0.45
 vr-sim hand right rot 0 0 0
 @frames 15
 @assert vr.magic.right.located eq true
-@assert vr.magic.aim.source eq hand
-@assert vr.magic.aim.hand eq right
+@assert vr.magic.aim.source eq view
 @remember lookYaw camera.yaw
-@assert vr.magic.aim.pitch gt -0.5
-@assert vr.magic.aim.pitch lt 0.5
 @assert vr.magic.aim.yaw gt {lookYaw-0.5}
 @assert vr.magic.aim.yaw lt {lookYaw+0.5}
 
-# Pitched up 45 degrees: the engine's pitch is positive downwards
-vr-sim hand right rot 0 45 0
+# The hand pitched up 45 degrees and turned 30: the default aim is the centre of the view (owner, 2026-10-10),
+# it does not follow the hand (rune-cast-hand has the hand's aim); the hand's own axis is still reported
+vr-sim hand right rot -30 45 0
 @frames 10
-@assert vr.magic.aim.pitch gt -45.5
-@assert vr.magic.aim.pitch lt -44.5
+@assert vr.magic.aim.source eq view
+@assert vr.magic.aim.yaw gt {lookYaw-0.5}
+@assert vr.magic.aim.yaw lt {lookYaw+0.5}
 @assert vr.magic.right.aimPitch gt -45.5
 @assert vr.magic.right.aimPitch lt -44.5
-
-# Turned right 30 degrees: the engine's yaw grows to the left, so it drops by 30 (the save looks at yaw
-# 359.7: a left turn would wrap past 360, which {lookYaw+30} cannot follow)
-vr-sim hand right rot -30 0 0
-@frames 10
-@assert vr.magic.aim.pitch gt -0.5
-@assert vr.magic.aim.pitch lt 0.5
-@assert vr.magic.aim.yaw gt {lookYaw-30.5}
-@assert vr.magic.aim.yaw lt {lookYaw-29.5}
 vr-sim hand right rot 0 0 0
 @frames 5
 
@@ -135,11 +125,11 @@ vr-sim action trigger right 0
 @log GameEvent:.*rune\.drawn rune=taar moves=
 @assert events.byName."rune.drawn" eq 2
 
-# The stance released: AAM + TAAR cast Magic Missile, aimed by the right hand
+# The stance released: AAM + TAAR cast Magic Missile, aimed along the view (the centre of the view, vr_spell_aim = view)
 vr-sim action trackpad_press left 0
 @frames 15
 @assert vr.magic.stance eq false
-@log GameEvent:.*spell\.cast spell=magic_missile caster=player .*aim=hand aimHand=right
+@log GameEvent:.*spell\.cast spell=magic_missile caster=player .*aim=view aimHand=right
 @assert spells.launchedByType.magic_missile eq 1
 @assert events.byName."spell.cast" eq 1
 

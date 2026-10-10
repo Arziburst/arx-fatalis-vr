@@ -161,6 +161,7 @@ public:
 		
 		int bufferSize;
 		std::string bufferUpload;
+		std::string vrSpellAim; //!< VR: where the flying spells go: "view" (the centre of the view) or "hand" (#44)
 		std::string extensionOverride;
 		
 	} video;

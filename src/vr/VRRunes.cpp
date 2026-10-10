@@ -19,14 +19,26 @@
 
 #include "vr/VRRunes.h"
 
+#include "core/Config.h"
 #include "core/GameEvent.h"
 #include "core/GameTime.h"
+#include "platform/ProgramOptions.h"
 #include "core/TimeTypes.h"
 #include "game/magic/SpellRecognition.h"
 #include "vr/HeadTracking.h"
 #include "vr/VRBody.h"
 #include "vr/VRInput.h"
 #include "vr/VRSystem.h"
+
+//! Where the flying spells go from the command line ("view" or "hand"; empty: cfg.ini's vr_spell_aim decides)
+static std::string g_spellAimOverride;
+
+static void setSpellAim(const std::string & mode) {
+	g_spellAimOverride = mode;
+}
+ARX_PROGRAM_OPTION_ARG("vr-spell-aim", nullptr,
+                       "Where the spells that fly go in VR: view (the centre of the view) or hand (overrides vr_spell_aim in cfg.ini)",
+                       &setSpellAim, "MODE")
 
 namespace vr {
 
@@ -170,7 +182,8 @@ SpellAim spellAim(const Anglef & view) {
 	aim.source = "view";
 	aim.hand = g_runes.stroke.strokes() ? g_runes.stroke.hand() : Hand::Right;
 
-	if(!g_runes.status.handsDraw) {
+	// The default (D-NEW, owner 2026-10-10): the spell flies where the centre of the view looks; the hand is opt-in
+	if(!g_runes.status.handsDraw || (g_spellAimOverride.empty() ? config.video.vrSpellAim : g_spellAimOverride) != "hand") {
 		return aim;
 	}
 

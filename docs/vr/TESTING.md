@@ -318,8 +318,9 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   stroke's plane faces, engine degrees), `width` / `height` of the 2D stroke in recogniser pixels (10 per
   cm), `gate` (the view gate's verdict on the last ended stroke: `ok`, `behind`, `low`, `high`; `none` before
   the first) and `refused` (strokes the gate threw away since the start). `aim` (F-75): where a spell of
-  the player would go now — `source` (`hand`: the casting hand's controller axis; `view`: the engine's
-  own view angles are used), `hand`, `pitch` (+ is down), `yaw` ([0, 360)).
+  the player would go now — `source` (`view`, the default: the engine's own view angles, the centre of the
+  view; `hand`: the casting hand's controller axis, with `vr_spell_aim = hand` / `--vr-spell-aim hand`;
+  sequences `rune-cast` and `rune-cast-hand`), `hand`, `pitch` (+ is down), `yaw` ([0, 360)).
 - `vr.weapon` (#75, D-033): the equipped weapon and the IK hand. `item`, `kind` (`dagger`, `1h`, `2h`, `bow`,
   `none`), `place` (`hand`: linked to the right hand by the VR body; `engine`: where the engine keeps it — the
   back, or the hand in combat mode; `none`), `inHand`, `handFrames`, `relinks` (links this module changed);

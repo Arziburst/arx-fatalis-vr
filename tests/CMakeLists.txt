@@ -78,6 +78,8 @@ set(arxtest_TESTCASES
 	tests/vr/SimRigTest.cpp
 	tests/vr/UIPanelTest.h
 	tests/vr/UIPanelTest.cpp
+	tests/vr/MenuPointerTest.h
+	tests/vr/MenuPointerTest.cpp
 	tests/vr/InterfaceSizeTest.h
 	tests/vr/InterfaceSizeTest.cpp
 	tests/vr/LocomotionTest.h
@@ -119,6 +121,7 @@ set(arxtest_SOURCES
 	src/vr/EyeImage.cpp
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
+	src/vr/MenuPointer.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/ArmIK.cpp
 	src/vr/WeaponGrip.cpp

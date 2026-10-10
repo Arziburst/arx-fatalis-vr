@@ -246,6 +246,15 @@ interface in VR.
   quad until #116. Distance, drop and width are cfg.ini settings (`vr_panel_distance`, `vr_panel_drop`,
   `vr_panel_width`; F-180). The panel is a compositor quad layer, always on top: never swallowed by walls
   (F-179), but it covers the hands until #36 / #37 decide.
+- **Menu pointer (#34)** *(proposed by the worker, approved by the coordinator for the owner as the MVP
+  default, 2026-10-10; the owner judges it in the headset)*: only while the panel is shown (D-010), either
+  hand points (D-016, D-019). A **thin white beam, 3 mm, from the pointing hand to the panel, fading out
+  towards the panel**, drawn as a compositor quad layer above the panel; the **dot is the game's own
+  cursor** on the panel, no second one. **Only the hand that owns the cursor shows a beam:** the hand whose
+  trigger was pressed last; the other hand's trigger takes it over and clicks under that hand; an owner
+  pointing away hands an idle cursor to the other hand on the panel. Nothing when no menu is open or the
+  ray misses the panel. The click holds still for **16 px** after a press, then drags (F-81); a press with
+  the ray off the panel clicks nothing.
 - **Health and mana (#116):** **two vertical bars, red and blue, on the inner side of the left wrist**,
   read by raising the hand to the face like a watch.
 - **Hand reticle (#37):** a **small dot / ring where the hand points**, no ray (D-010); it **brightens over

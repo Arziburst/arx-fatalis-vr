@@ -1265,6 +1265,7 @@ set(VR_SOURCES
 	src/vr/PhysicalCrouch.cpp
 	src/vr/HeadTracking.cpp
 	src/vr/InterfaceSize.cpp
+	src/vr/MenuPointer.cpp
 	src/vr/Locomotion.cpp
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp

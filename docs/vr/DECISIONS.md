@@ -46,6 +46,37 @@ under ~0.5 ms against the 11.1 ms budget at 90 Hz) and removes ~70 % of the hard
 
 ---
 
+## D-034: Physical crouch — hysteresis on the calibrated eye; the character's crouch never lowers the view twice
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (implements the crouch part of D-028 / D-018)
+- **Decided by:** owner (thresholds, relayed by the coordinator on #100); worker of #100 (the camera rule, technical within D-018)
+
+### Decision
+- The head **30 cm** below the calibrated reference (recenter + auto-raise, D-031) crouches the character
+  (`PLAYER_CROUCH`, next to the crouch button and toggle); it stands again once the head is back above
+  **20 cm** below. A recenter measures from where the head is, so it stands; a headset that is not worn
+  (taken off, put on the desk, D-031) never crouches, nor does one while a settled reference is still
+  pending (put on again seated: the old reference is the standing head). A seated player leaning forward
+  that far crouches too — accepted. `cfg.ini` [video]: `vr_physical_crouch`, `vr_crouch_enter`,
+  `vr_crouch_exit` (settings screen #178). Getting up under a low ceiling stays the game's own rule.
+- **Camera:** the engine's crouch lowers the character's eye by its animation (the drop from the last
+  standing eye, `vr.head.characterDrop`); the head's drop moves the camera only below that:
+  `offset.y = headDrop − clamp(characterDrop, 0, headDrop)` — the view is the head, but never above the
+  character's eye. Applies to every crouch (the button's too), so getting up has no jump.
+
+### Why
+Adding both drops puts the view of a player who crouched 35 cm about a meter down, inside the character's
+knees. Following only the head would leave the view above the crouched cylinder, through the ceiling of
+a passage the crouch lets the character into. The rule is continuous while the animation runs.
+
+### Consequences
+A seated player who crouched with the button and leans down sees no lower until the head is below the
+crouched eye. `status.json`: `vr.head.crouch` / `crouchDepth` / `crouches` / `characterDrop`,
+`player.crouched`; event `vr.head.crouch` per episode. Sequence `physical-crouch.xrs`.
+
+---
+
 ## D-033: The weapon in VR is held by the IK hand — always in the hand, the controller's handle is the hilt, no engine arm clips
 
 - **Date:** 2026-10-10

@@ -1261,6 +1261,7 @@ set(VR_SOURCES
 	src/vr/FramePacing.cpp
 	src/vr/HeadPose.cpp
 	src/vr/HeadReferenceGate.cpp
+	src/vr/PhysicalCrouch.cpp
 	src/vr/HeadTracking.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/Locomotion.cpp

@@ -83,12 +83,13 @@ ArmPose solveArm(const Vec3f & shoulder, const Vec3f & target, float upperLength
 /*!
  * \brief The hand's own axes, read from its mesh, in the OpenXR grip convention
  *
- * The grip pose of a controller (OpenXR: the palm centroid; +X normal to the palm - into it for
- * the right hand, away from it for the left; +Z from the little finger towards the thumb; +Y
- * through the knuckles) is matched to the model's hand by the same three directions of the hand
- * mesh at rest, relative to the wrist (the hand bone's origin):
- *  - \c knuckles: the hand's long axis, from the wrist towards the fingers (grip +Y)
- *  - \c thumb: the lateral axis, towards the side the mesh extends further on - the thumb (grip +Z)
+ * The grip pose of a controller (the OpenXR spec: the palm centroid; +X normal to the palm - into it
+ * for the right hand, away from it for the left; -Z through the tube of the non-thumb fingers from
+ * the little finger towards the thumb; +Y by the right-hand rule, so the knuckles lie on -Y) is
+ * matched to the model's hand by the same three directions of the hand mesh at rest, relative to
+ * the wrist (the hand bone's origin):
+ *  - \c knuckles: the hand's long axis, from the wrist towards the fingers (grip -Y)
+ *  - \c thumb: the lateral axis, towards the side the mesh extends further on - the thumb (grip -Z)
  *  - \c palm: \c knuckles x \c thumb (grip +X)
  * \c valid is false when the vertices are too few or too flat to tell the axes apart.
  */
@@ -114,8 +115,9 @@ HandFrame handFrameFromMesh(const std::vector<Vec3f> & vertices, const Vec3f * p
 
 /*!
  * \return the rotation from the hand bone's rest frame to the controller's grip frame in engine axes
- *         (OpenXR's +X, +Y, +Z are the engine's +X, -Y, -Z), so that a vector of the hand mesh at
- *         rest turned by it lies as the grip frame says - the hand bone's world rotation is the
+ *         (OpenXR's +X, +Y, +Z are the engine's +X, -Y, -Z: the palm lands on +x, the knuckles on
+ *         grip -Y = engine +y, the thumb on grip -Z = engine +z), so that a vector of the hand mesh
+ *         at rest turned by it lies as the grip frame says - the hand bone's world rotation is the
  *         grip's world rotation times this
  */
 glm::quat handToGrip(const HandFrame & frame);

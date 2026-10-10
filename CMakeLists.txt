@@ -1264,6 +1264,7 @@ set(VR_SOURCES
 	src/vr/HeadReferenceGate.cpp
 	src/vr/HeadTracking.cpp
 	src/vr/InterfaceSize.cpp
+	src/vr/Locomotion.cpp
 	src/vr/MenuPointer.cpp
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp

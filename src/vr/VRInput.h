@@ -25,6 +25,7 @@
 #include <string_view>
 
 #include "math/Types.h"
+#include "vr/Locomotion.h"
 #include "vr/VRControls.h"
 #include "vr/VRGameInput.h"
 #include "vr/VRTurn.h"
@@ -56,6 +57,22 @@ const ControlResolver & controls();
 
 //! What the engine was given in the last update: actions, buttons, the move vector, the turn axis
 const GameInputState & gameInput();
+
+//! The stick walk of the last game update (#31): what status.json reports
+struct WalkStatus {
+	bool walking = false;
+	float yaw = 0.f;     //!< engine degrees [0, 360): where the stick's forward pointed (the look, D-008)
+	float heading = 0.f; //!< engine degrees: the player's heading in that update
+	Vec3f direction = Vec3f(0.f);
+	u64 walks = 0;       //!< walk episodes since the game started
+	bool sneak = false;  //!< the walk sneaks: a slight deflection (#33)
+	u64 paceChanges = 0; //!< switches between sneak and run within a walk since the game started (#33)
+};
+
+const WalkStatus & walkStatus();
+
+//! Called by the game's player controls every update with the stick walk it applied
+void reportWalk(const StickWalk & walk, float yaw, float heading);
 
 //! The controllers the current layout is for
 ControllerType controllerType();

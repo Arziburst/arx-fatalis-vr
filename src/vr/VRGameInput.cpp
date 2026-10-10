@@ -104,7 +104,10 @@ const GameInputState & GameInputMapper::update(const ControlResolver & controls,
 
 	// D-019: walk with the left stick, turn with the right one (left-handed mode swaps them: #178)
 	state.move = applyDeadZone(input.sticks[size_t(Hand::Left)], moveDeadZone);
-	state.turn = applyDeadZone(Stick{ input.sticks[size_t(Hand::Right)].x, 0.f }, turnDeadZone).x;
+	const Stick & turnStick = input.sticks[size_t(Hand::Right)];
+	if(std::abs(turnStick.x) >= turnDominance * std::abs(turnStick.y)) {
+		state.turn = applyDeadZone(Stick{ turnStick.x, 0.f }, turnDeadZone).x;
+	}
 
 	m_state = state;
 	return m_state;

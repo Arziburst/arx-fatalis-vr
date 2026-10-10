@@ -95,6 +95,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "graphics/GlobalFog.h"
 #include "graphics/GraphicsTypes.h"
 #include "graphics/Math.h"
+#include "graphics/Raycast.h"
 #include "graphics/Vertex.h"
 #include "graphics/VertexBuffer.h"
 #include "graphics/data/FTL.h"
@@ -143,6 +144,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "math/Vector.h"
 
 #include "physics/Attractors.h"
+#include "physics/Collisions.h"
 
 #include "io/fs/FilePath.h"
 #include "io/fs/Filesystem.h"
@@ -175,6 +177,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "util/String.h"
 
+#include "vr/EyeProjection.h"
+#include "vr/HeadLean.h"
 #include "vr/HeadTracking.h"
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
@@ -182,6 +186,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "vr/VRRunes.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
+#include "vr/VRWeapon.h"
 
 #include "Configure.h"
 
@@ -1718,6 +1723,59 @@ void ArxGame::restoreEngineCamera() {
 
 }
 
+//! A solid background polygon closer to \a pos than \a radius - exactly, unlike CheckBackgroundInSphere (#26)
+static bool backgroundCloserThan(const Vec3f & pos, float radius) {
+
+	const u16 tiles = u16(radius * g_tiles->m_mul.x) + 2;
+	for(auto tile : g_tiles->tilesAround(g_tiles->getTile(pos), tiles)) {
+		for(const EERIEPOLY & polygon : tile.polygons()) {
+			if(polygon.type & (POLY_WATER | POLY_TRANS | POLY_NOCOL)) {
+				continue;
+			}
+			if(vr::distanceToTriangle(pos, polygon.v[0].p, polygon.v[1].p, polygon.v[2].p) < radius) {
+				return true;
+			}
+			if((polygon.type & POLY_QUAD)
+			   && vr::distanceToTriangle(pos, polygon.v[1].p, polygon.v[2].p, polygon.v[3].p) < radius) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+/*!
+ * Is the tracked head in geometry (#26, D-018)? \return \c behind when a wall is between the camera the
+ * engine chose (the character's eye) and the head, \c inside when the head's near plane touches a wall or
+ * a fixed entity (a door, a chest) that the engine's own camera does not, nullptr otherwise. Relative to
+ * the engine's camera on purpose: where the game itself puts the eye next to a low ceiling or a wall, the
+ * head there is no reason to fade.
+ */
+static const char * headGeometryCheck(const Vec3f & eye, const Vec3f & head) {
+
+	if(closerThan(eye, head, 1.f)) {
+		return nullptr;
+	}
+
+	if(raycastScene(eye, head, POLY_WATER | POLY_TRANS | POLY_NOCOL)) {
+		return "behind";
+	}
+
+	// The near plane around both eyes: the clip distance plus half the distance between them
+	const float radius = (vr::NearClipMeters + 0.035f) * vr::HeadCameraParams().unitsPerMeter;
+	if(backgroundCloserThan(head, radius) && !backgroundCloserThan(eye, radius)) {
+		return "inside";
+	}
+	const CASFlags fixedOnly = CAS_NO_NPC_COL | CAS_NO_ITEM_COL | CAS_NO_DEAD_COL | CAS_NO_BACKGROUND_COL;
+	if(CheckAnythingInSphere(Sphere(head, radius), entities.player(), fixedOnly)
+	   && !CheckAnythingInSphere(Sphere(eye, radius), entities.player(), fixedOnly)) {
+		return "inside";
+	}
+
+	return nullptr;
+}
+
 void ArxGame::updateActiveCamera() {
 
 	ARX_PROFILE_FUNC();
@@ -1740,16 +1798,25 @@ void ArxGame::updateActiveCamera() {
 	// from. restoreEngineCamera() takes it off again before the engine updates its cameras next frame
 	Vec3f enginePos = cam->m_pos;
 	Anglef engineAngle = cam->angle;
+	const char * headInGeometry = nullptr;
 	if(cam == &g_playerCamera && !EXTERNALVIEW) {
-		// The character's eye height, which the head at its reference becomes (#27) - evidence for the scale
-		vr::setCharacterEyeHeight(player.basePosition().y - g_playerCameraStablePos.y);
+		// The character's eye height, which the head at its reference becomes (#27) - evidence for the scale;
+		// and whether it is the standing eye: crouching, getting up and levitating lower or raise it (#100)
+		const Entity * io = entities.player();
+		const bool crouching = ((player.m_currentMovement | player.m_lastMovement) & PLAYER_CROUCH)
+		                       || (io && io->animlayer[0].cur_anim
+		                           && io->animlayer[0].cur_anim == io->anims[ANIM_CROUCH_END]);
+		vr::setCharacterEyeHeight(player.basePosition().y - g_playerCameraStablePos.y,
+		                          !crouching && !player.levitate);
 	}
 	if(vr::applyHeadPose(cam->m_pos, cam->angle, engineAngle.getYaw())) {
 		m_headView = HeadView{ cam, enginePos, engineAngle };
 		if(cam == &g_playerCamera) {
 			g_playerCameraStablePos += cam->m_pos - enginePos;
 		}
+		headInGeometry = headGeometryCheck(enginePos, cam->m_pos);
 	}
+	vr::updateWallFade(headInGeometry, toMsf(g_platformTime.lastFrameDuration()) / 1000.f);
 
 	ManageQuakeFX(cam);
 
@@ -1956,6 +2023,9 @@ void ArxGame::updateLevel() {
 			ManageCombatModeAnimationsEND();
 	}
 
+	// The weapon in the IK hand (#75): after this frame's body pose and the combat mode's links
+	vr::updateHeldWeapon();
+
 	restoreEngineCamera();
 
 	updateFirstPersonCamera();
@@ -2130,7 +2200,8 @@ void ArxGame::renderLevel() {
  * game (#71) with the same random numbers. The eye image is the screen for everything drawn into
  * it: full-screen effects, sprite sizes and their culling measure themselves against g_size, which
  * is the eye's size during the draw. Afterwards the head camera is prepared again for the
- * interface, at its own size on the quad (#73), which is neither the eye's nor the window's.
+ * interface, at its own size on the quad (#73), which is neither the eye's nor the window's, and
+ * the entities' screen data for mouse picking is the head camera's again (#72).
  */
 void ArxGame::renderStereoViews() {
 
@@ -2189,6 +2260,9 @@ void ArxGame::renderStereoViews() {
 
 	prepareStereoHeadCamera(cam);
 
+	// The eyes left their screen positions in the entities: picking reads the head camera's (#72)
+	ProjectEntitiesForPicking();
+
 }
 
 void ArxGame::renderSceneView() {
@@ -2218,7 +2292,8 @@ void ArxGame::renderSceneView() {
 	// Begin Particles
 	g_particleManager.Render();
 
-	ARX_PARTICLES_Render();
+	// In VR the screen-space particles go to the flat frame with the interface (#72)
+	ARX_PARTICLES_Render(vr::stereoActive() ? ParticleLayer::World : ParticleLayer::All);
 	ParticleSparkRender();
 	
 	// End Particles
@@ -2259,6 +2334,14 @@ void ArxGame::renderSceneView() {
 	// Death visual
 	ARX_PLAYER_Render_Death();
 
+	// A head in a wall or too far from the body sees black instead of through the wall (#26, D-018): over
+	// the whole view of this eye, under the interface, which stays readable on its own panel
+	const float headFade = vr::fadeStatus().fade;
+	if(headFade > 0.f) {
+		UseRenderState state(render2D());
+		EERIEDrawBitmap(Rectf(g_size), 0.0001f, nullptr, Color(Color4f(Color3f::black, headFade)));
+	}
+
 }
 
 void ArxGame::renderInterface() {
@@ -2266,6 +2349,16 @@ void ArxGame::renderInterface() {
 	ARX_PROFILE_FUNC();
 
 	g_renderBatcher.clear();
+
+	if(vr::stereoActive()) {
+		// The screen-space particles (the book icon's FX, the book's fire) are window coordinates:
+		// under the interface on the flat frame, where the scene pass drew them in flat mode (#72)
+		ARX_PARTICLES_Render(ParticleLayer::Screen);
+		GRenderer->SetFogColor(Color());
+		g_renderBatcher.render();
+		GRenderer->SetFogColor(g_fogColor);
+		g_renderBatcher.clear();
+	}
 
 	// Draw game interface if needed
 	if(ARXmenu.mode() == Mode_InGame && !cinematicBorder.isActive()) {

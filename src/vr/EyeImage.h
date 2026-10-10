@@ -106,6 +106,9 @@ PixelStats pixelStats(const RgbImage & image, const ImageRegion & region, const 
 //! \return the mean alpha of a region as a fraction 0..1 (1 for a picture without an alpha plane)
 float alphaCoverage(const RgbImage & image, const ImageRegion & region);
 
+//! \return how many pixels of the whole picture are at least half covered (all of them without an alpha plane)
+size_t coveredPixels(const RgbImage & image);
+
 //! \return the region of the eye image around where the eye looks straight ahead, \a half of the image each way
 ImageRegion forwardRegion(const MirrorFov & fov, float half);
 

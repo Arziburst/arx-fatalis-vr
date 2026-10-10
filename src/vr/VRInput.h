@@ -20,9 +20,11 @@
 #ifndef ARX_VR_VRINPUT_H
 #define ARX_VR_VRINPUT_H
 
+#include <array>
 #include <string>
 #include <string_view>
 
+#include "math/Types.h"
 #include "vr/Locomotion.h"
 #include "vr/VRControls.h"
 #include "vr/VRGameInput.h"
@@ -77,6 +79,21 @@ ControllerType controllerType();
 
 //! The controllers' state of the last update: sticks and analog values
 const ControllerInput & controllerInput();
+
+//! The menu pointer (#34) as status.json reports it
+struct PointerStatus {
+	bool shown = false;          //!< the floating panel is shown: the pointer is on
+	bool active = false;         //!< the owning hand's ray is on the panel: the cursor follows it
+	const char * owner = "right"; //!< the hand that owns the cursor
+	Vec2f cursor = Vec2f(0.f);   //!< the mouse it gives, the 2D interface's pixels
+	bool beam = false;           //!< the beam was in the last submitted frame
+	std::array<bool, HandCount> onPanel = { }; //!< each hand's ray hits the panel
+	u64 clicks = 0;              //!< trigger presses on the panel
+	u64 offPanelPresses = 0;     //!< presses off it, kept from the engine
+	u64 ownerChanges = 0;
+};
+
+PointerStatus pointerStatus();
 
 //! The turn settings of cfg.ini (\c vr_smooth_turn, \c vr_snap_turn_angle, \c vr_snap_turn_repeat,
 //! \c vr_smooth_turn_speed - #32)

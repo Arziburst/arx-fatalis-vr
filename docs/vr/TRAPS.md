@@ -26,6 +26,47 @@ Windows macro before anything else.
 writes `true` / `false`.
 **Do:** match `key=yes|no` in `@log`, `eq true|false` in `@assert`.
 
+## 2026-10-10 — A head pressed into a wall is "not in geometry": `CheckBackgroundInSphere` misses the middle of a wall (#26)
+
+**Symptom:** the simulated head is moved into the start cell's side wall — the body is blocked at the wall, the eye
+shot shows the wall face filling half the view at a few centimetres — and the near-plane sphere test
+(`CheckBackgroundInSphere(Sphere(head, 12.5))`) says nothing is there; once the head is past the wall the ray test
+finds it at once.
+**Cause:** the engine's `IsPolyInSphere` does not measure the distance to a polygon: it only tests whether the
+polygon's corners, edge midpoints and a few points towards its centre lie in the sphere (it was made for the
+50-unit cylinders of NPCs). A small sphere in front of the middle of a large wall polygon contains none of them.
+**Do:** for anything smaller than a body, measure the distance to the polygon's triangles —
+`vr::distanceToTriangle` (HeadLean.h), used by `backgroundCloserThan` in `ArxGame.cpp`; `raycastScene` is exact
+for a segment.
+
+## 2026-10-10 — A shipped `.xrs` sequence is red in CI only because of the sequence that ran before it (#296, from #178)
+
+**Symptom:** the CI game check fails a sequence that passes alone: `vr-remap-saved` expected the file `vr-remap` saved
+(it ran *after* it alphabetically), `vr-settings-flat` found the `vr-controls-index.ini` that `vr-remap` left. Rename or add
+a sequence and the order — and the verdict — changes.
+**Cause:** `ci-smoke.ps1` ran every sequence in the runner account's single user dir, so config, saves and ini files leaked
+from one sequence into the next.
+**Do:** every sequence now runs in its own fresh user dir (`New-ArxSequenceUserDir` in `xrs-lib.ps1`, passed to
+`smoke-test.ps1 -UserDir`; its `@save` is copied in as before; the dir is removed after the run and its logs are in the
+phase's evidence). A sequence that needs a file from another one is wrong: set the state up in its own `@save` / commands.
+The first fresh-dir CI run found it at once: `walk-forward`, `walk-look` and `sneak-jump-crouch` had `@args --loadslot 0` but no
+`@save`, and had only ever passed on the save an earlier sequence left in the shared dir ("no such save, 0 save(s)"). They
+declare `@save mvp-new-game` now, and `test-xrs.ps1` fails a shipped sequence with `--loadslot` and no `@save`.
+Checked by `test-xrs.ps1` ("fresh user dir per sequence"). Locally, `smoke-test.ps1 -Sequence` already used the isolated dir of
+the working copy: run two sequences by hand with `-UserDir` pointing at different folders for the same effect.
+
+
+
+## 2026-10-10 — The arm clips are "suppressed", yet the shoulder moves 10 units when the combat mode starts (#75)
+
+**Symptom:** `vr.weapon.armAnimSuppressed` is `true` and every `vr.body.armAnim` event says `suppressed`, but
+`vr.body.right.shoulder` jumps by ~10 units between before `combat on` and after the strike.
+**Cause:** the combat mode also switches the **body's** layer 0 to the fight stance (`ANIM_FIGHT_WAIT`,
+`ARX_PLAYER_Manage_Visual`), which turns the torso; only layer 1 (the arm clips) is suppressed (D-009: the body
+keeps the engine's animations). **Do:** measure what the arm layer does from a settled stance — take the
+shoulder after `combat on` + 60 frames (300 ms of blend), then strike, as `weapon-hold.xrs` does. Also: never
+ask `entities.player()` while writing `status.json` before a level exists (the first `weapon-hold` run crashed
+at start-up on it, #286) — check this module's own state first.
 ## 2026-10-10 — .xrs: a count of what a held input did passes locally and fails on the CI runner (#285)
 
 **Symptom:** `snap-turn.xrs` held the stick until the 5th snap, let go and allowed one more snap; locally it
@@ -202,8 +243,11 @@ with MSAA on the window the renderer draws alpha cutouts with alpha-to-coverage 
 that would discard the transparent texels is off.
 **Do:** tell the renderer the bound target's size (`Renderer::setRenderTargetSize`, 0 = the window): it
 re-applies the viewport and the scissor against that height, snapshots read that size, and
-`SetAntialiasing(true)` is refused off the window so the alpha cutout path falls back to the alpha test.
+`SetAntialiasing(true)` is refused on a single-sample offscreen target so the alpha cutout path falls
+back to the alpha test (a multisampled one names its samples too, `setRenderTargetSize(size, samples)`, #226).
 `vr::beginEyeRender()` / `endEyeRender()` and the flat frame target do this; a new offscreen target must too.
+With eye MSAA (`vr_msaa`, D-035) the eye is drawn into a multisampled buffer, not the swapchain image:
+the image holds the picture only after `Swapchain::resolve()` in `endEyeRender` - read eye pixels after it.
 
 ## 2026-10-10 — "use" fires from just holding the Index controller (a closed hand flickers, #30)
 
@@ -850,6 +894,24 @@ high); `[datetime]::Parse($obj.updated)` on a JSON field gave a date a month off
 a PowerShell test helper with parameter `$G` and a local `$g` failed with "cannot convert Graphics to Int32".
 **Cause:** the runner took everything after the operator as the value; PowerShell variable names are case-insensitive, so `$g` and `$G` are one variable.
 **Do:** write timeouts as `60s` (the parser now rejects a value with a trailing bare number); never name two variables in one scope by letters that differ only in case.
+
+## 2026-10-09 — VR: picking finds nothing although the item is in the middle of the view
+
+**Symptom:** in a stereo frame (`--vr-sim` or the headset) the mouse hovers nothing — no highlight, `pick` finds nothing on
+the whole window — while the item is plainly on screen; the item's `bbox2D` is in the thousands (`597 1066 657 1113` in a
+640x480 window).
+**Cause:** the scene is drawn once per eye, and drawing an entity stores its screen data (clip positions, items'
+`bbox2D`) for the camera of the draw — the last eye, at the eye image's size. Mouse picking reads that data next frame
+against window coordinates (#72).
+**Do:** anything that keeps screen positions from a draw must be projected again with the head camera after the eyes
+(`ProjectEntitiesForPicking()` after `renderStereoViews()`); check with `pick <entity>` (`targetSeenInBox`).
+
+## 2026-10-09 — `specialfx newspell` logs `[W] unexpected newline`
+
+**Symptom:** the script command `specialfx newspell` (the book icon's FX) works, but adds a `[W] ScriptUtils … [player:N] :
+unexpected newline`, which the run digest reports as a new warning.
+**Cause:** the command skips one word after `newspell`; with nothing after it, it reads the end of the line.
+**Do:** send `specialfx newspell 1`.
 
 ## 2026-10-09 - Send-ArxCommand returned the previous batch's ack
 

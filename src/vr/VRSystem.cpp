@@ -1278,6 +1278,7 @@ bool makeBeamImage() {
 		}
 	}
 
+	g_xr.mirror.setOverlayImage(DesktopMirror::BeamImage, BeamImageSize, pixels.data());
 	glBindTexture(GL_TEXTURE_2D, g_xr.beam.texture());
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, BeamImageSize.x, BeamImageSize.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
@@ -1375,6 +1376,8 @@ bool makeReticleImages() {
 				pixel[0] = pixel[1] = pixel[2] = pixel[3] = value;
 			}
 		}
+		g_xr.mirror.setOverlayImage(i == 0 ? DesktopMirror::ReticleDimImage : DesktopMirror::ReticleBrightImage, size,
+		                            pixels.data());
 		glBindTexture(GL_TEXTURE_2D, image.texture());
 		glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, size.x, size.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
@@ -1830,7 +1833,36 @@ void drawMirror(const Vec2i & windowSize, bool flatFrame) {
 		}
 	}
 
-	g_xr.mirror.draw(windowSize, fov, position, orientation, quad);
+	// The quad layers after the flat frame (#271): the menu pointer's beam, then the hand reticles, in the
+	// order they were submitted. They live in the room, where the eye was located for the frame.
+	std::vector<DesktopMirror::Overlay> overlays;
+	const Vec3f roomEye(mirrored.pose.position.x, mirrored.pose.position.y, mirrored.pose.position.z);
+	const glm::quat roomOrientation(mirrored.pose.orientation.w, mirrored.pose.orientation.x,
+	                                mirrored.pose.orientation.y, mirrored.pose.orientation.z);
+	if(frame.views.valid) {
+		const auto add = [&](DesktopMirror::OverlayImage image, const XrCompositionLayerQuad & layer) {
+			DesktopMirror::Overlay overlay;
+			overlay.image = image;
+			overlay.width = layer.size.width;
+			overlay.height = layer.size.height;
+			overlay.position = Vec3f(layer.pose.position.x, layer.pose.position.y, layer.pose.position.z);
+			overlay.orientation = glm::quat(layer.pose.orientation.w, layer.pose.orientation.x,
+			                                layer.pose.orientation.y, layer.pose.orientation.z);
+			overlays.push_back(overlay);
+		};
+		if(g_xr.pointer.submitted) {
+			add(DesktopMirror::BeamImage, g_xr.layers.beam);
+		}
+		for(size_t hand = 0; hand < HandCount; hand++) {
+			const OpenXRState::HandReticle & reticle = g_xr.reticles[hand];
+			if(reticle.submitted) {
+				add(reticle.bright ? DesktopMirror::ReticleBrightImage : DesktopMirror::ReticleDimImage,
+				    g_xr.layers.reticles[hand]);
+			}
+		}
+	}
+
+	g_xr.mirror.draw(windowSize, fov, position, orientation, quad, overlays, roomEye, roomOrientation);
 }
 
 /*!
@@ -2486,6 +2518,7 @@ MirrorStatus mirrorStatus() {
 	status.state = g_xr.mirror.state();
 	status.eye = g_xr.mirror.eyeName();
 	status.frames = g_xr.mirror.frames();
+	status.overlays = g_xr.mirror.overlaysDrawn();
 	return status;
 }
 

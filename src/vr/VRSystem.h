@@ -294,6 +294,7 @@ struct MirrorStatus {
 	std::string state = "flat mode"; //!< "on", or why the window shows the flat frame ("off: ...")
 	std::string eye = "right";       //!< the mirrored eye (vr_mirror_eye; right by default)
 	u64 frames = 0;                  //!< frames mirrored into the window since the game started
+	size_t overlays = 0;             //!< quad layers after the flat frame (pointer beam, reticles) in the last mirrored frame
 };
 
 MirrorStatus mirrorStatus();

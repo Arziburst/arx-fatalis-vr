@@ -237,7 +237,11 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   window), otherwise why not (`flat mode`, `off: --no-vr-mirror`, `off: vr_mirror = 0 in cfg.ini`,
   `off: OpenGL has no glCopyImageSubData ...`, `off: the VR session ended`); `frames` grows with
   `vr.shownFrames` while it is `on` (0 in flat mode). One `[vr] desktop mirror:` log line per session
-  names the eye size, the crop and where the flat frame quad lands in the window.
+  names the eye size, the crop and where the flat frame quad lands in the window. `overlays` (#271): the quad
+  layers after the flat frame (the menu pointer's beam, the hand reticles) the last mirrored frame drew over it
+  (0 when none is in view of the window, which crops the eye to its aspect: the bag at the eye's bottom edge
+  is outside it until the head looks down). A channel `shot` is taken after the mirror is drawn, so in VR it
+  shows the window as a spectator sees it.
 - `vr.panel` (#49): the floating UI panel. `mode`: `world` while a menu is open and the panel is placed
   in the play space, `head` otherwise (the HUD on the head-locked quad; also while a menu waits for a
   tracked head); `menu`: the open menu (`mainmenu`, `charactercreation`, `credits`, `note`, `book`,
@@ -778,7 +782,7 @@ the eyes by its alpha (research rows F-115, F-162, F-163; the design is D-025):
   the quad in front; a frame whose scene was not drawn (a menu) clears both eyes to the dark
   background — both eyes or none (F-116). The desktop mirror (#21) copies the mirrored eye in
   `endEyeRender()` and the quad before its release and draws them into the window (the quad
-  blended by its alpha); with `vr_mirror = 0` the window shows the flat frame alone. Any other
+  blended by its alpha, then the pointer beam and the reticles); with `vr_mirror = 0` the window shows the flat frame alone. Any other
   frame while the session runs (an idle headset with `shouldRender` false, eyes not located, the
   loading screen through `vr::beginInterfaceFrame()`) draws the flat frame straight into the quad's
   image, cleared to opaque black, and the window shows it scaled; such a frame is ended without

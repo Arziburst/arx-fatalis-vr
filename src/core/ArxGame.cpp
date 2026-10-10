@@ -1422,10 +1422,11 @@ void ArxGame::doFrame() {
 	} else {
 		cinematicLaunchWaiting();
 		render();
-		// A "shot" from the test channel reads the finished frame before it is shown
-		channel::afterRender();
 		// In VR: the finished flat frame on a head-locked quad in the headset (no-op in flat mode)
 		vr::submitFrame(m_MainWindow->getSize());
+		// A "shot" from the test channel reads the finished frame before it is shown: in VR the window
+		// holds the desktop mirror by now (#271), what a spectator sees
+		channel::afterRender();
 		m_MainWindow->showFrame();
 	}
 }

@@ -187,6 +187,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 #include "vr/VRWeapon.h"
+#include "vr/WristHud.h"
 
 #include "Configure.h"
 
@@ -2174,6 +2175,9 @@ void ArxGame::renderLevel() {
 	}
 	#endif
 
+	// The wrist bars (#116): shown this frame when the player's left arm was posed from a controller
+	vr::updateWristVitals();
+
 	if(vr::stereoActive()) {
 		// In VR the views are the two eyes, each into its own swapchain image (#19)
 		renderStereoViews();
@@ -2328,7 +2332,10 @@ void ArxGame::renderSceneView() {
 	GRenderer->SetFogColor(Color());
 	g_renderBatcher.render();
 	GRenderer->SetFogColor(g_fogColor);
-	
+
+	// Health and mana on the left wrist (#116), after everything opaque: the arm and the walls cover them
+	vr::drawWristVitals();
+
 	GRenderer->SetAntialiasing(false);
 
 	renderLightFlares();

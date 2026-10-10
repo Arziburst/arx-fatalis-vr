@@ -64,6 +64,8 @@
 
 #include "util/Cast.h"
 
+#include "vr/WristHud.h"
+
 
 extern bool WILLRETURNTOFREELOOK;
 
@@ -1443,7 +1445,9 @@ void HudRoot::draw() {
 	}
 	
 	healthGauge.updateRect(hudSlider);
-	healthGauge.updateInput(mousePos);
+	if(!vr::wristVitalsShown()) {
+		healthGauge.updateInput(mousePos); // a click on the hidden orb would print the value (#116)
+	}
 	healthGauge.update();
 	
 	stealIconGui.updateRect(healthGauge.rect());
@@ -1474,10 +1478,13 @@ void HudRoot::draw() {
 	
 	if(player.Interface & INTER_LIFE_MANA) {
 		manaGauge.update(hudSlider);
-		manaGauge.updateInput(mousePos);
-		manaGauge.draw();
-		
-		healthGauge.draw();
+
+		// In VR health and mana are on the left wrist while it is posed from a controller (#116)
+		if(!vr::wristVitalsShown()) {
+			manaGauge.updateInput(mousePos);
+			manaGauge.draw();
+			healthGauge.draw();
+		}
 		
 		if(bRenderInCursorMode) {
 			if(!MAGICMODE) {

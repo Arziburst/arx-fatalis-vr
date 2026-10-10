@@ -83,6 +83,7 @@
 #include "vr/VRSystem.h"
 #include "vr/VRWeapon.h"
 #include "vr/WorldScale.h"
+#include "vr/WristHud.h"
 #include "window/RenderWindow.h"
 
 extern bool START_NEW_QUEST;
@@ -913,6 +914,30 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("armAnimation", weapon.armAnimation);
 		json.value("suppressedFrames", weapon.suppressedFrames);
 		json.value("combatMode", (player.Interface & INTER_COMBATMODE) != 0);
+		json.end();
+	}
+	{
+		// Health and mana on the left wrist (#116): shown instead of the orbs, and how visible from the eyes
+		const vr::WristVitalsStatus & wrist = vr::wristVitalsStatus();
+		json.object("wrist");
+		json.value("shown", wrist.shown);
+		json.value("hidden", wrist.hidden);
+		json.value("health", wrist.health);
+		json.value("mana", wrist.mana);
+		json.value("facingDeg", wrist.facingDeg);
+		json.value("alpha", wrist.alpha);
+		json.value("drawnViews", wrist.drawnViews);
+		// the middle of the bars (units) and their axes in the world (engine: x right, y down, z forward)
+		const struct { const char * name; const Vec3f & v; } vectors[] = {
+			{ "center", wrist.center }, { "normal", wrist.normal }, { "across", wrist.across }, { "along", wrist.along },
+		};
+		for(const auto & vector : vectors) {
+			json.object(vector.name);
+			json.value("x", vector.v.x);
+			json.value("y", vector.v.y);
+			json.value("z", vector.v.z);
+			json.end();
+		}
 		json.end();
 	}
 	{

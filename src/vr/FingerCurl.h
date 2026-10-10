@@ -30,7 +30,7 @@
 
 /*!
  * \file
- * \brief The finger curl of the VR body (#305, D-NEW): pure math, host-tested in tests/vr/FingerCurlTest.cpp
+ * \brief The finger curl of the VR body (#305, D-041): pure math, host-tested in tests/vr/FingerCurlTest.cpp
  *
  * No engine globals, no OpenXR, no clock. The body module (vr/VRBody.cpp) feeds it either the 26
  * hand joints of \c XR_EXT_hand_tracking (located by vr/HandTracking.cpp) or the controller's action
@@ -138,7 +138,7 @@ FingerCurl fingerCurlFromJoints(const HandJoints & joints, const FingerCurlLimit
 FingerCurl fingerCurlFromControls(float trigger, float grip, bool thumbTouch,
                                   const FingerCurlLimits & limits = FingerCurlLimits());
 
-//! The closed hand: every segment at its limit (a hand on a weapon's grip, D-NEW)
+//! The closed hand: every segment at its limit (a hand on a weapon's grip, D-041)
 FingerCurl fingerCurlClosed(const FingerCurlLimits & limits = FingerCurlLimits());
 
 //! \return \a current moved towards \a target by at most \a stepDegrees per segment

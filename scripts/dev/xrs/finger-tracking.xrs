@@ -1,4 +1,4 @@
-# Finger tracking (#305, D-NEW): the model's finger groups - the thumb, the index finger and the three-finger
+# Finger tracking (#305, D-041): the model's finger groups - the thumb, the index finger and the three-finger
 # block - follow the real fingers. The simulated runtime has XR_EXT_hand_tracking: its hand trackers give the
 # 26 joints of a synthetic hand closed as "vr-sim hand <side> fingers <thumb> <index> <rest>" says (0 open,
 # 1 a fist), and the body reads the curl of each group off the angles between the joints (vr/FingerCurl.h).

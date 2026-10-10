@@ -1,4 +1,4 @@
-# A hand holding a weapon closes its fingers on the grip (#305, D-NEW; the weapon in the IK hand is #75):
+# A hand holding a weapon closes its fingers on the grip (#305, D-041; the weapon in the IK hand is #75):
 # on mvp-items a short sword is equipped, so the right hand's fingers are closed whatever its tracked
 # fingers do, while the left hand still follows its joints.
 #   .\scripts\dev\xrs-run.ps1 finger-held

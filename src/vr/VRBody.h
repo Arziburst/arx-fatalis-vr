@@ -57,7 +57,7 @@ struct Skeleton;
  * Two poses per hand (F-185): the controller (where the player's hand is) and the posed wrist
  * (where the model's hand is); both are in status.json with the error between them.
  *
- * The fingers (#305, D-NEW): the model's finger groups under each hand - the thumb, the index
+ * The fingers (#305, D-041): the model's finger groups under each hand - the thumb, the index
  * finger and the three-finger block, found as the hand group's children by name - bend about the
  * knuckle line by what the real fingers do: the hand joints of XR_EXT_hand_tracking when the
  * runtime gives them, the trigger, grip and thumb-rest values when it does not (vr/FingerCurl.h),

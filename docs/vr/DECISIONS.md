@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: The model's fingers follow the real fingers — hand joints first, the controls as the fallback, closed on a held weapon
+## D-041: The model's fingers follow the real fingers — hand joints first, the controls as the fallback, closed on a held weapon
 
 - **Date:** 2026-10-10
 - **Status:** Accepted (the owner's pick from #298's table, row F-218; implemented by #305)

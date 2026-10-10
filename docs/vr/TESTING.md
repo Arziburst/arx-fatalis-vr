@@ -328,7 +328,7 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   the vertices were transformed, `reach` (shoulder to target), `armLength` (the model's, 58.1 units on
   `human_base`), `error` (wrist to target: 0 when the controller is reached), `slide` (the shoulder
   moved towards an out-of-reach target, up to 20) and `stretched`.
-  The fingers (#305, D-NEW), per hand under `fingers`: `source` — `joints` (the hand joints of
+  The fingers (#305, D-041), per hand under `fingers`: `source` — `joints` (the hand joints of
   `XR_EXT_hand_tracking`), `controls` (no joints: the trigger is the index finger, the grip the three-finger
   block, the thumb's rest a closed thumb), `held` (a weapon in the hand: closed on the grip whatever the
   fingers do), `none` (the arm is the engine's, or the model has no finger groups — `groups`); `joints`

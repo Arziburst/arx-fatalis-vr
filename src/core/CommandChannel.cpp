@@ -53,8 +53,11 @@
 #include "graphics/Renderer.h"
 #include "graphics/image/Image.h"
 #include "gui/Console.h"
+#include "gui/Dragging.h"
 #include "gui/Interface.h"
 #include "gui/Menu.h"
+#include "gui/hud/PlayerInventory.h"
+#include "input/Input.h"
 #include "io/fs/FilePath.h"
 #include "io/fs/Filesystem.h"
 #include "io/log/LogBackend.h"
@@ -260,6 +263,12 @@ struct State {
 		Image first;                 //!< The first view of the current frame
 	} drawCheck;
 
+	//! vr-point: the widget a simulated hand was last aimed at (#34)
+	struct PointTarget {
+		std::string id = "none";     //!< the item's id, "pixel" for a bare pixel
+		Vec2f pixel = Vec2f(0.f);    //!< in the 2D interface's pixels
+	} pointTarget;
+
 };
 
 State g;
@@ -381,6 +390,7 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 			writeAngles(json, "rot", e.angles);
 			json.value("imageFrame", e.imageFrame);
 			json.value("quadPixels", u64(shot.quadPixels[eye]));
+			json.value("overlayPixels", u64(shot.overlayPixels[eye]));
 			json.end();
 		}
 		json.object("quad");
@@ -545,6 +555,20 @@ std::string buildStatus(PlatformInstant now) {
 		json.end();
 	}
 
+	// The 2D interface under the mouse (#34): what a click there would take, and what is being dragged
+	json.object("ui");
+	if(GInput) {
+		json.value("mouseX", GInput->getMousePosition().x);
+		json.value("mouseY", GInput->getMousePosition().y);
+		json.value("mouseInWindow", GInput->isMouseInWindow());
+	}
+	json.value("hover", FlyingOverIO ? FlyingOverIO->idString() : std::string("none"));
+	json.value("drag", g_draggedEntity ? g_draggedEntity->idString() : std::string("none"));
+	json.value("target", g.pointTarget.id);
+	json.value("targetX", g.pointTarget.pixel.x);
+	json.value("targetY", g.pointTarget.pixel.y);
+	json.end();
+
 	if(mainApp && mainApp->getWindow()) {
 		const RenderWindow & window = *mainApp->getWindow();
 		json.object("window");
@@ -630,6 +654,23 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("drop", panel.drop);
 		json.end();
 	}
+	// The menu pointer (#34): the hand on the panel is the mouse; cursor in the 2D interface's pixels
+	{
+		vr::PointerStatus pointer = vr::pointerStatus();
+		json.object("pointer");
+		json.value("shown", pointer.shown);
+		json.value("active", pointer.active);
+		json.value("owner", pointer.owner);
+		json.value("x", pointer.cursor.x);
+		json.value("y", pointer.cursor.y);
+		json.value("beam", pointer.beam);
+		json.value("leftOnPanel", pointer.onPanel[0]);
+		json.value("rightOnPanel", pointer.onPanel[1]);
+		json.value("clicks", pointer.clicks);
+		json.value("offPanelPresses", pointer.offPanelPresses);
+		json.value("ownerChanges", pointer.ownerChanges);
+		json.end();
+	}
 	json.value("runtime", vr::runtimeName());
 	json.value("manifest", vr::runtimeManifest());
 	// Head tracking (#24): where the head comes from, its reference and what it does to the camera
@@ -662,7 +703,23 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("offsetX", head.offset.x);
 		json.value("offsetY", head.offset.y);
 		json.value("offsetZ", head.offset.z);
-		json.value("clamped", head.clamped);
+		// Leaning and real steps, the wall fade (#26): the head against the body, what the body walked after it
+		json.value("leanX", head.lean.x);
+		json.value("leanZ", head.lean.y);
+		json.value("leanM", head.leanDistance);
+		json.value("anchorX", head.anchor.x);
+		json.value("anchorZ", head.anchor.y);
+		json.value("walkedM", head.walked);
+		json.value("stepping", head.stepping);
+		json.value("steps", head.steps);
+		json.value("bodyBlocked", head.bodyBlocked);
+		json.value("blocks", head.blocks);
+		const vr::FadeStatus & fade = vr::fadeStatus();
+		json.value("fade", fade.fade);
+		json.value("wall", fade.wall ? fade.wall : "");
+		json.value("walls", fade.walls);
+		json.value("farFade", fade.farFade);
+		json.value("fars", fade.fars);
 		// Physical crouch (#100): the head crouching the character, its depth below the reference (meters), the
 		// episodes, and how far the character's crouch lowered its eye (game units)
 		json.value("crouch", head.crouch);
@@ -764,6 +821,13 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("y", point.point.y);
 			json.value("z", point.point.z);
 			json.end();
+		}
+		// Distance from the hilt to the right palm, both taken in this one status write: a check that remembers
+		// the palm and asserts the hilt later compares two frames of a moving idle rig (#316)
+		Vec3f palm(0.f);
+		Vec3f palmTip(0.f);
+		if(vr::handLandmarks(vr::Hand::Right, palm, palmTip)) {
+			json.value("hiltToPalm", glm::distance(weapon.hilt, palm));
 		}
 		json.value("bladeAngle", weapon.bladeAngle);
 		json.value("armAnimSuppressed", weapon.armAnimSuppressed);
@@ -1264,6 +1328,85 @@ std::string execute(std::string_view line) {
 		} else {
 			return refuse("ui: expected \"inventory open\" or \"inventory close\", got \"" + std::string(rest) + "\"");
 		}
+		return std::string();
+	}
+
+	if(word == "vr-point") {
+		// vr-point <left|right> item [<dx> <dy>] | <x> <y>: turn a simulated hand (--vr-sim) so its aim ray points at the
+		// first item in the open inventory bag, or at a pixel of the 2D interface, on the floating panel (#34).
+		// Aims only - what the pointer makes of the ray is the game's own path
+		std::istringstream iss{std::string(rest)};
+		std::string hand, what;
+		iss >> hand >> what;
+		if((hand != "left" && hand != "right") || what.empty()) {
+			return refuse("vr-point: expected left|right item, or left|right <x> <y>, got \"" + std::string(rest) + "\"");
+		}
+		const vr::SimStatus sim = vr::simStatus();
+		if(!sim.active) {
+			return refuse("vr-point: needs the simulated headset (--vr-sim)");
+		}
+		State::PointTarget target;
+		if(what == "item") {
+			if(!(player.Interface & INTER_INVENTORY) || !entities.player()) {
+				return refuse("vr-point item: needs the inventory open");
+			}
+			// The first item of the shown bag, and the middle of the pixels it answers to
+			Entity * item = nullptr;
+			Vec2f low(0.f), high(0.f);
+			const s32 step = 2;
+			for(s32 y = 0; y < g_size.height(); y += step) {
+				for(s32 x = 0; x < g_size.width(); x += step) {
+					Entity * found = g_playerInventoryHud.getObj(Vec2s(s16(x), s16(y)));
+					if(!found || (item && found != item)) {
+						continue;
+					}
+					if(!item) {
+						item = found;
+						low = high = Vec2f(float(x), float(y));
+					}
+					low = glm::min(low, Vec2f(float(x), float(y)));
+					high = glm::max(high, Vec2f(float(x), float(y)));
+				}
+			}
+			if(!item) {
+				return refuse("vr-point item: no item in the shown inventory bag");
+			}
+			// Optionally that many pixels beside it: a hand moving while the trigger is held (a drag)
+			Vec2f offset(0.f);
+			if(!(iss >> offset.x)) {
+				offset = Vec2f(0.f);
+			} else if(!(iss >> offset.y)) {
+				return refuse("vr-point item: expected item [<dx> <dy>], got \"" + std::string(rest) + "\"");
+			}
+			target.id = item->idString();
+			target.pixel = (low + high) * 0.5f + offset;
+		} else {
+			std::istringstream numbers{std::string(rest)};
+			std::string skip;
+			float x = 0.f, y = 0.f;
+			if(!(numbers >> skip >> x >> y)) {
+				return refuse("vr-point: expected left|right <x> <y> in the 2D interface's pixels, got \"" + std::string(rest) + "\"");
+			}
+			target.id = "pixel";
+			target.pixel = Vec2f(x, y);
+		}
+		Vec3f point(0.f);
+		if(!vr::panelPoint(target.pixel, point)) {
+			return refuse("vr-point: no floating panel shown (no menu open)");
+		}
+		const Vec3f from = sim.rig.hands[hand == "left" ? 0 : 1].position;
+		const Vec3f direction = glm::normalize(point - from);
+		const float yaw = glm::degrees(std::atan2(-direction.x, -direction.z));
+		const float pitch = glm::degrees(std::asin(std::clamp(direction.y, -1.f, 1.f)));
+		std::ostringstream command;
+		command << "hand " << hand << " rot " << yaw << ' ' << pitch << " 0";
+		std::string error = vr::simCommand(command.str());
+		if(!error.empty()) {
+			return refuse("vr-point: " + error);
+		}
+		LogInfo << "[channel] vr-point: the " << hand << " hand aimed at " << target.id << " (pixel "
+		        << target.pixel.x << ", " << target.pixel.y << "): yaw " << yaw << ", pitch " << pitch;
+		g.pointTarget = target;
 		return std::string();
 	}
 

@@ -135,6 +135,12 @@ public:
 		bool vrMirror; //!< VR: the desktop window shows what one eye sees (#21); off = the flat frame
 		int vrMirrorEye; //!< VR: the eye the desktop mirror shows: 0 = left, 1 = right (default, the owner's choice)
 		int vrMsaa; //!< VR: multisampling of the eye images, samples per pixel; 0 = off (#226)
+		float vrBodyFollowRadius; //!< VR: meters the head may be from the body before the body steps after it (#26)
+		float vrWallFadeOut; //!< VR: seconds to black when the head enters geometry or gets too far from the body (#26)
+		float vrWallFadeIn; //!< VR: seconds back from black (#26)
+		float vrHeadFarStart; //!< VR: meters from the body where a head too far starts to fade the world (#26)
+		float vrHeadFarFull; //!< VR: meters from the body where it is black (#26)
+		bool vrRealStepNoise; //!< VR: the body walking after the head makes footstep noise like walking (#26)
 		float vrPanelDistance; //!< VR: the menu panel this far ahead of the head, meters (#49)
 		float vrPanelDrop; //!< VR: the menu panel's centre this far below the eyes, meters (#49)
 		float vrPanelWidth; //!< VR: the menu panel's width, meters (#49)

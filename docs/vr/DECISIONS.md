@@ -174,8 +174,8 @@ How D-009's full body is built (#36):
   chain keeps the engine's arms and says why in the log. The zero-length hand group is rigid on the
   wrist, so the hand mesh takes the controller's orientation and not the animation's bend of the hand.
 - **Hands rigid with the head camera** (`handToWorld`, HeadPose.h): a hand is placed from the head the
-  way the head is placed from its reference — the same turn, the same units per metre, the lean clamp
-  included — so a hand 30 cm right of the head is 30 units right of the camera, and #27's scale and #28's
+  way the head is placed from its reference — the same turn, the same units per metre, relative to the head
+  (so the body walking after it, #26, does not matter) — so a hand 30 cm right of the head is 30 units right of the camera, and #27's scale and #28's
   recenter apply to hands and head alike. The model's palm attach point lands on the controller's grip.
 - **The hand frame is read from the mesh**, no calibration constants: the long axis from the wrist to the
   palm attach vertex (OpenXR grip −Y), the lateral axis towards the model's thumb group (grip −Z: the
@@ -279,6 +279,15 @@ interface in VR.
   quad until #116. Distance, drop and width are cfg.ini settings (`vr_panel_distance`, `vr_panel_drop`,
   `vr_panel_width`; F-180). The panel is a compositor quad layer, always on top: never swallowed by walls
   (F-179), but it covers the hands until #36 / #37 decide.
+- **Menu pointer (#34)** *(proposed by the worker, approved by the coordinator for the owner as the MVP
+  default, 2026-10-10; the owner judges it in the headset)*: only while the panel is shown (D-010), either
+  hand points (D-016, D-019). A **thin white beam, 3 mm, from the pointing hand to the panel, fading out
+  towards the panel**, drawn as a compositor quad layer above the panel; the **dot is the game's own
+  cursor** on the panel, no second one. **Only the hand that owns the cursor shows a beam:** the hand whose
+  trigger was pressed last; the other hand's trigger takes it over and clicks under that hand; an owner
+  pointing away hands an idle cursor to the other hand on the panel. Nothing when no menu is open or the
+  ray misses the panel. The click holds still for **16 px** after a press, then drags (F-81); a press with
+  the ray off the panel clicks nothing.
 - **Health and mana (#116):** **two vertical bars, red and blue, on the inner side of the left wrist**,
   read by raising the hand to the face like a watch.
 - **Hand reticle (#37):** a **small dot / ring where the hand points**, no ray (D-010); it **brightens over
@@ -678,7 +687,7 @@ RESEARCH-reference-mods.md 13g with these answers); #49 the centred panel for th
 ## D-018: The camera is where the head is — full head tracking in the MVP
 
 - **Date:** 2026-10-09
-- **Status:** Accepted (replaces D-006); seated play and height calibration refined by D-028
+- **Status:** Accepted (replaces D-006); seated play and height calibration refined by D-028; leaning and real steps: defaults in the amendment below (#26)
 - **Decided by:** project owner (design agreed by questions, D-017)
 
 ### Decision
@@ -715,6 +724,20 @@ fixed height in thought and rejected it.
   character's eye height; #100 crouch threshold on top of the continuous height; #26 (leaning, room-scale,
   wall fade) moves from M2 into the MVP; #25 makes the body follow the head with collision; #28 captures
   the standing height at recenter and covers seated play.
+
+### Amendment (2026-10-10, #26): leaning and real steps — the defaults
+Agreed by the coordinator with the owner as defaults to judge in the headset (D-017); each is a `cfg.ini` key
+(`[video]`), so the owner's verdict tunes it without a rebuild:
+- **Body lag** — `vr_body_follow_radius = 0.1` m: the body (the collision cylinder) stays put while the head
+  is within 10 cm of it horizontally; beyond that it walks after the head through the game's collision, so
+  the head stays at most 10 cm off. Held by a wall, a table or a corner, the body stops and the head goes on
+  (a lean). The interim 0.6 m lean clamp of #24 is gone.
+- **Wall fade** — `vr_wall_fade_out = 0.15` s to black, `vr_wall_fade_in = 0.25` s back; black; the world
+  only (the interface panel stays readable). When the head's near plane touches geometry the game's own eye
+  does not, or a wall is between the character's eye and the head.
+- **Head too far** from a body that cannot follow (blocked controls, a conversation camera, a ledge) — fade
+  from `vr_head_far_start = 0.7` m to black at `vr_head_far_full = 1.0` m.
+- **Real steps make footstep noise** like walking — `vr_real_step_noise = 1` (stealth stays honest). **The owner decided: keep** (2026-10-10, before the headset test).
 
 ---
 

@@ -1,0 +1,108 @@
+# Leaning and real steps (#26, D-018): the body follows the head through the game's collision; a head in a wall fades.
+# Run on the test save mvp-new-game (the start cell, facing yaw ~0 = world +z):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence real-steps
+# The head moves in the room (LOCAL: x right, -z forward, meters); the body is the player's position (player.x / z,
+# world units, 100 per meter). Defaults: follow radius 0.10 m, fade out 0.15 s / in 0.25 s, far fade 0.7 - 1.0 m.
+@sim idle
+@args --loadslot 0
+@save mvp-new-game
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s in: past the level's fade-in (TRAPS.md)
+@until vr.head.source eq hmd 30s
+@assert vr.head.fade eq 0
+@assert vr.head.steps eq 0
+@remember x0 player.x
+@remember z0 player.z
+@shot steps-start
+
+# 8 cm forward: inside the follow radius - a lean, the body stays where it is
+vr-sim head pos 0 0 -0.08
+@frames 10
+@assert vr.head.leanM gt 0.079
+@assert vr.head.steps eq 0
+@assert player.z lt {z0+0.5}
+@assert player.z gt {z0-0.5}
+
+# A real step: 1 m forward in quarter meters - the body walks 0.9 m, the head stays 10 cm ahead of it, no fade
+vr-sim head pos 0 0 -0.25
+@frames 5
+vr-sim head pos 0 0 -0.5
+@frames 5
+vr-sim head pos 0 0 -0.75
+@frames 5
+vr-sim head pos 0 0 -1.0
+@frames 20
+@assert vr.head.steps ge 1
+@assert vr.head.leanM lt 0.101
+@assert player.z gt {z0+85}
+@assert player.z lt {z0+95}
+@assert player.x lt {x0+2}
+@assert player.x gt {x0-2}
+@assert vr.head.fade eq 0
+@assert vr.head.walls eq 0
+@shot steps-1m
+@diff steps-start steps-1m gt 3
+
+# Back to the start: the body walks back with it
+vr-sim head pos 0 0 0
+@frames 30
+@assert player.z lt {z0+12}
+@assert vr.head.leanM lt 0.101
+@remember zBack player.z
+
+# Into the cell's side wall (the body stops at x ~8784, the wall face is ~5 cm past its edge): the head goes right
+# in quarter meters; the wall stops the body, the head goes on
+vr-sim head pos 0.25 0 0
+@frames 5
+vr-sim head pos 0.5 0 0
+@frames 5
+vr-sim head pos 0.75 0 0
+@frames 5
+vr-sim head pos 1.0 0 0
+@frames 5
+vr-sim head pos 1.25 0 0
+@frames 5
+vr-sim head pos 1.5 0 0
+@frames 5
+vr-sim head pos 1.75 0 0
+@frames 5
+vr-sim head pos 2.0 0 0
+@frames 5
+vr-sim head pos 2.5 0 0
+@frames 5
+@assert vr.head.bodyBlocked eq true
+@assert vr.head.blocks ge 1
+@remember xWall player.x
+vr-sim head pos 3.0 0 0
+@frames 40
+# The head's near plane is in the wall face, still in front of it: "inside" - nearer than the far fade (0.7 m)
+@assert vr.head.leanM gt 0.5
+@assert vr.head.leanM lt 0.7
+@assert vr.head.farFade eq 0
+@assert vr.head.walls ge 1
+@assert vr.head.wall eq inside
+@assert vr.head.fade eq 1
+@shot steps-wall
+@diff steps-start steps-wall gt 10
+
+# Through the wall: "behind" it as seen from the character's eye; the body does not move on
+vr-sim head pos 3.5 0 0
+@frames 20
+@assert vr.head.wall eq behind
+@assert vr.head.fade eq 1
+@assert player.x lt {xWall+0.5}
+@assert player.x gt {xWall-0.5}
+@log vr\.body\.blocked state=start
+@log vr\.head\.wall state=inside
+@log vr\.head\.wall state=behind
+
+# Out again, back to the room's centre: the fade clears (0.25 s)
+vr-sim head pos 0 0 0
+@frames 45
+@assert vr.head.wall ne behind
+@assert vr.head.fade eq 0
+@assert vr.head.bodyBlocked eq false
+@shot steps-back
+@log vr\.head\.wall state=clear
+@assert errors eq 0

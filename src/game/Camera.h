@@ -105,6 +105,8 @@ struct PreparedCamera {
 	//! Screen pixels per view-space unit at depth 1 (vertical), see projectionPixelsPerUnit()
 	float m_pixelsPerUnit;
 	
+	Rect m_viewport;
+
 	PreparedCamera()
 		: m_worldToView(1.f)
 		, m_viewToClip(1.f)
@@ -114,6 +116,7 @@ struct PreparedCamera {
 		, m_center(0.f)
 		, m_screenToView(0.f)
 		, m_pixelsPerUnit(0.f)
+		, m_viewport(0, 0, 0, 0)
 	{ }
 	
 };
@@ -141,6 +144,16 @@ inline void PrepareCamera(Camera * cam, const Rect & viewport) {
  */
 void PrepareCamera(Camera * cam, const Rect & viewport, const glm::mat4x4 & worldToView,
                    const glm::mat4x4 & viewToClip);
+
+/*!
+ * \brief Make \a prepared the prepared camera again, with \a cam as the active camera
+ *
+ * For a view that borrows the camera for a moment (the player model and the rune necklace in the
+ * book): it puts back exactly what was prepared before it - in a stereo frame the head camera with
+ * the union projection of both eyes (#247), which PrepareCamera(cam, g_size) would replace with the
+ * flat projection rebuilt from the focal length.
+ */
+void RestorePreparedCamera(Camera * cam, const PreparedCamera & prepared);
 
 //! \return the world-to-view matrix of \a cam as PrepareCamera() derives it from its angle and position
 glm::mat4x4 cameraWorldToView(const Camera & cam);

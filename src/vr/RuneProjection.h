@@ -30,7 +30,7 @@
 
 /*!
  * \file
- * \brief The rune stroke as the engine's recogniser sees it (#44, D-010, D-036, F-75, F-76, F-77, F-202)
+ * \brief The rune stroke as the engine's recogniser sees it (#44, D-010, D-NEW-recognition, F-75, F-76, F-77, F-202)
  *
  * The engine recognises runes from 2D points: the mouse cursor's screen pixels, sampled while the button is
  * held, turned into a chain of numpad directions and matched against a table (game/magic/SpellRecognition.cpp).

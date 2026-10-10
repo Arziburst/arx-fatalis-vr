@@ -1,4 +1,4 @@
-# Rune recognition from the hand and the spell's aim (#44, D-010, D-036, F-75, F-76, F-202): the
+# Rune recognition from the hand and the spell's aim (#44, D-010, D-NEW-recognition, F-75, F-76, F-202): the
 # stroke of #43 is projected onto the plane of the look at its start and fed into the engine's own recogniser
 # in place of the cursor's points, so a line drawn to the right is AAM, right-down-right is TAAR, up is MEGA,
 # down is RHAA; AAM + TAAR with the stance released cast Magic Missile, aimed where the right controller

@@ -39,17 +39,22 @@ vr-sim head rot 0 -35 0
 @frames 15
 @shot sword-ahead
 @shot sword-ahead-still
+@remember tipAheadY vr.weapon.tip.y
 
 # The handle up (pitched 90 degrees): the blade points up - the tip above the hilt by the blade's length
-# (engine y is down) - and still lies on the grip's -Z
+# (engine y is down), above where it was with the handle ahead - and still lies on the grip's -Z
 vr-sim hand right rot 0 90 0
 @frames 10
 @remember hiltUpY vr.weapon.hilt.y
 @assert vr.weapon.tip.y lt {hiltUpY-30}
+@assert vr.weapon.tip.y lt {tipAheadY-30}
 @assert vr.weapon.bladeAngle lt 2
 @shot sword-up
 @diff sword-ahead sword-ahead-still lt 1.5 left
-@diff sword-ahead sword-up gt 2 left
+# The raised sword changes the picture: a weak sanity check behind the tip numbers above - the change
+# depends on how the arm lies (2.0x on #36's rig, 1.88 left / 1.53 right on #304's roll-aware one, the
+# still floor 0.36 on the runner)
+@diff sword-ahead sword-up gt 1 left
 
 # The hand moves 30 cm right: the hilt goes with the palm, the blade stays on the handle
 @remember hiltX0 vr.weapon.hilt.x

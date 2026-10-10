@@ -274,6 +274,10 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   character actually crouching (`PLAYER_CROUCH`) — it stays `true` after the toggle goes off while
   something is in the way of the head, and every refused stand-up logs one `player.standup.blocked`
   event naming what is there (#263).
+  `player.stealth`: this update's movement is the stealth walk (the key or a slight stick push, #33).
+  `player.animSpeed`: how fast the current body animation moves the player, units per second — the
+  walk speed the engine uses, independent of walls and the frame rate (run 192, the stealth walk 135.6
+  on `mvp-new-game`, #33).
 - `camera` (with `player`): the first-person camera as the frame before left it — position, angles,
   `fov` in degrees, `bob` = its distance from the stable head position of the paused animation (view
   bobbing; 0 when off), `shake` = the quake amplitude applied that frame (0 without a quake or when
@@ -300,6 +304,12 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   each event came on since the start, `layout`: the binding of every event (`none`, `right.a`, `left.grip+left.trigger`,
   `left.stick_click:long`). Nothing in the game reacts to the events yet (#74); `input-check.ps1`
   asserts on `presses` and `layout`.
+  `walk` (#31): the stick walk the player controls applied in the last update — `walking`, `yaw` (the
+  stick's forward, engine degrees [0, 360): the look, D-008), `heading` (`player.yaw` then), `dirX` / `dirZ`
+  (the world direction, unit length), `walks` (episodes since the start), `sneak` (#33: a slight
+  deflection — the stealth walk; below cfg `vr_sneak_below` 0.6 of the dead-zoned travel a run turns
+  into a sneak, at `vr_run_above` 0.7 a sneak into a run), `paceChanges` (sneak ↔ run switches within
+  a walk since the start; a game event `vr.walk state=pace pace=…` each, and `pace=` on `state=start`).
 - `drawCheck` appears once a `drawcheck` was requested: `{"seq":1,"running":false,"frames":120,
   "framesDiffering":0,"pixels":307200,"maxPixelsDiffering":0,"maxDelta":0,"capture":""}` —
   `frames` compared so far, `framesDiffering` of them with at least one differing pixel,
@@ -474,6 +484,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.panel.placed` | the floating UI panel was placed (#49): a menu opened (after > 250 ms closed), a recenter while it was open, or the head came back to tracking | `reason=open\|recenter\|tracking`, `menu`, `x`, `y`, `z` (LOCAL, metres), `yawDeg`, `distanceM`, `dropM`, `widthM`, `headY` |
 | `vr.panel` | the 2D interface moved between the panel and the head-locked quad (#49) | `mode=world\|head`, `menu` (`none` when closed) |
 | `vr.body.drag` | the head reached the 25° dead zone and pulls the body along, and when it let go (5° inside) (#25) | `state=start\|end`, `head`, `body` (degrees from the heading), `deadZone` (limit 100) |
+| `vr.walk` | the left stick left its dead zone and the player walks, and when it came back to rest (#31) | `state=start\|end`, `yaw` (the stick's forward = the look), `heading`, `look` (yaw − heading, the head's turn) (limit 200) |
 
 Not here yet, by design: melee attacks *refused* by a gate (F-66) come with the VR swing detector
 (#39); the recenter chord with #28; locomotion, interaction and rune-drawing in VR add their own events in the
@@ -840,7 +851,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 .\scripts\dev\xrs-run.ps1 -Check               # parse every sequence: syntax errors with their lines, no game
 .\scripts\dev\xrs-run.ps1 snap-turn -- --loadslot 0   # other arx.exe arguments replace the sequence's @args
 .\scripts\dev\xrs-run.ps1 recenter -Attach     # against a game that already runs with --test-dir (writing a sequence step by step)
-.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence walk-forward   # the same through the smoke test
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence walk-forward   # the same through the smoke test, on a test save
 .\scripts\dev\img-diff.ps1 -A a.bmp -B b.bmp [-Grid 16 | -Bands 16]   # two shots: mean difference 0-255, which regions changed
 ```
 
@@ -867,11 +878,13 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 
 | Sequence | Real today | `@pending` until |
 |---|---|---|
-| `look-around` | the rig and both located eyes follow a 40° yaw and a pitch; two shots of a still head agree | #24: the pictures change with the head |
+| `look-around` | the rig and both located eyes follow a 40° yaw and a pitch; two shots of a still head agree; the pictures change with the head (#24) | — |
 | `snap-turn` | on `mvp-new-game`, the repeat off: the right stick held for a second turns the body exactly 45° once (`vr.turn.snap`), the view turns (picture change 16.9), the head turned back 45° gives the first view again (5.3, HUD and lights); a second push, a push left, a half push that does nothing; the repeat 0.4 s on: held 1.8 s → the snap + 4 repeats; smooth turn by time and no snaps in it (#32) | — |
-| `walk-forward` | the player stands still without input; the stick is held and let go | #31: the player moves |
+| `walk-forward` | on `mvp-new-game` (`-Save`; level 10 never moves the player, TRAPS.md): still without input, the stick held forward moves him | — (#31) |
+| `walk-look` | on `mvp-new-game`: with the head turned ±90° the stick walks where the head looks (D-008), with the head ahead along the heading; the heading stays, one `vr.walk` start / end per push (`vr.input.walk` in status.json) | — (#31) |
+| `sneak-jump-crouch` | on `mvp-new-game`: a full push runs, a slight one sneaks (`player.stealth`, `player.animSpeed` < 0.8 × the run's), the hysteresis band keeps a run, below it the walk turns into a sneak; `right.a` jumps; `right.stick_down` with the stick drifting sideways toggles the crouch on without turning, a tap toggles it off | — (#33) |
 | `stand-up` | flat, on the test save `mvp-new-game` (`smoke-test.ps1 -Sequence stand-up -Save mvp-new-game`): `crouch on` / `crouch off` in the start cell — the character crouches (eye 170.1 → 122.7) and stands up where it stood (eye 170.1, same x/z); crouched inside the cell's portcullis it stays down with one `player.standup.blocked` event, and stands up once back at the start spot (#263) | — |
-| `recenter` | a head offset is set and read back | #28: `recenter` is accepted (it logs one expected `[W]`) |
+| `recenter` | a head offset is set and read back; `recenter` is accepted (#28) | — |
 | `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
@@ -980,13 +993,23 @@ self-hosted runner (D-021: CI is the automatic gate; a red step blocks the merge
 | Script self-tests | `scripts/dev/run-script-tests.ps1`: every `scripts/dev/test-*.ps1` in its own pwsh (`test-log-digest.ps1` incl. the `-Id` / `-Find` / `-Condense` / `-Print` modes on a fixture log, `test-github-lib.ps1`, `test-launch-lib.ps1`) | a test exits non-zero, or a `test-*.ps1` is in neither list of the script (a new test cannot be forgotten) |
 | Build | `build-windows.ps1 -Config Release`, which also builds and runs the host unit tests (`arxtest`) | the build, or a CppUnit test, fails |
 | Game checks | `scripts/dev/ci-smoke.ps1`: `smoke-test.ps1 -Seconds 3 -Commands 'drawcheck 120'`, then `spell-drawcheck.ps1` — the same scripts a worker runs, flat, `--loadlevel 10` | either returns `FAIL`, **or was skipped** (exit 2: the game lock stayed busy for 15 min) — a gate that did not run is not a pass, re-run the job |
+| Sequences (#255) | the same script, phase `sequences`: every `scripts/dev/xrs/*.xrs` (`look-around`, `snap-turn`, `walk-forward`, `stand-up`, `recenter`, `ui-panel`, see [Scripted sequences](#scripted-sequences-xrs-113)) as one launch each — `smoke-test.ps1 -Sequence <name>` with the `@sim` / `@args` / `@save` the file declares (idle simulated headset by default, flat when its `@args` say `--no-vr`) | a step fails, **a `@pending` step starts passing** (remove the `@pending`), or the launch was skipped (exit 2). A new `.xrs` file is picked up by itself |
 | Upload | the artifact `game-checks`, also when a step failed | — |
 
-`game-checks` holds, per phase (`smoke-test`, `spell-drawcheck`): the transcript (`<phase>.log`), then
+**The save library on the runner (#255).** Sequences with a `@save` (`snap-turn`, `stand-up`, `ui-panel`: `mvp-new-game`)
+need the test saves (D-023: derived from the game's data, generated per machine, never committed). The phase
+`save-library` runs first: in the service's own profile (`C:\Windows\ServiceProfiles\NetworkService\AppData\Local\ArxFatalisVR\savelib`)
+it runs `make-test-saves.ps1 -Verify` (one launch, ~20 s: a fresh game loads every save); when the library is missing, lacks a
+save a sequence names, or `-Verify` fails (an engine save format change made the saves stale), it runs
+`make-test-saves.ps1` (one launch, ~1 min) and the library is regenerated — nothing to do by hand. A sequence whose save the phase could
+not provide fails (not skipped).
+
+`game-checks` holds, per phase (`smoke-test`, `spell-drawcheck`, `save-library`, `xrs-<sequence>`): the transcript (`<phase>.log`), then
 in `<phase>\` every `arx*.log`, `status.json`, `ack.txt`, `stdout.txt` / `stderr.txt` of the channel,
-`capture\` (the most differing draw check pair as `.bmp`), `crashes\` and the run `digest\`. Read the
-digest, not the log. A whole green job takes about two minutes on the owner's PC (script tests 6 s, an
-incremental build about a minute, game checks 17 s).
+`capture\` (the draw check pair as `.bmp`; a sequence's `@shot` pictures), `crashes\` and the run `digest\`. Read the
+digest, not the log; the failing step of a sequence is the `FAIL` line of `xrs-<sequence>.log`. A whole green job takes about
+four minutes on the owner's PC (script tests 6 s, an incremental build about a minute, game checks 17 s, sequences
+about 1.5 min, plus ~20 s to verify the save library; ~1 min more when it is regenerated).
 
 How the runner differs from a worker's copy — none of it needs action, all of it explains a surprise:
 - **The runner service is `NT AUTHORITY\NETWORK SERVICE` in session 0** (no desktop), and the game runs

@@ -220,22 +220,21 @@ void VRBindingsTest::layoutCoverageTest() {
 
 void VRBindingsTest::defaultLayoutsTest() {
 
-	// Every event of the D-019 table on the Index and the Touch (magic mode waits for #43)
+	// Every event of the D-019 table on the Index and the Touch (magic mode since #43)
 	for(ControllerType type : { ControllerType::Index, ControllerType::Touch }) {
 		const ControlLayout layout = defaultLayout(type);
 		for(size_t i = 0; i < EventCount; i++) {
-			if(Event(i) != Event::MagicMode) {
-				CPPUNIT_ASSERT_MESSAGE(std::string(controllerTypeName(type)) + ": " + eventName(Event(i)),
-				                       layout.bindings[i].isBound());
-			}
+			CPPUNIT_ASSERT_MESSAGE(std::string(controllerTypeName(type)) + ": " + eventName(Event(i)),
+			                       layout.bindings[i].isBound());
 		}
 	}
 
-	// The Touch is the Index with the game menu on its menu button: X stays free
+	// The Touch is the Index with the game menu on its menu button and magic mode on the X it leaves free
+	// (the Touch has no trackpad)
 	const ControlLayout index = defaultLayout(ControllerType::Index);
 	const ControlLayout touch = defaultLayout(ControllerType::Touch);
 	for(size_t i = 0; i < EventCount; i++) {
-		if(Event(i) != Event::Menu) {
+		if(Event(i) != Event::Menu && Event(i) != Event::MagicMode) {
 			CPPUNIT_ASSERT_MESSAGE(eventName(Event(i)), index.bindings[i] == touch.bindings[i]);
 		}
 	}

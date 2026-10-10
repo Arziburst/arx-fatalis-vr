@@ -34,6 +34,11 @@ void ARX_MAGICAL_FLARES_KillAll();
 void MagicFlareChangeColor();
 void AddFlare(const Vec2f & pos, float sm, short typ, Entity * io = nullptr, bool bookDraw = false);
 void FlareLine(Vec2f pos0, Vec2f pos1, Entity * io = nullptr);
+/*!
+ * A flare at a point of the world instead of the cursor: the rune trail at the hand in VR (#43). Looks,
+ * colours and lifetime are \ref AddFlare's; \a sizeScale scales the glow and the spread of its sparks
+ */
+void AddFlareAt(const Vec3f & pos, float sm, short typ, float sizeScale);
 //! Age the flares, drop the dead ones, update their lights - once per frame
 void ARX_MAGICAL_FLARES_Update();
 //! Draw the flares into the render batcher - once per view

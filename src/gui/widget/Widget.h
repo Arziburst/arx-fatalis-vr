@@ -43,6 +43,7 @@ enum MENUSTATE {
 	Page_OptionsInput,
 	Page_OptionsInputCustomizeKeys1,
 	Page_OptionsInputCustomizeKeys2,
+	Page_OptionsVR, //!< the VR settings, Controls section (#178)
 	Page_QuitConfirm,
 	Page_Localization,
 };
@@ -58,6 +59,8 @@ enum WidgetType {
 	WidgetType_TextInput,
 	WidgetType_Keybind,
 	WidgetType_SaveSlot,
+	WidgetType_VRBinding,
+	WidgetType_VRInfo,
 };
 
 class Widget {

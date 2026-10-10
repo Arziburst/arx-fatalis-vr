@@ -138,7 +138,8 @@ function Read-ArxSequence([string]$Name) {
 		Name  = [IO.Path]::GetFileNameWithoutExtension($path)
 		Steps = @($steps | Where-Object { $_.Kind -notin 'sim', 'args', 'save' })
 		Sim   = if ($sim) { $sim[0].Name } else { $null }
-		Args  = if ($argsStep) { $argsStep[0].Args } else { @() }
+		# @( ) keeps a one-word @args an array: an if-expression unrolls it into a string, which splats char by char
+		Args  = @(if ($argsStep) { $argsStep[0].Args })
 		Save  = if ($save) { $save[0].Name } else { $null }
 	}
 }

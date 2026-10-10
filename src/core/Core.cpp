@@ -164,6 +164,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "script/Script.h"
 
 #include "vr/HeadTracking.h"
+#include "vr/VRMelee.h"
 #include "vr/VRSystem.h"
 
 #include "window/RenderWindow.h"
@@ -601,7 +602,7 @@ void ManageCombatModeAnimations() {
 			// Waiting and receiving Strike Impulse
 			if(layer1.cur_anim == alist[ANIM_DAGGER_WAIT]) {
 				player.m_aimTime = 0;
-				if(eeMousePressed1()) {
+				if(eeMousePressed1() && !vr::meleeOwnsStrikes()) { // VR: the swing is the strike (#39)
 					changeAnimation(io, 1, alist[ANIM_DAGGER_STRIKE_LEFT_START + player.m_strikeDirection * 3]);
 					io->isHit = false;
 				}
@@ -653,7 +654,7 @@ void ManageCombatModeAnimations() {
 			// Waiting and Received Strike Impulse
 			if(layer1.cur_anim == alist[ANIM_1H_WAIT]) {
 				player.m_aimTime = 0;
-				if(eeMousePressed1()) {
+				if(eeMousePressed1() && !vr::meleeOwnsStrikes()) {
 					changeAnimation(io, 1, alist[ANIM_1H_STRIKE_LEFT_START + player.m_strikeDirection * 3]);
 					io->isHit = false;
 				}
@@ -705,7 +706,7 @@ void ManageCombatModeAnimations() {
 			// Waiting and Receiving Strike Impulse
 			if(layer1.cur_anim == alist[ANIM_2H_WAIT]) {
 				player.m_aimTime = 0;
-				if(eeMousePressed1()) {
+				if(eeMousePressed1() && !vr::meleeOwnsStrikes()) {
 					changeAnimation(io, 1, alist[ANIM_2H_STRIKE_LEFT_START + player.m_strikeDirection * 3]);
 					io->isHit = false;
 				}

@@ -8,6 +8,86 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — An `.xrs` `@log` step misses a game event that is in `arx.log` (#43)
+
+**Symptom:** `@log GameEvent:.*magic\.stance state=on hands=true` failed with "no log line matched" while
+`status.json` showed the stance on and `arx.log` had the event.
+**Cause:** the game event log writes a `bool` field as `yes` / `no` (`GameEventFormat.h`), while `status.json`
+writes `true` / `false`.
+**Do:** match `key=yes|no` in `@log`, `eq true|false` in `@assert`.
+## 2026-10-10 — A sequence passes alone and fails in CI with a value it never set (#178)
+
+**Symptom:** in CI `vr-remap-saved` found `remapped` false and `vr-settings-flat` found `jump` = `right.b`, both passing
+with `xrs-run.ps1` alone. **Cause:** CI's game checks run every shipped `.xrs`, in alphabetical order, in **one**
+user and config directory: `vr-remap-saved` ran before the `vr-remap` it expected, and `vr-remap` left its saved layout
+(`vr-controls-index.ini`) for `vr-settings-flat`. **Do:** a sequence sets up what it needs and leaves the user
+directory as it found it (here: `vr-input default` at the start and the end; `vr-input reload` instead of a second
+start). Anything a sequence saves (cfg, layouts, saves) is shared with the next one.
+
+## 2026-10-10 — A remap through the channel records a long press nobody made (#178)
+
+**Symptom:** `vr-remap.xrs` captured `jump` as `right.b:long` after `vr-input down right.b` … `vr-input up right.b`;
+the same sequence had passed an hour earlier. **Cause:** every channel step is a round trip of about 0.6 s, so a
+`down` and an `up` in separate steps hold the control longer than the 0.5 s of a long press — the capture (and the
+control table) correctly records a long press; on a quiet machine it may just stay under. **Do:** a short press in a
+sequence is `vr-input tap` (pressed and released within one update), the second control of a short chord too; a
+`down` / `up` pair only for a press that is meant to be long (with a `@wait` well above 0.5 s).
+## 2026-10-10 — A check broken on purpose still passes: `-Rebuild` did not rebuild (#39)
+
+**Symptom:** with the charge spend commented out, `smoke-test.ps1 -Rebuild -Sequence melee-swing` passed all 92 steps,
+including "the charge is spent".
+**Cause:** `-Rebuild` (and the launch scripts' fresh-build check) compare `built-from.txt` with `HEAD` and the
+*dirty* flag only: a build of `<sha> dirty` counts as fresh for any later uncommitted change on the same commit, so
+the game ran the previous build. **Do:** after editing uncommitted code, run `.\scripts\build-windows.ps1` yourself
+before a launch (it always builds what changed); a break-on-purpose run is only valid after an explicit build.
+
+## 2026-10-10 — `player.pos + player.baseOffset()` is not the feet: an NPC placed there floats (#39)
+
+**Symptom:** the channel's new `place` put the goblin 170 units *above* the player's eye; it hung in the air and
+`setspeed 1` did not drop it.
+**Cause:** `player.pos` is the eye and y grows downwards; `baseOffset()` is `(0, -170, 0)`, so adding it goes up.
+The feet are `player.basePosition()` (`pos.y - baseHeight()`). **Do:** use `basePosition()` for the floor under the
+player; check a placed entity's `y` against the player's feet in `entities.txt` (the floor is the eye + 170).
+
+## 2026-10-10 — The sneak covered more ground than the run (#33)
+
+**Symptom:** on `mvp-new-game` a slight stick push (the stealth walk) moved the player 355 units in 1.5 s and the
+full push right after it only 201; with `@frames 40` instead the sneak covered 136-151 and the run 163-197 — the
+ratio changed from run to run.
+**Cause:** a distance measures the room and the clock, not the walk: the second walk ran into the cell's far end,
+and `@frames n` is n frames, whose length swings with the frame rate of the moment (36-90 fps in these runs).
+**Do:** compare walk speeds with `player.animSpeed` (the current animation's own units per second, what the engine
+moves the player by: run 192, stealth 135.6); use positions only for "it moved", from a known start.
+
+## 2026-10-10 — A new `status.json` key is `<absent>` though the code that writes it was just changed (#116)
+
+**Symptom:** `smoke-test.ps1 -Rebuild` ran, said nothing about building, and the sequence failed on a key
+added a minute ago: `vr.wrist.along.x (<absent>)`.
+**Cause:** the fresh-build check (D-014) compares `built-from.txt` with the commit only. A build of the
+clean `HEAD` followed by edits still counts as fresh, so `-Rebuild` does not rebuild and the old `arx.exe` runs.
+**Do:** after editing, run `.\scripts\build-windows.ps1` yourself before the launch (or commit first); it costs
+a launch from the budget otherwise.
+
+## 2026-10-10 — `@diff` of two still shots of the body is as large as a small HUD change (#116)
+
+**Symptom:** on `mvp-new-game`, looking down at the arms (`--vr-sim idle`), two shots of the same pose a few
+frames apart differ by **2.2** (left eye) — the change of the wrist bars from full to half was 2.1–2.8.
+**Cause:** the whole picture moves: the idle animation of the body and the right arm, the torch light.
+**Do:** a mean over the whole eye image cannot prove a change of a few hundred pixels; assert on the numbers
+in `status.json` and judge the captures. Measure a still pair in the same pose before trusting a threshold.
+
+## 2026-10-10 — Which grip axis is the thumb: the hand's convention moved under the wrist bars (#36, #116)
+
+**Symptom:** wrist bars built on "thumb = grip +Y" lay along the fingers instead of across the wrist; then,
+after #36 was corrected to the OpenXR spec, bars built on "thumb = grip +Z" would fill the wrong way.
+**Cause:** the full body (#36, `HandFrame` in `src/vr/ArmIK.h`) defines the hand's axes on the grip: since
+`234ea0cc2` the knuckles (wrist → fingers) lie on grip **−Y**, the thumb side on grip **−Z**, the palm normal
+on **+X** (the OpenXR grip pose). In engine axes (y down, z forward) a grip vector (x, y, z) is (x, −y, −z)
+before `PlayerArmStatus::grip` turns it into the world.
+**Do:** anything attached to the hand takes its axes from `HandFrame`'s comment, not from memory; a `--vr-sim`
+pose for "knuckles to the right, palm to the face, thumb up" is `hand left rot -90 90 0`, "palm down,
+knuckles to the right" `hand left rot 180 0 -90`. Assert the axes in `status.json` (`vr.wrist.across`).
+
 ## 2026-10-10 — In VR an item on the floor is not picked where the cursor is, or a far one is (#37)
 
 **Symptom:** with a mouse position projected from a 3D point in a VR run, `FlyingOverObject` finds nothing over
@@ -142,16 +222,6 @@ concatenation rebuilds from the animation after the wrist was set.
 the zero-length groups between it and the hand's group are made rigid with the wrist (`ArmChain::rigid`,
 `vr/VRBody.cpp`). Check a chain by its lengths in the `[vr] body:` bind line (`27.6 + 30.5` on `human_base`) and
 a hand by `vr.body.<hand>.tip` against `wrist` / `controller`, not by the picture alone.
-## 2026-10-10 — The sneak covered more ground than the run (#33)
-
-**Symptom:** on `mvp-new-game` a slight stick push (the stealth walk) moved the player 355 units in 1.5 s and the
-full push right after it only 201; with `@frames 40` instead the sneak covered 136-151 and the run 163-197 — the
-ratio changed from run to run.
-**Cause:** a distance measures the room and the clock, not the walk: the second walk ran into the cell's far end,
-and `@frames n` is n frames, whose length swings with the frame rate of the moment (36-90 fps in these runs).
-**Do:** compare walk speeds with `player.animSpeed` (the current animation's own units per second, what the engine
-moves the player by: run 192, stealth 135.6); use positions only for "it moved", from a known start.
-
 ## 2026-10-10 — `test-xrs.ps1` fails once in a while: "timed out waiting for the game to acknowledge" (#275)
 
 **Symptom:** one check of 73 fails on the CI runner (a `@shot`/`@diff` step), the rerun of the same commit passes.

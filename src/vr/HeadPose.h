@@ -93,13 +93,12 @@ float raiseHeadReference(HeadReference & reference, const HeadSample & head);
 struct HeadCamera {
 	Anglef angle;              //!< engine degrees, each wrapped to [0, 360) like the engine's angles
 	Vec3f offset = Vec3f(0.f); //!< game units from the character's eye to the head
-	bool clamped = false;      //!< the horizontal offset was longer than the lean limit and was shortened
+	Vec3f moved = Vec3f(0.f);  //!< meters, the head's movement since the reference, reference frame (engine axes)
 };
 
 //! How the head moves the camera
 struct HeadCameraParams {
 	float unitsPerMeter = UnitsPerMeter; //!< world scale (WorldScale.h)
-	float maxLeanMeters = 0.6f;  //!< interim horizontal limit until the body follows the head (#26)
 };
 
 /*!
@@ -108,11 +107,14 @@ struct HeadCameraParams {
  * The LOCAL space is turned about the vertical so that the reference heading is the body's yaw:
  * camera yaw = body yaw + head yaw - reference yaw, pitch and roll are the head's own. The offset is
  * the head's movement since the reference, turned the same way, in game units: head 20 cm lower -
- * camera 20 cm lower (D-018); a horizontal offset beyond \c maxLeanMeters is shortened to it.
+ * camera 20 cm lower (D-018). The part of the horizontal movement the body already took (real steps,
+ * #26, HeadLean.h) is the body's, not the camera's: \a anchor is taken off before the turn.
  *
  * \param bodyYaw the character's yaw in engine degrees (what the stick and the mouse turn)
+ * \param anchor the body's movement since the reference, meters, reference frame (x right, z forward)
  */
 HeadCamera headToCamera(const HeadSample & head, const HeadReference & reference, float bodyYaw,
+                        const Vec2f & anchor = Vec2f(0.f),
                         const HeadCameraParams & params = HeadCameraParams());
 
 /*!
@@ -150,7 +152,7 @@ struct HandPlacement {
  * The hand's position relative to the head is turned the way \ref headToCamera turns the head's
  * movement (the LOCAL space put on the body's yaw by the reference) and scaled to game units; its
  * orientation gets the same turn. So a hand 30 cm right of the head is 30 units right of the camera
- * whatever the lean clamp did to the camera, and a hand oriented like the head has the camera's
+ * whatever the body walked after the head (#26), and a hand oriented like the head has the camera's
  * rotation. Hands at the character's eye height look right as soon as the head does (#27).
  */
 HandPlacement handToWorld(const HandSample & hand, const HeadSample & head, const HeadReference & reference,

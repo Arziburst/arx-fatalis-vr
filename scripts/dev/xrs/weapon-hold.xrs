@@ -26,15 +26,9 @@
 @assert vr.weapon.bladeGrip.z lt -0.99
 @assert events.byName."vr.weapon.grip" ge 1
 # The hilt on the palm: the weapon's attach vertex is the model's palm attach point
-@remember palmX vr.body.right.palm.x
-@remember palmY vr.body.right.palm.y
-@remember palmZ vr.body.right.palm.z
-@assert vr.weapon.hilt.x gt {palmX-0.5}
-@assert vr.weapon.hilt.x lt {palmX+0.5}
-@assert vr.weapon.hilt.y gt {palmY-0.5}
-@assert vr.weapon.hilt.y lt {palmY+0.5}
-@assert vr.weapon.hilt.z gt {palmZ-0.5}
-@assert vr.weapon.hilt.z lt {palmZ+0.5}
+# (one status field: the palm and the hilt are taken in the same status write - a remembered palm would be
+# compared with a hilt of a later write, and the idle rig moves in between, #316)
+@assert vr.weapon.hiltToPalm lt 0.5
 # The idle rig holds the grip at identity: the handle points ahead, so the blade is level with the hilt
 @remember hiltY vr.weapon.hilt.y
 @assert vr.weapon.tip.y gt {hiltY-3}
@@ -63,9 +57,7 @@ vr-sim hand right pos 0.5 -0.45 -0.35
 @frames 10
 @assert vr.body.right.error lt 1
 @assert vr.weapon.bladeAngle lt 2
-@remember palmX2 vr.body.right.palm.x
-@assert vr.weapon.hilt.x gt {palmX2-0.5}
-@assert vr.weapon.hilt.x lt {palmX2+0.5}
+@assert vr.weapon.hiltToPalm lt 0.5
 
 # The raised sword near the face does not clip at the near plane (F-39, 0.09 m; judged on the capture)
 vr-sim head rot 0 0 0

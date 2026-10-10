@@ -1259,10 +1259,13 @@ set(VR_SOURCES
 	src/vr/EyeImage.cpp
 	src/vr/EyeProjection.cpp
 	src/vr/FramePacing.cpp
+	src/vr/HeadLean.cpp
 	src/vr/HeadPose.cpp
 	src/vr/HeadReferenceGate.cpp
+	src/vr/PhysicalCrouch.cpp
 	src/vr/HeadTracking.cpp
 	src/vr/InterfaceSize.cpp
+	src/vr/MenuPointer.cpp
 	src/vr/Locomotion.cpp
 	src/vr/MeleeSwing.cpp
 	src/vr/SimRig.cpp

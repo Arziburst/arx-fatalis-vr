@@ -8,6 +8,7 @@
 # sequence first puts the player on the room's floor by the table (TRAPS.md):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence hand-reticle -Save mvp-items
 @sim idle
+@save mvp-items
 @args --loadslot 0
 
 @until state eq GAMEPLAY 60s

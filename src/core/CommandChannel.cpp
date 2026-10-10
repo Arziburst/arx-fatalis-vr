@@ -33,6 +33,7 @@
 #include <type_traits>
 #include <vector>
 
+#include "animation/Animation.h"
 #include "cinematic/CinematicController.h"
 #include "core/Application.h"
 #include "core/ArxGame.h"
@@ -458,6 +459,16 @@ std::string buildStatus(PlatformInstant now) {
 		// The character crouches - the button, the toggle, the head (#100) or a low ceiling
 		json.value("crouched", (player.m_currentMovement & PLAYER_CROUCH) != 0);
 		json.value("jumping", player.jumpphase != NotJumping);
+		// The stealth walk in this update: the key or a slight push of the stick (#33)
+		json.value("stealth", (player.m_currentMovement & PLAYER_MOVE_STEALTH) != 0);
+		// The speed the current body animation moves the player at, units per second - what the engine walks
+		// with (ARX_PLAYER_Manage_Movement), independent of walls and the frame rate: the run vs the sneak (#33)
+		if(entities.player() && entities.player()->animlayer[0].cur_anim) {
+			const AnimLayer & layer0 = entities.player()->animlayer[0];
+			const float duration = toMsf(layer0.cur_anim->anims[layer0.altidx_cur]->anim_time);
+			const Vec3f travel = GetAnimTotalTranslate(layer0.cur_anim, layer0.altidx_cur);
+			json.value("animSpeed", duration > 0.f ? glm::length(travel) / duration * 1000.f : 0.f);
+		}
 		json.end();
 		// The first-person camera after this frame's effects: bob = how far the camera left the stable head
 		// position (view bobbing), shake = the quake amplitude applied, fov in degrees (zoom) - the numbers
@@ -785,6 +796,18 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("moveX", game.move.x);
 		json.value("moveY", game.move.y);
 		json.value("turn", game.turn);
+		json.end();
+		// The stick walk the player controls applied (#31): its forward is the look (D-008)
+		const vr::WalkStatus & walk = vr::walkStatus();
+		json.object("walk");
+		json.value("walking", walk.walking);
+		json.value("yaw", walk.yaw);
+		json.value("heading", walk.heading);
+		json.value("dirX", walk.direction.x);
+		json.value("dirZ", walk.direction.z);
+		json.value("walks", walk.walks);
+		json.value("sneak", walk.sneak);
+		json.value("paceChanges", walk.paceChanges);
 		json.end();
 		// What the turn axis did (#32): the settings, snaps so far and the total turned (degrees, right positive)
 		const vr::TurnSettings turnSettings = vr::turnSettings();

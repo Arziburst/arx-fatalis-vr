@@ -892,10 +892,9 @@ std::string buildStatus(PlatformInstant now) {
 		}
 		// Distance from the hilt to the right palm, both taken in this one status write: a check that remembers
 		// the palm and asserts the hilt later compares two frames of a moving idle rig (#316)
-		Vec3f palm(0.f);
-		Vec3f palmTip(0.f);
-		if(vr::handLandmarks(vr::Hand::Right, palm, palmTip)) {
-			json.value("hiltToPalm", glm::distance(weapon.hilt, palm));
+		vr::HandLandmarks palm;
+		if(vr::handLandmarks(vr::Hand::Right, palm)) {
+			json.value("hiltToPalm", glm::distance(weapon.hilt, palm.palm));
 		}
 		json.value("bladeAngle", weapon.bladeAngle);
 		json.value("armAnimSuppressed", weapon.armAnimSuppressed);

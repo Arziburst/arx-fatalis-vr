@@ -930,6 +930,7 @@ void takeShot(const std::string & name, const XrCompositionLayerProjection & pro
 			placement.height = quadLayer->size.height;
 			shot.quadShown = true;
 			shot.quad = pixelStats(quad, QuadRegion, background);
+			shot.quadCovered = coveredPixels(quad);
 			if(placement.blended && alphaCoverage(quad, QuadRegion) < 0.1f) {
 				// Nothing drawn in the middle of a blended quad: the world shows through, not a black frame
 				shot.quad.verdict = ImageVerdict::Transparent;
@@ -979,6 +980,10 @@ void takeShot(const std::string & name, const XrCompositionLayerProjection & pro
 
 		composed[eye] = readImage(it->second);
 		out.layer = pixelStats(composed[eye], region, background);
+		if(s.sim.rig.saveLayers) {
+			// What the game drew into the eye itself, before the quad goes on top (#72)
+			saveImage(composed[eye], name + "-" + EyeNames[eye] + "-layer");
+		}
 
 		// The eye as submitted, in the room, and as seen from the quad's space
 		Vec3f position = layerPosition + layerOrientation * toVec(view.pose.position);

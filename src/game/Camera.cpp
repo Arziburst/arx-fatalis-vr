@@ -103,6 +103,13 @@ static void finishPreparedCamera(const Rect & viewport, const Vec2f & projection
 	Vec2f defov = Vec2f(g_preparedCamera.m_viewToClip[0][0], -g_preparedCamera.m_viewToClip[1][1]);
 	g_preparedCamera.m_screenToView = 2.f / (Vec2f(viewport.size()) * defov);
 
+	g_preparedCamera.m_pixelsPerUnit = projectionPixelsPerUnit(g_preparedCamera.m_viewToClip, Vec2f(viewport.size()));
+
+}
+
+float projectionPixelsPerUnit(const glm::mat4x4 & viewToClip, const Vec2f & viewportSize) {
+	// The projection's y scale is clip y per view unit at depth 1; the viewport maps clip [-1, 1] to its height
+	return glm::abs(viewToClip[1][1]) * viewportSize.y / 2.f;
 }
 
 glm::mat4x4 cameraWorldToView(const Camera & cam) {

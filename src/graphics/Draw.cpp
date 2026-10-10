@@ -78,11 +78,14 @@ static bool EERIECreateSprite(TexturedQuad & sprite, const Vec3f & in, float siz
 		return false;
 	}
 	
-	float t = float(std::min(g_size.width(), g_size.height())) / 480.f;
+	// The scale of the view being drawn, from its projection: min(width, height) / 480 * focal for the
+	// engine's own camera, the eye's own scale in a portrait eye image (#72)
+	float t = g_preparedCamera.m_pixelsPerUnit;
 	if(siz < 0) {
-		t *= -siz;
+		// A fixed share of the image, whatever the distance
+		t *= -siz / g_camera->focal;
 	} else {
-		t *= siz * (1.f / out.w * 3000.f - 1.f) * g_camera->focal * (350.f / 310 * 0.001f);
+		t *= siz * (1.f / out.w * 3000.f - 1.f) * (350.f / 310 * 0.001f);
 		if(t <= 0.f) {
 			t = 0.00000001f;
 		}

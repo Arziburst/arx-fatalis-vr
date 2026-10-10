@@ -47,19 +47,19 @@ struct EventInfo {
 };
 
 const EventInfo Events[EventCount] = {
-	{ "interact_left", "Click / drag (left hand)" },
-	{ "interact_right", "Click / drag (right hand)" },
-	{ "use_left", "Use item (left hand)" },
-	{ "use_right", "Use item (right hand)" },
-	{ "stash_left", "Straight into the inventory (left hand)" },
-	{ "stash_right", "Straight into the inventory (right hand)" },
+	{ "interact_left", "Click / drag, left" },
+	{ "interact_right", "Click / drag, right" },
+	{ "use_left", "Use item, left" },
+	{ "use_right", "Use item, right" },
+	{ "stash_left", "Take to inventory, left" },
+	{ "stash_right", "Take to inventory, right" },
 	{ "jump", "Jump" },
 	{ "crouch_toggle", "Crouch (toggle)" },
 	{ "inventory", "Inventory" },
 	{ "book", "Character book" },
 	{ "menu", "Game menu" },
 	{ "recenter", "Recenter" },
-	{ "magic_mode", "Magic: draw runes" },
+	{ "magic_mode", "Draw runes" },
 };
 
 const std::string_view LongSuffix = ":long";
@@ -260,6 +260,63 @@ ControlLayout defaultLayout(ControllerType type) {
 	return layout;
 }
 
+std::string controlLabel(Control control, ControllerType type) {
+
+	if(control >= ControlCount) {
+		return "---";
+	}
+
+	const Hand hand = controlHand(control);
+	std::string result = hand == Hand::Left ? "Left " : "Right ";
+	const bool leftTouch = type == ControllerType::Touch && hand == Hand::Left;
+	switch(controlKind(control)) {
+		case ControlKind::Trigger: result += "trigger"; break;
+		case ControlKind::Grip: result += "grip"; break;
+		case ControlKind::A: result += leftTouch ? "X" : "A"; break;
+		case ControlKind::B: result += leftTouch ? "Y" : "B"; break;
+		case ControlKind::StickClick: result += "stick click"; break;
+		case ControlKind::StickUp: result += "stick up"; break;
+		case ControlKind::StickDown: result += "stick down"; break;
+		case ControlKind::StickLeft: result += "stick left"; break;
+		case ControlKind::StickRight: result += "stick right"; break;
+		case ControlKind::Trackpad: result += "trackpad"; break;
+		case ControlKind::Menu: result += "menu"; break;
+		case ControlKind::Count: arx_unreachable();
+	}
+
+	return result;
+}
+
+std::string bindingLabel(const Binding & binding, ControllerType type) {
+
+	if(!binding.isBound()) {
+		return "---";
+	}
+
+	std::string result = controlLabel(binding.first, type);
+	if(binding.isChord()) {
+		result += " + " + controlLabel(binding.second, type);
+	}
+	if(binding.longPress) {
+		result += " (hold)";
+	}
+
+	return result;
+}
+
+std::string formatLayoutChanges(const ControlLayout & layout, const ControlLayout & base) {
+	std::string result;
+	for(size_t i = 0; i < EventCount; i++) {
+		if(layout.bindings[i] != base.bindings[i]) {
+			result += eventName(Event(i));
+			result += " = ";
+			result += formatBinding(layout.bindings[i]);
+			result += '\n';
+		}
+	}
+	return result;
+}
+
 std::string formatLayout(const ControlLayout & layout) {
 	std::string result;
 	for(size_t i = 0; i < EventCount; i++) {
@@ -310,6 +367,15 @@ bool parseLayout(std::string_view text, ControlLayout & layout, std::string * er
 	}
 
 	layout = result;
+	return true;
+}
+
+bool readSavedLayout(std::string_view text, ControllerType type, ControlLayout & layout, std::string * error) {
+	layout = defaultLayout(type);
+	if(!parseLayout(text, layout, error)) {
+		layout = defaultLayout(type);
+		return false;
+	}
 	return true;
 }
 

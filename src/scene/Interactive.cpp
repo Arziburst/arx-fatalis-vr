@@ -47,6 +47,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "scene/Interactive.h"
 
 #include "vr/VRBody.h"
+#include "vr/VRReticle.h"
 
 #include <cstdlib>
 #include <iomanip>
@@ -1653,6 +1654,14 @@ Entity * GetFirstInterAtPos(const Vec2s & pos) {
 		fMaxDist = 850;
 	}
 	
+	// VR (#37): the world is picked by the hands' rays in 3D; a world reticle's mouse position stands for
+	// what its ray hit, and a position on the 2D interface never picks the world
+	Entity * reticleEntity = nullptr;
+	const vr::ReticlePick reticle = vr::reticlePickAt(pos, reticleEntity);
+	if(reticle == vr::ReticlePick::Found) {
+		return reticleEntity;
+	}
+	
 	for(Entity & entity : entities) {
 		
 		if(entity.ioflags & (IO_CAMERA | IO_MARKER) || !(entity.gameFlags & GFLAG_INTERACTIVITY)) {
@@ -1664,6 +1673,9 @@ Entity * GetFirstInterAtPos(const Vec2s & pos) {
 		}
 		
 		bool bPlayerEquiped = IsEquipedByPlayer(&entity);
+		if(reticle == vr::ReticlePick::Blocked && !(bPlayerEquiped && (player.Interface & INTER_PLAYERBOOK))) {
+			continue;
+		}
 		if(!((bPlayerEquiped && (player.Interface & INTER_PLAYERBOOK))
 		   || (entity.gameFlags & GFLAG_ISINTREATZONE))) {
 			continue;

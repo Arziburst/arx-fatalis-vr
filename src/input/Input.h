@@ -195,8 +195,13 @@ public:
 	 * floating panel, \c std::nullopt for the real mouse. Applied by \ref update in the absolute mouse
 	 * mode (the cursor modes), where it wins over the real mouse and counts as inside the window; the
 	 * system cursor is not moved.
+	 * \param inRelativeMode applied in the relative mode (the exploration mode) too: the hand reticles of
+	 *                       #37, which are the crosshair there
 	 */
-	void setVirtualMousePosition(std::optional<Vec2s> position) { m_virtualMousePosition = position; }
+	void setVirtualMousePosition(std::optional<Vec2s> position, bool inRelativeMode = false) {
+		m_virtualMousePosition = position;
+		m_virtualMouseInRelativeMode = inRelativeMode;
+	}
 	
 private:
 	
@@ -242,6 +247,7 @@ private:
 	std::bitset<NUM_ACTION_KEY> m_virtualActions;
 	std::bitset<NUM_ACTION_KEY> m_oldVirtualActions;
 	std::optional<Vec2s> m_virtualMousePosition;
+	bool m_virtualMouseInRelativeMode = false;
 	
 };
 

@@ -195,7 +195,7 @@ in the PR body (a line carrying the marker `d-new-literal` is left alone — for
 
 **Headset tests in batches** — the owner tests several PRs in one sitting, run by the coordinator
 (`test-pr.ps1 <pr> -Saves mvp-new-game -StartSteamVR`, one question per PR); the procedure, accept and
-reject: [COORDINATOR.md §6](COORDINATOR.md#6-headset-tests).
+reject: [COORDINATOR.md §A6](COORDINATOR.md#a6-owner-tests-acceptance-on-the-real-target).
 
 ### The safety hook (#185, D-021)
 

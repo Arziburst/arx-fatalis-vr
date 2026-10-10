@@ -50,6 +50,194 @@ spells (Magic Missile = AAM + TAAR: several strokes in one stance) and the origi
 `magic.stroke` game events), `AddFlareAt` in `MagicFlare.h`, the `rune-trail.xrs` sequence. What the
 engine recognises still comes from the cursor until #44 feeds the stroke into the recogniser. The look
 (size, tip distance, depth test) is tuned after the owner's headset test.
+## D-039: Remapping in the VR settings — captured on release, conflicts shown, saved as changes per controller type
+
+- **Date:** 2026-10-10
+- **Status:** Accepted
+- **Decided by:** worker of #178 (technical internals, D-017), within D-020 and D-029; the split of #178 and the
+  "VR" entry after "Input" in Options approved by the coordinator; research rows F-171, F-172, F-194
+
+### Decision
+- **The VR page** is an entry "VR" after "Input" in the game's Options list (the pause menu is the same menu, so both
+  reach it), rows like the game's Customize Controls pages: the event left, its binding right; a click captures.
+- **A capture ends when the player lets go** (`src/vr/BindingCapture.h`): released → single; held ≥ 0.5 s (the
+  control table's own long-press time) → long press; a second control of the same hand while the first is held →
+  chord (held together ≥ 0.5 s → long chord). Ending on release, not at 0.5 s, keeps "close the grip, then pull the
+  trigger" a chord however slowly it is done; releases are debounced like the table's (150 ms, the Index grip).
+  Controls held when the capture starts (the trigger that clicked) are ignored until released; nothing pressed for
+  8 s cancels; while capturing, the controls reach nothing else in the game.
+- **Not remappable:** the left stick's directions (walking, D-008) and the right stick's left / right (turning,
+  #32) — refused with the reason. The right stick's down / up and every button are.
+- **Conflicts are shown, not refused** (D-020: "conflicts are shown"): two events with the same binding both fire;
+  both rows turn red and the page names them. Unlike OpenMW VR, which refuses the rebind (F-171): refusing would
+  make swapping two buttons impossible without a free button in between. The table's own rules already let a
+  control lead a chord, have a long press and a single binding at once, so only identical bindings conflict.
+- **Saved per controller type** as `vr-controls-<type>.ini` next to `cfg.ini`, holding **only the events that
+  differ from the default** (`formatLayoutChanges`): a later change of #35's defaults reaches every event the
+  player did not touch. An unknown controller uses (and saves) the Index layout, as its default already is the
+  Index's. A broken file is ignored with a warning (the default keeps the game playable); "reset to default"
+  removes it. The test channel's `bind` / `reset` stay unsaved.
+- **Way out of a bad layout (F-171):** the page's "reset to default" works with the mouse and keyboard too, and
+  remapping never unbinds an event — the game menu and the clicks can be moved, never removed.
+
+### Why
+D-020 asks for single / chord / long press, shown conflicts and layouts per controller type; ending the capture on
+release is the one rule that makes all three distinguishable without a mode switch on the page.
+
+### Rules out
+A mode toggle on the page for "chord" / "long press", refusing conflicting binds, saving the whole layout (it would
+freeze today's defaults into every player's file), remapping the walk and turn sticks before #261 (left-handed mode
+swaps them as a whole).
+## D-038: Physical melee — the swing is the strike, the trigger charges it with the game's own charge
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (the owner's design; the numbers are MVP defaults the owner tunes in the headset)
+- **Decided by:** the owner (after a headset fight with #75's sword, relayed by the coordinator on #39); the
+  mechanism by the worker of #39; builds on D-009, D-016, D-019, D-032 (the body) and D-033 (the weapon in the IK hand, #75)
+
+### Decision
+- **A physical swing hits; the trigger does not strike.** While the IK hand holds a melee weapon, a swing of the
+  right controller is the strike. During the swing the weapon is placed where the hand holds it this frame and
+  the engine's own strike check runs on it every frame (`ARX_EQUIPMENT_Strike_Check`: the weapon's hit
+  spheres, the to-hit roll, damage, armour, knockback, blood, sounds, durability — F-58: the engine keeps the
+  rules). The engine's own strike (combat mode: press, charge, release — in VR it hit without any animation)
+  no longer starts from the attack button while the IK hand holds the weapon.
+- **Plain swing = weak; trigger held = the game's charge; a charged hit spends it.** The right trigger held
+  charges with the engine's own numbers — the time held against the player's `Full_AimTime`, the ratio 0.1..1 of
+  `StrikeAimtime`, shown on the HUD's hit strength gauge. A hit's aim ratio (the engine's damage = attack ×
+  ratio) is the charge (never below a plain swing's) or **0.25** without one, times a **speed factor**
+  0.5..1 (F-63: 2.5 → 6 m/s). The first contact of a charged swing spends the charge; it stays empty until the
+  trigger is released and pressed again. A charged swing that touches nothing keeps the charge (the owner's
+  words: "after a charged hit"); letting go of the trigger before a swing drops it.
+- **The swing detector** (`vr/MeleeSwing.h`, pure, host-tested): the speed of a point 0.125 m along the blade
+  (F-61's lever: wrist flicks do not swing), relative to the head (stepping or leaning with a still arm is no
+  swing; the stick's walk and turn never move the controller in the room), from the median of three positions
+  (F-59); a swing starts at **2.5 m/s** and ends below 1.5 m/s or after 1 s; a thrust of 0.2 m along the blade
+  within 0.25 s at 2 m/s is a stab (F-61); a time step outside 4–100 ms or a speed above 20 m/s starts it over.
+  One hit per target per swing and a **0.25 s** per-target cooldown (F-62, PLANCK's per-target 0.25 s of F-74).
+- **Gates** (F-66): a weapon in the IK hand, the right controller tracked, no menu / inventory / book, nothing
+  dragged, the controls not blocked, alive. A swing start does what the engine's strike start does: the player
+  becomes visible, the `strike` script event, the strike speech of a nearly full charge.
+- **The numbers are cfg.ini keys:** `vr_melee_swing_speed` (2.5), `vr_melee_full_speed` (6), `vr_melee_weak_aim`
+  (0.25), `vr_melee_target_cooldown` (0.25).
+
+### Why
+The owner fought an orc with #75's sword: swinging did nothing, and the trigger aimed at the enemy struck with
+no animation. The owner asked for swings that hit, spam-able but weak, and the game's charge for the strong ones — so
+the charge mechanic and the damage rules stay Arx's and only the trigger's release is replaced by the swing.
+2.5 m/s sits between F-178's 1 m/s (the game's roll filters) and PLANCK's 4.5–5 m/s (F-195), measured at a
+short lever; 0.25 s instead of "the weapon's attack duration" (F-62) because the owner wants plain swings fast
+and spam-able. Contact through the engine's check (not a ray or a cone) keeps hits where the blade really is.
+
+### Rules out
+The engine's click attack while a weapon is in the VR hand; damage from swing speed alone without the charge
+(VHVR's curve is only the speed factor here); hits from the trigger, from wrist flicks, or from moving the body.
+
+### Consequences
+- `vr.melee` in status.json (detector, charge, hits, the last hit's aim and damage, the thresholds); game events
+  `melee.swing` (one per swing: kind, result, peak, factor, charge, aim, hits), `melee.charge` (start, full,
+  spent, released), `melee.nearMiss` (F-60: motions that peaked within 20 % below the swing speed — the census to
+  tune the swing speed on the owner's arm), `melee.state`; the engine's `melee.hit` per hit.
+- Haptics come from #42 (PR #264) inside the strike check; bare hands, bows, shields, the left hand, a swish
+  sound by strength (F-178) and the per-target outline (F-62) are later tasks.
+- `weapon-hold.xrs` no longer sees a strike clip in combat mode; `melee-swing.xrs` proves the design on
+  `mvp-goblin-fight`.
+
+---
+
+## D-037: The wrist bars — size, order, fade, and when they replace the orbs
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (refines D-029's "two vertical bars, red and blue, on the inner side of the left wrist")
+- **Decided by:** worker of #116, proposed to and approved by the coordinator as the MVP default (D-017)
+
+### Decision
+- **Geometry:** two bars, each **1 cm wide × 5 cm long**, **0.6 cm apart**, flat on the **palm side** of the
+  full body's left wrist (#36): 3 cm out from the wrist joint, 4 cm back from it towards the elbow. Each bar
+  runs **across the wrist** and fills towards the thumb, so both stand upright when the wrist is raised to the
+  face like a watch. **Health (red) towards the elbow, mana (blue) towards the hand** — red left, blue right
+  for a left forearm held across the face, as on the flat HUD. The empty part is dark and a little see-through.
+- **Placement source:** the model's posed elbow and wrist (where the player sees the arm) and the controller's
+  grip axes as #36 gives them to the model's hand (palm normal = grip +X, thumb side = grip -Z, knuckles = -Y;
+  `HandFrame` in `src/vr/ArmIK.h`), not the raw controller.
+- **Fade:** fully visible while the inner wrist faces the eye within **50°**, fading linearly to invisible at
+  **80°**; drawn in the world, against the scene's depth (walls and the other hand cover them), without fog.
+- **Who shows health and mana:** the bars while the **left arm is posed from a controller** (a located one, or
+  the test channel's `handpose`); the HUD's orbs then are neither drawn nor clickable. No posed left arm
+  (flat mode, the left controller off, a model without arm chains) → the orbs as before. Everything else of
+  the HUD stays on the head-locked quad.
+- Sizes and angles are named constants (`WristVitalsParams` in `src/vr/WristVitals.h`), not settings.
+
+### Why
+D-029 fixed the place and the colours; the details were proposed by the worker and approved by the
+coordinator for the MVP. Thin bars across the wrist read like a watch face; keeping the flat HUD's left/right
+order means nothing to relearn; the orbs staying whenever the bars cannot be shown means health and mana are
+never invisible.
+
+### Consequences
+`status.json` → `vr.wrist` (`shown`, `hidden`, `health`, `mana`, `facingDeg`, `alpha`, `drawnViews`,
+`center`); game event `vr.wrist state=wrist|orbs reason=…`. Left-handed mode (#178) and a body-zone registry
+(F-198) may move or extend this later.
+
+---
+
+## D-036: The hand reticles pick the world in 3D; one mouse arbiter for the panel and the world
+
+- **Date:** 2026-10-10
+- **Status:** Accepted
+- **Decided by:** worker of #37 (technical, within D-016, D-019, D-029; plan approved by the coordinator)
+
+### Decision
+- **The world is picked by each hand's hidden ray in 3D**, not by the engine's 2D pick: the aim pose, rigid
+  with the head camera like the body's hands (#36, F-185: the controller where it is, not the posed hand),
+  is cast against the level (`raycastScene`, transparent polygons included — plank floors and gratings stop
+  it, water and non-colliding ones do not) and the entities' faces; the nearest interactive entity within the
+  engine's reach (350 units from the player, 850 with telekinesis) is the hand's hover, with the hysteresis of
+  F-57 (2 frames in, 150 ms out). Reason: the engine's pick is a 2D test along rays through the eye, and a
+  hand's ray is another ray (before #72 the screen boxes were partly the last eye's too, TRAPS.md).
+- **The engine still decides everything else.** The owning hand's hit becomes the engine's mouse position:
+  its projection with the head camera moved **16384 px right of the interface** (the "world band"), where no
+  2D widget is — so the inventory drawn at the bottom of the screen never answers for an item seen there,
+  distances between such positions stay the projection's (the 16 px click dead zone, the engine's 5 px drag
+  threshold), and `GetFirstInterAtPos` asks the reticle module what a band position stands for (a short
+  history of the positions given to the engine, and each hand's press). While the reticles are on, an
+  interface position never picks the world. Highlight, click, use, drag, stash and drop are the engine's own.
+- **One arbiter for the panel and the world:** #34's menu pointer takes world targets too (`PointerRay.onWorld`):
+  the panel wins where both are hit; the hand that pressed last owns the mouse until its trigger is up; while
+  idle, a hand whose reticle moved onto something new, or whose use button fired, takes it (D-019: the name of
+  the hand that moved last); a press on no target is muted.
+- **A drag puts the item where the ring is, along the line from the head:** the engine steps the item along a
+  ray until it collides; from the hand it would collide at once whenever the hand is in or behind a table edge
+  or a wall, the head is always in free space. The engine's 300-unit limit for putting down stays.
+- **The engine's modes stay:** the exploration mode (mouse look) is kept — leaving it would open the inventory
+  — and the hand's position is given to the engine in the relative mouse mode too; the exploration mode's
+  crosshair is the owning hand. The cursor-mode edge turning is off while a VR session renders.
+- **The rings** (D-029, numbers approved by the coordinator for the owner): a ring with a dot, white, 1.5°
+  wide at any distance, alpha 0.45, **1.0 over an item** (`IO_ITEM`) in reach; a compositor quad layer per
+  hand on the first hit, facing the eyes, on top of everything. No ring for a ray on the panel (the panel has
+  the engine's cursor and #34's beam). The engine's own cursor is not drawn while the mouse is in the world.
+- **Off** (the game's own clicks, as before): outside a session, in menus other than the inventory and
+  containers, cinematics, blocked controls, a camera that is not first person, the book, a note, magic, and
+  **combat mode** — the weapon drawn keeps the engine's attack on the trigger until the follow-up of #37
+  (after #75) changes it.
+
+### Why
+D-016 asks for both hands as the mouse with the engine's own logic; the engine's pick cannot be fed from a
+3D hand in stereo, everything after the pick can. One arbiter avoids two hands and two pointers fighting over
+one engine mouse (F-175: one mapping from hit to pixel for highlight and click; F-204: one owner per press).
+
+### Rules out
+Grab by reach (F-57 before D-016); a visible ray in the world (D-010); the engine's screen-space pick in VR;
+leaving the exploration mode to get an absolute mouse.
+
+### Consequences
+`vr.reticle` in `status.json`, `vr-point <hand> entity|at`, `watch` (TESTING.md); `hand-reticle.xrs` and
+`HandReticleTest`; `menu-pointer.xrs` points the hands behind the head where it needs "no target". #38 uses
+the same reticles for doors, levers, chests and bodies; the follow-up task makes them work with the weapon
+drawn; #271 draws the quad layers into the desktop mirror.
+
+---
+
 ## D-035: The eyes are multisampled in a buffer of ours, resolved into single-sample swapchains; 4x by default
 
 - **Date:** 2026-10-10
@@ -854,7 +1042,7 @@ before #37 / #38.
 
 ### Why
 Half of Fable's weekly limit went in the first hours with Fable on every engine task (D-013); most of
-those tasks did not need it. The playbook table: [COORDINATOR.md §5](COORDINATOR.md#5-models-and-effort-d-015-d-027).
+those tasks did not need it. The playbook table: [COORDINATOR.md §B5](COORDINATOR.md#b5-models-d-015-d-027).
 
 ---
 

@@ -24,6 +24,7 @@
 #include <string>
 #include <string_view>
 
+#include "vr/BindingCapture.h"
 #include "math/Types.h"
 #include "vr/Locomotion.h"
 #include "vr/VRControls.h"
@@ -36,7 +37,7 @@
  * Every frame the physical controls are read from OpenXR (\ref readControllers) and the game's
  * control table turns them into gameplay events (\ref ControlResolver). The layout follows the
  * controllers: when the interaction profile changes, the default layout for that controller type
- * is applied (saved layouts per type come with the settings screen, #178).
+ * is applied (or the layout the player saved for that type in the VR settings, #178).
  *
  * The events then become what the engine sees (\ref GameInputMapper, #74): its actions, the mouse's
  * buttons and the Escape key, OR-ed with the keyboard and the mouse; the analog axes are kept for
@@ -80,21 +81,6 @@ ControllerType controllerType();
 //! The controllers' state of the last update: sticks and analog values
 const ControllerInput & controllerInput();
 
-//! The menu pointer (#34) as status.json reports it
-struct PointerStatus {
-	bool shown = false;          //!< the floating panel is shown: the pointer is on
-	bool active = false;         //!< the owning hand's ray is on the panel: the cursor follows it
-	const char * owner = "right"; //!< the hand that owns the cursor
-	Vec2f cursor = Vec2f(0.f);   //!< the mouse it gives, the 2D interface's pixels
-	bool beam = false;           //!< the beam was in the last submitted frame
-	std::array<bool, HandCount> onPanel = { }; //!< each hand's ray hits the panel
-	u64 clicks = 0;              //!< trigger presses on the panel
-	u64 offPanelPresses = 0;     //!< presses off it, kept from the engine
-	u64 ownerChanges = 0;
-};
-
-PointerStatus pointerStatus();
-
 //! The turn settings of cfg.ini (\c vr_smooth_turn, \c vr_snap_turn_angle, \c vr_snap_turn_repeat,
 //! \c vr_smooth_turn_speed - #32)
 TurnSettings turnSettings();
@@ -110,11 +96,69 @@ float updateTurn(float seconds, bool allowed);
 
 //! Snaps and the total turned so far - for status.json
 const TurnController & turnState();
+//! The menu pointer (#34) as status.json reports it
+struct PointerStatus {
+	bool shown = false;          //!< the floating panel is shown: the pointer is on
+	bool active = false;         //!< the owning hand's ray is on the panel: the cursor follows it
+	const char * owner = "right"; //!< the hand that owns the cursor
+	Vec2f cursor = Vec2f(0.f);   //!< the mouse it gives, the 2D interface's pixels
+	bool beam = false;           //!< the beam was in the last submitted frame
+	std::array<bool, HandCount> onPanel = { }; //!< each hand's ray hits the panel
+	std::array<bool, HandCount> onWorld = { }; //!< each hand's reticle is a world target (#37)
+	u64 clicks = 0;              //!< trigger presses on the panel
+	u64 worldClicks = 0;         //!< trigger presses with the reticle in the world (#37)
+	u64 offPanelPresses = 0;     //!< presses off it, kept from the engine
+	u64 ownerChanges = 0;
+};
+
+PointerStatus pointerStatus();
 
 //! The repeats of the last snap push (0: a single snap) and their mean interval in seconds of the clock, from
 //! the push's first snap to its last repeat (0 without a repeat) - for status.json (#285)
 u64 snapPushRepeats();
 float snapRepeatInterval();
+
+/*!
+ * The controller type a remapped layout is saved for: an unknown controller uses the Index layout
+ * (\ref defaultLayout), so it also uses the Index's saved one
+ */
+ControllerType layoutType(ControllerType type);
+
+/*!
+ * The file a remapped layout of these controllers is saved in (#178): \c vr-controls-<type>.ini in
+ * the config directory, next to cfg.ini - only the events that differ from the default (\ref formatLayoutChanges)
+ */
+std::string layoutFileName(ControllerType type);
+
+//! Whether the current controllers have a saved, remapped layout
+bool layoutRemapped();
+
+/*!
+ * The player's remapping in the VR settings (#178): bind \a event, apply it at once and save the
+ * layout for the current controllers
+ */
+void setPlayerBinding(Event event, const Binding & binding);
+
+//! The VR settings' "reset to default": #35's layout for the current controllers, the saved file removed
+void restoreDefaultLayout();
+
+/*!
+ * Start capturing what the player presses for \a event (\ref BindingCapture): the controls then do
+ * nothing else until the capture ends, and its result is bound with \ref setPlayerBinding.
+ * In flat mode only the test channel's controls (\c vr-input \c down) can answer it.
+ */
+void startCapture(Event event);
+
+void cancelCapture();
+
+//! The capture of the VR settings page: its state, what is held so far, the last refusal
+const BindingCapture & capture();
+
+//! The event being captured (or captured last)
+Event captureEvent();
+
+//! How many captures ended with a binding since the start
+u32 captureCount();
 
 /*!
  * \brief The test channel's \c vr-input command
@@ -123,7 +167,10 @@ float snapRepeatInterval();
  * \c stick \c left|right \c <x> \c <y> (e.g. \c stick \c left \c 0 \c 1) - hold a stick deflected
  * (the analog value only; its direction controls are \c down / \c up);
  * \c bind \c <event> \c <binding> (e.g. \c bind \c jump \c left.grip+left.a) - remap one event;
- * \c reset - the default layout for the current controllers;
+ * \c reset - the default layout for the current controllers, not saved;
+ * \c capture \c <event> - what the VR settings page does when the player selects the event
+ * (\ref startCapture); \c cancel - end the capture; \c default - the page's "reset to default"
+ * (\ref restoreDefaultLayout); \c reload - read the saved layout again, as at a start;
  * \c turn \c snap|smooth, \c turn \c angle \c <degrees>, \c turn \c speed \c <degrees per second>,
  * \c turn \c repeat \c <seconds> -
  * the turn settings, as cfg.ini would set them (#32).

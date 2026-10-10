@@ -45,6 +45,7 @@
 #include "core/Version.h"
 #include "game/Camera.h"
 #include "game/EntityManager.h"
+#include "game/Inventory.h"
 #include "game/NPC.h"
 #include "game/Player.h"
 #include "game/Spells.h"
@@ -56,6 +57,7 @@
 #include "gui/Console.h"
 #include "gui/Dragging.h"
 #include "gui/Interface.h"
+#include "gui/MainMenu.h"
 #include "gui/Menu.h"
 #include "gui/hud/PlayerInventory.h"
 #include "input/Input.h"
@@ -77,11 +79,14 @@
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
+#include "vr/VRMelee.h"
+#include "vr/VRReticle.h"
 #include "vr/VRRunes.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 #include "vr/VRWeapon.h"
 #include "vr/WorldScale.h"
+#include "vr/WristHud.h"
 #include "window/RenderWindow.h"
 
 extern bool START_NEW_QUEST;
@@ -103,6 +108,27 @@ const char * menuModeName(MenuMode mode) {
 		case Mode_CharacterCreation: return "charactercreation";
 	}
 	return "unknown";
+}
+
+//! The main menu's pages a test can open and read back (#178)
+const struct { MENUSTATE page; const char * name; } MenuPages[] = {
+	{ Page_None, "none" },
+	{ Page_Options, "options" },
+	{ Page_OptionsInput, "input" },
+	{ Page_OptionsVR, "vr" },
+};
+
+const char * menuPageName(MENUSTATE page) {
+	for(const auto & entry : MenuPages) {
+		if(entry.page == page) {
+			return entry.name;
+		}
+	}
+	return "other";
+}
+
+MENUSTATE currentMenuPage() {
+	return (g_mainMenu && g_mainMenu->m_window) ? g_mainMenu->m_window->currentPageId() : Page_None;
 }
 
 //! Counts logged errors and warnings so a test can assert on numbers without parsing the log
@@ -288,6 +314,9 @@ struct State {
 		Vec2f pixel = Vec2f(0.f);    //!< in the 2D interface's pixels
 	} pointTarget;
 
+	//! watch: the entity whose place status.json reports (#37), empty for none
+	std::string watch;
+
 };
 
 State g;
@@ -462,6 +491,7 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("warnings", g.counter ? g.counter->warnings.load() : 0u);
 
 	json.value("menuMode", menuModeName(ARXmenu.mode()));
+	json.value("menuPage", ARXmenu.mode() == Mode_MainMenu ? menuPageName(currentMenuPage()) : "none");
 	json.value("area", g_currentArea ? u32(g_currentArea) : 0u);
 	json.value("paused", g_gameTime.isPaused() != 0);
 	json.value("cinematic", isInCinematic());
@@ -589,6 +619,24 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("targetY", g.pointTarget.pixel.y);
 	json.end();
 
+	// One entity followed by the watch command (#37): where it is and whether it is in an inventory
+	{
+		Entity * watched = g.watch.empty() ? nullptr : entities.getById(g.watch);
+		json.object("watch");
+		json.value("id", g.watch.empty() ? std::string("none") : g.watch);
+		json.value("found", watched != nullptr);
+		if(watched) {
+			json.value("show", int(watched->show));
+			json.value("inScene", watched->show == SHOW_FLAG_IN_SCENE);
+			json.value("inInventory", bool(locateInInventories(watched)));
+			json.value("dragged", watched == g_draggedEntity);
+			json.value("x", watched->pos.x);
+			json.value("y", watched->pos.y);
+			json.value("z", watched->pos.z);
+		}
+		json.end();
+	}
+
 	if(mainApp && mainApp->getWindow()) {
 		const RenderWindow & window = *mainApp->getWindow();
 		json.object("window");
@@ -689,6 +737,43 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("clicks", pointer.clicks);
 		json.value("offPanelPresses", pointer.offPanelPresses);
 		json.value("ownerChanges", pointer.ownerChanges);
+		json.value("leftOnWorld", pointer.onWorld[0]);
+		json.value("rightOnWorld", pointer.onWorld[1]);
+		json.value("worldClicks", pointer.worldClicks);
+		json.end();
+	}
+	// The hand reticles in the world (#37): each hand's hidden ray, what it hits and hovers, the ring
+	{
+		const vr::ReticleStatus & reticle = vr::reticleStatus();
+		json.object("reticle");
+		json.value("on", reticle.on);
+		json.value("off", reticle.off);
+		json.value("cursor", reticle.cursor);
+		json.value("cursorEntity", reticle.cursorEntity);
+		json.value("presses", reticle.presses);
+		json.value("hoverChanges", reticle.hoverChanges);
+		json.value("picks", reticle.picks);
+		json.value("blocked", reticle.blocked);
+		const char * const names[] = { "left", "right" };
+		for(size_t hand = 0; hand < reticle.hands.size(); hand++) {
+			const vr::ReticleHandStatus & h = reticle.hands[hand];
+			json.object(names[hand]);
+			json.value("aimed", h.aimed);
+			json.value("hit", h.hit);
+			json.value("onWorld", h.onWorld);
+			json.value("ring", h.ring);
+			json.value("shown", h.shown);
+			json.value("bright", h.bright);
+			json.value("under", h.under);
+			json.value("entity", h.entity);
+			json.value("distance", h.distance);
+			json.value("pixelX", int(h.pixel.x));
+			json.value("pixelY", int(h.pixel.y));
+			writeVec(json, "origin", h.origin);
+			writeVec(json, "direction", h.direction);
+			writeVec(json, "point", h.point);
+			json.end();
+		}
 		json.end();
 	}
 	json.value("runtime", vr::runtimeName());
@@ -880,6 +965,83 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("combatMode", (player.Interface & INTER_COMBATMODE) != 0);
 		json.end();
 	}
+	// Physical melee (#39): the swing detector, the charge, the hits
+	{
+		const vr::MeleeStatus & melee = vr::meleeStatus();
+		json.object("melee");
+		json.value("active", melee.active);
+		json.value("refused", melee.refused);
+		json.value("swinging", melee.swinging);
+		json.value("kind", melee.kind);
+		json.value("speed", melee.speed);
+		json.value("peak", melee.peak);
+		json.value("factor", melee.factor);
+		json.value("swings", melee.swings);
+		json.value("gaps", melee.gaps);
+		json.value("jumps", melee.jumps);
+		json.value("nearMisses", melee.nearMisses);
+		json.value("lastNearMiss", melee.lastNearMiss);
+		json.object("charge");
+		json.value("held", melee.chargeHeld);
+		json.value("charging", melee.charging);
+		json.value("spent", melee.chargeSpent);
+		json.value("seconds", melee.chargeSeconds);
+		json.value("ratio", melee.chargeRatio);
+		json.value("fullAimSeconds", melee.fullAimSeconds);
+		json.end();
+		json.value("hits", melee.hits);
+		json.value("contacts", melee.contacts);
+		json.value("chargedHits", melee.chargedHits);
+		json.object("last");
+		json.value("target", melee.lastTarget);
+		json.value("aim", melee.lastAim);
+		json.value("damage", melee.lastDamage);
+		json.value("charged", melee.lastCharged);
+		json.value("speed", melee.lastSpeed);
+		json.value("swing", melee.lastSwing);
+		json.end();
+		json.object("params");
+		json.value("swingSpeed", melee.params.startSpeed);
+		json.value("endSpeed", melee.params.endSpeed);
+		json.value("fullSpeed", melee.params.fullSpeed);
+		json.value("weakAim", melee.params.weakAim);
+		json.value("targetCooldown", melee.params.targetCooldown);
+		json.end();
+		json.value("placed", melee.placed);
+		const struct { const char * name; const Vec3f & point; } points[] = { { "hilt", melee.hilt }, { "tip", melee.tip } };
+		for(const auto & point : points) {
+			json.object(point.name);
+			json.value("x", point.point.x);
+			json.value("y", point.point.y);
+			json.value("z", point.point.z);
+			json.end();
+		}
+		json.end();
+	}
+	{
+		// Health and mana on the left wrist (#116): shown instead of the orbs, and how visible from the eyes
+		const vr::WristVitalsStatus & wrist = vr::wristVitalsStatus();
+		json.object("wrist");
+		json.value("shown", wrist.shown);
+		json.value("hidden", wrist.hidden);
+		json.value("health", wrist.health);
+		json.value("mana", wrist.mana);
+		json.value("facingDeg", wrist.facingDeg);
+		json.value("alpha", wrist.alpha);
+		json.value("drawnViews", wrist.drawnViews);
+		// the middle of the bars (units) and their axes in the world (engine: x right, y down, z forward)
+		const struct { const char * name; const Vec3f & v; } vectors[] = {
+			{ "center", wrist.center }, { "normal", wrist.normal }, { "across", wrist.across }, { "along", wrist.along },
+		};
+		for(const auto & vector : vectors) {
+			json.object(vector.name);
+			json.value("x", vector.v.x);
+			json.value("y", vector.v.y);
+			json.value("z", vector.v.z);
+			json.end();
+		}
+		json.end();
+	}
 	{
 		// The controllers and the control table (#30): profiles per hand, held controls, events
 		const vr::ControlResolver & controls = vr::controls();
@@ -924,6 +1086,39 @@ std::string buildStatus(PlatformInstant now) {
 			json.value(vr::eventName(vr::Event(i)), vr::formatBinding(controls.layout()[vr::Event(i)]));
 		}
 		json.end();
+		// The player's remapping in the VR settings (#178): saved per controller type, conflicts, the capture
+		json.value("remapped", vr::layoutRemapped());
+		json.value("layoutFile", vr::layoutFileName(vr::controllerType()));
+		{
+			const std::vector<vr::Conflict> conflicts = vr::findConflicts(controls.layout());
+			std::string list;
+			for(const vr::Conflict & conflict : conflicts) {
+				list += (list.empty() ? "" : " ") + std::string(vr::eventName(conflict.first)) + '+'
+				        + vr::eventName(conflict.second);
+			}
+			json.value("conflicts", conflicts.size());
+			json.value("conflictList", list);
+		}
+		{
+			const vr::BindingCapture & capture = vr::capture();
+			const char * state = "idle";
+			switch(capture.state()) {
+				case vr::BindingCapture::State::Idle: state = "idle"; break;
+				case vr::BindingCapture::State::Waiting: state = "waiting"; break;
+				case vr::BindingCapture::State::Holding: state = "holding"; break;
+				case vr::BindingCapture::State::Done: state = "done"; break;
+				case vr::BindingCapture::State::Cancelled: state = "cancelled"; break;
+			}
+			json.object("capture");
+			json.value("state", state);
+			json.value("event", vr::eventName(vr::captureEvent()));
+			json.value("binding", vr::formatBinding(capture.binding()));
+			json.value("refused", capture.refused() == vr::Binding::None ? std::string()
+			                                                            : vr::controlName(capture.refused()));
+			json.value("why", capture.refusedWhy());
+			json.value("count", vr::captureCount());
+			json.end();
+		}
 		// What the engine was given (#74): held actions, buttons and keys; the move vector and turn axis
 		const vr::GameInputState & game = vr::gameInput();
 		json.object("game");
@@ -1360,6 +1555,8 @@ std::string execute(std::string_view line) {
 		}
 		State::Pick & pick = g.pick;
 		pick.seq++;
+		// The engine's own screen pick, not the hand reticles' (#37), which own world picking while they are on
+		const vr::EnginePickOnly enginePickOnly;
 		Entity * centered = FlyingOverObject(Vec2s(g_size.center()));
 		pick.center = centered ? centered->idString() : std::string();
 		struct Hits {
@@ -1463,6 +1660,30 @@ std::string execute(std::string_view line) {
 		return std::string();
 	}
 
+	if(word == "menu") {
+		// Open a page of the main / pause menu as a click on its entry would (#178): none, options, input,
+		// vr; "pause" opens the pause menu from the game, as Escape does
+		std::string name(rest);
+		util::makeLowercase(name);
+		if(name == "pause") {
+			if(ARXmenu.mode() != Mode_InGame || !g_currentArea) {
+				return refuse("menu pause: needs a running game");
+			}
+			ARX_MENU_Launch(true);
+			return std::string();
+		}
+		if(ARXmenu.mode() != Mode_MainMenu || !g_mainMenu) {
+			return refuse(std::string("menu: needs the main or pause menu, mode is ") + menuModeName(ARXmenu.mode()));
+		}
+		for(const auto & entry : MenuPages) {
+			if(name == entry.name) {
+				g_mainMenu->requestPage(entry.page);
+				return std::string();
+			}
+		}
+		return refuse("menu: expected pause, none, options, input or vr, got \"" + name + "\"");
+	}
+
 	if(word == "ui") {
 		// What the inventory key does, for tests without a keyboard (#130); the book has the
 		// script command "book open|close"
@@ -1496,6 +1717,44 @@ std::string execute(std::string_view line) {
 			return refuse("vr-point: needs the simulated headset (--vr-sim)");
 		}
 		State::PointTarget target;
+		if(what == "entity" || what == "at") {
+			// vr-point <hand> entity <id> [<dx> <dy> <dz>]: the hand's hidden ray at the middle of an entity's
+			// box in the world, optionally that many game units beside it (#37) - a hand that drags it away;
+			// vr-point <hand> at <x> <y> <z>: at a point of the world (game units, y down)
+			std::string id = "point";
+			Vec3f point(0.f);
+			if(what == "entity") {
+				Vec3f offset(0.f);
+				iss >> id;
+				Entity * entity = (id.empty() || id == "point") ? nullptr : entities.getById(id);
+				if(!entity) {
+					return refuse("vr-point entity: no entity \"" + id + "\"");
+				}
+				if(iss >> offset.x && !(iss >> offset.y >> offset.z)) {
+					return refuse("vr-point entity: expected entity <id> [<dx> <dy> <dz>], got \"" + std::string(rest) + "\"");
+				}
+				point = (entity->bbox3D.min + entity->bbox3D.max) * 0.5f + offset;
+			} else if(!(iss >> point.x >> point.y >> point.z)) {
+				return refuse("vr-point at: expected at <x> <y> <z> in game units, got \"" + std::string(rest) + "\"");
+			}
+			float yaw = 0.f;
+			float pitch = 0.f;
+			std::string error;
+			if(!vr::aimAtWorldPoint(hand == "left" ? vr::Hand::Left : vr::Hand::Right, point, yaw, pitch, error)) {
+				return refuse("vr-point entity: " + error);
+			}
+			std::ostringstream command;
+			command << "hand " << hand << " rot " << yaw << ' ' << pitch << " 0";
+			error = vr::simCommand(command.str());
+			if(!error.empty()) {
+				return refuse("vr-point: " + error);
+			}
+			LogInfo << "[channel] vr-point: the " << hand << " hand aimed at " << id << " (" << point.x << ", "
+			        << point.y << ", " << point.z << "): yaw " << yaw << ", pitch " << pitch;
+			target.id = id;
+			g.pointTarget = target;
+			return std::string();
+		}
 		if(what == "item") {
 			if(!(player.Interface & INTER_INVENTORY) || !entities.player()) {
 				return refuse("vr-point item: needs the inventory open");
@@ -1572,6 +1831,23 @@ std::string execute(std::string_view line) {
 		if(!savegames.save(rest, SavegameHandle(), Image())) {
 			return refuse("save: the game could not save (see the save event and the lines before it)");
 		}
+		return std::string();
+	}
+
+	if(word == "watch") {
+		// watch <id> | watch off: report one entity's place in status.json (watch.*), e.g. an item dragged by a hand (#37)
+		const std::string id(rest);
+		if(id.empty()) {
+			return refuse("watch: expected an entity id or off");
+		}
+		if(id == "off") {
+			g.watch.clear();
+			return std::string();
+		}
+		if(!entities.getById(id)) {
+			return refuse("watch: no entity \"" + id + "\"");
+		}
+		g.watch = id;
 		return std::string();
 	}
 
@@ -1656,6 +1932,34 @@ std::string execute(std::string_view line) {
 		player.desiredangle.setPitch(angle.getPitch());
 		player.angle.setPitch(angle.getPitch());
 		LogInfo << "[channel] player looks at " << rest << " (yaw " << angle.getYaw() << ", pitch " << angle.getPitch() << ")";
+		return std::string();
+	}
+
+	if(word == "place") {
+		// place <entity> <ahead> [<right>]: an entity on the floor ahead of the player (units along the player's
+		// heading, and to its right), facing the player - a target in reach for melee checks (#39)
+		if(currentState() != GameState::Gameplay || !entities.player()) {
+			return refuse(std::string("place: needs a level on screen (state ") + gameStateName(currentState()) + ")");
+		}
+		std::istringstream iss{std::string(rest)};
+		std::string id;
+		float ahead = 0.f, right = 0.f;
+		if(!(iss >> id >> ahead)) {
+			return refuse("place: expected <entity> <ahead> [<right>], got \"" + std::string(rest) + "\"");
+		}
+		iss >> right;
+		Entity * target = entities.getById(id);
+		if(!target || target == entities.player()) {
+			return refuse("place: unknown entity \"" + id + "\"");
+		}
+		const float yaw = player.angle.getYaw();
+		const Vec3f forward = angleToVectorXZ(yaw);
+		const Vec3f side = angleToVectorXZ(yaw - 90.f);
+		const Vec3f pos = player.basePosition() + forward * ahead + side * right;
+		ARX_INTERACTIVE_Teleport(target, pos);
+		target->angle.setYaw(MAKEANGLE(yaw + 180.f));
+		LogInfo << "[channel] " << id << " placed at " << pos.x << " " << pos.y << " " << pos.z << " (" << ahead
+		        << " ahead, " << right << " right of the player)";
 		return std::string();
 	}
 

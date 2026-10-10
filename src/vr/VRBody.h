@@ -121,6 +121,7 @@ struct PlayerArmStatus {
 	bool posed = false;           //!< the arm was posed by the IK this frame (else the engine's animation)
 	HandSample sample;            //!< the controller in the OpenXR LOCAL space (meters)
 	Vec3f controller = Vec3f(0.f); //!< the grip in the world (units) - where the player's hand is
+	glm::quat grip = glm::quat(1.f, 0.f, 0.f, 0.f); //!< the grip's rotation in engine axes (HandPlacement::orientation)
 	Vec3f target = Vec3f(0.f);    //!< where the wrist should be for the palm to sit on the grip
 	Vec3f shoulder = Vec3f(0.f);  //!< the posed joints (units) - where the model's arm is
 	Vec3f elbow = Vec3f(0.f);
@@ -140,6 +141,7 @@ struct PlayerBodyStatus {
 	bool active = false;          //!< the body was shifted and at least one arm posed this frame
 	const char * inactive = "";   //!< why not, when not
 	u64 posedFrames = 0;          //!< frames with at least one posed arm since the game started
+	u64 poseCalls = 0;            //!< frames the player's skeleton was posed at all (a still count: the model was not animated)
 	Vec3f shift = Vec3f(0.f);     //!< this frame's horizontal shift of the body (units)
 	float facingYaw = 0.f;        //!< engine degrees [0, 360): where the model was turned to face (#25's body yaw)
 	std::array<PlayerArmStatus, HandCount> hands; //!< left, right

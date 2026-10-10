@@ -54,6 +54,7 @@
 #include "gui/Menu.h"
 
 #include "util/Cast.h"
+#include "vr/VRReticle.h"
 
 #include "vr/VRRunes.h"
 
@@ -278,6 +279,11 @@ void ARX_INTERFACE_RenderCursor(bool flag) {
 	} else {
 		fHighLightAng = 0.f;
 		iHighLight = 0;
+	}
+	
+	// VR (#37): in the world the hands' rings are the cursor; on the floating panel the cursor is drawn (#34)
+	if(vr::engineCursorHidden()) {
+		return;
 	}
 	
 	float iconScale = g_hudRoot.getScale();

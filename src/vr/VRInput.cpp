@@ -29,12 +29,16 @@
 #include "core/TimeTypes.h"
 #include "gui/Menu.h"
 #include "input/Input.h"
+#include "io/fs/FilePath.h"
+#include "io/fs/Filesystem.h"
+#include "io/fs/SystemPaths.h"
 #include "io/log/Logger.h"
 #include "platform/Time.h"
 #include "util/Number.h"
 #include "vr/BodyYaw.h"
 #include "vr/HeadTracking.h"
 #include "vr/MenuPointer.h"
+#include "vr/VRReticle.h"
 #include "vr/VRSystem.h"
 
 namespace vr {
@@ -59,6 +63,14 @@ struct InputState {
 	ControlSet injectedTaps;
 	//! Stick deflections set by the test channel, added to the controllers' (directions: down / up)
 	std::array<Stick, HandCount> injectedSticks;
+
+	//! The saved layout of the first controller type was read (#178)
+	bool loaded = false;
+
+	//! The VR settings page's remapping (#178)
+	BindingCapture capture;
+	Event captureEvent = Event::Jump;
+	u32 captures = 0;
 
 	//! The menu pointer (#34): the hand on the floating panel is the mouse
 	MenuPointer pointer;
@@ -96,6 +108,89 @@ void applyLayout(const ControlLayout & layout, const char * why) {
 	logConflicts(layout);
 }
 
+fs::path layoutPath(ControllerType type) {
+	return fs::getConfigDir() / layoutFileName(type);
+}
+
+//! The layout the player saved for these controllers over their default, or the default (#178)
+ControlLayout playerLayout(ControllerType type, std::string & why) {
+
+	ControlLayout layout = defaultLayout(type);
+	why = std::string("default for ") + controllerTypeName(type);
+
+	const fs::path file = layoutPath(type);
+	if(file.empty() || !fs::exists(file)) {
+		return layout;
+	}
+
+	std::string error;
+	if(!readSavedLayout(fs::read(file), type, layout, &error)) {
+		// The default layout keeps the game playable; the file stays for the player to look at
+		LogWarning << "[vr] input: ignoring the saved layout " << file << ": " << error;
+		return layout;
+	}
+
+	why = std::string("saved for ") + controllerTypeName(type) + " (" + file.string() + ")";
+	return layout;
+}
+
+void savePlayerLayout(const ControlLayout & layout) {
+
+	const ControllerType type = layoutType(g_input.type);
+	const fs::path file = layoutPath(type);
+	if(file.empty()) {
+		LogWarning << "[vr] input: no config directory - the remapped layout is not saved";
+		return;
+	}
+
+	const std::string changes = formatLayoutChanges(layout, defaultLayout(g_input.type));
+	if(changes.empty()) {
+		if(fs::exists(file) && !fs::remove(file)) {
+			LogWarning << "[vr] input: could not remove " << file;
+		}
+		return;
+	}
+
+	std::string text = std::string("# Arx Fatalis VR: the controls remapped in the VR settings for ")
+	                   + controllerTypeName(type) + " controllers (#178).\n"
+	                   "# The events that differ from the default layout; delete the file to reset them.\n";
+	text += changes;
+	if(!fs::write(file, text)) {
+		LogWarning << "[vr] input: could not save the remapped layout to " << file;
+	}
+}
+
+//! While the VR settings capture a binding the controls do nothing else (#178)
+void updateCapture(s64 timeMs) {
+
+	BindingCapture & capture = g_input.capture;
+	if(!capture.active()) {
+		return;
+	}
+
+	const Control refused = capture.refused();
+	switch(capture.update(timeMs, g_input.input.down, g_input.input.taps)) {
+		case BindingCapture::State::Done: {
+			g_input.captures++;
+			gameevent::Event("vr.remap")("event", eventName(g_input.captureEvent))
+			                            ("binding", formatBinding(capture.binding()));
+			setPlayerBinding(g_input.captureEvent, capture.binding());
+			break;
+		}
+		case BindingCapture::State::Cancelled: {
+			gameevent::Event("vr.remap")("event", eventName(g_input.captureEvent))("binding", "cancelled")
+			                            ("why", "nothing pressed");
+			break;
+		}
+		default: break;
+	}
+
+	if(capture.refused() != refused && capture.refused() != Binding::None) {
+		LogInfo << "[vr] input: remapping " << eventName(g_input.captureEvent) << " refused "
+		        << controlName(capture.refused()) << ": " << capture.refusedWhy();
+	}
+}
+
 ControlAction engineAction(GameAction action) {
 	switch(action) {
 		case GameAction::Jump: return CONTROLS_CUST_JUMP;
@@ -122,7 +217,9 @@ void applyToEngine(const GameInputState & state) {
 	GInput->setVirtualMouseButton(Mouse::Button_0, state.click && !g_input.pointer.suppressClick());
 	if(g_input.pointer.active()) {
 		const Vec2f cursor = g_input.pointer.cursor();
-		GInput->setVirtualMousePosition(Vec2s(s16(std::lround(cursor.x)), s16(std::lround(cursor.y))));
+		// A world reticle (#37) is the exploration mode's crosshair too: also in the relative mouse mode
+		GInput->setVirtualMousePosition(Vec2s(s16(std::lround(cursor.x)), s16(std::lround(cursor.y))),
+		                                !g_input.pointer.onPanel());
 	} else {
 		GInput->setVirtualMousePosition(std::nullopt);
 	}
@@ -144,23 +241,37 @@ void updatePointer() {
 
 	const bool shown = panelShown();
 	const std::array<HandAim, HandCount> aims = handAims();
+
+	// The hands' hidden rays in the world (#37): their reticles are targets of the same mouse
+	updateReticles(aims, double(toUs(platform::getTime())) / 1000000.0);
+	const bool world = reticlesOn();
+
 	std::array<Vec3f, HandCount> hits = { };
 	std::array<bool, HandCount> trigger = { };
+	std::array<bool, HandCount> claims = { };
 	for(size_t hand = 0; hand < HandCount; hand++) {
 		PointerRay & ray = g_input.rays[hand];
 		ray = PointerRay();
 		if(shown && aims[hand].valid) {
 			ray.onPanel = panelHit(aims[hand].origin, aims[hand].direction, ray.pixel, &hits[hand]);
 		}
+		if(!ray.onPanel) {
+			reticleTarget(Hand(hand), ray);
+		}
+		claims[hand] = reticleClaims(Hand(hand));
 	}
 	trigger[size_t(Hand::Left)] = g_input.resolver.active(Event::InteractLeft) || g_input.resolver.active(Event::StashLeft);
 	trigger[size_t(Hand::Right)] = g_input.resolver.active(Event::InteractRight) || g_input.resolver.active(Event::StashRight);
+	// The grip's use acts under its own hand (D-019): the hand that uses takes an idle cursor
+	claims[size_t(Hand::Left)] = claims[size_t(Hand::Left)] || g_input.resolver.pressed(Event::UseLeft);
+	claims[size_t(Hand::Right)] = claims[size_t(Hand::Right)] || g_input.resolver.pressed(Event::UseRight);
 
 	MenuPointer & pointer = g_input.pointer;
-	pointer.update(shown, g_input.rays, trigger);
+	pointer.update(shown || world, g_input.rays, trigger, PointerParams(), claims);
+	afterPointer(pointer, g_input.rays);
 
 	const size_t owner = size_t(pointer.owner());
-	if(pointer.active()) {
+	if(pointer.onPanel()) {
 		setPointerBeam(true, aims[owner].origin, hits[owner]);
 	} else {
 		setPointerBeam(false);
@@ -171,7 +282,7 @@ void updatePointer() {
 		gameevent::Event("vr.pointer")("state", shown ? "on" : "off")("hand", handName(pointer.owner()))
 			("tracked", int(aims[0].valid) + int(aims[1].valid));
 	}
-	if(!shown) {
+	if(!shown && !world) {
 		return;
 	}
 	if(pointer.ownerChanged()) {
@@ -186,7 +297,8 @@ void updatePointer() {
 	}
 	if(pointer.offPanelPresses() != g_input.loggedOffPanelPresses) {
 		g_input.loggedOffPanelPresses = pointer.offPanelPresses();
-		gameevent::Event("vr.pointer.muted")("hand", handName(pointer.owner()))("reason", "off the panel");
+		gameevent::Event("vr.pointer.muted")("hand", handName(pointer.owner()))
+			("reason", world ? "no target" : "off the panel");
 	}
 }
 
@@ -197,12 +309,22 @@ void updateInput() {
 	ControllerInput input;
 	readControllers(input);
 
-	// The layout follows the controllers (saved layouts per type: #178)
+	// The layout follows the controllers: the one the player saved for them, else their default (#178)
 	ControllerType type = typeFromProfiles(controllerProfiles());
-	if(type != g_input.type && type != ControllerType::Unknown) {
-		LogInfo << "[vr] input: controllers " << controllerTypeName(type) << " - default layout for them";
+	if((type != g_input.type && type != ControllerType::Unknown) || !g_input.loaded) {
+		if(type == ControllerType::Unknown) {
+			type = g_input.type;
+		}
+		g_input.loaded = true;
 		g_input.type = type;
-		applyLayout(defaultLayout(type), controllerTypeName(type));
+		std::string why;
+		ControlLayout layout = playerLayout(type, why);
+		LogInfo << "[vr] input: controllers " << controllerTypeName(type) << " - layout " << why;
+		if(g_input.capture.active()) {
+			// A capture for the old controllers' layout would land in the new one's file
+			cancelCapture();
+		}
+		applyLayout(layout, why.c_str());
 	}
 
 	input.down |= g_input.injectedDown;
@@ -217,10 +339,10 @@ void updateInput() {
 	g_input.resolver.update(toMsi(platform::getTime()), input.down, input.taps);
 	g_input.input = input;
 
-	// A press is a state change made by the player: one line each, bounded by how fast hands are
+	// A press is a state change made by the player: one line each, bounded by how fast hands are (not while a capture takes the controls)
 	for(size_t i = 0; i < EventCount; i++) {
 		const Event event = Event(i);
-		if(g_input.resolver.pressed(event)) {
+		if(g_input.resolver.pressed(event) && !g_input.capture.active()) {
 			LogInfo << "[vr] input: " << eventName(event) << " (" << formatBinding(g_input.resolver.layout()[event]) << ')';
 		}
 	}
@@ -229,8 +351,13 @@ void updateInput() {
 	// cursor under the pressing hand in the same update, so the click lands where it points
 	updatePointer();
 
-	// Events -> the engine's actions, mouse buttons and keys (#74)
-	const GameInputState & game = g_input.game.update(g_input.resolver, g_input.input);
+	// Events -> the engine's actions, mouse buttons and keys (#74); nothing while the VR settings
+	// capture a binding, so pressing the menu's or the inventory's control only binds it (#178)
+	// - also in the update that ends it, whose events were resolved with the old layout
+	const GameInputState & resolved = g_input.game.update(g_input.resolver, g_input.input);
+	const bool capturing = g_input.capture.active();
+	updateCapture(toMsi(platform::getTime()));
+	const GameInputState game = capturing || g_input.capture.active() ? GameInputState() : resolved;
 	applyToEngine(game);
 
 	// Recenter (#28, D-019: a long press of the left stick click): the head as it is at the next sample
@@ -250,7 +377,9 @@ PointerStatus pointerStatus() {
 	status.cursor = pointer.cursor();
 	status.beam = pointerBeamShown();
 	status.onPanel = { g_input.rays[0].onPanel, g_input.rays[1].onPanel };
+	status.onWorld = { g_input.rays[0].onWorld, g_input.rays[1].onWorld };
 	status.clicks = pointer.clicks();
+	status.worldClicks = pointer.worldClicks();
 	status.offPanelPresses = pointer.offPanelPresses();
 	status.ownerChanges = pointer.ownerChanges();
 	return status;
@@ -302,6 +431,62 @@ const ControllerInput & controllerInput() {
 	return g_input.input;
 }
 
+ControllerType layoutType(ControllerType type) {
+	return type == ControllerType::Unknown ? ControllerType::Index : type;
+}
+
+std::string layoutFileName(ControllerType type) {
+	return std::string("vr-controls-") + controllerTypeName(layoutType(type)) + ".ini";
+}
+
+bool layoutRemapped() {
+	return g_input.resolver.layout() != defaultLayout(g_input.type);
+}
+
+void setPlayerBinding(Event event, const Binding & binding) {
+	ControlLayout layout = g_input.resolver.layout();
+	layout[event] = binding;
+	const std::string why = std::string(eventName(event)) + " = " + formatBinding(binding) + " (VR settings)";
+	applyLayout(layout, why.c_str());
+	savePlayerLayout(layout);
+}
+
+void restoreDefaultLayout() {
+	cancelCapture();
+	applyLayout(defaultLayout(g_input.type), "reset to the default (VR settings)");
+	savePlayerLayout(g_input.resolver.layout());
+	gameevent::Event("vr.remap")("event", "all")("binding", "default")
+	                            ("controllers", controllerTypeName(layoutType(g_input.type)));
+}
+
+void startCapture(Event event) {
+	cancelCapture();
+	g_input.captureEvent = event;
+	g_input.capture.longPressMs = g_input.resolver.longPressMs;
+	g_input.capture.releaseDebounceMs = g_input.resolver.releaseDebounceMs;
+	g_input.capture.start(toMsi(platform::getTime()), g_input.input.down);
+	LogInfo << "[vr] input: remapping " << eventName(event) << " - waiting for a press";
+}
+
+void cancelCapture() {
+	if(g_input.capture.active()) {
+		g_input.capture.cancel();
+		LogInfo << "[vr] input: remapping " << eventName(g_input.captureEvent) << " cancelled";
+	}
+}
+
+const BindingCapture & capture() {
+	return g_input.capture;
+}
+
+Event captureEvent() {
+	return g_input.captureEvent;
+}
+
+u32 captureCount() {
+	return g_input.captures;
+}
+
 TurnSettings turnSettings() {
 	TurnSettings settings;
 	settings.mode = config.input.vrSmoothTurn ? TurnMode::Smooth : TurnMode::Snap;
@@ -316,7 +501,8 @@ float updateTurn(float seconds, bool allowed) {
 	const TurnSettings settings = turnSettings();
 	const float axis = g_input.game.state().turn;
 	const u64 snaps = g_input.turn.snaps();
-	const float yaw = g_input.turn.update(settings, axis, seconds, allowed);
+	// A capture of the VR settings takes the controls: the turn stick does not turn meanwhile (#178)
+	const float yaw = g_input.turn.update(settings, axis, seconds, allowed && !g_input.capture.active());
 
 	// A snap is a player action: one event each; a smooth turn is an episode: logged when it starts and stops
 	if(g_input.turn.snaps() != snaps) {
@@ -427,6 +613,33 @@ std::string inputCommand(std::string_view arguments) {
 		return std::string();
 	}
 
+	if(verb == "capture") {
+		std::string_view name = nextWord(rest);
+		std::optional<Event> event = parseEvent(name);
+		if(!event) {
+			return "vr-input capture: unknown event \"" + std::string(name) + "\"";
+		}
+		startCapture(*event);
+		return std::string();
+	}
+
+	if(verb == "cancel") {
+		cancelCapture();
+		return std::string();
+	}
+
+	if(verb == "default") {
+		restoreDefaultLayout();
+		return std::string();
+	}
+
+	if(verb == "reload") {
+		// Read the saved layout again at the next update, as when the controllers are detected at a start
+		cancelCapture();
+		g_input.loaded = false;
+		return std::string();
+	}
+
 	if(verb == "turn") {
 		// The turn settings as cfg.ini sets them (#32); the settings screen is #178
 		std::string_view what = nextWord(rest);
@@ -463,8 +676,8 @@ std::string inputCommand(std::string_view arguments) {
 		return std::string();
 	}
 
-	return "vr-input: expected down|up|tap <control>, stick <hand> <x> <y>, bind <event> <binding>, turn <setting> or reset, got \""
-	       + std::string(arguments) + "\"";
+	return "vr-input: expected down|up|tap <control>, stick <hand> <x> <y>, bind <event> <binding>, turn <setting>,"
+	       " reset, capture <event>, cancel, default or reload, got \"" + std::string(arguments) + "\"";
 }
 
 } // namespace vr

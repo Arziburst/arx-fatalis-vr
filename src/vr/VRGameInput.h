@@ -99,6 +99,11 @@ public:
 	//! Stick dead zones: a resting stick drifts, the Index stick by up to ~0.1
 	float moveDeadZone = 0.2f;
 	float turnDeadZone = 0.2f;
+	/*!
+	 * The turn stick turns only while its x is at least this share of its y (F-121 axis dominance): a push
+	 * down for the crouch toggle (#33) that drifts sideways does not turn as well
+	 */
+	float turnDominance = 0.6f;
 
 	const GameInputState & update(const ControlResolver & controls, const ControllerInput & input);
 

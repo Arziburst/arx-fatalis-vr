@@ -1,0 +1,71 @@
+# Walk where you look (#31, D-008): with the head turned 90 degrees, the left stick pushed forward walks the player
+# where the head looks, not where the body or the heading faces. Run on the test save mvp-new-game, whose heading is
+# about 0 (yaw 0 walks +z, a larger yaw turns left: -x):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence walk-look
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s in: past the fade-in, the head reference taken
+setplayercontrols on
+@assert player.controlsBlocked eq false
+@assert player.yaw gt 345                    # the save's heading: the x / z steps below assume it
+@remember heading player.yaw
+
+# The stick rests: nobody walks
+@frames 20
+@assert vr.input.walk.walking eq false
+@assert vr.input.walk.walks eq 0
+
+# Head turned 90 degrees left: forward on the stick walks -x, the heading does not change
+vr-sim head rot 90 0 0
+@frames 30
+@remember look vr.head.lookYaw
+@assert vr.head.lookYaw gt 80
+@assert vr.head.lookYaw lt 100
+@remember x0 player.x
+@remember z0 player.z
+vr-input stick left 0 1
+@frames 40
+@assert vr.input.walk.walking eq true
+@assert vr.input.walk.yaw gt {look-0.5}
+@assert vr.input.walk.yaw lt {look+0.5}
+@assert vr.input.walk.dirX lt -0.98
+vr-input stick left 0 0
+@frames 10
+@assert vr.input.walk.walking eq false
+@assert player.x lt {x0-10}
+@assert player.z gt {z0-10}
+@assert player.z lt {z0+10}
+@assert player.yaw eq {heading}
+@log GameEvent:.*vr\.walk state=start
+@log GameEvent:.*vr\.walk state=end
+
+# Head turned 90 degrees right: the same stick walks +x
+vr-sim head rot -90 0 0
+@frames 30
+@remember x1 player.x
+@remember z1 player.z
+vr-input stick left 0 1
+@frames 40
+@assert vr.input.walk.dirX gt 0.98
+vr-input stick left 0 0
+@frames 10
+@assert player.x gt {x1+10}
+@assert player.z gt {z1-10}
+@assert player.z lt {z1+10}
+
+# Head ahead again: the stick walks along the heading, +z
+vr-sim head rot 0 0 0
+@frames 30
+@remember x2 player.x
+@remember z2 player.z
+vr-input stick left 0 1
+@frames 40
+@assert vr.input.walk.dirZ gt 0.98
+vr-input stick left 0 0
+@frames 10
+@assert player.z gt {z2+10}
+@assert vr.input.walk.walks eq 3
+@assert errors eq 0

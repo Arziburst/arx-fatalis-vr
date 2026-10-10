@@ -62,6 +62,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "ai/Paths.h"
 
 #include "core/Application.h"
+#include "core/Config.h"
 #include "core/Localisation.h"
 #include "core/GameTime.h"
 #include "core/Core.h"
@@ -1216,6 +1217,22 @@ static void ARX_PLAYER_Manage_Visual_End(ANIM_HANDLE * request0_anim, ANIM_HANDL
 }
 
 /*!
+ * The room a crouched character needs to stand up: the part of the standing cylinder above the crouched one.
+ * What the crouched cylinder already touches - a sloped floor, the edge of a step - is no reason to stay
+ * down: the game checked the whole standing cylinder, so a character that crouched where its standing
+ * cylinder grazed the ground never stood up there again (#263). Something in this part (a low ceiling, a
+ * beam, a creature) still keeps it crouched; < 0 = blocked, as CheckAnythingInCylinder.
+ */
+static Cylinder standUpCylinder() {
+	Cylinder cyl(player.basePosition(), player.physics.cyl.radius, player.baseHeight() - player.crouchHeight());
+	cyl.origin.y += player.crouchHeight();
+	return cyl;
+}
+
+//! The stand-up below was refused and logged; cleared when the character stands up (#263)
+static bool g_standUpRefused = false;
+
+/*!
  * \brief Choose the set of animations to use to represent current player situation.
  */
 void ARX_PLAYER_Manage_Visual() {
@@ -1268,10 +1285,19 @@ void ARX_PLAYER_Manage_Visual() {
 		float old = player.physics.cyl.height;
 		player.physics.cyl.height = player.baseHeight();
 		player.physics.cyl.origin = player.basePosition();
-		float anything = CheckAnythingInCylinder(player.physics.cyl, entities.player());
+		Cylinder room = standUpCylinder();
+		float anything = CheckAnythingInCylinder(room, entities.player());
 		if(anything < 0.f) {
+			// Once per refused stand-up: what is in the way, relative to the crouched head (#263)
+			if(!g_standUpRefused) {
+				g_standUpRefused = true;
+				gameevent::Event("player.standup.blocked", 20)("aboveCrouchedHead", -anything, 1)
+					("what", describeCylinderBlocker(room, entities.player()));
+			}
 			player.m_currentMovement |= PLAYER_CROUCH;
 			player.physics.cyl.height = old;
+		} else {
+			g_standUpRefused = false;
 		}
 	}
 	
@@ -1802,7 +1828,8 @@ static void PlayerMovementIterate(float DeltaTime) {
 				float old = player.physics.cyl.height;
 				player.physics.cyl.height = player.baseHeight();
 				player.physics.cyl.origin = player.basePosition();
-				float anything = CheckAnythingInCylinder(player.physics.cyl, entities.player(), CFLAG_JUST_TEST);
+				// The same room to stand up as without a jump (#263)
+				float anything = CheckAnythingInCylinder(standUpCylinder(), entities.player(), CFLAG_JUST_TEST);
 				if(anything < 0.f) {
 					player.m_currentMovement |= PLAYER_CROUCH;
 					player.physics.cyl.height = old;
@@ -2236,6 +2263,50 @@ static void PlayerMovementIterate(float DeltaTime) {
 	setPlayerPositionColor();
 }
 
+/*!
+ * Real steps (#26, D-018): the body walks after the tracked head - the step HeadTracking asks for,
+ * through the same cylinder collision as walking (walls stop it, it slides along them and climbs low
+ * steps). What the collision let it walk goes back, so the camera keeps only the rest of the head's
+ * movement. No step while the player jumps, falls or climbs: the head simply leans meanwhile.
+ */
+static void PlayerFollowHead() {
+
+	const Vec2f step = vr::takeBodyStep();
+	if(step == Vec2f(0.f)) {
+		return;
+	}
+
+	if(player.jumpphase != NotJumping || player.falling || player.climbing) {
+		vr::bodyStepped(Vec2f(0.f));
+		return;
+	}
+
+	Vec3f moved(step.x, 0.f, step.y);
+	if(USE_PLAYERCOLLISIONS) {
+		IO_PHYSICS physics = player.physics;
+		physics.cyl.origin = player.basePosition();
+		physics.startpos = physics.cyl.origin;
+		physics.targetpos = physics.startpos + moved;
+		ARX_COLLISION_Move_Cylinder(&physics, entities.player(), 40.f, CFLAG_EASY_SLIDING | CFLAG_PLAYER);
+		moved = physics.cyl.origin - physics.startpos;
+	}
+
+	player.pos += moved;
+	g_moveto = player.pos;
+	player.physics.cyl.origin = player.basePosition();
+
+	const float walked = glm::length(Vec2f(moved.x, moved.z));
+	if(walked > 0.f && config.video.vrRealStepNoise) {
+		// Walking in the room is walking in the game: footsteps for the stealth rules
+		currentdistance += (player.m_currentMovement & PLAYER_CROUCH) ? walked * 2.f : walked;
+		if(currentdistance >= STEP_DISTANCE) {
+			ARX_PLAYER_MakeStepNoise();
+		}
+	}
+
+	vr::bodyStepped(Vec2f(moved.x, moved.z));
+}
+
 void ARX_PLAYER_Manage_Movement() {
 	
 	ARX_PROFILE_FUNC();
@@ -2276,8 +2347,10 @@ void ARX_PLAYER_Manage_Movement() {
 		PlayerMovementIterate(DeltaTime);
 		DeltaTime = 0;
 	}
-	
+
 	StoredTime = DeltaTime;
+
+	PlayerFollowHead();
 }
 
 /*!

@@ -27,7 +27,7 @@
  * The head pose → camera math of #24 (D-018, F-37, F-120): the engine's own toRotationMatrix() of
  * the produced angles must be the head's rotation for any orientation, the poles included; pitch
  * and roll stay absolute while the yaw follows the body; the head's movement becomes the camera
- * offset in game units, turned with the body, and a lean beyond the limit is clamped.
+ * offset in game units, turned with the body, less what the body walked of it (#26).
  */
 class HeadPoseTest final : public CppUnit::TestFixture {
 
@@ -39,7 +39,7 @@ class HeadPoseTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testOnlyTheYawIsRelative);
 	CPPUNIT_TEST(testRotationAloneDoesNotMoveTheCamera);
 	CPPUNIT_TEST(testMovementIsTurnedWithTheBody);
-	CPPUNIT_TEST(testLeanIsClamped);
+	CPPUNIT_TEST(testAnchorIsTheBodysPart);
 	CPPUNIT_TEST(testHeightOffsetLiftsTheCamera);
 	CPPUNIT_TEST(testRecenterIsTheEye);
 	CPPUNIT_TEST(testHeadBetweenTheEyes);
@@ -56,7 +56,7 @@ public:
 	void testOnlyTheYawIsRelative();
 	void testRotationAloneDoesNotMoveTheCamera();
 	void testMovementIsTurnedWithTheBody();
-	void testLeanIsClamped();
+	void testAnchorIsTheBodysPart();
 	void testHeightOffsetLiftsTheCamera();
 	void testRecenterIsTheEye();
 	void testHeadBetweenTheEyes();

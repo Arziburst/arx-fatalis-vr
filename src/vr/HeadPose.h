@@ -93,13 +93,12 @@ float raiseHeadReference(HeadReference & reference, const HeadSample & head);
 struct HeadCamera {
 	Anglef angle;              //!< engine degrees, each wrapped to [0, 360) like the engine's angles
 	Vec3f offset = Vec3f(0.f); //!< game units from the character's eye to the head
-	bool clamped = false;      //!< the horizontal offset was longer than the lean limit and was shortened
+	Vec3f moved = Vec3f(0.f);  //!< meters, the head's movement since the reference, reference frame (engine axes)
 };
 
 //! How the head moves the camera
 struct HeadCameraParams {
 	float unitsPerMeter = UnitsPerMeter; //!< world scale (WorldScale.h)
-	float maxLeanMeters = 0.6f;  //!< interim horizontal limit until the body follows the head (#26)
 	//! The player's character height setting (#260): the head at the reference sees from this far above
 	//! the character's eye, meters, up positive; already clamped (\ref clampHeightOffset)
 	float heightOffsetMeters = 0.f;
@@ -118,12 +117,15 @@ float clampHeightOffset(float meters);
  * The LOCAL space is turned about the vertical so that the reference heading is the body's yaw:
  * camera yaw = body yaw + head yaw - reference yaw, pitch and roll are the head's own. The offset is
  * the head's movement since the reference, turned the same way, in game units: head 20 cm lower -
- * camera 20 cm lower (D-018); a horizontal offset beyond \c maxLeanMeters is shortened to it. The
+ * camera 20 cm lower (D-018). The part of the horizontal movement the body already took (real steps,
+ * #26, HeadLean.h) is the body's, not the camera's: \a anchor is taken off before the turn. The
  * character height setting lifts the whole offset by \c heightOffsetMeters (#260).
  *
  * \param bodyYaw the character's yaw in engine degrees (what the stick and the mouse turn)
+ * \param anchor the body's movement since the reference, meters, reference frame (x right, z forward)
  */
 HeadCamera headToCamera(const HeadSample & head, const HeadReference & reference, float bodyYaw,
+                        const Vec2f & anchor = Vec2f(0.f),
                         const HeadCameraParams & params = HeadCameraParams());
 
 /*!
@@ -140,6 +142,45 @@ HeadCamera headToCamera(const HeadSample & head, const HeadReference & reference
  * \return the vertical field of view in radians
  */
 float headLockedQuadFov(float quadWidth, float distance, const Vec2i & frameSize);
+
+//! A controller's grip pose in the OpenXR LOCAL space (#36)
+struct HandSample {
+	Vec3f position = Vec3f(0.f); //!< meters
+	glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f); //!< grip to LOCAL
+};
+
+//! A hand in the engine world, rigid with the head camera
+struct HandPlacement {
+	Vec3f offset = Vec3f(0.f); //!< game units from the head camera to the grip
+	//! the grip's rotation in engine axes: turns a grip-frame vector given in engine axes (OpenXR
+	//! +X, +Y, +Z = engine +X, -Y, -Z) into the world
+	glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f);
+};
+
+/*!
+ * \brief Where a hand is, rigid with the head (#36)
+ *
+ * The hand's position relative to the head is turned the way \ref headToCamera turns the head's
+ * movement (the LOCAL space put on the body's yaw by the reference) and scaled to game units; its
+ * orientation gets the same turn. So a hand 30 cm right of the head is 30 units right of the camera
+ * whatever the body walked after the head (#26), and a hand oriented like the head has the camera's
+ * rotation. Hands at the character's eye height look right as soon as the head does (#27).
+ */
+HandPlacement handToWorld(const HandSample & hand, const HeadSample & head, const HeadReference & reference,
+                          float bodyYaw, const HeadCameraParams & params = HeadCameraParams());
+
+//! \return a vector in OpenXR axes (y up, z back) as the same vector in engine axes (y down, z forward)
+Vec3f toEngineAxes(const Vec3f & v);
+
+//! \return a vector in engine axes turned about the vertical by \a turnDegrees the way \ref headToCamera turns the head's movement
+Vec3f turnAboutVertical(const Vec3f & v, float turnDegrees);
+
+/*!
+ * \return a rotation given in OpenXR axes as the same rotation in engine axes, turned about the
+ *         vertical by \a turnDegrees: the quaternion \c toRotationMatrix(headAngles(q) + turn) is the
+ *         inverse of
+ */
+glm::quat orientationToEngine(const glm::quat & q, float turnDegrees);
 
 //! \return \a degrees wrapped to [0, 360)
 float wrapDegrees(float degrees);

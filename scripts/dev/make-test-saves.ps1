@@ -48,6 +48,10 @@
 .PARAMETER Verify
 	Do not generate: load every save of the library in a fresh game and check it.
 
+.PARAMETER DataDir
+	Arx Fatalis install folder, passed as --data-dir (default: the game finds the Steam install itself; CI's
+	service account has none, ci-smoke.ps1 passes $env:ARXVR_DATA_DIR).
+
 .PARAMETER Config
 	Which build to run: Release (default), RelWithDebInfo or Debug.
 
@@ -71,6 +75,7 @@
 param(
 	[string]$Script,
 	[string]$Library,
+	[string]$DataDir,
 	[ValidateSet('Release', 'RelWithDebInfo', 'Debug')]
 	[string]$Config = 'Release',
 	[switch]$Rebuild,
@@ -227,6 +232,7 @@ try {
 	}
 
 	$argList = @('--windowed', '--test-dir', "`"$TestDir`"", '--user-dir', "`"$UserDir`"", '--config-dir', "`"$UserDir`"", '--no-vr')
+	if ($DataDir) { $argList += '--data-dir', "`"$DataDir`"" }
 	$launchArgs = @('--no-vr')
 	if ($Verify) { $argList += '--loadslot', '0'; $launchArgs += '--loadslot', '0' }
 	Write-Host "=== arx.exe $($argList -join ' ')" -ForegroundColor Cyan

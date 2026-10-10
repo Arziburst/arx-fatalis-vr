@@ -5,3 +5,7 @@
 
 # A fresh isolated user directory has no cfg.ini yet; the game writes defaults (docs/vr/TESTING.md, first run)
 ^\[W\] ArxGame:\d+\s+Could not read config files cfg\.ini and cfg_default\.ini
+
+# OpenAL's mixer thread starved while the PC was busy (parallel worker builds): seen in 1 of 30 kept runs, 449 lines in
+# 11 s, nothing audible reported (#300). The digest still shows it; a real audio fault shows as a crash or an error
+^\[W\] OpenALSource:\d+\s+\[.*\] buffer underrun detected

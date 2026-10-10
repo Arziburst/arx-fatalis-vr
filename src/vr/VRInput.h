@@ -20,10 +20,13 @@
 #ifndef ARX_VR_VRINPUT_H
 #define ARX_VR_VRINPUT_H
 
+#include <array>
 #include <string>
 #include <string_view>
 
 #include "vr/BindingCapture.h"
+#include "math/Types.h"
+#include "vr/Locomotion.h"
 #include "vr/VRControls.h"
 #include "vr/VRGameInput.h"
 #include "vr/VRTurn.h"
@@ -56,11 +59,42 @@ const ControlResolver & controls();
 //! What the engine was given in the last update: actions, buttons, the move vector, the turn axis
 const GameInputState & gameInput();
 
+//! The stick walk of the last game update (#31): what status.json reports
+struct WalkStatus {
+	bool walking = false;
+	float yaw = 0.f;     //!< engine degrees [0, 360): where the stick's forward pointed (the look, D-008)
+	float heading = 0.f; //!< engine degrees: the player's heading in that update
+	Vec3f direction = Vec3f(0.f);
+	u64 walks = 0;       //!< walk episodes since the game started
+	bool sneak = false;  //!< the walk sneaks: a slight deflection (#33)
+	u64 paceChanges = 0; //!< switches between sneak and run within a walk since the game started (#33)
+};
+
+const WalkStatus & walkStatus();
+
+//! Called by the game's player controls every update with the stick walk it applied
+void reportWalk(const StickWalk & walk, float yaw, float heading);
+
 //! The controllers the current layout is for
 ControllerType controllerType();
 
 //! The controllers' state of the last update: sticks and analog values
 const ControllerInput & controllerInput();
+
+//! The menu pointer (#34) as status.json reports it
+struct PointerStatus {
+	bool shown = false;          //!< the floating panel is shown: the pointer is on
+	bool active = false;         //!< the owning hand's ray is on the panel: the cursor follows it
+	const char * owner = "right"; //!< the hand that owns the cursor
+	Vec2f cursor = Vec2f(0.f);   //!< the mouse it gives, the 2D interface's pixels
+	bool beam = false;           //!< the beam was in the last submitted frame
+	std::array<bool, HandCount> onPanel = { }; //!< each hand's ray hits the panel
+	u64 clicks = 0;              //!< trigger presses on the panel
+	u64 offPanelPresses = 0;     //!< presses off it, kept from the engine
+	u64 ownerChanges = 0;
+};
+
+PointerStatus pointerStatus();
 
 //! The turn settings of cfg.ini (\c vr_smooth_turn, \c vr_snap_turn_angle, \c vr_snap_turn_repeat,
 //! \c vr_smooth_turn_speed - #32)
@@ -77,6 +111,11 @@ float updateTurn(float seconds, bool allowed);
 
 //! Snaps and the total turned so far - for status.json
 const TurnController & turnState();
+
+//! The repeats of the last snap push (0: a single snap) and their mean interval in seconds of the clock, from
+//! the push's first snap to its last repeat (0 without a repeat) - for status.json (#285)
+u64 snapPushRepeats();
+float snapRepeatInterval();
 
 /*!
  * The controller type a remapped layout is saved for: an unknown controller uses the Index layout
@@ -128,13 +167,13 @@ u32 captureCount();
  * (the analog value only; its direction controls are \c down / \c up);
  * \c bind \c <event> \c <binding> (e.g. \c bind \c jump \c left.grip+left.a) - remap one event;
  * \c reset - the default layout for the current controllers, not saved;
+ * \c capture \c <event> - what the VR settings page does when the player selects the event
+ * (\ref startCapture); \c cancel - end the capture; \c default - the page's "reset to default"
+ * (\ref restoreDefaultLayout); \c reload - read the saved layout again, as at a start;
  * \c turn \c snap|smooth, \c turn \c angle \c <degrees>, \c turn \c speed \c <degrees per second>,
  * \c turn \c repeat \c <seconds> -
  * the turn settings, as cfg.ini would set them (#32); \c height \c <meters> - the character height
- * setting (#260);
- * \c capture \c <event> - what the VR settings page does when the player selects the event
- * (\ref startCapture); \c cancel - end the capture; \c default - the page's "reset to default"
- * (\ref restoreDefaultLayout).
+ * setting (#260).
  *
  * \return an empty string on success, otherwise the reason it was refused
  */

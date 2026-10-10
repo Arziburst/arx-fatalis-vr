@@ -367,6 +367,15 @@ bool parseLayout(std::string_view text, ControlLayout & layout, std::string * er
 	return true;
 }
 
+bool readSavedLayout(std::string_view text, ControllerType type, ControlLayout & layout, std::string * error) {
+	layout = defaultLayout(type);
+	if(!parseLayout(text, layout, error)) {
+		layout = defaultLayout(type);
+		return false;
+	}
+	return true;
+}
+
 std::vector<Conflict> findConflicts(const ControlLayout & layout) {
 	std::vector<Conflict> conflicts;
 	for(size_t i = 0; i < EventCount; i++) {

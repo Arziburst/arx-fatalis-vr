@@ -49,6 +49,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include <stddef.h>
 #include <bitset>
+#include <optional>
 #include <string_view>
 
 #include "core/Config.h"
@@ -188,6 +189,14 @@ public:
 	void setVirtualKey(int keyId, bool down);
 	void setVirtualMouseButton(int buttonId, bool down);
 	void setVirtualAction(ControlAction actionId, bool down);
+
+	/*!
+	 * The VR menu pointer (#34): the mouse on the interface's virtual screen while a hand points at the
+	 * floating panel, \c std::nullopt for the real mouse. Applied by \ref update in the absolute mouse
+	 * mode (the cursor modes), where it wins over the real mouse and counts as inside the window; the
+	 * system cursor is not moved.
+	 */
+	void setVirtualMousePosition(std::optional<Vec2s> position) { m_virtualMousePosition = position; }
 	
 private:
 	
@@ -232,6 +241,7 @@ private:
 	std::bitset<NUM_ACTION_KEY> m_virtualActionsSet;
 	std::bitset<NUM_ACTION_KEY> m_virtualActions;
 	std::bitset<NUM_ACTION_KEY> m_oldVirtualActions;
+	std::optional<Vec2s> m_virtualMousePosition;
 	
 };
 

@@ -39,6 +39,7 @@ class BindingCaptureTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(timeoutTest);
 	CPPUNIT_TEST(labelTest);
 	CPPUNIT_TEST(layoutChangesTest);
+	CPPUNIT_TEST(brokenLayoutFileTest);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -56,6 +57,7 @@ public:
 	void timeoutTest();
 	void labelTest();
 	void layoutChangesTest();
+	void brokenLayoutFileTest();
 
 };
 

@@ -21,6 +21,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <optional>
 
 #include "core/Config.h"
 #include "core/GameEvent.h"
@@ -33,7 +35,9 @@
 #include "io/log/Logger.h"
 #include "platform/Time.h"
 #include "util/Number.h"
+#include "vr/BodyYaw.h"
 #include "vr/HeadTracking.h"
+#include "vr/MenuPointer.h"
 #include "vr/VRSystem.h"
 
 namespace vr {
@@ -48,6 +52,10 @@ struct InputState {
 	GameInputMapper game;
 	TurnController turn;
 	bool smoothTurning = false; //!< a smooth turn is under way (for its start / stop game events)
+	//! The push of the last snap (#285): when its first snap was made, its repeats, their mean interval
+	PlatformInstant pushStart = 0;
+	u64 pushRepeats = 0;
+	float repeatInterval = 0.f;
 
 	//! Controls set by the test channel, merged into what the controllers report
 	ControlSet injectedDown;
@@ -62,6 +70,13 @@ struct InputState {
 	BindingCapture capture;
 	Event captureEvent = Event::Jump;
 	u32 captures = 0;
+
+	//! The menu pointer (#34): the hand on the floating panel is the mouse
+	MenuPointer pointer;
+	bool panelShown = false;
+	std::array<PointerRay, HandCount> rays;
+	u64 loggedOffPanelPresses = 0;
+	WalkStatus walk;
 
 };
 
@@ -108,10 +123,10 @@ ControlLayout playerLayout(ControllerType type, std::string & why) {
 	}
 
 	std::string error;
-	if(!parseLayout(fs::read(file), layout, &error)) {
+	if(!readSavedLayout(fs::read(file), type, layout, &error)) {
 		// The default layout keeps the game playable; the file stays for the player to look at
 		LogWarning << "[vr] input: ignoring the saved layout " << file << ": " << error;
-		return defaultLayout(type);
+		return layout;
 	}
 
 	why = std::string("saved for ") + controllerTypeName(type) + " (" + file.string() + ")";
@@ -196,14 +211,76 @@ void applyToEngine(const GameInputState & state) {
 		return;
 	}
 
-	// Both hands work as the mouse (D-016): the left button clicks, drags and double-clicks
-	GInput->setVirtualMouseButton(Mouse::Button_0, state.click);
+	// Both hands work as the mouse (D-016): the left button clicks, drags and double-clicks; on the
+	// floating panel the pointing hand's pixel is the mouse, and a press off the panel clicks nothing (#34)
+	GInput->setVirtualMouseButton(Mouse::Button_0, state.click && !g_input.pointer.suppressClick());
+	if(g_input.pointer.active()) {
+		const Vec2f cursor = g_input.pointer.cursor();
+		GInput->setVirtualMousePosition(Vec2s(s16(std::lround(cursor.x)), s16(std::lround(cursor.y))));
+	} else {
+		GInput->setVirtualMousePosition(std::nullopt);
+	}
 	// The original's right click: the use action in game, the right button in the menus (in game
 	// the right button is free look)
 	GInput->setVirtualMouseButton(Mouse::Button_1, state.use && ARXmenu.mode() != Mode_InGame);
 	GInput->setVirtualKey(Keyboard::Key_Escape, state.escape);
 	for(size_t i = 0; i < GameActionCount; i++) {
 		GInput->setVirtualAction(engineAction(GameAction(i)), state.actions[i]);
+	}
+}
+
+/*!
+ * The menu pointer (#34): where each hand's aim ray hits the floating panel this frame, which hand
+ * owns the cursor (vr/MenuPointer.h) and the beam from it. Game events on the panel appearing and
+ * going, on an owner change and on every press - bounded by the player's hands, never per frame.
+ */
+void updatePointer() {
+
+	const bool shown = panelShown();
+	const std::array<HandAim, HandCount> aims = handAims();
+	std::array<Vec3f, HandCount> hits = { };
+	std::array<bool, HandCount> trigger = { };
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		PointerRay & ray = g_input.rays[hand];
+		ray = PointerRay();
+		if(shown && aims[hand].valid) {
+			ray.onPanel = panelHit(aims[hand].origin, aims[hand].direction, ray.pixel, &hits[hand]);
+		}
+	}
+	trigger[size_t(Hand::Left)] = g_input.resolver.active(Event::InteractLeft) || g_input.resolver.active(Event::StashLeft);
+	trigger[size_t(Hand::Right)] = g_input.resolver.active(Event::InteractRight) || g_input.resolver.active(Event::StashRight);
+
+	MenuPointer & pointer = g_input.pointer;
+	pointer.update(shown, g_input.rays, trigger);
+
+	const size_t owner = size_t(pointer.owner());
+	if(pointer.active()) {
+		setPointerBeam(true, aims[owner].origin, hits[owner]);
+	} else {
+		setPointerBeam(false);
+	}
+
+	if(shown != g_input.panelShown) {
+		g_input.panelShown = shown;
+		gameevent::Event("vr.pointer")("state", shown ? "on" : "off")("hand", handName(pointer.owner()))
+			("tracked", int(aims[0].valid) + int(aims[1].valid));
+	}
+	if(!shown) {
+		return;
+	}
+	if(pointer.ownerChanged()) {
+		gameevent::Event("vr.pointer.owner")("hand", handName(pointer.owner()));
+	}
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		const bool pressed = trigger[hand] && pointer.pressedOnPanel(Hand(hand));
+		if(pressed) {
+			gameevent::Event("vr.pointer.click")("hand", handName(Hand(hand)))
+				("x", g_input.rays[hand].pixel.x, 0)("y", g_input.rays[hand].pixel.y, 0);
+		}
+	}
+	if(pointer.offPanelPresses() != g_input.loggedOffPanelPresses) {
+		g_input.loggedOffPanelPresses = pointer.offPanelPresses();
+		gameevent::Event("vr.pointer.muted")("hand", handName(pointer.owner()))("reason", "off the panel");
 	}
 }
 
@@ -252,6 +329,10 @@ void updateInput() {
 		}
 	}
 
+	// The hands on the floating panel (#34), before the events reach the engine: a press moves the
+	// cursor under the pressing hand in the same update, so the click lands where it points
+	updatePointer();
+
 	// Events -> the engine's actions, mouse buttons and keys (#74); nothing while the VR settings
 	// capture a binding, so pressing the menu's or the inventory's control only binds it (#178)
 	// - also in the update that ends it, whose events were resolved with the old layout
@@ -269,8 +350,53 @@ void updateInput() {
 	}
 }
 
+PointerStatus pointerStatus() {
+	const MenuPointer & pointer = g_input.pointer;
+	PointerStatus status;
+	status.shown = g_input.panelShown;
+	status.active = pointer.active();
+	status.owner = handName(pointer.owner());
+	status.cursor = pointer.cursor();
+	status.beam = pointerBeamShown();
+	status.onPanel = { g_input.rays[0].onPanel, g_input.rays[1].onPanel };
+	status.clicks = pointer.clicks();
+	status.offPanelPresses = pointer.offPanelPresses();
+	status.ownerChanges = pointer.ownerChanges();
+	return status;
+}
+
 const GameInputState & gameInput() {
 	return g_input.game.state();
+}
+
+const WalkStatus & walkStatus() {
+	return g_input.walk;
+}
+
+void reportWalk(const StickWalk & walk, float yaw, float heading) {
+
+	WalkStatus & status = g_input.walk;
+	yaw -= 360.f * std::floor(yaw / 360.f);
+	const bool walking = walk.moving();
+	if(walking != status.walking) {
+		if(walking) {
+			status.walks++;
+		}
+		// An episode, not a frame: the stick left its dead zone, or came back to rest
+		gameevent::Event("vr.walk", 200)("state", walking ? "start" : "end")("yaw", yaw, 1)
+			("heading", heading, 1)("look", wrapSignedDegrees(yaw - heading), 1)
+			("pace", walk.sneak ? "sneak" : "run");
+	} else if(walking && walk.sneak != status.sneak) {
+		// The deflection crossed a threshold of the pace (#33): one line per switch, not per frame
+		status.paceChanges++;
+		gameevent::Event("vr.walk", 200)("state", "pace")("pace", walk.sneak ? "sneak" : "run");
+	}
+	status.sneak = walking && walk.sneak;
+
+	status.walking = walking;
+	status.yaw = yaw;
+	status.heading = heading;
+	status.direction = walk.direction;
 }
 
 const ControlResolver & controls() {
@@ -283,42 +409,6 @@ ControllerType controllerType() {
 
 const ControllerInput & controllerInput() {
 	return g_input.input;
-}
-
-TurnSettings turnSettings() {
-	TurnSettings settings;
-	settings.mode = config.input.vrSmoothTurn ? TurnMode::Smooth : TurnMode::Snap;
-	settings.snapAngle = config.input.vrSnapTurnAngle;
-	settings.smoothSpeed = config.input.vrSmoothTurnSpeed;
-	settings.snapRepeat = config.input.vrSnapTurnRepeat;
-	return settings;
-}
-
-float updateTurn(float seconds, bool allowed) {
-
-	const TurnSettings settings = turnSettings();
-	const float axis = g_input.game.state().turn;
-	const u64 snaps = g_input.turn.snaps();
-	const float yaw = g_input.turn.update(settings, axis, seconds, allowed);
-
-	// A snap is a player action: one event each; a smooth turn is an episode: logged when it starts and stops
-	if(g_input.turn.snaps() != snaps) {
-		gameevent::Event("vr.turn.snap", 1000)("dir", g_input.turn.lastSnap() > 0 ? "right" : "left")
-			("deg", settings.snapAngle, 1)("repeat", g_input.turn.lastSnapRepeated() ? "yes" : "no")
-			("count", g_input.turn.snaps());
-	}
-	const bool smoothTurning = settings.mode == TurnMode::Smooth && yaw != 0.f;
-	if(smoothTurning != g_input.smoothTurning) {
-		gameevent::Event("vr.turn.smooth", 1000)("state", smoothTurning ? "start" : "stop")
-			("speed", settings.smoothSpeed, 1)("turnedDeg", g_input.turn.turned(), 1);
-		g_input.smoothTurning = smoothTurning;
-	}
-
-	return yaw;
-}
-
-const TurnController & turnState() {
-	return g_input.turn;
 }
 
 ControllerType layoutType(ControllerType type) {
@@ -375,6 +465,62 @@ Event captureEvent() {
 
 u32 captureCount() {
 	return g_input.captures;
+}
+
+TurnSettings turnSettings() {
+	TurnSettings settings;
+	settings.mode = config.input.vrSmoothTurn ? TurnMode::Smooth : TurnMode::Snap;
+	settings.snapAngle = config.input.vrSnapTurnAngle;
+	settings.smoothSpeed = config.input.vrSmoothTurnSpeed;
+	settings.snapRepeat = config.input.vrSnapTurnRepeat;
+	return settings;
+}
+
+float updateTurn(float seconds, bool allowed) {
+
+	const TurnSettings settings = turnSettings();
+	const float axis = g_input.game.state().turn;
+	const u64 snaps = g_input.turn.snaps();
+	// A capture of the VR settings takes the controls: the turn stick does not turn meanwhile (#178)
+	const float yaw = g_input.turn.update(settings, axis, seconds, allowed && !g_input.capture.active());
+
+	// A snap is a player action: one event each; a smooth turn is an episode: logged when it starts and stops
+	if(g_input.turn.snaps() != snaps) {
+		// The repeat measured by the clock: a test reads it instead of a count of snaps, which depends on when
+		// the stick is let go (#285)
+		const PlatformInstant now = platform::getTime();
+		if(g_input.turn.lastSnapRepeated()) {
+			g_input.pushRepeats++;
+			g_input.repeatInterval = toS(now - g_input.pushStart) / float(g_input.pushRepeats);
+		} else {
+			g_input.pushStart = now;
+			g_input.pushRepeats = 0;
+			g_input.repeatInterval = 0.f;
+		}
+		gameevent::Event("vr.turn.snap", 1000)("dir", g_input.turn.lastSnap() > 0 ? "right" : "left")
+			("deg", settings.snapAngle, 1)("repeat", g_input.turn.lastSnapRepeated() ? "yes" : "no")
+			("count", g_input.turn.snaps());
+	}
+	const bool smoothTurning = settings.mode == TurnMode::Smooth && yaw != 0.f;
+	if(smoothTurning != g_input.smoothTurning) {
+		gameevent::Event("vr.turn.smooth", 1000)("state", smoothTurning ? "start" : "stop")
+			("speed", settings.smoothSpeed, 1)("turnedDeg", g_input.turn.turned(), 1);
+		g_input.smoothTurning = smoothTurning;
+	}
+
+	return yaw;
+}
+
+const TurnController & turnState() {
+	return g_input.turn;
+}
+
+u64 snapPushRepeats() {
+	return g_input.pushRepeats;
+}
+
+float snapRepeatInterval() {
+	return g_input.repeatInterval;
 }
 
 namespace {
@@ -447,6 +593,33 @@ std::string inputCommand(std::string_view arguments) {
 		return std::string();
 	}
 
+	if(verb == "capture") {
+		std::string_view name = nextWord(rest);
+		std::optional<Event> event = parseEvent(name);
+		if(!event) {
+			return "vr-input capture: unknown event \"" + std::string(name) + "\"";
+		}
+		startCapture(*event);
+		return std::string();
+	}
+
+	if(verb == "cancel") {
+		cancelCapture();
+		return std::string();
+	}
+
+	if(verb == "default") {
+		restoreDefaultLayout();
+		return std::string();
+	}
+
+	if(verb == "reload") {
+		// Read the saved layout again at the next update, as when the controllers are detected at a start
+		cancelCapture();
+		g_input.loaded = false;
+		return std::string();
+	}
+
 	if(verb == "turn") {
 		// The turn settings as cfg.ini sets them (#32); the settings screen is #178
 		std::string_view what = nextWord(rest);
@@ -486,26 +659,6 @@ std::string inputCommand(std::string_view arguments) {
 		return std::string();
 	}
 
-	if(verb == "capture") {
-		std::string_view name = nextWord(rest);
-		std::optional<Event> event = parseEvent(name);
-		if(!event) {
-			return "vr-input capture: unknown event \"" + std::string(name) + "\"";
-		}
-		startCapture(*event);
-		return std::string();
-	}
-
-	if(verb == "cancel") {
-		cancelCapture();
-		return std::string();
-	}
-
-	if(verb == "default") {
-		restoreDefaultLayout();
-		return std::string();
-	}
-
 	if(verb == "reset") {
 		g_input.injectedDown.reset();
 		g_input.injectedTaps.reset();
@@ -514,8 +667,8 @@ std::string inputCommand(std::string_view arguments) {
 		return std::string();
 	}
 
-	return "vr-input: expected down|up|tap <control>, stick <hand> <x> <y>, bind <event> <binding>, turn <setting>, height <meters>, reset, capture <event>, cancel or default, got \""
-	       + std::string(arguments) + "\"";
+	return "vr-input: expected down|up|tap <control>, stick <hand> <x> <y>, bind <event> <binding>, turn <setting>,"
+	       " height <meters>, reset, capture <event>, cancel, default or reload, got \"" + std::string(arguments) + "\"";
 }
 
 } // namespace vr

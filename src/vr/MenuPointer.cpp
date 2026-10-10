@@ -62,15 +62,18 @@ void MenuPointer::setOwner(Hand hand) {
 	}
 }
 
-void MenuPointer::update(bool panelShown, const std::array<PointerRay, HandCount> & rays,
-                         const std::array<bool, HandCount> & trigger, const PointerParams & params) {
+void MenuPointer::update(bool on, const std::array<PointerRay, HandCount> & rays,
+                         const std::array<bool, HandCount> & trigger, const PointerParams & params,
+                         const std::array<bool, HandCount> & claims) {
 
 	m_ownerChanged = false;
 	m_pressedOnPanel = { };
+	m_pressedOnWorld = { };
 
-	if(!panelShown) {
+	if(!on) {
 		// The game's own clicks: nothing to mute, nothing to hold
 		m_active = false;
+		m_onPanel = false;
 		m_holding = false;
 		m_muted = { };
 		m_trigger = trigger;
@@ -84,11 +87,16 @@ void MenuPointer::update(bool panelShown, const std::array<PointerRay, HandCount
 		}
 		const Hand hand = Hand(i);
 		setOwner(hand);
-		if(rays[i].onPanel) {
+		if(rays[i].onTarget()) {
 			m_holding = true;
 			m_pressPixel = rays[i].pixel;
-			m_pressedOnPanel[i] = true;
-			m_clicks++;
+			if(rays[i].onPanel) {
+				m_pressedOnPanel[i] = true;
+				m_clicks++;
+			} else {
+				m_pressedOnWorld[i] = true;
+				m_worldClicks++;
+			}
 		} else {
 			m_muted[i] = true;
 			m_offPanelPresses++;
@@ -100,9 +108,11 @@ void MenuPointer::update(bool panelShown, const std::array<PointerRay, HandCount
 		}
 	}
 
-	// The owner points away, the other hand at the panel: the other hand takes the cursor
+	// The owner points away, the other hand at a target: the other hand takes the cursor. A hand that
+	// claims it (its reticle moved onto something new) takes it while the owner's trigger is up
 	const Hand other = otherHand(m_owner);
-	if(!rays[size_t(m_owner)].onPanel && !trigger[size_t(m_owner)] && rays[size_t(other)].onPanel) {
+	if(!trigger[size_t(m_owner)] && rays[size_t(other)].onTarget()
+	   && (!rays[size_t(m_owner)].onTarget() || claims[size_t(other)])) {
 		setOwner(other);
 	}
 
@@ -110,7 +120,8 @@ void MenuPointer::update(bool panelShown, const std::array<PointerRay, HandCount
 	if(!trigger[owner]) {
 		m_holding = false;
 	}
-	m_active = rays[owner].onPanel;
+	m_active = rays[owner].onTarget();
+	m_onPanel = rays[owner].onPanel;
 	if(m_active) {
 		if(m_holding && glm::distance(rays[owner].pixel, m_pressPixel) > params.clickDeadZone) {
 			m_holding = false; // a drag: from now on the cursor follows the ray

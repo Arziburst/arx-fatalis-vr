@@ -574,7 +574,13 @@ void Input::update(float time) {
 	} else {
 		mouseInWindow = false;
 	}
-	
+
+	// The VR menu pointer (#34): the hand on the floating panel is the mouse
+	if(m_virtualMousePosition && m_mouseMode == Mouse::Absolute) {
+		iMouseA = *m_virtualMousePosition;
+		mouseInWindow = true;
+	}
+
 	int relX, relY;
 	backend->getRelativeMouseCoords(relX, relY, iWheelDir);
 	

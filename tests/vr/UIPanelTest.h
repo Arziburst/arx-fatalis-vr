@@ -38,6 +38,7 @@ class UIPanelTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testHeadingAtThePoles);
 	CPPUNIT_TEST(testSizeFollowsTheImage);
 	CPPUNIT_TEST(testRayToPixel);
+	CPPUNIT_TEST(testPointIsTheInverseOfTheHit);
 	CPPUNIT_TEST(testRayMisses);
 	CPPUNIT_TEST(testFixedWhileOpen);
 	CPPUNIT_TEST(testShortCloseKeepsThePose);
@@ -53,6 +54,7 @@ public:
 	void testHeadingAtThePoles();
 	void testSizeFollowsTheImage();
 	void testRayToPixel();
+	void testPointIsTheInverseOfTheHit();
 	void testRayMisses();
 	void testFixedWhileOpen();
 	void testShortCloseKeepsThePose();

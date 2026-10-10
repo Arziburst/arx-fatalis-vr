@@ -95,6 +95,11 @@ float updateTurn(float seconds, bool allowed);
 //! Snaps and the total turned so far - for status.json
 const TurnController & turnState();
 
+//! The repeats of the last snap push (0: a single snap) and their mean interval in seconds of the clock, from
+//! the push's first snap to its last repeat (0 without a repeat) - for status.json (#285)
+u64 snapPushRepeats();
+float snapRepeatInterval();
+
 /*!
  * The controller type a remapped layout is saved for: an unknown controller uses the Index layout
  * (\ref defaultLayout), so it also uses the Index's saved one

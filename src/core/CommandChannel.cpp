@@ -78,6 +78,7 @@
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
+#include "vr/VRMelee.h"
 #include "vr/VRReticle.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
@@ -914,6 +915,59 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("armAnimation", weapon.armAnimation);
 		json.value("suppressedFrames", weapon.suppressedFrames);
 		json.value("combatMode", (player.Interface & INTER_COMBATMODE) != 0);
+		json.end();
+	}
+	// Physical melee (#39): the swing detector, the charge, the hits
+	{
+		const vr::MeleeStatus & melee = vr::meleeStatus();
+		json.object("melee");
+		json.value("active", melee.active);
+		json.value("refused", melee.refused);
+		json.value("swinging", melee.swinging);
+		json.value("kind", melee.kind);
+		json.value("speed", melee.speed);
+		json.value("peak", melee.peak);
+		json.value("factor", melee.factor);
+		json.value("swings", melee.swings);
+		json.value("gaps", melee.gaps);
+		json.value("jumps", melee.jumps);
+		json.value("nearMisses", melee.nearMisses);
+		json.value("lastNearMiss", melee.lastNearMiss);
+		json.object("charge");
+		json.value("held", melee.chargeHeld);
+		json.value("charging", melee.charging);
+		json.value("spent", melee.chargeSpent);
+		json.value("seconds", melee.chargeSeconds);
+		json.value("ratio", melee.chargeRatio);
+		json.value("fullAimSeconds", melee.fullAimSeconds);
+		json.end();
+		json.value("hits", melee.hits);
+		json.value("contacts", melee.contacts);
+		json.value("chargedHits", melee.chargedHits);
+		json.object("last");
+		json.value("target", melee.lastTarget);
+		json.value("aim", melee.lastAim);
+		json.value("damage", melee.lastDamage);
+		json.value("charged", melee.lastCharged);
+		json.value("speed", melee.lastSpeed);
+		json.value("swing", melee.lastSwing);
+		json.end();
+		json.object("params");
+		json.value("swingSpeed", melee.params.startSpeed);
+		json.value("endSpeed", melee.params.endSpeed);
+		json.value("fullSpeed", melee.params.fullSpeed);
+		json.value("weakAim", melee.params.weakAim);
+		json.value("targetCooldown", melee.params.targetCooldown);
+		json.end();
+		json.value("placed", melee.placed);
+		const struct { const char * name; const Vec3f & point; } points[] = { { "hilt", melee.hilt }, { "tip", melee.tip } };
+		for(const auto & point : points) {
+			json.object(point.name);
+			json.value("x", point.point.x);
+			json.value("y", point.point.y);
+			json.value("z", point.point.z);
+			json.end();
+		}
 		json.end();
 	}
 	{
@@ -1773,6 +1827,34 @@ std::string execute(std::string_view line) {
 		player.desiredangle.setPitch(angle.getPitch());
 		player.angle.setPitch(angle.getPitch());
 		LogInfo << "[channel] player looks at " << rest << " (yaw " << angle.getYaw() << ", pitch " << angle.getPitch() << ")";
+		return std::string();
+	}
+
+	if(word == "place") {
+		// place <entity> <ahead> [<right>]: an entity on the floor ahead of the player (units along the player's
+		// heading, and to its right), facing the player - a target in reach for melee checks (#39)
+		if(currentState() != GameState::Gameplay || !entities.player()) {
+			return refuse(std::string("place: needs a level on screen (state ") + gameStateName(currentState()) + ")");
+		}
+		std::istringstream iss{std::string(rest)};
+		std::string id;
+		float ahead = 0.f, right = 0.f;
+		if(!(iss >> id >> ahead)) {
+			return refuse("place: expected <entity> <ahead> [<right>], got \"" + std::string(rest) + "\"");
+		}
+		iss >> right;
+		Entity * target = entities.getById(id);
+		if(!target || target == entities.player()) {
+			return refuse("place: unknown entity \"" + id + "\"");
+		}
+		const float yaw = player.angle.getYaw();
+		const Vec3f forward = angleToVectorXZ(yaw);
+		const Vec3f side = angleToVectorXZ(yaw - 90.f);
+		const Vec3f pos = player.basePosition() + forward * ahead + side * right;
+		ARX_INTERACTIVE_Teleport(target, pos);
+		target->angle.setYaw(MAKEANGLE(yaw + 180.f));
+		LogInfo << "[channel] " << id << " placed at " << pos.x << " " << pos.y << " " << pos.z << " (" << ahead
+		        << " ahead, " << right << " right of the player)";
 		return std::string();
 	}
 

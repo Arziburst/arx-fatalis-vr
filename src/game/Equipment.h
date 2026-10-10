@@ -49,6 +49,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include <stddef.h>
 #include <string_view>
+#include <vector>
 
 #include "game/Item.h"
 #include "math/Types.h"
@@ -121,7 +122,22 @@ float getEquipmentBaseModifier(EquipmentModifierType modifier, bool relative = f
  */
 float getEquipmentModifier(EquipmentModifierType modifier, float baseval);
 
-bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ratioaim, long flags, EntityHandle targ = EntityHandle());
+//! A target a strike check touched (VR melee, #39)
+struct StrikeContact {
+	EntityHandle target;
+	float damage = 0.f; //!< 0 for a miss of the armour class roll, and for objects
+	bool npc = false;
+};
+
+//! What a VR contact hit asks of a strike check (#39): targets to leave out (the per-target cooldown), and
+//! the targets it touched
+struct StrikeTargets {
+	std::vector<EntityHandle> skip;
+	std::vector<StrikeContact> touched;
+};
+
+bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ratioaim, long flags,
+                                EntityHandle targ = EntityHandle(), StrikeTargets * targets = nullptr);
 void ARX_EQUIPMENT_RecreatePlayerMesh();
 Entity * getWeapon(Entity & entity) noexcept;
 std::string_view getWeaponMaterial(Entity & entity) noexcept;

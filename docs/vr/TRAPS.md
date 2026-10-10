@@ -8,6 +8,19 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — A head pressed into a wall is "not in geometry": `CheckBackgroundInSphere` misses the middle of a wall (#26)
+
+**Symptom:** the simulated head is moved into the start cell's side wall — the body is blocked at the wall, the eye
+shot shows the wall face filling half the view at a few centimetres — and the near-plane sphere test
+(`CheckBackgroundInSphere(Sphere(head, 12.5))`) says nothing is there; once the head is past the wall the ray test
+finds it at once.
+**Cause:** the engine's `IsPolyInSphere` does not measure the distance to a polygon: it only tests whether the
+polygon's corners, edge midpoints and a few points towards its centre lie in the sphere (it was made for the
+50-unit cylinders of NPCs). A small sphere in front of the middle of a large wall polygon contains none of them.
+**Do:** for anything smaller than a body, measure the distance to the polygon's triangles —
+`vr::distanceToTriangle` (HeadLean.h), used by `backgroundCloserThan` in `ArxGame.cpp`; `raycastScene` is exact
+for a segment.
+
 ## 2026-10-10 — A shipped `.xrs` sequence is red in CI only because of the sequence that ran before it (#296, from #178)
 
 **Symptom:** the CI game check fails a sequence that passes alone: `vr-remap-saved` expected the file `vr-remap` saved
@@ -212,8 +225,11 @@ with MSAA on the window the renderer draws alpha cutouts with alpha-to-coverage 
 that would discard the transparent texels is off.
 **Do:** tell the renderer the bound target's size (`Renderer::setRenderTargetSize`, 0 = the window): it
 re-applies the viewport and the scissor against that height, snapshots read that size, and
-`SetAntialiasing(true)` is refused off the window so the alpha cutout path falls back to the alpha test.
+`SetAntialiasing(true)` is refused on a single-sample offscreen target so the alpha cutout path falls
+back to the alpha test (a multisampled one names its samples too, `setRenderTargetSize(size, samples)`, #226).
 `vr::beginEyeRender()` / `endEyeRender()` and the flat frame target do this; a new offscreen target must too.
+With eye MSAA (`vr_msaa`, D-035) the eye is drawn into a multisampled buffer, not the swapchain image:
+the image holds the picture only after `Swapchain::resolve()` in `endEyeRender` - read eye pixels after it.
 
 ## 2026-10-10 — "use" fires from just holding the Index controller (a closed hand flickers, #30)
 

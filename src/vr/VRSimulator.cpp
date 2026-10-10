@@ -890,9 +890,17 @@ void eyeBackground(u8 background[3]) {
 	}
 }
 
+//! A quad layer drawn over the panel (the menu pointer's beam, #34), ready to compose
+struct OverlayQuad {
+	RgbImage image;
+	QuadPlacement placement;
+	Vec3f spacePosition = Vec3f(0.f);
+	glm::quat spaceOrientation = glm::quat(1.f, 0.f, 0.f, 0.f);
+};
+
 //! Compose, save and judge the shot \a name from the layers of this frame
 void takeShot(const std::string & name, const XrCompositionLayerProjection & projection,
-              const XrCompositionLayerQuad * quadLayer) {
+              const XrCompositionLayerQuad * quadLayer, const std::vector<const XrCompositionLayerQuad *> & overlayLayers) {
 
 	SimRuntime & s = *g_sim;
 	ShotRecord record;
@@ -931,6 +939,23 @@ void takeShot(const std::string & name, const XrCompositionLayerProjection & pro
 		}
 	}
 
+	// The later quad layers, in their order: drawn over the panel as the compositor does
+	std::vector<OverlayQuad> overlays;
+	for(const XrCompositionLayerQuad * layer : overlayLayers) {
+		auto it = s.swapchains.find(fromHandle(layer->subImage.swapchain));
+		OverlayQuad overlay;
+		if(it == s.swapchains.end() || !roomPose(layer->space, overlay.spacePosition, overlay.spaceOrientation)) {
+			continue;
+		}
+		overlay.placement.blended = (layer->layerFlags & XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT) != 0;
+		overlay.image = readImage(it->second, overlay.placement.blended);
+		overlay.placement.position = toVec(layer->pose.position);
+		overlay.placement.orientation = toQuat(layer->pose.orientation);
+		overlay.placement.width = layer->size.width;
+		overlay.placement.height = layer->size.height;
+		overlays.push_back(std::move(overlay));
+	}
+
 	Vec3f layerPosition(0.f);
 	glm::quat layerOrientation(1.f, 0.f, 0.f, 0.f);
 	roomPose(projection.space, layerPosition, layerOrientation);
@@ -966,8 +991,17 @@ void takeShot(const std::string & name, const XrCompositionLayerProjection & pro
 		out.position = position;
 		out.angles = simAngles(orientation);
 		if(shot.quadShown) {
-			poseInSpace(quadSpacePosition, quadSpaceOrientation, position, orientation);
-			shot.quadPixels[eye] = composeQuad(composed[eye], fov, position, orientation, quad, placement);
+			Vec3f quadEyePosition = position;
+			glm::quat quadEyeOrientation = orientation;
+			poseInSpace(quadSpacePosition, quadSpaceOrientation, quadEyePosition, quadEyeOrientation);
+			shot.quadPixels[eye] = composeQuad(composed[eye], fov, quadEyePosition, quadEyeOrientation, quad, placement);
+		}
+		for(const OverlayQuad & overlay : overlays) {
+			Vec3f overlayEyePosition = position;
+			glm::quat overlayEyeOrientation = orientation;
+			poseInSpace(overlay.spacePosition, overlay.spaceOrientation, overlayEyePosition, overlayEyeOrientation);
+			shot.overlayPixels[eye] += composeQuad(composed[eye], fov, overlayEyePosition, overlayEyeOrientation,
+			                                       overlay.image, overlay.placement);
 		}
 	}
 
@@ -1021,14 +1055,20 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrEndFrame(XrSession /* session */, const XrF
 	s.begun = false;
 	s.counters.endedFrames++;
 
+	// The first quad is the flat frame / the panel; later ones are drawn over it (the menu pointer, #34)
 	const XrCompositionLayerProjection * projection = nullptr;
 	const XrCompositionLayerQuad * quad = nullptr;
+	std::vector<const XrCompositionLayerQuad *> overlays;
 	for(uint32_t i = 0; i < info->layerCount; i++) {
 		const XrCompositionLayerBaseHeader * layer = info->layers[i];
 		if(layer->type == XR_TYPE_COMPOSITION_LAYER_PROJECTION) {
 			projection = reinterpret_cast<const XrCompositionLayerProjection *>(layer);
 		} else if(layer->type == XR_TYPE_COMPOSITION_LAYER_QUAD) {
-			quad = reinterpret_cast<const XrCompositionLayerQuad *>(layer);
+			if(quad) {
+				overlays.push_back(reinterpret_cast<const XrCompositionLayerQuad *>(layer));
+			} else {
+				quad = reinterpret_cast<const XrCompositionLayerQuad *>(layer);
+			}
 		}
 	}
 
@@ -1069,7 +1109,7 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrEndFrame(XrSession /* session */, const XrF
 		std::vector<std::string> shots = std::move(s.pendingShots);
 		s.pendingShots.clear();
 		for(const std::string & name : shots) {
-			takeShot(name, *projection, quad);
+			takeShot(name, *projection, quad, overlays);
 		}
 	}
 

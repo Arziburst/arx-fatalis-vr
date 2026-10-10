@@ -226,9 +226,8 @@ void ArmIKTest::testFoldedAndDegenerateTargets() {
 void ArmIKTest::testHandMovesLikeTheHead() {
 
 	// Whatever the turn: a hand where the head is sits at the camera; a hand moved from the head by
-	// v sits where the camera would be if the head had moved by v (no lean clamp in the way)
+	// v sits where the camera would be if the head had moved by v (the body not walking after it)
 	vr::HeadCameraParams params;
-	params.maxLeanMeters = 100.f;
 	const float turns[][2] = { { 0.f, 0.f }, { 30.f, 90.f }, { 200.f, 45.f }, { -20.f, 350.f } };
 	const Vec3f moves[] = { Vec3f(0.3f, 0.f, 0.f), Vec3f(0.f, -0.4f, -0.5f), Vec3f(-0.25f, 0.1f, 0.2f) };
 	for(const auto & turn : turns) {
@@ -238,7 +237,7 @@ void ArmIKTest::testHandMovesLikeTheHead() {
 		reference.yaw = referenceYaw;
 		reference.position = Vec3f(1.f, 1.6f, -2.f);
 		const vr::HeadSample head = headSample(referenceYaw + 10.f, -20.f, 5.f, Vec3f(1.2f, 1.5f, -2.3f));
-		const vr::HeadCamera camera = vr::headToCamera(head, reference, bodyYaw, params);
+		const vr::HeadCamera camera = vr::headToCamera(head, reference, bodyYaw, Vec2f(0.f), params);
 
 		vr::HandSample atHead;
 		atHead.position = head.position;
@@ -250,7 +249,7 @@ void ArmIKTest::testHandMovesLikeTheHead() {
 			hand.position = head.position + move;
 			vr::HeadSample movedHead = head;
 			movedHead.position = head.position + move;
-			const vr::HeadCamera movedCamera = vr::headToCamera(movedHead, reference, bodyYaw, params);
+			const vr::HeadCamera movedCamera = vr::headToCamera(movedHead, reference, bodyYaw, Vec2f(0.f), params);
 			armCheckVector("the hand's offset is the camera's movement", movedCamera.offset - camera.offset,
 			               vr::handToWorld(hand, head, reference, bodyYaw, params).offset);
 		}

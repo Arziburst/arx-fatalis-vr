@@ -91,6 +91,8 @@ struct SimShot {
 	PixelStats quad;        //!< the flat frame, its middle
 	size_t quadCovered = 0; //!< pixels of the flat frame that cover the eyes (alpha at least half, #72)
 	size_t quadPixels[2] = { 0, 0 }; //!< eye pixels the quad covers
+	//! eye pixels the quad layers after the first cover - the menu pointer's beam above the panel (#34)
+	size_t overlayPixels[2] = { 0, 0 };
 	float lrDiff = -1.f;    //!< mean absolute luma difference of the two composed eyes
 	ShiftEstimate lrShift;  //!< left eye picture shifted right of the right eye's (> 0 is right)
 	bool swapEyes = false;  //!< the swap-eyes fault was on

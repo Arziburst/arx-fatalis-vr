@@ -8,6 +8,13 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — An `.xrs` `@log` step misses a game event that is in `arx.log` (#43)
+
+**Symptom:** `@log GameEvent:.*magic\.stance state=on hands=true` failed with "no log line matched" while
+`status.json` showed the stance on and `arx.log` had the event.
+**Cause:** the game event log writes a `bool` field as `yes` / `no` (`GameEventFormat.h`), while `status.json`
+writes `true` / `false`.
+**Do:** match `key=yes|no` in `@log`, `eq true|false` in `@assert`.
 ## 2026-10-10 — A sequence passes alone and fails in CI with a value it never set (#178)
 
 **Symptom:** in CI `vr-remap-saved` found `remapped` false and `vr-settings-flat` found `jump` = `right.b`, both passing

@@ -153,8 +153,13 @@ void MagicFlareChangeColor() {
 		g_magicFlareCurrentColor = 0;
 }
 
-void AddFlare(const Vec2f & pos, float sm, short typ, Entity * io, bool bookDraw) {
-	
+/*!
+ * A flare at the cursor position \a pos, or, with \a world, at that point of the world (the rune trail
+ * at the hand in VR, #43): \a sizeScale then scales the glow and the spread of its sparks
+ */
+static void addFlare(const Vec2f & pos, const Vec3f * world, float sm, short typ, Entity * io, bool bookDraw,
+                     float sizeScale) {
+
 	size_t oldest = 0;
 	size_t i;
 	for(i = 0; i < g_magicFlaresMax; i++) {
@@ -187,7 +192,10 @@ void AddFlare(const Vec2f & pos, float sm, short typ, Entity * io, bool bookDraw
 	flare.pos.x = pos.x - Random::getf(0.f, 4.f);
 	flare.pos.y = pos.y - Random::getf(0.f, 4.f);
 
-	if(!bookDraw) {
+	if(world) {
+		// The cursor's few pixels of jitter, as a few millimetres around the point
+		flare.p = *world + arx::randomVec(-0.3f, 0.3f);
+	} else if(!bookDraw) {
 		if(io) {
 			float vx = -(flare.pos.x - g_size.center().x) * 0.2173913f;
 			float vy = (flare.pos.y - g_size.center().y) * 0.1515151515151515f;
@@ -237,7 +245,8 @@ void AddFlare(const Vec2f & pos, float sm, short typ, Entity * io, bool bookDraw
 		flare.size = Random::getf(64.f, 102.f) * sm;
 		flare.tolive = Random::get(3400000us, 4400000us);
 	}
-	
+	flare.size *= sizeScale;
+
 	flare.dynlight = { };
 	
 	for(unsigned int kk = 0; kk < 3; kk++) {
@@ -260,7 +269,7 @@ void AddFlare(const Vec2f & pos, float sm, short typ, Entity * io, bool bookDraw
 			pd->m_flags = FADE_IN_AND_OUT | PARTICLE_2D;
 		}
 		
-		pd->ov = flare.p + arx::randomVec(-5.f, 5.f);
+		pd->ov = flare.p + arx::randomVec(-5.f, 5.f) * sizeScale;
 		pd->move = Vec3f(0.f, 5.f, 0.f);
 		pd->sizeDelta = -2.f;
 		pd->duration = 1300ms + kk * 100ms + Random::get(0ms, 800ms);
@@ -276,6 +285,14 @@ void AddFlare(const Vec2f & pos, float sm, short typ, Entity * io, bool bookDraw
 		
 	}
 	
+}
+
+void AddFlare(const Vec2f & pos, float sm, short typ, Entity * io, bool bookDraw) {
+	addFlare(pos, nullptr, sm, typ, io, bookDraw, 1.f);
+}
+
+void AddFlareAt(const Vec3f & pos, float sm, short typ, float sizeScale) {
+	addFlare(Vec2f(0.f), &pos, sm, typ, nullptr, false, sizeScale);
 }
 
 //! Helper for FlareLine

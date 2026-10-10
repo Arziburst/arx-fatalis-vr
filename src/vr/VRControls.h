@@ -126,7 +126,7 @@ enum class Event : u8 {
 	Book,          //!< the character book: stats, map, diary, spells
 	Menu,          //!< the game menu
 	Recenter,
-	MagicMode,     //!< start drawing runes - the control is decided with the magic tasks (#43)
+	MagicMode,     //!< held: the casting stance - a trigger draws runes with its hand (#43)
 	Count
 };
 

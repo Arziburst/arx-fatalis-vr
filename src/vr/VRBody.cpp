@@ -531,8 +531,6 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	const Vec3f right(std::cos(yaw), 0.f, std::sin(yaw));
 	const Vec3f down(0.f, 1.f, 0.f);
 
-	const FrameHands & located = frameHands();
-
 	bool any = false;
 	for(size_t hand = 0; hand < HandCount; hand++) {
 
@@ -541,16 +539,10 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 
 		// Where the controller is: located this frame, else the simulated one
 		HandSample sample;
-		const char * source = "none";
-		if(located.tracked[hand]) {
-			sample = located.hands[hand];
-			source = "xr";
-		} else if(g_body.haveSim[hand]) {
-			sample = g_body.sim[hand];
-			source = "sim";
-		}
+		const char * located = controllerSample(Hand(hand), sample);
+		const char * source = located ? located : "none";
 		arm.source = source;
-		arm.tracked = (std::strcmp(source, "none") != 0);
+		arm.tracked = (located != nullptr);
 		arm.sample = sample;
 		if(!arm.tracked || !chain.valid) {
 			noteArm(hand, false, source);
@@ -683,6 +675,19 @@ const HandFrame * handRestFrame(Hand hand) {
 void setSimulatedHand(Hand hand, const HandSample & sample) {
 	g_body.sim[size_t(hand)] = sample;
 	g_body.haveSim[size_t(hand)] = true;
+}
+
+const char * controllerSample(Hand hand, HandSample & sample) {
+	const FrameHands & located = frameHands();
+	if(located.tracked[size_t(hand)]) {
+		sample = located.hands[size_t(hand)];
+		return "xr";
+	}
+	if(g_body.haveSim[size_t(hand)]) {
+		sample = g_body.sim[size_t(hand)];
+		return "sim";
+	}
+	return nullptr;
 }
 
 void clearSimulatedHand(Hand hand) {

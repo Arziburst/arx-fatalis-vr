@@ -69,6 +69,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "game/EntityManager.h"
 #include "game/Equipment.h"
 #include "game/NPC.h"
+#include "game/Camera.h"
 #include "game/Player.h"
 #include "game/Inventory.h"
 #include "game/effect/Quake.h"
@@ -129,6 +130,9 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "script/Script.h"
 
 #include "util/Cast.h"
+
+#include "vr/RuneTrail.h"
+#include "vr/VRRunes.h"
 
 
 bool WILLRETURNTOFREELOOK = false;
@@ -444,6 +448,69 @@ void ARX_SPELLS_Fizzle(Spell * spell) {
 }
 
 
+//! The engine's trail: flares at the mouse cursor, 75 units in front of the camera (flat mode)
+static void drawRuneTrailAtCursor() {
+
+	Vec2f pos = Vec2f(DANAEMouse);
+	if(TRUE_PLAYER_MOUSELOOK_ON) {
+		pos = Vec2f(MemoMouse);
+	}
+
+	PlatformInstant now = g_platformTime.frameStart();
+
+	const PlatformDuration interval = std::chrono::microseconds(1s) / 60;
+
+	if(ARX_FLARES_broken) {
+		g_LastFlarePosition = pos;
+		g_LastFlareTime = now - interval;
+	}
+
+	if(now - g_LastFlareTime >= interval) {
+
+		if(glm::distance(pos, g_LastFlarePosition) > 14 * g_sizeRatio.y) {
+			FlareLine(g_LastFlarePosition, pos);
+			g_LastFlarePosition = pos;
+		}
+
+		if(Random::getf() > 0.6f)
+			AddFlare(pos, 1.f, -1);
+		else
+			AddFlare(pos, 1.f, 3);
+
+		g_LastFlareTime = now - std::min(now - g_LastFlareTime - interval, interval);
+	}
+
+}
+
+/*!
+ * The trail in VR (#43, D-010): the same flares at the point ahead of the drawing hand's grip, the path
+ * since the last update filled like the cursor's line - nothing while no hand draws
+ */
+static void drawRuneTrailAtHand(const vr::RuneStroke & stroke) {
+
+	static u32 lastStroke = 0;
+	static Vec3f lastPoint;
+
+	if(!stroke.drawing()) {
+		return;
+	}
+
+	const Vec3f point = stroke.point();
+	size_t count = 0;
+	if(stroke.strokes() == lastStroke) {
+		for(const Vec3f & fill : vr::fillTrailSegment(lastPoint, point, vr::RuneTrailStep)) {
+			AddFlareAt(fill, 0.45f, 1, vr::RuneFlareScale); // FlareLine's flare
+			count++;
+		}
+	}
+	AddFlareAt(point, 1.f, Random::getf() > 0.6f ? -1 : 3, vr::RuneFlareScale);
+	count++;
+
+	lastStroke = stroke.strokes();
+	lastPoint = point;
+	vr::noteRuneFlares(count, point);
+}
+
 void ARX_SPELLS_ManageMagic() {
 	
 	arx_assert(entities.player());
@@ -466,11 +533,17 @@ void ARX_SPELLS_ManageMagic() {
 
 	snip++;
 
-	if(   !(player.m_currentMovement & PLAYER_CROUCH)
-	   && !BLOCK_PLAYER_CONTROLS
-	   && GInput->actionPressed(CONTROLS_CUST_MAGICMODE)
-	   && !player.m_paralysed
-	) {
+	const bool stance = !(player.m_currentMovement & PLAYER_CROUCH)
+	                    && !BLOCK_PLAYER_CONTROLS
+	                    && GInput->actionPressed(CONTROLS_CUST_MAGICMODE)
+	                    && !player.m_paralysed;
+
+	// VR (#43, D-010): the hands draw the runes - the trail follows the hand whose trigger is held in the
+	// stance, the cursor's trail is not drawn
+	const vr::RuneStroke & stroke = vr::updateRuneTrail(stance, g_camera->m_pos, player.angle.getYaw());
+	const bool handsDraw = vr::handsDrawRunes();
+
+	if(stance) {
 		if(player.Interface & INTER_COMBATMODE) {
 			WILLRETURNTOCOMBATMODE = true;
 
@@ -500,35 +573,13 @@ void ARX_SPELLS_ManageMagic() {
 			}
 			
 			if(eeMousePressed1()) {
-				Vec2f pos = Vec2f(DANAEMouse);
-				if(TRUE_PLAYER_MOUSELOOK_ON) {
-					pos = Vec2f(MemoMouse);
+
+				if(handsDraw) {
+					drawRuneTrailAtHand(stroke);
+				} else {
+					drawRuneTrailAtCursor();
 				}
-				
-				PlatformInstant now = g_platformTime.frameStart();
-				
-				const PlatformDuration interval = std::chrono::microseconds(1s) / 60;
-				
-				if(ARX_FLARES_broken) {
-					g_LastFlarePosition = pos;
-					g_LastFlareTime = now - interval;
-				}
-				
-				if(now - g_LastFlareTime >= interval) {
-					
-					if(glm::distance(pos, g_LastFlarePosition) > 14 * g_sizeRatio.y) {
-						FlareLine(g_LastFlarePosition, pos);
-						g_LastFlarePosition = pos;
-					}
-					
-					if(Random::getf() > 0.6f)
-						AddFlare(pos, 1.f, -1);
-					else
-						AddFlare(pos, 1.f, 3);
-					
-					g_LastFlareTime = now - std::min(now - g_LastFlareTime - interval, interval);
-				}
-				
+
 				ARX_FLARES_broken = 0;
 				
 				if(!ARX_SOUND_IsPlaying(player.magic_draw)) {

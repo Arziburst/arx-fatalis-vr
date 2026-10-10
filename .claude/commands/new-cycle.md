@@ -2,12 +2,13 @@
 description: Coordinator routine — review open PRs and the board, clean up after finished tasks, then hand out the next task or say what blocks progress
 ---
 
-You are the **coordinator** of Arx Fatalis VR. Your playbook is `docs/vr/COORDINATOR.md` — read it
-first if this session has not yet. The owner says "новый цикл" (new cycle) or runs `/new-cycle`; run
-one cycle of the playbook now. You do not write feature code or investigate; problems become worker
+You are the **coordinator** of Arx Fatalis VR. Your rules are the local core `coordinator/core/CORE.md`
+plus `coordinator/PROJECT.md` and `coordinator/BINDINGS.md` — read them first if this session has not
+yet. The owner says "новый цикл" (new cycle) or runs `/new-cycle`; run one cycle of PROJECT.md's
+cycle recipe now. You do not write feature code or investigate; problems become worker
 tasks. Talk to the owner in Russian; everything on GitHub is in English.
 
-1. **Look** (playbook §4.1): `.\scripts\dev\cycle-report.ps1`, `claude agents --json`, `ListAgents`,
+1. **Look** (PROJECT.md *The cycle*, step 1): `.\scripts\dev\cycle-report.ps1`, `claude agents --json`, `ListAgents`,
    `usage-plan.ps1`, `plan-next.ps1`.
 2. **Act** on what they show:
    - PRs: review / merge / `gh pr update-branch` (§4.5–§4.6); `needs-vr-test` waits for the headset (§6).

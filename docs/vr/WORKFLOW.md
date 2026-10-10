@@ -82,7 +82,8 @@ and the terminal tab.
   investigate. It writes the tasks, starts, briefs and follows the workers, triages, merges, cleans up
   and runs the work on its own while the usage limits last (D-013, D-022, D-027); the owner talks only
   to it, VR verdicts included, and triggers a cycle with **"новый цикл"** (or `/new-cycle`). Its
-  complete rule set: [COORDINATOR.md](COORDINATOR.md) (`/coordinator` on any machine).
+  complete rule set: [coordinator/](../../coordinator/) — the local core plus PROJECT.md and BINDINGS.md
+  (`/coordinator` on any machine).
 - **Worker session** — a fresh session per task, possibly with a different model. It implements exactly
   one task in its own PR (`/next-task <n>`), and handles the owner's verdict (`/accept-task`, `/reject-task`).
   In parallel mode the coordinator starts workers itself as background sessions
@@ -195,7 +196,7 @@ in the PR body (a line carrying the marker `d-new-literal` is left alone — for
 
 **Headset tests in batches** — the owner tests several PRs in one sitting, run by the coordinator
 (`test-pr.ps1 <pr> -Saves mvp-new-game -StartSteamVR`, one question per PR); the procedure, accept and
-reject: [COORDINATOR.md §A6](COORDINATOR.md#a6-owner-tests-acceptance-on-the-real-target).
+reject: [coordinator/PROJECT.md](../../coordinator/PROJECT.md#acceptance--the-owners-headset-test).
 
 ### The safety hook (#185, D-021)
 

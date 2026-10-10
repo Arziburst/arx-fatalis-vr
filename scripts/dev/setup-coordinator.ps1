@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-	Prepare this machine for the coordinator / worker loop (docs/vr/COORDINATOR.md, D-011, D-013).
+	Prepare this machine for the coordinator / worker loop (coordinator/BINDINGS.md, D-011, D-013).
 
 .DESCRIPTION
 	Sets the owner's personal Claude Code settings (~/.claude/settings.json) that the loop needs, keeping

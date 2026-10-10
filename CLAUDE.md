@@ -29,7 +29,8 @@ Merge on your own when CI is green, except `needs-vr-test` PRs — those wait fo
 
 **Coordinator:** the owner talks to one coordinator session ("ARXVR Coordinator", started with
 `/coordinator`), which runs the work in blocks, starts and controls the worker sessions
-(`scripts/dev/start-worker.ps1`) and reports — playbook: [docs/vr/COORDINATOR.md](docs/vr/COORDINATOR.md).
+(`scripts/dev/start-worker.ps1`) and reports — rules: [coordinator/](coordinator/) (a local copy of the
+reusable core in `coordinator/core/`, the Arx rules in `PROJECT.md`, the tools in `BINDINGS.md`).
 A new machine is prepared with `scripts/dev/setup-coordinator.ps1`.
 
 **All project artifacts (docs, issues, commits, PRs, code comments) are in English.**

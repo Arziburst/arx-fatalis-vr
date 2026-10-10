@@ -134,6 +134,7 @@ public:
 		int vrFrameDivisor; //!< VR: submit every n-th display slot (the even-cadence cap, #20); 1 = every slot
 		bool vrMirror; //!< VR: the desktop window shows what one eye sees (#21); off = the flat frame
 		int vrMirrorEye; //!< VR: the eye the desktop mirror shows: 0 = left, 1 = right (default, the owner's choice)
+		int vrMsaa; //!< VR: multisampling of the eye images, samples per pixel; 0 = off (#226)
 		float vrBodyFollowRadius; //!< VR: meters the head may be from the body before the body steps after it (#26)
 		float vrWallFadeOut; //!< VR: seconds to black when the head enters geometry or gets too far from the body (#26)
 		float vrWallFadeIn; //!< VR: seconds back from black (#26)

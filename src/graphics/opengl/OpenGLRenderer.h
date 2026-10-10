@@ -59,7 +59,7 @@ public:
 	// Viewport
 	void SetViewport(const Rect & viewport) override;
 
-	void setRenderTargetSize(const Vec2i & size) override;
+	void setRenderTargetSize(const Vec2i & size, int samples = 0) override;
 	
 	void SetScissor(const Rect & rect) override;
 	
@@ -122,6 +122,8 @@ private:
 
 	//! The size of the bound render target when it is not the window (VR eye and flat frame images, #19)
 	Vec2i m_renderTargetSize;
+	//! The multisampling of that target (#226); 0 = single-sample
+	int m_renderTargetSamples;
 
 	//! \return the size of the current render target: the window unless setRenderTargetSize() named another
 	Vec2i renderTargetSize() const;

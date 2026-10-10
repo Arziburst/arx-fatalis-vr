@@ -70,6 +70,13 @@
  */
 namespace vr {
 
+/*!
+ * Multisampling of the eye images (#226), samples per pixel (\c vr_msaa in cfg.ini, \c --vr-msaa):
+ * the eyes render into a multisampled buffer resolved into the swapchain image; 0 or 1 = off
+ */
+const int DefaultEyeMsaa = 4;
+const int MaxEyeMsaa = 8;
+
 //! \return true if the game was built with OpenXR support
 bool isSupported();
 

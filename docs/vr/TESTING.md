@@ -887,6 +887,24 @@ separation (64 mm), difference (5.9 vs floor 0.8), parallax (+16 of 160 columns)
 (the pictures change by 1.3, the floor's noise) — the camera does not follow the head until #24.
 `-Fault swap-eyes` (each eye shown the other's picture) fails the parallax (−16): the check can fail.
 
+### Eye MSAA (`msaa.vrsim`, #226)
+
+`vr_msaa` in `cfg.ini` (samples per pixel, 0 = off, default 4, D-035) or `--vr-msaa N`. The log says
+`[vr] eye MSAA: 4x from vr_msaa in cfg.ini` and, per eye, `rendered with 4x MSAA, resolved into the
+swapchain image`. `scripts\dev\vrsim\msaa.vrsim` draws the eyes at the Index's 2468×2740 **unpaced**
+(`rate 0`): the `[vr] rate:` lines then show how many frames per second the PC draws (judge the
+windows before the shot, not the first one, which holds the level's fade-in); the `edges` shot at
+frame 6000 is for comparing edges between sample counts.
+
+```powershell
+.\scripts\dev\smoke-test.ps1 -VrSim msaa -Seconds 12 -- --loadlevel 10 --vr-msaa 0   # then 4, 8
+```
+
+| Date, PC | 0x | 4x | 8x |
+|---|---|---|---|
+| 2026-10-10, owner's PC (RX 6800 XT), shared with CI and other workers | 652 / 765 frames/s | 654 / 982 frames/s | 274 → 59 / 95 frames/s |
+| hard edge steps (neighbours ≥ 64 luma levels apart) in the `edges` shot, left / right | 249 / 232 | 66 / 72 | (another moment of the scene) |
+
 ## Scripted sequences (`.xrs`, #113)
 
 A sequence is a text file in `scripts\dev\xrs` — test-channel commands with asserts, log checks and

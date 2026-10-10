@@ -302,6 +302,10 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   character actually crouching (`PLAYER_CROUCH`) — it stays `true` after the toggle goes off while
   something is in the way of the head, and every refused stand-up logs one `player.standup.blocked`
   event naming what is there (#263).
+  `player.stealth`: this update's movement is the stealth walk (the key or a slight stick push, #33).
+  `player.animSpeed`: how fast the current body animation moves the player, units per second — the
+  walk speed the engine uses, independent of walls and the frame rate (run 192, the stealth walk 135.6
+  on `mvp-new-game`, #33).
 - `camera` (with `player`): the first-person camera as the frame before left it — position, angles,
   `fov` in degrees, `bob` = its distance from the stable head position of the paused animation (view
   bobbing; 0 when off), `shake` = the quake amplitude applied that frame (0 without a quake or when
@@ -328,6 +332,12 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   each event came on since the start, `layout`: the binding of every event (`none`, `right.a`, `left.grip+left.trigger`,
   `left.stick_click:long`). Nothing in the game reacts to the events yet (#74); `input-check.ps1`
   asserts on `presses` and `layout`.
+  `walk` (#31): the stick walk the player controls applied in the last update — `walking`, `yaw` (the
+  stick's forward, engine degrees [0, 360): the look, D-008), `heading` (`player.yaw` then), `dirX` / `dirZ`
+  (the world direction, unit length), `walks` (episodes since the start), `sneak` (#33: a slight
+  deflection — the stealth walk; below cfg `vr_sneak_below` 0.6 of the dead-zoned travel a run turns
+  into a sneak, at `vr_run_above` 0.7 a sneak into a run), `paceChanges` (sneak ↔ run switches within
+  a walk since the start; a game event `vr.walk state=pace pace=…` each, and `pace=` on `state=start`).
 - `drawCheck` appears once a `drawcheck` was requested: `{"seq":1,"running":false,"frames":120,
   "framesDiffering":0,"pixels":307200,"maxPixelsDiffering":0,"maxDelta":0,"capture":""}` —
   `frames` compared so far, `framesDiffering` of them with at least one differing pixel,
@@ -509,6 +519,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.weapon` | the equipped weapon goes into the IK hand or back to the engine (#75) | `state=hand\|engine\|none`, `reason`, `item`, `kind` (`dagger`, `1h`, `2h`, `bow`, `none`; limit 200) |
 | `vr.weapon.grip` | a weapon's blade was read from its mesh (once per weapon and hand frame) | `item`, `bladeLength` (units), `assetAngle` (degrees between the asset's blade and the handle axis) |
 | `vr.body.drag` | the head reached the 25° dead zone and pulls the body along, and when it let go (5° inside) (#25) | `state=start\|end`, `head`, `body` (degrees from the heading), `deadZone` (limit 100) |
+| `vr.walk` | the left stick left its dead zone and the player walks, and when it came back to rest (#31) | `state=start\|end`, `yaw` (the stick's forward = the look), `heading`, `look` (yaw − heading, the head's turn) (limit 200) |
 
 Not here yet, by design: melee attacks *refused* by a gate (F-66) come with the VR swing detector
 (#39); the recenter chord with #28; locomotion, interaction and rune-drawing in VR add their own events in the
@@ -857,7 +868,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 .\scripts\dev\xrs-run.ps1 -Check               # parse every sequence: syntax errors with their lines, no game
 .\scripts\dev\xrs-run.ps1 snap-turn -- --loadslot 0   # other arx.exe arguments replace the sequence's @args
 .\scripts\dev\xrs-run.ps1 recenter -Attach     # against a game that already runs with --test-dir (writing a sequence step by step)
-.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence walk-forward   # the same through the smoke test
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence walk-forward   # the same through the smoke test, on a test save
 .\scripts\dev\img-diff.ps1 -A a.bmp -B b.bmp [-Grid 16 | -Bands 16]   # two shots: mean difference 0-255, which regions changed
 ```
 
@@ -889,6 +900,9 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `walk-forward` | the player stands still without input; the stick is held and let go | #31: the player moves |
 | `recenter` | a head offset is set and read back | #28: `recenter` is accepted (it logs one expected `[W]`) |
 | `arms-follow` | the full body (#36): both arm chains found, both arms posed from the idle rig's controllers with `error` 0; the hand takes the controller's orientation (the identity grip is a hand hanging down in the OpenXR grip pose: the wrist 8 units above the grip and the fingertips below the wrist; pitched up 90°, fingers ahead and thumb up: wrist and fingertips level with the grip); a hand moved 30 cm moves the wrist with it and changes both eyes' pictures of the body seen from above (> 2, floor < 1.5); 1.2 m out: `stretched`, `slide` 20; a controller switched off gives its arm back to the engine; a 30 cm lean shifts the body by the camera's offset and keeps `error` 0. **Needs the first-person save** (level 10's conversation camera is nowhere near the body): `smoke-test.ps1 -VrSim idle -Sequence arms-follow -Save mvp-new-game` | — |
+| `walk-forward` | on `mvp-new-game` (`-Save`; level 10 never moves the player, TRAPS.md): still without input, the stick held forward moves him | — (#31) |
+| `walk-look` | on `mvp-new-game`: with the head turned ±90° the stick walks where the head looks (D-008), with the head ahead along the heading; the heading stays, one `vr.walk` start / end per push (`vr.input.walk` in status.json) | — (#31) |
+| `sneak-jump-crouch` | on `mvp-new-game`: a full push runs, a slight one sneaks (`player.stealth`, `player.animSpeed` < 0.8 × the run's), the hysteresis band keeps a run, below it the walk turns into a sneak; `right.a` jumps; `right.stick_down` with the stick drifting sideways toggles the crouch on without turning, a tap toggles it off | — (#33) |
 | `stand-up` | flat, on the test save `mvp-new-game` (`smoke-test.ps1 -Sequence stand-up -Save mvp-new-game`): `crouch on` / `crouch off` in the start cell — the character crouches (eye 170.1 → 122.7) and stands up where it stood (eye 170.1, same x/z); crouched inside the cell's portcullis it stays down with one `player.standup.blocked` event, and stands up once back at the start spot (#263) | — |
 | `recenter` | a head offset is set and read back; `recenter` is accepted (#28) | — |
 | `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |

@@ -18,6 +18,24 @@ keeps the engine's animations). **Do:** measure what the arm layer does from a s
 shoulder after `combat on` + 60 frames (300 ms of blend), then strike, as `weapon-hold.xrs` does. Also: never
 ask `entities.player()` while writing `status.json` before a level exists (the first `weapon-hold` run crashed
 at start-up on it, #286) — check this module's own state first.
+## 2026-10-10 — The arms twist outward and wrap into spirals from the shoulder and the elbow when the wrist turns (#36, owner's headset run of PR #254)
+
+**Symptom:** the body, the solid torso and the hands following the controllers are right in the headset
+("руки работают"), but as soon as a controller rolls, the upper arm and the forearm of the model twist into
+flat spirals between the shoulder and the hand (`C:\Users\arzib\arx-fatalis-vr-wt\arms-twist-owner.png`:
+both arms reach in from the sides as twisted ribbons while the hands themselves look fine). Every number in
+`status.json` is still perfect — `error` 0, the wrist on its target — because the numbers describe joints,
+not the mesh between them.
+**Cause:** the engine's skeleton has no twist model: a group's vertices turn rigidly with the bone's quaternion,
+and the IK of #36 only *swings* each bone onto its joints (`rotationBetween` on top of the animated quaternion)
+while the wrist takes the controller's full orientation. The roll about the arm's axis is therefore whatever
+the animation plus the swing leave — nothing distributes the hand's roll along the forearm or keeps the
+upper arm's roll tied to the elbow — and the low-poly arm, a flat-ish slab, shows every stray roll as a spiral.
+A joint-position check cannot see it.
+**Do:** accepted as the interim body (D-032 / #36); the arm rework is a research task (how Valheim VR builds
+its arms, what Arx's model and textures allow: twist bones, roll limits, a separate VR arm rig). Until then,
+judge arms in the headset or on a capture with the controllers *rolled*, not from `vr.body` alone; the
+`arms-follow` sequence rolls nothing.
 
 ## 2026-10-09 — The body is nowhere in a `--vr-sim` shot that looks down, although `vr.body` says both arms are posed with `error` 0 (#36)
 
@@ -44,6 +62,16 @@ concatenation rebuilds from the animation after the wrist was set.
 the zero-length groups between it and the hand's group are made rigid with the wrist (`ArmChain::rigid`,
 `vr/VRBody.cpp`). Check a chain by its lengths in the `[vr] body:` bind line (`27.6 + 30.5` on `human_base`) and
 a hand by `vr.body.<hand>.tip` against `wrist` / `controller`, not by the picture alone.
+## 2026-10-10 — The sneak covered more ground than the run (#33)
+
+**Symptom:** on `mvp-new-game` a slight stick push (the stealth walk) moved the player 355 units in 1.5 s and the
+full push right after it only 201; with `@frames 40` instead the sneak covered 136-151 and the run 163-197 — the
+ratio changed from run to run.
+**Cause:** a distance measures the room and the clock, not the walk: the second walk ran into the cell's far end,
+and `@frames n` is n frames, whose length swings with the frame rate of the moment (36-90 fps in these runs).
+**Do:** compare walk speeds with `player.animSpeed` (the current animation's own units per second, what the engine
+moves the player by: run 192, stealth 135.6); use positions only for "it moved", from a known start.
+
 ## 2026-10-10 — `test-xrs.ps1` fails once in a while: "timed out waiting for the game to acknowledge" (#275)
 
 **Symptom:** one check of 73 fails on the CI runner (a `@shot`/`@diff` step), the rerun of the same commit passes.
@@ -811,8 +839,15 @@ a PowerShell test helper with parameter `$G` and a local `$g` failed with "canno
 **Cause:** the game writes `ack.txt` first and `status.json` later; `Send-ArxCommand` took its baseline `cmdSeq` from `status.json` and waited for it to advance, so the late status update of the *previous* batch ended the wait and the old ack was returned.
 **Do:** the baseline is the newest seq of ack.txt and status.json, and the answer is `ack.txt` itself advancing (`Read-ArxAck` in `scripts/dev/test-lib.ps1`). After a send, `status.json` may still lag behind the ack - wait for the state you assert on (`@until`, `@frames`).
 
-## 2026-10-10 - Crouched in the start cell, the character never stood up again
+## 2026-10-09 — The stick walk is applied on level 10, but the player does not move
 
+**Symptom:** `walk-forward.xrs` on `--loadlevel 10` with `setplayercontrols on`: `vr.walk state=start` / `end` are logged
+and `vr.input.walk.walking` is true, yet `player.x` / `player.z` stay exactly the same.
+**Cause:** level 10 is the scripted intro (see "On `--loadlevel 10` the inventory never closes" above): the movement
+the controls ask for is not applied to the player there - not a locomotion bug.
+**Do:** check walking on a playable save: `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence walk-forward` (#31).
+
+## 2026-10-10 - Crouched in the start cell, the character never stood up again
 **Symptom:** on the test save `mvp-new-game` the character crouched (button, toggle or the head, #100) and never stood up: the toggle went off (`player.crouch state=off`), `PLAYER_CROUCH` stayed set for good; on `mvp-items` the same sequence stood up (#263).
 **Cause:** the engine's own stand-up check, not VR code - flat Arx Libertatis did the same. `ARX_PLAYER_Manage_Visual` checked the **whole** standing cylinder with `CheckAnythingInCylinder`, and at the awakening spot that cylinder grazes a sloped floor polygon 21 units above the feet (`background=-21.0 ... normY=-0.3`). Standing there is fine - the check runs only to stand up - but the crouched character could never pass it.
 **Do:** the stand-up (and the jump from a crouch) now checks only the part of the standing cylinder above the crouched one (`standUpCylinder()` in `src/game/Player.cpp`). A refused stand-up logs one `player.standup.blocked` event with what is in the way (`describeCylinderBlocker`); read it before blaming crouch code. `stand-up.xrs` checks both directions.

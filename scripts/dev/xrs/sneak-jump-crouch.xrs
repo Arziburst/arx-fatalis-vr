@@ -3,6 +3,7 @@
 # and does not turn even when it drifts sideways (F-121). Run on the test save mvp-new-game (heading about 0: +z):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence sneak-jump-crouch
 @sim idle
+@save mvp-new-game
 @args --loadslot 0
 
 @until state eq GAMEPLAY 60s

@@ -267,4 +267,8 @@ void SimRigTest::testFocusAndFault() {
 	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("fault swap-eyes on"));
 	CPPUNIT_ASSERT(sim.rig.swapEyes);
 	CPPUNIT_ASSERT(!sim.execute("fault melt on").empty());
+	CPPUNIT_ASSERT(!sim.rig.saveLayers);
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("layers on"));
+	CPPUNIT_ASSERT(sim.rig.saveLayers);
+	CPPUNIT_ASSERT(!sim.execute("layers maybe").empty());
 }

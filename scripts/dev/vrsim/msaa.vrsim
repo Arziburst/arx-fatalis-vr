@@ -1,0 +1,10 @@
+# The cost and the look of the eyes' multisampling (#226, docs/vr/TESTING.md "Eye MSAA"): the eyes at
+# the size SteamVR recommends for the Index on the owner's PC, no pacing - the rate line then shows how
+# fast the game can draw both eyes - and one shot after the measurement, for the edge comparison.
+# Run once per sample count: smoke-test.ps1 -VrSim msaa -- --vr-msaa <n>
+
+rate 0                         # no pacing: xrWaitFrame returns at once, frames per second = what the PC draws
+eye-size 2468 2740             # SteamVR's recommended eye size for the Index here (#19)
+timeline gameplay
+
+@6000 shot edges               # past the level fade-in at any rate this PC reaches, after the measurement (shots stall their frame, ~100 ms)

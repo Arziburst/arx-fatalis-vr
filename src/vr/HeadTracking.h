@@ -75,6 +75,12 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw);
 void resetHeadReference(const char * reason);
 
 /*!
+ * \return the head sample \ref applyHeadPose will use this frame (hmd, held or sim), without
+ *         changing any state - for the body (#36), which is posed before the camera is placed
+ */
+bool peekHead(HeadSample & head);
+
+/*!
  * \brief The character's eye above its feet (game units) for the next \ref applyHeadPose - set by the
  *        first-person camera before it, so the reference event and status.json show the character's
  *        eye height next to the player's; not set for other cameras

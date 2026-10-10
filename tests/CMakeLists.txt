@@ -77,6 +77,11 @@ set(arxtest_TESTCASES
 	tests/vr/UIPanelTest.cpp
 	tests/vr/InterfaceSizeTest.h
 	tests/vr/InterfaceSizeTest.cpp
+	tests/vr/LocomotionTest.h
+	tests/vr/LocomotionTest.cpp
+
+	tests/vr/ArmIKTest.h
+	tests/vr/ArmIKTest.cpp
 
 
 )
@@ -109,6 +114,8 @@ set(arxtest_SOURCES
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
 	src/vr/InterfaceSize.cpp
+	src/vr/ArmIK.cpp
+	src/vr/Locomotion.cpp
 
 
 	${arxtest_TESTCASES}

@@ -45,6 +45,7 @@
 #include "util/Number.h"
 #include "util/String.h"
 
+#include "vr/Locomotion.h"
 #include "vr/MirrorGeometry.h"
 #include "vr/PhysicalCrouch.h"
 #include "vr/UIPanel.h"
@@ -137,6 +138,8 @@ constexpr const float
 	vrPanelWidth = vr::DefaultPanelWidth,
 	vrCrouchEnter = vr::DefaultCrouchEnter,
 	vrCrouchExit = vr::DefaultCrouchExit,
+	vrSneakBelow = vr::StickPace().sneakBelow,
+	vrRunAbove = vr::StickPace().runAbove,
 	fogDistance = 10.f,
 	gamma = 5.f,
 	fov = 75.f,
@@ -298,6 +301,8 @@ constexpr const std::string_view
 	borderTurning = "border_turning",
 	useAltRuneRecognition = "improved_rune_recognition",
 	improvedBowAim = "improved_bow_aim",
+	vrSneakBelow = "vr_sneak_below",
+	vrRunAbove = "vr_run_above",
 	quickLevelTransition = "quick_level_transition",
 	allowConsole = "allow_console",
 	vrSmoothTurn = "vr_smooth_turn",
@@ -574,6 +579,8 @@ bool Config::save() {
 	writer.writeKey(Key::borderTurning, input.borderTurning);
 	writer.writeKey(Key::useAltRuneRecognition, input.useAltRuneRecognition);
 	writer.writeKey(Key::improvedBowAim, input.improvedBowAim);
+	writer.writeKey(Key::vrSneakBelow, input.vrSneakBelow);
+	writer.writeKey(Key::vrRunAbove, input.vrRunAbove);
 	writer.writeKey(Key::quickLevelTransition, int(input.quickLevelTransition));
 	writer.writeKey(Key::vrSmoothTurn, input.vrSmoothTurn);
 	writer.writeKey(Key::vrSnapTurnAngle, input.vrSnapTurnAngle);
@@ -734,6 +741,11 @@ bool Config::init(const fs::path & file) {
 	input.borderTurning = reader.getKey(Section::Input, Key::borderTurning, Default::borderTurning);
 	input.useAltRuneRecognition = reader.getKey(Section::Input, Key::useAltRuneRecognition, Default::useAltRuneRecognition);
 	input.improvedBowAim = reader.getKey(Section::Input, Key::improvedBowAim, Default::improvedBowAim);
+	// The stick's pace (#33): the run threshold is never below the sneak one
+	float vrSneakBelow = reader.getKey(Section::Input, Key::vrSneakBelow, Default::vrSneakBelow);
+	input.vrSneakBelow = glm::clamp(vrSneakBelow, 0.f, 1.f);
+	float vrRunAbove = reader.getKey(Section::Input, Key::vrRunAbove, Default::vrRunAbove);
+	input.vrRunAbove = glm::clamp(vrRunAbove, input.vrSneakBelow, 1.f);
 	int quickLevelTransition = reader.getKey(Section::Input, Key::quickLevelTransition, Default::quickLevelTransition);
 	input.quickLevelTransition = QuickLevelTransition(glm::clamp(quickLevelTransition, 0, 2));
 	input.allowConsole = reader.getKey(Section::Input, Key::allowConsole, Default::allowConsole);

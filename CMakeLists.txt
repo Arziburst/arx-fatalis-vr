@@ -1254,6 +1254,7 @@ set(UTIL_MD5_SOURCES
 list(APPEND IO_RESOURCE_SOURCES ${UTIL_MD5_SOURCES})
 
 set(VR_SOURCES
+	src/vr/ArmIK.cpp
 	src/vr/BodyYaw.cpp
 	src/vr/EyeImage.cpp
 	src/vr/EyeProjection.cpp
@@ -1263,10 +1264,12 @@ set(VR_SOURCES
 	src/vr/PhysicalCrouch.cpp
 	src/vr/HeadTracking.cpp
 	src/vr/InterfaceSize.cpp
+	src/vr/Locomotion.cpp
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
 	src/vr/VRActions.cpp
 	src/vr/VRBindings.cpp
+	src/vr/VRBody.cpp
 	src/vr/VRComfort.cpp
 	src/vr/VRControls.cpp
 	src/vr/VRGameInput.cpp

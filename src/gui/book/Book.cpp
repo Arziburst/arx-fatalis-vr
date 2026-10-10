@@ -1080,6 +1080,7 @@ void StatsPage::RenderBookPlayerCharacter() {
 	bookcam.cdepth = 2200.f;
 	
 	Camera * oldcam = g_camera;
+	const PreparedCamera oldPrepared = g_preparedCamera;
 	PrepareCamera(&bookcam, Rect(g_bookRect), rec.center());
 	
 	GRenderer->SetAntialiasing(true);
@@ -1158,7 +1159,7 @@ void StatsPage::RenderBookPlayerCharacter() {
 	
 	GRenderer->SetAntialiasing(false);
 	
-	PrepareCamera(oldcam, g_size);
+	RestorePreparedCamera(oldcam, oldPrepared);
 	
 	player.bookAnimation[0].cur_anim = herowaitbook;
 	

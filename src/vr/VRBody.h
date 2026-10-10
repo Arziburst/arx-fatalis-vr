@@ -58,6 +58,8 @@ struct Skeleton;
  */
 namespace vr {
 
+struct HandFrame;
+
 /*!
  * \brief Shift the body under the head and pose the arms - after the engine's animation of the
  *        player's own skeleton, before its vertices are transformed
@@ -95,6 +97,12 @@ size_t bodyCapStart(const EERIE_3DOBJ * obj);
  * \return false without a bound model or a chain for the hand
  */
 bool handLandmarks(Hand hand, Vec3f & palm, Vec3f & tip);
+
+/*!
+ * \return the hand's axes read from the bound model's mesh at rest (the frame the IK puts on the grip), or
+ *         nullptr without a bound chain or a usable frame for that hand - for the held weapon (#75)
+ */
+const HandFrame * handRestFrame(Hand hand);
 
 //! A simulated controller for checks without one (the test channel's \c handpose); a located controller wins over it
 void setSimulatedHand(Hand hand, const HandSample & sample);

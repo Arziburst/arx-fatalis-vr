@@ -103,19 +103,24 @@ vr-sim hand right pos 0.2 -0.45 -0.35
 @assert vr.body.right.posed eq true
 @assert vr.body.right.error lt 1
 
-# A lean of 30 cm moves the body with the head (the same offset the camera takes) and keeps the hands
-# rigid with the head
+# A lean of 30 cm: the collision cylinder walks 20 cm after the head (#26) and the model is shifted by the
+# 10 cm rest - the same offset the camera takes - so it stays under the head; the hands stay rigid with it
 vr-sim head rot 0 0 0
 vr-sim head pos 0.3 0 0
 @frames 10
 @remember leanX vr.head.offsetX
 @remember leanZ vr.head.offsetZ
+@assert vr.head.leanM lt 0.101
 @assert vr.body.shiftX eq {leanX}
 @assert vr.body.shiftZ eq {leanZ}
 @assert vr.body.right.error lt 1
 @assert vr.body.left.error lt 1
+# Back to the start: the cylinder, 10 cm right of the head now, is within the follow radius and stays; the
+# model is shifted by that lean again, under the head
 vr-sim head pos 0 0 0
 @frames 5
-@assert vr.body.shiftX eq 0
+@remember backX vr.head.offsetX
+@assert vr.head.leanM lt 0.101
+@assert vr.body.shiftX eq {backX}
 
 @assert errors eq 0

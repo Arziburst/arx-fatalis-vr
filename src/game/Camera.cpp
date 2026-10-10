@@ -96,12 +96,20 @@ static void finishPreparedCamera(const Rect & viewport, const Vec2f & projection
 	g_preparedCamera.m_worldToScreen = g_preparedCamera.m_viewToScreen * g_preparedCamera.m_worldToView;
 
 	GRenderer->SetViewport(viewport);
+	g_preparedCamera.m_viewport = viewport;
 
 	// Equivalent to glm::inverse(g_preparedCamera.m_viewToScreen)
 	g_preparedCamera.m_center = projectionCenter;
 	Vec2f defov = Vec2f(g_preparedCamera.m_viewToClip[0][0], -g_preparedCamera.m_viewToClip[1][1]);
 	g_preparedCamera.m_screenToView = 2.f / (Vec2f(viewport.size()) * defov);
 
+	g_preparedCamera.m_pixelsPerUnit = projectionPixelsPerUnit(g_preparedCamera.m_viewToClip, Vec2f(viewport.size()));
+
+}
+
+float projectionPixelsPerUnit(const glm::mat4x4 & viewToClip, const Vec2f & viewportSize) {
+	// The projection's y scale is clip y per view unit at depth 1; the viewport maps clip [-1, 1] to its height
+	return glm::abs(viewToClip[1][1]) * viewportSize.y / 2.f;
 }
 
 glm::mat4x4 cameraWorldToView(const Camera & cam) {
@@ -142,6 +150,17 @@ void PrepareCamera(Camera * cam, const Rect & viewport, const glm::mat4x4 & worl
 	               + Vec2f(viewport.size()) * Vec2f((1.f + ndc.x) / 2.f, (1.f - ndc.y) / 2.f);
 
 	finishPreparedCamera(viewport, center);
+
+}
+
+void RestorePreparedCamera(Camera * cam, const PreparedCamera & prepared) {
+
+	SetActiveCamera(cam);
+
+	g_preparedCamera = prepared;
+	GRenderer->SetViewMatrix(g_preparedCamera.m_worldToView);
+	GRenderer->SetProjectionMatrix(g_preparedCamera.m_viewToClip);
+	GRenderer->SetViewport(g_preparedCamera.m_viewport);
 
 }
 

@@ -83,6 +83,8 @@ set(arxtest_TESTCASES
 
 	tests/vr/RuneTrailTest.h
 	tests/vr/RuneTrailTest.cpp
+	tests/vr/RuneProjectionTest.h
+	tests/vr/RuneProjectionTest.cpp
 
 
 )
@@ -117,6 +119,7 @@ set(arxtest_SOURCES
 	src/vr/ArmIK.cpp
 	src/vr/Locomotion.cpp
 	src/vr/RuneTrail.cpp
+	src/vr/RuneProjection.cpp
 
 
 	${arxtest_TESTCASES}

@@ -539,9 +539,13 @@ void ARX_SPELLS_ManageMagic() {
 	                    && !player.m_paralysed;
 
 	// VR (#43, D-010): the hands draw the runes - the trail follows the hand whose trigger is held in the
-	// stance, the cursor's trail is not drawn
-	const vr::RuneStroke & stroke = vr::updateRuneTrail(stance, g_camera->m_pos, player.angle.getYaw());
+	// stance, the cursor's trail is not drawn. The stroke feeds the recogniser's points (#44), so the engine's
+	// hold / release model follows the stroke: the rune is analysed when the stroke ends, not when the mouse
+	// button (either trigger) is released
+	const vr::RuneStroke & stroke = vr::updateRuneTrail(stance, g_camera->m_pos, player.angle.getYaw(),
+	                                                    g_camera->angle.getYaw());
 	const bool handsDraw = vr::handsDrawRunes();
+	const bool drawingHeld = handsDraw ? stroke.drawing() : eeMousePressed1();
 
 	if(stance) {
 		if(player.Interface & INTER_COMBATMODE) {
@@ -567,12 +571,12 @@ void ARX_SPELLS_ManageMagic() {
 		}
 		
 		if(snip >= 2) {
-			if(!eeMousePressed1() && ARX_FLARES_broken == 0) {
+			if(!drawingHeld && ARX_FLARES_broken == 0) {
 				ARX_FLARES_broken = 2;
 				MagicFlareChangeColor();
 			}
-			
-			if(eeMousePressed1()) {
+
+			if(drawingHeld) {
 
 				if(handsDraw) {
 					drawRuneTrailAtHand(stroke);
@@ -1075,9 +1079,18 @@ bool ARX_SPELLS_Launch(SpellType typ, Entity & source, SpellcastFlags flags, lon
 		return false;
 	}
 	
-	gameevent::Event("spell.cast")("spell", getSpellName(typ))("caster", gameevent::entityName(&source))
-		("level", spell->m_level, 1)("target", gameevent::entityName(entities.get(spell->m_target)));
-	
+	{
+		gameevent::Event event("spell.cast");
+		event("spell", getSpellName(typ))("caster", gameevent::entityName(&source))
+			("level", spell->m_level, 1)("target", gameevent::entityName(entities.get(spell->m_target)));
+		if(byPlayer) {
+			// Where the player's spell is aimed (#44, F-75): the casting hand in VR, the view in flat mode
+			const vr::SpellAim aim = vr::spellAim(player.angle);
+			event("aim", aim.source)("aimHand", vr::handName(aim.hand))
+				("aimPitch", aim.angle.getPitch(), 1)("aimYaw", aim.angle.getYaw(), 1);
+		}
+	}
+
 	spell->Launch();
 	
 	Spell & addedSpell = spells.addSpell(std::move(spell));

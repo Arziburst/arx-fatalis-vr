@@ -13,6 +13,58 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW-recognition: Runes drawn in the air are recognised by the engine — the stroke projected onto the plane of the look, the spell aimed by the casting hand
+
+- **Date:** 2026-10-10
+- **Status:** Accepted as the MVP default; the tolerances are tuned in #45, the owner judges recognition in the headset (#44)
+- **Decided by:** coordinator (proposed by the worker of #44), within D-010, D-019 and #43's rune trail decision; from catalog rows F-75, F-76, F-77, F-202
+
+### Decision
+- **The engine's own recogniser, fed from the hand.** The engine recognises runes from 2D points (the cursor's
+  pixels, a chain of numpad directions matched against its table). In VR the drawing hand's 3D stroke (#43) is
+  **projected onto a vertical plane that faces where the player looked when the stroke started** — a
+  head-yaw-only frame (F-77): x along the look's right, y down, the depth dropped — at **10 recogniser pixels
+  per centimetre** (a 30 cm rune is 300 px, what a mouse rune is at 1080p) and **resampled every 2 cm along
+  the path** (one point a step from the last towards the hand), so a slow hand gives the same chain as a fast
+  one and the recogniser's own 10 px segment floor is always met. The points go into the engine's own list in
+  place of the cursor's (`ARX_SPELLS_AddPoint`); the classic and the alternative recogniser both read it.
+- **The engine's hold / release model follows the stroke, not the mouse button:** the list is reset when a
+  stroke starts, the rune is analysed when the stroke ends (its trigger released, the stance released, the
+  hand lost), and the engine's cursor points are not collected while the hands draw — so two triggers never
+  merge their points, and the one-hand-at-a-time rule of #43 holds for recognition too.
+- **The view gate (F-202 rule 1):** a stroke whose centre is more than **75°** off the look's yaw, more than
+  **0.9 m below** the head (the hips) or more than **0.5 m above** it is **no rune**: the recogniser gets
+  nothing, the log says why with the numbers (`magic.stroke.refused`). A trigger squeezed with the hand at
+  the hip or behind the back casts nothing by accident.
+- **One aim for the spells that fly (F-75), the casting hand replaces the view at the engine's input
+  (F-76):** Magic Missile, Fireball, Ice Projectile, Poison Projectile and Lightning Strike read their pitch
+  and yaw from `vr::spellAim` instead of `player.angle` — **the axis of the casting hand's controller**, the
+  same axis the trail's tip is on (a wand: the spell flies along it), the hand of the last stroke, or the
+  other hand when the tracking lost it, the view when neither is tracked. The engine's own target, range and
+  collision stay. Nothing is drawn (D-010). Placement spells (fields, runes of guarding, summons) keep the
+  view's direction for now.
+- **No plane, no symbol is shown** (D-010): the only feedback is the engine's — the rune's chime, the colour
+  change of the trail, the spell. Showing the recognised symbol (F-202 rule 2) waits for the UI work.
+
+### Why
+D-010 wants runes drawn in the air with the engine's recognition kept (#44 feeds it, #45 tunes it, the $P
+recogniser is the published fallback, F-202); the engine's chain-of-directions recogniser is translation- and
+resolution-free, so a fixed scale and a fixed step are all it needs. A plane that faces the look at the
+stroke's start keeps a rune drawn in the room (the trail stays where it was drawn) readable even when the head
+turns during the stroke. The controller's axis rather than the OpenXR aim pose keeps the trail's tip and the
+spell on one line (F-75), and needs no second pose space in the simulator.
+
+### Consequences
+`vr/RuneProjection.h` (pure, host-tested: the plane, the sampler, the gate, the aim), `vr/VRRunes.h`
+(`spellAim`, `vr.magic.recognizer` / `vr.magic.aim` in `status.json`, the `magic.stroke.refused` event, `points`
+and `gate` on `magic.stroke`'s end, `aim` / `aimPitch` / `aimYaw` on the player's `spell.cast`), the engine's
+`ARX_SPELLS_ManageMagic` driven by the stroke in VR, the `rune-cast.xrs` sequence. The engine's alternative
+recogniser (the default, `improved_rune_recognition`) now writes the digits it quantised into `rune.drawn` and
+logs `rune.unknown` like the classic one, so every stroke's fate is in the log. The scale, the step and the
+gate's numbers are the constants of `RuneProjection.h`, for #45. Haptics on a recognised rune come with #42.
+
+---
+
 ## D-NEW: The rune trail — the engine's flares at the drawing hand, the engine's hold / release model
 
 - **Date:** 2026-10-10

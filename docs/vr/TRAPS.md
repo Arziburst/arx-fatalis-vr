@@ -8,6 +8,16 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-10 — A host test fails to compile with `C2513: no variable declared before '='` on a plain local (#44)
+
+**Symptom:** `vr::RuneGateResult far = vr::gateRuneStroke(...)` in a CppUnit test: `error C2513`,
+`C2143 missing ')' before '.'`, `C2660 function does not take 0 arguments` on the lines that use it — the
+code reads as valid C++ and compiles in the head.
+**Cause:** `far` (and `near`, `pascal`, …) are `#define`d to nothing by `windef.h`, which the test build pulls
+in through the platform headers; the declaration became `vr::RuneGateResult = ...`.
+**Do:** never name a variable `far` / `near` on Windows; when MSVC rejects an innocent line, look for a
+Windows macro before anything else.
+
 ## 2026-10-10 — An `.xrs` `@log` step misses a game event that is in `arx.log` (#43)
 
 **Symptom:** `@log GameEvent:.*magic\.stance state=on hands=true` failed with "no log line matched" while

@@ -179,6 +179,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
+#include "vr/VRRunes.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 
@@ -2003,7 +2004,9 @@ void ArxGame::updateLevel() {
 
 	// Checks Magic Flares Drawing
 	if(!player.m_paralysed) {
-		if(eeMousePressed1()) {
+		if(vr::handsDrawRunes()) {
+			// VR (#44): the drawing hand's stroke feeds the recogniser's points (vr/VRRunes.cpp), not the cursor
+		} else if(eeMousePressed1()) {
 			if(!ARX_FLARES_Block) {
 				static PlatformDuration runeDrawPointElapsed = 0;
 				if(!config.input.useAltRuneRecognition) {

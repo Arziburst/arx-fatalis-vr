@@ -736,11 +736,30 @@ std::string buildStatus(PlatformInstant now) {
 		writeVec(json, "point", magic.point);
 		json.value("flares", magic.flares);
 		writeVec(json, "lastFlare", magic.lastFlare);
+		// The recogniser's input from the stroke (#44): the points fed, the plane's yaw, the 2D size in
+		// recogniser pixels, the view gate's verdict on the last ended stroke and how many it refused
+		json.object("recognizer");
+		json.value("points", magic.recognizerPoints);
+		json.value("planeYaw", magic.planeYaw);
+		json.value("width", magic.size2D.x);
+		json.value("height", magic.size2D.y);
+		json.value("gate", magic.gate);
+		json.value("refused", magic.refused);
+		json.end();
+		// Where a spell of the player would go now (F-75): the casting hand's axis, or the engine's view
+		json.object("aim");
+		json.value("source", magic.aim.source);
+		json.value("hand", vr::handName(magic.aim.hand));
+		json.value("pitch", magic.aim.angle.getPitch());
+		json.value("yaw", magic.aim.angle.getYaw());
+		json.end();
 		for(size_t hand = 0; hand < vr::HandCount; hand++) {
 			json.object(vr::handName(vr::Hand(hand)));
 			json.value("located", magic.located[hand]);
 			json.value("ignored", magic.ignored[hand]);
 			writeVec(json, "point", magic.points[hand]);
+			json.value("aimPitch", magic.aims[hand].getPitch());
+			json.value("aimYaw", magic.aims[hand].getYaw());
 			json.end();
 		}
 		json.end();

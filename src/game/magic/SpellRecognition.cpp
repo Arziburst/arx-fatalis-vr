@@ -52,6 +52,7 @@ static std::vector<Vec2f> plist;
 bool bPrecastSpell = false;
 
 static void handleRuneDetection(Rune rune);
+static void unrecognizedRune();
 
 typedef struct RunePattern{
 	Rune runeId;
@@ -114,6 +115,8 @@ class RuneRecognitionAlt {
 	void inputToDirs();
 	void findKeyPoints(std::vector<Vec2f> &in);
 	void setFailedSeq();
+	//! The input directions as the classic recogniser writes them (numpad digits, repeats collapsed)
+	std::string dirsAsArx() const;
 	static void callRuneHandlers(int index);
 	static char angle2arx(int dir);
 	static int arx2angle(char dir);
@@ -345,15 +348,20 @@ int RuneRecognitionAlt::arx2angle(char dir) {
 	}
 }
 
-void RuneRecognitionAlt::setFailedSeq() {
-	LAST_FAILED_SEQUENCE.clear();
+std::string RuneRecognitionAlt::dirsAsArx() const {
+	std::string sequence;
 	int lastDir = -1;
 	for(int direction : m_dirs) {
 		if(direction != lastDir) {
-			LAST_FAILED_SEQUENCE.push_back(angle2arx(direction));
+			sequence.push_back(angle2arx(direction));
 			lastDir = direction;
 		}
 	}
+	return sequence;
+}
+
+void RuneRecognitionAlt::setFailedSeq() {
+	LAST_FAILED_SEQUENCE = dirsAsArx();
 }
 
 /*! Compare the input directions (m_dirs) with each rune pattern
@@ -426,16 +434,23 @@ void RuneRecognitionAlt::analyze() {
 	
 	findKeyPoints(plist);
 	if(m_indices.size() > s_requiredPointCount) {
-		// Too deformed
+		// Too deformed - said in the event log like any other unrecognised stroke (#44)
+		SpellMoves = "deformed";
+		unrecognizedRune();
 		return;
 	}
 	resampleInput(plist);
 	inputToDirs();
-	
+
+	// What this recogniser saw, in the classic recogniser's digits: the rune.drawn / rune.unknown event
+	// carries it, so a stroke's fate can be read from the log (#44, tuning in #45)
+	SpellMoves = dirsAsArx();
+
 	int index = findMatchingPattern();
 	if(index >= 0) {
 		callRuneHandlers(index);
 	} else {
+		unrecognizedRune();
 		return;
 	}
 	

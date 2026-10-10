@@ -39,6 +39,7 @@
 #include "math/RandomVector.h"
 
 #include "scene/GameSound.h"
+#include "vr/VRRunes.h"
 #include "scene/Object.h"
 #include "scene/Scene.h"
 
@@ -578,8 +579,10 @@ void LightningStrikeSpell::Update() {
 	}
 	
 	if(m_caster == EntityHandle_Player) {
-		falpha = -player.angle.getPitch();
-		fBeta = player.angle.getYaw();
+		// VR (#44, F-76): the bolt goes where the casting hand points
+		const Anglef aim = vr::spellAim(player.angle).angle;
+		falpha = -aim.getPitch();
+		fBeta = aim.getYaw();
 	} else {
 		fBeta = caster ? caster->angle.getYaw() : 0.f;
 		if(caster && entities.get(caster->targetinfo) && caster->targetinfo != m_caster) {

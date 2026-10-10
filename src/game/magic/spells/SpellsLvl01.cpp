@@ -41,6 +41,7 @@
 #include "physics/Collisions.h"
 
 #include "scene/GameSound.h"
+#include "vr/VRRunes.h"
 #include "scene/Object.h"
 
 #include "util/Range.h"
@@ -134,8 +135,10 @@ void MagicMissileSpell::Launch() {
 	Vec3f startPos = m_hand_pos;
 	float pitch, yaw;
 	if(m_caster == EntityHandle_Player) {
-		pitch = player.angle.getPitch();
-		yaw = player.angle.getYaw();
+		// VR (#44, F-76): the missile flies where the casting hand points; flat mode: where the view looks
+		const Anglef aim = vr::spellAim(player.angle).angle;
+		pitch = aim.getPitch();
+		yaw = aim.getYaw();
 		if(!m_hand_group) {
 			startPos = player.pos + angleToVectorXZ(yaw);
 		}

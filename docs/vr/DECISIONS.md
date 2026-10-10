@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: The hand reticles pick the world in 3D; one mouse arbiter for the panel and the world
+## D-036: The hand reticles pick the world in 3D; one mouse arbiter for the panel and the world
 
 - **Date:** 2026-10-10
 - **Status:** Accepted

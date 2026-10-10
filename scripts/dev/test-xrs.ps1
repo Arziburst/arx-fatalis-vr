@@ -63,6 +63,8 @@ mark one
 '@
 Check 'a sequence parses' ($seq -isnot [string]) $seq
 Check 'launch directives are separated from the steps' ($seq.Sim -eq 'idle' -and "$($seq.Args)" -eq '--loadlevel 10' -and ($seq.Steps | Where-Object { $_.Kind -in 'sim', 'args' }).Count -eq 0)
+$oneWord = Get-Parse "@sim idle`n@args --skiplogo`n@wait 1"
+Check 'a one-word @args stays one argument (#178: it splatted as "- - s k i p l o g o")' ($oneWord -isnot [string] -and $oneWord.Args -is [array] -and $oneWord.Args.Count -eq 1 -and $oneWord.Args[0] -eq '--skiplogo') "$($oneWord.Args)"
 Check 'no save unless one is named' ($null -eq $seq.Save)
 $saved = Get-Parse "@sim idle`n@save mvp-new-game`n@args --loadslot 0`n@frames 1"
 Check '@save names the start save and is not a step' ($saved -isnot [string] -and $saved.Save -eq 'mvp-new-game' -and @($saved.Steps).Count -eq 1) $saved

@@ -40,7 +40,7 @@ void checkVec(const char * what, const Vec2f & expected, const Vec2f & actual, f
 	checkNear((std::string(what) + " z").c_str(), expected.y, actual.y, tolerance);
 }
 
-const float UnitsPerMeter = 100.f;
+const float LeanUnitsPerMeter = 100.f;
 
 } // anonymous namespace
 
@@ -86,8 +86,8 @@ void HeadLeanTest::testWalkingAMeter() {
 	for(int i = 1; i <= 100; i++) {
 		vr::HeadLean lean = vr::leanHead(Vec2f(0.f, 0.01f * float(i)), anchor);
 		CPPUNIT_ASSERT(lean.distance <= 0.10f + 0.0101f);
-		const Vec2f movedWorld = vr::turnToWorld(lean.step, turn) * UnitsPerMeter;
-		anchor = vr::anchorAfterStep(anchor, movedWorld, turn, UnitsPerMeter);
+		const Vec2f movedWorld = vr::turnToWorld(lean.step, turn) * LeanUnitsPerMeter;
+		anchor = vr::anchorAfterStep(anchor, movedWorld, turn, LeanUnitsPerMeter);
 	}
 	checkVec("anchor", Vec2f(0.f, 0.9f), anchor, 1e-3f);
 	vr::HeadLean lean = vr::leanHead(Vec2f(0.f, 1.f), anchor);
@@ -101,13 +101,13 @@ void HeadLeanTest::testBlockedBodyLeavesTheLean() {
 	for(int i = 1; i <= 60; i++) {
 		vr::HeadLean lean = vr::leanHead(Vec2f(0.f, 0.01f * float(i)), anchor);
 		const float allowed = std::max(0.f, std::min(lean.step.y, 0.3f - anchor.y));
-		anchor = vr::anchorAfterStep(anchor, Vec2f(0.f, allowed * UnitsPerMeter), 0.f, UnitsPerMeter);
+		anchor = vr::anchorAfterStep(anchor, Vec2f(0.f, allowed * LeanUnitsPerMeter), 0.f, LeanUnitsPerMeter);
 	}
 	checkVec("body at the wall", Vec2f(0.f, 0.3f), anchor, 1e-4f);
 	vr::HeadLean lean = vr::leanHead(Vec2f(0.f, 0.6f), anchor);
 	checkNear("lean past the wall", 0.3f, lean.distance, 1e-4f);
 	// The wall slid the body sideways instead: the anchor takes what really happened
-	anchor = vr::anchorAfterStep(Vec2f(0.f), Vec2f(5.f, 0.f), 0.f, UnitsPerMeter);
+	anchor = vr::anchorAfterStep(Vec2f(0.f), Vec2f(5.f, 0.f), 0.f, LeanUnitsPerMeter);
 	checkVec("slide", Vec2f(0.05f, 0.f), anchor);
 }
 

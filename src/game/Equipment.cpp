@@ -595,7 +595,8 @@ static float ARX_EQUIPMENT_GetSpecialValue(Entity * io, long val) {
 }
 
 // flags & 1 = blood spawn only
-bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ratioaim, long flags, EntityHandle targ) {
+bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ratioaim, long flags, EntityHandle targ,
+                                StrikeTargets * targets) {
 	
 	ARX_PROFILE_FUNC();
 	
@@ -609,6 +610,14 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 	bool ret = false;
 	
 	EXCEPTIONS_LIST_Pos = 0;
+	if(targets) {
+		// VR melee (#39): targets still in their cooldown are left out like the ones already hit by this check
+		for(EntityHandle skip : targets->skip) {
+			if(EXCEPTIONS_LIST_Pos < MAX_IN_SPHERE) {
+				EXCEPTIONS_LIST[EXCEPTIONS_LIST_Pos++] = skip;
+			}
+		}
+	}
 	
 	float drain_life = ARX_EQUIPMENT_GetSpecialValue(io_weapon, IO_SPECIAL_ELEM_DRAIN_LIFE);
 	float paralyse = ARX_EQUIPMENT_GetSpecialValue(io_weapon, IO_SPECIAL_ELEM_PARALYZE);
@@ -703,6 +712,14 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 
 						if(io_source == entities.player()) {
 							ARX_DAMAGES_DurabilityCheck(io_weapon, g_framedelay * 0.006f);
+						}
+
+						if(targets) {
+							StrikeContact contact;
+							contact.target = target->index();
+							contact.damage = dmgs;
+							contact.npc = (target->ioflags & IO_NPC) != 0;
+							targets->touched.push_back(contact);
 						}
 					}
 					

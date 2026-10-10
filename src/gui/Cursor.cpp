@@ -54,6 +54,9 @@
 #include "gui/Menu.h"
 
 #include "util/Cast.h"
+#include "vr/VRReticle.h"
+
+#include "vr/VRRunes.h"
 
 
 enum ARX_INTERFACE_CURSOR_MODE
@@ -278,6 +281,11 @@ void ARX_INTERFACE_RenderCursor(bool flag) {
 		iHighLight = 0;
 	}
 	
+	// VR (#37): in the world the hands' rings are the cursor; on the floating panel the cursor is drawn (#34)
+	if(vr::engineCursorHidden()) {
+		return;
+	}
+	
 	float iconScale = g_hudRoot.getScale();
 	float cursorScale = getInterfaceScale(config.interface.cursorScale, config.interface.cursorScaleInteger);
 	
@@ -401,19 +409,22 @@ void ARX_INTERFACE_RenderCursor(bool flag) {
 				}
 				
 				TextureContainer * surf = cursorMagic;
-				
+
 				Vec2f pos = Vec2f(DANAEMouse);
-				
+
 				if(TRUE_PLAYER_MOUSELOOK_ON) {
 					pos = MemoMouse;
 				}
-				
+
 				Vec2f size(surf->m_size.x, surf->m_size.y);
 				size *= cursorScale;
-				
+
 				pos += -size * 0.5f;
-				
-				EERIEDrawBitmap(Rectf(pos, size.x, size.y), 0.f, surf, Color::white);
+
+				// In VR the hand draws the runes: no cursor in the stance (D-010, #43)
+				if(!vr::handsDrawRunes()) {
+					EERIEDrawBitmap(Rectf(pos, size.x, size.y), 0.f, surf, Color::white);
+				}
 			} else {
 				if(MAGICMODE) {
 					ARX_SOUND_Stop(player.magic_draw);

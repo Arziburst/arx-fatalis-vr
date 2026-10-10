@@ -185,9 +185,11 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
 #include "vr/VRMelee.h"
+#include "vr/VRReticle.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 #include "vr/VRWeapon.h"
+#include "vr/WristHud.h"
 
 #include "Configure.h"
 
@@ -1827,6 +1829,10 @@ void ArxGame::updateActiveCamera() {
 		PrepareCamera(cam, g_size);
 	}
 
+	// Where the hands' rays start next frame, and how their hits become the mouse (#37)
+	vr::noteHeadCamera(cam == &g_playerCamera && !EXTERNALVIEW && m_headView.camera == cam, cam->m_pos,
+	                   engineAngle.getYaw(), g_preparedCamera.m_worldToScreen);
+
 }
 
 void ArxGame::updateTime() {
@@ -2184,6 +2190,9 @@ void ArxGame::renderLevel() {
 	}
 	#endif
 
+	// The wrist bars (#116): shown this frame when the player's left arm was posed from a controller
+	vr::updateWristVitals();
+
 	if(vr::stereoActive()) {
 		// In VR the views are the two eyes, each into its own swapchain image (#19)
 		renderStereoViews();
@@ -2338,7 +2347,10 @@ void ArxGame::renderSceneView() {
 	GRenderer->SetFogColor(Color());
 	g_renderBatcher.render();
 	GRenderer->SetFogColor(g_fogColor);
-	
+
+	// Health and mana on the left wrist (#116), after everything opaque: the arm and the walls cover them
+	vr::drawWristVitals();
+
 	GRenderer->SetAntialiasing(false);
 
 	renderLightFlares();
@@ -2441,7 +2453,14 @@ void ArxGame::render() {
 			}
 		}
 		
-		if((player.Interface & INTER_COMBATMODE) || PLAYER_MOUSELOOK_ON) {
+		if(vr::reticlesOn()) {
+			// VR (#37): in the exploration mode as in the cursor mode, the hand that owns the mouse hovers
+			if(!BLOCK_PLAYER_CONTROLS && !g_cursorOverBook && eMouseState != MOUSE_IN_NOTE) {
+				FlyingOverIO = FlyingOverObject(DANAEMouse);
+			} else {
+				FlyingOverIO = nullptr;
+			}
+		} else if((player.Interface & INTER_COMBATMODE) || PLAYER_MOUSELOOK_ON) {
 			FlyingOverIO = nullptr; // Avoid to check with those modes
 		} else {
 			if(!BLOCK_PLAYER_CONTROLS

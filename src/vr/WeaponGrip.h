@@ -33,7 +33,7 @@
  * No engine globals, no OpenXR: mesh vertices and rotations in, axes and rotations out. The held
  * weapon module (vr/VRWeapon.cpp) reads the weapon's mesh once per weapon and turns it in the hand.
  *
- * The rule (D-NEW, the coordinator for the owner): the controller's handle is the hilt - the blade
+ * The rule (D-033, the coordinator for the owner): the controller's handle is the hilt - the blade
  * lies along the grip's -Z (OpenXR: little finger to thumb, out of the thumb side of the fist), the
  * hilt's attach point on the model's palm. The engine draws a weapon in the hand bone's rest frame,
  * so its own angle in the model's fist is whatever the asset gives; the correction turns the blade

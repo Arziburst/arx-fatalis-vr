@@ -13,12 +13,12 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW-melee: Physical melee — the swing is the strike, the trigger charges it with the game's own charge
+## D-NEW: Physical melee — the swing is the strike, the trigger charges it with the game's own charge
 
 - **Date:** 2026-10-10
 - **Status:** Accepted (the owner's design; the numbers are MVP defaults the owner tunes in the headset)
 - **Decided by:** the owner (after a headset fight with #75's sword, relayed by the coordinator on #39); the
-  mechanism by the worker of #39; builds on D-009, D-016, D-019 and the weapon in the IK hand (#75)
+  mechanism by the worker of #39; builds on D-009, D-016, D-019, D-032 (the body) and D-033 (the weapon in the IK hand, #75)
 
 ### Decision
 - **A physical swing hits; the trigger does not strike.** While the IK hand holds a melee weapon, a swing of the
@@ -68,7 +68,7 @@ The engine's click attack while a weapon is in the VR hand; damage from swing sp
 - `weapon-hold.xrs` no longer sees a strike clip in combat mode; `melee-swing.xrs` proves the design on
   `mvp-goblin-fight`.
 
-## D-NEW: The weapon in VR is held by the IK hand — always in the hand, the controller's handle is the hilt, no engine arm clips
+## D-033: The weapon in VR is held by the IK hand — always in the hand, the controller's handle is the hilt, no engine arm clips
 
 - **Date:** 2026-10-10
 - **Status:** Accepted (MVP defaults; the owner judges them in the headset)
@@ -145,7 +145,7 @@ post-MVP (#101).
 
 ---
 
-## D-NEW: The VR body is the engine's player model on its own skeleton — arms by IK after the animation, the head and neck hidden, the model drawn under the head
+## D-032: The VR body is the engine's player model on its own skeleton — arms by IK after the animation, the head and neck hidden, the model drawn under the head
 
 - **Date:** 2026-10-09
 - **Status:** Accepted

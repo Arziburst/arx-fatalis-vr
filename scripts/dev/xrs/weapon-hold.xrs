@@ -1,4 +1,4 @@
-# The weapon in the IK hand (#75, D-NEW): the equipped sword is held by the model's right hand while the
+# The weapon in the IK hand (#75, D-033): the equipped sword is held by the model's right hand while the
 # IK drives that arm - outside the combat mode too (VR has no draw / sheathe control, D-019) - with the
 # hilt on the palm and the blade along the controller's handle (grip -Z, out of the thumb side of the
 # fist). It follows the hand, goes back to the engine (the back) when the controller is lost, and while

@@ -30,7 +30,7 @@
 class Entity;
 
 /*!
- * \brief The weapon in the IK hand of the full body (#75, D-009, D-NEW)
+ * \brief The weapon in the IK hand of the full body (#75, D-009, D-033)
  *
  *  - While the IK drives the right arm (vr/VRBody.h), an equipped dagger, one- or two-handed weapon is
  *    linked to the model's right hand - outside the engine's combat mode too: VR has no draw or sheathe

@@ -115,9 +115,9 @@ set(arxtest_SOURCES
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
 	src/vr/InterfaceSize.cpp
-	src/vr/Locomotion.cpp
 	src/vr/ArmIK.cpp
 	src/vr/WeaponGrip.cpp
+	src/vr/Locomotion.cpp
 	src/vr/MeleeSwing.cpp
 
 

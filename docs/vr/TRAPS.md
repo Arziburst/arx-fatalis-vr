@@ -43,6 +43,16 @@ the key on the floor (399 units away) is not even pickable. **Do:** put the play
 the table first — `setpos 10600 3100 11420 72` (as `hand-reticle.xrs` does); the note and the form are then
 ~1.5 m away, both for picking and for putting down. Mind the goblin in that room.
 
+## 2026-10-10 — .xrs: a count of what a held input did passes locally and fails on the CI runner (#285)
+
+**Symptom:** `snap-turn.xrs` held the stick until the 5th snap, let go and allowed one more snap; locally it
+passed, on the CI runner it counted 10 to 12 (`ASSERT FAILED: vr.input.turn.snaps (12) le 9`).
+**Cause:** a channel command reaches the game a poll after the runner sends it, and the runner's round trip on a
+loaded machine is longer than a repeat (0.4 s), so the release came 2–4 repeats late. An upper bound on a count
+after a release is a bound on the runner's speed.
+**Do:** let the game measure the timing by its own clock and assert on that (`vr.input.turn.repeatInterval`);
+in a sequence, bound only what the game decides, never how many times something happened before a later command.
+
 ## 2026-10-10 — The arms twist outward and wrap into spirals from the shoulder and the elbow when the wrist turns (#36, owner's headset run of PR #254)
 
 **Symptom:** the body, the solid torso and the hands following the controllers are right in the headset

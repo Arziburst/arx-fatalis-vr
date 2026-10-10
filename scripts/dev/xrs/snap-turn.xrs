@@ -71,20 +71,21 @@ vr-input stick right 0 0
 @frames 5
 @assert vr.input.turn.snaps eq {snaps0+3}
 
-# The repeat (owner, 2026-10-10): held under 2 s, the snap and then one every 0.4 s - "tick tick tick", 1 + 4.
-# The commands reach the game a poll later and the runner adds its own time, so a fixed wait counted 4 to 5
-# repeats (CI measured 1 + 3 on a 1500 ms wait, #255): held until the 5th snap is made, then let go - the
-# release may let one more through (repeats every 0.4 s, the round trip is shorter)
+# The repeat (owner, 2026-10-10): held, the snap and then one every 0.4 s - "tick tick tick".
+# How many repeats a hold gives depends on when the release reaches the game: the commands arrive a poll later
+# and the runner adds its own time (CI counted 2 to 4 extra repeats after the 5th snap, #285). So the hold
+# lasts until the 5th snap is made, and the repeat is judged by the interval the game measures by its clock
+# from the push's first snap to its last repeat (vr.input.turn.repeatInterval), not by a count
 vr-input turn repeat 0.4
 @mark
 vr-input stick right 1 0
 @until vr.input.turn.snaps ge {snaps0+8} 5s
 vr-input stick right 0 0
 @frames 5
-@assert vr.input.turn.snaps ge {snaps0+8}
-@assert vr.input.turn.snaps le {snaps0+9}
+@assert vr.input.turn.pushRepeats ge 4
+@assert vr.input.turn.repeatInterval ge 0.38   # 0.4 s of frames add up to a little more by the clock
+@assert vr.input.turn.repeatInterval le 0.6    # a repeat per frame or a slower one fails
 @assert vr.input.turn.turned ge {turned0+270}
-@assert vr.input.turn.turned le {turned0+315}
 @remember snaps1 vr.input.turn.snaps
 @log vr\.turn\.snap dir=right deg=45\.0 repeat=no
 @log vr\.turn\.snap dir=right deg=45\.0 repeat=yes

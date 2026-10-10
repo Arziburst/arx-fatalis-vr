@@ -112,6 +112,11 @@ struct PointerStatus {
 
 PointerStatus pointerStatus();
 
+//! The repeats of the last snap push (0: a single snap) and their mean interval in seconds of the clock, from
+//! the push's first snap to its last repeat (0 without a repeat) - for status.json (#285)
+u64 snapPushRepeats();
+float snapRepeatInterval();
+
 /*!
  * \brief The test channel's \c vr-input command
  *

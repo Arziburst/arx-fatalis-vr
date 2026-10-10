@@ -11,6 +11,12 @@ queue and waves: [MVP.md](MVP.md).
   the board, MVP.md and #193 current, report. You **never investigate or fix** — a problem becomes a task
   with a Definition of done for a worker; delegate investigation (D-013). Your own PRs: process docs and
   coordination tooling only, from a worktree (`new-worktree.ps1 -Issue <n> -Type docs -Name <x>`).
+  **Changes to this playbook and other process rules you write yourself — never delegate them** (owner,
+  2026-10-10).
+- **Global rules first** (owner, 2026-10-10): a PR that changes rules or docs every session follows
+  (COORDINATOR.md, WORKFLOW.md, CLAUDE.md, TESTING.md conventions, shared scripts' usage) is reviewed by you
+  and merged **out of the merge queue, first**; right after the merge tell every running session it
+  concerns to pull main and follow the new rule.
 - **Player-experience design is the owner's (D-017):** controls, interaction, comfort, UI look/placement,
   feedback — summarize, ask concrete questions, play back, get a yes, record a D-0xx, then write the
   issue. **Ask ahead** for the next tasks so no worker waits (D-027). Issues labelled `needs-design` wait.

@@ -13,6 +13,56 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: The VR arms are roll-aware — rotations from the bend plane, the hand's roll shared along the arm (RENIK's rules)
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (the owner's pick of option A1 from research section 16e; the shares are the owner's to tune in the headset)
+- **Decided by:** project owner (A1), the worker of #304 for the formulation; within D-009 / D-032
+
+### Decision
+How the arms of D-032 are rolled (#304, `src/vr/ArmRoll.h`, research row F-212):
+- **Every arm rotation is built from the bend plane, not on top of the animation.** The upper arm and the
+  forearm each get the world rotation that puts the bone on its joints *and* its rest bend reference
+  (the inside of the bend, opposite the elbow) into the plane of the posed arm. Nothing of the engine's
+  animation roll is kept for these two bones; the hand bone takes the controller's orientation as before.
+  The rest bend reference comes from the model's own rest pose — the rest triangle when the rest arm
+  bends, opposite the thumb when it is straight — so there is no calibrated constant.
+- **The hand's roll is measured against the neutral forearm** (the swing-twist split of the hand's
+  rotation relative to that forearm, about the forearm's axis), and **unwrapped past a half turn with
+  RENIK's overflow rule**: near ±180° the roll remembers which side it came from and continues on it
+  (190°, 200° …) until it is `vr_arm_twist_overflow` (45°) beyond the half turn, then flips to the
+  complement. So a slowly turning wrist never makes the arm snap at 180°.
+- **The roll is shared** (RENIK's arm defaults, named constants in `ArmRoll.h`, cfg.ini keys):
+  the elbow swings about the shoulder-target line by `vr_arm_elbow_roll` (⅓) of the roll — the bend plane
+  follows the hand, so a far-rolled hand moves the elbow instead of the mesh; the forearm takes
+  `vr_arm_forearm_twist` (⅔) of what is left against the final bend plane; the upper arm
+  `vr_arm_upper_twist` (½) of the forearm's. The wrist band of faces shows the remainder, the elbow band
+  the difference between the forearm and the upper arm, the shoulder band the upper arm's roll: a
+  controller rolled 90° leaves 15–25° on each band and 180° leaves 20–35° (measured by the `arms-roll`
+  sequence on the simulated headset) — against 90° and 180° on the one wrist band before (the candy
+  wrapper of research section 16a).
+- **The base pole is a relaxed elbow** — down, back and a little outward in the body frame (#36's
+  pole pointed a hanging arm's elbow outward, 50° from where the hand's thumb says the bend is) — and
+  is only swung by the roll. The shares are reported per hand in `status.json` (`handRoll`, `elbowSwing`,
+  `residualRoll`, `forearmRoll`, `upperRoll`, `wristTwist`, `elbowTwist`, `rollOverflow`) and asserted by
+  the `arms-roll` sequence; a change of the overflow side is a `vr.body.roll` game event.
+- **Licence:** the rules are ported from RENIK (V-Sekai/renik, MIT) — `LICENSE.renik` keeps its notice;
+  Final IK (the Unity package VHVR uses) was read to understand VRIK and nothing of it is copied.
+
+### Why
+The owner judged #36's arms "not for the MVP": a rolled controller wrung the forearm into a ribbon and the
+upper arm into a spiral, because the engine skins one bone per vertex and #36 rolled only the hand. The
+research (section 16) found that Valheim VR's arms look right through exactly these rules (VRIK's) plus
+skin weights Arx does not have; A1 ports the rules and leaves the weights to A2 (synthetic twist rings,
+F-213) only if the wrist band still reads as a ribbon in the headset. A pure core with host tests and a
+simulated-headset sequence means the headset answers only "how does it look", not "does it work".
+
+### Rules out
+Keeping the animation's roll on the arm bones; a fixed elbow with the whole roll on the wrist band; a
+separate VR arm rig or mesh (F-216) and hands-only (F-217) for the MVP; shares hard-coded without cfg keys.
+
+---
+
 ## D-031: The head reference comes from a worn headset; one world scale of 100 units per meter
 
 - **Date:** 2026-10-09

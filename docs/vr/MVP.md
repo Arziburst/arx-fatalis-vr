@@ -141,6 +141,7 @@ dependencies are met; when a task is split, replace it with its parts.
 31. #33 — Jump on A, crouch toggle on right stick down, stealth by partial deflection (F-47)
 32. #70 — Test save library for MVP scenarios *(done: new game, items, goblin fight; levers, doors and chests are #210, recorded by the owner)*
 33. #36 — Full body: the player model with arms driven by the controllers via IK (D-009, F-52, F-49)
+33. #304 — VR arms: roll-aware IK (A1, RENIK's rules) — the hand's roll shared along the arm, no twisting from the shoulder or the elbow (F-212)
 34. #116 — Health and mana as two bars on the left wrist (F-83)
 35. #166 — Research: world interaction in Valheim VR — the reference for D-016, #37, #38
 35. #37 — Items with a reticle per hand: both hands work as the mouse — drag, set down, into the inventory (D-016, F-57, F-72)
@@ -214,6 +215,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #33 jump, crouch toggle, stealth | input | VR | #74 |
 | #70 test saves | build | plain | #99, #123 |
 | #36 full body with IK arms | render | VR | #72, #24, #74, decisions on #118 / #120 |
+| #304 roll-aware arm IK (A1, F-212) | render | VR | #36, the owner's pick on #298 |
 | #116 wrist vitals | ui | VR | #36 |
 | #166 research: VHVR world interaction | docs | plain | — (owner's decisions before #37 / #38) |
 | #37 a reticle per hand: drag, into the inventory | combat | VR | #74, #166 (no longer #36, D-016) |

@@ -116,6 +116,18 @@ struct PlayerArmStatus {
 	float error = 0.f;            //!< wrist to target: 0 when the hand is where the controller is
 	float slide = 0.f;            //!< how far the shoulder slid towards an out-of-reach target
 	bool stretched = false;
+	//! Where the hand's roll went (degrees, D-NEW, vr/ArmRoll.h): the hand's roll about the forearm against
+	//! the base bend plane (unwrapped past a half turn), how far it swung the elbow, what was left against the
+	//! final bend plane, the forearm's and the upper arm's roll off that plane, and what the bands between the
+	//! bones show - the wrist band (hand vs forearm) and the elbow band (forearm vs upper arm)
+	float handRoll = 0.f;
+	float elbowSwing = 0.f;
+	float residualRoll = 0.f;
+	float forearmRoll = 0.f;
+	float upperRoll = 0.f;
+	float wristTwist = 0.f;
+	float elbowTwist = 0.f;
+	int overflow = 0;             //!< the side the roll continues on past a half turn: 0 none, +1, -1
 };
 
 //! The body as status.json reports it (the look and the body yaw of #25 are vr::BodyStatus in HeadTracking.h)
@@ -128,6 +140,11 @@ struct PlayerBodyStatus {
 	u64 posedFrames = 0;          //!< frames with at least one posed arm since the game started
 	Vec3f shift = Vec3f(0.f);     //!< this frame's horizontal shift of the body (units)
 	float facingYaw = 0.f;        //!< engine degrees [0, 360): where the model was turned to face (#25's body yaw)
+	//! the shares of the hand's roll in use (cfg.ini vr_arm_*, D-NEW): forearm, upper arm, elbow swing, overflow degrees
+	float forearmShare = 0.f;
+	float upperShare = 0.f;
+	float elbowShare = 0.f;
+	float twistOverflow = 0.f;
 	std::array<PlayerArmStatus, HandCount> hands; //!< left, right
 };
 

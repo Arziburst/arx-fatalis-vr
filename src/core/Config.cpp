@@ -45,6 +45,7 @@
 #include "util/Number.h"
 #include "util/String.h"
 
+#include "vr/ArmRoll.h"
 #include "vr/Locomotion.h"
 #include "vr/MirrorGeometry.h"
 #include "vr/UIPanel.h"
@@ -149,7 +150,11 @@ constexpr const float
 	ambianceVolume = 10.f,
 	vrSnapTurnAngle = vr::DefaultSnapAngle,
 	vrSmoothTurnSpeed = vr::DefaultSmoothSpeed,
-	vrSnapTurnRepeat = vr::DefaultSnapRepeat;
+	vrSnapTurnRepeat = vr::DefaultSnapRepeat,
+	vrArmForearmTwist = vr::DefaultForearmTwist,
+	vrArmUpperTwist = vr::DefaultUpperTwist,
+	vrArmElbowRoll = vr::DefaultElbowRoll,
+	vrArmTwistOverflow = vr::DefaultTwistOverflow;
 
 constexpr const ActionKey actions[NUM_ACTION_KEY] = {
 	ActionKey(Keyboard::Key_Spacebar), // JUMP
@@ -301,7 +306,11 @@ constexpr const std::string_view
 	vrSmoothTurn = "vr_smooth_turn",
 	vrSnapTurnAngle = "vr_snap_turn_angle",
 	vrSmoothTurnSpeed = "vr_smooth_turn_speed",
-	vrSnapTurnRepeat = "vr_snap_turn_repeat";
+	vrSnapTurnRepeat = "vr_snap_turn_repeat",
+	vrArmForearmTwist = "vr_arm_forearm_twist",
+	vrArmUpperTwist = "vr_arm_upper_twist",
+	vrArmElbowRoll = "vr_arm_elbow_roll",
+	vrArmTwistOverflow = "vr_arm_twist_overflow";
 
 // Input key options
 constexpr const std::string_view actions[NUM_ACTION_KEY] = {
@@ -576,6 +585,10 @@ bool Config::save() {
 	writer.writeKey(Key::vrSnapTurnAngle, input.vrSnapTurnAngle);
 	writer.writeKey(Key::vrSmoothTurnSpeed, input.vrSmoothTurnSpeed);
 	writer.writeKey(Key::vrSnapTurnRepeat, input.vrSnapTurnRepeat);
+	writer.writeKey(Key::vrArmForearmTwist, input.vrArmForearmTwist);
+	writer.writeKey(Key::vrArmUpperTwist, input.vrArmUpperTwist);
+	writer.writeKey(Key::vrArmElbowRoll, input.vrArmElbowRoll);
+	writer.writeKey(Key::vrArmTwistOverflow, input.vrArmTwistOverflow);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -740,6 +753,15 @@ bool Config::init(const fs::path & file) {
 	input.vrSmoothTurnSpeed = glm::clamp(vrSmoothTurnSpeed, vr::MinSmoothSpeed, vr::MaxSmoothSpeed);
 	float vrSnapTurnRepeat = reader.getKey(Section::Input, Key::vrSnapTurnRepeat, Default::vrSnapTurnRepeat);
 	input.vrSnapTurnRepeat = glm::clamp(vrSnapTurnRepeat, 0.f, vr::MaxSnapRepeat);
+	// The shares of the hand's roll along the VR arm (#304): fractions, and the overflow in degrees
+	float vrArmForearmTwist = reader.getKey(Section::Input, Key::vrArmForearmTwist, Default::vrArmForearmTwist);
+	input.vrArmForearmTwist = glm::clamp(vrArmForearmTwist, 0.f, 1.f);
+	float vrArmUpperTwist = reader.getKey(Section::Input, Key::vrArmUpperTwist, Default::vrArmUpperTwist);
+	input.vrArmUpperTwist = glm::clamp(vrArmUpperTwist, 0.f, 1.f);
+	float vrArmElbowRoll = reader.getKey(Section::Input, Key::vrArmElbowRoll, Default::vrArmElbowRoll);
+	input.vrArmElbowRoll = glm::clamp(vrArmElbowRoll, 0.f, 1.f);
+	float vrArmTwistOverflow = reader.getKey(Section::Input, Key::vrArmTwistOverflow, Default::vrArmTwistOverflow);
+	input.vrArmTwistOverflow = glm::clamp(vrArmTwistOverflow, vr::MinTwistOverflow, vr::MaxTwistOverflow);
 	
 	// Get action key settings
 	for(size_t i = 0; i < NUM_ACTION_KEY; i++) {

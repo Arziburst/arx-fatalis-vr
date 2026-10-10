@@ -1,0 +1,164 @@
+# The roll-aware arm IK (#304, D-NEW, F-212): the hand's roll about the forearm is shared along the arm
+# instead of wringing the one band of faces at the wrist (research section 16a). The right controller is
+# rolled 0 / 45 / 90 / 180 degrees hanging down and pointing forward - the eight poses of the #298 baseline
+# (docs/vr/research/arms-roll.xrs, section 16g) - and status.json says where the roll went:
+#   handRoll     the hand's roll about the forearm against the base bend plane (unwrapped past a half turn)
+#   elbowSwing   how far the elbow swung about the shoulder-target line (the elbow share of handRoll)
+#   residualRoll what is left against the final bend plane
+#   forearmRoll  the forearm's roll off its bend plane (the forearm share of residualRoll)
+#   upperRoll    the upper arm's roll off its bend plane (the upper share of forearmRoll)
+#   wristTwist   residualRoll - forearmRoll: what the band between the forearm and the hand shows
+#   elbowTwist   forearmRoll - upperRoll: the band at the elbow; the shoulder band shows upperRoll
+# With the defaults (2/3, 1/2, 1/3, 45) a 90 degree roll leaves each band about 20 degrees and a 180 degree
+# roll about 40 - against 90 and 180 on the wrist band with #36's rule. The joints are still met (error < 1).
+# Needs the first-person save (level 10's conversation camera is nowhere near the body, TRAPS.md):
+#   .\scripts\dev\xrs-run.ps1 arms-roll
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence arms-roll -Save mvp-new-game
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.body.bound eq true
+@assert vr.body.active eq true
+@assert vr.body.right.posed eq true
+
+# The shares in use are the defaults
+@assert vr.body.forearmShare gt 0.6
+@assert vr.body.forearmShare lt 0.7
+@assert vr.body.upperShare eq 0.5
+@assert vr.body.elbowShare gt 0.3
+@assert vr.body.elbowShare lt 0.4
+@assert vr.body.twistOverflow eq 45
+
+# Look down-forward at the right hand in front of the chest, the left one off
+vr-sim head rot 0 -40 0
+vr-sim hand left off
+vr-sim hand right pos 0.15 -0.3 -0.4
+
+# A) the hand hanging down (fingers down): the forearm is vertical, so a yaw is a roll about it.
+# At the identity grip the hand hangs as the model was made: nothing rolls, the elbow is not swung
+vr-sim hand right rot 0 0 0
+@frames 15
+@assert vr.body.right.error lt 1
+@remember down0HandRoll vr.body.right.handRoll
+@assert vr.body.right.wristTwist lt 12
+@assert vr.body.right.wristTwist gt -12
+@assert vr.body.right.elbowTwist lt 12
+@assert vr.body.right.elbowTwist gt -12
+@shot down-roll000
+
+# 45 degrees: the hand's roll moved against the rest pose - by less than 45 and the other way round
+# (the forearm leans forward here, so a room yaw is about 0.7 of a roll about it, and a positive yaw
+# unrolls this hand); the wrist band and the elbow band carry no more than their share
+vr-sim hand right rot 45 0 0
+@frames 15
+@assert vr.body.right.error lt 1
+@assert vr.body.right.handRoll lt {down0HandRoll-15}
+@assert vr.body.right.handRoll gt {down0HandRoll-50}
+@assert vr.body.right.wristTwist lt 25
+@assert vr.body.right.wristTwist gt -25
+@assert vr.body.right.elbowTwist lt 25
+@assert vr.body.right.elbowTwist gt -25
+@shot down-roll045
+
+# 90 degrees: each band under 35 degrees (the whole 90 on the wrist band is the candy wrapper of #36)
+vr-sim hand right rot 90 0 0
+@frames 15
+@assert vr.body.right.error lt 1
+@assert vr.body.right.handRoll lt {down0HandRoll-40}
+@assert vr.body.right.handRoll gt {down0HandRoll-95}
+@assert vr.body.right.wristTwist lt 35
+@assert vr.body.right.wristTwist gt -35
+@assert vr.body.right.elbowTwist lt 35
+@assert vr.body.right.elbowTwist gt -35
+@assert vr.body.right.upperRoll lt 35
+@assert vr.body.right.upperRoll gt -35
+@shot down-roll090
+
+# 180 degrees: a half turn, still shared - under 70 degrees per band
+vr-sim hand right rot 180 0 0
+@frames 15
+@assert vr.body.right.error lt 1
+@assert vr.body.right.wristTwist lt 70
+@assert vr.body.right.wristTwist gt -70
+@assert vr.body.right.elbowTwist lt 70
+@assert vr.body.right.elbowTwist gt -70
+@assert vr.body.right.upperRoll lt 70
+@assert vr.body.right.upperRoll gt -70
+@shot down-roll180
+
+# Back to 0: everything returns, the overflow side is forgotten
+vr-sim hand right rot 0 0 0
+@frames 15
+@assert vr.body.right.handRoll lt {down0HandRoll+5}
+@assert vr.body.right.handRoll gt {down0HandRoll-5}
+@assert vr.body.right.rollOverflow eq 0
+
+# B) the hand pointing forward (fingers ahead, thumb up), rolled about the forward axis: 0, +90, -90, 180
+# (yaw pitch roll compose as Ry * Rx * Rz: Rz(90) * Rx(90) = Ry(90) * Rz(90), Rz(180) * Rx(90) = Ry(180) * Rx(-90))
+vr-sim hand right rot 0 90 0
+@frames 15
+@assert vr.body.right.error lt 1
+@remember fwd0HandRoll vr.body.right.handRoll
+@shot fwd-roll000
+
+vr-sim hand right rot 90 0 90
+@frames 15
+@assert vr.body.right.error lt 1
+@assert vr.body.right.wristTwist lt 35
+@assert vr.body.right.wristTwist gt -35
+@assert vr.body.right.elbowTwist lt 35
+@assert vr.body.right.elbowTwist gt -35
+@shot fwd-roll090
+
+vr-sim hand right rot -90 0 -90
+@frames 15
+@assert vr.body.right.error lt 1
+@assert vr.body.right.wristTwist lt 35
+@assert vr.body.right.wristTwist gt -35
+@assert vr.body.right.elbowTwist lt 35
+@assert vr.body.right.elbowTwist gt -35
+@shot fwd-roll-090
+
+vr-sim hand right rot 180 -90 0
+@frames 15
+@assert vr.body.right.error lt 1
+@assert vr.body.right.wristTwist lt 70
+@assert vr.body.right.wristTwist gt -70
+@assert vr.body.right.elbowTwist lt 70
+@assert vr.body.right.elbowTwist gt -70
+@shot fwd-roll180
+
+# C) the roll past a half turn keeps its side until the overflow (RENIK's rule). The hand hanging by
+# the side, so the forearm is vertical and a room yaw is a roll about it (a negative yaw rolls this hand
+# positive; the hanging hand starts about 25 degrees from the model's rest relation, and a yaw step is
+# about one roll step here): yawed on in steps to -170 the roll continues past 180 instead of
+# flipping; at -215 it is past the overflow (225) and flips to the complement. The steps stay under the
+# overflow: the simulated hand jumps, and a jump straight past 225 flips at once, as it should
+vr-sim hand right pos 0.2 -0.55 -0.1
+vr-sim hand right rot 0 0 0
+@frames 10
+@remember sideHandRoll vr.body.right.handRoll
+@assert vr.body.right.rollOverflow eq 0
+vr-sim hand right rot -100 0 0
+@frames 10
+@assert vr.body.right.handRoll gt {sideHandRoll+70}
+@assert vr.body.right.handRoll lt {sideHandRoll+130}
+vr-sim hand right rot -135 0 0
+@frames 10
+@assert vr.body.right.handRoll gt 140
+vr-sim hand right rot -170 0 0
+@frames 10
+@assert vr.body.right.handRoll gt 180
+@assert vr.body.right.rollOverflow ne 0
+@assert vr.body.right.error lt 1
+vr-sim hand right rot -215 0 0
+@frames 10
+@assert vr.body.right.handRoll lt 0
+@assert vr.body.right.rollOverflow eq 0
+@assert vr.body.right.error lt 1
+
+@assert errors eq 0

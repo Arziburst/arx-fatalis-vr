@@ -229,6 +229,10 @@ public:
 		float vrSnapTurnAngle; //!< VR: degrees per snap turn (#32)
 		float vrSmoothTurnSpeed; //!< VR: smooth turn degrees per second at full deflection (#32)
 		float vrSnapTurnRepeat; //!< VR: seconds between snaps while the stick is held; 0 = no repeat (#32)
+		float vrArmForearmTwist; //!< VR: the forearm's share [0, 1] of the hand's roll off the arm's bend plane (#304)
+		float vrArmUpperTwist; //!< VR: the upper arm's share [0, 1] of the forearm's roll (#304)
+		float vrArmElbowRoll; //!< VR: the share [0, 1] of the hand's roll that swings the elbow about the arm (#304)
+		float vrArmTwistOverflow; //!< VR: degrees past a half turn the hand's roll keeps its side before flipping (#304)
 
 	} input;
 	

@@ -716,8 +716,24 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("error", arm.error);
 			json.value("slide", arm.slide);
 			json.value("stretched", arm.stretched);
+			// where the hand's roll went (#304, degrees): the hand's roll about the forearm, the elbow's swing,
+			// what was left, the forearm's and the upper arm's roll off the bend plane, and the bands between
+			// the bones - the wrist band (hand vs forearm) and the elbow band (forearm vs upper arm)
+			json.value("handRoll", arm.handRoll);
+			json.value("elbowSwing", arm.elbowSwing);
+			json.value("residualRoll", arm.residualRoll);
+			json.value("forearmRoll", arm.forearmRoll);
+			json.value("upperRoll", arm.upperRoll);
+			json.value("wristTwist", arm.wristTwist);
+			json.value("elbowTwist", arm.elbowTwist);
+			json.value("rollOverflow", arm.overflow);
 			json.end();
 		}
+		// the shares in use (cfg.ini vr_arm_*, #304)
+		json.value("forearmShare", body.forearmShare);
+		json.value("upperShare", body.upperShare);
+		json.value("elbowShare", body.elbowShare);
+		json.value("twistOverflow", body.twistOverflow);
 		json.end();
 	}
 	{

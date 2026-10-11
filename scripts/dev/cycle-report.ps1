@@ -17,14 +17,14 @@
 	  NEXT            the next task from the MVP queue (same logic as next-task.ps1)
 
 .PARAMETER WorkingCopy
-	The owner's working copy to inspect. Default: C:\Users\arzib\OneDrive\Desktop\arx-fatalis-vr.
+	The owner's working copy to inspect. Default: E:\dev\arx-fatalis-vr.
 
 .PARAMETER LaunchHours
 	How many hours of the launch ledger to summarize (default 12).
 #>
 [CmdletBinding()]
 param(
-	[string]$WorkingCopy = 'C:\Users\arzib\OneDrive\Desktop\arx-fatalis-vr',
+	[string]$WorkingCopy = 'E:\dev\arx-fatalis-vr',
 	[double]$LaunchHours = 12
 )
 

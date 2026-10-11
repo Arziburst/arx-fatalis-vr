@@ -76,7 +76,7 @@ $effortLine = if ($Effort) { "Work at effort: $Effort." } else { '' }
 $brief = @"
 $role
 
-## Your contract (issue #$Issue: $title)
+## Your contract (issue #${Issue}: $title)
 $contract
 
 ## Project rules for workers (Arx Fatalis VR)

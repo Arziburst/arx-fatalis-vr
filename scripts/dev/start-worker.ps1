@@ -4,7 +4,7 @@
 
 .DESCRIPTION
 	What the coordinator runs to hand out a task in parallel mode (docs/vr/WORKFLOW.md, "Parallel work";
-	decision D-011). Run it from the owner's copy (C:\Users\arzib\OneDrive\Desktop\arx-fatalis-vr\scripts\dev\),
+	decision D-011). Run it from the owner's copy (C:\Users\arzib\dev\arx-fatalis-vr\scripts\dev\),
 	so the worktree belongs to the owner's repository. It
 	  1. creates the task's worktree with new-worktree.ps1 (from origin/main, outside OneDrive), or reuses it;
 	  2. starts `claude --bg` named "ARXVR-<n> <issue title>" with the prompt "/next-task <n> worktree=<path>"

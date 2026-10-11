@@ -1,0 +1,194 @@
+# Safety-guard verdicts shared by safety-guard.sh and safety-guard.ps1.
+# <expect> <branch> <command>   expect: block | allow; branch: the cwd repo's checked-out branch (main | work)
+# Separated by single tabs. \n in the command is a newline, \t a tab (so \\n is a backslash and a newline).
+block	work	git push --force origin main
+block	work	git push origin main
+block	work	git push -f origin master
+block	work	git push origin +main
+block	work	git push origin feature:main
+block	work	git push origin HEAD:refs/heads/main
+block	work	git push origin refs/heads/main
+block	work	git push --mirror origin
+block	work	GIT PUSH ORIGIN MAIN
+block	work	git -C /tmp/x push origin main
+block	work	git -c core.x=1 push origin master
+block	work	GIT_TRACE=1 git push origin main
+block	work	& git push origin main
+block	work	"C:\Program Files\Git\bin\git.exe" push origin main
+block	work	git.exe push origin main
+block	work	/usr/bin/git push origin main
+block	work	cd repo && git push origin main
+block	work	git fetch; git push origin main
+block	work	bash -c "git push origin main"
+block	work	pwsh -Command git push origin main
+block	work	echo ok\ngit push origin main
+block	main	git push
+block	main	git push origin
+block	main	git push origin HEAD
+block	main	git push -u origin @
+block	main	git push origin $(git branch --show-current)
+block	work	git branch -D main
+block	work	git branch --delete master
+block	work	rm -rf /
+block	work	rm -rf ~
+block	work	rm -rf ~/
+block	work	rm -rf $HOME
+block	work	rm -fr "/"
+block	work	rm -rf .claude/worktrees/12-fix
+block	work	rm -rf /repo/.claude/worktrees
+block	work	Remove-Item C:\ -Recurse -Force
+block	work	Remove-Item -Recurse -Force $HOME
+block	work	Remove-Item -Path ~ -Recurse
+allow	work	git push
+allow	work	git push origin 12-fix-login
+allow	work	git push -u origin 12-fix-login
+allow	work	git push --force origin 12-fix-login
+allow	work	git push origin --delete 12-fix-login
+allow	work	git push origin HEAD
+allow	work	git commit -m "never git push origin main"
+allow	work	echo git push origin main
+allow	work	gh pr create --body "do not git push origin main"
+allow	work	# git push origin main\ngit status
+allow	work	git branch -D 12-fix-login
+allow	work	git branch -d maintenance
+allow	work	git push origin maintenance
+allow	work	git push origin main-fix
+allow	work	rm -rf node_modules
+allow	work	rm -rf ./build /tmp/x
+allow	work	Remove-Item -Recurse .\dist
+allow	main	git status
+allow	main	git pull origin main
+allow	main	git log origin/main..HEAD
+allow	work	git reset --hard origin/main
+allow	work	git rebase origin/main
+# --- line continuations, tabs (A2) ---
+block	work	git push origin \\nmain
+block	work	git push \\n  origin main
+block	work	git \\n  push origin main
+block	main	git \\n push
+block	work	git push origin `\nmain
+block	work	git\tpush origin main
+block	work	git push origin main\tfoo
+# --- every-branch pushes and refspec forms (A3) ---
+block	work	git push --all
+block	work	git push --all origin
+block	work	git push origin :
+block	main	git push origin +HEAD
+block	main	git push origin HEAD~0
+block	main	git push origin HEAD:HEAD
+block	main	git push origin "HEAD"
+block	main	git push origin @{0}
+block	work	git push origin :main
+block	work	git push origin --delete main
+block	work	git push origin main~0
+block	work	git push origin refs/heads/main^{}
+block	work	git push origin work:heads/main
+block	work	git push origin +HEAD:main
+block	work	git push origin "+work:main"
+block	work	git push origin -f main
+block	work	git push origin main --dry-run
+block	work	git push origin main>/dev/null
+block	work	git push origin main 2>&1
+block	work	git push --repo origin main
+block	work	git push -o ci.skip origin main
+block	work	git --git-dir .git push origin main
+block	work	git -p push origin main
+block	work	git -c "a=b c" push origin main
+block	work	(git push origin main)
+block	work	{ git push origin main; }
+block	work	git push origin main &
+block	work	EOF; git push origin main
+block	work	if true; then git push origin main; fi
+block	work	echo "x" | git push origin main
+block	work	sudo git push origin main
+block	work	bash -lc 'git push origin main'
+block	work	bash -c "cd ../main && git push"
+block	work	bash <<'EOF'\ngit push origin main\nEOF
+# --- the current branch after checkout / switch / cd / -C (A4) ---
+block	work	git checkout main; git push
+block	work	git checkout main; git push origin HEAD
+block	work	git switch main && git merge work && git push
+block	work	git -C ../main push
+block	work	git -C ../main push origin HEAD
+block	work	cd ../main && git push
+block	work	cd ../main; git push origin HEAD
+block	work	Set-Location ../main; git push
+# --- deleting a protected branch (A5) ---
+block	work	git branch --delete --force main
+block	work	git branch -Df main
+block	work	git branch -f -D main
+block	work	git branch -D -f main
+block	work	git branch -D work main
+block	work	git branch -D "main"
+block	work	git branch -d 'master'
+block	work	git update-ref -d refs/heads/main
+# --- removals (A6) ---
+block	work	rm -r -f /
+block	work	rm -rf /*
+block	work	rm -rf ~/*
+block	work	rm -rf ~/.
+block	work	rm -Rf ~
+block	work	rm -r ~
+block	work	rm --recursive --force ~
+block	work	rm -rf -- ~
+block	work	rm -rf "$HOME"
+block	work	rm -rf $HOME/
+block	work	rm -rf ${HOME}
+block	work	rm -rf / --no-preserve-root
+block	work	sudo rm -rf /
+block	work	rm -rf .claude/worktrees/
+block	work	rm -rf ./.claude/worktrees/12-fix
+block	work	rm -rf .claude\worktrees\12-fix
+block	work	Remove-Item -Recurse -Force ~\
+block	work	Remove-Item C:\* -Recurse
+block	work	Remove-Item -Recurse -Force $env:USERPROFILE
+block	work	Remove-Item -Recurse -Force "$HOME\"
+block	work	Remove-Item -LiteralPath C:\ -Recurse
+block	work	Remove-Item -Recurse -Force D:\
+block	work	Remove-Item -Recurse -Force .claude\worktrees\12-fix
+block	work	Remove-Item -Recurse .claude/worktrees/12-fix
+block	work	ri -r -fo ~
+block	work	rd /s /q C:\
+block	work	rmdir /s /q C:\
+block	work	find ~ -delete
+block	work	find / -name "*.tmp" -delete
+# --- ordinary work stays free (A8 and the philosophy: only main / master and irreversible removals) ---
+allow	work	git push origin 12-fix --force-with-lease
+allow	work	git push --force-with-lease origin 12-fix
+allow	work	git push -f origin HEAD
+allow	work	git push origin +12-fix
+allow	work	git push origin :12-fix
+allow	work	git push origin work:12-fix-login 2>&1
+allow	work	git push origin 12-fix > out.txt
+allow	main	git push --tags
+allow	main	git push origin --tags
+allow	main	git push origin v1.0
+allow	main	git push origin HEAD:12-fix
+allow	main	git checkout -b 12-fix && git push -u origin HEAD
+allow	main	git switch -c 12-fix; git push -u origin 12-fix
+allow	main	cd ../work && git push
+allow	main	git -C ../work push
+allow	work	git commit -m "wip; git push origin main"
+allow	work	git commit -m "refactor && git push origin main is forbidden"
+allow	work	gh pr create --body "fixed; git push origin main later"
+allow	work	git commit -m "$(cat <<'EOF'\nFix it; don't push to main\n\ngit push origin main is not ours\nEOF\n)"
+allow	work	git commit -m "line one\ngit push origin main"
+allow	work	git push origin main-fix # git push origin main
+allow	work	git log --oneline | grep push
+allow	work	git checkout main -- README.md && git push
+allow	work	git branch -D 12-fix maintenance
+allow	work	git branch -m main-old
+allow	work	git rebase -i origin/main
+allow	work	echo "do not rm -rf /"
+allow	work	rm -rf build
+allow	work	rm -rf ~/projects/app/build
+allow	work	rm -rf "$HOME/projects/app/node_modules"
+allow	work	rm -rf .claude/worktrees/12-fix/build
+allow	work	rm -f ~/.cache/x.log
+allow	work	Remove-Item -Force ~\notes.txt
+allow	work	Remove-Item -Recurse -Force $env:TEMP\build
+allow	work	rd /s /q build
+allow	work	find . -name "*.tmp" -delete
+# --- project patterns (.claude/coordinator-deny.txt) ---
+block	work	terraform  destroy -auto-approve
+allow	work	terraform plan

@@ -120,7 +120,7 @@ if (-not $found) { 'no leftover remote branches' }
 
 # --- Worktrees -------------------------------------------------------------------------------------
 Section 'WORKTREES'
-$wtRoot = if ($env:ARXVR_WORKTREE_ROOT) { $env:ARXVR_WORKTREE_ROOT } else { Join-Path $env:USERPROFILE 'arx-fatalis-vr-wt' }
+$wtRoot = if ($env:ARXVR_WORKTREE_ROOT) { $env:ARXVR_WORKTREE_ROOT } else { Join-Path $WorkingCopy '.claude\worktrees' }
 $worktrees = @()
 $current = $null
 foreach ($line in (git -C $WorkingCopy worktree list --porcelain 2>$null)) {

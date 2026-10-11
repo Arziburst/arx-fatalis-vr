@@ -3,6 +3,27 @@
 These are the agreed rules for developing the VR version. They apply to humans and to Claude alike.
 Update this file whenever the agreements change.
 
+## Working through the coordinator core
+
+Since 2026-10-11 the work runs through the coordinator core (`coordinator/` in the owner's copy:
+the core in `coordinator/core/`, the Arx rules in `coordinator/PROJECT.md`). **This section wins over
+any older text below** that mentions `/next-task`, `/accept-task`, `/reject-task`, `/review-pr`,
+`start-reviewer.ps1`, worktrees in `arx-fatalis-vr-wt` or workers merging their own PRs:
+
+- **The coordinator writes the task's contract** into the issue (a `## Contract` section, the core's
+  CONTRACT.md format: intent, ordered criteria each with its check — `oracle` / `review` / `owner` —,
+  non-goals, do-not-decide items, budget, `touches`). Workers no longer write their own Definition of done.
+- **A worker** is started by `scripts\dev\start-worker.ps1 <n>` as the session `#<n> worker: <title>`
+  with the worker role and the contract in its brief, in its own worktree
+  `E:\dev\arx-fatalis-vr\.claude\worktrees\ARXVR-<n>-<type>-<name>`. It follows this file for naming,
+  launches (D-014), building and testing; proves each `oracle` criterion itself; opens the PR; and sends
+  the coordinator the core's YAML report (each result `oracle` / `claim` / `owner`). **It never merges.**
+- **The verifier** (the core's role, as a subagent) checks the PR against the contract; findings go back
+  to the worker.
+- **The coordinator merges** on fully green CI and a confirmed verdict; `needs-vr-test` PRs only after the
+  owner's headset verdict. The owner's verdict reaches the worker through the coordinator.
+- Artifacts are in the owner's voice: no AI co-author lines (`attribution` off).
+
 ## Language
 
 All project artifacts are written in **English**: documentation, issues, epics, tasks, comments on issues,

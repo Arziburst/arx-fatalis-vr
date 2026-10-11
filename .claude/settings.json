@@ -1,4 +1,9 @@
 {
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
   "permissions": {
     "allow": [
       "PowerShell(Get-Content *)",
@@ -56,12 +61,12 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell|Edit|Write|NotebookEdit",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
-            "shell": "bash",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/dev/hooks/safety-guard.sh\"",
+            "shell": "powershell",
+            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"$env:CLAUDE_PROJECT_DIR/coordinator/core/scripts/hooks/safety-guard.ps1\"",
             "timeout": 10
           }
         ]

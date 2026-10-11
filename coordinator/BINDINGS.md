@@ -7,7 +7,7 @@ Layer 3 of the coordinator: the concrete tools behind the generic terms of the c
 |---|---|
 | Operating system, shells | Windows 11; PowerShell 7 (scripts), Git Bash for the Bash tool |
 | Repository, branches | `Arziburst/arx-fatalis-vr`; `main` (development, default) and `master` (upstream mirror) — never pushed directly |
-| Owner's working copy | `C:\Users\arzib\dev\arx-fatalis-vr` (outside OneDrive since 2026-10-11; on `main`, pulled with `--ff-only`, never edited) |
+| Owner's working copy | `E:\dev\arx-fatalis-vr` (outside OneDrive since 2026-10-11; on `main`, pulled with `--ff-only`, never edited) |
 | First start on a machine | `scripts\dev\setup-coordinator.ps1` (`-Check` later): status line, cross-session messages, auto-continue; lists the owner-only steps (bypass disclaimer, folder trust, `gh auth login`, D-011). Then `/coordinator` in the owner's copy |
 | Build / run / test | `scripts\build-windows.ps1`, `scripts\run-windows.ps1`, `scripts\dev\smoke-test.ps1`, `--vr-sim` `.xrs` sequences, `eye-check.ps1` (#112) |
 | Start a worker | from the owner's copy: `scripts\dev\start-worker.ps1 <n> -Type <t> -Model <m> -Effort <e>` (the line `plan-next.ps1` prints); subscribe with `SendMessage(to: <name>, notify_when_idle: true)`; lane limits: VR lane ≤ 2 in progress, ≤ 4 in Testing |

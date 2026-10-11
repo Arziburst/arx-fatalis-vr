@@ -44,7 +44,7 @@ Conversation with the project owner is in Russian.
 - `main` — our development branch and the default branch. Task branches start from it, PRs go into it.
 - `master` — untouched mirror of the upstream engine at the point we forked; not used for development.
 
-The project owner's working copy is `C:\Users\arzib\dev\arx-fatalis-vr` (outside OneDrive since 2026-10-11).
+The project owner's working copy is `E:\dev\arx-fatalis-vr` (outside OneDrive since 2026-10-11).
 
 ## Development environment (Windows)
 

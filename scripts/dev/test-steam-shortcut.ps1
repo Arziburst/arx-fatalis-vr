@@ -1,3 +1,4 @@
+#Requires -Version 7
 <#
 .SYNOPSIS
 	Self-test of add-steam-shortcut.ps1 (#80): Steam's shortcuts.vdf on copies only - no Steam, no game.

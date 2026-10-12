@@ -45,6 +45,9 @@
 	Keep the game's sound. Without it the launch is silent (arx.exe --mute, #345): a worker's self-test must
 	not play over the owner. test-pr.ps1 passes it - the owner's launches have sound.
 
+.PARAMETER DryRun
+	Print the arx.exe command line and exit: nothing is started, no game lock is taken.
+
 .PARAMETER Fullscreen
 	Do not force windowed mode; use the fullscreen setting from cfg.ini.
 
@@ -108,6 +111,7 @@ param(
 	[switch]$TestChannel,
 	[switch]$StartSteamVR,
 	[switch]$Sound,
+	[switch]$DryRun,
 	[switch]$Rebuild,
 	[switch]$Background,
 	[Alias('VrLockTimeoutSec')]
@@ -163,6 +167,14 @@ if ($slotProblem) { throw $slotProblem }
 $vr = Resolve-ArxVrMode -ArxArgs $ArxArgs -StartSteamVR:$StartSteamVR
 $ArxArgs = $vr.Args
 Write-Host "    mode: $(if ($vr.Vr) { 'VR' } else { 'flat' }) ($($vr.Reason))"
+
+# Start-Process does not quote arguments: paths with spaces need explicit quotes (docs/vr/TRAPS.md)
+$quote = { param($a) if ("$a" -match '\s') { '"' + $a + '"' } else { "$a" } }
+$argList = @($dataArgs + $modeArgs + $dirArgs + $ArxArgs | ForEach-Object { & $quote $_ })
+if ($DryRun) {
+	Write-Host "    dry run, not started: arx.exe $($argList -join ' ')" -ForegroundColor Cyan
+	exit 0
+}
 Write-ArxLaunchBudgetNote -Copy $SourceDir -Branch $copy.Branch
 
 # One game at a time: hold a game lock slot (and the VR lock for a VR launch) while the game runs
@@ -172,9 +184,6 @@ if (-not $lock) {
 }
 Write-Host "    game lock: slot $($lock.Slot)$(if ($lock.Vr) { ' + VR lock' })"
 
-# Start-Process does not quote arguments: paths with spaces need explicit quotes (docs/vr/TRAPS.md)
-$quote = { param($a) if ("$a" -match '\s') { '"' + $a + '"' } else { "$a" } }
-$argList = @($dataArgs + $modeArgs + $dirArgs + $ArxArgs | ForEach-Object { & $quote $_ })
 $code = $null
 $process = $null
 $started = Get-Date

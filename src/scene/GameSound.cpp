@@ -210,6 +210,12 @@ bool ARX_SOUND_Init() {
 	ARX_SOUND_MixerMenuSpeech = audio::createMixer(ARX_SOUND_MixerMenu);
 	ARX_SOUND_MixerMenuAmbiance = audio::createMixer(ARX_SOUND_MixerMenu);
 	
+	if(g_soundMuted) {
+		// Before anything can play; the child mixers follow their parents
+		audio::setMixerVolume(ARX_SOUND_MixerGame, 0.f);
+		audio::setMixerVolume(ARX_SOUND_MixerMenu, 0.f);
+	}
+
 	// Load samples
 	ARX_SOUND_CreateStaticSamples();
 	ARX_SOUND_CreateMaterials();

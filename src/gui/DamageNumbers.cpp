@@ -84,8 +84,10 @@ struct DamageNumber {
 	float dealt = 0.f;
 	u32 hits = 0;
 	bool logged = false;
-	//! Where the last frame drew it, per view (each eye in VR)
+	std::string text;  //!< the damage as drawn
+	//! The views that drew it in the last frame (each eye in VR), and where in the first two
 	size_t views = 0;
+	std::array<bool, 2> drawn = { { false, false } };
 	std::array<Vec2f, 2> screen = { { Vec2f(0.f), Vec2f(0.f) } };
 };
 
@@ -93,6 +95,8 @@ std::vector<DamageNumber> g_numbers;
 //! Scene views drawn in this frame
 size_t g_view = 0;
 Font * g_font = nullptr;
+//! A size the font could not be loaded at: not tried again
+unsigned g_failedFontSize = 0;
 
 Vec3f aboveHead(const Entity & entity) {
 	// The cylinder's height is negative: up is -y
@@ -118,10 +122,10 @@ void log(const DamageNumber & number) {
 	gameevent::Event event("damage.number");
 	event("entity", number.targetName)("amount", number.damage, 1)("dealt", number.dealt, 1)("hits", number.hits);
 	event("views", number.views);
-	if(number.views > 0) {
+	if(number.drawn[0]) {
 		event("x0", s32(number.screen[0].x))("y0", s32(number.screen[0].y));
 	}
-	if(number.views > 1) {
+	if(number.drawn[1]) {
 		event("x1", s32(number.screen[1].x))("y1", s32(number.screen[1].y));
 	}
 }
@@ -134,10 +138,15 @@ Font * fontForView() {
 	if(g_font && g_font->getSize() == size) {
 		return g_font;
 	}
+	if(size == g_failedFontSize) {
+		return nullptr;
+	}
 
 	Font * font = FontCache::getFont(FontFile, size, FontWeight);
 	if(!font) {
 		LogError << "Could not load the damage number font " << FontFile << " at size " << size;
+		g_failedFontSize = size;
+		return nullptr;
 	}
 	FontCache::releaseFont(g_font);
 	g_font = font;
@@ -177,6 +186,7 @@ void hit(const Entity & target, float damage, float dealt) {
 			number.damage += damage;
 			number.dealt += dealt;
 			number.hits++;
+			number.text = format(number.damage);
 			return;
 		}
 	}
@@ -196,6 +206,7 @@ void hit(const Entity & target, float damage, float dealt) {
 	number.damage = damage;
 	number.dealt = dealt;
 	number.hits = 1;
+	number.text = format(damage);
 
 }
 
@@ -212,6 +223,9 @@ void update() {
 			log(number);
 			number.logged = true;
 		}
+		// The views of this frame draw it anew
+		number.views = 0;
+		number.drawn = { { false, false } };
 	}
 
 	g_numbers.erase(std::remove_if(g_numbers.begin(), g_numbers.end(), [now](const DamageNumber & number) {
@@ -255,10 +269,11 @@ void render() {
 
 		if(view < number.screen.size()) {
 			number.screen[view] = center;
+			number.drawn[view] = true;
 		}
-		number.views = view + 1;
+		number.views++;
 
-		drawOutlined(*font, center, format(number.damage), alpha);
+		drawOutlined(*font, center, number.text, alpha);
 
 	}
 

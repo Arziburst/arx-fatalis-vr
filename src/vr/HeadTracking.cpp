@@ -331,8 +331,12 @@ bool applyHeadPose(Vec3f & position, Anglef & angle, float bodyYaw) {
 		status.crouch = crouch;
 	}
 
-	// The body's part of the head's movement (#26) is the anchor the camera leaves out
-	HeadCamera camera = headToCamera(head, status.reference, bodyYaw, status.anchor);
+	// The body's part of the head's movement (#26) is the anchor the camera leaves out; the character height
+	// setting (#260) applies at once: read every frame
+	HeadCameraParams cameraParams;
+	cameraParams.heightOffsetMeters = clampHeightOffset(config.input.vrHeightOffset);
+	status.heightOffset = cameraParams.heightOffsetMeters;
+	HeadCamera camera = headToCamera(head, status.reference, bodyYaw, status.anchor, cameraParams);
 	updateLean(camera.moved, bodyYaw - status.reference.yaw);
 
 	// The character's crouch - the head's, the button's - already lowered the eye the camera starts from: the

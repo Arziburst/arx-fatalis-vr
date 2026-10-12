@@ -21,6 +21,8 @@
 #define ARX_GUI_MAINMENU_H
 
 #include <memory>
+#include <string>
+#include <string_view>
 
 #include "gui/MenuWidgets.h"
 #include "gui/widget/Widget.h"
@@ -70,5 +72,19 @@ private:
 };
 
 extern MainMenu * g_mainMenu;
+
+/*!
+ * A click on the left (\a delta -1) or right (+1) arrow of a row of the VR turning page (#260) - turn,
+ * angle, speed, repeat or height - for the test channel; the page must be open
+ * \return an empty string, or why it was refused
+ */
+std::string stepVRSettingRow(std::string_view row, int delta);
+
+/*!
+ * The dot of a slider of the VR turning page (#260) - angle, speed or repeat - dragged to \a fraction of its
+ * bar (0 left end, 1 right end) and let go there, for the test channel; the page must be open
+ * \return an empty string, or why it was refused
+ */
+std::string dragVRSettingSlider(std::string_view row, float fraction);
 
 #endif // ARX_GUI_MAINMENU_H

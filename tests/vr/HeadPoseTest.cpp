@@ -233,6 +233,36 @@ void HeadPoseTest::testAnchorIsTheBodysPart() {
 	checkVector("turned rest", 10.f * angleToVector(Anglef(0.f, 90.f, 0.f)), camera.offset);
 }
 
+void HeadPoseTest::testHeightOffsetLiftsTheCamera() {
+
+	vr::HeadReference reference = vr::makeHeadReference(head(0.f, 0.f, 0.f, Vec3f(0.f, 1.7f, 0.f)));
+	vr::HeadCameraParams params;
+
+	// The character height setting (#260): +10 cm sees 10 units above the character's eye (y is down)
+	params.heightOffsetMeters = 0.1f;
+	vr::HeadCamera camera = vr::headToCamera(head(0.f, 0.f, 0.f, Vec3f(0.f, 1.7f, 0.f)), reference, 0.f, Vec2f(0.f),
+	                                         params);
+	checkVector("at the reference", Vec3f(0.f, -10.f, 0.f), camera.offset);
+	// The head's own movement (crouch #100 reads it) does not include the setting
+	checkVector("moved untouched", Vec3f(0.f), camera.moved);
+
+	// It adds to the head's own movement: 20 cm lower and turned with the body - the height stays vertical
+	camera = vr::headToCamera(head(0.f, 0.f, 0.f, Vec3f(0.3f, 1.5f, 0.f)), reference, 90.f, Vec2f(0.f), params);
+	checkVector("crouched and to the side", Vec3f(0.f, 10.f, 30.f), camera.offset);
+
+	// Shorter, with the body's anchor (#26) taken off the horizontal part only
+	params.heightOffsetMeters = -0.2f;
+	camera = vr::headToCamera(head(0.f, 0.f, 0.f, Vec3f(0.8f, 1.7f, -0.6f)), reference, 0.f, Vec2f(0.7f, 0.5f),
+	                          params);
+	checkVector("shorter after the body", Vec3f(10.f, 20.f, 10.f), camera.offset);
+
+	// The setting's range
+	CPPUNIT_ASSERT_EQUAL(0.2f, vr::clampHeightOffset(0.5f));
+	CPPUNIT_ASSERT_EQUAL(-0.2f, vr::clampHeightOffset(-3.f));
+	CPPUNIT_ASSERT_EQUAL(0.06f, vr::clampHeightOffset(0.06f));
+	CPPUNIT_ASSERT_EQUAL(0.f, vr::clampHeightOffset(std::nanf("")));
+}
+
 void HeadPoseTest::testRecenterIsTheEye() {
 	// Recenter taken seated and turned: the head there is the character's eye, facing the body's way
 	vr::HeadSample seated = head(40.f, 0.f, 0.f, Vec3f(0.25f, 1.2f, 0.1f));

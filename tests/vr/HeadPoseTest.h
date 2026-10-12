@@ -40,6 +40,7 @@ class HeadPoseTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testRotationAloneDoesNotMoveTheCamera);
 	CPPUNIT_TEST(testMovementIsTurnedWithTheBody);
 	CPPUNIT_TEST(testAnchorIsTheBodysPart);
+	CPPUNIT_TEST(testHeightOffsetLiftsTheCamera);
 	CPPUNIT_TEST(testRecenterIsTheEye);
 	CPPUNIT_TEST(testHeadBetweenTheEyes);
 	CPPUNIT_TEST(testWrapDegrees);
@@ -56,6 +57,7 @@ public:
 	void testRotationAloneDoesNotMoveTheCamera();
 	void testMovementIsTurnedWithTheBody();
 	void testAnchorIsTheBodysPart();
+	void testHeightOffsetLiftsTheCamera();
 	void testRecenterIsTheEye();
 	void testHeadBetweenTheEyes();
 	void testWrapDegrees();

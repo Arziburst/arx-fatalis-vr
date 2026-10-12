@@ -13,6 +13,76 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: Control scheme v2 — two equal hands: a casting stance and a radial menu per hand, dual wielding
+
+- **Date:** 2026-10-13
+- **Status:** Accepted; replaces D-019's button layout and D-040's stance binding and cast rule. Implemented by #375 ("Control scheme v2",
+  #376–#381); each part is judged in the headset in the test playground
+- **Decided by:** project owner (the scheme, by a design discussion with the coordinator, 2026-10-13); the coordinator
+  for the defaults the owner accepted (jump threshold, eight radial segments, the quick-slot rules)
+
+### Decision
+**Both hands are equal.** Each hand can hold a weapon, cast and interact; no action belongs to one hand. The same
+layout on both controllers (Index; on the Touch, X / Y take A / B's places):
+
+| Input | Action (each hand) |
+|---|---|
+| **A** (lower face button), held | That hand's **casting stance**. A hand holding a weapon does not enter it: a short haptic pulse |
+| **Trigger in the stance** | **The pen**: pressed, the hand draws a rune in the air in front of the player; released, the rune is done. Both hands draw at the same time, each its own rune |
+| **A released** | When the **last** A is released, the spell is cast: all runes of both hands, **in the order they were finished**, as one spell, from the hand released last or along the gaze (per spell; every spell is tested) |
+| **B** (upper face button), held | That hand's **radial menu**; two can be open at once. Selected by moving the hand; released, the item under the hand runs |
+| **Trigger, empty hand, no stance** | **Grab and drag** an item with that hand's reticle. Two hands drag two items at once (an engine change) |
+| **Trigger, weapon in the hand** | **Charge the strike**; the strike is that hand's swing |
+| **Grip + trigger** (grip first) | **Use / interact**: doors, levers, chests, bodies, items. Empty hand only |
+| **Grip alone** | Nothing (the model's fingers only) |
+| **Stick click** | **Draw / sheathe** the weapon equipped in that hand |
+| **Left stick** | Walk along the look; the deflection sets sneak / walk / run (as now) |
+| **Right stick** | Left / right: turn (snap or smooth, as set). **Up: jump** (up beyond 0.7 and more than sideways, so a diagonal turn does not jump). **Down: crouch toggle** |
+| **Trackpads** | Unbound by default; the player binds them. Defaults never rely on a trackpad: the game is played on controllers without one |
+
+**The radial menu** (the owner's reference: the radial menu of the VR game Strayed; the screenshot is kept outside this public repository and described in the radial-menu issue):
+- a ring of **8 segments** that hangs in the air in front of the hand and moves with the player, within reach; the
+  centre names the segment under the hand;
+- the **top segment is the inventory**: released there, the inventory opens;
+- moving the hand **above** the ring opens a **half-ring** over it: game menu, the book (character, spells, map,
+  quests), quick save, quick load, recenter, cancel the running spell;
+- the other **7 segments are quick slots** for items (potions, food, torch). An item is put into a slot by dragging it
+  from the inventory onto the segment; used from the menu of a hand, it acts for that hand (a torch lights in it, a
+  potion is drunk);
+- time does not stop while a menu is open;
+- the menu is the only way to the game menu, with no hold fallback: it must not break, and CI covers it.
+
+**Dual wielding (MVP, after the arms are fixed):** a weapon is equipped per hand (a sword in the left, a dagger in the
+right) and both hands strike; a hand can hold a weapon while the other casts. Two-handed weapons (bows, two-handed
+swords) take both hands.
+
+**Dropped:** the grip + trigger chord that sent an item straight to the inventory; precast spells (the flat game's
+1 / 2 / 3); the game menu on the left A; recenter on a long left-stick click (now in the radial half-ring); the casting
+stance on the left trackpad. No guard against an accidental stick click while running (a VR experience, the owner).
+
+**Later, a separate PR for the owner's test:** the trigger alone uses (a click) and grabs (a hold), replacing
+grip + trigger.
+
+### Why
+The owner wants the game to feel like VR, not a port of the mouse and keyboard: the hands are the player's own and equal,
+spells are drawn with both hands at once, and the many quick keys of 2002 move into one radial menu per hand. Both face
+buttons on both controllers stay meaningful, which also fits the Touch (X / Y). The stance plus the trigger as the pen
+keeps one stroke per rune, as in the original, so the recognizer knows where a rune ends; releasing the last stance
+gives a clear moment to cast without a pause or an extra gesture.
+
+### Consequences
+- **Replaces** D-019's layout (its locomotion and turning rules stay) and, in D-040, the stance on the left trackpad and
+  the "first trigger wins" rule; the trail's look stays. D-016 (both hands work as the mouse, each with its reticle) and
+  D-010 (no rays, runes drawn in the air) stand.
+- **Engine changes:** two strokes and recognizers at once and one spell built from both; two held items; a weapon slot
+  per hand, damage and the character sheet for two weapons, two-handed weapons on both hands.
+- **The first game restriction:** a hand with a weapon cannot cast. It may be revisited after the headset tests.
+- PR #310 (runes in the air, #44) and the haptics PR #264 wait until this scheme lands; #310 is reviewed against it.
+- Issues #324 (full rebinding) and #325 (radial menu) are folded into the epic; the remapping screen (D-039) keeps
+  working on the new actions.
+
+---
+
 ## D-041: The model's fingers follow the real fingers — hand joints first, the controls as the fallback, closed on a held weapon
 
 - **Date:** 2026-10-10
@@ -902,7 +972,7 @@ the controls are the base of the VR settings that grow later (sound, graphics).
 ## D-019: The MVP control scheme
 
 - **Date:** 2026-10-09 (game menu, recenter and the grip rule added 2026-10-10; other controllers, #35)
-- **Status:** Accepted
+- **Status:** Superseded by D-NEW (control scheme v2, 2026-10-13) for the button layout; its locomotion and turning rules stay
 - **Decided by:** project owner (agreed by questions, D-017; builds on D-008, D-010, D-016, D-018)
 
 ### Decision

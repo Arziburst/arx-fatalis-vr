@@ -5,7 +5,9 @@
 # Runs on the test save mvp-goblin-fight (#70: a sword equipped, a goblin ahead in a corridor):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence melee-swing -Save mvp-goblin-fight
 # The swings are ramps of the simulated right controller: 0.85 m in 8 frames - 9.6 m/s at 90 fps, 3.2 m/s at 30 fps,
-# above the swing speed (2.5 m/s) and below a tracking jump (20 m/s) at any frame rate the runner plays at.
+# above the swing speed (2.5 m/s) and below a tracking jump (20 m/s) at any frame rate the runner plays at. Every other
+# move of the hand is a slow ramp too: an instant move is a tracking jump only on a short frame - the set-up's 0.43 m
+# in one 22 ms frame (45 fps, a busy runner) is 19.5 m/s, a swing (#349, TRAPS.md).
 @sim idle
 @save mvp-goblin-fight
 @args --loadslot 0
@@ -19,12 +21,12 @@
 @assert vr.melee.swings eq 0
 
 # The goblin held still 80 units ahead (the save has it walking away down the corridor), the sword level with its
-# chest, the blade pointing ahead, the hand to the right
+# chest, the blade pointing ahead, the hand to the right - moved there slowly (0.43 m in 60 frames: under 0.7 m/s)
 goblin_base_0036.setspeed 0
 place goblin_base_0036 80
-vr-sim hand right pos 0.45 -0.8 -0.35
+vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
 vr-sim head rot 0 -25 0
-@frames 30
+@frames 75
 @assert vr.melee.swings eq 0
 @shot goblin-in-reach
 

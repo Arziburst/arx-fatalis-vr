@@ -426,8 +426,11 @@ void ARX_PLAYER_ClickedOnTorch(Entity * io);
 void ARX_PLAYER_RectifyPosition();
 void ARX_PLAYER_Frame_Update();
 void ARX_PLAYER_Manage_Movement();
-//! Death sequence: release paralysis, launch the menu when the fade is over - once per frame
+//! Death sequence: release paralysis, launch the menu when the fade is over - once per frame.
+//! In the test playground (#321) the hero is back at the level's start at once instead.
 void ARX_PLAYER_Manage_Death();
+//! The player's start of the level being loaded (the level file's), set by the level loader
+void ARX_PLAYER_SetLevelStart(const Vec3f & pos, const Anglef & angle);
 //! Draw the fade to white of the death sequence - once per view
 void ARX_PLAYER_Render_Death();
 void ARX_PLAYER_Quest_Add(std::string_view quest);

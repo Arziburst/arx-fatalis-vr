@@ -51,7 +51,6 @@
         "hooks": [
           {
             "type": "command",
-            "shell": "powershell",
             "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"E:/dev/arx-fatalis-vr/scripts/dev/hooks/session-title.ps1\"",
             "timeout": 15,
             "statusMessage": "Naming the session after the task"
@@ -65,7 +64,6 @@
         "hooks": [
           {
             "type": "command",
-            "shell": "powershell",
             "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"E:/dev/arx-fatalis-vr/coordinator/core/scripts/hooks/safety-guard.ps1\"",
             "timeout": 10
           }

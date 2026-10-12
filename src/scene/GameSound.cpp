@@ -113,6 +113,7 @@ static const res::path ARX_SOUND_COLLISION_MAP_NAMES[] = {
 };
 
 static bool g_soundInitialized = false;
+static bool g_soundMuted = false; // --mute: every mixer stays at volume 0, cfg.ini is untouched
 
 static AmbianceId g_zoneAmbiance = AmbianceId();
 static AmbianceId g_menuAmbiance = AmbianceId();
@@ -250,9 +251,13 @@ bool ARX_SOUND_IsEnabled() {
 	return g_soundInitialized;
 }
 
+void ARX_SOUND_SetMuted(bool muted) {
+	g_soundMuted = muted;
+}
+
 void ARX_SOUND_MixerSetVolume(audio::MixerId mixer_id, float volume) {
 	if(g_soundInitialized) {
-		audio::setMixerVolume(mixer_id, volume);
+		audio::setMixerVolume(mixer_id, g_soundMuted ? 0.f : volume);
 	}
 }
 

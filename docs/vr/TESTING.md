@@ -105,6 +105,23 @@ A fresh isolated directory has no `cfg.ini` yet, so the first run logs one warni
 is taken from there) for `-- --loadslot` runs; `-Save <name>` makes one library save the **only** save of
 the directory and defaults the arguments to `--loadslot 0` (see [The test save library](#the-test-save-library-70)).
 
+## Background runs are silent (`--mute`, #345)
+
+CI, smoke tests, `.xrs` sequences, `--vr-sim` runs and a worker's own launches happen on the owner's PC
+while he works or tests in the headset, so they play no sound. `arx.exe --mute` keeps every audio mixer
+at volume 0 for that run and logs one line, `Audio is muted (--mute): ...`, to `arx.log`. The flag lives
+in the mixer only: `cfg.ini` keeps the owner's volumes (like `--windowed`, it never leaks into the config).
+
+| Launch | `--mute` |
+|---|---|
+| `smoke-test.ps1` (so `ci-smoke.ps1`, `xrs-run.ps1`, the CI job, every `--vr-sim` sequence) | yes; `-Sound` opts out |
+| `run-windows.ps1` (a worker's launch) | yes; `-Sound` opts out |
+| `make-test-saves.ps1`, `package-tester.ps1` verify run | yes |
+| `test-pr.ps1` (the owner's test station, with or without `-StartSteamVR`) | no - it passes `-Sound` |
+| the desktop icon, `arx.exe` started by hand | no |
+
+The printed command line (`=== run ...: arx.exe ...`) and `launches.log` show the flag.
+
 ## The test command channel (`--test-dir DIR`)
 
 Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While enabled the game:

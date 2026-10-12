@@ -175,7 +175,7 @@ Write-Host "==> Build id: $(Short $head)$(if ($dirty) { ' + uncommitted changes'
 
 if ($NoLaunch) { return }
 if (-not $ArxArgs) { $ArxArgs = @('--skiplogo', '--loadslot', '0') }
-$runArgs = @{ Config = $Config; ArxArgs = $ArxArgs }
+$runArgs = @{ Config = $Config; ArxArgs = $ArxArgs; Sound = $true } # the owner's launches have sound (#345)
 if ($StartSteamVR) { $runArgs.StartSteamVR = $true }
 elseif ($ArxArgs -notcontains '--no-vr' -and -not (Get-Process vrserver -ErrorAction SilentlyContinue)) {
 	Write-Host '    SteamVR is not running: the game will start flat. For the headset start SteamVR first, or pass -StartSteamVR.' -ForegroundColor Yellow

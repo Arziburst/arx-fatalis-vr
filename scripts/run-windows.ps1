@@ -41,6 +41,10 @@
 	Arx Fatalis install folder, passed as --data-dir. Default: none - the game finds the install in the
 	Steam libraries itself (#79).
 
+.PARAMETER Sound
+	Keep the game's sound. Without it the launch is silent (arx.exe --mute, #345): a worker's self-test must
+	not play over the owner. test-pr.ps1 passes it - the owner's launches have sound.
+
 .PARAMETER Fullscreen
 	Do not force windowed mode; use the fullscreen setting from cfg.ini.
 
@@ -103,6 +107,7 @@ param(
 	[string]$SaveLibrary,
 	[switch]$TestChannel,
 	[switch]$StartSteamVR,
+	[switch]$Sound,
 	[switch]$Rebuild,
 	[switch]$Background,
 	[Alias('VrLockTimeoutSec')]
@@ -127,6 +132,7 @@ $dataArgs = if ($DataDir) { @('--data-dir', $DataDir) } else { @() }
 
 $modeArgs = @()
 if (-not $Fullscreen) { $modeArgs += '--windowed' }
+if (-not $Sound) { $modeArgs += '--mute' }
 
 # Isolated user and config directory
 $dirArgs = @()

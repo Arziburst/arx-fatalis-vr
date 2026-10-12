@@ -30,7 +30,13 @@ vr-sim hand left rot 180 0 -90
 @assert vr.wrist.alpha eq 0
 @shot wrist-away
 
-# The watch pose: the palm turned to the eyes, the thumb up - fully visible, drawn into both eyes
+# The watch pose: the palm turned to the eyes, the thumb up - fully visible, drawn into both eyes. The hand
+# sits further right and a little higher than the pose above (#304): the roll-aware arm's relaxed pole (down,
+# back, a little out) and its elbow swing put the elbow behind the wrist at (0.12, -0.3, -0.3), so the forearm
+# ran away from the eyes (along 0.36 / -0.58 / 0.73); here the shoulder-hand line runs to the right and the
+# forearm with it. Further right the forearm runs across the view even more but the inner wrist turns away
+# from the eyes (0.3 / -0.3 / -0.25: along x 0.68, facing 66 degrees) - measured on the simulated headset
+vr-sim hand left pos 0.25 -0.25 -0.3
 vr-sim hand left rot -90 90 0
 @frames 15
 @assert vr.body.left.posed eq true
@@ -38,9 +44,10 @@ vr-sim hand left rot -90 90 0
 @assert vr.wrist.facingDeg lt 50
 @assert vr.wrist.alpha eq 1
 # The forearm runs to the right (health, towards the elbow, is the left bar); the bars fill upwards (engine
-# y is down), towards the thumb, across the forearm (measured: along 0.71 / -0.56 / 0.43, across -0.62 /
-# -0.78 / 0.00 - the forearm rises 34 degrees, so "up" leans left with it); the inner wrist faces back
-# towards the eyes (normal z -0.90)
+# y is down), towards the thumb, across the forearm (measured on #36's arm at the old pose: along 0.71 /
+# -0.56 / 0.43, across -0.62 / -0.78 / 0.00 - the forearm rises 34 degrees, so "up" leans left with it;
+# on #304's arm here: along 0.52 / -0.56 / 0.65, across.y -0.68, facing 48.5); the inner wrist faces back
+# towards the eyes (normal z -0.90 on #36's arm, -0.76 on #304's)
 @assert vr.wrist.along.x gt 0.5
 @assert vr.wrist.across.y lt -0.6
 @assert vr.wrist.normal.z lt -0.7

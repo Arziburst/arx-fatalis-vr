@@ -34,7 +34,7 @@ class Font;
 class TextureContainer;
 
 /*!
- * \brief A slider the player drags: a bar with notches and a dot that snaps to them (#260, D-NEW-turning)
+ * \brief A slider the player drags: a bar with notches and a dot that snaps to them (#260, D-043)
  *
  * The label left, the bar, then the value's text. Pressing on the bar puts the dot on the nearest notch and
  * keeps dragging it while the button is held - the mouse in flat mode, a hand's reticle and trigger in VR

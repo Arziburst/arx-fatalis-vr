@@ -50,7 +50,7 @@ try {
 		Write-Host "up to date (built from $(Short $head))" -ForegroundColor Green
 	}
 
-	& (Join-Path $WorkingCopy 'scripts\run-windows.ps1') -Config $Config
+	& (Join-Path $WorkingCopy 'scripts\run-windows.ps1') -Config $Config -Sound # the owner's launch has sound (#345)
 	if ($LASTEXITCODE) { throw "arx.exe exited with code $LASTEXITCODE" }
 } catch {
 	Write-Host $_ -ForegroundColor Red

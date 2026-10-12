@@ -33,6 +33,9 @@
 	-LockTimeoutSec for the holder named in the output; it runs only this working copy's own build made
 	from its HEAD (-Rebuild builds first); every run is one line in %LOCALAPPDATA%\ArxFatalisVR\launches.log.
 
+.PARAMETER Sound
+	Keep the game's sound. Without it every run gets --mute (#345): CI, workers and sequences stay silent.
+
 .PARAMETER Config
 	Which build to run: Release (default), RelWithDebInfo or Debug.
 
@@ -146,6 +149,7 @@ param(
 	[int]$LockTimeoutSec = 300,
 	[switch]$Rebuild,
 	[switch]$Vr,
+	[switch]$Sound,
 	[string]$VrSim,
 	[switch]$Menu,
 	[int]$Seconds = 10,
@@ -233,6 +237,7 @@ function Invoke-SmokeRun([int]$Run) {
 		$argList += '--windowed', '--test-dir', "`"$TestDir`""
 		if (-not $Shared) { $argList += '--user-dir', "`"$UserDir`"", '--config-dir', "`"$UserDir`"" }
 		if (-not $Vr) { $argList += '--no-vr' }
+		if (-not $Sound) { $argList += '--mute' }
 		# --vr-sim wins over --no-vr in the game; --no-vr stays, so a broken script means flat, never the runtime
 		if ($sim) { $argList += '--vr-sim', "`"$simScript`"" }
 		$argList += $ArxArgs

@@ -115,6 +115,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "gui/Console.h"
 #include "gui/Cursor.h"
+#include "gui/Dragging.h"
 #include "gui/Hud.h"
 #include "gui/Interface.h"
 #include "gui/LoadLevelScreen.h"
@@ -183,8 +184,9 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
-#include "vr/VRRunes.h"
+#include "vr/VRMelee.h"
 #include "vr/VRReticle.h"
+#include "vr/VRRunes.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 #include "vr/VRWeapon.h"
@@ -351,6 +353,14 @@ static void forceWindowed() {
 ARX_PROGRAM_OPTION("windowed", "", "Start in a window regardless of the fullscreen setting in cfg.ini",
                    &forceWindowed)
 
+static bool g_forceMute = false;
+
+static void forceMute() {
+	g_forceMute = true;
+}
+ARX_PROGRAM_OPTION("mute", "", "Play no sound in this run; the audio settings in cfg.ini are not changed",
+                   &forceMute)
+
 bool ArxGame::initConfig() {
 
 	// Initialize config first, before anything else.
@@ -394,6 +404,12 @@ bool ArxGame::initConfig() {
 		// For this run only: the config is saved at exit, so the original value is restored there
 		LogInfo << "Starting in a window (--windowed)";
 		config.video.fullscreen = false;
+	}
+
+	if(g_forceMute) {
+		// Applied in the mixer, so config.audio.volume and the rest stay as saved in cfg.ini
+		LogInfo << "Audio is muted (--mute): all mixers stay at volume 0, cfg.ini volumes are kept";
+		ARX_SOUND_SetMuted(true);
 	}
 
 	if(!migrated && config.misc.migration < Config::CaseSensitiveFilenames) {
@@ -1424,10 +1440,11 @@ void ArxGame::doFrame() {
 	} else {
 		cinematicLaunchWaiting();
 		render();
-		// A "shot" from the test channel reads the finished frame before it is shown
-		channel::afterRender();
 		// In VR: the finished flat frame on a head-locked quad in the headset (no-op in flat mode)
 		vr::submitFrame(m_MainWindow->getSize());
+		// A "shot" from the test channel reads the finished frame before it is shown: in VR the window
+		// holds the desktop mirror by now (#271), what a spectator sees
+		channel::afterRender();
 		m_MainWindow->showFrame();
 	}
 }
@@ -2031,6 +2048,19 @@ void ArxGame::updateLevel() {
 
 	// The weapon in the IK hand (#75): after this frame's body pose and the combat mode's links
 	vr::updateHeldWeapon();
+
+	// Physical melee (#39): swings of the held weapon hit - not with a menu open, an item dragged, the controls blocked
+	{
+		const char * refusal = openMenuName();
+		if(!refusal && BLOCK_PLAYER_CONTROLS) {
+			refusal = "controls blocked";
+		} else if(!refusal && g_draggedEntity) {
+			refusal = "an item is dragged";
+		} else if(!refusal && player.lifePool.current <= 0.f) {
+			refusal = "dead";
+		}
+		vr::updateMelee(refusal);
+	}
 
 	restoreEngineCamera();
 

@@ -196,8 +196,8 @@ std::string simProfilePath(std::string_view name) {
 
 struct Simulation::Command {
 	enum Op {
-		Rate, EyeSize, Ipd, Fov, Timeline, HeadPos, HeadRot, HandPos, HandRot, HandTracked, Profile,
-		Action, Session, Shot, Mark, Quit, Fault, Layers,
+		Rate, EyeSize, Ipd, Fov, Timeline, HeadPos, HeadRot, HandPos, HandRot, HandTracked, HandFingers, HandJoints,
+		Profile, Action, Session, Shot, Mark, Quit, Fault, Layers,
 	};
 	Op op = Rate;
 	size_t index = 0; //!< eye or hand; 2 = both hands
@@ -206,7 +206,8 @@ struct Simulation::Command {
 	size_t count = 0;
 	bool flag = false;
 	bool rampable() const {
-		return op == Ipd || op == HeadPos || op == HeadRot || op == HandPos || op == HandRot || op == Action;
+		return op == Ipd || op == HeadPos || op == HeadRot || op == HandPos || op == HandRot || op == HandFingers
+		       || op == Action;
 	}
 };
 
@@ -324,7 +325,7 @@ std::string Simulation::parse(std::string_view line, Command & command) const {
 
 	if(word == "hand") {
 		if(!side(1, false)) {
-			return "hand: expected left|right pos|rot|on|off";
+			return "hand: expected left|right pos|rot|fingers|on|off";
 		}
 		const std::string what = words.size() > 2 ? lowercase(words[2]) : std::string();
 		if(what == "pos") {
@@ -337,8 +338,23 @@ std::string Simulation::parse(std::string_view line, Command & command) const {
 			command.op = Command::HandTracked;
 			command.flag = (what == "on");
 			return std::string();
+		} else if(what == "fingers") {
+			const std::string mode = words.size() == 4 ? lowercase(words[3]) : std::string();
+			if(mode == "on" || mode == "off") {
+				command.op = Command::HandJoints;
+				command.flag = (mode == "on");
+				return std::string();
+			}
+			command.op = Command::HandFingers;
+			std::string error = numbers(3, 3, "hand left|right fingers <thumb> <index> <rest> (0 open - 1 closed) or on|off");
+			for(size_t i = 0; error.empty() && i < 3; i++) {
+				if(command.values[i] < 0.f || command.values[i] > 1.f) {
+					return "hand: fingers are closed from 0 to 1";
+				}
+			}
+			return error;
 		}
-		return "hand: expected left|right pos|rot|on|off";
+		return "hand: expected left|right pos|rot|fingers|on|off";
 	}
 
 	if(word == "profile") {
@@ -435,6 +451,7 @@ std::vector<float *> Simulation::targets(const Command & command) {
 		case Command::HeadRot: add(rig.head.angles); break;
 		case Command::HandPos: add(rig.hands[command.index].position); break;
 		case Command::HandRot: add(rig.hands[command.index].angles); break;
+		case Command::HandFingers: add(rig.fingers[command.index].curl); break;
 		case Command::Action: {
 			std::array<Vec2f, 2> & values = rig.actions[command.text];
 			for(size_t hand = 0; hand < 2; hand++) {
@@ -470,6 +487,9 @@ void Simulation::apply(const Command & command) {
 		case Command::HandTracked:
 			rig.handTracked[command.index] = command.flag;
 			m_requests.profileChanged = true;
+			return;
+		case Command::HandJoints:
+			rig.fingers[command.index].joints = command.flag;
 			return;
 		case Command::Profile:
 			rig.profile = command.text;

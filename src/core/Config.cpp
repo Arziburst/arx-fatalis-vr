@@ -46,6 +46,7 @@
 #include "util/String.h"
 
 #include "vr/Locomotion.h"
+#include "vr/MeleeSwing.h"
 #include "vr/MirrorGeometry.h"
 #include "vr/PhysicalCrouch.h"
 #include "vr/UIPanel.h"
@@ -144,6 +145,10 @@ constexpr const float
 	vrCrouchExit = vr::DefaultCrouchExit,
 	vrSneakBelow = vr::StickPace().sneakBelow,
 	vrRunAbove = vr::StickPace().runAbove,
+	vrMeleeSwingSpeed = vr::SwingParams().startSpeed,
+	vrMeleeFullSpeed = vr::SwingParams().fullSpeed,
+	vrMeleeWeakAim = vr::SwingParams().weakAim,
+	vrMeleeTargetCooldown = vr::SwingParams().targetCooldown,
 	fogDistance = 10.f,
 	gamma = 5.f,
 	fov = 75.f,
@@ -325,7 +330,11 @@ constexpr const std::string_view
 	vrSmoothTurn = "vr_smooth_turn",
 	vrSnapTurnAngle = "vr_snap_turn_angle",
 	vrSmoothTurnSpeed = "vr_smooth_turn_speed",
-	vrSnapTurnRepeat = "vr_snap_turn_repeat";
+	vrSnapTurnRepeat = "vr_snap_turn_repeat",
+	vrMeleeSwingSpeed = "vr_melee_swing_speed",
+	vrMeleeFullSpeed = "vr_melee_full_speed",
+	vrMeleeWeakAim = "vr_melee_weak_aim",
+	vrMeleeTargetCooldown = "vr_melee_target_cooldown";
 
 // Input key options
 constexpr const std::string_view actions[NUM_ACTION_KEY] = {
@@ -611,6 +620,10 @@ bool Config::save() {
 	writer.writeKey(Key::vrSnapTurnAngle, input.vrSnapTurnAngle);
 	writer.writeKey(Key::vrSmoothTurnSpeed, input.vrSmoothTurnSpeed);
 	writer.writeKey(Key::vrSnapTurnRepeat, input.vrSnapTurnRepeat);
+	writer.writeKey(Key::vrMeleeSwingSpeed, input.vrMeleeSwingSpeed);
+	writer.writeKey(Key::vrMeleeFullSpeed, input.vrMeleeFullSpeed);
+	writer.writeKey(Key::vrMeleeWeakAim, input.vrMeleeWeakAim);
+	writer.writeKey(Key::vrMeleeTargetCooldown, input.vrMeleeTargetCooldown);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -724,7 +737,7 @@ bool Config::init(const fs::path & file) {
 	video.alphaCutoutAntialiasing = glm::clamp(alphaCutoutAA, 0, 2);
 	video.bufferSize = std::max(reader.getKey(Section::Video, Key::bufferSize, Default::bufferSize), 0);
 	video.bufferUpload = reader.getKey(Section::Video, Key::bufferUpload, Default::bufferUpload);
-	// Where the spells that fly go (#44, D-NEW): "view" = the centre of the view (default), "hand" = the casting hand
+	// Where the spells that fly go (#44, D-NEW-recognition): "view" = the centre of the view (default), "hand" = the casting hand
 	video.vrSpellAim = reader.getKey(Section::Video, Key::vrSpellAim, Default::vrSpellAim);
 	if(video.vrSpellAim != "hand") {
 		video.vrSpellAim = "view";
@@ -800,6 +813,15 @@ bool Config::init(const fs::path & file) {
 	input.vrSmoothTurnSpeed = glm::clamp(vrSmoothTurnSpeed, vr::MinSmoothSpeed, vr::MaxSmoothSpeed);
 	float vrSnapTurnRepeat = reader.getKey(Section::Input, Key::vrSnapTurnRepeat, Default::vrSnapTurnRepeat);
 	input.vrSnapTurnRepeat = glm::clamp(vrSnapTurnRepeat, 0.f, vr::MaxSnapRepeat);
+	// Physical melee (#39): the full-damage speed is never below the swing speed
+	float vrMeleeSwingSpeed = reader.getKey(Section::Input, Key::vrMeleeSwingSpeed, Default::vrMeleeSwingSpeed);
+	input.vrMeleeSwingSpeed = glm::clamp(vrMeleeSwingSpeed, 0.5f, 10.f);
+	float vrMeleeFullSpeed = reader.getKey(Section::Input, Key::vrMeleeFullSpeed, Default::vrMeleeFullSpeed);
+	input.vrMeleeFullSpeed = glm::clamp(vrMeleeFullSpeed, input.vrMeleeSwingSpeed, 20.f);
+	float vrMeleeWeakAim = reader.getKey(Section::Input, Key::vrMeleeWeakAim, Default::vrMeleeWeakAim);
+	input.vrMeleeWeakAim = glm::clamp(vrMeleeWeakAim, 0.1f, 1.f);
+	float vrMeleeTargetCooldown = reader.getKey(Section::Input, Key::vrMeleeTargetCooldown, Default::vrMeleeTargetCooldown);
+	input.vrMeleeTargetCooldown = glm::clamp(vrMeleeTargetCooldown, 0.f, 2.f);
 	
 	// Get action key settings
 	for(size_t i = 0; i < NUM_ACTION_KEY; i++) {

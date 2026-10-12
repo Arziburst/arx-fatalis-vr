@@ -1,0 +1,60 @@
+# The test playground's content (#321.2): a goblin that stands peacefully until a lever makes it fight, a second
+# lever that respawns it, every weapon and the consumables lying in the room, and a hero at the game's maximum
+# level who knows every rune. The levers are driven through the test channel: `playground pull mode` /
+# `playground pull respawn` give the lever script exactly what a hand pull gives it (#38); `playground kill` kills
+# the NPC as a hit would. status.json: playground.{npc, npcMode, npcAlive, npcLife, npcLifeMax, npcAtSpot, items},
+# player.level, player.allRunes (src/core/CommandChannel.cpp).
+#   .\scripts\dev\smoke-test.ps1 -Playground -VrSim idle -Sequence playground-levers
+# (@playground below makes xrs-run.ps1 start the generated level; area 30.)
+@sim idle
+@playground
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert area eq 30
+
+# The content is there. Level 10 is the cap: ARX_PLAYER_Modify_XP only levels up while i < 11 (src/game/Player.cpp),
+# so 10 is the highest level the game's own XP table (178000 xp) reaches. Items: a lower bound, the game data cannot
+# be listed here - the weapon classes (dagger, sword, two-handed sword, axe, mace/club, bow = 6 at least) plus a
+# potion, a food and a scroll make 9 at least; 10 leaves room for a second kind without letting a missing group pass.
+@assert player.level eq 10
+@assert player.allRunes eq true
+@assert playground.npcAlive eq true
+@assert playground.npcMode eq peaceful
+@assert playground.npcAtSpot eq true
+@assert playground.npcLifeMax gt 0
+@assert playground.items ge 10
+@remember life0 player.life
+@remember lifemax playground.npcLifeMax
+
+# 1. Peaceful: the hero stands a step from the NPC (layout.mjs: NPC_SPOT x 200, z 100 from the room centre 8000/8000;
+# setpos takes the EYE: floor y 0 - 170 = -170; yaw 0 faces north) and nothing happens for 10 s
+setpos 8200 -170 8000 0
+@frames 30
+@wait 10000
+@assert player.life eq {life0}
+@assert playground.npcMode eq peaceful
+@assert playground.npcAlive eq true
+
+# 2. The mode lever: aggressive, the NPC attacks and the hero loses life within 20 s
+playground pull mode
+@frames 5
+@assert playground.npcMode eq aggressive
+@until player.life lt {life0} 20s
+
+# 3. Pulled again: peaceful
+playground pull mode
+@frames 5
+@assert playground.npcMode eq peaceful
+
+# 4. Dead, then the respawn lever: alive at its spot with full life, the mode as it was
+playground kill
+@until playground.npcAlive eq false 5s
+playground pull respawn
+@until playground.npcAlive eq true 5s
+@frames 5
+@assert playground.npcLife eq {lifemax}
+@assert playground.npcAtSpot eq true
+@assert playground.npcMode eq peaceful
+@assert errors eq 0

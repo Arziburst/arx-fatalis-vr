@@ -52,4 +52,12 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 //! Get the physical level (depth) of a "subdivided" level
 MapLevel getMapLevelForArea(AreaId area);
 
+//! The test playground (#321): a generated level in an area no original level uses (the mini map holds 32)
+const AreaId PlaygroundArea = AreaId(30);
+
+//! Whether an area is the test playground; the playground-only features ask this of g_currentArea
+inline bool isPlaygroundArea(AreaId area) {
+	return area == PlaygroundArea;
+}
+
 #endif // ARX_GAME_LEVELS_H

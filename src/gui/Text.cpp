@@ -51,6 +51,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "core/Config.h"
 #include "core/Core.h"
 
+#include "gui/DamageNumbers.h"
 #include "gui/Interface.h"
 #include "gui/TextManager.h"
 
@@ -488,6 +489,8 @@ void ARX_Text_Close() {
 
 	FontCache::releaseFont(g_iconFont);
 	g_iconFont = nullptr;
+	
+	damagenumbers::releaseFont();
 	
 	FontCache::shutdown();
 }

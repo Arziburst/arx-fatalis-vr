@@ -135,7 +135,7 @@ const size_t EventCount = size_t(Event::Count);
 //! The text form of an event, e.g. "jump", "interact_left" - for cfg files, the log and status.json
 const char * eventName(Event event);
 
-//! The name players read, e.g. "Click / drag (left hand)"
+//! The name players read on the VR settings page (#178), short enough for its row, e.g. "Click / drag, left"
 const char * eventLabel(Event event);
 
 std::optional<Event> parseEvent(std::string_view name);
@@ -227,8 +227,34 @@ struct ControlLayout {
  */
 ControlLayout defaultLayout(ControllerType type);
 
+/*!
+ * The name players read for a control on these controllers, e.g. "Right A", "Left Y" (the upper
+ * button of the left Touch), "Left stick click"
+ */
+std::string controlLabel(Control control, ControllerType type);
+
+/*!
+ * The name players read for a binding, e.g. "Right B", "Left grip + Left trigger",
+ * "Left stick click (hold)"; "---" when unbound (the game's own Customize Controls pages)
+ */
+std::string bindingLabel(const Binding & binding, ControllerType type);
+
 //! One "event = binding" line per event, in the order of \ref Event
 std::string formatLayout(const ControlLayout & layout);
+
+/*!
+ * One "event = binding" line per event whose binding differs from \a base - what a saved layout
+ * keeps (#178), so a later change of a default reaches the events the player did not remap
+ */
+std::string formatLayoutChanges(const ControlLayout & layout, const ControlLayout & base);
+
+/*!
+ * A saved layout (#178): \a text (what \ref formatLayoutChanges wrote) read over the default of \a type.
+ * A broken text - a line without "=", an unknown event, an unknown control - changes nothing: the
+ * default layout comes back, with the reason (and the line) in \a error, so the game stays playable.
+ * \return whether \a text was read
+ */
+bool readSavedLayout(std::string_view text, ControllerType type, ControlLayout & layout, std::string * error = nullptr);
 
 /*!
  * Read "event = binding" lines (empty lines and lines starting with '#' are skipped) into \a layout;
@@ -296,6 +322,7 @@ struct ControllerInput {
 	std::array<Stick, HandCount> sticks;
 	std::array<float, HandCount> trigger = { };
 	std::array<float, HandCount> grip = { };
+	std::array<bool, HandCount> thumbTouch = { }; //!< the thumb rests on a stick, trackpad or button (#305: closes the model's thumb)
 };
 
 //! Turns the controls held each update into gameplay events, by the rules at the top of this file

@@ -1,12 +1,57 @@
 {
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-Content *)",
+      "PowerShell(Select-String *)",
+      "PowerShell(Select-Object *)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Get-Item *)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(Get-CimInstance *)",
+      "PowerShell(ConvertFrom-Json *)",
+      "PowerShell(ConvertTo-Json *)",
+      "PowerShell(Measure-Object *)",
+      "PowerShell(Sort-Object *)",
+      "PowerShell(Group-Object *)",
+      "PowerShell(Format-Table *)",
+      "PowerShell(Format-List *)",
+      "PowerShell(Out-String *)",
+      "PowerShell(Out-Null *)",
+      "PowerShell(Get-Date *)",
+      "PowerShell(git log *)",
+      "PowerShell(git status *)",
+      "PowerShell(git diff *)",
+      "PowerShell(git show *)",
+      "PowerShell(git branch *)",
+      "PowerShell(git rev-parse *)",
+      "PowerShell(git worktree list *)",
+      "PowerShell(gh pr view *)",
+      "PowerShell(gh pr list *)",
+      "PowerShell(gh pr checks *)",
+      "PowerShell(gh pr diff *)",
+      "PowerShell(gh issue view *)",
+      "PowerShell(gh issue list *)",
+      "PowerShell(gh run view *)",
+      "PowerShell(gh run list *)",
+      "PowerShell(gh repo view *)",
+      "PowerShell(gh auth status *)",
+      "PowerShell(claude agents *)",
+      "PowerShell(claude logs *)"
+    ]
+  },
   "hooks": {
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
-            "shell": "powershell",
-            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"$env:CLAUDE_PROJECT_DIR/scripts/dev/hooks/session-title.ps1\"",
+            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"E:/dev/arx-fatalis-vr/scripts/dev/hooks/session-title.ps1\"",
             "timeout": 15,
             "statusMessage": "Naming the session after the task"
           }
@@ -15,12 +60,11 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell|Edit|Write|NotebookEdit",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
-            "shell": "bash",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/dev/hooks/safety-guard.sh\"",
+            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"E:/dev/arx-fatalis-vr/coordinator/core/scripts/hooks/safety-guard.ps1\"",
             "timeout": 10
           }
         ]

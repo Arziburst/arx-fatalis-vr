@@ -58,6 +58,7 @@
 #include "gui/widget/SliderWidget.h"
 #include "gui/widget/TextInputWidget.h"
 #include "gui/widget/TextWidget.h"
+#include "gui/widget/VRBindingWidget.h"
 #include "gui/widget/Spacer.h"
 
 #include "graphics/Draw.h"
@@ -77,6 +78,8 @@
 
 #include "util/Number.h"
 #include "util/Unicode.h"
+#include "vr/VRControls.h"
+#include "vr/VRInput.h"
 
 #include "vr/VRSystem.h"
 #include "window/RenderWindow.h"
@@ -497,7 +500,14 @@ public:
 			txt->setTargetPage(Page_OptionsInput);
 			addCenter(std::move(txt));
 		}
-		
+
+		{
+			// Our own VR settings (#178, D-020), after the game's options; the pause menu is the same menu
+			auto txt = std::make_unique<TextWidget>(hFontMenu, getLocalised("system_menus_options_vr", "VR"));
+			txt->setTargetPage(Page_OptionsVR);
+			addCenter(std::move(txt));
+		}
+
 		addBackButton(Page_None);
 		
 	}
@@ -1747,6 +1757,84 @@ public:
 	
 };
 
+/*!
+ * The VR settings (#178, D-020): the Controls section's remapping, in the game's own menu style on
+ * the floating panel (D-029). One row per gameplay event of the control table (#30) - the label left,
+ * the binding right, like the Customize Controls pages; a click on a binding captures what the player
+ * presses next. The layout is the current controllers' and is saved for their type (vr::setPlayerBinding).
+ */
+class VRControlsMenuPage final : public MenuPage {
+
+public:
+
+	VRControlsMenuPage()
+		: MenuPage(Page_OptionsVR)
+	{
+		m_rowSpacing = 3;
+	}
+
+	void init() override {
+
+		reserveBottom();
+
+		{
+			auto txt = std::make_unique<TextWidget>(hFontMenu, getLocalised("system_menus_options_vr_controls",
+			                                                                 "VR controls"));
+			txt->setEnabled(false);
+			addCenter(std::move(txt));
+		}
+
+		for(size_t i = 0; i < vr::EventCount; i++) {
+			addBindingRow(vr::Event(i));
+		}
+
+		addCenter(std::make_unique<Spacer>(hFontControls->getLineHeight() / 2));
+
+		addCenter(std::make_unique<VRControlsInfoWidget>(hFontControls, m_rect.width() * 0.95f, 4), false);
+
+		addBackButton(Page_Options);
+
+		{
+			std::string_view label = getLocalised("system_menus_options_input_customize_default");
+			auto txt = std::make_unique<TextWidget>(hFontMenu, label);
+			txt->clicked = [](Widget * /* widget */) {
+				vr::restoreDefaultLayout();
+			};
+			addCorner(std::move(txt), BottomCenter);
+		}
+
+	}
+
+	void focus() override {
+		MenuPage::focus();
+		// A capture started from the test channel or left over from an earlier visit ends here
+		vr::cancelCapture();
+	}
+
+private:
+
+	void addBindingRow(vr::Event event) {
+
+		auto panel = std::make_unique<PanelWidget>();
+
+		{
+			auto txt = std::make_unique<TextWidget>(hFontControls, vr::eventLabel(event));
+			txt->setEnabled(false);
+			panel->add(std::move(txt));
+		}
+
+		{
+			auto binding = std::make_unique<VRBindingWidget>(event, hFontControls);
+			binding->setPosition(RATIO_2(Vec2f(135.f, 0.f)));
+			panel->add(std::move(binding));
+		}
+
+		addCenter(std::move(panel), false);
+
+	}
+
+};
+
 class QuitConfirmMenuPage final : public MenuPage {
 	
 public:
@@ -1811,6 +1899,7 @@ void MainMenu::initWindowPages() {
 	m_window->add(std::make_unique<InputOptionsMenuPage>());
 	m_window->add(std::make_unique<ControlOptionsMenuPage1>());
 	m_window->add(std::make_unique<ControlOptionsMenuPage2>());
+	m_window->add(std::make_unique<VRControlsMenuPage>());
 	
 	m_window->add(std::make_unique<QuitConfirmMenuPage>());
 	m_window->add(std::make_unique<LocalizationMenuPage>());

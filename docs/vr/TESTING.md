@@ -21,6 +21,7 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 .\scripts\dev\smoke-test.ps1 -Saves save0000 -- --loadslot 0  # copy a save into the isolated user directory, then load it
 .\scripts\dev\smoke-test.ps1 -Save mvp-goblin-fight           # a scenario of the test save library (#70): the only save, --loadslot 0
 .\scripts\dev\make-test-saves.ps1                             # produce the test save library, one launch; -Verify loads it all in a fresh game (#70)
+.\scripts\dev\smoke-test.ps1 -Playground                      # the test playground (#321): the generated room, a max-level hero, GAMEPLAY in area 30
 .\scripts\dev\smoke-test.ps1 -Commands 'shot a','mark x' -- --loadslot 0
 .\scripts\dev\smoke-test.ps1 -Menu -Commands 'loadslot 0'       # plain launch (main menu), then a save through the channel
 .\scripts\dev\smoke-test.ps1 -Commands 'drawcheck 120'         # two draws of the scene per frame must give one picture (#71)
@@ -105,6 +106,32 @@ A fresh isolated directory has no `cfg.ini` yet, so the first run logs one warni
 is taken from there) for `-- --loadslot` runs; `-Save <name>` makes one library save the **only** save of
 the directory and defaults the arguments to `--loadslot 0` (see [The test save library](#the-test-save-library-70)).
 
+## Background runs are silent (`--mute`, #345)
+
+CI, smoke tests, `.xrs` sequences, `--vr-sim` runs and a worker's own launches happen on the owner's PC
+while he works or tests in the headset, so they play no sound. `arx.exe --mute` keeps every audio mixer
+at volume 0 for that run and logs one line, `Audio is muted (--mute): ...`, to `arx.log`. The flag lives
+in the mixer only: `cfg.ini` keeps the owner's volumes (like `--windowed`, it never leaks into the config).
+
+| Launch | `--mute` |
+|---|---|
+| `smoke-test.ps1` (so `ci-smoke.ps1`, `xrs-run.ps1`, the CI job, every `--vr-sim` sequence) | yes; `-Sound` opts out |
+| `run-windows.ps1` with `-Background` or `-TestChannel` (a worker's / test launch) | yes; `-Sound` opts out |
+| `run-windows.ps1` by hand (neither switch) | no; `-Mute` silences it |
+| `make-test-saves.ps1`, `package-tester.ps1` verify run | yes |
+| `test-pr.ps1` (the owner's test station, with or without `-StartSteamVR`) | no - it passes `-Sound` |
+| the desktop icon (`launch-shortcut.ps1`) | no - it passes `-Sound` |
+| the Steam non-Steam shortcut, `arx.exe` started by hand | no |
+
+The owner's headset tests always have sound: `test-pr.ps1` passes `-Sound` on every path it launches
+(with and without `-StartSteamVR`, with `-Saves`), `run-windows.ps1` started by hand has sound, and only
+background launches (CI, smoke-test, `--vr-sim`, workers' `-Background` / `-TestChannel` runs) are muted. `run-windows.ps1 -DryRun` (and `test-pr.ps1 <pr> -DryRun`) prints the
+`arx.exe` command line without starting the game, SteamVR (`-StartSteamVR` only prints "would start
+SteamVR") or copying saves - no `--mute` with `-Sound`. `test-pr.ps1 -DryRun` still prepares the
+worktree, fast-forwards and builds first (only the launch is a dry one). A smoke-test run prints the
+command line (`=== run ...: arx.exe ...`) and `arx.log` has it in the `command line:` banner; `launches.log`
+records only the extra arguments, not `--mute`.
+
 ## The test command channel (`--test-dir DIR`)
 
 Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While enabled the game:
@@ -142,9 +169,12 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `entities [filter]` | write one line per entity to `<dir>\entities.txt`: `<id> npc\|item\|fix\|marker\|camera\|other show=<n> pos=<x> <y> <z> [life=<n>]`; `filter` is a substring of the id. `show` is the engine's `EntityShowState`: 0 in the scene, 2 in an inventory, 6 equipped by the player. The position of a floor object (lever, chest, item) is on the **floor** (#70) |
 | `setpos <x> <y> <z> [yaw]` | put the player at exact coordinates, optionally facing `yaw`. `y` is the **eye**: the floor is 170 units lower (a `y` at floor level puts the eye in the floor: black screen). About 100 units are a metre. Refused outside gameplay (#70) |
 | `lookat <entity>` | turn the player (yaw and pitch) towards an entity, aiming 40 units above its floor position. The pitch is not kept by a save and does not matter in VR (the head decides); the yaw is kept (#70) |
+| `place <entity> <ahead> [<right>]` | put an entity on the floor `ahead` units along the player's heading (and `right` units to its right), facing the player — a target in reach for melee checks (#39; `goblin_base_0036.setspeed 0` first keeps an NPC from walking off). Refused outside gameplay or for an unknown entity |
 | `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
+| `vr-input down\|up\|tap <control>`, `vr-input stick left\|right <x> <y>`, `vr-input bind <event> <binding>`, `vr-input reset`, `vr-input turn snap\|smooth\|angle <deg>\|speed <deg/s>\|repeat <s>` | the VR controls' table without a headset (#30, `vr/VRInput.h`): a control (`right.a`, `left.grip`, `right.stick_down` …) held, let go or tapped as if a controller did it, merged into what OpenXR reports and resolved by the same table at the next frame; the game then reacts as to the controllers (#74: inventory, book, jump, crouch toggle, the game menu, the mouse buttons). `stick` holds a stick deflected (the analog value only — its direction controls are `down` / `up`), seen in `vr.input.game.moveX/moveY/turn`; `bind` remaps one event (`bind jump left.grip+left.a`, `bind menu left.b:long`, `bind magic_mode none`); `reset` restores the default layout for the current controllers and lets go of everything (`bind` and `reset` are not saved); `turn` sets the turn settings as `cfg.ini` does (#32: mode, snap angle, the repeat pause of a held stick (0 = none), smooth speed — `vr.input.turn` shows them with `snaps`, `lastSnap`, `turned` degrees right positive, `allowed`, and for the last push `pushRepeats` and `repeatInterval` — the mean seconds by the clock from its first snap to its last repeat (#285); one `vr.turn.snap … repeat=no|yes` game event per snap, `vr.turn.smooth` at the start and stop of a smooth turn). Refused with the reason for an unknown control, event or binding. `vr.input` in the status (`vr.input.game.held`: the actions, buttons and keys the engine is given); one `[vr] input: <event> (<binding>)` log line per event press, one `[vr] input: layout …` line per layout change |
+| `vr-input capture <event>`, `vr-input cancel`, `vr-input default` | the VR settings page's remapping (#178, `vr/BindingCapture.h`): `capture` is what a click on the event's binding does — the next controls pressed (`vr-input down` / `up` / `tap`, or the simulated controllers) become its binding: released → single, held ≥ 0.5 s → `:long`, a second control of the same hand while the first is held → a chord; the walk stick and the turn stick's left / right are refused with the reason; nothing pressed for 8 s cancels. While capturing, the controls reach nothing else. The result is applied at once and **saved** for the controller type (`vr-controls-<type>.ini` in the config directory: only the events that differ from the default). `cancel` ends a capture; `default` is the page's "reset to default" (#35's layout, the file removed); `reload` reads the saved layout again at the next frame, as a start does. `vr.input.capture` and `vr.input.remapped` / `conflicts` in the status; a `vr.remap` game event per result |
+| `menu pause\|none\|options\|input\|vr` | the main / pause menu without clicks (#178): `pause` opens the pause menu from a running game (as Escape does); the others open that page of the main or pause menu (`none` closes the options window). `menuPage` in the status |
 | `pick [<entity>]` | what mouse picking (`FlyingOverObject`) finds, on an 8-pixel grid over the interface's screen (#72; the window's size in flat mode, the quad's own size in VR, #73): `pick.center` (the entity at its center), `pick.scan` (`<entity> <hits> <x> <y>` per entity found, most hits first) and, for an entity, `targetHits`, `targetHitX/Y` (the middle of its hits), `targetSeenX/Y` (where the camera prepared last — the head camera at the interface's size — sees the middle of its bounding box), `targetOffset` (the distance between the two), `targetBox` (its `bbox2D`) and `targetSeenInBox`. A thin item (a key) can fall between the grid points: `targetSeenInBox` still tests its box. Refused outside gameplay or for an unknown entity; one `[channel] pick:` log line |
-| `vr-input down\|up\|tap <control>`, `vr-input stick left\|right <x> <y>`, `vr-input bind <event> <binding>`, `vr-input reset`, `vr-input turn snap\|smooth\|angle <deg>\|speed <deg/s>\|repeat <s>` | the VR controls' table without a headset (#30, `vr/VRInput.h`): a control (`right.a`, `left.grip`, `right.stick_down` …) held, let go or tapped as if a controller did it, merged into what OpenXR reports and resolved by the same table at the next frame; the game then reacts as to the controllers (#74: inventory, book, jump, crouch toggle, the game menu, the mouse buttons). `stick` holds a stick deflected (the analog value only — its direction controls are `down` / `up`), seen in `vr.input.game.moveX/moveY/turn`; `bind` remaps one event (`bind jump left.grip+left.a`, `bind menu left.b:long`, `bind magic_mode none`); `reset` restores the default layout for the current controllers and lets go of everything; `turn` sets the turn settings as `cfg.ini` does (#32: mode, snap angle, the repeat pause of a held stick (0 = none), smooth speed — `vr.input.turn` shows them with `snaps`, `lastSnap`, `turned` degrees right positive, `allowed`, and for the last push `pushRepeats` and `repeatInterval` — the mean seconds by the clock from its first snap to its last repeat (#285); one `vr.turn.snap … repeat=no|yes` game event per snap, `vr.turn.smooth` at the start and stop of a smooth turn). Refused with the reason for an unknown control, event or binding. `vr.input` in the status (`vr.input.game.held`: the actions, buttons and keys the engine is given); one `[vr] input: <event> (<binding>)` log line per event press, one `[vr] input: layout …` line per layout change |
 | `recenter` | the head is measured from its next sample: a new head reference (#24; the player's button chord is #28). A `vr.head.reference reason=channel` event once a head is there |
 | `headpose <yaw> <pitch> <roll> [<x> <y> <z>]` / `headpose off` | a simulated head for checks without a headset (#24): degrees as a person says them — yaw left, pitch up, roll left positive — and optionally the position in metres in the OpenXR LOCAL space (x right, y up, z back). It drives the first-person camera exactly like the headset (`vr.head` and `camera` in the status); the first pose takes the reference, later ones move the camera from it. A real headset pose wins over it; `off` removes it |
 | `vr-point left\|right item [<dx> <dy>]`, `vr-point left\|right <x> <y>` | a simulated hand (`--vr-sim` only) turned so its aim ray hits the floating panel (#34) at the first item of the shown inventory bag (optionally that many pixels beside it — a hand moving while the trigger is held) or at a pixel of the 2D interface; only aims — what the pointer makes of the ray is the game's path. The target is in `ui.target`, `ui.targetX/Y`. Refused without the simulator, without a panel shown, or with no item in the bag |
@@ -152,7 +182,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `watch <id>` / `watch off` | report one entity's place in `status.json` → `watch` (#37): where an item is, whether it is dragged, in the scene or in an inventory |
 | `handpose left\|right <yaw> <pitch> <roll> [<x> <y> <z>]` / `handpose left\|right off` | a simulated controller for the body without one (#36): the grip pose in the same terms as `headpose` (degrees as a person says them, metres in the OpenXR LOCAL space); the body poses that arm towards it exactly as towards a located controller (`vr.body.<hand>` in the status, `source=sim`). A located controller wins over it; `off` removes it. Needs a head too (`headpose`, or a headset / `--vr-sim`), since hands are placed rigid with the head camera |
 | `vr-sim <command>` | a command of the simulated headset (#112), only in a `--vr-sim` run: `head rot 25 0 0`, `head pos 0 -0.3 0`, `action trigger right 1`, `shot <name>`, `session visible`, `fault swap-eyes on`, … — now, or `@+<n> <command>` n frames from now on its timeline. See [The simulated headset](#the-simulated-headset---vr-sim-112) |
-| `combat on\|off` | the engine's combat mode without a key (#75): what the weapon key does — `on` draws the weapon (ready clips), `off` puts it away; a strike is then the mouse button or the trigger (`vr-sim action trigger right 1`). VR has no control for it (D-019); `vr.weapon.combatMode` in the status |
+| `combat on\|off` | the engine's combat mode without a key (#75): what the weapon key does — `on` draws the weapon (ready clips), `off` puts it away; a strike is then the mouse button — or, with the weapon in the VR hand, a physical swing (#39: the trigger only charges). VR has no control for it (D-019); `vr.weapon.combatMode` in the status |
 | `crouch on\|off` | the crouch toggle without an input device, for flat runs (#263): `on` crouches the character, `off` lets it stand up when there is room for its head. `player.crouchToggle` / `player.crouched` in the status |
 | `comfort auto\|on\|off` | who decides the VR comfort policy (#76, `vr::comfort()`): `auto` = the VR session (the default: view bobbing, screen shake and FOV zoom off in VR, `cfg.ini` decides in flat mode), `on` / `off` force the VR rules on or off — so a flat run can measure them. `comfort` and `camera` in the status; one `[vr] comfort:` log line per change |
 | anything else | the **script console**: `[entity.]command args`, exactly as typed in the in-game console (`` ` ``). Context defaults to the player. Refused (and counted in the ack) when the entity or the command is unknown |
@@ -172,6 +202,13 @@ self-inflicted `dodamage` and damage while the controls are blocked do nothing),
 (an obsolete command: a `[W]` and a `script.error` event, no `[E]`).
 A refused line costs nothing: `[W] [channel] script command failed: Unknown command: …` and
 `errors=1` in the ack, no `[E]`.
+
+In the test playground (area 30, #321.2): `playground pull mode|respawn` (the lever gets exactly what a hand pull
+gives it: `SM_ACTION` from the player), `playground kill` (the NPC dies as from a hit), `playground place <ahead> [<right>]`
+(the NPC stands there facing the hero, like `place`) and `playground hit <n>` (the hero deals n damage through
+`damageNpc`, as a weapon hit). status.json has `playground` (`npc`, `npcMode` peaceful|aggressive, `npcAlive`, `npcLife`,
+`npcLifeMax`, `npcAtSpot`, `items`) in area 30, and `player.level` / `player.allRunes` always.
+The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead one runs no script events).
 
 ### `status.json`
 
@@ -237,7 +274,11 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   window), otherwise why not (`flat mode`, `off: --no-vr-mirror`, `off: vr_mirror = 0 in cfg.ini`,
   `off: OpenGL has no glCopyImageSubData ...`, `off: the VR session ended`); `frames` grows with
   `vr.shownFrames` while it is `on` (0 in flat mode). One `[vr] desktop mirror:` log line per session
-  names the eye size, the crop and where the flat frame quad lands in the window.
+  names the eye size, the crop and where the flat frame quad lands in the window. `overlays` (#271): the quad
+  layers after the flat frame (the menu pointer's beam, the hand reticles) the last mirrored frame drew over it
+  (0 when none is in view of the window, which crops the eye to its aspect: the bag at the eye's bottom edge
+  is outside it until the head looks down). A channel `shot` is taken after the mirror is drawn, so in VR it
+  shows the window as a spectator sees it.
 - `vr.panel` (#49): the floating UI panel. `mode`: `world` while a menu is open and the panel is placed
   in the play space, `head` otherwise (the HUD on the head-locked quad; also while a menu waits for a
   tracked head); `menu`: the open menu (`mainmenu`, `charactercreation`, `credits`, `note`, `book`,
@@ -325,6 +366,21 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   the vertices were transformed, `reach` (shoulder to target), `armLength` (the model's, 58.1 units on
   `human_base`), `error` (wrist to target: 0 when the controller is reached), `slide` (the shoulder
   moved towards an out-of-reach target, up to 20) and `stretched`.
+  The fingers (#305, D-041), per hand under `fingers`: `source` — `joints` (the hand joints of
+  `XR_EXT_hand_tracking`), `controls` (no joints: the trigger is the index finger, the grip the three-finger
+  block, the thumb's rest a closed thumb), `held` (a weapon in the hand: closed on the grip whatever the
+  fingers do), `none` (the arm is the engine's, or the model has no finger groups — `groups`); `joints`
+  (the runtime located this hand's joints this frame), `holds`; `curl` — the bend of each segment in degrees
+  (`thumb`, `indexRoot`, `indexTip`, `fingersRoot`, `fingersTip`; the limits are 60 / 90 / 95 / 90 / 95, a fist)
+  approaching `target` (what the source asked for) at 720°/s. `tipAlong` / `tipOut` next to the landmarks: the
+  fingertip vertex from the wrist along the hand's long axis and out towards the palm's face (units) — a closing
+  hand brings the tip back and out. `fingerGroups` names the groups found per hand (`human_base`: `thumb
+  right_hand_thumb, index right_hand_index_root>right_hand_index_tip, block right_hand_fingers_root>right_hand_finger_tip`).
+- `vr.hands` (#305): `XR_EXT_hand_tracking` — `extension` (the runtime lists it and the instance has its
+  functions), `supported` (the headset reports hand tracking), `trackers` (one per hand on the session),
+  `locates` / `failures`, and per hand `active` (joints located in the last frame) and `activeFrames`. All
+  false in flat mode and on a runtime without the extension: the fingers then follow the controls.
+
 - `vr.magic` (#43, D-010): the rune trail at the hand. `handsDraw`: the hands draw the runes (a VR session
   or a `handpose` hand) — the cursor's trail and the magic cursor are then off; `stance`: the casting stance
   (the magic action held and casting allowed: not crouched, controls free); `drawing`, `hand`, `strokes`
@@ -358,6 +414,17 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   controller's grip axes, OpenXR: -Z is the handle), `bladeAngle` (degrees from grip -Z: ~0 when held right);
   the engine's arm layer (F-67): `armAnimSuppressed`, `armAnimation` (the clip it plays), `suppressedFrames`;
   `combatMode`.
+- `vr.melee` (#39, D-038): physical melee. `active` (swings count now) or `refused` (why not: `no weapon in the
+  hand`, a menu's name such as `inventory`, `controls blocked`, `an item is dragged`, …); the swing detector:
+  `swinging`, `kind` (`slash`, `stab`, `none`; of the swing in progress or the last one), `speed` (m/s of the point
+  0.125 m along the blade, relative to the head, now), `peak`, `factor` (0.5..1), `swings`, `gaps` and `jumps` (samples
+  refused: a time step outside 4-100 ms, a speed over 20 m/s), `nearMisses` / `lastNearMiss` (motions that peaked
+  within 20 % below the swing speed, F-60); `charge` (`held`, `charging`, `spent` — a charged hit used it and the
+  trigger is still held — `seconds`, `ratio` 0.1..1 while charging, `fullAimSeconds` = the player's `Full_AimTime`);
+  `hits` (NPCs touched by swings), `contacts` (anything touched), `chargedHits`; `last` (`target`, `aim` — the
+  engine's `ratioaim`: 0.25 × factor plain, the charge × factor charged — `damage`, `charged`, `speed`, `swing`);
+  `params` (`swingSpeed`, `endSpeed`, `fullSpeed`, `weakAim`, `targetCooldown`, from cfg.ini); `placed`, `hilt`,
+  `tip` (the weapon placed for this frame's check, world).
 - `player` is present only while a level is loaded; the `.xrs` runner (#113) asserts on these keys
   with `@modassert`.
   `player.y` is the **eye** (the camera is within a few units of it), not the feet.
@@ -396,16 +463,23 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
   that hand yet — SteamVR binds a few frames after the session is `focused`, so an idle headset never
   shows one), `syncs`: action syncs while focused, `down`: the controls held after the last frame
   (space separated), `active`: the events on now, `trigger` / `grip`: the analog values per hand
-  (`squeeze/value`: on the Index how far the strapped hand is closed — TRAPS.md), `presses`: how often
+  (`squeeze/value`: on the Index how far the strapped hand is closed — TRAPS.md), `thumbTouch`: the thumb
+  rests on the thumbstick (the `thumb_touch` action, #305: the fingers' fallback, no gameplay event), `presses`: how often
   each event came on since the start, `layout`: the binding of every event (`none`, `right.a`, `left.grip+left.trigger`,
   `left.stick_click:long`). Nothing in the game reacts to the events yet (#74); `input-check.ps1`
-  asserts on `presses` and `layout`.
+  asserts on `presses` and `layout`. The VR settings' remapping (#178): `remapped` (the layout differs
+  from the default of these controllers), `layoutFile` (where it is saved, in the config directory),
+  `conflicts` / `conflictList` (events sharing a binding, `jump+inventory`), `capture.state`
+  (`idle`, `waiting`, `holding`, `done`, `cancelled`), `capture.event`, `capture.binding` (what is held so
+  far, or the result), `capture.refused` / `capture.why` (the last refused control), `capture.count`.
   `walk` (#31): the stick walk the player controls applied in the last update — `walking`, `yaw` (the
   stick's forward, engine degrees [0, 360): the look, D-008), `heading` (`player.yaw` then), `dirX` / `dirZ`
   (the world direction, unit length), `walks` (episodes since the start), `sneak` (#33: a slight
   deflection — the stealth walk; below cfg `vr_sneak_below` 0.6 of the dead-zoned travel a run turns
   into a sneak, at `vr_run_above` 0.7 a sneak into a run), `paceChanges` (sneak ↔ run switches within
   a walk since the start; a game event `vr.walk state=pace pace=…` each, and `pace=` on `state=start`).
+- `menuPage` (#178): the page of the main / pause menu shown — `none`, `options`, `input`, `vr` or
+  `other`; `none` outside the menu.
 - `drawCheck` appears once a `drawcheck` was requested: `{"seq":1,"running":false,"frames":120,
   "framesDiffering":0,"pixels":307200,"maxPixelsDiffering":0,"maxDelta":0,"capture":""}` —
   `frames` compared so far, `framesDiffering` of them with at least one differing pixel,
@@ -466,6 +540,52 @@ What a save does and does not keep (measured, #70): the position, the yaw, the i
 equipped, the entities' state (the goblin's patrol goes on from where it was). Not the pitch of the view
 (irrelevant in VR). The verification waits 4 s after a `loadslot` before its screenshot (the level fades
 in from black, TRAPS.md).
+
+## The test playground (#321)
+
+One generated room for combat, magic and item tests, in minutes and again and again, without walking
+the story. **Combat and magic headset tests run here.**
+
+```powershell
+.\scripts\run-windows.ps1 -Playground -StartSteamVR             # the owner in the headset: the playground, a fresh max-level hero
+.\scripts\dev\test-pr.ps1 <pr> -Playground -StartSteamVR        # the same for a PR under test
+.\scripts\run-windows.ps1 -Isolated -Playground -TestChannel -- --no-vr   # flat, with the channel
+.\scripts\dev\smoke-test.ps1 -Playground                       # a worker's check: GAMEPLAY in area 30
+.\scripts\dev\xrs-run.ps1 playground-levers                    # any sequence with @playground starts there
+```
+
+**What it is.** Our own level in area 30 (`PlaygroundArea`, `src/game/Levels.h`), built by
+[arx-level-generator](https://github.com/arx-tools/arx-level-generator) (MIT) from `scripts/dev/playground/`
+with the original game's textures by name. The repository holds only the generator; the level is
+generated on the machine that runs it into `%LOCALAPPDATA%\ArxFatalisVR\playground\<folder>-<hash>`
+(one per working copy) and passed to the game as `--data-dir <level> --loadlevel 30`. The first
+`-Playground` launch generates it (node 20+ needed, a few seconds); later launches reuse it until a
+generator source changes. No original level is touched: a launch without `-Playground` does not see it.
+
+**The room.** The hero starts at the south wall facing north.
+- **Ahead, the main table** (north wall): potions, food and a scroll of magic missile.
+- **Left, the weapons table** (west wall): one of every weapon of the game (32 classes, the list in
+  `layout.mjs`).
+- **The goblin** in the middle of the room: **peaceful** by default — it stands and takes hits without
+  fighting back.
+- **Two levers** on the north wall to the right of the main table, pulled by hand like any lever (#38):
+  - the **mode lever** (nearer the table): down = the goblin turns **aggressive** and attacks at once;
+    up = **peaceful** again (it is also healed and goes back to its spot);
+  - the **respawn lever**: the goblin is back at its spot, alive, with full life, in the mode it was in.
+    The mode lever does nothing while the goblin is dead — pull the respawn lever.
+- **The hero** is at the game's maximum level (10) and knows every rune; the level-up message shows at
+  the start (attribute points to spend in the book).
+- **Death costs nothing:** when the hero dies here he is back at the start at once, with full life and
+  mana, no death screen, no load; his level, runes, inventory and the room stay as they were.
+- **Damage numbers:** every hit on an NPC shows the damage over the target for about a second, in both
+  eyes, drawn over everything. Only here — the original levels show none.
+
+Checks: `playground-levers.xrs` (peaceful, the mode lever, the respawn lever, the hero's level and runes,
+the items), `playground-respawn.xrs` (death and back), `damage-numbers.xrs` / `damage-numbers-off.xrs`
+(numbers in both eyes, none in an original level). The channel's `playground` commands and status fields
+are under [Commands](#commands). CI runs these sequences only where node is on the runner's PATH; without
+it they are **NOT RUN** with a warning in the job summary, never a pass. The tester zip does not carry
+the playground yet (#359).
 
 ## The log banner
 
@@ -557,6 +677,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `cinematic.skip` | a development launch skips a `.cin` (#124) | `name`, `reason` |
 | `player.levelup` | the player gains a level | `level`, `xp` |
 | `player.death` | the player dies | `source` (entity id), `damage`, `type` (damage type flags) |
+| `player.respawn` | the player died in the test playground (#321) and is back at its start, alive, in the same frame | `x` `y` `z` (the start), `fromX` `fromZ` (where he died), `life` |
 | `player.combat` | the weapon is drawn / put away | `state=on\|off`, `weapon` |
 | `player.jump` / `player.crouch` | a jump starts / the crouch toggle (`C`, the right stick down in VR) changes (#74) | `state=on\|off` (crouch) |
 | `ui.inventory` / `ui.book` / `ui.container` / `ui.note` | opened or closed while playing | `state=open\|closed`; `bags=one\|all`, `page=stats\|spells\|map\|quests`, `entity` |
@@ -565,7 +686,8 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `spell.cast` | a spell launches (player or NPC) | `spell`, `caster`, `level`, `target`; for the player also `aim=hand\|view` (#44, F-75: where a flying spell is aimed), `aimHand`, `aimPitch` (+ is down), `aimYaw` |
 | `spell.precast` | the player stores a spell | `spell`, `level` |
 | `spell.refused` | the player's spell does not launch | `spell`, `reason` (`runes-not-learned`, `no-mana` with `mana` / `cost`, `magic-disabled-by-level`, `spell-cannot-launch` — the spell's own silent check, `no-demon-within-900`, `not-implemented`) |
-| `melee.hit` | a weapon strike reaches an NPC and the player is the attacker or the target — one per swing | `source`, `target`, `weapon`, `damage` (0 = the armour-class roll made it a miss), `aim` |
+| `melee.hit` | a weapon strike reaches an NPC and the player is the attacker or the target — one per swing (a VR swing: one per target it touches, #39) | `source`, `target`, `weapon`, `damage` (0 = the armour-class roll made it a miss), `aim` |
+| `damage.number` | a damage number over an NPC closes, only in the test playground (#321): every hit on an NPC shows its damage above the target for 1.2 s; hits on one target within 250 ms add up into one number, logged 250 ms after its first hit. `damageNumbers.visible` in the status: the numbers shown now | `entity`, `amount` (the hits' damage), `dealt` (the life taken: less on a killing blow), `hits`, `views` (the scene views it was drawn into in the last frame: 2 = both eyes), `x0` `y0` / `x1` `y1` (where in view 0 / 1 - the left / right eye image in VR - in pixels) |
 | `item.take` / `item.drop` | an item goes onto / off the cursor | `item`, `from=world\|inventory`; `how=throw\|drop\|place`, `count` |
 | `item.toinventory` | an item enters the player's inventory or the container the player has open | `item`, `container` |
 | `item.use` / `item.equip` | the player uses / equips an item | `item` |
@@ -584,6 +706,9 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.body.model` | the body bound to the player model: the arm chains found (once per model, also after an armor tweak) | `model`, `chains`, `bound` |
 | `vr.body` | the body starts being posed from the controllers, or stops and why (#36) | `state=posed\|engine`, `reason` (`no head`, `head not referenced yet`, `no tracked hand`, `no arm chain on the model`; limit 200) |
 | `vr.body.arm` | one arm switches between the IK and the engine's animation | `hand`, `posed`, `source=xr\|sim\|none` (limit 200) |
+| `vr.body.fingers` | a hand's fingers change what they follow (#305) | `hand`, `source=joints\|controls\|held\|none`, `holds` (limit 200) |
+| `vr.hands.trackers` | the `XR_EXT_hand_tracking` trackers were created on the session (#305) | `state=created` |
+| `vr.hands.joints` | the runtime starts or stops giving a hand's joints (#305) | `hand`, `state=active\|inactive` (limit 200) |
 | `vr.wrist` | health and mana move between the left wrist and the HUD's orbs (#116) | `state=wrist\|orbs`, `reason` (limit 200) |
 | `vr.panel.placed` | the floating UI panel was placed (#49): a menu opened (after > 250 ms closed), a recenter while it was open, or the head came back to tracking | `reason=open\|recenter\|tracking`, `menu`, `x`, `y`, `z` (LOCAL, metres), `yawDeg`, `distanceM`, `dropM`, `widthM`, `headY` |
 | `vr.panel` | the 2D interface moved between the panel and the head-locked quad (#49) | `mode=world\|head`, `menu` (`none` when closed) |
@@ -597,14 +722,17 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.body.armAnim` | the clip of the player's arm layer changes, or starts / stops being suppressed while the IK drives the arms (#75, F-67) | `state=suppressed\|applied`, `anim` (the clip's path; limit 200) |
 | `vr.weapon` | the equipped weapon goes into the IK hand or back to the engine (#75) | `state=hand\|engine\|none`, `reason`, `item`, `kind` (`dagger`, `1h`, `2h`, `bow`, `none`; limit 200) |
 | `vr.weapon.grip` | a weapon's blade was read from its mesh (once per weapon and hand frame) | `item`, `bladeLength` (units), `assetAngle` (degrees between the asset's blade and the handle axis) |
+| `melee.state` | physical melee (#39) is switched on or off, and why | `state=on\|off`, `reason` (`allowed`, `no weapon in the hand`, `the right controller is not tracked`, a menu, `controls blocked`, `an item is dragged`, `dead`; limit 200) |
+| `melee.swing` | a swing of the weapon in the IK hand ended (#39): one line per swing | `kind=slash\|stab`, `result=hit\|miss\|lost` (lost: tracking or the gate dropped it), `peak` (m/s), `factor`, `charge` (the ratio when it started), `aim` (of its hits), `charged=yes\|no` (its charge was spent), `hits`, `ms` (limit 1000) |
+| `melee.charge` | the trigger's charge (#39): `start`, `full` (the ratio reached 1), `spent` (a charged hit used it), `released` (let go while charging) | `state`, `full` (seconds of `Full_AimTime`), `seconds`, `ratio` (limit 1000) |
+| `melee.nearMiss` | a hand motion peaked within 20 % below the swing speed without becoming a swing (#39, F-60): the census to tune `vr_melee_swing_speed` | `peak`, `swingSpeed` (limit 200) |
 | `vr.reticle` | the hand reticles went on or off (#37) | `state=on\|off`, `reason` (`game`, or why off — see `vr.reticle.off` in the status; limit 200) |
 | `vr.reticle.hover` | a hand's hover changed, after the hysteresis (#37) | `hand`, `item` (`none` when it left), `takeable=yes\|no` (limit 500) |
 | `vr.reticle.press` | a trigger pressed with the hand's reticle in the world: the engine clicks there (#37) | `hand`, `item` (the hover at the press, `none`), `distance` (game units; limit 500) |
 | `vr.body.drag` | the head reached the 25° dead zone and pulls the body along, and when it let go (5° inside) (#25) | `state=start\|end`, `head`, `body` (degrees from the heading), `deadZone` (limit 100) |
 | `vr.walk` | the left stick left its dead zone and the player walks, and when it came back to rest (#31) | `state=start\|end`, `yaw` (the stick's forward = the look), `heading`, `look` (yaw − heading, the head's turn) (limit 200) |
 
-Not here yet, by design: melee attacks *refused* by a gate (F-66) come with the VR swing detector
-(#39); the recenter chord with #28; locomotion, interaction and rune-drawing in VR add their own events in the
+Not here yet, by design: the recenter chord with #28; locomotion, interaction and rune-drawing in VR add their own events in the
 same shape (#31, #37, #44). Measured in #130 (flat, `--loadlevel 10`, 60 s idle): 13 events in the
 whole run, none per frame — after `GAMEPLAY` (t=0.54) only the level 10 intro script's own work:
 `cinematic.skip` at t=29.55, four NPC `spell.cast` between t=52.67 and t=56.39, and
@@ -806,7 +934,7 @@ the eyes by its alpha (research rows F-115, F-162, F-163; the design is D-025):
   the quad in front; a frame whose scene was not drawn (a menu) clears both eyes to the dark
   background — both eyes or none (F-116). The desktop mirror (#21) copies the mirrored eye in
   `endEyeRender()` and the quad before its release and draws them into the window (the quad
-  blended by its alpha); with `vr_mirror = 0` the window shows the flat frame alone. Any other
+  blended by its alpha, then the pointer beam and the reticles); with `vr_mirror = 0` the window shows the flat frame alone. Any other
   frame while the session runs (an idle headset with `shouldRender` false, eyes not located, the
   loading screen through `vr::beginInterfaceFrame()`) draws the flat frame straight into the quad's
   image, cleared to opaque black, and the window shows it scaled; such a frame is ended without
@@ -909,9 +1037,12 @@ first frame the game is playable (`timeline gameplay`, the default) or of the se
 session`). Commands: `rate <hz>` (0 = no pacing), `eye-size <w> <h>`, `ipd <m>`, `fov left|right <l>
 <r> <u> <d>` (degrees, OpenXR signs), `head pos <x> <y> <z>` (meters, the room's LOCAL space: x right,
 y up, −z forward), `head rot <yaw> <pitch> <roll>` (degrees: yaw + turns left, pitch + looks up),
-`hand left|right pos|rot …`, `hand left|right on|off`, `profile index|touch|simple|none|<path>`,
+`hand left|right pos|rot …`, `hand left|right on|off`, `hand left|right fingers <thumb> <index> <rest>`
+(how far the real fingers are closed, 0 open to 1 a fist — the hand joints the simulated runtime's
+`XR_EXT_hand_tracking` trackers give, #305; `hand left|right fingers off|on`: no joints for that hand, as
+on a runtime that cannot read fingers, or joints again), `profile index|touch|simple|none|<path>`,
 `action <name> left|right|both <value> [<y>]` (the game's OpenXR action names: `trigger`, `grip`,
-`button_a`, `button_b`, `thumbstick`, `thumbstick_click`, `trackpad_press`, `menu`), `session
+`button_a`, `button_b`, `thumbstick`, `thumbstick_click`, `trackpad_press`, `menu`, `thumb_touch`), `session
 focused|visible|idle` (`idle`: the headset is taken off - the session falls back to `synchronized`, the eyes are still located, nothing is shown, #27), `shot [name]`, `mark <text>`, `quit`, `fault swap-eyes on|off`, `layers on|off` (shots also save each eye's projection layer without the quad, `<name>-left-layer.bmp` / `-right-layer.bmp`: what the game drew into the eye itself, #72). The defaults: Index
 panel size 1440 × 1600, IPD 64 mm, 90 Hz, the asymmetric, mirrored field of view of research row
 F-165, both Index controllers in front of the body.
@@ -1011,6 +1142,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 | `@pending #<issue> <step>` | a step the game cannot pass yet, because issue N builds the feature. Its failure is printed as `pending`; **once it passes the run fails** until the `@pending` is removed, so an expectation cannot go stale. Pick a step that fails for the right reason (a first version of `snap-turn` had a "turned back" step that passed trivially) |
 | `@sim <name>`, `@args <...>` | what `xrs-run.ps1` launches: the `scripts\dev\vrsim` script (default `idle`: no timed lines, no shots) and the arx.exe arguments (default `--loadlevel 10`); ignored while running |
 | `@save <name>` | start from this save of the test save library (#70; `smoke-test.ps1 -Save`, the only save of the isolated user directory), with `@args --loadslot 0`. Anything the **body** does — turning, walking — needs a first-person save: on level 10 the intro conversation's camera owns the view (TRAPS.md) |
+| `@playground` | start in the test playground (#321; `smoke-test.ps1 -Playground`: the generated level, area 30, a fresh max-level hero). CI runs it only where node is on the runner's PATH, else NOT RUN with a warning |
 
 Rules: a sequence waits for `state eq GAMEPLAY` and for `vr.sim.timelineFrame ge 270` (3 s) before its
 first shot — the level fades in from black (TRAPS.md). A timeout must carry its `s` (`60s`); a bare
@@ -1022,6 +1154,9 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `look-around` | the rig and both located eyes follow a 40° yaw and a pitch; two shots of a still head agree; the pictures change with the head (#24) | — |
 | `snap-turn` | on `mvp-new-game`, the repeat off: the right stick held for a second turns the body exactly 45° once (`vr.turn.snap`), the view turns (picture change 16.9), the head turned back 45° gives the first view again (5.3, HUD and lights); a second push, a push left, a half push that does nothing; the repeat 0.4 s on: held until the snap + 4 repeats, the interval the game measures by its clock (`vr.input.turn.repeatInterval`, 0.400–0.403) within 0.38–0.6 s — not a count of snaps, which depends on when the release reaches the game (#285); smooth turn by time and no snaps in it (#32) | — |
 | `walk-forward` | the player stands still without input; the stick is held and let go | #31: the player moves |
+| `recenter` | a head offset is set and read back | #28: `recenter` is accepted (it logs one expected `[W]`) |
+| `finger-tracking` | the fingers follow the real fingers (#305): on `mvp-new-game` the simulated runtime's hand trackers are on (`vr.hands`), finger groups are found under both hands, the open hand bends nothing; pointing (`hand right fingers 1 0 1`) closes the thumb and the block to their limits and leaves the index finger straight, a fist closes every segment and brings the fingertip vertex back along the hand and out towards the palm (`tipAlong`, `tipOut`), half closed is half; with joints the trigger does nothing; `fingers off` → `source=controls`: a trigger pulled 0.4 bends the index finger to 36°, a grip of 0.45 the block to 40.5°, `thumb_touch` the thumb to 60°; `fingers on` gives the joints back; a controller off gives the whole arm back. Shots `hand-open-a/b`, `hand-point`, `hand-fist` of the hand before the face are for the eye (the fingers are a small part of the frame and the torch's flicker on the arm moves the whole-frame difference by up to ~0.5: no picture threshold beyond the still pair): `smoke-test.ps1 -VrSim idle -Sequence finger-tracking -Save mvp-new-game` | — |
+| `finger-held` | a hand holding a weapon is closed on the grip (#305, #75): on `mvp-items` (a short sword equipped) the right hand's `source=held` with every segment at its limit whatever its joints say, the left hand follows its own joints; the right controller off gives the arm back, on holds again; shot `sword-fist`: `smoke-test.ps1 -VrSim idle -Sequence finger-held -Save mvp-items` | — |
 | `arms-follow` | the full body (#36): both arm chains found, both arms posed from the idle rig's controllers with `error` 0; the hand takes the controller's orientation (the identity grip is a hand hanging down in the OpenXR grip pose: the wrist 8 units above the grip and the fingertips below the wrist; pitched up 90°, fingers ahead and thumb up: wrist and fingertips level with the grip); a hand moved 30 cm moves the wrist with it and changes both eyes' pictures of the body seen from above (> 2, floor < 1.5); 1.2 m out: `stretched`, `slide` 20; a controller switched off gives its arm back to the engine; a 30 cm lean shifts the body by the camera's offset and keeps `error` 0. **Needs the first-person save** (level 10's conversation camera is nowhere near the body): `smoke-test.ps1 -VrSim idle -Sequence arms-follow -Save mvp-new-game` | — |
 | `rune-trail` | the rune trail (#43) on `mvp-new-game`: the right trigger alone is a click (no stroke, no flare); the left trackpad held is the stance and draws nothing; the trigger in it draws with the right hand, the last flare at the trail's point; the hand moved 30 cm in six steps: `length` 30, more than 20 new flares, the point stays level; pitched up 90°: the point rises 8 units (the controller's tip, not the grip); the left trigger is ignored while the right draws and until released; the release ends the rune (`trigger`), no flare after it; a left-hand stroke ended by releasing the stance (`stance`); the drawn shots differ from a still pair in both eyes | — |
 | `rune-cast` | rune recognition from the hand and the spell's aim (#44) on `mvp-new-game` (the runes added with the console's `rune -a`): the right hand's aim is level along the look, pitched up 45° gives `aim.pitch` −45, turned left 30° gives `aim.yaw` + 30; in the stance a 30 cm line to the right (one recogniser point per 2 cm: 16 points, 300 px wide) is `rune.drawn rune=aam moves=6`; right-down-right is `taar`; the stance released casts **Magic Missile** (`spell.cast … aim=hand aimHand=right`, `spells.launchedByType.magic_missile` 1); up is `mega`, down `rhaa`, and the two together `spell.unknown runes=mega+rhaa`; a stroke behind the head is `magic.stroke.refused reason=behind`, one at the knee `reason=low`, no `rune.*` event for either, and AAM drawn after them is recognised as before | — |
@@ -1029,6 +1164,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `walk-forward` | on `mvp-new-game` (`-Save`; level 10 never moves the player, TRAPS.md): still without input, the stick held forward moves him | — (#31) |
 | `walk-look` | on `mvp-new-game`: with the head turned ±90° the stick walks where the head looks (D-008), with the head ahead along the heading; the heading stays, one `vr.walk` start / end per push (`vr.input.walk` in status.json) | — (#31) |
 | `sneak-jump-crouch` | on `mvp-new-game`: a full push runs, a slight one sneaks (`player.stealth`, `player.animSpeed` < 0.8 × the run's), the hysteresis band keeps a run, below it the walk turns into a sneak; `right.a` jumps; `right.stick_down` with the stick drifting sideways toggles the crouch on without turning, a tap toggles it off | — (#33) |
+| `arms-follow` | the full body (#36): both arm chains found, both arms posed from the idle rig's controllers with `error` 0; the hand takes the controller's orientation (the identity grip is a hand hanging down in the OpenXR grip pose: the wrist 8 units above the grip and the fingertips below the wrist; pitched up 90°, fingers ahead and thumb up: wrist and fingertips level with the grip); a hand moved 30 cm moves the wrist with it and changes both eyes' pictures of the body seen from above (> 2, floor < 1.5); 1.2 m out: `stretched`, `slide` 20; a controller switched off gives its arm back to the engine; a 30 cm lean shifts the body by the camera's offset and keeps `error` 0. **Needs the first-person save** (level 10's conversation camera is nowhere near the body): `smoke-test.ps1 -VrSim idle -Sequence arms-follow -Save mvp-new-game` | — |
 | `stand-up` | flat, on the test save `mvp-new-game` (`smoke-test.ps1 -Sequence stand-up -Save mvp-new-game`): `crouch on` / `crouch off` in the start cell — the character crouches (eye 170.1 → 122.7) and stands up where it stood (eye 170.1, same x/z); crouched inside the cell's portcullis it stays down with one `player.standup.blocked` event, and stands up once back at the start spot (#263) | — |
 | `recenter` | a head offset is set and read back; `recenter` is accepted (#28) | — |
 | `tl-reprojection` | picking reads the head camera after the eyes, the book icon's particles are on the quad and add no coverage (#72), on the save `mvp-items` | — |
@@ -1036,8 +1172,13 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
 | `menu-pointer` | the menu pointer (#34) on the test save `mvp-items` — run with `smoke-test.ps1 -VrSim idle -Sequence menu-pointer -Save mvp-items`: no pointer and no beam without a menu (`overlayPixels` 0); the key from the table put in the bag, the inventory opened, the right hand aimed at it (`vr-point right item`): the engine's mouse on the key's pixel (192, 606 = the target), `ui.hover` the key, the beam drawn above the panel (`overlayPixels` 2125 left / 1997 right); the trigger clicks (`vr.pointer.click`), a hand move of 8 px keeps the cursor on the key (dead zone, no drag), 40 px drags **the key the click landed on**; released over the bag it goes back; the left hand's trigger takes the cursor and its click lands on the key too; both hands pointing behind the head (since #37 a hand pointing ahead in the game is a world reticle): no cursor, no beam, a press is muted (`offPanelPresses` 1, nothing dragged); closed: the pointer goes. Host test `MenuPointerTest` | — |
 | `physical-crouch` | physical crouch (#100, D-034) on `mvp-new-game` — `smoke-test.ps1 -VrSim idle -Sequence physical-crouch -Save mvp-new-game`: the button crouches and stands at that spot first; the head 25 cm down follows the view and stands, 35 cm crouches the character (one `vr.head.crouch` episode), back at 25 cm stays crouched, 15 cm stands; the view never above the head nor twice as low; the crouch button still crouches and stands with the head up | — |
-| `weapon-hold` | the weapon in the IK hand (#75, D-033): on `mvp-items` the equipped short sword is in the right hand without the combat mode (`vr.weapon.place` `hand`), its blade read from the mesh (65.8 units; the asset 9.1° off the handle axis) and drawn 0.1° from the grip's -Z, the hilt on the palm attach point; the handle pitched up puts the tip 66 units above the hilt; a moved hand keeps the hilt on the palm; a controller switched off gives the sword back to the engine (`engine`), switched on it is back; `combat on` + a trigger strike: the arm layer's ready, wait and strike clips are `suppressed`, the shoulder does not move with the strike, the sword stays in the hand. The shots `sword-ahead`, `sword-up` and `sword-at-face` (the raised blade 0.1 m from the eyes, F-39) are judged by eye. `smoke-test.ps1 -VrSim idle -Sequence weapon-hold -Save mvp-items` | — |
+| `weapon-hold` | the weapon in the IK hand (#75, D-033): on `mvp-items` the equipped short sword is in the right hand without the combat mode (`vr.weapon.place` `hand`), its blade read from the mesh (65.8 units; the asset 9.1° off the handle axis) and drawn 0.1° from the grip's -Z, the hilt on the palm attach point; the handle pitched up puts the tip 66 units above the hilt; a moved hand keeps the hilt on the palm; a controller switched off gives the sword back to the engine (`engine`), switched on it is back; `combat on` + the trigger held: the arm layer's ready and wait clips are `suppressed`, no strike clip starts (since #39 the swing is the strike), the shoulder stays, the sword stays in the hand. The shots `sword-ahead`, `sword-up` and `sword-at-face` (the raised blade 0.1 m from the eyes, F-39) are judged by eye. `smoke-test.ps1 -VrSim idle -Sequence weapon-hold -Save mvp-items` | — |
+| `melee-swing` | physical melee (#39, D-038) on `mvp-goblin-fight`: the goblin held still and `place`d 80 units ahead, the sword at its chest; a slow sweep through it (under 1.3 m/s) is no swing; a plain swing (0.85 m in 8 frames) hits it once with aim 0.25 × the speed factor (`melee.hit`, `vr.melee.last`); the trigger held to a full charge (`melee.charge state=full`), a swing hits with aim ≥ 0.5 (measured 1.00 and damage 7.4 against 0.25 and 1.8) and spends the charge; held on, it does not charge again and the next swing is plain; released and pressed, it charges again; `combat on` + the trigger: no engine strike clip, no hit; the inventory open: no swing (`refused=inventory`). Shots `goblin-in-reach`, `after-hits` judged by eye. Broken on purpose (the charge never spent): fails at `vr.melee.charge.spent`. `smoke-test.ps1 -VrSim idle -Sequence melee-swing -Save mvp-goblin-fight` | — |
 | `hand-reticle` | the hand reticles (#37) on the test save `mvp-items` — run with `smoke-test.ps1 -VrSim idle -Sequence hand-reticle -Save mvp-items`: in the game both hands' rings are drawn (`overlayPixels` > 0 in both eyes), dim, nothing hovered; the player put on the floor by the table (the save stands it on the wall top, TRAPS.md); the right hand at the note: `under` / `entity` the note, `bright`, the engine's hover the note; the left hand onto the form takes the idle mouse (D-019); the right trigger takes it back and presses on the note (`vr.reticle.press`), the hand moved: the note is dragged and follows the ring, released: `item.drop how=place` on the floor at the ring; the bag open, the left hand drags the form from the table onto the bag on the panel: `item.toinventory`; grip + trigger on the note: straight into the bag; the book open: the reticles off (`book`). Host test `HandReticleTest` | — |
+
+| `vr-remap` | the VR settings' remapping (#178) on the simulated Index controllers: `menu pause` + `menu vr` open the page; `jump` captured as `right.b` (a conflict with `inventory`: `conflicts` 1, shown in red), `magic_mode` as the chord `left.grip+left.a`, `crouch_toggle` as `right.stick_click:long`; the walk stick refused, a cancel. Leaves the layout saved | — |
+| `vr-remap-saved` | the saved layout read back as a start reads it: `jump` captured as `right.b` (saved), `vr-input reset` (not saved), `vr-input reload` → `remapped`, `jump` = `right.b`; `vr-input default` → the file removed, `reload` gives the default. Every #178 sequence starts and ends with the default layout: CI runs all sequences in one user directory, in any order | — |
+| `vr-settings-flat` | a plain launch (`@args --skiplogo`: the main menu) on the simulated headset — "VR" in the Options list after "Input", the VR page with the default Index layout, shots `options` and `vr-menu` (the name is from its first, flat version) | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
 `scripts\dev\test-xrs.ps1` (a fake game answering the channel files; in `run-script-tests.ps1`, so in CI).
@@ -1117,6 +1258,8 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | 2026-10-09, #70: `make-test-saves.ps1 -Verify` — a fresh game with `--loadslot 0`, then `loadslot 1` and `loadslot 2` through the channel | `PASS` (3 of 3): slot 0 = `mvp-goblin-fight` (the newest), slot 1 = `mvp-items`, slot 2 = `mvp-new-game` — the slot order is the file time, newest first; the first state `GAMEPLAY` 25 s after the launch, 0 errors, clean shutdown |
 | 2026-10-09, #70: `equip short_sword_0030` as a console line (a player-context command) | acked `errors=0`, nothing equipped (`show=2`): `equip <target>` is the **item's** command (`ARX_EQUIPMENT_Equip(target, context entity)`); `short_sword_0030.equip player` equips (`show=6`) |
 | 2026-10-09, #70: a `status.json` field `hover` (the entity under the reticle) read at 160 positions on rings of 150 / 250 units around 5 levers, 2 chests, 2 portcullises and a key, then at the 20 level markers within 700 units of those (twice) — `hover` = `FlyingOverIO`, then `FlyingOverObject(screen centre)` | **0 hits** for a lever, chest, portcullis or the key in all three passes (3 hits for `note_0004` on the rings, with `FlyingOverIO`); `FlyingOverIO` is cleared in mouse look, and the pick at the centre found nothing either; the mechanism was dropped, see TRAPS.md |
+| 2026-10-10, #305: `FingerCurlTest` (10 cases: the synthetic hand's frame, open / fist / pointing / thumbs-up / half closed from the joints, the same curl in any space and for either hand, the controls fallback, the closed hand, the approach step) and `SimRigTest::testFingers`; `smoke-test.ps1 -VrSim idle -Sequence finger-tracking -Save mvp-new-game` (117 steps), `-Sequence finger-held -Save mvp-items` (42), `arms-follow` again, the flat smoke test | Host tests `OK (241 tests)`; with the knuckle mapping broken on purpose (the wrong flexion scale) **3 cases fail** (`fist: indexRoot: expected 90, got 50.6`). `finger-tracking` **117 of 117** `PASS`: the simulated runtime lists the extension, `supportsHandTracking`, trackers for both hands, joints active every frame (`vr.hands.failures` 0); finger groups found under both hands (`thumb right_hand_thumb, index right_hand_index_root>right_hand_index_tip, block right_hand_fingers_root>right_hand_finger_tip`; the palm's face (0.08, 0.99, 0.10), finger axis (−0.11, 0.11, −0.99) in the wrist's rest frame); the open hand bends every segment < 1°; pointing (`fingers 1 0 1`) → thumb **60**, block **90 + 95**, index **0**; a fist → every segment at its limit and the fingertip vertex from **18.98 → 4.02** units along the hand, **−3.02 → +5.59** out towards the palm; half closed → knuckles **45**; with joints a trigger of 0.4 changes nothing; `fingers off` → `source=controls`, trigger 0.4 → index **36 / 38**, grip 0.45 → block **40.5 / 42.75**, `thumb_touch` → thumb **60**; `fingers on` → joints again; the controller off → `none`. The captures (the right hand 35 cm before the face, thumb up): the open hand a straight slab, the point an index finger ahead over three curled fingers, the fist all four curled towards the palm's face — whole-frame differences to the open shot **0.78** (point) and **0.31** (fist) against a **0.15** still pair, too small and flicker-prone for a threshold. `finger-held` **42 of 42** `PASS`: on `mvp-items` the right hand `source=held`, every segment at the fist whatever its joints say, the left hand on its joints; the controller off and on → `none` then `held` again. `arms-follow` **79 of 79** `PASS` (the fingers now straight instead of the wait animation's curl: the hanging hand's tip still below the wrist). Flat smoke test `PASS`; pacing MATCHED 90/s; 0 errors in every run; **5 launches**. SteamVR was in the owner's hands the whole session: no real-runtime run — the owner's test decides whether SteamVR's joints land as the simulator's do |
+| 2026-10-10, #178: `xrs-run.ps1 vr-remap` (simulated Index controllers, level 10, the pause menu's VR page), then `xrs-run.ps1 vr-remap-saved` (a new start), then `xrs-run.ps1 vr-settings-flat` (the main menu; its first, flat version ran `smoke-test.ps1 -Menu -Sequence`) | `PASS` 63 / 63, 18 / 18 and 16 / 16 steps (after the merge of #27 / #28; a first version with `down` / `up` pairs recorded `right.b:long` — TRAPS.md): captures `jump` = `right.b`, `magic_mode` = `left.grip+left.a`, `crouch_toggle` = `right.stick_click:long`; `conflicts` 1 (`jump+inventory`, the two rows in red); `left.stick_up` refused ("the left stick walks"); the next start logged `layout saved for index (…\vr-controls-index.ini)` with the three bindings; `default` → `remapped` false, the file gone. Host test `BindingCaptureTest` (14 cases): broken on purpose (long press at twice the time) → `Failures: 2`; `brokenLayoutFileTest` (a bad line, an unknown event, an unknown control in line 2 after a good line 1 → `readSavedLayout` false, the error names the line, the layout is the default) with the all-or-nothing guard removed → `Failures: 2` (`brokenLayoutFileTest`, `VRControlsTest::layoutTextTest`) |
 | 2026-10-09, #36: `ArmIKTest` (9 cases: the IK, the shoulder slide, hand placement against `headToCamera`, the hand frame from a mesh, `handToGrip`); `smoke-test.ps1 -VrSim idle -Sequence arms-follow -Save mvp-new-game` (73 steps); `eye-check.ps1`; a flat `smoke-test.ps1 -Save mvp-new-game` with `headpose 0 -60 0`, `handpose right/left 0 -90 0 …`, `shot` | Host tests `OK (173 tests)`; one case failed before the fold-at-the-shoulder fix (the elbow went across the hint) and `near` had to be renamed (a `windows.h` macro). The sequence: **73 of 73** `PASS` — both chains found (`right_arm>right_elbow>right_wrist>right_hand`, lengths **27.6 + 30.5**), `error` **0** for both arms with the idle rig's controllers; the identity grip (a hand hanging down in the OpenXR grip pose, after #75's review caught the axes turned 180° about the palm normal — grip −Z, not +Z, runs from the little finger to the thumb): the wrist above the grip by the palm's 7.9 units, the fingertips (curled) below the wrist; pitched up 90° (fingers ahead, thumb up): wrist and fingertips level with the grip (within 3 / 6); a hand raised 25 cm: `target.y` and `wrist.y` **−25**, `error` 0; the still floor of the body seen from above **0.68 / 0.64** (left / right eye), the raised hand changes the pictures by **2.43 / 6.67**; 1.2 m out: `stretched`, `slide` **20**, `error` **37.5**; a controller off: that arm `posed=false`, the other still posed; a 30 cm lean: `shiftX` **30.000** = `vr.head.offsetX`, `error` 0. Two sequence runs on `--loadlevel 10` before that showed **no body at all** in the shots (the intro's conversation camera, TRAPS.md), with the same status numbers. `eye-check.ps1` `PASS` (world, pairing 429/429, separation 64 mm, difference 4.28 vs floor 0.99, parallax +14, yaw 5.9 / 6.2). Flat with simulated head and hands: `PASS`, `vr.body.active` true, `source=sim`, `error` 0, 1015 posed frames; the shot shows the chest, both arms and the hands with the fingers ahead. A startup crash (`entities.player()` asked by the status writer before the player entity exists) was found by the smoke test and fixed. SteamVR was off the whole session: no real-controller run. After the owner's #27 run ("looking down I see through the hollow body"): a `body-straight-down` shot (pitch −89°) with the model drawn two-sided still showed the neck opening and the torso's inside through it; with the cap (`neck opening closed with 5 cap face(s) over 1 boundary loop(s) (7 boundary edges)`) the opening is a skin-coloured plate and the chest reads solid — 80 of 80 steps PASS, launches 12 (the last two asked for by the coordinator) |
 | 2026-10-10, #43: `RuneTrailTest` (6 cases); `smoke-test.ps1 -VrSim idle -Sequence rune-trail -Save mvp-new-game`; `eye-check.ps1`; a flat `smoke-test.ps1` | Host tests `OK (227 tests)`; the tip direction reversed on purpose turns them red. The sequence **108 of 108** `PASS`: no stroke or flare from the trigger alone or the stance alone; the stroke at the right hand with the last flare exactly at `vr.magic.point`; the hand moved 30 cm in six steps: `length` **30.0**, flares 25 → **188**, the point level (y unchanged); pitched up 90°: the point **8.0** units higher; the left trigger `ignored` while the right drew; ended `trigger` (no flare after it: 291 = 291), the second stroke ended `stance`; `magic.stroke … lengthCm=52.6 ms=6067` (30 cm plus the 90° pitch and back, 2 × 11.3). Pictures: the still pair **0.10 / 0.09** (left / right eye), drawn **8.07 / 7.82**, the line **10.83 / 13.09**. The first run failed one step only: the event log writes a bool as `yes`. `eye-check.ps1` `PASS` (difference 4.25, parallax +14, yaw 5.9 / 6.2); flat smoke test `PASS`; CI (runner service): `rune-trail` 108 of 108. SteamVR ran for the owner's batch: no real-controller run; launches 4 |
 | 2026-10-10, #44: `RuneProjectionTest` (6 cases); `smoke-test.ps1 -VrSim idle -Sequence rune-cast -Save mvp-new-game`; `rune-trail` again; a flat `smoke-test.ps1` | Host tests `OK (242 tests)`; the plane's right vector reversed on purpose turns them red. The sequence **205 of 205** `PASS` on the third run: the aim level along the look (`camera.yaw` 359.7, `aim.yaw` 359.7, pitch 0.0), pitched up 45° → `aim.pitch` **−45.0**, turned right 30° → `aim.yaw` 329.7; a 30 cm line to the right: **16** recogniser points, 300 px wide, 0 high, `gate=ok`, `rune.drawn rune=aam moves=6`; right-down-right (45 cm, 22 points): `rune=taar moves=626`; the stance released: `spell.cast spell=magic_missile … aim=hand aimHand=right aimPitch=0.0 aimYaw=359.7`, `launchedByType.magic_missile` 1; up: `rune=mega moves=8`, down: `rune=rhaa moves=2`, `spell.unknown runes=mega+rhaa`; behind the head: `magic.stroke.refused reason=behind offYaw=-154.9`, at the knee: `reason=low belowHeadM=1.20`, no `rune.*` line for either, AAM after them `moves=6` again and `spell.unknown runes=aam`. The first run failed its own assert: the save looks at yaw 359.7, so `{lookYaw+30}` = 389 and a left turn (29.7) cannot pass — turned right instead. The second run found the engine's alternative recogniser (the default) silent: `rune.drawn … moves=""` and no `rune.unknown` ever — it logs its digits now. `rune-trail` again **108 of 108** `PASS`; flat smoke test `PASS` (0 errors, 0 warnings). Launches 5 |

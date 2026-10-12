@@ -17,14 +17,14 @@
 	  NEXT            the next task from the MVP queue (same logic as next-task.ps1)
 
 .PARAMETER WorkingCopy
-	The owner's working copy to inspect. Default: C:\Users\arzib\OneDrive\Desktop\arx-fatalis-vr.
+	The owner's working copy to inspect. Default: E:\dev\arx-fatalis-vr.
 
 .PARAMETER LaunchHours
 	How many hours of the launch ledger to summarize (default 12).
 #>
 [CmdletBinding()]
 param(
-	[string]$WorkingCopy = 'C:\Users\arzib\OneDrive\Desktop\arx-fatalis-vr',
+	[string]$WorkingCopy = 'E:\dev\arx-fatalis-vr',
 	[double]$LaunchHours = 12
 )
 
@@ -120,7 +120,7 @@ if (-not $found) { 'no leftover remote branches' }
 
 # --- Worktrees -------------------------------------------------------------------------------------
 Section 'WORKTREES'
-$wtRoot = if ($env:ARXVR_WORKTREE_ROOT) { $env:ARXVR_WORKTREE_ROOT } else { Join-Path $env:USERPROFILE 'arx-fatalis-vr-wt' }
+$wtRoot = if ($env:ARXVR_WORKTREE_ROOT) { $env:ARXVR_WORKTREE_ROOT } else { Join-Path $WorkingCopy '.claude\worktrees' }
 $worktrees = @()
 $current = $null
 foreach ($line in (git -C $WorkingCopy worktree list --porcelain 2>$null)) {

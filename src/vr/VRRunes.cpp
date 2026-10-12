@@ -182,7 +182,7 @@ SpellAim spellAim(const Anglef & view) {
 	aim.source = "view";
 	aim.hand = g_runes.stroke.strokes() ? g_runes.stroke.hand() : Hand::Right;
 
-	// The default (D-NEW, owner 2026-10-10): the spell flies where the centre of the view looks; the hand is opt-in
+	// The default (D-NEW-recognition, owner 2026-10-10): the spell flies where the centre of the view looks; the hand is opt-in
 	if(!g_runes.status.handsDraw || (g_spellAimOverride.empty() ? config.video.vrSpellAim : g_spellAimOverride) != "hand") {
 		return aim;
 	}

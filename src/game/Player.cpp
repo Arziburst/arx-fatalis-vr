@@ -73,6 +73,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "game/Equipment.h"
 #include "game/Inventory.h"
 #include "game/Item.h"
+#include "game/Levels.h"
 #include "game/Missile.h"
 #include "game/NPC.h"
 #include "game/effect/Quake.h"
@@ -2353,10 +2354,53 @@ void ARX_PLAYER_Manage_Movement() {
 	PlayerFollowHead();
 }
 
+// The player's start of the level loaded last (the level file's), where a death in the playground returns to (#321)
+static Vec3f g_levelStartPos(0.f);
+static Anglef g_levelStartAngle;
+
+void ARX_PLAYER_SetLevelStart(const Vec3f & pos, const Anglef & angle) {
+	g_levelStartPos = pos;
+	g_levelStartAngle = angle;
+}
+
+/*!
+ * Death in the test playground costs nothing (#321): the hero is back at the level's start at once, alive with full
+ * life and mana and no poison - no death screen, no load. Everything else (level, runes, inventory, the NPCs and
+ * items) stays as it is.
+ */
+static void ARX_PLAYER_PlaygroundRespawn() {
+
+	Vec3f deathPos = player.pos;
+
+	player.poison = 0.f;
+	player.lifePool.current = player.lifePool.max;
+	player.manaPool.current = player.manaPool.max;
+	player.DeadTime = 0;
+	player.m_paralysed = false;
+	player.Interface = INTER_LIFE_MANA | INTER_MINIBACK | INTER_MINIBOOK;
+	BLOCK_PLAYER_CONTROLS = false;
+
+	ARX_PLAYER_Reset_Fall();
+	player.jumpphase = NotJumping;
+	player.desiredangle = player.angle = g_levelStartAngle;
+	ARX_INTERACTIVE_Teleport(entities.player(), g_levelStartPos - player.baseOffset());
+	ARX_PLAYER_PutPlayerInNormalStance();
+
+	gameevent::Event("player.respawn")("x", player.pos.x, 0)("y", player.pos.y, 0)("z", player.pos.z, 0)
+		("fromX", deathPos.x, 0)("fromZ", deathPos.z, 0)("life", player.lifePool.current, 1);
+	LogInfo << "[playground] the hero died and is back at the start " << player.pos.x << " " << player.pos.y << " "
+	        << player.pos.z;
+}
+
 /*!
  * \brief Manage Player Death Visual
  */
 void ARX_PLAYER_Manage_Death() {
+	if(player.lifePool.current <= 0.f && isPlaygroundArea(g_currentArea)) {
+		ARX_PLAYER_PlaygroundRespawn();
+		return;
+	}
+
 	if(player.DeadTime <= 2s)
 		return;
 

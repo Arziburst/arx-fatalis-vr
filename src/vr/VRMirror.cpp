@@ -75,6 +75,12 @@ void DesktopMirror::destroy() {
 		glDeleteTextures(1, &m_flatTexture);
 		m_flatTexture = 0;
 	}
+	for(GLuint & texture : m_overlayTextures) {
+		if(texture) {
+			glDeleteTextures(1, &texture);
+			texture = 0;
+		}
+	}
 	m_eyeSize = Vec2i(0);
 	m_flatSize = Vec2i(0);
 	m_haveEye = false;
@@ -133,8 +139,32 @@ void DesktopMirror::copyFlatFrame(const Swapchain & quad) {
 	m_haveFlat = true;
 }
 
+void DesktopMirror::setOverlayImage(OverlayImage image, const Vec2i & size, const u8 * rgba) {
+
+	if(!m_on) {
+		return;
+	}
+
+	GLuint & texture = m_overlayTextures[image];
+	if(!texture) {
+		glGenTextures(1, &texture);
+	}
+
+	// The caller restores the texture binding, as for the other textures of the mirror
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+}
+
 void DesktopMirror::draw(const Vec2i & windowSize, const MirrorFov & fov, const Vec3f & eyePosition,
-                         const glm::quat & eyeOrientation, const Quad & quad) {
+                         const glm::quat & eyeOrientation, const Quad & quad, const std::vector<Overlay> & overlays,
+                         const Vec3f & overlayEyePosition, const glm::quat & overlayEyeOrientation) {
 
 	bool haveEye = m_haveEye;
 	bool haveFlat = m_haveFlat && quad.shown;
@@ -152,21 +182,55 @@ void DesktopMirror::draw(const Vec2i & windowSize, const MirrorFov & fov, const 
 		Vec2f window;
 		float s, t, q;
 	};
-	std::array<Corner, 4> corners;
-	if(haveFlat) {
-		const float x = quad.width * 0.5f, y = quad.height * 0.5f;
+	typedef std::array<Corner, 4> Corners;
+	const auto project = [&](const Vec3f & position, const glm::quat & orientation, float width, float height,
+	                         const Vec3f & eye, const glm::quat & eyeRotation, Corners & out) {
+		const float x = width * 0.5f, y = height * 0.5f;
 		const Vec3f points[4] = {
-			quad.position + quad.orientation * Vec3f(-x, -y, 0.f), quad.position + quad.orientation * Vec3f(x, -y, 0.f),
-			quad.position + quad.orientation * Vec3f(-x, y, 0.f), quad.position + quad.orientation * Vec3f(x, y, 0.f),
+			position + orientation * Vec3f(-x, -y, 0.f), position + orientation * Vec3f(x, -y, 0.f),
+			position + orientation * Vec3f(-x, y, 0.f), position + orientation * Vec3f(x, y, 0.f),
 		};
-		for(size_t i = 0; i < corners.size() && haveFlat; i++) {
+		for(size_t i = 0; i < out.size(); i++) {
 			Vec2f uv(0.f);
 			float depth = 0.f;
-			haveFlat = mirrorProject(points[i], eyePosition, eyeOrientation, fov, uv, depth);
-			corners[i].window = mirrorToWindow(crop, uv);
-			corners[i].q = 1.f / depth;
-			corners[i].s = float(i % 2) * corners[i].q;
-			corners[i].t = float(i / 2) * corners[i].q;
+			if(!mirrorProject(points[i], eye, eyeRotation, fov, uv, depth)) {
+				return false;
+			}
+			out[i].window = mirrorToWindow(crop, uv);
+			out[i].q = 1.f / depth;
+			out[i].s = float(i % 2) * out[i].q;
+			out[i].t = float(i / 2) * out[i].q;
+		}
+		return true;
+	};
+	Corners corners;
+	if(haveFlat) {
+		haveFlat = project(quad.position, quad.orientation, quad.width, quad.height, eyePosition, eyeOrientation,
+		                   corners);
+	}
+
+	// The quad layers after the flat frame, in submission order; one with a corner behind the eye is left out
+	struct PlacedOverlay {
+		GLuint texture;
+		Corners corners;
+	};
+	std::vector<PlacedOverlay> placed;
+	for(const Overlay & overlay : overlays) {
+		PlacedOverlay entry;
+		entry.texture = m_overlayTextures[overlay.image];
+		if(entry.texture && project(overlay.position, overlay.orientation, overlay.width, overlay.height,
+		                            overlayEyePosition, overlayEyeOrientation, entry.corners)) {
+			placed.push_back(entry);
+		}
+	}
+
+	if(placed.size() != m_overlaysDrawn) {
+		LogInfo << "[vr] desktop mirror: " << placed.size() << " of " << overlays.size()
+		        << " quad layer(s) after the flat frame in view of the window";
+		for(const PlacedOverlay & overlay : placed) {
+			LogInfo << "[vr] desktop mirror: overlay from (" << overlay.corners[0].window.x << ", "
+			        << overlay.corners[0].window.y << ") to (" << overlay.corners[3].window.x << ", "
+			        << overlay.corners[3].window.y << ") (-1..1)";
 		}
 	}
 
@@ -256,6 +320,22 @@ void DesktopMirror::draw(const Vec2i & windowSize, const MirrorFov & fov, const 
 		}
 	}
 
+	// The beam and the reticles over it: premultiplied by their alpha like the interface
+	if(!placed.empty()) {
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+		for(const PlacedOverlay & overlay : placed) {
+			glBindTexture(GL_TEXTURE_2D, overlay.texture);
+			glBegin(GL_TRIANGLE_STRIP);
+			for(const Corner & corner : overlay.corners) {
+				glTexCoord4f(corner.s, corner.t, 0.f, corner.q);
+				glVertex2f(corner.window.x, corner.window.y);
+			}
+			glEnd();
+		}
+		glDisable(GL_BLEND);
+	}
+
 	glMatrixMode(GL_MODELVIEW);
 	glPopMatrix();
 	glMatrixMode(GL_PROJECTION);
@@ -267,6 +347,7 @@ void DesktopMirror::draw(const Vec2i & windowSize, const MirrorFov & fov, const 
 	glActiveTexture(GLenum(activeTexture));
 
 	m_frames++;
+	m_overlaysDrawn = placed.size();
 }
 
 } // namespace vr

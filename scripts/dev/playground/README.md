@@ -10,7 +10,8 @@ textures by name — no game data is copied.
 - `layout.mjs` — the room's layout in one place: room size, hero start, table, NPC spot, lever wall, lights.
 - `build.mjs` — the generator (`npm ci && npm run build [-- <outputDir>]`).
 - `playground-lib.ps1` — what `-Playground` of `run-windows.ps1`, `dev\test-pr.ps1` and `dev\smoke-test.ps1` uses:
-  generates the level when it is missing or older than the generator, returns `--data-dir <level> --loadlevel 30`.
+  generates the level when it is missing or was generated from other sources (`sources.sha256` next to it), returns
+  `--data-dir <level> --loadlevel 30`.
 
 Needs node 20+ (and the .NET runtime for the generator's lighting calculator, which is bundled with the package).
 Textures: floor `stone_human_paving`, walls `stone_human_stone_wall`, ceiling `stone_human_stone_wall1`,

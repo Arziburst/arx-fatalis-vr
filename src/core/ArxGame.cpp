@@ -352,6 +352,14 @@ static void forceWindowed() {
 ARX_PROGRAM_OPTION("windowed", "", "Start in a window regardless of the fullscreen setting in cfg.ini",
                    &forceWindowed)
 
+static bool g_forceMute = false;
+
+static void forceMute() {
+	g_forceMute = true;
+}
+ARX_PROGRAM_OPTION("mute", "", "Play no sound in this run; the audio settings in cfg.ini are not changed",
+                   &forceMute)
+
 bool ArxGame::initConfig() {
 
 	// Initialize config first, before anything else.
@@ -395,6 +403,12 @@ bool ArxGame::initConfig() {
 		// For this run only: the config is saved at exit, so the original value is restored there
 		LogInfo << "Starting in a window (--windowed)";
 		config.video.fullscreen = false;
+	}
+
+	if(g_forceMute) {
+		// Applied in the mixer, so config.audio.volume and the rest stay as saved in cfg.ini
+		LogInfo << "Audio is muted (--mute): all mixers stay at volume 0, cfg.ini volumes are kept";
+		ARX_SOUND_SetMuted(true);
 	}
 
 	if(!migrated && config.misc.migration < Config::CaseSensitiveFilenames) {

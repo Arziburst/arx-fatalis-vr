@@ -57,6 +57,7 @@
 #include "graphics/data/Mesh.h"
 #include "graphics/image/Image.h"
 #include "gui/Console.h"
+#include "gui/DamageNumbers.h"
 #include "gui/Dragging.h"
 #include "gui/Interface.h"
 #include "gui/MainMenu.h"
@@ -1305,6 +1306,11 @@ std::string buildStatus(PlatformInstant now) {
 	if(vr::isSimulated()) {
 		writeSimStatus(json, vr::simStatus());
 	}
+	json.end();
+
+	// The playground's damage numbers (#321): how many are shown now (none outside the playground)
+	json.object("damageNumbers");
+	json.value("visible", u64(damagenumbers::visible()));
 	json.end();
 
 	// Game event log (#130): how many events of each name happened, logged or not

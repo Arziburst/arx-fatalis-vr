@@ -176,6 +176,13 @@ self-inflicted `dodamage` and damage while the controls are blocked do nothing),
 A refused line costs nothing: `[W] [channel] script command failed: Unknown command: …` and
 `errors=1` in the ack, no `[E]`.
 
+In the test playground (area 30, #321.2): `playground pull mode|respawn` (the lever gets exactly what a hand pull
+gives it: `SM_ACTION` from the player), `playground kill` (the NPC dies as from a hit), `playground place <ahead> [<right>]`
+(the NPC stands there facing the hero, like `place`) and `playground hit <n>` (the hero deals n damage through
+`damageNpc`, as a weapon hit). status.json has `playground` (`npc`, `npcMode` peaceful|aggressive, `npcAlive`, `npcLife`,
+`npcLifeMax`, `npcAtSpot`, `items`) in area 30, and `player.level` / `player.allRunes` always.
+The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead one runs no script events).
+
 ### `status.json`
 
 ```json

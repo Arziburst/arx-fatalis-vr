@@ -196,14 +196,18 @@ map.entities.push(goblin)
 // The levers: pulled by hand like any lever of the game (#38). The mode lever hangs down for aggressive and up for
 // peaceful, the respawn lever fires on every pull. They send the goblin the orders above
 const leverRotation = yawDeg(180) // on the north wall, facing into the room
-const addLever = (id, x, role, orders) => {
+// `before` runs first: a dead goblin runs no events, so the respawn lever revives it from outside, then the order follows
+const addLever = (id, x, role, orders, before = '') => {
 	const lever = new Lever({ id, position: at(x, -LEVER_HEIGHT, LEVER_WALL.z), orientation: leverRotation })
 	lever.script.on('init', `set £pg_role "${role}"`)
-	lever.script.on('custom', Object.entries(orders).map(([param, order]) => `if (^$param1 == "${param}") {\n sendevent custom ${goblin.ref} "${order}"\n}`))
+	lever.script.on(
+		'custom',
+		Object.entries(orders).map(([param, order]) => `if (^$param1 == "${param}") {\n ${before}sendevent custom ${goblin.ref} "${order}"\n}`),
+	)
 	map.entities.push(lever)
 }
 addLever(FIRST_ID, LEVER_WALL.xMode, 'lever_mode', { on: 'aggressive', off: 'peaceful' })
-addLever(FIRST_ID + 1, LEVER_WALL.xRespawn, 'lever_respawn', { on: 'respawn', off: 'respawn' })
+addLever(FIRST_ID + 1, LEVER_WALL.xRespawn, 'lever_respawn', { on: 'respawn', off: 'respawn' }, `revive -it ${goblin.ref}\n `)
 
 // The hero: level 10 and every rune, set by a marker's script when the level loads (the generator's player script
 // would replace the game's own player script, with all its animations)

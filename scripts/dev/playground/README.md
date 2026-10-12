@@ -16,3 +16,22 @@ Needs node 20+ (and the .NET runtime for the generator's lighting calculator, wh
 Textures: floor `stone_human_paving`, walls `stone_human_stone_wall`, ceiling `stone_human_stone_wall1`,
 table `l4_dwarf_wood_board02` (all native to the original game).
 The tester zip (`package-tester.ps1`) does not carry the playground yet.
+
+## Content (321.2)
+
+- **Goblin** (`npc/goblin_base`, the MVP enemy) at `NPC_SPOT`: peaceful by default — its instance script refuses `ouch`
+  and `aggression` while `§aggro` is 0, so even a hit does not anger it. Orders arrive as `custom` events:
+  `aggressive` (attacks at once), `peaceful` (`revive -i` + stance reset: full life, back at its spot), `respawn` (the same,
+  back into the mode it was in).
+- **Two levers** on the north wall right of the table (visible from the start): the mode lever (nearer the table; down =
+  aggressive, up = peaceful) and the respawn lever. Both are the game's `fix_inter/lever`, pulled by hand like any lever
+  (#38). A dead NPC runs no script events, so the respawn lever revives it from outside (`revive -it <entity>`).
+- **Weapons**: every folder under `items/weapons` that holds a class script (`WEAPONS` in `layout.mjs`, 32), on a table at
+  the west wall. **Consumables** (`CONSUMABLES`: 5 potions, 6 foods, a scroll holding magic missile) on the main table.
+- **Hero**: a marker's init script runs `addxp 178000` (level 10, the game's cap) and `rune all`. The player script is not
+  used: the generator's one would replace the game's own.
+- Instance ids start at `FIRST_ID` (9001): the original levels ship instance scripts for the low numbers of every class,
+  which the engine would run for an item without a script of its own.
+- The test channel finds these entities by the text variable `£pg_role` their scripts set (`npc`, `lever_mode`,
+  `lever_respawn`); status.json `playground`, `player.level`, `player.allRunes` and the commands `playground pull|kill|place|hit`
+  are described in `docs/vr/TESTING.md`. Sequence: `scripts/dev/xrs/playground-levers.xrs`.

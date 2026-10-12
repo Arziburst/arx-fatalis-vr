@@ -44,6 +44,9 @@
 	Launch with the worktree's isolated user directory instead of the owner's saves
 	(run-windows.ps1 -Isolated); add -Saves to copy saves into it.
 
+.PARAMETER Playground
+	Launch the test playground (run-windows.ps1 -Playground, #321) instead of the default save.
+
 .PARAMETER Saves
 	With -Isolated: save slots to copy into the isolated user directory (e.g. save0000).
 
@@ -66,6 +69,7 @@ param(
 	[switch]$StopSteamVR,
 	[string]$Branch,
 	[switch]$Isolated,
+	[switch]$Playground,
 	[string[]]$Saves,
 	[ValidateSet('Release', 'RelWithDebInfo', 'Debug')] [string]$Config = 'Release',
 	[Parameter(ValueFromRemainingArguments)] [string[]]$ArxArgs
@@ -174,12 +178,14 @@ Write-Host "==> Build id: $(Short $head)$(if ($dirty) { ' + uncommitted changes'
 # --- Launch ------------------------------------------------------------------------------------------
 
 if ($NoLaunch) { return }
-if (-not $ArxArgs) { $ArxArgs = @('--skiplogo', '--loadslot', '0') }
+if (-not $ArxArgs -and -not $Playground) { $ArxArgs = @('--skiplogo', '--loadslot', '0') }
+if (-not $ArxArgs) { $ArxArgs = @() }
 $runArgs = @{ Config = $Config; ArxArgs = $ArxArgs }
 if ($StartSteamVR) { $runArgs.StartSteamVR = $true }
 elseif ($ArxArgs -notcontains '--no-vr' -and -not (Get-Process vrserver -ErrorAction SilentlyContinue)) {
 	Write-Host '    SteamVR is not running: the game will start flat. For the headset start SteamVR first, or pass -StartSteamVR.' -ForegroundColor Yellow
 }
+if ($Playground) { $runArgs.Playground = $true }
 if ($Isolated) { $runArgs.Isolated = $true }
 if ($Saves) { $runArgs.Isolated = $true; $runArgs.Saves = $Saves }
 & (Join-Path $wt 'scripts\run-windows.ps1') @runArgs

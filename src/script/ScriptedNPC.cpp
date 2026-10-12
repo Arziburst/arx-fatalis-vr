@@ -151,13 +151,26 @@ public:
 	Result execute(Context & context) override {
 		
 		bool init = false;
-		HandleFlags("i") {
+		bool hasTarget = false;
+		HandleFlags("it") {
 			init = test_flag(flg, 'i');
+			hasTarget = test_flag(flg, 't');
 		}
-		
+
+		// -t <entity>: revive another NPC - a dead NPC runs no script events, so it cannot revive itself
+		Entity * target = context.getEntity();
+		if(hasTarget) {
+			std::string id = context.getWord();
+			target = entities.getById(id, context.getEntity());
+			if(!target) {
+				ScriptWarning << "unknown target: " << id;
+				return Failed;
+			}
+		}
+
 		DebugScript(' ' << options);
-		
-		ARX_NPC_Revive(context.getEntity(), init);
+
+		ARX_NPC_Revive(target, init);
 		
 		return Success;
 	}

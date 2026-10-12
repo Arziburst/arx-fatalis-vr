@@ -1,0 +1,30 @@
+# Damage numbers only in the playground (#321, sub-task 321.4): in an original level a hit that damages an NPC shows
+# no number - no `damage.number` event and damageNumbers.visible 0. Companion of damage-numbers.xrs (the playground case).
+#
+# Runs on the test save mvp-goblin-fight (#70: a goblin ahead in a corridor):
+#   .\scripts\dev\xrs-run.ps1 damage-numbers-off
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence damage-numbers-off -Save mvp-goblin-fight
+# The hit is `player.dodamage goblin_base_0036 5` (damageCharacter(), the path every damage source ends in). The eye
+# images are not compared: the goblin's hurt animation alone changes the largest channel by ~236 (a first run), so a
+# picture cannot tell a number from the animation - the event and the status value do.
+@sim idle
+@save mvp-goblin-fight
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+
+goblin_base_0036.setspeed 0
+place goblin_base_0036 80
+lookat goblin_base_0036
+@frames 60
+
+@mark
+player.dodamage goblin_base_0036 5
+@assert damageNumbers.visible eq 0
+@shot during-hit       # for the reviewer's eye: no number over the goblin
+@frames 60
+@assert damageNumbers.visible eq 0
+@nolog damage\.number
+@assert errors eq 0

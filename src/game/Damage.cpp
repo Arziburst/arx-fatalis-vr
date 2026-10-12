@@ -73,6 +73,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "game/effect/Quake.h"
 #include "game/npc/Dismemberment.h"
 
+#include "gui/DamageNumbers.h"
 #include "gui/Dragging.h"
 #include "gui/Speech.h"
 #include "gui/Hud.h"
@@ -291,10 +292,13 @@ void ARX_DAMAGE_Reset_Blood_Info() {
 
 void ARX_DAMAGE_Update_Hit_Blood() {
 	g_screenFxBloodSplash.update();
+	damagenumbers::update();
 }
 
 void ARX_DAMAGE_Show_Hit_Blood() {
 	g_screenFxBloodSplash.render();
+	// The playground's damage numbers (#321) over the blood flash, in each scene view
+	damagenumbers::render();
 }
 
 
@@ -869,6 +873,8 @@ float damageNpc(Entity & npc, float dmg, Entity * source, Spell * spell, DamageT
 	float damagesdone = std::min(dmg, npc._npcdata->lifePool.current);
 	npc._npcdata->lifePool.current -= dmg;
 	
+	damagenumbers::hit(npc, dmg, damagesdone);
+	
 	float fHitFlash = 0;
 	if(npc._npcdata->lifePool.current <= 0) {
 		fHitFlash = 0;
@@ -896,6 +902,7 @@ float damageNpc(Entity & npc, float dmg, Entity * source, Spell * spell, DamageT
 
 void ARX_DAMAGES_Reset() {
 	g_damages.clear();
+	damagenumbers::clear();
 }
 
 static void ARX_DAMAGES_AddVisual(DAMAGE_INFO & di, const Vec3f & pos, float dmg, Entity * io) {

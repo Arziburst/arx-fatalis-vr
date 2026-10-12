@@ -21,6 +21,7 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 .\scripts\dev\smoke-test.ps1 -Saves save0000 -- --loadslot 0  # copy a save into the isolated user directory, then load it
 .\scripts\dev\smoke-test.ps1 -Save mvp-goblin-fight           # a scenario of the test save library (#70): the only save, --loadslot 0
 .\scripts\dev\make-test-saves.ps1                             # produce the test save library, one launch; -Verify loads it all in a fresh game (#70)
+.\scripts\dev\smoke-test.ps1 -Playground                      # the test playground (#321): the generated room, a max-level hero, GAMEPLAY in area 30
 .\scripts\dev\smoke-test.ps1 -Commands 'shot a','mark x' -- --loadslot 0
 .\scripts\dev\smoke-test.ps1 -Menu -Commands 'loadslot 0'       # plain launch (main menu), then a save through the channel
 .\scripts\dev\smoke-test.ps1 -Commands 'drawcheck 120'         # two draws of the scene per frame must give one picture (#71)
@@ -201,6 +202,13 @@ self-inflicted `dodamage` and damage while the controls are blocked do nothing),
 (an obsolete command: a `[W]` and a `script.error` event, no `[E]`).
 A refused line costs nothing: `[W] [channel] script command failed: Unknown command: …` and
 `errors=1` in the ack, no `[E]`.
+
+In the test playground (area 30, #321.2): `playground pull mode|respawn` (the lever gets exactly what a hand pull
+gives it: `SM_ACTION` from the player), `playground kill` (the NPC dies as from a hit), `playground place <ahead> [<right>]`
+(the NPC stands there facing the hero, like `place`) and `playground hit <n>` (the hero deals n damage through
+`damageNpc`, as a weapon hit). status.json has `playground` (`npc`, `npcMode` peaceful|aggressive, `npcAlive`, `npcLife`,
+`npcLifeMax`, `npcAtSpot`, `items`) in area 30, and `player.level` / `player.allRunes` always.
+The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead one runs no script events).
 
 ### `status.json`
 
@@ -525,6 +533,52 @@ equipped, the entities' state (the goblin's patrol goes on from where it was). N
 (irrelevant in VR). The verification waits 4 s after a `loadslot` before its screenshot (the level fades
 in from black, TRAPS.md).
 
+## The test playground (#321)
+
+One generated room for combat, magic and item tests, in minutes and again and again, without walking
+the story. **Combat and magic headset tests run here.**
+
+```powershell
+.\scripts\run-windows.ps1 -Playground -StartSteamVR             # the owner in the headset: the playground, a fresh max-level hero
+.\scripts\dev\test-pr.ps1 <pr> -Playground -StartSteamVR        # the same for a PR under test
+.\scripts\run-windows.ps1 -Isolated -Playground -TestChannel -- --no-vr   # flat, with the channel
+.\scripts\dev\smoke-test.ps1 -Playground                       # a worker's check: GAMEPLAY in area 30
+.\scripts\dev\xrs-run.ps1 playground-levers                    # any sequence with @playground starts there
+```
+
+**What it is.** Our own level in area 30 (`PlaygroundArea`, `src/game/Levels.h`), built by
+[arx-level-generator](https://github.com/arx-tools/arx-level-generator) (MIT) from `scripts/dev/playground/`
+with the original game's textures by name. The repository holds only the generator; the level is
+generated on the machine that runs it into `%LOCALAPPDATA%\ArxFatalisVR\playground\<folder>-<hash>`
+(one per working copy) and passed to the game as `--data-dir <level> --loadlevel 30`. The first
+`-Playground` launch generates it (node 20+ needed, a few seconds); later launches reuse it until a
+generator source changes. No original level is touched: a launch without `-Playground` does not see it.
+
+**The room.** The hero starts at the south wall facing north.
+- **Ahead, the main table** (north wall): potions, food and a scroll of magic missile.
+- **Left, the weapons table** (west wall): one of every weapon of the game (32 classes, the list in
+  `layout.mjs`).
+- **The goblin** in the middle of the room: **peaceful** by default — it stands and takes hits without
+  fighting back.
+- **Two levers** on the north wall to the right of the main table, pulled by hand like any lever (#38):
+  - the **mode lever** (nearer the table): down = the goblin turns **aggressive** and attacks at once;
+    up = **peaceful** again (it is also healed and goes back to its spot);
+  - the **respawn lever**: the goblin is back at its spot, alive, with full life, in the mode it was in.
+    The mode lever does nothing while the goblin is dead — pull the respawn lever.
+- **The hero** is at the game's maximum level (10) and knows every rune; the level-up message shows at
+  the start (attribute points to spend in the book).
+- **Death costs nothing:** when the hero dies here he is back at the start at once, with full life and
+  mana, no death screen, no load; his level, runes, inventory and the room stay as they were.
+- **Damage numbers:** every hit on an NPC shows the damage over the target for about a second, in both
+  eyes, drawn over everything. Only here — the original levels show none.
+
+Checks: `playground-levers.xrs` (peaceful, the mode lever, the respawn lever, the hero's level and runes,
+the items), `playground-respawn.xrs` (death and back), `damage-numbers.xrs` / `damage-numbers-off.xrs`
+(numbers in both eyes, none in an original level). The channel's `playground` commands and status fields
+are under [Commands](#commands). CI runs these sequences only where node is on the runner's PATH; without
+it they are **NOT RUN** with a warning in the job summary, never a pass. The tester zip does not carry
+the playground yet (#359).
+
 ## The log banner
 
 Every `arx.log` starts with six `Key: value` lines (#115, #129 and #130, research rows F-18, F-98,
@@ -615,6 +669,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `cinematic.skip` | a development launch skips a `.cin` (#124) | `name`, `reason` |
 | `player.levelup` | the player gains a level | `level`, `xp` |
 | `player.death` | the player dies | `source` (entity id), `damage`, `type` (damage type flags) |
+| `player.respawn` | the player died in the test playground (#321) and is back at its start, alive, in the same frame | `x` `y` `z` (the start), `fromX` `fromZ` (where he died), `life` |
 | `player.combat` | the weapon is drawn / put away | `state=on\|off`, `weapon` |
 | `player.jump` / `player.crouch` | a jump starts / the crouch toggle (`C`, the right stick down in VR) changes (#74) | `state=on\|off` (crouch) |
 | `ui.inventory` / `ui.book` / `ui.container` / `ui.note` | opened or closed while playing | `state=open\|closed`; `bags=one\|all`, `page=stats\|spells\|map\|quests`, `entity` |
@@ -624,6 +679,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `spell.precast` | the player stores a spell | `spell`, `level` |
 | `spell.refused` | the player's spell does not launch | `spell`, `reason` (`runes-not-learned`, `no-mana` with `mana` / `cost`, `magic-disabled-by-level`, `spell-cannot-launch` — the spell's own silent check, `no-demon-within-900`, `not-implemented`) |
 | `melee.hit` | a weapon strike reaches an NPC and the player is the attacker or the target — one per swing (a VR swing: one per target it touches, #39) | `source`, `target`, `weapon`, `damage` (0 = the armour-class roll made it a miss), `aim` |
+| `damage.number` | a damage number over an NPC closes, only in the test playground (#321): every hit on an NPC shows its damage above the target for 1.2 s; hits on one target within 250 ms add up into one number, logged 250 ms after its first hit. `damageNumbers.visible` in the status: the numbers shown now | `entity`, `amount` (the hits' damage), `dealt` (the life taken: less on a killing blow), `hits`, `views` (the scene views it was drawn into in the last frame: 2 = both eyes), `x0` `y0` / `x1` `y1` (where in view 0 / 1 - the left / right eye image in VR - in pixels) |
 | `item.take` / `item.drop` | an item goes onto / off the cursor | `item`, `from=world\|inventory`; `how=throw\|drop\|place`, `count` |
 | `item.toinventory` | an item enters the player's inventory or the container the player has open | `item`, `container` |
 | `item.use` / `item.equip` | the player uses / equips an item | `item` |
@@ -1077,6 +1133,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 | `@pending #<issue> <step>` | a step the game cannot pass yet, because issue N builds the feature. Its failure is printed as `pending`; **once it passes the run fails** until the `@pending` is removed, so an expectation cannot go stale. Pick a step that fails for the right reason (a first version of `snap-turn` had a "turned back" step that passed trivially) |
 | `@sim <name>`, `@args <...>` | what `xrs-run.ps1` launches: the `scripts\dev\vrsim` script (default `idle`: no timed lines, no shots) and the arx.exe arguments (default `--loadlevel 10`); ignored while running |
 | `@save <name>` | start from this save of the test save library (#70; `smoke-test.ps1 -Save`, the only save of the isolated user directory), with `@args --loadslot 0`. Anything the **body** does — turning, walking — needs a first-person save: on level 10 the intro conversation's camera owns the view (TRAPS.md) |
+| `@playground` | start in the test playground (#321; `smoke-test.ps1 -Playground`: the generated level, area 30, a fresh max-level hero). CI runs it only where node is on the runner's PATH, else NOT RUN with a warning |
 
 Rules: a sequence waits for `state eq GAMEPLAY` and for `vr.sim.timelineFrame ge 270` (3 s) before its
 first shot — the level fades in from black (TRAPS.md). A timeout must carry its `s` (`60s`); a bare

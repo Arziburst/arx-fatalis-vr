@@ -1,0 +1,16 @@
+{
+  "name": "arxvr-playground",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Generates the Arx Fatalis VR test playground level (#321) from the owner's own game data",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "arx-level-generator": "20.1.0"
+  }
+}

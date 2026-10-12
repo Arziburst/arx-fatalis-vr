@@ -48,6 +48,10 @@
 	Use this working copy's own user and config directory (--user-dir / --config-dir) instead of the
 	player's Saved Games\Arx Libertatis. -UserDir names another directory.
 
+.PARAMETER Playground
+	Start the test playground (#321, scripts\dev\playground): generates the level with arx-level-generator when it
+	is missing or older than the generator, then starts a new game in it (--data-dir <level folder> --loadlevel 30).
+
 .PARAMETER UserDir
 	The user and config directory to use (implies -Isolated).
 
@@ -97,6 +101,7 @@ param(
 	[string]$DataDir,
 	[switch]$Fullscreen,
 	[switch]$Isolated,
+	[switch]$Playground,
 	[string]$UserDir,
 	[string[]]$Saves,
 	[string]$Save,
@@ -116,6 +121,11 @@ $ErrorActionPreference = 'Stop'
 $SourceDir = Split-Path -Parent $PSScriptRoot
 if (-not $BuildDir) { $BuildDir = Get-DefaultBuildDir $SourceDir $Config }
 if (-not $ArxArgs) { $ArxArgs = @() }
+if ($Playground) {
+	# The test playground (#321): the generated level's folder as a data dir, a new game in its area
+	. (Join-Path $PSScriptRoot 'dev\playground\playground-lib.ps1')
+	$ArxArgs = @(Get-ArxPlaygroundArgs (Initialize-ArxPlaygroundLevel)) + $ArxArgs
+}
 
 # Only this working copy's own fresh build (D-014)
 $copy = Get-ArxWorkingCopyInfo $SourceDir

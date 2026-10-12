@@ -1,3 +1,4 @@
+#Requires -Version 7
 # The rules of plan-next.ps1 (#187, D-021): which tasks of the MVP plan may start now. Pure functions - they take the text of
 # docs/vr/MVP.md, the board items, the open pull requests and the running agents as data and read nothing themselves, so
 # scripts/dev/test-plan-next.ps1 can run them on fixtures. Dot-source from plan-next.ps1:

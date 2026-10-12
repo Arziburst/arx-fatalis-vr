@@ -177,9 +177,18 @@ void VRGameInputTest::buttonActionsTest() {
 		CPPUNIT_ASSERT(!f.frame(downSet()).action(c.action));
 	}
 
-	// Magic mode is unbound by default (#43); bound, it is held like the others
+	// Magic mode (#43): held with the Index's left trackpad, as long as it is pressed, and not by the face buttons
 	CPPUNIT_ASSERT(!f.frame(downSet({ GiLeftA, GiLeftB, GiRightA, GiRightB })).action(GameAction::MagicMode));
-	f.frame(downSet());
+	f.settle();
+	const Control leftTrackpad = control(Hand::Left, ControlKind::Trackpad);
+	CPPUNIT_ASSERT(f.frame(downSet({ leftTrackpad })).action(GameAction::MagicMode));
+	CPPUNIT_ASSERT(f.frame(downSet({ leftTrackpad })).action(GameAction::MagicMode));
+	// a trigger held in the stance is still the click: the engine draws the rune with it
+	const GameInputState & drawing = f.frame(downSet({ leftTrackpad, control(Hand::Right, ControlKind::Trigger) }));
+	CPPUNIT_ASSERT(drawing.action(GameAction::MagicMode) && drawing.click);
+	CPPUNIT_ASSERT(!f.frame(downSet()).action(GameAction::MagicMode));
+	f.settle();
+	// Remapped, it is held like the others
 	ControlLayout layout = f.resolver.layout();
 	layout[Event::MagicMode] = Binding::single(control(Hand::Right, ControlKind::Trackpad));
 	f.resolver.setLayout(layout);

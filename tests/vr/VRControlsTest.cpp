@@ -467,10 +467,12 @@ void VRControlsTest::defaultLayoutTest() {
 	CPPUNIT_ASSERT_EQUAL(std::string("right.stick_down"), formatBinding(index[Event::CrouchToggle]));
 	CPPUNIT_ASSERT_EQUAL(std::string("left.grip+left.trigger"), formatBinding(index[Event::StashLeft]));
 	CPPUNIT_ASSERT_EQUAL(std::string("left.a"), formatBinding(index[Event::Menu]));
-	CPPUNIT_ASSERT(!index[Event::MagicMode].isBound());
+	// #43: magic mode held with the left hand - the Index's trackpad, the Touch's free X
+	CPPUNIT_ASSERT_EQUAL(std::string("left.trackpad"), formatBinding(index[Event::MagicMode]));
 
 	const ControlLayout touch = defaultLayout(ControllerType::Touch);
 	CPPUNIT_ASSERT_EQUAL(std::string("left.menu"), formatBinding(touch[Event::Menu]));
+	CPPUNIT_ASSERT_EQUAL(std::string("left.a"), formatBinding(touch[Event::MagicMode]));
 	CPPUNIT_ASSERT(touch[Event::Jump] == index[Event::Jump]);
 	CPPUNIT_ASSERT(findConflicts(touch).empty());
 
@@ -478,6 +480,7 @@ void VRControlsTest::defaultLayoutTest() {
 	CPPUNIT_ASSERT_EQUAL(std::string("right.trigger"), formatBinding(simple[Event::InteractRight]));
 	CPPUNIT_ASSERT_EQUAL(std::string("left.menu"), formatBinding(simple[Event::Menu]));
 	CPPUNIT_ASSERT(!simple[Event::Jump].isBound());
+	CPPUNIT_ASSERT(!simple[Event::MagicMode].isBound());
 
 	CPPUNIT_ASSERT(defaultLayout(ControllerType::Unknown) == index);
 

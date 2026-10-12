@@ -24,7 +24,9 @@
 
 #if ARX_HAVE_OPENXR
 
+#include <array>
 #include <string>
+#include <vector>
 
 #include "math/Types.h"
 #include "vr/MirrorGeometry.h"
@@ -93,6 +95,33 @@ public:
 		glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f); //!< the quad faces its +z axis
 	};
 
+	//! The images of the quad layers drawn after the flat frame: the menu pointer's beam, the hand reticles
+	enum OverlayImage : size_t {
+		BeamImage,
+		ReticleDimImage,
+		ReticleBrightImage,
+		OverlayImageCount
+	};
+
+	/*!
+	 * Keep a copy of a static layer image (premultiplied RGBA8, rows bottom to top as the layer's image
+	 * is filled): those images are filled once and never read back, so the mirror gets its own
+	 * copy. A no-op while the mirror is off.
+	 */
+	void setOverlayImage(OverlayImage image, const Vec2i & size, const u8 * rgba);
+
+	/*!
+	 * A quad layer after the flat frame (#271), in the world-locked space the eyes were located in
+	 * for the frame; always blended by its alpha
+	 */
+	struct Overlay {
+		OverlayImage image = BeamImage;
+		float width = 0.f;  //!< meters
+		float height = 0.f; //!< meters
+		Vec3f position = Vec3f(0.f);
+		glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f); //!< the quad faces its +z axis
+	};
+
 	/*!
 	 * \brief Draw what the mirrored eye sees into the window's back buffer
 	 *
@@ -102,15 +131,22 @@ public:
 	 * \param fov            the mirrored eye's field of view for this frame
 	 * \param eyePosition    the mirrored eye's position in the quad's space, for placing the quad
 	 * \param eyeOrientation the mirrored eye's orientation in the quad's space
+	 * \param overlays       the quad layers after the flat frame in submission order, drawn over it;
+	 *                       placed from \a overlayEyePosition / \a overlayEyeOrientation, the eye in
+	 *                       the world-locked space (which is not the quad's space for a head-locked quad)
 	 */
 	void draw(const Vec2i & windowSize, const MirrorFov & fov, const Vec3f & eyePosition,
-	          const glm::quat & eyeOrientation, const Quad & quad);
+	          const glm::quat & eyeOrientation, const Quad & quad, const std::vector<Overlay> & overlays,
+	          const Vec3f & overlayEyePosition, const glm::quat & overlayEyeOrientation);
 
 	//! \return "on", or why the window shows the flat frame instead
 	const std::string & state() const { return m_state; }
 
 	//! \return frames mirrored since the game started
 	u64 frames() const { return m_frames; }
+
+	//! eturn the overlay quads (ef Overlay) the last mirrored frame drew; 0 when none was in view
+	size_t overlaysDrawn() const { return m_overlaysDrawn; }
 
 private:
 
@@ -122,6 +158,7 @@ private:
 	size_t m_eye = 1;
 	std::string m_state = "flat mode";
 	u64 m_frames = 0;
+	size_t m_overlaysDrawn = 0; //!< overlay quads drawn by the last mirrored frame
 	bool m_haveEye = false;   //!< the eye texture holds this frame's mirrored eye
 	bool m_haveFlat = false;  //!< the flat texture holds this frame's flat frame
 	bool m_logged = false;    //!< the geometry of the first mirrored frame was logged
@@ -130,6 +167,7 @@ private:
 	Vec2i m_eyeSize = Vec2i(0);
 	GLuint m_flatTexture = 0;
 	Vec2i m_flatSize = Vec2i(0);
+	std::array<GLuint, OverlayImageCount> m_overlayTextures = { };
 
 };
 

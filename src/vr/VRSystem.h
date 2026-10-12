@@ -28,6 +28,7 @@
 #include "math/Types.h"
 #include "platform/Platform.h"
 #include "vr/EyeProjection.h"
+#include "vr/FingerCurl.h"
 #include "vr/FramePacing.h"
 #include "vr/Haptics.h"
 #include "vr/HeadPose.h"
@@ -245,6 +246,8 @@ const FrameViews & frameViews();
 struct FrameHands {
 	std::array<bool, HandCount> tracked = { { false, false } }; //!< the runtime located the hand with a valid position
 	std::array<HandSample, HandCount> hands;                   //!< left, right - in the OpenXR LOCAL space
+	//! The hand joints of XR_EXT_hand_tracking (#305), in the same space and for the same time; \c valid per hand when all were located
+	std::array<HandJoints, HandCount> joints;
 };
 
 /*!
@@ -253,6 +256,19 @@ struct FrameHands {
  *         frame, or while a controller is off
  */
 const FrameHands & frameHands();
+
+//! XR_EXT_hand_tracking as status.json reports it (#305)
+struct HandJointsStatus {
+	bool extension = false;  //!< the runtime lists the extension and the instance has its functions
+	bool supported = false;  //!< the headset reports hand tracking
+	bool trackers = false;   //!< a tracker per hand exists on the session
+	std::array<bool, HandCount> active = { { false, false } }; //!< the joints were located in the last frame
+	u64 locates = 0;         //!< frames the joints were asked for
+	std::array<u64, HandCount> activeFrames = { { 0, 0 } };   //!< frames with active joints per hand
+	u32 failures = 0;        //!< failed locate calls
+};
+
+const HandJointsStatus & handJointsStatus();
 
 //! \return true while the game runs in VR, i.e. an OpenXR session exists
 bool isEnabled();
@@ -295,6 +311,7 @@ struct MirrorStatus {
 	std::string state = "flat mode"; //!< "on", or why the window shows the flat frame ("off: ...")
 	std::string eye = "right";       //!< the mirrored eye (vr_mirror_eye; right by default)
 	u64 frames = 0;                  //!< frames mirrored into the window since the game started
+	size_t overlays = 0;             //!< quad layers after the flat frame (pointer beam, reticles) in the last mirrored frame
 };
 
 MirrorStatus mirrorStatus();

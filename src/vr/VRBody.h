@@ -25,6 +25,7 @@
 
 #include "math/Types.h"
 #include "platform/Platform.h"
+#include "vr/FingerCurl.h"
 #include "vr/HeadPose.h"
 #include "vr/VRControls.h"
 
@@ -55,6 +56,13 @@ struct Skeleton;
  *
  * Two poses per hand (F-185): the controller (where the player's hand is) and the posed wrist
  * (where the model's hand is); both are in status.json with the error between them.
+ *
+ * The fingers (#305, D-041): the model's finger groups under each hand - the thumb, the index
+ * finger and the three-finger block, found as the hand group's children by name - bend about the
+ * knuckle line by what the real fingers do: the hand joints of XR_EXT_hand_tracking when the
+ * runtime gives them, the trigger, grip and thumb-rest values when it does not (vr/FingerCurl.h),
+ * and closed on the grip while the hand holds a weapon (#75). The engine's animation no longer
+ * moves the finger groups of a posed arm.
  */
 namespace vr {
 
@@ -90,13 +98,16 @@ bool isHeadVertex(EERIE_3DOBJ * obj, VertexId vertex);
  */
 size_t bodyCapStart(const EERIE_3DOBJ * obj);
 
-/*!
- * \brief Where the posed hand ended up, after the vertices were transformed - for status.json
- * \param palm the palm attach vertex in the world (on the controller's grip when the arm reached it)
- * \param tip the vertex farthest along the hand from the wrist: the fingertips
- * \return false without a bound model or a chain for the hand
- */
-bool handLandmarks(Hand hand, Vec3f & palm, Vec3f & tip);
+//! Where the posed hand ended up, after the vertices were transformed - for status.json
+struct HandLandmarks {
+	Vec3f palm = Vec3f(0.f);  //!< the palm attach vertex in the world (on the controller's grip when the arm reached it)
+	Vec3f tip = Vec3f(0.f);   //!< the vertex farthest along the hand from the wrist at rest: a fingertip
+	float tipAlong = 0.f;     //!< the fingertip from the wrist along the hand's long axis (units): shrinks as the fingers curl (#305)
+	float tipOut = 0.f;       //!< the fingertip from the wrist towards the palm's face (units): grows as they curl
+};
+
+//! \return false without a bound model, a chain for the hand, or a pose this frame
+bool handLandmarks(Hand hand, HandLandmarks & landmarks);
 
 /*!
  * \return the hand's axes read from the bound model's mesh at rest (the frame the IK puts on the grip), or
@@ -108,6 +119,12 @@ const HandFrame * handRestFrame(Hand hand);
 void setSimulatedHand(Hand hand, const HandSample & sample);
 void clearSimulatedHand(Hand hand);
 
+/*!
+ * \brief A hand's controller for this frame: located with the eyes (F-21), else the simulated one
+ * \return the source - "xr" or "sim" - or nullptr when the hand has neither
+ */
+const char * controllerSample(Hand hand, HandSample & sample);
+
 //! One arm as status.json reports it
 struct PlayerArmStatus {
 	const char * source = "none"; //!< xr (a located controller), sim (handpose), none
@@ -115,6 +132,7 @@ struct PlayerArmStatus {
 	bool posed = false;           //!< the arm was posed by the IK this frame (else the engine's animation)
 	HandSample sample;            //!< the controller in the OpenXR LOCAL space (meters)
 	Vec3f controller = Vec3f(0.f); //!< the grip in the world (units) - where the player's hand is
+	glm::quat grip = glm::quat(1.f, 0.f, 0.f, 0.f); //!< the grip's rotation in engine axes (HandPlacement::orientation)
 	Vec3f target = Vec3f(0.f);    //!< where the wrist should be for the palm to sit on the grip
 	Vec3f shoulder = Vec3f(0.f);  //!< the posed joints (units) - where the model's arm is
 	Vec3f elbow = Vec3f(0.f);
@@ -124,6 +142,13 @@ struct PlayerArmStatus {
 	float error = 0.f;            //!< wrist to target: 0 when the hand is where the controller is
 	float slide = 0.f;            //!< how far the shoulder slid towards an out-of-reach target
 	bool stretched = false;
+	// The fingers (#305)
+	const char * fingerSource = "none"; //!< joints (XR_EXT_hand_tracking), controls (trigger, grip, thumb rest), held (a weapon in the hand), none
+	bool fingerGroups = false;    //!< the model has finger groups under this hand
+	bool joints = false;          //!< the runtime located this hand's joints this frame
+	bool holds = false;           //!< the hand holds a weapon: the fingers are closed on its grip
+	FingerCurl curl;              //!< the segments' bend this frame (degrees), approaching \c curlTarget
+	FingerCurl curlTarget;        //!< what the source asked for
 };
 
 //! The body as status.json reports it (the look and the body yaw of #25 are vr::BodyStatus in HeadTracking.h)
@@ -131,9 +156,11 @@ struct PlayerBodyStatus {
 	bool bound = false;           //!< arm chains were found on the player model
 	std::string model;            //!< the model file bound to
 	std::string chains;           //!< the group names of both chains, e.g. "left: left_arm>left_forearm>left_hand; right: ..."
+	std::string fingers;          //!< the finger groups per hand, e.g. "right: thumb right_hand_thumb, index right_hand_index_root>..., block ..."
 	bool active = false;          //!< the body was shifted and at least one arm posed this frame
 	const char * inactive = "";   //!< why not, when not
 	u64 posedFrames = 0;          //!< frames with at least one posed arm since the game started
+	u64 poseCalls = 0;            //!< frames the player's skeleton was posed at all (a still count: the model was not animated)
 	Vec3f shift = Vec3f(0.f);     //!< this frame's horizontal shift of the body (units)
 	float facingYaw = 0.f;        //!< engine degrees [0, 360): where the model was turned to face (#25's body yaw)
 	std::array<PlayerArmStatus, HandCount> hands; //!< left, right

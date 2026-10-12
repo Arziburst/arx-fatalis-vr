@@ -116,18 +116,25 @@ jobs:
       shell: pwsh
       run: ./scripts/package-tester.ps1 -NoBuild -OutDir "$env:GITHUB_WORKSPACE/dist"
 
+    # The uploads never fail the job (#360): an upload can fail for reasons outside the change (the artifact
+    # storage quota of the private repository), and the build and the game checks above are the gate. The last
+    # step reports a failed upload as a warning in the job summary.
     - name: Upload tester package
+      id: upload-tester-build
       if: steps.scope.outputs.heavy == 'true'
+      continue-on-error: true
       uses: actions/upload-artifact@v4
       with:
         name: tester-build
         path: dist/*.zip
         if-no-files-found: error
-        retention-days: 14
+        retention-days: 7
 
     # The debug symbols of this exact exe (BUILD.txt holds its sha256), kept long enough to read a tester crash (#132)
     - name: Upload debug symbols
+      id: upload-tester-symbols
       if: steps.scope.outputs.heavy == 'true'
+      continue-on-error: true
       uses: actions/upload-artifact@v4
       with:
         name: tester-symbols
@@ -135,11 +142,30 @@ jobs:
         if-no-files-found: error
         retention-days: 90
 
+    # Read only when a run fails, so kept briefly (#360)
     - name: Upload game check evidence
+      id: upload-game-checks
       if: always()
+      continue-on-error: true
       uses: actions/upload-artifact@v4
       with:
         name: game-checks
         path: ci-artifacts
         if-no-files-found: ignore
-        retention-days: 14
+        retention-days: 3
+
+    - name: Report failed uploads
+      if: always()
+      shell: pwsh
+      env:
+        TESTER_BUILD: ${{ steps.upload-tester-build.outcome }}
+        TESTER_SYMBOLS: ${{ steps.upload-tester-symbols.outcome }}
+        GAME_CHECKS: ${{ steps.upload-game-checks.outcome }}
+      run: |
+        $uploads = [ordered]@{ 'tester-build' = $env:TESTER_BUILD; 'tester-symbols' = $env:TESTER_SYMBOLS; 'game-checks' = $env:GAME_CHECKS }
+        foreach ($name in $uploads.Keys) {
+          if ($uploads[$name] -ne 'failure') { continue }
+          $line = "Upload of the artifact '$name' failed - not a build failure (#360); its step log says why (often the artifact storage quota)"
+          Write-Output "::warning::$line"
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- :warning: $line"
+        }

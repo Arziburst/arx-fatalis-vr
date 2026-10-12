@@ -254,7 +254,7 @@ if ($SkipVerify) {
 	$launchTime = Get-Date
 	$argList = @()
 	if ($DataDir) { $argList += '--data-dir', "`"$DataDir`"" }
-	$argList += '--windowed', '--no-vr', '--test-dir', "`"$verifyTest`"", '--user-dir', "`"$verifyUser`"", '--config-dir', "`"$verifyUser`"", '--loadlevel', '10'
+	$argList += '--windowed', '--no-vr', '--mute', '--test-dir', "`"$verifyTest`"", '--user-dir', "`"$verifyUser`"", '--config-dir', "`"$verifyUser`"", '--loadlevel', '10'
 	$savedPath = $env:PATH
 	try {
 		# What a tester's PC has: Windows and nothing else - no vcpkg, no compiler, no OpenXR SDK

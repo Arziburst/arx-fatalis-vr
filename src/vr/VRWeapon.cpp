@@ -25,6 +25,7 @@
 
 #include <glm/glm.hpp>
 
+#include "animation/AnimationRender.h"
 #include "core/GameEvent.h"
 #include "game/Entity.h"
 #include "game/EntityManager.h"
@@ -244,6 +245,40 @@ bool suppressArmAnimation(const Entity * io, const std::string & armAnimation) {
 		}
 	}
 	return suppress;
+}
+
+Entity * weaponInHand() {
+	return g_weapon.inHand ? g_weapon.weapon : nullptr;
+}
+
+bool placeHeldWeapon(Vec3f & hilt, Vec3f & tip) {
+
+	if(!g_weapon.inHand || !g_weapon.weapon) {
+		return false;
+	}
+	Entity * io = entities.player();
+	if(!io || !io->obj || !io->obj->m_skeleton) {
+		return false;
+	}
+	const EERIE_LINKED * link = findLink(io->obj, g_weapon.weapon);
+	if(!link || !link->lgroup || !link->obj || link->obj != g_weapon.weapon->obj) {
+		return false;
+	}
+	EERIE_3DOBJ * obj = link->obj;
+	if(obj->vertexWorldPositions.size() != obj->vertexlist.size()) {
+		return false;
+	}
+
+	// As Cedric_AnimateDrawEntityRender draws the player's linked objects
+	glm::quat rotation = io->obj->m_skeleton->bones[link->lgroup].anim.quat;
+	heldWeaponRotation(link->io, rotation);
+	TransformInfo t(io->obj->vertexWorldPositions[link->lidx].v, rotation, link->io ? link->io->scale : 1.f);
+	t.pos = t(obj->vertexlist[obj->origin].v - obj->vertexlist[link->lidx2].v);
+	DrawEERIEInter_ModelTransform(obj, t);
+
+	hilt = obj->vertexWorldPositions[link->lidx2].v;
+	tip = (g_weapon.corrected && obj == g_weapon.measuredObject) ? obj->vertexWorldPositions[g_weapon.tip].v : hilt;
+	return true;
 }
 
 const HeldWeaponStatus & heldWeaponStatus() {

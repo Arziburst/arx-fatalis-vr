@@ -1,0 +1,28 @@
+# VR settings from the main menu (#178): a plain launch on the simulated headset - the main menu's Options list has
+# "VR" after "Input", and the VR page lists every event with its binding for the simulated Index controllers.
+# (vr-remap.xrs reaches the same page through the pause menu.) The name is historical: the first version ran flat.
+@sim idle
+@args --skiplogo
+
+@until state eq MENU 60s
+@assert menuMode eq mainmenu
+@until vr.input.controllers eq index 30s
+# Whatever an earlier sequence left in this user directory (CI runs them all in one)
+vr-input default
+@frames 2
+
+menu options
+@until menuPage eq options 10s
+@frames 30
+@shot options
+
+menu vr
+@until menuPage eq vr 10s
+@frames 30
+@shot vr-menu
+@assert vr.input.layout.jump eq right.a
+@assert vr.input.conflicts eq 0
+
+menu none
+@until menuPage eq none 10s
+@assert errors eq 0

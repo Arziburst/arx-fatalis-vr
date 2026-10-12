@@ -3,6 +3,27 @@
 These are the agreed rules for developing the VR version. They apply to humans and to Claude alike.
 Update this file whenever the agreements change.
 
+## Working through the coordinator core
+
+Since 2026-10-11 the work runs through the coordinator core (`coordinator/` in the owner's copy:
+the core in `coordinator/core/`, the Arx rules in `coordinator/PROJECT.md`). **This section wins over
+any older text below** that mentions `/next-task`, `/accept-task`, `/reject-task`, `/review-pr`,
+`start-reviewer.ps1`, worktrees in `arx-fatalis-vr-wt` or workers merging their own PRs:
+
+- **The coordinator writes the task's contract** into the issue (a `## Contract` section, the core's
+  CONTRACT.md format: intent, ordered criteria each with its check — `oracle` / `review` / `owner` —,
+  non-goals, do-not-decide items, budget, `touches`). Workers no longer write their own Definition of done.
+- **A worker** is started by `scripts\dev\start-worker.ps1 <n>` as the session `#<n> worker: <title>`
+  with the worker role and the contract in its brief, in its own worktree
+  `E:\dev\arx-fatalis-vr\.claude\worktrees\ARXVR-<n>-<type>-<name>`. It follows this file for naming,
+  launches (D-014), building and testing; proves each `oracle` criterion itself; opens the PR; and sends
+  the coordinator the core's YAML report (each result `oracle` / `claim` / `owner`). **It never merges.**
+- **The verifier** (the core's role, as a subagent) checks the PR against the contract; findings go back
+  to the worker.
+- **The coordinator merges** on fully green CI and a confirmed verdict; `needs-vr-test` PRs only after the
+  owner's headset verdict. The owner's verdict reaches the worker through the coordinator.
+- Artifacts are in the owner's voice: no AI co-author lines (`attribution` off).
+
 ## Language
 
 All project artifacts are written in **English**: documentation, issues, epics, tasks, comments on issues,
@@ -71,10 +92,9 @@ One task per session, one pull request per task. The owner drives it with three 
 
 Start each task in a **new Claude Code session** in the owner's working copy, so every task starts
 with a clean context; everything a session needs to know lives in the repository and on the board.
-The session names itself after the task: a project hook (`.claude/settings.json` →
-`scripts/dev/hooks/session-title.ps1`) turns `/next-task 124` into the session title
-"ARXVR-124 <issue title>" (also for `/accept-task <n>` and `/reject-task <n>`), shown in `/resume`
-and the terminal tab.
+Workers are named by start-worker (`#<n> worker: <title>`). A project hook (`.claude/settings.json` →
+`scripts/dev/hooks/session-title.ps1`) names the coordinator's session "Coordinator" when it starts
+(`/coordinator`, `/new-cycle` or "новый цикл"); that name is the workers' report address.
 
 ### Roles
 
@@ -82,7 +102,8 @@ and the terminal tab.
   investigate. It writes the tasks, starts, briefs and follows the workers, triages, merges, cleans up
   and runs the work on its own while the usage limits last (D-013, D-022, D-027); the owner talks only
   to it, VR verdicts included, and triggers a cycle with **"новый цикл"** (or `/new-cycle`). Its
-  complete rule set: [COORDINATOR.md](COORDINATOR.md) (`/coordinator` on any machine).
+  complete rule set: [coordinator/](../../coordinator/) — the local core plus PROJECT.md and BINDINGS.md
+  (`/coordinator` on any machine).
 - **Worker session** — a fresh session per task, possibly with a different model. It implements exactly
   one task in its own PR (`/next-task <n>`), and handles the owner's verdict (`/accept-task`, `/reject-task`).
   In parallel mode the coordinator starts workers itself as background sessions
@@ -195,7 +216,7 @@ in the PR body (a line carrying the marker `d-new-literal` is left alone — for
 
 **Headset tests in batches** — the owner tests several PRs in one sitting, run by the coordinator
 (`test-pr.ps1 <pr> -Saves mvp-new-game -StartSteamVR`, one question per PR); the procedure, accept and
-reject: [COORDINATOR.md §6](COORDINATOR.md#6-headset-tests).
+reject: [coordinator/PROJECT.md](../../coordinator/PROJECT.md#acceptance--the-owners-headset-test).
 
 ### The safety hook (#185, D-021)
 
@@ -367,6 +388,8 @@ Helper scripts used by the commands:
 2. **Branch**: `ARXVR-<issue>-<type>-<short-name>` (e.g. `ARXVR-12-fix-rc-flags`), from `main`.
 3. **Commits** follow the [naming convention](#commit-and-pull-request-naming): `ARXVR-12 fix: ...`, `Refs #12` in the body.
 4. **Pull request** into `main`: title in the same format, PR template body with `Closes #12`, *What*, *How verified*, *How to test*.
+   After each meaningful push to an open PR (a fix after review or a headset verdict, a change of approach, a merge with
+   conflicts), add a short PR comment: what was done or fixed and how it was verified. Trivial pushes (typos, a re-run) need none.
 5. **CI and merge** — see [Pull requests, CI and merging](#pull-requests-ci-and-merging).
 6. **Done** = the definition of done is met and verified (build, launch, in-headset check — whatever applies). The task is closed and moves to *Done*.
 7. If a task is blocked, comment on it with exactly what blocks it and move it back to *Todo* / *Backlog*.

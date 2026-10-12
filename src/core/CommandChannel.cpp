@@ -44,8 +44,10 @@
 #include "core/TimeTypes.h"
 #include "core/Version.h"
 #include "game/Camera.h"
+#include "game/Damage.h"
 #include "game/EntityManager.h"
 #include "game/Inventory.h"
+#include "game/Levels.h"
 #include "game/NPC.h"
 #include "game/Player.h"
 #include "game/Spells.h"
@@ -55,8 +57,10 @@
 #include "graphics/data/Mesh.h"
 #include "graphics/image/Image.h"
 #include "gui/Console.h"
+#include "gui/DamageNumbers.h"
 #include "gui/Dragging.h"
 #include "gui/Interface.h"
+#include "gui/MainMenu.h"
 #include "gui/Menu.h"
 #include "gui/hud/PlayerInventory.h"
 #include "input/Input.h"
@@ -73,16 +77,20 @@
 #include "platform/Time.h"
 #include "scene/ChangeLevel.h"
 #include "scene/Interactive.h"
+#include "script/Script.h"
 #include "util/String.h"
 #include "vr/HeadTracking.h"
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
+#include "vr/VRMelee.h"
 #include "vr/VRReticle.h"
+#include "vr/VRRunes.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 #include "vr/VRWeapon.h"
 #include "vr/WorldScale.h"
+#include "vr/WristHud.h"
 #include "window/RenderWindow.h"
 
 extern bool START_NEW_QUEST;
@@ -104,6 +112,27 @@ const char * menuModeName(MenuMode mode) {
 		case Mode_CharacterCreation: return "charactercreation";
 	}
 	return "unknown";
+}
+
+//! The main menu's pages a test can open and read back (#178)
+const struct { MENUSTATE page; const char * name; } MenuPages[] = {
+	{ Page_None, "none" },
+	{ Page_Options, "options" },
+	{ Page_OptionsInput, "input" },
+	{ Page_OptionsVR, "vr" },
+};
+
+const char * menuPageName(MENUSTATE page) {
+	for(const auto & entry : MenuPages) {
+		if(entry.page == page) {
+			return entry.name;
+		}
+	}
+	return "other";
+}
+
+MENUSTATE currentMenuPage() {
+	return (g_mainMenu && g_mainMenu->m_window) ? g_mainMenu->m_window->currentPageId() : Page_None;
 }
 
 //! Counts logged errors and warnings so a test can assert on numbers without parsing the log
@@ -364,6 +393,15 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 	json.value("profile", sim.rig.profile);
 	json.value("focused", sim.rig.focused);
 	json.value("swapEyes", sim.rig.swapEyes);
+	// The real fingers the simulated hand trackers show (#305): joints on or off, how far closed (0 - 1)
+	for(size_t hand = 0; hand < 2; hand++) {
+		json.object(hand ? "rightFingers" : "leftFingers");
+		json.value("joints", sim.rig.fingers[hand].joints);
+		json.value("thumb", sim.rig.fingers[hand].curl.x);
+		json.value("index", sim.rig.fingers[hand].curl.y);
+		json.value("rest", sim.rig.fingers[hand].curl.z);
+		json.end();
+	}
 	json.object("actions");
 	for(const auto & [name, values] : sim.rig.actions) {
 		json.object(name);
@@ -458,6 +496,60 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 	json.end();
 }
 
+//! The test playground's entities (#321.2) tell the channel what they are: their instance scripts set the
+//! text variable pg_role ("npc", "lever_mode", "lever_respawn", scripts/dev/playground/build.mjs)
+Entity * findPlaygroundEntity(std::string_view role) {
+	for(Entity & entity : entities) {
+		if(GETVarValueText(entity.m_variables, "\xA3pg_role") == role) {
+			return &entity;
+		}
+	}
+	return nullptr;
+}
+
+//! The playground NPC fights: its instance script's aggro variable (the mode lever sets it)
+bool playgroundNpcAggressive(const Entity & npc) {
+	return GETVarValueLong(npc.m_variables, "\xA7" "aggro") == 1;
+}
+
+bool playerKnowsAllRunes() {
+	static constexpr RuneFlag runes[] = {
+		FLAG_AAM, FLAG_CETRIUS, FLAG_COMUNICATUM, FLAG_COSUM, FLAG_FOLGORA, FLAG_FRIDD, FLAG_KAOM, FLAG_MEGA, FLAG_MORTE,
+		FLAG_MOVIS, FLAG_NHI, FLAG_RHAA, FLAG_SPACIUM, FLAG_STREGUM, FLAG_TAAR, FLAG_TEMPUS, FLAG_TERA, FLAG_VISTA,
+		FLAG_VITAE, FLAG_YOK,
+	};
+	return std::all_of(std::begin(runes), std::end(runes), [](RuneFlag rune) {
+		return (player.rune_flags & rune) != 0;
+	});
+}
+
+//! status.json, area 30: the playground's NPC, its mode and the items in the room (#321.2)
+void writePlaygroundStatus(JsonWriter & json) {
+
+	size_t items = 0;
+	for(const Entity & entity : entities) {
+		if((entity.ioflags & IO_ITEM) && entity.show == SHOW_FLAG_IN_SCENE) {
+			items++;
+		}
+	}
+
+	const Entity * npc = findPlaygroundEntity("npc");
+	json.object("playground");
+	json.value("npc", npc ? npc->idString() : std::string("none"));
+	if(npc && npc->_npcdata) {
+		const IO_NPCDATA & data = *npc->_npcdata;
+		json.value("npcMode", playgroundNpcAggressive(*npc) ? "aggressive" : "peaceful");
+		json.value("npcAlive", data.lifePool.current > 0.f);
+		json.value("npcLife", data.lifePool.current);
+		json.value("npcLifeMax", data.lifePool.max);
+		// Back at the place the level put it (revive -i takes it there): within a step, floor plane only
+		json.value("npcAtSpot", glm::distance(Vec2f(npc->pos.x, npc->pos.z), Vec2f(npc->initpos.x, npc->initpos.z)) < 50.f);
+	}
+	json.value("items", items);
+	json.end();
+
+}
+
 std::string buildStatus(PlatformInstant now) {
 
 	JsonWriter json;
@@ -479,6 +571,7 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("warnings", g.counter ? g.counter->warnings.load() : 0u);
 
 	json.value("menuMode", menuModeName(ARXmenu.mode()));
+	json.value("menuPage", ARXmenu.mode() == Mode_MainMenu ? menuPageName(currentMenuPage()) : "none");
 	json.value("area", g_currentArea ? u32(g_currentArea) : 0u);
 	json.value("paused", g_gameTime.isPaused() != 0);
 	json.value("cinematic", isInCinematic());
@@ -495,6 +588,8 @@ std::string buildStatus(PlatformInstant now) {
 		}
 		json.value("life", player.lifePool.current);
 		json.value("lifeMax", player.lifePool.max);
+		json.value("level", int(player.level));
+		json.value("allRunes", playerKnowsAllRunes());
 		json.value("mana", player.manaPool.current);
 		json.value("manaMax", player.manaPool.max);
 		// Scripts block the controls during scripted scenes (the awakening of a new game): a save made then is not playable (#70)
@@ -517,6 +612,9 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("animSpeed", duration > 0.f ? glm::length(travel) / duration * 1000.f : 0.f);
 		}
 		json.end();
+		if(isPlaygroundArea(g_currentArea)) {
+			writePlaygroundStatus(json);
+		}
 		// The first-person camera after this frame's effects: bob = how far the camera left the stable head
 		// position (view bobbing), shake = the quake amplitude applied, fov in degrees (zoom) - the numbers
 		// the VR comfort policy (#76) keeps at 0 / cfg.ini fov
@@ -689,6 +787,7 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("state", mirror.state);
 	json.value("eye", mirror.eye);
 	json.value("frames", mirror.frames);
+	json.value("overlays", mirror.overlays);
 	json.end();
 	// The floating UI panel (#49): "world" while an open menu's panel is placed, its pose in the LOCAL space
 	{
@@ -867,23 +966,87 @@ std::string buildStatus(PlatformInstant now) {
 				json.end();
 			}
 			// where the posed hand's palm and fingertips ended up (after the vertices were transformed)
-			Vec3f palm(0.f);
-			Vec3f tip(0.f);
-			if(vr::handLandmarks(vr::Hand(hand), palm, tip)) {
-				const struct { const char * name; const Vec3f & point; } landmarks[] = { { "palm", palm }, { "tip", tip } };
-				for(const auto & landmark : landmarks) {
+			vr::HandLandmarks landmarks;
+			if(vr::handLandmarks(vr::Hand(hand), landmarks)) {
+				const struct { const char * name; const Vec3f & point; } points2[] = {
+					{ "palm", landmarks.palm }, { "tip", landmarks.tip }
+				};
+				for(const auto & landmark : points2) {
 					json.object(landmark.name);
 					json.value("x", landmark.point.x);
 					json.value("y", landmark.point.y);
 					json.value("z", landmark.point.z);
 					json.end();
 				}
+				json.value("tipAlong", landmarks.tipAlong);
+				json.value("tipOut", landmarks.tipOut);
 			}
 			json.value("reach", arm.reach);
 			json.value("armLength", arm.armLength);
 			json.value("error", arm.error);
 			json.value("slide", arm.slide);
 			json.value("stretched", arm.stretched);
+			// The fingers (#305): what they follow and how far each segment is bent (degrees)
+			json.object("fingers");
+			json.value("source", arm.fingerSource);
+			json.value("groups", arm.fingerGroups);
+			json.value("joints", arm.joints);
+			json.value("holds", arm.holds);
+			const struct { const char * name; const vr::FingerCurl & curl; } curls[] = {
+				{ "curl", arm.curl }, { "target", arm.curlTarget }
+			};
+			for(const auto & entry : curls) {
+				json.object(entry.name);
+				json.value("thumb", entry.curl.thumb);
+				json.value("indexRoot", entry.curl.indexRoot);
+				json.value("indexTip", entry.curl.indexTip);
+				json.value("fingersRoot", entry.curl.fingersRoot);
+				json.value("fingersTip", entry.curl.fingersTip);
+				json.end();
+			}
+			json.end();
+			json.end();
+		}
+		json.value("fingerGroups", body.fingers);
+		json.end();
+	}
+	// XR_EXT_hand_tracking (#305): whether the runtime gives hand joints and how often it did
+	{
+		const vr::HandJointsStatus & hands = vr::handJointsStatus();
+		json.object("hands");
+		json.value("extension", hands.extension);
+		json.value("supported", hands.supported);
+		json.value("trackers", hands.trackers);
+		json.value("locates", hands.locates);
+		json.value("failures", hands.failures);
+		for(size_t hand = 0; hand < vr::HandCount; hand++) {
+			json.object(vr::handName(vr::Hand(hand)));
+			json.value("active", hands.active[hand]);
+			json.value("activeFrames", hands.activeFrames[hand]);
+			json.end();
+		}
+		json.end();
+	}
+	// The rune trail (#43): the stance, the stroke the hand draws and the flares put at it
+	{
+		const vr::RuneTrailStatus & magic = vr::runeTrailStatus();
+		json.object("magic");
+		json.value("handsDraw", magic.handsDraw);
+		json.value("stance", magic.stance);
+		json.value("drawing", magic.drawing);
+		json.value("hand", magic.hand);
+		json.value("strokes", magic.strokes);
+		json.value("length", magic.length);
+		json.value("ms", magic.durationMs);
+		json.value("lastEnd", magic.lastEnd);
+		writeVec(json, "point", magic.point);
+		json.value("flares", magic.flares);
+		writeVec(json, "lastFlare", magic.lastFlare);
+		for(size_t hand = 0; hand < vr::HandCount; hand++) {
+			json.object(vr::handName(vr::Hand(hand)));
+			json.value("located", magic.located[hand]);
+			json.value("ignored", magic.ignored[hand]);
+			writeVec(json, "point", magic.points[hand]);
 			json.end();
 		}
 		json.end();
@@ -916,16 +1079,92 @@ std::string buildStatus(PlatformInstant now) {
 		}
 		// Distance from the hilt to the right palm, both taken in this one status write: a check that remembers
 		// the palm and asserts the hilt later compares two frames of a moving idle rig (#316)
-		Vec3f palm(0.f);
-		Vec3f palmTip(0.f);
-		if(vr::handLandmarks(vr::Hand::Right, palm, palmTip)) {
-			json.value("hiltToPalm", glm::distance(weapon.hilt, palm));
+		vr::HandLandmarks palm;
+		if(vr::handLandmarks(vr::Hand::Right, palm)) {
+			json.value("hiltToPalm", glm::distance(weapon.hilt, palm.palm));
 		}
 		json.value("bladeAngle", weapon.bladeAngle);
 		json.value("armAnimSuppressed", weapon.armAnimSuppressed);
 		json.value("armAnimation", weapon.armAnimation);
 		json.value("suppressedFrames", weapon.suppressedFrames);
 		json.value("combatMode", (player.Interface & INTER_COMBATMODE) != 0);
+		json.end();
+	}
+	// Physical melee (#39): the swing detector, the charge, the hits
+	{
+		const vr::MeleeStatus & melee = vr::meleeStatus();
+		json.object("melee");
+		json.value("active", melee.active);
+		json.value("refused", melee.refused);
+		json.value("swinging", melee.swinging);
+		json.value("kind", melee.kind);
+		json.value("speed", melee.speed);
+		json.value("peak", melee.peak);
+		json.value("factor", melee.factor);
+		json.value("swings", melee.swings);
+		json.value("gaps", melee.gaps);
+		json.value("jumps", melee.jumps);
+		json.value("nearMisses", melee.nearMisses);
+		json.value("lastNearMiss", melee.lastNearMiss);
+		json.object("charge");
+		json.value("held", melee.chargeHeld);
+		json.value("charging", melee.charging);
+		json.value("spent", melee.chargeSpent);
+		json.value("seconds", melee.chargeSeconds);
+		json.value("ratio", melee.chargeRatio);
+		json.value("fullAimSeconds", melee.fullAimSeconds);
+		json.end();
+		json.value("hits", melee.hits);
+		json.value("contacts", melee.contacts);
+		json.value("chargedHits", melee.chargedHits);
+		json.object("last");
+		json.value("target", melee.lastTarget);
+		json.value("aim", melee.lastAim);
+		json.value("damage", melee.lastDamage);
+		json.value("charged", melee.lastCharged);
+		json.value("speed", melee.lastSpeed);
+		json.value("swing", melee.lastSwing);
+		json.end();
+		json.object("params");
+		json.value("swingSpeed", melee.params.startSpeed);
+		json.value("endSpeed", melee.params.endSpeed);
+		json.value("fullSpeed", melee.params.fullSpeed);
+		json.value("weakAim", melee.params.weakAim);
+		json.value("targetCooldown", melee.params.targetCooldown);
+		json.end();
+		json.value("placed", melee.placed);
+		const struct { const char * name; const Vec3f & point; } points[] = { { "hilt", melee.hilt }, { "tip", melee.tip } };
+		for(const auto & point : points) {
+			json.object(point.name);
+			json.value("x", point.point.x);
+			json.value("y", point.point.y);
+			json.value("z", point.point.z);
+			json.end();
+		}
+		json.end();
+	}
+	{
+		// Health and mana on the left wrist (#116): shown instead of the orbs, and how visible from the eyes
+		const vr::WristVitalsStatus & wrist = vr::wristVitalsStatus();
+		json.object("wrist");
+		json.value("shown", wrist.shown);
+		json.value("hidden", wrist.hidden);
+		json.value("health", wrist.health);
+		json.value("mana", wrist.mana);
+		json.value("facingDeg", wrist.facingDeg);
+		json.value("alpha", wrist.alpha);
+		json.value("drawnViews", wrist.drawnViews);
+		// the middle of the bars (units) and their axes in the world (engine: x right, y down, z forward)
+		const struct { const char * name; const Vec3f & v; } vectors[] = {
+			{ "center", wrist.center }, { "normal", wrist.normal }, { "across", wrist.across }, { "along", wrist.along },
+		};
+		for(const auto & vector : vectors) {
+			json.object(vector.name);
+			json.value("x", vector.v.x);
+			json.value("y", vector.v.y);
+			json.value("z", vector.v.z);
+			json.end();
+		}
 		json.end();
 	}
 	{
@@ -962,6 +1201,10 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("left", analog.grip[size_t(vr::Hand::Left)]);
 		json.value("right", analog.grip[size_t(vr::Hand::Right)]);
 		json.end();
+		json.object("thumbTouch");
+		json.value("left", analog.thumbTouch[size_t(vr::Hand::Left)]);
+		json.value("right", analog.thumbTouch[size_t(vr::Hand::Right)]);
+		json.end();
 		json.object("presses");
 		for(size_t i = 0; i < vr::EventCount; i++) {
 			json.value(vr::eventName(vr::Event(i)), controls.presses(vr::Event(i)));
@@ -972,6 +1215,39 @@ std::string buildStatus(PlatformInstant now) {
 			json.value(vr::eventName(vr::Event(i)), vr::formatBinding(controls.layout()[vr::Event(i)]));
 		}
 		json.end();
+		// The player's remapping in the VR settings (#178): saved per controller type, conflicts, the capture
+		json.value("remapped", vr::layoutRemapped());
+		json.value("layoutFile", vr::layoutFileName(vr::controllerType()));
+		{
+			const std::vector<vr::Conflict> conflicts = vr::findConflicts(controls.layout());
+			std::string list;
+			for(const vr::Conflict & conflict : conflicts) {
+				list += (list.empty() ? "" : " ") + std::string(vr::eventName(conflict.first)) + '+'
+				        + vr::eventName(conflict.second);
+			}
+			json.value("conflicts", conflicts.size());
+			json.value("conflictList", list);
+		}
+		{
+			const vr::BindingCapture & capture = vr::capture();
+			const char * state = "idle";
+			switch(capture.state()) {
+				case vr::BindingCapture::State::Idle: state = "idle"; break;
+				case vr::BindingCapture::State::Waiting: state = "waiting"; break;
+				case vr::BindingCapture::State::Holding: state = "holding"; break;
+				case vr::BindingCapture::State::Done: state = "done"; break;
+				case vr::BindingCapture::State::Cancelled: state = "cancelled"; break;
+			}
+			json.object("capture");
+			json.value("state", state);
+			json.value("event", vr::eventName(vr::captureEvent()));
+			json.value("binding", vr::formatBinding(capture.binding()));
+			json.value("refused", capture.refused() == vr::Binding::None ? std::string()
+			                                                            : vr::controlName(capture.refused()));
+			json.value("why", capture.refusedWhy());
+			json.value("count", vr::captureCount());
+			json.end();
+		}
 		// What the engine was given (#74): held actions, buttons and keys; the move vector and turn axis
 		const vr::GameInputState & game = vr::gameInput();
 		json.object("game");
@@ -1063,6 +1339,11 @@ std::string buildStatus(PlatformInstant now) {
 	if(vr::isSimulated()) {
 		writeSimStatus(json, vr::simStatus());
 	}
+	json.end();
+
+	// The playground's damage numbers (#321): how many are shown now (none outside the playground)
+	json.object("damageNumbers");
+	json.value("visible", u64(damagenumbers::visible()));
 	json.end();
 
 	// Game event log (#130): how many events of each name happened, logged or not
@@ -1533,6 +1814,30 @@ std::string execute(std::string_view line) {
 		return std::string();
 	}
 
+	if(word == "menu") {
+		// Open a page of the main / pause menu as a click on its entry would (#178): none, options, input,
+		// vr; "pause" opens the pause menu from the game, as Escape does
+		std::string name(rest);
+		util::makeLowercase(name);
+		if(name == "pause") {
+			if(ARXmenu.mode() != Mode_InGame || !g_currentArea) {
+				return refuse("menu pause: needs a running game");
+			}
+			ARX_MENU_Launch(true);
+			return std::string();
+		}
+		if(ARXmenu.mode() != Mode_MainMenu || !g_mainMenu) {
+			return refuse(std::string("menu: needs the main or pause menu, mode is ") + menuModeName(ARXmenu.mode()));
+		}
+		for(const auto & entry : MenuPages) {
+			if(name == entry.name) {
+				g_mainMenu->requestPage(entry.page);
+				return std::string();
+			}
+		}
+		return refuse("menu: expected pause, none, options, input or vr, got \"" + name + "\"");
+	}
+
 	if(word == "ui") {
 		// What the inventory key does, for tests without a keyboard (#130); the book has the
 		// script command "book open|close"
@@ -1782,6 +2087,87 @@ std::string execute(std::string_view line) {
 		player.angle.setPitch(angle.getPitch());
 		LogInfo << "[channel] player looks at " << rest << " (yaw " << angle.getYaw() << ", pitch " << angle.getPitch() << ")";
 		return std::string();
+	}
+
+	if(word == "place") {
+		// place <entity> <ahead> [<right>]: an entity on the floor ahead of the player (units along the player's
+		// heading, and to its right), facing the player - a target in reach for melee checks (#39)
+		if(currentState() != GameState::Gameplay || !entities.player()) {
+			return refuse(std::string("place: needs a level on screen (state ") + gameStateName(currentState()) + ")");
+		}
+		std::istringstream iss{std::string(rest)};
+		std::string id;
+		float ahead = 0.f, right = 0.f;
+		if(!(iss >> id >> ahead)) {
+			return refuse("place: expected <entity> <ahead> [<right>], got \"" + std::string(rest) + "\"");
+		}
+		iss >> right;
+		Entity * target = entities.getById(id);
+		if(!target || target == entities.player()) {
+			return refuse("place: unknown entity \"" + id + "\"");
+		}
+		const float yaw = player.angle.getYaw();
+		const Vec3f forward = angleToVectorXZ(yaw);
+		const Vec3f side = angleToVectorXZ(yaw - 90.f);
+		const Vec3f pos = player.basePosition() + forward * ahead + side * right;
+		ARX_INTERACTIVE_Teleport(target, pos);
+		target->angle.setYaw(MAKEANGLE(yaw + 180.f));
+		LogInfo << "[channel] " << id << " placed at " << pos.x << " " << pos.y << " " << pos.z << " (" << ahead
+		        << " ahead, " << right << " right of the player)";
+		return std::string();
+	}
+
+	if(word == "playground") {
+		// playground pull mode|respawn | kill | place <ahead> [<right>] | hit <n>: the test playground's NPC and
+		// levers (#321.2). pull sends the lever what a hand pull sends it (Interface.cpp: SM_ACTION from the player)
+		if(!isPlaygroundArea(g_currentArea) || !entities.player()) {
+			return refuse("playground: needs the playground level (area 30) on screen");
+		}
+		std::string_view args;
+		std::string_view what = firstWord(rest, args);
+		Entity * npc = findPlaygroundEntity("npc");
+		if(what == "pull") {
+			std::string role = "lever_" + std::string(args);
+			Entity * lever = (args == "mode" || args == "respawn") ? findPlaygroundEntity(role) : nullptr;
+			if(!lever) {
+				return refuse("playground pull: expected mode or respawn, got \"" + std::string(args) + "\"");
+			}
+			SendIOScriptEvent(entities.player(), lever, SM_ACTION);
+			LogInfo << "[channel] playground: " << lever->idString() << " pulled (" << args << ")";
+			return std::string();
+		}
+		if(!npc || !npc->_npcdata) {
+			return refuse("playground " + std::string(what) + ": the level has no NPC");
+		}
+		if(what == "kill") {
+			ARX_DAMAGES_ForceDeath(*npc, entities.player());
+			return std::string();
+		}
+		if(what == "place") {
+			std::istringstream iss{std::string(args)};
+			float ahead = 0.f, right = 0.f;
+			if(!(iss >> ahead)) {
+				return refuse("playground place: expected <ahead> [<right>], got \"" + std::string(args) + "\"");
+			}
+			iss >> right;
+			const float yaw = player.angle.getYaw();
+			const Vec3f pos = player.basePosition() + angleToVectorXZ(yaw) * ahead + angleToVectorXZ(yaw - 90.f) * right;
+			ARX_INTERACTIVE_Teleport(npc, pos);
+			npc->angle.setYaw(MAKEANGLE(yaw + 180.f));
+			LogInfo << "[channel] playground: " << npc->idString() << " placed at " << pos.x << " " << pos.y << " " << pos.z;
+			return std::string();
+		}
+		if(what == "hit") {
+			float damage = 0.f;
+			std::istringstream iss{std::string(args)};
+			if(!(iss >> damage) || damage <= 0.f) {
+				return refuse("playground hit: expected a damage greater than 0, got \"" + std::string(args) + "\"");
+			}
+			// What a weapon hit does to the NPC (Equipment.cpp), without the weapon
+			damageNpc(*npc, damage, entities.player(), nullptr, DAMAGE_TYPE_METAL, &npc->pos);
+			return std::string();
+		}
+		return refuse("playground: expected pull, kill, place or hit, got \"" + std::string(what) + "\"");
 	}
 
 	if(word == "loadlevel") {

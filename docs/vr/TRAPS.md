@@ -8,6 +8,19 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-12 — An instant `vr-sim hand ... pos` set-up move counts as a melee swing on a busy runner (#349)
+
+**Symptom:** `melee-swing.xrs` failed on CI at its first `@assert vr.melee.swings eq 0` for runs in a row with only
+docs merged; `melee.swing` reported a swing with `peak=40.88` (above the 20 m/s jump speed), `status.json` had
+`jumps=0`, and the run had a 99.5 ms frame gap just before the move. The green runs before had `jumps=1`.
+**Cause:** an instant move of a simulated hand is a tracking jump only when its frame is short: the detector checks a
+step's raw speed against 20 m/s, so 0.43 m over an 11 ms frame (39 m/s) is dropped, but over a 22 ms frame (45 fps,
+the runner shares the PC with builds and other games) it is 19.5 m/s, and over a 99 ms gap 4.3 m/s — a real swing
+(reproduced on purpose with `vr-sim rate 45`). The peak's 40.88 is that move divided by the next frame's step
+(the median of three lags one sample, #352).
+**Do:** in a melee sequence move the hand in a ramp only (`vr-sim @+1-60 hand right pos ...`: slow, frame by frame);
+reproduce a slow runner with `vr-sim rate 45` in a scratch copy of the sequence.
+
 ## 2026-10-10 — An `.xrs` `@log` step misses a game event that is in `arx.log` (#43)
 
 **Symptom:** `@log GameEvent:.*magic\.stance state=on hands=true` failed with "no log line matched" while

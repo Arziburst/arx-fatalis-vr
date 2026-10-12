@@ -107,6 +107,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "util/Cast.h"
 #include "util/HandleContainer.h"
+#include "vr/VRInput.h"
 
 
 class TextureContainer;
@@ -446,6 +447,10 @@ float damagePlayer(float dmg, DamageType type, Entity * source) {
 		SendIOScriptEvent(source, entities.player(), SM_OUCH, getOuchEventParameter(entities.player()));
 		float power = entities.player()->dmg_sum / player.m_lifeMaxWithoutMods * 220.f;
 		AddQuakeFX(power * 3.5f, 500ms + 3ms * power, Random::getf(200.f, 300.f) + power, false);
+		// Both controllers, stronger with the damage since the last ouch - at most every 500 ms (#42)
+		if(entities.player()->dmg_sum > 0.f) {
+			vr::haptic(vr::HapticEvent::HitTaken, entities.player()->dmg_sum / player.m_lifeMaxWithoutMods);
+		}
 		entities.player()->dmg_sum = 0.f;
 	}
 	

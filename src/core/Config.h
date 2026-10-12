@@ -235,6 +235,7 @@ public:
 		float vrRunAbove; //!< VR: a sneaking stick walk runs at this deflection or more (#33, D-019)
 		QuickLevelTransition quickLevelTransition;
 		bool allowConsole;
+		float vrHapticStrength; //!< VR: the master strength of the controllers' vibration (#42); 0 = off, 1 = the table
 		bool vrSmoothTurn; //!< VR: the right stick turns smoothly instead of in snaps (#32)
 		float vrSnapTurnAngle; //!< VR: degrees per snap turn (#32)
 		float vrSmoothTurnSpeed; //!< VR: smooth turn degrees per second at full deflection (#32)

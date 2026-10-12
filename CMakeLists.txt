@@ -1265,6 +1265,7 @@ set(VR_SOURCES
 	src/vr/FramePacing.cpp
 	src/vr/HandTracking.cpp
 	src/vr/HandReticle.cpp
+	src/vr/Haptics.cpp
 	src/vr/HeadLean.cpp
 	src/vr/HeadPose.cpp
 	src/vr/HeadReferenceGate.cpp

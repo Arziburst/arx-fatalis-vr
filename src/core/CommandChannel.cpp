@@ -433,6 +433,19 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 	json.value("syncs", sim.syncs);
 	json.end();
 
+	// The controllers' vibration as the simulated runtime played it (#42)
+	json.object("haptics");
+	for(size_t hand = 0; hand < 2; hand++) {
+		json.object(hand == 0 ? "left" : "right");
+		json.value("pulses", sim.haptics[hand].pulses);
+		json.value("stops", sim.haptics[hand].stops);
+		json.value("amplitude", sim.haptics[hand].amplitude);
+		json.value("ms", sim.haptics[hand].ms);
+		json.value("hz", sim.haptics[hand].hz);
+		json.end();
+	}
+	json.end();
+
 	json.value("pendingShots", u64(sim.pendingShots));
 	json.value("shotCount", u64(sim.shots.size()));
 	json.object("shots");
@@ -1271,6 +1284,26 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("updates", turn.updates());
 		json.value("allowed", turn.allowed());
 		json.end();
+		json.end();
+	}
+	{
+		// Haptic feedback (#42, D-NEW): requests per event (counted in flat mode too), pulses sent per hand
+		const vr::HapticStatus haptics = vr::hapticStatus();
+		json.object("haptics");
+		json.value("strength", haptics.strength);
+		json.value("pointer", vr::handName(haptics.pointer));
+		json.object("requests");
+		for(size_t i = 0; i < vr::HapticEventCount; i++) {
+			json.value(vr::hapticEventName(vr::HapticEvent(i)), haptics.requests[i]);
+		}
+		json.end();
+		json.value("refused", haptics.refused);
+		json.value("sentLeft", haptics.sent[size_t(vr::Hand::Left)]);
+		json.value("sentRight", haptics.sent[size_t(vr::Hand::Right)]);
+		json.value("lastLeft", haptics.lastAmplitude[size_t(vr::Hand::Left)]);
+		json.value("lastRight", haptics.lastAmplitude[size_t(vr::Hand::Right)]);
+		json.value("masked", haptics.masked);
+		json.value("merged", haptics.merged);
 		json.end();
 	}
 	// The last rate / cadence report of the frame loop (#20, F-07): one per 3 s while the session runs

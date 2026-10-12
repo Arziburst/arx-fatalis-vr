@@ -84,6 +84,8 @@ set(arxtest_TESTCASES
 	tests/vr/MenuPointerTest.cpp
 	tests/vr/InterfaceSizeTest.h
 	tests/vr/InterfaceSizeTest.cpp
+	tests/vr/HapticsTest.h
+	tests/vr/HapticsTest.cpp
 	tests/vr/LocomotionTest.h
 	tests/vr/LocomotionTest.cpp
 
@@ -139,6 +141,7 @@ set(arxtest_SOURCES
 	src/vr/UIPanel.cpp
 	src/vr/MenuPointer.cpp
 	src/vr/InterfaceSize.cpp
+	src/vr/Haptics.cpp
 	src/vr/ArmIK.cpp
 	src/vr/WristVitals.cpp
 	src/vr/HandReticle.cpp

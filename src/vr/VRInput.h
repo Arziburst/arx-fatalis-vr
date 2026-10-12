@@ -24,7 +24,9 @@
 #include <string>
 #include <string_view>
 
+#include "platform/Platform.h"
 #include "vr/BindingCapture.h"
+#include "vr/Haptics.h"
 #include "math/Types.h"
 #include "vr/Locomotion.h"
 #include "vr/VRControls.h"
@@ -167,6 +169,8 @@ u32 captureCount();
  * \c stick \c left|right \c <x> \c <y> (e.g. \c stick \c left \c 0 \c 1) - hold a stick deflected
  * (the analog value only; its direction controls are \c down / \c up);
  * \c bind \c <event> \c <binding> (e.g. \c bind \c jump \c left.grip+left.a) - remap one event;
+ * \c haptic \c <event> \c [left|right|both] \c [intensity] (e.g. \c haptic \c weapon_hit) - a pulse as the
+ * game would ask for it (#42);
  * \c reset - the default layout for the current controllers, not saved;
  * \c capture \c <event> - what the VR settings page does when the player selects the event
  * (\ref startCapture); \c cancel - end the capture; \c default - the page's "reset to default"
@@ -178,6 +182,33 @@ u32 captureCount();
  * \return an empty string on success, otherwise the reason it was refused
  */
 std::string inputCommand(std::string_view arguments);
+
+/*!
+ * \brief Haptic feedback for a game event (#42, D-NEW) - safe to call in flat mode, where it does nothing
+ *
+ * The table (vr/Haptics.h) gives the pulse and the hand; the pulse is queued and sent at the next
+ * \ref updateInput, right after the controllers are synced. Each request is a \c haptic game event.
+ *
+ * \param intensity the event's own strength term in 0 to 1 (HitTaken: damage over max life)
+ */
+void haptic(HapticEvent event, float intensity = 0.f);
+
+//! The same, to a given hand instead of the table's
+void haptic(HapticEvent event, HapticHand hand, float intensity = 0.f);
+
+//! Haptics for status.json
+struct HapticStatus {
+	float strength = 0.f;                         //!< the master strength (cfg vr_haptic_strength)
+	std::array<u64, HapticEventCount> requests = { }; //!< per event, in flat mode too
+	u64 refused = 0;                              //!< not queued: flat mode, not focused, strength 0
+	std::array<u64, HandCount> sent = { };        //!< pulses the runtime took, per hand
+	std::array<float, HandCount> lastAmplitude = { };
+	u64 masked = 0;                               //!< dropped under a stronger pulse still playing
+	u64 merged = 0;                               //!< merged into a stronger one of the same frame
+	Hand pointer = Hand::Right;                   //!< the hand that clicked last
+};
+
+HapticStatus hapticStatus();
 
 } // namespace vr
 

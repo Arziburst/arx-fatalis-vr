@@ -1396,6 +1396,62 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrGetActionStateVector2f(XrSession /* session
 	return XR_SUCCESS;
 }
 
+//! The haptic action's hand, or 2 if the action is not a vibration output or the hand is unknown
+size_t hapticHand(const XrHapticActionInfo * info) {
+	auto action = g_sim->actions.find(fromHandle(info->action));
+	if(action == g_sim->actions.end() || action->second.type != XR_ACTION_TYPE_VIBRATION_OUTPUT) {
+		return 2;
+	}
+	return handOf(info->subactionPath);
+}
+
+//! Pulses logged per run; the counts in status.json go on
+const u64 MaxLoggedHaptics = 50;
+
+XRAPI_ATTR XrResult XRAPI_CALL sim_xrApplyHapticFeedback(XrSession /* session */, const XrHapticActionInfo * info,
+                                                         const XrHapticBaseHeader * feedback) {
+	SimRuntime & s = *g_sim;
+	if(!s.attached) {
+		return XR_ERROR_ACTIONSET_NOT_ATTACHED;
+	}
+	const size_t hand = hapticHand(info);
+	if(hand > 1) {
+		return XR_ERROR_ACTION_TYPE_MISMATCH;
+	}
+	if(feedback->type != XR_TYPE_HAPTIC_VIBRATION) {
+		return XR_ERROR_VALIDATION_FAILURE;
+	}
+	if(s.state != XR_SESSION_STATE_FOCUSED) {
+		return XR_SESSION_NOT_FOCUSED;
+	}
+	const XrHapticVibration & vibration = *reinterpret_cast<const XrHapticVibration *>(feedback);
+	SimStatus::Haptics & h = s.counters.haptics[hand];
+	h.pulses++;
+	h.amplitude = vibration.amplitude;
+	h.ms = vibration.duration > 0 ? float(double(vibration.duration) / 1e6) : 0.f;
+	h.hz = vibration.frequency == XR_FREQUENCY_UNSPECIFIED ? 0.f : vibration.frequency;
+	const u64 total = s.counters.haptics[0].pulses + s.counters.haptics[1].pulses;
+	if(total <= MaxLoggedHaptics) {
+		LogInfo << "[vr] sim: haptic " << EyeNames[hand] << " amplitude " << h.amplitude << " for " << h.ms << " ms"
+		        << (h.hz > 0.f ? " at " + std::to_string(int(h.hz)) + " Hz" : std::string(" (runtime frequency)"))
+		        << (total == MaxLoggedHaptics ? " (further pulses are only counted)" : "");
+	}
+	return XR_SUCCESS;
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL sim_xrStopHapticFeedback(XrSession /* session */, const XrHapticActionInfo * info) {
+	SimRuntime & s = *g_sim;
+	if(!s.attached) {
+		return XR_ERROR_ACTIONSET_NOT_ATTACHED;
+	}
+	const size_t hand = hapticHand(info);
+	if(hand > 1) {
+		return XR_ERROR_ACTION_TYPE_MISMATCH;
+	}
+	s.counters.haptics[hand].stops++;
+	return XR_SUCCESS;
+}
+
 XRAPI_ATTR XrResult XRAPI_CALL sim_xrGetInstanceProcAddr(XrInstance /* instance */, const char * name, PFN_xrVoidFunction * function) {
 	*function = nullptr;
 	#define ARX_XR_FUNCTION(n) \

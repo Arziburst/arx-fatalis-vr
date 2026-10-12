@@ -99,6 +99,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "util/Number.h"
 #include "util/String.h"
+#include "vr/VRInput.h"
 
 
 struct EQUIP_INFO {
@@ -683,6 +684,10 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 							gameevent::Event("melee.hit")("source", gameevent::entityName(io_source))
 								("target", gameevent::entityName(target))("weapon", gameevent::entityName(io_weapon))
 								("damage", dmgs, 1)("aim", ratioaim, 2);
+							// The weapon hand feels the player's own hit; a miss of the armour roll does not (#42)
+							if(io_source == entities.player() && dmgs > 0.f) {
+								vr::haptic(vr::HapticEvent::WeaponHit);
+							}
 						}
 
 						if(target->ioflags & IO_NPC) {

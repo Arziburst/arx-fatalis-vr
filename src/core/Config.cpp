@@ -45,6 +45,7 @@
 #include "util/Number.h"
 #include "util/String.h"
 
+#include "vr/Haptics.h"
 #include "vr/Locomotion.h"
 #include "vr/MeleeSwing.h"
 #include "vr/MirrorGeometry.h"
@@ -140,6 +141,7 @@ constexpr const float
 	vrPanelDistance = vr::DefaultPanelDistance,
 	vrPanelDrop = vr::DefaultPanelDrop,
 	vrPanelWidth = vr::DefaultPanelWidth,
+	vrHapticStrength = vr::DefaultHapticStrength,
 	vrCrouchEnter = vr::DefaultCrouchEnter,
 	vrCrouchExit = vr::DefaultCrouchExit,
 	vrSneakBelow = vr::StickPace().sneakBelow,
@@ -324,6 +326,7 @@ constexpr const std::string_view
 	vrSneakBelow = "vr_sneak_below",
 	vrRunAbove = "vr_run_above",
 	quickLevelTransition = "quick_level_transition",
+	vrHapticStrength = "vr_haptic_strength",
 	allowConsole = "allow_console",
 	vrSmoothTurn = "vr_smooth_turn",
 	vrSnapTurnAngle = "vr_snap_turn_angle",
@@ -613,6 +616,7 @@ bool Config::save() {
 	writer.writeKey(Key::vrSneakBelow, input.vrSneakBelow);
 	writer.writeKey(Key::vrRunAbove, input.vrRunAbove);
 	writer.writeKey(Key::quickLevelTransition, int(input.quickLevelTransition));
+	writer.writeKey(Key::vrHapticStrength, input.vrHapticStrength);
 	writer.writeKey(Key::vrSmoothTurn, input.vrSmoothTurn);
 	writer.writeKey(Key::vrSnapTurnAngle, input.vrSnapTurnAngle);
 	writer.writeKey(Key::vrSmoothTurnSpeed, input.vrSmoothTurnSpeed);
@@ -797,6 +801,8 @@ bool Config::init(const fs::path & file) {
 	input.vrRunAbove = glm::clamp(vrRunAbove, input.vrSneakBelow, 1.f);
 	int quickLevelTransition = reader.getKey(Section::Input, Key::quickLevelTransition, Default::quickLevelTransition);
 	input.quickLevelTransition = QuickLevelTransition(glm::clamp(quickLevelTransition, 0, 2));
+	float vrHapticStrength = reader.getKey(Section::Input, Key::vrHapticStrength, Default::vrHapticStrength);
+	input.vrHapticStrength = glm::clamp(vrHapticStrength, 0.f, 2.f);
 	input.allowConsole = reader.getKey(Section::Input, Key::allowConsole, Default::allowConsole);
 	input.vrSmoothTurn = reader.getKey(Section::Input, Key::vrSmoothTurn, Default::vrSmoothTurn);
 	float vrSnapTurnAngle = reader.getKey(Section::Input, Key::vrSnapTurnAngle, Default::vrSnapTurnAngle);

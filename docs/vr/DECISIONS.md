@@ -13,6 +13,51 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: Haptic feedback — the MVP table, one mixer on the frame thread
+
+- **Date:** 2026-10-10
+- **Status:** Accepted
+- **Decided by:** the coordinator approved the worker's proposal of #42 (player-facing, D-017: the owner
+  judges the numbers in the headset and may change them)
+
+### Decision
+- **The table** (`src/vr/Haptics.h`, named constants; strength 0–1, frequency in Hz):
+
+  | Event | Hand | Strength | Duration | Hz | Wired |
+  |---|---|---|---|---|---|
+  | `hit_taken` — the game's "ouch" after damage | both | 0.3 + 1.5 × damage / max life, at most 0.9 | 0.20 s | 100 | yes (`damagePlayer`) |
+  | `weapon_hit` — the player's weapon hits a creature (damage > 0) | weapon hand (right; left with the left-handed setting, #178) | 0.5 | 0.15 s | 100 | yes (`ARX_EQUIPMENT_Strike_Check`, beside `melee.hit`) |
+  | `item_grabbed` — an item goes onto the cursor (world or inventory) | the hand that clicked last | 0.25 | 0.05 s | 160 | yes (`setDraggedEntity`, beside `item.take`) |
+  | `weapon_blocked` — the weapon hits a wall or a parry | weapon hand | 0.3 | 0.10 s | 100 | hook for #39 |
+  | `pointer_tick` — the menu pointer onto another control | pointer hand | 0.1 | 0.02 s | 200 | hook (#265) |
+  | `rune_stroke` / `spell_cast` | drawing hand / both | 0.2 / 0.5 | 0.04 / 0.15 s | 160 / 100 | hooks for #43 |
+  | `item_stashed` — into the inventory | pointer hand | 0.15 | 0.03 s | 160 | hook (#265) |
+
+  Starting values from VHVR's hit 0.2 s / 100 Hz / 0.5 (F-44) and HIGGS' grab base 0.25 (F-193).
+- **One mixer, on the frame thread** (F-44): the game queues requests from anywhere in the frame; they are
+  sent at the start of the next frame right after `xrSyncActions`. Per hand the strongest request of a
+  frame wins (the longer one on a tie); a weaker pulse never cuts a stronger one still playing. Nothing is
+  queued in flat mode or while the session is not focused; focus loss clears the queue.
+- **A hit taken rides on the game's own "ouch"**, which also drives the screen shake: at most every 500 ms,
+  with the damage summed since the last one. Damage inside that window is felt with the next ouch.
+- **Master strength** `vr_haptic_strength` in `[input]` of `cfg.ini` (0 = off, 1 = the table, up to 2;
+  amplitudes are cut at 1). The settings screen (#178) shows it.
+- Every request is a `haptic.request` game event; counts in `status.json` `vr.haptics`; the simulated
+  runtime implements `xrApplyHapticFeedback` / `xrStopHapticFeedback` and counts the pulses per hand.
+
+### Why
+- The coordinator asked for a short table before more than the obvious events are wired, so the owner
+  judges three events, not eight. The rest are rows with hooks, so the tasks that add the events (#39, #43)
+  only call `vr::haptic(...)`.
+- Riding on the ouch keeps the pulse in step with what the player sees (the shake and the blood splash)
+  and bounds it: damage over time (fire, poison) cannot rumble every frame.
+
+### Rules out
+- Continuous rumble, mass terms for grabs (F-193's `mass^0.6`), haptics on hover (F-160) — later, if the
+  owner wants them.
+
+---
+
 ## D-041: The model's fingers follow the real fingers — hand joints first, the controls as the fallback, closed on a held weapon
 
 - **Date:** 2026-10-10

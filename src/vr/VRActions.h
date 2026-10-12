@@ -27,6 +27,7 @@
 #include <array>
 #include <string>
 
+#include "vr/Haptics.h"
 #include <glm/gtc/quaternion.hpp>
 
 #include "math/Types.h"
@@ -93,6 +94,14 @@ public:
 	//! How often the actions were synced while focused
 	u64 syncs() const { return m_syncs; }
 
+	/*!
+	 * Vibrate a hand's controller (#42): the runtime replaces a pulse still playing on that hand
+	 * \return false if the runtime refused it (logged, the first few times) or the session is not focused
+	 */
+	bool vibrate(Hand hand, const HapticPulse & pulse);
+
+	//! Stop the vibration of both hands
+	void stopHaptics();
 	//! A hand's aim pose: the pointer ray starts at \c position and runs along the orientation's -z
 	struct AimPose {
 		bool valid = false; //!< position and orientation are tracked
@@ -147,6 +156,7 @@ private:
 	bool m_loggedBound = false;
 	bool m_focused = false;
 	u32 m_syncFailures = 0;
+	u32 m_hapticFailures = 0;
 	u64 m_syncs = 0;
 
 	std::array<std::string, HandCount> m_profiles;

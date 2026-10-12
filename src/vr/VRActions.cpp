@@ -21,6 +21,7 @@
 
 #if ARX_HAVE_OPENXR
 
+#include <algorithm>
 #include <iomanip>
 #include <sstream>
 #include <vector>
@@ -257,7 +258,55 @@ bool ActionSet::attach(XrSession session) {
 	return true;
 }
 
+bool ActionSet::vibrate(Hand hand, const HapticPulse & pulse) {
+
+	if(m_session == XR_NULL_HANDLE || !m_focused || m_actions.haptic == XR_NULL_HANDLE) {
+		return false;
+	}
+
+	XrHapticActionInfo info = { XR_TYPE_HAPTIC_ACTION_INFO };
+	info.action = m_actions.haptic;
+	info.subactionPath = m_hands[size_t(hand)];
+	XrHapticVibration vibration = { XR_TYPE_HAPTIC_VIBRATION };
+	vibration.duration = XrDuration(double(pulse.seconds) * 1e9);
+	vibration.frequency = pulse.frequency > 0.f ? pulse.frequency : XR_FREQUENCY_UNSPECIFIED;
+	vibration.amplitude = std::clamp(pulse.amplitude, 0.f, 1.f);
+	XrResult result = xrApplyHapticFeedback(m_session, &info,
+	                                        reinterpret_cast<const XrHapticBaseHeader *>(&vibration));
+	if(XR_FAILED(result)) {
+		m_hapticFailures++;
+		if(m_hapticFailures <= MaxLoggedSyncFailures) {
+			LogError << "[vr] haptics: xrApplyHapticFeedback (" << handName(hand) << ") failed: " << resultName(result)
+			         << (m_hapticFailures == MaxLoggedSyncFailures ? " (further failures are not logged)" : "");
+		}
+		return false;
+	}
+
+	// XR_SESSION_NOT_FOCUSED is a success code: nothing was played
+	return result == XR_SUCCESS;
+}
+
+void ActionSet::stopHaptics() {
+
+	if(m_session == XR_NULL_HANDLE || m_actions.haptic == XR_NULL_HANDLE) {
+		return;
+	}
+
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		XrHapticActionInfo info = { XR_TYPE_HAPTIC_ACTION_INFO };
+		info.action = m_actions.haptic;
+		info.subactionPath = m_hands[hand];
+		XrResult result = xrStopHapticFeedback(m_session, &info);
+		if(XR_FAILED(result)) {
+			LogWarning << "[vr] haptics: xrStopHapticFeedback (" << handName(Hand(hand)) << ") failed: "
+			           << resultName(result);
+		}
+	}
+}
+
 void ActionSet::detach() {
+
+	stopHaptics();
 
 	for(XrSpace & space : m_gripSpaces) {
 		if(space != XR_NULL_HANDLE) {

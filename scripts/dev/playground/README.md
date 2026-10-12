@@ -4,7 +4,7 @@ Generates the test playground level (area 30, `PlaygroundArea` in `src/game/Leve
 [arx-level-generator](https://github.com/arx-tools/arx-level-generator) (MIT, pinned in `package-lock.json`):
 one stone room in the game's style with a table along the north wall, light, and free spots for the NPC and
 levers (321.2). The repository holds only the generator's source; the level is written on the player's own machine
-to `%LOCALAPPDATA%\ArxFatalisVR\playground\level` (a `--data-dir` for the game) and uses the original game's
+to `%LOCALAPPDATA%\ArxFatalisVR\playground\<folder>-<hash>` (one per working copy, regenerated when a source changes; a `--data-dir` for the game) and uses the original game's
 textures by name — no game data is copied.
 
 - `layout.mjs` — the room's layout in one place: room size, hero start, table, NPC spot, lever wall, lights.
@@ -35,3 +35,4 @@ The tester zip (`package-tester.ps1`) does not carry the playground yet.
 - The test channel finds these entities by the text variable `£pg_role` their scripts set (`npc`, `lever_mode`,
   `lever_respawn`); status.json `playground`, `player.level`, `player.allRunes` and the commands `playground pull|kill|place|hit`
   are described in `docs/vr/TESTING.md`. Sequence: `scripts/dev/xrs/playground-levers.xrs`.
+- The mode lever does nothing while the goblin is dead (a dead NPC runs no script events): use the respawn lever.

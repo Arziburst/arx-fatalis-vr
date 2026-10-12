@@ -2,7 +2,7 @@
 //
 //   node build.mjs [outputDir]
 //
-// outputDir defaults to %LOCALAPPDATA%\ArxFatalisVR\playground\level: a data dir for the game
+// outputDir defaults to %LOCALAPPDATA%\ArxFatalisVR\playground\level (playground-lib.ps1 passes a per-working-copy folder): a data dir for the game
 // (--data-dir), holding graph/levels/level30/*.dlf, *.llf and game/graph/levels/level30/fast.fts.
 // The textures are the original game's own (referenced by name, never copied), so the generated
 // folder holds no game data and is built on the player's own machine. The layout is in layout.mjs.
@@ -159,9 +159,9 @@ CONSUMABLES.forEach((src, i) => {
 //                        again (peaceful, not hostile), the corpse's death state undone
 //   custom "respawn"     the same, then back into the mode it was in
 // §aggro is the mode; the test channel reads it (CommandChannel.cpp, status.json playground.npcMode) and finds
-// the entity by £pg_role. A goblin that died has COLLISION OFF and no detection; revive -i restores both
-// Revive and put the goblin back into its peaceful stance: revive does not undo a fight's behaviour, target, drawn weapon
-// or death animation
+// the entity by £pg_role. A dead goblin runs no events at all, so the respawn lever revives it from outside first.
+// `reset` revives and puts the goblin back into its peaceful stance: revive does not undo a fight's behaviour, target,
+// drawn weapon or death animation
 const reset = ['revive -i', 'behavior none', 'settarget none', 'weapon off', 'forceanim wait'].join('\n\t\t')
 const goblin = new Entity({ id: FIRST_ID, src: 'npc/goblin_base', position: at(NPC_SPOT.x, NPC_SPOT.y, NPC_SPOT.z), orientation: yawDeg(180) })
 goblin.withScript()

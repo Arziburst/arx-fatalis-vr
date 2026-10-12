@@ -31,13 +31,15 @@ vr-sim hand left rot 180 0 -90
 @shot wrist-away
 
 # The watch pose: the palm turned to the eyes, the thumb up - fully visible, drawn into both eyes. The hand
-# sits further right and a little higher than the pose above (#304): the roll-aware arm's relaxed pole (down,
-# back, a little out) and its elbow swing put the elbow behind the wrist at (0.12, -0.3, -0.3), so the forearm
-# ran away from the eyes (along 0.36 / -0.58 / 0.73); here the shoulder-hand line runs to the right and the
-# forearm with it. Further right the forearm runs across the view even more but the inner wrist turns away
-# from the eyes (0.3 / -0.3 / -0.25: along x 0.68, facing 66 degrees) - measured on the simulated headset
-vr-sim hand left pos 0.25 -0.25 -0.3
-vr-sim hand left rot -90 90 0
+# sits further right and nearer than the pose above, the palm yawed 10 degrees towards the head (#304): the
+# roll-aware arm's relaxed pole (down, back, a little out) and its elbow swing put the elbow behind the wrist
+# at (0.12, -0.3, -0.3), so the forearm ran away from the eyes (along 0.36 / -0.58 / 0.73); here the
+# shoulder-hand line runs to the right and the forearm with it. Further right the forearm runs across the view
+# even more but the inner wrist turns away from the eyes (0.3 / -0.3 / -0.25: facing 59 degrees); the yaw
+# brings the palm back to the eyes, more of it tips the bars' "up" and the palm's normal off their limits
+# (-105: normal z -0.71) - a sweep of positions and yaws on the simulated headset
+vr-sim hand left pos 0.25 -0.3 -0.25
+vr-sim hand left rot -100 90 0
 @frames 15
 @assert vr.body.left.posed eq true
 @assert vr.wrist.shown eq true
@@ -46,8 +48,8 @@ vr-sim hand left rot -90 90 0
 # The forearm runs to the right (health, towards the elbow, is the left bar); the bars fill upwards (engine
 # y is down), towards the thumb, across the forearm (measured on #36's arm at the old pose: along 0.71 /
 # -0.56 / 0.43, across -0.62 / -0.78 / 0.00 - the forearm rises 34 degrees, so "up" leans left with it;
-# on #304's arm here: along 0.52 / -0.56 / 0.65, across.y -0.68, facing 48.5); the inner wrist faces back
-# towards the eyes (normal z -0.90 on #36's arm, -0.76 on #304's)
+# on #304's arm here: along.x 0.59, across.y -0.70, facing 47); the inner wrist faces back towards the eyes
+# (normal z -0.90 on #36's arm, -0.74 on #304's)
 @assert vr.wrist.along.x gt 0.5
 @assert vr.wrist.across.y lt -0.6
 @assert vr.wrist.normal.z lt -0.7
@@ -66,7 +68,7 @@ specialfx mana -6
 @shot wrist-hurt
 
 # Half turned away (the palm turned 30 degrees further from the eyes): fading
-vr-sim hand left rot -90 90 -30
+vr-sim hand left rot -100 90 -30
 @frames 10
 @assert vr.wrist.alpha gt 0
 @assert vr.wrist.alpha lt 1

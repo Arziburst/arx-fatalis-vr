@@ -53,9 +53,10 @@ const GameDuration Lifetime = 1200ms;
 //! It is fully opaque until then and fades out after
 const GameDuration FadeStart = 600ms;
 
-//! It appears this far above the top of the target's cylinder (meters) and rises this much
-const float AboveHeadMeters = 0.2f;
-const float RiseMeters = 0.5f;
+//! It appears this far above the top of the target's cylinder (meters) and rises this much: an
+//! enemy in sword reach stays within the view
+const float AboveHeadMeters = 0.15f;
+const float RiseMeters = 0.3f;
 
 //! The font's size as the angle it covers in the view, so it reads the same near and far, in a
 //! headset as on a monitor (the digits are about 70 % of it)
@@ -115,7 +116,7 @@ std::string format(float damage) {
 
 void log(const DamageNumber & number) {
 	gameevent::Event event("damage.number");
-	event("target", number.targetName)("damage", number.damage, 1)("dealt", number.dealt, 1)("hits", number.hits);
+	event("entity", number.targetName)("amount", number.damage, 1)("dealt", number.dealt, 1)("hits", number.hits);
 	event("views", number.views);
 	if(number.views > 0) {
 		event("x0", s32(number.screen[0].x))("y0", s32(number.screen[0].y));
@@ -261,6 +262,10 @@ void render() {
 
 	}
 
+}
+
+size_t visible() {
+	return g_numbers.size();
 }
 
 void clear() {

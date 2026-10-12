@@ -20,6 +20,8 @@
 #ifndef ARX_GUI_DAMAGENUMBERS_H
 #define ARX_GUI_DAMAGENUMBERS_H
 
+#include <stddef.h>
+
 class Entity;
 
 /*!
@@ -46,6 +48,9 @@ void update();
 
 //! Draw the numbers into the current scene view (each eye in VR), over the scene
 void render();
+
+//! The numbers shown now (status.json \c damageNumbers.visible)
+size_t visible();
 
 //! Forget all numbers (a level is left)
 void clear();

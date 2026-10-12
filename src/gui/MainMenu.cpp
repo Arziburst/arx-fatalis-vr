@@ -1848,7 +1848,7 @@ private:
 
 
 /*!
- * The VR settings' Controls section, second page (#260, D-028, D-NEW-turning): turning and the character height, in
+ * The VR settings' Controls section, second page (#260, D-028, D-043): turning and the character height, in
  * the game's own menu style (D-029). Each row edits its cfg.ini key (#32: vr_smooth_turn, vr_snap_turn_angle,
  * vr_smooth_turn_speed, vr_snap_turn_repeat; vr_height_offset), which applies at once - the turn and the head
  * camera read it every frame. The turning values are sliders the player drags (owner, 2026-10-10): the snap

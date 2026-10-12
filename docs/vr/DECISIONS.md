@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: Control scheme v2 — two equal hands: a casting stance and a radial menu per hand, dual wielding
+## D-042: Control scheme v2 — two equal hands: a casting stance and a radial menu per hand, dual wielding
 
 - **Date:** 2026-10-13
 - **Status:** Accepted; replaces D-019's button layout and D-040's stance binding and cast rule. Implemented by #375 ("Control scheme v2",
@@ -83,7 +83,7 @@ gives a clear moment to cast without a pause or an extra gesture.
 
 ---
 
-## D-NEW-turning: Turning settings are sliders the player drags; the smooth speed is named presets
+## D-043: Turning settings are sliders the player drags; the smooth speed is named presets
 
 - **Date:** 2026-10-10
 - **Status:** Accepted
@@ -163,7 +163,7 @@ Virtual Desktop, which was not verified to give joints.
 ## D-040: The rune trail — the engine's flares at the drawing hand, the engine's hold / release model
 
 - **Date:** 2026-10-10
-- **Status:** Accepted as the MVP default; the owner judges the look in the headset (#43). The stance on the left trackpad and "the first trigger wins" are superseded by D-NEW (control scheme v2, 2026-10-13); the trail's look stays
+- **Status:** Accepted as the MVP default; the owner judges the look in the headset (#43). The stance on the left trackpad and "the first trigger wins" are superseded by D-042 (control scheme v2, 2026-10-13); the trail's look stays
 - **Decided by:** coordinator (default bindings are the coordinator's call, the owner's D-017 exception of
   2026-10-10; proposed by the worker of #43), within D-010 and D-019
 
@@ -1005,7 +1005,7 @@ the controls are the base of the VR settings that grow later (sound, graphics).
 ## D-019: The MVP control scheme
 
 - **Date:** 2026-10-09 (game menu, recenter and the grip rule added 2026-10-10; other controllers, #35)
-- **Status:** Superseded by D-NEW (control scheme v2, 2026-10-13) for the button layout; its locomotion and turning rules stay
+- **Status:** Superseded by D-042 (control scheme v2, 2026-10-13) for the button layout; its locomotion and turning rules stay
 - **Decided by:** project owner (agreed by questions, D-017; builds on D-008, D-010, D-016, D-018)
 
 ### Decision

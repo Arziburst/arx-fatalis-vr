@@ -68,6 +68,9 @@ Check 'a one-word @args stays one argument (#178: it splatted as "- - s k i p l 
 Check 'no save unless one is named' ($null -eq $seq.Save)
 $saved = Get-Parse "@sim idle`n@save mvp-new-game`n@args --loadslot 0`n@frames 1"
 Check '@save names the start save and is not a step' ($saved -isnot [string] -and $saved.Save -eq 'mvp-new-game' -and @($saved.Steps).Count -eq 1) $saved
+Check 'no playground unless asked' (-not $seq.Playground)
+$inPlayground = Get-Parse "@sim idle`n@playground`n@frames 1"
+Check '@playground starts in the playground and is not a step' ($inPlayground -isnot [string] -and $inPlayground.Playground -and @($inPlayground.Steps).Count -eq 1) $inPlayground
 $kinds = ($seq.Steps | ForEach-Object Kind) -join ' '
 Check 'every directive has its kind' ($kinds -eq 'wait frames until assert remember assert mark log nolog shot diff key pending command command') $kinds
 Check 'the trailing comment is dropped' ($seq.Steps[0].Ms -eq 100)

@@ -19,9 +19,41 @@ export const TABLE = { x: 0, z: ROOM.depth / 2 - 60, width: 300, depth: 90, heig
 // Room for an NPC, in front of the table, a few steps from the hero (321.2)
 export const NPC_SPOT = { x: 200, y: 0, z: 100 }
 
-// The lever wall: the east wall, levers go along it at LEVER_HEIGHT (321.2)
-export const LEVER_WALL = { x: ROOM.width / 2, zFrom: -250, zTo: 250 }
+// The lever wall: the north wall, right of the table, so that both levers are in front of the hero from his start
+// (the hero faces north, they are 20 to 30 degrees right of straight ahead). Levers hang at LEVER_HEIGHT above
+// the floor, LEVER_GAP apart; the mode lever is the nearer to the table (321.2)
+export const LEVER_WALL = { z: ROOM.depth / 2 - 5, xMode: 280, xRespawn: 380 }
 export const LEVER_HEIGHT = 130
+
+// A long table along the west wall for the weapons: WEAPON_COLUMNS columns, rows along the wall (321.2)
+export const WEAPON_TABLE = { x: -400, z: 0, width: 180, depth: 620, height: 90, top: 8 }
+export const WEAPON_COLUMNS = 4
+
+// Every weapon class of the game: the folders of graph/obj3d/interactive/items/weapons that hold a class script,
+// taken from the game's own archives with `arxunpak --list` (the _backup and _common folders are not weapons;
+// arrows_2 holds only an icon). Paths are relative to graph/obj3d/interactive (321.2)
+export const WEAPONS = [
+	'arrow', 'arrows', 'axe', 'axe_2handed', 'bone_weap', 'bow', 'bow_mx', 'club', 'dagger', 'dagger_assassin',
+	'dagger_jeweld', 'giant_slayer', 'hammer', 'hammer2', 'hammer_club', 'long_sword', 'long_sword_ciprian',
+	'long_sword_feather', 'long_sword_jeweld', 'long_sword_recovery', 'sabre', 'sabre_meteor', 'sabre_meteor_enchant',
+	'sabre_mithril', 'sabre_ylside', 'short_sword', 'sword_2handed', 'sword_2handed_forged', 'sword_2handed_meteor',
+	'sword_2handed_meteor_enchant', 'sword_2handed_mithril', 'sword_mx',
+].map((name) => `items/weapons/${name}`)
+
+// Potions, food and a scroll on the main table, one of each kind (321.2)
+export const CONSUMABLES = [
+	'items/magic/potion_life', 'items/magic/potion_mana', 'items/magic/potion_green', 'items/magic/potion_purple',
+	'items/magic/potion_invisible', 'items/magic/scroll_generic', 'items/provisions/applepie', 'items/provisions/bread',
+	'items/provisions/cheese', 'items/provisions/food_apple', 'items/provisions/food_chicken',
+	'items/provisions/food_fish_cooked',
+]
+
+// Instances get ids from here up: the original levels ship scripts for the low numbers of every class
+// (goblin_base_0001 ...), and the engine would run those for an item that has none of its own (321.2)
+export const FIRST_ID = 9001
+
+// The hero is level 10, the game's cap (ARX_PLAYER_Modify_XP levels up while i < 11, GetXPforLevel(10) = 178000 xp)
+export const MAX_LEVEL_XP = 178000
 
 // One light in the middle of the ceiling and one over the table
 export const LIGHTS = [

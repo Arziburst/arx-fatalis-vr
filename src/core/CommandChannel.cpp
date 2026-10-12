@@ -44,8 +44,10 @@
 #include "core/TimeTypes.h"
 #include "core/Version.h"
 #include "game/Camera.h"
+#include "game/Damage.h"
 #include "game/EntityManager.h"
 #include "game/Inventory.h"
+#include "game/Levels.h"
 #include "game/NPC.h"
 #include "game/Player.h"
 #include "game/Spells.h"
@@ -75,6 +77,7 @@
 #include "platform/Time.h"
 #include "scene/ChangeLevel.h"
 #include "scene/Interactive.h"
+#include "script/Script.h"
 #include "util/String.h"
 #include "vr/HeadTracking.h"
 #include "vr/VRBody.h"
@@ -480,6 +483,60 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 	json.end();
 }
 
+//! The test playground's entities (#321.2) tell the channel what they are: their instance scripts set the
+//! text variable pg_role ("npc", "lever_mode", "lever_respawn", scripts/dev/playground/build.mjs)
+Entity * findPlaygroundEntity(std::string_view role) {
+	for(Entity & entity : entities) {
+		if(GETVarValueText(entity.m_variables, "\xA3pg_role") == role) {
+			return &entity;
+		}
+	}
+	return nullptr;
+}
+
+//! The playground NPC fights: its instance script's aggro variable (the mode lever sets it)
+bool playgroundNpcAggressive(const Entity & npc) {
+	return GETVarValueLong(npc.m_variables, "\xA7" "aggro") == 1;
+}
+
+bool playerKnowsAllRunes() {
+	static constexpr RuneFlag runes[] = {
+		FLAG_AAM, FLAG_CETRIUS, FLAG_COMUNICATUM, FLAG_COSUM, FLAG_FOLGORA, FLAG_FRIDD, FLAG_KAOM, FLAG_MEGA, FLAG_MORTE,
+		FLAG_MOVIS, FLAG_NHI, FLAG_RHAA, FLAG_SPACIUM, FLAG_STREGUM, FLAG_TAAR, FLAG_TEMPUS, FLAG_TERA, FLAG_VISTA,
+		FLAG_VITAE, FLAG_YOK,
+	};
+	return std::all_of(std::begin(runes), std::end(runes), [](RuneFlag rune) {
+		return (player.rune_flags & rune) != 0;
+	});
+}
+
+//! status.json, area 30: the playground's NPC, its mode and the items in the room (#321.2)
+void writePlaygroundStatus(JsonWriter & json) {
+
+	size_t items = 0;
+	for(const Entity & entity : entities) {
+		if((entity.ioflags & IO_ITEM) && entity.show == SHOW_FLAG_IN_SCENE) {
+			items++;
+		}
+	}
+
+	const Entity * npc = findPlaygroundEntity("npc");
+	json.object("playground");
+	json.value("npc", npc ? npc->idString() : std::string("none"));
+	if(npc && npc->_npcdata) {
+		const IO_NPCDATA & data = *npc->_npcdata;
+		json.value("npcMode", playgroundNpcAggressive(*npc) ? "aggressive" : "peaceful");
+		json.value("npcAlive", data.lifePool.current > 0.f);
+		json.value("npcLife", data.lifePool.current);
+		json.value("npcLifeMax", data.lifePool.max);
+		// Back at the place the level put it (revive -i takes it there): within a step, floor plane only
+		json.value("npcAtSpot", glm::distance(Vec2f(npc->pos.x, npc->pos.z), Vec2f(npc->initpos.x, npc->initpos.z)) < 50.f);
+	}
+	json.value("items", items);
+	json.end();
+
+}
+
 std::string buildStatus(PlatformInstant now) {
 
 	JsonWriter json;
@@ -518,6 +575,8 @@ std::string buildStatus(PlatformInstant now) {
 		}
 		json.value("life", player.lifePool.current);
 		json.value("lifeMax", player.lifePool.max);
+		json.value("level", int(player.level));
+		json.value("allRunes", playerKnowsAllRunes());
 		json.value("mana", player.manaPool.current);
 		json.value("manaMax", player.manaPool.max);
 		// Scripts block the controls during scripted scenes (the awakening of a new game): a save made then is not playable (#70)
@@ -540,6 +599,9 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("animSpeed", duration > 0.f ? glm::length(travel) / duration * 1000.f : 0.f);
 		}
 		json.end();
+		if(isPlaygroundArea(g_currentArea)) {
+			writePlaygroundStatus(json);
+		}
 		// The first-person camera after this frame's effects: bob = how far the camera left the stable head
 		// position (view bobbing), shake = the quake amplitude applied, fov in degrees (zoom) - the numbers
 		// the VR comfort policy (#76) keeps at 0 / cfg.ini fov
@@ -2020,6 +2082,59 @@ std::string execute(std::string_view line) {
 		LogInfo << "[channel] " << id << " placed at " << pos.x << " " << pos.y << " " << pos.z << " (" << ahead
 		        << " ahead, " << right << " right of the player)";
 		return std::string();
+	}
+
+	if(word == "playground") {
+		// playground pull mode|respawn | kill | place <ahead> [<right>] | hit <n>: the test playground's NPC and
+		// levers (#321.2). pull sends the lever what a hand pull sends it (Interface.cpp: SM_ACTION from the player)
+		if(!isPlaygroundArea(g_currentArea) || !entities.player()) {
+			return refuse("playground: needs the playground level (area 30) on screen");
+		}
+		std::string_view args;
+		std::string_view what = firstWord(rest, args);
+		Entity * npc = findPlaygroundEntity("npc");
+		if(what == "pull") {
+			std::string role = "lever_" + std::string(args);
+			Entity * lever = (args == "mode" || args == "respawn") ? findPlaygroundEntity(role) : nullptr;
+			if(!lever) {
+				return refuse("playground pull: expected mode or respawn, got \"" + std::string(args) + "\"");
+			}
+			SendIOScriptEvent(entities.player(), lever, SM_ACTION);
+			LogInfo << "[channel] playground: " << lever->idString() << " pulled (" << args << ")";
+			return std::string();
+		}
+		if(!npc || !npc->_npcdata) {
+			return refuse("playground " + std::string(what) + ": the level has no NPC");
+		}
+		if(what == "kill") {
+			ARX_DAMAGES_ForceDeath(*npc, entities.player());
+			return std::string();
+		}
+		if(what == "place") {
+			std::istringstream iss{std::string(args)};
+			float ahead = 0.f, right = 0.f;
+			if(!(iss >> ahead)) {
+				return refuse("playground place: expected <ahead> [<right>], got \"" + std::string(args) + "\"");
+			}
+			iss >> right;
+			const float yaw = player.angle.getYaw();
+			const Vec3f pos = player.basePosition() + angleToVectorXZ(yaw) * ahead + angleToVectorXZ(yaw - 90.f) * right;
+			ARX_INTERACTIVE_Teleport(npc, pos);
+			npc->angle.setYaw(MAKEANGLE(yaw + 180.f));
+			LogInfo << "[channel] playground: " << npc->idString() << " placed at " << pos.x << " " << pos.y << " " << pos.z;
+			return std::string();
+		}
+		if(what == "hit") {
+			float damage = 0.f;
+			std::istringstream iss{std::string(args)};
+			if(!(iss >> damage) || damage <= 0.f) {
+				return refuse("playground hit: expected a damage greater than 0, got \"" + std::string(args) + "\"");
+			}
+			// What a weapon hit does to the NPC (Equipment.cpp), without the weapon
+			damageNpc(*npc, damage, entities.player(), nullptr, DAMAGE_TYPE_METAL, &npc->pos);
+			return std::string();
+		}
+		return refuse("playground: expected pull, kill, place or hit, got \"" + std::string(what) + "\"");
 	}
 
 	if(word == "loadlevel") {

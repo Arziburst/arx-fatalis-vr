@@ -25,6 +25,9 @@
 	The effort, written into the brief (the CLI has no confirmed effort flag for --bg).
 .PARAMETER PermissionMode
 	auto (default) or acceptEdits. bypassPermissions is refused by the core script.
+.PARAMETER ReportTo
+	The coordinator's session name as ListAgents shows it now (required by the core since #53): the
+	worker's report and questions go there. Never a guessed or hard-coded name.
 .PARAMETER DryRun
 	Print what would happen; start nothing.
 #>
@@ -35,6 +38,7 @@ param(
 	[string]$Model,
 	[ValidateSet('low', 'medium', 'high', 'xhigh', 'max')] [string]$Effort,
 	[ValidateSet('acceptEdits', 'auto')] [string]$PermissionMode = 'auto',
+	[string]$ReportTo,
 	[switch]$DryRun
 )
 $ErrorActionPreference = 'Stop'
@@ -45,6 +49,7 @@ foreach ($p in @($core, (Join-Path $coord 'worker-settings.json'), (Join-Path $c
 	if (-not (Test-Path -LiteralPath $p)) { throw "missing $p - run this from the owner's copy, where coordinator/ lives" }
 }
 if (-not $Model) { throw 'pass -Model (plan-next.ps1 prints the line with the model)' }
+if (-not $ReportTo) { throw "pass -ReportTo <the coordinator's session name as ListAgents shows it now>" }
 
 $issueJson = gh api "repos/Arziburst/arx-fatalis-vr/issues/$Issue" | ConvertFrom-Json
 $title = [string]$issueJson.title
@@ -85,7 +90,7 @@ PRs, decisions). Branch: $branch. Commits: ARXVR-$Issue <type>: <description>, b
 $rules
 
 $effortLine
-When done (or blocked), send the report to the coordinator: SendMessage to "Coordinator", first line
+When done (or blocked), send the report to the coordinator: SendMessage to "$ReportTo", first line
 "#$Issue ready for review" (or "#$Issue blocked"), then the YAML report. Do not merge: the coordinator merges.
 "@
 $briefFile = Join-Path ([IO.Path]::GetTempPath()) "arxvr-brief-$Issue.md"
@@ -94,7 +99,7 @@ $briefFile = Join-Path ([IO.Path]::GetTempPath()) "arxvr-brief-$Issue.md"
 # 4. Start through the core.
 $coreArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $core 'scripts\start-worker.ps1'),
 	'-Repo', $repoRoot, '-LaunchFrom', $repoRoot, '-Name', "#$Issue worker: $title", '-Branch', $branch,
-	'-Model', $Model, '-BriefFile', $briefFile, '-Safety', (Join-Path $coord 'worker-settings.json'), '-Mode', $PermissionMode)
+	'-Model', $Model, '-ReportTo', $ReportTo, '-BriefFile', $briefFile, '-Safety', (Join-Path $coord 'worker-settings.json'), '-Mode', $PermissionMode)
 if ($DryRun) { $coreArgs += '-DryRun' }
 & (Get-Process -Id $PID).Path @coreArgs
 exit $LASTEXITCODE

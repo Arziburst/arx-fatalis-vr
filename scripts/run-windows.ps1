@@ -41,6 +41,17 @@
 	Arx Fatalis install folder, passed as --data-dir. Default: none - the game finds the install in the
 	Steam libraries itself (#79).
 
+.PARAMETER Sound
+	Keep the game's sound in a background launch. A launch by hand has sound anyway; -Background and
+	-TestChannel (a worker's self-test) launches are silent (arx.exe --mute, #345) so they do not play over
+	the owner. test-pr.ps1 and launch-shortcut.ps1 pass it - the owner's launches have sound.
+
+.PARAMETER Mute
+	Silence the launch (arx.exe --mute) even by hand; cfg.ini keeps its volumes.
+
+.PARAMETER DryRun
+	Print the arx.exe command line and exit: nothing is started, no game lock is taken.
+
 .PARAMETER Fullscreen
 	Do not force windowed mode; use the fullscreen setting from cfg.ini.
 
@@ -108,6 +119,9 @@ param(
 	[string]$SaveLibrary,
 	[switch]$TestChannel,
 	[switch]$StartSteamVR,
+	[switch]$Sound,
+	[switch]$Mute,
+	[switch]$DryRun,
 	[switch]$Rebuild,
 	[switch]$Background,
 	[Alias('VrLockTimeoutSec')]
@@ -137,12 +151,14 @@ $dataArgs = if ($DataDir) { @('--data-dir', $DataDir) } else { @() }
 
 $modeArgs = @()
 if (-not $Fullscreen) { $modeArgs += '--windowed' }
+# By hand the game has sound; a background launch (-Background, -TestChannel) is silent unless -Sound (#345)
+if ($Mute -or (($Background -or $TestChannel) -and -not $Sound)) { $modeArgs += '--mute' }
 
 # Isolated user and config directory
 $dirArgs = @()
 if ($UserDir) { $Isolated = $true } elseif ($Isolated) { $UserDir = Get-DefaultUserDir $SourceDir }
 if ($Isolated) {
-	New-Item -ItemType Directory -Force $UserDir | Out-Null
+	if (-not $DryRun) { New-Item -ItemType Directory -Force $UserDir | Out-Null }
 	$dirArgs += '--user-dir', $UserDir, '--config-dir', $UserDir
 } elseif ($Saves -or $Save) {
 	throw '-Saves / -Save copy saves into an isolated user directory: add -Isolated (the player''s own saves are never touched)'
@@ -154,19 +170,41 @@ Write-Host "    build: $(ConvertTo-ShortSha $stamp) ($($copy.Branch))"
 Write-Host "    data: $(if ($DataDir) { "$DataDir (--data-dir)" } else { 'found by the game in the Steam libraries (arx.log: Steam data)' })"
 if ($Isolated) { Write-Host "    user dir: $UserDir (isolated)" } else { Write-Host "    user dir: $(Get-SharedUserDir) (shared)" }
 if ($TestChannel) { Write-Host "    test channel: $(Get-DefaultTestDir $SourceDir)" }
-if ($Saves) { Copy-ArxSaves -Names $Saves -UserDir $UserDir -Library $SaveLibrary }
-if ($Save) {
-	Use-ArxSave -Name $Save -UserDir $UserDir -Library $SaveLibrary
-	if (-not $ArxArgs) { $ArxArgs = @('--loadslot', '0') }
+if ($DryRun) {
+	# Nothing is written or started: the saves are not copied and SteamVR is not started (D-014)
+	if ($Saves) { Write-Host "    dry run: would copy the saves $($Saves -join ', ')" }
+	if ($Save) {
+		Write-Host "    dry run: would use the save $Save"
+		if (-not $ArxArgs) { $ArxArgs = @('--loadslot', '0') }
+	}
+} else {
+	if ($Saves) { Copy-ArxSaves -Names $Saves -UserDir $UserDir -Library $SaveLibrary }
+	if ($Save) {
+		Use-ArxSave -Name $Save -UserDir $UserDir -Library $SaveLibrary
+		if (-not $ArxArgs) { $ArxArgs = @('--loadslot', '0') }
+	}
+	# A --loadslot of a save that is not there loads nothing: refuse before the game (and the headset) starts
+	$slotProblem = Get-ArxLoadSlotProblem -ArxArgs $ArxArgs -UserDir $(if ($Isolated) { $UserDir } else { Get-SharedUserDir })
+	if ($slotProblem) { throw $slotProblem }
 }
-# A --loadslot of a save that is not there loads nothing: refuse before the game (and the headset) starts
-$slotProblem = Get-ArxLoadSlotProblem -ArxArgs $ArxArgs -UserDir $(if ($Isolated) { $UserDir } else { Get-SharedUserDir })
-if ($slotProblem) { throw $slotProblem }
 
 # No SteamVR start without the owner: flat unless SteamVR already runs (or -StartSteamVR)
-$vr = Resolve-ArxVrMode -ArxArgs $ArxArgs -StartSteamVR:$StartSteamVR
+if ($DryRun -and $StartSteamVR -and $ArxArgs -notcontains '--no-vr' -and -not (Test-SteamVrRunning)) {
+	Write-Host '    dry run: would start SteamVR (-StartSteamVR); the launch would be VR' -ForegroundColor Yellow
+	$vr = [pscustomobject]@{ Vr = $true; Args = @($ArxArgs); Reason = 'dry run: SteamVR would be started on -StartSteamVR' }
+} else {
+	$vr = Resolve-ArxVrMode -ArxArgs $ArxArgs -StartSteamVR:$StartSteamVR
+}
 $ArxArgs = $vr.Args
 Write-Host "    mode: $(if ($vr.Vr) { 'VR' } else { 'flat' }) ($($vr.Reason))"
+
+# Start-Process does not quote arguments: paths with spaces need explicit quotes (docs/vr/TRAPS.md)
+$quote = { param($a) if ("$a" -match '\s') { '"' + $a + '"' } else { "$a" } }
+$argList = @($dataArgs + $modeArgs + $dirArgs + $ArxArgs | ForEach-Object { & $quote $_ })
+if ($DryRun) {
+	Write-Host "    dry run, not started: arx.exe $($argList -join ' ')" -ForegroundColor Cyan
+	exit 0
+}
 Write-ArxLaunchBudgetNote -Copy $SourceDir -Branch $copy.Branch
 
 # One game at a time: hold a game lock slot (and the VR lock for a VR launch) while the game runs
@@ -176,9 +214,6 @@ if (-not $lock) {
 }
 Write-Host "    game lock: slot $($lock.Slot)$(if ($lock.Vr) { ' + VR lock' })"
 
-# Start-Process does not quote arguments: paths with spaces need explicit quotes (docs/vr/TRAPS.md)
-$quote = { param($a) if ("$a" -match '\s') { '"' + $a + '"' } else { "$a" } }
-$argList = @($dataArgs + $modeArgs + $dirArgs + $ArxArgs | ForEach-Object { & $quote $_ })
 $code = $null
 $process = $null
 $started = Get-Date

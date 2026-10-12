@@ -106,6 +106,32 @@ A fresh isolated directory has no `cfg.ini` yet, so the first run logs one warni
 is taken from there) for `-- --loadslot` runs; `-Save <name>` makes one library save the **only** save of
 the directory and defaults the arguments to `--loadslot 0` (see [The test save library](#the-test-save-library-70)).
 
+## Background runs are silent (`--mute`, #345)
+
+CI, smoke tests, `.xrs` sequences, `--vr-sim` runs and a worker's own launches happen on the owner's PC
+while he works or tests in the headset, so they play no sound. `arx.exe --mute` keeps every audio mixer
+at volume 0 for that run and logs one line, `Audio is muted (--mute): ...`, to `arx.log`. The flag lives
+in the mixer only: `cfg.ini` keeps the owner's volumes (like `--windowed`, it never leaks into the config).
+
+| Launch | `--mute` |
+|---|---|
+| `smoke-test.ps1` (so `ci-smoke.ps1`, `xrs-run.ps1`, the CI job, every `--vr-sim` sequence) | yes; `-Sound` opts out |
+| `run-windows.ps1` with `-Background` or `-TestChannel` (a worker's / test launch) | yes; `-Sound` opts out |
+| `run-windows.ps1` by hand (neither switch) | no; `-Mute` silences it |
+| `make-test-saves.ps1`, `package-tester.ps1` verify run | yes |
+| `test-pr.ps1` (the owner's test station, with or without `-StartSteamVR`) | no - it passes `-Sound` |
+| the desktop icon (`launch-shortcut.ps1`) | no - it passes `-Sound` |
+| the Steam non-Steam shortcut, `arx.exe` started by hand | no |
+
+The owner's headset tests always have sound: `test-pr.ps1` passes `-Sound` on every path it launches
+(with and without `-StartSteamVR`, with `-Saves`), `run-windows.ps1` started by hand has sound, and only
+background launches (CI, smoke-test, `--vr-sim`, workers' `-Background` / `-TestChannel` runs) are muted. `run-windows.ps1 -DryRun` (and `test-pr.ps1 <pr> -DryRun`) prints the
+`arx.exe` command line without starting the game, SteamVR (`-StartSteamVR` only prints "would start
+SteamVR") or copying saves - no `--mute` with `-Sound`. `test-pr.ps1 -DryRun` still prepares the
+worktree, fast-forwards and builds first (only the launch is a dry one). A smoke-test run prints the
+command line (`=== run ...: arx.exe ...`) and `arx.log` has it in the `command line:` banner; `launches.log`
+records only the extra arguments, not `--mute`.
+
 ## The test command channel (`--test-dir DIR`)
 
 Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While enabled the game:

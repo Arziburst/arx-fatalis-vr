@@ -42,8 +42,12 @@
 	Steam libraries itself (#79).
 
 .PARAMETER Sound
-	Keep the game's sound. Without it the launch is silent (arx.exe --mute, #345): a worker's self-test must
-	not play over the owner. test-pr.ps1 passes it - the owner's launches have sound.
+	Keep the game's sound in a background launch. A launch by hand has sound anyway; -Background and
+	-TestChannel (a worker's self-test) launches are silent (arx.exe --mute, #345) so they do not play over
+	the owner. test-pr.ps1 and launch-shortcut.ps1 pass it - the owner's launches have sound.
+
+.PARAMETER Mute
+	Silence the launch (arx.exe --mute) even by hand; cfg.ini keeps its volumes.
 
 .PARAMETER DryRun
 	Print the arx.exe command line and exit: nothing is started, no game lock is taken.
@@ -111,6 +115,7 @@ param(
 	[switch]$TestChannel,
 	[switch]$StartSteamVR,
 	[switch]$Sound,
+	[switch]$Mute,
 	[switch]$DryRun,
 	[switch]$Rebuild,
 	[switch]$Background,
@@ -136,7 +141,8 @@ $dataArgs = if ($DataDir) { @('--data-dir', $DataDir) } else { @() }
 
 $modeArgs = @()
 if (-not $Fullscreen) { $modeArgs += '--windowed' }
-if (-not $Sound) { $modeArgs += '--mute' }
+# By hand the game has sound; a background launch (-Background, -TestChannel) is silent unless -Sound (#345)
+if ($Mute -or (($Background -or $TestChannel) -and -not $Sound)) { $modeArgs += '--mute' }
 
 # Isolated user and config directory
 $dirArgs = @()

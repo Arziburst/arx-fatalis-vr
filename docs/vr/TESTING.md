@@ -115,15 +115,16 @@ in the mixer only: `cfg.ini` keeps the owner's volumes (like `--windowed`, it ne
 | Launch | `--mute` |
 |---|---|
 | `smoke-test.ps1` (so `ci-smoke.ps1`, `xrs-run.ps1`, the CI job, every `--vr-sim` sequence) | yes; `-Sound` opts out |
-| `run-windows.ps1` (a worker's launch; also by hand until the owner decides otherwise) | yes; `-Sound` opts out |
+| `run-windows.ps1` with `-Background` or `-TestChannel` (a worker's / test launch) | yes; `-Sound` opts out |
+| `run-windows.ps1` by hand (neither switch) | no; `-Mute` silences it |
 | `make-test-saves.ps1`, `package-tester.ps1` verify run | yes |
 | `test-pr.ps1` (the owner's test station, with or without `-StartSteamVR`) | no - it passes `-Sound` |
 | the desktop icon (`launch-shortcut.ps1`) | no - it passes `-Sound` |
 | the Steam non-Steam shortcut, `arx.exe` started by hand | no |
 
 The owner's headset tests always have sound: `test-pr.ps1` passes `-Sound` on every path it launches
-(with and without `-StartSteamVR`, with `-Saves`), and only background launches (CI, smoke-test,
-`--vr-sim`, workers) are muted. `run-windows.ps1 -DryRun` (and `test-pr.ps1 <pr> -DryRun`) prints the
+(with and without `-StartSteamVR`, with `-Saves`), `run-windows.ps1` started by hand has sound, and only
+background launches (CI, smoke-test, `--vr-sim`, workers' `-Background` / `-TestChannel` runs) are muted. `run-windows.ps1 -DryRun` (and `test-pr.ps1 <pr> -DryRun`) prints the
 `arx.exe` command line without starting the game, SteamVR (`-StartSteamVR` only prints "would start
 SteamVR") or copying saves - no `--mute` with `-Sound`. `test-pr.ps1 -DryRun` still prepares the
 worktree, fast-forwards and builds first (only the launch is a dry one). A smoke-test run prints the

@@ -130,7 +130,7 @@ Virtual Desktop, which was not verified to give joints.
 ## D-040: The rune trail — the engine's flares at the drawing hand, the engine's hold / release model
 
 - **Date:** 2026-10-10
-- **Status:** Accepted as the MVP default; the owner judges the look in the headset (#43)
+- **Status:** Accepted as the MVP default; the owner judges the look in the headset (#43). The stance on the left trackpad and "the first trigger wins" are superseded by D-NEW (control scheme v2, 2026-10-13); the trail's look stays
 - **Decided by:** coordinator (default bindings are the coordinator's call, the owner's D-017 exception of
   2026-10-10; proposed by the worker of #43), within D-010 and D-019
 

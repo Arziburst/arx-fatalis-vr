@@ -4,7 +4,7 @@
 
 .DESCRIPTION
 	Parallel work (docs/vr/WORKFLOW.md): every worker session gets its own working copy, a git
-	worktree at C:\Users\<user>\arx-fatalis-vr-wt\ARXVR-<issue>-<type>-<name> on the branch of the same
+	worktree at <repository>\.claude\worktrees\ARXVR-<issue>-<type>-<name> on the branch of the same
 	name. The branch is cut from origin/main - never from master, the untouched upstream mirror that
 	git sees as the default branch (docs/vr/TRAPS.md) - and the script checks that afterwards.
 	If the branch already exists on origin (a task being resumed), the worktree tracks it instead.
@@ -29,7 +29,7 @@
 	The full branch name instead of -Issue/-Type/-Name (what test-pr.ps1 passes).
 
 .PARAMETER Root
-	Where the worktrees live. Default: $env:ARXVR_WORKTREE_ROOT or %USERPROFILE%\arx-fatalis-vr-wt.
+	Where the worktrees live. Default: $env:ARXVR_WORKTREE_ROOT or <repository>\.claude\worktrees (the coordinator core's place).
 
 .PARAMETER Remove
 	Remove the worktree (and its derived directories, and its merged local branch) instead of creating it.
@@ -65,7 +65,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'board.ps1')
 . (Join-Path $PSScriptRoot '..\build-paths.ps1')
 
-if (-not $Root) { $Root = if ($env:ARXVR_WORKTREE_ROOT) { $env:ARXVR_WORKTREE_ROOT } else { Join-Path $env:USERPROFILE 'arx-fatalis-vr-wt' } }
+if (-not $Root) { $Root = if ($env:ARXVR_WORKTREE_ROOT) { $env:ARXVR_WORKTREE_ROOT } else { Join-Path (git -C $PSScriptRoot rev-parse --show-toplevel) '.claude\worktrees' } }
 $RepoDir = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
 function Invoke-Git([string[]]$Arguments) {

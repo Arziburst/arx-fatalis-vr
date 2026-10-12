@@ -1065,6 +1065,7 @@ set(GUI_SOURCES
 	src/gui/Console.cpp
 	src/gui/Credits.cpp
 	src/gui/Cursor.cpp
+	src/gui/DamageNumbers.cpp
 	src/gui/Dragging.cpp
 	src/gui/Hud.cpp
 	src/gui/Interface.cpp
@@ -1102,6 +1103,7 @@ set(GUI_SOURCES
 	src/gui/widget/SliderWidget.cpp
 	src/gui/widget/TextInputWidget.cpp
 	src/gui/widget/TextWidget.cpp
+	src/gui/widget/VRBindingWidget.cpp
 	src/gui/widget/Widget.cpp
 	src/gui/widget/WidgetContainer.cpp
 )
@@ -1254,12 +1256,16 @@ set(UTIL_MD5_SOURCES
 list(APPEND IO_RESOURCE_SOURCES ${UTIL_MD5_SOURCES})
 
 set(VR_SOURCES
+	src/vr/BindingCapture.cpp
 	src/vr/ArmIK.cpp
 	src/vr/ArmRoll.cpp
 	src/vr/BodyYaw.cpp
 	src/vr/EyeImage.cpp
 	src/vr/EyeProjection.cpp
+	src/vr/FingerCurl.cpp
 	src/vr/FramePacing.cpp
+	src/vr/HandTracking.cpp
+	src/vr/HandReticle.cpp
 	src/vr/HeadLean.cpp
 	src/vr/HeadPose.cpp
 	src/vr/HeadReferenceGate.cpp
@@ -1268,22 +1274,29 @@ set(VR_SOURCES
 	src/vr/InterfaceSize.cpp
 	src/vr/MenuPointer.cpp
 	src/vr/Locomotion.cpp
+	src/vr/RuneTrail.cpp
+	src/vr/MeleeSwing.cpp
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
 	src/vr/VRActions.cpp
 	src/vr/VRBindings.cpp
 	src/vr/VRBody.cpp
+	src/vr/VRRunes.cpp
+	src/vr/VRMelee.cpp
 	src/vr/VRWeapon.cpp
 	src/vr/VRComfort.cpp
 	src/vr/VRControls.cpp
 	src/vr/VRGameInput.cpp
 	src/vr/VRInput.cpp
 	src/vr/VRMirror.cpp
+	src/vr/VRReticle.cpp
 	src/vr/VRSimulator.cpp
 	src/vr/VRSwapchain.cpp
 	src/vr/VRSystem.cpp
 	src/vr/VRTurn.cpp
 	src/vr/WeaponGrip.cpp
+	src/vr/WristHud.cpp
+	src/vr/WristVitals.cpp
 	src/vr/XRDispatch.cpp
 )
 

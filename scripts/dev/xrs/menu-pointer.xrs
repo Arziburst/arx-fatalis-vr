@@ -14,7 +14,11 @@
 @until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
 @assert player.controlsBlocked eq false
 
-# Gameplay: no menu, no pointer, no beam
+# Gameplay: no menu, no pointer, no beam. The hands point behind the head: in the game each hand's ray in
+# front of it is a reticle in the world (#37), whose ring is a quad layer too
+vr-sim hand left rot 180 0 0
+vr-sim hand right rot 180 0 0
+@frames 5
 @assert vr.panel.mode eq head
 @assert vr.pointer.shown eq false
 @assert vr.pointer.active eq false
@@ -28,6 +32,10 @@ inventory playeraddfromscene key_base_0005
 ui inventory open
 @until vr.panel.mode eq world 5s
 @frames 60                                   # the bag slides up
+# The head looks down at the bag: the desktop mirror's window crops the eye to its aspect and the bag sits
+# at the bottom edge of the eye, so the beam to it is outside the window until the head turns (#271)
+vr-sim head rot 0 -20 0
+@frames 5
 @assert vr.pointer.shown eq true
 @assert events.byName."vr.pointer" ge 1
 
@@ -50,6 +58,14 @@ vr-point right item
 @shot pointing
 @assert vr.sim.shots.pointing.left.overlayPixels gt 0
 @assert vr.sim.shots.pointing.right.overlayPixels gt 0
+# The desktop mirror's window (#271): the same beam in the window, which a spectator sees. Two window shots
+# of the still pointing hand give the floor of the scene's flicker for the comparison further down
+@assert vr.mirror.state eq on
+@assert vr.mirror.overlays ge 1
+shot window-pointing
+@frames 3
+shot window-pointing2
+@frames 3
 
 # The trigger: a click on the key. The hand moves 8 px - inside the dead zone the cursor stays on the key
 # and no drag starts; 40 px - the cursor follows and the key the click landed on is dragged
@@ -88,9 +104,9 @@ vr-point left item 40 0
 vr-sim action trigger left 0
 @until ui.drag eq none 5s
 
-# Both hands point up, off the panel: no cursor, no beam; a press there clicks nothing
-vr-sim hand left rot 0 60 0
-vr-sim hand right rot 0 60 0
+# Both hands point behind the head, off the panel and at nothing in front (#37): no cursor, no beam; a press there clicks nothing
+vr-sim hand left rot 180 0 0
+vr-sim hand right rot 180 0 0
 @frames 5
 @assert vr.pointer.active eq false
 @assert vr.pointer.leftOnPanel eq false
@@ -98,6 +114,9 @@ vr-sim hand right rot 0 60 0
 @assert vr.pointer.beam eq false
 @shot offpanel
 @assert vr.sim.shots.offpanel.left.overlayPixels eq 0
+shot window-offpanel
+@frames 3
+@assert vr.mirror.overlays eq 0
 vr-sim action trigger right 1
 @frames 5
 @assert vr.pointer.offPanelPresses eq 1
@@ -106,9 +125,7 @@ vr-sim action trigger right 1
 vr-sim action trigger right 0
 @frames 5
 
-# Closed: the pointer goes with the panel
-vr-sim hand left rot 0 0 0
-vr-sim hand right rot 0 0 0
+# Closed: the pointer goes with the panel (the hands still behind the head, so no ring is in view either)
 ui inventory close
 @until vr.panel.mode eq head 5s
 @frames 5

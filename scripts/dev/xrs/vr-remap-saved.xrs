@@ -1,0 +1,46 @@
+# VR settings, the saved layout (#178): a remap is saved for the Index controllers and read back the way a start reads
+# it (vr-input reload: the layout of the detected controllers from vr-controls-index.ini); "reset to default" restores
+# #35's layout and removes the file. Self-contained: CI runs every sequence in one user directory, in any order.
+@sim idle
+@args --loadlevel 10
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 120 60s
+@assert vr.input.controllers eq index
+@assert vr.input.layoutFile eq vr-controls-index.ini
+vr-input default
+@frames 2
+@assert vr.input.remapped eq false
+
+# Remap jump (saved), then put the default back in memory only (vr-input reset is not saved)
+vr-input capture jump
+@frames 2
+vr-input tap right.b
+@until vr.input.capture.state eq done 5s
+@assert vr.input.layout.jump eq right.b
+vr-input reset
+@frames 2
+@assert vr.input.layout.jump eq right.a
+@assert vr.input.remapped eq false
+
+# Read the file back as a start does
+@mark
+vr-input reload
+@frames 5
+@log \[vr\] input: controllers index - layout saved for index
+@assert vr.input.remapped eq true
+@assert vr.input.layout.jump eq right.b
+@assert vr.input.conflicts eq 1
+
+# The page's "reset to default" removes the file: reading it again gives the default
+vr-input default
+@frames 2
+@assert vr.input.remapped eq false
+@log GameEvent:\d+\s+vr\.remap event=all binding=default
+@mark
+vr-input reload
+@frames 5
+@log \[vr\] input: controllers index - layout default for index
+@assert vr.input.layout.jump eq right.a
+@assert vr.input.conflicts eq 0
+@assert errors eq 0

@@ -65,6 +65,8 @@ set(arxtest_TESTCASES
 
 	tests/vr/VRControlsTest.h
 	tests/vr/VRControlsTest.cpp
+	tests/vr/BindingCaptureTest.h
+	tests/vr/BindingCaptureTest.cpp
 
 	tests/vr/VRGameInputTest.h
 	tests/vr/VRGameInputTest.cpp
@@ -89,8 +91,21 @@ set(arxtest_TESTCASES
 	tests/vr/ArmIKTest.cpp
 	tests/vr/ArmRollTest.h
 	tests/vr/ArmRollTest.cpp
+	tests/vr/WristVitalsTest.h
+	tests/vr/WristVitalsTest.cpp
 	tests/vr/WeaponGripTest.h
 	tests/vr/WeaponGripTest.cpp
+	tests/vr/MeleeSwingTest.h
+	tests/vr/MeleeSwingTest.cpp
+
+	tests/vr/HandReticleTest.h
+	tests/vr/HandReticleTest.cpp
+
+	tests/vr/RuneTrailTest.h
+	tests/vr/RuneTrailTest.cpp
+
+	tests/vr/FingerCurlTest.h
+	tests/vr/FingerCurlTest.cpp
 
 
 )
@@ -118,6 +133,7 @@ set(arxtest_SOURCES
 	src/vr/HeadReferenceGate.cpp
 	src/vr/PhysicalCrouch.cpp
 	src/vr/VRControls.cpp
+	src/vr/BindingCapture.cpp
 	src/vr/VRGameInput.cpp
 	src/vr/VRTurn.cpp
 	src/vr/EyeImage.cpp
@@ -127,8 +143,13 @@ set(arxtest_SOURCES
 	src/vr/InterfaceSize.cpp
 	src/vr/ArmIK.cpp
 	src/vr/ArmRoll.cpp
+	src/vr/WristVitals.cpp
+	src/vr/HandReticle.cpp
 	src/vr/WeaponGrip.cpp
 	src/vr/Locomotion.cpp
+	src/vr/FingerCurl.cpp
+	src/vr/RuneTrail.cpp
+	src/vr/MeleeSwing.cpp
 
 
 	${arxtest_TESTCASES}

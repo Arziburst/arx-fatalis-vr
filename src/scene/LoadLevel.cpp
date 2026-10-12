@@ -306,6 +306,7 @@ static bool loadLevel(AreaId area, bool loadEntities) {
 	}
 	
 	player.pos = dlh.pos_edit.toVec3() + trans;
+	ARX_PLAYER_SetLevelStart(player.pos, player.angle);
 	
 	float increment = 0;
 	if(dlh.nb_inter > 0) {

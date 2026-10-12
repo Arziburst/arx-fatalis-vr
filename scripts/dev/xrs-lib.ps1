@@ -42,6 +42,8 @@
 #                                  arguments of the run the sequence wants; ignored while running
 #   @save <name>                   launch information: start from this save of the test save library (#70,
 #                                  smoke-test.ps1 -Save) - with @args --loadslot 0; ignored while running
+#   @playground                    launch information: start in the test playground (#321, smoke-test.ps1
+#                                  -Playground: the generated level in area 30); ignored while running
 #
 # A sequence stops at its first failed step (-ContinueOnError: runs on and lists them all).
 
@@ -105,11 +107,12 @@ function ConvertTo-XrsStep([string]$Line, [int]$Number) {
 		$step.Kind = 'pending'; $step.Issue = [int]$Matches[1]
 		if ($Matches[2] -match '^@pending') { throw '@pending cannot be nested' }
 		$step.Inner = ConvertTo-XrsStep $Matches[2] $Number
-		if ($step.Inner.Kind -in 'mark', 'wait', 'sim', 'args', 'save') { throw "@pending needs a step that can fail, not @$($step.Inner.Kind)" }
+		if ($step.Inner.Kind -in 'mark', 'wait', 'sim', 'args', 'save', 'playground') { throw "@pending needs a step that can fail, not @$($step.Inner.Kind)" }
 	}
 	elseif ($Line -match '^@sim\s+(\S+)\s*$') { $step.Kind = 'sim'; $step.Name = $Matches[1] }
 	elseif ($Line -match '^@args\s+(.+?)\s*$') { $step.Kind = 'args'; $step.Args = @($Matches[1] -split '\s+') }
 	elseif ($Line -match '^@save\s+(\S+)\s*$') { $step.Kind = 'save'; $step.Name = $Matches[1] }
+	elseif ($Line -match '^@playground\s*$') { $step.Kind = 'playground' }
 	else { throw "unknown or malformed directive" }
 	[pscustomobject]$step
 }
@@ -136,10 +139,12 @@ function Read-ArxSequence([string]$Name) {
 	[pscustomobject]@{
 		Path  = $path
 		Name  = [IO.Path]::GetFileNameWithoutExtension($path)
-		Steps = @($steps | Where-Object { $_.Kind -notin 'sim', 'args', 'save' })
+		Steps = @($steps | Where-Object { $_.Kind -notin 'sim', 'args', 'save', 'playground' })
 		Sim   = if ($sim) { $sim[0].Name } else { $null }
-		Args  = if ($argsStep) { $argsStep[0].Args } else { @() }
+		# @( ) keeps a one-word @args an array: an if-expression unrolls it into a string, which splats char by char
+		Args  = @(if ($argsStep) { $argsStep[0].Args })
 		Save  = if ($save) { $save[0].Name } else { $null }
+		Playground = [bool]($steps | Where-Object Kind -eq 'playground')
 	}
 }
 

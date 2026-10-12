@@ -63,9 +63,14 @@ mark one
 '@
 Check 'a sequence parses' ($seq -isnot [string]) $seq
 Check 'launch directives are separated from the steps' ($seq.Sim -eq 'idle' -and "$($seq.Args)" -eq '--loadlevel 10' -and ($seq.Steps | Where-Object { $_.Kind -in 'sim', 'args' }).Count -eq 0)
+$oneWord = Get-Parse "@sim idle`n@args --skiplogo`n@wait 1"
+Check 'a one-word @args stays one argument (#178: it splatted as "- - s k i p l o g o")' ($oneWord -isnot [string] -and $oneWord.Args -is [array] -and $oneWord.Args.Count -eq 1 -and $oneWord.Args[0] -eq '--skiplogo') "$($oneWord.Args)"
 Check 'no save unless one is named' ($null -eq $seq.Save)
 $saved = Get-Parse "@sim idle`n@save mvp-new-game`n@args --loadslot 0`n@frames 1"
 Check '@save names the start save and is not a step' ($saved -isnot [string] -and $saved.Save -eq 'mvp-new-game' -and @($saved.Steps).Count -eq 1) $saved
+Check 'no playground unless asked' (-not $seq.Playground)
+$inPlayground = Get-Parse "@sim idle`n@playground`n@frames 1"
+Check '@playground starts in the playground and is not a step' ($inPlayground -isnot [string] -and $inPlayground.Playground -and @($inPlayground.Steps).Count -eq 1) $inPlayground
 $kinds = ($seq.Steps | ForEach-Object Kind) -join ' '
 Check 'every directive has its kind' ($kinds -eq 'wait frames until assert remember assert mark log nolog shot diff key pending command command') $kinds
 Check 'the trailing comment is dropped' ($seq.Steps[0].Ms -eq 100)
@@ -267,8 +272,9 @@ foreach ($file in $shipped) {
 	$parsed = try { Read-ArxSequence $file.FullName } catch { "$_" }
 	Check "  $($file.Name) parses" ($parsed -isnot [string]) $parsed
 	if ($parsed -isnot [string]) {
-		# A simulator script, or a flat run said outright (--no-vr in @args, stand-up.xrs #263)
-		Check "  $($file.Name) names its start" (($parsed.Sim -or $parsed.Args -contains '--no-vr') -and $parsed.Args)
+		# A simulator script, or a flat run said outright (--no-vr in @args, stand-up.xrs #263); the start is its @args
+		# or the test playground (@playground, #321)
+		Check "  $($file.Name) names its start" (($parsed.Sim -or $parsed.Args -contains '--no-vr') -and ($parsed.Args -or $parsed.Playground))
 		# CI gives every sequence a fresh user dir (#296): a slot to load exists only when the sequence says which save
 		Check "  $($file.Name) declares the @save its --loadslot needs" (-not ($parsed.Args -contains '--loadslot') -or [bool]$parsed.Save)
 		Check "  $($file.Name) names the issue behind every @pending" (@($parsed.Steps | Where-Object { $_.Kind -eq 'pending' -and $_.Issue -gt 0 }).Count -eq @($parsed.Steps | Where-Object Kind -eq 'pending').Count)

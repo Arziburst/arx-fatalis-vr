@@ -56,6 +56,8 @@
 #if ARX_HAVE_OPENXR
 
 // OpenXR with the OpenGL binding (and windows.h on Windows)
+#include "vr/HandTracking.h"
+#include "vr/HandReticle.h"
 #include "vr/HeadTracking.h"
 #include "vr/InterfaceSize.h"
 #include "vr/MenuPointer.h"
@@ -164,6 +166,8 @@ struct OpenXRState {
 	Vec2i quadFailedSize = Vec2i(0); //!< a size the quad swapchain could not be created for
 	Swapchain beam;                  //!< the menu pointer's beam image (#34), made the first time it is shown
 	bool beamFailed = false;         //!< the beam swapchain could not be made: not retried this session
+	std::array<Swapchain, 2> reticleImages; //!< the hand reticle's ring, dim and bright (#37), made when first shown
+	bool reticleFailed = false;      //!< the reticle swapchains could not be made: not retried this session
 
 	/*!
 	 * The interface's own resolution (#73): from the session's first located eyes on, the 2D
@@ -184,6 +188,9 @@ struct OpenXRState {
 
 	//! One action per physical control (#30); created with the instance, attached to the session
 	ActionSet actions;
+
+	//! XR_EXT_hand_tracking (#305): bound with the instance, a tracker per hand on the session
+	HandTracking handTracking;
 
 	//! The current OpenXR frame, from beginFrame (xrWaitFrame) to its xrEndFrame
 	struct Frame {
@@ -225,6 +232,15 @@ struct OpenXRState {
 		bool submitted = false;  //!< part of the last frame's layers
 	} pointer;
 
+	//! The hand reticles (#37), set by the input module every frame
+	struct HandReticle {
+		bool requested = false;
+		Vec3f hit = Vec3f(0.f); //!< LOCAL space
+		bool bright = false;
+		bool submitted = false; //!< part of the last frame's layers
+	};
+	std::array<HandReticle, HandCount> reticles;
+
 	//! The stereo render as status.json reports it; \c active is the current frame's, the rest the last stereo frame's
 	StereoStatus stereo;
 	bool stereoLogged = false; //!< the stereo banner was logged for this session
@@ -235,7 +251,8 @@ struct OpenXRState {
 		XrCompositionLayerProjection projection = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
 		XrCompositionLayerQuad quad = { XR_TYPE_COMPOSITION_LAYER_QUAD };
 		XrCompositionLayerQuad beam = { XR_TYPE_COMPOSITION_LAYER_QUAD }; //!< the menu pointer, above the panel (#34)
-		std::array<const XrCompositionLayerBaseHeader *, 3> list = { };
+		std::array<XrCompositionLayerQuad, HandCount> reticles = { }; //!< the hand reticles, on top (#37)
+		std::array<const XrCompositionLayerBaseHeader *, 3 + HandCount> list = { };
 		u32 count = 0;
 	} layers;
 
@@ -551,19 +568,22 @@ bool runtimeIsReady() {
 
 #endif
 
-bool hasExtension(const char * name) {
+//! Whether the runtime lists an extension; \a failure gets the result of a failed enumeration (nothing is logged)
+bool extensionListed(const char * name, XrResult & failure) {
+
+	failure = XR_SUCCESS;
 
 	uint32_t count = 0;
 	XrResult result = xrEnumerateInstanceExtensionProperties(nullptr, 0, &count, nullptr);
 	if(XR_FAILED(result)) {
-		LogWarning << "OpenXR runtime unavailable (" << resultName(result) << "), starting in flat mode";
+		failure = result;
 		return false;
 	}
 
 	std::vector<XrExtensionProperties> extensions(count, { XR_TYPE_EXTENSION_PROPERTIES });
 	result = xrEnumerateInstanceExtensionProperties(nullptr, count, &count, extensions.data());
 	if(XR_FAILED(result)) {
-		LogWarning << "Could not enumerate OpenXR extensions (" << resultName(result) << "), starting in flat mode";
+		failure = result;
 		return false;
 	}
 
@@ -573,13 +593,39 @@ bool hasExtension(const char * name) {
 		}
 	}
 
-	LogWarning << "OpenXR runtime does not support " << name << ", starting in flat mode";
+	return false;
+}
+
+//! An extension VR cannot start without
+bool hasExtension(const char * name) {
+
+	XrResult failure = XR_SUCCESS;
+	if(extensionListed(name, failure)) {
+		return true;
+	}
+
+	if(XR_FAILED(failure)) {
+		LogWarning << "OpenXR runtime unavailable or its extensions could not be enumerated (" << resultName(failure)
+		           << "), starting in flat mode";
+	} else {
+		LogWarning << "OpenXR runtime does not support " << name << ", starting in flat mode";
+	}
 	return false;
 }
 
 bool createInstance() {
 
-	const char * extensions[] = { XR_KHR_OPENGL_ENABLE_EXTENSION_NAME };
+	// The OpenGL binding is required; hand tracking (#305) is taken when the runtime lists it and
+	// the fingers follow the controls otherwise
+	std::vector<const char *> extensions = { XR_KHR_OPENGL_ENABLE_EXTENSION_NAME };
+	XrResult listFailure = XR_SUCCESS;
+	const bool handTracking = extensionListed(HandTracking::extensionName(), listFailure);
+	if(handTracking) {
+		extensions.push_back(HandTracking::extensionName());
+	} else {
+		LogInfo << "[vr] hands: the runtime does not list " << HandTracking::extensionName()
+		        << " - the fingers follow the controls (trigger, grip, thumb)";
+	}
 
 	XrInstanceCreateInfo createInfo = { XR_TYPE_INSTANCE_CREATE_INFO };
 	util::storeStringTerminated(createInfo.applicationInfo.applicationName, arx_name);
@@ -592,14 +638,18 @@ bool createInstance() {
 	#else
 	createInfo.applicationInfo.apiVersion = XR_CURRENT_API_VERSION;
 	#endif
-	createInfo.enabledExtensionCount = uint32_t(std::size(extensions));
-	createInfo.enabledExtensionNames = extensions;
+	createInfo.enabledExtensionCount = uint32_t(extensions.size());
+	createInfo.enabledExtensionNames = extensions.data();
 
 	XrResult result = xrCreateInstance(&createInfo, &g_xr.instance);
 	if(XR_FAILED(result)) {
 		g_xr.instance = XR_NULL_HANDLE;
 		LogWarning << "Could not create OpenXR instance (" << resultName(result) << "), starting in flat mode";
 		return false;
+	}
+
+	if(handTracking) {
+		g_xr.handTracking.bind(g_xr.instance);
 	}
 
 	XrInstanceProperties properties = { XR_TYPE_INSTANCE_PROPERTIES };
@@ -649,14 +699,22 @@ bool findSystem() {
 	}
 
 	XrSystemProperties properties = { XR_TYPE_SYSTEM_PROPERTIES };
+	// Whether this headset gives hand joints (#305): asked along with the rest when the extension is on
+	XrSystemHandTrackingPropertiesEXT handProperties = { XR_TYPE_SYSTEM_HAND_TRACKING_PROPERTIES_EXT };
+	if(g_xr.handTracking.status().extension) {
+		properties.next = &handProperties;
+	}
 	result = xrGetSystemProperties(g_xr.instance, g_xr.systemId, &properties);
 	if(XR_SUCCEEDED(result)) {
+		g_xr.handTracking.setSupported(handProperties.supportsHandTracking == XR_TRUE);
 		LogInfo << "VR headset: " << util::loadString(properties.systemName)
 		        << " (vendor " << properties.vendorId << ")"
 		        << (properties.trackingProperties.positionTracking ? ", positional tracking" : ", orientation tracking only")
 		        << ", max swapchain " << properties.graphicsProperties.maxSwapchainImageWidth
 		        << 'x' << properties.graphicsProperties.maxSwapchainImageHeight
-		        << ", " << properties.graphicsProperties.maxLayerCount << " layers";
+		        << ", " << properties.graphicsProperties.maxLayerCount << " layers"
+		        << (g_xr.handTracking.status().extension
+		            ? (handProperties.supportsHandTracking ? ", hand tracking" : ", no hand tracking") : "");
 		CrashHandler::setVariable("VR headset", util::loadString(properties.systemName));
 		g_xr.maxSwapchainSize = Vec2i(s32(properties.graphicsProperties.maxSwapchainImageWidth),
 		                              s32(properties.graphicsProperties.maxSwapchainImageHeight));
@@ -782,9 +840,15 @@ void destroySession() {
 	g_xr.beam.destroy();
 	g_xr.beamFailed = false;
 	g_xr.pointer = OpenXRState::PointerBeam();
+	for(Swapchain & image : g_xr.reticleImages) {
+		image.destroy();
+	}
+	g_xr.reticleFailed = false;
+	g_xr.reticles = { };
 	g_xr.mirror.destroy();
 	g_xr.colorFormat = 0;
 
+	g_xr.handTracking.destroy();
 	g_xr.actions.detach();
 	g_xr.lastDisplayTime = 0;
 
@@ -1260,6 +1324,7 @@ bool makeBeamImage() {
 		}
 	}
 
+	g_xr.mirror.setOverlayImage(DesktopMirror::BeamImage, BeamImageSize, pixels.data());
 	glBindTexture(GL_TEXTURE_2D, g_xr.beam.texture());
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, BeamImageSize.x, BeamImageSize.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
@@ -1310,6 +1375,109 @@ void describeBeamLayer(OpenXRState::Layers & layers) {
 
 	layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
 	pointer.submitted = true;
+}
+
+//! The hand reticle's image: a ring with a dot in its middle (#37, D-029)
+const s32 ReticleImageSize = 64;
+
+/*!
+ * The hand reticle's two images, made once per session: white, premultiplied by the alpha - a ring
+ * (radius 0.32 to 0.46 of the image) and a dot (0.12) with soft edges, at ReticleDimAlpha and at
+ * ReticleBrightAlpha. Filled once: the compositor keeps showing the last released image.
+ */
+bool makeReticleImages() {
+
+	if(g_xr.reticleImages[0].isValid() && g_xr.reticleImages[1].isValid()) {
+		return true;
+	}
+	if(g_xr.reticleFailed) {
+		return false;
+	}
+
+	const Vec2i size(ReticleImageSize, ReticleImageSize);
+	const char * const names[] = { "hand reticle (dim)", "hand reticle (bright)" };
+	const float alphas[] = { ReticleDimAlpha, ReticleBrightAlpha };
+	std::vector<u8> pixels(size_t(size.x * size.y) * 4);
+	for(size_t i = 0; i < g_xr.reticleImages.size(); i++) {
+		Swapchain & image = g_xr.reticleImages[i];
+		if(!image.create(g_xr.session, g_xr.colorFormat, size, false, names[i]) || !image.acquire()) {
+			for(Swapchain & failed : g_xr.reticleImages) {
+				failed.destroy();
+			}
+			g_xr.reticleFailed = true;
+			LogWarning << "[vr] reticle: no reticle image, the hands aim without a visible mark";
+			return false;
+		}
+		for(s32 y = 0; y < size.y; y++) {
+			for(s32 x = 0; x < size.x; x++) {
+				const float dx = (float(x) + 0.5f) / float(size.x) - 0.5f;
+				const float dy = (float(y) + 0.5f) / float(size.y) - 0.5f;
+				const float r = std::sqrt(dx * dx + dy * dy);
+				const float soft = 1.5f / float(size.x); // the edges fade over about a pixel and a half
+				const float ring = std::clamp((r - 0.32f) / soft + 0.5f, 0.f, 1.f) * std::clamp((0.46f - r) / soft + 0.5f, 0.f, 1.f);
+				const float dot = std::clamp((0.12f - r) / soft + 0.5f, 0.f, 1.f);
+				const float alpha = alphas[i] * std::max(ring, dot);
+				const u8 value = u8(std::lround(alpha * 255.f));
+				u8 * pixel = &pixels[size_t(y * size.x + x) * 4];
+				pixel[0] = pixel[1] = pixel[2] = pixel[3] = value;
+			}
+		}
+		g_xr.mirror.setOverlayImage(i == 0 ? DesktopMirror::ReticleDimImage : DesktopMirror::ReticleBrightImage, size,
+		                            pixels.data());
+		glBindTexture(GL_TEXTURE_2D, image.texture());
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, size.x, size.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+		glBindTexture(GL_TEXTURE_2D, 0);
+		image.release();
+	}
+
+	LogInfo << "[vr] reticle: ring images " << size.x << 'x' << size.y << ", " << ReticleAngleDegrees
+	        << " deg wide, alpha " << ReticleDimAlpha << " / " << ReticleBrightAlpha;
+	return true;
+}
+
+/*!
+ * The hand reticles (#37): a small ring where each hand's hidden ray hits the world, as a quad layer
+ * on top of everything (the ring sits on the first hit, so nothing in the world is in front of it).
+ */
+void describeReticleLayers(OpenXRState::Layers & layers) {
+
+	const FrameViews & views = g_xr.frame.views;
+	if(!views.valid) {
+		return;
+	}
+	const Vec3f eye = (views.eyes[0].position + views.eyes[1].position) * 0.5f;
+
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		OpenXRState::HandReticle & reticle = g_xr.reticles[hand];
+		if(!reticle.requested || layers.count >= layers.list.size() || !makeReticleImages()) {
+			continue;
+		}
+		ReticleQuad quad;
+		if(!reticleQuad(reticle.hit, eye, ReticleAngleDegrees, quad)) {
+			continue;
+		}
+		const Swapchain & image = g_xr.reticleImages[reticle.bright ? 1 : 0];
+		XrCompositionLayerQuad & layer = layers.reticles[hand];
+		layer = { XR_TYPE_COMPOSITION_LAYER_QUAD };
+		layer.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+		layer.space = g_xr.localSpace;
+		layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+		layer.subImage.swapchain = image.handle();
+		layer.subImage.imageRect = image.rect();
+		layer.subImage.imageArrayIndex = 0;
+		layer.pose.orientation.x = quad.orientation.x;
+		layer.pose.orientation.y = quad.orientation.y;
+		layer.pose.orientation.z = quad.orientation.z;
+		layer.pose.orientation.w = quad.orientation.w;
+		layer.pose.position.x = quad.center.x;
+		layer.pose.position.y = quad.center.y;
+		layer.pose.position.z = quad.center.z;
+		layer.size.width = quad.size;
+		layer.size.height = quad.size;
+		layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
+		reticle.submitted = true;
+	}
 }
 
 /*!
@@ -1500,6 +1668,9 @@ bool finishFlatFrame(OpenXRState::Layers & layers) {
 	frame.quadAcquired = false;
 
 	describeQuadLayer(layers, frame.stereo ? XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT : 0);
+	if(frame.stereo) {
+		describeReticleLayers(layers);
+	}
 
 	return true;
 }
@@ -1708,7 +1879,36 @@ void drawMirror(const Vec2i & windowSize, bool flatFrame) {
 		}
 	}
 
-	g_xr.mirror.draw(windowSize, fov, position, orientation, quad);
+	// The quad layers after the flat frame (#271): the menu pointer's beam, then the hand reticles, in the
+	// order they were submitted. They live in the room, where the eye was located for the frame.
+	std::vector<DesktopMirror::Overlay> overlays;
+	const Vec3f roomEye(mirrored.pose.position.x, mirrored.pose.position.y, mirrored.pose.position.z);
+	const glm::quat roomOrientation(mirrored.pose.orientation.w, mirrored.pose.orientation.x,
+	                                mirrored.pose.orientation.y, mirrored.pose.orientation.z);
+	if(frame.views.valid) {
+		const auto add = [&](DesktopMirror::OverlayImage image, const XrCompositionLayerQuad & layer) {
+			DesktopMirror::Overlay overlay;
+			overlay.image = image;
+			overlay.width = layer.size.width;
+			overlay.height = layer.size.height;
+			overlay.position = Vec3f(layer.pose.position.x, layer.pose.position.y, layer.pose.position.z);
+			overlay.orientation = glm::quat(layer.pose.orientation.w, layer.pose.orientation.x,
+			                                layer.pose.orientation.y, layer.pose.orientation.z);
+			overlays.push_back(overlay);
+		};
+		if(g_xr.pointer.submitted) {
+			add(DesktopMirror::BeamImage, g_xr.layers.beam);
+		}
+		for(size_t hand = 0; hand < HandCount; hand++) {
+			const OpenXRState::HandReticle & reticle = g_xr.reticles[hand];
+			if(reticle.submitted) {
+				add(reticle.bright ? DesktopMirror::ReticleBrightImage : DesktopMirror::ReticleDimImage,
+				    g_xr.layers.reticles[hand]);
+			}
+		}
+	}
+
+	g_xr.mirror.draw(windowSize, fov, position, orientation, quad, overlays, roomEye, roomOrientation);
 }
 
 /*!
@@ -1951,6 +2151,7 @@ bool createSession() {
 	}
 
 	g_xr.actions.attach(g_xr.session);
+	g_xr.handTracking.create(g_xr.session);
 
 	return true;
 
@@ -2133,6 +2334,7 @@ bool beginFrameFor(const Vec2i & windowSize, FrameTargets targets) {
 	// The hands for the same display time in the same space as the eyes: the body is posed with the
 	// sample the frame is submitted with (#36, F-21)
 	g_xr.actions.locateHands(g_xr.localSpace, frame.state.predictedDisplayTime, frame.hands);
+	g_xr.handTracking.locate(g_xr.localSpace, frame.state.predictedDisplayTime, frame.hands);
 
 	beginFrameTargets(windowSize, targets);
 
@@ -2202,6 +2404,9 @@ void submitFrame(const Vec2i & windowSize) {
 		GLStateGuard state;
 		g_xr.layers.count = 0;
 		g_xr.pointer.submitted = false;
+		for(OpenXRState::HandReticle & reticle : g_xr.reticles) {
+			reticle.submitted = false;
+		}
 		eyes = describeEyeLayer(g_xr.layers);
 		if(!eyes) {
 			background = renderBackground(g_xr.layers);
@@ -2361,6 +2566,7 @@ MirrorStatus mirrorStatus() {
 	status.state = g_xr.mirror.state();
 	status.eye = g_xr.mirror.eyeName();
 	status.frames = g_xr.mirror.frames();
+	status.overlays = g_xr.mirror.overlaysDrawn();
 	return status;
 }
 
@@ -2445,6 +2651,17 @@ bool pointerBeamShown() {
 	return g_xr.pointer.submitted;
 }
 
+void setHandReticle(Hand hand, bool shown, const Vec3f & hit, bool bright) {
+	OpenXRState::HandReticle & reticle = g_xr.reticles[size_t(hand)];
+	reticle.requested = shown;
+	reticle.hit = hit;
+	reticle.bright = bright;
+}
+
+bool handReticleShown(Hand hand) {
+	return g_xr.reticles[size_t(hand)].submitted;
+}
+
 void recenterPanel() {
 	g_xr.panel.anchor.recenter();
 }
@@ -2473,11 +2690,16 @@ u64 controllerSyncs() {
 	return g_xr.actions.syncs();
 }
 
+const HandJointsStatus & handJointsStatus() {
+	return g_xr.handTracking.status();
+}
+
 void shutdown() {
 
 	requestExit();
 	destroySession();
 	g_xr.actions.destroy();
+	g_xr.handTracking.unbind();
 
 	if(g_xr.instance != XR_NULL_HANDLE) {
 		xrDestroyInstance(g_xr.instance);
@@ -2613,6 +2835,12 @@ bool pointerBeamShown() {
 	return false;
 }
 
+void setHandReticle(Hand /* hand */, bool /* shown */, const Vec3f & /* hit */, bool /* bright */) { }
+
+bool handReticleShown(Hand /* hand */) {
+	return false;
+}
+
 void recenterPanel() { }
 
 std::string runtimeName() {
@@ -2634,6 +2862,11 @@ std::array<std::string, HandCount> controllerProfiles() {
 
 u64 controllerSyncs() {
 	return 0;
+}
+
+const HandJointsStatus & handJointsStatus() {
+	static const HandJointsStatus none;
+	return none;
 }
 
 bool isEnabled() {

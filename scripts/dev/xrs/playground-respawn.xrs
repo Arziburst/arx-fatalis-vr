@@ -1,0 +1,64 @@
+# Death in the test playground costs nothing (#321.3): the hero dies and is back at the playground's start at once,
+# alive with full life, in GAMEPLAY and the same area - no death screen, no menu, no load. Until that is built, death
+# shows the game's death screen: life stays 0 and the state leaves GAMEPLAY, so the waits and asserts below fail.
+#   .\scripts\dev\xrs-run.ps1 playground-respawn
+#   .\scripts\dev\smoke-test.ps1 -Playground -VrSim idle -Sequence playground-respawn
+# How the hero is killed: the script console's `poison 100000` (ARX_PLAYER_Poison, src/game/Player.cpp). It needs no
+# second entity - `<npc>.dodamage player N` does, and a self-inflicted dodamage does nothing (docs/vr/TESTING.md) - and
+# no knowledge of the playground's NPC id. The poison's saving throw (resistPoison) is random, so the line is sent
+# several times in one batch; the first frame after a success ARX_PLAYER_FrameCheck turns the huge poison into damagePlayer
+# and the game raises the `player.death` event (src/game/Damage.cpp), which the sequence waits for before it judges.
+# The start is not hard-coded: the position at the start of the run is what the respawn must come back to (the
+# generator's HERO_START, scripts/dev/playground/layout.mjs: the room's centre 8000/8000, 250 units from it).
+# Not covered here (owner / verifier steps, they need another level): death in an original level is unchanged - launch
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-goblin-fight -Sequence <a copy of this file without @playground,
+#   with @save mvp-goblin-fight and @args --loadslot 0 and a `setplayercontrols on` line>
+# and expect the death screen (state not GAMEPLAY, life 0, no respawn), as before the change.
+@sim idle
+@playground
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert area eq 30
+@remember lifemax player.lifeMax
+@remember startx player.x
+@remember starty player.y
+@remember startz player.z
+@assert player.life gt 0
+@assert player.mana ge 0
+
+# 1. Away from the start (the room's middle, 200 units east; setpos takes the EYE: floor y 0 - 170 = -170), as the
+# hero would be after a fight
+setpos 8200 -170 8000 0
+@frames 30
+@assert player.x ge 8150
+@assert player.x le 8250
+@assert player.life gt 0
+
+# 2. Dead: the hero's life goes to 0 (the death event is the proof it happened; the respawn may follow within frames)
+poison 100000; poison 100000; poison 100000; poison 100000; poison 100000; poison 100000; poison 100000; poison 100000
+@until events.byName."player.death" ge 1 15s
+
+# 3. Within 3 s: alive again, full life, the same level, in GAMEPLAY, back at the start (the 200 units walked away undone)
+@until player.life ge {lifemax} 3s
+@assert state eq GAMEPLAY
+@assert area eq 30
+@assert menuMode eq ingame
+@assert player.life ge {lifemax}
+@assert player.mana gt 0
+@assert player.x ge {startx-40}
+@assert player.x le {startx+40}
+@assert player.z ge {startz-40}
+@assert player.z le {startz+40}
+@assert player.y ge {starty-60}
+@assert player.y le {starty+60}
+@assert player.controlsBlocked eq false
+
+# 4. And it stays so: the poison is gone (the hero does not die again), the level is still the playground
+@frames 90
+@assert state eq GAMEPLAY
+@assert area eq 30
+@assert player.life ge {lifemax}
+@assert events.byName."player.death" eq 1
+@assert errors eq 0

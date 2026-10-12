@@ -8,7 +8,9 @@
 	  1. smoke-test.ps1 -Seconds 3 -Commands 'drawcheck 120'   flat, --loadlevel 10: start, play, draw check, quit
 	  2. spell-drawcheck.ps1                                   the 26 spells of #71 cast, drawn twice per frame
 	  3. every scripts\dev\xrs\*.xrs sequence (#255)           one launch each, with the @sim / @args / @save it declares; the
-	                                                           test save library of this account is verified (or generated) first
+	                                                           test save library of this account is verified (or generated) first;
+	                                                           an @playground sequence on a runner without node is NOT RUN, with
+	                                                           a warning in the log and the job summary (#321)
 	All are the same scripts the workers run (docs/vr/TESTING.md); a FAIL of any fails this script.
 
 	Evidence, in -OutDir: one transcript per phase (smoke-test.log, spell-drawcheck.log), and after each phase the
@@ -179,6 +181,16 @@ try {
 		}
 		$sequenceUserDirs = Join-Path (Get-ArxAppDataDir) 'ci-userdirs'
 		foreach ($seq in $sequences) {
+			# A playground sequence needs the generated level (#321), which needs node; a runner without it (the service
+			# account may not see a per-user install) reports the sequence NOT RUN with a warning, never a pass
+			if ($seq.Playground -and -not (Get-Command node -ErrorAction SilentlyContinue)) {
+				$why = "sequence '$($seq.Name)' runs in the test playground, whose level is generated with node - node is not on this runner's PATH, not run"
+				Write-Host "ci-smoke: $why" -ForegroundColor Yellow
+				Write-Host "::warning title=Playground sequence not run::$why"
+				if ($env:GITHUB_STEP_SUMMARY) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "> **Not run:** $why" }
+				$results += [pscustomobject]@{ Name = "xrs-$($seq.Name)"; Exit = 0; Verdict = 'NOT RUN' }
+				continue
+			}
 			if ($seq.Save -and -not $libraryOk) { Write-Host "ci-smoke: sequence '$($seq.Name)' needs the save $($seq.Save), which the library phase did not provide - not run" -ForegroundColor Red; $results += [pscustomobject]@{ Name = "xrs-$($seq.Name)"; Exit = 1; Verdict = 'FAIL' }; continue }
 			$p = @{ Config = $Config; Sequence = $seq.Path; LockTimeoutSec = $LockTimeoutSec } + $dataArgs
 			# A flat sequence says so (--no-vr in its @args, no @sim); the others run on the idle simulated headset
@@ -187,6 +199,7 @@ try {
 			$seqUserDir = New-ArxSequenceUserDir $sequenceUserDirs $seq.Name
 			$p.UserDir = $seqUserDir
 			if ($seq.Save) { $p.Save = $seq.Save }
+			if ($seq.Playground) { $p.Playground = $true }
 			if ($seq.Args) { $p.ArxArgs = @($seq.Args) }
 			$results += Invoke-Phase "xrs-$($seq.Name)" 'smoke-test.ps1' $p $seqUserDir
 			Remove-Item -LiteralPath $seqUserDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -203,11 +216,13 @@ try {
 }
 
 Write-Host ''
-foreach ($r in $results) { Write-Host ("  {0,-8} {1}" -f $r.Verdict, $r.Name) -ForegroundColor $(if ($r.Exit -eq 0) { 'Green' } else { 'Red' }) }
+foreach ($r in $results) { Write-Host ("  {0,-8} {1}" -f $r.Verdict, $r.Name) -ForegroundColor $(if ($r.Verdict -eq 'NOT RUN') { 'Yellow' } elseif ($r.Exit -eq 0) { 'Green' } else { 'Red' }) }
 if (@($results | Where-Object Verdict -eq 'FAIL')) { Write-Host 'ci-smoke: FAILED' -ForegroundColor Red; exit 1 }
 if (@($results | Where-Object Verdict -eq 'SKIPPED')) {
 	Write-Host "ci-smoke: SKIPPED - the game lock stayed busy for $LockTimeoutSec s; a gate that did not run is not a pass, re-run the job when the game is closed" -ForegroundColor Red
 	exit 2
 }
+$notRun = @($results | Where-Object Verdict -eq 'NOT RUN')
+if ($notRun) { Write-Host "ci-smoke: all phases that ran passed; $($notRun.Count) playground sequence(s) NOT RUN (no node on this runner)" -ForegroundColor Yellow; exit 0 }
 Write-Host 'ci-smoke: all phases passed' -ForegroundColor Green
 exit 0

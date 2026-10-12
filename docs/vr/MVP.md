@@ -57,7 +57,8 @@ The desktop window mirrors one eye, so the demo can be recorded and shown.
 ## Accepted for the MVP (known problems we live with)
 
 - The menus are the original 2D interface on a flat floating panel — functional, not pretty.
-- No finger tracking; the arms follow the controllers, but engine animations that take over the body
+- The arms follow the controllers and the fingers the real fingers (#305; three curls per hand — the model has
+  the middle, ring and little finger as one block), but engine animations that take over the body
   (death, ladders, knockdowns) may look wrong.
 - Bow, shield, prepared spells, spell book in VR: not in MVP (they may work through the panel, or not).
 - Cutscenes, death camera and scripted cameras may behave badly.
@@ -137,11 +138,13 @@ dependencies are met; when a task is split, replace it with its parts.
 *(the owner decides on the new catalog rows before #36, #116, #49 and #88)*
 29. #49 — Floating UI panel for menus, inventory, book, map (F-80, F-82)
 30. #34 — Menu pointer only while a menu or the inventory is open (D-010, F-81)
-30. #178 — VR settings screen with the Controls section: remapping, turning, crouch and height, left-handed (D-020)
+30. #178 — VR settings screen with the Controls section: remapping (button, chord, long press) per controller type (D-020, D-039)
+30. #260 — VR settings, Controls: turning rows and character height up / down (after #32, #27)
 31. #33 — Jump on A, crouch toggle on right stick down, stealth by partial deflection (F-47)
 32. #70 — Test save library for MVP scenarios *(done: new game, items, goblin fight; levers, doors and chests are #210, recorded by the owner)*
 33. #36 — Full body: the player model with arms driven by the controllers via IK (D-009, F-52, F-49)
 33. #304 — VR arms: roll-aware IK (A1, RENIK's rules) — the hand's roll shared along the arm, no twisting from the shoulder or the elbow (F-212)
+33. #261 — VR settings, Controls: left-handed mode, physical crouch rows, grip input (after #100, #36)
 34. #116 — Health and mana as two bars on the left wrist (F-83)
 35. #166 — Research: world interaction in Valheim VR — the reference for D-016, #37, #38
 35. #37 — Items with a reticle per hand: both hands work as the mouse — drag, set down, into the inventory (D-016, F-57, F-72)
@@ -152,6 +155,7 @@ dependencies are met; when a task is split, replace it with its parts.
 
 ### C. Fight
 39. #75 — Weapon held by the IK hand; no engine arm attack animation while IK drives the arms (F-48, F-67)
+39. #288 — Hand reticles with the weapon drawn: the trigger is the mouse in combat mode, the inventory keeps the weapon drawn (D-019; follow-up of #37)
 40. #39 — Melee: contact hits, swing detector, stab rule, per-target cooldown, damage from swing speed (F-58–F-63, F-66, F-74)
 41. #42 — Haptic feedback (F-44)
 
@@ -210,7 +214,9 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #32 turning | input | VR | #74 |
 | #118, #120 research | docs | plain | — (decisions before #36, #116, #49, #88) |
 | #49 UI panel | ui | VR | #73 |
-| #178 VR settings: Controls | ui | VR | #30, #35, #49, #34, #32, #33, #28, #100 |
+| #178 VR settings: Controls, remapping | ui | VR | #30, #35, #49 |
+| #260 VR settings: turning, height | ui | VR | #178, #32, #27 |
+| #261 VR settings: left-handed, crouch, grip | ui | VR | #178, #100, #36 |
 | #34 menu pointer | ui | VR | #49, #74 |
 | #33 jump, crouch toggle, stealth | input | VR | #74 |
 | #70 test saves | build | plain | #99, #123 |
@@ -224,6 +230,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #88 tester build | build | plain | #79, #123, decisions on #118 / #120 |
 | #132 D4 crash reports under SteamVR, symbols | build | plain | #88, #131 |
 | #75 weapon in the IK hand | combat | VR | #36 |
+| #288 reticles with the weapon drawn | combat | VR | #37, #75 |
 | #39 melee | combat | VR | #75, #114 |
 | #42 haptics | input | VR | #74 |
 | #43, #44, #45 runes | magic | VR | #36, #74 |
@@ -241,8 +248,8 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | **3** | #74, #72, #27, #25, #35 | #73, #70, #127 |
 | **4** — finishes checkpoint A | #28, #100, #26, #31, #32, #42 | #80 |
 | **5** — checkpoint B | #49, #33, #36 | #88 → #132 *(after the owner's decisions on #118 / #120)* |
-| **6** | #34, #116, #37, #75, #304, #178 | — |
-| **7** — checkpoints C, D | #38, #39, #43 → #44 → #45 | #16 |
+| **6** | #34, #116, #37, #75, #304, #178 → #260, #261 | — |
+| **7** — checkpoints C, D | #38, #288, #39, #43 → #44 → #45 | #16 |
 | **8** — MVP done | #77 | — |
 
 ## Estimate

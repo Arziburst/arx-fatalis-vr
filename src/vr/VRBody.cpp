@@ -34,15 +34,19 @@
 #include "animation/Skeleton.h"
 #include "core/Config.h"
 #include "core/GameEvent.h"
+#include "core/GameTime.h"
 #include "game/Entity.h"
 #include "game/EntityManager.h"
+#include "game/Equipment.h"
 #include "game/Player.h"
 #include "graphics/GraphicsTypes.h"
 #include "io/log/Logger.h"
+#include "platform/Time.h"
 #include "scene/Object.h"
 #include "vr/ArmIK.h"
 #include "vr/ArmRoll.h"
 #include "vr/HeadTracking.h"
+#include "vr/VRInput.h"
 #include "vr/VRSystem.h"
 
 namespace vr {
@@ -62,6 +66,28 @@ const float MaxShoulderSlide = 20.f;
 const float ElbowPoleDown = 1.f;
 const float ElbowPoleOut = 0.3f;
 const float ElbowPoleBack = 1.f;
+//! The bend of the model's finger segments at a fist (#305); the one place to tune from the headset
+const FingerCurlLimits CurlLimits;
+
+//! The thumb closes towards the palm's face and a little towards the fingers (its direction at a fist, in hand axes)
+const float ThumbCloseTowardsFingers = 0.5f;
+
+//! The model's finger groups under a hand: three curls (F-218, research section 16b)
+enum FingerGroup : u8 {
+	FingerThumb = 0, //!< one segment
+	FingerIndex,     //!< root and tip
+	FingerBlock,     //!< the middle, ring and little finger as one block: root and tip
+	FingerGroupCount
+};
+
+const u8 NoFinger = 0xff;
+
+//! One finger group of a hand: its segments from the knuckle out, and the axis they bend about
+struct FingerChain {
+	std::vector<VertexGroupId> segments; //!< root first; empty when the model has none
+	Vec3f axis = Vec3f(0.f);             //!< in the wrist's rest frame: a positive turn about it curls the segment towards the palm's face
+	std::string names;
+};
 
 //! One arm of the model: the three joints from the shoulder to the wrist, and the hand's frame
 struct ArmChain {
@@ -83,6 +109,20 @@ struct ArmChain {
 	Vec3f restElbow = Vec3f(0.f);          //!< the direction the elbow sticks out at rest, across the shoulder-wrist line
 	const char * restElbowSource = "";     //!< what named restElbow (the model's back, the rest triangle, the thumb)
 	float restBend = 0.f;                  //!< degrees between the upper arm and the forearm at rest
+	// The fingers (#305)
+	bool haveFingers = false;              //!< at least one finger group was found under the hand
+	std::array<FingerChain, FingerGroupCount> fingers;
+	Vec3f outwardLocal = Vec3f(0.f);       //!< the palm's face, in the wrist's rest frame: where the fingers curl towards
+	//! per bone of the model: the finger group and the segment it is, or NoFinger
+	std::vector<std::pair<u8, u8>> fingerOf;
+};
+
+//! A posed hand's world axes, for the landmarks of status.json
+struct HandAxes {
+	bool valid = false;
+	Vec3f wrist = Vec3f(0.f);
+	Vec3f knuckles = Vec3f(0.f);
+	Vec3f outward = Vec3f(0.f);
 };
 
 struct BodyState {
@@ -98,6 +138,9 @@ struct BodyState {
 	Vec3f shift = Vec3f(0.f);
 	std::array<bool, HandCount> posedBefore = { }; //!< for the per-arm events
 	std::array<int, HandCount> overflowBefore = { }; //!< for the roll overflow events
+	std::array<std::string, HandCount> fingerSourceBefore; //!< for the per-hand finger events
+	std::array<FingerCurl, HandCount> curl;       //!< the fingers' bend, approaching what the tracking says
+	std::array<HandAxes, HandCount> axes;         //!< the posed hands' axes this frame
 	bool activeBefore = false;
 	std::string inactiveBefore;
 	std::vector<char> touched;                    //!< scratch: bones recomputed after the chain
@@ -117,6 +160,8 @@ std::string vectorText(const Vec3f & v, int decimals = 2) {
 	text << std::fixed << std::setprecision(decimals) << '(' << v.x << ", " << v.y << ", " << v.z << ')';
 	return text.str();
 }
+
+void findFingers(const EERIE_3DOBJ * obj, VertexGroupId handGroup, Hand hand, ArmChain & chain);
 
 //! The arm whose hand holds the attach vertex: the wrist joint it sits on, its father and its father's father
 ArmChain findChain(const EERIE_3DOBJ * obj, Hand hand) {
@@ -215,9 +260,124 @@ ArmChain findChain(const EERIE_3DOBJ * obj, Hand hand) {
 		}
 	}
 
+	findFingers(obj, handGroup, hand, chain);
+
 	chain.valid = true;
 
 	return chain;
+}
+
+/*!
+ * \brief The finger groups under the hand (#305): the hand group's children, told apart by name
+ *
+ * \c thumb in the name is the thumb, \c index the index finger, any other child the three-finger
+ * block (human_base: right_hand_thumb, right_hand_index_root > _tip, right_hand_fingers_root >
+ * right_hand_finger_tip). Each chain runs from the child down its own children. The bend axes
+ * come from the hand frame: the fingers turn about the knuckle line towards the palm's face
+ * (grip +X is into the right palm and out of the left, ArmIK.h), the thumb about the axis that
+ * swings its rest direction towards the palm's face and the fingers.
+ */
+void findFingers(const EERIE_3DOBJ * obj, VertexGroupId handGroup, Hand hand, ArmChain & chain) {
+
+	chain.haveFingers = false;
+	chain.fingerOf.assign(obj->grouplist.size(), std::make_pair(NoFinger, NoFinger));
+	if(!chain.frame.valid) {
+		return;
+	}
+	const Skeleton & rig = *obj->m_skeleton;
+
+	const float side = (hand == Hand::Right) ? 1.f : -1.f;
+	chain.outwardLocal = -side * chain.frame.palm;
+
+	for(VertexGroupId child : obj->grouplist.handles()) {
+		if(rig.bones[child].father != handGroup) {
+			continue;
+		}
+		const std::string & name = obj->grouplist[child].name;
+		FingerGroup group = FingerBlock;
+		if(name.find("thumb") != std::string::npos) {
+			group = FingerThumb;
+		} else if(name.find("index") != std::string::npos) {
+			group = FingerIndex;
+		}
+		FingerChain & finger = chain.fingers[group];
+		if(!finger.segments.empty()) {
+			LogWarning << "[vr] body: " << handName(hand) << " hand has a second group for its "
+			           << (group == FingerThumb ? "thumb" : group == FingerIndex ? "index finger" : "finger block")
+			           << ": " << name << " (keeping " << finger.names << ")";
+			continue;
+		}
+		// The chain: this group, then its child, and so on
+		VertexGroupId segment = child;
+		while(segment && finger.segments.size() < 4) {
+			finger.segments.push_back(segment);
+			finger.names += (finger.segments.size() > 1 ? ">" : "") + obj->grouplist[segment].name;
+			VertexGroupId next;
+			for(VertexGroupId candidate : obj->grouplist.handles()) {
+				if(rig.bones[candidate].father == segment) {
+					next = candidate;
+					break;
+				}
+			}
+			segment = next;
+		}
+		chain.haveFingers = true;
+	}
+
+	for(size_t g = 0; g < FingerGroupCount; g++) {
+		FingerChain & finger = chain.fingers[g];
+		if(finger.segments.empty()) {
+			continue;
+		}
+		if(g == FingerThumb) {
+			// The thumb's rest direction: from its root to the middle of its vertices
+			const VertexGroupId root = finger.segments.front();
+			const Vec3f origin = obj->vertexlist[obj->grouplist[root].origin].v;
+			Vec3f centroid(0.f);
+			size_t count = 0;
+			for(VertexGroupId segment : finger.segments) {
+				for(VertexId vertex : obj->m_boneVertices[segment]) {
+					centroid += obj->vertexlist[vertex].v - origin;
+					count++;
+				}
+			}
+			const Vec3f direction = count ? centroid / float(count) : chain.frame.thumb;
+			const Vec3f closed = glm::normalize(chain.outwardLocal + ThumbCloseTowardsFingers * chain.frame.knuckles);
+			finger.axis = glm::cross(direction, closed);
+			if(glm::length(finger.axis) < 1e-4f) {
+				finger.axis = chain.frame.knuckles; // the thumb already points at its closed direction
+			}
+		} else {
+			finger.axis = glm::cross(chain.frame.knuckles, chain.outwardLocal);
+		}
+		finger.axis = glm::normalize(finger.axis);
+		for(size_t s = 0; s < finger.segments.size(); s++) {
+			chain.fingerOf[size_t(finger.segments[s])] = std::make_pair(u8(g), u8(s));
+		}
+	}
+}
+
+/*!
+ * \return whether the hand holds the equipped weapon this frame (#75, D-033): the right hand, an
+ *         equipped dagger, one- or two-handed weapon (not a bow) - the same rule the weapon module
+ *         links the weapon to the IK hand by, so the fingers close on the grip exactly when there is one
+ */
+bool handHoldsWeapon(Hand hand) {
+	if(hand != Hand::Right) {
+		return false;
+	}
+	const Entity * weapon = entities.get(player.equiped[EQUIP_SLOT_WEAPON]);
+	return weapon && (weapon->type_flags & (OBJECT_TYPE_DAGGER | OBJECT_TYPE_1H | OBJECT_TYPE_2H));
+}
+
+//! The bend of one segment of a finger group, degrees
+float segmentAngle(const FingerCurl & curl, u8 group, u8 segment) {
+	switch(group) {
+		case FingerThumb: return segment == 0 ? curl.thumb : 0.f;
+		case FingerIndex: return segment == 0 ? curl.indexRoot : segment == 1 ? curl.indexTip : 0.f;
+		case FingerBlock: return segment == 0 ? curl.fingersRoot : segment == 1 ? curl.fingersTip : 0.f;
+		default: return 0.f;
+	}
 }
 
 /*!
@@ -448,11 +608,39 @@ void bind(EERIE_3DOBJ * obj) {
 		        << "), the elbow points " << vectorText(chain.restElbow) << " (from " << chain.restElbowSource << ")";
 		status.chains += std::string(hand ? "; " : "") + name + ": " + chain.names;
 		status.bound = true;
+
+		// The fingers (#305): the groups found under the hand and the axes they bend about
+		std::string fingers;
+		if(chain.haveFingers) {
+			const char * labels[FingerGroupCount] = { "thumb", "index", "block" };
+			for(size_t g = 0; g < FingerGroupCount; g++) {
+				const FingerChain & finger = chain.fingers[g];
+				fingers += std::string(g ? ", " : "") + labels[g] + ' ' + (finger.segments.empty() ? "none" : finger.names);
+			}
+			LogInfo << "[vr] body: " << name << " hand fingers: " << fingers << "; the palm's face "
+			        << vectorText(chain.outwardLocal) << ", finger axis " << vectorText(chain.fingers[FingerBlock].axis)
+			        << ", thumb axis " << vectorText(chain.fingers[FingerThumb].axis)
+			        << " (wrist rest frame); limits thumb " << CurlLimits.thumb << ", index " << CurlLimits.indexRoot
+			        << " + " << CurlLimits.indexTip << ", block " << CurlLimits.fingersRoot << " + " << CurlLimits.fingersTip
+			        << " degrees";
+		} else {
+			fingers = chain.frame.valid ? "none under the hand group - the engine animates them" : "no hand frame - the engine animates them";
+			LogWarning << "[vr] body: " << name << " hand fingers: " << fingers;
+		}
+		status.fingers += std::string(hand ? "; " : "") + name + ": " + fingers;
 	}
 
 	addNeckCap(obj);
 
-	gameevent::Event("vr.body.model")("model", status.model)("chains", status.chains)("bound", status.bound);
+	gameevent::Event("vr.body.model")("model", status.model)("chains", status.chains)("bound", status.bound)
+		("fingers", status.fingers);
+}
+
+void noteFingers(size_t hand, const char * source, bool holds) {
+	if(g_body.fingerSourceBefore[hand] != source) {
+		g_body.fingerSourceBefore[hand] = source;
+		gameevent::Event("vr.body.fingers", 200)("hand", handName(Hand(hand)))("source", source)("holds", holds);
+	}
 }
 
 //! A child bone from its parent, as the engine's concatenation does
@@ -513,6 +701,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		bind(eobj);
 	}
 
+	status.poseCalls++;
 	g_body.shift = Vec3f(0.f);
 	status.shift = Vec3f(0.f);
 	for(size_t hand = 0; hand < HandCount; hand++) {
@@ -520,6 +709,11 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		arm.source = "none";
 		arm.tracked = false;
 		arm.posed = false;
+		arm.fingerSource = "none";
+		arm.fingerGroups = g_body.chains[hand].haveFingers;
+		arm.joints = false;
+		arm.holds = false;
+		g_body.axes[hand].valid = false;
 	}
 
 	if(!status.bound) {
@@ -581,8 +775,6 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	const Vec3f right(std::cos(yaw), 0.f, std::sin(yaw));
 	const Vec3f down(0.f, 1.f, 0.f);
 
-	const FrameHands & located = frameHands();
-
 	bool any = false;
 	for(size_t hand = 0; hand < HandCount; hand++) {
 
@@ -591,16 +783,10 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 
 		// Where the controller is: located this frame, else the simulated one
 		HandSample sample;
-		const char * source = "none";
-		if(located.tracked[hand]) {
-			sample = located.hands[hand];
-			source = "xr";
-		} else if(g_body.haveSim[hand]) {
-			sample = g_body.sim[hand];
-			source = "sim";
-		}
+		const char * located = controllerSample(Hand(hand), sample);
+		const char * source = located ? located : "none";
 		arm.source = source;
-		arm.tracked = (std::strcmp(source, "none") != 0);
+		arm.tracked = (located != nullptr);
 		arm.sample = sample;
 		if(!arm.tracked || !chain.valid) {
 			noteArm(hand, false, source);
@@ -652,6 +838,40 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		handBone.anim.trans = pose.wrist;
 		handBone.anim.quat = chain.frame.valid ? handQuat : forearm.anim.quat * handBone.init.quat;
 
+		// The fingers (#305): what they follow this frame - a weapon in the hand closes them on its
+		// grip, else the runtime's hand joints, else the controller's trigger, grip and thumb rest
+		// (a simulated hand of the channel has neither: open). The bend approaches the target at a
+		// bounded speed, so a weapon taken or a source lost never snaps the fingers
+		FingerCurl curlTarget;
+		const char * fingerSource = "none";
+		const bool holds = handHoldsWeapon(Hand(hand));
+		const HandJoints & joints = frameHands().joints[hand];
+		if(chain.haveFingers) {
+			if(holds) {
+				fingerSource = "held";
+				curlTarget = fingerCurlClosed(CurlLimits);
+			} else if(joints.valid) {
+				fingerSource = "joints";
+				curlTarget = fingerCurlFromJoints(joints, CurlLimits);
+			} else if(std::strcmp(source, "xr") == 0) {
+				fingerSource = "controls";
+				const ControllerInput & input = controllerInput();
+				curlTarget = fingerCurlFromControls(input.trigger[hand], input.grip[hand], input.thumbTouch[hand], CurlLimits);
+			}
+		}
+		const float seconds = std::min(toMsf(g_platformTime.lastFrameDuration()) / 1000.f, 0.25f);
+		g_body.curl[hand] = approachCurl(g_body.curl[hand], curlTarget, CurlDegreesPerSecond * seconds);
+		const FingerCurl & curl = g_body.curl[hand];
+		std::array<Vec3f, FingerGroupCount> fingerAxes;
+		for(size_t g = 0; g < FingerGroupCount; g++) {
+			fingerAxes[g] = handBone.anim.quat * chain.fingers[g].axis;
+		}
+		HandAxes & axes = g_body.axes[hand];
+		axes.valid = chain.frame.valid;
+		axes.wrist = pose.wrist;
+		axes.knuckles = handBone.anim.quat * chain.frame.knuckles;
+		axes.outward = handBone.anim.quat * chain.outwardLocal;
+
 		// Whatever hangs below the chain (the hand, fingers, other children of these groups) follows it
 		std::vector<char> & touched = g_body.touched;
 		touched.assign(skeleton.bones.size(), 0);
@@ -671,12 +891,28 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 						bone.anim.quat = skeleton.bones[bone.father].anim.quat;
 					}
 				}
+				const std::pair<u8, u8> & finger = chain.fingerOf[i];
+				if(finger.first != NoFinger) {
+					// A finger segment: its rest pose on its parent (not the animation's bend), turned about
+					// the knuckle line by the curl - the tip segment on the already curled root
+					const float angle = segmentAngle(curl, finger.first, finger.second);
+					bone.anim.quat = glm::angleAxis(glm::radians(angle), fingerAxes[finger.first])
+					                 * skeleton.bones[bone.father].anim.quat;
+				}
 				touched[i] = 1;
 			}
 		}
 
+		arm.fingerSource = fingerSource;
+		arm.joints = joints.valid;
+		arm.holds = holds;
+		arm.curl = curl;
+		arm.curlTarget = curlTarget;
+		noteFingers(hand, fingerSource, holds);
+
 		arm.posed = true;
 		arm.controller = grip;
+		arm.grip = placement.orientation;
 		arm.target = target;
 		arm.shoulder = pose.shoulder;
 		arm.elbow = pose.elbow;
@@ -697,6 +933,11 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		noteRollOverflow(hand, posed.overflow, posed.handRoll);
 		noteArm(hand, true, source);
 		any = true;
+	}
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		if(!status.hands[hand].posed) {
+			noteFingers(hand, "none", false);
+		}
 	}
 
 	if(any) {
@@ -734,7 +975,7 @@ size_t bodyCapStart(const EERIE_3DOBJ * obj) {
 	return (obj && obj == g_body.boundObject) ? g_body.capStart : (obj ? obj->facelist.size() : 0);
 }
 
-bool handLandmarks(Hand hand, Vec3f & palm, Vec3f & tip) {
+bool handLandmarks(Hand hand, HandLandmarks & landmarks) {
 	const ArmChain & chain = g_body.chains[size_t(hand)];
 	if(!chain.valid || !g_body.boundObject) {
 		return false; // nothing bound yet: before the player entity exists, entities.player() must not be asked
@@ -743,8 +984,17 @@ bool handLandmarks(Hand hand, Vec3f & palm, Vec3f & tip) {
 	if(!io || io->obj != g_body.boundObject) {
 		return false;
 	}
-	palm = io->obj->vertexWorldPositions[chain.palm].v;
-	tip = io->obj->vertexWorldPositions[chain.tip].v;
+	landmarks.palm = io->obj->vertexWorldPositions[chain.palm].v;
+	landmarks.tip = io->obj->vertexWorldPositions[chain.tip].v;
+	const HandAxes & axes = g_body.axes[size_t(hand)];
+	if(axes.valid) {
+		const Vec3f tip = landmarks.tip - axes.wrist;
+		landmarks.tipAlong = glm::dot(tip, axes.knuckles);
+		landmarks.tipOut = glm::dot(tip, axes.outward);
+	} else {
+		landmarks.tipAlong = 0.f;
+		landmarks.tipOut = 0.f;
+	}
 	return true;
 }
 
@@ -756,6 +1006,19 @@ const HandFrame * handRestFrame(Hand hand) {
 void setSimulatedHand(Hand hand, const HandSample & sample) {
 	g_body.sim[size_t(hand)] = sample;
 	g_body.haveSim[size_t(hand)] = true;
+}
+
+const char * controllerSample(Hand hand, HandSample & sample) {
+	const FrameHands & located = frameHands();
+	if(located.tracked[size_t(hand)]) {
+		sample = located.hands[size_t(hand)];
+		return "xr";
+	}
+	if(g_body.haveSim[size_t(hand)]) {
+		sample = g_body.sim[size_t(hand)];
+		return "sim";
+	}
+	return nullptr;
 }
 
 void clearSimulatedHand(Hand hand) {

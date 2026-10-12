@@ -1,3 +1,4 @@
+#Requires -Version 7
 <#
 .SYNOPSIS
 	Self-test of the GitHub access of the dev scripts (#186): REST first, the board cache, rate-limit handling, the move queue.

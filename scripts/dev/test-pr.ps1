@@ -28,6 +28,9 @@
 .PARAMETER NoLaunch
 	Prepare (worktree, build) and print the test question, but do not start the game.
 
+.PARAMETER DryRun
+	Like a launch, but run-windows.ps1 only prints the arx.exe command line (it has sound: no --mute, #345). The worktree, the fast-forward and the build still happen first; the game, SteamVR and the saves are not touched.
+
 .PARAMETER StartSteamVR
 	Start SteamVR when it is not running, then launch in VR (the owner's switch - it turns the headset on).
 
@@ -43,6 +46,9 @@
 .PARAMETER Isolated
 	Launch with the worktree's isolated user directory instead of the owner's saves
 	(run-windows.ps1 -Isolated); add -Saves to copy saves into it.
+
+.PARAMETER Playground
+	Launch the test playground (run-windows.ps1 -Playground, #321) instead of the default save.
 
 .PARAMETER Saves
 	With -Isolated: save slots to copy into the isolated user directory (e.g. save0000).
@@ -62,10 +68,12 @@ param(
 	[Parameter(Mandatory, Position = 0)] [int]$Pr,
 	[switch]$Rebuild,
 	[switch]$NoLaunch,
+	[switch]$DryRun,
 	[switch]$StartSteamVR,
 	[switch]$StopSteamVR,
 	[string]$Branch,
 	[switch]$Isolated,
+	[switch]$Playground,
 	[string[]]$Saves,
 	[ValidateSet('Release', 'RelWithDebInfo', 'Debug')] [string]$Config = 'Release',
 	[Parameter(ValueFromRemainingArguments)] [string[]]$ArxArgs
@@ -174,12 +182,15 @@ Write-Host "==> Build id: $(Short $head)$(if ($dirty) { ' + uncommitted changes'
 # --- Launch ------------------------------------------------------------------------------------------
 
 if ($NoLaunch) { return }
-if (-not $ArxArgs) { $ArxArgs = @('--skiplogo', '--loadslot', '0') }
-$runArgs = @{ Config = $Config; ArxArgs = $ArxArgs }
+if (-not $ArxArgs -and -not $Playground) { $ArxArgs = @('--skiplogo', '--loadslot', '0') }
+if (-not $ArxArgs) { $ArxArgs = @() }
+$runArgs = @{ Config = $Config; ArxArgs = $ArxArgs; Sound = $true } # the owner's launches have sound (#345)
+if ($DryRun) { $runArgs.DryRun = $true }
 if ($StartSteamVR) { $runArgs.StartSteamVR = $true }
 elseif ($ArxArgs -notcontains '--no-vr' -and -not (Get-Process vrserver -ErrorAction SilentlyContinue)) {
 	Write-Host '    SteamVR is not running: the game will start flat. For the headset start SteamVR first, or pass -StartSteamVR.' -ForegroundColor Yellow
 }
+if ($Playground) { $runArgs.Playground = $true }
 if ($Isolated) { $runArgs.Isolated = $true }
 if ($Saves) { $runArgs.Isolated = $true; $runArgs.Saves = $Saves }
 & (Join-Path $wt 'scripts\run-windows.ps1') @runArgs

@@ -22,14 +22,18 @@ no rays from the hands — runes drawn in the air with the hand, a pointer only 
 — both hands work as the mouse, each with its own reticle; the inventory opens in the centre of the view (D-016);
 the camera is where the head is (D-018); the MVP control scheme (D-019).
 
-**Development loop:** `/next-task` takes the next task from the queue in [docs/vr/MVP.md](docs/vr/MVP.md#task-queue)
-and implements it in its own PR; `/accept-task` and `/reject-task` handle the owner's VR test verdict.
-Merge on your own when CI is green, except `needs-vr-test` PRs — those wait for the owner
+**Development loop (since 2026-10-11, the coordinator core):** the coordinator writes each task's
+**contract** into its issue and starts a worker (`#<n> worker: <title>`) with the worker role; the worker
+implements it in its own PR and reports; the verifier checks it; **the coordinator merges** on green CI
+and a confirmed verdict — `needs-vr-test` PRs after the owner's headset verdict. Workers never merge.
+The old `/next-task`, `/accept-task`, `/reject-task` and `/review-pr` commands are retired
+(see [docs/vr/WORKFLOW.md](docs/vr/WORKFLOW.md#working-through-the-coordinator-core)); details
 (see [Pull requests, CI and merging](docs/vr/WORKFLOW.md#pull-requests-ci-and-merging)).
 
 **Coordinator:** the owner talks to one coordinator session ("ARXVR Coordinator", started with
 `/coordinator`), which runs the work in blocks, starts and controls the worker sessions
-(`scripts/dev/start-worker.ps1`) and reports — playbook: [docs/vr/COORDINATOR.md](docs/vr/COORDINATOR.md).
+(`scripts/dev/start-worker.ps1`) and reports — rules: [coordinator/](coordinator/) (a local copy of the
+reusable core in `coordinator/core/`, the Arx rules in `PROJECT.md`, the tools in `BINDINGS.md`).
 A new machine is prepared with `scripts/dev/setup-coordinator.ps1`.
 
 **All project artifacts (docs, issues, commits, PRs, code comments) are in English.**
@@ -43,7 +47,7 @@ Conversation with the project owner is in Russian.
 - `main` — our development branch and the default branch. Task branches start from it, PRs go into it.
 - `master` — untouched mirror of the upstream engine at the point we forked; not used for development.
 
-The project owner's working copy is `C:\Users\arzib\OneDrive\Desktop\arx-fatalis-vr`.
+The project owner's working copy is `E:\dev\arx-fatalis-vr` (outside OneDrive since 2026-10-11).
 
 ## Development environment (Windows)
 

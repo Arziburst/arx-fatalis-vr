@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-	Prepare this machine for the coordinator / worker loop (docs/vr/COORDINATOR.md, D-011, D-013).
+	Prepare this machine for the coordinator / worker loop (coordinator/BINDINGS.md, D-011, D-013).
 
 .DESCRIPTION
 	Sets the owner's personal Claude Code settings (~/.claude/settings.json) that the loop needs, keeping
@@ -91,7 +91,7 @@ $claude = [bool](Get-Command claude -ErrorAction SilentlyContinue)
 Write-State $claude "Claude Code installed$(if ($claude) { ': ' + (claude --version 2>$null | Select-Object -First 1) })"
 if (-not $claude) { $missing += 'Install Claude Code.' }
 
-$wtRoot = if ($env:ARXVR_WORKTREE_ROOT) { $env:ARXVR_WORKTREE_ROOT } else { Join-Path $env:USERPROFILE 'arx-fatalis-vr-wt' }
+$wtRoot = if ($env:ARXVR_WORKTREE_ROOT) { $env:ARXVR_WORKTREE_ROOT } else { Join-Path (git -C $PSScriptRoot rev-parse --show-toplevel) '.claude\worktrees' }
 Write-State $true "worker worktrees go to $wtRoot (created on demand; ARXVR_WORKTREE_ROOT changes it)"
 
 $data = Find-ArxFatalisSteamInstall

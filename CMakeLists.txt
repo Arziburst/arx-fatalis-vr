@@ -1065,6 +1065,7 @@ set(GUI_SOURCES
 	src/gui/Console.cpp
 	src/gui/Credits.cpp
 	src/gui/Cursor.cpp
+	src/gui/DamageNumbers.cpp
 	src/gui/Dragging.cpp
 	src/gui/Hud.cpp
 	src/gui/Interface.cpp

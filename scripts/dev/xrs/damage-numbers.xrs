@@ -1,0 +1,45 @@
+# Damage numbers (#321, sub-task 321.4): in the test playground every hit that damages an NPC shows the damage dealt
+# as a number over the target - rising and fading for about a second, drawn in the world so both eyes see it at the
+# target's depth. The game reports it as one `damage.number` event per number (entity, amount, and views = how many
+# views drew it, with its screen position in each: x0 y0 x1 y1) and as status.json damageNumbers.visible (numbers on
+# screen now). The original levels show nothing: damage-numbers-off.xrs.
+#
+# Runs in the generated playground (area 30) on the simulated headset:
+#   .\scripts\dev\xrs-run.ps1 damage-numbers
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence damage-numbers -Playground
+# The playground's NPC (321.2) is reached through the channel, so the sequence needs no entity id: `playground place
+# <ahead>` stands it ahead of the hero, facing him; `playground hit <n>` is the hero's hit of n damage on it (the
+# damageCharacter() path every weapon, spell and missile ends in). The eye images are not compared: the NPC's hurt
+# animation changes them as much as a number does - the event's views and positions say where each eye drew it.
+@sim idle
+@playground
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+
+# The NPC held 80 units ahead of the hero
+playground place 80
+@frames 60
+@assert damageNumbers.visible eq 0
+@shot before-hit
+
+# 1. One hit: one number, with the amount, on screen at once
+@mark
+playground hit 5
+@until damageNumbers.visible ge 1 2s
+@shot during-hit       # right away: a number lives 1.2 s game time (opaque 0.6 s) and a shot costs 0.3-0.7 s
+# The event is logged 250 ms game time after the hit (hits on one target within 250 ms sum into one event)
+@until events.byName."damage.number" ge 1 5s
+@assert events.byName."damage.number" eq 1
+# 2. In both eyes: the number was drawn in view 0 and view 1 (left and right eye on the headset)
+@log damage\.number .*amount=5.*views=2
+
+# 3. It fades: after about a second no number is on screen, and the event was not repeated
+@until damageNumbers.visible eq 0 5s
+@assert events.byName."damage.number" eq 1
+
+# 4. A second hit: a second number
+playground hit 5
+@until events.byName."damage.number" ge 2 5s
+@assert errors eq 0

@@ -33,6 +33,9 @@
 	-LockTimeoutSec for the holder named in the output; it runs only this working copy's own build made
 	from its HEAD (-Rebuild builds first); every run is one line in %LOCALAPPDATA%\ArxFatalisVR\launches.log.
 
+.PARAMETER Sound
+	Keep the game's sound. Without it every run gets --mute (#345): CI, workers and sequences stay silent.
+
 .PARAMETER Config
 	Which build to run: Release (default), RelWithDebInfo or Debug.
 
@@ -84,6 +87,11 @@
 
 .PARAMETER Menu
 	A plain launch that expects the main menu (no --loadlevel 10 default); combine with -Commands 'loadslot 0'.
+
+.PARAMETER Playground
+	Start the test playground (#321, scripts\dev\playground): generates the level when it is missing or older than
+	the generator, starts a new game in it (--data-dir <level folder> --loadlevel 30) and fails unless the game reaches
+	GAMEPLAY in the playground area.
 
 .PARAMETER Seconds
 	How long the game stays in the expected state before it is quit (default 10).
@@ -146,8 +154,10 @@ param(
 	[int]$LockTimeoutSec = 300,
 	[switch]$Rebuild,
 	[switch]$Vr,
+	[switch]$Sound,
 	[string]$VrSim,
 	[switch]$Menu,
+	[switch]$Playground,
 	[int]$Seconds = 10,
 	[int]$Repeat = 1,
 	[int]$StartTimeoutSec = 90,
@@ -194,6 +204,12 @@ if ($VrSim) {
 $sim = [bool]$simScript
 # -Save <name>: that library save is the only save of the isolated user directory, so slot 0 is it
 if ($Save -and -not $ArxArgs) { $ArxArgs = @('--loadslot', '0') }
+if ($Playground) {
+	# The test playground (#321): the generated level's folder as a data dir, a new game in its area
+	if ($Menu -or $Save -or $Saves) { throw '-Playground starts a new game in the playground: it excludes -Menu, -Save and -Saves' }
+	. (Join-Path $PSScriptRoot 'playground\playground-lib.ps1')
+	$ArxArgs = @(Get-ArxPlaygroundArgs (Initialize-ArxPlaygroundLevel)) + @($ArxArgs)
+}
 if (-not $ArxArgs -and -not $Menu) { $ArxArgs = @('--loadlevel', '10') }
 if (-not $ArxArgs) { $ArxArgs = @() }
 
@@ -233,6 +249,7 @@ function Invoke-SmokeRun([int]$Run) {
 		$argList += '--windowed', '--test-dir', "`"$TestDir`""
 		if (-not $Shared) { $argList += '--user-dir', "`"$UserDir`"", '--config-dir', "`"$UserDir`"" }
 		if (-not $Vr) { $argList += '--no-vr' }
+		if (-not $Sound) { $argList += '--mute' }
 		# --vr-sim wins over --no-vr in the game; --no-vr stays, so a broken script means flat, never the runtime
 		if ($sim) { $argList += '--vr-sim', "`"$simScript`"" }
 		$argList += $ArxArgs
@@ -274,6 +291,12 @@ function Invoke-SmokeRun([int]$Run) {
 		if ($reached) {
 			# Evidence for the no-focus rule (D-014): the window of a self-test must not take the focus
 			if ($status.window) { Write-Host "  window: focused=$($status.window.focused) minimized=$($status.window.minimized) $($status.window.width)x$($status.window.height)" }
+			if ($Playground) {
+				$inPlayground = [int]$status.area -eq $script:ArxPlaygroundArea
+				Write-Check $inPlayground "playground: the game is in area $($status.area) (expected $script:ArxPlaygroundArea) in state $($status.state)"
+				if (-not $inPlayground) { $reasons.Add("-Playground: the game is in area $($status.area), not the playground area $script:ArxPlaygroundArea") }
+				elseif ($status.state -ne 'GAMEPLAY') { $reasons.Add("-Playground: the game is in state $($status.state), not GAMEPLAY") }
+			}
 			if ($Vr) {
 				# Give the runtime a moment to move the session past idle; frames follow once it is ready (#18)
 				try { $status = Wait-ArxStatus { param($s) $s.vr.sessionState -ne 'idle' } -TimeoutSec 10 -Dir $TestDir -What 'a session state' } catch { }

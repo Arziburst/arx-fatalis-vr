@@ -248,6 +248,8 @@ bool ARX_SOUND_PlayZoneAmbiance(const res::path & ambiance_name, SoundLoopMode l
 audio::AmbianceId ARX_SOUND_PlayMenuAmbiance(const res::path & ambiance_name);
 void ARX_SOUND_KillAmbiances();
 
+//! Keep all mixers silent for this run (--mute); the configured volumes are not changed
+void ARX_SOUND_SetMuted(bool muted);
 void ARX_SOUND_MixerSetVolume(audio::MixerId mixer_id, float volume);
 void ARX_SOUND_MixerStop(audio::MixerId mixer_id);
 void ARX_SOUND_MixerPause(audio::MixerId mixer_id);

@@ -46,6 +46,7 @@
 #include "util/String.h"
 
 #include "vr/ArmRoll.h"
+#include "vr/HeadPose.h"
 #include "vr/Locomotion.h"
 #include "vr/MeleeSwing.h"
 #include "vr/MirrorGeometry.h"
@@ -171,7 +172,8 @@ constexpr const float
 	vrArmForearmTwist = vr::DefaultForearmTwist,
 	vrArmUpperTwist = vr::DefaultUpperTwist,
 	vrArmElbowRoll = vr::DefaultElbowRoll,
-	vrArmTwistOverflow = vr::DefaultTwistOverflow;
+	vrArmTwistOverflow = vr::DefaultTwistOverflow,
+	vrHeightOffset = 0.f;
 
 constexpr const ActionKey actions[NUM_ACTION_KEY] = {
 	ActionKey(Keyboard::Key_Spacebar), // JUMP
@@ -338,6 +340,7 @@ constexpr const std::string_view
 	vrArmUpperTwist = "vr_arm_upper_twist",
 	vrArmElbowRoll = "vr_arm_elbow_roll",
 	vrArmTwistOverflow = "vr_arm_twist_overflow",
+	vrHeightOffset = "vr_height_offset",
 	vrMeleeSwingSpeed = "vr_melee_swing_speed",
 	vrMeleeFullSpeed = "vr_melee_full_speed",
 	vrMeleeWeakAim = "vr_melee_weak_aim",
@@ -630,6 +633,7 @@ bool Config::save() {
 	writer.writeKey(Key::vrArmUpperTwist, input.vrArmUpperTwist);
 	writer.writeKey(Key::vrArmElbowRoll, input.vrArmElbowRoll);
 	writer.writeKey(Key::vrArmTwistOverflow, input.vrArmTwistOverflow);
+	writer.writeKey(Key::vrHeightOffset, input.vrHeightOffset);
 	writer.writeKey(Key::vrMeleeSwingSpeed, input.vrMeleeSwingSpeed);
 	writer.writeKey(Key::vrMeleeFullSpeed, input.vrMeleeFullSpeed);
 	writer.writeKey(Key::vrMeleeWeakAim, input.vrMeleeWeakAim);
@@ -827,6 +831,7 @@ bool Config::init(const fs::path & file) {
 	input.vrArmElbowRoll = glm::clamp(vrArmElbowRoll, 0.f, 1.f);
 	float vrArmTwistOverflow = reader.getKey(Section::Input, Key::vrArmTwistOverflow, Default::vrArmTwistOverflow);
 	input.vrArmTwistOverflow = glm::clamp(vrArmTwistOverflow, vr::MinTwistOverflow, vr::MaxTwistOverflow);
+	input.vrHeightOffset = vr::clampHeightOffset(reader.getKey(Section::Input, Key::vrHeightOffset, Default::vrHeightOffset));
 	// Physical melee (#39): the full-damage speed is never below the swing speed
 	float vrMeleeSwingSpeed = reader.getKey(Section::Input, Key::vrMeleeSwingSpeed, Default::vrMeleeSwingSpeed);
 	input.vrMeleeSwingSpeed = glm::clamp(vrMeleeSwingSpeed, 0.5f, 10.f);

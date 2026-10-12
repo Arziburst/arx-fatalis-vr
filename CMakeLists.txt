@@ -1098,6 +1098,7 @@ set(GUI_SOURCES
 	src/gui/widget/CheckboxWidget.cpp
 	src/gui/widget/CycleTextWidget.cpp
 	src/gui/widget/KeybindWidget.cpp
+	src/gui/widget/NotchSliderWidget.cpp
 	src/gui/widget/PanelWidget.cpp
 	src/gui/widget/SaveSlotWidget.cpp
 	src/gui/widget/SliderWidget.cpp
@@ -1292,6 +1293,7 @@ set(VR_SOURCES
 	src/vr/VRReticle.cpp
 	src/vr/VRSimulator.cpp
 	src/vr/VRSwapchain.cpp
+	src/vr/VRSettingsRows.cpp
 	src/vr/VRSystem.cpp
 	src/vr/VRTurn.cpp
 	src/vr/WeaponGrip.cpp

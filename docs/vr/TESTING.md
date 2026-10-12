@@ -124,7 +124,9 @@ in the mixer only: `cfg.ini` keeps the owner's volumes (like `--windowed`, it ne
 The owner's headset tests always have sound: `test-pr.ps1` passes `-Sound` on every path it launches
 (with and without `-StartSteamVR`, with `-Saves`), and only background launches (CI, smoke-test,
 `--vr-sim`, workers) are muted. `run-windows.ps1 -DryRun` (and `test-pr.ps1 <pr> -DryRun`) prints the
-`arx.exe` command line without starting anything - no `--mute` with `-Sound`. A smoke-test run prints the
+`arx.exe` command line without starting the game, SteamVR (`-StartSteamVR` only prints "would start
+SteamVR") or copying saves - no `--mute` with `-Sound`. `test-pr.ps1 -DryRun` still prepares the
+worktree, fast-forwards and builds first (only the launch is a dry one). A smoke-test run prints the
 command line (`=== run ...: arx.exe ...`) and `arx.log` has it in the `command line:` banner; `launches.log`
 records only the extra arguments, not `--mute`.
 

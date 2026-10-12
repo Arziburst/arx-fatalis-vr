@@ -142,7 +142,7 @@ if (-not $Sound) { $modeArgs += '--mute' }
 $dirArgs = @()
 if ($UserDir) { $Isolated = $true } elseif ($Isolated) { $UserDir = Get-DefaultUserDir $SourceDir }
 if ($Isolated) {
-	New-Item -ItemType Directory -Force $UserDir | Out-Null
+	if (-not $DryRun) { New-Item -ItemType Directory -Force $UserDir | Out-Null }
 	$dirArgs += '--user-dir', $UserDir, '--config-dir', $UserDir
 } elseif ($Saves -or $Save) {
 	throw '-Saves / -Save copy saves into an isolated user directory: add -Isolated (the player''s own saves are never touched)'
@@ -154,17 +154,31 @@ Write-Host "    build: $(ConvertTo-ShortSha $stamp) ($($copy.Branch))"
 Write-Host "    data: $(if ($DataDir) { "$DataDir (--data-dir)" } else { 'found by the game in the Steam libraries (arx.log: Steam data)' })"
 if ($Isolated) { Write-Host "    user dir: $UserDir (isolated)" } else { Write-Host "    user dir: $(Get-SharedUserDir) (shared)" }
 if ($TestChannel) { Write-Host "    test channel: $(Get-DefaultTestDir $SourceDir)" }
-if ($Saves) { Copy-ArxSaves -Names $Saves -UserDir $UserDir -Library $SaveLibrary }
-if ($Save) {
-	Use-ArxSave -Name $Save -UserDir $UserDir -Library $SaveLibrary
-	if (-not $ArxArgs) { $ArxArgs = @('--loadslot', '0') }
+if ($DryRun) {
+	# Nothing is written or started: the saves are not copied and SteamVR is not started (D-014)
+	if ($Saves) { Write-Host "    dry run: would copy the saves $($Saves -join ', ')" }
+	if ($Save) {
+		Write-Host "    dry run: would use the save $Save"
+		if (-not $ArxArgs) { $ArxArgs = @('--loadslot', '0') }
+	}
+} else {
+	if ($Saves) { Copy-ArxSaves -Names $Saves -UserDir $UserDir -Library $SaveLibrary }
+	if ($Save) {
+		Use-ArxSave -Name $Save -UserDir $UserDir -Library $SaveLibrary
+		if (-not $ArxArgs) { $ArxArgs = @('--loadslot', '0') }
+	}
+	# A --loadslot of a save that is not there loads nothing: refuse before the game (and the headset) starts
+	$slotProblem = Get-ArxLoadSlotProblem -ArxArgs $ArxArgs -UserDir $(if ($Isolated) { $UserDir } else { Get-SharedUserDir })
+	if ($slotProblem) { throw $slotProblem }
 }
-# A --loadslot of a save that is not there loads nothing: refuse before the game (and the headset) starts
-$slotProblem = Get-ArxLoadSlotProblem -ArxArgs $ArxArgs -UserDir $(if ($Isolated) { $UserDir } else { Get-SharedUserDir })
-if ($slotProblem) { throw $slotProblem }
 
 # No SteamVR start without the owner: flat unless SteamVR already runs (or -StartSteamVR)
-$vr = Resolve-ArxVrMode -ArxArgs $ArxArgs -StartSteamVR:$StartSteamVR
+if ($DryRun -and $StartSteamVR -and $ArxArgs -notcontains '--no-vr' -and -not (Test-SteamVrRunning)) {
+	Write-Host '    dry run: would start SteamVR (-StartSteamVR); the launch would be VR' -ForegroundColor Yellow
+	$vr = [pscustomobject]@{ Vr = $true; Args = @($ArxArgs); Reason = 'dry run: SteamVR would be started on -StartSteamVR' }
+} else {
+	$vr = Resolve-ArxVrMode -ArxArgs $ArxArgs -StartSteamVR:$StartSteamVR
+}
 $ArxArgs = $vr.Args
 Write-Host "    mode: $(if ($vr.Vr) { 'VR' } else { 'flat' }) ($($vr.Reason))"
 

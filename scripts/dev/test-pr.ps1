@@ -29,7 +29,7 @@
 	Prepare (worktree, build) and print the test question, but do not start the game.
 
 .PARAMETER DryRun
-	Like a launch, but run-windows.ps1 only prints the arx.exe command line (it has sound: no --mute, #345).
+	Like a launch, but run-windows.ps1 only prints the arx.exe command line (it has sound: no --mute, #345). The worktree, the fast-forward and the build still happen first; the game, SteamVR and the saves are not touched.
 
 .PARAMETER StartSteamVR
 	Start SteamVR when it is not running, then launch in VR (the owner's switch - it turns the headset on).

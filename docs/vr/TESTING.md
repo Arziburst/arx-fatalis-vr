@@ -598,6 +598,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `spell.precast` | the player stores a spell | `spell`, `level` |
 | `spell.refused` | the player's spell does not launch | `spell`, `reason` (`runes-not-learned`, `no-mana` with `mana` / `cost`, `magic-disabled-by-level`, `spell-cannot-launch` — the spell's own silent check, `no-demon-within-900`, `not-implemented`) |
 | `melee.hit` | a weapon strike reaches an NPC and the player is the attacker or the target — one per swing (a VR swing: one per target it touches, #39) | `source`, `target`, `weapon`, `damage` (0 = the armour-class roll made it a miss), `aim` |
+| `damage.number` | a damage number over an NPC closes, only in the test playground (#321): every hit on an NPC shows its damage above the target for 1.2 s; hits on one target within 250 ms add up into one number, logged 250 ms after its first hit. `damageNumbers.visible` in the status: the numbers shown now | `entity`, `amount` (the hits' damage), `dealt` (the life taken: less on a killing blow), `hits`, `views` (the scene views it was drawn into in the last frame: 2 = both eyes), `x0` `y0` / `x1` `y1` (where in view 0 / 1 - the left / right eye image in VR - in pixels) |
 | `item.take` / `item.drop` | an item goes onto / off the cursor | `item`, `from=world\|inventory`; `how=throw\|drop\|place`, `count` |
 | `item.toinventory` | an item enters the player's inventory or the container the player has open | `item`, `container` |
 | `item.use` / `item.equip` | the player uses / equips an item | `item` |

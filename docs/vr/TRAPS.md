@@ -28,6 +28,7 @@ reproduce a slow runner with `vr-sim rate 45` in a scratch copy of the sequence.
 **Cause:** the game event log writes a `bool` field as `yes` / `no` (`GameEventFormat.h`), while `status.json`
 writes `true` / `false`.
 **Do:** match `key=yes|no` in `@log`, `eq true|false` in `@assert`.
+
 ## 2026-10-10 — A sequence passes alone and fails in CI with a value it never set (#178)
 
 **Symptom:** in CI `vr-remap-saved` found `remapped` false and `vr-settings-flat` found `jump` = `right.b`, both passing
@@ -45,6 +46,7 @@ the same sequence had passed an hour earlier. **Cause:** every channel step is a
 control table) correctly records a long press; on a quiet machine it may just stay under. **Do:** a short press in a
 sequence is `vr-input tap` (pressed and released within one update), the second control of a short chord too; a
 `down` / `up` pair only for a press that is meant to be long (with a `@wait` well above 0.5 s).
+
 ## 2026-10-10 — A check broken on purpose still passes: `-Rebuild` did not rebuild (#39)
 
 **Symptom:** with the charge spend commented out, `smoke-test.ps1 -Rebuild -Sequence melee-swing` passed all 92 steps,

@@ -12,18 +12,9 @@ name: Build (Windows)
 on:
   pull_request:
     branches: [ main ]
-    # Docs-only changes skip the build, except the two files of the light decision-number check (#274, folded in
-    # here by #296 so it does not take a runner slot of its own): there the "Scope" step skips the heavy steps and
-    # only the check runs. Later patterns re-include what an earlier one excluded.
-    paths:
-      - '**'
-      - '!docs/**'
-      - '!**/*.md'
-      - '!.claude/**'
-      - '!.github/ISSUE_TEMPLATE/**'
-      - '!.github/pull_request_template.md'
-      - 'docs/vr/DECISIONS.md'
-      - 'scripts/dev/number-decisions.ps1'
+    # Every PR into main runs this workflow, so the check "Windows MSVC build" is always reported and main's
+    # branch protection can require it (#371). A docs-only PR stays light: the "Scope" step skips the heavy
+    # steps and only the decision-number check runs (seconds, no build).
   push:
     branches: [ main ]
     paths-ignore:
@@ -41,6 +32,9 @@ concurrency:
 jobs:
   build:
     name: Windows MSVC build
+    # The repository is public and this runner is the owner's PC (#371): a pull request from a fork never runs
+    # here. Pushes, manual runs and PRs from this repository's own branches do.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [ self-hosted, Windows, arxvr ]
     timeout-minutes: 90
 

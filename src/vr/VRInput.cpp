@@ -668,6 +668,17 @@ std::string inputCommand(std::string_view arguments) {
 		return std::string();
 	}
 
+	if(verb == "height") {
+		// The character height setting as cfg.ini sets it (#260): meters above the character's eye
+		std::optional<float> value = util::toFloat(nextWord(rest));
+		if(!value) {
+			return "vr-input height: expected meters, e.g. 0.1";
+		}
+		config.input.vrHeightOffset = clampHeightOffset(*value);
+		LogInfo << "[vr] input: character height " << config.input.vrHeightOffset << " m (test channel)";
+		return std::string();
+	}
+
 	if(verb == "reset") {
 		g_input.injectedDown.reset();
 		g_input.injectedTaps.reset();
@@ -677,7 +688,7 @@ std::string inputCommand(std::string_view arguments) {
 	}
 
 	return "vr-input: expected down|up|tap <control>, stick <hand> <x> <y>, bind <event> <binding>, turn <setting>,"
-	       " reset, capture <event>, cancel, default or reload, got \"" + std::string(arguments) + "\"";
+	       " height <meters>, reset, capture <event>, cancel, default or reload, got \"" + std::string(arguments) + "\"";
 }
 
 } // namespace vr

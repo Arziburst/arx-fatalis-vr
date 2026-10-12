@@ -99,7 +99,17 @@ struct HeadCamera {
 //! How the head moves the camera
 struct HeadCameraParams {
 	float unitsPerMeter = UnitsPerMeter; //!< world scale (WorldScale.h)
+	//! The player's character height setting (#260): the head at the reference sees from this far above
+	//! the character's eye, meters, up positive; already clamped (\ref clampHeightOffset)
+	float heightOffsetMeters = 0.f;
 };
+
+//! The character height setting's range and step (#260): +-20 cm in 2 cm steps, 0 = the character's own eye
+constexpr float MaxHeightOffset = 0.2f;
+constexpr float HeightOffsetStep = 0.02f;
+
+//! \return \a meters within +-\ref MaxHeightOffset (0 for a value that is not a number)
+float clampHeightOffset(float meters);
 
 /*!
  * \brief The camera for a head pose
@@ -108,7 +118,8 @@ struct HeadCameraParams {
  * camera yaw = body yaw + head yaw - reference yaw, pitch and roll are the head's own. The offset is
  * the head's movement since the reference, turned the same way, in game units: head 20 cm lower -
  * camera 20 cm lower (D-018). The part of the horizontal movement the body already took (real steps,
- * #26, HeadLean.h) is the body's, not the camera's: \a anchor is taken off before the turn.
+ * #26, HeadLean.h) is the body's, not the camera's: \a anchor is taken off before the turn. The
+ * character height setting lifts the whole offset by \c heightOffsetMeters (#260).
  *
  * \param bodyYaw the character's yaw in engine degrees (what the stick and the mouse turn)
  * \param anchor the body's movement since the reference, meters, reference frame (x right, z forward)

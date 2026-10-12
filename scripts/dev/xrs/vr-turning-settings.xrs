@@ -1,0 +1,114 @@
+# VR settings, turning and character height (#260): the second page of the VR controls in the pause menu. Each row
+# edits its cfg.ini key and applies at once: the snap angle slider (its dot dragged) changes the next snap's step, the height row moves the
+# view up by the offset. cfg.ini holds the values after the quit (checked by the caller - the run's config directory).
+# A first-person save: on level 10 the intro conversation's camera owns the view (TRAPS.md, #32)
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # past the level's fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+# A clean start: an isolated config directory keeps what an earlier run chose
+vr-input turn snap
+vr-input turn angle 45
+vr-input turn repeat 0
+vr-input turn speed 120
+vr-input height 0
+@frames 5
+@assert vr.input.turn.snapAngle eq 45
+@assert vr.head.heightOffset eq 0
+@remember offY0 vr.head.offsetY
+@remember eye0 camera.eyeAboveFeet
+@remember turned0 vr.input.turn.turned
+@shot height-0
+
+# The pause menu, Options -> VR -> the turning page: the rows show cfg.ini (45 degrees, 0 cm)
+menu pause
+@until menuMode eq mainmenu 10s
+menu vr-turning
+@until menuPage eq vr-turning 10s
+@frames 30
+@shot vr-turning-page
+
+# The snap angle slider (owner, 2026-10-10: 30 to 90 degrees in 5 degree steps, a dot dragged along a bar): the dot
+# let go at the middle of the bar is 60, at its right end 90, past it still 90; the arrow key steps 5 degrees
+@mark
+menu drag angle 0.5
+@frames 2
+@assert vr.input.turn.snapAngle eq 60
+@log vr\.settings row=angle value=60
+menu drag angle 1
+@frames 2
+@assert vr.input.turn.snapAngle eq 90
+@log vr\.settings row=angle value=90
+menu step angle left
+@frames 2
+@assert vr.input.turn.snapAngle eq 85
+menu drag angle 1.4
+@frames 2
+@assert vr.input.turn.snapAngle eq 90
+@frames 10
+@shot vr-turning-angle-90
+
+# The turning row: snap -> smooth -> snap (the cycle wraps)
+menu step turn right
+@frames 2
+@assert vr.input.turn.mode eq smooth
+@log vr\.settings row=turn value=smooth
+menu step turn right
+@frames 2
+@assert vr.input.turn.mode eq snap
+@log vr\.settings row=turn value=snap
+
+# The smooth speed slider: five named presets, no degrees shown; the right end is "very fast" (240 deg/s), the
+# middle "medium" (#32's 120)
+menu drag speed 1
+@frames 2
+@assert vr.input.turn.smoothSpeed eq 240
+@log vr\.settings row=speed value=240 preset="?very fast
+menu drag speed 0.5
+@frames 2
+@assert vr.input.turn.smoothSpeed eq 120
+@log vr\.settings row=speed value=120 preset="?medium
+
+# The repeat slider: off -> 0.25 s -> off (the held push below must stay one snap)
+menu drag repeat 0.2
+@frames 2
+@assert vr.input.turn.snapRepeat eq 0.25
+@log vr\.settings row=repeat value=0\.25
+menu drag repeat 0
+@frames 2
+@assert vr.input.turn.snapRepeat eq 0
+
+# The height row: five clicks right -> +10 cm
+menu step height right
+menu step height right
+menu step height right
+menu step height right
+menu step height right
+@frames 2
+@log vr\.settings row=height value=0\.10
+@frames 10
+@shot vr-turning-changed
+
+# Back to the game: the view is 10 cm higher, the snap is 90 degrees
+menu resume
+@until menuMode eq ingame 10s
+@frames 30
+# The head camera reads the setting while the game runs (the pause menu's view is not the head's)
+@assert vr.head.heightOffset eq 0.1
+@assert vr.head.offsetY lt {offY0-9.9}
+@assert vr.head.offsetY gt {offY0-10.1}
+@assert camera.eyeAboveFeet gt {eye0+9.9}
+@assert camera.eyeAboveFeet lt {eye0+10.1}
+@shot height-10
+
+@mark
+vr-input stick right 1 0
+@frames 30
+vr-input stick right 0 0
+@frames 5
+@assert vr.input.turn.turned eq {turned0+90}
+@log vr\.turn\.snap dir=right deg=90\.0 repeat=no
+@assert errors eq 0

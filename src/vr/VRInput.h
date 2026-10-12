@@ -173,7 +173,8 @@ u32 captureCount();
  * (\ref restoreDefaultLayout); \c reload - read the saved layout again, as at a start;
  * \c turn \c snap|smooth, \c turn \c angle \c <degrees>, \c turn \c speed \c <degrees per second>,
  * \c turn \c repeat \c <seconds> -
- * the turn settings, as cfg.ini would set them (#32).
+ * the turn settings, as cfg.ini would set them (#32); \c height \c <meters> - the character height
+ * setting (#260).
  *
  * \return an empty string on success, otherwise the reason it was refused
  */

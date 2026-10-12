@@ -135,7 +135,17 @@ HeadCamera headToCamera(const HeadSample & head, const HeadReference & reference
 	const Vec3f lean(camera.moved.x - anchor.x, camera.moved.y, camera.moved.z - anchor.y);
 	camera.offset = turnAboutVertical(lean * params.unitsPerMeter, turn);
 
+	// The character height setting: a taller player character sees from higher up (y is down)
+	camera.offset.y -= params.heightOffsetMeters * params.unitsPerMeter;
+
 	return camera;
+}
+
+float clampHeightOffset(float meters) {
+	if(!std::isfinite(meters)) {
+		return 0.f;
+	}
+	return std::clamp(meters, -MaxHeightOffset, MaxHeightOffset);
 }
 
 float headLockedQuadFov(float quadWidth, float distance, const Vec2i & frameSize) {

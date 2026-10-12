@@ -1,0 +1,245 @@
+# The same as rune-cast, with the hand aim opted in (vr_spell_aim = hand, D-NEW-recognition; F-75, F-76): the spell flies along the controller.
+# Rune recognition from the hand and the spell's aim (#44, D-010, D-NEW-recognition, F-75, F-76, F-202): the
+# stroke of #43 is projected onto the plane of the look at its start and fed into the engine's own recogniser
+# in place of the cursor's points, so a line drawn to the right is AAM, right-down-right is TAAR, up is MEGA,
+# down is RHAA; AAM + TAAR with the stance released cast Magic Missile, aimed where the right controller
+# points (the aim follows the hand's pitch and yaw). A stroke behind the head or at the knee is refused by
+# the view gate and never reaches the recogniser. The runes are added with the console's "rune -a".
+# Needs the first-person save (level 10's conversation camera is nowhere near the hands, TRAPS.md):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence rune-cast-hand -Save mvp-new-game -- --loadslot 0 --vr-spell-aim hand
+@sim idle
+@save mvp-new-game
+@args --loadslot 0 --vr-spell-aim hand
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.input.controllers eq index
+@assert vr.magic.handsDraw eq true
+@assert vr.magic.strokes eq 0
+@assert vr.magic.recognizer.points eq 0
+@assert vr.magic.recognizer.gate eq none
+@assert vr.magic.recognizer.refused eq 0
+
+# The runes of Magic Missile (AAM + TAAR), MEGA and RHAA, so what is recognised can be cast; magic allowed
+rune -a aam
+rune -a taar
+rune -a mega
+rune -a rhaa
+magic on
+@frames 5
+
+# The right hand in front of the face, the controller pointing ahead: the aim is the right hand's - level,
+# along the look (the camera's yaw)
+vr-sim hand right pos 0.00 -0.15 -0.45
+vr-sim hand right rot 0 0 0
+@frames 15
+@assert vr.magic.right.located eq true
+@assert vr.magic.aim.source eq hand
+@assert vr.magic.aim.hand eq right
+@remember lookYaw camera.yaw
+@assert vr.magic.aim.pitch gt -0.5
+@assert vr.magic.aim.pitch lt 0.5
+@assert vr.magic.aim.yaw gt {lookYaw-0.5}
+@assert vr.magic.aim.yaw lt {lookYaw+0.5}
+
+# Pitched up 45 degrees: the engine's pitch is positive downwards
+vr-sim hand right rot 0 45 0
+@frames 10
+@assert vr.magic.aim.pitch gt -45.5
+@assert vr.magic.aim.pitch lt -44.5
+@assert vr.magic.right.aimPitch gt -45.5
+@assert vr.magic.right.aimPitch lt -44.5
+
+# Turned right 30 degrees: the engine's yaw grows to the left, so it drops by 30 (the save looks at yaw
+# 359.7: a left turn would wrap past 360, which {lookYaw+30} cannot follow)
+vr-sim hand right rot -30 0 0
+@frames 10
+@assert vr.magic.aim.pitch gt -0.5
+@assert vr.magic.aim.pitch lt 0.5
+@assert vr.magic.aim.yaw gt {lookYaw-30.5}
+@assert vr.magic.aim.yaw lt {lookYaw-29.5}
+vr-sim hand right rot 0 0 0
+@frames 5
+
+# AAM: in the stance, the right trigger draws a 30 cm line to the right in 5 cm steps; the stroke's plane faces
+# the look; one recogniser point per 2 cm; the release gives the rune
+vr-sim action trackpad_press left 1
+@frames 10
+@assert vr.magic.stance eq true
+@mark
+vr-sim action trigger right 1
+@frames 6
+@assert vr.magic.drawing eq true
+@assert vr.magic.strokes eq 1
+@assert vr.magic.recognizer.points eq 1
+@assert vr.magic.recognizer.planeYaw gt {lookYaw-0.5}
+@assert vr.magic.recognizer.planeYaw lt {lookYaw+0.5}
+vr-sim hand right pos 0.05 -0.15 -0.45
+@frames 3
+vr-sim hand right pos 0.10 -0.15 -0.45
+@frames 3
+vr-sim hand right pos 0.15 -0.15 -0.45
+@frames 3
+vr-sim hand right pos 0.20 -0.15 -0.45
+@frames 3
+vr-sim hand right pos 0.25 -0.15 -0.45
+@frames 3
+vr-sim hand right pos 0.30 -0.15 -0.45
+@frames 6
+@assert vr.magic.recognizer.points gt 14
+@assert vr.magic.recognizer.points lt 18
+@assert vr.magic.recognizer.width gt 295
+@assert vr.magic.recognizer.width lt 305
+@assert vr.magic.recognizer.height lt 5
+vr-sim action trigger right 0
+@frames 10
+@assert vr.magic.drawing eq false
+@assert vr.magic.recognizer.gate eq ok
+@log GameEvent:.*magic\.stroke state=end hand=right reason=trigger .*gate=ok
+@log GameEvent:.*rune\.drawn rune=aam moves=6
+@assert events.byName."rune.drawn" eq 1
+
+# TAAR (right, down, right): the hand back - moving with the trigger up draws nothing - then the trigger draws
+# the three legs of 15 cm
+vr-sim hand right pos 0.00 -0.05 -0.45
+@frames 10
+@assert vr.magic.strokes eq 1
+vr-sim action trigger right 1
+@frames 6
+@assert vr.magic.strokes eq 2
+@assert vr.magic.recognizer.points eq 1
+vr-sim hand right pos 0.05 -0.05 -0.45
+@frames 3
+vr-sim hand right pos 0.10 -0.05 -0.45
+@frames 3
+vr-sim hand right pos 0.15 -0.05 -0.45
+@frames 3
+vr-sim hand right pos 0.15 -0.10 -0.45
+@frames 3
+vr-sim hand right pos 0.15 -0.15 -0.45
+@frames 3
+vr-sim hand right pos 0.15 -0.20 -0.45
+@frames 3
+vr-sim hand right pos 0.20 -0.20 -0.45
+@frames 3
+vr-sim hand right pos 0.25 -0.20 -0.45
+@frames 3
+vr-sim hand right pos 0.30 -0.20 -0.45
+@frames 6
+@assert vr.magic.recognizer.width gt 295
+@assert vr.magic.recognizer.width lt 305
+@assert vr.magic.recognizer.height gt 145
+@assert vr.magic.recognizer.height lt 155
+vr-sim action trigger right 0
+@frames 10
+@log GameEvent:.*rune\.drawn rune=taar moves=
+@assert events.byName."rune.drawn" eq 2
+
+# The stance released: AAM + TAAR cast Magic Missile, aimed by the right hand
+vr-sim action trackpad_press left 0
+@frames 15
+@assert vr.magic.stance eq false
+@log GameEvent:.*spell\.cast spell=magic_missile caster=player .*aim=hand aimHand=right
+@assert spells.launchedByType.magic_missile eq 1
+@assert events.byName."spell.cast" eq 1
+
+# MEGA (up) and RHAA (down) in one stance: two runes that are no spell - the stance released fizzles
+vr-sim hand right pos 0.00 -0.20 -0.45
+vr-sim action trackpad_press left 1
+@frames 10
+vr-sim action trigger right 1
+@frames 6
+vr-sim hand right pos 0.00 -0.15 -0.45
+@frames 3
+vr-sim hand right pos 0.00 -0.10 -0.45
+@frames 3
+vr-sim hand right pos 0.00 -0.05 -0.45
+@frames 3
+vr-sim hand right pos 0.00 0.00 -0.45
+@frames 6
+@assert vr.magic.recognizer.height gt 195
+@assert vr.magic.recognizer.height lt 205
+vr-sim action trigger right 0
+@frames 10
+@log GameEvent:.*rune\.drawn rune=mega moves=8
+vr-sim action trigger right 1
+@frames 6
+vr-sim hand right pos 0.00 -0.05 -0.45
+@frames 3
+vr-sim hand right pos 0.00 -0.10 -0.45
+@frames 3
+vr-sim hand right pos 0.00 -0.15 -0.45
+@frames 3
+vr-sim hand right pos 0.00 -0.20 -0.45
+@frames 6
+vr-sim action trigger right 0
+@frames 10
+@log GameEvent:.*rune\.drawn rune=rhaa moves=2
+vr-sim action trackpad_press left 0
+@frames 15
+@log GameEvent:.*spell\.unknown runes=mega\+rhaa
+@assert spells.launchedByType.magic_missile eq 1
+
+# The view gate (F-202 rule 1): a stroke drawn behind the head is no rune, nor one at the knee; the engine
+# gets no points from them and nothing is recognised
+vr-sim hand right pos 0.00 -0.15 0.40
+vr-sim action trackpad_press left 1
+@frames 10
+@mark
+vr-sim action trigger right 1
+@frames 6
+vr-sim hand right pos 0.10 -0.15 0.40
+@frames 3
+vr-sim hand right pos 0.20 -0.15 0.40
+@frames 3
+vr-sim hand right pos 0.30 -0.15 0.40
+@frames 6
+vr-sim action trigger right 0
+@frames 10
+@assert vr.magic.recognizer.gate eq behind
+@assert vr.magic.recognizer.refused eq 1
+@nolog GameEvent:.*rune\.
+@log GameEvent:.*magic\.stroke\.refused hand=right reason=behind
+@mark
+vr-sim hand right pos 0.00 -1.20 -0.45
+@frames 10
+vr-sim action trigger right 1
+@frames 6
+vr-sim hand right pos 0.10 -1.20 -0.45
+@frames 3
+vr-sim hand right pos 0.20 -1.20 -0.45
+@frames 3
+vr-sim hand right pos 0.30 -1.20 -0.45
+@frames 6
+vr-sim action trigger right 0
+@frames 10
+@assert vr.magic.recognizer.gate eq low
+@assert vr.magic.recognizer.refused eq 2
+@nolog GameEvent:.*rune\.
+@log GameEvent:.*magic\.stroke\.refused hand=right reason=low
+
+# A refused stroke leaves nothing behind: AAM drawn next in the same stance is recognised, and the stance
+# released casts that rune alone (no spell: the refused strokes added none)
+vr-sim hand right pos 0.00 -0.15 -0.45
+@frames 10
+vr-sim action trigger right 1
+@frames 6
+vr-sim hand right pos 0.10 -0.15 -0.45
+@frames 3
+vr-sim hand right pos 0.20 -0.15 -0.45
+@frames 3
+vr-sim hand right pos 0.30 -0.15 -0.45
+@frames 6
+vr-sim action trigger right 0
+@frames 10
+@assert vr.magic.recognizer.gate eq ok
+@log GameEvent:.*rune\.drawn rune=aam moves=6
+vr-sim action trackpad_press left 0
+@frames 15
+@log GameEvent:.*spell\.unknown runes=aam
+@assert events.byName."magic.stroke.refused" eq 2
+@assert events.byName."rune.drawn" eq 5
+@assert spells.launchedByType.magic_missile eq 1
+
+@assert errors eq 0

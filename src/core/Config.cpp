@@ -71,6 +71,7 @@ constexpr const std::string_view
 	renderer = "auto",
 	resolution = "auto",
 	audioBackend = "auto",
+	vrSpellAim = "view",
 	audioDevice = "auto",
 	windowSize = BOOST_PP_STRINGIZE(ARX_DEFAULT_WIDTH) "x"
 	             BOOST_PP_STRINGIZE(ARX_DEFAULT_HEIGHT),
@@ -274,6 +275,7 @@ constexpr const std::string_view
 	alphaCutoutAntialiasing = "alpha_cutout_antialiasing",
 	bufferSize = "buffer_size",
 	bufferUpload = "buffer_upload",
+	vrSpellAim = "vr_spell_aim",
 	extensionOverride = "extension_override";
 
 // Interface options
@@ -559,6 +561,7 @@ bool Config::save() {
 	writer.writeKey(Key::alphaCutoutAntialiasing, video.alphaCutoutAntialiasing);
 	writer.writeKey(Key::bufferSize, video.bufferSize);
 	writer.writeKey(Key::bufferUpload, video.bufferUpload);
+	writer.writeKey(Key::vrSpellAim, video.vrSpellAim);
 	writer.writeKey(Key::extensionOverride, video.extensionOverride);
 	
 	// interface
@@ -734,6 +737,11 @@ bool Config::init(const fs::path & file) {
 	video.alphaCutoutAntialiasing = glm::clamp(alphaCutoutAA, 0, 2);
 	video.bufferSize = std::max(reader.getKey(Section::Video, Key::bufferSize, Default::bufferSize), 0);
 	video.bufferUpload = reader.getKey(Section::Video, Key::bufferUpload, Default::bufferUpload);
+	// Where the spells that fly go (#44, D-NEW-recognition): "view" = the centre of the view (default), "hand" = the casting hand
+	video.vrSpellAim = reader.getKey(Section::Video, Key::vrSpellAim, Default::vrSpellAim);
+	if(video.vrSpellAim != "hand") {
+		video.vrSpellAim = "view";
+	}
 	video.extensionOverride = reader.getKey(Section::Video, Key::extensionOverride, Default::extensionOverride);
 	
 	// Get interface settings

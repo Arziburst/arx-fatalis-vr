@@ -20,6 +20,15 @@ the runner shares the PC with builds and other games) it is 19.5 m/s, and over a
 (the median of three lags one sample, #352).
 **Do:** in a melee sequence move the hand in a ramp only (`vr-sim @+1-60 hand right pos ...`: slow, frame by frame);
 reproduce a slow runner with `vr-sim rate 45` in a scratch copy of the sequence.
+## 2026-10-10 — A host test fails to compile with `C2513: no variable declared before '='` on a plain local (#44)
+
+**Symptom:** `vr::RuneGateResult far = vr::gateRuneStroke(...)` in a CppUnit test: `error C2513`,
+`C2143 missing ')' before '.'`, `C2660 function does not take 0 arguments` on the lines that use it — the
+code reads as valid C++ and compiles in the head.
+**Cause:** `far` (and `near`, `pascal`, …) are `#define`d to nothing by `windef.h`, which the test build pulls
+in through the platform headers; the declaration became `vr::RuneGateResult = ...`.
+**Do:** never name a variable `far` / `near` on Windows; when MSVC rejects an innocent line, look for a
+Windows macro before anything else.
 
 ## 2026-10-10 — An `.xrs` `@log` step misses a game event that is in `arx.log` (#43)
 

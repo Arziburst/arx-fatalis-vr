@@ -44,6 +44,7 @@
 #include "physics/Collisions.h"
 
 #include "scene/GameSound.h"
+#include "vr/VRRunes.h"
 #include "scene/Interactive.h"
 
 #include "util/Range.h"
@@ -509,7 +510,8 @@ void PoisonProjectileSpell::Launch() {
 	}
 	
 	if(m_caster == EntityHandle_Player) {
-		afBeta = player.angle.getYaw();
+		// VR (#44, F-76): the projectile goes where the casting hand points
+		afBeta = vr::spellAim(player.angle).angle.getYaw();
 		srcPos = m_hand_group ? m_hand_pos : player.pos;
 	} else {
 		afBeta = entities[m_caster]->angle.getYaw();

@@ -41,6 +41,7 @@
 #include "physics/Collisions.h"
 
 #include "scene/GameSound.h"
+#include "vr/VRRunes.h"
 #include "scene/Object.h"
 
 #include "util/Cast.h"
@@ -187,7 +188,9 @@ void FireballSpell::Launch() {
 	
 	float anglea = 0.f, angleb = 0.f;
 	if(caster == entities.player()) {
-		anglea = player.angle.getPitch(), angleb = player.angle.getYaw();
+		// VR (#44, F-76): the ball flies where the casting hand points
+		const Anglef aim = vr::spellAim(player.angle).angle;
+		anglea = aim.getPitch(), angleb = aim.getYaw();
 	} else if(caster) {
 		Vec3f start = caster->pos;
 		if(caster->ioflags & IO_NPC) {
@@ -228,9 +231,11 @@ void FireballSpell::Update() {
 		
 		Entity * caster = entities.get(m_caster);
 		if(caster == entities.player()) {
-			
-			afBeta = player.angle.getYaw();
-			afAlpha = player.angle.getPitch();
+
+			// VR (#44, F-76): the ball forms in front of the chest towards where the casting hand points
+			const Anglef aim = vr::spellAim(player.angle).angle;
+			afBeta = aim.getYaw();
+			afAlpha = aim.getPitch();
 			if(VertexGroupId chest = EERIE_OBJECT_GetGroup(caster->obj, "chest")) {
 				eCurPos = caster->obj->vertexWorldPositions[caster->obj->grouplist[chest].origin].v;
 			} else {
@@ -383,7 +388,8 @@ void IceProjectileSpell::Launch() {
 	float angleb;
 	if(m_caster == EntityHandle_Player) {
 		target = player.pos + Vec3f(0.f, 160.f, 0.f);
-		angleb = player.angle.getYaw();
+		// VR (#44, F-76): the spikes run along the floor where the casting hand points
+		angleb = vr::spellAim(player.angle).angle.getYaw();
 	} else {
 		target = entities[m_caster]->pos;
 		angleb = entities[m_caster]->angle.getYaw();

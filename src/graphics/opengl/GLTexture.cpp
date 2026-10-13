@@ -24,6 +24,7 @@
 #include "graphics/opengl/OpenGLRenderer.h"
 #include "graphics/opengl/OpenGLUtil.h"
 #include "io/fs/FilePath.h" // TODO remove
+#include "vr/PerfLog.h"
 
 
 GLTexture::GLTexture(OpenGLRenderer * _renderer)
@@ -60,7 +61,11 @@ bool GLTexture::create() {
 void GLTexture::upload() {
 	
 	arx_assert(tex != GL_NONE);
-	
+
+	// Uploads are a hitch suspect: their count and time go into the performance log (#327)
+	vr::perf::Scope perfScope(vr::PerfPhase::Textures);
+	vr::perf::countUpload();
+
 	glBindTexture(GL_TEXTURE_2D, tex);
 	renderer->GetTextureStage(0)->current = this;
 	

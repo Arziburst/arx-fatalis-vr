@@ -30,7 +30,7 @@ Format: **symptom** — what is really going on — what to do.
 
 **Symptom:** `first-run-chargen.xrs` started at the main menu by `@args --dev-launch` fails at the window shot (`capture.topRight.verdict` black; the quad shot shows only the hero's portrait on black). The same sequence passes when the process first played the level 10 scene (`@args --skiplogo`), and `first-run.xrs` (a player's launch) passes through the same screen.
 **Cause:** not found; a longer wait before the shot (600 frames) changes nothing, so it is not the fade-in. Probably something the level 10 load initialises that a cold menu start does not.
-**Do:** see the open question to the #394 lead; do not loosen the shot's check.
+**Do:** tracked as #399; `first-run-chargen.xrs` stays on `@args --skiplogo` (90 s) until it is fixed - do not loosen the shot's check.
 
 ## 2026-10-13 — In VR the main menu sits in a corner of the desktop window and the mouse clicks invisible buttons (#334)
 

@@ -128,7 +128,7 @@ trigger), the intro on the VR screen skipped with A during its scripted scene (s
 character creation by pointer clicks (the average hero in `status.json`), the prison (area 1) in `GAMEPLAY` once its
 wake-up script frees the controls, a walk with the left stick; `@shot` of the intro and the menu in both eyes. The
 parts have their own faster sequences: `first-run-intro` (a player's launch up to `introduction.cin`, its skip with B,
-New game and the walk), `first-run-menu` and `first-run-chargen` (a development launch at the main menu).
+New game and the walk), `first-run-menu` (a development launch at the main menu) and `first-run-chargen` (`--skiplogo` until #399).
 `ci-smoke.ps1` runs all of them on every pull request, and after `first-run-menu` its **read-back**
 `readback/first-run-menu-readback.xrs` in the same user directory (the crosshair setting, written to `cfg.ini` on quit,
 read back by the second launch).

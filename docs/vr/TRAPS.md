@@ -8,6 +8,43 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — A sphere at 35° is narrower in one eye: the Index's eyes overlap only within 37.5° (#22)
+
+**Symptom:** the stereo check's self-test drew a 5 cm sphere 1 m away and 35° to the right on canted eyes with the
+Index's angles; the left eye saw it 12 % narrower than its distance allows, though the pictures were ray-cast
+exactly.
+**Cause:** the left eye sees only 40° to the nose, turned outward by half the 5° cant: 37.5° right of the head's
+forward is its edge. The sphere (from the left eye at 36.5° ± 1.5°) was cut by the edge of the image. Nothing was
+wrong with either eye.
+**Do:** put a thing whose two pictures are compared inside both eyes: within about 33° of the middle for a small
+one on the Index (the sequence `stereo-effects` uses 30°); `@stereo` reads each eye's own FOV from the shot.
+
+## 2026-10-13 — Magic Sight "has 12° of parallax": the change after a cast is the world's tint, not the overlay (#22)
+
+**Symptom:** the first `@stereo ... infinity` of Magic Sight's red vignette measured a disparity of 12.8° (a thing
+0.3 m from the eyes) for an overlay that hangs at infinity.
+**Cause:** the spell tints the whole world (`player.m_improve`: lighting, particles, decals): the base shot without
+the spell and the shot with it differ most at the arm in front of the eyes, 0.3 m away. The vignette itself is a
+faint red over dark walls - about 12 levels of brightness, at the noise threshold.
+**Do:** compare the spell with and without the overlay (`stereo-fx overlays off` / `on`, a few frames apart) and
+measure the largest change of a color channel, not the brightness (what `stereo-check-lib.ps1` does).
+
+## 2026-10-13 — A test particle of size 25 fills the view: the engine's sprite size is not a world size (#22)
+
+**Symptom:** a still particle placed 1 m ahead with `size = 25` covered a third of each eye and blurred the whole
+window of the check; its depth measured 2.25 m.
+**Cause:** the engine sizes sprites in pixels, `size * (3000 / depth - 1) * 0.00113` per pixel of focal: at 1 m a
+size of 25 is 1.6 m across. Torches' flames are size 7 (0.45 m at 1 m).
+**Do:** size test sprites with the formula (`vr::spriteHalfSize`): `stereo-fx place billboard` uses 2, about 13 cm at
+0.8 m.
+
+## 2026-10-13 — PowerShell: `@(-$q[0] / $len, -$q[1] / $len)` fails with "op_Division" (#22)
+
+**Symptom:** `Method invocation failed because [System.Object[]] does not contain a method named 'op_Division'` on a
+line that divides numbers.
+**Cause:** in an array literal the comma binds tighter than `/`: `$a / $b, $c` is `$a / ($b, $c)`.
+**Do:** put each element in parentheses: `@(($a / $b), ($c / $d))`.
+
 ## 2026-10-13 — `walk-look.xrs`: the walk left on a busy PC drifts 12.6 units in z (#370)
 
 **Symptom:** `walk-look` failed on CI (run 38339943784, PR #391, nothing related changed) at its first push:

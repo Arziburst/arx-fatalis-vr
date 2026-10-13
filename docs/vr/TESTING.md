@@ -507,14 +507,31 @@ which.
 | `mvp-new-game` | in the start cell after the awakening, controls free, nothing equipped | demo step 1-2: look, walk, turn |
 | `mvp-items` | a sword equipped; 2.3 m from a table with a key, a note and a form (`key_base_0005`, `note_0004`, `blank_form_0001`); dark room, the items are low in the view | demo step 3: pick up, drag into the inventory (#37) |
 | `mvp-goblin-fight` | a sword equipped; `goblin_base_0036` 3.5 m ahead in a corridor, walking away | demo step 5: melee (#39) |
+| `mvp-lever` | a sword equipped; `lever_0012` (opens `porticullis_0015`) 1.6 m ahead on the floor, in the hand reticles' reach | #38: pull a lever |
+| `mvp-door` | a sword equipped; the closed portcullis `porticullis_0015` 1.6 m ahead, in the hand reticles' reach | #38: a door |
+| `mvp-chest` | a sword equipped; `chest_metal_0052` 1.6 m ahead, in the hand reticles' reach | #38: open a chest |
 
-**Not in the library: levers, doors, chests.** Nothing could put the player where one is in reach and
-visible; the owner records those by hand (follow-up #210). What that attempt
-learned is in TRAPS.md ("A lever, a chest, a door cannot be found by coordinates").
+`mvp-items` and `mvp-goblin-fight` were placed with `setpos` before it was known that `setpos` takes the
+feet: their player stands 170 units above the floor (TRAPS.md); #417 regenerates them.
+
+**A save at an object** (a lever, a door, a chest, an NPC): `approach <entity>` twice in the scenario, then
+`save` (the three above; one run, no search). Each save has its reticle check, one launch each:
+
+```powershell
+.\scripts\dev\make-test-saves.ps1 -VrSim idle -Only mvp-lever,mvp-door,mvp-chest   # made in VR (the simulated headset); only these replaced
+.\scripts\dev\make-test-saves.ps1 -Verify -VrSim idle                               # every save loaded in a fresh VR game
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence reach-lever -Save mvp-lever      # the right reticle on the lever: under, hover; then a load with the sword held
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence reach-door -Save mvp-door
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence reach-chest -Save mvp-chest
+```
+
+`-VrSim <script>` makes (or verifies) the saves on the simulated headset instead of a flat game; `-Only`
+copies only the named saves of the run into the library (every save is still made and loaded again).
+`manifest.json` says how each save was made (`made`: `flat` or `vr-sim idle`).
 
 **How a save is made** (`scripts/dev/make-test-saves.ps1`, scenario file
-`scripts/dev/test-saves/scenarios.txt`): one flat game from the main menu; `newgame`; `@until
-player.controlsBlocked False`; per scenario `setpos` + `lookat` + `save <name>`; then the **same game
+`scripts/dev/test-saves/scenarios.txt`): one game (flat, or `-VrSim`) from the main menu; `newgame`; `@until
+player.controlsBlocked False`; per scenario `setpos` + `lookat` or `approach` + `save <name>`; then the **same game
 loads every save again** (`loadslot`, oldest first) and checks the level, that the player stands where it
 was saved (within 1 m) and that the controls are free, with a screenshot per save. The script **fails**
 (nothing is copied into the library) when a command is refused, the game ends unclean, or a check fails.

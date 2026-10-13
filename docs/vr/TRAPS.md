@@ -8,6 +8,31 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — `setpos` y is the feet, not the eye: the player stood 170 units above the floor (#210)
+
+**Symptom:** a save placed in reach of `lever_0012` loaded in `--vr-sim` with the hand reticle's ray ending on the
+lever's box, yet `vr.reticle.right.under` stayed `none`; the hand rays started at y 2810 over a floor at 3105
+(the eye 340 above it), and `entities` listed the player entity at y 2935 — its position is its feet.
+**Cause:** the channel's `setpos` (and the new `approach` at first) call `ARX_INTERACTIVE_Teleport(player, p)`,
+which sets `player.pos = p + baseOffset()`: `p` is the **feet**, the eye ends 170 units higher. Everything
+written before said "setpos y is the eye (floor - 170)", so eye coordinates put the feet in the air: the eye
+340 units above the floor, out of the pick's reach of a floor object (350 units from the eye), on wall tops
+(what `hand-reticle.xrs` works around for `mvp-items`). The player does not fall back down by itself.
+**Do:** `setpos <x> <floor y> <z>` for a player standing on that floor; check `player.y` (the eye) and
+`camera.eyeAboveFeet` in the status. For a spot at an object use `approach <entity>` (TESTING.md), which finds
+the floor itself. `mvp-items` and `mvp-goblin-fight` still stand 170 up until #417 regenerates them.
+
+## 2026-10-13 — A load with a weapon in the IK hand crashed at `VRWeapon.cpp:296` (#210)
+
+**Symptom:** `make-test-saves.ps1 -VrSim idle` crashed (ACCESS_VIOLATION, `VRWeapon.cpp:296`) at its first
+channel `loadslot`, with the sword in the right hand; a launch with `--loadslot 0` never crashed.
+**Cause:** `vr::heldWeaponStatus()` (the status writer, every frame) and `placeHeldWeapon()` used the weapon
+pointer kept from the last `updateHeldWeapon()`; a load frees the entities before the next update, so the
+pointer dangled. The radial menu's quick load in a real game takes the same path.
+**Do:** never keep an `Entity *` across frames without resolving it again - `heldEntity()` checks it against
+the player's weapon slot. Regression check: the end of `reach-lever.xrs` (`loadslot 0` with the sword held,
+then `vr.weapon.place eq hand`), and every `make-test-saves.ps1 -VrSim` run reloads all its saves.
+
 ## 2026-10-12 — An instant `vr-sim hand ... pos` set-up move counts as a melee swing on a busy runner (#349)
 
 **Symptom:** `melee-swing.xrs` failed on CI at its first `@assert vr.melee.swings eq 0` for runs in a row with only
@@ -554,6 +579,10 @@ which special-cases both.
 first (see `script.error` in `ScriptEvent.cpp`, #130), or print through `operator<<`.
 
 ## 2026-10-09 — A lever, a chest, a door cannot be found by coordinates (#70)
+
+*Resolved (#210):* `approach <entity>` finds the spot in the game (TESTING.md); cause (2) below is wrong -
+`setpos` takes the **feet** (the 2026-10-13 entry), so the eye was 340 units above the floor, which explains
+the wall tops and the picks that found nothing.
 
 **Symptoms:** `setpos` next to `lever_0012` / `chest_metal_0052` and a screenshot shows a bare wall, a
 black screen, the player's own feet, or a goblin; the entity is nowhere in the picture. About 6 of

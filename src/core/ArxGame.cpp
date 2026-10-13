@@ -778,6 +778,9 @@ static bool HandleGameFlowTransitions() {
 	                  || GameFlow::getTransition() == GameFlow::SecondLogo;
 
 	if(logo) {
+		// No camera is prepared for a logo, so nothing else sets the viewport: in VR the interface is
+		// larger than the window and a logo drawn in the window's viewport is cut off (#394)
+		GRenderer->SetViewport(g_size);
 		if(g_devLaunch && !g_showIntro) {
 			// A development launch starts at the main menu, exactly like pressing a key during the logos does
 			startMainMenu(nullptr);

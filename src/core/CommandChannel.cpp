@@ -649,6 +649,9 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("controlsBlocked", BLOCK_PLAYER_CONTROLS);
 		// What the controls did (#74): the inventory and the book open, the crouch toggle, a jump under way
 		json.value("inventoryOpen", (player.Interface & INTER_INVENTORY) != 0);
+		// Freelook (TRUE_PLAYER_MOUSELOOK_ON): off is the engine's cursor mode, which keeps the inventory open
+		// and refuses melee; in VR always on in the game (#394)
+		json.value("freelook", TRUE_PLAYER_MOUSELOOK_ON);
 		json.value("bookOpen", (player.Interface & INTER_PLAYERBOOK) != 0);
 		json.value("crouchToggle", bGCroucheToggle);
 		// The character crouches - the button, the toggle, the head (#100) or a low ceiling

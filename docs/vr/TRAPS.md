@@ -8,6 +8,12 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — In VR the inventory will not close and melee is refused after New game or `--loadlevel` (#394.5)
+
+**Symptom:** a new game or a `--loadlevel` start in VR: the inventory stays open (closing it reopens it), `melee.state state=off reason=inventory`; a save load is fine, and so is New game in a player's launch.
+**Cause:** the engine's freelook (`TRUE_PLAYER_MOUSELOOK_ON`) starts `false`; off is cursor mode, in which `ARX_INTERFACE_Manage` reopens the inventory every frame. Only `ARX_GAME_Reset` with `!DONT_ERASE_PLAYER` (a save load, or level 10 of a player's launch through `DanaeClearLevel`) turns it on; `--loadlevel` never resets and `DANAE_StartNewQuest` sets `DONT_ERASE_PLAYER`; the pause menu turns it off. VR has no freelook control.
+**Do:** ArxGame turns it on whenever the game enters `GAMEPLAY` in VR (a `vr.freelook` event). Check `player.freelook` / `player.inventoryOpen` before blaming the inventory or melee code. An event of the first loaded frame is logged before a sequence's first mark: assert it with `events.byName`, not `@log`.
+
 ## 2026-10-13 — A scripted scene's skip "refused" although the scene was skipped (#394.4)
 
 **Symptom:** `scene.skip ... refused=yes` for a skip of the prison intro, yet the controls come back 5 s later and the hero stands at `MARKER_0112` (the intro's own end takes about 35 s).

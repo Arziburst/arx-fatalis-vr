@@ -1456,7 +1456,18 @@ void ArxGame::doFrame() {
 
 	// Game event log: state and UI changes (before the channel, which reports the same state);
 	// the OpenXR events were polled at the top of the frame, before vr::beginFrame()
+	const gameevent::GameState stateBefore = gameevent::currentGameState();
 	gameevent::update();
+
+	// In VR the game is always played in freelook (#394): the hands are the mouse (D-016) and VR has no
+	// freelook control. Only a save load sets it (ARX_GAME_Reset); New game and --loadlevel keep the
+	// player out of it, and the pause menu turns it off - in cursor mode the engine keeps the inventory
+	// open and refuses melee. The inventory the player opened stays open (bInverseInventory)
+	if(vr::isEnabled() && stateBefore != gameevent::GameState::Gameplay
+	   && gameevent::currentGameState() == gameevent::GameState::Gameplay && !TRUE_PLAYER_MOUSELOOK_ON) {
+		TRUE_PLAYER_MOUSELOOK_ON = true;
+		gameevent::Event("vr.freelook")("state", "on")("was", gameevent::gameStateName(stateBefore));
+	}
 
 	// Crash reports under SteamVR: the overlay or the runtime may replace our exception filter (#132)
 	{

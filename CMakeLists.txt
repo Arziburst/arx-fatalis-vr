@@ -543,6 +543,13 @@ find_package(GLM 0.9.9.7 REQUIRED)
 include_directories(SYSTEM ${GLM_INCLUDE_DIRS})
 add_definitions(-DGLM_FORCE_RADIANS) # Only needed for older GLM versions
 
+# cgltf - single-header glTF 2.0 loader (MIT, vcpkg) for the VR arm mesh (#385, src/vr/ArmMesh.cpp)
+find_path(CGLTF_INCLUDE_DIR cgltf.h)
+if(NOT CGLTF_INCLUDE_DIR)
+	message(FATAL_ERROR "cgltf.h not found - it comes from vcpkg (vcpkg.json)")
+endif()
+include_directories(SYSTEM ${CGLTF_INCLUDE_DIR})
+
 # DbgHelp
 if(MSVC AND BUILD_CRASHHANDLER)
 	find_package(DbgHelp ${OPTIONAL_DEPENDENCY})
@@ -1259,6 +1266,7 @@ list(APPEND IO_RESOURCE_SOURCES ${UTIL_MD5_SOURCES})
 set(VR_SOURCES
 	src/vr/BindingCapture.cpp
 	src/vr/ArmIK.cpp
+	src/vr/ArmMesh.cpp
 	src/vr/ArmRoll.cpp
 	src/vr/BodyYaw.cpp
 	src/vr/EyeImage.cpp
@@ -1916,6 +1924,8 @@ endif()
 if(BUILD_TESTS)
 	
 	target_include_directories(arxtest PRIVATE tests)
+	# Tests that read shipped data (data/core/vr/arms/) find it in the source tree
+	target_compile_definitions(arxtest PRIVATE "ARX_TEST_SOURCE_DIR=\"${PROJECT_SOURCE_DIR}\"")
 	
 	set(run_tests)
 	if(RUN_TESTS)

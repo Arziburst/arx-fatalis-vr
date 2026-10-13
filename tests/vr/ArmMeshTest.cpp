@@ -45,7 +45,7 @@ const size_t HandVertexCount = 812;
 const size_t HandIndexCount = 3480;
 const size_t HandTriangleCount = HandIndexCount / 3;
 
-void near(const char * what, float expected, float actual, float tolerance) {
+void expectNear(const char * what, float expected, float actual, float tolerance) {
 	if(!(std::abs(expected - actual) <= tolerance)) {
 		CPPUNIT_FAIL(std::string(what) + ": expected " + std::to_string(expected) + ", got " + std::to_string(actual));
 	}
@@ -56,9 +56,9 @@ glm::vec3 asGlm(const Vec3f & v) {
 }
 
 void nearVec(const char * what, const glm::vec3 & expected, const glm::vec3 & actual, float tolerance) {
-	near((std::string(what) + ".x").c_str(), expected.x, actual.x, tolerance);
-	near((std::string(what) + ".y").c_str(), expected.y, actual.y, tolerance);
-	near((std::string(what) + ".z").c_str(), expected.z, actual.z, tolerance);
+	expectNear((std::string(what) + ".x").c_str(), expected.x, actual.x, tolerance);
+	expectNear((std::string(what) + ".y").c_str(), expected.y, actual.y, tolerance);
+	expectNear((std::string(what) + ".z").c_str(), expected.z, actual.z, tolerance);
 }
 
 std::string readHandFile(char side) {
@@ -201,7 +201,7 @@ void ArmMeshTest::testWeightsAreNormalised() {
 				}
 				sum += mesh.weights[v][k];
 			}
-			near("weight sum", 1.f, sum, 1e-4f);
+			expectNear("weight sum", 1.f, sum, 1e-4f);
 		}
 	}
 }
@@ -307,7 +307,7 @@ void ArmMeshTest::testNormalsAreRenormalised() {
 	posed[1] = glm::rotate(glm::mat4(1.f), glm::half_pi<float>(), glm::vec3(0.f, 0.f, 1.f));
 	std::vector<Vec3f> positions, normals;
 	vr::skinMesh(mesh, posed, positions, normals);
-	near("normal length", 1.f, glm::length(asGlm(normals[0])), 1e-4f);
+	expectNear("normal length", 1.f, glm::length(asGlm(normals[0])), 1e-4f);
 	// The blend of (3, 0, 0) and (0, 1, 0) points between +x and +y
 	nearVec("blended normal", glm::normalize(glm::vec3(1.5f, 0.5f, 0.f)), asGlm(normals[0]), 1e-4f);
 }
@@ -316,8 +316,8 @@ void ArmMeshTest::testSleeveCounts() {
 	vr::SleeveParams params;
 	CPPUNIT_ASSERT(params.rings >= 12);
 	CPPUNIT_ASSERT(params.sides >= 12 && params.sides <= 16);
-	near("upper length", 27.6f, params.upperLength, 1e-4f);
-	near("forearm length", 30.5f, params.forearmLength, 1e-4f);
+	expectNear("upper length", 27.6f, params.upperLength, 1e-4f);
+	expectNear("forearm length", 30.5f, params.forearmLength, 1e-4f);
 
 	vr::SkinnedMesh sleeve = vr::buildSleeve(params);
 	CPPUNIT_ASSERT(sleeve.positions.size() >= size_t(params.rings * params.sides));
@@ -342,10 +342,10 @@ void ArmMeshTest::testSleeveCounts() {
 	CPPUNIT_ASSERT(stations.size() >= size_t(params.rings));
 
 	// A smaller resolution is honoured
-	vr::SleeveParams small;
-	small.rings = 12;
-	small.sides = 12;
-	vr::SkinnedMesh smallSleeve = vr::buildSleeve(small);
+	vr::SleeveParams smallParams;
+	smallParams.rings = 12;
+	smallParams.sides = 12;
+	vr::SkinnedMesh smallSleeve = vr::buildSleeve(smallParams);
 	CPPUNIT_ASSERT(smallSleeve.positions.size() >= size_t(144));
 	CPPUNIT_ASSERT(smallSleeve.positions.size() < sleeve.positions.size());
 }
@@ -361,7 +361,7 @@ void ArmMeshTest::testSleeveWeightsSumToOne() {
 			}
 			sum += sleeve.weights[v][k];
 		}
-		near("sleeve weight sum", 1.f, sum, 1e-4f);
+		expectNear("sleeve weight sum", 1.f, sum, 1e-4f);
 	}
 }
 
@@ -372,12 +372,12 @@ void ArmMeshTest::testSleeveElbowRingIsWeightedAcrossBothJoints() {
 	std::vector<size_t> ring = verticesNearestX(sleeve, params.upperLength);
 	CPPUNIT_ASSERT(!ring.empty());
 	for(size_t v : ring) {
-		near("elbow ring x", params.upperLength, sleeve.positions[v].x, 0.5f);
+		expectNear("elbow ring x", params.upperLength, sleeve.positions[v].x, 0.5f);
 		float upperSide = weightOn(sleeve, v, { vr::SleeveShoulder, vr::SleeveUpperTwist });
 		float forearmSide = weightOn(sleeve, v, { vr::SleeveElbow, vr::SleeveForearmTwist1,
 		                                          vr::SleeveForearmTwist2, vr::SleeveWrist });
-		near("elbow ring upper side", 0.5f, upperSide, 0.05f);
-		near("elbow ring forearm side", 0.5f, forearmSide, 0.05f);
+		expectNear("elbow ring upper side", 0.5f, upperSide, 0.05f);
+		expectNear("elbow ring forearm side", 0.5f, forearmSide, 0.05f);
 	}
 
 	// A ring 2 to 3 units on each side of it
@@ -430,8 +430,8 @@ void ArmMeshTest::testSleeveSpansTheArm() {
 		maxX = std::max(maxX, p.x);
 	}
 	// Units are about a centimetre: within one
-	near("shoulder end", 0.f, minX, 1.f);
-	near("wrist end", params.upperLength + params.forearmLength, maxX, 1.f);
+	expectNear("shoulder end", 0.f, minX, 1.f);
+	expectNear("wrist end", params.upperLength + params.forearmLength, maxX, 1.f);
 
 	// The lengths are honoured, not hard-coded
 	vr::SleeveParams longer;
@@ -442,13 +442,13 @@ void ArmMeshTest::testSleeveSpansTheArm() {
 	for(const Vec3f & p : longSleeve.positions) {
 		longMax = std::max(longMax, p.x);
 	}
-	near("longer wrist end", 75.f, longMax, 1.f);
+	expectNear("longer wrist end", 75.f, longMax, 1.f);
 
 	// The joints sit on the arm: the elbow upperLength from the shoulder, the wrist at the far end
 	std::vector<glm::mat4> world;
 	vr::restWorldMatrices(sleeve, world);
-	near("elbow joint x", params.upperLength, world[vr::SleeveElbow][3][0], 1.f);
-	near("wrist joint x", params.upperLength + params.forearmLength, world[vr::SleeveWrist][3][0], 1.f);
+	expectNear("elbow joint x", params.upperLength, world[vr::SleeveElbow][3][0], 1.f);
+	expectNear("wrist joint x", params.upperLength + params.forearmLength, world[vr::SleeveWrist][3][0], 1.f);
 }
 
 void ArmMeshTest::testRecomputeNormalsOfAFlatStrip() {
@@ -479,9 +479,9 @@ void ArmMeshTest::testRecomputeNormalsOfAFlatStrip() {
 	}
 	vr::recomputeNormals(mesh, turned, normals);
 	for(const Vec3f & n : normals) {
-		near("turned strip normal", 1.f, std::abs(n.x), 1e-4f);
-		near("turned strip normal y", 0.f, n.y, 1e-4f);
-		near("turned strip normal z", 0.f, n.z, 1e-4f);
+		expectNear("turned strip normal", 1.f, std::abs(n.x), 1e-4f);
+		expectNear("turned strip normal y", 0.f, n.y, 1e-4f);
+		expectNear("turned strip normal z", 0.f, n.z, 1e-4f);
 	}
 
 	// A whole sleeve: unit-length normals everywhere
@@ -489,7 +489,7 @@ void ArmMeshTest::testRecomputeNormalsOfAFlatStrip() {
 	vr::recomputeNormals(sleeve, sleeve.positions, normals);
 	CPPUNIT_ASSERT_EQUAL(sleeve.positions.size(), normals.size());
 	for(const Vec3f & n : normals) {
-		near("sleeve normal length", 1.f, glm::length(asGlm(n)), 1e-3f);
+		expectNear("sleeve normal length", 1.f, glm::length(asGlm(n)), 1e-3f);
 	}
 }
 
@@ -524,7 +524,7 @@ void ArmMeshTest::testElbowCorrective() {
 	CPPUNIT_ASSERT_MESSAGE("the outer elbow vertex must move outward (y decreases)", outerDy < -1e-3f);
 	CPPUNIT_ASSERT(-outerDy <= push + 1e-3f);
 	if(std::abs(sleeve.positions[outer].z) < 1e-3f) {
-		near("outer elbow push", -push, outerDy, 1e-3f);
+		expectNear("outer elbow push", -push, outerDy, 1e-3f);
 	}
 	// Inner: its distance to the arm's axis shrinks
 	float innerBefore = radiusOf(sleeve.positions[inner]);

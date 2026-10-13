@@ -110,13 +110,19 @@ struct Speech {
 	int iTimeScroll = 0;
 	float fPixelScroll = 0.f;
 	std::string text;
+	//! The localised text of the sample played, also for a line the original shows without text (no
+	//! letterbox): the VR subtitle (#29.3); empty when the sample has none
+	std::string spokenText;
 	Entity * speaker = nullptr;
 	CinematicSpeech cine;
-	
+
 	Entity * scriptEntity = nullptr;
 	const EERIE_SCRIPT * script = nullptr;
 	size_t scriptPos = 0;
-	
+
+	bool subtitleChecked = false; //!< whether the line gets a VR subtitle is decided (#29.3)
+	u64 subtitleLine = 0;         //!< the line's VR subtitle (vr::startSubtitle), 0 for none
+
 };
 
 void ARX_SPEECH_Reset();

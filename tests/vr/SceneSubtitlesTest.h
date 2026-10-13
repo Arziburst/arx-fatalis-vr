@@ -27,11 +27,21 @@ class SceneSubtitlesTest final : public CppUnit::TestFixture {
 
 	CPPUNIT_TEST_SUITE(SceneSubtitlesTest);
 	CPPUNIT_TEST(placementNameTest);
+	CPPUNIT_TEST(aboveAnchorTest);
+	CPPUNIT_TEST(anchorInViewTest);
+	CPPUNIT_TEST(chestPanelTest);
+	CPPUNIT_TEST(roomToViewTest);
+	CPPUNIT_TEST(boxTest);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
 
 	void placementNameTest();
+	void aboveAnchorTest();
+	void anchorInViewTest();
+	void chestPanelTest();
+	void roomToViewTest();
+	void boxTest();
 
 };
 

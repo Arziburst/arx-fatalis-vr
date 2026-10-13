@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <optional>
 #include <sstream>
 #include <vector>
@@ -87,6 +88,8 @@ struct RadialState {
 		std::string className;
 		u32 frames = 0;
 	} torch;
+	//! The names of the slots' kinds as last seen in the bag, for a slot with none left
+	std::map<std::string, std::string> names;
 };
 
 RadialState g_radial;
@@ -743,15 +746,17 @@ void drawMenu(Hand hand) {
 		} else {
 			drawItemIcon(RadialItem::QuickSlot, iconCenter, iconRadius * (className.empty() ? 0.8f : 1.f), DimIconColor);
 		}
+		if(shown) {
+			g_radial.names[className] = itemName(shown);
+		}
 		if(lit) {
+			// Names in the game's language only: the dragged item, the slot's kind (also when none is left -
+			// its icon is then the dim plus); an empty slot shows its plus alone
 			if(dragging) {
-				label = "Put " + itemName(g_draggedEntity) + " here";
-			} else if(className.empty()) {
-				label = "Empty slot";
-			} else if(shown) {
-				label = itemName(shown);
-			} else {
-				label = "None left";
+				label = itemName(g_draggedEntity);
+			} else if(!className.empty()) {
+				const auto known = g_radial.names.find(className);
+				label = (known != g_radial.names.end()) ? known->second : className;
 			}
 		}
 	}

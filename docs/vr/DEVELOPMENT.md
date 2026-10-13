@@ -4,7 +4,7 @@ For a developer (or a worker session) who has just cloned the repository: what t
 build, how to run the game flat and in VR, how to check a change, and where things are. This page
 collects the commands; the reasoning lives in the documents it links to. Everything here is for
 **Windows** — the only platform of the VR port (the upstream engine's own Linux / macOS build
-instructions are in the root [README.md](../../README.md)).
+instructions are in the [ARX-LIBERTATIS.md](../ARX-LIBERTATIS.md)).
 
 ## Prerequisites
 

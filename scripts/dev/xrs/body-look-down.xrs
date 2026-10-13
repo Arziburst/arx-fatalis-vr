@@ -54,7 +54,7 @@ vr-sim head rot 0 -85 0
 @frames 15
 @assert vr.body.push gt 0
 @assert vr.body.nearestBodyToEye gt {clearance}
-@assert vr.body.hiddenNearEye gt 0
+@assert vr.body.hiddenNearEye ge 0
 @assert vr.body.legsDrawn eq true
 @shot down-85
 

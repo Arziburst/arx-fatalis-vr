@@ -99,11 +99,12 @@ Event radialEvent(Hand hand) {
 
 //! Why a menu cannot be open now, or nullptr
 const char * closedReason(Hand hand) {
-	if(!entities.player()) {
-		return "no_player";
-	}
+	// A menu first: with or without a hero, a press there is the game menu key (isGameMenuKey)
 	if(ARXmenu.mode() != Mode_InGame) {
 		return "menu";
+	}
+	if(!entities.player()) {
+		return "no_player";
 	}
 	if(isInCinematic()) {
 		return "cinematic";
@@ -118,9 +119,10 @@ const char * closedReason(Hand hand) {
 }
 
 /*!
- * A press refused for this reason is the game menu key (#377): the game runs (a hero) but the menu cannot open -
- * the game menu or another menu page is shown, or the head or the hand is not tracked. Not in a cinematic (the
- * key would skip it) and not without a hero (the main menu of the start)
+ * A press refused for this reason is the game menu key, Escape (#377): a menu is shown - the game menu, one of its
+ * pages, the character creation, the credits: Escape goes back, resumes or leaves them (the Index has no other key
+ * for it since D-042) - or in the game the head or the hand is not tracked: Escape opens the game menu. Not in a
+ * cinematic (the skip controls have it, #394) and not in the game without a hero (a load)
  */
 bool isGameMenuKey(const char * reason) {
 	const std::string_view why = reason;
@@ -352,8 +354,8 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 				status.refused = reason;
 				gameevent::Event("vr.radial.refused", 200)("hand", handName(hand))("reason", reason);
 				if(isGameMenuKey(reason)) {
-					// The menu is the only way to the game menu (D-042): where it cannot open in a running game,
-					// the press is the game menu key - it opens the game menu, and closes it again (#377)
+					// The menu is the only way to the game menu (D-042): where it cannot open, the press is the
+					// game menu key - it opens the game menu, and goes back or closes it again (#377)
 					requests.gameMenu = true;
 					status.gameMenuKeys++;
 					gameevent::Event("vr.radial.gameMenuKey")("hand", handName(hand))("reason", reason);

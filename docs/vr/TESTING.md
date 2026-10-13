@@ -542,8 +542,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   release (`none`, `inventory`, `game_menu`, `book_open`, `book_closed`, `no_spells`, `quick_save`, `quick_load`, `recenter`,
   `cancel_spell`, `slot_filled`, `used`, `nothing_left`, `torch_out`, `empty_slot`), `refused` (why the last press
   opened nothing: `menu`, `cinematic`, `no_head`, `hand_not_tracked`, `no_player`; else `none`), `opens`, `choices`,
-  `gameMenuKeys` (#377: refused presses that were the game menu key - `menu`, `no_head` or `hand_not_tracked` in a
-  running game: the game menu opens, or goes back; a `vr.radial.gameMenuKey` game event each),
+  `gameMenuKeys` (#377: refused presses that were the game menu key - `menu` (any menu, the credits and the
+  character creation too), or `no_head` / `hand_not_tracked` in the game: the game menu opens, or goes back; a `vr.radial.gameMenuKey` game event each),
   `shown` (the menu was in the last submitted frame), `pointX` / `pointY` (the hand in the ring's plane, metres),
   `center` (the ring in LOCAL), `slots.slot1` … `slot7` (the kind each of the hand's own quick slots holds, `none`
   when empty - the save's `$vr_quickslots_left` / `_right`). `torchHand`: the hand whose menu lit the torch that burns
@@ -794,7 +794,7 @@ by `VRControlsTest::defaultLayoutTest`. Played through in `controls-v2.xrs` (the
 | Trigger, weapon drawn in the hand | the same | Charges the strike (`vr.melee.charge`), no click in the world (the right hand until #380; on the panel it clicks) |
 | Grip, then trigger | `act_*` and `use_*` (`left.grip+left.trigger`) | Use / interact: a door, lever, chest, NPC or corpse is acted on (`vr.reticle.lastAct`); an item is used - eaten, drunk, equipped (the original's right click). Not on the item into the bag any more. The trigger alone - also a double click - no longer opens doors, levers or chests |
 | Grip alone | — | Nothing (the model's fingers only) |
-| B held (Y on the left Touch) | `radial_left` / `radial_right` | That hand's radial menu: the inventory on top; above the ring the game menu, the book's pages, quick save / load, recenter, cancel the spell; seven quick slots. Where no menu can open in a running game - the game menu shown, the head or that hand not tracked - a press is the game menu key: the game menu opens, or goes back (`vr.radial.<hand>.gameMenuKeys`) |
+| B held (Y on the left Touch) | `radial_left` / `radial_right` | That hand's radial menu: the inventory on top; above the ring the game menu, the book's pages, quick save / load, recenter, cancel the spell; seven quick slots. Where no radial menu can open - in any menu (the game menu, its pages, the character creation, the credits), or in the game with the head or that hand not tracked - a press is the game menu key (Escape): the game menu opens, or goes back (`vr.radial.<hand>.gameMenuKeys`) |
 | Right stick left / right | (the turn axis) | Turn, snap or smooth as set - unchanged |
 | Right stick up | `jump` | Jump: up beyond 0.7 and more up than sideways (a diagonal turn does not jump) |
 | Right stick down | `crouch_toggle` | Crouch on / off |

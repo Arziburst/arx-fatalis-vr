@@ -41,8 +41,9 @@
  * kind (the next potion of the kind refills it). Each hand has its own slots, kept in the save as the
  * global script text variables \c $vr_quickslots_left / \c $vr_quickslots_right, so no save format changes.
  * The game time runs while a menu is open.
- * The game menu is never out of reach (#377): a press that cannot open a menu in a running game - the game menu
- * shown, the head or the hand not tracked - is the game menu key (Escape): it opens the game menu or goes back.
+ * The game menu is never out of reach (#377): a press that cannot open a menu - a menu shown (the game menu, the
+ * character creation, the credits), in the game the head or the hand not tracked - is the game menu key (Escape):
+ * it opens the game menu, or goes back.
  *
  * The menus are drawn by the engine's 2D drawing into an image per hand, shown by the VR module as a
  * quad layer on top of everything (\ref beginRadialImage, \ref setRadialLayer).

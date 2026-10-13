@@ -176,8 +176,9 @@ gives a clear moment to cast without a pause or an extra gesture.
   the **left A** (the Touch's X, where it was); until a weapon per hand (#380) the **right** stick click draws / sheathes
   the right hand's weapon, the left stick click is free; the game starts with the weapon **drawn** (as the hand held
   it before). The Touch keeps the game menu on its **left menu button** (the table does not name it). "The game
-  menu must not break": a B press that **cannot open a radial menu** in a running game - the game menu shown, the head
-  or the hand not tracked - is the **game menu key** (it opens the game menu or goes back); not a hold fallback.
+  menu must not break": a B press that **cannot open a radial menu** - in any menu (the game menu, the character
+  creation, the credits: the Index has no other Escape), or in the game with the head or the hand not tracked - is
+  the **game menu key** (it opens the game menu or goes back); not a hold fallback.
   The trigger's double click no longer acts on doors, levers, chests or NPCs while the hands are the mouse.
 
 ---

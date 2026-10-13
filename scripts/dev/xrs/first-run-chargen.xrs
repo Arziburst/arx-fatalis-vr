@@ -1,7 +1,7 @@
 # New game and the character creation in VR, the way a player meets them on the first run (#394): a plain launch
 # on the simulated headset. New game is clicked with the hand pointer; the character creation screen fills its
 # floating panel and the desktop window (#334); a point is spent on an attribute with the trigger (the left mouse
-# button), the quick generation makes the average hero and then re-rolls, the grip (the right button in the
+# button), the quick generation makes the average hero and then re-rolls, grip + trigger (the right button in the
 # menus) takes an attribute and a skill point back and the trigger spends them elsewhere, and Done starts the
 # game - all by pointer clicks, one press = one click, a press off the panel clicks nothing. Arx asks for no name.
 #   .\scripts\dev\xrs-run.ps1 first-run-chargen
@@ -95,12 +95,15 @@ vr-sim action trigger right 0
 @assert hero.skillPoints eq 0
 @assert hero.skills.stealth eq 2
 
-# The grip takes a point back from strength, the trigger puts it on dexterity; the same for a skill
+# Grip, then trigger (the right button in the menus since D-042, #377; the grip alone does nothing) takes a point
+# back from strength, the trigger puts it on dexterity; the same for a skill
 vr-point right menu strength
 @frames 5
 vr-sim action grip right 1
 @frames 5
-vr-sim action grip right 0
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0; vr-sim action grip right 0
 @frames 5
 @assert hero.strength eq 9
 @assert hero.attributePoints eq 1
@@ -116,7 +119,9 @@ vr-point right menu stealth
 @frames 5
 vr-sim action grip right 1
 @frames 5
-vr-sim action grip right 0
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0; vr-sim action grip right 0
 @frames 5
 @assert hero.skills.stealth eq 1
 @assert hero.skillPoints eq 1

@@ -164,7 +164,8 @@ vr-sim action trigger left 1
 vr-sim action trigger left 0
 @until menuPage ne language 5s
 
-# The credits roll; the left A (the game menu, Escape) brings the main menu back
+# The credits roll; the left B brings the main menu back - no radial menu opens in a menu, the press is the game menu
+# key, Escape (#377; the left A was the game menu before D-042)
 menu none
 @until menuPage eq none 5s
 vr-point left menu credits
@@ -176,8 +177,9 @@ vr-sim action trigger left 0
 # The panel takes the menu's name when the frame is submitted, after the status of its start was written
 @until vr.panel.menu eq credits 5s
 @frames 60
-vr-input tap left.a
+vr-input tap left.b
 @until menuMode eq mainmenu 15s
+@assert vr.radial.left.refused eq menu
 @frames 60
 
 # Options with the right hand: Interface, the crosshair off - one click toggles it once - and back twice

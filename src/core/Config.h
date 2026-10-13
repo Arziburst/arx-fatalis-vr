@@ -252,7 +252,8 @@ public:
 		float vrMeleeFullSpeed; //!< VR: m/s a swing has its full damage at (#39)
 		float vrMeleeWeakAim; //!< VR: the damage ratio of an uncharged swing; a full charge is 1 (#39)
 		float vrMeleeTargetCooldown; //!< VR: seconds before a new swing can hit the same target (#39)
-		float vrBodyPush; //!< VR: game units (cm) the own body sits behind the eyes along its facing (#385.9, vr/BodyView.h)
+		float vrBodyPush; //!< VR: game units (cm) the own body sits behind the eyes along its facing, looking ahead (#385.9, vr/BodyView.h)
+		float vrBodyPushDown; //!< VR: game units (cm) the push grows by looking straight down (#385.9)
 		float vrBodyClearance; //!< VR: game units (cm) from an eye within which the own body's faces are not drawn (#385.9)
 
 	} input;

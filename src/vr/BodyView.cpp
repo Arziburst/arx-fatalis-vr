@@ -27,6 +27,11 @@
 
 namespace vr {
 
+float pushForPitch(float pitchDownDegrees, const BodyViewParams & params) {
+	const float down = glm::clamp(pitchDownDegrees, 0.f, 90.f);
+	return params.push + params.pushDown * std::sin(glm::radians(down));
+}
+
 Vec3f neckPivot(const Vec3f & eye, float yawDegrees, const BodyViewParams & params) {
 	const float yaw = glm::radians(yawDegrees);
 	const Vec3f forward(-std::sin(yaw), 0.f, std::cos(yaw));

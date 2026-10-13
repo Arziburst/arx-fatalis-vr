@@ -129,6 +129,8 @@ set(arxtest_TESTCASES
 
 	tests/vr/BodyViewTest.h
 	tests/vr/BodyViewTest.cpp
+	tests/vr/BodyPushTest.h
+	tests/vr/BodyPushTest.cpp
 
 	tests/vr/PerfStatsTest.h
 	tests/vr/PerfStatsTest.cpp

@@ -182,6 +182,7 @@ constexpr const float
 	vrArmMaxStretch = vr::MaxArmStretch,
 	vrArmWeaponElbowDrop = vr::DefaultWeaponElbowDrop,
 	vrBodyPush = vr::BodyViewParams().push,
+	vrBodyPushDown = vr::BodyViewParams().pushDown,
 	vrBodyClearance = vr::BodyViewParams().clearance;
 
 constexpr const ActionKey actions[NUM_ACTION_KEY] = {
@@ -359,6 +360,7 @@ constexpr const std::string_view
 	vrMeleeWeakAim = "vr_melee_weak_aim",
 	vrMeleeTargetCooldown = "vr_melee_target_cooldown",
 	vrBodyPush = "vr_body_push",
+	vrBodyPushDown = "vr_body_push_down",
 	vrBodyClearance = "vr_body_clearance";
 
 // Input key options
@@ -658,6 +660,7 @@ bool Config::save() {
 	writer.writeKey(Key::vrMeleeWeakAim, input.vrMeleeWeakAim);
 	writer.writeKey(Key::vrMeleeTargetCooldown, input.vrMeleeTargetCooldown);
 	writer.writeKey(Key::vrBodyPush, input.vrBodyPush);
+	writer.writeKey(Key::vrBodyPushDown, input.vrBodyPushDown);
 	writer.writeKey(Key::vrBodyClearance, input.vrBodyClearance);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
@@ -871,6 +874,8 @@ bool Config::init(const fs::path & file) {
 	// The own body out of the eyes (#385.9): the push back behind the eyes and the clearance around them, game units
 	float vrBodyPush = reader.getKey(Section::Input, Key::vrBodyPush, Default::vrBodyPush);
 	input.vrBodyPush = glm::clamp(vrBodyPush, 0.f, vr::MaxBodyPush);
+	float vrBodyPushDown = reader.getKey(Section::Input, Key::vrBodyPushDown, Default::vrBodyPushDown);
+	input.vrBodyPushDown = glm::clamp(vrBodyPushDown, 0.f, vr::MaxBodyPush);
 	float vrBodyClearance = reader.getKey(Section::Input, Key::vrBodyClearance, Default::vrBodyClearance);
 	input.vrBodyClearance = glm::clamp(vrBodyClearance, 0.f, vr::MaxBodyClearance);
 	

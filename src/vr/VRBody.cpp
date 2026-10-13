@@ -752,6 +752,7 @@ ArmRollParams rollParams() {
 BodyViewParams bodyViewParams() {
 	BodyViewParams params;
 	params.push = config.input.vrBodyPush;
+	params.pushDown = config.input.vrBodyPushDown;
 	params.clearance = config.input.vrBodyClearance;
 	return params;
 }
@@ -915,8 +916,10 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	// The body hangs from the neck pivot below the eyes, pushed back behind them along its facing (#385.9,
 	// research F-471): looking down shows the chest and the legs ahead of the feet, not the inside of the
 	// shoulders. Only across the floor - the body keeps standing on its feet - and never the camera or the
-	// hands, which were placed from the eye above
-	const BodyViewParams view = bodyViewParams();
+	// hands, which were placed from the eye above. A little looking ahead, more as the head looks down
+	BodyViewParams view = bodyViewParams();
+	const float pitch = camera.angle.getPitch(); // engine degrees in [0, 360), positive down
+	view.push = pushForPitch(pitch > 180.f ? pitch - 360.f : pitch, view);
 	const Vec3f modelNeck = eye + Vec3f(0.f, view.neckBelowEye, 0.f);
 	Vec3f push = bodyOffset(headCamera, facingYaw, modelNeck, view);
 	push.y = 0.f;

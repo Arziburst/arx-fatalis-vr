@@ -39,15 +39,23 @@
 namespace vr {
 
 struct BodyViewParams {
-	float push = 12.f;         //!< how far the body sits behind the eyes along its facing (cfg.ini vr_body_push)
+	float push = 4.f;          //!< how far the body sits behind the eyes along its facing (looking ahead: cfg.ini vr_body_push)
+	float pushDown = 10.f;     //!< the push added looking straight down (cfg.ini vr_body_push_down), see \ref pushForPitch
 	float neckBelowEye = 10.f; //!< the neck pivot below the eyes
-	float clearance = 25.f;    //!< faces with a corner within this distance of an eye are hidden (cfg.ini vr_body_clearance)
+	float clearance = 15.f;    //!< faces with a corner within this distance of an eye are hidden (cfg.ini vr_body_clearance)
 	float keepBelow = 60.f;    //!< faces lower than this below the eyes are never hidden: the legs
 };
 
-//! The limits cfg.ini's push and clearance are clamped to (units)
+//! The limits cfg.ini's pushes and clearance are clamped to (units)
 const float MaxBodyPush = 40.f;
 const float MaxBodyClearance = 40.f;
+
+/*!
+ * \return the push in use for a head looking \a pitchDownDegrees below the horizon (negative: above it): \c push
+ *         looking ahead or up, plus \c pushDown eased in by the sine of the angle down - the torso moves out from
+ *         under the eyes as the head looks down, as the real neck carries the eyes forward (the sim has no neck)
+ */
+float pushForPitch(float pitchDownDegrees, const BodyViewParams & params);
 
 //! \return the neck pivot: \c neckBelowEye below \a eye and \c push behind it along the facing \a yawDegrees
 Vec3f neckPivot(const Vec3f & eye, float yawDegrees, const BodyViewParams & params);

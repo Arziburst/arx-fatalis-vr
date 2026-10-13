@@ -2,7 +2,8 @@
 # simulated headset walks the path from the publisher logos to the first steps in the prison - the two logos
 # skipped with A and the trigger, the level 10 intro on the VR screen skipped with A during its scripted scene (before
 # introduction.cin plays), the main menu with no leaked click, Options with one setting changed by pointer and back,
-# New game, the character creation by pointer clicks, the prison (area 1) and a walk with the left stick. The parts
+# New game, the character creation by pointer clicks, the prison (area 1) with its intro skipped with A and a walk
+# with the left stick. The parts
 # have their own, faster sequences (first-run-intro, first-run-menu, first-run-chargen); this one keeps the seams
 # between them from breaking.
 #   .\scripts\dev\xrs-run.ps1 first-run
@@ -109,12 +110,42 @@ vr-sim action trigger right 1
 @frames 5
 vr-sim action trigger right 0
 
-# The prison: area 1, playable once its wake-up script frees the controls; the hero is the one made; the left stick walks
+# The prison: area 1, the hero is the one made; the prison intro (a scripted scene, the controls held) plays and A
+# skips it through its own skip handlers, as Esc does: the hero at MARKER_0112, the controls back, the press reaches
+# nothing; the left stick walks
 @until area eq 1 60s
 @until state eq GAMEPLAY 120s
 @assert hero.strength eq 10
 @assert hero.mind eq 10
-@until player.controlsBlocked eq false 90s
+@log GameEvent:.*scene state=start area=1 30s
+@assert player.controlsBlocked eq true
+vr-input tap right.a                         # too early: nothing is sent to the scene, the press reaches nothing
+@log GameEvent:.*scene\.skip how=vr area=1 .*result=early 5s
+@frames 30
+@assert player.controlsBlocked eq true
+@nolog GameEvent:.*player\.jump
+@wait 6000                                   # the skip handlers take a skip 3 s into the letterbox, outside a fade
+@mark
+vr-input tap right.a
+@until player.controlsBlocked eq false 15s
+@frames 30
+@nolog GameEvent:.*player\.jump
+@nolog GameEvent:.*vr\.pointer\.click
+@assert player.jumping eq false
+@log GameEvent:.*vr\.skip what=SCENE 5s
+@log GameEvent:.*scene\.skip how=vr area=1 .*result=sent 5s
+@log GameEvent:.*scene state=end area=1 5s
+@assert events.byName."vr.skip" eq 5
+watch marker_0112
+@frames 5
+@assert watch.found eq true
+@remember mx watch.x
+@remember mz watch.z
+@assert player.x gt {mx-10}
+@assert player.x lt {mx+10}
+@assert player.z gt {mz-10}
+@assert player.z lt {mz+10}
+watch off
 @remember z0 player.z
 vr-input stick left 0 1
 @frames 45
@@ -122,4 +153,5 @@ vr-input stick left 0 1
 vr-input stick left 0 0
 @frames 10
 @assert player.z gt {z0+50}                  # the prison start faces +z (yaw about 0): the walk goes along it
+@nolog GameEvent:.*scene state=start         # the skipped intro does not play again
 @assert errors eq 0

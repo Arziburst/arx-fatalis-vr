@@ -2,7 +2,8 @@
 # FISHTANK and ARKANE logos, then the intro - level 10's scripted scene around introduction.cin - which ends in the
 # main menu. In VR all of it plays on a screen fixed in the room in front of the player (vr.panel.mode screen: the
 # flat-frame quad, quadPixels in both eyes); A, B or a trigger skips the logo on screen, the whole intro, and the press
-# reaches nothing after it. New game then starts in the prison (area 1), where the left stick walks.
+# reaches nothing after it. New game then starts in the prison (area 1): its intro runs to its end without a skip,
+# then the left stick walks.
 #   .\scripts\dev\xrs-run.ps1 first-run-intro
 @sim idle
 @player
@@ -65,12 +66,17 @@ vr-input tap right.b
 @nolog GameEvent:.*vr\.pointer\.click
 @assert menuMode eq mainmenu
 
-# New game (an average hero, as the menu's New game and character creation do): the prison, area 1, playable once its
-# wake-up script frees the controls; the left stick walks
+# New game (an average hero, as the menu's New game and character creation do): the prison, area 1; its intro (a
+# scripted scene, the controls held) runs to its end untouched and frees the controls; the left stick walks
 newgame
 @until area eq 1 60s
 @until state eq GAMEPLAY 30s
+@log GameEvent:.*scene state=start area=1 30s
+@assert player.controlsBlocked eq true
 @until player.controlsBlocked eq false 90s
+@nolog GameEvent:.*scene\.skip               # nothing skipped it since it started
+@log GameEvent:.*scene state=end area=1 30s
+@assert events.byName."vr.skip" eq 3
 @nolog GameEvent:.*player\.jump
 @remember z0 player.z
 vr-input stick left 0 1

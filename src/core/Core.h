@@ -99,7 +99,20 @@ const char * startupLogoName();
 //! The intro after the logos (level 10, ending in the main menu) plays (#394)
 bool startupIntroPlaying();
 
-//! The VR skip (A, B or a trigger) was pressed this frame while a logo, the intro or a cinematic played (#394)
+/*!
+ * A scripted scene plays in the game (#394): the letterbox is on outside a cinematic and the startup
+ * intro - the prison intro after a new game among them. Its scripts hold the controls
+ */
+bool scriptedScenePlaying();
+
+/*!
+ * Skip the scripted scene as Esc does (#394): its scripts get key_pressed and end it through their
+ * skip handlers - refused while a fade runs and in the scene's first 3 s. A scene.skip event says
+ * what happened; \a how is "key" or "vr"
+ */
+void skipScriptedScene(const char * how);
+
+//! The VR skip (A, B or a trigger) was pressed this frame while a logo, the intro, a cinematic or a scripted scene played (#394)
 extern bool g_vrSkipPressed;
 
 extern AreaId g_currentArea;

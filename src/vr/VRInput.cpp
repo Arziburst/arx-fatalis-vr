@@ -99,20 +99,31 @@ ControlSet skipControls() {
 	return controls;
 }
 
+//! What the skip controls would skip now (#394): the game state's name, "SCENE" for a scripted scene in the game, or nullptr
+const char * skippable() {
+	const gameevent::GameState state = gameevent::currentGameState();
+	if(state == gameevent::GameState::Logo || state == gameevent::GameState::Intro
+	   || state == gameevent::GameState::Cinematic) {
+		return gameevent::gameStateName(state);
+	}
+	if(state == gameevent::GameState::Gameplay && scriptedScenePlaying()) {
+		return "SCENE";
+	}
+	return nullptr;
+}
+
 /*!
- * While a logo or a cinematic plays (#394) A, B and the triggers skip it and reach nothing else: they
- * are taken out of the input before it is resolved, and one still held when the logo or cinematic
- * ends stays out until it is released - the press that skipped never clicks in the menu, opens a
- * radial menu or jumps in the game that follows.
+ * While a logo, a cinematic or a scripted scene (the prison intro after a new game) plays (#394) A, B
+ * and the triggers skip it and reach nothing else: they are taken out of the input before it is
+ * resolved, and one still held when it ends stays out until it is released - the press that skipped
+ * never clicks in the menu, opens a radial menu or jumps in the game that follows.
  *
- * \return true when one of them was pressed in this update while a logo or a cinematic plays
+ * \return true when one of them was pressed in this update while something skippable plays
  */
 bool takeSkipControls(ControllerInput & input) {
 
 	static const ControlSet controls = skipControls();
-	const gameevent::GameState state = gameevent::currentGameState();
-	const bool playing = state == gameevent::GameState::Logo || state == gameevent::GameState::Intro
-	                     || state == gameevent::GameState::Cinematic;
+	const bool playing = skippable() != nullptr;
 
 	const ControlSet pressed = ((input.down & ~g_input.skipDown) | input.taps) & controls;
 	g_input.skipDown = input.down & controls;
@@ -410,10 +421,11 @@ void updateInput() {
 	applyToEngine(game);
 
 	// The game skips what is on screen this frame (#394, core/ArxGame.cpp): the logo, the whole intro,
-	// the cinematic (through cinematicEnd(), as Esc does)
+	// the cinematic (through cinematicEnd(), as Esc does), the scripted scene (through its skip handlers)
 	if(skip) {
 		g_vrSkipPressed = true;
-		gameevent::Event("vr.skip")("what", gameevent::gameStateName(gameevent::currentGameState()));
+		const char * what = skippable();
+		gameevent::Event("vr.skip")("what", what ? what : "none");
 	}
 
 	// Recenter (#28, D-019: a long press of the left stick click): the head as it is at the next sample

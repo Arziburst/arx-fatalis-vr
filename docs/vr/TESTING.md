@@ -125,10 +125,12 @@ character creation by pointer.
 **What the CI checks of it:** `first-run.xrs` (`@player`, one launch) walks the whole path - both logos skipped (A, the
 trigger), the intro on the VR screen skipped with A during its scripted scene (state `INTRO`, before
 `introduction.cin`), the menu with no leaked click, Options (the crosshair off by pointer) and back, New game, the
-character creation by pointer clicks (the average hero in `status.json`), the prison (area 1) in `GAMEPLAY` once its
-wake-up script frees the controls, a walk with the left stick; `@shot` of the intro and the menu in both eyes. The
-parts have their own faster sequences: `first-run-intro` (a player's launch up to `introduction.cin`, its skip with B,
-New game and the walk), `first-run-menu` (a development launch at the main menu) and `first-run-chargen` (`--skiplogo` until #399).
+character creation by pointer clicks (the average hero in `status.json`), the prison (area 1) in `GAMEPLAY`, its
+intro (a scripted scene, `scene state=start`) skipped with A through its own skip handlers as Esc does (`scene.skip
+how=vr result=sent`, the controls back, the hero at `MARKER_0112`, no jump), a walk with the left stick; `@shot` of the
+intro and the menu in both eyes. The parts have their own faster sequences: `first-run-intro` (a player's launch up to
+`introduction.cin`, its skip with B, New game, the prison intro played to its end without a skip, and the walk),
+`first-run-menu` (a development launch at the main menu) and `first-run-chargen` (`--skiplogo` until #399).
 `ci-smoke.ps1` runs all of them on every pull request, and after `first-run-menu` its **read-back**
 `readback/first-run-menu-readback.xrs` in the same user directory (the crosshair setting, written to `cfg.ini` on quit,
 read back by the second launch).
@@ -727,7 +729,9 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `startup.intro` (#394) | the level 10 intro starts / ends | `state=start area=10`; `state=end how=done\|skip` |
 | `cinematic.start` / `cinematic.end` (#394) | a `.cin` plays / ends | `name`; `how=skip\|done` |
 | `vr.screen` / `vr.screen.placed` (#394) | the VR screen (logos, intro, cinematics) goes on / off, is placed in the room | `state=on\|off`, `for=` |
-| `vr.skip` (#394) | A, B or a trigger skips a logo, the intro or a cinematic | `what=<state>` |
+| `vr.skip` (#394) | A, B or a trigger skips a logo, the intro, a cinematic or a scripted scene | `what=<state>\|SCENE` |
+| `scene` (#394) | a scripted scene in the game (the letterbox outside a cinematic and the startup intro: the prison intro after New game) starts / ends | `state=start\|end`, `area`, `camera` (the scripted camera, `none` before it is set), `controlsBlocked` |
+| `scene.skip` (#394) | Esc (`how=key`) or the VR skip (`how=vr`) skips a scripted scene: its scripts get `key_pressed` and their skip handlers end it | `how`, `area`, `camera`, `result=sent\|early` (`early`: a fade runs, or the letterbox has not been on for 3 s - nothing sent), `refused` (some script refused it: the speech plays on; the scene is still skipped, see TRAPS.md) |
 | `chargen.roll` (#394) | a click of the quick generation | `kind=average\|random` |
 | `player.death` | the player dies | `source` (entity id), `damage`, `type` (damage type flags) |
 | `player.respawn` | the player died in the test playground (#321) and is back at its start, alive, in the same frame | `x` `y` `z` (the start), `fromX` `fromZ` (where he died), `life` |

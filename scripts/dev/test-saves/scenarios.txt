@@ -4,9 +4,9 @@
 # header of make-test-saves.ps1.
 #
 # Level 1 (the goblin prison, where a new game starts). Ids and coordinates come from the `entities`
-# channel command (docs/vr/TESTING.md); a position is "x y z" in world units (about 100 per metre) and
-# `setpos` takes the feet: y is the floor the player stands on, the eye ends 170 higher (smaller y, TRAPS.md).
-# An entity's own position is on the floor, and walls are everywhere:
+# channel command (docs/vr/TESTING.md); a position is "x y z" in world units (about 100 per metre). `setpos`
+# takes the feet: its y is the floor the player stands on, and the eye (`player.y`) ends 170 units higher
+# (smaller y; TRAPS.md, #210). An entity's own position is on the floor, and walls are everywhere:
 # a spot set with `setpos` is checked with a screenshot (`shot`), never by arithmetic alone. A spot in the
 # hand reticles' reach of an entity is found by the game itself with `approach <entity>` (#210).
 #

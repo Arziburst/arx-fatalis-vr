@@ -27,7 +27,7 @@ lever's box, yet `vr.reticle.right.under` stayed `none`; the hand rays started a
 (the eye 340 above it), and `entities` listed the player entity at y 2935 — its position is its feet.
 **Cause:** the channel's `setpos` (and the new `approach` at first) call `ARX_INTERACTIVE_Teleport(player, p)`,
 which sets `player.pos = p + baseOffset()`: `p` is the **feet**, the eye ends 170 units higher. Everything
-written before said "setpos y is the eye (floor - 170)", so eye coordinates put the feet in the air: the eye
+written before took setpos's y for the eye (the floor minus 170), so eye coordinates put the feet in the air: the eye
 340 units above the floor, out of the pick's reach of a floor object (350 units from the eye), on wall tops
 (what `hand-reticle.xrs` works around for `mvp-items`). The player does not fall back down by itself.
 **Do:** `setpos <x> <floor y> <z>` for a player standing on that floor; check `player.y` (the eye) and
@@ -601,8 +601,9 @@ black screen, the player's own feet, or a goblin; the entity is nowhere in the p
 the 13 launches of #70 went into it before this was written down.
 **Causes, all measured:** (1) an entity's `pos` — from `entities` — is its **floor** position, so
 looking at "the entity" from 2 m with pitch 0 aims 1.7 m above it; `lookat` now aims 40 units above the
-floor and sets the pitch. (2) `setpos` / `player.pos` is the **eye**: `y` = floor − 170; a floor-level
-`y` puts the eye in the floor (black or a wall's back) until gravity pulls the player up. (3) The
+floor and sets the pitch. (2) *Wrong, see the 2026-10-13 entry "`setpos` y is the feet":* this entry
+first took `setpos`'s `y` for the eye and placed the player with eye coordinates, which put the feet 170
+units above the floor - the eye 340 above it, on wall tops, out of the pick's reach. (3) The
 level is narrow corridors and cells: many points 1.5-2.5 m away on a ring around an object are
 inside a wall or in another room (black or wall-only screenshots in the contact sheets of the 4
 compass points around each of 7 objects); which ones are valid cannot be told without a picture. (4) The pick that decides what a click acts on is not exposed: `FlyingOverIO` is cleared in

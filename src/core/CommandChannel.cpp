@@ -1593,6 +1593,8 @@ std::string execute(std::string_view line) {
 			return std::string();
 		}
 		LogInfo << "[channel] stalling the frame for " << stallMs << " ms";
+		// Named in a hang report: the run digest knows this stall is on purpose (log-digest-allowlist.txt)
+		note("a stall the test channel asked for");
 		platform::stallThisThread(std::chrono::milliseconds(stallMs));
 		return std::string();
 	}
@@ -2778,6 +2780,8 @@ void notifyLoading(AreaId area) {
 		long stallMs = g.stallLoadMs;
 		g.stallLoadMs = 0;
 		LogInfo << "[channel] stalling the level load for " << stallMs << " ms";
+		// Named in a hang report: the run digest knows this stall is on purpose (log-digest-allowlist.txt)
+		note("a stall the test channel asked for");
 		platform::stallThisThread(std::chrono::milliseconds(stallMs));
 	}
 }

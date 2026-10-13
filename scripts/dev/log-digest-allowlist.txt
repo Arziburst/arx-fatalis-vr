@@ -15,3 +15,11 @@
 # simulated headset in every CI run. An exit of the process that follows names itself in [E] ExitTrace lines
 ^\[W\] VRSystem:\d+\s+OpenXR session ended by the runtime \((exiting|loss pending)\), continuing in flat mode$
 ^\[W\] VRSystem:\d+\s+OpenXR runtime is shutting down \(instance loss pending\), continuing in flat mode$
+
+# The hang watchdog (#440): the first line of a report ("[hang] main thread stalled for ...") carries the signature;
+# its stack (module offsets that change with every build), a missing stack and the end of the stall are its context.
+# Closed as noise: #441-#445, the frame lines of the deliberate stall of level-load-hang.xrs, one issue per frame
+^\[W\] CommandChannel:\d+\s+\[hang\]   [#(]
+^\[W\] CommandChannel:\d+\s+\[hang\] main thread responsive again after \d+ ms$
+# A stall the test channel asks for on purpose (stall / stall load; level-load-hang.xrs in every CI run)
+^\[W\] CommandChannel:\d+\s+\[hang\] main thread stalled for \d+ ms \(report \d of at most \d\), last beat at .*, then a stall the test channel asked for$

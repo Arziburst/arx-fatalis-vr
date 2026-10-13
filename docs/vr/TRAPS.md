@@ -285,7 +285,7 @@ in a sequence, bound only what the game decides, never how many times something 
 
 **Symptom:** the body, the solid torso and the hands following the controllers are right in the headset
 ("руки работают"), but as soon as a controller rolls, the upper arm and the forearm of the model twist into
-flat spirals between the shoulder and the hand (`C:\Users\arzib\arx-fatalis-vr-wt\arms-twist-owner.png`:
+flat spirals between the shoulder and the hand (the owner's headset screenshot, kept out of the repository:
 both arms reach in from the sides as twisted ribbons while the hands themselves look fine). Every number in
 `status.json` is still perfect — `error` 0, the wrist on its target — because the numbers describe joints,
 not the mesh between them.
@@ -1065,7 +1065,7 @@ also refuses `git -C <owner copy>` and commands with runtime-computed paths: use
 ## 2026-10-09 — `claude --bg` refuses a worker's worktree: "Workspace not trusted"
 
 **Symptom:** `start-worker.ps1` fails with `Workspace not trusted. Run claude in <worktree> once and accept
-the trust prompt`, even after the owner trusted the parent folder `C:\Users\arzib\arx-fatalis-vr-wt`.
+the trust prompt`, even after the owner trusted the parent folder `%USERPROFILE%\arx-fatalis-vr-wt`.
 **Cause:** Claude Code's workspace trust is checked for the launch folder itself; trusting a parent does
 not cover a new subfolder. Every worktree is a new folder.
 **Do:** launch workers in the owner's copy (trusted) and let them enter the worktree first —

@@ -34,6 +34,8 @@ set(arxtest_TESTCASES
 	
 	tests/platform/ExitReportTest.h
 	tests/platform/ExitReportTest.cpp
+	tests/platform/HangWatchdogTest.h
+	tests/platform/HangWatchdogTest.cpp
 	
 	tests/math/AssertionTraits.h
 	tests/math/LegacyMath.h
@@ -149,6 +151,7 @@ set(arxtest_SOURCES
 	src/io/log/FileLogger.cpp
 	src/io/resource/ResourcePath.cpp
 	src/platform/ExitReport.cpp
+	src/platform/HangWatchdog.cpp
 	src/vr/BodyYaw.cpp
 	src/vr/EyeProjection.cpp
 	src/vr/FramePacing.cpp

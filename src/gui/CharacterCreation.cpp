@@ -22,6 +22,7 @@
 #include <utility>
 
 #include "core/Core.h"
+#include "core/GameEvent.h"
 #include "core/GameTime.h"
 #include "core/Localisation.h"
 #include "game/Player.h"
@@ -74,6 +75,19 @@ void CharacterCreation::loadData() {
 void CharacterCreation::freeData() {
 	delete BookBackground;
 	BookBackground = nullptr;
+}
+
+bool CharacterCreation::targetRect(std::string_view name, Rectf & rect) const {
+	if(name == "quickgen") {
+		rect = m_quickGenerateButton;
+	} else if(name == "skin") {
+		rect = m_skinButton;
+	} else if(name == "done") {
+		rect = m_doneButton;
+	} else {
+		return StatsPage::slotRect(name, rect);
+	}
+	return true;
 }
 
 void CharacterCreation::resetCheat() {
@@ -156,8 +170,10 @@ void CharacterCreation::render() {
 			if(bQuickGenFirstClick) {
 				ARX_PLAYER_MakeAverageHero();
 				bQuickGenFirstClick = false;
+				gameevent::Event("chargen.roll")("kind", "average");
 			} else {
 				ARX_PLAYER_QuickGeneration();
+				gameevent::Event("chargen.roll")("kind", "random");
 			}
 			player.skin = skin;
 			
@@ -241,6 +257,10 @@ void CharacterCreation::render() {
 	}
 	
 	ARX_UNICODE_DrawTextInRect(hFontMenu, doneButton.topLeft(), 999999, str_button_done, color);
+
+	m_quickGenerateButton = quickGenerateButton;
+	m_skinButton = skinButton;
+	m_doneButton = doneButton;
 	}
 	
 	EERIE_LIGHT * light = lightHandleGet(torchLightHandle);

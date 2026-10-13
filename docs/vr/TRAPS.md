@@ -8,6 +8,123 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — In VR the inventory will not close and melee is refused after New game or `--loadlevel` (#394.5)
+
+**Symptom:** a new game or a `--loadlevel` start in VR: the inventory stays open (closing it reopens it), `melee.state state=off reason=inventory`; a save load is fine, and so is New game in a player's launch.
+**Cause:** the engine's freelook (`TRUE_PLAYER_MOUSELOOK_ON`) starts `false`; off is cursor mode, in which `ARX_INTERFACE_Manage` reopens the inventory every frame. Only `ARX_GAME_Reset` with `!DONT_ERASE_PLAYER` (a save load, or level 10 of a player's launch through `DanaeClearLevel`) turns it on; `--loadlevel` never resets and `DANAE_StartNewQuest` sets `DONT_ERASE_PLAYER`; the pause menu turns it off. VR has no freelook control.
+**Do:** ArxGame turns it on whenever the game enters `GAMEPLAY` in VR (a `vr.freelook` event). Check `player.freelook` / `player.inventoryOpen` before blaming the inventory or melee code. An event of the first loaded frame is logged before a sequence's first mark: assert it with `events.byName`, not `@log`.
+
+## 2026-10-13 — A scripted scene's skip "refused" although the scene was skipped (#394.4)
+
+**Symptom:** `scene.skip ... refused=yes` for a skip of the prison intro, yet the controls come back 5 s later and the hero stands at `MARKER_0112` (the intro's own end takes about 35 s).
+**Cause:** `SendMsgToAllIO(key_pressed)` returns `REFUSE` when **any** of the level's scripts refuses the event; every script still gets it, and the scene's skip handlers end the scene. The engine only uses the result to decide whether the speech is cut (`REQUEST_SPEECH_SKIP`).
+**Do:** judge a scene skip by what the scene does (`scene state=end`, `player.controlsBlocked`, the hero's place), not by `refused`; `result=early` (a fade, or the letterbox's first 3 s) is the real refusal.
+
+## 2026-10-13 — A sequence that changes a setting fails on its second local run (#394.4)
+
+**Symptom:** `first-run.xrs` passes, then fails at `@assert settings.crosshair eq true` when run again with `xrs-run.ps1`.
+**Cause:** the isolated user directory of a working copy is kept between launches, and `cfg.ini` in it still has the crosshair the previous run turned off. CI starts from an empty directory.
+**Do:** delete `cfg.ini` in `%LOCALAPPDATA%\ArxFatalisVR\userdirs\<copy>\` before re-running a sequence that changes a setting.
+
+## 2026-10-13 — The level 10 intro is the original game's startup, not New game's (#394)
+
+**Symptom:** a test of "the intro" from `--loadlevel 10`, `--skiplogo` or New game shows a different thing than a player sees; New game never plays level 10.
+**Cause:** the original start is logos -> level 10 (a scripted scene that plays `introduction.cin` and ends in the main menu through the player's death, `ARX_PLAYER_Manage_Death`) -> main menu. New game loads area 1 (`DANAE_StartNewQuest`).
+**Do:** test the intro from a player's launch (`@player`, `-Player`); `first-run.xrs` / `first-run-intro.xrs`.
+
+## 2026-10-13 — A one-frame virtual Escape never ends a cinematic (#394)
+
+**Symptom:** a simulated Escape / skip press during a `.cin` does nothing.
+**Cause:** `Menu.cpp` ends a cinematic on `isKeyPressedNowUnPressed`, which needs `keysStates == 1` after the release; a key held for one update goes 1 -> 0.
+**Do:** #394 uses `g_vrSkipPressed` and calls `cinematicEnd()` itself; do not "fix" a skip with a faster key press.
+
+## 2026-10-13 — In VR a logo is cut off at the window's size (#394, #73)
+
+**Symptom:** a publisher logo on the VR screen fills only the window's size while the interface (the quad) is larger.
+**Cause:** nothing prepares a camera for the logos, so the GL viewport stays the window's while the interface is the larger quad (#73).
+**Do:** `GRenderer->SetViewport(g_size)` for 2D drawn outside the camera paths.
+
+## 2026-10-13 — The character creation screen is black but for the portrait on a cold development start (#394.3)
+
+**Symptom:** `first-run-chargen.xrs` started at the main menu by `@args --dev-launch` fails at the window shot (`capture.topRight.verdict` black; the quad shot shows only the hero's portrait on black). The same sequence passes when the process first played the level 10 scene (`@args --skiplogo`), and `first-run.xrs` (a player's launch) passes through the same screen.
+**Cause:** not found; a longer wait before the shot (600 frames) changes nothing, so it is not the fade-in. Probably something the level 10 load initialises that a cold menu start does not.
+**Do:** tracked as #399; `first-run-chargen.xrs` stays on `@args --skiplogo` (90 s) until it is fixed - do not loosen the shot's check.
+
+## 2026-10-13 — In VR the main menu sits in a corner of the desktop window and the mouse clicks invisible buttons (#334)
+
+**Symptom:** with VR on, the desktop window showed the main menu (and the character creation) as a small picture
+in one part of the window, the rest dark; the owner reached the character creation only by clicking where nothing
+was drawn. The headset itself showed the menu whole.
+**Cause:** the desktop mirror (#21) showed the right eye, and in the eye the menu is the floating panel (#49) 0.9 m
+ahead and 0.3 m down - a trapezoid at the bottom (or wherever the panel was placed). The desktop mouse, though, is
+mapped from the whole window onto the whole 2D interface (#73), so it hit widgets where the window showed none.
+**Do:** nothing since #394.2: while a menu without the world is shown (`ARXmenu.mode() != Mode_InGame`) the mirror
+draws the flat frame over the whole window (`[vr] desktop mirror: a menu without the world - the window shows the
+2D interface`); the in-game menus (inventory, book) keep the eye. `capture.<quarter>.verdict` of a window `shot`
+tells a picture that fills the window from one in a corner of it.
+
+## 2026-10-13 — `smoke-test.ps1 -Sequence` ignores the sequence's `@args`
+
+**Symptom:** a sequence with `@args --skiplogo` run through `smoke-test.ps1 -VrSim idle -Sequence <name>` launched
+`arx.exe ... --loadlevel 10`.
+**Cause:** `@sim`, `@args` and `@save` are read by `xrs-run.ps1` and `ci-smoke.ps1`; `smoke-test.ps1` takes the
+arx.exe arguments from its own command line (default `--loadlevel 10`).
+**Do:** run a sequence with `xrs-run.ps1 <name>`, or pass the same arguments to the smoke test after `--`
+(`smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir> -- --skiplogo`) - the way to give it a user
+directory of your own.
+
+## 2026-10-13 — The smoke test's `loadlevel 1` "hangs" on the desktop and passes in CI (#440)
+
+**Symptom:** `smoke-test.ps1 -Seconds 3 -Commands 'loadlevel 1','loadlevel 10','drawcheck 120'` failed every time on
+the owner's PC (main too) with `timed out after 10 s waiting for the game to acknowledge 'loadlevel 1'`; the log
+stopped at `level.load area=1`, no crash, no `Done loading level`. The same phase passed in CI, and level 1 loaded
+in 250 ms from a save.
+**Cause:** not a hang - a load bound by the present. The game's window in an interactive session is in the
+background (shown without focus), and the compositor throttles its presents: every `SwapBuffers` took ~30 ms
+(`present=30` in every frame of `arx-perf.log`). The loading screen draws a frame when 16 ms have passed and the
+progress bar moved, but it counted the 16 ms from *before* its present - with a 30 ms present every step of the
+load drew and presented a frame, and the change from level 10 to level 1 (hundreds of progress steps) outlasted the
+10 s ack. In CI (the runner service, session 0, no compositor) a present costs nothing. The hang watchdog (#440)
+gave the stack: `ZwWaitForAlertByThreadId` < `atio6axx.dll` < `wglSwapBuffers` < `SDL2` < `LoadLevelScreen` <
+`loadLevel` < `ARX_CHANGELEVEL_PopLevel` < `ARX_CHANGELEVEL_Change` < `channel::execute` - but only once the
+progress beat was taken out: every step still beat, so the watchdog rightly saw no hang.
+**Do:** the 16 ms are counted from the end of the present now (level 10 → 1 in ~0.9 s with 15 loading frames, the
+start's level 10 load 1.7 s → 0.22 s). A load that seems to hang: read `[hang]` in `arx.log` / `hang.txt`; no report
+means the main thread still makes progress - the `[channel] level N loaded in ... the loading screen drew ...`
+line and `present=` in `arx-perf.log` say where the time goes. Mind: a thread-stack walk from inside the process
+must never load DbgHelp or query modules while the thread is stopped (a thread stuck in the loader holds that lock),
+and must give up when the thread does not stop (a driver call blocks suspension).
+
+## 2026-10-13 — `walk-look.xrs`: the walk left on a busy PC drifts 12.6 units in z (#370)
+
+**Symptom:** `walk-look` failed on CI (run 38339943784, PR #391, nothing related changed) at its first push:
+`ASSERT FAILED: player.z (8472.643) lt 8470` - the head turned left, the stick walked -x as it should
+(`walk.dirX = -1`, `yaw = 89.748`), yet z moved +12.6. Green runs end that push at x ≈ 8347, z 8460.07.
+**Cause:** the push was timed by the runner, not by the distance: stick on, `@frames 40`, four status reads,
+stick off. On the busy runner (18.7 frames/s, worst frame 105 ms) that took 106 frames and 4.8 s (`vr.walk`
+start t=7.94, end t=12.71) instead of 67 frames and 0.75 s, so the player walked the whole way to the start
+cell's wall: x stopped at 8302.06. The cell is x 8302-8798 from the start at 8540, and walking into its wall
+slides the player along it in z (measured on a quiet PC by walking on: z 8460.07 -> 8463.25 at the left wall,
++11.8 at the right one; the busy run's +12.6 is the same slide).
+**Do:** bound a walk by its distance, never by frames or the runner's pace: `stick-for left 0 1 100` - the game
+lets the stick go 100 units on - then `@until stickFor.active eq false` and assert on `stickFor.walk` (the walk
+of its last walking frame, kept after the release). Mind the walls: a push needs room for its distance plus
+the coast after the release (≈ 28 units at 90 fps).
+
+## 2026-10-13 — `ui-panel.xrs`: the head-locked HUD loses half its pixels between two shots (#370)
+
+**Symptom:** `ui-panel` failed on CI (run 38293812665, PR #358, a busy PC) at `@assert
+vr.sim.shots.hudturned.left.quadPixels ge {hudq-1000}`: `2690 ge 5709` - the HUD quad covered 6709 eye pixels
+with the head ahead and 2690 a moment later with it turned, although the quad is head-locked.
+**Cause:** not the turn: the save `mvp-new-game` starts with a timed notification on the HUD, the tutorial hint
+"Right-click to toggle from 'CURSOR MODE' to 'MOUSELOOK MODE'" (`gui/Notification.cpp`: 2 s + 60 ms per character
+of game time, about 6 s). On a quiet PC both shots fall inside it; on a busy one the frames and the runner's
+round trips between the shots are slower and the pair straddles its expiry. Measured with one shot a second:
+the hint on screen (`notifications = 1`) for 4 more seconds after frame 270, 8791 px with it, 2690 px without
+it - the failing value exactly - and 2690 with the head turned 40°.
+**Do:** before comparing HUD pixels over time, `@until notifications eq 0` (status.json, #370); a sequence that
+needs a hint on screen can put one up with `herosay <text>`.
+
 ## 2026-10-13 — The game vanishes with exit code -1: no crash report, no "Clean shutdown", nothing in arx.log (#146)
 
 **Symptom:** a VR self-test with SteamVR running died 3-4 s after `xrCreateSession` (2 of 15 runs, 2026-10-09) with
@@ -255,7 +372,7 @@ in a sequence, bound only what the game decides, never how many times something 
 
 **Symptom:** the body, the solid torso and the hands following the controllers are right in the headset
 ("руки работают"), but as soon as a controller rolls, the upper arm and the forearm of the model twist into
-flat spirals between the shoulder and the hand (`C:\Users\arzib\arx-fatalis-vr-wt\arms-twist-owner.png`:
+flat spirals between the shoulder and the hand (the owner's headset screenshot, kept out of the repository:
 both arms reach in from the sides as twisted ribbons while the hands themselves look fine). Every number in
 `status.json` is still perfect — `error` 0, the wrist on its target — because the numbers describe joints,
 not the mesh between them.
@@ -1039,7 +1156,7 @@ also refuses `git -C <owner copy>` and commands with runtime-computed paths: use
 ## 2026-10-09 — `claude --bg` refuses a worker's worktree: "Workspace not trusted"
 
 **Symptom:** `start-worker.ps1` fails with `Workspace not trusted. Run claude in <worktree> once and accept
-the trust prompt`, even after the owner trusted the parent folder `C:\Users\arzib\arx-fatalis-vr-wt`.
+the trust prompt`, even after the owner trusted the parent folder `%USERPROFILE%\arx-fatalis-vr-wt`.
 **Cause:** Claude Code's workspace trust is checked for the launch folder itself; trusting a parent does
 not cover a new subfolder. Every worktree is a new folder.
 **Do:** launch workers in the owner's copy (trusted) and let them enter the worktree first —

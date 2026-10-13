@@ -224,6 +224,9 @@ struct OpenXRState {
 		PanelPlacement lastPlacement = PanelPlacement::None;
 		PanelMode loggedMode = PanelMode::HeadLocked;
 		Vec2f size = Vec2f(0.f); //!< the panel as last submitted, meters
+		//! The screen of the logos and the cinematics (#394): the same anchor rules, its own place and size
+		PanelAnchor screen;
+		PanelMode loggedScreenMode = PanelMode::HeadLocked;
 	} panel;
 
 	//! The menu pointer's beam (#34), set by the input module every frame
@@ -1504,9 +1507,11 @@ void describeQuadLayer(OpenXRState::Layers & layers, XrCompositionLayerFlags lay
 	layer.subImage.imageRect = swapchain.rect();
 	layer.subImage.imageArrayIndex = 0;
 
-	if(g_xr.panel.anchor.mode() == PanelMode::World) {
-		const PanelPose & pose = g_xr.panel.anchor.pose();
-		const Vec2f size = panelSize(g_xr.panel.params.width, swapchain.size());
+	// A logo or a cinematic on its screen (#394), else an open menu on the floating panel (#49)
+	const bool screen = g_xr.panel.screen.mode() == PanelMode::World;
+	if(screen || g_xr.panel.anchor.mode() == PanelMode::World) {
+		const PanelPose & pose = screen ? g_xr.panel.screen.pose() : g_xr.panel.anchor.pose();
+		const Vec2f size = panelSize(screen ? ScreenWidth : g_xr.panel.params.width, swapchain.size());
 		layer.space = g_xr.localSpace;
 		layer.pose.orientation.x = pose.orientation.x;
 		layer.pose.orientation.y = pose.orientation.y;
@@ -1533,9 +1538,15 @@ void describeQuadLayer(OpenXRState::Layers & layers, XrCompositionLayerFlags lay
 
 	layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
 
-	if(layer.space == g_xr.localSpace) {
+	if(layer.space == g_xr.localSpace && !screen) {
 		describeBeamLayer(layers);
 	}
+}
+
+//! The game shows a logo, the intro or a cinematic: on the screen in the room, not the eyes (#394)
+bool onScreen(gameevent::GameState state) {
+	return state == gameevent::GameState::Logo || state == gameevent::GameState::Intro
+	       || state == gameevent::GameState::Cinematic;
 }
 
 //! The panel settings from cfg.ini (clamped when read)
@@ -1585,6 +1596,31 @@ void updatePanel() {
 	if(mode != panel.loggedMode) {
 		panel.loggedMode = mode;
 		gameevent::Event("vr.panel")("mode", panelModeName(mode))("menu", panel.menu.empty() ? "none" : panel.menu);
+	}
+
+	// The logos and the cinematics play on a screen fixed in the room (#394): placed where the player
+	// looks when one starts, like a menu's panel, never head-locked (a picture glued to the face)
+	const gameevent::GameState state = gameevent::currentGameState();
+	const bool playing = onScreen(state);
+	PanelParams screenParams;
+	screenParams.distance = ScreenDistance;
+	screenParams.drop = ScreenDrop;
+	screenParams.width = ScreenWidth;
+	const PanelPlacement screenPlaced = panel.screen.update(playing, nowUs, tracked, screenParams);
+	if(screenPlaced != PanelPlacement::None) {
+		const PanelPose & pose = panel.screen.pose();
+		const Vec3f heading = pose.orientation * Vec3f(0.f, 0.f, -1.f);
+		gameevent::Event("vr.screen.placed")("reason", panelPlacementName(screenPlaced))
+			("for", gameevent::gameStateName(state))
+			("x", pose.position.x, 2)("y", pose.position.y, 2)("z", pose.position.z, 2)
+			("yawDeg", glm::degrees(std::atan2(-heading.x, -heading.z)), 1)
+			("distanceM", ScreenDistance, 2)("widthM", ScreenWidth, 2)("headY", head.position.y, 2);
+	}
+	const PanelMode screenMode = panel.screen.mode();
+	if(screenMode != panel.loggedScreenMode) {
+		panel.loggedScreenMode = screenMode;
+		gameevent::Event("vr.screen")("state", screenMode == PanelMode::World ? "on" : "off")
+			("for", gameevent::gameStateName(state));
 	}
 }
 
@@ -1751,7 +1787,10 @@ void beginFrameTargets(const Vec2i & windowSize, FrameTargets targets) {
 		return;
 	}
 
-	if(targets == FrameTargets::Game && frame.state.shouldRender && frame.views.valid) {
+	// The intro's scripted scene is a film on the screen (#394): drawn flat into the quad like the
+	// cinematics, never per eye (the state of the last frame: this one has not been decided yet)
+	if(targets == FrameTargets::Game && frame.state.shouldRender && frame.views.valid
+	   && gameevent::currentGameState() != gameevent::GameState::Intro) {
 		beginStereo(frame);
 	} else if(interfaceSize == windowSize) {
 		// The interface is the window: drawn there, copied onto the quad (#18)
@@ -2469,10 +2508,11 @@ void submitFrame(const Vec2i & windowSize) {
 		oss << "First VR frame shown: " << (eyes ? "the scene per eye" : background ? "dark background" : "no background");
 		if(flatFrame) {
 			const bool world = g_xr.layers.quad.space == g_xr.localSpace;
+			const bool screen = g_xr.panel.screen.mode() == PanelMode::World;
 			oss << ", flat frame " << g_xr.quad.size().x << 'x' << g_xr.quad.size().y
-			    << (world ? " on the floating panel " : " on a head-locked quad ") << g_xr.layers.quad.size.width
-			    << " x " << g_xr.layers.quad.size.height << " m at "
-			    << (world ? g_xr.panel.params.distance : QuadDistance)
+			    << (!world ? " on a head-locked quad " : screen ? " on the logo / cinematic screen " : " on the floating panel ")
+			    << g_xr.layers.quad.size.width << " x " << g_xr.layers.quad.size.height << " m at "
+			    << (!world ? QuadDistance : screen ? ScreenDistance : g_xr.panel.params.distance)
 			    << " m" << (g_xr.layers.quad.layerFlags & XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT
 			                ? " (2D interface, blended by its alpha)" : " (a copy of the window)");
 		} else {
@@ -2609,19 +2649,21 @@ void setMenuOpen(const char * menu) {
 PanelStatus panelStatus() {
 	const OpenXRState::Panel & panel = g_xr.panel;
 	PanelStatus status;
-	status.mode = panelModeName(panel.anchor.mode());
+	// While a logo or a cinematic plays the quad is its screen (#394): mode "screen", its pose and size
+	const bool screen = panel.screen.mode() == PanelMode::World;
+	status.mode = screen ? "screen" : panelModeName(panel.anchor.mode());
 	status.menu = panel.menu;
 	status.placements = panel.anchor.placements();
 	status.lastPlacement = panelPlacementName(panel.lastPlacement);
-	const PanelPose & pose = panel.anchor.pose();
+	const PanelPose & pose = screen ? panel.screen.pose() : panel.anchor.pose();
 	const Vec3f heading = pose.orientation * Vec3f(0.f, 0.f, -1.f);
 	const Vec3f face = pose.orientation * Vec3f(0.f, 0.f, 1.f);
 	status.position = pose.position;
 	status.yawDeg = glm::degrees(std::atan2(-heading.x, -heading.z));
 	status.tiltDeg = glm::degrees(std::asin(std::clamp(face.y, -1.f, 1.f)));
 	status.size = panel.size;
-	status.distance = panel.params.distance;
-	status.drop = panel.params.drop;
+	status.distance = screen ? ScreenDistance : panel.params.distance;
+	status.drop = screen ? ScreenDrop : panel.params.drop;
 	return status;
 }
 
@@ -2696,6 +2738,7 @@ bool handReticleShown(Hand hand) {
 
 void recenterPanel() {
 	g_xr.panel.anchor.recenter();
+	g_xr.panel.screen.recenter();
 }
 
 std::string runtimeName() {

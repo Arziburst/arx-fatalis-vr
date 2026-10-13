@@ -1,0 +1,23 @@
+# A level load that hangs is reported as a hang with its stack (#440): the hang watchdog's threshold lowered to
+# 1 s, the next level load stalled for 3 s right after its "Loading level" line (the channel's 'stall load'), then
+# 'loadlevel 1'. The watchdog must report the main thread stalled in the load - the stalling function by name, the
+# load under it - before the load goes on, then the main thread responsive again; the level loads.
+@args --no-vr --loadlevel 10
+
+@until state eq GAMEPLAY 60s
+# The watchdog reads the symbols first (a second or so after the first frame)
+@until hangWatchdog.watching eq true 30s
+@assert hangWatchdog.stalls eq 0
+
+watchdog 1000
+@assert hangWatchdog.thresholdMs eq 1000
+stall load 3000
+loadlevel 1
+@log Loading level "graph/levels/level1/level1.dlf" 10s
+@log \[hang\] main thread stalled for \d+ ms \(report 1 of at most 3\), last beat at level load 10s
+@log \[hang\]   #\d+ arx\.exe\+0x[0-9a-f]+ platform::stallThisThread 10s
+@log \[hang\]   #\d+ arx\.exe\+0x[0-9a-f]+ .*(notifyLoading|loadLevel|DanaeLoadLevel|ARX_CHANGELEVEL) 10s
+@log \[hang\] main thread responsive again after \d+ ms 10s
+@until state eq GAMEPLAY 60s
+@assert area eq 1
+@assert hangWatchdog.stalls ge 1

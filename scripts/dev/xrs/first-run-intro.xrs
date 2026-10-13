@@ -1,0 +1,74 @@
+# The player's first run (#394): a plain arx.exe launch (no --dev-launch) shows the FISHTANK and ARKANE logos and
+# then the main menu (not level 10); after New game the level 10 script plays introduction.cin. In VR the logos and
+# the cinematic play on a screen fixed in the room in front of the player (vr.panel.mode screen, the flat-frame quad:
+# quadPixels in both eyes); A, B or a trigger skips the one on screen, and the press reaches nothing after it.
+#   .\scripts\dev\xrs-run.ps1 first-run-intro
+@sim idle
+@player
+
+# The first logo, on the screen straight ahead at eye height
+@until state eq LOGO 90s
+@log GameEvent:.*startup\.logo name=fishtank state=shown 10s
+@until vr.panel.mode eq screen 10s
+@assert vr.panel.distance eq 2.5
+@assert vr.panel.width gt 2.59
+@assert vr.panel.width lt 2.61
+@shot logo
+@assert vr.sim.shots.logo.left.quadPixels gt 0
+@assert vr.sim.shots.logo.right.quadPixels gt 0
+@assert vr.sim.shots.logo.left.scene.verdict ne background
+@assert vr.sim.shots.logo.right.scene.verdict ne background
+
+# Right A skips FISHTANK: ARKANE follows (still LOGO)
+vr-input tap right.a
+@log GameEvent:.*startup\.logo name=fishtank state=end how=skip
+@log GameEvent:.*startup\.logo name=arkane state=shown 5s
+@assert state eq LOGO
+@assert events.byName."vr.skip" eq 1
+
+# The right trigger skips ARKANE: the main menu, no level loaded, the press clicked nothing
+vr-input tap right.trigger
+@until state eq MENU 10s
+@log GameEvent:.*startup\.logo name=arkane state=end how=skip
+@assert menuMode eq mainmenu
+@assert area eq 0
+@assert events.byName."vr.skip" eq 2
+@frames 30
+@nolog GameEvent:.*vr\.pointer\.click
+
+# New game: level 10 loads and its script plays the intro cinematic on the screen
+newgame
+@until state eq CINEMATIC 120s
+@log GameEvent:.*cinematic\.start name=introduction\.cin 30s
+@assert area eq 10
+@until vr.panel.mode eq screen 10s
+@wait 3000                                   # the cinematic's first picture fades in
+@shot cine
+@assert vr.sim.shots.cine.left.quadPixels gt 0
+@assert vr.sim.shots.cine.right.quadPixels gt 0
+@assert vr.sim.shots.cine.left.scene.verdict ne background
+@assert vr.sim.shots.cine.right.scene.verdict ne background
+
+# Right A skips the cinematic through cinematicEnd(): the prison, playable, no jump from the press
+@mark
+vr-input tap right.a
+@until state eq GAMEPLAY 15s
+@log GameEvent:.*cinematic\.end name=introduction\.cin how=skip 5s
+@assert area eq 10
+@assert events.byName."vr.skip" eq 3
+@until vr.panel.mode eq head 5s
+@frames 60
+@nolog GameEvent:.*player\.jump
+@assert player.controlsBlocked eq false
+
+# The left stick walks
+@remember x0 player.x
+@remember z0 player.z
+vr-input stick left 0 1
+@frames 45
+@assert vr.input.walk.walking eq true
+vr-input stick left 0 0
+@frames 10
+@log GameEvent:.*vr\.walk state=start
+@assert player.x ne {x0}
+@assert player.z ne {z0}

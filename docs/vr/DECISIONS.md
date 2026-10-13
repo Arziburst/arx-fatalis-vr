@@ -13,6 +13,48 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: Own VR arms behind `vr_arms_model` — the Godot XR Tools glove hand (CC0), cgltf and CPU skinning, the logical Arx arm kept
+
+- **Date:** 2026-10-13
+- **Status:** Accepted (a first proposal; the look is the owner's to judge in the headset)
+- **Decided by:** project owner (variant B of #385); the worker of #385.5 for the formulation; within D-009 / D-032
+
+### Decision
+The VR body can wear **its own arms** (#385) instead of the Arx arm models:
+- **Variant B:** the hand is the low-poly glove hand of Godot XR Tools (`Hand_Glove_low_L/R.gltf`, CC0, skinned to the 26
+  joints of `XR_EXT_hand_tracking`), plus a generated low-poly sleeve along the arm. The files are read with **cgltf**
+  and skinned **on the CPU** (`src/vr/ArmMesh.h`); the engine's renderer draws the result, no new rendering path.
+- **The logical Arx arm is kept:** the Arx arm skeleton and its IK of D-009 / D-032 still drive the pose; the custom
+  meshes follow its joints, and the Arx arm models are hidden while the custom ones are shown. Reach, shoulder and roll
+  rules do not change.
+- **A switch, not a replacement:** cfg.ini `vr_arms_model` (`custom` | `arx`, default `custom`) and `vr_hand_scale`
+  (default 1.15, range 0.8 - 1.5; the owner found the Arx fingers too small and thin). In the test playground: the
+  `lever_arms` lever and the channel commands `arms custom|arx` / `arms scale <factor>`.
+- **Flat mode and the inventory book always keep the Arx arms.**
+- **Visible full only:** no forearm-only or hands-only modes; no hiding near the eye; **no bracer** — the hand/sleeve
+  seam stays visible for now.
+- The arm's length is fitted to the player's reach with a small stretch (~10%) instead of the shoulder slide, and the
+  elbow drops when the hand holds a weapon (both in #385.6).
+- The textures are a first proposal from CC0 sources only (`data/core/vr/arms/README.md`): a dark worn leather glove and
+  a coarse cloth sleeve.
+
+### Why
+- The Arx hands are too small and thin for VR; arms as good as Valheim VR's need a real hand mesh with fingers that
+  follow the tracked joints.
+- The Godot XR Tools glove is CC0, already rigged to the OpenXR hand joints and light enough to skin on the CPU.
+- Keeping the logical Arx arm means the tuned arm rules stay and there is an easy way back.
+
+### Trade-offs accepted
+- Two arm models to maintain; the book and flat mode still show the Arx one.
+- CPU skinning costs a little per frame; fine for two small meshes.
+- A visible seam between glove and sleeve until the owner picks a look.
+
+### Consequences
+- The owner compares the two in the playground ([TESTING.md](TESTING.md)); the final look (bare or glove, sleeve
+  material, colours) is decided after that. No per-armour sleeve textures for now.
+
+---
+
 ## D-NEW: The VR arms are roll-aware — rotations from the bend plane, the hand's roll shared along the arm (RENIK's rules)
 
 - **Date:** 2026-10-10

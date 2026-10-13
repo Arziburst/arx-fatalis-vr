@@ -72,7 +72,7 @@ function Format-ArxPerfTopPhases($Phases, [int]$Count = 3, [double]$Floor = 0.05
 # Worst (the $Top seconds with the highest p95, ties by max), Hitches (all of them, in order)
 function Get-ArxPerfSummary($Log, [int]$Top = 5) {
 	$seconds = @($Log.Seconds)
-	$frames = 0.0; $time = 0.0; $missed = 0.0; $hitches = 0.0; $vrSeconds = 0; $self = 0.0
+	$frames = 0.0; $time = 0.0; $missed = 0.0; $hitches = 0.0; $vrSeconds = 0; $self = 0.0; $selfMax = 0.0
 	$periods = [Collections.Generic.List[double]]::new()
 	$budget = [ordered]@{}
 	foreach ($s in $seconds) {
@@ -81,6 +81,7 @@ function Get-ArxPerfSummary($Log, [int]$Top = 5) {
 		$missed += $s.missed
 		$hitches += $s.hitches
 		$self += $s.frames * $s.self
+		if ($s.selfmax -gt $selfMax) { $selfMax = $s.selfmax }
 		if ($s.vr -eq 1) { $vrSeconds++ }
 		if ($s.period -gt 0) { $periods.Add($s.period) }
 		foreach ($kv in $s.Phases.GetEnumerator()) {
@@ -106,9 +107,16 @@ function Get-ArxPerfSummary($Log, [int]$Top = 5) {
 			Missed    = [int]$missed
 			Hitches   = [int]$hitches
 			SelfUs    = if ($frames) { $self / $frames } else { 0.0 }
+			SelfMaxUs = $selfMax
 			Ended     = $Log.Ended
 		}
 		Budget  = $split
+		# cause -> hitches, most first
+		Causes  = $(
+			$causes = [ordered]@{}
+			foreach ($g in ($Log.Hitches | Group-Object cause | Sort-Object @{ Expression = 'Count'; Descending = $true }, Name)) { $causes[$g.Name] = $g.Count }
+			$causes
+		)
 		Worst   = @($seconds | Sort-Object @{ Expression = 'p95'; Descending = $true }, @{ Expression = 'max'; Descending = $true } | Select-Object -First $Top)
 		Hitches = @($Log.Hitches)
 		Marks   = @($Log.Marks)
@@ -125,10 +133,10 @@ function Format-ArxPerfSummary($Summary, [string]$Path = '') {
 		$out.Add('No seconds in the log: the run ended before its first second closed, or the log is not a performance log.')
 		return $out
 	}
-	$out.Add([string]::Format($c, 'Run: {0} s with frames, {1} frames, mean {2:0.00} ms ({3:0.0} fps); display {4} ({5} of {0} s in VR); missed display slots {6}; hitches {7}; the log''s own cost {8:0.0} us per frame{9}',
+	$out.Add([string]::Format($c, 'Run: {0} s with frames, {1} frames, mean {2:0.00} ms ({3:0.0} fps); display {4} ({5} of {0} s in VR); missed display slots {6}; hitches {7}; the log''s own cost {8:0.0} us per frame (max {9:0} us){10}',
 		$r.Seconds, $r.Frames, $r.MeanMs, $r.Fps,
 		$(if ($r.Hz -gt 0) { [string]::Format($c, '{0:0.0} Hz ({1:0.00} ms)', $r.Hz, $r.PeriodMs) } else { 'rate unknown' }),
-		$r.VrSeconds, $r.Missed, $r.Hitches, $r.SelfUs, $(if ($r.Ended) { '' } else { ' - NO end line: the game did not shut down cleanly' })))
+		$r.VrSeconds, $r.Missed, $r.Hitches, $r.SelfUs, $r.SelfMaxUs, $(if ($r.Ended) { '' } else { ' - NO end line: the game did not shut down cleanly' })))
 
 	$out.Add('Frame budget (mean ms per frame over the run, share of the mean frame):')
 	$parts = foreach ($kv in $Summary.Budget.GetEnumerator()) {
@@ -146,6 +154,7 @@ function Format-ArxPerfSummary($Summary, [string]$Path = '') {
 
 	$out.Add("Hitches ($($Summary.Hitches.Count)), frames over 1.5 expected frame times:")
 	if (-not $Summary.Hitches.Count) { $out.Add('  none') }
+	else { $out.Add('  by cause: ' + (($Summary.Causes.GetEnumerator() | ForEach-Object { "$($_.Key) $($_.Value)" }) -join ', ')) }
 	foreach ($h in $Summary.Hitches) {
 		$out.Add([string]::Format($c, '  t={0,9:0.000} s  {1,7:0.0} ms ({2:0.0} slots)  cause {3,-9}  missed {4}  uploads {5}  | {6}',
 			$h.t, $h.ms, $h.slots, $h.cause, $h.missed, $h.uploads, (Format-ArxPerfTopPhases $h.Phases 4)))

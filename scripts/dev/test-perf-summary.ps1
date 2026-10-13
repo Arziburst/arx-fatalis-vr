@@ -28,10 +28,10 @@ $phases = 'other input channel load save update script physics particles render 
 function PhaseText([hashtable]$Values, [string]$Format) {
 	($phases | ForEach-Object { "$_=" + ([double]($Values[$_] ?? 0)).ToString($Format, [Globalization.CultureInfo]::InvariantCulture) }) -join ' '
 }
-function SecondLine($T, $Frames, $Min, $Mean, $P95, $Max, $Missed, $Hitches, [hashtable]$P, $Vr = 1, $Uploads = 0, $Self = 0.4) {
+function SecondLine($T, $Frames, $Min, $Mean, $P95, $Max, $Missed, $Hitches, [hashtable]$P, $Vr = 1, $Uploads = 0, $Self = 0.4, $SelfMax = 3) {
 	$c = [Globalization.CultureInfo]::InvariantCulture
-	[string]::Format($c, 'S t={0} frames={1} min={2:0.00} mean={3:0.00} p95={4:0.00} max={5:0.00} hz=90.0 period=11.11 div=1 vr={6} missed={7} hitches={8} | {9} | uploads={10} self={11:0.0}',
-		$T, $Frames, $Min, $Mean, $P95, $Max, $Vr, $Missed, $Hitches, (PhaseText $P '0.00'), $Uploads, $Self)
+	[string]::Format($c, 'S t={0} frames={1} min={2:0.00} mean={3:0.00} p95={4:0.00} max={5:0.00} hz=90.0 period=11.11 div=1 vr={6} missed={7} hitches={8} | {9} | uploads={10} self={11:0.0} selfmax={12:0}',
+		$T, $Frames, $Min, $Mean, $P95, $Max, $Vr, $Missed, $Hitches, (PhaseText $P '0.00'), $Uploads, $Self, $SelfMax)
 }
 
 # --- A fixture run: 4 seconds in VR, a channel stall in second 2, a level load in second 3 ----------------------
@@ -43,7 +43,7 @@ $lines = @(
 	'M t=2.100 before the stall'
 	(SecondLine 2 72 10.90 13.89 11.50 211.10 18 1 @{ vrwait = 4.8; render = 4.0; update = 1.0; channel = 3.0; other = 1.09 })
 	'H t=2.200 frame=252 ms=211.1 slots=19.0 period=11.11 missed=18 uploads=0 cause=channel | ' + (PhaseText @{ channel = 200.2; render = 4.0; update = 1.0; vrwait = 5.9 } '0.0')
-	(SecondLine 3 60 10.90 16.67 30.00 260.00 25 2 @{ vrwait = 4.0; render = 5.0; update = 1.0; load = 6.0; textures = 0.5; other = 0.17 } -Uploads 40)
+	(SecondLine 3 60 10.90 16.67 30.00 260.00 25 2 @{ vrwait = 4.0; render = 5.0; update = 1.0; load = 6.0; textures = 0.5; other = 0.17 } -Uploads 40 -SelfMax 41)
 	'H t=3.500 frame=400 ms=260.0 slots=23.4 period=11.11 missed=22 uploads=37 cause=load | ' + (PhaseText @{ load = 231.0; textures = 9.0; render = 5.0; vrwait = 3.0 } '0.0')
 	'H t=3.800 frame=430 ms=30.0 slots=2.7 period=11.11 missed=2 uploads=3 cause=textures | ' + (PhaseText @{ textures = 20.0; render = 6.0; vrwait = 4.0 } '0.0')
 	'# end: 312 frames'
@@ -75,10 +75,15 @@ $expectedLoad = 60 * 6.0 / 312
 Check (Near $summary.Budget.load $expectedLoad) "a phase's budget is weighted by frames ($($summary.Budget.load) vs $expectedLoad)"
 Check ($summary.Worst.Count -eq 2 -and $summary.Worst[0].t -eq 3 -and $summary.Worst[1].t -eq 2) 'the worst seconds by p95, then max (second 2 beats 1 on p95 11.5)'
 Check ($summary.Hitches.Count -eq 3) 'every hitch is in the summary'
+Check (Near $r.SelfMaxUs 41) "the log's most expensive frame over the run ($($r.SelfMaxUs))"
+$causes = @($summary.Causes.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" })
+Check (($causes -join ',') -eq 'channel=1,load=1,textures=1') "hitches counted by cause ($($causes -join ','))"
 
 Write-Host '==> text'
 $text = (Format-ArxPerfSummary $summary -Path 'arx-perf.log') -join "`n"
 Check ($text -match 'Run: 4 s with frames, 312 frames') 'the run line'
+Check ($text -match 'us per frame \(max 41 us\)') 'the run line has the log''s most expensive frame'
+Check ($text -match 'by cause: channel 1, load 1, textures 1') 'the hitch causes are counted'
 Check ($text -notmatch 'NO end line') 'a clean run is not called unclean'
 Check ($text -match 'vrwait \d+\.\d\d \(\d+%\)') 'the budget line has ms and shares'
 Check ($text -match 't=   3 s  p95   30\.00  max   260\.0') 'the worst second line'

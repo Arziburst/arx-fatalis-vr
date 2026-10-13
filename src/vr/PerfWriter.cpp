@@ -31,6 +31,7 @@ PerfWriter::PerfWriter(Sink sink, std::chrono::milliseconds interval, size_t max
 PerfWriter::~PerfWriter() {
 	{
 		std::scoped_lock lock(m_mutex);
+		handOver();
 		m_stop = true;
 	}
 	m_wake.notify_all();
@@ -38,7 +39,23 @@ PerfWriter::~PerfWriter() {
 }
 
 void PerfWriter::push(std::string_view line) {
-	std::scoped_lock lock(m_mutex);
+
+	// The writer thread holds the lock only to swap the buffer, but a starved CPU can deschedule it
+	// right then: the frame never waits for that, it keeps the line and hands it over next time
+	std::unique_lock lock(m_mutex, std::try_to_lock);
+	if(!lock.owns_lock()) {
+		if(m_held.size() + line.size() + 1 > m_maxPending) {
+			m_heldDropped++;
+			return;
+		}
+		m_held.append(line);
+		m_held.push_back('\n');
+		m_heldLines++;
+		return;
+	}
+
+	handOver();
+
 	if(m_pending.size() + line.size() + 1 > m_maxPending) {
 		m_dropped++;
 		return;
@@ -48,8 +65,25 @@ void PerfWriter::push(std::string_view line) {
 	m_pushed++;
 }
 
+void PerfWriter::handOver() {
+	m_dropped += m_heldDropped;
+	m_heldDropped = 0;
+	if(m_held.empty()) {
+		return;
+	}
+	if(m_pending.size() + m_held.size() > m_maxPending) {
+		m_dropped += m_heldLines;
+	} else {
+		m_pending.append(m_held);
+		m_pushed += m_heldLines;
+	}
+	m_held.clear();
+	m_heldLines = 0;
+}
+
 void PerfWriter::flush() {
 	std::unique_lock lock(m_mutex);
+	handOver();
 	unsigned long long target = m_pushed;
 	m_flushWanted = true;
 	m_wake.notify_all();
@@ -58,7 +92,7 @@ void PerfWriter::flush() {
 
 size_t PerfWriter::dropped() {
 	std::scoped_lock lock(m_mutex);
-	return m_dropped;
+	return m_dropped + m_heldDropped;
 }
 
 void PerfWriter::run() {

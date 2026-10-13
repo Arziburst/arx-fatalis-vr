@@ -195,7 +195,7 @@ std::string formatSecond(const PerfSecond & s) {
 
 	std::string line = buffer;
 	appendPhases(line, s.phaseMs, " %s=%.2f");
-	std::snprintf(buffer, sizeof(buffer), " | uploads=%u self=%.1f", s.uploads, s.selfUs);
+	std::snprintf(buffer, sizeof(buffer), " | uploads=%u self=%.1f selfmax=%.0f", s.uploads, s.selfUs, s.selfMaxUs);
 	line += buffer;
 
 	return line;

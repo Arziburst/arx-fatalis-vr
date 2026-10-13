@@ -24,6 +24,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 
 #include "vr/PerfWriter.h"
 
@@ -129,6 +130,49 @@ void PerfWriterTest::testPushNeverWaitsForTheSink() {
 	CPPUNIT_ASSERT(!gate.timedOut);
 	CPPUNIT_ASSERT(meanUs < 20.0);
 	CPPUNIT_ASSERT_EQUAL(expectedLines(0, count + 1), gate.text());
+}
+
+void PerfWriterTest::testPushNeverWaitsForTheLock() {
+
+	Gate gate;
+	PerfWriter writer(gate.sink(), std::chrono::milliseconds(1));
+	writer.push(numbered(0));
+
+	// Another thread holds the writer's lock - a writer thread descheduled while swapping buffers
+	std::mutex mutex;
+	std::condition_variable changed;
+	bool holding = false;
+	bool release = false;
+	bool timedOut = false;
+	std::thread holder([&] {
+		std::unique_lock<std::mutex> held = writer.holdLockForTest();
+		std::unique_lock lock(mutex);
+		holding = true;
+		changed.notify_all();
+		timedOut = !changed.wait_for(lock, std::chrono::seconds(10), [&] { return release; });
+	});
+	{
+		std::unique_lock lock(mutex);
+		CPPUNIT_ASSERT(changed.wait_for(lock, std::chrono::seconds(10), [&] { return holding; }));
+	}
+
+	for(int i = 1; i <= 100; i++) {
+		writer.push(numbered(i));
+	}
+
+	{
+		std::scoped_lock lock(mutex);
+		release = true;
+		changed.notify_all();
+	}
+	holder.join();
+	CPPUNIT_ASSERT(!timedOut);
+
+	// The lines kept meanwhile are handed over in order, with the next push or the flush
+	writer.push(numbered(101));
+	writer.flush();
+	CPPUNIT_ASSERT_EQUAL(expectedLines(0, 102), gate.text());
+	CPPUNIT_ASSERT_EQUAL(size_t(0), writer.dropped());
 }
 
 void PerfWriterTest::testDropsWhenTheSinkFallsBehind() {

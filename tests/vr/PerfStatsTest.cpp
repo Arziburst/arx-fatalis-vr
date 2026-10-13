@@ -275,9 +275,10 @@ void PerfStatsTest::testFormatSecond() {
 
 	vr::PerfSecond s = monitor.second();
 	s.selfUs = 1.5;
+	s.selfMaxUs = 12.0;
 	std::string line = vr::formatSecond(s);
 	CPPUNIT_ASSERT(line.rfind("S t=0 frames=90 min=11.11 mean=11.11 p95=11.11 max=11.11 hz=90.0 period=11.11 div=1 vr=1"
 	                          " missed=0 hitches=0 | other=0.00 input=0.00 ", 0) == 0);
 	CPPUNIT_ASSERT(contains(line, " render=11.11 "));
-	CPPUNIT_ASSERT(contains(line, " limit=0.00 vrwait=0.00 vrend=0.00 | uploads=0 self=1.5"));
+	CPPUNIT_ASSERT(contains(line, " limit=0.00 vrwait=0.00 vrend=0.00 | uploads=0 self=1.5 selfmax=12"));
 }

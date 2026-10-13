@@ -35,9 +35,13 @@
  * The frame thread only appends a line to a memory buffer under a mutex that the writer thread
  * holds for nothing but swapping that buffer out; the sink (the file, with its flush) runs on the
  * writer thread without the lock, so a slow disk never stalls a frame. A flush per line was a
- * measured stutter source in Dishonored VR (research row F-92). When the sink falls so far behind
- * that \a maxPending bytes wait, further lines are dropped and counted instead of growing without
- * bound - the log is evidence, not a reason for a hitch of its own.
+ * measured stutter source in Dishonored VR (research row F-92). The frame does not even wait for
+ * that swap: when the lock is taken (a starved CPU may deschedule the writer thread holding it),
+ * the line is kept on the frame thread's side and handed over with the next one. When the sink falls so far behind that \a maxPending bytes wait, further lines are
+ * dropped and counted instead of growing without bound - the log is evidence, not a reason for a
+ * hitch of its own.
+ *
+ * One producer: \ref push, \ref flush, \ref dropped and the destructor are called from one thread.
  */
 class PerfWriter {
 
@@ -55,7 +59,7 @@ public:
 	PerfWriter(const PerfWriter &) = delete;
 	PerfWriter & operator=(const PerfWriter &) = delete;
 
-	//! Queue one line (without '\n'); never waits for the sink
+	//! Queue one line (without '\n'); never waits for the sink nor for the writer thread
 	void push(std::string_view line);
 
 	//! Wait until every line pushed so far went to the sink
@@ -64,9 +68,15 @@ public:
 	//! Lines dropped because the sink fell behind
 	size_t dropped();
 
+	//! For the host test: hold the lock the writer thread takes, as if it were descheduled holding it
+	std::unique_lock<std::mutex> holdLockForTest() { return std::unique_lock<std::mutex>(m_mutex); }
+
 private:
 
 	void run();
+
+	//! The lines kept while the lock was taken go to the pending buffer (under the lock)
+	void handOver();
 
 	Sink m_sink;
 	std::chrono::milliseconds m_interval;
@@ -81,6 +91,12 @@ private:
 	unsigned long long m_done = 0;
 	bool m_flushWanted = false;
 	bool m_stop = false;
+
+	// The producer's side, never touched by the writer thread
+	std::string m_held;           //!< lines pushed while the lock was taken
+	unsigned long long m_heldLines = 0;
+	size_t m_heldDropped = 0;
+
 	std::thread m_thread;
 
 };

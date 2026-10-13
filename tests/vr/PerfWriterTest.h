@@ -33,6 +33,7 @@ class PerfWriterTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST_SUITE(PerfWriterTest);
 	CPPUNIT_TEST(testLinesReachTheSinkInOrder);
 	CPPUNIT_TEST(testPushNeverWaitsForTheSink);
+	CPPUNIT_TEST(testPushNeverWaitsForTheLock);
 	CPPUNIT_TEST(testDropsWhenTheSinkFallsBehind);
 	CPPUNIT_TEST(testDestructorWritesTheRest);
 	CPPUNIT_TEST_SUITE_END();
@@ -41,6 +42,7 @@ public:
 
 	void testLinesReachTheSinkInOrder();
 	void testPushNeverWaitsForTheSink();
+	void testPushNeverWaitsForTheLock();
 	void testDropsWhenTheSinkFallsBehind();
 	void testDestructorWritesTheRest();
 

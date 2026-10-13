@@ -19,6 +19,7 @@
 
 #include "vr/PerfLog.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <ctime>
@@ -72,6 +73,8 @@ struct State {
 	PerfMonitor monitor;
 	s64 selfUs = 0;     //!< the log's own work in frameStart() and frameBegun() this second
 	u32 selfFrames = 0;
+	s64 selfFrameUs = 0; //!< ... in the current frame
+	s64 selfMaxUs = 0;   //!< ... in the most expensive frame this second
 
 	std::unique_ptr<fs::ofstream> file;
 	std::unique_ptr<PerfWriter> writer; //!< destroyed before the file it writes to
@@ -89,9 +92,18 @@ void charge(PlatformInstant now) {
 void writeSecond() {
 	PerfSecond second = g.monitor.second();
 	second.selfUs = g.selfFrames ? double(g.selfUs) / double(g.selfFrames) : 0.0;
+	second.selfMaxUs = double(g.selfMaxUs);
 	g.writer->push(formatSecond(second));
 	g.selfUs = 0;
 	g.selfFrames = 0;
+	g.selfMaxUs = 0;
+}
+
+//! The log's own work in this frame
+void chargeSelf(s64 us) {
+	g.selfUs += us;
+	g.selfFrameUs += us;
+	g.selfMaxUs = std::max(g.selfMaxUs, g.selfFrameUs);
 }
 
 //! Judge the previous frame: its second, its hitch
@@ -213,8 +225,9 @@ void frameStart() {
 
 	// What this took is the log's own cost, reported per frame on the second's line (in the new
 	// frame it counts as "other")
-	g.selfUs += toUs(platform::getTime() - now);
+	g.selfFrameUs = 0;
 	g.selfFrames++;
+	chargeSelf(toUs(platform::getTime() - now));
 }
 
 void frameBegun() {
@@ -225,7 +238,7 @@ void frameBegun() {
 
 	PlatformInstant now = platform::getTime();
 	commitClosing();
-	g.selfUs += toUs(platform::getTime() - now);
+	chargeSelf(toUs(platform::getTime() - now));
 }
 
 void setDisplay(s64 periodUs, u32 divisor, bool vr) {

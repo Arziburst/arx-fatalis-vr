@@ -100,6 +100,7 @@ struct PerfSecond {
 	u32 uploads = 0;
 	std::array<double, PerfPhaseCount> phaseMs = { }; //!< mean per frame
 	double selfUs = 0.0;   //!< the log's own work per frame (set by the caller), microseconds
+	double selfMaxUs = 0.0; //!< ... in its most expensive frame
 
 };
 

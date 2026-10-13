@@ -220,31 +220,35 @@ void VRBindingsTest::layoutCoverageTest() {
 
 void VRBindingsTest::defaultLayoutsTest() {
 
-	// Every event of the D-019 table on the Index and the Touch (magic mode since #43), except the inventory and
-	// the book: since D-042 (#376) they are items of the radial menus on B, with no control of their own
+	// Every event on the Index and the Touch has a control except the ones D-042 (#377) moved or dropped: the
+	// inventory, the book, the game menu and recenter are items of the radial menus on B (#376), nothing goes
+	// straight into the inventory any more (stash). The Touch keeps the game menu on its menu button
 	for(ControllerType type : { ControllerType::Index, ControllerType::Touch }) {
 		const ControlLayout layout = defaultLayout(type);
 		for(size_t i = 0; i < EventCount; i++) {
-			const bool inRadialMenu = (Event(i) == Event::Inventory || Event(i) == Event::Book);
-			CPPUNIT_ASSERT_MESSAGE(std::string(controllerTypeName(type)) + ": " + eventName(Event(i)),
-			                       layout.bindings[i].isBound() != inRadialMenu);
+			const Event event = Event(i);
+			const bool unbound = event == Event::Inventory || event == Event::Book || event == Event::Recenter
+			                     || event == Event::StashLeft || event == Event::StashRight
+			                     || (event == Event::Menu && type == ControllerType::Index);
+			CPPUNIT_ASSERT_MESSAGE(std::string(controllerTypeName(type)) + ": " + eventName(event),
+			                       layout.bindings[i].isBound() != unbound);
 		}
 		CPPUNIT_ASSERT_EQUAL(std::string("left.b"), formatBinding(layout[Event::RadialLeft]));
 		CPPUNIT_ASSERT_EQUAL(std::string("right.b"), formatBinding(layout[Event::RadialRight]));
 	}
 
-	// The Touch is the Index with the game menu on its menu button and magic mode on the X it leaves free
-	// (the Touch has no trackpad)
+	// The Touch is the Index with the game menu on its menu button (the Index has none); the casting stance is the
+	// left A / X on both (the Touch has no trackpad, and no default needs one)
 	const ControlLayout index = defaultLayout(ControllerType::Index);
 	const ControlLayout touch = defaultLayout(ControllerType::Touch);
 	for(size_t i = 0; i < EventCount; i++) {
-		if(Event(i) != Event::Menu && Event(i) != Event::MagicMode) {
+		if(Event(i) != Event::Menu) {
 			CPPUNIT_ASSERT_MESSAGE(eventName(Event(i)), index.bindings[i] == touch.bindings[i]);
 		}
 	}
-	CPPUNIT_ASSERT_EQUAL(std::string("left.a"), formatBinding(index[Event::Menu]));
+	CPPUNIT_ASSERT(!index[Event::Menu].isBound());
 	CPPUNIT_ASSERT_EQUAL(std::string("left.menu"), formatBinding(touch[Event::Menu]));
-	CPPUNIT_ASSERT_EQUAL(std::string("left.stick_click:long"), formatBinding(touch[Event::Recenter]));
+	CPPUNIT_ASSERT_EQUAL(std::string("left.a"), formatBinding(touch[Event::MagicMode]));
 
 	// The simple controller: select clicks, the menu buttons carry the menus and recenter
 	const ControlLayout simple = defaultLayout(ControllerType::Simple);
@@ -257,12 +261,14 @@ void VRBindingsTest::defaultLayoutsTest() {
 	CPPUNIT_ASSERT(!simple[Event::Jump].isBound());
 	CPPUNIT_ASSERT(!simple[Event::UseRight].isBound());
 
-	// The game menu and the click are reachable on every controller (F-173: never stuck outside the menus)
+	// The game menu, recenter and the click are reachable on every controller (F-173: never stuck outside the
+	// menus): their own control, or both hands' radial menus, which hold the game menu and recenter (D-042)
 	for(ControllerType type : { ControllerType::Unknown, ControllerType::Index, ControllerType::Touch,
 	                            ControllerType::Simple }) {
 		const ControlLayout layout = defaultLayout(type);
-		CPPUNIT_ASSERT(layout[Event::Menu].isBound());
+		const bool radial = layout[Event::RadialLeft].isBound() && layout[Event::RadialRight].isBound();
+		CPPUNIT_ASSERT(layout[Event::Menu].isBound() || radial);
+		CPPUNIT_ASSERT(layout[Event::Recenter].isBound() || radial);
 		CPPUNIT_ASSERT(layout[Event::InteractRight].isBound());
-		CPPUNIT_ASSERT(layout[Event::Recenter].isBound());
 	}
 }

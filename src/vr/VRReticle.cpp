@@ -407,7 +407,7 @@ bool reticleAct(Hand hand) {
 	const ReticleHandState & state = g_reticle.hands[size_t(hand)];
 	const s32 id = state.hover.hovered();
 	Entity * entity = reticleEntityById(id);
-	// What the engine's double click acts on (managePlayerControls): not an item - the same chord stashes those
+	// What the engine's double click acts on (managePlayerControls): not an item - the same chord uses those
 	if(!entity || (entity->ioflags & IO_ITEM) || !(entity->ioflags & (IO_FIX | IO_NPC))
 	   || !isReticlePickable(*entity) || !isInPickReach(*entity)) {
 		return false;

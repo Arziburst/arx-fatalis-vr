@@ -20,6 +20,7 @@
 #ifndef ARX_VR_VRGAMEINPUT_H
 #define ARX_VR_VRGAMEINPUT_H
 
+#include <array>
 #include <bitset>
 #include <string>
 
@@ -94,6 +95,14 @@ struct GameInputState {
 //! The held actions and buttons of a state as text, e.g. "click stealth" - for status.json and the log
 std::string formatGameInput(const GameInputState & state);
 
+//! What a hand's controls stand for this frame beyond the control table (D-042, #377)
+struct HandRoles {
+	//! The hand holds a drawn weapon in the world: its trigger charges the strike (vr/VRMelee.h), it is no click
+	std::array<bool, HandCount> charges = { };
+	//! The hand's use / interact chord acted on a door, lever, chest or body (#38): it is no use (or stash) of an item
+	std::array<bool, HandCount> acts = { };
+};
+
 //! Turns the resolved events and the sticks into \ref GameInputState, once per frame
 class GameInputMapper {
 
@@ -108,7 +117,8 @@ public:
 	 */
 	float turnDominance = 0.6f;
 
-	const GameInputState & update(const ControlResolver & controls, const ControllerInput & input);
+	const GameInputState & update(const ControlResolver & controls, const ControllerInput & input,
+	                              const HandRoles & roles = HandRoles());
 
 	const GameInputState & state() const { return m_state; }
 

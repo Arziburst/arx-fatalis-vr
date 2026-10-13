@@ -24,6 +24,7 @@
 #include <map>
 #include <optional>
 #include <sstream>
+#include <string_view>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -116,6 +117,16 @@ const char * closedReason(Hand hand) {
 		return "hand_not_tracked";
 	}
 	return nullptr;
+}
+
+/*!
+ * A press refused for this reason is the game menu key (#377): the game runs (a hero) but the menu cannot open -
+ * the game menu or another menu page is shown, or the head or the hand is not tracked. Not in a cinematic (the
+ * key would skip it) and not without a hero (the main menu of the start)
+ */
+bool isGameMenuKey(const char * reason) {
+	const std::string_view why = reason;
+	return why == "menu" || why == "no_head" || why == "hand_not_tracked";
 }
 
 Vec3f eyeMiddle() {
@@ -335,6 +346,13 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 				// A press refused, once per press: the reason with it
 				status.refused = reason;
 				gameevent::Event("vr.radial.refused", 200)("hand", handName(hand))("reason", reason);
+				if(isGameMenuKey(reason)) {
+					// The menu is the only way to the game menu (D-042): where it cannot open in a running game,
+					// the press is the game menu key - it opens the game menu, and closes it again (#377)
+					requests.gameMenu = true;
+					status.gameMenuKeys++;
+					gameevent::Event("vr.radial.gameMenuKey")("hand", handName(hand))("reason", reason);
+				}
 				continue;
 			}
 			menu.hand = frameHands().hands[i].position;

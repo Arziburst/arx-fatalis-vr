@@ -35,6 +35,9 @@ class VRGameInputTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(deadZoneTest);
 	CPPUNIT_TEST(sticksTest);
 	CPPUNIT_TEST(crouchDoesNotTurnTest);
+	CPPUNIT_TEST(defaultUseTest);
+	CPPUNIT_TEST(handRolesTest);
+	CPPUNIT_TEST(jumpDoesNotTurnTest);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -48,6 +51,9 @@ public:
 	void deadZoneTest();
 	void sticksTest();
 	void crouchDoesNotTurnTest();
+	void defaultUseTest();
+	void handRolesTest();
+	void jumpDoesNotTurnTest();
 
 };
 

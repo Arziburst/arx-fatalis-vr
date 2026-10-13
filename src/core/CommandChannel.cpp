@@ -1149,6 +1149,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("kind", weapon.kind);
 		json.value("place", weapon.place);
 		json.value("inHand", weapon.inHand);
+		json.value("sheathed", weapon.sheathed);
+		json.value("toggles", weapon.toggles);
 		json.value("handFrames", weapon.handFrames);
 		json.value("relinks", weapon.relinks);
 		json.value("measured", weapon.measured);
@@ -1249,6 +1251,7 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("refused", h.refused.empty() ? std::string("none") : h.refused);
 			json.value("opens", h.opens);
 			json.value("choices", h.choices);
+			json.value("gameMenuKeys", h.gameMenuKeys);
 			json.value("shown", h.shown);
 			json.value("pointX", h.point.x);
 			json.value("pointY", h.point.y);

@@ -82,7 +82,7 @@ void afterPointer(const MenuPointer & pointer, const std::array<PointerRay, Hand
 /*!
  * \a hand's act fired this frame (#38, D-042: doors, levers, chests, NPCs and corpses): when its reticle is on
  * such an entity in reach, the entity is acted on as by the engine's double click (\ref takeReticleAct).
- * Over an item it does nothing: the same chord stashes the item (VRControls.h, sharesBindingByDesign).
+ * Over an item it does nothing: the same chord uses the item (VRControls.h, sharesBindingByDesign).
  * Called after \ref updateReticles
  * \return whether the act was taken (an entity to act on is under the hand's reticle)
  */

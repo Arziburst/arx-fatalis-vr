@@ -649,10 +649,13 @@ void ArxGame::managePlayerControls() {
 	
 	ARX_PROFILE_FUNC();
 	
-	// VR (#38, D-042): a hand's act is the double click on what its reticle is on (vr/VRReticle.h)
+	// VR (#38, D-042): a hand's act is the double click on what its reticle is on (vr/VRReticle.h). While the
+	// hands are the mouse a double trigger click is no act: doors, levers, chests and NPCs answer to grip +
+	// trigger only (#377)
 	Entity * reticleAct = vr::takeReticleAct();
-	
-	if((eeMouseDoubleClick1() || reticleAct) && !(player.Interface & INTER_COMBATMODE) && !player.doingmagic
+	const bool doubleClick = eeMouseDoubleClick1() && !vr::reticlesOn();
+
+	if((doubleClick || reticleAct) && !(player.Interface & INTER_COMBATMODE) && !player.doingmagic
 	   && !g_secondaryInventoryHud.containsPos(DANAEMouse) && !g_playerInventoryHud.containsPos(DANAEMouse)
 	   && !g_cursorOverBook && eMouseState != MOUSE_IN_NOTE) {
 		

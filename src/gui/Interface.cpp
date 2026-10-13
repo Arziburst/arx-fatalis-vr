@@ -1666,7 +1666,7 @@ void ArxGame::manageKeyMouse() {
 	} else if(vrGhost && vrTurn != 0.f) {
 		player.desiredangle.setYaw(MAKEANGLE(player.desiredangle.getYaw() - vrTurn));
 	}
-
+	
 	manageEntityDescription();
 }
 

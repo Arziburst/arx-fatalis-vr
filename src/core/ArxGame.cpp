@@ -1536,7 +1536,7 @@ void ArxGame::updateFirstPersonCamera() {
 	
 	Vec3f targetPos = g_playerCamera.m_pos;
 	Anglef targetAngle = g_playerCamera.angle;
-
+	
 	// The stable view (#416) starts afresh where the body is once it is switched on again; its steps are timed by
 	// the display (vr::noteViewFrame)
 	vr::noteViewFrame(toMsf(g_platformTime.lastFrameDuration()) / 1000.f);
@@ -1544,7 +1544,7 @@ void ArxGame::updateFirstPersonCamera() {
 	if(!vr::comfort().stableView) {
 		vr::stableView().valid = false;
 	}
-
+	
 	if(eyeball.isActive()) {
 		
 		targetPos = eyeball.getPosition();
@@ -1570,7 +1570,7 @@ void ArxGame::updateFirstPersonCamera() {
 	} else {
 		
 		g_playerCamera.angle = player.angle;
-
+		
 		if(vr::comfort().stableView) {
 
 			// The stable view (#416): in VR the camera stands on the body's real travel, never on the animated
@@ -1811,7 +1811,7 @@ void ArxGame::handlePlayerDeath() {
 	}
 
 	if(player.lifePool.current <= 0) {
-
+		
 		player.DeadTime += g_gameTime.lastFrameDuration();
 		float mdist = glm::abs(player.physics.cyl.height) - 60;
 		

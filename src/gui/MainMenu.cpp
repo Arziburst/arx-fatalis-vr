@@ -34,6 +34,8 @@
 
 #include "core/Application.h"
 #include "core/Benchmark.h"
+#include "core/BugReport.h"
+#include "core/CommandChannel.h"
 #include "core/Config.h"
 #include "core/ArxGame.h"
 #include "core/Core.h"
@@ -73,9 +75,12 @@
 #include "input/Input.h"
 #include "input/Keyboard.h"
 
+#include "io/fs/SystemPaths.h"
 #include "io/log/Logger.h"
 
+#include "platform/Environment.h"
 #include "platform/Platform.h"
+#include "platform/Process.h"
 
 #include "scene/GameSound.h"
 
@@ -509,6 +514,14 @@ public:
 			// Our own VR settings (#178, D-020), after the game's options; the pause menu is the same menu
 			auto txt = std::make_unique<TextWidget>(hFontMenu, getLocalised("system_menus_options_vr", "VR"));
 			txt->setTargetPage(Page_OptionsVR);
+			addCenter(std::move(txt));
+		}
+
+		{
+			// The saves folder and a save exported for a bug report (#417); the pause menu is the same menu
+			auto txt = std::make_unique<TextWidget>(hFontMenu, getLocalised("system_menus_options_saves",
+			                                                                 "Saves and bug reports"));
+			txt->setTargetPage(Page_OptionsSaves);
 			addCenter(std::move(txt));
 		}
 
@@ -2051,6 +2064,203 @@ std::string dragVRSettingSlider(std::string_view row, float fraction) {
 }
 
 
+/*!
+ * Saves and bug reports (#417, owner 2026-10-13): where this run's saves are, that folder opened on the desktop, and
+ * a save exported for a bug report - one zip with the chosen save, arx.log, arx-perf.log and cfg.ini, personal data
+ * scrubbed (core/BugReport.h), written to the Desktop. A test run (--test-dir) opens no window and writes the zip
+ * into <test dir>\reports instead; the log line names the folder and the zip either way.
+ */
+class SavesMenuPage final : public MenuPage {
+
+public:
+
+	SavesMenuPage()
+		: MenuPage(Page_OptionsSaves)
+		, m_save(nullptr)
+		, m_result(nullptr)
+	{ }
+
+	void init() override {
+
+		reserveBottom();
+
+		{
+			auto txt = std::make_unique<TextWidget>(hFontMenu, getLocalised("system_menus_options_saves_title",
+			                                                                 "Saves and bug reports"));
+			txt->setEnabled(false);
+			addCenter(std::move(txt));
+		}
+
+		{
+			auto txt = std::make_unique<TextWidget>(hFontControls, saveFolder().string());
+			txt->setEnabled(false);
+			addCenter(std::move(txt));
+		}
+
+		{
+			auto txt = std::make_unique<TextWidget>(hFontMenu, getLocalised("system_menus_options_saves_open",
+			                                                                 "Open saves folder"));
+			txt->clicked = [this](Widget * /* widget */) {
+				openFolder();
+			};
+			addCenter(std::move(txt));
+		}
+
+		addCenter(std::make_unique<Spacer>(hFontControls->getLineHeight()));
+
+		{
+			// The save to export, newest first like the load page
+			auto cb = std::make_unique<CycleTextWidget>(sliderSize(), hFontMenu,
+			                                            getLocalised("system_menus_options_saves_choose", "Save"),
+			                                            hFontControls);
+			m_saves.clear();
+			for(SavegameHandle save : savegames) {
+				const SaveGame & entry = savegames[save];
+				std::string label = entry.quicksave ? std::string("Quicksave") : entry.name.substr(0, 24);
+				cb->addEntry(label + " (level " + std::to_string(u32(entry.area)) + ")");
+				m_saves.push_back(save);
+			}
+			if(m_saves.empty()) {
+				cb->addEntry(getLocalised("system_menus_options_saves_none", "none"));
+			}
+			m_save = cb.get();
+			addCenter(std::move(cb));
+		}
+
+		{
+			auto txt = std::make_unique<TextWidget>(hFontMenu, getLocalised("system_menus_options_saves_export",
+			                                                                 "Export a save for a bug report"));
+			txt->clicked = [this](Widget * /* widget */) {
+				exportSave();
+			};
+			txt->setEnabled(!m_saves.empty());
+			addCenter(std::move(txt));
+		}
+
+		{
+			auto txt = std::make_unique<TextWidget>(hFontControls, std::string_view());
+			txt->setEnabled(false);
+			m_result = txt.get();
+			addCenter(std::move(txt));
+		}
+
+		addBackButton(Page_Options);
+
+	}
+
+	/*!
+	 * For the test channel: \c menu \c step \c save - the save row's left / right arrow; \c menu \c press - a click on
+	 * \c folder or \c export
+	 * \return an empty string, or why it was refused
+	 */
+	std::string step(std::string_view row, int delta) {
+		if(row != "save") {
+			return "unknown row \"" + std::string(row) + "\", expected save";
+		}
+		m_save->step(delta);
+		return std::string();
+	}
+
+	std::string press(std::string_view entry) {
+		if(entry == "folder") {
+			openFolder();
+		} else if(entry == "export") {
+			if(m_saves.empty()) {
+				return "menu press export: no save of this " + std::string(saveKindName(savegames.kind())) + " run";
+			}
+			exportSave();
+		} else {
+			return "unknown entry \"" + std::string(entry) + "\", expected folder or export";
+		}
+		return std::string();
+	}
+
+private:
+
+	static fs::path saveFolder() {
+		return fs::getUserDir() / "save";
+	}
+
+	void openFolder() {
+		fs::path folder = saveFolder();
+		// A test run must not open windows on the owner's desktop: the log line is the evidence
+		bool open = !channel::isEnabled();
+		if(open) {
+			platform::launchDefaultProgram(folder.string());
+		}
+		LogInfo << "Saves folder: " << folder << (open ? " opened on the desktop" : " - not opened, a test run (--test-dir)");
+		gameevent::Event("saves.folder")("opened", open);
+	}
+
+	void exportSave() {
+
+		size_t index = size_t(std::max(0, m_save->getValue()));
+		if(index >= m_saves.size()) {
+			return;
+		}
+		const SaveGame & save = savegames[m_saves[index]];
+
+		fs::path target;
+		if(channel::isEnabled()) {
+			// A test run keeps the Desktop clean: the zip goes next to status.json
+			target = channel::directory() / "reports";
+		} else {
+			std::vector<fs::path> desktop = platform::getSystemPaths(platform::DesktopDir);
+			target = desktop.empty() ? fs::getUserDir() : desktop.front();
+		}
+
+		// The log on disk ends with this line
+		LogInfo << "Exporting save " << save.savefile.parent().filename() << " \"" << save.name << "\" for a bug report";
+		Logger::flush();
+
+		bugreport::ExportResult result = bugreport::exportReport(save.savefile, fs::getUserDir(), fs::getConfigDir(),
+		                                                         target, std::time(nullptr), bugreport::systemNames());
+		if(result.ok) {
+			std::string files;
+			for(const std::string & file : result.files) {
+				files += (files.empty() ? "" : " ") + file;
+			}
+			LogInfo << "Bug report written: " << result.file << " (" << files << ")"
+			        << (result.why.empty() ? "" : " - " + result.why);
+			m_result->setText(std::string(getLocalised("system_menus_options_saves_written", "Written: "))
+			                  + std::string(result.file.filename()));
+		} else {
+			LogWarning << "Bug report not written: " << result.why;
+			m_result->setText(result.why);
+		}
+		gameevent::Event("saves.export")("slot", save.savefile.parent().filename())("ok", result.ok)
+			("files", u64(result.files.size()));
+
+	}
+
+	CycleTextWidget * m_save;
+	TextWidget * m_result;
+	std::vector<SavegameHandle> m_saves;
+
+};
+
+static SavesMenuPage * openSavesPage() {
+	if(!g_mainMenu || !g_mainMenu->m_window || g_mainMenu->m_window->currentPageId() != Page_OptionsSaves) {
+		return nullptr;
+	}
+	return static_cast<SavesMenuPage *>(g_mainMenu->m_window->getPage(Page_OptionsSaves));
+}
+
+bool savesPageOpen() {
+	return openSavesPage() != nullptr;
+}
+
+std::string stepSavesRow(std::string_view row, int delta) {
+	SavesMenuPage * page = openSavesPage();
+	return page ? page->step(row, delta) : "menu step: needs the saves page open (menu saves)";
+}
+
+std::string pressSavesEntry(std::string_view entry) {
+	SavesMenuPage * page = openSavesPage();
+	return page ? page->press(entry) : "menu press: needs the saves page open (menu saves)";
+}
+
+
 class QuitConfirmMenuPage final : public MenuPage {
 	
 public:
@@ -2117,7 +2327,8 @@ void MainMenu::initWindowPages() {
 	m_window->add(std::make_unique<ControlOptionsMenuPage2>());
 	m_window->add(std::make_unique<VRControlsMenuPage>());
 	m_window->add(std::make_unique<VRTurningMenuPage>());
-	
+	m_window->add(std::make_unique<SavesMenuPage>());
+
 	m_window->add(std::make_unique<QuitConfirmMenuPage>());
 	m_window->add(std::make_unique<LocalizationMenuPage>());
 	

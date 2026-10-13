@@ -263,6 +263,10 @@ bool ArxGame::initialize() {
 	// One line with the outcome; the lines before it say why when it is flat
 	gameevent::Event("vr.mode")("mode", vr::isEnabled() ? "vr" : "flat")("simulated", vr::isSimulated());
 
+	// The run's saves follow its mode for the whole run (#417, D-NEW): a VR run writes, lists and loads only VR
+	// saves, a flat one only flat saves - a session lost later does not turn the VR game's saves into flat ones
+	savegames.setKind(vr::isEnabled() ? SaveKind::VR : SaveKind::Flat);
+
 	init = initGameData();
 	if(!init) {
 		return false;
@@ -388,8 +392,14 @@ bool ArxGame::initConfig() {
 				LogInfo << "Moved " << oldConfigFile << " to " << configFile;
 			}
 		}
+
+		// The first start of our own user directory (#417, D-NEW) keeps the player's Arx Libertatis settings
+		if(!fs::getLegacyConfigFile().empty()) {
+			fs::LegacyConfigCopy copy = fs::copyLegacyConfig(configFile, fs::getLegacyConfigFile(), fs::getUserDir());
+			LogInfo << "First start settings: " << copy.why;
+		}
 	}
-	
+
 	LogInfo << "Using config file " << configFile;
 	if(!config.init(configFile)) {
 		
@@ -1440,8 +1450,17 @@ void ArxGame::doFrame() {
 		// --loadslot of a save that does not exist: the launch already switched to the game, which then runs
 		// with no level at all - a black world with only the HUD, in VR as on the monitor (TRAPS.md, #24).
 		// Say so and start at the main menu instead
-		LogError << "--loadslot " << LOADQUEST_SLOT.handleData() << ": no such save, " << savegames.size()
-		         << " save(s) in the save game dir - starting at the main menu instead of an empty level";
+		if(savegames.hiddenCount() > 0) {
+			// The save is there but belongs to the other game (#417, D-NEW): refused, not missing
+			LogWarning << "--loadslot " << LOADQUEST_SLOT.handleData() << " refused: " << savegames.size()
+			           << " save(s) of this " << saveKindName(savegames.kind()) << " run; "
+			           << savegames.hiddenReason() << " - starting at the main menu instead of an empty level";
+			gameevent::Event("load.refused")("source", "loadslot")("slot", u64(LOADQUEST_SLOT.handleData()))
+				("hidden", u64(savegames.hiddenCount()));
+		} else {
+			LogError << "--loadslot " << LOADQUEST_SLOT.handleData() << ": no such save, " << savegames.size()
+			         << " save(s) in the save game dir - starting at the main menu instead of an empty level";
+		}
 		LOADQUEST_SLOT = SavegameHandle();
 		if(!g_currentArea) {
 			ARXmenu.requestMode(Mode_MainMenu);
@@ -1458,6 +1477,14 @@ void ArxGame::doFrame() {
 		AreaId area;
 		if(!ARX_CHANGELEVEL_GetInfo(g_saveToLoad, name, version, area)) {
 			LogError << "Unable to get save file info for " << g_saveToLoad;
+		} else if(std::string why = savegames.refusal(g_saveToLoad); !why.empty()) {
+			// A save given by path never went through the list's filter (#417, D-NEW)
+			LogWarning << "Not loading " << g_saveToLoad << ": " << why;
+			gameevent::Event("load.refused")("source", "file")("name", name);
+			if(!g_currentArea) {
+				ARXmenu.requestMode(Mode_MainMenu);
+				ARX_MENU_Launch(false);
+			}
 		} else {
 			SaveGame save;
 			save.name = name;

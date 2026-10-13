@@ -87,4 +87,21 @@ std::string stepVRSettingRow(std::string_view row, int delta);
  */
 std::string dragVRSettingSlider(std::string_view row, float fraction);
 
+//! \return true while the saves and bug reports page (#417) is the open page
+bool savesPageOpen();
+
+/*!
+ * A click on the left (\a delta -1) or right (+1) arrow of the save row of the saves page (#417), for the test channel;
+ * the page must be open
+ * \return an empty string, or why it was refused
+ */
+std::string stepSavesRow(std::string_view row, int delta);
+
+/*!
+ * A click on an entry of the saves page (#417) - \c folder ("Open saves folder") or \c export ("Export a save for a
+ * bug report") - for the test channel; the page must be open
+ * \return an empty string, or why it was refused
+ */
+std::string pressSavesEntry(std::string_view entry);
+
 #endif // ARX_GUI_MAINMENU_H

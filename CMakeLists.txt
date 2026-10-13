@@ -202,7 +202,14 @@ mark_as_advanced(
 
 # Default runtime user and data directories
 if(WIN32)
-	set(USER_DIR          "Arx Libertatis"                CACHE STRING "User dir names")
+	# Our own user directory (D-NEW, #417): flat Arx Libertatis and the original game never see a VR save.
+	# LEGACY_USER_DIR is only read once, for the first start's copy of cfg.ini (settings, never saves)
+	set(USER_DIR          "Arx Fatalis VR"                CACHE STRING "User dir names")
+	set(LEGACY_USER_DIR   "Arx Libertatis"                CACHE STRING "Old user dir names, cfg.ini copied once")
+	if(USER_DIR STREQUAL LEGACY_USER_DIR)
+		# A build directory configured before #417 keeps the old name in its cache
+		set(USER_DIR "Arx Fatalis VR" CACHE STRING "User dir names" FORCE)
+	endif()
 elseif(MACOS)
 	set(DATA_DIR          "ArxLibertatis"                 CACHE STRING "Data dir names")
 	set(DATA_DIR_PREFIXES "/Applications"                 CACHE STRING "Data dir paths")
@@ -243,6 +250,7 @@ mark_as_advanced(
 	DATA_DIR
 	DATA_DIR_PREFIXES
 	USER_DIR
+	LEGACY_USER_DIR
 	USER_DIR_PREFIXES
 	CONFIG_DIR
 	CONFIG_DIR_PREFIXES
@@ -955,6 +963,7 @@ set(CORE_SOURCES
 	src/core/Application.cpp
 	src/core/ArxGame.cpp
 	src/core/Benchmark.cpp
+	src/core/BugReport.cpp
 	src/core/CommandChannel.cpp
 	src/core/Config.cpp
 	src/core/Core.cpp
@@ -963,6 +972,7 @@ set(CORE_SOURCES
 	src/core/GameTime.cpp
 	src/core/Localisation.cpp
 	src/core/SaveGame.cpp
+	src/core/SaveKind.cpp
 	src/core/Startup.cpp
 )
 

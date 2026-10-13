@@ -13,7 +13,13 @@ set(arxtest_TESTCASES
 	
 	tests/core/GameEventTest.h
 	tests/core/GameEventTest.cpp
-	
+
+	tests/core/SaveKindTest.h
+	tests/core/SaveKindTest.cpp
+
+	tests/core/BugReportTest.h
+	tests/core/BugReportTest.cpp
+
 	tests/io/fs/FilePathTest.h
 	tests/io/fs/FilePathTest.cpp
 	
@@ -22,6 +28,9 @@ set(arxtest_TESTCASES
 
 	tests/io/fs/SteamLibraryTest.h
 	tests/io/fs/SteamLibraryTest.cpp
+
+	tests/io/fs/LegacyConfigTest.h
+	tests/io/fs/LegacyConfigTest.cpp
 
 	tests/io/log/FileLoggerTest.h
 	tests/io/log/FileLoggerTest.cpp
@@ -125,10 +134,14 @@ set(arxtest_SOURCES
 	${BASE_SOURCES}
 	${MATH_SOURCES}
 	
+	src/core/BugReport.cpp
+	src/core/SaveKind.cpp
 	src/game/Camera.cpp
 	src/graphics/Math.cpp
 	src/graphics/Renderer.cpp
+	src/io/Blast.cpp
 	src/io/IniSection.cpp
+	src/io/SaveBlock.cpp
 	src/io/log/FileLogger.cpp
 	src/io/resource/ResourcePath.cpp
 	src/vr/BodyYaw.cpp
@@ -169,7 +182,7 @@ set(arxtest_INCLUDES
 	${CppUnit_INCLUDE_DIR}
 )
 
-set(arxtest_LIBRARIES ${BASE_LIBRARIES} ${CppUnit_LIBRARIES})
+set(arxtest_LIBRARIES ${BASE_LIBRARIES} ${ZLIB_LIBRARIES} ${CppUnit_LIBRARIES})
 
 add_executable_shared(arxtest "${arxtest_SOURCES}" "${arxtest_LIBRARIES}")
 add_binary_includes(arxtest ${arxtest_INCLUDES})

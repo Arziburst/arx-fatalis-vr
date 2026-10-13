@@ -46,6 +46,32 @@ const path & getConfigDir();
 const std::vector<path> & getDataDirs();
 
 /*!
+ * \return How the user directory was chosen: "command-line" (--user-dir), "registry", "default" or "fallback" -
+ *         for the startup banner and status.json
+ */
+const char * getUserDirSource();
+
+/*!
+ * \return cfg.ini of the user directory earlier builds used (Arx Libertatis, #417) when this run found its user
+ *         and config directories by the standard search (no --user-dir / --config-dir, no registry value) and that
+ *         file exists; empty otherwise
+ */
+const path & getLegacyConfigFile();
+
+//! What \ref copyLegacyConfig did
+struct LegacyConfigCopy {
+	bool copied = false;
+	std::string why; //!< what was copied, or why nothing was
+};
+
+/*!
+ * The first start's settings copy (#417, D-NEW): \a legacyConfigFile is copied to \a configFile when that does not
+ * exist yet and \a userDir has no save folder yet (the game creates it on its first start), so it happens once.
+ * Settings only - saves are never copied: a flat save must never reach the VR game.
+ */
+LegacyConfigCopy copyLegacyConfig(const path & configFile, const path & legacyConfigFile, const path & userDir);
+
+/*!
  * \return What the lookup of Arx Fatalis in the Steam libraries found (the folder and the library),
  *         or why it found nothing — for the startup banner
  */

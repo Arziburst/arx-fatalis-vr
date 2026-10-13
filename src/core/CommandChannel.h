@@ -21,6 +21,7 @@
 #define ARX_CORE_COMMANDCHANNEL_H
 
 #include "graphics/BaseGraphicsTypes.h"
+#include "io/fs/FilePath.h"
 
 /*!
  * \brief File-based command channel and status file for automated tests
@@ -49,6 +50,9 @@ namespace channel {
 
 //! \return true if \c --test-dir was given
 bool isEnabled();
+
+//! \return the \c --test-dir directory, empty without one
+const fs::path & directory();
 
 //! Create the directory, remember the process start, start counting log errors - call after the log file exists
 void initialize();

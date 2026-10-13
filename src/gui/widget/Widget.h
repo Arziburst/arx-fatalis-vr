@@ -45,6 +45,7 @@ enum MENUSTATE {
 	Page_OptionsInputCustomizeKeys2,
 	Page_OptionsVR, //!< the VR settings, Controls section (#178)
 	Page_OptionsVRTurning, //!< the VR settings, Controls section: turning and the character height (#260)
+	Page_OptionsSaves, //!< the saves folder and a save exported for a bug report (#417)
 	Page_QuitConfirm,
 	Page_Localization,
 };

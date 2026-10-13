@@ -93,6 +93,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "input/Input.h"
 
+#include "io/log/Logger.h"
+
 #include "scene/ChangeLevel.h"
 #include "scene/GameSound.h"
 #include "scene/LoadLevel.h"
@@ -143,7 +145,12 @@ void ARX_QuickLoad() {
 	
 	SavegameHandle save = savegames.quickload();
 	if(save == SavegameHandle()) {
-		// No saves found!
+		// No saves found! Or only saves of the other kind, which this run never loads (#417, D-NEW)
+		if(savegames.hiddenCount() > 0) {
+			LogWarning << "Quick load refused: no save of this " << saveKindName(savegames.kind()) << " run - "
+			           << savegames.hiddenReason();
+			gameevent::Event("load.refused")("source", "quickload")("hidden", u64(savegames.hiddenCount()));
+		}
 		return;
 	}
 	

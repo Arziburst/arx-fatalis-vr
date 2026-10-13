@@ -50,6 +50,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include <string>
 #include <string_view>
 
+#include "core/SaveKind.h"
 #include "graphics/BaseGraphicsTypes.h"
 
 
@@ -66,7 +67,10 @@ bool ARX_CHANGELEVEL_StartNew();
  */
 void ARX_CHANGELEVEL_Load(const fs::path & savefile);
 
-bool ARX_CHANGELEVEL_Save(std::string_view name, const fs::path & savefile);
+/*!
+ * Save the game to \a savefile; a save of \a kind VR carries the VR mark (#417, core/SaveKind.h)
+ */
+bool ARX_CHANGELEVEL_Save(std::string_view name, const fs::path & savefile, SaveKind kind);
 
 bool ARX_Changelevel_CurGame_Clear();
 

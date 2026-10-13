@@ -110,6 +110,12 @@ set(arxtest_TESTCASES
 	tests/vr/FingerCurlTest.h
 	tests/vr/FingerCurlTest.cpp
 
+	tests/vr/PerfStatsTest.h
+	tests/vr/PerfStatsTest.cpp
+
+	tests/vr/PerfWriterTest.h
+	tests/vr/PerfWriterTest.cpp
+
 
 )
 
@@ -130,6 +136,8 @@ set(arxtest_SOURCES
 	src/vr/BodyYaw.cpp
 	src/vr/EyeProjection.cpp
 	src/vr/FramePacing.cpp
+	src/vr/PerfStats.cpp
+	src/vr/PerfWriter.cpp
 	src/vr/VRBindings.cpp
 	src/vr/HeadLean.cpp
 	src/vr/HeadPose.cpp

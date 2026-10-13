@@ -8,6 +8,17 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — The game crashes on quit in `FT_Done_Face` after a feature drew text (#376)
+
+**Symptom:** a run that worked ends with exit code 1, no `Clean shutdown`, and a crash report whose stack is
+`freetype.dll!FT_Done_Face()` under `xtree` / `xmemory` from `ArxGame.cpp` (the shutdown). Nothing in the log says why.
+**Cause:** a `Font` taken with `FontCache::getFont` and never given back with `FontCache::releaseFont`. At the exit
+`FontCache::shutdown` deletes the cache: its destructor only *asserts* that every font was released (nothing in a
+Release build), frees the FreeType library, and then the leaked font's face is destroyed against the freed library.
+The first radial menu kept two fonts of its own for the whole run.
+**Do:** draw with the game's fonts (`hFontControls`, `hFontInGame`, … in `gui/Text.h`: the right language's glyphs,
+replaced when the interface is laid out again), or release an own font before `ARX_Text_Close`.
+
 ## 2026-10-12 — An instant `vr-sim hand ... pos` set-up move counts as a melee swing on a busy runner (#349)
 
 **Symptom:** `melee-swing.xrs` failed on CI at its first `@assert vr.melee.swings eq 0` for runs in a row with only

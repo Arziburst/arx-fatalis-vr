@@ -101,7 +101,7 @@ float halfRingCenterDegrees(size_t index);
 //! The half-ring's items each span this many degrees
 constexpr float HalfRingItemDegrees = 180.f / float(HalfRingItemCount);
 
-//! The ring's size and its rules, meters in the ring's plane (D-NEW-radial: proposals, judged in the headset)
+//! The ring's size and its rules, meters in the ring's plane (D-NEW: proposals, judged in the headset)
 struct RadialParams {
 	float holeRadius = 0.04f;        //!< the middle selects nothing
 	float ringRadius = 0.12f;        //!< the segments' outer edge

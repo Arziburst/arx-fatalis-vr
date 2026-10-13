@@ -532,7 +532,7 @@ private:
 
 };
 
-//! The fixed items' line icons (proposals, D-NEW-radial)
+//! The fixed items' line icons (proposals, D-NEW)
 void drawItemIcon(RadialItem item, const Vec2f & center, float radius, const Color4f & color) {
 
 	Icon icon(center, radius, std::max(2.f, radius * 0.14f), color);

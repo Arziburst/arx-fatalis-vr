@@ -13,6 +13,56 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: The radial menus — at the hand, drawn by the engine into a quad layer per hand; each hand's quick slots kept in the save as script variables
+
+- **Date:** 2026-10-13
+- **Status:** Accepted for the technique; the look and the sizes are proposals the owner judges in the headset (#376)
+- **Decided by:** the owner (each hand has its own seven quick slots; the torch lit through the engine's own path, its
+  hand recorded - drawing it in that hand is a separate task), relayed by the coordinator; the worker for the internals
+
+### Decision
+- **Where it hangs.** Holding B places the hand's ring at the hand's grip, pushed 4 cm further from the eyes, facing
+  them, upright, fixed in the OpenXR LOCAL space - the room - until B is let go. Stick walking and turning move the
+  world, not LOCAL, so the ring stays with the player and in reach; the hand moving selects. Both rings can be open.
+- **Selection** (`vr/RadialMenu.h`, host test `RadialMenuTest`, meters in the ring's plane): the middle (4 cm) selects
+  nothing; outside it, the segment in the hand's direction, kept 6° past its edge; the hand above the ring's top
+  edge (12.5 cm) opens the half-ring - 9 items left to right over 180°: game menu, character, spells, map, quests,
+  quick save, quick load, recenter, cancel spell - which closes when the hand comes back inside the ring (10 cm) or
+  drops below its middle. Released over nothing, nothing runs.
+- **Drawing.** Each open menu is drawn by the engine's own 2D drawing (filled sectors, line icons, the game's fonts and
+  item icons) into a 512 × 512 swapchain of its hand and submitted as a quad layer 0.46 m wide on top of every other
+  layer - never hidden by the world or the hand, the same in both eyes. The proposed look (after the owner's
+  reference): dark see-through segments, the one under the hand lit amber with an arc outside it and its name in a
+  dark disc in the middle, white line icons, a faint arc above the ring saying the half-ring is there, a dot where the
+  hand is. Names are the game's own strings where it has them (its key-binding names, item names), so they follow
+  its language; "Game menu" and "Recenter" have none and are English. The desktop mirror (#21) does not show the
+  menus yet: its overlays are fixed images, a menu's image changes every frame.
+- **Running the items.** The engine's own paths: the inventory, quick save / load and cancel spell as their keys pressed
+  for one update; the game menu as Escape (an open book or note is closed first, so it always opens the menu); the
+  book's pages opened (not toggled); recenter as a new head reference (`reason=radial`). A quick slot uses an item of
+  its kind from the bag as the item's own use does (a potion is drunk, food eaten, a torch lit); a lit torch of the
+  kind is put out instead. Time is not paused.
+- **Quick slots.** Each hand has 7, holding an item **kind** (`potion_life`), so the next one of the kind refills the
+  slot. An item dragged out of the bag and released (B) onto a slot fills it; the item goes back into the bag and the
+  held trigger is kept up for the engine until let go, so it picks nothing up again. The slots are the global script
+  text variables `$vr_quickslots_left` / `$vr_quickslots_right` (`potion_life|torch|||||`): the save keeps global
+  variables already, so no save format changes, and old saves load with empty slots.
+- **The torch's hand.** The torch lit from a hand's slot is recorded as that hand's (`vr.radial.torchHand`, a
+  `vr.radial.torch` event); the engine's torch is a light at the player and no held model, so drawing it in that hand
+  is a separate task.
+
+### Why
+A layer per hand keeps the menu readable over any scene and lets the engine draw it with what it already has (text in
+the game's language, item icons) instead of a 3D text renderer. Kinds in script variables survive save and load with
+no change to the save format the original game shares. Running the items through the engine's own key paths keeps
+their rules (no quick save while the controls are blocked, the inventory's own toggle).
+
+### Rules out
+A head-locked or panel menu; items running on the press of B; slots that hold one particular item; a save format
+change for the slots.
+
+---
+
 ## D-042: Control scheme v2 — two equal hands: a casting stance and a radial menu per hand, dual wielding
 
 - **Date:** 2026-10-13

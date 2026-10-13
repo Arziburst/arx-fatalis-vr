@@ -185,7 +185,7 @@ $fake = {
 			camera = @{ yaw = $yaw }; player = @{ controlsBlocked = $false }; events = @{ byName = @{ 'spell.cast' = 2 } } }
 		$json = $status | ConvertTo-Json -Depth 6 -Compress
 		[IO.File]::WriteAllText((Join-Path $Dir 'status.json.tmp'), $json)
-		Move-Item (Join-Path $Dir 'status.json.tmp') (Join-Path $Dir 'status.json') -Force
+		[IO.File]::Move((Join-Path $Dir 'status.json.tmp'), (Join-Path $Dir 'status.json'), $true)  # atomic replace, like the real game (#446)
 		Start-Sleep -Milliseconds 30
 	}
 }
@@ -195,8 +195,10 @@ try {
 	$startDeadline = (Get-Date).AddMinutes(3)
 	while (-not (Test-Path (Join-Path $testDir 'started')) -and $job.State -eq 'Running' -and (Get-Date) -lt $startDeadline) { Start-Sleep -Milliseconds 100 }
 	$deadline = (Get-Date).AddSeconds(15)
-	while (-not (Read-ArxStatus $testDir) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
-	Check 'the fake game answers' ([bool](Read-ArxStatus $testDir))
+	$firstStatus = $null
+	while (-not ($firstStatus = Read-ArxStatus $testDir) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
+	# The check uses the status the loop parsed: a second read could hit a rewrite in progress (#446).
+	Check 'the fake game answers' ([bool]$firstStatus)
 	$quiet = { param($Text, $Color) }
 
 	function Run-Seq([string]$Text, [switch]$ContinueOnError) {

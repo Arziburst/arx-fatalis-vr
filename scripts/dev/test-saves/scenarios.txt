@@ -5,8 +5,8 @@
 # Level 1 (the goblin prison, where a new game starts). Ids and coordinates come from the `entities`
 # channel command (docs/vr/TESTING.md); a position is "x y z" in world units (about 100 per metre) and y
 # is the eye: the floor is 170 higher. An entity's own position is on the floor, and walls are everywhere:
-# a spot is found with a screenshot (`shot`), never by arithmetic alone. Levers, chests and doors are not
-# here: nothing placed the player where one is under the reticle, see the follow-up task named in #70.
+# a spot set with `setpos` is checked with a screenshot (`shot`), never by arithmetic alone. A spot in the
+# hand reticles' reach of an entity is found by the game itself with `approach <entity>` (#210).
 #
 # Save names are folder names: scripts use them as `smoke-test.ps1 -Save <name>`.
 
@@ -51,3 +51,41 @@ invulnerability off
 shot mvp-goblin-fight
 @wait 1
 save mvp-goblin-fight
+invulnerability on
+
+# --- mvp-lever, mvp-door, mvp-chest: a lever, a portcullis, a chest in the hand reticles' reach (#210) -------------
+# `approach <entity>` finds the spot by number (docs/vr/TESTING.md): a floor with room for the player, the eye within
+# the pick's reach and nothing of the level before the entity on the rays from the eye and both hands. Called twice:
+# far away an entity is not updated, so the first call can only test the level; the second, from there, its faces.
+# lever_0012 opens porticullis_0015 (#403); pulled once its goblin is dead, it starts the 'Kultar freed' scene.
+approach lever_0012
+@wait 1
+approach lever_0012
+@wait 2
+invulnerability off
+@describe Lever: a sword equipped; lever_0012 (opens porticullis_0015) in the hand reticles' reach ahead (#38).
+shot mvp-lever
+@wait 1
+save mvp-lever
+invulnerability on
+
+approach porticullis_0015
+@wait 1
+approach porticullis_0015
+@wait 2
+invulnerability off
+@describe Door: a sword equipped; the closed portcullis porticullis_0015 in the hand reticles' reach ahead (#38).
+shot mvp-door
+@wait 1
+save mvp-door
+invulnerability on
+
+approach chest_metal_0052
+@wait 1
+approach chest_metal_0052
+@wait 2
+invulnerability off
+@describe Chest: a sword equipped; chest_metal_0052 in the hand reticles' reach ahead (#38, open it, take what is inside).
+shot mvp-chest
+@wait 1
+save mvp-chest

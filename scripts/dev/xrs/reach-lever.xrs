@@ -1,0 +1,20 @@
+# The test save mvp-lever (#210, made by `approach lever_0012` in make-test-saves.ps1): a sword in the hand and the
+# right hand's reticle on lever_0012 from where the save stands - in the engine's reach, nothing of the level before it.
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence reach-lever -Save mvp-lever
+@sim idle
+@save mvp-lever
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.weapon.place eq hand
+@until vr.reticle.on eq true 5s
+
+vr-point right entity lever_0012
+@frames 10
+@assert vr.reticle.right.under eq lever_0012
+@assert vr.reticle.right.entity eq lever_0012
+@assert ui.hover eq lever_0012
+@shot lever
+@assert errors eq 0

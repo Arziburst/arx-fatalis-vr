@@ -8,6 +8,35 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — The game vanishes with exit code -1: no crash report, no "Clean shutdown", nothing in arx.log (#146)
+
+**Symptom:** a VR self-test with SteamVR running died 3-4 s after `xrCreateSession` (2 of 15 runs, 2026-10-09) with
+exit code -1, no crash report, no `Clean shutdown` and nothing in `arx.log` about why. SteamVR's `xrclient_arx.txt`
+logged `VR_Shutdown called` before the disconnect, and `vrserver.txt` no `Sending Quit event` to the game.
+**Cause:** `exit()` or `ExitProcess(-1)` inside the process - the client's DLL detach ran, so it was not a
+`TerminateProcess` from outside - by a module that is not ours: on Windows `main` returns 0 or 1, the crash handler
+ends with 1, and no OpenXR failure ends the process (every failed call and every session end - stopping, exiting,
+loss pending, instance loss - goes on in flat mode; read in `VRSystem.cpp`). Which module was not provable: the
+failing runs' logs were overwritten (before #129), and the simulated headset cannot reproduce SteamVR. The suspect
+is SteamVR's client: run 1 was the first launch right after SteamVR started (SteamVR Home was being asked to quit),
+and at the time the session sat in `ready` without `xrBeginSession` (#20 runs the frame loop since), which a
+runtime may treat as a hung app. An `ExitProcess` also skips the game's `atexit` handlers and loses up to a second
+of buffered info lines - which is why nothing was in the log.
+**Do:** read the `[E] ExitTrace:0` lines at the end of `arx.log` or `stderr.txt` ([The exit hook](TESTING.md#the-exit-hook-146)):
+the way out, the exit code, the last quit request or VR session end before it, and the stack - the module after
+`KERNEL32.DLL` / `ucrtbase.dll` called it. None of those lines and no crash report = killed from outside. The hunt
+with SteamVR is the owner's: `smoke-test.ps1 -Vr -Repeat 10 -Seconds 3 -EvidenceDir <dir>` keeps every failed run's
+logs, SteamVR's included.
+
+## 2026-10-13 — An executable's TLS callback never sees the "process is terminating" flag (#146)
+
+**Symptom:** the exit hook's TLS callback was in `arx.exe` (`dumpbin /tls` listed it) but wrote nothing when
+`ExitProcess` ended the game.
+**Cause:** it returned early on `reserved == nullptr`, copying `DllMain`'s rule (`lpvReserved != NULL` = the process
+terminates). The loader calls TLS callbacks with a null reserved on process detach, always.
+**Do:** in a TLS callback of the executable treat every `DLL_PROCESS_DETACH` as the end of the process - an `.exe`
+is never unloaded. Check such a hook with a deliberate exit (`exit-trace-check.ps1`), never by reading the code.
+
 ## 2026-10-13 — `setpos` y is the feet, not the eye: the player stood 170 units above the floor (#210)
 
 **Symptom:** a save placed in reach of `lever_0012` loaded in `--vr-sim` with the hand reticle's ray ending on the
@@ -80,6 +109,8 @@ including "the charge is spent".
 *dirty* flag only: a build of `<sha> dirty` counts as fresh for any later uncommitted change on the same commit, so
 the game ran the previous build. **Do:** after editing uncommitted code, run `.\scripts\build-windows.ps1` yourself
 before a launch (it always builds what changed); a break-on-purpose run is only valid after an explicit build.
+**Resolved (#306):** the build stamp carries a fingerprint of the uncommitted tree (`fp=<hash>`); an edit after
+the build makes the launch scripts' check stale and `-Rebuild` rebuilds.
 
 ## 2026-10-10 — `player.pos + player.baseOffset()` is not the feet: an NPC placed there floats (#39)
 
@@ -107,6 +138,8 @@ added a minute ago: `vr.wrist.along.x (<absent>)`.
 clean `HEAD` followed by edits still counts as fresh, so `-Rebuild` does not rebuild and the old `arx.exe` runs.
 **Do:** after editing, run `.\scripts\build-windows.ps1` yourself before the launch (or commit first); it costs
 a launch from the budget otherwise.
+**Resolved (#306, #294):** the build stamp carries a fingerprint of the uncommitted tree (`fp=<hash>`); the
+fresh-build check sees edits made after a build (clean or dirty) and `-Rebuild` rebuilds.
 
 ## 2026-10-10 — `@diff` of two still shots of the body is as large as a small HUD change (#116)
 
@@ -818,8 +851,8 @@ the middle of loading the new level, with no crash report — it looks like the 
 **Cause:** a test-tool bug, not the game: the channel's `loadlevel` runs synchronously, the level
 change writes `status.json` with the new `cmdSeq` before `ack.txt` exists, `Send-ArxCommand` reads a
 missing ack, throws, and the smoke test kills the game in its error handler (#142).
-**Do:** until #142 is fixed, change levels with `-- --loadlevel N` (one launch per level), not with
-the channel command.
+**Do:** fixed in #142: `status.json` reports `cmdSeq` only once the batch's `ack.txt` is written, so
+`loadlevel` / `load` batches work through the channel (the old `-- --loadlevel N` workaround is no longer needed).
 
 ## 2026-10-09 — A crash report folder is dated "yesterday" and the VR self-test crashes where the flat one is clean
 

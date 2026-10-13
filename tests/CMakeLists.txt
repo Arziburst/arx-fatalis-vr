@@ -32,6 +32,9 @@ set(arxtest_TESTCASES
 	tests/io/IniTest.h
 	tests/io/IniTest.cpp
 	
+	tests/platform/ExitReportTest.h
+	tests/platform/ExitReportTest.cpp
+	
 	tests/math/AssertionTraits.h
 	tests/math/LegacyMath.h
 	tests/math/LegacyMathTest.cpp
@@ -131,6 +134,7 @@ set(arxtest_SOURCES
 	src/io/IniSection.cpp
 	src/io/log/FileLogger.cpp
 	src/io/resource/ResourcePath.cpp
+	src/platform/ExitReport.cpp
 	src/vr/BodyYaw.cpp
 	src/vr/EyeProjection.cpp
 	src/vr/FramePacing.cpp

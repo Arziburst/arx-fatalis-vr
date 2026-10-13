@@ -1,0 +1,15 @@
+# The VR session is about to be lost (#146): the headset or the runtime gone (loss pending). The game destroys the
+# session, goes on in flat mode and names the cause in arx.log; the run then quits through the channel and must
+# end cleanly - the exit hook reports nothing.
+@sim idle
+@args --loadlevel 10
+
+@until state eq GAMEPLAY 60s
+@until vr.sessionState eq focused 30s
+
+vr-sim session loss-pending
+@log OpenXR session ended by the runtime \(loss pending\), continuing in flat mode 10s
+@until vr.sessionState eq none 10s
+@frames 10
+@assert state eq GAMEPLAY
+@nolog ExitTrace

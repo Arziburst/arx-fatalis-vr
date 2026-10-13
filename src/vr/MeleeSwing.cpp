@@ -128,8 +128,9 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 		m_speed = 0.f;
 	}
 	if(m_speed > m_params.jumpSpeed) {
-		// A jump all the same (#352). Over the span above it cannot outrun that step's raw speed (on each axis
-		// both medians lie between the two samples they share), so this guards the filter, not the hand
+		// A guard that cannot fire (#352): over its true span the median never outruns the raw speed of that
+		// step, already checked above (on each axis both medians lie between the two samples they share). It
+		// stays as protection should the filter change; no test can reach it
 		m_jumps++;
 		const SwingChange change = drop();
 		update(sample, true);

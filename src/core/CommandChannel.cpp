@@ -335,6 +335,8 @@ struct State {
 		Vec2f start = Vec2f(0.f);    //!< The player's ground position (x, z) when the hold started
 		float units = 0.f;           //!< The distance that ends the hold
 		float moved = 0.f;           //!< The distance walked so far (the last one, once ended)
+		GameInstant deadline = 0;    //!< When the hold ends anyway: a blocked player never walks the distance
+		bool timedOut = false;       //!< The hold ended at its deadline, not at its distance
 		vr::WalkStatus walk;         //!< The stick walk of the hold's last frame that walked
 	} stickFor;
 
@@ -1371,6 +1373,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("active", hold.active);
 		json.value("units", hold.units);
 		json.value("moved", hold.moved);
+		json.value("timedOut", hold.timedOut);
 		json.object("walk");
 		json.value("walking", hold.walk.walking);
 		json.value("yaw", hold.walk.yaw);
@@ -1605,14 +1608,20 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "stick-for") {
-		// stick-for left|right <x> <y> <units>: a stick held deflected until the player has walked that far on the
-		// ground, then let go by the game in that frame (#370) - a walk bounded by its distance, not by how fast the
-		// runner reads the status (a busy PC walked a frame-counted walk into a wall)
+		// stick-for left|right <x> <y> <units> [<seconds>]: a stick held deflected until the player has walked that
+		// far on the ground, then let go by the game in that frame (#370) - a walk bounded by its distance, not by how
+		// fast the runner reads the status (a busy PC walked a frame-counted walk into a wall). A player who never
+		// gets that far (a wall) is let go after <seconds> of game time (default 10)
 		std::istringstream iss{std::string(rest)};
 		std::string hand;
-		float x = 0.f, y = 0.f, units = 0.f;
-		if(!(iss >> hand >> x >> y >> units) || (hand != "left" && hand != "right") || units <= 0.f) {
-			return refuse("stick-for: expected left|right <x> <y> <units>, got \"" + std::string(rest) + "\"");
+		float x = 0.f, y = 0.f, units = 0.f, seconds = 10.f;
+		bool parsed = bool(iss >> hand >> x >> y >> units);
+		if(parsed && !(iss >> seconds)) {
+			parsed = iss.eof();
+			seconds = 10.f;
+		}
+		if(!parsed || (hand != "left" && hand != "right") || units <= 0.f || seconds <= 0.f) {
+			return refuse("stick-for: expected left|right <x> <y> <units> [<seconds>], got \"" + std::string(rest) + "\"");
 		}
 		if(currentState() != GameState::Gameplay || !entities.player()) {
 			return refuse(std::string("stick-for: needs a level on screen (state ") + gameStateName(currentState()) + ")");
@@ -1630,6 +1639,8 @@ std::string execute(std::string_view line) {
 		hold.start = Vec2f(player.pos.x, player.pos.z);
 		hold.units = units;
 		hold.moved = 0.f;
+		hold.deadline = g_gameTime.now() + GameDuration(std::chrono::milliseconds(s64(seconds * 1000.f)));
+		hold.timedOut = false;
 		hold.walk = vr::WalkStatus();
 		return std::string();
 	}
@@ -2351,6 +2362,12 @@ void updateStickFor() {
 		vr::inputCommand("stick " + hold.hand + " 0 0");
 		hold.active = false;
 		LogInfo << "[channel] stick-for: " << hold.hand << " stick let go after " << hold.moved << " units";
+	} else if(g_gameTime.now() >= hold.deadline) {
+		vr::inputCommand("stick " + hold.hand + " 0 0");
+		hold.active = false;
+		hold.timedOut = true;
+		LogWarning << "[channel] stick-for: " << hold.hand << " stick let go at its time limit after only "
+		           << hold.moved << " of " << hold.units << " units";
 	}
 
 }

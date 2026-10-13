@@ -31,6 +31,7 @@ vr-sim head rot 90 0 0
 @remember z0 player.z
 stick-for left 0 1 100
 @until stickFor.active eq false 10s
+@assert stickFor.timedOut eq false
 @assert stickFor.walk.walking eq true
 @assert stickFor.walk.yaw gt {look-0.5}
 @assert stickFor.walk.yaw lt {look+0.5}
@@ -51,6 +52,7 @@ vr-sim head rot -90 0 0
 @remember z1 player.z
 stick-for left 0 1 100
 @until stickFor.active eq false 10s
+@assert stickFor.timedOut eq false
 @assert stickFor.walk.dirX gt 0.98
 @frames 10
 @assert player.x gt {x1+10}
@@ -64,6 +66,7 @@ vr-sim head rot 0 0 0
 @remember z2 player.z
 stick-for left 0 1 100
 @until stickFor.active eq false 10s
+@assert stickFor.timedOut eq false
 @assert stickFor.walk.dirZ gt 0.98
 @frames 10
 @assert player.z gt {z2+10}

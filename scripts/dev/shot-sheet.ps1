@@ -33,7 +33,7 @@
 .EXAMPLE
 	.\scripts\dev\shot-sheet.ps1 -Shots down-roll000,down-roll045,down-roll090,down-roll180,fwd-roll000,fwd-roll090,fwd-roll-090,fwd-roll180 `
 	    -Labels 'hand down, roll 0','hand down, roll 45','hand down, roll 90','hand down, roll 180','hand forward, roll 0','hand forward, roll +90','hand forward, roll -90','hand forward, roll 180' `
-	    -Out docs\vr\images\arms-304-roll.jpg
+	    -Out $env:LOCALAPPDATA\ArxFatalisVR\evidence\arms-roll.jpg
 #>
 [CmdletBinding()]
 param(

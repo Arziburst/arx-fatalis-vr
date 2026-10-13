@@ -2955,7 +2955,7 @@ forearm takes two thirds of what is left, the upper arm half of the forearm's (`
 sheet by `scripts/dev/shot-sheet.ps1`). The wrist band carries about 20° at a 90° roll and 40° at 180° where it
 carried the whole roll before.
 
-![#304's arm rolled 0 / 45 / 90 / 180 degrees](images/arms-304-roll.jpg)
+(The sheet of #304's arm rolled 0 / 45 / 90 / 180 degrees is a game capture: it lives in the `game-checks` artifact of a CI run and the local capture folder, never in git - the owner, 2026-10-13.)
 
 ## Sources
 

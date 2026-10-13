@@ -1336,6 +1336,8 @@ void ArxGame::doFrame() {
 		vr::perf::Scope perfLimit(vr::PerfPhase::Limit);
 		limitFrameRate();
 	}
+	// The previous frame is judged now that xrWaitFrame said which display slots it cost
+	vr::perf::frameBegun();
 
 	ARX_PROFILE_FUNC();
 

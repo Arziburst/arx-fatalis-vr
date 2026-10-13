@@ -46,8 +46,16 @@ void initialize();
 //! Write the open second and close the log
 void shutdown();
 
-//! The top of a frame: closes the previous one (its second, its hitch) and starts timing this one
+//! The top of a frame: ends the previous one and starts timing this one
 void frameStart();
+
+/*!
+ * \brief After the frame's xrWaitFrame (or the flat frame limiter): judges the previous frame
+ *
+ * Its second and its hitch are written now, with the display slots the runtime's predicted display
+ * time skipped because of it (\ref addMissed from this frame's xrWaitFrame).
+ */
+void frameBegun();
 
 /*!
  * \brief What the current frame is paced by
@@ -58,7 +66,11 @@ void frameStart();
  */
 void setDisplay(s64 periodUs, u32 divisor, bool vr);
 
-//! Display slots the runtime's predicted display time skipped in this frame, beyond the expected ones
+/*!
+ * Display slots the runtime's predicted display time skipped, beyond the expected ones: counted
+ * for the previous frame between \ref frameStart and \ref frameBegun, else for this one (a loading
+ * screen's frames inside a load)
+ */
 void addMissed(u32 slots);
 
 //! A texture was uploaded to the GPU in this frame

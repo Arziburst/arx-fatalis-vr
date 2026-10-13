@@ -47,6 +47,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\build-paths.ps1')
 . (Join-Path $PSScriptRoot 'perf-summary-lib.ps1')
 
+$SourceDir = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $name = if ($Previous) { "arx-perf.$Previous.log" } else { 'arx-perf.log' }
 if (-not $Path) {
 	if (-not $UserDir) {

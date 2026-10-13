@@ -65,8 +65,12 @@ struct State {
 	size_t depth = 0;
 
 	PerfFrame frame;
+	//! The previous frame, ended by frameStart() and judged by frameBegun(): the display slots it made
+	//! the runtime skip are known only after this frame's xrWaitFrame
+	PerfFrame closing;
+	bool haveClosing = false;
 	PerfMonitor monitor;
-	s64 selfUs = 0;     //!< the log's own work in frameStart() this second
+	s64 selfUs = 0;     //!< the log's own work in frameStart() and frameBegun() this second
 	u32 selfFrames = 0;
 
 	std::unique_ptr<fs::ofstream> file;
@@ -88,6 +92,21 @@ void writeSecond() {
 	g.writer->push(formatSecond(second));
 	g.selfUs = 0;
 	g.selfFrames = 0;
+}
+
+//! Judge the previous frame: its second, its hitch
+void commitClosing() {
+	if(!g.haveClosing) {
+		return;
+	}
+	g.haveClosing = false;
+	PerfHitch hitch;
+	if(g.monitor.add(g.closing, &hitch)) {
+		writeSecond();
+	}
+	if(hitch.detected) {
+		g.writer->push(formatHitch(hitch));
+	}
 }
 
 std::string localTime() {
@@ -149,10 +168,9 @@ void shutdown() {
 		return;
 	}
 
+	// The frame in progress never ended; the one before it still waits for its verdict
 	t_timing = false;
-	if(g.haveFrame) {
-		charge(platform::getTime());
-	}
+	commitClosing();
 	if(g.monitor.flush()) {
 		writeSecond();
 	}
@@ -175,20 +193,15 @@ void frameStart() {
 
 	PlatformInstant now = platform::getTime();
 
+	// A frame without frameBegun() (cannot happen in doFrame) is judged without its missed slots
+	commitClosing();
+
 	if(g.haveFrame) {
-
 		charge(now);
-		g.frame.start = toUs(g.frameStart - g.origin);
-		g.frame.duration = toUs(now - g.frameStart);
-
-		PerfHitch hitch;
-		if(g.monitor.add(g.frame, &hitch)) {
-			writeSecond();
-		}
-		if(hitch.detected) {
-			g.writer->push(formatHitch(hitch));
-		}
-
+		g.closing = g.frame;
+		g.closing.start = toUs(g.frameStart - g.origin);
+		g.closing.duration = toUs(now - g.frameStart);
+		g.haveClosing = true;
 	}
 
 	g.frame = PerfFrame();
@@ -204,6 +217,17 @@ void frameStart() {
 	g.selfFrames++;
 }
 
+void frameBegun() {
+
+	if(!g.writer || !g.haveClosing) {
+		return;
+	}
+
+	PlatformInstant now = platform::getTime();
+	commitClosing();
+	g.selfUs += toUs(platform::getTime() - now);
+}
+
 void setDisplay(s64 periodUs, u32 divisor, bool vr) {
 	g.frame.period = periodUs;
 	g.frame.divisor = divisor;
@@ -211,7 +235,8 @@ void setDisplay(s64 periodUs, u32 divisor, bool vr) {
 }
 
 void addMissed(u32 slots) {
-	g.frame.missed += slots;
+	// Before frameBegun() the slots were skipped for the previous frame: it came late
+	(g.haveClosing ? g.closing : g.frame).missed += slots;
 }
 
 void countUpload() {

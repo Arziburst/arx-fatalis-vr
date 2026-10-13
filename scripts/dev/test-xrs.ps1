@@ -143,6 +143,8 @@ $logPath = Join-Path $work 'arx.log'
 # The fake game answers command.txt like CommandChannel.cpp: ack.txt, status.json, shots
 $fake = {
 	param($Dir, $Source)
+	# First thing: tell the test the job process is up. Start-Job's own startup can take long on a busy PC (#446).
+	[IO.File]::WriteAllText((Join-Path $Dir 'started'), '1')
 	Add-Type -AssemblyName System.Drawing
 	$seq = 0; $frame = 0; $capture = 0; $yaw = 0.0; $shots = [ordered]@{}; $errors = 0
 	$stop = Join-Path $Dir 'stop'
@@ -184,6 +186,9 @@ $fake = {
 }
 $job = Start-Job -ScriptBlock $fake -ArgumentList $testDir, $PSScriptRoot
 try {
+	# The job's process start is not what is tested: wait for its marker (up to 3 min, or the job ending), then time the 15 s.
+	$startDeadline = (Get-Date).AddMinutes(3)
+	while (-not (Test-Path (Join-Path $testDir 'started')) -and $job.State -eq 'Running' -and (Get-Date) -lt $startDeadline) { Start-Sleep -Milliseconds 100 }
 	$deadline = (Get-Date).AddSeconds(15)
 	while (-not (Read-ArxStatus $testDir) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
 	Check 'the fake game answers' ([bool](Read-ArxStatus $testDir))

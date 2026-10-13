@@ -34,11 +34,11 @@
  * The engine puts the first-person eye on the animated player model: walking, jumping, landing, crouching,
  * striking, being hit and dying move or tilt the view. In VR the view instead stands on the collision
  * cylinder - the body's real travel: horizontally exactly where the body is, vertically the body's feet plus
- * the eye of its stance (standing or crouched), never an animation. What changes the height is smoothed:
+ * the eye of its stance (standing, crouched or levitating), never an animation. What changes the height is smoothed:
  *  - the view's feet follow the body's feet at \ref ViewMaxSpeed at most (2 cm per frame at 90 Hz) - stairs,
  *    slopes, a landing; a jump either keeps the view level (\ref JumpView::Level: never above the take-off)
  *    or follows its arc that slowly (\ref JumpView::Arc);
- *  - the eye glides between the standing and the crouched eye at the crouch toggle's speed
+ *  - the eye glides between the stances' eyes (standing, crouched, levitating) at the crouch toggle's speed
  *    (\ref CrouchGlide), within what the feet leave of the same per-frame limit;
  *  - a fall the speed cannot follow pulls the view along \ref ViewMaxLag behind the body (a fall is real
  *    travel; only a jump's arc and the crouch are bound to the limit), and a teleport is a cut.
@@ -79,6 +79,9 @@ constexpr float ViewMaxSpeed = 180.f;   //!< units per second the view's height 
 constexpr float ViewMaxLag = 60.f;      //!< units a fall may leave the view above the body before it pulls it along
 constexpr float ViewCatchUp = 360.f;    //!< units per second a lag beyond \ref ViewMaxLag left by a jump's arc closes at
 constexpr float ViewTeleport = 150.f;   //!< the body's feet moving more than this in one frame are a cut, not travel
+//! units the levitating character's eye is above its standing eye: the player model's eye in its levitation pose
+//! (the camera motion catalog of #416: 30.5); the collision cylinder does not move, the model floats over it
+constexpr float LevitateEyeRise = 30.f;
 
 //! How the view follows the body
 struct StableViewParams {

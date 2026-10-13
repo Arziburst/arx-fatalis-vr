@@ -1585,8 +1585,13 @@ void ArxGame::updateFirstPersonCamera() {
 			vr::StableViewInput input;
 			input.dt = vr::viewStepSeconds();
 			input.feetY = player.basePosition().y;
+			// The stance's eye: crouched, standing, or levitating - the levitating character's head really floats
+			// over its feet (the owner's call, #416), glided to like the crouch
 			const bool crouched = (player.m_currentMovement & PLAYER_CROUCH) != 0;
 			input.eyeAboveFeet = -(crouched ? player.crouchHeight() : player.baseHeight());
+			if(player.levitate && !crouched) {
+				input.eyeAboveFeet += vr::LevitateEyeRise;
+			}
 			// A jump from the take-off to the landing; a fall off a ledge is travel the view follows. The engine ends
 			// the jump while the body still hangs over the floor (21 units at the end of its landing animation) and
 			// drops it there a frame later: the jump lasts until the body is on firm ground, half a second at most (a

@@ -23,7 +23,7 @@ a changed decision keeps its history in that cell.
 ### Decision
 - With the VR rules on (`vr::comfort().stableView`, D-018 / #76), the first-person camera is **not** read from the player
   model's eye vertex any more. It stands on the collision cylinder: horizontally exactly where the body is, vertically
-  the body's feet plus the eye of its stance — 170 units standing, 120 crouched (the cylinder's heights). No animation
+  the body's feet plus the eye of its stance — 170 units standing, 120 crouched (the cylinder's heights), 200 levitating (the model's head floats 30 units higher; the owner: the view rises with it, gliding). No animation
   (walk, run, jump, landing, crouch, strike, charge, cast, hit, death) can move or tilt it. The head pose goes on top
   as before (D-018).
 - Height changes are smoothed: at most **1.8 m/s** (2 cm per frame at 90 Hz, the same speed at 45 Hz), timed by the

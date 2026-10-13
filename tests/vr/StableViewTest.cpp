@@ -202,6 +202,21 @@ void StableViewTest::testCrouchOnStairsKeepsTheLimit() {
 	CPPUNIT_ASSERT_DOUBLES_EQUAL(-150.f * 59.f / 90.f - Crouched, heights.back(), 1e-3f);
 }
 
+void StableViewTest::testLevitationGlides() {
+	// Levitating, the head floats 30 units over the standing eye: the view rises there and back down when it ends,
+	// at the glide's speed, never faster than the limit, at 90 and 45 Hz
+	for(float hz : { 90.f, 45.f }) {
+		std::vector<BodyFrame> frames(5, BodyFrame{ 0.f, Standing, false });
+		frames.resize(200, BodyFrame{ 0.f, Standing + vr::LevitateEyeRise, false });
+		const size_t top = frames.size() - 1;
+		frames.resize(400, BodyFrame{ 0.f, Standing, false });
+		const std::vector<float> heights = run(frames, hz, vr::StableViewParams());
+		CPPUNIT_ASSERT(largestStep(heights) <= 50.f / hz + 1e-3f);
+		CPPUNIT_ASSERT_DOUBLES_EQUAL(-Standing - vr::LevitateEyeRise, heights[top], 1e-3f);
+		CPPUNIT_ASSERT_DOUBLES_EQUAL(-Standing, heights.back(), 1e-3f);
+	}
+}
+
 void StableViewTest::testFallPullsTheView() {
 	// A fall off a ledge (no jump): the view follows, never more than the lag above the body, and lands with it
 	std::vector<BodyFrame> frames(5, BodyFrame{ 0.f, Standing, false });

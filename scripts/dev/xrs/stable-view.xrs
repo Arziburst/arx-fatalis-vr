@@ -141,6 +141,10 @@ view meter reset
 spellcast -fsmx 5 levitate self
 @wait 2500
 view meter report before-levitate
+view meter reset
+spellcast -k levitate
+@wait 2500
+view meter report before-levitate-end
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Phase 2: the stable view (the fix), the same save loaded again - the levitation and the damage gone
@@ -412,13 +416,33 @@ view meter report after-fall
 @assert view.feetLag le 0.05
 @assert view.feetLag ge -0.05
 
+# Levitation: the character's head really floats over its feet (the owner's call) - the view rises with it, 30 cm
+# (the model's levitation pose), gliding, and comes down again the same way when the spell ends
 view meter reset
 spellcast -fsmx 5 levitate self
 @wait 2500
 view meter report after-levitate
+@assert view.eye ge 199.9
+@assert view.eye le 200.1
+@assert camera.motion.cameraRangeY ge 29.5
+@assert camera.motion.cameraRangeY le 30.5
 @assert camera.motion.maxOffStepXZ le 0.05
 @assert camera.motion.maxStepY90 le 2.01
 @assert camera.motion.maxStepY le 2.01                 # and per shown frame: a late frame slows the view, never a jump
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+view meter reset
+spellcast -k levitate
+@wait 2500
+view meter report after-levitate-end
+@assert view.eye ge 169.9
+@assert view.eye le 170.1
+@assert camera.motion.cameraRangeY ge 29.5
+@assert camera.motion.cameraRangeY le 30.5
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxStepY90 le 2.01
+@assert camera.motion.maxStepY le 2.01
 @assert camera.motion.maxPitchStep eq 0
 @assert camera.motion.maxRollStep eq 0
 @assert camera.motion.maxOffYawStep le 0.01

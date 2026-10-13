@@ -38,6 +38,7 @@ class StableViewTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testArcJumpIsSoft);
 	CPPUNIT_TEST(testCrouchGlides);
 	CPPUNIT_TEST(testCrouchOnStairsKeepsTheLimit);
+	CPPUNIT_TEST(testLevitationGlides);
 	CPPUNIT_TEST(testFallPullsTheView);
 	CPPUNIT_TEST(testTeleportCuts);
 	CPPUNIT_TEST(testNames);
@@ -55,6 +56,7 @@ public:
 	void testArcJumpIsSoft();
 	void testCrouchGlides();
 	void testCrouchOnStairsKeepsTheLimit();
+	void testLevitationGlides();
 	void testFallPullsTheView();
 	void testTeleportCuts();
 	void testNames();

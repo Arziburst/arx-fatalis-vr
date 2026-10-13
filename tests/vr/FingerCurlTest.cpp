@@ -53,7 +53,7 @@ vr::HandShape handShape(float thumb, float index, float fingers) {
 	vr::HandShape shape;
 	shape.thumb = thumb;
 	shape.index = index;
-	shape.fingers = fingers;
+	shape.middle = shape.ring = shape.little = fingers;
 	return shape;
 }
 

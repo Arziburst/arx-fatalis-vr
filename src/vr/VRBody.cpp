@@ -35,6 +35,7 @@
 #include "core/Config.h"
 #include "core/GameEvent.h"
 #include "core/GameTime.h"
+#include "game/Camera.h"
 #include "game/Entity.h"
 #include "game/EntityManager.h"
 #include "game/Equipment.h"
@@ -45,6 +46,8 @@
 #include "scene/Object.h"
 #include "vr/ArmIK.h"
 #include "vr/ArmRoll.h"
+#include "vr/BodyView.h"
+#include "vr/EyeProjection.h"
 #include "vr/HeadTracking.h"
 #include "vr/VRArms.h"
 #include "vr/VRInput.h"
@@ -156,6 +159,10 @@ struct BodyState {
 	size_t boundFaces = 0;                        //!< the bound model's faces with the caps (a reloaded model has fewer)
 	//! per face of the bound model: what it is to the custom arms (#385.3) - FaceBody, FaceArm + hand, FaceArmCap + hand
 	std::vector<u8> faceRole;
+	//! per face of the bound model: hidden this frame because it is too near an eye (#385.9), and the pose it was
+	//! worked out for (status.poseCalls) - once per frame, the same faces for both eyes
+	std::vector<char> nearEye;
+	u64 nearEyePose = u64(-1);
 	PlayerBodyStatus status;
 };
 
@@ -741,6 +748,71 @@ ArmRollParams rollParams() {
 	return params;
 }
 
+//! Where the body sits behind the eyes and how near them its faces may be drawn, as cfg.ini has them (#385.9)
+BodyViewParams bodyViewParams() {
+	BodyViewParams params;
+	params.push = config.input.vrBodyPush;
+	params.clearance = config.input.vrBodyClearance;
+	return params;
+}
+
+/*!
+ * \brief Work out once per frame which faces of the bound model are too near an eye to draw (#385.9, research F-472)
+ *
+ * The eyes are the head camera's (g_playerCamera, where the head pose put it) with this frame's eye offsets in
+ * stereo, the head camera itself otherwise. The faces looked at are the ones the two-sided view draws: not hidden
+ * by the engine, not given way to a custom arm. An Arx arm's own faces follow the controller - a hand brought to
+ * the face stays drawn - so the rule and the nearest-vertex count leave them out.
+ */
+void updateNearEye(const EERIE_3DOBJ * obj) {
+
+	PlayerBodyStatus & status = g_body.status;
+	if(g_body.nearEyePose == status.poseCalls && g_body.nearEye.size() == obj->facelist.size()) {
+		return;
+	}
+	g_body.nearEyePose = status.poseCalls;
+	g_body.nearEye.assign(obj->facelist.size(), 0);
+
+	Vec3f eyes[2] = { g_playerCamera.m_pos, g_playerCamera.m_pos };
+	if(stereoActive()) {
+		const glm::mat4x4 headWorldToView = cameraWorldToView(g_playerCamera);
+		const std::array<EyeRig, 2> & rigs = eyeRigs();
+		for(size_t eye = 0; eye < rigs.size(); eye++) {
+			eyes[eye] = eyeWorldPosition(headWorldToView, rigs[eye]);
+		}
+	}
+
+	const BodyViewParams params = bodyViewParams();
+	size_t hidden = 0;
+	float nearest = -1.f;
+	bool legs = false;
+	for(size_t f = 0; f < obj->facelist.size(); f++) {
+		const EERIE_FACE & face = obj->facelist[f];
+		if(!face.material || (face.facetype & POLY_HIDE) || !drawsBodyFace(obj, f)) {
+			continue;
+		}
+		if(f < g_body.faceRole.size() && (g_body.faceRole[f] == FaceArm || g_body.faceRole[f] == FaceArm + 1)) {
+			continue;
+		}
+		const Vec3f & a = obj->vertexWorldPositions[face.vid[0]].v;
+		const Vec3f & b = obj->vertexWorldPositions[face.vid[1]].v;
+		const Vec3f & c = obj->vertexWorldPositions[face.vid[2]].v;
+		if(hideFaceNearEye(a, b, c, eyes[0], eyes[1], params)) {
+			g_body.nearEye[f] = 1;
+			hidden++;
+			continue;
+		}
+		const float distance = faceDistanceToEyes(a, b, c, eyes[0], eyes[1]);
+		nearest = (nearest < 0.f) ? distance : std::min(nearest, distance);
+		legs = legs || faceBelowKeepLine(a, b, c, eyes[0], eyes[1], params);
+	}
+
+	status.clearance = params.clearance;
+	status.hiddenNearEye = hidden;
+	status.nearestBodyToEye = nearest;
+	status.legsDrawn = legs;
+}
+
 void noteBody(bool active, const char * inactive) {
 	PlayerBodyStatus & status = g_body.status;
 	status.active = active;
@@ -773,6 +845,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	resetCustomArms();
 	g_body.shift = Vec3f(0.f);
 	status.shift = Vec3f(0.f);
+	status.push = 0.f;
 	for(size_t hand = 0; hand < HandCount; hand++) {
 		PlayerArmStatus & arm = status.hands[hand];
 		arm.source = "none";
@@ -825,18 +898,34 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 
 	// The model faces where the body yaw of #25 says - the heading plus the body's offset after the
 	// head - not the heading the engine built the skeleton with: every bone turns about the vertical
-	// through the model's origin (the eye above was read before the turn: the camera does not turn)
+	// through the neck pivot under the eyes (#385.9; the eye above was read before the turn: the camera
+	// does not turn)
 	const float facingOffset = bodyStatus().offset;
 	if(std::abs(facingOffset) > 0.01f) {
-		const Vec3f root = skeleton.bones.front().anim.trans;
+		const Vec3f pivot(eye.x, 0.f, eye.z);
 		const glm::quat turn = glm::angleAxis(-glm::radians(facingOffset), Vec3f(0.f, 1.f, 0.f));
 		for(Bone & bone : skeleton.bones) {
-			bone.anim.trans = root + turnAboutVertical(bone.anim.trans - root, facingOffset);
+			bone.anim.trans = pivot + turnAboutVertical(bone.anim.trans - pivot, facingOffset);
 			bone.anim.quat = turn * bone.anim.quat;
 		}
 	}
 	const float facingYaw = bodyYaw + facingOffset;
 	status.facingYaw = wrapDegrees(facingYaw);
+
+	// The body hangs from the neck pivot below the eyes, pushed back behind them along its facing (#385.9,
+	// research F-471): looking down shows the chest and the legs ahead of the feet, not the inside of the
+	// shoulders. Only across the floor - the body keeps standing on its feet - and never the camera or the
+	// hands, which were placed from the eye above
+	const BodyViewParams view = bodyViewParams();
+	const Vec3f modelNeck = eye + Vec3f(0.f, view.neckBelowEye, 0.f);
+	Vec3f push = bodyOffset(headCamera, facingYaw, modelNeck, view);
+	push.y = 0.f;
+	for(Bone & bone : skeleton.bones) {
+		bone.anim.trans += push;
+	}
+	g_body.shift = shift + push;
+	status.push = glm::length(push);
+	status.neckPivot = neckPivot(headCamera, facingYaw, view);
 
 	// The body's axes for the elbow hints: engine x right, y down, z forward
 	const float yaw = glm::radians(facingYaw);
@@ -1085,6 +1174,14 @@ bool drawsBodyFace(const EERIE_3DOBJ * obj, size_t face) {
 		return customArmDrawn(Hand(role - FaceArmCap));
 	}
 	return !customArmDrawn(Hand(role - FaceArm));
+}
+
+bool hidesBodyFaceNearEye(const EERIE_3DOBJ * obj, size_t face) {
+	if(!obj || obj != g_body.boundObject) {
+		return false;
+	}
+	updateNearEye(obj);
+	return face < g_body.nearEye.size() && g_body.nearEye[face];
 }
 
 bool handLandmarks(Hand hand, HandLandmarks & landmarks) {

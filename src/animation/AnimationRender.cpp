@@ -1047,6 +1047,11 @@ static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io,
 			continue;
 		}
 
+		// The own body never covers the eyes (#385.9): its faces within the clearance of an eye are not drawn
+		if(twoSided && vr::hidesBodyFaceNearEye(eobj, i)) {
+			continue;
+		}
+
 		if((!twoSided && CullFace(eobj, face)) || !face.material) {
 			continue;
 		}

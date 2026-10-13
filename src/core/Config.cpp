@@ -47,6 +47,7 @@
 
 #include "vr/ArmFit.h"
 #include "vr/ArmRoll.h"
+#include "vr/BodyView.h"
 #include "vr/HeadPose.h"
 #include "vr/Locomotion.h"
 #include "vr/MeleeSwing.h"
@@ -179,7 +180,9 @@ constexpr const float
 	vrHeightOffset = 0.f,
 	vrHandScale = vr::DefaultHandScale,
 	vrArmMaxStretch = vr::MaxArmStretch,
-	vrArmWeaponElbowDrop = vr::DefaultWeaponElbowDrop;
+	vrArmWeaponElbowDrop = vr::DefaultWeaponElbowDrop,
+	vrBodyPush = vr::BodyViewParams().push,
+	vrBodyClearance = vr::BodyViewParams().clearance;
 
 constexpr const ActionKey actions[NUM_ACTION_KEY] = {
 	ActionKey(Keyboard::Key_Spacebar), // JUMP
@@ -354,7 +357,9 @@ constexpr const std::string_view
 	vrMeleeSwingSpeed = "vr_melee_swing_speed",
 	vrMeleeFullSpeed = "vr_melee_full_speed",
 	vrMeleeWeakAim = "vr_melee_weak_aim",
-	vrMeleeTargetCooldown = "vr_melee_target_cooldown";
+	vrMeleeTargetCooldown = "vr_melee_target_cooldown",
+	vrBodyPush = "vr_body_push",
+	vrBodyClearance = "vr_body_clearance";
 
 // Input key options
 constexpr const std::string_view actions[NUM_ACTION_KEY] = {
@@ -652,6 +657,8 @@ bool Config::save() {
 	writer.writeKey(Key::vrMeleeFullSpeed, input.vrMeleeFullSpeed);
 	writer.writeKey(Key::vrMeleeWeakAim, input.vrMeleeWeakAim);
 	writer.writeKey(Key::vrMeleeTargetCooldown, input.vrMeleeTargetCooldown);
+	writer.writeKey(Key::vrBodyPush, input.vrBodyPush);
+	writer.writeKey(Key::vrBodyClearance, input.vrBodyClearance);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -861,6 +868,11 @@ bool Config::init(const fs::path & file) {
 	input.vrMeleeWeakAim = glm::clamp(vrMeleeWeakAim, 0.1f, 1.f);
 	float vrMeleeTargetCooldown = reader.getKey(Section::Input, Key::vrMeleeTargetCooldown, Default::vrMeleeTargetCooldown);
 	input.vrMeleeTargetCooldown = glm::clamp(vrMeleeTargetCooldown, 0.f, 2.f);
+	// The own body out of the eyes (#385.9): the push back behind the eyes and the clearance around them, game units
+	float vrBodyPush = reader.getKey(Section::Input, Key::vrBodyPush, Default::vrBodyPush);
+	input.vrBodyPush = glm::clamp(vrBodyPush, 0.f, vr::MaxBodyPush);
+	float vrBodyClearance = reader.getKey(Section::Input, Key::vrBodyClearance, Default::vrBodyClearance);
+	input.vrBodyClearance = glm::clamp(vrBodyClearance, 0.f, vr::MaxBodyClearance);
 	
 	// Get action key settings
 	for(size_t i = 0; i < NUM_ACTION_KEY; i++) {

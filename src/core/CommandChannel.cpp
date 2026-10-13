@@ -1073,6 +1073,18 @@ std::string buildStatus(PlatformInstant now) {
 		// the arms drawn in VR (#385.3): cfg.ini vr_arms_model, and whether an Arx arm's faces gave way to a custom arm
 		json.value("armsModel", body.armsModel);
 		json.value("arxArmsHidden", body.arxArmsHidden);
+		// the own body out of the eyes (#385.9): the push back behind the eyes, the neck pivot the body hangs from,
+		// the clearance, the faces hidden near an eye this frame, the nearest drawn body vertex, the legs still drawn
+		json.value("push", body.push);
+		json.object("neckPivot");
+		json.value("x", body.neckPivot.x);
+		json.value("y", body.neckPivot.y);
+		json.value("z", body.neckPivot.z);
+		json.end();
+		json.value("clearance", body.clearance);
+		json.value("hiddenNearEye", body.hiddenNearEye);
+		json.value("nearestBodyToEye", body.nearestBodyToEye);
+		json.value("legsDrawn", body.legsDrawn);
 		{
 			const vr::CustomArmsLoad load = vr::customArmsLoad();
 			json.object("customArms");

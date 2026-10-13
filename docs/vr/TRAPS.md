@@ -8,6 +8,32 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — The same 500 ms walk measured 77, 100, 107 and 109 units at four rates (#23)
+
+**Symptom:** a walk timed exactly in display time gave wildly different distances per rate, and not in the
+order of the rates - it looked like a rate-dependent walk. **Cause:** each measurement started with `setpos` to
+the same spot. `setpos` puts the player where the engine starts a fall (`player.falling`): a per-frame trace
+showed him hanging 16 units above the floor in the jump's end phase for seconds, and `falling` still set when the
+walk began, so the walk started from a landing. The walk itself is the same at every rate (127.7-129.7 units once
+nothing was teleported). **Do:** never teleport between measurements that compare motion; return by motion
+(`stick-for` back, a turn back by time). Wait for `player.jumping eq false` and half a second after any teleport.
+
+## 2026-10-13 — A jump's "time in the air" read 0.40 s or 1.0 s at the same rate (#23, #435)
+
+**Symptom:** the time above 20 cm of the same jump differed by 0.6 s between runs. **Cause:** the engine moves a
+jumping player in 25-35 ms steps; a step that would end below the floor is refused, so the player hangs where the
+last step ended - 6 or 24 units above the floor - until the landing animation ends, then snaps down. A gauge
+below that height reads the hang. **Do:** measure a jump above 50 cm (`MotionProbe::AirborneUnits`); the hang is
+#435.
+
+## 2026-10-13 — A swing peaked at 2x or 3x its speed, a slow hand made a phantom swing, on the simulated headset (#23, #352)
+
+**Symptom:** a 9.4 m/s swing peaked at 18.89 or 28.33; a 1.2 m/s return counted as a swing. **Cause:** a frame
+hitch (here: the 22-26 ms that come with each `Cursor escaped the window` warning in a background run, #198) makes
+the runtime skip one or two display slots; the swing detector's median then moved over two or three slots and
+was divided by one frame's step (#352). **Do:** look for `H ... missed=` lines in `arx-perf.log` at the swing's
+time before suspecting the detector; #409 fixes the divisor.
+
 ## 2026-10-13 — `walk-look.xrs`: the walk left on a busy PC drifts 12.6 units in z (#370)
 
 **Symptom:** `walk-look` failed on CI (run 38339943784, PR #391, nothing related changed) at its first push:

@@ -116,6 +116,15 @@ set(arxtest_TESTCASES
 	tests/vr/HandRigTest.h
 	tests/vr/HandRigTest.cpp
 
+	tests/vr/ArmFitTest.h
+	tests/vr/ArmFitTest.cpp
+
+	tests/vr/PerfStatsTest.h
+	tests/vr/PerfStatsTest.cpp
+
+	tests/vr/PerfWriterTest.h
+	tests/vr/PerfWriterTest.cpp
+
 
 )
 
@@ -136,6 +145,8 @@ set(arxtest_SOURCES
 	src/vr/BodyYaw.cpp
 	src/vr/EyeProjection.cpp
 	src/vr/FramePacing.cpp
+	src/vr/PerfStats.cpp
+	src/vr/PerfWriter.cpp
 	src/vr/VRBindings.cpp
 	src/vr/HeadLean.cpp
 	src/vr/HeadPose.cpp
@@ -160,6 +171,7 @@ set(arxtest_SOURCES
 	src/vr/FingerCurl.cpp
 	src/vr/ArmMesh.cpp
 	src/vr/HandRig.cpp
+	src/vr/ArmFit.cpp
 	src/vr/RuneTrail.cpp
 	src/vr/MeleeSwing.cpp
 

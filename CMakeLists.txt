@@ -1265,6 +1265,7 @@ list(APPEND IO_RESOURCE_SOURCES ${UTIL_MD5_SOURCES})
 
 set(VR_SOURCES
 	src/vr/BindingCapture.cpp
+	src/vr/ArmFit.cpp
 	src/vr/ArmIK.cpp
 	src/vr/ArmMesh.cpp
 	src/vr/ArmRoll.cpp
@@ -1285,9 +1286,13 @@ set(VR_SOURCES
 	src/vr/Locomotion.cpp
 	src/vr/RuneTrail.cpp
 	src/vr/MeleeSwing.cpp
+	src/vr/PerfLog.cpp
+	src/vr/PerfStats.cpp
+	src/vr/PerfWriter.cpp
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
 	src/vr/VRActions.cpp
+	src/vr/VRArms.cpp
 	src/vr/VRBindings.cpp
 	src/vr/VRBody.cpp
 	src/vr/VRRunes.cpp

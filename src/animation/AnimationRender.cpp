@@ -43,6 +43,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "animation/AnimationRender.h"
 
+#include "vr/VRArms.h"
 #include "vr/VRBody.h"
 #include "vr/VRWeapon.h"
 
@@ -1041,6 +1042,11 @@ static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io,
 			continue;
 		}
 
+		// The custom arms (#385.3) are drawn in place of the Arx arms' faces, which stay the posed logical arm
+		if(twoSided && !vr::drawsBodyFace(eobj, i)) {
+			continue;
+		}
+
 		if((!twoSided && CullFace(eobj, face)) || !face.material) {
 			continue;
 		}
@@ -1078,6 +1084,58 @@ static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io,
 	}
 }
 
+/*!
+ * The custom VR arms (#385.3, vr/VRArms.h) in place of the player's Arx arms: skinned once per frame after the
+ * body was posed, lit here with the player's lights and colour, projected for the eye being drawn and put into
+ * the model batch, two-sided like the VR body (D-032, research row F-231)
+ */
+static void Cedric_RenderVRArms(ShaderLight lights[], size_t lightsCount, const ColorMod & colorMod, float invisibility) {
+
+	vr::CustomArmMesh meshes[4];
+	const size_t count = vr::customArmMeshes(meshes);
+
+	// What GetNewVertexList reads of a face: opaque, unless the player is invisible
+	EERIE_FACE face;
+	face.facetype = POLY_DOUBLESIDED;
+
+	static std::vector<ColorRGBA> colors;
+	static std::vector<Vec4f> clip;
+	for(size_t m = 0; m < count; m++) {
+		const vr::CustomArmMesh & mesh = meshes[m];
+		if(!mesh.texture) {
+			continue;
+		}
+		const std::vector<Vec3f> & positions = *mesh.positions;
+		const std::vector<Vec2f> & uvs = *mesh.uvs;
+		const size_t vertices = std::min(positions.size(), std::min(mesh.normals->size(), uvs.size()));
+		colors.resize(vertices);
+		clip.resize(vertices);
+		for(size_t v = 0; v < vertices; v++) {
+			colors[v] = ApplyLight(lights, lightsCount, positions[v], (*mesh.normals)[v], colorMod);
+			clip[v] = worldToClipSpace(positions[v]);
+		}
+		const std::vector<u16> & indices = *mesh.indices;
+		for(size_t i = 0; i + 2 < indices.size(); i += 3) {
+			if(indices[i] >= vertices || indices[i + 1] >= vertices || indices[i + 2] >= vertices) {
+				continue;
+			}
+			float fTransp = 0.f;
+			TexturedVertex * tvList = GetNewVertexList(mesh.texture->m_modelBatch, face, invisibility, fTransp);
+			for(size_t n = 0; n < 3; n++) {
+				const size_t vertex = indices[i + n];
+				tvList[n].p = Vec3f(clip[vertex]);
+				tvList[n].w = clip[vertex].w;
+				tvList[n].uv = uvs[vertex];
+				tvList[n].color = colors[vertex];
+			}
+			if(invisibility > 0.f) {
+				tvList[0].color = tvList[1].color = tvList[2].color = Color::gray(fTransp).toRGB();
+			}
+		}
+	}
+
+}
+
 static void Cedric_AnimateDrawEntityRender(EERIE_3DOBJ * eobj, const Vec3f & pos,
                                            Entity * io, float invisibility) {
 	
@@ -1105,7 +1163,12 @@ static void Cedric_AnimateDrawEntityRender(EERIE_3DOBJ * eobj, const Vec3f & pos
 	Cedric_ApplyLighting(lights, lightsCount, eobj, obj, colorMod);
 	
 	Cedric_RenderObject(eobj, obj, io, pos, invisibility);
-	
+
+	// The VR body's own arms (#385.3): only in the view under a tracked head, never in the book or flat
+	if(io && io == entities.player() && eobj == io->obj && !IN_BOOK_DRAW && vr::hidesHeadOnly() && invisibility < 1.f) {
+		Cedric_RenderVRArms(lights, lightsCount, colorMod, invisibility);
+	}
+
 	// Now we can render Linked Objects
 	for(const EERIE_LINKED & link : eobj->linked) {
 		

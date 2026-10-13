@@ -23,6 +23,7 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
@@ -37,6 +38,7 @@
 #include "cinematic/CinematicController.h"
 #include "core/Application.h"
 #include "core/ArxGame.h"
+#include "core/Config.h"
 #include "core/Core.h"
 #include "core/GameEvent.h"
 #include "core/GameTime.h"
@@ -53,6 +55,7 @@
 #include "game/Spells.h"
 #include "game/effect/Quake.h"
 #include "graphics/Math.h"
+#include "graphics/Raycast.h"
 #include "graphics/Renderer.h"
 #include "graphics/data/Mesh.h"
 #include "graphics/image/Image.h"
@@ -69,18 +72,23 @@
 #include "io/fs/Filesystem.h"
 #include "io/log/LogBackend.h"
 #include "io/log/Logger.h"
+#include "physics/Collisions.h"
 #include "platform/Environment.h"
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
 #include "platform/WindowsUtils.h"
 #endif
 #include "platform/Process.h"
 #include "platform/ProgramOptions.h"
+#include "platform/Thread.h"
 #include "platform/Time.h"
 #include "scene/ChangeLevel.h"
 #include "scene/Interactive.h"
 #include "script/Script.h"
 #include "util/String.h"
+#include "vr/ArmFit.h"
 #include "vr/HeadTracking.h"
+#include "vr/PerfLog.h"
+#include "vr/VRArms.h"
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
@@ -96,6 +104,7 @@
 
 extern bool START_NEW_QUEST;
 extern bool bGCroucheToggle;
+extern long COLLIDED_CLIMB_POLY;
 
 namespace channel {
 
@@ -486,7 +495,7 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 }
 
 //! The test playground's entities (#321.2) tell the channel what they are: their instance scripts set the
-//! text variable pg_role ("npc", "lever_mode", "lever_respawn", scripts/dev/playground/build.mjs)
+//! text variable pg_role ("npc", "lever_mode", "lever_respawn", "lever_arms", scripts/dev/playground/build.mjs)
 Entity * findPlaygroundEntity(std::string_view role) {
 	for(Entity & entity : entities) {
 		if(GETVarValueText(entity.m_variables, "\xA3pg_role") == role) {
@@ -930,6 +939,17 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("shiftX", body.shift.x);
 		json.value("shiftZ", body.shift.z);
 		json.value("facingYaw", body.facingYaw);
+		// the arms drawn in VR (#385.3): cfg.ini vr_arms_model, and whether an Arx arm's faces gave way to a custom arm
+		json.value("armsModel", body.armsModel);
+		json.value("arxArmsHidden", body.arxArmsHidden);
+		{
+			const vr::CustomArmsLoad load = vr::customArmsLoad();
+			json.object("customArms");
+			json.value("tried", load.tried);
+			json.value("loaded", load.loaded);
+			json.value("reason", load.reason);
+			json.end();
+		}
 		for(size_t hand = 0; hand < vr::HandCount; hand++) {
 			const vr::PlayerArmStatus & arm = body.hands[hand];
 			json.object(vr::handName(vr::Hand(hand)));
@@ -987,6 +1007,40 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("wristTwist", arm.wristTwist);
 			json.value("elbowTwist", arm.elbowTwist);
 			json.value("rollOverflow", arm.overflow);
+			// The custom arm drawn on this logical arm (#385.3): the hand's size, where the glove and the sleeve sit,
+			// the bend the sleeve is drawn with and the roll its twist joints carry
+			const vr::CustomArmStatus & custom = vr::customArmStatus(vr::Hand(hand));
+			json.value("handScale", custom.handScale);
+			json.object("custom");
+			json.value("drawn", custom.drawn);
+			json.value("tipLength", custom.tipLength);
+			const struct { const char * name; const Vec3f & point; } customPoints[] = {
+				{ "palm", custom.palm }, { "wrist", custom.wrist }
+			};
+			for(const auto & point : customPoints) {
+				json.object(point.name);
+				json.value("x", point.point.x);
+				json.value("y", point.point.y);
+				json.value("z", point.point.z);
+				json.end();
+			}
+			// its own solve (#385.6): the segments fitted to the player (fitSource height | reach | arx, the reach
+			// measured so far), the stretch fraction in use, the wrist short of the controller, the weapon's elbow drop
+			json.value("upperLength", custom.upperLength);
+			json.value("forearmLength", custom.forearmLength);
+			json.value("fitSource", custom.fitSource);
+			json.value("reach", custom.reach);
+			json.value("stretch", custom.stretch);
+			json.value("error", custom.error);
+			json.value("elbowDrop", custom.elbowDrop);
+			json.value("bend", custom.bend);
+			json.value("drawnBend", custom.drawnBend);
+			json.value("upperRoll", custom.upperRoll);
+			json.value("forearmTwist", custom.forearmTwist);
+			json.value("wristGap", custom.wristGap);
+			json.value("vertices", u64(custom.vertices));
+			json.value("triangles", u64(custom.triangles));
+			json.end();
 			// The fingers (#305): what they follow and how far each segment is bent (degrees)
 			json.object("fingers");
 			json.value("source", arm.fingerSource);
@@ -1014,6 +1068,9 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("upperShare", body.upperShare);
 		json.value("elbowShare", body.elbowShare);
 		json.value("twistOverflow", body.twistOverflow);
+		// the custom arm's tunables in use (cfg.ini vr_arm_max_stretch, vr_arm_weapon_elbow_drop, #385.6)
+		json.value("armMaxStretch", vr::clampArmMaxStretch(config.input.vrArmMaxStretch));
+		json.value("weaponElbowDrop", vr::clampWeaponElbowDrop(config.input.vrArmWeaponElbowDrop));
 		json.end();
 	}
 	// XR_EXT_hand_tracking (#305): whether the runtime gives hand joints and how often it did
@@ -1502,6 +1559,19 @@ std::string execute(std::string_view line) {
 
 	if(word == "mark") {
 		LogInfo << "[mark] " << rest;
+		vr::perf::mark(rest);
+		return std::string();
+	}
+
+	if(word == "stall") {
+		// A forced hitch (#327): the main thread sleeps in this frame, which the performance log must
+		// mark as a hitch caused by the channel
+		long stallMs = 0;
+		if(!parseIndex(rest, stallMs) || stallMs < 1 || stallMs > 5000) {
+			return refuse("stall: expected milliseconds 1..5000, got \"" + std::string(rest) + "\"");
+		}
+		LogInfo << "[channel] stalling the frame for " << stallMs << " ms";
+		Thread::sleep(PlatformDuration(std::chrono::microseconds(stallMs * 1000)));
 		return std::string();
 	}
 
@@ -1614,6 +1684,29 @@ std::string execute(std::string_view line) {
 		} else {
 			return refuse("comfort: expected auto, on or off, got \"" + std::string(rest) + "\"");
 		}
+		return std::string();
+	}
+
+	if(word == "arms") {
+		// The arms drawn on the player in VR (#385.3): arms custom|arx switches the model live, arms scale <factor>
+		// sets the custom hands' size (vr_hand_scale); both are saved to cfg.ini
+		std::string_view args;
+		std::string_view what = firstWord(rest, args);
+		vr::ArmsModel model;
+		if(what == "scale") {
+			float scale = 0.f;
+			std::istringstream iss{std::string(args)};
+			if(!(iss >> scale) || scale < vr::MinHandScale || scale > vr::MaxHandScale) {
+				return refuse("arms scale: expected a factor from " + std::to_string(vr::MinHandScale) + " to "
+				              + std::to_string(vr::MaxHandScale) + ", got \"" + std::string(args) + "\"");
+			}
+			vr::setHandScale(scale, "the channel");
+			return std::string();
+		}
+		if(!args.empty() || !vr::parseArmsModelStrict(what, model)) {
+			return refuse("arms: expected custom, arx or scale <factor>, got \"" + std::string(rest) + "\"");
+		}
+		vr::setArmsModel(model, "the channel");
 		return std::string();
 	}
 
@@ -2052,6 +2145,8 @@ std::string execute(std::string_view line) {
 			if((entity.ioflags & IO_NPC) && entity._npcdata) {
 				oss << " life=" << entity._npcdata->lifePool.current;
 			}
+			// What the hand reticles and the mouse can hover (its script switches it, #210)
+			oss << " interactive=" << ((entity.gameFlags & GFLAG_INTERACTIVITY) ? 1 : 0);
 			oss << '\n';
 			count++;
 		}
@@ -2106,6 +2201,126 @@ std::string execute(std::string_view line) {
 		return std::string();
 	}
 
+	if(word == "approach") {
+		// approach <entity> [<distance>]: the player to a spot where the hand reticles reach an entity, facing it -
+		// found by number, not by trying spots in launches (#210, TRAPS.md). Every 15 degrees on rings around the
+		// entity: a floor near the entity's own, room for the player's cylinder there, the eye within the pick's
+		// reach (350 units of the entity's position, VRReticle.cpp) and nothing of the level before the entity
+		// on the rays from the eye and from both simulated hands to the middle of its box. The spot nearest to
+		// <distance> along the floor (default 170) wins. Far from the player an entity is not updated (its box,
+		// its faces): the first call can only test the level, a second one from there tests the faces too
+		if(currentState() != GameState::Gameplay || !entities.player()) {
+			return refuse(std::string("approach: needs a level on screen (state ") + gameStateName(currentState()) + ")");
+		}
+		std::istringstream iss{std::string(rest)};
+		std::string id;
+		float wanted = 170.f;
+		if(!(iss >> id)) {
+			return refuse("approach: expected <entity> [<distance>], got \"" + std::string(rest) + "\"");
+		}
+		if(!iss.eof() && !(iss >> wanted)) {
+			return refuse("approach: expected <entity> [<distance>], got \"" + std::string(rest) + "\"");
+		}
+		Entity * target = entities.getById(id);
+		if(!target || target == entities.player()) {
+			return refuse("approach: unknown entity \"" + id + "\"");
+		}
+		const Vec3f base = target->pos;
+		const EERIE_3D_BBOX & box = target->bbox3D;
+		const Vec3f middle = (box.min + box.max) * 0.5f;
+		// Updated: in the treat zone around the player, and its box drawn where the entity is
+		const bool updated = (target->gameFlags & GFLAG_ISINTREATZONE) && box.max.x > box.min.x
+		                     && closerThan(Vec2f(middle.x, middle.z), Vec2f(base.x, base.z), 300.f);
+		const Vec3f aim = updated ? middle : base + Vec3f(0.f, -80.f, 0.f);
+		const float reach = 350.f - 20.f;
+		// Whether nothing of the level is before the entity on the ray from origin to the aim point
+		auto sees = [&](const Vec3f & origin) {
+			const Vec3f direction = glm::normalize(aim - origin);
+			if(!updated) {
+				// Short of the position: a lever's is at the wall it is fixed to
+				return !raycastScene(origin, aim - direction * 30.f, POLY_NOCOL | POLY_WATER);
+			}
+			const Vec3f end = origin + direction * (glm::distance(origin, aim) + 100.f);
+			const EntityRaycastResult first = raycastEntities(origin, end, POLY_TRANS, RaycastIgnorePlayer);
+			if(first.entity != target) {
+				return false;
+			}
+			const RaycastResult scene = raycastScene(origin, end, POLY_NOCOL | POLY_WATER);
+			return !scene || glm::distance(origin, scene.pos) >= glm::distance(origin, first.pos);
+		};
+		long climb = COLLIDED_CLIMB_POLY;
+		struct Rejects {
+			int floor = 0;
+			int room = 0;
+			int reach = 0;
+			int sight = 0;
+		} rejects;
+		bool found = false;
+		Vec3f best(0.f);
+		float bestScore = 0.f;
+		int tested = 0;
+		for(float radius = 80.f; radius <= 320.f; radius += 20.f) {
+			for(float degrees = 0.f; degrees < 360.f; degrees += 15.f) {
+				tested++;
+				const Vec3f around = base + angleToVectorXZ(degrees) * radius;
+				float floorY = 0.f;
+				if(!CheckInPoly(Vec3f(around.x, base.y - 120.f, around.z), &floorY)
+				   || std::abs(floorY - base.y) > 100.f) {
+					rejects.floor++;
+					continue;
+				}
+				const Vec3f feet(around.x, floorY, around.z);
+				const Cylinder body(feet, ARXCHARACTER::baseRadius(), ARXCHARACTER::baseHeight());
+				if(CheckAnythingInCylinder(body, entities.player(), CFLAG_JUST_TEST | CFLAG_PLAYER) < -20.f) {
+					rejects.room++;
+					continue;
+				}
+				const Vec3f eye = feet + ARXCHARACTER::baseOffset();
+				if(!closerThan(eye, base, reach)) {
+					rejects.reach++;
+					continue;
+				}
+				// The simulated hands (SimRig: 20 cm aside, 45 below the eyes, 35 ahead), facing the aim point
+				Vec3f ahead = aim - eye;
+				ahead.y = 0.f;
+				ahead = glm::normalize(ahead);
+				const Vec3f side(-ahead.z, 0.f, ahead.x);
+				const Vec3f hand = eye + ahead * 35.f + Vec3f(0.f, 45.f, 0.f);
+				if(!sees(eye) || !sees(hand + side * 20.f) || !sees(hand - side * 20.f)) {
+					rejects.sight++;
+					continue;
+				}
+				const float score = std::abs(radius - wanted);
+				if(!found || score < bestScore) {
+					found = true;
+					best = eye;
+					bestScore = score;
+				}
+			}
+		}
+		COLLIDED_CLIMB_POLY = climb;
+		if(!found) {
+			std::ostringstream why;
+			why << "approach: no spot in reach of " << id << " among " << tested << " (no floor " << rejects.floor
+			    << ", no room " << rejects.room << ", out of reach " << rejects.reach << ", no sight " << rejects.sight
+			    << (updated ? "" : "; the entity is not updated here - come closer first") << ")";
+			return refuse(why.str());
+		}
+		// The player's teleport takes the feet (player.pos, the eye, is 170 units above them - TRAPS.md)
+		ARX_INTERACTIVE_Teleport(entities.player(), best - ARXCHARACTER::baseOffset());
+		const Anglef angle = vectorToAngle(glm::normalize(aim - best));
+		player.desiredangle.setYaw(angle.getYaw());
+		player.angle.setYaw(angle.getYaw());
+		player.desiredangle.setPitch(angle.getPitch());
+		player.angle.setPitch(angle.getPitch());
+		LogInfo << "[channel] approach " << id << ": the eye to " << best.x << ' ' << best.y << ' ' << best.z
+		        << " (yaw " << angle.getYaw() << ", pitch " << angle.getPitch() << ", " << glm::distance(best, base)
+		        << " from its position), " << (updated ? "the entity's faces seen" : "the level only: not updated there")
+		        << "; of " << tested << " spots: no floor " << rejects.floor << ", no room " << rejects.room
+		        << ", out of reach " << rejects.reach << ", no sight " << rejects.sight;
+		return std::string();
+	}
+
 	if(word == "place") {
 		// place <entity> <ahead> [<right>]: an entity on the floor ahead of the player (units along the player's
 		// heading, and to its right), facing the player - a target in reach for melee checks (#39)
@@ -2135,7 +2350,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "playground") {
-		// playground pull mode|respawn | kill | place <ahead> [<right>] | hit <n>: the test playground's NPC and
+		// playground pull mode|respawn|arms | kill | place <ahead> [<right>] | hit <n>: the test playground's NPC and
 		// levers (#321.2). pull sends the lever what a hand pull sends it (Interface.cpp: SM_ACTION from the player)
 		if(!isPlaygroundArea(g_currentArea) || !entities.player()) {
 			return refuse("playground: needs the playground level (area 30) on screen");
@@ -2145,9 +2360,9 @@ std::string execute(std::string_view line) {
 		Entity * npc = findPlaygroundEntity("npc");
 		if(what == "pull") {
 			std::string role = "lever_" + std::string(args);
-			Entity * lever = (args == "mode" || args == "respawn") ? findPlaygroundEntity(role) : nullptr;
+			Entity * lever = (args == "mode" || args == "respawn" || args == "arms") ? findPlaygroundEntity(role) : nullptr;
 			if(!lever) {
-				return refuse("playground pull: expected mode or respawn, got \"" + std::string(args) + "\"");
+				return refuse("playground pull: expected mode, respawn or arms, got \"" + std::string(args) + "\"");
 			}
 			SendIOScriptEvent(entities.player(), lever, SM_ACTION);
 			LogInfo << "[channel] playground: " << lever->idString() << " pulled (" << args << ")";
@@ -2198,6 +2413,7 @@ std::string execute(std::string_view line) {
 			return refuse("loadlevel: needs a running game (start with --loadlevel N or use loadslot)");
 		}
 		LogInfo << "[channel] changing to level " << area << (target.empty() ? "" : " at ") << target;
+		vr::perf::Scope perfLoad(vr::PerfPhase::Load);
 		ARX_CHANGELEVEL_Change(AreaId(u32(area)), target, 0.f);
 		return std::string();
 	}

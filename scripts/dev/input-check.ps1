@@ -45,6 +45,8 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'test-lib.ps1')
 
 $commands = @()
+# B holds the radial menus since #376 (D-042): the book event goes back on left B for this check
+$commands += @('vr-input bind radial_left none', 'vr-input bind book left.b')
 if ($Unbind) { $commands += 'vr-input bind jump none' }
 $commands += @(
 	'vr-input tap right.a',

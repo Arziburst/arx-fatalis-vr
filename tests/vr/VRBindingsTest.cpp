@@ -220,13 +220,17 @@ void VRBindingsTest::layoutCoverageTest() {
 
 void VRBindingsTest::defaultLayoutsTest() {
 
-	// Every event of the D-019 table on the Index and the Touch (magic mode since #43)
+	// Every event of the D-019 table on the Index and the Touch (magic mode since #43), except the inventory and
+	// the book: since D-042 (#376) they are items of the radial menus on B, with no control of their own
 	for(ControllerType type : { ControllerType::Index, ControllerType::Touch }) {
 		const ControlLayout layout = defaultLayout(type);
 		for(size_t i = 0; i < EventCount; i++) {
+			const bool inRadialMenu = (Event(i) == Event::Inventory || Event(i) == Event::Book);
 			CPPUNIT_ASSERT_MESSAGE(std::string(controllerTypeName(type)) + ": " + eventName(Event(i)),
-			                       layout.bindings[i].isBound());
+			                       layout.bindings[i].isBound() != inRadialMenu);
 		}
+		CPPUNIT_ASSERT_EQUAL(std::string("left.b"), formatBinding(layout[Event::RadialLeft]));
+		CPPUNIT_ASSERT_EQUAL(std::string("right.b"), formatBinding(layout[Event::RadialRight]));
 	}
 
 	// The Touch is the Index with the game menu on its menu button and magic mode on the X it leaves free

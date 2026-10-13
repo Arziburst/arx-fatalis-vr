@@ -33,6 +33,9 @@ const char * gameActionName(GameAction action) {
 		case GameAction::MagicMode: return "magic_mode";
 		case GameAction::Stealth: return "stealth";
 		case GameAction::Use: return "use";
+		case GameAction::QuickSave: return "quick_save";
+		case GameAction::QuickLoad: return "quick_load";
+		case GameAction::CancelSpell: return "cancel_spell";
 		case GameAction::Count: break;
 	}
 	return "?";

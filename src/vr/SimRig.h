@@ -75,6 +75,12 @@
  *  - \c mark \c <text>: a line in arx.log; \c quit: ask the game to quit
  *  - \c fault \c swap-eyes \c on|off: the compositor shows each eye the other eye's image - the
  *    bug class the two-eyes check (F-06) must catch
+ *  - \c session \c exiting: the runtime ends the session on its own (stopping, then exiting after
+ *    xrEndSession - SteamVR quitting the app); \c session \c loss-pending: the session is about to be
+ *    lost (the headset or the runtime gone); \c runtime \c lost: the runtime shuts down (instance loss
+ *    pending). The game goes on in flat mode and names the cause in arx.log (#146)
+ *  - \c fault \c exit|exit-process \c <code>: end the process the way #146 ended - std::exit, or
+ *    ExitProcess as a library does (std::_Exit off Windows) - to check that the exit hook reports it
  *  - \c layers \c on|off: shots also save each eye's projection layer without the quad
  *    (\c <name>-left-layer.bmp, \c -right-layer.bmp): what the game drew into the eyes themselves (#72)
  */
@@ -153,6 +159,21 @@ struct SimRig {
 	SimRig();
 };
 
+//! How the simulated runtime ends the session (#146)
+enum class SimSessionEnd {
+	None,
+	Exiting,     //!< stopping, then exiting: the runtime quits the app
+	LossPending, //!< the session is about to be lost
+	RuntimeLost, //!< the runtime shuts down: instance loss pending
+};
+
+//! How \c fault \c exit ends the process (#146)
+enum class SimExit {
+	None,
+	Exit,        //!< std::exit: the C runtime's atexit handlers run
+	ExitProcess, //!< ExitProcess (std::_Exit off Windows): what a library calls
+};
+
 //! What a command asks of the simulated runtime beyond the rig
 struct SimRequests {
 	std::vector<std::string> shots;
@@ -160,8 +181,12 @@ struct SimRequests {
 	bool quit = false;
 	bool focusChanged = false;
 	bool profileChanged = false;
+	SimSessionEnd sessionEnd = SimSessionEnd::None;
+	SimExit exit = SimExit::None;
+	int exitCode = 0;
 	bool empty() const {
-		return shots.empty() && marks.empty() && !quit && !focusChanged && !profileChanged;
+		return shots.empty() && marks.empty() && !quit && !focusChanged && !profileChanged
+		       && sessionEnd == SimSessionEnd::None && exit == SimExit::None;
 	}
 };
 

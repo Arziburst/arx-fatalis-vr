@@ -8,6 +8,60 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — The game vanishes with exit code -1: no crash report, no "Clean shutdown", nothing in arx.log (#146)
+
+**Symptom:** a VR self-test with SteamVR running died 3-4 s after `xrCreateSession` (2 of 15 runs, 2026-10-09) with
+exit code -1, no crash report, no `Clean shutdown` and nothing in `arx.log` about why. SteamVR's `xrclient_arx.txt`
+logged `VR_Shutdown called` before the disconnect, and `vrserver.txt` no `Sending Quit event` to the game.
+**Cause:** `exit()` or `ExitProcess(-1)` inside the process - the client's DLL detach ran, so it was not a
+`TerminateProcess` from outside - by a module that is not ours: on Windows `main` returns 0 or 1, the crash handler
+ends with 1, and no OpenXR failure ends the process (every failed call and every session end - stopping, exiting,
+loss pending, instance loss - goes on in flat mode; read in `VRSystem.cpp`). Which module was not provable: the
+failing runs' logs were overwritten (before #129), and the simulated headset cannot reproduce SteamVR. The suspect
+is SteamVR's client: run 1 was the first launch right after SteamVR started (SteamVR Home was being asked to quit),
+and at the time the session sat in `ready` without `xrBeginSession` (#20 runs the frame loop since), which a
+runtime may treat as a hung app. An `ExitProcess` also skips the game's `atexit` handlers and loses up to a second
+of buffered info lines - which is why nothing was in the log.
+**Do:** read the `[E] ExitTrace:0` lines at the end of `arx.log` or `stderr.txt` ([The exit hook](TESTING.md#the-exit-hook-146)):
+the way out, the exit code, the last quit request or VR session end before it, and the stack - the module after
+`KERNEL32.DLL` / `ucrtbase.dll` called it. None of those lines and no crash report = killed from outside. The hunt
+with SteamVR is the owner's: `smoke-test.ps1 -Vr -Repeat 10 -Seconds 3 -EvidenceDir <dir>` keeps every failed run's
+logs, SteamVR's included.
+
+## 2026-10-13 — An executable's TLS callback never sees the "process is terminating" flag (#146)
+
+**Symptom:** the exit hook's TLS callback was in `arx.exe` (`dumpbin /tls` listed it) but wrote nothing when
+`ExitProcess` ended the game.
+**Cause:** it returned early on `reserved == nullptr`, copying `DllMain`'s rule (`lpvReserved != NULL` = the process
+terminates). The loader calls TLS callbacks with a null reserved on process detach, always.
+**Do:** in a TLS callback of the executable treat every `DLL_PROCESS_DETACH` as the end of the process - an `.exe`
+is never unloaded. Check such a hook with a deliberate exit (`exit-trace-check.ps1`), never by reading the code.
+
+## 2026-10-13 — `setpos` y is the feet, not the eye: the player stood 170 units above the floor (#210)
+
+**Symptom:** a save placed in reach of `lever_0012` loaded in `--vr-sim` with the hand reticle's ray ending on the
+lever's box, yet `vr.reticle.right.under` stayed `none`; the hand rays started at y 2810 over a floor at 3105
+(the eye 340 above it), and `entities` listed the player entity at y 2935 — its position is its feet.
+**Cause:** the channel's `setpos` (and the new `approach` at first) call `ARX_INTERACTIVE_Teleport(player, p)`,
+which sets `player.pos = p + baseOffset()`: `p` is the **feet**, the eye ends 170 units higher. Everything
+written before took setpos's y for the eye (the floor minus 170), so eye coordinates put the feet in the air: the eye
+340 units above the floor, out of the pick's reach of a floor object (350 units from the eye), on wall tops
+(what `hand-reticle.xrs` works around for `mvp-items`). The player does not fall back down by itself.
+**Do:** `setpos <x> <floor y> <z>` for a player standing on that floor; check `player.y` (the eye) and
+`camera.eyeAboveFeet` in the status. For a spot at an object use `approach <entity>` (TESTING.md), which finds
+the floor itself. `mvp-items` and `mvp-goblin-fight` still stand 170 up until #417 regenerates them.
+
+## 2026-10-13 — A load with a weapon in the IK hand crashed at `VRWeapon.cpp:296` (#210)
+
+**Symptom:** `make-test-saves.ps1 -VrSim idle` crashed (ACCESS_VIOLATION, `VRWeapon.cpp:296`) at its first
+channel `loadslot`, with the sword in the right hand; a launch with `--loadslot 0` never crashed.
+**Cause:** `vr::heldWeaponStatus()` (the status writer, every frame) and `placeHeldWeapon()` used the weapon
+pointer kept from the last `updateHeldWeapon()`; a load frees the entities before the next update, so the
+pointer dangled. The radial menu's quick load in a real game takes the same path.
+**Do:** never keep an `Entity *` across frames without resolving it again - `heldEntity()` checks it against
+the player's weapon slot. Regression check: the end of `reach-lever.xrs` (`loadslot 0` with the sword held,
+then `vr.weapon.place eq hand`), and every `make-test-saves.ps1 -VrSim` run reloads all its saves.
+
 ## 2026-10-12 — An instant `vr-sim hand ... pos` set-up move counts as a melee swing on a busy runner (#349)
 
 **Symptom:** `melee-swing.xrs` failed on CI at its first `@assert vr.melee.swings eq 0` for runs in a row with only
@@ -555,13 +609,18 @@ first (see `script.error` in `ScriptEvent.cpp`, #130), or print through `operato
 
 ## 2026-10-09 — A lever, a chest, a door cannot be found by coordinates (#70)
 
+*Resolved (#210):* `approach <entity>` finds the spot in the game (TESTING.md); cause (2) below is wrong -
+`setpos` takes the **feet** (the 2026-10-13 entry), so the eye was 340 units above the floor, which explains
+the wall tops and the picks that found nothing.
+
 **Symptoms:** `setpos` next to `lever_0012` / `chest_metal_0052` and a screenshot shows a bare wall, a
 black screen, the player's own feet, or a goblin; the entity is nowhere in the picture. About 6 of
 the 13 launches of #70 went into it before this was written down.
 **Causes, all measured:** (1) an entity's `pos` — from `entities` — is its **floor** position, so
 looking at "the entity" from 2 m with pitch 0 aims 1.7 m above it; `lookat` now aims 40 units above the
-floor and sets the pitch. (2) `setpos` / `player.pos` is the **eye**: `y` = floor − 170; a floor-level
-`y` puts the eye in the floor (black or a wall's back) until gravity pulls the player up. (3) The
+floor and sets the pitch. (2) *Wrong, see the 2026-10-13 entry "`setpos` y is the feet":* this entry
+first took `setpos`'s `y` for the eye and placed the player with eye coordinates, which put the feet 170
+units above the floor - the eye 340 above it, on wall tops, out of the pick's reach. (3) The
 level is narrow corridors and cells: many points 1.5-2.5 m away on a ring around an object are
 inside a wall or in another room (black or wall-only screenshots in the contact sheets of the 4
 compass points around each of 7 objects); which ones are valid cannot be told without a picture. (4) The pick that decides what a click acts on is not exposed: `FlyingOverIO` is cleared in

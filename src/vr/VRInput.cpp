@@ -82,6 +82,8 @@ struct InputState {
 
 	//! The radial menu's game menu item holds Escape for this many more updates (#376)
 	u32 radialEscapeUpdates = 0;
+	//! A dragged item went into a radial quick slot: the click stays up until the triggers are let go (#376)
+	bool radialClickReleased = false;
 
 };
 
@@ -380,6 +382,14 @@ void updateInput() {
 	if(g_input.radialEscapeUpdates > 0) {
 		game.escape = true;
 		g_input.radialEscapeUpdates--;
+	}
+	if(radial.releaseClick) {
+		g_input.radialClickReleased = true;
+	}
+	if(g_input.radialClickReleased) {
+		// Up for the engine until the triggers are let go: the hand that dragged into a slot picks nothing up
+		g_input.radialClickReleased = game.click;
+		game.click = false;
 	}
 	applyToEngine(game);
 

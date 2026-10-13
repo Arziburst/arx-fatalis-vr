@@ -43,11 +43,11 @@
 #include "graphics/Vertex.h"
 #include "graphics/data/TextureContainer.h"
 #include "graphics/font/Font.h"
-#include "graphics/font/FontCache.h"
 #include "gui/Dragging.h"
 #include "gui/Interface.h"
 #include "gui/Menu.h"
 #include "gui/Note.h"
+#include "gui/Text.h"
 #include "gui/book/Book.h"
 #include "io/log/Logger.h"
 #include "script/Script.h"
@@ -63,9 +63,6 @@ namespace {
 
 //! The menu image: square, the ring's middle in its middle (RadialParams::imageExtent wide)
 const s32 RadialImagePixels = 512;
-//! The label in the middle and the count on a slot, pixels of the image
-const unsigned LabelFontPixels = 24;
-const unsigned CountFontPixels = 18;
 //! A torch lit by a menu's slot belongs to that hand once the engine lights it, within this many frames
 const u32 TorchWaitFrames = 90;
 
@@ -90,9 +87,6 @@ struct RadialState {
 		std::string className;
 		u32 frames = 0;
 	} torch;
-	Font * labelFont = nullptr;
-	Font * countFont = nullptr;
-	bool fontFailed = false;
 };
 
 RadialState g_radial;
@@ -104,7 +98,7 @@ Event radialEvent(Hand hand) {
 //! Why a menu cannot be open now, or nullptr
 const char * closedReason(Hand hand) {
 	if(!entities.player()) {
-		return "no player";
+		return "no_player";
 	}
 	if(ARXmenu.mode() != Mode_InGame) {
 		return "menu";
@@ -113,10 +107,10 @@ const char * closedReason(Hand hand) {
 		return "cinematic";
 	}
 	if(!frameViews().valid) {
-		return "no head";
+		return "no_head";
 	}
 	if(!frameHands().tracked[size_t(hand)]) {
-		return "hand not tracked";
+		return "hand_not_tracked";
 	}
 	return nullptr;
 }
@@ -174,7 +168,7 @@ void putTorchOut(Entity * torch) {
 }
 
 //! A quick slot released on: fill it with a dragged item, or use what it holds - for this hand
-std::string runQuickSlot(Hand hand, u8 slot) {
+std::string runQuickSlot(Hand hand, u8 slot, RadialRequests & requests) {
 
 	QuickSlotSet slots = quickSlots(hand);
 	const std::string slotName = "slot" + std::to_string(int(slot) + 1);
@@ -182,32 +176,34 @@ std::string runQuickSlot(Hand hand, u8 slot) {
 	if(Entity * dragged = g_draggedEntity; dragged && (dragged->ioflags & IO_ITEM)) {
 		slots[slot] = dragged->className();
 		saveQuickSlots(hand, slots);
-		// The item itself goes back where it came from: the slot names its kind, not this one
+		// The item itself goes back where it came from: the slot names its kind, not this one. The trigger
+		// that dragged it is still held: the engine must not see it as a press on whatever is under the hand
 		const InventoryPos from = g_draggedItemPreviousPosition;
 		setDraggedEntity(nullptr);
 		const bool inBag = giveToPlayer(dragged, from);
+		requests.releaseClick = true;
 		gameevent::Event("vr.radial.slot")("hand", handName(hand))("slot", slotName)("item", slots[slot])
 			("back", inBag ? "inventory" : "dropped");
-		return "slot filled";
+		return "slot_filled";
 	}
 
 	const std::string & className = slots[slot];
 	if(className.empty()) {
-		return "empty slot";
+		return "empty_slot";
 	}
 
 	if(Entity * torch = player.torch; torch && torch->className() == className) {
 		putTorchOut(torch);
 		g_radial.status.torchHand = "none";
-		gameevent::Event("vr.radial.use")("hand", handName(hand))("slot", slotName)("item", className)("result", "torch out");
-		return "torch out";
+		gameevent::Event("vr.radial.use")("hand", handName(hand))("slot", slotName)("item", className)("result", "torch_out");
+		return "torch_out";
 	}
 
 	const SlotItem found = findInInventory(className);
 	if(!found.item) {
 		gameevent::Event("vr.radial.use")("hand", handName(hand))("slot", slotName)("item", className)
-			("result", "nothing left");
-		return "nothing left";
+			("result", "nothing_left");
+		return "nothing_left";
 	}
 
 	useInventoryItemWithLowestDurability(className);
@@ -235,7 +231,7 @@ std::string runChoice(Hand hand, const RadialChoice & choice, RadialRequests & r
 			return "inventory";
 		}
 		case RadialItem::QuickSlot: {
-			return runQuickSlot(hand, choice.slot);
+			return runQuickSlot(hand, choice.slot, requests);
 		}
 		case RadialItem::GameMenu: {
 			// Escape closes an open book or note first: the menu item opens the menu itself
@@ -244,7 +240,7 @@ std::string runChoice(Hand hand, const RadialChoice & choice, RadialRequests & r
 				ARX_INTERFACE_NoteClose();
 			}
 			requests.gameMenu = true;
-			return "game menu";
+			return "game_menu";
 		}
 		case RadialItem::Character: {
 			openBookPage(BOOKMODE_STATS);
@@ -252,7 +248,7 @@ std::string runChoice(Hand hand, const RadialChoice & choice, RadialRequests & r
 		}
 		case RadialItem::Spells: {
 			openBookPage(BOOKMODE_SPELLS);
-			return (player.Interface & INTER_PLAYERBOOK) ? "book" : "no spells";
+			return (player.Interface & INTER_PLAYERBOOK) ? "book" : "no_spells";
 		}
 		case RadialItem::Map: {
 			openBookPage(BOOKMODE_MINIMAP);
@@ -264,11 +260,11 @@ std::string runChoice(Hand hand, const RadialChoice & choice, RadialRequests & r
 		}
 		case RadialItem::QuickSave: {
 			requests.pulses[size_t(GameAction::QuickSave)] = true;
-			return "quick save";
+			return "quick_save";
 		}
 		case RadialItem::QuickLoad: {
 			requests.pulses[size_t(GameAction::QuickLoad)] = true;
-			return "quick load";
+			return "quick_load";
 		}
 		case RadialItem::Recenter: {
 			resetHeadReference("radial");
@@ -276,7 +272,7 @@ std::string runChoice(Hand hand, const RadialChoice & choice, RadialRequests & r
 		}
 		case RadialItem::CancelSpell: {
 			requests.pulses[size_t(GameAction::CancelSpell)] = true;
-			return "cancel spell";
+			return "cancel_spell";
 		}
 	}
 	return "none";
@@ -353,7 +349,7 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 		}
 
 		if(blocked || reason) {
-			closeMenu(hand, blocked ? "controls taken" : reason);
+			closeMenu(hand, blocked ? "controls_taken" : reason);
 			continue;
 		}
 
@@ -622,31 +618,43 @@ void drawItemIcon(RadialItem item, const Vec2f & center, float radius, const Col
 	}
 }
 
-bool loadFonts() {
-	if(g_radial.labelFont && g_radial.countFont) {
-		return true;
+/*
+ * The game's own fonts, in the font of its language (item names are localised): the menu's controls font
+ * for the name, the in-game font for a count. Not fonts of our own - the font cache must have every font
+ * released before it shuts down, and the game's fonts follow a change of the language
+ */
+//! The name of a fixed item in the game's language where the game names the same thing (its key bindings)
+std::string itemLabel(RadialItem item) {
+	const char * key = nullptr;
+	switch(item) {
+		case RadialItem::Inventory: key = "system_menus_options_input_customize_controls_inventory"; break;
+		case RadialItem::Character: key = "system_menus_options_input_customize_controls_bookcharsheet"; break;
+		case RadialItem::Spells: key = "system_menus_options_input_customize_controls_bookspell"; break;
+		case RadialItem::Map: key = "system_menus_options_input_customize_controls_bookmap"; break;
+		case RadialItem::Quests: key = "system_menus_options_input_customize_controls_bookquest"; break;
+		case RadialItem::QuickSave: key = "system_menus_options_input_customize_controls_quicksave"; break;
+		case RadialItem::QuickLoad: key = "system_menus_options_input_customize_controls_quickload"; break;
+		case RadialItem::CancelSpell: key = "system_menus_options_input_customize_controls_cancelcurrentspell"; break;
+		default: break;
 	}
-	if(g_radial.fontFailed) {
-		return false;
-	}
-	const res::path file = "misc/arx_default.ttf";
-	g_radial.labelFont = FontCache::getFont(file, LabelFontPixels);
-	g_radial.countFont = FontCache::getFont(file, CountFontPixels);
-	if(!g_radial.labelFont || !g_radial.countFont) {
-		g_radial.fontFailed = true;
-		LogWarning << "[vr] radial menu: could not load " << file << ", the menus show no names";
-		return false;
-	}
-	return true;
+	return std::string(key ? getLocalised(key, radialItemLabel(item)) : std::string_view(radialItemLabel(item)));
+}
+
+Font * labelFont() {
+	return hFontControls;
+}
+
+Font * countFont() {
+	return hFontInGame;
 }
 
 //! The name of the item under the hand, in one or two lines over a dark disc in the ring's middle
 void drawLabel(const Canvas & canvas, const std::string & text) {
 
-	if(text.empty() || !loadFonts()) {
+	Font * font = labelFont();
+	if(text.empty() || !font) {
 		return;
 	}
-	Font * font = g_radial.labelFont;
 
 	std::vector<std::string> lines = { text };
 	const float maxWidth = 2.f * g_radial.params.holeRadius * 1.55f * canvas.scale;
@@ -713,7 +721,7 @@ void drawMenu(Hand hand) {
 		if(choice.item == RadialItem::Inventory) {
 			drawItemIcon(RadialItem::Inventory, iconCenter, iconRadius, IconColor);
 			if(lit) {
-				label = radialItemLabel(RadialItem::Inventory);
+				label = itemLabel(RadialItem::Inventory);
 			}
 			continue;
 		}
@@ -726,11 +734,11 @@ void drawMenu(Hand hand) {
 			const float size = iconRadius * 2.4f;
 			const Rectf rect(iconCenter - Vec2f(size * 0.5f), size, size);
 			EERIEDrawBitmap(rect, 0.f, shown->m_icon, Color::white);
-			if(found.count > 1 && loadFonts()) {
+			if(Font * font = countFont(); font && found.count > 1) {
 				const std::string count = std::to_string(found.count);
-				const s32 width = g_radial.countFont->getTextSize(count).advance();
-				g_radial.countFont->draw(Vec2i(s32(rect.right) - width / 2, s32(rect.bottom) - s32(CountFontPixels) / 2),
-				                         count, Color::white);
+				const s32 width = font->getTextSize(count).advance();
+				font->draw(Vec2i(s32(rect.right) - width / 2, s32(rect.bottom) - font->getLineHeight() / 2), count,
+				           Color::white);
 			}
 		} else {
 			drawItemIcon(RadialItem::QuickSlot, iconCenter, iconRadius * (className.empty() ? 0.8f : 1.f), DimIconColor);
@@ -760,7 +768,7 @@ void drawMenu(Hand hand) {
 			fillSector(canvas, params.halfInnerRadius, params.halfOuterRadius, from, to, lit ? HoverColor : SegmentColor);
 			if(lit) {
 				fillSector(canvas, params.halfOuterRadius + 0.003f, params.halfOuterRadius + 0.009f, from, to, MarkColor);
-				label = radialItemLabel(item);
+				label = itemLabel(item);
 			}
 			drawItemIcon(item, canvas.polar(center, iconMiddle), iconRadius * 0.95f, IconColor);
 		}

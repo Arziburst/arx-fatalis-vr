@@ -1,0 +1,306 @@
+# The radial menus on B (#376, D-042) in the test playground, on the simulated Index controllers: each hand's
+# menu opens while B is held and runs the item under the hand when B is let go; both at once; the inventory
+# on top; the half-ring's game menu, book pages, quick save / load, recenter and cancel spell; each hand's own
+# quick slots filled by dragging an item from the bag onto them and used from that hand (a potion drunk, a
+# torch lit in that hand), kept by a save and a load; the game time runs while a menu is open.
+# The hands are moved onto an item by `vr-radial point <hand> <item>` (the simulated hand's grip to that
+# item's middle; through the half-ring when it is there), B is `vr-input down|up <hand>.b`.
+# The shots still-a / still-b / yaw25 of an open menu are the two-eyes check's: after the run
+#   .\scripts\dev\eye-check.ps1 -StatusFile <test dir>\status.json
+#   .\scripts\dev\smoke-test.ps1 -Playground -VrSim idle -Sequence radial-menu
+@sim idle
+@playground
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert area eq 30
+
+# The layout (D-042): B is each hand's radial menu, the inventory and the book have no button of their own
+@assert vr.input.layout.radial_left eq left.b
+@assert vr.input.layout.radial_right eq right.b
+@assert vr.input.layout.inventory eq none
+@assert vr.input.layout.book eq none
+
+# The hands before the chest, where a player holds them (the idle rig holds them low, out of the view)
+vr-sim hand right pos 0.12 -0.2 -0.38; vr-sim hand left pos -0.12 -0.2 -0.38
+@frames 10
+@shot closed
+@remember overlay0 vr.sim.shots.closed.left.overlayPixels
+
+# 1. The right menu: open while B is held, drawn, at the hand; let go in the middle runs nothing
+vr-input down right.b
+@frames 5
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.hovered eq none
+@assert vr.radial.right.shown eq true
+@assert vr.radial.right.refused eq none
+@assert vr.radial.left.open eq false
+vr-input up right.b
+@frames 3
+@assert vr.radial.right.open eq false
+@assert vr.radial.right.chosen eq none
+@assert vr.radial.right.result eq none
+
+# 2. The time runs while a menu is open
+vr-input down left.b
+@frames 3
+@assert vr.radial.left.open eq true
+@remember t0 gameTimeMs
+@wait 1500
+@assert paused eq false
+@assert gameTimeMs gt {t0+1000}
+
+# 3. Both menus at once, each following its own hand
+vr-input down right.b
+@frames 3
+@assert vr.radial.left.open eq true
+@assert vr.radial.right.open eq true
+vr-radial point left slot6; vr-radial point right slot1
+@frames 5
+@assert vr.radial.left.hovered eq slot6
+@assert vr.radial.right.hovered eq slot1
+@assert vr.radial.left.shown eq true
+@assert vr.radial.right.shown eq true
+
+# 4. The look (the reference: a ring of segments with line icons, the one under the hand lit and named in the
+# middle, the half-ring over it): both menus in both eyes, then the two-eyes check's shots of an open menu
+@shot both-open
+@assert vr.sim.shots.both-open.left.overlayPixels gt {overlay0+20000}
+@assert vr.sim.shots.both-open.right.overlayPixels gt {overlay0+20000}
+vr-radial point left center
+vr-radial point right recenter
+@frames 10
+@assert vr.radial.right.halfRing eq true
+@assert vr.radial.right.hovered eq recenter
+@shot half-ring
+vr-sim shot still-a; vr-sim shot still-b
+@frames 2
+vr-sim head rot 25 0 0
+@frames 20
+vr-sim shot yaw25
+@frames 2
+vr-sim head rot 0 0 0
+@frames 10
+# Released in the middle: nothing runs (the right hand back in the ring closes the half-ring first)
+vr-radial point right center
+@frames 10
+vr-input up left.b; vr-input up right.b
+@frames 5
+@assert vr.radial.left.chosen eq none
+@assert vr.radial.right.chosen eq none
+
+# 5. The inventory on top: released there, the bag opens or closes
+vr-input down right.b
+@frames 3
+vr-radial point right inventory
+@frames 5
+@assert vr.radial.right.hovered eq inventory
+@remember inv0 player.inventoryOpen
+vr-input up right.b
+@frames 3
+@assert vr.radial.right.chosen eq inventory
+@until player.inventoryOpen ne {inv0} 5s
+
+# 6. The half-ring from the left hand: the book's four pages
+vr-input down left.b
+@frames 3
+vr-radial point left character
+@frames 10
+@assert vr.radial.left.halfRing eq true
+@assert vr.radial.left.hovered eq character
+vr-input up left.b
+@until player.bookOpen eq true 5s
+@assert player.bookPage eq stats
+vr-input down left.b
+@frames 3
+vr-radial point left spells
+@frames 10
+vr-input up left.b
+@frames 5
+@assert player.bookPage eq spells
+vr-input down left.b
+@frames 3
+vr-radial point left map
+@frames 10
+vr-input up left.b
+@frames 5
+@assert player.bookPage eq map
+vr-input down left.b
+@frames 3
+vr-radial point left quests
+@frames 10
+vr-input up left.b
+@frames 5
+@assert player.bookPage eq quests
+@assert player.bookOpen eq true
+book close
+@until player.bookOpen eq false 5s
+
+# Recenter: a new head reference, named for the menu
+@mark
+vr-input down left.b
+@frames 3
+vr-radial point left recenter
+@frames 10
+vr-input up left.b
+@log vr\.head\.reference.*reason=radial 5s
+
+# Cancel the running spell
+spellcast -fsm 5 magic_sight self
+@until spells.activeByType.magic_sight eq 1 5s
+@remember spells0 spells.active
+vr-input down left.b
+@frames 3
+vr-radial point left cancel_spell
+@frames 10
+vr-input up left.b
+@frames 3
+@assert vr.radial.left.result eq cancel_spell
+@until spells.active lt {spells0} 5s
+
+# 7. Quick slots, each hand its own: a potion and a torch in the bag, dragged onto the slots
+inventory playeradd magic/potion_life/potion_life
+inventory playeradd provisions/torch/torch
+@frames 10
+ui inventory open
+@until player.inventoryOpen eq true 5s
+@frames 30
+# The right hand drags the potion onto its slot 1: the slot takes the kind, the potion goes back into the bag
+vr-point right item potion_life
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-point right item potion_life 40 0
+@frames 10
+@assert ui.drag ne none
+vr-input down right.b
+@frames 3
+vr-radial point right slot1
+@frames 5
+@assert vr.radial.right.hovered eq slot1
+@shot put-in-slot
+vr-input up right.b
+@frames 5
+@assert vr.radial.right.result eq slot_filled
+@assert vr.radial.right.slots.slot1 eq potion_life
+@assert ui.drag eq none
+vr-sim action trigger right 0
+@frames 10
+@assert ui.drag eq none
+# The right hand drags the torch onto its slot 2
+vr-point right item torch
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-point right item torch 40 0
+@frames 10
+@assert ui.drag ne none
+vr-input down right.b
+@frames 3
+vr-radial point right slot2
+@frames 5
+vr-input up right.b
+@frames 5
+@assert vr.radial.right.slots.slot2 eq torch
+vr-sim action trigger right 0
+@frames 10
+# The left hand drags the torch onto its slot 3; the right hand's slot 3 stays empty, its own slots are its own
+vr-point left item torch
+@frames 5
+vr-sim action trigger left 1
+@frames 5
+vr-point left item torch 40 0
+@frames 10
+@assert ui.drag ne none
+vr-input down left.b
+@frames 3
+vr-radial point left slot3
+@frames 5
+vr-input up left.b
+@frames 5
+@assert vr.radial.left.slots.slot3 eq torch
+@assert vr.radial.left.slots.slot1 eq none
+@assert vr.radial.right.slots.slot3 eq none
+vr-sim action trigger left 0
+@frames 10
+ui inventory close
+@frames 30
+
+# Used from the right hand: the potion is drunk; the bag has no other, so the slot then has nothing left
+vr-input down right.b
+@frames 3
+vr-radial point right slot1
+@frames 5
+vr-input up right.b
+@frames 5
+@assert vr.radial.right.result eq used
+@log vr\.radial\.use hand=right slot=slot1 item=potion_life result=used 5s
+vr-input down right.b
+@frames 3
+vr-radial point right slot1
+@frames 5
+vr-input up right.b
+@frames 5
+@assert vr.radial.right.result eq nothing_left
+# The torch from the right hand lights in the right hand; from the left hand it goes out, then lights in the left
+vr-input down right.b
+@frames 3
+vr-radial point right slot2
+@frames 5
+vr-input up right.b
+@until player.torch ne none 5s
+@until vr.radial.torchHand eq right 5s
+vr-input down left.b
+@frames 3
+vr-radial point left slot3
+@frames 5
+vr-input up left.b
+@frames 5
+@assert vr.radial.left.result eq torch_out
+@until player.torch eq none 5s
+@assert vr.radial.torchHand eq none
+vr-input down left.b
+@frames 3
+vr-radial point left slot3
+@frames 5
+vr-input up left.b
+@until player.torch ne none 5s
+@until vr.radial.torchHand eq left 5s
+
+# 8. Quick save, a change after it, quick load: the slots are the saved ones
+@mark
+vr-input down left.b
+@frames 3
+vr-radial point left quick_save
+@frames 10
+@assert vr.radial.left.hovered eq quick_save
+vr-input up left.b
+@log GameEvent:.*\bsave\b.*ok=yes 15s
+set $vr_quickslots_right changed
+@frames 3
+@assert vr.radial.right.slots.slot1 eq changed
+@mark
+vr-input down left.b
+@frames 3
+vr-radial point left quick_load
+@frames 10
+vr-input up left.b
+@log GameEvent:.*\bload\b.*quick=yes 15s
+@until state eq GAMEPLAY 60s
+@frames 30
+@assert vr.radial.right.slots.slot1 eq potion_life
+@assert vr.radial.right.slots.slot2 eq torch
+@assert vr.radial.left.slots.slot3 eq torch
+@assert vr.radial.left.slots.slot1 eq none
+
+# 9. The game menu from the right hand (the only way to it in D-042), and back into the game
+vr-input down right.b
+@frames 3
+vr-radial point right game_menu
+@frames 10
+vr-input up right.b
+@until menuMode eq mainmenu 5s
+@assert vr.radial.right.open eq false
+menu resume
+@until menuMode eq ingame 5s
+@assert errors eq 0

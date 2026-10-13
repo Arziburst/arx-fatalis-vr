@@ -51,6 +51,11 @@ namespace vr {
 struct RadialRequests {
 	std::bitset<GameActionCount> pulses;
 	bool gameMenu = false; //!< the game menu key (Escape), as the menu's left A gives it
+	/*!
+	 * A dragged item went into a quick slot and back into the bag: the mouse button is up for the engine
+	 * until every trigger is let go, so the held trigger does not pick the item up again
+	 */
+	bool releaseClick = false;
 };
 
 /*!
@@ -72,7 +77,7 @@ struct RadialHandStatus {
 	bool halfRing = false;
 	std::string hovered = "none";
 	std::string chosen = "none";   //!< the item run by the last release (also "none")
-	std::string result = "none";   //!< what the last release did, e.g. "inventory", "slot filled", "nothing left"
+	std::string result = "none";   //!< what the last release did, e.g. "inventory", "slot_filled", "nothing_left"
 	std::string refused;           //!< why the last press did not open the menu, empty when it did
 	u64 opens = 0;
 	u64 choices = 0;               //!< releases that ran an item

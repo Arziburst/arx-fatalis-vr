@@ -50,11 +50,12 @@ class TextureContainer;
  *    and two thirds of the forearm-to-hand roll, and the wrist on the glove hand's cuff, so the two
  *    openings meet; the elbow corrective is applied from the bend, the normals are recomputed from the
  *    skinned positions every frame (research rows F-233, F-310 .. F-312);
- *  - the Godot XR Tools glove hand (data/core/vr/arms/Hand_Glove_low_L/R.gltf) with its palm on the
- *    controller's grip (short of it past the stretch limit) and the controller's orientation, scaled by
- *    \c vr_hand_scale; its five fingers bend joint by joint (vr/HandRig.h, #385.4): closed on a held weapon's grip
- *    on either hand (D-042), else following the runtime's hand joints, else the controller's trigger, grip and
- *    thumb rest (D-041).
+ *  - the Godot XR Tools glove hand (data/core/vr/arms/Hand_Glove_low_L/R.gltf) with its palm behind the
+ *    controller's grip by the handle's and the palm's radius (short of it past the stretch limit) and the
+ *    controller's orientation, scaled by \c vr_hand_scale; its joints turn as the joints' orientations say
+ *    (vr/HandRig.h poseHandFromJoints, #385.7): closed on the hilt pose by a held weapon on either hand (D-042),
+ *    else following the runtime's hand joints (conforming to the controller where the runtime can), else
+ *    closing each finger toward MRTK3's Grab by the controller's trigger, grip and thumb rest (D-041).
  * Skinned once per frame after the body is posed; the animation code lights and projects the result per eye
  * into the model batch, two-sided like the VR body (research row F-231). Flat mode and the inventory book
  * always draw the Arx arms.

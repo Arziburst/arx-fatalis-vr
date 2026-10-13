@@ -45,6 +45,11 @@
  * What the fingers follow (D-041, D-042) is \ref customFingerTarget: a hand holding a weapon - either
  * hand - is closed on the grip, else the runtime's hand joints, else the controller's trigger, grip and
  * thumb rest.
+ *
+ * Since #385.7 the game poses the glove joint by joint from the joints' OpenXR frames instead
+ * (\ref poseHandFromJoints, chosen by \ref customHandTarget: the hilt pose, the runtime's joints, MRTK3's
+ * Grab, host-tested in tests/vr/HandConformingTest.cpp and tests/vr/HandShapeTest.cpp); \ref poseHand and
+ * \ref customFingerTarget remain the flexion model of #385.4.
  */
 namespace vr {
 

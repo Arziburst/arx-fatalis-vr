@@ -492,7 +492,9 @@ Every game run is evidence, with nothing for the owner to do (plan decided on 20
   `test-pr.ps1`, the smoke test) a digest runs automatically; a **new** error signature or a crash is
   filed as an issue labeled `bug` + `auto-reported`, a known one gets a throttled "seen again" comment.
   Read `scripts/dev/log-digest.ps1 -Print` instead of `arx.log` ([TESTING.md](TESTING.md#the-run-digest-131));
-  GitHub calls of the filing are REST only (the GraphQL quota is shared by all sessions).
+  GitHub calls of the filing are REST only (the GraphQL quota is shared by all sessions). The repository
+  is public: every report is scrubbed of personal data first, and one that cannot be made clean stays
+  queued (#387, [TESTING.md](TESTING.md#scrubbing-personal-data-387)).
 - **D4 (#132)** crash reports verified under SteamVR, debug symbols kept for every tester build.
 
 **Triage:** the coordinator goes through new `auto-reported` issues in every `/new-cycle`: confirm or

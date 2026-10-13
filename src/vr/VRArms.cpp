@@ -40,9 +40,12 @@
 #include "io/resource/ResourcePath.h"
 #include "script/Script.h"
 #include "util/String.h"
+#include "vr/ArmFit.h"
 #include "vr/ArmIK.h"
 #include "vr/ArmMesh.h"
 #include "vr/ArmRoll.h"
+#include "vr/HeadTracking.h"
+#include "vr/WorldScale.h"
 
 namespace vr {
 
@@ -93,12 +96,28 @@ struct CustomArm {
 	std::vector<Vec3f> handPositions;
 	std::vector<Vec3f> handNormals;
 	std::vector<size_t> lastRing;  //!< the sleeve's vertices on its last ring
+	ReachTracker reach;            //!< the player's reach with this hand (#385.6)
+	ArmRollState roll;             //!< the overflow side of this arm's roll, between frames
 	bool drawn = false;
 	CustomArmStatus status;
 };
 
 std::array<CustomArm, HandCount> g_customArms;
 long g_armsLeverPulls = -1; //!< the pulls seen last, -1 outside the playground
+float g_armsBodyHeight = -1.f; //!< the character's height as the setting makes it, units; -1 before it was known
+
+/*!
+ * \return the body height the character height setting makes (#260), units: the character's standing eye
+ *         lifted by the setting, against the eye's share of the stature (vr/ArmFit.h); -1 while unknown
+ */
+float armsBodyHeight() {
+	const HeadStatus & head = headStatus();
+	if(head.eyeAboveFeet >= 0.f) {
+		const float standingEye = head.eyeAboveFeet + head.characterDrop;
+		g_armsBodyHeight = (standingEye + head.heightOffset * UnitsPerMeter) / EyeToStature;
+	}
+	return g_armsBodyHeight;
+}
 
 float wrapHalfTurn(float degrees) {
 	return degrees - 360.f * std::round(degrees / 360.f);
@@ -328,10 +347,6 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	if(!arm.glove.loaded || logical.upperLength <= 0.f || logical.forearmLength <= 0.f) {
 		return false;
 	}
-	if(arm.sleeve.positions.empty() || std::abs(arm.builtUpper - logical.upperLength) > 0.1f
-	   || std::abs(arm.builtForearm - logical.forearmLength) > 0.1f) {
-		buildArmSleeve(arm, logical.upperLength, logical.forearmLength);
-	}
 	const GloveRest & glove = arm.glove;
 	const float scale = status.handScale;
 	const float gloveScale = GloveUnitsPerMeter * scale;
@@ -342,20 +357,72 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	glm::mat4 gloveToWorld = glm::translate(glm::mat4(1.f), gloveWrist) * glm::mat4_cast(handQuat);
 	gloveToWorld = glm::scale(gloveToWorld, Vec3f(gloveScale));
 	gloveToWorld = glm::translate(gloveToWorld, -glove.wrist);
-	const Vec3f cuff = Vec3f(gloveToWorld * glm::vec4(glove.cuff, 1.f));
+	const Vec3f target = Vec3f(gloveToWorld * glm::vec4(glove.cuff, 1.f));
 
-	// The upper arm's bend frame: along the logical upper arm, the inner side towards the drawn forearm
-	// (the elbow to the glove's cuff), the bend axis completing it
+	// The fit (#385.6): the arm the character height setting makes, until this hand's reach is measured -
+	// sampled while the wrist target is about as far from the shoulder as that arm is long (the arm held out)
 	const Vec3f shoulder = logical.shoulder;
-	const Vec3f elbow = logical.elbow;
+	const float toTarget = glm::distance(shoulder, target);
+	const float height = armsBodyHeight();
+	ArmLengths lengths;
+	if(height > 0.f) {
+		const ArmLengths fromHeight = armLengthsFromHeight(height);
+		if(isExtendedReach(toTarget, fromHeight.upper + fromHeight.forearm)) {
+			arm.reach.add(toTarget);
+		}
+		lengths = fromHeight;
+		status.fitSource = "height";
+	} else {
+		lengths.upper = logical.upperLength;
+		lengths.forearm = logical.forearmLength;
+		status.fitSource = "arx";
+	}
+	if(arm.reach.measured()) {
+		lengths = armLengthsFromReach(arm.reach.reach());
+		status.fitSource = "reach";
+	}
+	if(arm.sleeve.positions.empty() || std::abs(arm.builtUpper - lengths.upper) > 0.1f
+	   || std::abs(arm.builtForearm - lengths.forearm) > 0.1f) {
+		buildArmSleeve(arm, lengths.upper, lengths.forearm);
+	}
+
+	// The custom arm's own solve: from the Arx shoulder (never slid) to the glove's cuff, both segments stretched
+	// by at most MaxArmStretch; a hand holding a weapon drops its elbow (F-300)
+	const float stretch = armStretch(toTarget, lengths);
+	const float stretchedUpper = lengths.upper * (1.f + stretch);
+	const float stretchedForearm = lengths.forearm * (1.f + stretch);
+	const ArmIKParams noSlide;
+	const ArmRollPose solved = solveArmRoll(shoulder, target, logical.hand, stretchedUpper, stretchedForearm,
+	                                        logical.holdsWeapon ? logical.weaponElbowHint : logical.elbowHint,
+	                                        logical.rest, noSlide, logical.roll, arm.roll);
+	float elbowDrop = 0.f;
+	if(logical.holdsWeapon) {
+		// Where the elbow would be without the weapon (engine y is down): the drop, for status.json
+		ArmRollState state = arm.roll;
+		const ArmRollPose unarmed = solveArmRoll(shoulder, target, logical.hand, stretchedUpper, stretchedForearm,
+		                                      logical.elbowHint, logical.rest, noSlide, logical.roll, state);
+		elbowDrop = solved.pose.elbow.y - unarmed.pose.elbow.y;
+	}
+
+	// Past the stretch limit the hand stops short of the controller, on the line from the shoulder
+	Vec3f cuff = target;
+	if(solved.pose.stretched) {
+		const Vec3f back = solved.pose.wrist - target;
+		gloveToWorld = glm::translate(glm::mat4(1.f), back) * gloveToWorld;
+		cuff = solved.pose.wrist;
+	}
+
+	// The upper arm's bend frame: along the custom upper arm, the inner side towards the drawn forearm
+	// (the elbow to the glove's cuff), the bend axis completing it
+	const Vec3f elbow = solved.pose.elbow;
 	const Vec3f upperAxis = (glm::length(elbow - shoulder) > 1e-4f) ? glm::normalize(elbow - shoulder) : Vec3f(0.f, 1.f, 0.f);
 	const Vec3f forearmVector = cuff - elbow;
 	const float forearmDrawn = glm::length(forearmVector);
 	const Vec3f forearmAxis = forearmDrawn > 1e-4f ? forearmVector / forearmDrawn : upperAxis;
 	Vec3f inner = forearmAxis - glm::dot(forearmAxis, upperAxis) * upperAxis;
 	if(glm::length(inner) < 1e-3f) {
-		// Straight: the inside of the bend is opposite where the logical elbow sticks out
-		inner = logical.upper * -logical.restElbow;
+		// Straight: the inside of the bend is opposite where the Arx elbow sticks out at rest
+		inner = solved.upper * -logical.restElbow;
 		inner -= glm::dot(inner, upperAxis) * upperAxis;
 		inner = (glm::length(inner) > 1e-4f) ? inner : armsPerpendicular(upperAxis);
 	}
@@ -373,16 +440,16 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	const glm::mat3 forearmFrame = bent(bend); // its first axis is forearmAxis
 
 	// The wrist: the glove's cuff with the cuff's axes and the hand's scale; the forearm's twist is the roll from the
-	// elbow's frame to it, on the same turn as the logical arm's unwrapped roll (a half turn and past keeps its side)
+	// elbow's frame to it, on the same turn as the solve's unwrapped roll (a half turn and past keeps its side)
 	const glm::quat wristQuat = glm::normalize(handQuat * glove.sleeveAxes);
 	const float measured = twistAboutAxis(glm::inverse(glm::quat_cast(forearmFrame)) * wristQuat, Vec3f(1.f, 0.f, 0.f));
-	const float forearmTwist = logical.residualRoll + wrapHalfTurn(measured - logical.residualRoll);
+	const float forearmTwist = solved.residualRoll + wrapHalfTurn(measured - solved.residualRoll);
 
 	// The sleeve's joints (vr/ArmMesh.h SleeveJoint)
 	const float upperTwistAt = SleeveParams().upperTwistAt * glm::distance(shoulder, elbow);
 	arm.sleeveJoints.resize(SleeveJointCount);
 	arm.sleeveJoints[SleeveShoulder] = jointMatrix(shoulder - upperAxis * ArmsShoulderSink, upperFrame);
-	arm.sleeveJoints[SleeveUpperTwist] = jointMatrix(shoulder + upperAxis * upperTwistAt, rolled(upperFrame, logical.upperRoll));
+	arm.sleeveJoints[SleeveUpperTwist] = jointMatrix(shoulder + upperAxis * upperTwistAt, rolled(upperFrame, solved.upperRoll));
 	arm.sleeveJoints[SleeveElbow] = jointMatrix(elbow, elbowFrame);
 	arm.sleeveJoints[SleeveForearmTwist1] = jointMatrix(elbow + forearmVector / 3.f, rolled(forearmFrame, forearmTwist / 3.f));
 	arm.sleeveJoints[SleeveForearmTwist2] = jointMatrix(elbow + forearmVector * (2.f / 3.f),
@@ -407,20 +474,21 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	}
 	ring /= float(std::max<size_t>(arm.lastRing.size(), 1));
 
-	const Vec3f logicalForearm = logical.wrist - logical.elbow;
-	const Vec3f logicalUpper = logical.elbow - logical.shoulder;
 	status.drawn = true;
 	status.palm = Vec3f(gloveToWorld * glm::vec4(glove.palm, 1.f));
 	status.tipLength = glm::distance(status.palm, Vec3f(gloveToWorld * glm::vec4(glove.tip, 1.f)));
 	status.wrist = cuff;
-	status.bend = (glm::length(logicalForearm) > 1e-4f && glm::length(logicalUpper) > 1e-4f)
-	              ? glm::degrees(std::acos(glm::clamp(glm::dot(glm::normalize(logicalUpper), glm::normalize(logicalForearm)), -1.f, 1.f)))
-	              : 0.f;
+	status.upperLength = lengths.upper;
+	status.forearmLength = lengths.forearm;
+	status.reach = arm.reach.reach();
+	status.stretch = stretch;
+	status.error = solved.pose.error;
+	status.elbowDrop = elbowDrop;
+	status.bend = bend;
 	status.drawnBend = drawnBend;
-	status.upperRoll = logical.upperRoll;
+	status.upperRoll = solved.upperRoll;
 	status.forearmTwist = forearmTwist;
 	status.wristGap = glm::distance(ring, cuff);
-	status.stretch = forearmDrawn / logical.forearmLength;
 	status.vertices = arm.sleevePositions.size() + arm.handPositions.size();
 	status.triangles = (arm.sleeve.indices.size() + glove.mesh.indices.size()) / 3;
 	arm.drawn = true;

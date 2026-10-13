@@ -1016,12 +1016,20 @@ std::string buildStatus(PlatformInstant now) {
 				json.value("z", point.point.z);
 				json.end();
 			}
+			// its own solve (#385.6): the segments fitted to the player (fitSource height | reach | arx, the reach
+			// measured so far), the stretch fraction in use, the wrist short of the controller, the weapon's elbow drop
+			json.value("upperLength", custom.upperLength);
+			json.value("forearmLength", custom.forearmLength);
+			json.value("fitSource", custom.fitSource);
+			json.value("reach", custom.reach);
+			json.value("stretch", custom.stretch);
+			json.value("error", custom.error);
+			json.value("elbowDrop", custom.elbowDrop);
 			json.value("bend", custom.bend);
 			json.value("drawnBend", custom.drawnBend);
 			json.value("upperRoll", custom.upperRoll);
 			json.value("forearmTwist", custom.forearmTwist);
 			json.value("wristGap", custom.wristGap);
-			json.value("stretch", custom.stretch);
 			json.value("vertices", u64(custom.vertices));
 			json.value("triangles", u64(custom.triangles));
 			json.end();

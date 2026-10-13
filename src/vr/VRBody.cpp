@@ -67,6 +67,12 @@ const float MaxShoulderSlide = 20.f;
 const float ElbowPoleDown = 1.f;
 const float ElbowPoleOut = 0.3f;
 const float ElbowPoleBack = 1.f;
+/*!
+ * The custom arm's elbow while its hand holds a weapon (#385.6): the pole pulled this much further down, so the
+ * elbow hangs lower under the weapon - VHVR's equipped palm-to-thumb axis (-+1, -3, 0) weighs the downward part
+ * three times the sideways one (research row F-300). A first proposal, the owner tunes it in the headset
+ */
+const float WeaponElbowPull = 3.f;
 //! The bend of the model's finger segments at a fist (#305); the one place to tune from the headset
 const FingerCurlLimits CurlLimits;
 
@@ -893,7 +899,8 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 			// No controller orientation for this hand: nothing to share, the bones sit in their bend plane
 			roll.forearmShare = roll.upperShare = roll.elbowShare = 0.f;
 		}
-		const ArmRollPose posed = solveArmRoll(upper.anim.trans, target, handQuat, upperLength, forearmLength, hint,
+		const Vec3f shoulder = upper.anim.trans;
+		const ArmRollPose posed = solveArmRoll(shoulder, target, handQuat, upperLength, forearmLength, hint,
 		                                       chain.rest, params, roll, g_body.roll[hand]);
 		const ArmPose & pose = posed.pose;
 
@@ -1003,16 +1010,18 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		noteArm(hand, true, source);
 		any = true;
 
-		// The custom arm (#385.3) copies this logical arm; its Arx faces are then not drawn (drawsBodyFace)
+		// The custom arm (#385.3) hangs from this logical arm's shoulder and solves its own chain (#385.6); its Arx
+		// faces are then not drawn (drawsBodyFace)
 		if(chain.frame.valid) {
 			LogicalArm logical;
-			logical.shoulder = pose.shoulder;
-			logical.elbow = pose.elbow;
-			logical.wrist = pose.wrist;
-			logical.upper = posed.upper;
+			logical.shoulder = shoulder;
+			logical.hand = handQuat;
+			logical.rest = chain.rest;
 			logical.restElbow = chain.restElbow;
-			logical.upperRoll = posed.upperRoll;
-			logical.residualRoll = posed.residualRoll;
+			logical.elbowHint = hint;
+			logical.weaponElbowHint = hint + down * WeaponElbowPull;
+			logical.holdsWeapon = holds;
+			logical.roll = roll;
 			logical.grip = grip;
 			logical.gripOrientation = placement.orientation;
 			logical.upperLength = upperLength;

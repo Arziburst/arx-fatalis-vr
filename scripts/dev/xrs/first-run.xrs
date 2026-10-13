@@ -119,6 +119,11 @@ vr-sim action trigger right 0
 @assert hero.mind eq 10
 @log GameEvent:.*scene state=start area=1 30s
 @assert player.controlsBlocked eq true
+vr-input tap right.a                         # too early: nothing is sent to the scene, the press reaches nothing
+@log GameEvent:.*scene\.skip how=vr area=1 .*result=early 5s
+@frames 30
+@assert player.controlsBlocked eq true
+@nolog GameEvent:.*player\.jump
 @wait 6000                                   # the skip handlers take a skip 3 s into the letterbox, outside a fade
 @mark
 vr-input tap right.a
@@ -130,7 +135,7 @@ vr-input tap right.a
 @log GameEvent:.*vr\.skip what=SCENE 5s
 @log GameEvent:.*scene\.skip how=vr area=1 .*result=sent 5s
 @log GameEvent:.*scene state=end area=1 5s
-@assert events.byName."vr.skip" eq 4
+@assert events.byName."vr.skip" eq 5
 watch marker_0112
 @frames 5
 @assert watch.found eq true

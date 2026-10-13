@@ -98,6 +98,13 @@ bool isHeadVertex(EERIE_3DOBJ * obj, VertexId vertex);
  */
 size_t bodyCapStart(const EERIE_3DOBJ * obj);
 
+/*!
+ * \return false for a face of the player model not drawn under a tracked head this frame (#385.3): an Arx arm's
+ *         face while the custom arm (vr/VRArms.h) is drawn in its place, or a face of the cap that closes that
+ *         shoulder while it is not. Asked only for the two-sided view of the VR body (never the book, never flat)
+ */
+bool drawsBodyFace(const EERIE_3DOBJ * obj, size_t face);
+
 //! Where the posed hand ended up, after the vertices were transformed - for status.json
 struct HandLandmarks {
 	Vec3f palm = Vec3f(0.f);  //!< the palm attach vertex in the world (on the controller's grip when the arm reached it)
@@ -180,6 +187,8 @@ struct PlayerBodyStatus {
 	float upperShare = 0.f;
 	float elbowShare = 0.f;
 	float twistOverflow = 0.f;
+	const char * armsModel = "custom"; //!< cfg.ini vr_arms_model: the arms drawn in VR, custom or arx (#385.3)
+	bool arxArmsHidden = false;   //!< an Arx arm's faces are not drawn this frame: a custom arm is drawn in their place
 	std::array<PlayerArmStatus, HandCount> hands; //!< left, right
 };
 

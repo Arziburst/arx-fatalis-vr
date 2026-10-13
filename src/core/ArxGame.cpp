@@ -2064,6 +2064,84 @@ static std::string speakerName(const Entity * speaker) {
 	return gameevent::entityName(speaker);
 }
 
+//! How far from \a from towards \a to before the level's walls and floors (#29)
+static float freeDistance(const Vec3f & from, const Vec3f & to) {
+	const RaycastResult hit = raycastScene(from, to, POLY_WATER | POLY_TRANS | POLY_NOCOL);
+	return hit ? glm::distance(from, hit.pos) : glm::distance(from, to);
+}
+
+/*!
+ * The NPC a scene's shot looks at (#29): the camera entity's target, else the line's speaker or the one its
+ * camera turns to, else the living NPC nearest to the hero within 10 m; nullptr for none
+ */
+static const Entity * sceneSubject(const Speech * speech) {
+
+	const Entity * hero = entities.player();
+	auto npc = [hero](const Entity * entity) -> const Entity * {
+		return (entity && entity != hero && (entity->ioflags & IO_NPC) && !IsDeadNPC(*entity)) ? entity : nullptr;
+	};
+
+	if(g_cameraEntity) {
+		if(const Entity * target = npc(entities.get(g_cameraEntity->targetinfo))) {
+			return target;
+		}
+	}
+	if(speech) {
+		if(const Entity * speaker = npc(speech->speaker)) {
+			return speaker;
+		}
+		if(const Entity * listener = npc(entities.get(speech->cine.ionum))) {
+			return listener;
+		}
+	}
+
+	const Entity * nearest = nullptr;
+	float nearestDistance = 1000.f;
+	for(const Entity & entity : entities.inScene(IO_NPC)) {
+		const float distance = glm::distance(entity.pos, player.basePosition());
+		if(npc(&entity) && distance < nearestDistance) {
+			nearest = &entity;
+			nearestDistance = distance;
+		}
+	}
+	return nearest;
+}
+
+/*!
+ * The observer's point for this scene (#29, b): beside the line between the hero's head and the head of the
+ * NPC the shot looks at, at the player's real eye height above the floor there (the character's eye when the
+ * room's floor is unknown)
+ */
+static vr::ObserverPlace placeSceneObserver(const Speech * speech, const Vec3f & gameCamera) {
+
+	vr::ObserverInput in;
+	in.heroHead = player.pos;
+	in.otherHead = in.heroHead;
+	const Entity * subject = sceneSubject(speech);
+	if(subject) {
+		const float height = subject->physics.cyl.height < 0.f ? subject->physics.cyl.height * 0.9f : -160.f;
+		in.otherHead = subject->pos + Vec3f(0.f, height, 0.f);
+	}
+	in.gameCamera = gameCamera;
+	in.heroYaw = player.angle.getYaw();
+	const float realEye = vr::headStatus().referenceAboveFloor;
+	in.eyeHeight = realEye >= 0.5f ? realEye * vr::UnitsPerMeter : -player.baseHeight();
+
+	vr::ObserverWorld world;
+	world.freeDistance = freeDistance;
+	world.floorBelow = [](const Vec3f & pos) -> std::optional<float> {
+		bool found = false;
+		const float floorY = floorBelow(pos, found);
+		return found ? std::optional<float>(floorY) : std::nullopt;
+	};
+
+	const vr::ObserverPlace place = vr::placeObserver(in, world);
+	LogInfo << "[vr] scene observer at " << place.pos.x << ' ' << place.pos.y << ' ' << place.pos.z
+	        << " yaw " << place.yaw << ", watching the hero and " << gameevent::entityName(subject)
+	        << ", eye " << in.eyeHeight << " units above the floor";
+	return place;
+}
+
 /*!
  * The scene view of this VR frame (#29): which scripted scene owns the game's camera, what the eyes get
  * instead (vr/SceneView.h), the scene's events, a pending playerlookat turned at black
@@ -2093,6 +2171,18 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 	const vr::HeadStatus & head = vr::headStatus();
 	in.headYaw = head.referenced ? vr::wrapSignedDegrees(head.head.getYaw() - head.reference.yaw) : 0.f;
 	in.seconds = toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
+	// The hybrid: a camera entity's shot of a far place, or of the hero's body played by a script, on the screen
+	if(in.kind == vr::SceneKind::Entity && in.setting == vr::SceneViewSetting::Hybrid) {
+		vr::HybridShot shot;
+		shot.camera = engineCamera.m_pos;
+		shot.heroHead = player.pos;
+		shot.lineOfSight = !raycastScene(shot.heroHead, shot.camera, POLY_WATER | POLY_TRANS | POLY_NOCOL);
+		const Entity * hero = entities.player();
+		shot.heroScripted = hero && (hero->animlayer[0].flags & EA_FORCEPLAY);
+		in.hybridScreen = vr::hybridWantsScreen(shot);
+	}
+	const Vec3f gameCamera = engineCamera.m_pos;
+	in.placeObserver = [speech, gameCamera]() { return placeSceneObserver(speech, gameCamera); };
 
 	const vr::SceneOutput out = state.director.update(in);
 	state.active = in.active;
@@ -2188,12 +2278,13 @@ void ArxGame::updateActiveCamera() {
 	// Scripted scenes in VR (#29): the scene view decides what the eyes get - the hero's head, a held shot of the
 	// game's camera - and the head goes on the player's camera placed there, turned with the hero (the body's
 	// yaw stays the hero's) and then by the shot's yaw. The game's own scene cameras run on underneath; the
-	// player's camera gets the game's pose back next frame
+	// player's camera gets the game's pose back next frame. The hybrid's screen shows the game's own camera,
+	// drawn flat on a quad fixed in the room like the intro (#394): neither placed nor head-driven
 	vr::SceneOutput scene;
 	const bool sceneFrame = vr::isEnabled() && !g_startupIntro;
 	if(sceneFrame) {
 		scene = updateSceneView(*cam);
-		if(scene.drive) {
+		if(scene.drive && scene.shown != vr::SceneShown::Screen) {
 			restorePos = g_playerCamera.m_pos;
 			restoreAngle = g_playerCamera.angle;
 			cam = &g_playerCamera;
@@ -2210,6 +2301,8 @@ void ArxGame::updateActiveCamera() {
 		state.kind = vr::SceneKind::None;
 		state.lookAtPending = false;
 	}
+	const bool sceneScreen = sceneFrame && scene.shown == vr::SceneShown::Screen;
+	vr::setSceneScreen(sceneScreen);
 
 	const char * headInGeometry = nullptr;
 	if(cam == &g_playerCamera && !EXTERNALVIEW) {
@@ -2222,8 +2315,9 @@ void ArxGame::updateActiveCamera() {
 		vr::setCharacterEyeHeight(player.basePosition().y - g_playerCameraStablePos.y,
 		                          !crouching && !player.levitate);
 	}
-	// The intro (#394) is a film on the screen in front of the player: its scripted camera is not the head
-	if(!g_startupIntro && vr::applyHeadPose(cam->m_pos, cam->angle, engineAngle.getYaw())) {
+	// The intro (#394) and the hybrid's screen (#29) are a film on the screen in front of the player: their
+	// scripted camera is not the head
+	if(!g_startupIntro && !sceneScreen && vr::applyHeadPose(cam->m_pos, cam->angle, engineAngle.getYaw())) {
 		m_headView = HeadView{ cam, restorePos, restoreAngle };
 		if(scene.drive && scene.yawDelta != 0.f) {
 			cam->m_pos = enginePos + vr::turnAboutVertical(cam->m_pos - enginePos, scene.yawDelta);
@@ -2233,14 +2327,19 @@ void ArxGame::updateActiveCamera() {
 			g_playerCameraStablePos += cam->m_pos - enginePos;
 		}
 		headInGeometry = headGeometryCheck(enginePos, cam->m_pos);
-	} else if(scene.drive) {
+	} else if(scene.drive && !sceneScreen) {
 		m_headView = HeadView{ cam, restorePos, restoreAngle };
 		cam->angle.setYaw(MAKEANGLE(cam->angle.getYaw() + scene.yawDelta));
 	}
 	vr::updateWallFade(headInGeometry, toMsf(g_platformTime.lastFrameDuration()) / 1000.f);
 
 	if(sceneFrame) {
-		meterSceneFrame(scene, enginePos, MAKEANGLE(engineAngle.getYaw() + scene.yawDelta));
+		// On the screen the eyes' camera is where the cut to it held it, not the game's camera on the screen
+		if(sceneScreen) {
+			meterSceneFrame(scene, scene.pos, MAKEANGLE(player.angle.getYaw() + scene.yawDelta));
+		} else {
+			meterSceneFrame(scene, enginePos, MAKEANGLE(engineAngle.getYaw() + scene.yawDelta));
+		}
 		// The hero shown in third person (a ghost shot, a camera of the game's own) has the engine's arms (#29)
 		vr::sceneState().armsIk = !EXTERNALVIEW;
 	}

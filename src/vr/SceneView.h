@@ -20,6 +20,7 @@
 #ifndef ARX_VR_SCENEVIEW_H
 #define ARX_VR_SCENEVIEW_H
 
+#include <functional>
 #include <optional>
 #include <string_view>
 
@@ -38,7 +39,11 @@
  *  - \c first (a): the eyes stay at the hero's head, the game's scene cameras are ignored;
  *  - \c ghost (c): the game's camera positions, each shot held where it starts (no dolly, no pan), yaw
  *    only (pitch and roll come from the head), never lower than \ref GhostMinAboveFloor;
- *  - \c observer (b) and \c hybrid (d): #29.2 - until then they show \c first.
+ *  - \c observer (b): one point beside the line between the speakers' heads (\ref placeObserver), at the
+ *    player's real eye height above the floor there, kept for the whole scene; the hero in third person;
+ *  - \c hybrid (d): \c first for the dialogue, and a camera entity's shot of a far place or of the hero's
+ *    scripted body (\ref hybridWantsScreen) on a virtual screen fixed in the room - the game's own camera,
+ *    drawn flat, as the intro and the cinematics are (#394).
  *
  * Every change of the shot the eyes see is a cut behind a fade (\ref SceneFade): the previous shot is held
  * while the world fades out, the new one is taken at black, then the world fades in. A shot is the
@@ -56,9 +61,9 @@ namespace vr {
 //! The player's choice of view for scripted scenes (cfg.ini \c vr_scene_view, channel \c scene \c view)
 enum class SceneViewSetting : u8 {
 	First,    //!< (a) the hero's head
-	Observer, //!< (b) #29.2
+	Observer, //!< (b) one point beside the speakers, kept for the scene
 	Ghost,    //!< (c) the game's camera positions, held per shot
-	Hybrid    //!< (d) #29.2
+	Hybrid    //!< (d) (a) for the dialogue, far shots and the hero's scripted body on a screen
 };
 
 //! What the eyes get this frame (status.json \c scene.shown)
@@ -67,7 +72,7 @@ enum class SceneShown : u8 {
 	First,
 	Observer,
 	Ghost,
-	Screen    //!< the hybrid's screen (#29.2)
+	Screen    //!< the hybrid's screen: the game's camera, drawn flat on a quad fixed in the room
 };
 
 //! What \c playerlookat does in VR (cfg.ini \c vr_scene_lookat, channel \c scene \c lookat)
@@ -103,6 +108,12 @@ constexpr float GhostMinAboveFloor = 120.1f;
 
 //! A frame drawn with the scene fade at least this black is behind the fade (SPEC.md)
 constexpr float BehindFade = 0.99f;
+
+/*!
+ * The hybrid's camera-entity shot is of a far place beyond this from the hero's head (game units): 6 m - a
+ * proposal for the owner to tune; the game's far cameras are 20 to 60 m away, its dialogue cameras 2 to 5 m
+ */
+constexpr float HybridFarUnits = 600.f;
 
 /*!
  * The comfort numbers of the fades (proposals for the owner to tune in the headset): a cut fades out in
@@ -155,10 +166,26 @@ private:
 /*!
  * \brief The view a scene is shown in: the place where the shown view is chosen per frame
  *
- * \c observer and \c hybrid show \c first until #29.2 builds them. A scene without a scene camera (only the
- * letterbox) has nothing to hold: \c first in every view.
+ * A scene without a scene camera (only the letterbox) has nothing to hold: \c first in every view. The
+ * hybrid shows a camera entity's shot on the screen when \a hybridScreen (\ref hybridWantsScreen), every
+ * other shot - a \c speak \c -c line, a camera near the hero - in first person.
  */
-SceneShown chooseShownView(SceneViewSetting setting, SceneKind kind);
+SceneShown chooseShownView(SceneViewSetting setting, SceneKind kind, bool hybridScreen = false);
+
+//! One frame of a camera entity's shot, for the hybrid
+struct HybridShot {
+	Vec3f camera = Vec3f(0.f);   //!< the game's camera
+	Vec3f heroHead = Vec3f(0.f); //!< the hero's eye
+	bool lineOfSight = true;     //!< no level geometry between the two
+	bool heroScripted = false;   //!< a script plays the hero's body (\c playanim \c -p, \c forceanim on the player)
+};
+
+/*!
+ * \return the hybrid shows this camera entity's shot on its screen: a far place - the camera beyond
+ *         \a farUnits from the hero's head or without a line of sight to it - or the hero's scripted body,
+ *         which first person would see from inside (the hero dragged, lying, thrown)
+ */
+bool hybridWantsScreen(const HybridShot & shot, float farUnits = HybridFarUnits);
 
 //! \return the hero shown in third person in this view: the whole model drawn, the IK arms off (#29)
 bool showsHeroOutside(SceneShown shown);
@@ -172,6 +199,56 @@ Vec3f clampAboveFloor(const Vec3f & pos, float floorY, bool floorFound, float mi
 
 //! \return the angle between the yaws \a a and \a b, degrees in [0, 180]
 float yawDistance(float a, float b);
+
+//! \return the engine yaw (degrees, [0, 360)) of a camera at \a from looking at \a to, ignoring height
+float yawTowards(const Vec3f & from, const Vec3f & to);
+
+/*!
+ * Where the observer stands (proposals for the owner to tune in the headset): beside the line between the
+ * two heads, at its middle, 0.75 of the heads' distance away - so both are in view - but 1.5 m at least and
+ * 3 m at most; 40 cm short of a wall the side's ray meets. Heads closer than 50 cm (the same speaker, or
+ * none found) span the line along the hero's facing instead
+ */
+struct ObserverParams {
+	float offsetRatio = 0.75f;
+	float minOffset = 150.f;
+	float maxOffset = 300.f;
+	float wallMargin = 40.f;
+	float minHeadSpan = 50.f;
+};
+
+//! The level, as the observer's placement asks it (game units, y down)
+struct ObserverWorld {
+	//! How far from \a from towards \a to before the level's geometry; the whole distance when nothing is hit
+	std::function<float(const Vec3f & from, const Vec3f & to)> freeDistance;
+	//! The floor's y under \a pos, none when there is no floor
+	std::function<std::optional<float>(const Vec3f & pos)> floorBelow;
+};
+
+//! The scene the observer watches, at its first shot (game units, engine degrees)
+struct ObserverInput {
+	Vec3f heroHead = Vec3f(0.f);
+	Vec3f otherHead = Vec3f(0.f); //!< the NPC the shot looks at; the hero's head when there is none
+	Vec3f gameCamera = Vec3f(0.f); //!< the game's camera: the side it films from is kept when both sides fit
+	float heroYaw = 0.f;
+	float eyeHeight = 170.f;      //!< the player's real eye above the floor, game units
+};
+
+//! The observer's point and the yaw it looks at the middle of the heads with
+struct ObserverPlace {
+	Vec3f pos = Vec3f(0.f);
+	float yaw = 0.f;
+};
+
+/*!
+ * \brief The observer's one point for a scene (b): beside the line between the hero's head and the other's
+ *
+ * Both sides of the line are ray-checked from the middle of the heads; the side with more room wins, the
+ * game camera's side when both have the full distance. The point is put \c eyeHeight above the floor under
+ * it; with no floor there it moves back towards the middle until there is one.
+ */
+ObserverPlace placeObserver(const ObserverInput & in, const ObserverWorld & world,
+                            const ObserverParams & params = ObserverParams());
 
 //! One frame of the game's cameras, game units and engine degrees
 struct SceneInput {
@@ -187,6 +264,9 @@ struct SceneInput {
 	float playerYaw = 0.f;          //!< the hero's yaw now
 	float headYaw = 0.f;            //!< the head's own yaw since its reference, degrees
 	float seconds = 0.f;            //!< the frame's duration
+	bool hybridScreen = false;      //!< this frame of a camera entity's shot wants the hybrid's screen
+	//! The observer's point for this scene (\ref placeObserver), asked once, at the observer's first cut
+	std::function<ObserverPlace()> placeObserver;
 };
 
 //! What the eyes' camera is this frame, before the head: \c pos and the hero's yaw plus \c yawDelta
@@ -196,7 +276,7 @@ struct SceneOutput {
 	SceneKind kind = SceneKind::None;    //!< its kind
 	bool drive = false;                  //!< the scene view places the camera (else the game's own first person)
 	Vec3f pos = Vec3f(0.f);
-	float yawDelta = 0.f;                //!< added to the hero's yaw (the ghost's shot); the head goes on top
+	float yawDelta = 0.f;                //!< added to the hero's yaw (a ghost's or the observer's shot, a held one); the head goes on top
 	float fade = 0.f;                    //!< the scene fade drawn this frame, 0..1
 
 	bool cut = false;                    //!< the shot changed this frame (at black)
@@ -215,7 +295,12 @@ struct SceneOutput {
  * \ref chooseShownView. A different target, or a jump of a following view, starts a cut: the shot shown is
  * held until the fade is black, then the target is taken. A ghost shot is the game's camera where the shot
  * starts, and a new one when the game's camera jumps within it; its yaw is set at the switch so that where
- * the player looks now is where the game's camera looked.
+ * the player looks now is where the game's camera looked. The observer's point is placed at its first cut and
+ * kept while the scene shows the observer; its yaw looks at the middle of the heads the same way. The screen
+ * holds the eyes' camera where the cut to it found it: the game's camera is on the screen, not in the eyes.
+ * Within the observer or the screen another camera entity or line is no cut - the eyes' camera stays.
+ * While a cut waits for black the shot shown keeps its yaw too: a script that turns the hero as the scene
+ * starts (\c teleport \c -a) turns it behind the fade.
  */
 class SceneDirector {
 
@@ -261,13 +346,29 @@ private:
 		float lastEngineYaw = 0.f;
 	};
 
+	struct Observer {
+		bool valid = false;
+		ObserverPlace place;
+	};
+
+	//! The hybrid's choice for a camera entity's shot: once the shot wants the screen it keeps it
+	struct HybridChoice {
+		u64 shot = 0;
+		bool screen = false;
+	};
+
 	SceneFadeParams m_params;
 	SceneFade m_fade;
 	Shot m_shown;
 	Vec3f m_pos = Vec3f(0.f);
 	float m_yawDelta = 0.f;
 	Ghost m_ghost;
+	Observer m_observer;
+	HybridChoice m_hybrid;
 	bool m_cutPending = false;
+	float m_heldYaw = 0.f; //!< the eyes' yaw kept while a cut waits for black, and on the screen
+	bool m_haveLastYaw = false;
+	float m_lastYaw = 0.f; //!< the eyes' yaw last frame, before the head
 	bool m_lookAtPending = false;
 
 };

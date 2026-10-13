@@ -19,7 +19,10 @@
 
 #include "vr/SceneViewTest.h"
 
+#include <optional>
 #include <string>
+
+#include <glm/geometric.hpp>
 
 #include "vr/SceneView.h"
 
@@ -111,15 +114,280 @@ void SceneViewTest::shownViewTest() {
 	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Ghost, SceneKind::Speech) == SceneShown::Ghost);
 	// The letterbox alone has no scene camera: the hero's head in every view
 	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Ghost, SceneKind::None) == SceneShown::First);
-	// Until #29.2 the observer and the hybrid show the hero's head
-	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Observer, SceneKind::Entity) == SceneShown::First);
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Observer, SceneKind::None) == SceneShown::First);
+	// The observer watches every scene camera's scene
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Observer, SceneKind::Entity) == SceneShown::Observer);
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Observer, SceneKind::Speech) == SceneShown::Observer);
+	// The hybrid: the screen only for a camera entity's shot that wants it; a speak -c line is a dialogue
 	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Hybrid, SceneKind::Speech) == SceneShown::First);
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Hybrid, SceneKind::Speech, true) == SceneShown::First);
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Hybrid, SceneKind::Entity) == SceneShown::First);
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Hybrid, SceneKind::Entity, true) == SceneShown::Screen);
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Hybrid, SceneKind::None, true) == SceneShown::First);
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::First, SceneKind::Entity, true) == SceneShown::First);
 
 	CPPUNIT_ASSERT(showsHeroOutside(SceneShown::Ghost));
+	CPPUNIT_ASSERT(showsHeroOutside(SceneShown::Observer));
 	CPPUNIT_ASSERT(!showsHeroOutside(SceneShown::First));
 	CPPUNIT_ASSERT(!showsHeroOutside(SceneShown::None));
+	CPPUNIT_ASSERT(!showsHeroOutside(SceneShown::Screen));
 	CPPUNIT_ASSERT(!letterboxInEyes(SceneShown::First));
 	CPPUNIT_ASSERT(!letterboxInEyes(SceneShown::Ghost));
+	CPPUNIT_ASSERT(!letterboxInEyes(SceneShown::Observer));
+}
+
+void SceneViewTest::hybridClassificationTest() {
+
+	HybridShot shot;
+	shot.heroHead = Vec3f(1000.f, -170.f, 2000.f);
+
+	// A dialogue camera 3 m from the hero, in sight: first person
+	shot.camera = shot.heroHead + Vec3f(300.f, 20.f, 0.f);
+	CPPUNIT_ASSERT(!hybridWantsScreen(shot));
+	// Just inside the far range: still near; just beyond it: a far place
+	shot.camera = shot.heroHead + Vec3f(0.f, 0.f, HybridFarUnits - 1.f);
+	CPPUNIT_ASSERT(!hybridWantsScreen(shot));
+	shot.camera = shot.heroHead + Vec3f(0.f, 0.f, HybridFarUnits + 1.f);
+	CPPUNIT_ASSERT(hybridWantsScreen(shot));
+	// A vision ball's camera 20 m away
+	shot.camera = shot.heroHead + Vec3f(1500.f, 200.f, -1250.f);
+	CPPUNIT_ASSERT(hybridWantsScreen(shot));
+	// Near, but behind a wall: another place
+	shot.camera = shot.heroHead + Vec3f(300.f, 0.f, 0.f);
+	shot.lineOfSight = false;
+	CPPUNIT_ASSERT(hybridWantsScreen(shot));
+	// Near and in sight, but the hero's body played by a script (dragged in the prison intro)
+	shot.lineOfSight = true;
+	shot.heroScripted = true;
+	CPPUNIT_ASSERT(hybridWantsScreen(shot));
+	// The threshold is the caller's to tune
+	shot.heroScripted = false;
+	CPPUNIT_ASSERT(hybridWantsScreen(shot, 250.f));
+}
+
+namespace {
+
+//! An open hall: a floor at y = 0 everywhere, walls at x = \a wallLow and x = \a wallHigh (none when 0)
+ObserverWorld hall(float wallLow = 0.f, float wallHigh = 0.f) {
+	ObserverWorld world;
+	world.freeDistance = [wallLow, wallHigh](const Vec3f & from, const Vec3f & to) {
+		const float length = glm::distance(from, to);
+		const float dx = to.x - from.x;
+		float wall = 0.f;
+		if(wallHigh != 0.f && dx > 0.f && to.x > wallHigh) {
+			wall = wallHigh;
+		} else if(wallLow != 0.f && dx < 0.f && to.x < wallLow) {
+			wall = wallLow;
+		} else {
+			return length;
+		}
+		return length * (wall - from.x) / dx;
+	};
+	world.floorBelow = [](const Vec3f &) -> std::optional<float> { return 0.f; };
+	return world;
+}
+
+//! The hero and an NPC 2 m apart along z, both heads 1.6 m up, the game's camera on the +x side
+ObserverInput twoHeads() {
+	ObserverInput in;
+	in.heroHead = Vec3f(1000.f, -160.f, 2000.f);
+	in.otherHead = Vec3f(1000.f, -160.f, 2200.f);
+	in.gameCamera = Vec3f(1200.f, -150.f, 2100.f);
+	in.eyeHeight = 165.f;
+	return in;
+}
+
+} // anonymous namespace
+
+void SceneViewTest::observerPlacementTest() {
+
+	// Open ground: beside the middle of the line, 1.5 m away (0.75 of 2 m is less than the minimum), on the
+	// game camera's side, the player's eye above the floor, looking at the middle (-x is yaw 90)
+	ObserverPlace place = placeObserver(twoHeads(), hall());
+	CPPUNIT_ASSERT(same(place.pos, Vec3f(1150.f, -165.f, 2100.f)));
+	CPPUNIT_ASSERT(std::abs(place.yaw - 90.f) < SvEps);
+	CPPUNIT_ASSERT(std::abs(yawTowards(Vec3f(0.f), Vec3f(0.f, 0.f, 10.f))) < SvEps);
+
+	// The game's camera on the other side: that side
+	ObserverInput in = twoHeads();
+	in.gameCamera.x = 800.f;
+	place = placeObserver(in, hall());
+	CPPUNIT_ASSERT(same(place.pos, Vec3f(850.f, -165.f, 2100.f)));
+	CPPUNIT_ASSERT(std::abs(place.yaw - 270.f) < SvEps);
+
+	// Heads farther apart: 0.75 of their distance, at most 3 m
+	in = twoHeads();
+	in.otherHead.z = 2000.f + 320.f;
+	place = placeObserver(in, hall());
+	CPPUNIT_ASSERT(same(place.pos, Vec3f(1240.f, -165.f, 2160.f)));
+	in.otherHead.z = 2000.f + 1000.f;
+	place = placeObserver(in, hall());
+	CPPUNIT_ASSERT(same(place.pos, Vec3f(1300.f, -165.f, 2500.f)));
+
+	// A wall 1 m away on the camera's side: the open side, whole
+	place = placeObserver(twoHeads(), hall(0.f, 1100.f));
+	CPPUNIT_ASSERT(same(place.pos, Vec3f(850.f, -165.f, 2100.f)));
+
+	// Walls on both sides, 1 m and 1.2 m away: the roomier side, 40 cm short of its wall
+	place = placeObserver(twoHeads(), hall(880.f, 1100.f));
+	CPPUNIT_ASSERT(same(place.pos, Vec3f(920.f, -165.f, 2100.f)));
+
+	// The floor drops away beyond 1 m: the point moves back to where there is one, then up from it
+	ObserverWorld ledge = hall();
+	ledge.floorBelow = [](const Vec3f & pos) -> std::optional<float> {
+		if(pos.x > 1100.f) {
+			return std::nullopt;
+		}
+		return -20.f;
+	};
+	place = placeObserver(twoHeads(), ledge);
+	CPPUNIT_ASSERT(same(place.pos, Vec3f(1075.f, -185.f, 2100.f)));
+
+	// No other head (the speaker is the hero): the line runs along the hero's facing (yaw 90 is -x)
+	in = twoHeads();
+	in.otherHead = in.heroHead;
+	in.heroYaw = 90.f;
+	in.gameCamera = Vec3f(975.f, -150.f, 2500.f);
+	place = placeObserver(in, hall());
+	CPPUNIT_ASSERT(same(place.pos, Vec3f(975.f, -165.f, 2150.f)));
+	CPPUNIT_ASSERT(std::abs(place.yaw - 180.f) < SvEps);
+}
+
+void SceneViewTest::observerHoldsSceneTest() {
+
+	SceneDirector director;
+	SceneInput in = standing();
+	in.playerYaw = 30.f;
+	in.headYaw = 10.f;
+	director.update(in);
+
+	// The scene starts: the observer is placed once, at black, and the eyes look at the middle of the heads
+	int placed = 0;
+	ObserverPlace spot;
+	spot.pos = Vec3f(1400.f, -165.f, 2300.f);
+	spot.yaw = 200.f;
+	SceneInput scene = sceneOf(in, SceneKind::Entity, 5, SceneViewSetting::Observer);
+	scene.enginePos = Vec3f(1500.f, -100.f, 2600.f);
+	scene.placeObserver = [&placed, spot]() { placed++; return spot; };
+	bool held = false;
+	int frames = 0;
+	SceneOutput out = untilCut(director, scene, in.firstPos, held, frames);
+	CPPUNIT_ASSERT(out.cut);
+	CPPUNIT_ASSERT(held);
+	CPPUNIT_ASSERT(out.started);
+	CPPUNIT_ASSERT(out.fade >= BehindFade);
+	CPPUNIT_ASSERT(out.shown == SceneShown::Observer);
+	CPPUNIT_ASSERT_EQUAL(1, placed);
+	CPPUNIT_ASSERT(same(out.pos, spot.pos));
+	// Where the player looks now (the hero's yaw plus the head's) is the observer's yaw: 200 - 10 - 30
+	CPPUNIT_ASSERT(std::abs(out.yawDelta - 160.f) < SvEps);
+
+	// The scene's camera entities glide and change, a line is spoken: the observer stays, no cut, placed once
+	for(int i = 0; i < 120; i++) {
+		scene.shot = (i < 60) ? 5 : 6;
+		scene.enginePos.x += 3.f;
+		scene.firstPos.z += 1.f;
+		out = director.update(scene);
+		CPPUNIT_ASSERT(!out.cut);
+		CPPUNIT_ASSERT(same(out.pos, spot.pos));
+		CPPUNIT_ASSERT(std::abs(out.yawDelta - 160.f) < SvEps);
+	}
+	CPPUNIT_ASSERT_EQUAL(0.f, out.fade);
+	CPPUNIT_ASSERT_EQUAL(1, placed);
+
+	// The scene ends: held until black, then the game's view
+	SceneInput after = standing();
+	out = untilCut(director, after, spot.pos, held, frames);
+	CPPUNIT_ASSERT(held);
+	CPPUNIT_ASSERT(out.ended);
+	CPPUNIT_ASSERT(out.shown == SceneShown::None);
+
+	// The next scene places the observer anew
+	out = untilCut(director, scene, after.firstPos, held, frames);
+	CPPUNIT_ASSERT(out.shown == SceneShown::Observer);
+	CPPUNIT_ASSERT_EQUAL(2, placed);
+}
+
+void SceneViewTest::hybridScreenTest() {
+
+	SceneDirector director;
+	SceneInput in = standing();
+	in.playerYaw = 40.f;
+	director.update(in);
+
+	// A dialogue camera near the hero: first person
+	SceneInput scene = sceneOf(in, SceneKind::Entity, 8, SceneViewSetting::Hybrid);
+	settle(director, scene);
+	CPPUNIT_ASSERT(director.shown() == SceneShown::First);
+
+	// Another camera entity wants the screen (far, or the hero's scripted body): cut behind the fade, the eyes'
+	// camera stays at the hero's head and its yaw while the game's camera plays on the screen
+	scene.shot = 9;
+	scene.hybridScreen = true;
+	scene.enginePos = Vec3f(4000.f, -500.f, 6000.f);
+	bool held = false;
+	int frames = 0;
+	SceneOutput out = untilCut(director, scene, in.firstPos, held, frames);
+	CPPUNIT_ASSERT(held);
+	CPPUNIT_ASSERT(out.fade >= BehindFade);
+	CPPUNIT_ASSERT_EQUAL(std::string("camera"), std::string(out.cutReason));
+	CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
+	CPPUNIT_ASSERT(!showsHeroOutside(out.shown));
+	CPPUNIT_ASSERT(same(out.pos, in.firstPos));
+
+	// The shot keeps the screen when it stops wanting it (the hero's animation ended, the camera glided
+	// nearer); the hero turned by the script, a camera entity after it on the screen too: no cut, the eyes'
+	// camera and its yaw stay
+	for(int i = 0; i < 120; i++) {
+		scene.hybridScreen = (i >= 60);
+		scene.shot = (i < 60) ? 9 : 10;
+		scene.playerYaw = 40.f + 2.f * float(i);
+		scene.enginePos.x -= 20.f;
+		out = director.update(scene);
+		CPPUNIT_ASSERT(!out.cut);
+		CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
+		CPPUNIT_ASSERT(same(out.pos, in.firstPos));
+		CPPUNIT_ASSERT(yawDistance(scene.playerYaw + out.yawDelta, 40.f) < SvEps);
+	}
+
+	// A camera near the hero again: back to first person behind the fade, the hero's yaw now
+	scene.shot = 11;
+	scene.hybridScreen = false;
+	out = untilCut(director, scene, in.firstPos, held, frames);
+	CPPUNIT_ASSERT(held);
+	CPPUNIT_ASSERT(out.fade >= BehindFade);
+	CPPUNIT_ASSERT(out.shown == SceneShown::First);
+	CPPUNIT_ASSERT_EQUAL(0.f, out.yawDelta);
+
+	// A speak -c line is a dialogue: first person even if a camera entity's rule would say screen
+	SceneInput line = sceneOf(in, SceneKind::Speech, 12, SceneViewSetting::Hybrid);
+	line.hybridScreen = true;
+	out = untilCut(director, line, in.firstPos, held, frames);
+	CPPUNIT_ASSERT(out.shown == SceneShown::First);
+}
+
+void SceneViewTest::heldYawTest() {
+
+	SceneDirector director;
+	SceneInput in = standing();
+	in.playerYaw = 10.f;
+	director.update(in);
+
+	// The scene starts and its script turns the hero in the same frame (teleport -a): the eyes keep the old
+	// yaw until black, then take the hero's
+	SceneInput scene = sceneOf(in, SceneKind::Entity, 2, SceneViewSetting::First);
+	scene.playerYaw = 190.f;
+	SceneOutput out;
+	for(int i = 0; i < 100; i++) {
+		out = director.update(scene);
+		if(out.cut) {
+			break;
+		}
+		CPPUNIT_ASSERT(yawDistance(scene.playerYaw + out.yawDelta, 10.f) < SvEps);
+	}
+	CPPUNIT_ASSERT(out.cut);
+	CPPUNIT_ASSERT(out.fade >= BehindFade);
+	CPPUNIT_ASSERT_EQUAL(0.f, out.yawDelta);
 }
 
 void SceneViewTest::fadeTimingTest() {

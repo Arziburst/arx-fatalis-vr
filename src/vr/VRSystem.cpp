@@ -227,6 +227,9 @@ struct OpenXRState {
 		//! The screen of the logos and the cinematics (#394): the same anchor rules, its own place and size
 		PanelAnchor screen;
 		PanelMode loggedScreenMode = PanelMode::HeadLocked;
+		//! The hybrid's screen (#29): wanted by the scene view, and the frame being drawn for it
+		bool sceneScreenWanted = false;
+		bool sceneScreen = false;
 	} panel;
 
 	//! The menu pointer's beam (#34), set by the input module every frame
@@ -1599,9 +1602,11 @@ void updatePanel() {
 	}
 
 	// The logos and the cinematics play on a screen fixed in the room (#394): placed where the player
-	// looks when one starts, like a menu's panel, never head-locked (a picture glued to the face)
+	// looks when one starts, like a menu's panel, never head-locked (a picture glued to the face). The
+	// hybrid's scene shots (#29) on the same screen, while this frame is drawn flat for it
 	const gameevent::GameState state = gameevent::currentGameState();
-	const bool playing = onScreen(state);
+	const bool sceneScreen = panel.sceneScreen && !frame.stereo;
+	const bool playing = onScreen(state) || sceneScreen;
 	PanelParams screenParams;
 	screenParams.distance = ScreenDistance;
 	screenParams.drop = ScreenDrop;
@@ -1611,7 +1616,7 @@ void updatePanel() {
 		const PanelPose & pose = panel.screen.pose();
 		const Vec3f heading = pose.orientation * Vec3f(0.f, 0.f, -1.f);
 		gameevent::Event("vr.screen.placed")("reason", panelPlacementName(screenPlaced))
-			("for", gameevent::gameStateName(state))
+			("for", sceneScreen ? "scene" : gameevent::gameStateName(state))
 			("x", pose.position.x, 2)("y", pose.position.y, 2)("z", pose.position.z, 2)
 			("yawDeg", glm::degrees(std::atan2(-heading.x, -heading.z)), 1)
 			("distanceM", ScreenDistance, 2)("widthM", ScreenWidth, 2)("headY", head.position.y, 2);
@@ -1620,7 +1625,7 @@ void updatePanel() {
 	if(screenMode != panel.loggedScreenMode) {
 		panel.loggedScreenMode = screenMode;
 		gameevent::Event("vr.screen")("state", screenMode == PanelMode::World ? "on" : "off")
-			("for", gameevent::gameStateName(state));
+			("for", sceneScreen ? "scene" : gameevent::gameStateName(state));
 	}
 }
 
@@ -1787,10 +1792,12 @@ void beginFrameTargets(const Vec2i & windowSize, FrameTargets targets) {
 		return;
 	}
 
-	// The intro's scripted scene is a film on the screen (#394): drawn flat into the quad like the
-	// cinematics, never per eye (the state of the last frame: this one has not been decided yet)
+	// The intro's scripted scene is a film on the screen (#394), and so is a scene shot the hybrid puts on
+	// its screen (#29): drawn flat into the quad like the cinematics, never per eye (the state of the last
+	// frame: this one has not been decided yet)
+	g_xr.panel.sceneScreen = targets == FrameTargets::Game && g_xr.panel.sceneScreenWanted;
 	if(targets == FrameTargets::Game && frame.state.shouldRender && frame.views.valid
-	   && gameevent::currentGameState() != gameevent::GameState::Intro) {
+	   && gameevent::currentGameState() != gameevent::GameState::Intro && !g_xr.panel.sceneScreen) {
 		beginStereo(frame);
 	} else if(interfaceSize == windowSize) {
 		// The interface is the window: drawn there, copied onto the quad (#18)
@@ -2646,6 +2653,10 @@ void setMenuOpen(const char * menu) {
 	g_xr.panel.menu = menu ? menu : "";
 }
 
+void setSceneScreen(bool on) {
+	g_xr.panel.sceneScreenWanted = on;
+}
+
 PanelStatus panelStatus() {
 	const OpenXRState::Panel & panel = g_xr.panel;
 	PanelStatus status;
@@ -2883,6 +2894,8 @@ MirrorStatus mirrorStatus() {
 }
 
 void setMenuOpen(const char * /* menu */) { }
+
+void setSceneScreen(bool /* on */) { }
 
 PanelStatus panelStatus() {
 	return PanelStatus();

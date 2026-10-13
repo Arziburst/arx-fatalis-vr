@@ -2531,7 +2531,7 @@ void ArxGame::renderInterface() {
 			ARX_MAGICAL_FLARES_Render();
 			g_renderBatcher.render();
 		}
-
+		
 	}
 
 	GRenderer->Clear(Renderer::DepthBuffer);

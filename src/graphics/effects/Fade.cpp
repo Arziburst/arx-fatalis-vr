@@ -61,7 +61,7 @@ void fadeRequestStart(FadeType type, const PlatformDuration duration) {
 
 //! The fade's opacity this frame; false before it starts, below 0 once it has run out
 static bool fadeVisibility(float & visibility) {
-
+	
 	PlatformDuration elapsed = g_platformTime.frameStart() - FADESTART;
 	if(elapsed < 0)
 		return false;
@@ -78,7 +78,7 @@ static bool fadeVisibility(float & visibility) {
 }
 
 void ManageFade() {
-
+	
 	float Visibility;
 	if(!fadeVisibility(Visibility))
 		return;
@@ -87,9 +87,9 @@ void ManageFade() {
 		FADEDIR = 0;
 		return;
 	}
-
+	
 	LAST_FADEVALUE = Visibility;
-
+	
 	if(vr::stereoActive() && !g_stereoView.legacy) {
 		// The eyes were faded over their whole view (drawFadeOverView). The flat frame is a quad in the
 		// middle of the view: faded like the window it would darken that middle twice and leave the rest
@@ -98,15 +98,15 @@ void ManageFade() {
 		EERIEDrawBitmap(Rectf(g_size), 0.0001f, nullptr, Color(Color4f(FADECOLOR * Visibility, Visibility)));
 		return;
 	}
-
+	
 	UseRenderState state(render2D());
-
+	
 	EERIEDrawBitmap(Rectf(g_size), 0.0001f, nullptr, Color(Color4f(FADECOLOR, Visibility)));
-
+	
 }
 
 void drawFadeOverView() {
-
+	
 	float visibility;
 	if(!FADEDIR || !fadeVisibility(visibility) || visibility <= 0.f) {
 		return;

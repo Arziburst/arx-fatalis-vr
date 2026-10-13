@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <iomanip>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -55,6 +56,7 @@
 #include "game/Spells.h"
 #include "game/effect/Quake.h"
 #include "graphics/Math.h"
+#include "graphics/Raycast.h"
 #include "graphics/Renderer.h"
 #include "graphics/data/Mesh.h"
 #include "graphics/image/Image.h"
@@ -63,23 +65,28 @@
 #include "gui/Dragging.h"
 #include "gui/CharacterCreation.h"
 #include "gui/Interface.h"
+#include "gui/LoadLevelScreen.h"
 #include "gui/MainMenu.h"
 #include "gui/Menu.h"
 #include "gui/MenuPublic.h"
 #include "gui/MenuWidgets.h"
+#include "gui/Notification.h"
 #include "gui/hud/PlayerInventory.h"
 #include "input/Input.h"
 #include "io/fs/FilePath.h"
+#include "io/fs/FileStream.h"
 #include "io/fs/Filesystem.h"
 #include "io/log/LogBackend.h"
 #include "io/log/Logger.h"
+#include "physics/Collisions.h"
 #include "platform/Environment.h"
+#include "platform/ExitTrace.h"
+#include "platform/HangWatchdog.h"
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
 #include "platform/WindowsUtils.h"
 #endif
 #include "platform/Process.h"
 #include "platform/ProgramOptions.h"
-#include "platform/Thread.h"
 #include "platform/Time.h"
 #include "scene/ChangeLevel.h"
 #include "scene/Interactive.h"
@@ -103,6 +110,7 @@
 
 extern bool START_NEW_QUEST;
 extern bool bGCroucheToggle;
+extern long COLLIDED_CLIMB_POLY;
 
 namespace channel {
 
@@ -313,7 +321,8 @@ struct State {
 	GameState state = GameState::Startup;
 	bool cleanShutdown = false;
 
-	unsigned cmdSeq = 0; //!< Command batches executed so far
+	unsigned cmdSeq = 0; //!< Command batches started so far (the running batch included)
+	unsigned ackedSeq = 0; //!< Command batches whose ack.txt is written; this is what status.json reports (#142)
 	std::string lastCmd;
 	std::string lastCmdError;
 
@@ -367,6 +376,25 @@ struct State {
 
 	//! watch: the entity whose place status.json reports (#37), empty for none
 	std::string watch;
+
+	//! stick-for: a stick held until the player has walked a distance, let go by the game (#370)
+	struct StickFor {
+		unsigned seq = 0;            //!< Holds started so far
+		bool active = false;
+		std::string hand;
+		Vec2f start = Vec2f(0.f);    //!< The player's ground position (x, z) when the hold started
+		float units = 0.f;           //!< The distance that ends the hold
+		float moved = 0.f;           //!< The distance walked so far (the last one, once ended)
+		GameInstant deadline = 0;    //!< When the hold ends anyway: a blocked player never walks the distance
+		bool timedOut = false;       //!< The hold ended at its deadline, not at its distance
+		vr::WalkStatus walk;         //!< The stick walk of the hold's last frame that walked
+	} stickFor;
+
+	//! The hang watchdog of the main thread (#440), started at the first frame
+	std::unique_ptr<platform::HangWatchdog> watchdog;
+	bool watchdogLogged = false;     //!< Its "watching" line is in the log
+	long watchdogThresholdMs = 5000; //!< Below the 10 s a test waits for an ack: the report comes first
+	long stallLoadMs = 0;            //!< stall load: how long the next level load sleeps, 0 = it does not
 
 };
 
@@ -631,6 +659,9 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("area", g_currentArea ? u32(g_currentArea) : 0u);
 	json.value("paused", g_gameTime.isPaused() != 0);
 	json.value("cinematic", isInCinematic());
+	// The timed texts at the top of the 2D interface (a script's tutorial hint): a shot of the HUD that must not
+	// change waits for none (#370)
+	json.value("notifications", u64(notification_count()));
 
 	if(g_currentArea) {
 		json.object("player");
@@ -1433,7 +1464,16 @@ std::string buildStatus(PlatformInstant now) {
 	json.end();
 	json.end();
 
-	json.value("cmdSeq", g.cmdSeq);
+	// The hang watchdog of the main thread (#440): its reports are in hang.txt and as [hang] log lines
+	json.object("hangWatchdog");
+	json.value("watching", g.watchdog && g.watchdog->watching());
+	json.value("thresholdMs", s64(g.watchdogThresholdMs));
+	json.value("stalls", u64(g.watchdog ? g.watchdog->stalls() : 0));
+	json.end();
+
+	// A command that changes the level or loads a save writes the status while its batch still runs: the batch
+	// must not show up before its ack does (#142)
+	json.value("cmdSeq", g.ackedSeq);
 	json.value("lastCmd", g.lastCmd);
 	json.value("lastCmdError", g.lastCmdError);
 	json.value("captureSeq", g.captureSeq);
@@ -1461,6 +1501,23 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("maxPixelsDiffering", check.maxPixelsDiffering);
 		json.value("maxDelta", check.maxDelta);
 		json.value("capture", check.capture);
+		json.end();
+	}
+
+	if(g.stickFor.seq != 0) {
+		const State::StickFor & hold = g.stickFor;
+		json.object("stickFor");
+		json.value("seq", hold.seq);
+		json.value("active", hold.active);
+		json.value("units", hold.units);
+		json.value("moved", hold.moved);
+		json.value("timedOut", hold.timedOut);
+		json.object("walk");
+		json.value("walking", hold.walk.walking);
+		json.value("yaw", hold.walk.yaw);
+		json.value("dirX", hold.walk.direction.x);
+		json.value("dirZ", hold.walk.direction.z);
+		json.end();
 		json.end();
 	}
 
@@ -1516,6 +1573,29 @@ void writeAck(unsigned errors) {
 	if(!fs::write(g.dir / "ack.txt", oss.str())) {
 		LogWarning << "[channel] could not write " << (g.dir / "ack.txt");
 	}
+}
+
+/*
+ * A report of the hang watchdog (#440), on its own thread: hang.txt first and without the logger -
+ * a main thread stuck inside the logger must not keep the report from the test - then one [hang]
+ * line of arx.log per report line.
+ */
+void reportHang(std::string_view report) {
+
+	{
+		fs::ofstream file(g.dir / "hang.txt", std::ios::out | std::ios::app);
+		file << report;
+	}
+
+	for(size_t pos = 0; pos < report.size(); ) {
+		size_t end = report.find('\n', pos);
+		if(end == std::string_view::npos) {
+			end = report.size();
+		}
+		LogWarning << "[hang] " << report.substr(pos, end - pos);
+		pos = end + 1;
+	}
+	Logger::flush();
 }
 
 void setState(GameState state) {
@@ -1592,7 +1672,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "quit") {
-		LogInfo << "[channel] quit requested";
+		platform::logQuitRequest("the test channel's quit command");
 		mainApp->quit();
 		return std::string();
 	}
@@ -1628,13 +1708,41 @@ std::string execute(std::string_view line) {
 
 	if(word == "stall") {
 		// A forced hitch (#327): the main thread sleeps in this frame, which the performance log must
-		// mark as a hitch caused by the channel
+		// mark as a hitch caused by the channel. "stall load <ms>": the next level load sleeps instead,
+		// after its "Loading level" line - a stalled load for the hang watchdog's check (#440)
+		std::string_view value;
+		std::string_view where = firstWord(rest, value);
+		const bool load = (where == "load");
+		if(!load) {
+			value = rest;
+		}
 		long stallMs = 0;
-		if(!parseIndex(rest, stallMs) || stallMs < 1 || stallMs > 5000) {
-			return refuse("stall: expected milliseconds 1..5000, got \"" + std::string(rest) + "\"");
+		if(!parseIndex(value, stallMs) || stallMs < 1 || stallMs > 5000) {
+			return refuse("stall: expected [load] and milliseconds 1..5000, got \"" + std::string(rest) + "\"");
+		}
+		if(load) {
+			g.stallLoadMs = stallMs;
+			LogInfo << "[channel] the next level load stalls for " << stallMs << " ms";
+			return std::string();
 		}
 		LogInfo << "[channel] stalling the frame for " << stallMs << " ms";
-		Thread::sleep(PlatformDuration(std::chrono::microseconds(stallMs * 1000)));
+		// Named in a hang report: the run digest knows this stall is on purpose (log-digest-allowlist.txt)
+		note("a stall the test channel asked for");
+		platform::stallThisThread(std::chrono::milliseconds(stallMs));
+		return std::string();
+	}
+
+	if(word == "watchdog") {
+		// The hang watchdog's threshold (#440): a main thread without a beat for this long is reported
+		long thresholdMs = 0;
+		if(!parseIndex(rest, thresholdMs) || thresholdMs < 100 || thresholdMs > 60000) {
+			return refuse("watchdog: expected milliseconds 100..60000, got \"" + std::string(rest) + "\"");
+		}
+		g.watchdogThresholdMs = thresholdMs;
+		if(g.watchdog) {
+			g.watchdog->setThreshold(std::chrono::milliseconds(thresholdMs));
+		}
+		LogInfo << "[channel] hang watchdog threshold " << thresholdMs << " ms";
 		return std::string();
 	}
 
@@ -1704,6 +1812,44 @@ std::string execute(std::string_view line) {
 		// The controllers' control table without a headset (#30): down|up|tap <control>, stick, bind, reset
 		std::string error = vr::inputCommand(rest);
 		return error.empty() ? error : refuse(error);
+	}
+
+	if(word == "stick-for") {
+		// stick-for left|right <x> <y> <units> [<seconds>]: a stick held deflected until the player has walked that
+		// far on the ground, then let go by the game in that frame (#370) - a walk bounded by its distance, not by how
+		// fast the runner reads the status (a busy PC walked a frame-counted walk into a wall). A player who never
+		// gets that far (a wall) is let go after <seconds> of game time (default 10)
+		std::istringstream iss{std::string(rest)};
+		std::string hand;
+		float x = 0.f, y = 0.f, units = 0.f, seconds = 10.f;
+		bool parsed = bool(iss >> hand >> x >> y >> units);
+		if(parsed && !(iss >> seconds)) {
+			parsed = iss.eof();
+			seconds = 10.f;
+		}
+		if(!parsed || (hand != "left" && hand != "right") || units <= 0.f || seconds <= 0.f) {
+			return refuse("stick-for: expected left|right <x> <y> <units> [<seconds>], got \"" + std::string(rest) + "\"");
+		}
+		if(currentState() != GameState::Gameplay || !entities.player()) {
+			return refuse(std::string("stick-for: needs a level on screen (state ") + gameStateName(currentState()) + ")");
+		}
+		std::ostringstream stick;
+		stick << "stick " << hand << ' ' << x << ' ' << y;
+		std::string error = vr::inputCommand(stick.str());
+		if(!error.empty()) {
+			return refuse(error);
+		}
+		State::StickFor & hold = g.stickFor;
+		hold.seq++;
+		hold.active = true;
+		hold.hand = hand;
+		hold.start = Vec2f(player.pos.x, player.pos.z);
+		hold.units = units;
+		hold.moved = 0.f;
+		hold.deadline = g_gameTime.now() + GameDuration(std::chrono::milliseconds(s64(seconds * 1000.f)));
+		hold.timedOut = false;
+		hold.walk = vr::WalkStatus();
+		return std::string();
 	}
 
 	if(word == "vr-sim") {
@@ -2198,6 +2344,8 @@ std::string execute(std::string_view line) {
 			if((entity.ioflags & IO_NPC) && entity._npcdata) {
 				oss << " life=" << entity._npcdata->lifePool.current;
 			}
+			// What the hand reticles and the mouse can hover (its script switches it, #210)
+			oss << " interactive=" << ((entity.gameFlags & GFLAG_INTERACTIVITY) ? 1 : 0);
 			oss << '\n';
 			count++;
 		}
@@ -2249,6 +2397,126 @@ std::string execute(std::string_view line) {
 		player.desiredangle.setPitch(angle.getPitch());
 		player.angle.setPitch(angle.getPitch());
 		LogInfo << "[channel] player looks at " << rest << " (yaw " << angle.getYaw() << ", pitch " << angle.getPitch() << ")";
+		return std::string();
+	}
+
+	if(word == "approach") {
+		// approach <entity> [<distance>]: the player to a spot where the hand reticles reach an entity, facing it -
+		// found by number, not by trying spots in launches (#210, TRAPS.md). Every 15 degrees on rings around the
+		// entity: a floor near the entity's own, room for the player's cylinder there, the eye within the pick's
+		// reach (350 units of the entity's position, VRReticle.cpp) and nothing of the level before the entity
+		// on the rays from the eye and from both simulated hands to the middle of its box. The spot nearest to
+		// <distance> along the floor (default 170) wins. Far from the player an entity is not updated (its box,
+		// its faces): the first call can only test the level, a second one from there tests the faces too
+		if(currentState() != GameState::Gameplay || !entities.player()) {
+			return refuse(std::string("approach: needs a level on screen (state ") + gameStateName(currentState()) + ")");
+		}
+		std::istringstream iss{std::string(rest)};
+		std::string id;
+		float wanted = 170.f;
+		if(!(iss >> id)) {
+			return refuse("approach: expected <entity> [<distance>], got \"" + std::string(rest) + "\"");
+		}
+		if(!iss.eof() && !(iss >> wanted)) {
+			return refuse("approach: expected <entity> [<distance>], got \"" + std::string(rest) + "\"");
+		}
+		Entity * target = entities.getById(id);
+		if(!target || target == entities.player()) {
+			return refuse("approach: unknown entity \"" + id + "\"");
+		}
+		const Vec3f base = target->pos;
+		const EERIE_3D_BBOX & box = target->bbox3D;
+		const Vec3f middle = (box.min + box.max) * 0.5f;
+		// Updated: in the treat zone around the player, and its box drawn where the entity is
+		const bool updated = (target->gameFlags & GFLAG_ISINTREATZONE) && box.max.x > box.min.x
+		                     && closerThan(Vec2f(middle.x, middle.z), Vec2f(base.x, base.z), 300.f);
+		const Vec3f aim = updated ? middle : base + Vec3f(0.f, -80.f, 0.f);
+		const float reach = 350.f - 20.f;
+		// Whether nothing of the level is before the entity on the ray from origin to the aim point
+		auto sees = [&](const Vec3f & origin) {
+			const Vec3f direction = glm::normalize(aim - origin);
+			if(!updated) {
+				// Short of the position: a lever's is at the wall it is fixed to
+				return !raycastScene(origin, aim - direction * 30.f, POLY_NOCOL | POLY_WATER);
+			}
+			const Vec3f end = origin + direction * (glm::distance(origin, aim) + 100.f);
+			const EntityRaycastResult first = raycastEntities(origin, end, POLY_TRANS, RaycastIgnorePlayer);
+			if(first.entity != target) {
+				return false;
+			}
+			const RaycastResult scene = raycastScene(origin, end, POLY_NOCOL | POLY_WATER);
+			return !scene || glm::distance(origin, scene.pos) >= glm::distance(origin, first.pos);
+		};
+		long climb = COLLIDED_CLIMB_POLY;
+		struct Rejects {
+			int floor = 0;
+			int room = 0;
+			int reach = 0;
+			int sight = 0;
+		} rejects;
+		bool found = false;
+		Vec3f best(0.f);
+		float bestScore = 0.f;
+		int tested = 0;
+		for(float radius = 80.f; radius <= 320.f; radius += 20.f) {
+			for(float degrees = 0.f; degrees < 360.f; degrees += 15.f) {
+				tested++;
+				const Vec3f around = base + angleToVectorXZ(degrees) * radius;
+				float floorY = 0.f;
+				if(!CheckInPoly(Vec3f(around.x, base.y - 120.f, around.z), &floorY)
+				   || std::abs(floorY - base.y) > 100.f) {
+					rejects.floor++;
+					continue;
+				}
+				const Vec3f feet(around.x, floorY, around.z);
+				const Cylinder body(feet, ARXCHARACTER::baseRadius(), ARXCHARACTER::baseHeight());
+				if(CheckAnythingInCylinder(body, entities.player(), CFLAG_JUST_TEST | CFLAG_PLAYER) < -20.f) {
+					rejects.room++;
+					continue;
+				}
+				const Vec3f eye = feet + ARXCHARACTER::baseOffset();
+				if(!closerThan(eye, base, reach)) {
+					rejects.reach++;
+					continue;
+				}
+				// The simulated hands (SimRig: 20 cm aside, 45 below the eyes, 35 ahead), facing the aim point
+				Vec3f ahead = aim - eye;
+				ahead.y = 0.f;
+				ahead = glm::normalize(ahead);
+				const Vec3f side(-ahead.z, 0.f, ahead.x);
+				const Vec3f hand = eye + ahead * 35.f + Vec3f(0.f, 45.f, 0.f);
+				if(!sees(eye) || !sees(hand + side * 20.f) || !sees(hand - side * 20.f)) {
+					rejects.sight++;
+					continue;
+				}
+				const float score = std::abs(radius - wanted);
+				if(!found || score < bestScore) {
+					found = true;
+					best = eye;
+					bestScore = score;
+				}
+			}
+		}
+		COLLIDED_CLIMB_POLY = climb;
+		if(!found) {
+			std::ostringstream why;
+			why << "approach: no spot in reach of " << id << " among " << tested << " (no floor " << rejects.floor
+			    << ", no room " << rejects.room << ", out of reach " << rejects.reach << ", no sight " << rejects.sight
+			    << (updated ? "" : "; the entity is not updated here - come closer first") << ")";
+			return refuse(why.str());
+		}
+		// The player's teleport takes the feet (player.pos, the eye, is 170 units above them - TRAPS.md)
+		ARX_INTERACTIVE_Teleport(entities.player(), best - ARXCHARACTER::baseOffset());
+		const Anglef angle = vectorToAngle(glm::normalize(aim - best));
+		player.desiredangle.setYaw(angle.getYaw());
+		player.angle.setYaw(angle.getYaw());
+		player.desiredangle.setPitch(angle.getPitch());
+		player.angle.setPitch(angle.getPitch());
+		LogInfo << "[channel] approach " << id << ": the eye to " << best.x << ' ' << best.y << ' ' << best.z
+		        << " (yaw " << angle.getYaw() << ", pitch " << angle.getPitch() << ", " << glm::distance(best, base)
+		        << " from its position), " << (updated ? "the entity's faces seen" : "the level only: not updated there")
+		        << "; of " << tested << " spots: no floor " << rejects.floor << ", no room " << rejects.room
+		        << ", out of reach " << rejects.reach << ", no sight " << rejects.sight;
 		return std::string();
 	}
 
@@ -2345,7 +2613,12 @@ std::string execute(std::string_view line) {
 		}
 		LogInfo << "[channel] changing to level " << area << (target.empty() ? "" : " at ") << target;
 		vr::perf::Scope perfLoad(vr::PerfPhase::Load);
+		const PlatformInstant start = platform::getTime();
 		ARX_CHANGELEVEL_Change(AreaId(u32(area)), target, 0.f);
+		// How much of the change the loading screen took (#440): its frames are bound by the present
+		const LoadingScreenStats screen = loadingScreenStats();
+		LogInfo << "[channel] level " << area << " loaded in " << toMsi(platform::getTime() - start)
+		        << " ms, the loading screen drew " << screen.frames << " frames in " << toMsi(screen.drawTime) << " ms";
 		return std::string();
 	}
 
@@ -2408,7 +2681,43 @@ void pollCommands() {
 	}
 
 	writeAck(errors);
+	g.ackedSeq = g.cmdSeq;
 	writeStatus(platform::getTime());
+}
+
+//! stick-for: keep the walk the hold made, and let the stick go once the player has walked far enough (#370)
+void updateStickFor() {
+
+	State::StickFor & hold = g.stickFor;
+	if(!hold.active) {
+		return;
+	}
+
+	if(currentState() != GameState::Gameplay || !entities.player()) {
+		// The level is gone (a load, the menu): nothing to measure the distance on, let go now
+		vr::inputCommand("stick " + hold.hand + " 0 0");
+		hold.active = false;
+		LogInfo << "[channel] stick-for: " << hold.hand << " stick let go, the level is not on screen";
+		return;
+	}
+
+	const vr::WalkStatus & walk = vr::walkStatus();
+	if(walk.walking) {
+		hold.walk = walk;
+	}
+	hold.moved = glm::distance(Vec2f(player.pos.x, player.pos.z), hold.start);
+	if(hold.moved >= hold.units) {
+		vr::inputCommand("stick " + hold.hand + " 0 0");
+		hold.active = false;
+		LogInfo << "[channel] stick-for: " << hold.hand << " stick let go after " << hold.moved << " units";
+	} else if(g_gameTime.now() >= hold.deadline) {
+		vr::inputCommand("stick " + hold.hand + " 0 0");
+		hold.active = false;
+		hold.timedOut = true;
+		LogWarning << "[channel] stick-for: " << hold.hand << " stick let go at its time limit after only "
+		           << hold.moved << " of " << hold.units << " units";
+	}
+
 }
 
 } // anonymous namespace
@@ -2435,6 +2744,7 @@ void initialize() {
 	// Leftovers of a previous run must not be mistaken for this one
 	fs::remove(g.dir / "status.json");
 	fs::remove(g.dir / "ack.txt");
+	fs::remove(g.dir / "hang.txt");
 
 	g.counter = new LogCounter;
 	Logger::add(g.counter);
@@ -2459,6 +2769,18 @@ void update() {
 	g.frame++;
 	PlatformInstant now = platform::getTime();
 
+	// Watched from the first frame on: the start-up before it has the smoke test's own timeout
+	if(!g.watchdog) {
+		g.watchdog = std::make_unique<platform::HangWatchdog>("main thread",
+			std::chrono::milliseconds(g.watchdogThresholdMs), reportHang);
+	}
+	g.watchdog->beat("frame");
+	if(!g.watchdogLogged && g.watchdog->watching()) {
+		g.watchdogLogged = true;
+		LogInfo << "[channel] hang watchdog: watching the main thread, threshold "
+		        << g.watchdog->threshold().count() << " ms";
+	}
+
 	if(g_crashAt != PlatformInstant(0) && toUs(now - g_crashAt) >= 0) {
 		LogWarning << "[crash] deliberate crash requested through the test channel";
 		volatile int * nothing = nullptr;
@@ -2469,6 +2791,8 @@ void update() {
 	if(state != g.state) {
 		setState(state);
 	}
+
+	updateStickFor();
 
 	if(toMsi(now - g.lastPollTime) >= PollIntervalMs) {
 		g.lastPollTime = now;
@@ -2615,7 +2939,29 @@ void notifyLoading(AreaId area) {
 	// Logged by the event log (game.state to=LOADING area=N)
 	ARX_UNUSED(area);
 	g.state = GameState::Loading;
+	beat("level load");
 	writeStatus(platform::getTime());
+
+	if(g.stallLoadMs != 0) {
+		long stallMs = g.stallLoadMs;
+		g.stallLoadMs = 0;
+		LogInfo << "[channel] stalling the level load for " << stallMs << " ms";
+		// Named in a hang report: the run digest knows this stall is on purpose (log-digest-allowlist.txt)
+		note("a stall the test channel asked for");
+		platform::stallThisThread(std::chrono::milliseconds(stallMs));
+	}
+}
+
+void beat(const char * where) {
+	if(g.watchdog) {
+		g.watchdog->beat(where);
+	}
+}
+
+void note(const char * what) {
+	if(g.watchdog) {
+		g.watchdog->note(what);
+	}
 }
 
 void shutdown() {
@@ -2623,6 +2969,9 @@ void shutdown() {
 	if(!g.enabled) {
 		return;
 	}
+
+	// The game is down: nothing beats any more
+	g.watchdog.reset();
 
 	g.state = GameState::Exited;
 	g.cleanShutdown = true;

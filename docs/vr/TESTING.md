@@ -92,6 +92,10 @@ It prints the state timeline (`+1.1s state GAMEPLAY (frame 2)`), the acks, the `
 the last lines of the log, the head of a new crash report, and `PASS` / `FAIL` with every reason.
 `-Repeat N` adds a table and a `passed X/N` line. The game runs with `ARX_UNATTENDED=1`: a crash
 writes its report and exits instead of waiting for someone to click the crash dialog.
+`-EvidenceDir <dir>` keeps every **failed** run's evidence in `<dir>\runNN-<time>\` before the next run
+replaces it (#146): `arx.log`, `stdout.txt`, `stderr.txt`, `status.json`, the run's new crash reports,
+`reasons.txt` and, with `-Vr`, the SteamVR logs written during the run (`Steam\logs\vrserver*`,
+`vrcompositor*`, `vrmonitor*`, `vrclient_arx*`, `xrclient_arx*`).
 
 Before the first run the test applies the launch rules of D-014 (`scripts/launch-lib.ps1`): it runs
 only this working copy's own build made from its `HEAD` (`built-from.txt`; `-Rebuild` builds first),
@@ -139,6 +143,74 @@ read back by the second launch).
 **What it does not cover (#92, #54):** only the intro's `introduction.cin` is played and skipped on the VR screen. The
 in-game cutscenes (the forced cameras that #29 / #54 are about) are not walked by any sequence: #92 (restore cinematics
 for players) must not ship before they are covered.
+
+## The exit hook (#146)
+
+Every way the process ends names itself in `arx.log`. The game's own shutdown logs `Clean shutdown`; a crash
+writes a crash report; every quit request logs `Quit requested: <who>` (the window closed, the main menu, the
+channel's `quit`, the simulated headset's `quit`, the benchmark); the runtime ending the VR session logs
+`OpenXR session ended by the runtime (exiting|loss pending)` or `OpenXR runtime is shutting down (instance loss
+pending)` and the game goes on flat. What is left - `exit()` or `ExitProcess` called inside the process by any
+module before the shutdown finished, the shape of #146 - is caught by `platform/ExitTrace` (an `atexit` handler,
+and a TLS callback of `arx.exe` that the loader calls for every `ExitProcess`), which flushes the log and appends:
+
+```
+[E] ExitTrace:0  The process is ending outside the game's own shutdown (#146): ExitProcess (or _exit / abort) was called inside the process, not exit() of the game's C runtime - the stack names the module that called it, exit code -1 (0xffffffff)
+[E] ExitTrace:0  Last cause noted before it: OpenXR session ended by the runtime (exiting), 195 ms earlier
+[E] ExitTrace:0  Called from (innermost first): ntdll.dll+0xe83fb < ... < KERNEL32.DLL+0x4141b < arx.exe+0x21682e < ...
+```
+
+The same lines go to stderr (`stderr.txt` of a smoke run). Read the stack from the left: after the loader's
+`ntdll.dll` frames, `KERNEL32.DLL` is `ExitProcess` (or `ucrtbase.dll` for `exit()`), and the **next module is the
+caller** - `arx.exe` is ours (resolve the offset with the build's `arx.pdb`), anything else is a library
+(`vrclient_x64.dll`: SteamVR's client, a driver ...). With `exit()` a fourth line follows: `The process ended with
+exit code N`. **No ExitTrace lines, no crash report and no `Clean shutdown`** means nothing in the process ran on
+the way out: a `TerminateProcess` from outside (the task manager, a launcher, a runtime killing a hung app).
+
+- `scripts\dev\xrs\vr-session-end.xrs`, `vr-session-loss.xrs` (CI runs them): the simulated runtime ends the session
+  (`vr-sim session exiting`, `vr-sim runtime lost`, `vr-sim session loss-pending`); the game must go on flat, name the
+  cause and still end with `Clean shutdown` and no ExitTrace line. The three warnings are in the digest allowlist.
+- `scripts\dev\exit-trace-check.ps1 [-Fault exit-process|exit] [-Code -1]`: one launch on the simulated headset,
+  the session ended by the runtime, then `vr-sim fault ...` ends the process from inside. The smoke run FAILS (on
+  purpose); the check PASSES when the exit code, the way out, the cause and a stack with `arx.exe` are in `arx.log`.
+  Bug filing is off for the run (`ARXVR_AUTOREPORT=0`).
+- The simulated headset cannot reproduce what SteamVR does: the real hunt is the owner's, with SteamVR running and
+  only on his word (D-014): `.\scripts\dev\smoke-test.ps1 -Vr -Repeat 10 -Seconds 3 -EvidenceDir
+  $env:LOCALAPPDATA\ArxFatalisVR\evidence\146` - each failed run keeps its `arx.log`, stdout / stderr and the SteamVR
+  logs.
+
+## The hang watchdog (#440)
+
+With the test channel the game watches its main thread (`platform/HangWatchdog`, from the first frame): the main
+thread beats every frame, when a level load starts and at every step of a load's progress bar. When no beat came
+for the threshold (5 s, below the 10 s a test waits for an ack; the channel's `watchdog <ms>` changes it) a thread
+of the watchdog suspends the main thread just long enough to walk its stack, resumes it and writes the report to
+`<dir>\hang.txt` (first, without the logger) and as `[W] ... [hang]` lines of `arx.log`:
+
+```
+[hang] main thread stalled for 5019 ms (report 1 of at most 3), last beat at level load, then loading screen: presenting the frame
+[hang]   #0 ntdll.dll+0x164a14 ZwWaitForAlertByThreadId
+[hang]   #10 OPENGL32.dll+0x817e wglSwapBuffers
+[hang]   #13 arx.exe+0x10122b LoadLevelScreen (LoadLevelScreen.cpp:128)
+[hang]   #14 arx.exe+0x1907de loadLevel (LoadLevel.cpp:324)
+[hang] main thread responsive again after 6230 ms
+```
+
+A stall that goes on is reported again every threshold (three reports at most, so a stack that moves shows it),
+and the first beat after it is reported too. "then <step>" names the last step noted after the beat (the loading
+screen notes its present). Functions and lines come from the build's `.pdb` next to `arx.exe`, read when the
+watchdog starts — never during a report, since a thread stuck in the loader holds the lock that loading symbols
+waits for. A thread that does not stop for the walk within 1 s (inside the kernel with suspension blocked, as in a
+driver call) is reported without its stack. `Send-ArxCommand` (`scripts/dev/test-lib.ps1`) puts the new reports of
+`hang.txt` into its timeout: `the game hangs: no ack for '<command>' after 10 s, and its hang watchdog reported
+(hang.txt): ...` instead of a bare timeout. `smoke-test.ps1 -EvidenceDir` and the CI evidence keep `hang.txt`.
+
+- Host test `HangWatchdogTest`: a stalled thread is reported within its threshold with `platform::stallThisThread`
+  and the test function in its stack, three times, then responsive again; a beating thread never.
+- `scripts\dev\xrs\level-load-hang.xrs` (CI runs it): `watchdog 1000`, `stall load 3000`, `loadlevel 1` - the report
+  names the stall and the load under it, the main thread is responsive again and level 1 loads.
+- A load that goes on slowly beats at every progress step and is no hang: what it spends its time on is the
+  `[channel] level N loaded in <ms> ms, the loading screen drew <frames> frames in <ms> ms` line of a `loadlevel`.
 
 ## Background runs are silent (`--mute`, #345)
 
@@ -196,20 +268,24 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `window <width> <height>` | resize the game window as a player dragging its border does (#334): the interface is laid out again for the new size at the next frame (`window` and `vr.interface.windowWidth/Height` in the status). At least 320 × 240; refused in fullscreen. The size is saved to `cfg.ini` when the game quits |
 | `mark <text>` | `[mark] <text>` in the log — an anchor for "the line I wait for must come after this"; also an `M` line in [the performance log](#the-performance-log-arx-perflog-327) |
 | `stall <ms>` | the main thread sleeps 1..5000 ms in this frame: a forced hitch, which the performance log must mark with `cause=channel` (#327) |
+| `stall load <ms>` | the **next level load** sleeps 1..5000 ms right after its `Loading level` line: a stalled load for the [hang watchdog](#the-hang-watchdog-440) (#440, `level-load-hang.xrs`) |
+| `watchdog <ms>` | the hang watchdog's threshold, 100..60000 ms (default 5000): a main thread without a beat for this long is reported with its stack (#440); `hangWatchdog.thresholdMs` in the status |
 | `quit` | ask the game to quit at the end of the frame (the same path as closing the window) |
 | `save <name>` | save the running game as a new slot named `<name>` (no thumbnail); the newest save is slot 0, so `loadslot 0` loads it back. A `save slot=save000N name=<name> ok=yes\|no` event either way; refused outside a running game (#130) |
 | `loadslot <n>` | load save slot `n` (from the menu or in-game), refused with the slot count if it does not exist. The command-line `--loadslot <n>` of a missing slot logs an `[E]` and starts at the main menu (before #24 it started an empty level: a black world with only the HUD, TRAPS.md); `run-windows.ps1` / `test-pr.ps1` refuse such a launch before it starts |
 | `ui inventory open\|close` | what the inventory key does (the book has the script command `book open\|close`); a `ui.inventory` event once the inventory is open / has finished closing. While a level script holds the player (the level 10 start: letterbox, controls blocked) the HUD is not drawn and a close never finishes — `setplayercontrols on` and `cinemascope off` first (#130) |
 | `loadlevel <n> [target]` | change to level `n` in a running game (refused from the menu: start with `--loadlevel` or `loadslot`) |
 | `newgame` | what the menu does for "New game" and the end of the character creation, without the screens: an average hero (all attributes 10, skills 2, nothing to distribute), level 1. Refused outside the main menu (a plain launch). The hero then lies in the start cell and `player.controlsBlocked` stays `true` for 30-40 s while the level script plays the awakening (#70) |
-| `entities [filter]` | write one line per entity to `<dir>\entities.txt`: `<id> npc\|item\|fix\|marker\|camera\|other show=<n> pos=<x> <y> <z> [life=<n>]`; `filter` is a substring of the id. `show` is the engine's `EntityShowState`: 0 in the scene, 2 in an inventory, 6 equipped by the player. The position of a floor object (lever, chest, item) is on the **floor** (#70) |
-| `setpos <x> <y> <z> [yaw]` | put the player at exact coordinates, optionally facing `yaw`. `y` is the **eye**: the floor is 170 units lower (a `y` at floor level puts the eye in the floor: black screen). About 100 units are a metre. Refused outside gameplay (#70) |
+| `entities [filter]` | write one line per entity to `<dir>\entities.txt`: `<id> npc\|item\|fix\|marker\|camera\|other show=<n> pos=<x> <y> <z> [life=<n>] interactive=<0\|1>`; `filter` is a substring of the id. `show` is the engine's `EntityShowState`: 0 in the scene, 2 in an inventory, 6 equipped by the player. The position of a floor object (lever, chest, item) is on the **floor** (#70). `interactive=0`: its script switched it off, no hand reticle or mouse hovers it (#210) |
+| `setpos <x> <y> <z> [yaw]` | put the player at exact coordinates, optionally facing `yaw`. `y` is the **feet** (the engine's teleport): the eye, `player.y` in the status, ends 170 units higher (smaller `y`). A `y` taken from the eye puts the player 170 units above the floor (TRAPS.md, #210). About 100 units are a metre. Refused outside gameplay (#70) |
+| `approach <entity> [<distance>]` | put the player where the hand reticles reach an entity, facing it — the spot is found by the game, not by trying spots in launches (#210): every 15° on rings 80-320 units around the entity, the first floor within 100 units of the entity's own, room for the player's cylinder, the eye within the pick's reach (350 units of the entity's position), and no wall before the entity's faces on the rays from the eye and from both simulated hands to the middle of its box. The spot nearest to `distance` along the floor (default 170) wins; one `[channel] approach` log line with the spot and the counts of rejected spots. Call it **twice**: far from the player an entity is not updated (box, faces), so the first call tests only the level, the second the entity's faces. Refused (with the counts) when no spot qualifies |
 | `lookat <entity>` | turn the player (yaw and pitch) towards an entity, aiming 40 units above its floor position. The pitch is not kept by a save and does not matter in VR (the head decides); the yaw is kept (#70) |
 | `place <entity> <ahead> [<right>]` | put an entity on the floor `ahead` units along the player's heading (and `right` units to its right), facing the player — a target in reach for melee checks (#39; `goblin_base_0036.setspeed 0` first keeps an NPC from walking off). Refused outside gameplay or for an unknown entity |
 | `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
 | `vr-input down\|up\|tap <control>`, `vr-input stick left\|right <x> <y>`, `vr-input bind <event> <binding>`, `vr-input reset`, `vr-input turn snap\|smooth\|angle <deg>\|speed <deg/s>\|repeat <s>` | the VR controls' table without a headset (#30, `vr/VRInput.h`): a control (`right.a`, `left.grip`, `right.stick_down` …) held, let go or tapped as if a controller did it, merged into what OpenXR reports and resolved by the same table at the next frame; the game then reacts as to the controllers (#74: inventory, book, jump, crouch toggle, the game menu, the mouse buttons). `stick` holds a stick deflected (the analog value only — its direction controls are `down` / `up`), seen in `vr.input.game.moveX/moveY/turn`; `bind` remaps one event (`bind jump left.grip+left.a`, `bind menu left.b:long`, `bind magic_mode none`); `reset` restores the default layout for the current controllers and lets go of everything (`bind` and `reset` are not saved); `turn` sets the turn settings as `cfg.ini` does (#32: mode, snap angle, the repeat pause of a held stick (0 = none), smooth speed — `vr.input.turn` shows them with `snaps`, `lastSnap`, `turned` degrees right positive, `allowed`, and for the last push `pushRepeats` and `repeatInterval` — the mean seconds by the clock from its first snap to its last repeat (#285); one `vr.turn.snap … repeat=no|yes` game event per snap, `vr.turn.smooth` at the start and stop of a smooth turn). Refused with the reason for an unknown control, event or binding. `vr.input` in the status (`vr.input.game.held`: the actions, buttons and keys the engine is given); one `[vr] input: <event> (<binding>)` log line per event press, one `[vr] input: layout …` line per layout change |
 | `vr-input capture <event>`, `vr-input cancel`, `vr-input default` | the VR settings page's remapping (#178, `vr/BindingCapture.h`): `capture` is what a click on the event's binding does — the next controls pressed (`vr-input down` / `up` / `tap`, or the simulated controllers) become its binding: released → single, held ≥ 0.5 s → `:long`, a second control of the same hand while the first is held → a chord; the walk stick and the turn stick's left / right are refused with the reason; nothing pressed for 8 s cancels. While capturing, the controls reach nothing else. The result is applied at once and **saved** for the controller type (`vr-controls-<type>.ini` in the config directory: only the events that differ from the default). `cancel` ends a capture; `default` is the page's "reset to default" (#35's layout, the file removed); `reload` reads the saved layout again at the next frame, as a start does. `vr.input.capture` and `vr.input.remapped` / `conflicts` in the status; a `vr.remap` game event per result |
 | `menu pause\|resume\|none\|options\|input\|vr\|vr-turning\|loadsave\|interface\|quit\|language`, `menu step <row> left\|right`, `menu drag <slider> <0..1>` | the main / pause menu without clicks (#178): `pause` opens the pause menu from a running game (as Escape does), `resume` goes back to the game ("Resume game"); the others open that page of the main or pause menu (`none` closes the options window). On the VR turning page (#260, D-043, the page open): `drag` is a slider's dot dragged to that point of its bar (0 left end, 1 right end) and let go — it lands on the nearest notch: `angle` (30–90° in 5° steps), `speed` (very slow / slow / medium / fast / very fast = 60 / 90 / 120 / 180 / 240°/s), `repeat` (off, 0.25, 0.4, 0.6, 0.8, 1 s); `step` is one notch of a slider (the arrow keys) or a click on the left / right arrow of the rows `turn` (snap / smooth) and `height` (−20 to +20 cm in 2 cm steps); a change is a `vr.settings row=… value=…` game event and applies at once. `menuPage` in the status |
+| `stick-for left\|right <x> <y> <units> [<seconds>]` | a walk bounded by its distance (#370): holds the stick deflected as `vr-input stick` does and lets it go in the first frame the player is `units` or more from where it started on the ground (x, z) - however slow the frames or the runner are. The player still coasts a few units after the release (≈ 28 at 90 fps). `stickFor` in the status (`@until stickFor.active eq false`, then assert on `stickFor.walk`); one `[channel] stick-for:` log line per release. A player who never gets that far (a wall) is let go after `seconds` of game time (default 10) with `stickFor.timedOut` true and a `[W]` log line - assert `stickFor.timedOut eq false`. Refused outside gameplay |
 | `vr-input height <meters>` | the character height setting as `cfg.ini` (`vr_height_offset`) sets it (#260), clamped to ±0.2: the head camera sees from this far above the character's eye; `vr.head.heightOffset` in the status (updated while the head drives the camera, not in the menu) |
 | `pick [<entity>]` | what mouse picking (`FlyingOverObject`) finds, on an 8-pixel grid over the interface's screen (#72; the window's size in flat mode, the quad's own size in VR, #73): `pick.center` (the entity at its center), `pick.scan` (`<entity> <hits> <x> <y>` per entity found, most hits first) and, for an entity, `targetHits`, `targetHitX/Y` (the middle of its hits), `targetSeenX/Y` (where the camera prepared last — the head camera at the interface's size — sees the middle of its bounding box), `targetOffset` (the distance between the two), `targetBox` (its `bbox2D`) and `targetSeenInBox`. A thin item (a key) can fall between the grid points: `targetSeenInBox` still tests its box. Refused outside gameplay or for an unknown entity; one `[channel] pick:` log line |
 | `recenter` | the head is measured from its next sample: a new head reference (#24; the player's button chord is #28). A `vr.head.reference reason=channel` event once a head is there |
@@ -293,7 +369,17 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   screen.
 - `errors` / `warnings`: log lines at `[E]`/`[C]` and `[W]` level since the process started, counted
   by a logger backend — assert on these instead of grepping a buffered log.
+- `hangWatchdog` (#440): `watching` (the [hang watchdog](#the-hang-watchdog-440) has read its symbols and checks
+  the beats, about a second after the first frame), `thresholdMs`, `stalls` (stalls reported so far).
 - `fps`: frames over the last status interval (0 in the final status).
+- `notifications` (#370): the timed texts at the top of the 2D interface on screen now (a level script's
+  tutorial hint, `herosay`, "cannot cast"): each stays 2 s + 60 ms per character of **game time** and is
+  drawn on the HUD quad. A check that compares HUD pixels over time waits for `notifications eq 0` first
+  (`mvp-new-game` starts with one for about 6 s; see TRAPS.md).
+- `stickFor` (#370, after the first `stick-for`): `seq` holds started, `active` while the stick is held,
+  `units` the distance asked for, `moved` the distance walked (the last hold's, once let go), `timedOut` the hold ended at its time limit instead, `walk` the stick
+  walk of the hold's last walking frame - `walking`, `yaw`, `dirX`, `dirZ` as in `vr.input.walk`, kept after
+  the release so a check reads them whenever it gets to it.
 - `vr.sessionState`: `none` without a session, else the OpenXR state as the runtime reported it
   (`idle`, `ready`, `synchronized`, `visible`, `focused`, `stopping`, …).
 - `vr.frames`: OpenXR frames submitted with `xrEndFrame` since the start (one per shown game frame
@@ -565,14 +651,31 @@ which.
 | `mvp-new-game` | in the start cell after the awakening, controls free, nothing equipped | demo step 1-2: look, walk, turn |
 | `mvp-items` | a sword equipped; 2.3 m from a table with a key, a note and a form (`key_base_0005`, `note_0004`, `blank_form_0001`); dark room, the items are low in the view | demo step 3: pick up, drag into the inventory (#37) |
 | `mvp-goblin-fight` | a sword equipped; `goblin_base_0036` 3.5 m ahead in a corridor, walking away | demo step 5: melee (#39) |
+| `mvp-lever` | a sword equipped; `lever_0012` (opens `porticullis_0015`) 1.6 m ahead on the floor, in the hand reticles' reach | #38: pull a lever |
+| `mvp-door` | a sword equipped; the closed portcullis `porticullis_0015` 1.6 m ahead, in the hand reticles' reach | #38: a door |
+| `mvp-chest` | a sword equipped; `chest_metal_0052` 1.6 m ahead, in the hand reticles' reach | #38: open a chest |
 
-**Not in the library: levers, doors, chests.** Nothing could put the player where one is in reach and
-visible; the owner records those by hand (follow-up #210). What that attempt
-learned is in TRAPS.md ("A lever, a chest, a door cannot be found by coordinates").
+`mvp-items` and `mvp-goblin-fight` were placed with `setpos` before it was known that `setpos` takes the
+feet: their player stands 170 units above the floor (TRAPS.md); #417 regenerates them.
+
+**A save at an object** (a lever, a door, a chest, an NPC): `approach <entity>` twice in the scenario, then
+`save` (the three above; one run, no search). Each save has its reticle check, one launch each:
+
+```powershell
+.\scripts\dev\make-test-saves.ps1 -VrSim idle -Only mvp-lever,mvp-door,mvp-chest   # made in VR (the simulated headset); only these replaced
+.\scripts\dev\make-test-saves.ps1 -Verify -VrSim idle                               # every save loaded in a fresh VR game
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence reach-lever -Save mvp-lever      # the right reticle on the lever: under, hover; then a load with the sword held
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence reach-door -Save mvp-door
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence reach-chest -Save mvp-chest
+```
+
+`-VrSim <script>` makes (or verifies) the saves on the simulated headset instead of a flat game; `-Only`
+copies only the named saves of the run into the library (every save is still made and loaded again).
+`manifest.json` says how each save was made (`made`: `flat` or `vr-sim idle`).
 
 **How a save is made** (`scripts/dev/make-test-saves.ps1`, scenario file
-`scripts/dev/test-saves/scenarios.txt`): one flat game from the main menu; `newgame`; `@until
-player.controlsBlocked False`; per scenario `setpos` + `lookat` + `save <name>`; then the **same game
+`scripts/dev/test-saves/scenarios.txt`): one game (flat, or `-VrSim`) from the main menu; `newgame`; `@until
+player.controlsBlocked False`; per scenario `setpos` + `lookat` or `approach` + `save <name>`; then the **same game
 loads every save again** (`loadslot`, oldest first) and checks the level, that the player stands where it
 was saved (within 1 m) and that the controls are free, with a screenshot per save. The script **fails**
 (nothing is copied into the library) when a command is refused, the game ends unclean, or a check fails.
@@ -637,8 +740,8 @@ generator source changes. No original level is touched: a launch without `-Playg
 Checks: `playground-levers.xrs` (peaceful, the mode lever, the respawn lever, the hero's level and runes,
 the items), `playground-respawn.xrs` (death and back), `damage-numbers.xrs` / `damage-numbers-off.xrs`
 (numbers in both eyes, none in an original level). The channel's `playground` commands and status fields
-are under [Commands](#commands). CI runs these sequences only where node is on the runner's PATH; without
-it they are **NOT RUN** with a warning in the job summary, never a pass. The tester zip does not carry
+are under [Commands](#commands). CI installs node 22 with `actions/setup-node` (cached in the runner's tool cache, #412) and runs these
+sequences; a machine without node (a local `ci-smoke.ps1` included) reports them **NOT RUN** with a warning in the job summary, never a pass. The tester zip does not carry
 the playground yet (#359).
 
 ## The log banner
@@ -1222,7 +1325,7 @@ y up, −z forward), `head rot <yaw> <pitch> <roll>` (degrees: yaw + turns left,
 on a runtime that cannot read fingers, or joints again), `profile index|touch|simple|none|<path>`,
 `action <name> left|right|both <value> [<y>]` (the game's OpenXR action names: `trigger`, `grip`,
 `button_a`, `button_b`, `thumbstick`, `thumbstick_click`, `trackpad_press`, `menu`, `thumb_touch`), `session
-focused|visible|idle` (`idle`: the headset is taken off - the session falls back to `synchronized`, the eyes are still located, nothing is shown, #27), `shot [name]`, `mark <text>`, `quit`, `fault swap-eyes on|off`, `layers on|off` (shots also save each eye's projection layer without the quad, `<name>-left-layer.bmp` / `-right-layer.bmp`: what the game drew into the eye itself, #72). The defaults: Index
+focused|visible|idle` (`idle`: the headset is taken off - the session falls back to `synchronized`, the eyes are still located, nothing is shown, #27), `session exiting|loss-pending` and `runtime lost` (the runtime ends the session on its own - stopping, then exiting after `xrEndSession`, as SteamVR quitting the app; the session about to be lost; the runtime shutting down: the game goes on flat and names the cause, #146, see [The exit hook](#the-exit-hook-146)), `shot [name]`, `mark <text>`, `quit`, `fault swap-eyes on|off`, `fault exit|exit-process <code>` (the process ends from inside with `std::exit` or `ExitProcess`, the shape of #146 - only for `exit-trace-check.ps1`), `layers on|off` (shots also save each eye's projection layer without the quad, `<name>-left-layer.bmp` / `-right-layer.bmp`: what the game drew into the eye itself, #72). The defaults: Index
 panel size 1440 × 1600, IPD 64 mm, 90 Hz, the asymmetric, mirrored field of view of research row
 F-165, both Index controllers in front of the body.
 
@@ -1322,7 +1425,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 | `@sim <name>`, `@args <...>` | what `xrs-run.ps1` launches: the `scripts\dev\vrsim` script (default `idle`: no timed lines, no shots) and the arx.exe arguments (default `--loadlevel 10`); ignored while running |
 | `@player` | a player's launch (#394; `smoke-test.ps1 -Player`): no `--dev-launch`, so the logos, the intro and every cinematic play; without `@args` the sequence starts while the first logo is up (`LOGO`). `@args --dev-launch` is the other extreme: the main menu at once, no default `--loadlevel 10` |
 | `@save <name>` | start from this save of the test save library (#70; `smoke-test.ps1 -Save`, the only save of the isolated user directory), with `@args --loadslot 0`. Anything the **body** does — turning, walking — needs a first-person save: on level 10 the intro conversation's camera owns the view (TRAPS.md) |
-| `@playground` | start in the test playground (#321; `smoke-test.ps1 -Playground`: the generated level, area 30, a fresh max-level hero). CI runs it only where node is on the runner's PATH, else NOT RUN with a warning |
+| `@playground` | start in the test playground (#321; `smoke-test.ps1 -Playground`: the generated level, area 30, a fresh max-level hero). CI sets up node itself (#412); on a machine without node it is NOT RUN with a warning |
 
 Rules: a sequence waits for `state eq GAMEPLAY` and for `vr.sim.timelineFrame ge 270` (3 s) before its
 first shot — the level fades in from black (TRAPS.md). A timeout must carry its `s` (`60s`); a bare
@@ -1341,14 +1444,14 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `rune-trail` | the rune trail (#43) on `mvp-new-game`: the right trigger alone is a click (no stroke, no flare); the left trackpad held is the stance and draws nothing; the trigger in it draws with the right hand, the last flare at the trail's point; the hand moved 30 cm in six steps: `length` 30, more than 20 new flares, the point stays level; pitched up 90°: the point rises 8 units (the controller's tip, not the grip); the left trigger is ignored while the right draws and until released; the release ends the rune (`trigger`), no flare after it; a left-hand stroke ended by releasing the stance (`stance`); the drawn shots differ from a still pair in both eyes | — |
 | `wrist-vitals` | health and mana on the left wrist (#116): with the idle rig the bars are on the wrist (orbs off) at full value; the left hand raised in front of the chest, knuckles right, the back of the hand up → `alpha` 0; the palm turned to the eyes like a watch → `alpha` 1, drawn into both eyes, the forearm to the right (`along.x` > 0.5: red left), filling upwards (`across.y` < −0.6); `specialfx heal -9` / `specialfx mana -6` → `vr.wrist.health` / `mana` drop (the picture judged on the captures: a still pair already differs by 2.2); turned 30° further → fading (`alpha` 0.61); the left controller off → `shown` false and the orbs back on the quad (quad picture changes). Needs the first-person save: `smoke-test.ps1 -VrSim idle -Sequence wrist-vitals -Save mvp-new-game` | — |
 | `walk-forward` | on `mvp-new-game` (`-Save`; level 10 never moves the player, TRAPS.md): still without input, the stick held forward moves him | — (#31) |
-| `walk-look` | on `mvp-new-game`: with the head turned ±90° the stick walks where the head looks (D-008), with the head ahead along the heading; the heading stays, one `vr.walk` start / end per push (`vr.input.walk` in status.json) | — (#31) |
+| `walk-look` | on `mvp-new-game`: with the head turned ±90° the stick walks where the head looks (D-008), with the head ahead along the heading; the heading stays, one `vr.walk` start / end per push (`vr.input.walk` in status.json). Each push is `stick-for left 0 1 100`: bounded by the distance, so a busy PC cannot walk it into the start cell's wall (#370) | — (#31) |
 | `sneak-jump-crouch` | on `mvp-new-game`: a full push runs, a slight one sneaks (`player.stealth`, `player.animSpeed` < 0.8 × the run's), the hysteresis band keeps a run, below it the walk turns into a sneak; `right.a` jumps; `right.stick_down` with the stick drifting sideways toggles the crouch on without turning, a tap toggles it off | — (#33) |
 | `arms-follow` | the full body (#36): both arm chains found, both arms posed from the idle rig's controllers with `error` 0; the hand takes the controller's orientation (the identity grip is a hand hanging down in the OpenXR grip pose: the wrist 8 units above the grip and the fingertips below the wrist; pitched up 90°, fingers ahead and thumb up: wrist and fingertips level with the grip); a hand moved 30 cm moves the wrist with it and changes both eyes' pictures of the body seen from above (> 2, floor < 1.5); 1.2 m out: `stretched`, `slide` 20; a controller switched off gives its arm back to the engine; a 30 cm lean shifts the body by the camera's offset and keeps `error` 0. **Needs the first-person save** (level 10's conversation camera is nowhere near the body): `smoke-test.ps1 -VrSim idle -Sequence arms-follow -Save mvp-new-game` | — |
 | `stand-up` | flat, on the test save `mvp-new-game` (`smoke-test.ps1 -Sequence stand-up -Save mvp-new-game`): `crouch on` / `crouch off` in the start cell — the character crouches (eye 170.1 → 122.7) and stands up where it stood (eye 170.1, same x/z); crouched inside the cell's portcullis it stays down with one `player.standup.blocked` event, and stands up once back at the start spot (#263) | — |
 | `recenter` | a head offset is set and read back; `recenter` is accepted (#28) | — |
 | `tl-reprojection` | picking reads the head camera after the eyes, the book icon's particles are on the quad and add no coverage (#72), on the save `mvp-items` | — |
 | `real-steps` (#26; run with `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence real-steps`) | 8 cm is a lean (the body stays); 1 m forward is a real step (the body walks 0.9 m, the lean stays 0.1 m, no fade); into the cell wall the body is held, the head goes `inside` then `behind` it, both eyes black; back out, the fade clears | — |
-| `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
+| `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105; the pair waits for `notifications eq 0`, since the save's tutorial hint on the HUD expires by game time, #370); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
 | `menu-pointer` | the menu pointer (#34) on the test save `mvp-items` — run with `smoke-test.ps1 -VrSim idle -Sequence menu-pointer -Save mvp-items`: no pointer and no beam without a menu (`overlayPixels` 0); the key from the table put in the bag, the inventory opened, the right hand aimed at it (`vr-point right item`): the engine's mouse on the key's pixel (192, 606 = the target), `ui.hover` the key, the beam drawn above the panel (`overlayPixels` 2125 left / 1997 right); the trigger clicks (`vr.pointer.click`), a hand move of 8 px keeps the cursor on the key (dead zone, no drag), 40 px drags **the key the click landed on**; released over the bag it goes back; the left hand's trigger takes the cursor and its click lands on the key too; both hands pointing behind the head (since #37 a hand pointing ahead in the game is a world reticle): no cursor, no beam, a press is muted (`offPanelPresses` 1, nothing dragged); closed: the pointer goes. Host test `MenuPointerTest` | — |
 | `physical-crouch` | physical crouch (#100, D-034) on `mvp-new-game` — `smoke-test.ps1 -VrSim idle -Sequence physical-crouch -Save mvp-new-game`: the button crouches and stands at that spot first; the head 25 cm down follows the view and stands, 35 cm crouches the character (one `vr.head.crouch` episode), back at 25 cm stays crouched, 15 cm stands; the view never above the head nor twice as low; the crouch button still crouches and stands with the head up | — |
 | `weapon-hold` | the weapon in the IK hand (#75, D-033): on `mvp-items` the equipped short sword is in the right hand without the combat mode (`vr.weapon.place` `hand`), its blade read from the mesh (65.8 units; the asset 9.1° off the handle axis) and drawn 0.1° from the grip's -Z, the hilt on the palm attach point; the handle pitched up puts the tip 66 units above the hilt; a moved hand keeps the hilt on the palm; a controller switched off gives the sword back to the engine (`engine`), switched on it is back; `combat on` + the trigger held: the arm layer's ready and wait clips are `suppressed`, no strike clip starts (since #39 the swing is the strike), the shoulder stays, the sword stays in the hand. The shots `sword-ahead`, `sword-up` and `sword-at-face` (the raised blade 0.1 m from the eyes, F-39) are judged by eye. `smoke-test.ps1 -VrSim idle -Sequence weapon-hold -Save mvp-items` | — |
@@ -1364,6 +1467,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `first-run` | the whole first run from one player launch (`@player`, #394.3): logos skipped with A and the trigger, the level 10 intro on the VR screen skipped with A in `INTRO` (before `introduction.cin`, no `cinematic.start`), the menu with no leaked click (`vr.pointer.clicks` 0), shots `intro` and `menu` in both eyes, Options > Interface > Crosshair off by pointer and back, New game, the quick generation and Done by pointer clicks, the prison (area 1, `GAMEPLAY`, `player.controlsBlocked` false) with the made hero, a left-stick walk that moves `player.z` | — |
 | `first-run-intro` | a player's launch up to the main menu (#394): the logos on the screen (`vr.panel.mode screen`, distance 2.5), A and the trigger skip them, the intro (`INTRO`) drawn flat, `introduction.cin` shown (`CINEMATIC`) and skipped with B through `cinematicEnd()`, no click leaks into the menu, New game, the prison and a walk | — |
 | `first-run-chargen` | New game and the character creation by pointer clicks only (#394): New game clicked; a fresh hero (6 each, 16 + 18 points); the screen fills its panel and the window (all four quarters `world`); the trigger on strength spends one point (7, 15 left); both hands behind the head, the trigger and the grip change nothing; the quick generation makes the average hero (`chargen.roll` 1) and, clicked again, a random one (2); the grip takes a point back from strength and a skill point from stealth, the trigger spends them on dexterity and — with the left hand — on casting; Done starts the game with the rolled hero (`hero.strength` / `mind` kept into GAMEPLAY). Arx asks for no name | — |
+| `level-load-hang` | a stalled level load is reported as a hang with its stack (#440): `watchdog 1000`, `stall load 3000`, `loadlevel 1` - `[hang] main thread stalled ... last beat at level load`, `platform::stallThisThread` and the load under it in the stack, `responsive again`, level 1 loaded, `hangWatchdog.stalls` ≥ 1 ([The hang watchdog](#the-hang-watchdog-440)) | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
 `scripts\dev\test-xrs.ps1` (a fake game answering the channel files; in `run-script-tests.ps1`, so in CI).

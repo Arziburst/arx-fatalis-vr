@@ -63,6 +63,11 @@ void notification_add(std::string && text) {
 	
 }
 
+size_t notification_count() {
+	return size_t(std::count_if(g_notifications.begin(), g_notifications.end(),
+	                            [](const auto & entry) { return g_gameTime.now() <= entry.deadline; }));
+}
+
 void notification_check() {
 	
 	g_notifications.erase(std::remove_if(g_notifications.begin(), g_notifications.end(),

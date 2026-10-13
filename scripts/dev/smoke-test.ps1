@@ -125,11 +125,19 @@
 .PARAMETER CloseWindow
 	Quit with WM_CLOSE (what a player does) instead of the channel's quit command.
 
+.PARAMETER EvidenceDir
+	Keep each FAILED run's evidence in <EvidenceDir>\runNN-<time>\ before the next run replaces it (#146): arx.log,
+	stdout.txt, stderr.txt, status.json, the run's new crash reports, reasons.txt and, with -Vr, the SteamVR logs
+	(Steam\logs\vrserver*, vrcompositor*, vrmonitor*, vrclient_arx*, xrclient_arx*) written during the run.
+
 .EXAMPLE
 	.\scripts\dev\smoke-test.ps1
 	# flat, --loadlevel 10 (the default when no arguments for arx.exe are given)
 .EXAMPLE
 	.\scripts\dev\smoke-test.ps1 -Repeat 10 -Seconds 5
+.EXAMPLE
+	.\scripts\dev\smoke-test.ps1 -Vr -Repeat 10 -Seconds 3 -EvidenceDir $env:LOCALAPPDATA\ArxFatalisVR\evidence\146
+	# the #146 hunt, only while the owner has SteamVR running: every failed run keeps its logs
 .EXAMPLE
 	.\scripts\dev\smoke-test.ps1 -Vr -- --loadslot 0
 .EXAMPLE
@@ -171,6 +179,7 @@ param(
 	[string]$Sequence,
 	[string[]]$ExpectEvents = @(),
 	[switch]$CloseWindow,
+	[string]$EvidenceDir,
 	[Parameter(ValueFromRemainingArguments)]
 	[string[]]$ArxArgs
 )
@@ -237,6 +246,25 @@ function Write-Check([bool]$Ok, [string]$Text) {
 	if ($Ok) { Write-Host "  [ok]   $Text" -ForegroundColor Green } else { Write-Host "  [FAIL] $Text" -ForegroundColor Red }
 }
 
+# A failed run's evidence (-EvidenceDir, #146), copied before the next run replaces it: the game's log, stdout,
+# stderr and status, its new crash reports and, with -Vr, the SteamVR logs written during the run
+function Save-SmokeEvidence([int]$Run, [DateTime]$Since, [string[]]$Crashes, [string]$Why) {
+	$dir = Join-Path $EvidenceDir ('run{0:00}-{1:yyyyMMdd-HHmmss}' -f $Run, $Since)
+	New-Item -ItemType Directory -Force $dir | Out-Null
+	foreach ($file in @($log, (Join-Path $TestDir 'stdout.txt'), (Join-Path $TestDir 'stderr.txt'), (Join-Path $TestDir 'status.json'), (Join-Path $TestDir 'hang.txt'))) {
+		if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination $dir }
+	}
+	foreach ($c in $Crashes) { Copy-Item -LiteralPath (Join-Path $crashDir $c) -Destination $dir -Recurse }
+	$steam = if ($Vr) { Get-SteamPath } else { $null }
+	if ($steam) {
+		Get-ChildItem (Join-Path $steam 'logs') -File -ErrorAction SilentlyContinue |
+			Where-Object { $_.Name -match '^(vrserver|vrcompositor|vrmonitor|vrclient_arx|xrclient_arx)' -and $_.LastWriteTime -ge $Since } |
+			Copy-Item -Destination $dir
+	}
+	Set-Content -LiteralPath (Join-Path $dir 'reasons.txt') -Value $Why -Encoding utf8
+	Write-Host "  evidence kept in $dir"
+}
+
 function Invoke-SmokeRun([int]$Run) {
 	$reasons = [Collections.Generic.List[string]]::new()
 	$result = [ordered]@{ Run = $Run; Result = 'FAIL'; Exit = $null; State = '-'; Frames = 0; Fps = 0; VR = '-'; Errors = '-'; Warnings = '-'; Crash = '-'; DrawCheck = '-'; Reasons = '' }
@@ -244,7 +272,7 @@ function Invoke-SmokeRun([int]$Run) {
 	$launchTime = Get-Date
 	try {
 		New-Item -ItemType Directory -Force $TestDir | Out-Null
-		foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt', 'launched.txt') {
+		foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt', 'launched.txt', 'hang.txt') {
 			Remove-Item (Join-Path $TestDir $f) -Force -ErrorAction SilentlyContinue
 		}
 		# arx.log is not deleted here: the game rotates the previous run to arx.1.log itself (#129), and
@@ -326,10 +354,17 @@ function Invoke-SmokeRun([int]$Run) {
 				elseif ($status.vr.sessionState -ne 'focused') { $reasons.Add("the simulated session is not focused (state $($status.vr.sessionState))") }
 			}
 
+			# Each batch gets its own ack: seq advances by one per command and 'last=' names the command (#142: a
+			# level change inside a batch once exposed the next seq in status.json before the ack existed)
+			$lastAckSeq = $null
 			foreach ($command in $Commands) {
 				$ack = Send-ArxCommand -Lines @($command) -Dir $TestDir
 				Write-Host "  > $command`n    $ack"
 				if ($ack -notmatch 'errors=0 ') { $reasons.Add("command '$command' failed: $ack") }
+				$ackSeq = if ($ack -match '^seq=(\d+) ') { [int]$Matches[1] } else { -1 }
+				if ($ack -notmatch ('last=' + [regex]::Escape($command) + ' error=')) { $reasons.Add("the ack for '$command' belongs to another batch: $ack") }
+				if ($null -ne $lastAckSeq -and $ackSeq -ne $lastAckSeq + 1) { $reasons.Add("the ack for '$command' has seq $ackSeq, expected $($lastAckSeq + 1): $ack") }
+				$lastAckSeq = $ackSeq
 			}
 
 			if ($sequenceToRun) {
@@ -487,6 +522,10 @@ function Invoke-SmokeRun([int]$Run) {
 
 	$result.Reasons = $reasons -join '; '
 	$result.Result = if ($reasons.Count -eq 0) { 'PASS' } else { 'FAIL' }
+	if ($EvidenceDir -and $reasons.Count -gt 0 -and $launchTime) {
+		try { Save-SmokeEvidence -Run $Run -Since $launchTime -Crashes $newCrashes -Why $result.Reasons }
+		catch { Write-Warning "keeping the evidence failed (the verdict is unaffected): $($_.Exception.Message)" }
+	}
 	$color = if ($result.Result -eq 'PASS') { 'Green' } else { 'Red' }
 	Write-Host "  => $($result.Result) $($result.Reasons)" -ForegroundColor $color
 	[pscustomobject]$result

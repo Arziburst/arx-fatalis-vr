@@ -5,7 +5,9 @@
 
 .DESCRIPTION
 	Runs on the self-hosted runner after the build (.github/workflows/build-windows.yml), and by hand:
-	  1. smoke-test.ps1 -Seconds 3 -Commands 'drawcheck 120'   flat, --loadlevel 10: start, play, draw check, quit
+	  1. smoke-test.ps1 -Seconds 3 -Commands 'loadlevel 1','loadlevel 10','drawcheck 120'
+		                                                           flat, --loadlevel 10: start, two level changes (the first channel
+		                                                           batch is a loadlevel, each ack must be its own, #142), draw check, quit
 	  2. spell-drawcheck.ps1                                   the 26 spells of #71 cast, drawn twice per frame
 	  3. every scripts\dev\xrs\*.xrs sequence (#255)           one launch each, with the @sim / @args / @save it declares; the
 	                                                           test save library of this account is verified (or generated) first;
@@ -98,7 +100,7 @@ function Save-Evidence([string]$Name, [string]$UserDir = $userDir) {
 	$dest = Join-Path $OutDir $Name
 	New-Item -ItemType Directory -Force $dest | Out-Null
 	foreach ($log in Get-ChildItem $UserDir -Filter 'arx*.log' -File -ErrorAction SilentlyContinue) { Copy-Item $log.FullName $dest -Force }
-	foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt') {
+	foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt', 'hang.txt') {
 		$p = Join-Path $testDir $f
 		if (Test-Path $p) { Copy-Item $p $dest -Force }
 	}
@@ -144,7 +146,7 @@ function Invoke-Phase([string]$Name, $Script, [hashtable]$Params, [string]$Evide
 $results = @()
 try {
 	if ($Phase -in 'all', 'smoke') {
-		$p = @{ Config = $Config; Seconds = 3; Commands = @('drawcheck 120'); LockTimeoutSec = $LockTimeoutSec } + $dataArgs
+		$p = @{ Config = $Config; Seconds = 3; Commands = @('loadlevel 1', 'loadlevel 10', 'drawcheck 120'); LockTimeoutSec = $LockTimeoutSec } + $dataArgs
 		$results += Invoke-Phase 'smoke-test' 'smoke-test.ps1' $p
 	}
 	if ($Phase -in 'all', 'spells') {

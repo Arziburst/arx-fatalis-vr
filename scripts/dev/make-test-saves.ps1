@@ -3,7 +3,7 @@
 	Produce the test save library (#70): the saves a worker loads to reach an MVP scenario point at once.
 
 .DESCRIPTION
-	One flat game run, driven through the test channel (docs/vr/TESTING.md): the scenario file
+	One game run (flat, or on the simulated headset with -VrSim), driven through the test channel (docs/vr/TESTING.md): the scenario file
 	(scripts/dev/test-saves/scenarios.txt) starts a new game from the main menu, puts the player at each
 	scenario point with channel commands (setpos, lookat, script-console commands) and saves there with
 	the channel command `save <name>`. Then the same game loads every save again and checks it (the
@@ -36,7 +36,7 @@
 	<n>` through the channel) and checks each one. Run it after an engine change that may touch the
 	save format. One launch for the whole library.
 
-	Launch control (D-014, scripts/launch-lib.ps1): one flat launch, never SteamVR, the game lock,
+	Launch control (D-014, scripts/launch-lib.ps1): one launch (flat or --vr-sim), never SteamVR, the game lock,
 	the working copy's own fresh build, one line in the ledger.
 
 .PARAMETER Script
@@ -47,6 +47,15 @@
 
 .PARAMETER Verify
 	Do not generate: load every save of the library in a fresh game and check it.
+
+.PARAMETER VrSim
+	Make (or -Verify) the saves on the simulated headset (#112, #210): arx.exe --vr-sim <script> instead of a flat
+	game, so the saves are made in VR the way a player makes them. A bare name is looked up in scripts\dev\vrsim
+	(e.g. idle, the headset at rest). Still one launch, never the runtime or SteamVR.
+
+.PARAMETER Only
+	Copy only these saves of the run into the library (every save is still made and loaded again): renew some
+	saves without replacing the others, e.g. -Only mvp-lever,mvp-door,mvp-chest.
 
 .PARAMETER DataDir
 	Arx Fatalis install folder, passed as --data-dir (default: the game finds the Steam install itself; CI's
@@ -69,6 +78,8 @@
 .EXAMPLE
 	.\scripts\dev\make-test-saves.ps1 -Verify
 .EXAMPLE
+	.\scripts\dev\make-test-saves.ps1 -VrSim idle
+.EXAMPLE
 	.\scripts\dev\smoke-test.ps1 -Save mvp-goblin-fight
 #>
 [CmdletBinding(PositionalBinding = $false)]
@@ -80,6 +91,8 @@ param(
 	[string]$Config = 'Release',
 	[switch]$Rebuild,
 	[switch]$Verify,
+	[string]$VrSim,
+	[string[]]$Only,
 	[int]$LockTimeoutSec = 300,
 	[int]$StepTimeoutSec = 90
 )
@@ -92,6 +105,8 @@ if (-not $Script) { $Script = Join-Path $PSScriptRoot 'test-saves\scenarios.txt'
 if (-not $Library) { $Library = Get-ArxSaveLibrary }
 if (-not $Verify -and -not (Test-Path $Script)) { throw "scenario file not found: $Script" }
 if ($Verify -and -not (Test-Path (Join-Path $Library 'manifest.json'))) { throw "no manifest.json in $Library - run scripts\dev\make-test-saves.ps1 first" }
+# The simulated headset (#112): a script path, or a name in scripts\dev\vrsim
+$simScript = if ($VrSim) { Resolve-ArxSimScript $VrSim } else { $null }
 
 $BuildDir = Get-DefaultBuildDir $ArxSourceDir $Config
 $copy = Get-ArxWorkingCopyInfo $ArxSourceDir
@@ -112,7 +127,10 @@ if (-not $Verify) {
 	$scenario = Read-ArxScenario (Get-Content $Script) $Script
 	foreach ($s in $scenario.Steps) { $steps.Add($s) }
 	$saveNames = @($scenario.SaveNames)
+	$unknown = @($Only | Where-Object { $_ -notin $saveNames })
+	if ($unknown) { throw "-Only: no save $($unknown -join ', ') in $Script (it makes $($saveNames -join ', '))" }
 }
+if ($Only -and $Verify) { throw '-Only chooses which saves of a run go into the library; -Verify loads them all' }
 
 # -Verify: slots are numbered newest first by the save file's time, which a copy keeps - the order is
 # computed here. Slot 0 is loaded by the command line, the others through the channel; every save differs
@@ -128,6 +146,7 @@ if ($Verify) {
 # --- The run -------------------------------------------------------------------------------------------------
 if ($Verify) { Write-Host "make-test-saves -Verify: $($ordered.Count) save(s) of $Library, a fresh game with --loadslot 0" -ForegroundColor Cyan }
 else { Write-Host "make-test-saves: $($saveNames.Count) save(s) from $Script -> $Library" -ForegroundColor Cyan }
+Write-Host "game: $(if ($simScript) { "the simulated headset, $simScript" } else { 'flat' })"
 Write-Host "build: $(ConvertTo-ShortSha $stamp) ($($copy.Branch));  user dir: $UserDir;  test channel: $TestDir"
 Write-ArxLaunchBudgetNote -Copy $ArxSourceDir -Branch $copy.Branch -Launches 1
 
@@ -214,6 +233,7 @@ function Invoke-Steps($stepList) {
 					$manifest.Add([pscustomobject][ordered]@{
 						name = $Matches[1].Trim(); description = $script:pendingDescription; area = [int]$status.area
 						player = $status.player; commit = ($stamp -split ' ')[0]; created = (Get-Date).ToString('s')
+						made = if ($simScript) { "vr-sim $(Split-Path -LeafBase $simScript)" } else { 'flat' }
 					})
 					$script:pendingDescription = ''
 				}
@@ -234,6 +254,8 @@ try {
 	$argList = @('--windowed', '--dev-launch', '--test-dir', "`"$TestDir`"", '--user-dir', "`"$UserDir`"", '--config-dir', "`"$UserDir`"", '--no-vr', '--mute')
 	if ($DataDir) { $argList += '--data-dir', "`"$DataDir`"" }
 	$launchArgs = @('--no-vr')
+	# --vr-sim wins over --no-vr in the game; --no-vr stays, so a broken script means flat, never the runtime
+	if ($simScript) { $argList += '--vr-sim', "`"$simScript`""; $launchArgs += '--vr-sim', (Split-Path -Leaf $simScript) }
 	if ($Verify) { $argList += '--loadslot', '0'; $launchArgs += '--loadslot', '0' }
 	Write-Host "=== arx.exe $($argList -join ' ')" -ForegroundColor Cyan
 	$env:ARX_UNATTENDED = '1'
@@ -269,7 +291,7 @@ try {
 	}
 	if ($process) {
 		$process.WaitForExit()
-		Add-ArxLaunchRecord -Script 'make-test-saves.ps1' -Copy $ArxSourceDir -Branch $copy.Branch -Build $stamp -Vr $false -GamePid $process.Id `
+		Add-ArxLaunchRecord -Script 'make-test-saves.ps1' -Copy $ArxSourceDir -Branch $copy.Branch -Build $stamp -Vr $false -Sim ([bool]$simScript) -GamePid $process.Id `
 			-ExitCode $process.ExitCode -DurationSec ((Get-Date) - $launchTime).TotalSeconds -ArxArgs $launchArgs -Time $launchTime
 	}
 	Exit-ArxGameLock $lock
@@ -308,6 +330,7 @@ if ($failures.Count -eq 0) {
 	New-Item -ItemType Directory -Force $Library | Out-Null
 	# The game numbers new save folders from the first free number, so the i-th save is the i-th folder
 	for ($i = 0; $i -lt $manifest.Count; $i++) {
+		if ($Only -and $manifest[$i].name -notin $Only) { continue }
 		$target = Join-Path $Library $manifest[$i].name
 		if (Test-Path $target) { Remove-Item -Recurse -Force $target }
 		Copy-Item -Recurse $folders[$i].FullName $target
@@ -318,9 +341,10 @@ if ($failures.Count -eq 0) {
 	$manifestFile = Join-Path $Library 'manifest.json'
 	$all = [ordered]@{}
 	if (Test-Path $manifestFile) { foreach ($e in (Get-Content -Raw $manifestFile | ConvertFrom-Json)) { $all[$e.name] = $e } }
-	foreach ($e in $manifest) { $all[$e.name] = $e }
+	$copied = @($manifest | Where-Object { -not $Only -or $_.name -in $Only })
+	foreach ($e in $copied) { $all[$e.name] = $e }
 	ConvertTo-Json -InputObject @($all.Values) -Depth 5 | Set-Content -Encoding utf8 $manifestFile
-	Write-Host "make-test-saves: PASS - $($manifest.Count) save(s) in $Library, each loaded again in the same game" -ForegroundColor Green
+	Write-Host "make-test-saves: PASS - $($copied.Count) of $($manifest.Count) save(s) in $Library, each loaded again in the same game" -ForegroundColor Green
 	exit 0
 }
 foreach ($f in $failures) { Write-Host "  [FAIL] $f" -ForegroundColor Red }

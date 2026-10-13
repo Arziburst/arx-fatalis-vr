@@ -20,6 +20,7 @@
 #ifndef ARX_GUI_LOADLEVELSCREEN_H
 #define ARX_GUI_LOADLEVELSCREEN_H
 
+#include "core/TimeTypes.h"
 #include "graphics/BaseGraphicsTypes.h"
 
 
@@ -29,5 +30,12 @@ void progressBarAdvance(float delta = 1.f);
 
 void LoadLevelScreen(AreaId area = { });
 void LoadLevelScreenDestroy();
+
+//! The loading screen's frames since progressBarReset() and the time spent drawing and presenting them (#440)
+struct LoadingScreenStats {
+	unsigned frames = 0;
+	PlatformDuration drawTime = 0;
+};
+LoadingScreenStats loadingScreenStats();
 
 #endif // ARX_GUI_LOADLEVELSCREEN_H

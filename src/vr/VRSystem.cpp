@@ -47,6 +47,7 @@
 #include "io/fs/Filesystem.h"
 #include "io/log/Logger.h"
 #include "platform/CrashHandler.h"
+#include "platform/ExitTrace.h"
 #include "platform/ProgramOptions.h"
 #include "platform/Thread.h"
 #include "platform/Time.h"
@@ -2244,19 +2245,27 @@ void pollEvents() {
 				if(changed.state == XR_SESSION_STATE_READY) {
 					beginSession();
 				} else if(changed.state == XR_SESSION_STATE_STOPPING) {
+					if(!g_xr.exitRequested) {
+						// The runtime ends the session on its own: the exit report names it if the process follows (#146)
+						platform::noteExitCause("OpenXR session stopping: the runtime asks the game to end the session");
+					}
 					endSession();
 				} else if(changed.state == XR_SESSION_STATE_EXITING && g_xr.exitRequested) {
 					// Our own exit (requestExit): shutdown destroys the session
 					g_xr.exited = true;
 				} else if(changed.state == XR_SESSION_STATE_LOSS_PENDING || changed.state == XR_SESSION_STATE_EXITING) {
-					LogWarning << "OpenXR session ended by the runtime, continuing in flat mode";
+					const std::string cause = std::string("OpenXR session ended by the runtime (")
+					                          + sessionStateName(changed.state) + ")";
+					LogWarning << cause << ", continuing in flat mode";
+					platform::noteExitCause(cause);
 					destroySession();
 				}
 				break;
 			}
 
 			case XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING: {
-				LogWarning << "OpenXR runtime is shutting down, continuing in flat mode";
+				LogWarning << "OpenXR runtime is shutting down (instance loss pending), continuing in flat mode";
+				platform::noteExitCause("OpenXR runtime is shutting down (instance loss pending)");
 				// No orderly exit from a dying runtime: the session goes first, then the instance
 				destroySession();
 				shutdown();

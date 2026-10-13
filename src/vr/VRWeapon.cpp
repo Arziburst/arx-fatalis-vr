@@ -92,6 +92,18 @@ const EERIE_LINKED * findLink(const EERIE_3DOBJ * obj, const Entity * weapon) {
 	return nullptr;
 }
 
+/*!
+ * The weapon this module holds, resolved again through the player's weapon slot: a load (`loadslot`, a quick
+ * load) frees the entities before the next updateHeldWeapon, and the kept pointer would dangle (#210)
+ */
+Entity * heldEntity() {
+	if(!g_weapon.inHand || !g_weapon.weapon) {
+		return nullptr;
+	}
+	Entity * equipped = entities.get(player.equiped[EQUIP_SLOT_WEAPON]);
+	return equipped == g_weapon.weapon ? equipped : nullptr;
+}
+
 void noteState(const char * state, const char * reason, const Entity * weapon) {
 	const std::string key = std::string(state) + "/" + reason;
 	static std::string before;
@@ -248,20 +260,21 @@ bool suppressArmAnimation(const Entity * io, const std::string & armAnimation) {
 }
 
 Entity * weaponInHand() {
-	return g_weapon.inHand ? g_weapon.weapon : nullptr;
+	return heldEntity();
 }
 
 bool placeHeldWeapon(Vec3f & hilt, Vec3f & tip) {
 
-	if(!g_weapon.inHand || !g_weapon.weapon) {
+	const Entity * weapon = heldEntity();
+	if(!weapon) {
 		return false;
 	}
 	Entity * io = entities.player();
 	if(!io || !io->obj || !io->obj->m_skeleton) {
 		return false;
 	}
-	const EERIE_LINKED * link = findLink(io->obj, g_weapon.weapon);
-	if(!link || !link->lgroup || !link->obj || link->obj != g_weapon.weapon->obj) {
+	const EERIE_LINKED * link = findLink(io->obj, weapon);
+	if(!link || !link->lgroup || !link->obj || link->obj != weapon->obj) {
 		return false;
 	}
 	EERIE_3DOBJ * obj = link->obj;
@@ -288,16 +301,17 @@ const HeldWeaponStatus & heldWeaponStatus() {
 	if(!g_weapon.inHand || !g_weapon.weapon || !status.measured) {
 		return status; // nothing held yet: before the player entity exists, entities.player() must not be asked
 	}
+	const Entity * weapon = heldEntity();
 	Entity * io = entities.player();
 	const HandFrame * frame = handRestFrame(Hand::Right);
-	if(!io || !io->obj || !frame) {
+	if(!weapon || !io || !io->obj || !frame) {
 		return status;
 	}
-	const EERIE_3DOBJ * obj = g_weapon.weapon->obj;
+	const EERIE_3DOBJ * obj = weapon->obj;
 	if(!obj || obj != g_weapon.measuredObject || obj->vertexWorldPositions.size() != obj->vertexlist.size()) {
 		return status;
 	}
-	const EERIE_LINKED * link = findLink(io->obj, g_weapon.weapon);
+	const EERIE_LINKED * link = findLink(io->obj, weapon);
 	if(!link || !link->lgroup || !io->obj->m_skeleton) {
 		return status;
 	}

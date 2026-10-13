@@ -75,7 +75,7 @@ $head = (git -C $SourceDir rev-parse HEAD).Trim()
 $dirty = @(git -C $SourceDir status --porcelain).Count -gt 0
 $stampFile = Join-Path $buildDir 'built-from.txt'
 $stamp = if (Test-Path $stampFile) { (Get-Content $stampFile -Raw).Trim() } else { '' }
-$stale = -not (Test-Path (Join-Path $buildDir 'arx.exe')) -or -not $stamp -or ($stamp -split ' ')[0] -ne $head -or ($dirty -and $stamp -notmatch 'dirty')
+$stale = -not (Test-Path (Join-Path $buildDir 'arx.exe')) -or -not $stamp -or ($stamp -split ' ')[0] -ne $head -or (Get-ArxStampFingerprint $stamp) -ne (Get-ArxTreeFingerprint $SourceDir)
 if ($stale) {
 	if ($NoBuild) { throw "the build in $buildDir is missing or not from HEAD ($stamp) - build first or drop -NoBuild" }
 	Write-Step "Building $Config (the build is missing or stale)"

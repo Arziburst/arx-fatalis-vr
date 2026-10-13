@@ -8,12 +8,16 @@
 	the game reacts to the events. Runs smoke-test.ps1 (flat, --loadlevel 10, isolated, every launch
 	rule of D-014) with 'vr-input' commands - controls pressed as if a controller did it, no headset:
 	  setplayercontrols on, cinemascope off      the level 10 start holds the player (TESTING.md)
-	  tap right.b, tap right.b                   inventory closed, open (the level start shows the bag)
+	  tap right.a, tap right.a                   inventory closed, open (the level start shows the bag)
 	  tap left.b, tap left.b                     book open, closed            (ui.book = 2)
 	  tap right.stick_down x2                    crouch toggle on, off        (player.crouch = 2)
-	  tap right.a                                a jump                       (player.jump = 1)
+	  tap right.stick_up                         a jump                       (player.jump = 1)
 	  stick left 0 1                             the move vector: forward 1   (vr.input.game.moveY)
-	  tap left.a, tap left.a                     the game menu, and back      (game.state MENU, GAMEPLAY)
+	  tap right.b, tap right.b                   the game menu, and back      (game.state MENU, GAMEPLAY)
+	The inventory and the book are items of the radial menus on B since D-042 (#376); here they are bound to
+	buttons of their own (the right A, the left B), so each press is one change. The right B keeps its radial
+	menu: a flat run has no head, so the menu cannot open and the press is the game menu key (#377) - the
+	game menu's way when no radial menu can be shown.
 	'mark' lines between the steps give the game frames to finish one before the next.
 	The counts come from the final status.json (smoke-test -ExpectEvents); the order from arx.log:
 	after the first '[vr] input: <event>' line of a button, its game events must change state twice,
@@ -51,27 +55,27 @@ function Step([string]$command, [string]$what) {
 }
 
 $commands = @('setplayercontrols on', 'cinemascope off')
-# B holds the radial menus since #376 (D-042): the inventory and book events go back on B for this check
-$commands += @('vr-input bind radial_right none', 'vr-input bind radial_left none', 'vr-input bind inventory right.b', 'vr-input bind book left.b')
+# The inventory and the book are radial menu items since D-042: bound to buttons of their own for this check
+$commands += @('vr-input bind radial_left none', 'vr-input bind inventory right.a', 'vr-input bind book left.b')
 if ($Unbind) { $commands += 'vr-input bind inventory none' }
-$commands += Step 'tap right.b' 'inventory open'
-$commands += Step 'tap right.b' 'inventory closed'
+$commands += Step 'tap right.a' 'inventory open'
+$commands += Step 'tap right.a' 'inventory closed'
 $commands += Step 'tap left.b' 'book open'
 $commands += Step 'tap left.b' 'book closed'
 $commands += Step 'tap right.stick_down' 'crouch on'
 $commands += Step 'tap right.stick_down' 'crouch off'
-$commands += Step 'tap right.a' 'jump'
+$commands += Step 'tap right.stick_up' 'jump'
 $commands += Step 'stick left 0 1' 'move forward'
-$commands += Step 'tap left.a' 'game menu'
-$commands += Step 'tap left.a' 'back in the game'
+$commands += Step 'tap right.b' 'game menu'
+$commands += Step 'tap right.b' 'back in the game'
 
 # At least: the level start shows the inventory bag (one more ui.inventory); the order is checked below
 $expectEvents = @('ui.inventory>=2', 'ui.book=2', 'player.crouch=2', 'player.jump=1')
 # Event presses in the control table: the zeros catch a button that fired a second event
 $expectedPresses = [ordered]@{
-	inventory = 2; book = 2; crouch_toggle = 2; jump = 1; menu = 2
+	inventory = 2; book = 2; crouch_toggle = 2; jump = 1; radial_right = 2
 	interact_left = 0; interact_right = 0; use_left = 0; use_right = 0; stash_left = 0; stash_right = 0
-	recenter = 0; magic_mode = 0
+	menu = 0; recenter = 0; magic_mode = 0; weapon = 0
 }
 
 $smokeArgs = @{ Commands = $commands; Seconds = 1; ExpectEvents = $expectEvents }
@@ -112,9 +116,11 @@ if (-not (Test-Path $log) -or (Get-Item $log).LastWriteTime -lt $launchStart) {
 			$reasons += "$($check[0]): expected two opposite state changes after its presses, got '$($states -join ' -> ')'"
 		}
 	}
-	# The game menu round trip: the state goes to MENU and back to GAMEPLAY
-	$states = Get-StatesAfter $lines 'menu' 'game\.state to=(\w+)'
-	Write-Host "game states after the menu button: $(if ($states) { $states -join ' -> ' } else { '(nothing)' })"
+	# The game menu round trip through the radial menu's button (the game menu key, #377): MENU and back to GAMEPLAY
+	$states = Get-StatesAfter $lines 'radial_right' 'game\.state to=(\w+)'
+	Write-Host "game states after the radial menu's button: $(if ($states) { $states -join ' -> ' } else { '(nothing)' })"
+	$keys = @($lines | Select-String -SimpleMatch 'vr.radial.gameMenuKey').Count
+	if ($keys -ne 2) { $reasons += "the radial menu's button was the game menu key $keys times, expected 2" }
 	$toMenu = if ($states) { [array]::IndexOf($states, 'MENU') } else { -1 }
 	$back = if ($toMenu -ge 0) { [array]::IndexOf($states, 'GAMEPLAY', $toMenu) } else { -1 }
 	if ($toMenu -lt 0) { $reasons += 'the menu button did not open the game menu (no game.state MENU)' }

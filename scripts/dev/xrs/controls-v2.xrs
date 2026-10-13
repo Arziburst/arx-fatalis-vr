@@ -1,0 +1,350 @@
+# Control scheme v2 (#377, D-042) in the playground, on the simulated Index controllers - the whole default layout at
+# once, as the owner plays it: each hand's radial menu (B) opens and closes the inventory, the book and the game menu,
+# and B is the game menu key where no radial menu can open (the game menu shown, a hand not tracked); the right stick
+# up jumps (beyond 0.7, more up than sideways), down toggles the crouch, sideways still turns; grip, then trigger acts
+# on a door and a lever (the trigger alone no longer does) and uses an item (a pie eaten, a sword equipped); the
+# weapon hand's trigger charges the strike, its stick click sheathes the weapon - then the trigger drags - and draws
+# it again. The controls go through the simulated runtime (vr-sim action) where a test can: the stick's directions
+# and the stick click are the game's own path from OpenXR; B through vr-input (the radial-menu sequence's way).
+# The playground's ids (scripts/dev/playground/layout.mjs, FIRST_ID 9001): light_door_9001, lever_9002 (respawn),
+# applepie_9001 and potion_mana_9001 on the main table, short_sword_9001 on the weapon table.
+#   .\scripts\dev\smoke-test.ps1 -Playground -VrSim idle -Sequence controls-v2
+@sim idle
+@playground
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert area eq 30
+@until vr.reticle.on eq true 5s
+
+# 0. The default layout (D-042) as the game has it for the Index
+@assert vr.input.controllers eq index
+@assert vr.input.remapped eq false
+@assert vr.input.conflicts eq 0
+@assert vr.input.layout.interact_left eq left.trigger
+@assert vr.input.layout.interact_right eq right.trigger
+@assert vr.input.layout.use_left eq left.grip+left.trigger
+@assert vr.input.layout.use_right eq right.grip+right.trigger
+@assert vr.input.layout.act_left eq left.grip+left.trigger
+@assert vr.input.layout.act_right eq right.grip+right.trigger
+@assert vr.input.layout.stash_left eq none
+@assert vr.input.layout.stash_right eq none
+@assert vr.input.layout.radial_left eq left.b
+@assert vr.input.layout.radial_right eq right.b
+@assert vr.input.layout.jump eq right.stick_up
+@assert vr.input.layout.crouch_toggle eq right.stick_down
+@assert vr.input.layout.weapon eq right.stick_click
+@assert vr.input.layout.magic_mode eq left.a
+@assert vr.input.layout.menu eq none
+@assert vr.input.layout.recenter eq none
+@assert vr.input.layout.inventory eq none
+@assert vr.input.layout.book eq none
+
+# The level starts in the engine's cursor mode with the bag open (until #394 / #405): free look on, the bag closed
+freelook on; ui inventory close
+@until player.inventoryOpen eq false 5s
+@until vr.pointer.shown eq false 5s
+# The hands before the player, where a player holds them (the idle rig holds them low)
+vr-sim hand right pos 0.12 -0.2 -0.38; vr-sim hand left pos -0.12 -0.2 -0.38
+@frames 10
+
+# ---- 1. The radial menus: inventory, book and game menu, open and closed with each hand ---------------------------
+
+# The right hand: the inventory on top, opened and closed
+vr-input down right.b
+@frames 3
+@assert vr.radial.right.open eq true
+vr-radial point right inventory
+@frames 5
+@assert vr.radial.right.hovered eq inventory
+vr-input up right.b
+@until player.inventoryOpen eq true 5s
+@frames 30
+vr-input down right.b
+@frames 3
+vr-radial point right inventory
+@frames 5
+vr-input up right.b
+@until player.inventoryOpen eq false 5s
+@frames 30
+# The book (its character page), opened and closed by the same item
+vr-input down right.b
+@frames 3
+vr-radial point right character
+@frames 10
+@assert vr.radial.right.hovered eq character
+vr-input up right.b
+@until player.bookOpen eq true 5s
+@frames 30
+vr-input down right.b
+@frames 3
+vr-radial point right character
+@frames 10
+vr-input up right.b
+@until player.bookOpen eq false 5s
+@frames 30
+# The game menu from the half-ring; in the game menu no radial menu opens: B is the game menu key, back to the game
+vr-input down right.b
+@frames 3
+vr-radial point right game_menu
+@frames 10
+vr-input up right.b
+@until menuMode eq mainmenu 5s
+@assert vr.radial.right.result eq game_menu
+@assert vr.radial.right.gameMenuKeys eq 0
+@frames 30
+vr-input tap right.b
+@until menuMode eq ingame 5s
+@assert vr.radial.right.refused eq menu
+@assert vr.radial.right.gameMenuKeys eq 1
+@frames 30
+
+# The left hand: the same
+vr-input down left.b
+@frames 3
+@assert vr.radial.left.open eq true
+vr-radial point left inventory
+@frames 5
+vr-input up left.b
+@until player.inventoryOpen eq true 5s
+@frames 30
+vr-input down left.b
+@frames 3
+vr-radial point left inventory
+@frames 5
+vr-input up left.b
+@until player.inventoryOpen eq false 5s
+@frames 30
+vr-input down left.b
+@frames 3
+vr-radial point left character
+@frames 10
+vr-input up left.b
+@until player.bookOpen eq true 5s
+@frames 30
+vr-input down left.b
+@frames 3
+vr-radial point left character
+@frames 10
+vr-input up left.b
+@until player.bookOpen eq false 5s
+@frames 30
+vr-input down left.b
+@frames 3
+vr-radial point left game_menu
+@frames 10
+vr-input up left.b
+@until menuMode eq mainmenu 5s
+@assert vr.radial.left.result eq game_menu
+@frames 30
+vr-input tap left.b
+@until menuMode eq ingame 5s
+@assert vr.radial.left.gameMenuKeys eq 1
+@frames 30
+
+# A hand the tracking lost cannot show its menu: its B is the game menu key too - never without the game menu
+vr-sim hand left off
+@frames 10
+vr-input tap left.b
+@until menuMode eq mainmenu 5s
+@assert vr.radial.left.refused eq hand_not_tracked
+@assert vr.radial.left.open eq false
+@frames 30
+vr-input tap left.b
+@until menuMode eq ingame 5s
+@assert vr.radial.left.gameMenuKeys eq 3
+vr-sim hand left on
+vr-sim hand left pos -0.12 -0.2 -0.38
+@frames 30
+@assert vr.input.presses.menu eq 0
+
+# ---- 2. The right stick: jump up, crouch down, turn sideways --------------------------------------------------------
+
+freelook on; ui inventory close
+@until vr.pointer.shown eq false 5s
+setpos 8000 -170 7700 0
+@frames 30
+@remember jumps0 vr.input.presses.jump
+@remember yaw0 player.yaw
+# Up but short of 0.7: nothing
+vr-sim action thumbstick right 0 0.65
+@frames 15
+@assert player.jumping eq false
+@assert vr.input.presses.jump eq {jumps0}
+# Up beyond 0.7, a little sideways: a jump, and no turn
+vr-sim action thumbstick right 0.3 0.9
+@until player.jumping eq true 2s
+vr-sim action thumbstick right 0 0
+@until player.jumping eq false 5s
+@assert vr.input.presses.jump eq {jumps0+1}
+@assert player.yaw eq {yaw0}
+@frames 20
+# More sideways than up: a turn, no jump
+@remember turned0 vr.input.turn.turned
+vr-sim action thumbstick right 0.9 0.8
+@frames 20
+vr-sim action thumbstick right 0 0
+@frames 20
+@assert vr.input.turn.turned ne {turned0}
+@assert vr.input.presses.jump eq {jumps0+1}
+@assert player.jumping eq false
+# Down: the crouch toggles on, and off again
+@assert player.crouchToggle eq false
+vr-sim action thumbstick right 0 -0.9
+@frames 10
+vr-sim action thumbstick right 0 0
+@frames 10
+@assert player.crouchToggle eq true
+vr-sim action thumbstick right 0 -0.9
+@frames 10
+vr-sim action thumbstick right 0 0
+@frames 10
+@assert player.crouchToggle eq false
+
+# ---- 3. Use / interact: grip, then trigger -----------------------------------------------------------------------
+
+# The door: the trigger alone - even a double click - no longer opens it (D-042); grip, then trigger does
+setpos 7850 -170 7900 0
+@frames 30
+vr-point left face light_door_9001
+@frames 5
+vr-point left face light_door_9001
+@until vr.reticle.left.entity eq light_door_9001 5s
+@assert playground.door.open eq false
+@remember acts0 vr.reticle.acts
+vr-sim action trigger left 1
+@frames 3
+vr-sim action trigger left 0
+@frames 3
+vr-sim action trigger left 1
+@frames 3
+vr-sim action trigger left 0
+@frames 60
+@assert playground.door.open eq false
+@assert vr.reticle.acts eq {acts0}
+vr-sim action grip left 1
+@frames 5
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0; vr-sim action grip left 0
+@until playground.door.open eq true 5s
+@assert vr.reticle.lastAct eq light_door_9001
+@assert vr.reticle.lastActHand eq left
+@wait 2000
+
+# The lever with the right hand
+setpos 8380 -170 8200 0
+@frames 30
+vr-point right face lever_9002
+@frames 5
+vr-point right face lever_9002
+@until vr.reticle.right.entity eq lever_9002 5s
+@remember pulled0 playground.leverRespawn.pulled
+vr-sim action grip right 1
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0; vr-sim action grip right 0
+@until playground.leverRespawn.pulled ne {pulled0} 5s
+@assert vr.reticle.lastAct eq lever_9002
+@assert vr.reticle.lastActHand eq right
+
+# An item: grip, then trigger uses it - the pie on the table is eaten, not taken into the bag (no stash, D-042)
+approach applepie_9001
+@frames 10
+approach applepie_9001
+@frames 10
+watch applepie_9001
+@remember bag0 player.inventoryItems
+@remember uses0 vr.input.presses.use_right
+@remember acts1 vr.reticle.acts
+vr-point right entity applepie_9001
+@frames 5
+vr-point right entity applepie_9001
+@until vr.reticle.right.entity eq applepie_9001 5s
+vr-sim action grip right 1
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0; vr-sim action grip right 0
+@until watch.found eq false 5s
+@assert vr.input.presses.use_right eq {uses0+1}
+@assert vr.reticle.acts eq {acts1}
+@assert player.inventoryItems eq {bag0}
+@assert ui.drag eq none
+
+# A sword: used, it is equipped - drawn in the right hand
+approach short_sword_9001
+@frames 10
+approach short_sword_9001
+@frames 10
+@assert vr.weapon.item eq none
+vr-point right entity short_sword_9001
+@frames 5
+vr-point right entity short_sword_9001
+@until vr.reticle.right.entity eq short_sword_9001 5s
+vr-sim action grip right 1
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0; vr-sim action grip right 0
+@until vr.weapon.item eq short_sword_9001 5s
+@until vr.weapon.inHand eq true 5s
+@assert vr.weapon.sheathed eq false
+@until vr.melee.active eq true 5s
+
+# ---- 4. The weapon hand: the trigger charges; the stick click sheathes (the trigger drags) and draws -------------
+
+@remember clicks0 vr.pointer.worldClicks
+vr-sim action trigger right 1
+@frames 30
+@assert vr.melee.charge.charging eq true
+@assert vr.pointer.worldClicks eq {clicks0}
+@assert ui.drag eq none
+vr-sim action trigger right 0
+@frames 10
+@assert vr.melee.charge.charging eq false
+# Sheathed with the right stick click: the sword goes where the engine keeps it, the hand is empty, no swing hits
+vr-sim action thumbstick_click right 1
+@frames 5
+vr-sim action thumbstick_click right 0
+@until vr.weapon.sheathed eq true 5s
+@until vr.weapon.place eq engine 5s
+@assert vr.weapon.inHand eq false
+@assert vr.weapon.toggles eq 1
+@until vr.melee.active eq false 5s
+@log GameEvent:.*vr\.weapon\.toggle result=sheathed
+# The empty hand's trigger drags: the mana potion off the table
+approach potion_mana_9001
+@frames 10
+approach potion_mana_9001
+@frames 10
+vr-point right entity potion_mana_9001
+@frames 5
+vr-point right entity potion_mana_9001
+@until vr.reticle.right.entity eq potion_mana_9001 5s
+vr-sim action trigger right 1
+@frames 5
+vr-point right entity potion_mana_9001 0 0 40
+@frames 10
+@assert ui.drag eq potion_mana_9001
+@assert vr.melee.charge.charging eq false
+vr-sim action trigger right 0
+@until ui.drag eq none 5s
+# Drawn again with the same click: in the hand, the trigger charges again
+vr-sim action thumbstick_click right 1
+@frames 5
+vr-sim action thumbstick_click right 0
+@until vr.weapon.inHand eq true 5s
+@assert vr.weapon.sheathed eq false
+@assert vr.weapon.toggles eq 2
+@until vr.melee.active eq true 5s
+# The left stick click does nothing by default (recenter moved into the radial menu, the left hand's weapon is #380)
+vr-sim action thumbstick_click left 1
+@frames 60
+vr-sim action thumbstick_click left 0
+@frames 10
+@assert vr.weapon.toggles eq 2
+@assert vr.input.presses.recenter eq 0
+@assert errors eq 0

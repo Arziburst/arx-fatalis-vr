@@ -2,6 +2,8 @@
 # (a long press of the left stick click, #28), then a save is loaded through the channel
 # (smoke-test.ps1 -Menu -VrSim menu-recenter -Commands ... 'loadslot 0'). The level must open with the
 # seated head at the character's eye: vr.head.reference after the load at y -0.4, offset 0.
+# Recenter has no button by default since D-042 (#377: the radial menu has it, in the game only): bind the long
+# press first - -Commands 'vr-input bind recenter left.stick_click:long', ... 'loadslot 0'.
 
 timeline session
 head pos 0 -0.4 0              # seated: 40 cm below where the session started (1.3 m above the floor)

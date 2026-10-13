@@ -55,6 +55,12 @@ vr-point left entity blank_form_0001
 @assert vr.pointer.owner eq left
 @assert ui.hover eq blank_form_0001
 
+# The save's sword is drawn in the right hand, whose trigger then charges the strike (D-042, #377): sheathed with
+# the right stick click, the hand is empty and its trigger drags
+vr-input tap right.stick_click
+@until vr.weapon.sheathed eq true 5s
+@until vr.weapon.inHand eq false 5s
+
 # The right trigger takes the note back to the right hand; moved, the note follows the ring onto the floor
 @remember nx watch.x
 vr-sim action trigger right 1
@@ -100,7 +106,12 @@ vr-sim action trigger left 0
 ui inventory close
 @until vr.panel.mode eq head 5s
 
-# Grip held + trigger on the note on the floor: straight into the bag, without opening it (D-019)
+# Grip held + trigger on the note on the floor: straight into the bag, without opening it (D-019). Since D-042 (#377)
+# the chord uses an item by default and the stash has no control: bound here as a player can bind it (VR settings)
+vr-input bind use_right none
+vr-input bind stash_right right.grip+right.trigger
+@frames 2
+@assert vr.input.conflicts eq 0
 watch note_0004
 vr-point right entity note_0004
 @frames 10
@@ -115,6 +126,9 @@ vr-sim action grip right 0
 @until watch.inInventory eq true 5s
 @log item\.toinventory item=note_0004
 @assert ui.drag eq none
+vr-input reset
+@frames 2
+@assert vr.input.layout.stash_right eq none
 
 # A menu that is not the bag (the book, opened by its script command: B is the radial menu since #376) takes the hands off the world: no rings
 book open

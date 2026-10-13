@@ -20,7 +20,7 @@ vr-input tap right.b
 @assert vr.input.layout.jump eq right.b
 vr-input reset
 @frames 2
-@assert vr.input.layout.jump eq right.a
+@assert vr.input.layout.jump eq right.stick_up
 @assert vr.input.remapped eq false
 
 # Read the file back as a start does
@@ -41,6 +41,6 @@ vr-input default
 vr-input reload
 @frames 5
 @log \[vr\] input: controllers index - layout default for index
-@assert vr.input.layout.jump eq right.a
+@assert vr.input.layout.jump eq right.stick_up
 @assert vr.input.conflicts eq 0
 @assert errors eq 0

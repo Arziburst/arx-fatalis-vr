@@ -1154,6 +1154,11 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("shown", cue.wristShown);
 		json.value("fill", cue.wristFill);
 		json.value("views", cue.wristViews);
+		json.object("center");
+		json.value("x", cue.wristCenter.x);
+		json.value("y", cue.wristCenter.y);
+		json.value("z", cue.wristCenter.z);
+		json.end();
 		json.end();
 		json.object("hud");
 		json.value("shown", cue.hudShown);

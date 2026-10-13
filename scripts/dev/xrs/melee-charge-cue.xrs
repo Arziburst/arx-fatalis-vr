@@ -78,6 +78,9 @@ vr-sim action trigger right 1
 @assert vr.chargeCue.wrist.fill eq 1
 @assert vr.chargeCue.blade.fill eq 1
 @assert vr.chargeCue.hud.intensity eq 1
+# The ring is by the right wrist (printed for the eye-check of the shot: centre against the wrist, world units)
+@assert vr.chargeCue.wrist.center.x ne 0
+@assert vr.body.right.wrist.x ne 0
 @shot cue-full
 
 # 4. The strike spends the charge: the NPC placed ahead, the sword taken slowly to its right, one swing through

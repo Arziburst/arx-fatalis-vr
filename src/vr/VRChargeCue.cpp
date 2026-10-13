@@ -149,23 +149,22 @@ void drawChargeCue() {
 	params.unitsPerMeter = EyeRigParams().unitsPerMeter;
 	const Vec3f eye = g_camera->m_pos;
 
-	// In the world, against the depth of the scene, without fog, seen from either side
+	// In the world, without fog, seen from either side, over everything: both cues belong to the weapon hand,
+	// and in the eye they lie on or right by the hand, the forearm and the blade, which would cover them (the
+	// strip lies along the blade, the ring a few centimetres off the back of the hand)
 	GRenderer->ResetTexture(0);
 
 	if(status.wristShown && g_cue.armPosed) {
 		const ChargeRingLayout ring = layoutChargeRing(g_cue.frame, eye, status.fill, params);
 		status.wristFill = ring.valid ? ring.filledDeg / 360.f : 0.f;
+		status.wristCenter = ring.center;
 		if(ring.valid) {
-			UseRenderState state(render3D().fog(false).depthWrite(false).blend(BlendSrcAlpha, BlendInvSrcAlpha));
+			UseRenderState state(render3D().fog(false).depthTest(false).depthWrite(false)
+			                     .blend(BlendSrcAlpha, BlendInvSrcAlpha));
 			for(const CueQuad & quad : ring.track) {
 				drawCueQuad(quad, CueTrackColor);
 			}
-			// The fill a little nearer to the eye than its backing, so the two never fight over the depth
-			const Vec3f lift = ring.normal * (0.0008f * params.unitsPerMeter);
-			for(CueQuad quad : ring.filled) {
-				for(Vec3f & corner : quad) {
-					corner += lift;
-				}
+			for(const CueQuad & quad : ring.filled) {
 				drawCueQuad(quad, cueFillColor(status.fill, 1.f));
 			}
 			status.wristViews++;
@@ -177,7 +176,7 @@ void drawChargeCue() {
 		status.bladeFill = strip.valid ? strip.fill : 0.f;
 		if(strip.valid) {
 			// Light added to the scene: a glow along the blade
-			UseRenderState state(render3D().fog(false).depthWrite(false).blendAdditive());
+			UseRenderState state(render3D().fog(false).depthTest(false).depthWrite(false).blendAdditive());
 			drawCueQuad(strip.strip, cueFillColor(status.fill, 1.f));
 			status.bladeViews++;
 		}

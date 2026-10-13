@@ -20,6 +20,7 @@
 #ifndef ARX_VR_VRCHARGECUE_H
 #define ARX_VR_VRCHARGECUE_H
 
+#include "math/Types.h"
 #include "platform/Platform.h"
 
 /*!
@@ -55,6 +56,7 @@ struct ChargeCueStatus {
 	bool wristShown = false;
 	float wristFill = 0.f;       //!< the ring's filled arc / 360 degrees in the last view drawn
 	u64 wristViews = 0;          //!< views the ring was drawn into
+	Vec3f wristCenter = Vec3f(0.f); //!< the ring's center in the last view drawn (world)
 	bool hudShown = false;
 	bool bladeShown = false;
 	float bladeFill = 0.f;       //!< the strip's length / the blade's in the last view drawn

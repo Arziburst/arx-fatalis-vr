@@ -231,7 +231,7 @@ try {
 		Remove-Item (Join-Path $TestDir $f) -Force -ErrorAction SilentlyContinue
 	}
 
-	$argList = @('--windowed', '--test-dir', "`"$TestDir`"", '--user-dir', "`"$UserDir`"", '--config-dir', "`"$UserDir`"", '--no-vr', '--mute')
+	$argList = @('--windowed', '--dev-launch', '--test-dir', "`"$TestDir`"", '--user-dir', "`"$UserDir`"", '--config-dir', "`"$UserDir`"", '--no-vr', '--mute')
 	if ($DataDir) { $argList += '--data-dir', "`"$DataDir`"" }
 	$launchArgs = @('--no-vr')
 	if ($Verify) { $argList += '--loadslot', '0'; $launchArgs += '--loadslot', '0' }

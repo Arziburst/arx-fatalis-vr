@@ -178,6 +178,17 @@ function Resolve-ArxVrMode([string[]]$ArxArgs, [switch]$StartSteamVR) {
 	return [pscustomobject]@{ Vr = $false; Args = @($ArxArgs) + '--no-vr'; Reason = 'SteamVR not running, --no-vr added' }
 }
 
+# The kind of launch (#394). A plain arx.exe is the player's launch: the publisher logos, the main menu and every
+# .cin cinematic (the new-game intro, the cutscenes) - the desktop shortcut and the Steam shortcut launch that way.
+# Development and test launches add --dev-launch: no logos and no cutscenes, straight to the menu or the game
+# (--intro / --cinematics bring them back). The scripts that start the game take their arguments from here.
+$script:ArxDevLaunchArg = '--dev-launch'
+
+function Get-ArxLaunchKindArgs([switch]$Player) {
+	if ($Player) { return @() }
+	return @($script:ArxDevLaunchArg)
+}
+
 # --- 3. The working copy's own fresh build ---------------------------------------------------------------
 
 # Refuse (or with -Rebuild, rebuild) unless $BuildDir is a build directory of $SourceDir holding an

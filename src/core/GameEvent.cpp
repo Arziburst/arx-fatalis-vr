@@ -188,6 +188,8 @@ Event::~Event() {
 const char * gameStateName(GameState state) {
 	switch(state) {
 		case GameState::Startup:   return "STARTUP";
+		case GameState::Logo:      return "LOGO";
+		case GameState::Intro:     return "INTRO";
 		case GameState::Menu:      return "MENU";
 		case GameState::Loading:   return "LOADING";
 		case GameState::Gameplay:  return "GAMEPLAY";
@@ -198,6 +200,9 @@ const char * gameStateName(GameState state) {
 }
 
 GameState detectGameState() {
+	if(startupLogoName()) {
+		return GameState::Logo;
+	}
 	if(ARXmenu.mode() != Mode_InGame) {
 		return GameState::Menu;
 	}
@@ -206,6 +211,9 @@ GameState detectGameState() {
 	}
 	if(isInCinematic()) {
 		return GameState::Cinematic;
+	}
+	if(startupIntroPlaying()) {
+		return GameState::Intro;
 	}
 	return GameState::Gameplay;
 }

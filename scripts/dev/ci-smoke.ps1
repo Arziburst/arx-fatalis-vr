@@ -200,6 +200,7 @@ try {
 			$p.UserDir = $seqUserDir
 			if ($seq.Save) { $p.Save = $seq.Save }
 			if ($seq.Playground) { $p.Playground = $true }
+			if ($seq.Player) { $p.Player = $true }
 			if ($seq.Args) { $p.ArxArgs = @($seq.Args) }
 			$results += Invoke-Phase "xrs-$($seq.Name)" 'smoke-test.ps1' $p $seqUserDir
 			Remove-Item -LiteralPath $seqUserDir -Recurse -Force -ErrorAction SilentlyContinue

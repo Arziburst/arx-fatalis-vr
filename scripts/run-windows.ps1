@@ -7,9 +7,11 @@
 	with it as the data directory. Any extra arguments are passed through to arx.exe.
 
 	Test runs start in a window (arx.exe --windowed) so the game does not take over the desktop;
-	pass -Fullscreen to use the fullscreen setting from cfg.ini instead. A plain launch goes straight
-	to the main menu and every .cin cinematic is skipped; add --intro to see the publisher logos and
-	the intro cinematic, --cinematics to see all cinematics (new-game intro, in-game cutscenes).
+	pass -Fullscreen to use the fullscreen setting from cfg.ini instead. A launch from here is a
+	development launch (arx.exe --dev-launch, #394): straight to the main menu and every .cin cinematic
+	is skipped; add --intro to see the publisher logos and the intro cinematic, --cinematics to see all
+	cinematics (new-game intro, in-game cutscenes). -Player launches as a player does - arx.exe without
+	--dev-launch: the logos, the main menu and every cinematic (the desktop shortcut does that).
 
 	Launch control (docs/vr/WORKFLOW.md "Parallel work", decision D-014; scripts/launch-lib.ps1):
 	  - no SteamVR start: without --no-vr the game may start in VR only when SteamVR (vrserver.exe) is
@@ -54,6 +56,10 @@
 
 .PARAMETER Fullscreen
 	Do not force windowed mode; use the fullscreen setting from cfg.ini.
+
+.PARAMETER Player
+	A player's launch (#394): no --dev-launch, so the publisher logos, the main menu and every .cin cinematic are
+	shown as in the original game. launch-shortcut.ps1 (the desktop shortcut) passes it.
 
 .PARAMETER Isolated
 	Use this working copy's own user and config directory (--user-dir / --config-dir) instead of the
@@ -101,6 +107,9 @@
 .EXAMPLE
 	.\scripts\run-windows.ps1 -Fullscreen -Config Debug -- --no-vr
 .EXAMPLE
+	.\scripts\run-windows.ps1 -Player
+	# as a player: the publisher logos, the main menu, the intro cinematic after New game
+.EXAMPLE
 	.\scripts\run-windows.ps1 -Isolated -Saves save0000 -TestChannel -Background -- --no-vr --loadslot 0
 #>
 # PositionalBinding=$false: after "--" everything is positional, and without this "--skiplogo" would bind to -Config.
@@ -111,6 +120,7 @@ param(
 	[string]$BuildDir,
 	[string]$DataDir,
 	[switch]$Fullscreen,
+	[switch]$Player,
 	[switch]$Isolated,
 	[switch]$Playground,
 	[string]$UserDir,
@@ -151,6 +161,8 @@ $dataArgs = if ($DataDir) { @('--data-dir', $DataDir) } else { @() }
 
 $modeArgs = @()
 if (-not $Fullscreen) { $modeArgs += '--windowed' }
+# A development launch skips the logos and the cinematics; -Player launches as a player does (#394)
+$modeArgs += Get-ArxLaunchKindArgs -Player:$Player
 # By hand the game has sound; a background launch (-Background, -TestChannel) is silent unless -Sound (#345)
 if ($Mute -or (($Background -or $TestChannel) -and -not $Sound)) { $modeArgs += '--mute' }
 

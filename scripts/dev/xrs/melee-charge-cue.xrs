@@ -19,8 +19,10 @@
 # A sword in the right hand: physical melee is active, the cues follow that hand, all of them by default
 playground equip long_sword
 @until vr.weapon.place eq hand 5s
-# The playground's hero starts with the bag open (status.json: vr.melee.refused inventory): closed, swings count
-ui inventory close
+# A --loadlevel start stays in the cursor mode, where the engine keeps the bag open and melee is refused (#405):
+# free look on, as loading a save does - a test-only workaround until #394 keeps VR gameplay in free look
+freelook on
+@until vr.melee.refused ne inventory 5s
 @until vr.melee.active eq true 5s
 @assert vr.weapon.combatMode eq false
 @assert vr.chargeCue.mode eq all

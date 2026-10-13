@@ -132,9 +132,9 @@ void HitStrengthGauge::update() {
 }
 
 void HitStrengthGauge::draw() {
-
+	
 	m_draws++;
-
+	
 	if(vr::stereoActive()) {
 		// On the VR interface quad an additive draw adds light but no coverage (its alpha stays 0), and the
 		// compositor may drop such pixels: the gauge looked empty in the headset (#322). Drawn over what is

@@ -1665,6 +1665,22 @@ std::string execute(std::string_view line) {
 		return std::string();
 	}
 
+	if(word == "freelook") {
+		// The engine's free look without the mouse (#323): "on" leaves the cursor mode, as loading a save does -
+		// a level started with --loadlevel (the playground) stays in it, where the engine keeps the inventory open
+		std::string mode(rest);
+		util::makeLowercase(mode);
+		if(currentState() != GameState::Gameplay || !entities.player()) {
+			return refuse("freelook: needs a level");
+		}
+		if(mode == "on" || mode == "off") {
+			TRUE_PLAYER_MOUSELOOK_ON = (mode == "on");
+		} else {
+			return refuse("freelook: expected on or off, got \"" + std::string(rest) + "\"");
+		}
+		return std::string();
+	}
+
 	if(word == "crouch") {
 		// The crouch toggle without an input device, for flat runs (#263)
 		std::string mode(rest);

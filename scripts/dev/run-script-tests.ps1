@@ -32,7 +32,7 @@ $tests = @(
 	'test-plan-next.ps1'    # the coordinator's task order (#187): MVP.md parsing and every start rule
 	'test-wait-launch.ps1'   # the launch marker (#258): checks wait out the game lock before their gameplay timeout; a lock skip is exit 2
 	'test-xrs.ps1'           # the .xrs sequence runner and img-diff (#113): parser, conditions, log marks, @pending, shots, a fake game
-	'test-usage-plan.ps1'    # the usage accounting (#217): calibration, burn, task costs, the worker-count recommendation
+	'test-usage-plan.ps1'    # the usage accounting (#217): calibration, burn, task costs, the worker-count recommendation, the core's status JSON (#346)
 	'test-start-steamvr.ps1' # starting and quitting SteamVR on the owner's switches (#171): stubbed processes and clock, SteamVR is not touched
 )
 # test-*.ps1 files that are libraries or tools, not tests

@@ -923,6 +923,8 @@ without a headset session (F-07).
   the cost of finished tasks per model / effort / size, a forecast for the READY tasks). Run every cycle and before starting a worker; it
   names the binding limit and the number of workers that keeps the week at <= 90% by its reset and the 5-hour window < 95%.
   The coordinator starts no more than it recommends; one line of its output goes to the status page (#193).
+  Since #346 the inputs are the core's status-line files (`~/.claude/coordinator/statusline.json`, `sessions/<id>.json`);
+  the samples and the task ledger are kept by `usage-plan.ps1` itself in `~/.claude/arxvr-usage/`.
 - **Autopilot (owner, 2026-10-10):** the coordinator runs the work on its own while the limits last. It reads the limits and
   `usage-plan.ps1` on a timer (about every 30 minutes) and before starting a worker, starts every unblocked task the budget
   allows with a sensible model / effort, loads a 5-hour window that has headroom before its reset, but paces the week to <= 90%
@@ -1258,7 +1260,7 @@ The owner wants the desktop quiet while workers run, and the headset untouched u
   work that needs no headset goes on meanwhile — or (3) the budget is reached. The owner gives VR
   verdicts to the coordinator ("#18 ok" / what is wrong); the coordinator merges or passes the feedback
   to the worker.
-- **Budget:** the common weekly limit up to **70%** — from there no new workers start, running ones finish
+- *(The 70% budget point is superseded by D-022: weekly 90%, five-hour 95%.)* **Budget:** the common weekly limit up to **70%** — from there no new workers start, running ones finish
   their PRs; the 5-hour limit may be used up (sessions wait for its reset and continue,
   `autoContinueAtUsageLimit`); Fable's separate weekly limit may be used up.
 - *(Superseded by D-015: Opus by default, Fable only for really hard tasks.)* **Models** (replaced D-012's table): **Fable** for every engine task (any area except build and docs)

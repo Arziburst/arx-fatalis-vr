@@ -650,8 +650,8 @@ generator source changes. No original level is touched: a launch without `-Playg
 Checks: `playground-levers.xrs` (peaceful, the mode lever, the respawn lever, the hero's level and runes,
 the items), `playground-respawn.xrs` (death and back), `damage-numbers.xrs` / `damage-numbers-off.xrs`
 (numbers in both eyes, none in an original level). The channel's `playground` commands and status fields
-are under [Commands](#commands). CI runs these sequences only where node is on the runner's PATH; without
-it they are **NOT RUN** with a warning in the job summary, never a pass. The tester zip does not carry
+are under [Commands](#commands). CI installs node 22 with `actions/setup-node` (cached in the runner's tool cache, #412) and runs these
+sequences; a machine without node (a local `ci-smoke.ps1` included) reports them **NOT RUN** with a warning in the job summary, never a pass. The tester zip does not carry
 the playground yet (#359).
 
 ### Switching the arms: custom or Arx (#385)
@@ -1366,7 +1366,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 | `@pending #<issue> <step>` | a step the game cannot pass yet, because issue N builds the feature. Its failure is printed as `pending`; **once it passes the run fails** until the `@pending` is removed, so an expectation cannot go stale. Pick a step that fails for the right reason (a first version of `snap-turn` had a "turned back" step that passed trivially) |
 | `@sim <name>`, `@args <...>` | what `xrs-run.ps1` launches: the `scripts\dev\vrsim` script (default `idle`: no timed lines, no shots) and the arx.exe arguments (default `--loadlevel 10`); ignored while running |
 | `@save <name>` | start from this save of the test save library (#70; `smoke-test.ps1 -Save`, the only save of the isolated user directory), with `@args --loadslot 0`. Anything the **body** does — turning, walking — needs a first-person save: on level 10 the intro conversation's camera owns the view (TRAPS.md) |
-| `@playground` | start in the test playground (#321; `smoke-test.ps1 -Playground`: the generated level, area 30, a fresh max-level hero). CI runs it only where node is on the runner's PATH, else NOT RUN with a warning |
+| `@playground` | start in the test playground (#321; `smoke-test.ps1 -Playground`: the generated level, area 30, a fresh max-level hero). CI sets up node itself (#412); on a machine without node it is NOT RUN with a warning |
 
 Rules: a sequence waits for `state eq GAMEPLAY` and for `vr.sim.timelineFrame ge 270` (3 s) before its
 first shot — the level fades in from black (TRAPS.md). A timeout must carry its `s` (`60s`); a bare

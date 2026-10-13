@@ -18,7 +18,7 @@
 	  - one game at a time on this PC: the launch holds a game lock slot while the game runs (a VR
 	    launch also the VR lock), waits up to -LockTimeoutSec for the holder and names it.
 	  - only this working copy's own fresh build: an arx.exe from another copy, or whose built-from.txt
-	    does not name the copy's HEAD, is refused ("dirty" is fine); -Rebuild builds first.
+	    does not name the copy's HEAD or predates later uncommitted edits (tree fingerprint, #306), is refused; -Rebuild builds first.
 	  - the launch is written to the ledger %LOCALAPPDATA%\ArxFatalisVR\launches.log.
 	  - -Background shows the window without taking the focus (self-tests).
 

@@ -159,8 +159,8 @@ $stampFile = Join-Path $buildDir 'built-from.txt'
 $stamp = if (Test-Path $stampFile) { (Get-Content $stampFile -Raw).Trim() } else { '' }
 $reason = if ($Rebuild) { '-Rebuild' }
 	elseif (-not (Test-Path $exe)) { 'no arx.exe yet' }
-	elseif ($dirty) { 'uncommitted changes in the worktree' }
-	elseif ($stamp -ne $head) { "built from '$(Short $stamp)', HEAD is $(Short $head)" }
+	elseif (($stamp -split ' ')[0] -ne $head) { "built from '$(Short ($stamp -split ' ')[0])', HEAD is $(Short $head)" }
+	elseif ((Get-ArxStampFingerprint $stamp) -ne (Get-ArxTreeFingerprint $wt)) { 'the worktree changed since the build' }
 if ($reason) {
 	Write-Host "    building: $reason" -ForegroundColor Cyan
 	& (Join-Path $wt 'scripts\build-windows.ps1') -Config $Config

@@ -137,7 +137,8 @@ void FlyingEye::drawMagicSightInterface() {
 		}
 	}
 
-	EERIEDrawBitmap(Rectf(g_size), 0.0001f, m_eyeTex, Color::gray(col));
+	// Over the whole view: in VR one head-locked image for both eyes (#22)
+	drawViewOverlay(0.0001f, m_eyeTex, Color::gray(col));
 
 	if(MagicSightFader > 0.f) {
 		col = MagicSightFader;

@@ -79,6 +79,9 @@ Check '@log has its regex and seconds' ($seq.Steps[7].Regex -eq 'hello (world)?'
 Check '@diff has its eye' ($seq.Steps[10].Eye -eq 'right' -and $seq.Steps[10].Value -eq '2.5')
 $metric = Get-Parse "@diff a b max lt 64 left-layer`n@diff a b lt 1"
 Check '@diff takes the max metric and a layer (#72), mean by default' ($metric -isnot [string] -and $metric.Steps[0].Metric -eq 'max' -and $metric.Steps[0].Eye -eq 'left-layer' -and $metric.Steps[0].Value -eq '64' -and $metric.Steps[1].Metric -eq 'mean' -and $metric.Steps[1].Eye -eq 'left') $metric
+$stereo = Get-Parse "@stereo base fire fx`n@stereo base fade-legacy view fails covered`n@stereo a b infinity"
+Check '@stereo takes its mode and the leg that must fail (#22)' ($stereo -isnot [string] -and $stereo.Steps[0].Mode -eq 'fx' -and -not $stereo.Steps[0].Fails -and $stereo.Steps[1].Mode -eq 'view' -and $stereo.Steps[1].Fails -eq 'covered' -and $stereo.Steps[2].Mode -eq 'infinity') $stereo
+Check '@stereo refuses an unknown mode' ((Get-Parse '@stereo a b sideways') -match 'malformed')
 Check '@key has its count and delay' ($seq.Steps[11].Count -eq 2 -and $seq.Steps[11].DelayMs -eq 100)
 Check '@pending wraps a step' ($seq.Steps[12].Issue -eq 24 -and $seq.Steps[12].Inner.Kind -eq 'diff')
 Check "';' groups commands into one batch" ($seq.Steps[13].Commands.Count -eq 2 -and $seq.Steps[14].Commands.Count -eq 1)

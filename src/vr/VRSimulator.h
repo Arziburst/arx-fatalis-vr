@@ -76,6 +76,8 @@ struct SimShotEye {
 	PixelStats layer;    //!< the projection layer alone, same region
 	Vec3f position = Vec3f(0.f);  //!< the eye as submitted, in the room
 	Vec3f angles = Vec3f(0.f);    //!< yaw, pitch, roll in degrees
+	glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f); //!< the eye as submitted, in the room (#22)
+	MirrorFov fov;       //!< the eye's four angles as submitted, radians (#22)
 	u64 imageFrame = 0;  //!< the frame the eye image was released in
 };
 

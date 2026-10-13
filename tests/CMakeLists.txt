@@ -51,6 +51,9 @@ set(arxtest_TESTCASES
 	tests/vr/EyeProjectionTest.h
 	tests/vr/EyeProjectionTest.cpp
 
+	tests/vr/StereoEffectsTest.h
+	tests/vr/StereoEffectsTest.cpp
+
 	tests/vr/FramePacingTest.h
 	tests/vr/FramePacingTest.cpp
 	tests/vr/MirrorGeometryTest.h
@@ -152,6 +155,7 @@ set(arxtest_SOURCES
 	src/vr/VRSettingsRows.cpp
 	src/vr/EyeImage.cpp
 	src/vr/SimRig.cpp
+	src/vr/StereoEffects.cpp
 	src/vr/UIPanel.cpp
 	src/vr/MenuPointer.cpp
 	src/vr/InterfaceSize.cpp

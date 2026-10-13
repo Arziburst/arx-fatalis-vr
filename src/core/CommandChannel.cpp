@@ -53,10 +53,15 @@
 #include "game/Player.h"
 #include "game/Spells.h"
 #include "game/effect/Quake.h"
+#include "graphics/Draw.h"
 #include "graphics/Math.h"
 #include "graphics/Raycast.h"
 #include "graphics/Renderer.h"
 #include "graphics/data/Mesh.h"
+#include "graphics/effects/Fog.h"
+#include "graphics/particle/MagicFlare.h"
+#include "graphics/particle/ParticleEffects.h"
+#include "graphics/particle/ParticleTextures.h"
 #include "graphics/image/Image.h"
 #include "gui/Console.h"
 #include "gui/DamageNumbers.h"
@@ -84,6 +89,7 @@
 #include "platform/Time.h"
 #include "scene/ChangeLevel.h"
 #include "scene/Interactive.h"
+#include "scene/Light.h"
 #include "script/Script.h"
 #include "util/String.h"
 #include "vr/HeadTracking.h"
@@ -345,6 +351,18 @@ struct State {
 		vr::WalkStatus walk;         //!< The stick walk of the hold's last frame that walked
 	} stickFor;
 
+	//! stereo-fx: a test effect at a known point in front of the head, for the stereo checks (#22)
+	struct StereoFx {
+		unsigned seq = 0;            //!< Effects placed so far
+		std::string kind = "none";   //!< flare, fire, fog, magic, billboard, or none
+		Vec3f pos = Vec3f(0.f);      //!< Where it is, in the world
+		Vec3f offset = Vec3f(0.f);   //!< Asked for: meters ahead, right and up of the head
+		LightHandle light;           //!< The flare's light
+		FogHandle fog;               //!< The fog emitter
+		bool hasFog = false;
+		GameInstant nextBillboard = 0; //!< When the billboard's particle is renewed
+	} stereoFx;
+
 };
 
 State g;
@@ -383,6 +401,26 @@ void writeAngles(JsonWriter & json, std::string_view name, const Vec3f & angles)
 	json.end();
 }
 
+//! An orientation as its quaternion: what a check needs to turn an eye's pixels into rays in the room (#22)
+void writeQuat(JsonWriter & json, std::string_view name, const glm::quat & q) {
+	json.object(name);
+	json.value("x", q.x);
+	json.value("y", q.y);
+	json.value("z", q.z);
+	json.value("w", q.w);
+	json.end();
+}
+
+//! Four field of view half-angles in degrees, OpenXR signs (left and down negative)
+void writeFov(JsonWriter & json, std::string_view name, const vr::MirrorFov & fov) {
+	json.object(name);
+	json.value("left", glm::degrees(fov.left));
+	json.value("right", glm::degrees(fov.right));
+	json.value("up", glm::degrees(fov.up));
+	json.value("down", glm::degrees(fov.down));
+	json.end();
+}
+
 void writePixelStats(JsonWriter & json, std::string_view name, const vr::PixelStats & stats) {
 	json.object(name);
 	json.value("verdict", vr::imageVerdictName(stats.verdict));
@@ -406,6 +444,7 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 	json.value("eyeWidth", sim.view.eyeSize.x);
 	json.value("eyeHeight", sim.view.eyeSize.y);
 	json.value("ipd", sim.view.ipd);
+	json.value("cant", sim.view.cant);
 	json.value("rate", sim.view.rate);
 	json.end();
 
@@ -473,6 +512,8 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 			writePixelStats(json, "layer", e.layer);
 			writeVec(json, "position", e.position);
 			writeAngles(json, "rot", e.angles);
+			writeQuat(json, "quat", e.orientation);
+			writeFov(json, "fov", e.fov);
 			json.value("imageFrame", e.imageFrame);
 			json.value("quadPixels", u64(shot.quadPixels[eye]));
 			json.value("overlayPixels", u64(shot.overlayPixels[eye]));
@@ -1390,6 +1431,22 @@ std::string buildStatus(PlatformInstant now) {
 		json.end();
 	}
 
+	// The stereo checks (#22): the per-eye way of drawing sprites, overlays and fades, and the test effect
+	json.object("stereoFx");
+	json.value("legacy", g_stereoView.legacy);
+	json.value("seq", g.stereoFx.seq);
+	json.value("kind", g.stereoFx.kind);
+	writeVec(json, "pos", g.stereoFx.pos);
+	writeVec(json, "offset", g.stereoFx.offset);
+	if(g.stereoFx.kind != "none") {
+		// Where the effect is from the head now (engine view: x right, y down, z forward): what a shot sees
+		const Vec3f view = Vec3f(cameraWorldToView(g_playerCamera) * Vec4f(g.stereoFx.pos, 1.f));
+		json.value("azimuth", glm::degrees(std::atan2(view.x, view.z)));
+		json.value("elevation", glm::degrees(std::atan2(-view.y, std::sqrt(view.x * view.x + view.z * view.z))));
+		json.value("distance", glm::length(view) / vr::UnitsPerMeter);
+	}
+	json.end();
+
 	if(g.pick.seq != 0) {
 		json.object("pick");
 		json.value("seq", g.pick.seq);
@@ -1500,6 +1557,118 @@ bool parseFloats(std::string_view text, std::vector<float> & values) {
 		rest = next;
 	}
 	return true;
+}
+
+//! stereo-fx: take the test effect away (#22)
+void clearStereoFx() {
+	State::StereoFx & fx = g.stereoFx;
+	lightHandleDestroy(fx.light);
+	if(fx.hasFog && size_t(fx.fog) < g_fogs.size()) {
+		g_fogs[fx.fog].exist = false;
+	}
+	fx.hasFog = false;
+	fx.kind = "none";
+}
+
+/*!
+ * stereo-fx: keep the test effect going, once per frame (#22). The flare and the fog are the engine's
+ * own (a light with a flare, a fog emitter); fire, rune flares and the billboard are emitted here
+ * through the engine's particle paths, as a torch or a rune trail emits them.
+ */
+void updateStereoFx() {
+	State::StereoFx & fx = g.stereoFx;
+	if(fx.kind == "none" || currentState() != GameState::Gameplay || g_gameTime.isPaused()) {
+		return;
+	}
+	if(fx.kind == "fire") {
+		createFireParticles(fx.pos, 4, ShortGameDuration(0));
+	} else if(fx.kind == "magic") {
+		AddFlareAt(fx.pos, 1.f, -1, 1.f);
+	} else if(fx.kind == "billboard" && g_gameTime.now() >= fx.nextBillboard) {
+		// One still, square, unrotated particle at the point: 10 % dimmer after 3 s, renewed at its end
+		if(PARTICLE_DEF * pd = createParticle()) {
+			pd->ov = fx.pos;
+			pd->move = Vec3f(0.f);
+			pd->size = 25.f;
+			pd->sizeDelta = 0.f;
+			pd->duration = std::chrono::seconds(30);
+			pd->m_flags = 0;
+			pd->tc = g_particleTextures.fire2;
+			pd->rgb = Color3f::white;
+			fx.nextBillboard = g_gameTime.now() + std::chrono::seconds(29);
+		}
+	}
+}
+
+/*!
+ * stereo-fx place <kind> <ahead> [<right> [<up>]]: a test effect at that many meters ahead, right and up of
+ * the head (#22)
+ */
+std::string placeStereoFx(std::string_view rest) {
+
+	std::istringstream iss{std::string(rest)};
+	std::string kind;
+	Vec3f offset(0.f);
+	bool parsed = bool(iss >> kind >> offset.x);
+	if(parsed && !(iss >> offset.y)) {
+		parsed = iss.eof();
+	} else if(parsed && !(iss >> offset.z)) {
+		parsed = iss.eof();
+	}
+	if(!parsed || (kind != "flare" && kind != "fire" && kind != "fog" && kind != "magic" && kind != "billboard")
+	   || offset.x <= 0.f) {
+		return "stereo-fx place: expected flare|fire|fog|magic|billboard <ahead> [<right> [<up>]] in meters, ahead > 0,"
+		       " got \"" + std::string(rest) + "\"";
+	}
+	if(currentState() != GameState::Gameplay) {
+		return std::string("stereo-fx place: needs a level on screen (state ") + gameStateName(currentState()) + ")";
+	}
+
+	clearStereoFx();
+
+	// The head camera's axes: engine view space is x right, y down, z forward
+	const glm::mat4x4 viewToWorld = glm::inverse(cameraWorldToView(g_playerCamera));
+	const Vec3f inView = Vec3f(offset.y, -offset.z, offset.x) * vr::UnitsPerMeter;
+	State::StereoFx & fx = g.stereoFx;
+	fx.seq++;
+	fx.kind = kind;
+	fx.offset = offset;
+	fx.pos = Vec3f(viewToWorld * Vec4f(inView, 1.f));
+	fx.nextBillboard = 0;
+
+	if(kind == "flare") {
+		if(EERIE_LIGHT * light = dynLightCreate(fx.light)) {
+			light->pos = fx.pos;
+			light->rgb = Color3f(1.f, 0.9f, 0.7f);
+			light->intensity = 1.f;
+			// Next to no reach: the flare alone, not a lit wall around it, changes the picture
+			light->fallstart = 1.f;
+			light->fallend = 5.f;
+			light->extras = EXTRAS_FLARE;
+			light->ex_flaresize = 40.f;
+			light->duration = 0;
+		}
+	} else if(kind == "fog") {
+		fx.fog = ARX_FOGS_GetFree();
+		fx.hasFog = true;
+		FOG_DEF & fog = g_fogs[fx.fog];
+		fog.pos = fx.pos;
+		fog.directional = true;
+		fog.move = Vec3f(0.f);
+		fog.speed = 0.f;
+		fog.speedRandom = 0.f;
+		fog.rotatespeed = 0.001f;
+		fog.size = 40.f;
+		fog.sizeDelta = 4.f;
+		fog.frequency = 20.f;
+		fog.duration = std::chrono::milliseconds(2500);
+		fog.rgb = Color3f(0.8f, 0.8f, 0.9f);
+		fog.creationTime = g_gameTime.now();
+	}
+
+	LogInfo << "[channel] stereo-fx: " << kind << " placed " << offset.x << " m ahead, " << offset.y << " m right, "
+	        << offset.z << " m up of the head, at " << fx.pos.x << ' ' << fx.pos.y << ' ' << fx.pos.z;
+	return std::string();
 }
 
 /*!
@@ -1650,6 +1819,30 @@ std::string execute(std::string_view line) {
 		hold.timedOut = false;
 		hold.walk = vr::WalkStatus();
 		return std::string();
+	}
+
+	if(word == "stereo-fx") {
+		// The stereo checks of screen-space effects and sprites (#22): place / clear a test effect in front of the
+		// head; legacy on|off draws them the per-eye way they were drawn before, to show a check fails without the fix
+		std::string_view args;
+		const std::string what(firstWord(rest, args));
+		if(what == "place") {
+			std::string error = placeStereoFx(args);
+			return error.empty() ? error : refuse(error);
+		}
+		if(what == "clear" && args.empty()) {
+			clearStereoFx();
+			return std::string();
+		}
+		if(what == "legacy" && (args == "on" || args == "off")) {
+			g_stereoView.legacy = (args == "on");
+			LogInfo << "[channel] stereo-fx: legacy " << args << (g_stereoView.legacy
+			        ? " - sprites, trails, overlays and the fade drawn per eye as before #22"
+			        : " - sprites, trails, overlays and the fade drawn for the head between the eyes (#22)");
+			return std::string();
+		}
+		return refuse("stereo-fx: expected place <kind> <ahead> [<right> [<up>]], clear or legacy on|off, got \""
+		              + std::string(rest) + "\"");
 	}
 
 	if(word == "vr-sim") {
@@ -2562,6 +2755,7 @@ void update() {
 	}
 
 	updateStickFor();
+	updateStereoFx();
 
 	if(toMsi(now - g.lastPollTime) >= PollIntervalMs) {
 		g.lastPollTime = now;
@@ -2688,6 +2882,10 @@ void notifyLoading(AreaId area) {
 	// Logged by the event log (game.state to=LOADING area=N)
 	ARX_UNUSED(area);
 	g.state = GameState::Loading;
+	// The level's lights and fogs go with it: the test effect's handles name nothing any more (#22)
+	g.stereoFx.kind = "none";
+	g.stereoFx.light = LightHandle();
+	g.stereoFx.hasFog = false;
 	writeStatus(platform::getTime());
 }
 

@@ -37,6 +37,7 @@ class SimRigTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testPositiveYawTurnsLeft);
 	CPPUNIT_TEST(testHeadOffsetMovesBothEyes);
 	CPPUNIT_TEST(testEyesSeenFromTheHead);
+	CPPUNIT_TEST(testCantTurnsTheEyesOutward);
 	CPPUNIT_TEST(testAnglesRoundTrip);
 	CPPUNIT_TEST(testDefaultFovIsAsymmetricAndMirrored);
 	CPPUNIT_TEST(testSetupCommands);
@@ -62,6 +63,7 @@ public:
 	void testPositiveYawTurnsLeft();
 	void testHeadOffsetMovesBothEyes();
 	void testEyesSeenFromTheHead();
+	void testCantTurnsTheEyesOutward();
 	void testAnglesRoundTrip();
 	void testDefaultFovIsAsymmetricAndMirrored();
 	void testSetupCommands();

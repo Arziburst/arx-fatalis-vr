@@ -33,6 +33,11 @@
 #                                  eye = left (default) | right | quad | left-layer | right-layer (the eye without the quad,
 #                                  after `vr-sim layers on`, #72) on the simulated headset. A still scene
 #                                  shot twice is below ~0.5; a head turn is several levels.
+#   @stereo <a> <b> fx|view|infinity [fails <leg>]  the change from shot a to shot b as both eyes of the simulated
+#                                  headset see it (stereo-check-lib.ps1, #22): fx = the test effect of `stereo-fx place`
+#                                  at its depth in both eyes, the same size and height; view = over each eye's whole
+#                                  view equally (a fade); infinity = a head-locked overlay with no disparity. With
+#                                  `fails <leg>` that leg must fail (the before picture, `stereo-fx legacy on`)
 #   @key <name> [n] [ms]           press a key n times (default 1), ms apart (default 300), in the game window,
 #                                  without taking the focus (a posted keyboard message): Escape, Enter, Space, A-Z, 0-9, F1-F12 ...
 #   @pending <#issue> <step>       a step that the game cannot pass yet (the feature is issue #N): its failure is
@@ -48,6 +53,7 @@
 # A sequence stops at its first failed step (-ContinueOnError: runs on and lists them all).
 
 . (Join-Path $PSScriptRoot 'test-lib.ps1')
+. (Join-Path $PSScriptRoot 'stereo-check-lib.ps1')
 
 $script:XrsOps = 'eq|ne|gt|ge|lt|le'
 
@@ -96,6 +102,10 @@ function ConvertTo-XrsStep([string]$Line, [int]$Number) {
 		$step.Eye = if ($Matches[6]) { $Matches[6] } else { 'left' }
 		$d = 0.0
 		if (-not [double]::TryParse($step.Value, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$d)) { throw "@diff compares with a number, got '$($step.Value)'" }
+	}
+	elseif ($Line -match '^@stereo\s+([\w.-]+)\s+([\w.-]+)\s+(fx|view|infinity)(?:\s+fails\s+(\w+))?\s*$') {
+		$step.Kind = 'stereo'; $step.A = $Matches[1]; $step.B = $Matches[2]; $step.Mode = $Matches[3]
+		$step.Fails = $Matches[4]
 	}
 	elseif ($Line -match '^@key\s+(\w+)(?:\s+(\d+))?(?:\s+(\d+))?\s*$') {
 		$step.Kind = 'key'; $step.Key = $Matches[1]
@@ -372,6 +382,21 @@ function Invoke-XrsStep($Context, $Step) {
 			Write-XrsLine $Context "      $($Step.A) vs $($Step.B) ($($Step.Eye)): mean $($d.Mean), max channel $($d.Max), $($d.PctChanged)% of the channels changed" 'DarkGray'
 			$measured = if ($Step.Metric -eq 'max') { $d.Max } else { $d.Mean }
 			if (-not (Test-XrsCondition $measured $Step.Op $Step.Value)) { throw "DIFF FAILED: $($Step.A) vs $($Step.B) ($($Step.Eye)) $($Step.Metric) difference $measured $($Step.Op) $($Step.Value)" }
+		}
+		'stereo' {
+			$legs = @(Test-ArxStereoChange (Read-XrsStatus $dir) $Step.A $Step.B $Step.Mode { param($Name, $Eye) Get-XrsShotFile $dir $Name $Eye })
+			foreach ($leg in $legs) {
+				Write-XrsLine $Context ("      {0,-9} {1,-4} {2}" -f $leg.Leg, $(if ($leg.Pass) { 'pass' } else { 'FAIL' }), $leg.Detail) 'DarkGray'
+			}
+			if ($Step.Fails) {
+				# The check broken on purpose (`stereo-fx legacy on`): this leg must fail - the check sees the fault
+				$leg = $legs | Where-Object Leg -eq $Step.Fails | Select-Object -First 1
+				if (-not $leg) { throw "STEREO FAILED: no leg '$($Step.Fails)' in the $($Step.Mode) check of $($Step.A) vs $($Step.B)" }
+				if ($leg.Pass) { throw "STEREO FAILED: the $($Step.Fails) leg passed on $($Step.B), which it must fail: $($leg.Detail)" }
+			} else {
+				$failed = @($legs | Where-Object { -not $_.Pass })
+				if ($failed) { throw "STEREO FAILED: $($Step.A) vs $($Step.B) ($($Step.Mode)): $(($failed | ForEach-Object { "$($_.Leg): $($_.Detail)" }) -join '; ')" }
+			}
 		}
 		'key' {
 			$status = Read-ArxStatus $dir

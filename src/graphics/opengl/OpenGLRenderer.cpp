@@ -1042,9 +1042,11 @@ void OpenGLRenderer::flushState() {
 				 * destination alpha, and the window never shows it: flat rendering is unchanged.
 				 * A blend that keeps all of the destination (additive glows, particles, flares)
 				 * only adds light and covers nothing: its alpha would turn the world behind an
-				 * additive texture's black into a dark square (#72).
+				 * additive texture's black into a dark square (#72). A blend weighted by the
+				 * destination's alpha only tints what is already there - the fade over the
+				 * interface on the flat frame in VR (#22) - and keeps its coverage too.
 				 */
-				if(glblendDst == GL_ONE) {
+				if(glblendDst == GL_ONE || glblendSrc == GL_DST_ALPHA) {
 					glBlendFuncSeparate(glblendSrc, glblendDst, GL_ZERO, GL_ONE);
 				} else {
 					glBlendFuncSeparate(glblendSrc, glblendDst, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);

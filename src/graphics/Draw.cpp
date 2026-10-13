@@ -43,14 +43,22 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "graphics/Draw.h"
 
+#include <array>
+#include <cmath>
+#include <limits>
+
 #include "core/Core.h"
 #include "core/Application.h"
 #include "core/GameTime.h"
+
+#include "game/Camera.h"
 
 #include "graphics/VertexBuffer.h"
 #include "graphics/Math.h"
 #include "graphics/data/TextureContainer.h"
 #include "graphics/data/Mesh.h"
+
+#include "vr/StereoEffects.h"
 
 CircularVertexBuffer<TexturedVertex> * pDynamicVertexBuffer_TLVERTEX;
 
@@ -69,9 +77,91 @@ static void SetTextureDrawPrim(TextureContainer * tex, const TexturedVertex * v,
 	EERIEDRAWPRIM(prim, v, 4);
 }
 
+StereoView g_stereoView;
+
+Vec3f viewerPosition() {
+	return g_stereoView.active && !g_stereoView.legacy ? g_stereoView.position : g_camera->m_pos;
+}
+
+namespace {
+
+//! The four corners of an engine sprite around its point, in units of its half size (screen x right, y down)
+std::array<Vec2f, 4> spriteOffsets(float rot) {
+	if(rot == 0) {
+		return { Vec2f(-1.f, -1.f), Vec2f(1.f, -1.f), Vec2f(1.f, 1.f), Vec2f(-1.f, 1.f) };
+	}
+	std::array<Vec2f, 4> offsets;
+	for(size_t i = 0; i < offsets.size(); i++) {
+		float tt = glm::radians(MAKEANGLE(rot + 90.f * float(i) + 135.f));
+		offsets[i] = Vec2f(std::sin(tt), std::cos(tt));
+	}
+	return offsets;
+}
+
+enum class FacingSprite {
+	Drawn,
+	Culled,
+	Unsupported, //!< a corner behind this eye: the screen-space square instead
+};
+
+/*!
+ * In an eye of a stereo frame a sprite is one square in the world facing the head between the eyes,
+ * the engine's size at the head's depth, and this eye projects its corners (#22, vr/StereoEffects.h):
+ * both eyes see the same square. Straight ahead it is exactly the engine's screen-space square.
+ */
+FacingSprite createFacingSprite(TexturedQuad & sprite, const Vec3f & in, float siz, Color color, float Zpos,
+                                float rot) {
+
+	const Vec3f center = Vec3f(g_stereoView.worldToView * Vec4f(in, 1.f));
+	if(center.z <= 0.f) {
+		// Behind the head
+		return FacingSprite::Culled;
+	}
+
+	const float half = vr::spriteHalfSize(siz, center.z, g_stereoView.focal);
+	const vr::FacingAxes axes = vr::facingAxes(center);
+	const std::array<Vec2f, 4> offsets = spriteOffsets(rot);
+	static const Vec2f uvs[4] = { Vec2f(0.f), Vec2f(1.f, 0.f), Vec2f(1.f), Vec2f(0.f, 1.f) };
+	const ColorRGBA col = color.toRGBA();
+
+	Vec2f mins(std::numeric_limits<float>::max());
+	Vec2f maxs(std::numeric_limits<float>::lowest());
+	for(size_t i = 0; i < offsets.size(); i++) {
+		const Vec3f corner = center + (axes.right * offsets[i].x + axes.down * offsets[i].y) * half;
+		Vec4f clip = worldToClipSpace(Vec3f(g_stereoView.viewToWorld * Vec4f(corner, 1.f)));
+		if(clip.w <= 0.f) {
+			return FacingSprite::Unsupported;
+		}
+		if(Zpos <= 1.f) {
+			// A fixed depth, as the engine's sprite has
+			clip.z = Zpos * clip.w;
+		}
+		sprite.v[i] = TexturedVertex(Vec3f(clip), clip.w, col, uvs[i]);
+		const Vec2f screen = Vec2f(clip) / clip.w;
+		mins = glm::min(mins, screen);
+		maxs = glm::max(maxs, screen);
+	}
+
+	if(maxs.x < g_size.left || mins.x > g_size.right || maxs.y < g_size.top || mins.y > g_size.bottom) {
+		// Sprite is entirely outside the viewport
+		return FacingSprite::Culled;
+	}
+
+	return FacingSprite::Drawn;
+}
+
+} // anonymous namespace
+
 static bool EERIECreateSprite(TexturedQuad & sprite, const Vec3f & in, float siz,
                               Color color, float Zpos, float rot = 0) {
-	
+
+	if(g_stereoView.active && !g_stereoView.legacy) {
+		FacingSprite facing = createFacingSprite(sprite, in, siz, color, Zpos, rot);
+		if(facing != FacingSprite::Unsupported) {
+			return facing == FacingSprite::Drawn;
+		}
+	}
+
 	Vec4f out = worldToClipSpace(in);
 	if(out.w <= 0.f) {
 		// Sprite is behind the camera
@@ -222,4 +312,41 @@ void EERIEDrawBitmap2DecalY(Rectf rect, float z, TextureContainer * tex, Color c
 	v[2] = TexturedVertex(Vec3f(rect.bottomRight(), z), 1.f, col, uv3);
 	v[3] = TexturedVertex(Vec3f(rect.bottomLeft(),  z), 1.f, col, uv4);
 	SetTextureDrawPrim(tex, v, Renderer::TriangleFan);
+}
+
+void drawViewOverlay(float z, TextureContainer * tex, Color color) {
+
+	if(g_stereoView.active && !g_stereoView.legacy) {
+
+		// Head-locked at infinity over both eyes' union frustum: each texel is one direction for both eyes,
+		// where the eye-sized bitmap put the texture's middle at each eye's own image center (#22)
+		vr::EyeFov fov;
+		fov.left = g_stereoView.unionFov.x;
+		fov.right = g_stereoView.unionFov.y;
+		fov.up = g_stereoView.unionFov.z;
+		fov.down = g_stereoView.unionFov.w;
+		const std::array<Vec3f, 4> corners = vr::overlayCornerDirections(fov);
+
+		const Vec2f uv = (tex) ? tex->uv : Vec2f(0.f);
+		const Vec2f uvs[4] = { Vec2f(0.f), Vec2f(uv.x, 0.f), uv, Vec2f(0.f, uv.y) };
+		const ColorRGBA col = color.toRGBA();
+		const glm::mat3x3 headToWorld(g_stereoView.viewToWorld);
+
+		TexturedVertex v[4];
+		bool inFront = true;
+		for(size_t i = 0; i < corners.size(); i++) {
+			// A direction projects to its vanishing point: no eye offset, no parallax
+			Vec4f clip = g_preparedCamera.m_worldToScreen * Vec4f(headToWorld * corners[i], 0.f);
+			inFront = inFront && clip.w > 0.f;
+			v[i] = TexturedVertex(Vec3f(clip.x, clip.y, z * clip.w), clip.w, col, uvs[i]);
+		}
+
+		if(inFront) {
+			SetTextureDrawPrim(tex, v, Renderer::TriangleFan);
+			return;
+		}
+
+	}
+
+	EERIEDrawBitmap(Rectf(g_size), z, tex, color);
 }

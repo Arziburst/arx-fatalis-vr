@@ -69,4 +69,36 @@ void EERIEDrawBitmapUVs(Rectf rect, float z, TextureContainer * tex, Color color
 void EERIEAddBitmap(const RenderMaterial & mat, const Vec3f & p, float sx, float sy, TextureContainer * tex, Color color);
 void EERIEAddSprite(const RenderMaterial & mat, const Vec3f & in, float siz, Color color, float Zpos, float rot = 0);
 
+/*!
+ * The head between the eyes while the eyes of a stereo frame are drawn (#22, vr/StereoEffects.h):
+ * camera-facing geometry - sprites, trails - faces it, so that both eyes see one shape in the world,
+ * and full-view overlays hang from it at infinity. Set by ArxGame::renderStereoViews(); inactive in
+ * flat mode and outside the eye passes, where everything is drawn as the engine always drew it.
+ */
+struct StereoView {
+	bool active = false;
+	//! The test channel's "stereo-fx legacy on": the eyes draw these effects the old, per-eye way -
+	//! the before picture, so a check can show that it fails without the fix
+	bool legacy = false;
+	glm::mat4x4 worldToView = glm::mat4x4(1.f); //!< the head camera's (engine view axes)
+	glm::mat4x4 viewToWorld = glm::mat4x4(1.f);
+	Vec3f position = Vec3f(0.f); //!< the point between the eyes, in the world
+	float focal = 0.f;           //!< the head camera's focal length: the scale of fixed-share sprites
+	//! The union of both eyes' frusta in the head's axes, as OpenXR angles in radians (left, right, up, down)
+	Vec4f unionFov = Vec4f(0.f);
+};
+
+extern StereoView g_stereoView;
+
+//! \return where camera-facing geometry looks from: the head between the eyes in a stereo frame, else the camera
+Vec3f viewerPosition();
+
+/*!
+ * Draw a texture or a color over the whole view, as the engine's full-screen effects do (the
+ * Improve Vision tint, Magic Sight): in flat mode the bitmap over \c g_size; in an eye of a stereo
+ * frame a head-locked image at infinity over both eyes' union frustum, so every texel is one
+ * direction for both eyes (#22). The caller sets the render state.
+ */
+void drawViewOverlay(float z, TextureContainer * tex, Color color);
+
 #endif // ARX_GRAPHICS_DRAW_H

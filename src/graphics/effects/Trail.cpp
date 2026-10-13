@@ -24,6 +24,7 @@
 #include "math/Random.h"
 #include "graphics/RenderBatcher.h"
 #include "graphics/Vertex.h"
+#include "graphics/Draw.h"
 
 
 Trail::Trail(GameDuration duration, Color3f startColor, Color3f endColor, float startSize, float endSize)
@@ -160,7 +161,8 @@ void Trail::Render() {
 	 */
 	
 	// Direction of the camera from the trail start
-	Vec3f cameraDir = g_camera->m_pos - m_positions[0];
+	// In VR the head between the eyes: both eyes see one ribbon (#22)
+	Vec3f cameraDir = viewerPosition() - m_positions[0];
 	
 	// Calculate (cosine of) the angle between the camera direction and the trail direction
 	// Zero when looking at the trail from the side, -1 when looking from the front, 1 from the back

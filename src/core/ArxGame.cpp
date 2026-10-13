@@ -2344,6 +2344,20 @@ void ArxGame::renderStereoViews() {
 	const Vec2f interfaceRatio = g_sizeRatio;
 	const Random::State random = Random::getState();
 
+	// Sprites, trails and full-view overlays face the head between the eyes, not each eye (#22)
+	g_stereoView.active = true;
+	g_stereoView.worldToView = headWorldToView;
+	g_stereoView.viewToWorld = glm::inverse(headWorldToView);
+	g_stereoView.position = cam->m_pos;
+	{
+		// The eyes' focal (they share the vertical FOV): fixed-share sprites keep the size the eye gave them
+		Camera fovCamera = *cam;
+		fovCamera.setFov(vr::verticalFov(rigs[0].fov));
+		g_stereoView.focal = fovCamera.focal;
+	}
+	const vr::EyeFov & unionFov = vr::unionEyeFov();
+	g_stereoView.unionFov = Vec4f(unionFov.left, unionFov.right, unionFov.up, unionFov.down);
+
 	for(size_t eye = 0; eye < rigs.size(); eye++) {
 
 		if(!vr::beginEyeRender(eye)) {
@@ -2376,6 +2390,8 @@ void ArxGame::renderStereoViews() {
 
 		vr::endEyeRender(eye);
 	}
+
+	g_stereoView.active = false;
 
 	// The cinematic border's scissor belongs to the eye images, not to the interface on the quad
 	GRenderer->SetScissor(Rect());
@@ -2421,12 +2437,18 @@ void ArxGame::renderSceneView() {
 	// End Particles
 
 	// Renders Magical Flares
-	if(!((player.Interface & INTER_PLAYERBOOK) && !(player.Interface & INTER_COMBATMODE))) {
+	if(vr::stereoActive()) {
+		// The world's flares into the eyes, the book open or not; the book's own (window coordinates) go
+		// to the flat frame with the interface (#22)
+		ARX_MAGICAL_FLARES_Render(ParticleLayer::World);
+	} else if(!((player.Interface & INTER_PLAYERBOOK) && !(player.Interface & INTER_COMBATMODE))) {
 		ARX_MAGICAL_FLARES_Render();
 	}
 
-	// Checks some specific spell FX
-	CheckMr();
+	// Checks some specific spell FX - a corner icon of the screen: in VR on the flat frame (#22)
+	if(!vr::stereoActive()) {
+		CheckMr();
+	}
 
 	if(player.m_improve) {
 		DrawImproveVisionInterface();
@@ -2467,6 +2489,12 @@ void ArxGame::renderSceneView() {
 		EERIEDrawBitmap(Rectf(g_size), 0.0001f, nullptr, Color(Color4f(Color3f::black, headFade)));
 	}
 
+	// A scripted fade (worldfade) over the whole view of this eye; the flat frame fades only its own
+	// interface (ManageFade, #22)
+	if(g_stereoView.active && !g_stereoView.legacy) {
+		drawFadeOverView();
+	}
+
 }
 
 void ArxGame::renderInterface() {
@@ -2493,11 +2521,17 @@ void ArxGame::renderInterface() {
 		ARX_INTERFACE_NoteManage();
 		g_hudRoot.draw();
 		
-		if((player.Interface & INTER_PLAYERBOOK) && !(player.Interface & INTER_COMBATMODE)) {
+		if(vr::stereoActive()) {
+			// The book's flares on the flat frame, the book open or not; the world's are in the eyes (#22)
+			ARX_MAGICAL_FLARES_Render(ParticleLayer::Screen);
+			g_renderBatcher.render();
+			// The cheat's corner icon: a corner of the interface, not of each eye's image
+			CheckMr();
+		} else if((player.Interface & INTER_PLAYERBOOK) && !(player.Interface & INTER_COMBATMODE)) {
 			ARX_MAGICAL_FLARES_Render();
 			g_renderBatcher.render();
 		}
-		
+
 	}
 
 	GRenderer->Clear(Renderer::DepthBuffer);

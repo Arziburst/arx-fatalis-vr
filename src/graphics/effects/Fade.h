@@ -40,4 +40,11 @@ void fadeRequestStart(FadeType type, PlatformDuration duration);
 
 void ManageFade();
 
+/*!
+ * The fade over the whole view of one eye of a stereo frame (#22): drawn into each eye after its scene,
+ * so both eyes are covered equally to the edge of their view, where the flat frame quad would cover
+ * only its middle. \ref ManageFade then fades the interface on the quad. Advances nothing.
+ */
+void drawFadeOverView();
+
 #endif // ARX_GRAPHICS_EFFECTS_FADE_H

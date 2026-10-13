@@ -55,7 +55,9 @@
  * Commands (the channel's \c vr-sim takes the same):
  *  - \c rate \c <hz>: display rate, 0 = no pacing; \c eye-size \c <w> \c <h> (set-up only);
  *    \c ipd \c <meters>; \c fov \c left|right \c <left> \c <right> \c <up> \c <down> (degrees,
- *    OpenXR signs: left and down negative); \c timeline \c gameplay|session (set-up only)
+ *    OpenXR signs: left and down negative); \c cant \c <degrees>: the angle between the two eyes'
+ *    view directions, each eye turned outward by half (canted displays: the Index has 5, #22; the
+ *    default 0 is parallel); \c timeline \c gameplay|session (set-up only)
  *  - \c head \c pos \c <x> \c <y> \c <z>; \c head \c rot \c <yaw> \c <pitch> \c <roll> - yaw + turns
  *    left, pitch + looks up, roll + tilts the head to the left
  *  - \c hand \c left|right \c pos|rot \c ...; \c hand \c left|right \c on|off (tracked or not)
@@ -112,6 +114,7 @@ struct SimEye {
 struct SimView {
 	Vec2i eyeSize = Vec2i(1440, 1600);
 	float ipd = 0.064f;
+	float cant = 0.f; //!< degrees between the eyes' view directions, each turned outward by half (#22)
 	std::array<MirrorFov, 2> fov;
 	float rate = 90.f;
 	SimView();

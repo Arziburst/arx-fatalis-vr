@@ -20,6 +20,7 @@
 #ifndef ARX_GRAPHICS_PARTICLE_MAGICFLARE_H
 #define ARX_GRAPHICS_PARTICLE_MAGICFLARE_H
 
+#include "graphics/particle/ParticleEffects.h"
 #include "math/Types.h"
 
 class Entity;
@@ -41,7 +42,8 @@ void FlareLine(Vec2f pos0, Vec2f pos1, Entity * io = nullptr);
 void AddFlareAt(const Vec3f & pos, float sm, short typ, float sizeScale);
 //! Age the flares, drop the dead ones, update their lights - once per frame
 void ARX_MAGICAL_FLARES_Update();
-//! Draw the flares into the render batcher - once per view
-void ARX_MAGICAL_FLARES_Render();
+//! Draw the flares into the render batcher - once per view. In VR the book's flares (window coordinates)
+//! go to the flat frame with the interface, the world's into the eyes, the book open or not (#22)
+void ARX_MAGICAL_FLARES_Render(ParticleLayer layer = ParticleLayer::All);
 
 #endif // ARX_GRAPHICS_PARTICLE_MAGICFLARE_H

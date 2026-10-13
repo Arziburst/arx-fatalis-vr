@@ -1,0 +1,14 @@
+# The simulated headset with the Index's optics (#22): the field of view the game logs on the owner's Index
+# (docs/vr/TESTING.md, "Stereo rendering": left eye L -54 R 40 U 44 D -55, the right eye mirrored) and its canted
+# displays, 5 degrees between the eyes. The default simulator has parallel eyes; on canted ones whatever the
+# engine draws in each eye's own screen space turns with that eye. At rest, no timed lines, no shots: the base of
+# the sequences that check effects in stereo (scripts\dev\xrs\stereo-effects.xrs).
+
+timeline gameplay
+
+fov left -54 40 44 -55
+fov right -40 54 44 -55
+cant 5
+
+head pos 0 0 0
+head rot 0 0 0

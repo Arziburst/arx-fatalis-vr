@@ -165,6 +165,9 @@ freelook on; ui inventory close
 @until vr.pointer.shown eq false 5s
 setpos 8000 -170 7700 0
 @frames 30
+# A teleport can land the hero with a short fall, which the engine counts as a jump (player.jump, no input press)
+@until player.jumping eq false 5s
+@frames 10
 @remember jumps0 vr.input.presses.jump
 @remember yaw0 player.yaw
 # Up but short of 0.7: nothing

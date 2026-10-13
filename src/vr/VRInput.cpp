@@ -99,8 +99,13 @@ ControlSet skipControls() {
 	return controls;
 }
 
-//! What the skip controls would skip now (#394): the game state's name, "SCENE" for a scripted scene in the game, or nullptr
+//! What the skip controls would skip now (#394): the game state's name, "SCENE" for a scripted scene in the game, or
+//! nullptr - always nullptr while a binding capture waits for its press
 const char * skippable() {
+	// A binding capture in the VR settings (#178) takes the next press, also while a scripted scene runs
+	if(g_input.capture.active()) {
+		return nullptr;
+	}
 	const gameevent::GameState state = gameevent::currentGameState();
 	if(state == gameevent::GameState::Logo || state == gameevent::GameState::Intro
 	   || state == gameevent::GameState::Cinematic) {

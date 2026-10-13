@@ -1115,6 +1115,21 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("speed", melee.lastSpeed);
 		json.value("swing", melee.lastSwing);
 		json.end();
+		// The recovery after a hit (#323): a swing started within it hits nothing
+		json.object("recovery");
+		json.value("weapon", melee.weapon);
+		json.value("seconds", melee.recovery);
+		json.value("source", melee.recoverySource);
+		json.value("game", melee.recoveryGame);
+		json.object("games"); // the game's own strike of every type, whatever is in the hand
+		for(vr::MeleeWeapon type : { vr::MeleeWeapon::Dagger, vr::MeleeWeapon::OneHanded, vr::MeleeWeapon::TwoHanded }) {
+			json.value(vr::meleeWeaponName(type), melee.gameStrike[size_t(type)]);
+		}
+		json.end();
+		json.value("left", melee.recoveryLeft);
+		json.value("recovering", melee.recovering);
+		json.value("swings", melee.recoverySwings);
+		json.end();
 		json.object("params");
 		json.value("swingSpeed", melee.params.startSpeed);
 		json.value("endSpeed", melee.params.endSpeed);
@@ -1615,6 +1630,22 @@ std::string execute(std::string_view line) {
 			ARX_INTERFACE_setCombatMode(COMBAT_MODE_OFF);
 		} else {
 			return refuse("combat: expected on or off, got \"" + std::string(rest) + "\"");
+		}
+		return std::string();
+	}
+
+	if(word == "freelook") {
+		// The engine's free look without the mouse (#323): "on" leaves the cursor mode, as loading a save does -
+		// a level started with --loadlevel (the playground) stays in it, where the engine keeps the inventory open
+		std::string mode(rest);
+		util::makeLowercase(mode);
+		if(currentState() != GameState::Gameplay || !entities.player()) {
+			return refuse("freelook: needs a level");
+		}
+		if(mode == "on" || mode == "off") {
+			TRUE_PLAYER_MOUSELOOK_ON = (mode == "on");
+		} else {
+			return refuse("freelook: expected on or off, got \"" + std::string(rest) + "\"");
 		}
 		return std::string();
 	}

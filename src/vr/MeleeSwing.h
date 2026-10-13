@@ -41,8 +41,9 @@
  *    its speed factor. The speed is the one of a point \ref SwingParams::lever along the blade from the
  *    hand (F-61: a wrist flick turns a long blade's tip fast but this point slowly), measured relative
  *    to the head (F-59: leaning or stepping with a still arm is no swing; the room-space position
- *    already ignores the stick's walk and turn, F-178), from the median of the last three positions (F-59), and
- *    samples with a time step outside 4-100 ms or a speed above 20 m/s (a tracking jump) start it over.
+ *    already ignores the stick's walk and turn, F-178), from the median of the last three positions (F-59) over
+ *    the time between the middle samples (the step the median really moved over, #352), and samples with a time
+ *    step outside 4-100 ms or a speed above 20 m/s - raw or filtered - (a tracking jump) start it over.
  *    A swing starts at \ref SwingParams::startSpeed - or as a stab: a thrust of \ref SwingParams::stabDistance
  *    along the blade within \ref SwingParams::stabWindow at \ref SwingParams::stabSpeed (F-61) - and
  *    ends below \ref SwingParams::endSpeed or after \ref SwingParams::maxDuration.
@@ -51,6 +52,9 @@
  *    \c ratioaim): the charge (or \ref SwingParams::weakAim without one) times the speed factor (F-63).
  *  - \ref TargetCooldown: one hit per target per swing, and not within \ref SwingParams::targetCooldown
  *    of the last one (F-62).
+ *  - \ref StrikeRecovery: after a hit the hand recovers - a swing started within \ref recoveryTime of the hit
+ *    hits nothing (#323: waving the weapon fast is no flurry of hits); the time is the game's own strike
+ *    for the weapon type (the player's strike start and strike animations), a cfg.ini key overrides it.
  *
  * Pure logic: positions in meters, times in seconds, no engine globals, no clock - covered by
  * tests/vr/MeleeSwingTest. Thresholds against prior art: F-74, F-178, F-195 (RESEARCH-reference-mods.md).
@@ -68,7 +72,7 @@ struct SwingParams {
 	float stabDistance = 0.2f;   //!< ... covering this distance ...
 	float stabWindow = 0.25f;    //!< ... within this time is a stab, below \ref startSpeed too (F-61)
 	float maxDuration = 1.f;     //!< s: a longer swing (circling the blade) ends and a new one may start
-	float jumpSpeed = 20.f;      //!< faster is a tracking jump, not a swing (F-59)
+	float jumpSpeed = 20.f;      //!< faster (raw or filtered) is a tracking jump, not a swing (F-59, #352)
 	float minStep = 0.004f;      //!< s: samples closer than this are skipped
 	float maxStep = 0.1f;        //!< s: a longer gap starts over
 	float weakAim = 0.25f;       //!< the aim ratio of an uncharged swing [vr_melee_weak_aim]
@@ -150,6 +154,7 @@ private:
 	Vec3f m_lastPoint = Vec3f(0.f);
 	Vec3f m_lastHand = Vec3f(0.f);
 	std::array<Vec3f, 3> m_points = { };  //!< the last three lever points, newest first
+	std::array<double, 3> m_times = { };  //!< and their times
 	size_t m_pointCount = 0;
 	Vec3f m_filtered = Vec3f(0.f);        //!< their median
 	bool m_filteredValid = false;
@@ -243,6 +248,74 @@ private:
 	};
 
 	std::vector<Hit> m_hits;
+
+};
+
+//! The melee weapon types a recovery time is kept for (the engine's \c WeaponType without bare hands and bows)
+enum class MeleeWeapon : u8 {
+	Dagger,
+	OneHanded,
+	TwoHanded
+};
+
+//! "dagger", "1h", "2h" - the engine's names (the \c strike script event's parameter)
+const char * meleeWeaponName(MeleeWeapon weapon);
+
+//! Where a recovery time came from
+enum class RecoverySource : u8 {
+	Game,    //!< the game's own strike for the weapon type
+	Config,  //!< the cfg.ini key
+	Fallback //!< \ref fallbackRecovery: the game's strike is not known (its animations are not loaded)
+};
+
+//! "game", "config", "fallback"
+const char * recoverySourceName(RecoverySource source);
+
+/*!
+ * \return seconds of recovery when the game's own strike is not known: the dagger shortest, the two-handed
+ *         weapon longest, near the game's strike animations (#323)
+ */
+float fallbackRecovery(MeleeWeapon weapon);
+
+struct RecoveryTime {
+	float seconds = 0.f;
+	RecoverySource source = RecoverySource::Fallback;
+};
+
+/*!
+ * \brief The recovery after a hit for a weapon type
+ * \param configured the cfg.ini key (\c vr_melee_recovery_dagger, \c _1h, \c _2h): seconds when 0 or more, the
+ *        game's own when negative
+ * \param game the game's own strike for the type, seconds: the player's strike start and strike animations
+ *        (what the engine's attack button plays from the hand at rest to the hand at rest), 0 when not known
+ */
+RecoveryTime recoveryTime(MeleeWeapon weapon, float configured, float game);
+
+/*!
+ * \brief The weapon hand's recovery after a hit (#323): a swing that starts within it hits nothing
+ *
+ * The swing that hit goes on hitting what else it touches (one hit per target, \ref TargetCooldown); a new
+ * swing started before the recovery ended is spent - it does not start hitting when the recovery ends.
+ */
+class StrikeRecovery {
+
+public:
+
+	//! A swing hit at \a time: swings starting before \a time + \a seconds hit nothing
+	void hit(double time, float seconds);
+
+	//! \return true when a swing starting at \a time may hit
+	bool ready(double time) const { return !m_hit || time >= m_until; }
+
+	//! \return seconds until a swing may hit again, 0 when it may now
+	float remaining(double time) const;
+
+	void clear() { m_hit = false; }
+
+private:
+
+	bool m_hit = false;
+	double m_until = 0.;
 
 };
 

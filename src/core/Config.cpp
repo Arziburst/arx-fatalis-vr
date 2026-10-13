@@ -149,6 +149,7 @@ constexpr const float
 	vrMeleeFullSpeed = vr::SwingParams().fullSpeed,
 	vrMeleeWeakAim = vr::SwingParams().weakAim,
 	vrMeleeTargetCooldown = vr::SwingParams().targetCooldown,
+	vrMeleeRecovery = -1.f, // the game's own strike (#323)
 	fogDistance = 10.f,
 	gamma = 5.f,
 	fov = 75.f,
@@ -335,7 +336,10 @@ constexpr const std::string_view
 	vrMeleeSwingSpeed = "vr_melee_swing_speed",
 	vrMeleeFullSpeed = "vr_melee_full_speed",
 	vrMeleeWeakAim = "vr_melee_weak_aim",
-	vrMeleeTargetCooldown = "vr_melee_target_cooldown";
+	vrMeleeTargetCooldown = "vr_melee_target_cooldown",
+	vrMeleeRecoveryDagger = "vr_melee_recovery_dagger",
+	vrMeleeRecovery1h = "vr_melee_recovery_1h",
+	vrMeleeRecovery2h = "vr_melee_recovery_2h";
 
 // Input key options
 constexpr const std::string_view actions[NUM_ACTION_KEY] = {
@@ -625,6 +629,9 @@ bool Config::save() {
 	writer.writeKey(Key::vrMeleeFullSpeed, input.vrMeleeFullSpeed);
 	writer.writeKey(Key::vrMeleeWeakAim, input.vrMeleeWeakAim);
 	writer.writeKey(Key::vrMeleeTargetCooldown, input.vrMeleeTargetCooldown);
+	writer.writeKey(Key::vrMeleeRecoveryDagger, input.vrMeleeRecoveryDagger);
+	writer.writeKey(Key::vrMeleeRecovery1h, input.vrMeleeRecovery1h);
+	writer.writeKey(Key::vrMeleeRecovery2h, input.vrMeleeRecovery2h);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -819,6 +826,14 @@ bool Config::init(const fs::path & file) {
 	input.vrMeleeWeakAim = glm::clamp(vrMeleeWeakAim, 0.1f, 1.f);
 	float vrMeleeTargetCooldown = reader.getKey(Section::Input, Key::vrMeleeTargetCooldown, Default::vrMeleeTargetCooldown);
 	input.vrMeleeTargetCooldown = glm::clamp(vrMeleeTargetCooldown, 0.f, 2.f);
+	// The recovery after a hit per weapon type (#323): seconds, or negative for the game's own strike
+	auto meleeRecovery = [&reader](std::string_view key) {
+		const float seconds = reader.getKey(Section::Input, key, Default::vrMeleeRecovery);
+		return seconds < 0.f ? -1.f : std::min(seconds, 5.f);
+	};
+	input.vrMeleeRecoveryDagger = meleeRecovery(Key::vrMeleeRecoveryDagger);
+	input.vrMeleeRecovery1h = meleeRecovery(Key::vrMeleeRecovery1h);
+	input.vrMeleeRecovery2h = meleeRecovery(Key::vrMeleeRecovery2h);
 	
 	// Get action key settings
 	for(size_t i = 0; i < NUM_ACTION_KEY; i++) {

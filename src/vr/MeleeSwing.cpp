@@ -82,6 +82,7 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 		m_lastPoint = point;
 		m_lastHand = sample.hand;
 		m_points[0] = point;
+		m_times[0] = sample.time;
 		m_pointCount = 1;
 		return SwingChange::None;
 	}
@@ -107,18 +108,32 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 	}
 
 	// The speed of the median of the last three lever points (F-59's median of three, taken on the
-	// positions: a sample that is off and back gives two fast speeds, but its position is never the median)
+	// positions: a sample that is off and back gives two fast speeds, but its position is never the median).
+	// The median lags a sample: it moved over the step between the middle samples, not over this frame's -
+	// divided by this frame's step, a long frame followed by a short one reads a speed the hand never had (#352)
 	m_points[2] = m_points[1];
 	m_points[1] = m_points[0];
 	m_points[0] = point;
+	m_times[2] = m_times[1];
+	m_times[1] = m_times[0];
+	m_times[0] = sample.time;
 	m_pointCount = std::min<size_t>(m_pointCount + 1, 3);
 	if(m_pointCount == 3) {
 		const Vec3f filtered = median(m_points[0], m_points[1], m_points[2]);
-		m_speed = m_filteredValid ? glm::length(filtered - m_filtered) / seconds : 0.f;
+		const float span = float(m_times[1] - m_times[2]); // at least minStep: skipped samples never get here
+		m_speed = m_filteredValid ? glm::length(filtered - m_filtered) / span : 0.f;
 		m_filtered = filtered;
 		m_filteredValid = true;
 	} else {
 		m_speed = 0.f;
+	}
+	if(m_speed > m_params.jumpSpeed) {
+		// A jump all the same (#352). Over the span above it cannot outrun that step's raw speed (on each axis
+		// both medians lie between the two samples they share), so this guards the filter, not the hand
+		m_jumps++;
+		const SwingChange change = drop();
+		update(sample, true);
+		return change;
 	}
 
 	// The thrust along the blade within the stab window (F-61)
@@ -237,6 +252,57 @@ std::vector<size_t> TargetCooldown::blocked(u64 swing, double time, float cooldo
 		}
 	}
 	return result;
+}
+
+const char * meleeWeaponName(MeleeWeapon weapon) {
+	switch(weapon) {
+		case MeleeWeapon::Dagger: return "dagger";
+		case MeleeWeapon::OneHanded: return "1h";
+		case MeleeWeapon::TwoHanded: return "2h";
+	}
+	return "1h";
+}
+
+const char * recoverySourceName(RecoverySource source) {
+	switch(source) {
+		case RecoverySource::Game: return "game";
+		case RecoverySource::Config: return "config";
+		case RecoverySource::Fallback: return "fallback";
+	}
+	return "fallback";
+}
+
+float fallbackRecovery(MeleeWeapon weapon) {
+	switch(weapon) {
+		case MeleeWeapon::Dagger: return 0.6f;
+		case MeleeWeapon::OneHanded: return 0.8f;
+		case MeleeWeapon::TwoHanded: return 1.f;
+	}
+	return 0.8f;
+}
+
+RecoveryTime recoveryTime(MeleeWeapon weapon, float configured, float game) {
+	RecoveryTime result;
+	if(configured >= 0.f) {
+		result.seconds = configured;
+		result.source = RecoverySource::Config;
+	} else if(game > 0.f) {
+		result.seconds = game;
+		result.source = RecoverySource::Game;
+	} else {
+		result.seconds = fallbackRecovery(weapon);
+		result.source = RecoverySource::Fallback;
+	}
+	return result;
+}
+
+void StrikeRecovery::hit(double time, float seconds) {
+	m_hit = true;
+	m_until = time + double(std::max(seconds, 0.f));
+}
+
+float StrikeRecovery::remaining(double time) const {
+	return ready(time) ? 0.f : float(m_until - time);
 }
 
 } // namespace vr

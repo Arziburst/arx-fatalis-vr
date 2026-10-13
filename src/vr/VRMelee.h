@@ -20,6 +20,7 @@
 #ifndef ARX_VR_VRMELEE_H
 #define ARX_VR_VRMELEE_H
 
+#include <array>
 #include <string>
 
 #include "math/Types.h"
@@ -40,6 +41,8 @@
  *    \ref strikeAim; targets hit by this swing or within the cooldown are left out (F-62);
  *  - the first contact of a charged swing spends the charge: the trigger must be released and pressed
  *    again to charge another;
+ *  - after a contact the hand recovers for the weapon type's \ref recoveryTime (the game's own strike: the
+ *    player's strike start and strike animations): a swing started within it hits nothing (#323);
  *  - a swing start is the engine's strike: the player becomes visible, the \c strike script event, and the
  *    strike speech of a nearly full charge.
  * The engine's own strike (the attack button's charge-and-release in combat mode, which hit without any
@@ -48,7 +51,7 @@
  * Gates (F-66): a weapon in the IK hand, the right controller tracked, a head, no menu, inventory or book,
  * nothing dragged, the controls not blocked - the caller names what refuses (\ref updateMelee).
  * Thresholds: cfg.ini \c vr_melee_swing_speed, \c vr_melee_full_speed, \c vr_melee_weak_aim,
- * \c vr_melee_target_cooldown.
+ * \c vr_melee_target_cooldown, \c vr_melee_recovery_dagger, \c vr_melee_recovery_1h, \c vr_melee_recovery_2h.
  */
 namespace vr {
 
@@ -97,6 +100,15 @@ struct MeleeStatus {
 	bool lastCharged = false;
 	float lastSpeed = 0.f;          //!< the swing's peak speed then
 	u64 lastSwing = 0;              //!< which swing
+	// The recovery after a hit (#323)
+	const char * weapon = "none";   //!< the weapon type in the hand: dagger, 1h, 2h
+	float recovery = 0.f;           //!< s, its recovery after a hit
+	const char * recoverySource = "fallback"; //!< game, config, fallback
+	float recoveryGame = 0.f;       //!< s, the game's own strike for the type (0: not known)
+	std::array<float, 3> gameStrike = { }; //!< s, the game's own strike per \ref MeleeWeapon (0: not known)
+	float recoveryLeft = 0.f;       //!< s until a new swing may hit
+	bool recovering = false;        //!< the swing in progress (or the last one) started within the recovery: no hits
+	u64 recoverySwings = 0;         //!< swings that started within the recovery
 	// The weapon placed for the check
 	bool placed = false;
 	Vec3f hilt = Vec3f(0.f);

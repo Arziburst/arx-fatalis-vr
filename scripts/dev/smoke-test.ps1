@@ -120,11 +120,19 @@
 .PARAMETER CloseWindow
 	Quit with WM_CLOSE (what a player does) instead of the channel's quit command.
 
+.PARAMETER EvidenceDir
+	Keep each FAILED run's evidence in <EvidenceDir>\runNN-<time>\ before the next run replaces it (#146): arx.log,
+	stdout.txt, stderr.txt, status.json, the run's new crash reports, reasons.txt and, with -Vr, the SteamVR logs
+	(Steam\logs\vrserver*, vrcompositor*, vrmonitor*, vrclient_arx*, xrclient_arx*) written during the run.
+
 .EXAMPLE
 	.\scripts\dev\smoke-test.ps1
 	# flat, --loadlevel 10 (the default when no arguments for arx.exe are given)
 .EXAMPLE
 	.\scripts\dev\smoke-test.ps1 -Repeat 10 -Seconds 5
+.EXAMPLE
+	.\scripts\dev\smoke-test.ps1 -Vr -Repeat 10 -Seconds 3 -EvidenceDir $env:LOCALAPPDATA\ArxFatalisVR\evidence\146
+	# the #146 hunt, only while the owner has SteamVR running: every failed run keeps its logs
 .EXAMPLE
 	.\scripts\dev\smoke-test.ps1 -Vr -- --loadslot 0
 .EXAMPLE
@@ -165,6 +173,7 @@ param(
 	[string]$Sequence,
 	[string[]]$ExpectEvents = @(),
 	[switch]$CloseWindow,
+	[string]$EvidenceDir,
 	[Parameter(ValueFromRemainingArguments)]
 	[string[]]$ArxArgs
 )
@@ -227,6 +236,25 @@ Write-Host "build: $(ConvertTo-ShortSha $stamp) ($($copy.Branch));  user dir: $U
 
 function Write-Check([bool]$Ok, [string]$Text) {
 	if ($Ok) { Write-Host "  [ok]   $Text" -ForegroundColor Green } else { Write-Host "  [FAIL] $Text" -ForegroundColor Red }
+}
+
+# A failed run's evidence (-EvidenceDir, #146), copied before the next run replaces it: the game's log, stdout,
+# stderr and status, its new crash reports and, with -Vr, the SteamVR logs written during the run
+function Save-SmokeEvidence([int]$Run, [DateTime]$Since, [string[]]$Crashes, [string]$Why) {
+	$dir = Join-Path $EvidenceDir ('run{0:00}-{1:yyyyMMdd-HHmmss}' -f $Run, $Since)
+	New-Item -ItemType Directory -Force $dir | Out-Null
+	foreach ($file in @($log, (Join-Path $TestDir 'stdout.txt'), (Join-Path $TestDir 'stderr.txt'), (Join-Path $TestDir 'status.json'))) {
+		if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination $dir }
+	}
+	foreach ($c in $Crashes) { Copy-Item -LiteralPath (Join-Path $crashDir $c) -Destination $dir -Recurse }
+	$steam = if ($Vr) { Get-SteamPath } else { $null }
+	if ($steam) {
+		Get-ChildItem (Join-Path $steam 'logs') -File -ErrorAction SilentlyContinue |
+			Where-Object { $_.Name -match '^(vrserver|vrcompositor|vrmonitor|vrclient_arx|xrclient_arx)' -and $_.LastWriteTime -ge $Since } |
+			Copy-Item -Destination $dir
+	}
+	Set-Content -LiteralPath (Join-Path $dir 'reasons.txt') -Value $Why -Encoding utf8
+	Write-Host "  evidence kept in $dir"
 }
 
 function Invoke-SmokeRun([int]$Run) {
@@ -477,6 +505,10 @@ function Invoke-SmokeRun([int]$Run) {
 
 	$result.Reasons = $reasons -join '; '
 	$result.Result = if ($reasons.Count -eq 0) { 'PASS' } else { 'FAIL' }
+	if ($EvidenceDir -and $reasons.Count -gt 0 -and $launchTime) {
+		try { Save-SmokeEvidence -Run $Run -Since $launchTime -Crashes $newCrashes -Why $result.Reasons }
+		catch { Write-Warning "keeping the evidence failed (the verdict is unaffected): $($_.Exception.Message)" }
+	}
 	$color = if ($result.Result -eq 'PASS') { 'Green' } else { 'Red' }
 	Write-Host "  => $($result.Result) $($result.Reasons)" -ForegroundColor $color
 	[pscustomobject]$result

@@ -344,7 +344,7 @@ function Update-ArxSignatures($Problems, [string]$RunId, $Banner, $AllowList, [s
 
 $script:ArxTimelinePatterns = @(
 	'^Starting ', '^Starting in VR', '^OpenXR session (created|state)', '^OpenXR session destroyed', '^Loading level', '^Done loading level',
-	'^Clean shutdown', '^VR headset:', '^Using OpenXR runtime', '^Application window is being destroyed'
+	'^Clean shutdown', '^VR headset:', '^Using OpenXR runtime', '^Application window is being destroyed', '^Quit requested:', '^OpenXR session ended by the runtime', '^OpenXR runtime is shutting down'
 )
 
 function Get-ArxTimeline($Run) {

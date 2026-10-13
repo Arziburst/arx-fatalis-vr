@@ -71,6 +71,7 @@
 #include "io/log/LogBackend.h"
 #include "io/log/Logger.h"
 #include "platform/Environment.h"
+#include "platform/ExitTrace.h"
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
 #include "platform/WindowsUtils.h"
 #endif
@@ -1477,7 +1478,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "quit") {
-		LogInfo << "[channel] quit requested";
+		platform::logQuitRequest("the test channel's quit command");
 		mainApp->quit();
 		return std::string();
 	}

@@ -28,6 +28,7 @@
 
 #include "io/log/Logger.h"
 
+#include "platform/ExitTrace.h"
 #include "platform/Platform.h"
 #include "platform/ProgramOptions.h"
 #include "platform/Time.h"
@@ -241,6 +242,7 @@ void begin(Status status) {
 	
 	if(g_timeLimit != PlatformDuration::max() && isNormalFrame(g_currentStatus)
 	   && g_results[0].m_totalTime + g_current.m_totalTime >= g_timeLimit) {
+		platform::logQuitRequest("the benchmark's time limit");
 		mainApp->quit();
 	}
 	

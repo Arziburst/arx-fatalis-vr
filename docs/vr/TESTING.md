@@ -590,6 +590,35 @@ are under [Commands](#commands). CI runs these sequences only where node is on t
 it they are **NOT RUN** with a warning in the job summary, never a pass. The tester zip does not carry
 the playground yet (#359).
 
+### Switching the arms: custom or Arx (#385)
+
+The VR body has two arm models (D-NEW "Own VR arms"): the **custom** arms — the leather glove hand
+(Godot XR Tools, CC0) and a cloth sleeve, textures in `data/core/vr/arms/` — and the original **Arx** arms.
+The IK, the reach and the roll rules are the same for both; only the meshes differ. **Flat mode and the
+inventory book always show the Arx arms.**
+
+**How to switch** (any one of these):
+- **The arms lever** (a third lever on the lever wall of the playground, role `lever_arms`): pull it by hand
+  to toggle custom / Arx. Its channel twin is `playground pull arms`.
+- **The channel command** (`--test-dir`): `arms custom` or `arms arx`; `arms scale <factor>` sets the hand size.
+- **cfg.ini** (read at start): `vr_arms_model` = `custom` | `arx` (default `custom`) and `vr_hand_scale`
+  (default `1.15`, range `0.8` – `1.5`; the Arx hands are too small, so the custom hand is a little larger).
+
+status.json shows the state: `vr.body.armsModel` (`custom` | `arx`), `vr.body.arxArmsHidden`,
+`vr.body.<left|right>.handScale` and `vr.body.<left|right>.custom.*`. Sequences: `arms-model.xrs` and
+`arms-lever.xrs` (`.\scripts\dev\xrs-run.ps1 arms-model`).
+
+**What to compare** in the headset, one arm model after the other, in the same spot (the playground):
+- **Fingers:** size and thickness against your real hand; do they follow your finger poses (fist, point, open)?
+- **Hand size:** try `vr_hand_scale` 1.0, 1.15 and 1.3 — which looks like your own hand?
+- **The wrist and the elbow:** the seam between glove and sleeve (there is no bracer, the seam stays visible for
+  now), twisting the wrist, bending the elbow — does the sleeve fold or tear?
+- **Reach:** the arm should reach where your hand is without the shoulder sliding (arm length is fitted to your
+  reach with a small stretch); the elbow drops when the hand holds a weapon.
+- **The look:** dark worn leather glove and coarse cloth sleeve are a first proposal — say whether you want
+  bare hands or the glove, and what colour and material the sleeve should be.
+- **Anything near the eye:** the arms are not hidden when the hand comes close to your face; note if it bothers you.
+
 ## The log banner
 
 Every `arx.log` starts with six `Key: value` lines (#115, #129 and #130, research rows F-18, F-98,

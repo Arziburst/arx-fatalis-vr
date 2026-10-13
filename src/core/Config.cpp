@@ -153,6 +153,10 @@ constexpr const float
 	vrMeleeFullSpeed = vr::SwingParams().fullSpeed,
 	vrMeleeWeakAim = vr::SwingParams().weakAim,
 	vrMeleeTargetCooldown = vr::SwingParams().targetCooldown,
+	vrHiltKnuckle = vr::HiltAngles().knuckle,
+	vrHiltMiddle = vr::HiltAngles().middle,
+	vrHiltLast = vr::HiltAngles().last,
+	vrHiltThumb = vr::HiltAngles().thumb,
 	fogDistance = 10.f,
 	gamma = 5.f,
 	fov = 75.f,
@@ -354,7 +358,11 @@ constexpr const std::string_view
 	vrMeleeSwingSpeed = "vr_melee_swing_speed",
 	vrMeleeFullSpeed = "vr_melee_full_speed",
 	vrMeleeWeakAim = "vr_melee_weak_aim",
-	vrMeleeTargetCooldown = "vr_melee_target_cooldown";
+	vrMeleeTargetCooldown = "vr_melee_target_cooldown",
+	vrHiltKnuckle = "vr_hilt_knuckle",
+	vrHiltMiddle = "vr_hilt_middle",
+	vrHiltLast = "vr_hilt_last",
+	vrHiltThumb = "vr_hilt_thumb";
 
 // Input key options
 constexpr const std::string_view actions[NUM_ACTION_KEY] = {
@@ -652,6 +660,10 @@ bool Config::save() {
 	writer.writeKey(Key::vrMeleeFullSpeed, input.vrMeleeFullSpeed);
 	writer.writeKey(Key::vrMeleeWeakAim, input.vrMeleeWeakAim);
 	writer.writeKey(Key::vrMeleeTargetCooldown, input.vrMeleeTargetCooldown);
+	writer.writeKey(Key::vrHiltKnuckle, input.vrHiltKnuckle);
+	writer.writeKey(Key::vrHiltMiddle, input.vrHiltMiddle);
+	writer.writeKey(Key::vrHiltLast, input.vrHiltLast);
+	writer.writeKey(Key::vrHiltThumb, input.vrHiltThumb);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -861,6 +873,17 @@ bool Config::init(const fs::path & file) {
 	input.vrMeleeWeakAim = glm::clamp(vrMeleeWeakAim, 0.1f, 1.f);
 	float vrMeleeTargetCooldown = reader.getKey(Section::Input, Key::vrMeleeTargetCooldown, Default::vrMeleeTargetCooldown);
 	input.vrMeleeTargetCooldown = glm::clamp(vrMeleeTargetCooldown, 0.f, 2.f);
+	// A hand on a hilt (#385.7): each angle within 0 and its fist limit
+	vr::HiltAngles hilt;
+	hilt.knuckle = reader.getKey(Section::Input, Key::vrHiltKnuckle, Default::vrHiltKnuckle);
+	hilt.middle = reader.getKey(Section::Input, Key::vrHiltMiddle, Default::vrHiltMiddle);
+	hilt.last = reader.getKey(Section::Input, Key::vrHiltLast, Default::vrHiltLast);
+	hilt.thumb = reader.getKey(Section::Input, Key::vrHiltThumb, Default::vrHiltThumb);
+	hilt = vr::clampHiltAngles(hilt);
+	input.vrHiltKnuckle = hilt.knuckle;
+	input.vrHiltMiddle = hilt.middle;
+	input.vrHiltLast = hilt.last;
+	input.vrHiltThumb = hilt.thumb;
 	
 	// Get action key settings
 	for(size_t i = 0; i < NUM_ACTION_KEY; i++) {

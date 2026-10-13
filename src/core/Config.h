@@ -252,6 +252,11 @@ public:
 		float vrMeleeFullSpeed; //!< VR: m/s a swing has its full damage at (#39)
 		float vrMeleeWeakAim; //!< VR: the damage ratio of an uncharged swing; a full charge is 1 (#39)
 		float vrMeleeTargetCooldown; //!< VR: seconds before a new swing can hit the same target (#39)
+		// VR: how far a custom hand on a weapon's hilt is closed, degrees (#385.7, vr/HandRig.h HiltAngles)
+		float vrHiltKnuckle; //!< the four fingers' knuckles
+		float vrHiltMiddle;  //!< their middle joints
+		float vrHiltLast;    //!< their last joints
+		float vrHiltThumb;   //!< the thumb's two outer joints
 
 	} input;
 	

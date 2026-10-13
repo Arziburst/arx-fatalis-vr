@@ -150,7 +150,7 @@ struct CustomArmStatus {
 	bool drawn = false;
 	float handScale = DefaultHandScale;
 	float tipLength = 0.f;       //!< the hand from the palm joint to the middle fingertip (units)
-	Vec3f palm = Vec3f(0.f);     //!< the glove's palm joint in the world (on the grip)
+	Vec3f palm = Vec3f(0.f);     //!< the glove's palm joint in the world (behind the grip, #385.7)
 	Vec3f wrist = Vec3f(0.f);    //!< where the sleeve meets the glove's cuff
 	// The fit (#385.6, vr/ArmFit.h)
 	float upperLength = 0.f;     //!< the fitted segments, units
@@ -168,11 +168,26 @@ struct CustomArmStatus {
 	// The five fingers (#385.4): what they follow (none while the arm is not posed) and each joint's bend this frame
 	CustomFingerSource fingerSource = CustomFingerSource::None;
 	FingerPose fingers;          //!< degrees, approaching what the source asks for
+	// The glove driven joint by joint (#385.7)
+	HiltPoseSource hiltPose = HiltPoseSource::None; //!< what a held weapon closes the hand on (none: no weapon)
+	float palmToGrip = 0.f;      //!< the glove's palm joint placed behind the controller's grip by this much (units)
 	size_t vertices = 0;         //!< sleeve + hand
 	size_t triangles = 0;
 };
 
 const CustomArmStatus & customArmStatus(Hand hand);
+
+/*!
+ * \brief Store \a hand's runtime joints of the last frame as its hilt pose (#385.7, the channel's `grip capture`)
+ *
+ * Written to <user dir>/vr-hilt-pose-<left|right>.json (vr/HandRig.h handShapeJson, palm-relative) and used at once
+ * for a held weapon; read again on the next start. \a result says what was done or why not (no joints this frame,
+ * the file could not be written). In the headset with SteamVR this is the Index's conforming grip (research F-486).
+ */
+bool captureHiltPose(Hand hand, std::string & result);
+
+//! Forget \a hand's captured hilt pose and delete its file: a held weapon closes the hand on the default hilt pose
+void clearHiltPose(Hand hand);
 
 //! One mesh to draw, in the world: the sleeve or the hand of an arm drawn this frame
 struct CustomArmMesh {

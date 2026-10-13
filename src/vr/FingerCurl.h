@@ -83,10 +83,28 @@ enum class HandJoint : u8 {
 
 const size_t HandJointCount = size_t(HandJoint::Count); //!< 26, XR_HAND_JOINT_COUNT_EXT
 
-//! One hand's joints as located for a frame: positions only (the curl is read from the angles between the bones)
+//! Every joint's orientation the identity
+inline std::array<glm::quat, HandJointCount> identityJointOrientations() {
+	std::array<glm::quat, HandJointCount> orientations;
+	orientations.fill(glm::quat(1.f, 0.f, 0.f, 0.f));
+	return orientations;
+}
+
+/*!
+ * \brief One hand's joints as located for a frame: positions and orientations
+ *
+ * The curl is read from the angles between the bones (the positions); the custom glove is posed by the
+ * orientations (#385.7, vr/HandRig.h poseHandFromJoints). An orientation is the OpenXR joint frame
+ * (XR_EXT_hand_tracking's "Conventions of hand joints"): -Z along the bone toward the fingertip, +Y on
+ * the back of the hand (the thumb's: toward the thumb's side, away from the fingers), X completing a
+ * right-handed frame; the palm and the wrist point -Z along the middle finger. A tip has its distal
+ * bone's frame.
+ */
 struct HandJoints {
 	bool valid = false; //!< every joint was located this frame
 	std::array<Vec3f, HandJointCount> position = { }; //!< meters, all in one space
+	//! the OpenXR joint frames, in the space of the positions (the identity until located)
+	std::array<glm::quat, HandJointCount> orientation = identityJointOrientations();
 	const Vec3f & operator[](HandJoint joint) const { return position[size_t(joint)]; }
 	Vec3f & operator[](HandJoint joint) { return position[size_t(joint)]; }
 };
@@ -233,9 +251,24 @@ struct HandShape {
  * grip pose says) and placed by \a gripPosition / \a gripOrientation. A fully closed finger bends
  * 90 degrees at the knuckle, 100 at the middle joint and 70 at the last one; the thumb 40 at its
  * first joint (the metacarpal on the wrist: a real thumb closing into a fist flexes there too, #385.4), 50 and 70.
+ * The orientations are the joints' OpenXR frames (orientHandJoints, #385.7).
  */
 HandJoints synthesizeHandJoints(Hand hand, const HandShape & shape, const Vec3f & gripPosition = Vec3f(0.f),
                                 const glm::quat & gripOrientation = glm::quat(1.f, 0.f, 0.f, 0.f));
+
+/*!
+ * \brief Every joint's OpenXR frame from the positions of \a joints (#385.7)
+ *
+ * \param along     the hand's direction from the wrist to the fingers (the palm's and the wrist's -Z)
+ * \param back      out of the back of the hand (the palm's +Y)
+ * \param thumbSide across the hand toward the thumb (the thumb joints' +Y)
+ *
+ * A finger joint's -Z runs along its bone to the next joint (a tip takes its distal's frame) and its X is
+ * the hand's sideways axis (\a back x -\a along) made square to the bone - the axis a finger flexes about,
+ * so a curled finger keeps its frame's roll; a thumb joint's +Y is \a thumbSide made square to its bone.
+ * The three directions are in the space of the positions and need not be unit.
+ */
+void orientHandJoints(HandJoints & joints, const Vec3f & along, const Vec3f & back, const Vec3f & thumbSide);
 
 } // namespace vr
 

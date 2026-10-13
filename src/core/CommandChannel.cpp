@@ -1185,6 +1185,8 @@ std::string buildStatus(PlatformInstant now) {
 				json.end();
 			}
 			json.end();
+			// the glove's palm placed behind the controller's grip (#385.7: the grip is the handle's centre), units
+			json.value("palmToGrip", custom.palmToGrip);
 			json.end();
 			// The fingers (#305): what they follow and how far each segment is bent (degrees)
 			json.object("fingers");
@@ -1227,10 +1229,22 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("trackers", hands.trackers);
 		json.value("locates", hands.locates);
 		json.value("failures", hands.failures);
+		// #385.7: the hilt angles in use (cfg.ini vr_hilt_*, degrees)
+		json.object("hiltAngles");
+		json.value("knuckle", config.input.vrHiltKnuckle);
+		json.value("middle", config.input.vrHiltMiddle);
+		json.value("last", config.input.vrHiltLast);
+		json.value("thumb", config.input.vrHiltThumb);
+		json.end();
 		for(size_t hand = 0; hand < vr::HandCount; hand++) {
 			json.object(vr::handName(vr::Hand(hand)));
 			json.value("active", hands.active[hand]);
 			json.value("activeFrames", hands.activeFrames[hand]);
+			// #385.7: the motion range of the joints in use - conforming to the controller (XR_EXT_hand_joints_motion_range),
+			// the runtime's unobstructed default, or none (no joints this frame) - and what a held weapon closes the
+			// custom hand on (none: no weapon in it, default: the vr_hilt_* pose, captured: `grip capture`'s)
+			json.value("motionRange", !hands.active[hand] ? "none" : hands.motionRange ? "conforming" : "unobstructed");
+			json.value("hiltPose", vr::hiltPoseSourceName(vr::customArmStatus(vr::Hand(hand)).hiltPose));
 			json.end();
 		}
 		json.end();
@@ -1997,6 +2011,80 @@ std::string execute(std::string_view line) {
 		}
 		vr::setArmsModel(model, "the channel");
 		return std::string();
+	}
+
+	if(word == "grip") {
+		// A custom hand on a hilt (#385.7): grip capture [left|right] stores the hand's runtime joints of the last
+		// frame (SteamVR: the Index's conforming grip) as its hilt pose in the user dir, every hand with joints when
+		// none is named; grip capture clear [left|right] goes back to the default hilt pose; grip angles <knuckle>
+		// <middle> <last> [<thumb>] | default sets cfg.ini vr_hilt_* live (degrees) and saves them
+		std::string_view args;
+		const std::string_view what = firstWord(rest, args);
+		if(what == "capture") {
+			std::string_view more;
+			std::string_view side = firstWord(args, more);
+			const bool clear = (side == "clear");
+			if(clear) {
+				side = firstWord(more, more);
+			}
+			if(!more.empty() || (!side.empty() && side != "left" && side != "right")) {
+				return refuse("grip capture: expected [clear] [left|right], got \"" + std::string(args) + "\"");
+			}
+			size_t done = 0;
+			std::string why;
+			for(size_t hand = 0; hand < vr::HandCount; hand++) {
+				if(!side.empty() && side != vr::handName(vr::Hand(hand))) {
+					continue;
+				}
+				if(clear) {
+					vr::clearHiltPose(vr::Hand(hand));
+					done++;
+					continue;
+				}
+				std::string result;
+				if(vr::captureHiltPose(vr::Hand(hand), result)) {
+					done++;
+				} else {
+					why += (why.empty() ? "" : "; ") + result;
+				}
+			}
+			if(done == 0) {
+				return refuse("grip capture: nothing captured - " + why);
+			}
+			return std::string();
+		}
+		if(what == "angles") {
+			vr::HiltAngles angles;
+			if(args != "default") {
+				std::istringstream iss{std::string(args)};
+				std::string extra;
+				if(!(iss >> angles.knuckle >> angles.middle >> angles.last)) {
+					return refuse("grip angles: expected <knuckle> <middle> <last> [<thumb>] or default, got \""
+					              + std::string(args) + "\"");
+				}
+				float thumb = 0.f;
+				if(iss >> thumb) {
+					angles.thumb = thumb;
+				}
+				iss.clear();
+				if(iss >> extra) {
+					return refuse("grip angles: too many values in \"" + std::string(args) + "\"");
+				}
+			}
+			angles = vr::clampHiltAngles(angles);
+			config.input.vrHiltKnuckle = angles.knuckle;
+			config.input.vrHiltMiddle = angles.middle;
+			config.input.vrHiltLast = angles.last;
+			config.input.vrHiltThumb = angles.thumb;
+			config.save();
+			LogInfo << "[vr] arms: hilt angles " << angles.knuckle << " / " << angles.middle << " / " << angles.last
+			        << ", thumb " << angles.thumb << " (the channel)";
+			gameevent::Event("vr.hands.hiltAngles")("knuckle", angles.knuckle)("middle", angles.middle)
+			                ("last", angles.last)("thumb", angles.thumb);
+			return std::string();
+		}
+		return refuse("grip: expected capture [clear] [left|right] or angles <knuckle> <middle> <last> [<thumb>] | default,"
+		              " got \"" + std::string(rest) + "\"");
 	}
 
 	if(word == "combat") {

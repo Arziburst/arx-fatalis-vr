@@ -209,6 +209,13 @@ const addLever = (id, x, role, orders, before = '') => {
 addLever(FIRST_ID, LEVER_WALL.xMode, 'lever_mode', { on: 'aggressive', off: 'peaceful' })
 addLever(FIRST_ID + 1, LEVER_WALL.xRespawn, 'lever_respawn', { on: 'respawn', off: 'respawn' }, `revive -it ${goblin.ref}\n `)
 
+// The arms lever (#385.3): every pull, up or down, counts in the global #pg_arms_pulls; the game (src/vr/VRArms.cpp)
+// flips the VR arms between our own and the Arx arms on each new pull, so the owner compares them in the headset
+const armsLever = new Lever({ id: FIRST_ID + 2, position: at(LEVER_WALL.xArms, -LEVER_HEIGHT, LEVER_WALL.z), orientation: leverRotation })
+armsLever.script.on('init', 'set £pg_role "lever_arms"')
+armsLever.script.on('custom', ['on', 'off'].map((param) => `if (^$param1 == "${param}") {\n inc #pg_arms_pulls 1\n}`))
+map.entities.push(armsLever)
+
 // The hero: level 10 and every rune, set by a marker's script when the level loads (the generator's player script
 // would replace the game's own player script, with all its animations)
 const hero = new Marker({ id: FIRST_ID, position: at(0, 0, 0) })

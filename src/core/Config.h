@@ -244,6 +244,8 @@ public:
 		float vrArmElbowRoll; //!< VR: the share [0, 1] of the hand's roll that swings the elbow about the arm (#304)
 		float vrArmTwistOverflow; //!< VR: degrees past a half turn the hand's roll keeps its side before flipping (#304)
 		float vrHeightOffset; //!< VR: the character height setting, meters above the character's eye (#260)
+		std::string vrArmsModel; //!< VR: the arms drawn on the player, "custom" (our own, vr/VRArms.h) or "arx" (#385)
+		float vrHandScale; //!< VR: the custom hands' size against the glove's real size (#385)
 		float vrMeleeSwingSpeed; //!< VR: m/s a weapon swing hits from (#39, vr/MeleeSwing.h)
 		float vrMeleeFullSpeed; //!< VR: m/s a swing has its full damage at (#39)
 		float vrMeleeWeakAim; //!< VR: the damage ratio of an uncharged swing; a full charge is 1 (#39)

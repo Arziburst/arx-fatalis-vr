@@ -41,7 +41,8 @@ Conversation with the project owner is in Russian.
 
 ## Remotes and branches
 
-- `origin` — https://github.com/Arziburst/arx-fatalis-vr (private, ours)
+- `origin` — https://github.com/Arziburst/arx-fatalis-vr (ours, **public since 2026-10-12**: nothing personal or secret
+  goes into commits, issues or PRs; the `auto-reported` issues are scrubbed of personal data before the upload, #387)
 - `upstream` — https://github.com/arx/ArxLibertatis (original engine; add it with
   `git remote add upstream https://github.com/arx/ArxLibertatis.git` if missing)
 - `main` — our development branch and the default branch. Task branches start from it, PRs go into it.

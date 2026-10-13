@@ -1288,6 +1288,7 @@ set(VR_SOURCES
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
 	src/vr/VRActions.cpp
+	src/vr/VRArms.cpp
 	src/vr/VRBindings.cpp
 	src/vr/VRBody.cpp
 	src/vr/VRRunes.cpp

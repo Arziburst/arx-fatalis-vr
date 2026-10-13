@@ -81,6 +81,7 @@
 #include "script/Script.h"
 #include "util/String.h"
 #include "vr/HeadTracking.h"
+#include "vr/VRArms.h"
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
@@ -486,7 +487,7 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 }
 
 //! The test playground's entities (#321.2) tell the channel what they are: their instance scripts set the
-//! text variable pg_role ("npc", "lever_mode", "lever_respawn", scripts/dev/playground/build.mjs)
+//! text variable pg_role ("npc", "lever_mode", "lever_respawn", "lever_arms", scripts/dev/playground/build.mjs)
 Entity * findPlaygroundEntity(std::string_view role) {
 	for(Entity & entity : entities) {
 		if(GETVarValueText(entity.m_variables, "\xA3pg_role") == role) {
@@ -930,6 +931,17 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("shiftX", body.shift.x);
 		json.value("shiftZ", body.shift.z);
 		json.value("facingYaw", body.facingYaw);
+		// the arms drawn in VR (#385.3): cfg.ini vr_arms_model, and whether an Arx arm's faces gave way to a custom arm
+		json.value("armsModel", body.armsModel);
+		json.value("arxArmsHidden", body.arxArmsHidden);
+		{
+			const vr::CustomArmsLoad load = vr::customArmsLoad();
+			json.object("customArms");
+			json.value("tried", load.tried);
+			json.value("loaded", load.loaded);
+			json.value("reason", load.reason);
+			json.end();
+		}
 		for(size_t hand = 0; hand < vr::HandCount; hand++) {
 			const vr::PlayerArmStatus & arm = body.hands[hand];
 			json.object(vr::handName(vr::Hand(hand)));
@@ -987,6 +999,32 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("wristTwist", arm.wristTwist);
 			json.value("elbowTwist", arm.elbowTwist);
 			json.value("rollOverflow", arm.overflow);
+			// The custom arm drawn on this logical arm (#385.3): the hand's size, where the glove and the sleeve sit,
+			// the bend the sleeve is drawn with and the roll its twist joints carry
+			const vr::CustomArmStatus & custom = vr::customArmStatus(vr::Hand(hand));
+			json.value("handScale", custom.handScale);
+			json.object("custom");
+			json.value("drawn", custom.drawn);
+			json.value("tipLength", custom.tipLength);
+			const struct { const char * name; const Vec3f & point; } customPoints[] = {
+				{ "palm", custom.palm }, { "wrist", custom.wrist }
+			};
+			for(const auto & point : customPoints) {
+				json.object(point.name);
+				json.value("x", point.point.x);
+				json.value("y", point.point.y);
+				json.value("z", point.point.z);
+				json.end();
+			}
+			json.value("bend", custom.bend);
+			json.value("drawnBend", custom.drawnBend);
+			json.value("upperRoll", custom.upperRoll);
+			json.value("forearmTwist", custom.forearmTwist);
+			json.value("wristGap", custom.wristGap);
+			json.value("stretch", custom.stretch);
+			json.value("vertices", u64(custom.vertices));
+			json.value("triangles", u64(custom.triangles));
+			json.end();
 			// The fingers (#305): what they follow and how far each segment is bent (degrees)
 			json.object("fingers");
 			json.value("source", arm.fingerSource);
@@ -1617,6 +1655,29 @@ std::string execute(std::string_view line) {
 		return std::string();
 	}
 
+	if(word == "arms") {
+		// The arms drawn on the player in VR (#385.3): arms custom|arx switches the model live, arms scale <factor>
+		// sets the custom hands' size (vr_hand_scale); both are saved to cfg.ini
+		std::string_view args;
+		std::string_view what = firstWord(rest, args);
+		vr::ArmsModel model;
+		if(what == "scale") {
+			float scale = 0.f;
+			std::istringstream iss{std::string(args)};
+			if(!(iss >> scale) || scale < vr::MinHandScale || scale > vr::MaxHandScale) {
+				return refuse("arms scale: expected a factor from " + std::to_string(vr::MinHandScale) + " to "
+				              + std::to_string(vr::MaxHandScale) + ", got \"" + std::string(args) + "\"");
+			}
+			vr::setHandScale(scale, "the channel");
+			return std::string();
+		}
+		if(!args.empty() || !vr::parseArmsModelStrict(what, model)) {
+			return refuse("arms: expected custom, arx or scale <factor>, got \"" + std::string(rest) + "\"");
+		}
+		vr::setArmsModel(model, "the channel");
+		return std::string();
+	}
+
 	if(word == "combat") {
 		// The engine's combat mode without the mouse (#75): what the weapon key does - "on" draws the
 		// weapon, "off" puts it away; the strike is the mouse button / the trigger
@@ -2135,7 +2196,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "playground") {
-		// playground pull mode|respawn | kill | place <ahead> [<right>] | hit <n>: the test playground's NPC and
+		// playground pull mode|respawn|arms | kill | place <ahead> [<right>] | hit <n>: the test playground's NPC and
 		// levers (#321.2). pull sends the lever what a hand pull sends it (Interface.cpp: SM_ACTION from the player)
 		if(!isPlaygroundArea(g_currentArea) || !entities.player()) {
 			return refuse("playground: needs the playground level (area 30) on screen");
@@ -2145,9 +2206,9 @@ std::string execute(std::string_view line) {
 		Entity * npc = findPlaygroundEntity("npc");
 		if(what == "pull") {
 			std::string role = "lever_" + std::string(args);
-			Entity * lever = (args == "mode" || args == "respawn") ? findPlaygroundEntity(role) : nullptr;
+			Entity * lever = (args == "mode" || args == "respawn" || args == "arms") ? findPlaygroundEntity(role) : nullptr;
 			if(!lever) {
-				return refuse("playground pull: expected mode or respawn, got \"" + std::string(args) + "\"");
+				return refuse("playground pull: expected mode, respawn or arms, got \"" + std::string(args) + "\"");
 			}
 			SendIOScriptEvent(entities.player(), lever, SM_ACTION);
 			LogInfo << "[channel] playground: " << lever->idString() << " pulled (" << args << ")";

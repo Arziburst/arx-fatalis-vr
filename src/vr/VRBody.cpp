@@ -46,6 +46,7 @@
 #include "vr/ArmIK.h"
 #include "vr/ArmRoll.h"
 #include "vr/HeadTracking.h"
+#include "vr/VRArms.h"
 #include "vr/VRInput.h"
 #include "vr/VRSystem.h"
 
@@ -81,6 +82,12 @@ enum FingerGroup : u8 {
 };
 
 const u8 NoFinger = 0xff;
+
+//! What a face of the bound model is to the custom arms (#385.3): the body, an Arx arm face (its arm's upper arm and
+//! everything under it - hidden while the custom arm is drawn), or a face of the cap that closes the shoulder then
+const u8 FaceBody = 0;
+const u8 FaceArm = 1;     //!< + the hand
+const u8 FaceArmCap = 3;  //!< + the hand
 
 //! One finger group of a hand: its segments from the knuckle out, and the axis they bend about
 struct FingerChain {
@@ -146,6 +153,9 @@ struct BodyState {
 	std::vector<char> touched;                    //!< scratch: bones recomputed after the chain
 	std::vector<char> headVertex;                 //!< per vertex of the bound model: in the head or the neck
 	size_t capStart = 0;                          //!< the first cap face added to the bound model (its face count without one)
+	size_t boundFaces = 0;                        //!< the bound model's faces with the caps (a reloaded model has fewer)
+	//! per face of the bound model: what it is to the custom arms (#385.3) - FaceBody, FaceArm + hand, FaceArmCap + hand
+	std::vector<u8> faceRole;
 	PlayerBodyStatus status;
 };
 
@@ -388,12 +398,14 @@ float segmentAngle(const FingerCurl & curl, u8 group, u8 segment) {
  * vertex in the head or the neck) and the visible ones is walked as loops, and each loop is closed by
  * a triangle fan with the material and texture coordinates of the visible faces on it. The cap faces are
  * appended to the model's face list and drawn only under a tracked head (\ref bodyCapStart).
+ *
+ * The same walk closes a shoulder when the custom arms hide an Arx arm (#385.3, research row F-234):
+ * \a hiddenVertex then marks the arm's vertices. \return the faces added
  */
-void addNeckCap(EERIE_3DOBJ * obj) {
+size_t addCap(EERIE_3DOBJ * obj, const std::vector<char> & hiddenVertex, const char * what) {
 
-	g_body.capStart = obj->facelist.size();
-	if(g_body.headVertex.size() != obj->vertexlist.size()) {
-		return;
+	if(hiddenVertex.size() != obj->vertexlist.size()) {
+		return 0;
 	}
 
 	typedef std::pair<size_t, size_t> EdgeKey;
@@ -412,7 +424,7 @@ void addNeckCap(EERIE_3DOBJ * obj) {
 		}
 		bool hidden = false;
 		for(VertexId vertex : face.vid) {
-			hidden = hidden || g_body.headVertex[size_t(vertex)];
+			hidden = hidden || hiddenVertex[size_t(vertex)];
 		}
 		for(size_t k = 0; k < 3; k++) {
 			const size_t a = size_t(face.vid[k]);
@@ -506,8 +518,59 @@ void addNeckCap(EERIE_3DOBJ * obj) {
 		}
 	}
 
-	LogInfo << "[vr] body: neck opening closed with " << capFaces << " cap face(s) over " << loops
+	LogInfo << "[vr] body: " << what << " closed with " << capFaces << " cap face(s) over " << loops
 	        << " boundary loop(s) (" << boundaryFace.size() << " boundary edges); drawn under a tracked head only";
+	return capFaces;
+}
+
+/*!
+ * \brief The faces the custom arms hide and the caps that close the shoulders then (#385.3, research rows F-233, F-234)
+ *
+ * An Arx arm is its upper arm group with everything under it (the forearm, the hand, the fingers); the shoulder
+ * group above stays. A face with any vertex in the arm is the arm's; the opening its faces leave in the torso is
+ * closed with a cap like the neck's, drawn only while the arm is hidden. Called after the neck cap, so the caps
+ * sit behind \c capStart and flat mode and the book never see them.
+ */
+void addArmCaps(EERIE_3DOBJ * obj) {
+
+	g_body.faceRole.assign(obj->facelist.size(), FaceBody);
+	if(!obj->m_skeleton) {
+		return;
+	}
+	const Skeleton & rig = *obj->m_skeleton;
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		const ArmChain & chain = g_body.chains[hand];
+		if(!chain.valid) {
+			continue;
+		}
+		std::vector<char> armVertex(obj->vertexlist.size(), 0);
+		for(VertexGroupId group : obj->grouplist.handles()) {
+			VertexGroupId ancestor = group;
+			while(ancestor && ancestor != chain.upper) {
+				ancestor = rig.bones[ancestor].father;
+			}
+			if(!ancestor) {
+				continue;
+			}
+			for(VertexId vertex : obj->m_boneVertices[group]) {
+				armVertex[size_t(vertex)] = 1;
+			}
+		}
+		size_t armFaces = 0;
+		for(size_t f = 0; f < obj->facelist.size(); f++) {
+			for(VertexId vertex : obj->facelist[f].vid) {
+				if(armVertex[size_t(vertex)]) {
+					g_body.faceRole[f] = u8(FaceArm + hand);
+					armFaces++;
+					break;
+				}
+			}
+		}
+		const std::string what = std::string(handName(Hand(hand))) + " shoulder (" + std::to_string(armFaces)
+		                         + " arm faces hidden under the custom arm)";
+		addCap(obj, armVertex, what.c_str());
+		g_body.faceRole.resize(obj->facelist.size(), u8(FaceArmCap + hand));
+	}
 }
 
 void bind(EERIE_3DOBJ * obj) {
@@ -630,7 +693,10 @@ void bind(EERIE_3DOBJ * obj) {
 		status.fingers += std::string(hand ? "; " : "") + name + ": " + fingers;
 	}
 
-	addNeckCap(obj);
+	g_body.capStart = obj->facelist.size();
+	addCap(obj, g_body.headVertex, "neck opening");
+	addArmCaps(obj);
+	g_body.boundFaces = obj->facelist.size();
 
 	gameevent::Event("vr.body.model")("model", status.model)("chains", status.chains)("bound", status.bound)
 		("fingers", status.fingers);
@@ -697,11 +763,14 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	}
 
 	if(g_body.boundObject != eobj || g_body.boundGroups != eobj->grouplist.size()
-	   || g_body.boundVertices != eobj->vertexlist.size()) {
+	   || g_body.boundVertices != eobj->vertexlist.size() || g_body.boundFaces != eobj->facelist.size()) {
 		bind(eobj);
 	}
 
 	status.poseCalls++;
+	// The custom arms (#385.3): the playground lever may switch them; nothing is drawn until an arm is posed again
+	followArmsLever();
+	resetCustomArms();
 	g_body.shift = Vec3f(0.f);
 	status.shift = Vec3f(0.f);
 	for(size_t hand = 0; hand < HandCount; hand++) {
@@ -933,6 +1002,23 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		noteRollOverflow(hand, posed.overflow, posed.handRoll);
 		noteArm(hand, true, source);
 		any = true;
+
+		// The custom arm (#385.3) copies this logical arm; its Arx faces are then not drawn (drawsBodyFace)
+		if(chain.frame.valid) {
+			LogicalArm logical;
+			logical.shoulder = pose.shoulder;
+			logical.elbow = pose.elbow;
+			logical.wrist = pose.wrist;
+			logical.upper = posed.upper;
+			logical.restElbow = chain.restElbow;
+			logical.upperRoll = posed.upperRoll;
+			logical.residualRoll = posed.residualRoll;
+			logical.grip = grip;
+			logical.gripOrientation = placement.orientation;
+			logical.upperLength = upperLength;
+			logical.forearmLength = forearmLength;
+			poseCustomArm(Hand(hand), logical);
+		}
 	}
 	for(size_t hand = 0; hand < HandCount; hand++) {
 		if(!status.hands[hand].posed) {
@@ -965,7 +1051,7 @@ bool isHeadVertex(EERIE_3DOBJ * obj, VertexId vertex) {
 		return false;
 	}
 	if(g_body.boundObject != obj || g_body.boundGroups != obj->grouplist.size()
-	   || g_body.boundVertices != obj->vertexlist.size()) {
+	   || g_body.boundVertices != obj->vertexlist.size() || g_body.boundFaces != obj->facelist.size()) {
 		bind(obj);
 	}
 	return size_t(vertex) < g_body.headVertex.size() && g_body.headVertex[size_t(vertex)];
@@ -973,6 +1059,20 @@ bool isHeadVertex(EERIE_3DOBJ * obj, VertexId vertex) {
 
 size_t bodyCapStart(const EERIE_3DOBJ * obj) {
 	return (obj && obj == g_body.boundObject) ? g_body.capStart : (obj ? obj->facelist.size() : 0);
+}
+
+bool drawsBodyFace(const EERIE_3DOBJ * obj, size_t face) {
+	if(!obj || obj != g_body.boundObject || face >= g_body.faceRole.size()) {
+		return true;
+	}
+	const u8 role = g_body.faceRole[face];
+	if(role == FaceBody) {
+		return true;
+	}
+	if(role >= FaceArmCap) {
+		return customArmDrawn(Hand(role - FaceArmCap));
+	}
+	return !customArmDrawn(Hand(role - FaceArm));
 }
 
 bool handLandmarks(Hand hand, HandLandmarks & landmarks) {
@@ -1026,7 +1126,10 @@ void clearSimulatedHand(Hand hand) {
 }
 
 const PlayerBodyStatus & playerBodyStatus() {
-	return g_body.status;
+	PlayerBodyStatus & status = g_body.status;
+	status.armsModel = armsModelName(armsModel());
+	status.arxArmsHidden = customArmDrawn(Hand::Left) || customArmDrawn(Hand::Right);
+	return status;
 }
 
 } // namespace vr

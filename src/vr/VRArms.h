@@ -21,6 +21,7 @@
 #define ARX_VR_VRARMS_H
 
 #include <stddef.h>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -108,6 +109,18 @@ bool poseCustomArm(Hand hand, const LogicalArm & arm);
 
 //! The custom arm of \a hand is drawn this frame (its Arx arm faces are not)
 bool customArmDrawn(Hand hand);
+
+/*!
+ * Whether the glove meshes loaded (status.json vr.body.customArms). A glove is read the first time its arm is
+ * posed with the custom model on; a missing or broken data/core/vr/arms file is logged as an error.
+ */
+struct CustomArmsLoad {
+	bool tried = false;   //!< at least one glove was read
+	bool loaded = false;  //!< every glove read so far loaded
+	std::string reason;   //!< why not, when not
+};
+
+CustomArmsLoad customArmsLoad();
 
 //! One custom arm as status.json reports it (vr.body.<hand>.custom)
 struct CustomArmStatus {

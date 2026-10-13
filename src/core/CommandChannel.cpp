@@ -934,6 +934,14 @@ std::string buildStatus(PlatformInstant now) {
 		// the arms drawn in VR (#385.3): cfg.ini vr_arms_model, and whether an Arx arm's faces gave way to a custom arm
 		json.value("armsModel", body.armsModel);
 		json.value("arxArmsHidden", body.arxArmsHidden);
+		{
+			const vr::CustomArmsLoad load = vr::customArmsLoad();
+			json.object("customArms");
+			json.value("tried", load.tried);
+			json.value("loaded", load.loaded);
+			json.value("reason", load.reason);
+			json.end();
+		}
 		for(size_t hand = 0; hand < vr::HandCount; hand++) {
 			const vr::PlayerArmStatus & arm = body.hands[hand];
 			json.object(vr::handName(vr::Hand(hand)));

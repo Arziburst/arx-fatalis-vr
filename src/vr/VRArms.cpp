@@ -69,6 +69,7 @@ const char * const ArmsLeverPulls = "#pg_arms_pulls";
 struct GloveRest {
 	bool tried = false;
 	bool loaded = false;
+	std::string error;           //!< why it is not loaded, after a try
 	SkinnedMesh mesh;
 	std::vector<glm::mat4> restWorld;
 	Vec3f wrist = Vec3f(0.f);    //!< mesh space, meters
@@ -112,6 +113,15 @@ Vec3f jointPosition(const std::vector<glm::mat4> & world, int joint) {
 	return (joint >= 0 && size_t(joint) < world.size()) ? Vec3f(world[size_t(joint)][3]) : Vec3f(0.f);
 }
 
+/*!
+ * A glove that cannot be used: the shipped data is broken, so it is an error (a check's errors count goes red),
+ * and status.json vr.body.customArms says why
+ */
+void gloveFailed(Hand hand, GloveRest & glove, const std::string & reason) {
+	glove.error = reason;
+	LogError << "[vr] arms: " << reason << " - the " << handName(hand) << " arm stays the Arx arm";
+}
+
 void loadGlove(Hand hand, GloveRest & glove) {
 
 	glove.tried = true;
@@ -119,12 +129,12 @@ void loadGlove(Hand hand, GloveRest & glove) {
 	// The resource system keeps every name in lower case (PakReader::addFiles)
 	const std::string data = g_resources->read(util::toLowercase(file));
 	if(data.empty()) {
-		LogWarning << "[vr] arms: " << file << " not found - the " << handName(hand) << " arm stays the Arx arm";
+		gloveFailed(hand, glove, file + " not found");
 		return;
 	}
 	std::string error;
 	if(!loadGltfSkinnedMesh(data.data(), data.size(), glove.mesh, error)) {
-		LogWarning << "[vr] arms: " << file << ": " << error << " - the " << handName(hand) << " arm stays the Arx arm";
+		gloveFailed(hand, glove, file + ": " + error);
 		return;
 	}
 	const int wrist = findHandJoint(glove.mesh, HandJoint::Wrist);
@@ -132,8 +142,7 @@ void loadGlove(Hand hand, GloveRest & glove) {
 	const int tip = findHandJoint(glove.mesh, HandJoint::MiddleTip);
 	const int thumb = findHandJoint(glove.mesh, HandJoint::ThumbProximal);
 	if(wrist < 0 || palm < 0 || tip < 0 || thumb < 0) {
-		LogWarning << "[vr] arms: " << file << " lacks the Wrist, Palm, Middle_Tip or Thumb_Proximal joint - the "
-		           << handName(hand) << " arm stays the Arx arm";
+		gloveFailed(hand, glove, file + " lacks the Wrist, Palm, Middle_Tip or Thumb_Proximal joint");
 		return;
 	}
 	restWorldMatrices(glove.mesh, glove.restWorld);
@@ -151,7 +160,7 @@ void loadGlove(Hand hand, GloveRest & glove) {
 	const Vec3f thumbLocal = jointPosition(glove.restWorld, thumb) - glove.wrist;
 	const HandFrame frame = handFrameFromMesh(vertices, &palmLocal, &thumbLocal);
 	if(!frame.valid) {
-		LogWarning << "[vr] arms: " << file << ": no usable hand frame - the " << handName(hand) << " arm stays the Arx arm";
+		gloveFailed(hand, glove, file + ": no usable hand frame");
 		return;
 	}
 	glove.toGrip = handToGrip(frame);
@@ -416,6 +425,26 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	status.triangles = (arm.sleeve.indices.size() + glove.mesh.indices.size()) / 3;
 	arm.drawn = true;
 	return true;
+}
+
+CustomArmsLoad customArmsLoad() {
+	CustomArmsLoad load;
+	bool all = true;
+	for(const CustomArm & arm : g_customArms) {
+		if(!arm.glove.tried) {
+			continue;
+		}
+		load.tried = true;
+		all = all && arm.glove.loaded;
+		if(!arm.glove.loaded && load.reason.empty()) {
+			load.reason = arm.glove.error;
+		}
+	}
+	load.loaded = load.tried && all;
+	if(!load.tried) {
+		load.reason = "not tried yet: no arm was posed with the custom model on";
+	}
+	return load;
 }
 
 bool customArmDrawn(Hand hand) {

@@ -53,6 +53,7 @@ class SimRigTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testFocusAndFault);
 	CPPUNIT_TEST(testFingers);
 	CPPUNIT_TEST(testFiveFingers);
+	CPPUNIT_TEST(testSessionEndsAndExitFaults);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -78,6 +79,7 @@ public:
 	void testFocusAndFault();
 	void testFingers();
 	void testFiveFingers();
+	void testSessionEndsAndExitFaults();
 
 };
 

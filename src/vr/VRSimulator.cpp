@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <map>
@@ -38,9 +39,14 @@
 #include "io/fs/Filesystem.h"
 #include "io/fs/SystemPaths.h"
 #include "io/log/Logger.h"
+#include "platform/ExitTrace.h"
 #include "platform/ProgramOptions.h"
 #include "platform/Thread.h"
 #include "platform/Time.h"
+
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+#include <windows.h>
+#endif
 
 #if ARX_HAVE_OPENXR
 #include "vr/FingerCurl.h"
@@ -129,6 +135,7 @@ struct SimRuntime {
 	XrSessionState state = XR_SESSION_STATE_UNKNOWN;
 	bool running = false;
 	bool exitRequested = false;
+	bool runtimeEnds = false; //!< the script's "session exiting": exiting follows xrEndSession (#146)
 	std::deque<XrEventDataBuffer> events;
 
 	std::vector<std::string> paths; //!< XrPath n is paths[n - 1]
@@ -433,7 +440,12 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrGetInstanceProperties(XrInstance /* instanc
 	return XR_SUCCESS;
 }
 
+void runRequests();
+
 XRAPI_ATTR XrResult XRAPI_CALL sim_xrPollEvent(XrInstance /* instance */, XrEventDataBuffer * event) {
+	// The game polls every frame, with a session or without: commands sent after the runtime ended the
+	// session (#146: "runtime lost", "fault exit") still run
+	runRequests();
 	if(g_sim->events.empty()) {
 		return XR_EVENT_UNAVAILABLE;
 	}
@@ -542,6 +554,7 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrCreateSession(XrInstance /* instance */, co
 	g_sim->session = true;
 	g_sim->running = false;
 	g_sim->exitRequested = false;
+	g_sim->runtimeEnds = false;
 	g_sim->state = XR_SESSION_STATE_IDLE;
 	*session = sessionHandle();
 	setState(XR_SESSION_STATE_READY);
@@ -583,7 +596,7 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrEndSession(XrSession /* session */) {
 	}
 	g_sim->running = false;
 	setState(XR_SESSION_STATE_IDLE);
-	if(g_sim->exitRequested) {
+	if(g_sim->exitRequested || g_sim->runtimeEnds) {
 		setState(XR_SESSION_STATE_EXITING);
 	}
 	return XR_SUCCESS;
@@ -790,6 +803,56 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrReleaseSwapchainImage(XrSwapchain swapchain
 
 // --- The frame loop -----------------------------------------------------------------------------
 
+//! The runtime ends the session on its own, as the script's "session exiting|loss-pending" and "runtime lost" ask (#146)
+void endSessionFromRuntime(SimSessionEnd how) {
+
+	if(how == SimSessionEnd::RuntimeLost) {
+		LogInfo << "[vr] sim: the runtime shuts down (instance loss pending)";
+		XrEventDataInstanceLossPending event = { XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING };
+		event.lossTime = nowNs();
+		queueEvent(&event, sizeof(event));
+		return;
+	}
+
+	if(!g_sim->session) {
+		LogWarning << "[vr] sim: no session for the runtime to end";
+		return;
+	}
+
+	if(how == SimSessionEnd::LossPending) {
+		LogInfo << "[vr] sim: the session is about to be lost (loss pending)";
+		setState(XR_SESSION_STATE_LOSS_PENDING);
+		return;
+	}
+
+	// As a runtime quitting the app: down to stopping; xrEndSession then goes idle and exiting
+	LogInfo << "[vr] sim: the runtime ends the session (stopping, exiting after xrEndSession)";
+	g_sim->runtimeEnds = true;
+	if(!g_sim->running) {
+		setState(XR_SESSION_STATE_EXITING);
+		return;
+	}
+	if(g_sim->state == XR_SESSION_STATE_FOCUSED) {
+		setState(XR_SESSION_STATE_VISIBLE);
+	}
+	setState(XR_SESSION_STATE_SYNCHRONIZED);
+	setState(XR_SESSION_STATE_STOPPING);
+}
+
+//! The script's "fault exit|exit-process <code>": the process ends the way #146 ended, for the exit hook to report
+[[noreturn]] void exitAsFault(SimExit how, int code) {
+	const bool exitProcess = (how == SimExit::ExitProcess);
+	LogInfo << "[vr] sim: fault: the process ends with " << (exitProcess ? "ExitProcess(" : "std::exit(") << code << ")";
+	if(exitProcess) {
+		#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+		ExitProcess(UINT(code));
+		#else
+		std::_Exit(code);
+		#endif
+	}
+	std::exit(code);
+}
+
 void runRequests() {
 
 	SimRequests requests = g_sim->sim.takeRequests();
@@ -831,11 +894,17 @@ void runRequests() {
 	if(requests.profileChanged) {
 		profileChanged();
 	}
+	if(requests.sessionEnd != SimSessionEnd::None) {
+		endSessionFromRuntime(requests.sessionEnd);
+	}
 	if(requests.quit) {
-		LogInfo << "[vr] sim: the script asks the game to quit";
+		platform::logQuitRequest("the simulated headset's script (vr-sim quit)");
 		if(mainApp) {
 			mainApp->quit();
 		}
+	}
+	if(requests.exit != SimExit::None) {
+		exitAsFault(requests.exit, requests.exitCode);
 	}
 }
 

@@ -5,7 +5,9 @@
 
 .DESCRIPTION
 	Runs on the self-hosted runner after the build (.github/workflows/build-windows.yml), and by hand:
-	  1. smoke-test.ps1 -Seconds 3 -Commands 'drawcheck 120'   flat, --loadlevel 10: start, play, draw check, quit
+	  1. smoke-test.ps1 -Seconds 3 -Commands 'loadlevel 1','loadlevel 10','drawcheck 120'
+		                                                           flat, --loadlevel 10: start, two level changes (the first channel
+		                                                           batch is a loadlevel, each ack must be its own, #142), draw check, quit
 	  2. spell-drawcheck.ps1                                   the 26 spells of #71 cast, drawn twice per frame
 	  3. every scripts\dev\xrs\*.xrs sequence (#255)           one launch each, with the @sim / @args / @save it declares; the
 	                                                           test save library of this account is verified (or generated) first;
@@ -144,7 +146,7 @@ function Invoke-Phase([string]$Name, $Script, [hashtable]$Params, [string]$Evide
 $results = @()
 try {
 	if ($Phase -in 'all', 'smoke') {
-		$p = @{ Config = $Config; Seconds = 3; Commands = @('drawcheck 120'); LockTimeoutSec = $LockTimeoutSec } + $dataArgs
+		$p = @{ Config = $Config; Seconds = 3; Commands = @('loadlevel 1', 'loadlevel 10', 'drawcheck 120'); LockTimeoutSec = $LockTimeoutSec } + $dataArgs
 		$results += Invoke-Phase 'smoke-test' 'smoke-test.ps1' $p
 	}
 	if ($Phase -in 'all', 'spells') {

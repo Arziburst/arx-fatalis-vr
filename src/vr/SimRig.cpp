@@ -76,6 +76,18 @@ bool parseFloat(std::string_view text, float & value) {
 	return true;
 }
 
+bool parseExitCode(std::string_view text, int & value) {
+	std::string copy(text);
+	char * end = nullptr;
+	errno = 0;
+	long parsed = std::strtol(copy.c_str(), &end, 0);
+	if(copy.empty() || end != copy.c_str() + copy.size() || errno != 0 || parsed < -2147483647L - 1 || parsed > 2147483647L) {
+		return false;
+	}
+	value = int(parsed);
+	return true;
+}
+
 bool parseFrame(std::string_view text, u64 & value) {
 	if(text.empty() || text.size() > 12) {
 		return false;
@@ -197,7 +209,7 @@ std::string simProfilePath(std::string_view name) {
 struct Simulation::Command {
 	enum Op {
 		Rate, EyeSize, Ipd, Fov, Timeline, HeadPos, HeadRot, HandPos, HandRot, HandTracked, HandFingers, HandJoints,
-		Profile, Action, Session, Shot, Mark, Quit, Fault, Layers,
+		Profile, Action, Session, Shot, Mark, Quit, Fault, Layers, SessionEnd, FaultExit,
 	};
 	Op op = Rate;
 	size_t index = 0; //!< eye or hand; 2 = both hands
@@ -205,6 +217,8 @@ struct Simulation::Command {
 	std::array<float, 5> values = { };
 	size_t count = 0;
 	bool flag = false;
+	SimSessionEnd sessionEnd = SimSessionEnd::None;
+	int exitCode = 0;
 	bool rampable() const {
 		return op == Ipd || op == HeadPos || op == HeadRot || op == HandPos || op == HandRot || op == HandFingers
 		       || op == Action;
@@ -388,8 +402,13 @@ std::string Simulation::parse(std::string_view line, Command & command) const {
 	if(word == "session") {
 		command.op = Command::Session;
 		const std::string state = words.size() == 2 ? lowercase(words[1]) : std::string();
+		if(state == "exiting" || state == "loss-pending") {
+			command.op = Command::SessionEnd;
+			command.sessionEnd = (state == "exiting") ? SimSessionEnd::Exiting : SimSessionEnd::LossPending;
+			return std::string();
+		}
 		if(state != "focused" && state != "visible" && state != "idle") {
-			return "session: expected focused, visible or idle";
+			return "session: expected focused, visible, idle, exiting or loss-pending";
 		}
 		command.flag = (state == "focused");
 		command.index = (state == "idle") ? 0 : 1; // worn
@@ -419,12 +438,24 @@ std::string Simulation::parse(std::string_view line, Command & command) const {
 		return words.size() == 1 ? std::string() : "quit: takes no arguments";
 	}
 
+	if(word == "runtime") {
+		command.op = Command::SessionEnd;
+		command.sessionEnd = SimSessionEnd::RuntimeLost;
+		const bool lost = words.size() == 2 && lowercase(words[1]) == "lost";
+		return lost ? std::string() : "runtime: expected lost";
+	}
+
 	if(word == "fault") {
 		command.op = Command::Fault;
 		const std::string what = words.size() == 3 ? lowercase(words[1]) : std::string();
 		const std::string state = words.size() == 3 ? lowercase(words[2]) : std::string();
+		if(what == "exit" || what == "exit-process") {
+			command.op = Command::FaultExit;
+			command.flag = (what == "exit-process");
+			return parseExitCode(words[2], command.exitCode) ? std::string() : "fault: " + what + " takes an exit code";
+		}
 		if(what != "swap-eyes" || (state != "on" && state != "off")) {
-			return "fault: expected swap-eyes on|off";
+			return "fault: expected swap-eyes on|off or exit|exit-process <code>";
 		}
 		command.flag = (state == "on");
 		return std::string();
@@ -528,6 +559,11 @@ void Simulation::apply(const Command & command) {
 		case Command::Mark: m_requests.marks.push_back(command.text); return;
 		case Command::Quit: m_requests.quit = true; return;
 		case Command::Fault: rig.swapEyes = command.flag; return;
+		case Command::SessionEnd: m_requests.sessionEnd = command.sessionEnd; return;
+		case Command::FaultExit:
+			m_requests.exit = command.flag ? SimExit::ExitProcess : SimExit::Exit;
+			m_requests.exitCode = command.exitCode;
+			return;
 		case Command::Layers: rig.saveLayers = command.flag; return;
 		default: break;
 	}

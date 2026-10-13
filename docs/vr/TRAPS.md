@@ -8,6 +8,30 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — The level 10 intro is the original game's startup, not New game's (#394)
+
+**Symptom:** a test of "the intro" from `--loadlevel 10`, `--skiplogo` or New game shows a different thing than a player sees; New game never plays level 10.
+**Cause:** the original start is logos -> level 10 (a scripted scene that plays `introduction.cin` and ends in the main menu through the player's death, `ARX_PLAYER_Manage_Death`) -> main menu. New game loads area 1 (`DANAE_StartNewQuest`).
+**Do:** test the intro from a player's launch (`@player`, `-Player`); `first-run.xrs` / `first-run-intro.xrs`.
+
+## 2026-10-13 — A one-frame virtual Escape never ends a cinematic (#394)
+
+**Symptom:** a simulated Escape / skip press during a `.cin` does nothing.
+**Cause:** `Menu.cpp` ends a cinematic on `isKeyPressedNowUnPressed`, which needs `keysStates == 1` after the release; a key held for one update goes 1 -> 0.
+**Do:** #394 uses `g_vrSkipPressed` and calls `cinematicEnd()` itself; do not "fix" a skip with a faster key press.
+
+## 2026-10-13 — In VR a logo is cut off at the window's size (#394, #73)
+
+**Symptom:** a publisher logo on the VR screen fills only the window's size while the interface (the quad) is larger.
+**Cause:** nothing prepares a camera for the logos, so the GL viewport stays the window's while the interface is the larger quad (#73).
+**Do:** `GRenderer->SetViewport(g_size)` for 2D drawn outside the camera paths.
+
+## 2026-10-13 — The character creation screen is black but for the portrait on a cold development start (#394.3)
+
+**Symptom:** `first-run-chargen.xrs` started at the main menu by `@args --dev-launch` fails at the window shot (`capture.topRight.verdict` black; the quad shot shows only the hero's portrait on black). The same sequence passes when the process first played the level 10 scene (`@args --skiplogo`), and `first-run.xrs` (a player's launch) passes through the same screen.
+**Cause:** not found; a longer wait before the shot (600 frames) changes nothing, so it is not the fade-in. Probably something the level 10 load initialises that a cold menu start does not.
+**Do:** see the open question to the #394 lead; do not loosen the shot's check.
+
 ## 2026-10-13 — In VR the main menu sits in a corner of the desktop window and the mouse clicks invisible buttons (#334)
 
 **Symptom:** with VR on, the desktop window showed the main menu (and the character creation) as a small picture

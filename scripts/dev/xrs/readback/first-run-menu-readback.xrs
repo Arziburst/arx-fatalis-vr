@@ -2,14 +2,14 @@
 # when the game quit, and this launch, in the same user directory, reads it back. Not a sequence of its own -
 # ci-smoke runs every scripts\dev\xrs\*.xrs on a fresh user directory, and this one lives a level below so it
 # never runs alone. Run the pair in one user directory:
-#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir> -- --skiplogo
-#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence scripts\dev\xrs\readback\first-run-menu-readback.xrs -UserDir <dir> -- --skiplogo
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir> -- --dev-launch
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence scripts\dev\xrs\readback\first-run-menu-readback.xrs -UserDir <dir> -- --dev-launch
 # It turns the crosshair on again with the pointer, so the pair leaves the directory as it found it.
 @sim idle
-@args --skiplogo
+@args --dev-launch
 
-# --skiplogo still plays the in-game intro scene first: about 59 s on the simulated headset (measured)
-@until state eq MENU 90s
+# A plain development launch (no logos, no intro) reaches the main menu in about a second
+@until state eq MENU 30s
 @assert menuMode eq mainmenu
 # Read from cfg.ini at the start
 @assert settings.crosshair eq false

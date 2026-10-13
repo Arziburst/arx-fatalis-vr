@@ -7,14 +7,14 @@
 #
 # The change is saved to cfg.ini when the game quits; a second launch in the same user directory reads it back
 # (readback/first-run-menu-readback.xrs - not one of the sequences ci-smoke runs on their own):
-#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir> -- --skiplogo
-#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence scripts\dev\xrs\readback\first-run-menu-readback.xrs -UserDir <dir> -- --skiplogo
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir> -- --dev-launch
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence scripts\dev\xrs\readback\first-run-menu-readback.xrs -UserDir <dir> -- --dev-launch
 # (the smoke test takes the arx.exe arguments after --, not from @args - TRAPS.md)
 @sim idle
-@args --skiplogo
+@args --dev-launch
 
-# --skiplogo still plays the in-game intro scene first: about 59 s on the simulated headset (measured)
-@until state eq MENU 90s
+# A plain development launch (no logos, no intro) reaches the main menu in about a second
+@until state eq MENU 30s
 @assert menuMode eq mainmenu
 @until vr.sessionState eq focused 30s
 @until vr.panel.mode eq world 10s

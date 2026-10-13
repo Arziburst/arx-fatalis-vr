@@ -17,7 +17,7 @@
 	     arguments after -- replace the default ones. Launch control applies (D-014): with SteamVR off
 	     the game starts flat unless -StartSteamVR, the owner's switch, starts SteamVR first; the game
 	     lock makes it wait for any other game on this PC (one at a time).
-	The verdict goes to /accept-task <pr> or /reject-task <pr> <what is wrong>, with the build id.
+	The headset verdict (OK, or what is wrong) goes to the coordinator, with the build id.
 
 .PARAMETER Pr
 	The pull request number.

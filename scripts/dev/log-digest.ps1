@@ -13,7 +13,8 @@
 	part is sent by a detached background process, and without a network the reports wait in
 	%LOCALAPPDATA%\ArxFatalisVR\pending-reports\ for the next run.
 
-	Bug filing (GitHub REST only, never GraphQL; only into the private repository): a new error or critical
+	Bug filing (GitHub REST only, never GraphQL; the repository is public, so every report is scrubbed of personal
+	data first and one that cannot be made clean stays queued, #387): a new error or critical
 	signature or a crash becomes an issue labeled `bug` + `auto-reported`; a new warning only once it shows up in a
 	second run; a known signature gets a "seen again" comment at most once a day. signatures.json remembers the
 	signatures, existing auto-reported issues are searched by the marker in their body, so a signature is never
@@ -54,6 +55,10 @@
 .PARAMETER Flush
 	Only send the queue (retries what an earlier run could not send). No digest.
 
+.PARAMETER Preview
+	Only print the queued reports as they would be uploaded (scrubbed) and what the final check refuses. Sends
+	nothing, changes nothing. No digest.
+
 .PARAMETER Quiet
 	No console summary.
 
@@ -91,6 +96,7 @@ param(
 	[switch]$Detach,
 	[switch]$FlushNow,
 	[switch]$Flush,
+	[switch]$Preview,
 	[switch]$Quiet,
 	[switch]$Print,
 	[switch]$Id,
@@ -111,10 +117,25 @@ function Write-FlushResult($r) {
 	if ($r.Reopened.Count) { Write-Host "    reopened (the problem came back): $(($r.Reopened | ForEach-Object { "#$_" }) -join ', ')" -ForegroundColor Yellow }
 	if ($r.Dropped.Count) { Write-Host "    seen again, comment throttled (once a day): $(($r.Dropped | ForEach-Object { "#$_" }) -join ', ')" }
 	foreach ($f in $r.Failed) { Write-Warning "report not sent, it stays queued: $f" }
+	foreach ($f in $r.Refused) { Write-Warning "report not sent, personal data the scrubber cannot remove - it stays queued: $f" }
 }
 
 if ($Flush) {
 	Write-FlushResult (Invoke-ArxReportFlush)
+	exit 0
+}
+
+if ($Preview) {
+	$files = @(Get-ChildItem (Get-ArxPendingDir) -Filter '*.json' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime)
+	Write-Host "$($files.Count) queued report(s) in $(Get-ArxPendingDir), as they would be uploaded:"
+	foreach ($f in $files) {
+		$upload = Get-ArxUploadItem (Get-Content $f.FullName -Raw | ConvertFrom-Json -AsHashtable)
+		$i = $upload.Item
+		Write-Host "==> $($f.Name): $($i.action), $(if ($upload.Leaks) { "REFUSED: $($upload.Leaks -join ', ')" } else { 'clean' })" -ForegroundColor $(if ($upload.Leaks) { 'Yellow' } else { 'Cyan' })
+		Write-Host "--- title`n$($i.title)"
+		if ($i.action -eq 'file') { Write-Host "--- body`n$($i.body)" }
+		Write-Host "--- comment (when the issue exists)`n$($i.comment)"
+	}
 	exit 0
 }
 

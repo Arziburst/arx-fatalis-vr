@@ -236,6 +236,31 @@ Vec3f palmBehindGrip(Hand hand, const Vec3f & gripPosition, const glm::quat & gr
  */
 HandJoints blendHandJoints(const HandJoints & open, const HandJoints & closed, const std::array<float, FingerCount> & amounts);
 
+//! The line a closed glove's fingers wrap (#385.7): where the hilt runs through the hand
+struct GloveCurl {
+	bool valid = false;
+	Vec3f centre = Vec3f(0.f); //!< mesh space: the mean centre of the index .. little finger's curls
+	Vec3f axis = Vec3f(0.f);   //!< unit, from the little finger's side toward the index finger's
+};
+
+/*!
+ * \brief The curl axis of \a hand posed by \a local (\ref poseHandFromJoints): for each of the index .. little finger
+ *        the circle through its knuckle, its last joint and its tip, the centres and the circles' normals averaged
+ *
+ * Invalid when a finger is straight (its three points in a line) or \a rig is invalid.
+ */
+GloveCurl gloveCurlAxis(const SkinnedMesh & hand, const HandRig & rig, const std::vector<glm::mat4> & local);
+
+/*!
+ * \brief The glove's rest frame to the grip frame (\a toGrip, vr/ArmIK.h handToGrip) turned by the least rotation
+ *        that lays \a curl's axis along the handle (the grip's Z: engine +z)
+ *
+ * The hand frame read from the glove's mesh leans off the handle (its long axis runs from the wrist to the glove's
+ * off-centre Palm joint); a real hand on the handle wraps it, so the closed glove must too. \a toGrip itself for an
+ * invalid \a curl.
+ */
+glm::quat gloveOnHandle(const GloveCurl & curl, const glm::quat & toGrip);
+
 //! Where a held weapon's hilt pose comes from (status.json vr.hands.<hand>.hiltPose)
 enum class HiltPoseSource : u8 {
 	None,     //!< no weapon in the hand

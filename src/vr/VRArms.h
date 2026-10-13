@@ -171,7 +171,11 @@ struct CustomArmStatus {
 	FingerPose fingers;          //!< degrees, approaching what the source asks for
 	// The glove driven joint by joint (#385.7)
 	HiltPoseSource hiltPose = HiltPoseSource::None; //!< what a held weapon closes the hand on (none: no weapon)
-	float palmToGrip = 0.f;      //!< the glove's palm joint placed behind the controller's grip by this much (units)
+	float palmToGrip = 0.f;      //!< the glove palm's centre (the middle metacarpal's midpoint) from the grip (units)
+	Vec3f grip = Vec3f(0.f);     //!< the controller's grip in the world: a point of the handle's line
+	Vec3f handle = Vec3f(0.f, 0.f, 1.f); //!< the handle's direction in the world (the grip's Z), unit
+	float curlToHandle = 0.f;    //!< the hilt pose's curl centre from the handle's line, as drawn (units)
+	float curlAngle = 0.f;       //!< the hilt pose's curl axis off the handle, as drawn (degrees)
 	size_t vertices = 0;         //!< sleeve + hand
 	size_t triangles = 0;
 };

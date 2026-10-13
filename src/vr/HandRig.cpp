@@ -791,6 +791,69 @@ HandJoints blendHandJoints(const HandJoints & open, const HandJoints & closed, c
 	return blended;
 }
 
+GloveCurl gloveCurlAxis(const SkinnedMesh & hand, const HandRig & rig, const std::vector<glm::mat4> & local) {
+
+	GloveCurl curl;
+	if(!rig.valid || local.size() != hand.skeleton.size()) {
+		return curl;
+	}
+
+	// The joints in mesh space: each local composed with its parents'
+	auto at = [&](HandJoint joint) {
+		size_t i = size_t(rig.joint[size_t(joint)]);
+		glm::mat4 matrix = local[i];
+		for(int parent = hand.skeleton[i].parent; parent >= 0; parent = hand.skeleton[size_t(parent)].parent) {
+			matrix = local[size_t(parent)] * matrix;
+		}
+		return Vec3f(matrix[3]);
+	};
+
+	const Vec3f across = at(HandJoint::IndexProximal) - at(HandJoint::LittleProximal);
+	const HandJoint knuckles[] = {
+		HandJoint::IndexProximal, HandJoint::MiddleProximal, HandJoint::RingProximal, HandJoint::LittleProximal,
+	};
+	Vec3f centres(0.f);
+	Vec3f normals(0.f);
+	for(HandJoint knuckle : knuckles) {
+		// The circle through three points: the centre of their triangle's circumcircle, the triangle's normal
+		const Vec3f tip = at(HandJoint(size_t(knuckle) + 3));
+		const Vec3f a = at(knuckle) - tip;
+		const Vec3f b = at(HandJoint(size_t(knuckle) + 2)) - tip;
+		const Vec3f normal = glm::cross(a, b);
+		const float area = glm::dot(normal, normal);
+		if(!(area > 1e-14f)) {
+			return curl;
+		}
+		centres += tip + glm::cross(glm::dot(a, a) * b - glm::dot(b, b) * a, normal) / (2.f * area);
+		normals += glm::normalize(normal) * (glm::dot(normal, across) < 0.f ? -1.f : 1.f);
+	}
+	if(!(glm::length(normals) > 1e-6f)) {
+		return curl;
+	}
+	curl.centre = centres * 0.25f;
+	curl.axis = glm::normalize(normals);
+	curl.valid = true;
+	return curl;
+}
+
+glm::quat gloveOnHandle(const GloveCurl & curl, const glm::quat & toGrip) {
+	if(!curl.valid) {
+		return toGrip;
+	}
+	// The handle's direction in the glove's mesh space, signed to lie with the curl axis; the least rotation onto it
+	Vec3f handle = glm::inverse(toGrip) * Vec3f(0.f, 0.f, 1.f);
+	if(glm::dot(handle, curl.axis) < 0.f) {
+		handle = -handle;
+	}
+	const Vec3f axis = glm::cross(curl.axis, handle);
+	const float sine = glm::length(axis);
+	const float cosine = glm::dot(curl.axis, handle);
+	if(!(sine > 1e-6f)) {
+		return toGrip;
+	}
+	return glm::normalize(toGrip * glm::angleAxis(std::atan2(sine, cosine), axis / sine));
+}
+
 const char * hiltPoseSourceName(HiltPoseSource source) {
 	switch(source) {
 		case HiltPoseSource::None: return "none";

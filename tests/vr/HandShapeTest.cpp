@@ -29,6 +29,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "vr/ArmIK.h"
 #include "vr/ArmMesh.h"
 #include "vr/FingerCurl.h"
 #include "vr/HandRig.h"
@@ -270,5 +271,58 @@ void HandShapeTest::testControlsBlendTowardGrab() {
 		hstExpectNear("grip 0.4: the middle knuckle", 0.4f * grab.flex[size_t(vr::Finger::Middle)][0],
 		              target.pose.flex[size_t(vr::Finger::Middle)][0], 4.f);
 		CPPUNIT_ASSERT(target.pose.flex[size_t(vr::Finger::Index)][0] < 1.f);
+	}
+}
+
+void HandShapeTest::testHiltCurlLiesOnTheGripAxis() {
+	// The glove in units at the default hand scale (vr/VRArms.h: meters x 100 x 1.15)
+	const float scale = 115.f;
+	for(char side : { 'L', 'R' }) {
+		const vr::Hand hand = (side == 'R') ? vr::Hand::Right : vr::Hand::Left;
+		const std::string data = hstReadSource(std::string("data/core/vr/arms/Hand_Glove_low_") + side + ".gltf");
+		vr::SkinnedMesh mesh;
+		std::string error;
+		CPPUNIT_ASSERT_MESSAGE("glove: " + error, vr::loadGltfSkinnedMesh(data.data(), data.size(), mesh, error));
+		const vr::HandRig rig = vr::buildHandRig(mesh);
+		CPPUNIT_ASSERT(rig.valid);
+		std::vector<glm::mat4> local;
+		vr::poseHandFromJoints(mesh, rig, vr::palmRelativeJoints(vr::hiltPose(hand, vr::DefaultHiltRadius)), local);
+		const vr::GloveCurl curl = vr::gloveCurlAxis(mesh, rig, local);
+		CPPUNIT_ASSERT(curl.valid);
+
+		// The hand frame as vr/VRArms.cpp reads it from the glove at rest
+		std::vector<glm::mat4> rest;
+		vr::restWorldMatrices(mesh, rest);
+		const Vec3f wrist(rest[size_t(vr::findHandJoint(mesh, vr::HandJoint::Wrist))][3]);
+		const Vec3f palm(rest[size_t(vr::findHandJoint(mesh, vr::HandJoint::Palm))][3]);
+		const Vec3f thumb(rest[size_t(vr::findHandJoint(mesh, vr::HandJoint::ThumbProximal))][3]);
+		std::vector<Vec3f> vertices;
+		for(const Vec3f & position : mesh.positions) {
+			vertices.push_back(position - wrist);
+		}
+		const Vec3f palmLocal = palm - wrist;
+		const Vec3f thumbLocal = thumb - wrist;
+		const vr::HandFrame frame = vr::handFrameFromMesh(vertices, &palmLocal, &thumbLocal);
+		CPPUNIT_ASSERT(frame.valid);
+
+		// A grip somewhere, turned; the glove placed as vr/VRArms.cpp places it: turned so its curl lies along the
+		// handle, its curl centre on the grip
+		const Vec3f grip(10.f, -150.f, 30.f);
+		const glm::quat gripOrientation = glm::angleAxis(0.7f, glm::normalize(Vec3f(1.f, 2.f, -1.f)));
+		const glm::quat handQuat = glm::normalize(gripOrientation * vr::gloveOnHandle(curl, vr::handToGrip(frame)));
+		const Vec3f gloveWrist = grip - handQuat * ((curl.centre - wrist) * scale);
+		const Vec3f centre = gloveWrist + handQuat * ((curl.centre - wrist) * scale);
+		// The handle's line: the grip's Z (engine axes: OpenXR's -Z is the engine's +z)
+		const Vec3f handle = gripOrientation * Vec3f(0.f, 0.f, 1.f);
+		const std::string name(1, side);
+		hstExpectNear(name + " curl centre off the handle (units)", 0.f, glm::length(glm::cross(centre - grip, handle)), 0.5f);
+		const float angle = glm::degrees(std::acos(std::min(std::abs(glm::dot(handQuat * curl.axis, handle)), 1.f)));
+		CPPUNIT_ASSERT_MESSAGE(name + " curl axis off the handle by " + std::to_string(angle) + " degrees", angle <= 10.f);
+		// The palm's centre (the middle metacarpal's midpoint: the glove's Palm joint is off the palm) behind the handle
+		// as hand-conforming.xrs expects it (2.5 - 4.5 units)
+		const Vec3f palmCentre = 0.5f * (Vec3f(rest[size_t(vr::findHandJoint(mesh, vr::HandJoint::MiddleMetacarpal))][3])
+		                                 + Vec3f(rest[size_t(vr::findHandJoint(mesh, vr::HandJoint::MiddleProximal))][3]));
+		const float palmToGrip = glm::distance(gloveWrist + handQuat * ((palmCentre - wrist) * scale), grip);
+		CPPUNIT_ASSERT_MESSAGE(name + " palm to grip " + std::to_string(palmToGrip), palmToGrip >= 2.5f && palmToGrip <= 4.5f);
 	}
 }

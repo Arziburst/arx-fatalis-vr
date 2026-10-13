@@ -1185,8 +1185,16 @@ std::string buildStatus(PlatformInstant now) {
 				json.end();
 			}
 			json.end();
-			// the glove's palm placed behind the controller's grip (#385.7: the grip is the handle's centre), units
+			// #385.7: the glove's palm centre from the controller's grip (the grip is the handle's centre), and the hilt
+			// pose's curl - the line the closed fingers wrap - against the handle's line (units, degrees); for 385.10,
+			// how far the held weapon's hilt (its attach vertex, drawn by the Arx hand) lies off that line (units)
 			json.value("palmToGrip", custom.palmToGrip);
+			json.value("curlToHandle", custom.curlToHandle);
+			json.value("curlAngle", custom.curlAngle);
+			const vr::HeldWeaponStatus & held = vr::heldWeaponStatus();
+			if(vr::Hand(hand) == vr::Hand::Right && held.drawn && custom.drawn) {
+				json.value("weaponToHandle", glm::length(glm::cross(held.hilt - custom.grip, custom.handle)));
+			}
 			json.end();
 			// The fingers (#305): what they follow and how far each segment is bent (degrees)
 			json.object("fingers");

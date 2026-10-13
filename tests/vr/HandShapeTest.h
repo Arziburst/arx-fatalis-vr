@@ -27,7 +27,8 @@
  * The hand shapes of the custom hand (#385.7, vr/HandRig.h): the joints' OpenXR frames run along the bones, the
  * left hand is the right one mirrored, a hand shape survives its JSON, the shipped MRTK3 Grab loads, the hilt pose
  * keeps the configured angles at the default hilt radius (finger-five.xrs' held asserts), the angles are clamped,
- * and the custom hand chooses its source in the documented order.
+ * the custom hand chooses its source in the documented order, and the glove placed on a grip by its hilt pose's
+ * curl wraps the grip's handle line.
  */
 class HandShapeTest final : public CppUnit::TestFixture {
 
@@ -40,6 +41,7 @@ class HandShapeTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testHiltAnglesAreClamped);
 	CPPUNIT_TEST(testCustomHandSourceOrder);
 	CPPUNIT_TEST(testControlsBlendTowardGrab);
+	CPPUNIT_TEST(testHiltCurlLiesOnTheGripAxis);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -52,6 +54,7 @@ public:
 	void testHiltAnglesAreClamped();
 	void testCustomHandSourceOrder();
 	void testControlsBlendTowardGrab();
+	void testHiltCurlLiesOnTheGripAxis();
 
 };
 

@@ -147,6 +147,9 @@ public:
 		bool vrPhysicalCrouch; //!< VR: the head going down crouches the character (#100)
 		float vrCrouchEnter; //!< VR: the head this far below the calibrated eye crouches, meters (#100)
 		float vrCrouchExit; //!< VR: the character stands again once the head is back above this depth, meters (#100)
+		std::string vrSceneView; //!< VR: the view of scripted scenes: first, observer, ghost, hybrid (#29, vr/SceneView.h)
+		std::string vrSceneLookAt; //!< VR: what playerlookat does: ignore, fade (#29)
+		std::string vrSubtitles; //!< VR: where scene subtitles go: above, chest, lowerthird (#29, vr/SceneSubtitles.h)
 
 		float fov;
 		bool viewBobbing;

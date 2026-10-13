@@ -50,6 +50,8 @@
 #include "vr/MeleeSwing.h"
 #include "vr/MirrorGeometry.h"
 #include "vr/PhysicalCrouch.h"
+#include "vr/SceneSubtitles.h"
+#include "vr/SceneView.h"
 #include "vr/UIPanel.h"
 #include "vr/VRSystem.h"
 #include "vr/VRTurn.h"
@@ -79,6 +81,9 @@ constexpr const std::string_view
 	realtimeOverride,
 	bufferUpload,
 	extensionOverride,
+	vrSceneView = "hybrid",
+	vrSceneLookAt = "ignore",
+	vrSubtitles = "above",
 	thumbnailSize = BOOST_PP_STRINGIZE(THUMBNAIL_DEFAULT_WIDTH) "x"
 	                BOOST_PP_STRINGIZE(THUMBNAIL_DEFAULT_HEIGHT);
 
@@ -267,6 +272,9 @@ constexpr const std::string_view
 	vrPhysicalCrouch = "vr_physical_crouch",
 	vrCrouchEnter = "vr_crouch_enter",
 	vrCrouchExit = "vr_crouch_exit",
+	vrSceneView = "vr_scene_view",
+	vrSceneLookAt = "vr_scene_lookat",
+	vrSubtitles = "vr_subtitles",
 	fov = "fov",
 	viewBobbing = "view_bobbing",
 	screenShake = "screen_shake",
@@ -553,6 +561,9 @@ bool Config::save() {
 	writer.writeKey(Key::vrPhysicalCrouch, video.vrPhysicalCrouch);
 	writer.writeKey(Key::vrCrouchEnter, video.vrCrouchEnter);
 	writer.writeKey(Key::vrCrouchExit, video.vrCrouchExit);
+	writer.writeKey(Key::vrSceneView, video.vrSceneView);
+	writer.writeKey(Key::vrSceneLookAt, video.vrSceneLookAt);
+	writer.writeKey(Key::vrSubtitles, video.vrSubtitles);
 	writer.writeKey(Key::fov, video.fov);
 	writer.writeKey(Key::viewBobbing, video.viewBobbing);
 	writer.writeKey(Key::screenShake, video.screenShake);
@@ -726,6 +737,14 @@ bool Config::init(const fs::path & file) {
 	video.vrCrouchEnter = glm::clamp(vrCrouchEnter, 0.05f, 1.5f);
 	float vrCrouchExit = reader.getKey(Section::Video, Key::vrCrouchExit, Default::vrCrouchExit);
 	video.vrCrouchExit = glm::clamp(vrCrouchExit, 0.f, video.vrCrouchEnter);
+	// Scripted scenes in VR (#29): an unknown name is the default
+	std::string vrSceneView(reader.getKey(Section::Video, Key::vrSceneView, Default::vrSceneView));
+	video.vrSceneView = vr::sceneViewName(vr::parseSceneView(vrSceneView).value_or(vr::DefaultSceneView));
+	std::string vrSceneLookAt(reader.getKey(Section::Video, Key::vrSceneLookAt, Default::vrSceneLookAt));
+	video.vrSceneLookAt = vr::sceneLookAtName(vr::parseSceneLookAt(vrSceneLookAt).value_or(vr::DefaultSceneLookAt));
+	std::string vrSubtitles(reader.getKey(Section::Video, Key::vrSubtitles, Default::vrSubtitles));
+	video.vrSubtitles = vr::subtitlePlacementName(
+		vr::parseSubtitlePlacement(vrSubtitles).value_or(vr::DefaultSubtitlePlacement));
 	float fov = reader.getKey(Section::Video, Key::fov, Default::fov);
 	video.fov = std::max(fov, 10.f);
 	video.viewBobbing = reader.getKey(Section::Video, Key::viewBobbing, Default::viewBobbing);

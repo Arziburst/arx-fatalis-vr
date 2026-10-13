@@ -181,10 +181,13 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "util/String.h"
 
+#include "vr/BodyYaw.h"
 #include "vr/EyeProjection.h"
 #include "vr/HeadLean.h"
 #include "vr/HeadTracking.h"
 #include "vr/PerfLog.h"
+#include "vr/SceneSubtitles.h"
+#include "vr/SceneView.h"
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
@@ -406,6 +409,7 @@ bool ArxGame::initConfig() {
 		// Save a default config file so users have a chance to edit it even if we crash.
 		config.save();
 	}
+	vr::setSubtitlePlacement(vr::parseSubtitlePlacement(config.video.vrSubtitles).value_or(vr::DefaultSubtitlePlacement));
 	
 	Logger::configure(config.misc.debug);
 
@@ -2034,6 +2038,120 @@ static const char * headGeometryCheck(const Vec3f & eye, const Vec3f & head) {
 	return nullptr;
 }
 
+//! The hero's eye this frame, where the first-person camera put it before a scene's camera took over (#29)
+static Vec3f g_sceneFirstPos(0.f);
+//! The stick's turn so far at the last two scene frames: the frame after a stick turn has no yaw step (#29)
+static std::array<float, 2> g_sceneTurned = { 0.f, 0.f };
+//! The speak -c line last seen, for its subtitle (#29)
+static u64 g_sceneSpeechLine = 0;
+
+//! \return the floor's y under \a pos (y down), \a found false when there is none
+static float floorBelow(const Vec3f & pos, bool & found) {
+	float floorY = 0.f;
+	found = CheckInPoly(pos, &floorY) != nullptr;
+	return floorY;
+}
+
+//! The speaker as the player reads its name
+static std::string speakerName(const Entity * speaker) {
+	if(speaker && !speaker->locname.empty()) {
+		return std::string(getLocalised(speaker->locname, speaker->idString()));
+	}
+	return gameevent::entityName(speaker);
+}
+
+/*!
+ * The scene view of this VR frame (#29): which scripted scene owns the game's camera, what the eyes get
+ * instead (vr/SceneView.h), the scene's events, a pending playerlookat turned at black
+ */
+static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
+
+	vr::SceneState & state = vr::sceneState();
+
+	vr::SceneInput in;
+	const Speech * speech = getCinematicSpeech();
+	const u64 speechLine = speech ? (u64(reinterpret_cast<uintptr_t>(speech)) ^ (u64(toMsi(speech->time_creation)) << 16))
+	                              : 0;
+	if(g_cameraEntity) {
+		in.kind = vr::SceneKind::Entity;
+		in.shot = u64(reinterpret_cast<uintptr_t>(g_cameraEntity));
+	} else if(speech) {
+		in.kind = vr::SceneKind::Speech;
+		in.shot = speechLine;
+	}
+	in.active = in.kind != vr::SceneKind::None || cinematicBorder.isActive();
+	in.setting = vr::parseSceneView(config.video.vrSceneView).value_or(vr::DefaultSceneView);
+	in.enginePos = engineCamera.m_pos;
+	in.engineYaw = engineCamera.angle.getYaw();
+	in.engineFloorY = floorBelow(in.enginePos, in.engineFloor);
+	in.firstPos = g_sceneFirstPos;
+	in.playerYaw = player.angle.getYaw();
+	const vr::HeadStatus & head = vr::headStatus();
+	in.headYaw = head.referenced ? vr::wrapSignedDegrees(head.head.getYaw() - head.reference.yaw) : 0.f;
+	in.seconds = toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
+
+	const vr::SceneOutput out = state.director.update(in);
+	state.active = in.active;
+	state.kind = in.kind;
+
+	// playerlookat with the fade (#29): the hero turns now, at black
+	if(out.applyLookAt && state.lookAtPending) {
+		state.lookAtPending = false;
+		player.desiredangle = player.angle = state.lookAtAngle;
+		state.meter.lookAtFaded();
+	}
+
+	const char * view = vr::sceneViewName(in.setting);
+	if(out.ended) {
+		gameevent::Event("vr.scene", 200)("state", "end")("kind", vr::sceneKindName(out.endedKind))("view", view)
+			("shown", vr::sceneShownName(out.shown));
+	}
+	if(out.started) {
+		gameevent::Event("vr.scene", 200)("state", "start")("kind", vr::sceneKindName(out.kind))("view", view)
+			("shown", vr::sceneShownName(out.shown));
+	}
+	if(out.cut) {
+		gameevent::Event("vr.scene.cut", 500)("faded", out.fade >= vr::BehindFade ? "yes" : "no")
+			("reason", out.cutReason);
+	}
+
+	// The subtitle of a speak -c line (#29.3 moves this to where the subtitle is really shown, gui/Speech.cpp)
+	if(speechLine != g_sceneSpeechLine) {
+		g_sceneSpeechLine = speechLine;
+		if(speech) {
+			vr::noteSubtitle(speakerName(speech->speaker), speech->text, speech->sample != audio::SourcedSample());
+		} else {
+			vr::clearSubtitle();
+		}
+	}
+
+	return out;
+}
+
+//! One VR frame for the scene meter (#29): the camera the head goes on, \a pos and \a yaw
+static void meterSceneFrame(const vr::SceneOutput & scene, const Vec3f & pos, float yaw) {
+
+	vr::SceneState & state = vr::sceneState();
+
+	vr::SceneMeterFrame frame;
+	frame.active = state.active;
+	frame.shown = scene.shown;
+	frame.fade = scene.fade;
+	frame.pos = pos;
+	frame.yaw = yaw;
+	bool floorFound = false;
+	const float floorY = floorBelow(pos, floorFound);
+	frame.aboveFloor = floorFound ? (floorY - pos.y) / vr::UnitsPerMeter : 0.f;
+	frame.shotChanged = scene.cut;
+	// The stick's turn reaches the hero's yaw a frame later: this frame and the next are the player's own
+	const float turned = vr::turnState().turned();
+	frame.ownTurn = turned != g_sceneTurned[0] || turned != g_sceneTurned[1];
+	g_sceneTurned[1] = g_sceneTurned[0];
+	g_sceneTurned[0] = turned;
+	state.meter.add(frame);
+
+}
+
 void ArxGame::updateActiveCamera() {
 
 	ARX_PROFILE_FUNC();
@@ -2056,6 +2174,35 @@ void ArxGame::updateActiveCamera() {
 	// from. restoreEngineCamera() takes it off again before the engine updates its cameras next frame
 	Vec3f enginePos = cam->m_pos;
 	Anglef engineAngle = cam->angle;
+	Vec3f restorePos = enginePos;
+	Anglef restoreAngle = engineAngle;
+
+	// Scripted scenes in VR (#29): the scene view decides what the eyes get - the hero's head, a held shot of the
+	// game's camera - and the head goes on the player's camera placed there, turned with the hero (the body's
+	// yaw stays the hero's) and then by the shot's yaw. The game's own scene cameras run on underneath; the
+	// player's camera gets the game's pose back next frame
+	vr::SceneOutput scene;
+	const bool sceneFrame = vr::isEnabled() && !g_startupIntro;
+	if(sceneFrame) {
+		scene = updateSceneView(*cam);
+		if(scene.drive) {
+			restorePos = g_playerCamera.m_pos;
+			restoreAngle = g_playerCamera.angle;
+			cam = &g_playerCamera;
+			cam->m_pos = scene.pos;
+			cam->angle = Anglef(0.f, player.angle.getYaw(), 0.f);
+			enginePos = cam->m_pos;
+			engineAngle = cam->angle;
+			EXTERNALVIEW = vr::showsHeroOutside(scene.shown);
+		}
+	} else if(!vr::isEnabled()) {
+		vr::SceneState & state = vr::sceneState();
+		state.director.reset();
+		state.active = false;
+		state.kind = vr::SceneKind::None;
+		state.lookAtPending = false;
+	}
+
 	const char * headInGeometry = nullptr;
 	if(cam == &g_playerCamera && !EXTERNALVIEW) {
 		// The character's eye height, which the head at its reference becomes (#27) - evidence for the scale;
@@ -2069,13 +2216,26 @@ void ArxGame::updateActiveCamera() {
 	}
 	// The intro (#394) is a film on the screen in front of the player: its scripted camera is not the head
 	if(!g_startupIntro && vr::applyHeadPose(cam->m_pos, cam->angle, engineAngle.getYaw())) {
-		m_headView = HeadView{ cam, enginePos, engineAngle };
+		m_headView = HeadView{ cam, restorePos, restoreAngle };
+		if(scene.drive && scene.yawDelta != 0.f) {
+			cam->m_pos = enginePos + vr::turnAboutVertical(cam->m_pos - enginePos, scene.yawDelta);
+			cam->angle.setYaw(MAKEANGLE(cam->angle.getYaw() + scene.yawDelta));
+		}
 		if(cam == &g_playerCamera) {
 			g_playerCameraStablePos += cam->m_pos - enginePos;
 		}
 		headInGeometry = headGeometryCheck(enginePos, cam->m_pos);
+	} else if(scene.drive) {
+		m_headView = HeadView{ cam, restorePos, restoreAngle };
+		cam->angle.setYaw(MAKEANGLE(cam->angle.getYaw() + scene.yawDelta));
 	}
 	vr::updateWallFade(headInGeometry, toMsf(g_platformTime.lastFrameDuration()) / 1000.f);
+
+	if(sceneFrame) {
+		meterSceneFrame(scene, enginePos, MAKEANGLE(engineAngle.getYaw() + scene.yawDelta));
+		// The hero shown in third person (a ghost shot, a camera of the game's own) has the engine's arms (#29)
+		vr::sceneState().armsIk = !EXTERNALVIEW;
+	}
 
 	ManageQuakeFX(cam);
 
@@ -2213,7 +2373,9 @@ void ArxGame::updateLevel() {
 	if(!player.m_paralysed) {
 		manageEditorControls();
 
-		if(!BLOCK_PLAYER_CONTROLS) {
+		// In VR a scripted scene blocks walking even where its script leaves the controls on (#29, owner:
+		// turning allowed in dialogues, walking blocked) - the stick turn is in manageKeyMouse()
+		if(!BLOCK_PLAYER_CONTROLS && !(vr::isEnabled() && vr::sceneState().inScene())) {
 			managePlayerControls();
 		}
 	}
@@ -2305,6 +2467,7 @@ void ArxGame::updateLevel() {
 	restoreEngineCamera();
 
 	updateFirstPersonCamera();
+	g_sceneFirstPos = g_playerCamera.m_pos;
 
 	{
 		vr::perf::Scope perfScript(vr::PerfPhase::Script);
@@ -2566,9 +2729,16 @@ void ArxGame::renderSceneView() {
 
 	// Clear screen & Z buffers
 	GRenderer->Clear(Renderer::ColorBuffer | Renderer::DepthBuffer, g_fogColor);
-	
-	cinematicBorder.render();
-	
+
+	// The cinematic bars (#29): in VR not into the eyes, where they are black bars glued to the face - the
+	// cinemascope state stays for the game's logic. An eye that gets them is counted by the scene meter
+	const bool eye = vr::stereoActive();
+	if(!eye || vr::letterboxInEyes(vr::sceneState().director.shown())) {
+		if(cinematicBorder.render() && eye) {
+			vr::sceneState().meter.letterboxDrawn();
+		}
+	}
+
 	GRenderer->SetAntialiasing(true);
 	
 	GRenderer->SetFogParams(fZFogStart * g_camera->cdepth, fZFogEnd * g_camera->cdepth);
@@ -2626,9 +2796,15 @@ void ArxGame::renderSceneView() {
 	// Death visual
 	ARX_PLAYER_Render_Death();
 
+	// A scene's subtitles in the world (#29.3)
+	if(eye) {
+		vr::drawSubtitlesInEye();
+	}
+
 	// A head in a wall or too far from the body sees black instead of through the wall (#26, D-018): over
-	// the whole view of this eye, under the interface, which stays readable on its own panel
-	const float headFade = vr::fadeStatus().fade;
+	// the whole view of this eye, under the interface, which stays readable on its own panel. A scene's cut
+	// fades the same way (#29): the darker of the two
+	const float headFade = std::max(vr::fadeStatus().fade, vr::isEnabled() ? vr::sceneState().director.fade() : 0.f);
 	if(headFade > 0.f) {
 		UseRenderState state(render2D());
 		EERIEDrawBitmap(Rectf(g_size), 0.0001f, nullptr, Color(Color4f(Color3f::black, headFade)));
@@ -2693,9 +2869,14 @@ void ArxGame::renderInterface() {
 		ManageFade();
 	
 	GRenderer->SetScissor(Rect());
-	
+
 	ARX_SPEECH_Update();
-	
+
+	// A scene's subtitles on the head-locked interface layer (#29.3)
+	if(vr::stereoActive()) {
+		vr::drawSubtitlesOnInterface();
+	}
+
 }
 
 void ArxGame::render() {

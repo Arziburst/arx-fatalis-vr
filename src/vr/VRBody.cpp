@@ -44,6 +44,7 @@
 #include "scene/Object.h"
 #include "vr/ArmIK.h"
 #include "vr/HeadTracking.h"
+#include "vr/SceneView.h"
 #include "vr/VRInput.h"
 #include "vr/VRSystem.h"
 
@@ -668,6 +669,13 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 
 	if(!status.bound) {
 		noteBody(false, "no arm chain on the model");
+		return;
+	}
+
+	// The hero shown in third person - a ghost shot, a scene camera of the game's own - keeps the engine's
+	// body: arms reaching for controllers the viewer holds elsewhere look broken from outside (#29)
+	if(!sceneState().armsIk) {
+		noteBody(false, "third person");
 		return;
 	}
 

@@ -119,6 +119,11 @@ set(arxtest_TESTCASES
 	tests/vr/PerfWriterTest.h
 	tests/vr/PerfWriterTest.cpp
 
+	tests/vr/SceneViewTest.h
+	tests/vr/SceneViewTest.cpp
+	tests/vr/SceneSubtitlesTest.h
+	tests/vr/SceneSubtitlesTest.cpp
+
 
 )
 
@@ -166,6 +171,7 @@ set(arxtest_SOURCES
 	src/vr/FingerCurl.cpp
 	src/vr/RuneTrail.cpp
 	src/vr/MeleeSwing.cpp
+	src/vr/SceneView.cpp
 
 
 	${arxtest_TESTCASES}

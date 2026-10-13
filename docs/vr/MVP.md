@@ -89,7 +89,7 @@ Tasks are done strictly one after another, each tested before the next starts.
 ## Task queue
 
 The exact order in which MVP tasks are picked up. The coordinating session hands out tasks in this
-order; `/next-task` (via `scripts/dev/next-task.ps1`) takes the first task in this list that is in
+order; the coordinator (`scripts/dev/next-task.ps1` shows it) takes the first task in this list that is in
 **Todo** on the board. Keep it up to date: when a task is added to the MVP, insert it where its
 dependencies are met; when a task is split, replace it with its parts.
 

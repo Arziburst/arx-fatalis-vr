@@ -182,5 +182,5 @@ $head = (git -C $path rev-parse HEAD).Trim()
 
 Write-Host "worktree: $path" -ForegroundColor Cyan
 Write-Host "branch:   $Branch from $from (HEAD $($head.Substring(0, 9)), merge base with origin/main $($base.Trim().Substring(0, 9)))"
-Write-Host "next:     cd $path; claude    then /next-task $(if ($Issue) { $Issue } else { ($Branch -split '-')[1] })"
+Write-Host "next:     cd $path; claude    then work on the contract in the issue (workers are started by the coordinator with scripts/dev/start-worker.ps1)"
 if ($PassThru) { return $path }

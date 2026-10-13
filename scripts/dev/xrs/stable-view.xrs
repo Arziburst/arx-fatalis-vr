@@ -145,13 +145,8 @@ view meter report before-levitate
 # ---------------------------------------------------------------------------------------------------------------------
 # Phase 2: the stable view (the fix), the same save loaded again - the levitation and the damage gone
 view stable auto
-# The sword back to the engine first: a status write during the load reads the held weapon after the load freed it
-# (#421, a crash) - the right controller off, then on again in the loaded game
-vr-sim hand right off
-@frames 10
 loadslot 0
 @until state eq GAMEPLAY 60s
-vr-sim hand right on
 @wait 3000
 @until player.controlsBlocked eq false 30s
 @assert view.active eq true
@@ -403,7 +398,8 @@ view meter report after-heal
 @assert camera.motion.maxRollStep eq 0
 @assert camera.motion.maxOffYawStep le 0.01
 
-# A fall (1.6 m, put there by setpos - a cut, then real travel): the view follows within its lag, the angles hold
+# A fall (3.3 m: setpos takes the feet, 330 units over the floor - a cut, then real travel): the view follows within
+# its lag, the angles hold
 setpos 11454 2775 10250; view meter reset
 @frames 10
 @until player.y ge 2900 5s
@@ -429,13 +425,8 @@ view meter report after-levitate
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Phase 3: 45 Hz - the same speed limit (4 cm per frame, 2 per 90 Hz frame), the level jump still still
-# The sword back to the engine first: a status write during the load reads the held weapon after the load freed it
-# (#421, a crash) - the right controller off, then on again in the loaded game
-vr-sim hand right off
-@frames 10
 loadslot 0
 @until state eq GAMEPLAY 60s
-vr-sim hand right on
 @wait 3000
 @until player.controlsBlocked eq false 30s
 goblin_base_0036.setspeed 0

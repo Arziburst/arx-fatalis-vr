@@ -28,13 +28,8 @@ view meter report before-death
 
 # Phase 2: the stable view - the same save, the same death
 view stable auto
-# The sword back to the engine first: a status write during the load reads the held weapon after the load freed it
-# (#421, a crash) - the right controller off, then on again in the loaded game
-vr-sim hand right off
-@frames 10
 loadslot 0
 @until state eq GAMEPLAY 60s
-vr-sim hand right on
 @wait 3000
 @until player.controlsBlocked eq false 30s
 @assert view.active eq true

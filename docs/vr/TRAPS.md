@@ -1043,11 +1043,6 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Cause:** the PC, not the game: other workers build in parallel (the game lock serialises game runs, not compiles), and a starved CPU stretches every phase of the frame at once.
 **Do:** judge pacing and frame costs only from windows at full rate, or repeat the run; a real cost of the game shows in one phase (`cause`), the same way in every run. `perf-summary.ps1` lists the hitches by cause.
 
-## 2026-10-13 - A sequence's in-game `loadslot` crashes the game when a weapon is in the VR hand
-**Symptom:** a `--vr-sim` sequence on `mvp-goblin-fight` (a sword in the right hand) sends `loadslot 0` from a running game; the game exits with code 1 during the level load, a crash report names `VRWeapon.cpp:296` under the status writer (`CommandChannel.cpp`, called from `LoadLevel.cpp`) (#416).
-**Cause:** #421 - the status written during the load reads the held weapon's entity after the load freed it.
-**Do:** until #421 is fixed, put the sword back to the engine first: `vr-sim hand right off`, `@frames 10`, `loadslot 0`, and `vr-sim hand right on` once the level is in GAMEPLAY again (`stable-view.xrs`, `ghost-death.xrs`).
-
 ## 2026-10-13 - In VR an animation never shows in `camera.pitch` / `camera.roll`
 **Symptom:** the camera motion catalog of #416 measured 0 degrees of pitch and roll for every animation with the engine's eye, while the view visibly moved.
 **Cause:** in VR the head pose replaces the engine camera's angles (D-018): only the yaw keeps the body's heading. What the animations did reached the view only through the **position** of the eye vertex.

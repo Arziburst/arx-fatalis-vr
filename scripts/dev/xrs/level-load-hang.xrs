@@ -5,6 +5,8 @@
 @args --loadlevel 10
 
 @until state eq GAMEPLAY 60s
+# The watchdog reads the symbols first (a second or so after the first frame)
+@log \[channel\] hang watchdog: watching the main thread 30s
 
 watchdog 1000
 stall load 3000

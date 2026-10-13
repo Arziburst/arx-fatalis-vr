@@ -283,6 +283,7 @@ void StableViewTest::testMeterStill() {
 	CPPUNIT_ASSERT_EQUAL(0.f, motion.maxOffStepXZ);
 	CPPUNIT_ASSERT_EQUAL(0.f, motion.maxYawStep);
 	CPPUNIT_ASSERT(motion.offsetRange() == Vec3f(0.f));
+	CPPUNIT_ASSERT_EQUAL(0.f, motion.cameraRangeY());
 	vr::resetCameraMotion(motion);
 	CPPUNIT_ASSERT_EQUAL(u64(0), motion.frames);
 	CPPUNIT_ASSERT(!motion.have);
@@ -317,5 +318,7 @@ void StableViewTest::testMeterSway() {
 	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.5f, motion.maxOffStepY, 1e-4f);
 	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.75f, motion.maxOffStepXZ, 1e-4f);
 	CPPUNIT_ASSERT_DOUBLES_EQUAL(4.5f, motion.offsetRange().y, 1e-4f);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(4.5f, motion.cameraRangeY(), 1e-4f);
+	CPPUNIT_ASSERT_EQUAL(0.f, motion.bodyRangeY());
 	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.f, motion.maxPitchStep, 1e-4f);
 }

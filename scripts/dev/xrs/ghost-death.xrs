@@ -1,0 +1,90 @@
+# Death in VR is a still ghost (#416): the view stays at the eye's height and place of the moment of death, the body
+# falls below; the head still looks around and the stick still turns; nothing else moves the view; the darkening and
+# the main menu after it stay. Before the fix (phase 1, "view stable off") the engine's death camera rose over the
+# body for 7 s - measured as the catalog's death row.
+# How the hero is killed: the script console's `poison 100000`, sent several times (its saving throw is random), as in
+# playground-respawn.xrs - an original level, so the death is the real one (the playground respawns at once).
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence ghost-death -Save mvp-goblin-fight
+@sim idle
+@save mvp-goblin-fight
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+goblin_base_0036.setspeed 0
+vr-input turn snap
+vr-input turn angle 45
+
+# Phase 1: the engine's death camera (before the fix), measured from the death to the menu
+view stable off
+@frames 30
+poison 100000; poison 100000; poison 100000; poison 100000; poison 100000; poison 100000; poison 100000; poison 100000
+@until events.byName."player.death" ge 1 15s
+view meter reset
+@until menuMode eq mainmenu 15s
+view meter report before-death
+@assert camera.motion.cameraRangeY gt 10            # the engine's camera moved over the body
+
+# Phase 2: the stable view - the same save, the same death
+view stable auto
+# The sword back to the engine first: a status write during the load reads the held weapon after the load freed it
+# (#421, a crash) - the right controller off, then on again in the loaded game
+vr-sim hand right off
+@frames 10
+loadslot 0
+@until state eq GAMEPLAY 60s
+vr-sim hand right on
+@wait 3000
+@until player.controlsBlocked eq false 30s
+@assert view.active eq true
+@assert view.ghost eq false
+@assert player.life gt 0
+goblin_base_0036.setspeed 0
+@frames 30
+@remember cx camera.x
+@remember cy camera.y
+@remember cz camera.z
+@remember yaw0 camera.yaw
+poison 100000; poison 100000; poison 100000; poison 100000; poison 100000; poison 100000; poison 100000; poison 100000
+@until events.byName."player.death" ge 2 15s
+@until view.ghost eq true 2s
+view meter reset
+@frames 45
+# Still: the eye where it was, not one step, not one degree
+@assert camera.x ge {cx-0.5}
+@assert camera.x le {cx+0.5}
+@assert camera.y ge {cy-0.5}
+@assert camera.y le {cy+0.5}
+@assert camera.z ge {cz-0.5}
+@assert camera.z le {cz+0.5}
+@assert camera.motion.frames ge 30
+@assert camera.motion.maxStepXZ eq 0
+@assert camera.motion.maxStepY eq 0
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxYawStep eq 0
+@assert menuMode eq ingame
+@log vr.body state=engine reason="?dead
+# The stick still turns: one snap, the view turns with the heading, still in place
+vr-input stick right 1 0
+@frames 20
+vr-input stick right 0 0
+@frames 10
+@assert camera.motion.maxYawStep ge 44
+@assert camera.motion.maxOffYawStep le 0.01
+@assert camera.motion.maxStepXZ eq 0
+@assert camera.motion.maxStepY eq 0
+@assert camera.yaw ne {yaw0}
+# The head still looks around: a 30 degree turn of the head turns the view, the place stays
+view meter reset
+vr-sim head rot 30 0 0
+@frames 15
+@assert camera.motion.maxOffYawStep ge 29
+@assert camera.motion.maxStepXZ le 0.01
+@assert camera.motion.maxStepY le 0.01
+view meter report after-death
+# The darkening and the main menu after it, as before
+@until menuMode eq mainmenu 15s
+@assert view.ghost eq true
+@assert errors eq 0

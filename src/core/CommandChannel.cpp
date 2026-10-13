@@ -657,6 +657,8 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("rangeY", range.y);
 			json.value("rangeZ", range.z);
 			json.value("rangeXZ", std::sqrt(range.x * range.x + range.z * range.z));
+			json.value("cameraRangeY", motion.cameraRangeY());
+			json.value("bodyRangeY", motion.bodyRangeY());
 			json.end();
 		}
 		json.end();
@@ -973,6 +975,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("inactive", body.inactive);
 		json.value("posedFrames", body.posedFrames);
 		json.value("shiftX", body.shift.x);
+		json.value("shiftY", body.shift.y); // the stable view's feet lag: the body drawn where the view stands (#416)
 		json.value("shiftZ", body.shift.z);
 		json.value("facingYaw", body.facingYaw);
 		for(size_t hand = 0; hand < vr::HandCount; hand++) {
@@ -1661,7 +1664,8 @@ std::string execute(std::string_view line) {
 
 	if(word == "view") {
 		// The stable view (#416): "stable auto|on|off" forces it like comfort does, "jump|crouch|death <variant>"
-		// sets a variant as cfg.ini would, "meter reset" starts a new stretch of camera.motion
+		// sets a variant as cfg.ini would, "meter reset" starts a new stretch of camera.motion, "meter report <name>"
+		// writes it as one vr.view.motion game event (a row of the catalog)
 		std::string_view value;
 		std::string what(firstWord(rest, value));
 		if(what == "stable") {
@@ -1677,10 +1681,23 @@ std::string execute(std::string_view line) {
 			return std::string();
 		}
 		if(what == "meter") {
-			if(value != "reset") {
-				return refuse("view meter: expected reset, got \"" + std::string(value) + "\"");
+			std::string_view name;
+			std::string verb(firstWord(value, name));
+			if(verb == "reset") {
+				vr::resetCameraMotion(vr::cameraMotion());
+			} else if(verb == "report" && !name.empty()) {
+				vr::reportCameraMotion(name);
+			} else {
+				return refuse("view meter: expected reset or report <name>, got \"" + std::string(value) + "\"");
 			}
-			vr::resetCameraMotion(vr::cameraMotion());
+			return std::string();
+		}
+		if(what == "trace") {
+			long frames = 0;
+			if(!parseIndex(value, frames)) {
+				return refuse("view trace: expected a frame count, got \"" + std::string(value) + "\"");
+			}
+			vr::setViewTrace(int(std::min(frames, 2000l)));
 			return std::string();
 		}
 		std::string error = vr::setViewVariant(what, value);

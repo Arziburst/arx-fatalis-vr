@@ -1537,7 +1537,9 @@ void ArxGame::updateFirstPersonCamera() {
 	Vec3f targetPos = g_playerCamera.m_pos;
 	Anglef targetAngle = g_playerCamera.angle;
 
-	// The stable view (#416) starts afresh where the body is once it is switched on again
+	// The stable view (#416) starts afresh where the body is once it is switched on again; its steps are timed by
+	// the display (vr::noteViewFrame)
+	vr::noteViewFrame(toMsf(g_platformTime.lastFrameDuration()) / 1000.f);
 	vr::setStableViewPlaced(false);
 	if(!vr::comfort().stableView) {
 		vr::stableView().valid = false;
@@ -1575,14 +1577,26 @@ void ArxGame::updateFirstPersonCamera() {
 			// model - horizontally where the collision cylinder is, vertically its feet plus the stance's eye,
 			// height changes smoothed (vr/StableView.h). The head pose goes on top as before (D-018)
 			vr::StableViewInput input;
-			input.dt = toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
+			input.dt = vr::viewStepSeconds();
 			input.feetY = player.basePosition().y;
 			const bool crouched = (player.m_currentMovement & PLAYER_CROUCH) != 0;
 			input.eyeAboveFeet = -(crouched ? player.crouchHeight() : player.baseHeight());
-			// A jump from the take-off to the landing; a fall off a ledge is travel the view follows
-			input.jumping = player.jumpphase != NotJumping && !player.falling;
+			// A jump from the take-off to the landing; a fall off a ledge is travel the view follows. The engine ends
+			// the jump while the body still hangs over the floor (21 units at the end of its landing animation) and
+			// drops it there a frame later: the jump lasts until the body is on firm ground, half a second at most (a
+			// platform or water may never count as firm ground)
 			vr::StableView & view = vr::stableView();
+			static float landing = 0.f;
+			const bool engineJump = player.jumpphase != NotJumping && !player.falling;
+			landing = engineJump ? 0.f : landing + input.dt;
+			input.jumping = engineJump || (view.valid && view.jumping && !player.onfirmground && landing < 0.5f);
 			vr::updateStableView(view, input, vr::stableViewParams());
+			if(vr::takeViewTraceFrame()) {
+				LogInfo << "[vr] view trace: bodyFeet=" << input.feetY << " viewFeet=" << view.feetY << " eye=" << view.eye
+				        << " jumping=" << input.jumping << " phase=" << int(player.jumpphase)
+				        << " falling=" << player.falling << " onFirmGround=" << player.onfirmground
+				        << " dt=" << input.dt;
+			}
 			g_playerCameraStablePos = g_playerCamera.m_pos = Vec3f(player.pos.x, view.cameraY(), player.pos.z);
 			vr::setStableViewPlaced(true);
 
@@ -1966,7 +1980,7 @@ void ArxGame::updateActiveCamera() {
 	// The camera this frame renders with against the body's travel and turn (#416): status.json camera.motion
 	{
 		vr::CameraSample sample;
-		sample.dt = toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
+		sample.dt = vr::viewFrameSeconds();
 		sample.camera = cam->m_pos;
 		sample.angle = cam->angle;
 		sample.body = player.pos;

@@ -1,0 +1,504 @@
+# The stable view (#416, #57): with the head held still, nothing but the body's real travel moves the VR camera - no
+# sway from walking, running, strafing, jumping, landing, falling, crouching, the combat stance, the charge, a swing,
+# the rune stance, a cast, a hit, a heal, levitation. The camera motion meter (status.json camera.motion, reset by
+# "view meter reset") measures each action, "view meter report <name>" writes it as a vr.view.motion game event: the
+# catalog of the PR is grep "vr.view.motion" in arx.log.
+#   phase 1  "view stable off": the engine's eye as before the fix (bobbing off in VR, #76) - measured, no asserts
+#   phase 2  the save loaded again, the stable view on (auto: the VR session): the same actions with the limits
+#   phase 3  the same at 45 Hz (vr-sim rate 45): jump, crouch, run
+# The limits, every action: the horizontal step equals the body's step (maxOffStepXZ), no pitch, roll or yaw that is
+# not the body's turn, no height step above 2 cm per 90 Hz frame (maxStepY90 = the height speed / 90 - the same speed
+# at 45 Hz); the camera's height moves no more than the body's own (cameraRangeY <= bodyRangeY), a level jump not at
+# all, the crouch toggle by the 50 cm of the stance. A fall is real travel: only the angles and the horizontal hold.
+# Runs on the test save mvp-goblin-fight (a sword in the hand, the goblin 3.5 m ahead in the corridor, held still):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence stable-view -Save mvp-goblin-fight
+@sim idle
+@save mvp-goblin-fight
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert view.active eq true
+@assert view.placed eq true
+@assert view.jump eq level
+@assert view.crouch eq slow
+goblin_base_0036.setspeed 0
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Phase 1: the engine's eye (before the fix)
+view stable off
+@frames 30
+@assert view.active eq false
+@assert view.placed eq false
+@remember x0 player.x
+
+view meter reset
+@frames 90
+view meter report before-idle
+
+view meter reset
+vr-input stick left 0 0.5
+@wait 1000
+vr-input stick left 0 0
+@frames 20
+view meter report before-walk
+
+view meter reset
+vr-input stick left 0 -1
+@wait 1000
+vr-input stick left 0 0
+@frames 20
+view meter report before-run-back
+
+view meter reset
+vr-input stick left 0 1
+@wait 600
+vr-input stick left 0 0
+@frames 20
+view meter report before-run
+
+view meter reset
+vr-input stick left -1 0
+@wait 800
+vr-input stick left 1 0
+@wait 800
+vr-input stick left 0 0
+@frames 20
+view meter report before-strafe
+
+view meter reset
+vr-input tap right.a
+@until player.jumping eq true 2s
+@until player.jumping eq false 5s
+@frames 60
+view meter report before-jump
+
+view meter reset
+crouch on
+@until player.crouched eq true 5s
+@wait 1500
+view meter report before-crouch-down
+view meter reset
+crouch off
+@until player.crouched eq false 5s
+@wait 1500
+view meter report before-crouch-up
+
+view meter reset
+combat on
+@wait 1500
+view meter report before-combat-draw
+view meter reset
+vr-sim action trigger right 1
+@wait 2000
+vr-sim action trigger right 0
+@frames 20
+view meter report before-charge
+view meter reset
+vr-sim @+1-8 hand right pos -0.4 -0.6 -0.35
+@frames 30
+vr-sim @+1-8 hand right pos 0.3 -0.6 -0.35
+@frames 30
+view meter report before-swing
+view meter reset
+combat off
+@wait 1500
+view meter report before-combat-sheathe
+
+view meter reset
+vr-sim action trackpad_press left 1
+@frames 20
+vr-sim action trigger right 1
+vr-sim @+1-20 hand right pos 0.3 -0.3 -0.45
+@frames 30
+vr-sim action trigger right 0
+vr-sim action trackpad_press left 0
+@frames 30
+spellcast -fsmx 5 magic_sight self
+@wait 1500
+view meter report before-cast
+
+view meter reset
+goblin_base_0036.dodamage player 2
+@wait 700
+goblin_base_0036.dodamage player 2
+@wait 1000
+view meter report before-hit
+
+view meter reset
+specialfx heal 10
+@wait 1000
+view meter report before-heal
+
+setpos 11454 2775 10250; view meter reset
+@frames 10
+@until player.y ge 2900 5s
+@wait 1500
+view meter report before-fall
+
+view meter reset
+spellcast -fsmx 5 levitate self
+@wait 2500
+view meter report before-levitate
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Phase 2: the stable view (the fix), the same save loaded again - the levitation and the damage gone
+view stable auto
+# The sword back to the engine first: a status write during the load reads the held weapon after the load freed it
+# (#421, a crash) - the right controller off, then on again in the loaded game
+vr-sim hand right off
+@frames 10
+loadslot 0
+@until state eq GAMEPLAY 60s
+vr-sim hand right on
+@wait 3000
+@until player.controlsBlocked eq false 30s
+@assert view.active eq true
+@assert view.placed eq true
+@assert view.ghost eq false
+goblin_base_0036.setspeed 0
+@frames 30
+
+view meter reset
+@frames 90
+view meter report after-idle
+@assert camera.motion.frames ge 60
+@assert camera.motion.maxStepXZ le 0.05
+@assert camera.motion.cameraRangeY le 0.05
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxYawStep le 0.01
+
+view meter reset
+vr-input stick left 0 0.5
+@wait 1000
+vr-input stick left 0 0
+@frames 20
+view meter report after-walk
+@remember body camera.motion.bodyRangeY
+@assert camera.motion.maxStepXZ gt 0.5                # it walked
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.cameraRangeY le {body+0.5}
+@assert camera.motion.maxStepY90 le 2.01
+@assert camera.motion.maxStepY le 2.01                 # and per shown frame: a late frame slows the view, never a jump
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+
+view meter reset
+vr-input stick left 0 -1
+@wait 1000
+vr-input stick left 0 0
+@frames 20
+view meter report after-run-back
+@remember body camera.motion.bodyRangeY
+@assert camera.motion.maxStepXZ gt 0.5
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.cameraRangeY le {body+0.5}
+@assert camera.motion.maxStepY90 le 2.01
+@assert camera.motion.maxStepY le 2.01                 # and per shown frame: a late frame slows the view, never a jump
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+
+view meter reset
+vr-input stick left 0 1
+@wait 600
+vr-input stick left 0 0
+@frames 20
+view meter report after-run
+@remember body camera.motion.bodyRangeY
+@assert camera.motion.maxStepXZ gt 0.5
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.cameraRangeY le {body+0.5}
+@assert camera.motion.maxStepY90 le 2.01
+@assert camera.motion.maxStepY le 2.01                 # and per shown frame: a late frame slows the view, never a jump
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+
+view meter reset
+vr-input stick left -1 0
+@wait 800
+vr-input stick left 1 0
+@wait 800
+vr-input stick left 0 0
+@frames 20
+view meter report after-strafe
+@remember body camera.motion.bodyRangeY
+@assert camera.motion.maxStepXZ gt 0.5
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.cameraRangeY le {body+0.5}
+@assert camera.motion.maxStepY90 le 2.01
+@assert camera.motion.maxStepY le 2.01                 # and per shown frame: a late frame slows the view, never a jump
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+
+# The level jump (the default): the body goes up and down, the view does not move at all
+view meter reset
+vr-input tap right.a
+@until player.jumping eq true 2s
+@until player.jumping eq false 5s
+@frames 60
+view meter report after-jump-level
+@assert camera.motion.bodyRangeY gt 50              # it jumped
+@assert camera.motion.cameraRangeY le 0.5
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxStepY90 le 2.01
+@assert camera.motion.maxStepY le 2.01                 # and per shown frame: a late frame slows the view, never a jump
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+
+# The arc jump: a soft hop, never faster than the limit
+view jump arc
+@assert view.jump eq arc
+view meter reset
+vr-input tap right.a
+@until player.jumping eq true 2s
+@until player.jumping eq false 5s
+@frames 90
+view meter report after-jump-arc
+@assert camera.motion.bodyRangeY gt 50
+@assert camera.motion.cameraRangeY gt 10
+@assert camera.motion.cameraRangeY lt 100
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxStepY90 le 2.01
+@assert camera.motion.maxStepY le 2.01                 # and per shown frame: a late frame slows the view, never a jump
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+view jump level
+
+# The crouch toggle: the view glides the stance's 50 cm (slow: about a second), nothing else
+view meter reset
+crouch on
+@until player.crouched eq true 5s
+@wait 1800
+view meter report after-crouch-down
+@assert view.eye ge 119.9
+@assert view.eye le 120.1
+@assert camera.motion.cameraRangeY ge 49.5
+@assert camera.motion.cameraRangeY le 50.5
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxStepY90 le 2.01
+@assert camera.motion.maxStepY le 2.01                 # and per shown frame: a late frame slows the view, never a jump
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+view meter reset
+crouch off
+@until player.crouched eq false 5s
+@wait 1800
+view meter report after-crouch-up
+@assert view.eye ge 169.9
+@assert view.eye le 170.1
+@assert camera.motion.cameraRangeY ge 49.5
+@assert camera.motion.cameraRangeY le 50.5
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxStepY90 le 2.01
+@assert camera.motion.maxStepY le 2.01                 # and per shown frame: a late frame slows the view, never a jump
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+# The fast glide: within the limit too
+view crouch fast
+view meter reset
+crouch on
+@until player.crouched eq true 5s
+@wait 1000
+crouch off
+@until player.crouched eq false 5s
+@wait 1000
+view meter report after-crouch-fast
+@assert camera.motion.cameraRangeY ge 49.5
+@assert camera.motion.maxStepY90 le 2.01
+@assert camera.motion.maxStepY le 2.01                 # and per shown frame: a late frame slows the view, never a jump
+@assert camera.motion.maxOffStepXZ le 0.05
+view crouch slow
+
+view meter reset
+combat on
+@wait 1500
+view meter report after-combat-draw
+@assert camera.motion.cameraRangeY le 0.05
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+view meter reset
+vr-sim action trigger right 1
+@wait 2000
+vr-sim action trigger right 0
+@frames 20
+view meter report after-charge
+@assert camera.motion.cameraRangeY le 0.05
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+view meter reset
+vr-sim @+1-8 hand right pos -0.4 -0.6 -0.35
+@frames 30
+vr-sim @+1-8 hand right pos 0.3 -0.6 -0.35
+@frames 30
+view meter report after-swing
+@assert camera.motion.cameraRangeY le 0.05
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+view meter reset
+combat off
+@wait 1500
+view meter report after-combat-sheathe
+@assert camera.motion.cameraRangeY le 0.05
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+
+view meter reset
+vr-sim action trackpad_press left 1
+@frames 20
+vr-sim action trigger right 1
+vr-sim @+1-20 hand right pos 0.3 -0.3 -0.45
+@frames 30
+vr-sim action trigger right 0
+vr-sim action trackpad_press left 0
+@frames 30
+spellcast -fsmx 5 magic_sight self
+@wait 1500
+view meter report after-cast
+@assert camera.motion.cameraRangeY le 0.05
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+
+view meter reset
+goblin_base_0036.dodamage player 2
+@wait 700
+goblin_base_0036.dodamage player 2
+@wait 1000
+view meter report after-hit
+@remember body camera.motion.bodyRangeY
+@assert camera.motion.cameraRangeY le {body+0.5}
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxStepY90 le 2.01
+@assert camera.motion.maxStepY le 2.01                 # and per shown frame: a late frame slows the view, never a jump
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+
+view meter reset
+specialfx heal 10
+@wait 1000
+view meter report after-heal
+@assert camera.motion.cameraRangeY le 0.05
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+
+# A fall (1.6 m, put there by setpos - a cut, then real travel): the view follows within its lag, the angles hold
+setpos 11454 2775 10250; view meter reset
+@frames 10
+@until player.y ge 2900 5s
+@wait 1500
+view meter report after-fall
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+@assert view.feetLag le 0.05
+@assert view.feetLag ge -0.05
+
+view meter reset
+spellcast -fsmx 5 levitate self
+@wait 2500
+view meter report after-levitate
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxStepY90 le 2.01
+@assert camera.motion.maxStepY le 2.01                 # and per shown frame: a late frame slows the view, never a jump
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Phase 3: 45 Hz - the same speed limit (4 cm per frame, 2 per 90 Hz frame), the level jump still still
+# The sword back to the engine first: a status write during the load reads the held weapon after the load freed it
+# (#421, a crash) - the right controller off, then on again in the loaded game
+vr-sim hand right off
+@frames 10
+loadslot 0
+@until state eq GAMEPLAY 60s
+vr-sim hand right on
+@wait 3000
+@until player.controlsBlocked eq false 30s
+goblin_base_0036.setspeed 0
+vr-sim rate 45
+@frames 60
+@assert view.placed eq true
+
+view meter reset
+vr-input stick left 0 1
+@wait 600
+vr-input stick left 0 0
+@frames 20
+view meter report after45-run
+@remember body camera.motion.bodyRangeY
+@assert camera.motion.maxDtMs gt 18                  # the frames are 45 Hz ones
+@assert camera.motion.maxStepXZ gt 0.5
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.cameraRangeY le {body+0.5}
+@assert camera.motion.maxStepY90 le 2.01
+@assert camera.motion.maxStepY le 4.01                 # one 45 Hz frame: two 90 Hz slots
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert camera.motion.maxOffYawStep le 0.01
+
+view meter reset
+vr-input tap right.a
+@until player.jumping eq true 2s
+@until player.jumping eq false 5s
+@frames 30
+view meter report after45-jump-level
+@assert camera.motion.bodyRangeY gt 50
+@assert camera.motion.cameraRangeY le 0.5
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+
+view jump arc
+view meter reset
+vr-input tap right.a
+@until player.jumping eq true 2s
+@until player.jumping eq false 5s
+@frames 45
+view meter report after45-jump-arc
+@assert camera.motion.cameraRangeY gt 10
+@assert camera.motion.maxStepY90 le 2.01
+@assert camera.motion.maxStepY le 4.01                 # one 45 Hz frame: two 90 Hz slots
+@assert camera.motion.maxOffStepXZ le 0.05
+view jump level
+
+view meter reset
+crouch on
+@until player.crouched eq true 5s
+@wait 1800
+crouch off
+@until player.crouched eq false 5s
+@wait 1800
+view meter report after45-crouch
+@assert camera.motion.cameraRangeY ge 49.5
+@assert camera.motion.cameraRangeY le 50.5
+@assert camera.motion.maxStepY90 le 2.01
+@assert camera.motion.maxStepY le 4.01                 # one 45 Hz frame: two 90 Hz slots
+@assert camera.motion.maxOffStepXZ le 0.05
+@assert camera.motion.maxPitchStep eq 0
+@assert camera.motion.maxRollStep eq 0
+@assert events.byName."vr.view.motion" ge 40
+@assert errors eq 0

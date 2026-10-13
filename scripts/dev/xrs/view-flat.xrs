@@ -1,0 +1,47 @@
+# Flat mode keeps the engine's camera (#416): without VR the stable view is off - running bobs the view (cfg.ini
+# view_bobbing, on by default), a jump moves it with the model, and death is the engine's death camera rising over
+# the body for 7 s before the main menu. The same actions as stable-view.xrs and ghost-death.xrs, flat.
+#   .\scripts\dev\smoke-test.ps1 -Sequence view-flat -Save mvp-goblin-fight
+@save mvp-goblin-fight
+@args --loadslot 0 --no-vr
+
+@until state eq GAMEPLAY 60s
+@wait 3000                                   # past the level's fade-in
+@assert player.controlsBlocked eq false
+@assert comfort.active eq false
+@assert comfort.viewBobbing eq true
+@assert comfort.stableView eq false
+@assert view.active eq false
+@assert view.placed eq false
+goblin_base_0036.setspeed 0
+@frames 30
+
+# Running bobs the view: the camera leaves its place on the body
+view meter reset
+vr-input stick left 0 1
+@wait 600
+vr-input stick left 0 0
+@frames 20
+view meter report flat-run
+@assert camera.motion.maxStepXZ gt 0.5
+@assert camera.motion.maxOffStepY gt 0.1
+@assert view.placed eq false
+
+# A jump moves the view with the model
+view meter reset
+vr-input tap right.a
+@until player.jumping eq true 2s
+@until player.jumping eq false 5s
+@frames 60
+view meter report flat-jump
+@assert camera.motion.cameraRangeY gt 50
+
+# Death: the engine's death camera, then the main menu
+poison 100000; poison 100000; poison 100000; poison 100000; poison 100000; poison 100000; poison 100000; poison 100000
+@until events.byName."player.death" ge 1 15s
+view meter reset
+@until menuMode eq mainmenu 15s
+view meter report flat-death
+@assert camera.motion.cameraRangeY gt 10
+@assert view.ghost eq false
+@assert errors eq 0

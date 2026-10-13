@@ -147,11 +147,19 @@ struct CameraMotion {
 	float maxOffYawStep = 0.f; //!< degrees per frame that are not the body's turn
 	Vec3f minOffset = Vec3f(0.f); //!< the camera's place relative to the body: its range is the sway
 	Vec3f maxOffset = Vec3f(0.f);
+	float minCameraY = 0.f;       //!< the camera's own height range: what a jump or a crouch did to the view
+	float maxCameraY = 0.f;
+	float minBodyY = 0.f;         //!< the body's height range: what the body itself travelled up and down
+	float maxBodyY = 0.f;
 	bool have = false;
 	CameraSample last;
 
 	//! The range of the camera's place relative to the body, cm (x, y, z)
 	Vec3f offsetRange() const { return maxOffset - minOffset; }
+	//! How far the camera's height moved in all, cm
+	float cameraRangeY() const { return maxCameraY - minCameraY; }
+	//! How far the body's height moved in all, cm
+	float bodyRangeY() const { return maxBodyY - minBodyY; }
 };
 
 void resetCameraMotion(CameraMotion & motion);

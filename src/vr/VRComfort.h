@@ -135,6 +135,31 @@ void setDeathGhost(bool ghost);
 //! The camera's motion since the last \ref resetCameraMotion (status.json \c camera.motion, the channel's \c view \c meter)
 CameraMotion & cameraMotion();
 
+/*!
+ * \brief The time this frame is shown after the last one - once per frame, before the first-person camera
+ *
+ * In VR the predicted display times of two frames (a whole number of display slots: 11.1 ms at 90 Hz, more for a
+ * missed slot) - what the eye sees the step over, free of the game clock's jitter; in flat mode (or before the first
+ * located frame) the game's frame time. The camera motion meter measures speeds with it.
+ */
+void noteViewFrame(float gameSeconds);
+float viewFrameSeconds();
+
+/*!
+ * \return \ref viewFrameSeconds, but never more than one display slot (the shortest interval of the last 30 frames):
+ *         the stable view's step - a frame shown late (a hitch) slows the view's glide instead of making it jump, so
+ *         one shown frame moves it at most 2 cm at 90 Hz
+ */
+float viewStepSeconds();
+
+//! Log the stable view's inputs and state for the next \a frames frames (at most 2000), one \c [vr] \c view \c trace: line each
+void setViewTrace(int frames);
+//! \return true when this frame is traced (counts it down)
+bool takeViewTraceFrame();
+
+//! Write the camera motion since the last reset as one \c vr.view.motion game event named \a name - a row of the catalog
+void reportCameraMotion(std::string_view name);
+
 } // namespace vr
 
 #endif // ARX_VR_VRCOMFORT_H

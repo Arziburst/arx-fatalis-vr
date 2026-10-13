@@ -166,6 +166,8 @@ void addCameraSample(CameraMotion & motion, const CameraSample & sample) {
 		motion.have = true;
 		motion.last = sample;
 		motion.minOffset = motion.maxOffset = offset;
+		motion.minCameraY = motion.maxCameraY = sample.camera.y;
+		motion.minBodyY = motion.maxBodyY = sample.body.y;
 		return;
 	}
 
@@ -195,6 +197,10 @@ void addCameraSample(CameraMotion & motion, const CameraSample & sample) {
 
 	motion.minOffset = glm::min(motion.minOffset, offset);
 	motion.maxOffset = glm::max(motion.maxOffset, offset);
+	motion.minCameraY = std::min(motion.minCameraY, sample.camera.y);
+	motion.maxCameraY = std::max(motion.maxCameraY, sample.camera.y);
+	motion.minBodyY = std::min(motion.minBodyY, sample.body.y);
+	motion.maxBodyY = std::max(motion.maxBodyY, sample.body.y);
 	motion.last = sample;
 }
 

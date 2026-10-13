@@ -19,9 +19,13 @@
 
 #include "vr/VRComfort.h"
 
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <string>
 
 #include "core/Config.h"
+#include "core/GameEvent.h"
 #include "io/log/Logger.h"
 #include "vr/VRSystem.h"
 
@@ -37,6 +41,12 @@ StableView g_view;
 bool g_viewPlaced = false;
 bool g_ghost = false;
 CameraMotion g_motion;
+int g_traceFrames = 0;
+float g_viewSeconds = 0.f;
+s64 g_lastDisplayTime = 0;
+float g_stepSeconds = 0.f;
+std::array<float, 30> g_slots = {};
+size_t g_slotIndex = 0;
 ViewVariants g_variants;
 bool g_variantsLogged = false;
 std::string g_loggedVariants;
@@ -227,6 +237,62 @@ void setDeathGhost(bool ghost) {
 
 CameraMotion & cameraMotion() {
 	return g_motion;
+}
+
+void noteViewFrame(float gameSeconds) {
+	g_viewSeconds = gameSeconds;
+	g_stepSeconds = gameSeconds;
+	const FrameViews & views = frameViews();
+	if(views.displayTime != 0 && views.displayTime != g_lastDisplayTime) {
+		const double seconds = double(views.displayTime - g_lastDisplayTime) * 1e-9;
+		if(g_lastDisplayTime != 0 && seconds > 0.0 && seconds < 0.25) {
+			g_viewSeconds = float(seconds);
+			// One display slot: the shortest of the last frames' intervals (a missed slot is a longer one)
+			g_slots[g_slotIndex] = g_viewSeconds;
+			g_slotIndex = (g_slotIndex + 1) % g_slots.size();
+			float slot = g_viewSeconds;
+			for(float s : g_slots) {
+				if(s > 0.f) {
+					slot = std::min(slot, s);
+				}
+			}
+			g_stepSeconds = slot;
+		}
+		g_lastDisplayTime = views.displayTime;
+	}
+}
+
+float viewFrameSeconds() {
+	return g_viewSeconds;
+}
+
+float viewStepSeconds() {
+	return g_stepSeconds;
+}
+
+void setViewTrace(int frames) {
+	g_traceFrames = std::clamp(frames, 0, 2000);
+}
+
+bool takeViewTraceFrame() {
+	if(g_traceFrames <= 0) {
+		return false;
+	}
+	g_traceFrames--;
+	return true;
+}
+
+void reportCameraMotion(std::string_view name) {
+	const CameraMotion & m = g_motion;
+	const Vec3f range = m.offsetRange();
+	const float rangeXZ = std::sqrt(range.x * range.x + range.z * range.z);
+	gameevent::Event("vr.view.motion")("name", std::string(name))("stable", comfort().stableView)
+		("frames", m.frames)("maxDtMs", m.maxDt * 1000.f, 1)
+		("maxStepY", m.maxStepY, 2)("maxStepY90", m.maxSpeedY / 90.f, 2)("cameraRangeY", m.cameraRangeY(), 1)
+		("bodyRangeY", m.bodyRangeY(), 1)
+		("maxStepXZ", m.maxStepXZ, 2)("maxOffStepXZ", m.maxOffStepXZ, 2)("maxOffStepY", m.maxOffStepY, 2)
+		("rangeXZ", rangeXZ, 1)("rangeY", range.y, 1)
+		("maxPitchStep", m.maxPitchStep, 2)("maxRollStep", m.maxRollStep, 2)("maxOffYawStep", m.maxOffYawStep, 2);
 }
 
 } // namespace vr

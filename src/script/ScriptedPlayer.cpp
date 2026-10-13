@@ -44,6 +44,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "script/ScriptedPlayer.h"
 
 #include "core/Core.h"
+#include "core/GameEvent.h"
 #include "game/EntityManager.h"
 #include "game/Inventory.h"
 #include "game/Item.h"
@@ -62,6 +63,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "script/ScriptEvent.h"
 #include "script/ScriptUtils.h"
 #include "util/Cast.h"
+#include "vr/SceneView.h"
+#include "vr/VRSystem.h"
 
 
 namespace script {
@@ -527,8 +530,26 @@ public:
 			return Failed;
 		}
 		
+		if(!vr::isEnabled()) {
+			ForcePlayerLookAtIO(t);
+			return Success;
+		}
+
+		// In VR the hero's turn is the player's view (#29): ignored, or turned at the black of a short fade
+		const Anglef angle = player.angle;
+		const Anglef desired = player.desiredangle;
 		ForcePlayerLookAtIO(t);
-		
+		vr::SceneState & scene = vr::sceneState();
+		scene.lookAtAngle = player.angle;
+		player.angle = angle;
+		player.desiredangle = desired;
+		const vr::SceneLookAt mode = scene.lookAt;
+		scene.meter.lookAtSeen();
+		gameevent::Event("vr.scene.lookat", 200)("how", vr::sceneLookAtName(mode))("target", t->idString());
+		if(scene.director.lookAt(mode)) {
+			scene.lookAtPending = true;
+		}
+
 		return Success;
 	}
 	

@@ -27,11 +27,15 @@ save mvp-new-game
 
 # --- scene-kultar: T1 of #29, one step before the Kultar scene's trigger --------------------------------------------
 # After the prison intro the hero stands at MARKER_0112 (8540 3105 8460), yaw 0, facing +z; the zone KULTAR_WAKE (armed by
-# the intro) lies 2.5-3.5 m ahead, a strip about 1.5 m deep. This spot is 2.2 m ahead, facing +z: a walk forward starts the
-# scene (Kultar at the bars: camera entities, cinemascope, playerlookat, three voiced lines).
-setpos 8540 3105 8680 0
+# the intro) is a strip about 1 m deep across the cell, 2.5-3.5 m ahead. Entering it only sends Kultar to the bars between
+# the cells (MARKER_0117, 9103 8836); his scene starts once the hero is within 5 m of him there (his CHECK_DIST), so this
+# spot is on the cell's right side, towards those bars: 8700 8660 (at 8740 and beyond the wall holds the hero), facing +z,
+# the zone 0.8 m ahead; a walk forward stops at z 8898, 4.1 m from Kultar (#29: from 8540 the hero stopped at the portcullis
+# 6 m away and the scene never started). A walk forward starts the scene (Kultar at the bars: camera entities,
+# cinemascope, playerlookat, three voiced lines).
+setpos 8700 3105 8660 0
 @wait 2
-@describe Kultar at the bars (#29, T1): the hero one step before the trigger zone KULTAR_WAKE, facing +z; walking forward about half a metre starts the scene (camera entities).
+@describe Kultar at the bars (#29, T1): the hero one step before the trigger zone KULTAR_WAKE, by the bars to Kultar's cell, facing +z; walking forward about a metre starts the scene (camera entities) once Kultar reached the bars.
 shot scene-kultar
 @wait 1
 save scene-kultar

@@ -1,0 +1,540 @@
+/*
+ * Copyright 2026 Arx Fatalis VR contributors
+ *
+ * This file is part of Arx Fatalis VR, based on Arx Libertatis.
+ *
+ * Arx Libertatis is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Arx Libertatis is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Arx Libertatis.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include "vr/SceneViewTest.h"
+
+#include <string>
+
+#include "vr/SceneView.h"
+
+CppUnit::AutoRegisterSuite<SceneViewTest> g_registerSceneViewTest;
+
+using namespace vr;
+
+namespace {
+
+const float SvFrame = 1.f / 90.f;
+const float SvEps = 1e-3f;
+
+//! The hero standing on a floor at y = 0 (y down), his eye 1.7 m up, facing yaw 0, the head ahead
+SceneInput standing() {
+	SceneInput in;
+	in.setting = SceneViewSetting::First;
+	in.firstPos = Vec3f(1000.f, -170.f, 2000.f);
+	in.enginePos = in.firstPos;
+	in.engineFloorY = 0.f;
+	in.engineFloor = true;
+	in.seconds = SvFrame;
+	return in;
+}
+
+SceneInput sceneOf(SceneInput in, SceneKind kind, u64 shot, SceneViewSetting setting) {
+	in.active = true;
+	in.kind = kind;
+	in.shot = shot;
+	in.setting = setting;
+	return in;
+}
+
+bool same(const Vec3f & a, const Vec3f & b) {
+	return std::abs(a.x - b.x) < SvEps && std::abs(a.y - b.y) < SvEps && std::abs(a.z - b.z) < SvEps;
+}
+
+/*!
+ * Frames of \a in until the director cuts (at most \a limit). \return the cutting frame's output;
+ * \a held is false if any frame before it showed something else than \a heldPos
+ */
+SceneOutput untilCut(SceneDirector & director, const SceneInput & in, const Vec3f & heldPos, bool & held,
+                     int & frames, int limit = 200) {
+	held = true;
+	for(frames = 1; frames <= limit; frames++) {
+		SceneOutput out = director.update(in);
+		if(out.cut) {
+			return out;
+		}
+		if(!same(out.pos, heldPos)) {
+			held = false;
+		}
+	}
+	return SceneOutput();
+}
+
+//! Frames of \a in until the fade is gone
+void settle(SceneDirector & director, const SceneInput & in) {
+	for(int i = 0; i < 200 && (i < 2 || director.fade() > 0.f); i++) {
+		director.update(in);
+	}
+}
+
+} // anonymous namespace
+
+void SceneViewTest::namesTest() {
+
+	for(SceneViewSetting view : { SceneViewSetting::First, SceneViewSetting::Observer, SceneViewSetting::Ghost,
+	                              SceneViewSetting::Hybrid }) {
+		CPPUNIT_ASSERT(parseSceneView(sceneViewName(view)) == view);
+	}
+	CPPUNIT_ASSERT_EQUAL(std::string("hybrid"), std::string(sceneViewName(DefaultSceneView)));
+	CPPUNIT_ASSERT(!parseSceneView("Ghost"));
+	CPPUNIT_ASSERT(!parseSceneView(""));
+
+	CPPUNIT_ASSERT(parseSceneLookAt("ignore") == SceneLookAt::Ignore);
+	CPPUNIT_ASSERT(parseSceneLookAt("fade") == SceneLookAt::Fade);
+	CPPUNIT_ASSERT(!parseSceneLookAt("snap"));
+	CPPUNIT_ASSERT_EQUAL(std::string("ignore"), std::string(sceneLookAtName(DefaultSceneLookAt)));
+
+	CPPUNIT_ASSERT_EQUAL(std::string("none"), std::string(sceneShownName(SceneShown::None)));
+	CPPUNIT_ASSERT_EQUAL(std::string("screen"), std::string(sceneShownName(SceneShown::Screen)));
+	CPPUNIT_ASSERT_EQUAL(std::string("entity"), std::string(sceneKindName(SceneKind::Entity)));
+	CPPUNIT_ASSERT_EQUAL(std::string("speech"), std::string(sceneKindName(SceneKind::Speech)));
+}
+
+void SceneViewTest::shownViewTest() {
+
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::First, SceneKind::Entity) == SceneShown::First);
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Ghost, SceneKind::Speech) == SceneShown::Ghost);
+	// The letterbox alone has no scene camera: the hero's head in every view
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Ghost, SceneKind::None) == SceneShown::First);
+	// Until #29.2 the observer and the hybrid show the hero's head
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Observer, SceneKind::Entity) == SceneShown::First);
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Hybrid, SceneKind::Speech) == SceneShown::First);
+
+	CPPUNIT_ASSERT(showsHeroOutside(SceneShown::Ghost));
+	CPPUNIT_ASSERT(!showsHeroOutside(SceneShown::First));
+	CPPUNIT_ASSERT(!showsHeroOutside(SceneShown::None));
+	CPPUNIT_ASSERT(!letterboxInEyes(SceneShown::First));
+	CPPUNIT_ASSERT(!letterboxInEyes(SceneShown::Ghost));
+}
+
+void SceneViewTest::fadeTimingTest() {
+
+	SceneFade fade;
+	CPPUNIT_ASSERT(!fade.busy());
+	fade.request(0.15f, 0.25f, 2);
+
+	// Out in 0.15 s: black on the 14th frame at 90 Hz, not before
+	for(int i = 1; i < 14; i++) {
+		fade.update(SvFrame);
+		CPPUNIT_ASSERT(!fade.isBlack());
+	}
+	fade.update(SvFrame);
+	CPPUNIT_ASSERT(fade.isBlack());
+
+	// Black two more frames, then in
+	fade.update(SvFrame);
+	CPPUNIT_ASSERT(fade.isBlack());
+	fade.update(SvFrame);
+	CPPUNIT_ASSERT(fade.isBlack());
+	fade.update(SvFrame);
+	CPPUNIT_ASSERT(fade.value() < BehindFade && fade.value() > 0.9f);
+
+	// Back in 0.25 s
+	int frames = 1;
+	while(fade.busy() && frames < 100) {
+		fade.update(SvFrame);
+		frames++;
+	}
+	CPPUNIT_ASSERT_EQUAL(0.f, fade.value());
+	CPPUNIT_ASSERT(frames >= 22 && frames <= 24);
+
+	// A second request while black keeps it black for the black frames from a hold
+	fade.request(0.1f, 0.1f, 2);
+	for(int i = 0; i < 10 && !fade.isBlack(); i++) {
+		fade.update(SvFrame);
+	}
+	CPPUNIT_ASSERT(fade.isBlack());
+	fade.update(SvFrame);
+	fade.holdBlack();
+	fade.update(SvFrame);
+	fade.update(SvFrame);
+	CPPUNIT_ASSERT(fade.isBlack());
+	fade.update(SvFrame);
+	CPPUNIT_ASSERT(!fade.isBlack());
+}
+
+void SceneViewTest::floorClampTest() {
+
+	// 0.5 m above a floor at y = 300 (y down): raised to 1.2 m
+	Vec3f low = clampAboveFloor(Vec3f(10.f, 250.f, 20.f), 300.f, true);
+	CPPUNIT_ASSERT(same(low, Vec3f(10.f, 300.f - GhostMinAboveFloor, 20.f)));
+	CPPUNIT_ASSERT((300.f - low.y) / 100.f >= 1.2f);
+
+	// High enough, or no floor found: unchanged
+	CPPUNIT_ASSERT(same(clampAboveFloor(Vec3f(0.f, 100.f, 0.f), 300.f, true), Vec3f(0.f, 100.f, 0.f)));
+	CPPUNIT_ASSERT(same(clampAboveFloor(Vec3f(0.f, 250.f, 0.f), 300.f, false), Vec3f(0.f, 250.f, 0.f)));
+
+	CPPUNIT_ASSERT(std::abs(yawDistance(350.f, 10.f) - 20.f) < SvEps);
+	CPPUNIT_ASSERT(std::abs(yawDistance(10.f, 190.f) - 180.f) < SvEps);
+}
+
+void SceneViewTest::firstStartHoldsUntilBlackTest() {
+
+	SceneDirector director;
+	SceneInput in = standing();
+
+	// No scene: the game's own view, followed, nothing driven
+	for(int i = 0; i < 5; i++) {
+		SceneOutput out = director.update(in);
+		CPPUNIT_ASSERT(!out.drive);
+		CPPUNIT_ASSERT(!out.cut);
+		CPPUNIT_ASSERT(out.shown == SceneShown::None);
+		CPPUNIT_ASSERT(same(out.pos, in.firstPos));
+	}
+	const Vec3f before = in.firstPos;
+
+	// The scene starts with the hero teleported 3 m and a camera entity far away: the eyes keep the old head
+	// until black, then take the hero's new head
+	SceneInput scene = sceneOf(in, SceneKind::Entity, 7, SceneViewSetting::First);
+	scene.firstPos = before + Vec3f(300.f, 0.f, 0.f);
+	scene.enginePos = Vec3f(0.f, -50.f, 0.f);
+	bool held = false;
+	int frames = 0;
+	SceneOutput out = untilCut(director, scene, before, held, frames);
+	CPPUNIT_ASSERT(out.cut);
+	CPPUNIT_ASSERT(held);
+	CPPUNIT_ASSERT_EQUAL(14, frames);
+	CPPUNIT_ASSERT(out.fade >= BehindFade);
+	CPPUNIT_ASSERT(out.started);
+	CPPUNIT_ASSERT(!out.ended);
+	CPPUNIT_ASSERT_EQUAL(std::string("start"), std::string(out.cutReason));
+	CPPUNIT_ASSERT(out.shown == SceneShown::First);
+	CPPUNIT_ASSERT(out.kind == SceneKind::Entity);
+	CPPUNIT_ASSERT(out.drive);
+	CPPUNIT_ASSERT(same(out.pos, scene.firstPos));
+	CPPUNIT_ASSERT_EQUAL(0.f, out.yawDelta);
+
+	// Then the world fades in on the new head, no more cuts
+	for(int i = 0; i < 40; i++) {
+		out = director.update(scene);
+		CPPUNIT_ASSERT(!out.cut);
+		CPPUNIT_ASSERT(same(out.pos, scene.firstPos));
+	}
+	CPPUNIT_ASSERT_EQUAL(0.f, out.fade);
+}
+
+void SceneViewTest::firstTeleportInSceneTest() {
+
+	SceneDirector director;
+	SceneInput scene = sceneOf(standing(), SceneKind::Entity, 7, SceneViewSetting::First);
+	settle(director, scene);
+	CPPUNIT_ASSERT(director.shown() == SceneShown::First);
+
+	// A teleport within the scene: held, a cut behind the fade
+	const Vec3f before = scene.firstPos;
+	scene.firstPos += Vec3f(0.f, 0.f, 200.f);
+	bool held = false;
+	int frames = 0;
+	SceneOutput out = untilCut(director, scene, before, held, frames);
+	CPPUNIT_ASSERT(out.cut);
+	CPPUNIT_ASSERT(held);
+	CPPUNIT_ASSERT(out.fade >= BehindFade);
+	CPPUNIT_ASSERT_EQUAL(std::string("jump"), std::string(out.cutReason));
+	CPPUNIT_ASSERT(!out.started);
+	CPPUNIT_ASSERT(!out.ended);
+	CPPUNIT_ASSERT(same(out.pos, scene.firstPos));
+}
+
+void SceneViewTest::firstFollowsHeroTest() {
+
+	SceneDirector director;
+	SceneInput scene = sceneOf(standing(), SceneKind::Speech, 1, SceneViewSetting::First);
+	settle(director, scene);
+
+	// The hero's head moving a little (the script walks him, the body steps after the head): followed
+	for(int i = 0; i < 30; i++) {
+		scene.firstPos.x += 2.f;
+		SceneOutput out = director.update(scene);
+		CPPUNIT_ASSERT(!out.cut);
+		CPPUNIT_ASSERT(same(out.pos, scene.firstPos));
+		CPPUNIT_ASSERT_EQUAL(0.f, out.fade);
+	}
+}
+
+void SceneViewTest::ghostHoldsShotTest() {
+
+	SceneDirector director;
+	SceneInput in = standing();
+	in.playerYaw = 90.f;
+	in.headYaw = 20.f;
+	director.update(in);
+
+	// A camera entity 0.3 m above the floor, dollying and panning
+	SceneInput scene = sceneOf(in, SceneKind::Entity, 3, SceneViewSetting::Ghost);
+	scene.enginePos = Vec3f(500.f, -30.f, 500.f);
+	scene.engineYaw = 180.f;
+	SceneOutput out;
+	int frames = 0;
+	for(frames = 1; frames < 100; frames++) {
+		out = director.update(scene);
+		if(out.cut) {
+			break;
+		}
+		scene.enginePos.x += 1.f;
+		scene.engineYaw += 0.2f;
+	}
+	CPPUNIT_ASSERT(out.cut);
+	CPPUNIT_ASSERT(out.started);
+	CPPUNIT_ASSERT(out.shown == SceneShown::Ghost);
+	CPPUNIT_ASSERT(showsHeroOutside(out.shown));
+	// The shot's first frame, raised to 1.2 m above the floor
+	CPPUNIT_ASSERT(same(out.pos, Vec3f(500.f, -GhostMinAboveFloor, 500.f)));
+	// Where the player looks now (the hero's yaw plus the head's) is where the camera looked: 180 - 20 - 90
+	CPPUNIT_ASSERT(std::abs(out.yawDelta - 70.f) < SvEps);
+
+	// The dolly and the pan go on: the shot stays where it began
+	for(int i = 0; i < 60; i++) {
+		scene.enginePos.x += 1.f;
+		scene.engineYaw += 0.2f;
+		out = director.update(scene);
+		CPPUNIT_ASSERT(!out.cut);
+		CPPUNIT_ASSERT(same(out.pos, Vec3f(500.f, -GhostMinAboveFloor, 500.f)));
+		CPPUNIT_ASSERT(std::abs(out.yawDelta - 70.f) < SvEps);
+	}
+}
+
+void SceneViewTest::ghostJumpIsNewShotTest() {
+
+	SceneDirector director;
+	SceneInput scene = sceneOf(standing(), SceneKind::Entity, 3, SceneViewSetting::Ghost);
+	scene.enginePos = Vec3f(500.f, -200.f, 500.f);
+	settle(director, scene);
+	CPPUNIT_ASSERT(director.shown() == SceneShown::Ghost);
+
+	// The same camera entity put elsewhere in one frame: a new shot, cut behind the fade
+	const Vec3f before = scene.enginePos;
+	scene.enginePos = Vec3f(900.f, -200.f, 500.f);
+	bool held = false;
+	int frames = 0;
+	SceneOutput out = untilCut(director, scene, before, held, frames);
+	CPPUNIT_ASSERT(out.cut);
+	CPPUNIT_ASSERT(held);
+	CPPUNIT_ASSERT(out.fade >= BehindFade);
+	CPPUNIT_ASSERT_EQUAL(std::string("camera"), std::string(out.cutReason));
+	CPPUNIT_ASSERT(same(out.pos, scene.enginePos));
+}
+
+void SceneViewTest::speechLineCutTest() {
+
+	SceneDirector director;
+	SceneInput scene = sceneOf(standing(), SceneKind::Speech, 1, SceneViewSetting::First);
+	settle(director, scene);
+
+	// The next speak -c line: a cut behind the fade (SPEC.md), though the hero's head stays
+	scene.shot = 2;
+	bool held = false;
+	int frames = 0;
+	SceneOutput out = untilCut(director, scene, scene.firstPos, held, frames);
+	CPPUNIT_ASSERT(out.cut);
+	CPPUNIT_ASSERT(out.fade >= BehindFade);
+	CPPUNIT_ASSERT_EQUAL(std::string("line"), std::string(out.cutReason));
+	CPPUNIT_ASSERT(!out.started);
+}
+
+void SceneViewTest::sceneEndTest() {
+
+	SceneDirector director;
+	SceneInput scene = sceneOf(standing(), SceneKind::Entity, 3, SceneViewSetting::Ghost);
+	scene.enginePos = Vec3f(500.f, -200.f, 500.f);
+	settle(director, scene);
+
+	// The game gives the camera back: the ghost shot is held and driven until black, then the game's view
+	SceneInput after = standing();
+	SceneOutput out;
+	for(int i = 0; i < 100; i++) {
+		out = director.update(after);
+		if(out.cut) {
+			break;
+		}
+		CPPUNIT_ASSERT(out.drive);
+		CPPUNIT_ASSERT(out.shown == SceneShown::Ghost);
+		CPPUNIT_ASSERT(same(out.pos, scene.enginePos));
+	}
+	CPPUNIT_ASSERT(out.cut);
+	CPPUNIT_ASSERT(out.ended);
+	CPPUNIT_ASSERT(!out.started);
+	CPPUNIT_ASSERT(out.endedKind == SceneKind::Entity);
+	CPPUNIT_ASSERT_EQUAL(std::string("end"), std::string(out.cutReason));
+	CPPUNIT_ASSERT(out.shown == SceneShown::None);
+	CPPUNIT_ASSERT(!out.drive);
+	CPPUNIT_ASSERT(same(out.pos, after.firstPos));
+	CPPUNIT_ASSERT_EQUAL(0.f, out.yawDelta);
+}
+
+void SceneViewTest::letterboxOnlyTest() {
+
+	SceneDirector director;
+	director.update(standing());
+
+	// The letterbox first, the camera entity a moment later: two starts, the first one's end between
+	SceneInput bars = sceneOf(standing(), SceneKind::None, 0, SceneViewSetting::Ghost);
+	bool held = false;
+	int frames = 0;
+	SceneOutput out = untilCut(director, bars, bars.firstPos, held, frames);
+	CPPUNIT_ASSERT(out.started);
+	CPPUNIT_ASSERT(out.shown == SceneShown::First);
+	CPPUNIT_ASSERT(out.kind == SceneKind::None);
+
+	SceneInput camera = sceneOf(standing(), SceneKind::Entity, 4, SceneViewSetting::Ghost);
+	camera.enginePos = Vec3f(0.f, -200.f, 0.f);
+	out = untilCut(director, camera, bars.firstPos, held, frames);
+	CPPUNIT_ASSERT(out.started);
+	CPPUNIT_ASSERT(out.ended);
+	CPPUNIT_ASSERT(out.endedKind == SceneKind::None);
+	CPPUNIT_ASSERT(out.kind == SceneKind::Entity);
+	CPPUNIT_ASSERT(out.shown == SceneShown::Ghost);
+	CPPUNIT_ASSERT(out.fade >= BehindFade);
+}
+
+void SceneViewTest::lookAtTest() {
+
+	SceneDirector director;
+	SceneInput in = standing();
+	director.update(in);
+
+	// ignore: nothing to apply, no fade
+	CPPUNIT_ASSERT(!director.lookAt(SceneLookAt::Ignore));
+	for(int i = 0; i < 30; i++) {
+		SceneOutput out = director.update(in);
+		CPPUNIT_ASSERT(!out.applyLookAt);
+		CPPUNIT_ASSERT_EQUAL(0.f, out.fade);
+	}
+
+	// fade: applied once, at black (0.1 s: the 9th or, rounded, the 10th frame), about 0.2 s in all
+	CPPUNIT_ASSERT(director.lookAt(SceneLookAt::Fade));
+	int applied = 0;
+	int appliedFrame = 0;
+	int frames = 0;
+	for(frames = 1; frames < 100; frames++) {
+		SceneOutput out = director.update(in);
+		if(out.applyLookAt) {
+			applied++;
+			appliedFrame = frames;
+			CPPUNIT_ASSERT(out.fade >= BehindFade);
+		}
+		CPPUNIT_ASSERT(!out.cut);
+		if(applied && out.fade == 0.f) {
+			break;
+		}
+	}
+	CPPUNIT_ASSERT_EQUAL(1, applied);
+	CPPUNIT_ASSERT(appliedFrame >= 9 && appliedFrame <= 10);
+	CPPUNIT_ASSERT(frames <= appliedFrame + 2 + 10 + 1);
+}
+
+void SceneViewTest::meterTest() {
+
+	SceneMeter meter;
+	CPPUNIT_ASSERT_EQUAL(-1.f, meter.minAboveFloorM());
+	CPPUNIT_ASSERT_EQUAL(u64(0), meter.frames());
+
+	SceneMeterFrame frame;
+	frame.active = true;
+	frame.shown = SceneShown::First;
+	frame.aboveFloor = 1.7f;
+	frame.pos = Vec3f(0.f, -170.f, 0.f);
+
+	// Steps of 2 cm and 0.5 degrees
+	for(int i = 0; i < 10; i++) {
+		meter.add(frame);
+		frame.pos.x += 2.f;
+		frame.yaw += 0.5f;
+	}
+	CPPUNIT_ASSERT_EQUAL(u64(10), meter.frames());
+	CPPUNIT_ASSERT_EQUAL(u64(10), meter.sceneFrames());
+	CPPUNIT_ASSERT(std::abs(meter.maxStepCm() - 2.f) < SvEps);
+	CPPUNIT_ASSERT(std::abs(meter.maxYawStepDeg() - 0.5f) < SvEps);
+	CPPUNIT_ASSERT(std::abs(meter.minAboveFloorM() - 1.7f) < SvEps);
+
+	// Behind the fade: a 3 m move is neither a step nor a height; the next seen frame starts a new comparison
+	frame.fade = 1.f;
+	frame.pos.x += 300.f;
+	frame.aboveFloor = 0.3f;
+	meter.add(frame);
+	frame.fade = 0.5f;
+	frame.pos.x += 1.f;
+	frame.aboveFloor = 1.5f;
+	meter.add(frame);
+	CPPUNIT_ASSERT(std::abs(meter.maxStepCm() - 2.f) < SvEps);
+	CPPUNIT_ASSERT(std::abs(meter.minAboveFloorM() - 1.5f) < SvEps);
+
+	// The player's own stick turn is no yaw step; the game's view (no scene) is not measured
+	frame.ownTurn = true;
+	frame.yaw += 45.f;
+	meter.add(frame);
+	frame.ownTurn = false;
+	CPPUNIT_ASSERT(std::abs(meter.maxYawStepDeg() - 0.5f) < SvEps);
+	frame.active = false;
+	frame.shown = SceneShown::None;
+	frame.aboveFloor = 0.1f;
+	frame.pos.x += 20.f;
+	meter.add(frame);
+	CPPUNIT_ASSERT(std::abs(meter.minAboveFloorM() - 1.5f) < SvEps);
+	CPPUNIT_ASSERT(std::abs(meter.maxStepCm() - 2.f) < SvEps);
+	CPPUNIT_ASSERT_EQUAL(u64(13), meter.sceneFrames());
+	CPPUNIT_ASSERT_EQUAL(u64(14), meter.frames());
+
+	// The screen is counted, not measured; letterbox frames are counted
+	frame.shown = SceneShown::Screen;
+	meter.letterboxDrawn();
+	meter.add(frame);
+	CPPUNIT_ASSERT_EQUAL(u64(1), meter.screenFrames());
+	CPPUNIT_ASSERT_EQUAL(u64(1), meter.letterboxFrames());
+
+	meter.lookAtSeen();
+	meter.lookAtFaded();
+	CPPUNIT_ASSERT_EQUAL(u64(1), meter.lookats());
+	CPPUNIT_ASSERT_EQUAL(u64(1), meter.fadedLookats());
+
+	meter.reset();
+	CPPUNIT_ASSERT_EQUAL(u64(0), meter.frames());
+	CPPUNIT_ASSERT_EQUAL(u64(0), meter.lookats());
+	CPPUNIT_ASSERT_EQUAL(-1.f, meter.minAboveFloorM());
+}
+
+void SceneViewTest::meterCutsTest() {
+
+	SceneMeter meter;
+	SceneMeterFrame frame;
+	frame.shown = SceneShown::First;
+	frame.aboveFloor = 1.7f;
+	meter.add(frame);
+
+	// A shot change behind the fade, then a jump of 60 cm behind it: two faded cuts, one per frame
+	frame.fade = 1.f;
+	frame.shotChanged = true;
+	frame.pos.x += 60.f;
+	meter.add(frame);
+	frame.shotChanged = false;
+	frame.pos.x += 60.f;
+	meter.add(frame);
+	CPPUNIT_ASSERT_EQUAL(u64(2), meter.cuts());
+	CPPUNIT_ASSERT_EQUAL(u64(2), meter.fadedCuts());
+
+	// An unfaded yaw cut of 15 degrees, an unfaded jump - and the player's own snap, which is none
+	frame.fade = 0.f;
+	frame.yaw += 15.f;
+	meter.add(frame);
+	frame.pos.z += 51.f;
+	meter.add(frame);
+	frame.ownTurn = true;
+	frame.yaw += 45.f;
+	meter.add(frame);
+	CPPUNIT_ASSERT_EQUAL(u64(4), meter.cuts());
+	CPPUNIT_ASSERT_EQUAL(u64(2), meter.fadedCuts());
+}

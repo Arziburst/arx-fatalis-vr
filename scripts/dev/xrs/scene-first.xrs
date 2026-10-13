@@ -110,9 +110,11 @@ human_base_0028.speak -c ccclistener_r player 40 40 [kultar_letmeout3]
 @assert scene.meter.fadedCuts eq {cuts5}
 @assert scene.meter.letterboxFrames eq 0
 
-# Input in a speak -c scene (a separate stretch, not judged by the meter): the stick turn works, walking stays blocked
+# Input in a speak -c scene (a separate stretch, not judged by the meter): the stick turn works, walking stays blocked.
+# A line without variants, longer than the stretch: without the letterbox a line plays a random variant of its sample
+# (kultar_letmeout2 / 3 are 2.1 s), which ended before the walk
 vr-input turn smooth
-human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
+human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_cantgo]
 @until scene.kind eq speech 15s
 @remember yaw0 player.yaw
 @remember x0 player.x

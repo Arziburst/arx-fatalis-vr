@@ -95,6 +95,8 @@
 #include "vr/EyeImage.h"
 #include "vr/HeadTracking.h"
 #include "vr/PerfLog.h"
+#include "vr/SceneSubtitles.h"
+#include "vr/SceneView.h"
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
@@ -634,6 +636,46 @@ void writePlaygroundStatus(JsonWriter & json) {
 
 }
 
+//! status.json \c scene: the scene view of scripted scenes in VR, its meter and its subtitle (#29, SPEC.md)
+void writeSceneStatus(JsonWriter & json) {
+
+	const vr::SceneState & scene = vr::sceneState();
+	const vr::SceneMeter & meter = scene.meter;
+	const vr::SubtitleStatus & subtitle = vr::subtitleStatus();
+
+	json.object("scene");
+	json.value("active", scene.active);
+	json.value("kind", vr::sceneKindName(scene.kind));
+	json.value("view", vr::sceneViewName(scene.view));
+	json.value("shown", vr::sceneShownName(scene.director.shown()));
+	json.value("lookat", vr::sceneLookAtName(scene.lookAt));
+	json.value("fade", scene.director.fade());
+	json.value("armsIk", scene.armsIk);
+	json.object("meter");
+	json.value("frames", meter.frames());
+	json.value("sceneFrames", meter.sceneFrames());
+	json.value("screenFrames", meter.screenFrames());
+	json.value("minAboveFloorM", meter.minAboveFloorM());
+	json.value("maxStepCm", meter.maxStepCm());
+	json.value("maxYawStepDeg", meter.maxYawStepDeg());
+	json.value("cuts", meter.cuts());
+	json.value("fadedCuts", meter.fadedCuts());
+	json.value("lookats", meter.lookats());
+	json.value("fadedLookats", meter.fadedLookats());
+	json.value("letterboxFrames", meter.letterboxFrames());
+	json.end();
+	json.object("subtitle");
+	json.value("visible", subtitle.visible);
+	json.value("text", subtitle.text);
+	json.value("speaker", subtitle.speaker);
+	json.value("placement", vr::subtitlePlacementName(subtitle.placement));
+	json.value("lines", subtitle.lines);
+	json.value("voicedLines", subtitle.voicedLines);
+	json.end();
+	json.end();
+
+}
+
 std::string buildStatus(PlatformInstant now) {
 
 	JsonWriter json;
@@ -768,6 +810,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.end();
 		json.end();
 	}
+
+	writeSceneStatus(json);
 
 	{
 		const vr::ComfortPolicy & policy = vr::comfort();
@@ -1893,6 +1937,33 @@ std::string execute(std::string_view line) {
 		} else {
 			return refuse("comfort: expected auto, on or off, got \"" + std::string(rest) + "\"");
 		}
+		return std::string();
+	}
+
+	if(word == "scene") {
+		// Scripted scenes in VR (#29, SPEC.md): scene view first|observer|ghost|hybrid, scene lookat ignore|fade,
+		// scene subtitles above|chest|lowerthird - live, for this session (cfg.ini keeps the player's choice: the
+		// sequences start from the defaults in any order); scene meter reset starts a new
+		// measuring stretch of status.json scene.meter. Accepted in flat mode too, where they change nothing
+		std::string_view value;
+		std::string what(firstWord(rest, value));
+		util::makeLowercase(what);
+		std::string name(trim(value));
+		util::makeLowercase(name);
+		if(what == "view" && vr::parseSceneView(name)) {
+			vr::sceneState().view = *vr::parseSceneView(name);
+		} else if(what == "lookat" && vr::parseSceneLookAt(name)) {
+			vr::sceneState().lookAt = *vr::parseSceneLookAt(name);
+		} else if(what == "subtitles" && vr::parseSubtitlePlacement(name)) {
+			vr::setSubtitlePlacement(*vr::parseSubtitlePlacement(name));
+		} else if(what == "meter" && name == "reset") {
+			vr::sceneState().meter.reset();
+			vr::resetSubtitleCounts();
+		} else {
+			return refuse("scene: expected view first|observer|ghost|hybrid, lookat ignore|fade, "
+			              "subtitles above|chest|lowerthird or meter reset, got \"" + std::string(rest) + "\"");
+		}
+		LogInfo << "[channel] scene " << what << ' ' << name;
 		return std::string();
 	}
 

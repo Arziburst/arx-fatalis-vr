@@ -17,7 +17,7 @@ scene subtitles chest
 @remember cx camera.x
 @remember cz camera.z
 @mark
-setpos 8540 3105 8780 0
+setpos 8700 3105 8840 0
 @log scene state=start 30s                   # the game's own scene event (the bars)
 @wait 8000
 @assert scene.shown eq none

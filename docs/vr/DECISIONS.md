@@ -13,6 +13,51 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: Scripted scenes in VR - the view is a switch, every cut is behind a fade, no letterbox in the eyes
+
+- **Date:** 2026-10-14
+- **Status:** Proposed - the views and the comfort numbers are for the owner to pick and tune in the headset (#29)
+- **Decided by:** the owner (2026-10-13 on #29: every sensible variant behind a switch, default hybrid; turning allowed
+  in dialogues, walking blocked; playerlookat both ways, default ignored); the fade timings are the worker's proposal
+
+### Decision
+- A scripted scene (a `speak -c` line, a camera entity of `cameraactivate`, the letterbox of `cinemascope`) no longer
+  hands the game's camera to the eyes. What the eyes get is **cfg.ini `vr_scene_view`**: `first` (the hero's head, the
+  game's scene cameras ignored), `ghost` (the game's camera positions, each shot held where it starts - no dolly, no
+  pan - yaw only, pitch and roll from the head, never lower than 1.2 m above the floor under it), `observer` and
+  `hybrid` (#29.2; until then they show `first`). Default `hybrid`.
+- **Every change of the shot the eyes see is a cut behind a fade**: the shot shown is held while the world fades out,
+  the new one is taken at black, then the world fades in. A shot changes with the scene's start and end, a new
+  `speak -c` line, another camera entity, and a jump (> 50 cm) of a view that follows the hero (the script teleporting
+  him). The ghost's yaw is set at each cut so that where the player looks is where the game's camera looked.
+- **`playerlookat`** (cfg.ini `vr_scene_lookat`): `ignore` (default) leaves the hero's yaw; `fade` turns him at the
+  black of a short fade. Never an un-faded snap.
+- **No cinematic bars in the eyes**; the cinemascope state stays for the game (subtitles, the hidden HUD).
+- **Walking is blocked during a scene in VR, the stick turn works** (also where the script holds the controls).
+- **The IK arms are off while the hero is shown in third person** (a ghost shot, any external view of the game).
+- Flat mode is unchanged. The test channel's `scene ...` commands change the switches for the session only (cfg.ini
+  keeps the player's choice).
+- **Proposal, for the owner to tune:** a cut fades out in 0.15 s (the head-in-wall fade's speed) and in in 0.25 s; a
+  `playerlookat` fade is 0.1 s out and 0.1 s in; black is held two frames after a switch. In `first`, a scene's start
+  and end and a new `speak -c` line fade too, although the hero's head stays - the rule is "every shot change", and the
+  script's teleport at a scene start hides behind that fade; if the owner finds those fades needless in `first`, they
+  can be limited to jumps. One place: `SceneFadeParams` in `src/vr/SceneView.h`.
+
+### Why
+- The jerks the owner felt are the scene camera's own moves: un-faded cuts (a yaw cut rotates the world), dollies and
+  per-frame look-at pans (vection), camera paths diving to the floor ("on the floor looking up": camera_0039 of the
+  prison scene dips to 0.5 m), `playerlookat` as an un-faded snap turn, and the letterbox drawn into each eye as
+  head-locked bars. Holding each shot, fading every cut and keeping the head's own rotation removes all of them.
+- Doom 3 BFG VR's "immersive" cutscenes (research F-358..F-362) do the same for the ghost view.
+
+### Trade-offs accepted
+- The ghost view loses the game's camera motion within a shot; `first` loses the authored framing altogether.
+- A fade per shot change can feel busy in a dialogue of many short lines.
+
+### Consequences
+- `src/vr/SceneView.*` (the director, the fade, the meter), `src/vr/SceneSubtitles.*` (#29.3), status.json `scene.*`,
+  the `vr.scene*` events, the sequences `scene-*.xrs` (TESTING.md).
+
 ## D-044: The player's launch is the original start; logos, the intro and cinematics play on a screen fixed in the room
 
 - **Date:** 2026-10-13

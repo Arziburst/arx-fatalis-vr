@@ -13,6 +13,42 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW-armfit: The custom arm solves its own chain - fitted to the player's reach, a small stretch, the elbow down with a weapon
+
+- **Date:** 2026-10-13
+- **Status:** Accepted (the stretch limit and the elbow drop are first proposals for the owner to tune in the headset)
+- **Decided by:** project owner (2026-10-13: "the arm's own length must fit first", "arm stretch yes", "elbow drop yes"); #385.6
+- **Builds on:** D-NEW-arms (own arms), the roll-aware IK (D-NEW of #313)
+
+### Decision
+- The custom arm (D-NEW-arms) is posed by **its own** roll-aware solve, from the logical Arx shoulder to the glove's
+  wrist, with **its own segment lengths**; the logical Arx arm keeps its own solve for the weapon, reticle, wrist bars
+  and melee.
+- **Length fit:** first from the character height setting (#260; Drillis and Contini's segment ratios, the Arx upper
+  arm to forearm ratio), then from the **measured reach** - a running maximum of the shoulder-to-wrist distance at
+  full extension, one outlier ignored, used once enough samples are in (`src/vr/ArmFit.h`). The drawn lengths ease to
+  a new fit over half a second.
+- **Stretch instead of the shoulder slide:** past its fitted length the custom arm stretches by at most
+  `vr_arm_max_stretch` (default 0.10, cfg.ini) to keep the hand on the controller; past that the hand stops short.
+  The shoulder no longer slides for the custom arm.
+- **Elbow drop with a weapon** (VHVR's rule, F-300): a hand holding a weapon, on either hand, turns its elbow toward
+  its lowest position about the shoulder-target line by `vr_arm_weapon_elbow_drop` (default 0.75, cfg.ini).
+- **Fallback:** a glove that cannot be loaded logs an error (status `vr.body.customArms`) and the arm stays the Arx arm.
+
+### Why
+- A fixed-length arm on a real player either falls short or folds; a too-long or rubbery arm was ruled out by the owner.
+- Stretch kept the best embodiment in a user study (F-307, CHI'24), where a sliding shoulder moves the body.
+- A low elbow reads as holding a weight; VHVR does the same.
+
+### Trade-offs accepted
+- The first extension refits the arm once (eased); a long reach held for a while lengthens the fit (for a player taller
+  than the height setting).
+- Two solves per arm per frame (logical and custom), plus one more while a weapon is held; cheap.
+
+### Consequences
+- status.json `vr.body.<hand>.custom.*` shows the fit (`upperLength`, `forearmLength`, `fitSource`), `stretch`,
+  `error` and `elbowDrop`; `arm-fit.xrs` checks them.
+
 ## D-NEW-arms: Own VR arms behind `vr_arms_model` — the Godot XR Tools glove hand (CC0), cgltf and CPU skinning, the logical Arx arm kept
 
 - **Date:** 2026-10-13

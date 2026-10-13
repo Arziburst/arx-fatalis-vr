@@ -1076,3 +1076,13 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** an idle `--vr-sim` run (`idle.vrsim`, no commands) shows several `[vr] rate:` windows UNDER-SUBMITTING at 20-40/s with a worst frame near 100 ms, then 90/s again; `arx-perf.log` has a burst of `H` lines whose `update`, `render` and `vrwait` all grow together, with no `load` and no uploads (#327: in one pair of runs the burst came with the log on, in the next pair with it off).
 **Cause:** the PC, not the game: other workers build in parallel (the game lock serialises game runs, not compiles), and a starved CPU stretches every phase of the frame at once.
 **Do:** judge pacing and frame costs only from windows at full rate, or repeat the run; a real cost of the game shows in one phase (`cause`), the same way in every run. `perf-summary.ps1` lists the hitches by cause.
+
+## 2026-10-13 - A file under data/core is in the repository but the game says "not found"
+**Symptom:** `[W] VRArms: [vr] arms: vr/arms/Hand_Glove_low_R.gltf not found` (#385.3), while the file is in `data/core/vr/arms/` and the build's data dirs point at `data/core`; the host tests that load the same file pass.
+**Cause:** two rules of the resource system. `src/io/resource/ResourceSetup.cpp` mounts only a fixed list of top-level folders of each data dir (`editor`, `game`, `graph`, `localisation`, `misc`, `sfx`, `speech`, and now `vr`), so a new folder is invisible until it is added there; and every resource name is lower case (`PakReader::addFiles`), so `vr/arms/Hand_Glove_low_R.gltf` must be asked for as `vr/arms/hand_glove_low_r.gltf`. Host tests read data/core straight from the source tree and see neither rule.
+**Do:** a new folder under data/core goes into that list in the same change; ask for resources in lower case; prove an asset in a game run (a sequence that asserts the loaded state), not only in a host test.
+
+## 2026-10-13 - A test or source file fails to compile with C2059 "syntax error: 'const'" on an innocent name
+**Symptom:** `tests/vr/ArmMeshTest.cpp(48): error C2059: syntax error: 'const'` on a helper `void near(...)`, or C2628 "'vr::SleeveParams' followed by 'char'" on a variable named `small` (#385.1).
+**Cause:** `arx` and `arxtest` are unity builds (`ub_arxtest.cpp`): `windows.h`, included earlier in the same unit by FilesystemWindows.cpp, Process.cpp or WindowsUtils.cpp, defines the macros `near` and `far` (empty) and `small` (`char`). Names in anonymous namespaces also collide across the files of one unit.
+**Do:** never name anything `near`, `far` or `small`; give file-scope helpers unique names (a file prefix).

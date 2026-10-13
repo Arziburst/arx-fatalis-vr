@@ -268,7 +268,7 @@ HandJoints synthesizeHandJoints(Hand hand, const HandShape & shape, const Vec3f 
 		bend = glm::normalize(bend - direction * glm::dot(bend, direction));
 		const Vec3f base = wrist + thumbSide * 0.02f + along * 0.005f;
 		const float lengths[] = { 0.045f, 0.035f, 0.03f };
-		const float angles[] = { 0.f, 50.f * shape.thumb, 70.f * shape.thumb };
+		const float angles[] = { 40.f * shape.thumb, 50.f * shape.thumb, 70.f * shape.thumb };
 		chain(HandJoint::ThumbMetacarpal, base, direction, bend, lengths, angles, 3);
 	}
 

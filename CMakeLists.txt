@@ -1273,6 +1273,7 @@ set(VR_SOURCES
 	src/vr/EyeImage.cpp
 	src/vr/EyeProjection.cpp
 	src/vr/FingerCurl.cpp
+	src/vr/HandRig.cpp
 	src/vr/FramePacing.cpp
 	src/vr/HandTracking.cpp
 	src/vr/HandReticle.cpp

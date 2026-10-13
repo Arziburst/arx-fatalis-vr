@@ -1040,6 +1040,20 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("wristGap", custom.wristGap);
 			json.value("vertices", u64(custom.vertices));
 			json.value("triangles", u64(custom.triangles));
+			// its five fingers (#385.4): what they follow and each joint's bend (degrees, 0 straight) - root is the
+			// thumb's first joint or a finger's knuckle, mid the next, tip the last
+			json.object("fingers");
+			json.value("source", vr::customFingerSourceName(custom.fingerSource));
+			const char * const customFingerNames[] = { "thumb", "index", "middle", "ring", "little" };
+			for(size_t finger = 0; finger < vr::FingerCount; finger++) {
+				json.object(customFingerNames[finger]);
+				json.value("root", custom.fingers.flex[finger][0]);
+				json.value("mid", custom.fingers.flex[finger][1]);
+				json.value("tip", custom.fingers.flex[finger][2]);
+				json.value("spread", custom.fingers.spread[finger]);
+				json.end();
+			}
+			json.end();
 			json.end();
 			// The fingers (#305): what they follow and how far each segment is bent (degrees)
 			json.object("fingers");

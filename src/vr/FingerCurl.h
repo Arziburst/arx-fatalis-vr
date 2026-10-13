@@ -231,7 +231,8 @@ struct HandShape {
  * Built in the OpenXR grip frame of \a hand (the palm centroid at the origin, the fingers along -Y,
  * the thumb towards -Z, the palm facing -X for the right hand and +X for the left, as the spec's
  * grip pose says) and placed by \a gripPosition / \a gripOrientation. A fully closed finger bends
- * 90 degrees at the knuckle, 100 at the middle joint and 70 at the last one; the thumb 50 and 70.
+ * 90 degrees at the knuckle, 100 at the middle joint and 70 at the last one; the thumb 40 at its
+ * first joint (the metacarpal on the wrist: a real thumb closing into a fist flexes there too, #385.4), 50 and 70.
  */
 HandJoints synthesizeHandJoints(Hand hand, const HandShape & shape, const Vec3f & gripPosition = Vec3f(0.f),
                                 const glm::quat & gripOrientation = glm::quat(1.f, 0.f, 0.f, 0.f));

@@ -1019,6 +1019,16 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 			logical.gripOrientation = placement.orientation;
 			logical.upperLength = upperLength;
 			logical.forearmLength = forearmLength;
+			// The glove's five fingers (#385.4) read the same sources as the Arx fingers above
+			logical.joints = joints;
+			logical.fingers.controls = std::strcmp(source, "xr") == 0;
+			if(logical.fingers.controls) {
+				const ControllerInput & input = controllerInput();
+				logical.fingers.trigger = input.trigger[hand];
+				logical.fingers.grip = input.grip[hand];
+				logical.fingers.thumbTouch = input.thumbTouch[hand];
+			}
+			logical.seconds = seconds;
 			poseCustomArm(Hand(hand), logical);
 		}
 	}

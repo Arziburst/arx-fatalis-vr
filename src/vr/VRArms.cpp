@@ -84,6 +84,7 @@ struct GloveRest {
 	Vec3f cuff = Vec3f(0.f);     //!< the centre of the cuff opening
 	glm::quat toGrip = quat_identity(); //!< the mesh's rest frame to the grip frame (vr/ArmIK.h handToGrip)
 	glm::quat sleeveAxes = quat_identity(); //!< the sleeve's wrist axes (along, thickness, width) in mesh space
+	HandRig rig;                 //!< the five fingers' joints and axes (#385.4)
 };
 
 struct CustomArm {
@@ -93,6 +94,7 @@ struct CustomArm {
 	float builtUpper = 0.f;
 	float builtForearm = 0.f;
 	std::vector<glm::mat4> sleeveJoints;
+	std::vector<glm::mat4> gloveLocal;  //!< the glove's joints posed by the fingers, on their parents (#385.4)
 	std::vector<glm::mat4> gloveJoints;
 	std::vector<Vec3f> sleevePositions;
 	std::vector<Vec3f> sleeveNormals;
@@ -168,6 +170,11 @@ void loadGlove(Hand hand, GloveRest & glove) {
 		gloveFailed(hand, glove, file + " lacks the Wrist, Palm, Middle_Tip or Thumb_Proximal joint");
 		return;
 	}
+	glove.rig = buildHandRig(glove.mesh);
+	if(!glove.rig.valid) {
+		gloveFailed(hand, glove, file + " lacks a hand joint or a usable finger bone for the five fingers");
+		return;
+	}
 	restWorldMatrices(glove.mesh, glove.restWorld);
 	glove.wrist = jointPosition(glove.restWorld, wrist);
 	glove.palm = jointPosition(glove.restWorld, palm);
@@ -202,6 +209,22 @@ void loadGlove(Hand hand, GloveRest & glove) {
 	        << glm::length(palmLocal) * GloveUnitsPerMeter << " cm, palm to middle tip "
 	        << glm::distance(glove.palm, glove.tip) * GloveUnitsPerMeter << " cm, the hand along mesh "
 	        << (along.z < 0.f ? "-Z" : "+Z");
+}
+
+/*!
+ * The glove's joints in the world: each joint's \a local composed with its parents' (a parent may come after its
+ * child in the file), placed by \a toWorld
+ */
+void composeGloveJoints(const SkinnedMesh & mesh, const std::vector<glm::mat4> & local, const glm::mat4 & toWorld,
+                        std::vector<glm::mat4> & world) {
+	world.resize(mesh.skeleton.size());
+	for(size_t j = 0; j < mesh.skeleton.size(); j++) {
+		glm::mat4 matrix = local[j];
+		for(int parent = mesh.skeleton[j].parent; parent >= 0; parent = mesh.skeleton[size_t(parent)].parent) {
+			matrix = local[size_t(parent)] * matrix;
+		}
+		world[j] = toWorld * matrix;
+	}
 }
 
 void buildArmSleeve(CustomArm & arm, float upperLength, float forearmLength) {
@@ -361,6 +384,7 @@ void resetCustomArms() {
 	for(CustomArm & arm : g_customArms) {
 		arm.drawn = false;
 		arm.status.drawn = false;
+		arm.status.fingerSource = CustomFingerSource::None;
 	}
 }
 
@@ -508,11 +532,15 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	skinMesh(arm.sleeveWork, arm.sleeveJoints, arm.sleevePositions, arm.sleeveNormals);
 	recomputeNormals(arm.sleeve, arm.sleevePositions, arm.sleeveNormals);
 
-	// The hand, rigid at its rest pose
-	arm.gloveJoints.resize(glove.restWorld.size());
-	for(size_t j = 0; j < glove.restWorld.size(); j++) {
-		arm.gloveJoints[j] = gloveToWorld * glove.restWorld[j];
-	}
+	// The hand: its five fingers head for what their source asks (#385.4: a held weapon closes them on either hand,
+	// else the hand joints, else the controls) at a bounded speed, so a weapon taken or a source lost never snaps them
+	CustomFingerInput fingerInput = logical.fingers;
+	fingerInput.holds = logical.holdsWeapon;
+	const CustomFingerTarget fingerTarget = customFingerTarget(fingerInput, logical.joints);
+	status.fingers = approachPose(status.fingers, fingerTarget.pose, CurlDegreesPerSecond * logical.seconds);
+	status.fingerSource = fingerTarget.source;
+	poseHand(glove.mesh, glove.rig, status.fingers, arm.gloveLocal);
+	composeGloveJoints(glove.mesh, arm.gloveLocal, gloveToWorld, arm.gloveJoints);
 	skinMesh(glove.mesh, arm.gloveJoints, arm.handPositions, arm.handNormals);
 
 	Vec3f ring(0.f);

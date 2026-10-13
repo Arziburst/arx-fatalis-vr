@@ -30,6 +30,7 @@
 #include "math/Types.h"
 #include "platform/Platform.h"
 #include "vr/ArmRoll.h"
+#include "vr/HandRig.h"
 #include "vr/VRControls.h"
 
 class TextureContainer;
@@ -51,8 +52,9 @@ class TextureContainer;
  *    skinned positions every frame (research rows F-233, F-310 .. F-312);
  *  - the Godot XR Tools glove hand (data/core/vr/arms/Hand_Glove_low_L/R.gltf) with its palm on the
  *    controller's grip (short of it past the stretch limit) and the controller's orientation, scaled by
- *    \c vr_hand_scale, at rest pose (the
- *    fingers are 385.4's).
+ *    \c vr_hand_scale; its five fingers bend joint by joint (vr/HandRig.h, #385.4): closed on a held weapon's grip
+ *    on either hand (D-042), else following the runtime's hand joints, else the controller's trigger, grip and
+ *    thumb rest (D-041).
  * Skinned once per frame after the body is posed; the animation code lights and projects the result per eye
  * into the model batch, two-sided like the VR body (research row F-231). Flat mode and the inventory book
  * always draw the Arx arms.
@@ -113,6 +115,10 @@ struct LogicalArm {
 	glm::quat gripOrientation = quat_identity(); //!< the grip's rotation in engine axes
 	float upperLength = 0.f;            //!< the Arx bones, units: the fit when the character's height is unknown
 	float forearmLength = 0.f;
+	// The glove's five fingers (#385.4, D-041, D-042): the held rule's inputs (holds = holdsWeapon) and the hand joints
+	CustomFingerInput fingers;
+	HandJoints joints;                  //!< this frame's hand joints (invalid without them)
+	float seconds = 0.f;                //!< this frame's duration: the fingers move at most CurlDegreesPerSecond
 };
 
 //! Forget last frame's custom arms (before the body is posed)
@@ -159,6 +165,9 @@ struct CustomArmStatus {
 	float upperRoll = 0.f;       //!< the roll on the upper twist joint
 	float forearmTwist = 0.f;    //!< the roll from the elbow to the wrist; the twist joints take a third and two thirds
 	float wristGap = 0.f;        //!< the sleeve's last ring centre to the glove's cuff centre (units, 0 = they meet)
+	// The five fingers (#385.4): what they follow (none while the arm is not posed) and each joint's bend this frame
+	CustomFingerSource fingerSource = CustomFingerSource::None;
+	FingerPose fingers;          //!< degrees, approaching what the source asks for
 	size_t vertices = 0;         //!< sleeve + hand
 	size_t triangles = 0;
 };

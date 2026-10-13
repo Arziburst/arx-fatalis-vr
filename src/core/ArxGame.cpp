@@ -1536,7 +1536,13 @@ void ArxGame::updateFirstPersonCamera() {
 	
 	Vec3f targetPos = g_playerCamera.m_pos;
 	Anglef targetAngle = g_playerCamera.angle;
-	
+
+	// The stable view (#416) starts afresh where the body is once it is switched on again
+	vr::setStableViewPlaced(false);
+	if(!vr::comfort().stableView) {
+		vr::stableView().valid = false;
+	}
+
 	if(eyeball.isActive()) {
 		
 		targetPos = eyeball.getPosition();
@@ -1562,8 +1568,25 @@ void ArxGame::updateFirstPersonCamera() {
 	} else {
 		
 		g_playerCamera.angle = player.angle;
-		
-		if(VertexId viewVertex = io->obj->fastaccess.view_attach) {
+
+		if(vr::comfort().stableView) {
+
+			// The stable view (#416): in VR the camera stands on the body's real travel, never on the animated
+			// model - horizontally where the collision cylinder is, vertically its feet plus the stance's eye,
+			// height changes smoothed (vr/StableView.h). The head pose goes on top as before (D-018)
+			vr::StableViewInput input;
+			input.dt = toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
+			input.feetY = player.basePosition().y;
+			const bool crouched = (player.m_currentMovement & PLAYER_CROUCH) != 0;
+			input.eyeAboveFeet = -(crouched ? player.crouchHeight() : player.baseHeight());
+			// A jump from the take-off to the landing; a fall off a ledge is travel the view follows
+			input.jumping = player.jumpphase != NotJumping && !player.falling;
+			vr::StableView & view = vr::stableView();
+			vr::updateStableView(view, input, vr::stableViewParams());
+			g_playerCameraStablePos = g_playerCamera.m_pos = Vec3f(player.pos.x, view.cameraY(), player.pos.z);
+			vr::setStableViewPlaced(true);
+
+		} else if(VertexId viewVertex = io->obj->fastaccess.view_attach) {
 
 			// The VR body is drawn under the tracked head (#36): its shift is the head's own lean,
 			// which the head pose adds to the camera itself - so the engine's eye is the unshifted one
@@ -1749,8 +1772,32 @@ void ArxGame::speechControlledCinematic() {
 
 void ArxGame::handlePlayerDeath() {
 	
+	if(player.lifePool.current <= 0 && vr::comfort().stableView) {
+
+		// The still ghost (#416): the view stays where the eye was at the moment of death - the stable view's
+		// camera of this frame on the first dead frame - and only the head and the stick turn move it (the head
+		// pose goes on top in updateActiveCamera). The body falls below; the darkening and the menu stay
+		static Vec3f ghostPos;
+		if(!vr::deathGhost()) {
+			ghostPos = g_playerCamera.m_pos;
+			vr::setDeathGhost(true);
+			gameevent::Event("vr.view.ghost")("x", ghostPos.x, 0)("y", ghostPos.y, 0)("z", ghostPos.z, 0)
+				("eyeAboveFeet", player.basePosition().y - ghostPos.y, 1)
+				("death", vr::deathViewName(vr::viewVariants().death));
+		}
+		player.DeadTime += g_gameTime.lastFrameDuration();
+		g_playerCameraStablePos = g_playerCamera.m_pos = ghostPos;
+		g_playerCamera.angle = Anglef(0.f, player.angle.getYaw(), 0.f);
+		EXTERNALVIEW = true;
+		BLOCK_PLAYER_CONTROLS = true;
+		return;
+	}
+	if(player.lifePool.current > 0 && vr::deathGhost()) {
+		vr::setDeathGhost(false);
+	}
+
 	if(player.lifePool.current <= 0) {
-		
+
 		player.DeadTime += g_gameTime.lastFrameDuration();
 		float mdist = glm::abs(player.physics.cyl.height) - 60;
 		
@@ -1915,6 +1962,17 @@ void ArxGame::updateActiveCamera() {
 	// Where the hands' rays start next frame, and how their hits become the mouse (#37)
 	vr::noteHeadCamera(cam == &g_playerCamera && !EXTERNALVIEW && m_headView.camera == cam, cam->m_pos,
 	                   engineAngle.getYaw(), g_preparedCamera.m_worldToScreen);
+
+	// The camera this frame renders with against the body's travel and turn (#416): status.json camera.motion
+	{
+		vr::CameraSample sample;
+		sample.dt = toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
+		sample.camera = cam->m_pos;
+		sample.angle = cam->angle;
+		sample.body = player.pos;
+		sample.bodyYaw = player.angle.getYaw();
+		vr::addCameraSample(vr::cameraMotion(), sample);
+	}
 
 }
 
@@ -2162,6 +2220,10 @@ void ArxGame::updateLevel() {
 	}
 	
 	if(!EXTERNALVIEW) {
+		ARX_INTERACTIVE_Show_Hide_1st(entities.player(), true);
+	}
+	// The ghost's view (#416): the head stays hidden as in life, so the ghost never looks out of the falling head
+	if(vr::deathGhost() && vr::viewVariants().death == vr::DeathView::Headless) {
 		ARX_INTERACTIVE_Show_Hide_1st(entities.player(), true);
 	}
 	

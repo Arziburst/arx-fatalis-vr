@@ -44,6 +44,7 @@
 #include "scene/Object.h"
 #include "vr/ArmIK.h"
 #include "vr/HeadTracking.h"
+#include "vr/VRComfort.h"
 #include "vr/VRInput.h"
 #include "vr/VRSystem.h"
 
@@ -682,12 +683,23 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		noteBody(false, "head not referenced yet");
 		return;
 	}
+	// The still ghost at death (#416): the body below is the engine's falling corpse, its arms no longer the hands
+	if(deathGhost()) {
+		noteBody(false, "dead: the view is a ghost");
+		return;
+	}
 
 	// The body under the head: the lean - the head's movement less what the collision cylinder already walked
 	// after it (#26), the same offset the camera takes - moves every bone
 	const float bodyYaw = player.angle.getYaw();
 	const HeadCamera camera = headToCamera(head, headState.reference, bodyYaw, headState.anchor);
-	const Vec3f shift(camera.offset.x, 0.f, camera.offset.z);
+	Vec3f shift(camera.offset.x, 0.f, camera.offset.z);
+	// The stable view (#416) follows the body's feet smoothly, or not at all in a level jump: the body is drawn
+	// where the view's feet are, so it hops with the view and does not rise through it
+	const bool stable = stableViewPlaced() && stableView().valid;
+	if(stable) {
+		shift.y = stableView().feetY - player.basePosition().y;
+	}
 	for(Bone & bone : skeleton.bones) {
 		bone.anim.trans += shift;
 	}
@@ -697,7 +709,10 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	// The head camera in the world: the model's own eye (shifted with it) plus the head's height
 	// change - the camera that renders this frame, up to the model's head animation
 	Vec3f eye;
-	if(g_body.viewVertex && g_body.viewGroup) {
+	if(stable) {
+		// The stable view's eye, as the camera stands this frame (#416): the hands stay rigid with the real camera
+		eye = Vec3f(player.pos.x + shift.x, stableView().cameraY(), player.pos.z + shift.z);
+	} else if(g_body.viewVertex && g_body.viewGroup) {
 		eye = skeleton.bones[g_body.viewGroup].anim(eobj->vertexlocal[g_body.viewVertex]);
 	} else {
 		eye = player.pos + shift;

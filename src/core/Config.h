@@ -147,6 +147,9 @@ public:
 		bool vrPhysicalCrouch; //!< VR: the head going down crouches the character (#100)
 		float vrCrouchEnter; //!< VR: the head this far below the calibrated eye crouches, meters (#100)
 		float vrCrouchExit; //!< VR: the character stands again once the head is back above this depth, meters (#100)
+		std::string vrViewJump; //!< VR: how the view follows a jump: level or arc (#416, vr/StableView.h)
+		std::string vrViewCrouch; //!< VR: how fast the view glides into and out of a crouch: slow, medium or fast (#416)
+		std::string vrDeathView; //!< VR: what the still ghost sees at death: headless or body (#416)
 
 		float fov;
 		bool viewBobbing;

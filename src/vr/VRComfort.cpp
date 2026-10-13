@@ -30,6 +30,16 @@ namespace vr {
 namespace {
 
 ComfortMode g_mode = ComfortMode::Auto;
+ComfortMode g_stableMode = ComfortMode::Auto;
+
+// The stable view (#416)
+StableView g_view;
+bool g_viewPlaced = false;
+bool g_ghost = false;
+CameraMotion g_motion;
+ViewVariants g_variants;
+bool g_variantsLogged = false;
+std::string g_loggedVariants;
 
 // What was logged last, so the policy line is written on changes only - never per frame
 bool g_logged = false;
@@ -70,6 +80,11 @@ const ComfortPolicy & comfort() {
 	policy.viewBobbing = !active && config.video.viewBobbing;
 	policy.screenShake = !active && config.video.screenShake;
 	policy.fovZoom = !active;
+	switch(g_stableMode) {
+		case ComfortMode::On:   policy.stableView = true; break;
+		case ComfortMode::Off:  policy.stableView = false; break;
+		case ComfortMode::Auto: policy.stableView = active; break;
+	}
 
 	if(!g_logged || policy != g_policy || active != g_loggedActive || g_mode != g_loggedMode) {
 		std::string ignored;
@@ -78,7 +93,9 @@ const ComfortPolicy & comfort() {
 			          + std::to_string(int(config.video.screenShake)) + " ignored)";
 		}
 		LogInfo << "[vr] comfort: decided by " << decider(active) << " - view bobbing " << onOff(policy.viewBobbing)
-		        << ", screen shake " << onOff(policy.screenShake) << ", FOV zoom " << onOff(policy.fovZoom) << ignored;
+		        << ", screen shake " << onOff(policy.screenShake) << ", FOV zoom " << onOff(policy.fovZoom)
+		        << ", stable view " << onOff(policy.stableView)
+		        << (g_stableMode != ComfortMode::Auto ? " (forced by the test channel)" : "") << ignored;
 		g_logged = true;
 		g_loggedMode = g_mode;
 		g_loggedActive = active;
@@ -109,6 +126,107 @@ const char * comfortModeName(ComfortMode mode) {
 		case ComfortMode::Off:  return "off";
 	}
 	return "?";
+}
+
+void setStableViewMode(ComfortMode mode) {
+	if(mode == g_stableMode) {
+		return;
+	}
+	LogInfo << "[vr] view: stable view mode " << comfortModeName(g_stableMode) << " -> " << comfortModeName(mode)
+	        << " (test channel)";
+	g_stableMode = mode;
+	comfort(); // log the new policy right away
+}
+
+ComfortMode stableViewMode() {
+	return g_stableMode;
+}
+
+const ViewVariants & viewVariants() {
+
+	ViewVariants variants;
+	std::string rejected;
+	if(!parseJumpView(config.video.vrViewJump, variants.jump)) {
+		rejected += " vr_view_jump=\"" + config.video.vrViewJump + "\"";
+	}
+	if(!parseCrouchGlide(config.video.vrViewCrouch, variants.crouch)) {
+		rejected += " vr_view_crouch=\"" + config.video.vrViewCrouch + "\"";
+	}
+	if(!parseDeathView(config.video.vrDeathView, variants.death)) {
+		rejected += " vr_death_view=\"" + config.video.vrDeathView + "\"";
+	}
+	g_variants = variants;
+
+	std::string line = std::string("jump ") + jumpViewName(variants.jump) + ", crouch glide "
+	                   + crouchGlideName(variants.crouch) + ", death " + deathViewName(variants.death);
+	if(!g_variantsLogged || line != g_loggedVariants) {
+		LogInfo << "[vr] view: " << line << " (cfg.ini vr_view_jump, vr_view_crouch, vr_death_view)";
+		if(!rejected.empty()) {
+			LogWarning << "[vr] view: not a variant, the default is used instead:" << rejected;
+		}
+		g_variantsLogged = true;
+		g_loggedVariants = line;
+	}
+
+	return g_variants;
+}
+
+StableViewParams stableViewParams() {
+	const ViewVariants & variants = viewVariants();
+	StableViewParams params;
+	params.jump = variants.jump;
+	params.crouchSpeed = crouchGlideSpeed(variants.crouch);
+	return params;
+}
+
+std::string setViewVariant(std::string_view name, std::string_view value) {
+	if(name == "jump") {
+		JumpView jump;
+		if(!parseJumpView(value, jump)) {
+			return "view jump: expected level or arc, got \"" + std::string(value) + "\"";
+		}
+		config.video.vrViewJump = jumpViewName(jump);
+	} else if(name == "crouch") {
+		CrouchGlide crouch;
+		if(!parseCrouchGlide(value, crouch)) {
+			return "view crouch: expected slow, medium or fast, got \"" + std::string(value) + "\"";
+		}
+		config.video.vrViewCrouch = crouchGlideName(crouch);
+	} else if(name == "death") {
+		DeathView death;
+		if(!parseDeathView(value, death)) {
+			return "view death: expected headless or body, got \"" + std::string(value) + "\"";
+		}
+		config.video.vrDeathView = deathViewName(death);
+	} else {
+		return "view: expected jump, crouch or death, got \"" + std::string(name) + "\"";
+	}
+	viewVariants(); // log the change right away
+	return std::string();
+}
+
+StableView & stableView() {
+	return g_view;
+}
+
+bool stableViewPlaced() {
+	return g_viewPlaced;
+}
+
+void setStableViewPlaced(bool placed) {
+	g_viewPlaced = placed;
+}
+
+bool deathGhost() {
+	return g_ghost;
+}
+
+void setDeathGhost(bool ghost) {
+	g_ghost = ghost;
+}
+
+CameraMotion & cameraMotion() {
+	return g_motion;
 }
 
 } // namespace vr

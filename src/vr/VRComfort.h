@@ -20,6 +20,11 @@
 #ifndef ARX_VR_VRCOMFORT_H
 #define ARX_VR_VRCOMFORT_H
 
+#include <string>
+#include <string_view>
+
+#include "vr/StableView.h"
+
 /*!
  * \brief VR comfort policy (#76, F-31)
  *
@@ -29,6 +34,9 @@
  *  - \b screen \b shake: quake effects jitter the camera position and angles (\ref ManageQuakeFX)
  *  - \b FOV \b zoom: the bow aim and the Magic Sight spell change the camera focal length
  *    (\ref ArxGame::updateLevel)
+ * and a fourth that bobbing off left (#416): the first-person eye still sits on the model's paused animation,
+ * which every stance, jump, landing, crouch, strike and the death fall move - in VR the \b stable \b view puts
+ * the camera on the body's real travel instead and makes death a still ghost (vr/StableView.h).
  *
  * On a monitor these are cues; in a headset the view is the player's own head, and every motion
  * or zoom that does not come from it is a motion-sickness trigger. The policy decides per kind:
@@ -47,9 +55,13 @@ struct ComfortPolicy {
 	bool viewBobbing = true; //!< the camera may follow the animated head of the player model
 	bool screenShake = true; //!< quake effects may jitter the camera
 	bool fovZoom = true;     //!< the bow aim and Magic Sight may change the field of view
+	//! the first-person camera stands on the body's real travel, not on the animated model, and death is a
+	//! still ghost (#416, vr/StableView.h) - off: the engine's eye and death camera
+	bool stableView = false;
 
 	bool operator==(const ComfortPolicy & other) const {
-		return viewBobbing == other.viewBobbing && screenShake == other.screenShake && fovZoom == other.fovZoom;
+		return viewBobbing == other.viewBobbing && screenShake == other.screenShake && fovZoom == other.fovZoom
+		       && stableView == other.stableView;
 	}
 	bool operator!=(const ComfortPolicy & other) const { return !(*this == other); }
 
@@ -78,6 +90,50 @@ ComfortMode comfortMode();
 
 //! \return "auto", "on" or "off" - for the log and status.json
 const char * comfortModeName(ComfortMode mode);
+
+/*!
+ * \brief Who decides the stable view (#416) on its own: \c auto follows the comfort policy (on with the VR
+ *        rules), \c on / \c off force it - the test channel's \c view \c stable, which measures the engine's
+ *        camera and the stable one in one run
+ */
+void setStableViewMode(ComfortMode mode);
+ComfortMode stableViewMode();
+
+//! The stable view's variants as cfg.ini (or the channel) sets them (#416); a value that is not one is the default
+struct ViewVariants {
+	JumpView jump = JumpView::Level;
+	CrouchGlide crouch = CrouchGlide::Slow;
+	DeathView death = DeathView::Headless;
+};
+
+//! \return the variants now; logs one \c [vr] \c view: line whenever they change
+const ViewVariants & viewVariants();
+
+//! \return the parameters of \ref updateStableView for the variants now
+StableViewParams stableViewParams();
+
+/*!
+ * \brief Set one variant (\c jump, \c crouch or \c death) in the running game's config, as cfg.ini would
+ * \return an error, empty when it was set
+ */
+std::string setViewVariant(std::string_view name, std::string_view value);
+
+//! The view's height, carried from frame to frame by the first-person camera (ArxGame::updateFirstPersonCamera)
+StableView & stableView();
+
+//! \return true while the stable view placed this frame's first-person camera (not a ghost, not the engine's eye)
+bool stableViewPlaced();
+void setStableViewPlaced(bool placed);
+
+/*!
+ * \brief The still ghost at death (#416): the view stays where the eye was when the hero died, only the head and
+ *        the stick turn move it - set by the death camera (ArxGame::handlePlayerDeath), cleared when alive
+ */
+bool deathGhost();
+void setDeathGhost(bool ghost);
+
+//! The camera's motion since the last \ref resetCameraMotion (status.json \c camera.motion, the channel's \c view \c meter)
+CameraMotion & cameraMotion();
 
 } // namespace vr
 

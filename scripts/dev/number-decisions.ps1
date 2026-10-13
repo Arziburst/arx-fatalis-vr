@@ -18,6 +18,8 @@
 
 	-Check is the CI gate: fails when DECISIONS.md adds a numbered D-nnn heading that already exists on -BaseRef with another
 	title, or that appears twice. A D-NEW placeholder passes (it is numbered at merge).
+	With -Strict (CI on a push to main) a placeholder heading fails too: nothing unnumbered may sit on main (#383).
+	Every documentation line that talks about the placeholder itself must carry the d-new-literal marker.
 
 .PARAMETER Root
 	The working copy (default: the one this script belongs to).
@@ -27,13 +29,16 @@
 	Also rewrite the body of this pull request.
 .PARAMETER Check
 	Only verify, change nothing; exit 1 on a clash.
+.PARAMETER Strict
+	With -Check: also fail on any unnumbered D-NEW heading (for main).
 #>
 [CmdletBinding()]
 param(
 	[string]$Root = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
 	[string]$BaseRef = 'origin/main',
 	[int]$Pr = 0,
-	[switch]$Check
+	[switch]$Check,
+	[switch]$Strict
 )
 
 $ErrorActionPreference = 'Stop'
@@ -52,6 +57,12 @@ $mine = @(Get-Headings (Get-Content -LiteralPath $path))
 if ($Check) {
 	$base = @(Get-Headings ((Invoke-Git show "${BaseRef}:$decisions") -split "`r?`n"))
 	$problems = @()
+	if ($Strict) {
+		# main (push): every decision must be numbered by now (#383)
+		foreach ($line in (Get-Content -LiteralPath $path)) {
+			if ($line -match "^## ($placeholder):") { $problems += "$decisions still has an unnumbered decision '$line' on main - run number-decisions.ps1 and commit the result" }
+		}
+	}
 	foreach ($g in ($mine | Group-Object Number | Where-Object Count -gt 1)) { $problems += "D-$($g.Name) appears $($g.Count) times in $decisions" }
 	foreach ($h in $mine) {
 		$onBase = @($base | Where-Object Number -eq $h.Number)

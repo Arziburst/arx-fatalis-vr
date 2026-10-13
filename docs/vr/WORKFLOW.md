@@ -203,8 +203,8 @@ test station.
 `main` and green on that state (`gh pr update-branch <pr>`, wait for CI). Conflicts are resolved by
 the PR's worker. After each merge the coordinator updates the other open PRs in `/new-cycle`.
 
-**Decision numbers are assigned at merge (#274).** <!-- d-new-literal --> Nobody picks a number while a PR is open: a new
-decision is written `## D-NEW: <title>` and referenced as `D-NEW` (code comments, TESTING, TRAPS, the PR body); a second decision
+**Decision numbers are assigned at merge (#274).** Nobody picks a number while a PR is open: a new <!-- d-new-literal -->
+decision is written `## D-NEW: <title>` and referenced as `D-NEW` (code comments, TESTING, TRAPS, the PR body); a second decision <!-- d-new-literal -->
 in the same PR is `D-NEW-<tag>`. <!-- d-new-literal --> Right after `git merge origin/main` and right before the merge, run
 `.\scripts\dev\number-decisions.ps1 -Pr <pr>`: the next free numbers replace the placeholders in every file the branch changed and
 in the PR body (a line carrying the marker `d-new-literal` is left alone — for docs that talk about the placeholder); commit and push

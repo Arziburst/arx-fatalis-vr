@@ -24,6 +24,9 @@
 # chest, the blade pointing ahead, the hand to the right - moved there slowly (0.43 m in 60 frames: under 0.7 m/s)
 goblin_base_0036.setspeed 0
 place goblin_base_0036 80
+# Since #417 the save stands the player on the floor (170 units up before, out of reach): a second goblin comes
+# and hits the player with its club, a melee.hit step 6 must not see - it leaves, only the player's strikes count
+goblin_base_0012.destroy self
 vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
 vr-sim head rot 0 -25 0
 @frames 75

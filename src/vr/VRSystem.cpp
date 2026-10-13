@@ -62,6 +62,7 @@
 #include "vr/InterfaceSize.h"
 #include "vr/MenuPointer.h"
 #include "vr/OpenXRUtil.h"
+#include "vr/PerfLog.h"
 #include "vr/UIPanel.h"
 #include "vr/VRActions.h"
 #include "vr/VRMirror.h"
@@ -1976,7 +1977,11 @@ bool endFrame(bool resubmit) {
 	endInfo.layers = count ? layers.list.data() : nullptr;
 
 	frame.timing.endStart = toUs(platform::getTime());
-	XrResult result = xrEndFrame(g_xr.session, &endInfo);
+	XrResult result;
+	{
+		perf::Scope perfEnd(PerfPhase::VrEnd);
+		result = xrEndFrame(g_xr.session, &endInfo);
+	}
 	frame.timing.endEnd = toUs(platform::getTime());
 	frame.begun = false;
 	if(XR_FAILED(result)) {
@@ -2325,29 +2330,47 @@ bool beginFrameFor(const Vec2i & windowSize, FrameTargets targets) {
 		endFrame(true);
 	}
 
-	// The even-cadence cap (F-26): sleep past the slots to skip, so that xrWaitFrame - the only
-	// display clock, a timer of our own slips (F-117) - hands out every n-th slot, not the next one
-	if(g_xr.divisor > 1 && frame.haveLastWait && frame.period > 0) {
-		s64 skipUs = s64((double(g_xr.divisor) - 0.5) * double(frame.period));
-		PlatformInstant deadline = frame.lastWaitReturn + PlatformDuration(std::chrono::microseconds(skipUs));
-		PlatformDuration left = deadline - platform::getTime();
-		if(left > 0) {
-			Thread::sleep(left);
+	XrResult result;
+	PlatformInstant waited;
+	{
+		// The cap's sleep and xrWaitFrame: the time the headset paces the game (#327's vrwait)
+		perf::Scope perfWait(PerfPhase::VrWait);
+
+		// The even-cadence cap (F-26): sleep past the slots to skip, so that xrWaitFrame - the only
+		// display clock, a timer of our own slips (F-117) - hands out every n-th slot, not the next one
+		if(g_xr.divisor > 1 && frame.haveLastWait && frame.period > 0) {
+			s64 skipUs = s64((double(g_xr.divisor) - 0.5) * double(frame.period));
+			PlatformInstant deadline = frame.lastWaitReturn + PlatformDuration(std::chrono::microseconds(skipUs));
+			PlatformDuration left = deadline - platform::getTime();
+			if(left > 0) {
+				Thread::sleep(left);
+			}
 		}
+
+		frame.timing = FrameTiming();
+		frame.timing.waitStart = toUs(platform::getTime());
+
+		XrFrameWaitInfo waitInfo = { XR_TYPE_FRAME_WAIT_INFO };
+		frame.state = { XR_TYPE_FRAME_STATE };
+		result = xrWaitFrame(g_xr.session, &waitInfo, &frame.state);
+		waited = platform::getTime();
 	}
-
-	frame.timing = FrameTiming();
-	frame.timing.waitStart = toUs(platform::getTime());
-
-	XrFrameWaitInfo waitInfo = { XR_TYPE_FRAME_WAIT_INFO };
-	frame.state = { XR_TYPE_FRAME_STATE };
-	XrResult result = xrWaitFrame(g_xr.session, &waitInfo, &frame.state);
-	PlatformInstant waited = platform::getTime();
 	frame.timing.waitEnd = toUs(waited);
 	if(XR_FAILED(result)) {
 		logFrameFailure("xrWaitFrame", result);
 		return false;
 	}
+	// Missed frames as OpenXR sees them: display slots the predicted display time skipped beyond the
+	// expected ones (the performance log, #327)
+	if(g_xr.lastDisplayTime != 0 && frame.state.predictedDisplayPeriod > 0
+	   && frame.state.predictedDisplayTime > g_xr.lastDisplayTime) {
+		XrTime slots = (frame.state.predictedDisplayTime - g_xr.lastDisplayTime + frame.state.predictedDisplayPeriod / 2)
+		               / frame.state.predictedDisplayPeriod;
+		if(slots > XrTime(g_xr.divisor)) {
+			perf::addMissed(u32(slots - XrTime(g_xr.divisor)));
+		}
+	}
+	perf::setDisplay(frame.state.predictedDisplayPeriod / 1000, g_xr.divisor, true);
 	g_xr.lastDisplayTime = frame.state.predictedDisplayTime;
 	frame.period = frame.state.predictedDisplayPeriod / 1000; // OpenXR nanoseconds
 	frame.timing.displayPeriod = frame.period;

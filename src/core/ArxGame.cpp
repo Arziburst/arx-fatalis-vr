@@ -183,6 +183,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "vr/EyeProjection.h"
 #include "vr/HeadLean.h"
 #include "vr/HeadTracking.h"
+#include "vr/PerfLog.h"
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
@@ -247,6 +248,9 @@ bool ArxGame::initialize() {
 
 	// Test command channel and status file (--test-dir): counts log errors from here on
 	channel::initialize();
+
+	// arx-perf.log next to arx.log: frame times per second and every hitch with its phases (#327)
+	vr::perf::initialize();
 
 	// Decide between VR and flat mode before the window exists: needs no OpenGL yet
 	vr::initialize();
@@ -1159,7 +1163,10 @@ static void ReleaseSystemObjects() {
 long EXITING = 0;
 
 void ArxGame::shutdown() {
-	
+
+	// The last second of frames, before the slow parts of the shutdown
+	vr::perf::shutdown();
+
 	if(m_gameInitialized)
 		shutdownGame();
 
@@ -1333,6 +1340,16 @@ void ArxGame::run() {
 }
 
 /*!
+ * \brief The frame time a flat frame is judged against in the performance log (#327), microseconds
+ *
+ * cfg.ini fps_limit when set, else the monitor's refresh rate; 0 when neither is known.
+ */
+static s64 flatFramePeriodUs(const Window & window) {
+	int fps = config.video.fpsLimit > 0 ? config.video.fpsLimit : window.getDisplayMode().refresh;
+	return fps > 0 ? 1000000 / fps : 0;
+}
+
+/*!
  * \brief The engine's own frame limiter: sleep towards cfg.ini fps_limit (or the monitor's rate)
  */
 void ArxGame::limitFrameRate() {
@@ -1436,23 +1453,41 @@ static const char * openMenuName() {
  * \brief Draws the scene.
  */
 void ArxGame::doFrame() {
-	
-	vr::pollEvents();
-	
+
+	// The performance log (#327): the previous frame ends here, this one's phases are timed from now on
+	vr::perf::frameStart();
+
+	{
+		vr::perf::Scope perfInput(vr::PerfPhase::Input);
+		vr::pollEvents();
+	}
+
 	// In VR the frame starts when the headset wants it (xrWaitFrame, the only frame clock - D-024);
 	// otherwise the engine paces itself as before
 	applyVRPacing();
-	if(!vr::beginFrame(m_MainWindow->getSize())) {
+	bool vrFrame;
+	{
+		vr::perf::Scope perfInput(vr::PerfPhase::Input);
+		vrFrame = vr::beginFrame(m_MainWindow->getSize());
+	}
+	if(!vrFrame) {
+		vr::perf::setDisplay(flatFramePeriodUs(*m_MainWindow), 1, false);
+		vr::perf::Scope perfLimit(vr::PerfPhase::Limit);
 		limitFrameRate();
 	}
-	
+	// The previous frame is judged now that xrWaitFrame said which display slots it cost
+	vr::perf::frameBegun();
+
 	ARX_PROFILE_FUNC();
-	
+
 	updateTime();
 
 	// Controllers -> gameplay events through the control table (#30), synced after xrWaitFrame, and the
 	// events -> the engine's actions, mouse buttons and keys (#74), applied by GInput->update() below
-	vr::updateInput();
+	{
+		vr::perf::Scope perfInput(vr::PerfPhase::Input);
+		vr::updateInput();
+	}
 
 	// Game event log: state and UI changes (before the channel, which reports the same state);
 	// the OpenXR events were polled at the top of the frame, before vr::beginFrame()
@@ -1480,9 +1515,15 @@ void ArxGame::doFrame() {
 	}
 
 	// Test channel: frame counter, command file, status.json (no-op without --test-dir)
-	channel::update();
+	{
+		vr::perf::Scope perfChannel(vr::PerfPhase::Channel);
+		channel::update();
+	}
 
-	updateInput();
+	{
+		vr::perf::Scope perfInput(vr::PerfPhase::Input);
+		updateInput();
+	}
 
 	// In VR an open menu goes on the floating panel (#49); the state after this frame's input, the
 	// panel is placed when the frame is submitted
@@ -1503,8 +1544,17 @@ void ArxGame::doFrame() {
 	}
 
 	// Manages Splash Screens if needed
-	if(HandleGameFlowTransitions()) {
-		vr::submitFrame(m_MainWindow->getSize());
+	bool transition;
+	{
+		vr::perf::Scope perfLoad(vr::PerfPhase::Load);
+		transition = HandleGameFlowTransitions();
+	}
+	if(transition) {
+		{
+			vr::perf::Scope perfRender(vr::PerfPhase::Render);
+			vr::submitFrame(m_MainWindow->getSize());
+		}
+		vr::perf::Scope perfPresent(vr::PerfPhase::Present);
 		m_MainWindow->showFrame();
 		return;
 	}
@@ -1528,6 +1578,7 @@ void ArxGame::doFrame() {
 	// Clicked on New Quest ? (TODO:need certainly to be moved somewhere else...)
 	if(START_NEW_QUEST) {
 		LogDebug("start quest");
+		vr::perf::Scope perfLoad(vr::PerfPhase::Load);
 		DANAE_StartNewQuest();
 	}
 
@@ -1541,12 +1592,14 @@ void ArxGame::doFrame() {
 		benchmark::begin(benchmark::LoadLevel);
 		LogDebug("teleport to " << g_teleportToArea << " " << TELEPORT_TO_POSITION << " " << TELEPORT_TO_ANGLE);
 		CHANGE_LEVEL_ICON = NoChangeLevel;
+		vr::perf::Scope perfLoad(vr::PerfPhase::Load);
 		ARX_CHANGELEVEL_Change(g_teleportToArea, TELEPORT_TO_POSITION, float(TELEPORT_TO_ANGLE));
 		g_teleportToArea = { };
 		TELEPORT_TO_POSITION.clear();
 	}
 
 	if(LOADQUEST_SLOT != SavegameHandle() && LOADQUEST_SLOT.handleData() < long(savegames.size())) {
+		vr::perf::Scope perfLoad(vr::PerfPhase::Load);
 		ARX_LoadGame(savegames[LOADQUEST_SLOT]);
 		LOADQUEST_SLOT = SavegameHandle();
 	} else if(LOADQUEST_SLOT != SavegameHandle()) {
@@ -1576,12 +1629,14 @@ void ArxGame::doFrame() {
 			save.name = name;
 			save.area = area;
 			save.savefile = g_saveToLoad;
+			vr::perf::Scope perfLoad(vr::PerfPhase::Load);
 			ARX_LoadGame(save);
 		}
 		g_saveToLoad.clear();
 	}
 	
 	if(GInput->actionNowPressed(CONTROLS_CUST_QUICKLOAD)) {
+		vr::perf::Scope perfLoad(vr::PerfPhase::Load);
 		ARX_QuickLoad();
 	}
 	
@@ -1592,6 +1647,7 @@ void ArxGame::doFrame() {
 		
 		if(GInput->actionNowPressed(CONTROLS_CUST_QUICKSAVE) && ARXmenu.mode() == Mode_InGame) {
 			g_hudRoot.quickSaveIconGui.show();
+			vr::perf::Scope perfSave(vr::PerfPhase::Save);
 			GRenderer->getSnapshot(savegame_thumbnail, config.interface.thumbnailSize.x, config.interface.thumbnailSize.y);
 			ARX_QuickSave();
 			g_platformTime.updateFrame();
@@ -1601,15 +1657,27 @@ void ArxGame::doFrame() {
 	
 	if(g_requestLevelInit) {
 		g_requestLevelInit = false;
+		vr::perf::Scope perfLoad(vr::PerfPhase::Load);
 		levelInit();
 	} else {
 		cinematicLaunchWaiting();
-		render();
+		{
+			// render() updates the game and draws it: its drawing parts are timed as render inside
+			vr::perf::Scope perfUpdate(vr::PerfPhase::Update);
+			render();
+		}
 		// In VR: the finished flat frame on a head-locked quad in the headset (no-op in flat mode)
-		vr::submitFrame(m_MainWindow->getSize());
+		{
+			vr::perf::Scope perfRender(vr::PerfPhase::Render);
+			vr::submitFrame(m_MainWindow->getSize());
+		}
 		// A "shot" from the test channel reads the finished frame before it is shown: in VR the window
 		// holds the desktop mirror by now (#271), what a spectator sees
-		channel::afterRender();
+		{
+			vr::perf::Scope perfChannel(vr::PerfPhase::Channel);
+			channel::afterRender();
+		}
+		vr::perf::Scope perfPresent(vr::PerfPhase::Present);
 		m_MainWindow->showFrame();
 	}
 }
@@ -2232,7 +2300,10 @@ void ArxGame::updateLevel() {
 
 	updateFirstPersonCamera();
 
-	ARX_SCRIPT_Timer_Check();
+	{
+		vr::perf::Scope perfScript(vr::PerfPhase::Script);
+		ARX_SCRIPT_Timer_Check();
+	}
 
 	speechControlledCinematic();
 
@@ -2262,13 +2333,19 @@ void ArxGame::updateLevel() {
 	}
 	
 	PrepareIOTreatZone();
-	ARX_PHYSICS_Apply();
-	
+	{
+		vr::perf::Scope perfPhysics(vr::PerfPhase::Physics);
+		ARX_PHYSICS_Apply();
+	}
+
 	PrecalcIOLighting(g_camera->m_pos, g_camera->cdepth * 0.6f);
-	
+
 	ARX_SCENE_Update();
 
-	g_particleManager.Update(g_gameTime.lastFrameDuration());
+	{
+		vr::perf::Scope perfParticles(vr::PerfPhase::Particles);
+		g_particleManager.Update(g_gameTime.lastFrameDuration());
+	}
 
 	ARX_FOGS_Render();
 
@@ -2345,10 +2422,13 @@ void ArxGame::updateLevel() {
 
 	// Effects that used to advance while the level was drawn - once per frame here, so the scene
 	// can be drawn once per eye without running the game twice (#71)
-	ARX_PARTICLES_Update();
-	ParticleSparkUpdate();
-	ARX_MAGICAL_FLARES_Update();
-	PolyBoomUpdate();
+	{
+		vr::perf::Scope perfParticles(vr::PerfPhase::Particles);
+		ARX_PARTICLES_Update();
+		ParticleSparkUpdate();
+		ARX_MAGICAL_FLARES_Update();
+		PolyBoomUpdate();
+	}
 	ARX_DAMAGE_Update_Hit_Blood();
 	eyeball.updateFading();
 	ARX_SPELLS_Update();
@@ -2674,13 +2754,16 @@ void ArxGame::render() {
 	
 	if(ARXmenu.mode() != Mode_InGame) {
 		benchmark::begin(benchmark::Menu);
+		vr::perf::Scope perfRender(vr::PerfPhase::Render);
 		ARX_Menu_Render();
 	} else if(isInCinematic()) {
 		benchmark::begin(benchmark::Cinematic);
+		vr::perf::Scope perfRender(vr::PerfPhase::Render);
 		cinematicRender();
 	} else {
 		benchmark::begin(cinematicBorder.CINEMA_DECAL != 0.f ? benchmark::Cutscene : benchmark::Scene);
 		updateLevel();
+		vr::perf::Scope perfRender(vr::PerfPhase::Render);
 		renderLevel();
 	}
 	
@@ -2718,8 +2801,11 @@ void ArxGame::render() {
 	g_console.draw();
 	
 	if(ARXmenu.mode() == Mode_InGame) {
-		ARX_SCRIPT_AllowInterScriptExec();
-		ARX_SCRIPT_EventStackExecute();
+		{
+			vr::perf::Scope perfScript(vr::PerfPhase::Script);
+			ARX_SCRIPT_AllowInterScriptExec();
+			ARX_SCRIPT_EventStackExecute();
+		}
 		// Updates Damages Spheres
 		ARX_DAMAGES_UpdateAll();
 		ARX_MISSILES_Update();

@@ -316,6 +316,10 @@ void EERIEDrawBitmap2DecalY(Rectf rect, float z, TextureContainer * tex, Color c
 
 void drawViewOverlay(float z, TextureContainer * tex, Color color) {
 
+	if(g_stereoView.overlaysHidden) {
+		return;
+	}
+
 	if(g_stereoView.active && !g_stereoView.legacy) {
 
 		// Head-locked at infinity over both eyes' union frustum: each texel is one direction for both eyes,

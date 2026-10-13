@@ -7,7 +7,7 @@
 	known geometry and feeds them to Test-ArxStereoChange, as a --vr-sim run's shots would come: a small sphere 1 m
 	away and 30 degrees to the side passes every fx leg and is measured at 1 m; the same pictures with the eyes swapped
 	fail the depth (a negative disparity); a square drawn in each eye's own screen space (the engine's sprite before
-	#22) fails the fusion; a stale eye fails the pairing; a change over both whole eyes passes the view legs, over the
+	#22) fails the size; a stale eye fails the pairing; a change over both whole eyes passes the view legs, over the
 	middle of the view only (the flat frame quad) fails the coverage; a head-locked pattern at infinity passes the
 	parallax, the same pattern stretched over each eye's own image fails it. No game, no network.
 	Exit code 0 when everything passed, 1 otherwise.
@@ -114,13 +114,13 @@ $azimuth = 30.0
 $rad = $azimuth * [math]::PI / 180
 $center = [double[]]@([math]::Sin($rad), 0.0, -[math]::Cos($rad))
 
-function Save-Shot([string]$Name, [int]$Kind, [switch]$Swap) {
+function Save-Shot([string]$Name, [int]$Kind, [switch]$Swap, [double]$RaiseRight = 0) {
 	foreach ($eye in 'left', 'right') {
 		$source = if ($Swap) { if ($eye -eq 'left') { 'right' } else { 'left' } } else { $eye }
 		$f = $fov[$source]; $q = $quat[$source]; $p = $position[$source]
 		$d2r = [math]::PI / 180
 		$bytes = [ArxStereoFixture]::Render($W, $H, [math]::Tan($f.left * $d2r), [math]::Tan($f.right * $d2r), [math]::Tan($f.up * $d2r),
-			[math]::Tan($f.down * $d2r), [double[]]@($q.x, $q.y, $q.z, $q.w), [double[]]@($p.x, $p.y, $p.z), $Kind, $center, 0.025)
+			[math]::Tan($f.down * $d2r), [double[]]@($q.x, $q.y, $q.z, $q.w), [double[]]@($p.x, $p.y, $p.z), $Kind, $(if ($eye -eq 'right' -and $RaiseRight) { [double[]]@($center[0], ($center[1] + $RaiseRight), $center[2]) } else { $center }), 0.025)
 		$bitmap = New-Object System.Drawing.Bitmap $W, $H, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
 		$data = $bitmap.LockBits((New-Object System.Drawing.Rectangle 0, 0, $W, $H), [System.Drawing.Imaging.ImageLockMode]::WriteOnly, $bitmap.PixelFormat)
 		for ($y = 0; $y -lt $H; $y++) {
@@ -157,29 +157,37 @@ try {
 	Save-Shot 'base' 0
 	Save-Shot 'sphere' 1
 	Save-Shot 'swapped' 1 -Swap
+	Save-Shot 'raised' 1 -RaiseRight 0.012     # the right eye sees it 1.2 cm higher: 0.7 degrees
 	Save-Shot 'screen-square' 2
 	Save-Shot 'white' 5
 	Save-Shot 'middle' 6
 	Save-Shot 'locked' 3
 	Save-Shot 'stretched' 4
-	$status = New-Status @('base', 'sphere', 'swapped', 'screen-square', 'white', 'middle', 'locked', 'stretched')
+	$status = New-Status @('base', 'sphere', 'swapped', 'raised', 'screen-square', 'white', 'middle', 'locked', 'stretched')
 
 	Write-Host 'fx: a sphere 1 m away, 30 degrees right, on canted eyes'
-	$legs = Test-ArxStereoChange $status 'base' 'sphere' 'fx' $files
-	Check 'every fx leg passes' (@($legs | Where-Object { -not $_.Pass }).Count -eq 0 -and $legs.Count -eq 4) (Show $legs)
+	$legs = Test-ArxStereoChange $status 'base' 'sphere' 'sprite' $files
+	Check 'every sprite leg passes' (@($legs | Where-Object { -not $_.Pass }).Count -eq 0 -and $legs.Count -eq 5) (Show $legs)
 	$depth = Leg $legs 'depth'
 	Check 'the depth leg names the distance near 1 m' ($depth.Detail -match ': (0\.9\d|1\.0\d) m') $depth.Detail
-	Write-Host "        $((Leg $legs 'fusion').Detail)" -ForegroundColor DarkGray
+	Write-Host "        $((Leg $legs 'size').Detail)" -ForegroundColor DarkGray
+
+	$legs = Test-ArxStereoChange $status 'base' 'sphere' 'fx' $files
+	Check 'fx has no size leg (a cloud is as wide as where its particles are)' ($legs.Count -eq 4 -and -not (Leg $legs 'size')) (Show $legs)
+
+	Write-Host 'fx: the right eye sees it higher'
+	$legs = Test-ArxStereoChange $status 'base' 'raised' 'fx' $files
+	Check 'the height leg fails' (-not (Leg $legs 'height').Pass) (Show $legs)
 
 	Write-Host 'fx: the eyes swapped'
 	$legs = Test-ArxStereoChange $status 'base' 'swapped' 'fx' $files
 	Check 'the depth leg fails' (-not (Leg $legs 'depth').Pass) (Show $legs)
 
 	Write-Host "fx: a square in each eye's own screen space"
-	$legs = Test-ArxStereoChange $status 'base' 'screen-square' 'fx' $files
+	$legs = Test-ArxStereoChange $status 'base' 'screen-square' 'sprite' $files
 	Check 'the depth leg still passes (its middle is the point)' (Leg $legs 'depth').Pass (Show $legs)
-	Check 'the fusion leg fails' (-not (Leg $legs 'fusion').Pass) (Show $legs)
-	Write-Host "        $((Leg $legs 'fusion').Detail)" -ForegroundColor DarkGray
+	Check 'the size leg fails' (-not (Leg $legs 'size').Pass) (Show $legs)
+	Write-Host "        $((Leg $legs 'size').Detail)" -ForegroundColor DarkGray
 
 	Write-Host 'pairing: a stale eye'
 	$legs = Test-ArxStereoChange (New-Status @('base', 'sphere') -Stale 3) 'base' 'sphere' 'fx' $files

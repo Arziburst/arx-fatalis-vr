@@ -80,6 +80,9 @@ struct StereoView {
 	//! The test channel's "stereo-fx legacy on": the eyes draw these effects the old, per-eye way -
 	//! the before picture, so a check can show that it fails without the fix
 	bool legacy = false;
+	//! The test channel's "stereo-fx overlays off": the full-view overlays are not drawn, so that a shot with them
+	//! and one without differ by the overlay alone (Magic Sight also tints the world)
+	bool overlaysHidden = false;
 	glm::mat4x4 worldToView = glm::mat4x4(1.f); //!< the head camera's (engine view axes)
 	glm::mat4x4 viewToWorld = glm::mat4x4(1.f);
 	Vec3f position = Vec3f(0.f); //!< the point between the eyes, in the world

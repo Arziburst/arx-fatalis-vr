@@ -33,10 +33,11 @@
 #                                  eye = left (default) | right | quad | left-layer | right-layer (the eye without the quad,
 #                                  after `vr-sim layers on`, #72) on the simulated headset. A still scene
 #                                  shot twice is below ~0.5; a head turn is several levels.
-#   @stereo <a> <b> fx|view|infinity [fails <leg>]  the change from shot a to shot b as both eyes of the simulated
-#                                  headset see it (stereo-check-lib.ps1, #22): fx = the test effect of `stereo-fx place`
-#                                  at its depth in both eyes, the same size and height; view = over each eye's whole
-#                                  view equally (a fade); infinity = a head-locked overlay with no disparity. With
+#   @stereo <a> <b> fx|sprite|view|infinity [fails <leg>]  the change from shot a to shot b as both eyes of the
+#                                  simulated headset see it (stereo-check-lib.ps1, #22): fx = the test effect of
+#                                  `stereo-fx place` at its depth and one height in both eyes; sprite = fx and the same
+#                                  size; view = over each eye's whole view equally (a fade); infinity = a head-locked
+#                                  overlay with no disparity. With
 #                                  `fails <leg>` that leg must fail (the before picture, `stereo-fx legacy on`)
 #   @key <name> [n] [ms]           press a key n times (default 1), ms apart (default 300), in the game window,
 #                                  without taking the focus (a posted keyboard message): Escape, Enter, Space, A-Z, 0-9, F1-F12 ...
@@ -103,7 +104,7 @@ function ConvertTo-XrsStep([string]$Line, [int]$Number) {
 		$d = 0.0
 		if (-not [double]::TryParse($step.Value, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$d)) { throw "@diff compares with a number, got '$($step.Value)'" }
 	}
-	elseif ($Line -match '^@stereo\s+([\w.-]+)\s+([\w.-]+)\s+(fx|view|infinity)(?:\s+fails\s+(\w+))?\s*$') {
+	elseif ($Line -match '^@stereo\s+([\w.-]+)\s+([\w.-]+)\s+(fx|sprite|view|infinity)(?:\s+fails\s+(\w+))?\s*$') {
 		$step.Kind = 'stereo'; $step.A = $Matches[1]; $step.B = $Matches[2]; $step.Mode = $Matches[3]
 		$step.Fails = $Matches[4]
 	}

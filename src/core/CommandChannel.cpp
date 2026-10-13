@@ -1434,6 +1434,7 @@ std::string buildStatus(PlatformInstant now) {
 	// The stereo checks (#22): the per-eye way of drawing sprites, overlays and fades, and the test effect
 	json.object("stereoFx");
 	json.value("legacy", g_stereoView.legacy);
+	json.value("overlays", !g_stereoView.overlaysHidden);
 	json.value("seq", g.stereoFx.seq);
 	json.value("kind", g.stereoFx.kind);
 	writeVec(json, "pos", g.stereoFx.pos);
@@ -1589,7 +1590,7 @@ void updateStereoFx() {
 		if(PARTICLE_DEF * pd = createParticle()) {
 			pd->ov = fx.pos;
 			pd->move = Vec3f(0.f);
-			pd->size = 25.f;
+			pd->size = 2.f; // the engine's sprite size: about 13 cm across at 0.8 m
 			pd->sizeDelta = 0.f;
 			pd->duration = std::chrono::seconds(30);
 			pd->m_flags = 0;
@@ -1658,8 +1659,8 @@ std::string placeStereoFx(std::string_view rest) {
 		fog.speed = 0.f;
 		fog.speedRandom = 0.f;
 		fog.rotatespeed = 0.001f;
-		fog.size = 40.f;
-		fog.sizeDelta = 4.f;
+		fog.size = 3.f; // puffs of 5 to 25 cm at a metre: a cloud that stays inside the check's window
+		fog.sizeDelta = 1.f;
 		fog.frequency = 20.f;
 		fog.duration = std::chrono::milliseconds(2500);
 		fog.rgb = Color3f(0.8f, 0.8f, 0.9f);
@@ -1823,7 +1824,8 @@ std::string execute(std::string_view line) {
 
 	if(word == "stereo-fx") {
 		// The stereo checks of screen-space effects and sprites (#22): place / clear a test effect in front of the
-		// head; legacy on|off draws them the per-eye way they were drawn before, to show a check fails without the fix
+		// head; legacy on|off draws them the per-eye way they were drawn before, to show a check fails without the fix;
+		// overlays off|on hides the full-view overlays, so that two shots differ by the overlay alone
 		std::string_view args;
 		const std::string what(firstWord(rest, args));
 		if(what == "place") {
@@ -1841,8 +1843,13 @@ std::string execute(std::string_view line) {
 			        : " - sprites, trails, overlays and the fade drawn for the head between the eyes (#22)");
 			return std::string();
 		}
-		return refuse("stereo-fx: expected place <kind> <ahead> [<right> [<up>]], clear or legacy on|off, got \""
-		              + std::string(rest) + "\"");
+		if(what == "overlays" && (args == "on" || args == "off")) {
+			g_stereoView.overlaysHidden = (args == "off");
+			LogInfo << "[channel] stereo-fx: full-view overlays " << args;
+			return std::string();
+		}
+		return refuse("stereo-fx: expected place <kind> <ahead> [<right> [<up>]], clear, legacy on|off or overlays on|off,"
+		              " got \"" + std::string(rest) + "\"");
 	}
 
 	if(word == "vr-sim") {

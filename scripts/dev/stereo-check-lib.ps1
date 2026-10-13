@@ -5,14 +5,15 @@
 # turned by the eye's orientation as the shot recorded it (status.json vr.sim.shots.<name>.left/right: quat, fov,
 # position), then into the head between the eyes - so the two eye images are compared as directions, not pixels:
 # the eyes of a headset see different parts of the world (asymmetric, canted), the same pixel is not the same
-# direction. The change from the base shot to the effect shot (luma above a noise threshold) is profiled along the
-# azimuth; the shift that best aligns the left eye's profile with the right eye's is the disparity, and with the eye
-# separation it is a distance. The modes:
+# direction. The change from the base shot to the effect shot (the largest change of a color channel, above a noise
+# threshold) is profiled along the azimuth; the shift that best aligns the left eye's profile with the right eye's is
+# the disparity, and with the eye separation it is a distance. The modes:
 #
 #   fx        the test effect of `stereo-fx place` (status.json stereoFx: where it is from the head), in a window
 #             around its direction. Legs: covered (both eyes see it change), depth (the disparity puts it at its
-#             distance, in front: a positive disparity), fusion (both eyes see it at the size its distance from each
-#             eye gives - per-eye screen squares on canted eyes differ by more - and at the same height)
+#             distance, in front: a positive disparity), height (both eyes see it at one height)
+#   sprite    fx, and size: both eyes see one sprite at the size its distance from each eye gives - the engine's
+#             per-eye screen squares on canted eyes differ by more (the middle half of the change, its quartiles)
 #   view      something over the whole view (a fade): covered (each eye changed over most of its pixels) and equal
 #             (both eyes changed by the same mean amount)
 #   infinity  a head-locked overlay at infinity (Magic Sight): covered (both eyes see it), parallax (no disparity:
@@ -20,14 +21,14 @@
 #             tens of degrees apart on an asymmetric headset, divergent)
 # Every mode also has the leg pairing: every frame showed both eye images from one frame (the compositor's count).
 
-$script:StereoNoise = 12          # luma levels: a change below this is the flicker of torches and fire between two frames
-$script:StereoFxWindow = 15.0     # degrees around the test effect's direction
+$script:StereoNoise = 12          # levels of a color channel: a change below this is the flicker of torches and fire between two frames
+$script:StereoFxWindow = 20.0     # degrees around the test effect's direction
 $script:StereoFxBin = 0.1         # degrees per azimuth bin for an effect
 $script:StereoFxMaxShift = 12.0   # degrees: the largest disparity looked for (a thing 0.3 m from the eyes)
 $script:StereoViewBin = 0.25      # degrees per bin for whole-view patterns
 $script:StereoViewMaxShift = 40.0 # degrees: a pattern stretched over each eye's image lands this far apart
 $script:StereoDepthTolerance = 0.2      # the measured distance within 20 % of where the effect is
-$script:StereoFusionTolerance = 0.04    # the two eyes' sizes within 4 % of what their distances give
+$script:StereoSizeTolerance = 0.04      # a sprite's two sizes within 4 % of what the eyes' distances give
 $script:StereoMaxVertical = 0.3         # degrees between the heights the two eyes see it at
 $script:StereoViewCovered = 0.9         # share of each eye's pixels a whole-view effect changes
 $script:StereoViewEqual = 0.1           # the two eyes' mean change within 10 %
@@ -43,11 +44,35 @@ public static class ArxStereoCheck {
     public double TanLeft, TanRight, TanUp, TanDown;   // OpenXR: left and down negative
     public double Qx, Qy, Qz, Qw = 1;                  // the eye in the room (OpenXR: x right, y up, -z forward)
   }
+  // What changed in one eye: its weighted median direction and how wide it is (the middle half of the change: the
+  // quartiles - a few flickering pixels at the window's edge do not move them, as they would a mean or a spread)
   public sealed class Result {
     public long Pixels, Changed;
-    public double Weight, MeanChange, AzMean, ElMean, AzStd, ElStd;
+    public double Weight, MeanChange, AzMedian, ElMedian, AzSpread, ElSpread;
     public double[] Profile;
     public long[] Count;
+  }
+  static double Quantile(System.Collections.Generic.List<double> values, System.Collections.Generic.List<double> weights,
+                         int[] order, double total, double q) {
+    double target = q * total, cumulative = 0;
+    for (int k = 0; k < order.Length; k++) {
+      double w = weights[order[k]];
+      if (cumulative + w >= target) {
+        if (k == 0) return values[order[k]];
+        double t = w > 0 ? (target - cumulative) / w : 0;
+        return values[order[k - 1]] + t * (values[order[k]] - values[order[k - 1]]);
+      }
+      cumulative += w;
+    }
+    return order.Length > 0 ? values[order[order.Length - 1]] : 0;
+  }
+  static void Quartiles(System.Collections.Generic.List<double> values, System.Collections.Generic.List<double> weights,
+                        double total, out double median, out double spread) {
+    int[] order = new int[values.Count];
+    for (int k = 0; k < order.Length; k++) order[k] = k;
+    Array.Sort(order, (p, q) => values[p].CompareTo(values[q]));
+    median = Quantile(values, weights, order, total, 0.5);
+    spread = Quantile(values, weights, order, total, 0.75) - Quantile(values, weights, order, total, 0.25);
   }
   const double Deg = 180.0 / Math.PI;
   public static void Rotate(double qx, double qy, double qz, double qw, double vx, double vy, double vz,
@@ -57,14 +82,25 @@ public static class ArxStereoCheck {
     ry = vy + qw * ty + (qz * tx - qx * tz);
     rz = vz + qw * tz + (qx * ty - qy * tx);
   }
-  static double Luma(byte[] p, int i) { return (p[i + 2] * 299 + p[i + 1] * 587 + p[i] * 114) / 1000.0; }
+  // The change of a pixel: its largest change of one color channel - a red tint over a dark wall is a small change
+  // of brightness but a clear change of red
+  static double Change(byte[] a, byte[] b, int i) {
+    int d0 = Math.Abs(a[i] - b[i]), d1 = Math.Abs(a[i + 1] - b[i + 1]), d2 = Math.Abs(a[i + 2] - b[i + 2]);
+    return Math.Max(d0, Math.Max(d1, d2));
+  }
   // a, b: 32bpp BGRA rows from the top. head: the inverse of the head's orientation (x, y, z, w).
   // Only pixels whose direction is within winHalf degrees of (winAz, winEl) count (winHalf <= 0: all).
+  // The profile is a grid of elBins rows of bins azimuth cells each (one row: a profile along the azimuth), row 0 at
+  // elMin: the mean change per pixel of each cell, Count its pixels.
   public static Result Measure(byte[] a, byte[] b, Eye eye, double[] head, int noise,
-                               double winAz, double winEl, double winHalf, double azMin, double binDeg, int bins) {
-    var r = new Result { Profile = new double[bins], Count = new long[bins] };
-    double[] binWeight = new double[bins];
-    double sw = 0, saz = 0, saz2 = 0, sel = 0, sel2 = 0, sumChange = 0;
+                               double winAz, double winEl, double winHalf, double azMin, double binDeg, int bins,
+                               double elMin, double elBinDeg, int elBins) {
+    var r = new Result { Profile = new double[bins * elBins], Count = new long[bins * elBins] };
+    double[] binWeight = new double[bins * elBins];
+    double sw = 0, sumChange = 0;
+    var azs = new System.Collections.Generic.List<double>();
+    var els = new System.Collections.Generic.List<double>();
+    var ws = new System.Collections.Generic.List<double>();
     for (int y = 0; y < eye.Height; y++) {
       double ty = eye.TanUp - (eye.TanUp - eye.TanDown) * (y + 0.5) / eye.Height;
       for (int x = 0; x < eye.Width; x++) {
@@ -76,32 +112,35 @@ public static class ArxStereoCheck {
         double el = Math.Atan2(hy, Math.Sqrt(hx * hx + hz * hz)) * Deg;
         if (winHalf > 0 && (Math.Abs(az - winAz) > winHalf || Math.Abs(el - winEl) > winHalf)) continue;
         int i = (y * eye.Width + x) * 4;
-        double d = Math.Abs(Luma(a, i) - Luma(b, i));
+        double d = Change(a, b, i);
         r.Pixels++;
         sumChange += d;
         int bin = (int)Math.Floor((az - azMin) / binDeg);
-        bool inBins = bin >= 0 && bin < bins;
+        int row = (int)Math.Floor((el - elMin) / elBinDeg);
+        bool inBins = bin >= 0 && bin < bins && row >= 0 && row < elBins;
+        bin += row * bins;
         if (inBins) r.Count[bin]++;
         if (d <= noise) continue;
         double w = d - noise;
         r.Changed++;
-        sw += w; saz += w * az; saz2 += w * az * az; sel += w * el; sel2 += w * el * el;
+        sw += w;
+        if (winHalf > 0) { azs.Add(az); els.Add(el); ws.Add(w); }
         if (inBins) binWeight[bin] += w;
       }
     }
     r.Weight = sw;
     r.MeanChange = r.Pixels > 0 ? sumChange / r.Pixels : 0;
-    if (sw > 0) {
-      r.AzMean = saz / sw; r.ElMean = sel / sw;
-      r.AzStd = Math.Sqrt(Math.Max(0, saz2 / sw - r.AzMean * r.AzMean));
-      r.ElStd = Math.Sqrt(Math.Max(0, sel2 / sw - r.ElMean * r.ElMean));
+    if (sw > 0 && azs.Count > 0) {
+      Quartiles(azs, ws, sw, out r.AzMedian, out r.AzSpread);
+      Quartiles(els, ws, sw, out r.ElMedian, out r.ElSpread);
     }
-    for (int k = 0; k < bins; k++) r.Profile[k] = r.Count[k] > 0 ? binWeight[k] / r.Count[k] : 0;
+    for (int k = 0; k < r.Profile.Length; k++) r.Profile[k] = r.Count[k] > 0 ? binWeight[k] / r.Count[k] : 0;
     return r;
   }
-  // The shift s (bins, refined between bins) that best matches left(i) with right(i - s): the left profile moved
-  // right by s. Pearson correlation over the bins both eyes see; corr is -2 when no shift had minPairs bins.
-  public static double BestShift(double[] pl, long[] cl, double[] pr, long[] cr, int maxShift, int minPairs, out double corr) {
+  // The shift s (bins, refined between bins) that best matches left(i) with right(i - s) along each row of width
+  // cells: the left profile moved right by s. Pearson correlation over the cells both eyes see; corr is -2 when no
+  // shift had minPairs cells.
+  public static double BestShift(double[] pl, long[] cl, double[] pr, long[] cr, int width, int maxShift, int minPairs, out double corr) {
     int n = pl.Length;
     double[] c = new double[2 * maxShift + 1];
     int best = -1;
@@ -109,8 +148,10 @@ public static class ArxStereoCheck {
       int s = k - maxShift;
       double sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0; int m = 0;
       for (int i = 0; i < n; i++) {
+        int col = i % width - s;
+        if (col < 0 || col >= width) continue;
         int j = i - s;
-        if (j < 0 || j >= n || cl[i] == 0 || cr[j] == 0) continue;
+        if (cl[i] == 0 || cr[j] == 0) continue;
         double x = pl[i], yv = pr[j];
         sx += x; sy += yv; sxx += x * x; syy += yv * yv; sxy += x * yv; m++;
       }
@@ -213,7 +254,7 @@ function Test-ArxStereoChange($Status, [string]$Base, [string]$Shot, [string]$Mo
 	$separation = [math]::Sqrt([math]::Pow([double]$p1.x - [double]$p0.x, 2) + [math]::Pow([double]$p1.y - [double]$p0.y, 2) + [math]::Pow([double]$p1.z - [double]$p0.z, 2))
 
 	switch ($Mode) {
-		'fx' {
+		{ $_ -in 'fx', 'sprite' } {
 			$fx = $Status.stereoFx
 			if (-not $fx -or $fx.kind -eq 'none' -or $null -eq $fx.azimuth) { return $legs + @(New-StereoLeg 'fx' $false 'no test effect placed (stereo-fx place)') }
 			$winAz = [double]$fx.azimuth; $winEl = [double]$fx.elevation; $distance = [double]$fx.distance
@@ -225,7 +266,7 @@ function Test-ArxStereoChange($Status, [string]$Base, [string]$Shot, [string]$Mo
 				$a = Read-StereoImage (& $Files $Base $eyeName)
 				$b = Read-StereoImage (& $Files $Shot $eyeName)
 				$eye = ConvertTo-StereoEye $shotEyes.$eyeName $b
-				$m[$eyeName] = [ArxStereoCheck]::Measure($a.Bytes, $b.Bytes, $eye, $head, $script:StereoNoise, $winAz, $winEl, $script:StereoFxWindow, $azMin, $bin, $bins)
+				$m[$eyeName] = [ArxStereoCheck]::Measure($a.Bytes, $b.Bytes, $eye, $head, $script:StereoNoise, $winAz, $winEl, $script:StereoFxWindow, $azMin, $bin, $bins, -90, 180, 1)
 			}
 			$l = $m.left; $r = $m.right
 
@@ -236,7 +277,7 @@ function Test-ArxStereoChange($Status, [string]$Base, [string]$Shot, [string]$Mo
 
 			# depth
 			$corr = 0.0
-			$shiftBins = [ArxStereoCheck]::BestShift($l.Profile, $l.Count, $r.Profile, $r.Count, [int]($script:StereoFxMaxShift / $bin), 20, [ref]$corr)
+			$shiftBins = [ArxStereoCheck]::BestShift($l.Profile, $l.Count, $r.Profile, $r.Count, $bins, [int]($script:StereoFxMaxShift / $bin), 20, [ref]$corr)
 			$disparity = $shiftBins * $bin
 			$rad = [math]::PI / 180.0
 			$measured = if ($disparity -gt 0) { $separation * [math]::Cos($winAz * $rad) / ([math]::Tan($disparity * $rad) * [math]::Cos($winEl * $rad)) } else { [double]::PositiveInfinity }
@@ -244,14 +285,20 @@ function Test-ArxStereoChange($Status, [string]$Base, [string]$Shot, [string]$Mo
 			$legs += New-StereoLeg 'depth' $depthOk `
 				"disparity $(Format-StereoNumber $disparity '0.00') deg (left image $(if ($disparity -ge 0) { 'right' } else { 'LEFT' }) of the right one, correlation $(Format-StereoNumber $corr '0.00')): $(Format-StereoNumber $measured '0.00') m with the eyes $(Format-StereoNumber ($separation * 1000) '0.0') mm apart; the effect is $(Format-StereoNumber $distance '0.00') m away at $(Format-StereoNumber $winAz '0.0') deg (needs within $($script:StereoDepthTolerance * 100) %, in front)"
 
-			# fusion: each eye sees it at the size its own distance gives - the left eye is nearer by about half the
-			# eye separation times the sine of the azimuth - and at one height
-			$expected = 1.0 - $separation * [math]::Sin($winAz * $rad) * [math]::Cos($winEl * $rad) / $distance
-			$sizeRatio = if ($r.AzStd -gt 0) { $l.AzStd / $r.AzStd } else { 0 }
-			$vertical = [math]::Abs($l.ElMean - $r.ElMean)
-			$fusionOk = [math]::Abs($sizeRatio / $expected - 1) -le $script:StereoFusionTolerance -and $vertical -le $script:StereoMaxVertical
-			$legs += New-StereoLeg 'fusion' $fusionOk `
-				"width left / right $(Format-StereoNumber $sizeRatio '0.000') (spread $(Format-StereoNumber $l.AzStd '0.00') / $(Format-StereoNumber $r.AzStd '0.00') deg), $(Format-StereoNumber $expected '0.000') from the distances (needs within $($script:StereoFusionTolerance * 100) %); heights $(Format-StereoNumber $l.ElMean '0.00') / $(Format-StereoNumber $r.ElMean '0.00') deg, $(Format-StereoNumber $vertical '0.00') apart (needs <= $($script:StereoMaxVertical))"
+			# height: both eyes see it at one height (a vertical disparity cannot be fused)
+			$vertical = [math]::Abs($l.ElMedian - $r.ElMedian)
+			$legs += New-StereoLeg 'height' ($vertical -le $script:StereoMaxVertical) `
+				"heights $(Format-StereoNumber $l.ElMedian '0.00') / $(Format-StereoNumber $r.ElMedian '0.00') deg (left / right), $(Format-StereoNumber $vertical '0.00') apart (needs <= $($script:StereoMaxVertical))"
+
+			if ($Mode -eq 'sprite') {
+				# size: each eye sees the sprite at the size its own distance gives - the eyes' distances to it differ
+				# by the eye separation times the sine of its azimuth. A cloud of many particles is as wide as where its
+				# particles are, which a sprite's shape hardly moves: the size is judged on one sprite
+				$expected = 1.0 - $separation * [math]::Sin($winAz * $rad) * [math]::Cos($winEl * $rad) / $distance
+				$sizeRatio = if ($r.AzSpread -gt 0) { $l.AzSpread / $r.AzSpread } else { 0 }
+				$legs += New-StereoLeg 'size' ([math]::Abs($sizeRatio / $expected - 1) -le $script:StereoSizeTolerance) `
+					"width left / right $(Format-StereoNumber $sizeRatio '0.000') (middle half $(Format-StereoNumber $l.AzSpread '0.00') / $(Format-StereoNumber $r.AzSpread '0.00') deg), $(Format-StereoNumber $expected '0.000') from the distances (needs within $($script:StereoSizeTolerance * 100) %)"
+			}
 		}
 		'view' {
 			$m = @{}
@@ -259,7 +306,7 @@ function Test-ArxStereoChange($Status, [string]$Base, [string]$Shot, [string]$Mo
 				$a = Read-StereoImage (& $Files $Base $eyeName)
 				$b = Read-StereoImage (& $Files $Shot $eyeName)
 				$eye = ConvertTo-StereoEye $shotEyes.$eyeName $b
-				$m[$eyeName] = [ArxStereoCheck]::Measure($a.Bytes, $b.Bytes, $eye, $head, $script:StereoNoise, 0, 0, 0, -90, 1.0, 180)
+				$m[$eyeName] = [ArxStereoCheck]::Measure($a.Bytes, $b.Bytes, $eye, $head, $script:StereoNoise, 0, 0, 0, -90, 1.0, 180, -90, 180, 1)
 			}
 			$l = $m.left; $r = $m.right
 			$shareL = if ($l.Pixels) { $l.Changed / $l.Pixels } else { 0 }
@@ -268,17 +315,20 @@ function Test-ArxStereoChange($Status, [string]$Base, [string]$Shot, [string]$Mo
 				"changed $(Format-StereoNumber ($shareL * 100) '0.0') % / $(Format-StereoNumber ($shareR * 100) '0.0') % of the left / right eye's pixels (needs $($script:StereoViewCovered * 100) % each)"
 			$equal = if ($r.MeanChange -gt 0) { $l.MeanChange / $r.MeanChange } else { 0 }
 			$legs += New-StereoLeg 'equal' ([math]::Abs($equal - 1) -le $script:StereoViewEqual) `
-				"mean change $(Format-StereoNumber $l.MeanChange '0.0') / $(Format-StereoNumber $r.MeanChange '0.0') luma levels (needs within $($script:StereoViewEqual * 100) %)"
+				"mean change $(Format-StereoNumber $l.MeanChange '0.0') / $(Format-StereoNumber $r.MeanChange '0.0') levels (needs within $($script:StereoViewEqual * 100) %)"
 		}
 		'infinity' {
+			# A grid of directions, not a profile: a vignette's ring crosses the part both eyes see at its top and its
+			# bottom, which a profile along the azimuth averages away
 			$bin = $script:StereoViewBin
 			$bins = [int](180 / $bin)
+			$rows = [int](120 / $bin)
 			$m = @{}
 			foreach ($eyeName in 'left', 'right') {
 				$a = Read-StereoImage (& $Files $Base $eyeName)
 				$b = Read-StereoImage (& $Files $Shot $eyeName)
 				$eye = ConvertTo-StereoEye $shotEyes.$eyeName $b
-				$m[$eyeName] = [ArxStereoCheck]::Measure($a.Bytes, $b.Bytes, $eye, $head, $script:StereoNoise, 0, 0, 0, -90, $bin, $bins)
+				$m[$eyeName] = [ArxStereoCheck]::Measure($a.Bytes, $b.Bytes, $eye, $head, $script:StereoNoise, 0, 0, 0, -90, $bin, $bins, -60, $bin, $rows)
 			}
 			$l = $m.left; $r = $m.right
 			$shareL = if ($l.Pixels) { $l.Changed / $l.Pixels } else { 0 }
@@ -286,12 +336,12 @@ function Test-ArxStereoChange($Status, [string]$Base, [string]$Shot, [string]$Mo
 			$legs += New-StereoLeg 'covered' ($shareL -ge $script:StereoInfinityCovered -and $shareR -ge $script:StereoInfinityCovered) `
 				"changed $(Format-StereoNumber ($shareL * 100) '0.0') % / $(Format-StereoNumber ($shareR * 100) '0.0') % of the left / right eye's pixels (needs $($script:StereoInfinityCovered * 100) % each)"
 			$corr = 0.0
-			$shiftBins = [ArxStereoCheck]::BestShift($l.Profile, $l.Count, $r.Profile, $r.Count, [int]($script:StereoViewMaxShift / $bin), 40, [ref]$corr)
+			$shiftBins = [ArxStereoCheck]::BestShift($l.Profile, $l.Count, $r.Profile, $r.Count, $bins, [int]($script:StereoViewMaxShift / $bin), 200, [ref]$corr)
 			$disparity = $shiftBins * $bin
 			$legs += New-StereoLeg 'parallax' ($corr -gt 0.5 -and [math]::Abs($disparity) -le $script:StereoInfinityParallax) `
 				"the pattern's disparity $(Format-StereoNumber $disparity '0.00') deg (correlation $(Format-StereoNumber $corr '0.00'); negative: the eyes would have to diverge; needs within $($script:StereoInfinityParallax) deg of 0: at infinity)"
 		}
-		default { return $legs + @(New-StereoLeg 'mode' $false "unknown mode '$Mode' (fx, view, infinity)") }
+		default { return $legs + @(New-StereoLeg 'mode' $false "unknown mode '$Mode' (fx, sprite, view, infinity)") }
 	}
 	return $legs
 }

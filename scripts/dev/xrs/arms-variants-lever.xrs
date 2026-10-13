@@ -1,0 +1,42 @@
+# The playground's arms lever steps through all four variants (#385.8):
+# custom -> forearm -> hands -> arx -> custom.
+#   .\scripts\dev\smoke-test.ps1 -Playground -VrSim idle -Sequence arms-variants-lever
+@sim idle
+@playground
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert area eq 30
+@assert vr.body.armsModel eq custom
+
+setpos 8200 -170 8000 0
+@frames 30
+playground pull arms
+@frames 5
+@assert vr.body.armsModel eq forearm
+@assert vr.body.right.custom.upperArmDrawn eq false
+@assert vr.body.arxArmsHidden eq true
+playground pull arms
+@frames 5
+@assert vr.body.armsModel eq hands
+@assert vr.body.right.custom.sleeveDrawn eq false
+@assert vr.body.arxArmsHidden eq true
+playground pull arms
+@frames 5
+@assert vr.body.armsModel eq arx
+@assert vr.body.arxArmsHidden eq false
+playground pull arms
+@frames 5
+@assert vr.body.armsModel eq custom
+@assert vr.body.arxArmsHidden eq true
+@assert vr.body.right.custom.upperArmDrawn eq true
+
+# the other levers leave the model alone
+playground pull mode
+@frames 5
+@assert playground.npcMode eq aggressive
+playground pull mode
+@frames 5
+@assert vr.body.armsModel eq custom
+@assert errors eq 0

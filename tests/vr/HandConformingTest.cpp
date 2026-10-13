@@ -113,16 +113,22 @@ std::vector<glm::mat4> hctRestLocals(const vr::SkinnedMesh & mesh) {
 	return local;
 }
 
-//! A rest-pose joint set of a glove: the rest world positions, identity orientations (the rest correction is the rig's)
+/*!
+ * A rest-pose joint set of a glove: what a runtime would report for a hand in the glove's rest - the rest world
+ * positions and the glove's rest frames in the OpenXR joint convention (restHandJoints)
+ */
 vr::HandJoints hctRestJoints(const vr::SkinnedMesh & mesh) {
 	std::vector<glm::mat4> world = hctWorld(mesh, hctRestLocals(mesh));
-	vr::HandJoints joints;
-	joints.valid = true;
+	vr::HandRig rig = vr::buildHandRig(mesh);
+	CPPUNIT_ASSERT(rig.valid);
+	vr::HandJoints joints = vr::restHandJoints(mesh, rig);
+	CPPUNIT_ASSERT(joints.valid);
 	for(size_t j = 0; j < vr::HandJointCount; j++) {
 		int index = vr::findHandJoint(mesh, vr::HandJoint(j));
 		CPPUNIT_ASSERT(index >= 0);
 		glm::vec3 p(world[size_t(index)][3]);
-		joints.position[j] = Vec3f(p.x, p.y, p.z);
+		hctExpectNear("rest joint position", 0.f, glm::length(hctPos(joints, vr::HandJoint(j)) - p), 1e-5f);
+		hctExpectNear("rest joint frame", 1.f, glm::length(joints.orientation[j]), 1e-3f);
 	}
 	return joints;
 }
@@ -268,13 +274,15 @@ void HandConformingTest::testTurningAFingerJointMovesOnlyThatFinger() {
 	vr::HandJoints rest = hctRestJoints(mesh);
 	std::vector<glm::mat4> before = hctWorld(mesh, hctRestLocals(mesh));
 
-	// The index finger's proximal joint turned 60 degrees about each axis in turn (one of them is its flexion)
+	// The index finger's proximal joint turned 60 degrees from its rest frame about each axis in turn (one of them is
+	// its flexion); the glove is in meters, the index finger from the knuckle to the tip is about 0.1 m
 	float biggest = 0.f;
 	for(int axis = 0; axis < 3; axis++) {
 		glm::vec3 about(0.f);
 		about[axis] = 1.f;
 		vr::HandJoints turned = rest;
-		turned.orientation[size_t(vr::HandJoint::IndexProximal)] = glm::angleAxis(glm::radians(60.f), about);
+		turned.orientation[size_t(vr::HandJoint::IndexProximal)]
+			= glm::angleAxis(glm::radians(60.f), about) * rest.orientation[size_t(vr::HandJoint::IndexProximal)];
 		std::vector<glm::mat4> local;
 		vr::poseHandFromJoints(mesh, rig, turned, local);
 		std::vector<glm::mat4> after = hctWorld(mesh, local);
@@ -289,7 +297,7 @@ void HandConformingTest::testTurningAFingerJointMovesOnlyThatFinger() {
 		hctExpectNear("palm", 0.f, moved(vr::HandJoint::Palm), 1e-3f);
 		hctExpectNear("index knuckle", 0.f, moved(vr::HandJoint::IndexProximal), 1e-3f);
 	}
-	CPPUNIT_ASSERT_MESSAGE("a turned joint must move its finger tip", biggest > 0.5f);
+	CPPUNIT_ASSERT_MESSAGE("a turned joint must move its finger tip", biggest > 0.03f);
 }
 
 void HandConformingTest::testPalmSitsBehindTheGripOnBothHands() {

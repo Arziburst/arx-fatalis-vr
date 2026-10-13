@@ -773,11 +773,12 @@ every signature (first and last seen, in how many runs, the issue number). A run
 counts once.
 
 **Automatic bug filing** — fully automatic, GitHub **REST** only (`gh api`; never GraphQL, whose quota the
-sessions share), only into the private repository (the flush checks `private` first):
+sessions share). The repository is **public** (since 2026-10-12), so every title, body and comment is
+scrubbed of personal data on its way out ([below](#scrubbing-personal-data-387)):
 
 | Situation | What happens |
 |---|---|
-| A new `[E]` / `[C]` signature, or a crash | An issue labeled `bug` + `auto-reported`: title from the signature, body with the build and branch, command line, exit code, how often, the stack or a log excerpt around the first occurrence, the digest; the user-profile part of every path is replaced by `<user>`. A hidden marker `arxvr-auto-report: sig=<hash>` in the body |
+| A new `[E]` / `[C]` signature, or a crash | An issue labeled `bug` + `auto-reported`: title from the signature, body with the build and branch, command line, exit code, how often, the stack or a log excerpt around the first occurrence, the digest; scrubbed of personal data (the home folder of every path is `<home>`). A hidden marker `arxvr-auto-report: sig=<hash>` in the body |
 | A new `[W]` signature | Nothing yet — filed only when it shows up in a **second** run (new *and* repeated) |
 | A known signature with an issue | A "Seen again" comment, at most **once per 24 h** per issue; the first comment waits a day after the issue was created. A **closed** issue whose problem comes back is **reopened** with a comment — close noise together with an allow-list line |
 | More than 5 new problems in one run | One root cause logs several lines and a broken build hundreds: at most 5 new issues per run (crashes first); the rest stay in the digest (*new, not filed*) and are filed by a later run if they come back |
@@ -794,6 +795,32 @@ nothing and writes nothing outside a scratch folder.
 
 **Triage** is the coordinator's (WORKFLOW.md, *Development diagnostics*): confirm or close as noise (and
 extend the allow-list), link the issue to its epic, set the milestone.
+
+### Scrubbing personal data (#387)
+
+`Protect-ArxText` in `log-digest-lib.ps1` replaces, in this order: a home folder (`C:\Users\<name>`,
+`C:/Users/<name>`, `/Users/<name>`, `/home/<name>`) with `<home>`; the account id of a Steam `userdata`
+path, a SteamID64, `STEAM_0:…` and `[U:1:…]` with `<steam-id>`; a network path (`\\server\share`) with
+`<path>`; e-mails, GUIDs, Windows SIDs, MAC and IPv4 addresses with `<email>`, `<guid>`, `<sid>`, `<mac>`,
+`<ip>` (not after `version` / `v` / `build` / `driver`, so a four-part version stays); and the Windows
+account and machine names wherever they stand alone with `<user>` / `<machine>` (not inside a longer word:
+the GitHub login stays). Everything technical stays: the engine's `file:line`, error texts, counts, the game
+data and Program Files paths. The flush scrubs every queued item again, so items queued by an older script
+go out clean too.
+
+`Find-ArxPrivateData` is the **final check**: the same patterns plus what the scrubber does not know how
+to clean — a `C:\Users` left over, a user folder outside the home (`D:\OneDrive - …\`, `\Desktop\`,
+`\Documents\`, …), an identity value (`username=`, `steamid:`, `e-mail:` …). An item it flags is **not
+uploaded**: it stays in `pending-reports\` with the reason in `lastError`, the flush goes on with the
+others and prints a warning. Teach `Protect-ArxText` the new pattern (with a case in
+`test-log-digest.ps1`) or delete the item.
+
+`log-digest.ps1 -Preview` prints the queue as it would be uploaded, the refusals included, and sends
+nothing. `scrub-auto-reports.ps1` runs the scrubber over the issues already on GitHub (all
+`auto-reported` issues, open and closed, and their comments): a dry run lists every change, `-Apply`
+edits in place (never deletes), and both re-scan the result with the final check. GitHub keeps an
+issue's **edit history**: the text before a scrub stays readable there; only the author can delete a
+revision, in the web UI (no API).
 
 ## The draw check (`drawcheck`)
 

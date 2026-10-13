@@ -116,7 +116,8 @@ void loadGlove(Hand hand, GloveRest & glove) {
 
 	glove.tried = true;
 	const std::string file = std::string("vr/arms/Hand_Glove_low_") + (hand == Hand::Right ? "R" : "L") + ".gltf";
-	const std::string data = g_resources->read(file);
+	// The resource system keeps every name in lower case (PakReader::addFiles)
+	const std::string data = g_resources->read(util::toLowercase(file));
 	if(data.empty()) {
 		LogWarning << "[vr] arms: " << file << " not found - the " << handName(hand) << " arm stays the Arx arm";
 		return;

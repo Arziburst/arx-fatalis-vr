@@ -146,6 +146,39 @@ the way out: a `TerminateProcess` from outside (the task manager, a launcher, a 
   $env:LOCALAPPDATA\ArxFatalisVR\evidence\146` - each failed run keeps its `arx.log`, stdout / stderr and the SteamVR
   logs.
 
+## The hang watchdog (#440)
+
+With the test channel the game watches its main thread (`platform/HangWatchdog`, from the first frame): the main
+thread beats every frame, when a level load starts and at every step of a load's progress bar. When no beat came
+for the threshold (5 s, below the 10 s a test waits for an ack; the channel's `watchdog <ms>` changes it) a thread
+of the watchdog suspends the main thread just long enough to walk its stack, resumes it and writes the report to
+`<dir>\hang.txt` (first, without the logger) and as `[W] ... [hang]` lines of `arx.log`:
+
+```
+[hang] main thread stalled for 5019 ms (report 1 of at most 3), last beat at level load, then loading screen: presenting the frame
+[hang]   #0 ntdll.dll+0x164a14 ZwWaitForAlertByThreadId
+[hang]   #10 OPENGL32.dll+0x817e wglSwapBuffers
+[hang]   #13 arx.exe+0x10122b LoadLevelScreen (LoadLevelScreen.cpp:128)
+[hang]   #14 arx.exe+0x1907de loadLevel (LoadLevel.cpp:324)
+[hang] main thread responsive again after 6230 ms
+```
+
+A stall that goes on is reported again every threshold (three reports at most, so a stack that moves shows it),
+and the first beat after it is reported too. "then <step>" names the last step noted after the beat (the loading
+screen notes its present). Functions and lines come from the build's `.pdb` next to `arx.exe`, read when the
+watchdog starts — never during a report, since a thread stuck in the loader holds the lock that loading symbols
+waits for. A thread that does not stop for the walk within 1 s (inside the kernel with suspension blocked, as in a
+driver call) is reported without its stack. `Send-ArxCommand` (`scripts/dev/test-lib.ps1`) puts the new reports of
+`hang.txt` into its timeout: `the game hangs: no ack for '<command>' after 10 s, and its hang watchdog reported
+(hang.txt): ...` instead of a bare timeout. `smoke-test.ps1 -EvidenceDir` and the CI evidence keep `hang.txt`.
+
+- Host test `HangWatchdogTest`: a stalled thread is reported within its threshold with `platform::stallThisThread`
+  and the test function in its stack, three times, then responsive again; a beating thread never.
+- `scripts\dev\xrs\level-load-hang.xrs` (CI runs it): `watchdog 1000`, `stall load 3000`, `loadlevel 1` - the report
+  names the stall and the load under it, the main thread is responsive again and level 1 loads.
+- A load that goes on slowly beats at every progress step and is no hang: what it spends its time on is the
+  `[channel] level N loaded in <ms> ms, the loading screen drew <frames> frames in <ms> ms` line of a `loadlevel`.
+
 ## Background runs are silent (`--mute`, #345)
 
 CI, smoke tests, `.xrs` sequences, `--vr-sim` runs and a worker's own launches happen on the owner's PC
@@ -201,6 +234,8 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `shot [name]` | after the next rendered frame, save it as `<dir>\capture\<name>.bmp` (default `shot<N>`); `captureSeq` and `lastCapture` in the status |
 | `mark <text>` | `[mark] <text>` in the log — an anchor for "the line I wait for must come after this"; also an `M` line in [the performance log](#the-performance-log-arx-perflog-327) |
 | `stall <ms>` | the main thread sleeps 1..5000 ms in this frame: a forced hitch, which the performance log must mark with `cause=channel` (#327) |
+| `stall load <ms>` | the **next level load** sleeps 1..5000 ms right after its `Loading level` line: a stalled load for the [hang watchdog](#the-hang-watchdog-440) (#440, `level-load-hang.xrs`) |
+| `watchdog <ms>` | the hang watchdog's threshold, 100..60000 ms (default 5000): a main thread without a beat for this long is reported with its stack (#440); `hangWatchdog.thresholdMs` in the status |
 | `quit` | ask the game to quit at the end of the frame (the same path as closing the window) |
 | `save <name>` | save the running game as a new slot named `<name>` (no thumbnail); the newest save is slot 0, so `loadslot 0` loads it back. A `save slot=save000N name=<name> ok=yes\|no` event either way; refused outside a running game (#130) |
 | `loadslot <n>` | load save slot `n` (from the menu or in-game), refused with the slot count if it does not exist. The command-line `--loadslot <n>` of a missing slot logs an `[E]` and starts at the main menu (before #24 it started an empty level: a black world with only the HUD, TRAPS.md); `run-windows.ps1` / `test-pr.ps1` refuse such a launch before it starts |
@@ -297,6 +332,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   `Clean shutdown` is logged).
 - `errors` / `warnings`: log lines at `[E]`/`[C]` and `[W]` level since the process started, counted
   by a logger backend — assert on these instead of grepping a buffered log.
+- `hangWatchdog` (#440): `watching` (the [hang watchdog](#the-hang-watchdog-440) has read its symbols and checks
+  the beats, about a second after the first frame), `thresholdMs`, `stalls` (stalls reported so far).
 - `fps`: frames over the last status interval (0 in the final status).
 - `notifications` (#370): the timed texts at the top of the 2D interface on screen now (a level script's
   tutorial hint, `herosay`, "cannot cast"): each stays 2 s + 60 ms per character of **game time** and is
@@ -1356,6 +1393,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `vr-remap-saved` | the saved layout read back as a start reads it: `jump` captured as `right.b` (saved), `vr-input reset` (not saved), `vr-input reload` → `remapped`, `jump` = `right.b`; `vr-input default` → the file removed, `reload` gives the default. Every #178 sequence starts and ends with the default layout: CI runs all sequences in one user directory, in any order | — |
 | `vr-settings-flat` | a plain launch (`@args --skiplogo`: the main menu) on the simulated headset — "VR" in the Options list after "Input", the VR page with the default Index layout, shots `options` and `vr-menu` (the name is from its first, flat version) | — |
 | `vr-turning-settings` | the VR settings' turning and height page (#260) on `mvp-new-game`: `menu pause` + `menu vr-turning` open it; the snap angle slider's dot dragged to the middle of the bar makes the snap 60°, to the right end 90° (past it still 90°, one step left 85°) at once (`vr.input.turn.snapAngle`, a `vr.settings row=angle` game event); the turning row snap → smooth → snap, the speed slider at its right end "very fast" (240) and in the middle "medium" (120), the repeat slider off → 0.25 s → off, each read back from `vr.input.turn` at once; five `menu step height right` make the character 10 cm taller; back in the game (`menu resume`) `vr.head.heightOffset` is 0.1, `vr.head.offsetY` 10 units lower and `camera.eyeAboveFeet` 10 units higher, and one push of the stick turns 90°. Leaves `vr_snap_turn_angle=90` and `vr_height_offset=0.1` in the run's `cfg.ini` | — |
+| `level-load-hang` | a stalled level load is reported as a hang with its stack (#440): `watchdog 1000`, `stall load 3000`, `loadlevel 1` - `[hang] main thread stalled ... last beat at level load`, `platform::stallThisThread` and the load under it in the stack, `responsive again`, level 1 loaded, `hangWatchdog.stalls` ≥ 1 ([The hang watchdog](#the-hang-watchdog-440)) | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
 `scripts\dev\test-xrs.ps1` (a fake game answering the channel files; in `run-script-tests.ps1`, so in CI).

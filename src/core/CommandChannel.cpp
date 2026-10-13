@@ -1360,6 +1360,13 @@ std::string buildStatus(PlatformInstant now) {
 	json.end();
 	json.end();
 
+	// The hang watchdog of the main thread (#440): its reports are in hang.txt and as [hang] log lines
+	json.object("hangWatchdog");
+	json.value("watching", g.watchdog && g.watchdog->watching());
+	json.value("thresholdMs", s64(g.watchdogThresholdMs));
+	json.value("stalls", u64(g.watchdog ? g.watchdog->stalls() : 0));
+	json.end();
+
 	// A command that changes the level or loads a save writes the status while its batch still runs: the batch
 	// must not show up before its ack does (#142)
 	json.value("cmdSeq", g.ackedSeq);

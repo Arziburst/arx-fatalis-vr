@@ -8,6 +8,28 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — The smoke test's `loadlevel 1` "hangs" on the desktop and passes in CI (#440)
+
+**Symptom:** `smoke-test.ps1 -Seconds 3 -Commands 'loadlevel 1','loadlevel 10','drawcheck 120'` failed every time on
+the owner's PC (main too) with `timed out after 10 s waiting for the game to acknowledge 'loadlevel 1'`; the log
+stopped at `level.load area=1`, no crash, no `Done loading level`. The same phase passed in CI, and level 1 loaded
+in 250 ms from a save.
+**Cause:** not a hang - a load bound by the present. The game's window in an interactive session is in the
+background (shown without focus), and the compositor throttles its presents: every `SwapBuffers` took ~30 ms
+(`present=30` in every frame of `arx-perf.log`). The loading screen draws a frame when 16 ms have passed and the
+progress bar moved, but it counted the 16 ms from *before* its present - with a 30 ms present every step of the
+load drew and presented a frame, and the change from level 10 to level 1 (hundreds of progress steps) outlasted the
+10 s ack. In CI (the runner service, session 0, no compositor) a present costs nothing. The hang watchdog (#440)
+gave the stack: `ZwWaitForAlertByThreadId` < `atio6axx.dll` < `wglSwapBuffers` < `SDL2` < `LoadLevelScreen` <
+`loadLevel` < `ARX_CHANGELEVEL_PopLevel` < `ARX_CHANGELEVEL_Change` < `channel::execute` - but only once the
+progress beat was taken out: every step still beat, so the watchdog rightly saw no hang.
+**Do:** the 16 ms are counted from the end of the present now (level 10 → 1 in ~0.9 s with 15 loading frames, the
+start's level 10 load 1.7 s → 0.22 s). A load that seems to hang: read `[hang]` in `arx.log` / `hang.txt`; no report
+means the main thread still makes progress - the `[channel] level N loaded in ... the loading screen drew ...`
+line and `present=` in `arx-perf.log` say where the time goes. Mind: a thread-stack walk from inside the process
+must never load DbgHelp or query modules while the thread is stopped (a thread stuck in the loader holds that lock),
+and must give up when the thread does not stop (a driver call blocks suspension).
+
 ## 2026-10-13 — `walk-look.xrs`: the walk left on a busy PC drifts 12.6 units in z (#370)
 
 **Symptom:** `walk-look` failed on CI (run 38339943784, PR #391, nothing related changed) at its first push:

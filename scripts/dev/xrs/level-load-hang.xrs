@@ -6,9 +6,11 @@
 
 @until state eq GAMEPLAY 60s
 # The watchdog reads the symbols first (a second or so after the first frame)
-@log \[channel\] hang watchdog: watching the main thread 30s
+@until hangWatchdog.watching eq true 30s
+@assert hangWatchdog.stalls eq 0
 
 watchdog 1000
+@assert hangWatchdog.thresholdMs eq 1000
 stall load 3000
 loadlevel 1
 @log Loading level "graph/levels/level1/level1.dlf" 10s
@@ -18,3 +20,4 @@ loadlevel 1
 @log \[hang\] main thread responsive again after \d+ ms 10s
 @until state eq GAMEPLAY 60s
 @assert area eq 1
+@assert hangWatchdog.stalls ge 1

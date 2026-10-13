@@ -89,8 +89,8 @@ const char * fileNameOf(const char * path) {
 /*
  * DbgHelp, the symbols and the list of loaded modules, all set up while the watched thread still
  * beats - never during a report: a thread stuck inside the loader holds the loader lock, which
- * LoadLibrary, SymInitialize and the module queries wait for (the first version of this watchdog
- * did that at its first report and never wrote it, #440). The game links DbgHelp only with the
+ * LoadLibrary, SymInitialize and the module queries wait for, and the report would never come.
+ * The game links DbgHelp only with the
  * crash handler and the host test not at all, so it is loaded here. Without it (or without the
  * .pdb) a frame keeps its module+offset, which the build's .pdb resolves later.
  */

@@ -592,7 +592,7 @@ the playground yet (#359).
 
 ### Switching the arms: custom or Arx (#385)
 
-The VR body has two arm models (D-NEW "Own VR arms"): the **custom** arms — the leather glove hand
+The VR body has two arm models (D-NEW-arms, "Own VR arms"): the **custom** arms — the leather glove hand
 (Godot XR Tools, CC0) and a cloth sleeve, textures in `data/core/vr/arms/` — and the original **Arx** arms.
 The IK, the reach and the roll rules are the same for both; only the meshes differ. **Flat mode and the
 inventory book always show the Arx arms.**

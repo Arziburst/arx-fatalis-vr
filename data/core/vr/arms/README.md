@@ -9,6 +9,7 @@ glove hands of Godot XR Tools, skinned to the 26 joints of `XR_EXT_hand_tracking
   `addons/godot-xr-tools/hands/model/Hand_Glove_low_R.gltf` and `addons/godot-xr-tools/hands/License.md`
 - Author: DigitalN8m4r3 aka Miodrag Sejic, 2022
 - Licence: CC0 1.0 Universal (public domain dedication), see `License.md` as shipped with the models
+  (https://github.com/GodotVR/godot-xr-tools/blob/6c6189bdfcdf855052ef1aeb9f3e0ec4c7a7eb60/addons/godot-xr-tools/hands/License.md)
 - Changes: none; the files are as published (glTF 2.0, the buffer embedded as a data: URI, meters)
 
 The game reads them through its resource system as `vr/arms/Hand_Glove_low_L.gltf` /

@@ -179,6 +179,7 @@ vr-sim action grip left 0.4
 @assert vr.body.left.custom.fingers.little.root gt 30
 @assert vr.body.left.custom.fingers.index.root lt 10
 vr-sim action grip left 0
+vr-sim hand left fingers on
 vr-sim hand left fingers 0 0 0 0 0
 @frames 30
 @assert vr.body.left.custom.fingers.source eq joints

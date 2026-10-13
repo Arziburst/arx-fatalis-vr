@@ -1,0 +1,32 @@
+# The playground's third lever (#385.3, role lever_arms): `playground pull arms` gives the lever script what a
+# hand pull gives it (#38) and flips the arms model; pulled twice it is back.
+#   .\scripts\dev\smoke-test.ps1 -Playground -VrSim idle -Sequence arms-lever
+@sim idle
+@playground
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert area eq 30
+@assert vr.body.armsModel eq custom
+
+setpos 8200 -170 8000 0
+@frames 30
+playground pull arms
+@frames 5
+@assert vr.body.armsModel eq arx
+@assert vr.body.arxArmsHidden eq false
+playground pull arms
+@frames 5
+@assert vr.body.armsModel eq custom
+@assert vr.body.arxArmsHidden eq true
+
+# the other levers are unharmed and leave the model alone
+playground pull mode
+@frames 5
+@assert playground.npcMode eq aggressive
+playground pull mode
+@frames 5
+@assert playground.npcMode eq peaceful
+@assert vr.body.armsModel eq custom
+@assert errors eq 0

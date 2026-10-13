@@ -409,6 +409,9 @@ bool ArxGame::initConfig() {
 		// Save a default config file so users have a chance to edit it even if we crash.
 		config.save();
 	}
+	// The scene switches (#29): from cfg.ini at the start; the test channel changes them for the session only
+	vr::sceneState().view = vr::parseSceneView(config.video.vrSceneView).value_or(vr::DefaultSceneView);
+	vr::sceneState().lookAt = vr::parseSceneLookAt(config.video.vrSceneLookAt).value_or(vr::DefaultSceneLookAt);
 	vr::setSubtitlePlacement(vr::parseSubtitlePlacement(config.video.vrSubtitles).value_or(vr::DefaultSubtitlePlacement));
 	
 	Logger::configure(config.misc.debug);
@@ -2042,8 +2045,9 @@ static const char * headGeometryCheck(const Vec3f & eye, const Vec3f & head) {
 static Vec3f g_sceneFirstPos(0.f);
 //! The stick's turn so far at the last two scene frames: the frame after a stick turn has no yaw step (#29)
 static std::array<float, 2> g_sceneTurned = { 0.f, 0.f };
-//! The speak -c line last seen, for its subtitle (#29)
+//! The speak -c line last seen, and its subtitle not noted yet (#29)
 static u64 g_sceneSpeechLine = 0;
+static bool g_sceneSubtitlePending = false;
 
 //! \return the floor's y under \a pos (y down), \a found false when there is none
 static float floorBelow(const Vec3f & pos, bool & found) {
@@ -2080,7 +2084,7 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 		in.shot = speechLine;
 	}
 	in.active = in.kind != vr::SceneKind::None || cinematicBorder.isActive();
-	in.setting = vr::parseSceneView(config.video.vrSceneView).value_or(vr::DefaultSceneView);
+	in.setting = state.view;
 	in.enginePos = engineCamera.m_pos;
 	in.engineYaw = engineCamera.angle.getYaw();
 	in.engineFloorY = floorBelow(in.enginePos, in.engineFloor);
@@ -2115,14 +2119,18 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 			("reason", out.cutReason);
 	}
 
-	// The subtitle of a speak -c line (#29.3 moves this to where the subtitle is really shown, gui/Speech.cpp)
+	// The subtitle of a speak -c line, once the eyes see the line's scene (#29.3 moves this to where the
+	// subtitle is really shown, gui/Speech.cpp)
 	if(speechLine != g_sceneSpeechLine) {
 		g_sceneSpeechLine = speechLine;
-		if(speech) {
-			vr::noteSubtitle(speakerName(speech->speaker), speech->text, speech->sample != audio::SourcedSample());
-		} else {
+		g_sceneSubtitlePending = (speech != nullptr);
+		if(!speech) {
 			vr::clearSubtitle();
 		}
+	}
+	if(g_sceneSubtitlePending && speech && out.shown != vr::SceneShown::None) {
+		g_sceneSubtitlePending = false;
+		vr::noteSubtitle(speakerName(speech->speaker), speech->text, speech->sample != audio::SourcedSample());
 	}
 
 	return out;

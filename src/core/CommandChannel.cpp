@@ -646,9 +646,9 @@ void writeSceneStatus(JsonWriter & json) {
 	json.object("scene");
 	json.value("active", scene.active);
 	json.value("kind", vr::sceneKindName(scene.kind));
-	json.value("view", config.video.vrSceneView);
+	json.value("view", vr::sceneViewName(scene.view));
 	json.value("shown", vr::sceneShownName(scene.director.shown()));
-	json.value("lookat", config.video.vrSceneLookAt);
+	json.value("lookat", vr::sceneLookAtName(scene.lookAt));
 	json.value("fade", scene.director.fade());
 	json.value("armsIk", scene.armsIk);
 	json.object("meter");
@@ -1942,7 +1942,8 @@ std::string execute(std::string_view line) {
 
 	if(word == "scene") {
 		// Scripted scenes in VR (#29, SPEC.md): scene view first|observer|ghost|hybrid, scene lookat ignore|fade,
-		// scene subtitles above|chest|lowerthird - live and kept in cfg.ini; scene meter reset starts a new
+		// scene subtitles above|chest|lowerthird - live, for this session (cfg.ini keeps the player's choice: the
+		// sequences start from the defaults in any order); scene meter reset starts a new
 		// measuring stretch of status.json scene.meter. Accepted in flat mode too, where they change nothing
 		std::string_view value;
 		std::string what(firstWord(rest, value));
@@ -1950,11 +1951,10 @@ std::string execute(std::string_view line) {
 		std::string name(trim(value));
 		util::makeLowercase(name);
 		if(what == "view" && vr::parseSceneView(name)) {
-			config.video.vrSceneView = name;
+			vr::sceneState().view = *vr::parseSceneView(name);
 		} else if(what == "lookat" && vr::parseSceneLookAt(name)) {
-			config.video.vrSceneLookAt = name;
+			vr::sceneState().lookAt = *vr::parseSceneLookAt(name);
 		} else if(what == "subtitles" && vr::parseSubtitlePlacement(name)) {
-			config.video.vrSubtitles = name;
 			vr::setSubtitlePlacement(*vr::parseSubtitlePlacement(name));
 		} else if(what == "meter" && name == "reset") {
 			vr::sceneState().meter.reset();

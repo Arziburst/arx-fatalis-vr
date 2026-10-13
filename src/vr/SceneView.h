@@ -352,7 +352,11 @@ struct SceneState {
 	SceneDirector director;
 	SceneMeter meter;
 
-	bool active = false;              //!< a scripted scene owns the game's camera (last VR frame)
+	//! The switches now: read from cfg.ini at the start, changed live by the test channel (not saved)
+	SceneViewSetting view = DefaultSceneView;
+	SceneLookAt lookAt = DefaultSceneLookAt;
+
+	bool active = false;             //!< a scripted scene owns the game's camera (last VR frame)
 	SceneKind kind = SceneKind::None; //!< what owns it
 	bool armsIk = true;               //!< the IK arms are on: the hero is not shown in third person
 

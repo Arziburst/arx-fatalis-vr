@@ -43,7 +43,6 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "script/ScriptedPlayer.h"
 
-#include "core/Config.h"
 #include "core/Core.h"
 #include "core/GameEvent.h"
 #include "game/EntityManager.h"
@@ -544,7 +543,7 @@ public:
 		scene.lookAtAngle = player.angle;
 		player.angle = angle;
 		player.desiredangle = desired;
-		const vr::SceneLookAt mode = vr::parseSceneLookAt(config.video.vrSceneLookAt).value_or(vr::DefaultSceneLookAt);
+		const vr::SceneLookAt mode = scene.lookAt;
 		scene.meter.lookAtSeen();
 		gameevent::Event("vr.scene.lookat", 200)("how", vr::sceneLookAtName(mode))("target", t->idString());
 		if(scene.director.lookAt(mode)) {

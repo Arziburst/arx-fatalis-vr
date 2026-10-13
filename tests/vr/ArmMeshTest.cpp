@@ -314,8 +314,8 @@ void ArmMeshTest::testNormalsAreRenormalised() {
 
 void ArmMeshTest::testSleeveCounts() {
 	vr::SleeveParams params;
-	CPPUNIT_ASSERT(params.rings >= 10 && params.rings <= 12);
-	CPPUNIT_ASSERT(params.sides >= 8 && params.sides <= 10);
+	CPPUNIT_ASSERT(params.rings >= 12);
+	CPPUNIT_ASSERT(params.sides >= 12 && params.sides <= 16);
 	near("upper length", 27.6f, params.upperLength, 1e-4f);
 	near("forearm length", 30.5f, params.forearmLength, 1e-4f);
 
@@ -343,10 +343,10 @@ void ArmMeshTest::testSleeveCounts() {
 
 	// A smaller resolution is honoured
 	vr::SleeveParams small;
-	small.rings = 10;
-	small.sides = 8;
+	small.rings = 12;
+	small.sides = 12;
 	vr::SkinnedMesh smallSleeve = vr::buildSleeve(small);
-	CPPUNIT_ASSERT(smallSleeve.positions.size() >= size_t(80));
+	CPPUNIT_ASSERT(smallSleeve.positions.size() >= size_t(144));
 	CPPUNIT_ASSERT(smallSleeve.positions.size() < sleeve.positions.size());
 }
 
@@ -368,13 +368,48 @@ void ArmMeshTest::testSleeveWeightsSumToOne() {
 void ArmMeshTest::testSleeveElbowRingIsWeightedAcrossBothJoints() {
 	vr::SleeveParams params;
 	vr::SkinnedMesh sleeve = vr::buildSleeve(params);
+	// The ring at the elbow joint is weighted 50/50 between the upper arm side and the forearm side
 	std::vector<size_t> ring = verticesNearestX(sleeve, params.upperLength);
 	CPPUNIT_ASSERT(!ring.empty());
 	for(size_t v : ring) {
+		near("elbow ring x", params.upperLength, sleeve.positions[v].x, 0.5f);
 		float upperSide = weightOn(sleeve, v, { vr::SleeveShoulder, vr::SleeveUpperTwist });
-		float forearmSide = weightOn(sleeve, v, { vr::SleeveElbow, vr::SleeveForearmTwist });
-		CPPUNIT_ASSERT_MESSAGE("no weight on the upper arm side at the elbow ring", upperSide > 0.01f);
-		CPPUNIT_ASSERT_MESSAGE("no weight on the forearm side at the elbow ring", forearmSide > 0.01f);
+		float forearmSide = weightOn(sleeve, v, { vr::SleeveElbow, vr::SleeveForearmTwist1,
+		                                          vr::SleeveForearmTwist2, vr::SleeveWrist });
+		near("elbow ring upper side", 0.5f, upperSide, 0.05f);
+		near("elbow ring forearm side", 0.5f, forearmSide, 0.05f);
+	}
+
+	// A ring 2 to 3 units on each side of it
+	for(float side : { -1.f, 1.f }) {
+		bool found = false;
+		for(const Vec3f & p : sleeve.positions) {
+			float d = (p.x - params.upperLength) * side;
+			if(d >= 2.f - 1e-3f && d <= 3.f + 1e-3f) {
+				found = true;
+			}
+		}
+		CPPUNIT_ASSERT_MESSAGE("no ring 2 to 3 units from the elbow ring", found);
+	}
+
+	// The forearm twist rings are dominated by their own twist joint
+	const std::pair<float, int> twists[] = {
+		{ params.upperLength + params.forearmLength / 3.f, vr::SleeveForearmTwist1 },
+		{ params.upperLength + params.forearmLength * 2.f / 3.f, vr::SleeveForearmTwist2 },
+	};
+	for(const auto & twist : twists) {
+		for(size_t v : verticesNearestX(sleeve, twist.first)) {
+			int best = -1;
+			float bestWeight = 0.f;
+			for(int j = 0; j < int(sleeve.skeleton.size()); j++) {
+				float w = weightOn(sleeve, v, { j });
+				if(w > bestWeight) {
+					bestWeight = w;
+					best = j;
+				}
+			}
+			CPPUNIT_ASSERT_EQUAL(twist.second, best);
+		}
 	}
 
 	// The ends belong to their own end of the chain
@@ -382,7 +417,7 @@ void ArmMeshTest::testSleeveElbowRingIsWeightedAcrossBothJoints() {
 		CPPUNIT_ASSERT(weightOn(sleeve, v, { vr::SleeveShoulder, vr::SleeveUpperTwist }) > 0.5f);
 	}
 	for(size_t v : verticesNearestX(sleeve, params.upperLength + params.forearmLength)) {
-		CPPUNIT_ASSERT(weightOn(sleeve, v, { vr::SleeveForearmTwist, vr::SleeveWrist }) > 0.5f);
+		CPPUNIT_ASSERT(weightOn(sleeve, v, { vr::SleeveForearmTwist2, vr::SleeveWrist }) > 0.5f);
 	}
 }
 
@@ -414,6 +449,94 @@ void ArmMeshTest::testSleeveSpansTheArm() {
 	vr::restWorldMatrices(sleeve, world);
 	near("elbow joint x", params.upperLength, world[vr::SleeveElbow][3][0], 1.f);
 	near("wrist joint x", params.upperLength + params.forearmLength, world[vr::SleeveWrist][3][0], 1.f);
+}
+
+void ArmMeshTest::testRecomputeNormalsOfAFlatStrip() {
+	// A strip of two quads in the plane z = 0: every smooth normal is the plane normal (+z or -z by winding)
+	vr::SkinnedMesh mesh = tinyMesh(1);
+	for(int i = 0; i < 3; i++) {
+		addVertex(mesh, glm::vec3(float(i), 0.f, 0.f), glm::vec3(1.f, 0.f, 0.f), { 0, 0, 0, 0 }, { 1.f, 0.f, 0.f, 0.f });
+		addVertex(mesh, glm::vec3(float(i), 1.f, 0.f), glm::vec3(1.f, 0.f, 0.f), { 0, 0, 0, 0 }, { 1.f, 0.f, 0.f, 0.f });
+	}
+	for(u16 i = 0; i < 2; i++) {
+		u16 a = u16(i * 2), b = u16(i * 2 + 1), c = u16(i * 2 + 2), d = u16(i * 2 + 3);
+		for(u16 index : { a, c, b, b, c, d }) {
+			mesh.indices.push_back(index);
+		}
+	}
+	std::vector<Vec3f> normals;
+	vr::recomputeNormals(mesh, mesh.positions, normals);
+	CPPUNIT_ASSERT_EQUAL(mesh.positions.size(), normals.size());
+	float sign = normals[0].z < 0.f ? -1.f : 1.f;
+	for(const Vec3f & n : normals) {
+		nearVec("flat strip normal", glm::vec3(0.f, 0.f, sign), asGlm(n), 1e-4f);
+	}
+
+	// The same strip lifted into the plane x = 0 has its normal along x
+	std::vector<Vec3f> turned;
+	for(const Vec3f & p : mesh.positions) {
+		turned.push_back(Vec3f(0.f, p.y, p.x));
+	}
+	vr::recomputeNormals(mesh, turned, normals);
+	for(const Vec3f & n : normals) {
+		near("turned strip normal", 1.f, std::abs(n.x), 1e-4f);
+		near("turned strip normal y", 0.f, n.y, 1e-4f);
+		near("turned strip normal z", 0.f, n.z, 1e-4f);
+	}
+
+	// A whole sleeve: unit-length normals everywhere
+	vr::SkinnedMesh sleeve = vr::buildSleeve(vr::SleeveParams());
+	vr::recomputeNormals(sleeve, sleeve.positions, normals);
+	CPPUNIT_ASSERT_EQUAL(sleeve.positions.size(), normals.size());
+	for(const Vec3f & n : normals) {
+		near("sleeve normal length", 1.f, glm::length(asGlm(n)), 1e-3f);
+	}
+}
+
+void ArmMeshTest::testElbowCorrective() {
+	vr::SleeveParams params;
+	vr::SkinnedMesh sleeve = vr::buildSleeve(params);
+	const float k = 2.f;
+
+	// Bend 0 changes nothing
+	std::vector<Vec3f> unbent = sleeve.positions;
+	vr::applyElbowCorrective(sleeve, 0.f, k, unbent);
+	CPPUNIT_ASSERT_EQUAL(sleeve.positions.size(), unbent.size());
+	for(size_t v = 0; v < unbent.size(); v++) {
+		nearVec("unbent", asGlm(sleeve.positions[v]), asGlm(unbent[v]), 1e-5f);
+	}
+
+	// At 90 degrees the outer side (-Y) of the elbow ring moves out by k * sin(45 degrees), the inner side (+Y) in
+	std::vector<Vec3f> bent = sleeve.positions;
+	vr::applyElbowCorrective(sleeve, 90.f, k, bent);
+	const float push = k * std::sin(glm::radians(45.f));
+	std::vector<size_t> ring = verticesNearestX(sleeve, params.upperLength);
+	size_t outer = ring[0], inner = ring[0];
+	for(size_t v : ring) {
+		if(sleeve.positions[v].y < sleeve.positions[outer].y) {
+			outer = v;
+		}
+		if(sleeve.positions[v].y > sleeve.positions[inner].y) {
+			inner = v;
+		}
+	}
+	float outerDy = bent[outer].y - sleeve.positions[outer].y;
+	CPPUNIT_ASSERT_MESSAGE("the outer elbow vertex must move outward (y decreases)", outerDy < -1e-3f);
+	CPPUNIT_ASSERT(-outerDy <= push + 1e-3f);
+	if(std::abs(sleeve.positions[outer].z) < 1e-3f) {
+		near("outer elbow push", -push, outerDy, 1e-3f);
+	}
+	// Inner: its distance to the arm's axis shrinks
+	float innerBefore = radiusOf(sleeve.positions[inner]);
+	float innerAfter = radiusOf(bent[inner]);
+	CPPUNIT_ASSERT_MESSAGE("the inner elbow vertex must move toward the fold", innerAfter < innerBefore - 1e-3f);
+
+	// Vertices far from the elbow are unchanged
+	for(size_t v = 0; v < bent.size(); v++) {
+		if(std::abs(sleeve.positions[v].x - params.upperLength) > 12.f) {
+			nearVec("far from the elbow", asGlm(sleeve.positions[v]), asGlm(bent[v]), 1e-5f);
+		}
+	}
 }
 
 void ArmMeshTest::testSleeveTopRingIsWider() {

@@ -17,8 +17,8 @@
 ^\[W\] VRSystem:\d+\s+OpenXR runtime is shutting down \(instance loss pending\), continuing in flat mode$
 
 # The hang watchdog (#440): the first line of a report ("[hang] main thread stalled for ...") carries the signature;
-# its stack (module offsets that change with every build), a missing stack and the end of the stall are its context.
-# Closed as noise: #441-#445, the frame lines of the deliberate stall of level-load-hang.xrs, one issue per frame
+# its stack lines, a missing stack and the end of the stall are its context - filed, each frame became an issue.
+# Closed as noise: #441-#445, the frame lines of the deliberate stall of level-load-hang.xrs
 ^\[W\] CommandChannel:\d+\s+\[hang\]   [#(]
 ^\[W\] CommandChannel:\d+\s+\[hang\] main thread responsive again after \d+ ms$
 # A stall the test channel asks for on purpose (stall / stall load; level-load-hang.xrs in every CI run)

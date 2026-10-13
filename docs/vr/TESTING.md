@@ -106,6 +106,37 @@ A fresh isolated directory has no `cfg.ini` yet, so the first run logs one warni
 is taken from there) for `-- --loadslot` runs; `-Save <name>` makes one library save the **only** save of
 the directory and defaults the arguments to `--loadslot 0` (see [The test save library](#the-test-save-library-70)).
 
+## Launch kinds (#394)
+
+A plain `arx.exe` is the **player's launch**: the logos FISHTANK and ARKANE, then the level 10 intro (the original
+game's start: a scripted scene that plays `introduction.cin` and ends in the main menu), then the main menu, and every
+`.cin` plays. `--dev-launch` is the development launch: no logos, no intro, no cinematics (`--intro` /
+`--cinematics` show them anyway). `smoke-test.ps1` (and everything on it: `xrs-run.ps1`, `ci-smoke.ps1`),
+`run-windows.ps1` and `test-pr.ps1` add `--dev-launch` themselves; `-Player` on them (`@player` in a sequence)
+launches as a player. `smoke-test.ps1 -Player` without arx.exe arguments waits for `LOGO` (or `MENU`) instead of the
+`--loadlevel 10` default. A sequence that wants the main menu at once says `@args --dev-launch` (a plain development
+launch reaches `MENU` in about a second; `--skiplogo` would play the level 10 scene first, about 59 s).
+
+**The owner runs the whole path in the headset** as a player does: the desktop shortcut (`launch-shortcut.ps1` passes
+`-Player`), or `.\scripts\dev\test-pr.ps1 <pr> -Player -StartSteamVR`, or `.\scripts\run-windows.ps1 -Player`. The
+logos and the intro are on a screen in the room (A, B or a trigger skips them), then the menu, New game and the
+character creation by pointer.
+
+**What the CI checks of it:** `first-run.xrs` (`@player`, one launch) walks the whole path - both logos skipped (A, the
+trigger), the intro on the VR screen skipped with A during its scripted scene (state `INTRO`, before
+`introduction.cin`), the menu with no leaked click, Options (the crosshair off by pointer) and back, New game, the
+character creation by pointer clicks (the average hero in `status.json`), the prison (area 1) in `GAMEPLAY` once its
+wake-up script frees the controls, a walk with the left stick; `@shot` of the intro and the menu in both eyes. The
+parts have their own faster sequences: `first-run-intro` (a player's launch up to `introduction.cin`, its skip with B,
+New game and the walk), `first-run-menu` (a development launch at the main menu) and `first-run-chargen` (`--skiplogo` until #399).
+`ci-smoke.ps1` runs all of them on every pull request, and after `first-run-menu` its **read-back**
+`readback/first-run-menu-readback.xrs` in the same user directory (the crosshair setting, written to `cfg.ini` on quit,
+read back by the second launch).
+
+**What it does not cover (#92, #54):** only the intro's `introduction.cin` is played and skipped on the VR screen. The
+in-game cutscenes (the forced cameras that #29 / #54 are about) are not walked by any sequence: #92 (restore cinematics
+for players) must not ship before they are covered.
+
 ## Background runs are silent (`--mute`, #345)
 
 CI, smoke tests, `.xrs` sequences, `--vr-sim` runs and a worker's own launches happen on the owner's PC
@@ -250,10 +281,12 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   by name — **logged or not** (a kind with a limit is only counted past it). Assert on these numbers
   (`events.byName.'spell.refused' -eq 1`) instead of grepping the log.
 
-- `state`: `STARTUP` (before the first level or menu), `MENU` (main menu, pause menu, credits,
-  character creation), `LOADING` (written from inside the level loader — a level load is one long
-  frame), `GAMEPLAY`, `CINEMATIC`, `EXITED` (with `cleanShutdown: true`, written right before
-  `Clean shutdown` is logged).
+- `state`: `STARTUP` (before the first level or menu), `LOGO` (a publisher logo of a player's launch, #394),
+  `MENU` (main menu, pause menu, credits, character creation), `LOADING` (written from inside the level loader — a
+  level load is one long frame), `INTRO` (the level 10 intro's scripted scene; its `introduction.cin` is
+  `CINEMATIC`), `GAMEPLAY`, `CINEMATIC`, `EXITED` (with `cleanShutdown: true`, written right before
+  `Clean shutdown` is logged). `vr.panel.mode` is `screen` while a logo, the intro or a cinematic plays on the VR
+  screen.
 - `errors` / `warnings`: log lines at `[E]`/`[C]` and `[W]` level since the process started, counted
   by a logger backend — assert on these instead of grepping a buffered log.
 - `fps`: frames over the last status interval (0 in the final status).
@@ -690,6 +723,12 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `save` / `load` | a save is written / a save starts loading | `slot` (`save0003`), `name`, `ok`; `area`, `quick` |
 | `cinematic.skip` | a development launch skips a `.cin` (#124) | `name`, `reason` |
 | `player.levelup` | the player gains a level | `level`, `xp` |
+| `startup.logo` (#394) | a publisher logo is shown / ends | `name=fishtank\|arkane`, `state=shown\|end`, `how=time\|skip\|key` |
+| `startup.intro` (#394) | the level 10 intro starts / ends | `state=start area=10`; `state=end how=done\|skip` |
+| `cinematic.start` / `cinematic.end` (#394) | a `.cin` plays / ends | `name`; `how=skip\|done` |
+| `vr.screen` / `vr.screen.placed` (#394) | the VR screen (logos, intro, cinematics) goes on / off, is placed in the room | `state=on\|off`, `for=` |
+| `vr.skip` (#394) | A, B or a trigger skips a logo, the intro or a cinematic | `what=<state>` |
+| `chargen.roll` (#394) | a click of the quick generation | `kind=average\|random` |
 | `player.death` | the player dies | `source` (entity id), `damage`, `type` (damage type flags) |
 | `player.respawn` | the player died in the test playground (#321) and is back at its start, alive, in the same frame | `x` `y` `z` (the start), `fromX` `fromZ` (where he died), `life` |
 | `player.combat` | the weapon is drawn / put away | `state=on\|off`, `weapon` |
@@ -1154,6 +1193,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 | `@key <name> [n] [ms]` | a keyboard message posted to the game window, no focus change (Escape, Enter, Space, A-Z, 0-9, F1-F12 …). **Not yet run against a live game** — verify it with a first sequence that needs it |
 | `@pending #<issue> <step>` | a step the game cannot pass yet, because issue N builds the feature. Its failure is printed as `pending`; **once it passes the run fails** until the `@pending` is removed, so an expectation cannot go stale. Pick a step that fails for the right reason (a first version of `snap-turn` had a "turned back" step that passed trivially) |
 | `@sim <name>`, `@args <...>` | what `xrs-run.ps1` launches: the `scripts\dev\vrsim` script (default `idle`: no timed lines, no shots) and the arx.exe arguments (default `--loadlevel 10`); ignored while running |
+| `@player` | a player's launch (#394; `smoke-test.ps1 -Player`): no `--dev-launch`, so the logos, the intro and every cinematic play; without `@args` the sequence starts while the first logo is up (`LOGO`). `@args --dev-launch` is the other extreme: the main menu at once, no default `--loadlevel 10` |
 | `@save <name>` | start from this save of the test save library (#70; `smoke-test.ps1 -Save`, the only save of the isolated user directory), with `@args --loadslot 0`. Anything the **body** does — turning, walking — needs a first-person save: on level 10 the intro conversation's camera owns the view (TRAPS.md) |
 | `@playground` | start in the test playground (#321; `smoke-test.ps1 -Playground`: the generated level, area 30, a fresh max-level hero). CI runs it only where node is on the runner's PATH, else NOT RUN with a warning |
 
@@ -1192,8 +1232,10 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `vr-remap-saved` | the saved layout read back as a start reads it: `jump` captured as `right.b` (saved), `vr-input reset` (not saved), `vr-input reload` → `remapped`, `jump` = `right.b`; `vr-input default` → the file removed, `reload` gives the default. Every #178 sequence starts and ends with the default layout: CI runs all sequences in one user directory, in any order | — |
 | `vr-settings-flat` | a plain launch (`@args --skiplogo`: the main menu) on the simulated headset — "VR" in the Options list after "Input", the VR page with the default Index layout, shots `options` and `vr-menu` (the name is from its first, flat version) | — |
 | `vr-turning-settings` | the VR settings' turning and height page (#260) on `mvp-new-game`: `menu pause` + `menu vr-turning` open it; the snap angle slider's dot dragged to the middle of the bar makes the snap 60°, to the right end 90° (past it still 90°, one step left 85°) at once (`vr.input.turn.snapAngle`, a `vr.settings row=angle` game event); the turning row snap → smooth → snap, the speed slider at its right end "very fast" (240) and in the middle "medium" (120), the repeat slider off → 0.25 s → off, each read back from `vr.input.turn` at once; five `menu step height right` make the character 10 cm taller; back in the game (`menu resume`) `vr.head.heightOffset` is 0.1, `vr.head.offsetY` 10 units lower and `camera.eyeAboveFeet` 10 units higher, and one push of the stick turns 90°. Leaves `vr_snap_turn_angle=90` and `vr_height_offset=0.1` in the run's `cfg.ini` | — |
-| `first-run-menu` | the main menu as a player meets it (#394, #334), a plain launch (`@args --skiplogo`; the in-game intro scene runs about 59 s before the menu): the flat frame has the interface's own size (918 × 689) and covers part of both eyes; the window shot is `world` in all four quarters (before the fix the top ones were the eye's flat background); every entry under the right and then the left hand's pointer (`ui.menuHover`; Resume game greyed out without a save: the mouse on it, `menuTargetEnabled` false); Load / save, Quit (No), the language page and the credits (left A back) opened and closed by clicks; Options > Interface > Crosshair turned off — `settings.crosshair` false, one click per press (`vr.pointer.clicks`); both hands behind the head: a press is muted (`offPanelPresses` + 1), nothing changes; back twice; the window resized to 1024 × 600: the interface laid out again, the window still filled, the pointer still on Options. Leaves `show_crosshair=false` in `cfg.ini` | — |
-| `readback/first-run-menu-readback` | not a sequence of its own (one level below, so `ci-smoke.ps1` never runs it alone): the **second launch** after `first-run-menu` in the same user directory — `settings.crosshair` is `false` at the start, read from `cfg.ini`; turned on again by pointer, so the pair leaves the directory as it found it. `smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir> -- --skiplogo`, then `smoke-test.ps1 -VrSim idle -Sequence scripts\dev\xrs\readback\first-run-menu-readback.xrs -UserDir <dir> -- --skiplogo` | — |
+| `first-run-menu` | the main menu as a player meets it (#394, #334), a plain development launch (`@args --dev-launch`: the main menu after about a second): the flat frame has the interface's own size (918 × 689) and covers part of both eyes; the window shot is `world` in all four quarters (before the fix the top ones were the eye's flat background); every entry under the right and then the left hand's pointer (`ui.menuHover`; Resume game greyed out without a save: the mouse on it, `menuTargetEnabled` false); Load / save, Quit (No), the language page and the credits (left A back) opened and closed by clicks; Options > Interface > Crosshair turned off — `settings.crosshair` false, one click per press (`vr.pointer.clicks`); both hands behind the head: a press is muted (`offPanelPresses` + 1), nothing changes; back twice; the window resized to 1024 × 600: the interface laid out again, the window still filled, the pointer still on Options. Leaves `show_crosshair=false` in `cfg.ini` | — |
+| `readback/first-run-menu-readback` | not a sequence of its own (one level below, so `ci-smoke.ps1` never runs it on a fresh user directory; it runs it itself right after `first-run-menu`, in that sequence's user directory): the **second launch** after `first-run-menu` in the same user directory — `settings.crosshair` is `false` at the start, read from `cfg.ini`; turned on again by pointer, so the pair leaves the directory as it found it. `smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir> -- --dev-launch`, then `smoke-test.ps1 -VrSim idle -Sequence scripts\dev\xrs\readback\first-run-menu-readback.xrs -UserDir <dir> -- --dev-launch` | — |
+| `first-run` | the whole first run from one player launch (`@player`, #394.3): logos skipped with A and the trigger, the level 10 intro on the VR screen skipped with A in `INTRO` (before `introduction.cin`, no `cinematic.start`), the menu with no leaked click (`vr.pointer.clicks` 0), shots `intro` and `menu` in both eyes, Options > Interface > Crosshair off by pointer and back, New game, the quick generation and Done by pointer clicks, the prison (area 1, `GAMEPLAY`, `player.controlsBlocked` false) with the made hero, a left-stick walk that moves `player.z` | — |
+| `first-run-intro` | a player's launch up to the main menu (#394): the logos on the screen (`vr.panel.mode screen`, distance 2.5), A and the trigger skip them, the intro (`INTRO`) drawn flat, `introduction.cin` shown (`CINEMATIC`) and skipped with B through `cinematicEnd()`, no click leaks into the menu, New game, the prison and a walk | — |
 | `first-run-chargen` | New game and the character creation by pointer clicks only (#394): New game clicked; a fresh hero (6 each, 16 + 18 points); the screen fills its panel and the window (all four quarters `world`); the trigger on strength spends one point (7, 15 left); both hands behind the head, the trigger and the grip change nothing; the quick generation makes the average hero (`chargen.roll` 1) and, clicked again, a random one (2); the grip takes a point back from strength and a skill point from stealth, the trigger spends them on dexterity and — with the left hand — on casting; Done starts the game with the rolled hero (`hero.strength` / `mind` kept into GAMEPLAY). Arx asks for no name | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by

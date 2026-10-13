@@ -163,7 +163,8 @@ void reportExit(std::string_view via, bool exitCodeKnown, s64 exitCode) {
 		return;
 	}
 
-	// The lines the game wrote just before the end go first
+	// The lines the game wrote just before the end go first. Logger::quickShutdown may wait up to ~200 ms for
+	// the file logger's mutex when a dead or busy thread holds it - only on an abnormal end, then it gives up
 	if(g_exitFlushLog) {
 		g_exitFlushLog();
 	}

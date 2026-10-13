@@ -1,0 +1,266 @@
+# The main menu in VR, the way a player meets it on the first run (#394, #334): a plain launch on the simulated
+# headset. The menu fills its floating panel in the headset and the whole desktop window (before #334 the
+# window showed the right eye, where the panel is a small trapezoid at the bottom, and the desktop mouse hit
+# "invisible" buttons), also after the window is resized. Every entry of the main menu is reachable with either
+# hand's pointer and clickable (New game: first-run-chargen); Options > Interface > Crosshair is turned off by
+# pointer clicks only, one press = one click, a press off the panel clicks nothing.
+#
+# The change is saved to cfg.ini when the game quits; a second launch in the same user directory reads it back
+# (readback/first-run-menu-readback.xrs - not one of the sequences ci-smoke runs on their own):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir>
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence scripts\dev\xrs\readback\first-run-menu-readback.xrs -UserDir <dir>
+@sim idle
+@args --skiplogo
+
+# --skiplogo still plays the in-game intro scene first: about 59 s on the simulated headset (measured)
+@until state eq MENU 90s
+@assert menuMode eq mainmenu
+@until vr.sessionState eq focused 30s
+@until vr.panel.mode eq world 10s
+@assert vr.panel.menu eq mainmenu
+@frames 60
+# A fresh user directory: the default
+@assert settings.crosshair eq true
+
+# The headset: the panel shows the whole interface - the flat frame has the interface's own size (#73), nothing
+# shrunk or cropped, and covers part of each eye
+@remember iw vr.interface.width
+@remember ih vr.interface.height
+@assert vr.interface.quadWidth eq {iw}
+@assert vr.interface.quadHeight eq {ih}
+@shot menu
+@assert vr.sim.shots.menu.quad.shown eq true
+@assert vr.sim.shots.menu.quad.stats.verdict eq world
+@assert vr.sim.shots.menu.left.quadPixels gt 0
+@assert vr.sim.shots.menu.right.quadPixels gt 0
+
+# The desktop window: the menu fills it - detail in each quarter (the eye's view of the panel left the top
+# quarters flat background, the owner's report of #334 three of them black)
+shot window-menu
+@until capture.name eq window-menu 5s
+@assert capture.width eq 640
+@assert capture.topLeft.verdict eq world
+@assert capture.topRight.verdict eq world
+@assert capture.bottomLeft.verdict eq world
+@assert capture.bottomRight.verdict eq world
+
+# Every entry under the right hand's pointer: the engine's mouse is on it (ui.menuHover is the widget a click
+# there reaches)
+vr-point right menu resume
+@frames 5
+@assert vr.pointer.active eq true
+@assert vr.pointer.owner eq right
+@assert vr.pointer.rightOnPanel eq true
+@assert vr.pointer.beam eq true
+# Resume game is greyed out in a user directory without a save: the mouse is on it, a click there reaches nothing
+@remember tx ui.targetX
+@remember ty ui.targetY
+@assert ui.mouseX ge {tx-2}
+@assert ui.mouseX le {tx+2}
+@assert ui.mouseY ge {ty-2}
+@assert ui.mouseY le {ty+2}
+@assert ui.menuTargetEnabled eq false
+@assert ui.menuHover eq none
+vr-point right menu newquest
+@frames 5
+@assert ui.menuHover eq newquest
+vr-point right menu loadsave
+@frames 5
+@assert ui.menuHover eq loadsave
+vr-point right menu options
+@frames 5
+@assert ui.menuHover eq options
+vr-point right menu credits
+@frames 5
+@assert ui.menuHover eq credits
+vr-point right menu quit
+@frames 5
+@assert ui.menuHover eq quit
+vr-point right menu language
+@frames 5
+@assert ui.menuHover eq language
+
+# The right hand points away: the left hand takes the cursor, and reaches every entry too
+vr-sim hand right rot 180 0 0
+vr-point left menu resume
+@frames 5
+@assert vr.pointer.owner eq left
+@assert vr.pointer.leftOnPanel eq true
+@remember tx ui.targetX
+@remember ty ui.targetY
+@assert ui.mouseX ge {tx-2}
+@assert ui.mouseX le {tx+2}
+@assert ui.mouseY ge {ty-2}
+@assert ui.mouseY le {ty+2}
+@assert ui.menuHover eq none
+vr-point left menu newquest
+@frames 5
+@assert ui.menuHover eq newquest
+vr-point left menu loadsave
+@frames 5
+@assert ui.menuHover eq loadsave
+vr-point left menu options
+@frames 5
+@assert ui.menuHover eq options
+vr-point left menu credits
+@frames 5
+@assert ui.menuHover eq credits
+vr-point left menu quit
+@frames 5
+@assert ui.menuHover eq quit
+vr-point left menu language
+@frames 5
+@assert ui.menuHover eq language
+
+# Clicks with the left hand: Load / save opens its page, its back button closes it - one press, one click
+@remember clicks vr.pointer.clicks
+vr-point left menu loadsave
+@frames 5
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0
+@until menuPage eq loadsave 5s
+@assert vr.pointer.clicks eq {clicks+1}
+@frames 90                                   # the page window slides in
+vr-point left menu back
+@frames 5
+@assert ui.menuHover eq back
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0
+@until menuPage eq none 5s
+@assert vr.pointer.clicks eq {clicks+2}
+
+# Quit asks first; No keeps the game
+vr-point left menu quit
+@frames 5
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0
+@until menuPage eq quit 5s
+@frames 90
+vr-point left menu system_no
+@frames 5
+@assert ui.menuHover eq system_no
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0
+@until menuPage eq none 5s
+@assert state eq MENU
+
+# The language page opens and closes
+vr-point left menu language
+@frames 5
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0
+@until menuPage eq language 5s
+@frames 90
+vr-point left menu back
+@frames 5
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0
+@until menuPage ne language 5s
+
+# The credits roll; the left A (the game menu, Escape) brings the main menu back
+menu none
+@until menuPage eq none 5s
+vr-point left menu credits
+@frames 5
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0
+@until menuMode eq credits 10s
+@assert vr.panel.menu eq credits
+@frames 60
+vr-input tap left.a
+@until menuMode eq mainmenu 15s
+@frames 60
+
+# Options with the right hand: Interface, the crosshair off - one click toggles it once - and back twice
+vr-sim hand left rot 180 0 0
+vr-point right menu options
+@frames 5
+@assert vr.pointer.owner eq right
+@remember clicks vr.pointer.clicks
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@until menuPage eq options 5s
+@frames 90
+vr-point right menu system_menus_options_interface
+@frames 5
+@assert ui.menuHover eq system_menus_options_interface
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@until menuPage eq interface 5s
+@frames 30
+vr-point right menu system_menus_options_video_crosshair
+@frames 5
+@assert ui.menuHover eq system_menus_options_video_crosshair
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+@assert settings.crosshair eq false
+@assert vr.pointer.clicks eq {clicks+3}
+@shot interface
+
+# A press off the panel clicks nothing: both hands behind the head, the trigger pressed
+vr-sim hand right rot 180 0 0
+@frames 5
+@assert vr.pointer.active eq false
+@assert vr.pointer.rightOnPanel eq false
+@remember muted vr.pointer.offPanelPresses
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+@assert vr.pointer.offPanelPresses eq {muted+1}
+@assert vr.pointer.clicks eq {clicks+3}
+@assert settings.crosshair eq false
+@assert menuPage eq interface
+
+# Back to the options, back to the main menu
+vr-point right menu back
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@until menuPage eq options 5s
+@frames 30
+vr-point right menu back
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@until menuPage eq none 5s
+@assert vr.pointer.clicks eq {clicks+5}
+@assert settings.crosshair eq false
+
+# The window resized wider: the interface is laid out again for it, the menu still fills the window and the
+# pointer still lands on the entries
+window 1024 600
+@until vr.interface.windowWidth eq 1024 10s
+@frames 30
+@assert vr.interface.windowHeight eq 600
+@remember iw2 vr.interface.width
+@assert vr.interface.quadWidth eq {iw2}
+shot window-resized
+@until capture.name eq window-resized 5s
+@assert capture.width eq 1024
+@assert capture.height eq 600
+@assert capture.topLeft.verdict eq world
+@assert capture.topRight.verdict eq world
+@assert capture.bottomLeft.verdict eq world
+@assert capture.bottomRight.verdict eq world
+@shot resized
+@assert vr.sim.shots.resized.quad.stats.verdict eq world
+vr-point right menu options
+@frames 5
+@assert ui.menuHover eq options
+window 640 480
+@until vr.interface.windowWidth eq 640 10s
+@assert errors eq 0

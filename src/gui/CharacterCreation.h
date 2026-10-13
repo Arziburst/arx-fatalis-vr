@@ -21,22 +21,35 @@
 #define ARX_GUI_CHARACTERCREATION_H
 
 #include <string>
+#include <string_view>
 
+#include "math/Rectangle.h"
 #include "platform/Platform.h"
 
 class TextureContainer;
 
 struct CharacterCreation {
-	
+
 	CharacterCreation();
-	
+
 	void loadData();
 	void freeData();
-	
+
 	void resetCheat();
 	void render();
 
+	/*!
+	 * For the test channel (#394): where the button (quickgen, skin, done) or the attribute or skill of the
+	 * book (\ref StatsPage::slotRect) named \a name is clicked on the interface, as the last frame drew it
+	 * \return false for an unknown name
+	 */
+	bool targetRect(std::string_view name, Rectf & rect) const;
+
 private:
+	Rectf m_quickGenerateButton;
+	Rectf m_skinButton;
+	Rectf m_doneButton;
+
 	TextureContainer * BookBackground;
 	std::string str_button_quickgen;
 	std::string str_button_skin;

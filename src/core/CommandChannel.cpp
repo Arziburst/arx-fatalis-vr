@@ -23,6 +23,7 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
@@ -75,12 +76,14 @@
 #endif
 #include "platform/Process.h"
 #include "platform/ProgramOptions.h"
+#include "platform/Thread.h"
 #include "platform/Time.h"
 #include "scene/ChangeLevel.h"
 #include "scene/Interactive.h"
 #include "script/Script.h"
 #include "util/String.h"
 #include "vr/HeadTracking.h"
+#include "vr/PerfLog.h"
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
@@ -1487,6 +1490,19 @@ std::string execute(std::string_view line) {
 
 	if(word == "mark") {
 		LogInfo << "[mark] " << rest;
+		vr::perf::mark(rest);
+		return std::string();
+	}
+
+	if(word == "stall") {
+		// A forced hitch (#327): the main thread sleeps in this frame, which the performance log must
+		// mark as a hitch caused by the channel
+		long stallMs = 0;
+		if(!parseIndex(rest, stallMs) || stallMs < 1 || stallMs > 5000) {
+			return refuse("stall: expected milliseconds 1..5000, got \"" + std::string(rest) + "\"");
+		}
+		LogInfo << "[channel] stalling the frame for " << stallMs << " ms";
+		Thread::sleep(PlatformDuration(std::chrono::microseconds(stallMs * 1000)));
 		return std::string();
 	}
 
@@ -2183,6 +2199,7 @@ std::string execute(std::string_view line) {
 			return refuse("loadlevel: needs a running game (start with --loadlevel N or use loadslot)");
 		}
 		LogInfo << "[channel] changing to level " << area << (target.empty() ? "" : " at ") << target;
+		vr::perf::Scope perfLoad(vr::PerfPhase::Load);
 		ARX_CHANGELEVEL_Change(AreaId(u32(area)), target, 0.f);
 		return std::string();
 	}

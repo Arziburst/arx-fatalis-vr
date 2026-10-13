@@ -1,4 +1,4 @@
-# The radial menus on B (#376, D-042) in the test playground, on the simulated Index controllers: each hand's
+# The radial menus on B (#376, D-042) on the simulated Index controllers: each hand's
 # menu opens while B is held and runs the item under the hand when B is let go; both at once; the inventory
 # on top; the half-ring's game menu, book pages, quick save / load, recenter and cancel spell; each hand's own
 # quick slots filled by dragging an item from the bag onto them and used from that hand (a potion drunk, a
@@ -9,13 +9,18 @@
 # level, the playground or their own library save, never from the newest save).
 # The shots still-a / still-b / yaw25 of an open menu are the two-eyes check's: after the run
 #   .\scripts\dev\eye-check.ps1 -StatusFile <test dir>\status.json
-#   .\scripts\dev\smoke-test.ps1 -Playground -VrSim idle -Sequence radial-menu
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence radial-menu
+# On the first-person test save, not in the playground: CI runs a playground sequence only where node is on the
+# runner's PATH (NOT RUN otherwise), and the game menu's only way must be covered by CI (D-042). The items the
+# slots need are put in the bag here; the owner's headset test is in the playground.
 @sim idle
-@playground
+@save mvp-new-game
 
 @until state eq GAMEPLAY 60s
 @until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
-@assert area eq 30
+@assert player.controlsBlocked eq false
+# Every rune: the book's spells page opens only for a hero who knows one
+rune all
 
 # The layout (D-042): B is each hand's radial menu, the inventory and the book have no button of their own
 @assert vr.input.layout.radial_left eq left.b

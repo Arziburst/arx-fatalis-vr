@@ -410,7 +410,9 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrLocateHandJointsEXT(XrHandTrackerEXT tracke
 	HandShape shape;
 	shape.thumb = rig.fingers[hand].curl.x;
 	shape.index = rig.fingers[hand].curl.y;
-	shape.fingers = rig.fingers[hand].curl.z;
+	shape.middle = rig.fingers[hand].curl.z;
+	shape.ring = rig.fingers[hand].outer.x;
+	shape.little = rig.fingers[hand].outer.y;
 	const HandJoints joints = synthesizeHandJoints(Hand(hand), shape, rig.hands[hand].position, rig.hands[hand].orientation());
 	for(uint32_t i = 0; i < locations->jointCount; i++) {
 		Vec3f position = joints.position[i];

@@ -54,6 +54,33 @@ float approach(float current, float target, float step) {
 	return std::max(target, current - step);
 }
 
+//! The first joint of each finger's chain of four: the thumb's metacarpal, a finger's metacarpal
+const HandJoint FingerRoots[FingerCount] = {
+	HandJoint::ThumbMetacarpal, HandJoint::IndexMetacarpal, HandJoint::MiddleMetacarpal,
+	HandJoint::RingMetacarpal, HandJoint::LittleMetacarpal,
+};
+
+/*!
+ * The knuckle's sideways turn in degrees: how far the bone after it leaves the plane the finger
+ * flexes in (its metacarpal and the palm's normal), + towards \a thumbSide - so a bend towards the
+ * palm is no spread, at any flexion
+ */
+float knuckleSpread(const Vec3f & metacarpal, const Vec3f & proximal, const Vec3f & thumbSide) {
+	const float metacarpalLength = glm::length(metacarpal);
+	const float proximalLength = glm::length(proximal);
+	if(!(metacarpalLength > 1e-6f) || !(proximalLength > 1e-6f)) {
+		return 0.f;
+	}
+	const Vec3f along = metacarpal / metacarpalLength;
+	const Vec3f side = thumbSide - along * glm::dot(thumbSide, along);
+	const float sideLength = glm::length(side);
+	if(!(sideLength > 1e-6f)) {
+		return 0.f;
+	}
+	const float sine = std::clamp(glm::dot(proximal / proximalLength, side / sideLength), -1.f, 1.f);
+	return glm::degrees(std::asin(sine));
+}
+
 } // anonymous namespace
 
 float flexionDegrees(const Vec3f & before, const Vec3f & after) {
@@ -128,6 +155,67 @@ FingerCurl approachCurl(const FingerCurl & current, const FingerCurl & target, f
 	return curl;
 }
 
+FingerPose fingerPoseFromJoints(const HandJoints & joints, const FingerPoseLimits & limits) {
+
+	FingerPose pose;
+	if(!joints.valid) {
+		return pose;
+	}
+
+	// Across the knuckles towards the thumb: the side a positive spread turns to
+	const Vec3f thumbSide = joints[HandJoint::IndexProximal] - joints[HandJoint::LittleProximal];
+
+	for(size_t finger = 0; finger < FingerCount; finger++) {
+		// Five joints in a row; a joint's flexion is the angle between the bones on either side of it.
+		// The thumb's chain starts at the wrist: its first flexing joint is the metacarpal's base.
+		const bool thumb = (finger == size_t(Finger::Thumb));
+		const HandJoint root = FingerRoots[finger];
+		const size_t next = size_t(root) + (thumb ? 0 : 1);
+		const HandJoint chain[] = {
+			thumb ? HandJoint::Wrist : root, HandJoint(next), HandJoint(next + 1), HandJoint(next + 2), HandJoint(next + 3),
+		};
+		for(size_t joint = 0; joint < 3; joint++) {
+			const float flexion = jointFlexion(joints, chain[joint], chain[joint + 1], chain[joint + 2]);
+			pose.flex[finger][joint] = std::clamp(flexion, 0.f, limits.flex[finger][joint]);
+		}
+		if(!thumb) {
+			pose.spread[finger] = knuckleSpread(joints[chain[1]] - joints[chain[0]], joints[chain[2]] - joints[chain[1]],
+			                                    thumbSide);
+		}
+	}
+
+	return pose;
+}
+
+FingerPose fingerPoseFromControls(float trigger, float grip, bool thumbTouch, const FingerPoseLimits & limits) {
+	const float closed[FingerCount] = { thumbTouch ? 1.f : 0.f, clamp01(trigger), clamp01(grip), clamp01(grip), clamp01(grip) };
+	FingerPose pose;
+	for(size_t finger = 0; finger < FingerCount; finger++) {
+		for(size_t joint = 0; joint < 3; joint++) {
+			pose.flex[finger][joint] = limits.flex[finger][joint] * closed[finger];
+		}
+	}
+	return pose;
+}
+
+FingerPose fingerPoseClosed(const FingerPoseLimits & limits) {
+	FingerPose pose;
+	pose.flex = limits.flex;
+	return pose;
+}
+
+FingerPose approachPose(const FingerPose & current, const FingerPose & target, float stepDegrees) {
+	const float step = std::max(stepDegrees, 0.f);
+	FingerPose pose;
+	for(size_t finger = 0; finger < FingerCount; finger++) {
+		for(size_t joint = 0; joint < 3; joint++) {
+			pose.flex[finger][joint] = approach(current.flex[finger][joint], target.flex[finger][joint], step);
+		}
+		pose.spread[finger] = approach(current.spread[finger], target.spread[finger], step);
+	}
+	return pose;
+}
+
 HandJoints synthesizeHandJoints(Hand hand, const HandShape & shape, const Vec3f & gripPosition,
                                 const glm::quat & gripOrientation) {
 
@@ -159,18 +247,17 @@ HandJoints synthesizeHandJoints(Hand hand, const HandShape & shape, const Vec3f 
 
 	// The four fingers, side by side from the thumb's side: a straight metacarpal from near the
 	// wrist to the knuckle, then three phalanges bending at the knuckle, the middle and the last joint
-	const struct { HandJoint metacarpal; float side; float scale; } fingers[] = {
-		{ HandJoint::IndexMetacarpal, -0.025f, 1.f },
-		{ HandJoint::MiddleMetacarpal, -0.008f, 1.05f },
-		{ HandJoint::RingMetacarpal, 0.008f, 0.95f },
-		{ HandJoint::LittleMetacarpal, 0.025f, 0.8f },
+	const struct { HandJoint metacarpal; float side; float scale; float closed; } fingers[] = {
+		{ HandJoint::IndexMetacarpal, -0.025f, 1.f, shape.index },
+		{ HandJoint::MiddleMetacarpal, -0.008f, 1.05f, shape.middle },
+		{ HandJoint::RingMetacarpal, 0.008f, 0.95f, shape.ring },
+		{ HandJoint::LittleMetacarpal, 0.025f, 0.8f, shape.little },
 	};
 	for(const auto & finger : fingers) {
-		const float closed = (finger.metacarpal == HandJoint::IndexMetacarpal) ? shape.index : shape.fingers;
 		const Vec3f base = wrist + Vec3f(0.f, 0.f, finger.side) + along * 0.01f;
 		joints[finger.metacarpal] = base;
 		const float lengths[] = { 0.04f * finger.scale, 0.025f * finger.scale, 0.02f * finger.scale };
-		const float angles[] = { 90.f * closed, 100.f * closed, 70.f * closed };
+		const float angles[] = { 90.f * finger.closed, 100.f * finger.closed, 70.f * finger.closed };
 		chain(HandJoint(size_t(finger.metacarpal) + 1), base + along * 0.06f, along, palmOut, lengths, angles, 3);
 	}
 

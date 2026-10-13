@@ -1,0 +1,234 @@
+# The melee charge shown in VR (#322): the trigger held with a weapon charges the strike (#39, the engine's
+# Full_AimTime); the variants of cfg.ini's vr_melee_charge_cue show it - the weapon glows (glow), a ring at the
+# weapon hand's wrist (wrist), the HUD's hit strength gauge on the interface quad (hud), a strip along the blade
+# (blade); all (the default until the owner picks) shows every one, off none. Each fills from empty to full with
+# the engine's charge and is empty again when a charged hit spends it or the trigger is released; the channel's
+# `melee-cue <variant>` switches live. The weapon hand is the right one until #380 (a weapon per hand).
+# Runs in the test playground (#321): a long sword from the weapons table put in the hand by the channel
+# (`playground equip long_sword`), the playground's NPC placed ahead for the charged hit:
+#   .\scripts\dev\smoke-test.ps1 -Playground -VrSim idle -Sequence melee-charge-cue
+# Every hand move is a slow ramp (under 1 m/s) except the one swing: a fast move is a swing (melee-swing.xrs).
+@sim idle
+@playground
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert area eq 30
+
+# A sword in the right hand: physical melee is active, the cues follow that hand, all of them by default
+playground equip long_sword
+@until vr.weapon.place eq hand 5s
+# The playground's hero starts with the bag open (status.json: vr.melee.refused inventory): closed, swings count
+ui inventory close
+@until vr.melee.active eq true 5s
+@assert vr.weapon.combatMode eq false
+@assert vr.chargeCue.mode eq all
+@assert vr.chargeCue.hand eq right
+@assert vr.chargeCue.active eq true
+
+# Looking at the sword held ahead (the back of the right hand, where the ring is, faces right)
+vr-sim head rot 0 -35 0
+vr-sim @+1-30 hand right pos 0.2 -0.45 -0.35
+@frames 40
+@assert vr.melee.swings eq 0
+
+# 1. Not charging: every variant shown and empty; the HUD gauge is drawn outside the combat mode too, idle
+@assert vr.chargeCue.fill eq 0
+@assert vr.chargeCue.glow.shown eq true
+@assert vr.chargeCue.glow.fill eq 0
+@assert vr.chargeCue.wrist.shown eq true
+@assert vr.chargeCue.wrist.fill eq 0
+@assert vr.chargeCue.hud.shown eq true
+@assert vr.chargeCue.hud.intensity lt 0.21
+@assert vr.chargeCue.blade.shown eq true
+@assert vr.chargeCue.blade.fill eq 0
+@remember wristViews vr.chargeCue.wrist.views
+@remember hudDraws vr.chargeCue.hud.draws
+@frames 10
+@assert vr.chargeCue.wrist.views ge {wristViews+10}
+@assert vr.chargeCue.hud.draws ge {hudDraws+5}
+@shot cue-empty
+
+# 2. The trigger held: the charge grows and every variant with it - past half way none is empty or full yet
+vr-sim action trigger right 1
+@frames 10
+@assert vr.melee.charge.charging eq true
+@assert vr.chargeCue.fill gt 0
+@until vr.melee.charge.ratio ge 0.5 10s
+@assert vr.chargeCue.fill ge 0.5
+@assert vr.chargeCue.fill lt 1
+@assert vr.chargeCue.glow.fill ge 0.5
+@assert vr.chargeCue.glow.fill lt 1
+@assert vr.chargeCue.wrist.fill ge 0.5
+@assert vr.chargeCue.wrist.fill lt 1
+@assert vr.chargeCue.blade.fill ge 0.5
+@assert vr.chargeCue.blade.fill lt 1
+@assert vr.chargeCue.hud.intensity ge 0.5
+@assert vr.chargeCue.hud.intensity lt 1
+@shot cue-half
+
+# 3. Full: every variant full
+@until vr.melee.charge.ratio ge 1 10s
+@frames 5
+@assert vr.chargeCue.fill eq 1
+@assert vr.chargeCue.glow.fill eq 1
+@assert vr.chargeCue.wrist.fill eq 1
+@assert vr.chargeCue.blade.fill eq 1
+@assert vr.chargeCue.hud.intensity eq 1
+@shot cue-full
+
+# 4. The strike spends the charge: the NPC placed ahead, the sword taken slowly to its right, one swing through
+# it - the charged hit empties every variant while the trigger is still held
+playground place 80
+vr-sim head rot 0 -25 0
+vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
+@frames 75
+@assert vr.melee.swings eq 0
+@assert vr.chargeCue.fill eq 1
+vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35
+@until vr.melee.swings ge 1 5s
+@until vr.melee.chargedHits ge 1 5s
+@frames 5
+@assert vr.melee.charge.held eq true
+@assert vr.melee.charge.spent eq true
+@assert vr.chargeCue.fill eq 0
+@assert vr.chargeCue.glow.fill eq 0
+@assert vr.chargeCue.wrist.fill eq 0
+@assert vr.chargeCue.blade.fill eq 0
+@assert vr.chargeCue.hud.intensity lt 0.21
+@log melee\.charge state=spent
+
+# 5. Released and pressed again it charges again; released before a strike, every variant is empty
+vr-sim action trigger right 0
+vr-sim head rot 0 -35 0
+vr-sim @+1-60 hand right pos 0.2 -0.45 -0.35
+@frames 70
+@assert vr.melee.swings eq 1
+vr-sim action trigger right 1
+@frames 20
+@assert vr.chargeCue.fill gt 0
+@assert vr.chargeCue.wrist.fill gt 0
+@assert vr.chargeCue.blade.fill gt 0
+@assert vr.chargeCue.glow.fill gt 0
+vr-sim action trigger right 0
+@frames 5
+@assert vr.chargeCue.fill eq 0
+@assert vr.chargeCue.glow.fill eq 0
+@assert vr.chargeCue.wrist.fill eq 0
+@assert vr.chargeCue.blade.fill eq 0
+@assert vr.chargeCue.hud.intensity lt 0.21
+
+# 6. Each variant alone, switched live: only it is shown, it fills to full and empties on the release
+melee-cue glow
+@log melee\.cue mode=glow
+@frames 5
+@assert vr.chargeCue.mode eq glow
+@assert vr.chargeCue.glow.shown eq true
+@assert vr.chargeCue.wrist.shown eq false
+@assert vr.chargeCue.hud.shown eq false
+@assert vr.chargeCue.blade.shown eq false
+@remember hudDraws vr.chargeCue.hud.draws
+@remember wristViews vr.chargeCue.wrist.views
+@shot glow-empty
+vr-sim action trigger right 1
+@until vr.melee.charge.ratio ge 1 10s
+@frames 5
+@assert vr.chargeCue.glow.fill eq 1
+@assert vr.chargeCue.wrist.fill eq 0
+@assert vr.chargeCue.blade.fill eq 0
+# Not drawn: the gauge (no combat mode) and the ring
+@assert vr.chargeCue.hud.draws eq {hudDraws}
+@assert vr.chargeCue.wrist.views eq {wristViews}
+@shot glow-full
+vr-sim action trigger right 0
+@frames 5
+@assert vr.chargeCue.glow.fill eq 0
+
+melee-cue wrist
+@log melee\.cue mode=wrist
+@frames 5
+@assert vr.chargeCue.mode eq wrist
+@assert vr.chargeCue.glow.shown eq false
+@assert vr.chargeCue.wrist.shown eq true
+@assert vr.chargeCue.hud.shown eq false
+@assert vr.chargeCue.blade.shown eq false
+@remember bladeViews vr.chargeCue.blade.views
+vr-sim action trigger right 1
+@until vr.melee.charge.ratio ge 1 10s
+@frames 5
+@assert vr.chargeCue.wrist.fill eq 1
+@assert vr.chargeCue.glow.fill eq 0
+@assert vr.chargeCue.blade.fill eq 0
+@assert vr.chargeCue.blade.views eq {bladeViews}
+@shot wrist-full
+vr-sim action trigger right 0
+@frames 5
+@assert vr.chargeCue.wrist.fill eq 0
+
+melee-cue hud
+@log melee\.cue mode=hud
+@frames 5
+@assert vr.chargeCue.mode eq hud
+@assert vr.chargeCue.glow.shown eq false
+@assert vr.chargeCue.wrist.shown eq false
+@assert vr.chargeCue.hud.shown eq true
+@assert vr.chargeCue.blade.shown eq false
+@remember hudDraws vr.chargeCue.hud.draws
+@shot hud-empty
+vr-sim action trigger right 1
+@until vr.melee.charge.ratio ge 1 10s
+@frames 5
+@assert vr.chargeCue.hud.intensity eq 1
+@assert vr.chargeCue.hud.draws gt {hudDraws}
+@assert vr.chargeCue.glow.fill eq 0
+@assert vr.chargeCue.wrist.fill eq 0
+@assert vr.chargeCue.blade.fill eq 0
+@shot hud-full
+vr-sim action trigger right 0
+@frames 5
+@assert vr.chargeCue.hud.intensity lt 0.21
+
+melee-cue blade
+@log melee\.cue mode=blade
+@frames 5
+@assert vr.chargeCue.mode eq blade
+@assert vr.chargeCue.glow.shown eq false
+@assert vr.chargeCue.wrist.shown eq false
+@assert vr.chargeCue.hud.shown eq false
+@assert vr.chargeCue.blade.shown eq true
+@remember bladeViews vr.chargeCue.blade.views
+vr-sim action trigger right 1
+@until vr.melee.charge.ratio ge 1 10s
+@frames 5
+@assert vr.chargeCue.blade.fill eq 1
+@assert vr.chargeCue.blade.views ge {bladeViews+5}
+@assert vr.chargeCue.glow.fill eq 0
+@assert vr.chargeCue.wrist.fill eq 0
+@shot blade-full
+vr-sim action trigger right 0
+@frames 5
+@assert vr.chargeCue.blade.fill eq 0
+
+# 7. Off: the charge still grows, nothing shows it
+melee-cue off
+@log melee\.cue mode=off
+@frames 5
+@assert vr.chargeCue.glow.shown eq false
+@assert vr.chargeCue.wrist.shown eq false
+@assert vr.chargeCue.hud.shown eq false
+@assert vr.chargeCue.blade.shown eq false
+vr-sim action trigger right 1
+@until vr.melee.charge.ratio ge 1 10s
+@frames 5
+@assert vr.chargeCue.fill eq 1
+@assert vr.chargeCue.glow.fill eq 0
+@assert vr.chargeCue.wrist.fill eq 0
+@assert vr.chargeCue.blade.fill eq 0
+vr-sim action trigger right 0
+
+# The default again: CI runs every sequence in one user directory
+melee-cue all
+@frames 5
+@assert vr.chargeCue.mode eq all
+@assert errors eq 0

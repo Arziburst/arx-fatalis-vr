@@ -113,6 +113,9 @@ set(arxtest_TESTCASES
 	tests/vr/ArmMeshTest.h
 	tests/vr/ArmMeshTest.cpp
 
+	tests/vr/ArmFitTest.h
+	tests/vr/ArmFitTest.cpp
+
 
 )
 
@@ -156,6 +159,7 @@ set(arxtest_SOURCES
 	src/vr/Locomotion.cpp
 	src/vr/FingerCurl.cpp
 	src/vr/ArmMesh.cpp
+	src/vr/ArmFit.cpp
 	src/vr/RuneTrail.cpp
 	src/vr/MeleeSwing.cpp
 

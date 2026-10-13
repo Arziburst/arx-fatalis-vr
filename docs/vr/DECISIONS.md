@@ -132,6 +132,15 @@ gives a clear moment to cast without a pause or an extra gesture.
 - PR #310 (runes in the air, #44) and the haptics PR #264 wait until this scheme lands; #310 is reviewed against it.
 - Issues #324 (full rebinding) and #325 (radial menu) are folded into the epic; the remapping screen (D-039) keeps
   working on the new actions.
+- **The defaults as built (#377, the worker's calls the coordinator delegated; the owner judges them in the headset):**
+  grip + trigger on an **item uses it** (the original's right click: eaten, drunk, equipped) - the table's "use", and
+  the stash chord is dropped; the stash event stays bindable. Until each hand has its stance (#378) the one stance is
+  the **left A** (the Touch's X, where it was); until a weapon per hand (#380) the **right** stick click draws / sheathes
+  the right hand's weapon, the left stick click is free; the game starts with the weapon **drawn** (as the hand held
+  it before). The Touch keeps the game menu on its **left menu button** (the table does not name it). "The game
+  menu must not break": a B press that **cannot open a radial menu** in a running game - the game menu shown, the head
+  or the hand not tracked - is the **game menu key** (it opens the game menu or goes back); not a hold fallback.
+  The trigger's double click no longer acts on doors, levers, chests or NPCs while the hands are the mouse.
 
 ---
 

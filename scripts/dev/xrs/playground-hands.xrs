@@ -1,6 +1,6 @@
 # Doors, levers, chests and bodies by hand (#38, D-016, D-042): each hand's reticle and that hand's act - grip held, then
-# the trigger (VRControls.cpp: act_left / act_right, the stash chord; on a door, lever, chest, NPC or corpse it acts as the
-# engine's double click, on an item it stashes). With the right hand, then again with the left: pull a lever, open and
+# the trigger (VRControls.cpp: act_left / act_right, the use chord since #377; on a door, lever, chest, NPC or corpse it
+# acts as the engine's double click, on an item it uses). With the right hand, then again with the left: pull a lever, open and
 # close the door, open the chest and drag an item from it into the bag, search the body and drag an item from it into
 # the bag. No desktop mouse: vr-point turns a simulated hand, vr-sim action presses its controls.
 # The playground's door, chest and body (scripts/dev/playground/layout.mjs; ids from FIRST_ID 9001): light_door_9001

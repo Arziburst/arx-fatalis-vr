@@ -1,0 +1,33 @@
+# Flat mode is unchanged (#29): the original cameras, bars and subtitles; T1 Kultar in a flat run.
+#   .\scripts\dev\xrs-run.ps1 scene-flat
+# Red until #29 is built: the scene command and the status.json scene.* fields are not in the game yet (29.0, SPEC.md).
+# No OpenXR session and no --vr-sim: the scene switches are accepted and ignored. The zone KULTAR_WAKE is entered by a setpos
+# 3 m ahead of the save (no VR stick in a flat run).
+@save scene-kultar
+@args --loadslot 0 --no-vr
+
+@until state eq GAMEPLAY 60s
+@wait 3000                                   # past the level's fade-in
+@assert player.controlsBlocked eq false
+@assert scene.shown eq none
+scene view ghost
+scene lookat fade
+scene subtitles chest
+@assert scene.shown eq none
+@remember cx camera.x
+@remember cz camera.z
+@mark
+setpos 8540 3105 8780 0
+@log scene state=start 30s                   # the game's own scene event (the bars)
+@wait 8000
+@assert scene.shown eq none
+@assert scene.fade eq 0
+@assert scene.meter.frames eq 0              # the meter counts VR frames only
+@assert scene.meter.letterboxFrames eq 0
+@shot flat-scene
+# the original camera: a camera entity moves the engine camera away from the hero's head
+@assert camera.z ne {cz}
+@wait 20000
+@nolog vr\.scene
+@assert scene.shown eq none
+@assert errors eq 0

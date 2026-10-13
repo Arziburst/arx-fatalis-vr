@@ -1,0 +1,65 @@
+# playerlookat in scenes (#29, 29.1): ignore leaves the yaw, fade applies it behind a ~0.2 s scene fade; no un-faded yaw snap.
+#   .\scripts\dev\xrs-run.ps1 scene-lookat
+# Red until #29 is built: the scene command and the status.json scene.* fields are not in the game yet (29.0, SPEC.md).
+# T1 (Kultar's scene holds a playerlookat) and a script-console playerlookat, in both modes.
+@sim idle
+@save scene-kultar
+@args --loadslot 0
+
+# T1: the save is one step before the KULTAR_WAKE zone, facing +z (scripts/dev/test-saves/scenarios.txt)
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # past the level's fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert scene.active eq false
+@assert scene.shown eq none
+scene view first
+
+# ignore: the lookat is counted, the yaw is not touched
+scene lookat ignore
+@remember yawI player.yaw
+scene meter reset
+vr-input stick left 0 1
+@until scene.active eq true 60s
+vr-input stick left 0 0
+@until scene.active eq false 120s
+@assert scene.meter.lookats gt 0
+@assert scene.meter.fadedLookats eq 0
+@assert scene.meter.maxYawStepDeg lt 1
+@assert player.yaw eq {yawI}
+@remember lk scene.meter.lookats
+playerlookat human_base_0028
+@frames 10
+@assert scene.meter.lookats eq {lk+1}
+@assert scene.meter.fadedLookats eq 0
+@assert player.yaw eq {yawI}
+@assert scene.meter.maxYawStepDeg lt 1
+
+# fade: reload the save, the same scene; every applied lookat is behind the fade
+loadslot 0
+@wait 5000
+@until state eq GAMEPLAY 60s
+@until player.controlsBlocked eq false 60s
+@wait 3000
+scene view first
+scene lookat fade
+scene meter reset
+vr-input stick left 0 1
+@until scene.active eq true 60s
+vr-input stick left 0 0
+@until scene.active eq false 120s
+@assert scene.meter.lookats gt 0
+@remember lkF scene.meter.lookats
+@assert scene.meter.fadedLookats eq {lkF}
+@assert scene.meter.maxYawStepDeg lt 1
+@assert scene.meter.letterboxFrames eq 0
+@remember yawF player.yaw
+playerlookat human_base_0028
+@until scene.fade gt 0 5s
+@wait 1000
+@assert scene.meter.lookats eq {lkF+1}
+@assert scene.meter.fadedLookats eq {lkF+1}
+@assert player.yaw ne {yawF}
+@assert scene.meter.maxYawStepDeg lt 1
+@assert scene.fade eq 0
+scene lookat ignore
+@assert errors eq 0

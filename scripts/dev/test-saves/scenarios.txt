@@ -25,6 +25,17 @@ shot mvp-new-game
 @wait 1
 save mvp-new-game
 
+# --- scene-kultar: T1 of #29, one step before the Kultar scene's trigger --------------------------------------------
+# After the prison intro the hero stands at MARKER_0112 (8540 3105 8460), yaw 0, facing +z; the zone KULTAR_WAKE (armed by
+# the intro) lies 2.5-3.5 m ahead, a strip about 1.5 m deep. This spot is 2.2 m ahead, facing +z: a walk forward starts the
+# scene (Kultar at the bars: camera entities, cinemascope, playerlookat, three voiced lines).
+setpos 8540 3105 8680 0
+@wait 2
+@describe Kultar at the bars (#29, T1): the hero one step before the trigger zone KULTAR_WAKE, facing +z; walking forward about half a metre starts the scene (camera entities).
+shot scene-kultar
+@wait 1
+save scene-kultar
+
 # The next scenarios fight and pick things up: a sword in the right hand (demo step 3), and the player
 # cannot be killed while the script walks him around (switched off again before every save).
 invulnerability on

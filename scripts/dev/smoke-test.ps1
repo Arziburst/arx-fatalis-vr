@@ -243,7 +243,7 @@ function Write-Check([bool]$Ok, [string]$Text) {
 function Save-SmokeEvidence([int]$Run, [DateTime]$Since, [string[]]$Crashes, [string]$Why) {
 	$dir = Join-Path $EvidenceDir ('run{0:00}-{1:yyyyMMdd-HHmmss}' -f $Run, $Since)
 	New-Item -ItemType Directory -Force $dir | Out-Null
-	foreach ($file in @($log, (Join-Path $TestDir 'stdout.txt'), (Join-Path $TestDir 'stderr.txt'), (Join-Path $TestDir 'status.json'))) {
+	foreach ($file in @($log, (Join-Path $TestDir 'stdout.txt'), (Join-Path $TestDir 'stderr.txt'), (Join-Path $TestDir 'status.json'), (Join-Path $TestDir 'hang.txt'))) {
 		if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination $dir }
 	}
 	foreach ($c in $Crashes) { Copy-Item -LiteralPath (Join-Path $crashDir $c) -Destination $dir -Recurse }
@@ -264,7 +264,7 @@ function Invoke-SmokeRun([int]$Run) {
 	$launchTime = Get-Date
 	try {
 		New-Item -ItemType Directory -Force $TestDir | Out-Null
-		foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt', 'launched.txt') {
+		foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt', 'launched.txt', 'hang.txt') {
 			Remove-Item (Join-Path $TestDir $f) -Force -ErrorAction SilentlyContinue
 		}
 		# arx.log is not deleted here: the game rotates the previous run to arx.1.log itself (#129), and

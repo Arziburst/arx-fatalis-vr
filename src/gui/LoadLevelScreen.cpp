@@ -22,6 +22,7 @@
 #include <cstdio>
 
 #include "core/Application.h"
+#include "core/CommandChannel.h"
 #include "core/Core.h"
 #include "platform/Time.h"
 #include "game/Levels.h"
@@ -51,6 +52,8 @@ void progressBarSetTotal(float total) {
 
 void progressBarAdvance(float delta) {
 	PROGRESS_BAR_COUNT += delta;
+	// A load that advances is alive: the hang watchdog sees it go on (#440)
+	channel::beat("level load progress");
 }
 
 void LoadLevelScreen(AreaId area ) {

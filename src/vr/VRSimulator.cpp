@@ -438,7 +438,12 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrGetInstanceProperties(XrInstance /* instanc
 	return XR_SUCCESS;
 }
 
+void runRequests();
+
 XRAPI_ATTR XrResult XRAPI_CALL sim_xrPollEvent(XrInstance /* instance */, XrEventDataBuffer * event) {
+	// The game polls every frame, with a session or without: commands sent after the runtime ended the
+	// session (#146: "runtime lost", "fault exit") still run
+	runRequests();
 	if(g_sim->events.empty()) {
 		return XR_EVENT_UNAVAILABLE;
 	}

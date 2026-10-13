@@ -265,14 +265,13 @@ const char * meleeWeaponName(MeleeWeapon weapon) {
 
 const char * recoverySourceName(RecoverySource source) {
 	switch(source) {
-		case RecoverySource::Game: return "game";
+		case RecoverySource::Default: return "default";
 		case RecoverySource::Config: return "config";
-		case RecoverySource::Fallback: return "fallback";
 	}
-	return "fallback";
+	return "default";
 }
 
-float fallbackRecovery(MeleeWeapon weapon) {
+float defaultRecovery(MeleeWeapon weapon) {
 	switch(weapon) {
 		case MeleeWeapon::Dagger: return 0.6f;
 		case MeleeWeapon::OneHanded: return 0.8f;
@@ -281,17 +280,14 @@ float fallbackRecovery(MeleeWeapon weapon) {
 	return 0.8f;
 }
 
-RecoveryTime recoveryTime(MeleeWeapon weapon, float configured, float game) {
+RecoveryTime recoveryTime(MeleeWeapon weapon, float configured) {
 	RecoveryTime result;
 	if(configured >= 0.f) {
 		result.seconds = configured;
 		result.source = RecoverySource::Config;
-	} else if(game > 0.f) {
-		result.seconds = game;
-		result.source = RecoverySource::Game;
 	} else {
-		result.seconds = fallbackRecovery(weapon);
-		result.source = RecoverySource::Fallback;
+		result.seconds = defaultRecovery(weapon);
+		result.source = RecoverySource::Default;
 	}
 	return result;
 }

@@ -53,8 +53,8 @@
  *  - \ref TargetCooldown: one hit per target per swing, and not within \ref SwingParams::targetCooldown
  *    of the last one (F-62).
  *  - \ref StrikeRecovery: after a hit the hand recovers - a swing started within \ref recoveryTime of the hit
- *    hits nothing (#323: waving the weapon fast is no flurry of hits); the time is the game's own strike
- *    for the weapon type (the player's strike start and strike animations), a cfg.ini key overrides it.
+ *    hits nothing (#323: waving the weapon fast is no flurry of hits); a time per weapon type, the dagger
+ *    shortest, a cfg.ini key overrides it.
  *
  * Pure logic: positions in meters, times in seconds, no engine globals, no clock - covered by
  * tests/vr/MeleeSwingTest. Thresholds against prior art: F-74, F-178, F-195 (RESEARCH-reference-mods.md).
@@ -263,33 +263,32 @@ const char * meleeWeaponName(MeleeWeapon weapon);
 
 //! Where a recovery time came from
 enum class RecoverySource : u8 {
-	Game,    //!< the game's own strike for the weapon type
-	Config,  //!< the cfg.ini key
-	Fallback //!< \ref fallbackRecovery: the game's strike is not known (its animations are not loaded)
+	Default, //!< \ref defaultRecovery
+	Config   //!< the cfg.ini key
 };
 
-//! "game", "config", "fallback"
+//! "default", "config"
 const char * recoverySourceName(RecoverySource source);
 
 /*!
- * \return seconds of recovery when the game's own strike is not known: the dagger shortest, the two-handed
- *         weapon longest, near the game's strike animations (#323)
+ * \return the default recovery after a hit, seconds: the dagger shortest, the two-handed weapon longest (#323).
+ *         Not the game's own strike: the hero's strike start + strike animations take 1.79 s with the dagger,
+ *         1.5 s one-handed and 1.79 s two-handed - the dagger is not the fastest, and every one is slow for a
+ *         swing of the arm (VRMelee reports them as diagnostics)
  */
-float fallbackRecovery(MeleeWeapon weapon);
+float defaultRecovery(MeleeWeapon weapon);
 
 struct RecoveryTime {
 	float seconds = 0.f;
-	RecoverySource source = RecoverySource::Fallback;
+	RecoverySource source = RecoverySource::Default;
 };
 
 /*!
  * \brief The recovery after a hit for a weapon type
  * \param configured the cfg.ini key (\c vr_melee_recovery_dagger, \c _1h, \c _2h): seconds when 0 or more, the
- *        game's own when negative
- * \param game the game's own strike for the type, seconds: the player's strike start and strike animations
- *        (what the engine's attack button plays from the hand at rest to the hand at rest), 0 when not known
+ *        default when negative
  */
-RecoveryTime recoveryTime(MeleeWeapon weapon, float configured, float game);
+RecoveryTime recoveryTime(MeleeWeapon weapon, float configured);
 
 /*!
  * \brief The weapon hand's recovery after a hit (#323): a swing that starts within it hits nothing

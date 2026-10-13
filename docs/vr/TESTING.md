@@ -411,13 +411,19 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
 - `vr.melee` (#39, D-038): physical melee. `active` (swings count now) or `refused` (why not: `no weapon in the
   hand`, a menu's name such as `inventory`, `controls blocked`, `an item is dragged`, …); the swing detector:
   `swinging`, `kind` (`slash`, `stab`, `none`; of the swing in progress or the last one), `speed` (m/s of the point
-  0.125 m along the blade, relative to the head, now), `peak`, `factor` (0.5..1), `swings`, `gaps` and `jumps` (samples
-  refused: a time step outside 4-100 ms, a speed over 20 m/s), `nearMisses` / `lastNearMiss` (motions that peaked
+  0.125 m along the blade, relative to the head, now; the median's move over the time between the middle samples, #352),
+  `peak`, `factor` (0.5..1), `swings`, `gaps` and `jumps` (samples refused: a time step outside 4-100 ms, a raw or
+  filtered speed over 20 m/s), `nearMisses` / `lastNearMiss` (motions that peaked
   within 20 % below the swing speed, F-60); `charge` (`held`, `charging`, `spent` — a charged hit used it and the
   trigger is still held — `seconds`, `ratio` 0.1..1 while charging, `fullAimSeconds` = the player's `Full_AimTime`);
   `hits` (NPCs touched by swings), `contacts` (anything touched), `chargedHits`; `last` (`target`, `aim` — the
   engine's `ratioaim`: 0.25 × factor plain, the charge × factor charged — `damage`, `charged`, `speed`, `swing`);
-  `params` (`swingSpeed`, `endSpeed`, `fullSpeed`, `weakAim`, `targetCooldown`, from cfg.ini); `placed`, `hilt`,
+  `recovery` (#323: after a hit a swing that starts within the recovery hits nothing — `weapon` `dagger`/`1h`/`2h`,
+  `seconds` its recovery, `source` `default` (0.6 / 0.8 / 1.0 s) or `config` (`vr_melee_recovery_dagger` / `_1h` / `_2h`),
+  for comparison `game` the game's own strike for it and `games.dagger` / `games.1h` / `games.2h` for every type (the
+  hero's strike start + strike animations: 1.79 / 1.5 / 1.79 s; 0 when not loaded), `left`
+  seconds until a swing may hit again, `recovering` the swing in progress or the last one started within it,
+  `swings` such swings so far); `params` (`swingSpeed`, `endSpeed`, `fullSpeed`, `weakAim`, `targetCooldown`, from cfg.ini); `placed`, `hilt`,
   `tip` (the weapon placed for this frame's check, world).
 - `player` is present only while a level is loaded; the `.xrs` runner (#113) asserts on these keys
   with `@modassert`.
@@ -716,7 +722,8 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.weapon` | the equipped weapon goes into the IK hand or back to the engine (#75) | `state=hand\|engine\|none`, `reason`, `item`, `kind` (`dagger`, `1h`, `2h`, `bow`, `none`; limit 200) |
 | `vr.weapon.grip` | a weapon's blade was read from its mesh (once per weapon and hand frame) | `item`, `bladeLength` (units), `assetAngle` (degrees between the asset's blade and the handle axis) |
 | `melee.state` | physical melee (#39) is switched on or off, and why | `state=on\|off`, `reason` (`allowed`, `no weapon in the hand`, `the right controller is not tracked`, a menu, `controls blocked`, `an item is dragged`, `dead`; limit 200) |
-| `melee.swing` | a swing of the weapon in the IK hand ended (#39): one line per swing | `kind=slash\|stab`, `result=hit\|miss\|lost` (lost: tracking or the gate dropped it), `peak` (m/s), `factor`, `charge` (the ratio when it started), `aim` (of its hits), `charged=yes\|no` (its charge was spent), `hits`, `ms` (limit 1000) |
+| `melee.swing` | a swing of the weapon in the IK hand ended (#39): one line per swing | `kind=slash\|stab`, `result=hit\|miss\|lost\|recovering` (lost: tracking or the gate dropped it; recovering: it started within the recovery after a hit and could not hit, #323), `peak` (m/s), `factor`, `charge` (the ratio when it started), `aim` (of its hits), `charged=yes\|no` (its charge was spent), `hits`, `ms` (limit 1000) |
+| `melee.recovery` | the recovery after a hit of the weapon type in the hand changed (#323): another weapon type, a cfg.ini value | `weapon`, `seconds`, `source=default\|config`, `game` (the game's own strike for it, for comparison), `dagger` / `1h` / `2h` (the strike start + strike animation files every type's game value was read from, `-` when not loaded; limit 200) |
 | `melee.charge` | the trigger's charge (#39): `start`, `full` (the ratio reached 1), `spent` (a charged hit used it), `released` (let go while charging) | `state`, `full` (seconds of `Full_AimTime`), `seconds`, `ratio` (limit 1000) |
 | `melee.nearMiss` | a hand motion peaked within 20 % below the swing speed without becoming a swing (#39, F-60): the census to tune `vr_melee_swing_speed` | `peak`, `swingSpeed` (limit 200) |
 | `vr.reticle` | the hand reticles went on or off (#37) | `state=on\|off`, `reason` (`game`, or why off — see `vr.reticle.off` in the status; limit 200) |

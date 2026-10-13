@@ -106,9 +106,10 @@ MeleeWeapon meleeWeapon() {
 }
 
 /*!
- * The game's own strike for a weapon type, seconds: the player's strike start and strike animations - what the
- * attack button plays from the weapon at rest to the weapon at rest (Core.cpp), in the default (left) direction,
- * without the charge held in between; 0 while they are not loaded. \a anims gets their file names
+ * The game's own strike for a weapon type, seconds - diagnostics next to the recovery (#323): the player's strike
+ * start and strike animations, what the attack button plays from the weapon at rest to the weapon at rest
+ * (Core.cpp), in the default (left) direction, without the charge held in between; 0 while they are not loaded.
+ * \a anims gets their file names
  */
 float gameStrikeSeconds(MeleeWeapon weapon, std::string * anims = nullptr) {
 	AnimationNumber start = ANIM_1H_STRIKE_LEFT_START;
@@ -163,7 +164,7 @@ void updateRecoveryTime() {
 		s.gameStrike[size_t(type)] = gameStrikeSeconds(type, &anims[size_t(type)]);
 	}
 	const float game = s.gameStrike[size_t(weapon)];
-	m.recoveryTime = recoveryTime(weapon, configuredRecovery(weapon), game);
+	m.recoveryTime = recoveryTime(weapon, configuredRecovery(weapon));
 	s.weapon = meleeWeaponName(weapon);
 	s.recovery = m.recoveryTime.seconds;
 	s.recoverySource = recoverySourceName(m.recoveryTime.source);

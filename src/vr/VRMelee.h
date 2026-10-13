@@ -41,8 +41,8 @@
  *    \ref strikeAim; targets hit by this swing or within the cooldown are left out (F-62);
  *  - the first contact of a charged swing spends the charge: the trigger must be released and pressed
  *    again to charge another;
- *  - after a contact the hand recovers for the weapon type's \ref recoveryTime (the game's own strike: the
- *    player's strike start and strike animations): a swing started within it hits nothing (#323);
+ *  - after a contact the hand recovers for the weapon type's \ref recoveryTime: a swing started within it hits
+ *    nothing (#323);
  *  - a swing start is the engine's strike: the player becomes visible, the \c strike script event, and the
  *    strike speech of a nearly full charge.
  * The engine's own strike (the attack button's charge-and-release in combat mode, which hit without any
@@ -103,8 +103,8 @@ struct MeleeStatus {
 	// The recovery after a hit (#323)
 	const char * weapon = "none";   //!< the weapon type in the hand: dagger, 1h, 2h
 	float recovery = 0.f;           //!< s, its recovery after a hit
-	const char * recoverySource = "fallback"; //!< game, config, fallback
-	float recoveryGame = 0.f;       //!< s, the game's own strike for the type (0: not known)
+	const char * recoverySource = "default"; //!< default, config
+	float recoveryGame = 0.f;       //!< s, the game's own strike for the type, for comparison (0: not known)
 	std::array<float, 3> gameStrike = { }; //!< s, the game's own strike per \ref MeleeWeapon (0: not known)
 	float recoveryLeft = 0.f;       //!< s until a new swing may hit
 	bool recovering = false;        //!< the swing in progress (or the last one) started within the recovery: no hits

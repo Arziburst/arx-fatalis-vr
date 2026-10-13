@@ -149,7 +149,7 @@ constexpr const float
 	vrMeleeFullSpeed = vr::SwingParams().fullSpeed,
 	vrMeleeWeakAim = vr::SwingParams().weakAim,
 	vrMeleeTargetCooldown = vr::SwingParams().targetCooldown,
-	vrMeleeRecovery = -1.f, // the game's own strike (#323)
+	vrMeleeRecovery = -1.f, // the weapon type's default (#323, vr::defaultRecovery)
 	fogDistance = 10.f,
 	gamma = 5.f,
 	fov = 75.f,
@@ -826,7 +826,7 @@ bool Config::init(const fs::path & file) {
 	input.vrMeleeWeakAim = glm::clamp(vrMeleeWeakAim, 0.1f, 1.f);
 	float vrMeleeTargetCooldown = reader.getKey(Section::Input, Key::vrMeleeTargetCooldown, Default::vrMeleeTargetCooldown);
 	input.vrMeleeTargetCooldown = glm::clamp(vrMeleeTargetCooldown, 0.f, 2.f);
-	// The recovery after a hit per weapon type (#323): seconds, or negative for the game's own strike
+	// The recovery after a hit per weapon type (#323): seconds, or negative for the type's default
 	auto meleeRecovery = [&reader](std::string_view key) {
 		const float seconds = reader.getKey(Section::Input, key, Default::vrMeleeRecovery);
 		return seconds < 0.f ? -1.f : std::min(seconds, 5.f);

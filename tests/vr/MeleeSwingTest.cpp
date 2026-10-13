@@ -468,23 +468,21 @@ void MeleeSwingTest::testSameSwingsAt45And90Hz() {
 void MeleeSwingTest::testRecoveryTime() {
 	const vr::MeleeWeapon weapons[] = { vr::MeleeWeapon::Dagger, vr::MeleeWeapon::OneHanded, vr::MeleeWeapon::TwoHanded };
 	for(vr::MeleeWeapon weapon : weapons) {
-		// The cfg.ini key wins (0 too: no recovery), then the game's strike, then the fallback
-		vr::RecoveryTime time = vr::recoveryTime(weapon, -1.f, 0.f);
-		CPPUNIT_ASSERT(time.source == vr::RecoverySource::Fallback);
-		CPPUNIT_ASSERT_EQUAL(vr::fallbackRecovery(weapon), time.seconds);
-		time = vr::recoveryTime(weapon, -1.f, 0.9f);
-		CPPUNIT_ASSERT(time.source == vr::RecoverySource::Game);
-		CPPUNIT_ASSERT_EQUAL(0.9f, time.seconds);
-		time = vr::recoveryTime(weapon, 0.4f, 0.9f);
+		// The cfg.ini key wins (0 too: no recovery), a negative one is the type's default
+		vr::RecoveryTime time = vr::recoveryTime(weapon, -1.f);
+		CPPUNIT_ASSERT(time.source == vr::RecoverySource::Default);
+		CPPUNIT_ASSERT_EQUAL(vr::defaultRecovery(weapon), time.seconds);
+		time = vr::recoveryTime(weapon, 0.4f);
 		CPPUNIT_ASSERT(time.source == vr::RecoverySource::Config);
 		CPPUNIT_ASSERT_EQUAL(0.4f, time.seconds);
-		time = vr::recoveryTime(weapon, 0.f, 0.9f);
+		time = vr::recoveryTime(weapon, 0.f);
 		CPPUNIT_ASSERT(time.source == vr::RecoverySource::Config);
 		CPPUNIT_ASSERT_EQUAL(0.f, time.seconds);
 	}
-	// The dagger recovers fastest, the two-handed weapon slowest
-	CPPUNIT_ASSERT(vr::fallbackRecovery(vr::MeleeWeapon::Dagger) < vr::fallbackRecovery(vr::MeleeWeapon::OneHanded));
-	CPPUNIT_ASSERT(vr::fallbackRecovery(vr::MeleeWeapon::OneHanded) < vr::fallbackRecovery(vr::MeleeWeapon::TwoHanded));
+	// The dagger recovers fastest, the two-handed weapon slowest: 0.6, 0.8, 1.0 s
+	CPPUNIT_ASSERT_EQUAL(0.6f, vr::defaultRecovery(vr::MeleeWeapon::Dagger));
+	CPPUNIT_ASSERT_EQUAL(0.8f, vr::defaultRecovery(vr::MeleeWeapon::OneHanded));
+	CPPUNIT_ASSERT_EQUAL(1.f, vr::defaultRecovery(vr::MeleeWeapon::TwoHanded));
 	CPPUNIT_ASSERT_EQUAL(std::string("dagger"), std::string(vr::meleeWeaponName(vr::MeleeWeapon::Dagger)));
 	CPPUNIT_ASSERT_EQUAL(std::string("1h"), std::string(vr::meleeWeaponName(vr::MeleeWeapon::OneHanded)));
 	CPPUNIT_ASSERT_EQUAL(std::string("2h"), std::string(vr::meleeWeaponName(vr::MeleeWeapon::TwoHanded)));
@@ -510,7 +508,7 @@ void MeleeSwingTest::testRecoveryPerWeapon() {
 	// after it does
 	const vr::MeleeWeapon weapons[] = { vr::MeleeWeapon::Dagger, vr::MeleeWeapon::OneHanded, vr::MeleeWeapon::TwoHanded };
 	for(vr::MeleeWeapon weapon : weapons) {
-		const float seconds = vr::recoveryTime(weapon, -1.f, 0.f).seconds;
+		const float seconds = vr::recoveryTime(weapon, -1.f).seconds;
 		vr::SwingDetector detector;
 		vr::StrikeRecovery recovery;
 		double time = 0.;

@@ -290,6 +290,20 @@ The engine's click attack while a weapon is in the VR hand; damage from swing sp
 - `weapon-hold.xrs` no longer sees a strike clip in combat mode; `melee-swing.xrs` proves the design on
   `mvp-goblin-fight`.
 
+### Amendment (2026-10-13, #323, #352): a recovery after a hit; the swing speed over the real time step
+- **Plain swings are no longer spam-able** (the owner's headset run, 2026-10-10: waving the dagger in front of you hit
+  again and again). After a hit the weapon hand recovers: a swing that starts within the recovery hits nothing (and
+  is not the engine's strike: no `strike` event, no speech), even once the recovery ends. The swing that hit goes on
+  hitting other targets. **Dagger 0.6 s, one-handed 0.8 s, two-handed 1.0 s** (the coordinator's option, confirmed by
+  the owner on 2026-10-13), cfg.ini `vr_melee_recovery_dagger` / `_1h` / `_2h` (-1 = the default).
+- **Not the game's own attack timing:** the hero's strike start + strike animations take 1.79 s with the dagger, 1.5 s
+  one-handed and 1.79 s two-handed. The dagger is not the fastest, and each is slow for a swing of the arm. They are
+  reported next to the recovery (`vr.melee.recovery.games`, the `melee.recovery` event) for comparison.
+- **The detector (#352, approved by the owner):** the median's move is divided by the time between the middle samples
+  it moved over, not by this frame's step. Before, a frame hitch (a 50 ms frame followed by an 11 ms one) read 4.5 m/s
+  for a hand at 1 m/s, a phantom hit. A filtered speed above 20 m/s is a jump like a raw one. With the right step
+  that can no longer happen: on each axis both medians lie between the two samples they share. The check stays as a guard.
+
 ---
 
 ## D-037: The wrist bars — size, order, fade, and when they replace the orbs

@@ -92,6 +92,10 @@ It prints the state timeline (`+1.1s state GAMEPLAY (frame 2)`), the acks, the `
 the last lines of the log, the head of a new crash report, and `PASS` / `FAIL` with every reason.
 `-Repeat N` adds a table and a `passed X/N` line. The game runs with `ARX_UNATTENDED=1`: a crash
 writes its report and exits instead of waiting for someone to click the crash dialog.
+`-EvidenceDir <dir>` keeps every **failed** run's evidence in `<dir>\runNN-<time>\` before the next run
+replaces it (#146): `arx.log`, `stdout.txt`, `stderr.txt`, `status.json`, the run's new crash reports,
+`reasons.txt` and, with `-Vr`, the SteamVR logs written during the run (`Steam\logs\vrserver*`,
+`vrcompositor*`, `vrmonitor*`, `vrclient_arx*`, `xrclient_arx*`).
 
 Before the first run the test applies the launch rules of D-014 (`scripts/launch-lib.ps1`): it runs
 only this working copy's own build made from its `HEAD` (`built-from.txt`; `-Rebuild` builds first),
@@ -106,6 +110,41 @@ A fresh isolated directory has no `cfg.ini` yet, so the first run logs one warni
 `%LOCALAPPDATA%\ArxFatalisVR\savelib`; a name that is not there but is in the player's own `save` folder
 is taken from there) for `-- --loadslot` runs; `-Save <name>` makes one library save the **only** save of
 the directory and defaults the arguments to `--loadslot 0` (see [The test save library](#the-test-save-library-70)).
+
+## The exit hook (#146)
+
+Every way the process ends names itself in `arx.log`. The game's own shutdown logs `Clean shutdown`; a crash
+writes a crash report; every quit request logs `Quit requested: <who>` (the window closed, the main menu, the
+channel's `quit`, the simulated headset's `quit`, the benchmark); the runtime ending the VR session logs
+`OpenXR session ended by the runtime (exiting|loss pending)` or `OpenXR runtime is shutting down (instance loss
+pending)` and the game goes on flat. What is left - `exit()` or `ExitProcess` called inside the process by any
+module before the shutdown finished, the shape of #146 - is caught by `platform/ExitTrace` (an `atexit` handler,
+and a TLS callback of `arx.exe` that the loader calls for every `ExitProcess`), which flushes the log and appends:
+
+```
+[E] ExitTrace:0  The process is ending outside the game's own shutdown (#146): ExitProcess (or _exit / abort) was called inside the process, not exit() of the game's C runtime - the stack names the module that called it, exit code -1 (0xffffffff)
+[E] ExitTrace:0  Last cause noted before it: OpenXR session ended by the runtime (exiting), 195 ms earlier
+[E] ExitTrace:0  Called from (innermost first): ntdll.dll+0xe83fb < ... < KERNEL32.DLL+0x4141b < arx.exe+0x21682e < ...
+```
+
+The same lines go to stderr (`stderr.txt` of a smoke run). Read the stack from the left: after the loader's
+`ntdll.dll` frames, `KERNEL32.DLL` is `ExitProcess` (or `ucrtbase.dll` for `exit()`), and the **next module is the
+caller** - `arx.exe` is ours (resolve the offset with the build's `arx.pdb`), anything else is a library
+(`vrclient_x64.dll`: SteamVR's client, a driver ...). With `exit()` a fourth line follows: `The process ended with
+exit code N`. **No ExitTrace lines, no crash report and no `Clean shutdown`** means nothing in the process ran on
+the way out: a `TerminateProcess` from outside (the task manager, a launcher, a runtime killing a hung app).
+
+- `scripts\dev\xrs\vr-session-end.xrs`, `vr-session-loss.xrs` (CI runs them): the simulated runtime ends the session
+  (`vr-sim session exiting`, `vr-sim runtime lost`, `vr-sim session loss-pending`); the game must go on flat, name the
+  cause and still end with `Clean shutdown` and no ExitTrace line. The three warnings are in the digest allowlist.
+- `scripts\dev\exit-trace-check.ps1 [-Fault exit-process|exit] [-Code -1]`: one launch on the simulated headset,
+  the session ended by the runtime, then `vr-sim fault ...` ends the process from inside. The smoke run FAILS (on
+  purpose); the check PASSES when the exit code, the way out, the cause and a stack with `arx.exe` are in `arx.log`.
+  Bug filing is off for the run (`ARXVR_AUTOREPORT=0`).
+- The simulated headset cannot reproduce what SteamVR does: the real hunt is the owner's, with SteamVR running and
+  only on his word (D-014): `.\scripts\dev\smoke-test.ps1 -Vr -Repeat 10 -Seconds 3 -EvidenceDir
+  $env:LOCALAPPDATA\ArxFatalisVR\evidence\146` - each failed run keeps its `arx.log`, stdout / stderr and the SteamVR
+  logs.
 
 ## Background runs are silent (`--mute`, #345)
 
@@ -168,8 +207,9 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `ui inventory open\|close` | what the inventory key does (the book has the script command `book open\|close`); a `ui.inventory` event once the inventory is open / has finished closing. While a level script holds the player (the level 10 start: letterbox, controls blocked) the HUD is not drawn and a close never finishes — `setplayercontrols on` and `cinemascope off` first (#130) |
 | `loadlevel <n> [target]` | change to level `n` in a running game (refused from the menu: start with `--loadlevel` or `loadslot`) |
 | `newgame` | what the menu does for "New game" and the end of the character creation, without the screens: an average hero (all attributes 10, skills 2, nothing to distribute), level 1. Refused outside the main menu (a plain launch). The hero then lies in the start cell and `player.controlsBlocked` stays `true` for 30-40 s while the level script plays the awakening (#70) |
-| `entities [filter]` | write one line per entity to `<dir>\entities.txt`: `<id> npc\|item\|fix\|marker\|camera\|other show=<n> pos=<x> <y> <z> [life=<n>]`; `filter` is a substring of the id. `show` is the engine's `EntityShowState`: 0 in the scene, 2 in an inventory, 6 equipped by the player. The position of a floor object (lever, chest, item) is on the **floor** (#70) |
-| `setpos <x> <y> <z> [yaw]` | put the player at exact coordinates, optionally facing `yaw`. `y` is the **eye**: the floor is 170 units lower (a `y` at floor level puts the eye in the floor: black screen). About 100 units are a metre. Refused outside gameplay (#70) |
+| `entities [filter]` | write one line per entity to `<dir>\entities.txt`: `<id> npc\|item\|fix\|marker\|camera\|other show=<n> pos=<x> <y> <z> [life=<n>] interactive=<0\|1>`; `filter` is a substring of the id. `show` is the engine's `EntityShowState`: 0 in the scene, 2 in an inventory, 6 equipped by the player. The position of a floor object (lever, chest, item) is on the **floor** (#70). `interactive=0`: its script switched it off, no hand reticle or mouse hovers it (#210) |
+| `setpos <x> <y> <z> [yaw]` | put the player at exact coordinates, optionally facing `yaw`. `y` is the **feet** (the engine's teleport): the eye, `player.y` in the status, ends 170 units higher (smaller `y`). A `y` taken from the eye puts the player 170 units above the floor (TRAPS.md, #210). About 100 units are a metre. Refused outside gameplay (#70) |
+| `approach <entity> [<distance>]` | put the player where the hand reticles reach an entity, facing it — the spot is found by the game, not by trying spots in launches (#210): every 15° on rings 80-320 units around the entity, the first floor within 100 units of the entity's own, room for the player's cylinder, the eye within the pick's reach (350 units of the entity's position), and no wall before the entity's faces on the rays from the eye and from both simulated hands to the middle of its box. The spot nearest to `distance` along the floor (default 170) wins; one `[channel] approach` log line with the spot and the counts of rejected spots. Call it **twice**: far from the player an entity is not updated (box, faces), so the first call tests only the level, the second the entity's faces. Refused (with the counts) when no spot qualifies |
 | `lookat <entity>` | turn the player (yaw and pitch) towards an entity, aiming 40 units above its floor position. The pitch is not kept by a save and does not matter in VR (the head decides); the yaw is kept (#70) |
 | `place <entity> <ahead> [<right>]` | put an entity on the floor `ahead` units along the player's heading (and `right` units to its right), facing the player — a target in reach for melee checks (#39; `goblin_base_0036.setspeed 0` first keeps an NPC from walking off). Refused outside gameplay or for an unknown entity |
 | `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
@@ -515,14 +555,31 @@ which.
 | `mvp-new-game` | in the start cell after the awakening, controls free, nothing equipped | demo step 1-2: look, walk, turn |
 | `mvp-items` | a sword equipped; 2.3 m from a table with a key, a note and a form (`key_base_0005`, `note_0004`, `blank_form_0001`); dark room, the items are low in the view | demo step 3: pick up, drag into the inventory (#37) |
 | `mvp-goblin-fight` | a sword equipped; `goblin_base_0036` 3.5 m ahead in a corridor, walking away | demo step 5: melee (#39) |
+| `mvp-lever` | a sword equipped; `lever_0012` (opens `porticullis_0015`) 1.6 m ahead on the floor, in the hand reticles' reach | #38: pull a lever |
+| `mvp-door` | a sword equipped; the closed portcullis `porticullis_0015` 1.6 m ahead, in the hand reticles' reach | #38: a door |
+| `mvp-chest` | a sword equipped; `chest_metal_0052` 1.6 m ahead, in the hand reticles' reach | #38: open a chest |
 
-**Not in the library: levers, doors, chests.** Nothing could put the player where one is in reach and
-visible; the owner records those by hand (follow-up #210). What that attempt
-learned is in TRAPS.md ("A lever, a chest, a door cannot be found by coordinates").
+`mvp-items` and `mvp-goblin-fight` were placed with `setpos` before it was known that `setpos` takes the
+feet: their player stands 170 units above the floor (TRAPS.md); #417 regenerates them.
+
+**A save at an object** (a lever, a door, a chest, an NPC): `approach <entity>` twice in the scenario, then
+`save` (the three above; one run, no search). Each save has its reticle check, one launch each:
+
+```powershell
+.\scripts\dev\make-test-saves.ps1 -VrSim idle -Only mvp-lever,mvp-door,mvp-chest   # made in VR (the simulated headset); only these replaced
+.\scripts\dev\make-test-saves.ps1 -Verify -VrSim idle                               # every save loaded in a fresh VR game
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence reach-lever -Save mvp-lever      # the right reticle on the lever: under, hover; then a load with the sword held
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence reach-door -Save mvp-door
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence reach-chest -Save mvp-chest
+```
+
+`-VrSim <script>` makes (or verifies) the saves on the simulated headset instead of a flat game; `-Only`
+copies only the named saves of the run into the library (every save is still made and loaded again).
+`manifest.json` says how each save was made (`made`: `flat` or `vr-sim idle`).
 
 **How a save is made** (`scripts/dev/make-test-saves.ps1`, scenario file
-`scripts/dev/test-saves/scenarios.txt`): one flat game from the main menu; `newgame`; `@until
-player.controlsBlocked False`; per scenario `setpos` + `lookat` + `save <name>`; then the **same game
+`scripts/dev/test-saves/scenarios.txt`): one game (flat, or `-VrSim`) from the main menu; `newgame`; `@until
+player.controlsBlocked False`; per scenario `setpos` + `lookat` or `approach` + `save <name>`; then the **same game
 loads every save again** (`loadslot`, oldest first) and checks the level, that the player stands where it
 was saved (within 1 m) and that the controls are free, with a screenshot per save. The script **fails**
 (nothing is copied into the library) when a command is refused, the game ends unclean, or a check fails.
@@ -1163,7 +1220,7 @@ y up, −z forward), `head rot <yaw> <pitch> <roll>` (degrees: yaw + turns left,
 on a runtime that cannot read fingers, or joints again), `profile index|touch|simple|none|<path>`,
 `action <name> left|right|both <value> [<y>]` (the game's OpenXR action names: `trigger`, `grip`,
 `button_a`, `button_b`, `thumbstick`, `thumbstick_click`, `trackpad_press`, `menu`, `thumb_touch`), `session
-focused|visible|idle` (`idle`: the headset is taken off - the session falls back to `synchronized`, the eyes are still located, nothing is shown, #27), `shot [name]`, `mark <text>`, `quit`, `fault swap-eyes on|off`, `layers on|off` (shots also save each eye's projection layer without the quad, `<name>-left-layer.bmp` / `-right-layer.bmp`: what the game drew into the eye itself, #72). The defaults: Index
+focused|visible|idle` (`idle`: the headset is taken off - the session falls back to `synchronized`, the eyes are still located, nothing is shown, #27), `session exiting|loss-pending` and `runtime lost` (the runtime ends the session on its own - stopping, then exiting after `xrEndSession`, as SteamVR quitting the app; the session about to be lost; the runtime shutting down: the game goes on flat and names the cause, #146, see [The exit hook](#the-exit-hook-146)), `shot [name]`, `mark <text>`, `quit`, `fault swap-eyes on|off`, `fault exit|exit-process <code>` (the process ends from inside with `std::exit` or `ExitProcess`, the shape of #146 - only for `exit-trace-check.ps1`), `layers on|off` (shots also save each eye's projection layer without the quad, `<name>-left-layer.bmp` / `-right-layer.bmp`: what the game drew into the eye itself, #72). The defaults: Index
 panel size 1440 × 1600, IPD 64 mm, 90 Hz, the asymmetric, mirrored field of view of research row
 F-165, both Index controllers in front of the body.
 

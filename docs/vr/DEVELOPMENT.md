@@ -4,7 +4,7 @@ For a developer (or a worker session) who has just cloned the repository: what t
 build, how to run the game flat and in VR, how to check a change, and where things are. This page
 collects the commands; the reasoning lives in the documents it links to. Everything here is for
 **Windows** — the only platform of the VR port (the upstream engine's own Linux / macOS build
-instructions are in the root [README.md](../../README.md)).
+instructions are in the [ARX-LIBERTATIS.md](../ARX-LIBERTATIS.md)).
 
 ## Prerequisites
 
@@ -104,7 +104,9 @@ Enforced by `scripts/launch-lib.ps1`, not by good manners — do not work around
 
 - **One game at a time on this PC.** A launch holds the game lock and waits for the holder.
 - **Only this working copy's own fresh build** runs: an `arx.exe` of another copy, or of another commit
-  than `HEAD`, is refused (`-Rebuild` builds first; "dirty" is fine).
+  than `HEAD`, or built before later uncommitted edits, is refused (`-Rebuild` builds first). `built-from.txt`
+  is `<sha>[ dirty] fp=<hash>`: the hash covers `git diff HEAD` plus the untracked files (#306); edits outside
+  the repository are not seen.
 - **No SteamVR starts** from a script; without `vrserver.exe` a launch is flat and `smoke-test.ps1 -Vr` is
   skipped with exit code 2.
 - **Launch budget**: at most 10 game launches per task. Every launch is written to

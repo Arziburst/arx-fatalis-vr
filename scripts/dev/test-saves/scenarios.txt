@@ -62,6 +62,7 @@ approach lever_0012
 @wait 1
 approach lever_0012
 @wait 2
+@print player.x player.y player.z camera.eyeAboveFeet
 invulnerability off
 @describe Lever: a sword equipped; lever_0012 (opens porticullis_0015) in the hand reticles' reach ahead (#38).
 shot mvp-lever
@@ -73,6 +74,7 @@ approach porticullis_0015
 @wait 1
 approach porticullis_0015
 @wait 2
+@print player.x player.y player.z camera.eyeAboveFeet
 invulnerability off
 @describe Door: a sword equipped; the closed portcullis porticullis_0015 in the hand reticles' reach ahead (#38).
 shot mvp-door
@@ -84,6 +86,7 @@ approach chest_metal_0052
 @wait 1
 approach chest_metal_0052
 @wait 2
+@print player.x player.y player.z camera.eyeAboveFeet
 invulnerability off
 @describe Chest: a sword equipped; chest_metal_0052 in the hand reticles' reach ahead (#38, open it, take what is inside).
 shot mvp-chest

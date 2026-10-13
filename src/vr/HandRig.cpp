@@ -383,6 +383,8 @@ bool rigIsChainRoot(size_t joint) {
 const Vec3f HiltThumbDirection(-0.8f, -0.6f, 0.f);
 //! Each bend is opened by this factor while the pose leaves a fingertip inside the hilt
 const float HiltOpenStep = 0.9f;
+//! A fingertip may sink this far into the hilt (meters: its skin pressed on it) before its finger opens
+const float HiltTipTolerance = 0.001f;
 
 //! The distance of \a p from the hilt's axis (the Z axis through \a axis)
 float hiltAxisDistance(const Vec3f & p, const Vec3f & axis) {
@@ -725,14 +727,16 @@ HandJoints hiltPose(Hand hand, float hiltRadius, const HiltAngles & configured) 
 		hiltBendChain(joints, open, knuckle, fingerBends, scale);
 	}
 
-	// The hilt runs along Z through the centre of the middle finger's curl (its knuckle, last joint and tip)
-	const size_t middle = size_t(HandJoint::MiddleProximal);
-	Vec3f axis = hiltCircleCentre(joints.position[middle], joints.position[middle + 2], joints.position[middle + 3]);
+	// The hilt runs along Z through the mean centre of the four fingers' curls (each its knuckle, last joint and tip)
+	Vec3f axis(0.f);
+	for(size_t knuckle : knuckles) {
+		axis += hiltCircleCentre(joints.position[knuckle], joints.position[knuckle + 2], joints.position[knuckle + 3]) * 0.25f;
+	}
 
 	// A fingertip still inside the hilt opens its finger
 	for(size_t knuckle : knuckles) {
 		float opened = scale;
-		for(int step = 0; step < 32 && hiltAxisDistance(joints.position[knuckle + 3], axis) < radius; step++) {
+		for(int step = 0; step < 32 && hiltAxisDistance(joints.position[knuckle + 3], axis) < radius - HiltTipTolerance; step++) {
 			opened *= HiltOpenStep;
 			hiltBendChain(joints, open, knuckle, fingerBends, opened);
 		}
@@ -743,7 +747,7 @@ HandJoints hiltPose(Hand hand, float hiltRadius, const HiltAngles & configured) 
 	                           + joints.position[size_t(HandJoint::MiddleIntermediate)].z);
 	float thumbBend = angles.thumb * scale;
 	hiltLayThumb(joints, open, thumbBend, tipZ);
-	for(int step = 0; step < 32 && hiltAxisDistance(joints.position[size_t(HandJoint::ThumbTip)], axis) < radius; step++) {
+	for(int step = 0; step < 32 && hiltAxisDistance(joints.position[size_t(HandJoint::ThumbTip)], axis) < radius - HiltTipTolerance; step++) {
 		thumbBend *= HiltOpenStep;
 		hiltLayThumb(joints, open, thumbBend, tipZ);
 	}

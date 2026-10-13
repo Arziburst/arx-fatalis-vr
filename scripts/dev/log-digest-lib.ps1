@@ -8,7 +8,9 @@
 #                            should be reported as files in %LOCALAPPDATA%\ArxFatalisVR\pending-reports\.
 #   2. Invoke-ArxReportFlush sends the queue to GitHub - REST only (`gh api`), one call per issue or comment,
 #                            never GraphQL (its quota is shared by every session). A failure leaves the item
-#                            queued; the next run retries it. Runs detached after a launch (-Detach).
+#                            queued; the next run retries it. Runs detached after a launch (-Detach). The
+#                            repository is public: every item is scrubbed of personal data first (Protect-ArxText)
+#                            and one the final check still flags stays queued (#387).
 #
 # $env:ARXVR_DIGEST_ROOT replaces %LOCALAPPDATA%\ArxFatalisVR (the self-test); $script:ArxGitHubInvoker
 # replaces the `gh api` call (the self-test's fake GitHub).
@@ -97,10 +99,79 @@ function Get-ArxHash([string]$Text) {
 	-join ($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($Text))[0..5] | ForEach-Object { $_.ToString('x2') })
 }
 
-# Machine-specific parts out of anything that leaves the machine (an issue body)
-function Protect-ArxText([string]$Text) {
-	$t = [regex]::Replace($Text, '(?i)([A-Za-z]):\\Users\\[^\\/"''\r\n]+', '$1:\Users\<user>')
-	[regex]::Replace($t, '(?i)(/Users/)[^/"''\r\n]+', '$1<user>')
+# --- Personal data out of what is published -------------------------------------------------------------------
+# The repository is public (since 2026-10-12, #387): every title, body and comment goes through Protect-ArxText
+# before it is uploaded, and Find-ArxPrivateData is the final check - an item it flags is not uploaded.
+
+# Applied in order; a Windows user name cannot contain " / \ [ ] : ; | = , + * ? < >
+$script:ArxScrubRules = @(
+	@{ Kind = 'home path'; Put = '<home>'; Rx = [regex]'(?i)\b[A-Za-z]:[\\/]+(?:Users|Documents and Settings)[\\/]+(?:<user>|[^\\/"''`\r\n\[\]:;|=,+*?<>]+)' }
+	@{ Kind = 'home path'; Put = '<home>'; Rx = [regex]'(?<![\w.~])/(?:Users|home)/(?:<user>|[^/\s"''`<>]+)' }
+	@{ Kind = 'Steam userdata id'; Put = '<steam-id>'; Rx = [regex]'(?i)(?<=\buserdata[\\/]+)\d+' }
+	@{ Kind = 'Steam id'; Put = '<steam-id>'; Rx = [regex]'\b7656119\d{10}\b|\bSTEAM_[0-5]:[01]:\d+\b|\[U:1:\d+\]' }
+	@{ Kind = 'network path'; Put = '<path>'; Rx = [regex]'(?<![\\\w:])\\\\(?![?.]\\)[^\\\s"''`]+\\[^\\\s"''`]+' }
+	@{ Kind = 'e-mail'; Put = '<email>'; Rx = [regex]'(?i)\b[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b' }
+	@{ Kind = 'GUID'; Put = '<guid>'; Rx = [regex]'(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b' }
+	@{ Kind = 'Windows SID'; Put = '<sid>'; Rx = [regex]'\bS-1-5-21(?:-\d+){1,4}\b' }
+	@{ Kind = 'MAC address'; Put = '<mac>'; Rx = [regex]'(?i)(?<![\w:-])(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![\w:-])' }   # not a crash folder: 2026-10-09-18-50-15-00
+	@{ Kind = 'IP address'; Put = '<ip>'; Rx = [regex]'(?i)(?<![\w.])(?<!\b(?:version|ver|v|build|driver)[\s:=]{0,3})(?!127\.)(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![\w.])' }
+)
+
+# Found only by the final check - the scrubber does not know how to clean them, so the item is not uploaded
+$script:ArxPrivateChecks = @(
+	@{ Kind = 'home path'; Rx = [regex]'(?i)\b[A-Za-z]:[\\/]+(?:Users|Documents and Settings)\b' }
+	@{ Kind = 'user folder outside the home'; Rx = [regex]'(?i)(?<!<home>[^\s"''`]*)[\\/](?:OneDrive(?: - [^\\/\r\n]+)?|Dropbox|Google Drive|iCloud ?Drive|Desktop|Downloads|Documents|My Documents)(?=[\\/])' }
+	@{ Kind = 'identity value'; Rx = [regex]'(?i)\b(?:user ?name|login|steam ?id|account ?id|persona ?name|e-?mail|host ?name|computer ?name|machine ?name)\s*[=:]\s*(?!<)[^\s<]' }
+)
+
+# The Windows account and machine names, replaced wherever they stand alone (not inside a longer word: the
+# GitHub login that starts with the account name stays). Generic and short names are left alone. The self-test
+# sets $script:ArxPrivateNames.
+function Get-ArxPrivateNames {
+	if ($script:ArxPrivateNames) { return $script:ArxPrivateNames }
+	$generic = 'SYSTEM', 'Administrator', 'Admin', 'User', 'Public', 'Default', 'Guest', 'LOCAL SERVICE', 'NETWORK SERVICE', 'WORKGROUP'
+	$usable = { param([string[]]$Names) @($Names | ForEach-Object { "$_".TrimEnd('$') } | Where-Object { $_.Length -ge 4 -and $_ -notin $generic } | Select-Object -Unique) }
+	@{ '<user>' = & $usable @($env:USERNAME); '<machine>' = & $usable @($env:COMPUTERNAME, $env:USERDOMAIN) }
+}
+
+function Get-ArxNameRules {
+	$names = Get-ArxPrivateNames
+	foreach ($put in '<user>', '<machine>') {
+		foreach ($n in @($names[$put])) {
+			if ($n) { @{ Kind = "$($put.Trim('<>')) name"; Put = $put; Rx = [regex]::new("(?<![\w-])$([regex]::Escape($n))(?![\w-])", 'IgnoreCase') } }
+		}
+	}
+}
+
+# Personal data out of a text that leaves the machine: home paths, Steam ids, account and machine names, e-mails,
+# IPs, GUIDs. -Changes collects "found -> placeholder" counts (scrub-auto-reports.ps1 lists them).
+function Protect-ArxText([string]$Text, [hashtable]$Changes) {
+	if (-not $Text) { return $Text }
+	$t = $Text
+	foreach ($rule in @($script:ArxScrubRules) + @(Get-ArxNameRules)) {
+		$put = $rule.Put
+		$t = $rule.Rx.Replace($t, [Text.RegularExpressions.MatchEvaluator]{
+			param($m)
+			if ($null -ne $Changes) { $key = "$($m.Value) -> $put"; $Changes[$key] = 1 + [int]$Changes[$key] }
+			$put
+		})
+	}
+	$t
+}
+
+# The final check: the kinds of personal data still in a text (empty when it is clean)
+function Find-ArxPrivateData([string]$Text) {
+	if (-not $Text) { return @() }
+	@(foreach ($rule in @($script:ArxScrubRules) + @(Get-ArxNameRules) + @($script:ArxPrivateChecks)) {
+		if ($rule.Rx.IsMatch($Text)) { $rule.Kind }
+	}) | Select-Object -Unique
+}
+
+# A queued report as it would be uploaded: title, body and comment scrubbed, and what the final check still finds
+function Get-ArxUploadItem($Item) {
+	foreach ($k in 'title', 'body', 'comment') { if ($Item[$k]) { $Item[$k] = Protect-ArxText $Item[$k] } }
+	$leaks = @(foreach ($k in 'title', 'body', 'comment') { Find-ArxPrivateData $Item[$k] }) | Select-Object -Unique
+	[pscustomobject]@{ Item = $Item; Leaks = @($leaks) }
 }
 
 # Warnings, errors and critical errors of a run grouped by signature. The signature is the level, the source
@@ -552,7 +623,7 @@ function Find-ArxAutoIssue([string]$Hash, [ref]$Cache) {
 # create the same issue; an item that fails stays queued with its error. Stops at the first sign of no network or a
 # spent rate limit.
 function Invoke-ArxReportFlush {
-	$result = [pscustomobject]@{ Created = @(); Commented = @(); Reopened = @(); Dropped = @(); Failed = @(); Pending = 0 }
+	$result = [pscustomobject]@{ Created = @(); Commented = @(); Reopened = @(); Dropped = @(); Failed = @(); Refused = @(); Pending = 0 }
 	$dir = Get-ArxPendingDir
 	if (-not (Test-Path $dir) -or -not (Get-ChildItem $dir -Filter '*.json' -ErrorAction SilentlyContinue)) { return $result }
 
@@ -568,12 +639,19 @@ function Invoke-ArxReportFlush {
 	try {
 		$items = @(Get-ChildItem $dir -Filter '*.json' | Sort-Object LastWriteTime)
 		if (-not $items) { return $result }
-		# Only into the private repository
-		$repo = Invoke-ArxGitHub GET "repos/$script:ArxDigestRepo"
-		if (-not $repo -or $repo.private -ne $true) { throw "$script:ArxDigestRepo is not a private repository - nothing is uploaded" }
 		$cache = $null
 		foreach ($file in $items) {
-			$item = Get-Content $file.FullName -Raw | ConvertFrom-Json -AsHashtable
+			# The repository is public: scrubbed on the way out (items queued by an older script too); an item the
+			# final check still flags stays queued with the reason, the others go on
+			$upload = Get-ArxUploadItem (Get-Content $file.FullName -Raw | ConvertFrom-Json -AsHashtable)
+			$item = $upload.Item
+			if ($upload.Leaks) {
+				$item.attempts = [int]$item.attempts + 1
+				$item.lastError = "not uploaded: after scrubbing it still holds personal data ($($upload.Leaks -join ', ')); teach Protect-ArxText in log-digest-lib.ps1 to remove it, or delete this file"
+				[IO.File]::WriteAllText($file.FullName, ($item | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
+				$result.Refused += "$($item.signature): $($upload.Leaks -join ', ')"
+				continue
+			}
 			try {
 				$hash = $item.signature
 				$entry = Use-ArxStore { param($s) if ($s.Contains($hash)) { $s[$hash] } else { $null } }

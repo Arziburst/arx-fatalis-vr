@@ -169,7 +169,7 @@ setpos 8000 -170 7700 0
 @until player.jumping eq false 5s
 @frames 10
 @remember jumps0 vr.input.presses.jump
-@remember yaw0 player.yaw
+@remember turnedJ vr.input.turn.turned
 # Up but short of 0.7: nothing
 vr-sim action thumbstick right 0 0.65
 @frames 15
@@ -181,7 +181,7 @@ vr-sim action thumbstick right 0.3 0.9
 vr-sim action thumbstick right 0 0
 @until player.jumping eq false 5s
 @assert vr.input.presses.jump eq {jumps0+1}
-@assert player.yaw eq {yaw0}
+@assert vr.input.turn.turned eq {turnedJ}           # the turn axis did not turn (player.yaw follows the head)
 @frames 20
 # More sideways than up: a turn, no jump
 @remember turned0 vr.input.turn.turned

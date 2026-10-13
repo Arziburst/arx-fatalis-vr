@@ -188,6 +188,7 @@ Event::~Event() {
 const char * gameStateName(GameState state) {
 	switch(state) {
 		case GameState::Startup:   return "STARTUP";
+		case GameState::Logo:      return "LOGO";
 		case GameState::Menu:      return "MENU";
 		case GameState::Loading:   return "LOADING";
 		case GameState::Gameplay:  return "GAMEPLAY";
@@ -198,6 +199,9 @@ const char * gameStateName(GameState state) {
 }
 
 GameState detectGameState() {
+	if(startupLogoName()) {
+		return GameState::Logo;
+	}
 	if(ARXmenu.mode() != Mode_InGame) {
 		return GameState::Menu;
 	}

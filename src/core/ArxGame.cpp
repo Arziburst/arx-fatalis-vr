@@ -623,26 +623,56 @@ static AreaId g_areaToLoad = AreaId(10);
 static bool g_initialPlayerCollision = true;
 
 /*
- * During development a plain launch goes straight to the main menu: the publisher logos and the
- * intro cinematic are skipped (owner's decision, 2026-10-08). Bringing them back for players is #92;
- * --intro shows the original startup sequence until then. Every .cin cinematic - the intro that the
- * level 10 script plays when a new game starts, and the in-game cutscenes - is skipped as well
- * (#124, owner's decision: no cutscenes at all during development); --cinematics shows them. The
+ * A plain launch is the player's (#394): the publisher logos, then the main menu, and every .cin
+ * cinematic - the intro that the level 10 script plays when a new game starts and the in-game
+ * cutscenes - as in the original game. In VR they are shown on a screen in front of the player, and
+ * A, B or a trigger skips the current one (vr/VRInput.cpp: one press of Escape).
+ *
+ * Development and test launches pass --dev-launch (run-windows.ps1, smoke-test.ps1, test-pr.ps1 do):
+ * straight to the main menu or the game, no logos and no cutscenes (owner's decisions, 2026-10-08 and
+ * #124). --intro brings the logos and the intro cinematic back, --cinematics every cinematic. The
  * skip itself lives in the cinematic controller (cinematicLaunchWaiting(), cinematicRequestStart())
  * and ends the cinematic through the same path as pressing Esc, without loading its file.
  */
+bool g_devLaunch = false;
 bool g_showIntro = false;
 bool g_showCinematics = false;
+
+static void devLaunch() {
+	g_devLaunch = true;
+}
+ARX_PROGRAM_OPTION("dev-launch", "", "Development launch: skip the publisher logos and every .cin cinematic",
+                   &devLaunch)
 
 static void showIntro() {
 	g_showIntro = true;
 }
-ARX_PROGRAM_OPTION("intro", "", "Show the publisher logos and the intro cinematic at startup", &showIntro)
+ARX_PROGRAM_OPTION("intro", "", "With --dev-launch: show the publisher logos and the intro cinematic anyway",
+                   &showIntro)
 
 static void showCinematics() {
 	g_showCinematics = true;
 }
-ARX_PROGRAM_OPTION("cinematics", "", "Show the .cin cinematics (new-game intro, in-game cutscenes)", &showCinematics)
+ARX_PROGRAM_OPTION("cinematics", "", "With --dev-launch: show every .cin cinematic anyway (new-game intro, cutscenes)",
+                   &showCinematics)
+
+//! The publisher logo on screen (#394): "fishtank", "arkane", or nullptr
+static const char * g_startupLogo = nullptr;
+
+const char * startupLogoName() {
+	return g_startupLogo;
+}
+
+//! A logo comes on screen, or goes (\a name nullptr); \a how the previous one ended: time, skip, key
+static void setStartupLogo(const char * name, const char * how) {
+	if(g_startupLogo) {
+		gameevent::Event("startup.logo")("name", g_startupLogo)("state", "end")("how", how);
+	}
+	g_startupLogo = name;
+	if(name) {
+		gameevent::Event("startup.logo")("name", name)("state", "shown");
+	}
+}
 
 static void skipLogo() {
 	if(GameFlow::getTransition() != GameFlow::LoadingScreen) {
@@ -674,8 +704,20 @@ static void loadSave(const std::string & saveFile) {
 }
 ARX_PROGRAM_OPTION_ARG("loadsave", "", "Load a specific savegame file", &loadSave, "SAVEFILE")
 
+//! From the logos to the main menu; \a how the logo on screen ended (nullptr: none was shown)
+static void startMainMenu(const char * how) {
+	if(how) {
+		setStartupLogo(nullptr, how);
+	}
+	ARX_INTERFACE_KillFISHTANK();
+	ARX_INTERFACE_KillARKANE();
+	ARXmenu.requestMode(Mode_MainMenu);
+	ARX_MENU_Launch(false);
+	GameFlow::setTransition(GameFlow::InGame);
+}
+
 static bool HandleGameFlowTransitions() {
-	
+
 	const PlatformDuration TRANSITION_DURATION = 3600ms;
 	static PlatformInstant TRANSITION_START = 0;
 
@@ -683,13 +725,34 @@ static bool HandleGameFlowTransitions() {
 		return false;
 	}
 
-	// A plain launch starts at the main menu, exactly like pressing a key during the logos does
-	bool skipIntro = (GameFlow::getTransition() == GameFlow::FirstLogo && !g_showIntro);
+	const bool logo = GameFlow::getTransition() == GameFlow::FirstLogo
+	                  || GameFlow::getTransition() == GameFlow::SecondLogo;
 
-	if(skipIntro || GInput->isAnyKeyPressed()) {
-		ARXmenu.requestMode(Mode_MainMenu);
-		ARX_MENU_Launch(false);
-		GameFlow::setTransition(GameFlow::InGame);
+	if(logo) {
+		// In VR the skip buttons press Escape for one frame (vr/VRInput.cpp): it skips the logo on
+		// screen and the next one follows (#394). Any other key, and in flat mode any key at all, goes
+		// straight to the main menu as in the original game
+		const bool vrSkip = vr::isEnabled() && GInput->isKeyPressedNowPressed(Keyboard::Key_Escape);
+		const bool anyKey = GInput->isAnyKeyPressed()
+		                    && !(vr::isEnabled() && GInput->isKeyPressed(Keyboard::Key_Escape));
+		if(g_devLaunch && !g_showIntro) {
+			// A development launch starts at the main menu, exactly like pressing a key during the logos does
+			startMainMenu(nullptr);
+			return false;
+		}
+		if(anyKey) {
+			startMainMenu("key");
+			return false;
+		}
+		if(vrSkip) {
+			TRANSITION_START = 0;
+			if(GameFlow::getTransition() == GameFlow::SecondLogo) {
+				startMainMenu("skip");
+				return false;
+			}
+			setStartupLogo(nullptr, "skip");
+			GameFlow::setTransition(GameFlow::SecondLogo);
+		}
 	}
 
 	if(GameFlow::getTransition() == GameFlow::FirstLogo) {
@@ -703,6 +766,7 @@ static bool HandleGameFlowTransitions() {
 			}
 			
 			TRANSITION_START = g_platformTime.frameStart();
+			setStartupLogo("fishtank", "time");
 		}
 
 		ARX_INTERFACE_ShowFISHTANK();
@@ -723,21 +787,24 @@ static bool HandleGameFlowTransitions() {
 		
 		if(TRANSITION_START == 0) {
 			if(!ARX_INTERFACE_InitARKANE()) {
-				GameFlow::setTransition(GameFlow::LoadingScreen);
-				return true;
+				startMainMenu("time");
+				return false;
 			}
-			
+
 			TRANSITION_START = g_platformTime.frameStart();
+			setStartupLogo("arkane", "time");
 			ARX_SOUND_PlayInterface(g_snd.PLAYER_HEART_BEAT);
 		}
 
 		ARX_INTERFACE_ShowARKANE();
-		
+
 		PlatformDuration elapsed = g_platformTime.frameStart() - TRANSITION_START;
 
+		// The logos end in the main menu (#394), as a key pressed during them does: level 10 is loaded
+		// by a new game, not by the logos (before #394 --intro went on to the loading screen)
 		if(elapsed > TRANSITION_DURATION) {
 			TRANSITION_START = 0;
-			GameFlow::setTransition(GameFlow::LoadingScreen);
+			startMainMenu("time");
 		}
 
 		return true;

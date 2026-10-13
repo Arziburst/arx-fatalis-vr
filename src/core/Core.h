@@ -86,10 +86,15 @@ extern float g_framedelay;
 
 extern bool g_requestLevelInit;
 
-//! Show the publisher logos and the intro cinematic (--intro); development launches skip them
+//! A development launch (--dev-launch): no publisher logos, no .cin cinematics (#124, #394)
+extern bool g_devLaunch;
+//! With --dev-launch: show the publisher logos and the intro cinematic anyway (--intro)
 extern bool g_showIntro;
-//! Show every .cin cinematic (--cinematics); development launches skip them (#124)
+//! With --dev-launch: show every .cin cinematic anyway (--cinematics)
 extern bool g_showCinematics;
+
+//! The publisher logo on screen at startup: "fishtank", "arkane", or nullptr (#394)
+const char * startupLogoName();
 
 extern AreaId g_currentArea;
 extern long TELEPORT_TO_ANGLE;

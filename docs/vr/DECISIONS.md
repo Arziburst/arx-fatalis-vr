@@ -65,7 +65,7 @@ change for the slots.
 
 ---
 
-## D-NEW: The player's launch is the original start; logos, the intro and cinematics play on a screen fixed in the room
+## D-044: The player's launch is the original start; logos, the intro and cinematics play on a screen fixed in the room
 
 - **Date:** 2026-10-13
 - **Status:** Proposed - the screen's distance and size are the worker's proposal for the owner to judge in the headset (#394)

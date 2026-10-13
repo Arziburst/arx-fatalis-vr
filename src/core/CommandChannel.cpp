@@ -279,7 +279,8 @@ struct State {
 	GameState state = GameState::Startup;
 	bool cleanShutdown = false;
 
-	unsigned cmdSeq = 0; //!< Command batches executed so far
+	unsigned cmdSeq = 0; //!< Command batches started so far (the running batch included)
+	unsigned ackedSeq = 0; //!< Command batches whose ack.txt is written; this is what status.json reports (#142)
 	std::string lastCmd;
 	std::string lastCmdError;
 
@@ -1329,7 +1330,9 @@ std::string buildStatus(PlatformInstant now) {
 	json.end();
 	json.end();
 
-	json.value("cmdSeq", g.cmdSeq);
+	// A command that changes the level or loads a save writes the status while its batch still runs: the batch
+	// must not show up before its ack does (#142)
+	json.value("cmdSeq", g.ackedSeq);
 	json.value("lastCmd", g.lastCmd);
 	json.value("lastCmdError", g.lastCmdError);
 	json.value("captureSeq", g.captureSeq);
@@ -2262,6 +2265,7 @@ void pollCommands() {
 	}
 
 	writeAck(errors);
+	g.ackedSeq = g.cmdSeq;
 	writeStatus(platform::getTime());
 }
 

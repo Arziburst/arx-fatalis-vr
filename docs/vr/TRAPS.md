@@ -788,8 +788,8 @@ the middle of loading the new level, with no crash report — it looks like the 
 **Cause:** a test-tool bug, not the game: the channel's `loadlevel` runs synchronously, the level
 change writes `status.json` with the new `cmdSeq` before `ack.txt` exists, `Send-ArxCommand` reads a
 missing ack, throws, and the smoke test kills the game in its error handler (#142).
-**Do:** until #142 is fixed, change levels with `-- --loadlevel N` (one launch per level), not with
-the channel command.
+**Do:** fixed in #142: `status.json` reports `cmdSeq` only once the batch's `ack.txt` is written, so
+`loadlevel` / `load` batches work through the channel (the old `-- --loadlevel N` workaround is no longer needed).
 
 ## 2026-10-09 — A crash report folder is dated "yesterday" and the VR self-test crashes where the flat one is clean
 

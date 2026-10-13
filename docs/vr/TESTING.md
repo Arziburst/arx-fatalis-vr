@@ -225,6 +225,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `vr-point left\|right entity <id> [<dx> <dy> <dz>]`, `vr-point left\|right at <x> <y> <z>` | a simulated hand (`--vr-sim` only) turned so its hidden ray (#37) points at the middle of an entity's box in the world (optionally that many game units beside it) or at a point of the world (game units, y down) — from where the hand is this frame, through the inverse of the hand's mapping into the world. Only aims: what the reticle hits and what the engine makes of it is the game's path (`vr.reticle`). Refused without the simulator, for an unknown entity, or while the reticles are off (no ray in the world) |
 | `watch <id>` / `watch off` | report one entity's place in `status.json` → `watch` (#37): where an item is, whether it is dragged, in the scene or in an inventory |
 | `handpose left\|right <yaw> <pitch> <roll> [<x> <y> <z>]` / `handpose left\|right off` | a simulated controller for the body without one (#36): the grip pose in the same terms as `headpose` (degrees as a person says them, metres in the OpenXR LOCAL space); the body poses that arm towards it exactly as towards a located controller (`vr.body.<hand>` in the status, `source=sim`). A located controller wins over it; `off` removes it. Needs a head too (`headpose`, or a headset / `--vr-sim`), since hands are placed rigid with the head camera |
+| `stereo-fx place <kind> <ahead> [<right> [<up>]]`, `stereo-fx clear`, `stereo-fx legacy on\|off`, `stereo-fx overlays on\|off` | the stereo checks of effects (#22, [Effects in stereo](#effects-and-sprites-in-stereo-22)): `place` puts a test effect that many metres ahead, right and up of the head through the engine's own path — `flare` (a light with a flare and next to no reach), `fire` (a torch's flame particles), `magic` (the rune flares of the rune trail, #43), `fog` (a fog emitter's smoke), `billboard` (one still particle) — and keeps it going until `clear` or the next `place` (a level load forgets it). `legacy on` draws sprites, trails, full-view overlays and the fade per eye as before #22: the before picture a check must fail on. `overlays off` hides the full-view overlays (Magic Sight also tints the world: two shots that differ by the overlay alone). `stereoFx` in the status: `legacy`, `overlays`, `kind`, `pos`, `offset` and, from the head now, `azimuth` / `elevation` (degrees, right and up positive) and `distance` (metres); one `[channel] stereo-fx:` log line each. Refused outside gameplay or for an unknown kind |
 | `vr-sim <command>` | a command of the simulated headset (#112), only in a `--vr-sim` run: `head rot 25 0 0`, `head pos 0 -0.3 0`, `action trigger right 1`, `shot <name>`, `session visible`, `fault swap-eyes on`, … — now, or `@+<n> <command>` n frames from now on its timeline. See [The simulated headset](#the-simulated-headset---vr-sim-112) |
 | `combat on\|off` | the engine's combat mode without a key (#75): what the weapon key does — `on` draws the weapon (ready clips), `off` puts it away; a strike is then the mouse button — or, with the weapon in the VR hand, a physical swing (#39: the trigger only charges). VR has no control for it (D-019); `vr.weapon.combatMode` in the status |
 | `crouch on\|off` | the crouch toggle without an input device, for flat runs (#263): `on` crouches the character, `off` lets it stand up when there is room for its head. `player.crouchToggle` / `player.crouched` in the status |
@@ -1212,7 +1213,9 @@ at once, `@<frame> <command>` at that frame of the timeline, `@<a>-<b> <command>
 there linearly (a ramp), `@+<n>` counts from the previous timed line. Frame 0 of the timeline is the
 first frame the game is playable (`timeline gameplay`, the default) or of the session (`timeline
 session`). Commands: `rate <hz>` (0 = no pacing), `eye-size <w> <h>`, `ipd <m>`, `fov left|right <l>
-<r> <u> <d>` (degrees, OpenXR signs), `head pos <x> <y> <z>` (meters, the room's LOCAL space: x right,
+<r> <u> <d>` (degrees, OpenXR signs), `cant <deg>` (the angle between the two eyes' view directions, each
+eye turned outward by half: canted displays, the Index has 5; default 0, parallel — #22, `index.vrsim`
+sets it with the Index's field of view), `head pos <x> <y> <z>` (meters, the room's LOCAL space: x right,
 y up, −z forward), `head rot <yaw> <pitch> <roll>` (degrees: yaw + turns left, pitch + looks up),
 `hand left|right pos|rot …`, `hand left|right on|off`, `hand left|right fingers <thumb> <index> <rest>`
 (how far the real fingers are closed, 0 open to 1 a fist — the hand joints the simulated runtime's
@@ -1240,7 +1243,9 @@ drawn); `quad.covered` counts the flat frame's pixels that cover the eyes (alpha
 shift of the left picture against the right one (> 0 is right) and the eye separation; `versus` the
 difference of each eye to every earlier shot. Per eye, `quadPixels` counts the eye pixels the first quad
 (the flat frame / the floating panel) covers and `overlayPixels` those of every later quad layer, drawn
-over it in order — the menu pointer's beam (#34), the hand reticles' rings (#37). `vr.sim` also has the rig, the eye poses as last
+over it in order — the menu pointer's beam (#34), the hand reticles' rings (#37). Per eye also `quat` and `fov`:
+the eye's orientation in the room and its four angles as submitted, what turns a pixel into a direction
+(#22, `stereo-check-lib.ps1`); `vr.sim.view.cant` the simulated cant. `vr.sim` also has the rig, the eye poses as last
 located (`eyes`, with `separation`) and the timeline's state; a `vr.sim.shot` game event per shot.
 A shot stalls its frame for about 100 ms (read-back, composition, three BMPs at eye size): the rate
 line of a run with shots shows those frames as gaps — judge pacing from a run without shots.
@@ -1288,6 +1293,59 @@ frame 6000 is for comparing edges between sample counts.
 | 2026-10-10, owner's PC (RX 6800 XT), shared with CI and other workers | 652 / 765 frames/s | 654 / 982 frames/s | 274 → 59 / 95 frames/s |
 | hard edge steps (neighbours ≥ 64 luma levels apart) in the `edges` shot, left / right | 249 / 232 | 66 / 72 | (another moment of the scene) |
 
+### Effects and sprites in stereo (#22)
+
+The engine's screen-space effects were written for one flat camera. In a stereo frame (D-NEW):
+- **Sprites** (`EERIECreateSprite`: particles, particle systems, fog, light and magic flares) are one square in the
+  world facing the point between the eyes, the engine's size at the head's depth, and each eye projects its corners
+  (`graphics/Draw.cpp`, the math in `vr/StereoEffects.h`, host test `StereoEffectsTest`). The engine's square in each
+  eye's own screen space is a different square per eye on canted displays: away from the middle the two eyes saw it
+  at sizes 6-12 % apart.
+- **Trails** face the head, not each eye. **Full-view overlays** (Magic Sight's vignette, the Flying Eye) hang at
+  infinity in front of the head over the union of both eyes' frusta (`drawViewOverlay`); stretched over each eye's
+  own image they were 21° apart on the Index, the eyes would have had to diverge.
+- **The scripted fade** (`worldfade`) covers each eye's whole view after its scene; the flat frame quad only fades the
+  interface on it (a blend weighted by the destination's alpha keeps the quad's coverage). On the quad alone it
+  covered 28 % of each eye.
+- The book's rune flares and the cheat's corner icon go to the quad; the Mass Lightning flash, drawn before the frame
+  (wiped by the clear in flat mode), is not drawn into the quad.
+
+Everything else was already right in stereo, flat mode draws exactly as before. **The check:** `@stereo` in a sequence
+(`scripts/dev/stereo-check-lib.ps1`, self-test `test-stereo-check.ps1` on made-up canted eyes) turns every pixel of
+each eye into a direction from the head — the shot's `quat` and `fov` per eye — and judges the change from a base shot
+to the effect's shot (the largest change of a color channel above 12 levels, the flicker of torches):
+
+| Mode | Legs (each also `pairing`: both eye images of every frame from one frame) |
+|---|---|
+| `fx` | `covered`: each eye ≥ 50 pixels changed, 0.5–2 × the other's change, within 20° of the test effect (`stereoFx.azimuth` / `elevation`); `depth`: the azimuth shift that best aligns the left eye's change profile with the right's is the disparity, with the eye separation a distance within 20 % of `stereoFx.distance`, in front (positive); `height`: the weighted median heights ≤ 0.3° apart |
+| `sprite` | `fx` and `size`: the middle half of the change (its quartiles) left / right within 4 % of what the eyes' distances give (1 − separation · sin azimuth / distance) — for one sprite: a cloud is as wide as where its particles are |
+| `view` | `covered`: ≥ 90 % of each eye's pixels changed; `equal`: the mean changes within 10 % |
+| `infinity` | `covered`: ≥ 10 % of each eye; `parallax`: on a 0.25° grid of directions the shift that aligns the eyes is within 0.5° of 0 (correlation > 0.5) |
+
+The sequence is `stereo-effects` (table of [scripted sequences](#scripted-sequences-xrs-113)). Every fixed kind is shot
+again with `stereo-fx legacy on`, and the leg that must catch the old drawing fails in every run.
+
+**Catalog** (2026-10-13, the measurements of `stereo-effects` on the simulated Index; the PR of #22 has the reasons
+in full):
+
+| Kind | Drawn | Before #22 in stereo | Now |
+|---|---|---|---|
+| Particles, particle systems, fog puffs (`EERIEAddSprite`) | scene pass per eye, screen-space square around the point | depth right, the square per eye: sizes apart on canted eyes — **wrong** | one world square facing the head: billboard 0.80 m (at 0.80), sizes within 0.5 % of the distances; fog 1.01 m, fire 1.24 m (at 1.21) |
+| Light flares (`renderLightFlares`) | sprite of a fixed share of the image, depth test off; visibility raycast from the head once per frame | as particles — **wrong** | sprite path: 0.81 m (at 0.80) |
+| Magic (rune) flares | world flares: sprites; the book's: window coordinates | world: as particles; book flares into the eyes after the book closed — **wrong** | world 0.82 m (at 0.80); book flares on the quad |
+| Sparks, spell geometry (lightning, cones, missiles, `Draw3DLineTexNew`), blob shadows, decals | world points projected per eye; facing by the camera's yaw, which the eyes share | correct | — |
+| Trails (`Trail.cpp`) | ribbon across the line to the camera | faced each eye, ≈ 1° apart at 2 m — **wrong** (small) | faces the head (code; no test spawner) |
+| Halos (`AnimationRender.cpp`) | each eye's silhouette edges pushed out by pixels, the same random numbers | correct: the rim stays at the edge's depth | — |
+| Full-view tints: paralysis, damage blood, death, the head-in-wall fade (#26), Magic Sight's fader | uniform color over each eye's image | correct: both eyes alike, nothing to fuse | — |
+| Full-view overlays: Magic Sight (`ombrignon`), Flying Eye | texture over each eye's own image | the middle at each eye's image center: −21° (divergent) on the Index — **wrong** | at infinity over the union frustum: 0.04° |
+| Scripted fade (`worldfade`) | on the flat frame quad | 28 % of each eye — **wrong** | 100 % of both eyes, equal |
+| Mass Lightning flash | at the spell's launch, before the frame | flat: wiped by the clear; VR: a white quad for a frame — **wrong** | not drawn in a stereo frame (code) |
+| Cheat corner icon (`CheckMr`) | top right of each eye's image | a different direction per eye — **wrong** | on the quad (code) |
+| Screen-space particles (`PARTICLE_2D`) | on the quad since #72 | correct | — |
+| Cinematic border | the same rows of each eye | correct in stereo (horizontal edges); bars in VR at all: #29 | — |
+| Distance fog (GL linear fog) | by each eye's planar depth | parallel eyes alike; canted: up to ~7 % of the fog's blend apart 40° off the middle, a brightness, not a position — **left as is** (radial fog needs shaders, follow-up) | — |
+| Damage numbers (`gui/DamageNumbers.cpp`) | text at the anchor's per-eye projection | depth right; the glyphs face each eye's screen like the old sprites (small; `src/gui`, follow-up) | — |
+
 ## Scripted sequences (`.xrs`, #113)
 
 A sequence is a text file in `scripts\dev\xrs` — test-channel commands with asserts, log checks and
@@ -1314,6 +1372,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 | `@remember <name> <path>` | keep a value; later `@assert` / `@until` values can be `{name}`, `{name+5}` / `{name-5}` (the yaw before a turn, the position before a walk) or `{name*0.9}` (a relative threshold: "at least 10 % less") |
 | `@mark`, `@log <regex> [<n>s]`, `@nolog <regex>` | `arx.log` since the mark (the sequence start is the first mark): wait up to n s (default 5) for a matching line — a match moves the mark past it, so consecutive `@log` lines assert an order — / fail on a matching line |
 | `@shot <name>` | on the simulated headset both eyes and the flat frame (`capture\<name>-left.bmp`, `-right.bmp`, `-quad.bmp`), otherwise `capture\<name>.bmp` |
+| `@stereo <a> <b> fx\|sprite\|view\|infinity [fails <leg>]` | the change from shot `a` to shot `b` as both eyes of the simulated headset see it (#22, `stereo-check-lib.ps1`, [Effects in stereo](#effects-and-sprites-in-stereo-22)): every leg printed, the step fails on the first failed one. With `fails <leg>` that leg must fail instead — the before picture of `stereo-fx legacy on` |
 | `@diff <a> <b> [max] <op> <v> [left\|right\|quad\|left-layer\|right-layer]` | `img-diff` of two shots: the mean absolute per-channel difference, or with `max` the largest change of one channel — what a small bright effect shows when the mean drowns in the scene's flicker (#72). `left-layer` / `right-layer` compare the eye's own layer without the quad (after `vr-sim layers on`). **The floor of a still shot of level 10 is about 1.8** (animated fire and HUD, measured), a 40° head turn with a following camera is far above; set thresholds against a still pair taken in the same sequence |
 | `@key <name> [n] [ms]` | a keyboard message posted to the game window, no focus change (Escape, Enter, Space, A-Z, 0-9, F1-F12 …). **Not yet run against a live game** — verify it with a first sequence that needs it |
 | `@pending #<issue> <step>` | a step the game cannot pass yet, because issue N builds the feature. Its failure is printed as `pending`; **once it passes the run fails** until the `@pending` is removed, so an expectation cannot go stale. Pick a step that fails for the right reason (a first version of `snap-turn` had a "turned back" step that passed trivially) |
@@ -1344,6 +1403,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `stand-up` | flat, on the test save `mvp-new-game` (`smoke-test.ps1 -Sequence stand-up -Save mvp-new-game`): `crouch on` / `crouch off` in the start cell — the character crouches (eye 170.1 → 122.7) and stands up where it stood (eye 170.1, same x/z); crouched inside the cell's portcullis it stays down with one `player.standup.blocked` event, and stands up once back at the start spot (#263) | — |
 | `recenter` | a head offset is set and read back; `recenter` is accepted (#28) | — |
 | `tl-reprojection` | picking reads the head camera after the eyes, the book icon's particles are on the quad and add no coverage (#72), on the save `mvp-items` | — |
+| `stereo-effects` | screen-space effects and flat sprites in stereo (#22, #58) on the simulated Index (`@sim index`: its field of view, 5° between the eyes) and `mvp-new-game`, the head turned 30° left to the cell's dark back corner: a billboard 0.8 m away 30° left of the view (`sprite`: 0.80 m, sizes 1.035 left / right against 1.040 from the distances; legacy 1.103 fails `size`), a light's flare at 0.8 m (0.81 m), fire at 1.2 m (1.24 m), rune flares at 0.8 m (0.82 m), fog at 1 m (1.01 m) — all `fx`, one height; a white `worldfade` over 100 % of both eyes (legacy, on the quad only: 28 %, fails `covered`); Magic Sight's vignette at infinity (0.04°; legacy stretched over each eye: −21°, divergent, fails `parallax`). `smoke-test.ps1 -VrSim index -Save mvp-new-game -Sequence stereo-effects` | — |
 | `real-steps` (#26; run with `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence real-steps`) | 8 cm is a lean (the body stays); 1 m forward is a real step (the body walks 0.9 m, the lean stays 0.1 m, no fade); into the cell wall the body is held, the head goes `inside` then `behind` it, both eyes black; back out, the fade clears | — |
 | `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105; the pair waits for `notifications eq 0`, since the save's tutorial hint on the HUD expires by game time, #370); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
 | `menu-pointer` | the menu pointer (#34) on the test save `mvp-items` — run with `smoke-test.ps1 -VrSim idle -Sequence menu-pointer -Save mvp-items`: no pointer and no beam without a menu (`overlayPixels` 0); the key from the table put in the bag, the inventory opened, the right hand aimed at it (`vr-point right item`): the engine's mouse on the key's pixel (192, 606 = the target), `ui.hover` the key, the beam drawn above the panel (`overlayPixels` 2125 left / 1997 right); the trigger clicks (`vr.pointer.click`), a hand move of 8 px keeps the cursor on the key (dead zone, no drag), 40 px drags **the key the click landed on**; released over the bag it goes back; the left hand's trigger takes the cursor and its click lands on the key too; both hands pointing behind the head (since #37 a hand pointing ahead in the game is a world reticle): no cursor, no beam, a press is muted (`offPanelPresses` 1, nothing dragged); closed: the pointer goes. Host test `MenuPointerTest` | — |

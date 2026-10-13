@@ -1,0 +1,110 @@
+# Screen-space effects and flat sprites in stereo (#22, #58), on the simulated headset with the Index's optics
+# (index.vrsim: its asymmetric field of view, 5 degrees between the eyes) and the test save mvp-new-game:
+#   .\scripts\dev\smoke-test.ps1 -VrSim index -Save mvp-new-game -Sequence stereo-effects
+# One section per kind. `stereo-fx place <kind> <ahead> <right> <up>` puts a test effect that many meters from the
+# head through the engine's own path (a light with a flare, fire and rune-flare particles, a fog emitter, a still
+# particle); @stereo judges the change from a base shot to the effect's shot as the two eyes see it
+# (stereo-check-lib.ps1): pairing, both eyes covered, the depth from the disparity (in front, at its distance), one
+# height in both eyes, and for the single sprite the same size; a fade over both whole eyes; an overlay at infinity.
+# Each fixed kind is shot a second time with `stereo-fx legacy on` - drawn per eye as before #22 - and the leg that
+# must catch it has to fail.
+@sim index
+@args --loadslot 0
+@save mvp-new-game
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s in: past the level's fade-in (TRAPS.md)
+@until vr.head.source eq hmd 30s
+@until notifications eq 0 60s                # the save's tutorial hint expires by game time: no HUD change between shots
+@assert vr.stereo.active eq true
+@assert vr.sim.view.cant eq 5
+@assert stereoFx.legacy eq false
+
+# The head turns 30 degrees left, to the cell's back corner: away from the barred door, whose torch flickers over
+# everything near it from frame to frame. Every effect is placed from there, inside the cell
+vr-sim head rot 30 0 0
+@frames 10
+
+# --- A billboard: one still particle 0.8 m away and 30 degrees left of the view, where the canted eyes' own screen
+# squares differ most (the eyes overlap only within 37.5 degrees of the middle)
+@shot billboard-base
+stereo-fx place billboard 0.693 -0.4 0
+@frames 10
+@assert stereoFx.kind eq billboard
+@shot billboard
+@stereo billboard-base billboard sprite
+stereo-fx legacy on
+@frames 3
+@shot billboard-legacy
+@stereo billboard-base billboard-legacy sprite fails size
+stereo-fx legacy off
+stereo-fx clear
+@frames 10
+
+# --- A light's flare (renderLightFlares): a light with a flare and next to no reach, 0.8 m ahead
+@shot flare-base
+stereo-fx place flare 0.8 0 0
+@wait 500                                    # the flare fades in once the light is seen (updateLightFlares)
+@shot flare
+@stereo flare-base flare fx
+stereo-fx clear
+@wait 500
+
+# --- Fire: the particles of a torch's flame, 1.2 m ahead and a little low
+@shot fire-base
+stereo-fx place fire 1.2 0 -0.15
+@wait 800
+@shot fire
+@stereo fire-base fire fx
+stereo-fx clear
+@wait 1700                                   # the last flames die (1.5 s at most)
+
+# --- Magic: the rune flares the rune trail leaves at the hand (#43), 0.8 m ahead
+@shot magic-base
+stereo-fx place magic 0.8 0 0
+@wait 800
+@shot magic
+@stereo magic-base magic fx
+stereo-fx clear
+@wait 3500                                   # rune flares live up to 3.2 s
+
+# --- Fog: a level fog emitter's smoke, 1 m ahead
+@shot fog-base
+stereo-fx place fog 1 0 0
+@wait 1500
+@shot fog
+@stereo fog-base fog fx
+stereo-fx clear
+@wait 5500                                   # fog puffs live up to twice the emitter's 2.5 s
+
+# --- A scripted fade (worldfade) to white: over each eye's whole view, not only the flat frame's quad in the middle
+@shot fade-base
+worldfade out 300 1 1 1
+@wait 800
+@shot fade
+@stereo fade-base fade view
+stereo-fx legacy on
+@frames 3
+@shot fade-legacy
+@stereo fade-base fade-legacy view fails covered
+stereo-fx legacy off
+worldfade in 300
+@wait 800
+
+# --- A full-view overlay: Magic Sight's red vignette, one head-locked image at infinity for both eyes. The spell also
+# tints the world (the arm near the eyes most): the base is the spell with the overlay hidden, so the change is the
+# overlay alone
+spellcast -fsm 5 magic_sight self
+@wait 500                                    # the cast's text stays on the HUD: base and shot are 6 frames apart, both have it
+stereo-fx overlays off
+@frames 3
+@shot sight-base
+stereo-fx overlays on
+@frames 3
+@shot sight
+@stereo sight-base sight infinity
+stereo-fx legacy on
+@frames 3
+@shot sight-legacy
+@stereo sight-base sight-legacy infinity fails parallax
+stereo-fx legacy off

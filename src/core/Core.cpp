@@ -1153,7 +1153,7 @@ void DrawImproveVisionInterface() {
 	if(ombrignon) {
 		float mod = 0.6f + PULSATE * 0.35f;
 		UseRenderState state(render2D().blendAdditive());
-		EERIEDrawBitmap(Rectf(g_size), 0.0001f, ombrignon, Color::red * ((0.5f + PULSATE * 0.1f) * mod));
+		drawViewOverlay(0.0001f, ombrignon, Color::red * ((0.5f + PULSATE * 0.1f) * mod));
 	}
 	
 }

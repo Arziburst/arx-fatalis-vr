@@ -26,6 +26,7 @@ $tests = @(
 	'test-launch-lib.ps1'     # the machine-wide game lock (#205): the lock folder and its ACL, old and new location, holders, stale files
 	'test-log-digest.ps1'    # the run digest and the automatic bug filing (#131): fixture logs, a fake GitHub, the command line modes
 	'test-steam-shortcut.ps1' # the non-Steam VR shortcut (#80): binary shortcuts.vdf round-trip, add / update / remove on copies
+	'test-stereo-check.ps1'   # the stereo check of effects (#22): made-up canted eyes - a sphere at 1 m passes, swapped eyes, per-eye squares, a quad-only fade, a stretched overlay fail
 	'test-save-library.ps1'  # the test save library (#70): the scenario parser, the verification steps and slot order, Use-ArxSave
 	'test-number-decisions.ps1' # decision numbers at merge (#274): two branches adding D-NEW get consecutive numbers; the clash gate
 	'test-perf-summary.ps1'  # the performance log summary (#327): a fixture arx-perf.log, the totals, worst seconds, hitches, the script

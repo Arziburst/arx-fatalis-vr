@@ -105,6 +105,26 @@ void SimRigTest::testEyesSeenFromTheHead() {
 	}
 }
 
+void SimRigTest::testCantTurnsTheEyesOutward() {
+	vr::Simulation sim;
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.load("cant 5\n"));
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(5.0, sim.view.cant, RigEpsilon);
+	vr::SimPose head;
+	head.angles = Vec3f(30.f, 0.f, 0.f);
+	std::array<vr::SimEye, 2> eyes = vr::simEyes(sim.view, head);
+	// The left eye looks 2.5 degrees further left than the head, the right eye 2.5 degrees further right
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(32.5, vr::simAngles(eyes[0].orientation).x, 1e-3);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(27.5, vr::simAngles(eyes[1].orientation).x, 1e-3);
+	// Where the eyes are does not change
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(sim.view.ipd, glm::length(eyes[1].position - eyes[0].position), RigEpsilon);
+	// Out of range, and back to parallel
+	CPPUNIT_ASSERT(rigStartsWith(sim.execute("cant 45"), "cant"));
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("cant 0"));
+	eyes = vr::simEyes(sim.view, head);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(30.0, vr::simAngles(eyes[0].orientation).x, 1e-3);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(30.0, vr::simAngles(eyes[1].orientation).x, 1e-3);
+}
+
 void SimRigTest::testAnglesRoundTrip() {
 	vr::SimPose pose;
 	pose.angles = Vec3f(-120.f, 35.f, -15.f);

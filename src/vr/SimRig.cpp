@@ -175,7 +175,9 @@ std::array<SimEye, 2> simEyes(const SimView & view, const SimPose & head) {
 	for(size_t i = 0; i < eyes.size(); i++) {
 		const Vec3f offset((i == 0 ? -0.5f : 0.5f) * view.ipd, 0.f, 0.f);
 		eyes[i].position = head.position + orientation * offset;
-		eyes[i].orientation = orientation;
+		// Canted displays: each eye turned outward by half the cant (+ yaw turns left)
+		const float outward = glm::radians((i == 0 ? 0.5f : -0.5f) * view.cant);
+		eyes[i].orientation = orientation * glm::angleAxis(outward, AxisY);
 		eyes[i].fov = view.fov[i];
 	}
 	return eyes;
@@ -208,7 +210,7 @@ std::string simProfilePath(std::string_view name) {
 
 struct Simulation::Command {
 	enum Op {
-		Rate, EyeSize, Ipd, Fov, Timeline, HeadPos, HeadRot, HandPos, HandRot, HandTracked, HandFingers, HandJoints,
+		Rate, EyeSize, Ipd, Cant, Fov, Timeline, HeadPos, HeadRot, HandPos, HandRot, HandTracked, HandFingers, HandJoints,
 		Profile, Action, Session, Shot, Mark, Quit, Fault, Layers, SessionEnd, FaultExit,
 	};
 	Op op = Rate;
@@ -220,7 +222,7 @@ struct Simulation::Command {
 	SimSessionEnd sessionEnd = SimSessionEnd::None;
 	int exitCode = 0;
 	bool rampable() const {
-		return op == Ipd || op == HeadPos || op == HeadRot || op == HandPos || op == HandRot || op == HandFingers
+		return op == Ipd || op == Cant || op == HeadPos || op == HeadRot || op == HandPos || op == HandRot || op == HandFingers
 		       || op == Action;
 	}
 };
@@ -289,6 +291,15 @@ std::string Simulation::parse(std::string_view line, Command & command) const {
 		std::string error = numbers(1, 1, "a distance in meters");
 		if(error.empty() && std::abs(command.values[0]) > 0.5f) {
 			return "ipd: expected at most 0.5 m";
+		}
+		return error;
+	}
+
+	if(word == "cant") {
+		command.op = Command::Cant;
+		std::string error = numbers(1, 1, "the degrees between the eyes' view directions");
+		if(error.empty() && std::abs(command.values[0]) > 30.f) {
+			return "cant: expected at most 30 degrees";
 		}
 		return error;
 	}
@@ -478,6 +489,7 @@ std::vector<float *> Simulation::targets(const Command & command) {
 
 	switch(command.op) {
 		case Command::Ipd: result.push_back(&view.ipd); break;
+		case Command::Cant: result.push_back(&view.cant); break;
 		case Command::HeadPos: add(rig.head.position); break;
 		case Command::HeadRot: add(rig.head.angles); break;
 		case Command::HandPos: add(rig.hands[command.index].position); break;

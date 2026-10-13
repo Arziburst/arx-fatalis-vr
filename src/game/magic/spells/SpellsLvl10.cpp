@@ -43,6 +43,8 @@
 
 #include "util/Range.h"
 
+#include "vr/VRSystem.h"
+
 
 MassLightningStrikeSpell::MassLightningStrikeSpell()
 	: m_pos(0.f)
@@ -102,9 +104,14 @@ void MassLightningStrikeSpell::Launch() {
 	ARX_SOUND_PlaySFX(g_snd.SPELL_LIGHTNING_START);
 	m_snd_loop = ARX_SOUND_PlaySFX_loop(g_snd.SPELL_LIGHTNING_LOOP, &m_pos, 1.f);
 	
-	// Draws White Flash on Screen
-	UseRenderState state(render2D().blend(BlendOne, BlendOne));
-	EERIEDrawBitmap(Rectf(g_size), 0.00009f, nullptr, Color::white);
+	// Draws White Flash on Screen - before the frame is drawn, so the window's clear wipes it at once. In VR
+	// the target here is the flat frame quad, which nothing clears: a white square in the middle of the
+	// view for one frame, in neither eye's picture of the world. Not drawn there, as nothing shows in flat
+	// mode (#22)
+	if(!vr::stereoActive()) {
+		UseRenderState state(render2D().blend(BlendOne, BlendOne));
+		EERIEDrawBitmap(Rectf(g_size), 0.00009f, nullptr, Color::white);
+	}
 }
 
 void MassLightningStrikeSpell::End() {

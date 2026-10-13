@@ -423,7 +423,7 @@ void ARX_MAGICAL_FLARES_Update() {
 	light->rgb = componentwise_min(light->rgb, Color3f::white);
 }
 
-void ARX_MAGICAL_FLARES_Render() {
+void ARX_MAGICAL_FLARES_Render(ParticleLayer layer) {
 
 	if(!g_magicFlaresCount)
 		return;
@@ -447,7 +447,8 @@ void ARX_MAGICAL_FLARES_Render() {
 
 			const MagicFlare & flare = g_magicFlares[i];
 
-			if(!flare.exist || flare.type != j) {
+			if(!flare.exist || flare.type != j
+			   || (layer != ParticleLayer::All && (layer == ParticleLayer::Screen) != bool(flare.bDrawBitmap))) {
 				continue;
 			}
 

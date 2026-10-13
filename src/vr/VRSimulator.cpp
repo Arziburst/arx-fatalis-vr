@@ -1143,6 +1143,8 @@ void takeShot(const std::string & name, const XrCompositionLayerProjection & pro
 		glm::quat orientation = layerOrientation * toQuat(view.pose.orientation);
 		out.position = position;
 		out.angles = simAngles(orientation);
+		out.orientation = orientation;
+		out.fov = fov;
 		if(shot.quadShown) {
 			Vec3f quadEyePosition = position;
 			glm::quat quadEyeOrientation = orientation;
@@ -1516,7 +1518,7 @@ bool installSimulator() {
 
 	const SimView & view = runtime->sim.view;
 	LogInfo << "[vr] sim: simulated headset from " << file << ": eyes " << view.eyeSize.x << 'x' << view.eyeSize.y
-	        << ", ipd " << view.ipd * 1000.f << " mm, " << view.rate << " Hz"
+	        << ", ipd " << view.ipd * 1000.f << " mm, cant " << view.cant << " deg, " << view.rate << " Hz"
 	        << (view.rate > 0.f ? "" : " (no pacing)") << ", fov left eye " << glm::degrees(view.fov[0].left) << ' '
 	        << glm::degrees(view.fov[0].right) << ' ' << glm::degrees(view.fov[0].up) << ' '
 	        << glm::degrees(view.fov[0].down) << " deg, " << runtime->sim.pending() << " timed lines; no OpenXR runtime is used";

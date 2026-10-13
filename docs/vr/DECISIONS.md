@@ -13,6 +13,39 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: In stereo, sprites face the head, full-view overlays hang at infinity, the fade covers each eye
+
+- **Date:** 2026-10-13
+- **Status:** Accepted (technical; the owner judges the look in the headset with #22's PR)
+- **Decided by:** the worker of #22, within its contract (correct stereo for screen-space effects and flat sprites)
+
+### Decision
+In a stereo frame, everything the engine draws in screen space for one camera gets one shape in the head's space
+that each eye projects (`vr/StereoEffects.h`, `graphics/Draw.cpp`, the catalog in TESTING.md, "Effects and sprites in
+stereo"):
+- **A sprite** is one square in the world, facing the point between the eyes, its side the engine's own size at the
+  head's depth — straight ahead exactly the old screen square. Trails face the head too.
+- **A full-view overlay** (Magic Sight, the Flying Eye) hangs at infinity in front of the head over the union of both
+  eyes' frusta: every texel is one direction for both eyes.
+- **The scripted fade** is drawn over each eye's whole view; on the flat frame quad it only fades the interface drawn
+  there and adds no coverage (a blend weighted by the destination's alpha; the renderer keeps the alpha for it).
+- Things drawn in window coordinates (the book's rune flares, the cheat icon) go to the quad; the Mass Lightning flash,
+  which flat mode never shows (drawn before the frame, wiped by its clear), is not drawn into the quad.
+Flat mode is untouched. The channel's `stereo-fx legacy on` draws the old way, for the checks' before picture.
+
+### Why
+Drawn per eye in each eye's own screen space these were different things per eye: on canted displays (the Index,
+5° between the eyes) a sprite's two squares differ in size by 6-12 % away from the middle; an overlay stretched over
+each asymmetric eye image has its middle 21° apart in the two eyes (the eyes would have to diverge); the fade on the
+quad darkened 28 % of the view. One shape in the head's space is what a real object is: both eyes fuse it.
+
+### Rules out
+Screen-space squares and full-image textures inside the eye pass; effects on the head-locked quad that are meant to
+cover the view. Distance fog stays the engine's planar per-eye fog for now (a brightness difference of a few percent
+at the edges on canted displays, no position error): radial fog needs shaders.
+
+---
+
 ## D-042: Control scheme v2 — two equal hands: a casting stance and a radial menu per hand, dual wielding
 
 - **Date:** 2026-10-13

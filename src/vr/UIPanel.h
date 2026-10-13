@@ -56,7 +56,7 @@ constexpr float DefaultPanelWidth = 1.0f;
 
 /*!
  * The screen the publisher logos and the cinematics play on (#394): a proposal for the owner to
- * judge in the headset (D-NEW) - 2.5 m ahead at eye height, 2.6 m wide (about 55 degrees of the
+ * judge in the headset (D-044) - 2.5 m ahead at eye height, 2.6 m wide (about 55 degrees of the
  * view, a cinema seat in the middle rows), placed where the player looks when one starts and fixed
  * in the play space while it plays, like the menu panel.
  */

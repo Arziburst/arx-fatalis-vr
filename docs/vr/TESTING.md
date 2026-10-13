@@ -1039,9 +1039,11 @@ first frame the game is playable (`timeline gameplay`, the default) or of the se
 session`). Commands: `rate <hz>` (0 = no pacing), `eye-size <w> <h>`, `ipd <m>`, `fov left|right <l>
 <r> <u> <d>` (degrees, OpenXR signs), `head pos <x> <y> <z>` (meters, the room's LOCAL space: x right,
 y up, −z forward), `head rot <yaw> <pitch> <roll>` (degrees: yaw + turns left, pitch + looks up),
-`hand left|right pos|rot …`, `hand left|right on|off`, `hand left|right fingers <thumb> <index> <rest>`
-(how far the real fingers are closed, 0 open to 1 a fist — the hand joints the simulated runtime's
-`XR_EXT_hand_tracking` trackers give, #305; `hand left|right fingers off|on`: no joints for that hand, as
+`hand left|right pos|rot …`, `hand left|right on|off`, `hand left|right fingers <thumb> <index> <middle> <ring> <little>`
+(how far each real finger is closed, 0 open to 1 a fist — the hand joints the simulated runtime's
+`XR_EXT_hand_tracking` trackers give, #305, five fingers #385; the three-value form
+`fingers <thumb> <index> <rest>` closes the middle, ring and little finger together;
+`hand left|right fingers off|on`: no joints for that hand, as
 on a runtime that cannot read fingers, or joints again), `profile index|touch|simple|none|<path>`,
 `action <name> left|right|both <value> [<y>]` (the game's OpenXR action names: `trigger`, `grip`,
 `button_a`, `button_b`, `thumbstick`, `thumbstick_click`, `trackpad_press`, `menu`, `thumb_touch`), `session

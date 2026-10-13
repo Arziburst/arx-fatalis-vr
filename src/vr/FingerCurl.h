@@ -44,6 +44,9 @@
  * is scaled so the model's segment reaches its limit when the real finger reaches a fist. The
  * action values give fractions: the trigger is the index finger, the grip the three-finger block,
  * a thumb resting on a control a closed thumb. A hand on a weapon's grip is the closed hand.
+ *
+ * The custom VR hand (#385) has five fingers of three joints each: its FingerPose is read the same
+ * way, one angle per joint, with the grip closing the middle, ring and little finger.
  */
 namespace vr {
 
@@ -147,11 +150,79 @@ FingerCurl approachCurl(const FingerCurl & current, const FingerCurl & target, f
 //! The angle between two bone directions in degrees, 0 for a degenerate one
 float flexionDegrees(const Vec3f & before, const Vec3f & after);
 
-//! How far a hand is closed, per finger group: 0 open, 1 a fist (the simulated runtime's script)
+//! The five fingers of a real hand, in the order of \c XR_EXT_hand_tracking's joints
+enum class Finger : u8 {
+	Thumb,
+	Index,
+	Middle,
+	Ring,
+	Little,
+	Count
+};
+
+const size_t FingerCount = size_t(Finger::Count); //!< 5
+
+/*!
+ * \brief How far each joint of a five-finger hand bends (#385): the custom VR hand's fingers
+ *
+ * Degrees, 0 = straight; \c flex[finger][joint] from the root: the thumb's metacarpal (carpometacarpal),
+ * proximal and distal joint, a finger's knuckle (metacarpophalangeal), middle and last joint.
+ * \c spread is the knuckle's sideways turn, signed (+ towards the thumb's side), 0 = in line with
+ * its metacarpal; the thumb's spread stays 0 (its sideways motion is in its three flexions).
+ */
+struct FingerPose {
+	std::array<std::array<float, 3>, FingerCount> flex = { };
+	std::array<float, FingerCount> spread = { };
+};
+
+/*!
+ * \brief The bend of each joint at a closed fist, degrees: the custom hand's limits (#385)
+ *
+ * A first proposal, tuned in the headset: a finger bends 90 at the knuckle, 100 at the middle
+ * joint and 70 at the last one, the thumb 40, 50 and 70. A real angle past its limit is held there.
+ */
+struct FingerPoseLimits {
+	std::array<std::array<float, 3>, FingerCount> flex = { {
+		{ 40.f, 50.f, 70.f },
+		{ 90.f, 100.f, 70.f },
+		{ 90.f, 100.f, 70.f },
+		{ 90.f, 100.f, 70.f },
+		{ 90.f, 100.f, 70.f },
+	} };
+};
+
+/*!
+ * \brief The five-finger pose from a located hand
+ *
+ * The flexion at each joint is the angle between the bone before it and the bone after it (as
+ * fingerCurlFromJoints reads it), so the joints may be in any space and either hand; each is held
+ * within 0 and its limit. Invalid joints give an open hand.
+ */
+FingerPose fingerPoseFromJoints(const HandJoints & joints, const FingerPoseLimits & limits = FingerPoseLimits());
+
+/*!
+ * \brief The five-finger pose from the controller's action values, for a runtime without hand joints
+ *
+ * \param trigger    0 - 1: the index finger
+ * \param grip       0 - 1: the middle, ring and little finger
+ * \param thumbTouch the thumb rests on a control - a closed thumb
+ */
+FingerPose fingerPoseFromControls(float trigger, float grip, bool thumbTouch,
+                                  const FingerPoseLimits & limits = FingerPoseLimits());
+
+//! The closed hand: every joint of all five fingers at its limit (a hand on a weapon's grip)
+FingerPose fingerPoseClosed(const FingerPoseLimits & limits = FingerPoseLimits());
+
+//! \return \a current moved towards \a target by at most \a stepDegrees per joint and spread
+FingerPose approachPose(const FingerPose & current, const FingerPose & target, float stepDegrees);
+
+//! How far a hand is closed, per finger: 0 open, 1 a fist (the simulated runtime's script)
 struct HandShape {
 	float thumb = 0.f;
 	float index = 0.f;
-	float fingers = 0.f; //!< the middle, ring and little finger
+	float middle = 0.f;
+	float ring = 0.f;
+	float little = 0.f;
 };
 
 /*!

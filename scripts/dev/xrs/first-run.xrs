@@ -1,0 +1,182 @@
+# The whole first run of a player in the headset (#394): one plain player launch (@player, no --dev-launch) on the
+# simulated headset walks the path from the publisher logos to the first steps in the prison - the two logos
+# skipped with A and the trigger, the level 10 intro on the VR screen skipped with A during its scripted scene (before
+# introduction.cin plays), the main menu with no leaked click, Options with one setting changed by pointer and back,
+# New game, the character creation by pointer clicks, the prison (area 1) with its intro skipped with A, a walk
+# with the left stick, the inventory opened and closed with right B (freelook back after it) and a sword swing. The parts
+# have their own, faster sequences (first-run-intro, first-run-menu, first-run-chargen); this one keeps the seams
+# between them from breaking.
+#   .\scripts\dev\xrs-run.ps1 first-run
+@sim idle
+@player
+
+# The logos: FISHTANK, then ARKANE; A and the trigger skip them
+@until state eq LOGO 90s
+@until vr.panel.mode eq screen 10s
+vr-input tap right.a
+@log GameEvent:.*startup\.logo name=arkane state=shown 5s
+@assert state eq LOGO
+vr-input tap right.trigger
+@log GameEvent:.*startup\.intro state=start area=10 5s
+
+# The intro's scripted scene, on the screen, in both eyes; A skips it before its cinematic starts
+@until state eq INTRO 30s
+@until vr.panel.mode eq screen 5s
+@wait 3000                                   # the level fades in
+@shot intro
+@assert vr.sim.shots.intro.left.quadPixels gt 0
+@assert vr.sim.shots.intro.right.quadPixels gt 0
+@assert vr.sim.shots.intro.left.scene.verdict ne background
+@assert vr.sim.shots.intro.right.scene.verdict ne background
+@assert state eq INTRO
+vr-input tap right.a
+@until state eq MENU 15s
+@log GameEvent:.*startup\.intro state=end how=skip 5s
+@nolog GameEvent:.*cinematic\.start name=introduction\.cin
+@assert menuMode eq mainmenu
+@assert events.byName."vr.skip" eq 3
+@until vr.sessionState eq focused 30s
+@until vr.panel.mode eq world 10s
+@frames 60
+@assert vr.pointer.clicks eq 0               # the skip press reached nothing in the menu
+
+# The main menu, in both eyes
+@shot menu
+@assert vr.sim.shots.menu.left.quadPixels gt 0
+@assert vr.sim.shots.menu.right.quadPixels gt 0
+@assert vr.sim.shots.menu.left.scene.verdict ne background
+@assert vr.sim.shots.menu.right.scene.verdict ne background
+
+# Options > Interface: the crosshair off by pointer, back twice
+@assert settings.crosshair eq true
+vr-point right menu options
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@until menuPage eq options 5s
+@frames 90
+vr-point right menu system_menus_options_interface
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@until menuPage eq interface 5s
+@frames 30
+vr-point right menu system_menus_options_video_crosshair
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+@assert settings.crosshair eq false
+vr-point right menu back
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@until menuPage eq options 5s
+@frames 30
+vr-point right menu back
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@until menuPage eq none 5s
+
+# New game: the character creation, the average hero by quick generation, Done
+vr-point right menu newquest
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@until menuMode eq charactercreation 15s
+@until vr.panel.menu eq charactercreation 5s
+@frames 120                                  # the screen fades in
+@assert hero.attributePoints eq 16
+vr-point right menu quickgen
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+@assert hero.strength eq 10
+@assert hero.attributePoints eq 0
+@assert hero.skillPoints eq 0
+vr-point right menu done
+@frames 5
+@assert ui.menuHover eq done
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+
+# The prison: area 1, the hero is the one made; the prison intro (a scripted scene, the controls held) plays and A
+# skips it through its own skip handlers, as Esc does: the hero at MARKER_0112, the controls back, the press reaches
+# nothing; the left stick walks
+@until area eq 1 60s
+@until state eq GAMEPLAY 120s
+@assert hero.strength eq 10
+@assert hero.mind eq 10
+@assert player.freelook eq true             # in VR the game is always in freelook (#394; here level 10's reset set it)
+@log GameEvent:.*scene state=start area=1 30s
+@assert player.controlsBlocked eq true
+vr-input tap right.a                         # too early: nothing is sent to the scene, the press reaches nothing
+@log GameEvent:.*scene\.skip how=vr area=1 .*result=early 5s
+@frames 30
+@assert player.controlsBlocked eq true
+@nolog GameEvent:.*player\.jump
+@wait 6000                                   # the skip handlers take a skip 3 s into the letterbox, outside a fade
+@mark
+vr-input tap right.a
+@until player.controlsBlocked eq false 15s
+@frames 30
+@nolog GameEvent:.*player\.jump
+@nolog GameEvent:.*vr\.pointer\.click
+@assert player.jumping eq false
+@log GameEvent:.*vr\.skip what=SCENE 5s
+@log GameEvent:.*scene\.skip how=vr area=1 .*result=sent 5s
+@log GameEvent:.*scene state=end area=1 5s
+@assert events.byName."vr.skip" eq 5
+watch marker_0112
+@frames 5
+@assert watch.found eq true
+@remember mx watch.x
+@remember mz watch.z
+@assert player.x gt {mx-10}
+@assert player.x lt {mx+10}
+@assert player.z gt {mz-10}
+@assert player.z lt {mz+10}
+watch off
+@assert player.freelook eq true
+@assert player.inventoryOpen eq false
+@remember z0 player.z
+vr-input stick left 0 1
+@frames 45
+@assert vr.input.walk.walking eq true
+vr-input stick left 0 0
+@frames 10
+@assert player.z gt {z0+50}                  # the prison start faces +z (yaw about 0): the walk goes along it
+@nolog GameEvent:.*scene state=start         # the skipped intro does not play again
+
+# The inventory's own control (right B) opens and closes it; freelook is on again after it closes
+vr-input tap right.b
+@until player.inventoryOpen eq true 5s
+@frames 30
+vr-input tap right.b
+@until player.inventoryOpen eq false 5s
+@frames 30
+@assert player.freelook eq true
+@assert player.inventoryOpen eq false
+
+# The hero can fight: a sword from the prison equipped (as the test saves do), a swing of the IK hand is taken
+inventory playeraddfromscene short_sword_0030
+short_sword_0030.equip player
+@until vr.melee.active eq true 5s
+@assert player.inventoryOpen eq false
+vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35  # slowly into place (under 0.7 m/s: no swing)
+@frames 75
+@assert vr.melee.swings eq 0
+vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35   # 0.85 m in 8 frames: a swing
+@until vr.melee.swings ge 1 5s
+@log GameEvent:.*melee\.swing kind=
+@assert errors eq 0

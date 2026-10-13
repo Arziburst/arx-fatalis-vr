@@ -14,7 +14,8 @@
 #      handle when the holder dies, so a crash or a kill leaves no stale lock. A game that runs outside
 #      the lock (a raw arx.exe) counts as a holder too. settings.json ("maxGames") allows more slots.
 #   3. Only the working copy's own fresh build: Assert-ArxFreshBuild refuses a build directory of
-#      another copy and a built-from.txt whose commit is not the copy's HEAD ("dirty" is allowed).
+#      another copy and a built-from.txt whose commit is not the copy's HEAD or whose tree fingerprint
+#      (git diff HEAD plus untracked files, #306) differs from the copy's now.
 #   4. The launch ledger %LOCALAPPDATA%\ArxFatalisVR\launches.log: one line per launch (time, copy,
 #      branch, build, mode, pid, exit code, duration), read by scripts/dev/cycle-report.ps1.
 #   5. The launch budget: 10 launches per task (WORKFLOW.md); Write-ArxLaunchBudgetNote warns past it.
@@ -178,10 +179,22 @@ function Resolve-ArxVrMode([string[]]$ArxArgs, [switch]$StartSteamVR) {
 	return [pscustomobject]@{ Vr = $false; Args = @($ArxArgs) + '--no-vr'; Reason = 'SteamVR not running, --no-vr added' }
 }
 
+# The kind of launch (#394). A plain arx.exe is the player's launch: the publisher logos, the main menu and every
+# .cin cinematic (the new-game intro, the cutscenes) - the desktop shortcut and the Steam shortcut launch that way.
+# Development and test launches add --dev-launch: no logos and no cutscenes, straight to the menu or the game
+# (--intro / --cinematics bring them back). The scripts that start the game take their arguments from here.
+$script:ArxDevLaunchArg = '--dev-launch'
+
+function Get-ArxLaunchKindArgs([switch]$Player) {
+	if ($Player) { return @() }
+	return @($script:ArxDevLaunchArg)
+}
+
 # --- 3. The working copy's own fresh build ---------------------------------------------------------------
 
 # Refuse (or with -Rebuild, rebuild) unless $BuildDir is a build directory of $SourceDir holding an
-# arx.exe whose built-from.txt names the copy's HEAD ("<sha>" or "<sha> dirty"). Returns the stamp.
+# arx.exe whose built-from.txt names the copy's HEAD and the fingerprint of its uncommitted state
+# ("<sha>[ dirty] fp=<hash>"). Returns the stamp.
 function Assert-ArxFreshBuild([string]$SourceDir, [string]$BuildDir, [string]$Config, [string]$Head, [switch]$Rebuild) {
 	$root = Join-Path (Get-ArxAppDataDir) "build\$(Get-WorkingCopyKey $SourceDir)"
 	$full = [IO.Path]::GetFullPath($BuildDir).TrimEnd('\')
@@ -195,6 +208,8 @@ function Assert-ArxFreshBuild([string]$SourceDir, [string]$BuildDir, [string]$Co
 	$problem = if (-not (Test-Path $exe)) { "no arx.exe in $BuildDir" }
 		elseif (-not $stamp) { 'the build has no built-from.txt (made before the stamp existed)' }
 		elseif ($Head -and ($stamp -split ' ')[0] -ne $Head) { "built from $(ConvertTo-ShortSha (($stamp -split ' ')[0])), HEAD is $(ConvertTo-ShortSha $Head)" }
+		elseif ($Head -and -not (Get-ArxStampFingerprint $stamp)) { 'the build stamp has no tree fingerprint (made before #306)' }
+		elseif ($Head -and (Get-ArxStampFingerprint $stamp) -ne (Get-ArxTreeFingerprint $SourceDir)) { 'the working tree changed since the build (uncommitted edits, #306)' }
 	if (-not $problem) { return $stamp }
 	if (-not $Rebuild) {
 		throw "stale build: $problem. Build first (.\scripts\build-windows.ps1 -Config $Config) or pass -Rebuild - a launch runs only a fresh build of its working copy (D-014)."
@@ -417,7 +432,7 @@ function Get-ArxLaunchLogPath { Join-Path (Get-ArxAppDataDir) 'launches.log' }
 function Add-ArxLaunchRecord([string]$Script, [string]$Copy, [string]$Branch, [string]$Build, [bool]$Vr, [int]$GamePid, $ExitCode, [double]$DurationSec, [string[]]$ArxArgs, [DateTime]$Time = (Get-Date), [bool]$Sim = $false) {
 	$fields = [ordered]@{
 		time = $Time.ToString('yyyy-MM-ddTHH:mm:ss'); script = $Script; copy = $Copy; branch = $Branch
-		build = ($Build -replace ' dirty$', '+dirty') -replace '^([0-9a-f]{9})[0-9a-f]+', '$1'
+		build = (($Build -replace ' fp=[0-9a-f]+$', '') -replace ' dirty$', '+dirty') -replace '^([0-9a-f]{9})[0-9a-f]+', '$1'
 		# sim: the simulated headset (--vr-sim, #112) - VR code, no runtime, no headset
 		mode = $(if ($Vr) { 'vr' } elseif ($Sim) { 'sim' } else { 'flat' }); pid = $GamePid; exit = $(if ($null -eq $ExitCode) { '-' } else { $ExitCode })
 		duration = $DurationSec.ToString('0.0', [Globalization.CultureInfo]::InvariantCulture); args = ($ArxArgs -join ' ')

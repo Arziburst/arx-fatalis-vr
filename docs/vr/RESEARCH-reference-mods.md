@@ -2948,7 +2948,8 @@ while the mesh wrings**: at 90° and 180° the wrist band of the hanging hand is
 forward hand at 180° kinks where the forearm meets the wrist. A fix is judged against this sheet: the same sequence, the
 same eight shots.
 
-![#36's arm rolled 0 / 45 / 90 / 180 degrees](images/arms-298-baseline.jpg)
+The capture of that sheet (eight shots of #36's arm rolled 0 / 45 / 90 / 180°) is not kept in the repository — game
+captures live only in CI artifacts; regenerate it by running the sequence above.
 
 ## Sources
 

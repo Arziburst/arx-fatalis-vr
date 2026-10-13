@@ -39,8 +39,8 @@ try {
 	$stamp = if (Test-Path $stampFile) { (Get-Content $stampFile -Raw).Trim() } else { '' }
 	$reason = if (-not (Test-Path (Join-Path $buildDir 'arx.exe'))) { 'no build yet' }
 		elseif (-not $stamp) { 'the build has no built-from.txt' }
-		elseif ($dirty) { 'the working copy has uncommitted changes' }
-		elseif ($stamp -ne $head) { "built from '$(Short $stamp)', HEAD is $(Short $head)" }
+		elseif (($stamp -split ' ')[0] -ne $head) { "built from '$(Short ($stamp -split ' ')[0])', HEAD is $(Short $head)" }
+		elseif ((Get-ArxStampFingerprint $stamp) -ne (Get-ArxTreeFingerprint $WorkingCopy)) { 'the working tree changed since the build' }
 
 	if ($reason) {
 		Write-Host "building $(Short $head) ... ($reason)" -ForegroundColor Yellow
@@ -50,7 +50,8 @@ try {
 		Write-Host "up to date (built from $(Short $head))" -ForegroundColor Green
 	}
 
-	& (Join-Path $WorkingCopy 'scripts\run-windows.ps1') -Config $Config -Sound # the owner's launch has sound (#345)
+	# The owner's launch has sound (#345) and is a player's: logos, main menu, cinematics (#394)
+	& (Join-Path $WorkingCopy 'scripts\run-windows.ps1') -Config $Config -Sound -Player
 	if ($LASTEXITCODE) { throw "arx.exe exited with code $LASTEXITCODE" }
 } catch {
 	Write-Host $_ -ForegroundColor Red

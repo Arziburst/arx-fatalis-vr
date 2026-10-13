@@ -96,6 +96,12 @@ jobs:
         "heavy=$($heavy.ToString().ToLower())" >> $env:GITHUB_OUTPUT
         Write-Host "heavy steps: $heavy"
 
+    # The repository is public: no personal paths, ids or e-mails in tracked files, no images under docs/ (#428).
+    # Runs on every change, docs-only ones included.
+    - name: No personal data in tracked files
+      shell: pwsh
+      run: ./scripts/dev/check-private-data.ps1
+
     # Seconds, no game: the PowerShell self-tests of the dev scripts (scripts/dev/test-*.ps1) first,
     # so a broken tool fails before the build.
     - name: Script self-tests
@@ -107,6 +113,15 @@ jobs:
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
       run: ./scripts/build-windows.ps1 -Config Release
+
+    # The playground sequences generate their level with node (#321, #412). The runner service cannot see the owner's
+    # per-user install, so node comes from the workflow: a pinned LTS major, downloaded once into the runner's tool
+    # cache and reused by later runs. ci-smoke.ps1 still reports NOT RUN when a runner has no node at all.
+    - name: Set up node (playground generator)
+      if: steps.scope.outputs.heavy == 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
 
     # Flat game on the runner: smoke test (start, play, draw check, quit, evidence) and the spell draw
     # check. Fails the job on FAIL, and also when it could not run (exit 2: another game kept the game

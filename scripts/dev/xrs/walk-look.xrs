@@ -2,6 +2,9 @@
 # where the head looks, not where the body or the heading faces. Run on the test save mvp-new-game, whose heading is
 # about 0 (yaw 0 walks +z, a larger yaw turns left: -x):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence walk-look
+# Each push is `stick-for`: the game lets the stick go once the player has walked 100 units, and keeps the walk of
+# its last walking frame in `stickFor.walk`. The start cell is 496 units wide (x 8302-8798 from the start at 8540): a
+# push timed by frames and status reads walked into its wall on a busy PC and slid along it in z (#370, TRAPS.md).
 @sim idle
 @save mvp-new-game
 @args --loadslot 0
@@ -26,13 +29,13 @@ vr-sim head rot 90 0 0
 @assert vr.head.lookYaw lt 100
 @remember x0 player.x
 @remember z0 player.z
-vr-input stick left 0 1
-@frames 40
-@assert vr.input.walk.walking eq true
-@assert vr.input.walk.yaw gt {look-0.5}
-@assert vr.input.walk.yaw lt {look+0.5}
-@assert vr.input.walk.dirX lt -0.98
-vr-input stick left 0 0
+stick-for left 0 1 100
+@until stickFor.active eq false 10s
+@assert stickFor.timedOut eq false
+@assert stickFor.walk.walking eq true
+@assert stickFor.walk.yaw gt {look-0.5}
+@assert stickFor.walk.yaw lt {look+0.5}
+@assert stickFor.walk.dirX lt -0.98
 @frames 10
 @assert vr.input.walk.walking eq false
 @assert player.x lt {x0-10}
@@ -47,10 +50,10 @@ vr-sim head rot -90 0 0
 @frames 30
 @remember x1 player.x
 @remember z1 player.z
-vr-input stick left 0 1
-@frames 40
-@assert vr.input.walk.dirX gt 0.98
-vr-input stick left 0 0
+stick-for left 0 1 100
+@until stickFor.active eq false 10s
+@assert stickFor.timedOut eq false
+@assert stickFor.walk.dirX gt 0.98
 @frames 10
 @assert player.x gt {x1+10}
 @assert player.z gt {z1-10}
@@ -61,10 +64,10 @@ vr-sim head rot 0 0 0
 @frames 30
 @remember x2 player.x
 @remember z2 player.z
-vr-input stick left 0 1
-@frames 40
-@assert vr.input.walk.dirZ gt 0.98
-vr-input stick left 0 0
+stick-for left 0 1 100
+@until stickFor.active eq false 10s
+@assert stickFor.timedOut eq false
+@assert stickFor.walk.dirZ gt 0.98
 @frames 10
 @assert player.z gt {z2+10}
 @assert vr.input.walk.walks eq 3

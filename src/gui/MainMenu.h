@@ -57,7 +57,12 @@ public:
 	MENUSTATE requestedPage() const {
 		return m_requestedPage;
 	}
-	
+
+	//! The main menu's own entries (resume, new game, load / save, options, credits, quit, version, language)
+	const WidgetContainer & widgets() const {
+		return m_widgets;
+	}
+
 private:
 	
 	MENUSTATE m_requestedPage;

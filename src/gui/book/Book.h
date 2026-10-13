@@ -21,6 +21,7 @@
 #define ARX_GUI_BOOK_BOOK_H
 
 #include <string>
+#include <string_view>
 
 #include "graphics/Color.h"
 #include "gui/Menu.h"
@@ -62,6 +63,13 @@ public:
 	
 	void manage();
 	void manageNewQuest();
+	/*!
+	 * For the test channel (#394): where the attribute or skill named \a name (strength, mind, dexterity,
+	 * constitution, stealth, mecanism, intuition, etheral_link, object_knowledge, casting, close_combat,
+	 * projectile, defense) is clicked on the interface - left adds a point, right takes it back
+	 * \return false for an unknown name
+	 */
+	static bool slotRect(std::string_view name, Rectf & rect);
 private:
 	void manageStats();
 	void RenderBookPlayerCharacter();

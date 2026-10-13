@@ -80,8 +80,9 @@ vr-sim hand right pos 0.5 -0.2 -0.45
 @assert vr.body.right.wrist.y lt {rightWristY-20}
 @assert vr.body.right.error lt 1
 @shot body-hand-up
-# (measured 6.7 on #36's rig, 3.6 on #304's roll-aware one - the arm lies differently; the still floor is under 1.5)
-@diff body-down-a body-hand-up gt 2.5 right
+# (measured 6.7 on #36's rig; with the custom arms of #385 4.00 - 4.82 in four CI runs - near this threshold;
+# the still floor is under 1.5)
+@diff body-down-a body-hand-up gt 4 right
 
 # Out of reach: a hand 1.2 m to the right stretches the arm at it after the shoulder slid its 20 units
 vr-sim hand right pos 1.2 -0.3 -0.45

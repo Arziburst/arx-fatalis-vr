@@ -188,10 +188,11 @@ void onCrtExit() {
 
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32 && ARX_COMPILER_MSVC
 
-void NTAPI exitTraceTlsCallback(PVOID /* module */, DWORD reason, PVOID reserved) {
+void NTAPI exitTraceTlsCallback(PVOID /* module */, DWORD reason, PVOID /* reserved */) {
 
-	// Process detach with a non-null reserved: the process is ending (ExitProcess), not an unload
-	if(reason != DLL_PROCESS_DETACH || reserved == nullptr) {
+	// The executable is never unloaded: its process detach is the end of the process. Unlike DllMain,
+	// a TLS callback gets no "terminating" flag - the loader passes a null reserved here
+	if(reason != DLL_PROCESS_DETACH) {
 		return;
 	}
 

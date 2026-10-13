@@ -59,7 +59,8 @@ vr-sim fault $Fault $Code
 @log ExitTrace:0  The process is ending outside the game's own shutdown 10s
 "@
 
-$params = @{ Sequence = $sequence }
+# smoke-test.ps1 takes the launch from its parameters (the @sim / @args lines are for xrs-run.ps1)
+$params = @{ Sequence = $sequence; VrSim = 'idle' }
 if ($Rebuild) { $params.Rebuild = $true }
 $previousReport = $env:ARXVR_AUTOREPORT
 $env:ARXVR_AUTOREPORT = '0'

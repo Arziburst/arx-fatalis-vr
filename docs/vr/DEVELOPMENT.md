@@ -75,8 +75,13 @@ Everything after `--` goes to `arx.exe`. What the script does by default:
 - **Game data**: the game finds the Arx Fatalis install in the Steam libraries itself (arx.log line
   `Steam data:`); `-DataDir <folder>` passes another install as `--data-dir`.
 - **Windowed**: test runs get `--windowed`, so the game does not take over the desktop.
-- **Development shortcuts**: a plain launch starts at the main menu, the publisher logos and the intro
-  are skipped (`--intro` shows them) and every `.cin` cinematic is skipped (`--cinematics` shows them).
+- **Development and player launches** (#394): a plain `arx.exe` is the player's launch - the publisher
+  logos, then the main menu, and every `.cin` cinematic (in VR on a screen in front of the player, skipped
+  with A, B or a trigger). The development scripts (`run-windows.ps1`, `smoke-test.ps1` and everything
+  built on it, `test-pr.ps1`) add `--dev-launch`: straight to the main menu or the game, no logos, no
+  cinematics (`--intro` shows the logos and the intro anyway, `--cinematics` every cinematic). `-Player`
+  on `run-windows.ps1` / `smoke-test.ps1` / `test-pr.ps1` (and `@player` in a sequence) launches as a
+  player; the desktop shortcut, the Steam shortcut, the SteamVR library entry and the tester zip do.
 - **Straight into the game**: `--skiplogo --loadslot <n>` loads a save; `--loadlevel <n>` starts a level
   (the smoke test uses level 10). The owner records saves in flat mode; a library of test saves for
   scenarios is described in [TESTING.md](TESTING.md).

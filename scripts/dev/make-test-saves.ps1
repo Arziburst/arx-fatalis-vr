@@ -251,7 +251,7 @@ try {
 		Remove-Item (Join-Path $TestDir $f) -Force -ErrorAction SilentlyContinue
 	}
 
-	$argList = @('--windowed', '--test-dir', "`"$TestDir`"", '--user-dir', "`"$UserDir`"", '--config-dir', "`"$UserDir`"", '--no-vr', '--mute')
+	$argList = @('--windowed', '--dev-launch', '--test-dir', "`"$TestDir`"", '--user-dir', "`"$UserDir`"", '--config-dir', "`"$UserDir`"", '--no-vr', '--mute')
 	if ($DataDir) { $argList += '--data-dir', "`"$DataDir`"" }
 	$launchArgs = @('--no-vr')
 	# --vr-sim wins over --no-vr in the game; --no-vr stays, so a broken script means flat, never the runtime

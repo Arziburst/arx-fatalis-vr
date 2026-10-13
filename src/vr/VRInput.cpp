@@ -25,6 +25,7 @@
 #include <optional>
 
 #include "core/Config.h"
+#include "core/Core.h"
 #include "core/GameEvent.h"
 #include "core/TimeTypes.h"
 #include "gui/Menu.h"
@@ -79,9 +80,71 @@ struct InputState {
 	u64 loggedOffPanelPresses = 0;
 	WalkStatus walk;
 
+	//! The skip controls (#394) down in the last update, and those kept from the game until released
+	ControlSet skipDown;
+	ControlSet skipHeld;
+
 };
 
 InputState g_input;
+
+//! The controls that skip a logo or a cinematic (#394): A, B and the trigger of either hand
+ControlSet skipControls() {
+	ControlSet controls;
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		for(ControlKind kind : { ControlKind::A, ControlKind::B, ControlKind::Trigger }) {
+			controls.set(control(Hand(hand), kind));
+		}
+	}
+	return controls;
+}
+
+//! What the skip controls would skip now (#394): the game state's name, "SCENE" for a scripted scene in the game, or
+//! nullptr - always nullptr while a binding capture waits for its press
+const char * skippable() {
+	// A binding capture in the VR settings (#178) takes the next press, also while a scripted scene runs
+	if(g_input.capture.active()) {
+		return nullptr;
+	}
+	const gameevent::GameState state = gameevent::currentGameState();
+	if(state == gameevent::GameState::Logo || state == gameevent::GameState::Intro
+	   || state == gameevent::GameState::Cinematic) {
+		return gameevent::gameStateName(state);
+	}
+	if(state == gameevent::GameState::Gameplay && scriptedScenePlaying()) {
+		return "SCENE";
+	}
+	return nullptr;
+}
+
+/*!
+ * While a logo, a cinematic or a scripted scene (the prison intro after a new game) plays (#394) A, B
+ * and the triggers skip it and reach nothing else: they are taken out of the input before it is
+ * resolved, and one still held when it ends stays out until it is released - the press that skipped
+ * never clicks in the menu, opens a radial menu or jumps in the game that follows.
+ *
+ * \return true when one of them was pressed in this update while something skippable plays
+ */
+bool takeSkipControls(ControllerInput & input) {
+
+	static const ControlSet controls = skipControls();
+	const bool playing = skippable() != nullptr;
+
+	const ControlSet pressed = ((input.down & ~g_input.skipDown) | input.taps) & controls;
+	g_input.skipDown = input.down & controls;
+	g_input.skipHeld = playing ? g_input.skipDown : (g_input.skipHeld & input.down);
+
+	const ControlSet taken = playing ? controls : g_input.skipHeld;
+	input.down &= ~taken;
+	input.taps &= ~taken;
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		if(taken.test(control(Hand(hand), ControlKind::Trigger))) {
+			input.trigger[hand] = 0.f;
+		}
+	}
+
+	return playing && pressed.any();
+}
 
 //! The right hand decides (the trigger hand of most players), the left one when the right has no profile
 ControllerType typeFromProfiles(const std::array<std::string, HandCount> & profiles) {
@@ -336,6 +399,8 @@ void updateInput() {
 		stick.y = std::clamp(stick.y + g_input.injectedSticks[hand].y, -1.f, 1.f);
 	}
 
+	const bool skip = takeSkipControls(input);
+
 	g_input.resolver.update(toMsi(platform::getTime()), input.down, input.taps);
 	g_input.input = input;
 
@@ -359,6 +424,14 @@ void updateInput() {
 	updateCapture(toMsi(platform::getTime()));
 	const GameInputState game = capturing || g_input.capture.active() ? GameInputState() : resolved;
 	applyToEngine(game);
+
+	// The game skips what is on screen this frame (#394, core/ArxGame.cpp): the logo, the whole intro,
+	// the cinematic (through cinematicEnd(), as Esc does), the scripted scene (through its skip handlers)
+	if(skip) {
+		g_vrSkipPressed = true;
+		const char * what = skippable();
+		gameevent::Event("vr.skip")("what", what ? what : "none");
+	}
 
 	// Recenter (#28, D-019: a long press of the left stick click): the head as it is at the next sample
 	// becomes the character's eye and facing - horizontal and height, standing or seated (D-018). Any

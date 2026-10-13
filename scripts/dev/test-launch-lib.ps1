@@ -55,6 +55,24 @@ function Wait-Until([scriptblock]$Condition, [int]$Sec = 20) {
 	$false
 }
 
+# --- The kind of launch (#394) ---------------------------------------------------------------------------------
+# A plain arx.exe is the player's launch (logos, main menu, every cinematic); the dev launchers add --dev-launch, the
+# player launchers (the desktop shortcut, the Steam shortcut, the tester zip) never do
+Write-Host '==> development and player launches'
+$devArgs = @(Get-ArxLaunchKindArgs)
+Check 'a launch is a development launch by default: --dev-launch' ($devArgs.Count -eq 1 -and $devArgs[0] -eq '--dev-launch') "$devArgs"
+Check '-Player adds nothing: arx.exe as a player starts it' (@(Get-ArxLaunchKindArgs -Player).Count -eq 0)
+$scripts = Split-Path -Parent $PSScriptRoot
+$text = { param($Path) [IO.File]::ReadAllText((Join-Path $scripts $Path)) }
+Check 'run-windows.ps1 takes its launch kind from launch-lib, -Player opts out' ((& $text 'run-windows.ps1') -match 'Get-ArxLaunchKindArgs -Player:\$Player')
+Check 'smoke-test.ps1 takes its launch kind from launch-lib, -Player opts out' ((& $text 'dev\smoke-test.ps1') -match 'Get-ArxLaunchKindArgs -Player:\$Player')
+Check 'xrs-run.ps1 and ci-smoke.ps1 pass a sequence''s @player on' (((& $text 'dev\xrs-run.ps1') -match '\$parsed\.Player') -and ((& $text 'dev\ci-smoke.ps1') -match '\$seq\.Player'))
+Check 'test-pr.ps1 has -Player and passes it to run-windows.ps1' ((& $text 'dev\test-pr.ps1') -match '\$runArgs\.Player = \$true')
+Check 'the desktop shortcut (launch-shortcut.ps1) launches as a player' ((& $text 'launch-shortcut.ps1') -match "run-windows\.ps1'\) [^\r\n]*-Player")
+Check 'the verify run of package-tester.ps1 and make-test-saves.ps1 are development launches' (((& $text 'package-tester.ps1') -match "'--dev-launch'") -and ((& $text 'dev\make-test-saves.ps1') -match "'--dev-launch'"))
+$testerLaunchers = @(Get-ChildItem (Join-Path $scripts 'tester') -Filter '*.cmd' | Where-Object { (Get-Content -Raw $_.FullName) -match 'arx\.exe' })
+Check 'the tester zip''s launchers start arx.exe as a player (no --dev-launch)' ($testerLaunchers.Count -ge 2 -and -not ($testerLaunchers | Where-Object { (Get-Content -Raw $_.FullName) -match '--dev-launch' })) "$($testerLaunchers.Name)"
+
 try {
 	# --- The folder and its ACL ---------------------------------------------------------------------------------
 	Write-Host '==> the lock folder and its ACL'

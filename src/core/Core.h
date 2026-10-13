@@ -86,10 +86,34 @@ extern float g_framedelay;
 
 extern bool g_requestLevelInit;
 
-//! Show the publisher logos and the intro cinematic (--intro); development launches skip them
+//! A development launch (--dev-launch): no publisher logos, no .cin cinematics (#124, #394)
+extern bool g_devLaunch;
+//! With --dev-launch: show the publisher logos and the intro cinematic anyway (--intro)
 extern bool g_showIntro;
-//! Show every .cin cinematic (--cinematics); development launches skip them (#124)
+//! With --dev-launch: show every .cin cinematic anyway (--cinematics)
 extern bool g_showCinematics;
+
+//! The publisher logo on screen at startup: "fishtank", "arkane", or nullptr (#394)
+const char * startupLogoName();
+
+//! The intro after the logos (level 10, ending in the main menu) plays (#394)
+bool startupIntroPlaying();
+
+/*!
+ * A scripted scene plays in the game (#394): the letterbox is on outside a cinematic and the startup
+ * intro - the prison intro after a new game among them. Its scripts hold the controls
+ */
+bool scriptedScenePlaying();
+
+/*!
+ * Skip the scripted scene as Esc does (#394): its scripts get key_pressed and end it through their
+ * skip handlers - refused while a fade runs and in the scene's first 3 s. A scene.skip event says
+ * what happened; \a how is "key" or "vr"
+ */
+void skipScriptedScene(const char * how);
+
+//! The VR skip (A, B or a trigger) was pressed this frame while a logo, the intro, a cinematic or a scripted scene played (#394)
+extern bool g_vrSkipPressed;
 
 extern AreaId g_currentArea;
 extern long TELEPORT_TO_ANGLE;

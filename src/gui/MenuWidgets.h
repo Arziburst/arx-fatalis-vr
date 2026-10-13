@@ -45,6 +45,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #define ARX_GUI_MENUWIDGETS_H
 
 #include <memory>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/TimeTypes.h"
@@ -116,5 +118,18 @@ void ARX_QuickLoad();
 void ARX_QuickSave();
 
 bool MENU_NoActiveWindow();
+
+/*!
+ * For the test channel (#394): the widget of the main menu, or of its open page, a name stands for - an
+ * entry of the main menu (resume, newquest, loadsave, options, credits, quit, language), \c back (the open
+ * page's back button) or a localisation key whose text a text widget or a checkbox's label of the open page
+ * shows (\c system_menus_options_interface, \c system_yes). Names, not texts: the game data may be in any
+ * language.
+ * \return the widget, or nullptr with why in \a why
+ */
+Widget * findMenuWidget(std::string_view name, std::string & why);
+
+//! The enabled widget of the main menu or of its open page under \a pos - the one a click there reaches; nullptr for none
+Widget * menuWidgetAt(const Vec2f & pos);
 
 #endif // ARX_GUI_MENUWIDGETS_H

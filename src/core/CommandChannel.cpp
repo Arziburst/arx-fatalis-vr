@@ -39,6 +39,7 @@
 #include "cinematic/CinematicController.h"
 #include "core/Application.h"
 #include "core/ArxGame.h"
+#include "core/Config.h"
 #include "core/Core.h"
 #include "core/GameEvent.h"
 #include "core/GameTime.h"
@@ -62,11 +63,13 @@
 #include "gui/Console.h"
 #include "gui/DamageNumbers.h"
 #include "gui/Dragging.h"
+#include "gui/CharacterCreation.h"
 #include "gui/Interface.h"
 #include "gui/LoadLevelScreen.h"
 #include "gui/MainMenu.h"
 #include "gui/Menu.h"
 #include "gui/MenuPublic.h"
+#include "gui/MenuWidgets.h"
 #include "gui/Notification.h"
 #include "gui/hud/PlayerInventory.h"
 #include "input/Input.h"
@@ -89,6 +92,7 @@
 #include "scene/Interactive.h"
 #include "script/Script.h"
 #include "util/String.h"
+#include "vr/EyeImage.h"
 #include "vr/HeadTracking.h"
 #include "vr/PerfLog.h"
 #include "vr/VRBody.h"
@@ -133,6 +137,11 @@ const struct { MENUSTATE page; const char * name; } MenuPages[] = {
 	{ Page_OptionsInput, "input" },
 	{ Page_OptionsVR, "vr" },
 	{ Page_OptionsVRTurning, "vr-turning" },
+	// The pages the main menu's entries and the Interface options open (#394)
+	{ Page_LoadOrSave, "loadsave" },
+	{ Page_OptionsInterface, "interface" },
+	{ Page_QuitConfirm, "quit" },
+	{ Page_Localization, "language" },
 };
 
 const char * menuPageName(MENUSTATE page) {
@@ -146,6 +155,31 @@ const char * menuPageName(MENUSTATE page) {
 
 MENUSTATE currentMenuPage() {
 	return (g_mainMenu && g_mainMenu->m_window) ? g_mainMenu->m_window->currentPageId() : Page_None;
+}
+
+/*!
+ * vr-point <hand> menu <name> (#394): where a widget of the main menu or of its open page (findMenuWidget), or a
+ * button, an attribute or a skill of the character creation (CharacterCreation::targetRect), is on the interface
+ */
+bool menuTargetRect(std::string_view name, Rectf & rect, std::string & why) {
+	if(ARXmenu.mode() == Mode_CharacterCreation) {
+		if(!g_characterCreation.targetRect(name, rect)) {
+			why = "the character creation has no \"" + std::string(name) + "\" (quickgen, skin, done, an attribute"
+			      " or a skill: strength, mind, dexterity, constitution, stealth, ...)";
+			return false;
+		}
+		return true;
+	}
+	if(ARXmenu.mode() == Mode_MainMenu) {
+		const Widget * widget = findMenuWidget(name, why);
+		if(!widget) {
+			return false;
+		}
+		rect = widget->m_rect;
+		return true;
+	}
+	why = std::string("needs the main menu or the character creation, mode is ") + menuModeName(ARXmenu.mode());
+	return false;
 }
 
 //! Counts logged errors and warnings so a test can assert on numbers without parsing the log
@@ -296,6 +330,13 @@ struct State {
 	std::string lastCapture;
 	std::string pendingCapture;
 
+	//! The last shot's four quarters (#334): a picture that fills the window has detail in each of them
+	struct CaptureQuarters {
+		std::string name;
+		Vec2i size = Vec2i(0);
+		std::array<vr::PixelStats, 4> quarters; //!< top left, top right, bottom left, bottom right
+	} capture;
+
 	//! drawcheck: the scene view drawn twice per frame with the same camera must give one picture
 	struct DrawCheck {
 		unsigned seq = 0;            //!< Checks started so far
@@ -328,8 +369,9 @@ struct State {
 
 	//! vr-point: the widget a simulated hand was last aimed at (#34)
 	struct PointTarget {
-		std::string id = "none";     //!< the item's id, "pixel" for a bare pixel
+		std::string id = "none";     //!< the item's id, "pixel" for a bare pixel, the name of a menu target
 		Vec2f pixel = Vec2f(0.f);    //!< in the 2D interface's pixels
+		bool menu = false;           //!< a widget of the main menu or a target of the character creation (#394)
 	} pointTarget;
 
 	//! watch: the entity whose place status.json reports (#37), empty for none
@@ -357,6 +399,28 @@ struct State {
 };
 
 State g;
+
+/*!
+ * ui.menuHover (#394): the menu target a vr-point aimed at while the widget under the mouse is that one -
+ * what a click lands on; "other" for another widget of the main menu, "none" for nothing
+ */
+std::string menuHover(const Vec2f & mouse) {
+	const State::PointTarget & target = g.pointTarget;
+	if(ARXmenu.mode() == Mode_MainMenu) {
+		const Widget * under = menuWidgetAt(mouse);
+		if(!under) {
+			return "none";
+		}
+		std::string why;
+		return (target.menu && findMenuWidget(target.id, why) == under) ? target.id : "other";
+	}
+	Rectf rect;
+	if(ARXmenu.mode() == Mode_CharacterCreation && target.menu && g_characterCreation.targetRect(target.id, rect)
+	   && rect.contains(mouse)) {
+		return target.id;
+	}
+	return "none";
+}
 
 //! When the delayed deliberate crash of "crash steal" fires (#132); zero = none pending
 PlatformInstant g_crashAt = PlatformInstant(0);
@@ -619,6 +683,9 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("controlsBlocked", BLOCK_PLAYER_CONTROLS);
 		// What the controls did (#74): the inventory and the book open, the crouch toggle, a jump under way
 		json.value("inventoryOpen", (player.Interface & INTER_INVENTORY) != 0);
+		// Freelook (TRUE_PLAYER_MOUSELOOK_ON): off is the engine's cursor mode, which keeps the inventory open
+		// and refuses melee; in VR always on in the game (#394)
+		json.value("freelook", TRUE_PLAYER_MOUSELOOK_ON);
 		json.value("bookOpen", (player.Interface & INTER_PLAYERBOOK) != 0);
 		json.value("crouchToggle", bGCroucheToggle);
 		// The character crouches - the button, the toggle, the head (#100) or a low ceiling
@@ -725,6 +792,43 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("target", g.pointTarget.id);
 	json.value("targetX", g.pointTarget.pixel.x);
 	json.value("targetY", g.pointTarget.pixel.y);
+	json.value("menuHover", GInput ? menuHover(Vec2f(GInput->getMousePosition())) : std::string("none"));
+	// A main menu entry can be greyed out: Resume game in a user directory without a save
+	if(g.pointTarget.menu && ARXmenu.mode() == Mode_MainMenu) {
+		std::string why;
+		const Widget * widget = findMenuWidget(g.pointTarget.id, why);
+		json.value("menuTargetEnabled", widget && widget->isEnabled());
+	}
+	json.end();
+
+	// The hero as the character creation makes it (#394): the attributes and skills before modifiers, the
+	// points still to spend
+	if(ARXmenu.mode() == Mode_CharacterCreation || g_currentArea) {
+		json.object("hero");
+		json.value("strength", player.m_attribute.strength);
+		json.value("mind", player.m_attribute.mind);
+		json.value("dexterity", player.m_attribute.dexterity);
+		json.value("constitution", player.m_attribute.constitution);
+		json.value("attributePoints", int(player.Attribute_Redistribute));
+		json.value("skillPoints", int(player.Skill_Redistribute));
+		json.object("skills");
+		json.value("stealth", player.m_skill.stealth);
+		json.value("mecanism", player.m_skill.mecanism);
+		json.value("intuition", player.m_skill.intuition);
+		json.value("etheral_link", player.m_skill.etheralLink);
+		json.value("object_knowledge", player.m_skill.objectKnowledge);
+		json.value("casting", player.m_skill.casting);
+		json.value("close_combat", player.m_skill.closeCombat);
+		json.value("projectile", player.m_skill.projectile);
+		json.value("defense", player.m_skill.defense);
+		json.end();
+		json.value("skin", int(player.skin));
+		json.end();
+	}
+
+	// A setting the menu sequence changes by pointer and a second launch reads back from cfg.ini (#394)
+	json.object("settings");
+	json.value("crosshair", config.interface.showCrosshair);
 	json.end();
 
 	// One entity followed by the watch command (#37): where it is and whether it is in an inventory
@@ -1374,6 +1478,17 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("lastCmdError", g.lastCmdError);
 	json.value("captureSeq", g.captureSeq);
 	json.value("lastCapture", g.lastCapture);
+	if(!g.capture.name.empty()) {
+		json.object("capture");
+		json.value("name", g.capture.name);
+		json.value("width", g.capture.size.x);
+		json.value("height", g.capture.size.y);
+		const char * const quarters[] = { "topLeft", "topRight", "bottomLeft", "bottomRight" };
+		for(size_t i = 0; i < g.capture.quarters.size(); i++) {
+			writePixelStats(json, quarters[i], g.capture.quarters[i]);
+		}
+		json.end();
+	}
 
 	if(g.drawCheck.seq != 0) {
 		const State::DrawCheck & check = g.drawCheck;
@@ -1564,6 +1679,24 @@ std::string execute(std::string_view line) {
 
 	if(word == "shot") {
 		g.pendingCapture = rest.empty() ? "shot" + std::to_string(g.captureSeq + 1) : std::string(rest);
+		return std::string();
+	}
+
+	if(word == "window") {
+		// window <width> <height>: the window resized as a player dragging its border does (#334) - the
+		// interface is laid out again for the new size at the next frame
+		std::vector<float> size;
+		if(!parseFloats(rest, size) || size.size() != 2 || size[0] < 320.f || size[1] < 240.f) {
+			return refuse("window: expected <width> <height> of at least 320 240, got \"" + std::string(rest) + "\"");
+		}
+		RenderWindow * window = mainApp ? mainApp->getWindow() : nullptr;
+		if(!window || window->isFullScreen()) {
+			return refuse("window: needs a windowed game window");
+		}
+		const Vec2i wanted = Vec2i(Vec2f(size[0], size[1]));
+		LogInfo << "[channel] window resized from " << window->getSize().x << 'x' << window->getSize().y << " to "
+		        << wanted.x << 'x' << wanted.y;
+		window->setWindowSize(wanted);
 		return std::string();
 	}
 
@@ -1997,7 +2130,7 @@ std::string execute(std::string_view line) {
 				return std::string();
 			}
 		}
-		return refuse("menu: expected pause, resume, none, options, input, vr, vr-turning, step <row> left|right or drag <slider> <0..1>, got \""
+		return refuse("menu: expected pause, resume, none, options, input, vr, vr-turning, loadsave, interface, quit, language, step <row> left|right or drag <slider> <0..1>, got \""
 		              + name + "\"");
 	}
 
@@ -2020,14 +2153,14 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "vr-point") {
-		// vr-point <left|right> item [<dx> <dy>] | <x> <y>: turn a simulated hand (--vr-sim) so its aim ray points at the
-		// first item in the open inventory bag, or at a pixel of the 2D interface, on the floating panel (#34).
-		// Aims only - what the pointer makes of the ray is the game's own path
+		// vr-point <left|right> item [<dx> <dy>] | menu <name> | <x> <y>: turn a simulated hand (--vr-sim) so its aim
+		// ray points at the first item in the open inventory bag, at a menu widget (#394), or at a pixel of the 2D
+		// interface, on the floating panel (#34). Aims only - what the pointer makes of the ray is the game's own path
 		std::istringstream iss{std::string(rest)};
 		std::string hand, what;
 		iss >> hand >> what;
 		if((hand != "left" && hand != "right") || what.empty()) {
-			return refuse("vr-point: expected left|right item, or left|right <x> <y>, got \"" + std::string(rest) + "\"");
+			return refuse("vr-point: expected left|right item, menu <name> or <x> <y>, got \"" + std::string(rest) + "\"");
 		}
 		const vr::SimStatus sim = vr::simStatus();
 		if(!sim.active) {
@@ -2106,6 +2239,19 @@ std::string execute(std::string_view line) {
 			}
 			target.id = item->idString();
 			target.pixel = (low + high) * 0.5f + offset;
+		} else if(what == "menu") {
+			// vr-point <hand> menu <name>: the middle of a widget of the main menu or of a target of the
+			// character creation (#394)
+			std::string name;
+			iss >> name;
+			Rectf rect;
+			std::string why;
+			if(name.empty() || !menuTargetRect(name, rect, why)) {
+				return refuse("vr-point menu: " + (name.empty() ? std::string("expected menu <name>") : why));
+			}
+			target.id = name;
+			target.pixel = rect.center();
+			target.menu = true;
 		} else {
 			std::istringstream numbers{std::string(rest)};
 			std::string skip;
@@ -2680,6 +2826,26 @@ void afterRender() {
 	if(!image.save(file)) {
 		g.lastCmdError = refuse("shot: could not write " + file.string());
 		return;
+	}
+
+	// Each quarter's verdict (#334): a menu filling the window has detail in all four, one in a corner of it or on
+	// the floating panel seen from the eye leaves flat background in some
+	if(image.getFormat() == Image::Format_R8G8B8) {
+		vr::RgbImage rgb(image.getWidth(), image.getHeight());
+		const size_t row = rgb.width * 3;
+		for(size_t y = 0; y < rgb.height; y++) {
+			// The snapshot's rows go top to bottom, the picture's bottom to top
+			std::copy_n(image.getData() + (rgb.height - 1 - y) * row, row, rgb.pixels.data() + y * row);
+		}
+		const vr::ImageRegion regions[] = {
+			{ 0.f, 0.5f, 0.5f, 1.f }, { 0.5f, 0.5f, 1.f, 1.f }, { 0.f, 0.f, 0.5f, 0.5f }, { 0.5f, 0.f, 1.f, 0.5f },
+		};
+		const u8 black[3] = { 0, 0, 0 };
+		g.capture.name = name;
+		g.capture.size = Vec2i(int(rgb.width), int(rgb.height));
+		for(size_t i = 0; i < g.capture.quarters.size(); i++) {
+			g.capture.quarters[i] = vr::pixelStats(rgb, regions[i], black);
+		}
 	}
 
 	g.captureSeq++;

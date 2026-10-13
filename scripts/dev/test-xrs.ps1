@@ -71,6 +71,11 @@ Check '@save names the start save and is not a step' ($saved -isnot [string] -an
 Check 'no playground unless asked' (-not $seq.Playground)
 $inPlayground = Get-Parse "@sim idle`n@playground`n@frames 1"
 Check '@playground starts in the playground and is not a step' ($inPlayground -isnot [string] -and $inPlayground.Playground -and @($inPlayground.Steps).Count -eq 1) $inPlayground
+Check 'a development launch unless @player (#394)' (-not $seq.Player)
+$asPlayer = Get-Parse "@sim idle`n@player`n@until state eq LOGO 60s"
+Check '@player is a player''s launch and is not a step' ($asPlayer -isnot [string] -and $asPlayer.Player -and @($asPlayer.Steps).Count -eq 1 -and -not $asPlayer.Args) $asPlayer
+$badPlayer = Get-Parse "@player now"
+Check '@player takes no argument' ($badPlayer -is [string] -and $badPlayer -match 'malformed') $badPlayer
 $kinds = ($seq.Steps | ForEach-Object Kind) -join ' '
 Check 'every directive has its kind' ($kinds -eq 'wait frames until assert remember assert mark log nolog shot diff key pending command command') $kinds
 Check 'the trailing comment is dropped' ($seq.Steps[0].Ms -eq 100)
@@ -278,8 +283,8 @@ foreach ($file in $shipped) {
 	Check "  $($file.Name) parses" ($parsed -isnot [string]) $parsed
 	if ($parsed -isnot [string]) {
 		# A simulator script, or a flat run said outright (--no-vr in @args, stand-up.xrs #263); the start is its @args
-		# or the test playground (@playground, #321)
-		Check "  $($file.Name) names its start" (($parsed.Sim -or $parsed.Args -contains '--no-vr') -and ($parsed.Args -or $parsed.Playground))
+		# or the test playground (@playground, #321), or a player's launch (@player, #394: logos, then the main menu)
+		Check "  $($file.Name) names its start" (($parsed.Sim -or $parsed.Args -contains '--no-vr') -and ($parsed.Args -or $parsed.Playground -or $parsed.Player))
 		# CI gives every sequence a fresh user dir (#296): a slot to load exists only when the sequence says which save
 		Check "  $($file.Name) declares the @save its --loadslot needs" (-not ($parsed.Args -contains '--loadslot') -or [bool]$parsed.Save)
 		Check "  $($file.Name) names the issue behind every @pending" (@($parsed.Steps | Where-Object { $_.Kind -eq 'pending' -and $_.Issue -gt 0 }).Count -eq @($parsed.Steps | Where-Object Kind -eq 'pending').Count)

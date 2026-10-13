@@ -3,15 +3,15 @@
 # floating panel and the desktop window (#334); a point is spent on an attribute with the trigger (the left mouse
 # button), the quick generation makes the average hero and then re-rolls, the grip (the right button in the
 # menus) takes an attribute and a skill point back and the trigger spends them elsewhere, and Done starts the
-# game - all by pointer clicks, one press = one click, a press off the panel clicks nothing. Arx asks for no name.
+# game - all by pointer clicks, one press = one click, a press off the panel (the trigger or the grip, #398) clicks
+# nothing. Arx asks for no name.
 #   .\scripts\dev\xrs-run.ps1 first-run-chargen
 @sim idle
-@args --skiplogo
+@args --dev-launch
 
-# The fast start (@args --dev-launch, MENU in about a second) waits on #399: a cold start at the main menu draws the
-# character creation screen black but for the portrait. Until then --skiplogo plays the in-game intro scene first
-# (about 59 s on the simulated headset, measured).
-@until state eq MENU 90s
+# A development launch reaches the main menu without the level 10 intro, so no level camera was ever prepared: the
+# screen must still draw its background and widgets, not only the portrait on black (#399)
+@until state eq MENU 30s
 @assert menuMode eq mainmenu
 @until vr.sessionState eq focused 30s
 @until vr.panel.mode eq world 10s
@@ -60,12 +60,17 @@ vr-sim action trigger right 0
 @assert hero.attributePoints eq 15
 @assert vr.pointer.clicks eq {clicks+2}
 
-# A press off the panel clicks nothing: the trigger and the grip with both hands behind the head
+# A press off the panel clicks nothing: the trigger and both grips with both hands behind the head. The engine's
+# mouse stays on strength, where the right hand left it, and the desktop mouse is parked over it too and clicks
+# both buttons (#338: in VR the window takes no mouse input) - the grip used to right-click there (#398)
+desktop-mouse at menu strength
+@frames 5
 vr-sim hand left rot 180 0 0
 vr-sim hand right rot 180 0 0
 @frames 5
 @assert vr.pointer.active eq false
 @remember muted vr.pointer.offPanelPresses
+@remember droppedButtons desktopMouse.droppedButtons
 vr-sim action trigger right 1
 @frames 5
 vr-sim action trigger right 0
@@ -74,7 +79,23 @@ vr-sim action grip right 1
 @frames 5
 vr-sim action grip right 0
 @frames 5
-@assert vr.pointer.offPanelPresses eq {muted+1}
+vr-sim action grip left 1
+@frames 5
+vr-sim action grip left 0
+@frames 5
+desktop-mouse button 2 down
+@frames 5
+desktop-mouse button 2 up
+@frames 5
+desktop-mouse button 1 down
+@frames 5
+desktop-mouse button 1 up
+@frames 5
+@assert vr.pointer.offPanelPresses eq {muted+3}
+@assert desktopMouse.ignored eq true
+@assert desktopMouse.droppedButtons eq {droppedButtons+2}
+@log \[input\] desktop mouse: button 2 dropped \(VR\)
+@log \[input\] desktop mouse: button 1 dropped \(VR\)
 @assert vr.pointer.clicks eq {clicks+2}
 @assert hero.strength eq 7
 @assert hero.attributePoints eq 15

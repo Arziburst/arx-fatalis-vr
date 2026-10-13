@@ -203,6 +203,30 @@ public:
 		m_virtualMouseInRelativeMode = inRelativeMode;
 	}
 	
+	/*!
+	 * The desktop mouse in VR (#338): while a VR session runs the window only mirrors the headset, so
+	 * \ref update drops the real mouse's movement, buttons and wheel - the hands are the mouse (D-016),
+	 * the head is the camera (D-018). The virtual input and the keyboard are unchanged.
+	 */
+	struct DesktopMouseStatus {
+		bool ignored = false;   //!< the real mouse is dropped now
+		u64 droppedButtons = 0; //!< button presses dropped
+		u64 droppedWheel = 0;   //!< wheel steps dropped
+		u64 droppedMoves = 0;   //!< updates in which the dropped mouse moved
+	};
+	const DesktopMouseStatus & desktopMouseStatus() const { return m_desktopMouse; }
+	
+	/*!
+	 * The test channel (#338): a desktop mouse event as the window system delivers it, through the
+	 * backend's own event queue, so it reaches the game exactly as the real mouse does.
+	 * \return false when the backend cannot inject events
+	 */
+	bool injectDesktopMouseMove(const Vec2i & motion);
+	//! \param position on the interface's virtual screen, like \ref getMousePosition
+	bool injectDesktopMouseAt(const Vec2s & position);
+	bool injectDesktopMouseButton(int buttonId, bool down);
+	bool injectDesktopMouseWheel(int steps);
+
 private:
 	
 	void centerMouse();
@@ -249,6 +273,9 @@ private:
 	std::optional<Vec2s> m_virtualMousePosition;
 	bool m_virtualMouseInRelativeMode = false;
 	
+	DesktopMouseStatus m_desktopMouse;
+	PlatformInstant m_lastDroppedMove = 0;
+
 };
 
 extern Input * GInput;

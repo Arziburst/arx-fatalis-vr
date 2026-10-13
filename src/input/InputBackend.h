@@ -50,6 +50,12 @@ public:
 	virtual void stopTextInput() = 0;
 	virtual std::string getKeyName(Keyboard::Key key) const = 0;
 	
+	// The test channel (#338): mouse events as the window system delivers them; false when not supported
+	virtual bool injectMouseMove(const Vec2i & /* motion */) { return false; }
+	virtual bool injectMouseAt(const Vec2i & /* windowPos */) { return false; }
+	virtual bool injectMouseButton(int /* buttonId */, bool /* down */) { return false; }
+	virtual bool injectMouseWheel(int /* steps */) { return false; }
+	
 protected:
 	
 	virtual ~InputBackend() = default;

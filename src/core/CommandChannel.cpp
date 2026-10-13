@@ -801,6 +801,17 @@ std::string buildStatus(PlatformInstant now) {
 	}
 	json.end();
 
+	// The desktop mouse (#338): in VR the window only mirrors the headset, the real mouse is dropped
+	if(GInput) {
+		const Input::DesktopMouseStatus & mouse = GInput->desktopMouseStatus();
+		json.object("desktopMouse");
+		json.value("ignored", mouse.ignored);
+		json.value("droppedButtons", mouse.droppedButtons);
+		json.value("droppedWheel", mouse.droppedWheel);
+		json.value("droppedMoves", mouse.droppedMoves);
+		json.end();
+	}
+
 	// The hero as the character creation makes it (#394): the attributes and skills before modifiers, the
 	// points still to spend
 	if(ARXmenu.mode() == Mode_CharacterCreation || g_currentArea) {
@@ -2149,6 +2160,49 @@ std::string execute(std::string_view line) {
 		} else {
 			return refuse("ui: expected \"inventory open\" or \"inventory close\", got \"" + std::string(rest) + "\"");
 		}
+		return std::string();
+	}
+
+	if(word == "desktop-mouse") {
+		// The desktop mouse over the game window (#338), through the input backend's event queue as a real
+		// mouse: "move <dx> <dy>" (window pixels), "at <x> <y>" (interface pixels) or "at menu <name>" (the
+		// middle of a menu target, as vr-point names it - also the ui.menuHover target), "button <1-6> down|up",
+		// "wheel <steps>". In VR the game must drop all of it
+		std::string_view args;
+		std::string what(firstWord(rest, args));
+		std::string_view value;
+		const std::string first(firstWord(args, value));
+		std::vector<float> numbers;
+		bool injected = false;
+		if(!GInput) {
+			return refuse("desktop-mouse: no input yet");
+		} else if(what == "move" && parseFloats(args, numbers) && numbers.size() == 2) {
+			injected = GInput->injectDesktopMouseMove(Vec2i(Vec2f(numbers[0], numbers[1])));
+		} else if(what == "at" && first == "menu") {
+			Rectf rect;
+			std::string why;
+			if(value.empty() || !menuTargetRect(value, rect, why)) {
+				return refuse("desktop-mouse at menu: " + (value.empty() ? std::string("expected menu <name>") : why));
+			}
+			g.pointTarget.id = std::string(value);
+			g.pointTarget.pixel = rect.center();
+			g.pointTarget.menu = true;
+			injected = GInput->injectDesktopMouseAt(Vec2s(rect.center()));
+		} else if(what == "at" && parseFloats(args, numbers) && numbers.size() == 2) {
+			injected = GInput->injectDesktopMouseAt(Vec2s(Vec2f(numbers[0], numbers[1])));
+		} else if(what == "button" && parseFloats(first, numbers) && numbers.size() == 1 && numbers[0] >= 1.f
+		          && numbers[0] <= 6.f && (value == "down" || value == "up")) {
+			injected = GInput->injectDesktopMouseButton(Mouse::ButtonBase + int(numbers[0]) - 1, value == "down");
+		} else if(what == "wheel" && parseFloats(args, numbers) && numbers.size() == 1 && numbers[0] != 0.f) {
+			injected = GInput->injectDesktopMouseWheel(int(numbers[0]));
+		} else {
+			return refuse("desktop-mouse: expected move <dx> <dy> | at <x> <y> | at menu <name> | button <1-6> down|up"
+			              " | wheel <steps>, got \"" + std::string(rest) + "\"");
+		}
+		if(!injected) {
+			return refuse("desktop-mouse: the input backend cannot inject \"" + std::string(rest) + "\"");
+		}
+		LogInfo << "[channel] desktop mouse: " << rest;
 		return std::string();
 	}
 

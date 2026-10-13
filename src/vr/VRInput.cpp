@@ -78,6 +78,8 @@ struct InputState {
 	bool panelShown = false;
 	std::array<PointerRay, HandCount> rays;
 	u64 loggedOffPanelPresses = 0;
+	//! A hand's use event as the menus' right button (#398): held since a press with that hand on the panel
+	std::array<bool, HandCount> useOnPanel = { };
 	WalkStatus walk;
 
 	//! The skip controls (#394) down in the last update, and those kept from the game until released
@@ -287,8 +289,9 @@ void applyToEngine(const GameInputState & state) {
 		GInput->setVirtualMousePosition(std::nullopt);
 	}
 	// The original's right click: the use action in game, the right button in the menus (in game
-	// the right button is free look)
-	GInput->setVirtualMouseButton(Mouse::Button_1, state.use && ARXmenu.mode() != Mode_InGame);
+	// the right button is free look) - there only from a hand on the panel, like the trigger (#398)
+	const bool useOnPanel = g_input.useOnPanel[size_t(Hand::Left)] || g_input.useOnPanel[size_t(Hand::Right)];
+	GInput->setVirtualMouseButton(Mouse::Button_1, state.use && ARXmenu.mode() != Mode_InGame && useOnPanel);
 	GInput->setVirtualKey(Keyboard::Key_Escape, state.escape);
 	for(size_t i = 0; i < GameActionCount; i++) {
 		GInput->setVirtualAction(engineAction(GameAction(i)), state.actions[i]);
@@ -332,6 +335,22 @@ void updatePointer() {
 	MenuPointer & pointer = g_input.pointer;
 	pointer.update(shown || world, g_input.rays, trigger, PointerParams(), claims);
 	afterPointer(pointer, g_input.rays);
+
+	// A hand's use event, whatever control it is bound to, is the right button in the menus (#398): it clicks
+	// only while that hand pressed it on the panel; a press off the panel clicks nothing and is muted like the
+	// trigger's
+	const bool menu = ARXmenu.mode() != Mode_InGame;
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		const Event use = Hand(hand) == Hand::Left ? Event::UseLeft : Event::UseRight;
+		if(!g_input.resolver.active(use)) {
+			g_input.useOnPanel[hand] = false;
+		} else if(g_input.resolver.pressed(use)) {
+			g_input.useOnPanel[hand] = g_input.rays[hand].onPanel;
+			if(menu && !g_input.rays[hand].onPanel) {
+				pointer.mutePress();
+			}
+		}
+	}
 
 	const size_t owner = size_t(pointer.owner());
 	if(pointer.onPanel()) {

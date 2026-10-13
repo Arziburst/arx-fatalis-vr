@@ -5,7 +5,7 @@
 
 .DESCRIPTION
 	No game, no network: fixtures in a scratch folder. Checks that
-	  - the real scripts/dev/test-saves/scenarios.txt parses: its three saves, only known directives
+	  - the real scripts/dev/test-saves/scenarios.txt parses: its six saves, only known directives
 	  - the parser reads comments, blank lines, directives and commands, keeps line numbers and the order of the saves
 	  - a mistake that would only show after a minute in the game is an error naming the line: an unknown directive, a
 	    missing or non-numeric argument, a save name used twice or not usable as a folder name, no save at all
@@ -38,7 +38,7 @@ function Throws([scriptblock]$Block) { try { & $Block | Out-Null; $null } catch 
 try {
 	Write-Host 'The real scenario file'
 	$real = Read-ArxScenario (Get-Content (Join-Path $PSScriptRoot 'test-saves\scenarios.txt')) 'scenarios.txt'
-	Check ((@($real.SaveNames) -join ',') -eq 'mvp-new-game,mvp-items,mvp-goblin-fight') 'the three saves, in order' ($real.SaveNames -join ',')
+	Check ((@($real.SaveNames) -join ',') -eq 'mvp-new-game,mvp-items,mvp-goblin-fight,mvp-lever,mvp-door,mvp-chest') 'the six saves, in order' ($real.SaveNames -join ',')
 	Check (@($real.Steps | Where-Object { $_.Kind -notin ($script:ArxScenarioDirectives + 'command') }).Count -eq 0) 'every step is a known directive or a command'
 	Check (@($real.Steps | Where-Object { $_.Kind -eq 'command' -and $_.Text -eq 'newgame' }).Count -eq 1) 'one newgame'
 	Check (@($real.Steps | Where-Object { $_.Kind -eq 'until' -and $_.Text -like 'player.controlsBlocked False*' }).Count -ge 1) 'it waits for the controls before the first save (TRAPS.md: the awakening)'

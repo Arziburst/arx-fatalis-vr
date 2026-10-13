@@ -37,6 +37,7 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 .\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence      # what CI runs after the build: smoke test + drawcheck, spell draw check, evidence in one folder (#127)
 .\scripts\run-windows.ps1 -Isolated -TestChannel -- --no-vr --loadlevel 10   # a manual run with the channel, in this copy's own user dir
 .\scripts\dev\log-digest.ps1 -Print                           # the last run in a screenful + automatic bug filing; runs by itself after every launch (#131), never cat arx.log
+.\scripts\dev\perf-summary.ps1                                # the last run's arx-perf.log: worst seconds, every hitch with its cause, the frame budget split (#327)
 .\scripts\dev\game-status.ps1 -Watch                          # live state line
 .\scripts\dev\game-cmd.ps1 'shot before' 'teleport -p marker_0001' 'shot after'
 .\scripts\dev\game-cmd.ps1 quit
@@ -159,15 +160,17 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 |---|---|
 | `status` | nothing extra — the status is written after every batch anyway |
 | `shot [name]` | after the next rendered frame, save it as `<dir>\capture\<name>.bmp` (default `shot<N>`); `captureSeq` and `lastCapture` in the status |
-| `mark <text>` | `[mark] <text>` in the log — an anchor for "the line I wait for must come after this" |
+| `mark <text>` | `[mark] <text>` in the log — an anchor for "the line I wait for must come after this"; also an `M` line in [the performance log](#the-performance-log-arx-perflog-327) |
+| `stall <ms>` | the main thread sleeps 1..5000 ms in this frame: a forced hitch, which the performance log must mark with `cause=channel` (#327) |
 | `quit` | ask the game to quit at the end of the frame (the same path as closing the window) |
 | `save <name>` | save the running game as a new slot named `<name>` (no thumbnail); the newest save is slot 0, so `loadslot 0` loads it back. A `save slot=save000N name=<name> ok=yes\|no` event either way; refused outside a running game (#130) |
 | `loadslot <n>` | load save slot `n` (from the menu or in-game), refused with the slot count if it does not exist. The command-line `--loadslot <n>` of a missing slot logs an `[E]` and starts at the main menu (before #24 it started an empty level: a black world with only the HUD, TRAPS.md); `run-windows.ps1` / `test-pr.ps1` refuse such a launch before it starts |
 | `ui inventory open\|close` | what the inventory key does (the book has the script command `book open\|close`); a `ui.inventory` event once the inventory is open / has finished closing. While a level script holds the player (the level 10 start: letterbox, controls blocked) the HUD is not drawn and a close never finishes — `setplayercontrols on` and `cinemascope off` first (#130) |
 | `loadlevel <n> [target]` | change to level `n` in a running game (refused from the menu: start with `--loadlevel` or `loadslot`) |
 | `newgame` | what the menu does for "New game" and the end of the character creation, without the screens: an average hero (all attributes 10, skills 2, nothing to distribute), level 1. Refused outside the main menu (a plain launch). The hero then lies in the start cell and `player.controlsBlocked` stays `true` for 30-40 s while the level script plays the awakening (#70) |
-| `entities [filter]` | write one line per entity to `<dir>\entities.txt`: `<id> npc\|item\|fix\|marker\|camera\|other show=<n> pos=<x> <y> <z> [life=<n>]`; `filter` is a substring of the id. `show` is the engine's `EntityShowState`: 0 in the scene, 2 in an inventory, 6 equipped by the player. The position of a floor object (lever, chest, item) is on the **floor** (#70) |
-| `setpos <x> <y> <z> [yaw]` | put the player at exact coordinates, optionally facing `yaw`. `y` is the **eye**: the floor is 170 units lower (a `y` at floor level puts the eye in the floor: black screen). About 100 units are a metre. Refused outside gameplay (#70) |
+| `entities [filter]` | write one line per entity to `<dir>\entities.txt`: `<id> npc\|item\|fix\|marker\|camera\|other show=<n> pos=<x> <y> <z> [life=<n>] interactive=<0\|1>`; `filter` is a substring of the id. `show` is the engine's `EntityShowState`: 0 in the scene, 2 in an inventory, 6 equipped by the player. The position of a floor object (lever, chest, item) is on the **floor** (#70). `interactive=0`: its script switched it off, no hand reticle or mouse hovers it (#210) |
+| `setpos <x> <y> <z> [yaw]` | put the player at exact coordinates, optionally facing `yaw`. `y` is the **feet** (the engine's teleport): the eye, `player.y` in the status, ends 170 units higher (smaller `y`). A `y` taken from the eye puts the player 170 units above the floor (TRAPS.md, #210). About 100 units are a metre. Refused outside gameplay (#70) |
+| `approach <entity> [<distance>]` | put the player where the hand reticles reach an entity, facing it — the spot is found by the game, not by trying spots in launches (#210): every 15° on rings 80-320 units around the entity, the first floor within 100 units of the entity's own, room for the player's cylinder, the eye within the pick's reach (350 units of the entity's position), and no wall before the entity's faces on the rays from the eye and from both simulated hands to the middle of its box. The spot nearest to `distance` along the floor (default 170) wins; one `[channel] approach` log line with the spot and the counts of rejected spots. Call it **twice**: far from the player an entity is not updated (box, faces), so the first call tests only the level, the second the entity's faces. Refused (with the counts) when no spot qualifies |
 | `lookat <entity>` | turn the player (yaw and pitch) towards an entity, aiming 40 units above its floor position. The pitch is not kept by a save and does not matter in VR (the head decides); the yaw is kept (#70) |
 | `place <entity> <ahead> [<right>]` | put an entity on the floor `ahead` units along the player's heading (and `right` units to its right), facing the player — a target in reach for melee checks (#39; `goblin_base_0036.setspeed 0` first keeps an NPC from walking off). Refused outside gameplay or for an unknown entity |
 | `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
@@ -514,14 +517,31 @@ which.
 | `mvp-new-game` | in the start cell after the awakening, controls free, nothing equipped | demo step 1-2: look, walk, turn |
 | `mvp-items` | a sword equipped; 2.3 m from a table with a key, a note and a form (`key_base_0005`, `note_0004`, `blank_form_0001`); dark room, the items are low in the view | demo step 3: pick up, drag into the inventory (#37) |
 | `mvp-goblin-fight` | a sword equipped; `goblin_base_0036` 3.5 m ahead in a corridor, walking away | demo step 5: melee (#39) |
+| `mvp-lever` | a sword equipped; `lever_0012` (opens `porticullis_0015`) 1.6 m ahead on the floor, in the hand reticles' reach | #38: pull a lever |
+| `mvp-door` | a sword equipped; the closed portcullis `porticullis_0015` 1.6 m ahead, in the hand reticles' reach | #38: a door |
+| `mvp-chest` | a sword equipped; `chest_metal_0052` 1.6 m ahead, in the hand reticles' reach | #38: open a chest |
 
-**Not in the library: levers, doors, chests.** Nothing could put the player where one is in reach and
-visible; the owner records those by hand (follow-up #210). What that attempt
-learned is in TRAPS.md ("A lever, a chest, a door cannot be found by coordinates").
+`mvp-items` and `mvp-goblin-fight` were placed with `setpos` before it was known that `setpos` takes the
+feet: their player stands 170 units above the floor (TRAPS.md); #417 regenerates them.
+
+**A save at an object** (a lever, a door, a chest, an NPC): `approach <entity>` twice in the scenario, then
+`save` (the three above; one run, no search). Each save has its reticle check, one launch each:
+
+```powershell
+.\scripts\dev\make-test-saves.ps1 -VrSim idle -Only mvp-lever,mvp-door,mvp-chest   # made in VR (the simulated headset); only these replaced
+.\scripts\dev\make-test-saves.ps1 -Verify -VrSim idle                               # every save loaded in a fresh VR game
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence reach-lever -Save mvp-lever      # the right reticle on the lever: under, hover; then a load with the sword held
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence reach-door -Save mvp-door
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence reach-chest -Save mvp-chest
+```
+
+`-VrSim <script>` makes (or verifies) the saves on the simulated headset instead of a flat game; `-Only`
+copies only the named saves of the run into the library (every save is still made and loaded again).
+`manifest.json` says how each save was made (`made`: `flat` or `vr-sim idle`).
 
 **How a save is made** (`scripts/dev/make-test-saves.ps1`, scenario file
-`scripts/dev/test-saves/scenarios.txt`): one flat game from the main menu; `newgame`; `@until
-player.controlsBlocked False`; per scenario `setpos` + `lookat` + `save <name>`; then the **same game
+`scripts/dev/test-saves/scenarios.txt`): one game (flat, or `-VrSim`) from the main menu; `newgame`; `@until
+player.controlsBlocked False`; per scenario `setpos` + `lookat` or `approach` + `save <name>`; then the **same game
 loads every save again** (`loadslot`, oldest first) and checks the level, that the player stands where it
 was saved (within 1 m) and that the controls are free, with a screenshot per save. The script **fails**
 (nothing is copied into the library) when a command is refused, the game ends unclean, or a check fails.
@@ -966,6 +986,96 @@ The verdict logic is pure (`src/vr/FramePacing.h`: timestamps in, report out) an
 `tests/vr/FramePacingTest.cpp` (`arxtest`, run by `build-windows.ps1` and CI): a healthy loop, the
 cap, half rate without the cap (UNDER), 9 / 16 ms jitter at 80 fps (MATCHED but UNEVEN), 1 / 2 slot
 alternation, an unpaced loop (OVER), a late run, the gap phases, the window boundary.
+
+## The performance log (`arx-perf.log`, #327)
+
+**Every run writes it, nobody has to ask:** `arx-perf.log` next to `arx.log` — the owner's runs
+(`test-pr.ps1`, `run-windows.ps1`, the desktop shortcut) in `%USERPROFILE%\Saved Games\Arx Libertatis`,
+a working copy's isolated runs (`smoke-test.ps1`, `--vr-sim`, `-Isolated`) in
+`%LOCALAPPDATA%\ArxFatalisVR\userdirs\<key>`. The previous nine runs are kept as `arx-perf.1.log` ..
+`arx-perf.9.log`, like `arx.log`; `ci-smoke.ps1` collects them with the `arx*.log` files. `arx.log`
+names the file in a `[perf] performance log:` line. `--no-perf-log` turns it off.
+
+**Read it with one command** — never by hand:
+
+```powershell
+.\scripts\dev\perf-summary.ps1                 # the last run: this copy's isolated one if it has a log, else the owner's Saved Games
+.\scripts\dev\perf-summary.ps1 -Previous 1     # the run before it (arx-perf.1.log)
+.\scripts\dev\perf-summary.ps1 -Path <file> -Top 10
+```
+
+```
+Performance log: arx-perf.log
+Run: 33 s with frames, 2761 frames, mean 11.66 ms (85.8 fps); display 90.0 Hz (11.11 ms) (33 of 33 s in VR); missed display slots 107; hitches 10; the log's own cost 0.9 us per frame (max 98 us)
+Frame budget (mean ms per frame over the run, share of the mean frame):
+  vrwait 9.66 (83%), render 0.78 (7%), load 0.40 (3%), update 0.32 (3%), physics 0.16 (1%), channel 0.15 (1%), input 0.09 (1%), present 0.07 (1%), other 0.02 (0%), script 0.01 (0%)
+Worst seconds (by p95):
+  t=   0 s  p95  214.01  max   233.9  mean  25.33 ms  frames  30  missed  32  hitches  2  vr    top: vrwait 10.89, channel 7.00, load 6.14
+  t=   1 s  p95   14.14  max  1067.0  mean  63.72 ms  frames  20  missed  72  hitches  1  vr    top: load 45.47, vrwait 16.93, render 0.43
+Hitches (10), frames over 1.5 expected frame times:
+  by cause: vrwait 6, load 2, channel 1, input 1
+  t=    0.914 s    214.0 ms (19.3 slots)  cause channel    missed 18  uploads 0  | channel 203.7, vrwait 9.6, render 0.4, update 0.2
+  t=    1.336 s   1067.0 ms (96.0 slots)  cause load       missed 72  uploads 523  | load 909.4, vrwait 148.0, textures 6.3, channel 3.3
+Marks:
+  t=    0.824 s  before-stall
+```
+
+(a `--vr-sim` run with `stall 200` and `loadlevel 11` through the channel, shortened). Workers attach
+this output to their reports when a change can cost frame time; for the owner's headset complaints
+it is the first thing to run after the test.
+
+**What is in the file** — one line per second, one per hitch, one per mark; times in ms since the log
+started (`t`), phases in a fixed order:
+
+```
+S t=12 frames=90 min=10.88 mean=11.11 p95=11.52 max=12.40 hz=90.0 period=11.11 div=1 vr=1 missed=0 hitches=0 | other=0.02 input=0.09 channel=0.15 load=0.00 save=0.00 update=0.32 script=0.01 physics=0.16 particles=0.00 render=0.78 textures=0.00 present=0.07 limit=0.00 vrwait=9.50 vrend=0.01 | uploads=0 self=0.9 selfmax=28
+H t=1.336 frame=212 ms=1067.0 slots=96.0 period=11.11 missed=72 uploads=523 cause=load | other=0.4 input=0.1 channel=3.3 load=909.4 ... vrwait=148.0 vrend=0.0
+M t=0.824 before-stall
+```
+
+| Part | Meaning |
+|---|---|
+| `S` `min mean p95 max` | the frame times of that second: a frame is from the top of `ArxGame::doFrame` to the next one (in VR one OpenXR frame, D-024). p95 is the nearest rank: 95 % of the frames took at most that long. A second with no frame starting in it (a long load) has no line |
+| `hz`, `period`, `div`, `vr` | the display: OpenXR's predicted display period in VR (`vr=1`), the monitor's refresh or `fps_limit` in flat mode; `div` = `vr_frame_divisor` |
+| `missed` | display slots OpenXR's predicted display time jumped over beyond the expected `div`, counted for the frame that came late (the jump shows in the next `xrWaitFrame`) — the missed frames as the runtime saw them |
+| `hitches` | frames of the second over **1.5 expected frame times** (period × `div`); each has an `H` line |
+| phases | the mean ms per frame of each phase; they are **exclusive** (a level load started by a channel command counts as `load`, not `channel`) and add up to the mean frame |
+| `uploads`, `self`, `selfmax` | textures uploaded to the GPU; the log's own work per frame in µs, mean and the worst frame |
+| `H` | one hitch: its length in ms and in display slots, the missed slots it cost, its texture uploads, **`cause`** = the phase that took the most time, and every phase's ms |
+| `M` | a channel `mark` |
+
+| Phase | What it times |
+|---|---|
+| `input` | OpenXR events, `vr::beginFrame` without its wait (views, hands, the frame's eye targets), the controllers' actions, the engine's input |
+| `channel` | the test channel: its commands (`stall <ms>` sleeps here on purpose — a forced hitch) and `status.json` |
+| `load`, `save` | the start-up transitions, a new game, a level change, a save game load (`--loadslot`, quickload, `loadslot`, `loadlevel`), a quicksave |
+| `update` | the game's update outside the phases below: player, entities, spells, damages, missiles, the HUD logic |
+| `script`, `physics`, `particles` | the script timers and the script event stack; `ARX_PHYSICS_Apply`; the particle manager, particles, sparks, magical flares, poly booms — the effects that grow and are collected every frame |
+| `render`, `textures` | drawing: the scene (per eye in VR), the interface, menus, cinematics, the VR layers and the desktop mirror; `textures` = `GLTexture::upload` (inside render or load) with its count in `uploads` |
+| `present` | the window's buffer swap |
+| `limit` | flat mode only: the engine's frame limiter sleeping towards `fps_limit` |
+| `vrwait`, `vrend` | `xrWaitFrame` with the even-cadence cap's sleep — the headset pacing the game, mostly idle time; a long `vrwait` in a hitch is the runtime or the GPU making the game wait; `xrEndFrame` |
+| `other` | what no phase claimed (the time update, the game events, the log's own work) |
+
+Not measurable on the frame: the sound system mixes on its own thread, so its work never shows in a
+frame's phases (it only competes for the CPU).
+
+**Its cost:** the frame thread reads the clock twice per phase and appends a line to a memory buffer;
+the file is written by a thread of its own, the frame never waits for it (it does not even wait for
+that thread's lock: `PerfWriter`). Measured on two 30 s `--vr-sim` runs at 90 Hz (`idle.vrsim`,
+`stall 200` and `loadlevel 11` first), the 3 s `[vr] rate:` windows at full rate: with the log
+`game` 0.111 ms mean, interval sd 0.697 ms, worst frame 12.8–13.4 ms; with `--no-perf-log` 0.117 ms,
+0.697 ms, 12.7–13.3 ms — no difference. The log's own work: 0.9 µs per frame on average (0.01 % of
+11.1 ms), 98 µs in its worst frame of the run (the frame that formats a second's line), no hitch of
+its own. A first build that took the lock in every `push` measured 574 µs per frame on average in
+one second while the PC's CPU was starved by parallel builds (most likely the writer thread was
+descheduled holding the lock); since then `push` only tries the lock.
+
+The numbers are pure logic (`src/vr/PerfStats.h`, test `tests/vr/PerfStatsTest.cpp`: the second's
+stats and p95, the 1.5-period threshold with and without the cap, no verdict without a period, the
+cause, exclusive phases add up); the writer has `tests/vr/PerfWriterTest.cpp` (order, a push never
+waits for a stuck sink nor for a held lock, drops when the sink falls far behind, nothing lost at
+the end); the summary script has `scripts/dev/test-perf-summary.ps1` (in `run-script-tests.ps1`).
 
 ## Stereo rendering (#19)
 

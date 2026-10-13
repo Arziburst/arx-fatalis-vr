@@ -1286,6 +1286,9 @@ set(VR_SOURCES
 	src/vr/Locomotion.cpp
 	src/vr/RuneTrail.cpp
 	src/vr/MeleeSwing.cpp
+	src/vr/PerfLog.cpp
+	src/vr/PerfStats.cpp
+	src/vr/PerfWriter.cpp
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
 	src/vr/VRActions.cpp

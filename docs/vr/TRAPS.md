@@ -8,6 +8,31 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — `setpos` y is the feet, not the eye: the player stood 170 units above the floor (#210)
+
+**Symptom:** a save placed in reach of `lever_0012` loaded in `--vr-sim` with the hand reticle's ray ending on the
+lever's box, yet `vr.reticle.right.under` stayed `none`; the hand rays started at y 2810 over a floor at 3105
+(the eye 340 above it), and `entities` listed the player entity at y 2935 — its position is its feet.
+**Cause:** the channel's `setpos` (and the new `approach` at first) call `ARX_INTERACTIVE_Teleport(player, p)`,
+which sets `player.pos = p + baseOffset()`: `p` is the **feet**, the eye ends 170 units higher. Everything
+written before took setpos's y for the eye (the floor minus 170), so eye coordinates put the feet in the air: the eye
+340 units above the floor, out of the pick's reach of a floor object (350 units from the eye), on wall tops
+(what `hand-reticle.xrs` works around for `mvp-items`). The player does not fall back down by itself.
+**Do:** `setpos <x> <floor y> <z>` for a player standing on that floor; check `player.y` (the eye) and
+`camera.eyeAboveFeet` in the status. For a spot at an object use `approach <entity>` (TESTING.md), which finds
+the floor itself. `mvp-items` and `mvp-goblin-fight` still stand 170 up until #417 regenerates them.
+
+## 2026-10-13 — A load with a weapon in the IK hand crashed at `VRWeapon.cpp:296` (#210)
+
+**Symptom:** `make-test-saves.ps1 -VrSim idle` crashed (ACCESS_VIOLATION, `VRWeapon.cpp:296`) at its first
+channel `loadslot`, with the sword in the right hand; a launch with `--loadslot 0` never crashed.
+**Cause:** `vr::heldWeaponStatus()` (the status writer, every frame) and `placeHeldWeapon()` used the weapon
+pointer kept from the last `updateHeldWeapon()`; a load frees the entities before the next update, so the
+pointer dangled. The radial menu's quick load in a real game takes the same path.
+**Do:** never keep an `Entity *` across frames without resolving it again - `heldEntity()` checks it against
+the player's weapon slot. Regression check: the end of `reach-lever.xrs` (`loadslot 0` with the sword held,
+then `vr.weapon.place eq hand`), and every `make-test-saves.ps1 -VrSim` run reloads all its saves.
+
 ## 2026-10-12 — An instant `vr-sim hand ... pos` set-up move counts as a melee swing on a busy runner (#349)
 
 **Symptom:** `melee-swing.xrs` failed on CI at its first `@assert vr.melee.swings eq 0` for runs in a row with only
@@ -559,13 +584,18 @@ first (see `script.error` in `ScriptEvent.cpp`, #130), or print through `operato
 
 ## 2026-10-09 — A lever, a chest, a door cannot be found by coordinates (#70)
 
+*Resolved (#210):* `approach <entity>` finds the spot in the game (TESTING.md); cause (2) below is wrong -
+`setpos` takes the **feet** (the 2026-10-13 entry), so the eye was 340 units above the floor, which explains
+the wall tops and the picks that found nothing.
+
 **Symptoms:** `setpos` next to `lever_0012` / `chest_metal_0052` and a screenshot shows a bare wall, a
 black screen, the player's own feet, or a goblin; the entity is nowhere in the picture. About 6 of
 the 13 launches of #70 went into it before this was written down.
 **Causes, all measured:** (1) an entity's `pos` — from `entities` — is its **floor** position, so
 looking at "the entity" from 2 m with pitch 0 aims 1.7 m above it; `lookat` now aims 40 units above the
-floor and sets the pitch. (2) `setpos` / `player.pos` is the **eye**: `y` = floor − 170; a floor-level
-`y` puts the eye in the floor (black or a wall's back) until gravity pulls the player up. (3) The
+floor and sets the pitch. (2) *Wrong, see the 2026-10-13 entry "`setpos` y is the feet":* this entry
+first took `setpos`'s `y` for the eye and placed the player with eye coordinates, which put the feet 170
+units above the floor - the eye 340 above it, on wall tops, out of the pick's reach. (3) The
 level is narrow corridors and cells: many points 1.5-2.5 m away on a ring around an object are
 inside a wall or in another room (black or wall-only screenshots in the contact sheets of the 4
 compass points around each of 7 objects); which ones are valid cannot be told without a picture. (4) The pick that decides what a click acts on is not exposed: `FlyingOverIO` is cleared in
@@ -1041,3 +1071,8 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** on the test save `mvp-new-game` the character crouched (button, toggle or the head, #100) and never stood up: the toggle went off (`player.crouch state=off`), `PLAYER_CROUCH` stayed set for good; on `mvp-items` the same sequence stood up (#263).
 **Cause:** the engine's own stand-up check, not VR code - flat Arx Libertatis did the same. `ARX_PLAYER_Manage_Visual` checked the **whole** standing cylinder with `CheckAnythingInCylinder`, and at the awakening spot that cylinder grazes a sloped floor polygon 21 units above the feet (`background=-21.0 ... normY=-0.3`). Standing there is fine - the check runs only to stand up - but the crouched character could never pass it.
 **Do:** the stand-up (and the jump from a crouch) now checks only the part of the standing cylinder above the crouched one (`standUpCylinder()` in `src/game/Player.cpp`). A refused stand-up logs one `player.standup.blocked` event with what is in the way (`describeCylinderBlocker`); read it before blaming crouch code. `stand-up.xrs` checks both directions.
+
+## 2026-10-13 - A `--vr-sim` run drops to 20-40 fps for a few seconds with nothing happening in the game
+**Symptom:** an idle `--vr-sim` run (`idle.vrsim`, no commands) shows several `[vr] rate:` windows UNDER-SUBMITTING at 20-40/s with a worst frame near 100 ms, then 90/s again; `arx-perf.log` has a burst of `H` lines whose `update`, `render` and `vrwait` all grow together, with no `load` and no uploads (#327: in one pair of runs the burst came with the log on, in the next pair with it off).
+**Cause:** the PC, not the game: other workers build in parallel (the game lock serialises game runs, not compiles), and a starved CPU stretches every phase of the frame at once.
+**Do:** judge pacing and frame costs only from windows at full rate, or repeat the run; a real cost of the game shows in one phase (`cause`), the same way in every run. `perf-summary.ps1` lists the hitches by cause.

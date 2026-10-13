@@ -1,0 +1,41 @@
+# The second launch of first-run-menu (#394): the crosshair it turned off by pointer clicks was saved to cfg.ini
+# when the game quit, and this launch, in the same user directory, reads it back. Not a sequence of its own -
+# ci-smoke runs every scripts\dev\xrs\*.xrs on a fresh user directory, and this one lives a level below so it
+# never runs alone. Run the pair in one user directory:
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir> -- --skiplogo
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence scripts\dev\xrs\readback\first-run-menu-readback.xrs -UserDir <dir> -- --skiplogo
+# It turns the crosshair on again with the pointer, so the pair leaves the directory as it found it.
+@sim idle
+@args --skiplogo
+
+# --skiplogo still plays the in-game intro scene first: about 59 s on the simulated headset (measured)
+@until state eq MENU 90s
+@assert menuMode eq mainmenu
+# Read from cfg.ini at the start
+@assert settings.crosshair eq false
+
+@until vr.sessionState eq focused 30s
+@until vr.panel.mode eq world 10s
+@frames 60
+vr-point right menu options
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@until menuPage eq options 5s
+@frames 90
+vr-point right menu system_menus_options_interface
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@until menuPage eq interface 5s
+@frames 30
+vr-point right menu system_menus_options_video_crosshair
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+@assert settings.crosshair eq true
+@assert errors eq 0

@@ -8,6 +8,29 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — In VR the main menu sits in a corner of the desktop window and the mouse clicks invisible buttons (#334)
+
+**Symptom:** with VR on, the desktop window showed the main menu (and the character creation) as a small picture
+in one part of the window, the rest dark; the owner reached the character creation only by clicking where nothing
+was drawn. The headset itself showed the menu whole.
+**Cause:** the desktop mirror (#21) showed the right eye, and in the eye the menu is the floating panel (#49) 0.9 m
+ahead and 0.3 m down - a trapezoid at the bottom (or wherever the panel was placed). The desktop mouse, though, is
+mapped from the whole window onto the whole 2D interface (#73), so it hit widgets where the window showed none.
+**Do:** nothing since #394.2: while a menu without the world is shown (`ARXmenu.mode() != Mode_InGame`) the mirror
+draws the flat frame over the whole window (`[vr] desktop mirror: a menu without the world - the window shows the
+2D interface`); the in-game menus (inventory, book) keep the eye. `capture.<quarter>.verdict` of a window `shot`
+tells a picture that fills the window from one in a corner of it.
+
+## 2026-10-13 — `smoke-test.ps1 -Sequence` ignores the sequence's `@args`
+
+**Symptom:** a sequence with `@args --skiplogo` run through `smoke-test.ps1 -VrSim idle -Sequence <name>` launched
+`arx.exe ... --loadlevel 10`.
+**Cause:** `@sim`, `@args` and `@save` are read by `xrs-run.ps1` and `ci-smoke.ps1`; `smoke-test.ps1` takes the
+arx.exe arguments from its own command line (default `--loadlevel 10`).
+**Do:** run a sequence with `xrs-run.ps1 <name>`, or pass the same arguments to the smoke test after `--`
+(`smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir> -- --skiplogo`) - the way to give it a user
+directory of your own.
+
 ## 2026-10-12 — An instant `vr-sim hand ... pos` set-up move counts as a melee swing on a busy runner (#349)
 
 **Symptom:** `melee-swing.xrs` failed on CI at its first `@assert vr.melee.swings eq 0` for runs in a row with only

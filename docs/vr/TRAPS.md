@@ -8,6 +8,36 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — `walk-look.xrs`: the walk left on a busy PC drifts 12.6 units in z (#370)
+
+**Symptom:** `walk-look` failed on CI (run 38339943784, PR #391, nothing related changed) at its first push:
+`ASSERT FAILED: player.z (8472.643) lt 8470` - the head turned left, the stick walked -x as it should
+(`walk.dirX = -1`, `yaw = 89.748`), yet z moved +12.6. Green runs end that push at x ≈ 8347, z 8460.07.
+**Cause:** the push was timed by the runner, not by the distance: stick on, `@frames 40`, four status reads,
+stick off. On the busy runner (18.7 frames/s, worst frame 105 ms) that took 106 frames and 4.8 s (`vr.walk`
+start t=7.94, end t=12.71) instead of 67 frames and 0.75 s, so the player walked the whole way to the start
+cell's wall: x stopped at 8302.06. The cell is x 8302-8798 from the start at 8540, and walking into its wall
+slides the player along it in z (measured on a quiet PC by walking on: z 8460.07 -> 8463.25 at the left wall,
++11.8 at the right one; the busy run's +12.6 is the same slide).
+**Do:** bound a walk by its distance, never by frames or the runner's pace: `stick-for left 0 1 100` - the game
+lets the stick go 100 units on - then `@until stickFor.active eq false` and assert on `stickFor.walk` (the walk
+of its last walking frame, kept after the release). Mind the walls: a push needs room for its distance plus
+the coast after the release (≈ 28 units at 90 fps).
+
+## 2026-10-13 — `ui-panel.xrs`: the head-locked HUD loses half its pixels between two shots (#370)
+
+**Symptom:** `ui-panel` failed on CI (run 38293812665, PR #358, a busy PC) at `@assert
+vr.sim.shots.hudturned.left.quadPixels ge {hudq-1000}`: `2690 ge 5709` - the HUD quad covered 6709 eye pixels
+with the head ahead and 2690 a moment later with it turned, although the quad is head-locked.
+**Cause:** not the turn: the save `mvp-new-game` starts with a timed notification on the HUD, the tutorial hint
+"Right-click to toggle from 'CURSOR MODE' to 'MOUSELOOK MODE'" (`gui/Notification.cpp`: 2 s + 60 ms per character
+of game time, about 6 s). On a quiet PC both shots fall inside it; on a busy one the frames and the runner's
+round trips between the shots are slower and the pair straddles its expiry. Measured with one shot a second:
+the hint on screen (`notifications = 1`) for 4 more seconds after frame 270, 8791 px with it, 2690 px without
+it - the failing value exactly - and 2690 with the head turned 40°.
+**Do:** before comparing HUD pixels over time, `@until notifications eq 0` (status.json, #370); a sequence that
+needs a hint on screen can put one up with `herosay <text>`.
+
 ## 2026-10-12 — An instant `vr-sim hand ... pos` set-up move counts as a melee swing on a busy runner (#349)
 
 **Symptom:** `melee-swing.xrs` failed on CI at its first `@assert vr.melee.swings eq 0` for runs in a row with only

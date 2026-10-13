@@ -12,7 +12,9 @@
 	  - a warning is filed only when it repeats in a second run; an allow-listed line never
 	  - a crash is filed with its stack; paths of the user profile are redacted
 	  - without a network the report stays queued and is sent exactly once later
-	  - nothing is uploaded when the repository is not private
+	  - the repository is public: titles, bodies and comments are scrubbed of personal data (home paths in both
+	    slash styles, account and machine names, Steam ids and userdata paths, e-mails, IPs, GUIDs) before the
+	    upload, items queued by an older script too; an item the final check still flags stays queued (#387)
 	Exit code 0 when everything passed, 1 otherwise.
 #>
 [CmdletBinding()]
@@ -27,13 +29,12 @@ $userDir = Join-Path $root 'user'
 New-Item -ItemType Directory -Force $userDir, $env:ARXVR_DIGEST_ROOT | Out-Null
 
 # --- The fake GitHub -----------------------------------------------------------------------------------------------
-$fake = @{ Issues = [Collections.Generic.List[object]]::new(); Calls = [Collections.Generic.List[string]]::new(); Offline = $false; Private = $true; Next = 100 }
+$fake = @{ Issues = [Collections.Generic.List[object]]::new(); Calls = [Collections.Generic.List[string]]::new(); Offline = $false; Next = 100 }
 $script:ArxGitHubInvoker = {
 	param($Method, $Path, $Body)
 	$fake.Calls.Add("$Method $Path")
 	if ($fake.Offline) { throw 'gh api: network is unreachable' }
 	if ($Path -match 'graphql') { throw 'GraphQL must never be used' }
-	if ($Method -eq 'GET' -and $Path -eq "repos/$script:ArxDigestRepo") { return [pscustomobject]@{ private = $fake.Private } }
 	if ($Method -eq 'GET' -and $Path -match '/issues\?') { return $fake.Issues.ToArray() }
 	if ($Method -eq 'POST' -and $Path -match '/issues$') {
 		$issue = [pscustomobject]@{ number = $fake.Next++; state = 'open'; title = $Body.title; body = $Body.body; labels = $Body.labels; comments = [Collections.Generic.List[string]]::new() }
@@ -52,6 +53,9 @@ $script:ArxGitHubInvoker = {
 	}
 	throw "fake GitHub: unexpected $Method $Path"
 }
+
+# The account and machine names the scrubber removes (the real ones of whoever runs the test are left out of it)
+$script:ArxPrivateNames = @{ '<user>' = @('mkowalski'); '<machine>' = @('MKOWALSKI-PC') }
 
 $failures = 0
 function Check([bool]$Ok, [string]$What) {
@@ -109,7 +113,7 @@ $issue = $fake.Issues[0]
 Check (($issue.labels -join ',') -eq 'bug,auto-reported') 'labels bug + auto-reported'
 Check ($issue.body.Contains("arxvr-auto-report: sig=$hash")) 'the signature marker is in the body'
 Check ($issue.title -like '`[E`] Entity: Entity human_base_N not found*') "the title comes from the signature: $($issue.title)"
-Check (-not ($issue.body -match 'tester') -or -not ($issue.body -match '\\Users\\tester')) 'the user profile name is redacted in the body'
+Check ($issue.body -notmatch '\\Users\\' -and $issue.body -match '<home>\\AppData\\Local\\x\\arx\.exe') 'the user profile path is <home> in the body'
 Check ($issue.body -match 'ARXVR-999-feat-fixture' -and $issue.body -match 'Log excerpt') 'the body has the branch and a log excerpt'
 Check ((Pending) -eq 0) 'the queue is empty after the flush'
 Check (-not ($fake.Calls -match 'graphql')) 'no GraphQL call'
@@ -222,19 +226,18 @@ $before = $fake.Issues.Count
 $r = Invoke-ArxReportFlush
 Check ($r.Created.Count -eq 1 -and $fake.Issues.Count -eq $before + 1 -and (Pending) -eq 0) 'online again: sent exactly once'
 
-Write-Host '9. reporting off, and a repository that is not private' -ForegroundColor Cyan
+Write-Host '9. reporting off, and the public repository' -ForegroundColor Cyan
 $null = New-FixtureRun @('[E] Input:12             Device 5 vanished')
 $info = Digest -NoReport
 Check ($info.Queued -eq 0 -and $info.Problems[0].Action -eq 'reporting off') '-NoReport queues nothing'
 $null = New-FixtureRun @('[E] Input:12             Device 6 vanished', '[E] Input:13             Second problem 1')
 $info = Digest
 Check ($info.Queued -eq 2) 'two new signatures, two reports'
-$fake.Private = $false
 Reset-Calls
 $before = $fake.Issues.Count
 $r = Invoke-ArxReportFlush
-Check ($fake.Issues.Count -eq $before -and $r.Failed.Count -ge 1 -and (Pending) -eq 2) 'a repository that is not private receives nothing'
-$fake.Private = $true
+Check ($fake.Issues.Count -eq $before + 2 -and -not $r.Failed -and (Pending) -eq 0) 'the public repository receives the scrubbed reports'
+Check (-not ($fake.Calls -contains "GET repos/$script:ArxDigestRepo")) 'no visibility check is made (the scrubber replaced the private-only refusal)'
 
 Write-Host '10. a flood of new problems in one run' -ForegroundColor Cyan
 Get-ChildItem (Get-ArxPendingDir) -Filter '*.json' | Remove-Item -Force
@@ -273,6 +276,72 @@ $cli = Invoke-DigestCli @('-UserDir', $userDir, '-NoReport', '-Print', '-Quiet')
 Check ($cli.Exit -eq 0 -and $cli.Text -match 'Entity' -and $cli.Text -match 'ARXVR-999-feat-fixture') '-Print prints digest.md with the error and the branch'
 $cli = Invoke-DigestCli @('-Log', (Join-Path $userDir 'no-such.log'), '-Id')
 Check ($cli.Exit -ne 0 -and $cli.Text -match 'no log at') 'a missing log is an error, not an empty answer'
+
+Write-Host '12. personal data out of everything uploaded: the repository is public (#387)' -ForegroundColor Cyan
+Get-ChildItem (Get-ArxPendingDir) -Filter '*.json' | Remove-Item -Force    # the flood of section 10
+$personal = @(
+	'[I] Startup:208           Log: "C:\Users\mkowalski\AppData\Local\ArxFatalisVR\arx.log", previous runs kept'
+	'[I] Startup:209           Config dir: C:/Users/mkowalski/AppData/Local/ArxFatalisVR'
+	'[I] Startup:210           Masked by the old script: C:\Users\<user>\AppData\Local\ArxFatalisVR\test'
+	'[I] Steam:31              Screenshots: C:\Program Files (x86)\Steam\userdata\123456789\760\remote'
+	'[I] Steam:32              Signed in as 76561198012345678 ([U:1:51744013]) on MKOWALSKI-PC'
+	'[I] Net:7                 Host mkowalski-pc 192.168.1.23 mac 00-1A-2B-3C-4D-5E, mail jan.kowalski@example.com'
+	'[I] Audio:4               Endpoint {0.0.0.00000000}.{3f2a8c1e-5b7d-4e9a-9c01-2b3d4e5f6a7b}, owner S-1-5-21-1004336348-1177238915-682003330-1001'
+	'[I] Data:9                Share \\NAS-01\games\arx, Linux home /home/mkowalski/.local/share/arx'
+	'[I] Crash:3               Report in crashes\2026-10-09-18-50-15-00, runtime 1.0.34, version 2.1.0.7 at 14:02:55, MSVC 19.44'
+	'[E] Entity:259            Entity human_base_0033 lost (code 0x80004005) by mkowalski, see Arziburst/arx-fatalis-vr'
+)
+$raw = $personal -join "`n"
+$changes = @{}
+$clean = Protect-ArxText $raw $changes
+$found = @(Find-ArxPrivateData $raw)
+Check ($found.Count -ge 9) "the final check finds the raw data: $($found -join ', ')"
+Check (@(Find-ArxPrivateData $clean).Count -eq 0) "the final check finds nothing in the scrubbed text: $((Find-ArxPrivateData $clean) -join ', ')"
+foreach ($secret in 'mkowalski', 'MKOWALSKI-PC', '123456789', '76561198012345678', '51744013', '192.168.1.23', '00-1A-2B-3C-4D-5E', 'jan.kowalski@example.com', '3f2a8c1e', 'S-1-5-21', 'NAS-01', 'C:\Users', 'C:/Users', '/home/') {
+	Check ($clean -notmatch [regex]::Escape($secret)) "scrubbed: $secret"
+}
+foreach ($kept in 'Log: "<home>\AppData\Local\ArxFatalisVR\arx.log", previous runs kept', 'Config dir: <home>/AppData/Local/ArxFatalisVR',
+	'the old script: <home>\AppData\Local\ArxFatalisVR\test', 'C:\Program Files (x86)\Steam\userdata\<steam-id>\760\remote',
+	'Signed in as <steam-id> (<steam-id>) on <machine>', 'Host <machine> <ip> mac <mac>, mail <email>',
+	'Endpoint {0.0.0.00000000}.{<guid>}, owner <sid>', 'Share <path>\arx, Linux home <home>/.local/share/arx',
+	'Report in crashes\2026-10-09-18-50-15-00, runtime 1.0.34, version 2.1.0.7 at 14:02:55, MSVC 19.44',
+	'[E] Entity:259            Entity human_base_0033 lost (code 0x80004005) by <user>, see Arziburst/arx-fatalis-vr') {
+	Check ($clean.Contains($kept)) "placeholder in place, technical content kept: $kept"
+}
+Check ((Protect-ArxText $clean) -eq $clean) 'scrubbing twice changes nothing'
+Check ($changes['C:\Users\mkowalski -> <home>'] -eq 1 -and $changes['C:/Users/mkowalski -> <home>'] -eq 1 -and $changes['mkowalski -> <user>'] -eq 1) 'the changes are counted for the listing'
+
+# A run with all of it: the filed issue holds none of it
+Reset-Calls
+$null = New-FixtureRun $personal
+$info = Digest
+$r = Invoke-ArxReportFlush
+$new = $fake.Issues[$fake.Issues.Count - 1]
+Check ($r.Created.Count -eq 1 -and -not $r.Refused -and $new.title -like '`[E`] Entity: Entity human_base_N lost*') "the run with personal data is filed: $($new.title)"
+Check (@(Find-ArxPrivateData "$($new.title)`n$($new.body)").Count -eq 0 -and $new.body -notmatch 'mkowalski|123456789|192\.168|NAS-01|\\Users\\') 'the issue holds none of it'
+Check ($new.body.Contains('<home>\AppData\Local\ArxFatalisVR\arx.log') -and $new.body.Contains('human_base_0033 lost (code 0x80004005)')) 'and keeps the technical content'
+
+# Items queued before the scrubber (an older script, or the queue at the time of the switch): scrubbed on the way out;
+# an item the final check still flags stays queued with the reason, and does not hold up the others
+function Add-OldItem([string]$Sig, [string]$Body) {
+	$item = [ordered]@{ signature = $Sig; action = 'file'; kind = 'log'; level = 'E'; queuedAt = Get-ArxNow; attempts = 0; lastError = ''
+		title = "[E] Old: queued by an older script on MKOWALSKI-PC"; body = "<!-- arxvr-auto-report: sig=$Sig -->`n$Body"; comment = 'Seen again: run by mkowalski' }
+	[IO.File]::WriteAllText((Join-Path (Get-ArxPendingDir) "$Sig.json"), ($item | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
+	Start-Sleep -Milliseconds 50
+}
+Add-OldItem 'feedc0ffee02' 'Saved in D:\OneDrive - Contoso\Arx Libertatis\save0001\gsave.sav'
+Add-OldItem 'feedc0ffee01' 'Log: C:\Users\mkowalski\AppData\Local\ArxFatalisVR\arx.log, Steam C:\Program Files (x86)\Steam\userdata\123456789'
+Reset-Calls
+$before = $fake.Issues.Count
+$r = Invoke-ArxReportFlush
+$old = $fake.Issues | Where-Object { $_.body -match 'sig=feedc0ffee01' }
+Check ($old -and $old.title -eq '[E] Old: queued by an older script on <machine>' -and $old.body.Contains('Log: <home>\AppData\Local\ArxFatalisVR\arx.log, Steam C:\Program Files (x86)\Steam\userdata\<steam-id>')) 'an item queued by an older script is scrubbed and uploaded'
+Check ($r.Refused.Count -eq 1 -and $r.Refused[0] -like 'feedc0ffee02: user folder outside the home*' -and $fake.Issues.Count -eq $before + 1) "a dirty item is refused: $($r.Refused -join '; ')"
+$left = Get-Content (Join-Path (Get-ArxPendingDir) 'feedc0ffee02.json') -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
+Check ((Pending) -eq 1 -and $left -and $left.lastError -like 'not uploaded: after scrubbing it still holds personal data (user folder outside the home)*') 'it stays queued with the reason'
+$cli = Invoke-DigestCli @('-Preview')
+Check ($cli.Exit -eq 0 -and $cli.Text -match '1 queued report' -and $cli.Text -match 'feedc0ffee02\.json: file, REFUSED: user folder outside the home') '-Preview shows the queue as it would be uploaded, the refusal included'
+Get-ChildItem (Get-ArxPendingDir) -Filter '*.json' | Remove-Item -Force
 
 Write-Host '8. the signatures mutex is open to every Windows account (#272)' -ForegroundColor Cyan
 # The CI runner service is another account than the owner and the workers: a mutex created with the default

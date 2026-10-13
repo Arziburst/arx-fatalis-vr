@@ -64,6 +64,8 @@
 
 #include "util/Cast.h"
 
+#include "vr/VRChargeCue.h"
+#include "vr/VRSystem.h"
 #include "vr/WristHud.h"
 
 
@@ -130,8 +132,16 @@ void HitStrengthGauge::update() {
 }
 
 void HitStrengthGauge::draw() {
-	
-	{
+
+	m_draws++;
+
+	if(vr::stereoActive()) {
+		// On the VR interface quad an additive draw adds light but no coverage (its alpha stays 0), and the
+		// compositor may drop such pixels: the gauge looked empty in the headset (#322). Drawn over what is
+		// below with its own coverage instead - its color-keyed black stays transparent
+		UseRenderState state(render2D().blend(BlendOne, BlendInvSrcAlpha));
+		EERIEDrawBitmap(m_rect, 0.0001f, m_fullTex, Color::gray(m_intensity));
+	} else {
 		UseRenderState state(render2D().blendAdditive());
 		EERIEDrawBitmap(m_rect, 0.0001f, m_fullTex, Color::gray(m_intensity));
 	}
@@ -1428,7 +1438,8 @@ void HudRoot::draw() {
 	UseRenderState state(render2D());
 	UseTextureState textureState(getInterfaceTextureFilter(), TextureStage::WrapClamp);
 	
-	if(player.Interface & INTER_COMBATMODE) {
+	// In VR the weapon is held outside the combat mode too: the gauge shows the melee charge as a cue (#322)
+	if((player.Interface & INTER_COMBATMODE) || vr::chargeCueHudShown()) {
 		hitStrengthGauge.draw();
 	}
 	

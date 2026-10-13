@@ -34,6 +34,7 @@
 #include "script/Script.h"
 #include "vr/HeadTracking.h"
 #include "vr/VRBody.h"
+#include "vr/VRChargeCue.h"
 #include "vr/VRInput.h"
 #include "vr/VRWeapon.h"
 
@@ -226,6 +227,7 @@ void updateMelee(const char * refusal) {
 		s.placed = false;
 		s.chargeHeld = s.charging = s.chargeSpent = false;
 		s.chargeSeconds = s.chargeRatio = 0.f;
+		updateChargeCue();
 		return;
 	}
 	s.active = true;
@@ -298,10 +300,16 @@ void updateMelee(const char * refusal) {
 	s.chargeSpent = m.charge.spent();
 	s.chargeSeconds = m.charge.seconds();
 	s.chargeRatio = ratio;
+
+	updateChargeCue();
 }
 
 bool meleeOwnsStrikes() {
 	return weaponInHand() != nullptr;
+}
+
+Hand meleeHand() {
+	return Hand::Right;
 }
 
 const MeleeStatus & meleeStatus() {

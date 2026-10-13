@@ -182,6 +182,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "vr/HeadLean.h"
 #include "vr/HeadTracking.h"
 #include "vr/VRBody.h"
+#include "vr/VRChargeCue.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
 #include "vr/VRMelee.h"
@@ -2365,6 +2366,7 @@ void ArxGame::renderSceneView() {
 
 	// Health and mana on the left wrist (#116), after everything opaque: the arm and the walls cover them
 	vr::drawWristVitals();
+	vr::drawChargeCue(); // the melee charge at the weapon hand's wrist and along the blade (#322)
 
 	GRenderer->SetAntialiasing(false);
 

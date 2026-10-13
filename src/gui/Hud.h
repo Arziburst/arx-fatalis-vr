@@ -53,6 +53,14 @@ public:
 	void update();
 	void draw();
 	void requestFlash(float flashIntensity);
+
+	//! The brightness of the full gauge: 0.2 idle, the charge up to 1 (status.json, #322)
+	float intensity() const { return m_intensity; }
+	//! Frames the gauge was drawn in since the start (status.json, #322)
+	u64 draws() const { return m_draws; }
+
+private:
+	u64 m_draws = 0;
 };
 
 class BookIconGui : public HudIconBase {

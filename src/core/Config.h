@@ -244,6 +244,7 @@ public:
 		float vrMeleeFullSpeed; //!< VR: m/s a swing has its full damage at (#39)
 		float vrMeleeWeakAim; //!< VR: the damage ratio of an uncharged swing; a full charge is 1 (#39)
 		float vrMeleeTargetCooldown; //!< VR: seconds before a new swing can hit the same target (#39)
+		std::string vrMeleeChargeCue; //!< VR: how the melee charge is shown (#322, vr/MeleeChargeCue.h)
 
 	} input;
 	

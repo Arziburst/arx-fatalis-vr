@@ -25,6 +25,7 @@
 #include "math/Types.h"
 #include "platform/Platform.h"
 #include "vr/MeleeSwing.h"
+#include "vr/VRControls.h"
 
 /*!
  * \brief Physical melee (#39, D-038): the weapon in the IK hand hits what it is swung into
@@ -63,6 +64,12 @@ void updateMelee(const char * refusal);
  *         from the attack button (the physical swing is the strike)
  */
 bool meleeOwnsStrikes();
+
+/*!
+ * \return the hand that holds the melee weapon: the right one until a weapon per hand (#380, D-042); the
+ *         charge cues (vr/VRChargeCue.h) follow it
+ */
+Hand meleeHand();
 
 //! Physical melee as status.json reports it
 struct MeleeStatus {

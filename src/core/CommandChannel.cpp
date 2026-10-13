@@ -46,6 +46,7 @@
 #include "game/Camera.h"
 #include "game/Damage.h"
 #include "game/EntityManager.h"
+#include "game/Equipment.h"
 #include "game/Inventory.h"
 #include "game/Levels.h"
 #include "game/NPC.h"
@@ -59,6 +60,7 @@
 #include "gui/Console.h"
 #include "gui/DamageNumbers.h"
 #include "gui/Dragging.h"
+#include "gui/Hud.h"
 #include "gui/Interface.h"
 #include "gui/MainMenu.h"
 #include "gui/Menu.h"
@@ -81,7 +83,9 @@
 #include "script/Script.h"
 #include "util/String.h"
 #include "vr/HeadTracking.h"
+#include "vr/MeleeChargeCue.h"
 #include "vr/VRBody.h"
+#include "vr/VRChargeCue.h"
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
 #include "vr/VRMelee.h"
@@ -1134,6 +1138,36 @@ std::string buildStatus(PlatformInstant now) {
 		json.end();
 	}
 	{
+		// The melee charge shown (#322): the setting, the charge the cues show, each variant's state
+		const vr::ChargeCueStatus & cue = vr::chargeCueStatus();
+		json.object("chargeCue");
+		json.value("mode", cue.mode);
+		json.value("hand", cue.hand);
+		json.value("active", cue.active);
+		json.value("fill", cue.fill);
+		json.value("changes", cue.changes);
+		json.object("glow");
+		json.value("shown", cue.glowShown);
+		json.value("fill", cue.glow);
+		json.end();
+		json.object("wrist");
+		json.value("shown", cue.wristShown);
+		json.value("fill", cue.wristFill);
+		json.value("views", cue.wristViews);
+		json.end();
+		json.object("hud");
+		json.value("shown", cue.hudShown);
+		json.value("intensity", g_hudRoot.hitStrengthGauge.intensity());
+		json.value("draws", g_hudRoot.hitStrengthGauge.draws());
+		json.end();
+		json.object("blade");
+		json.value("shown", cue.bladeShown);
+		json.value("fill", cue.bladeFill);
+		json.value("views", cue.bladeViews);
+		json.end();
+		json.end();
+	}
+	{
 		// Health and mana on the left wrist (#116): shown instead of the orbs, and how visible from the eyes
 		const vr::WristVitalsStatus & wrist = vr::wristVitalsStatus();
 		json.object("wrist");
@@ -1598,6 +1632,18 @@ std::string execute(std::string_view line) {
 		} else {
 			return refuse("comfort: expected auto, on or off, got \"" + std::string(rest) + "\"");
 		}
+		return std::string();
+	}
+
+	if(word == "melee-cue") {
+		// How the melee charge is shown (#322), live: the setting cfg.ini's vr_melee_charge_cue holds
+		std::string name(rest);
+		util::makeLowercase(name);
+		vr::ChargeCue cue;
+		if(!vr::parseChargeCue(name, cue)) {
+			return refuse("melee-cue: expected off, glow, wrist, hud, blade or all, got \"" + std::string(rest) + "\"");
+		}
+		config.input.vrMeleeChargeCue = name;
 		return std::string();
 	}
 
@@ -2136,6 +2182,19 @@ std::string execute(std::string_view line) {
 			SendIOScriptEvent(entities.player(), lever, SM_ACTION);
 			LogInfo << "[channel] playground: " << lever->idString() << " pulled (" << args << ")";
 			return std::string();
+		}
+		if(what == "equip") {
+			// equip <class>: the hero equips a weapon of that class from the playground's table, as the
+			// inventory's equip does (#322: the charge cues need a weapon in the hand)
+			for(Entity & item : entities) {
+				if((item.ioflags & IO_ITEM) && item.show == SHOW_FLAG_IN_SCENE && item.className() == args
+				   && (item.type_flags & (OBJECT_TYPE_DAGGER | OBJECT_TYPE_1H | OBJECT_TYPE_2H | OBJECT_TYPE_BOW))) {
+					ARX_EQUIPMENT_Equip(entities.player(), &item);
+					LogInfo << "[channel] playground: " << item.idString() << " equipped";
+					return std::string();
+				}
+			}
+			return refuse("playground equip: no weapon of class \"" + std::string(args) + "\" lies in the level");
 		}
 		if(!npc || !npc->_npcdata) {
 			return refuse("playground " + std::string(what) + ": the level has no NPC");

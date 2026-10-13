@@ -47,6 +47,7 @@
 
 #include "vr/HeadPose.h"
 #include "vr/Locomotion.h"
+#include "vr/MeleeChargeCue.h"
 #include "vr/MeleeSwing.h"
 #include "vr/MirrorGeometry.h"
 #include "vr/PhysicalCrouch.h"
@@ -217,6 +218,9 @@ constexpr const ActionKey actions[NUM_ACTION_KEY] = {
 	ActionKey(Keyboard::Key_ScrollLock, Keyboard::Key_Backslash), // DEBUG
 };
 
+// How the melee charge is shown in VR (#322): every variant until the owner picks one in the headset
+constexpr const std::string_view vrMeleeChargeCue = "all";
+
 } // namespace Default
 
 namespace Section {
@@ -336,6 +340,8 @@ constexpr const std::string_view
 	vrMeleeFullSpeed = "vr_melee_full_speed",
 	vrMeleeWeakAim = "vr_melee_weak_aim",
 	vrMeleeTargetCooldown = "vr_melee_target_cooldown";
+
+constexpr const std::string_view vrMeleeChargeCue = "vr_melee_charge_cue";
 
 // Input key options
 constexpr const std::string_view actions[NUM_ACTION_KEY] = {
@@ -625,6 +631,7 @@ bool Config::save() {
 	writer.writeKey(Key::vrMeleeFullSpeed, input.vrMeleeFullSpeed);
 	writer.writeKey(Key::vrMeleeWeakAim, input.vrMeleeWeakAim);
 	writer.writeKey(Key::vrMeleeTargetCooldown, input.vrMeleeTargetCooldown);
+	writer.writeKey(Key::vrMeleeChargeCue, input.vrMeleeChargeCue);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -819,6 +826,10 @@ bool Config::init(const fs::path & file) {
 	input.vrMeleeWeakAim = glm::clamp(vrMeleeWeakAim, 0.1f, 1.f);
 	float vrMeleeTargetCooldown = reader.getKey(Section::Input, Key::vrMeleeTargetCooldown, Default::vrMeleeTargetCooldown);
 	input.vrMeleeTargetCooldown = glm::clamp(vrMeleeTargetCooldown, 0.f, 2.f);
+	input.vrMeleeChargeCue = reader.getKey(Section::Input, Key::vrMeleeChargeCue, Default::vrMeleeChargeCue);
+	if(vr::ChargeCue cue; !vr::parseChargeCue(input.vrMeleeChargeCue, cue)) {
+		input.vrMeleeChargeCue = Default::vrMeleeChargeCue;
+	}
 	
 	// Get action key settings
 	for(size_t i = 0; i < NUM_ACTION_KEY; i++) {

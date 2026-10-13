@@ -98,6 +98,8 @@ set(arxtest_TESTCASES
 	tests/vr/WeaponGripTest.cpp
 	tests/vr/MeleeSwingTest.h
 	tests/vr/MeleeSwingTest.cpp
+	tests/vr/MeleeChargeCueTest.h
+	tests/vr/MeleeChargeCueTest.cpp
 
 	tests/vr/HandReticleTest.h
 	tests/vr/HandReticleTest.cpp
@@ -151,6 +153,7 @@ set(arxtest_SOURCES
 	src/vr/FingerCurl.cpp
 	src/vr/RuneTrail.cpp
 	src/vr/MeleeSwing.cpp
+	src/vr/MeleeChargeCue.cpp
 
 
 	${arxtest_TESTCASES}

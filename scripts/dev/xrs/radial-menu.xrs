@@ -5,8 +5,7 @@
 # torch lit in that hand), kept by a save and a load; the game time runs while a menu is open.
 # The hands are moved onto an item by `vr-radial point <hand> <item>` (the simulated hand's grip to that
 # item's middle; through the half-ring when it is there), B is `vr-input down|up <hand>.b`.
-# Leaves a quick save in the user directory (CI shares it with the sequences after this one; they start from a
-# level, the playground or their own library save, never from the newest save).
+# Leaves a quick save in the user directory (CI gives every sequence a fresh one, #296).
 # The shots still-a / still-b / yaw25 of an open menu are the two-eyes check's: after the run
 #   .\scripts\dev\eye-check.ps1 -StatusFile <test dir>\status.json
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence radial-menu
@@ -15,6 +14,7 @@
 # slots need are put in the bag here; the owner's headset test is in the playground.
 @sim idle
 @save mvp-new-game
+@args --loadslot 0
 
 @until state eq GAMEPLAY 60s
 @until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)

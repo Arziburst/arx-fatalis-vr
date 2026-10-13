@@ -1151,6 +1151,8 @@ std::string buildStatus(PlatformInstant now) {
 		const vr::RadialStatus & radial = vr::radialStatus();
 		json.object("radial");
 		json.value("torchHand", radial.torchHand);
+		// The menus' images exist: without them the menus work unseen (the owner's first headset run)
+		json.value("images", vr::radialImagesMade());
 		json.value("drawn", radial.drawn);
 		for(size_t hand = 0; hand < vr::HandCount; hand++) {
 			const vr::RadialHandStatus & h = radial.hands[hand];

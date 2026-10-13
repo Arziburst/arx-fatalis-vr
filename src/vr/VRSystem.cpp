@@ -141,6 +141,9 @@ const s64 PacingWindowUs = 3000000;
 //! How long an orderly exit may take: xrRequestExitSession to EXITING
 const std::chrono::milliseconds ExitTimeout(2000);
 
+//! A radial menu's image (#376), made with the session
+const Vec2i RadialImageSize(RadialImagePixels, RadialImagePixels);
+
 struct OpenXRState {
 
 	XrInstance instance = XR_NULL_HANDLE;
@@ -972,6 +975,22 @@ bool createSessionResources() {
 		if(!g_xr.eyes[i].create(g_xr.session, g_xr.colorFormat, size, true, names[i], samples)) {
 			return false;
 		}
+	}
+
+	// The radial menus' images (#376), made here with no swapchain image acquired: SteamVR refused one made
+	// in the frame while the flat frame's image was acquired (XR_ERROR_RUNTIME_FAILURE, TRAPS.md). Without
+	// them the menus still work, unseen - said once here, and in status.json (vr.radial.images)
+	const char * const radialNames[] = { "radial menu (left)", "radial menu (right)" };
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		Swapchain & image = g_xr.radials[hand].image;
+		if(!image.create(g_xr.session, g_xr.colorFormat, RadialImageSize, true, radialNames[hand])) {
+			image.destroy();
+			g_xr.radialFailed = true;
+		}
+	}
+	if(g_xr.radialFailed) {
+		LogWarning << "[vr] radial menu: no image of " << RadialImageSize.x << 'x' << RadialImageSize.y
+		           << ", the radial menus work but are not drawn";
 	}
 
 	return true;
@@ -2744,26 +2763,14 @@ bool handReticleShown(Hand hand) {
 	return g_xr.reticles[size_t(hand)].submitted;
 }
 
-bool beginRadialImage(Hand hand, const Vec2i & size) {
+bool beginRadialImage(Hand hand) {
 
 	OpenXRState::Frame & frame = g_xr.frame;
 	OpenXRState::RadialMenu & radial = g_xr.radials[size_t(hand)];
 	radial.drawn = false;
-	if(!stereoActive() || frame.eyeInRender != size_t(-1) || g_xr.radialFailed) {
+	// The images are made with the session (createSwapchains), never in a frame
+	if(!stereoActive() || frame.eyeInRender != size_t(-1) || !radial.image.isValid()) {
 		return false;
-	}
-
-	if(!radial.image.isValid() || radial.image.size() != size) {
-		radial.image.destroy();
-		const char * name = hand == Hand::Left ? "radial menu (left)" : "radial menu (right)";
-		if(!radial.image.create(g_xr.session, g_xr.colorFormat, size, true, name)) {
-			radial.image.destroy();
-			g_xr.radialFailed = true;
-			LogWarning << "[vr] radial menu: no image of " << size.x << 'x' << size.y
-			           << ", the radial menus work but are not drawn";
-			return false;
-		}
-		LogInfo << "[vr] radial menu: " << handName(hand) << " image " << size.x << 'x' << size.y;
 	}
 	if(!radial.image.acquire()) {
 		return false;
@@ -2812,6 +2819,10 @@ void setRadialLayer(Hand hand, bool shown, const Vec3f & center, const glm::quat
 
 bool radialLayerShown(Hand hand) {
 	return g_xr.radials[size_t(hand)].submitted;
+}
+
+bool radialImagesMade() {
+	return g_xr.radials[0].image.isValid() && g_xr.radials[1].image.isValid();
 }
 
 void recenterPanel() {
@@ -2993,7 +3004,11 @@ bool handReticleShown(Hand /* hand */) {
 	return false;
 }
 
-bool beginRadialImage(Hand /* hand */, const Vec2i & /* size */) {
+bool beginRadialImage(Hand /* hand */) {
+	return false;
+}
+
+bool radialImagesMade() {
 	return false;
 }
 

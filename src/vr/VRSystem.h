@@ -398,14 +398,21 @@ void setHandReticle(Hand hand, bool shown, const Vec3f & hit = Vec3f(0.f), bool 
 //! The hand's reticle was part of the last submitted frame
 bool handReticleShown(Hand hand);
 
+//! The radial menu images' size in pixels, square (#376)
+const s32 RadialImagePixels = 512;
+
 /*!
  * \brief Draw a hand's radial menu image this frame (#376): its own swapchain becomes the render target
  *
- * The image is \a size pixels, cleared to transparent; the caller draws the menu in 2D (premultiplied by
- * the renderer's alpha, like the flat frame) and calls \ref endRadialImage. Only in stereo frames.
- * \return false when the frame is not a stereo frame or the image could not be made (logged once)
+ * The image (\ref RadialImagePixels square, made with the session) is cleared to transparent; the caller
+ * draws the menu in 2D (premultiplied by the renderer's alpha, like the flat frame) and calls
+ * \ref endRadialImage. Only in stereo frames.
+ * \return false when the frame is not a stereo frame or the session has no image for it (logged once)
  */
-bool beginRadialImage(Hand hand, const Vec2i & size);
+bool beginRadialImage(Hand hand);
+
+//! Both radial menu images were made with the session (status.json: vr.radial.images)
+bool radialImagesMade();
 
 //! Hand the image back to the compositor and make the flat frame the render target again
 void endRadialImage(Hand hand);

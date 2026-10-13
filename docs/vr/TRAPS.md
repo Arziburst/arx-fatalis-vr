@@ -8,6 +8,18 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — A quad layer is in every simulated shot and invisible in the headset (#376)
+
+**Symptom:** the radial menus passed their sequence on the simulated headset (drawn, `overlayPixels` in both eyes)
+and could not be seen at all on the owner's Index, while the log showed them opening, hovering and running items.
+**Cause:** their swapchains were made lazily, the first time a menu opened - in `updateInput`, inside the frame,
+while the flat frame quad's image was acquired. SteamVR answered `xrCreateSwapchain` with
+`XR_ERROR_RUNTIME_FAILURE` (one `[E] VRSwapchain` line, then the menus worked unseen); the simulated runtime made it.
+Every other lazily made swapchain (beam, reticles) is made in `submitFrame` after the quad's release.
+**Do:** make swapchains with the session, or at least with no image of any swapchain acquired. The simulated runtime
+now refuses `xrCreateSwapchain` while another swapchain's image is acquired, with an `[E]` line, as SteamVR did; read
+the run digest of a headset run for `[E] VRSwapchain` before suspecting the composition.
+
 ## 2026-10-13 — The game crashes on quit in `FT_Done_Face` after a feature drew text (#376)
 
 **Symptom:** a run that worked ends with exit code 1, no `Clean shutdown`, and a crash report whose stack is

@@ -62,8 +62,6 @@ namespace vr {
 
 namespace {
 
-//! The menu image: square, the ring's middle in its middle (RadialParams::imageExtent wide)
-const s32 RadialImagePixels = 512;
 //! A torch lit by a menu's slot belongs to that hand once the engine lights it, within this many frames
 const u32 TorchWaitFrames = 90;
 
@@ -219,8 +217,19 @@ std::string runQuickSlot(Hand hand, u8 slot, RadialRequests & requests) {
 	return "used";
 }
 
-void openBookPage(ARX_INTERFACE_BOOK_MODE page) {
-	g_playerBook.openPage(page, false);
+/*!
+ * A page of the book from the menu, as its key does: the book opens on it, or turns to it - and the same
+ * item closes the book it shows (the owner's headset run: what an item opened, it closes)
+ * \return "book_open", "book_closed", or "no_spells" for the spells page of a hero who knows no rune
+ */
+std::string toggleBookPage(ARX_INTERFACE_BOOK_MODE page) {
+	const bool wasOpen = (player.Interface & INTER_PLAYERBOOK) != 0;
+	g_playerBook.openPage(page, true);
+	const bool open = (player.Interface & INTER_PLAYERBOOK) != 0;
+	if(open) {
+		return "book_open";
+	}
+	return wasOpen ? "book_closed" : (page == BOOKMODE_SPELLS ? "no_spells" : "book_closed");
 }
 
 //! Run the item a hand released B over; \return what it did, for the status
@@ -246,20 +255,16 @@ std::string runChoice(Hand hand, const RadialChoice & choice, RadialRequests & r
 			return "game_menu";
 		}
 		case RadialItem::Character: {
-			openBookPage(BOOKMODE_STATS);
-			return "book";
+			return toggleBookPage(BOOKMODE_STATS);
 		}
 		case RadialItem::Spells: {
-			openBookPage(BOOKMODE_SPELLS);
-			return (player.Interface & INTER_PLAYERBOOK) ? "book" : "no_spells";
+			return toggleBookPage(BOOKMODE_SPELLS);
 		}
 		case RadialItem::Map: {
-			openBookPage(BOOKMODE_MINIMAP);
-			return "book";
+			return toggleBookPage(BOOKMODE_MINIMAP);
 		}
 		case RadialItem::Quests: {
-			openBookPage(BOOKMODE_QUESTS);
-			return "book";
+			return toggleBookPage(BOOKMODE_QUESTS);
 		}
 		case RadialItem::QuickSave: {
 			requests.pulses[size_t(GameAction::QuickSave)] = true;
@@ -803,7 +808,7 @@ void drawRadialMenus() {
 		const Hand hand = Hand(i);
 		const HandMenu & menu = g_radial.menus[i];
 		status.hands[i].shown = radialLayerShown(hand);
-		if(!menu.open || !beginRadialImage(hand, Vec2i(RadialImagePixels))) {
+		if(!menu.open || !beginRadialImage(hand)) {
 			setRadialLayer(hand, false);
 			continue;
 		}

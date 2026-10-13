@@ -694,6 +694,16 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrCreateSwapchain(XrSession /* session */, co
 		return XR_ERROR_SWAPCHAIN_FORMAT_UNSUPPORTED;
 	}
 
+	// As SteamVR answered on the owner's Index (#376): a swapchain asked for while an image of another one is
+	// acquired is refused - the radial menu's image made in the frame, with the flat frame's image acquired
+	for(const auto & other : g_sim->swapchains) {
+		if(other.second.acquired >= 0) {
+			logFailure("xrCreateSwapchain while an image of another swapchain is acquired: XR_ERROR_RUNTIME_FAILURE,"
+			           " as SteamVR answers");
+			return XR_ERROR_RUNTIME_FAILURE;
+		}
+	}
+
 	SimSwapchain s;
 	s.format = info->format;
 	s.size = Vec2i(s32(info->width), s32(info->height));

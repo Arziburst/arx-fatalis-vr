@@ -395,13 +395,15 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   release), `point`.
 - `vr.radial` (#376, D-042): the radial menus on B. Per hand (`left`, `right`): `open`, `halfRing`, `hovered` (the
   item under the hand: `none`, `inventory`, `slot1` … `slot7`, `game_menu` …), `chosen` and `result` of the last
-  release (`none`, `inventory`, `game_menu`, `book`, `no_spells`, `quick_save`, `quick_load`, `recenter`,
+  release (`none`, `inventory`, `game_menu`, `book_open`, `book_closed`, `no_spells`, `quick_save`, `quick_load`, `recenter`,
   `cancel_spell`, `slot_filled`, `used`, `nothing_left`, `torch_out`, `empty_slot`), `refused` (why the last press
   opened nothing: `menu`, `cinematic`, `no_head`, `hand_not_tracked`, `no_player`; else `none`), `opens`, `choices`,
   `shown` (the menu was in the last submitted frame), `pointX` / `pointY` (the hand in the ring's plane, metres),
   `center` (the ring in LOCAL), `slots.slot1` … `slot7` (the kind each of the hand's own quick slots holds, `none`
   when empty - the save's `$vr_quickslots_left` / `_right`). `torchHand`: the hand whose menu lit the torch that burns
-  now (`none`); `drawn`: menu images drawn. With them (#376): `gameTimeMs` at the top (the game clock: it runs while a
+  now (`none`); `drawn`: menu images drawn; `images`: both menus' swapchains were made with the session (without
+  them the menus work unseen - the owner's first headset run; the simulated runtime refuses a swapchain made while
+  another one's image is acquired, as SteamVR does, TRAPS.md). With them (#376): `gameTimeMs` at the top (the game clock: it runs while a
   radial menu is open, stops in the pause menu), `player.bookPage` (`stats`, `spells`, `map`, `quests`) and
   `player.torch` (the lit torch's id, or `none`).
 - `vr.wrist` (#116, D-037): health and mana on the left wrist. `shown`: the left arm was posed from a

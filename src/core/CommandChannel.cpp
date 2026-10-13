@@ -2216,17 +2216,18 @@ std::string execute(std::string_view line) {
 			    << (updated ? "" : "; the entity is not updated here - come closer first") << ")";
 			return refuse(why.str());
 		}
-		ARX_INTERACTIVE_Teleport(entities.player(), best);
+		// The player's teleport takes the feet (player.pos, the eye, is 170 units above them - TRAPS.md)
+		ARX_INTERACTIVE_Teleport(entities.player(), best - ARXCHARACTER::baseOffset());
 		const Anglef angle = vectorToAngle(glm::normalize(aim - best));
 		player.desiredangle.setYaw(angle.getYaw());
 		player.angle.setYaw(angle.getYaw());
 		player.desiredangle.setPitch(angle.getPitch());
 		player.angle.setPitch(angle.getPitch());
-		LogInfo << "[channel] approach " << id << ": the player to " << best.x << ' ' << best.y << ' ' << best.z
+		LogInfo << "[channel] approach " << id << ": the eye to " << best.x << ' ' << best.y << ' ' << best.z
 		        << " (yaw " << angle.getYaw() << ", pitch " << angle.getPitch() << ", " << glm::distance(best, base)
-		        << " from its position), " << (updated ? "the entity's faces seen" : "the level only: the entity is not updated there") << "; of "
-		        << tested << " spots: no floor " << rejects.floor << ", no room " << rejects.room << ", out of reach "
-		        << rejects.reach << ", no sight " << rejects.sight;
+		        << " from its position), " << (updated ? "the entity's faces seen" : "the level only: not updated there")
+		        << "; of " << tested << " spots: no floor " << rejects.floor << ", no room " << rejects.room
+		        << ", out of reach " << rejects.reach << ", no sight " << rejects.sight;
 		return std::string();
 	}
 

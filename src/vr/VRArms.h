@@ -97,8 +97,7 @@ struct LogicalArm {
 	ArmRest rest;                       //!< the Arx chain at rest, in the model's mesh space
 	Vec3f restElbow = Vec3f(0.f);       //!< where the Arx elbow sticks out at rest, in the model's mesh space
 	Vec3f elbowHint = Vec3f(0.f);       //!< the base pole of the elbow (the body's down, out, back)
-	Vec3f weaponElbowHint = Vec3f(0.f); //!< the pole while the hand holds a weapon: the elbow dropped (F-300)
-	bool holdsWeapon = false;           //!< the hand holds the equipped weapon this frame
+	bool holdsWeapon = false;           //!< the hand holds the equipped weapon this frame: its elbow drops (F-300)
 	ArmRollParams roll;                 //!< the shares of the hand's roll, as the logical arm uses them
 	Vec3f grip = Vec3f(0.f);            //!< the controller's grip in the world
 	glm::quat gripOrientation = quat_identity(); //!< the grip's rotation in engine axes

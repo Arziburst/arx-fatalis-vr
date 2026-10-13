@@ -62,6 +62,12 @@ const float ArmsElbowCorrective = 1.5f;
 const float GloveCuffPastWrist = 0.0014f;
 //! The glove meshes are in meters
 const float GloveUnitsPerMeter = 100.f;
+/*!
+ * A hand holding a weapon drops its elbow (#385.6, research row F-300: VHVR's equipped palm-to-thumb axis (-+1, -3, 0)
+ * puts three parts down to one sideways): the elbow turns about the shoulder-target line towards its lowest position
+ * by this share of its angle off it. A first proposal, the owner tunes it in the headset
+ */
+const float WeaponElbowDrop = 0.75f;
 //! The colour of a missing texture: plain leather brown
 const u8 ArmsLeather[3] = { 92, 60, 38 };
 
@@ -215,6 +221,30 @@ void buildArmSleeve(CustomArm & arm, float upperLength, float forearmLength) {
 			arm.lastRing.push_back(v);
 		}
 	}
+}
+
+/*!
+ * The pole that puts the elbow of \a unarmed (the solve on the base pole) \c WeaponElbowDrop of its angle nearer its
+ * lowest position about the shoulder-target line. The solve swings the elbow from its pole by a share of the hand's
+ * roll measured against that pole, so turning the pole by an angle moves the elbow by (1 - elbowShare) of it: the
+ * pole turns by the wanted move over that
+ */
+Vec3f weaponElbowHint(const ArmRollPose & unarmed, const Vec3f & shoulder, const Vec3f & target,
+                      const LogicalArm & logical) {
+	const Vec3f line = target - shoulder;
+	if(glm::length(line) < 1e-4f) {
+		return logical.elbowHint;
+	}
+	const Vec3f axis = glm::normalize(line);
+	const Vec3f down(0.f, 1.f, 0.f); // engine y is down
+	const Vec3f lowest = down - glm::dot(down, axis) * axis;
+	const Vec3f elbow = (unarmed.pose.elbow - shoulder) - glm::dot(unarmed.pose.elbow - shoulder, axis) * axis;
+	if(glm::length(lowest) < 1e-3f || glm::length(elbow) < 1e-3f) {
+		return logical.elbowHint; // the arm along the vertical, or straight: no lower side to turn to
+	}
+	const float offLowest = std::atan2(glm::dot(glm::cross(lowest, elbow), axis), glm::dot(lowest, elbow));
+	const float kept = std::max(1.f - glm::clamp(logical.roll.elbowShare, 0.f, 1.f), 0.1f);
+	return glm::angleAxis(-WeaponElbowDrop * offLowest / kept, axis) * logical.elbowHint;
 }
 
 //! A joint's world matrix: at \a position, turned by the frame \a axes (columns: along, inner side, bend axis)
@@ -392,16 +422,17 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	const float stretchedUpper = lengths.upper * (1.f + stretch);
 	const float stretchedForearm = lengths.forearm * (1.f + stretch);
 	const ArmIKParams noSlide;
-	const ArmRollPose solved = solveArmRoll(shoulder, target, logical.hand, stretchedUpper, stretchedForearm,
-	                                        logical.holdsWeapon ? logical.weaponElbowHint : logical.elbowHint,
-	                                        logical.rest, noSlide, logical.roll, arm.roll);
+	ArmRollState unarmedState = arm.roll;
+	const ArmRollPose unarmed = solveArmRoll(shoulder, target, logical.hand, stretchedUpper, stretchedForearm,
+	                                         logical.elbowHint, logical.rest, noSlide, logical.roll,
+	                                         logical.holdsWeapon ? unarmedState : arm.roll);
+	ArmRollPose solved = unarmed;
 	float elbowDrop = 0.f;
 	if(logical.holdsWeapon) {
-		// Where the elbow would be without the weapon (engine y is down): the drop, for status.json
-		ArmRollState state = arm.roll;
-		const ArmRollPose unarmed = solveArmRoll(shoulder, target, logical.hand, stretchedUpper, stretchedForearm,
-		                                      logical.elbowHint, logical.rest, noSlide, logical.roll, state);
-		elbowDrop = solved.pose.elbow.y - unarmed.pose.elbow.y;
+		solved = solveArmRoll(shoulder, target, logical.hand, stretchedUpper, stretchedForearm,
+		                      weaponElbowHint(unarmed, shoulder, target, logical), logical.rest, noSlide, logical.roll,
+		                      arm.roll);
+		elbowDrop = solved.pose.elbow.y - unarmed.pose.elbow.y; // engine y is down
 	}
 
 	// Past the stretch limit the hand stops short of the controller, on the line from the shoulder

@@ -67,12 +67,6 @@ const float MaxShoulderSlide = 20.f;
 const float ElbowPoleDown = 1.f;
 const float ElbowPoleOut = 0.3f;
 const float ElbowPoleBack = 1.f;
-/*!
- * The custom arm's elbow while its hand holds a weapon (#385.6): the pole pulled this much further down, so the
- * elbow hangs lower under the weapon - VHVR's equipped palm-to-thumb axis (-+1, -3, 0) weighs the downward part
- * three times the sideways one (research row F-300). A first proposal, the owner tunes it in the headset
- */
-const float WeaponElbowPull = 3.f;
 //! The bend of the model's finger segments at a fist (#305); the one place to tune from the headset
 const FingerCurlLimits CurlLimits;
 
@@ -1019,7 +1013,6 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 			logical.rest = chain.rest;
 			logical.restElbow = chain.restElbow;
 			logical.elbowHint = hint;
-			logical.weaponElbowHint = hint + down * WeaponElbowPull;
 			logical.holdsWeapon = holds;
 			logical.roll = roll;
 			logical.grip = grip;

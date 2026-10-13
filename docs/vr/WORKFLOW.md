@@ -81,14 +81,11 @@ Work-in-progress limits: see [Parallel work](#parallel-work) (sequential mode: o
 
 ## The development loop
 
-One task per session, one pull request per task. The owner drives it with three commands
-(Claude Code project commands in `.claude/commands/`):
-
-| Command | What happens |
-|---|---|
-| `/next-task` | Claude takes the next task from the [MVP task queue](MVP.md#task-queue), implements it on its own branch, opens a PR, waits for CI. Non-VR work is merged automatically; VR behavior goes to **Testing** with step-by-step test instructions. |
-| `/accept-task` | The owner tested it in the headset and it is good → Claude merges the PR and moves the task to **Done**. |
-| `/reject-task <what is wrong>` | The owner tested it and something is off → Claude fixes it in the same PR and puts it back to **Testing**. |
+One task per session, one pull request per task. The owner does not start tasks by command: the coordinator
+takes the next task from the [MVP task queue](MVP.md#task-queue), writes its contract and starts a worker
+with `scripts/dev/start-worker.ps1`; the worker implements it on its own branch, opens a PR and waits for CI.
+VR behavior goes to **Testing** with step-by-step test instructions; the owner gives the headset verdict
+(OK, or what is wrong) to the coordinator, who merges on OK or sends the worker back to fix it in the same PR.
 
 Start each task in a **new Claude Code session** in the owner's working copy, so every task starts
 with a clean context; everything a session needs to know lives in the repository and on the board.
@@ -105,7 +102,7 @@ Workers are named by start-worker (`#<n> worker: <title>`). A project hook (`.cl
   complete rule set: [coordinator/](../../coordinator/) — the local core plus PROJECT.md and BINDINGS.md
   (`/coordinator` on any machine).
 - **Worker session** — a fresh session per task, possibly with a different model. It implements exactly
-  one task in its own PR (`/next-task <n>`), and handles the owner's verdict (`/accept-task`, `/reject-task`).
+  one task in its own PR, and fixes what the coordinator relays from the owner's verdict.
   In parallel mode the coordinator starts workers itself as background sessions
   (`scripts/dev/start-worker.ps1 <n>`, decision D-011): each in its own worktree, without permission
   prompts. The owner sees them in `claude agents` and opens one with `claude attach <id>`.
@@ -206,8 +203,8 @@ test station.
 `main` and green on that state (`gh pr update-branch <pr>`, wait for CI). Conflicts are resolved by
 the PR's worker. After each merge the coordinator updates the other open PRs in `/new-cycle`.
 
-**Decision numbers are assigned at merge (#274).** <!-- d-new-literal --> Nobody picks a number while a PR is open: a new
-decision is written `## D-NEW: <title>` and referenced as `D-NEW` (code comments, TESTING, TRAPS, the PR body); a second decision
+**Decision numbers are assigned at merge (#274).** Nobody picks a number while a PR is open: a new <!-- d-new-literal -->
+decision is written `## D-NEW: <title>` and referenced as `D-NEW` (code comments, TESTING, TRAPS, the PR body); a second decision <!-- d-new-literal -->
 in the same PR is `D-NEW-<tag>`. <!-- d-new-literal --> Right after `git merge origin/main` and right before the merge, run
 `.\scripts\dev\number-decisions.ps1 -Pr <pr>`: the next free numbers replace the placeholders in every file the branch changed and
 in the PR body (a line carrying the marker `d-new-literal` is left alone — for docs that talk about the placeholder); commit and push
@@ -256,7 +253,7 @@ the log, the timing); extend its table when a rule changes.
 
 ### Worker sessions prepare everything themselves
 
-The owner only opens a session and types `/next-task <n>`. Everything else at the start of a task is
+The coordinator starts the worker with the task number. Everything else at the start of a task is
 the worker's job, without asking: fetch and pull `main`, leave a branch of an already merged task,
 build `main` once (which also sets up vcpkg and dependencies) to make sure the base is healthy, and
 install or add anything missing for the task (tools via `winget`, libraries via `vcpkg.json`).
@@ -345,7 +342,7 @@ menu exists (checkpoint B). `run-windows.ps1` starts the game in a window (`--wi
 opts out), and a plain launch goes straight to the main menu — logos, the intro and every `.cin`
 cinematic are skipped during development (`--intro` shows the logos and the intro, `--cinematics`
 every cinematic; #92 restores them for players).
-After `/accept-task` the worker merges and switches the copy back to `main`.
+After the owner's OK the coordinator merges and the copy goes back to `main`.
 
 Helper scripts used by the commands:
 - `scripts/dev/next-task.ps1` — which task is next (Testing / In Progress first, then the queue)
@@ -403,7 +400,7 @@ human in a headset:
 | PR type | Label | Who merges | Condition |
 |---|---|---|---|
 | Everything that does not need in-headset testing: build, CI, tooling, docs, refactoring, engine plumbing | — | **Claude, on its own** | CI is green |
-| Gameplay / VR behavior that can only be judged in the headset | `needs-vr-test` | **Claude, after the owner's OK** (`/accept-task`) | CI is green **and** the owner tested it in VR |
+| Gameplay / VR behavior that can only be judged in the headset | `needs-vr-test` | **Claude, after the owner's OK** (the owner's verdict, given to the coordinator) | CI is green **and** the owner tested it in VR |
 
 - **Never merge with failing or pending CI.** Fix the PR instead.
 - **CI runs on a self-hosted runner on the owner's PC** (Windows service, label `arxvr`, installed in

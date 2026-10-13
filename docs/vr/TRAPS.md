@@ -8,6 +8,18 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — A scripted scene's skip "refused" although the scene was skipped (#394.4)
+
+**Symptom:** `scene.skip ... refused=yes` for a skip of the prison intro, yet the controls come back 5 s later and the hero stands at `MARKER_0112` (the intro's own end takes about 35 s).
+**Cause:** `SendMsgToAllIO(key_pressed)` returns `REFUSE` when **any** of the level's scripts refuses the event; every script still gets it, and the scene's skip handlers end the scene. The engine only uses the result to decide whether the speech is cut (`REQUEST_SPEECH_SKIP`).
+**Do:** judge a scene skip by what the scene does (`scene state=end`, `player.controlsBlocked`, the hero's place), not by `refused`; `result=early` (a fade, or the letterbox's first 3 s) is the real refusal.
+
+## 2026-10-13 — A sequence that changes a setting fails on its second local run (#394.4)
+
+**Symptom:** `first-run.xrs` passes, then fails at `@assert settings.crosshair eq true` when run again with `xrs-run.ps1`.
+**Cause:** the isolated user directory of a working copy is kept between launches, and `cfg.ini` in it still has the crosshair the previous run turned off. CI starts from an empty directory.
+**Do:** delete `cfg.ini` in `%LOCALAPPDATA%\ArxFatalisVR\userdirs\<copy>\` before re-running a sequence that changes a setting.
+
 ## 2026-10-13 — The level 10 intro is the original game's startup, not New game's (#394)
 
 **Symptom:** a test of "the intro" from `--loadlevel 10`, `--skiplogo` or New game shows a different thing than a player sees; New game never plays level 10.

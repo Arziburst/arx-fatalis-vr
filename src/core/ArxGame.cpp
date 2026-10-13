@@ -113,6 +113,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "graphics/particle/Spark.h"
 #include "graphics/texture/TextureStage.h"
 
+#include "gui/CinematicBorder.h"
 #include "gui/Console.h"
 #include "gui/Cursor.h"
 #include "gui/Dragging.h"
@@ -174,6 +175,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "scene/Scene.h"
 #include "scene/Tiles.h"
 
+#include "script/Script.h"
 #include "script/ScriptEvent.h"
 
 #include "util/String.h"
@@ -205,6 +207,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 InfoPanels g_debugInfo = InfoPanelNone;
 
 extern bool START_NEW_QUEST;
+extern bool REQUEST_SPEECH_SKIP;
 SavegameHandle LOADQUEST_SLOT = SavegameHandle(); // OH NO, ANOTHER GLOBAL! - TEMP PATCH TO CLEAN CODE FLOW
 static fs::path g_saveToLoad;
 
@@ -703,6 +706,29 @@ static void skipStartupIntro() {
 	ARX_SPEECH_Reset();
 	ARX_MENU_Launch(false);
 	endStartupIntro("skip");
+}
+
+bool scriptedScenePlaying() {
+	return ARXmenu.mode() == Mode_InGame && g_currentArea && !isInCinematic() && !g_startupIntro
+	       && cinematicBorder.isActive();
+}
+
+void skipScriptedScene(const char * how) {
+	gameevent::Event event("scene.skip");
+	event("how", how)("area", u32(g_currentArea))("camera", idString(g_cameraEntity));
+	// Disabling the skip while fading in or out, and in the scene's first 3 s
+	if(FADEDIR || cinematicBorder.elapsedTime() < 3s) {
+		event("result", "early");
+		return;
+	}
+	// Every script gets it and the scene's skip handlers end the scene themselves: the prison intro
+	// places the hero at its end and gives the controls back. A script that refuses it (any, not only
+	// the scene's) keeps the speech playing
+	const bool refused = SendMsgToAllIO(nullptr, SM_KEY_PRESSED) == REFUSE;
+	if(!refused) {
+		REQUEST_SPEECH_SKIP = true;
+	}
+	event("result", "sent")("refused", refused);
 }
 
 //! A skip press of the VR controllers this frame, taken once
@@ -1472,8 +1498,9 @@ void ArxGame::doFrame() {
 		return;
 	}
 
-	// The intro ends in the main menu by itself (#394); the VR skip ends it there at once, and a
-	// cinematic through cinematicEnd(), as Esc does (scripts get cine_end)
+	// The intro ends in the main menu by itself (#394); the VR skip ends it there at once, a cinematic
+	// through cinematicEnd() and a scripted scene through its skip handlers, as Esc does (scripts get
+	// cine_end / key_pressed)
 	if(g_startupIntro && ARXmenu.mode() != Mode_InGame) {
 		endStartupIntro("done");
 	}
@@ -1482,6 +1509,8 @@ void ArxGame::doFrame() {
 			skipStartupIntro();
 		} else if(isInCinematic()) {
 			cinematicEnd();
+		} else if(scriptedScenePlaying()) {
+			skipScriptedScene("vr");
 		}
 	}
 

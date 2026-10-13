@@ -1187,6 +1187,7 @@ set(PLATFORM_EXTRA_SOURCES
 	src/platform/Dialog.cpp
 	src/platform/ExitReport.cpp
 	src/platform/ExitTrace.cpp
+	src/platform/HangWatchdog.cpp
 	src/platform/Thread.cpp
 )
 if(MACOS)

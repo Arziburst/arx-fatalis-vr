@@ -100,7 +100,7 @@ function Save-Evidence([string]$Name, [string]$UserDir = $userDir) {
 	$dest = Join-Path $OutDir $Name
 	New-Item -ItemType Directory -Force $dest | Out-Null
 	foreach ($log in Get-ChildItem $UserDir -Filter 'arx*.log' -File -ErrorAction SilentlyContinue) { Copy-Item $log.FullName $dest -Force }
-	foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt') {
+	foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt', 'hang.txt') {
 		$p = Join-Path $testDir $f
 		if (Test-Path $p) { Copy-Item $p $dest -Force }
 	}

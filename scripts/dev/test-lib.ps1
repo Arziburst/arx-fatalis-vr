@@ -106,6 +106,7 @@ function Send-ArxCommand(
 	$before = Read-ArxStatus $Dir
 	$seq = if ($before) { [int]$before.cmdSeq } else { 0 }
 	$seq = [Math]::Max($seq, (Read-ArxAckSeq $Dir))
+	$hangBefore = Get-ArxHangReportLength $Dir
 	$file = Join-Path $Dir 'command.txt'
 	$tmp = Join-Path $Dir 'command.txt.tmp'
 	$text = ($Lines -join "`n") + "`n"
@@ -127,7 +128,32 @@ function Send-ArxCommand(
 		Start-Sleep -Milliseconds 50
 	} while ((Get-Date) -lt $deadline)
 	$last = if ($before) { $before | ConvertTo-Json -Compress -Depth 4 } else { 'none' }
+	# A main thread stuck in the batch is reported by the game's hang watchdog with its stack (#440): the reason, not a bare timeout
+	$hang = Read-ArxHangReport $Dir -Since $hangBefore
+	if ($hang) {
+		throw "the game hangs: no ack for '$($Lines -join '; ')' after $TimeoutSec s, and its hang watchdog reported (hang.txt):`n$hang"
+	}
 	throw "timed out after $TimeoutSec s waiting for the game to acknowledge '$($Lines -join '; ')' (last ack seq $seq; status before: $last)"
+}
+
+# hang.txt (#440): the hang watchdog's reports - a main thread without a beat for its threshold (5 s by default, the
+# channel's 'watchdog <ms>'), with the stack it is stuck in. Get-ArxHangReportLength before an action, then
+# Read-ArxHangReport -Since that length: only the reports written after it, or $null.
+function Get-ArxHangReportLength([string]$Dir) {
+	$file = Join-Path $Dir 'hang.txt'
+	if (Test-Path -LiteralPath $file) { (Get-Item -LiteralPath $file).Length } else { 0 }
+}
+
+function Read-ArxHangReport([string]$Dir, [long]$Since = 0) {
+	$file = Join-Path $Dir 'hang.txt'
+	try {
+		$bytes = [IO.File]::ReadAllBytes($file)
+	} catch {
+		return $null
+	}
+	if ($bytes.Length -le $Since) { return $null }
+	$text = [Text.Encoding]::UTF8.GetString($bytes, [int]$Since, $bytes.Length - [int]$Since).TrimEnd()
+	if ($text) { $text } else { $null }
 }
 
 # ack.txt as { Seq; Text }, or $null when it is missing, half-written or unreadable.

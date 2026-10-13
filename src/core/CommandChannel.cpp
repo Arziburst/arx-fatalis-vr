@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <iomanip>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -62,6 +63,7 @@
 #include "gui/DamageNumbers.h"
 #include "gui/Dragging.h"
 #include "gui/Interface.h"
+#include "gui/LoadLevelScreen.h"
 #include "gui/MainMenu.h"
 #include "gui/Menu.h"
 #include "gui/MenuPublic.h"
@@ -69,18 +71,19 @@
 #include "gui/hud/PlayerInventory.h"
 #include "input/Input.h"
 #include "io/fs/FilePath.h"
+#include "io/fs/FileStream.h"
 #include "io/fs/Filesystem.h"
 #include "io/log/LogBackend.h"
 #include "io/log/Logger.h"
 #include "physics/Collisions.h"
 #include "platform/Environment.h"
 #include "platform/ExitTrace.h"
+#include "platform/HangWatchdog.h"
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
 #include "platform/WindowsUtils.h"
 #endif
 #include "platform/Process.h"
 #include "platform/ProgramOptions.h"
-#include "platform/Thread.h"
 #include "platform/Time.h"
 #include "scene/ChangeLevel.h"
 #include "scene/Interactive.h"
@@ -344,6 +347,12 @@ struct State {
 		bool timedOut = false;       //!< The hold ended at its deadline, not at its distance
 		vr::WalkStatus walk;         //!< The stick walk of the hold's last frame that walked
 	} stickFor;
+
+	//! The hang watchdog of the main thread (#440), started at the first frame
+	std::unique_ptr<platform::HangWatchdog> watchdog;
+	bool watchdogLogged = false;     //!< Its "watching" line is in the log
+	long watchdogThresholdMs = 5000; //!< Below the 10 s a test waits for an ack: the report comes first
+	long stallLoadMs = 0;            //!< stall load: how long the next level load sleeps, 0 = it does not
 
 };
 
@@ -1351,6 +1360,13 @@ std::string buildStatus(PlatformInstant now) {
 	json.end();
 	json.end();
 
+	// The hang watchdog of the main thread (#440): its reports are in hang.txt and as [hang] log lines
+	json.object("hangWatchdog");
+	json.value("watching", g.watchdog && g.watchdog->watching());
+	json.value("thresholdMs", s64(g.watchdogThresholdMs));
+	json.value("stalls", u64(g.watchdog ? g.watchdog->stalls() : 0));
+	json.end();
+
 	// A command that changes the level or loads a save writes the status while its batch still runs: the batch
 	// must not show up before its ack does (#142)
 	json.value("cmdSeq", g.ackedSeq);
@@ -1442,6 +1458,29 @@ void writeAck(unsigned errors) {
 	if(!fs::write(g.dir / "ack.txt", oss.str())) {
 		LogWarning << "[channel] could not write " << (g.dir / "ack.txt");
 	}
+}
+
+/*
+ * A report of the hang watchdog (#440), on its own thread: hang.txt first and without the logger -
+ * a main thread stuck inside the logger must not keep the report from the test - then one [hang]
+ * line of arx.log per report line.
+ */
+void reportHang(std::string_view report) {
+
+	{
+		fs::ofstream file(g.dir / "hang.txt", std::ios::out | std::ios::app);
+		file << report;
+	}
+
+	for(size_t pos = 0; pos < report.size(); ) {
+		size_t end = report.find('\n', pos);
+		if(end == std::string_view::npos) {
+			end = report.size();
+		}
+		LogWarning << "[hang] " << report.substr(pos, end - pos);
+		pos = end + 1;
+	}
+	Logger::flush();
 }
 
 void setState(GameState state) {
@@ -1536,13 +1575,41 @@ std::string execute(std::string_view line) {
 
 	if(word == "stall") {
 		// A forced hitch (#327): the main thread sleeps in this frame, which the performance log must
-		// mark as a hitch caused by the channel
+		// mark as a hitch caused by the channel. "stall load <ms>": the next level load sleeps instead,
+		// after its "Loading level" line - a stalled load for the hang watchdog's check (#440)
+		std::string_view value;
+		std::string_view where = firstWord(rest, value);
+		const bool load = (where == "load");
+		if(!load) {
+			value = rest;
+		}
 		long stallMs = 0;
-		if(!parseIndex(rest, stallMs) || stallMs < 1 || stallMs > 5000) {
-			return refuse("stall: expected milliseconds 1..5000, got \"" + std::string(rest) + "\"");
+		if(!parseIndex(value, stallMs) || stallMs < 1 || stallMs > 5000) {
+			return refuse("stall: expected [load] and milliseconds 1..5000, got \"" + std::string(rest) + "\"");
+		}
+		if(load) {
+			g.stallLoadMs = stallMs;
+			LogInfo << "[channel] the next level load stalls for " << stallMs << " ms";
+			return std::string();
 		}
 		LogInfo << "[channel] stalling the frame for " << stallMs << " ms";
-		Thread::sleep(PlatformDuration(std::chrono::microseconds(stallMs * 1000)));
+		// Named in a hang report: the run digest knows this stall is on purpose (log-digest-allowlist.txt)
+		note("a stall the test channel asked for");
+		platform::stallThisThread(std::chrono::milliseconds(stallMs));
+		return std::string();
+	}
+
+	if(word == "watchdog") {
+		// The hang watchdog's threshold (#440): a main thread without a beat for this long is reported
+		long thresholdMs = 0;
+		if(!parseIndex(rest, thresholdMs) || thresholdMs < 100 || thresholdMs > 60000) {
+			return refuse("watchdog: expected milliseconds 100..60000, got \"" + std::string(rest) + "\"");
+		}
+		g.watchdogThresholdMs = thresholdMs;
+		if(g.watchdog) {
+			g.watchdog->setThreshold(std::chrono::milliseconds(thresholdMs));
+		}
+		LogInfo << "[channel] hang watchdog threshold " << thresholdMs << " ms";
 		return std::string();
 	}
 
@@ -2400,7 +2467,12 @@ std::string execute(std::string_view line) {
 		}
 		LogInfo << "[channel] changing to level " << area << (target.empty() ? "" : " at ") << target;
 		vr::perf::Scope perfLoad(vr::PerfPhase::Load);
+		const PlatformInstant start = platform::getTime();
 		ARX_CHANGELEVEL_Change(AreaId(u32(area)), target, 0.f);
+		// How much of the change the loading screen took (#440): its frames are bound by the present
+		const LoadingScreenStats screen = loadingScreenStats();
+		LogInfo << "[channel] level " << area << " loaded in " << toMsi(platform::getTime() - start)
+		        << " ms, the loading screen drew " << screen.frames << " frames in " << toMsi(screen.drawTime) << " ms";
 		return std::string();
 	}
 
@@ -2526,6 +2598,7 @@ void initialize() {
 	// Leftovers of a previous run must not be mistaken for this one
 	fs::remove(g.dir / "status.json");
 	fs::remove(g.dir / "ack.txt");
+	fs::remove(g.dir / "hang.txt");
 
 	g.counter = new LogCounter;
 	Logger::add(g.counter);
@@ -2549,6 +2622,18 @@ void update() {
 
 	g.frame++;
 	PlatformInstant now = platform::getTime();
+
+	// Watched from the first frame on: the start-up before it has the smoke test's own timeout
+	if(!g.watchdog) {
+		g.watchdog = std::make_unique<platform::HangWatchdog>("main thread",
+			std::chrono::milliseconds(g.watchdogThresholdMs), reportHang);
+	}
+	g.watchdog->beat("frame");
+	if(!g.watchdogLogged && g.watchdog->watching()) {
+		g.watchdogLogged = true;
+		LogInfo << "[channel] hang watchdog: watching the main thread, threshold "
+		        << g.watchdog->threshold().count() << " ms";
+	}
 
 	if(g_crashAt != PlatformInstant(0) && toUs(now - g_crashAt) >= 0) {
 		LogWarning << "[crash] deliberate crash requested through the test channel";
@@ -2688,7 +2773,29 @@ void notifyLoading(AreaId area) {
 	// Logged by the event log (game.state to=LOADING area=N)
 	ARX_UNUSED(area);
 	g.state = GameState::Loading;
+	beat("level load");
 	writeStatus(platform::getTime());
+
+	if(g.stallLoadMs != 0) {
+		long stallMs = g.stallLoadMs;
+		g.stallLoadMs = 0;
+		LogInfo << "[channel] stalling the level load for " << stallMs << " ms";
+		// Named in a hang report: the run digest knows this stall is on purpose (log-digest-allowlist.txt)
+		note("a stall the test channel asked for");
+		platform::stallThisThread(std::chrono::milliseconds(stallMs));
+	}
+}
+
+void beat(const char * where) {
+	if(g.watchdog) {
+		g.watchdog->beat(where);
+	}
+}
+
+void note(const char * what) {
+	if(g.watchdog) {
+		g.watchdog->note(what);
+	}
 }
 
 void shutdown() {
@@ -2696,6 +2803,9 @@ void shutdown() {
 	if(!g.enabled) {
 		return;
 	}
+
+	// The game is down: nothing beats any more
+	g.watchdog.reset();
 
 	g.state = GameState::Exited;
 	g.cleanShutdown = true;

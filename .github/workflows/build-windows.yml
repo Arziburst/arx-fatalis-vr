@@ -17,12 +17,17 @@ on:
     # steps and only the decision-number check runs (seconds, no build).
   push:
     branches: [ main ]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - '.claude/**'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/pull_request_template.md'
+    # Same effect as a paths-ignore of the docs-only set, but DECISIONS.md is re-included (a later pattern wins): an
+    # unnumbered D-NEW most likely arrives in a docs-only merge, and the strict decision check (#383) must see it.
+    # The Scope step keeps such a push light (no build).
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!**/*.md'
+      - '!.claude/**'
+      - '!.github/ISSUE_TEMPLATE/**'
+      - '!.github/pull_request_template.md'
+      - 'docs/vr/DECISIONS.md'
   workflow_dispatch:
 
 concurrency:
@@ -70,15 +75,23 @@ jobs:
         else { Write-Host 'decision numbers: DECISIONS.md untouched, nothing to check' }
 
     # A pull request that changes only docs (and DECISIONS.md, which wakes this workflow) needs no build: the
-    # heavy steps below run only when something outside the docs-only set changed (push / manual runs: always).
+    # heavy steps below run only when something outside the docs-only set changed. A push is compared with the commit
+    # before it (the push trigger lets a DECISIONS.md-only push through for the strict check, #383); when that commit
+    # is unknown (new branch, all zeros) or cannot be fetched (force push), or on a manual run: heavy.
     - name: Scope
       id: scope
       shell: pwsh
       run: |
         $heavy = $true
+        $light = '^(docs/|\.claude/|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md$)|\.md$'
         if ('${{ github.event_name }}' -eq 'pull_request') {
-          $light = '^(docs/|\.claude/|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md$)|\.md$'
           $heavy = [bool]@(git diff --name-only origin/main HEAD | Where-Object { $_ -notmatch $light }).Count
+        } elseif ('${{ github.event_name }}' -eq 'push' -and '${{ github.event.before }}' -notmatch '^0+$') {
+          git fetch --no-tags --depth=1 origin '${{ github.event.before }}'
+          if ($LASTEXITCODE -eq 0) {
+            $heavy = [bool]@(git diff --name-only '${{ github.event.before }}' '${{ github.sha }}' | Where-Object { $_ -notmatch $light }).Count
+          }
+          $global:LASTEXITCODE = 0 # a failed fetch is handled (heavy), not a failed step
         }
         "heavy=$($heavy.ToString().ToLower())" >> $env:GITHUB_OUTPUT
         Write-Host "heavy steps: $heavy"

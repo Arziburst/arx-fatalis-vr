@@ -1541,6 +1541,12 @@ void describeQuadLayer(OpenXRState::Layers & layers, XrCompositionLayerFlags lay
 	}
 }
 
+//! The game shows a logo, the intro or a cinematic: on the screen in the room, not the eyes (#394)
+bool onScreen(gameevent::GameState state) {
+	return state == gameevent::GameState::Logo || state == gameevent::GameState::Intro
+	       || state == gameevent::GameState::Cinematic;
+}
+
 //! The panel settings from cfg.ini (clamped when read)
 PanelParams panelParams() {
 	PanelParams params;
@@ -1593,7 +1599,7 @@ void updatePanel() {
 	// The logos and the cinematics play on a screen fixed in the room (#394): placed where the player
 	// looks when one starts, like a menu's panel, never head-locked (a picture glued to the face)
 	const gameevent::GameState state = gameevent::currentGameState();
-	const bool playing = state == gameevent::GameState::Logo || state == gameevent::GameState::Cinematic;
+	const bool playing = onScreen(state);
 	PanelParams screenParams;
 	screenParams.distance = ScreenDistance;
 	screenParams.drop = ScreenDrop;
@@ -1779,7 +1785,10 @@ void beginFrameTargets(const Vec2i & windowSize, FrameTargets targets) {
 		return;
 	}
 
-	if(targets == FrameTargets::Game && frame.state.shouldRender && frame.views.valid) {
+	// The intro's scripted scene is a film on the screen (#394): drawn flat into the quad like the
+	// cinematics, never per eye (the state of the last frame: this one has not been decided yet)
+	if(targets == FrameTargets::Game && frame.state.shouldRender && frame.views.valid
+	   && gameevent::currentGameState() != gameevent::GameState::Intro) {
 		beginStereo(frame);
 	} else if(interfaceSize == windowSize) {
 		// The interface is the window: drawn there, copied onto the quad (#18)

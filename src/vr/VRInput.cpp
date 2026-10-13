@@ -25,6 +25,7 @@
 #include <optional>
 
 #include "core/Config.h"
+#include "core/Core.h"
 #include "core/GameEvent.h"
 #include "core/TimeTypes.h"
 #include "gui/Menu.h"
@@ -110,7 +111,8 @@ bool takeSkipControls(ControllerInput & input) {
 
 	static const ControlSet controls = skipControls();
 	const gameevent::GameState state = gameevent::currentGameState();
-	const bool playing = state == gameevent::GameState::Logo || state == gameevent::GameState::Cinematic;
+	const bool playing = state == gameevent::GameState::Logo || state == gameevent::GameState::Intro
+	                     || state == gameevent::GameState::Cinematic;
 
 	const ControlSet pressed = ((input.down & ~g_input.skipDown) | input.taps) & controls;
 	g_input.skipDown = input.down & controls;
@@ -407,10 +409,10 @@ void updateInput() {
 	const GameInputState game = capturing || g_input.capture.active() ? GameInputState() : resolved;
 	applyToEngine(game);
 
-	// A skip is Escape pressed for one update (#394): the logo code skips the logo on screen, the
-	// menu's Escape ends the playing cinematic through cinematicEnd() when it is let go in the next
-	if(skip && GInput) {
-		GInput->setVirtualKey(Keyboard::Key_Escape, true);
+	// The game skips what is on screen this frame (#394, core/ArxGame.cpp): the logo, the whole intro,
+	// the cinematic (through cinematicEnd(), as Esc does)
+	if(skip) {
+		g_vrSkipPressed = true;
 		gameevent::Event("vr.skip")("what", gameevent::gameStateName(gameevent::currentGameState()));
 	}
 

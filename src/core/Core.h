@@ -96,6 +96,12 @@ extern bool g_showCinematics;
 //! The publisher logo on screen at startup: "fishtank", "arkane", or nullptr (#394)
 const char * startupLogoName();
 
+//! The intro after the logos (level 10, ending in the main menu) plays (#394)
+bool startupIntroPlaying();
+
+//! The VR skip (A, B or a trigger) was pressed this frame while a logo, the intro or a cinematic played (#394)
+extern bool g_vrSkipPressed;
+
 extern AreaId g_currentArea;
 extern long TELEPORT_TO_ANGLE;
 

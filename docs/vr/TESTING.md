@@ -472,6 +472,9 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   `player.controlsBlocked` is `BLOCK_PLAYER_CONTROLS`: scripts set it during scripted scenes — the
   awakening of a new game on level 1 holds it for 30-40 s — and a save made while it is `true` is not
   playable (#70): wait for `false` (`@until player.controlsBlocked False` in a save scenario).
+  `player.freelook` is `TRUE_PLAYER_MOUSELOOK_ON`: `false` is the engine's cursor mode, which keeps the
+  inventory open (`player.inventoryOpen`) and refuses melee; in VR it is turned on whenever the game
+  enters `GAMEPLAY` (#394, a `vr.freelook` event when it was off).
   `player.crouchToggle` is the crouch toggle (the button, `crouch on|off`); `player.crouched` is the
   character actually crouching (`PLAYER_CROUCH`) — it stays `true` after the toggle goes off while
   something is in the way of the head, and every refused stand-up logs one `player.standup.blocked`
@@ -730,6 +733,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `cinematic.start` / `cinematic.end` (#394) | a `.cin` plays / ends | `name`; `how=skip\|done` |
 | `vr.screen` / `vr.screen.placed` (#394) | the VR screen (logos, intro, cinematics) goes on / off, is placed in the room | `state=on\|off`, `for=` |
 | `vr.skip` (#394) | A, B or a trigger skips a logo, the intro, a cinematic or a scripted scene | `what=<state>\|SCENE` |
+| `vr.freelook` (#394) | in VR the game enters `GAMEPLAY` with freelook off (a `--loadlevel` start, New game from the pause menu or a development launch, the return from the pause menu) and the VR side turns it on | `state=on`, `was=<state>` |
 | `scene` (#394) | a scripted scene in the game (the letterbox outside a cinematic and the startup intro: the prison intro after New game) starts / ends | `state=start\|end`, `area`, `camera` (the scripted camera, `none` before it is set), `controlsBlocked` |
 | `scene.skip` (#394) | Esc (`how=key`) or the VR skip (`how=vr`) skips a scripted scene: its scripts get `key_pressed` and their skip handlers end it | `how`, `area`, `camera`, `result=sent\|early` (`early`: a fade runs, or the letterbox has not been on for 3 s - nothing sent), `refused` (some script refused it: the speech plays on; the scene is still skipped, see TRAPS.md) |
 | `chargen.roll` (#394) | a click of the quick generation | `kind=average\|random` |

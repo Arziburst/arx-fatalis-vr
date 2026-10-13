@@ -27,7 +27,7 @@
 
 //! VR saves and flat saves (#417, src/core/SaveKind.h): the mark, its way through a save block, the filter's rule
 class SaveKindTest final : public CppUnit::TestFixture {
-
+	
 	CPPUNIT_TEST_SUITE(SaveKindTest);
 	CPPUNIT_TEST(namesTest);
 	CPPUNIT_TEST(markTest);
@@ -37,14 +37,14 @@ class SaveKindTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(flatSaveOfVRBlockTest);
 	CPPUNIT_TEST(missingFileTest);
 	CPPUNIT_TEST_SUITE_END();
-
+	
 	fs::path m_root;
-
+	
 public:
-
+	
 	void setUp() override;
 	void tearDown() override;
-
+	
 	void namesTest();
 	void markTest();
 	void refusalTest();
@@ -52,7 +52,7 @@ public:
 	void flatSaveBlockTest();
 	void flatSaveOfVRBlockTest();
 	void missingFileTest();
-
+	
 };
 
 #endif // ARX_TESTS_CORE_SAVEKINDTEST_H

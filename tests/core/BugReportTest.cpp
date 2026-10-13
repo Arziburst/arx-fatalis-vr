@@ -54,16 +54,16 @@ struct ReadEntry {
 
 //! Read a zip back through its central directory, checking every structure on the way
 std::vector<ReadEntry> readZip(const std::string & zip) {
-
+	
 	std::vector<ReadEntry> result;
-
+	
 	CPPUNIT_ASSERT(zip.size() >= 22);
 	size_t end = zip.size() - 22;
 	CPPUNIT_ASSERT_EQUAL(u32(0x06054b50), get32(zip, end));
 	u16 count = get16(zip, end + 10);
 	size_t directory = get32(zip, end + 16);
 	CPPUNIT_ASSERT_EQUAL(size_t(get32(zip, end + 12)), end - directory);
-
+	
 	size_t pos = directory;
 	for(u16 i = 0; i < count; i++) {
 		CPPUNIT_ASSERT_EQUAL(u32(0x02014b50), get32(zip, pos));
@@ -75,7 +75,7 @@ std::vector<ReadEntry> readZip(const std::string & zip) {
 		size_t local = get32(zip, pos + 42);
 		entry.name = zip.substr(pos + 46, nameLength);
 		pos += 46 + nameLength;
-
+		
 		CPPUNIT_ASSERT_EQUAL(u32(0x04034b50), get32(zip, local));
 		CPPUNIT_ASSERT_EQUAL(entry.crc, get32(zip, local + 14));
 		CPPUNIT_ASSERT_EQUAL(entry.name, zip.substr(local + 30, get16(zip, local + 26)));
@@ -83,7 +83,7 @@ std::vector<ReadEntry> readZip(const std::string & zip) {
 		result.push_back(entry);
 	}
 	CPPUNIT_ASSERT_EQUAL(end, pos);
-
+	
 	return result;
 }
 
@@ -111,7 +111,7 @@ void BugReportTest::homePathTest() {
 }
 
 void BugReportTest::steamIdTest() {
-	CPPUNIT_ASSERT_EQUAL(std::string("D:\\Steam\\userdata\\<steam-id>\\760"), scrub("D:\\Steam\\userdata\\100985359\\760"));
+	CPPUNIT_ASSERT_EQUAL(std::string("D:\\Steam\\userdata\\<steam-id>\\760"), scrub("D:\\Steam\\userdata\\12345678\\760"));
 	CPPUNIT_ASSERT_EQUAL(std::string("id <steam-id>"), scrub("id 76561198061251087"));
 	CPPUNIT_ASSERT_EQUAL(std::string("<steam-id> <steam-id>"), scrub("STEAM_0:1:2345 [U:1:4690]"));
 }
@@ -149,7 +149,7 @@ void BugReportTest::usableNamesTest() {
 }
 
 void BugReportTest::zipTest() {
-
+	
 	std::string binary("\x00\x01\x02\xff\r\n", 6);
 	std::vector<bugreport::ZipEntry> entries = {
 		{ "save0003/gsave.sav", binary },
@@ -157,7 +157,7 @@ void BugReportTest::zipTest() {
 		{ "empty.txt", std::string() },
 	};
 	std::string zip = bugreport::makeZip(entries, 1760000000);
-
+	
 	std::vector<ReadEntry> read = readZip(zip);
 	CPPUNIT_ASSERT_EQUAL(entries.size(), read.size());
 	for(size_t i = 0; i < entries.size(); i++) {
@@ -167,7 +167,7 @@ void BugReportTest::zipTest() {
 		crc.process_bytes(entries[i].data.data(), entries[i].data.size());
 		CPPUNIT_ASSERT_EQUAL(u32(crc.checksum()), read[i].crc);
 	}
-
+	
 	CPPUNIT_ASSERT(readZip(bugreport::makeZip({ }, 1760000000)).empty());
 }
 
@@ -179,7 +179,7 @@ void BugReportTest::fileNameTest() {
 }
 
 void BugReportTest::exportTest() {
-
+	
 	fs::path user = m_root / "user";
 	fs::path save = user / "save" / "save0002" / "gsave.sav";
 	CPPUNIT_ASSERT(fs::create_directories(save.parent()));
@@ -188,13 +188,13 @@ void BugReportTest::exportTest() {
 	CPPUNIT_ASSERT(fs::write(user / "arx.log", "Log: \"C:\\Users\\jdoe1\\Saved Games\\Arx Fatalis VR\\arx.log\"\n"));
 	CPPUNIT_ASSERT(fs::write(user / "arx-perf.log", "perf for jdoe1\n"));
 	CPPUNIT_ASSERT(fs::write(user / "cfg.ini", "[misc]\nmachine=DESKTOP-K4Q2\n"));
-
+	
 	fs::path target = m_root / "desktop";
 	bugreport::ExportResult result = bugreport::exportReport(save, user, user, target, 1760000000, Names);
 	CPPUNIT_ASSERT(result.ok);
 	CPPUNIT_ASSERT(result.why.empty());
 	CPPUNIT_ASSERT_EQUAL(target / bugreport::reportFileName(1760000000), result.file);
-
+	
 	std::vector<ReadEntry> read = readZip(fs::read(result.file));
 	CPPUNIT_ASSERT_EQUAL(size_t(4), read.size());
 	CPPUNIT_ASSERT_EQUAL(std::string("save0002/gsave.sav"), read[0].name);

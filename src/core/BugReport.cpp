@@ -136,12 +136,12 @@ const std::vector<Rule> & fixedRules() {
 	return rules;
 }
 void addNames(std::vector<std::string> & out, const std::vector<std::string> & names) {
-
+	
 	static const char * const generic[] = {
 		"SYSTEM", "Administrator", "Admin", "User", "Public", "Default", "Guest", "LOCAL SERVICE", "NETWORK SERVICE",
 		"WORKGROUP"
 	};
-
+	
 	for(std::string name : names) {
 		while(!name.empty() && name.back() == '$') {
 			name.pop_back();
@@ -156,7 +156,7 @@ void addNames(std::vector<std::string> & out, const std::vector<std::string> & n
 			out.push_back(name);
 		}
 	}
-
+	
 }
 
 std::string environmentValue(const char * name) {
@@ -189,13 +189,13 @@ PersonalNames systemNames() {
 }
 
 std::string scrub(std::string_view input, const PersonalNames & names) {
-
+	
 	std::string text(input);
-
+	
 	for(const Rule & rule : fixedRules()) {
 		text = applyRule(text, rule);
 	}
-
+	
 	// Where they stand alone: not inside a longer word or a hyphenated name (the GitHub login stays)
 	auto nameRule = [](const std::string & name, const char * put) {
 		return Rule{ std::regex(escapeRegex(name) + R"((?![\w-]))", std::regex::ECMAScript | std::regex::icase),
@@ -207,27 +207,27 @@ std::string scrub(std::string_view input, const PersonalNames & names) {
 	for(const std::string & name : names.machines) {
 		text = applyRule(text, nameRule(name, "<machine>"));
 	}
-
+	
 	return text;
 }
 
 std::string makeZip(const std::vector<ZipEntry> & entries, std::time_t time) {
-
+	
 	// MS-DOS date and time of the entries
 	std::tm local = *std::localtime(&time);
 	u16 dosTime = u16((local.tm_hour << 11) | (local.tm_min << 5) | (local.tm_sec / 2));
 	u16 dosDate = u16(((std::max(local.tm_year, 80) - 80) << 9) | ((local.tm_mon + 1) << 5) | local.tm_mday);
-
+	
 	std::string zip;
 	std::string directory;
-
+	
 	for(const ZipEntry & entry : entries) {
-
+		
 		boost::crc_32_type crc;
 		crc.process_bytes(entry.data.data(), entry.data.size());
 		u32 checksum = crc.checksum();
 		u32 offset = u32(zip.size());
-
+		
 		// Local file header, stored (method 0), UTF-8 names (flag bit 11)
 		put32(zip, 0x04034b50);
 		put16(zip, 20);
@@ -242,7 +242,7 @@ std::string makeZip(const std::vector<ZipEntry> & entries, std::time_t time) {
 		put16(zip, 0);
 		zip += entry.name;
 		zip += entry.data;
-
+		
 		// Central directory record
 		put32(directory, 0x02014b50);
 		put16(directory, 20);
@@ -262,12 +262,12 @@ std::string makeZip(const std::vector<ZipEntry> & entries, std::time_t time) {
 		put32(directory, 0);
 		put32(directory, offset);
 		directory += entry.name;
-
+		
 	}
-
+	
 	u32 directoryOffset = u32(zip.size());
 	zip += directory;
-
+	
 	// End of central directory
 	put32(zip, 0x06054b50);
 	put16(zip, 0);
@@ -277,7 +277,7 @@ std::string makeZip(const std::vector<ZipEntry> & entries, std::time_t time) {
 	put32(zip, u32(directory.size()));
 	put32(zip, directoryOffset);
 	put16(zip, 0);
-
+	
 	return zip;
 }
 
@@ -290,18 +290,18 @@ std::string reportFileName(std::time_t time) {
 
 ExportResult exportReport(const fs::path & savefile, const fs::path & userDir, const fs::path & configDir,
                           const fs::path & targetDir, std::time_t time, const PersonalNames & names) {
-
+	
 	ExportResult result;
-
+	
 	if(!fs::is_regular_file(savefile)) {
 		result.why = "no save file " + savefile.string();
 		return result;
 	}
-
+	
 	std::vector<ZipEntry> entries;
 	std::string slot(savefile.parent().filename());
 	entries.push_back(ZipEntry{ slot + "/" + std::string(savefile.filename()), fs::read(savefile) });
-
+	
 	std::vector<std::string> missing;
 	const fs::path texts[] = { userDir / "arx.log", userDir / "arx-perf.log", configDir / "cfg.ini" };
 	for(const fs::path & file : texts) {
@@ -311,18 +311,18 @@ ExportResult exportReport(const fs::path & savefile, const fs::path & userDir, c
 			missing.push_back(std::string(file.filename()));
 		}
 	}
-
+	
 	if(!fs::create_directories(targetDir)) {
 		result.why = "could not create " + targetDir.string();
 		return result;
 	}
-
+	
 	result.file = targetDir / reportFileName(time);
 	if(!fs::write(result.file, makeZip(entries, time))) {
 		result.why = "could not write " + result.file.string();
 		return result;
 	}
-
+	
 	result.ok = true;
 	for(const ZipEntry & entry : entries) {
 		result.files.push_back(entry.name);
@@ -333,7 +333,7 @@ ExportResult exportReport(const fs::path & savefile, const fs::path & userDir, c
 			result.why += " " + name;
 		}
 	}
-
+	
 	return result;
 }
 

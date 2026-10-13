@@ -2,7 +2,8 @@
 # the strike with the game's own charge (the time held against Full_AimTime) and a swing then hits at full strength;
 # a charged hit spends the charge until the trigger is released and pressed again. The trigger alone never starts the
 # engine's strike while the IK hand holds the weapon.
-# Runs on the test save mvp-goblin-fight (#70: a sword equipped, a goblin ahead in a corridor):
+# Runs on the test save mvp-goblin-fight (#70: a sword equipped, a goblin ahead in a corridor; the second goblin that
+# reaches the player standing on the floor since #417 is removed first, so only the player's strikes are hits):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence melee-swing -Save mvp-goblin-fight
 # The swings are ramps of the simulated right controller: 0.85 m in 8 frames - 9.6 m/s at 90 fps, 3.2 m/s at 30 fps,
 # above the swing speed (2.5 m/s) and below a tracking jump (20 m/s) at any frame rate the runner plays at. Every other

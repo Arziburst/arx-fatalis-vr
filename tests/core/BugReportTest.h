@@ -27,7 +27,7 @@
 
 //! A save exported for a bug report (#417, src/core/BugReport.h): the scrubber, the zip, the export
 class BugReportTest final : public CppUnit::TestFixture {
-
+	
 	CPPUNIT_TEST_SUITE(BugReportTest);
 	CPPUNIT_TEST(homePathTest);
 	CPPUNIT_TEST(steamIdTest);
@@ -41,14 +41,14 @@ class BugReportTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(exportWithoutLogsTest);
 	CPPUNIT_TEST(exportWithoutSaveTest);
 	CPPUNIT_TEST_SUITE_END();
-
+	
 	fs::path m_root;
-
+	
 public:
-
+	
 	void setUp() override;
 	void tearDown() override;
-
+	
 	void homePathTest();
 	void steamIdTest();
 	void otherIdentifiersTest();
@@ -60,7 +60,7 @@ public:
 	void exportTest();
 	void exportWithoutLogsTest();
 	void exportWithoutSaveTest();
-
+	
 };
 
 #endif // ARX_TESTS_CORE_BUGREPORTTEST_H

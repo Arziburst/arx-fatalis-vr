@@ -34,11 +34,11 @@ SaveKind saveKindOfMark(std::string_view markData) {
 }
 
 std::string saveKindRefusal(SaveKind save, SaveKind run) {
-
+	
 	if(save == run) {
 		return std::string();
 	}
-
+	
 	if(save == SaveKind::VR) {
 		return "a VR save, and this run is flat - VR and flat games never load each other's saves (D-NEW)";
 	}
@@ -46,12 +46,12 @@ std::string saveKindRefusal(SaveKind save, SaveKind run) {
 }
 
 bool writeSaveKind(SaveBlock & block, SaveKind kind) {
-
+	
 	if(kind == SaveKind::VR) {
 		std::string mark = vrMarkData();
 		return block.save(VRMarkFile, mark.data(), mark.size());
 	}
-
+	
 	// A save block is copied from the save that was loaded: a flat save must not keep a mark it never earned
 	block.remove(VRMarkFile);
 	return true;

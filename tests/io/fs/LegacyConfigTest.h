@@ -27,7 +27,7 @@
 
 //! The first start's copy of cfg.ini from the old Arx Libertatis user directory (#417, fs::copyLegacyConfig)
 class LegacyConfigTest final : public CppUnit::TestFixture {
-
+	
 	CPPUNIT_TEST_SUITE(LegacyConfigTest);
 	CPPUNIT_TEST(firstStartTest);
 	CPPUNIT_TEST(onlyOnceTest);
@@ -35,22 +35,22 @@ class LegacyConfigTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(noLegacyTest);
 	CPPUNIT_TEST(savesNeverCopiedTest);
 	CPPUNIT_TEST_SUITE_END();
-
+	
 	fs::path m_root;
 	fs::path m_legacy;
 	fs::path m_user;
-
+	
 public:
-
+	
 	void setUp() override;
 	void tearDown() override;
-
+	
 	void firstStartTest();
 	void onlyOnceTest();
 	void ownConfigKeptTest();
 	void noLegacyTest();
 	void savesNeverCopiedTest();
-
+	
 };
 
 #endif // ARX_TESTS_IO_FS_LEGACYCONFIGTEST_H

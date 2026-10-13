@@ -52,7 +52,8 @@ std::string expandEnvironmentVariables(std::string_view in);
 
 enum SystemPathId {
 	NoPath,
-	UserDirPrefixes //!< Directories under which to store per-user data.
+	UserDirPrefixes, //!< Directories under which to store per-user data.
+	DesktopDir //!< The player's desktop, where a bug report goes (#417)
 };
 
 /*!

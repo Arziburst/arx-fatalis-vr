@@ -12,7 +12,7 @@
 $ArxSourceDir = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
 # The user directory a test run writes to: this working copy's isolated one (arx.log, cfg.ini,
-# saves, crashes), or with -Shared the player's %USERPROFILE%\Saved Games\Arx Libertatis
+# saves, crashes), or with -Shared the player's %USERPROFILE%\Saved Games\Arx Fatalis VR
 function Get-ArxUserDir([switch]$Shared) {
 	if ($Shared) { Get-SharedUserDir } else { Get-DefaultUserDir $ArxSourceDir }
 }

@@ -1,0 +1,20 @@
+# VR saves (#417, D-NEW), part 2 of scripts\dev\save-kind-check.ps1: a flat run of part 1's user directory. It lists
+# neither VR save, refused --loadslot 0 at the start (save-kind-check.ps1 finds the log line, written before this
+# sequence starts) and came up at the main menu; a new game's save is a flat one and is listed.
+@args --loadslot 0 --no-vr
+
+@until state eq MENU 60s
+@assert saves.kind eq flat
+@assert saves.listed eq 0
+@assert saves.hidden eq 2
+@assert events.byName."load.refused" eq 1
+@assert area eq 0
+
+newgame
+@until state eq GAMEPLAY 120s
+@wait 2000
+save flat-made
+@until saves.listed eq 1 10s
+@assert saves.hidden eq 2
+@log GameEvent:.*\bsave slot=\S+ name=flat-made kind=flat ok=yes 5s
+@assert errors eq 0

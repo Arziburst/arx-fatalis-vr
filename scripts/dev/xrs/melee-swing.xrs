@@ -2,7 +2,8 @@
 # the strike with the game's own charge (the time held against Full_AimTime) and a swing then hits at full strength;
 # a charged hit spends the charge until the trigger is released and pressed again. The trigger alone never starts the
 # engine's strike while the IK hand holds the weapon.
-# Runs on the test save mvp-goblin-fight (#70: a sword equipped, a goblin ahead in a corridor):
+# Runs on the test save mvp-goblin-fight (#70: a sword equipped, a goblin ahead in a corridor; the second goblin that
+# reaches the player standing on the floor since #417 is removed first, so only the player's strikes are hits):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence melee-swing -Save mvp-goblin-fight
 # The swings are ramps of the simulated right controller: 0.85 m in 8 frames - 9.6 m/s at 90 fps, 3.2 m/s at 30 fps,
 # above the swing speed (2.5 m/s) and below a tracking jump (20 m/s) at any frame rate the runner plays at. Every other
@@ -24,6 +25,9 @@
 # chest, the blade pointing ahead, the hand to the right - moved there slowly (0.43 m in 60 frames: under 0.7 m/s)
 goblin_base_0036.setspeed 0
 place goblin_base_0036 80
+# Since #417 the save stands the player on the floor (170 units up before, out of reach): a second goblin comes
+# and hits the player with its club, a melee.hit step 6 must not see - it leaves, only the player's strikes count
+goblin_base_0012.destroy self
 vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
 vr-sim head rot 0 -25 0
 @frames 75

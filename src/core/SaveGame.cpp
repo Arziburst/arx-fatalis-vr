@@ -64,6 +64,8 @@ void SaveGameList::update(bool verbose) {
 	
 	size_t max_name_length = 0;
 	
+	std::vector<HiddenSave> hidden;
+	
 	fs::path savedir = fs::getUserDir() / SAVEGAME_DIR;
 	
 	if(verbose) {
@@ -92,11 +94,28 @@ void SaveGameList::update(bool verbose) {
 			continue;
 		}
 		
+		// A save of the other kind seen before is not read or logged again
+		auto known = std::find_if(m_hidden.begin(), m_hidden.end(), [&](const HiddenSave & save) {
+			return save.savefile == path && save.stime == stime;
+		});
+		if(known != m_hidden.end()) {
+			hidden.push_back(*known);
+			continue;
+		}
+		
 		std::string name;
 		float version;
 		AreaId area;
 		if(!ARX_CHANGELEVEL_GetInfo(path, name, version, area)) {
 			LogWarning << "Unable to get save file info for " << path;
+			continue;
+		}
+		
+		// VR and flat runs never see each other's saves (#417, D-NEW)
+		SaveKind kind = readSaveKind(path);
+		if(kind != m_kind) {
+			LogInfo << "Hiding save " << dirname.string() << " \"" << name << "\": " << saveKindRefusal(kind, m_kind);
+			hidden.push_back(HiddenSave{ path, stime, kind });
 			continue;
 		}
 		
@@ -116,6 +135,7 @@ void SaveGameList::update(bool verbose) {
 		save->area = area;
 		save->stime = stime;
 		save->savefile = path;
+		save->kind = kind;
 		
 		save->quicksave = (save->name == QUICKSAVE_ID || save->name == "ARX_QUICK_ARX1");
 		
@@ -198,7 +218,29 @@ void SaveGameList::update(bool verbose) {
 		std::sort(savelist.begin(), savelist.end(), saveTimeCompare);
 	}
 	
+	m_hidden = std::move(hidden);
+	if(verbose) {
+		// Expected zero for a player who only ever played this build in one mode
+		LogInfo << "Saves of this " << saveKindName(m_kind) << " run: " << savelist.size() << " listed, "
+		        << m_hidden.size() << " of the other kind hidden";
+	}
+	
 	LogDebug("Found " << savelist.size() << " savegames");
+}
+
+std::string SaveGameList::hiddenReason() const {
+	
+	if(m_hidden.empty()) {
+		return std::string();
+	}
+	
+	SaveKind other = (m_kind == SaveKind::VR) ? SaveKind::Flat : SaveKind::VR;
+	return std::to_string(m_hidden.size()) + " " + saveKindName(other) + " save(s) in the save folder are hidden: "
+	       + saveKindRefusal(other, m_kind);
+}
+
+std::string SaveGameList::refusal(const fs::path & savefile) const {
+	return saveKindRefusal(readSaveKind(savefile), m_kind);
 }
 
 void SaveGameList::remove(SavegameHandle handle) {
@@ -233,9 +275,10 @@ bool SaveGameList::save(std::string_view name, SavegameHandle overwrite, const I
 		savefile /= SAVEGAME_NAME;
 	}
 	
-	bool success = ARX_CHANGELEVEL_Save(name, savefile);
+	bool success = ARX_CHANGELEVEL_Save(name, savefile, m_kind);
 	// A failed save already logged why ([W] / [E] just before this line)
-	gameevent::Event("save")("slot", savefile.parent().filename())("name", name)("ok", success);
+	gameevent::Event("save")("slot", savefile.parent().filename())("name", name)("kind", saveKindName(m_kind))
+		("ok", success);
 	if(!success) {
 		return false;
 	}

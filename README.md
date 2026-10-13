@@ -147,6 +147,13 @@ without a headset is in [docs/vr/TESTING.md](docs/vr/TESTING.md). The original A
 
 - **Bugs and ideas:** open an [issue](https://github.com/Arziburst/arx-fatalis-vr/issues/new/choose) (templates for a bug
   and a task). Say what you did, what you expected, and attach `arx.log`.
+- **Where the files are:** `%USERPROFILE%\Saved Games\Arx Fatalis VR` - `arx.log` (the last run; `arx.1.log` ... the
+  runs before), `arx-perf.log`, `cfg.ini` and the saves in `save\`. It is the game's own folder, not flat Arx
+  Libertatis' one: saves made in VR load only in VR, saves of a flat game only in a flat game.
+- **A problem in a saved game:** in the game, Options → *Saves and bug reports* shows that folder, **Open saves
+  folder** opens it on the desktop, and **Export a save for a bug report** writes one zip to your Desktop - the chosen
+  save, `arx.log`, `arx-perf.log` and `cfg.ini`, with personal data (user name, home folder, Steam id, ...) taken
+  out. Attach the zip to the issue.
 - **Pull requests** from forks are welcome. CI does not build pull requests from forks; a maintainer
   reviews and builds them before anything is merged. Naming of branches, commits and PRs: [WORKFLOW.md](docs/vr/WORKFLOW.md#commit-and-pull-request-naming).
 - Work is tracked on the [project board](https://github.com/users/Arziburst/projects/3), tasks grouped in nine epics

@@ -30,17 +30,19 @@ function Get-DefaultTestDir([string]$SourceDir) {
 }
 
 # The player's own user directory, shared by every working copy (the owner's saves live here):
-# %USERPROFILE%\Saved Games\Arx Libertatis
+# %USERPROFILE%\Saved Games\Arx Fatalis VR - our own since #417 (D-NEW), never flat Arx Libertatis' one
 function Get-SharedUserDir {
-	Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Saved Games\Arx Libertatis'
+	Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Saved Games\Arx Fatalis VR'
 }
 
 # The test save library (#70, scripts/dev/make-test-saves.ps1): one folder per scenario, each with
-# gsave.sav. $env:ARXVR_SAVE_LIBRARY if set, else %LOCALAPPDATA%\ArxFatalisVR\savelib. Not in the
+# gsave.sav. $env:ARXVR_SAVE_LIBRARY if set, else %LOCALAPPDATA%\ArxFatalisVR\savelib-vr. Not in the
 # repository: saves derive from the original game's data and go stale with the engine's save format.
+# Made in the simulated headset since #417: VR saves, which a flat run does not load. The flat library of
+# the builds before (savelib) is left alone for the branches that still use it.
 function Get-ArxSaveLibrary {
 	if ($env:ARXVR_SAVE_LIBRARY) { return $env:ARXVR_SAVE_LIBRARY }
-	Join-Path $env:LOCALAPPDATA 'ArxFatalisVR\savelib'
+	Join-Path $env:LOCALAPPDATA 'ArxFatalisVR\savelib-vr'
 }
 
 # Copy save slots (folders like mvp-new-game, each with gsave.sav) from a save library into the save

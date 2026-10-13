@@ -69,6 +69,7 @@
 #include "input/Input.h"
 #include "io/fs/FilePath.h"
 #include "io/fs/Filesystem.h"
+#include "io/fs/SystemPaths.h"
 #include "io/log/LogBackend.h"
 #include "io/log/Logger.h"
 #include "physics/Collisions.h"
@@ -128,6 +129,7 @@ const struct { MENUSTATE page; const char * name; } MenuPages[] = {
 	{ Page_OptionsInput, "input" },
 	{ Page_OptionsVR, "vr" },
 	{ Page_OptionsVRTurning, "vr-turning" },
+	{ Page_OptionsSaves, "saves" },
 };
 
 const char * menuPageName(MENUSTATE page) {
@@ -568,6 +570,14 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("menuMode", menuModeName(ARXmenu.mode()));
 	json.value("menuPage", ARXmenu.mode() == Mode_MainMenu ? menuPageName(currentMenuPage()) : "none");
 	json.value("area", g_currentArea ? u32(g_currentArea) : 0u);
+	// Where this run keeps its files and which saves it sees (#417, D-NEW): VR and flat never see each other's
+	json.object("saves");
+	json.value("userDir", fs::getUserDir().string());
+	json.value("userDirSource", fs::getUserDirSource());
+	json.value("kind", saveKindName(savegames.kind()));
+	json.value("listed", u64(savegames.size()));
+	json.value("hidden", u64(savegames.hiddenCount()));
+	json.end();
 	json.value("paused", g_gameTime.isPaused() != 0);
 	json.value("cinematic", isInCinematic());
 
@@ -1780,8 +1790,10 @@ std::string execute(std::string_view line) {
 		// The list is read at startup and by the load menu; a save made since then must count too
 		savegames.update();
 		if(size_t(slot) >= savegames.size()) {
+			// Saves of the other kind are not in the list (#417, D-NEW): say so, they are on disk
+			std::string hidden = savegames.hiddenReason();
 			return refuse("loadslot: no save in slot " + std::to_string(slot) + " (have "
-			              + std::to_string(savegames.size()) + ")");
+			              + std::to_string(savegames.size()) + ")" + (hidden.empty() ? "" : "; " + hidden));
 		}
 		LogInfo << "[channel] loading save slot " << slot;
 		LOADQUEST_SLOT = SavegameHandle(slot);
@@ -1805,9 +1817,10 @@ std::string execute(std::string_view line) {
 
 	if(word == "menu") {
 		// Open a page of the main / pause menu as a click on its entry would (#178): none, options, input,
-		// vr, vr-turning; "pause" opens the pause menu from the game, as Escape does, "resume" goes back to
+		// vr, vr-turning, saves; "pause" opens the pause menu from the game, as Escape does, "resume" goes back to
 		// it; "step <row> left|right", "drag <slider> <0..1>"
-		// is a click on an arrow of a row of the VR turning page, "drag" its slider's dot dragged and let go (#260)
+		// is a click on an arrow of a row of the VR turning page, "drag" its slider's dot dragged and let go (#260);
+		// on the saves page "step save left|right" chooses the save and "press folder|export" clicks an entry (#417)
 		std::string name(rest);
 		util::makeLowercase(name);
 		if(name == "pause") {
@@ -1835,7 +1848,13 @@ std::string execute(std::string_view line) {
 			if(direction != "left" && direction != "right") {
 				return refuse("menu step: expected <row> left|right, got \"" + name + "\"");
 			}
-			std::string why = stepVRSettingRow(row, direction == "right" ? 1 : -1);
+			int delta = (direction == "right") ? 1 : -1;
+			std::string why = savesPageOpen() ? stepSavesRow(row, delta) : stepVRSettingRow(row, delta);
+			return why.empty() ? why : refuse(why);
+		}
+		if(name.rfind("press ", 0) == 0) {
+			// A click on an entry of the saves page (#417): folder, export
+			std::string why = pressSavesEntry(util::trim(std::string_view(name).substr(6)));
 			return why.empty() ? why : refuse(why);
 		}
 		if(name.rfind("drag ", 0) == 0) {
@@ -1854,7 +1873,8 @@ std::string execute(std::string_view line) {
 				return std::string();
 			}
 		}
-		return refuse("menu: expected pause, resume, none, options, input, vr, vr-turning, step <row> left|right or drag <slider> <0..1>, got \""
+		return refuse("menu: expected pause, resume, none, options, input, vr, vr-turning, saves, step <row> left|right, "
+		              "drag <slider> <0..1> or press folder|export, got \""
 		              + name + "\"");
 	}
 
@@ -2394,6 +2414,11 @@ void pollCommands() {
 
 bool isEnabled() {
 	return g.enabled;
+}
+
+const fs::path & directory() {
+	static const fs::path none;
+	return g.enabled ? g.dir : none;
 }
 
 void initialize() {

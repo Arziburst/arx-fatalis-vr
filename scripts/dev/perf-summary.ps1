@@ -22,7 +22,7 @@
 
 .PARAMETER UserDir
 	The user directory holding arx.log and arx-perf.log. Default: this working copy's isolated one when it has an
-	arx-perf.log, otherwise the player's Saved Games\Arx Libertatis (the owner's headset runs).
+	arx-perf.log, otherwise the player's Saved Games\Arx Fatalis VR (the owner's headset runs).
 
 .PARAMETER Previous
 	Read an earlier run: 1 = arx-perf.1.log (the run before the last one), up to 9.

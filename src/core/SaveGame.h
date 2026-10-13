@@ -29,6 +29,7 @@
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/iterator/transform_iterator.hpp>
 
+#include "core/SaveKind.h"
 #include "graphics/BaseGraphicsTypes.h"
 #include "graphics/image/Image.h"
 #include "io/fs/FilePath.h"
@@ -52,9 +53,17 @@ struct SaveGame {
 	AreaId area;
 	std::time_t stime = 0;
 	
+	SaveKind kind = SaveKind::Flat;
+	
 };
 
-//! Central management of the list of savegames.
+/*!
+ * Central management of the list of savegames.
+ *
+ * Lists only the saves of this run's kind (#417, D-NEW, core/SaveKind.h): a VR run never sees a flat save and a flat
+ * run never a VR one - the menu, quick load, \c --loadslot and the channel's \c loadslot all index this list. The
+ * saves of the other kind stay on disk, counted by \ref hiddenCount.
+ */
 class SaveGameList {
 	
 	struct IndexToHandle {
@@ -73,6 +82,25 @@ public:
 	
 	//! Update the savegame list. This is automatically called by save() and remove()
 	void update(bool verbose = false);
+	
+	//! The kind of save this run writes, lists and loads: set once, before the first \ref update
+	void setKind(SaveKind kind) { m_kind = kind; }
+	SaveKind kind() const { return m_kind; }
+	
+	//! Saves in the save folder that belong to the other kind and are not listed
+	size_t hiddenCount() const { return m_hidden.size(); }
+	
+	/*!
+	 * Why a load asked for by slot finds nothing to load: \a slot is past the list, and saves of the other kind are
+	 * hidden - an empty string when no save is hidden
+	 */
+	std::string hiddenReason() const;
+	
+	/*!
+	 * Check a save file that does not come from this list (a path on the command line, a file dropped on the window)
+	 * \return why this run must not load it, or an empty string
+	 */
+	std::string refusal(const fs::path & savefile) const;
 	
 	/*! Save the current game state
 	 * \param name The name of the new savegame.
@@ -100,7 +128,16 @@ public:
 	
 private:
 	
+	//! A save of the other kind: remembered so it is read and logged once, not on every update
+	struct HiddenSave {
+		fs::path savefile;
+		std::time_t stime = 0;
+		SaveKind kind = SaveKind::Flat;
+	};
+	
 	std::vector<SaveGame> savelist;
+	std::vector<HiddenSave> m_hidden;
+	SaveKind m_kind = SaveKind::Flat;
 	
 };
 

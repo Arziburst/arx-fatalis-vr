@@ -8,6 +8,18 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — A test save "does not load" in a flat run: it is a VR save (#417)
+
+**Symptom:** a flat launch with a test save (`smoke-test.ps1 -Save mvp-new-game` without `-VrSim`, `--no-vr`, or a
+VR launch that fell back to flat because SteamVR was off) comes up at the main menu instead of the level; a sequence
+waits for `GAMEPLAY` until it times out. The save is in `save\`, `run-windows.ps1` found the slot.
+**Cause:** since #417 (D-NEW) every test save is a VR save and a flat run lists no VR save - `--loadslot` is refused
+with an info line `--loadslot 0 refused: 0 save(s) of this flat run; 1 vr save(s) ... hidden` (an `[I]`, not an
+`[E]`). The other way round too: a VR run hides flat saves, e.g. the owner's old saves in `Saved Games\Arx Libertatis`
+are not even in our user directory any more.
+**Do:** load test saves with `-VrSim idle` (or in the headset); check `saves.kind` / `saves.hidden` in the status and
+the `Hiding save` lines in `arx.log`.
+
 ## 2026-10-13 — `setpos` y is the feet, not the eye: the player stood 170 units above the floor (#210)
 
 **Symptom:** a save placed in reach of `lever_0012` loaded in `--vr-sim` with the hand reticle's ray ending on the
@@ -20,7 +32,7 @@ written before took setpos's y for the eye (the floor minus 170), so eye coordin
 (what `hand-reticle.xrs` works around for `mvp-items`). The player does not fall back down by itself.
 **Do:** `setpos <x> <floor y> <z>` for a player standing on that floor; check `player.y` (the eye) and
 `camera.eyeAboveFeet` in the status. For a spot at an object use `approach <entity>` (TESTING.md), which finds
-the floor itself. `mvp-items` and `mvp-goblin-fight` still stand 170 up until #417 regenerates them.
+the floor itself. `mvp-items` and `mvp-goblin-fight` stood 170 up until #417 regenerated them on the floor.
 
 ## 2026-10-13 — A load with a weapon in the IK hand crashed at `VRWeapon.cpp:296` (#210)
 

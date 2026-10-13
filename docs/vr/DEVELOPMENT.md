@@ -78,10 +78,12 @@ Everything after `--` goes to `arx.exe`. What the script does by default:
 - **Development shortcuts**: a plain launch starts at the main menu, the publisher logos and the intro
   are skipped (`--intro` shows them) and every `.cin` cinematic is skipped (`--cinematics` shows them).
 - **Straight into the game**: `--skiplogo --loadslot <n>` loads a save; `--loadlevel <n>` starts a level
-  (the smoke test uses level 10). The owner records saves in flat mode; a library of test saves for
-  scenarios is described in [TESTING.md](TESTING.md).
-- **User directory**: by default the game uses the player's `%USERPROFILE%\Saved Games\Arx Libertatis`
-  (log `arx.log`, `cfg.ini`, saves, crash reports). `-Isolated` uses
+  (the smoke test uses level 10). Saves are made in VR: a flat run (`--no-vr`) does not list or load a
+  VR save, nor a VR run a flat one (D-NEW); a library of test saves for scenarios, made on the simulated
+  headset, is described in [TESTING.md](TESTING.md).
+- **User directory**: by default the game uses the player's `%USERPROFILE%\Saved Games\Arx Fatalis VR`
+  (log `arx.log`, `cfg.ini`, saves, crash reports) - its own, never flat Arx Libertatis' (D-NEW); the first
+  start copies `cfg.ini` from `Saved Games\Arx Libertatis` once, never the saves. `-Isolated` uses
   `%LOCALAPPDATA%\ArxFatalisVR\userdirs\<folder>-<hash>` instead, so a test never touches real saves.
 
 ### VR

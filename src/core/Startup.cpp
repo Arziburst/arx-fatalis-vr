@@ -329,6 +329,9 @@ void logStartupBanner(int argc, char ** argv, const fs::path & logFile,
 	// Steam data: "<folder>" (Steam library <library>) | not found: <why> (#79, D-004)
 	LogInfo << "Steam data: " << fs::getSteamDataStatus();
 
+	// User dir: "<path>" (default | command-line | registry | fallback) - our own, never Arx Libertatis' (#417)
+	LogInfo << "User dir: " << fs::getUserDir() << " (" << fs::getUserDirSource() << ')';
+
 }
 
 } // anonymous namespace

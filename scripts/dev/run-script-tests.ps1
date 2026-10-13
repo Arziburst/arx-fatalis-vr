@@ -30,6 +30,7 @@ $tests = @(
 	'test-number-decisions.ps1' # decision numbers at merge (#274): two branches adding D-NEW get consecutive numbers; the clash gate
 	'test-perf-summary.ps1'  # the performance log summary (#327): a fixture arx-perf.log, the totals, worst seconds, hitches, the script
 	'test-plan-next.ps1'    # the coordinator's task order (#187): MVP.md parsing and every start rule
+	'test-repro-save.ps1'    # a reported save loaded in one command (#417): the zip / folder / file, the repro user dir, the arguments
 	'test-wait-launch.ps1'   # the launch marker (#258): checks wait out the game lock before their gameplay timeout; a lock skip is exit 2
 	'test-xrs.ps1'           # the .xrs sequence runner and img-diff (#113): parser, conditions, log marks, @pending, shots, a fake game
 	'test-usage-plan.ps1'    # the usage accounting (#217): calibration, burn, task costs, the worker-count recommendation

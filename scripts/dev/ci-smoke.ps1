@@ -11,6 +11,8 @@
 	                                                           test save library of this account is verified (or generated) first;
 	                                                           an @playground sequence on a runner without node is NOT RUN, with
 	                                                           a warning in the log and the job summary (#321)
+	  4. save-kind-check.ps1 (#417)                            VR and flat saves never see each other; a save exported
+	                                                           for a bug report loads again (four launches)
 	All are the same scripts the workers run (docs/vr/TESTING.md); a FAIL of any fails this script.
 
 	Evidence, in -OutDir: one transcript per phase (smoke-test.log, spell-drawcheck.log), and after each phase the
@@ -203,6 +205,14 @@ try {
 			if ($seq.Args) { $p.ArxArgs = @($seq.Args) }
 			$results += Invoke-Phase "xrs-$($seq.Name)" 'smoke-test.ps1' $p $seqUserDir
 			Remove-Item -LiteralPath $seqUserDir -Recurse -Force -ErrorAction SilentlyContinue
+		}
+		# VR and flat saves never see each other, and an exported save loads again (#417): four launches on one user dir
+		if ($libraryOk) {
+			$p = @{ Config = $Config; LockTimeoutSec = $LockTimeoutSec } + $dataArgs
+			$results += Invoke-Phase 'save-kinds' 'save-kind-check.ps1' $p (Join-Path (Get-ArxAppDataDir) "userdirs\$(Get-WorkingCopyKey $ArxSourceDir)-savekinds")
+		} else {
+			Write-Host 'ci-smoke: save-kind-check needs the save mvp-items, which the library phase did not provide - not run' -ForegroundColor Red
+			$results += [pscustomobject]@{ Name = 'save-kinds'; Exit = 1; Verdict = 'FAIL' }
 		}
 	}
 } finally {

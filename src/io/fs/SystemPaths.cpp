@@ -80,6 +80,8 @@ struct SystemPaths {
 	std::vector<path> m_dataDirs; //!< Directories for data files
 	path m_steamDataDir; //!< The Arx Fatalis install found in the Steam libraries, if any
 	std::string m_steamDataStatus; //!< What the Steam lookup found, or why it found nothing
+	const char * m_userDirSource = "none"; //!< How m_userDir was chosen (getUserDirSource)
+	path m_legacyConfigFile; //!< cfg.ini of the old Arx Libertatis user directory (getLegacyConfigFile)
 
 	/*!
 	 * \brief Initialize the system resource paths using the specified parameters
@@ -130,11 +132,15 @@ std::vector<path> parsePathList(const char * input) {
 path findUserPath(const char * name, const path & force,
                   const char * registry, platform::SystemPathId systemPathId,
                   const char * prefixVar, const char * suffixVar,
-                  const path & fallback, bool create) {
+                  const path & fallback, bool create, const char ** source = nullptr) {
+	
+	const char * ignored = nullptr;
+	const char *& from = source ? *source : ignored;
 	
 	// Prefer command-line options
 	if(!force.empty()) {
 		path dir = canonical(force);
+		from = "command-line";
 		if(create && !create_directories(dir)) {
 			LogCritical << "Could not create " << name << " directory " << dir << '.';
 			return path();
@@ -148,6 +154,7 @@ path findUserPath(const char * name, const path & force,
 	if(registry) {
 		if(auto value = platform::getSystemConfiguration(registry)) {
 			path dir = canonical(value.value());
+			from = "registry";
 			if(!create) {
 				return dir;
 			} else if(create_directories(dir)) {
@@ -169,6 +176,7 @@ path findUserPath(const char * name, const path & force,
 		prefixes.insert(prefixes.end(), paths.begin(), paths.end());
 	}
 	bool create_exists = false;
+	from = "default";
 	for(const path & prefix : prefixes) {
 		for(const path & suffix : suffixes) {
 			
@@ -203,7 +211,30 @@ path findUserPath(const char * name, const path & force,
 	}
 	
 	LogDebug("using fallback " << name << " dir");
+	from = "fallback";
 	return fallback;
+}
+
+//! cfg.ini in the first existing \a legacyDir under the user directory prefixes, or an empty path
+path findLegacyConfigFile(platform::SystemPathId systemPathId, const char * prefixVar, const char * legacyDir) {
+	
+	if(!legacyDir) {
+		return path();
+	}
+	
+	std::vector<path> prefixes = parsePathList(prefixVar);
+	std::vector<path> paths = platform::getSystemPaths(systemPathId);
+	prefixes.insert(prefixes.end(), paths.begin(), paths.end());
+	for(const path & prefix : prefixes) {
+		for(const path & suffix : parsePathList(legacyDir)) {
+			path file = canonical(prefix / suffix) / "cfg.ini";
+			if(is_regular_file(file)) {
+				return file;
+			}
+		}
+	}
+	
+	return path();
 }
 
 bool addSearchPath(std::vector<path> & result, const path & dir, bool filter) {
@@ -364,10 +395,22 @@ SystemPaths::InitParams cmdLineInitParams;
 ExitStatus SystemPaths::init(const InitParams & initParams) {
 	
 	m_userDir = findUserPath("user", initParams.forceUser, "UserDir", platform::UserDirPrefixes,
-	                         user_dir_prefixes, user_dir, current_path(), !initParams.displaySearchDirs);
+	                         user_dir_prefixes, user_dir, current_path(), !initParams.displaySearchDirs,
+	                         &m_userDirSource);
 	
+	const char * configDirSource = "none";
 	m_configDir = findUserPath("config", initParams.forceConfig, "ConfigDir", platform::NoPath,
-	                           config_dir_prefixes, config_dir, m_userDir, !initParams.displaySearchDirs);
+	                           config_dir_prefixes, config_dir, m_userDir, !initParams.displaySearchDirs,
+	                           &configDirSource);
+	
+	// Only a player's own user directory takes the settings of an earlier build (#417): a directory given on the
+	// command line (the test scripts' isolated runs) or in the registry starts from its own cfg.ini. Without a
+	// config dir of its own (Windows) the config dir is the user dir, the search's fallback
+	std::string_view configFrom = configDirSource;
+	bool configDefault = (configFrom == "default" || (configFrom == "fallback" && m_configDir == m_userDir));
+	if(std::string_view(m_userDirSource) == "default" && configDefault) {
+		m_legacyConfigFile = findLegacyConfigFile(platform::UserDirPrefixes, user_dir_prefixes, legacy_user_dir);
+	}
 	
 	m_additionalDataDirs = initParams.dataDirs;
 	
@@ -413,7 +456,7 @@ void listDirectoriesFor(std::ostream & os, std::string_view regKey, platform::Sy
 	
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
 	if(!regKey.empty()) {
-		os << " - Registry key {HKCU,HKLM}\\Software\\ArxLibertatis\\" << regKey << '\n';
+		os << " - Registry key {HKCU,HKLM}\\Software\\ArxFatalisVR\\" << regKey << '\n';
 		if(auto value = platform::getSystemConfiguration(regKey)) {
 			os << "   = " << canonical(value.value()) << '\n';
 		}
@@ -538,6 +581,35 @@ const std::vector<path> & getDataDirs() {
 
 const std::string & getSteamDataStatus() {
 	return g_systemPaths.m_steamDataStatus;
+}
+
+const char * getUserDirSource() {
+	return g_systemPaths.m_userDirSource;
+}
+
+const path & getLegacyConfigFile() {
+	return g_systemPaths.m_legacyConfigFile;
+}
+
+LegacyConfigCopy copyLegacyConfig(const path & configFile, const path & legacyConfigFile, const path & userDir) {
+	
+	LegacyConfigCopy result;
+	
+	if(legacyConfigFile.empty() || !is_regular_file(legacyConfigFile)) {
+		result.why = "no cfg.ini of an earlier build";
+	} else if(exists(configFile)) {
+		result.why = "this directory has its own cfg.ini";
+	} else if(exists(userDir / "save")) {
+		// The game creates the save folder on its first start: a cfg.ini deleted later is not replaced again
+		result.why = "not the first start (the save folder exists)";
+	} else if(!copy_file(legacyConfigFile, configFile)) {
+		result.why = "copying " + legacyConfigFile.string() + " failed";
+	} else {
+		result.copied = true;
+		result.why = "settings copied from " + legacyConfigFile.string() + " (never saves)";
+	}
+	
+	return result;
 }
 
 std::vector<path> getDataSearchPaths() {

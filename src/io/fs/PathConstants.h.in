@@ -32,6 +32,9 @@ static str_t data_dir = ARX_GET_STR("${DATA_DIR}");
 
 static str_t user_dir = ARX_GET_STR("${USER_DIR}");
 
+// The user directory of earlier builds (Arx Libertatis): only the first start's copy of cfg.ini reads it (#417)
+static str_t legacy_user_dir = ARX_GET_STR("${LEGACY_USER_DIR}");
+
 static str_t config_dir = ARX_GET_STR("${CONFIG_DIR}");
 
 static str_t data_dir_prefixes = ARX_GET_STR("${DATA_DIR_PREFIXES}");

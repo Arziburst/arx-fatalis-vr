@@ -206,7 +206,8 @@ std::optional<std::string> getSystemConfiguration(std::string_view name) {
 	REGSAM foreign_registry = KEY_WOW64_64KEY;
 	#endif
 	
-	const WCHAR * key = L"Software\\ArxLibertatis\\";
+	// Our own key (#417, D-NEW): a UserDir set for Arx Libertatis must not lead this build to its saves
+	const WCHAR * key = L"Software\\ArxFatalisVR\\";
 	platform::WideString wname(name);
 	
 	if(auto value = getRegistryValue(HKEY_CURRENT_USER, key, wname)) {
@@ -235,6 +236,16 @@ std::optional<std::string> getSystemConfiguration(std::string_view name) {
 std::vector<fs::path> getSystemPaths(SystemPathId id) {
 	
 	std::vector<fs::path> result;
+	
+	if(id == DesktopDir) {
+		// The desktop the player sees, a OneDrive-redirected one included
+		WCHAR desktop[MAX_PATH];
+		HRESULT hr = SHGetFolderPathW(nullptr, CSIDL_DESKTOPDIRECTORY, nullptr, SHGFP_TYPE_CURRENT, desktop);
+		if(SUCCEEDED(hr)) {
+			result.push_back(platform::WideString::toUTF8(desktop));
+		}
+		return result;
+	}
 	
 	if(id != UserDirPrefixes) {
 		return result;

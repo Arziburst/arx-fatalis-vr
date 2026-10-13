@@ -24,7 +24,7 @@
 
 	Parallel work: -Isolated gives this working copy its own user and config directory
 	(%LOCALAPPDATA%\ArxFatalisVR\userdirs\<folder>-<hash>: arx.log, cfg.ini, saves, crash reports), so a
-	worker's runs never touch the player's files in Saved Games\Arx Libertatis; -Saves copies save
+	worker's runs never touch the player's files in Saved Games\Arx Fatalis VR; -Saves copies save
 	slots into it.
 
 	The game finds the Arx Fatalis data in the Steam libraries itself (#79, arx.log line "Steam data:");
@@ -57,7 +57,7 @@
 
 .PARAMETER Isolated
 	Use this working copy's own user and config directory (--user-dir / --config-dir) instead of the
-	player's Saved Games\Arx Libertatis. -UserDir names another directory.
+	player's Saved Games\Arx Fatalis VR. -UserDir names another directory.
 
 .PARAMETER Playground
 	Start the test playground (#321, scripts\dev\playground): generates the level with arx-level-generator when it
@@ -76,7 +76,7 @@
 
 .PARAMETER SaveLibrary
 	Folder holding the saves for -Saves / -Save (the test save library, #70). Default:
-	$env:ARXVR_SAVE_LIBRARY or %LOCALAPPDATA%\ArxFatalisVR\savelib.
+	$env:ARXVR_SAVE_LIBRARY or %LOCALAPPDATA%\ArxFatalisVR\savelib-vr.
 
 .PARAMETER TestChannel
 	Start with the test channel (--test-dir) of this working copy, so scripts/dev/game-status.ps1 and

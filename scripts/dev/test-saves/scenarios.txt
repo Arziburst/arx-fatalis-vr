@@ -1,7 +1,7 @@
-# The scenarios of the test save library (#70), played by scripts\dev\make-test-saves.ps1 in ONE game run
-# (flat, or on the simulated headset with -VrSim): a new game from the main menu, then the player is put at
-# each scenario point with channel commands and saved there. Format and directives: the header of
-# make-test-saves.ps1.
+# The scenarios of the test save library (#70), played by scripts\dev\make-test-saves.ps1 in ONE game run on
+# the simulated headset (#417: VR saves - a flat game does not load them): a new game from the main menu, then
+# the player is put at each scenario point with channel commands and saved there. Format and directives: the
+# header of make-test-saves.ps1.
 #
 # Level 1 (the goblin prison, where a new game starts). Ids and coordinates come from the `entities`
 # channel command (docs/vr/TESTING.md); a position is "x y z" in world units (about 100 per metre). `setpos`
@@ -34,7 +34,7 @@ short_sword_0030.equip player
 @entity short_sword_0030 show=6
 
 # --- mvp-items: a key on a table, a note and a form beside it, 2.3 m ahead -----------------------------------
-setpos 10700 2935 11400
+setpos 10700 3105 11400
 lookat key_base_0005
 @wait 2
 invulnerability off
@@ -45,7 +45,7 @@ save mvp-items
 invulnerability on
 
 # --- mvp-goblin-fight: a goblin 3.5 m ahead in the corridor ---------------------------------------------------------
-setpos 11454 2935 10250
+setpos 11454 3105 10250
 lookat goblin_base_0036
 @wait 2
 invulnerability off

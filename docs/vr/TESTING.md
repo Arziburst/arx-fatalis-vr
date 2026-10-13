@@ -19,8 +19,10 @@ The rules that use this are in [WORKFLOW.md](WORKFLOW.md) (*Workers test the gam
 .\scripts\dev\eye-check.ps1                                   # the two-eyes check (F-06) on the simulated headset: six legs, one launch
 .\scripts\dev\smoke-test.ps1 -Repeat 10 -Seconds 5            # a table of 10 runs
 .\scripts\dev\smoke-test.ps1 -Saves save0000 -- --loadslot 0  # copy a save into the isolated user directory, then load it
-.\scripts\dev\smoke-test.ps1 -Save mvp-goblin-fight           # a scenario of the test save library (#70): the only save, --loadslot 0
-.\scripts\dev\make-test-saves.ps1                             # produce the test save library, one launch; -Verify loads it all in a fresh game (#70)
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-goblin-fight # a scenario of the test save library (#70, VR saves): the only save, --loadslot 0
+.\scripts\dev\make-test-saves.ps1                             # produce the test save library on the simulated headset, one launch; -Verify loads it all in a fresh game (#70)
+.\scripts\dev\save-kind-check.ps1                             # VR and flat saves never see each other; a save exported for a bug report loads again (#417), four launches
+.\scripts\dev\repro-save.ps1 <zip> -VrSim idle                # a player's exported save loaded in one command (#417); without -VrSim on the real headset
 .\scripts\dev\smoke-test.ps1 -Playground                      # the test playground (#321): the generated room, a max-level hero, GAMEPLAY in area 30
 .\scripts\dev\smoke-test.ps1 -Commands 'shot a','mark x' -- --loadslot 0
 .\scripts\dev\smoke-test.ps1 -Menu -Commands 'loadslot 0'       # plain launch (main menu), then a save through the channel
@@ -53,7 +55,7 @@ Every path a test run touches is **per working copy** (the key `<folder>-<hash>`
 directory `%LOCALAPPDATA%\ArxFatalisVR\userdirs\<key>` (`arx.log`, `cfg.ini`, saves, crash reports)
 and the channel directory `%LOCALAPPDATA%\ArxFatalisVR\test\<key>`. Parallel workers therefore never
 read each other's log or overwrite each other's `status.json`, and never touch the player's
-`%USERPROFILE%\Saved Games\Arx Libertatis` (`-Shared` opts into it on purpose). Game *runs*, however,
+`%USERPROFILE%\Saved Games\Arx Fatalis VR` (`-Shared` opts into it on purpose). Game *runs*, however,
 are one at a time on the PC. See [Isolation and the game lock](#isolation-and-the-game-lock-parallel-work).
 
 ## The smoke test (`scripts/dev/smoke-test.ps1`)
@@ -103,7 +105,7 @@ the same). Every run is one line in the ledger `%LOCALAPPDATA%\ArxFatalisVR\laun
 A fresh isolated directory has no `cfg.ini` yet, so the first run logs one warning
 (`Could not read config files cfg.ini and cfg_default.ini, using defaults`) and writes the file;
 `-Saves <slots>` copies save folders into it (from `-SaveLibrary`, `$env:ARXVR_SAVE_LIBRARY`,
-`%LOCALAPPDATA%\ArxFatalisVR\savelib`; a name that is not there but is in the player's own `save` folder
+`%LOCALAPPDATA%\ArxFatalisVR\savelib-vr`; a name that is not there but is in the player's own `save` folder
 is taken from there) for `-- --loadslot` runs; `-Save <name>` makes one library save the **only** save of
 the directory and defaults the arguments to `--loadslot 0` (see [The test save library](#the-test-save-library-70)).
 
@@ -164,7 +166,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `stall <ms>` | the main thread sleeps 1..5000 ms in this frame: a forced hitch, which the performance log must mark with `cause=channel` (#327) |
 | `quit` | ask the game to quit at the end of the frame (the same path as closing the window) |
 | `save <name>` | save the running game as a new slot named `<name>` (no thumbnail); the newest save is slot 0, so `loadslot 0` loads it back. A `save slot=save000N name=<name> ok=yes\|no` event either way; refused outside a running game (#130) |
-| `loadslot <n>` | load save slot `n` (from the menu or in-game), refused with the slot count if it does not exist. The command-line `--loadslot <n>` of a missing slot logs an `[E]` and starts at the main menu (before #24 it started an empty level: a black world with only the HUD, TRAPS.md); `run-windows.ps1` / `test-pr.ps1` refuse such a launch before it starts |
+| `loadslot <n>` | load save slot `n` (from the menu or in-game), refused with the slot count if it does not exist. A save of the other kind (#417: a flat save in VR, a VR save in a flat run) is not in the list - the refusal names the saves it hides. The command-line `--loadslot <n>` of a missing slot logs an `[E]` and starts at the main menu; of a slot only a hidden save would fill, an info line `--loadslot <n> refused: ...` and a `load.refused` event instead (before #24 it started an empty level: a black world with only the HUD, TRAPS.md); `run-windows.ps1` / `test-pr.ps1` refuse such a launch before it starts |
 | `ui inventory open\|close` | what the inventory key does (the book has the script command `book open\|close`); a `ui.inventory` event once the inventory is open / has finished closing. While a level script holds the player (the level 10 start: letterbox, controls blocked) the HUD is not drawn and a close never finishes — `setplayercontrols on` and `cinemascope off` first (#130) |
 | `loadlevel <n> [target]` | change to level `n` in a running game (refused from the menu: start with `--loadlevel` or `loadslot`) |
 | `newgame` | what the menu does for "New game" and the end of the character creation, without the screens: an average hero (all attributes 10, skills 2, nothing to distribute), level 1. Refused outside the main menu (a plain launch). The hero then lies in the start cell and `player.controlsBlocked` stays `true` for 30-40 s while the level script plays the awakening (#70) |
@@ -176,7 +178,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
 | `vr-input down\|up\|tap <control>`, `vr-input stick left\|right <x> <y>`, `vr-input bind <event> <binding>`, `vr-input reset`, `vr-input turn snap\|smooth\|angle <deg>\|speed <deg/s>\|repeat <s>` | the VR controls' table without a headset (#30, `vr/VRInput.h`): a control (`right.a`, `left.grip`, `right.stick_down` …) held, let go or tapped as if a controller did it, merged into what OpenXR reports and resolved by the same table at the next frame; the game then reacts as to the controllers (#74: inventory, book, jump, crouch toggle, the game menu, the mouse buttons). `stick` holds a stick deflected (the analog value only — its direction controls are `down` / `up`), seen in `vr.input.game.moveX/moveY/turn`; `bind` remaps one event (`bind jump left.grip+left.a`, `bind menu left.b:long`, `bind magic_mode none`); `reset` restores the default layout for the current controllers and lets go of everything (`bind` and `reset` are not saved); `turn` sets the turn settings as `cfg.ini` does (#32: mode, snap angle, the repeat pause of a held stick (0 = none), smooth speed — `vr.input.turn` shows them with `snaps`, `lastSnap`, `turned` degrees right positive, `allowed`, and for the last push `pushRepeats` and `repeatInterval` — the mean seconds by the clock from its first snap to its last repeat (#285); one `vr.turn.snap … repeat=no|yes` game event per snap, `vr.turn.smooth` at the start and stop of a smooth turn). Refused with the reason for an unknown control, event or binding. `vr.input` in the status (`vr.input.game.held`: the actions, buttons and keys the engine is given); one `[vr] input: <event> (<binding>)` log line per event press, one `[vr] input: layout …` line per layout change |
 | `vr-input capture <event>`, `vr-input cancel`, `vr-input default` | the VR settings page's remapping (#178, `vr/BindingCapture.h`): `capture` is what a click on the event's binding does — the next controls pressed (`vr-input down` / `up` / `tap`, or the simulated controllers) become its binding: released → single, held ≥ 0.5 s → `:long`, a second control of the same hand while the first is held → a chord; the walk stick and the turn stick's left / right are refused with the reason; nothing pressed for 8 s cancels. While capturing, the controls reach nothing else. The result is applied at once and **saved** for the controller type (`vr-controls-<type>.ini` in the config directory: only the events that differ from the default). `cancel` ends a capture; `default` is the page's "reset to default" (#35's layout, the file removed); `reload` reads the saved layout again at the next frame, as a start does. `vr.input.capture` and `vr.input.remapped` / `conflicts` in the status; a `vr.remap` game event per result |
-| `menu pause\|resume\|none\|options\|input\|vr\|vr-turning`, `menu step <row> left\|right`, `menu drag <slider> <0..1>` | the main / pause menu without clicks (#178): `pause` opens the pause menu from a running game (as Escape does), `resume` goes back to the game ("Resume game"); the others open that page of the main or pause menu (`none` closes the options window). On the VR turning page (#260, D-043, the page open): `drag` is a slider's dot dragged to that point of its bar (0 left end, 1 right end) and let go — it lands on the nearest notch: `angle` (30–90° in 5° steps), `speed` (very slow / slow / medium / fast / very fast = 60 / 90 / 120 / 180 / 240°/s), `repeat` (off, 0.25, 0.4, 0.6, 0.8, 1 s); `step` is one notch of a slider (the arrow keys) or a click on the left / right arrow of the rows `turn` (snap / smooth) and `height` (−20 to +20 cm in 2 cm steps); a change is a `vr.settings row=… value=…` game event and applies at once. `menuPage` in the status |
+| `menu pause\|resume\|none\|options\|input\|vr\|vr-turning\|saves`, `menu step <row> left\|right`, `menu drag <slider> <0..1>`, `menu press folder\|export` | the main / pause menu without clicks (#178): `pause` opens the pause menu from a running game (as Escape does), `resume` goes back to the game ("Resume game"); the others open that page of the main or pause menu (`none` closes the options window). On the VR turning page (#260, D-043, the page open): `drag` is a slider's dot dragged to that point of its bar (0 left end, 1 right end) and let go — it lands on the nearest notch: `angle` (30–90° in 5° steps), `speed` (very slow / slow / medium / fast / very fast = 60 / 90 / 120 / 180 / 240°/s), `repeat` (off, 0.25, 0.4, 0.6, 0.8, 1 s); `step` is one notch of a slider (the arrow keys) or a click on the left / right arrow of the rows `turn` (snap / smooth) and `height` (−20 to +20 cm in 2 cm steps); a change is a `vr.settings row=… value=…` game event and applies at once. On the saves page (#417, the page open): `step save left\|right` chooses the save to export (newest first), `press folder` is "Open saves folder" (a test run only logs it), `press export` is "Export a save for a bug report" (into `<test dir>\reports`) - see [VR saves and bug reports](#vr-saves-and-bug-reports-417). `menuPage` in the status |
 | `vr-input height <meters>` | the character height setting as `cfg.ini` (`vr_height_offset`) sets it (#260), clamped to ±0.2: the head camera sees from this far above the character's eye; `vr.head.heightOffset` in the status (updated while the head drives the camera, not in the menu) |
 | `pick [<entity>]` | what mouse picking (`FlyingOverObject`) finds, on an 8-pixel grid over the interface's screen (#72; the window's size in flat mode, the quad's own size in VR, #73): `pick.center` (the entity at its center), `pick.scan` (`<entity> <hits> <x> <y>` per entity found, most hits first) and, for an entity, `targetHits`, `targetHitX/Y` (the middle of its hits), `targetSeenX/Y` (where the camera prepared last — the head camera at the interface's size — sees the middle of its bounding box), `targetOffset` (the distance between the two), `targetBox` (its `bbox2D`) and `targetSeenInBox`. A thin item (a key) can fall between the grid points: `targetSeenInBox` still tests its box. Refused outside gameplay or for an unknown entity; one `[channel] pick:` log line |
 | `recenter` | the head is measured from its next sample: a new head reference (#24; the player's button chord is #28). A `vr.head.reference reason=channel` event once a head is there |
@@ -474,8 +476,11 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   deflection — the stealth walk; below cfg `vr_sneak_below` 0.6 of the dead-zoned travel a run turns
   into a sneak, at `vr_run_above` 0.7 a sneak into a run), `paceChanges` (sneak ↔ run switches within
   a walk since the start; a game event `vr.walk state=pace pace=…` each, and `pace=` on `state=start`).
-- `menuPage` (#178): the page of the main / pause menu shown — `none`, `options`, `input`, `vr` or
-  `other`; `none` outside the menu.
+- `menuPage` (#178): the page of the main / pause menu shown — `none`, `options`, `input`, `vr`,
+  `vr-turning`, `saves` or `other`; `none` outside the menu.
+- `saves` (#417): `userDir` (the user directory of this run), `userDirSource` (`default`, `command-line`,
+  `registry` or `fallback`), `kind` (`vr` or `flat`: the saves this run writes, lists and loads), `listed`, `hidden`
+  (the saves of the other kind in the save folder; an expected 0 for a player who plays one mode).
 - `drawCheck` appears once a `drawcheck` was requested: `{"seq":1,"running":false,"frames":120,
   "framesDiffering":0,"pixels":307200,"maxPixelsDiffering":0,"maxDelta":0,"capture":""}` —
   `frames` compared so far, `framesDiffering` of them with at least one differing pixel,
@@ -490,14 +495,16 @@ original game's data and go stale with the engine's save format; they are produc
 needs them, by one script and one game launch.
 
 ```powershell
-.\scripts\dev\make-test-saves.ps1                    # produce the library: one launch, ~2.5 min (30-40 s of it the awakening)
-.\scripts\dev\make-test-saves.ps1 -Verify            # a FRESH game (--loadslot 0) loads every save and checks it: one launch
-.\scripts\dev\smoke-test.ps1 -Save mvp-goblin-fight  # a worker's use: that save, nothing else, --loadslot 0
-.\scripts\run-windows.ps1 -Isolated -Save mvp-items -TestChannel -- --no-vr   # the same by hand, in a window
+.\scripts\dev\make-test-saves.ps1                    # produce the library on the simulated headset: one launch, ~1.5 min (30-40 s of it the awakening)
+.\scripts\dev\make-test-saves.ps1 -Verify            # a FRESH VR game (--loadslot 0) loads every save and checks it: one launch
+.\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-goblin-fight  # a worker's use: that save, nothing else, --loadslot 0
+.\scripts\run-windows.ps1 -Isolated -Save mvp-items -TestChannel   # the same by hand, in the headset (SteamVR running)
 ```
 
-The library is `%LOCALAPPDATA%\ArxFatalisVR\savelib` (`$env:ARXVR_SAVE_LIBRARY` or `-SaveLibrary`
-elsewhere): one folder per scenario with `gsave.sav`, and `manifest.json` (name, description, level,
+**Every save of the library is a VR save** (#417, D-NEW): it is made on the simulated headset and a flat run
+(`--no-vr`) lists none of them - load them with `-VrSim` (or in the headset). The library is
+`%LOCALAPPDATA%\ArxFatalisVR\savelib-vr` (`$env:ARXVR_SAVE_LIBRARY` or `-SaveLibrary` elsewhere; the flat
+`savelib` of the builds before #417 is left alone for the branches that still use it): one folder per scenario with `gsave.sav`, and `manifest.json` (name, description, level,
 player position, commit, date). It is shared by every working copy of the machine. **Regenerate it**
 (`make-test-saves.ps1`) when the engine's save format changes, or a save fails to load; `-Verify` says
 which.
@@ -511,8 +518,8 @@ which.
 | `mvp-door` | a sword equipped; the closed portcullis `porticullis_0015` 1.6 m ahead, in the hand reticles' reach | #38: a door |
 | `mvp-chest` | a sword equipped; `chest_metal_0052` 1.6 m ahead, in the hand reticles' reach | #38: open a chest |
 
-`mvp-items` and `mvp-goblin-fight` were placed with `setpos` before it was known that `setpos` takes the
-feet: their player stands 170 units above the floor (TRAPS.md); #417 regenerates them.
+`mvp-items` and `mvp-goblin-fight` were first placed with `setpos` at the eye's height, which put the feet
+170 units above the floor (`setpos` takes the feet, TRAPS.md); #417 placed them on the floor (`setpos <x> 3105 <z>`).
 
 **A save at an object** (a lever, a door, a chest, an NPC): `approach <entity>` twice in the scenario, then
 `save` (the three above; one run, no search). Each save has its reticle check, one launch each:
@@ -525,12 +532,14 @@ feet: their player stands 170 units above the floor (TRAPS.md); #417 regenerates
 .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence reach-chest -Save mvp-chest
 ```
 
-`-VrSim <script>` makes (or verifies) the saves on the simulated headset instead of a flat game; `-Only`
-copies only the named saves of the run into the library (every save is still made and loaded again).
-`manifest.json` says how each save was made (`made`: `flat` or `vr-sim idle`).
+`-VrSim <script>` names the simulated headset's script the saves are made (or verified) on - `idle` by default;
+a run that comes up flat fails (`saves.kind` must be `vr`), and `-Verify`, a VR game that lists no flat save,
+proves every save is a VR save. `-Only` copies only the named saves of the run into the library (every save is
+still made and loaded again). `manifest.json` says how each save was made (`made`: `vr-sim idle`; `flat` in a
+library made before #417).
 
 **How a save is made** (`scripts/dev/make-test-saves.ps1`, scenario file
-`scripts/dev/test-saves/scenarios.txt`): one game (flat, or `-VrSim`) from the main menu; `newgame`; `@until
+`scripts/dev/test-saves/scenarios.txt`): one game on the simulated headset from the main menu; `newgame`; `@until
 player.controlsBlocked False`; per scenario `setpos` + `lookat` or `approach` + `save <name>`; then the **same game
 loads every save again** (`loadslot`, oldest first) and checks the level, that the player stands where it
 was saved (within 1 m) and that the controls are free, with a screenshot per save. The script **fails**
@@ -553,6 +562,53 @@ What a save does and does not keep (measured, #70): the position, the yaw, the i
 equipped, the entities' state (the goblin's patrol goes on from where it was). Not the pitch of the view
 (irrelevant in VR). The verification waits 4 s after a `loadslot` before its screenshot (the level fades
 in from black, TRAPS.md).
+
+## VR saves and bug reports (#417)
+
+**Our own user directory** (D-NEW): `%USERPROFILE%\Saved Games\Arx Fatalis VR` (the registry key, if one is ever
+needed, is `Software\ArxFatalisVR`), never flat Arx Libertatis' `Saved Games\Arx Libertatis`. The banner says which
+(`User dir: "<path>" (default)`); `status.json` → `saves.userDir`. Its first start (no `cfg.ini`, no `save` folder)
+copies `cfg.ini` once from the old directory - one `First start settings: ...` line says what happened; saves are
+never copied. Test runs pass `--user-dir`, which never copies anything.
+
+**VR saves and flat saves never see each other.** A VR run (an OpenXR session at startup, the simulated headset
+included) writes a mark into every save (the file `arxvr` in the save block, `src/core/SaveKind.h`) and lists and
+loads only marked saves; a flat run only unmarked ones. The other kind stays on disk: one `Hiding save <slot>
+"<name>": a VR save, and this run is flat ...` info line per save, `saves.hidden` in the status. A load that would
+reach one - `--loadslot` past the listed saves, quick load with none of this kind, a save given by path - is refused:
+`--loadslot 0 refused: 0 save(s) of this flat run; 2 vr save(s) in the save folder are hidden: ...` and a
+`load.refused` game event, then the main menu. The channel's `loadslot` refuses the same way, naming the hidden saves.
+
+**The saves page** - Options → *Saves and bug reports* (the pause menu is the same menu; `menu saves`): the save
+folder's path, **Open saves folder** (Explorer on the desktop; `menu press folder` - a test run logs `Saves folder:
+"<path>" - not opened, a test run (--test-dir)` instead), the save to export (newest first; `menu step save
+left|right`), and **Export a save for a bug report** (`menu press export`): one zip on the Desktop,
+`arxvr-report-YYYYMMDD-HHMMSS.zip`, holding `<slot>/gsave.sav`, `arx.log`, `arx-perf.log` and `cfg.ini`. The three text
+files are scrubbed first with the rules of #387 (home folders, Steam ids, network paths, e-mails, GUIDs, SIDs, MAC and
+IP addresses, the account and machine names; `src/core/BugReport.h`); the save is binary and goes in as it is. A
+test run writes the zip into `<test dir>\reports`. One `Bug report written: "<zip>" (<files>)` line.
+
+**A reported save in one command:**
+
+```powershell
+.\scripts\dev\repro-save.ps1 "$env:USERPROFILE\Downloads\arxvr-report-20261013-153012.zip"   # VR: SteamVR must run
+.\scripts\dev\repro-save.ps1 .\arxvr-report-20261013-153012.zip -VrSim idle                    # the simulated headset
+.\scripts\dev\repro-save.ps1 D:\somewhere\save0003 -VrSim idle -Quit                           # a save folder; quit once loaded
+```
+
+It takes the zip, a save folder or a `gsave.sav`, makes it the only save of this copy's repro user directory
+(`userdirs\<key>-repro`, emptied first; the reporter's `cfg.ini` is not copied), starts the game into it with the
+test channel and prints `loaded <slot> - area 1, player at x .. y .. z .. (yaw ..)` and the tail of `arx.log`. The
+reporter's logs stay in the zip. One launch; `test-repro-save.ps1` is its self-test.
+
+**The check** - `save-kind-check.ps1`, four launches on one user directory (`scripts\dev\xrs\save-kinds\`), run by
+CI: (1) the simulated headset from `mvp-items`: a save `vr-made` with the mark, the saves page, the folder logged,
+`mvp-items` exported; the zip holds exactly the four files, the save byte for byte the library's, and
+`Find-ArxPrivateData` finds nothing in the text files; (2) flat with `--loadslot 0`: both VR saves hidden, the load
+refused, a new game's `flat-made` is a flat save and listed; (3) the simulated headset with `--loadslot 2`: the flat
+save hidden although it is the newest, slot 2 refused, slot 0 is `vr-made`; (4) `repro-save.ps1 <zip> -VrSim idle
+-Quit` loads `mvp-items` at the library's area and position. Measured 2026-10-13: all four pass, the repro 0.0 units
+from where the library made the save.
 
 ## The test playground (#321)
 
@@ -686,7 +742,9 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `game.state` | the state changes | `to`, `was` (`STARTUP`, `MENU`, `LOADING`, `GAMEPLAY`, `CINEMATIC`, `EXITED`), `area` with `LOADING` / `GAMEPLAY` |
 | `game.new` | a new playthrough starts (character creation or `--loadlevel`) | — |
 | `level.load` / `level.loaded` | a level starts / finishes loading (new game, save, level change) | `area`; `ok`, `ms` |
-| `save` / `load` | a save is written / a save starts loading | `slot` (`save0003`), `name`, `ok`; `area`, `quick` |
+| `save` / `load` | a save is written / a save starts loading | `slot` (`save0003`), `name`, `kind` (`vr` / `flat`, #417), `ok`; `area`, `quick` |
+| `load.refused` | a load that would reach a save of the other kind (#417): `--loadslot`, quick load, a save given by path | `source` (`loadslot`, `quickload`, `file`), `slot`, `hidden`, `name` |
+| `saves.folder` / `saves.export` | "Open saves folder" / "Export a save for a bug report" on the saves page (#417) | `opened` (no in a test run); `slot`, `ok`, `files` |
 | `cinematic.skip` | a development launch skips a `.cin` (#124) | `name`, `reason` |
 | `player.levelup` | the player gains a level | `level`, `xp` |
 | `player.death` | the player dies | `source` (entity id), `damage`, `type` (damage type flags) |
@@ -762,7 +820,7 @@ code, duration, errors/warnings (how many are **new**), crashes. The owner does 
 .\scripts\dev\log-digest.ps1 -Id                     # who wrote this log: the banner lines, nothing else
 .\scripts\dev\log-digest.ps1 -Find 'OpenXR' -Last 5  # the last 5 lines of the run matching a regex
 .\scripts\dev\log-digest.ps1 -Condense               # the log in a screenful (logdig, F-112)
-.\scripts\dev\log-digest.ps1 -DryRun -Log "$env:USERPROFILE\Saved Games\Arx Libertatis\arx.2.log"   # an older run, nothing written or filed
+.\scripts\dev\log-digest.ps1 -DryRun -Log "$env:USERPROFILE\Saved Games\Arx Fatalis VR\arx.2.log"   # an older run, nothing written or filed
 .\scripts\dev\log-digest.ps1 -Flush                  # send the queued reports now (a run does this itself)
 .\scripts\dev\test-log-digest.ps1                    # the self-test: fixture logs, a fake GitHub, no game, no network
 .\scripts\dev\test-github-lib.ps1                    # self-test of the dev scripts' GitHub access (#186): REST, board cache, rate limit, move queue
@@ -951,7 +1009,7 @@ alternation, an unpaced loop (OVER), a late run, the gap phases, the window boun
 ## The performance log (`arx-perf.log`, #327)
 
 **Every run writes it, nobody has to ask:** `arx-perf.log` next to `arx.log` — the owner's runs
-(`test-pr.ps1`, `run-windows.ps1`, the desktop shortcut) in `%USERPROFILE%\Saved Games\Arx Libertatis`,
+(`test-pr.ps1`, `run-windows.ps1`, the desktop shortcut) in `%USERPROFILE%\Saved Games\Arx Fatalis VR`,
 a working copy's isolated runs (`smoke-test.ps1`, `--vr-sim`, `-Isolated`) in
 `%LOCALAPPDATA%\ArxFatalisVR\userdirs\<key>`. The previous nine runs are kept as `arx-perf.1.log` ..
 `arx-perf.9.log`, like `arx.log`; `ci-smoke.ps1` collects them with the `arx*.log` files. `arx.log`
@@ -1293,7 +1351,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `walk-look` | on `mvp-new-game`: with the head turned ±90° the stick walks where the head looks (D-008), with the head ahead along the heading; the heading stays, one `vr.walk` start / end per push (`vr.input.walk` in status.json) | — (#31) |
 | `sneak-jump-crouch` | on `mvp-new-game`: a full push runs, a slight one sneaks (`player.stealth`, `player.animSpeed` < 0.8 × the run's), the hysteresis band keeps a run, below it the walk turns into a sneak; `right.a` jumps; `right.stick_down` with the stick drifting sideways toggles the crouch on without turning, a tap toggles it off | — (#33) |
 | `arms-follow` | the full body (#36): both arm chains found, both arms posed from the idle rig's controllers with `error` 0; the hand takes the controller's orientation (the identity grip is a hand hanging down in the OpenXR grip pose: the wrist 8 units above the grip and the fingertips below the wrist; pitched up 90°, fingers ahead and thumb up: wrist and fingertips level with the grip); a hand moved 30 cm moves the wrist with it and changes both eyes' pictures of the body seen from above (> 2, floor < 1.5); 1.2 m out: `stretched`, `slide` 20; a controller switched off gives its arm back to the engine; a 30 cm lean shifts the body by the camera's offset and keeps `error` 0. **Needs the first-person save** (level 10's conversation camera is nowhere near the body): `smoke-test.ps1 -VrSim idle -Sequence arms-follow -Save mvp-new-game` | — |
-| `stand-up` | flat, on the test save `mvp-new-game` (`smoke-test.ps1 -Sequence stand-up -Save mvp-new-game`): `crouch on` / `crouch off` in the start cell — the character crouches (eye 170.1 → 122.7) and stands up where it stood (eye 170.1, same x/z); crouched inside the cell's portcullis it stays down with one `player.standup.blocked` event, and stands up once back at the start spot (#263) | — |
+| `stand-up` | on the simulated headset since #417 (the test saves are VR saves; flat before, where the eye numbers were measured), on the test save `mvp-new-game` (`smoke-test.ps1 -VrSim idle -Sequence stand-up -Save mvp-new-game`): `crouch on` / `crouch off` in the start cell — the character crouches (eye 170.1 → 122.7) and stands up where it stood (eye 170.1, same x/z); crouched inside the cell's portcullis it stays down with one `player.standup.blocked` event, and stands up once back at the start spot (#263) | — |
 | `recenter` | a head offset is set and read back; `recenter` is accepted (#28) | — |
 | `tl-reprojection` | picking reads the head camera after the eyes, the book icon's particles are on the quad and add no coverage (#72), on the save `mvp-items` | — |
 | `real-steps` (#26; run with `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence real-steps`) | 8 cm is a lean (the body stays); 1 m forward is a real step (the body walks 0.9 m, the lean stays 0.1 m, no fade); into the cell wall the body is held, the head goes `inside` then `behind` it, both eyes black; back out, the fade clears | — |
@@ -1430,12 +1488,13 @@ self-hosted runner (D-021: CI is the automatic gate; a red step blocks the merge
 | Script self-tests | `scripts/dev/run-script-tests.ps1`: every `scripts/dev/test-*.ps1` in its own pwsh (`test-log-digest.ps1` incl. the `-Id` / `-Find` / `-Condense` / `-Print` modes on a fixture log, `test-github-lib.ps1`, `test-launch-lib.ps1`) | a test exits non-zero, or a `test-*.ps1` is in neither list of the script (a new test cannot be forgotten) |
 | Build | `build-windows.ps1 -Config Release`, which also builds and runs the host unit tests (`arxtest`) | the build, or a CppUnit test, fails |
 | Game checks | `scripts/dev/ci-smoke.ps1`: `smoke-test.ps1 -Seconds 3 -Commands 'drawcheck 120'`, then `spell-drawcheck.ps1` — the same scripts a worker runs, flat, `--loadlevel 10` | either returns `FAIL`, **or was skipped** (exit 2: the game lock stayed busy for 15 min) — a gate that did not run is not a pass, re-run the job |
-| Sequences (#255) | the same script, phase `sequences`: every `scripts/dev/xrs/*.xrs` (`look-around`, `snap-turn`, `walk-forward`, `stand-up`, `recenter`, `ui-panel`, see [Scripted sequences](#scripted-sequences-xrs-113)) as one launch each — `smoke-test.ps1 -Sequence <name>` with the `@sim` / `@args` / `@save` the file declares (idle simulated headset by default, flat when its `@args` say `--no-vr`) | a step fails, **a `@pending` step starts passing** (remove the `@pending`), or the launch was skipped (exit 2). A new `.xrs` file is picked up by itself |
+| Sequences (#255) | the same script, phase `sequences`: every `scripts/dev/xrs/*.xrs` (`look-around`, `snap-turn`, `walk-forward`, `stand-up`, `recenter`, `ui-panel`, see [Scripted sequences](#scripted-sequences-xrs-113)) as one launch each — `smoke-test.ps1 -Sequence <name>` with the `@sim` / `@args` / `@save` the file declares (idle simulated headset by default, flat when its `@args` say `--no-vr` - never with a `@save`: the test saves are VR saves, #417, `test-xrs.ps1` checks it) | a step fails, **a `@pending` step starts passing** (remove the `@pending`), or the launch was skipped (exit 2). A new `.xrs` file is picked up by itself |
+| Save kinds (#417) | the same phase, last: `save-kind-check.ps1` - VR and flat runs on one user directory never see each other's saves, the bug report export and `repro-save.ps1` (four launches, see [VR saves and bug reports](#vr-saves-and-bug-reports-417)) | a check fails, or a launch was skipped |
 | Upload | the artifact `game-checks`, also when a step failed | — |
 
 **The save library on the runner (#255).** Sequences with a `@save` (`snap-turn`, `stand-up`, `ui-panel`: `mvp-new-game`)
 need the test saves (D-023: derived from the game's data, generated per machine, never committed). The phase
-`save-library` runs first: in the service's own profile (`C:\Windows\ServiceProfiles\NetworkService\AppData\Local\ArxFatalisVR\savelib`)
+`save-library` runs first: in the service's own profile (`C:\Windows\ServiceProfiles\NetworkService\AppData\Local\ArxFatalisVR\savelib-vr`, VR saves since #417)
 it runs `make-test-saves.ps1 -Verify` (one launch, ~20 s: a fresh game loads every save); when the library is missing, lacks a
 save a sequence names, or `-Verify` fails (an engine save format change made the saves stale), it runs
 `make-test-saves.ps1` (one launch, ~1 min) and the library is regenerated — nothing to do by hand. A sequence whose save the phase could
@@ -1495,7 +1554,7 @@ launch rules D-014 / #147). What keeps their runs apart — all derived from the
 | Shared before | Now |
 |---|---|
 | the build | `%LOCALAPPDATA%\ArxFatalisVR\build\<key>\<Config>`; `built-from.txt` in it records the commit a build came from (`<sha>` or `<sha> dirty`), read by `test-pr.ps1` to decide whether to rebuild and by every launch script, which refuses a build of another copy or of another commit than `HEAD` (`-Rebuild` builds first) |
-| `arx.log`, `cfg.ini`, saves, crash reports | `run-windows.ps1 -Isolated` and the smoke test pass `--user-dir` / `--config-dir` = `…\userdirs\<key>`. The player's `Saved Games\Arx Libertatis` is touched only by a plain `run-windows.ps1` (the owner's headset test, `test-pr.ps1`) or `smoke-test.ps1 -Shared` |
+| `arx.log`, `cfg.ini`, saves, crash reports | `run-windows.ps1 -Isolated` and the smoke test pass `--user-dir` / `--config-dir` = `…\userdirs\<key>`. The player's `Saved Games\Arx Fatalis VR` (D-NEW; `Arx Libertatis` before #417) is touched only by a plain `run-windows.ps1` (the owner's headset test, `test-pr.ps1`) or `smoke-test.ps1 -Shared` |
 | the channel (`status.json`, `command.txt`) | `--test-dir` = `…\test\<key>`; a copy's `game-cmd.ps1` / `game-status.ps1` talk to that copy's game; `run-windows.ps1 -TestChannel` starts a manual run with it |
 | saves for `--loadslot` | `-Saves save0000` copies slots into the isolated directory from `-SaveLibrary`, `$env:ARXVR_SAVE_LIBRARY` or the player's `save` folder (#70 defines the library) |
 | the PC (GPU, desktop) and the headset | the game lock below: one game at a time, flat or VR |
@@ -1547,7 +1606,7 @@ Measured (owner's PC, 2026-10-09, #123):
 
 | Scenario | Result |
 |---|---|
-| `smoke-test.ps1` (isolated by default) | `PASS`; `arx.log`, `cfg.ini`, `save\`, `crashes\` appear in `userdirs\<key>`; the player's `Saved Games\Arx Libertatis\arx.log` keeps its `LastWriteTime`. First run in a fresh directory: 1 warning (no `cfg.ini` yet), later runs 0 |
+| `smoke-test.ps1` (isolated by default) | `PASS`; `arx.log`, `cfg.ini`, `save\`, `crashes\` appear in `userdirs\<key>`; the player's `Saved Games\Arx Fatalis VR\arx.log` keeps its `LastWriteTime` (`Arx Libertatis` when measured, before #417). First run in a fresh directory: 1 warning (no `cfg.ini` yet), later runs 0 |
 | **Two smoke tests at the same time** (this worktree's build and the owner's build, separate user and channel directories), `-Seconds 8` each | **2 of 2** `PASS`, both done in 11 s; `GAMEPLAY` after 0.5 s and 1.1 s, 0 errors — **no second-instance limit** in the engine. *Superseded by D-014 (#147): the owner wants one game at a time anyway, so every launch takes the game lock now and the second test waits* |
 | VR lock held by another process: `smoke-test.ps1 -Vr -VrLockTimeoutSec 3` | `SKIPPED`, exit 2, holder printed: `pid=2580 since=… what=lock-test holder` |
 | the same, `run-windows.ps1 -VrLockTimeoutSec 2` without `--no-vr` | fails: `another game is running in VR (pid=2580 … what=lock-test holder). Wait for it to end, or add --no-vr` |

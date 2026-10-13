@@ -127,6 +127,8 @@ enum class Event : u8 {
 	Menu,          //!< the game menu
 	Recenter,
 	MagicMode,     //!< held: the casting stance - a trigger draws runes with its hand (#43)
+	ActLeft,       //!< act on the door, lever, chest, NPC or corpse under the left reticle (the double click, #38, D-042)
+	ActRight,
 	Count
 };
 
@@ -269,7 +271,13 @@ struct Conflict {
 	Event second;
 };
 
-//! The events that share a binding - shown to the player when remapping (#178)
+/*!
+ * Two events that may share a binding: one hand's stash and act (#38, D-042) - the reticle's target decides
+ * which one acts (an item is stashed, a door, lever, chest, NPC or corpse is acted on)
+ */
+bool sharesBindingByDesign(Event a, Event b);
+
+//! The events that share a binding - shown to the player when remapping (#178); not a pair of \ref sharesBindingByDesign
 std::vector<Conflict> findConflicts(const ControlLayout & layout);
 
 //! A press / release threshold pair for an analog input used as a button

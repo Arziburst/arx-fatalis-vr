@@ -41,7 +41,7 @@ namespace vr {
 struct BodyViewParams {
 	float push = 12.f;         //!< how far the body sits behind the eyes along its facing (cfg.ini vr_body_push)
 	float neckBelowEye = 10.f; //!< the neck pivot below the eyes
-	float clearance = 15.f;    //!< faces with a corner within this distance of an eye are hidden (cfg.ini vr_body_clearance)
+	float clearance = 25.f;    //!< faces with a corner within this distance of an eye are hidden (cfg.ini vr_body_clearance)
 	float keepBelow = 60.f;    //!< faces lower than this below the eyes are never hidden: the legs
 };
 

@@ -109,10 +109,14 @@ void VRControlsTest::chordTest() {
 	CPPUNIT_ASSERT(!resolver.active(Event::UseRight));
 	resolver.update(16, controls({ RightGrip, RightTrigger }));
 	CPPUNIT_ASSERT(resolver.pressed(Event::StashRight));
+	// The same chord acts on a door, lever, chest or body (#38): the reticle's target decides which one does something
+	CPPUNIT_ASSERT(resolver.pressed(Event::ActRight));
+	CPPUNIT_ASSERT(!resolver.active(Event::ActLeft));
 	CPPUNIT_ASSERT(!resolver.active(Event::InteractRight));
 
 	resolver.update(32, controls({ RightGrip }));
 	CPPUNIT_ASSERT(resolver.released(Event::StashRight));
+	CPPUNIT_ASSERT(resolver.released(Event::ActRight));
 
 	// Both controls were used by the chord: releasing the grip is no tap
 	resolver.update(48, controls());
@@ -450,6 +454,20 @@ void VRControlsTest::layoutTextTest() {
 	CPPUNIT_ASSERT(findConflicts(layout).size() == 1); // jump and menu both on left.a now
 	CPPUNIT_ASSERT(findConflicts(layout)[0].first == Event::Jump);
 	CPPUNIT_ASSERT(findConflicts(layout)[0].second == Event::Menu);
+
+	// #38, D-042: a hand's stash and act share grip + trigger by design - not a conflict; any other pair is
+	ControlLayout shared = index;
+	CPPUNIT_ASSERT(shared[Event::ActLeft] == shared[Event::StashLeft]);
+	CPPUNIT_ASSERT(sharesBindingByDesign(Event::ActRight, Event::StashRight));
+	CPPUNIT_ASSERT(sharesBindingByDesign(Event::StashLeft, Event::ActLeft));
+	CPPUNIT_ASSERT(!sharesBindingByDesign(Event::StashLeft, Event::ActRight));
+	CPPUNIT_ASSERT(!sharesBindingByDesign(Event::ActLeft, Event::InteractLeft));
+	shared[Event::ActRight] = shared[Event::StashLeft]; // the right act on the left chord: three events on it
+	CPPUNIT_ASSERT_EQUAL(size_t(2), findConflicts(shared).size());
+	CPPUNIT_ASSERT(findConflicts(shared)[0].first == Event::StashLeft);
+	CPPUNIT_ASSERT(findConflicts(shared)[0].second == Event::ActRight);
+	CPPUNIT_ASSERT(findConflicts(shared)[1].first == Event::ActLeft);
+	CPPUNIT_ASSERT(findConflicts(shared)[1].second == Event::ActRight);
 }
 
 void VRControlsTest::defaultLayoutTest() {
@@ -466,6 +484,9 @@ void VRControlsTest::defaultLayoutTest() {
 	CPPUNIT_ASSERT_EQUAL(std::string("left.b"), formatBinding(index[Event::Book]));
 	CPPUNIT_ASSERT_EQUAL(std::string("right.stick_down"), formatBinding(index[Event::CrouchToggle]));
 	CPPUNIT_ASSERT_EQUAL(std::string("left.grip+left.trigger"), formatBinding(index[Event::StashLeft]));
+	// #38: D-042's use / interact on the same chord (an interim default, #377 owns the layout)
+	CPPUNIT_ASSERT_EQUAL(std::string("left.grip+left.trigger"), formatBinding(index[Event::ActLeft]));
+	CPPUNIT_ASSERT_EQUAL(std::string("right.grip+right.trigger"), formatBinding(index[Event::ActRight]));
 	CPPUNIT_ASSERT_EQUAL(std::string("left.a"), formatBinding(index[Event::Menu]));
 	// #43: magic mode held with the left hand - the Index's trackpad, the Touch's free X
 	CPPUNIT_ASSERT_EQUAL(std::string("left.trackpad"), formatBinding(index[Event::MagicMode]));

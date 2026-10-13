@@ -649,11 +649,14 @@ void ArxGame::managePlayerControls() {
 	
 	ARX_PROFILE_FUNC();
 	
-	if(eeMouseDoubleClick1() && !(player.Interface & INTER_COMBATMODE) && !player.doingmagic
+	// VR (#38, D-042): a hand's act is the double click on what its reticle is on (vr/VRReticle.h)
+	Entity * reticleAct = vr::takeReticleAct();
+	
+	if((eeMouseDoubleClick1() || reticleAct) && !(player.Interface & INTER_COMBATMODE) && !player.doingmagic
 	   && !g_secondaryInventoryHud.containsPos(DANAEMouse) && !g_playerInventoryHud.containsPos(DANAEMouse)
 	   && !g_cursorOverBook && eMouseState != MOUSE_IN_NOTE) {
 		
-		Entity * t = InterClick(DANAEMouse);
+		Entity * t = reticleAct ? reticleAct : InterClick(DANAEMouse);
 
 		if(t) {
 			if(t->ioflags & IO_NPC) {

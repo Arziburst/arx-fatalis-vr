@@ -79,6 +79,9 @@ struct InputState {
 	u64 loggedOffPanelPresses = 0;
 	WalkStatus walk;
 
+	//! The hand's stash chord acted on a door, lever, chest or body (#38): it is no click until released
+	std::array<bool, HandCount> acting = { };
+
 };
 
 InputState g_input;
@@ -214,7 +217,12 @@ void applyToEngine(const GameInputState & state) {
 
 	// Both hands work as the mouse (D-016): the left button clicks, drags and double-clicks; on the
 	// floating panel the pointing hand's pixel is the mouse, and a press off the panel clicks nothing (#34)
-	GInput->setVirtualMouseButton(Mouse::Button_0, state.click && !g_input.pointer.suppressClick());
+	// A stash chord that acted on a door, lever, chest or body (#38) is not also a click on it
+	const ControlResolver & controls = g_input.resolver;
+	const bool onlyActs = !controls.active(Event::InteractLeft) && !controls.active(Event::InteractRight)
+	                      && (!controls.active(Event::StashLeft) || g_input.acting[size_t(Hand::Left)])
+	                      && (!controls.active(Event::StashRight) || g_input.acting[size_t(Hand::Right)]);
+	GInput->setVirtualMouseButton(Mouse::Button_0, state.click && !onlyActs && !g_input.pointer.suppressClick());
 	if(g_input.pointer.active()) {
 		const Vec2f cursor = g_input.pointer.cursor();
 		// A world reticle (#37) is the exploration mode's crosshair too: also in the relative mouse mode
@@ -260,8 +268,23 @@ void updatePointer() {
 		}
 		claims[hand] = reticleClaims(Hand(hand));
 	}
-	trigger[size_t(Hand::Left)] = g_input.resolver.active(Event::InteractLeft) || g_input.resolver.active(Event::StashLeft);
-	trigger[size_t(Hand::Right)] = g_input.resolver.active(Event::InteractRight) || g_input.resolver.active(Event::StashRight);
+	// The act (#38, D-042): a hand's reticle on a door, lever, chest or body acts on it. Its chord is the stash's,
+	// which then is neither a click nor a press of the pointer until it is released (the target decides)
+	const Event actEvents[HandCount] = { Event::ActLeft, Event::ActRight };
+	const Event stashEvents[HandCount] = { Event::StashLeft, Event::StashRight };
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		if(g_input.resolver.pressed(actEvents[hand])) {
+			g_input.acting[hand] = !g_input.rays[hand].onPanel && reticleAct(Hand(hand));
+			// The hand that acts owns the cursor, as the grip's use does
+			claims[hand] = true;
+		} else if(!g_input.resolver.active(stashEvents[hand]) && !g_input.resolver.active(actEvents[hand])) {
+			g_input.acting[hand] = false;
+		}
+	}
+	trigger[size_t(Hand::Left)] = g_input.resolver.active(Event::InteractLeft)
+	                              || (g_input.resolver.active(Event::StashLeft) && !g_input.acting[size_t(Hand::Left)]);
+	trigger[size_t(Hand::Right)] = g_input.resolver.active(Event::InteractRight)
+	                               || (g_input.resolver.active(Event::StashRight) && !g_input.acting[size_t(Hand::Right)]);
 	// The grip's use acts under its own hand (D-019): the hand that uses takes an idle cursor
 	claims[size_t(Hand::Left)] = claims[size_t(Hand::Left)] || g_input.resolver.pressed(Event::UseLeft);
 	claims[size_t(Hand::Right)] = claims[size_t(Hand::Right)] || g_input.resolver.pressed(Event::UseRight);

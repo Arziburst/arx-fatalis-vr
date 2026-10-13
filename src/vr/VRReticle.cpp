@@ -81,6 +81,7 @@ struct ReticleState {
 	bool cursorOnWorld = false;
 	bool cursorOnPanel = false;
 	int enginePickOnly = 0; //!< EnginePickOnly scopes alive
+	s32 act = HoverFilter::None; //!< what a hand's act chose this frame, for takeReticleAct
 	ReticleStatus status;
 
 };
@@ -242,6 +243,8 @@ void noteHeadCamera(bool firstPerson, const Vec3f & position, float bodyYaw, con
 void updateReticles(const std::array<HandAim, HandCount> & aims, double now) {
 
 	ReticleStatus & status = g_reticle.status;
+	// An act the engine did not take in its frame (the world interaction was off) is not kept for later
+	g_reticle.act = HoverFilter::None;
 	const char * off = reticleOffReason();
 	noteReticleOnOff(off);
 	g_reticle.on = (off == nullptr);
@@ -394,6 +397,36 @@ void afterPointer(const MenuPointer & pointer, const std::array<PointerRay, Hand
 		setHandReticle(Hand(i), out.ring, local, out.bright);
 		out.shown = handReticleShown(Hand(i));
 	}
+}
+
+bool reticleAct(Hand hand) {
+
+	if(!g_reticle.on) {
+		return false;
+	}
+	const ReticleHandState & state = g_reticle.hands[size_t(hand)];
+	const s32 id = state.hover.hovered();
+	Entity * entity = reticleEntityById(id);
+	// What the engine's double click acts on (managePlayerControls): not an item - the same chord stashes those
+	if(!entity || (entity->ioflags & IO_ITEM) || !(entity->ioflags & (IO_FIX | IO_NPC))
+	   || !isReticlePickable(*entity) || !isInPickReach(*entity)) {
+		return false;
+	}
+
+	g_reticle.act = id;
+	ReticleStatus & status = g_reticle.status;
+	status.acts++;
+	status.lastAct = reticleEntityLabel(id);
+	status.lastActHand = ReticleHandNames[size_t(hand)];
+	gameevent::Event("vr.reticle.act", 200)("hand", status.lastActHand)("item", status.lastAct)
+		("distance", state.distance, 0);
+	return true;
+}
+
+Entity * takeReticleAct() {
+	Entity * entity = reticleEntityById(g_reticle.act);
+	g_reticle.act = HoverFilter::None;
+	return entity;
 }
 
 EnginePickOnly::EnginePickOnly() {

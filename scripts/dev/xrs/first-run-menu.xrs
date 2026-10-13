@@ -7,8 +7,9 @@
 #
 # The change is saved to cfg.ini when the game quits; a second launch in the same user directory reads it back
 # (readback/first-run-menu-readback.xrs - not one of the sequences ci-smoke runs on their own):
-#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir>
-#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence scripts\dev\xrs\readback\first-run-menu-readback.xrs -UserDir <dir>
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir> -- --skiplogo
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence scripts\dev\xrs\readback\first-run-menu-readback.xrs -UserDir <dir> -- --skiplogo
+# (the smoke test takes the arx.exe arguments after --, not from @args - TRAPS.md)
 @sim idle
 @args --skiplogo
 

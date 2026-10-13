@@ -4,7 +4,7 @@
 # button), the quick generation makes the average hero and then re-rolls, the grip (the right button in the
 # menus) takes an attribute and a skill point back and the trigger spends them elsewhere, and Done starts the
 # game - all by pointer clicks, one press = one click, a press off the panel clicks nothing. Arx asks for no name.
-#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence first-run-chargen
+#   .\scripts\dev\xrs-run.ps1 first-run-chargen
 @sim idle
 @args --skiplogo
 

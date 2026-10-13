@@ -1,226 +1,173 @@
-            _______________________
-           /\                      \
-           \_|         Arx         |
-             |      Libertatis     |
-             |   __________________|__
-              \_/____________________/
-
-
-Cross-platform port of Arx Fatalis, a first-person role-playing game
-
-Arx Libertatis is based on the publicly released [Arx Fatalis source code](https://web.archive.org/web/20180105233341/https://www.arkane-studios.com/uk/arx_downloads.php).
-The source code is available under the GPLv3+ license with some additional terms - see the COPYING and LICENSE files for details.
-
-> **Arx Fatalis VR fork:** to build and run the VR port on Windows see [docs/vr/DEVELOPMENT.md](docs/vr/DEVELOPMENT.md).
-
-## Contact
-
-Website: [arx-libertatis.org](https://arx-libertatis.org/)
-
-Bug Tracker: [bugs.arx-libertatis.org](https://bugs.arx-libertatis.org/)
-
-IRC: \#arx on libera.chat
-
-Wiki: [wiki.arx-libertatis.org](https://wiki.arx-libertatis.org/)
-
-Reddit: [/r/ArxFatalis/](https://old.reddit.com/r/ArxFatalis/)
-
-## Dependencies
-
-* A **C++ 17** compiler (GCC 7+, Clang 5+, MSVC 19.15+ aka Visual Studio 2017 15.8+)
-* **[CMake](https://cmake.org/) 3.12**+ (compile-time only)
-* **[zlib](https://zlib.net/)**
-* **[Boost](https://www.boost.org/) 1.58**+ (headers only¹)
-* **[GLM](https://glm.g-truc.net/) 0.9.9.7**+
-* **[FreeType](https://freetype.org/) 2.3.0**+
-* **OpenAL 1.1**+ ([OpenAL Soft](https://openal-soft.org/) strongly recommended!)
-* **iconutil** (from Xcode) or **[icnsutil](https://github.com/pornel/libicns)** (macOS only)
-
-1. Systems without Win32 or POSIX filesystem support will also need the `filesystem` and `system` libraries from Boost.
-
-### Renderer
-
-There is currently a single rendering backend for OpenGL:
-
-* **[SDL](https://libsdl.org/)** **1.2.10**+ *or* **2.0.0**+
-* **OpenGL 1.5**+ (OpenGL 2.1 or newer is recommended) *or* **OpenGL ES-CM 1.x**¹
-* **[libepoxy](https://github.com/anholt/libepoxy) 1.2**+ (recommended) *or* **[GLEW](http://glew.sourceforge.net/) 1.5.2**+
-
-1. OpenGL ES support requires libepoxy
-
-### Crash Reporter
-
-Arx Libertatis comes with an optional gui crash reporter which has additional dependencies:
-
-* **[Qt](https://www.qt.io/) 4.7**+, **5** or **6** (`QtCore`, `QtConcurrent`¹, `QtGui` and `QtWidgets`¹ libraries)
-* **[libcurl](https://curl.haxx.se/libcurl/) 7.20.0**+ (not required on Windows)
-* **GDB** (Linux-only, optional, run-time only)
-* **DbgHelp** (Windows-only)
-
-1. Qt 5 only
-
-While the crash reporter can be run without GDB, it's main usefulness comes from generating and submitting detailed back-traces in the event of a crash. On non-Windows systems we use GDB, the GNU Debugger, to accomplish that. If you want to help out the arx project, please install GDB before running arx. GDB is however purely a run-time dependency and is not needed when building the crash reporter.
-
-### Tests
-
-Building and running tests has additional dependencies:
-
-* **[CppUnit](https://freedesktop.org/wiki/Software/cppunit/)**
-
-### Git Build Dependencies
-
-Building checkouts from git on their own requires additional dependencies:
-* **[Inkscape](https://inkscape.org/)**
-* **[ImageMagick](https://imagemagick.org/)**
-* **[OptiPNG](http://optipng.sourceforge.net/)**
-
-These are needed to render and scale the SVG icons, which currently only render correctly in Inkscape. Release and development snapshot source tarballs include pre-built icon files and do not need these dependencies to build.
-
-To avoid the Inkscape (as well as ImageMagick and OptiPNG) dependency for git builds, pre-built icons can be downloaded from https://arx-libertatis.org/files/data/ or the [ArxLibertatisData](https://github.com/arx/ArxLibertatisData/) repository. The required data version is listed in the VERSION file. Place `arx-libertatis-data-$version` directory into the build directory or tell the build system about it's location using the `DATA_FILES` CMake variable (`-DDATA_FILES=…` on the command-line).
-
-Alternatively, icons can be disabled by setting the `ICON_TYPE` CMake variable to `none`. See **OPTIONS.md** for other supported icon type values.
-
-## Compile and install
-
-For Linux run:
-
-    $ mkdir build && cd build
-    $ cmake ..
-    $ make
-
-The default build settings are tuned for users - if you plan to make changes to Arx Libertatis you should append the `-DDEVELOPER=1` option to the `cmake` command to enable tests, debug checks and fast incremental builds.
-
-To install the binaries system-wide, run as root:
-
-    # make install
-
-Alternatively you can run the game by specifying the full path to the `arx` binary in the `build` directory.
-
-The wiki has more detailed instructions on [compiling under Linux](https://wiki.arx-libertatis.org/Downloading_and_Compiling_under_Linux).
-
-Getting all the dependencies set up for Windows is more tricky. Pre-built dependencies are available in the [ArxWindows repository](https://github.com/arx/ArxWindows) and [instructions on how to use them](https://wiki.arx-libertatis.org/Downloading_and_Compiling_under_Windows) are available on the wiki.
-
-### Build options:
-
-* `BUILD_TOOLS` (default: `ON`): Build tools
-* `BUILD_TOOLS_MERGED` (default: `ON`): Merge tools into a single binary
-* `BUILD_IO_LIBRARY` (default: `ON`): Build helper library for the Blender plugin
-* `BUILD_CRASHHANDLER` (default: `ON`): Enable the built-in crash handler (default OFF for macOS)
-* `BUILD_CRASHREPORTER` (default: `ON`): Build the Qt crash reporter gui - requires `BUILD_CRASHHANDLER` (default OFF for macOS)
-* `BUILD_PROFILER` (default: `OFF`¹): Build the profiler GUI
-* `BUILD_TESTS` (default: `OFF`²): Build tests that can be run using `make check`
-* `BUILD_ALL` (default: `OFF`): Enable all the BUILD_* options above by default - they can still be disabled individually
-* `UNITY_BUILD` (default: `ON`): Unity build (faster build, better optimizations but no incremental build)
-* `CMAKE_BUILD_TYPE` (default: `Release`): Set to `Debug` for debug binaries
-* `DEBUG` (default: `OFF`³): Enable debug output and runtime checks
-* `DEBUG_GL` (default: `OFF`⁴): Enable OpenGL debug output by default
-* `DEBUG_EXTRA` (default: `OFF`): Expensive debug options
-* `RUN_TESTS` (default: `OFF`⁵): Automatically run tests
-* `RUN_TARGET` (default: (none): Wrapper to run binaries produced in the build process
-* `DEVELOPER` (default: `OFF`): Enable build options suitable for developers⁶
-* `BUILD_PROFILER_INSTRUMENT` (default: `OFF`): Add profiling instructions to the main arx binary
-
-1. Enabled automatically if `BUILD_ALL` or `BUILD_PROFILER_INSTRUMENT` is enabled
-2. Enabled automatically if `BUILD_ALL` or `DEVELOPER` is enabled
-3. Enabled automatically if `CMAKE_BUILD_TYPE` is set to `Debug` or if `DEVELOPER` is enabled.
-4. Enabled automatically if `DEBUG` is enabled. If disabled, OpenGL debug output can be enabled at run-time using the `--debug-gl` command-line option.
-5. Enabled automatically if `DEVELOPER` is enabled unless cross-compiling without `RUN_TARGET` set
-6. Currently this disables `UNITY_BUILD` and enables `DEBUG`, `BUILD_TESTS`, `RUN_TESTS` and `FASTLINK` for faster incremental builds and improved debug checks, unless those options have been explicitly specified by the user.
-
-Install options:
-
-* `CMAKE_INSTALL_PREFIX` (default: `/usr/local` on UNIX and `C:/Program Files` on Windows): Where to install Arx Libertatis
-
-Set options by passing `-D<option>=<value>` to `cmake`.
-
-Backends that are not available are disabled by default. The `cmake` run should display a summary of the enabled backends at the end.
-
-Advanced options not listed here are documented in **OPTIONS.md**.
-
-## Data file, config and savegame locations
-
-You will need to [get either the full game or demo data of Arx Fatalis](https://arx.vg/data).
-
-Where arx will look for data files and write config and save files depends on the operating system and environment - the wiki has a page detailing the [full data directory detection algorithm](https://arx.vg/paths).
-
-**For Unix-like systems**:
-The game will try to rename all used files in the user directory (but not the data directory) to lowercase on the first run. System-wide installations with case-sensitive filesystems always need to manually rename the files to lowercase. The `arx-install-data` script can be used to install the data files, convert them to lowercase and verify that all required files are present.
-
-To print all directories searched by arx, run
-
-    $ arx --list-dirs
-
-By default, user, config and data files will be loaded from and saved to standard system locations depending on the OS:
-
-**Windows**:
-* user and config dir:<br>
-*XP*: `%USERPROFILE%\My Documents\My Games\Arx Libertatis`<br>
-*Vista* and up: `%USERPROFILE%\Saved Games\Arx Libertatis`
-* data dir: location stored in `HKCU\Software\ArxLibertatis\DataDir` or `HKLM\Software\ArxLibertatis\DataDir` registry keys
-
-**macOS**:
-* user and config dir: `~/Library/Application Support/ArxLibertatis/`
-* data dir: `/Applications/ArxLibertatis/`
-
-**Linux** and others:
-* user dir: `~/.local/share/arx/`
-* config dir: `~/.config/arx/`
-* data dir: `/usr/share/games/arx/`, `/usr/local/share/games/arx/` and more
-
-Arx will also try to load data files from the directory containing the game executable.
-
-To use the current working directory for user, config and data files (e.g. for a portable install) run the game as
-
-    $ arx --no-data-dir --user-dir=. --config-dir=.
-
-## Run
-
-Provided the data files are installed at the correct location, you can simply play the game using the installed shortcut or by running
-
-    $ arx
-
-See the `arx --help` and `man arx` output for more details.
-
-## Tools
-
-* `arxunpak [options] <pakfile> [<pakfile>...]` <br>
-  Extracts Arx Fatalis .pak files containing the game assets. <br>
-  See the `arxunpak --help` and `man arxunpak` output for more details.
-
-* `arxunpak [options] [--all]` <br>
-  Extracts all game assets. <br>
-  See the `arxunpak --help` and `man arxunpak` output for more details.
-
-* `arxsavetool <command> <savefile> [<options>...]` - commands are:
-  * `extract <savefile>` <br>
-    Extract the contents of the given savefile to the current directory
-  * `add <savefile> [<files>...]` <br>
-    Add files to a savefile, create it if needed
-  * `fix <savefile>` <br>
-    Fix savegame issues created by previous builds of Arx Libertatis
-  * `view <savefile> [<ident>]` <br>
-    Print savegame information - leave out `<ident>` to list root files
-
-## Scripts
-
-The `arx-install-data` script can extract and install the game data under Linux and FreeBSD from the CD, demo, [GOG.com](https://www.gog.com/) installer or any Arx Fatalis install (such as on Steam) - simply run it and follow the GUI dialogs. Also see the [wiki page on installing the game data under non-Windows systems](https://arx.vg/install-data).
-
-Or, if you prefer a command-line interface, run it as
-
-    $ arx-install-data --cli
-
-More options and required tools (depending on the source file) are documented in the help output:
-
-    $ arx-install-data --help
-
-## Developer information
-
-New contributors should first read the CONTRIBUTING.md file.
-
-To build developer documentation (doxygen), run this from the build directory:
-
-    $ make doc
-
-To check for coding style problems, run the following: (requires python)
-
-    $ make style
+<p align="center">
+  <img src="data/vr/key-art.png" alt="Arx Fatalis VR key art" width="720">
+</p>
+
+<h1 align="center">Arx Fatalis VR</h1>
+
+<p align="center"><em>Step into the underworld with your own hands.</em></p>
+<p align="center">
+  <a href="https://github.com/Arziburst/arx-fatalis-vr/actions/workflows/build-windows.yml"><img src="https://github.com/Arziburst/arx-fatalis-vr/actions/workflows/build-windows.yml/badge.svg?branch=main" alt="CI status"></a>
+  <a href="COPYING"><img src="https://img.shields.io/badge/licence-GPLv3%2B-blue" alt="Licence: GPLv3+"></a>
+  <a href="https://github.com/Arziburst/arx-fatalis-vr/milestone/1"><img src="https://img.shields.io/github/milestones/progress/Arziburst/arx-fatalis-vr/1?label=M1%20MVP" alt="M1 MVP progress"></a>
+  <img src="https://img.shields.io/badge/status-in%20development-orange" alt="Status: in development">
+</p>
+
+**Arx Fatalis VR** is a virtual-reality port of [Arx Fatalis](https://store.steampowered.com/app/1700/Arx_Fatalis/),
+the 2002 first-person dungeon RPG by Arkane Studios, built on the open-source
+[Arx Libertatis](https://arx-libertatis.org/) engine. It uses **OpenXR** with **SteamVR** as the runtime and is
+built for the **Valve Index**: you look around with your head, see your own body and arms, fight by swinging a
+weapon, and cast spells by drawing runes in the air. The goal is a **free standalone Steam app** that needs the
+original Arx Fatalis (Steam app 1700) on your account — the game's data is never included.
+
+> **Not released yet.** There is no download for players. The project is public so that you can follow it,
+> test it and contribute.
+
+## Contents
+
+- [Status](#status)
+- [Features](#features)
+- [Requirements](#requirements)
+- [How to play and test](#how-to-play-and-test)
+- [Build and run (developers)](#build-and-run-developers)
+- [Documentation map](#documentation-map)
+- [Report a bug and contribute](#report-a-bug-and-contribute)
+- [Credits and legal](#credits-and-legal)
+
+## Status
+
+**In development — working towards the MVP** (milestone [M1 MVP](https://github.com/Arziburst/arx-fatalis-vr/milestone/1);
+the badge above shows closed tasks of all its tasks). The MVP is a short, rough but convincing demo of the core
+VR experience, played in a Valve Index from a new game at the start of Arx Fatalis (the goblin prison and the
+first areas after it):
+
+1. walk around with the thumbstick (forward = where you look), turn with snap or smooth turn, crouch for real, jump;
+2. look down and see your own body, with the arms following the controllers;
+3. pick up items, open doors and chests, pull levers — each hand works as the mouse with its own reticle;
+4. open the inventory and the book on a floating panel; health and mana on the left wrist;
+5. fight a goblin by physically swinging the weapon in your hand;
+6. cast a spell by drawing its runes in the air;
+7. open the menu, save and load — all without keyboard and mouse.
+
+The plan, checkpoints and known limits of the MVP: [docs/vr/MVP.md](docs/vr/MVP.md). After it come
+**M2 Full Game & Polish** (shield, bow, diegetic UI, cutscenes, comfort options, a full playthrough) and
+**M3 Steam Release** (rights, licensing, store page). Live board:
+[Arx Fatalis VR project board](https://github.com/users/Arziburst/projects/3).
+
+## Features
+
+What works **today** (on `main`; judged in the headset by the project owner):
+
+- **VR rendering** — OpenXR stereo at the headset's native rate, MSAA, correct world scale, desktop window mirrors one eye.
+- **Head-tracked camera** — the camera is where your head is: leaning, real steps with a wall fade, physical
+  crouch, recenter, seated mode ([D-018](docs/vr/DECISIONS.md)).
+- **Full body with IK arms** — the engine's player model, head hidden, arms follow the controllers
+  ([D-009](docs/vr/DECISIONS.md), [D-032](docs/vr/DECISIONS.md)); the fingers follow your real fingers through
+  hand tracking, with a controls-based fallback ([D-041](docs/vr/DECISIONS.md)).
+- **Locomotion** — stick forward = where you look ([D-008](docs/vr/DECISIONS.md)), snap and smooth turn, jump, crouch toggle.
+- **Hand reticles** — both hands work as the mouse, each with its own reticle and no rays from the hands:
+  drag items, set them down, put them into the inventory ([D-016](docs/vr/DECISIONS.md), [D-036](docs/vr/DECISIONS.md)).
+- **Floating panel and wrist bars** — menus, inventory, book and map on one panel, a pointer only while a menu is
+  open; health and mana as two bars on the left wrist.
+- **Physical melee** — the weapon is held by the IK hand, the swing is the strike, the trigger charges it
+  ([D-033](docs/vr/DECISIONS.md), [D-038](docs/vr/DECISIONS.md)).
+- **Runes in the air** — a glowing rune trail follows the drawing hand ([D-040](docs/vr/DECISIONS.md)).
+- **VR settings** — remapping of the controls (button, chord, long press) per controller type, turning and height
+  rows ([D-039](docs/vr/DECISIONS.md)).
+- **Comfort defaults** — head bob, screen shake and FOV zoom disabled.
+- **Test playground** — a generated room with every weapon, potions and a max-level hero for combat and magic tests.
+- **Launch** — finds the Arx Fatalis data in your Steam libraries on its own; starts in VR when a headset is available.
+
+**Planned** (not working yet — see the [board](https://github.com/users/Arziburst/projects/3)):
+
+- **Control scheme v2** ([D-042](docs/vr/DECISIONS.md)): two equal hands, a casting stance and a **radial menu**
+  per hand, spells drawn with both hands at once, dual wielding and two-handed weapons.
+- Recognition of the drawn runes as spells, and haptic feedback.
+- Doors, levers, chests and searching bodies with the hand reticle.
+- A proper start menu and character creation in the headset; first-run flow.
+- Our own arm and hand meshes, a torch held in the hand, a melee swing delay and a visible strike charge.
+- Launch from SteamVR with no setup, and a Steam release.
+- Later (M2): shield and blocking, bow, diegetic UI, cutscene handling, more comfort options, other headsets (Quest 3 via SteamVR).
+
+Known problems we live with in the MVP (flat 2D menus, cutscenes, some screen-space effects): see
+[MVP.md](docs/vr/MVP.md#accepted-for-the-mvp-known-problems-we-live-with).
+
+## Requirements
+
+| What | Notes |
+|---|---|
+| **Arx Fatalis** (original game) | [Steam app 1700](https://store.steampowered.com/app/1700/Arx_Fatalis/) on your account. This project ships no game data |
+| **PC VR headset with SteamVR** | the **Valve Index** first; other headsets and controllers as they get tested |
+| **Windows 10/11, 64-bit** | the only platform of the VR port |
+| A graphics card that drives your headset | the game itself is light, but VR renders the scene twice |
+
+## How to play and test
+
+There is **no public release yet**. Until then:
+
+- **Testers** get a tester zip from the project owner — it runs without any toolchain; see
+  [docs/vr/TESTING.md](docs/vr/TESTING.md#the-tester-package-88).
+- **Developers** build from source (below). To make SteamVR show "Arx Fatalis VR" with its tile and to launch it from
+  the SteamVR library, see [docs/vr/STEAMVR.md](docs/vr/STEAMVR.md).
+- Everything can be tried without a headset too: flat mode (`--no-vr`) and a simulated headset (`--vr-sim`), see
+  [docs/vr/TESTING.md](docs/vr/TESTING.md).
+
+## Build and run (developers)
+
+You need Visual Studio 2022 (or Build Tools) with the C++ workload, CMake, Git and PowerShell 7; the dependencies
+come from vcpkg automatically.
+
+```powershell
+git clone https://github.com/Arziburst/arx-fatalis-vr.git
+cd arx-fatalis-vr
+.\scripts\build-windows.ps1       # Release build + host unit tests
+.\scripts\run-windows.ps1         # runs it; finds the Arx Fatalis data in the Steam libraries
+```
+
+SteamVR is started by you, never by the scripts (without it the game starts flat). The full guide — options, test
+saves, launch rules, the playground — is in [docs/vr/DEVELOPMENT.md](docs/vr/DEVELOPMENT.md); how to check a change
+without a headset is in [docs/vr/TESTING.md](docs/vr/TESTING.md). The original Arx Libertatis build instructions
+(Linux, macOS, options) are kept in [docs/ARX-LIBERTATIS.md](docs/ARX-LIBERTATIS.md) — the VR port itself targets Windows only.
+
+## Documentation map
+
+| Document | What is in it |
+|---|---|
+| [docs/vr/MVP.md](docs/vr/MVP.md) | the MVP goal, demo scenario, scope, checkpoints, task queue |
+| [docs/vr/DECISIONS.md](docs/vr/DECISIONS.md) | every significant decision and why |
+| [docs/vr/DEVELOPMENT.md](docs/vr/DEVELOPMENT.md) | how to build and run |
+| [docs/vr/TESTING.md](docs/vr/TESTING.md) | testing without a headset: smoke test, simulated headset, test channel, playground |
+| [docs/vr/STEAMVR.md](docs/vr/STEAMVR.md) | SteamVR registration and the Steam shortcut |
+| [docs/vr/WORKFLOW.md](docs/vr/WORKFLOW.md) | how work is organised: tasks, board, PRs, naming |
+| [docs/vr/TRAPS.md](docs/vr/TRAPS.md) | pitfalls that already cost us time |
+| [docs/vr/RESEARCH-reference-mods.md](docs/vr/RESEARCH-reference-mods.md) | the research catalog: what other VR mods do and what we take |
+| [docs/vr/RESEARCH-controllers.md](docs/vr/RESEARCH-controllers.md), [VR-CHECKLIST.md](docs/vr/VR-CHECKLIST.md), [RESEARCH-playable-v1.md](docs/vr/RESEARCH-playable-v1.md) | controllers, what players expect from a VR game, the estimate |
+| [docs/ARX-LIBERTATIS.md](docs/ARX-LIBERTATIS.md) | the original Arx Libertatis README |
+
+## Report a bug and contribute
+
+- **Bugs and ideas:** open an [issue](https://github.com/Arziburst/arx-fatalis-vr/issues/new/choose) (templates for a bug
+  and a task). Say what you did, what you expected, and attach `arx.log`.
+- **Pull requests** from forks are welcome. CI does not build pull requests from forks; a maintainer
+  reviews and builds them before anything is merged. Naming of branches, commits and PRs: [WORKFLOW.md](docs/vr/WORKFLOW.md#commit-and-pull-request-naming).
+- Work is tracked on the [project board](https://github.com/users/Arziburst/projects/3), tasks grouped in nine epics
+  (build, rendering, camera, controls, interaction and combat, magic, UI, comfort, Steam release).
+- The engine-level contribution rules of Arx Libertatis (code style, licensing of contributions) are in
+  [CONTRIBUTING.md](CONTRIBUTING.md). All project documents, issues and commits are in English.
+
+## Credits and legal
+
+- **[Arx Libertatis](https://arx-libertatis.org/)** — the cross-platform open-source engine this port is built on,
+  by the Arx Libertatis Team and contributors ([AUTHORS](AUTHORS)). It is based on the publicly released
+  [Arx Fatalis source code](https://web.archive.org/web/20180105233341/https://www.arkane-studios.com/uk/arx_downloads.php).
+  Its contacts: [website](https://arx-libertatis.org/), [bug tracker](https://bugs.arx-libertatis.org/),
+  IRC `#arx` on libera.chat, [wiki](https://wiki.arx-libertatis.org/), [/r/ArxFatalis](https://old.reddit.com/r/ArxFatalis/).
+- **Arx Fatalis** — the original game, © Arkane Studios. You need your own copy.
+- **Licence:** GPLv3 or newer with some additional terms — see [COPYING](COPYING) and [LICENSE](LICENSE).
+- **Third-party components**, under the licences shipped in this repository:
+  [DejaVu fonts](LICENSE.DejaVu), [fast_float](LICENSE.fast_float) (MIT), [stb](LICENSE.stb) (MIT / public domain),
+  the [xr_hello](LICENSE.xr_hello) OpenXR probe and the [`.xrs` sequence runner](LICENSE.xrsim), both adapted from
+  Dishonored VR (MIT). The test playground is generated with
+  [arx-level-generator](https://github.com/arx-tools/arx-level-generator) (MIT) and is not committed.
+- **Not affiliated:** this is an unofficial fan project. It is **not affiliated with or endorsed by Arkane Studios or
+  Bethesda** (or ZeniMax), and it ships **no game data**: the original Arx Fatalis files are read from your own
+  installation.

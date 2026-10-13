@@ -279,7 +279,7 @@ approach short_sword_9001
 @frames 10
 approach short_sword_9001
 @frames 10
-@assert vr.weapon.item eq none
+@assert vr.weapon.kind eq none
 vr-point right entity short_sword_9001
 @frames 5
 vr-point right entity short_sword_9001

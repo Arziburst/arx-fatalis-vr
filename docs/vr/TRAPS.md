@@ -1222,3 +1222,13 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** an idle `--vr-sim` run (`idle.vrsim`, no commands) shows several `[vr] rate:` windows UNDER-SUBMITTING at 20-40/s with a worst frame near 100 ms, then 90/s again; `arx-perf.log` has a burst of `H` lines whose `update`, `render` and `vrwait` all grow together, with no `load` and no uploads (#327: in one pair of runs the burst came with the log on, in the next pair with it off).
 **Cause:** the PC, not the game: other workers build in parallel (the game lock serialises game runs, not compiles), and a starved CPU stretches every phase of the frame at once.
 **Do:** judge pacing and frame costs only from windows at full rate, or repeat the run; a real cost of the game shows in one phase (`cause`), the same way in every run. `perf-summary.ps1` lists the hitches by cause.
+
+## 2026-10-14 - Kultar's scene never starts although the hero walked into KULTAR_WAKE
+**Symptom:** on a save in the start cell the hero walks into the zone KULTAR_WAKE (`player.z` well inside it), yet `scene.active` stays false for a minute: no letterbox, no camera, no teleport (#29).
+**Cause:** the zone only sends Kultar to the bars between the cells (`MARKER_0117`, 9103 8836) and has him say his introduction; his scene (`>>dialogue`: the teleport, the cameras, the letterbox, `playerlookat`) starts from his `CHECK_DIST` timer only while `^DIST_PLAYER < 500` - the hero within 5 m of him. Walking straight ahead from the middle of the cell ends at the portcullis about 6 m away; at x 8740 and beyond, the cell's wall holds the hero at once.
+**Do:** start from the test save `scene-kultar` (8700 8660, facing +z: the walk stops 4.1 m from Kultar) or `setpos 8700 3105 8840` (`scene-flat.xrs`). The zone fires once per game: a second try needs the save loaded again.
+
+## 2026-10-14 - A console `speak -c` line ends after about 2 s although its sample is longer
+**Symptom:** `<npc>.speak -c ... [kultar_letmeout]` (a 5 s sample) through the test channel ends after about 2 s - a sequence's input in that line runs past its end; the same line from the game's own script plays in full (#29).
+**Cause:** without the letterbox (`cinematicBorder` off) a `speak` line is a "no text" line, and `ARX_SPEECH_AddSpeech` plays a random variant of its sample: `kultar_letmeout2` / `3` are 2.1 s. Lines with the letterbox on (a real scene) never pick a variant.
+**Do:** for a line that must last, take one without variants (`kultar_cantgo`, 8.4 s; `kultar_traveler`, 22 s) or turn the letterbox on first.

@@ -298,6 +298,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `vr-sim <command>` | a command of the simulated headset (#112), only in a `--vr-sim` run: `head rot 25 0 0`, `head pos 0 -0.3 0`, `action trigger right 1`, `shot <name>`, `session visible`, `fault swap-eyes on`, … — now, or `@+<n> <command>` n frames from now on its timeline. See [The simulated headset](#the-simulated-headset---vr-sim-112) |
 | `combat on\|off` | the engine's combat mode without a key (#75): what the weapon key does — `on` draws the weapon (ready clips), `off` puts it away; a strike is then the mouse button — or, with the weapon in the VR hand, a physical swing (#39: the trigger only charges). VR has no control for it (D-019); `vr.weapon.combatMode` in the status |
 | `crouch on\|off` | the crouch toggle without an input device, for flat runs (#263): `on` crouches the character, `off` lets it stand up when there is room for its head. `player.crouchToggle` / `player.crouched` in the status |
+| `scene view first\|observer\|ghost\|hybrid`, `scene lookat ignore\|fade`, `scene subtitles above\|chest\|lowerthird`, `scene meter reset` | the switches of scripted scenes in VR (#29, D-NEW) for this session - `cfg.ini` (`vr_scene_view`, `vr_scene_lookat`, `vr_subtitles`; defaults `hybrid`, `ignore`, `above`) keeps the player's choice, so sequences start from it in any order; `meter reset` starts a new stretch of `scene.meter` (and the subtitle line counts). Accepted in flat mode, where they change nothing |
 | `comfort auto\|on\|off` | who decides the VR comfort policy (#76, `vr::comfort()`): `auto` = the VR session (the default: view bobbing, screen shake and FOV zoom off in VR, `cfg.ini` decides in flat mode), `on` / `off` force the VR rules on or off — so a flat run can measure them. `comfort` and `camera` in the status; one `[vr] comfort:` log line per change |
 | anything else | the **script console**: `[entity.]command args`, exactly as typed in the in-game console (`` ` ``). Context defaults to the player. Refused (and counted in the ack) when the entity or the command is unknown |
 
@@ -620,6 +621,22 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   click a random one — one `chargen.roll kind=average|random` game event per click.
 - `settings` (#394): `crosshair` — `config.interface.showCrosshair` (`show_crosshair` in `cfg.ini`), the setting
   `first-run-menu` changes by pointer clicks and its second launch reads back.
+- `scene` (#29, D-NEW): scripted scenes in VR (`src/vr/SceneView.h`); flat mode leaves it at rest (`shown` `none`,
+  `fade` 0, no meter frames). `active`: a scripted scene owns the game's camera (a `speak -c` line, a camera entity,
+  the letterbox) on the last VR frame; `kind` `none` | `speech` | `entity`; `view` (`first` | `observer` | `ghost` |
+  `hybrid`) and `lookat` (`ignore` | `fade`): the switches now; `shown`: what the eyes see (`none` - no scene, the
+  game's first person - or the view of the shot shown; it changes at the black of a cut, with the `vr.scene` events);
+  `fade`: the scene fade now (0..1); `armsIk`: the IK arms are on (false while the hero is shown in third person).
+  `meter`, since `scene meter reset`, VR frames only: `frames`, `sceneFrames` (`active`), `screenFrames`;
+  `minAboveFloorM`, `maxStepCm`, `maxYawStepDeg` over the frames that show a scene and are not behind the fade (fade
+  >= 0.99), measured on the camera the head goes on (the head's own motion and the player's stick turn excluded; a step
+  is from the last measured frame, so nothing is compared across a fade; `minAboveFloorM` -1 while no frame was
+  measured, a frame with no floor under it counts 0); `cuts` (over all frames: a shot change - a scene's start or end, a
+  new `speak -c` line, another camera entity - or a jump of the eyes' camera, > 50 cm or > 10 degrees in one frame) and
+  `fadedCuts` (those behind the fade); `lookats` / `fadedLookats` (`playerlookat` seen / applied behind the fade);
+  `letterboxFrames` (eye frames that got cinematic bars: always 0). `subtitle` (#29.3): `visible`, `text`, `speaker`,
+  `placement` (`above` | `chest` | `lowerthird`), `lines` / `voicedLines` since the meter reset - until #29.3 noted
+  when a `speak -c` line's scene is first seen.
 - `drawCheck` appears once a `drawcheck` was requested: `{"seq":1,"running":false,"frames":120,
   "framesDiffering":0,"pixels":307200,"maxPixelsDiffering":0,"maxDelta":0,"capture":""}` —
   `frames` compared so far, `framesDiffering` of them with at least one differing pixel,
@@ -649,6 +666,7 @@ which.
 | Save | Where the player stands (level 1, the goblin prison) | For |
 |---|---|---|
 | `mvp-new-game` | in the start cell after the awakening, controls free, nothing equipped | demo step 1-2: look, walk, turn |
+| `scene-kultar` | in the start cell at 8700 8660, facing +z, one step before the zone KULTAR_WAKE; a walk forward starts Kultar's scene at the bars (camera entities) once he reached them - his scene needs the hero within 5 m (TRAPS.md) | #29: T1, the scene views |
 | `mvp-items` | a sword equipped; 2.3 m from a table with a key, a note and a form (`key_base_0005`, `note_0004`, `blank_form_0001`); dark room, the items are low in the view | demo step 3: pick up, drag into the inventory (#37) |
 | `mvp-goblin-fight` | a sword equipped; `goblin_base_0036` 3.5 m ahead in a corridor, walking away | demo step 5: melee (#39) |
 | `mvp-lever` | a sword equipped; `lever_0012` (opens `porticullis_0015`) 1.6 m ahead on the floor, in the hand reticles' reach | #38: pull a lever |
@@ -841,6 +859,10 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.freelook` (#394) | in VR the game enters `GAMEPLAY` with freelook off (a `--loadlevel` start, New game from the pause menu or a development launch, the return from the pause menu) and the VR side turns it on | `state=on`, `was=<state>` |
 | `scene` (#394) | a scripted scene in the game (the letterbox outside a cinematic and the startup intro: the prison intro after New game) starts / ends | `state=start\|end`, `area`, `camera` (the scripted camera, `none` before it is set), `controlsBlocked` |
 | `scene.skip` (#394) | Esc (`how=key`) or the VR skip (`how=vr`) skips a scripted scene: its scripts get `key_pressed` and their skip handlers end it | `how`, `area`, `camera`, `result=sent\|early` (`early`: a fade runs, or the letterbox has not been on for 3 s - nothing sent), `refused` (some script refused it: the speech plays on; the scene is still skipped, see TRAPS.md) |
+| `vr.scene` (#29) | the eyes see a scene's first shot (at the black of its cut) / see the game's view again; a scene of another kind (the letterbox first, a camera a moment later) is an end and a start | `state=start\|end`, `kind=speech\|entity\|none` (`none`: only the letterbox), `view` (the setting), `shown` (what the eyes see now) |
+| `vr.scene.cut` (#29) | the shot the eyes see changes | `faded=yes\|no` (behind the fade: always yes), `reason=start\|end\|line\|camera\|jump` |
+| `vr.scene.lookat` (#29) | a script's `playerlookat` in VR | `how=ignore\|fade`, `target` |
+| `vr.scene.subtitle` (#29.3) | a voiced line's subtitle is shown (until #29.3: a `speak -c` line's scene is first seen) | `placement`, `speaker` |
 | `chargen.roll` (#394) | a click of the quick generation | `kind=average\|random` |
 | `player.death` | the player dies | `source` (entity id), `damage`, `type` (damage type flags) |
 | `player.respawn` | the player died in the test playground (#321) and is back at its start, alive, in the same frame | `x` `y` `z` (the start), `fromX` `fromZ` (where he died), `life` |
@@ -1468,6 +1490,11 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `first-run-intro` | a player's launch up to the main menu (#394): the logos on the screen (`vr.panel.mode screen`, distance 2.5), A and the trigger skip them, the intro (`INTRO`) drawn flat, `introduction.cin` shown (`CINEMATIC`) and skipped with B through `cinematicEnd()`, no click leaks into the menu, New game, the prison and a walk | — |
 | `first-run-chargen` | New game and the character creation by pointer clicks only (#394): New game clicked; a fresh hero (6 each, 16 + 18 points); the screen fills its panel and the window (all four quarters `world`); the trigger on strength spends one point (7, 15 left); both hands behind the head, the trigger and the grip change nothing; the quick generation makes the average hero (`chargen.roll` 1) and, clicked again, a random one (2); the grip takes a point back from strength and a skill point from stealth, the trigger spends them on dexterity and — with the left hand — on casting; Done starts the game with the rolled hero (`hero.strength` / `mind` kept into GAMEPLAY). Arx asks for no name | — |
 | `level-load-hang` | a stalled level load is reported as a hang with its stack (#440): `watchdog 1000`, `stall load 3000`, `loadlevel 1` - `[hang] main thread stalled ... last beat at level load`, `platform::stallThisThread` and the load under it in the stack, `responsive again`, level 1 loaded, `hangWatchdog.stalls` ≥ 1 ([The hang watchdog](#the-hang-watchdog-440)) | — |
+| `scene-switches` | the switches of scripted scenes (#29): on the test save `scene-kultar` the defaults `hybrid` / `ignore` / `above`, each `scene ...` command live, `scene meter reset`; a `speak -c` line on Kultar: `vr.scene state=start kind=speech`, its cut, its subtitle event, `state=end`, the meter counted it, no letterbox; `playerlookat` counted with `ignore` (the yaw stays) and turned behind the fade with `fade` | — |
+| `scene-first` | the `first` view (#29) on `scene-kultar`: T1 - a walk into KULTAR_WAKE, Kultar's scene at the bars (camera entities, the hero teleported) seen from the hero's head: `kind=entity`, IK arms on, both eyes see the world, 3 cuts all behind the fade, the eyes 1.70 m above the floor, steps 0.009 cm, no yaw step, no letterbox; T5 - every `speak -c` mode on Kultar the same (18 cuts, all faded); in a line the stick turns the hero, the stick walk does not move him | — |
+| `scene-ghost` | the `ghost` view (#29): T1 and T5 as in `scene-first`, the shots held at their first frame (steps 0, no yaw step) and never lower than 1.2 m (camera_0038 at 0.8 m: 1.201), IK arms off | — |
+| `scene-lookat` | `playerlookat` (#29): T1 with `ignore` (counted, the yaw stays, also a console `playerlookat`), the save loaded again and T1 with `fade` (every lookat applied behind the fade, no yaw step, the fade back to 0) | — |
+| `scene-flat` | flat mode unchanged (#29, `--no-vr`): the switches accepted and ignored, the game's own `scene state=start` (the letterbox) on entering KULTAR_WAKE by the bars, `scene.shown` `none`, no meter frames, no `vr.scene` event | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
 `scripts\dev\test-xrs.ps1` (a fake game answering the channel files; in `run-script-tests.ps1`, so in CI).

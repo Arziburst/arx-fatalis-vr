@@ -78,6 +78,9 @@ void notifyLoading(AreaId area);
  */
 void beat(const char * where);
 
+//! A step after the last beat that may block (a present): named by a hang report, not a beat
+void note(const char * what);
+
 //! Write the final status (\c state: \c EXITED) and stop - call after "Clean shutdown" was logged
 void shutdown();
 

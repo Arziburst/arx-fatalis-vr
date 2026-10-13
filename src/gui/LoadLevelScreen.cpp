@@ -41,9 +41,15 @@ static AreaId g_lastLoadedArea;
 static TextureContainer * g_loadingScreenImage = nullptr;
 static TextureContainer * pbar = nullptr;
 static AreaId g_lastArea;
+static LoadingScreenStats g_loadingScreenStats;
 
 void progressBarReset() {
 	OLD_PROGRESS_BAR_COUNT = PROGRESS_BAR_COUNT = 0;
+	g_loadingScreenStats = LoadingScreenStats();
+}
+
+LoadingScreenStats loadingScreenStats() {
+	return g_loadingScreenStats;
 }
 
 void progressBarSetTotal(float total) {
@@ -121,11 +127,20 @@ void LoadLevelScreen(AreaId area ) {
 			EERIEDrawBitmap_uv(Rectf(pos, size.x, size.y), 0.f, pbar, Color::white, 0.f, 0.f, ratio, 1.f);
 		}
 		
+		channel::note("loading screen: submitting the frame");
 		vr::submitFrame(mainApp->getWindow()->getSize());
+		channel::note("loading screen: presenting the frame");
 		mainApp->getWindow()->showFrame();
+		channel::note("loading screen: frame presented");
 		
 		OLD_PROGRESS_BAR_COUNT = PROGRESS_BAR_COUNT;
-		last_progress_bar_update = now;
+		// The 16 ms of loading are counted from the end of this frame (#440): a present that takes longer
+		// (a window in the background, throttled by the compositor to ~30 ms) otherwise made every step
+		// of the load draw and present a frame: the change from level 10 to level 1 outlasted a test's 10 s
+		PlatformInstant presented = platform::getTime();
+		g_loadingScreenStats.frames++;
+		g_loadingScreenStats.drawTime += presented - now;
+		last_progress_bar_update = presented;
 	}
 }
 

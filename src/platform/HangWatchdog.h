@@ -81,6 +81,14 @@ public:
 	 */
 	void beat(const char * where) noexcept;
 
+	/*!
+	 * \brief A step inside the last beat, named in a report ("last beat at X, then <what>")
+	 *
+	 * Not a beat: the stall time goes on. For a call that may block - the report of a thread stuck
+	 * where its stack cannot be walked still names it. \a what is a string literal.
+	 */
+	void note(const char * what) noexcept;
+
 	void setThreshold(std::chrono::milliseconds threshold) noexcept;
 	std::chrono::milliseconds threshold() const noexcept;
 
@@ -93,6 +101,7 @@ public:
 private:
 
 	struct Thread;
+	struct Capture;
 	class Symbols;
 
 	void run();
@@ -100,12 +109,14 @@ private:
 
 	std::string m_name;
 	Reporter m_reporter;
-	std::unique_ptr<Thread> m_watched;
+	std::shared_ptr<Thread> m_watched;  //!< Shared with a walk that may outlive the watchdog
 	std::unique_ptr<Symbols> m_symbols; //!< Set up and used by the watchdog's thread only
+	std::shared_ptr<Capture> m_capture; //!< The last walk; used by the watchdog's thread only
 	std::atomic<s64> m_thresholdMs;
 	std::atomic<s64> m_lastBeatNs;
 	std::atomic<u64> m_beats;
 	std::atomic<const char *> m_where;
+	std::atomic<const char *> m_note;
 	std::atomic<u64> m_stalls;
 	std::atomic<bool> m_watching;
 

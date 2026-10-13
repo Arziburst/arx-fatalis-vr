@@ -44,6 +44,9 @@ s64 watchdogClockNs() {
 
 constexpr size_t MaxStackFrames = 48;
 
+//! How long a report waits for the watched thread to stop for the walk of its stack
+constexpr std::chrono::milliseconds CaptureTimeout(1000);
+
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
 
 std::string toUtf8(const wchar_t * text) {
@@ -314,14 +317,37 @@ struct HangWatchdog::Thread {
 
 };
 
+/*
+ * One walk of the watched thread's stack, on a thread of its own: suspending a thread waits until
+ * it can stop, and a thread inside the kernel with suspension blocked (a driver call) never does.
+ * The report waits a bounded time; a walk that never ends keeps its thread, which is never joined.
+ */
+struct HangWatchdog::Capture {
+
+	std::shared_ptr<Thread> thread;
+	u64 frames[MaxStackFrames] = {};
+	size_t count = 0;
+
+	std::mutex mutex;
+	std::condition_variable finished;
+	bool done = false;
+
+	bool isDone() {
+		std::lock_guard<std::mutex> lock(mutex);
+		return done;
+	}
+
+};
+
 HangWatchdog::HangWatchdog(std::string name, std::chrono::milliseconds threshold, Reporter reporter)
 	: m_name(std::move(name))
 	, m_reporter(std::move(reporter))
-	, m_watched(std::make_unique<Thread>())
+	, m_watched(std::make_shared<Thread>())
 	, m_thresholdMs(std::max<s64>(threshold.count(), 1))
 	, m_lastBeatNs(watchdogClockNs())
 	, m_beats(0)
 	, m_where("start")
+	, m_note(nullptr)
 	, m_stalls(0)
 	, m_watching(false)
 {
@@ -339,8 +365,13 @@ HangWatchdog::~HangWatchdog() {
 
 void HangWatchdog::beat(const char * where) noexcept {
 	m_where.store(where, std::memory_order_relaxed);
+	m_note.store(nullptr, std::memory_order_relaxed);
 	m_lastBeatNs.store(watchdogClockNs(), std::memory_order_relaxed);
 	m_beats.fetch_add(1, std::memory_order_release);
+}
+
+void HangWatchdog::note(const char * what) noexcept {
+	m_note.store(what, std::memory_order_relaxed);
 }
 
 void HangWatchdog::setThreshold(std::chrono::milliseconds threshold) noexcept {
@@ -414,22 +445,54 @@ void HangWatchdog::run() {
 
 void HangWatchdog::report(s64 stalledMs, int index) {
 
-	u64 frames[MaxStackFrames];
-	size_t count = m_watched->captureStack(frames);
-
 	std::ostringstream oss;
 	oss << m_name << " stalled for " << stalledMs << " ms (report " << index << " of at most "
-	    << MaxReportsPerStall << "), last beat at " << m_where.load(std::memory_order_relaxed) << '\n';
+	    << MaxReportsPerStall << "), last beat at " << m_where.load(std::memory_order_relaxed);
+	if(const char * note = m_note.load(std::memory_order_relaxed)) {
+		oss << ", then " << note;
+	}
+	oss << '\n';
+
+	if(m_capture && !m_capture->isDone()) {
+		// The walk of an earlier report still waits for the thread to stop: a second one would too
+		oss << "  (no stack: the thread has not stopped for the walk of an earlier report - it is inside the"
+		    << " kernel with suspension blocked, as in a driver call)\n";
+		m_reporter(oss.str());
+		return;
+	}
+
+	auto capture = std::make_shared<Capture>();
+	capture->thread = m_watched;
+	m_capture = capture;
+	std::thread([capture]() {
+		size_t count = capture->thread->captureStack(capture->frames);
+		std::lock_guard<std::mutex> lock(capture->mutex);
+		capture->count = count;
+		capture->done = true;
+		capture->finished.notify_all();
+	}).detach();
+
+	bool done = false;
+	size_t count = 0;
+	{
+		std::unique_lock<std::mutex> lock(capture->mutex);
+		done = capture->finished.wait_for(lock, CaptureTimeout, [&capture]() { return capture->done; });
+		count = capture->count;
+	}
+
+	if(!done) {
+		oss << "  (no stack: the thread did not stop for the walk within " << CaptureTimeout.count()
+		    << " ms - it is inside the kernel with suspension blocked, as in a driver call)\n";
+	} else if(count == 0) {
+		oss << "  (no stack: the thread could not be walked on this platform)\n";
+	}
 
 	#if ARX_PLATFORM == ARX_PLATFORM_WIN32
 	for(size_t i = 0; i < count; i++) {
-		oss << "  #" << i << ' ' << m_symbols->moduleOffset(frames[i]) << m_symbols->describe(frames[i]) << '\n';
+		const DWORD64 address = capture->frames[i];
+		oss << "  #" << i << ' ' << m_symbols->moduleOffset(address) << m_symbols->describe(address) << '\n';
 	}
 	#endif
-
-	if(count == 0) {
-		oss << "  (no stack: the thread could not be walked on this platform)\n";
-	}
 
 	m_reporter(oss.str());
 }

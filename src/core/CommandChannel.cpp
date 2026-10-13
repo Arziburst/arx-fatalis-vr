@@ -63,6 +63,7 @@
 #include "gui/DamageNumbers.h"
 #include "gui/Dragging.h"
 #include "gui/Interface.h"
+#include "gui/LoadLevelScreen.h"
 #include "gui/MainMenu.h"
 #include "gui/Menu.h"
 #include "gui/MenuPublic.h"
@@ -2457,7 +2458,12 @@ std::string execute(std::string_view line) {
 		}
 		LogInfo << "[channel] changing to level " << area << (target.empty() ? "" : " at ") << target;
 		vr::perf::Scope perfLoad(vr::PerfPhase::Load);
+		const PlatformInstant start = platform::getTime();
 		ARX_CHANGELEVEL_Change(AreaId(u32(area)), target, 0.f);
+		// How much of the change the loading screen took (#440): its frames are bound by the present
+		const LoadingScreenStats screen = loadingScreenStats();
+		LogInfo << "[channel] level " << area << " loaded in " << toMsi(platform::getTime() - start)
+		        << " ms, the loading screen drew " << screen.frames << " frames in " << toMsi(screen.drawTime) << " ms";
 		return std::string();
 	}
 
@@ -2772,6 +2778,12 @@ void notifyLoading(AreaId area) {
 void beat(const char * where) {
 	if(g.watchdog) {
 		g.watchdog->beat(where);
+	}
+}
+
+void note(const char * what) {
+	if(g.watchdog) {
+		g.watchdog->note(what);
 	}
 }
 

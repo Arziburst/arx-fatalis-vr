@@ -1,0 +1,915 @@
+/*
+ * Copyright 2026 Arx Fatalis VR contributors
+ *
+ * This file is part of Arx Fatalis VR, based on Arx Libertatis.
+ *
+ * Arx Libertatis is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Arx Libertatis is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Arx Libertatis.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include "vr/VRRadial.h"
+
+#include <algorithm>
+#include <cmath>
+#include <optional>
+#include <sstream>
+#include <vector>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
+
+#include "cinematic/CinematicController.h"
+#include "core/GameEvent.h"
+#include "core/Localisation.h"
+#include "game/Camera.h"
+#include "game/Entity.h"
+#include "game/EntityManager.h"
+#include "game/Inventory.h"
+#include "game/Item.h"
+#include "game/Player.h"
+#include "graphics/Color.h"
+#include "graphics/Draw.h"
+#include "graphics/Renderer.h"
+#include "graphics/Vertex.h"
+#include "graphics/data/TextureContainer.h"
+#include "graphics/font/Font.h"
+#include "graphics/font/FontCache.h"
+#include "gui/Dragging.h"
+#include "gui/Interface.h"
+#include "gui/Menu.h"
+#include "gui/Note.h"
+#include "gui/book/Book.h"
+#include "io/log/Logger.h"
+#include "script/Script.h"
+#include "util/Number.h"
+#include "vr/HeadPose.h"
+#include "vr/HeadTracking.h"
+#include "vr/VRSimulator.h"
+#include "vr/VRSystem.h"
+
+namespace vr {
+
+namespace {
+
+//! The menu image: square, the ring's middle in its middle (RadialParams::imageExtent wide)
+const s32 RadialImagePixels = 512;
+//! The label in the middle and the count on a slot, pixels of the image
+const unsigned LabelFontPixels = 24;
+const unsigned CountFontPixels = 18;
+//! A torch lit by a menu's slot belongs to that hand once the engine lights it, within this many frames
+const u32 TorchWaitFrames = 90;
+
+const char * const SlotVariables[HandCount] = { "$vr_quickslots_left", "$vr_quickslots_right" };
+
+struct HandMenu {
+	bool open = false;
+	RadialPose pose;
+	RadialSelector selector;
+	Vec2f point = Vec2f(0.f);
+	Vec3f hand = Vec3f(0.f); //!< the grip this frame, LOCAL
+};
+
+struct RadialState {
+	RadialParams params;
+	std::array<HandMenu, HandCount> menus;
+	RadialStatus status;
+	//! A torch slot was used: the torch lit by it is that hand's (the engine lights it from the item's script)
+	struct TorchCandidate {
+		bool waiting = false;
+		Hand hand = Hand::Right;
+		std::string className;
+		u32 frames = 0;
+	} torch;
+	Font * labelFont = nullptr;
+	Font * countFont = nullptr;
+	bool fontFailed = false;
+};
+
+RadialState g_radial;
+
+Event radialEvent(Hand hand) {
+	return hand == Hand::Left ? Event::RadialLeft : Event::RadialRight;
+}
+
+//! Why a menu cannot be open now, or nullptr
+const char * closedReason(Hand hand) {
+	if(!entities.player()) {
+		return "no player";
+	}
+	if(ARXmenu.mode() != Mode_InGame) {
+		return "menu";
+	}
+	if(isInCinematic()) {
+		return "cinematic";
+	}
+	if(!frameViews().valid) {
+		return "no head";
+	}
+	if(!frameHands().tracked[size_t(hand)]) {
+		return "hand not tracked";
+	}
+	return nullptr;
+}
+
+Vec3f eyeMiddle() {
+	const FrameViews & views = frameViews();
+	return (views.eyes[0].position + views.eyes[1].position) * 0.5f;
+}
+
+struct SlotItem {
+	Entity * item = nullptr; //!< one of the kind in the bag
+	long count = 0;          //!< how many of the kind the bag holds
+};
+
+SlotItem findInInventory(const std::string & className) {
+	SlotItem found;
+	Entity * owner = entities.player();
+	if(className.empty() || !owner || !owner->inventory) {
+		return found;
+	}
+	for(auto slot : owner->inventory->slots()) {
+		if(!slot.entity || !slot.show || slot.entity->className() != className) {
+			continue;
+		}
+		if(!found.item) {
+			found.item = slot.entity;
+		}
+		found.count += (slot.entity->_itemdata && slot.entity->_itemdata->count > 0) ? slot.entity->_itemdata->count : 1;
+	}
+	return found;
+}
+
+void saveQuickSlots(Hand hand, const QuickSlotSet & slots) {
+	SETVarValueText(svar, SlotVariables[size_t(hand)], formatQuickSlots(slots));
+}
+
+std::string itemName(const Entity * item) {
+	if(!item) {
+		return std::string();
+	}
+	if(!item->locname.empty()) {
+		const std::string_view name = getLocalised(item->locname);
+		if(!name.empty()) {
+			return std::string(name);
+		}
+	}
+	return item->className();
+}
+
+void putTorchOut(Entity * torch) {
+	// What the torch key does (gui/Interface.cpp): the lit torch goes back into the bag
+	InventoryPos pos = locateInInventories(torch);
+	torch->setOwner(nullptr);
+	giveToPlayer(torch, pos);
+}
+
+//! A quick slot released on: fill it with a dragged item, or use what it holds - for this hand
+std::string runQuickSlot(Hand hand, u8 slot) {
+
+	QuickSlotSet slots = quickSlots(hand);
+	const std::string slotName = "slot" + std::to_string(int(slot) + 1);
+
+	if(Entity * dragged = g_draggedEntity; dragged && (dragged->ioflags & IO_ITEM)) {
+		slots[slot] = dragged->className();
+		saveQuickSlots(hand, slots);
+		// The item itself goes back where it came from: the slot names its kind, not this one
+		const InventoryPos from = g_draggedItemPreviousPosition;
+		setDraggedEntity(nullptr);
+		const bool inBag = giveToPlayer(dragged, from);
+		gameevent::Event("vr.radial.slot")("hand", handName(hand))("slot", slotName)("item", slots[slot])
+			("back", inBag ? "inventory" : "dropped");
+		return "slot filled";
+	}
+
+	const std::string & className = slots[slot];
+	if(className.empty()) {
+		return "empty slot";
+	}
+
+	if(Entity * torch = player.torch; torch && torch->className() == className) {
+		putTorchOut(torch);
+		g_radial.status.torchHand = "none";
+		gameevent::Event("vr.radial.use")("hand", handName(hand))("slot", slotName)("item", className)("result", "torch out");
+		return "torch out";
+	}
+
+	const SlotItem found = findInInventory(className);
+	if(!found.item) {
+		gameevent::Event("vr.radial.use")("hand", handName(hand))("slot", slotName)("item", className)
+			("result", "nothing left");
+		return "nothing left";
+	}
+
+	useInventoryItemWithLowestDurability(className);
+	g_radial.torch.waiting = true;
+	g_radial.torch.hand = hand;
+	g_radial.torch.className = className;
+	g_radial.torch.frames = 0;
+	gameevent::Event("vr.radial.use")("hand", handName(hand))("slot", slotName)("item", className)("result", "used")
+		("left", found.count - 1);
+	return "used";
+}
+
+void openBookPage(ARX_INTERFACE_BOOK_MODE page) {
+	g_playerBook.openPage(page, false);
+}
+
+//! Run the item a hand released B over; \return what it did, for the status
+std::string runChoice(Hand hand, const RadialChoice & choice, RadialRequests & requests) {
+	switch(choice.item) {
+		case RadialItem::None: {
+			return "none";
+		}
+		case RadialItem::Inventory: {
+			requests.pulses[size_t(GameAction::Inventory)] = true;
+			return "inventory";
+		}
+		case RadialItem::QuickSlot: {
+			return runQuickSlot(hand, choice.slot);
+		}
+		case RadialItem::GameMenu: {
+			// Escape closes an open book or note first: the menu item opens the menu itself
+			g_playerBook.close();
+			if(g_note.isOpen()) {
+				ARX_INTERFACE_NoteClose();
+			}
+			requests.gameMenu = true;
+			return "game menu";
+		}
+		case RadialItem::Character: {
+			openBookPage(BOOKMODE_STATS);
+			return "book";
+		}
+		case RadialItem::Spells: {
+			openBookPage(BOOKMODE_SPELLS);
+			return (player.Interface & INTER_PLAYERBOOK) ? "book" : "no spells";
+		}
+		case RadialItem::Map: {
+			openBookPage(BOOKMODE_MINIMAP);
+			return "book";
+		}
+		case RadialItem::Quests: {
+			openBookPage(BOOKMODE_QUESTS);
+			return "book";
+		}
+		case RadialItem::QuickSave: {
+			requests.pulses[size_t(GameAction::QuickSave)] = true;
+			return "quick save";
+		}
+		case RadialItem::QuickLoad: {
+			requests.pulses[size_t(GameAction::QuickLoad)] = true;
+			return "quick load";
+		}
+		case RadialItem::Recenter: {
+			resetHeadReference("radial");
+			return "recenter";
+		}
+		case RadialItem::CancelSpell: {
+			requests.pulses[size_t(GameAction::CancelSpell)] = true;
+			return "cancel spell";
+		}
+	}
+	return "none";
+}
+
+void closeMenu(Hand hand, const char * why) {
+	HandMenu & menu = g_radial.menus[size_t(hand)];
+	RadialHandStatus & status = g_radial.status.hands[size_t(hand)];
+	menu.open = false;
+	status.open = false;
+	status.halfRing = false;
+	status.hovered = "none";
+	gameevent::Event("vr.radial")("hand", handName(hand))("state", "close")("why", why);
+}
+
+//! The torch a slot's use lit: once the engine has lit it, it is that hand's
+void followTorch() {
+	RadialState::TorchCandidate & candidate = g_radial.torch;
+	if(!player.torch) {
+		g_radial.status.torchHand = "none";
+	}
+	if(!candidate.waiting) {
+		return;
+	}
+	if(player.torch && player.torch->className() == candidate.className) {
+		candidate.waiting = false;
+		g_radial.status.torchHand = handName(candidate.hand);
+		gameevent::Event("vr.radial.torch")("hand", handName(candidate.hand))("item", candidate.className);
+	} else if(++candidate.frames > TorchWaitFrames) {
+		candidate.waiting = false;
+	}
+}
+
+} // anonymous namespace
+
+QuickSlotSet quickSlots(Hand hand) {
+	return parseQuickSlots(GETVarValueText(svar, SlotVariables[size_t(hand)]));
+}
+
+void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialRequests & requests) {
+
+	followTorch();
+
+	for(size_t i = 0; i < HandCount; i++) {
+
+		const Hand hand = Hand(i);
+		HandMenu & menu = g_radial.menus[i];
+		RadialHandStatus & status = g_radial.status.hands[i];
+		const Event event = radialEvent(hand);
+		const char * reason = closedReason(hand);
+
+		if(!menu.open) {
+			if(!controls.pressed(event) || blocked) {
+				continue;
+			}
+			if(reason) {
+				// A press refused, once per press: the reason with it
+				status.refused = reason;
+				gameevent::Event("vr.radial.refused", 200)("hand", handName(hand))("reason", reason);
+				continue;
+			}
+			menu.hand = frameHands().hands[i].position;
+			menu.pose = placeRadial(menu.hand, eyeMiddle(), g_radial.params);
+			menu.selector.reset();
+			menu.point = Vec2f(0.f);
+			menu.open = true;
+			status.open = true;
+			status.refused.clear();
+			status.opens++;
+			status.center = menu.pose.center;
+			status.hovered = "none";
+			gameevent::Event("vr.radial")("hand", handName(hand))("state", "open")
+				("x", menu.pose.center.x, 2)("y", menu.pose.center.y, 2)("z", menu.pose.center.z, 2);
+		}
+
+		if(blocked || reason) {
+			closeMenu(hand, blocked ? "controls taken" : reason);
+			continue;
+		}
+
+		menu.hand = frameHands().hands[i].position;
+		menu.point = radialPlanePoint(menu.pose, menu.hand);
+		const RadialChoice before = menu.selector.hovered();
+		const RadialChoice & hovered = menu.selector.update(menu.point, g_radial.params);
+		status.point = menu.point;
+		status.halfRing = menu.selector.halfRingOpen();
+		status.hovered = radialChoiceName(hovered);
+		if(hovered != before) {
+			gameevent::Event("vr.radial.hover", 2000)("hand", handName(hand))("item", status.hovered);
+		}
+
+		if(!controls.active(event)) {
+			// Released: the item under the hand runs, over nothing nothing does
+			const RadialChoice chosen = hovered;
+			status.chosen = radialChoiceName(chosen);
+			status.result = runChoice(hand, chosen, requests);
+			if(chosen.item != RadialItem::None) {
+				status.choices++;
+			}
+			gameevent::Event("vr.radial")("hand", handName(hand))("state", "chosen")("item", status.chosen)
+				("result", status.result);
+			menu.open = false;
+			status.open = false;
+			status.halfRing = false;
+			status.hovered = "none";
+		}
+	}
+}
+
+namespace {
+
+const Color4f SegmentColor = Color4f::rgba(0.05f, 0.05f, 0.07f, 0.62f);
+const Color4f HoverColor = Color4f::rgba(0.42f, 0.31f, 0.14f, 0.82f);
+const Color4f MarkColor = Color4f::rgba(1.f, 0.8f, 0.42f, 0.95f);
+const Color4f IconColor = Color4f::rgba(0.93f, 0.92f, 0.88f, 0.95f);
+const Color4f DimIconColor = Color4f::rgba(0.93f, 0.92f, 0.88f, 0.4f);
+const Color4f HintColor = Color4f::rgba(0.93f, 0.92f, 0.88f, 0.22f);
+const Color4f LabelBackColor = Color4f::rgba(0.02f, 0.02f, 0.03f, 0.7f);
+
+//! The ring's plane in the image: meters (x right, y up) -> pixels (x right, y down)
+struct Canvas {
+
+	float scale = 1.f;
+	Vec2f middle = Vec2f(0.f);
+
+	Vec2f pixel(const Vec2f & meters) const {
+		return middle + Vec2f(meters.x, -meters.y) * scale;
+	}
+
+	Vec2f polar(float degrees, float radius) const {
+		const float a = glm::radians(degrees);
+		return pixel(Vec2f(std::cos(a), std::sin(a)) * radius);
+	}
+
+};
+
+TexturedVertex vertex(const Vec2f & p, ColorRGBA color) {
+	return TexturedVertex(Vec3f(p, 0.f), 1.f, color, Vec2f(0.f));
+}
+
+void drawTriangles(const std::vector<TexturedVertex> & vertices) {
+	if(!vertices.empty()) {
+		GRenderer->ResetTexture(0);
+		EERIEDRAWPRIM(Renderer::TriangleList, vertices.data(), vertices.size());
+	}
+}
+
+//! An annulus sector from \a from to \a to degrees (counterclockwise), radii in meters
+void fillSector(const Canvas & canvas, float inner, float outer, float from, float to, const Color4f & color) {
+	const ColorRGBA rgba = color.toRGBA();
+	const int steps = std::max(2, int(std::ceil((to - from) / 4.f)));
+	std::vector<TexturedVertex> vertices;
+	vertices.reserve(size_t(steps) * 6);
+	for(int i = 0; i < steps; i++) {
+		const float a0 = from + (to - from) * float(i) / float(steps);
+		const float a1 = from + (to - from) * float(i + 1) / float(steps);
+		const Vec2f i0 = canvas.polar(a0, inner);
+		const Vec2f o0 = canvas.polar(a0, outer);
+		const Vec2f i1 = canvas.polar(a1, inner);
+		const Vec2f o1 = canvas.polar(a1, outer);
+		for(const Vec2f & p : { i0, o0, o1, i0, o1, i1 }) {
+			vertices.push_back(vertex(p, rgba));
+		}
+	}
+	drawTriangles(vertices);
+}
+
+void fillDisc(const Canvas & canvas, const Vec2f & center, float radius, const Color4f & color) {
+	const ColorRGBA rgba = color.toRGBA();
+	const Vec2f c = canvas.pixel(center);
+	const float r = radius * canvas.scale;
+	std::vector<TexturedVertex> vertices;
+	const int steps = 32;
+	for(int i = 0; i < steps; i++) {
+		const float a0 = glm::two_pi<float>() * float(i) / float(steps);
+		const float a1 = glm::two_pi<float>() * float(i + 1) / float(steps);
+		vertices.push_back(vertex(c, rgba));
+		vertices.push_back(vertex(c + Vec2f(std::cos(a0), std::sin(a0)) * r, rgba));
+		vertices.push_back(vertex(c + Vec2f(std::cos(a1), std::sin(a1)) * r, rgba));
+	}
+	drawTriangles(vertices);
+}
+
+/*!
+ * A line icon: strokes in a box of -1..1 (y up), drawn \a radius pixels around \a center (pixels) with
+ * lines \a width pixels wide
+ */
+class Icon {
+
+public:
+
+	Icon(const Vec2f & center, float radius, float width, const Color4f & color)
+		: m_center(center), m_radius(radius), m_halfWidth(width * 0.5f), m_color(color.toRGBA()) { }
+
+	~Icon() {
+		drawTriangles(m_vertices);
+	}
+
+	void line(Vec2f a, Vec2f b) {
+		a = point(a);
+		b = point(b);
+		const Vec2f along = b - a;
+		const float length = glm::length(along);
+		if(length < 1e-3f) {
+			return;
+		}
+		const Vec2f d = along / length * m_halfWidth;
+		const Vec2f n(-d.y, d.x);
+		// Extended by half the width: joints of a polyline close
+		a -= d;
+		b += d;
+		for(const Vec2f & p : { a + n, a - n, b - n, a + n, b - n, b + n }) {
+			m_vertices.push_back(vertex(p, m_color));
+		}
+	}
+
+	void polyline(std::initializer_list<Vec2f> points, bool closed = false) {
+		const Vec2f * previous = nullptr;
+		for(const Vec2f & p : points) {
+			if(previous) {
+				line(*previous, p);
+			}
+			previous = &p;
+		}
+		if(closed && points.size() > 2) {
+			line(*(points.end() - 1), *points.begin());
+		}
+	}
+
+	void arc(const Vec2f & center, float radius, float from, float to) {
+		const int steps = std::max(3, int(std::ceil(std::abs(to - from) / 15.f)));
+		for(int i = 0; i < steps; i++) {
+			const float a0 = glm::radians(from + (to - from) * float(i) / float(steps));
+			const float a1 = glm::radians(from + (to - from) * float(i + 1) / float(steps));
+			line(center + Vec2f(std::cos(a0), std::sin(a0)) * radius, center + Vec2f(std::cos(a1), std::sin(a1)) * radius);
+		}
+	}
+
+	void circle(const Vec2f & center, float radius) {
+		arc(center, radius, 0.f, 360.f);
+	}
+
+private:
+
+	Vec2f point(const Vec2f & p) const {
+		return m_center + Vec2f(p.x, -p.y) * m_radius;
+	}
+
+	Vec2f m_center;
+	float m_radius;
+	float m_halfWidth;
+	ColorRGBA m_color;
+	std::vector<TexturedVertex> m_vertices;
+
+};
+
+//! The fixed items' line icons (proposals, D-NEW-radial)
+void drawItemIcon(RadialItem item, const Vec2f & center, float radius, const Color4f & color) {
+
+	Icon icon(center, radius, std::max(2.f, radius * 0.14f), color);
+
+	switch(item) {
+		case RadialItem::Inventory: {
+			// A bag: body, flap, handle
+			icon.polyline({ Vec2f(-0.7f, 0.35f), Vec2f(-0.7f, -0.8f), Vec2f(0.7f, -0.8f), Vec2f(0.7f, 0.35f) }, true);
+			icon.polyline({ Vec2f(-0.7f, 0.35f), Vec2f(0.f, 0.f), Vec2f(0.7f, 0.35f) });
+			icon.arc(Vec2f(0.f, 0.35f), 0.35f, 0.f, 180.f);
+			break;
+		}
+		case RadialItem::GameMenu: {
+			for(float y : { 0.5f, 0.f, -0.5f }) {
+				icon.line(Vec2f(-0.7f, y), Vec2f(0.7f, y));
+			}
+			break;
+		}
+		case RadialItem::Character: {
+			icon.circle(Vec2f(0.f, 0.4f), 0.32f);
+			icon.arc(Vec2f(0.f, -0.85f), 0.75f, 15.f, 165.f);
+			break;
+		}
+		case RadialItem::Spells: {
+			// A five-pointed star
+			const float outer = 0.9f;
+			const float inner = 0.38f;
+			std::array<Vec2f, 10> points;
+			for(size_t i = 0; i < points.size(); i++) {
+				const float a = glm::radians(90.f + 36.f * float(i));
+				points[i] = Vec2f(std::cos(a), std::sin(a)) * ((i % 2 == 0) ? outer : inner);
+			}
+			for(size_t i = 0; i < points.size(); i++) {
+				icon.line(points[i], points[(i + 1) % points.size()]);
+			}
+			break;
+		}
+		case RadialItem::Map: {
+			icon.polyline({ Vec2f(-0.8f, 0.6f), Vec2f(-0.27f, 0.8f), Vec2f(0.27f, 0.6f), Vec2f(0.8f, 0.8f),
+			                Vec2f(0.8f, -0.6f), Vec2f(0.27f, -0.8f), Vec2f(-0.27f, -0.6f), Vec2f(-0.8f, -0.8f) }, true);
+			icon.line(Vec2f(-0.27f, 0.8f), Vec2f(-0.27f, -0.6f));
+			icon.line(Vec2f(0.27f, 0.6f), Vec2f(0.27f, -0.8f));
+			break;
+		}
+		case RadialItem::Quests: {
+			icon.polyline({ Vec2f(-0.6f, 0.85f), Vec2f(0.6f, 0.85f), Vec2f(0.6f, -0.85f), Vec2f(-0.6f, -0.85f) }, true);
+			for(float y : { 0.4f, 0.f, -0.4f }) {
+				icon.line(Vec2f(-0.32f, y), Vec2f(0.32f, y));
+			}
+			break;
+		}
+		case RadialItem::QuickSave:
+		case RadialItem::QuickLoad: {
+			icon.polyline({ Vec2f(-0.8f, -0.2f), Vec2f(-0.8f, -0.85f), Vec2f(0.8f, -0.85f), Vec2f(0.8f, -0.2f) });
+			if(item == RadialItem::QuickSave) {
+				icon.line(Vec2f(0.f, 0.85f), Vec2f(0.f, -0.45f));
+				icon.polyline({ Vec2f(-0.38f, -0.05f), Vec2f(0.f, -0.45f), Vec2f(0.38f, -0.05f) });
+			} else {
+				icon.line(Vec2f(0.f, -0.45f), Vec2f(0.f, 0.85f));
+				icon.polyline({ Vec2f(-0.38f, 0.45f), Vec2f(0.f, 0.85f), Vec2f(0.38f, 0.45f) });
+			}
+			break;
+		}
+		case RadialItem::Recenter: {
+			icon.circle(Vec2f(0.f), 0.55f);
+			icon.line(Vec2f(0.f, 0.55f), Vec2f(0.f, 0.95f));
+			icon.line(Vec2f(0.f, -0.55f), Vec2f(0.f, -0.95f));
+			icon.line(Vec2f(0.55f, 0.f), Vec2f(0.95f, 0.f));
+			icon.line(Vec2f(-0.55f, 0.f), Vec2f(-0.95f, 0.f));
+			icon.circle(Vec2f(0.f), 0.08f);
+			break;
+		}
+		case RadialItem::CancelSpell: {
+			icon.circle(Vec2f(0.f), 0.85f);
+			icon.line(Vec2f(-0.45f, 0.45f), Vec2f(0.45f, -0.45f));
+			icon.line(Vec2f(-0.45f, -0.45f), Vec2f(0.45f, 0.45f));
+			break;
+		}
+		case RadialItem::QuickSlot: {
+			// An empty slot: a plus
+			icon.line(Vec2f(-0.4f, 0.f), Vec2f(0.4f, 0.f));
+			icon.line(Vec2f(0.f, -0.4f), Vec2f(0.f, 0.4f));
+			break;
+		}
+		case RadialItem::None: break;
+	}
+}
+
+bool loadFonts() {
+	if(g_radial.labelFont && g_radial.countFont) {
+		return true;
+	}
+	if(g_radial.fontFailed) {
+		return false;
+	}
+	const res::path file = "misc/arx_default.ttf";
+	g_radial.labelFont = FontCache::getFont(file, LabelFontPixels);
+	g_radial.countFont = FontCache::getFont(file, CountFontPixels);
+	if(!g_radial.labelFont || !g_radial.countFont) {
+		g_radial.fontFailed = true;
+		LogWarning << "[vr] radial menu: could not load " << file << ", the menus show no names";
+		return false;
+	}
+	return true;
+}
+
+//! The name of the item under the hand, in one or two lines over a dark disc in the ring's middle
+void drawLabel(const Canvas & canvas, const std::string & text) {
+
+	if(text.empty() || !loadFonts()) {
+		return;
+	}
+	Font * font = g_radial.labelFont;
+
+	std::vector<std::string> lines = { text };
+	const float maxWidth = 2.f * g_radial.params.holeRadius * 1.55f * canvas.scale;
+	if(float(font->getTextSize(text).advance()) > maxWidth) {
+		// Two lines, split at the space nearest the middle
+		size_t best = std::string::npos;
+		for(size_t i = text.find(' '); i != std::string::npos; i = text.find(' ', i + 1)) {
+			if(best == std::string::npos || std::abs(int(i) - int(text.size() / 2)) < std::abs(int(best) - int(text.size() / 2))) {
+				best = i;
+			}
+		}
+		if(best != std::string::npos) {
+			lines = { text.substr(0, best), text.substr(best + 1) };
+		}
+	}
+
+	const float lineHeight = float(font->getLineHeight());
+	float y = canvas.middle.y - lineHeight * float(lines.size()) * 0.5f;
+	for(const std::string & line : lines) {
+		const s32 width = font->getTextSize(line).advance();
+		font->draw(Vec2i(s32(canvas.middle.x) - width / 2, s32(y)), line, Color::white);
+		y += lineHeight;
+	}
+}
+
+void drawMenu(Hand hand) {
+
+	const HandMenu & menu = g_radial.menus[size_t(hand)];
+	const RadialParams & params = g_radial.params;
+	const RadialChoice hovered = menu.selector.hovered();
+	const bool halfOpen = menu.selector.halfRingOpen();
+	const QuickSlotSet slots = quickSlots(hand);
+	const bool dragging = g_draggedEntity && (g_draggedEntity->ioflags & IO_ITEM);
+
+	Canvas canvas;
+	canvas.scale = float(RadialImagePixels) / params.imageExtent;
+	canvas.middle = Vec2f(float(RadialImagePixels) * 0.5f);
+
+	UseRenderState state(render2D());
+	UseTextureState textureState(TextureStage::FilterLinear, TextureStage::WrapClamp);
+	GRenderer->SetViewport(Rect(RadialImagePixels, RadialImagePixels));
+
+	const float segmentDegrees = 360.f / float(RadialSegmentCount);
+	const float gap = 1.5f;
+	const float drawnHole = params.holeRadius * 1.4f;
+	const float iconRadius = 0.016f * canvas.scale;
+	const float middleRadius = (drawnHole + params.ringRadius) * 0.5f;
+
+	std::string label;
+
+	// The ring: 8 segments, the one under the hand lit, with an arc outside it
+	for(size_t segment = 0; segment < RadialSegmentCount; segment++) {
+		const float center = segmentCenterDegrees(segment);
+		const float from = center - segmentDegrees * 0.5f + gap;
+		const float to = center + segmentDegrees * 0.5f - gap;
+		const RadialChoice choice = segmentChoice(segment);
+		const bool lit = !halfOpen && hovered == choice;
+		fillSector(canvas, drawnHole, params.ringRadius, from, to, lit ? HoverColor : SegmentColor);
+		if(lit) {
+			fillSector(canvas, params.ringRadius + 0.003f, params.ringRadius + 0.009f, from, to, MarkColor);
+		}
+
+		const Vec2f iconCenter = canvas.polar(center, middleRadius);
+		if(choice.item == RadialItem::Inventory) {
+			drawItemIcon(RadialItem::Inventory, iconCenter, iconRadius, IconColor);
+			if(lit) {
+				label = radialItemLabel(RadialItem::Inventory);
+			}
+			continue;
+		}
+
+		const std::string & className = slots[choice.slot];
+		const SlotItem found = findInInventory(className);
+		const bool burning = !className.empty() && player.torch && player.torch->className() == className;
+		Entity * shown = found.item ? found.item : (burning ? player.torch : nullptr);
+		if(shown && shown->m_icon) {
+			const float size = iconRadius * 2.4f;
+			const Rectf rect(iconCenter - Vec2f(size * 0.5f), size, size);
+			EERIEDrawBitmap(rect, 0.f, shown->m_icon, Color::white);
+			if(found.count > 1 && loadFonts()) {
+				const std::string count = std::to_string(found.count);
+				const s32 width = g_radial.countFont->getTextSize(count).advance();
+				g_radial.countFont->draw(Vec2i(s32(rect.right) - width / 2, s32(rect.bottom) - s32(CountFontPixels) / 2),
+				                         count, Color::white);
+			}
+		} else {
+			drawItemIcon(RadialItem::QuickSlot, iconCenter, iconRadius * (className.empty() ? 0.8f : 1.f), DimIconColor);
+		}
+		if(lit) {
+			if(dragging) {
+				label = "Put " + itemName(g_draggedEntity) + " here";
+			} else if(className.empty()) {
+				label = "Empty slot";
+			} else if(shown) {
+				label = itemName(shown);
+			} else {
+				label = "None left";
+			}
+		}
+	}
+
+	// The half-ring over the ring: its items when the hand went up there, a faint arc saying it is there
+	if(halfOpen) {
+		const float iconMiddle = (params.halfInnerRadius + params.halfOuterRadius) * 0.5f;
+		for(size_t i = 0; i < HalfRingItemCount; i++) {
+			const RadialItem item = halfRingItem(i);
+			const float center = halfRingCenterDegrees(i);
+			const float from = center - HalfRingItemDegrees * 0.5f + gap * 0.6f;
+			const float to = center + HalfRingItemDegrees * 0.5f - gap * 0.6f;
+			const bool lit = hovered.item == item;
+			fillSector(canvas, params.halfInnerRadius, params.halfOuterRadius, from, to, lit ? HoverColor : SegmentColor);
+			if(lit) {
+				fillSector(canvas, params.halfOuterRadius + 0.003f, params.halfOuterRadius + 0.009f, from, to, MarkColor);
+				label = radialItemLabel(item);
+			}
+			drawItemIcon(item, canvas.polar(center, iconMiddle), iconRadius * 0.95f, IconColor);
+		}
+	} else {
+		fillSector(canvas, params.halfInnerRadius, params.halfInnerRadius + 0.004f, 30.f, 150.f, HintColor);
+	}
+
+	// The middle: a dark disc with the name of the item under the hand
+	fillDisc(canvas, Vec2f(0.f), drawnHole * 0.97f, LabelBackColor);
+	drawLabel(canvas, label);
+
+	// Where the hand is, so the player sees what moving it does
+	const Vec2f extent(params.imageExtent * 0.48f);
+	const Vec2f point = glm::clamp(menu.point, -extent, extent);
+	fillDisc(canvas, point, 0.0045f, Color4f::rgba(0.f, 0.f, 0.f, 0.6f));
+	fillDisc(canvas, point, 0.003f, Color4f::rgba(1.f, 1.f, 1.f, 0.95f));
+
+	GRenderer->SetViewport(g_preparedCamera.m_viewport);
+}
+
+} // anonymous namespace
+
+void drawRadialMenus() {
+
+	RadialStatus & status = g_radial.status;
+	for(size_t i = 0; i < HandCount; i++) {
+		const Hand hand = Hand(i);
+		const HandMenu & menu = g_radial.menus[i];
+		status.hands[i].shown = radialLayerShown(hand);
+		if(!menu.open || !beginRadialImage(hand, Vec2i(RadialImagePixels))) {
+			setRadialLayer(hand, false);
+			continue;
+		}
+		drawMenu(hand);
+		endRadialImage(hand);
+		setRadialLayer(hand, true, menu.pose.center, menu.pose.orientation, g_radial.params.imageExtent);
+		status.drawn++;
+	}
+}
+
+const RadialStatus & radialStatus() {
+	return g_radial.status;
+}
+
+namespace {
+
+std::string_view nextRadialWord(std::string_view & text) {
+	const size_t start = text.find_first_not_of(" \t");
+	if(start == std::string_view::npos) {
+		text = std::string_view();
+		return text;
+	}
+	text.remove_prefix(start);
+	const size_t end = text.find_first_of(" \t");
+	const std::string_view word = text.substr(0, end);
+	text = (end == std::string_view::npos) ? std::string_view() : text.substr(end);
+	return word;
+}
+
+//! Where the middle of an item is in the ring's plane (meters), nothing for an unknown name
+std::optional<Vec2f> itemPoint(std::string_view name, bool & halfRing) {
+
+	const RadialParams & params = g_radial.params;
+	const float ringMiddle = (params.holeRadius + params.ringRadius) * 0.5f;
+	halfRing = false;
+
+	if(name == "center") {
+		return Vec2f(0.f);
+	}
+	for(size_t segment = 0; segment < RadialSegmentCount; segment++) {
+		if(name == radialChoiceName(segmentChoice(segment))) {
+			const float a = glm::radians(segmentCenterDegrees(segment));
+			return Vec2f(std::cos(a), std::sin(a)) * ringMiddle;
+		}
+	}
+	for(size_t i = 0; i < HalfRingItemCount; i++) {
+		RadialChoice choice;
+		choice.item = halfRingItem(i);
+		if(name == radialChoiceName(choice)) {
+			halfRing = true;
+			const float a = glm::radians(halfRingCenterDegrees(i));
+			return Vec2f(std::cos(a), std::sin(a)) * ((params.halfInnerRadius + params.halfOuterRadius) * 0.5f);
+		}
+	}
+	return std::nullopt;
+}
+
+std::string handPosCommand(Hand hand, const HandMenu & menu, const Vec2f & point) {
+	const Vec3f x = menu.pose.orientation * Vec3f(1.f, 0.f, 0.f);
+	const Vec3f y = menu.pose.orientation * Vec3f(0.f, 1.f, 0.f);
+	// In the plane the hand opened the menu in: its offset along the ring's face is kept
+	const Vec3f face = menu.pose.orientation * Vec3f(0.f, 0.f, 1.f);
+	const float depth = glm::dot(menu.hand - menu.pose.center, face);
+	const Vec3f p = menu.pose.center + x * point.x + y * point.y + face * depth;
+	std::ostringstream oss;
+	oss << "hand " << handName(hand) << " pos " << p.x << ' ' << p.y << ' ' << p.z;
+	return oss.str();
+}
+
+} // anonymous namespace
+
+std::string radialCommand(std::string_view arguments) {
+
+	std::string_view rest = arguments;
+	const std::string_view verb = nextRadialWord(rest);
+	if(verb != "point") {
+		return "vr-radial: expected point <left|right> <item>, got \"" + std::string(arguments) + "\"";
+	}
+	const std::string_view handWord = nextRadialWord(rest);
+	if(handWord != "left" && handWord != "right") {
+		return "vr-radial point: expected left or right, got \"" + std::string(handWord) + "\"";
+	}
+	const Hand hand = handWord == "left" ? Hand::Left : Hand::Right;
+	const std::string_view item = nextRadialWord(rest);
+	bool halfRing = false;
+	const std::optional<Vec2f> point = itemPoint(item, halfRing);
+	if(!point) {
+		return "vr-radial point: unknown item \"" + std::string(item)
+		       + "\" (center, inventory, slot1..slot7, game_menu, character, spells, map, quests, quick_save,"
+		         " quick_load, recenter, cancel_spell)";
+	}
+	if(!isSimulated()) {
+		return "vr-radial point: needs the simulated headset (--vr-sim)";
+	}
+	const HandMenu & menu = g_radial.menus[size_t(hand)];
+	if(!menu.open) {
+		return std::string("vr-radial point: the ") + handName(hand) + " menu is not open";
+	}
+
+	// The half-ring opens when the hand goes above the ring and stays open over it: up first, then across
+	const RadialParams & params = g_radial.params;
+	std::vector<std::string> lines;
+	if(halfRing && !menu.selector.halfRingOpen()) {
+		lines.push_back(handPosCommand(hand, menu, Vec2f(0.f, (params.halfInnerRadius + params.halfOuterRadius) * 0.5f)));
+		lines.push_back("@+3 " + handPosCommand(hand, menu, *point));
+	} else if(!halfRing && menu.selector.halfRingOpen()) {
+		// Back into the ring first: the middle closes the half-ring
+		lines.push_back(handPosCommand(hand, menu, Vec2f(0.f)));
+		lines.push_back("@+3 " + handPosCommand(hand, menu, *point));
+	} else {
+		lines.push_back(handPosCommand(hand, menu, *point));
+	}
+	for(const std::string & line : lines) {
+		const std::string error = simCommand(line);
+		if(!error.empty()) {
+			return "vr-radial point: " + error;
+		}
+	}
+	return std::string();
+}
+
+} // namespace vr

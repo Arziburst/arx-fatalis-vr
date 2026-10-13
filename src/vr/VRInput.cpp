@@ -38,6 +38,7 @@
 #include "vr/BodyYaw.h"
 #include "vr/HeadTracking.h"
 #include "vr/MenuPointer.h"
+#include "vr/VRRadial.h"
 #include "vr/VRReticle.h"
 #include "vr/VRSystem.h"
 
@@ -78,6 +79,9 @@ struct InputState {
 	std::array<PointerRay, HandCount> rays;
 	u64 loggedOffPanelPresses = 0;
 	WalkStatus walk;
+
+	//! The radial menu's game menu item holds Escape for this many more updates (#376)
+	u32 radialEscapeUpdates = 0;
 
 };
 
@@ -200,6 +204,9 @@ ControlAction engineAction(GameAction action) {
 		case GameAction::MagicMode: return CONTROLS_CUST_MAGICMODE;
 		case GameAction::Stealth: return CONTROLS_CUST_STEALTHMODE;
 		case GameAction::Use: return CONTROLS_CUST_USE;
+		case GameAction::QuickSave: return CONTROLS_CUST_QUICKSAVE;
+		case GameAction::QuickLoad: return CONTROLS_CUST_QUICKLOAD;
+		case GameAction::CancelSpell: return CONTROLS_CUST_CANCELCURSPELL;
 		case GameAction::Count: break;
 	}
 	arx_unreachable();
@@ -357,7 +364,23 @@ void updateInput() {
 	const GameInputState & resolved = g_input.game.update(g_input.resolver, g_input.input);
 	const bool capturing = g_input.capture.active();
 	updateCapture(toMsi(platform::getTime()));
-	const GameInputState game = capturing || g_input.capture.active() ? GameInputState() : resolved;
+	const bool controlsTaken = capturing || g_input.capture.active();
+	GameInputState game = controlsTaken ? GameInputState() : resolved;
+
+	// The radial menus on B (#376): their items press the engine's keys for one update, the game menu
+	// holds Escape for two like the menu button above (the engine acts on its release)
+	RadialRequests radial;
+	updateRadialMenus(g_input.resolver, controlsTaken, radial);
+	for(size_t i = 0; i < GameActionCount; i++) {
+		game.actions[i] = game.actions[i] || radial.pulses[i];
+	}
+	if(radial.gameMenu) {
+		g_input.radialEscapeUpdates = 2;
+	}
+	if(g_input.radialEscapeUpdates > 0) {
+		game.escape = true;
+		g_input.radialEscapeUpdates--;
+	}
 	applyToEngine(game);
 
 	// Recenter (#28, D-019: a long press of the left stick click): the head as it is at the next sample
@@ -366,6 +389,9 @@ void updateInput() {
 	if(game.recenter) {
 		resetHeadReference("button");
 	}
+
+	// The open radial menus into their images, while the frame's targets are bound (stereo frames only)
+	drawRadialMenus();
 }
 
 PointerStatus pointerStatus() {

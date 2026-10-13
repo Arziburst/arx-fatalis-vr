@@ -55,6 +55,9 @@ enum class GameAction : u8 {
 	MagicMode,
 	Stealth, //!< held for a stash: the original's stealth-click
 	Use,     //!< the original's right click on an item - the engine's "use" action in game
+	QuickSave,   //!< items of the radial menus (#376): pressed for one update, as the keys would be
+	QuickLoad,
+	CancelSpell, //!< end the player's newest running spell that has a duration
 	Count
 };
 

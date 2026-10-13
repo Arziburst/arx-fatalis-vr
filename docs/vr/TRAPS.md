@@ -55,6 +55,8 @@ including "the charge is spent".
 *dirty* flag only: a build of `<sha> dirty` counts as fresh for any later uncommitted change on the same commit, so
 the game ran the previous build. **Do:** after editing uncommitted code, run `.\scripts\build-windows.ps1` yourself
 before a launch (it always builds what changed); a break-on-purpose run is only valid after an explicit build.
+**Resolved (#306):** the build stamp carries a fingerprint of the uncommitted tree (`fp=<hash>`); an edit after
+the build makes the launch scripts' check stale and `-Rebuild` rebuilds.
 
 ## 2026-10-10 — `player.pos + player.baseOffset()` is not the feet: an NPC placed there floats (#39)
 
@@ -82,6 +84,8 @@ added a minute ago: `vr.wrist.along.x (<absent>)`.
 clean `HEAD` followed by edits still counts as fresh, so `-Rebuild` does not rebuild and the old `arx.exe` runs.
 **Do:** after editing, run `.\scripts\build-windows.ps1` yourself before the launch (or commit first); it costs
 a launch from the budget otherwise.
+**Resolved (#306, #294):** the build stamp carries a fingerprint of the uncommitted tree (`fp=<hash>`); the
+fresh-build check sees edits made after a build (clean or dirty) and `-Rebuild` rebuilds.
 
 ## 2026-10-10 — `@diff` of two still shots of the body is as large as a small HUD change (#116)
 

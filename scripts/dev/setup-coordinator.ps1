@@ -5,8 +5,9 @@
 .DESCRIPTION
 	Sets the owner's personal Claude Code settings (~/.claude/settings.json) that the loop needs, keeping
 	everything else in that file:
-	  - statusLine -> scripts/dev/statusline.ps1 of the main working copy (model, context, 5-hour and
-	    weekly limits; writes ~/.claude/statusline/last.json, which the coordinator reads);
+	  - statusLine -> coordinator/core/scripts/statusline.ps1 of the main working copy, the core's (model, context,
+	    5-hour and weekly limits; writes ~/.claude/coordinator/statusline.json and sessions/<id>.json, which the
+	    coordinator and usage-plan.ps1 read);
 	  - crossSessionInbound = accept (the coordinator's messages reach the workers without the owner);
 	  - autoContinueAtUsageLimit = true (sessions wait for the 5-hour reset and continue).
 	Then checks what only the owner can do and prints the missing steps:
@@ -31,7 +32,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoDir = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $mainCopy = (git -C $repoDir worktree list --porcelain | Select-Object -First 1) -replace '^worktree ', '' -replace '/', '\'
-$statusScript = (Join-Path $mainCopy 'scripts\dev\statusline.ps1') -replace '\\', '/'
+$statusScript = (Join-Path $mainCopy 'coordinator\core\scripts\statusline.ps1') -replace '\\', '/'
 $settingsPath = Join-Path $env:USERPROFILE '.claude\settings.json'
 $missing = @()
 
@@ -50,6 +51,7 @@ $want = [ordered]@{
 	autoCompactWindow        = 900000   # compact at 900k of the 1M context: the coordinator lives long (#217)
 }
 $changed = $false
+Write-State (Test-Path $statusScript) "the core's status line script: $statusScript"
 foreach ($key in $want.Keys) {
 	$current = $settings.PSObject.Properties[$key]
 	$same = $current -and (($current.Value | ConvertTo-Json -Compress -Depth 5) -eq ($want[$key] | ConvertTo-Json -Compress -Depth 5))

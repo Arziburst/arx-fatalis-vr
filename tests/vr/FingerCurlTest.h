@@ -42,6 +42,12 @@ class FingerCurlTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testControlsFallback);
 	CPPUNIT_TEST(testClosedHand);
 	CPPUNIT_TEST(testApproachStepsTowardsTheTarget);
+	CPPUNIT_TEST(testPoseEachFingerClosedAlone);
+	CPPUNIT_TEST(testPoseOpenAndInvalidHand);
+	CPPUNIT_TEST(testPoseIgnoresTheSpaceAndTheHand);
+	CPPUNIT_TEST(testPoseControlsFallback);
+	CPPUNIT_TEST(testPoseClosed);
+	CPPUNIT_TEST(testPoseApproach);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -56,6 +62,12 @@ public:
 	void testControlsFallback();
 	void testClosedHand();
 	void testApproachStepsTowardsTheTarget();
+	void testPoseEachFingerClosedAlone();
+	void testPoseOpenAndInvalidHand();
+	void testPoseIgnoresTheSpaceAndTheHand();
+	void testPoseControlsFallback();
+	void testPoseClosed();
+	void testPoseApproach();
 
 };
 

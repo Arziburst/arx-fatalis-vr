@@ -88,6 +88,11 @@
 .PARAMETER Menu
 	A plain launch that expects the main menu (no --loadlevel 10 default); combine with -Commands 'loadslot 0'.
 
+.PARAMETER Player
+	A player's launch (#394): arx.exe without --dev-launch, so the publisher logos, the main menu and every .cin
+	cinematic are shown. Without arguments for arx.exe the game is expected in LOGO (or MENU) - the sequence takes
+	over while the first logo is up. Every other run is a development launch (--dev-launch: no logos, no cinematics).
+
 .PARAMETER Playground
 	Start the test playground (#321, scripts\dev\playground): generates the level when it is missing or older than
 	the generator, starts a new game in it (--data-dir <level folder> --loadlevel 30) and fails unless the game reaches
@@ -165,6 +170,7 @@ param(
 	[switch]$Sound,
 	[string]$VrSim,
 	[switch]$Menu,
+	[switch]$Player,
 	[switch]$Playground,
 	[int]$Seconds = 10,
 	[int]$Repeat = 1,
@@ -219,11 +225,13 @@ if ($Playground) {
 	. (Join-Path $PSScriptRoot 'playground\playground-lib.ps1')
 	$ArxArgs = @(Get-ArxPlaygroundArgs (Initialize-ArxPlaygroundLevel)) + @($ArxArgs)
 }
-if (-not $ArxArgs -and -not $Menu) { $ArxArgs = @('--loadlevel', '10') }
+if (-not $ArxArgs -and -not $Menu -and -not $Player) { $ArxArgs = @('--loadlevel', '10') }
 if (-not $ArxArgs) { $ArxArgs = @() }
 
 $loadsSomething = ($ArxArgs -join ' ') -match '--load(level|slot|save)'
 $expectedStates = if ($loadsSomething) { @('GAMEPLAY', 'CINEMATIC') } else { @('MENU') }
+# A player's launch starts with the publisher logos (#394): the checks start as soon as the first one is up
+if ($Player -and -not $loadsSomething) { $expectedStates = @('LOGO', 'MENU') }
 
 $log = Get-ArxLogPath $UserDir
 $crashDir = Get-ArxCrashDir $UserDir
@@ -275,6 +283,8 @@ function Invoke-SmokeRun([int]$Run) {
 		$argList = @()
 		if ($DataDir) { $argList += '--data-dir', "`"$DataDir`"" }
 		$argList += '--windowed', '--test-dir', "`"$TestDir`""
+		# A development launch (no logos, no cinematics) unless -Player (#394)
+		$argList += Get-ArxLaunchKindArgs -Player:$Player
 		if (-not $Shared) { $argList += '--user-dir', "`"$UserDir`"", '--config-dir', "`"$UserDir`"" }
 		if (-not $Vr) { $argList += '--no-vr' }
 		if (-not $Sound) { $argList += '--mute' }

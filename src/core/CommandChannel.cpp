@@ -2055,6 +2055,8 @@ std::string execute(std::string_view line) {
 			if((entity.ioflags & IO_NPC) && entity._npcdata) {
 				oss << " life=" << entity._npcdata->lifePool.current;
 			}
+			// What the hand reticles and the mouse can hover (its script switches it, #210)
+			oss << " interactive=" << ((entity.gameFlags & GFLAG_INTERACTIVITY) ? 1 : 0);
 			oss << '\n';
 			count++;
 		}

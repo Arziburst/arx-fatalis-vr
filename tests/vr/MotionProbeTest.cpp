@@ -89,7 +89,7 @@ void MotionProbeTest::testTeleportIsNoWalk() {
 }
 
 void MotionProbeTest::testJumpIsTheSameAtEveryRate() {
-	// 130 units high, 0.6 s from the take-off to the landing: the time above 20 units is the same at any rate,
+	// 130 units high, 0.6 s from the take-off to the landing: the time above 50 units is the same at any rate,
 	// though the frames land elsewhere on the curve
 	const double start = 0.2, air = 0.6;
 	const float apex = 130.f;
@@ -122,11 +122,11 @@ void MotionProbeTest::testJumpThatNeverLeavesTheGround() {
 	CPPUNIT_ASSERT_EQUAL(u32(0), probe.jumps());
 	CPPUNIT_ASSERT(!probe.airborne());
 	// The next one is measured from its own take-off
-	probe.update(probeSample(0.04, Vec3f(0.f, -30.f, 0.f), 0.f, true));
+	probe.update(probeSample(0.04, Vec3f(0.f, -60.f, 0.f), 0.f, true));
 	CPPUNIT_ASSERT(probe.airborne());
 	probe.update(probeSample(0.05, Vec3f(0.f), 0.f, true));
 	CPPUNIT_ASSERT_EQUAL(u32(1), probe.jumps());
-	CPPUNIT_ASSERT_DOUBLES_EQUAL(30.0, double(probe.jumpApex()), 1e-4);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(60.0, double(probe.jumpApex()), 1e-4);
 }
 
 void MotionProbeTest::testResetStartsFromZero() {

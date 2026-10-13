@@ -64,11 +64,14 @@ public:
 	//! A step this long in one frame is no walk (a level load, a teleport): 200 units, 2 m
 	static constexpr float TeleportUnits = 200.f;
 	/*!
-	 * Above the take-off by more than this is in the air: 20 units, 20 cm. High enough that the frames on
-	 * both sides of the crossing are on the flight's curve at 72 Hz (the jump rises 130 units in 200 ms):
-	 * placed between a frame still on the floor and one in the air, the crossing would move with the rate
+	 * Above the take-off by more than this is in the air: 50 units, 50 cm. The frames on both sides of the
+	 * crossing are on the flight's curve (the jump rises 130 units in 200 ms: 77 ms to get there), never one
+	 * still on the floor - which would move the crossing with the rate. And it is above where the engine's
+	 * jump hangs before it lands: it moves a jumping player in steps of 25-35 ms, a step that would end
+	 * below the floor is refused, and the player hovers up to a step (~35 units) above the floor until the
+	 * landing animation ends (#435) - a gauge at 20 cm read 0.4 s or 1.0 s for the same jump
 	 */
-	static constexpr float AirborneUnits = 20.f;
+	static constexpr float AirborneUnits = 50.f;
 
 	//! Start counting from the next sample
 	void reset();

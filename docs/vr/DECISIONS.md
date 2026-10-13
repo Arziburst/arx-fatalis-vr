@@ -30,7 +30,8 @@ a changed decision keeps its history in that cell.
   quick save, quick load, recenter, cancel spell - which closes when the hand comes back inside the ring (10 cm) or
   drops below its middle. Released over nothing, nothing runs.
 - **Drawing.** Each open menu is drawn by the engine's own 2D drawing (filled sectors, line icons, the game's fonts and
-  item icons) into a 512 × 512 swapchain of its hand and submitted as a quad layer 0.46 m wide on top of every other
+  item icons) into a 512 × 512 swapchain of its hand - made with the session: SteamVR refuses one made in a frame
+  while another image is acquired (TRAPS.md) - and submitted as a quad layer 0.46 m wide on top of every other
   layer - never hidden by the world or the hand, the same in both eyes. The proposed look (after the owner's
   reference): dark see-through segments, the one under the hand lit amber with an arc outside it and its name in a
   dark disc in the middle, white line icons, a faint arc above the ring saying the half-ring is there, a dot where the
@@ -39,7 +40,8 @@ a changed decision keeps its history in that cell.
   menus yet: its overlays are fixed images, a menu's image changes every frame.
 - **Running the items.** The engine's own paths: the inventory, quick save / load and cancel spell as their keys pressed
   for one update; the game menu as Escape (an open book or note is closed first, so it always opens the menu); the
-  book's pages opened (not toggled); recenter as a new head reference (`reason=radial`). A quick slot uses an item of
+  book's pages as their keys do - the book opens on the page or turns to it, and the same item closes the book it
+  shows (like the inventory item, what an item opened it closes: the owner's headset run); recenter as a new head reference (`reason=radial`). A quick slot uses an item of
   its kind from the bag as the item's own use does (a potion is drunk, food eaten, a torch lit); a lit torch of the
   kind is put out instead. Time is not paused.
 - **Quick slots.** Each hand has 7, holding an item **kind** (`potion_life`), so the next one of the kind refills the

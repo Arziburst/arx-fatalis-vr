@@ -5,8 +5,6 @@
 <h1 align="center">Arx Fatalis VR</h1>
 
 <p align="center"><em>Step into the underworld with your own hands.</em></p>
-<!-- the tagline above is a proposal (#401) -->
-
 <p align="center">
   <a href="https://github.com/Arziburst/arx-fatalis-vr/actions/workflows/build-windows.yml"><img src="https://github.com/Arziburst/arx-fatalis-vr/actions/workflows/build-windows.yml/badge.svg?branch=main" alt="CI status"></a>
   <a href="COPYING"><img src="https://img.shields.io/badge/licence-GPLv3%2B-blue" alt="Licence: GPLv3+"></a>

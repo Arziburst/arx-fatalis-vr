@@ -58,10 +58,12 @@ jobs:
 
     # Seconds (#274, #296): a PR must not add a numbered D-0xx that main already has; new decisions are D-NEW and
     # numbered by scripts/dev/number-decisions.ps1 right before the merge. Only for a PR that touches those files.
+    # On a push to main nothing may stay unnumbered (-Strict, #383).
     - name: Decision numbers
-      if: github.event_name == 'pull_request'
+      if: github.event_name == 'pull_request' || github.event_name == 'push'
       shell: pwsh
       run: |
+        if ('${{ github.event_name }}' -eq 'push') { git fetch --no-tags origin main:refs/remotes/origin/main; ./scripts/dev/number-decisions.ps1 -Check -Strict; exit $LASTEXITCODE }
         git fetch --no-tags origin main:refs/remotes/origin/main
         $changed = @(git diff --name-only origin/main HEAD)
         if ($changed -contains 'docs/vr/DECISIONS.md' -or $changed -contains 'scripts/dev/number-decisions.ps1') { ./scripts/dev/number-decisions.ps1 -Check }

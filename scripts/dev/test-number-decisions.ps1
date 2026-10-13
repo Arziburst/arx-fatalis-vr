@@ -86,6 +86,25 @@ try {
 	$r = Num @('-Check'); Check 'check fails on a clashing number' ($r.Exit -eq 1 -and $r.Out -match 'clashes') $r.Out
 	G switch -q main
 	$r = Num @('-Check'); Check 'check passes on main' ($r.Exit -eq 0) $r.Out
+	$r = Num @('-Check', '-Strict'); Check 'strict check passes on a fully numbered main' ($r.Exit -eq 0) $r.Out
+
+	# an unnumbered placeholder that reached main (#383): the strict check names the heading, the plain one still passes
+	G switch -q -c e main
+	$d = Read 'docs/vr/DECISIONS.md'
+	Put 'docs/vr/DECISIONS.md' ($d -replace '(?m)^## D-004', "## D-NEW-turning: turning`n`nx`n`n## D-004")
+	G add -A; G commit -q -m unnumbered
+	$r = Num @('-Check', '-Strict'); Check 'strict check fails on an unnumbered heading, naming it' ($r.Exit -eq 1 -and $r.Out -match 'D-NEW-turning: turning') $r.Out
+	$r = Num @('-Check'); Check 'plain check still passes a placeholder' ($r.Exit -eq 0) $r.Out
+
+	# a doc line about the placeholder itself, in a file the branch changed, stays as written (#383)
+	G switch -q -c f main
+	Put 'docs/vr/WORKFLOW.md' "A new decision is written ## D-NEW: title and referenced as D-NEW. <!-- d-new-literal -->`n"
+	$d = Read 'docs/vr/DECISIONS.md'
+	Put 'docs/vr/DECISIONS.md' ($d -replace '(?m)^## D-004', "## D-NEW: real`n`nx`n`n## D-004")
+	G add -A; G commit -q -m docline
+	$r = Num; Check 'f: script ran' ($r.Exit -eq 0) $r.Out
+	Check 'f: doc line about the placeholder unchanged' ((Read 'docs/vr/WORKFLOW.md') -match 'written ## D-NEW: title and referenced as D-NEW\.')
+	Check 'f: heading numbered' ((Read 'docs/vr/DECISIONS.md') -match '(?m)^## D-005: real')
 } finally {
 	Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue
 }

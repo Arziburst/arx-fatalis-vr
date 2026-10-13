@@ -173,7 +173,8 @@ vr-sim action trigger left 1
 @frames 5
 vr-sim action trigger left 0
 @until menuMode eq credits 10s
-@assert vr.panel.menu eq credits
+# The panel takes the menu's name when the frame is submitted, after the status of its start was written
+@until vr.panel.menu eq credits 5s
 @frames 60
 vr-input tap left.a
 @until menuMode eq mainmenu 15s

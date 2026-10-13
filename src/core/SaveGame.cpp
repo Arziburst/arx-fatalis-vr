@@ -61,9 +61,9 @@ void SaveGameList::update(bool verbose) {
 	std::vector<SaveGameChange> found(old_count, SaveGameRemoved);
 	
 	bool new_saves = false;
-
+	
 	size_t max_name_length = 0;
-
+	
 	std::vector<HiddenSave> hidden;
 	
 	fs::path savedir = fs::getUserDir() / SAVEGAME_DIR;
@@ -93,7 +93,7 @@ void SaveGameList::update(bool verbose) {
 			found[index] = SaveGameUnchanged;
 			continue;
 		}
-
+		
 		// A save of the other kind seen before is not read or logged again
 		auto known = std::find_if(m_hidden.begin(), m_hidden.end(), [&](const HiddenSave & save) {
 			return save.savefile == path && save.stime == stime;
@@ -102,7 +102,7 @@ void SaveGameList::update(bool verbose) {
 			hidden.push_back(*known);
 			continue;
 		}
-
+		
 		std::string name;
 		float version;
 		AreaId area;
@@ -110,7 +110,7 @@ void SaveGameList::update(bool verbose) {
 			LogWarning << "Unable to get save file info for " << path;
 			continue;
 		}
-
+		
 		// VR and flat runs never see each other's saves (#417, D-NEW)
 		SaveKind kind = readSaveKind(path);
 		if(kind != m_kind) {
@@ -118,7 +118,7 @@ void SaveGameList::update(bool verbose) {
 			hidden.push_back(HiddenSave{ path, stime, kind });
 			continue;
 		}
-
+		
 		new_saves = true;
 		
 		if(index == size_t(-1)) {
@@ -217,23 +217,23 @@ void SaveGameList::update(bool verbose) {
 	if(new_saves) {
 		std::sort(savelist.begin(), savelist.end(), saveTimeCompare);
 	}
-
+	
 	m_hidden = std::move(hidden);
 	if(verbose) {
 		// Expected zero for a player who only ever played this build in one mode
 		LogInfo << "Saves of this " << saveKindName(m_kind) << " run: " << savelist.size() << " listed, "
 		        << m_hidden.size() << " of the other kind hidden";
 	}
-
+	
 	LogDebug("Found " << savelist.size() << " savegames");
 }
 
 std::string SaveGameList::hiddenReason() const {
-
+	
 	if(m_hidden.empty()) {
 		return std::string();
 	}
-
+	
 	SaveKind other = (m_kind == SaveKind::VR) ? SaveKind::Flat : SaveKind::VR;
 	return std::to_string(m_hidden.size()) + " " + saveKindName(other) + " save(s) in the save folder are hidden: "
 	       + saveKindRefusal(other, m_kind);

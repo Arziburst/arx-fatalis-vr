@@ -236,7 +236,7 @@ std::optional<std::string> getSystemConfiguration(std::string_view name) {
 std::vector<fs::path> getSystemPaths(SystemPathId id) {
 	
 	std::vector<fs::path> result;
-
+	
 	if(id == DesktopDir) {
 		// The desktop the player sees, a OneDrive-redirected one included
 		WCHAR desktop[MAX_PATH];
@@ -246,7 +246,7 @@ std::vector<fs::path> getSystemPaths(SystemPathId id) {
 		}
 		return result;
 	}
-
+	
 	if(id != UserDirPrefixes) {
 		return result;
 	}

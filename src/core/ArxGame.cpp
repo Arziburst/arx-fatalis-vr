@@ -266,7 +266,7 @@ bool ArxGame::initialize() {
 	// The run's saves follow its mode for the whole run (#417, D-NEW): a VR run writes, lists and loads only VR
 	// saves, a flat one only flat saves - a session lost later does not turn the VR game's saves into flat ones
 	savegames.setKind(vr::isEnabled() ? SaveKind::VR : SaveKind::Flat);
-
+	
 	init = initGameData();
 	if(!init) {
 		return false;
@@ -392,14 +392,14 @@ bool ArxGame::initConfig() {
 				LogInfo << "Moved " << oldConfigFile << " to " << configFile;
 			}
 		}
-
+		
 		// The first start of our own user directory (#417, D-NEW) keeps the player's Arx Libertatis settings
 		if(!fs::getLegacyConfigFile().empty()) {
 			fs::LegacyConfigCopy copy = fs::copyLegacyConfig(configFile, fs::getLegacyConfigFile(), fs::getUserDir());
 			LogInfo << "First start settings: " << copy.why;
 		}
 	}
-
+	
 	LogInfo << "Using config file " << configFile;
 	if(!config.init(configFile)) {
 		

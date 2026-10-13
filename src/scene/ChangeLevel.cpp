@@ -2554,13 +2554,13 @@ bool ARX_CHANGELEVEL_Save(std::string_view name, const fs::path & savefile, Save
 	
 	const char * dat = reinterpret_cast<const char *>(&pld);
 	g_currentSavedGame->save("pld", dat, sizeof(ARX_CHANGELEVEL_PLAYER_LEVEL_DATA));
-
+	
 	// The VR mark (#417, D-NEW): flat and VR games never see each other's saves
 	if(!writeSaveKind(*g_currentSavedGame, kind)) {
 		LogError << "Could not mark the save as a " << saveKindName(kind) << " save";
 		return false;
 	}
-
+	
 	// Close the savegame file
 	
 	if(!g_currentSavedGame->flush("pld")) {

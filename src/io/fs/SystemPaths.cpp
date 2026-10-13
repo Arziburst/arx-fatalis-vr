@@ -133,10 +133,10 @@ path findUserPath(const char * name, const path & force,
                   const char * registry, platform::SystemPathId systemPathId,
                   const char * prefixVar, const char * suffixVar,
                   const path & fallback, bool create, const char ** source = nullptr) {
-
+	
 	const char * ignored = nullptr;
 	const char *& from = source ? *source : ignored;
-
+	
 	// Prefer command-line options
 	if(!force.empty()) {
 		path dir = canonical(force);
@@ -217,11 +217,11 @@ path findUserPath(const char * name, const path & force,
 
 //! cfg.ini in the first existing \a legacyDir under the user directory prefixes, or an empty path
 path findLegacyConfigFile(platform::SystemPathId systemPathId, const char * prefixVar, const char * legacyDir) {
-
+	
 	if(!legacyDir) {
 		return path();
 	}
-
+	
 	std::vector<path> prefixes = parsePathList(prefixVar);
 	std::vector<path> paths = platform::getSystemPaths(systemPathId);
 	prefixes.insert(prefixes.end(), paths.begin(), paths.end());
@@ -233,7 +233,7 @@ path findLegacyConfigFile(platform::SystemPathId systemPathId, const char * pref
 			}
 		}
 	}
-
+	
 	return path();
 }
 
@@ -397,12 +397,12 @@ ExitStatus SystemPaths::init(const InitParams & initParams) {
 	m_userDir = findUserPath("user", initParams.forceUser, "UserDir", platform::UserDirPrefixes,
 	                         user_dir_prefixes, user_dir, current_path(), !initParams.displaySearchDirs,
 	                         &m_userDirSource);
-
+	
 	const char * configDirSource = "none";
 	m_configDir = findUserPath("config", initParams.forceConfig, "ConfigDir", platform::NoPath,
 	                           config_dir_prefixes, config_dir, m_userDir, !initParams.displaySearchDirs,
 	                           &configDirSource);
-
+	
 	// Only a player's own user directory takes the settings of an earlier build (#417): a directory given on the
 	// command line (the test scripts' isolated runs) or in the registry starts from its own cfg.ini. Without a
 	// config dir of its own (Windows) the config dir is the user dir, the search's fallback
@@ -411,7 +411,7 @@ ExitStatus SystemPaths::init(const InitParams & initParams) {
 	if(std::string_view(m_userDirSource) == "default" && configDefault) {
 		m_legacyConfigFile = findLegacyConfigFile(platform::UserDirPrefixes, user_dir_prefixes, legacy_user_dir);
 	}
-
+	
 	m_additionalDataDirs = initParams.dataDirs;
 	
 	m_findDataDirs = initParams.findData;
@@ -592,9 +592,9 @@ const path & getLegacyConfigFile() {
 }
 
 LegacyConfigCopy copyLegacyConfig(const path & configFile, const path & legacyConfigFile, const path & userDir) {
-
+	
 	LegacyConfigCopy result;
-
+	
 	if(legacyConfigFile.empty() || !is_regular_file(legacyConfigFile)) {
 		result.why = "no cfg.ini of an earlier build";
 	} else if(exists(configFile)) {
@@ -608,7 +608,7 @@ LegacyConfigCopy copyLegacyConfig(const path & configFile, const path & legacyCo
 		result.copied = true;
 		result.why = "settings copied from " + legacyConfigFile.string() + " (never saves)";
 	}
-
+	
 	return result;
 }
 

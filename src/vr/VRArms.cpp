@@ -38,6 +38,7 @@
 #include "io/log/Logger.h"
 #include "io/resource/PakReader.h"
 #include "io/resource/ResourcePath.h"
+#include "platform/Time.h"
 #include "script/Script.h"
 #include "util/String.h"
 #include "vr/ArmFit.h"
@@ -58,16 +59,12 @@ const float ArmsShoulderSink = 1.5f;
 const float ArmsMaxDrawnBend = 150.f;
 //! The elbow corrective's strength (units at a full fold, vr/ArmMesh.h applyElbowCorrective)
 const float ArmsElbowCorrective = 1.5f;
+//! A new fit (the reach measured, the height setting changed) is taken over about this long (seconds, 95 %)
+const float ArmsFitEaseSeconds = 0.5f;
 //! The glove's cuff opening is this far past its Wrist joint towards the fingers (meters, 385.1's measure)
 const float GloveCuffPastWrist = 0.0014f;
 //! The glove meshes are in meters
 const float GloveUnitsPerMeter = 100.f;
-/*!
- * A hand holding a weapon drops its elbow (#385.6, research row F-300: VHVR's equipped palm-to-thumb axis (-+1, -3, 0)
- * puts three parts down to one sideways): the elbow turns about the shoulder-target line towards its lowest position
- * by this share of its angle off it. A first proposal, the owner tunes it in the headset
- */
-const float WeaponElbowDrop = 0.75f;
 //! The colour of a missing texture: plain leather brown
 const u8 ArmsLeather[3] = { 92, 60, 38 };
 
@@ -103,6 +100,7 @@ struct CustomArm {
 	std::vector<Vec3f> handNormals;
 	std::vector<size_t> lastRing;  //!< the sleeve's vertices on its last ring
 	ReachTracker reach;            //!< the player's reach with this hand (#385.6)
+	ArmLengths lengths;            //!< the segments in use: easing towards the fit (0 before the first)
 	ArmRollState roll;             //!< the overflow side of this arm's roll, between frames
 	bool drawn = false;
 	CustomArmStatus status;
@@ -224,8 +222,8 @@ void buildArmSleeve(CustomArm & arm, float upperLength, float forearmLength) {
 }
 
 /*!
- * The pole that puts the elbow of \a unarmed (the solve on the base pole) \c WeaponElbowDrop of its angle nearer its
- * lowest position about the shoulder-target line. The solve swings the elbow from its pole by a share of the hand's
+ * The pole that puts the elbow of \a unarmed (the solve on the base pole) vr_arm_weapon_elbow_drop of its angle
+ * nearer its lowest position about the shoulder-target line. The solve swings the elbow from its pole by a share of the hand's
  * roll measured against that pole, so turning the pole by an angle moves the elbow by (1 - elbowShare) of it: the
  * pole turns by the wanted move over that
  */
@@ -244,7 +242,8 @@ Vec3f weaponElbowHint(const ArmRollPose & unarmed, const Vec3f & shoulder, const
 	}
 	const float offLowest = std::atan2(glm::dot(glm::cross(lowest, elbow), axis), glm::dot(lowest, elbow));
 	const float kept = std::max(1.f - glm::clamp(logical.roll.elbowShare, 0.f, 1.f), 0.1f);
-	return glm::angleAxis(-WeaponElbowDrop * offLowest / kept, axis) * logical.elbowHint;
+	const float drop = clampWeaponElbowDrop(config.input.vrArmWeaponElbowDrop);
+	return glm::angleAxis(-drop * offLowest / kept, axis) * logical.elbowHint;
 }
 
 //! A joint's world matrix: at \a position, turned by the frame \a axes (columns: along, inner side, bend axis)
@@ -312,6 +311,10 @@ bool parseArmsModelStrict(std::string_view text, ArmsModel & model) {
 
 const char * armsModelName(ArmsModel model) {
 	return model == ArmsModel::Arx ? "arx" : "custom";
+}
+
+float clampWeaponElbowDrop(float share) {
+	return std::isfinite(share) ? glm::clamp(share, 0.f, 1.f) : DefaultWeaponElbowDrop;
 }
 
 float clampHandScale(float scale) {
@@ -390,35 +393,48 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	const Vec3f target = Vec3f(gloveToWorld * glm::vec4(glove.cuff, 1.f));
 
 	// The fit (#385.6): the arm the character height setting makes, until this hand's reach is measured -
-	// sampled while the wrist target is about as far from the shoulder as that arm is long (the arm held out)
+	// sampled while the wrist target is about as far from the shoulder as that arm is long (the arm held out).
+	// Samples count up to MaxExtendedReach (1.3) of the height's arm while the arm stretches only to 1 +
+	// vr_arm_max_stretch of its fit: a long reach held for a while lengthens the fit - intended, for a player
+	// taller than the height setting says
 	const Vec3f shoulder = logical.shoulder;
 	const float toTarget = glm::distance(shoulder, target);
 	const float height = armsBodyHeight();
-	ArmLengths lengths;
+	ArmLengths fit;
 	if(height > 0.f) {
 		const ArmLengths fromHeight = armLengthsFromHeight(height);
 		if(isExtendedReach(toTarget, fromHeight.upper + fromHeight.forearm)) {
 			arm.reach.add(toTarget);
 		}
-		lengths = fromHeight;
+		fit = fromHeight;
 		status.fitSource = "height";
 	} else {
-		lengths.upper = logical.upperLength;
-		lengths.forearm = logical.forearmLength;
+		fit.upper = logical.upperLength;
+		fit.forearm = logical.forearmLength;
 		status.fitSource = "arx";
 	}
 	if(arm.reach.measured()) {
-		lengths = armLengthsFromReach(arm.reach.reach());
+		fit = armLengthsFromReach(arm.reach.reach());
 		status.fitSource = "reach";
 	}
+	// The arm grows or shrinks to a new fit over a moment instead of popping (the first fit is taken at once)
+	if(arm.lengths.upper <= 0.f || arm.lengths.forearm <= 0.f) {
+		arm.lengths = fit;
+	} else {
+		const float seconds = std::min(toMsf(g_platformTime.lastFrameDuration()) / 1000.f, 0.25f);
+		const float approach = 1.f - std::exp(-3.f * seconds / ArmsFitEaseSeconds);
+		arm.lengths.upper += (fit.upper - arm.lengths.upper) * approach;
+		arm.lengths.forearm += (fit.forearm - arm.lengths.forearm) * approach;
+	}
+	const ArmLengths lengths = arm.lengths;
 	if(arm.sleeve.positions.empty() || std::abs(arm.builtUpper - lengths.upper) > 0.1f
 	   || std::abs(arm.builtForearm - lengths.forearm) > 0.1f) {
 		buildArmSleeve(arm, lengths.upper, lengths.forearm);
 	}
 
 	// The custom arm's own solve: from the Arx shoulder (never slid) to the glove's cuff, both segments stretched
-	// by at most MaxArmStretch; a hand holding a weapon drops its elbow (F-300)
-	const float stretch = armStretch(toTarget, lengths);
+	// by at most vr_arm_max_stretch; a hand holding a weapon drops its elbow (F-300)
+	const float stretch = armStretch(toTarget, lengths, clampArmMaxStretch(config.input.vrArmMaxStretch));
 	const float stretchedUpper = lengths.upper * (1.f + stretch);
 	const float stretchedForearm = lengths.forearm * (1.f + stretch);
 	const ArmIKParams noSlide;

@@ -24,6 +24,10 @@
 
 namespace vr {
 
+float clampArmMaxStretch(float stretch) {
+	return std::isfinite(stretch) ? std::min(std::max(stretch, 0.f), MaxArmStretchLimit) : MaxArmStretch;
+}
+
 bool isExtendedReach(float shoulderToWrist, float heightReach) {
 	return std::isfinite(shoulderToWrist) && heightReach > 0.f && shoulderToWrist >= heightReach * MinExtendedReach
 	       && shoulderToWrist <= heightReach * MaxExtendedReach;

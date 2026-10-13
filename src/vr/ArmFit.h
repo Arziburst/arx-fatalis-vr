@@ -33,8 +33,14 @@
  */
 namespace vr {
 
-//! How far the custom arm may stretch past its fitted length to reach the controller, a fraction of that length
+//! How far the custom arm may stretch past its fitted length to reach the controller, a fraction of that length:
+//! the default of cfg.ini vr_arm_max_stretch, which the owner tunes in the headset
 constexpr float MaxArmStretch = 0.10f;
+//! The largest stretch vr_arm_max_stretch may ask for
+constexpr float MaxArmStretchLimit = 0.3f;
+
+//! \return \a stretch within [0, MaxArmStretchLimit] (MaxArmStretch for a value that is not a number)
+float clampArmMaxStretch(float stretch);
 
 //! The two segments of an arm, units
 struct ArmLengths {

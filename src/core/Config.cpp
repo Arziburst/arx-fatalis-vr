@@ -45,6 +45,7 @@
 #include "util/Number.h"
 #include "util/String.h"
 
+#include "vr/ArmFit.h"
 #include "vr/ArmRoll.h"
 #include "vr/HeadPose.h"
 #include "vr/Locomotion.h"
@@ -176,7 +177,9 @@ constexpr const float
 	vrArmElbowRoll = vr::DefaultElbowRoll,
 	vrArmTwistOverflow = vr::DefaultTwistOverflow,
 	vrHeightOffset = 0.f,
-	vrHandScale = vr::DefaultHandScale;
+	vrHandScale = vr::DefaultHandScale,
+	vrArmMaxStretch = vr::MaxArmStretch,
+	vrArmWeaponElbowDrop = vr::DefaultWeaponElbowDrop;
 
 constexpr const ActionKey actions[NUM_ACTION_KEY] = {
 	ActionKey(Keyboard::Key_Spacebar), // JUMP
@@ -346,6 +349,8 @@ constexpr const std::string_view
 	vrHeightOffset = "vr_height_offset",
 	vrArmsModel = "vr_arms_model",
 	vrHandScale = "vr_hand_scale",
+	vrArmMaxStretch = "vr_arm_max_stretch",
+	vrArmWeaponElbowDrop = "vr_arm_weapon_elbow_drop",
 	vrMeleeSwingSpeed = "vr_melee_swing_speed",
 	vrMeleeFullSpeed = "vr_melee_full_speed",
 	vrMeleeWeakAim = "vr_melee_weak_aim",
@@ -641,6 +646,8 @@ bool Config::save() {
 	writer.writeKey(Key::vrHeightOffset, input.vrHeightOffset);
 	writer.writeKey(Key::vrArmsModel, input.vrArmsModel);
 	writer.writeKey(Key::vrHandScale, input.vrHandScale);
+	writer.writeKey(Key::vrArmMaxStretch, input.vrArmMaxStretch);
+	writer.writeKey(Key::vrArmWeaponElbowDrop, input.vrArmWeaponElbowDrop);
 	writer.writeKey(Key::vrMeleeSwingSpeed, input.vrMeleeSwingSpeed);
 	writer.writeKey(Key::vrMeleeFullSpeed, input.vrMeleeFullSpeed);
 	writer.writeKey(Key::vrMeleeWeakAim, input.vrMeleeWeakAim);
@@ -842,6 +849,9 @@ bool Config::init(const fs::path & file) {
 	// The arms drawn on the player in VR (#385): anything but "arx" is our own arms
 	input.vrArmsModel = vr::armsModelName(vr::parseArmsModel(reader.getKey(Section::Input, Key::vrArmsModel, Default::vrArmsModel)));
 	input.vrHandScale = vr::clampHandScale(reader.getKey(Section::Input, Key::vrHandScale, Default::vrHandScale));
+	input.vrArmMaxStretch = vr::clampArmMaxStretch(reader.getKey(Section::Input, Key::vrArmMaxStretch, Default::vrArmMaxStretch));
+	input.vrArmWeaponElbowDrop = vr::clampWeaponElbowDrop(reader.getKey(Section::Input, Key::vrArmWeaponElbowDrop,
+	                                                                    Default::vrArmWeaponElbowDrop));
 	// Physical melee (#39): the full-damage speed is never below the swing speed
 	float vrMeleeSwingSpeed = reader.getKey(Section::Input, Key::vrMeleeSwingSpeed, Default::vrMeleeSwingSpeed);
 	input.vrMeleeSwingSpeed = glm::clamp(vrMeleeSwingSpeed, 0.5f, 10.f);

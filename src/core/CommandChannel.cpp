@@ -37,6 +37,7 @@
 #include "cinematic/CinematicController.h"
 #include "core/Application.h"
 #include "core/ArxGame.h"
+#include "core/Config.h"
 #include "core/Core.h"
 #include "core/GameEvent.h"
 #include "core/GameTime.h"
@@ -80,6 +81,7 @@
 #include "scene/Interactive.h"
 #include "script/Script.h"
 #include "util/String.h"
+#include "vr/ArmFit.h"
 #include "vr/HeadTracking.h"
 #include "vr/VRArms.h"
 #include "vr/VRBody.h"
@@ -1060,6 +1062,9 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("upperShare", body.upperShare);
 		json.value("elbowShare", body.elbowShare);
 		json.value("twistOverflow", body.twistOverflow);
+		// the custom arm's tunables in use (cfg.ini vr_arm_max_stretch, vr_arm_weapon_elbow_drop, #385.6)
+		json.value("armMaxStretch", vr::clampArmMaxStretch(config.input.vrArmMaxStretch));
+		json.value("weaponElbowDrop", vr::clampWeaponElbowDrop(config.input.vrArmWeaponElbowDrop));
 		json.end();
 	}
 	// XR_EXT_hand_tracking (#305): whether the runtime gives hand joints and how often it did

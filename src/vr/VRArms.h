@@ -69,6 +69,16 @@ constexpr float DefaultHandScale = 1.15f;
 constexpr float MinHandScale = 0.8f;
 constexpr float MaxHandScale = 1.5f;
 
+/*!
+ * A hand holding a weapon drops its elbow (#385.6, research row F-300: VHVR's equipped palm-to-thumb axis (-+1, -3, 0)
+ * puts three parts down to one sideways): the elbow turns about the shoulder-target line towards its lowest position
+ * by this share of its angle off it. The default of cfg.ini vr_arm_weapon_elbow_drop, which the owner tunes in the headset
+ */
+constexpr float DefaultWeaponElbowDrop = 0.75f;
+
+//! \return \a share within [0, 1] (DefaultWeaponElbowDrop for a value that is not a number)
+float clampWeaponElbowDrop(float share);
+
 //! \return the model a cfg.ini value names: "arx" is the Arx arms, anything else our own
 ArmsModel parseArmsModel(std::string_view text);
 //! \return false unless \a text is "custom" or "arx" (the channel's \c arms command)

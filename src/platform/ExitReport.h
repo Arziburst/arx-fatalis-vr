@@ -80,9 +80,6 @@ private:
  */
 void describeExit(ExitReport & out, const ExitFacts & facts);
 
-//! \return the file name part of a module path (after the last / or \\)
-std::string_view moduleFileName(std::string_view path);
-
 } // namespace platform
 
 #endif // ARX_PLATFORM_EXITREPORT_H

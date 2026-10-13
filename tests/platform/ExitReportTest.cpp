@@ -108,9 +108,3 @@ void ExitReportTest::testOverflowIsCut() {
 	CPPUNIT_ASSERT_EQUAL(std::string("..."), std::string(report->text().substr(report->text().size() - 3)));
 	CPPUNIT_ASSERT(!reportContains(*report, "never"));
 }
-
-void ExitReportTest::testModuleFileName() {
-	CPPUNIT_ASSERT_EQUAL(std::string("arx.exe"), std::string(platform::moduleFileName("C:\\games\\arx\\arx.exe")));
-	CPPUNIT_ASSERT_EQUAL(std::string("libarx.so"), std::string(platform::moduleFileName("/usr/lib/libarx.so")));
-	CPPUNIT_ASSERT_EQUAL(std::string("plain"), std::string(platform::moduleFileName("plain")));
-}

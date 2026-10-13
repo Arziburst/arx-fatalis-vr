@@ -94,10 +94,17 @@ void captureExitStack(ExitStack & stack) {
 		wchar_t path[MAX_PATH];
 		if(GetModuleHandleExW(flags, reinterpret_cast<LPCWSTR>(addresses[i]), &module)
 		   && GetModuleFileNameW(module, path, MAX_PATH) != 0) {
+			// Only the file name: a full build path does not fit the name buffer
+			const wchar_t * file = path;
+			for(const wchar_t * c = path; *c != L'\0'; c++) {
+				if(*c == L'\\' || *c == L'/') {
+					file = c + 1;
+				}
+			}
 			char * name = stack.names[stack.count];
-			int size = WideCharToMultiByte(CP_UTF8, 0, path, -1, name, int(sizeof(stack.names[0])), nullptr, nullptr);
+			int size = WideCharToMultiByte(CP_UTF8, 0, file, -1, name, int(sizeof(stack.names[0])), nullptr, nullptr);
 			if(size > 0) {
-				frame.module = moduleFileName(std::string_view(name, size_t(size - 1)));
+				frame.module = std::string_view(name, size_t(size - 1));
 			}
 			frame.offset -= u64(reinterpret_cast<uintptr_t>(module));
 		}
@@ -199,8 +206,8 @@ void NTAPI exitTraceTlsCallback(PVOID /* module */, DWORD reason, PVOID /* reser
 	// The code is set once the process is fully gone; read it in case this runtime has it already
 	DWORD code = STILL_ACTIVE;
 	bool known = GetExitCodeProcess(GetCurrentProcess(), &code) && code != STILL_ACTIVE;
-	reportExit("ExitProcess (or _exit / abort) was called inside the process without exit() of the game's"
-	       " C runtime - by another module, see the stack", known, s64(s32(code)));
+	reportExit("ExitProcess (or _exit / abort) was called inside the process, not exit() of the game's"
+	           " C runtime - the stack names the module that called it", known, s64(s32(code)));
 
 }
 

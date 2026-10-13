@@ -36,7 +36,6 @@ class ExitReportTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testReportWithoutCauseOrStack);
 	CPPUNIT_TEST(testLinesAreErrorLines);
 	CPPUNIT_TEST(testOverflowIsCut);
-	CPPUNIT_TEST(testModuleFileName);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -46,7 +45,6 @@ public:
 	void testReportWithoutCauseOrStack();
 	void testLinesAreErrorLines();
 	void testOverflowIsCut();
-	void testModuleFileName();
 
 };
 

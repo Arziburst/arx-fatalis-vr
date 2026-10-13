@@ -129,9 +129,4 @@ void describeExit(ExitReport & out, const ExitFacts & facts) {
 	out.append("\n");
 }
 
-std::string_view moduleFileName(std::string_view path) {
-	size_t slash = path.find_last_of("/\\");
-	return slash == std::string_view::npos ? path : path.substr(slash + 1);
-}
-
 } // namespace platform

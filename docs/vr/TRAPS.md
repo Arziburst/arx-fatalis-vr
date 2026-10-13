@@ -8,6 +8,16 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-13 — A cue drawn in the world at the weapon hand is counted as drawn but not seen in the eyes (#322)
+
+**Symptom:** the melee charge's wrist ring and blade strip passed every status check (`vr.chargeCue.wrist.views`
+grew, `wrist.fill` / `blade.fill` 1 at a full charge) while the shots showed no ring at all and only a sliver of the
+strip at the blade's tip. **Cause:** both were drawn against the scene's depth. In the eye the first-person forearm is
+a few centimetres from the camera and covers the ring a few centimetres off the back of the hand; the strip, laid
+along the line from the hilt vertex to the tip vertex and lifted 1.5 cm towards the eye, still lies behind the broad
+blade face it runs along. **Do:** a cue that belongs to the player's own hand or weapon is drawn over the scene
+(`depthTest(false)`); judge such cues on the shots, a counter of drawn views does not show that anything is visible.
+
 ## 2026-10-12 — An instant `vr-sim hand ... pos` set-up move counts as a melee swing on a busy runner (#349)
 
 **Symptom:** `melee-swing.xrs` failed on CI at its first `@assert vr.melee.swings eq 0` for runs in a row with only

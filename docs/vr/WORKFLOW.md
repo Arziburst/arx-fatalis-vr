@@ -159,7 +159,7 @@ they are in **different areas**:
 When in doubt, run them one after the other.
 
 **Each worker in its own working copy** — in parallel mode a worker never works in the owner's copy.
-It works in its own git worktree under `C:\Users\arzib\arx-fatalis-vr-wt\ARXVR-<n>-<type>-<name>`
+It works in its own git worktree under `%USERPROFILE%\arx-fatalis-vr-wt\ARXVR-<n>-<type>-<name>`
 (outside OneDrive), created from `origin/main` with `scripts/dev/new-worktree.ps1` (#123). Build
 directories are per copy already. The owner's copy on the desktop stays on `main` and serves as the
 test station.

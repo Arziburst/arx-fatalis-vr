@@ -127,6 +127,8 @@ enum class Event : u8 {
 	Menu,          //!< the game menu
 	Recenter,
 	MagicMode,     //!< held: the casting stance - a trigger draws runes with its hand (#43)
+	RadialLeft,    //!< held: the left hand's radial menu, released: its item under the hand runs (#376, D-042)
+	RadialRight,
 	Count
 };
 
@@ -220,7 +222,9 @@ struct ControlLayout {
 /*!
  * The default layout for a controller type: the D-019 table (#35). The Index and the Touch share
  * the button positions, the game menu is on left A on the Index and on the left menu button on the
- * Touch; the simple controller has select (click / drag) and the menu buttons: left = game menu,
+ * Touch; B (Y on the left Touch) holds that hand's radial menu (D-042, #376), which holds the inventory
+ * and the book - their own events are unbound there; the simple controller has select (click / drag)
+ * and the menu buttons: left = game menu,
  * long = recenter; right = inventory, long = book. An unknown controller gets the Index layout,
  * because SteamVR's automatic rebinding emulates one of the profiles we suggest.
  * Every control a layout uses is bound by its profile's suggestions (VRBindings.h, tested).

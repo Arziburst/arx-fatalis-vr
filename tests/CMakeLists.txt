@@ -108,6 +108,9 @@ set(arxtest_TESTCASES
 	tests/vr/FingerCurlTest.h
 	tests/vr/FingerCurlTest.cpp
 
+	tests/vr/RadialMenuTest.h
+	tests/vr/RadialMenuTest.cpp
+
 
 )
 
@@ -151,6 +154,7 @@ set(arxtest_SOURCES
 	src/vr/FingerCurl.cpp
 	src/vr/RuneTrail.cpp
 	src/vr/MeleeSwing.cpp
+	src/vr/RadialMenu.cpp
 
 
 	${arxtest_TESTCASES}

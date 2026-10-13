@@ -158,23 +158,41 @@ void VRGameInputTest::buttonActionsTest() {
 
 	Frames f;
 
+	// The B buttons hold the radial menus (D-042, #376): no engine action of their own - the inventory and
+	// the book are items of the menus. Bound by the player, the inventory and book events still give theirs
+	ControlLayout menus = defaultLayout(ControllerType::Index);
+	menus[Event::Inventory] = Binding::single(GiRightB);
+	menus[Event::Book] = Binding::single(GiLeftB);
+	menus[Event::RadialLeft] = Binding();
+	menus[Event::RadialRight] = Binding();
+	Frames remapped;
+	remapped.resolver.setLayout(menus);
+
+	for(const GameInputState & held : { f.frame(downSet({ GiRightB })), f.frame(downSet({ GiLeftB, GiRightB })) }) {
+		for(size_t i = 0; i < GameActionCount; i++) {
+			CPPUNIT_ASSERT(!held.actions[i]);
+		}
+	}
+	f.frame(downSet());
+	f.settle();
+
 	// Each button is the engine action of its event while held
-	struct Case { Control control; GameAction action; };
+	struct Case { Frames & frames; Control control; GameAction action; };
 	const Case cases[] = {
-		{ GiRightA, GameAction::Jump },
-		{ GiRightB, GameAction::Inventory },
-		{ GiLeftB, GameAction::Book },
-		{ GiRightStickDown, GameAction::CrouchToggle },
+		{ f, GiRightA, GameAction::Jump },
+		{ remapped, GiRightB, GameAction::Inventory },
+		{ remapped, GiLeftB, GameAction::Book },
+		{ f, GiRightStickDown, GameAction::CrouchToggle },
 	};
 	for(const Case & c : cases) {
-		const GameInputState & held = f.frame(downSet({ c.control }));
+		const GameInputState & held = c.frames.frame(downSet({ c.control }));
 		CPPUNIT_ASSERT(held.action(c.action));
 		for(size_t i = 0; i < GameActionCount; i++) {
 			CPPUNIT_ASSERT_EQUAL(GameAction(i) == c.action, held.actions[i]);
 		}
 		CPPUNIT_ASSERT(!held.click && !held.use && !held.escape);
-		CPPUNIT_ASSERT(f.frame(downSet({ c.control })).action(c.action));
-		CPPUNIT_ASSERT(!f.frame(downSet()).action(c.action));
+		CPPUNIT_ASSERT(c.frames.frame(downSet({ c.control })).action(c.action));
+		CPPUNIT_ASSERT(!c.frames.frame(downSet()).action(c.action));
 	}
 
 	// Magic mode (#43): held with the Index's left trackpad, as long as it is pressed, and not by the face buttons

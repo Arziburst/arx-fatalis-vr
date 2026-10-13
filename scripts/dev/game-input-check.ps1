@@ -51,6 +51,8 @@ function Step([string]$command, [string]$what) {
 }
 
 $commands = @('setplayercontrols on', 'cinemascope off')
+# B holds the radial menus since #376 (D-042): the inventory and book events go back on B for this check
+$commands += @('vr-input bind radial_right none', 'vr-input bind radial_left none', 'vr-input bind inventory right.b', 'vr-input bind book left.b')
 if ($Unbind) { $commands += 'vr-input bind inventory none' }
 $commands += Step 'tap right.b' 'inventory open'
 $commands += Step 'tap right.b' 'inventory closed'

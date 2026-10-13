@@ -319,8 +319,8 @@ void BindingCaptureTest::layoutChangesTest() {
 	touch[Event::Jump] = Binding::single(CapRightB);
 	CPPUNIT_ASSERT(saved == touch);
 
-	// Jump on right B now shares it with the inventory: shown as a conflict
+	// Jump on right B now shares it with the right hand's radial menu (D-042): shown as a conflict
 	CPPUNIT_ASSERT(findConflicts(layout).size() == 1);
 	CPPUNIT_ASSERT(findConflicts(layout)[0].first == Event::Jump);
-	CPPUNIT_ASSERT(findConflicts(layout)[0].second == Event::Inventory);
+	CPPUNIT_ASSERT(findConflicts(layout)[0].second == Event::RadialRight);
 }

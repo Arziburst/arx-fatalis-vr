@@ -60,6 +60,8 @@ const EventInfo Events[EventCount] = {
 	{ "menu", "Game menu" },
 	{ "recenter", "Recenter" },
 	{ "magic_mode", "Draw runes" },
+	{ "radial_left", "Radial menu, left" },
+	{ "radial_right", "Radial menu, right" },
 };
 
 const std::string_view LongSuffix = ":long";
@@ -246,8 +248,10 @@ ControlLayout defaultLayout(ControllerType type) {
 	layout[Event::StashRight] = Binding::chord(rightGrip, rightTrigger);
 	layout[Event::Jump] = Binding::single(control(Hand::Right, ControlKind::A));
 	layout[Event::CrouchToggle] = Binding::single(control(Hand::Right, ControlKind::StickDown));
-	layout[Event::Inventory] = Binding::single(control(Hand::Right, ControlKind::B));
-	layout[Event::Book] = Binding::single(control(Hand::Left, ControlKind::B));
+	// B on each hand holds that hand's radial menu (D-042): the inventory and the book are in it, so
+	// their own events have no control by default (the player can still bind them)
+	layout[Event::RadialLeft] = Binding::single(control(Hand::Left, ControlKind::B));
+	layout[Event::RadialRight] = Binding::single(control(Hand::Right, ControlKind::B));
 	// The Touch has a menu button on the left; the Index does not, its left A is free in D-019
 	layout[Event::Menu] = Binding::single(control(Hand::Left, type == ControllerType::Touch ? ControlKind::Menu
 	                                                                                         : ControlKind::A));

@@ -1274,6 +1274,7 @@ set(VR_SOURCES
 	src/vr/InterfaceSize.cpp
 	src/vr/MenuPointer.cpp
 	src/vr/Locomotion.cpp
+	src/vr/RadialMenu.cpp
 	src/vr/RuneTrail.cpp
 	src/vr/MeleeSwing.cpp
 	src/vr/SimRig.cpp

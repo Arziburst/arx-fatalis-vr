@@ -459,11 +459,14 @@ void VRControlsTest::defaultLayoutTest() {
 	CPPUNIT_ASSERT(controllerTypeFromProfile("/interaction_profiles/khr/simple_controller") == ControllerType::Simple);
 	CPPUNIT_ASSERT(controllerTypeFromProfile("") == ControllerType::Unknown);
 
-	// D-019: A right jumps, B right inventory, B left book, right stick down crouches
+	// D-019: A right jumps, right stick down crouches; D-042: B holds each hand's radial menu, which
+	// replaces the inventory on the right B and the book on the left B
 	const ControlLayout index = defaultLayout(ControllerType::Index);
 	CPPUNIT_ASSERT_EQUAL(std::string("right.a"), formatBinding(index[Event::Jump]));
-	CPPUNIT_ASSERT_EQUAL(std::string("right.b"), formatBinding(index[Event::Inventory]));
-	CPPUNIT_ASSERT_EQUAL(std::string("left.b"), formatBinding(index[Event::Book]));
+	CPPUNIT_ASSERT_EQUAL(std::string("right.b"), formatBinding(index[Event::RadialRight]));
+	CPPUNIT_ASSERT_EQUAL(std::string("left.b"), formatBinding(index[Event::RadialLeft]));
+	CPPUNIT_ASSERT(!index[Event::Inventory].isBound());
+	CPPUNIT_ASSERT(!index[Event::Book].isBound());
 	CPPUNIT_ASSERT_EQUAL(std::string("right.stick_down"), formatBinding(index[Event::CrouchToggle]));
 	CPPUNIT_ASSERT_EQUAL(std::string("left.grip+left.trigger"), formatBinding(index[Event::StashLeft]));
 	CPPUNIT_ASSERT_EQUAL(std::string("left.a"), formatBinding(index[Event::Menu]));

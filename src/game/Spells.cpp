@@ -566,7 +566,17 @@ void ARX_SPELLS_ManageMagic() {
 			}
 		}
 		
-		if(snip >= 2) {
+		// The engine draws every second frame; the hands draw by time, the same trail at every display rate (#23)
+		bool drawStep = snip >= 2;
+		if(handsDraw) {
+			static float sinceStep = 0.f;
+			sinceStep += toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
+			drawStep = sinceStep >= vr::RuneDrawSeconds;
+			if(drawStep) {
+				sinceStep = std::min(sinceStep - vr::RuneDrawSeconds, vr::RuneDrawSeconds);
+			}
+		}
+		if(drawStep) {
 			if(!eeMousePressed1() && ARX_FLARES_broken == 0) {
 				ARX_FLARES_broken = 2;
 				MagicFlareChangeColor();

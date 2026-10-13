@@ -52,6 +52,17 @@
  * Frame 0 of the timeline is the first frame the game is playable (\c timeline \c gameplay, the
  * default) or the first frame of the session (\c timeline \c session).
  *
+ * The same forms with \c ms count display time instead of frames (#23): \c @<t>ms, \c @<a>-<b>ms,
+ * \c @+<t>ms, \c @+<a>-<b>ms - milliseconds of the runtime's predicted display time since the
+ * timeline started (\c @+ in a script: after the previous \c ms line's end; from the channel: after
+ * the frame advanced last). A frame-counted line is a different length of time at every display
+ * rate; a timed one is the same physical motion at any rate, which is what a refresh-rate check
+ * compares. Poses (\c head, \c hand) are where they are at the frame's display time; an \c action
+ * is what the controller held when the frame's interval began (the previous frame's display time),
+ * because the game applies it over that interval: a stick held from \c @+0ms to \c @+500ms is held
+ * for exactly 500 ms of frame steps at any rate. Every other command runs at the first frame whose
+ * display time has reached its time.
+ *
  * Commands (the channel's \c vr-sim takes the same):
  *  - \c rate \c <hz>: display rate, 0 = no pacing; \c eye-size \c <w> \c <h> (set-up only);
  *    \c ipd \c <meters>; \c fov \c left|right \c <left> \c <right> \c <up> \c <down> (degrees,
@@ -73,6 +84,8 @@
  *    \c visible puts it on again
  *  - \c shot \c [name]: capture both eyes and the flat frame quad at the next submitted frame
  *  - \c mark \c <text>: a line in arx.log; \c quit: ask the game to quit
+ *  - \c record \c <name>: the test channel keeps the game's motion values of this frame, after its
+ *    update, under that name (status.json \c motion.records, #23) - read at leisure, taken on time
  *  - \c fault \c swap-eyes \c on|off: the compositor shows each eye the other eye's image - the
  *    bug class the two-eyes check (F-06) must catch
  *  - \c session \c exiting: the runtime ends the session on its own (stopping, then exiting after
@@ -178,6 +191,7 @@ enum class SimExit {
 struct SimRequests {
 	std::vector<std::string> shots;
 	std::vector<std::string> marks;
+	std::vector<std::string> records; //!< \c record names: the channel keeps this frame's motion values
 	bool quit = false;
 	bool focusChanged = false;
 	bool profileChanged = false;
@@ -185,7 +199,7 @@ struct SimRequests {
 	SimExit exit = SimExit::None;
 	int exitCode = 0;
 	bool empty() const {
-		return shots.empty() && marks.empty() && !quit && !focusChanged && !profileChanged
+		return shots.empty() && marks.empty() && records.empty() && !quit && !focusChanged && !profileChanged
 		       && sessionEnd == SimSessionEnd::None && exit == SimExit::None;
 	}
 };
@@ -212,9 +226,12 @@ public:
 	/*!
 	 * \brief Run the timeline up to \a frame: due commands, ramps in progress
 	 *
-	 * Call once per frame with increasing frames (0 = the first frame of the timeline).
+	 * Call once per frame with increasing frames (0 = the first frame of the timeline) and, for the
+	 * \c ms lines, the frame's predicted display time since the timeline started (\a timeUs, not
+	 * decreasing). Without a time the \c ms lines wait.
 	 */
-	void advance(u64 frame);
+	void advance(u64 frame, s64 timeUs);
+	void advance(u64 frame) { advance(frame, m_timeUs); }
 
 	//! The session started: set-up-only commands are refused from now on
 	void lockSetup() { m_setupLocked = true; }
@@ -228,6 +245,9 @@ public:
 	//! \return the last timeline frame advanced to
 	u64 frame() const { return m_frame; }
 
+	//! \return the display time of that frame since the timeline started, microseconds
+	s64 timeUs() const { return m_timeUs; }
+
 	SimView view;
 	SimRig rig;
 	SimTimeline timeline = SimTimeline::Gameplay;
@@ -236,8 +256,10 @@ private:
 
 	struct Command;
 	struct Entry {
-		u64 from = 0;
+		u64 from = 0;        //!< a frame, or a display time in microseconds for an \c ms line
 		u64 to = 0;
+		bool timed = false;  //!< an \c ms line: \c from and \c to are display times
+		bool action = false; //!< a controller action: sampled at the start of the frame's interval
 		size_t line = 0;
 		std::string text;
 		bool started = false;
@@ -246,14 +268,18 @@ private:
 	};
 
 	std::string parse(std::string_view line, Command & command) const;
-	//! Put "@<when> <command>" on the timeline; @+n counts from \a base; \a last = its last frame
-	std::string addTimed(std::string_view line, u64 base, u64 & last);
+	/*!
+	 * Put "@<when> <command>" on the timeline; @+n counts from \a base (frames), @+<t>ms from
+	 * \a baseUs; \a last / \a lastUs = its end in the line's own unit (the other is left alone)
+	 */
+	std::string addTimed(std::string_view line, u64 base, u64 & last, u64 baseUs, u64 & lastUs);
 	void apply(const Command & command);
 	std::vector<float *> targets(const Command & command);
 
 	std::vector<Entry> m_timeline;
 	SimRequests m_requests;
 	u64 m_frame = 0;
+	s64 m_timeUs = 0;
 	bool m_advanced = false;
 	bool m_setupLocked = false;
 	u32 m_shots = 0;

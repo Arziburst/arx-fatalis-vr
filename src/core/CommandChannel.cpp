@@ -87,6 +87,7 @@
 #include "script/Script.h"
 #include "util/String.h"
 #include "vr/HeadTracking.h"
+#include "vr/MotionProbe.h"
 #include "vr/PerfLog.h"
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
@@ -257,6 +258,13 @@ public:
 		return *this;
 	}
 
+	//! A value that is JSON already (a record kept from an earlier frame)
+	JsonWriter & raw(std::string_view name, std::string_view json) {
+		key(name);
+		m_out << json;
+		return *this;
+	}
+
 	std::string str() {
 		while(!m_first.empty()) {
 			end();
@@ -345,6 +353,12 @@ struct State {
 		vr::WalkStatus walk;         //!< The stick walk of the hold's last frame that walked
 	} stickFor;
 
+	//! motion: the player's walk, turn and jumps since `motion reset`, fed after every frame (#23)
+	vr::MotionProbe motion;
+	u32 motionResets = 0;
+	//! The simulated headset's `record <name>`: the motion values of the frame it named, as JSON, in order
+	std::vector<std::pair<std::string, std::string>> records;
+
 };
 
 State g;
@@ -400,6 +414,7 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 	json.value("timeline", sim.timeline);
 	json.value("frame", sim.frame);
 	json.value("timelineFrame", sim.timelineFrame);
+	json.value("timelineMs", float(sim.timelineMs));
 	json.value("pending", u64(sim.pending));
 
 	json.object("view");
@@ -561,6 +576,41 @@ void writePlaygroundStatus(JsonWriter & json) {
 
 }
 
+/*!
+ * The values the refresh-rate check compares (#23), as they are after the frame was updated: the motion
+ * probe's totals, the head-tracked camera, the body's follow of the head, the right hand's fingers and
+ * arm, the swing detector. Written as \c motion and kept as a record when the simulated headset asks
+ */
+void writeMotionValues(JsonWriter & json) {
+
+	json.value("timelineMs", float(vr::simStatus().timelineMs));
+	json.value("frames", g.motion.frames());
+	json.value("seconds", float(g.motion.seconds()));
+	json.value("walked", g.motion.walked());
+	json.value("turned", g.motion.turned());
+	json.value("jumps", g.motion.jumps());
+	json.value("airborne", g.motion.airborne());
+	json.value("jumpApex", g.motion.jumpApex());
+	json.value("jumpSeconds", float(g.motion.jumpSeconds()));
+	json.value("yaw", player.angle.getYaw());
+	json.value("cameraYaw", g_playerCamera.angle.getYaw());
+	json.value("cameraPitch", g_playerCamera.angle.getPitch());
+	json.value("bodyOffset", vr::bodyStatus().offset);
+
+	const vr::PlayerArmStatus & arm = vr::playerBodyStatus().hands[size_t(vr::Hand::Right)];
+	json.value("armError", arm.error);
+	json.value("curl", arm.curl.indexRoot);
+	json.value("curlTarget", arm.curlTarget.indexRoot);
+
+	const vr::MeleeStatus & melee = vr::meleeStatus();
+	json.value("swings", melee.swings);
+	json.value("swingKind", melee.kind);
+	json.value("swingSpeed", melee.speed);
+	json.value("swingPeak", melee.peak);
+	json.value("swingJumps", melee.jumps);
+	json.value("swingGaps", melee.gaps);
+}
+
 std::string buildStatus(PlatformInstant now) {
 
 	JsonWriter json;
@@ -656,6 +706,17 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("m21", g_preparedCamera.m_viewToClip[2][1]);
 		json.value("width", g_preparedCamera.m_viewport.width());
 		json.value("height", g_preparedCamera.m_viewport.height());
+		json.end();
+		json.end();
+		// The refresh-rate check (#23): totals since `motion reset` as of the last frame, and the records the
+		// simulated headset's `record <name>` took after the frame it named
+		json.object("motion");
+		writeMotionValues(json);
+		json.value("resets", g.motionResets);
+		json.object("records");
+		for(const auto & record : g.records) {
+			json.raw(record.first, record.second);
+		}
 		json.end();
 		json.end();
 		// Spells by type: active now, and launched since the level was loaded - the evidence that a spellcast
@@ -1652,6 +1713,21 @@ std::string execute(std::string_view line) {
 		return std::string();
 	}
 
+	if(word == "motion") {
+		// motion reset: the walk, turn and jump totals of status.json motion start from zero (#23); motion clear:
+		// the records too
+		const std::string what = std::string(trim(rest));
+		if(what != "reset" && what != "clear") {
+			return refuse("motion: expected reset or clear, got \"" + what + "\"");
+		}
+		g.motion.reset();
+		g.motionResets++;
+		if(what == "clear") {
+			g.records.clear();
+		}
+		return std::string();
+	}
+
 	if(word == "vr-sim") {
 		// The simulated headset (#112): any script command, now or @<frame> on its timeline
 		std::string error = vr::simCommand(rest);
@@ -2576,7 +2652,38 @@ void update() {
 
 void afterRender() {
 
-	if(!g.enabled || g.pendingCapture.empty()) {
+	if(!g.enabled) {
+		return;
+	}
+
+	// The motion probe (#23) after the frame's update, and the records the simulated headset asked for in it:
+	// the state this frame displays, at the display time its timeline named
+	if(g_currentArea && entities.player()) {
+		vr::MotionSample sample;
+		sample.seconds = double(toUs(g_platformTime.frameStart() - PlatformInstant(0))) * 1e-6;
+		sample.position = player.pos;
+		sample.yaw = player.angle.getYaw();
+		sample.jumping = player.jumpphase != NotJumping;
+		g.motion.update(sample);
+	}
+	for(const std::string & name : vr::takeSimRecords()) {
+		std::string json = "{}";
+		if(g_currentArea && entities.player()) {
+			JsonWriter values;
+			writeMotionValues(values);
+			json = values.str();
+			json.pop_back(); // the newline
+		}
+		auto found = std::find_if(g.records.begin(), g.records.end(), [&](const auto & record) { return record.first == name; });
+		if(found != g.records.end()) {
+			found->second = json;
+		} else {
+			g.records.emplace_back(name, json);
+		}
+		LogInfo << "[channel] record " << name << " at timeline " << vr::simStatus().timelineMs << " ms";
+	}
+
+	if(g.pendingCapture.empty()) {
 		return;
 	}
 

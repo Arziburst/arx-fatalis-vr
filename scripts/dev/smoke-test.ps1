@@ -344,10 +344,17 @@ function Invoke-SmokeRun([int]$Run) {
 				elseif ($status.vr.sessionState -ne 'focused') { $reasons.Add("the simulated session is not focused (state $($status.vr.sessionState))") }
 			}
 
+			# Each batch gets its own ack: seq advances by one per command and 'last=' names the command (#142: a
+			# level change inside a batch once exposed the next seq in status.json before the ack existed)
+			$lastAckSeq = $null
 			foreach ($command in $Commands) {
 				$ack = Send-ArxCommand -Lines @($command) -Dir $TestDir
 				Write-Host "  > $command`n    $ack"
 				if ($ack -notmatch 'errors=0 ') { $reasons.Add("command '$command' failed: $ack") }
+				$ackSeq = if ($ack -match '^seq=(\d+) ') { [int]$Matches[1] } else { -1 }
+				if ($ack -notmatch ('last=' + [regex]::Escape($command) + ' error=')) { $reasons.Add("the ack for '$command' belongs to another batch: $ack") }
+				if ($null -ne $lastAckSeq -and $ackSeq -ne $lastAckSeq + 1) { $reasons.Add("the ack for '$command' has seq $ackSeq, expected $($lastAckSeq + 1): $ack") }
+				$lastAckSeq = $ackSeq
 			}
 
 			if ($sequenceToRun) {

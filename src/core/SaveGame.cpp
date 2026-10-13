@@ -114,7 +114,7 @@ void SaveGameList::update(bool verbose) {
 		// VR and flat runs never see each other's saves (#417, D-NEW)
 		SaveKind kind = readSaveKind(path);
 		if(kind != m_kind) {
-			LogInfo << "Hiding save " << dirname << " \"" << name << "\": " << saveKindRefusal(kind, m_kind);
+			LogInfo << "Hiding save " << dirname.string() << " \"" << name << "\": " << saveKindRefusal(kind, m_kind);
 			hidden.push_back(HiddenSave{ path, stime, kind });
 			continue;
 		}

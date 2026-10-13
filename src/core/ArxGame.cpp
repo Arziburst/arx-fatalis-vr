@@ -1452,9 +1452,9 @@ void ArxGame::doFrame() {
 		// Say so and start at the main menu instead
 		if(savegames.hiddenCount() > 0) {
 			// The save is there but belongs to the other game (#417, D-NEW): refused, not missing
-			LogWarning << "--loadslot " << LOADQUEST_SLOT.handleData() << " refused: " << savegames.size()
-			           << " save(s) of this " << saveKindName(savegames.kind()) << " run; "
-			           << savegames.hiddenReason() << " - starting at the main menu instead of an empty level";
+			LogInfo << "--loadslot " << LOADQUEST_SLOT.handleData() << " refused: " << savegames.size()
+			        << " save(s) of this " << saveKindName(savegames.kind()) << " run; "
+			        << savegames.hiddenReason() << " - starting at the main menu instead of an empty level";
 			gameevent::Event("load.refused")("source", "loadslot")("slot", u64(LOADQUEST_SLOT.handleData()))
 				("hidden", u64(savegames.hiddenCount()));
 		} else {
@@ -1479,7 +1479,7 @@ void ArxGame::doFrame() {
 			LogError << "Unable to get save file info for " << g_saveToLoad;
 		} else if(std::string why = savegames.refusal(g_saveToLoad); !why.empty()) {
 			// A save given by path never went through the list's filter (#417, D-NEW)
-			LogWarning << "Not loading " << g_saveToLoad << ": " << why;
+			LogInfo << "Not loading " << g_saveToLoad << ": " << why;
 			gameevent::Event("load.refused")("source", "file")("name", name);
 			if(!g_currentArea) {
 				ARXmenu.requestMode(Mode_MainMenu);

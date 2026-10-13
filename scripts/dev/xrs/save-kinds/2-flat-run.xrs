@@ -16,5 +16,5 @@ newgame
 save flat-made
 @until saves.listed eq 1 10s
 @assert saves.hidden eq 2
-@log GameEvent:.*\bsave slot=\S+ name=flat-made kind=flat ok=true 5s
+@log GameEvent:.*\bsave slot=\S+ name=flat-made kind=flat ok=yes 5s
 @assert errors eq 0

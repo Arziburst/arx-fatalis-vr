@@ -147,8 +147,8 @@ void ARX_QuickLoad() {
 	if(save == SavegameHandle()) {
 		// No saves found! Or only saves of the other kind, which this run never loads (#417, D-NEW)
 		if(savegames.hiddenCount() > 0) {
-			LogWarning << "Quick load refused: no save of this " << saveKindName(savegames.kind()) << " run - "
-			           << savegames.hiddenReason();
+			LogInfo << "Quick load refused: no save of this " << saveKindName(savegames.kind()) << " run - "
+			        << savegames.hiddenReason();
 			gameevent::Event("load.refused")("source", "quickload")("hidden", u64(savegames.hiddenCount()));
 		}
 		return;

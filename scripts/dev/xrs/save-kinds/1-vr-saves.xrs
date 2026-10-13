@@ -14,7 +14,7 @@
 save vr-made
 @until saves.listed eq 2 10s
 @assert events.byName.save eq 1
-@log GameEvent:.*\bsave slot=\S+ name=vr-made kind=vr ok=true 5s
+@log GameEvent:.*\bsave slot=\S+ name=vr-made kind=vr ok=yes 5s
 
 # Options > Saves and bug reports, from the pause menu
 menu pause

@@ -65,6 +65,7 @@
 #include "gui/MainMenu.h"
 #include "gui/Menu.h"
 #include "gui/MenuPublic.h"
+#include "gui/Notification.h"
 #include "gui/hud/PlayerInventory.h"
 #include "input/Input.h"
 #include "io/fs/FilePath.h"
@@ -73,6 +74,7 @@
 #include "io/log/Logger.h"
 #include "physics/Collisions.h"
 #include "platform/Environment.h"
+#include "platform/ExitTrace.h"
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
 #include "platform/WindowsUtils.h"
 #endif
@@ -282,7 +284,8 @@ struct State {
 	GameState state = GameState::Startup;
 	bool cleanShutdown = false;
 
-	unsigned cmdSeq = 0; //!< Command batches executed so far
+	unsigned cmdSeq = 0; //!< Command batches started so far (the running batch included)
+	unsigned ackedSeq = 0; //!< Command batches whose ack.txt is written; this is what status.json reports (#142)
 	std::string lastCmd;
 	std::string lastCmdError;
 
@@ -328,6 +331,19 @@ struct State {
 
 	//! watch: the entity whose place status.json reports (#37), empty for none
 	std::string watch;
+
+	//! stick-for: a stick held until the player has walked a distance, let go by the game (#370)
+	struct StickFor {
+		unsigned seq = 0;            //!< Holds started so far
+		bool active = false;
+		std::string hand;
+		Vec2f start = Vec2f(0.f);    //!< The player's ground position (x, z) when the hold started
+		float units = 0.f;           //!< The distance that ends the hold
+		float moved = 0.f;           //!< The distance walked so far (the last one, once ended)
+		GameInstant deadline = 0;    //!< When the hold ends anyway: a blocked player never walks the distance
+		bool timedOut = false;       //!< The hold ended at its deadline, not at its distance
+		vr::WalkStatus walk;         //!< The stick walk of the hold's last frame that walked
+	} stickFor;
 
 };
 
@@ -570,6 +586,9 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("area", g_currentArea ? u32(g_currentArea) : 0u);
 	json.value("paused", g_gameTime.isPaused() != 0);
 	json.value("cinematic", isInCinematic());
+	// The timed texts at the top of the 2D interface (a script's tutorial hint): a shot of the HUD that must not
+	// change waits for none (#370)
+	json.value("notifications", u64(notification_count()));
 
 	if(g_currentArea) {
 		json.object("player");
@@ -1377,7 +1396,9 @@ std::string buildStatus(PlatformInstant now) {
 	json.end();
 	json.end();
 
-	json.value("cmdSeq", g.cmdSeq);
+	// A command that changes the level or loads a save writes the status while its batch still runs: the batch
+	// must not show up before its ack does (#142)
+	json.value("cmdSeq", g.ackedSeq);
 	json.value("lastCmd", g.lastCmd);
 	json.value("lastCmdError", g.lastCmdError);
 	json.value("captureSeq", g.captureSeq);
@@ -1394,6 +1415,23 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("maxPixelsDiffering", check.maxPixelsDiffering);
 		json.value("maxDelta", check.maxDelta);
 		json.value("capture", check.capture);
+		json.end();
+	}
+
+	if(g.stickFor.seq != 0) {
+		const State::StickFor & hold = g.stickFor;
+		json.object("stickFor");
+		json.value("seq", hold.seq);
+		json.value("active", hold.active);
+		json.value("units", hold.units);
+		json.value("moved", hold.moved);
+		json.value("timedOut", hold.timedOut);
+		json.object("walk");
+		json.value("walking", hold.walk.walking);
+		json.value("yaw", hold.walk.yaw);
+		json.value("dirX", hold.walk.direction.x);
+		json.value("dirZ", hold.walk.direction.z);
+		json.end();
 		json.end();
 	}
 
@@ -1525,7 +1563,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "quit") {
-		LogInfo << "[channel] quit requested";
+		platform::logQuitRequest("the test channel's quit command");
 		mainApp->quit();
 		return std::string();
 	}
@@ -1619,6 +1657,44 @@ std::string execute(std::string_view line) {
 		// The controllers' control table without a headset (#30): down|up|tap <control>, stick, bind, reset
 		std::string error = vr::inputCommand(rest);
 		return error.empty() ? error : refuse(error);
+	}
+
+	if(word == "stick-for") {
+		// stick-for left|right <x> <y> <units> [<seconds>]: a stick held deflected until the player has walked that
+		// far on the ground, then let go by the game in that frame (#370) - a walk bounded by its distance, not by how
+		// fast the runner reads the status (a busy PC walked a frame-counted walk into a wall). A player who never
+		// gets that far (a wall) is let go after <seconds> of game time (default 10)
+		std::istringstream iss{std::string(rest)};
+		std::string hand;
+		float x = 0.f, y = 0.f, units = 0.f, seconds = 10.f;
+		bool parsed = bool(iss >> hand >> x >> y >> units);
+		if(parsed && !(iss >> seconds)) {
+			parsed = iss.eof();
+			seconds = 10.f;
+		}
+		if(!parsed || (hand != "left" && hand != "right") || units <= 0.f || seconds <= 0.f) {
+			return refuse("stick-for: expected left|right <x> <y> <units> [<seconds>], got \"" + std::string(rest) + "\"");
+		}
+		if(currentState() != GameState::Gameplay || !entities.player()) {
+			return refuse(std::string("stick-for: needs a level on screen (state ") + gameStateName(currentState()) + ")");
+		}
+		std::ostringstream stick;
+		stick << "stick " << hand << ' ' << x << ' ' << y;
+		std::string error = vr::inputCommand(stick.str());
+		if(!error.empty()) {
+			return refuse(error);
+		}
+		State::StickFor & hold = g.stickFor;
+		hold.seq++;
+		hold.active = true;
+		hold.hand = hand;
+		hold.start = Vec2f(player.pos.x, player.pos.z);
+		hold.units = units;
+		hold.moved = 0.f;
+		hold.deadline = g_gameTime.now() + GameDuration(std::chrono::milliseconds(s64(seconds * 1000.f)));
+		hold.timedOut = false;
+		hold.walk = vr::WalkStatus();
+		return std::string();
 	}
 
 	if(word == "vr-sim") {
@@ -2474,7 +2550,43 @@ void pollCommands() {
 	}
 
 	writeAck(errors);
+	g.ackedSeq = g.cmdSeq;
 	writeStatus(platform::getTime());
+}
+
+//! stick-for: keep the walk the hold made, and let the stick go once the player has walked far enough (#370)
+void updateStickFor() {
+
+	State::StickFor & hold = g.stickFor;
+	if(!hold.active) {
+		return;
+	}
+
+	if(currentState() != GameState::Gameplay || !entities.player()) {
+		// The level is gone (a load, the menu): nothing to measure the distance on, let go now
+		vr::inputCommand("stick " + hold.hand + " 0 0");
+		hold.active = false;
+		LogInfo << "[channel] stick-for: " << hold.hand << " stick let go, the level is not on screen";
+		return;
+	}
+
+	const vr::WalkStatus & walk = vr::walkStatus();
+	if(walk.walking) {
+		hold.walk = walk;
+	}
+	hold.moved = glm::distance(Vec2f(player.pos.x, player.pos.z), hold.start);
+	if(hold.moved >= hold.units) {
+		vr::inputCommand("stick " + hold.hand + " 0 0");
+		hold.active = false;
+		LogInfo << "[channel] stick-for: " << hold.hand << " stick let go after " << hold.moved << " units";
+	} else if(g_gameTime.now() >= hold.deadline) {
+		vr::inputCommand("stick " + hold.hand + " 0 0");
+		hold.active = false;
+		hold.timedOut = true;
+		LogWarning << "[channel] stick-for: " << hold.hand << " stick let go at its time limit after only "
+		           << hold.moved << " of " << hold.units << " units";
+	}
+
 }
 
 } // anonymous namespace
@@ -2535,6 +2647,8 @@ void update() {
 	if(state != g.state) {
 		setState(state);
 	}
+
+	updateStickFor();
 
 	if(toMsi(now - g.lastPollTime) >= PollIntervalMs) {
 		g.lastPollTime = now;

@@ -158,6 +158,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "platform/CrashHandler.h"
 #include "platform/Dialog.h"
+#include "platform/ExitTrace.h"
 #include "platform/Platform.h"
 #include "platform/Process.h"
 #include "platform/ProgramOptions.h"
@@ -234,6 +235,9 @@ ArxGame::ArxGame()
 { }
 
 bool ArxGame::initialize() {
+	
+	// From here on an end of the process outside shutdown() names itself in arx.log (#146)
+	platform::initializeExitTrace(fs::getUserDir() / "arx.log", Logger::quickShutdown);
 	
 	bool init;
 	
@@ -1041,6 +1045,7 @@ void ArxGame::shutdown() {
 	channel::shutdown();
 
 	LogInfo << "Clean shutdown";
+	platform::markCleanExit();
 }
 
 void ArxGame::shutdownGame() {
@@ -1164,7 +1169,8 @@ void ArxGame::onResizeWindow(const Window & window) {
 }
 
 void ArxGame::onDestroyWindow(const Window & /* window */) {
-	LogInfo << "Application window is being destroyed";
+	// SDL_QUIT: the close button, Alt+F4, Ctrl+C, or a WM_CLOSE / WM_QUIT sent from outside
+	platform::logQuitRequest("the window is being closed (close button, Alt+F4, Ctrl+C or a close message from outside)");
 	quit();
 }
 

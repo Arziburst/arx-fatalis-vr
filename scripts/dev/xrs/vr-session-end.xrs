@@ -1,0 +1,22 @@
+# The runtime ends the VR session on its own (#146): SteamVR quitting the app (stopping, then exiting after
+# xrEndSession), then the runtime itself shutting down (instance loss pending). The game goes on in flat mode and
+# names each cause in arx.log; the run then quits through the channel ("Quit requested: the test channel's quit
+# command") and must end cleanly - the exit hook reports nothing.
+@sim idle
+@args --loadlevel 10
+
+@until state eq GAMEPLAY 60s
+@until vr.sessionState eq focused 30s
+
+vr-sim session exiting
+@log OpenXR session ended by the runtime \(exiting\), continuing in flat mode 10s
+@until vr.sessionState eq none 10s
+@frames 10
+@assert state eq GAMEPLAY
+
+# Without a session the runtime can still go away: the instance follows
+vr-sim runtime lost
+@log OpenXR runtime is shutting down \(instance loss pending\), continuing in flat mode 10s
+@frames 10
+@assert state eq GAMEPLAY
+@nolog ExitTrace

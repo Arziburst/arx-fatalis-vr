@@ -93,6 +93,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "input/Input.h"
 
+#include "platform/ExitTrace.h"
+
 #include "scene/ChangeLevel.h"
 #include "scene/GameSound.h"
 #include "scene/LoadLevel.h"
@@ -211,6 +213,7 @@ void MainMenuDoFrame() {
 				cinematicBorder.reset();
 				break;
 			case Mode_InGame:
+				platform::logQuitRequest("the main menu's quit");
 				mainApp->quit();
 				MenuFader_start(Fade_Out, -1);
 				break;

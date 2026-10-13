@@ -127,3 +127,24 @@ function Find-SteamAppInstall([int]$AppId) {
 # The game finds its data itself (#79, src/io/fs/SteamLibrary.cpp); the scripts use this only for
 # checks of the machine (setup-coordinator.ps1).
 function Find-ArxFatalisSteamInstall { Find-SteamAppInstall -AppId 1700 }
+
+# A fingerprint of the working copy's uncommitted state, written into the build stamp (built-from.txt) and
+# compared by the fresh-build checks (#306, #294): a hash of `git diff HEAD` (staged and unstaged edits of
+# tracked files) plus the name and content hash of every untracked, not ignored file. The same tree gives the
+# same fingerprint; a clean tree a fixed one. Edits outside the repository are not seen. $null when
+# $SourceDir is not a git working copy.
+function Get-ArxTreeFingerprint([string]$SourceDir) {
+	if (-not "$(git -C $SourceDir rev-parse HEAD 2>$null)".Trim()) { return $null }
+	$diff = (git -C $SourceDir -c core.quotepath=off diff HEAD --no-color 2>$null) -join "`n"
+	$untracked = @(git -C $SourceDir -c core.quotepath=off ls-files --others --exclude-standard 2>$null)
+	$hashes = if ($untracked) { @($untracked | git -C $SourceDir hash-object --stdin-paths 2>$null) } else { @() }
+	$files = for ($i = 0; $i -lt $untracked.Count; $i++) { "$($untracked[$i]) $($hashes[$i])" }
+	$sha = [Security.Cryptography.SHA256]::Create()
+	$bytes = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes("$diff`n--untracked--`n$($files -join "`n")"))
+	-join ($bytes[0..7] | ForEach-Object { $_.ToString('x2') })
+}
+
+# The fingerprint a stamp ("<sha>[ dirty] fp=<16 hex>") carries, or '' for a stamp without one (made before #306)
+function Get-ArxStampFingerprint([string]$Stamp) {
+	if ($Stamp -match '\bfp=([0-9a-f]+)') { $Matches[1] } else { '' }
+}

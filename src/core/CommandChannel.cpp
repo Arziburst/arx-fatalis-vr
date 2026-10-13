@@ -54,6 +54,7 @@
 #include "game/Spells.h"
 #include "game/effect/Quake.h"
 #include "graphics/Math.h"
+#include "graphics/Raycast.h"
 #include "graphics/Renderer.h"
 #include "graphics/data/Mesh.h"
 #include "graphics/image/Image.h"
@@ -70,7 +71,9 @@
 #include "io/fs/Filesystem.h"
 #include "io/log/LogBackend.h"
 #include "io/log/Logger.h"
+#include "physics/Collisions.h"
 #include "platform/Environment.h"
+#include "platform/ExitTrace.h"
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
 #include "platform/WindowsUtils.h"
 #endif
@@ -99,6 +102,7 @@
 
 extern bool START_NEW_QUEST;
 extern bool bGCroucheToggle;
+extern long COLLIDED_CLIMB_POLY;
 
 namespace channel {
 
@@ -279,7 +283,8 @@ struct State {
 	GameState state = GameState::Startup;
 	bool cleanShutdown = false;
 
-	unsigned cmdSeq = 0; //!< Command batches executed so far
+	unsigned cmdSeq = 0; //!< Command batches started so far (the running batch included)
+	unsigned ackedSeq = 0; //!< Command batches whose ack.txt is written; this is what status.json reports (#142)
 	std::string lastCmd;
 	std::string lastCmdError;
 
@@ -1329,7 +1334,9 @@ std::string buildStatus(PlatformInstant now) {
 	json.end();
 	json.end();
 
-	json.value("cmdSeq", g.cmdSeq);
+	// A command that changes the level or loads a save writes the status while its batch still runs: the batch
+	// must not show up before its ack does (#142)
+	json.value("cmdSeq", g.ackedSeq);
 	json.value("lastCmd", g.lastCmd);
 	json.value("lastCmdError", g.lastCmdError);
 	json.value("captureSeq", g.captureSeq);
@@ -1477,7 +1484,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "quit") {
-		LogInfo << "[channel] quit requested";
+		platform::logQuitRequest("the test channel's quit command");
 		mainApp->quit();
 		return std::string();
 	}
@@ -2052,6 +2059,8 @@ std::string execute(std::string_view line) {
 			if((entity.ioflags & IO_NPC) && entity._npcdata) {
 				oss << " life=" << entity._npcdata->lifePool.current;
 			}
+			// What the hand reticles and the mouse can hover (its script switches it, #210)
+			oss << " interactive=" << ((entity.gameFlags & GFLAG_INTERACTIVITY) ? 1 : 0);
 			oss << '\n';
 			count++;
 		}
@@ -2103,6 +2112,126 @@ std::string execute(std::string_view line) {
 		player.desiredangle.setPitch(angle.getPitch());
 		player.angle.setPitch(angle.getPitch());
 		LogInfo << "[channel] player looks at " << rest << " (yaw " << angle.getYaw() << ", pitch " << angle.getPitch() << ")";
+		return std::string();
+	}
+
+	if(word == "approach") {
+		// approach <entity> [<distance>]: the player to a spot where the hand reticles reach an entity, facing it -
+		// found by number, not by trying spots in launches (#210, TRAPS.md). Every 15 degrees on rings around the
+		// entity: a floor near the entity's own, room for the player's cylinder there, the eye within the pick's
+		// reach (350 units of the entity's position, VRReticle.cpp) and nothing of the level before the entity
+		// on the rays from the eye and from both simulated hands to the middle of its box. The spot nearest to
+		// <distance> along the floor (default 170) wins. Far from the player an entity is not updated (its box,
+		// its faces): the first call can only test the level, a second one from there tests the faces too
+		if(currentState() != GameState::Gameplay || !entities.player()) {
+			return refuse(std::string("approach: needs a level on screen (state ") + gameStateName(currentState()) + ")");
+		}
+		std::istringstream iss{std::string(rest)};
+		std::string id;
+		float wanted = 170.f;
+		if(!(iss >> id)) {
+			return refuse("approach: expected <entity> [<distance>], got \"" + std::string(rest) + "\"");
+		}
+		if(!iss.eof() && !(iss >> wanted)) {
+			return refuse("approach: expected <entity> [<distance>], got \"" + std::string(rest) + "\"");
+		}
+		Entity * target = entities.getById(id);
+		if(!target || target == entities.player()) {
+			return refuse("approach: unknown entity \"" + id + "\"");
+		}
+		const Vec3f base = target->pos;
+		const EERIE_3D_BBOX & box = target->bbox3D;
+		const Vec3f middle = (box.min + box.max) * 0.5f;
+		// Updated: in the treat zone around the player, and its box drawn where the entity is
+		const bool updated = (target->gameFlags & GFLAG_ISINTREATZONE) && box.max.x > box.min.x
+		                     && closerThan(Vec2f(middle.x, middle.z), Vec2f(base.x, base.z), 300.f);
+		const Vec3f aim = updated ? middle : base + Vec3f(0.f, -80.f, 0.f);
+		const float reach = 350.f - 20.f;
+		// Whether nothing of the level is before the entity on the ray from origin to the aim point
+		auto sees = [&](const Vec3f & origin) {
+			const Vec3f direction = glm::normalize(aim - origin);
+			if(!updated) {
+				// Short of the position: a lever's is at the wall it is fixed to
+				return !raycastScene(origin, aim - direction * 30.f, POLY_NOCOL | POLY_WATER);
+			}
+			const Vec3f end = origin + direction * (glm::distance(origin, aim) + 100.f);
+			const EntityRaycastResult first = raycastEntities(origin, end, POLY_TRANS, RaycastIgnorePlayer);
+			if(first.entity != target) {
+				return false;
+			}
+			const RaycastResult scene = raycastScene(origin, end, POLY_NOCOL | POLY_WATER);
+			return !scene || glm::distance(origin, scene.pos) >= glm::distance(origin, first.pos);
+		};
+		long climb = COLLIDED_CLIMB_POLY;
+		struct Rejects {
+			int floor = 0;
+			int room = 0;
+			int reach = 0;
+			int sight = 0;
+		} rejects;
+		bool found = false;
+		Vec3f best(0.f);
+		float bestScore = 0.f;
+		int tested = 0;
+		for(float radius = 80.f; radius <= 320.f; radius += 20.f) {
+			for(float degrees = 0.f; degrees < 360.f; degrees += 15.f) {
+				tested++;
+				const Vec3f around = base + angleToVectorXZ(degrees) * radius;
+				float floorY = 0.f;
+				if(!CheckInPoly(Vec3f(around.x, base.y - 120.f, around.z), &floorY)
+				   || std::abs(floorY - base.y) > 100.f) {
+					rejects.floor++;
+					continue;
+				}
+				const Vec3f feet(around.x, floorY, around.z);
+				const Cylinder body(feet, ARXCHARACTER::baseRadius(), ARXCHARACTER::baseHeight());
+				if(CheckAnythingInCylinder(body, entities.player(), CFLAG_JUST_TEST | CFLAG_PLAYER) < -20.f) {
+					rejects.room++;
+					continue;
+				}
+				const Vec3f eye = feet + ARXCHARACTER::baseOffset();
+				if(!closerThan(eye, base, reach)) {
+					rejects.reach++;
+					continue;
+				}
+				// The simulated hands (SimRig: 20 cm aside, 45 below the eyes, 35 ahead), facing the aim point
+				Vec3f ahead = aim - eye;
+				ahead.y = 0.f;
+				ahead = glm::normalize(ahead);
+				const Vec3f side(-ahead.z, 0.f, ahead.x);
+				const Vec3f hand = eye + ahead * 35.f + Vec3f(0.f, 45.f, 0.f);
+				if(!sees(eye) || !sees(hand + side * 20.f) || !sees(hand - side * 20.f)) {
+					rejects.sight++;
+					continue;
+				}
+				const float score = std::abs(radius - wanted);
+				if(!found || score < bestScore) {
+					found = true;
+					best = eye;
+					bestScore = score;
+				}
+			}
+		}
+		COLLIDED_CLIMB_POLY = climb;
+		if(!found) {
+			std::ostringstream why;
+			why << "approach: no spot in reach of " << id << " among " << tested << " (no floor " << rejects.floor
+			    << ", no room " << rejects.room << ", out of reach " << rejects.reach << ", no sight " << rejects.sight
+			    << (updated ? "" : "; the entity is not updated here - come closer first") << ")";
+			return refuse(why.str());
+		}
+		// The player's teleport takes the feet (player.pos, the eye, is 170 units above them - TRAPS.md)
+		ARX_INTERACTIVE_Teleport(entities.player(), best - ARXCHARACTER::baseOffset());
+		const Anglef angle = vectorToAngle(glm::normalize(aim - best));
+		player.desiredangle.setYaw(angle.getYaw());
+		player.angle.setYaw(angle.getYaw());
+		player.desiredangle.setPitch(angle.getPitch());
+		player.angle.setPitch(angle.getPitch());
+		LogInfo << "[channel] approach " << id << ": the eye to " << best.x << ' ' << best.y << ' ' << best.z
+		        << " (yaw " << angle.getYaw() << ", pitch " << angle.getPitch() << ", " << glm::distance(best, base)
+		        << " from its position), " << (updated ? "the entity's faces seen" : "the level only: not updated there")
+		        << "; of " << tested << " spots: no floor " << rejects.floor << ", no room " << rejects.room
+		        << ", out of reach " << rejects.reach << ", no sight " << rejects.sight;
 		return std::string();
 	}
 
@@ -2262,6 +2391,7 @@ void pollCommands() {
 	}
 
 	writeAck(errors);
+	g.ackedSeq = g.cmdSeq;
 	writeStatus(platform::getTime());
 }
 

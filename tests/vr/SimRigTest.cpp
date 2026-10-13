@@ -299,3 +299,38 @@ void SimRigTest::testFingers() {
 	sim.advance(20);
 	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.0, sim.rig.fingers[0].curl.z, RigEpsilon);
 }
+
+void SimRigTest::testSessionEndsAndExitFaults() {
+	vr::Simulation sim;
+	// The ways a runtime ends the session (#146) are requests to the simulated runtime
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("session exiting"));
+	CPPUNIT_ASSERT(vr::SimSessionEnd::Exiting == sim.takeRequests().sessionEnd);
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("session loss-pending"));
+	CPPUNIT_ASSERT(vr::SimSessionEnd::LossPending == sim.takeRequests().sessionEnd);
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("runtime lost"));
+	CPPUNIT_ASSERT(vr::SimSessionEnd::RuntimeLost == sim.takeRequests().sessionEnd);
+	CPPUNIT_ASSERT(sim.takeRequests().empty());
+	CPPUNIT_ASSERT(!sim.execute("runtime").empty());
+	CPPUNIT_ASSERT(!sim.execute("runtime found").empty());
+	// The rig is untouched: the focus stays as it was
+	CPPUNIT_ASSERT(sim.rig.worn && sim.rig.focused);
+	// The process ends the way #146 ended
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("fault exit-process -1"));
+	vr::SimRequests requests = sim.takeRequests();
+	CPPUNIT_ASSERT(vr::SimExit::ExitProcess == requests.exit);
+	CPPUNIT_ASSERT_EQUAL(-1, requests.exitCode);
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("fault exit 3"));
+	requests = sim.takeRequests();
+	CPPUNIT_ASSERT(vr::SimExit::Exit == requests.exit);
+	CPPUNIT_ASSERT_EQUAL(3, requests.exitCode);
+	CPPUNIT_ASSERT(!sim.execute("fault exit").empty());
+	CPPUNIT_ASSERT(!sim.execute("fault exit soon").empty());
+	CPPUNIT_ASSERT(!sim.execute("fault exit 99999999999").empty());
+	CPPUNIT_ASSERT(sim.takeRequests().empty());
+	// On the timeline like any other command
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.load("@5 session exiting\n"));
+	sim.advance(4);
+	CPPUNIT_ASSERT(sim.takeRequests().empty());
+	sim.advance(5);
+	CPPUNIT_ASSERT(vr::SimSessionEnd::Exiting == sim.takeRequests().sessionEnd);
+}

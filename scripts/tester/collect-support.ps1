@@ -11,12 +11,12 @@
 	Where the zip goes (default: the Desktop).
 
 .PARAMETER UserDir
-	The game's user directory (default: Saved Games\Arx Libertatis).
+	The game's user directory (default: Saved Games\Arx Fatalis VR).
 #>
 [CmdletBinding()]
 param(
 	[string]$OutDir = [Environment]::GetFolderPath('Desktop'),
-	[string]$UserDir = (Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Saved Games\Arx Libertatis')
+	[string]$UserDir = (Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Saved Games\Arx Fatalis VR')
 )
 
 $ErrorActionPreference = 'Continue'

@@ -22,7 +22,7 @@
 
 .PARAMETER UserDir
 	The user directory holding arx.log and crashes\. Default: this working copy's isolated one when it has an
-	arx.log, otherwise the player's Saved Games\Arx Libertatis.
+	arx.log, otherwise the player's Saved Games\Arx Fatalis VR.
 
 .PARAMETER Log
 	A log file to digest (e.g. an older arx.3.log); its folder is the user directory.
@@ -79,7 +79,7 @@
 .EXAMPLE
 	.\scripts\dev\log-digest.ps1 -Find 'OpenXR' -Last 5
 .EXAMPLE
-	.\scripts\dev\log-digest.ps1 -DryRun -Log "$env:USERPROFILE\Saved Games\Arx Libertatis\arx.2.log"
+	.\scripts\dev\log-digest.ps1 -DryRun -Log "$env:USERPROFILE\Saved Games\Arx Fatalis VR\arx.2.log"
 #>
 [CmdletBinding(PositionalBinding = $false)]
 param(

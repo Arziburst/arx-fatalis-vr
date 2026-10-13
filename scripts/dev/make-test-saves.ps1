@@ -3,7 +3,8 @@
 	Produce the test save library (#70): the saves a worker loads to reach an MVP scenario point at once.
 
 .DESCRIPTION
-	One game run (flat, or on the simulated headset with -VrSim), driven through the test channel (docs/vr/TESTING.md): the scenario file
+	One game run on the simulated headset (-VrSim, default idle; #417: VR saves, a flat game does not load them), driven
+	through the test channel (docs/vr/TESTING.md): the scenario file
 	(scripts/dev/test-saves/scenarios.txt) starts a new game from the main menu, puts the player at each
 	scenario point with channel commands (setpos, lookat, script-console commands) and saves there with
 	the channel command `save <name>`. Then the same game loads every save again and checks it (the
@@ -20,7 +21,7 @@
 	format change of the engine would make a committed save stale. Regenerating it takes one launch
 	(about two minutes, most of it the scripted awakening of a new game); a save the script cannot
 	produce (it needs real play, or a spot that cannot be reached by coordinates) is recorded by the
-	owner in flat mode and copied into the library by hand.
+	owner in VR and copied into the library by hand.
 
 	Scenario file lines: `#` comments; `@describe <text>` describes the next `save`; `@state
 	<STATE> [timeout s]` waits for GAMEPLAY / MENU; `@level <n> [timeout s]` waits for gameplay in
@@ -36,22 +37,23 @@
 	<n>` through the channel) and checks each one. Run it after an engine change that may touch the
 	save format. One launch for the whole library.
 
-	Launch control (D-014, scripts/launch-lib.ps1): one launch (flat or --vr-sim), never SteamVR, the game lock,
+	Launch control (D-014, scripts/launch-lib.ps1): one launch (--vr-sim), never SteamVR, the game lock,
 	the working copy's own fresh build, one line in the ledger.
 
 .PARAMETER Script
 	The scenario file. Default: scripts\dev\test-saves\scenarios.txt.
 
 .PARAMETER Library
-	The library folder. Default: $env:ARXVR_SAVE_LIBRARY or %LOCALAPPDATA%\ArxFatalisVR\savelib.
+	The library folder. Default: $env:ARXVR_SAVE_LIBRARY or %LOCALAPPDATA%\ArxFatalisVR\savelib-vr.
 
 .PARAMETER Verify
 	Do not generate: load every save of the library in a fresh game and check it.
 
 .PARAMETER VrSim
-	Make (or -Verify) the saves on the simulated headset (#112, #210): arx.exe --vr-sim <script> instead of a flat
-	game, so the saves are made in VR the way a player makes them. A bare name is looked up in scripts\dev\vrsim
-	(e.g. idle, the headset at rest). Still one launch, never the runtime or SteamVR.
+	The simulated headset's script (#112, #210) the saves are made (or -Verify'd) on: arx.exe --vr-sim <script>, so the
+	saves are VR saves, made the way a player makes them. A bare name is looked up in scripts\dev\vrsim. Default: idle,
+	the headset at rest. Every save of the library is a VR save (#417, D-NEW): a run that came up flat fails. Still one
+	launch, never the runtime or SteamVR.
 
 .PARAMETER Only
 	Copy only these saves of the run into the library (every save is still made and loaded again): renew some
@@ -91,7 +93,7 @@ param(
 	[string]$Config = 'Release',
 	[switch]$Rebuild,
 	[switch]$Verify,
-	[string]$VrSim,
+	[string]$VrSim = 'idle',
 	[string[]]$Only,
 	[int]$LockTimeoutSec = 300,
 	[int]$StepTimeoutSec = 90
@@ -270,6 +272,11 @@ try {
 	$firstState = if ($Verify) { 'GAMEPLAY' } else { 'MENU' }
 	$null = Wait-ArxStatus { param($s) $s.state -eq $firstState } -TimeoutSec $StepTimeoutSec -Dir $TestDir -What "state $firstState"
 	Write-Host ('  +{0,5:0.0}s  state {1}' -f ((Get-Date) - $launchTime).TotalSeconds, $firstState)
+	# The library holds VR saves only (#417, D-NEW): a simulator that did not start leaves a flat game, whose saves
+	# no VR run would list - and a VR run lists no flat save, so -Verify proves every save is a VR save
+	$kind = (Read-ArxStatus $TestDir).saves.kind
+	if ($kind -ne 'vr') { throw "the game runs as '$kind', not in VR - the simulated headset did not start (arx.log says why)" }
+	Write-Host "  [ok]   saves.kind = vr: $(if ($Verify) { 'only VR saves are listed' } else { 'every save gets the VR mark' })" -ForegroundColor Green
 
 	Invoke-Steps $steps
 

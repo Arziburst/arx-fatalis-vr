@@ -24,7 +24,7 @@
 	Isolation (docs/vr/WORKFLOW.md, "Parallel work"): the game gets this working copy's own user and
 	config directory (--user-dir / --config-dir = %LOCALAPPDATA%\ArxFatalisVR\userdirs\<folder>-<hash>)
 	and its own test channel directory, so parallel workers never share arx.log, cfg.ini, saves or
-	status.json with each other or with the player's Saved Games\Arx Libertatis (-Shared opts out).
+	status.json with each other or with the player's Saved Games\Arx Fatalis VR (-Shared opts out).
 	-Saves copies save slots into the isolated directory for -- --loadslot runs.
 
 	Launch control (decision D-014, scripts/launch-lib.ps1): the test never starts SteamVR - a -Vr test
@@ -53,7 +53,7 @@
 	The user and config directory for the game. Default: this working copy's isolated one.
 
 .PARAMETER Shared
-	Use the player's %USERPROFILE%\Saved Games\Arx Libertatis (their saves, log and config) instead of
+	Use the player's %USERPROFILE%\Saved Games\Arx Fatalis VR (their saves, log and config) instead of
 	the isolated directory. Refuses to run while any other arx.exe runs (they would share the log).
 
 .PARAMETER Saves
@@ -67,7 +67,7 @@
 
 .PARAMETER SaveLibrary
 	Folder holding the saves for -Saves / -Save (the test save library, #70). Default: $env:ARXVR_SAVE_LIBRARY
-	or %LOCALAPPDATA%\ArxFatalisVR\savelib.
+	or %LOCALAPPDATA%\ArxFatalisVR\savelib-vr.
 
 .PARAMETER LockTimeoutSec
 	How long to wait for the game lock (and with -Vr the VR lock) before skipping the test (default 300).
@@ -87,6 +87,8 @@
 
 .PARAMETER Menu
 	A plain launch that expects the main menu (no --loadlevel 10 default); combine with -Commands 'loadslot 0'.
+	With --loadslot among the arguments the load is expected to be refused - a save of the other kind (#417,
+	scripts\dev\save-kind-check.ps1) - and the game to come up at the main menu instead.
 
 .PARAMETER Playground
 	Start the test playground (#321, scripts\dev\playground): generates the level when it is missing or older than
@@ -214,7 +216,7 @@ if (-not $ArxArgs -and -not $Menu) { $ArxArgs = @('--loadlevel', '10') }
 if (-not $ArxArgs) { $ArxArgs = @() }
 
 $loadsSomething = ($ArxArgs -join ' ') -match '--load(level|slot|save)'
-$expectedStates = if ($loadsSomething) { @('GAMEPLAY', 'CINEMATIC') } else { @('MENU') }
+$expectedStates = if ($loadsSomething -and -not $Menu) { @('GAMEPLAY', 'CINEMATIC') } else { @('MENU') }
 
 $log = Get-ArxLogPath $UserDir
 $crashDir = Get-ArxCrashDir $UserDir

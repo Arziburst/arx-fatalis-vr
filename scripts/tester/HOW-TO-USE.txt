@@ -28,7 +28,7 @@ If the game says it cannot find the game data, start it once from a command prom
 
 Where the log is
 ----------------
- %USERPROFILE%\Saved Games\Arx Libertatis\arx.log   (arx.1.log ... are the previous runs)
+ %USERPROFILE%\Saved Games\Arx Fatalis VR\arx.log   (arx.1.log ... are the previous runs)
 
 Reporting a problem
 -------------------

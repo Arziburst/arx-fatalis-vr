@@ -1,0 +1,17 @@
+# VR saves (#417, D-NEW), part 3 of scripts\dev\save-kind-check.ps1: the simulated headset on the same user directory
+# again. It lists the two VR saves, never part 2's flat one - which is the newest save on disk; --loadslot 2 (the
+# third save on disk) was refused at the start; slot 0 is the newest VR save, vr-made.
+@sim idle
+@args --loadslot 2
+
+@until state eq MENU 60s
+@assert saves.kind eq vr
+@assert saves.listed eq 2
+@assert saves.hidden eq 1
+@assert events.byName."load.refused" eq 1
+
+loadslot 0
+@until state eq GAMEPLAY 60s
+@log GameEvent:.*\bload slot=\S+ name=vr-made 10s
+@assert area eq 1
+@assert errors eq 0

@@ -15,7 +15,7 @@
 	  - the slot order is newest save file first, and a save missing from the library is left out
 	  - Use-ArxSave makes the named save the ONLY save of a user directory (older ones are gone), keeps the file time that
 	    the slot order depends on, and a missing name fails naming what the library has
-	  - the library folder is $env:ARXVR_SAVE_LIBRARY, else %LOCALAPPDATA%\ArxFatalisVR\savelib
+	  - the library folder is $env:ARXVR_SAVE_LIBRARY, else %LOCALAPPDATA%\ArxFatalisVR\savelib-vr (#417: VR saves)
 	Exit code 0 when everything passed, 1 otherwise. Run by run-script-tests.ps1, so CI runs it.
 #>
 [CmdletBinding()]
@@ -110,7 +110,7 @@ try {
 	$savedEnv = $env:ARXVR_SAVE_LIBRARY
 	try {
 		$env:ARXVR_SAVE_LIBRARY = $null
-		Check ((Get-ArxSaveLibrary) -eq (Join-Path $env:LOCALAPPDATA 'ArxFatalisVR\savelib')) 'the default library is %LOCALAPPDATA%\ArxFatalisVR\savelib' (Get-ArxSaveLibrary)
+		Check ((Get-ArxSaveLibrary) -eq (Join-Path $env:LOCALAPPDATA 'ArxFatalisVR\savelib-vr')) 'the default library is %LOCALAPPDATA%\ArxFatalisVR\savelib-vr (VR saves, #417)' (Get-ArxSaveLibrary)
 		$env:ARXVR_SAVE_LIBRARY = 'D:\somewhere\saves'
 		Check ((Get-ArxSaveLibrary) -eq 'D:\somewhere\saves') '$env:ARXVR_SAVE_LIBRARY overrides it'
 	} finally { $env:ARXVR_SAVE_LIBRARY = $savedEnv }

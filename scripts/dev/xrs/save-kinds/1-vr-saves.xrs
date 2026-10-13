@@ -1,0 +1,34 @@
+# VR saves (#417, D-NEW), part 1 of scripts\dev\save-kind-check.ps1 - not a sequence of its own: the three parts share
+# one user directory. On the simulated headset, from the test save mvp-items: a save made here carries the VR mark;
+# the saves page opens the saves folder (logged, not opened: a test run) and exports mvp-items for a bug report.
+@sim idle
+@save mvp-items
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@assert saves.kind eq vr
+@assert saves.userDirSource eq command-line
+@assert saves.listed eq 1
+@assert saves.hidden eq 0
+
+save vr-made
+@until saves.listed eq 2 10s
+@assert events.byName.save eq 1
+@log GameEvent:.*\bsave slot=\S+ name=vr-made kind=vr ok=true 5s
+
+# Options > Saves and bug reports, from the pause menu
+menu pause
+@until menuMode eq mainmenu 10s
+menu saves
+@until menuPage eq saves 10s
+@shot saves-page
+menu press folder
+@log Saves folder: .*save" - not opened, a test run 5s
+@assert events.byName."saves.folder" eq 1
+
+# The save row lists newest first: vr-made, then mvp-items
+menu step save right
+menu press export
+@log Bug report written: .*arxvr-report-\d{8}-\d{6}\.zip" \(mvp-items/gsave\.sav arx\.log arx-perf\.log cfg\.ini\) 10s
+@assert events.byName."saves.export" eq 1
+@assert errors eq 0

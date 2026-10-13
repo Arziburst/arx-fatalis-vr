@@ -273,7 +273,7 @@ with the smoke test ([TESTING.md](TESTING.md)):
 
 It starts the build with the test channel (`--test-dir`), waits until `status.json` says the game is
 playable, quits through the channel and fails on: exit code ≠ 0, no `Clean shutdown` in a fresh
-`arx.log`, a new crash report in `%USERPROFILE%\Saved Games\Arx Libertatis\crashes\`, an `[E]` log
+`arx.log`, a new crash report in `%USERPROFILE%\Saved Games\Arx Fatalis VR\crashes\`, an `[E]` log
 line, `errors ≠ 0` in `status.json`. The flat run is a **gate**: a failure caused by the task is fixed
 (or filed as a bug, if unrelated) before the PR. Checks that need game state use the channel
 (`-Commands 'shot before','teleport -p marker_0001','shot after'`, `scripts/dev/game-cmd.ps1`), so a
@@ -337,7 +337,7 @@ Or double-click the **Arx Fatalis VR** desktop shortcut (created by `scripts/cre
 it rebuilds first when the build is stale (no `built-from.txt`, another commit than HEAD, uncommitted changes; the game never starts on a failed build), then runs whatever branch is checked out in the owner's working copy and shows the
 branch name in its console window.
 
-`--loadslot <n>` starts straight into a saved game (recorded in flat mode) — needed until the in-VR
+`--loadslot <n>` starts straight into a saved game (made in VR: a flat run does not load a VR save, D-NEW) — needed until the in-VR
 menu exists (checkpoint B). `run-windows.ps1` starts the game in a window (`--windowed`; `-Fullscreen`
 opts out), and a plain launch goes straight to the main menu — logos, the intro and every `.cin`
 cinematic are skipped during development (`--intro` shows the logos and the intro, `--cinematics`

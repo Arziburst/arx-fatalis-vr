@@ -12,6 +12,20 @@ Arx Libertatis is based on the publicly released [Arx Fatalis source code](https
 The source code is available under the GPLv3+ license with some additional terms - see the COPYING and LICENSE files for details.
 
 > **Arx Fatalis VR fork:** to build and run the VR port on Windows see [docs/vr/DEVELOPMENT.md](docs/vr/DEVELOPMENT.md).
+> Its saves, log and settings live in its own `%USERPROFILE%\Saved Games\Arx Fatalis VR`, not in the Arx Libertatis
+> folder below; see [Reporting a bug](#reporting-a-bug-arx-fatalis-vr).
+
+## Reporting a bug (Arx Fatalis VR)
+
+The game's files are in `%USERPROFILE%\Saved Games\Arx Fatalis VR`: `arx.log` (the last run; `arx.1.log` ... the
+ones before), `arx-perf.log`, `cfg.ini` and the saves in `save\`. In the game, Options → *Saves and bug reports*
+shows that folder and has two entries:
+
+* **Open saves folder** opens it on the desktop.
+* **Export a save for a bug report** writes one zip to your Desktop - the chosen save, `arx.log`, `arx-perf.log` and
+  `cfg.ini`, with personal data (your user name, home folder, Steam id, ...) taken out. Attach it to the bug report.
+
+Saves made in VR load only in VR and saves of a flat game only in a flat game: the two never see each other.
 
 ## Contact
 

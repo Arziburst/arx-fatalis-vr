@@ -13,6 +13,49 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: VR-only saves — our own user directory, a VR mark in every save, flat and VR never see each other's saves
+
+- **Date:** 2026-10-13
+- **Status:** Accepted; amends D-007 (its user directory paragraph). Implemented by #417
+- **Decided by:** project owner (both directions closed, no import; the save folder and the bug report export in the
+  game, 2026-10-13); Claude for the mark's form and the registry key
+
+### Decision
+- **Our own user directory:** `%USERPROFILE%\Saved Games\Arx Fatalis VR` (`USER_DIR` in `CMakeLists.txt`; a build
+  directory configured before keeps the old name in its cache and is moved over) and our own registry key
+  `Software\ArxFatalisVR` (`UserDir` / `ConfigDir` / `DataDir`). Flat Arx Libertatis and the original game never see
+  its saves, and a registry value set for Arx Libertatis never leads this build to theirs.
+- **The first start** of that directory (no `cfg.ini`, no `save` folder yet) copies `cfg.ini` once from the old
+  `Saved Games\Arx Libertatis`: the player keeps their settings. **Saves are never copied.** A directory given with
+  `--user-dir` / `--config-dir` (every test script) or in the registry starts from its own `cfg.ini`.
+- **A VR mark in every VR save:** a save written by a VR run carries one small file, `arxvr`, in its save block next
+  to `pld` (`src/core/SaveKind.h`); a flat save has none. Nothing else of the save format changes. A run is VR when it
+  has an OpenXR session at startup (the simulated headset included) and stays that kind for the whole run, so a
+  session lost later does not turn the VR game's saves into flat ones.
+- **Both directions closed:** a run lists and loads only the saves of its own kind — the load and save menus, quick
+  load, `--loadslot`, the test channel's `loadslot` and a save given by path. The other kind stays on disk, hidden,
+  counted in `status.json` → `saves.hidden`; a load that would reach one is refused with a log line naming both kinds
+  and a `load.refused` game event. No import of flat saves.
+- **The test save library is made in VR:** `make-test-saves.ps1` runs on the simulated headset (`-VrSim idle` by
+  default) and writes to `%LOCALAPPDATA%\ArxFatalisVR\savelib-vr`; the flat `savelib` of older branches is left alone.
+  The owner's own saves are made in VR from now on.
+- **Saves in reach for bug reports:** Options → *Saves and bug reports* shows the save folder, opens it on the desktop
+  and exports the chosen save with `arx.log`, `arx-perf.log` and `cfg.ini` — personal data scrubbed with the rules of
+  #387 — as one zip on the Desktop; `scripts/dev/repro-save.ps1 <zip>` loads it in one command.
+
+### Why
+The VR game diverges from the flat one: its own mechanics, per-hand quick slots (#376), VR state in the save. A VR
+save loaded by a flat game, or a flat save by the VR game, can break either; keeping them apart costs one file per
+save and a filter. D-007 kept the Arx Libertatis directory so that a VR save opened in flat Arx Libertatis — exactly
+what must not happen now.
+
+### Consequences
+- Saves made with earlier builds stay in `Saved Games\Arx Libertatis`, invisible to this build (the owner's flat
+  saves included). Tests that load a test save run on the simulated headset; a flat sequence cannot have a `@save`
+  (`test-xrs.ps1` checks it), so `stand-up.xrs` moved onto the simulated headset.
+- A tester's flat start (`--no-vr`, "Start flat (no VR).cmd") lists no VR save.
+- `scripts/dev/save-kind-check.ps1` (a CI phase) proves both directions and the export on every pull request.
+
 ## D-042: Control scheme v2 — two equal hands: a casting stance and a radial menu per hand, dual wielding
 
 - **Date:** 2026-10-13
@@ -1416,7 +1459,8 @@ kept drifting.
 ## D-007: The product is named in `VERSION`; user directory and icon name stay as in Arx Libertatis
 
 - **Date:** 2026-10-08
-- **Status:** Accepted
+- **Status:** Accepted; the user directory paragraph is superseded by D-NEW (our own `Saved Games\Arx Fatalis VR`:
+  VR saves must never reach flat Arx Libertatis, #417)
 - **Decided by:** Claude, per the owner's request in #89
 
 ### Decision

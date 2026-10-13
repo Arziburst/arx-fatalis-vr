@@ -30,8 +30,15 @@ Where the log is
 ----------------
  %USERPROFILE%\Saved Games\Arx Fatalis VR\arx.log   (arx.1.log ... are the previous runs)
 
+Saves made in VR load only in VR; the flat start ("Start flat (no VR).cmd") does not list them, and VR does not
+list the saves of a flat game. The saves are in %USERPROFILE%\Saved Games\Arx Fatalis VR\save - in the game,
+Options > Saves and bug reports > Open saves folder opens it.
+
 Reporting a problem
 -------------------
+ 0. A problem in a game you saved: in the game, Options > Saves and bug reports > Export a save for a bug report
+    writes arxvr-report-....zip to your Desktop (the save, the logs and the settings, personal data taken out).
+    Send it with the report.
  1. Double-click "Collect support bundle.cmd" - it writes a zip to your Desktop (logs, settings, SteamVR logs,
     OpenXR runtime, GPU and driver). Nothing is uploaded; look inside if you like.
  2. Fill in BUG-REPORT-TEMPLATE.md and send it together with the zip.

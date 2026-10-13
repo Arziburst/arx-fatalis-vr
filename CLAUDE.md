@@ -81,7 +81,8 @@ Dependencies come from vcpkg in manifest mode (`vcpkg.json`, triplet `x64-window
 - Build directories live in `%LOCALAPPDATA%\ArxFatalisVR\build\<folder>-<hash>\<Config>` — one per
   working copy, never inside the source tree (which may sit in a synced folder, OneDrive).
 - `--skiplogo --loadslot <n>` starts straight into a saved game — the way to test VR before the
-  in-VR menu exists. The owner records saves in flat mode.
+  in-VR menu exists. Saves are made in VR: a flat run does not load a VR save, nor a VR run a flat one
+  (D-NEW, #417); the user directory is `%USERPROFILE%\Saved Games\Arx Fatalis VR`.
 - A plain launch starts at the main menu: publisher logos and the intro are skipped during development
   (`--intro` shows them), and every `.cin` cinematic — the new-game intro, in-game cutscenes — is
   skipped too (`--cinematics` shows them; restoring all of it for players is #92). Test runs are

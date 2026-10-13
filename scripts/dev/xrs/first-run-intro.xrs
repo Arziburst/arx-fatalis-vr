@@ -8,7 +8,7 @@
 
 # The first logo, on the screen straight ahead at eye height
 @until state eq LOGO 90s
-@log GameEvent:.*startup\.logo name=fishtank state=shown 10s
+@assert events.byName."startup.logo" eq 1     # fishtank shown (logged before the sequence's first mark)
 @until vr.panel.mode eq screen 10s
 @assert vr.panel.distance eq 2.5
 @assert vr.panel.width gt 2.59

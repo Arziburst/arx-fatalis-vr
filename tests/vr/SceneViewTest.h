@@ -45,6 +45,7 @@ class SceneViewTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(observerPlacementTest);
 	CPPUNIT_TEST(observerHoldsSceneTest);
 	CPPUNIT_TEST(hybridScreenTest);
+	CPPUNIT_TEST(hybridBlindTest);
 	CPPUNIT_TEST(heldYawTest);
 	CPPUNIT_TEST_SUITE_END();
 
@@ -69,6 +70,7 @@ public:
 	void observerPlacementTest();
 	void observerHoldsSceneTest();
 	void hybridScreenTest();
+	void hybridBlindTest();
 	void heldYawTest();
 
 };

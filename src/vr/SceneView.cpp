@@ -384,6 +384,17 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 		}
 	}
 
+	// The hybrid shows nothing rather than the hero's eye with no floor under it: the fade stays black
+	const bool blind = in.active && in.setting == SceneViewSetting::Hybrid && target.shown == SceneShown::First
+	                   && m_shown == target && !in.firstOnFloor;
+	if(blind) {
+		if(m_fade.isBlack()) {
+			m_fade.holdBlack();
+		} else {
+			m_fade.request(m_params.cutOut, m_params.cutIn, m_params.blackFrames);
+		}
+	}
+
 	if(m_fade.isBlack() && m_lookAtPending) {
 		m_lookAtPending = false;
 		out.applyLookAt = true;

@@ -2167,6 +2167,7 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 	in.engineYaw = engineCamera.angle.getYaw();
 	in.engineFloorY = floorBelow(in.enginePos, in.engineFloor);
 	in.firstPos = g_sceneFirstPos;
+	floorBelow(in.firstPos, in.firstOnFloor);
 	in.playerYaw = player.angle.getYaw();
 	const vr::HeadStatus & head = vr::headStatus();
 	in.headYaw = head.referenced ? vr::wrapSignedDegrees(head.head.getYaw() - head.reference.yaw) : 0.f;
@@ -2246,6 +2247,24 @@ static void meterSceneFrame(const vr::SceneOutput & scene, const Vec3f & pos, fl
 	frame.ownTurn = turned != g_sceneTurned[0] || turned != g_sceneTurned[1];
 	g_sceneTurned[1] = g_sceneTurned[0];
 	g_sceneTurned[0] = turned;
+
+	// Diagnostics: where a seen scene frame first puts the eyes too low (the meter keeps only the minimum)
+	static bool s_low = false;
+	if(state.meter.frames() == 0) {
+		s_low = false;
+	}
+	const bool seen = scene.shown != vr::SceneShown::None && scene.shown != vr::SceneShown::Screen
+	                  && scene.fade < vr::BehindFade;
+	const bool low = seen && frame.aboveFloor < vr::GhostMinAboveFloor / vr::UnitsPerMeter;
+	if(low && !s_low) {
+		const Entity * hero = entities.player();
+		LogInfo << "[vr] scene meter: the eyes' camera " << frame.aboveFloor << " m above the floor"
+		        << (floorFound ? "" : " (no floor under it)") << " at " << pos.x << ' ' << pos.y << ' ' << pos.z
+		        << ", shown " << vr::sceneShownName(scene.shown) << ", kind " << vr::sceneKindName(state.kind)
+		        << ", the hero's body " << ((hero && (hero->animlayer[0].flags & EA_FORCEPLAY)) ? "scripted" : "free");
+	}
+	s_low = low;
+
 	state.meter.add(frame);
 
 }

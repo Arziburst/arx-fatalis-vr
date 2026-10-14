@@ -265,6 +265,7 @@ struct SceneInput {
 	float headYaw = 0.f;            //!< the head's own yaw since its reference, degrees
 	float seconds = 0.f;            //!< the frame's duration
 	bool hybridScreen = false;      //!< this frame of a camera entity's shot wants the hybrid's screen
+	bool firstOnFloor = true;       //!< a floor under the hero's eye (\c firstPos)
 	//! The observer's point for this scene (\ref placeObserver), asked once, at the observer's first cut
 	std::function<ObserverPlace()> placeObserver;
 };
@@ -300,7 +301,8 @@ struct SceneOutput {
  * holds the eyes' camera where the cut to it found it: the game's camera is on the screen, not in the eyes.
  * Within the observer or the screen another camera entity or line is no cut - the eyes' camera stays.
  * While a cut waits for black the shot shown keeps its yaw too: a script that turns the hero as the scene
- * starts (\c teleport \c -a) turns it behind the fade.
+ * starts (\c teleport \c -a) turns it behind the fade. The hybrid's first person with no floor under the
+ * hero's eye (a new game's hero stands off the level until the intro's script places him) stays black.
  */
 class SceneDirector {
 

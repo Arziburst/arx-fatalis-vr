@@ -366,6 +366,44 @@ void SceneViewTest::hybridScreenTest() {
 	CPPUNIT_ASSERT(out.shown == SceneShown::First);
 }
 
+void SceneViewTest::hybridBlindTest() {
+
+	SceneDirector director;
+	director.update(standing());
+
+	// A new game's letterbox starts with the hero off the level (no floor under his eye): the hybrid's first
+	// person stays black after the start cut
+	SceneInput bars = sceneOf(standing(), SceneKind::None, 0, SceneViewSetting::Hybrid);
+	bars.firstOnFloor = false;
+	bool held = false;
+	int frames = 0;
+	SceneOutput out = untilCut(director, bars, bars.firstPos, held, frames);
+	CPPUNIT_ASSERT(out.started);
+	CPPUNIT_ASSERT(out.shown == SceneShown::First);
+	for(int i = 0; i < 180; i++) {
+		out = director.update(bars);
+		CPPUNIT_ASSERT(out.fade >= BehindFade);
+	}
+
+	// The intro's script places him and its camera starts: the cut is taken at once, then the world fades in
+	SceneInput camera = sceneOf(standing(), SceneKind::Entity, 4, SceneViewSetting::Hybrid);
+	camera.hybridScreen = true;
+	out = director.update(camera);
+	CPPUNIT_ASSERT(out.cut);
+	CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
+	settle(director, camera);
+	CPPUNIT_ASSERT_EQUAL(0.f, director.fade());
+
+	// The other views are not held: the first view shows the hero's eye wherever it is
+	SceneDirector first;
+	first.update(standing());
+	SceneInput firstBars = sceneOf(standing(), SceneKind::None, 0, SceneViewSetting::First);
+	firstBars.firstOnFloor = false;
+	settle(first, firstBars);
+	CPPUNIT_ASSERT(first.shown() == SceneShown::First);
+	CPPUNIT_ASSERT_EQUAL(0.f, first.fade());
+}
+
 void SceneViewTest::heldYawTest() {
 
 	SceneDirector director;

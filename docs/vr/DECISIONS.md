@@ -107,7 +107,9 @@ change for the slots.
 
 - **Date:** 2026-10-13
 - **Status:** Accepted; replaces D-019's button layout and D-040's stance binding and cast rule. Implemented by #375 ("Control scheme v2",
-  #376–#381); each part is judged in the headset in the test playground
+  #376–#381); each part is judged in the headset in the test playground. The radial menu and the A / B buttons were
+  changed by the owner on 2026-10-14 (one ring on the right B, 3 + 3 slots, the map on the left B, the bag on the left A):
+  see "The owner's layout" at the end
 - **Decided by:** project owner (the scheme, by a design discussion with the coordinator, 2026-10-13); the coordinator
   for the defaults the owner accepted (jump threshold, eight radial segments, the quick-slot rules)
 
@@ -192,6 +194,19 @@ gives a clear moment to cast without a pause or an extra gesture.
   strike. **A variant for the owner to pick** (open): where the ring opens - `vr_radial_place = hand` (the default, at
   the hand) or `gaze_when_off` (before the eyes at the hand's height when the hand is more than `vr_radial_gaze_deg`,
   45, off the gaze: with a panel open his hand was beside his head and the ring opened out of view).
+- **The owner's layout before the headset test of #456 (2026-10-14), as built - replaces "a radial menu per hand":**
+  the radial menu opens on the **right B only** (`radial_left` is unbound; a player may bind it, it opens the same
+  ring). **One ring of 6 segments**: the right half is the right hand's three quick slots - R1 on top, R2 upper right,
+  R3 lower right - the left half the left hand's: L1 upper left, L2 lower left, L3 at the bottom. The inventory
+  segment is gone. The half-ring over the ring is unchanged ("it's ideal"). A slot acts for **its side's hand**,
+  whichever hand holds the menu: a consumable (potion, food, scroll) is used, a torch lights in that hand; equipment
+  is equipped by the engine's use - armour and clothes as usual, a shield to the shield slot, and a weapon into the
+  slot's hand, which until #380 (a weapon per hand) is always the right one: a weapon from an L slot goes to the right
+  hand, noted in the log (`vr.radial.use ... note=weapon_right_hand_until_380`). Slots are filled by dragging an item
+  onto a segment, as before. The **left B toggles the map** (the book on its map page, the engine's map key: pressed
+  again, closed) - a new `map` event; the **left A toggles the bag** (`inventory`); the right A stays the casting
+  stance. 6 slots for now; a setting for more or fewer comes later. A save made with the first layout (7 slots per
+  hand in `$vr_quickslots_left` / `_right`) keeps each hand's first three; the rest is dropped.
 
 ---
 

@@ -8,6 +8,27 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-14 — The build fails with `git.exe ... missing and no known rule to make it` after a Git update (#377)
+
+**Symptom:** `build-windows.ps1` stops at "Building" with
+`ninja: error: 'C:/Program Files/Git/mingw64/bin/git.exe', needed by 'arx-version.rc', missing and no known rule to make it`.
+The same build directory built a few minutes earlier, and `git` works in the shell.
+**Cause:** Git for Windows 2.56 moved its binaries from `mingw64\bin` to `ucrt64\bin`. CMake found git once and keeps
+its path in the build directory's cache (`GIT_COMMAND:FILEPATH` in `CMakeCache.txt`); the version rule depends on that
+file, so ninja refuses to build. Every existing build directory has the old path; a fresh one does not.
+**Do:** set `GIT_COMMAND:FILEPATH=C:/Program Files/Git/ucrt64/bin/git.exe` in that build directory's
+`CMakeCache.txt` (or build with `-Clean`), then build again.
+
+## 2026-10-14 — `input-check.ps1` / `game-input-check.ps1`: trigger and face-button presses are not counted on `--loadlevel 10` (#473)
+
+**Symptom:** the control table check reports `use_right`, `act_right`, the chord's `jump` and `book` as 0 presses;
+only the stick taps (jump, crouch, the stick click) count. Neither check runs in CI.
+**Cause:** level 10 starts with a scripted scene (`scene state=start ... controlsBlocked=yes`). Since #394, A, B and
+the triggers skip a playing scene and reach nothing else, so the presses the check sends in the scene's first seconds
+skip it (`vr.skip what=SCENE` in arx.log) and never reach the control table.
+**Do:** until #473 is fixed, do not count these two checks as evidence; the `.xrs` sequences wait for
+`player.controlsBlocked eq false` first.
+
 ## 2026-10-14 — `playground-hands.xrs`: the left hand's reticle misses the pulled lever on CI, passes locally (#377)
 
 **Symptom:** CI run 38477911299 (PR #456) failed at `@until vr.reticle.left.under eq lever_9002 5s`: the ray hit

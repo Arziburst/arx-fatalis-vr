@@ -1322,7 +1322,7 @@ void ArxGame::manageKeyMouse() {
 				if(config.input.mouseLookToggle && config.input.autoReadyWeapon != AlwaysAutoReadyWeapon) {
 					
 					// VR (#37): the exploration mode's crosshair is the hand that owns the mouse, not the screen centre
-					DANAEMouse = vr::reticlesOn() ? GInput->getMousePosition() : Vec2s(g_size.center());
+					DANAEMouse = vr::handsAreTheMouse() ? GInput->getMousePosition() : Vec2s(g_size.center());
 					
 					pIO = FlyingOverObject(DANAEMouse);
 					if(pIO) {
@@ -1736,7 +1736,7 @@ void ArxGame::manageEditorControls() {
 	if(   TRUE_PLAYER_MOUSELOOK_ON
 	   && config.input.autoReadyWeapon != AlwaysAutoReadyWeapon
 	   && config.input.mouseLookToggle
-	   && !vr::reticlesOn() // VR (#37): the hand that owns the mouse is the crosshair
+	   && !vr::handsAreTheMouse() // VR (#37, #377): the hand that owns the mouse is the crosshair - or the panel
 	) {
 		DANAEMouse = g_size.center();
 	}

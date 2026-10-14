@@ -334,6 +334,10 @@ bool reticlesOn() {
 	return g_reticle.on;
 }
 
+bool handsAreTheMouse() {
+	return g_reticle.on || panelShown();
+}
+
 void reticleTarget(Hand hand, PointerRay & ray) {
 	const ReticleHandState & state = g_reticle.hands[size_t(hand)];
 	if(g_reticle.on && state.hit && state.inFront) {

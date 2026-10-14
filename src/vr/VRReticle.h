@@ -67,6 +67,12 @@ void updateReticles(const std::array<HandAim, HandCount> & aims, double now);
 //! The reticles are on: in the game, first person, nothing that takes the mouse from the world
 bool reticlesOn();
 
+/*!
+ * The hands are the mouse (D-016): the reticles are on, or the floating panel shows (the book stays in freelook in
+ * VR, #377) - the engine's freelook then takes the mouse from the pointer, not the screen's centre
+ */
+bool handsAreTheMouse();
+
 //! The hand's world target for the arbiter (\c onWorld and \c pixel; untouched when it has none)
 void reticleTarget(Hand hand, PointerRay & ray);
 

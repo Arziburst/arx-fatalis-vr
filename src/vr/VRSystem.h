@@ -430,6 +430,9 @@ void setRadialLayer(Hand hand, bool shown, const Vec3f & center = Vec3f(0.f),
 //! The hand's radial menu was part of the last submitted frame
 bool radialLayerShown(Hand hand);
 
+//! Why the last \ref beginRadialImage of the hand drew nothing ("not a stereo frame", ...), empty when it drew (#377)
+const char * radialImageRefusal(Hand hand);
+
 //! Place the panel anew at the head on the next frame while a menu is open (a recenter, F-180)
 void recenterPanel();
 

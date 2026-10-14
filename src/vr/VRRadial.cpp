@@ -78,6 +78,9 @@ struct HandMenu {
 	Vec2f point = Vec2f(0.f);
 	Vec2f origin = Vec2f(0.f); //!< the hand in the ring's plane when it opened: the middle (#377)
 	float travel = 0.f;      //!< the farthest the hand went from the middle while open, metres (the log, #377)
+	u32 openFrames = 0;      //!< updates the menu was open (the log: drawn / submitted against them, #377)
+	u32 drawnFrames = 0;     //!< of them, frames its image was drawn
+	u32 submittedFrames = 0; //!< of them, frames its quad layer was in the submitted frame
 	Vec3f hand = Vec3f(0.f); //!< the grip this frame, LOCAL
 };
 
@@ -458,6 +461,8 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 			status.placed = beforeEyes ? "gaze" : "hand";
 			menu.selector.reset();
 			menu.travel = 0.f;
+			menu.openFrames = menu.drawnFrames = menu.submittedFrames = 0;
+			status.undrawnLogged = false;
 			menu.point = Vec2f(0.f);
 			menu.open = true;
 			status.open = true;
@@ -487,6 +492,8 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 		menu.hand = frameHands().hands[i].position;
 		menu.point = radialPlanePoint(menu.pose, menu.hand) - menu.origin;
 		menu.travel = std::max(menu.travel, glm::length(menu.point));
+		menu.openFrames++;
+		menu.submittedFrames += radialLayerShown(hand) ? 1 : 0;
 		const RadialChoice before = menu.selector.hovered();
 		const RadialChoice & hovered = menu.selector.update(menu.point, g_radial.params);
 		status.point = menu.point;
@@ -507,7 +514,8 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 			// shown: the menu was in the last submitted frame; travelM: how far the hand went from the middle -
 			// a release over nothing tells a menu nobody saw from one nobody moved in (#377)
 			gameevent::Event("vr.radial")("hand", handName(hand))("state", "chosen")("item", status.chosen)
-				("result", status.result)("shown", radialLayerShown(hand) ? "yes" : "no")("travelM", menu.travel, 2);
+				("result", status.result)("shown", radialLayerShown(hand) ? "yes" : "no")("travelM", menu.travel, 2)
+				("frames", menu.openFrames)("drawn", menu.drawnFrames)("submitted", menu.submittedFrames);
 			menu.open = false;
 			status.open = false;
 			status.halfRing = false;
@@ -948,15 +956,22 @@ void drawRadialMenus() {
 	RadialStatus & status = g_radial.status;
 	for(size_t i = 0; i < HandCount; i++) {
 		const Hand hand = Hand(i);
-		const HandMenu & menu = g_radial.menus[i];
+		HandMenu & menu = g_radial.menus[i];
 		status.hands[i].shown = radialLayerShown(hand);
 		if(!menu.open || !beginRadialImage(hand)) {
+			if(menu.open && !status.hands[i].undrawnLogged) {
+				// Open but not drawn this frame: the image could not be begun (no stereo frame, an eye in render,
+				// no image, its acquire failed) - once per open (#377: the owner's ring missing with a panel)
+				status.hands[i].undrawnLogged = true;
+				gameevent::Event("vr.radial.undrawn", 200)("hand", handName(hand))("why", radialImageRefusal(hand));
+			}
 			setRadialLayer(hand, false);
 			continue;
 		}
 		drawMenu(hand);
 		endRadialImage(hand);
 		setRadialLayer(hand, true, menu.pose.center, menu.pose.orientation, g_radial.params.imageExtent);
+		menu.drawnFrames++;
 		status.drawn++;
 	}
 }

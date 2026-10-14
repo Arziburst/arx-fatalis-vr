@@ -77,10 +77,13 @@ SubtitleParams subtitleParams() {
 	return params;
 }
 
+//! The line is drawn: the first time it is counted in \c lines and logged as \c vr.scene.subtitle
 void countSubtitleShown() {
 	if(g_subtitles.line > g_subtitles.countedLine) {
 		g_subtitles.countedLine = g_subtitles.line;
 		g_subtitles.status.lines++;
+		gameevent::Event("vr.scene.subtitle", 200)("placement", subtitlePlacementName(g_subtitles.status.placement))
+			("speaker", g_subtitles.status.speaker);
 	}
 }
 
@@ -185,10 +188,8 @@ void clearSubtitle() {
 	// #29.1's call from ArxGame.cpp: the lead removes it at the integration
 }
 
-u64 startSubtitle(std::string_view speaker) {
+u64 startSubtitle() {
 	g_subtitles.status.voicedLines++;
-	gameevent::Event("vr.scene.subtitle", 200)("placement", subtitlePlacementName(g_subtitles.status.placement))
-		("speaker", std::string(speaker));
 	return ++g_subtitles.nextLine;
 }
 

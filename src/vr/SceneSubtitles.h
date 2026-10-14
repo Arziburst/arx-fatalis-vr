@@ -185,11 +185,11 @@ void noteSubtitle(std::string_view speaker, std::string_view text, bool voiced);
 void clearSubtitle();
 
 /*!
- * A voiced line of a scene starts in VR (gui/Speech.cpp): counted in \c voicedLines and logged as
- * \c vr.scene.subtitle \c placement=<p> \c speaker=<name>
+ * A voiced line of a scene starts in VR (gui/Speech.cpp): counted in \c voicedLines. Once its subtitle is
+ * drawn it counts in \c lines and is logged as \c vr.scene.subtitle \c placement=<p> \c speaker=<name>.
  * \return the line's number for \ref showSubtitle
  */
-u64 startSubtitle(std::string_view speaker);
+u64 startSubtitle();
 
 /*!
  * The line the subtitle shows this frame in VR: the newest voiced line of a scene still playing

@@ -228,14 +228,14 @@ Speech * ARX_SPEECH_AddSpeech(Entity & speaker, std::string_view data, long mood
 		if(variant > 1) {
 			sample.append(std::to_string(variant));
 		}
-
+		
 		// The VR subtitle's text (#29.3): a variant's text is its own key in the line's section (string2, ...)
 		std::string_view spoken = (variant > 1) ? getLocalised(data, "string" + std::to_string(variant), "\x01")
 		                                        : getLocalised(data, "\x01");
 		if(spoken != "\x01") {
 			speech.spokenText = spoken;
 		}
-
+		
 	} else {
 		
 		speaker.lastspeechflag = 0;
@@ -248,7 +248,7 @@ Speech * ARX_SPEECH_AddSpeech(Entity & speaker, std::string_view data, long mood
 		                                   GameDuration(s64(speech.text.length() + 1) * 100ms));
 		speech.spokenText = speech.text;
 	}
-
+	
 	Entity * source = (speech.flags & ARX_SPEECH_FLAG_OFFVOICE) ? nullptr : &speaker;
 	speech.sample = ARX_SOUND_PlaySpeech(sample, nullptr, source);
 	
@@ -296,36 +296,36 @@ static bool isSceneLine(const Speech & speech) {
  * shows without text for want of the letterbox; the newest one still playing is shown
  */
 static void updateSubtitlesInVR() {
-
+	
 	const Speech * shown = nullptr;
-
+	
 	for(Speech & speech : g_speech) {
-
+		
 		if(!speech.subtitleChecked) {
 			speech.subtitleChecked = true;
 			if(!speech.spokenText.empty() && isSceneLine(speech)) {
-				speech.subtitleLine = vr::startSubtitle(subtitleSpeakerName(*speech.speaker));
+				speech.subtitleLine = vr::startSubtitle();
 			}
 		}
-
+		
 		if(speech.subtitleLine && (!shown || speech.subtitleLine > shown->subtitleLine)) {
 			shown = &speech;
 		}
-
+	
 	}
-
+	
 	if(!shown) {
 		vr::hideSubtitle();
 		return;
 	}
-
+	
 	bool named = false;
 	const std::string name = subtitleSpeakerName(*shown->speaker, &named);
 	// An off-voice line has no speaker to stand over: the chest panel
 	const bool offVoice = (shown->flags & ARX_SPEECH_FLAG_OFFVOICE);
 	const Vec3f headTop = speakerHeadTop(*shown->speaker);
 	vr::showSubtitle(shown->subtitleLine, name, shown->spokenText, named, offVoice ? nullptr : &headTop);
-
+	
 }
 
 void ARX_SPEECH_Update() {
@@ -366,28 +366,28 @@ void ARX_SPEECH_Update() {
 	}
 	
 	util::unordered_remove_if(g_speech, [](const Speech & speech) { return !speech.speaker; });
-
+	
 	// VR shows the subtitles of a scene in the world, not in the letterbox's band (#29.3)
 	if(vr::stereoActive()) {
 		updateSubtitlesInVR();
 		return;
 	}
-
+	
 	if(!cinematicBorder.isActive() || cinematicBorder.CINEMA_DECAL < 100.f) {
 		vr::noteFlatSubtitle(false);
 		return;
 	}
-
+	
 	const Speech * banded = nullptr;
-
+	
 	for(Speech & speech : g_speech) {
-
+		
 		if(speech.text.empty()) {
 			continue;
 		}
-
+		
 		banded = &speech;
-
+		
 		Vec2i sSize = hFontInGame->getTextSize(speech.text);
 		
 		float fZoneClippHeight = static_cast<float>(sSize.y * 3);
@@ -455,15 +455,15 @@ void ARX_SPEECH_Update() {
 		
 		speech.fDeltaY += fDTime;
 		speech.fPixelScroll += fDTime;
-
+		
 	}
-
+	
 	if(banded) {
 		vr::noteFlatSubtitle(true, subtitleSpeakerName(*banded->speaker), banded->text);
 	} else {
 		vr::noteFlatSubtitle(false);
 	}
-
+	
 }
 
 Speech * getCinematicSpeech() {

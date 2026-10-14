@@ -115,14 +115,14 @@ struct Speech {
 	std::string spokenText;
 	Entity * speaker = nullptr;
 	CinematicSpeech cine;
-
+	
 	Entity * scriptEntity = nullptr;
 	const EERIE_SCRIPT * script = nullptr;
 	size_t scriptPos = 0;
-
+	
 	bool subtitleChecked = false; //!< whether the line gets a VR subtitle is decided (#29.3)
 	u64 subtitleLine = 0;         //!< the line's VR subtitle (vr::startSubtitle), 0 for none
-
+	
 };
 
 void ARX_SPEECH_Reset();

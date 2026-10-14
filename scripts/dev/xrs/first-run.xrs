@@ -158,11 +158,19 @@ vr-input stick left 0 0
 @assert player.z gt {z0+50}                  # the prison start faces +z (yaw about 0): the walk goes along it
 @nolog GameEvent:.*scene state=start         # the skipped intro does not play again
 
-# The inventory's own control (right B) opens and closes it; freelook is on again after it closes
-vr-input tap right.b
+# The inventory (the top of the right hand's radial menu on B, #376) opens and closes it; freelook is on again after it closes
+vr-input down right.b
+@frames 3
+vr-radial point right inventory
+@frames 5
+vr-input up right.b
 @until player.inventoryOpen eq true 5s
 @frames 30
-vr-input tap right.b
+vr-input down right.b
+@frames 3
+vr-radial point right inventory
+@frames 5
+vr-input up right.b
 @until player.inventoryOpen eq false 5s
 @frames 30
 @assert player.freelook eq true

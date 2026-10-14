@@ -340,7 +340,7 @@ QuickSlotSet quickSlots(Hand hand) {
 	return parseQuickSlots(GETVarValueText(svar, SlotVariables[size_t(hand)]));
 }
 
-std::string closeOpenPanels(RadialRequests & requests) {
+std::string closeOpenPanels(RadialRequests & requests, bool direct) {
 
 	std::string closed;
 	const auto note = [&closed](const char * what) {
@@ -363,8 +363,16 @@ std::string closeOpenPanels(RadialRequests & requests) {
 		note("container");
 	}
 	if(player.Interface & (INTER_INVENTORY | INTER_INVENTORYALL)) {
-		// The bag through its key, as the menu's inventory item: the engine keeps its own state of the bag
-		requests.pulses[size_t(GameAction::Inventory)] = true;
+		if(direct) {
+			// The casting stance starts in this update, and the engine leaves the bag alone in its magic mode: closed
+			// here, with the engine's own state of it (the inverted bag, the cursor mode) set back to freelook
+			bInverseInventory = false;
+			InventoryOpenClose(2);
+			TRUE_PLAYER_MOUSELOOK_ON = true;
+		} else {
+			// The bag through its key, as the menu's inventory item: the engine keeps its own state of the bag
+			requests.pulses[size_t(GameAction::Inventory)] = true;
+		}
 		note("inventory");
 	}
 	if(!closed.empty()) {

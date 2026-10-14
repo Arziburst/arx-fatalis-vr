@@ -479,7 +479,7 @@ void updateInput() {
 	// the bag, a container, a note - not the game menu - then the stance starts with the hands free
 	if(g_input.resolver.pressed(Event::MagicMode) && !controlsTaken && ARXmenu.mode() == Mode_InGame) {
 		closeRadialMenus("stance");
-		closeOpenPanels(radial);
+		closeOpenPanels(radial, true);
 	}
 	updateRadialMenus(g_input.resolver, controlsTaken, radial);
 	for(size_t i = 0; i < GameActionCount; i++) {

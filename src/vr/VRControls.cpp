@@ -65,6 +65,7 @@ const EventInfo Events[EventCount] = {
 	{ "radial_left", "Radial menu, left" },
 	{ "radial_right", "Radial menu, right" },
 	{ "weapon", "Draw / sheathe weapon" },
+	{ "map", "Map" },
 };
 
 const std::string_view LongSuffix = ":long";
@@ -256,16 +257,17 @@ ControlLayout defaultLayout(ControllerType type) {
 	// pressed beyond 0.7 along its dominant axis, so a turn pushed a little up does not jump
 	layout[Event::Jump] = Binding::single(control(Hand::Right, ControlKind::StickUp));
 	layout[Event::CrouchToggle] = Binding::single(control(Hand::Right, ControlKind::StickDown));
-	// B on each hand holds that hand's radial menu (#376): the inventory, the book, the game menu and recenter are
-	// in it, so their own events have no control by default (the player can still bind them)
-	layout[Event::RadialLeft] = Binding::single(control(Hand::Left, ControlKind::B));
+	// The right B holds the radial menu (#376; only the right one, the owner, #377): the book's pages, the game menu,
+	// recenter and both hands' quick slots are in it. The left B toggles the book's map page, the left A the bag
 	layout[Event::RadialRight] = Binding::single(control(Hand::Right, ControlKind::B));
+	layout[Event::Map] = Binding::single(control(Hand::Left, ControlKind::B));
+	layout[Event::Inventory] = Binding::single(control(Hand::Left, ControlKind::A));
 	// No game menu button on either (the owner, #456): the radial menu has it, and B is the game menu key where no
 	// radial menu opens; the Touch's left menu button is free like the Index's trackpads
 	// The stick click draws / sheathes the weapon of its hand: only the right hand holds one until #380
 	layout[Event::Weapon] = Binding::single(control(Hand::Right, ControlKind::StickClick));
 	// The casting stance (#43) on A: one stance for both hands until each hand has its own (#378) - the right A
-	// (the owner, the headset test of #456); the left A is free until then
+	// (the owner, the headset test of #456)
 	layout[Event::MagicMode] = Binding::single(control(Hand::Right, ControlKind::A));
 
 	return layout;

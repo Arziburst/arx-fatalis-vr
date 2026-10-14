@@ -71,8 +71,7 @@ bool isClassName(std::string_view name) {
 std::string radialChoiceName(const RadialChoice & choice) {
 	switch(choice.item) {
 		case RadialItem::None: return "none";
-		case RadialItem::Inventory: return "inventory";
-		case RadialItem::QuickSlot: return "slot" + std::to_string(int(choice.slot) + 1);
+		case RadialItem::QuickSlot: return (choice.left ? "l" : "r") + std::to_string(int(choice.slot) + 1);
 		case RadialItem::GameMenu: return "game_menu";
 		case RadialItem::Character: return "character";
 		case RadialItem::Spells: return "spells";
@@ -89,7 +88,6 @@ std::string radialChoiceName(const RadialChoice & choice) {
 const char * radialItemLabel(RadialItem item) {
 	switch(item) {
 		case RadialItem::None: return "";
-		case RadialItem::Inventory: return "Inventory";
 		case RadialItem::QuickSlot: return "";
 		case RadialItem::GameMenu: return "Game menu";
 		case RadialItem::Character: return "Character";
@@ -105,12 +103,16 @@ const char * radialItemLabel(RadialItem item) {
 }
 
 RadialChoice segmentChoice(size_t segment) {
+	// Clockwise from the top: the right half R1 (top), R2, R3, then the left half from the bottom up - L3, L2,
+	// L1 (upper left): each hand's slots run from its side's top
 	RadialChoice choice;
-	if(segment == 0) {
-		choice.item = RadialItem::Inventory;
+	if(segment < QuickSlotCount) {
+		choice.item = RadialItem::QuickSlot;
+		choice.slot = u8(segment);
 	} else if(segment < RadialSegmentCount) {
 		choice.item = RadialItem::QuickSlot;
-		choice.slot = u8(segment - 1);
+		choice.slot = u8(RadialSegmentCount - 1 - segment);
+		choice.left = true;
 	}
 	return choice;
 }

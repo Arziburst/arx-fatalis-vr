@@ -33,30 +33,31 @@
  * \file
  * \brief The radial menu of a hand (#376, D-042): the ring, its half-ring and what the hand is over
  *
- * Holding B opens a hand's menu: a ring of 8 segments hangs in the air at the hand, facing the eyes,
- * fixed in the OpenXR LOCAL space - the room, which stick walking and turning do not move, so the ring
- * stays with the player and in reach. The hand selects by moving: its grip position projected onto the
+ * Holding B opens the menu (the right B by default, #377): a ring of 6 segments hangs in the air at the hand,
+ * facing the eyes, fixed in the OpenXR LOCAL space - the room, which stick walking and turning do not move, so
+ * the ring stays with the player and in reach. The hand selects by moving: its grip position projected onto the
  * ring's plane. Inside the hole in the middle nothing is selected; outside it, the segment in the hand's
- * direction. The top segment is the inventory, the other 7 are the hand's quick slots, clockwise from
- * the top right. Moving the hand above the ring (past the top segment's outer edge) opens the half-ring
- * over it - game menu, the book's four pages, quick save, quick load, recenter, cancel the running
- * spell - left to right; it closes when the hand comes back into the ring or drops below its middle.
+ * direction. The right half holds the right hand's three quick slots - R1 on top, R2 upper right, R3 lower
+ * right - the left half the left hand's: L1 upper left, L2 lower left, L3 at the bottom (the owner, #377: the
+ * inventory segment is gone, the bag is on the left A). Moving the hand above the ring (past the top segment's
+ * outer edge) opens the half-ring over it - game menu, the book's four pages, quick save, quick load,
+ * recenter, cancel the running spell - left to right; it closes when the hand comes back into the ring or
+ * drops below its middle.
  *
  * Pure logic - positions in, choices out; no engine, no OpenXR, no clock (tests/vr/RadialMenuTest).
  */
 namespace vr {
 
-//! The ring's segments: the inventory on top, then the quick slots clockwise
-constexpr size_t RadialSegmentCount = 8;
-//! A hand's quick slots: every segment but the top one (D-042)
-constexpr size_t QuickSlotCount = RadialSegmentCount - 1;
+//! The ring's segments, clockwise from the top: R1, R2, R3 on the right half, L3, L2, L1 on the left (#377)
+constexpr size_t RadialSegmentCount = 6;
+//! A hand's quick slots: its half of the ring (the owner, #377: 6 in all for now)
+constexpr size_t QuickSlotCount = RadialSegmentCount / 2;
 //! The half-ring's items, left to right
 constexpr size_t HalfRingItemCount = 9;
 
 //! What a menu item does
 enum class RadialItem : u8 {
 	None,
-	Inventory,
 	QuickSlot,
 	GameMenu,
 	Character,
@@ -69,24 +70,27 @@ enum class RadialItem : u8 {
 	CancelSpell
 };
 
-//! The item a hand is over: the item and, for a quick slot, which one (0 = the top right, clockwise)
+//! The item a hand is over: the item and, for a quick slot, which one of which hand (0 = R1 / L1)
 struct RadialChoice {
 
 	RadialItem item = RadialItem::None;
 	u8 slot = 0;
+	bool left = false; //!< a quick slot of the left hand (its half of the ring)
 
-	bool operator==(const RadialChoice & other) const { return item == other.item && slot == other.slot; }
+	bool operator==(const RadialChoice & other) const {
+		return item == other.item && slot == other.slot && left == other.left;
+	}
 	bool operator!=(const RadialChoice & other) const { return !(*this == other); }
 
 };
 
-//! The text form for status.json and the log: "none", "inventory", "slot1" … "slot7", "game_menu", "quick_save", …
+//! The text form for status.json and the log: "none", "r1" … "r3", "l1" … "l3", "game_menu", "quick_save", …
 std::string radialChoiceName(const RadialChoice & choice);
 
-//! The name players read in the middle of the ring, e.g. "Inventory", "Quick save"; empty for a quick slot and none
+//! The name players read in the middle of the ring, e.g. "Quick save"; empty for a quick slot and none
 const char * radialItemLabel(RadialItem item);
 
-//! The choice of a ring segment (0 = top)
+//! The choice of a ring segment (0 = top, clockwise): R1, R2, R3, L3, L2, L1
 RadialChoice segmentChoice(size_t segment);
 
 //! The half-ring's item at \a index (0 = left)
@@ -101,7 +105,7 @@ float halfRingCenterDegrees(size_t index);
 //! The half-ring's items each span this many degrees
 constexpr float HalfRingItemDegrees = 180.f / float(HalfRingItemCount);
 
-//! The ring's size and its rules, meters in the ring's plane (D-NEW: proposals, judged in the headset)
+//! The ring's size and its rules, meters in the ring's plane (D-045: proposals, judged in the headset)
 struct RadialParams {
 	float holeRadius = 0.04f;        //!< the middle selects nothing
 	float ringRadius = 0.12f;        //!< the segments' outer edge
@@ -153,12 +157,13 @@ private:
 //! A hand's quick slots: the item class each holds (e.g. "potion_life"), empty for an empty slot
 typedef std::array<std::string, QuickSlotCount> QuickSlotSet;
 
-//! "potion_life|torch|||||" - how a set is kept in the save (a global script variable)
+//! "potion_life|torch|" - how a set is kept in the save (a global script variable)
 std::string formatQuickSlots(const QuickSlotSet & slots);
 
 /*!
  * The set \ref formatQuickSlots wrote; a slot that is not a plain class name (lowercase letters, digits,
- * '_') or past the seventh is left empty, so a broken value never names an item
+ * '_') is left empty, so a broken value never names an item. Entries past the third are dropped: a save of
+ * the first layout kept 7 per hand (#376), of which the first 3 carry over (#377)
  */
 QuickSlotSet parseQuickSlots(std::string_view text);
 

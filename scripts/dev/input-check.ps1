@@ -46,8 +46,9 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'test-lib.ps1')
 
 $commands = @()
-# B holds the radial menus since #376 (D-042): the book event goes back on left B for this check
-$commands += @('vr-input bind radial_left none', 'vr-input bind book left.b')
+# B holds the radial menu since #376 (D-042), the left B the map and the left A the bag since #377: the book event goes
+# back on left B and the left A is left to the chord below, as the check was written
+$commands += @('vr-input bind radial_left none', 'vr-input bind map none', 'vr-input bind inventory none', 'vr-input bind book left.b')
 if ($Unbind) { $commands += 'vr-input bind jump none' }
 $commands += @(
 	'vr-input tap right.stick_up',
@@ -64,7 +65,7 @@ $commands += @(
 # Events and how often each must have fired; the zeros catch a press that counts as two events
 $expected = [ordered]@{
 	jump = 2; use_right = 1; act_right = 1; stash_right = 0; interact_right = 0; book = 1; crouch_toggle = 1; weapon = 1
-	interact_left = 0; use_left = 0; act_left = 0; stash_left = 0; inventory = 0; menu = 0; recenter = 0; magic_mode = 0
+	interact_left = 0; use_left = 0; act_left = 0; stash_left = 0; inventory = 0; menu = 0; recenter = 0; magic_mode = 0; map = 0
 }
 
 $smokeArgs = @{ Commands = $commands; Seconds = 1 }

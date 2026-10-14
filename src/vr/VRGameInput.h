@@ -59,6 +59,7 @@ enum class GameAction : u8 {
 	QuickSave,   //!< items of the radial menus (#376): pressed for one update, as the keys would be
 	QuickLoad,
 	CancelSpell, //!< end the player's newest running spell that has a duration
+	BookMap,     //!< the book on its map page, and closed again (the map event, #377)
 	Count
 };
 

@@ -244,6 +244,10 @@ public:
 		float vrMeleeFullSpeed; //!< VR: m/s a swing has its full damage at (#39)
 		float vrMeleeWeakAim; //!< VR: the damage ratio of an uncharged swing; a full charge is 1 (#39)
 		float vrMeleeTargetCooldown; //!< VR: seconds before a new swing can hit the same target (#39)
+		//! VR: where a radial menu opens (#377): "hand", or "gaze_when_off" - before the eyes at the hand's height
+		//! when the hand is more than \ref vrRadialGazeDeg off the gaze
+		std::string vrRadialPlace;
+		float vrRadialGazeDeg; //!< VR: degrees off the gaze beyond which gaze_when_off moves the ring (#377)
 
 	} input;
 	

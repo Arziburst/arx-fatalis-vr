@@ -1382,6 +1382,7 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("opens", h.opens);
 			json.value("choices", h.choices);
 			json.value("gameMenuKeys", h.gameMenuKeys);
+			json.value("placed", h.placed);
 			json.value("shown", h.shown);
 			json.value("pointX", h.point.x);
 			json.value("pointY", h.point.y);

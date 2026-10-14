@@ -69,6 +69,7 @@ namespace Default {
 constexpr const std::string_view
 	language,
 	audio,
+	vrRadialPlace = "hand",
 	renderer = "auto",
 	resolution = "auto",
 	audioBackend = "auto",
@@ -149,6 +150,7 @@ constexpr const float
 	vrMeleeFullSpeed = vr::SwingParams().fullSpeed,
 	vrMeleeWeakAim = vr::SwingParams().weakAim,
 	vrMeleeTargetCooldown = vr::SwingParams().targetCooldown,
+	vrRadialGazeDeg = 45.f,
 	fogDistance = 10.f,
 	gamma = 5.f,
 	fov = 75.f,
@@ -335,7 +337,9 @@ constexpr const std::string_view
 	vrMeleeSwingSpeed = "vr_melee_swing_speed",
 	vrMeleeFullSpeed = "vr_melee_full_speed",
 	vrMeleeWeakAim = "vr_melee_weak_aim",
-	vrMeleeTargetCooldown = "vr_melee_target_cooldown";
+	vrMeleeTargetCooldown = "vr_melee_target_cooldown",
+	vrRadialPlace = "vr_radial_place",
+	vrRadialGazeDeg = "vr_radial_gaze_deg";
 
 // Input key options
 constexpr const std::string_view actions[NUM_ACTION_KEY] = {
@@ -625,6 +629,8 @@ bool Config::save() {
 	writer.writeKey(Key::vrMeleeFullSpeed, input.vrMeleeFullSpeed);
 	writer.writeKey(Key::vrMeleeWeakAim, input.vrMeleeWeakAim);
 	writer.writeKey(Key::vrMeleeTargetCooldown, input.vrMeleeTargetCooldown);
+	writer.writeKey(Key::vrRadialPlace, input.vrRadialPlace);
+	writer.writeKey(Key::vrRadialGazeDeg, input.vrRadialGazeDeg);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -819,7 +825,14 @@ bool Config::init(const fs::path & file) {
 	input.vrMeleeWeakAim = glm::clamp(vrMeleeWeakAim, 0.1f, 1.f);
 	float vrMeleeTargetCooldown = reader.getKey(Section::Input, Key::vrMeleeTargetCooldown, Default::vrMeleeTargetCooldown);
 	input.vrMeleeTargetCooldown = glm::clamp(vrMeleeTargetCooldown, 0.f, 2.f);
-	
+	// The radial menus' placement (#377): at the hand, or before the eyes when the hand is that far off the gaze
+	input.vrRadialPlace = util::toLowercase(reader.getKey(Section::Input, Key::vrRadialPlace, Default::vrRadialPlace));
+	if(input.vrRadialPlace != "hand" && input.vrRadialPlace != "gaze_when_off") {
+		input.vrRadialPlace = Default::vrRadialPlace;
+	}
+	float vrRadialGazeDeg = reader.getKey(Section::Input, Key::vrRadialGazeDeg, Default::vrRadialGazeDeg);
+	input.vrRadialGazeDeg = glm::clamp(vrRadialGazeDeg, 10.f, 120.f);
+
 	// Get action key settings
 	for(size_t i = 0; i < NUM_ACTION_KEY; i++) {
 		actions[i] = reader.getActionKey(Section::Key, ControlAction(i));

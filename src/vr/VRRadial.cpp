@@ -31,6 +31,7 @@
 #include <glm/gtc/constants.hpp>
 
 #include "cinematic/CinematicController.h"
+#include "core/Config.h"
 #include "core/GameEvent.h"
 #include "core/Localisation.h"
 #include "game/Camera.h"
@@ -74,6 +75,7 @@ struct HandMenu {
 	RadialPose pose;
 	RadialSelector selector;
 	Vec2f point = Vec2f(0.f);
+	Vec2f origin = Vec2f(0.f); //!< the hand in the ring's plane when it opened: the middle (#377)
 	float travel = 0.f;      //!< the farthest the hand went from the middle while open, metres (the log, #377)
 	Vec3f hand = Vec3f(0.f); //!< the grip this frame, LOCAL
 };
@@ -134,6 +136,31 @@ bool isGameMenuKey(const char * reason) {
 Vec3f eyeMiddle() {
 	const FrameViews & views = frameViews();
 	return (views.eyes[0].position + views.eyes[1].position) * 0.5f;
+}
+
+/*!
+ * Where a hand's ring opens (#377, cfg.ini vr_radial_place - a variant for the owner to pick in the headset): at the
+ * hand ("hand", the default), or ("gaze_when_off") before the eyes at the hand's height when the hand is more than
+ * vr_radial_gaze_deg off the gaze - a hand held beside the head (pointing at the panel) opened its ring out of view.
+ * \param beforeEyes set when the ring was moved before the eyes
+ */
+Vec3f radialAnchor(const Vec3f & hand, const Vec3f & eye, bool & beforeEyes) {
+	beforeEyes = false;
+	const Vec3f toHand = hand - eye;
+	if(config.input.vrRadialPlace != "gaze_when_off" || glm::length(toHand) < 1e-3f) {
+		return hand;
+	}
+	const Vec3f forward = frameViews().eyes[0].orientation * Vec3f(0.f, 0.f, -1.f);
+	const float cosine = std::clamp(glm::dot(forward, glm::normalize(toHand)), -1.f, 1.f);
+	if(glm::degrees(std::acos(cosine)) <= config.input.vrRadialGazeDeg) {
+		return hand;
+	}
+	// Ahead along the gaze on the floor's plane, as far out as the hand is (at least an arm's comfortable reach)
+	Vec3f ahead(forward.x, 0.f, forward.z);
+	ahead = glm::length(ahead) > 1e-3f ? glm::normalize(ahead) : Vec3f(0.f, 0.f, -1.f);
+	const float reach = std::max(glm::length(Vec2f(toHand.x, toHand.z)), 0.35f);
+	beforeEyes = true;
+	return Vec3f(eye.x, hand.y, eye.z) + ahead * reach;
 }
 
 struct SlotItem {
@@ -419,7 +446,12 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 				continue;
 			}
 			menu.hand = frameHands().hands[i].position;
-			menu.pose = placeRadial(menu.hand, eyeMiddle(), g_radial.params);
+			const Vec3f eye = eyeMiddle();
+			bool beforeEyes = false;
+			menu.pose = placeRadial(radialAnchor(menu.hand, eye, beforeEyes), eye, g_radial.params);
+			// The hand where it opened is the middle - also for a ring moved before the eyes, away from the hand
+			menu.origin = radialPlanePoint(menu.pose, menu.hand);
+			status.placed = beforeEyes ? "gaze" : "hand";
 			menu.selector.reset();
 			menu.travel = 0.f;
 			menu.point = Vec2f(0.f);
@@ -439,7 +471,8 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 				gazeDeg = glm::degrees(std::acos(cosine));
 			}
 			gameevent::Event("vr.radial")("hand", handName(hand))("state", "open")
-				("x", menu.pose.center.x, 2)("y", menu.pose.center.y, 2)("z", menu.pose.center.z, 2)("gazeDeg", gazeDeg, 0);
+				("x", menu.pose.center.x, 2)("y", menu.pose.center.y, 2)("z", menu.pose.center.z, 2)("gazeDeg", gazeDeg, 0)
+				("place", status.placed);
 		}
 
 		if(blocked || reason) {
@@ -448,7 +481,7 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 		}
 
 		menu.hand = frameHands().hands[i].position;
-		menu.point = radialPlanePoint(menu.pose, menu.hand);
+		menu.point = radialPlanePoint(menu.pose, menu.hand) - menu.origin;
 		menu.travel = std::max(menu.travel, glm::length(menu.point));
 		const RadialChoice before = menu.selector.hovered();
 		const RadialChoice & hovered = menu.selector.update(menu.point, g_radial.params);
@@ -961,7 +994,9 @@ std::string handPosCommand(Hand hand, const HandMenu & menu, const Vec2f & point
 	// In the plane the hand opened the menu in: its offset along the ring's face is kept
 	const Vec3f face = menu.pose.orientation * Vec3f(0.f, 0.f, 1.f);
 	const float depth = glm::dot(menu.hand - menu.pose.center, face);
-	const Vec3f p = menu.pose.center + x * point.x + y * point.y + face * depth;
+	// The ring's middle is where the hand opened it (HandMenu::origin)
+	const Vec2f at = point + menu.origin;
+	const Vec3f p = menu.pose.center + x * at.x + y * at.y + face * depth;
 	std::ostringstream oss;
 	oss << "hand " << handName(hand) << " pos " << p.x << ' ' << p.y << ' ' << p.z;
 	return oss.str();
@@ -973,8 +1008,28 @@ std::string radialCommand(std::string_view arguments) {
 
 	std::string_view rest = arguments;
 	const std::string_view verb = nextRadialWord(rest);
+	if(verb == "place") {
+		// place hand|gaze_when_off [<degrees>]: cfg.ini's vr_radial_place / vr_radial_gaze_deg, live (#377)
+		const std::string_view mode = nextRadialWord(rest);
+		if(mode != "hand" && mode != "gaze_when_off") {
+			return "vr-radial place: expected hand or gaze_when_off [<degrees>], got \"" + std::string(mode) + "\"";
+		}
+		const std::string_view degrees = nextRadialWord(rest);
+		if(!degrees.empty()) {
+			const std::optional<float> value = util::toFloat(degrees);
+			if(!value) {
+				return "vr-radial place: expected degrees, got \"" + std::string(degrees) + "\"";
+			}
+			config.input.vrRadialGazeDeg = std::clamp(*value, 10.f, 120.f);
+		}
+		config.input.vrRadialPlace = std::string(mode);
+		LogInfo << "[vr] radial: menus open at " << config.input.vrRadialPlace << " (off the gaze beyond "
+		        << config.input.vrRadialGazeDeg << " deg, test channel)";
+		return std::string();
+	}
 	if(verb != "point") {
-		return "vr-radial: expected point <left|right> <item>, got \"" + std::string(arguments) + "\"";
+		return "vr-radial: expected point <left|right> <item> or place hand|gaze_when_off [<degrees>], got \""
+		       + std::string(arguments) + "\"";
 	}
 	const std::string_view handWord = nextRadialWord(rest);
 	if(handWord != "left" && handWord != "right") {

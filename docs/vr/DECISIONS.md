@@ -187,6 +187,10 @@ gives a clear moment to cast without a pause or an extra gesture.
   no longer switches the game to the engine's cursor mode (it kept the bag open with the book and stayed after it
   closed), and a click on the panel never picks the world behind it. Next, not in #456: the grip alone as use /
   interact (the chord goes); the book as a depth-tested panel the hands cover; the runes recognised from the hands' strokes (#44).
+  Casting with a weapon in the hand: while the stance is held the weapon hand's trigger is the pen - no charge, no
+  strike. **A variant for the owner to pick** (open): where the ring opens - `vr_radial_place = hand` (the default, at
+  the hand) or `gaze_when_off` (before the eyes at the hand's height when the hand is more than `vr_radial_gaze_deg`,
+  45, off the gaze: with a panel open his hand was beside his head and the ring opened out of view).
 
 ---
 

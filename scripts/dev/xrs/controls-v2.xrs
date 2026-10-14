@@ -161,6 +161,49 @@ vr-sim hand left pos -0.12 -0.2 -0.38
 @frames 30
 @assert vr.input.presses.menu eq 0
 
+# Where the ring opens (cfg.ini vr_radial_place, a variant for the owner to pick): with the right hand beside the head,
+# as when it points at a panel. "hand" (the default): at the hand, out of view
+@assert vr.radial.right.placed eq hand
+vr-sim hand right pos 0.45 -0.05 0.05
+@frames 10
+vr-input down right.b
+@frames 3
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.placed eq hand
+vr-input up right.b
+@frames 5
+# "gaze_when_off": the hand more than 45 degrees off the gaze, the ring opens before the eyes at the hand's height;
+# the hand still selects from where it opened
+vr-radial place gaze_when_off 45
+vr-input down right.b
+@frames 3
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.placed eq gaze
+@log GameEvent:.*vr\.radial hand=right state=open .*place=gaze
+vr-radial point right inventory
+@frames 5
+@assert vr.radial.right.hovered eq inventory
+vr-input up right.b
+@until player.inventoryOpen eq true 5s
+@frames 30
+vr-input down right.b
+@frames 3
+vr-radial point right center
+@frames 5
+vr-input up right.b
+@until player.inventoryOpen eq false 5s
+@frames 30
+# A hand before the eyes keeps the ring at the hand in either mode
+vr-sim hand right pos 0.12 -0.2 -0.38
+@frames 10
+vr-input down right.b
+@frames 3
+@assert vr.radial.right.placed eq hand
+vr-input up right.b
+@frames 5
+vr-radial place hand
+@frames 10
+
 # The book open from the half-ring (the owner's headset run: it would not close): no bag with it, freelook stays
 vr-input down right.b
 @frames 3

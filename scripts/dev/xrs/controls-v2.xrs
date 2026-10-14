@@ -341,8 +341,8 @@ vr-input up left.b
 @log GameEvent:.*vr\.panels\.closed what="?book inventory
 @until vr.reticle.on eq true 5s
 @frames 30
-# The right A while an item is dragged out of the bag: nothing is closed (the item would stay in the hand with its
-# bag gone, the verifier); the item goes back into the bag when let go there
+# The right A while an item is dragged out of the bag: no stance, nothing is closed (the item would stay in the hand
+# with its bag gone, the verifier); the item goes back into the bag when let go there
 inventory playeradd magic/potion_life/potion_life
 @frames 10
 vr-input down right.b
@@ -360,14 +360,17 @@ vr-sim action trigger right 1
 vr-point right item potion_life 40 0
 @frames 10
 @assert ui.drag ne none
-@mark
+@remember strokesDrag vr.magic.strokes
 vr-input down right.a
+@frames 10
+@assert vr.magic.stance eq false
+@assert player.inventoryOpen eq true
+@assert ui.drag ne none
+vr-input up right.a
 @frames 10
 @assert player.inventoryOpen eq true
 @assert ui.drag ne none
-@log GameEvent:.*vr\.panels\.kept why="?an item is dragged
-vr-input up right.a
-@frames 10
+@assert vr.magic.strokes eq {strokesDrag}
 vr-point right bag
 @frames 10
 vr-sim action trigger right 0

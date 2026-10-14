@@ -2301,9 +2301,9 @@ std::string execute(std::string_view line) {
 
 	if(word == "vr-point") {
 		// vr-point <left|right> item|container [<dx> <dy>] | bag | menu <name> | <x> <y>: turn a simulated hand
-		// (--vr-sim) so its aim ray points at the first item in the open inventory bag (or container, #38), at a menu
-		// widget (#394), or at a pixel of the 2D interface, on the floating panel (#34). Aims only - what the pointer
-		// makes of the ray is the game's own path
+		// (--vr-sim) so its aim ray points at the first item in the open inventory bag or container (#38), a free bag
+		// slot (#38), a menu widget (#394) or the open book's bookmark (#377), or a pixel of the 2D interface, on the
+		// floating panel (#34). Aims only - what the pointer makes of the ray is the game's own path
 		std::istringstream iss{std::string(rest)};
 		std::string hand, what;
 		iss >> hand >> what;

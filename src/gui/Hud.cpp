@@ -151,12 +151,12 @@ void HitStrengthGauge::draw() {
 }
 
 void BookIconGui::requestFX() {
-
+	
 	// The new spell's flash flies off the book icon: none where the icon is not drawn (VR, #469)
 	if(!vr::hudShown(vr::HudElement::Book)) {
 		return;
 	}
-
+	
 	static const float z = 0.00001f;
 	
 	for(long i = 0; i < 12; i++) {
@@ -677,7 +677,7 @@ void MemorizedRunesHud::draw(bool shown) {
 			}
 		}
 		if(shown && player.SpellToMemorize.iSpellSymbols[i] != RUNE_NONE) {
-
+			
 			Vec2f size = Vec2f(32.f, 32.f) * m_scale;
 			Rectf rect = Rectf(pos, size.x, size.y);
 			
@@ -1382,7 +1382,7 @@ void PlayerInterfaceFader::update() {
 }
 
 void HudRoot::draw() {
-
+	
 	// In VR none of the screen frame's elements is drawn: they live on the wrist and in the radial menus (#469)
 	vr::updateHud();
 	

@@ -21,6 +21,8 @@
 
 #include <algorithm>
 #include <limits>
+#include <string>
+#include <vector>
 
 #include "core/Core.h"
 #include "core/GameEvent.h"
@@ -89,7 +91,39 @@ void subtitleHeadInRoom(Vec3f & position, Anglef & headAngles) {
 	headAngles = head.head;
 }
 
-//! The box of the line on its anchor: the name over the text, both wrapped to \a maxWidth
+//! \a text in lines no wider than \a maxWidth, broken between words (a word wider on its own keeps its line)
+std::vector<std::string> wrapSubtitle(Font & font, std::string_view text, float maxWidth) {
+
+	std::vector<std::string> lines(1);
+	size_t start = 0;
+	while(start <= text.size()) {
+		size_t end = text.find_first_of(" \n", start);
+		if(end == std::string_view::npos) {
+			end = text.size();
+		}
+		const std::string_view word = text.substr(start, end - start);
+		if(!word.empty()) {
+			std::string & line = lines.back();
+			const std::string candidate = line.empty() ? std::string(word) : line + ' ' + std::string(word);
+			if(line.empty() || float(font.getTextSize(candidate).width()) <= maxWidth) {
+				line = candidate;
+			} else {
+				lines.emplace_back(word);
+			}
+		}
+		if(end < text.size() && text[end] == '\n' && !lines.back().empty()) {
+			lines.emplace_back();
+		}
+		start = end + 1;
+	}
+	if(lines.size() > 1 && lines.back().empty()) {
+		lines.pop_back();
+	}
+
+	return lines;
+}
+
+//! The box of the line on its anchor: the speaker's name over the text, wrapped to \a maxWidth
 void drawSubtitleBox(const Vec2f & anchor, SubtitleAlign align, float maxWidth, bool lowerThird) {
 
 	Font * font = hFontInGame;
@@ -97,18 +131,18 @@ void drawSubtitleBox(const Vec2f & anchor, SubtitleAlign align, float maxWidth, 
 		return;
 	}
 
-	const std::string & text = g_subtitles.status.text;
+	const std::vector<std::string> lines = wrapSubtitle(*font, g_subtitles.status.text, maxWidth);
 	const std::string & name = g_subtitles.status.speaker;
 	const float lineHeight = float(font->getLineHeight());
 	const float pad = std::max(4.f, lineHeight * 0.4f);
 
-	const float width = std::min(maxWidth, float(std::max(font->getTextSize(text).width(),
-	                                                       g_subtitles.named ? font->getTextSize(name).width() : 0)));
-	const Rect measure(0, 0, Rect::Num(width), Rect::Limits::max());
-	const float textHeight = float(ARX_UNICODE_ForceFormattingInRect(font, text, measure));
-	const float nameHeight = g_subtitles.named ? lineHeight : 0.f;
+	float width = g_subtitles.named ? float(font->getTextSize(name).width()) : 0.f;
+	for(const std::string & line : lines) {
+		width = std::max(width, float(font->getTextSize(line).width()));
+	}
+	const size_t rows = lines.size() + (g_subtitles.named ? 1 : 0);
 
-	const Vec2f size(width + 2.f * pad, textHeight + nameHeight + 2.f * pad);
+	const Vec2f size(width + 2.f * pad, float(rows) * lineHeight + 2.f * pad);
 	const Rectf box = lowerThird ? subtitleLowerThirdBox(Vec2f(g_size.size()), size)
 	                             : subtitleBox(anchor, size, align);
 
@@ -120,9 +154,12 @@ void drawSubtitleBox(const Vec2f & anchor, SubtitleAlign align, float maxWidth, 
 	Vec2f pen(box.left + pad, box.top + pad);
 	if(g_subtitles.named) {
 		font->draw(int(pen.x), int(pen.y), name, SubtitleNameColor);
-		pen.y += nameHeight;
+		pen.y += lineHeight;
 	}
-	ARX_UNICODE_DrawTextInRect(font, pen, pen.x + width, text, SubtitleTextColor);
+	for(const std::string & line : lines) {
+		font->draw(int(pen.x), int(pen.y), line, SubtitleTextColor);
+		pen.y += lineHeight;
+	}
 
 	countSubtitleShown();
 }

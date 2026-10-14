@@ -228,7 +228,14 @@ Speech * ARX_SPEECH_AddSpeech(Entity & speaker, std::string_view data, long mood
 		if(variant > 1) {
 			sample.append(std::to_string(variant));
 		}
-		
+
+		// The VR subtitle's text (#29.3): a variant's text is its own key in the line's section (string2, ...)
+		std::string_view spoken = (variant > 1) ? getLocalised(data, "string" + std::to_string(variant), "\x01")
+		                                        : getLocalised(data, "\x01");
+		if(spoken != "\x01") {
+			speech.spokenText = spoken;
+		}
+
 	} else {
 		
 		speaker.lastspeechflag = 0;
@@ -239,13 +246,7 @@ Speech * ARX_SPEECH_AddSpeech(Entity & speaker, std::string_view data, long mood
 		}
 		speech.duration = std::max(speech.duration,
 		                                   GameDuration(s64(speech.text.length() + 1) * 100ms));
-	}
-
-	// The VR subtitle's text: the line's, or the one of the variant played for a line without text (#29.3)
-	if(!speech.text.empty()) {
 		speech.spokenText = speech.text;
-	} else if(std::string_view spoken = getLocalised(sample.string(), "\x01"); spoken != "\x01") {
-		speech.spokenText = spoken;
 	}
 
 	Entity * source = (speech.flags & ARX_SPEECH_FLAG_OFFVOICE) ? nullptr : &speaker;

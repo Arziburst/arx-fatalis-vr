@@ -32,13 +32,16 @@ a changed decision keeps its history in that cell.
   2.6 m wide: the camera more than 6 m from the hero's head or without a line of sight to it - vision balls, portals,
   cutscene levels - or the hero's body played by a script, `playanim -p` / `forceanim`, as the goblins dragging him in
   the prison intro; a shot keeps the screen once it wanted it; `speak -c` lines and letterbox-only stretches stay
-  `first`; with no floor under the hero's eye it stays black). Default `hybrid`.
+  `first`). Default `hybrid`.
 - **Every change of the shot the eyes see is a cut behind a fade**: the shot shown is held while the world fades out,
   the new one is taken at black, then the world fades in. A shot changes with the scene's start and end, a new
   `speak -c` line, another camera entity, and a jump (> 50 cm) of a view that follows the hero (the script teleporting
   him). The ghost's yaw is set at each cut so that where the player looks is where the game's camera looked.
 - **`playerlookat`** (cfg.ini `vr_scene_lookat`): `ignore` (default) leaves the hero's yaw; `fade` turns him at the
   black of a short fade. Never an un-faded snap.
+- **No eye without a floor under it** (the owner, #29): in every view the fade stays black while the eyes' point - the
+  hero's eye, a ghost's shot, the observer's point - has no floor under it (a new game's hero stands off the level for
+  2 s before the prison intro).
 - **No cinematic bars in the eyes**; the cinemascope state stays for the game (the hidden HUD, the skip rules).
 - **Subtitles in VR** (cfg.ini `vr_subtitles`, default `above`): every voiced line of a scene (a `speak -c` line, a
   camera entity, or the letterbox on) gets a subtitle with the speaker's localised name - also a line the original
@@ -46,7 +49,8 @@ a changed decision keeps its history in that cell.
   section). `above`: over the speaker's head, facing the player (an off-screen, off-voice or too-near speaker, the hero
   himself, falls back to the chest panel); `chest`: a panel placed in the room at the player's chest when the line
   appears; `lowerthird`: on the head-locked interface quad. A subtitle shows once the eyes see the scene, not under the
-  fade it starts behind. Talk outside scenes (barks, a merchant's greeting) gets none yet. Proposals for the owner
+  fade it starts behind. The hero's own lines name him Am Shaegar (the owner: the game gives him no name at character
+  creation, and its texts have no key for the name alone). Talk outside scenes (barks, a merchant's greeting) gets none yet. Proposals for the owner
   (`SubtitleParams`): the game's subtitle font (about 1.4 degrees), the box at most 32 degrees wide, black at 60%, the
   name in warm gold over white text; `above` 0.25 m over the head, `chest` 0.8 m ahead and 0.45 m below the eyes,
   `lowerthird` up to 60% of the quad's width with its lower edge at 92% of its height.

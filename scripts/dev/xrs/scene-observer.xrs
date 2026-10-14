@@ -110,4 +110,20 @@ human_base_0028.speak -c ccclistener_r player 40 40 [kultar_cantgo]
 @remember cuts5 scene.meter.cuts
 @assert scene.meter.fadedCuts eq {cuts5}
 @assert scene.meter.letterboxFrames eq 0
+# T2 and the blind guard (the owner, #29): a new game's hero stands off the level for 2 s before the prison intro
+# (TRAPS.md); the observer view stays black while its eye has no floor under it, so no frame of the intro is measured below 1.2 m
+menu pause
+@until menuMode eq mainmenu 10s
+scene meter reset
+newgame
+@until state eq GAMEPLAY 60s
+@until scene.active eq true 60s
+@until scene.shown eq observer 30s
+@until player.controlsBlocked eq false 120s
+@until scene.active eq false 30s
+@assert scene.meter.sceneFrames gt 0
+@assert scene.meter.minAboveFloorM ge 1.2
+@remember cuts2 scene.meter.cuts
+@assert scene.meter.fadedCuts eq {cuts2}
+@assert scene.meter.letterboxFrames eq 0
 @assert errors eq 0

@@ -366,7 +366,7 @@ void SceneViewTest::hybridScreenTest() {
 	CPPUNIT_ASSERT(out.shown == SceneShown::First);
 }
 
-void SceneViewTest::hybridBlindTest() {
+void SceneViewTest::blindTest() {
 
 	SceneDirector director;
 	director.update(standing());
@@ -394,14 +394,31 @@ void SceneViewTest::hybridBlindTest() {
 	settle(director, camera);
 	CPPUNIT_ASSERT_EQUAL(0.f, director.fade());
 
-	// The other views are not held: the first view shows the hero's eye wherever it is
+	// Every view is held black while its eye has no floor under it (the owner, #29): first person...
 	SceneDirector first;
 	first.update(standing());
 	SceneInput firstBars = sceneOf(standing(), SceneKind::None, 0, SceneViewSetting::First);
 	firstBars.firstOnFloor = false;
 	settle(first, firstBars);
 	CPPUNIT_ASSERT(first.shown() == SceneShown::First);
+	CPPUNIT_ASSERT(first.fade() >= BehindFade);
+	firstBars.firstOnFloor = true;
+	settle(first, firstBars);
 	CPPUNIT_ASSERT_EQUAL(0.f, first.fade());
+
+	// ...a ghost's shot and the observer's point
+	for(SceneViewSetting setting : { SceneViewSetting::Ghost, SceneViewSetting::Observer }) {
+		SceneDirector director;
+		director.update(standing());
+		SceneInput shot = sceneOf(standing(), SceneKind::Entity, 7, setting);
+		shot.hasFloor = [](const Vec3f &) { return false; };
+		settle(director, shot);
+		CPPUNIT_ASSERT(director.shown() != SceneShown::None);
+		CPPUNIT_ASSERT(director.fade() >= BehindFade);
+		shot.hasFloor = [](const Vec3f &) { return true; };
+		settle(director, shot);
+		CPPUNIT_ASSERT_EQUAL(0.f, director.fade());
+	}
 }
 
 void SceneViewTest::heldYawTest() {

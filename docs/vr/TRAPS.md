@@ -1236,7 +1236,7 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 ## 2026-10-14 - A new game's hero stands off the level for 2 s before the prison intro
 **Symptom:** the scene meter's `minAboveFloorM` is 0 for a stretch from `newgame`: the eyes in first person over no floor (#29).
 **Cause:** after `GAME_READY` the intro waits 2 s (letterbox on, controls off) before its `TELEPORT -PA 180`; until then the hero is at the level's editor position, where `CheckInPoly` finds no floor.
-**Do:** the hybrid view keeps the fade black while there is no floor under the hero's eye; any measurement from `newgame` meets these 2 s.
+**Do:** every scene view keeps the fade black while there is no floor under its eye; any measurement from `newgame` meets these 2 s.
 
 ## 2026-10-14 - A console `speak` line of a variant's sample name shows no subtitle
 **Symptom:** `<npc>.speak -c ... [kultar_letmeout2]` plays, but `scene.subtitle.text` stays empty and `voicedLines` does not count it (#29).

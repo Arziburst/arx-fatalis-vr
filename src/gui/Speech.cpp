@@ -268,6 +268,14 @@ Speech * ARX_SPEECH_AddSpeech(Entity & speaker, std::string_view data, long mood
 
 //! The speaker as the player reads its name: \a named false when it has no localised one (the id instead)
 static std::string subtitleSpeakerName(const Entity & speaker, bool * named = nullptr) {
+	// The hero's own lines (the owner, #29): the game gives him no name at character creation and its texts no
+	// key for the name alone, so the subtitle names him as the story does
+	if(&speaker == entities.player()) {
+		if(named) {
+			*named = true;
+		}
+		return "Am Shaegar";
+	}
 	const bool localised = !speaker.locname.empty();
 	if(named) {
 		*named = localised;

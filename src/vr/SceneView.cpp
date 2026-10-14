@@ -384,9 +384,16 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 		}
 	}
 
-	// The hybrid shows nothing rather than the hero's eye with no floor under it: the fade stays black
-	const bool blind = in.active && in.setting == SceneViewSetting::Hybrid && target.shown == SceneShown::First
-	                   && m_shown == target && !in.firstOnFloor;
+	// Every view shows nothing rather than an eye with no floor under it (the owner, #29): the fade stays black.
+	// The hero's eye in first person (a new game's hero stands off the level before the prison intro), a ghost's
+	// shot or the observer's point; the screen has no eye in the world
+	bool onFloor = true;
+	if(m_shown.shown == SceneShown::First) {
+		onFloor = in.firstOnFloor;
+	} else if(m_shown.shown == SceneShown::Ghost || m_shown.shown == SceneShown::Observer) {
+		onFloor = !in.hasFloor || in.hasFloor(m_pos);
+	}
+	const bool blind = in.active && m_shown == target && !onFloor;
 	if(blind) {
 		if(m_fade.isBlack()) {
 			m_fade.holdBlack();

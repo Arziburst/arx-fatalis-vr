@@ -266,6 +266,8 @@ struct SceneInput {
 	float seconds = 0.f;            //!< the frame's duration
 	bool hybridScreen = false;      //!< this frame of a camera entity's shot wants the hybrid's screen
 	bool firstOnFloor = true;       //!< a floor under the hero's eye (\c firstPos)
+	//! Whether there is a floor under a point the eyes would see from (a ghost's or the observer's shot); none: yes
+	std::function<bool(const Vec3f & pos)> hasFloor;
 	//! The observer's point for this scene (\ref placeObserver), asked once, at the observer's first cut
 	std::function<ObserverPlace()> placeObserver;
 };

@@ -2157,6 +2157,7 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 	in.engineFloorY = floorBelow(in.enginePos, in.engineFloor);
 	in.firstPos = g_sceneFirstPos;
 	floorBelow(in.firstPos, in.firstOnFloor);
+	in.hasFloor = [](const Vec3f & pos) { bool found = false; floorBelow(pos, found); return found; };
 	in.playerYaw = player.angle.getYaw();
 	const vr::HeadStatus & head = vr::headStatus();
 	in.headYaw = head.referenced ? vr::wrapSignedDegrees(head.head.getYaw() - head.reference.yaw) : 0.f;

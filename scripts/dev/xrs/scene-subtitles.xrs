@@ -28,6 +28,8 @@ vr-input stick left 0 0
 @assert vr.sim.shots.sub-t1.left.scene.verdict ne background
 @assert vr.sim.shots.sub-t1.right.scene.verdict ne background
 @until scene.active eq false 120s
+@nolog vr\.scene\.subtitle .*speaker=player
+@log vr\.scene\.subtitle placement=above speaker="Am Shaegar"     # the hero's own line names him (the owner, #29)
 @assert scene.subtitle.voicedLines ge 3
 @remember voiced scene.subtitle.voicedLines
 @assert scene.subtitle.lines eq {voiced}

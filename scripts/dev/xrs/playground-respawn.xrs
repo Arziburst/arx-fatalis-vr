@@ -21,6 +21,8 @@
 @until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
 @assert player.controlsBlocked eq false
 @assert area eq 30
+@assert player.freelook eq true             # a --loadlevel start is in freelook in VR (#394): the inventory closed
+@assert player.inventoryOpen eq false
 @remember lifemax player.lifeMax
 @remember startx player.x
 @remember starty player.y

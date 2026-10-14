@@ -71,6 +71,16 @@ void afterSceneView(size_t view);
 //! The game started loading a level - writes the status (state \c LOADING) now
 void notifyLoading(AreaId area);
 
+/*!
+ * The main thread is alive outside the frame loop (a level load advancing its progress bar): the hang
+ * watchdog (#440, platform/HangWatchdog.h) reports a main thread without a beat for its threshold
+ * with its stack, in \c DIR/hang.txt and as \c [hang] lines of arx.log. \a where is a string literal.
+ */
+void beat(const char * where);
+
+//! A step after the last beat that may block (a present): named by a hang report, not a beat
+void note(const char * what);
+
 //! Write the final status (\c state: \c EXITED) and stop - call after "Clean shutdown" was logged
 void shutdown();
 

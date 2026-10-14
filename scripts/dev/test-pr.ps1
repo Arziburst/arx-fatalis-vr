@@ -50,6 +50,11 @@
 .PARAMETER Playground
 	Launch the test playground (run-windows.ps1 -Playground, #321) instead of the default save.
 
+.PARAMETER Player
+	Launch as a player does (run-windows.ps1 -Player, #394): no --dev-launch and no default arguments - the
+	publisher logos, the main menu, and the intro cinematic after New game. Without it the launch is a development
+	launch (logos and cinematics skipped) of the default save.
+
 .PARAMETER Saves
 	With -Isolated: save slots to copy into the isolated user directory (e.g. save0000).
 
@@ -62,6 +67,9 @@
 	.\scripts\dev\test-pr.ps1 131 -- --skiplogo --loadslot 2
 .EXAMPLE
 	.\scripts\dev\test-pr.ps1 131 -NoLaunch
+.EXAMPLE
+	.\scripts\dev\test-pr.ps1 131 -Player
+	# the first run as a player sees it: logos, main menu, New game, the intro cinematic
 #>
 [CmdletBinding(PositionalBinding = $false)]
 param(
@@ -74,6 +82,7 @@ param(
 	[string]$Branch,
 	[switch]$Isolated,
 	[switch]$Playground,
+	[switch]$Player,
 	[string[]]$Saves,
 	[ValidateSet('Release', 'RelWithDebInfo', 'Debug')] [string]$Config = 'Release',
 	[Parameter(ValueFromRemainingArguments)] [string[]]$ArxArgs
@@ -159,8 +168,8 @@ $stampFile = Join-Path $buildDir 'built-from.txt'
 $stamp = if (Test-Path $stampFile) { (Get-Content $stampFile -Raw).Trim() } else { '' }
 $reason = if ($Rebuild) { '-Rebuild' }
 	elseif (-not (Test-Path $exe)) { 'no arx.exe yet' }
-	elseif ($dirty) { 'uncommitted changes in the worktree' }
-	elseif ($stamp -ne $head) { "built from '$(Short $stamp)', HEAD is $(Short $head)" }
+	elseif (($stamp -split ' ')[0] -ne $head) { "built from '$(Short ($stamp -split ' ')[0])', HEAD is $(Short $head)" }
+	elseif ((Get-ArxStampFingerprint $stamp) -ne (Get-ArxTreeFingerprint $wt)) { 'the worktree changed since the build' }
 if ($reason) {
 	Write-Host "    building: $reason" -ForegroundColor Cyan
 	& (Join-Path $wt 'scripts\build-windows.ps1') -Config $Config
@@ -182,9 +191,16 @@ Write-Host "==> Build id: $(Short $head)$(if ($dirty) { ' + uncommitted changes'
 # --- Launch ------------------------------------------------------------------------------------------
 
 if ($NoLaunch) { return }
-if (-not $ArxArgs -and -not $Playground) { $ArxArgs = @('--skiplogo', '--loadslot', '0') }
+if (-not $ArxArgs -and -not $Playground -and -not $Player) { $ArxArgs = @('--skiplogo', '--loadslot', '0') }
 if (-not $ArxArgs) { $ArxArgs = @() }
 $runArgs = @{ Config = $Config; ArxArgs = $ArxArgs; Sound = $true } # the owner's launches have sound (#345)
+if ($Player) {
+	# A branch from before #394 has no player launch: its run-windows.ps1 would refuse the switch less clearly
+	if (-not (Select-String -LiteralPath (Join-Path $wt 'scripts\run-windows.ps1') -Pattern '\[switch\]\$Player' -Quiet)) {
+		throw "-Player: the PR's run-windows.ps1 has no player launch (#394) - merge main into its branch first"
+	}
+	$runArgs.Player = $true
+}
 if ($DryRun) { $runArgs.DryRun = $true }
 if ($StartSteamVR) { $runArgs.StartSteamVR = $true }
 elseif ($ArxArgs -notcontains '--no-vr' -and -not (Get-Process vrserver -ErrorAction SilentlyContinue)) {

@@ -13,6 +13,44 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-044: The player's launch is the original start; logos, the intro and cinematics play on a screen fixed in the room
+
+- **Date:** 2026-10-13
+- **Status:** Proposed - the screen's distance and size are the worker's proposal for the owner to judge in the headset (#394)
+- **Decided by:** the coordinator (the original flow, player vs. development launch, the skip buttons A / B / triggers);
+  the screen's numbers are a proposal (D-017: the owner decides how it looks)
+
+### Decision
+- **A plain `arx.exe` is the player's launch, the original game's start**: the FISHTANK and ARKANE logos, then the
+  **intro** - level 10, a scripted scene around the `introduction.cin` cinematic, which ends in the main menu by itself -
+  then the main menu; New game starts in the prison (area 1). Every `.cin` cinematic of the game plays. The desktop
+  shortcut, the Steam shortcut, the SteamVR library entry and the tester zip launch that way. **Development and test
+  launches add `--dev-launch`** (the scripts do it themselves; `-Player` / `@player` opt out): no logos, no intro, no
+  cinematics, as before (#124); `--intro` / `--cinematics` bring them back.
+- **In VR the logos, the intro and the cinematics play on a screen fixed in the room**, never on the head-locked quad and
+  never per eye: the intro's scripted 3D scene is drawn flat onto the screen like a film, and its scripted camera does not
+  take the head. The screen is placed when one starts where the player looks (yaw only) and stays put while the head
+  moves, like the menu panel (#49). **Proposal:** the screen's centre **2.5 m ahead at eye height**, **2.6 m wide**
+  (about 55 degrees of the view - a cinema seat in the middle rows; the height follows the picture, about 1.95 m at 4:3),
+  not tilted. A logo shows as the logo's own picture on that screen; the rest of the screen stays clear. One place to
+  change them: `ScreenDistance` / `ScreenDrop` / `ScreenWidth` in `src/vr/UIPanel.h`.
+- **Skip:** A, B or the trigger of either hand skips what is on screen: a logo (the next part follows), **the whole
+  intro** (straight to the main menu; a playing `introduction.cin` ends through `cinematicEnd()`), any other cinematic
+  (through `cinematicEnd()`, as Escape does: the scripts get `cine_end`). Only while one of them plays; the press is
+  kept from the game until it is released, so it never clicks in the menu, opens a radial menu or jumps. In flat mode
+  the keys work as in the original (a key during the logos goes to the main menu, Escape ends a cinematic).
+
+### Why
+- A picture glued to the face (the head-locked quad) is uncomfortable and reads as broken in VR; a screen at a fixed
+  place in the room is how VR players watch flat video. Far enough for the eyes to rest (2.5 m), big enough to fill the
+  centre of the view without turning the head.
+- Players must see the game's real start; developers and the test runs must not wait through it.
+
+### Rules out
+- Logos and cinematics on the head-locked quad in VR; a plain `arx.exe` that skips the logos or the cinematics.
+
+---
+
 ## D-042: Control scheme v2 — two equal hands: a casting stance and a radial menu per hand, dual wielding
 
 - **Date:** 2026-10-13

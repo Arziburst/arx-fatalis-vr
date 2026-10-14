@@ -50,7 +50,9 @@ namespace gameevent {
 //! What the game is doing, as the test channel and the event log report it
 enum class GameState {
 	Startup,   //!< Before the first level or menu
-	Menu,      //!< Main menu, pause menu, credits, character creation
+	Logo,      //!< A publisher logo at startup (\ref startupLogoName names it)
+	Intro,     //!< The intro after the logos (level 10's scripted scene), outside its cinematic
+	Menu,     //!< Main menu, pause menu, credits, character creation
 	Loading,   //!< A level is being loaded (set by \ref levelLoading, synchronous within a frame)
 	Gameplay,
 	Cinematic,

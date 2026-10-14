@@ -71,6 +71,11 @@ Check '@save names the start save and is not a step' ($saved -isnot [string] -an
 Check 'no playground unless asked' (-not $seq.Playground)
 $inPlayground = Get-Parse "@sim idle`n@playground`n@frames 1"
 Check '@playground starts in the playground and is not a step' ($inPlayground -isnot [string] -and $inPlayground.Playground -and @($inPlayground.Steps).Count -eq 1) $inPlayground
+Check 'a development launch unless @player (#394)' (-not $seq.Player)
+$asPlayer = Get-Parse "@sim idle`n@player`n@until state eq LOGO 60s"
+Check '@player is a player''s launch and is not a step' ($asPlayer -isnot [string] -and $asPlayer.Player -and @($asPlayer.Steps).Count -eq 1 -and -not $asPlayer.Args) $asPlayer
+$badPlayer = Get-Parse "@player now"
+Check '@player takes no argument' ($badPlayer -is [string] -and $badPlayer -match 'malformed') $badPlayer
 $kinds = ($seq.Steps | ForEach-Object Kind) -join ' '
 Check 'every directive has its kind' ($kinds -eq 'wait frames until assert remember assert mark log nolog shot diff key pending command command') $kinds
 Check 'the trailing comment is dropped' ($seq.Steps[0].Ms -eq 100)
@@ -143,6 +148,8 @@ $logPath = Join-Path $work 'arx.log'
 # The fake game answers command.txt like CommandChannel.cpp: ack.txt, status.json, shots
 $fake = {
 	param($Dir, $Source)
+	# First thing: tell the test the job process is up. Start-Job's own startup can take long on a busy PC (#446).
+	[IO.File]::WriteAllText((Join-Path $Dir 'started'), '1')
 	Add-Type -AssemblyName System.Drawing
 	$seq = 0; $frame = 0; $capture = 0; $yaw = 0.0; $shots = [ordered]@{}; $errors = 0
 	$stop = Join-Path $Dir 'stop'
@@ -178,15 +185,20 @@ $fake = {
 			camera = @{ yaw = $yaw }; player = @{ controlsBlocked = $false }; events = @{ byName = @{ 'spell.cast' = 2 } } }
 		$json = $status | ConvertTo-Json -Depth 6 -Compress
 		[IO.File]::WriteAllText((Join-Path $Dir 'status.json.tmp'), $json)
-		Move-Item (Join-Path $Dir 'status.json.tmp') (Join-Path $Dir 'status.json') -Force
+		[IO.File]::Move((Join-Path $Dir 'status.json.tmp'), (Join-Path $Dir 'status.json'), $true)  # atomic replace, like the real game (#446)
 		Start-Sleep -Milliseconds 30
 	}
 }
 $job = Start-Job -ScriptBlock $fake -ArgumentList $testDir, $PSScriptRoot
 try {
+	# The job's process start is not what is tested: wait for its marker (up to 3 min, or the job ending), then time the 15 s.
+	$startDeadline = (Get-Date).AddMinutes(3)
+	while (-not (Test-Path (Join-Path $testDir 'started')) -and $job.State -eq 'Running' -and (Get-Date) -lt $startDeadline) { Start-Sleep -Milliseconds 100 }
 	$deadline = (Get-Date).AddSeconds(15)
-	while (-not (Read-ArxStatus $testDir) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
-	Check 'the fake game answers' ([bool](Read-ArxStatus $testDir))
+	$firstStatus = $null
+	while (-not ($firstStatus = Read-ArxStatus $testDir) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
+	# The check uses the status the loop parsed: a second read could hit a rewrite in progress (#446).
+	Check 'the fake game answers' ([bool]$firstStatus)
 	$quiet = { param($Text, $Color) }
 
 	function Run-Seq([string]$Text, [switch]$ContinueOnError) {
@@ -273,8 +285,8 @@ foreach ($file in $shipped) {
 	Check "  $($file.Name) parses" ($parsed -isnot [string]) $parsed
 	if ($parsed -isnot [string]) {
 		# A simulator script, or a flat run said outright (--no-vr in @args, stand-up.xrs #263); the start is its @args
-		# or the test playground (@playground, #321)
-		Check "  $($file.Name) names its start" (($parsed.Sim -or $parsed.Args -contains '--no-vr') -and ($parsed.Args -or $parsed.Playground))
+		# or the test playground (@playground, #321), or a player's launch (@player, #394: logos, then the main menu)
+		Check "  $($file.Name) names its start" (($parsed.Sim -or $parsed.Args -contains '--no-vr') -and ($parsed.Args -or $parsed.Playground -or $parsed.Player))
 		# CI gives every sequence a fresh user dir (#296): a slot to load exists only when the sequence says which save
 		Check "  $($file.Name) declares the @save its --loadslot needs" (-not ($parsed.Args -contains '--loadslot') -or [bool]$parsed.Save)
 		Check "  $($file.Name) names the issue behind every @pending" (@($parsed.Steps | Where-Object { $_.Kind -eq 'pending' -and $_.Issue -gt 0 }).Count -eq @($parsed.Steps | Where-Object Kind -eq 'pending').Count)

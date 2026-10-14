@@ -1,0 +1,161 @@
+# New game and the character creation in VR, the way a player meets them on the first run (#394): a plain launch
+# on the simulated headset. New game is clicked with the hand pointer; the character creation screen fills its
+# floating panel and the desktop window (#334); a point is spent on an attribute with the trigger (the left mouse
+# button), the quick generation makes the average hero and then re-rolls, the grip (the right button in the
+# menus) takes an attribute and a skill point back and the trigger spends them elsewhere, and Done starts the
+# game - all by pointer clicks, one press = one click, a press off the panel clicks nothing. Arx asks for no name.
+#   .\scripts\dev\xrs-run.ps1 first-run-chargen
+@sim idle
+@args --skiplogo
+
+# The fast start (@args --dev-launch, MENU in about a second) waits on #399: a cold start at the main menu draws the
+# character creation screen black but for the portrait. Until then --skiplogo plays the in-game intro scene first
+# (about 59 s on the simulated headset, measured).
+@until state eq MENU 90s
+@assert menuMode eq mainmenu
+@until vr.sessionState eq focused 30s
+@until vr.panel.mode eq world 10s
+@frames 60
+
+# New game: the right hand's trigger on it
+vr-point right menu newquest
+@frames 5
+@assert ui.menuHover eq newquest
+@remember clicks vr.pointer.clicks
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@until menuMode eq charactercreation 15s
+@assert vr.pointer.clicks eq {clicks+1}
+@until vr.panel.menu eq charactercreation 5s
+@frames 120                                  # the screen fades in
+
+# A fresh hero: every attribute 6, 16 points to spend on them and 18 on the skills
+@assert hero.strength eq 6
+@assert hero.attributePoints eq 16
+@assert hero.skillPoints eq 18
+
+# The screen fills its panel and the window
+@shot chargen
+@assert vr.sim.shots.chargen.quad.shown eq true
+@assert vr.sim.shots.chargen.quad.stats.verdict eq world
+@assert vr.sim.shots.chargen.left.quadPixels gt 0
+shot window-chargen
+@until capture.name eq window-chargen 5s
+@assert capture.topLeft.verdict eq world
+@assert capture.topRight.verdict eq world
+@assert capture.bottomLeft.verdict eq world
+@assert capture.bottomRight.verdict eq world
+
+# The trigger on strength spends one point - one press, one point
+vr-point right menu strength
+@frames 5
+@assert ui.menuHover eq strength
+@assert vr.pointer.rightOnPanel eq true
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+@assert hero.strength eq 7
+@assert hero.attributePoints eq 15
+@assert vr.pointer.clicks eq {clicks+2}
+
+# A press off the panel clicks nothing: the trigger and the grip with both hands behind the head
+vr-sim hand left rot 180 0 0
+vr-sim hand right rot 180 0 0
+@frames 5
+@assert vr.pointer.active eq false
+@remember muted vr.pointer.offPanelPresses
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+vr-sim action grip right 1
+@frames 5
+vr-sim action grip right 0
+@frames 5
+@assert vr.pointer.offPanelPresses eq {muted+1}
+@assert vr.pointer.clicks eq {clicks+2}
+@assert hero.strength eq 7
+@assert hero.attributePoints eq 15
+@assert menuMode eq charactercreation
+
+# Quick generation, the first click: the average hero (10 each, skills 2, nothing left to spend)
+vr-point right menu quickgen
+@frames 5
+@assert ui.menuHover eq quickgen
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+@assert events.byName."chargen.roll" eq 1
+@assert hero.strength eq 10
+@assert hero.mind eq 10
+@assert hero.attributePoints eq 0
+@assert hero.skillPoints eq 0
+@assert hero.skills.stealth eq 2
+
+# The grip takes a point back from strength, the trigger puts it on dexterity; the same for a skill
+vr-point right menu strength
+@frames 5
+vr-sim action grip right 1
+@frames 5
+vr-sim action grip right 0
+@frames 5
+@assert hero.strength eq 9
+@assert hero.attributePoints eq 1
+vr-point right menu dexterity
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+@assert hero.dexterity eq 11
+@assert hero.attributePoints eq 0
+vr-point right menu stealth
+@frames 5
+vr-sim action grip right 1
+@frames 5
+vr-sim action grip right 0
+@frames 5
+@assert hero.skills.stealth eq 1
+@assert hero.skillPoints eq 1
+# ... with the left hand this time: the right one points away
+vr-sim hand right rot 180 0 0
+vr-point left menu casting
+@frames 5
+@assert vr.pointer.owner eq left
+@assert ui.menuHover eq casting
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0
+@frames 5
+@assert hero.skills.casting eq 3
+@assert hero.skillPoints eq 0
+
+# Quick generation again: a random hero - a re-roll, nothing left to spend
+vr-point left menu quickgen
+@frames 5
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0
+@frames 5
+@assert events.byName."chargen.roll" eq 2
+@assert hero.attributePoints eq 0
+@assert hero.skillPoints eq 0
+@shot rolled
+@remember strength hero.strength
+@remember mind hero.mind
+
+# Done: the game starts with this hero
+vr-point left menu done
+@frames 5
+@assert ui.menuHover eq done
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0
+@until menuMode eq ingame 20s
+@until state eq GAMEPLAY 120s
+@assert hero.strength eq {strength}
+@assert hero.mind eq {mind}
+@assert errors eq 0

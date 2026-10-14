@@ -18,7 +18,10 @@
 @assert vr.panel.mode eq head
 @assert vr.panel.placements eq 0
 
-# Gameplay: the head-locked quad covers the same pixels whatever the head does
+# Gameplay: the head-locked quad covers the same pixels whatever the head does. The quad also carries the timed
+# notifications - this save's tutorial hint ("Right-click to toggle ...") is on screen for about 6 s of game time -
+# so the two shots wait until none is shown: on a busy PC the pair straddled the hint's expiry (#370, TRAPS.md)
+@until notifications eq 0 30s
 @shot hudahead
 vr-sim head rot 40 0 0
 @frames 10

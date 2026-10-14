@@ -26,6 +26,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <iomanip>
 #include <memory>
@@ -106,6 +107,7 @@
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 #include "vr/VRWeapon.h"
+#include "vr/WeaponGrip.h"
 #include "vr/WorldScale.h"
 #include "vr/WristHud.h"
 #include "window/RenderWindow.h"
@@ -1337,12 +1339,28 @@ std::string buildStatus(PlatformInstant now) {
 			json.end();
 		}
 		// Distance from the hilt to the right palm, both taken in this one status write: a check that remembers
-		// the palm and asserts the hilt later compares two frames of a moving idle rig (#316)
+		// the palm and asserts the hilt later compares two frames of a moving idle rig (#316). Per frame (#385.10):
+		// arx - the weapon's attach vertex to the Arx hand's palm; glove - the drawn handle anchor to the glove's hold
+		// point (= hiltToGrip), the hidden Arx hand holds nothing then
+		const bool inGlove = std::strcmp(weapon.frame, "glove") == 0;
 		vr::HandLandmarks palm;
-		if(vr::handLandmarks(vr::Hand::Right, palm)) {
+		if(inGlove) {
+			json.value("hiltToPalm", weapon.hiltToGrip);
+		} else if(vr::handLandmarks(vr::Hand::Right, palm)) {
 			json.value("hiltToPalm", glm::distance(weapon.hilt, palm.palm));
 		}
 		json.value("bladeAngle", weapon.bladeAngle);
+		// The weapon in the glove (#385.10): the frame it is drawn from, the class's anchor along the handle, the
+		// anchor on the glove's hold point, the edge toward the knuckles, the sword's tilt
+		json.value("frame", weapon.frame);
+		json.value("weaponClass", weapon.weaponClass);
+		json.value("handleLength", weapon.handleLength);
+		json.value("anchor", weapon.anchor);
+		json.value("handWidth", weapon.handWidth);
+		json.value("hiltToGrip", weapon.hiltToGrip);
+		json.value("edgeToKnuckles", weapon.edgeToKnuckles);
+		json.value("tilt", weapon.tilt);
+		json.value("tiltApplied", weapon.tiltApplied);
 		json.value("armAnimSuppressed", weapon.armAnimSuppressed);
 		json.value("armAnimation", weapon.armAnimation);
 		json.value("suppressedFrames", weapon.suppressedFrames);
@@ -2067,7 +2085,8 @@ std::string execute(std::string_view line) {
 		// A custom hand on a hilt (#385.7): grip capture [left|right] stores the hand's runtime joints of the last
 		// frame (SteamVR: the Index's conforming grip) as its hilt pose in the user dir, every hand with joints when
 		// none is named; grip capture clear [left|right] goes back to the default hilt pose; grip angles <knuckle>
-		// <middle> <last> [<thumb>] | default sets cfg.ini vr_hilt_* live (degrees) and saves them
+		// <middle> <last> [<thumb>] | default sets cfg.ini vr_hilt_* live (degrees) and saves them; grip tilt <deg> the
+		// sword's forward tilt (#385.10)
 		std::string_view args;
 		const std::string_view what = firstWord(rest, args);
 		if(what == "capture") {
@@ -2133,8 +2152,23 @@ std::string execute(std::string_view line) {
 			                ("last", angles.last)("thumb", angles.thumb);
 			return std::string();
 		}
-		return refuse("grip: expected capture [clear] [left|right] or angles <knuckle> <middle> <last> [<thumb>] | default,"
-		              " got \"" + std::string(rest) + "\"");
+		if(what == "tilt") {
+			// The sword's forward tilt in the glove (#385.10): grip tilt <deg> snaps to 0, -15 or -30 (cfg.ini vr_sword_tilt)
+			float degrees = 0.f;
+			std::istringstream iss{std::string(args)};
+			std::string extra;
+			if(!(iss >> degrees) || !std::isfinite(degrees) || (iss >> extra)) {
+				return refuse("grip tilt: expected degrees (0, -15 or -30), got \"" + std::string(args) + "\"");
+			}
+			const float variant = vr::swordTiltVariant(degrees);
+			config.input.vrSwordTilt = variant;
+			config.save();
+			LogInfo << "[vr] weapon: sword tilt " << variant << " degrees (the channel, asked " << degrees << ")";
+			gameevent::Event("vr.weapon.tilt")("tilt", variant)("asked", degrees);
+			return std::string();
+		}
+		return refuse("grip: expected capture [clear] [left|right], angles <knuckle> <middle> <last> [<thumb>] | default"
+		              " or tilt <deg>, got \"" + std::string(rest) + "\"");
 	}
 
 	if(word == "combat") {

@@ -225,6 +225,13 @@ struct CustomArmStatus {
 	Vec3f handle = Vec3f(0.f, 0.f, 1.f); //!< the handle's direction in the world (the grip's Z), unit
 	float curlToHandle = 0.f;    //!< the hilt pose's curl centre from the handle's line, as drawn (units)
 	float curlAngle = 0.f;       //!< the hilt pose's curl axis off the handle, as drawn (degrees)
+	// The glove's hilt frame (#385.10): a held weapon is drawn from it with every model that draws the glove
+	bool hiltFrame = false;      //!< set this frame (the glove drawn)
+	Vec3f hiltCentre = Vec3f(0.f); //!< the hold point: the hilt pose's curl centre as drawn (the grip without a curl)
+	Vec3f hiltAxis = Vec3f(0.f, 0.f, 1.f); //!< unit: the line the closed fingers wrap, toward the thumb side (the blade's way)
+	Vec3f knuckles = Vec3f(0.f, 1.f, 0.f); //!< unit: the glove's wrist to its middle knuckle
+	glm::quat hiltGrip = quat_identity(); //!< the controller grip's rotation (engine axes): vr.weapon.bladeGrip's frame
+	float handWidth = 0.f;       //!< the glove's breadth across its four knuckles (units)
 	size_t vertices = 0;         //!< sleeve + hand
 	size_t triangles = 0;
 };

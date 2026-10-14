@@ -258,6 +258,7 @@ public:
 		float vrHiltMiddle;  //!< their middle joints
 		float vrHiltLast;    //!< their last joints
 		float vrHiltThumb;   //!< the thumb's two outer joints
+		float vrSwordTilt; //!< VR: the sword's forward tilt in the custom hand, degrees: 0, -15 or -30 (#385.10, vr/WeaponGrip.h)
 		float vrBodyPush; //!< VR: game units (cm) the own body sits behind the eyes along its facing, looking ahead (#385.9, vr/BodyView.h)
 		float vrBodyPushDown; //!< VR: game units (cm) the push grows by looking straight down (#385.9)
 		float vrBodyClearance; //!< VR: game units (cm) from an eye within which the own body's faces are not drawn (#385.9)

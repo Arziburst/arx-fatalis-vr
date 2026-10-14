@@ -36,6 +36,7 @@ const char * gameActionName(GameAction action) {
 		case GameAction::QuickSave: return "quick_save";
 		case GameAction::QuickLoad: return "quick_load";
 		case GameAction::CancelSpell: return "cancel_spell";
+		case GameAction::BookMap: return "book_map";
 		case GameAction::Count: break;
 	}
 	return "?";
@@ -107,6 +108,7 @@ const GameInputState & GameInputMapper::update(const ControlResolver & controls,
 	state.actions[size_t(GameAction::CrouchToggle)] = controls.active(Event::CrouchToggle);
 	state.actions[size_t(GameAction::Inventory)] = controls.active(Event::Inventory);
 	state.actions[size_t(GameAction::Book)] = controls.active(Event::Book);
+	state.actions[size_t(GameAction::BookMap)] = controls.active(Event::Map);
 	state.actions[size_t(GameAction::MagicMode)] = controls.active(Event::MagicMode);
 	// The game stashes when the button goes up with stealth held: keep stealth for that update
 	state.actions[size_t(GameAction::Stealth)] = stash || m_stashed;

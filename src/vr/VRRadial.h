@@ -31,15 +31,18 @@
 #include "vr/VRGameInput.h"
 
 /*!
- * \brief The radial menus in the game (#376, D-042): one per hand on B
+ * \brief The radial menu in the game (#376, D-042): on the right B by default (#377, the owner; the left
+ *        hand's radial event is unbound, a player may bind it)
  *
- * While a hand's radial event is held (B by default) its ring hangs at the hand (vr/RadialMenu.h) and
- * follows nothing but the room; releasing B runs the item under the hand: the inventory, the game menu,
- * the book's pages, quick save and load, recenter, cancel the running spell, or one of the hand's seven
- * quick slots - an item used from the hand's menu acts for that hand (a torch lit from it is recorded
- * as that hand's). An item dragged from the inventory and released onto a quick slot fills it with its
- * kind (the next potion of the kind refills it). Each hand has its own slots, kept in the save as the
- * global script text variables \c $vr_quickslots_left / \c $vr_quickslots_right, so no save format changes.
+ * While a hand's radial event is held its ring hangs at the hand (vr/RadialMenu.h) and follows nothing but the
+ * room; releasing B runs the item under the hand: the game menu, the book's pages, quick save and load,
+ * recenter, cancel the running spell, or a quick slot. The ring's right half holds the right hand's three
+ * slots, its left half the left hand's: a slot acts for its own side's hand, whichever hand holds the menu (a
+ * torch lit from an L slot is recorded as the left hand's; equipment is equipped by the engine - a weapon
+ * still goes to the right hand until #380). An item dragged from the inventory and released onto a quick slot
+ * fills it with its kind (the next potion of the kind refills it). Each hand's slots are kept in the save as the
+ * global script text variables \c $vr_quickslots_left / \c $vr_quickslots_right, so no save format changes (a
+ * save of the first layout's seven per hand keeps its first three).
  * The game time runs while a menu is open.
  * Released over nothing while the book, the bag, a container or a note is open, B closes it (#377, the owner).
  * The game menu is never out of reach (#377): a press that cannot open a menu - a menu shown (the game menu, the
@@ -96,7 +99,7 @@ struct RadialHandStatus {
 	bool halfRing = false;
 	std::string hovered = "none";
 	std::string chosen = "none";   //!< the item run by the last release (also "none")
-	std::string result = "none";   //!< what the last release did, e.g. "inventory", "slot_filled", "nothing_left"
+	std::string result = "none";   //!< what the last release did, e.g. "book_open", "slot_filled", "nothing_left"
 	std::string refused;           //!< why the last press did not open the menu, empty when it did
 	u64 opens = 0;
 	u64 choices = 0;               //!< releases that ran an item
@@ -118,7 +121,7 @@ const RadialStatus & radialStatus();
 
 /*!
  * The test channel's \c vr-radial command: \c point \c <hand> \c <item> moves the simulated hand to the
- * middle of that item of its open menu (\c inventory, \c slot1 … \c slot7, \c game_menu …, \c center),
+ * middle of that item of its open menu (\c r1 … \c r3, \c l1 … \c l3, \c game_menu …, \c center),
  * through the half-ring when the item is in it.
  * \return an empty string, or why it was refused
  */

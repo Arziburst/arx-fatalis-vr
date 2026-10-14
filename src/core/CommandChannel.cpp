@@ -1391,14 +1391,18 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("pointX", h.point.x);
 			json.value("pointY", h.point.y);
 			writeVec(json, "center", h.center);
-			const vr::QuickSlotSet slots = vr::quickSlots(vr::Hand(hand));
-			json.object("slots");
-			for(size_t slot = 0; slot < slots.size(); slot++) {
-				json.value("slot" + std::to_string(slot + 1), slots[slot].empty() ? std::string("none") : slots[slot]);
-			}
-			json.end();
 			json.end();
 		}
+		// The quick slots of the ring (#377): r1..r3 the right hand's, l1..l3 the left hand's - the kind each holds
+		json.object("slots");
+		for(vr::Hand side : { vr::Hand::Right, vr::Hand::Left }) {
+			const vr::QuickSlotSet slots = vr::quickSlots(side);
+			for(size_t slot = 0; slot < slots.size(); slot++) {
+				const std::string name = (side == vr::Hand::Left ? "l" : "r") + std::to_string(slot + 1);
+				json.value(name, slots[slot].empty() ? std::string("none") : slots[slot]);
+			}
+		}
+		json.end();
 		json.end();
 	}
 	{

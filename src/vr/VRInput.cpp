@@ -281,6 +281,7 @@ ControlAction engineAction(GameAction action) {
 		case GameAction::QuickSave: return CONTROLS_CUST_QUICKSAVE;
 		case GameAction::QuickLoad: return CONTROLS_CUST_QUICKLOAD;
 		case GameAction::CancelSpell: return CONTROLS_CUST_CANCELCURSPELL;
+		case GameAction::BookMap: return CONTROLS_CUST_BOOKMAP;
 		case GameAction::Count: break;
 	}
 	arx_unreachable();

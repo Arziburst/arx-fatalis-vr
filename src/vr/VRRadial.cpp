@@ -213,11 +213,18 @@ void putTorchOut(Entity * torch) {
 	giveToPlayer(torch, pos);
 }
 
-//! A quick slot released on: fill it with a dragged item, or use what it holds - for this hand
-std::string runQuickSlot(Hand hand, u8 slot, RadialRequests & requests) {
+/*!
+ * A quick slot released on: fill it with a dragged item, or use what it holds - for the slot's hand, its half of
+ * the ring (#377: R slots the right hand, L slots the left), whichever hand holds the menu. Consumables are used;
+ * equipment is equipped by the engine's own use - a weapon goes to the engine's one weapon hand, the right, also
+ * from an L slot until a weapon per hand (#380), noted in the log
+ */
+std::string runQuickSlot(const RadialChoice & choice, RadialRequests & requests) {
 
+	const Hand hand = choice.left ? Hand::Left : Hand::Right;
+	const u8 slot = choice.slot;
 	QuickSlotSet slots = quickSlots(hand);
-	const std::string slotName = "slot" + std::to_string(int(slot) + 1);
+	const std::string slotName = radialChoiceName(choice);
 
 	if(Entity * dragged = g_draggedEntity; dragged && (dragged->ioflags & IO_ITEM)) {
 		slots[slot] = dragged->className();
@@ -252,13 +259,15 @@ std::string runQuickSlot(Hand hand, u8 slot, RadialRequests & requests) {
 		return "nothing_left";
 	}
 
+	// A weapon from the left hand's slot: the engine has one weapon hand, the right (#380 gives each hand its own)
+	const bool weaponToRight = choice.left && (found.item->type_flags & OBJECT_TYPE_WEAPON);
 	useInventoryItemWithLowestDurability(className);
 	g_radial.torch.waiting = true;
 	g_radial.torch.hand = hand;
 	g_radial.torch.className = className;
 	g_radial.torch.frames = 0;
 	gameevent::Event("vr.radial.use")("hand", handName(hand))("slot", slotName)("item", className)("result", "used")
-		("left", found.count - 1);
+		("left", found.count - 1)("note", weaponToRight ? "weapon_right_hand_until_380" : "none");
 	return "used";
 }
 
@@ -278,7 +287,7 @@ std::string toggleBookPage(ARX_INTERFACE_BOOK_MODE page) {
 }
 
 //! Run the item a hand released B over; \return what it did, for the status
-std::string runChoice(Hand hand, const RadialChoice & choice, RadialRequests & requests) {
+std::string runChoice(const RadialChoice & choice, RadialRequests & requests) {
 	switch(choice.item) {
 		case RadialItem::None: {
 			// Over nothing, with the book, the bag, a container or a note open: B closes it (#377, the owner's
@@ -288,12 +297,8 @@ std::string runChoice(Hand hand, const RadialChoice & choice, RadialRequests & r
 			}
 			return "none";
 		}
-		case RadialItem::Inventory: {
-			requests.pulses[size_t(GameAction::Inventory)] = true;
-			return "inventory";
-		}
 		case RadialItem::QuickSlot: {
-			return runQuickSlot(hand, choice.slot, requests);
+			return runQuickSlot(choice, requests);
 		}
 		case RadialItem::GameMenu: {
 			// Escape closes an open book or note first: the menu item opens the menu itself
@@ -511,7 +516,7 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 			// Released: the item under the hand runs; over nothing, an open book, bag, container or note closes (#377)
 			const RadialChoice chosen = hovered;
 			status.chosen = radialChoiceName(chosen);
-			status.result = runChoice(hand, chosen, requests);
+			status.result = runChoice(chosen, requests);
 			if(chosen.item != RadialItem::None) {
 				status.choices++;
 			}
@@ -681,13 +686,6 @@ void drawItemIcon(RadialItem item, const Vec2f & center, float radius, const Col
 	Icon icon(center, radius, std::max(2.f, radius * 0.14f), color);
 
 	switch(item) {
-		case RadialItem::Inventory: {
-			// A bag: body, flap, handle
-			icon.polyline({ Vec2f(-0.7f, 0.35f), Vec2f(-0.7f, -0.8f), Vec2f(0.7f, -0.8f), Vec2f(0.7f, 0.35f) }, true);
-			icon.polyline({ Vec2f(-0.7f, 0.35f), Vec2f(0.f, 0.f), Vec2f(0.7f, 0.35f) });
-			icon.arc(Vec2f(0.f, 0.35f), 0.35f, 0.f, 180.f);
-			break;
-		}
 		case RadialItem::GameMenu: {
 			for(float y : { 0.5f, 0.f, -0.5f }) {
 				icon.line(Vec2f(-0.7f, y), Vec2f(0.7f, y));
@@ -773,7 +771,6 @@ void drawItemIcon(RadialItem item, const Vec2f & center, float radius, const Col
 std::string itemLabel(RadialItem item) {
 	const char * key = nullptr;
 	switch(item) {
-		case RadialItem::Inventory: key = "system_menus_options_input_customize_controls_inventory"; break;
 		case RadialItem::Character: key = "system_menus_options_input_customize_controls_bookcharsheet"; break;
 		case RadialItem::Spells: key = "system_menus_options_input_customize_controls_bookspell"; break;
 		case RadialItem::Map: key = "system_menus_options_input_customize_controls_bookmap"; break;
@@ -832,7 +829,8 @@ void drawMenu(Hand hand) {
 	const RadialParams & params = g_radial.params;
 	const RadialChoice hovered = menu.selector.hovered();
 	const bool halfOpen = menu.selector.halfRingOpen();
-	const QuickSlotSet slots = quickSlots(hand);
+	// The right half shows the right hand's slots, the left half the left hand's (#377)
+	const std::array<QuickSlotSet, HandCount> slots = { quickSlots(Hand::Left), quickSlots(Hand::Right) };
 	const bool dragging = g_draggedEntity && (g_draggedEntity->ioflags & IO_ITEM);
 
 	Canvas canvas;
@@ -851,7 +849,7 @@ void drawMenu(Hand hand) {
 
 	std::string label;
 
-	// The ring: 8 segments, the one under the hand lit, with an arc outside it
+	// The ring: 6 segments, the one under the hand lit, with an arc outside it
 	for(size_t segment = 0; segment < RadialSegmentCount; segment++) {
 		const float center = segmentCenterDegrees(segment);
 		const float from = center - segmentDegrees * 0.5f + gap;
@@ -864,15 +862,7 @@ void drawMenu(Hand hand) {
 		}
 
 		const Vec2f iconCenter = canvas.polar(center, middleRadius);
-		if(choice.item == RadialItem::Inventory) {
-			drawItemIcon(RadialItem::Inventory, iconCenter, iconRadius, IconColor);
-			if(lit) {
-				label = itemLabel(RadialItem::Inventory);
-			}
-			continue;
-		}
-
-		const std::string & className = slots[choice.slot];
+		const std::string & className = slots[size_t(choice.left ? Hand::Left : Hand::Right)][choice.slot];
 		const SlotItem found = findInInventory(className);
 		const bool burning = !className.empty() && player.torch && player.torch->className() == className;
 		Entity * shown = found.item ? found.item : (burning ? player.torch : nullptr);
@@ -1064,7 +1054,7 @@ std::string radialCommand(std::string_view arguments) {
 	const std::optional<Vec2f> point = itemPoint(item, halfRing);
 	if(!point) {
 		return "vr-radial point: unknown item \"" + std::string(item)
-		       + "\" (center, inventory, slot1..slot7, game_menu, character, spells, map, quests, quick_save,"
+		       + "\" (center, r1..r3, l1..l3, game_menu, character, spells, map, quests, quick_save,"
 		         " quick_load, recenter, cancel_spell)";
 	}
 	if(!isSimulated()) {

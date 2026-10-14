@@ -667,14 +667,16 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	status.handle = logical.gripOrientation * Vec3f(0.f, 0.f, 1.f); // the grip's Z in engine axes
 
 	if(atArxWrist) {
-		// The classic arm's glove (#466.2, research F-281): the Arx arm is drawn to its wrist, so the glove keeps the
-		// turn it has on the handle and sits with its cuff on the Arx wrist joint - the Arx forearm ends in its cuff,
-		// with no sleeve and no solve of its own
-		glm::mat4 atWrist = glm::translate(glm::mat4(1.f), logical.arxWrist) * glm::mat4_cast(handQuat);
+		// The classic arm's glove (#466.2, research F-281): the Arx arm is drawn to its wrist, so the glove takes the
+		// Arx hand's place - turned by the same grip frame as the Arx hand (D-032, without the curl's turn onto the
+		// handle, which tilts it some 30 degrees off the Arx wrist ring) and with its cuff on the Arx wrist joint. The
+		// Arx forearm ends in its cuff, with no sleeve and no solve of its own
+		const glm::quat wristQuat = glm::normalize(logical.gripOrientation * glove.toGrip);
+		glm::mat4 atWrist = glm::translate(glm::mat4(1.f), logical.arxWrist) * glm::mat4_cast(wristQuat);
 		atWrist = glm::scale(atWrist, Vec3f(gloveScale));
 		atWrist = glm::translate(atWrist, -glove.cuff);
 		status.palmToGrip = glm::distance(Vec3f(atWrist * glm::vec4(glove.palmCentre, 1.f)), logical.grip);
-		poseGloveHand(arm, logical, atWrist, handQuat);
+		poseGloveHand(arm, logical, atWrist, wristQuat);
 		status.drawn = true;
 		status.wrist = logical.arxWrist;
 		status.wristGap = 0.f;

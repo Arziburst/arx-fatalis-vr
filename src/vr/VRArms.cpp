@@ -401,7 +401,8 @@ TextureContainer * armsTexture(const std::string & name) {
 } // anonymous namespace
 
 ArmsModel parseArmsModel(std::string_view text) {
-	return (util::toLowercase(std::string(text)) == "arx") ? ArmsModel::Arx : ArmsModel::Custom;
+	const std::string name = util::toLowercase(std::string(text));
+	return (name == "arx") ? ArmsModel::Arx : (name == "classic") ? ArmsModel::Classic : ArmsModel::Custom;
 }
 
 bool parseArmsModelStrict(std::string_view text, ArmsModel & model) {
@@ -410,6 +411,8 @@ bool parseArmsModelStrict(std::string_view text, ArmsModel & model) {
 		model = ArmsModel::Custom;
 	} else if(name == "arx") {
 		model = ArmsModel::Arx;
+	} else if(name == "classic") {
+		model = ArmsModel::Classic;
 	} else {
 		return false;
 	}
@@ -417,7 +420,12 @@ bool parseArmsModelStrict(std::string_view text, ArmsModel & model) {
 }
 
 const char * armsModelName(ArmsModel model) {
-	return model == ArmsModel::Arx ? "arx" : "custom";
+	switch(model) {
+		case ArmsModel::Arx: return "arx";
+		case ArmsModel::Classic: return "classic";
+		case ArmsModel::Custom: break;
+	}
+	return "custom";
 }
 
 float clampWeaponElbowDrop(float share) {

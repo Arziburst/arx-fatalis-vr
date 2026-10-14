@@ -63,8 +63,9 @@ class TextureContainer;
 namespace vr {
 
 enum class ArmsModel : u8 {
-	Custom, //!< our own arms (the default)
-	Arx     //!< the player model's own arms
+	Custom,  //!< our own arms (the default)
+	Arx,     //!< the player model's own arms as the engine skins them: the reference
+	Classic  //!< the player model's own arms with one elbow and a rigid forearm (#466.1, vr/ArxArmFix.h)
 };
 
 //! The custom hands against the glove's real size: bigger than the Arx hands by default (the owner: fingers too small)
@@ -82,9 +83,9 @@ constexpr float DefaultWeaponElbowDrop = 0.75f;
 //! \return \a share within [0, 1] (DefaultWeaponElbowDrop for a value that is not a number)
 float clampWeaponElbowDrop(float share);
 
-//! \return the model a cfg.ini value names: "arx" is the Arx arms, anything else our own
+//! \return the model a cfg.ini value names: "arx" the Arx arms, "classic" the fixed Arx arms, anything else our own
 ArmsModel parseArmsModel(std::string_view text);
-//! \return false unless \a text is "custom" or "arx" (the channel's \c arms command)
+//! \return false unless \a text is "custom", "arx" or "classic" (the channel's \c arms command)
 bool parseArmsModelStrict(std::string_view text, ArmsModel & model);
 const char * armsModelName(ArmsModel model);
 float clampHandScale(float scale);

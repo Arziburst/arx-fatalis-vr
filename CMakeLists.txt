@@ -1272,6 +1272,7 @@ set(VR_SOURCES
 	src/vr/ArmIK.cpp
 	src/vr/ArmMesh.cpp
 	src/vr/ArmRoll.cpp
+	src/vr/ArxArmFix.cpp
 	src/vr/BodyView.cpp
 	src/vr/BodyYaw.cpp
 	src/vr/EyeImage.cpp

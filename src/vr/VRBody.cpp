@@ -46,6 +46,7 @@
 #include "scene/Object.h"
 #include "vr/ArmIK.h"
 #include "vr/ArmRoll.h"
+#include "vr/ArxArmFix.h"
 #include "vr/BodyView.h"
 #include "vr/EyeProjection.h"
 #include "vr/HeadTracking.h"
@@ -125,6 +126,11 @@ struct ArmChain {
 	Vec3f outwardLocal = Vec3f(0.f);       //!< the palm's face, in the wrist's rest frame: where the fingers curl towards
 	//! per bone of the model: the finger group and the segment it is, or NoFinger
 	std::vector<std::pair<u8, u8>> fingerOf;
+	// The classic Arx arm (#466.1, vr/ArxArmFix.h)
+	ArxArmRest armRest;                    //!< the arm at rest, each vertex with the part its group is in
+	ArxArmDiagnosis diagnosis;             //!< the arm's rings along its axis
+	std::vector<ArmPart> classicParts;     //!< per vertex: the part the classic arm skins it to
+	std::vector<VertexId> reassigned;      //!< the vertices whose classic part is not their group's
 };
 
 //! A posed hand's world axes, for the landmarks of status.json
@@ -159,6 +165,8 @@ struct BodyState {
 	size_t boundFaces = 0;                        //!< the bound model's faces with the caps (a reloaded model has fewer)
 	//! per face of the bound model: what it is to the custom arms (#385.3) - FaceBody, FaceArm + hand, FaceArmCap + hand
 	std::vector<u8> faceRole;
+	//! the vertices the classic arm skinned on another bone this frame, with the rotation they turned with (#466.1)
+	std::vector<ReskinnedVertex> reskinned;
 	//! per face of the bound model: hidden this frame because it is too near an eye (#385.9), and the pose it was
 	//! worked out for (status.poseCalls) - once per frame, the same faces for both eyes
 	std::vector<char> nearEye;
@@ -580,6 +588,37 @@ void addArmCaps(EERIE_3DOBJ * obj) {
 	}
 }
 
+//! One arm of the bound model at rest for vr/ArxArmFix.h: its joints, and each vertex with the part of the arm it is in
+ArxArmRest armRestOf(const EERIE_3DOBJ * obj, const ArmChain & chain) {
+
+	ArxArmRest rest;
+	const Skeleton & rig = *obj->m_skeleton;
+	rest.shoulder = obj->vertexlist[obj->grouplist[chain.upper].origin].v;
+	rest.elbow = obj->vertexlist[obj->grouplist[chain.forearm].origin].v;
+	rest.wrist = obj->vertexlist[obj->grouplist[chain.hand].origin].v;
+	rest.positions.reserve(obj->vertexlist.size());
+	for(const EERIE_VERTEX & vertex : obj->vertexlist) {
+		rest.positions.push_back(vertex.v);
+	}
+	rest.parts.assign(obj->vertexlist.size(), ArmPart::Body);
+	for(VertexGroupId group : obj->grouplist.handles()) {
+		// The nearest of the chain's groups at or above this one
+		ArmPart part = ArmPart::Body;
+		for(VertexGroupId ancestor = group; ancestor && part == ArmPart::Body; ancestor = rig.bones[ancestor].father) {
+			part = (ancestor == chain.hand) ? ArmPart::Hand : (ancestor == chain.forearm) ? ArmPart::Forearm
+			       : (ancestor == chain.upper) ? ArmPart::Upper : ArmPart::Body;
+		}
+		for(VertexId vertex : obj->m_boneVertices[group]) {
+			rest.parts[size_t(vertex)] = part;
+		}
+	}
+	rest.faces.reserve(obj->facelist.size());
+	for(const EERIE_FACE & face : obj->facelist) {
+		rest.faces.push_back({ size_t(face.vid[0]), size_t(face.vid[1]), size_t(face.vid[2]) });
+	}
+	return rest;
+}
+
 void bind(EERIE_3DOBJ * obj) {
 
 	PlayerBodyStatus & status = g_body.status;
@@ -678,6 +717,20 @@ void bind(EERIE_3DOBJ * obj) {
 		        << "), the elbow points " << vectorText(chain.restElbow) << " (from " << chain.restElbowSource << ")";
 		status.chains += std::string(hand ? "; " : "") + name + ": " + chain.names;
 		status.bound = true;
+
+		// The Arx arm along its axis (#466.1): what makes its second elbow, and the vertices the classic arm skins
+		// on another bone than their group's
+		chain.armRest = armRestOf(obj, chain);
+		chain.diagnosis = diagnoseArxArm(chain.armRest);
+		chain.classicParts = classicArmParts(chain.armRest, chain.diagnosis);
+		chain.reassigned.clear();
+		for(size_t v = 0; v < chain.classicParts.size(); v++) {
+			if(chain.classicParts[v] != chain.armRest.parts[v]) {
+				chain.reassigned.push_back(VertexId(v));
+			}
+		}
+		LogInfo << "[vr] body: " << name << " Arx arm " << diagnosisText(chain.diagnosis) << "; the classic arm skins "
+		        << chain.reassigned.size() << " vertices on another bone";
 
 		// The fingers (#305): the groups found under the hand and the axes they bend about
 		std::string fingers;
@@ -844,6 +897,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	// The custom arms (#385.3): the playground lever may switch them; nothing is drawn until an arm is posed again
 	followArmsLever();
 	resetCustomArms();
+	g_body.reskinned.clear();
 	g_body.shift = Vec3f(0.f);
 	status.shift = Vec3f(0.f);
 	status.push = 0.f;
@@ -856,6 +910,9 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		arm.fingerGroups = g_body.chains[hand].haveFingers;
 		arm.joints = false;
 		arm.holds = false;
+		arm.armSkin = "none";
+		arm.bend = ArmBend();
+		arm.classicDrawn = false;
 		g_body.axes[hand].valid = false;
 	}
 
@@ -991,7 +1048,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		// arms drawn the logical arm is the drawn one: it stays on the pushed shoulder, so the shoulder's band of
 		// faces is not stretched (the wrist bars may lean a little looking down there)
 		const Vec3f shoulder = upper.anim.trans;
-		const Vec3f realShoulder = (armsModel() == ArmsModel::Arx) ? shoulder : shoulder - push;
+		const Vec3f realShoulder = (armsModel() != ArmsModel::Custom) ? shoulder : shoulder - push;
 		const ArmRollPose posed = solveArmRoll(realShoulder, target, handQuat, upperLength, forearmLength, hint,
 		                                       chain.rest, params, roll, g_body.roll[hand]);
 		const ArmPose & pose = posed.pose;
@@ -1102,6 +1159,12 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		noteArm(hand, true, source);
 		any = true;
 
+		// How the drawn Arx arm bends along its rings (#466.1): on the classic skin when it is drawn, else on the engine's
+		const bool classic = armsModel() == ArmsModel::Classic;
+		arm.armSkin = classic ? "classic" : "arx";
+		arm.bend = measureArm(chain.armRest, chain.diagnosis, classic ? chain.classicParts : chain.armRest.parts,
+		                      { upper.anim.quat, forearm.anim.quat, handBone.anim.quat });
+
 		// The custom arm (#385.3) hangs from this logical arm's shoulder and solves its own chain (#385.6); its Arx
 		// faces are then not drawn (drawsBodyFace)
 		if(chain.frame.valid) {
@@ -1169,6 +1232,40 @@ bool isHeadVertex(EERIE_3DOBJ * obj, VertexId vertex) {
 
 size_t bodyCapStart(const EERIE_3DOBJ * obj) {
 	return (obj && obj == g_body.boundObject) ? g_body.capStart : (obj ? obj->facelist.size() : 0);
+}
+
+void skinPlayerArms(EERIE_3DOBJ * obj) {
+
+	if(!obj || obj != g_body.boundObject || !obj->m_skeleton) {
+		return;
+	}
+	g_body.reskinned.clear();
+	if(armsModel() != ArmsModel::Classic) {
+		return;
+	}
+	const Skeleton & rig = *obj->m_skeleton;
+	PlayerBodyStatus & status = g_body.status;
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		const ArmChain & chain = g_body.chains[hand];
+		if(!chain.valid || !status.hands[hand].posed || chain.classicParts.size() != obj->vertexlist.size()) {
+			continue;
+		}
+		for(VertexId vertex : chain.reassigned) {
+			const ArmPart part = chain.classicParts[size_t(vertex)];
+			const VertexGroupId group = (part == ArmPart::Upper) ? chain.upper : (part == ArmPart::Forearm) ? chain.forearm
+			                            : chain.hand;
+			const Bone & bone = rig.bones[group];
+			const Vec3f local = obj->vertexlist[vertex].v - obj->vertexlist[obj->grouplist[group].origin].v;
+			obj->vertexWorldPositions[vertex].v = skinOnBone(bone.anim.quat, bone.anim.trans, bone.anim.scale, local);
+			g_body.reskinned.push_back({ vertex, bone.anim.quat });
+		}
+		status.hands[hand].classicDrawn = true;
+	}
+}
+
+const std::vector<ReskinnedVertex> & reskinnedArmVertices(const EERIE_3DOBJ * obj) {
+	static const std::vector<ReskinnedVertex> none;
+	return (obj && obj == g_body.boundObject) ? g_body.reskinned : none;
 }
 
 bool drawsBodyFace(const EERIE_3DOBJ * obj, size_t face) {

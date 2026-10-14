@@ -1150,6 +1150,19 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("wristTwist", arm.wristTwist);
 			json.value("elbowTwist", arm.elbowTwist);
 			json.value("rollOverflow", arm.overflow);
+			// The Arx arm along its rings (#466.1): the skin it was measured on (classic when vr_arms_model = classic,
+			// else the engine's), the bands bent past the threshold (the elbow of a bent arm is one), the most bent
+			// band, the elbow's bend and the forearm rings' roll spread
+			json.object("classic");
+			json.value("skin", arm.armSkin);
+			json.value("drawn", arm.classicDrawn);
+			json.value("creases", arm.bend.creases);
+			json.value("creaseThreshold", vr::CreaseThreshold);
+			json.value("creaseBands", arm.bend.bands);
+			json.value("maxBend", arm.bend.maxBend);
+			json.value("elbowBend", arm.bend.elbowBend);
+			json.value("forearmTwistSpread", arm.bend.forearmTwistSpread);
+			json.end();
 			// The custom arm drawn on this logical arm (#385.3): the hand's size, where the glove and the sleeve sit,
 			// the bend the sleeve is drawn with and the roll its twist joints carry
 			const vr::CustomArmStatus & custom = vr::customArmStatus(vr::Hand(hand));
@@ -2011,7 +2024,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "arms") {
-		// The arms drawn on the player in VR (#385.3): arms custom|arx switches the model live, arms scale <factor>
+		// The arms drawn on the player in VR (#385.3): arms custom|arx|classic switches the model live, arms scale <factor>
 		// sets the custom hands' size (vr_hand_scale); both are saved to cfg.ini
 		std::string_view args;
 		std::string_view what = firstWord(rest, args);
@@ -2027,7 +2040,7 @@ std::string execute(std::string_view line) {
 			return std::string();
 		}
 		if(!args.empty() || !vr::parseArmsModelStrict(what, model)) {
-			return refuse("arms: expected custom, arx or scale <factor>, got \"" + std::string(rest) + "\"");
+			return refuse("arms: expected custom, arx, classic or scale <factor>, got \"" + std::string(rest) + "\"");
 		}
 		vr::setArmsModel(model, "the channel");
 		return std::string();

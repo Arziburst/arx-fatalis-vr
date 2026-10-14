@@ -22,9 +22,13 @@
 
 #include <array>
 #include <string>
+#include <vector>
+
+#include <glm/gtc/quaternion.hpp>
 
 #include "math/Types.h"
 #include "platform/Platform.h"
+#include "vr/ArxArmFix.h"
 #include "vr/FingerCurl.h"
 #include "vr/HeadPose.h"
 #include "vr/VRControls.h"
@@ -98,6 +102,25 @@ bool isHeadVertex(EERIE_3DOBJ * obj, VertexId vertex);
  *         head, where the model is drawn two-sided), or the face count of a model without one
  */
 size_t bodyCapStart(const EERIE_3DOBJ * obj);
+
+/*!
+ * \brief Skin the classic Arx arm (#466.1, vr/ArxArmFix.h) - after the engine transformed the vertices of the
+ *        player's own skeleton posed by \ref posePlayerBody
+ *
+ * With \c vr_arms_model = classic, the vertices of each posed arm whose ring the classic arm gives another bone than
+ * their group's are placed again on that bone. Nothing else changes: flat mode (no posed arm), the inventory book
+ * (its own update, never through here) and the other models keep the engine's skin.
+ */
+void skinPlayerArms(EERIE_3DOBJ * obj);
+
+//! A vertex the classic arm skinned on another bone than its group's this frame, and the rotation it turned with
+struct ReskinnedVertex {
+	VertexId vertex;
+	glm::quat rotation = glm::quat(1.f, 0.f, 0.f, 0.f);
+};
+
+//! The vertices of \a obj \ref skinPlayerArms placed this frame, for their lighting (empty for any other model)
+const std::vector<ReskinnedVertex> & reskinnedArmVertices(const EERIE_3DOBJ * obj);
 
 /*!
  * \return false for a face of the player model not drawn under a tracked head this frame (#385.3): an Arx arm's
@@ -177,6 +200,10 @@ struct PlayerArmStatus {
 	bool holds = false;           //!< the hand holds a weapon: the fingers are closed on its grip
 	FingerCurl curl;              //!< the segments' bend this frame (degrees), approaching \c curlTarget
 	FingerCurl curlTarget;        //!< what the source asked for
+	// The Arx arm along its rings (#466.1, vr/ArxArmFix.h)
+	const char * armSkin = "none"; //!< the skin it was measured on: classic, arx (the engine's), none (not posed)
+	ArmBend bend;                 //!< the creases, the elbow's bend and the forearm's twist spread on that skin
+	bool classicDrawn = false;    //!< the classic arm re-skinned this arm's vertices this frame
 };
 
 //! The body as status.json reports it (the look and the body yaw of #25 are vr::BodyStatus in HeadTracking.h)

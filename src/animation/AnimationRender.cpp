@@ -1166,7 +1166,15 @@ static void Cedric_AnimateDrawEntityRender(EERIE_3DOBJ * eobj, const Vec3f & pos
 	UpdateLlights(lights, lightsCount, tv, false);
 	
 	Cedric_ApplyLighting(lights, lightsCount, eobj, obj, colorMod);
-	
+	if(io && io == entities.player() && eobj == io->obj && !IN_BOOK_DRAW) {
+		// The classic Arx arm (#466.1): a vertex skinned on another bone than its group's turns its normal with it
+		for(const vr::ReskinnedVertex & reskinned : vr::reskinnedArmVertices(eobj)) {
+			const VertexId vertex = reskinned.vertex;
+			const Vec3f normal = reskinned.rotation * eobj->vertexlist[vertex].norm;
+			eobj->vertexColors[vertex] = ApplyLight(lights, lightsCount, eobj->vertexWorldPositions[vertex].v, normal, colorMod);
+		}
+	}
+
 	Cedric_RenderObject(eobj, obj, io, pos, invisibility);
 
 	// The VR body's own arms (#385.3): only in the view under a tracked head, never in the book or flat
@@ -1576,6 +1584,10 @@ void EERIEDrawAnimQuatUpdate(EERIE_3DOBJ * eobj,
 	animateSkeleton(eobj, animlayer, angle, pos, scale, ftr, io, *eobj->m_skeleton, io ? &io->animBlend : nullptr);
 	
 	Cedric_TransformVerts(eobj);
+	if(io && io == entities.player()) {
+		// The classic Arx arm in VR (#466.1): one elbow, the forearm one rigid piece
+		vr::skinPlayerArms(eobj);
+	}
 	if(io) {
 		io->bbox3D = UpdateBbox3d(eobj);
 	}

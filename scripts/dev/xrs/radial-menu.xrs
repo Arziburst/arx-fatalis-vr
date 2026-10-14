@@ -275,6 +275,77 @@ vr-input up right.b
 @assert vr.radial.slots.l1 eq short_sword
 vr-sim action trigger right 0
 @frames 10
+# The owner's flow (headset run of #456): the bag open, the right B held FIRST - the ring opens and the bag stays
+# open - then the LEFT hand drags an item out of the bag with its own pointer onto a segment; the release of B fills
+# the slot and closes the ring, the bag stays open. Onto an R slot, then onto an L slot
+vr-input down right.b
+@frames 5
+@assert vr.radial.right.open eq true
+@assert player.inventoryOpen eq true
+vr-point left item potion_life
+@frames 5
+vr-point left item potion_life
+@frames 5
+# The left trigger's press takes the cursor from the hand holding the ring (the owner rule 13g, D-019)
+vr-sim action trigger left 1
+@frames 5
+@assert vr.pointer.owner eq left
+vr-point left item potion_life 40 0
+@frames 10
+@assert ui.drag ne none
+@assert vr.pointer.owner eq left
+@assert player.inventoryOpen eq true
+vr-radial point right r3
+@frames 5
+@assert vr.radial.right.hovered eq r3
+vr-input up right.b
+@frames 5
+@assert vr.radial.right.open eq false
+@assert vr.radial.right.result eq slot_filled
+@assert vr.radial.slots.r3 eq potion_life
+@log vr\.radial\.slot hand=right slot=r3 item=potion_life back=inventory 5s
+vr-sim action trigger left 0
+@frames 10
+@assert ui.drag eq none
+@assert player.inventoryOpen eq true
+vr-input down right.b
+@frames 5
+@assert player.inventoryOpen eq true
+vr-point left item torch
+@frames 5
+vr-point left item torch
+@frames 5
+# The left trigger's press takes the cursor from the hand holding the ring (the owner rule 13g, D-019)
+vr-sim action trigger left 1
+@frames 5
+@assert vr.pointer.owner eq left
+vr-point left item torch 40 0
+@frames 10
+@assert ui.drag ne none
+@assert vr.pointer.owner eq left
+vr-radial point right l2
+@frames 5
+@assert vr.radial.right.hovered eq l2
+@shot left-drag-l2
+vr-input up right.b
+@frames 5
+@assert vr.radial.right.result eq slot_filled
+@assert vr.radial.slots.l2 eq torch
+vr-sim action trigger left 0
+@frames 10
+@assert ui.drag eq none
+@assert player.inventoryOpen eq true
+# A short B tap over nothing leaves the bag open (the owner): only the left A closes it
+vr-input down right.b
+@frames 3
+vr-radial point right center
+@frames 3
+vr-input up right.b
+@frames 30
+@assert vr.radial.right.result eq none
+@assert player.inventoryOpen eq true
+# The slots' R / L letters are drawn (on the plus and on a filled slot alike)
+@assert vr.radial.sideLetters gt 0
 # The left A again closes the bag
 vr-input down left.a
 @frames 5

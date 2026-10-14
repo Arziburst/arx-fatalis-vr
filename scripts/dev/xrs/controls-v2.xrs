@@ -251,7 +251,8 @@ vr-input up right.b
 @assert player.inventoryOpen eq false
 @assert player.freelook eq true
 @frames 30
-# The bag the same: the radial menu opens with it, B over nothing closes it
+# The bag: the radial menu opens with it and leaves it open - B over nothing does not close it (the owner's headset
+# run: the ring and the bag coexist to fill slots); the left A closes it
 vr-input tap left.a
 @until player.inventoryOpen eq true 5s
 @frames 30
@@ -274,17 +275,22 @@ vr-input down right.b
 @assert vr.radial.right.undrawn eq none
 @shot bag-ring
 @assert vr.sim.shots.bag-ring.left.overlayPixels gt {bagOverlayL+5000}
+@assert player.inventoryOpen eq true
 vr-radial point right center
 @frames 5
 vr-input up right.b
+@frames 30
+@assert vr.radial.right.open eq false
+@assert vr.radial.right.result eq none
+@assert player.inventoryOpen eq true
+vr-input tap left.a
 @until player.inventoryOpen eq false 5s
-@assert vr.radial.right.result eq closed
 # Closed, the hands are back in the world: the reticles on, the pointer off
 @until vr.reticle.on eq true 5s
 @until vr.pointer.shown eq false 5s
 @assert player.freelook eq true
 @frames 30
-# A short B tap over nothing closes the book and the bag at once (the owner)
+# A short B tap over nothing closes the book, not the bag (the owner's headset run of #456)
 vr-input down right.b
 @frames 3
 vr-radial point right character
@@ -302,9 +308,12 @@ vr-radial point right center
 @frames 3
 vr-input up right.b
 @until player.bookOpen eq false 5s
-@until player.inventoryOpen eq false 5s
 @assert vr.radial.right.result eq closed
-@log GameEvent:.*vr\.panels\.closed what="?book inventory
+@log GameEvent:.*vr\.panels\.closed what="?book"?(\s|$)
+@frames 30
+@assert player.inventoryOpen eq true
+vr-input tap left.a
+@until player.inventoryOpen eq false 5s
 @until vr.reticle.on eq true 5s
 @frames 30
 # The right A while an item is dragged out of the bag: no stance, nothing is closed (the item would stay in the hand
@@ -341,11 +350,7 @@ vr-sim action trigger right 0
 vr-sim hand left rot 0 0 0
 vr-sim hand right pos 0.12 -0.2 -0.38
 @frames 10
-vr-input down right.b
-@frames 3
-vr-radial point right center
-@frames 5
-vr-input up right.b
+vr-input tap left.a
 @until player.inventoryOpen eq false 5s
 @frames 30
 # The casting stance (the right A, the owner) closes everything open first - the book and the bag - then starts
@@ -528,6 +533,9 @@ vr-input up right.b
 @assert vr.radial.right.result eq closed
 @log GameEvent:.*vr\.radial hand=right state=chosen item=none result=closed .*frames=\d+ drawn=\d+ submitted=\d+
 @frames 30
+# The engine opened the bag with the chest: B leaves it open (it never closes the bag), the left A closes it
+@assert player.inventoryOpen eq true
+vr-input tap left.a
 @until player.inventoryOpen eq false 5s
 @frames 30
 

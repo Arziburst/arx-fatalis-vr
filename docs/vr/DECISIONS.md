@@ -207,6 +207,15 @@ gives a clear moment to cast without a pause or an extra gesture.
   again, closed) - a new `map` event; the **left A toggles the bag** (`inventory`); the right A stays the casting
   stance. 6 slots for now; a setting for more or fewer comes later. A save made with the first layout (7 slots per
   hand in `$vr_quickslots_left` / `_right`) keeps each hand's first three; the rest is dropped.
+- **Fixes after the owner's headset run of that layout (2026-10-14), as built:** every slot shows its side's letter,
+  **R or L**, on the plus and on a filled slot (at the icon's upper left; the count stays at its lower right). **The
+  ring and the open bag coexist:** B released over nothing closes the book, a note and a container but **never the
+  bag** - only the left A closes it (or the casting stance's press, which still closes everything). The flow: the
+  left A opens the bag, hold the right B, drag an item out of the bag with the left hand (its trigger press takes the
+  panel's cursor from the hand holding the ring, the owner rule 13g), let B go over a segment - the slot holds it,
+  the ring closes, the bag stays open. A container opens with the engine's bag: B closes the container and leaves
+  that bag open. No game menu key on the left B (the owner: it is the map); the ring opens at the hand
+  (`vr_radial_place = hand` stays the default).
 
 ---
 

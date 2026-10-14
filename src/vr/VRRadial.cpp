@@ -282,8 +282,8 @@ std::string runChoice(Hand hand, const RadialChoice & choice, RadialRequests & r
 	switch(choice.item) {
 		case RadialItem::None: {
 			// Over nothing, with the book, the bag, a container or a note open: B closes it (#377, the owner's
-			// D-042 amendment) - not while an item is dragged, which would fall out of the bag
-			if(!g_draggedEntity && !closeOpenPanels(requests).empty()) {
+			// D-042 amendment) - not while an item is dragged (closeOpenPanels keeps them then)
+			if(!closeOpenPanels(requests).empty()) {
 				return "closed";
 			}
 			return "none";
@@ -378,6 +378,11 @@ std::string closeOpenPanels(RadialRequests & requests, bool direct) {
 	};
 
 	if(ARXmenu.mode() != Mode_InGame || !entities.player()) {
+		return closed;
+	}
+	// Not while an item is dragged: it would stay in the hand with its bag closed, or fall out of it (the verifier)
+	if(g_draggedEntity) {
+		gameevent::Event("vr.panels.kept", 200)("why", "an item is dragged")("item", g_draggedEntity->idString());
 		return closed;
 	}
 	if(player.Interface & INTER_PLAYERBOOK) {

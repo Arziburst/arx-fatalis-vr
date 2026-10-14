@@ -341,6 +341,48 @@ vr-input up left.b
 @log GameEvent:.*vr\.panels\.closed what="?book inventory
 @until vr.reticle.on eq true 5s
 @frames 30
+# The right A while an item is dragged out of the bag: nothing is closed (the item would stay in the hand with its
+# bag gone, the verifier); the item goes back into the bag when let go there
+inventory playeradd magic/potion_life/potion_life
+@frames 10
+vr-input down right.b
+@frames 3
+vr-radial point right inventory
+@frames 5
+vr-input up right.b
+@until player.inventoryOpen eq true 5s
+@frames 30
+vr-sim hand left rot 180 0 0
+vr-point right item potion_life
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-point right item potion_life 40 0
+@frames 10
+@assert ui.drag ne none
+@mark
+vr-input down right.a
+@frames 10
+@assert player.inventoryOpen eq true
+@assert ui.drag ne none
+@log GameEvent:.*vr\.panels\.kept why="?an item is dragged
+vr-input up right.a
+@frames 10
+vr-point right bag
+@frames 10
+vr-sim action trigger right 0
+@until ui.drag eq none 5s
+@assert player.inventoryOpen eq true
+vr-sim hand left rot 0 0 0
+vr-sim hand right pos 0.12 -0.2 -0.38
+@frames 10
+vr-input down right.b
+@frames 3
+vr-radial point right center
+@frames 5
+vr-input up right.b
+@until player.inventoryOpen eq false 5s
+@frames 30
 # The casting stance (the right A, the owner) closes everything open first - the book and the bag - then starts
 vr-input down right.b
 @frames 3

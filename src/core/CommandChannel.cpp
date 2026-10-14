@@ -101,6 +101,7 @@
 #include "vr/PerfLog.h"
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
+#include "vr/VRHud.h"
 #include "vr/VRInput.h"
 #include "vr/VRMelee.h"
 #include "vr/VRRadial.h"
@@ -1006,6 +1007,7 @@ std::string buildStatus(PlatformInstant now) {
 		vr::PanelStatus panel = vr::panelStatus();
 		json.object("panel");
 		json.value("mode", panel.mode);
+		json.value("shown", vr::panelShown()); // placed for an open book, bag, container, note or menu (#469)
 		json.value("menu", panel.menu);
 		json.value("placements", panel.placements);
 		json.value("lastPlacement", panel.lastPlacement);
@@ -1419,6 +1421,33 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("z", vector.v.z);
 			json.end();
 		}
+		json.end();
+	}
+	{
+		// The screen-frame HUD (#469): the switches, per element the frames it was let through to draw (0 in VR),
+		// the level-up indication
+		const vr::HudStatus & hud = vr::hudStatus();
+		json.object("hud");
+		json.value("vr", hud.vr);
+		json.value("frame", hud.frame ? "on" : "off");
+		json.value("keep", hud.keep.empty() ? std::string("none") : hud.keep);
+		json.value("frames", hud.frames);
+		json.value("drawnTotal", vr::hudDrawnTotal());
+		json.object("drawn");
+		for(size_t i = 0; i < vr::HudElementCount; i++) {
+			json.value(vr::hudElementInfo(vr::HudElement(i)).name, hud.drawn[i]);
+		}
+		json.end();
+		const vr::LevelUpIndicator & levelUp = vr::levelUpIndicator();
+		json.object("levelUp");
+		json.value("mode", vr::levelUpModeName(levelUp.mode()));
+		json.value("pending", levelUp.pending());
+		json.value("radialMark", levelUp.radialMark());
+		json.value("wristNotice", levelUp.wristNotice());
+		json.value("notices", levelUp.notices());
+		json.value("radialImages", hud.levelUpRadialImages);
+		json.value("wristViews", hud.levelUpWristViews);
+		json.end();
 		json.end();
 	}
 	{
@@ -1976,6 +2005,12 @@ std::string execute(std::string_view line) {
 		hold.timedOut = false;
 		hold.walk = vr::WalkStatus();
 		return std::string();
+	}
+
+	if(word == "vr-hud") {
+		// The screen-frame HUD in VR (#469): frame on|off, keep <names>|none, levelup <mode>, reset - cfg.ini's, live
+		std::string error = vr::hudCommand(rest);
+		return error.empty() ? error : refuse(error);
 	}
 
 	if(word == "vr-radial") {

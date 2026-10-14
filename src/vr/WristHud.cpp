@@ -23,6 +23,7 @@
 #include <cstring>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include "core/GameEvent.h"
@@ -36,6 +37,7 @@
 #include "vr/EyeProjection.h"
 #include "vr/VRBody.h"
 #include "vr/VRControls.h"
+#include "vr/VRHud.h"
 
 namespace vr {
 
@@ -49,6 +51,9 @@ const Color4f BackColor = Color4f::rgba(0.04f, 0.03f, 0.03f, 0.7f);
 //! Health red and mana blue, as the orbs of the flat HUD
 const Color4f HealthColor = Color4f::rgba(0.85f, 0.08f, 0.06f, 1.f);
 const Color4f ManaColor = Color4f::rgba(0.12f, 0.32f, 1.f, 1.f);
+//! The level-up notice (#469): the gold of the flat game's level-up icon, a square this wide (meters)
+const Color4f WristLevelUpColor = Color4f::rgba(1.f, 0.78f, 0.15f, 1.f);
+const float WristLevelUpNoticeM = 0.014f;
 
 struct WristState {
 	WristVitalsStatus status;
@@ -160,6 +165,23 @@ void drawWristVitals() {
 	}
 	if(layout.mana.fraction > 0.f) {
 		drawQuad(layout.mana.fill, fillLift, ManaColor, layout.alpha);
+	}
+
+	// A level-up (#469): a gold square beyond the mana bar, towards the hand, pulsing for a few seconds
+	const LevelUpIndicator & levelUp = levelUpIndicator();
+	if(levelUp.wristNotice()) {
+		const Vec3f manaMiddle = (layout.mana.back[0] + layout.mana.back[1] + layout.mana.back[2] + layout.mana.back[3])
+		                         * 0.25f;
+		const float half = WristLevelUpNoticeM * 0.5f * params.unitsPerMeter;
+		const Vec3f middle = manaMiddle + layout.along * ((params.barWidthM * 0.5f + params.gapM) * params.unitsPerMeter
+		                                                  + half);
+		const std::array<Vec3f, 4> square = { {
+			middle - layout.along * half - layout.across * half, middle + layout.along * half - layout.across * half,
+			middle + layout.along * half + layout.across * half, middle - layout.along * half + layout.across * half,
+		} };
+		const float pulse = 0.65f + 0.35f * std::cos(levelUp.noticeProgress() * glm::two_pi<float>() * 4.f);
+		drawQuad(square, fillLift, WristLevelUpColor, layout.alpha * pulse);
+		noteLevelUpWristDrawn();
 	}
 }
 

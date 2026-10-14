@@ -1,0 +1,288 @@
+# VR without the old HUD frame (#469): the original game's screen-frame HUD (orbs, level-up / book / bag / purse
+# icons, spells, stealth ...) is not drawn on the 2D interface in VR, so in play there is no rectangle and no panel;
+# the panel is shown only for a real panel (the bag, the book). Every element has a VR home (vr/HudFrame.cpp,
+# TESTING.md "The HUD frame in VR"); the level-up is a gold mark on the radial menu's Character item and a gold
+# notice on the left wrist (vr_levelup). The radial ring is drawn each time it opens over the bag and the book.
+# The comparison switch vr_hud_frame (live: vr-hud frame on|off) brings the old frame back.
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence hud-frame
+# The flat side (the HUD as before) is hud-frame-flat.
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert player.inventoryOpen eq false
+@assert vr.hud.vr eq true
+@assert vr.hud.frame eq off
+@assert vr.hud.keep eq none
+@assert vr.wrist.shown eq true
+
+# 1. Play with no panel open: no panel, no pointer bound to it, and none of the frame's elements drawn
+vr-hud reset
+@frames 30
+@assert vr.panel.mode eq head
+@assert vr.panel.shown eq false
+@assert vr.pointer.shown eq false
+@assert vr.hud.frames gt 20
+@assert vr.hud.drawnTotal eq 0
+@assert vr.hud.drawn.health eq 0
+@assert vr.hud.drawn.mana eq 0
+@assert vr.hud.drawn.level_up eq 0
+@assert vr.hud.drawn.book eq 0
+@assert vr.hud.drawn.backpack eq 0
+@assert vr.hud.drawn.active_spells eq 0
+@assert vr.hud.drawn.precast_spells eq 0
+@assert vr.hud.drawn.stealth eq 0
+# The quad's tutorial hint expires by game time (ui-panel, #370): the shots wait for it
+@until notifications eq 0 30s
+@shot noframe
+@remember q0 vr.sim.shots.noframe.left.quadPixels
+
+# 2. The comparison switch: the old frame is back on the quad - the bag and book icons, the frame's pixels
+vr-hud frame on
+@frames 10
+@assert vr.hud.frame eq on
+@assert vr.hud.drawn.backpack gt 0
+@assert vr.hud.drawn.book gt 0
+# health and mana stay on the wrist even then (#116)
+@assert vr.hud.drawn.health eq 0
+@shot frame
+@assert vr.sim.shots.frame.left.quadPixels gt {q0+200}
+vr-hud frame off
+vr-hud reset
+@frames 10
+@assert vr.hud.drawnTotal eq 0
+
+# One element kept (vr_hud_keep): only that one comes back
+vr-hud keep book
+@frames 10
+@assert vr.hud.keep eq book
+@assert vr.hud.drawn.book gt 0
+@assert vr.hud.drawn.backpack eq 0
+vr-hud keep none
+vr-hud reset
+@frames 10
+@assert vr.hud.drawnTotal eq 0
+
+# 3. The real panels: the bag and the book are shown on the panel, with nothing of the frame around them
+ui inventory open
+@until player.inventoryOpen eq true 5s
+@frames 30
+@assert vr.panel.mode eq world
+@assert vr.panel.shown eq true
+@assert vr.panel.menu eq inventory
+@assert vr.hud.drawnTotal eq 0
+@shot bag
+ui inventory close
+@until player.inventoryOpen eq false 5s
+@frames 30
+book open
+@until player.bookOpen eq true 5s
+@frames 30
+@assert vr.panel.shown eq true
+@assert vr.panel.menu eq book
+@assert vr.hud.drawnTotal eq 0
+@shot book
+book close
+@until player.bookOpen eq false 5s
+@frames 30
+@assert vr.panel.shown eq false
+
+# 4. A level-up: the radial menu's Character item marked, the gold notice on the wrist; never the flat icon
+@remember level0 player.level
+@assert vr.hud.levelUp.pending eq false
+@assert vr.hud.levelUp.notices eq 0
+addxp 3000
+@until player.level gt {level0} 5s
+@until vr.hud.levelUp.pending eq true 5s
+@assert vr.hud.levelUp.mode eq both
+@assert vr.hud.levelUp.radialMark eq true
+@assert vr.hud.levelUp.wristNotice eq true
+@assert vr.hud.levelUp.notices eq 1
+@log GameEvent:.*vr\.levelup.*mode=both.*radial=yes.*wrist=yes 5s
+# The wrist turned to the eyes like a watch (wrist-vitals): the notice is drawn beside the bars
+vr-sim head rot -20 -45 0
+vr-sim hand left pos 0.12 -0.3 -0.3
+vr-sim hand left rot -90 90 0
+@frames 15
+@assert vr.wrist.alpha eq 1
+@remember wv vr.hud.levelUp.wristViews
+@frames 5
+@assert vr.hud.levelUp.wristViews ge {wv+5}
+@shot levelup-wrist
+vr-sim head rot 0 0 0
+# The right menu: the mark on the faint arc, and on the Character item once the half-ring opens
+vr-sim hand right pos 0.12 -0.2 -0.38; vr-sim hand left pos -0.12 -0.2 -0.38; vr-sim hand left rot 0 0 0
+@frames 10
+@remember ri vr.hud.levelUp.radialImages
+vr-input down right.b
+@frames 5
+@assert vr.radial.right.shown eq true
+@assert vr.hud.levelUp.radialImages gt {ri}
+vr-radial point right character
+@frames 10
+@assert vr.radial.right.halfRing eq true
+@shot levelup-radial
+vr-radial point right center
+@frames 10
+vr-input up right.b
+@frames 5
+@assert vr.hud.drawn.level_up eq 0
+# The switch: each part on its own, or none
+vr-hud levelup radial
+@frames 3
+@assert vr.hud.levelUp.radialMark eq true
+@assert vr.hud.levelUp.wristNotice eq false
+vr-hud levelup wrist
+@frames 3
+@assert vr.hud.levelUp.radialMark eq false
+vr-hud levelup off
+@frames 3
+@assert vr.hud.levelUp.radialMark eq false
+@assert vr.hud.levelUp.wristNotice eq false
+vr-hud levelup both
+@frames 3
+@assert vr.hud.levelUp.radialMark eq true
+# The notice is short (8 s); the mark stays while the points wait
+@until vr.hud.levelUp.wristNotice eq false 15s
+@assert vr.hud.levelUp.radialMark eq true
+
+# 5. The radial ring over the bag and the book (#456's "ring not drawn"): each hand, three times each, shown in
+# every checked frame. Released in the middle, B closes the open panel (#377), so it is opened again each time
+ui inventory open
+@until player.inventoryOpen eq true 5s
+@frames 20
+vr-input down right.b
+@frames 5
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.shown eq true
+@frames 5
+@assert vr.radial.right.shown eq true
+@shot ring-bag-right
+vr-input up right.b
+@until player.inventoryOpen eq false 5s
+ui inventory open
+@until player.inventoryOpen eq true 5s
+@frames 20
+vr-input down right.b
+@frames 5
+@assert vr.radial.right.shown eq true
+@frames 5
+@assert vr.radial.right.shown eq true
+vr-input up right.b
+@until player.inventoryOpen eq false 5s
+ui inventory open
+@until player.inventoryOpen eq true 5s
+@frames 20
+vr-input down right.b
+@frames 5
+@assert vr.radial.right.shown eq true
+@frames 5
+@assert vr.radial.right.shown eq true
+vr-input up right.b
+@until player.inventoryOpen eq false 5s
+ui inventory open
+@until player.inventoryOpen eq true 5s
+@frames 20
+vr-input down left.b
+@frames 5
+@assert vr.radial.left.open eq true
+@assert vr.radial.left.shown eq true
+@frames 5
+@assert vr.radial.left.shown eq true
+@shot ring-bag-left
+vr-input up left.b
+@until player.inventoryOpen eq false 5s
+ui inventory open
+@until player.inventoryOpen eq true 5s
+@frames 20
+vr-input down left.b
+@frames 5
+@assert vr.radial.left.shown eq true
+@frames 5
+@assert vr.radial.left.shown eq true
+vr-input up left.b
+@until player.inventoryOpen eq false 5s
+ui inventory open
+@until player.inventoryOpen eq true 5s
+@frames 20
+vr-input down left.b
+@frames 5
+@assert vr.radial.left.shown eq true
+@frames 5
+@assert vr.radial.left.shown eq true
+vr-input up left.b
+@until player.inventoryOpen eq false 5s
+
+book open
+@until player.bookOpen eq true 5s
+@frames 20
+vr-input down right.b
+@frames 5
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.shown eq true
+@frames 5
+@assert vr.radial.right.shown eq true
+@shot ring-book-right
+vr-input up right.b
+@until player.bookOpen eq false 5s
+book open
+@until player.bookOpen eq true 5s
+@frames 20
+vr-input down right.b
+@frames 5
+@assert vr.radial.right.shown eq true
+@frames 5
+@assert vr.radial.right.shown eq true
+vr-input up right.b
+@until player.bookOpen eq false 5s
+book open
+@until player.bookOpen eq true 5s
+@frames 20
+vr-input down right.b
+@frames 5
+@assert vr.radial.right.shown eq true
+@frames 5
+@assert vr.radial.right.shown eq true
+vr-input up right.b
+@until player.bookOpen eq false 5s
+book open
+@until player.bookOpen eq true 5s
+@frames 20
+vr-input down left.b
+@frames 5
+@assert vr.radial.left.open eq true
+@assert vr.radial.left.shown eq true
+@frames 5
+@assert vr.radial.left.shown eq true
+@shot ring-book-left
+vr-input up left.b
+@until player.bookOpen eq false 5s
+book open
+@until player.bookOpen eq true 5s
+@frames 20
+vr-input down left.b
+@frames 5
+@assert vr.radial.left.shown eq true
+@frames 5
+@assert vr.radial.left.shown eq true
+vr-input up left.b
+@until player.bookOpen eq false 5s
+book open
+@until player.bookOpen eq true 5s
+@frames 20
+vr-input down left.b
+@frames 5
+@assert vr.radial.left.shown eq true
+@frames 5
+@assert vr.radial.left.shown eq true
+vr-input up left.b
+@until player.bookOpen eq false 5s
+
+# Nothing of the frame was drawn through all of it
+@assert vr.hud.drawn.level_up eq 0
+@assert vr.hud.drawn.book eq 0
+@assert vr.hud.drawn.backpack eq 0
+@assert errors eq 0

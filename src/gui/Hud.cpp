@@ -64,6 +64,7 @@
 
 #include "util/Cast.h"
 
+#include "vr/VRHud.h"
 #include "vr/WristHud.h"
 
 
@@ -150,7 +151,12 @@ void HitStrengthGauge::draw() {
 }
 
 void BookIconGui::requestFX() {
-	
+
+	// The new spell's flash flies off the book icon: none where the icon is not drawn (VR, #469)
+	if(!vr::hudShown(vr::HudElement::Book)) {
+		return;
+	}
+
 	static const float z = 0.00001f;
 	
 	for(long i = 0; i < 12; i++) {
@@ -650,7 +656,7 @@ void MemorizedRunesHud::update(const Rectf & parent) {
 	m_rect = createChild(parent, Anchor_TopLeft, m_size * m_scale, Anchor_TopRight);
 }
 
-void MemorizedRunesHud::draw() {
+void MemorizedRunesHud::draw(bool shown) {
 	
 	if(!(CurrSpellSymbol || player.SpellToMemorize.bSpell)) {
 		return;
@@ -670,8 +676,8 @@ void MemorizedRunesHud::draw() {
 				}
 			}
 		}
-		if(player.SpellToMemorize.iSpellSymbols[i] != RUNE_NONE) {
-			
+		if(shown && player.SpellToMemorize.iSpellSymbols[i] != RUNE_NONE) {
+
 			Vec2f size = Vec2f(32.f, 32.f) * m_scale;
 			Rectf rect = Rectf(pos, size.x, size.y);
 			
@@ -1376,6 +1382,9 @@ void PlayerInterfaceFader::update() {
 }
 
 void HudRoot::draw() {
+
+	// In VR none of the screen frame's elements is drawn: they live on the wrist and in the radial menus (#469)
+	vr::updateHud();
 	
 	if(player.lifePool.current <= 0) {
 		return;
@@ -1423,12 +1432,14 @@ void HudRoot::draw() {
 	damagedEquipmentGui.update();
 	
 	precastSpellsGui.updateRect(damagedEquipmentGui.rect());
-	precastSpellsGui.update();
+	if(vr::hudShown(vr::HudElement::PrecastSpells)) {
+		precastSpellsGui.update(); // takes the icons' clicks
+	}
 	
 	UseRenderState state(render2D());
 	UseTextureState textureState(getInterfaceTextureFilter(), TextureStage::WrapClamp);
 	
-	if(player.Interface & INTER_COMBATMODE) {
+	if((player.Interface & INTER_COMBATMODE) && vr::hudDraw(vr::HudElement::HitStrength)) {
 		hitStrengthGauge.draw();
 	}
 	
@@ -1445,52 +1456,68 @@ void HudRoot::draw() {
 	}
 	
 	healthGauge.updateRect(hudSlider);
-	if(!vr::wristVitalsShown()) {
+	if(vr::hudShown(vr::HudElement::Health)) {
 		healthGauge.updateInput(mousePos); // a click on the hidden orb would print the value (#116)
 	}
 	healthGauge.update();
 	
 	stealIconGui.updateRect(healthGauge.rect());
 	
-	damagedEquipmentGui.draw();
+	if(vr::hudDraw(vr::HudElement::DamagedEquipment)) {
+		damagedEquipmentGui.draw();
+	}
 	
 	if(!(player.Interface & INTER_COMBATMODE) && (player.Interface & INTER_MINIBACK)) {
 		
-		if(player.Interface & INTER_STEAL) {
+		if((player.Interface & INTER_STEAL) && vr::hudDraw(vr::HudElement::Steal)) {
 			stealIconGui.draw();
 		}
 	}
 	
 	currentTorchIconGui.updateRect(stealIconGui.rect());
 	currentTorchIconGui.update();
-	currentTorchIconGui.draw();
+	if(vr::hudDraw(vr::HudElement::Torch)) {
+		currentTorchIconGui.draw();
+	}
 	
-	changeLevelIconGui.draw();
+	if(vr::hudDraw(vr::HudElement::ChangeLevel)) {
+		changeLevelIconGui.draw(); // takes its click
+	}
 	
-	quickSaveIconGui.draw();
-	stealthGauge.draw();
+	if(vr::hudDraw(vr::HudElement::QuickSave)) {
+		quickSaveIconGui.draw();
+	}
+	if(vr::hudDraw(vr::HudElement::Stealth)) {
+		stealthGauge.draw();
+	}
 
 	if((player.Interface & INTER_PLAYERBOOK) && !(player.Interface & INTER_COMBATMODE)) {
 		g_playerBook.manage();
 	}
 	
-	memorizedRunesHud.draw();
+	memorizedRunesHud.draw(vr::hudDraw(vr::HudElement::MemorizedRunes));
 	
 	if(player.Interface & INTER_LIFE_MANA) {
 		manaGauge.update(hudSlider);
 
 		// In VR health and mana are on the left wrist while it is posed from a controller (#116)
-		if(!vr::wristVitalsShown()) {
+		if(vr::hudShown(vr::HudElement::Mana)) {
 			manaGauge.updateInput(mousePos);
+		}
+		if(vr::hudDraw(vr::HudElement::Mana)) {
 			manaGauge.draw();
+		}
+		if(vr::hudDraw(vr::HudElement::Health)) {
 			healthGauge.draw();
 		}
 		
 		if(bRenderInCursorMode) {
-			if(!MAGICMODE) {
+			if(!MAGICMODE && vr::hudDraw(vr::HudElement::MechanismHint)) {
 				mecanismIcon.draw();
 			}
-			screenArrows.draw();
+			if(vr::hudDraw(vr::HudElement::ScreenArrows)) {
+				screenArrows.draw();
+			}
 		}
 	}
 	
@@ -1516,22 +1543,34 @@ void HudRoot::draw() {
 			levelUpIconGui.update(spacer);
 		}
 		
-		backpackIconGui.draw();
-		bookIconGui.draw();
+		if(vr::hudDraw(vr::HudElement::Backpack)) {
+			backpackIconGui.draw();
+		}
+		if(vr::hudDraw(vr::HudElement::Book)) {
+			bookIconGui.draw();
+		}
 		
-		levelUpIconGui.draw();
+		if(vr::hudDraw(vr::HudElement::LevelUp)) {
+			levelUpIconGui.draw();
+		}
 		
 		// Draw/Manage Gold Purse Icon
-		if(player.gold > 0) {
+		if(player.gold > 0 && vr::hudDraw(vr::HudElement::Purse)) {
 			purseIconGui.draw();
 		}
 		
 	}
 	
-	precastSpellsGui.draw();
+	if(vr::hudDraw(vr::HudElement::PrecastSpells)) {
+		precastSpellsGui.draw();
+	}
 	activeSpellsGui.update(hudSlider);
-	activeSpellsGui.updateInput(mousePos);
-	activeSpellsGui.draw();
+	if(vr::hudShown(vr::HudElement::ActiveSpells)) {
+		activeSpellsGui.updateInput(mousePos);
+	}
+	if(vr::hudDraw(vr::HudElement::ActiveSpells)) {
+		activeSpellsGui.draw();
+	}
 	
 }
 
@@ -1605,16 +1644,29 @@ void HudRoot::updateInput() {
 		if(!(player.Interface & INTER_COMBATMODE)) {
 			if(!TRUE_PLAYER_MOUSELOOK_ON) {
 				
-				currentTorchIconGui.updateInput();
-				levelUpIconGui.updateInput();
-				purseIconGui.updateInput();
-				bookIconGui.updateInput();
+				// In VR the hidden icons take no clicks either (#469)
+				if(vr::hudShown(vr::HudElement::Torch)) {
+					currentTorchIconGui.updateInput();
+				}
+				if(vr::hudShown(vr::HudElement::LevelUp)) {
+					levelUpIconGui.updateInput();
+				}
+				if(vr::hudShown(vr::HudElement::Purse)) {
+					purseIconGui.updateInput();
+				}
+				if(vr::hudShown(vr::HudElement::Book)) {
+					bookIconGui.updateInput();
+				}
 				
-				backpackIconGui.updateInput();
+				if(vr::hudShown(vr::HudElement::Backpack)) {
+					backpackIconGui.updateInput();
+				}
 				
 				
 			}
+			if(vr::hudShown(vr::HudElement::Steal)) {
 			stealIconGui.updateInput();
+		}
 		}
 	}
 }

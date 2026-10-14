@@ -58,6 +58,7 @@
 #include "util/Number.h"
 #include "vr/HeadPose.h"
 #include "vr/HeadTracking.h"
+#include "vr/VRHud.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 
@@ -524,6 +525,8 @@ const Color4f IconColor = Color4f::rgba(0.93f, 0.92f, 0.88f, 0.95f);
 const Color4f DimIconColor = Color4f::rgba(0.93f, 0.92f, 0.88f, 0.4f);
 const Color4f HintColor = Color4f::rgba(0.93f, 0.92f, 0.88f, 0.22f);
 const Color4f LabelBackColor = Color4f::rgba(0.02f, 0.02f, 0.03f, 0.7f);
+//! The level-up mark on the Character item (#469): the gold of the flat game's level-up icon
+const Color4f RadialLevelUpColor = Color4f::rgba(1.f, 0.78f, 0.15f, 1.f);
 
 //! The ring's plane in the image: meters (x right, y up) -> pixels (x right, y down)
 struct Canvas {
@@ -909,6 +912,20 @@ void drawMenu(Hand hand) {
 		}
 	} else {
 		fillSector(canvas, params.halfInnerRadius, params.halfInnerRadius + 0.004f, 30.f, 150.f, HintColor);
+	}
+
+	// A level-up (#469): a gold mark on the Character item, on the faint arc too while the half-ring is closed
+	if(levelUpIndicator().radialMark()) {
+		for(size_t i = 0; i < HalfRingItemCount; i++) {
+			if(halfRingItem(i) != RadialItem::Character) {
+				continue;
+			}
+			const float a = glm::radians(halfRingCenterDegrees(i));
+			const float radius = halfOpen ? params.halfOuterRadius - 0.006f : params.halfInnerRadius + 0.002f;
+			fillDisc(canvas, Vec2f(std::cos(a), std::sin(a)) * radius, 0.0065f, Color4f::rgba(0.f, 0.f, 0.f, 0.6f));
+			fillDisc(canvas, Vec2f(std::cos(a), std::sin(a)) * radius, 0.005f, RadialLevelUpColor);
+			noteLevelUpRadialDrawn();
+		}
 	}
 
 	// The middle: a dark disc with the name of the item under the hand

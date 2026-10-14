@@ -1,0 +1,35 @@
+# The screen-frame HUD in flat mode (#469): unchanged - the orbs, the bag and book icons are drawn as before, and a
+# level-up shows the flat level-up icon. The VR side is hud-frame.
+#   .\scripts\dev\smoke-test.ps1 -Sequence hud-frame-flat -Save mvp-new-game
+@save mvp-new-game
+@args --loadslot 0 --no-vr
+
+@until state eq GAMEPLAY 60s
+@wait 3000                                   # past the level's fade-in
+@assert player.controlsBlocked eq false
+@assert vr.hud.vr eq false
+@assert vr.panel.shown eq false
+
+vr-hud reset
+@wait 1000
+@assert vr.hud.frames gt 10
+@assert vr.hud.drawn.health gt 0
+@assert vr.hud.drawn.mana gt 0
+@assert vr.hud.drawn.backpack gt 0
+@assert vr.hud.drawn.book gt 0
+@assert vr.hud.drawn.active_spells gt 0
+@assert vr.hud.drawn.level_up gt 0
+@shot flat-hud
+
+# A level-up: the flat icon is drawn (the indicator follows the points; its VR parts are not drawn flat)
+@remember level0 player.level
+addxp 3000
+@until player.level gt {level0} 5s
+@until vr.hud.levelUp.pending eq true 5s
+@remember lu vr.hud.drawn.level_up
+@wait 500
+@assert vr.hud.drawn.level_up gt {lu}
+@assert vr.hud.levelUp.wristViews eq 0
+@assert vr.hud.levelUp.radialImages eq 0
+@shot flat-levelup
+@assert errors eq 0

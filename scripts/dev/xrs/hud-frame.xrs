@@ -35,9 +35,13 @@ vr-hud reset
 @assert vr.hud.drawn.active_spells eq 0
 @assert vr.hud.drawn.precast_spells eq 0
 @assert vr.hud.drawn.stealth eq 0
+@assert vr.hud.drawn.minimap eq 0
 # The quad's tutorial hint expires by game time (ui-panel, #370): the shots wait for it
 @until notifications eq 0 30s
 @shot noframe
+# Nothing at all on the head-locked quad in play: no rectangle, no corner icons, no minimap
+@assert vr.sim.shots.noframe.left.quadPixels eq 0
+@assert vr.sim.shots.noframe.right.quadPixels eq 0
 @remember q0 vr.sim.shots.noframe.left.quadPixels
 
 # 2. The comparison switch: the old frame is back on the quad - the bag and book icons, the frame's pixels
@@ -46,6 +50,7 @@ vr-hud frame on
 @assert vr.hud.frame eq on
 @assert vr.hud.drawn.backpack gt 0
 @assert vr.hud.drawn.book gt 0
+@assert vr.hud.drawn.minimap gt 0
 # health and mana stay on the wrist even then (#116)
 @assert vr.hud.drawn.health eq 0
 @shot frame
@@ -282,6 +287,7 @@ vr-input up left.b
 @until player.bookOpen eq false 5s
 
 # Nothing of the frame was drawn through all of it
+@assert vr.hud.drawnTotal eq 0
 @assert vr.hud.drawn.level_up eq 0
 @assert vr.hud.drawn.book eq 0
 @assert vr.hud.drawn.backpack eq 0

@@ -52,6 +52,8 @@ const std::array<HudElementInfo, HudElementCount> ElementInfo = { {
 	{ "hit_strength", HudHome::Question, "the charge of a swing (the held trigger, #39) has no VR display yet" },
 	{ "mechanism_hint", HudHome::None, "a hint at the mouse's cursor mode - the hands are the mouse in VR" },
 	{ "screen_arrows", HudHome::None, "the monitor's edges turn the view - the head turns it in VR" },
+	{ "minimap", HudHome::Radial,
+	  "the radial menu's Map item opens the book's map page (#376); a map always in view has no VR place yet" },
 } };
 
 bool isSeparator(char c) {

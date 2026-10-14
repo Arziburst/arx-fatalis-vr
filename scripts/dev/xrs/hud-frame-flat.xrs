@@ -19,6 +19,7 @@ vr-hud reset
 @assert vr.hud.drawn.book gt 0
 @assert vr.hud.drawn.active_spells gt 0
 @assert vr.hud.drawn.level_up gt 0
+@assert vr.hud.drawn.minimap gt 0
 @shot flat-hud
 
 # A level-up: the flat icon is drawn (the indicator follows the points; its VR parts are not drawn flat)

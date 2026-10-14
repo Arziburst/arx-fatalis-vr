@@ -180,12 +180,15 @@ vr-sim action thumbstick right 0.9 0
 vr-sim action thumbstick right 0 0
 @frames 20
 @assert vr.input.turn.turned ne {turnedBook}
-# The book's own bookmark takes the hand's click in freelook (the book keeps freelook in VR, #377)
+# The book's own bookmark takes the hand's click in freelook (the book keeps freelook in VR, #377); the left hand
+# points away, or its ray on the panel owns the cursor
+vr-sim hand left rot 180 0 0
 vr-point right menu book_quests
 @frames 5
 vr-point right menu book_quests
 @frames 5
 @assert vr.pointer.rightOnPanel eq true
+@until vr.pointer.owner eq right 5s
 @assert ui.menuHover eq book_quests
 vr-sim action trigger right 1
 @frames 5
@@ -194,6 +197,7 @@ vr-sim action trigger right 0
 @assert player.bookPage eq quests
 @assert player.bookOpen eq true
 @assert player.freelook eq true
+vr-sim hand left rot 0 0 0
 vr-sim hand right pos 0.12 -0.2 -0.38
 @frames 10
 # The radial menu opens over the open book; its half-ring switches the page
@@ -250,6 +254,33 @@ vr-input up right.b
 @until vr.reticle.on eq true 5s
 @until vr.pointer.shown eq false 5s
 @assert player.freelook eq true
+@frames 30
+# A short B tap over nothing closes the book and the bag at once (the owner)
+vr-input down right.b
+@frames 3
+vr-radial point right character
+@frames 10
+vr-input up right.b
+@until player.bookOpen eq true 5s
+@frames 30
+vr-input down right.b
+@frames 3
+vr-radial point right inventory
+@frames 5
+vr-input up right.b
+@until player.inventoryOpen eq true 5s
+@frames 30
+@assert player.bookOpen eq true
+vr-input down left.b
+@frames 3
+vr-radial point left center
+@frames 3
+vr-input up left.b
+@until player.bookOpen eq false 5s
+@until player.inventoryOpen eq false 5s
+@assert vr.radial.left.result eq closed
+@log GameEvent:.*vr\.panels\.closed what="?book inventory
+@until vr.reticle.on eq true 5s
 @frames 30
 # The casting stance (the right A, the owner) closes everything open first - the book and the bag - then starts
 vr-input down right.b
@@ -484,6 +515,29 @@ vr-sim action thumbstick_click right 0
 @assert vr.weapon.sheathed eq false
 @assert vr.weapon.toggles eq 2
 @until vr.melee.active eq true 5s
+# Casting with the sword in the hand (the owner): the right A held, the weapon hand's trigger is the pen - a stroke,
+# no charge, no strike
+@remember strokes0 vr.magic.strokes
+@mark
+vr-input down right.a
+@until vr.magic.stance eq true 5s
+@until vr.melee.active eq false 5s
+@log GameEvent:.*melee.state state=off reason="?casting stance 5s
+vr-sim action trigger right 1
+@frames 10
+@assert vr.magic.drawing eq true
+@assert vr.melee.charge.charging eq false
+vr-sim hand right pos 0.32 -0.2 -0.38
+@frames 20
+vr-sim action trigger right 0
+@frames 10
+@assert vr.magic.strokes gt {strokes0}
+@assert vr.melee.charge.charging eq false
+vr-input up right.a
+@until vr.magic.stance eq false 5s
+@until vr.melee.active eq true 5s
+vr-sim hand right pos 0.12 -0.2 -0.38
+@frames 10
 # The left stick click does nothing by default (recenter moved into the radial menu, the left hand's weapon is #380)
 vr-sim action thumbstick_click left 1
 @frames 60

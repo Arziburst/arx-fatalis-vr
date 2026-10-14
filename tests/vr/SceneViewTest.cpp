@@ -483,6 +483,29 @@ void SceneViewTest::firstLowTest() {
 	CPPUNIT_ASSERT_EQUAL(std::string("clamp"), std::string(sceneFirstLowName(DefaultSceneFirstLow)));
 }
 
+void SceneViewTest::scriptTurnTest() {
+
+	// A ghost's and the observer's shot: a script turning the hero (teleport -pa 180) does not turn the eyes; the
+	// stick does
+	for(SceneViewSetting setting : { SceneViewSetting::Ghost, SceneViewSetting::Observer }) {
+		SceneDirector director;
+		director.update(standing());
+		SceneInput shot = sceneOf(standing(), SceneKind::Entity, 9, setting);
+		settle(director, shot);
+		SceneOutput out = director.update(shot);
+		const float eyes = shot.playerYaw + out.yawDelta;
+		shot.playerYaw = 180.f;
+		out = director.update(shot);
+		CPPUNIT_ASSERT(!out.cut);
+		CPPUNIT_ASSERT(yawDistance(shot.playerYaw + out.yawDelta, eyes) < SvEps);
+		// The stick turns 30 degrees right: the hero's yaw goes down, the eyes with it
+		shot.stickTurned = 30.f;
+		shot.playerYaw = 150.f;
+		out = director.update(shot);
+		CPPUNIT_ASSERT(yawDistance(shot.playerYaw + out.yawDelta, eyes - 30.f) < SvEps);
+	}
+}
+
 void SceneViewTest::heldYawTest() {
 
 	SceneDirector director;

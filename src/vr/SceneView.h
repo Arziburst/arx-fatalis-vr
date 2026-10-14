@@ -274,6 +274,7 @@ struct SceneInput {
 	Vec3f firstPos = Vec3f(0.f);    //!< the hero's eye (the first-person camera)
 	float playerYaw = 0.f;          //!< the hero's yaw now
 	float headYaw = 0.f;            //!< the head's own yaw since its reference, degrees
+	float stickTurned = 0.f;        //!< the stick's turn so far, degrees, right positive (the hero's yaw goes down)
 	float seconds = 0.f;            //!< the frame's duration
 	bool hybridScreen = false;      //!< this frame of a camera entity's shot wants the hybrid's screen
 	bool firstOnFloor = true;       //!< a floor under the hero's eye (\c firstPos)
@@ -342,6 +343,13 @@ public:
 
 private:
 
+	//! The eyes keep \a shotYaw (before the head) through the shot; the stick's turn from \a stickTurned on is added
+	void fixYaw(float shotYaw, float stickTurned) {
+		m_fixedYaw = true;
+		m_shotYaw = shotYaw;
+		m_turnedAtCut = stickTurned;
+	}
+
 	struct Shot {
 		SceneShown shown = SceneShown::None;
 		SceneKind kind = SceneKind::None;
@@ -389,6 +397,10 @@ private:
 	float m_lastYaw = 0.f; //!< the eyes' yaw last frame, before the head
 	bool m_lookAtPending = false;
 	bool m_lowScreen = false; //!< \ref SceneFirstLow::Screen took this scene to the screen
+	//! A ghost's or the observer's shot keeps its own yaw: only the stick turns it, never a script turning the hero
+	bool m_fixedYaw = false;
+	float m_shotYaw = 0.f;     //!< the eyes' yaw at the cut, before the head
+	float m_turnedAtCut = 0.f; //!< the stick's turn then
 
 };
 

@@ -2166,6 +2166,7 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 	const vr::HeadStatus & head = vr::headStatus();
 	in.headYaw = head.referenced ? vr::wrapSignedDegrees(head.head.getYaw() - head.reference.yaw) : 0.f;
 	in.seconds = toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
+	in.stickTurned = vr::turnState().turned();
 	// The hybrid: a camera entity's shot of a far place, or of the hero's body played by a script, on the screen
 	if(in.kind == vr::SceneKind::Entity && in.setting == vr::SceneViewSetting::Hybrid) {
 		vr::HybridShot shot;
@@ -2246,7 +2247,15 @@ static void meterSceneFrame(const vr::SceneOutput & scene, const Vec3f & pos, fl
 	}
 	s_low = low;
 
+	const u64 cuts = state.meter.cuts();
+	const u64 fadedCuts = state.meter.fadedCuts();
 	state.meter.add(frame);
+	// Diagnostics: a cut the eyes saw - the meter counts it, the log says where and what (#29)
+	if(state.meter.cuts() != cuts && state.meter.fadedCuts() == fadedCuts) {
+		LogInfo << "[vr] scene meter: an unfaded cut at " << pos.x << ' ' << pos.y << ' ' << pos.z << " yaw " << yaw
+		        << ", shown " << vr::sceneShownName(scene.shown) << ", fade " << scene.fade
+		        << (scene.cut ? ", the shot changed" : ", a jump");
+	}
 
 }
 

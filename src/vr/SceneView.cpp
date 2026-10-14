@@ -385,6 +385,7 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 					// Where the player looks now is where the game's camera looked when the shot began
 					m_pos = targetPos;
 					m_yawDelta = wrapSignedDegrees(m_ghost.yaw - in.headYaw - in.playerYaw);
+					fixYaw(m_ghost.yaw - in.headYaw, in.stickTurned);
 					break;
 				}
 				case SceneShown::Observer: {
@@ -401,17 +402,20 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 					// Where the player looks now is the middle of the heads
 					m_pos = m_observer.place.pos;
 					m_yawDelta = wrapSignedDegrees(m_observer.place.yaw - in.headYaw - in.playerYaw);
+					fixYaw(m_observer.place.yaw - in.headYaw, in.stickTurned);
 					break;
 				}
 				case SceneShown::Screen: {
 					// The eyes' camera stays where it was, at the yaw held: the game's camera is on the screen
 					m_yawDelta = 0.f;
+					m_fixedYaw = false;
 					break;
 				}
 				case SceneShown::None:
 				case SceneShown::First: {
 					m_pos = targetPos;
 					m_yawDelta = 0.f;
+					m_fixedYaw = false;
 					break;
 				}
 			}
@@ -447,6 +451,11 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 	out.kind = m_shown.kind;
 	out.drive = in.active || m_shown.shown != SceneShown::None;
 	out.pos = m_pos;
+	// A script turning the hero within a ghost's or the observer's shot (the prison intro's teleport -pa) turns
+	// the hero, not the eyes; the stick still does (#29)
+	if(m_fixedYaw && (m_shown.shown == SceneShown::Ghost || m_shown.shown == SceneShown::Observer)) {
+		m_yawDelta = wrapSignedDegrees(m_shotYaw - (in.stickTurned - m_turnedAtCut) - in.playerYaw);
+	}
 	const bool holdYaw = m_cutPending || m_shown.shown == SceneShown::Screen;
 	out.yawDelta = holdYaw ? wrapSignedDegrees(m_heldYaw - in.playerYaw) : m_yawDelta;
 	out.fade = m_fade.value();

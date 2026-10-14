@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <initializer_list>
 #include <string>
 
 #include <glm/glm.hpp>
@@ -69,11 +70,16 @@ const float GloveCuffPastWrist = 0.0014f;
 const float GloveUnitsPerMeter = 100.f;
 //! The colour of a missing texture: plain leather brown
 const u8 ArmsLeather[3] = { 92, 60, 38 };
+/*!
+ * The library hand's colour (#467.1, a first proposal: the owner judges it in the headset): the WebXR hand has no
+ * texture, only its material's base colour 0.5 grey (linear), which is this in sRGB
+ */
+const u8 LibraryHandGrey[3] = { 188, 188, 188 };
 
 //! The playground's arms lever counts its pulls in this global script variable (scripts/dev/playground/build.mjs)
 const char * const ArmsLeverPulls = "#pg_arms_pulls";
 
-//! A glove hand at rest, read once from data/core/vr/arms
+//! A glove hand at rest, read once from data/core/vr/arms - or the library hand, from data/core/vr/hands/webxr
 struct GloveRest {
 	bool tried = false;
 	bool loaded = false;
@@ -88,10 +94,14 @@ struct GloveRest {
 	glm::quat toGrip = quat_identity(); //!< the mesh's rest frame to the grip frame (vr/ArmIK.h handToGrip)
 	glm::quat sleeveAxes = quat_identity(); //!< the sleeve's wrist axes (along, thickness, width) in mesh space
 	HandRig rig;                 //!< the five fingers' joints and axes (#385.4)
+	GloveCurl hiltCurl;          //!< the axis this hand's fingers wrap in the default hilt pose (mesh space)
+	HiltAngles curlBuiltFor;     //!< the configured angles hiltCurl was read with
+	bool curlBuilt = false;
 };
 
 struct CustomArm {
 	GloveRest glove;
+	GloveRest libraryHand;         //!< the library hand (#467.1), read the first time the library model is on
 	SkinnedMesh sleeve;            //!< at rest, built for the logical arm's bone lengths
 	SkinnedMesh sleeveWork;        //!< the same with this frame's elbow corrective
 	float builtUpper = 0.f;
@@ -114,8 +124,8 @@ struct CustomArm {
 	bool hiltBuilt = false;
 	HandJoints lastJoints;         //!< the runtime's joints of the last frame posed (for `grip capture`)
 	HandJoints current;            //!< what the glove is posed by: the target approached at a bounded speed
-	GloveCurl hiltCurl;            //!< the axis the glove's fingers wrap in the default hilt pose (mesh space)
 	bool drawn = false;
+	bool library = false;          //!< what is drawn is the library hand alone, no sleeve
 	CustomArmStatus status;
 };
 
@@ -158,10 +168,16 @@ void gloveFailed(Hand hand, GloveRest & glove, const std::string & reason) {
 	LogError << "[vr] arms: " << reason << " - the " << handName(hand) << " arm stays the Arx arm";
 }
 
-void loadGlove(Hand hand, GloveRest & glove) {
+/*!
+ * Read \a hand's glove - or with \a library its library hand, the WebXR generic hand (#467.1, binary glTF, meters,
+ * named as WebXR names its joints): the same rest landmarks, rig and grip frame; the sleeve's wrist axes and the
+ * cuff only for the glove, which a sleeve meets
+ */
+void loadGlove(Hand hand, GloveRest & glove, bool library) {
 
 	glove.tried = true;
-	const std::string file = std::string("vr/arms/Hand_Glove_low_") + (hand == Hand::Right ? "R" : "L") + ".gltf";
+	const std::string file = library ? std::string("vr/hands/webxr/") + handName(hand) + ".glb"
+	                                 : std::string("vr/arms/Hand_Glove_low_") + (hand == Hand::Right ? "R" : "L") + ".gltf";
 	// The resource system keeps every name in lower case (PakReader::addFiles)
 	const std::string data = g_resources->read(util::toLowercase(file));
 	if(data.empty()) {
@@ -209,19 +225,23 @@ void loadGlove(Hand hand, GloveRest & glove) {
 	glove.toGrip = handToGrip(frame);
 
 	// The sleeve's wrist axes in the glove's mesh space: along the hand (the glove points along mesh Z), the
-	// cuff's thickness (mesh X) and its width (mesh Y, completing the frame)
-	const Vec3f along(0.f, 0.f, palmLocal.z < 0.f ? -1.f : 1.f);
-	const Vec3f thickness(1.f, 0.f, 0.f);
-	const glm::mat3 axes(along, thickness, glm::cross(along, thickness));
-	glove.sleeveAxes = glm::normalize(glm::quat_cast(axes));
-	glove.cuff = glove.wrist + along * GloveCuffPastWrist;
+	// cuff's thickness (mesh X) and its width (mesh Y, completing the frame). No sleeve meets the library hand:
+	// its wrist ends clean
+	std::string along;
+	if(!library) {
+		const Vec3f alongZ(0.f, 0.f, palmLocal.z < 0.f ? -1.f : 1.f);
+		const Vec3f thickness(1.f, 0.f, 0.f);
+		const glm::mat3 axes(alongZ, thickness, glm::cross(alongZ, thickness));
+		glove.sleeveAxes = glm::normalize(glm::quat_cast(axes));
+		glove.cuff = glove.wrist + alongZ * GloveCuffPastWrist;
+		along = std::string(", the hand along mesh ") + (alongZ.z < 0.f ? "-Z" : "+Z");
+	}
 
 	glove.loaded = true;
 	LogInfo << "[vr] arms: " << file << ": " << glove.mesh.positions.size() << " vertices, "
 	        << glove.mesh.indices.size() / 3 << " triangles, " << glove.mesh.skeleton.size() << " joints; wrist to palm "
 	        << glm::length(palmLocal) * GloveUnitsPerMeter << " cm, palm to middle tip "
-	        << glm::distance(glove.palm, glove.tip) * GloveUnitsPerMeter << " cm, the hand along mesh "
-	        << (along.z < 0.f ? "-Z" : "+Z");
+	        << glm::distance(glove.palm, glove.tip) * GloveUnitsPerMeter << " cm" << along;
 }
 
 //! MRTK3's Grab (data/core/vr/hands, BSD-3): the controls' closed end; the resource system's names are lower case
@@ -240,6 +260,10 @@ HiltAngles configuredHiltAngles() {
 	angles.last = config.input.vrHiltLast;
 	angles.thumb = config.input.vrHiltThumb;
 	return clampHiltAngles(angles);
+}
+
+bool sameHiltAngles(const HiltAngles & a, const HiltAngles & b) {
+	return a.knuckle == b.knuckle && a.middle == b.middle && a.last == b.last && a.thumb == b.thumb;
 }
 
 /*!
@@ -365,10 +389,11 @@ glm::mat3 rolled(const glm::mat3 & axes, float degrees) {
 }
 
 /*!
- * A texture of data/core/vr/arms (385.5), or a plain leather-brown one when the file is missing. Looked up by
- * name every frame: the engine deletes every texture container when it exits or reloads them.
+ * A texture of data/core/vr (385.5), or a plain one of \a flatColour (named \a colourName in the log) when the file
+ * is missing. Looked up by name every frame: the engine deletes every texture container when it exits or reloads them.
  */
-TextureContainer * armsTexture(const std::string & name) {
+TextureContainer * armsTexture(const std::string & name, const u8 (&flatColour)[3] = ArmsLeather,
+                               const char * colourName = "leather brown") {
 	if(TextureContainer * texture = TextureContainer::Find(name)) {
 		return texture;
 	}
@@ -384,7 +409,7 @@ TextureContainer * armsTexture(const std::string & name) {
 	Image image;
 	image.create(4, 4, Image::Format_R8G8B8);
 	for(size_t i = 0; i < 16; i++) {
-		std::copy(ArmsLeather, ArmsLeather + 3, image.getData() + i * 3);
+		std::copy(flatColour, flatColour + 3, image.getData() + i * 3);
 	}
 	TextureContainer * flat = new TextureContainer(flatName, TextureContainer::NoMipmap);
 	flat->m_pTexture = GRenderer->createTexture();
@@ -394,14 +419,15 @@ TextureContainer * armsTexture(const std::string & name) {
 	flat->m_size = flat->m_pTexture->getSize();
 	flat->uv = Vec2f(1.f);
 	flat->hd = Vec2f(0.5f / flat->m_size.x, 0.5f / flat->m_size.y);
-	LogInfo << "[vr] arms: no " << name << ".png - drawn plain leather brown";
+	LogInfo << "[vr] arms: no " << name << ".png - drawn plain " << colourName;
 	return flat;
 }
 
 } // anonymous namespace
 
 ArmsModel parseArmsModel(std::string_view text) {
-	return (util::toLowercase(std::string(text)) == "arx") ? ArmsModel::Arx : ArmsModel::Custom;
+	ArmsModel model = ArmsModel::Custom;
+	return parseArmsModelStrict(text, model) ? model : ArmsModel::Custom;
 }
 
 bool parseArmsModelStrict(std::string_view text, ArmsModel & model) {
@@ -410,6 +436,8 @@ bool parseArmsModelStrict(std::string_view text, ArmsModel & model) {
 		model = ArmsModel::Custom;
 	} else if(name == "arx") {
 		model = ArmsModel::Arx;
+	} else if(name == "library") {
+		model = ArmsModel::Library;
 	} else {
 		return false;
 	}
@@ -417,7 +445,21 @@ bool parseArmsModelStrict(std::string_view text, ArmsModel & model) {
 }
 
 const char * armsModelName(ArmsModel model) {
-	return model == ArmsModel::Arx ? "arx" : "custom";
+	switch(model) {
+		case ArmsModel::Arx: return "arx";
+		case ArmsModel::Library: return "library";
+		case ArmsModel::Custom: break;
+	}
+	return "custom";
+}
+
+ArmsModel nextArmsModel(ArmsModel model) {
+	switch(model) {
+		case ArmsModel::Custom: return ArmsModel::Arx;
+		case ArmsModel::Arx: return ArmsModel::Library;
+		case ArmsModel::Library: break;
+	}
+	return ArmsModel::Custom;
 }
 
 float clampWeaponElbowDrop(float share) {
@@ -458,8 +500,12 @@ void followArmsLever() {
 		return;
 	}
 	const long pulls = GETVarValueLong(svar, ArmsLeverPulls);
-	if(g_armsLeverPulls >= 0 && pulls > g_armsLeverPulls && (pulls - g_armsLeverPulls) % 2 == 1) {
-		setArmsModel(armsModel() == ArmsModel::Custom ? ArmsModel::Arx : ArmsModel::Custom, "the playground lever");
+	if(g_armsLeverPulls >= 0 && pulls > g_armsLeverPulls) {
+		ArmsModel model = armsModel();
+		for(long step = (pulls - g_armsLeverPulls) % 3; step > 0; step--) { // the cycle has three models
+			model = nextArmsModel(model);
+		}
+		setArmsModel(model, "the playground lever");
 	}
 	g_armsLeverPulls = pulls; // first sight (a level just loaded) or fewer (a new game): nothing pulled yet
 }
@@ -467,11 +513,50 @@ void followArmsLever() {
 void resetCustomArms() {
 	for(CustomArm & arm : g_customArms) {
 		arm.drawn = false;
+		arm.library = false;
 		arm.status.drawn = false;
+		arm.status.library = false;
 		arm.status.fingerSource = CustomFingerSource::None;
 		arm.status.hiltPose = HiltPoseSource::None;
 	}
 }
+
+namespace {
+
+/*!
+ * The hand \a glove of \a arm (the glove or the library hand), joint by joint (#385.7), placed by \a toWorld and turned
+ * by \a handQuat: a held weapon closes it on the hilt pose on either hand (the captured one, else the default), else
+ * it takes the runtime's joints (conforming to the controller where the runtime can), else the controls close each
+ * finger toward MRTK3's Grab. The joints turn toward that at a bounded speed, so a weapon taken or a source lost never
+ * snaps them. Fills the hand's part of the status: the fingers, the hilt pose and its curl against the handle, the
+ * palm and the tip
+ */
+void poseArmHand(CustomArm & arm, const GloveRest & glove, const LogicalArm & logical, const glm::mat4 & toWorld,
+                 const glm::quat & handQuat) {
+	CustomArmStatus & status = arm.status;
+	arm.lastJoints = logical.joints;
+	CustomFingerInput fingerInput = logical.fingers;
+	fingerInput.holds = logical.holdsWeapon;
+	const CustomHandTarget handTarget = customHandTarget(fingerInput, logical.joints, arm.shapes);
+	const float step = CurlDegreesPerSecond * logical.seconds;
+	arm.current = approachJoints(arm.current, handTarget.joints, glm::radians(step));
+	status.fingers = approachPose(status.fingers, handTarget.pose, step);
+	status.fingerSource = handTarget.source;
+	status.hiltPose = handTarget.hilt;
+	poseHandFromJoints(glove.mesh, glove.rig, arm.current, arm.gloveLocal);
+	composeGloveJoints(glove.mesh, arm.gloveLocal, toWorld, arm.gloveJoints);
+	skinMesh(glove.mesh, arm.gloveJoints, arm.handPositions, arm.handNormals);
+
+	if(glove.hiltCurl.valid) {
+		const Vec3f centre(toWorld * glm::vec4(glove.hiltCurl.centre, 1.f));
+		status.curlToHandle = glm::length(glm::cross(centre - status.grip, status.handle));
+		status.curlAngle = glm::degrees(std::acos(std::min(std::abs(glm::dot(handQuat * glove.hiltCurl.axis, status.handle)), 1.f)));
+	}
+	status.palm = Vec3f(toWorld * glm::vec4(glove.palm, 1.f));
+	status.tipLength = glm::distance(status.palm, Vec3f(toWorld * glm::vec4(glove.tip, 1.f)));
+}
+
+} // anonymous namespace
 
 bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 
@@ -479,45 +564,53 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	CustomArmStatus & status = arm.status;
 	status.handScale = clampHandScale(config.input.vrHandScale);
 	arm.drawn = false;
+	arm.library = false;
 	status.drawn = false;
+	status.library = false;
 	status.hiltPose = HiltPoseSource::None;
-	if(armsModel() != ArmsModel::Custom) {
+	const ArmsModel model = armsModel();
+	if(model == ArmsModel::Arx) {
 		return false;
 	}
-	if(!arm.glove.tried) {
-		loadGlove(hand, arm.glove);
+	// The library model (#467.1) draws the library hand alone, placed and posed as the glove is
+	const bool library = (model == ArmsModel::Library);
+	GloveRest & glove = library ? arm.libraryHand : arm.glove;
+	if(!glove.tried) {
+		loadGlove(hand, glove, library);
 	}
-	if(!arm.glove.loaded || logical.upperLength <= 0.f || logical.forearmLength <= 0.f) {
+	if(!glove.loaded || logical.upperLength <= 0.f || logical.forearmLength <= 0.f) {
 		return false;
 	}
-	const GloveRest & glove = arm.glove;
 	const float scale = status.handScale;
 	const float gloveScale = GloveUnitsPerMeter * scale;
 
-	// The hand's shapes (#385.7): read once; the hilt pose rebuilt when its configured angles change, with the axis
-	// its closed fingers wrap on the glove
+	// The hand's shapes (#385.7): read once; the hilt pose rebuilt when its configured angles change, and with it the
+	// axis its closed fingers wrap on this hand
 	if(!arm.shapesLoaded) {
 		loadHandShapes(hand, arm);
 	}
 	const HiltAngles angles = configuredHiltAngles();
-	if(!arm.hiltBuilt || angles.knuckle != arm.hiltBuiltFor.knuckle || angles.middle != arm.hiltBuiltFor.middle
-	   || angles.last != arm.hiltBuiltFor.last || angles.thumb != arm.hiltBuiltFor.thumb) {
+	if(!arm.hiltBuilt || !sameHiltAngles(angles, arm.hiltBuiltFor)) {
 		arm.shapes.hilt = palmRelativeJoints(hiltPose(hand, DefaultHiltRadius, angles));
-		std::vector<glm::mat4> hiltLocal;
-		poseHandFromJoints(glove.mesh, glove.rig, arm.shapes.hilt, hiltLocal);
-		arm.hiltCurl = gloveCurlAxis(glove.mesh, glove.rig, hiltLocal);
 		arm.hiltBuiltFor = angles;
 		arm.hiltBuilt = true;
+	}
+	if(!glove.curlBuilt || !sameHiltAngles(angles, glove.curlBuiltFor)) {
+		std::vector<glm::mat4> hiltLocal;
+		poseHandFromJoints(glove.mesh, glove.rig, arm.shapes.hilt, hiltLocal);
+		glove.hiltCurl = gloveCurlAxis(glove.mesh, glove.rig, hiltLocal);
+		glove.curlBuiltFor = angles;
+		glove.curlBuilt = true;
 	}
 
 	// The glove on the controller's handle (#385.7, research #453 F-483: the grip is the handle's centre, outside the
 	// hand): turned by the least rotation that lays its hilt pose's curl along the handle and placed with that curl's
 	// centre on the grip, so the handle - and a held hilt - runs through the closed fingers, not through the palm.
 	// Without a curl the palm's centre lies the handle's radius plus the palm's radius behind the grip
-	const glm::quat handQuat = glm::normalize(logical.gripOrientation * gloveOnHandle(arm.hiltCurl, glove.toGrip));
+	const glm::quat handQuat = glm::normalize(logical.gripOrientation * gloveOnHandle(glove.hiltCurl, glove.toGrip));
 	Vec3f gloveWrist(0.f);
-	if(arm.hiltCurl.valid) {
-		gloveWrist = logical.grip - handQuat * ((arm.hiltCurl.centre - glove.wrist) * gloveScale);
+	if(glove.hiltCurl.valid) {
+		gloveWrist = logical.grip - handQuat * ((glove.hiltCurl.centre - glove.wrist) * gloveScale);
 	} else {
 		const Vec3f palmAt = palmBehindGrip(hand, logical.grip, logical.gripOrientation, IndexHandleRadius * UnitsPerMeter,
 		                                    GlovePalmRadius * gloveScale);
@@ -529,6 +622,22 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	glm::mat4 gloveToWorld = glm::translate(glm::mat4(1.f), gloveWrist) * glm::mat4_cast(handQuat);
 	gloveToWorld = glm::scale(gloveToWorld, Vec3f(gloveScale));
 	gloveToWorld = glm::translate(gloveToWorld, -glove.wrist);
+
+	if(library) {
+		// The library hand alone, always on the controller: no arm to solve, fit or stretch
+		poseArmHand(arm, glove, logical, gloveToWorld, handQuat);
+		status.wrist = Vec3f(gloveToWorld * glm::vec4(glove.wrist, 1.f));
+		status.upperLength = status.forearmLength = 0.f;
+		status.fitSource = "none";
+		status.reach = status.stretch = status.error = status.elbowDrop = 0.f;
+		status.bend = status.drawnBend = status.upperRoll = status.forearmTwist = status.wristGap = 0.f;
+		status.vertices = arm.handPositions.size();
+		status.triangles = glove.mesh.indices.size() / 3;
+		status.drawn = status.library = true;
+		arm.drawn = arm.library = true;
+		return true;
+	}
+
 	const Vec3f target = Vec3f(gloveToWorld * glm::vec4(glove.cuff, 1.f));
 
 	// The fit (#385.6): the arm the character height setting makes, until this hand's reach is measured -
@@ -647,22 +756,8 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	skinMesh(arm.sleeveWork, arm.sleeveJoints, arm.sleevePositions, arm.sleeveNormals);
 	recomputeNormals(arm.sleeve, arm.sleevePositions, arm.sleeveNormals);
 
-	// The hand, joint by joint (#385.7): a held weapon closes it on the hilt pose on either hand (the captured one,
-	// else the default), else it takes the runtime's joints (conforming to the controller where the runtime can),
-	// else the controls close each finger toward MRTK3's Grab. The glove's joints turn toward that at a bounded
-	// speed, so a weapon taken or a source lost never snaps them
-	arm.lastJoints = logical.joints;
-	CustomFingerInput fingerInput = logical.fingers;
-	fingerInput.holds = logical.holdsWeapon;
-	const CustomHandTarget handTarget = customHandTarget(fingerInput, logical.joints, arm.shapes);
-	const float step = CurlDegreesPerSecond * logical.seconds;
-	arm.current = approachJoints(arm.current, handTarget.joints, glm::radians(step));
-	status.fingers = approachPose(status.fingers, handTarget.pose, step);
-	status.fingerSource = handTarget.source;
-	status.hiltPose = handTarget.hilt;
-	poseHandFromJoints(glove.mesh, glove.rig, arm.current, arm.gloveLocal);
-	composeGloveJoints(glove.mesh, arm.gloveLocal, gloveToWorld, arm.gloveJoints);
-	skinMesh(glove.mesh, arm.gloveJoints, arm.handPositions, arm.handNormals);
+	// The hand, joint by joint (#385.7)
+	poseArmHand(arm, glove, logical, gloveToWorld, handQuat);
 
 	Vec3f ring(0.f);
 	for(size_t v : arm.lastRing) {
@@ -671,13 +766,6 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	ring /= float(std::max<size_t>(arm.lastRing.size(), 1));
 
 	status.drawn = true;
-	if(arm.hiltCurl.valid) {
-		const Vec3f centre(gloveToWorld * glm::vec4(arm.hiltCurl.centre, 1.f));
-		status.curlToHandle = glm::length(glm::cross(centre - status.grip, status.handle));
-		status.curlAngle = glm::degrees(std::acos(std::min(std::abs(glm::dot(handQuat * arm.hiltCurl.axis, status.handle)), 1.f)));
-	}
-	status.palm = Vec3f(gloveToWorld * glm::vec4(glove.palm, 1.f));
-	status.tipLength = glm::distance(status.palm, Vec3f(gloveToWorld * glm::vec4(glove.tip, 1.f)));
 	status.wrist = cuff;
 	status.upperLength = lengths.upper;
 	status.forearmLength = lengths.forearm;
@@ -700,18 +788,20 @@ CustomArmsLoad customArmsLoad() {
 	CustomArmsLoad load;
 	bool all = true;
 	for(const CustomArm & arm : g_customArms) {
-		if(!arm.glove.tried) {
-			continue;
-		}
-		load.tried = true;
-		all = all && arm.glove.loaded;
-		if(!arm.glove.loaded && load.reason.empty()) {
-			load.reason = arm.glove.error;
+		for(const GloveRest * hand : { &arm.glove, &arm.libraryHand }) {
+			if(!hand->tried) {
+				continue;
+			}
+			load.tried = true;
+			all = all && hand->loaded;
+			if(!hand->loaded && load.reason.empty()) {
+				load.reason = hand->error;
+			}
 		}
 	}
 	load.loaded = load.tried && all;
 	if(!load.tried) {
-		load.reason = "not tried yet: no arm was posed with the custom model on";
+		load.reason = "not tried yet: no arm was posed with the custom or the library model on";
 	}
 	return load;
 }
@@ -765,18 +855,22 @@ size_t customArmMeshes(CustomArmMesh (&meshes)[4]) {
 		if(!arm.drawn) {
 			continue;
 		}
-		CustomArmMesh & sleeve = meshes[count++];
-		sleeve.positions = &arm.sleevePositions;
-		sleeve.normals = &arm.sleeveNormals;
-		sleeve.uvs = &arm.sleeve.uvs;
-		sleeve.indices = &arm.sleeve.indices;
-		sleeve.texture = armsTexture("vr/arms/sleeve");
+		if(!arm.library) {
+			CustomArmMesh & sleeve = meshes[count++];
+			sleeve.positions = &arm.sleevePositions;
+			sleeve.normals = &arm.sleeveNormals;
+			sleeve.uvs = &arm.sleeve.uvs;
+			sleeve.indices = &arm.sleeve.indices;
+			sleeve.texture = armsTexture("vr/arms/sleeve");
+		}
+		const SkinnedMesh & mesh = arm.library ? arm.libraryHand.mesh : arm.glove.mesh;
 		CustomArmMesh & hand = meshes[count++];
 		hand.positions = &arm.handPositions;
 		hand.normals = &arm.handNormals;
-		hand.uvs = &arm.glove.mesh.uvs;
-		hand.indices = &arm.glove.mesh.indices;
-		hand.texture = armsTexture("vr/arms/glove");
+		hand.uvs = &mesh.uvs;
+		hand.indices = &mesh.indices;
+		hand.texture = arm.library ? armsTexture("vr/hands/webxr/hand", LibraryHandGrey, "grey")
+		                           : armsTexture("vr/arms/glove");
 	}
 	return count;
 }

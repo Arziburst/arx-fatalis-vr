@@ -89,6 +89,51 @@ std::string_view withoutSideSuffix(std::string_view name) {
 	return name;
 }
 
+//! The same joints as the WebXR hand input names them (#467.1, the WebXR generic hand); WebXR has no palm joint
+const char * const WebXRHandJointNames[HandJointCount] = {
+	"", "wrist",
+	"thumb-metacarpal", "thumb-phalanx-proximal", "thumb-phalanx-distal", "thumb-tip",
+	"index-finger-metacarpal", "index-finger-phalanx-proximal", "index-finger-phalanx-intermediate",
+	"index-finger-phalanx-distal", "index-finger-tip",
+	"middle-finger-metacarpal", "middle-finger-phalanx-proximal", "middle-finger-phalanx-intermediate",
+	"middle-finger-phalanx-distal", "middle-finger-tip",
+	"ring-finger-metacarpal", "ring-finger-phalanx-proximal", "ring-finger-phalanx-intermediate",
+	"ring-finger-phalanx-distal", "ring-finger-tip",
+	"pinky-finger-metacarpal", "pinky-finger-phalanx-proximal", "pinky-finger-phalanx-intermediate",
+	"pinky-finger-phalanx-distal", "pinky-finger-tip",
+};
+
+//! The skeleton index of the joint named \a joint's name in either spelling, without the palm's substitute; -1 if none
+int findNamedHandJoint(const SkinnedMesh & mesh, HandJoint joint) {
+	std::string_view godot = GltfHandJointNames[size_t(joint)];
+	std::string_view webxr = WebXRHandJointNames[size_t(joint)];
+	for(size_t i = 0; i < mesh.skeleton.size(); i++) {
+		std::string_view name = mesh.skeleton[i].name;
+		if(withoutSideSuffix(name) == godot || (!webxr.empty() && name == webxr)) {
+			return int(i);
+		}
+	}
+	return -1;
+}
+
+/*!
+ * The parent of \a joint in the XR_EXT_hand_tracking chain: a metacarpal's (and the palm's) is the wrist, a finger
+ * joint's the one before it; the wrist has none
+ */
+HandJoint chainedHandParent(HandJoint joint) {
+	if(joint == HandJoint::Wrist) {
+		return HandJoint::Count;
+	}
+	if(joint == HandJoint::Palm || joint == HandJoint::ThumbMetacarpal) {
+		return HandJoint::Wrist;
+	}
+	if(joint > HandJoint::ThumbMetacarpal && joint <= HandJoint::ThumbTip) {
+		return HandJoint(size_t(joint) - 1);
+	}
+	const size_t inFinger = (size_t(joint) - size_t(HandJoint::IndexMetacarpal)) % 5;
+	return inFinger == 0 ? HandJoint::Wrist : HandJoint(size_t(joint) - 1);
+}
+
 bool readGltfPrimitive(const cgltf_primitive & primitive, size_t jointCount, SkinnedMesh & out, std::string & error) {
 
 	const cgltf_accessor * position = nullptr;
@@ -317,6 +362,10 @@ bool loadGltfSkinnedMesh(const char * data, size_t size, SkinnedMesh & out, std:
 		return false;
 	}
 
+	// A hand whose joints the file keeps side by side (the WebXR hands: all children of one armature node) bends
+	// a finger as one chain only once its joints are chained
+	chainHandSkeleton(out);
+
 	if(haveNormals) {
 		for(Vec3f & normal : out.normals) {
 			float length = glm::length(normal);
@@ -344,13 +393,47 @@ int findHandJoint(const SkinnedMesh & mesh, HandJoint joint) {
 	if(size_t(joint) >= HandJointCount) {
 		return -1;
 	}
-	std::string_view wanted = GltfHandJointNames[size_t(joint)];
-	for(size_t i = 0; i < mesh.skeleton.size(); i++) {
-		if(withoutSideSuffix(mesh.skeleton[i].name) == wanted) {
-			return int(i);
+	const int found = findNamedHandJoint(mesh, joint);
+	if(found < 0 && joint == HandJoint::Palm) {
+		return findNamedHandJoint(mesh, HandJoint::MiddleMetacarpal);
+	}
+	return found;
+}
+
+bool chainHandSkeleton(SkinnedMesh & mesh) {
+
+	for(const MeshJoint & joint : mesh.skeleton) {
+		if(joint.parent >= 0) {
+			return false;
 		}
 	}
-	return -1;
+	std::array<int, HandJointCount> index;
+	for(size_t j = 0; j < HandJointCount; j++) {
+		index[j] = findHandJoint(mesh, HandJoint(j));
+		if(index[j] < 0) {
+			return false;
+		}
+	}
+
+	// Every joint is a root: its restLocal is its rest in mesh space
+	std::vector<glm::mat4> world;
+	world.reserve(mesh.skeleton.size());
+	for(const MeshJoint & joint : mesh.skeleton) {
+		world.push_back(joint.restLocal);
+	}
+	for(size_t j = 0; j < HandJointCount; j++) {
+		const HandJoint parent = chainedHandParent(HandJoint(j));
+		const size_t child = size_t(index[j]);
+		const bool substitute = HandJoint(j) == HandJoint::Palm
+		                        && index[j] == index[size_t(HandJoint::MiddleMetacarpal)];
+		if(parent == HandJoint::Count || substitute) {
+			continue; // the wrist, or the palm's substitute (chained as the middle metacarpal)
+		}
+		const size_t above = size_t(index[size_t(parent)]);
+		mesh.skeleton[child].parent = int(above);
+		mesh.skeleton[child].restLocal = glm::inverse(world[above]) * world[child];
+	}
+	return true;
 }
 
 void restWorldMatrices(const SkinnedMesh & mesh, std::vector<glm::mat4> & world) {

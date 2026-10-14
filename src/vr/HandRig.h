@@ -78,7 +78,11 @@ struct HandRig {
 	bool valid = false;
 };
 
-//! The rig of \a hand; invalid when one of the 26 hand joints is missing or a finger has no usable bone
+/*!
+ * The rig of \a hand; invalid when one of the 26 hand joints is missing or a finger has no usable bone. The palm's
+ * side is the side its Palm joint lies on off the middle metacarpal; a hand whose palm is its middle metacarpal
+ * (the WebXR hand, vr/ArmMesh.h findHandJoint) takes the side its thumb's tip lies on at rest.
+ */
 HandRig buildHandRig(const SkinnedMesh & hand);
 
 //! The joint that FingerPose::flex[finger][joint] turns: the thumb's metacarpal, proximal and distal joint,

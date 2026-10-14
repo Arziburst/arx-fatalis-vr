@@ -1208,6 +1208,10 @@ std::string buildStatus(PlatformInstant now) {
 				json.value("weaponToHandle", glm::length(glm::cross(held.hilt - custom.grip, custom.handle)));
 			}
 			json.end();
+			// The library hand (#467.1): drawn alone in the custom arm's place, its hand's fields under custom
+			json.object("library");
+			json.value("drawn", custom.drawn && custom.library);
+			json.end();
 			// The fingers (#305): what they follow and how far each segment is bent (degrees)
 			json.object("fingers");
 			json.value("source", arm.fingerSource);
@@ -2011,7 +2015,8 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "arms") {
-		// The arms drawn on the player in VR (#385.3): arms custom|arx switches the model live, arms scale <factor>
+		// The arms drawn on the player in VR (#385.3): arms custom|arx|library switches the model live (library: the
+		// WebXR hand alone, #467.1), arms scale <factor>
 		// sets the custom hands' size (vr_hand_scale); both are saved to cfg.ini
 		std::string_view args;
 		std::string_view what = firstWord(rest, args);
@@ -2027,7 +2032,7 @@ std::string execute(std::string_view line) {
 			return std::string();
 		}
 		if(!args.empty() || !vr::parseArmsModelStrict(what, model)) {
-			return refuse("arms: expected custom, arx or scale <factor>, got \"" + std::string(rest) + "\"");
+			return refuse("arms: expected custom, arx, library or scale <factor>, got \"" + std::string(rest) + "\"");
 		}
 		vr::setArmsModel(model, "the channel");
 		return std::string();

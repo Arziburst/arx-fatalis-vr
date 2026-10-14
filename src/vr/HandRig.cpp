@@ -474,7 +474,10 @@ HandRig buildHandRig(const SkinnedMesh & hand) {
 		return rig;
 	}
 	palmNormal = glm::normalize(palmNormal);
-	const Vec3f toPalm = rigJointPosition(world, rig, HandJoint::Palm)
+	// A hand without a palm joint of its own (the WebXR hand: its palm is the middle metacarpal) tells the palm's
+	// side by its thumb instead: at rest the thumb's tip lies in front of the palm
+	const bool ownPalm = rig.joint[size_t(HandJoint::Palm)] != rig.joint[size_t(HandJoint::MiddleMetacarpal)];
+	const Vec3f toPalm = rigJointPosition(world, rig, ownPalm ? HandJoint::Palm : HandJoint::ThumbTip)
 	                     - rigJointPosition(world, rig, HandJoint::MiddleMetacarpal);
 	if(glm::dot(palmNormal, toPalm) < 0.f) {
 		palmNormal = -palmNormal;

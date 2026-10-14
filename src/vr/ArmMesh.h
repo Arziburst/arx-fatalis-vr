@@ -43,7 +43,9 @@
  * The hands are the Godot XR Tools low-poly glove hands (data/core/vr/arms/Hand_Glove_low_L/R.gltf,
  * CC0, research rows F-219 / F-274). The game reads them through its resource system as
  * \c vr/arms/Hand_Glove_low_R.gltf: data/core/ is a resource directory (the build points
- * \c data.dirs at it, the installer and the tester package copy it).
+ * \c data.dirs at it, the installer and the tester package copy it). The library hand (the arms model
+ * \c library, #467.1) is the WebXR generic hand, binary glTF: data/core/vr/hands/webxr/left.glb and
+ * right.glb (MIT).
  *
  * Skinning (research rows F-279, F-280): a vertex is the weighted sum of its joints' skin matrices
  * (the joint's world matrix times its inverse bind matrix) applied to the rest vertex; the normal is
@@ -83,7 +85,8 @@ struct SkinnedMesh {
  * \c WEIGHTS_0 (normalised to sum 1), the triangles of every primitive, and the skin's joints with
  * their names, parents, rest transforms and inverse bind matrices. Units stay as in the file
  * (glTF: meters; the glove hands are about 0.2 m long). Never touches the file system: a buffer
- * outside the file (an external URI) is an error.
+ * outside the file (an external URI) is an error. A hand skeleton the file keeps flat is chained
+ * (\ref chainHandSkeleton).
  *
  * \return false with a reason in \a error for anything that is not such a file; \a out is then unspecified
  */
@@ -95,9 +98,24 @@ int findJoint(const SkinnedMesh & mesh, std::string_view name);
 /*!
  * The skeleton index of an \c XR_EXT_hand_tracking joint: the joint whose name, without a side
  * suffix (\c _L / \c _R), is the joint's name in the spec (Palm, Wrist, Thumb_Metacarpal, ...,
- * Little_Tip); -1 when the mesh has none
+ * Little_Tip), or whose name is the WebXR hand input's (wrist, thumb-metacarpal, thumb-phalanx-proximal,
+ * ..., index-finger-phalanx-intermediate, ..., pinky-finger-tip: the WebXR generic hand, #467.1); -1 when
+ * the mesh has none. WebXR has no palm joint: a hand without one gives its middle finger's metacarpal for
+ * the palm (the joint whose bone the OpenXR palm is the centre of).
  */
 int findHandJoint(const SkinnedMesh & mesh, HandJoint joint);
+
+/*!
+ * \brief Chain a hand skeleton whose joints are all roots, as \c XR_EXT_hand_tracking chains them (#467.1)
+ *
+ * The wrist stays the root; each metacarpal (and a palm of its own) becomes the wrist's child and every
+ * other finger joint the child of the one before it, its \c restLocal made relative to that parent (the
+ * rest pose and the inverse bind matrices do not change). The WebXR generic hand keeps its 25 joints side
+ * by side under one armature node; chained, a finger bends as one. \ref loadGltfSkinnedMesh does this.
+ *
+ * \return false, changing nothing, unless every joint is a root and every hand joint is found (\ref findHandJoint)
+ */
+bool chainHandSkeleton(SkinnedMesh & mesh);
 
 //! The joints' world (mesh space) matrices at rest: every joint's \c restLocal composed with its parents'
 void restWorldMatrices(const SkinnedMesh & mesh, std::vector<glm::mat4> & world);

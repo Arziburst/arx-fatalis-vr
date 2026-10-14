@@ -59,12 +59,17 @@ class TextureContainer;
  * Skinned once per frame after the body is posed; the animation code lights and projects the result per eye
  * into the model batch, two-sided like the VR body (research row F-231). Flat mode and the inventory book
  * always draw the Arx arms.
+ *
+ * With \c vr_arms_model = library (#467.1) a ready-made hand takes the glove's place and no arm is drawn: the WebXR
+ * generic hand (data/core/vr/hands/webxr, MIT), its wrist ending clean, placed on the controller's handle and
+ * posed joint by joint exactly as the glove is, in a plain grey (it has no texture) lit like the player model.
  */
 namespace vr {
 
 enum class ArmsModel : u8 {
 	Custom, //!< our own arms (the default)
-	Arx     //!< the player model's own arms
+	Arx,    //!< the player model's own arms
+	Library //!< a ready-made hand from a library, no arm (#467.1: the WebXR generic hand)
 };
 
 //! The custom hands against the glove's real size: bigger than the Arx hands by default (the owner: fingers too small)
@@ -82,9 +87,9 @@ constexpr float DefaultWeaponElbowDrop = 0.75f;
 //! \return \a share within [0, 1] (DefaultWeaponElbowDrop for a value that is not a number)
 float clampWeaponElbowDrop(float share);
 
-//! \return the model a cfg.ini value names: "arx" is the Arx arms, anything else our own
+//! \return the model a cfg.ini value names: "arx" is the Arx arms, "library" the library hand, anything else our own
 ArmsModel parseArmsModel(std::string_view text);
-//! \return false unless \a text is "custom" or "arx" (the channel's \c arms command)
+//! \return false unless \a text is "custom", "arx" or "library" (the channel's \c arms command)
 bool parseArmsModelStrict(std::string_view text, ArmsModel & model);
 const char * armsModelName(ArmsModel model);
 float clampHandScale(float scale);
@@ -96,7 +101,10 @@ void setArmsModel(ArmsModel model, const char * by);
 //! Set vr_hand_scale live (clamped) and save it to cfg.ini
 void setHandScale(float scale, const char * by);
 
-//! The playground's arms lever (#385.3, role lever_arms): each pull flips the model; call once per frame
+//! The model after \a model in the arms lever's cycle: custom, arx, library, custom again
+ArmsModel nextArmsModel(ArmsModel model);
+
+//! The playground's arms lever (#385.3, role lever_arms): each pull moves to the next model; call once per frame
 void followArmsLever();
 
 /*!
@@ -126,17 +134,19 @@ struct LogicalArm {
 void resetCustomArms();
 
 /*!
- * \brief Skin the custom arm of \a hand on the logical arm, when the custom model is on
- * \return true when the custom arm is drawn this frame in place of the Arx arm
+ * \brief Skin the custom arm of \a hand on the logical arm, when the custom model is on - or only its hand, the
+ *        library hand, when the library model is
+ * \return true when the custom arm (or the library hand) is drawn this frame in place of the Arx arm
  */
 bool poseCustomArm(Hand hand, const LogicalArm & arm);
 
-//! The custom arm of \a hand is drawn this frame (its Arx arm faces are not)
+//! The custom arm or the library hand of \a hand is drawn this frame (its Arx arm faces are not)
 bool customArmDrawn(Hand hand);
 
 /*!
- * Whether the glove meshes loaded (status.json vr.body.customArms). A glove is read the first time its arm is
- * posed with the custom model on; a missing or broken data/core/vr/arms file is logged as an error.
+ * Whether the hand meshes loaded (status.json vr.body.customArms). A glove is read the first time its arm is
+ * posed with the custom model on, a library hand with the library model on; a missing or broken data/core/vr/arms
+ * or data/core/vr/hands/webxr file is logged as an error.
  */
 struct CustomArmsLoad {
 	bool tried = false;   //!< at least one glove was read
@@ -146,9 +156,13 @@ struct CustomArmsLoad {
 
 CustomArmsLoad customArmsLoad();
 
-//! One custom arm as status.json reports it (vr.body.<hand>.custom)
+/*!
+ * One custom arm as status.json reports it (vr.body.<hand>.custom). With the library model (#467.1) the hand's fields
+ * are the library hand's, \c wrist is its wrist joint and the arm's (the fit to \c wristGap) are zero: no arm is drawn
+ */
 struct CustomArmStatus {
 	bool drawn = false;
+	bool library = false;        //!< the drawn hand is the library hand (vr.body.<hand>.library.drawn)
 	float handScale = DefaultHandScale;
 	float tipLength = 0.f;       //!< the hand from the palm joint to the middle fingertip (units)
 	Vec3f palm = Vec3f(0.f);     //!< the glove's palm joint in the world (behind the grip, #385.7)
@@ -203,7 +217,7 @@ struct CustomArmMesh {
 	TextureContainer * texture = nullptr;
 };
 
-//! The meshes drawn this frame (up to four: each arm's sleeve and hand); \return how many
+//! The meshes drawn this frame (up to four: each arm's sleeve and hand, a library hand alone); \return how many
 size_t customArmMeshes(CustomArmMesh (&meshes)[4]);
 
 } // namespace vr

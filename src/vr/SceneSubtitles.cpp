@@ -181,14 +181,6 @@ void setSubtitlePlacement(SubtitlePlacement placement) {
 	}
 }
 
-void noteSubtitle(std::string_view /* speaker */, std::string_view /* text */, bool /* voiced */) {
-	// #29.1's call from ArxGame.cpp: the lead removes it at the integration, gui/Speech.cpp notes the lines
-}
-
-void clearSubtitle() {
-	// #29.1's call from ArxGame.cpp: the lead removes it at the integration
-}
-
 u64 startSubtitle() {
 	g_subtitles.status.voicedLines++;
 	return ++g_subtitles.nextLine;

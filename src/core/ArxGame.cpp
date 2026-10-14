@@ -2045,23 +2045,12 @@ static const char * headGeometryCheck(const Vec3f & eye, const Vec3f & head) {
 static Vec3f g_sceneFirstPos(0.f);
 //! The stick's turn so far at the last two scene frames: the frame after a stick turn has no yaw step (#29)
 static std::array<float, 2> g_sceneTurned = { 0.f, 0.f };
-//! The speak -c line last seen, and its subtitle not noted yet (#29)
-static u64 g_sceneSpeechLine = 0;
-static bool g_sceneSubtitlePending = false;
 
 //! \return the floor's y under \a pos (y down), \a found false when there is none
 static float floorBelow(const Vec3f & pos, bool & found) {
 	float floorY = 0.f;
 	found = CheckInPoly(pos, &floorY) != nullptr;
 	return floorY;
-}
-
-//! The speaker as the player reads its name
-static std::string speakerName(const Entity * speaker) {
-	if(speaker && !speaker->locname.empty()) {
-		return std::string(getLocalised(speaker->locname, speaker->idString()));
-	}
-	return gameevent::entityName(speaker);
 }
 
 //! How far from \a from towards \a to before the level's walls and floors (#29)
@@ -2208,20 +2197,6 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 	if(out.cut) {
 		gameevent::Event("vr.scene.cut", 500)("faded", out.fade >= vr::BehindFade ? "yes" : "no")
 			("reason", out.cutReason);
-	}
-
-	// The subtitle of a speak -c line, once the eyes see the line's scene (#29.3 moves this to where the
-	// subtitle is really shown, gui/Speech.cpp)
-	if(speechLine != g_sceneSpeechLine) {
-		g_sceneSpeechLine = speechLine;
-		g_sceneSubtitlePending = (speech != nullptr);
-		if(!speech) {
-			vr::clearSubtitle();
-		}
-	}
-	if(g_sceneSubtitlePending && speech && out.shown != vr::SceneShown::None) {
-		g_sceneSubtitlePending = false;
-		vr::noteSubtitle(speakerName(speech->speaker), speech->text, speech->sample != audio::SourcedSample());
 	}
 
 	return out;

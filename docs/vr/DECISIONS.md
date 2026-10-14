@@ -39,7 +39,17 @@ a changed decision keeps its history in that cell.
   him). The ghost's yaw is set at each cut so that where the player looks is where the game's camera looked.
 - **`playerlookat`** (cfg.ini `vr_scene_lookat`): `ignore` (default) leaves the hero's yaw; `fade` turns him at the
   black of a short fade. Never an un-faded snap.
-- **No cinematic bars in the eyes**; the cinemascope state stays for the game (subtitles, the hidden HUD).
+- **No cinematic bars in the eyes**; the cinemascope state stays for the game (the hidden HUD, the skip rules).
+- **Subtitles in VR** (cfg.ini `vr_subtitles`, default `above`): every voiced line of a scene (a `speak -c` line, a
+  camera entity, or the letterbox on) gets a subtitle with the speaker's localised name - also a line the original
+  plays without text for want of the letterbox; the text follows the variant played (key `string<N>` in the line's
+  section). `above`: over the speaker's head, facing the player (an off-screen, off-voice or too-near speaker, the hero
+  himself, falls back to the chest panel); `chest`: a panel placed in the room at the player's chest when the line
+  appears; `lowerthird`: on the head-locked interface quad. A subtitle shows once the eyes see the scene, not under the
+  fade it starts behind. Talk outside scenes (barks, a merchant's greeting) gets none yet. Proposals for the owner
+  (`SubtitleParams`): the game's subtitle font (about 1.4 degrees), the box at most 32 degrees wide, black at 60%, the
+  name in warm gold over white text; `above` 0.25 m over the head, `chest` 0.8 m ahead and 0.45 m below the eyes,
+  `lowerthird` up to 60% of the quad's width with its lower edge at 92% of its height.
 - **Walking is blocked during a scene in VR, the stick turn works** (also where the script holds the controls).
 - **The IK arms are off while the hero is shown in third person** (a ghost shot, any external view of the game).
 - Flat mode is unchanged. The test channel's `scene ...` commands change the switches for the session only (cfg.ini

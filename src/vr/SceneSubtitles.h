@@ -176,15 +176,6 @@ const SubtitleStatus & subtitleStatus();
 void setSubtitlePlacement(SubtitlePlacement placement);
 
 /*!
- * #29.1's stand-in, called from ArxGame.cpp updateSceneView until the lead removes the call at the
- * integration of #29: does nothing, gui/Speech.cpp notes the lines (\ref startSubtitle)
- */
-void noteSubtitle(std::string_view speaker, std::string_view text, bool voiced);
-
-//! #29.1's stand-in, called from ArxGame.cpp updateSceneView until the integration of #29: does nothing
-void clearSubtitle();
-
-/*!
  * A voiced line of a scene starts in VR (gui/Speech.cpp): counted in \c voicedLines. Once its subtitle is
  * drawn it counts in \c lines and is logged as \c vr.scene.subtitle \c placement=<p> \c speaker=<name>.
  * \return the line's number for \ref showSubtitle

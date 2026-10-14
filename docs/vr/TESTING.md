@@ -636,8 +636,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   new `speak -c` line, another camera entity - or a jump of the eyes' camera, > 50 cm or > 10 degrees in one frame) and
   `fadedCuts` (those behind the fade); `lookats` / `fadedLookats` (`playerlookat` seen / applied behind the fade);
   `letterboxFrames` (eye frames that got cinematic bars: always 0). `subtitle` (#29.3): `visible`, `text`, `speaker`,
-  `placement` (`above` | `chest` | `lowerthird`), `lines` / `voicedLines` since the meter reset - until #29.3 noted
-  when a `speak -c` line's scene is first seen.
+  `placement` (`above` | `chest` | `lowerthird`); `voicedLines`: scene lines with a text started since the meter reset (also with
+  the audio muted), `lines`: those drawn at least once. Flat mode reports the band (`visible` only with the bars), no counts.
 - `drawCheck` appears once a `drawcheck` was requested: `{"seq":1,"running":false,"frames":120,
   "framesDiffering":0,"pixels":307200,"maxPixelsDiffering":0,"maxDelta":0,"capture":""}` —
   `frames` compared so far, `framesDiffering` of them with at least one differing pixel,
@@ -863,7 +863,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.scene` (#29) | the eyes see a scene's first shot (at the black of its cut) / see the game's view again; a scene of another kind (the letterbox first, a camera a moment later) is an end and a start | `state=start\|end`, `kind=speech\|entity\|none` (`none`: only the letterbox), `view` (the setting), `shown` (what the eyes see now) |
 | `vr.scene.cut` (#29) | the shot the eyes see changes | `faded=yes\|no` (behind the fade: always yes), `reason=start\|end\|line\|camera\|jump` |
 | `vr.scene.lookat` (#29) | a script's `playerlookat` in VR | `how=ignore\|fade`, `target` |
-| `vr.scene.subtitle` (#29.3) | a voiced line's subtitle is shown (until #29.3: a `speak -c` line's scene is first seen) | `placement`, `speaker` |
+| `vr.scene.subtitle` (#29.3) | a scene line's subtitle is drawn for the first time (VR only) | `placement`, `speaker` |
 | `chargen.roll` (#394) | a click of the quick generation | `kind=average\|random` |
 | `player.death` | the player dies | `source` (entity id), `damage`, `type` (damage type flags) |
 | `player.respawn` | the player died in the test playground (#321) and is back at its start, alive, in the same frame | `x` `y` `z` (the start), `fromX` `fromZ` (where he died), `life` |
@@ -1497,6 +1497,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `scene-observer` | the `observer` view (#29) on `scene-kultar`: T1 Kultar and T5 every `speak -c` mode shown from one point beside the speakers, the hero in third person with the IK arms off; the eyes at least 1.2 m above the floor, steps < 5 cm, yaw steps < 1 degree, every cut behind the fade, no letterbox | — |
 | `scene-hybrid` | the `hybrid` view (#29) in one run: T2 the new game's prison intro on the screen (`vr.panel.mode` `screen`, `quadPixels` in both eyes), T1 Kultar in first person (the hero `setpos` to the `scene-kultar` spot first), T8 a level 5 vision ball (`camera_0137`) on the screen - the whole scene, so no world frame is measured (`minAboveFloorM` -1, `screenFrames` = `sceneFrames`); every cut behind the fade, no letterbox | — |
 | `scene-lookat` | `playerlookat` (#29): T1 with `ignore` (counted, the yaw stays, also a console `playerlookat`), the save loaded again and T1 with `fade` (every lookat applied behind the fade, no yaw step, the fade back to 0) | — |
+| `scene-subtitles` | the subtitles of scenes in VR (#29) on `scene-kultar`: T1 - Kultar's three lines all subtitled (`lines` = `voicedLines`); T5 - a line in each placement `above` / `chest` / `lowerthird` switched live, visible with its text and speaker, the `vr.scene.subtitle` event and an eye shot each; every `speak -c` mode subtitled (9 = 9) | — |
 | `scene-flat` | flat mode unchanged (#29, `--no-vr`): the switches accepted and ignored, the game's own `scene state=start` (the letterbox) on entering KULTAR_WAKE by the bars, `scene.shown` `none`, no meter frames, no `vr.scene` event | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by

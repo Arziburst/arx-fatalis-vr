@@ -1,7 +1,7 @@
 # The library hand (#467.1): the WebXR generic hand (MIT, data/core/vr/hands/webxr/) as the arms model `library`:
-# cfg vr_arms_model = custom | arx | library, the channel command `arms library`, status.json vr.body.armsModel.
-# PROPOSED status field: vr.body.<hand>.library.drawn (true while that hand's library mesh is drawn; a new field
-# rather than the glove's custom.gloveDrawn, which stays false for any hand but the glove). The held weapon's
+# cfg vr_arms_model = custom | forearm | hands | arx | library, the channel command `arms library`, status.json
+# vr.body.armsModel. Status field: vr.body.<hand>.library.drawn (true while that hand's library mesh is drawn; a new
+# field rather than the glove's custom.gloveDrawn, which stays false for any hand but the glove). The held weapon's
 # hilt pose and its curl on the handle are the glove's own fields (vr.hands.<hand>.hiltPose,
 # vr.body.<hand>.custom.curlToHandle), which the library hand must fill too.
 # Needs the first-person save with the sword equipped:
@@ -32,6 +32,10 @@ arms library
 @assert vr.body.right.library.drawn eq true
 @assert vr.body.right.posed eq true
 @assert vr.body.right.error lt 1
+# the hand alone (#467.2, its ArmsModelTable row): no glove, no sleeve, the Arx arm faces hidden
+@assert vr.body.right.custom.gloveDrawn eq false
+@assert vr.body.right.custom.sleeveDrawn eq false
+@assert vr.body.arxArmsHidden eq true
 @shot model-library
 
 # 2. The sword in the right hand: a hilt pose is in use and the curl lies on the handle

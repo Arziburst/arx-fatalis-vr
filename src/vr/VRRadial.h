@@ -75,7 +75,9 @@ void drawRadialMenus();
 /*!
  * Close what is open in the game (#377): the book, a note, a container and the bag - the bag through its key in
  * \a requests, as the menu's inventory item. Not the game menu. B released over nothing does it while one of them
- * is open (the owner's amendment to D-042), and the casting stance's press (A) before it starts.
+ * is open (the owner's amendment to D-042), and the casting stance's press (A) before it starts (no stance while an
+ * item is dragged, VRInput). Nothing is closed
+ * while an item is dragged (a \c vr.panels.kept event): it would stay in the hand with its bag gone.
  * \param direct close the bag now instead of through its key: the casting stance starts in the same update, and the
  *        engine leaves the bag alone in its magic mode
  * \return what was closed ("book inventory" …), empty when nothing was open

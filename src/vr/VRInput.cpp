@@ -29,6 +29,7 @@
 #include "core/GameEvent.h"
 #include "core/TimeTypes.h"
 #include "game/Player.h"
+#include "gui/Dragging.h"
 #include "gui/Menu.h"
 #include "input/Input.h"
 #include "io/fs/FilePath.h"
@@ -475,9 +476,15 @@ void updateInput() {
 	// The radial menus on B (#376): their items press the engine's keys for one update, the game menu
 	// holds Escape for two like the menu button above (the engine acts on its release)
 	RadialRequests radial;
+	// No casting stance while an item is dragged (the verifier): the hand holds it - its trigger would turn into the
+	// pen, and the engine closes the bag when its magic mode ends, with the item still in the hand
+	if(g_draggedEntity) {
+		game.actions[size_t(GameAction::MagicMode)] = false;
+	}
 	// The casting stance's press (A) closes everything open first (#377, the owner): the radial menus, the book,
 	// the bag, a container, a note - not the game menu - then the stance starts with the hands free
-	if(g_input.resolver.pressed(Event::MagicMode) && !controlsTaken && ARXmenu.mode() == Mode_InGame) {
+	if(g_input.resolver.pressed(Event::MagicMode) && !controlsTaken && ARXmenu.mode() == Mode_InGame
+	   && !g_draggedEntity) {
 		closeRadialMenus("stance");
 		closeOpenPanels(radial, true);
 	}

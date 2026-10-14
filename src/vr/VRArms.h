@@ -101,10 +101,8 @@ void setArmsModel(ArmsModel model, const char * by);
 //! Set vr_hand_scale live (clamped) and save it to cfg.ini
 void setHandScale(float scale, const char * by);
 
-//! The model after \a model in the arms lever's cycle: custom, arx, library, custom again
-ArmsModel nextArmsModel(ArmsModel model);
-
-//! The playground's arms lever (#385.3, role lever_arms): each pull moves to the next model; call once per frame
+//! The playground's arms lever (#385.3, role lever_arms): each pull flips the model between custom and arx (the
+//! library hand is reached by the channel's `arms library`); call once per frame
 void followArmsLever();
 
 /*!

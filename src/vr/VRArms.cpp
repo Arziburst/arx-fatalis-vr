@@ -453,15 +453,6 @@ const char * armsModelName(ArmsModel model) {
 	return "custom";
 }
 
-ArmsModel nextArmsModel(ArmsModel model) {
-	switch(model) {
-		case ArmsModel::Custom: return ArmsModel::Arx;
-		case ArmsModel::Arx: return ArmsModel::Library;
-		case ArmsModel::Library: break;
-	}
-	return ArmsModel::Custom;
-}
-
 float clampWeaponElbowDrop(float share) {
 	return std::isfinite(share) ? glm::clamp(share, 0.f, 1.f) : DefaultWeaponElbowDrop;
 }
@@ -500,12 +491,8 @@ void followArmsLever() {
 		return;
 	}
 	const long pulls = GETVarValueLong(svar, ArmsLeverPulls);
-	if(g_armsLeverPulls >= 0 && pulls > g_armsLeverPulls) {
-		ArmsModel model = armsModel();
-		for(long step = (pulls - g_armsLeverPulls) % 3; step > 0; step--) { // the cycle has three models
-			model = nextArmsModel(model);
-		}
-		setArmsModel(model, "the playground lever");
+	if(g_armsLeverPulls >= 0 && pulls > g_armsLeverPulls && (pulls - g_armsLeverPulls) % 2 == 1) {
+		setArmsModel(armsModel() == ArmsModel::Custom ? ArmsModel::Arx : ArmsModel::Custom, "the playground lever");
 	}
 	g_armsLeverPulls = pulls; // first sight (a level just loaded) or fewer (a new game): nothing pulled yet
 }

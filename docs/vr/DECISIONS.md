@@ -13,6 +13,47 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW-armvariants: The VR arms are a choice of four - custom, forearm, hands, arx - switched live; full arms are not the only VR body
+
+- **Date:** 2026-10-14
+- **Status:** Accepted (the default stays `custom` until the owner picks in the headset; the forearm's length and the
+  cuff's look are first proposals)
+- **Decided by:** project owner (2026-10-13, via the coordinator: full, forearm, hands and arx all selectable live; the
+  forearm ends in a closed cuff before the elbow; the default stays custom); #385.8 for the formulation
+- **Amends:** D-009 (full body with IK arms: the arms drawn are now a choice, the full arm one of them) and the
+  "visible full only" point of D-NEW-arms
+
+### Decision
+cfg.ini `vr_arms_model` = `custom` | `forearm` | `hands` | `arx`, switched live by the channel's `arms <model>` and the
+playground's arms lever (each pull steps custom -> forearm -> hands -> arx -> custom); status.json `vr.body.armsModel`:
+- **custom** - the glove and the whole sleeve, shoulder to wrist (D-NEW-arms, D-NEW-armfit);
+- **forearm** - the glove and a short forearm: the sleeve from the glove's wrist along the forearm of the custom arm's
+  own solve, cut at `ForearmKept` = 0.6 of the forearm's length and closed there by a cuff; no upper arm, no elbow;
+- **hands** - the glove alone, its wrist opening closed by a cuff (Half-Life: Alyx);
+- **arx** - the player model's own arms.
+The forearm and hands models pose the same custom arm and draw less of it; the Arx arm faces are hidden for the three
+own models. The models are one table in `src/vr/VRArms.cpp` (what each draws: the glove, the sleeve, the upper arm, the
+Arx faces), so a new model is one row. Flat mode and the inventory book keep the Arx arms.
+
+### Why
+- No arm solver matches the player's real elbow (15-22 cm off in motion, research F-461); the owner found the full
+  custom arm a rubber tube whose elbow never matches.
+- Players ignore missing limbs more easily than wrong ones (F-305); Half-Life: Alyx shows gloved hands only (F-303).
+  A forearm ending before the elbow keeps some arm and hides the wrong elbow.
+- The owner picks by feel in the headset, so all four stay switchable live.
+
+### Trade-offs accepted
+- Ultraleap's forearm (Apache-2.0, F-467) is FBX and needs Blender to convert; the forearm is the #430 sleeve cut short
+  instead. A modelled forearm or full arms v2 come later.
+- Four models to keep working; the logic reads only the table's properties.
+
+### Consequences
+- status.json `vr.body.<hand>.custom.sleeveDrawn`, `.upperArmDrawn`, `.gloveDrawn` and `.forearmLength` (the forearm
+  as drawn); `arms-variants.xrs` and `arms-variants-lever.xrs` check them. How to switch: [TESTING.md](TESTING.md).
+- Two more models are planned as rows: `classic` (#466) and `library` (#467).
+
+---
+
 ## D-NEW-armfit: The custom arm solves its own chain - fitted to the player's reach, a small stretch, the elbow down with a weapon
 
 - **Date:** 2026-10-13
@@ -54,7 +95,8 @@ a changed decision keeps its history in that cell.
 ## D-NEW-arms: Own VR arms behind `vr_arms_model` — the Godot XR Tools glove hand (CC0), cgltf and CPU skinning, the logical Arx arm kept
 
 - **Date:** 2026-10-13
-- **Status:** Accepted (a first proposal; the look is the owner's to judge in the headset)
+- **Status:** Accepted (a first proposal; the look is the owner's to judge in the headset); "visible full only" amended
+  by D-NEW-armvariants (forearm and hands models)
 - **Decided by:** project owner (variant B of #385); the worker of #385.5 for the formulation; within D-009 / D-032
 
 ### Decision
@@ -1524,7 +1566,7 @@ The old 2D menus are small, so a pointer stays — but only where there is a men
 ## D-009: Full body in VR — the player model with arms driven by IK, in the MVP
 
 - **Date:** 2026-10-08
-- **Status:** Accepted
+- **Status:** Accepted; amended by D-NEW-armvariants (the arms drawn are a choice of four, the full arm one of them)
 - **Decided by:** project owner
 
 ### Decision

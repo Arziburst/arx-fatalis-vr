@@ -553,3 +553,93 @@ void ArmMeshTest::testSleeveTopRingIsWider() {
 	CPPUNIT_ASSERT(elbowRadius > 0.f);
 	CPPUNIT_ASSERT_MESSAGE("the top ring must be wider than the elbow ring", topRadius > elbowRadius);
 }
+
+void ArmMeshTest::testCutSleeveEndsInAClosedCuff() {
+	// The forearm variant (#385.8): the sleeve cut 0.4 of the forearm past the elbow, closed by a cuff there
+	vr::SleeveParams params;
+	params.startAt = params.upperLength + params.forearmLength * 0.4f;
+	vr::SkinnedMesh sleeve = vr::buildSleeve(params);
+	CPPUNIT_ASSERT(!sleeve.positions.empty());
+	CPPUNIT_ASSERT_EQUAL(sleeve.positions.size(), sleeve.weights.size());
+	CPPUNIT_ASSERT_EQUAL(size_t(0), sleeve.indices.size() % 3);
+
+	float minX = 1e9f, maxX = -1e9f;
+	for(const Vec3f & p : sleeve.positions) {
+		minX = std::min(minX, p.x);
+		maxX = std::max(maxX, p.x);
+	}
+	expectNear("cuff end", params.startAt - params.cuffDepth, minX, 1e-3f);
+	expectNear("wrist end", params.upperLength + params.forearmLength, maxX, 1e-3f);
+
+	// Closed: the cuff's end is a point on the arm's axis
+	for(size_t v : verticesNearestX(sleeve, minX)) {
+		expectNear("cuff centre radius", 0.f, radiusOf(sleeve.positions[v]), 1e-4f);
+	}
+	// The rim is wider than the cut ring
+	float cutRadius = 0.f;
+	for(size_t v : verticesNearestX(sleeve, params.startAt)) {
+		cutRadius = std::max(cutRadius, radiusOf(sleeve.positions[v]));
+	}
+	float rimRadius = 0.f;
+	for(size_t v : verticesNearestX(sleeve, params.startAt - params.cuffDepth * 0.4f)) {
+		rimRadius = std::max(rimRadius, radiusOf(sleeve.positions[v]));
+	}
+	CPPUNIT_ASSERT(cutRadius > 0.f);
+	CPPUNIT_ASSERT_MESSAGE("the cuff's rim must be wider than the cut", rimRadius > cutRadius);
+
+	// No upper arm: nothing weighted on the shoulder or the upper twist
+	for(size_t v = 0; v < sleeve.positions.size(); v++) {
+		float sum = 0.f;
+		for(size_t s = 0; s < 4; s++) {
+			sum += sleeve.weights[v][s];
+			if(sleeve.weights[v][s] > 0.f) {
+				CPPUNIT_ASSERT(sleeve.joints[v][s] != vr::SleeveShoulder);
+				CPPUNIT_ASSERT(sleeve.joints[v][s] != vr::SleeveUpperTwist);
+			}
+		}
+		expectNear("weights sum", 1.f, sum, 1e-5f);
+	}
+
+	// The full sleeve still starts at the shoulder
+	vr::SkinnedMesh full = vr::buildSleeve(vr::SleeveParams());
+	float fullMin = 1e9f;
+	for(const Vec3f & p : full.positions) {
+		fullMin = std::min(fullMin, p.x);
+	}
+	expectNear("full sleeve starts at the shoulder", 0.f, fullMin, 1e-3f);
+}
+
+void ArmMeshTest::testWristOnlySleeveIsTheCuff() {
+	// The hands variant (#385.8): cut at the wrist, the sleeve is only the cuff closing the glove's opening
+	vr::SleeveParams params;
+	const float total = params.upperLength + params.forearmLength;
+	params.startAt = total;
+	vr::SkinnedMesh sleeve = vr::buildSleeve(params);
+	CPPUNIT_ASSERT(!sleeve.positions.empty());
+	CPPUNIT_ASSERT(!sleeve.indices.empty());
+	for(size_t v = 0; v < sleeve.positions.size(); v++) {
+		const float x = sleeve.positions[v].x;
+		CPPUNIT_ASSERT(x >= total - params.cuffDepth - 1e-3f);
+		CPPUNIT_ASSERT(x <= total + 1e-3f);
+		// Wholly on the wrist joint: it turns with the glove
+		float wrist = 0.f;
+		for(size_t s = 0; s < 4; s++) {
+			if(sleeve.joints[v][s] == vr::SleeveWrist) {
+				wrist += sleeve.weights[v][s];
+			}
+		}
+		expectNear("on the wrist", 1.f, wrist, 1e-5f);
+	}
+	// Its ring at the wrist is the full sleeve's last ring: it meets the glove's cuff
+	const vr::SkinnedMesh full = vr::buildSleeve(vr::SleeveParams());
+	float wristRadius = 0.f;
+	for(size_t v : verticesNearestX(sleeve, total)) {
+		wristRadius = std::max(wristRadius, radiusOf(sleeve.positions[v]));
+	}
+	float fullWristRadius = 0.f;
+	for(size_t v : verticesNearestX(full, total)) {
+		fullWristRadius = std::max(fullWristRadius, radiusOf(full.positions[v]));
+	}
+	CPPUNIT_ASSERT(wristRadius > 0.f);
+	expectNear("wrist ring", fullWristRadius, wristRadius, 1e-3f);
+}

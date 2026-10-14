@@ -1042,7 +1042,8 @@ static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io,
 			continue;
 		}
 
-		// The custom arms (#385.3) are drawn in place of the Arx arms' faces, which stay the posed logical arm
+		// The custom arms (#385.3) are drawn in place of the Arx arms' faces, which stay the posed logical arm; with
+		// vr_body = hidden (#385.11) only the arms are drawn - no face, no halo of the body
 		if(twoSided && !vr::drawsBodyFace(eobj, i)) {
 			continue;
 		}
@@ -1055,12 +1056,16 @@ static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io,
 		if((!twoSided && CullFace(eobj, face)) || !face.material) {
 			continue;
 		}
-		
+
 		TextureContainer * pTex = eobj->materials[face.material];
 		if(!pTex) {
 			continue;
 		}
-		
+
+		if(twoSided) {
+			vr::noteBodyFaceDrawn(eobj, i);
+		}
+
 		float fTransp = 0.f;
 		
 		TexturedVertex * tvList = GetNewVertexList(pTex->m_modelBatch, face, invisibility, fTransp);

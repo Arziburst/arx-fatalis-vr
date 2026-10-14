@@ -22,6 +22,7 @@
 
 #include <array>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <glm/gtc/quaternion.hpp>
@@ -125,9 +126,34 @@ const std::vector<ReskinnedVertex> & reskinnedArmVertices(const EERIE_3DOBJ * ob
 /*!
  * \return false for a face of the player model not drawn under a tracked head this frame (#385.3): an Arx arm's
  *         face while the custom arm (vr/VRArms.h) is drawn in its place, or a face of the cap that closes that
- *         shoulder while it is not. Asked only for the two-sided view of the VR body (never the book, never flat)
+ *         shoulder while it is not; with vr_body = hidden (#385.11) every face of the body, and the cap of a shoulder
+ *         then closes the drawn Arx arm's open end instead. Asked only for the two-sided view of the VR body (never
+ *         the book, never flat)
  */
 bool drawsBodyFace(const EERIE_3DOBJ * obj, size_t face);
+
+/*!
+ * What of the player model is drawn under a tracked head (#385.11, cfg.ini vr_body): the whole body pushed back
+ * behind the eyes (#385.9), or the arms and hands only. Flat mode and the inventory book always draw the whole model.
+ */
+enum class BodyMode : u8 {
+	Full,  //!< the body, pushed back behind the eyes (the default)
+	Hidden //!< no torso, legs, neck or head: only the arms - the custom arms, or the Arx arms with their shoulder caps
+};
+
+//! \return the mode a cfg.ini value names: "hidden" hides the body, anything else draws it
+BodyMode parseBodyMode(std::string_view text);
+//! \return false unless \a text is "full" or "hidden" (the channel's \c body command)
+bool parseBodyModeStrict(std::string_view text, BodyMode & mode);
+const char * bodyModeName(BodyMode mode);
+
+//! The mode cfg.ini asks for (vr_body)
+BodyMode bodyMode();
+//! Switch the mode live and save it to cfg.ini; \a by says who asked (the channel)
+void setBodyMode(BodyMode mode, const char * by);
+
+//! A face of the player model went into the two-sided view of the VR body this frame - for status.json (#385.11)
+void noteBodyFaceDrawn(const EERIE_3DOBJ * obj, size_t face);
 
 /*!
  * \return true for a face of the player model too near an eye to draw under a tracked head this frame (#385.9,
@@ -225,6 +251,10 @@ struct PlayerBodyStatus {
 	float twistOverflow = 0.f;
 	const char * armsModel = "custom"; //!< cfg.ini vr_arms_model: the arms drawn in VR, custom or arx (#385.3)
 	bool arxArmsHidden = false;   //!< an Arx arm's faces are not drawn this frame: a custom arm is drawn in their place
+	// The body variant (#385.11): cfg.ini vr_body, and what of the player model the last frame drew (both eyes counted)
+	const char * bodyMode = "full";
+	size_t drawnBodyFaces = 0;    //!< the body's faces: torso, legs, the neck cap, the head - not the arms
+	size_t drawnArmFaces = 0;     //!< the Arx arms' faces and the caps that close their shoulders
 	// The own body out of the eyes (#385.9, vr/BodyView.h)
 	float push = 0.f;             //!< how far the body was pushed back behind the eyes along its facing this frame (units)
 	Vec3f neckPivot = Vec3f(0.f); //!< the neck pivot below and behind the eyes the body hangs from

@@ -374,6 +374,28 @@ const Rectf & PlayerBook::getArea() {
 	return g_bookRect;
 }
 
+bool PlayerBook::tabRect(ARX_INTERFACE_BOOK_MODE page, Rectf & rect) const {
+
+	if(!(player.Interface & INTER_PLAYERBOOK) || page == m_currentPage) {
+		return false;
+	}
+	// The bookmarks as manageTopTabs places them
+	TextureContainer * tc = nullptr;
+	float offset = 0.f;
+	switch(page) {
+		case BOOKMODE_STATS: tc = g_bookResouces.bookmark_char; offset = 0.f; break;
+		case BOOKMODE_SPELLS: tc = player.rune_flags ? g_bookResouces.bookmark_magic : nullptr; offset = 32.f; break;
+		case BOOKMODE_MINIMAP: tc = g_bookResouces.bookmark_map; offset = 64.f; break;
+		case BOOKMODE_QUESTS: tc = g_bookResouces.bookmark_quest; offset = 96.f; break;
+	}
+	if(!tc) {
+		return false;
+	}
+	const Vec2f pos = g_bookRect.topLeft() + Vec2f(119.f + offset, -4.f) * g_bookScale;
+	rect = Rectf(pos, float(tc->m_size.x) * g_bookScale, float(tc->m_size.y) * g_bookScale);
+	return true;
+}
+
 void PlayerBook::manageTopTabs() {
 	
 	float scale = g_bookScale;

@@ -172,16 +172,32 @@ vr-input up right.b
 @frames 30
 @assert player.inventoryOpen eq false
 @assert player.freelook eq true
+# The book's own bookmark takes the hand's click in freelook (the book keeps freelook in VR, #377)
+vr-point right menu book_quests
+@frames 5
+vr-point right menu book_quests
+@frames 5
+@assert vr.pointer.rightOnPanel eq true
+@assert ui.menuHover eq book_quests
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+@assert player.bookPage eq quests
+@assert player.bookOpen eq true
+@assert player.freelook eq true
+vr-sim hand right pos 0.12 -0.2 -0.38
+@frames 10
 # The radial menu opens over the open book; its half-ring switches the page
 vr-input down right.b
 @frames 3
 @assert vr.radial.right.open eq true
 @assert vr.radial.right.refused eq none
-vr-radial point right quests
+vr-radial point right character
 @frames 10
 vr-input up right.b
 @frames 5
-@assert player.bookPage eq quests
+@assert player.bookPage eq stats
 @assert player.bookOpen eq true
 # B released over nothing closes it (the owner's D-042 amendment); the hands are back in the world
 vr-input down left.b

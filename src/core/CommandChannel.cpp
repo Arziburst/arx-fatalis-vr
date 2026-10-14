@@ -183,7 +183,26 @@ bool menuTargetRect(std::string_view name, Rectf & rect, std::string & why) {
 		rect = widget->m_rect;
 		return true;
 	}
-	why = std::string("needs the main menu or the character creation, mode is ") + menuModeName(ARXmenu.mode());
+	if(ARXmenu.mode() == Mode_InGame && (player.Interface & INTER_PLAYERBOOK)) {
+		// The open book's bookmarks (#377): book_stats, book_spells, book_map, book_quests
+		const struct { std::string_view name; ARX_INTERFACE_BOOK_MODE page; } tabs[] = {
+			{ "book_stats", BOOKMODE_STATS }, { "book_spells", BOOKMODE_SPELLS },
+			{ "book_map", BOOKMODE_MINIMAP }, { "book_quests", BOOKMODE_QUESTS },
+		};
+		for(const auto & tab : tabs) {
+			if(name == tab.name) {
+				if(!g_playerBook.tabRect(tab.page, rect)) {
+					why = "the book shows " + std::string(name) + " or has no bookmark for it";
+					return false;
+				}
+				return true;
+			}
+		}
+		why = "the open book has book_stats, book_spells, book_map and book_quests, not \"" + std::string(name) + "\"";
+		return false;
+	}
+	why = std::string("needs the main menu, the character creation or the open book, mode is ")
+	      + menuModeName(ARXmenu.mode());
 	return false;
 }
 
@@ -422,6 +441,11 @@ std::string menuHover(const Vec2f & mouse) {
 	Rectf rect;
 	if(ARXmenu.mode() == Mode_CharacterCreation && target.menu && g_characterCreation.targetRect(target.id, rect)
 	   && rect.contains(mouse)) {
+		return target.id;
+	}
+	// The open book's bookmarks (#377)
+	std::string why;
+	if(ARXmenu.mode() == Mode_InGame && target.menu && menuTargetRect(target.id, rect, why) && rect.contains(mouse)) {
 		return target.id;
 	}
 	return "none";

@@ -259,6 +259,7 @@ struct OpenXRState {
 		glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f);
 		float size = 0.f;
 		bool submitted = false; //!< part of the last frame's layers
+		const char * refusal = ""; //!< why the last beginRadialImage drew nothing, empty when it did (#377)
 	};
 	std::array<RadialMenu, HandCount> radials;
 	bool radialFailed = false; //!< an image could not be made: not retried this session
@@ -1535,6 +1536,9 @@ void describeRadialLayers(OpenXRState::Layers & layers) {
 		const bool drawn = radial.drawn;
 		radial.drawn = false;
 		if(!radial.requested || !drawn || radial.size <= 0.f || layers.count >= layers.list.size()) {
+			if(radial.requested && drawn && layers.count >= layers.list.size()) {
+				radial.refusal = "the frame's layer list is full";
+			}
 			continue;
 		}
 		XrCompositionLayerQuad & layer = layers.radials[hand];
@@ -2821,11 +2825,15 @@ bool beginRadialImage(Hand hand) {
 	radial.drawn = false;
 	// The images are made with the session (createSwapchains), never in a frame
 	if(!stereoActive() || frame.eyeInRender != size_t(-1) || !radial.image.isValid()) {
+		radial.refusal = !stereoActive() ? (frame.begun ? "not a stereo frame" : "no frame begun")
+		                 : frame.eyeInRender != size_t(-1) ? "an eye in render" : "no image";
 		return false;
 	}
 	if(!radial.image.acquire()) {
+		radial.refusal = "the image acquire failed";
 		return false;
 	}
+	radial.refusal = "";
 
 	bindTarget(radial.image.framebuffer(), radial.image.size());
 	GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
@@ -2870,6 +2878,10 @@ void setRadialLayer(Hand hand, bool shown, const Vec3f & center, const glm::quat
 
 bool radialLayerShown(Hand hand) {
 	return g_xr.radials[size_t(hand)].submitted;
+}
+
+const char * radialImageRefusal(Hand hand) {
+	return g_xr.radials[size_t(hand)].refusal;
 }
 
 bool radialImagesMade() {
@@ -3071,6 +3083,10 @@ void setRadialLayer(Hand /* hand */, bool /* shown */, const Vec3f & /* center *
 
 bool radialLayerShown(Hand /* hand */) {
 	return false;
+}
+
+const char * radialImageRefusal(Hand /* hand */) {
+	return "no VR";
 }
 
 void recenterPanel() { }

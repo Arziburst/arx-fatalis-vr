@@ -1384,6 +1384,10 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("gameMenuKeys", h.gameMenuKeys);
 			json.value("placed", h.placed);
 			json.value("shown", h.shown);
+			// The quad layer was in the last submitted frame (#377: the same as shown), and why its image was not drawn
+			json.value("submitted", vr::radialLayerShown(vr::Hand(hand)));
+			const std::string undrawn = vr::radialImageRefusal(vr::Hand(hand));
+			json.value("undrawn", undrawn.empty() ? std::string("none") : undrawn);
 			json.value("pointX", h.point.x);
 			json.value("pointY", h.point.y);
 			writeVec(json, "center", h.center);

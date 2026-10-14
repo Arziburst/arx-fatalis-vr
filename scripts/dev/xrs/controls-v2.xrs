@@ -243,11 +243,21 @@ vr-sim action trigger right 0
 vr-sim hand left rot 0 0 0
 vr-sim hand right pos 0.12 -0.2 -0.38
 @frames 10
-# The radial menu opens over the open book; its half-ring switches the page
+# The radial menu opens over the open book, and is DRAWN (the owner: the ring was missing with a panel open): its
+# quad layer is in the submitted frame and adds its pixels to both eyes
+@shot book-no-ring
+@remember bookOverlayL vr.sim.shots.book-no-ring.left.overlayPixels
+@remember bookOverlayR vr.sim.shots.book-no-ring.right.overlayPixels
 vr-input down right.b
-@frames 3
+@frames 5
 @assert vr.radial.right.open eq true
 @assert vr.radial.right.refused eq none
+@assert vr.radial.right.submitted eq true
+@assert vr.radial.right.undrawn eq none
+@shot book-ring
+@assert vr.sim.shots.book-ring.left.overlayPixels gt {bookOverlayL+5000}
+@assert vr.sim.shots.book-ring.right.overlayPixels gt {bookOverlayR+5000}
+# Its half-ring switches the page
 vr-radial point right character
 @frames 10
 vr-input up right.b
@@ -283,11 +293,17 @@ vr-sim action thumbstick right -0.9 0
 vr-sim action thumbstick right 0 0
 @frames 20
 @assert vr.input.turn.turned ne {turnedBag}
-# The same hand that opened the bag opens its radial menu again over it (the owner: it would not)
+# The same hand that opened the bag opens its radial menu again over it (the owner: it would not), drawn
+@shot bag-no-ring
+@remember bagOverlayL vr.sim.shots.bag-no-ring.left.overlayPixels
 vr-input down right.b
-@frames 3
+@frames 5
 @assert vr.radial.right.open eq true
 @assert vr.radial.right.refused eq none
+@assert vr.radial.right.submitted eq true
+@assert vr.radial.right.undrawn eq none
+@shot bag-ring
+@assert vr.sim.shots.bag-ring.left.overlayPixels gt {bagOverlayL+5000}
 vr-radial point right center
 @frames 5
 vr-input up right.b

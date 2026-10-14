@@ -100,6 +100,7 @@ struct RadialHandStatus {
 	u64 choices = 0;               //!< releases that ran an item
 	u64 gameMenuKeys = 0;          //!< presses that could not open the menu and were the game menu key (#377)
 	std::string placed = "none";   //!< where the last menu opened: "hand", or "gaze" before the eyes (vr_radial_place)
+	bool undrawnLogged = false;    //!< the open menu's image could not be drawn once (vr.radial.undrawn logged, #377)
 	Vec2f point = Vec2f(0.f);      //!< the hand in the ring's plane, meters
 	Vec3f center = Vec3f(0.f);     //!< the ring in LOCAL, meters
 	bool shown = false;            //!< the menu was in the last submitted frame

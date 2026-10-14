@@ -798,6 +798,27 @@ unchanged.
   bare hands or the glove, and what colour and material the sleeve should be.
 - **Anything near the eye:** the arms are not hidden when the hand comes close to your face; note if it bothers you.
 
+### Switching the body: full or hidden (#385.11)
+
+Two variants of the own body in VR, to pick by feel: **full** — the whole player model, pushed back behind the
+eyes so it never blocks the view (#385.9) — and **hidden** — no torso, legs, neck or head, only the arms and hands
+(Half-Life: Alyx style): the custom arms (glove and sleeve) with `vr_arms_model = custom`, the Arx arms with their
+shoulders closed by a cap with `vr_arms_model = arx`. The held weapon, the wrist bars and the reticle are the same
+in both. **Flat mode and the inventory book always show the whole model.** The floor shadow (the engine's blob
+shadow under the player) stays in both variants.
+
+**How to switch** (live, saved to cfg.ini):
+- **The channel command** (`--test-dir`): `body full` or `body hidden`.
+- **cfg.ini** (read at start): `vr_body` = `full` | `hidden` (default `full`).
+
+status.json shows the state: `vr.body.mode` (`full` | `hidden`), `vr.body.drawnBodyFaces` (the body's faces the
+last frame drew — torso, legs, the neck cap, the head; 0 in hidden) and `vr.body.drawnArmFaces` (the Arx arms'
+faces and their shoulder caps; above 0 only with the Arx arms). Sequence: `body-hidden.xrs`
+(`.\scripts\dev\xrs-run.ps1 body-hidden`).
+
+**What to compare** in the headset, one variant after the other, standing and looking down: does the body (full)
+still bother you, do floating arms (hidden) feel right, and with which arm model.
+
 ## The log banner
 
 Every `arx.log` starts with six `Key: value` lines (#115, #129 and #130, research rows F-18, F-98,

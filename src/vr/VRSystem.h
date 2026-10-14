@@ -328,6 +328,14 @@ MirrorStatus mirrorStatus();
  */
 void setMenuOpen(const char * menu);
 
+/*!
+ * \brief The scene view shows the hybrid's screen (#29): once per frame, from the camera
+ *
+ * The next frame is then drawn flat into the quad, which becomes the screen fixed in the room that the
+ * logos and the cinematics play on (#394) - the game's own scene camera as a film, never in the eyes.
+ */
+void setSceneScreen(bool on);
+
 //! The floating UI panel as status.json reports it (#49)
 struct PanelStatus {
 	std::string mode = "head";     //!< "world" while the panel is placed for an open menu, else "head"

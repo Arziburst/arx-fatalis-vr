@@ -1,7 +1,7 @@
 # Scene view 'hybrid' (#29, 29.2): first person for dialogue, a virtual screen for far camera shots and the hero's scripted body - T2 the prison intro, T1 Kultar, T8 a level 5 vision ball.
 #   .\scripts\dev\xrs-run.ps1 scene-hybrid
 # Red until #29 is built: the scene command and the status.json scene.* fields are not in the game yet (29.0, SPEC.md).
-# One run: the new game's intro (T2), then - the hero stands at MARKER_0112 facing +z - the walk into the Kultar zone (T1),
+# One run: the new game's intro (T2), then - the hero put at the scene-kultar save's spot, facing +z - the walk into the Kultar zone (T1),
 # then level 5 (T8). Per stretch: minAboveFloorM >= 1.2 and maxStepCm < 5 over the non-screen frames, every cut behind a fade,
 # no letterbox bars in an eye.
 @sim idle
@@ -38,7 +38,10 @@ newgame
 @assert scene.meter.letterboxFrames eq 0
 
 # T1: Kultar at the bars - first person (the camera entities show the dialogue near the hero)
+# The intro leaves the hero 6 m short of Kultar's trigger (TRAPS.md): to the scene-kultar save's spot first, outside the stretch
 @wait 2000
+setpos 8700 3105 8660 0
+@wait 1000
 scene meter reset
 @mark
 vr-input stick left 0 1
@@ -76,7 +79,12 @@ sendevent cinematic camera_0137 ""
 @until scene.active eq false 60s
 @assert scene.meter.screenFrames gt 0
 @assert scene.meter.sceneFrames gt 0
-@assert scene.meter.minAboveFloorM ge 1.2
+# The whole vision-ball scene is on the screen: no frame puts the eyes' world camera at the scene view, so the
+# height has nothing to measure (29.1's -1); steps stay 0 (the lead's test change, coordinator's ruling: the
+# height/step asserts apply to frames whose eyes' world camera is the scene view, cuts == fadedCuts over all)
+@remember sf8 scene.meter.sceneFrames
+@assert scene.meter.screenFrames eq {sf8}
+@assert scene.meter.minAboveFloorM eq -1
 @assert scene.meter.maxStepCm lt 5
 @assert scene.meter.maxYawStepDeg lt 1
 @remember cuts8 scene.meter.cuts

@@ -801,7 +801,7 @@ by `VRControlsTest::defaultLayoutTest`. Played through in `controls-v2.xrs` (the
 | Right stick down | `crouch_toggle` | Crouch on / off |
 | Right stick click | `weapon` | Draw / sheathe the equipped weapon (`vr.weapon.sheathed`); the game starts with it drawn |
 | Left stick | (the walk axes) | Walk along the look; the deflection sets sneak / walk / run - unchanged |
-| Right A held | `magic_mode` | The casting stance: a trigger draws runes with its hand (#43). Its press first closes everything open - the radial menus, the book, the bag, a container, a note (not the game menu; `vr.panels.closed` event). The left A is free until #378 (the owner) |
+| Right A held | `magic_mode` | The casting stance: a trigger draws runes with its hand (#43); none while an item is dragged. Its press first closes everything open - the radial menus, the book, the bag, a container, a note (not the game menu; `vr.panels.closed` event). The left A is free until #378 (the owner) |
 | Trackpads, the Touch's left menu button | — | Unbound; the player may bind them (the Touch is the Index, the owner) |
 
 Not bound by default: `inventory`, `book`, `recenter` (all in the radial menu), `menu` on both controllers (the radial menu and

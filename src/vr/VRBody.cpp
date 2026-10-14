@@ -987,9 +987,11 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		}
 		// The logical arm - what the wrist bars, the held weapon and the status read - solves from the player's
 		// own shoulder, before the body was pushed back behind the eyes (#385.9: the push moves the drawn torso,
-		// never the arm the game reads); the custom arm hangs from the drawn, pushed shoulder below
+		// never the arm the game reads); the custom arm hangs from the drawn, pushed shoulder below. With the Arx
+		// arms drawn the logical arm is the drawn one: it stays on the pushed shoulder, so the shoulder's band of
+		// faces is not stretched (the wrist bars may lean a little looking down there)
 		const Vec3f shoulder = upper.anim.trans;
-		const Vec3f realShoulder = shoulder - push;
+		const Vec3f realShoulder = (armsModel() == ArmsModel::Arx) ? shoulder : shoulder - push;
 		const ArmRollPose posed = solveArmRoll(realShoulder, target, handQuat, upperLength, forearmLength, hint,
 		                                       chain.rest, params, roll, g_body.roll[hand]);
 		const ArmPose & pose = posed.pose;

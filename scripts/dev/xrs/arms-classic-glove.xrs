@@ -1,0 +1,52 @@
+# The glove on the classic arm (#466.2): `arms classic-hand arx|glove` (switch vr_classic_hand, default arx).
+# With glove the classic arm's Arx hand faces are not drawn and the five-finger glove (#385.7) is drawn at the
+# Arx wrist. status.json (PROPOSED names, 466.2 implements them):
+#   vr.body.<hand>.classic.hand            arx | glove (the switch)
+#   vr.body.<hand>.classic.arxHandHidden   the Arx hand faces are left out of the draw this frame (true only with glove)
+# Existing: vr.body.<hand>.custom.gloveDrawn, vr.body.<hand>.fingers.holds, vr.hands.<hand>.hiltPose,
+# vr.body.<hand>.classic.creases (466.1).
+# Needs the sword save:
+#   .\scripts\dev\xrs-run.ps1 arms-classic-glove
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence arms-classic-glove -Save mvp-items
+@sim idle
+@save mvp-items
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.body.bound eq true
+@assert vr.body.active eq true
+vr-sim head rot 0 -65 0
+
+# 1. classic, default hand: the Arx hand, no glove
+arms classic
+@frames 15
+@assert vr.body.armsModel eq classic
+@assert vr.body.right.posed eq true
+@assert vr.body.right.classic.hand eq arx
+@assert vr.body.right.classic.arxHandHidden eq false
+@assert vr.body.right.custom.gloveDrawn eq false
+@shot classic-hand-arx
+
+# 2. glove: the Arx hand faces hidden, the glove drawn, the sword held closed
+arms classic-hand glove
+@frames 15
+@assert vr.body.armsModel eq classic
+@assert vr.body.right.classic.hand eq glove
+@assert vr.body.right.classic.arxHandHidden eq true
+@assert vr.body.right.custom.gloveDrawn eq true
+@assert vr.body.right.fingers.holds eq true
+@assert vr.hands.right.hiltPose ne none
+@assert vr.body.right.classic.creases le 1
+@shot classic-hand-glove
+
+# 3. back to the Arx hand
+arms classic-hand arx
+@frames 15
+@assert vr.body.right.classic.hand eq arx
+@assert vr.body.right.classic.arxHandHidden eq false
+@assert vr.body.right.custom.gloveDrawn eq false
+@shot classic-hand-arx-again
+
+@assert errors eq 0

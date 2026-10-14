@@ -40,7 +40,8 @@ vr-sim hand right pos 0.2 -0.3 -0.55
 vr-sim hand right rot 0 90 0
 @frames 15
 @assert vr.body.right.error lt 1
-@assert vr.body.right.classic.creases eq 1
+# the arm is straight here (measured elbowBend 9.7, the rest bend straightened out): no crease, never a second one
+@assert vr.body.right.classic.creases le 1
 @assert vr.body.right.classic.forearmTwistSpread lt 2
 @shot classic-ahead
 

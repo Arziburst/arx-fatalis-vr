@@ -2,7 +2,8 @@
 # flat player's way past them - reaches a main menu whose character creation draws completely (#399: without the
 # level 10 intro no camera was ever prepared, and the screen showed only the portrait on black). A player's launch
 # without VR; New game, two attribute clicks and the camera turn are all done with the desktop mouse, through SDL's
-# event queue like a real mouse's (the channel's desktop-mouse). The VR counterpart: desktop-mouse.xrs.
+# event queue like a real mouse's (the channel's desktop-mouse); the keys go the same way (desktop-key: @key needs a
+# game window, which the CI runner's session does not have). The VR counterpart: desktop-mouse.xrs.
 #   .\scripts\dev\xrs-run.ps1 desktop-mouse-flat
 @player
 @save mvp-new-game
@@ -10,7 +11,9 @@
 
 # A key during the first logo: straight to the main menu, no level 10 intro
 @until state eq LOGO 60s
-@key Space
+desktop-key Space down
+@frames 5
+desktop-key Space up
 @log GameEvent:.*startup\.logo name=\w+ state=end how=key 10s
 @until state eq MENU 30s
 @assert menuMode eq mainmenu
@@ -57,7 +60,9 @@ desktop-mouse button 2 up
 @assert desktopMouse.droppedButtons eq 0
 
 # Back to the main menu, and into the game: the mouse turns the camera
-@key Escape
+desktop-key Escape down
+@frames 5
+desktop-key Escape up
 @until menuMode eq mainmenu 10s
 loadslot 0
 @until state eq GAMEPLAY 60s

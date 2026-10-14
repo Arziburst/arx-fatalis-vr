@@ -881,6 +881,10 @@ bool Input::injectDesktopMouseWheel(int steps) {
 	return backend && backend->injectMouseWheel(steps);
 }
 
+bool Input::injectDesktopKey(int keyId, bool down) {
+	return backend && backend->injectKey(keyId, down);
+}
+
 void Input::setVirtualAction(ControlAction actionId, bool down) {
 	arx_assert(actionId >= 0 && actionId < NUM_ACTION_KEY);
 

@@ -1232,3 +1232,8 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** in a VR session (the headset or `--vr-sim`) moving, clicking or scrolling the mouse over the game window changes nothing - the menu under the cursor is not clicked, the camera does not turn.
 **Cause:** by design (#338, the owner): in VR the window only mirrors the headset; `Input::update()` drops the real mouse's movement, buttons and wheel while `vr::isEnabled()` (`desktopMouse` in `status.json`, `[input] desktop mouse:` lines in `arx.log`). The keyboard is unchanged.
 **Do:** in VR aim the hands (`vr-point`, the controllers); test the real mouse flat (`--no-vr`) with the channel's `desktop-mouse`.
+
+## 2026-10-14 - `@key` fails in CI with "process has no window"
+**Symptom:** a sequence that passes locally fails in CI at its first `@key`: `@key: process <pid> has no window` (#399, PR #458).
+**Cause:** `@key` posts a keyboard message to the game's main window. The CI runner is a service in session 0, with no desktop, so the game process has no window handle to post to.
+**Do:** in a sequence CI runs, press keys through the test channel: `desktop-key <name> down`, a few frames, `desktop-key <name> up` (SDL's event queue, like `desktop-mouse`).

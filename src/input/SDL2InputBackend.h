@@ -60,6 +60,7 @@ public:
 	bool injectMouseAt(const Vec2i & windowPos) override;
 	bool injectMouseButton(int buttonId, bool down) override;
 	bool injectMouseWheel(int steps) override;
+	bool injectKey(int keyId, bool down) override;
 	
 	void onEvent(const SDL_Event & event);
 	

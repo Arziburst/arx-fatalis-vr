@@ -55,6 +55,7 @@ public:
 	virtual bool injectMouseAt(const Vec2i & /* windowPos */) { return false; }
 	virtual bool injectMouseButton(int /* buttonId */, bool /* down */) { return false; }
 	virtual bool injectMouseWheel(int /* steps */) { return false; }
+	virtual bool injectKey(int /* keyId */, bool /* down */) { return false; }
 	
 protected:
 	

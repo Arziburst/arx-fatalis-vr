@@ -398,6 +398,21 @@ bool SDL2InputBackend::injectMouseWheel(int steps) {
 	return SDL_PushEvent(&event) == 1;
 }
 
+bool SDL2InputBackend::injectKey(int keyId, bool down) {
+	for(size_t scancode = 0; scancode < std::size(sdlToArxKey); scancode++) {
+		if(sdlToArxKey[scancode] == keyId) {
+			SDL_Event event = { };
+			event.type = down ? SDL_KEYDOWN : SDL_KEYUP;
+			event.key.windowID = SDL_GetWindowID(m_window->m_window);
+			event.key.state = down ? SDL_PRESSED : SDL_RELEASED;
+			event.key.keysym.scancode = SDL_Scancode(scancode);
+			event.key.keysym.sym = SDL_GetKeyFromScancode(SDL_Scancode(scancode));
+			return SDL_PushEvent(&event) == 1;
+		}
+	}
+	return false;
+}
+
 bool SDL2InputBackend::isKeyboardKeyPressed(int keyId) const {
 	arx_assert(keyId >= Keyboard::KeyBase && keyId < Keyboard::KeyMax);
 	return keyStates[keyId - Keyboard::KeyBase];

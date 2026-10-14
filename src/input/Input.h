@@ -226,6 +226,8 @@ public:
 	bool injectDesktopMouseAt(const Vec2s & position);
 	bool injectDesktopMouseButton(int buttonId, bool down);
 	bool injectDesktopMouseWheel(int steps);
+	//! A key of the desktop keyboard, the same way (a window-less test run cannot post one to the window)
+	bool injectDesktopKey(int keyId, bool down);
 
 private:
 	

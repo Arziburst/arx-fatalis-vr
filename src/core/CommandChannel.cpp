@@ -2206,6 +2206,23 @@ std::string execute(std::string_view line) {
 		return std::string();
 	}
 
+	if(word == "desktop-key") {
+		// desktop-key <name> down|up: a key of the desktop keyboard through the input backend's event queue, like
+		// desktop-mouse (#399) - also where the xrs @key cannot post one (the CI runner's session has no window).
+		// <name> as cfg.ini names keys: Space, Escape, Enter, A ...
+		std::string_view value;
+		const std::string name(firstWord(rest, value));
+		const InputKeyId key = Input::getKeyId(name);
+		if(key < Keyboard::KeyBase || key >= Keyboard::KeyMax || (value != "down" && value != "up")) {
+			return refuse("desktop-key: expected <key name> down|up, got \"" + std::string(rest) + "\"");
+		}
+		if(!GInput || !GInput->injectDesktopKey(key, value == "down")) {
+			return refuse("desktop-key: the input backend cannot inject \"" + std::string(rest) + "\"");
+		}
+		LogInfo << "[channel] desktop key: " << rest;
+		return std::string();
+	}
+
 	if(word == "vr-point") {
 		// vr-point <left|right> item [<dx> <dy>] | menu <name> | <x> <y>: turn a simulated hand (--vr-sim) so its aim
 		// ray points at the first item in the open inventory bag, at a menu widget (#394), or at a pixel of the 2D

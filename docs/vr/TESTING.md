@@ -823,8 +823,9 @@ custom → forearm → hands → arx → classic → custom; the channel command
 The classic arm's **hand** is a second switch, to compare the Arx hand with our five-finger glove on the same arm:
 - **arx** (the default) — the Arx hand of the player model, its three finger groups;
 - **glove** — the Arx hand is not drawn; the glove of the custom arms (five fingers, the runtime's joints or the
-  controls, the hilt pose on a held weapon) sits at the Arx wrist, turned as on the controller's handle, and the Arx
-  forearm ends in its cuff (no sleeve).
+  controls, the hilt pose on a held weapon) sits at the Arx wrist, turned like the Arx hand, and the Arx forearm ends
+  in its cuff (no sleeve). Its closed fingers lie some 30 degrees off the handle (`custom.curlAngle`) — the price of
+  meeting the Arx wrist.
 
 How to switch (live, saved to cfg.ini): `arms classic-hand arx` or `arms classic-hand glove`; cfg.ini
 `vr_classic_hand` = `arx` | `glove`. It only matters with `vr_arms_model = classic`. status.json:

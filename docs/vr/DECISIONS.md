@@ -32,8 +32,8 @@ pushed shoulder) and the lever's fifth step (custom -> forearm -> hands -> arx -
 
 Its hand is a second switch, `vr_classic_hand` = `arx` (default) | `glove` (`arms classic-hand <hand>`): with `glove`
 the Arx hand faces (every corner on the classic hand: the wrist ring and past it) are left out and the custom arms'
-five-finger glove (#385.7: joints, controls, the hilt pose) is drawn with its cuff on the Arx wrist joint, turned as on
-the controller's handle; no sleeve - the Arx forearm ends in the glove's cuff.
+five-finger glove (#385.7: joints, controls, the hilt pose) is drawn with its cuff on the Arx wrist joint, turned by the
+same grip frame as the Arx hand (D-032, research F-281); no sleeve - the Arx forearm ends in the glove's cuff.
 
 ### Why
 - **The measured cause** of the second elbow (TRAPS.md 2026-10-14, `human_base`, both arms): the forearm group holds
@@ -46,8 +46,11 @@ the controller's handle; no sleeve - the Arx forearm ends in the glove's cuff.
 
 ### Trade-offs accepted
 - The re-skin is VR only: flat mode and the inventory book keep the engine's arm (and its second elbow).
-- The glove at the Arx wrist keeps its turn on the handle rather than the Arx hand's, so a kink at the wrist is possible;
-  the owner judges the seam in the headset.
+- The glove at the Arx wrist follows the Arx hand's frame, not its own curl's turn onto the handle (#385.7): measured in
+  the sim's idle pose, the curl's turn tilts the glove some 30 degrees off the Arx hand and leaves the end of the Arx
+  forearm open beside it, while the Arx frame lays its palm along the Arx palm (9.6 vs 8.0 units below the wrist, the
+  same direction) - at the price of the closed fingers' line lying 31 degrees off the handle (`custom.curlAngle`, 0 on
+  the own arms). The owner judges the seam and the grip in the headset.
 
 ### Consequences
 - status.json `vr.body.<hand>.classic.{skin, drawn, creases, creaseThreshold, creaseBands, maxBend, elbowBend,

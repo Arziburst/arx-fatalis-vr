@@ -397,6 +397,10 @@ private:
 	float m_heldYaw = 0.f; //!< the eyes' yaw kept while a cut waits for black, and on the screen
 	bool m_haveLastYaw = false;
 	float m_lastYaw = 0.f; //!< the eyes' yaw last frame, before the head
+	bool m_haveHeroYaw = false;
+	float m_lastHeroYaw = 0.f; //!< the hero's yaw last frame
+	float m_lastStick = 0.f;   //!< the stick's turn last frame
+	bool m_turnCut = false;    //!< the pending cut is a script's turn of the hero
 	bool m_lookAtPending = false;
 	bool m_lowScreen = false; //!< \ref SceneFirstLow::Screen took this scene to the screen
 	bool m_lowHeld = false;   //!< \ref SceneFirstLow::Black: the last eye high enough is held, the fade goes black

@@ -408,16 +408,16 @@ void SceneViewTest::blindTest() {
 
 	// ...a ghost's shot and the observer's point
 	for(SceneViewSetting setting : { SceneViewSetting::Ghost, SceneViewSetting::Observer }) {
-		SceneDirector director;
-		director.update(standing());
+		SceneDirector held;
+		held.update(standing());
 		SceneInput shot = sceneOf(standing(), SceneKind::Entity, 7, setting);
 		shot.hasFloor = [](const Vec3f &) { return false; };
-		settle(director, shot);
-		CPPUNIT_ASSERT(director.shown() != SceneShown::None);
-		CPPUNIT_ASSERT(director.fade() >= BehindFade);
+		settle(held, shot);
+		CPPUNIT_ASSERT(held.shown() != SceneShown::None);
+		CPPUNIT_ASSERT(held.fade() >= BehindFade);
 		shot.hasFloor = [](const Vec3f &) { return true; };
-		settle(director, shot);
-		CPPUNIT_ASSERT_EQUAL(0.f, director.fade());
+		settle(held, shot);
+		CPPUNIT_ASSERT_EQUAL(0.f, held.fade());
 	}
 }
 
@@ -517,6 +517,35 @@ void SceneViewTest::scriptTurnTest() {
 		out = director.update(shot);
 		CPPUNIT_ASSERT(yawDistance(shot.playerYaw + out.yawDelta, eyes - 30.f) < SvEps);
 	}
+}
+
+void SceneViewTest::firstYawJumpTest() {
+
+	// First person in a scene: a script snapping the hero round (teleport -a) is a cut behind the fade, the eyes keep
+	// the old yaw until black; the stick's own snap turn is never one
+	SceneDirector director;
+	director.update(standing());
+	SceneInput scene = sceneOf(standing(), SceneKind::Entity, 4, SceneViewSetting::First);
+	settle(director, scene);
+	SceneOutput out = director.update(scene);
+	CPPUNIT_ASSERT(!out.cut);
+
+	SceneInput stick = scene;
+	stick.stickTurned = 45.f;
+	stick.playerYaw = -45.f;
+	out = director.update(stick);
+	CPPUNIT_ASSERT(!out.cut);
+	CPPUNIT_ASSERT_EQUAL(0.f, director.fade());
+	settle(director, stick);
+
+	SceneInput turned = stick;
+	turned.playerYaw = 135.f;
+	bool held = false;
+	int frames = 0;
+	out = untilCut(director, turned, director.update(stick).pos, held, frames);
+	CPPUNIT_ASSERT(out.cut);
+	CPPUNIT_ASSERT(out.fade >= BehindFade);
+	CPPUNIT_ASSERT(frames > 1);
 }
 
 void SceneViewTest::heldYawTest() {

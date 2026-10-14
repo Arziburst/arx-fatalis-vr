@@ -345,11 +345,20 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 	// shown is held - its place and its yaw - until the fade is black. Without a scene the game's first
 	// person is followed as it is
 	const bool differs = (target != m_shown);
+	// A script turning the hero at once (teleport -a, a long frame of a scripted turn) is a jump too; the stick's own
+	// turn is the player's and never one
+	const float scriptTurn = m_haveHeroYaw
+	                         ? wrapSignedDegrees(in.playerYaw - m_lastHeroYaw + (in.stickTurned - m_lastStick)) : 0.f;
+	m_haveHeroYaw = true;
+	m_lastHeroYaw = in.playerYaw;
+	m_lastStick = in.stickTurned;
+	const bool turnJump = std::abs(scriptTurn) > CutJumpDegrees;
 	const bool jump = !differs && following && !m_lowHeld && target.shown != SceneShown::None
-	                  && glm::distance(targetPos, m_pos) > CutJumpUnits;
+	                  && (glm::distance(targetPos, m_pos) > CutJumpUnits || turnJump);
 	if(differs || jump) {
 		if(!m_cutPending) {
 			m_cutPending = true;
+			m_turnCut = jump && turnJump;
 			m_heldYaw = m_haveLastYaw ? m_lastYaw : in.playerYaw + m_yawDelta;
 			m_fade.request(m_params.cutOut, m_params.cutIn, m_params.blackFrames);
 		}
@@ -364,7 +373,8 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 		// The target may have come back to the shot shown meanwhile: then there is nothing to cut
 		const bool differsNow = (target != m_shown);
 		const bool jumpNow = following && target.shown != SceneShown::None
-		                     && glm::distance(targetPos, m_pos) > CutJumpUnits;
+		                     && (glm::distance(targetPos, m_pos) > CutJumpUnits || m_turnCut);
+		m_turnCut = false;
 		if(differsNow || jumpNow) {
 			out.cut = true;
 			if(m_shown.shown == SceneShown::None && target.shown != SceneShown::None) {

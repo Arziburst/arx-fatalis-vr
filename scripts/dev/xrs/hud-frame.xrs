@@ -107,6 +107,13 @@ addxp 3000
 @assert vr.hud.levelUp.wristNotice eq true
 @assert vr.hud.levelUp.notices eq 1
 @log GameEvent:.*vr\.levelup.*mode=both.*radial=yes.*wrist=yes 5s
+# The game's level-up message is an info message down the frame's top left: there in the game, never on the quad
+@assert notifications gt 0
+@frames 5
+@assert vr.hud.drawn.notifications eq 0
+@shot levelup-message
+@assert vr.sim.shots.levelup-message.left.quadPixels eq 0
+@assert vr.sim.shots.levelup-message.right.quadPixels eq 0
 # The wrist turned to the eyes like a watch (wrist-vitals): the notice is drawn beside the bars
 vr-sim head rot -20 -45 0
 vr-sim hand left pos 0.12 -0.3 -0.3
@@ -154,10 +161,11 @@ vr-hud levelup both
 @until vr.hud.levelUp.wristNotice eq false 15s
 @assert vr.hud.levelUp.radialMark eq true
 
-# 5. The radial ring over the bag and the book (#456's "ring not drawn"): each hand, three times each, shown in
-# every checked frame - its layer submitted (`submitted`, #377) and its image drawn (`undrawn` none). Released in the
-# middle, B closes the open panel (#377), so it is opened again each time
-ui inventory open
+# 5. The radial ring over the bag and the book (#456's "ring not drawn"; #474): six times over each, shown in every
+# checked frame - its layer submitted (`submitted`, #377) and its image drawn (`undrawn` none). The radial menu is on
+# the right B only since the owner's #377 layout (the left B is the book's map, the left A the bag). Released in the
+# middle over the bag, B leaves the bag open (the owner's rule, #377) and the left A closes it; over the book, B closes it
+vr-input tap left.a
 @until player.inventoryOpen eq true 5s
 @frames 20
 vr-input down right.b
@@ -169,72 +177,109 @@ vr-input down right.b
 @frames 5
 @assert vr.radial.right.shown eq true
 @assert vr.radial.right.submitted eq true
-@shot ring-bag-right
+@shot ring-bag
 vr-input up right.b
+@frames 5
+@assert vr.radial.right.open eq false
+@assert player.inventoryOpen eq true
+vr-input tap left.a
 @until player.inventoryOpen eq false 5s
-ui inventory open
+@frames 10
+vr-input tap left.a
 @until player.inventoryOpen eq true 5s
 @frames 20
 vr-input down right.b
 @frames 5
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.undrawn eq none
 @assert vr.radial.right.shown eq true
 @assert vr.radial.right.submitted eq true
 @frames 5
 @assert vr.radial.right.shown eq true
 @assert vr.radial.right.submitted eq true
 vr-input up right.b
+@frames 5
+@assert vr.radial.right.open eq false
+@assert player.inventoryOpen eq true
+vr-input tap left.a
 @until player.inventoryOpen eq false 5s
-ui inventory open
+@frames 10
+vr-input tap left.a
 @until player.inventoryOpen eq true 5s
 @frames 20
 vr-input down right.b
 @frames 5
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.undrawn eq none
 @assert vr.radial.right.shown eq true
 @assert vr.radial.right.submitted eq true
 @frames 5
 @assert vr.radial.right.shown eq true
 @assert vr.radial.right.submitted eq true
 vr-input up right.b
+@frames 5
+@assert vr.radial.right.open eq false
+@assert player.inventoryOpen eq true
+vr-input tap left.a
 @until player.inventoryOpen eq false 5s
-ui inventory open
+@frames 10
+vr-input tap left.a
 @until player.inventoryOpen eq true 5s
 @frames 20
-vr-input down left.b
+vr-input down right.b
 @frames 5
-@assert vr.radial.left.open eq true
-@assert vr.radial.left.undrawn eq none
-@assert vr.radial.left.shown eq true
-@assert vr.radial.left.submitted eq true
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.undrawn eq none
+@assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 @frames 5
-@assert vr.radial.left.shown eq true
-@assert vr.radial.left.submitted eq true
-@shot ring-bag-left
-vr-input up left.b
+@assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
+vr-input up right.b
+@frames 5
+@assert vr.radial.right.open eq false
+@assert player.inventoryOpen eq true
+vr-input tap left.a
 @until player.inventoryOpen eq false 5s
-ui inventory open
+@frames 10
+vr-input tap left.a
 @until player.inventoryOpen eq true 5s
 @frames 20
-vr-input down left.b
+vr-input down right.b
 @frames 5
-@assert vr.radial.left.shown eq true
-@assert vr.radial.left.submitted eq true
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.undrawn eq none
+@assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 @frames 5
-@assert vr.radial.left.shown eq true
-@assert vr.radial.left.submitted eq true
-vr-input up left.b
+@assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
+vr-input up right.b
+@frames 5
+@assert vr.radial.right.open eq false
+@assert player.inventoryOpen eq true
+vr-input tap left.a
 @until player.inventoryOpen eq false 5s
-ui inventory open
+@frames 10
+vr-input tap left.a
 @until player.inventoryOpen eq true 5s
 @frames 20
-vr-input down left.b
+vr-input down right.b
 @frames 5
-@assert vr.radial.left.shown eq true
-@assert vr.radial.left.submitted eq true
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.undrawn eq none
+@assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 @frames 5
-@assert vr.radial.left.shown eq true
-@assert vr.radial.left.submitted eq true
-vr-input up left.b
+@assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
+vr-input up right.b
+@frames 5
+@assert vr.radial.right.open eq false
+@assert player.inventoryOpen eq true
+vr-input tap left.a
 @until player.inventoryOpen eq false 5s
+@frames 10
 
 book open
 @until player.bookOpen eq true 5s
@@ -248,14 +293,17 @@ vr-input down right.b
 @frames 5
 @assert vr.radial.right.shown eq true
 @assert vr.radial.right.submitted eq true
-@shot ring-book-right
+@shot ring-book
 vr-input up right.b
 @until player.bookOpen eq false 5s
+@frames 10
 book open
 @until player.bookOpen eq true 5s
 @frames 20
 vr-input down right.b
 @frames 5
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.undrawn eq none
 @assert vr.radial.right.shown eq true
 @assert vr.radial.right.submitted eq true
 @frames 5
@@ -263,11 +311,14 @@ vr-input down right.b
 @assert vr.radial.right.submitted eq true
 vr-input up right.b
 @until player.bookOpen eq false 5s
+@frames 10
 book open
 @until player.bookOpen eq true 5s
 @frames 20
 vr-input down right.b
 @frames 5
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.undrawn eq none
 @assert vr.radial.right.shown eq true
 @assert vr.radial.right.submitted eq true
 @frames 5
@@ -275,49 +326,57 @@ vr-input down right.b
 @assert vr.radial.right.submitted eq true
 vr-input up right.b
 @until player.bookOpen eq false 5s
+@frames 10
 book open
 @until player.bookOpen eq true 5s
 @frames 20
-vr-input down left.b
+vr-input down right.b
 @frames 5
-@assert vr.radial.left.open eq true
-@assert vr.radial.left.undrawn eq none
-@assert vr.radial.left.shown eq true
-@assert vr.radial.left.submitted eq true
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.undrawn eq none
+@assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 @frames 5
-@assert vr.radial.left.shown eq true
-@assert vr.radial.left.submitted eq true
-@shot ring-book-left
-vr-input up left.b
+@assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
+vr-input up right.b
 @until player.bookOpen eq false 5s
+@frames 10
 book open
 @until player.bookOpen eq true 5s
 @frames 20
-vr-input down left.b
+vr-input down right.b
 @frames 5
-@assert vr.radial.left.shown eq true
-@assert vr.radial.left.submitted eq true
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.undrawn eq none
+@assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 @frames 5
-@assert vr.radial.left.shown eq true
-@assert vr.radial.left.submitted eq true
-vr-input up left.b
+@assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
+vr-input up right.b
 @until player.bookOpen eq false 5s
+@frames 10
 book open
 @until player.bookOpen eq true 5s
 @frames 20
-vr-input down left.b
+vr-input down right.b
 @frames 5
-@assert vr.radial.left.shown eq true
-@assert vr.radial.left.submitted eq true
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.undrawn eq none
+@assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 @frames 5
-@assert vr.radial.left.shown eq true
-@assert vr.radial.left.submitted eq true
-vr-input up left.b
+@assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
+vr-input up right.b
 @until player.bookOpen eq false 5s
+@frames 10
 
 # Nothing of the frame was drawn through all of it
 @assert vr.hud.drawnTotal eq 0
 @assert vr.hud.drawn.level_up eq 0
 @assert vr.hud.drawn.book eq 0
 @assert vr.hud.drawn.backpack eq 0
+@assert vr.hud.drawn.notifications eq 0
 @assert errors eq 0

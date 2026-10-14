@@ -25,7 +25,7 @@ a changed decision keeps its history in that cell.
 - **In VR no element of the original HUD frame is drawn on the 2D interface**, nor takes a click: the orbs, the
   level-up, book, bag and purse icons, the active and precast spells, the stealth gauge, the torch, steal, damaged
   equipment, zone-change and quick-save icons, the memorized runes, the swing charge, the cursor mode's hint and edge
-  arrows, the corner minimap (`vr/HudFrame.h`). In play nothing of it is on the head-locked quad; the panel is shown only for a real panel
+  arrows, the corner minimap, the info messages and the characters' speech text (`vr/HudFrame.h`). In play nothing of it is on the head-locked quad; the panel is shown only for a real panel
   (the bag, the book, a container, a note, a menu) and carries only that panel. Flat mode is unchanged.
 - **Each element's VR home** is listed in TESTING.md ([The HUD frame in VR](TESTING.md#the-hud-frame-in-vr-469)):
   health and mana on the left wrist (#116; the orbs come back only without a posed left arm); the book, the bag and the

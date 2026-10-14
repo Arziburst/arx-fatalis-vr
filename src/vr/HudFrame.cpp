@@ -54,6 +54,10 @@ const std::array<HudElementInfo, HudElementCount> ElementInfo = { {
 	{ "screen_arrows", HudHome::None, "the monitor's edges turn the view - the head turns it in VR" },
 	{ "minimap", HudHome::Radial,
 	  "the radial menu's Map item opens the book's map page (#376); a map always in view has no VR place yet" },
+	{ "notifications", HudHome::Question,
+	  "the info messages (tutorial hints, 'you cannot ...', level-up texts) have no VR place yet - the owner decides" },
+	{ "speech", HudHome::Question,
+	  "the characters' speech text has no VR place yet (the voice still plays) - the owner decides" },
 } };
 
 bool isSeparator(char c) {

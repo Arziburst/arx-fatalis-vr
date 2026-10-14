@@ -30,6 +30,9 @@ addxp 3000
 @remember lu vr.hud.drawn.level_up
 @wait 500
 @assert vr.hud.drawn.level_up gt {lu}
+# The level-up message down the top left, as before
+@assert notifications gt 0
+@assert vr.hud.drawn.notifications gt 0
 @assert vr.hud.levelUp.wristViews eq 0
 @assert vr.hud.levelUp.radialImages eq 0
 @shot flat-levelup

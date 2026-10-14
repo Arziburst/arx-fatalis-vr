@@ -66,6 +66,10 @@ void HudFrameTest::testEveryElementHasAHome() {
 	// Without an obvious home: listed for the owner
 	CPPUNIT_ASSERT(vr::hudElementInfo(HudElement::PrecastSpells).home == HudHome::Question);
 	CPPUNIT_ASSERT(vr::hudElementInfo(HudElement::ChangeLevel).home == HudHome::Question);
+	// The owner's scope note (#469, 2026-10-15): the minimap, the info messages and the speech go too
+	CPPUNIT_ASSERT(vr::hudElementInfo(HudElement::MiniMap).home == HudHome::Radial);
+	CPPUNIT_ASSERT(vr::hudElementInfo(HudElement::Notifications).home == HudHome::Question);
+	CPPUNIT_ASSERT(vr::hudElementInfo(HudElement::Speech).home == HudHome::Question);
 	// The mouse's and the monitor's own
 	CPPUNIT_ASSERT(vr::hudElementInfo(HudElement::ScreenArrows).home == HudHome::None);
 

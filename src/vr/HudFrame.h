@@ -62,6 +62,8 @@ enum class HudElement : u8 {
 	MechanismHint,    //!< the cog that hints at the cursor mode
 	ScreenArrows,     //!< the arrows on the screen edges in the cursor mode
 	MiniMap,          //!< the minimap in the top right corner (gui/MiniMap.cpp)
+	Notifications,    //!< the info messages down the top left (gui/Notification.cpp)
+	Speech,           //!< the characters' speech under the letterbox of a conversation (gui/Speech.cpp)
 	Count
 };
 

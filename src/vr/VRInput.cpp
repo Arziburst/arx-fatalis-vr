@@ -28,6 +28,7 @@
 #include "core/Core.h"
 #include "core/GameEvent.h"
 #include "core/TimeTypes.h"
+#include "game/Player.h"
 #include "gui/Menu.h"
 #include "input/Input.h"
 #include "io/fs/FilePath.h"
@@ -299,7 +300,9 @@ void applyToEngine(const GameInputState & state) {
 		const Vec2f cursor = g_input.pointer.cursor();
 		// A world reticle (#37) is the exploration mode's crosshair too, and the panel's pixel the mouse on the book,
 		// which stays in freelook in VR (#377): both also in the relative mouse mode
-		GInput->setVirtualMousePosition(Vec2s(s16(std::lround(cursor.x)), s16(std::lround(cursor.y))), true);
+		const bool book = (player.Interface & INTER_PLAYERBOOK) != 0;
+		GInput->setVirtualMousePosition(Vec2s(s16(std::lround(cursor.x)), s16(std::lround(cursor.y))),
+		                                !g_input.pointer.onPanel() || book);
 	} else {
 		GInput->setVirtualMousePosition(std::nullopt);
 	}

@@ -79,7 +79,12 @@ sendevent cinematic camera_0137 ""
 @until scene.active eq false 60s
 @assert scene.meter.screenFrames gt 0
 @assert scene.meter.sceneFrames gt 0
-@assert scene.meter.minAboveFloorM ge 1.2
+# The whole vision-ball scene is on the screen: no frame puts the eyes' world camera at the scene view, so the
+# height has nothing to measure (29.1's -1); steps stay 0 (the lead's test change, coordinator's ruling: the
+# height/step asserts apply to frames whose eyes' world camera is the scene view, cuts == fadedCuts over all)
+@remember sf8 scene.meter.sceneFrames
+@assert scene.meter.screenFrames eq {sf8}
+@assert scene.meter.minAboveFloorM eq -1
 @assert scene.meter.maxStepCm lt 5
 @assert scene.meter.maxYawStepDeg lt 1
 @remember cuts8 scene.meter.cuts

@@ -49,6 +49,8 @@ setpos 8380 -170 8200 0
 vr-point right face lever_9002
 @frames 5
 vr-point right face lever_9002
+@frames 30                                    # the hands still settle after a teleport on a busy runner: aim again from where they
+vr-point right face lever_9002                # are (the pulled handle lies against the wall, TRAPS.md)
 @until vr.reticle.right.under eq lever_9002 5s
 @until vr.reticle.right.entity eq lever_9002 5s
 vr-sim action grip right 1
@@ -173,6 +175,8 @@ setpos 8380 -170 8200 0
 vr-point left face lever_9002
 @frames 5
 vr-point left face lever_9002
+@frames 30                                    # the hands still settle after a teleport on a busy runner: aim again from where they
+vr-point left face lever_9002                # are (the pulled handle lies against the wall, TRAPS.md)
 @until vr.reticle.left.under eq lever_9002 5s
 @until vr.reticle.left.entity eq lever_9002 5s
 vr-sim action grip left 1

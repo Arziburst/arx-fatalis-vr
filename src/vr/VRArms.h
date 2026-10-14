@@ -87,6 +87,8 @@ struct ArmsModelInfo {
 	bool upperArm;      //!< the sleeve goes on to the shoulder; without it, it ends forearmKept along the forearm
 	float forearmKept;  //!< the share of the forearm the sleeve covers from the wrist without the upper arm
 	bool arxArms;       //!< the Arx arm faces are drawn (the logical arm then stays on the drawn, pushed shoulder)
+	bool classicSkin;   //!< the Arx arm is drawn with the classic re-skin (#466.1, vr/ArxArmFix.h); its hand is the Arx
+	                    //!< hand or our glove at the Arx wrist, as vr_classic_hand says (#466.2)
 };
 
 /*!
@@ -128,6 +130,22 @@ ArmsModel armsModel();
 const ArmsModelInfo & armsModelInfo();
 //! Switch the model live and save it to cfg.ini; \a by says who asked (the channel, the playground lever)
 void setArmsModel(ArmsModel model, const char * by);
+
+//! The hand at the end of the classic arm (#466.2, research F-281, F-282): the owner compares them in the headset
+enum class ClassicHand : u8 {
+	Arx,   //!< the Arx hand of the player model (the default)
+	Glove  //!< our five-finger glove (#385.7) at the Arx wrist, the Arx hand faces left out of the draw
+};
+
+//! \return the hand a cfg.ini value names: "glove" our glove, anything else the Arx hand
+ClassicHand parseClassicHand(std::string_view text);
+//! \return false unless \a text is "arx" or "glove" (the channel's \c arms \c classic-hand)
+bool parseClassicHandStrict(std::string_view text, ClassicHand & hand);
+const char * classicHandName(ClassicHand hand);
+//! The classic arm's hand cfg.ini asks for (vr_classic_hand)
+ClassicHand classicHand();
+//! Switch the classic arm's hand live and save it to cfg.ini; \a by says who asked
+void setClassicHand(ClassicHand hand, const char * by);
 //! Set vr_hand_scale live (clamped) and save it to cfg.ini
 void setHandScale(float scale, const char * by);
 
@@ -151,6 +169,7 @@ struct LogicalArm {
 	glm::quat gripOrientation = quat_identity(); //!< the grip's rotation in engine axes
 	float upperLength = 0.f;            //!< the Arx bones, units: the fit when the character's height is unknown
 	float forearmLength = 0.f;
+	Vec3f arxWrist = Vec3f(0.f);        //!< the Arx wrist joint as posed: the classic arm's glove sits there (#466.2)
 	// The glove's five fingers (#385.4, D-041, D-042): the held rule's inputs (holds = holdsWeapon) and the hand joints
 	CustomFingerInput fingers;
 	HandJoints joints;                  //!< this frame's hand joints (invalid without them)
@@ -161,14 +180,17 @@ struct LogicalArm {
 void resetCustomArms();
 
 /*!
- * \brief Skin the custom arm of \a hand on the logical arm, when the model draws our glove (custom, forearm, hands)
- * \return true when the custom arm - the glove and as much of the sleeve as the model draws - is drawn this frame in
- *         place of the Arx arm
+ * \brief Skin the custom arm of \a hand on the logical arm, when the model draws our glove (custom, forearm, hands),
+ *        or only its glove at the Arx wrist (classic with vr_classic_hand = glove, #466.2)
+ * \return true when the glove is drawn this frame: with as much of the sleeve as the model draws in place of the Arx
+ *         arm, or alone in place of the Arx hand
  */
 bool poseCustomArm(Hand hand, const LogicalArm & arm);
 
 //! The custom arm of \a hand, whole or in part, is drawn this frame (its Arx arm faces are not)
 bool customArmDrawn(Hand hand);
+//! The glove of \a hand is drawn at the classic arm's Arx wrist this frame (#466.2): its Arx hand faces are not
+bool arxHandHidden(Hand hand);
 
 /*!
  * Whether the glove meshes loaded (status.json vr.body.customArms). A glove is read the first time its arm is

@@ -1167,6 +1167,10 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("maxBend", arm.bend.maxBend);
 			json.value("elbowBend", arm.bend.elbowBend);
 			json.value("forearmTwistSpread", arm.bend.forearmTwistSpread);
+			// The classic arm's hand (#466.2): vr_classic_hand, and whether its Arx hand faces were left out this frame
+			// for our glove at the Arx wrist (custom.gloveDrawn below)
+			json.value("hand", vr::classicHandName(vr::classicHand()));
+			json.value("arxHandHidden", vr::arxHandHidden(vr::Hand(hand)));
 			json.end();
 			// The custom arm drawn on this logical arm (#385.3): the hand's size, where the glove and the sleeve sit,
 			// the bend the sleeve is drawn with and the roll its twist joints carry
@@ -2036,11 +2040,20 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "arms") {
-		// The arms drawn on the player in VR (#385.3): arms custom|forearm|hands|classic|arx switches the model live (#385.8, #466),
-		// arms scale <factor> sets the custom hands' size (vr_hand_scale); both are saved to cfg.ini
+		// The arms drawn on the player in VR (#385.3): arms custom|forearm|hands|arx|classic switches the model live
+		// (#385.8, #466), arms scale <factor> sets the custom hands' size (vr_hand_scale), arms classic-hand arx|glove
+		// the classic arm's hand (vr_classic_hand, #466.2); all are saved to cfg.ini
 		std::string_view args;
 		std::string_view what = firstWord(rest, args);
 		vr::ArmsModel model;
+		if(what == "classic-hand") {
+			vr::ClassicHand hand;
+			if(!vr::parseClassicHandStrict(args, hand)) {
+				return refuse("arms classic-hand: expected arx or glove, got \"" + std::string(args) + "\"");
+			}
+			vr::setClassicHand(hand, "the channel");
+			return std::string();
+		}
 		if(what == "scale") {
 			float scale = 0.f;
 			std::istringstream iss{std::string(args)};

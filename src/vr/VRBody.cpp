@@ -166,6 +166,8 @@ struct BodyState {
 	size_t boundFaces = 0;                        //!< the bound model's faces with the caps (a reloaded model has fewer)
 	//! per face of the bound model: what it is to the custom arms (#385.3) - FaceBody, FaceArm + hand, FaceArmCap + hand
 	std::vector<u8> faceRole;
+	//! per face of the bound model: 1 for a face of an Arx hand on the classic skin - every corner on the hand (#466.2)
+	std::vector<u8> arxHandFace;
 	//! the vertices the classic arm skinned on another bone this frame, with the rotation they turned with (#466.1)
 	std::vector<ReskinnedVertex> reskinned;
 	//! per face of the bound model: hidden this frame because it is too near an eye (#385.9), and the pose it was
@@ -554,6 +556,7 @@ size_t addCap(EERIE_3DOBJ * obj, const std::vector<char> & hiddenVertex, const c
 void addArmCaps(EERIE_3DOBJ * obj) {
 
 	g_body.faceRole.assign(obj->facelist.size(), FaceBody);
+	g_body.arxHandFace.assign(obj->facelist.size(), 0);
 	if(!obj->m_skeleton) {
 		return;
 	}
@@ -577,6 +580,7 @@ void addArmCaps(EERIE_3DOBJ * obj) {
 			}
 		}
 		size_t armFaces = 0;
+		size_t handFaces = 0;
 		for(size_t f = 0; f < obj->facelist.size(); f++) {
 			for(VertexId vertex : obj->facelist[f].vid) {
 				if(armVertex[size_t(vertex)]) {
@@ -585,11 +589,26 @@ void addArmCaps(EERIE_3DOBJ * obj) {
 					break;
 				}
 			}
+			// The classic arm's hand (#466.2): a face with every corner on the hand in the classic skin - the wrist
+			// ring and past it - is left out under our glove; the band from the forearm to the wrist ring stays, so the
+			// Arx forearm ends at the wrist joint the glove's cuff sits on
+			if(g_body.faceRole[f] == FaceArm + hand && chain.classicParts.size() == obj->vertexlist.size()) {
+				bool onHand = true;
+				for(VertexId vertex : obj->facelist[f].vid) {
+					onHand = onHand && chain.classicParts[size_t(vertex)] == ArmPart::Hand;
+				}
+				if(onHand) {
+					g_body.arxHandFace[f] = 1;
+					handFaces++;
+				}
+			}
 		}
 		const std::string what = std::string(handName(Hand(hand))) + " shoulder (" + std::to_string(armFaces)
-		                         + " arm faces hidden under the custom arm)";
+		                         + " arm faces hidden under the custom arm, " + std::to_string(handFaces)
+		                         + " hand faces under the classic arm's glove)";
 		addCap(obj, armVertex, what.c_str());
 		g_body.faceRole.resize(obj->facelist.size(), u8(FaceArmCap + hand));
+		g_body.arxHandFace.resize(obj->facelist.size(), 0);
 	}
 }
 
@@ -1170,7 +1189,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		any = true;
 
 		// How the drawn Arx arm bends along its rings (#466.1): on the classic skin when it is drawn, else on the engine's
-		const bool classic = armsModel() == ArmsModel::Classic;
+		const bool classic = armsModelInfo().classicSkin;
 		arm.armSkin = classic ? "classic" : "arx";
 		arm.bend = measureArm(chain.armRest, chain.diagnosis, classic ? chain.classicParts : chain.armRest.parts,
 		                      { upper.anim.quat, forearm.anim.quat, handBone.anim.quat });
@@ -1190,6 +1209,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 			logical.gripOrientation = placement.orientation;
 			logical.upperLength = upperLength;
 			logical.forearmLength = forearmLength;
+			logical.arxWrist = pose.wrist;
 			// The glove's five fingers (#385.4) read the same sources as the Arx fingers above
 			logical.joints = joints;
 			logical.fingers.controls = std::strcmp(source, "xr") == 0;
@@ -1250,7 +1270,7 @@ void skinPlayerArms(EERIE_3DOBJ * obj) {
 		return;
 	}
 	g_body.reskinned.clear();
-	if(armsModel() != ArmsModel::Classic) {
+	if(!armsModelInfo().classicSkin) {
 		return;
 	}
 	const Skeleton & rig = *obj->m_skeleton;
@@ -1293,7 +1313,12 @@ bool drawsBodyFace(const EERIE_3DOBJ * obj, size_t face) {
 		const bool customArm = customArmDrawn(Hand(role - FaceArmCap));
 		return hidden ? !customArm : customArm;
 	}
-	return !customArmDrawn(Hand(role - FaceArm));
+	const Hand hand = Hand(role - FaceArm);
+	if(customArmDrawn(hand)) {
+		return false;
+	}
+	// The classic arm's Arx hand while our glove is drawn at its wrist (#466.2)
+	return !(arxHandHidden(hand) && face < g_body.arxHandFace.size() && g_body.arxHandFace[face]);
 }
 
 BodyMode parseBodyMode(std::string_view text) {

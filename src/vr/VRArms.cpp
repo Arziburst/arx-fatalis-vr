@@ -78,12 +78,12 @@ const char * const ArmsLeverPulls = "#pg_arms_pulls";
  * model is one row here and one value of ArmsModel
  */
 const ArmsModelInfo ArmsModelTable[] = {
-	// model             name       glove  sleeve upperArm forearmKept  arxArms
-	{ ArmsModel::Custom,  "custom",  true,  true,  true,    1.f,         false },
-	{ ArmsModel::Forearm, "forearm", true,  true,  false,   ForearmKept, false },
-	{ ArmsModel::Hands,   "hands",   true,  false, false,   0.f,         false },
-	{ ArmsModel::Arx,     "arx",     false, false, false,   0.f,         true },
-	{ ArmsModel::Classic, "classic", false, false, false,   0.f,         true },
+	// model             name       glove  sleeve upperArm forearmKept  arxArms classicSkin
+	{ ArmsModel::Custom,  "custom",  true,  true,  true,    1.f,         false,  false },
+	{ ArmsModel::Forearm, "forearm", true,  true,  false,   ForearmKept, false,  false },
+	{ ArmsModel::Hands,   "hands",   true,  false, false,   0.f,         false,  false },
+	{ ArmsModel::Arx,     "arx",     false, false, false,   0.f,         true,   false },
+	{ ArmsModel::Classic, "classic", false, false, false,   0.f,         true,   true },
 	// { ArmsModel::Library, "library", ... }, // #467: the WebXR hand
 };
 const size_t ArmsModelCount = sizeof(ArmsModelTable) / sizeof(ArmsModelTable[0]);
@@ -150,6 +150,7 @@ struct CustomArm {
 	HandJoints current;            //!< what the glove is posed by: the target approached at a bounded speed
 	GloveCurl hiltCurl;            //!< the axis the glove's fingers wrap in the default hilt pose (mesh space)
 	bool drawn = false;
+	bool atArxWrist = false;       //!< drawn as the classic arm's hand: the glove alone, at the Arx wrist (#466.2)
 	CustomArmStatus status;
 };
 
@@ -434,6 +435,38 @@ TextureContainer * armsTexture(const std::string & name) {
 	return flat;
 }
 
+/*!
+ * The glove's hand, joint by joint (#385.7), placed by \a gloveToWorld: a held weapon closes it on the hilt pose on
+ * either hand (the captured one, else the default), else it takes the runtime's joints (conforming to the controller
+ * where the runtime can), else the controls close each finger toward MRTK3's Grab. The glove's joints turn toward
+ * that at a bounded speed, so a weapon taken or a source lost never snaps them. Needs status.grip and status.handle
+ */
+void poseGloveHand(CustomArm & arm, const LogicalArm & logical, const glm::mat4 & gloveToWorld, const glm::quat & handQuat) {
+
+	CustomArmStatus & status = arm.status;
+	const GloveRest & glove = arm.glove;
+	arm.lastJoints = logical.joints;
+	CustomFingerInput fingerInput = logical.fingers;
+	fingerInput.holds = logical.holdsWeapon;
+	const CustomHandTarget handTarget = customHandTarget(fingerInput, logical.joints, arm.shapes);
+	const float step = CurlDegreesPerSecond * logical.seconds;
+	arm.current = approachJoints(arm.current, handTarget.joints, glm::radians(step));
+	status.fingers = approachPose(status.fingers, handTarget.pose, step);
+	status.fingerSource = handTarget.source;
+	status.hiltPose = handTarget.hilt;
+	poseHandFromJoints(glove.mesh, glove.rig, arm.current, arm.gloveLocal);
+	composeGloveJoints(glove.mesh, arm.gloveLocal, gloveToWorld, arm.gloveJoints);
+	skinMesh(glove.mesh, arm.gloveJoints, arm.handPositions, arm.handNormals);
+
+	if(arm.hiltCurl.valid) {
+		const Vec3f centre(gloveToWorld * glm::vec4(arm.hiltCurl.centre, 1.f));
+		status.curlToHandle = glm::length(glm::cross(centre - status.grip, status.handle));
+		status.curlAngle = glm::degrees(std::acos(std::min(std::abs(glm::dot(handQuat * arm.hiltCurl.axis, status.handle)), 1.f)));
+	}
+	status.palm = Vec3f(gloveToWorld * glm::vec4(glove.palm, 1.f));
+	status.tipLength = glm::distance(status.palm, Vec3f(gloveToWorld * glm::vec4(glove.tip, 1.f)));
+}
+
 } // anonymous namespace
 
 ArmsModel parseArmsModel(std::string_view text) {
@@ -500,6 +533,42 @@ void setArmsModel(ArmsModel model, const char * by) {
 	}
 }
 
+ClassicHand parseClassicHand(std::string_view text) {
+	ClassicHand hand = ClassicHand::Arx;
+	parseClassicHandStrict(text, hand);
+	return hand;
+}
+
+bool parseClassicHandStrict(std::string_view text, ClassicHand & hand) {
+	const std::string name = util::toLowercase(std::string(text));
+	if(name == "arx") {
+		hand = ClassicHand::Arx;
+	} else if(name == "glove") {
+		hand = ClassicHand::Glove;
+	} else {
+		return false;
+	}
+	return true;
+}
+
+const char * classicHandName(ClassicHand hand) {
+	return (hand == ClassicHand::Glove) ? "glove" : "arx";
+}
+
+ClassicHand classicHand() {
+	return parseClassicHand(config.input.vrClassicHand);
+}
+
+void setClassicHand(ClassicHand hand, const char * by) {
+	const char * name = classicHandName(hand);
+	if(config.input.vrClassicHand != name) {
+		config.input.vrClassicHand = name;
+		config.save();
+		LogInfo << "[vr] arms: classic hand " << name << " (" << by << ")";
+		gameevent::Event("vr.arms.classicHand")("hand", name)("by", by);
+	}
+}
+
 void setHandScale(float scale, const char * by) {
 	const float clamped = clampHandScale(scale);
 	if(config.input.vrHandScale != clamped) {
@@ -530,6 +599,7 @@ void followArmsLever() {
 void resetCustomArms() {
 	for(CustomArm & arm : g_customArms) {
 		arm.drawn = false;
+		arm.atArxWrist = false;
 		arm.status.drawn = false;
 		arm.status.sleeveDrawn = false;
 		arm.status.upperArmDrawn = false;
@@ -549,7 +619,8 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	status.upperArmDrawn = false;
 	status.hiltPose = HiltPoseSource::None;
 	const ArmsModelInfo & info = armsModelInfo();
-	if(!info.glove) {
+	const bool atArxWrist = info.classicSkin && classicHand() == ClassicHand::Glove;
+	if(!info.glove && !atArxWrist) {
 		return false;
 	}
 	if(!arm.glove.tried) {
@@ -594,6 +665,26 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	status.palmToGrip = glm::distance(gloveWrist + handQuat * ((glove.palmCentre - glove.wrist) * gloveScale), logical.grip);
 	status.grip = logical.grip;
 	status.handle = logical.gripOrientation * Vec3f(0.f, 0.f, 1.f); // the grip's Z in engine axes
+
+	if(atArxWrist) {
+		// The classic arm's glove (#466.2, research F-281): the Arx arm is drawn to its wrist, so the glove keeps the
+		// turn it has on the handle and sits with its cuff on the Arx wrist joint - the Arx forearm ends in its cuff,
+		// with no sleeve and no solve of its own
+		glm::mat4 atWrist = glm::translate(glm::mat4(1.f), logical.arxWrist) * glm::mat4_cast(handQuat);
+		atWrist = glm::scale(atWrist, Vec3f(gloveScale));
+		atWrist = glm::translate(atWrist, -glove.cuff);
+		status.palmToGrip = glm::distance(Vec3f(atWrist * glm::vec4(glove.palmCentre, 1.f)), logical.grip);
+		poseGloveHand(arm, logical, atWrist, handQuat);
+		status.drawn = true;
+		status.wrist = logical.arxWrist;
+		status.wristGap = 0.f;
+		status.vertices = arm.handPositions.size();
+		status.triangles = glove.mesh.indices.size() / 3;
+		arm.atArxWrist = true;
+		arm.drawn = true;
+		return true;
+	}
+
 	glm::mat4 gloveToWorld = glm::translate(glm::mat4(1.f), gloveWrist) * glm::mat4_cast(handQuat);
 	gloveToWorld = glm::scale(gloveToWorld, Vec3f(gloveScale));
 	gloveToWorld = glm::translate(gloveToWorld, -glove.wrist);
@@ -718,22 +809,7 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	skinMesh(arm.sleeveWork, arm.sleeveJoints, arm.sleevePositions, arm.sleeveNormals);
 	recomputeNormals(arm.sleeve, arm.sleevePositions, arm.sleeveNormals);
 
-	// The hand, joint by joint (#385.7): a held weapon closes it on the hilt pose on either hand (the captured one,
-	// else the default), else it takes the runtime's joints (conforming to the controller where the runtime can),
-	// else the controls close each finger toward MRTK3's Grab. The glove's joints turn toward that at a bounded
-	// speed, so a weapon taken or a source lost never snaps them
-	arm.lastJoints = logical.joints;
-	CustomFingerInput fingerInput = logical.fingers;
-	fingerInput.holds = logical.holdsWeapon;
-	const CustomHandTarget handTarget = customHandTarget(fingerInput, logical.joints, arm.shapes);
-	const float step = CurlDegreesPerSecond * logical.seconds;
-	arm.current = approachJoints(arm.current, handTarget.joints, glm::radians(step));
-	status.fingers = approachPose(status.fingers, handTarget.pose, step);
-	status.fingerSource = handTarget.source;
-	status.hiltPose = handTarget.hilt;
-	poseHandFromJoints(glove.mesh, glove.rig, arm.current, arm.gloveLocal);
-	composeGloveJoints(glove.mesh, arm.gloveLocal, gloveToWorld, arm.gloveJoints);
-	skinMesh(glove.mesh, arm.gloveJoints, arm.handPositions, arm.handNormals);
+	poseGloveHand(arm, logical, gloveToWorld, handQuat);
 
 	Vec3f ring(0.f);
 	for(size_t v : arm.lastRing) {
@@ -742,13 +818,6 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	ring /= float(std::max<size_t>(arm.lastRing.size(), 1));
 
 	status.drawn = true;
-	if(arm.hiltCurl.valid) {
-		const Vec3f centre(gloveToWorld * glm::vec4(arm.hiltCurl.centre, 1.f));
-		status.curlToHandle = glm::length(glm::cross(centre - status.grip, status.handle));
-		status.curlAngle = glm::degrees(std::acos(std::min(std::abs(glm::dot(handQuat * arm.hiltCurl.axis, status.handle)), 1.f)));
-	}
-	status.palm = Vec3f(gloveToWorld * glm::vec4(glove.palm, 1.f));
-	status.tipLength = glm::distance(status.palm, Vec3f(gloveToWorld * glm::vec4(glove.tip, 1.f)));
 	status.wrist = cuff;
 	status.sleeveDrawn = info.sleeve;
 	status.upperArmDrawn = info.sleeve && info.upperArm;
@@ -823,7 +892,13 @@ void clearHiltPose(Hand hand) {
 }
 
 bool customArmDrawn(Hand hand) {
-	return g_customArms[size_t(hand)].drawn;
+	const CustomArm & arm = g_customArms[size_t(hand)];
+	return arm.drawn && !arm.atArxWrist;
+}
+
+bool arxHandHidden(Hand hand) {
+	const CustomArm & arm = g_customArms[size_t(hand)];
+	return arm.drawn && arm.atArxWrist;
 }
 
 const CustomArmStatus & customArmStatus(Hand hand) {
@@ -838,13 +913,16 @@ size_t customArmMeshes(CustomArmMesh (&meshes)[4]) {
 		if(!arm.drawn) {
 			continue;
 		}
-		// The sleeve as the model built it: whole, the forearm's part, or only the cuff closing the glove (#385.8)
-		CustomArmMesh & sleeve = meshes[count++];
-		sleeve.positions = &arm.sleevePositions;
-		sleeve.normals = &arm.sleeveNormals;
-		sleeve.uvs = &arm.sleeve.uvs;
-		sleeve.indices = &arm.sleeve.indices;
-		sleeve.texture = armsTexture("vr/arms/sleeve");
+		// The sleeve as the model built it: whole, the forearm's part, or only the cuff closing the glove (#385.8); none
+		// for the glove at the classic arm's wrist, the Arx forearm ends in its cuff (#466.2)
+		if(!arm.atArxWrist) {
+			CustomArmMesh & sleeve = meshes[count++];
+			sleeve.positions = &arm.sleevePositions;
+			sleeve.normals = &arm.sleeveNormals;
+			sleeve.uvs = &arm.sleeve.uvs;
+			sleeve.indices = &arm.sleeve.indices;
+			sleeve.texture = armsTexture("vr/arms/sleeve");
+		}
 		CustomArmMesh & hand = meshes[count++];
 		hand.positions = &arm.handPositions;
 		hand.normals = &arm.handNormals;

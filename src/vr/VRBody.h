@@ -78,7 +78,8 @@ struct HandFrame;
  */
 void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io);
 
-//! The horizontal shift the body was drawn with this frame (units); the engine camera takes it off
+//! The horizontal shift the body was drawn with this frame (units): the lean and the push back behind the eyes
+//! (#385.9); the engine camera takes it off
 Vec3f bodyShift();
 
 /*!
@@ -104,6 +105,14 @@ size_t bodyCapStart(const EERIE_3DOBJ * obj);
  *         shoulder while it is not. Asked only for the two-sided view of the VR body (never the book, never flat)
  */
 bool drawsBodyFace(const EERIE_3DOBJ * obj, size_t face);
+
+/*!
+ * \return true for a face of the player model too near an eye to draw under a tracked head this frame (#385.9,
+ *         vr/BodyView.h): a face of the torso, the shoulders or the caps with a corner within the clearance of an
+ *         eye - never the legs, never an Arx arm. Worked out once per frame for both eyes, after the vertices were
+ *         transformed; asked only for the two-sided view of the VR body (never the book, never flat)
+ */
+bool hidesBodyFaceNearEye(const EERIE_3DOBJ * obj, size_t face);
 
 //! Where the posed hand ended up, after the vertices were transformed - for status.json
 struct HandLandmarks {
@@ -189,6 +198,13 @@ struct PlayerBodyStatus {
 	float twistOverflow = 0.f;
 	const char * armsModel = "custom"; //!< cfg.ini vr_arms_model: the arms drawn in VR, custom or arx (#385.3)
 	bool arxArmsHidden = false;   //!< an Arx arm's faces are not drawn this frame: a custom arm is drawn in their place
+	// The own body out of the eyes (#385.9, vr/BodyView.h)
+	float push = 0.f;             //!< how far the body was pushed back behind the eyes along its facing this frame (units)
+	Vec3f neckPivot = Vec3f(0.f); //!< the neck pivot below and behind the eyes the body hangs from
+	float clearance = 0.f;        //!< faces within this distance of an eye are not drawn (units)
+	size_t hiddenNearEye = 0;     //!< faces not drawn this frame because they were within the clearance
+	float nearestBodyToEye = -1.f; //!< the nearest drawn body vertex to either eye (units; Arx arms aside), -1 none drawn
+	bool legsDrawn = false;       //!< faces wholly below the keep line (the legs) were drawn this frame
 	std::array<PlayerArmStatus, HandCount> hands; //!< left, right
 };
 

@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: The radial menus — at the hand, drawn by the engine into a quad layer per hand; each hand's quick slots kept in the save as script variables
+## D-045: The radial menus — at the hand, drawn by the engine into a quad layer per hand; each hand's quick slots kept in the save as script variables
 
 - **Date:** 2026-10-13
 - **Status:** Accepted for the technique; the look and the sizes are proposals the owner judges in the headset (#376)

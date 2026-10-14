@@ -22,7 +22,7 @@ export const NPC_SPOT = { x: 200, y: 0, z: 100 }
 // The lever wall: the north wall, right of the table, so that both levers are in front of the hero from his start
 // (the hero faces north, they are 20 to 30 degrees right of straight ahead). Levers hang at LEVER_HEIGHT above
 // the floor, LEVER_GAP apart; the mode lever is the nearer to the table (321.2); the third, the arms lever, switches
-// the VR arms between our own and the Arx arms (#385.3)
+// the VR arms through their models (#385.3, #385.8)
 export const LEVER_WALL = { z: ROOM.depth / 2 - 5, xMode: 280, xRespawn: 380, xArms: 470 }
 export const LEVER_HEIGHT = 130
 

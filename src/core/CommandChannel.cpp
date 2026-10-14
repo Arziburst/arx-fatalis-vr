@@ -1070,7 +1070,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("shiftX", body.shift.x);
 		json.value("shiftZ", body.shift.z);
 		json.value("facingYaw", body.facingYaw);
-		// the arms drawn in VR (#385.3): cfg.ini vr_arms_model, and whether an Arx arm's faces gave way to a custom arm
+		// the arms drawn in VR (#385.3): cfg.ini vr_arms_model (custom | forearm | hands | arx, #385.8), and whether an
+		// Arx arm's faces gave way to a custom arm
 		json.value("armsModel", body.armsModel);
 		json.value("arxArmsHidden", body.arxArmsHidden);
 		// the body variant (#385.11): cfg.ini vr_body, and the body's and the Arx arms' faces the last frame drew
@@ -1161,8 +1162,13 @@ std::string buildStatus(PlatformInstant now) {
 			json.object("custom");
 			json.value("drawn", custom.drawn);
 			// the glove went into the batch this frame (#385.11): a drawn arm hands out its sleeve and its glove
-			// together (vr::customArmMeshes), each with a texture (the file's, or a plain one when it is missing)
-			json.value("gloveDrawn", custom.drawn);
+			// together (vr::customArmMeshes), each with a texture (the file's, or a plain one when it is missing); the
+			// library model's arm hands out the library hand alone, never the glove (#467)
+			json.value("gloveDrawn", custom.drawn && !custom.library);
+			// what of the sleeve the model draws with it (#385.8): custom the whole, forearm the forearm's part, hands
+			// none (only the cuff closing the glove); forearmLength below is the forearm as drawn
+			json.value("sleeveDrawn", custom.sleeveDrawn);
+			json.value("upperArmDrawn", custom.upperArmDrawn);
 			json.value("tipLength", custom.tipLength);
 			const struct { const char * name; const Vec3f & point; } customPoints[] = {
 				{ "palm", custom.palm }, { "wrist", custom.wrist }
@@ -2022,9 +2028,9 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "arms") {
-		// The arms drawn on the player in VR (#385.3): arms custom|arx|library switches the model live (library: the
-		// WebXR hand alone, #467.1), arms scale <factor>
-		// sets the custom hands' size (vr_hand_scale); both are saved to cfg.ini
+		// The arms drawn on the player in VR (#385.3): arms custom|forearm|hands|arx|library switches the model live
+		// (#385.8; library: the WebXR hand alone, #467.1), arms scale <factor> sets the custom hands' size
+		// (vr_hand_scale); both are saved to cfg.ini
 		std::string_view args;
 		std::string_view what = firstWord(rest, args);
 		vr::ArmsModel model;
@@ -2039,7 +2045,7 @@ std::string execute(std::string_view line) {
 			return std::string();
 		}
 		if(!args.empty() || !vr::parseArmsModelStrict(what, model)) {
-			return refuse("arms: expected custom, arx, library or scale <factor>, got \"" + std::string(rest) + "\"");
+			return refuse("arms: expected " + vr::armsModelNames() + " or scale <factor>, got \"" + std::string(rest) + "\"");
 		}
 		vr::setArmsModel(model, "the channel");
 		return std::string();

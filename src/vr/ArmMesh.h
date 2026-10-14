@@ -198,6 +198,14 @@ struct SleeveParams {
 	float upperTwistAt = 0.25f;  //!< where the upper twist joint sits, as a fraction of upperLength
 	float elbowBlend = 4.f;      //!< the elbow's weight blend reaches this far each side of the elbow
 	float elbowRingOffset = 2.5f; //!< the rings each side of the elbow ring (F-310: 2 to 3 cm)
+	/*!
+	 * Where the sleeve starts along +X (#385.8): 0 at the shoulder (the open top sunk into the torso); past 0 the
+	 * sleeve is cut there - a short forearm, or at upperLength + forearmLength only the wrist's ring - and the cut
+	 * is closed by a cuff
+	 */
+	float startAt = 0.f;
+	float cuffFlare = 1.1f;      //!< the cuff's rim is this much wider than the cut ring (a first proposal)
+	float cuffDepth = 1.f;       //!< the cuff closes this far past the cut, towards the shoulder
 };
 
 /*!
@@ -215,6 +223,10 @@ struct SleeveParams {
  * the back (+Z, U = 0.75) to the seam again (U = 1). V goes along the arm, 0 at the shoulder's top
  * ring to 1 at the wrist, proportional to the length (the elbow at V = upperLength / (upperLength +
  * forearmLength), about 0.475 by default).
+ *
+ * Cut (\c startAt past 0, #385.8): the rings start at \c startAt, and three more rings close it towards the
+ * shoulder - the rim (\c cuffFlare wider, at 0.4 of \c cuffDepth), a ring at 0.6 of the radius (0.8 of the depth)
+ * and the centre on the axis (the whole depth). They are weighted and textured as the cut ring, at its V.
  */
 SkinnedMesh buildSleeve(const SleeveParams & params);
 

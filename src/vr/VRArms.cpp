@@ -79,6 +79,39 @@ const u8 LibraryHandGrey[3] = { 188, 188, 188 };
 //! The playground's arms lever counts its pulls in this global script variable (scripts/dev/playground/build.mjs)
 const char * const ArmsLeverPulls = "#pg_arms_pulls";
 
+/*!
+ * The arms models (#385.8), in the lever's cycle; the first is the default (cfg.ini, a name no model has). Each new
+ * model is one row here and one value of ArmsModel
+ */
+const ArmsModelInfo ArmsModelTable[] = {
+	// model             name       glove  library sleeve upperArm forearmKept  arxArms
+	{ ArmsModel::Custom,  "custom",  true,  false,  true,  true,    1.f,         false },
+	{ ArmsModel::Forearm, "forearm", true,  false,  true,  false,   ForearmKept, false },
+	{ ArmsModel::Hands,   "hands",   true,  false,  false, false,   0.f,         false },
+	{ ArmsModel::Arx,     "arx",     false, false,  false, false,   0.f,         true },
+	// { ArmsModel::Classic, "classic", ... }, // #466: the fixed Arx arm
+	{ ArmsModel::Library, "library", false, true,   false, false,   0.f,         false }, // #467: the WebXR hand
+};
+const size_t ArmsModelCount = sizeof(ArmsModelTable) / sizeof(ArmsModelTable[0]);
+
+size_t armsModelIndex(ArmsModel model) {
+	for(size_t i = 0; i < ArmsModelCount; i++) {
+		if(ArmsModelTable[i].model == model) {
+			return i;
+		}
+	}
+	return 0;
+}
+
+//! Where the sleeve of \a info starts along the arm built with \a upper and \a forearm (vr/ArmMesh.h SleeveParams)
+float sleeveStartAt(const ArmsModelInfo & info, float upper, float forearm) {
+	if(info.upperArm) {
+		return 0.f;
+	}
+	const float kept = info.sleeve ? glm::clamp(info.forearmKept, 0.f, 1.f) : 0.f;
+	return upper + forearm * (1.f - kept);
+}
+
 //! A glove hand at rest, read once from data/core/vr/arms - or the library hand, from data/core/vr/hands/webxr
 struct GloveRest {
 	bool tried = false;
@@ -106,6 +139,7 @@ struct CustomArm {
 	SkinnedMesh sleeveWork;        //!< the same with this frame's elbow corrective
 	float builtUpper = 0.f;
 	float builtForearm = 0.f;
+	float builtStart = 0.f;        //!< where it starts along the arm: 0 whole, else cut by the model (#385.8)
 	std::vector<glm::mat4> sleeveJoints;
 	std::vector<glm::mat4> gloveLocal;  //!< the glove's joints posed by the fingers, on their parents (#385.4)
 	std::vector<glm::mat4> gloveJoints;
@@ -335,14 +369,16 @@ void composeGloveJoints(const SkinnedMesh & mesh, const std::vector<glm::mat4> &
 	}
 }
 
-void buildArmSleeve(CustomArm & arm, float upperLength, float forearmLength) {
+void buildArmSleeve(CustomArm & arm, float upperLength, float forearmLength, float startAt) {
 	SleeveParams params;
 	params.upperLength = upperLength;
 	params.forearmLength = forearmLength;
+	params.startAt = startAt;
 	arm.sleeve = buildSleeve(params);
 	arm.sleeveWork = arm.sleeve;
 	arm.builtUpper = upperLength;
 	arm.builtForearm = forearmLength;
+	arm.builtStart = startAt;
 	arm.lastRing.clear();
 	const float end = upperLength + forearmLength;
 	for(size_t v = 0; v < arm.sleeve.positions.size(); v++) {
@@ -426,31 +462,41 @@ TextureContainer * armsTexture(const std::string & name, const u8 (&flatColour)[
 } // anonymous namespace
 
 ArmsModel parseArmsModel(std::string_view text) {
-	ArmsModel model = ArmsModel::Custom;
-	return parseArmsModelStrict(text, model) ? model : ArmsModel::Custom;
+	ArmsModel model = ArmsModelTable[0].model;
+	parseArmsModelStrict(text, model);
+	return model;
 }
 
 bool parseArmsModelStrict(std::string_view text, ArmsModel & model) {
 	const std::string name = util::toLowercase(std::string(text));
-	if(name == "custom") {
-		model = ArmsModel::Custom;
-	} else if(name == "arx") {
-		model = ArmsModel::Arx;
-	} else if(name == "library") {
-		model = ArmsModel::Library;
-	} else {
-		return false;
+	for(const ArmsModelInfo & info : ArmsModelTable) {
+		if(name == info.name) {
+			model = info.model;
+			return true;
+		}
 	}
-	return true;
+	return false;
 }
 
 const char * armsModelName(ArmsModel model) {
-	switch(model) {
-		case ArmsModel::Arx: return "arx";
-		case ArmsModel::Library: return "library";
-		case ArmsModel::Custom: break;
+	return armsModelInfo(model).name;
+}
+
+std::string armsModelNames() {
+	std::string names;
+	for(size_t i = 0; i < ArmsModelCount; i++) {
+		names += (i == 0) ? "" : (i + 1 == ArmsModelCount) ? " or " : ", ";
+		names += ArmsModelTable[i].name;
 	}
-	return "custom";
+	return names;
+}
+
+const ArmsModelInfo & armsModelInfo(ArmsModel model) {
+	return ArmsModelTable[armsModelIndex(model)];
+}
+
+ArmsModel nextArmsModel(ArmsModel model) {
+	return ArmsModelTable[(armsModelIndex(model) + 1) % ArmsModelCount].model;
 }
 
 float clampWeaponElbowDrop(float share) {
@@ -463,6 +509,10 @@ float clampHandScale(float scale) {
 
 ArmsModel armsModel() {
 	return parseArmsModel(config.input.vrArmsModel);
+}
+
+const ArmsModelInfo & armsModelInfo() {
+	return armsModelInfo(armsModel());
 }
 
 void setArmsModel(ArmsModel model, const char * by) {
@@ -491,8 +541,13 @@ void followArmsLever() {
 		return;
 	}
 	const long pulls = GETVarValueLong(svar, ArmsLeverPulls);
-	if(g_armsLeverPulls >= 0 && pulls > g_armsLeverPulls && (pulls - g_armsLeverPulls) % 2 == 1) {
-		setArmsModel(armsModel() == ArmsModel::Custom ? ArmsModel::Arx : ArmsModel::Custom, "the playground lever");
+	if(g_armsLeverPulls >= 0 && pulls > g_armsLeverPulls) {
+		// Each pull steps once through the cycle (#385.8)
+		ArmsModel model = armsModel();
+		for(long step = (pulls - g_armsLeverPulls) % long(ArmsModelCount); step > 0; step--) {
+			model = nextArmsModel(model);
+		}
+		setArmsModel(model, "the playground lever");
 	}
 	g_armsLeverPulls = pulls; // first sight (a level just loaded) or fewer (a new game): nothing pulled yet
 }
@@ -503,6 +558,8 @@ void resetCustomArms() {
 		arm.library = false;
 		arm.status.drawn = false;
 		arm.status.library = false;
+		arm.status.sleeveDrawn = false;
+		arm.status.upperArmDrawn = false;
 		arm.status.fingerSource = CustomFingerSource::None;
 		arm.status.hiltPose = HiltPoseSource::None;
 	}
@@ -554,13 +611,15 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	arm.library = false;
 	status.drawn = false;
 	status.library = false;
+	status.sleeveDrawn = false;
+	status.upperArmDrawn = false;
 	status.hiltPose = HiltPoseSource::None;
-	const ArmsModel model = armsModel();
-	if(model == ArmsModel::Arx) {
+	const ArmsModelInfo & info = armsModelInfo();
+	if(!info.glove && !info.library) {
 		return false;
 	}
 	// The library model (#467.1) draws the library hand alone, placed and posed as the glove is
-	const bool library = (model == ArmsModel::Library);
+	const bool library = info.library;
 	GloveRest & glove = library ? arm.libraryHand : arm.glove;
 	if(!glove.tried) {
 		loadGlove(hand, glove, library);
@@ -662,9 +721,12 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 		arm.lengths.forearm += (fit.forearm - arm.lengths.forearm) * approach;
 	}
 	const ArmLengths lengths = arm.lengths;
+	// The model draws the whole sleeve, the forearm's part or only the cuff at the wrist (#385.8): the same arm is
+	// posed, the sleeve's mesh starts further along it
+	const float startAt = sleeveStartAt(info, lengths.upper, lengths.forearm);
 	if(arm.sleeve.positions.empty() || std::abs(arm.builtUpper - lengths.upper) > 0.1f
-	   || std::abs(arm.builtForearm - lengths.forearm) > 0.1f) {
-		buildArmSleeve(arm, lengths.upper, lengths.forearm);
+	   || std::abs(arm.builtForearm - lengths.forearm) > 0.1f || std::abs(arm.builtStart - startAt) > 0.1f) {
+		buildArmSleeve(arm, lengths.upper, lengths.forearm, startAt);
 	}
 
 	// The custom arm's own solve: from the Arx shoulder (never slid) to the glove's cuff, both segments stretched
@@ -754,8 +816,10 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 
 	status.drawn = true;
 	status.wrist = cuff;
+	status.sleeveDrawn = info.sleeve;
+	status.upperArmDrawn = info.sleeve && info.upperArm;
 	status.upperLength = lengths.upper;
-	status.forearmLength = lengths.forearm;
+	status.forearmLength = glm::clamp(lengths.upper + lengths.forearm - startAt, 0.f, lengths.forearm); // as drawn
 	status.reach = arm.reach.reach();
 	status.stretch = stretch;
 	status.error = solved.pose.error;
@@ -788,7 +852,7 @@ CustomArmsLoad customArmsLoad() {
 	}
 	load.loaded = load.tried && all;
 	if(!load.tried) {
-		load.reason = "not tried yet: no arm was posed with the custom or the library model on";
+		load.reason = "not tried yet: no arm was posed with a model that draws the glove or the library hand";
 	}
 	return load;
 }
@@ -842,6 +906,8 @@ size_t customArmMeshes(CustomArmMesh (&meshes)[4]) {
 		if(!arm.drawn) {
 			continue;
 		}
+		// The sleeve as the model built it: whole, the forearm's part, or only the cuff closing the glove (#385.8);
+		// none meets the library hand (#467)
 		if(!arm.library) {
 			CustomArmMesh & sleeve = meshes[count++];
 			sleeve.positions = &arm.sleevePositions;

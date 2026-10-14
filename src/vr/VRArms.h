@@ -40,7 +40,7 @@ class TextureContainer;
  * \brief Our own arms on the player in VR (#385, D-NEW-arms): a sleeve from the shoulder to the wrist and a glove hand
  *
  * The Arx arm stays the logical arm: vr/VRBody.cpp poses it as before (#313's roll-aware IK), and the
- * weapon, the reticle, the wrist bars and the melee keep reading it. With \c vr_arms_model = custom its
+ * weapon, the reticle, the wrist bars and the melee keep reading it. With \c vr_arms_model = custom (forearm, hands) its
  * faces are not drawn in VR (\ref vr::drawsBodyFace), and this module draws in its place:
  *  - the procedural sleeve of vr/ArmMesh.h on the custom arm's own solve (#385.6): segment lengths fitted to the
  *    player's reach (vr/ArmFit.h), from the Arx shoulder to the glove's cuff, stretched by at most MaxArmStretch
@@ -56,6 +56,8 @@ class TextureContainer;
  *    (vr/HandRig.h poseHandFromJoints, #385.7): closed on the hilt pose by a held weapon on either hand (D-042),
  *    else following the runtime's hand joints (conforming to the controller where the runtime can), else
  *    closing each finger toward MRTK3's Grab by the controller's trigger, grip and thumb rest (D-041).
+ * The forearm and hands models (#385.8) pose the same arm and draw less of it: the sleeve cut ForearmKept along the
+ * forearm from the wrist, or only at the wrist, its cut closed by a cuff (vr/ArmMesh.h SleeveParams::startAt).
  * Skinned once per frame after the body is posed; the animation code lights and projects the result per eye
  * into the model batch, two-sided like the VR body (research row F-231). Flat mode and the inventory book
  * always draw the Arx arms.
@@ -66,11 +68,37 @@ class TextureContainer;
  */
 namespace vr {
 
+//! The arms drawn in VR (#385.8: a choice of models, the owner picks in the headset); what each draws is its ArmsModelInfo
 enum class ArmsModel : u8 {
-	Custom, //!< our own arms (the default)
-	Arx,    //!< the player model's own arms
-	Library //!< a ready-made hand from a library, no arm (#467.1: the WebXR generic hand)
+	Custom,  //!< our own arms: the glove and the whole sleeve (the default)
+	Forearm, //!< the glove and a short forearm ending in a closed cuff before the elbow (research F-305, F-467)
+	Hands,   //!< the glove alone, closed at the wrist (Half-Life: Alyx, research F-303)
+	Arx,     //!< the player model's own arms
+	// Classic, //!< #466: the fixed Arx arm
+	Library, //!< a ready-made hand from a library, no arm (#467.1: the WebXR generic hand)
 };
+
+/*!
+ * What one arms model draws (#385.8). The models are one table (VRArms.cpp ArmsModelTable), in the order the
+ * playground's arms lever cycles them; the code reads these properties, never the model itself, so a new model is
+ * one row
+ */
+struct ArmsModelInfo {
+	ArmsModel model;
+	const char * name;  //!< cfg.ini vr_arms_model, the channel's `arms <name>`, status.json vr.body.armsModel
+	bool glove;         //!< our glove hand is drawn (with a closed cuff when no sleeve meets it)
+	bool library;       //!< the library hand is drawn instead of the glove, alone: no cuff, no sleeve (#467)
+	bool sleeve;       //!< the sleeve is drawn, from the wrist along the forearm
+	bool upperArm;      //!< the sleeve goes on to the shoulder; without it, it ends forearmKept along the forearm
+	float forearmKept;  //!< the share of the forearm the sleeve covers from the wrist without the upper arm
+	bool arxArms;       //!< the Arx arm faces are drawn (the logical arm then stays on the drawn, pushed shoulder)
+};
+
+/*!
+ * The forearm variant's sleeve ends this share of the forearm from the wrist (#385.8, the owner's first proposal): before
+ * the elbow, so the elbow no solver places where the player's is (F-461) is never drawn
+ */
+constexpr float ForearmKept = 0.6f;
 
 //! The custom hands against the glove's real size: bigger than the Arx hands by default (the owner: fingers too small)
 constexpr float DefaultHandScale = 1.15f;
@@ -87,22 +115,28 @@ constexpr float DefaultWeaponElbowDrop = 0.75f;
 //! \return \a share within [0, 1] (DefaultWeaponElbowDrop for a value that is not a number)
 float clampWeaponElbowDrop(float share);
 
-//! \return the model a cfg.ini value names: "arx" is the Arx arms, "library" the library hand, anything else our own
+//! \return the model a cfg.ini value names; a name no model has is our own arms (custom)
 ArmsModel parseArmsModel(std::string_view text);
-//! \return false unless \a text is "custom", "arx" or "library" (the channel's \c arms command)
+//! \return false unless \a text names a model (the channel's \c arms command)
 bool parseArmsModelStrict(std::string_view text, ArmsModel & model);
 const char * armsModelName(ArmsModel model);
+//! The models' names for a message: "custom, forearm, hands, arx or library"
+std::string armsModelNames();
+const ArmsModelInfo & armsModelInfo(ArmsModel model);
+//! The model after \a model in the lever's cycle (the last one is followed by the first)
+ArmsModel nextArmsModel(ArmsModel model);
 float clampHandScale(float scale);
 
 //! The model cfg.ini asks for (vr_arms_model)
 ArmsModel armsModel();
+//! What it draws
+const ArmsModelInfo & armsModelInfo();
 //! Switch the model live and save it to cfg.ini; \a by says who asked (the channel, the playground lever)
 void setArmsModel(ArmsModel model, const char * by);
 //! Set vr_hand_scale live (clamped) and save it to cfg.ini
 void setHandScale(float scale, const char * by);
 
-//! The playground's arms lever (#385.3, role lever_arms): each pull flips the model between custom and arx (the
-//! library hand is reached by the channel's `arms library`); call once per frame
+//! The playground's arms lever (#385.3, role lever_arms): each pull steps to the next model (#385.8); call once per frame
 void followArmsLever();
 
 /*!
@@ -132,13 +166,14 @@ struct LogicalArm {
 void resetCustomArms();
 
 /*!
- * \brief Skin the custom arm of \a hand on the logical arm, when the custom model is on - or only its hand, the
- *        library hand, when the library model is
- * \return true when the custom arm (or the library hand) is drawn this frame in place of the Arx arm
+ * \brief Skin the custom arm of \a hand on the logical arm, when the model draws our glove (custom, forearm, hands) -
+ *        or only the library hand, when the model draws that (library)
+ * \return true when the custom arm - the glove and as much of the sleeve as the model draws - or the library hand is
+ *         drawn this frame in place of the Arx arm
  */
 bool poseCustomArm(Hand hand, const LogicalArm & arm);
 
-//! The custom arm or the library hand of \a hand is drawn this frame (its Arx arm faces are not)
+//! The custom arm of \a hand, whole or in part, or its library hand is drawn this frame (its Arx arm faces are not)
 bool customArmDrawn(Hand hand);
 
 /*!
@@ -159,15 +194,17 @@ CustomArmsLoad customArmsLoad();
  * are the library hand's, \c wrist is its wrist joint and the arm's (the fit to \c wristGap) are zero: no arm is drawn
  */
 struct CustomArmStatus {
-	bool drawn = false;
+	bool drawn = false;          //!< the glove (with what of the sleeve the model draws) or the library hand is drawn
 	bool library = false;        //!< the drawn hand is the library hand (vr.body.<hand>.library.drawn)
+	bool sleeveDrawn = false;    //!< the sleeve, whole or the forearm's part (#385.8)
+	bool upperArmDrawn = false;  //!< the sleeve's upper arm and elbow (#385.8)
 	float handScale = DefaultHandScale;
 	float tipLength = 0.f;       //!< the hand from the palm joint to the middle fingertip (units)
 	Vec3f palm = Vec3f(0.f);     //!< the glove's palm joint in the world (behind the grip, #385.7)
 	Vec3f wrist = Vec3f(0.f);    //!< where the sleeve meets the glove's cuff
 	// The fit (#385.6, vr/ArmFit.h)
 	float upperLength = 0.f;     //!< the fitted segments, units
-	float forearmLength = 0.f;
+	float forearmLength = 0.f;   //!< the forearm drawn: the fitted one, ForearmKept of it in the forearm model, 0 for hands
 	const char * fitSource = "none"; //!< reach (measured), height (the character height setting) or arx (the Arx bones)
 	float reach = 0.f;           //!< the measured reach so far (shoulder to wrist, units; 0 before a sample)
 	float stretch = 0.f;         //!< the stretch fraction in use, 0 .. MaxArmStretch

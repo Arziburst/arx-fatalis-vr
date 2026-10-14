@@ -421,8 +421,17 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 			status.opens++;
 			status.center = menu.pose.center;
 			status.hovered = "none";
+			// gazeDeg: how far off the view's middle the ring opened - a ring at a hand held beside the head (the
+			// owner's headset run with a panel open, #377) is out of view though it opened
+			const Vec3f forward = frameViews().eyes[0].orientation * Vec3f(0.f, 0.f, -1.f);
+			const Vec3f toRing = menu.pose.center - eyeMiddle();
+			float gazeDeg = 0.f;
+			if(glm::length(toRing) > 1e-3f) {
+				const float cosine = std::clamp(glm::dot(forward, glm::normalize(toRing)), -1.f, 1.f);
+				gazeDeg = glm::degrees(std::acos(cosine));
+			}
 			gameevent::Event("vr.radial")("hand", handName(hand))("state", "open")
-				("x", menu.pose.center.x, 2)("y", menu.pose.center.y, 2)("z", menu.pose.center.z, 2);
+				("x", menu.pose.center.x, 2)("y", menu.pose.center.y, 2)("z", menu.pose.center.z, 2)("gazeDeg", gazeDeg, 0);
 		}
 
 		if(blocked || reason) {

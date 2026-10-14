@@ -172,6 +172,14 @@ vr-input up right.b
 @frames 30
 @assert player.inventoryOpen eq false
 @assert player.freelook eq true
+@assert vr.pointer.shown eq true
+# The turn stick turns with the book open (the owner could not turn)
+@remember turnedBook vr.input.turn.turned
+vr-sim action thumbstick right 0.9 0
+@frames 20
+vr-sim action thumbstick right 0 0
+@frames 20
+@assert vr.input.turn.turned ne {turnedBook}
 # The book's own bookmark takes the hand's click in freelook (the book keeps freelook in VR, #377)
 vr-point right menu book_quests
 @frames 5
@@ -220,14 +228,28 @@ vr-radial point right inventory
 vr-input up right.b
 @until player.inventoryOpen eq true 5s
 @frames 30
+@assert player.bookOpen eq false
+# The turn stick turns with the bag open too
+@remember turnedBag vr.input.turn.turned
+vr-sim action thumbstick right -0.9 0
+@frames 20
+vr-sim action thumbstick right 0 0
+@frames 20
+@assert vr.input.turn.turned ne {turnedBag}
+# The same hand that opened the bag opens its radial menu again over it (the owner: it would not)
 vr-input down right.b
 @frames 3
 @assert vr.radial.right.open eq true
+@assert vr.radial.right.refused eq none
 vr-radial point right center
 @frames 5
 vr-input up right.b
 @until player.inventoryOpen eq false 5s
 @assert vr.radial.right.result eq closed
+# Closed, the hands are back in the world: the reticles on, the pointer off
+@until vr.reticle.on eq true 5s
+@until vr.pointer.shown eq false 5s
+@assert player.freelook eq true
 @frames 30
 # The casting stance (the right A, the owner) closes everything open first - the book and the bag - then starts
 vr-input down right.b

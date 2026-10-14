@@ -1466,9 +1466,9 @@ void ArxGame::manageKeyMouse() {
 	}
 
 	// VR: the right stick turns the body (#32); the head's own yaw stays on top of it (#24), so the
-	// play-space heading turns. Updated every frame so a stick held through a menu does not snap after it
-	const bool vrTurnAllowed = !BLOCK_PLAYER_CONTROLS && ARXmenu.mode() == Mode_InGame && !isInCinematic()
-	                           && !(player.Interface & INTER_PLAYERBOOK);
+	// play-space heading turns. Updated every frame so a stick held through a menu does not snap after it.
+	// Also with the book or the bag open (#377, the owner: he could not turn with the book open)
+	const bool vrTurnAllowed = !BLOCK_PLAYER_CONTROLS && ARXmenu.mode() == Mode_InGame && !isInCinematic();
 	const float vrTurn = vr::updateTurn(toMsf(g_platformTime.lastFrameDuration()) / 1000.f, vrTurnAllowed);
 
 	// Player/Eyeball Freelook Management

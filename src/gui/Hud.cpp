@@ -1665,8 +1665,8 @@ void HudRoot::updateInput() {
 				
 			}
 			if(vr::hudShown(vr::HudElement::Steal)) {
-			stealIconGui.updateInput();
-		}
+				stealIconGui.updateInput();
+			}
 		}
 	}
 }

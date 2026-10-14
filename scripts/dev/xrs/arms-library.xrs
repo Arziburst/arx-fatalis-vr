@@ -1,0 +1,51 @@
+# The library hand (#467.1): the WebXR generic hand (MIT, data/core/vr/hands/webxr/) as the arms model `library`:
+# cfg vr_arms_model = custom | arx | library, the channel command `arms library`, status.json vr.body.armsModel.
+# PROPOSED status field: vr.body.<hand>.library.drawn (true while that hand's library mesh is drawn; a new field
+# rather than the glove's custom.gloveDrawn, which stays false for any hand but the glove). The held weapon's
+# hilt pose and its curl on the handle are the glove's own fields (vr.hands.<hand>.hiltPose,
+# vr.body.<hand>.custom.curlToHandle), which the library hand must fill too.
+# Needs the first-person save with the sword equipped:
+#   .\scripts\dev\xrs-run.ps1 arms-library
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence arms-library -Save mvp-items
+@sim idle
+@save mvp-items
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.body.bound eq true
+@assert vr.body.active eq true
+
+vr-sim head rot 0 -40 0
+vr-sim hand left off
+vr-sim hand right pos 0.12 -0.1 -0.35
+vr-sim hand right rot 0 90 0
+@frames 15
+@assert vr.body.right.posed eq true
+@shot model-before
+
+# 1. The library hand: the model is set and the right hand's mesh is drawn
+arms library
+@frames 10
+@assert vr.body.armsModel eq library
+@assert vr.body.right.library.drawn eq true
+@assert vr.body.right.posed eq true
+@assert vr.body.right.error lt 1
+@shot model-library
+
+# 2. The sword in the right hand: a hilt pose is in use and the curl lies on the handle
+@assert vr.body.right.fingers.holds eq true
+@assert vr.hands.right.hiltPose ne none
+@assert vr.body.right.custom.curlToHandle lt 0.5
+@shot library-sword
+
+# 3. Back to the custom glove: the library hand is no longer drawn
+arms custom
+@frames 10
+@assert vr.body.armsModel eq custom
+@assert vr.body.right.library.drawn eq false
+@assert vr.body.right.posed eq true
+@shot model-custom-again
+
+@assert errors eq 0

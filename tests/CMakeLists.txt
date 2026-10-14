@@ -130,6 +130,9 @@ set(arxtest_TESTCASES
 	tests/vr/HandShapeTest.h
 	tests/vr/HandShapeTest.cpp
 
+	tests/vr/WebXRHandTest.h
+	tests/vr/WebXRHandTest.cpp
+
 	tests/vr/ArmFitTest.h
 	tests/vr/ArmFitTest.cpp
 

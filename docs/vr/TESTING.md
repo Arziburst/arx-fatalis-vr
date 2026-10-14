@@ -555,7 +555,18 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   the blade read from the mesh: `measured`, `bladeLength` (units, attach vertex to tip), `assetAngle` (degrees
   between the asset's blade and the hand's handle axis in the fist), `correction` (the turn applied, = `assetAngle`);
   after the weapon was drawn: `drawn`, `hilt` and `tip` (world), `bladeGrip` (the blade's direction in the
-  controller's grip axes, OpenXR: -Z is the handle), `bladeAngle` (degrees from grip -Z: ~0 when held right);
+  controller's grip axes, OpenXR: -Z is the handle), `bladeAngle` (degrees from grip -Z: ~0 when held right),
+  `hiltToPalm` (units; its meaning depends on `frame`: `arx` - the weapon's attach vertex to the Arx hand's palm
+  attach point; `glove` - the drawn handle anchor to the glove's hold point, the same as `hiltToGrip`);
+  the weapon in the glove (#385.10): `frame` (`glove`: drawn from the glove's hilt frame with the custom, forearm
+  and hands models; `arx`: from the Arx hand, the arx model), `weaponClass` (`sword`, `dagger`, `axe`, `mace`,
+  `twoHanded`: from the item's type and class name), `handleLength` (units, the handle read from the mesh: pommel
+  end to guard or head), `anchor` (units from the pommel end to the point held on the glove's grip axis: the class's
+  row of the anchor table), `handWidth` (units, the glove's breadth: a two-handed weapon's anchor), `hiltToGrip`
+  (units, the drawn anchor to the glove's hold point, ~0), `edgeToKnuckles` (degrees, the drawn edge to the glove's
+  knuckle direction across the blade), `tilt` (the configured sword tilt: `0`, `-15`, `-30`) and `tiltApplied`
+  (what the drawn weapon has: the tilt for a sword in the glove, else 0); the anchor, the distances and the edge are
+  0 with `arx`;
   the engine's arm layer (F-67): `armAnimSuppressed`, `armAnimation` (the clip it plays), `suppressedFrames`;
   `combatMode`.
 - `vr.melee` (#39, D-038): physical melee. `active` (swings count now) or `refused` (why not: `no weapon in the
@@ -841,6 +852,29 @@ then the classic arm with `classic-hand arx` against `classic-hand glove`: does 
 gap or a kink at the wrist, hanging, held ahead and rolled; is its size right next to the Arx arm (`vr_hand_scale`);
 which hand do you want on the classic arm?
 
+**The weapon in the glove** (#385.10, research #453). With the custom, forearm and hands models the held weapon is
+drawn from the glove's hilt frame, not from the hidden Arx hand: a point of its handle sits on the line the glove's
+closed fingers wrap, the blade runs along that line out of the thumb side of the fist, and the blade's edge points
+toward the glove's knuckles (the wrist-to-knuckles direction: forward, F-489). The glove keeps its own place (past
+the stretch limit it stops short of the controller) and the weapon follows it. With `arx` the weapon keeps the old
+placement. Where along the handle the fingers close depends on the class (`src/vr/WeaponGrip.cpp`, the anchor table,
+the research's first proposal): sword and dagger at the handle's centre, axe and mace (club, hammer) 20 % of the
+handle from its end, a two-handed weapon in the right hand a hand-width above the pommel.
+
+**The sword's tilt** — three variants for the owner to pick (the default 0 until then):
+- **cfg.ini** `vr_sword_tilt` = `0` | `-15` | `-30` (degrees; another value snaps to the nearest), or live through the
+  channel: `grip tilt 0`, `grip tilt -15`, `grip tilt -30` (saved to cfg.ini).
+- The tilt turns the blade about the palm's normal, its tip leaning **forward, toward the knuckles** (the Index's
+  pointing frame lies about 55° from its handle, F-488), in the plane of the edges. Only a sword leans; the other
+  classes stay along the handle.
+
+**What to compare** with a weapon in the hand (the playground's weapon table has every class):
+- Does the handle sit inside the closed fingers — the guard just above the fist, the pommel below it?
+- The edge: does the sharp side face forward (where the knuckles point) whichever way the hand turns?
+- The tilt: 0, -15 and -30 with the sword held ready — which one feels like holding a sword?
+- Axe, club and the two-handed sword: is the hand at the right place along the handle?
+- With the hand stretched out past the arm's reach: does the weapon stay in the glove?
+
 ### Switching the body: full or hidden (#385.11)
 
 Two variants of the own body in VR, to pick by feel: **full** — the whole player model, pushed back behind the
@@ -1004,7 +1038,8 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.pointer.muted` | a trigger pressed with the ray off the panel: no click reaches the engine (#34) | `hand`, `reason` (`off the panel`; `no target` while the reticles are on: off the panel and at nothing in front, #37) |
 | `vr.body.armAnim` | the clip of the player's arm layer changes, or starts / stops being suppressed while the IK drives the arms (#75, F-67) | `state=suppressed\|applied`, `anim` (the clip's path; limit 200) |
 | `vr.weapon` | the equipped weapon goes into the IK hand or back to the engine (#75) | `state=hand\|engine\|none`, `reason`, `item`, `kind` (`dagger`, `1h`, `2h`, `bow`, `none`; limit 200) |
-| `vr.weapon.grip` | a weapon's blade was read from its mesh (once per weapon and hand frame) | `item`, `bladeLength` (units), `assetAngle` (degrees between the asset's blade and the handle axis) |
+| `vr.weapon.grip` | a weapon's blade was read from its mesh (once per weapon and hand frame) | `item`, `bladeLength` (units), `assetAngle` (degrees between the asset's blade and the handle axis), `class` (the anchor's class, #385.10), `handle` (units) |
+| `vr.weapon.tilt` | the sword's tilt in the glove was set (`grip tilt <deg>`, #385.10) | `tilt` (the variant: 0, -15, -30), `asked` (degrees) |
 | `melee.state` | physical melee (#39) is switched on or off, and why | `state=on\|off`, `reason` (`allowed`, `no weapon in the hand`, `the right controller is not tracked`, a menu, `controls blocked`, `an item is dragged`, `dead`; limit 200) |
 | `melee.swing` | a swing of the weapon in the IK hand ended (#39): one line per swing | `kind=slash\|stab`, `result=hit\|miss\|lost` (lost: tracking or the gate dropped it), `peak` (m/s), `factor`, `charge` (the ratio when it started), `aim` (of its hits), `charged=yes\|no` (its charge was spent), `hits`, `ms` (limit 1000) |
 | `melee.charge` | the trigger's charge (#39): `start`, `full` (the ratio reached 1), `spent` (a charged hit used it), `released` (let go while charging) | `state`, `full` (seconds of `Full_AimTime`), `seconds`, `ratio` (limit 1000) |
@@ -1576,7 +1611,9 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105; the pair waits for `notifications eq 0`, since the save's tutorial hint on the HUD expires by game time, #370); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
 | `menu-pointer` | the menu pointer (#34) on the test save `mvp-items` — run with `smoke-test.ps1 -VrSim idle -Sequence menu-pointer -Save mvp-items`: no pointer and no beam without a menu (`overlayPixels` 0); the key from the table put in the bag, the inventory opened, the right hand aimed at it (`vr-point right item`): the engine's mouse on the key's pixel (192, 606 = the target), `ui.hover` the key, the beam drawn above the panel (`overlayPixels` 2125 left / 1997 right); the trigger clicks (`vr.pointer.click`), a hand move of 8 px keeps the cursor on the key (dead zone, no drag), 40 px drags **the key the click landed on**; released over the bag it goes back; the left hand's trigger takes the cursor and its click lands on the key too; both hands pointing behind the head (since #37 a hand pointing ahead in the game is a world reticle): no cursor, no beam, a press is muted (`offPanelPresses` 1, nothing dragged); closed: the pointer goes. Host test `MenuPointerTest` | — |
 | `physical-crouch` | physical crouch (#100, D-034) on `mvp-new-game` — `smoke-test.ps1 -VrSim idle -Sequence physical-crouch -Save mvp-new-game`: the button crouches and stands at that spot first; the head 25 cm down follows the view and stands, 35 cm crouches the character (one `vr.head.crouch` episode), back at 25 cm stays crouched, 15 cm stands; the view never above the head nor twice as low; the crouch button still crouches and stands with the head up | — |
-| `weapon-hold` | the weapon in the IK hand (#75, D-033): on `mvp-items` the equipped short sword is in the right hand without the combat mode (`vr.weapon.place` `hand`), its blade read from the mesh (65.8 units; the asset 9.1° off the handle axis) and drawn 0.1° from the grip's -Z, the hilt on the palm attach point; the handle pitched up puts the tip 66 units above the hilt; a moved hand keeps the hilt on the palm; a controller switched off gives the sword back to the engine (`engine`), switched on it is back; `combat on` + the trigger held: the arm layer's ready and wait clips are `suppressed`, no strike clip starts (since #39 the swing is the strike), the shoulder stays, the sword stays in the hand. The shots `sword-ahead`, `sword-up` and `sword-at-face` (the raised blade 0.1 m from the eyes, F-39) are judged by eye. `smoke-test.ps1 -VrSim idle -Sequence weapon-hold -Save mvp-items` | — |
+| `weapon-hold` | the weapon in the IK hand (#75, D-033): on `mvp-items` the equipped short sword is in the right hand without the combat mode (`vr.weapon.place` `hand`), its blade read from the mesh (65.8 units; the asset 9.1° off the handle axis) and drawn 0.1° from the grip's -Z, the hilt on the palm attach point; the handle pitched up puts the tip 66 units above the hilt; a moved hand keeps the hilt on the palm; a controller switched off gives the sword back to the engine (`engine`), switched on it is back; `combat on` + the trigger held: the arm layer's ready and wait clips are `suppressed`, no strike clip starts (since #39 the swing is the strike), the shoulder stays, the sword stays in the hand. The shots `sword-ahead`, `sword-up` and `sword-at-face` (the raised blade 0.1 m from the eyes, F-39) are judged by eye. With the default custom arms the weapon is drawn from the glove's frame (#385.10): "the hilt on the palm" is then the handle anchor on the glove's hold point (`hiltToPalm` = `hiltToGrip`). `smoke-test.ps1 -VrSim idle -Sequence weapon-hold -Save mvp-items` | — |
+| `weapon-in-glove` | the weapon in the glove (#385.10, research #453 F-485, F-489) on `mvp-items`: with the custom arms the sword is drawn from the glove's hilt frame (`vr.weapon.frame` `glove`, `hiltToGrip` < 0.5, `edgeToKnuckles` < 5), held ahead, raised to the face and with the hand 1.5 m out past the reach (the arm stretched, the weapon still in the glove); the forearm and hands models take the same frame; `grip tilt -15` / `-30` lean the blade by 15 / 30° (`bladeAngle`), `0` puts it back, `grip tilt 40` snaps to a variant; `arms arx` gives the Arx placement (`frame` `arx`). `xrs-run.ps1 weapon-in-glove` | — |
+| `weapon-classes` | one item of each class from the playground's weapon table in the glove (#385.10, F-487): long sword and dagger anchored at the handle's centre, axe and club 15 - 25 % from the handle's end, the two-handed sword a hand-width above the pommel; a capture of each for the owner. Playground only (not in CI): `xrs-run.ps1 weapon-classes` | — |
 | `melee-swing` | physical melee (#39, D-038) on `mvp-goblin-fight`: the goblin held still and `place`d 80 units ahead, the sword at its chest; a slow sweep through it (under 1.3 m/s) is no swing; a plain swing (0.85 m in 8 frames) hits it once with aim 0.25 × the speed factor (`melee.hit`, `vr.melee.last`); the trigger held to a full charge (`melee.charge state=full`), a swing hits with aim ≥ 0.5 (measured 1.00 and damage 7.4 against 0.25 and 1.8) and spends the charge; held on, it does not charge again and the next swing is plain; released and pressed, it charges again; `combat on` + the trigger: no engine strike clip, no hit; the inventory open: no swing (`refused=inventory`). Shots `goblin-in-reach`, `after-hits` judged by eye. Broken on purpose (the charge never spent): fails at `vr.melee.charge.spent`. `smoke-test.ps1 -VrSim idle -Sequence melee-swing -Save mvp-goblin-fight` | — |
 | `hand-reticle` | the hand reticles (#37) on the test save `mvp-items` — run with `smoke-test.ps1 -VrSim idle -Sequence hand-reticle -Save mvp-items`: in the game both hands' rings are drawn (`overlayPixels` > 0 in both eyes), dim, nothing hovered; the player put on the floor by the table (the save stands it on the wall top, TRAPS.md); the right hand at the note: `under` / `entity` the note, `bright`, the engine's hover the note; the left hand onto the form takes the idle mouse (D-019); the right trigger takes it back and presses on the note (`vr.reticle.press`), the hand moved: the note is dragged and follows the ring, released: `item.drop how=place` on the floor at the ring; the bag open, the left hand drags the form from the table onto the bag on the panel: `item.toinventory`; grip + trigger on the note: straight into the bag; the book open: the reticles off (`book`). Host test `HandReticleTest` | — |
 

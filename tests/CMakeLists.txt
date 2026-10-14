@@ -105,6 +105,10 @@ set(arxtest_TESTCASES
 	tests/vr/WristVitalsTest.cpp
 	tests/vr/WeaponGripTest.h
 	tests/vr/WeaponGripTest.cpp
+	tests/vr/WeaponInGloveTest.h
+	tests/vr/WeaponInGloveTest.cpp
+	tests/vr/WeaponHiltFrameTest.h
+	tests/vr/WeaponHiltFrameTest.cpp
 	tests/vr/MeleeSwingTest.h
 	tests/vr/MeleeSwingTest.cpp
 

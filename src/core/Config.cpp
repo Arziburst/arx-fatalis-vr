@@ -55,6 +55,7 @@
 #include "vr/PhysicalCrouch.h"
 #include "vr/UIPanel.h"
 #include "vr/VRArms.h"
+#include "vr/WeaponGrip.h"
 #include "vr/VRBody.h"
 #include "vr/VRSystem.h"
 #include "vr/VRTurn.h"
@@ -161,6 +162,7 @@ constexpr const float
 	vrHiltMiddle = vr::HiltAngles().middle,
 	vrHiltLast = vr::HiltAngles().last,
 	vrHiltThumb = vr::HiltAngles().thumb,
+	vrSwordTilt = 0.f,
 	fogDistance = 10.f,
 	gamma = 5.f,
 	fov = 75.f,
@@ -372,6 +374,7 @@ constexpr const std::string_view
 	vrHiltMiddle = "vr_hilt_middle",
 	vrHiltLast = "vr_hilt_last",
 	vrHiltThumb = "vr_hilt_thumb",
+	vrSwordTilt = "vr_sword_tilt",
 	vrBodyPush = "vr_body_push",
 	vrBodyPushDown = "vr_body_push_down",
 	vrBodyClearance = "vr_body_clearance";
@@ -678,6 +681,7 @@ bool Config::save() {
 	writer.writeKey(Key::vrHiltMiddle, input.vrHiltMiddle);
 	writer.writeKey(Key::vrHiltLast, input.vrHiltLast);
 	writer.writeKey(Key::vrHiltThumb, input.vrHiltThumb);
+	writer.writeKey(Key::vrSwordTilt, input.vrSwordTilt);
 	writer.writeKey(Key::vrBodyPush, input.vrBodyPush);
 	writer.writeKey(Key::vrBodyPushDown, input.vrBodyPushDown);
 	writer.writeKey(Key::vrBodyClearance, input.vrBodyClearance);
@@ -905,6 +909,8 @@ bool Config::init(const fs::path & file) {
 	input.vrHiltMiddle = hilt.middle;
 	input.vrHiltLast = hilt.last;
 	input.vrHiltThumb = hilt.thumb;
+	// The sword's forward tilt in the hand (#385.10): one of its variants
+	input.vrSwordTilt = vr::swordTiltVariant(reader.getKey(Section::Input, Key::vrSwordTilt, Default::vrSwordTilt));
 	// The own body out of the eyes (#385.9): the push back behind the eyes and the clearance around them, game units
 	float vrBodyPush = reader.getKey(Section::Input, Key::vrBodyPush, Default::vrBodyPush);
 	input.vrBodyPush = glm::clamp(vrBodyPush, 0.f, vr::MaxBodyPush);

@@ -1201,11 +1201,13 @@ static void Cedric_AnimateDrawEntityRender(EERIE_3DOBJ * eobj, const Vec3f & pos
 		}
 		
 		glm::quat rotation = eobj->m_skeleton->bones[link.lgroup].anim.quat;
+		Vec3f attach = eobj->vertexWorldPositions[link.lidx].v;
 		if(io && io == entities.player()) {
-			// The weapon in the VR hand (#75): the blade turned onto the controller's handle
-			vr::heldWeaponRotation(link.io, rotation);
+			// The weapon in the VR hand (#75): the blade turned onto the controller's handle; in our glove drawn from
+			// the glove's hilt frame (#385.10)
+			vr::heldWeaponTransform(link.io, attach, rotation);
 		}
-		TransformInfo t(eobj->vertexWorldPositions[link.lidx].v, rotation, link.io ? link.io->scale : 1.f);
+		TransformInfo t(attach, rotation, link.io ? link.io->scale : 1.f);
 		t.pos = t(link.obj->vertexlist[link.obj->origin].v - link.obj->vertexlist[link.lidx2].v);
 		
 		DrawEERIEInter(link.obj, t, link.io, true, invisibility);

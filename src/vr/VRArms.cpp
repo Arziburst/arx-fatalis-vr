@@ -118,6 +118,9 @@ struct GloveRest {
 	Vec3f tip = Vec3f(0.f);      //!< the middle fingertip
 	Vec3f palmCentre = Vec3f(0.f); //!< the middle metacarpal's midpoint: the palm's centre (the Palm joint lies off it)
 	Vec3f cuff = Vec3f(0.f);     //!< the centre of the cuff opening
+	Vec3f knuckle = Vec3f(0.f);  //!< the middle finger's knuckle (#385.10: the wrist to it is the knuckle direction)
+	Vec3f indexKnuckle = Vec3f(0.f);  //!< the index and the little finger's knuckles: the hand's breadth
+	Vec3f littleKnuckle = Vec3f(0.f);
 	glm::quat toGrip = quat_identity(); //!< the mesh's rest frame to the grip frame (vr/ArmIK.h handToGrip)
 	glm::quat sleeveAxes = quat_identity(); //!< the sleeve's wrist axes (along, thickness, width) in mesh space
 	HandRig rig;                 //!< the five fingers' joints and axes (#385.4)
@@ -227,6 +230,9 @@ void loadGlove(Hand hand, GloveRest & glove) {
 	glove.tip = jointPosition(glove.restWorld, tip);
 	glove.palmCentre = 0.5f * (jointPosition(glove.restWorld, glove.rig.joint[size_t(HandJoint::MiddleMetacarpal)])
 	                           + jointPosition(glove.restWorld, glove.rig.joint[size_t(HandJoint::MiddleProximal)]));
+	glove.knuckle = jointPosition(glove.restWorld, glove.rig.joint[size_t(HandJoint::MiddleProximal)]);
+	glove.indexKnuckle = jointPosition(glove.restWorld, glove.rig.joint[size_t(HandJoint::IndexProximal)]);
+	glove.littleKnuckle = jointPosition(glove.restWorld, glove.rig.joint[size_t(HandJoint::LittleProximal)]);
 
 	// The hand's frame as the IK reads it from a model (long axis to the palm, lateral axis to the thumb)
 	std::vector<Vec3f> vertices;
@@ -439,9 +445,11 @@ TextureContainer * armsTexture(const std::string & name) {
  * The glove's hand, joint by joint (#385.7), placed by \a gloveToWorld: a held weapon closes it on the hilt pose on
  * either hand (the captured one, else the default), else it takes the runtime's joints (conforming to the controller
  * where the runtime can), else the controls close each finger toward MRTK3's Grab. The glove's joints turn toward
- * that at a bounded speed, so a weapon taken or a source lost never snaps them. Needs status.grip and status.handle
+ * that at a bounded speed, so a weapon taken or a source lost never snaps them. Needs status.grip and status.handle.
+ * Also sets the glove's hilt frame (#385.10): \a fallbackHilt is the hilt's centre without a hilt curl
  */
-void poseGloveHand(CustomArm & arm, const LogicalArm & logical, const glm::mat4 & gloveToWorld, const glm::quat & handQuat) {
+void poseGloveHand(CustomArm & arm, const LogicalArm & logical, const glm::mat4 & gloveToWorld, const glm::quat & handQuat,
+                   const Vec3f & fallbackHilt) {
 
 	CustomArmStatus & status = arm.status;
 	const GloveRest & glove = arm.glove;
@@ -463,8 +471,19 @@ void poseGloveHand(CustomArm & arm, const LogicalArm & logical, const glm::mat4 
 		status.curlToHandle = glm::length(glm::cross(centre - status.grip, status.handle));
 		status.curlAngle = glm::degrees(std::acos(std::min(std::abs(glm::dot(handQuat * arm.hiltCurl.axis, status.handle)), 1.f)));
 	}
-	status.palm = Vec3f(gloveToWorld * glm::vec4(glove.palm, 1.f));
-	status.tipLength = glm::distance(status.palm, Vec3f(gloveToWorld * glm::vec4(glove.tip, 1.f)));
+	// The glove's hilt frame (#385.10, research #453 F-485): what a held weapon is drawn from - the curl the closed
+	// fingers wrap, where the glove is drawn (moved with it past the stretch limit, never to the hidden Arx hand)
+	auto gloveWorld = [&](const Vec3f & point) { return Vec3f(gloveToWorld * glm::vec4(point, 1.f)); };
+	status.hiltCentre = arm.hiltCurl.valid ? gloveWorld(arm.hiltCurl.centre) : fallbackHilt;
+	status.hiltAxis = arm.hiltCurl.valid ? glm::normalize(handQuat * arm.hiltCurl.axis) : status.handle;
+	const Vec3f knuckles = gloveWorld(glove.knuckle) - gloveWorld(glove.wrist);
+	status.knuckles = glm::length(knuckles) > 1e-4f ? glm::normalize(knuckles) : armsPerpendicular(status.hiltAxis);
+	status.hiltGrip = logical.gripOrientation;
+	// Four fingers side by side: the index to the little knuckle spans three of their widths
+	status.handWidth = glm::distance(gloveWorld(glove.indexKnuckle), gloveWorld(glove.littleKnuckle)) * (4.f / 3.f);
+	status.hiltFrame = true;
+	status.palm = gloveWorld(glove.palm);
+	status.tipLength = glm::distance(status.palm, gloveWorld(glove.tip));
 }
 
 } // anonymous namespace
@@ -605,6 +624,7 @@ void resetCustomArms() {
 		arm.status.upperArmDrawn = false;
 		arm.status.fingerSource = CustomFingerSource::None;
 		arm.status.hiltPose = HiltPoseSource::None;
+		arm.status.hiltFrame = false;
 	}
 }
 
@@ -618,6 +638,7 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	status.sleeveDrawn = false;
 	status.upperArmDrawn = false;
 	status.hiltPose = HiltPoseSource::None;
+	status.hiltFrame = false;
 	const ArmsModelInfo & info = armsModelInfo();
 	const bool atArxWrist = info.classicSkin && classicHand() == ClassicHand::Glove;
 	if(!info.glove && !atArxWrist) {
@@ -676,7 +697,7 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 		atWrist = glm::scale(atWrist, Vec3f(gloveScale));
 		atWrist = glm::translate(atWrist, -glove.cuff);
 		status.palmToGrip = glm::distance(Vec3f(atWrist * glm::vec4(glove.palmCentre, 1.f)), logical.grip);
-		poseGloveHand(arm, logical, atWrist, wristQuat);
+		poseGloveHand(arm, logical, atWrist, wristQuat, logical.grip);
 		status.drawn = true;
 		status.wrist = logical.arxWrist;
 		status.wristGap = -1.f; // measured on the Arx wrist ring once the classic arm is skinned (noteArxWristRing)
@@ -811,7 +832,7 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	skinMesh(arm.sleeveWork, arm.sleeveJoints, arm.sleevePositions, arm.sleeveNormals);
 	recomputeNormals(arm.sleeve, arm.sleevePositions, arm.sleeveNormals);
 
-	poseGloveHand(arm, logical, gloveToWorld, handQuat);
+	poseGloveHand(arm, logical, gloveToWorld, handQuat, logical.grip + (cuff - target));
 
 	Vec3f ring(0.f);
 	for(size_t v : arm.lastRing) {

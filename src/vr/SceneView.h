@@ -116,6 +116,8 @@ constexpr float CutJumpDegrees = 10.f;
 
 //! The ghost's camera never lower above the floor under it (game units): 1.2 m, and 1 mm against rounding
 constexpr float GhostMinAboveFloor = 120.1f;
+//! units above \ref GhostMinAboveFloor the hero's eye must rise before \ref SceneFirstLow::Black lets the world back in
+constexpr float FirstLowRise = 10.f;
 
 //! A frame drawn with the scene fade at least this black is behind the fade (SPEC.md)
 constexpr float BehindFade = 0.99f;
@@ -397,6 +399,7 @@ private:
 	float m_lastYaw = 0.f; //!< the eyes' yaw last frame, before the head
 	bool m_lookAtPending = false;
 	bool m_lowScreen = false; //!< \ref SceneFirstLow::Screen took this scene to the screen
+	bool m_lowHeld = false;   //!< \ref SceneFirstLow::Black: the last eye high enough is held, the fade goes black
 	//! A ghost's or the observer's shot keeps its own yaw: only the stick turns it, never a script turning the hero
 	bool m_fixedYaw = false;
 	float m_shotYaw = 0.f;     //!< the eyes' yaw at the cut, before the head

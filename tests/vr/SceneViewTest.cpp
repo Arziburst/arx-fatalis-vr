@@ -450,9 +450,22 @@ void SceneViewTest::firstLowTest() {
 		director.update(standing());
 		lying.firstLow = SceneFirstLow::Black;
 		up.firstLow = SceneFirstLow::Black;
+		settle(director, up);
+		// He goes down fast, 8 cm a frame: no frame the eyes see shows an eye lower than the minimum
 		SceneOutput out;
+		SceneInput falling = up;
 		for(int i = 0; i < 200; i++) {
-			out = director.update(lying);
+			falling.firstPos.y = std::min(-10.f, -170.f + 8.f * float(i));
+			out = director.update(falling);
+			if(out.fade < BehindFade) {
+				CPPUNIT_ASSERT(-out.pos.y >= GhostMinAboveFloor - SvEps);
+			}
+		}
+		// Barely up again (under the rise) stays black
+		SceneInput barely = up;
+		barely.firstPos.y = -(GhostMinAboveFloor + FirstLowRise / 2.f);
+		for(int i = 0; i < 100; i++) {
+			CPPUNIT_ASSERT(director.update(barely).fade >= BehindFade);
 		}
 		CPPUNIT_ASSERT(out.shown == SceneShown::First);
 		CPPUNIT_ASSERT(out.blind);

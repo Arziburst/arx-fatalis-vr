@@ -311,6 +311,14 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 		targetPos = clampAboveFloor(in.firstPos, in.firstFloorY, in.firstOnFloor);
 	}
 	const bool following = (target.shown == SceneShown::None || target.shown == SceneShown::First);
+	// Black: the eye that was last high enough is held while the fade goes out - a low one is never shown - and
+	// until the hero's eye is up again (#29)
+	if(in.active && target.shown == SceneShown::First && in.firstLow == SceneFirstLow::Black) {
+		const bool up = in.firstFloorY - in.firstPos.y >= GhostMinAboveFloor + FirstLowRise;
+		m_lowHeld = firstTooLow || (m_lowHeld && !up);
+	} else {
+		m_lowHeld = false;
+	}
 	if(target.shown == SceneShown::Ghost) {
 		// A ghost shot is the game's camera where the shot starts; a jump of the game's camera within it is
 		// a new shot (a camera entity moved elsewhere)
@@ -337,7 +345,7 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 	// shown is held - its place and its yaw - until the fade is black. Without a scene the game's first
 	// person is followed as it is
 	const bool differs = (target != m_shown);
-	const bool jump = !differs && following && target.shown != SceneShown::None
+	const bool jump = !differs && following && !m_lowHeld && target.shown != SceneShown::None
 	                  && glm::distance(targetPos, m_pos) > CutJumpUnits;
 	if(differs || jump) {
 		if(!m_cutPending) {
@@ -345,7 +353,7 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 			m_heldYaw = m_haveLastYaw ? m_lastYaw : in.playerYaw + m_yawDelta;
 			m_fade.request(m_params.cutOut, m_params.cutIn, m_params.blackFrames);
 		}
-	} else if(following) {
+	} else if(following && !m_lowHeld) {
 		m_pos = targetPos;
 	}
 
@@ -428,7 +436,7 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 	// shot or the observer's point; the screen has no eye in the world
 	bool onFloor = true;
 	if(m_shown.shown == SceneShown::First) {
-		onFloor = in.firstOnFloor && !(in.firstLow == SceneFirstLow::Black && firstTooLow);
+		onFloor = in.firstOnFloor && !m_lowHeld;
 	} else if(m_shown.shown == SceneShown::Ghost || m_shown.shown == SceneShown::Observer) {
 		onFloor = !in.hasFloor || in.hasFloor(m_pos);
 	}

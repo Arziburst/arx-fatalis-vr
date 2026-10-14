@@ -175,7 +175,8 @@ gives a clear moment to cast without a pause or an extra gesture.
   the stash chord is dropped; the stash event stays bindable. Until each hand has its stance (#378) the one stance is
   the **right A** (the owner, the headset test of #456; the left A is free); until a weapon per hand (#380) the
   **right** stick click draws / sheathes the right hand's weapon, the left stick click is free; the game starts with the weapon **drawn** (as the hand held
-  it before). The Touch keeps the game menu on its **left menu button** (the table does not name it). "The game
+  it before). The Touch's **left menu button is free** like the rest (the owner, #456: the Touch is the Index, the
+  game menu is in the radial menu and on B's game menu key; first built with the game menu on it). "The game
   menu must not break": a B press that **cannot open a radial menu** - in any menu (the game menu, the character
   creation, the credits: the Index has no other Escape), or in the game with the head or the hand not tracked - is
   the **game menu key** (it opens the game menu or goes back); not a hold fallback.

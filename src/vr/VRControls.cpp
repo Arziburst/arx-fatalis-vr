@@ -260,10 +260,8 @@ ControlLayout defaultLayout(ControllerType type) {
 	// in it, so their own events have no control by default (the player can still bind them)
 	layout[Event::RadialLeft] = Binding::single(control(Hand::Left, ControlKind::B));
 	layout[Event::RadialRight] = Binding::single(control(Hand::Right, ControlKind::B));
-	// The Touch's left menu button stays the game menu (the table does not name it); the Index has none
-	if(type == ControllerType::Touch) {
-		layout[Event::Menu] = Binding::single(control(Hand::Left, ControlKind::Menu));
-	}
+	// No game menu button on either (the owner, #456): the radial menu has it, and B is the game menu key where no
+	// radial menu opens; the Touch's left menu button is free like the Index's trackpads
 	// The stick click draws / sheathes the weapon of its hand: only the right hand holds one until #380
 	layout[Event::Weapon] = Binding::single(control(Hand::Right, ControlKind::StickClick));
 	// The casting stance (#43) on A: one stance for both hands until each hand has its own (#378) - the right A

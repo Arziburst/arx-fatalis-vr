@@ -533,12 +533,10 @@ void VRControlsTest::defaultLayoutTest() {
 	CPPUNIT_ASSERT_EQUAL(table, formatLayout(index));
 	CPPUNIT_ASSERT(findConflicts(index).empty());
 
-	// The Touch: the same positions (X / Y are its left A / B), and its left menu button stays the game menu
+	// The Touch: the same table (X / Y are its left A / B); its left menu button is free too (the owner, #456)
 	const ControlLayout touch = defaultLayout(ControllerType::Touch);
-	ControlLayout touchExpected;
-	std::string error;
-	CPPUNIT_ASSERT(parseLayout(table + "menu = left.menu\n", touchExpected, &error));
-	CPPUNIT_ASSERT_EQUAL(formatLayout(touchExpected), formatLayout(touch));
+	CPPUNIT_ASSERT_EQUAL(table, formatLayout(touch));
+	CPPUNIT_ASSERT(touch == index);
 	CPPUNIT_ASSERT(findConflicts(touch).empty());
 	CPPUNIT_ASSERT_EQUAL(std::string("Right A"), bindingLabel(touch[Event::MagicMode], ControllerType::Touch));
 	CPPUNIT_ASSERT_EQUAL(std::string("Left Y"), bindingLabel(touch[Event::RadialLeft], ControllerType::Touch));

@@ -802,10 +802,9 @@ by `VRControlsTest::defaultLayoutTest`. Played through in `controls-v2.xrs` (the
 | Right stick click | `weapon` | Draw / sheathe the equipped weapon (`vr.weapon.sheathed`); the game starts with it drawn |
 | Left stick | (the walk axes) | Walk along the look; the deflection sets sneak / walk / run - unchanged |
 | Right A held | `magic_mode` | The casting stance: a trigger draws runes with its hand (#43). Its press first closes everything open - the radial menus, the book, the bag, a container, a note (not the game menu; `vr.panels.closed` event). The left A is free until #378 (the owner) |
-| Left menu button (Touch only) | `menu` | The game menu (the Touch keeps it; not in the D-042 table) |
-| Trackpads | — | Unbound; the player may bind them |
+| Trackpads, the Touch's left menu button | — | Unbound; the player may bind them (the Touch is the Index, the owner) |
 
-Not bound by default: `inventory`, `book`, `recenter` (all in the radial menu), `menu` on the Index (the radial menu and
+Not bound by default: `inventory`, `book`, `recenter` (all in the radial menu), `menu` on both controllers (the radial menu and
 the game menu key), `stash_left` / `stash_right` (D-042 dropped "straight into the bag"; a player can still bind it -
 on grip + trigger it shares the chord with the act as the use does). The simple controller keeps its own layout
 (select clicks; left menu = game menu, held = recenter; right menu = inventory, held = book).

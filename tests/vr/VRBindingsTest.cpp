@@ -222,14 +222,13 @@ void VRBindingsTest::defaultLayoutsTest() {
 
 	// Every event on the Index and the Touch has a control except the ones D-042 (#377) moved or dropped: the
 	// inventory, the book, the game menu and recenter are items of the radial menus on B (#376), nothing goes
-	// straight into the inventory any more (stash). The Touch keeps the game menu on its menu button
+	// straight into the inventory any more (stash). The Touch's menu button is free too (the owner, #456)
 	for(ControllerType type : { ControllerType::Index, ControllerType::Touch }) {
 		const ControlLayout layout = defaultLayout(type);
 		for(size_t i = 0; i < EventCount; i++) {
 			const Event event = Event(i);
 			const bool unbound = event == Event::Inventory || event == Event::Book || event == Event::Recenter
-			                     || event == Event::StashLeft || event == Event::StashRight
-			                     || (event == Event::Menu && type == ControllerType::Index);
+			                     || event == Event::StashLeft || event == Event::StashRight || event == Event::Menu;
 			CPPUNIT_ASSERT_MESSAGE(std::string(controllerTypeName(type)) + ": " + eventName(event),
 			                       layout.bindings[i].isBound() != unbound);
 		}
@@ -237,17 +236,14 @@ void VRBindingsTest::defaultLayoutsTest() {
 		CPPUNIT_ASSERT_EQUAL(std::string("right.b"), formatBinding(layout[Event::RadialRight]));
 	}
 
-	// The Touch is the Index with the game menu on its menu button (the Index has none); the casting stance is the
-	// right A on both, the owner's until #378 (the Touch has no trackpad, and no default needs one)
+	// The Touch is the Index (the owner, #456: no game menu button on either); the casting stance is the right A on
+	// both, the owner's until #378 (the Touch has no trackpad, and no default needs one)
 	const ControlLayout index = defaultLayout(ControllerType::Index);
 	const ControlLayout touch = defaultLayout(ControllerType::Touch);
 	for(size_t i = 0; i < EventCount; i++) {
-		if(Event(i) != Event::Menu) {
-			CPPUNIT_ASSERT_MESSAGE(eventName(Event(i)), index.bindings[i] == touch.bindings[i]);
-		}
+		CPPUNIT_ASSERT_MESSAGE(eventName(Event(i)), index.bindings[i] == touch.bindings[i]);
 	}
-	CPPUNIT_ASSERT(!index[Event::Menu].isBound());
-	CPPUNIT_ASSERT_EQUAL(std::string("left.menu"), formatBinding(touch[Event::Menu]));
+	CPPUNIT_ASSERT(!touch[Event::Menu].isBound());
 	CPPUNIT_ASSERT_EQUAL(std::string("right.a"), formatBinding(touch[Event::MagicMode]));
 
 	// The simple controller: select clicks, the menu buttons carry the menus and recenter

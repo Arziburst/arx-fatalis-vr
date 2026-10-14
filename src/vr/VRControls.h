@@ -229,8 +229,8 @@ struct ControlLayout {
  * alone does nothing; B holds that hand's radial menu (#376), which has the inventory, the book, the game
  * menu and recenter - their own events are unbound; the right stick up jumps, down toggles the crouch; the
  * right stick click draws / sheathes the weapon (the right hand's until #380); the trackpads are free.
- * The casting stance is the right A (the owner) until each hand has its own (#378); the Touch keeps the game menu on
- * its left menu button, which the table does not name.
+ * The casting stance is the right A (the owner) until each hand has its own (#378). The Index and the Touch layouts
+ * are the same: the Touch's left menu button is free too (the owner, #456).
  * The simple controller has select (click / drag) and the menu buttons: left = game menu,
  * long = recenter; right = inventory, long = book. An unknown controller gets the Index layout,
  * because SteamVR's automatic rebinding emulates one of the profiles we suggest.

@@ -155,16 +155,20 @@ vr-hud levelup both
 @assert vr.hud.levelUp.radialMark eq true
 
 # 5. The radial ring over the bag and the book (#456's "ring not drawn"): each hand, three times each, shown in
-# every checked frame. Released in the middle, B closes the open panel (#377), so it is opened again each time
+# every checked frame - its layer submitted (`submitted`, #377) and its image drawn (`undrawn` none). Released in the
+# middle, B closes the open panel (#377), so it is opened again each time
 ui inventory open
 @until player.inventoryOpen eq true 5s
 @frames 20
 vr-input down right.b
 @frames 5
 @assert vr.radial.right.open eq true
+@assert vr.radial.right.undrawn eq none
 @assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 @frames 5
 @assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 @shot ring-bag-right
 vr-input up right.b
 @until player.inventoryOpen eq false 5s
@@ -174,8 +178,10 @@ ui inventory open
 vr-input down right.b
 @frames 5
 @assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 @frames 5
 @assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 vr-input up right.b
 @until player.inventoryOpen eq false 5s
 ui inventory open
@@ -184,8 +190,10 @@ ui inventory open
 vr-input down right.b
 @frames 5
 @assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 @frames 5
 @assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 vr-input up right.b
 @until player.inventoryOpen eq false 5s
 ui inventory open
@@ -194,9 +202,12 @@ ui inventory open
 vr-input down left.b
 @frames 5
 @assert vr.radial.left.open eq true
+@assert vr.radial.left.undrawn eq none
 @assert vr.radial.left.shown eq true
+@assert vr.radial.left.submitted eq true
 @frames 5
 @assert vr.radial.left.shown eq true
+@assert vr.radial.left.submitted eq true
 @shot ring-bag-left
 vr-input up left.b
 @until player.inventoryOpen eq false 5s
@@ -206,8 +217,10 @@ ui inventory open
 vr-input down left.b
 @frames 5
 @assert vr.radial.left.shown eq true
+@assert vr.radial.left.submitted eq true
 @frames 5
 @assert vr.radial.left.shown eq true
+@assert vr.radial.left.submitted eq true
 vr-input up left.b
 @until player.inventoryOpen eq false 5s
 ui inventory open
@@ -216,8 +229,10 @@ ui inventory open
 vr-input down left.b
 @frames 5
 @assert vr.radial.left.shown eq true
+@assert vr.radial.left.submitted eq true
 @frames 5
 @assert vr.radial.left.shown eq true
+@assert vr.radial.left.submitted eq true
 vr-input up left.b
 @until player.inventoryOpen eq false 5s
 
@@ -227,9 +242,12 @@ book open
 vr-input down right.b
 @frames 5
 @assert vr.radial.right.open eq true
+@assert vr.radial.right.undrawn eq none
 @assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 @frames 5
 @assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 @shot ring-book-right
 vr-input up right.b
 @until player.bookOpen eq false 5s
@@ -239,8 +257,10 @@ book open
 vr-input down right.b
 @frames 5
 @assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 @frames 5
 @assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 vr-input up right.b
 @until player.bookOpen eq false 5s
 book open
@@ -249,8 +269,10 @@ book open
 vr-input down right.b
 @frames 5
 @assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 @frames 5
 @assert vr.radial.right.shown eq true
+@assert vr.radial.right.submitted eq true
 vr-input up right.b
 @until player.bookOpen eq false 5s
 book open
@@ -259,9 +281,12 @@ book open
 vr-input down left.b
 @frames 5
 @assert vr.radial.left.open eq true
+@assert vr.radial.left.undrawn eq none
 @assert vr.radial.left.shown eq true
+@assert vr.radial.left.submitted eq true
 @frames 5
 @assert vr.radial.left.shown eq true
+@assert vr.radial.left.submitted eq true
 @shot ring-book-left
 vr-input up left.b
 @until player.bookOpen eq false 5s
@@ -271,8 +296,10 @@ book open
 vr-input down left.b
 @frames 5
 @assert vr.radial.left.shown eq true
+@assert vr.radial.left.submitted eq true
 @frames 5
 @assert vr.radial.left.shown eq true
+@assert vr.radial.left.submitted eq true
 vr-input up left.b
 @until player.bookOpen eq false 5s
 book open
@@ -281,8 +308,10 @@ book open
 vr-input down left.b
 @frames 5
 @assert vr.radial.left.shown eq true
+@assert vr.radial.left.submitted eq true
 @frames 5
 @assert vr.radial.left.shown eq true
+@assert vr.radial.left.submitted eq true
 vr-input up left.b
 @until player.bookOpen eq false 5s
 

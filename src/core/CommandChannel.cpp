@@ -1351,6 +1351,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("weaponClass", weapon.weaponClass);
 		json.value("handleLength", weapon.handleLength);
 		json.value("anchor", weapon.anchor);
+		json.value("handWidth", weapon.handWidth);
 		json.value("hiltToGrip", weapon.hiltToGrip);
 		json.value("edgeToKnuckles", weapon.edgeToKnuckles);
 		json.value("tilt", weapon.tilt);

@@ -401,6 +401,7 @@ const HeldWeaponStatus & heldWeaponStatus() {
 		                                     glove->knuckles - blade * glm::dot(glove->knuckles, blade));
 		status.anchor = weaponAnchorOffset(g_weapon.weaponClass, g_weapon.handle.length,
 		                                   glove->handWidth / std::max(scale, 1e-3f)) * scale;
+		status.handWidth = glove->handWidth;
 		status.tiltApplied = appliedTilt();
 		status.frame = "glove";
 	} else {
@@ -410,6 +411,7 @@ const HeldWeaponStatus & heldWeaponStatus() {
 		status.hiltToGrip = 0.f;
 		status.edgeToKnuckles = 0.f;
 		status.anchor = 0.f;
+		status.handWidth = 0.f;
 		status.tiltApplied = 0.f;
 	}
 	if(glm::length(status.bladeGrip) > 0.f) {

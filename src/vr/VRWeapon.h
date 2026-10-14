@@ -110,6 +110,7 @@ struct HeldWeaponStatus {
 	const char * weaponClass = "none"; //!< the anchor's class: sword, dagger, axe, mace, twoHanded (WeaponGrip.h)
 	float handleLength = 0.f;      //!< units, the handle read from the mesh: the pommel end to the guard or the head
 	float anchor = 0.f;            //!< units from the pommel end along the handle to the point held on the grip axis (glove)
+	float handWidth = 0.f;         //!< units, the glove's breadth a two-handed weapon's anchor is measured by (glove)
 	float hiltToGrip = 0.f;        //!< units, the drawn anchor to the glove's hold point (~0; glove, 0 with arx)
 	float edgeToKnuckles = 0.f;    //!< degrees, the drawn edge to the glove's knuckle direction across the blade (glove)
 	float tilt = 0.f;              //!< the sword tilt configured (cfg.ini vr_sword_tilt: 0, -15 or -30)

@@ -60,6 +60,8 @@ const EventInfo Events[EventCount] = {
 	{ "menu", "Game menu" },
 	{ "recenter", "Recenter" },
 	{ "magic_mode", "Draw runes" },
+	{ "act_left", "Open / pull, left" },
+	{ "act_right", "Open / pull, right" },
 };
 
 const std::string_view LongSuffix = ":long";
@@ -244,6 +246,10 @@ ControlLayout defaultLayout(ControllerType type) {
 	layout[Event::UseRight] = Binding::single(rightGrip);
 	layout[Event::StashLeft] = Binding::chord(leftGrip, leftTrigger);
 	layout[Event::StashRight] = Binding::chord(rightGrip, rightTrigger);
+	// D-042's use / interact (an interim default, #377 owns the layout): the stash chord, the reticle's target
+	// decides - an item is stashed, a door, lever, chest, NPC or corpse is acted on (sharesBindingByDesign)
+	layout[Event::ActLeft] = Binding::chord(leftGrip, leftTrigger);
+	layout[Event::ActRight] = Binding::chord(rightGrip, rightTrigger);
 	layout[Event::Jump] = Binding::single(control(Hand::Right, ControlKind::A));
 	layout[Event::CrouchToggle] = Binding::single(control(Hand::Right, ControlKind::StickDown));
 	layout[Event::Inventory] = Binding::single(control(Hand::Right, ControlKind::B));
@@ -379,6 +385,13 @@ bool readSavedLayout(std::string_view text, ControllerType type, ControlLayout &
 	return true;
 }
 
+bool sharesBindingByDesign(Event a, Event b) {
+	const auto pair = [a, b](Event x, Event y) {
+		return (a == x && b == y) || (a == y && b == x);
+	};
+	return pair(Event::StashLeft, Event::ActLeft) || pair(Event::StashRight, Event::ActRight);
+}
+
 std::vector<Conflict> findConflicts(const ControlLayout & layout) {
 	std::vector<Conflict> conflicts;
 	for(size_t i = 0; i < EventCount; i++) {
@@ -386,7 +399,7 @@ std::vector<Conflict> findConflicts(const ControlLayout & layout) {
 			continue;
 		}
 		for(size_t j = i + 1; j < EventCount; j++) {
-			if(layout.bindings[j] == layout.bindings[i]) {
+			if(layout.bindings[j] == layout.bindings[i] && !sharesBindingByDesign(Event(i), Event(j))) {
 				conflicts.push_back({ Event(i), Event(j) });
 			}
 		}

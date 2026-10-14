@@ -8,6 +8,18 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-14 — `playground-hands.xrs`: the left hand's reticle misses the pulled lever on CI, passes locally (#377)
+
+**Symptom:** CI run 38477911299 (PR #456) failed at `@until vr.reticle.left.under eq lever_9002 5s`: the ray hit
+the wall at (8378.7, -128.4, 8400), right behind the handle. The same sequence on the same commit passed 243/243
+locally; both runs aimed at the same face (8378.6, -130.5, 8399.2).
+**Cause:** the hands of the idle rig still rise after a `setpos` - the left hand's start was y -135.6 at the
+first aim, -127.2 at the second and -125.1 a moment later on the busy runner (locally the second aim already started
+at -125.1). `vr-point` aims from where the hand is in that frame, so the ray drifted 2 units up past the pulled
+handle, which lies 0.8 units in front of the wall.
+**Do:** after a teleport give the hands 30 frames and aim at a thin target once more before waiting on the reticle
+(`playground-hands.xrs` does this for the lever).
+
 ## 2026-10-13 — In VR the inventory will not close and melee is refused after New game or `--loadlevel` (#394.5)
 
 **Symptom:** a new game or a `--loadlevel` start in VR: the inventory stays open (closing it reopens it), `melee.state state=off reason=inventory`; a save load is fine, and so is New game in a player's launch.
@@ -1222,3 +1234,18 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** an idle `--vr-sim` run (`idle.vrsim`, no commands) shows several `[vr] rate:` windows UNDER-SUBMITTING at 20-40/s with a worst frame near 100 ms, then 90/s again; `arx-perf.log` has a burst of `H` lines whose `update`, `render` and `vrwait` all grow together, with no `load` and no uploads (#327: in one pair of runs the burst came with the log on, in the next pair with it off).
 **Cause:** the PC, not the game: other workers build in parallel (the game lock serialises game runs, not compiles), and a starved CPU stretches every phase of the frame at once.
 **Do:** judge pacing and frame costs only from windows at full rate, or repeat the run; a real cost of the game shows in one phase (`cause`), the same way in every run. `perf-summary.ps1` lists the hitches by cause.
+
+## 2026-10-13 - In the playground a hand's press lands on the panel, not on the lever it aims at
+**Symptom:** `--vr-sim` in the playground (`-Playground`): the reticle is on a lever (`vr.reticle.right.entity`), grip + trigger fires `act_right`, but nothing is pulled; `vr.pointer.click hand=right` is logged instead, `vr.panel.menu` is `inventory`. `ui inventory close` closes the bag and the next frame opens it again (#38).
+**Cause:** a level started with `--loadlevel` stays in the engine's cursor mode (no free look), and in cursor mode the engine keeps the inventory open: the floating panel hangs in front of the hands and takes their rays. Opening a chest or a body leaves free look again (the original's own rule).
+**Do:** `freelook on; ui inventory close` before the hands act in the world, and again after a drag from a chest or a body (`playground-hands.xrs`). For the player this goes with the first-run flow (#394 / #405).
+
+## 2026-10-13 - `vr-point` hits the wall behind a lever, or the hover passes and is gone again
+**Symptom:** `vr-point right entity lever_9002`: the ray ends on the wall 5 units behind the lever (`vr.reticle.right.point` z 8400), `under` stays `none`; or `@until vr.reticle.right.entity eq lever_9002` passes and the act a few frames later finds nothing (#38).
+**Cause:** two things. A lever on a wall is thin: the middle of its box is air, and a pulled lever's handle lies against the wall. And turning a simulated hand moves the start of its aim ray (it turns about the grip): the aim is computed from where the ray started before the turn, a few degrees off for a small target - the hover can catch the lever on the way and keep it for its 150 ms hold.
+**Do:** `vr-point <hand> face <id>` (a face of the mesh the hand's ray reaches without the level in the way), given twice a few frames apart; wait for `under` (this frame) before `entity` (the hover).
+
+## 2026-10-13 - An item dragged from a chest onto the bag falls back into the chest or is thrown
+**Symptom:** `vr-point right container`, trigger down, `vr-point right <bag pixel>`, trigger up: `item.toinventory container=chest_...` (back in the chest) or `item.drop how=throw`, never into the bag (#38).
+**Cause:** the engine puts a dragged item where its **icon** is - the cursor plus the offset the icon had when the drag started (`g_draggedIconOffset`). A simulated hand jumps: the pointer holds the press pixel inside its click dead zone (16 px), so the drag starts only on the jump, with the cursor already at the bag and an offset of hundreds of pixels; and after a short move the icon still hangs beside the cursor, left of the slot it aims at.
+**Do:** move the hand past the dead zone first (`vr-point right container 30 0`, a few frames), then `vr-point right bag` - it aims so that the icon covers the first free slot. A real hand moves gradually and places the icon by eye.

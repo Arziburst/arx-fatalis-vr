@@ -79,6 +79,21 @@ bool reticleClaims(Hand hand);
  */
 void afterPointer(const MenuPointer & pointer, const std::array<PointerRay, HandCount> & rays);
 
+/*!
+ * \a hand's act fired this frame (#38, D-042: doors, levers, chests, NPCs and corpses): when its reticle is on
+ * such an entity in reach, the entity is acted on as by the engine's double click (\ref takeReticleAct).
+ * Over an item it does nothing: the same chord stashes the item (VRControls.h, sharesBindingByDesign).
+ * Called after \ref updateReticles
+ * \return whether the act was taken (an entity to act on is under the hand's reticle)
+ */
+bool reticleAct(Hand hand);
+
+/*!
+ * The entity a hand's act chose this frame, once (nullptr when none): the engine's world interaction
+ * (ArxGame::managePlayerControls) takes it as the target of its double click
+ */
+Entity * takeReticleAct();
+
 //! What the engine's pick should do with a mouse position
 enum class ReticlePick {
 	NotMine, //!< the reticles are off: the engine's own pick
@@ -130,6 +145,9 @@ struct ReticleStatus {
 	bool cursor = false;            //!< the engine's mouse is a world reticle
 	std::string cursorEntity = "none";
 	u64 presses = 0;                //!< trigger presses with a reticle in the world
+	u64 acts = 0;                   //!< acts on a door, lever, chest, NPC or corpse (#38)
+	std::string lastAct = "none";   //!< what the last act was on, and with which hand
+	std::string lastActHand = "none";
 	u64 hoverChanges = 0;
 	u64 picks = 0;                  //!< the engine asked what a world pixel stands for
 	u64 blocked = 0;                //!< the engine asked about an interface pixel and got nothing from the world

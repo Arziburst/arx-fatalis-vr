@@ -505,13 +505,20 @@ SkinnedMesh buildSleeve(const SleeveParams & params) {
 	const float blend = glm::clamp(params.elbowBlend, 1e-3f, elbowRoom * 0.9f);
 	const float ringOffset = glm::clamp(params.elbowRingOffset, 1e-3f, elbowRoom * 0.9f);
 
-	// The rings: every joint, the elbow's side rings, the rest spread over the longest gaps
-	std::vector<float> stations = { 0.f, upperTwist, upper - ringOffset, upper, upper + ringOffset, twist1, twist2, total };
+	// The rings: every joint, the elbow's side rings, the rest spread over the longest gaps - a cut sleeve's from
+	// the cut on (#385.8)
+	const float start = glm::clamp(params.startAt, 0.f, total);
+	std::vector<float> stations = { start };
+	for(float x : { 0.f, upperTwist, upper - ringOffset, upper, upper + ringOffset, twist1, twist2, total }) {
+		if(x > start) {
+			stations.push_back(x);
+		}
+	}
 	std::sort(stations.begin(), stations.end());
 	stations.erase(std::unique(stations.begin(), stations.end(), [](float a, float b) { return b - a < 1e-3f; }),
 	               stations.end());
 	std::vector<int> pieces(stations.size() - 1, 1);
-	for(int extra = params.rings - int(stations.size()); extra > 0; extra--) {
+	for(int extra = params.rings - int(stations.size()); extra > 0 && !pieces.empty(); extra--) {
 		size_t longest = 0;
 		for(size_t g = 1; g < pieces.size(); g++) {
 			float gap = (stations[g + 1] - stations[g]) / float(pieces[g]);
@@ -555,8 +562,28 @@ SkinnedMesh buildSleeve(const SleeveParams & params) {
 		{ total, params.wristFlatten },
 	};
 
+	// A cut sleeve's cuff (#385.8): three rings past the cut towards the shoulder - the rim, a ring at 0.6 of the
+	// radius and the centre - each at its own x (placed) but weighted, sized and textured as the cut ring (at)
+	struct SleeveRing {
+		float x;
+		float at;
+		float scale;
+	};
+	std::vector<SleeveRing> profile;
+	if(start > 0.f) {
+		const float cut = rings.front();
+		const float depth = std::max(params.cuffDepth, 0.f);
+		profile.push_back({ cut - depth, cut, 0.f });
+		profile.push_back({ cut - depth * 0.8f, cut, 0.6f });
+		profile.push_back({ cut - depth * 0.4f, cut, params.cuffFlare });
+	}
 	for(float x : rings) {
+		profile.push_back({ x, x, 1.f });
+	}
 
+	for(const SleeveRing & ring : profile) {
+
+		const float x = ring.at;
 		std::array<u8, 4> joints = { u8(SleeveShoulder), 0, 0, 0 };
 		std::array<float, 4> weights = { 1.f, 0.f, 0.f, 0.f };
 		for(size_t k = 0; k + 1 < weightKeyCount; k++) {
@@ -576,21 +603,22 @@ SkinnedMesh buildSleeve(const SleeveParams & params) {
 			}
 		}
 
-		const float radiusZ = interpolateSleeveKeys(radiusKeys, x);
+		const float radiusZ = interpolateSleeveKeys(radiusKeys, x) * ring.scale;
 		const float radiusY = radiusZ * interpolateSleeveKeys(flattenKeys, x);
 		for(int s = 0; s <= sides; s++) {
 			// From the inner side (+Y) through the front (-Z), the outer side (-Y) and the back (+Z)
 			float angle = glm::two_pi<float>() * float(s % sides) / float(sides);
-			sleeve.positions.emplace_back(x, radiusY * std::cos(angle), -radiusZ * std::sin(angle));
+			sleeve.positions.emplace_back(ring.x, radiusY * std::cos(angle), -radiusZ * std::sin(angle));
 			sleeve.uvs.emplace_back(float(s) / float(sides), x / total);
 			sleeve.joints.push_back(joints);
 			sleeve.weights.push_back(weights);
 		}
 	}
 
-	// Quads between neighbouring rings, counter-clockwise seen from outside
+	// Quads between neighbouring rings, counter-clockwise seen from outside (the cuff's centre ring makes each of its
+	// quads one triangle and one of no area)
 	const size_t stride = size_t(sides) + 1;
-	for(size_t r = 0; r + 1 < rings.size(); r++) {
+	for(size_t r = 0; r + 1 < profile.size(); r++) {
 		for(size_t s = 0; s < size_t(sides); s++) {
 			u16 a = u16(r * stride + s);
 			u16 b = u16((r + 1) * stride + s);

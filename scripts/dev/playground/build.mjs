@@ -210,7 +210,8 @@ addLever(FIRST_ID, LEVER_WALL.xMode, 'lever_mode', { on: 'aggressive', off: 'pea
 addLever(FIRST_ID + 1, LEVER_WALL.xRespawn, 'lever_respawn', { on: 'respawn', off: 'respawn' }, `revive -it ${goblin.ref}\n `)
 
 // The arms lever (#385.3): every pull, up or down, counts in the global #pg_arms_pulls; the game (src/vr/VRArms.cpp)
-// flips the VR arms between our own and the Arx arms on each new pull, so the owner compares them in the headset
+// steps the VR arms to the next model on each new pull (custom, forearm, hands, arx, #385.8), so the owner compares
+// them in the headset
 const armsLever = new Lever({ id: FIRST_ID + 2, position: at(LEVER_WALL.xArms, -LEVER_HEIGHT, LEVER_WALL.z), orientation: leverRotation })
 armsLever.script.on('init', 'set £pg_role "lever_arms"')
 armsLever.script.on('custom', ['on', 'off'].map((param) => `if (^$param1 == "${param}") {\n inc #pg_arms_pulls 1\n}`))

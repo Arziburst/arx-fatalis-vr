@@ -244,7 +244,7 @@ public:
 		float vrArmElbowRoll; //!< VR: the share [0, 1] of the hand's roll that swings the elbow about the arm (#304)
 		float vrArmTwistOverflow; //!< VR: degrees past a half turn the hand's roll keeps its side before flipping (#304)
 		float vrHeightOffset; //!< VR: the character height setting, meters above the character's eye (#260)
-		std::string vrArmsModel; //!< VR: the arms drawn on the player, "custom" (our own, vr/VRArms.h) or "arx" (#385)
+		std::string vrArmsModel; //!< VR: the arms drawn on the player, "custom", "forearm", "hands" (our own, vr/VRArms.h) or "arx" (#385)
 		float vrHandScale; //!< VR: the custom hands' size against the glove's real size (#385)
 		std::string vrBody; //!< VR: the player model drawn under a tracked head, "full" (pushed back) or "hidden" (the arms only, #385.11)
 		float vrArmMaxStretch; //!< VR: how far [0, 0.3] the custom arm stretches past its fitted length to reach the controller (#385.6)

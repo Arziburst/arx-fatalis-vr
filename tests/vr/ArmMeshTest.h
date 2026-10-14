@@ -49,6 +49,8 @@ class ArmMeshTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testSleeveTopRingIsWider);
 	CPPUNIT_TEST(testRecomputeNormalsOfAFlatStrip);
 	CPPUNIT_TEST(testElbowCorrective);
+	CPPUNIT_TEST(testCutSleeveEndsInAClosedCuff);
+	CPPUNIT_TEST(testWristOnlySleeveIsTheCuff);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -68,6 +70,8 @@ public:
 	void testSleeveTopRingIsWider();
 	void testRecomputeNormalsOfAFlatStrip();
 	void testElbowCorrective();
+	void testCutSleeveEndsInAClosedCuff();
+	void testWristOnlySleeveIsTheCuff();
 
 };
 

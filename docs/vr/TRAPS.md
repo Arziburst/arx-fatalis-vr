@@ -8,6 +8,27 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-14 — The build fails with `git.exe ... missing and no known rule to make it` after a Git update (#377)
+
+**Symptom:** `build-windows.ps1` stops at "Building" with
+`ninja: error: 'C:/Program Files/Git/mingw64/bin/git.exe', needed by 'arx-version.rc', missing and no known rule to make it`.
+The same build directory built a few minutes earlier, and `git` works in the shell.
+**Cause:** Git for Windows 2.56 moved its binaries from `mingw64\bin` to `ucrt64\bin`. CMake found git once and keeps
+its path in the build directory's cache (`GIT_COMMAND:FILEPATH` in `CMakeCache.txt`); the version rule depends on that
+file, so ninja refuses to build. Every existing build directory has the old path; a fresh one does not.
+**Do:** set `GIT_COMMAND:FILEPATH=C:/Program Files/Git/ucrt64/bin/git.exe` in that build directory's
+`CMakeCache.txt` (or build with `-Clean`), then build again.
+
+## 2026-10-14 — `input-check.ps1` / `game-input-check.ps1`: trigger and face-button presses are not counted on `--loadlevel 10` (#473)
+
+**Symptom:** the control table check reports `use_right`, `act_right`, the chord's `jump` and `book` as 0 presses;
+only the stick taps (jump, crouch, the stick click) count. Neither check runs in CI.
+**Cause:** level 10 starts with a scripted scene (`scene state=start ... controlsBlocked=yes`). Since #394, A, B and
+the triggers skip a playing scene and reach nothing else, so the presses the check sends in the scene's first seconds
+skip it (`vr.skip what=SCENE` in arx.log) and never reach the control table.
+**Do:** until #473 is fixed, do not count these two checks as evidence; the `.xrs` sequences wait for
+`player.controlsBlocked eq false` first.
+
 ## 2026-10-14 — `playground-hands.xrs`: the left hand's reticle misses the pulled lever on CI, passes locally (#377)
 
 **Symptom:** CI run 38477911299 (PR #456) failed at `@until vr.reticle.left.under eq lever_9002 5s`: the ray hit
@@ -19,6 +40,18 @@ at -125.1). `vr-point` aims from where the hand is in that frame, so the ray dri
 handle, which lies 0.8 units in front of the wall.
 **Do:** after a teleport give the hands 30 frames and aim at a thin target once more before waiting on the reticle
 (`playground-hands.xrs` does this for the lever).
+
+## 2026-10-13 — A quad layer is in every simulated shot and invisible in the headset (#376)
+
+**Symptom:** the radial menus passed their sequence on the simulated headset (drawn, `overlayPixels` in both eyes)
+and could not be seen at all on the owner's Index, while the log showed them opening, hovering and running items.
+**Cause:** their swapchains were made lazily, the first time a menu opened - in `updateInput`, inside the frame,
+while the flat frame quad's image was acquired. SteamVR answered `xrCreateSwapchain` with
+`XR_ERROR_RUNTIME_FAILURE` (one `[E] VRSwapchain` line, then the menus worked unseen); the simulated runtime made it.
+Every other lazily made swapchain (beam, reticles) is made in `submitFrame` after the quad's release.
+**Do:** make swapchains with the session, or at least with no image of any swapchain acquired. The simulated runtime
+now refuses `xrCreateSwapchain` while another swapchain's image is acquired, with an `[E]` line, as SteamVR did; read
+the run digest of a headset run for `[E] VRSwapchain` before suspecting the composition.
 
 ## 2026-10-13 — In VR the inventory will not close and melee is refused after New game or `--loadlevel` (#394.5)
 
@@ -190,6 +223,17 @@ pointer dangled. The radial menu's quick load in a real game takes the same path
 **Do:** never keep an `Entity *` across frames without resolving it again - `heldEntity()` checks it against
 the player's weapon slot. Regression check: the end of `reach-lever.xrs` (`loadslot 0` with the sword held,
 then `vr.weapon.place eq hand`), and every `make-test-saves.ps1 -VrSim` run reloads all its saves.
+
+## 2026-10-13 — The game crashes on quit in `FT_Done_Face` after a feature drew text (#376)
+
+**Symptom:** a run that worked ends with exit code 1, no `Clean shutdown`, and a crash report whose stack is
+`freetype.dll!FT_Done_Face()` under `xtree` / `xmemory` from `ArxGame.cpp` (the shutdown). Nothing in the log says why.
+**Cause:** a `Font` taken with `FontCache::getFont` and never given back with `FontCache::releaseFont`. At the exit
+`FontCache::shutdown` deletes the cache: its destructor only *asserts* that every font was released (nothing in a
+Release build), frees the FreeType library, and then the leaked font's face is destroyed against the freed library.
+The first radial menu kept two fonts of its own for the whole run.
+**Do:** draw with the game's fonts (`hFontControls`, `hFontInGame`, … in `gui/Text.h`: the right language's glyphs,
+replaced when the interface is laid out again), or release an own font before `ARX_Text_Close`.
 
 ## 2026-10-12 — An instant `vr-sim hand ... pos` set-up move counts as a melee swing on a busy runner (#349)
 

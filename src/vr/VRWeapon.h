@@ -33,8 +33,8 @@ class Entity;
  * \brief The weapon in the IK hand of the full body (#75, D-009, D-033)
  *
  *  - While the IK drives the right arm (vr/VRBody.h), an equipped dagger, one- or two-handed weapon is
- *    linked to the model's right hand - outside the engine's combat mode too: VR has no draw or sheathe
- *    control (D-019: the weapon stays in the hand), the trigger stays a click and #39's swings hit. When
+ *    linked to the model's right hand - outside the engine's combat mode too: VR's draw / sheathe is its
+ *    own (\ref toggleHeldWeapon, D-042), drawn the trigger charges and #39's swings hit. When
  *    the right arm goes back to the engine (no controller, flat mode) the weapon goes back to where the
  *    engine keeps it (the back, or the hand in combat mode). Bows are left to the engine.
  *  - The hilt sits on the palm attach point and the blade lies along the controller's handle (grip -Z,
@@ -67,6 +67,17 @@ bool suppressArmAnimation(const Entity * io, const std::string & armAnimation);
 Entity * weaponInHand();
 
 /*!
+ * \brief Draw or sheathe the weapon (#377, D-042: the stick click of the weapon hand - the right one until #380)
+ *
+ * Sheathed, the weapon stays where the engine keeps it outside the combat mode (on the back) and the hand is
+ * empty: its trigger drags again and swings do not hit. Drawn, the next \ref updateHeldWeapon puts it in the
+ * hand. The game starts with it drawn (the hand held it before there was a control). A press without a melee
+ * weapon equipped changes nothing.
+ * \return what the press did: "drawn", "sheathed" or "no_weapon"
+ */
+const char * toggleHeldWeapon();
+
+/*!
  * \brief Put the held weapon's vertices where the hand holds it now (#39)
  *
  * The engine places a linked object's vertices only when it draws it; a hit check in the update (melee,
@@ -84,7 +95,9 @@ struct HeldWeaponStatus {
 	const char * kind = "none";    //!< dagger, 1h, 2h, bow, none
 	const char * place = "none";   //!< hand: held by the IK hand; engine: where the engine keeps it; none
 	bool inHand = false;           //!< linked to the right hand by this module
-	u64 handFrames = 0;            //!< frames held by the IK hand since the start
+	bool sheathed = false;         //!< the player sheathed it (\ref toggleHeldWeapon): the hand stays empty
+	u64 toggles = 0;               //!< presses of the draw / sheathe control that drew or sheathed it
+	u64 handFrames = 0;           //!< frames held by the IK hand since the start
 	u64 relinks = 0;               //!< links changed by this module
 	bool measured = false;         //!< the blade was read from the weapon's mesh
 	float bladeLength = 0.f;       //!< units, from the attach vertex to the tip along the blade

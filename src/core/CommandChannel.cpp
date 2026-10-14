@@ -72,6 +72,7 @@
 #include "gui/MenuPublic.h"
 #include "gui/MenuWidgets.h"
 #include "gui/Notification.h"
+#include "gui/book/Book.h"
 #include "gui/hud/PlayerInventory.h"
 #include "gui/hud/SecondaryInventory.h"
 #include "input/Input.h"
@@ -93,6 +94,7 @@
 #include "scene/ChangeLevel.h"
 #include "scene/Interactive.h"
 #include "script/Script.h"
+#include "util/Number.h"
 #include "util/String.h"
 #include "vr/EyeImage.h"
 #include "vr/HeadTracking.h"
@@ -101,6 +103,7 @@
 #include "vr/VRComfort.h"
 #include "vr/VRInput.h"
 #include "vr/VRMelee.h"
+#include "vr/VRRadial.h"
 #include "vr/VRReticle.h"
 #include "vr/VRRunes.h"
 #include "vr/VRSimulator.h"
@@ -180,7 +183,26 @@ bool menuTargetRect(std::string_view name, Rectf & rect, std::string & why) {
 		rect = widget->m_rect;
 		return true;
 	}
-	why = std::string("needs the main menu or the character creation, mode is ") + menuModeName(ARXmenu.mode());
+	if(ARXmenu.mode() == Mode_InGame && (player.Interface & INTER_PLAYERBOOK)) {
+		// The open book's bookmarks (#377): book_stats, book_spells, book_map, book_quests
+		const struct { std::string_view name; ARX_INTERFACE_BOOK_MODE page; } tabs[] = {
+			{ "book_stats", BOOKMODE_STATS }, { "book_spells", BOOKMODE_SPELLS },
+			{ "book_map", BOOKMODE_MINIMAP }, { "book_quests", BOOKMODE_QUESTS },
+		};
+		for(const auto & tab : tabs) {
+			if(name == tab.name) {
+				if(!g_playerBook.tabRect(tab.page, rect)) {
+					why = "the book shows " + std::string(name) + " or has no bookmark for it";
+					return false;
+				}
+				return true;
+			}
+		}
+		why = "the open book has book_stats, book_spells, book_map and book_quests, not \"" + std::string(name) + "\"";
+		return false;
+	}
+	why = std::string("needs the main menu, the character creation or the open book, mode is ")
+	      + menuModeName(ARXmenu.mode());
 	return false;
 }
 
@@ -419,6 +441,11 @@ std::string menuHover(const Vec2f & mouse) {
 	Rectf rect;
 	if(ARXmenu.mode() == Mode_CharacterCreation && target.menu && g_characterCreation.targetRect(target.id, rect)
 	   && rect.contains(mouse)) {
+		return target.id;
+	}
+	// The open book's bookmarks (#377)
+	std::string why;
+	if(ARXmenu.mode() == Mode_InGame && target.menu && menuTargetRect(target.id, rect, why) && rect.contains(mouse)) {
 		return target.id;
 	}
 	return "none";
@@ -705,6 +732,8 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("menuPage", ARXmenu.mode() == Mode_MainMenu ? menuPageName(currentMenuPage()) : "none");
 	json.value("area", g_currentArea ? u32(g_currentArea) : 0u);
 	json.value("paused", g_gameTime.isPaused() != 0);
+	// The game clock: it runs while a VR radial menu is open (#376), stops in the pause menu
+	json.value("gameTimeMs", toMsi(g_gameTime.now()));
 	json.value("cinematic", isInCinematic());
 	// The timed texts at the top of the 2D interface (a script's tutorial hint): a shot of the HUD that must not
 	// change waits for none (#370)
@@ -735,6 +764,11 @@ std::string buildStatus(PlatformInstant now) {
 		// and refuses melee; in VR always on in the game (#394)
 		json.value("freelook", TRUE_PLAYER_MOUSELOOK_ON);
 		json.value("bookOpen", (player.Interface & INTER_PLAYERBOOK) != 0);
+		// The page the book shows (or last showed): stats, spells, map, quests (#376)
+		const char * const bookPages[] = { "stats", "spells", "map", "quests" };
+		const size_t bookPage = size_t(g_playerBook.currentPage());
+		json.value("bookPage", bookPage < std::size(bookPages) ? bookPages[bookPage] : "?");
+		json.value("torch", player.torch ? player.torch->idString() : std::string("none"));
 		json.value("crouchToggle", bGCroucheToggle);
 		// The character crouches - the button, the toggle, the head (#100) or a low ceiling
 		json.value("crouched", (player.m_currentMovement & PLAYER_CROUCH) != 0);
@@ -1243,6 +1277,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("kind", weapon.kind);
 		json.value("place", weapon.place);
 		json.value("inHand", weapon.inHand);
+		json.value("sheathed", weapon.sheathed);
+		json.value("toggles", weapon.toggles);
 		json.value("handFrames", weapon.handFrames);
 		json.value("relinks", weapon.relinks);
 		json.value("measured", weapon.measured);
@@ -1324,6 +1360,50 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("z", point.point.z);
 			json.end();
 		}
+		json.end();
+	}
+	{
+		// The radial menus on B (#376): per hand open, under the hand, the last release; the quick slots
+		const vr::RadialStatus & radial = vr::radialStatus();
+		json.object("radial");
+		json.value("torchHand", radial.torchHand);
+		// The menus' images exist: without them the menus work unseen (the owner's first headset run)
+		json.value("images", vr::radialImagesMade());
+		json.value("drawn", radial.drawn);
+		json.value("sideLetters", radial.sideLetters);
+		for(size_t hand = 0; hand < vr::HandCount; hand++) {
+			const vr::RadialHandStatus & h = radial.hands[hand];
+			json.object(vr::handName(vr::Hand(hand)));
+			json.value("open", h.open);
+			json.value("halfRing", h.halfRing);
+			json.value("hovered", h.hovered);
+			json.value("chosen", h.chosen);
+			json.value("result", h.result);
+			json.value("refused", h.refused.empty() ? std::string("none") : h.refused);
+			json.value("opens", h.opens);
+			json.value("choices", h.choices);
+			json.value("gameMenuKeys", h.gameMenuKeys);
+			json.value("placed", h.placed);
+			json.value("shown", h.shown);
+			// The quad layer was in the last submitted frame (#377: the same as shown), and why its image was not drawn
+			json.value("submitted", vr::radialLayerShown(vr::Hand(hand)));
+			const std::string undrawn = vr::radialImageRefusal(vr::Hand(hand));
+			json.value("undrawn", undrawn.empty() ? std::string("none") : undrawn);
+			json.value("pointX", h.point.x);
+			json.value("pointY", h.point.y);
+			writeVec(json, "center", h.center);
+			json.end();
+		}
+		// The quick slots of the ring (#377): r1..r3 the right hand's, l1..l3 the left hand's - the kind each holds
+		json.object("slots");
+		for(vr::Hand side : { vr::Hand::Right, vr::Hand::Left }) {
+			const vr::QuickSlotSet slots = vr::quickSlots(side);
+			for(size_t slot = 0; slot < slots.size(); slot++) {
+				const std::string name = (side == vr::Hand::Left ? "l" : "r") + std::to_string(slot + 1);
+				json.value(name, slots[slot].empty() ? std::string("none") : slots[slot]);
+			}
+		}
+		json.end();
 		json.end();
 	}
 	{
@@ -1907,6 +1987,12 @@ std::string execute(std::string_view line) {
 		return std::string();
 	}
 
+	if(word == "vr-radial") {
+		// The radial menus (#376): point <hand> <item> moves the simulated hand onto an item of its open menu
+		std::string error = vr::radialCommand(rest);
+		return error.empty() ? error : refuse(error);
+	}
+
 	if(word == "vr-sim") {
 		// The simulated headset (#112): any script command, now or @<frame> on its timeline
 		std::string error = vr::simCommand(rest);
@@ -2226,8 +2312,8 @@ std::string execute(std::string_view line) {
 	if(word == "vr-point") {
 		// vr-point <left|right> item|container [<dx> <dy>] | bag | menu <name> | <x> <y>: turn a simulated hand
 		// (--vr-sim) so its aim ray points at the first item in the open inventory bag or container (#38), a free bag
-		// slot (#38), a menu widget (#394), or a pixel of the 2D interface, on the floating panel (#34). Aims only -
-		// what the pointer makes of the ray is the game's own path
+		// slot (#38), a menu widget (#394) or the open book's bookmark (#377), or a pixel of the 2D interface, on the
+		// floating panel (#34). Aims only - what the pointer makes of the ray is the game's own path
 		std::istringstream iss{std::string(rest)};
 		std::string hand, what;
 		iss >> hand >> what;
@@ -2308,7 +2394,19 @@ std::string execute(std::string_view line) {
 			if(!bag && !g_secondaryInventoryHud.openContainer()) {
 				return refuse("vr-point container: needs a container open");
 			}
-			// The first item of the shown bag, and the middle of the pixels it answers to
+			// The first item of the shown bag - of a kind when one is named (#376: item potion_life) - and the
+			// middle of the pixels it answers to
+			std::string kind;
+			if(bag) {
+				const std::streampos mark = iss.tellg();
+				std::string next;
+				if(iss >> next && !util::toFloat(next)) {
+					kind = next;
+				} else {
+					iss.clear();
+					iss.seekg(mark);
+				}
+			}
 			Entity * item = nullptr;
 			Vec2f low(0.f), high(0.f);
 			const s32 step = 2;
@@ -2316,7 +2414,7 @@ std::string execute(std::string_view line) {
 				for(s32 x = 0; x < g_size.width(); x += step) {
 					const Vec2s pixel = Vec2s(s16(x), s16(y));
 					Entity * found = bag ? g_playerInventoryHud.getObj(pixel) : g_secondaryInventoryHud.getObj(pixel);
-					if(!found || (item && found != item)) {
+					if(!found || (item && found != item) || (!kind.empty() && found->className() != kind)) {
 						continue;
 					}
 					if(!item) {
@@ -2328,7 +2426,11 @@ std::string execute(std::string_view line) {
 				}
 			}
 			if(!item) {
-				return refuse(bag ? "vr-point item: no item in the shown inventory bag" : "vr-point container: no item in the open container");
+				if(!bag) {
+					return refuse("vr-point container: no item in the open container");
+				}
+				return refuse("vr-point item: no item" + (kind.empty() ? std::string() : " of the kind \"" + kind + "\"")
+				              + " in the shown inventory bag");
 			}
 			// Optionally that many pixels beside it: a hand moving while the trigger is held (a drag)
 			Vec2f offset(0.f);

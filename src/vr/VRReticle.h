@@ -67,6 +67,12 @@ void updateReticles(const std::array<HandAim, HandCount> & aims, double now);
 //! The reticles are on: in the game, first person, nothing that takes the mouse from the world
 bool reticlesOn();
 
+/*!
+ * The hands are the mouse (D-016): the reticles are on, or the floating panel shows (the book stays in freelook in
+ * VR, #377) - the engine's freelook then takes the mouse from the pointer, not the screen's centre
+ */
+bool handsAreTheMouse();
+
 //! The hand's world target for the arbiter (\c onWorld and \c pixel; untouched when it has none)
 void reticleTarget(Hand hand, PointerRay & ray);
 
@@ -82,7 +88,7 @@ void afterPointer(const MenuPointer & pointer, const std::array<PointerRay, Hand
 /*!
  * \a hand's act fired this frame (#38, D-042: doors, levers, chests, NPCs and corpses): when its reticle is on
  * such an entity in reach, the entity is acted on as by the engine's double click (\ref takeReticleAct).
- * Over an item it does nothing: the same chord stashes the item (VRControls.h, sharesBindingByDesign).
+ * Over an item it does nothing: the same chord uses the item (VRControls.h, sharesBindingByDesign).
  * Called after \ref updateReticles
  * \return whether the act was taken (an entity to act on is under the hand's reticle)
  */
@@ -98,7 +104,7 @@ Entity * takeReticleAct();
 enum class ReticlePick {
 	NotMine, //!< the reticles are off: the engine's own pick
 	Found,   //!< a world reticle's pixel: \a entity is what its ray picked (may be null)
-	Blocked  //!< a pixel of the 2D interface: it never picks the world while the reticles are on
+	Blocked  //!< a pixel of the 2D interface: it never picks the world - the reticles on, or off for the panel (#377)
 };
 
 ReticlePick reticlePickAt(const Vec2s & pos, Entity *& entity);

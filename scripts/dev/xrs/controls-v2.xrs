@@ -484,6 +484,77 @@ vr-sim action trigger right 0; vr-sim action grip right 0
 @assert vr.reticle.lastAct eq lever_9002
 @assert vr.reticle.lastActHand eq right
 
+# The chest open (it brings the engine's cursor-mode bag with it): each hand's radial menu is drawn over it, follows
+# the hand and runs - the owner's missing ring clustered in this state (a book or a container with that bag)
+setpos 8420 -170 7820 0
+@frames 30
+vr-point right face chest_metal_9001
+@frames 5
+vr-point right face chest_metal_9001
+@until vr.reticle.right.entity eq chest_metal_9001 5s
+vr-sim action grip right 1
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0; vr-sim action grip right 0
+@until ui.container eq chest_metal_9001 5s
+@frames 30
+vr-sim hand right pos 0.12 -0.2 -0.38; vr-sim hand left pos -0.12 -0.2 -0.38
+@frames 10
+@shot chest-no-ring
+@remember chestOverlayL vr.sim.shots.chest-no-ring.left.overlayPixels
+vr-input down right.b
+@frames 5
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.submitted eq true
+@assert vr.radial.right.undrawn eq none
+@shot chest-ring-right
+@assert vr.sim.shots.chest-ring-right.left.overlayPixels gt {chestOverlayL+5000}
+vr-radial point right map
+@frames 10
+@assert vr.radial.right.hovered eq map
+vr-radial point right center
+@frames 10
+@assert vr.radial.right.hovered eq none
+vr-input up right.b
+@until ui.container eq none 5s
+@assert vr.radial.right.result eq closed
+@log GameEvent:.*vr\.radial hand=right state=chosen item=none result=closed .*frames=\d+ drawn=\d+ submitted=\d+
+@frames 30
+# ... the left hand the same, on the chest opened again
+vr-point right face chest_metal_9001
+@frames 5
+vr-point right face chest_metal_9001
+@until vr.reticle.right.entity eq chest_metal_9001 5s
+vr-sim action grip right 1
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0; vr-sim action grip right 0
+@until ui.container eq chest_metal_9001 5s
+@frames 30
+vr-sim hand right pos 0.12 -0.2 -0.38
+@frames 10
+@shot chest-no-ring-left
+@remember chestOverlayL2 vr.sim.shots.chest-no-ring-left.left.overlayPixels
+vr-input down left.b
+@frames 5
+@assert vr.radial.left.open eq true
+@assert vr.radial.left.submitted eq true
+@assert vr.radial.left.undrawn eq none
+@shot chest-ring-left
+@assert vr.sim.shots.chest-ring-left.left.overlayPixels gt {chestOverlayL2+5000}
+vr-radial point left quests
+@frames 10
+@assert vr.radial.left.hovered eq quests
+vr-radial point left center
+@frames 10
+vr-input up left.b
+@until ui.container eq none 5s
+@assert vr.radial.left.result eq closed
+@until player.inventoryOpen eq false 5s
+@frames 30
+
 # An item: grip, then trigger uses it - the pie on the table is eaten, not taken into the bag (no stash, D-042)
 approach applepie_9001
 @frames 10

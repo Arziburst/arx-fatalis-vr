@@ -131,8 +131,14 @@ vr-input stick left 0 0
 @assert scene.shown eq first
 @until scene.kind eq none 30s
 vr-input turn snap
-# T2 and the blind guard (the owner, #29): a new game's hero stands off the level for 2 s before the prison intro
-# (TRAPS.md); the first view stays black while its eye has no floor under it, so no frame of the intro is measured below 1.2 m
+# T2, the new game's prison intro from the pause menu (the owner, #29): the hero stands off the level for 2 s (TRAPS.md) -
+# every view stays black there - and is then dragged lying by the goblins, first person's eye 10 cm over the floor. What
+# first person does with an eye below 1.2 m is vr_scene_first_low (the owner picks): clamp (default) raises it, black
+# holds the fade, screen shows the scene on the screen in the room
+@assert scene.firstLow eq clamp
+# T2 with vr_scene_first_low clamp
+scene firstlow clamp
+@assert scene.firstLow eq clamp
 menu pause
 @until menuMode eq mainmenu 10s
 scene meter reset
@@ -143,8 +149,47 @@ newgame
 @until player.controlsBlocked eq false 120s
 @until scene.active eq false 30s
 @assert scene.meter.sceneFrames gt 0
-@assert scene.meter.minAboveFloorM ge 1.2
-@remember cuts2 scene.meter.cuts
-@assert scene.meter.fadedCuts eq {cuts2}
+@remember cuts2clamp scene.meter.cuts
+@assert scene.meter.fadedCuts eq {cuts2clamp}
 @assert scene.meter.letterboxFrames eq 0
+@assert scene.meter.minAboveFloorM ge 1.2                 # the eye raised
+@remember blindClamp scene.meter.blindFrames
+
+# T2 with vr_scene_first_low black
+scene firstlow black
+@assert scene.firstLow eq black
+menu pause
+@until menuMode eq mainmenu 10s
+scene meter reset
+newgame
+@until state eq GAMEPLAY 60s
+@until scene.active eq true 60s
+@until scene.shown eq first 30s
+@until player.controlsBlocked eq false 120s
+@until scene.active eq false 30s
+@assert scene.meter.sceneFrames gt 0
+@remember cuts2black scene.meter.cuts
+@assert scene.meter.fadedCuts eq {cuts2black}
+@assert scene.meter.letterboxFrames eq 0
+@assert scene.meter.minAboveFloorM ge 1.2                 # no low frame seen: black instead
+@assert scene.meter.blindFrames gt {blindClamp*3}           # black far longer than the 2 s off the level
+
+# T2 with vr_scene_first_low screen
+scene firstlow screen
+@assert scene.firstLow eq screen
+menu pause
+@until menuMode eq mainmenu 10s
+scene meter reset
+newgame
+@until state eq GAMEPLAY 60s
+@until scene.active eq true 60s
+@until scene.shown eq screen 60s
+@until player.controlsBlocked eq false 120s
+@until scene.active eq false 30s
+@assert scene.meter.sceneFrames gt 0
+@remember cuts2screen scene.meter.cuts
+@assert scene.meter.fadedCuts eq {cuts2screen}
+@assert scene.meter.letterboxFrames eq 0
+@assert scene.meter.screenFrames gt 0
+
 @assert errors eq 0

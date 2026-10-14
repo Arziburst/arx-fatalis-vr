@@ -649,6 +649,7 @@ void writeSceneStatus(JsonWriter & json) {
 	json.value("view", vr::sceneViewName(scene.view));
 	json.value("shown", vr::sceneShownName(scene.director.shown()));
 	json.value("lookat", vr::sceneLookAtName(scene.lookAt));
+	json.value("firstLow", vr::sceneFirstLowName(scene.firstLow));
 	json.value("fade", scene.director.fade());
 	json.value("armsIk", scene.armsIk);
 	json.object("meter");
@@ -663,6 +664,7 @@ void writeSceneStatus(JsonWriter & json) {
 	json.value("lookats", meter.lookats());
 	json.value("fadedLookats", meter.fadedLookats());
 	json.value("letterboxFrames", meter.letterboxFrames());
+	json.value("blindFrames", meter.blindFrames());
 	json.end();
 	json.object("subtitle");
 	json.value("visible", subtitle.visible);
@@ -1954,13 +1956,15 @@ std::string execute(std::string_view line) {
 			vr::sceneState().view = *vr::parseSceneView(name);
 		} else if(what == "lookat" && vr::parseSceneLookAt(name)) {
 			vr::sceneState().lookAt = *vr::parseSceneLookAt(name);
+		} else if(what == "firstlow" && vr::parseSceneFirstLow(name)) {
+			vr::sceneState().firstLow = *vr::parseSceneFirstLow(name);
 		} else if(what == "subtitles" && vr::parseSubtitlePlacement(name)) {
 			vr::setSubtitlePlacement(*vr::parseSubtitlePlacement(name));
 		} else if(what == "meter" && name == "reset") {
 			vr::sceneState().meter.reset();
 			vr::resetSubtitleCounts();
 		} else {
-			return refuse("scene: expected view first|observer|ghost|hybrid, lookat ignore|fade, "
+			return refuse("scene: expected view first|observer|ghost|hybrid, lookat ignore|fade, firstlow black|clamp|screen, "
 			              "subtitles above|chest|lowerthird or meter reset, got \"" + std::string(rest) + "\"");
 		}
 		LogInfo << "[channel] scene " << what << ' ' << name;

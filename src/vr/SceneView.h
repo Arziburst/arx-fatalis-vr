@@ -81,6 +81,14 @@ enum class SceneLookAt : u8 {
 	Fade    //!< the hero turns behind a short fade
 };
 
+//! What the first-person view does while the hero's eye is lower than \ref GhostMinAboveFloor - the hero lying or
+//! dragged by a script, the prison intro (cfg.ini \c vr_scene_first_low; the owner picks in the headset, #29)
+enum class SceneFirstLow : u8 {
+	Black, //!< the fade stays black until the eye is up again
+	Clamp, //!< the eye is raised to the minimum height, as a ghost's shot
+	Screen //!< the scene goes on the screen in the room, as the hybrid's far shots, until it ends
+};
+
 //! What owns the game's camera (status.json \c scene.kind)
 enum class SceneKind : u8 {
 	None,   //!< no scene camera (also a scene with only the letterbox on)
@@ -93,11 +101,14 @@ std::optional<SceneViewSetting> parseSceneView(std::string_view name);
 const char * sceneShownName(SceneShown shown);
 const char * sceneLookAtName(SceneLookAt lookAt);
 std::optional<SceneLookAt> parseSceneLookAt(std::string_view name);
+const char * sceneFirstLowName(SceneFirstLow low);
+std::optional<SceneFirstLow> parseSceneFirstLow(std::string_view name);
 const char * sceneKindName(SceneKind kind);
 
 //! The defaults (owner's answers on #29, 2026-10-13; the final pick is in the headset)
 constexpr SceneViewSetting DefaultSceneView = SceneViewSetting::Hybrid;
 constexpr SceneLookAt DefaultSceneLookAt = SceneLookAt::Ignore;
+constexpr SceneFirstLow DefaultSceneFirstLow = SceneFirstLow::Clamp; //!< the lead's proposal (#29)
 
 //! A change of the eyes' camera bigger than this in one frame is a cut (SPEC.md): 50 cm, 10 degrees
 constexpr float CutJumpUnits = 50.f;
@@ -266,6 +277,8 @@ struct SceneInput {
 	float seconds = 0.f;            //!< the frame's duration
 	bool hybridScreen = false;      //!< this frame of a camera entity's shot wants the hybrid's screen
 	bool firstOnFloor = true;       //!< a floor under the hero's eye (\c firstPos)
+	float firstFloorY = 0.f;        //!< that floor (y down), when \c firstOnFloor
+	SceneFirstLow firstLow = DefaultSceneFirstLow; //!< what first person does while that eye is too low
 	//! Whether there is a floor under a point the eyes would see from (a ghost's or the observer's shot); none: yes
 	std::function<bool(const Vec3f & pos)> hasFloor;
 	//! The observer's point for this scene (\ref placeObserver), asked once, at the observer's first cut
@@ -288,6 +301,7 @@ struct SceneOutput {
 	bool ended = false;                  //!< a scene shot was left (the game's view, or a scene of another kind)
 	SceneKind endedKind = SceneKind::None;
 	bool applyLookAt = false;            //!< turn the hero to the pending \c playerlookat now (at black)
+	bool blind = false;                  //!< held black: the eye has no floor under it, or first person's eye is too low
 
 };
 
@@ -374,6 +388,7 @@ private:
 	bool m_haveLastYaw = false;
 	float m_lastYaw = 0.f; //!< the eyes' yaw last frame, before the head
 	bool m_lookAtPending = false;
+	bool m_lowScreen = false; //!< \ref SceneFirstLow::Screen took this scene to the screen
 
 };
 
@@ -387,6 +402,7 @@ struct SceneMeterFrame {
 	float aboveFloor = 0.f;             //!< it above the floor under it, meters; no floor: 0
 	bool shotChanged = false;           //!< the shot changed this frame (\ref SceneOutput::cut)
 	bool ownTurn = false;               //!< the player's stick turned the hero since the last frame: no yaw step
+	bool blind = false;                 //!< held black by the director (\ref SceneOutput::blind)
 };
 
 /*!
@@ -411,6 +427,9 @@ public:
 	//! Cinematic bars were drawn into an eye (must never happen in VR)
 	void letterboxDrawn() { m_letterboxFrames++; }
 
+	//! A level was loaded: the eyes' camera moved behind the loading screen - no jump, no step across it
+	void breakChain() { m_havePrevious = false; m_haveMeasured = false; }
+
 	u64 frames() const { return m_frames; }
 	u64 sceneFrames() const { return m_sceneFrames; }
 	u64 screenFrames() const { return m_screenFrames; }
@@ -423,6 +442,7 @@ public:
 	u64 lookats() const { return m_lookats; }
 	u64 fadedLookats() const { return m_fadedLookats; }
 	u64 letterboxFrames() const { return m_letterboxFrames; }
+	u64 blindFrames() const { return m_blindFrames; }
 
 private:
 
@@ -438,6 +458,7 @@ private:
 	u64 m_lookats = 0;
 	u64 m_fadedLookats = 0;
 	u64 m_letterboxFrames = 0;
+	u64 m_blindFrames = 0;
 
 	bool m_havePrevious = false;  //!< the last frame, for jumps
 	Vec3f m_previousPos = Vec3f(0.f);
@@ -460,6 +481,7 @@ struct SceneState {
 	//! The switches now: read from cfg.ini at the start, changed live by the test channel (not saved)
 	SceneViewSetting view = DefaultSceneView;
 	SceneLookAt lookAt = DefaultSceneLookAt;
+	SceneFirstLow firstLow = DefaultSceneFirstLow;
 
 	bool active = false;             //!< a scripted scene owns the game's camera (last VR frame)
 	SceneKind kind = SceneKind::None; //!< what owns it

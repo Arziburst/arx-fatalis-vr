@@ -421,6 +421,68 @@ void SceneViewTest::blindTest() {
 	}
 }
 
+void SceneViewTest::firstLowTest() {
+
+	// The hero lies 10 cm over the floor (dragged by the prison intro's goblins), first person in a camera entity's shot
+	SceneInput lying = sceneOf(standing(), SceneKind::Entity, 3, SceneViewSetting::First);
+	lying.firstPos.y = -10.f;
+	SceneInput up = lying;
+	up.firstPos.y = -170.f;
+
+	// clamp: the eye raised to the minimum, nothing black
+	{
+		SceneDirector director;
+		director.update(standing());
+		lying.firstLow = SceneFirstLow::Clamp;
+		SceneOutput out;
+		for(int i = 0; i < 200; i++) {
+			out = director.update(lying);
+		}
+		CPPUNIT_ASSERT(out.shown == SceneShown::First);
+		CPPUNIT_ASSERT(!out.blind);
+		CPPUNIT_ASSERT_EQUAL(0.f, out.fade);
+		CPPUNIT_ASSERT(std::abs(out.pos.y + GhostMinAboveFloor) < SvEps);
+	}
+
+	// black: held black while the eye is low, the world back once he stands
+	{
+		SceneDirector director;
+		director.update(standing());
+		lying.firstLow = SceneFirstLow::Black;
+		up.firstLow = SceneFirstLow::Black;
+		SceneOutput out;
+		for(int i = 0; i < 200; i++) {
+			out = director.update(lying);
+		}
+		CPPUNIT_ASSERT(out.shown == SceneShown::First);
+		CPPUNIT_ASSERT(out.blind);
+		CPPUNIT_ASSERT(out.fade >= BehindFade);
+		settle(director, up);
+		CPPUNIT_ASSERT_EQUAL(0.f, director.fade());
+	}
+
+	// screen: the scene goes on the screen and stays there until it ends, also once he stands
+	{
+		SceneDirector director;
+		director.update(standing());
+		lying.firstLow = SceneFirstLow::Screen;
+		up.firstLow = SceneFirstLow::Screen;
+		settle(director, lying);
+		CPPUNIT_ASSERT(director.shown() == SceneShown::Screen);
+		settle(director, up);
+		CPPUNIT_ASSERT(director.shown() == SceneShown::Screen);
+		SceneInput after = standing();
+		after.firstLow = SceneFirstLow::Screen;
+		settle(director, after);
+		CPPUNIT_ASSERT(director.shown() == SceneShown::None);
+	}
+
+	CPPUNIT_ASSERT(parseSceneFirstLow("black") == SceneFirstLow::Black);
+	CPPUNIT_ASSERT(parseSceneFirstLow("screen") == SceneFirstLow::Screen);
+	CPPUNIT_ASSERT(!parseSceneFirstLow("floor"));
+	CPPUNIT_ASSERT_EQUAL(std::string("clamp"), std::string(sceneFirstLowName(DefaultSceneFirstLow)));
+}
+
 void SceneViewTest::heldYawTest() {
 
 	SceneDirector director;

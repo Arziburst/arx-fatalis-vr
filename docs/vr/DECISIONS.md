@@ -42,6 +42,10 @@ a changed decision keeps its history in that cell.
 - **No eye without a floor under it** (the owner, #29): in every view the fade stays black while the eyes' point - the
   hero's eye, a ghost's shot, the observer's point - has no floor under it (a new game's hero stands off the level for
   2 s before the prison intro).
+- **First person's eye too low** (cfg.ini `vr_scene_first_low`; the owner picks in the headset): while the hero's eye is
+  below 1.2 m above the floor in a scene - he lies or is dragged by a script, the prison intro - `clamp` (default, the
+  lead's proposal) raises the eye to 1.2 m as a ghost's shot, `black` holds the fade until he is up, `screen` puts
+  the scene on the screen in the room until it ends.
 - **No cinematic bars in the eyes**; the cinemascope state stays for the game (the hidden HUD, the skip rules).
 - **Subtitles in VR** (cfg.ini `vr_subtitles`, default `above`): every voiced line of a scene (a `speak -c` line, a
   camera entity, or the letterbox on) gets a subtitle with the speaker's localised name - also a line the original

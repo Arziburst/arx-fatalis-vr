@@ -59,6 +59,28 @@ const char * sceneShownName(SceneShown shown) {
 	return "none";
 }
 
+const char * sceneFirstLowName(SceneFirstLow low) {
+	switch(low) {
+		case SceneFirstLow::Black: return "black";
+		case SceneFirstLow::Clamp: return "clamp";
+		case SceneFirstLow::Screen: return "screen";
+	}
+	return "clamp";
+}
+
+std::optional<SceneFirstLow> parseSceneFirstLow(std::string_view name) {
+	if(name == "black") {
+		return SceneFirstLow::Black;
+	}
+	if(name == "clamp") {
+		return SceneFirstLow::Clamp;
+	}
+	if(name == "screen") {
+		return SceneFirstLow::Screen;
+	}
+	return std::nullopt;
+}
+
 const char * sceneLookAtName(SceneLookAt lookAt) {
 	return lookAt == SceneLookAt::Fade ? "fade" : "ignore";
 }
@@ -262,19 +284,32 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 		m_hybrid = HybridChoice();
 	}
 
+	// The hero's eye lower than a standing player's minimum above the floor under it (#29)
+	const bool firstTooLow = in.firstOnFloor && in.firstFloorY - in.firstPos.y < GhostMinAboveFloor;
+
 	// The shot the eyes should see now; the observer and the screen keep the eyes' camera through the
 	// scene's camera entities and lines - only a change of view or kind is a cut
 	Shot target;
 	if(in.active) {
 		target.shown = chooseShownView(in.setting, in.kind, m_hybrid.screen);
 		target.kind = in.kind;
+		// First person's eye too low (the hero lying or dragged by a script): the screen, for the rest of the scene
+		if(target.shown == SceneShown::First && in.firstLow == SceneFirstLow::Screen && (firstTooLow || m_lowScreen)) {
+			target.shown = SceneShown::Screen;
+			m_lowScreen = true;
+		}
 		const bool keeps = (target.shown == SceneShown::Observer || target.shown == SceneShown::Screen);
 		target.shot = keeps ? 0 : in.shot;
+	} else {
+		m_lowScreen = false;
 	}
 	if(target.shown != SceneShown::Observer) {
 		m_observer.valid = false;
 	}
 	Vec3f targetPos = in.firstPos;
+	if(target.shown == SceneShown::First && in.firstLow == SceneFirstLow::Clamp) {
+		targetPos = clampAboveFloor(in.firstPos, in.firstFloorY, in.firstOnFloor);
+	}
 	const bool following = (target.shown == SceneShown::None || target.shown == SceneShown::First);
 	if(target.shown == SceneShown::Ghost) {
 		// A ghost shot is the game's camera where the shot starts; a jump of the game's camera within it is
@@ -389,7 +424,7 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 	// shot or the observer's point; the screen has no eye in the world
 	bool onFloor = true;
 	if(m_shown.shown == SceneShown::First) {
-		onFloor = in.firstOnFloor;
+		onFloor = in.firstOnFloor && !(in.firstLow == SceneFirstLow::Black && firstTooLow);
 	} else if(m_shown.shown == SceneShown::Ghost || m_shown.shown == SceneShown::Observer) {
 		onFloor = !in.hasFloor || in.hasFloor(m_pos);
 	}
@@ -415,6 +450,7 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 	const bool holdYaw = m_cutPending || m_shown.shown == SceneShown::Screen;
 	out.yawDelta = holdYaw ? wrapSignedDegrees(m_heldYaw - in.playerYaw) : m_yawDelta;
 	out.fade = m_fade.value();
+	out.blind = blind;
 
 	m_haveLastYaw = true;
 	m_lastYaw = in.playerYaw + out.yawDelta;
@@ -461,6 +497,9 @@ void SceneMeter::add(const SceneMeterFrame & frame) {
 		if(behindFade) {
 			m_fadedCuts++;
 		}
+	}
+	if(frame.blind) {
+		m_blindFrames++;
 	}
 	m_havePrevious = true;
 	m_previousPos = frame.pos;

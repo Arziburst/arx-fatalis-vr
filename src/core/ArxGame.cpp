@@ -412,6 +412,7 @@ bool ArxGame::initConfig() {
 	// The scene switches (#29): from cfg.ini at the start; the test channel changes them for the session only
 	vr::sceneState().view = vr::parseSceneView(config.video.vrSceneView).value_or(vr::DefaultSceneView);
 	vr::sceneState().lookAt = vr::parseSceneLookAt(config.video.vrSceneLookAt).value_or(vr::DefaultSceneLookAt);
+	vr::sceneState().firstLow = vr::parseSceneFirstLow(config.video.vrSceneFirstLow).value_or(vr::DefaultSceneFirstLow);
 	vr::setSubtitlePlacement(vr::parseSubtitlePlacement(config.video.vrSubtitles).value_or(vr::DefaultSubtitlePlacement));
 	
 	Logger::configure(config.misc.debug);
@@ -1672,6 +1673,8 @@ void ArxGame::doFrame() {
 		g_requestLevelInit = false;
 		vr::perf::Scope perfLoad(vr::PerfPhase::Load);
 		levelInit();
+		// The level's loading screen sits between the old view and the new one: no cut for the scene meter (#29)
+		vr::sceneState().meter.breakChain();
 	} else {
 		cinematicLaunchWaiting();
 		{
@@ -2156,7 +2159,8 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 	in.engineYaw = engineCamera.angle.getYaw();
 	in.engineFloorY = floorBelow(in.enginePos, in.engineFloor);
 	in.firstPos = g_sceneFirstPos;
-	floorBelow(in.firstPos, in.firstOnFloor);
+	in.firstFloorY = floorBelow(in.firstPos, in.firstOnFloor);
+	in.firstLow = state.firstLow;
 	in.hasFloor = [](const Vec3f & pos) { bool found = false; floorBelow(pos, found); return found; };
 	in.playerYaw = player.angle.getYaw();
 	const vr::HeadStatus & head = vr::headStatus();
@@ -2218,6 +2222,7 @@ static void meterSceneFrame(const vr::SceneOutput & scene, const Vec3f & pos, fl
 	const float floorY = floorBelow(pos, floorFound);
 	frame.aboveFloor = floorFound ? (floorY - pos.y) / vr::UnitsPerMeter : 0.f;
 	frame.shotChanged = scene.cut;
+	frame.blind = scene.blind;
 	// The stick's turn reaches the hero's yaw a frame later: this frame and the next are the player's own
 	const float turned = vr::turnState().turned();
 	frame.ownTurn = turned != g_sceneTurned[0] || turned != g_sceneTurned[1];

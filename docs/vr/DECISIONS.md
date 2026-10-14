@@ -13,6 +13,49 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW-classic: The classic Arx arm - one elbow, the forearm one rigid piece, re-skinned by ring in VR; the glove optional at its wrist
+
+- **Date:** 2026-10-14
+- **Status:** Accepted (the classic arm's hand defaults to the Arx hand until the owner compares it with the glove in
+  the headset)
+- **Decided by:** project owner (#466: the Arx arm one solid piece up to the elbow, a fifth model behind
+  `vr_arms_model`; asked whether the classic arm could wear the five-finger glove); #466.1 and #466.2 for the formulation
+- **Amends:** D-NEW-armvariants (a fifth model, `classic`, the row it reserved)
+
+### Decision
+`vr_arms_model = classic` draws the player model's own arm with **one elbow**: in VR only, after the engine's transform,
+the arm's vertices are re-skinned by the ring of the arm they lie in, not by their group (`src/vr/ArxArmFix.*`,
+`skinPlayerArms`) - the rings before the elbow ring on the upper arm, the elbow ring up to the wrist ring on the forearm,
+the wrist ring and the hand on the hand. The arm folds in one band at the elbow and the forearm is rigid. `arx` stays the
+engine's skin, for comparison. It is a row of the model table (`arxArms` true: the logical arm stays on the drawn,
+pushed shoulder) and the lever's fifth step (custom -> forearm -> hands -> arx -> classic -> custom).
+
+Its hand is a second switch, `vr_classic_hand` = `arx` (default) | `glove` (`arms classic-hand <hand>`): with `glove`
+the Arx hand faces (every corner on the classic hand: the wrist ring and past it) are left out and the custom arms'
+five-finger glove (#385.7: joints, controls, the hilt pose) is drawn with its cuff on the Arx wrist joint, turned as on
+the controller's handle; no sleeve - the Arx forearm ends in the glove's cuff.
+
+### Why
+- **The measured cause** of the second elbow (TRAPS.md 2026-10-14, `human_base`, both arms): the forearm group holds
+  only the forearm's first third (11 vertices, 2.5 .. 11.3 units past the elbow of 30.5); the other two thirds are in
+  the wrist group, so every wrist bend and the wrist band's share of the roll fold the forearm in its middle; 3 faces
+  join a wrist vertex straight to the upper arm, and the elbow ring mixes both groups. The research's flat-ring (H1) and
+  stray-face (H2 alone) hypotheses were not it. Re-skinning by ring removes the cause without new art.
+- The owner keeps the Arx look as an option beside the own arms (D-NEW-armvariants) and asked for the five fingers on
+  it; the glove already exists with its finger sources, so it is an option, not new work.
+
+### Trade-offs accepted
+- The re-skin is VR only: flat mode and the inventory book keep the engine's arm (and its second elbow).
+- The glove at the Arx wrist keeps its turn on the handle rather than the Arx hand's, so a kink at the wrist is possible;
+  the owner judges the seam in the headset.
+
+### Consequences
+- status.json `vr.body.<hand>.classic.{skin, drawn, creases, creaseThreshold, creaseBands, maxBend, elbowBend,
+  forearmTwistSpread}` (#466.1) and `.hand`, `.arxHandHidden` (#466.2); `arms-classic.xrs`, `arms-classic-glove.xrs`
+  and the five-step `arms-variants-lever.xrs`. How to switch: [TESTING.md](TESTING.md).
+
+---
+
 ## D-NEW-armvariants: The VR arms are a choice of four - custom, forearm, hands, arx - switched live; full arms are not the only VR body
 
 - **Date:** 2026-10-14

@@ -759,29 +759,30 @@ are under [Commands](#commands). CI installs node 22 with `actions/setup-node` (
 sequences; a machine without node (a local `ci-smoke.ps1` included) reports them **NOT RUN** with a warning in the job summary, never a pass. The tester zip does not carry
 the playground yet (#359).
 
-### Switching the arms: custom, forearm, hands or Arx (#385)
+### Switching the arms: custom, forearm, hands, Arx or classic (#385, #466)
 
-The VR body has four arm models (D-NEW-arms "Own VR arms", D-NEW-armvariants "a choice of four"):
+The VR body has five arm models (D-NEW-arms "Own VR arms", D-NEW-armvariants "a choice of four", D-NEW-classic):
 - **custom** (the default) — the leather glove hand (Godot XR Tools, CC0) and a cloth sleeve from the shoulder to
   the wrist, textures in `data/core/vr/arms/`;
 - **forearm** — the glove and a short forearm: the sleeve from the wrist along the forearm, cut at 0.6 of its length
   and closed by a cuff before the elbow; no upper arm, no elbow;
 - **hands** — the glove alone, its wrist opening closed by a cuff (Half-Life: Alyx);
-- **arx** — the original Arx arms.
+- **arx** — the original Arx arms;
+- **classic** — the original Arx arms with one elbow, the forearm one rigid piece (#466, below).
 
-The IK, the reach and the roll rules are the same for all four; only what is drawn differs. **Flat mode and the
+The IK, the reach and the roll rules are the same for all five; only what is drawn differs. **Flat mode and the
 inventory book always show the Arx arms.**
 
 **How to switch** (any one of these; live, saved to cfg.ini):
 - **The arms lever** (a third lever on the lever wall of the playground, role `lever_arms`): each pull steps to the
-  next model — custom → forearm → hands → arx → custom. Its channel twin is `playground pull arms`.
-- **The channel command** (`--test-dir`): `arms custom`, `arms forearm`, `arms hands` or `arms arx`;
+  next model — custom → forearm → hands → arx → classic → custom. Its channel twin is `playground pull arms`.
+- **The channel command** (`--test-dir`): `arms custom`, `arms forearm`, `arms hands`, `arms arx` or `arms classic`;
   `arms scale <factor>` sets the hand size.
-- **cfg.ini** (read at start): `vr_arms_model` = `custom` | `forearm` | `hands` | `arx` (default `custom`) and
+- **cfg.ini** (read at start): `vr_arms_model` = `custom` | `forearm` | `hands` | `arx` | `classic` (default `custom`) and
   `vr_hand_scale` (default `1.15`, range `0.8` – `1.5`; the Arx hands are too small, so the custom hand is a little
   larger).
 
-status.json shows the state: `vr.body.armsModel` (`custom` | `forearm` | `hands` | `arx`), `vr.body.arxArmsHidden`,
+status.json shows the state: `vr.body.armsModel` (`custom` | `forearm` | `hands` | `arx` | `classic`), `vr.body.arxArmsHidden`,
 `vr.body.<left|right>.handScale` and `vr.body.<left|right>.custom.*` — among them `gloveDrawn`, `sleeveDrawn` (custom
 and forearm), `upperArmDrawn` (custom only) and `forearmLength` (the forearm as drawn: the fitted one for custom,
 0.6 of it for forearm, 0 for hands). Sequences: `arms-model.xrs`, `arms-variants.xrs` and `arms-variants-lever.xrs`
@@ -810,6 +811,34 @@ unchanged.
 - **Forearm and hands** (#385.8): does a missing elbow bother you less than a wrong one? Is the forearm's length
   right (it ends at 0.6 of the forearm)? How do the cuffs look — the forearm's end and the closed wrist of the hands —
   hanging, held ahead and with the wrist rolled 90° and 180°?
+
+#### The classic Arx arm and its hand (#466)
+
+**classic** is the fifth model (D-NEW-classic): the original Arx arm with **one elbow** — the forearm is one rigid
+piece from the elbow to the wrist instead of folding in its middle (the measured cause: [TRAPS.md](TRAPS.md),
+2026-10-14). It is re-skinned in VR only; **arx** stays the engine's arm, for comparison. The lever cycle is
+custom → forearm → hands → arx → classic → custom; the channel command is `arms classic`, cfg.ini
+`vr_arms_model = classic`.
+
+The classic arm's **hand** is a second switch, to compare the Arx hand with our five-finger glove on the same arm:
+- **arx** (the default) — the Arx hand of the player model, its three finger groups;
+- **glove** — the Arx hand is not drawn; the glove of the custom arms (five fingers, the runtime's joints or the
+  controls, the hilt pose on a held weapon) sits at the Arx wrist, turned as on the controller's handle, and the Arx
+  forearm ends in its cuff (no sleeve).
+
+How to switch (live, saved to cfg.ini): `arms classic-hand arx` or `arms classic-hand glove`; cfg.ini
+`vr_classic_hand` = `arx` | `glove`. It only matters with `vr_arms_model = classic`. status.json:
+`vr.body.<left|right>.classic.hand` (the switch), `vr.body.<left|right>.classic.arxHandHidden` (the Arx hand faces
+left out this frame — true only with the glove on a posed arm), `vr.body.<left|right>.custom.gloveDrawn` and
+`vr.hands.<left|right>.hiltPose` (the glove's, as on the custom arms); the one elbow:
+`vr.body.<left|right>.classic.creases` (bands bent past 20 degrees, 1 on a bent arm) and `.forearmTwistSpread`.
+Sequences: `arms-classic.xrs` (one elbow) and `arms-classic-glove.xrs` (the hand switch, sword save `mvp-items`):
+`.\scripts\dev\xrs-run.ps1 arms-classic-glove`.
+
+**What to compare:** classic against arx (the second elbow gone? the elbow band with the hand rolled 90° and 180°),
+then the classic arm with `classic-hand arx` against `classic-hand glove`: does the glove meet the Arx forearm without a
+gap or a kink at the wrist, hanging, held ahead and rolled; is its size right next to the Arx arm (`vr_hand_scale`);
+which hand do you want on the classic arm?
 
 ### Switching the body: full or hidden (#385.11)
 

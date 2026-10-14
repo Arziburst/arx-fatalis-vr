@@ -41,14 +41,14 @@ vr-input stick left 0 0
 # T5: every speak -c mode on Kultar (one stretch, no input)
 scene meter reset
 # zoom
-human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_encourage2]
+human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_cantgo]
 @until scene.kind eq speech 15s
 @until scene.shown eq observer 5s
 @assert scene.active eq true
 @assert scene.armsIk eq false
 @until scene.kind eq none 30s
 # keep
-human_base_0028.speak -c keep [kultar_encourage]
+human_base_0028.speak -c keep [kultar_cantgo]
 @until scene.kind eq speech 15s
 @until scene.shown eq observer 5s
 @assert scene.active eq true
@@ -62,28 +62,28 @@ human_base_0028.speak -c side player 5 5 90 90 0 [kultar_cantgo]
 @assert scene.armsIk eq false
 @until scene.kind eq none 30s
 # side_l
-human_base_0028.speak -c side_l player 5 5 90 90 0 [kultar_please]
+human_base_0028.speak -c side_l player 5 5 90 90 0 [kultar_cantgo]
 @until scene.kind eq speech 15s
 @until scene.shown eq observer 5s
 @assert scene.active eq true
 @assert scene.armsIk eq false
 @until scene.kind eq none 30s
 # side_r
-human_base_0028.speak -c side_r player 5 95 400 150 -10 [kultar_hey]
+human_base_0028.speak -c side_r player 5 95 400 150 -10 [kultar_cantgo]
 @until scene.kind eq speech 15s
 @until scene.shown eq observer 5s
 @assert scene.active eq true
 @assert scene.armsIk eq false
 @until scene.kind eq none 30s
 # ccctalker_l
-human_base_0028.speak -c ccctalker_l player 90 100 [kultar_encourage2]
+human_base_0028.speak -c ccctalker_l player 90 100 [kultar_cantgo]
 @until scene.kind eq speech 15s
 @until scene.shown eq observer 5s
 @assert scene.active eq true
 @assert scene.armsIk eq false
 @until scene.kind eq none 30s
 # ccctalker_r
-human_base_0028.speak -c ccctalker_r player 80 40 [kultar_encourage]
+human_base_0028.speak -c ccctalker_r player 80 40 [kultar_cantgo]
 @until scene.kind eq speech 15s
 @until scene.shown eq observer 5s
 @assert scene.active eq true
@@ -97,7 +97,7 @@ human_base_0028.speak -c ccclistener_l player 50 50 [kultar_cantgo]
 @assert scene.armsIk eq false
 @until scene.kind eq none 30s
 # ccclistener_r
-human_base_0028.speak -c ccclistener_r player 40 40 [kultar_please]
+human_base_0028.speak -c ccclistener_r player 40 40 [kultar_cantgo]
 @until scene.kind eq speech 15s
 @until scene.shown eq observer 5s
 @assert scene.active eq true

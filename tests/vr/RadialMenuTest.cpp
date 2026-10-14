@@ -91,14 +91,14 @@ void RadialMenuTest::testMiddleSelectsNothing() {
 	selector.reset();
 	checkChoice("at the middle", "none", selector.update(Vec2f(0.f)));
 	checkChoice("3 cm right", "none", selector.update(Vec2f(0.03f, 0.f)));
-	checkChoice("5 cm right", "slot2", selector.update(Vec2f(0.05f, 0.f)));
+	checkChoice("5 cm upper right", "r2", selector.update(at(30.f, 0.05f)));
 	checkChoice("back in the hole", "none", selector.update(Vec2f(0.01f, 0.01f)));
 }
 
 void RadialMenuTest::testSegments() {
 
 	const char * const expected[vr::RadialSegmentCount] = {
-		"inventory", "slot1", "slot2", "slot3", "slot4", "slot5", "slot6", "slot7",
+		"r1", "r2", "r3", "l3", "l2", "l1",
 	};
 	for(size_t segment = 0; segment < vr::RadialSegmentCount; segment++) {
 		vr::RadialSelector selector;
@@ -106,39 +106,48 @@ void RadialMenuTest::testSegments() {
 		const float degrees = vr::segmentCenterDegrees(segment);
 		checkChoice("segment " + std::to_string(segment), expected[segment], selector.update(at(degrees, 0.08f)));
 		// Beyond the ring's edge it is still the same segment, except above it (the half-ring)
-		if(segment != 0 && segment != 1 && segment != 7) {
+		if(segment != 0) {
 			checkChoice("outside, segment " + std::to_string(segment), expected[segment],
 			            selector.update(at(degrees, 0.2f)));
 		}
 	}
 
+	// The right half the right hand's slots, the left half the left hand's (#377, the owner)
 	checkRadialNear("top", 90.f, vr::segmentCenterDegrees(0));
-	checkRadialNear("right", 0.f, vr::segmentCenterDegrees(2));
-	checkRadialNear("bottom", 270.f, vr::segmentCenterDegrees(4));
-	checkRadialNear("left", 180.f, vr::segmentCenterDegrees(6));
+	checkRadialNear("upper right", 30.f, vr::segmentCenterDegrees(1));
+	checkRadialNear("lower right", 330.f, vr::segmentCenterDegrees(2));
+	checkRadialNear("bottom", 270.f, vr::segmentCenterDegrees(3));
+	checkRadialNear("lower left", 210.f, vr::segmentCenterDegrees(4));
+	checkRadialNear("upper left", 150.f, vr::segmentCenterDegrees(5));
+	for(size_t segment = 0; segment < vr::RadialSegmentCount; segment++) {
+		const vr::RadialChoice choice = vr::segmentChoice(segment);
+		CPPUNIT_ASSERT(choice.item == vr::RadialItem::QuickSlot);
+		CPPUNIT_ASSERT(choice.slot < vr::QuickSlotCount);
+		CPPUNIT_ASSERT_EQUAL(segment >= vr::QuickSlotCount, choice.left);
+	}
 }
 
 void RadialMenuTest::testSegmentHysteresis() {
 	vr::RadialSelector selector;
 	selector.reset();
-	// The right segment spans -22.5 .. 22.5 degrees; it is kept 6 degrees past each edge
-	checkChoice("right", "slot2", selector.update(at(0.f, 0.08f)));
-	checkChoice("just past its upper edge", "slot2", selector.update(at(26.f, 0.08f)));
-	checkChoice("past the margin", "slot1", selector.update(at(30.f, 0.08f)));
-	checkChoice("back past the edge", "slot1", selector.update(at(19.f, 0.08f)));
-	checkChoice("far back", "slot2", selector.update(at(10.f, 0.08f)));
+	// The upper right segment spans 0 .. 60 degrees; it is kept 6 degrees past each edge
+	checkChoice("upper right", "r2", selector.update(at(30.f, 0.08f)));
+	checkChoice("just past its upper edge", "r2", selector.update(at(64.f, 0.08f)));
+	checkChoice("past the margin", "r1", selector.update(at(68.f, 0.08f)));
+	checkChoice("back past the edge", "r1", selector.update(at(56.f, 0.08f)));
+	checkChoice("far back", "r2", selector.update(at(40.f, 0.08f)));
 	// Fresh, the edge decides
 	vr::RadialSelector fresh;
 	fresh.reset();
-	checkChoice("fresh at 26 degrees", "slot1", fresh.update(at(26.f, 0.08f)));
+	checkChoice("fresh at 64 degrees", "r1", fresh.update(at(64.f, 0.08f)));
 }
 
 void RadialMenuTest::testHalfRingOpensAboveTheRing() {
 	vr::RadialSelector selector;
 	selector.reset();
-	checkChoice("the top segment", "inventory", selector.update(Vec2f(0.f, 0.1f)));
+	checkChoice("the top segment", "r1", selector.update(Vec2f(0.f, 0.1f)));
 	CPPUNIT_ASSERT(!selector.halfRingOpen());
-	checkChoice("at the ring's edge", "inventory", selector.update(Vec2f(0.f, 0.12f)));
+	checkChoice("at the ring's edge", "r1", selector.update(Vec2f(0.f, 0.12f)));
 	CPPUNIT_ASSERT(!selector.halfRingOpen());
 	// Past the edge: the half-ring, its middle item straight up
 	checkChoice("above the ring", "quests", selector.update(Vec2f(0.f, 0.15f)));
@@ -146,7 +155,7 @@ void RadialMenuTest::testHalfRingOpensAboveTheRing() {
 	// Right of the ring but not above it: still a segment
 	vr::RadialSelector side;
 	side.reset();
-	checkChoice("far right", "slot2", side.update(Vec2f(0.25f, 0.f)));
+	checkChoice("far right", "r3", side.update(Vec2f(0.25f, -0.05f)));
 	CPPUNIT_ASSERT(!side.halfRingOpen());
 }
 
@@ -182,12 +191,12 @@ void RadialMenuTest::testHalfRingCloses() {
 	checkChoice("over the top right", "quick_save", selector.update(at(70.f, 0.11f)));
 	CPPUNIT_ASSERT(selector.halfRingOpen());
 	// Back inside the ring: the segments again
-	checkChoice("back in the ring", "inventory", selector.update(Vec2f(0.f, 0.08f)));
+	checkChoice("back in the ring", "r1", selector.update(Vec2f(0.f, 0.08f)));
 	CPPUNIT_ASSERT(!selector.halfRingOpen());
 
 	selector.update(Vec2f(0.f, 0.17f));
 	CPPUNIT_ASSERT(selector.halfRingOpen());
-	checkChoice("dropped below the middle", "slot2", selector.update(Vec2f(0.17f, -0.03f)));
+	checkChoice("dropped below the middle", "r3", selector.update(Vec2f(0.17f, -0.03f)));
 	CPPUNIT_ASSERT(!selector.halfRingOpen());
 
 	// A new menu starts closed
@@ -198,13 +207,16 @@ void RadialMenuTest::testHalfRingCloses() {
 }
 
 void RadialMenuTest::testNames() {
-	CPPUNIT_ASSERT_EQUAL(std::string("Inventory"), std::string(vr::radialItemLabel(vr::RadialItem::Inventory)));
+	CPPUNIT_ASSERT_EQUAL(std::string("Quick save"), std::string(vr::radialItemLabel(vr::RadialItem::QuickSave)));
 	CPPUNIT_ASSERT_EQUAL(std::string("Cancel spell"), std::string(vr::radialItemLabel(vr::RadialItem::CancelSpell)));
 	vr::RadialChoice slot;
 	slot.item = vr::RadialItem::QuickSlot;
-	slot.slot = 6;
-	CPPUNIT_ASSERT_EQUAL(std::string("slot7"), vr::radialChoiceName(slot));
-	CPPUNIT_ASSERT(vr::segmentChoice(8) == vr::RadialChoice());
+	CPPUNIT_ASSERT_EQUAL(std::string("r1"), vr::radialChoiceName(slot));
+	slot.slot = 2;
+	slot.left = true;
+	CPPUNIT_ASSERT_EQUAL(std::string("l3"), vr::radialChoiceName(slot));
+	CPPUNIT_ASSERT(vr::segmentChoice(3) == slot);
+	CPPUNIT_ASSERT(vr::segmentChoice(6) == vr::RadialChoice());
 	CPPUNIT_ASSERT(vr::halfRingItem(9) == vr::RadialItem::None);
 }
 
@@ -212,9 +224,9 @@ void RadialMenuTest::testQuickSlotText() {
 
 	vr::QuickSlotSet slots;
 	slots[0] = "potion_life";
-	slots[3] = "torch";
+	slots[2] = "torch";
 	const std::string text = vr::formatQuickSlots(slots);
-	CPPUNIT_ASSERT_EQUAL(std::string("potion_life|||torch|||"), text);
+	CPPUNIT_ASSERT_EQUAL(std::string("potion_life||torch"), text);
 	CPPUNIT_ASSERT(vr::parseQuickSlots(text) == slots);
 
 	// Empty, short, broken, too long: never an item that was not a class name
@@ -222,9 +234,16 @@ void RadialMenuTest::testQuickSlotText() {
 	const vr::QuickSlotSet shortSet = vr::parseQuickSlots("food_bread");
 	CPPUNIT_ASSERT_EQUAL(std::string("food_bread"), shortSet[0]);
 	CPPUNIT_ASSERT(shortSet[1].empty());
-	const vr::QuickSlotSet broken = vr::parseQuickSlots("Potion|../x|a b|torch");
-	CPPUNIT_ASSERT(broken[0].empty() && broken[1].empty() && broken[2].empty());
-	CPPUNIT_ASSERT_EQUAL(std::string("torch"), broken[3]);
+	const vr::QuickSlotSet broken = vr::parseQuickSlots("Potion|a b|torch");
+	CPPUNIT_ASSERT(broken[0].empty() && broken[1].empty());
+	CPPUNIT_ASSERT_EQUAL(std::string("torch"), broken[2]);
 	const vr::QuickSlotSet longSet = vr::parseQuickSlots("a|b|c|d|e|f|g|h|i");
-	CPPUNIT_ASSERT_EQUAL(std::string("g"), longSet[6]);
+	CPPUNIT_ASSERT_EQUAL(std::string("c"), longSet[2]);
+
+	// A save of the first layout (#376: 7 slots a hand): its first 3 carry over, the rest is dropped (#377)
+	const vr::QuickSlotSet old = vr::parseQuickSlots("potion_life||food_bread|torch|||potion_mana");
+	CPPUNIT_ASSERT_EQUAL(std::string("potion_life"), old[0]);
+	CPPUNIT_ASSERT(old[1].empty());
+	CPPUNIT_ASSERT_EQUAL(std::string("food_bread"), old[2]);
+	CPPUNIT_ASSERT_EQUAL(std::string("potion_life||food_bread"), vr::formatQuickSlots(old));
 }

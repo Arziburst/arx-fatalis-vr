@@ -505,11 +505,11 @@ void VRControlsTest::defaultLayoutTest() {
 	CPPUNIT_ASSERT(controllerTypeFromProfile("") == ControllerType::Unknown);
 
 	// The D-042 table (#377), every event: the trigger clicks and drags; grip, then trigger uses an item or acts on
-	// a door, lever, chest, NPC or corpse; B holds the radial menu (the inventory, the book, the game menu and
-	// recenter are in it); the right stick up jumps, down crouches; the right stick click draws / sheathes; the
-	// casting stance is the right A until #378 (the owner), the left A is free. Removed: the stash chord, the game
-	// menu on the left A, recenter on the left stick click, the stance on the left trackpad, jump on the right A, the
-	// book and the inventory on B
+	// a door, lever, chest, NPC or corpse; the right B holds the radial menu (the book, the game menu, recenter and
+	// both hands' quick slots are in it); the left B toggles the map, the left A the bag (the owner); the right stick
+	// up jumps, down crouches; the right stick click draws / sheathes; the casting stance is the right A until #378
+	// (the owner). Removed: the stash chord, the game menu on the left A, recenter on the left stick click, the
+	// stance on the left trackpad, jump on the right A, the left hand's radial menu
 	const std::string table =
 		"interact_left = left.trigger\n"
 		"interact_right = right.trigger\n"
@@ -519,16 +519,17 @@ void VRControlsTest::defaultLayoutTest() {
 		"stash_right = none\n"
 		"jump = right.stick_up\n"
 		"crouch_toggle = right.stick_down\n"
-		"inventory = none\n"
+		"inventory = left.a\n"
 		"book = none\n"
 		"menu = none\n"
 		"recenter = none\n"
 		"magic_mode = right.a\n"
 		"act_left = left.grip+left.trigger\n"
 		"act_right = right.grip+right.trigger\n"
-		"radial_left = left.b\n"
+		"radial_left = none\n"
 		"radial_right = right.b\n"
-		"weapon = right.stick_click\n";
+		"weapon = right.stick_click\n"
+		"map = left.b\n";
 	const ControlLayout index = defaultLayout(ControllerType::Index);
 	CPPUNIT_ASSERT_EQUAL(table, formatLayout(index));
 	CPPUNIT_ASSERT(findConflicts(index).empty());
@@ -539,7 +540,8 @@ void VRControlsTest::defaultLayoutTest() {
 	CPPUNIT_ASSERT(touch == index);
 	CPPUNIT_ASSERT(findConflicts(touch).empty());
 	CPPUNIT_ASSERT_EQUAL(std::string("Right A"), bindingLabel(touch[Event::MagicMode], ControllerType::Touch));
-	CPPUNIT_ASSERT_EQUAL(std::string("Left Y"), bindingLabel(touch[Event::RadialLeft], ControllerType::Touch));
+	CPPUNIT_ASSERT_EQUAL(std::string("Left Y"), bindingLabel(touch[Event::Map], ControllerType::Touch));
+	CPPUNIT_ASSERT_EQUAL(std::string("Left X"), bindingLabel(touch[Event::Inventory], ControllerType::Touch));
 
 	// No default needs a trackpad (the Touch has none), and the grip alone does nothing on either controller
 	for(const ControlLayout * layout : { &index, &touch }) {
@@ -620,10 +622,10 @@ void VRControlsTest::defaultChordTest() {
 	resolver.update(5000, controls());
 	resolver.update(5000 + resolver.releaseDebounceMs, controls());
 	resolver.update(6000, controls({ control(Hand::Left, ControlKind::B) }));
-	CPPUNIT_ASSERT(resolver.pressed(Event::RadialLeft));
+	CPPUNIT_ASSERT(resolver.pressed(Event::Map));
 	resolver.update(6100, controls({ control(Hand::Right, ControlKind::StickClick) }));
 	CPPUNIT_ASSERT(resolver.pressed(Event::Weapon));
-	CPPUNIT_ASSERT(resolver.released(Event::RadialLeft));
+	CPPUNIT_ASSERT(resolver.released(Event::Map));
 	// The casting stance is the right A (the owner, until #378); the left A and the left stick click do nothing
 	resolver.update(6200, controls({ RightA }));
 	CPPUNIT_ASSERT(resolver.pressed(Event::MagicMode));

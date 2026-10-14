@@ -220,19 +220,21 @@ void VRBindingsTest::layoutCoverageTest() {
 
 void VRBindingsTest::defaultLayoutsTest() {
 
-	// Every event on the Index and the Touch has a control except the ones D-042 (#377) moved or dropped: the
-	// inventory, the book, the game menu and recenter are items of the radial menus on B (#376), nothing goes
-	// straight into the inventory any more (stash). The Touch's menu button is free too (the owner, #456)
+	// Every event on the Index and the Touch has a control except the ones D-042 (#377) moved or dropped: the book,
+	// the game menu and recenter are items of the radial menu on the right B (#376), nothing goes straight into the
+	// inventory any more (stash), and the left hand has no radial menu (the owner: the left B is the map, the left A
+	// the bag). The Touch's menu button is free too (the owner, #456)
 	for(ControllerType type : { ControllerType::Index, ControllerType::Touch }) {
 		const ControlLayout layout = defaultLayout(type);
 		for(size_t i = 0; i < EventCount; i++) {
 			const Event event = Event(i);
-			const bool unbound = event == Event::Inventory || event == Event::Book || event == Event::Recenter
+			const bool unbound = event == Event::RadialLeft || event == Event::Book || event == Event::Recenter
 			                     || event == Event::StashLeft || event == Event::StashRight || event == Event::Menu;
 			CPPUNIT_ASSERT_MESSAGE(std::string(controllerTypeName(type)) + ": " + eventName(event),
 			                       layout.bindings[i].isBound() != unbound);
 		}
-		CPPUNIT_ASSERT_EQUAL(std::string("left.b"), formatBinding(layout[Event::RadialLeft]));
+		CPPUNIT_ASSERT_EQUAL(std::string("left.b"), formatBinding(layout[Event::Map]));
+		CPPUNIT_ASSERT_EQUAL(std::string("left.a"), formatBinding(layout[Event::Inventory]));
 		CPPUNIT_ASSERT_EQUAL(std::string("right.b"), formatBinding(layout[Event::RadialRight]));
 	}
 
@@ -258,11 +260,11 @@ void VRBindingsTest::defaultLayoutsTest() {
 	CPPUNIT_ASSERT(!simple[Event::UseRight].isBound());
 
 	// The game menu, recenter and the click are reachable on every controller (F-173: never stuck outside the
-	// menus): their own control, or both hands' radial menus, which hold the game menu and recenter (D-042)
+	// menus): their own control, or a radial menu, which holds the game menu and recenter (D-042)
 	for(ControllerType type : { ControllerType::Unknown, ControllerType::Index, ControllerType::Touch,
 	                            ControllerType::Simple }) {
 		const ControlLayout layout = defaultLayout(type);
-		const bool radial = layout[Event::RadialLeft].isBound() && layout[Event::RadialRight].isBound();
+		const bool radial = layout[Event::RadialLeft].isBound() || layout[Event::RadialRight].isBound();
 		CPPUNIT_ASSERT(layout[Event::Menu].isBound() || radial);
 		CPPUNIT_ASSERT(layout[Event::Recenter].isBound() || radial);
 		CPPUNIT_ASSERT(layout[Event::InteractRight].isBound());

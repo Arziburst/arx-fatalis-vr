@@ -182,17 +182,19 @@ void VRGameInputTest::buttonActionsTest() {
 
 	Frames f;
 
-	// The B buttons hold the radial menus (D-042, #376): no engine action of their own - the inventory and
-	// the book are items of the menus. Bound by the player, the inventory and book events still give theirs
+	// The right B holds the radial menu (D-042, #376): no engine action of its own - the book is an item of the menu.
+	// The left B is the book's map page, the left A the bag (the owner, #377). Bound by the player, the inventory and
+	// book events give theirs anywhere
 	ControlLayout menus = defaultLayout(ControllerType::Index);
 	menus[Event::Inventory] = Binding::single(GiRightB);
 	menus[Event::Book] = Binding::single(GiLeftB);
 	menus[Event::RadialLeft] = Binding();
+	menus[Event::Map] = Binding();
 	menus[Event::RadialRight] = Binding();
 	Frames remapped;
 	remapped.resolver.setLayout(menus);
 
-	for(const GameInputState & held : { f.frame(downSet({ GiRightB })), f.frame(downSet({ GiLeftB, GiRightB })) }) {
+	for(const GameInputState & held : { f.frame(downSet({ GiRightB })) }) {
 		for(size_t i = 0; i < GameActionCount; i++) {
 			CPPUNIT_ASSERT(!held.actions[i]);
 		}
@@ -204,6 +206,8 @@ void VRGameInputTest::buttonActionsTest() {
 	struct Case { Frames & frames; Control control; GameAction action; };
 	const Case cases[] = {
 		{ f, GiRightStickUp, GameAction::Jump },
+		{ f, GiLeftB, GameAction::BookMap },
+		{ f, GiLeftA, GameAction::Inventory },
 		{ remapped, GiRightB, GameAction::Inventory },
 		{ remapped, GiLeftB, GameAction::Book },
 		{ f, GiRightStickDown, GameAction::CrouchToggle },
@@ -217,6 +221,7 @@ void VRGameInputTest::buttonActionsTest() {
 		CPPUNIT_ASSERT(!held.click && !held.use && !held.escape);
 		CPPUNIT_ASSERT(c.frames.frame(downSet({ c.control })).action(c.action));
 		CPPUNIT_ASSERT(!c.frames.frame(downSet()).action(c.action));
+		c.frames.settle();
 	}
 
 	// Magic mode (#43): held with the right A (D-042: A is the casting stance; one for both hands until #378, the

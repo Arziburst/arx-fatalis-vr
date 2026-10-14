@@ -14,8 +14,8 @@
 	  tap right.stick_up                         a jump                       (player.jump = 1)
 	  stick left 0 1                             the move vector: forward 1   (vr.input.game.moveY)
 	  tap right.b, tap right.b                   the game menu, and back      (game.state MENU, GAMEPLAY)
-	The inventory and the book are items of the radial menus on B since D-042 (#376); here they are bound to
-	buttons of their own (the left A - free, the stance is on the right A - and the left B), so each press is one
+	The inventory is on the left A by default (#377); the book is an item of the radial menu (D-042, #376) and is
+	bound here to the left B in place of the map, so each press is one
 	change. The right B keeps its radial
 	menu: a flat run has no head, so the menu cannot open and the press is the game menu key (#377) - the
 	game menu's way when no radial menu can be shown.
@@ -56,8 +56,8 @@ function Step([string]$command, [string]$what) {
 }
 
 $commands = @('setplayercontrols on', 'cinemascope off')
-# The inventory and the book are radial menu items since D-042: bound to buttons of their own for this check
-$commands += @('vr-input bind radial_left none', 'vr-input bind inventory left.a', 'vr-input bind book left.b')
+# The book is a radial menu item since D-042 and the left B is the map (#377): the book on its own button for this check
+$commands += @('vr-input bind radial_left none', 'vr-input bind map none', 'vr-input bind inventory left.a', 'vr-input bind book left.b')
 if ($Unbind) { $commands += 'vr-input bind inventory none' }
 $commands += Step 'tap left.a' 'inventory open'
 $commands += Step 'tap left.a' 'inventory closed'
@@ -76,7 +76,7 @@ $expectEvents = @('ui.inventory>=2', 'ui.book=2', 'player.crouch=2', 'player.jum
 $expectedPresses = [ordered]@{
 	inventory = 2; book = 2; crouch_toggle = 2; jump = 1; radial_right = 2
 	interact_left = 0; interact_right = 0; use_left = 0; use_right = 0; stash_left = 0; stash_right = 0
-	menu = 0; recenter = 0; magic_mode = 0; weapon = 0
+	menu = 0; recenter = 0; magic_mode = 0; weapon = 0; map = 0
 }
 
 $smokeArgs = @{ Commands = $commands; Seconds = 1; ExpectEvents = $expectEvents }

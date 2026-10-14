@@ -34,6 +34,7 @@
 #include "graphics/font/Font.h"
 #include "gui/Text.h"
 #include "vr/HeadTracking.h"
+#include "vr/SceneView.h"
 #include "vr/VRSystem.h"
 
 namespace vr {
@@ -203,7 +204,8 @@ void showSubtitle(u64 line, std::string_view speaker, std::string_view text, boo
 		s.decided = false;
 	}
 
-	s.status.visible = true;
+	// Shown once the eyes see the scene: a scene starts behind a short fade (vr/SceneView.h)
+	s.status.visible = (sceneState().director.shown() != SceneShown::None);
 	if(s.status.speaker != speaker) {
 		s.status.speaker = std::string(speaker);
 	}
@@ -247,7 +249,7 @@ void resetSubtitleCounts() {
 void drawSubtitlesInEye() {
 
 	const SubtitleDrawState & s = g_subtitles;
-	if(!s.line || !s.decided || s.drawn == SubtitlePlacement::LowerThird) {
+	if(!s.line || !s.status.visible || !s.decided || s.drawn == SubtitlePlacement::LowerThird) {
 		return;
 	}
 
@@ -267,7 +269,7 @@ void drawSubtitlesInEye() {
 void drawSubtitlesOnInterface() {
 
 	SubtitleDrawState & s = g_subtitles;
-	if(!s.line) {
+	if(!s.line || !s.status.visible) {
 		return;
 	}
 

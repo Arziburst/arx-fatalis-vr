@@ -88,10 +88,12 @@ enum class WeaponClass { Sword, Dagger, Axe, Mace, TwoHanded };
 const char * weaponClassName(WeaponClass weaponClass);
 
 /*!
- * \return the class of an item: a dagger or a two-handed weapon by its type, a one-handed one by its weapon material
- *         (the script's setweaponmaterial, any case): axe an axe, club a mace, anything else a sword
+ * \return the class of an item: a dagger or a two-handed weapon by its type; a one-handed one by its item class
+ *         (\a className, any case: a name with axe is an axe, one with club, hammer or mace a mace - the game's axe
+ *         has the weapon material sword), else by its weapon material (the script's setweaponmaterial: axe, club);
+ *         anything else is a sword
  */
-WeaponClass weaponClassOf(bool dagger, bool twoHanded, std::string_view material);
+WeaponClass weaponClassOf(bool dagger, bool twoHanded, std::string_view className, std::string_view material);
 
 /*!
  * \brief Where the closed fingers sit on the handle: the distance from the pommel end of the handle, along the handle

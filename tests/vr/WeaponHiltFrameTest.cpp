@@ -138,12 +138,18 @@ void WeaponHiltFrameTest::testHandleWithoutGuard() {
 }
 
 void WeaponHiltFrameTest::testClassFromItem() {
-	CPPUNIT_ASSERT(vr::weaponClassOf(true, false, "sword") == vr::WeaponClass::Dagger);
-	CPPUNIT_ASSERT(vr::weaponClassOf(false, true, "axe") == vr::WeaponClass::TwoHanded);
-	CPPUNIT_ASSERT(vr::weaponClassOf(false, false, "AXE") == vr::WeaponClass::Axe);
-	CPPUNIT_ASSERT(vr::weaponClassOf(false, false, "club") == vr::WeaponClass::Mace);
-	CPPUNIT_ASSERT(vr::weaponClassOf(false, false, "sword") == vr::WeaponClass::Sword);
-	CPPUNIT_ASSERT(vr::weaponClassOf(false, false, "") == vr::WeaponClass::Sword);
+	CPPUNIT_ASSERT(vr::weaponClassOf(true, false, "dagger", "sword") == vr::WeaponClass::Dagger);
+	CPPUNIT_ASSERT(vr::weaponClassOf(false, true, "axe_2handed", "axe") == vr::WeaponClass::TwoHanded);
+	// The game's axe has the weapon material sword: the item class decides
+	CPPUNIT_ASSERT(vr::weaponClassOf(false, false, "axe", "sword") == vr::WeaponClass::Axe);
+	CPPUNIT_ASSERT(vr::weaponClassOf(false, false, "Hammer_Club", "") == vr::WeaponClass::Mace);
+	CPPUNIT_ASSERT(vr::weaponClassOf(false, false, "hammer2", "sword") == vr::WeaponClass::Mace);
+	CPPUNIT_ASSERT(vr::weaponClassOf(false, false, "club", "club") == vr::WeaponClass::Mace);
+	// Without a telling class name, the material
+	CPPUNIT_ASSERT(vr::weaponClassOf(false, false, "bone_weap", "CLUB") == vr::WeaponClass::Mace);
+	CPPUNIT_ASSERT(vr::weaponClassOf(false, false, "chopper", "axe") == vr::WeaponClass::Axe);
+	CPPUNIT_ASSERT(vr::weaponClassOf(false, false, "long_sword", "sword") == vr::WeaponClass::Sword);
+	CPPUNIT_ASSERT(vr::weaponClassOf(false, false, "", "") == vr::WeaponClass::Sword);
 	CPPUNIT_ASSERT(std::string(vr::weaponClassName(vr::WeaponClass::TwoHanded)) == "twoHanded");
 }
 

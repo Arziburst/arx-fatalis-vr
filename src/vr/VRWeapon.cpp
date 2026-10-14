@@ -158,7 +158,8 @@ void measure(Entity * weapon, const EERIE_LINKED & link) {
 	g_weapon.bladeAxis = blade.axis;
 	g_weapon.handle = weaponHandleFromMesh(vertices, blade);
 	g_weapon.weaponClass = weaponClassOf((weapon->type_flags & OBJECT_TYPE_DAGGER) != 0,
-	                                     (weapon->type_flags & OBJECT_TYPE_2H) != 0, weapon->weaponmaterial);
+	                                     (weapon->type_flags & OBJECT_TYPE_2H) != 0, weapon->className(),
+	                                     weapon->weaponmaterial);
 
 	status.measured = true;
 	status.bladeLength = blade.length;

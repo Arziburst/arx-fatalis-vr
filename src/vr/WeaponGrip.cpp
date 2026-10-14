@@ -167,19 +167,31 @@ const char * weaponClassName(WeaponClass weaponClass) {
 	return weaponAnchor(weaponClass).name;
 }
 
-WeaponClass weaponClassOf(bool dagger, bool twoHanded, std::string_view material) {
+WeaponClass weaponClassOf(bool dagger, bool twoHanded, std::string_view className, std::string_view material) {
 	if(dagger) {
 		return WeaponClass::Dagger;
 	}
 	if(twoHanded) {
 		return WeaponClass::TwoHanded;
 	}
-	std::string name(material);
-	std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return char(std::tolower(c)); });
-	if(name == "axe") {
+	auto lower = [](std::string_view text) {
+		std::string result(text);
+		std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+		return result;
+	};
+	const std::string name = lower(className);
+	if(name.find("axe") != std::string::npos) {
 		return WeaponClass::Axe;
 	}
-	if(name == "club") {
+	if(name.find("club") != std::string::npos || name.find("hammer") != std::string::npos
+	   || name.find("mace") != std::string::npos) {
+		return WeaponClass::Mace;
+	}
+	const std::string kind = lower(material);
+	if(kind == "axe") {
+		return WeaponClass::Axe;
+	}
+	if(kind == "club") {
 		return WeaponClass::Mace;
 	}
 	return WeaponClass::Sword;

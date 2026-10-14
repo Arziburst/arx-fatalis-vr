@@ -8,6 +8,18 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-14 — `playground-hands.xrs`: the left hand's reticle misses the pulled lever on CI, passes locally (#377)
+
+**Symptom:** CI run 38477911299 (PR #456) failed at `@until vr.reticle.left.under eq lever_9002 5s`: the ray hit
+the wall at (8378.7, -128.4, 8400), right behind the handle. The same sequence on the same commit passed 243/243
+locally; both runs aimed at the same face (8378.6, -130.5, 8399.2).
+**Cause:** the hands of the idle rig still rise after a `setpos` - the left hand's start was y -135.6 at the
+first aim, -127.2 at the second and -125.1 a moment later on the busy runner (locally the second aim already started
+at -125.1). `vr-point` aims from where the hand is in that frame, so the ray drifted 2 units up past the pulled
+handle, which lies 0.8 units in front of the wall.
+**Do:** after a teleport give the hands 30 frames and aim at a thin target once more before waiting on the reticle
+(`playground-hands.xrs` does this for the lever).
+
 ## 2026-10-13 — In VR the inventory will not close and melee is refused after New game or `--loadlevel` (#394.5)
 
 **Symptom:** a new game or a `--loadlevel` start in VR: the inventory stays open (closing it reopens it), `melee.state state=off reason=inventory`; a save load is fine, and so is New game in a player's launch.

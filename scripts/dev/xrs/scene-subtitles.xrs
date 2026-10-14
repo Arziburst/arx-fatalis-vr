@@ -86,7 +86,8 @@ human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
 @assert scene.subtitle.voicedLines eq 1
 @assert scene.subtitle.lines eq 1
 
-# T5: every speak -c mode has its subtitle (placement above)
+# T5: every speak -c mode has its subtitle (placement above); each key is a line with a localised text (the
+# sample names of variants, kultar_letmeout2 and the like, have none: a variant's text is string<N> in its line)
 scene subtitles above
 scene meter reset
 # zoom
@@ -95,22 +96,22 @@ human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_encourage2]
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
 # keep
-human_base_0028.speak -c keep [kultar_encourage22]
+human_base_0028.speak -c keep [kultar_encourage]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
 # side
-human_base_0028.speak -c side player 5 5 90 90 0 [kultar_letmeout2]
+human_base_0028.speak -c side player 5 5 90 90 0 [kultar_cantgo]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
 # side_l
-human_base_0028.speak -c side_l player 5 5 90 90 0 [kultar_letmeout3]
+human_base_0028.speak -c side_l player 5 5 90 90 0 [kultar_please]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
 # side_r
-human_base_0028.speak -c side_r player 5 95 400 150 -10 [kultar_encourage23]
+human_base_0028.speak -c side_r player 5 95 400 150 -10 [kultar_hey]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
@@ -120,17 +121,17 @@ human_base_0028.speak -c ccctalker_l player 90 100 [kultar_encourage2]
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
 # ccctalker_r
-human_base_0028.speak -c ccctalker_r player 80 40 [kultar_encourage22]
+human_base_0028.speak -c ccctalker_r player 80 40 [kultar_encourage]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
 # ccclistener_l
-human_base_0028.speak -c ccclistener_l player 50 50 [kultar_letmeout2]
+human_base_0028.speak -c ccclistener_l player 50 50 [kultar_cantgo]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
 # ccclistener_r
-human_base_0028.speak -c ccclistener_r player 40 40 [kultar_letmeout3]
+human_base_0028.speak -c ccclistener_r player 40 40 [kultar_please]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s

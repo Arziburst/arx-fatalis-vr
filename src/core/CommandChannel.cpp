@@ -1370,6 +1370,7 @@ std::string buildStatus(PlatformInstant now) {
 		// The menus' images exist: without them the menus work unseen (the owner's first headset run)
 		json.value("images", vr::radialImagesMade());
 		json.value("drawn", radial.drawn);
+		json.value("sideLetters", radial.sideLetters);
 		for(size_t hand = 0; hand < vr::HandCount; hand++) {
 			const vr::RadialHandStatus & h = radial.hands[hand];
 			json.object(vr::handName(vr::Hand(hand)));

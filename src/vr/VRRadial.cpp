@@ -290,9 +290,10 @@ std::string toggleBookPage(ARX_INTERFACE_BOOK_MODE page) {
 std::string runChoice(const RadialChoice & choice, RadialRequests & requests) {
 	switch(choice.item) {
 		case RadialItem::None: {
-			// Over nothing, with the book, the bag, a container or a note open: B closes it (#377, the owner's
-			// D-042 amendment) - not while an item is dragged (closeOpenPanels keeps them then)
-			if(!closeOpenPanels(requests).empty()) {
+			// Over nothing, with the book, a container or a note open: B closes it (#377, the owner's D-042
+			// amendments) - not the bag, which stays open with the ring for filling slots (the left A closes it), and
+			// nothing while an item is dragged (closeOpenPanels keeps them then)
+			if(!closeOpenPanels(requests, false, false).empty()) {
 				return "closed";
 			}
 			return "none";
@@ -375,7 +376,7 @@ QuickSlotSet quickSlots(Hand hand) {
 	return parseQuickSlots(GETVarValueText(svar, SlotVariables[size_t(hand)]));
 }
 
-std::string closeOpenPanels(RadialRequests & requests, bool direct) {
+std::string closeOpenPanels(RadialRequests & requests, bool direct, bool bag) {
 
 	std::string closed;
 	const auto note = [&closed](const char * what) {
@@ -402,7 +403,7 @@ std::string closeOpenPanels(RadialRequests & requests, bool direct) {
 		g_secondaryInventoryHud.close();
 		note("container");
 	}
-	if(player.Interface & (INTER_INVENTORY | INTER_INVENTORYALL)) {
+	if(bag && (player.Interface & (INTER_INVENTORY | INTER_INVENTORYALL))) {
 		if(direct) {
 			// The casting stance starts in this update, and the engine leaves the bag alone in its magic mode: closed
 			// here, with the engine's own state of it (the inverted bag, the cursor mode) set back to freelook
@@ -513,7 +514,7 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 		}
 
 		if(!controls.active(event)) {
-			// Released: the item under the hand runs; over nothing, an open book, bag, container or note closes (#377)
+			// Released: the item under the hand runs; over nothing, an open book, container or note closes - not the bag (#377)
 			const RadialChoice chosen = hovered;
 			status.chosen = radialChoiceName(chosen);
 			status.result = runChoice(chosen, requests);
@@ -540,6 +541,8 @@ const Color4f HoverColor = Color4f::rgba(0.42f, 0.31f, 0.14f, 0.82f);
 const Color4f MarkColor = Color4f::rgba(1.f, 0.8f, 0.42f, 0.95f);
 const Color4f IconColor = Color4f::rgba(0.93f, 0.92f, 0.88f, 0.95f);
 const Color4f DimIconColor = Color4f::rgba(0.93f, 0.92f, 0.88f, 0.4f);
+//! The R / L of a slot: the mark's gold, so it reads apart from the item and its count
+const Color SideColor = Color(255, 204, 107);
 const Color4f HintColor = Color4f::rgba(0.93f, 0.92f, 0.88f, 0.22f);
 const Color4f LabelBackColor = Color4f::rgba(0.02f, 0.02f, 0.03f, 0.7f);
 
@@ -878,6 +881,15 @@ void drawMenu(Hand hand) {
 			}
 		} else {
 			drawItemIcon(RadialItem::QuickSlot, iconCenter, iconRadius * (className.empty() ? 0.8f : 1.f), DimIconColor);
+		}
+		// Whose slot it is (the owner's headset run of #456): R or L at the icon's upper left - its count is at the
+		// lower right - on an empty slot's plus and on a filled one alike
+		if(Font * font = labelFont()) {
+			const std::string side = choice.left ? "L" : "R";
+			const Vec2f corner = iconCenter - Vec2f(iconRadius * 1.25f);
+			const s32 width = font->getTextSize(side).advance();
+			font->draw(Vec2i(s32(corner.x) - width / 2, s32(corner.y) - font->getLineHeight() / 2), side, SideColor);
+			g_radial.status.sideLetters++;
 		}
 		if(shown) {
 			g_radial.names[className] = itemName(shown);

@@ -44,7 +44,8 @@
  * global script text variables \c $vr_quickslots_left / \c $vr_quickslots_right, so no save format changes (a
  * save of the first layout's seven per hand keeps its first three).
  * The game time runs while a menu is open.
- * Released over nothing while the book, the bag, a container or a note is open, B closes it (#377, the owner).
+ * Released over nothing while the book, a container or a note is open, B closes it (#377, the owner) - not the bag: it
+ * stays open with the ring, to drag items onto the slots, until the left A closes it.
  * The game menu is never out of reach (#377): a press that cannot open a menu - a menu shown (the game menu, the
  * character creation, the credits), in the game the head or the hand not tracked - is the game menu key (Escape):
  * it opens the game menu, or goes back.
@@ -77,15 +78,16 @@ void drawRadialMenus();
 
 /*!
  * Close what is open in the game (#377): the book, a note, a container and the bag - the bag through its key in
- * \a requests, as the menu's inventory item. Not the game menu. B released over nothing does it while one of them
- * is open (the owner's amendment to D-042), and the casting stance's press (A) before it starts (no stance while an
- * item is dragged, VRInput). Nothing is closed
+ * \a requests. Not the game menu. B released over nothing does it - all but the bag - while one of them is open (the
+ * owner's amendments to D-042: the bag stays open with the ring, the left A closes it), and the casting stance's press
+ * (A) before it starts, the bag too (no stance while an item is dragged, VRInput). Nothing is closed
  * while an item is dragged (a \c vr.panels.kept event): it would stay in the hand with its bag gone.
  * \param direct close the bag now instead of through its key: the casting stance starts in the same update, and the
  *        engine leaves the bag alone in its magic mode
+ * \param bag close the bag as well
  * \return what was closed ("book inventory" …), empty when nothing was open
  */
-std::string closeOpenPanels(RadialRequests & requests, bool direct = false);
+std::string closeOpenPanels(RadialRequests & requests, bool direct = false, bool bag = true);
 
 //! Close the open radial menus without running their items (the casting stance takes the hands, #377)
 void closeRadialMenus(const char * why);
@@ -115,6 +117,7 @@ struct RadialStatus {
 	std::array<RadialHandStatus, HandCount> hands;
 	std::string torchHand = "none"; //!< the hand whose menu lit the torch that burns now
 	u64 drawn = 0;                  //!< menu images drawn since the start
+	u64 sideLetters = 0;            //!< the slots' R / L letters drawn since the start (#377: the owner, whose slot it is)
 };
 
 const RadialStatus & radialStatus();

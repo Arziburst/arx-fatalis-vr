@@ -521,6 +521,11 @@ void SceneMeter::add(const SceneMeterFrame & frame) {
 	if(frame.shown == SceneShown::Screen) {
 		m_screenFrames++;
 	}
+	if(frame.active && frame.shown == SceneShown::None) {
+		m_openingFrames++;
+	} else if(frame.active && frame.shown != SceneShown::Screen) {
+		m_worldFrames++;
+	}
 
 	const bool behindFade = frame.fade >= BehindFade;
 

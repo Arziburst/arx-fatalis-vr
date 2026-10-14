@@ -463,6 +463,11 @@ public:
 	u64 fadedLookats() const { return m_fadedLookats; }
 	u64 letterboxFrames() const { return m_letterboxFrames; }
 	u64 blindFrames() const { return m_blindFrames; }
+	//! Scene frames before its start cut is taken: the eyes still see the view before the scene, fading out
+	u64 openingFrames() const { return m_openingFrames; }
+	//! Scene frames the eyes see the world in a scene view (first, observer, ghost): with \ref screenFrames and
+	//! \ref openingFrames every scene frame is counted once
+	u64 worldFrames() const { return m_worldFrames; }
 
 private:
 
@@ -479,6 +484,8 @@ private:
 	u64 m_fadedLookats = 0;
 	u64 m_letterboxFrames = 0;
 	u64 m_blindFrames = 0;
+	u64 m_openingFrames = 0;
+	u64 m_worldFrames = 0;
 
 	bool m_havePrevious = false;  //!< the last frame, for jumps
 	Vec3f m_previousPos = Vec3f(0.f);

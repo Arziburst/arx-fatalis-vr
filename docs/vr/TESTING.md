@@ -636,7 +636,9 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   new `speak -c` line, another camera entity - or a jump of the eyes' camera, > 50 cm or > 10 degrees in one frame) and
   `fadedCuts` (those behind the fade); `lookats` / `fadedLookats` (`playerlookat` seen / applied behind the fade);
   `letterboxFrames` (eye frames that got cinematic bars: always 0); `blindFrames` (frames held black because the eye has no
-  floor under it, or first person's eye is too low with `firstLow` `black`); a level load breaks the chain (no cut, no step). `subtitle` (#29.3): `visible`, `text`, `speaker`,
+  floor under it, or first person's eye is too low with `firstLow` `black`); `openingFrames` (scene frames before its start cut is
+  taken: the old view fading out) and `worldFrames` (scene frames the eyes see the world in): with `screenFrames` every
+  scene frame counted once; a level load breaks the chain (no cut, no step). `subtitle` (#29.3): `visible`, `text`, `speaker`,
   `placement` (`above` | `chest` | `lowerthird`); `voicedLines`: scene lines with a text started since the meter reset (also with
   the audio muted), `lines`: those drawn at least once. Flat mode reports the band (`visible` only with the bars), no counts.
 - `drawCheck` appears once a `drawcheck` was requested: `{"seq":1,"running":false,"frames":120,

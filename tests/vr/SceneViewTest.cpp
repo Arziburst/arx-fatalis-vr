@@ -563,6 +563,28 @@ void SceneViewTest::fadeAtBlackTest() {
 	CPPUNIT_ASSERT(!fade.isBlack());
 }
 
+void SceneViewTest::meterFramesTest() {
+
+	// Every scene frame is counted once: on the screen, before the start cut (opening), or the world in a view
+	SceneMeter meter;
+	SceneMeterFrame frame;
+	frame.active = true;
+	frame.shown = SceneShown::None;
+	meter.add(frame);
+	meter.add(frame);
+	frame.shown = SceneShown::Screen;
+	meter.add(frame);
+	frame.shown = SceneShown::First;
+	meter.add(frame);
+	frame.active = false;
+	frame.shown = SceneShown::None;
+	meter.add(frame);
+	CPPUNIT_ASSERT_EQUAL(u64(4), meter.sceneFrames());
+	CPPUNIT_ASSERT_EQUAL(u64(2), meter.openingFrames());
+	CPPUNIT_ASSERT_EQUAL(u64(1), meter.screenFrames());
+	CPPUNIT_ASSERT_EQUAL(u64(1), meter.worldFrames());
+}
+
 void SceneViewTest::heldYawTest() {
 
 	SceneDirector director;

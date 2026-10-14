@@ -454,8 +454,8 @@ void VRControlsTest::layoutTextTest() {
 
 	// Comments and empty lines are skipped, events not named keep their binding
 	ControlLayout layout = index;
-	CPPUNIT_ASSERT(parseLayout("# remapped\n\njump = left.a\r\n", layout, &error));
-	CPPUNIT_ASSERT(layout[Event::Jump] == Binding::single(LeftA));
+	CPPUNIT_ASSERT(parseLayout("# remapped\n\njump = right.a\r\n", layout, &error));
+	CPPUNIT_ASSERT(layout[Event::Jump] == Binding::single(RightA));
 	CPPUNIT_ASSERT(layout[Event::Book] == index[Event::Book]);
 
 	// An error names the line and changes nothing
@@ -467,7 +467,7 @@ void VRControlsTest::layoutTextTest() {
 
 	// Conflicts: two events on the same binding
 	CPPUNIT_ASSERT(findConflicts(index).empty());
-	CPPUNIT_ASSERT(findConflicts(layout).size() == 1); // jump and the casting stance both on left.a now
+	CPPUNIT_ASSERT(findConflicts(layout).size() == 1); // jump and the casting stance both on right.a now
 	CPPUNIT_ASSERT(findConflicts(layout)[0].first == Event::Jump);
 	CPPUNIT_ASSERT(findConflicts(layout)[0].second == Event::MagicMode);
 
@@ -507,8 +507,9 @@ void VRControlsTest::defaultLayoutTest() {
 	// The D-042 table (#377), every event: the trigger clicks and drags; grip, then trigger uses an item or acts on
 	// a door, lever, chest, NPC or corpse; B holds the radial menu (the inventory, the book, the game menu and
 	// recenter are in it); the right stick up jumps, down crouches; the right stick click draws / sheathes; the
-	// casting stance is the left A until #378. Removed: the stash chord, the game menu on the left A, recenter on
-	// the left stick click, the stance on the left trackpad, jump on the right A, the book and the inventory on B
+	// casting stance is the right A until #378 (the owner), the left A is free. Removed: the stash chord, the game
+	// menu on the left A, recenter on the left stick click, the stance on the left trackpad, jump on the right A, the
+	// book and the inventory on B
 	const std::string table =
 		"interact_left = left.trigger\n"
 		"interact_right = right.trigger\n"
@@ -522,7 +523,7 @@ void VRControlsTest::defaultLayoutTest() {
 		"book = none\n"
 		"menu = none\n"
 		"recenter = none\n"
-		"magic_mode = left.a\n"
+		"magic_mode = right.a\n"
 		"act_left = left.grip+left.trigger\n"
 		"act_right = right.grip+right.trigger\n"
 		"radial_left = left.b\n"
@@ -539,7 +540,7 @@ void VRControlsTest::defaultLayoutTest() {
 	CPPUNIT_ASSERT(parseLayout(table + "menu = left.menu\n", touchExpected, &error));
 	CPPUNIT_ASSERT_EQUAL(formatLayout(touchExpected), formatLayout(touch));
 	CPPUNIT_ASSERT(findConflicts(touch).empty());
-	CPPUNIT_ASSERT_EQUAL(std::string("Left X"), bindingLabel(touch[Event::MagicMode], ControllerType::Touch));
+	CPPUNIT_ASSERT_EQUAL(std::string("Right A"), bindingLabel(touch[Event::MagicMode], ControllerType::Touch));
 	CPPUNIT_ASSERT_EQUAL(std::string("Left Y"), bindingLabel(touch[Event::RadialLeft], ControllerType::Touch));
 
 	// No default needs a trackpad (the Touch has none), and the grip alone does nothing on either controller
@@ -625,9 +626,16 @@ void VRControlsTest::defaultChordTest() {
 	resolver.update(6100, controls({ control(Hand::Right, ControlKind::StickClick) }));
 	CPPUNIT_ASSERT(resolver.pressed(Event::Weapon));
 	CPPUNIT_ASSERT(resolver.released(Event::RadialLeft));
-	resolver.update(6200, controls({ LeftA }));
+	// The casting stance is the right A (the owner, until #378); the left A and the left stick click do nothing
+	resolver.update(6200, controls({ RightA }));
 	CPPUNIT_ASSERT(resolver.pressed(Event::MagicMode));
-	resolver.update(6300, controls({ control(Hand::Left, ControlKind::StickClick) }));
+	resolver.update(6250, controls());
+	const u32 weapons = resolver.presses(Event::Weapon);
+	resolver.update(6300, controls({ LeftA }));
+	resolver.update(6350, controls({ control(Hand::Left, ControlKind::StickClick) }));
+	resolver.update(6400, controls());
+	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::MagicMode));
+	CPPUNIT_ASSERT_EQUAL(weapons, resolver.presses(Event::Weapon));
 	CPPUNIT_ASSERT_EQUAL(u32(0), resolver.presses(Event::Recenter));
 }
 

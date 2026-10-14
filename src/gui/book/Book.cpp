@@ -51,6 +51,7 @@
 #include "scene/GameSound.h"
 #include "scene/Interactive.h"
 #include "script/Script.h"
+#include "vr/VRSystem.h"
 
 
 long IN_BOOK_DRAW = 0;
@@ -243,9 +244,13 @@ void PlayerBook::toggle() {
 	}
 	
 	pTextManage->Clear();
-	
-	TRUE_PLAYER_MOUSELOOK_ON = false;
-	
+
+	// VR (#377): the book stays in freelook - the hands are the mouse on its panel (D-016). The cursor mode it
+	// switched to kept the inventory bag open with it, every frame, and stayed on after the book closed
+	if(!vr::isEnabled()) {
+		TRUE_PLAYER_MOUSELOOK_ON = false;
+	}
+
 }
 
 void PlayerBook::manage() {

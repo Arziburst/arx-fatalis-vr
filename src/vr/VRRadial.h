@@ -41,6 +41,7 @@
  * kind (the next potion of the kind refills it). Each hand has its own slots, kept in the save as the
  * global script text variables \c $vr_quickslots_left / \c $vr_quickslots_right, so no save format changes.
  * The game time runs while a menu is open.
+ * Released over nothing while the book, the bag, a container or a note is open, B closes it (#377, the owner).
  * The game menu is never out of reach (#377): a press that cannot open a menu - a menu shown (the game menu, the
  * character creation, the credits), in the game the head or the hand not tracked - is the game menu key (Escape):
  * it opens the game menu, or goes back.
@@ -70,6 +71,17 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 
 //! Draw the open menus into their images for this frame (stereo frames only; after \ref updateRadialMenus)
 void drawRadialMenus();
+
+/*!
+ * Close what is open in the game (#377): the book, a note, a container and the bag - the bag through its key in
+ * \a requests, as the menu's inventory item. Not the game menu. B released over nothing does it while one of them
+ * is open (the owner's amendment to D-042), and the casting stance's press (A) before it starts.
+ * \return what was closed ("book inventory" …), empty when nothing was open
+ */
+std::string closeOpenPanels(RadialRequests & requests);
+
+//! Close the open radial menus without running their items (the casting stance takes the hands, #377)
+void closeRadialMenus(const char * why);
 
 //! A hand's quick slots as saved in the running game
 QuickSlotSet quickSlots(Hand hand);

@@ -173,13 +173,20 @@ gives a clear moment to cast without a pause or an extra gesture.
 - **The defaults as built (#377, the worker's calls the coordinator delegated; the owner judges them in the headset):**
   grip + trigger on an **item uses it** (the original's right click: eaten, drunk, equipped) - the table's "use", and
   the stash chord is dropped; the stash event stays bindable. Until each hand has its stance (#378) the one stance is
-  the **left A** (the Touch's X, where it was); until a weapon per hand (#380) the **right** stick click draws / sheathes
-  the right hand's weapon, the left stick click is free; the game starts with the weapon **drawn** (as the hand held
+  the **right A** (the owner, the headset test of #456; the left A is free); until a weapon per hand (#380) the
+  **right** stick click draws / sheathes the right hand's weapon, the left stick click is free; the game starts with the weapon **drawn** (as the hand held
   it before). The Touch keeps the game menu on its **left menu button** (the table does not name it). "The game
   menu must not break": a B press that **cannot open a radial menu** - in any menu (the game menu, the character
   creation, the credits: the Index has no other Escape), or in the game with the head or the hand not tracked - is
   the **game menu key** (it opens the game menu or goes back); not a hold fallback.
   The trigger's double click no longer acts on doors, levers, chests or NPCs while the hands are the mouse.
+- **Amendments by the owner (headset test of #456, 2026-10-14):** B **released over nothing** while the book, the
+  bag, a container or a note is open **closes it** (instead of "over nothing nothing runs"); the radial menu opens over
+  them, and its half-ring switches the book's pages. The casting stance's press (A) **first closes everything open** -
+  the radial menus, the book, the bag, a container, a note; not the game menu - then the stance starts. In VR the book
+  no longer switches the game to the engine's cursor mode (it kept the bag open with the book and stayed after it
+  closed), and a click on the panel never picks the world behind it. Next, not in #456: the grip alone as use /
+  interact (the chord goes); the book as a depth-tested panel the hands cover; the runes recognised from the hands' strokes (#44).
 
 ---
 

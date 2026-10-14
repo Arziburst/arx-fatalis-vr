@@ -238,7 +238,7 @@ void VRBindingsTest::defaultLayoutsTest() {
 	}
 
 	// The Touch is the Index with the game menu on its menu button (the Index has none); the casting stance is the
-	// left A / X on both (the Touch has no trackpad, and no default needs one)
+	// right A on both, the owner's until #378 (the Touch has no trackpad, and no default needs one)
 	const ControlLayout index = defaultLayout(ControllerType::Index);
 	const ControlLayout touch = defaultLayout(ControllerType::Touch);
 	for(size_t i = 0; i < EventCount; i++) {
@@ -248,7 +248,7 @@ void VRBindingsTest::defaultLayoutsTest() {
 	}
 	CPPUNIT_ASSERT(!index[Event::Menu].isBound());
 	CPPUNIT_ASSERT_EQUAL(std::string("left.menu"), formatBinding(touch[Event::Menu]));
-	CPPUNIT_ASSERT_EQUAL(std::string("left.a"), formatBinding(touch[Event::MagicMode]));
+	CPPUNIT_ASSERT_EQUAL(std::string("right.a"), formatBinding(touch[Event::MagicMode]));
 
 	// The simple controller: select clicks, the menu buttons carry the menus and recenter
 	const ControlLayout simple = defaultLayout(ControllerType::Simple);

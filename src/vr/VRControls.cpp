@@ -266,9 +266,9 @@ ControlLayout defaultLayout(ControllerType type) {
 	}
 	// The stick click draws / sheathes the weapon of its hand: only the right hand holds one until #380
 	layout[Event::Weapon] = Binding::single(control(Hand::Right, ControlKind::StickClick));
-	// The casting stance (#43) on A: one stance for both hands until each hand has its own (#378) - the left A,
-	// where the Touch had it (its X)
-	layout[Event::MagicMode] = Binding::single(control(Hand::Left, ControlKind::A));
+	// The casting stance (#43) on A: one stance for both hands until each hand has its own (#378) - the right A
+	// (the owner, the headset test of #456); the left A is free until then
+	layout[Event::MagicMode] = Binding::single(control(Hand::Right, ControlKind::A));
 
 	return layout;
 }

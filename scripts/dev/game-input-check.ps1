@@ -8,14 +8,15 @@
 	the game reacts to the events. Runs smoke-test.ps1 (flat, --loadlevel 10, isolated, every launch
 	rule of D-014) with 'vr-input' commands - controls pressed as if a controller did it, no headset:
 	  setplayercontrols on, cinemascope off      the level 10 start holds the player (TESTING.md)
-	  tap right.a, tap right.a                   inventory closed, open (the level start shows the bag)
+	  tap left.a, tap left.a                     inventory closed, open (the level start shows the bag)
 	  tap left.b, tap left.b                     book open, closed            (ui.book = 2)
 	  tap right.stick_down x2                    crouch toggle on, off        (player.crouch = 2)
 	  tap right.stick_up                         a jump                       (player.jump = 1)
 	  stick left 0 1                             the move vector: forward 1   (vr.input.game.moveY)
 	  tap right.b, tap right.b                   the game menu, and back      (game.state MENU, GAMEPLAY)
 	The inventory and the book are items of the radial menus on B since D-042 (#376); here they are bound to
-	buttons of their own (the right A, the left B), so each press is one change. The right B keeps its radial
+	buttons of their own (the left A - free, the stance is on the right A - and the left B), so each press is one
+	change. The right B keeps its radial
 	menu: a flat run has no head, so the menu cannot open and the press is the game menu key (#377) - the
 	game menu's way when no radial menu can be shown.
 	'mark' lines between the steps give the game frames to finish one before the next.
@@ -56,10 +57,10 @@ function Step([string]$command, [string]$what) {
 
 $commands = @('setplayercontrols on', 'cinemascope off')
 # The inventory and the book are radial menu items since D-042: bound to buttons of their own for this check
-$commands += @('vr-input bind radial_left none', 'vr-input bind inventory right.a', 'vr-input bind book left.b')
+$commands += @('vr-input bind radial_left none', 'vr-input bind inventory left.a', 'vr-input bind book left.b')
 if ($Unbind) { $commands += 'vr-input bind inventory none' }
-$commands += Step 'tap right.a' 'inventory open'
-$commands += Step 'tap right.a' 'inventory closed'
+$commands += Step 'tap left.a' 'inventory open'
+$commands += Step 'tap left.a' 'inventory closed'
 $commands += Step 'tap left.b' 'book open'
 $commands += Step 'tap left.b' 'book closed'
 $commands += Step 'tap right.stick_down' 'crouch on'

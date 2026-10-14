@@ -1,4 +1,4 @@
-# The rune trail (#43, D-010): the magic button held (the left A / X, D-042, #377) is the casting
+# The rune trail (#43, D-010): the magic button held (the right A, D-042, #377, the owner until #378) is the casting
 # stance; the trigger of a hand draws a stroke with that hand, and the engine's magic flares are put at the
 # point 8 cm ahead of the grip - not at the cursor. The trigger alone is a click (no stroke), the stance
 # alone draws nothing; the point follows the hand's position and its orientation; one hand draws at a time.
@@ -35,7 +35,7 @@ vr-sim action trigger right 0
 @frames 10
 
 # The stance alone draws nothing
-vr-sim action button_a left 1
+vr-sim action button_a right 1
 @frames 10
 @assert vr.magic.stance eq true
 @assert vr.magic.drawing eq false
@@ -123,7 +123,7 @@ vr-sim action trigger left 1
 @assert vr.magic.drawing eq true
 @assert vr.magic.hand eq left
 @assert vr.magic.strokes eq 2
-vr-sim action button_a left 0
+vr-sim action button_a right 0
 @frames 10
 @assert vr.magic.stance eq false
 @assert vr.magic.drawing eq false

@@ -39,6 +39,7 @@
 #include "vr/HandReticle.h"
 #include "vr/HeadPose.h"
 #include "vr/HeadTracking.h"
+#include "vr/VRSystem.h"
 #include "vr/WorldScale.h"
 
 namespace vr {
@@ -440,7 +441,16 @@ EnginePickOnly::~EnginePickOnly() {
 ReticlePick reticlePickAt(const Vec2s & pos, Entity *& entity) {
 
 	entity = nullptr;
-	if(!g_reticle.on || g_reticle.enginePickOnly > 0) {
+	if(g_reticle.enginePickOnly > 0) {
+		return ReticlePick::NotMine;
+	}
+	if(!g_reticle.on) {
+		// The hands are on the floating panel (the book, a note - the reticles are off for it): a pixel of the
+		// panel is the 2D interface, never the world behind it - a click beside the book took the corpse (#377)
+		if(panelShown()) {
+			g_reticle.status.blocked++;
+			return ReticlePick::Blocked;
+		}
 		return ReticlePick::NotMine;
 	}
 

@@ -219,15 +219,15 @@ void VRGameInputTest::buttonActionsTest() {
 		CPPUNIT_ASSERT(!c.frames.frame(downSet()).action(c.action));
 	}
 
-	// Magic mode (#43): held with the left A (D-042: A is the casting stance; one for both hands until #378), as
-	// long as it is pressed, and not by the other face buttons or the trackpads (free by default)
-	CPPUNIT_ASSERT(!f.frame(downSet({ GiLeftB, GiRightA, GiRightB, control(Hand::Left, ControlKind::Trackpad),
+	// Magic mode (#43): held with the right A (D-042: A is the casting stance; one for both hands until #378, the
+	// owner), as long as it is pressed, and not by the other face buttons or the trackpads (free by default)
+	CPPUNIT_ASSERT(!f.frame(downSet({ GiLeftA, GiLeftB, GiRightB, control(Hand::Left, ControlKind::Trackpad),
 	                                  control(Hand::Right, ControlKind::Trackpad) })).action(GameAction::MagicMode));
 	f.settle();
-	CPPUNIT_ASSERT(f.frame(downSet({ GiLeftA })).action(GameAction::MagicMode));
-	CPPUNIT_ASSERT(f.frame(downSet({ GiLeftA })).action(GameAction::MagicMode));
+	CPPUNIT_ASSERT(f.frame(downSet({ GiRightA })).action(GameAction::MagicMode));
+	CPPUNIT_ASSERT(f.frame(downSet({ GiRightA })).action(GameAction::MagicMode));
 	// a trigger held in the stance is still the click: the engine draws the rune with it
-	const GameInputState & drawing = f.frame(downSet({ GiLeftA, control(Hand::Right, ControlKind::Trigger) }));
+	const GameInputState & drawing = f.frame(downSet({ GiRightA, control(Hand::Right, ControlKind::Trigger) }));
 	CPPUNIT_ASSERT(drawing.action(GameAction::MagicMode) && drawing.click);
 	CPPUNIT_ASSERT(!f.frame(downSet()).action(GameAction::MagicMode));
 	f.settle();

@@ -51,6 +51,7 @@
 #include "gui/Note.h"
 #include "gui/Text.h"
 #include "gui/book/Book.h"
+#include "gui/hud/SecondaryInventory.h"
 #include "io/log/Logger.h"
 #include "script/Script.h"
 #include "util/Number.h"
@@ -73,6 +74,7 @@ struct HandMenu {
 	RadialPose pose;
 	RadialSelector selector;
 	Vec2f point = Vec2f(0.f);
+	float travel = 0.f;      //!< the farthest the hand went from the middle while open, metres (the log, #377)
 	Vec3f hand = Vec3f(0.f); //!< the grip this frame, LOCAL
 };
 
@@ -249,6 +251,11 @@ std::string toggleBookPage(ARX_INTERFACE_BOOK_MODE page) {
 std::string runChoice(Hand hand, const RadialChoice & choice, RadialRequests & requests) {
 	switch(choice.item) {
 		case RadialItem::None: {
+			// Over nothing, with the book, the bag, a container or a note open: B closes it (#377, the owner's
+			// D-042 amendment) - not while an item is dragged, which would fall out of the bag
+			if(!g_draggedEntity && !closeOpenPanels(requests).empty()) {
+				return "closed";
+			}
 			return "none";
 		}
 		case RadialItem::Inventory: {
@@ -333,6 +340,47 @@ QuickSlotSet quickSlots(Hand hand) {
 	return parseQuickSlots(GETVarValueText(svar, SlotVariables[size_t(hand)]));
 }
 
+std::string closeOpenPanels(RadialRequests & requests) {
+
+	std::string closed;
+	const auto note = [&closed](const char * what) {
+		closed += closed.empty() ? what : std::string(" ") + what;
+	};
+
+	if(ARXmenu.mode() != Mode_InGame || !entities.player()) {
+		return closed;
+	}
+	if(player.Interface & INTER_PLAYERBOOK) {
+		g_playerBook.close();
+		note("book");
+	}
+	if(g_note.isOpen()) {
+		ARX_INTERFACE_NoteClose();
+		note("note");
+	}
+	if(g_secondaryInventoryHud.isOpen()) {
+		g_secondaryInventoryHud.close();
+		note("container");
+	}
+	if(player.Interface & (INTER_INVENTORY | INTER_INVENTORYALL)) {
+		// The bag through its key, as the menu's inventory item: the engine keeps its own state of the bag
+		requests.pulses[size_t(GameAction::Inventory)] = true;
+		note("inventory");
+	}
+	if(!closed.empty()) {
+		gameevent::Event("vr.panels.closed")("what", closed);
+	}
+	return closed;
+}
+
+void closeRadialMenus(const char * why) {
+	for(size_t i = 0; i < HandCount; i++) {
+		if(g_radial.menus[i].open) {
+			closeMenu(Hand(i), why);
+		}
+	}
+}
+
 void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialRequests & requests) {
 
 	followTorch();
@@ -365,6 +413,7 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 			menu.hand = frameHands().hands[i].position;
 			menu.pose = placeRadial(menu.hand, eyeMiddle(), g_radial.params);
 			menu.selector.reset();
+			menu.travel = 0.f;
 			menu.point = Vec2f(0.f);
 			menu.open = true;
 			status.open = true;
@@ -383,6 +432,7 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 
 		menu.hand = frameHands().hands[i].position;
 		menu.point = radialPlanePoint(menu.pose, menu.hand);
+		menu.travel = std::max(menu.travel, glm::length(menu.point));
 		const RadialChoice before = menu.selector.hovered();
 		const RadialChoice & hovered = menu.selector.update(menu.point, g_radial.params);
 		status.point = menu.point;
@@ -393,15 +443,17 @@ void updateRadialMenus(const ControlResolver & controls, bool blocked, RadialReq
 		}
 
 		if(!controls.active(event)) {
-			// Released: the item under the hand runs, over nothing nothing does
+			// Released: the item under the hand runs; over nothing, an open book, bag, container or note closes (#377)
 			const RadialChoice chosen = hovered;
 			status.chosen = radialChoiceName(chosen);
 			status.result = runChoice(hand, chosen, requests);
 			if(chosen.item != RadialItem::None) {
 				status.choices++;
 			}
+			// shown: the menu was in the last submitted frame; travelM: how far the hand went from the middle -
+			// a release over nothing tells a menu nobody saw from one nobody moved in (#377)
 			gameevent::Event("vr.radial")("hand", handName(hand))("state", "chosen")("item", status.chosen)
-				("result", status.result);
+				("result", status.result)("shown", radialLayerShown(hand) ? "yes" : "no")("travelM", menu.travel, 2);
 			menu.open = false;
 			status.open = false;
 			status.halfRing = false;

@@ -1,6 +1,8 @@
 # Control scheme v2 (#377, D-042) in the playground, on the simulated Index controllers - the whole default layout at
 # once, as the owner plays it: each hand's radial menu (B) opens and closes the inventory, the book and the game menu,
-# and B is the game menu key where no radial menu can open (the game menu shown, a hand not tracked); the right stick
+# and B is the game menu key where no radial menu can open (the game menu shown, a hand not tracked); with the book or
+# the bag open the radial menu still opens (the half-ring switches the page) and B released over nothing closes them,
+# and the casting stance's press (the right A) closes everything open first (the owner's headset test); the right stick
 # up jumps (beyond 0.7, more up than sideways), down toggles the crouch, sideways still turns; grip, then trigger acts
 # on a door and a lever (the trigger alone no longer does) and uses an item (a pie eaten, a sword equipped); the
 # weapon hand's trigger charges the strike, its stick click sheathes the weapon - then the trigger drags - and draws
@@ -35,7 +37,7 @@
 @assert vr.input.layout.jump eq right.stick_up
 @assert vr.input.layout.crouch_toggle eq right.stick_down
 @assert vr.input.layout.weapon eq right.stick_click
-@assert vr.input.layout.magic_mode eq left.a
+@assert vr.input.layout.magic_mode eq right.a
 @assert vr.input.layout.menu eq none
 @assert vr.input.layout.recenter eq none
 @assert vr.input.layout.inventory eq none
@@ -156,6 +158,107 @@ vr-input tap left.b
 @assert vr.radial.left.gameMenuKeys eq 3
 vr-sim hand left on
 vr-sim hand left pos -0.12 -0.2 -0.38
+@frames 30
+@assert vr.input.presses.menu eq 0
+
+# The book open from the half-ring (the owner's headset run: it would not close): no bag with it, freelook stays
+vr-input down right.b
+@frames 3
+vr-radial point right map
+@frames 10
+vr-input up right.b
+@until player.bookOpen eq true 5s
+@assert player.bookPage eq map
+@frames 30
+@assert player.inventoryOpen eq false
+@assert player.freelook eq true
+# The radial menu opens over the open book; its half-ring switches the page
+vr-input down right.b
+@frames 3
+@assert vr.radial.right.open eq true
+@assert vr.radial.right.refused eq none
+vr-radial point right quests
+@frames 10
+vr-input up right.b
+@frames 5
+@assert player.bookPage eq quests
+@assert player.bookOpen eq true
+# B released over nothing closes it (the owner's D-042 amendment); the hands are back in the world
+vr-input down left.b
+@frames 3
+@assert vr.radial.left.open eq true
+vr-radial point left center
+@frames 5
+vr-input up left.b
+@until player.bookOpen eq false 5s
+@assert vr.radial.left.result eq closed
+@until vr.reticle.on eq true 5s
+@assert player.inventoryOpen eq false
+@assert player.freelook eq true
+@frames 30
+# The bag the same: the radial menu opens with it, B over nothing closes it
+vr-input down right.b
+@frames 3
+vr-radial point right inventory
+@frames 5
+vr-input up right.b
+@until player.inventoryOpen eq true 5s
+@frames 30
+vr-input down right.b
+@frames 3
+@assert vr.radial.right.open eq true
+vr-radial point right center
+@frames 5
+vr-input up right.b
+@until player.inventoryOpen eq false 5s
+@assert vr.radial.right.result eq closed
+@frames 30
+# The casting stance (the right A, the owner) closes everything open first - the book and the bag - then starts
+vr-input down right.b
+@frames 3
+vr-radial point right character
+@frames 10
+vr-input up right.b
+@until player.bookOpen eq true 5s
+@frames 30
+vr-input down right.b
+@frames 3
+vr-radial point right inventory
+@frames 5
+vr-input up right.b
+@until player.inventoryOpen eq true 5s
+@frames 30
+@assert player.bookOpen eq true
+vr-input down right.a
+@until player.bookOpen eq false 5s
+@until player.inventoryOpen eq false 5s
+@until vr.magic.stance eq true 5s
+@log GameEvent:.*vr\.panels\.closed what="?book inventory
+vr-input up right.a
+@until vr.magic.stance eq false 5s
+@frames 30
+# The left A does nothing (the stance waits on the right A until #378)
+vr-input tap left.a
+@frames 10
+@assert vr.magic.stance eq false
+# The game menu item closes the book first, then the game menu opens; B goes back
+vr-input down right.b
+@frames 3
+vr-radial point right character
+@frames 10
+vr-input up right.b
+@until player.bookOpen eq true 5s
+@frames 30
+vr-input down right.b
+@frames 3
+vr-radial point right game_menu
+@frames 10
+vr-input up right.b
+@until menuMode eq mainmenu 5s
+@assert player.bookOpen eq false
+@frames 30
+vr-input tap right.b
+@until menuMode eq ingame 5s
 @frames 30
 @assert vr.input.presses.menu eq 0
 

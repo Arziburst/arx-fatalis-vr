@@ -472,6 +472,12 @@ void updateInput() {
 	// The radial menus on B (#376): their items press the engine's keys for one update, the game menu
 	// holds Escape for two like the menu button above (the engine acts on its release)
 	RadialRequests radial;
+	// The casting stance's press (A) closes everything open first (#377, the owner): the radial menus, the book,
+	// the bag, a container, a note - not the game menu - then the stance starts with the hands free
+	if(g_input.resolver.pressed(Event::MagicMode) && !controlsTaken && ARXmenu.mode() == Mode_InGame) {
+		closeRadialMenus("stance");
+		closeOpenPanels(radial);
+	}
 	updateRadialMenus(g_input.resolver, controlsTaken, radial);
 	for(size_t i = 0; i < GameActionCount; i++) {
 		game.actions[i] = game.actions[i] || radial.pulses[i];

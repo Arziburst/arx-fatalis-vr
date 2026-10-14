@@ -98,7 +98,7 @@ Entity * takeReticleAct();
 enum class ReticlePick {
 	NotMine, //!< the reticles are off: the engine's own pick
 	Found,   //!< a world reticle's pixel: \a entity is what its ray picked (may be null)
-	Blocked  //!< a pixel of the 2D interface: it never picks the world while the reticles are on
+	Blocked  //!< a pixel of the 2D interface: it never picks the world - the reticles on, or off for the panel (#377)
 };
 
 ReticlePick reticlePickAt(const Vec2s & pos, Entity *& entity);

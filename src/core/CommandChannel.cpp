@@ -1073,6 +1073,10 @@ std::string buildStatus(PlatformInstant now) {
 		// the arms drawn in VR (#385.3): cfg.ini vr_arms_model, and whether an Arx arm's faces gave way to a custom arm
 		json.value("armsModel", body.armsModel);
 		json.value("arxArmsHidden", body.arxArmsHidden);
+		// the body variant (#385.11): cfg.ini vr_body, and the body's and the Arx arms' faces the last frame drew
+		json.value("mode", body.bodyMode);
+		json.value("drawnBodyFaces", body.drawnBodyFaces);
+		json.value("drawnArmFaces", body.drawnArmFaces);
 		// the own body out of the eyes (#385.9): the push back behind the eyes, the neck pivot the body hangs from,
 		// the clearance, the faces hidden near an eye this frame, the nearest drawn body vertex, the legs still drawn
 		json.value("push", body.push);
@@ -2030,6 +2034,18 @@ std::string execute(std::string_view line) {
 			return refuse("arms: expected custom, arx or scale <factor>, got \"" + std::string(rest) + "\"");
 		}
 		vr::setArmsModel(model, "the channel");
+		return std::string();
+	}
+
+	if(word == "body") {
+		// The body drawn under a tracked head (#385.11): body full|hidden switches it live and saves it to cfg.ini
+		std::string_view args;
+		std::string_view what = firstWord(rest, args);
+		vr::BodyMode mode;
+		if(!args.empty() || !vr::parseBodyModeStrict(what, mode)) {
+			return refuse("body: expected full or hidden, got \"" + std::string(rest) + "\"");
+		}
+		vr::setBodyMode(mode, "the channel");
 		return std::string();
 	}
 

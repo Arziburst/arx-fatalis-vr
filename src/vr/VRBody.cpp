@@ -44,6 +44,7 @@
 #include "io/log/Logger.h"
 #include "platform/Time.h"
 #include "scene/Object.h"
+#include "util/String.h"
 #include "vr/ArmIK.h"
 #include "vr/ArmRoll.h"
 #include "vr/BodyView.h"
@@ -163,6 +164,10 @@ struct BodyState {
 	//! worked out for (status.poseCalls) - once per frame, the same faces for both eyes
 	std::vector<char> nearEye;
 	u64 nearEyePose = u64(-1);
+	//! the body's and the Arx arms' faces drawn since the player was last posed (#385.11): status.json reports the
+	//! last frame's
+	size_t drawingBodyFaces = 0;
+	size_t drawingArmFaces = 0;
 	PlayerBodyStatus status;
 };
 
@@ -841,6 +846,11 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	}
 
 	status.poseCalls++;
+	// What the last frame drew of the player model (#385.11)
+	status.drawnBodyFaces = g_body.drawingBodyFaces;
+	status.drawnArmFaces = g_body.drawingArmFaces;
+	g_body.drawingBodyFaces = 0;
+	g_body.drawingArmFaces = 0;
 	// The custom arms (#385.3): the playground lever may switch them; nothing is drawn until an arm is posed again
 	followArmsLever();
 	resetCustomArms();
@@ -1176,13 +1186,59 @@ bool drawsBodyFace(const EERIE_3DOBJ * obj, size_t face) {
 		return true;
 	}
 	const u8 role = g_body.faceRole[face];
+	const bool hidden = bodyMode() == BodyMode::Hidden;
 	if(role == FaceBody) {
-		return true;
+		return !hidden;
 	}
 	if(role >= FaceArmCap) {
-		return customArmDrawn(Hand(role - FaceArmCap));
+		// The cap closes the torso's shoulder while the custom arm is drawn; with the body hidden it closes the open
+		// end of the Arx arm drawn alone
+		const bool customArm = customArmDrawn(Hand(role - FaceArmCap));
+		return hidden ? !customArm : customArm;
 	}
 	return !customArmDrawn(Hand(role - FaceArm));
+}
+
+BodyMode parseBodyMode(std::string_view text) {
+	return (util::toLowercase(std::string(text)) == "hidden") ? BodyMode::Hidden : BodyMode::Full;
+}
+
+bool parseBodyModeStrict(std::string_view text, BodyMode & mode) {
+	const std::string name = util::toLowercase(std::string(text));
+	if(name == "full") {
+		mode = BodyMode::Full;
+	} else if(name == "hidden") {
+		mode = BodyMode::Hidden;
+	} else {
+		return false;
+	}
+	return true;
+}
+
+const char * bodyModeName(BodyMode mode) {
+	return mode == BodyMode::Hidden ? "hidden" : "full";
+}
+
+BodyMode bodyMode() {
+	return parseBodyMode(config.input.vrBody);
+}
+
+void setBodyMode(BodyMode mode, const char * by) {
+	const char * name = bodyModeName(mode);
+	if(config.input.vrBody != name) {
+		config.input.vrBody = name;
+		config.save();
+		LogInfo << "[vr] body: mode " << name << " (" << by << ")";
+		gameevent::Event("vr.body.mode")("mode", name)("by", by);
+	}
+}
+
+void noteBodyFaceDrawn(const EERIE_3DOBJ * obj, size_t face) {
+	if(!obj || obj != g_body.boundObject) {
+		return;
+	}
+	const bool arm = face < g_body.faceRole.size() && g_body.faceRole[face] != FaceBody;
+	(arm ? g_body.drawingArmFaces : g_body.drawingBodyFaces)++;
 }
 
 bool hidesBodyFaceNearEye(const EERIE_3DOBJ * obj, size_t face) {
@@ -1247,6 +1303,7 @@ const PlayerBodyStatus & playerBodyStatus() {
 	PlayerBodyStatus & status = g_body.status;
 	status.armsModel = armsModelName(armsModel());
 	status.arxArmsHidden = customArmDrawn(Hand::Left) || customArmDrawn(Hand::Right);
+	status.bodyMode = bodyModeName(bodyMode());
 	return status;
 }
 

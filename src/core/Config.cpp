@@ -55,6 +55,7 @@
 #include "vr/PhysicalCrouch.h"
 #include "vr/UIPanel.h"
 #include "vr/VRArms.h"
+#include "vr/VRBody.h"
 #include "vr/VRSystem.h"
 #include "vr/VRTurn.h"
 
@@ -82,6 +83,7 @@ constexpr const std::string_view
 	debugLevels,
 	realtimeOverride,
 	vrArmsModel = "custom",
+	vrBody = "full",
 	bufferUpload,
 	extensionOverride,
 	thumbnailSize = BOOST_PP_STRINGIZE(THUMBNAIL_DEFAULT_WIDTH) "x"
@@ -356,6 +358,7 @@ constexpr const std::string_view
 	vrArmTwistOverflow = "vr_arm_twist_overflow",
 	vrHeightOffset = "vr_height_offset",
 	vrArmsModel = "vr_arms_model",
+	vrBody = "vr_body",
 	vrHandScale = "vr_hand_scale",
 	vrArmMaxStretch = "vr_arm_max_stretch",
 	vrArmWeaponElbowDrop = "vr_arm_weapon_elbow_drop",
@@ -660,6 +663,7 @@ bool Config::save() {
 	writer.writeKey(Key::vrArmTwistOverflow, input.vrArmTwistOverflow);
 	writer.writeKey(Key::vrHeightOffset, input.vrHeightOffset);
 	writer.writeKey(Key::vrArmsModel, input.vrArmsModel);
+	writer.writeKey(Key::vrBody, input.vrBody);
 	writer.writeKey(Key::vrHandScale, input.vrHandScale);
 	writer.writeKey(Key::vrArmMaxStretch, input.vrArmMaxStretch);
 	writer.writeKey(Key::vrArmWeaponElbowDrop, input.vrArmWeaponElbowDrop);
@@ -871,6 +875,8 @@ bool Config::init(const fs::path & file) {
 	// The arms drawn on the player in VR (#385): anything but "arx" is our own arms
 	input.vrArmsModel = vr::armsModelName(vr::parseArmsModel(reader.getKey(Section::Input, Key::vrArmsModel, Default::vrArmsModel)));
 	input.vrHandScale = vr::clampHandScale(reader.getKey(Section::Input, Key::vrHandScale, Default::vrHandScale));
+	// The body drawn under a tracked head (#385.11): anything but "hidden" is the whole body
+	input.vrBody = vr::bodyModeName(vr::parseBodyMode(reader.getKey(Section::Input, Key::vrBody, Default::vrBody)));
 	input.vrArmMaxStretch = vr::clampArmMaxStretch(reader.getKey(Section::Input, Key::vrArmMaxStretch, Default::vrArmMaxStretch));
 	input.vrArmWeaponElbowDrop = vr::clampWeaponElbowDrop(reader.getKey(Section::Input, Key::vrArmWeaponElbowDrop,
 	                                                                    Default::vrArmWeaponElbowDrop));

@@ -246,6 +246,7 @@ public:
 		float vrHeightOffset; //!< VR: the character height setting, meters above the character's eye (#260)
 		std::string vrArmsModel; //!< VR: the arms drawn on the player, "custom" (our own, vr/VRArms.h) or "arx" (#385)
 		float vrHandScale; //!< VR: the custom hands' size against the glove's real size (#385)
+		std::string vrBody; //!< VR: the player model drawn under a tracked head, "full" (pushed back) or "hidden" (the arms only, #385.11)
 		float vrArmMaxStretch; //!< VR: how far [0, 0.3] the custom arm stretches past its fitted length to reach the controller (#385.6)
 		float vrArmWeaponElbowDrop; //!< VR: the share [0, 1] of its angle the elbow of a hand holding a weapon drops by (#385.6)
 		float vrMeleeSwingSpeed; //!< VR: m/s a weapon swing hits from (#39, vr/MeleeSwing.h)

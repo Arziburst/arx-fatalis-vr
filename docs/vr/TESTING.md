@@ -625,7 +625,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   `fade` 0, no meter frames). `active`: a scripted scene owns the game's camera (a `speak -c` line, a camera entity,
   the letterbox) on the last VR frame; `kind` `none` | `speech` | `entity`; `view` (`first` | `observer` | `ghost` |
   `hybrid`) and `lookat` (`ignore` | `fade`): the switches now; `shown`: what the eyes see (`none` - no scene, the
-  game's first person - or the view of the shot shown; it changes at the black of a cut, with the `vr.scene` events);
+  game's first person - or the view of the shot shown; `screen`: the frame is drawn flat into the quad on the screen
+  fixed in the room, `vr.screen ... for=scene`; it changes at the black of a cut, with the `vr.scene` events);
   `fade`: the scene fade now (0..1); `armsIk`: the IK arms are on (false while the hero is shown in third person).
   `meter`, since `scene meter reset`, VR frames only: `frames`, `sceneFrames` (`active`), `screenFrames`;
   `minAboveFloorM`, `maxStepCm`, `maxYawStepDeg` over the frames that show a scene and are not behind the fade (fade
@@ -1493,6 +1494,8 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `scene-switches` | the switches of scripted scenes (#29): on the test save `scene-kultar` the defaults `hybrid` / `ignore` / `above`, each `scene ...` command live, `scene meter reset`; a `speak -c` line on Kultar: `vr.scene state=start kind=speech`, its cut, its subtitle event, `state=end`, the meter counted it, no letterbox; `playerlookat` counted with `ignore` (the yaw stays) and turned behind the fade with `fade` | — |
 | `scene-first` | the `first` view (#29) on `scene-kultar`: T1 - a walk into KULTAR_WAKE, Kultar's scene at the bars (camera entities, the hero teleported) seen from the hero's head: `kind=entity`, IK arms on, both eyes see the world, 3 cuts all behind the fade, the eyes 1.70 m above the floor, steps 0.009 cm, no yaw step, no letterbox; T5 - every `speak -c` mode on Kultar the same (18 cuts, all faded); in a line the stick turns the hero, the stick walk does not move him | — |
 | `scene-ghost` | the `ghost` view (#29): T1 and T5 as in `scene-first`, the shots held at their first frame (steps 0, no yaw step) and never lower than 1.2 m (camera_0038 at 0.8 m: 1.201), IK arms off | — |
+| `scene-observer` | the `observer` view (#29) on `scene-kultar`: T1 Kultar and T5 every `speak -c` mode shown from one point beside the speakers, the hero in third person with the IK arms off; the eyes at least 1.2 m above the floor, steps < 5 cm, yaw steps < 1 degree, every cut behind the fade, no letterbox | — |
+| `scene-hybrid` | the `hybrid` view (#29) in one run: T2 the new game's prison intro on the screen (`vr.panel.mode` `screen`, `quadPixels` in both eyes), T1 Kultar in first person (the hero `setpos` to the `scene-kultar` spot first), T8 a level 5 vision ball (`camera_0137`) on the screen - the whole scene, so no world frame is measured (`minAboveFloorM` -1, `screenFrames` = `sceneFrames`); every cut behind the fade, no letterbox | — |
 | `scene-lookat` | `playerlookat` (#29): T1 with `ignore` (counted, the yaw stays, also a console `playerlookat`), the save loaded again and T1 with `fade` (every lookat applied behind the fade, no yaw step, the fade back to 0) | — |
 | `scene-flat` | flat mode unchanged (#29, `--no-vr`): the switches accepted and ignored, the game's own `scene state=start` (the letterbox) on entering KULTAR_WAKE by the bars, `scene.shown` `none`, no meter frames, no `vr.scene` event | — |
 

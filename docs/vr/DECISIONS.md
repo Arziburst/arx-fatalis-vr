@@ -24,8 +24,15 @@ a changed decision keeps its history in that cell.
 - A scripted scene (a `speak -c` line, a camera entity of `cameraactivate`, the letterbox of `cinemascope`) no longer
   hands the game's camera to the eyes. What the eyes get is **cfg.ini `vr_scene_view`**: `first` (the hero's head, the
   game's scene cameras ignored), `ghost` (the game's camera positions, each shot held where it starts - no dolly, no
-  pan - yaw only, pitch and roll from the head, never lower than 1.2 m above the floor under it), `observer` and
-  `hybrid` (#29.2; until then they show `first`). Default `hybrid`.
+  pan - yaw only, pitch and roll from the head, never lower than 1.2 m above the floor under it), `observer` (one
+  point per scene beside the line between the hero's head and the shot's NPC, 0.75 x their distance clamped to
+  1.5-3 m, ray-checked 40 cm off walls, the game camera's side when both fit, at the player's real eye height above the
+  floor there; kept through the scene's camera entities and lines) and `hybrid` (`first` for dialogues; a camera
+  entity's shot that `first` would lose goes on the virtual screen fixed in the room - the intro's screen, 2.5 m ahead,
+  2.6 m wide: the camera more than 6 m from the hero's head or without a line of sight to it - vision balls, portals,
+  cutscene levels - or the hero's body played by a script, `playanim -p` / `forceanim`, as the goblins dragging him in
+  the prison intro; a shot keeps the screen once it wanted it; `speak -c` lines and letterbox-only stretches stay
+  `first`; with no floor under the hero's eye it stays black). Default `hybrid`.
 - **Every change of the shot the eyes see is a cut behind a fade**: the shot shown is held while the world fades out,
   the new one is taken at black, then the world fades in. A shot changes with the scene's start and end, a new
   `speak -c` line, another camera entity, and a jump (> 50 cm) of a view that follows the hero (the script teleporting
@@ -41,7 +48,9 @@ a changed decision keeps its history in that cell.
   `playerlookat` fade is 0.1 s out and 0.1 s in; black is held two frames after a switch. In `first`, a scene's start
   and end and a new `speak -c` line fade too, although the hero's head stays - the rule is "every shot change", and the
   script's teleport at a scene start hides behind that fade; if the owner finds those fades needless in `first`, they
-  can be limited to jumps. One place: `SceneFadeParams` in `src/vr/SceneView.h`.
+  can be limited to jumps. One place: `SceneFadeParams` in `src/vr/SceneView.h`. The hybrid's 6 m (`HybridFarUnits`),
+  the screen's size and distance and the observer's distances are proposals too; `observer` and the screen keep the
+  eyes through a scene's new lines and cameras (no cut), `first` and `ghost` fade on each of them.
 
 ### Why
 - The jerks the owner felt are the scene camera's own moves: un-faded cuts (a yaw cut rotates the world), dollies and
@@ -49,6 +58,9 @@ a changed decision keeps its history in that cell.
   prison scene dips to 0.5 m), `playerlookat` as an un-faded snap turn, and the letterbox drawn into each eye as
   head-locked bars. Holding each shot, fading every cut and keeping the head's own rotation removes all of them.
 - Doom 3 BFG VR's "immersive" cutscenes (research F-358..F-362) do the same for the ghost view.
+- The hybrid's screen: the game's dialogue cameras stand 2-5 m from the hero, its far cameras 20-60 m; a far shot or the
+  hero's scripted body (the only near case where first person would see from inside a dragged or lying model) is lost
+  in `first`, and a flat screen in the room is the comfortable way to show it (UEVR's 2D screen mode, RE4 VR's theatre).
 
 ### Trade-offs accepted
 - The ghost view loses the game's camera motion within a shot; `first` loses the authored framing altogether.

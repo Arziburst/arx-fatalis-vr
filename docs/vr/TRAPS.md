@@ -1232,3 +1232,13 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** `<npc>.speak -c ... [kultar_letmeout]` (a 5 s sample) through the test channel ends after about 2 s - a sequence's input in that line runs past its end; the same line from the game's own script plays in full (#29).
 **Cause:** without the letterbox (`cinematicBorder` off) a `speak` line is a "no text" line, and `ARX_SPEECH_AddSpeech` plays a random variant of its sample: `kultar_letmeout2` / `3` are 2.1 s. Lines with the letterbox on (a real scene) never pick a variant.
 **Do:** for a line that must last, take one without variants (`kultar_cantgo`, 8.4 s; `kultar_traveler`, 22 s) or turn the letterbox on first.
+
+## 2026-10-14 - A new game's hero stands off the level for 2 s before the prison intro
+**Symptom:** the scene meter's `minAboveFloorM` is 0 for a stretch from `newgame`: the eyes in first person over no floor (#29).
+**Cause:** after `GAME_READY` the intro waits 2 s (letterbox on, controls off) before its `TELEPORT -PA 180`; until then the hero is at the level's editor position, where `CheckInPoly` finds no floor.
+**Do:** the hybrid view keeps the fade black while there is no floor under the hero's eye; any measurement from `newgame` meets these 2 s.
+
+## 2026-10-14 - A console `speak` line of a variant's sample name shows no subtitle
+**Symptom:** `<npc>.speak -c ... [kultar_letmeout2]` plays, but `scene.subtitle.text` stays empty and `voicedLines` does not count it (#29).
+**Cause:** a speech variant's text is not a section named after its sample (`kultar_letmeout2.wav`): it is the key `string2` in the line's own section `[kultar_letmeout]`. No section `[kultar_letmeout2]` exists.
+**Do:** speak the line's own key (`[kultar_letmeout]`); the subtitle takes the text of the variant actually played (`string<N>`).

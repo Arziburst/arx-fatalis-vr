@@ -35,6 +35,8 @@
 #include "graphics/data/TextureContainer.h"
 #include "graphics/image/Image.h"
 #include "graphics/texture/Texture.h"
+#include "io/fs/Filesystem.h"
+#include "io/fs/SystemPaths.h"
 #include "io/log/Logger.h"
 #include "io/resource/PakReader.h"
 #include "io/resource/ResourcePath.h"
@@ -81,6 +83,7 @@ struct GloveRest {
 	Vec3f wrist = Vec3f(0.f);    //!< mesh space, meters
 	Vec3f palm = Vec3f(0.f);
 	Vec3f tip = Vec3f(0.f);      //!< the middle fingertip
+	Vec3f palmCentre = Vec3f(0.f); //!< the middle metacarpal's midpoint: the palm's centre (the Palm joint lies off it)
 	Vec3f cuff = Vec3f(0.f);     //!< the centre of the cuff opening
 	glm::quat toGrip = quat_identity(); //!< the mesh's rest frame to the grip frame (vr/ArmIK.h handToGrip)
 	glm::quat sleeveAxes = quat_identity(); //!< the sleeve's wrist axes (along, thickness, width) in mesh space
@@ -104,6 +107,14 @@ struct CustomArm {
 	ReachTracker reach;            //!< the player's reach with this hand (#385.6)
 	ArmLengths lengths;            //!< the segments in use: easing towards the fit (0 before the first)
 	ArmRollState roll;             //!< the overflow side of this arm's roll, between frames
+	// The glove driven joint by joint (#385.7)
+	bool shapesLoaded = false;     //!< open, Grab and the captured hilt pose were read
+	CustomHandShapes shapes;       //!< palm-relative
+	HiltAngles hiltBuiltFor;       //!< the configured angles shapes.hilt was built with
+	bool hiltBuilt = false;
+	HandJoints lastJoints;         //!< the runtime's joints of the last frame posed (for `grip capture`)
+	HandJoints current;            //!< what the glove is posed by: the target approached at a bounded speed
+	GloveCurl hiltCurl;            //!< the axis the glove's fingers wrap in the default hilt pose (mesh space)
 	bool drawn = false;
 	CustomArmStatus status;
 };
@@ -179,6 +190,8 @@ void loadGlove(Hand hand, GloveRest & glove) {
 	glove.wrist = jointPosition(glove.restWorld, wrist);
 	glove.palm = jointPosition(glove.restWorld, palm);
 	glove.tip = jointPosition(glove.restWorld, tip);
+	glove.palmCentre = 0.5f * (jointPosition(glove.restWorld, glove.rig.joint[size_t(HandJoint::MiddleMetacarpal)])
+	                           + jointPosition(glove.restWorld, glove.rig.joint[size_t(HandJoint::MiddleProximal)]));
 
 	// The hand's frame as the IK reads it from a model (long axis to the palm, lateral axis to the thumb)
 	std::vector<Vec3f> vertices;
@@ -209,6 +222,77 @@ void loadGlove(Hand hand, GloveRest & glove) {
 	        << glm::length(palmLocal) * GloveUnitsPerMeter << " cm, palm to middle tip "
 	        << glm::distance(glove.palm, glove.tip) * GloveUnitsPerMeter << " cm, the hand along mesh "
 	        << (along.z < 0.f ? "-Z" : "+Z");
+}
+
+//! MRTK3's Grab (data/core/vr/hands, BSD-3): the controls' closed end; the resource system's names are lower case
+const char * const ArmsGrabShape = "vr/hands/articulatedhandpose_grab.json";
+
+//! Where `grip capture` keeps \a hand's hilt pose
+fs::path hiltPosePath(Hand hand) {
+	return fs::getUserDir() / (std::string("vr-hilt-pose-") + handName(hand) + ".json");
+}
+
+//! The configured hilt angles (cfg.ini vr_hilt_*)
+HiltAngles configuredHiltAngles() {
+	HiltAngles angles;
+	angles.knuckle = config.input.vrHiltKnuckle;
+	angles.middle = config.input.vrHiltMiddle;
+	angles.last = config.input.vrHiltLast;
+	angles.thumb = config.input.vrHiltThumb;
+	return clampHiltAngles(angles);
+}
+
+/*!
+ * The hand shapes of \a hand (#385.7), read once: the open hand, MRTK3's Grab (recorded for the right hand: the left
+ * is its mirror) and the captured hilt pose when <user dir> has one. A missing Grab is the shipped data broken: an
+ * error, and the controls close nothing
+ */
+void loadHandShapes(Hand hand, CustomArm & arm) {
+
+	arm.shapesLoaded = true;
+	arm.shapes.open = palmRelativeJoints(synthesizeHandJoints(hand, HandShape()));
+
+	std::string error;
+	const std::string grab = g_resources->read(ArmsGrabShape);
+	HandJoints joints;
+	if(grab.empty()) {
+		LogError << "[vr] arms: " << ArmsGrabShape << " not found - the " << handName(hand)
+		         << " hand's controls close no finger";
+	} else if(!loadHandShape(grab.data(), grab.size(), joints, error)) {
+		LogError << "[vr] arms: " << ArmsGrabShape << ": " << error << " - the " << handName(hand)
+		         << " hand's controls close no finger";
+	} else {
+		arm.shapes.grab = palmRelativeJoints(hand == Hand::Right ? joints : mirrorHandJoints(joints));
+	}
+
+	const fs::path captured = hiltPosePath(hand);
+	if(fs::exists(captured)) {
+		const std::string data = fs::read(captured);
+		if(loadHandShape(data.data(), data.size(), joints, error)) {
+			arm.shapes.captured = palmRelativeJoints(joints);
+			LogInfo << "[vr] arms: the " << handName(hand) << " hand closes on the hilt pose captured in " << captured;
+		} else {
+			LogWarning << "[vr] arms: " << captured << ": " << error << " - the " << handName(hand)
+			           << " hand closes on the default hilt pose";
+		}
+	}
+}
+
+//! \a current turned toward \a target by at most \a step radians per joint (all palm-relative)
+HandJoints approachJoints(const HandJoints & current, const HandJoints & target, float step) {
+	if(!current.valid || !target.valid) {
+		return target;
+	}
+	HandJoints joints = target;
+	for(size_t j = 0; j < HandJointCount; j++) {
+		const glm::quat & from = current.orientation[j];
+		const glm::quat & to = target.orientation[j];
+		const float angle = 2.f * std::acos(std::min(std::abs(glm::dot(from, to)), 1.f));
+		if(angle > step && angle > 1e-6f) {
+			joints.orientation[j] = glm::normalize(glm::slerp(from, to, step / angle));
+		}
+	}
+	return joints;
 }
 
 /*!
@@ -385,6 +469,7 @@ void resetCustomArms() {
 		arm.drawn = false;
 		arm.status.drawn = false;
 		arm.status.fingerSource = CustomFingerSource::None;
+		arm.status.hiltPose = HiltPoseSource::None;
 	}
 }
 
@@ -395,6 +480,7 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	status.handScale = clampHandScale(config.input.vrHandScale);
 	arm.drawn = false;
 	status.drawn = false;
+	status.hiltPose = HiltPoseSource::None;
 	if(armsModel() != ArmsModel::Custom) {
 		return false;
 	}
@@ -408,9 +494,38 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	const float scale = status.handScale;
 	const float gloveScale = GloveUnitsPerMeter * scale;
 
-	// The glove: its palm joint on the grip, the controller's orientation through the hand frame
-	const glm::quat handQuat = glm::normalize(logical.gripOrientation * glove.toGrip);
-	const Vec3f gloveWrist = logical.grip - handQuat * ((glove.palm - glove.wrist) * gloveScale);
+	// The hand's shapes (#385.7): read once; the hilt pose rebuilt when its configured angles change, with the axis
+	// its closed fingers wrap on the glove
+	if(!arm.shapesLoaded) {
+		loadHandShapes(hand, arm);
+	}
+	const HiltAngles angles = configuredHiltAngles();
+	if(!arm.hiltBuilt || angles.knuckle != arm.hiltBuiltFor.knuckle || angles.middle != arm.hiltBuiltFor.middle
+	   || angles.last != arm.hiltBuiltFor.last || angles.thumb != arm.hiltBuiltFor.thumb) {
+		arm.shapes.hilt = palmRelativeJoints(hiltPose(hand, DefaultHiltRadius, angles));
+		std::vector<glm::mat4> hiltLocal;
+		poseHandFromJoints(glove.mesh, glove.rig, arm.shapes.hilt, hiltLocal);
+		arm.hiltCurl = gloveCurlAxis(glove.mesh, glove.rig, hiltLocal);
+		arm.hiltBuiltFor = angles;
+		arm.hiltBuilt = true;
+	}
+
+	// The glove on the controller's handle (#385.7, research #453 F-483: the grip is the handle's centre, outside the
+	// hand): turned by the least rotation that lays its hilt pose's curl along the handle and placed with that curl's
+	// centre on the grip, so the handle - and a held hilt - runs through the closed fingers, not through the palm.
+	// Without a curl the palm's centre lies the handle's radius plus the palm's radius behind the grip
+	const glm::quat handQuat = glm::normalize(logical.gripOrientation * gloveOnHandle(arm.hiltCurl, glove.toGrip));
+	Vec3f gloveWrist(0.f);
+	if(arm.hiltCurl.valid) {
+		gloveWrist = logical.grip - handQuat * ((arm.hiltCurl.centre - glove.wrist) * gloveScale);
+	} else {
+		const Vec3f palmAt = palmBehindGrip(hand, logical.grip, logical.gripOrientation, IndexHandleRadius * UnitsPerMeter,
+		                                    GlovePalmRadius * gloveScale);
+		gloveWrist = palmAt - handQuat * ((glove.palmCentre - glove.wrist) * gloveScale);
+	}
+	status.palmToGrip = glm::distance(gloveWrist + handQuat * ((glove.palmCentre - glove.wrist) * gloveScale), logical.grip);
+	status.grip = logical.grip;
+	status.handle = logical.gripOrientation * Vec3f(0.f, 0.f, 1.f); // the grip's Z in engine axes
 	glm::mat4 gloveToWorld = glm::translate(glm::mat4(1.f), gloveWrist) * glm::mat4_cast(handQuat);
 	gloveToWorld = glm::scale(gloveToWorld, Vec3f(gloveScale));
 	gloveToWorld = glm::translate(gloveToWorld, -glove.wrist);
@@ -532,14 +647,20 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	skinMesh(arm.sleeveWork, arm.sleeveJoints, arm.sleevePositions, arm.sleeveNormals);
 	recomputeNormals(arm.sleeve, arm.sleevePositions, arm.sleeveNormals);
 
-	// The hand: its five fingers head for what their source asks (#385.4: a held weapon closes them on either hand,
-	// else the hand joints, else the controls) at a bounded speed, so a weapon taken or a source lost never snaps them
+	// The hand, joint by joint (#385.7): a held weapon closes it on the hilt pose on either hand (the captured one,
+	// else the default), else it takes the runtime's joints (conforming to the controller where the runtime can),
+	// else the controls close each finger toward MRTK3's Grab. The glove's joints turn toward that at a bounded
+	// speed, so a weapon taken or a source lost never snaps them
+	arm.lastJoints = logical.joints;
 	CustomFingerInput fingerInput = logical.fingers;
 	fingerInput.holds = logical.holdsWeapon;
-	const CustomFingerTarget fingerTarget = customFingerTarget(fingerInput, logical.joints);
-	status.fingers = approachPose(status.fingers, fingerTarget.pose, CurlDegreesPerSecond * logical.seconds);
-	status.fingerSource = fingerTarget.source;
-	poseHand(glove.mesh, glove.rig, status.fingers, arm.gloveLocal);
+	const CustomHandTarget handTarget = customHandTarget(fingerInput, logical.joints, arm.shapes);
+	const float step = CurlDegreesPerSecond * logical.seconds;
+	arm.current = approachJoints(arm.current, handTarget.joints, glm::radians(step));
+	status.fingers = approachPose(status.fingers, handTarget.pose, step);
+	status.fingerSource = handTarget.source;
+	status.hiltPose = handTarget.hilt;
+	poseHandFromJoints(glove.mesh, glove.rig, arm.current, arm.gloveLocal);
 	composeGloveJoints(glove.mesh, arm.gloveLocal, gloveToWorld, arm.gloveJoints);
 	skinMesh(glove.mesh, arm.gloveJoints, arm.handPositions, arm.handNormals);
 
@@ -550,6 +671,11 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 	ring /= float(std::max<size_t>(arm.lastRing.size(), 1));
 
 	status.drawn = true;
+	if(arm.hiltCurl.valid) {
+		const Vec3f centre(gloveToWorld * glm::vec4(arm.hiltCurl.centre, 1.f));
+		status.curlToHandle = glm::length(glm::cross(centre - status.grip, status.handle));
+		status.curlAngle = glm::degrees(std::acos(std::min(std::abs(glm::dot(handQuat * arm.hiltCurl.axis, status.handle)), 1.f)));
+	}
 	status.palm = Vec3f(gloveToWorld * glm::vec4(glove.palm, 1.f));
 	status.tipLength = glm::distance(status.palm, Vec3f(gloveToWorld * glm::vec4(glove.tip, 1.f)));
 	status.wrist = cuff;
@@ -588,6 +714,39 @@ CustomArmsLoad customArmsLoad() {
 		load.reason = "not tried yet: no arm was posed with the custom model on";
 	}
 	return load;
+}
+
+bool captureHiltPose(Hand hand, std::string & result) {
+	CustomArm & arm = g_customArms[size_t(hand)];
+	if(!arm.lastJoints.valid) {
+		result = std::string("the ") + handName(hand) + " hand has no runtime joints this frame (custom arms off, hand"
+		         " not tracked or the runtime gives no hand joints)";
+		return false;
+	}
+	const HandJoints joints = palmRelativeJoints(arm.lastJoints);
+	const fs::path path = hiltPosePath(hand);
+	if(!fs::write(path, handShapeJson(joints))) {
+		result = "could not write " + path.string();
+		LogWarning << "[vr] arms: grip capture: " << result;
+		return false;
+	}
+	arm.shapes.captured = joints;
+	result = path.string();
+	LogInfo << "[vr] arms: grip capture: the " << handName(hand) << " hand's joints are its hilt pose from now on ("
+	        << path << ")";
+	gameevent::Event("vr.hands.hiltPose")("hand", handName(hand))("state", "captured");
+	return true;
+}
+
+void clearHiltPose(Hand hand) {
+	CustomArm & arm = g_customArms[size_t(hand)];
+	arm.shapes.captured = HandJoints();
+	const fs::path path = hiltPosePath(hand);
+	if(fs::exists(path)) {
+		fs::remove(path);
+	}
+	LogInfo << "[vr] arms: grip capture clear: the " << handName(hand) << " hand closes on the default hilt pose";
+	gameevent::Event("vr.hands.hiltPose")("hand", handName(hand))("state", "default");
 }
 
 bool customArmDrawn(Hand hand) {

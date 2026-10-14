@@ -50,11 +50,12 @@ class TextureContainer;
  *    and two thirds of the forearm-to-hand roll, and the wrist on the glove hand's cuff, so the two
  *    openings meet; the elbow corrective is applied from the bend, the normals are recomputed from the
  *    skinned positions every frame (research rows F-233, F-310 .. F-312);
- *  - the Godot XR Tools glove hand (data/core/vr/arms/Hand_Glove_low_L/R.gltf) with its palm on the
- *    controller's grip (short of it past the stretch limit) and the controller's orientation, scaled by
- *    \c vr_hand_scale; its five fingers bend joint by joint (vr/HandRig.h, #385.4): closed on a held weapon's grip
- *    on either hand (D-042), else following the runtime's hand joints, else the controller's trigger, grip and
- *    thumb rest (D-041).
+ *  - the Godot XR Tools glove hand (data/core/vr/arms/Hand_Glove_low_L/R.gltf) with its palm behind the
+ *    controller's grip by the handle's and the palm's radius (short of it past the stretch limit) and the
+ *    controller's orientation, scaled by \c vr_hand_scale; its joints turn as the joints' orientations say
+ *    (vr/HandRig.h poseHandFromJoints, #385.7): closed on the hilt pose by a held weapon on either hand (D-042),
+ *    else following the runtime's hand joints (conforming to the controller where the runtime can), else
+ *    closing each finger toward MRTK3's Grab by the controller's trigger, grip and thumb rest (D-041).
  * Skinned once per frame after the body is posed; the animation code lights and projects the result per eye
  * into the model batch, two-sided like the VR body (research row F-231). Flat mode and the inventory book
  * always draw the Arx arms.
@@ -150,7 +151,7 @@ struct CustomArmStatus {
 	bool drawn = false;
 	float handScale = DefaultHandScale;
 	float tipLength = 0.f;       //!< the hand from the palm joint to the middle fingertip (units)
-	Vec3f palm = Vec3f(0.f);     //!< the glove's palm joint in the world (on the grip)
+	Vec3f palm = Vec3f(0.f);     //!< the glove's palm joint in the world (behind the grip, #385.7)
 	Vec3f wrist = Vec3f(0.f);    //!< where the sleeve meets the glove's cuff
 	// The fit (#385.6, vr/ArmFit.h)
 	float upperLength = 0.f;     //!< the fitted segments, units
@@ -168,11 +169,30 @@ struct CustomArmStatus {
 	// The five fingers (#385.4): what they follow (none while the arm is not posed) and each joint's bend this frame
 	CustomFingerSource fingerSource = CustomFingerSource::None;
 	FingerPose fingers;          //!< degrees, approaching what the source asks for
+	// The glove driven joint by joint (#385.7)
+	HiltPoseSource hiltPose = HiltPoseSource::None; //!< what a held weapon closes the hand on (none: no weapon)
+	float palmToGrip = 0.f;      //!< the glove palm's centre (the middle metacarpal's midpoint) from the grip (units)
+	Vec3f grip = Vec3f(0.f);     //!< the controller's grip in the world: a point of the handle's line
+	Vec3f handle = Vec3f(0.f, 0.f, 1.f); //!< the handle's direction in the world (the grip's Z), unit
+	float curlToHandle = 0.f;    //!< the hilt pose's curl centre from the handle's line, as drawn (units)
+	float curlAngle = 0.f;       //!< the hilt pose's curl axis off the handle, as drawn (degrees)
 	size_t vertices = 0;         //!< sleeve + hand
 	size_t triangles = 0;
 };
 
 const CustomArmStatus & customArmStatus(Hand hand);
+
+/*!
+ * \brief Store \a hand's runtime joints of the last frame as its hilt pose (#385.7, the channel's `grip capture`)
+ *
+ * Written to <user dir>/vr-hilt-pose-<left|right>.json (vr/HandRig.h handShapeJson, palm-relative) and used at once
+ * for a held weapon; read again on the next start. \a result says what was done or why not (no joints this frame,
+ * the file could not be written). In the headset with SteamVR this is the Index's conforming grip (research F-486).
+ */
+bool captureHiltPose(Hand hand, std::string & result);
+
+//! Forget \a hand's captured hilt pose and delete its file: a held weapon closes the hand on the default hilt pose
+void clearHiltPose(Hand hand);
 
 //! One mesh to draw, in the world: the sleeve or the hand of an arm drawn this frame
 struct CustomArmMesh {

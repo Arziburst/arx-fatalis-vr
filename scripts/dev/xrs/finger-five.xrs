@@ -162,21 +162,24 @@ vr-sim hand left fingers 0 0 0 0 0
 
 # Without hand joints the fingers follow the controls (D-041): the trigger is the index finger, the grip
 # the middle, ring and little finger; a value below the press threshold, so no gameplay event fires
+# The controls close each finger from the open hand toward MRTK3's Grab (#385.7): at 0.4 a knuckle bends about
+# 0.4 x Grab's own knuckle bend (index 64.5, middle 72.9, ring 74.8, little 73.2 degrees, data/core/vr/hands);
+# each threshold is 0.3 x that bend, rounded down (index 19, middle 21, ring 22, little 21)
 vr-sim hand left fingers off
 @frames 15
 @assert vr.body.left.custom.fingers.source eq controls
 vr-sim action trigger left 0.4
 @frames 30
-@assert vr.body.left.custom.fingers.index.root gt 30
+@assert vr.body.left.custom.fingers.index.root gt 19
 @assert vr.body.left.custom.fingers.middle.root lt 10
 @assert vr.body.left.custom.fingers.ring.root lt 10
 @assert vr.body.left.custom.fingers.little.root lt 10
 vr-sim action trigger left 0
 vr-sim action grip left 0.4
 @frames 30
-@assert vr.body.left.custom.fingers.middle.root gt 30
-@assert vr.body.left.custom.fingers.ring.root gt 30
-@assert vr.body.left.custom.fingers.little.root gt 30
+@assert vr.body.left.custom.fingers.middle.root gt 21
+@assert vr.body.left.custom.fingers.ring.root gt 22
+@assert vr.body.left.custom.fingers.little.root gt 21
 @assert vr.body.left.custom.fingers.index.root lt 10
 vr-sim action grip left 0
 vr-sim hand left fingers on

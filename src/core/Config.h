@@ -246,12 +246,21 @@ public:
 		float vrHeightOffset; //!< VR: the character height setting, meters above the character's eye (#260)
 		std::string vrArmsModel; //!< VR: the arms drawn on the player, "custom" (our own, vr/VRArms.h) or "arx" (#385)
 		float vrHandScale; //!< VR: the custom hands' size against the glove's real size (#385)
+		std::string vrBody; //!< VR: the player model drawn under a tracked head, "full" (pushed back) or "hidden" (the arms only, #385.11)
 		float vrArmMaxStretch; //!< VR: how far [0, 0.3] the custom arm stretches past its fitted length to reach the controller (#385.6)
 		float vrArmWeaponElbowDrop; //!< VR: the share [0, 1] of its angle the elbow of a hand holding a weapon drops by (#385.6)
 		float vrMeleeSwingSpeed; //!< VR: m/s a weapon swing hits from (#39, vr/MeleeSwing.h)
 		float vrMeleeFullSpeed; //!< VR: m/s a swing has its full damage at (#39)
 		float vrMeleeWeakAim; //!< VR: the damage ratio of an uncharged swing; a full charge is 1 (#39)
 		float vrMeleeTargetCooldown; //!< VR: seconds before a new swing can hit the same target (#39)
+		// VR: how far a custom hand on a weapon's hilt is closed, degrees (#385.7, vr/HandRig.h HiltAngles)
+		float vrHiltKnuckle; //!< the four fingers' knuckles
+		float vrHiltMiddle;  //!< their middle joints
+		float vrHiltLast;    //!< their last joints
+		float vrHiltThumb;   //!< the thumb's two outer joints
+		float vrBodyPush; //!< VR: game units (cm) the own body sits behind the eyes along its facing, looking ahead (#385.9, vr/BodyView.h)
+		float vrBodyPushDown; //!< VR: game units (cm) the push grows by looking straight down (#385.9)
+		float vrBodyClearance; //!< VR: game units (cm) from an eye within which the own body's faces are not drawn (#385.9)
 
 	} input;
 	

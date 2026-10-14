@@ -81,7 +81,49 @@ float knuckleSpread(const Vec3f & metacarpal, const Vec3f & proximal, const Vec3
 	return glm::degrees(std::asin(sine));
 }
 
+/*!
+ * A right-handed OpenXR joint frame: -Z along \a bone, and \a hint made square to it as the frame's +Y
+ * (\a hintIsY) or its X; \a fallback for a degenerate bone or a hint along it
+ */
+glm::quat jointFrame(const Vec3f & bone, const Vec3f & hint, bool hintIsY, const glm::quat & fallback) {
+	const float length = glm::length(bone);
+	if(!(length > 1e-9f)) {
+		return fallback;
+	}
+	const Vec3f z = -bone / length;
+	Vec3f square = hint - z * glm::dot(hint, z);
+	const float squareLength = glm::length(square);
+	if(!(squareLength > 1e-6f)) {
+		return fallback;
+	}
+	square /= squareLength;
+	const glm::mat3 frame = hintIsY ? glm::mat3(glm::cross(square, z), square, z) : glm::mat3(square, glm::cross(z, square), z);
+	return glm::normalize(glm::quat_cast(frame));
+}
+
 } // anonymous namespace
+
+void orientHandJoints(HandJoints & joints, const Vec3f & along, const Vec3f & back, const Vec3f & thumbSide) {
+
+	const Vec3f lateral = glm::cross(back, -along);
+	const glm::quat palm = jointFrame(along, back, true, glm::quat(1.f, 0.f, 0.f, 0.f));
+	joints.orientation[size_t(HandJoint::Palm)] = palm;
+	joints.orientation[size_t(HandJoint::Wrist)] = palm;
+
+	for(size_t finger = 0; finger < FingerCount; finger++) {
+		// The thumb has three bones from its metacarpal, a finger four; the tip takes the last bone's frame
+		const bool thumb = (finger == size_t(Finger::Thumb));
+		const size_t root = size_t(FingerRoots[finger]);
+		const size_t bones = thumb ? 3 : 4;
+		glm::quat previous = palm;
+		for(size_t j = root; j < root + bones; j++) {
+			const Vec3f bone = joints.position[j + 1] - joints.position[j];
+			previous = thumb ? jointFrame(bone, thumbSide, true, previous) : jointFrame(bone, lateral, false, previous);
+			joints.orientation[j] = previous;
+		}
+		joints.orientation[root + bones] = previous;
+	}
+}
 
 float flexionDegrees(const Vec3f & before, const Vec3f & after) {
 	const float lengths = glm::length(before) * glm::length(after);
@@ -272,8 +314,10 @@ HandJoints synthesizeHandJoints(Hand hand, const HandShape & shape, const Vec3f 
 		chain(HandJoint::ThumbMetacarpal, base, direction, bend, lengths, angles, 3);
 	}
 
-	for(Vec3f & position : joints.position) {
-		position = gripPosition + gripOrientation * position;
+	orientHandJoints(joints, along, -palmOut, thumbSide);
+	for(size_t j = 0; j < HandJointCount; j++) {
+		joints.position[j] = gripPosition + gripOrientation * joints.position[j];
+		joints.orientation[j] = glm::normalize(gripOrientation * joints.orientation[j]);
 	}
 
 	return joints;

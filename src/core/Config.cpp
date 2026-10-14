@@ -47,6 +47,7 @@
 
 #include "vr/ArmFit.h"
 #include "vr/ArmRoll.h"
+#include "vr/BodyView.h"
 #include "vr/HeadPose.h"
 #include "vr/Locomotion.h"
 #include "vr/MeleeSwing.h"
@@ -54,6 +55,7 @@
 #include "vr/PhysicalCrouch.h"
 #include "vr/UIPanel.h"
 #include "vr/VRArms.h"
+#include "vr/VRBody.h"
 #include "vr/VRSystem.h"
 #include "vr/VRTurn.h"
 
@@ -81,6 +83,7 @@ constexpr const std::string_view
 	debugLevels,
 	realtimeOverride,
 	vrArmsModel = "custom",
+	vrBody = "full",
 	bufferUpload,
 	extensionOverride,
 	thumbnailSize = BOOST_PP_STRINGIZE(THUMBNAIL_DEFAULT_WIDTH) "x"
@@ -153,6 +156,10 @@ constexpr const float
 	vrMeleeFullSpeed = vr::SwingParams().fullSpeed,
 	vrMeleeWeakAim = vr::SwingParams().weakAim,
 	vrMeleeTargetCooldown = vr::SwingParams().targetCooldown,
+	vrHiltKnuckle = vr::HiltAngles().knuckle,
+	vrHiltMiddle = vr::HiltAngles().middle,
+	vrHiltLast = vr::HiltAngles().last,
+	vrHiltThumb = vr::HiltAngles().thumb,
 	fogDistance = 10.f,
 	gamma = 5.f,
 	fov = 75.f,
@@ -179,7 +186,10 @@ constexpr const float
 	vrHeightOffset = 0.f,
 	vrHandScale = vr::DefaultHandScale,
 	vrArmMaxStretch = vr::MaxArmStretch,
-	vrArmWeaponElbowDrop = vr::DefaultWeaponElbowDrop;
+	vrArmWeaponElbowDrop = vr::DefaultWeaponElbowDrop,
+	vrBodyPush = vr::BodyViewParams().push,
+	vrBodyPushDown = vr::BodyViewParams().pushDown,
+	vrBodyClearance = vr::BodyViewParams().clearance;
 
 constexpr const ActionKey actions[NUM_ACTION_KEY] = {
 	ActionKey(Keyboard::Key_Spacebar), // JUMP
@@ -348,13 +358,21 @@ constexpr const std::string_view
 	vrArmTwistOverflow = "vr_arm_twist_overflow",
 	vrHeightOffset = "vr_height_offset",
 	vrArmsModel = "vr_arms_model",
+	vrBody = "vr_body",
 	vrHandScale = "vr_hand_scale",
 	vrArmMaxStretch = "vr_arm_max_stretch",
 	vrArmWeaponElbowDrop = "vr_arm_weapon_elbow_drop",
 	vrMeleeSwingSpeed = "vr_melee_swing_speed",
 	vrMeleeFullSpeed = "vr_melee_full_speed",
 	vrMeleeWeakAim = "vr_melee_weak_aim",
-	vrMeleeTargetCooldown = "vr_melee_target_cooldown";
+	vrMeleeTargetCooldown = "vr_melee_target_cooldown",
+	vrHiltKnuckle = "vr_hilt_knuckle",
+	vrHiltMiddle = "vr_hilt_middle",
+	vrHiltLast = "vr_hilt_last",
+	vrHiltThumb = "vr_hilt_thumb",
+	vrBodyPush = "vr_body_push",
+	vrBodyPushDown = "vr_body_push_down",
+	vrBodyClearance = "vr_body_clearance";
 
 // Input key options
 constexpr const std::string_view actions[NUM_ACTION_KEY] = {
@@ -645,6 +663,7 @@ bool Config::save() {
 	writer.writeKey(Key::vrArmTwistOverflow, input.vrArmTwistOverflow);
 	writer.writeKey(Key::vrHeightOffset, input.vrHeightOffset);
 	writer.writeKey(Key::vrArmsModel, input.vrArmsModel);
+	writer.writeKey(Key::vrBody, input.vrBody);
 	writer.writeKey(Key::vrHandScale, input.vrHandScale);
 	writer.writeKey(Key::vrArmMaxStretch, input.vrArmMaxStretch);
 	writer.writeKey(Key::vrArmWeaponElbowDrop, input.vrArmWeaponElbowDrop);
@@ -652,6 +671,13 @@ bool Config::save() {
 	writer.writeKey(Key::vrMeleeFullSpeed, input.vrMeleeFullSpeed);
 	writer.writeKey(Key::vrMeleeWeakAim, input.vrMeleeWeakAim);
 	writer.writeKey(Key::vrMeleeTargetCooldown, input.vrMeleeTargetCooldown);
+	writer.writeKey(Key::vrHiltKnuckle, input.vrHiltKnuckle);
+	writer.writeKey(Key::vrHiltMiddle, input.vrHiltMiddle);
+	writer.writeKey(Key::vrHiltLast, input.vrHiltLast);
+	writer.writeKey(Key::vrHiltThumb, input.vrHiltThumb);
+	writer.writeKey(Key::vrBodyPush, input.vrBodyPush);
+	writer.writeKey(Key::vrBodyPushDown, input.vrBodyPushDown);
+	writer.writeKey(Key::vrBodyClearance, input.vrBodyClearance);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -849,6 +875,8 @@ bool Config::init(const fs::path & file) {
 	// The arms drawn on the player in VR (#385): anything but "arx" is our own arms
 	input.vrArmsModel = vr::armsModelName(vr::parseArmsModel(reader.getKey(Section::Input, Key::vrArmsModel, Default::vrArmsModel)));
 	input.vrHandScale = vr::clampHandScale(reader.getKey(Section::Input, Key::vrHandScale, Default::vrHandScale));
+	// The body drawn under a tracked head (#385.11): anything but "hidden" is the whole body
+	input.vrBody = vr::bodyModeName(vr::parseBodyMode(reader.getKey(Section::Input, Key::vrBody, Default::vrBody)));
 	input.vrArmMaxStretch = vr::clampArmMaxStretch(reader.getKey(Section::Input, Key::vrArmMaxStretch, Default::vrArmMaxStretch));
 	input.vrArmWeaponElbowDrop = vr::clampWeaponElbowDrop(reader.getKey(Section::Input, Key::vrArmWeaponElbowDrop,
 	                                                                    Default::vrArmWeaponElbowDrop));
@@ -861,6 +889,24 @@ bool Config::init(const fs::path & file) {
 	input.vrMeleeWeakAim = glm::clamp(vrMeleeWeakAim, 0.1f, 1.f);
 	float vrMeleeTargetCooldown = reader.getKey(Section::Input, Key::vrMeleeTargetCooldown, Default::vrMeleeTargetCooldown);
 	input.vrMeleeTargetCooldown = glm::clamp(vrMeleeTargetCooldown, 0.f, 2.f);
+	// A hand on a hilt (#385.7): each angle within 0 and its fist limit
+	vr::HiltAngles hilt;
+	hilt.knuckle = reader.getKey(Section::Input, Key::vrHiltKnuckle, Default::vrHiltKnuckle);
+	hilt.middle = reader.getKey(Section::Input, Key::vrHiltMiddle, Default::vrHiltMiddle);
+	hilt.last = reader.getKey(Section::Input, Key::vrHiltLast, Default::vrHiltLast);
+	hilt.thumb = reader.getKey(Section::Input, Key::vrHiltThumb, Default::vrHiltThumb);
+	hilt = vr::clampHiltAngles(hilt);
+	input.vrHiltKnuckle = hilt.knuckle;
+	input.vrHiltMiddle = hilt.middle;
+	input.vrHiltLast = hilt.last;
+	input.vrHiltThumb = hilt.thumb;
+	// The own body out of the eyes (#385.9): the push back behind the eyes and the clearance around them, game units
+	float vrBodyPush = reader.getKey(Section::Input, Key::vrBodyPush, Default::vrBodyPush);
+	input.vrBodyPush = glm::clamp(vrBodyPush, 0.f, vr::MaxBodyPush);
+	float vrBodyPushDown = reader.getKey(Section::Input, Key::vrBodyPushDown, Default::vrBodyPushDown);
+	input.vrBodyPushDown = glm::clamp(vrBodyPushDown, 0.f, vr::MaxBodyPush);
+	float vrBodyClearance = reader.getKey(Section::Input, Key::vrBodyClearance, Default::vrBodyClearance);
+	input.vrBodyClearance = glm::clamp(vrBodyClearance, 0.f, vr::MaxBodyClearance);
 	
 	// Get action key settings
 	for(size_t i = 0; i < NUM_ACTION_KEY; i++) {

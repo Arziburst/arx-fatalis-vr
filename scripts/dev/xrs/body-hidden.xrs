@@ -1,0 +1,95 @@
+# The body hidden variant (#385.11): cfg vr_body = full | hidden (default full), the channel command
+# `body full|hidden`. In hidden none of the player model's body faces are drawn in VR; only the arms are
+# (the custom arms with vr_arms_model = custom, the Arx arm faces + shoulder caps with arx).
+# status.json (PROPOSED names, 385.11 implements them):
+#   vr.body.mode             full | hidden
+#   vr.body.drawnBodyFaces   player-model body faces (FaceBody, neck cap, head) drawn this frame, not the arms
+#   vr.body.drawnArmFaces    Arx arm faces + shoulder caps drawn this frame (> 0 only with arms arx)
+# existing: vr.body.<hand>.custom.gloveDrawn (385.3), vr.body.armsModel.
+# The sim's head pitch is the 2nd angle of `vr-sim head rot <yaw> <pitch> <roll>`: + looks up, so down is negative.
+# Captures go to the evidence folder (%LOCALAPPDATA%\ArxFatalisVR\evidence\385.11\), never into git.
+#   .\scripts\dev\xrs-run.ps1 body-hidden
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence body-hidden -Save mvp-new-game
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.body.bound eq true
+@assert vr.body.active eq true
+
+vr-sim hand left off
+vr-sim hand right pos 0.15 -0.3 -0.4
+vr-sim hand right rot 0 0 0
+vr-sim head rot 0 0 0
+@frames 15
+@assert vr.body.right.posed eq true
+
+# 1. The default is full: the body is drawn
+@assert vr.body.mode eq full
+@assert vr.body.drawnBodyFaces gt 0
+@shot full-default
+
+# 2. Hidden, looking ahead: no body face, the custom arms (the default model) still drawn
+body hidden
+@frames 10
+@assert vr.body.mode eq hidden
+@assert vr.body.drawnBodyFaces eq 0
+@assert vr.body.armsModel eq custom
+@assert vr.body.right.custom.gloveDrawn eq true
+@shot hidden-ahead
+
+# 3. Hidden, 85 degrees down: still no body face, the glove is there
+vr-sim head rot 0 -85 0
+@frames 15
+@assert vr.body.mode eq hidden
+@assert vr.body.drawnBodyFaces eq 0
+@assert vr.body.right.custom.gloveDrawn eq true
+@shot hidden-down-85
+
+# 4. Hidden with the Arx arms: the arm faces and shoulder caps are drawn, the body still is not
+arms arx
+@frames 10
+@assert vr.body.armsModel eq arx
+@assert vr.body.mode eq hidden
+@assert vr.body.drawnArmFaces gt 0
+@assert vr.body.drawnBodyFaces eq 0
+@shot hidden-arx-down-85
+vr-sim head rot 0 0 0
+@frames 10
+@assert vr.body.drawnArmFaces gt 0
+@assert vr.body.drawnBodyFaces eq 0
+@shot hidden-arx-ahead
+
+# 5. Back to the custom arms, still hidden
+arms custom
+@frames 10
+@assert vr.body.armsModel eq custom
+@assert vr.body.drawnBodyFaces eq 0
+@assert vr.body.right.custom.gloveDrawn eq true
+
+# 6. Full again: the body is drawn, 85 degrees down too (the push-back of 385.9 applies)
+body full
+@frames 10
+@assert vr.body.mode eq full
+@assert vr.body.drawnBodyFaces gt 0
+@shot full-again
+vr-sim head rot 0 -85 0
+@frames 15
+@assert vr.body.mode eq full
+@assert vr.body.drawnBodyFaces gt 0
+@shot full-down-85
+
+# 7. And hidden once more (the switch works both ways repeatedly)
+body hidden
+@frames 5
+@assert vr.body.mode eq hidden
+@assert vr.body.drawnBodyFaces eq 0
+body full
+@frames 5
+@assert vr.body.mode eq full
+@assert vr.body.drawnBodyFaces gt 0
+
+@assert errors eq 0

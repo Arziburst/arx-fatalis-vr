@@ -1160,6 +1160,9 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("handScale", custom.handScale);
 			json.object("custom");
 			json.value("drawn", custom.drawn);
+			// the glove went into the batch this frame (#385.11): a drawn arm hands out its sleeve and its glove
+			// together (vr::customArmMeshes), each with a texture (the file's, or a plain one when it is missing)
+			json.value("gloveDrawn", custom.drawn);
 			json.value("tipLength", custom.tipLength);
 			const struct { const char * name; const Vec3f & point; } customPoints[] = {
 				{ "palm", custom.palm }, { "wrist", custom.wrist }

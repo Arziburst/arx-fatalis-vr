@@ -985,8 +985,12 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 			// No controller orientation for this hand: nothing to share, the bones sit in their bend plane
 			roll.forearmShare = roll.upperShare = roll.elbowShare = 0.f;
 		}
+		// The logical arm - what the wrist bars, the held weapon and the status read - solves from the player's
+		// own shoulder, before the body was pushed back behind the eyes (#385.9: the push moves the drawn torso,
+		// never the arm the game reads); the custom arm hangs from the drawn, pushed shoulder below
 		const Vec3f shoulder = upper.anim.trans;
-		const ArmRollPose posed = solveArmRoll(shoulder, target, handQuat, upperLength, forearmLength, hint,
+		const Vec3f realShoulder = shoulder - push;
+		const ArmRollPose posed = solveArmRoll(realShoulder, target, handQuat, upperLength, forearmLength, hint,
 		                                       chain.rest, params, roll, g_body.roll[hand]);
 		const ArmPose & pose = posed.pose;
 

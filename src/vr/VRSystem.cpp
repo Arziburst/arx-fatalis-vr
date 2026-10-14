@@ -1795,7 +1795,10 @@ void beginFrameTargets(const Vec2i & windowSize, FrameTargets targets) {
 	// The intro's scripted scene is a film on the screen (#394), and so is a scene shot the hybrid puts on
 	// its screen (#29): drawn flat into the quad like the cinematics, never per eye (the state of the last
 	// frame: this one has not been decided yet)
-	g_xr.panel.sceneScreen = targets == FrameTargets::Game && g_xr.panel.sceneScreenWanted;
+	// Only while the game is played: a scene left by the menu or a load (the in-game intro ends in the main menu)
+	// takes its screen with it
+	g_xr.panel.sceneScreen = targets == FrameTargets::Game && g_xr.panel.sceneScreenWanted
+	                         && gameevent::currentGameState() == gameevent::GameState::Gameplay;
 	if(targets == FrameTargets::Game && frame.state.shouldRender && frame.views.valid
 	   && gameevent::currentGameState() != gameevent::GameState::Intro && !g_xr.panel.sceneScreen) {
 		beginStereo(frame);

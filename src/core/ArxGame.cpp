@@ -1675,6 +1675,7 @@ void ArxGame::doFrame() {
 		levelInit();
 		// The level's loading screen sits between the old view and the new one: no cut for the scene meter (#29)
 		vr::sceneState().meter.breakChain();
+		vr::setSceneScreen(false);
 	} else {
 		cinematicLaunchWaiting();
 		{
@@ -2181,6 +2182,10 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 	in.placeObserver = [speech, gameCamera]() { return placeSceneObserver(speech, gameCamera); };
 
 	const vr::SceneOutput out = state.director.update(in);
+	if(out.cutRestarted) {
+		LogInfo << "[vr] scene: a cut waited with no fade under way - fading again (shown "
+		        << vr::sceneShownName(state.director.shown()) << ", kind " << vr::sceneKindName(in.kind) << ')';
+	}
 	state.active = in.active;
 	state.kind = in.kind;
 

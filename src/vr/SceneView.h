@@ -305,6 +305,7 @@ struct SceneOutput {
 	SceneKind endedKind = SceneKind::None;
 	bool applyLookAt = false;            //!< turn the hero to the pending \c playerlookat now (at black)
 	bool blind = false;                  //!< held black: the eye has no floor under it, or first person's eye is too low
+	bool cutRestarted = false;           //!< a pending cut had no fade under way and was asked for again (diagnostics)
 
 };
 

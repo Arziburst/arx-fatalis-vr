@@ -123,6 +123,10 @@ void SceneFade::request(float outSeconds, float inSeconds, int blackFrames) {
 			m_outSpeed = std::max(m_outSpeed, outSpeed);
 			m_inSpeed = std::max(m_inSpeed, inSpeed);
 			m_blackFrames = std::max(m_blackFrames, blackFrames);
+			// Asked for at black: it stays black long enough to be taken there, not fading in the same frame
+			if(m_phase == Phase::Black) {
+				m_hold = std::max(m_hold, std::max(blackFrames, 1));
+			}
 			break;
 		}
 	}
@@ -355,6 +359,11 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 	const bool turnJump = std::abs(scriptTurn) > CutJumpDegrees;
 	const bool jump = !differs && following && !m_lowHeld && target.shown != SceneShown::None
 	                  && (glm::distance(targetPos, m_pos) > CutJumpUnits || turnJump);
+	// A cut that waits with no fade under way would wait for ever: fade again (#29)
+	if(m_cutPending && !m_fade.busy()) {
+		m_cutPending = false;
+		out.cutRestarted = true;
+	}
 	if(differs || jump) {
 		if(!m_cutPending) {
 			m_cutPending = true;

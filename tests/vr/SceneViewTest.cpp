@@ -548,6 +548,21 @@ void SceneViewTest::firstYawJumpTest() {
 	CPPUNIT_ASSERT(frames > 1);
 }
 
+void SceneViewTest::fadeAtBlackTest() {
+
+	// A fade asked for again at black, on the last frame it holds black: it stays black for that frame, so the
+	// cut waiting for it is taken (a cut asked for there once waited for ever, #29)
+	SceneFade fade;
+	fade.request(0.1f, 0.1f, 0);
+	fade.update(1.f);
+	CPPUNIT_ASSERT(fade.isBlack());
+	fade.request(0.1f, 0.1f, 0);
+	fade.update(SvFrame);
+	CPPUNIT_ASSERT(fade.isBlack());
+	fade.update(SvFrame);
+	CPPUNIT_ASSERT(!fade.isBlack());
+}
+
 void SceneViewTest::heldYawTest() {
 
 	SceneDirector director;

@@ -1,5 +1,5 @@
-# The playground's arms lever steps through all four variants (#385.8):
-# custom -> forearm -> hands -> arx -> custom.
+# The playground's arms lever steps through all five models (#385.8, #467):
+# custom -> forearm -> hands -> arx -> library -> custom.
 #   .\scripts\dev\smoke-test.ps1 -Playground -VrSim idle -Sequence arms-variants-lever
 @sim idle
 @playground
@@ -26,6 +26,10 @@ playground pull arms
 @frames 5
 @assert vr.body.armsModel eq arx
 @assert vr.body.arxArmsHidden eq false
+playground pull arms
+@frames 5
+@assert vr.body.armsModel eq library
+@assert vr.body.arxArmsHidden eq true
 playground pull arms
 @frames 5
 @assert vr.body.armsModel eq custom

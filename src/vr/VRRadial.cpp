@@ -396,6 +396,9 @@ std::string closeOpenPanels(RadialRequests & requests, bool direct) {
 			bInverseInventory = false;
 			InventoryOpenClose(2);
 			TRUE_PLAYER_MOUSELOOK_ON = true;
+			// The engine finishes a bag's closing only outside the magic mode (PlayerInventoryHud::update): the bag
+			// is gone for the game now, and its slide-out ends after the stance
+			player.Interface &= ~(INTER_INVENTORY | INTER_INVENTORYALL);
 		} else {
 			// The bag through its key, as the menu's inventory item: the engine keeps its own state of the bag
 			requests.pulses[size_t(GameAction::Inventory)] = true;

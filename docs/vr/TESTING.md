@@ -759,33 +759,38 @@ are under [Commands](#commands). CI installs node 22 with `actions/setup-node` (
 sequences; a machine without node (a local `ci-smoke.ps1` included) reports them **NOT RUN** with a warning in the job summary, never a pass. The tester zip does not carry
 the playground yet (#359).
 
-### Switching the arms: custom, forearm, hands or Arx (#385)
+### Switching the arms: custom, forearm, hands, Arx or library (#385, #467)
 
-The VR body has four arm models (D-NEW-arms "Own VR arms", D-NEW-armvariants "a choice of four"):
+The VR body has five arm models (D-NEW-arms "Own VR arms", D-NEW-armvariants "a choice of four", D-NEW-library):
 - **custom** (the default) — the leather glove hand (Godot XR Tools, CC0) and a cloth sleeve from the shoulder to
   the wrist, textures in `data/core/vr/arms/`;
 - **forearm** — the glove and a short forearm: the sleeve from the wrist along the forearm, cut at 0.6 of its length
   and closed by a cuff before the elbow; no upper arm, no elbow;
 - **hands** — the glove alone, its wrist opening closed by a cuff (Half-Life: Alyx);
-- **arx** — the original Arx arms.
+- **arx** — the original Arx arms;
+- **library** — a ready-made hand from a library and no arm: the WebXR generic hand (MIT, `data/core/vr/hands/webxr/`),
+  placed on the controller and posed finger by finger exactly as the glove, its wrist ending clean, plain grey (it has
+  no texture), sized by `vr_hand_scale` like the glove.
 
-The IK, the reach and the roll rules are the same for all four; only what is drawn differs. **Flat mode and the
+The IK, the reach and the roll rules are the same for all of them; only what is drawn differs (the library hand has no
+arm to solve). **Flat mode and the
 inventory book always show the Arx arms.**
 
 **How to switch** (any one of these; live, saved to cfg.ini):
 - **The arms lever** (a third lever on the lever wall of the playground, role `lever_arms`): each pull steps to the
-  next model — custom → forearm → hands → arx → custom. Its channel twin is `playground pull arms`.
-- **The channel command** (`--test-dir`): `arms custom`, `arms forearm`, `arms hands` or `arms arx`;
+  next model — custom → forearm → hands → arx → library → custom. Its channel twin is `playground pull arms`.
+- **The channel command** (`--test-dir`): `arms custom`, `arms forearm`, `arms hands`, `arms arx` or `arms library`;
   `arms scale <factor>` sets the hand size.
-- **cfg.ini** (read at start): `vr_arms_model` = `custom` | `forearm` | `hands` | `arx` (default `custom`) and
+- **cfg.ini** (read at start): `vr_arms_model` = `custom` | `forearm` | `hands` | `arx` | `library` (default `custom`) and
   `vr_hand_scale` (default `1.15`, range `0.8` – `1.5`; the Arx hands are too small, so the custom hand is a little
   larger).
 
-status.json shows the state: `vr.body.armsModel` (`custom` | `forearm` | `hands` | `arx`), `vr.body.arxArmsHidden`,
+status.json shows the state: `vr.body.armsModel` (`custom` | `forearm` | `hands` | `arx` | `library`), `vr.body.arxArmsHidden`,
 `vr.body.<left|right>.handScale` and `vr.body.<left|right>.custom.*` — among them `gloveDrawn`, `sleeveDrawn` (custom
 and forearm), `upperArmDrawn` (custom only) and `forearmLength` (the forearm as drawn: the fitted one for custom,
-0.6 of it for forearm, 0 for hands). Sequences: `arms-model.xrs`, `arms-variants.xrs` and `arms-variants-lever.xrs`
-(`.\scripts\dev\xrs-run.ps1 arms-variants`).
+0.6 of it for forearm, 0 for hands) — and `vr.body.<left|right>.library.drawn` (the library hand is drawn; its hand's
+fields are then under `custom`, with `gloveDrawn` and `sleeveDrawn` false). Sequences: `arms-model.xrs`,
+`arms-variants.xrs`, `arms-library.xrs` and `arms-variants-lever.xrs` (`.\scripts\dev\xrs-run.ps1 arms-variants`).
 
 **The custom hand's five fingers** (#385.4, D-041, D-042) bend joint by joint, each about its own flexion axis read
 from the glove's rest skeleton (`src/vr/HandRig.*`). They follow, in this order: a **held** weapon closes all five
@@ -810,13 +815,18 @@ unchanged.
 - **Forearm and hands** (#385.8): does a missing elbow bother you less than a wrong one? Is the forearm's length
   right (it ends at 0.6 of the forearm)? How do the cuffs look — the forearm's end and the closed wrist of the hands —
   hanging, held ahead and with the wrist rolled 90° and 180°?
+- **Library** (#467): pull the lever on from `arx` to `library`, then on to `custom` and round to `hands`, and compare
+  the WebXR hand with our glove in the same pose: the fingers' shape and how they follow fist, point and open; a sword
+  held in the hand (do the fingers close round the hilt?); the clean wrist with no cuff or sleeve; the grey colour and
+  the size against your real hand (try `vr_hand_scale` 1.0, 1.15 and 1.3) — colour and size are first proposals for
+  you to judge.
 
 ### Switching the body: full or hidden (#385.11)
 
 Two variants of the own body in VR, to pick by feel: **full** — the whole player model, pushed back behind the
 eyes so it never blocks the view (#385.9) — and **hidden** — no torso, legs, neck or head, only the arms and hands
 (Half-Life: Alyx style): the custom arms (glove and sleeve) with `vr_arms_model = custom` (less of them with
-`forearm` and `hands`), the Arx arms with their shoulders closed by a cap with `vr_arms_model = arx`. The held weapon, the wrist bars and the reticle are the same
+`forearm` and `hands`, only the library hand with `library`), the Arx arms with their shoulders closed by a cap with `vr_arms_model = arx`. The held weapon, the wrist bars and the reticle are the same
 in both. **Flat mode and the inventory book always show the whole model.** The floor shadow (the engine's blob
 shadow under the player) stays in both variants.
 

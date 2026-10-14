@@ -28,8 +28,8 @@ The tester zip (`package-tester.ps1`) does not carry the playground yet.
   aggressive, up = peaceful) and the respawn lever. Both are the game's `fix_inter/lever`, pulled by hand like any lever
   (#38). A dead NPC runs no script events, so the respawn lever revives it from outside (`revive -it <entity>`).
 - **The arms lever** (#385.3), third on the wall: each pull steps the VR arms to the next model - custom, forearm, hands,
-  arx, then custom again (#385.8; it counts pulls in the global `#pg_arms_pulls`, `src/vr/VRArms.cpp` follows it; the
-  setting is cfg.ini `vr_arms_model`).
+  arx, library, then custom again (#385.8, #467; it counts pulls in the global `#pg_arms_pulls`, `src/vr/VRArms.cpp`
+  follows it; the setting is cfg.ini `vr_arms_model`).
 - **Weapons**: every folder under `items/weapons` that holds a class script (`WEAPONS` in `layout.mjs`, 32), on a table at
   the west wall. **Consumables** (`CONSUMABLES`: 5 potions, 6 foods, a scroll holding magic missile) on the main table.
 - **Hero**: a marker's init script runs `addxp 178000` (level 10, the game's cap) and `rune all`. The player script is not

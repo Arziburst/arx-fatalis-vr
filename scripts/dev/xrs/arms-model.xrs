@@ -1,5 +1,6 @@
-# The arms model switch (#385.3): cfg vr_arms_model = custom | arx (default custom), the channel command
-# `arms custom|arx`, and the hand size vr_hand_scale. status.json: vr.body.armsModel,
+# The arms model switch (#385.3): cfg vr_arms_model = custom | forearm | hands | arx | library (default custom;
+# this sequence switches custom and arx, arms-variants.xrs and arms-library.xrs the others), the channel command
+# `arms <model>`, and the hand size vr_hand_scale. status.json: vr.body.armsModel,
 # vr.body.arxArmsHidden (true while the Arx arm faces are not drawn = custom; PROPOSED name, 385.3 implements it),
 # vr.body.<hand>.handScale, vr.body.<hand>.custom.tipLength (palm to fingertip, units).
 # The hand scale steps use the PROPOSED channel command `arms scale <factor>` (live vr_hand_scale, range 0.8 - 1.5);

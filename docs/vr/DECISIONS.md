@@ -13,6 +13,45 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW-library: A ready-made library hand as the fifth arms model - the WebXR generic hand (MIT), read by our glTF loader
+
+- **Date:** 2026-10-14
+- **Status:** Accepted (its colour and size are first proposals: the owner judges them in the headset)
+- **Decided by:** project owner (2026-10-14, via the coordinator: a library hand to compare with our glove, reached
+  with the arms lever); #467 for the choice of hand and the formulation
+- **Extends:** D-NEW-armvariants (one more row of the arms model table) and D-NEW-arms (the same placing and posing)
+
+### Decision
+cfg.ini `vr_arms_model` = `library` draws a ready-made hand alone, no arm: the generic hand of the WebXR input profiles
+(`immersive-web/webxr-input-profiles`, commit f499229, `packages/assets/profiles/generic-hand/left.glb` and
+`right.glb`, MIT), shipped unchanged in `data/core/vr/hands/webxr/` with its licence. It is one row of the arms model
+table in `src/vr/VRArms.cpp` (no glove, no sleeve, the Arx arm faces hidden), so the arms lever cycles it after `arx`
+(custom -> forearm -> hands -> arx -> library -> custom) and the channel's `arms library` sets it.
+- **Loading:** the binary glTF (.glb) goes through our own loader (`vr::loadGltfSkinnedMesh`, cgltf, D-NEW-arms); its
+  WebXR joint names (`wrist`, `index-finger-phalanx-proximal`, ...) map to the `XrHandJointEXT` joints, and its flat
+  skeleton (every joint a child of one `Armature` node) is chained as `XR_EXT_hand_tracking` chains the joints.
+- **The palm substitute:** the WebXR hand has no palm joint; the middle finger's metacarpal joint stands in for it.
+- **Placing and posing:** exactly as the glove - on the controller's handle by the hilt pose's curl, its joints from
+  the held weapon's hilt pose, the runtime's joints or the controls, sized by `vr_hand_scale`.
+- **Look:** no texture, so it is drawn plain grey (188, the file's 0.5 linear base colour in sRGB), lit like the
+  player; the wrist ends clean, no cuff.
+- status.json `vr.body.<hand>.library.drawn`; the hand's fields stay under `vr.body.<hand>.custom` (`gloveDrawn` false).
+
+### Why
+- The owner compares a ready-made, widely used hand with our glove before settling the VR hands; WebXR's generic hand
+  is MIT, small (about 1360 vertices), rigged to the same 25 joints the runtime gives, and needs no conversion.
+- A table row and the same posing path keep it to data and one column; no second hand pipeline.
+
+### Trade-offs accepted
+- The palm is approximated by the middle metacarpal; the hand's palm frame may sit a little off the glove's.
+- No arm and no cuff: the hand floats at the wrist by design, as the hands model's comparison point.
+
+### Consequences
+- `arms-library.xrs` checks it (drawn, no glove or sleeve, the Arx faces hidden, the hilt pose on the sword);
+  `arms-variants-lever.xrs` pulls through five models. How to switch and what to compare: [TESTING.md](TESTING.md).
+
+---
+
 ## D-NEW-armvariants: The VR arms are a choice of four - custom, forearm, hands, arx - switched live; full arms are not the only VR body
 
 - **Date:** 2026-10-14

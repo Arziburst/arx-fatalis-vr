@@ -168,6 +168,8 @@ struct BodyState {
 	std::vector<u8> faceRole;
 	//! per face of the bound model: 1 for a face of an Arx hand on the classic skin - every corner on the hand (#466.2)
 	std::vector<u8> arxHandFace;
+	//! per arm: the vertices where the classic hand's faces meet the faces kept - the Arx wrist ring the glove meets (#466.2)
+	std::array<std::vector<VertexId>, HandCount> arxWristRing;
 	//! the vertices the classic arm skinned on another bone this frame, with the rotation they turned with (#466.1)
 	std::vector<ReskinnedVertex> reskinned;
 	//! per face of the bound model: hidden this frame because it is too near an eye (#385.9), and the pose it was
@@ -557,6 +559,9 @@ void addArmCaps(EERIE_3DOBJ * obj) {
 
 	g_body.faceRole.assign(obj->facelist.size(), FaceBody);
 	g_body.arxHandFace.assign(obj->facelist.size(), 0);
+	for(std::vector<VertexId> & ring : g_body.arxWristRing) {
+		ring.clear();
+	}
 	if(!obj->m_skeleton) {
 		return;
 	}
@@ -603,9 +608,25 @@ void addArmCaps(EERIE_3DOBJ * obj) {
 				}
 			}
 		}
+		// The wrist ring the glove's cuff meets: the corners the hidden hand faces share with the arm faces kept
+		std::vector<char> inHandFace(obj->vertexlist.size(), 0);
+		std::vector<char> inKeptFace(obj->vertexlist.size(), 0);
+		for(size_t f = 0; f < obj->facelist.size(); f++) {
+			if(g_body.faceRole[f] == FaceArm + hand) {
+				for(VertexId vertex : obj->facelist[f].vid) {
+					(g_body.arxHandFace[f] ? inHandFace : inKeptFace)[size_t(vertex)] = 1;
+				}
+			}
+		}
+		for(size_t v = 0; v < obj->vertexlist.size(); v++) {
+			if(inHandFace[v] && inKeptFace[v]) {
+				g_body.arxWristRing[hand].push_back(VertexId(v));
+			}
+		}
 		const std::string what = std::string(handName(Hand(hand))) + " shoulder (" + std::to_string(armFaces)
 		                         + " arm faces hidden under the custom arm, " + std::to_string(handFaces)
-		                         + " hand faces under the classic arm's glove)";
+		                         + " hand faces under the classic arm's glove, its wrist ring "
+		                         + std::to_string(g_body.arxWristRing[hand].size()) + " vertices)";
 		addCap(obj, armVertex, what.c_str());
 		g_body.faceRole.resize(obj->facelist.size(), u8(FaceArmCap + hand));
 		g_body.arxHandFace.resize(obj->facelist.size(), 0);
@@ -1290,6 +1311,15 @@ void skinPlayerArms(EERIE_3DOBJ * obj) {
 			g_body.reskinned.push_back({ vertex, bone.anim.quat });
 		}
 		status.hands[hand].classicDrawn = true;
+		// The glove at the wrist (#466.2): how far the Arx wrist ring, as skinned now, lies from the glove's cuff
+		const std::vector<VertexId> & ring = g_body.arxWristRing[hand];
+		if(arxHandHidden(Hand(hand)) && !ring.empty()) {
+			Vec3f centre(0.f);
+			for(VertexId vertex : ring) {
+				centre += obj->vertexWorldPositions[vertex].v;
+			}
+			noteArxWristRing(Hand(hand), centre / float(ring.size()));
+		}
 	}
 }
 

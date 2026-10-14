@@ -191,6 +191,8 @@ bool poseCustomArm(Hand hand, const LogicalArm & arm);
 bool customArmDrawn(Hand hand);
 //! The glove of \a hand is drawn at the classic arm's Arx wrist this frame (#466.2): its Arx hand faces are not
 bool arxHandHidden(Hand hand);
+//! The centre of the Arx wrist ring the glove's cuff meets, as the classic arm skinned it this frame: its wristGap (#466.2)
+void noteArxWristRing(Hand hand, const Vec3f & centre);
 
 /*!
  * Whether the glove meshes loaded (status.json vr.body.customArms). A glove is read the first time its arm is
@@ -225,7 +227,8 @@ struct CustomArmStatus {
 	float drawnBend = 0.f;       //!< the bend the sleeve is drawn with (clamped)
 	float upperRoll = 0.f;       //!< the roll on the upper twist joint
 	float forearmTwist = 0.f;    //!< the roll from the elbow to the wrist; the twist joints take a third and two thirds
-	float wristGap = 0.f;        //!< the sleeve's last ring centre to the glove's cuff centre (units, 0 = they meet)
+	float wristGap = 0.f;        //!< the sleeve's last ring centre to the glove's cuff centre (units, 0 = they meet); for the
+	                             //!< glove at the classic arm's wrist the Arx wrist ring as skinned (#466.2), -1 unmeasured
 	// The five fingers (#385.4): what they follow (none while the arm is not posed) and each joint's bend this frame
 	CustomFingerSource fingerSource = CustomFingerSource::None;
 	FingerPose fingers;          //!< degrees, approaching what the source asks for

@@ -679,7 +679,7 @@ bool poseCustomArm(Hand hand, const LogicalArm & logical) {
 		poseGloveHand(arm, logical, atWrist, wristQuat);
 		status.drawn = true;
 		status.wrist = logical.arxWrist;
-		status.wristGap = 0.f;
+		status.wristGap = -1.f; // measured on the Arx wrist ring once the classic arm is skinned (noteArxWristRing)
 		status.vertices = arm.handPositions.size();
 		status.triangles = glove.mesh.indices.size() / 3;
 		arm.atArxWrist = true;
@@ -901,6 +901,13 @@ bool customArmDrawn(Hand hand) {
 bool arxHandHidden(Hand hand) {
 	const CustomArm & arm = g_customArms[size_t(hand)];
 	return arm.drawn && arm.atArxWrist;
+}
+
+void noteArxWristRing(Hand hand, const Vec3f & centre) {
+	CustomArm & arm = g_customArms[size_t(hand)];
+	if(arm.drawn && arm.atArxWrist) {
+		arm.status.wristGap = glm::distance(centre, arm.status.wrist);
+	}
 }
 
 const CustomArmStatus & customArmStatus(Hand hand) {

@@ -17,7 +17,8 @@ import { createBox as createBoxMesh } from 'arx-level-generator/prefabs/mesh'
 import { Lever, Marker } from 'arx-level-generator/prefabs/entity'
 import { createRoom } from 'arx-level-generator/prefabs/rooms'
 import {
-	CENTRE, CONSUMABLES, FIRST_ID, HERO_START, LEVEL_INDEX, LEVER_HEIGHT, LEVER_WALL, LIGHTS, MAX_LEVEL_XP, NPC_SPOT, ROOM, TABLE,
+	CENTRE, CHEST, CHEST_ITEMS, CONSUMABLES, CORPSE, CORPSE_ITEMS, DOOR, FIRST_ID, HERO_START, LEVEL_INDEX, LEVER_HEIGHT, LEVER_WALL,
+	LIGHTS, MAX_LEVEL_XP, NPC_SPOT, ROOM, TABLE,
 	WEAPON_COLUMNS, WEAPON_TABLE, WEAPONS,
 } from './layout.mjs'
 
@@ -216,6 +217,31 @@ const armsLever = new Lever({ id: FIRST_ID + 2, position: at(LEVER_WALL.xArms, -
 armsLever.script.on('init', 'set £pg_role "lever_arms"')
 armsLever.script.on('custom', ['on', 'off'].map((param) => `if (^$param1 == "${param}") {\n inc #pg_arms_pulls 1\n}`))
 map.entities.push(armsLever)
+
+// A door, a chest and a body worked by hand (#38). Each is the game's own class, its state the class script's own
+// variables (status.json playground.door / chest / corpse); £pg_role tells the test channel which is which. The
+// instance script runs after the class script's init (SendInitScriptEvent), so its settings win.
+// The door: light_door, closed; the class locks every door (§unlock 0) - this one is not
+const door = new Entity({ id: FIRST_ID, src: 'fix_inter/light_door', position: at(DOOR.x, 0, DOOR.z), orientation: yawDeg(DOOR.yaw) })
+door.withScript().script.on('init', ['set £pg_role "door"', 'set §unlock 1'])
+map.entities.push(door)
+
+// The chest: chest_metal, unlocked, its inventory filled when it is complete (as the original levels do, on initend)
+const chest = new Entity({ id: FIRST_ID, src: 'fix_inter/chest_metal', position: at(CHEST.x, 0, CHEST.z), orientation: yawDeg(CHEST.yaw) })
+chest.withScript().script
+	.on('init', ['set £pg_role "chest"', 'set §unlock 1'])
+	.on('initend', CHEST_ITEMS.map((item) => `inventory add "${item}"`))
+map.entities.push(chest)
+
+// The body: a second goblin with an item in its inventory (the class script creates the inventory), killed a moment
+// after the level starts - the game's own corpse of an NPC, searched like any other
+const corpse = new Entity({ id: FIRST_ID + 1, src: 'npc/goblin_base', position: at(CORPSE.x, 0, CORPSE.z), orientation: yawDeg(CORPSE.yaw) })
+corpse.withScript().script
+	.on('init', ['set £pg_role "corpse"', 'set §aggro 0'])
+	.on('initend', [...CORPSE_ITEMS.map((item) => `inventory add "${item}"`), 'timerdie -m 1 500 forcedeath self'])
+	.on('ouch', 'refuse')
+	.on('aggression', 'refuse')
+map.entities.push(corpse)
 
 // The hero: level 10 and every rune, set by a marker's script when the level loads (the generator's player script
 // would replace the game's own player script, with all its animations)

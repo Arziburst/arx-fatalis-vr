@@ -49,6 +49,7 @@
 #include "vr/ArmRoll.h"
 #include "vr/BodyView.h"
 #include "vr/HeadPose.h"
+#include "vr/HudFrame.h"
 #include "vr/Locomotion.h"
 #include "vr/MeleeSwing.h"
 #include "vr/MirrorGeometry.h"
@@ -75,6 +76,9 @@ namespace Default {
 constexpr const std::string_view
 	language,
 	audio,
+	vrRadialPlace = "hand",
+	vrHudKeep,
+	vrLevelUp = "both",
 	renderer = "auto",
 	resolution = "auto",
 	audioBackend = "auto",
@@ -117,6 +121,7 @@ constexpr const bool
 	vrMirror = true,
 	vrRealStepNoise = true,
 	vrPhysicalCrouch = vr::DefaultPhysicalCrouch,
+	vrHudFrame = false,
 	viewBobbing = true,
 	screenShake = true,
 	showCrosshair = true,
@@ -162,6 +167,7 @@ constexpr const float
 	vrHiltLast = vr::HiltAngles().last,
 	vrHiltThumb = vr::HiltAngles().thumb,
 	vrSwordTilt = 0.f,
+	vrRadialGazeDeg = 45.f,
 	fogDistance = 10.f,
 	gamma = 5.f,
 	fov = 75.f,
@@ -287,6 +293,9 @@ constexpr const std::string_view
 	vrPanelDistance = "vr_panel_distance",
 	vrPanelDrop = "vr_panel_drop",
 	vrPanelWidth = "vr_panel_width",
+	vrHudFrame = "vr_hud_frame",
+	vrHudKeep = "vr_hud_keep",
+	vrLevelUp = "vr_levelup",
 	vrPhysicalCrouch = "vr_physical_crouch",
 	vrCrouchEnter = "vr_crouch_enter",
 	vrCrouchExit = "vr_crouch_exit",
@@ -375,7 +384,9 @@ constexpr const std::string_view
 	vrSwordTilt = "vr_sword_tilt",
 	vrBodyPush = "vr_body_push",
 	vrBodyPushDown = "vr_body_push_down",
-	vrBodyClearance = "vr_body_clearance";
+	vrBodyClearance = "vr_body_clearance",
+	vrRadialPlace = "vr_radial_place",
+	vrRadialGazeDeg = "vr_radial_gaze_deg";
 
 // Input key options
 constexpr const std::string_view actions[NUM_ACTION_KEY] = {
@@ -590,6 +601,9 @@ bool Config::save() {
 	writer.writeKey(Key::vrPanelDistance, video.vrPanelDistance);
 	writer.writeKey(Key::vrPanelDrop, video.vrPanelDrop);
 	writer.writeKey(Key::vrPanelWidth, video.vrPanelWidth);
+	writer.writeKey(Key::vrHudFrame, video.vrHudFrame);
+	writer.writeKey(Key::vrHudKeep, video.vrHudKeep);
+	writer.writeKey(Key::vrLevelUp, video.vrLevelUp);
 	writer.writeKey(Key::vrPhysicalCrouch, video.vrPhysicalCrouch);
 	writer.writeKey(Key::vrCrouchEnter, video.vrCrouchEnter);
 	writer.writeKey(Key::vrCrouchExit, video.vrCrouchExit);
@@ -682,6 +696,8 @@ bool Config::save() {
 	writer.writeKey(Key::vrBodyPush, input.vrBodyPush);
 	writer.writeKey(Key::vrBodyPushDown, input.vrBodyPushDown);
 	writer.writeKey(Key::vrBodyClearance, input.vrBodyClearance);
+	writer.writeKey(Key::vrRadialPlace, input.vrRadialPlace);
+	writer.writeKey(Key::vrRadialGazeDeg, input.vrRadialGazeDeg);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -777,6 +793,13 @@ bool Config::init(const fs::path & file) {
 	video.vrPanelDrop = glm::clamp(vrPanelDrop, -0.5f, 1.f);
 	float vrPanelWidth = reader.getKey(Section::Video, Key::vrPanelWidth, Default::vrPanelWidth);
 	video.vrPanelWidth = glm::clamp(vrPanelWidth, 0.2f, 4.f);
+	// The screen-frame HUD in VR (#469): off, single elements kept, the level-up indication
+	video.vrHudFrame = reader.getKey(Section::Video, Key::vrHudFrame, Default::vrHudFrame);
+	video.vrHudKeep = util::toLowercase(reader.getKey(Section::Video, Key::vrHudKeep, Default::vrHudKeep));
+	video.vrLevelUp = util::toLowercase(reader.getKey(Section::Video, Key::vrLevelUp, Default::vrLevelUp));
+	if(video.vrLevelUp != vr::levelUpModeName(vr::levelUpModeFromName(video.vrLevelUp, vr::LevelUpMode::Off))) {
+		video.vrLevelUp = Default::vrLevelUp;
+	}
 	// Physical crouch (#100): the head this far below the calibrated eye crouches, back above the exit stands
 	video.vrPhysicalCrouch = reader.getKey(Section::Video, Key::vrPhysicalCrouch, Default::vrPhysicalCrouch);
 	float vrCrouchEnter = reader.getKey(Section::Video, Key::vrCrouchEnter, Default::vrCrouchEnter);
@@ -914,6 +937,15 @@ bool Config::init(const fs::path & file) {
 	float vrBodyClearance = reader.getKey(Section::Input, Key::vrBodyClearance, Default::vrBodyClearance);
 	input.vrBodyClearance = glm::clamp(vrBodyClearance, 0.f, vr::MaxBodyClearance);
 	
+
+	// The radial menus' placement (#377): at the hand, or before the eyes when the hand is that far off the gaze
+	input.vrRadialPlace = util::toLowercase(reader.getKey(Section::Input, Key::vrRadialPlace, Default::vrRadialPlace));
+	if(input.vrRadialPlace != "hand" && input.vrRadialPlace != "gaze_when_off") {
+		input.vrRadialPlace = Default::vrRadialPlace;
+	}
+	float vrRadialGazeDeg = reader.getKey(Section::Input, Key::vrRadialGazeDeg, Default::vrRadialGazeDeg);
+	input.vrRadialGazeDeg = glm::clamp(vrRadialGazeDeg, 10.f, 120.f);
+
 	// Get action key settings
 	for(size_t i = 0; i < NUM_ACTION_KEY; i++) {
 		actions[i] = reader.getActionKey(Section::Key, ControlAction(i));

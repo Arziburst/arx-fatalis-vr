@@ -1284,11 +1284,13 @@ set(VR_SOURCES
 	src/vr/HeadLean.cpp
 	src/vr/HeadPose.cpp
 	src/vr/HeadReferenceGate.cpp
+	src/vr/HudFrame.cpp
 	src/vr/PhysicalCrouch.cpp
 	src/vr/HeadTracking.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/MenuPointer.cpp
 	src/vr/Locomotion.cpp
+	src/vr/RadialMenu.cpp
 	src/vr/RuneTrail.cpp
 	src/vr/MeleeSwing.cpp
 	src/vr/PerfLog.cpp
@@ -1306,8 +1308,10 @@ set(VR_SOURCES
 	src/vr/VRComfort.cpp
 	src/vr/VRControls.cpp
 	src/vr/VRGameInput.cpp
+	src/vr/VRHud.cpp
 	src/vr/VRInput.cpp
 	src/vr/VRMirror.cpp
+	src/vr/VRRadial.cpp
 	src/vr/VRReticle.cpp
 	src/vr/VRSimulator.cpp
 	src/vr/VRSwapchain.cpp

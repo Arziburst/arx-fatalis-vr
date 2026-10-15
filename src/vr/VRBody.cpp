@@ -986,7 +986,11 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	// The body under the head: the lean - the head's movement less what the collision cylinder already walked
 	// after it (#26), the same offset the camera takes - moves every bone
 	const float bodyYaw = player.angle.getYaw();
-	const HeadCamera camera = headToCamera(head, headState.reference, bodyYaw, headState.anchor);
+	// The character height setting (#260) as the camera that renders takes it: the hands are placed from this
+	// camera, so they rise with the view and stay on the controllers (#482); the body stays on its feet
+	HeadCameraParams cameraParams;
+	cameraParams.heightOffsetMeters = headState.heightOffset;
+	const HeadCamera camera = headToCamera(head, headState.reference, bodyYaw, headState.anchor, cameraParams);
 	const Vec3f shift(camera.offset.x, 0.f, camera.offset.z);
 	for(Bone & bone : skeleton.bones) {
 		bone.anim.trans += shift;

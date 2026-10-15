@@ -27,7 +27,7 @@
 
 /*!
  * \file
- * \brief Roll-aware arm IK (#304, D-NEW): where the hand's roll goes along the arm
+ * \brief Roll-aware arm IK (#304, D-050): where the hand's roll goes along the arm
  *
  * Pure math on top of \ref solveArm, host-tested in tests/vr/ArmRollTest.cpp: no engine globals,
  * no OpenXR, no clock. The body module (vr/VRBody.cpp) feeds it the shoulder, the wrist target and

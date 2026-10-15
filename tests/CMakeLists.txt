@@ -101,6 +101,8 @@ set(arxtest_TESTCASES
 	tests/vr/ArmRollTest.cpp
 	tests/vr/WristVitalsTest.h
 	tests/vr/WristVitalsTest.cpp
+	tests/vr/HudFrameTest.h
+	tests/vr/HudFrameTest.cpp
 	tests/vr/WeaponGripTest.h
 	tests/vr/WeaponGripTest.cpp
 	tests/vr/WeaponInGloveTest.h
@@ -147,6 +149,9 @@ set(arxtest_TESTCASES
 	tests/vr/BodyViewTest.cpp
 	tests/vr/BodyPushTest.h
 	tests/vr/BodyPushTest.cpp
+
+	tests/vr/RadialMenuTest.h
+	tests/vr/RadialMenuTest.cpp
 
 	tests/vr/PerfStatsTest.h
 	tests/vr/PerfStatsTest.cpp
@@ -206,6 +211,8 @@ set(arxtest_SOURCES
 	src/vr/BodyView.cpp
 	src/vr/RuneTrail.cpp
 	src/vr/MeleeSwing.cpp
+	src/vr/RadialMenu.cpp
+	src/vr/HudFrame.cpp
 
 
 	${arxtest_TESTCASES}

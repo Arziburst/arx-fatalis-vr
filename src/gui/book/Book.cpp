@@ -51,6 +51,7 @@
 #include "scene/GameSound.h"
 #include "scene/Interactive.h"
 #include "script/Script.h"
+#include "vr/VRSystem.h"
 
 
 long IN_BOOK_DRAW = 0;
@@ -243,9 +244,13 @@ void PlayerBook::toggle() {
 	}
 	
 	pTextManage->Clear();
-	
-	TRUE_PLAYER_MOUSELOOK_ON = false;
-	
+
+	// VR (#377): the book stays in freelook - the hands are the mouse on its panel (D-016). The cursor mode it
+	// switched to kept the inventory bag open with it, every frame, and stayed on after the book closed
+	if(!vr::isEnabled()) {
+		TRUE_PLAYER_MOUSELOOK_ON = false;
+	}
+
 }
 
 void PlayerBook::manage() {
@@ -367,6 +372,28 @@ float PlayerBook::getScale() {
 const Rectf & PlayerBook::getArea() {
 	update();
 	return g_bookRect;
+}
+
+bool PlayerBook::tabRect(ARX_INTERFACE_BOOK_MODE page, Rectf & rect) const {
+
+	if(!(player.Interface & INTER_PLAYERBOOK) || page == m_currentPage) {
+		return false;
+	}
+	// The bookmarks as manageTopTabs places them
+	TextureContainer * tc = nullptr;
+	float offset = 0.f;
+	switch(page) {
+		case BOOKMODE_STATS: tc = g_bookResouces.bookmark_char; offset = 0.f; break;
+		case BOOKMODE_SPELLS: tc = player.rune_flags ? g_bookResouces.bookmark_magic : nullptr; offset = 32.f; break;
+		case BOOKMODE_MINIMAP: tc = g_bookResouces.bookmark_map; offset = 64.f; break;
+		case BOOKMODE_QUESTS: tc = g_bookResouces.bookmark_quest; offset = 96.f; break;
+	}
+	if(!tc) {
+		return false;
+	}
+	const Vec2f pos = g_bookRect.topLeft() + Vec2f(119.f + offset, -4.f) * g_bookScale;
+	rect = Rectf(pos, float(tc->m_size.x) * g_bookScale, float(tc->m_size.y) * g_bookScale);
+	return true;
 }
 
 void PlayerBook::manageTopTabs() {

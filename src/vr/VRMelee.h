@@ -46,7 +46,8 @@
  * animation in VR) does not start while the IK hand holds the weapon (\ref meleeOwnsStrikes).
  *
  * Gates (F-66): a weapon in the IK hand, the right controller tracked, a head, no menu, inventory or book,
- * nothing dragged, the controls not blocked - the caller names what refuses (\ref updateMelee).
+ * nothing dragged, the controls not blocked, not in the casting stance (A held: the trigger is the pen, #377) - the
+ * caller names what refuses (\ref updateMelee).
  * Thresholds: cfg.ini \c vr_melee_swing_speed, \c vr_melee_full_speed, \c vr_melee_weak_aim,
  * \c vr_melee_target_cooldown.
  */

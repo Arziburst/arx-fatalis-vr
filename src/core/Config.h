@@ -144,6 +144,9 @@ public:
 		float vrPanelDistance; //!< VR: the menu panel this far ahead of the head, meters (#49)
 		float vrPanelDrop; //!< VR: the menu panel's centre this far below the eyes, meters (#49)
 		float vrPanelWidth; //!< VR: the menu panel's width, meters (#49)
+		bool vrHudFrame; //!< VR: the original screen-frame HUD drawn on the 2D interface after all (#469)
+		std::string vrHudKeep; //!< VR: HUD elements kept on the 2D interface, comma-separated (#469, vr/HudFrame.h)
+		std::string vrLevelUp; //!< VR: the level-up indication - both, radial, wrist or off (#469)
 		bool vrPhysicalCrouch; //!< VR: the head going down crouches the character (#100)
 		float vrCrouchEnter; //!< VR: the head this far below the calibrated eye crouches, meters (#100)
 		float vrCrouchExit; //!< VR: the character stands again once the head is back above this depth, meters (#100)
@@ -262,6 +265,10 @@ public:
 		float vrBodyPush; //!< VR: game units (cm) the own body sits behind the eyes along its facing, looking ahead (#385.9, vr/BodyView.h)
 		float vrBodyPushDown; //!< VR: game units (cm) the push grows by looking straight down (#385.9)
 		float vrBodyClearance; //!< VR: game units (cm) from an eye within which the own body's faces are not drawn (#385.9)
+		//! VR: where a radial menu opens (#377): "hand", or "gaze_when_off" - before the eyes at the hand's height
+		//! when the hand is more than \ref vrRadialGazeDeg off the gaze
+		std::string vrRadialPlace;
+		float vrRadialGazeDeg; //!< VR: degrees off the gaze beyond which gaze_when_off moves the ring (#377)
 
 	} input;
 	

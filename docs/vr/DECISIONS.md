@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW-hud: No screen-frame HUD in VR - every element on a VR element or an open question for the owner
+## D-046: No screen-frame HUD in VR - every element on a VR element or an open question for the owner
 
 - **Date:** 2026-10-14
 - **Status:** Accepted (the owner, #464 / #469); the level-up indication and the homes of the elements without an

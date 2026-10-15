@@ -825,7 +825,7 @@ the playground yet (#359).
 
 ### Switching the arms: custom, forearm, hands, Arx or classic (#385, #466)
 
-The VR body has five arm models (D-NEW-arms "Own VR arms", D-NEW-armvariants "a choice of four", D-NEW-classic):
+The VR body has five arm models (D-NEW-arms "Own VR arms", D-NEW-armvariants "a choice of four", D-051):
 - **custom** (the default) — the leather glove hand (Godot XR Tools, CC0) and a cloth sleeve from the shoulder to
   the wrist, textures in `data/core/vr/arms/`;
 - **forearm** — the glove and a short forearm: the sleeve from the wrist along the forearm, cut at 0.6 of its length
@@ -878,7 +878,7 @@ unchanged.
 
 #### The classic Arx arm and its hand (#466)
 
-**classic** is the fifth model (D-NEW-classic): the original Arx arm with **one elbow** — the forearm is one rigid
+**classic** is the fifth model (D-051): the original Arx arm with **one elbow** — the forearm is one rigid
 piece from the elbow to the wrist instead of folding in its middle (the measured cause: [TRAPS.md](TRAPS.md),
 2026-10-14). It is re-skinned in VR only; **arx** stays the engine's arm, for comparison. The lever cycle is
 custom → forearm → hands → arx → classic → custom; the channel command is `arms classic`, cfg.ini

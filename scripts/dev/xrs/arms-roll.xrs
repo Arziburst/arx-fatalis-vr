@@ -1,4 +1,4 @@
-# The roll-aware arm IK (#304, D-NEW, F-212): the hand's roll about the forearm is shared along the arm
+# The roll-aware arm IK (#304, D-050, F-212): the hand's roll about the forearm is shared along the arm
 # instead of wringing the one band of faces at the wrist (research section 16a). The right controller is
 # rolled 0 / 45 / 90 / 180 degrees hanging down and pointing forward - the eight poses of the #298 baseline
 # (docs/vr/research/arms-roll.xrs, section 16g) - and status.json says where the roll went:

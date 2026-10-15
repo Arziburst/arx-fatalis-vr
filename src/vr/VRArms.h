@@ -37,7 +37,7 @@ class TextureContainer;
 
 /*!
  * \file
- * \brief Our own arms on the player in VR (#385, D-NEW-arms): a sleeve from the shoulder to the wrist and a glove hand
+ * \brief Our own arms on the player in VR (#385, D-049): a sleeve from the shoulder to the wrist and a glove hand
  *
  * The Arx arm stays the logical arm: vr/VRBody.cpp poses it as before (#313's roll-aware IK), and the
  * weapon, the reticle, the wrist bars and the melee keep reading it. With \c vr_arms_model = custom (forearm, hands) its

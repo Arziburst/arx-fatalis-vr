@@ -39,6 +39,7 @@
 #include "vr/HandReticle.h"
 #include "vr/HeadPose.h"
 #include "vr/HeadTracking.h"
+#include "vr/VRSystem.h"
 #include "vr/WorldScale.h"
 
 namespace vr {
@@ -81,6 +82,7 @@ struct ReticleState {
 	bool cursorOnWorld = false;
 	bool cursorOnPanel = false;
 	int enginePickOnly = 0; //!< EnginePickOnly scopes alive
+	s32 act = HoverFilter::None; //!< what a hand's act chose this frame, for takeReticleAct
 	ReticleStatus status;
 
 };
@@ -242,6 +244,8 @@ void noteHeadCamera(bool firstPerson, const Vec3f & position, float bodyYaw, con
 void updateReticles(const std::array<HandAim, HandCount> & aims, double now) {
 
 	ReticleStatus & status = g_reticle.status;
+	// An act the engine did not take in its frame (the world interaction was off) is not kept for later
+	g_reticle.act = HoverFilter::None;
 	const char * off = reticleOffReason();
 	noteReticleOnOff(off);
 	g_reticle.on = (off == nullptr);
@@ -330,6 +334,10 @@ bool reticlesOn() {
 	return g_reticle.on;
 }
 
+bool handsAreTheMouse() {
+	return g_reticle.on || panelShown();
+}
+
 void reticleTarget(Hand hand, PointerRay & ray) {
 	const ReticleHandState & state = g_reticle.hands[size_t(hand)];
 	if(g_reticle.on && state.hit && state.inFront) {
@@ -396,6 +404,36 @@ void afterPointer(const MenuPointer & pointer, const std::array<PointerRay, Hand
 	}
 }
 
+bool reticleAct(Hand hand) {
+
+	if(!g_reticle.on) {
+		return false;
+	}
+	const ReticleHandState & state = g_reticle.hands[size_t(hand)];
+	const s32 id = state.hover.hovered();
+	Entity * entity = reticleEntityById(id);
+	// What the engine's double click acts on (managePlayerControls): not an item - the same chord uses those
+	if(!entity || (entity->ioflags & IO_ITEM) || !(entity->ioflags & (IO_FIX | IO_NPC))
+	   || !isReticlePickable(*entity) || !isInPickReach(*entity)) {
+		return false;
+	}
+
+	g_reticle.act = id;
+	ReticleStatus & status = g_reticle.status;
+	status.acts++;
+	status.lastAct = reticleEntityLabel(id);
+	status.lastActHand = ReticleHandNames[size_t(hand)];
+	gameevent::Event("vr.reticle.act", 200)("hand", status.lastActHand)("item", status.lastAct)
+		("distance", state.distance, 0);
+	return true;
+}
+
+Entity * takeReticleAct() {
+	Entity * entity = reticleEntityById(g_reticle.act);
+	g_reticle.act = HoverFilter::None;
+	return entity;
+}
+
 EnginePickOnly::EnginePickOnly() {
 	g_reticle.enginePickOnly++;
 }
@@ -407,7 +445,16 @@ EnginePickOnly::~EnginePickOnly() {
 ReticlePick reticlePickAt(const Vec2s & pos, Entity *& entity) {
 
 	entity = nullptr;
-	if(!g_reticle.on || g_reticle.enginePickOnly > 0) {
+	if(g_reticle.enginePickOnly > 0) {
+		return ReticlePick::NotMine;
+	}
+	if(!g_reticle.on) {
+		// The hands are on the floating panel (the book, a note - the reticles are off for it): a pixel of the
+		// panel is the 2D interface, never the world behind it - a click beside the book took the corpse (#377)
+		if(panelShown()) {
+			g_reticle.status.blocked++;
+			return ReticlePick::Blocked;
+		}
 		return ReticlePick::NotMine;
 	}
 

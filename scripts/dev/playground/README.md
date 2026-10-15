@@ -30,6 +30,13 @@ The tester zip (`package-tester.ps1`) does not carry the playground yet.
 - **The arms lever** (#385.3), third on the wall: each pull steps the VR arms to the next model - custom, forearm, hands,
   arx, classic, then custom again (#385.8, #466.2; it counts pulls in the global `#pg_arms_pulls`, `src/vr/VRArms.cpp`
   follows it; the setting is cfg.ini `vr_arms_model`).
+- **Worked by hand** (#38, `DOOR`, `CHEST`, `CORPSE` in `layout.mjs`), all a few steps from the hero's start, each
+  the game's own class with its own state: a **door** (`fix_inter/light_door`, `light_door_9001`) standing free ahead-left,
+  closed and unlocked (the class locks every door; the instance script unlocks it); a **metal chest**
+  (`fix_inter/chest_metal`, `chest_metal_9001`) by the east wall, unlocked, holding `CHEST_ITEMS` (a life potion and
+  bread, added on `initend` as the original levels do); a **dead goblin** (`npc/goblin_base`, `goblin_base_9002`) ahead
+  holding `CORPSE_ITEMS` (cheese and an apple), killed by its own script half a second after the start and refusing
+  `ouch` / `aggression` before that. Each is opened, pulled or searched with a hand's reticle and grip + trigger.
 - **Weapons**: every folder under `items/weapons` that holds a class script (`WEAPONS` in `layout.mjs`, 32), on a table at
   the west wall. **Consumables** (`CONSUMABLES`: 5 potions, 6 foods, a scroll holding magic missile) on the main table.
 - **Hero**: a marker's init script runs `addxp 178000` (level 10, the game's cap) and `rune all`. The player script is not
@@ -37,6 +44,7 @@ The tester zip (`package-tester.ps1`) does not carry the playground yet.
 - Instance ids start at `FIRST_ID` (9001): the original levels ship instance scripts for the low numbers of every class,
   which the engine would run for an item without a script of its own.
 - The test channel finds these entities by the text variable `£pg_role` their scripts set (`npc`, `lever_mode`,
-  `lever_respawn`, `lever_arms`); status.json `playground`, `player.level`, `player.allRunes` and the commands `playground pull|kill|place|hit`
-  are described in `docs/vr/TESTING.md`. Sequences: `scripts/dev/xrs/playground-levers.xrs`, `arms-variants-lever.xrs`.
+  `lever_respawn`, `lever_arms`, `door`, `chest`, `corpse`); status.json `playground`, `player.level`, `player.allRunes` and the commands
+  `playground pull|kill|place|hit` are described in `docs/vr/TESTING.md`. Sequences: `scripts/dev/xrs/playground-levers.xrs`,
+  `scripts/dev/xrs/playground-hands.xrs` (the lever, the door, the chest and the body by each hand, #38), `arms-variants-lever.xrs`.
 - The mode lever does nothing while the goblin is dead (a dead NPC runs no script events): use the respawn lever.

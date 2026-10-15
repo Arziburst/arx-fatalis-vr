@@ -31,6 +31,7 @@
 #include "gui/Text.h"
 #include "gui/TextManager.h"
 #include "math/Rectangle.h"
+#include "vr/VRHud.h"
 
 struct Notification {
 	
@@ -79,6 +80,11 @@ void notification_check() {
 	}
 	
 	pTextManage->Clear();
+	
+	// Down the frame's top left: not drawn in VR, where the owner decides their place (#469); they still expire
+	if(!vr::hudDraw(vr::HudElement::Notifications)) {
+		return;
+	}
 	
 	long igrec = 14;
 	

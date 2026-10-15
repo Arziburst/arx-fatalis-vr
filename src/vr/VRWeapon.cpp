@@ -87,6 +87,11 @@ const char * weaponKind(const Entity * weapon) {
 	return "none";
 }
 
+//! A weapon the IK hand holds: a dagger, a one- or two-handed weapon (bows are left to the engine)
+bool isMeleeWeapon(const Entity * weapon) {
+	return weapon && (weapon->type_flags & (OBJECT_TYPE_DAGGER | OBJECT_TYPE_1H | OBJECT_TYPE_2H));
+}
+
 //! The player's link holding \a weapon, or nullptr
 const EERIE_LINKED * findLink(const EERIE_3DOBJ * obj, const Entity * weapon) {
 	if(!obj || !weapon) {
@@ -232,10 +237,10 @@ void updateHeldWeapon() {
 	status.item = weapon ? weapon->idString() : std::string();
 	status.kind = weaponKind(weapon);
 
-	const bool melee = weapon && (weapon->type_flags & (OBJECT_TYPE_DAGGER | OBJECT_TYPE_1H | OBJECT_TYPE_2H));
+	const bool melee = isMeleeWeapon(weapon);
 	const bool driven = playerBodyStatus().hands[size_t(Hand::Right)].posed;
 
-	if(melee && driven) {
+	if(melee && driven && !status.sheathed) {
 		const EERIE_LINKED * link = findLink(io->obj, weapon);
 		if(!link || link->lidx != io->obj->fastaccess.primary_attach) {
 			ARX_EQUIPMENT_AttachPlayerWeaponToHand();
@@ -274,7 +279,23 @@ void updateHeldWeapon() {
 	status.inHand = false;
 	status.place = weapon ? "engine" : "none";
 	noteState(weapon ? "engine" : "none",
-	          !weapon ? "no weapon equipped" : !melee ? "not a melee weapon" : "the right arm is the engine's", weapon);
+	          !weapon ? "no weapon equipped" : !melee ? "not a melee weapon"
+	          : status.sheathed ? "sheathed" : "the right arm is the engine's", weapon);
+}
+
+const char * toggleHeldWeapon() {
+
+	HeldWeaponStatus & status = g_weapon.status;
+	Entity * weapon = entities.get(player.equiped[EQUIP_SLOT_WEAPON]);
+	const char * result = "no_weapon";
+	if(isMeleeWeapon(weapon) && weapon->obj) {
+		status.sheathed = !status.sheathed;
+		status.toggles++;
+		result = status.sheathed ? "sheathed" : "drawn";
+	}
+	gameevent::Event("vr.weapon.toggle")("result", result)
+		("item", weapon ? weapon->idString() : std::string("none"))("kind", weaponKind(weapon));
+	return result;
 }
 
 bool heldWeaponTransform(const Entity * linked, Vec3f & attach, glm::quat & rotation) {

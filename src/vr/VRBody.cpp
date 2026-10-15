@@ -62,7 +62,7 @@ namespace {
 const float MaxShoulderSlide = 20.f;
 
 /*!
- * The base pole of the elbow in the body frame, before the hand's roll swings it (D-NEW): down, back
+ * The base pole of the elbow in the body frame, before the hand's roll swings it (D-050): down, back
  * and a little outward - where a relaxed elbow points. Only the part across the shoulder-target line
  * counts, so a hanging arm bends back (and a little out), a hand raised ahead bends down (and out), a
  * hand held out to the side bends down and back. #36's pole (down, half out, a fifth back) pointed a
@@ -116,7 +116,7 @@ struct ArmChain {
 	glm::quat handToGrip = quat_identity(); //!< wrist bone rest frame -> grip frame in engine axes
 	std::string names;                     //!< "upper>forearm>wrist[>hand]", or why there is no chain
 	std::string thumbGroup;                //!< the thumb group the lateral axis was read from, if any
-	ArmRest rest;                          //!< the chain at rest in mesh space (D-NEW): the two bones, the model's back, the thumb axis
+	ArmRest rest;                          //!< the chain at rest in mesh space (D-050): the two bones, the model's back, the thumb axis
 	Vec3f restElbow = Vec3f(0.f);          //!< the direction the elbow sticks out at rest, across the shoulder-wrist line
 	const char * restElbowSource = "";     //!< what named restElbow (the model's back, the rest triangle, the thumb)
 	float restBend = 0.f;                  //!< degrees between the upper arm and the forearm at rest
@@ -145,7 +145,7 @@ struct BodyState {
 	std::array<ArmChain, HandCount> chains;
 	std::array<bool, HandCount> haveSim = { };
 	std::array<HandSample, HandCount> sim;
-	std::array<ArmRollState, HandCount> roll;     //!< the overflow side of each arm's roll, between frames (D-NEW)
+	std::array<ArmRollState, HandCount> roll;     //!< the overflow side of each arm's roll, between frames (D-050)
 	Vec3f shift = Vec3f(0.f);
 	std::array<bool, HandCount> posedBefore = { }; //!< for the per-arm events
 	std::array<int, HandCount> overflowBefore = { }; //!< for the roll overflow events
@@ -261,7 +261,7 @@ ArmChain findChain(const EERIE_3DOBJ * obj, Hand hand) {
 	}
 
 	// The chain at rest, in mesh space (transinit_global is a bone's joint from its father's, at rest):
-	// what the roll of every bone is measured against (D-NEW)
+	// what the roll of every bone is measured against (D-050)
 	chain.rest.upper = rig.bones[forearm].transinit_global;
 	chain.rest.forearm = rig.bones[wrist].transinit_global;
 	chain.rest.thumb = chain.frame.valid ? chain.frame.thumb : Vec3f(0.f);
@@ -735,7 +735,7 @@ void noteArm(size_t hand, bool posed, const char * source) {
 	}
 }
 
-//! The hand's roll crossed a half turn, or came back: the side it continues on (D-NEW)
+//! The hand's roll crossed a half turn, or came back: the side it continues on (D-050)
 void noteRollOverflow(size_t hand, int overflow, float handRoll) {
 	if(overflow != g_body.overflowBefore[hand]) {
 		g_body.overflowBefore[hand] = overflow;
@@ -743,7 +743,7 @@ void noteRollOverflow(size_t hand, int overflow, float handRoll) {
 	}
 }
 
-//! The shares of the hand's roll along the arm, as cfg.ini has them (vr_arm_*, D-NEW)
+//! The shares of the hand's roll along the arm, as cfg.ini has them (vr_arm_*, D-050)
 ArmRollParams rollParams() {
 	ArmRollParams params;
 	params.forearmShare = config.input.vrArmForearmTwist;
@@ -985,7 +985,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		const float forearmLength = glm::length(forearmVector);
 
 		// The base pole: the elbow bends down, back and a little outward; the hand's roll swings it
-		// from there (D-NEW)
+		// from there (D-050)
 		const float side = (Hand(hand) == Hand::Right) ? 1.f : -1.f;
 		const Vec3f hint = down * ElbowPoleDown + right * (ElbowPoleOut * side) - forward * ElbowPoleBack;
 		ArmIKParams params;

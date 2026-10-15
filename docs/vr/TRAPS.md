@@ -442,7 +442,7 @@ A joint-position check cannot see it.
 its arms, what Arx's model and textures allow: twist bones, roll limits, a separate VR arm rig). Until then,
 judge arms in the headset or on a capture with the controllers *rolled*, not from `vr.body` alone; the
 `arms-follow` sequence rolls nothing.
-**Resolved by #304 (D-NEW):** the three arm rotations are built from the bend plane and the hand's roll is
+**Resolved by #304 (D-050):** the three arm rotations are built from the bend plane and the hand's roll is
 shared along the arm (vr/ArmRoll.h); `vr.body.<hand>.wristTwist` / `elbowTwist` / `upperRoll` now say what each
 band of faces carries, and the `arms-roll` sequence rolls the controller 0–180° and asserts on them. The lesson
 stays: a joint-position check sees no twist.

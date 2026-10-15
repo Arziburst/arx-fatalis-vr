@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW-armvariants: The VR arms are a choice of four - custom, forearm, hands, arx - switched live; full arms are not the only VR body
+## D-047: The VR arms are a choice of four - custom, forearm, hands, arx - switched live; full arms are not the only VR body
 
 - **Date:** 2026-10-14
 - **Status:** Accepted (the default stays `custom` until the owner picks in the headset; the forearm's length and the
@@ -21,12 +21,12 @@ a changed decision keeps its history in that cell.
 - **Decided by:** project owner (2026-10-13, via the coordinator: full, forearm, hands and arx all selectable live; the
   forearm ends in a closed cuff before the elbow; the default stays custom); #385.8 for the formulation
 - **Amends:** D-009 (full body with IK arms: the arms drawn are now a choice, the full arm one of them) and the
-  "visible full only" point of D-NEW-arms
+  "visible full only" point of D-049
 
 ### Decision
 cfg.ini `vr_arms_model` = `custom` | `forearm` | `hands` | `arx`, switched live by the channel's `arms <model>` and the
 playground's arms lever (each pull steps custom -> forearm -> hands -> arx -> custom); status.json `vr.body.armsModel`:
-- **custom** - the glove and the whole sleeve, shoulder to wrist (D-NEW-arms, D-NEW-armfit);
+- **custom** - the glove and the whole sleeve, shoulder to wrist (D-049, D-048);
 - **forearm** - the glove and a short forearm: the sleeve from the glove's wrist along the forearm of the custom arm's
   own solve, cut at `ForearmKept` = 0.6 of the forearm's length and closed there by a cuff; no upper arm, no elbow;
 - **hands** - the glove alone, its wrist opening closed by a cuff (Half-Life: Alyx);
@@ -54,15 +54,15 @@ Arx faces), so a new model is one row. Flat mode and the inventory book keep the
 
 ---
 
-## D-NEW-armfit: The custom arm solves its own chain - fitted to the player's reach, a small stretch, the elbow down with a weapon
+## D-048: The custom arm solves its own chain - fitted to the player's reach, a small stretch, the elbow down with a weapon
 
 - **Date:** 2026-10-13
 - **Status:** Accepted (the stretch limit and the elbow drop are first proposals for the owner to tune in the headset)
 - **Decided by:** project owner (2026-10-13: "the arm's own length must fit first", "arm stretch yes", "elbow drop yes"); #385.6
-- **Builds on:** D-NEW-arms (own arms), the roll-aware IK (D-NEW of #313)
+- **Builds on:** D-049 (own arms), the roll-aware IK (D-050 of #313)
 
 ### Decision
-- The custom arm (D-NEW-arms) is posed by **its own** roll-aware solve, from the logical Arx shoulder to the glove's
+- The custom arm (D-049) is posed by **its own** roll-aware solve, from the logical Arx shoulder to the glove's
   wrist, with **its own segment lengths**; the logical Arx arm keeps its own solve for the weapon, reticle, wrist bars
   and melee.
 - **Length fit:** first from the character height setting (#260; Drillis and Contini's segment ratios, the Arx upper
@@ -92,11 +92,11 @@ Arx faces), so a new model is one row. Flat mode and the inventory book keep the
 
 ---
 
-## D-NEW-arms: Own VR arms behind `vr_arms_model` — the Godot XR Tools glove hand (CC0), cgltf and CPU skinning, the logical Arx arm kept
+## D-049: Own VR arms behind `vr_arms_model` — the Godot XR Tools glove hand (CC0), cgltf and CPU skinning, the logical Arx arm kept
 
 - **Date:** 2026-10-13
 - **Status:** Accepted (a first proposal; the look is the owner's to judge in the headset); "visible full only" amended
-  by D-NEW-armvariants (forearm and hands models)
+  by D-047 (forearm and hands models)
 - **Decided by:** project owner (variant B of #385); the worker of #385.5 for the formulation; within D-009 / D-032
 
 ### Decision
@@ -135,7 +135,7 @@ The VR body can wear **its own arms** (#385) instead of the Arx arm models:
 
 ---
 
-## D-NEW: The VR arms are roll-aware — rotations from the bend plane, the hand's roll shared along the arm (RENIK's rules)
+## D-050: The VR arms are roll-aware — rotations from the bend plane, the hand's roll shared along the arm (RENIK's rules)
 
 - **Date:** 2026-10-10
 - **Status:** Accepted (the owner's pick of option A1 from research section 16e; the shares are the owner's to tune in the headset)
@@ -1696,7 +1696,7 @@ The old 2D menus are small, so a pointer stays — but only where there is a men
 ## D-009: Full body in VR — the player model with arms driven by IK, in the MVP
 
 - **Date:** 2026-10-08
-- **Status:** Accepted; amended by D-NEW-armvariants (the arms drawn are a choice of four, the full arm one of them)
+- **Status:** Accepted; amended by D-047 (the arms drawn are a choice of four, the full arm one of them)
 - **Decided by:** project owner
 
 ### Decision

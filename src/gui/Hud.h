@@ -192,7 +192,8 @@ public:
 	MemorizedRunesHud();
 	
 	void update(const Rectf & parent);
-	void draw();
+	//! \param shown false keeps the spell to memorize up to date without drawing it (VR, #469)
+	void draw(bool shown = true);
 };
 
 class HealthGauge : public HudItem {

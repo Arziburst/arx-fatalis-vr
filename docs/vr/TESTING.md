@@ -296,6 +296,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `freelook on\|off` | the engine's free look without the mouse (#323): `on` leaves the cursor mode, where the engine keeps the inventory open on the panel. In VR the game turns it on when it enters `GAMEPLAY` (#394); opening a chest or a body leaves it again (the engine's own rule). Refused without a level |
 | `vr-radial point left\|right <item>` | the radial menus (#376, `--vr-sim` only, the hand's menu open): the simulated hand's grip moved to the middle of an item of its open menu - `center`, `r1` … `r3`, `l1` … `l3`, `game_menu`, `character`, `spells`, `map`, `quests`, `quick_save`, `quick_load`, `recenter`, `cancel_spell`; an item of the half-ring is reached through it (up over the ring first, then across three frames later), an item of the ring from the half-ring through the middle. Only moves the hand: what the menu makes of it is the game's path. `vr.radial` in the status |
 | `vr-radial place hand\|gaze_when_off [<degrees>]` | where the radial menus open (#377), as `cfg.ini` sets it (`vr_radial_place`, `vr_radial_gaze_deg`, live, not saved): `hand` (the default) at the hand; `gaze_when_off` before the eyes at the hand's height when the hand is more than `<degrees>` (default 45) off the gaze - the hand still selects from where it opened. `vr.radial.<hand>.placed` (`hand`, `gaze`) and `place=` in the open event |
+| `vr-hud frame on\|off`, `vr-hud keep <names>\|none`, `vr-hud levelup both\|radial\|wrist\|off`, `vr-hud reset` | the screen-frame HUD in VR (#469), as `cfg.ini` sets it (`vr_hud_frame`, `vr_hud_keep`, `vr_levelup`; live, not saved): the old frame back on the 2D interface, single elements kept there (names as in `vr.hud.drawn`, separated by commas or spaces; an unknown name is refused), the level-up indication; `reset` zeroes `vr.hud.drawn` |
 | `vr-point left\|right menu <name>` | the same aim at the middle of a menu target (#394): in the main menu an entry (`resume`, `newquest`, `loadsave`, `options`, `credits`, `quit`, `language`), `back` (the open page's back button) or the **localisation key** of a text or a checkbox's label on the open page (`system_menus_options_interface`, `system_menus_options_video_crosshair`, `system_no`) — names, not texts: the game data may be in any language; in the character creation `quickgen`, `skin`, `done` or an attribute or skill of the book (`strength`, `mind`, `dexterity`, `constitution`, `stealth`, `mecanism`, `intuition`, `etheral_link`, `object_knowledge`, `casting`, `close_combat`, `projectile`, `defense`: the trigger adds a point, grip + trigger takes it back since #377); in the game with the book open its bookmarks (#377): `book_stats`, `book_spells`, `book_map`, `book_quests` (not the page shown). `ui.menuHover` says whether the engine sees the mouse on it. Refused outside the main menu, the character creation and the open book, or for a name not shown |
 | `vr-point left\|right entity <id> [<dx> <dy> <dz>]`, `vr-point left\|right at <x> <y> <z>` | a simulated hand (`--vr-sim` only) turned so its hidden ray (#37) points at the middle of an entity's box in the world (optionally that many game units beside it) or at a point of the world (game units, y down) — from where the hand is this frame, through the inverse of the hand's mapping into the world. Only aims: what the reticle hits and what the engine makes of it is the game's path (`vr.reticle`). Refused without the simulator, for an unknown entity, or while the reticles are off (no ray in the world) |
 | `watch <id>` / `watch off` | report one entity's place in `status.json` → `watch` (#37): where an item is, whether it is dragged, in the scene or in an inventory |
@@ -422,8 +423,9 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   `stddev`, `black`, `background`). A menu that fills the window is `world` in all four; the menu on the panel seen
   from the eye left the top quarters `uniform` (the eye's background).
 - `vr.panel` (#49): the floating UI panel. `mode`: `world` while a menu is open and the panel is placed
-  in the play space, `head` otherwise (the HUD on the head-locked quad; also while a menu waits for a
-  tracked head); `menu`: the open menu (`mainmenu`, `charactercreation`, `credits`, `note`, `book`,
+  in the play space, `head` otherwise (the head-locked quad - in VR without the HUD frame since #469; also
+  while a menu waits for a tracked head); `shown`: the panel is shown for an open menu (#469: only for the
+  real panels, never in play); `menu`: the open menu (`mainmenu`, `charactercreation`, `credits`, `note`, `book`,
   `container`, `inventory`) or empty; `placements` since the start and `lastPlacement` (`open`,
   `recenter`, `tracking`); `x`, `y`, `z` the panel's centre in LOCAL (metres; the simulated head starts at
   the origin, so `0, -0.3, -0.9` straight ahead with the defaults), `yaw` its heading (degrees, + left),
@@ -553,6 +555,18 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   another one's image is acquired, as SteamVR does, TRAPS.md). With them (#376): `gameTimeMs` at the top (the game clock: it runs while a
   radial menu is open, stops in the pause menu), `player.bookPage` (`stats`, `spells`, `map`, `quests`) and
   `player.torch` (the lit torch's id, or `none`).
+- `vr.hud` (#469): the original screen-frame HUD in VR ([The HUD frame in VR](#the-hud-frame-in-vr-469)).
+  `vr`: a VR session is on, so the frame is off unless `frame` is `on` (`cfg.ini` `vr_hud_frame`, the comparison
+  switch) or the element is in `keep` (`vr_hud_keep`, `none` for none); `frames`: HUD updates (frames the HUD
+  was drawn in); `drawn.<element>`: per element the frames it was let through to draw - it draws when it has
+  something to show (`health`, `mana`, `level_up`, `book`, `backpack`, `purse`, `active_spells`,
+  `precast_spells`, `stealth`, `torch`, `steal`, `damaged_equipment`, `change_level`, `quick_save`,
+  `memorized_runes`, `hit_strength`, `mechanism_hint`, `screen_arrows`, `minimap`, `notifications`, `speech`); 0 in VR play; `drawnTotal` their sum.
+  `levelUp`: the level-up indication - `mode` (`vr_levelup`: `both`, `radial`, `wrist`, `off`), `pending`
+  (points to spend, the flat icon's condition), `radialMark` (the radial menu's Character item marked),
+  `wristNotice` (the gold notice on the wrist, 8 s after a level-up or until the points are spent),
+  `notices` (how many started), `radialImages` / `wristViews` (radial images / eye views the mark / the notice
+  was drawn into). `vr-hud reset` zeroes `drawn`.
 - `vr.wrist` (#116, D-037): health and mana on the left wrist. `shown`: the left arm was posed from a
   controller this frame, so the bars are on the wrist and the HUD's orbs are not drawn; else `hidden` says
   why (`no left controller`, `left arm not posed`, `body not posed this frame`). `health`, `mana`: the
@@ -821,6 +835,41 @@ What the D-042 table names but the game does not have yet - kept as below until 
 | Two-handed weapons on both hands | A two-handed weapon is held by the right hand like any other | #380 |
 | Two dragged items, one per hand | One dragged item (the engine's) | #379 |
 
+## The HUD frame in VR (#469)
+
+The flat game spreads its HUD along the edges of the monitor. In VR that frame was the 2D interface's rectangle -
+on the head-locked quad in play, on the panel around the book and the bag - and the owner removed it
+(2026-10-14, #464): in VR no element of it is drawn on the 2D interface, nor takes a click; the panel shows only for
+a real panel (the bag, the book, a container, a note, a menu). Flat mode draws it as before. Every element and
+where its function lives in VR (`vr/HudFrame.cpp`, host test `HudFrameTest`; status `vr.hud`, sequences
+`hud-frame` and `hud-frame-flat`):
+
+| Element (`vr.hud.drawn.*`) | Flat HUD | VR home |
+|---|---|---|
+| `health`, `mana` | the red and blue orbs | the bars on the left wrist (#116). Without a posed left arm (no left controller) the orbs come back on the head-locked quad - **owner question**: keep that fallback? |
+| `level_up` | the level-up icon, a click opens the character page | a gold mark on the radial menu's **Character** item (the half-ring; on its faint arc while the half-ring is closed) while points wait, and a pulsing gold square beside the wrist bars for 8 s after a level-up - **a first proposal** behind `cfg.ini` `vr_levelup` = `both` (default) \| `radial` \| `wrist` \| `off` |
+| `book` | the book icon; its flash for a new spell | the radial menu's Character, Spells, Map and Quests items (#376). The new-spell flash is not shown in VR - **owner question** |
+| `backpack` | the bag icon (also a drop target) | the radial menu's Inventory item (#376) |
+| `torch` | the burning torch's icon, a click puts it out | a torch in a radial quick slot lights it and puts it out (#376) |
+| `purse` | the gold purse: the amount, a click takes gold out | **owner question** |
+| `active_spells` | the running spells' icons, a click cancels one | **owner question**; the radial menu's Cancel spell ends the last one |
+| `precast_spells` | the precast spells' icons, a click launches one | **owner question**: neither shown nor launchable in VR yet |
+| `stealth` | the stealth gauge while sneaking unseen | **owner question** |
+| `steal` | the steal icon at a container that can be stolen from | **owner question** (the container's panel still opens) |
+| `damaged_equipment` | the damaged equipment figure | **owner question** |
+| `change_level` | the zone-change icon at a level's exit, a click goes | jump goes (the default `quick_level_transition` = jump, right stick up); the "you can go" sign - **owner question** |
+| `quick_save` | the quick save's flash | **owner question**: the radial menu's Quick save gives no confirmation |
+| `memorized_runes` | the runes of the spell being drawn | **owner question**: only the rune trail (#43) |
+| `hit_strength` | the combat mode's swing charge | **owner question**: the held trigger charges a swing (#39), nothing shows it |
+| `mechanism_hint`, `screen_arrows` | the cursor mode's hint cog, the edge arrows that turn the view | none needed: the hands are the mouse and the head turns the view |
+| `minimap` | the minimap in the top right corner | the radial menu's Map item opens the book's map page (#376); a map always in view - **owner question** |
+| `notifications` | the info messages down the top left (tutorial hints, "you cannot …", the level-up message) | **owner question** (the owner, #469: they go to a VR element he picks); they still run their time and count in `notifications` |
+| `speech` | the characters' speech text under a conversation's letterbox | **owner question** (the owner, #469); the voice still plays |
+
+The switches, for comparing in the headset (`cfg.ini` [video], live through `vr-hud`): `vr_hud_frame = true` brings
+the whole old frame back in VR; `vr_hud_keep = precast_spells, stealth` keeps single elements on the 2D interface
+(the head-locked quad in play, the panel's edges with a panel open) until an element has its VR home.
+
 ## The log banner
 
 Every `arx.log` starts with six `Key: value` lines (#115, #129 and #130, research rows F-18, F-98,
@@ -956,6 +1005,8 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.radial.hover` / `vr.radial.refused` | the item under a hand changes; a press of B that opens nothing, with the reason | `hand`, `item` (limit 2000) / `hand`, `reason` (limit 200) |
 | `vr.radial.slot` / `vr.radial.use` / `vr.radial.torch` | a dragged item fills a quick slot (`back=inventory\|dropped`); a slot is used (`result=used\|nothing_left\|torch_out`, `left`: how many of the kind are left, `note`: `weapon_right_hand_until_380` for a weapon from an L slot, else `none`); the torch lit from a slot burns, in that hand. `hand` is the slot's side (`slot` `r1` … `l3`, #377) | `hand`, `slot`, `item` |
 | `vr.wrist` | health and mana move between the left wrist and the HUD's orbs (#116) | `state=wrist\|orbs`, `reason` (limit 200) |
+| `vr.hud` | the screen-frame HUD's switches change, and once at the start (#469) | `vr=yes\|no`, `frame=on\|off`, `keep` |
+| `vr.levelup` | a level-up notice starts: points to spend appeared, or the level rose again while they wait (#469) | `level`, `mode`, `radial=yes\|no`, `wrist=yes\|no` |
 | `vr.panel.placed` | the floating UI panel was placed (#49): a menu opened (after > 250 ms closed), a recenter while it was open, or the head came back to tracking | `reason=open\|recenter\|tracking`, `menu`, `x`, `y`, `z` (LOCAL, metres), `yawDeg`, `distanceM`, `dropM`, `widthM`, `headY` |
 | `vr.panel` | the 2D interface moved between the panel and the head-locked quad (#49) | `mode=world\|head`, `menu` (`none` when closed) |
 | `magic.stance` | the casting stance starts or ends (#43): the magic action held with casting allowed | `state=on\|off`, `hands` (the hands draw: VR or a simulated hand; limit 200) |
@@ -1529,7 +1580,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `arms-follow` | the full body (#36): both arm chains found, both arms posed from the idle rig's controllers with `error` 0; the hand takes the controller's orientation (the identity grip is a hand hanging down in the OpenXR grip pose: the wrist 8 units above the grip and the fingertips below the wrist; pitched up 90°, fingers ahead and thumb up: wrist and fingertips level with the grip); a hand moved 30 cm moves the wrist with it and changes both eyes' pictures of the body seen from above (> 2, floor < 1.5); 1.2 m out: `stretched`, `slide` 20; a controller switched off gives its arm back to the engine; a 30 cm lean shifts the body by the camera's offset and keeps `error` 0. **Needs the first-person save** (level 10's conversation camera is nowhere near the body): `smoke-test.ps1 -VrSim idle -Sequence arms-follow -Save mvp-new-game` | — |
 | `stand-up` | flat, on the test save `mvp-new-game` (`smoke-test.ps1 -Sequence stand-up -Save mvp-new-game`): `crouch on` / `crouch off` in the start cell — the character crouches (eye 170.1 → 122.7) and stands up where it stood (eye 170.1, same x/z); crouched inside the cell's portcullis it stays down with one `player.standup.blocked` event, and stands up once back at the start spot (#263) | — |
 | `recenter` | a head offset is set and read back; `recenter` is accepted (#28) | — |
-| `tl-reprojection` | picking reads the head camera after the eyes, the book icon's particles are on the quad and add no coverage (#72), on the save `mvp-items` | — |
+| `tl-reprojection` | picking reads the head camera after the eyes, the book icon's particles are on the quad and add no coverage (#72), on the save `mvp-items`; the book icon is kept for that part (`vr-hud keep book`: VR draws no HUD frame since #469) | — |
 | `real-steps` (#26; run with `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence real-steps`) | 8 cm is a lean (the body stays); 1 m forward is a real step (the body walks 0.9 m, the lean stays 0.1 m, no fade); into the cell wall the body is held, the head goes `inside` then `behind` it, both eyes black; back out, the fade clears | — |
 | `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105; the pair waits for `notifications eq 0`, since the save's tutorial hint on the HUD expires by game time, #370); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
 | `menu-pointer` | the menu pointer (#34) on the test save `mvp-items` — run with `smoke-test.ps1 -VrSim idle -Sequence menu-pointer -Save mvp-items`: no pointer and no beam without a menu (`overlayPixels` 0); the key from the table put in the bag, the inventory opened, the right hand aimed at it (`vr-point right item`): the engine's mouse on the key's pixel (192, 606 = the target), `ui.hover` the key, the beam drawn above the panel (`overlayPixels` 2125 left / 1997 right); the trigger clicks (`vr.pointer.click`), a hand move of 8 px keeps the cursor on the key (dead zone, no drag), 40 px drags **the key the click landed on**; released over the bag it goes back; the left hand's trigger takes the cursor and its click lands on the key too; both hands pointing behind the head (since #37 a hand pointing ahead in the game is a world reticle): no cursor, no beam, a press is muted (`offPanelPresses` 1, nothing dragged); closed: the pointer goes. Host test `MenuPointerTest` | — |
@@ -1550,6 +1601,8 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `first-run-intro` | a player's launch up to the main menu (#394): the logos on the screen (`vr.panel.mode screen`, distance 2.5), A and the trigger skip them, the intro (`INTRO`) drawn flat, `introduction.cin` shown (`CINEMATIC`) and skipped with B through `cinematicEnd()`, no click leaks into the menu, New game, the prison and a walk | — |
 | `first-run-chargen` | New game and the character creation by pointer clicks only (#394): New game clicked; a fresh hero (6 each, 16 + 18 points); the screen fills its panel and the window (all four quarters `world`); the trigger on strength spends one point (7, 15 left); both hands behind the head, the trigger and the grip change nothing; the quick generation makes the average hero (`chargen.roll` 1) and, clicked again, a random one (2); the grip takes a point back from strength and a skill point from stealth, the trigger spends them on dexterity and — with the left hand — on casting; Done starts the game with the rolled hero (`hero.strength` / `mind` kept into GAMEPLAY). Arx asks for no name | — |
 | `level-load-hang` | a stalled level load is reported as a hang with its stack (#440): `watchdog 1000`, `stall load 3000`, `loadlevel 1` - `[hang] main thread stalled ... last beat at level load`, `platform::stallThisThread` and the load under it in the stack, `responsive again`, level 1 loaded, `hangWatchdog.stalls` ≥ 1 ([The hang watchdog](#the-hang-watchdog-440)) | — |
+| `hud-frame` | VR without the old HUD frame (#469) on `mvp-new-game` - `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence hud-frame`: in play no panel (`vr.panel.shown` false), no pointer, none of the frame's 21 elements drawn, the quad empty (`quadPixels` 0) (`vr.hud.drawnTotal` 0); `vr-hud frame on` brings the bag and book icons back (the quad's pixels grow), `keep book` only the book; the bag and the book on the panel with nothing of the frame; `addxp` levels up: the game's level-up message is there (`notifications` > 0) but not drawn (`drawn.notifications` 0, the quad still empty), the radial Character item marked and the gold wrist notice (drawn into the eyes in the watch pose, on the arc of the open ring, a `vr.levelup` event), each `vr_levelup` mode, the notice gone after 8 s with the mark kept; the radial ring (the right B, #377's layout) opened six times over the bag and six times over the book, `vr.radial.right.shown` and `submitted` in every checked frame, `undrawn` none (#456's "ring not drawn", #474); released over nothing the bag stays open and the left A closes it, the book closes (#377). Shots `noframe`, `frame`, `bag`, `book`, `levelup-message`, `levelup-wrist`, `levelup-radial`, `ring-bag`, `ring-book` | — |
+| `hud-frame-flat` | the HUD frame flat (#469), `--no-vr` on `mvp-new-game`: the orbs, the bag, book and level-up icons and the active spells drawn as before (`vr.hud.drawn.*` > 0); a level-up counts the flat icon and draws none of the VR indication | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
 `scripts\dev\test-xrs.ps1` (a fake game answering the channel files; in `run-script-tests.ps1`, so in CI).

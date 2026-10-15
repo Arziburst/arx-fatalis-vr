@@ -13,6 +13,38 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-046: No screen-frame HUD in VR - every element on a VR element or an open question for the owner
+
+- **Date:** 2026-10-14
+- **Status:** Accepted (the owner, #464 / #469); the level-up indication and the homes of the elements without an
+  obvious one are proposals behind switches, for the owner to judge in the headset
+- **Decided by:** the owner (remove the frame and its edge icons in VR entirely; health and mana stay on the wrist;
+  the radial menu reaches the character page, the inventory and the book); the worker for the switches and the proposals
+
+### Decision
+- **In VR no element of the original HUD frame is drawn on the 2D interface**, nor takes a click: the orbs, the
+  level-up, book, bag and purse icons, the active and precast spells, the stealth gauge, the torch, steal, damaged
+  equipment, zone-change and quick-save icons, the memorized runes, the swing charge, the cursor mode's hint and edge
+  arrows, the corner minimap, the info messages and the characters' speech text (`vr/HudFrame.h`). In play nothing of it is on the head-locked quad; the panel is shown only for a real panel
+  (the bag, the book, a container, a note, a menu) and carries only that panel. Flat mode is unchanged.
+- **Each element's VR home** is listed in TESTING.md ([The HUD frame in VR](TESTING.md#the-hud-frame-in-vr-469)):
+  health and mana on the left wrist (#116; the orbs come back only without a posed left arm); the book, the bag and the
+  torch in the radial menu (#376); the level-up as a gold mark on the radial menu's Character item and a gold notice
+  beside the wrist bars for 8 s (`vr_levelup`: `both`, `radial`, `wrist`, `off`). The others have no VR home yet and
+  are listed as owner questions.
+- **Switches:** `vr_hud_frame` brings the whole old frame back in VR (to compare); `vr_hud_keep` keeps single elements
+  on the 2D interface until they have a home.
+
+### Why
+The frame was the monitor's edge. In VR it is a rectangle floating in the view (the head-locked quad, the panel's
+borders around the book and the bag) that clutters the view, and its icons duplicate what the radial menu and the wrist
+already do.
+
+### Rules out
+The flat HUD frame in VR by default; new HUD elements on the 2D interface in VR.
+
+---
+
 ## D-045: The radial menus — at the hand, drawn by the engine into a quad layer per hand; each hand's quick slots kept in the save as script variables
 
 - **Date:** 2026-10-13

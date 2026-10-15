@@ -82,6 +82,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "util/Cast.h"
 #include "util/Range.h"
 
+#include "vr/VRHud.h"
+
 
 extern bool EXTERNALVIEW;
 extern bool REQUEST_SPEECH_SKIP;
@@ -294,6 +296,11 @@ void ARX_SPEECH_Update() {
 	util::unordered_remove_if(g_speech, [](const Speech & speech) { return !speech.speaker; });
 	
 	if(!cinematicBorder.isActive() || cinematicBorder.CINEMA_DECAL < 100.f) {
+		return;
+	}
+	
+	// The speech text under the letterbox: not drawn in VR, where the owner decides its place (#469)
+	if(!vr::hudDraw(vr::HudElement::Speech)) {
 		return;
 	}
 	

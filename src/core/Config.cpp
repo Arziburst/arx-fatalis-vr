@@ -46,6 +46,7 @@
 #include "util/String.h"
 
 #include "vr/HeadPose.h"
+#include "vr/HudFrame.h"
 #include "vr/Locomotion.h"
 #include "vr/MeleeSwing.h"
 #include "vr/MirrorGeometry.h"
@@ -70,6 +71,8 @@ constexpr const std::string_view
 	language,
 	audio,
 	vrRadialPlace = "hand",
+	vrHudKeep,
+	vrLevelUp = "both",
 	renderer = "auto",
 	resolution = "auto",
 	audioBackend = "auto",
@@ -110,6 +113,7 @@ constexpr const bool
 	vrMirror = true,
 	vrRealStepNoise = true,
 	vrPhysicalCrouch = vr::DefaultPhysicalCrouch,
+	vrHudFrame = false,
 	viewBobbing = true,
 	screenShake = true,
 	showCrosshair = true,
@@ -266,6 +270,9 @@ constexpr const std::string_view
 	vrPanelDistance = "vr_panel_distance",
 	vrPanelDrop = "vr_panel_drop",
 	vrPanelWidth = "vr_panel_width",
+	vrHudFrame = "vr_hud_frame",
+	vrHudKeep = "vr_hud_keep",
+	vrLevelUp = "vr_levelup",
 	vrPhysicalCrouch = "vr_physical_crouch",
 	vrCrouchEnter = "vr_crouch_enter",
 	vrCrouchExit = "vr_crouch_exit",
@@ -554,6 +561,9 @@ bool Config::save() {
 	writer.writeKey(Key::vrPanelDistance, video.vrPanelDistance);
 	writer.writeKey(Key::vrPanelDrop, video.vrPanelDrop);
 	writer.writeKey(Key::vrPanelWidth, video.vrPanelWidth);
+	writer.writeKey(Key::vrHudFrame, video.vrHudFrame);
+	writer.writeKey(Key::vrHudKeep, video.vrHudKeep);
+	writer.writeKey(Key::vrLevelUp, video.vrLevelUp);
 	writer.writeKey(Key::vrPhysicalCrouch, video.vrPhysicalCrouch);
 	writer.writeKey(Key::vrCrouchEnter, video.vrCrouchEnter);
 	writer.writeKey(Key::vrCrouchExit, video.vrCrouchExit);
@@ -726,6 +736,13 @@ bool Config::init(const fs::path & file) {
 	video.vrPanelDrop = glm::clamp(vrPanelDrop, -0.5f, 1.f);
 	float vrPanelWidth = reader.getKey(Section::Video, Key::vrPanelWidth, Default::vrPanelWidth);
 	video.vrPanelWidth = glm::clamp(vrPanelWidth, 0.2f, 4.f);
+	// The screen-frame HUD in VR (#469): off, single elements kept, the level-up indication
+	video.vrHudFrame = reader.getKey(Section::Video, Key::vrHudFrame, Default::vrHudFrame);
+	video.vrHudKeep = util::toLowercase(reader.getKey(Section::Video, Key::vrHudKeep, Default::vrHudKeep));
+	video.vrLevelUp = util::toLowercase(reader.getKey(Section::Video, Key::vrLevelUp, Default::vrLevelUp));
+	if(video.vrLevelUp != vr::levelUpModeName(vr::levelUpModeFromName(video.vrLevelUp, vr::LevelUpMode::Off))) {
+		video.vrLevelUp = Default::vrLevelUp;
+	}
 	// Physical crouch (#100): the head this far below the calibrated eye crouches, back above the exit stands
 	video.vrPhysicalCrouch = reader.getKey(Section::Video, Key::vrPhysicalCrouch, Default::vrPhysicalCrouch);
 	float vrCrouchEnter = reader.getKey(Section::Video, Key::vrCrouchEnter, Default::vrCrouchEnter);

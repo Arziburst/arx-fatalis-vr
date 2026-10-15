@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW-library: A ready-made library hand as the fifth arms model - the WebXR generic hand (MIT), read by our glTF loader
+## D-052: A ready-made library hand as the fifth arms model - the WebXR generic hand (MIT), read by our glTF loader
 
 - **Date:** 2026-10-14
 - **Status:** Accepted (its colour and size are first proposals: the owner judges them in the headset)

@@ -825,7 +825,7 @@ the playground yet (#359).
 
 ### Switching the arms: custom, forearm, hands, Arx or library (#385, #467)
 
-The VR body has five arm models (D-NEW-arms "Own VR arms", D-NEW-armvariants "a choice of four", D-NEW-library):
+The VR body has five arm models (D-049 "Own VR arms", D-047 "a choice of four", D-052):
 - **custom** (the default) — the leather glove hand (Godot XR Tools, CC0) and a cloth sleeve from the shoulder to
   the wrist, textures in `data/core/vr/arms/`;
 - **forearm** — the glove and a short forearm: the sleeve from the wrist along the forearm, cut at 0.6 of its length

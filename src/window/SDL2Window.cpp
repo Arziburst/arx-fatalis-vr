@@ -119,6 +119,9 @@ SDL2Window::~SDL2Window() {
 #ifndef SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH // SDL 2.0.5+
 #define SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH "SDL_MOUSE_FOCUS_CLICKTHROUGH"
 #endif
+#ifndef SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN // SDL 2.0.22+
+#define SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN "SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN"
+#endif
 #if ARX_PLATFORM != ARX_PLATFORM_WIN32 && ARX_PLATFORM != ARX_PLATFORM_MACOS
 #ifndef SDL_HINT_VIDEO_X11_FORCE_EGL // SDL 2.0.12+
 #define SDL_HINT_VIDEO_X11_FORCE_EGL "SDL_VIDEO_X11_FORCE_EGL"
@@ -254,7 +257,18 @@ int SDL2Window::createWindowAndGLContext(const char * profile) {
 	int x = SDL_WINDOWPOS_UNDEFINED, y = SDL_WINDOWPOS_UNDEFINED;
 	Uint32 windowFlags = getSDLFlagsForMode(m_mode.resolution, m_fullscreen);
 	windowFlags |= SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN;
-	
+
+	if(m_background) {
+		// A test run's window (#487): shown without activation, in the bottom right corner of the main display,
+		// out of the way of whoever works at the PC - not minimised, a minimised window renders no frames
+		SDL_SetHint(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN, "1");
+		SDL_Rect area;
+		if(!m_fullscreen && SDL_GetDisplayUsableBounds(0, &area) == 0) {
+			x = std::max<int>(area.x, area.x + area.w - m_mode.resolution.x);
+			y = std::max<int>(area.y, area.y + area.h - m_mode.resolution.y);
+		}
+	}
+
 	for(int msaa = m_maxMSAALevel; true; msaa--) {
 		bool lastTry = (msaa == 0);
 		
@@ -559,6 +573,12 @@ bool SDL2Window::initialize() {
 			}
 			if(largeIcon) {
 				SendMessage(info.info.win.window, WM_SETICON, ICON_BIG, LPARAM(largeIcon));
+			}
+			if(m_background) {
+				// A test run's window is never activated, not even by a click on it (#487); it keeps its taskbar button
+				HWND hwnd = info.info.win.window;
+				LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+				SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE | WS_EX_APPWINDOW);
 			}
 		}
 	}

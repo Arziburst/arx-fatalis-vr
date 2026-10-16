@@ -30,7 +30,7 @@
 
 /*!
  * \file
- * \brief What the eyes see in a scripted scene (#29, D-NEW)
+ * \brief What the eyes see in a scripted scene (#29, D-053)
  *
  * A scripted scene owns the game's camera: a \c speak \c -c line moves it every frame (hard cuts between
  * lines, dollies and pans within one), a camera entity (\c cameraactivate) glides it on a path, and the

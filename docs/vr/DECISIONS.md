@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: Scripted scenes in VR - the view is a switch, every cut is behind a fade, no letterbox in the eyes
+## D-053: Scripted scenes in VR - the view is a switch, every cut is behind a fade, no letterbox in the eyes
 
 - **Date:** 2026-10-14
 - **Status:** Proposed - the views and the comfort numbers are for the owner to pick and tune in the headset (#29)

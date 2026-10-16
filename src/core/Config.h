@@ -144,6 +144,9 @@ public:
 		float vrPanelDistance; //!< VR: the menu panel this far ahead of the head, meters (#49)
 		float vrPanelDrop; //!< VR: the menu panel's centre this far below the eyes, meters (#49)
 		float vrPanelWidth; //!< VR: the menu panel's width, meters (#49)
+		bool vrHudFrame; //!< VR: the original screen-frame HUD drawn on the 2D interface after all (#469)
+		std::string vrHudKeep; //!< VR: HUD elements kept on the 2D interface, comma-separated (#469, vr/HudFrame.h)
+		std::string vrLevelUp; //!< VR: the level-up indication - both, radial, wrist or off (#469)
 		bool vrPhysicalCrouch; //!< VR: the head going down crouches the character (#100)
 		float vrCrouchEnter; //!< VR: the head this far below the calibrated eye crouches, meters (#100)
 		float vrCrouchExit; //!< VR: the character stands again once the head is back above this depth, meters (#100)
@@ -239,11 +242,34 @@ public:
 		float vrSnapTurnAngle; //!< VR: degrees per snap turn (#32)
 		float vrSmoothTurnSpeed; //!< VR: smooth turn degrees per second at full deflection (#32)
 		float vrSnapTurnRepeat; //!< VR: seconds between snaps while the stick is held; 0 = no repeat (#32)
+		float vrArmForearmTwist; //!< VR: the forearm's share [0, 1] of the hand's roll off the arm's bend plane (#304)
+		float vrArmUpperTwist; //!< VR: the upper arm's share [0, 1] of the forearm's roll (#304)
+		float vrArmElbowRoll; //!< VR: the share [0, 1] of the hand's roll that swings the elbow about the arm (#304)
+		float vrArmTwistOverflow; //!< VR: degrees past a half turn the hand's roll keeps its side before flipping (#304)
 		float vrHeightOffset; //!< VR: the character height setting, meters above the character's eye (#260)
+		std::string vrArmsModel; //!< VR: the arms drawn on the player: "classic" (the Arx arms fixed, #466.1) - the only player choice (#466); the test channel may set the others (vr/VRArms.h, #486)
+		std::string vrClassicHand; //!< VR: the classic arm's hand, "arx" (the default) or "glove" (ours at the Arx wrist, #466.2)
+		float vrHandScale; //!< VR: the custom hands' size against the glove's real size (#385)
+		std::string vrBody; //!< VR: the player model drawn under a tracked head, "full" (pushed back) or "hidden" (the arms only, #385.11)
+		float vrArmMaxStretch; //!< VR: how far [0, 0.3] the custom arm stretches past its fitted length to reach the controller (#385.6)
+		float vrArmWeaponElbowDrop; //!< VR: the share [0, 1] of its angle the elbow of a hand holding a weapon drops by (#385.6)
 		float vrMeleeSwingSpeed; //!< VR: m/s a weapon swing hits from (#39, vr/MeleeSwing.h)
 		float vrMeleeFullSpeed; //!< VR: m/s a swing has its full damage at (#39)
 		float vrMeleeWeakAim; //!< VR: the damage ratio of an uncharged swing; a full charge is 1 (#39)
 		float vrMeleeTargetCooldown; //!< VR: seconds before a new swing can hit the same target (#39)
+		// VR: how far a custom hand on a weapon's hilt is closed, degrees (#385.7, vr/HandRig.h HiltAngles)
+		float vrHiltKnuckle; //!< the four fingers' knuckles
+		float vrHiltMiddle;  //!< their middle joints
+		float vrHiltLast;    //!< their last joints
+		float vrHiltThumb;   //!< the thumb's two outer joints
+		float vrSwordTilt; //!< VR: the sword's forward tilt in the custom hand, degrees: 0, -15 or -30 (#385.10, vr/WeaponGrip.h)
+		float vrBodyPush; //!< VR: game units (cm) the own body sits behind the eyes along its facing, looking ahead (#385.9, vr/BodyView.h)
+		float vrBodyPushDown; //!< VR: game units (cm) the push grows by looking straight down (#385.9)
+		float vrBodyClearance; //!< VR: game units (cm) from an eye within which the own body's faces are not drawn (#385.9)
+		//! VR: where a radial menu opens (#377): "hand", or "gaze_when_off" - before the eyes at the hand's height
+		//! when the hand is more than \ref vrRadialGazeDeg off the gaze
+		std::string vrRadialPlace;
+		float vrRadialGazeDeg; //!< VR: degrees off the gaze beyond which gaze_when_off moves the ring (#377)
 
 	} input;
 	

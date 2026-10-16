@@ -28,6 +28,8 @@
 #include "core/Core.h"
 #include "core/GameEvent.h"
 #include "core/TimeTypes.h"
+#include "game/Player.h"
+#include "gui/Dragging.h"
 #include "gui/Menu.h"
 #include "input/Input.h"
 #include "io/fs/FilePath.h"
@@ -39,8 +41,11 @@
 #include "vr/BodyYaw.h"
 #include "vr/HeadTracking.h"
 #include "vr/MenuPointer.h"
+#include "vr/VRMelee.h"
+#include "vr/VRRadial.h"
 #include "vr/VRReticle.h"
 #include "vr/VRSystem.h"
+#include "vr/VRWeapon.h"
 
 namespace vr {
 
@@ -81,6 +86,16 @@ struct InputState {
 	//! A hand's use event as the menus' right button (#398): held since a press with that hand on the panel
 	std::array<bool, HandCount> useOnPanel = { };
 	WalkStatus walk;
+
+	//! The hand's use / interact chord acted on a door, lever, chest or body (#38): no use or click until released
+	std::array<bool, HandCount> acting = { };
+	//! The hand holds a drawn weapon in the world (#377): its trigger charges the strike, it is no click
+	std::array<bool, HandCount> charging = { };
+
+	//! The radial menu's game menu item holds Escape for this many more updates (#376)
+	u32 radialEscapeUpdates = 0;
+	//! A dragged item went into a radial quick slot: the click stays up until the triggers are let go (#376)
+	bool radialClickReleased = false;
 
 	//! The skip controls (#394) down in the last update, and those kept from the game until released
 	ControlSet skipDown;
@@ -265,6 +280,10 @@ ControlAction engineAction(GameAction action) {
 		case GameAction::MagicMode: return CONTROLS_CUST_MAGICMODE;
 		case GameAction::Stealth: return CONTROLS_CUST_STEALTHMODE;
 		case GameAction::Use: return CONTROLS_CUST_USE;
+		case GameAction::QuickSave: return CONTROLS_CUST_QUICKSAVE;
+		case GameAction::QuickLoad: return CONTROLS_CUST_QUICKLOAD;
+		case GameAction::CancelSpell: return CONTROLS_CUST_CANCELCURSPELL;
+		case GameAction::BookMap: return CONTROLS_CUST_BOOKMAP;
 		case GameAction::Count: break;
 	}
 	arx_unreachable();
@@ -277,14 +296,17 @@ void applyToEngine(const GameInputState & state) {
 		return;
 	}
 
-	// Both hands work as the mouse (D-016): the left button clicks, drags and double-clicks; on the
-	// floating panel the pointing hand's pixel is the mouse, and a press off the panel clicks nothing (#34)
+	// Both hands work as the mouse (D-016): the left button clicks and drags; on the floating panel the pointing
+	// hand's pixel is the mouse, and a press off the panel clicks nothing (#34). A chord that acted on a door,
+	// lever, chest or body (#38) is no click on it: the mapper left it out (HandRoles)
 	GInput->setVirtualMouseButton(Mouse::Button_0, state.click && !g_input.pointer.suppressClick());
 	if(g_input.pointer.active()) {
 		const Vec2f cursor = g_input.pointer.cursor();
-		// A world reticle (#37) is the exploration mode's crosshair too: also in the relative mouse mode
+		// A world reticle (#37) is the exploration mode's crosshair too, and the panel's pixel the mouse on the book,
+		// which stays in freelook in VR (#377): both also in the relative mouse mode
+		const bool book = (player.Interface & INTER_PLAYERBOOK) != 0;
 		GInput->setVirtualMousePosition(Vec2s(s16(std::lround(cursor.x)), s16(std::lround(cursor.y))),
-		                                !g_input.pointer.onPanel());
+		                                !g_input.pointer.onPanel() || book);
 	} else {
 		GInput->setVirtualMousePosition(std::nullopt);
 	}
@@ -326,11 +348,30 @@ void updatePointer() {
 		}
 		claims[hand] = reticleClaims(Hand(hand));
 	}
-	trigger[size_t(Hand::Left)] = g_input.resolver.active(Event::InteractLeft) || g_input.resolver.active(Event::StashLeft);
-	trigger[size_t(Hand::Right)] = g_input.resolver.active(Event::InteractRight) || g_input.resolver.active(Event::StashRight);
-	// The grip's use acts under its own hand (D-019): the hand that uses takes an idle cursor
-	claims[size_t(Hand::Left)] = claims[size_t(Hand::Left)] || g_input.resolver.pressed(Event::UseLeft);
-	claims[size_t(Hand::Right)] = claims[size_t(Hand::Right)] || g_input.resolver.pressed(Event::UseRight);
+	// The act (#38, D-042): a hand's reticle on a door, lever, chest or body acts on it. Its chord is the use's
+	// (#377), which then is neither a use nor a press of the pointer until it is released (the target decides)
+	const Event actEvents[HandCount] = { Event::ActLeft, Event::ActRight };
+	const Event useEvents[HandCount] = { Event::UseLeft, Event::UseRight };
+	const Event stashEvents[HandCount] = { Event::StashLeft, Event::StashRight };
+	const Event interactEvents[HandCount] = { Event::InteractLeft, Event::InteractRight };
+	// The weapon hand (the right until #380) with a drawn weapon in the world: its trigger charges the strike
+	// (vr/VRMelee.h, active since the last frame) and clicks nothing (D-042); on the panel it clicks as ever
+	g_input.charging = { };
+	g_input.charging[size_t(Hand::Right)] = meleeStatus().active && !g_input.rays[size_t(Hand::Right)].onPanel;
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		if(g_input.resolver.pressed(actEvents[hand])) {
+			g_input.acting[hand] = !g_input.rays[hand].onPanel && reticleAct(Hand(hand));
+			// The hand that acts owns the cursor, as the use does
+			claims[hand] = true;
+		} else if(!g_input.resolver.active(stashEvents[hand]) && !g_input.resolver.active(actEvents[hand])
+		          && !g_input.resolver.active(useEvents[hand])) {
+			g_input.acting[hand] = false;
+		}
+		trigger[hand] = (g_input.resolver.active(interactEvents[hand]) && !g_input.charging[hand])
+		                || (g_input.resolver.active(stashEvents[hand]) && !g_input.acting[hand]);
+		// The use acts under its own hand (D-019): the hand that uses takes an idle cursor
+		claims[hand] = claims[hand] || g_input.resolver.pressed(useEvents[hand]);
+	}
 
 	MenuPointer & pointer = g_input.pointer;
 	pointer.update(shown || world, g_input.rays, trigger, PointerParams(), claims);
@@ -341,10 +382,9 @@ void updatePointer() {
 	// trigger's
 	const bool menu = ARXmenu.mode() != Mode_InGame;
 	for(size_t hand = 0; hand < HandCount; hand++) {
-		const Event use = Hand(hand) == Hand::Left ? Event::UseLeft : Event::UseRight;
-		if(!g_input.resolver.active(use)) {
+		if(!g_input.resolver.active(useEvents[hand])) {
 			g_input.useOnPanel[hand] = false;
-		} else if(g_input.resolver.pressed(use)) {
+		} else if(g_input.resolver.pressed(useEvents[hand])) {
 			g_input.useOnPanel[hand] = g_input.rays[hand].onPanel;
 			if(menu && !g_input.rays[hand].onPanel) {
 				pointer.mutePress();
@@ -438,10 +478,54 @@ void updateInput() {
 	// Events -> the engine's actions, mouse buttons and keys (#74); nothing while the VR settings
 	// capture a binding, so pressing the menu's or the inventory's control only binds it (#178)
 	// - also in the update that ends it, whose events were resolved with the old layout
-	const GameInputState & resolved = g_input.game.update(g_input.resolver, g_input.input);
+	HandRoles roles;
+	roles.charges = g_input.charging;
+	roles.acts = g_input.acting;
+	const GameInputState & resolved = g_input.game.update(g_input.resolver, g_input.input, roles);
 	const bool capturing = g_input.capture.active();
 	updateCapture(toMsi(platform::getTime()));
-	const GameInputState game = capturing || g_input.capture.active() ? GameInputState() : resolved;
+	const bool controlsTaken = capturing || g_input.capture.active();
+	GameInputState game = controlsTaken ? GameInputState() : resolved;
+
+	// Draw / sheathe the weapon (#377, D-042: the stick click of the weapon hand), in the game only
+	if(g_input.resolver.pressed(Event::Weapon) && !controlsTaken && ARXmenu.mode() == Mode_InGame) {
+		toggleHeldWeapon();
+	}
+
+	// The radial menus on B (#376): their items press the engine's keys for one update, the game menu
+	// holds Escape for two like the menu button above (the engine acts on its release)
+	RadialRequests radial;
+	// No casting stance while an item is dragged (the verifier): the hand holds it - its trigger would turn into the
+	// pen, and the engine closes the bag when its magic mode ends, with the item still in the hand
+	if(g_draggedEntity) {
+		game.actions[size_t(GameAction::MagicMode)] = false;
+	}
+	// The casting stance's press (A) closes everything open first (#377, the owner): the radial menus, the book,
+	// the bag, a container, a note - not the game menu - then the stance starts with the hands free
+	if(g_input.resolver.pressed(Event::MagicMode) && !controlsTaken && ARXmenu.mode() == Mode_InGame
+	   && !g_draggedEntity) {
+		closeRadialMenus("stance");
+		closeOpenPanels(radial, true);
+	}
+	updateRadialMenus(g_input.resolver, controlsTaken, radial);
+	for(size_t i = 0; i < GameActionCount; i++) {
+		game.actions[i] = game.actions[i] || radial.pulses[i];
+	}
+	if(radial.gameMenu) {
+		g_input.radialEscapeUpdates = 2;
+	}
+	if(g_input.radialEscapeUpdates > 0) {
+		game.escape = true;
+		g_input.radialEscapeUpdates--;
+	}
+	if(radial.releaseClick) {
+		g_input.radialClickReleased = true;
+	}
+	if(g_input.radialClickReleased) {
+		// Up for the engine until the triggers are let go: the hand that dragged into a slot picks nothing up
+		g_input.radialClickReleased = game.click;
+		game.click = false;
+	}
 	applyToEngine(game);
 
 	// The game skips what is on screen this frame (#394, core/ArxGame.cpp): the logo, the whole intro,
@@ -452,12 +536,16 @@ void updateInput() {
 		gameevent::Event("vr.skip")("what", what ? what : "none");
 	}
 
-	// Recenter (#28, D-019: a long press of the left stick click): the head as it is at the next sample
-	// becomes the character's eye and facing - horizontal and height, standing or seated (D-018). Any
+	// Recenter (#28; unbound by default since D-042, the radial menu has it - the player may bind it): the head as
+	// it is at the next sample becomes the character's eye and facing - horizontal and height, standing or seated
+	// (D-018). Any
 	// time, menus included: the reference is taken as soon as there is a head to take it from
 	if(game.recenter) {
 		resetHeadReference("button");
 	}
+
+	// The open radial menus into their images, while the frame's targets are bound (stereo frames only)
+	drawRadialMenus();
 }
 
 PointerStatus pointerStatus() {

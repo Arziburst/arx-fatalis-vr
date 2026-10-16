@@ -543,6 +543,13 @@ find_package(GLM 0.9.9.7 REQUIRED)
 include_directories(SYSTEM ${GLM_INCLUDE_DIRS})
 add_definitions(-DGLM_FORCE_RADIANS) # Only needed for older GLM versions
 
+# cgltf - single-header glTF 2.0 loader (MIT, vcpkg) for the VR arm mesh (#385, src/vr/ArmMesh.cpp)
+find_path(CGLTF_INCLUDE_DIR cgltf.h)
+if(NOT CGLTF_INCLUDE_DIR)
+	message(FATAL_ERROR "cgltf.h not found - it comes from vcpkg (vcpkg.json)")
+endif()
+include_directories(SYSTEM ${CGLTF_INCLUDE_DIR})
+
 # DbgHelp
 if(MSVC AND BUILD_CRASHHANDLER)
 	find_package(DbgHelp ${OPTIONAL_DEPENDENCY})
@@ -1261,22 +1268,30 @@ list(APPEND IO_RESOURCE_SOURCES ${UTIL_MD5_SOURCES})
 
 set(VR_SOURCES
 	src/vr/BindingCapture.cpp
+	src/vr/ArmFit.cpp
 	src/vr/ArmIK.cpp
+	src/vr/ArmMesh.cpp
+	src/vr/ArmRoll.cpp
+	src/vr/ArxArmFix.cpp
+	src/vr/BodyView.cpp
 	src/vr/BodyYaw.cpp
 	src/vr/EyeImage.cpp
 	src/vr/EyeProjection.cpp
 	src/vr/FingerCurl.cpp
+	src/vr/HandRig.cpp
 	src/vr/FramePacing.cpp
 	src/vr/HandTracking.cpp
 	src/vr/HandReticle.cpp
 	src/vr/HeadLean.cpp
 	src/vr/HeadPose.cpp
 	src/vr/HeadReferenceGate.cpp
+	src/vr/HudFrame.cpp
 	src/vr/PhysicalCrouch.cpp
 	src/vr/HeadTracking.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/MenuPointer.cpp
 	src/vr/Locomotion.cpp
+	src/vr/RadialMenu.cpp
 	src/vr/RuneTrail.cpp
 	src/vr/MeleeSwing.cpp
 	src/vr/PerfLog.cpp
@@ -1285,6 +1300,7 @@ set(VR_SOURCES
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
 	src/vr/VRActions.cpp
+	src/vr/VRArms.cpp
 	src/vr/VRBindings.cpp
 	src/vr/VRBody.cpp
 	src/vr/VRRunes.cpp
@@ -1293,8 +1309,10 @@ set(VR_SOURCES
 	src/vr/VRComfort.cpp
 	src/vr/VRControls.cpp
 	src/vr/VRGameInput.cpp
+	src/vr/VRHud.cpp
 	src/vr/VRInput.cpp
 	src/vr/VRMirror.cpp
+	src/vr/VRRadial.cpp
 	src/vr/VRReticle.cpp
 	src/vr/VRSimulator.cpp
 	src/vr/VRSwapchain.cpp
@@ -1921,6 +1939,8 @@ endif()
 if(BUILD_TESTS)
 	
 	target_include_directories(arxtest PRIVATE tests)
+	# Tests that read shipped data (data/core/vr/arms/) find it in the source tree
+	target_compile_definitions(arxtest PRIVATE "ARX_TEST_SOURCE_DIR=\"${PROJECT_SOURCE_DIR}\"")
 	
 	set(run_tests)
 	if(RUN_TESTS)

@@ -300,6 +300,35 @@ void SimRigTest::testFingers() {
 	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.0, sim.rig.fingers[0].curl.z, RigEpsilon);
 }
 
+void SimRigTest::testFiveFingers() {
+	vr::Simulation sim;
+	// Each finger on its own (#385): the thumb, index, middle, ring and little finger
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("hand left fingers 0.1 0.2 0.3 0.4 0.5"));
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.1, sim.rig.fingers[0].curl.x, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.2, sim.rig.fingers[0].curl.y, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.3, sim.rig.fingers[0].curl.z, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.4, sim.rig.fingers[0].outer.x, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.5, sim.rig.fingers[0].outer.y, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.0, sim.rig.fingers[1].outer.y, RigEpsilon);
+	// The three-value form closes the middle, ring and little finger together
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("hand left fingers 0 0 0.7"));
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.7, sim.rig.fingers[0].curl.z, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.7, sim.rig.fingers[0].outer.x, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.7, sim.rig.fingers[0].outer.y, RigEpsilon);
+	// Four or six values, or one out of range, is an error
+	CPPUNIT_ASSERT(!sim.execute("hand left fingers 0 0 0 0").empty());
+	CPPUNIT_ASSERT(!sim.execute("hand left fingers 0 0 0 0 1.5").empty());
+	CPPUNIT_ASSERT(!sim.execute("hand left fingers 0 0 0 0 0 0").empty());
+	// A ramp moves all five
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.load("@10-20 hand right fingers 0 0 0 1 0.5\n"));
+	sim.advance(15);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.5, sim.rig.fingers[1].outer.x, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.25, sim.rig.fingers[1].outer.y, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.0, sim.rig.fingers[1].curl.z, RigEpsilon);
+	sim.advance(20);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.0, sim.rig.fingers[1].outer.x, RigEpsilon);
+}
+
 void SimRigTest::testSessionEndsAndExitFaults() {
 	vr::Simulation sim;
 	// The ways a runtime ends the session (#146) are requests to the simulated runtime

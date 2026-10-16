@@ -127,6 +127,12 @@ enum class Event : u8 {
 	Menu,          //!< the game menu
 	Recenter,
 	MagicMode,     //!< held: the casting stance - a trigger draws runes with its hand (#43)
+	ActLeft,       //!< act on the door, lever, chest, NPC or corpse under the left reticle (the double click, #38, D-042)
+	ActRight,
+	RadialLeft,    //!< held: the radial menu at the left hand, released: its item under the hand runs (#376, D-042; unbound by default, #377)
+	RadialRight,
+	Weapon,        //!< draw / sheathe the weapon of the weapon hand - the right one until #380 (#377, D-042)
+	Map,           //!< the book on its map page, and closed again (#377, the owner: the left B)
 	Count
 };
 
@@ -218,9 +224,16 @@ struct ControlLayout {
 };
 
 /*!
- * The default layout for a controller type: the D-019 table (#35). The Index and the Touch share
- * the button positions, the game menu is on left A on the Index and on the left menu button on the
- * Touch; the simple controller has select (click / drag) and the menu buttons: left = game menu,
+ * The default layout for a controller type. The Index and the Touch: the D-042 table (#377), the same on
+ * both hands and on both controllers (X / Y in A / B's places on the left Touch): the trigger clicks and
+ * drags; grip, then trigger uses / acts (the reticle's target decides, \ref sharesBindingByDesign); the grip
+ * alone does nothing; the right B holds the radial menu (#376), which has the book's pages, the game menu,
+ * recenter and both hands' quick slots - the book and recenter have no control of their own; the left B
+ * toggles the book's map page, the left A the bag (the owner, #456); the right stick up jumps, down toggles
+ * the crouch; the right stick click draws / sheathes the weapon (the right hand's until #380); the trackpads
+ * are free. The casting stance is the right A (the owner) until each hand has its own (#378). The Index and
+ * the Touch layouts are the same: the Touch's left menu button is free too (the owner, #456).
+ * The simple controller has select (click / drag) and the menu buttons: left = game menu,
  * long = recenter; right = inventory, long = book. An unknown controller gets the Index layout,
  * because SteamVR's automatic rebinding emulates one of the profiles we suggest.
  * Every control a layout uses is bound by its profile's suggestions (VRBindings.h, tested).
@@ -269,7 +282,13 @@ struct Conflict {
 	Event second;
 };
 
-//! The events that share a binding - shown to the player when remapping (#178)
+/*!
+ * Two events that may share a binding: one hand's act and its use or stash (#38, D-042, #377) - the reticle's
+ * target decides which one acts (a door, lever, chest, NPC or corpse is acted on, an item is used or stashed)
+ */
+bool sharesBindingByDesign(Event a, Event b);
+
+//! The events that share a binding - shown to the player when remapping (#178); not a pair of \ref sharesBindingByDesign
 std::vector<Conflict> findConflicts(const ControlLayout & layout);
 
 //! A press / release threshold pair for an analog input used as a button

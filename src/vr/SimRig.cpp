@@ -214,7 +214,7 @@ struct Simulation::Command {
 	Op op = Rate;
 	size_t index = 0; //!< eye or hand; 2 = both hands
 	std::string text;
-	std::array<float, 4> values = { };
+	std::array<float, 5> values = { };
 	size_t count = 0;
 	bool flag = false;
 	SimSessionEnd sessionEnd = SimSessionEnd::None;
@@ -360,11 +360,18 @@ std::string Simulation::parse(std::string_view line, Command & command) const {
 				return std::string();
 			}
 			command.op = Command::HandFingers;
-			std::string error = numbers(3, 3, "hand left|right fingers <thumb> <index> <rest> (0 open - 1 closed) or on|off");
-			for(size_t i = 0; error.empty() && i < 3; i++) {
+			// Five fingers, or the thumb, the index finger and the other three together (#305's form)
+			const size_t count = (words.size() == 3 + 5) ? 5 : 3;
+			std::string error = numbers(3, count, "hand left|right fingers <thumb> <index> <middle> <ring> <little> "
+			                                      "or <thumb> <index> <rest> (0 open - 1 closed) or on|off");
+			for(size_t i = 0; error.empty() && i < count; i++) {
 				if(command.values[i] < 0.f || command.values[i] > 1.f) {
 					return "hand: fingers are closed from 0 to 1";
 				}
+			}
+			if(error.empty() && count == 3) {
+				command.values[3] = command.values[4] = command.values[2];
+				command.count = 5;
 			}
 			return error;
 		}
@@ -482,7 +489,11 @@ std::vector<float *> Simulation::targets(const Command & command) {
 		case Command::HeadRot: add(rig.head.angles); break;
 		case Command::HandPos: add(rig.hands[command.index].position); break;
 		case Command::HandRot: add(rig.hands[command.index].angles); break;
-		case Command::HandFingers: add(rig.fingers[command.index].curl); break;
+		case Command::HandFingers:
+			add(rig.fingers[command.index].curl);
+			result.push_back(&rig.fingers[command.index].outer.x);
+			result.push_back(&rig.fingers[command.index].outer.y);
+			break;
 		case Command::Action: {
 			std::array<Vec2f, 2> & values = rig.actions[command.text];
 			for(size_t hand = 0; hand < 2; hand++) {

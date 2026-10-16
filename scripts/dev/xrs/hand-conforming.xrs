@@ -1,0 +1,63 @@
+# The conforming hand (#385.7): the runtime is asked for the controller-conforming joints (SteamVR's own fist
+# around the Index handle, XR_EXT_hand_joints_motion_range), the glove is driven by the joints' orientations,
+# a held weapon closes the hand to a hilt pose sized by the hilt, and the palm sits behind the grip.
+# PROPOSED status.json keys (385.7 implements them):
+#   vr.hands.<hand>.motionRange = conforming | unobstructed | none
+#   vr.hands.<hand>.hiltPose = default | captured | live | none      (none: no weapon in that hand)
+#   vr.body.<hand>.custom.palmToGrip = the glove palm's distance from the controller grip, units
+# The simulated runtime reports XR_EXT_hand_joints_motion_range and fills the conforming joints.
+# The right hand holds the sword (mvp-items); `grip capture` stores the current conforming pose as the hilt pose.
+#   .\scripts\dev\xrs-run.ps1 hand-conforming
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence hand-conforming -Save mvp-items
+@sim idle
+@save mvp-items
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+# The custom arms: a test-only model since #466 (classic is the default) until #486 removes it
+arms custom
+@frames 5
+@assert vr.body.active eq true
+@assert vr.body.right.posed eq true
+@assert vr.body.left.posed eq true
+@assert vr.body.armsModel eq custom
+
+# The conforming range is the one in use on both hands
+@assert vr.hands.left.active eq true
+@assert vr.hands.right.active eq true
+@assert vr.hands.left.motionRange eq conforming
+@assert vr.hands.right.motionRange eq conforming
+
+# The sword in the right hand: a hilt pose is in use, whatever its origin; the left hand holds nothing
+@assert vr.body.right.fingers.holds eq true
+@assert vr.hands.right.hiltPose ne none
+@assert vr.hands.left.hiltPose eq none
+
+# The palm sits behind the grip by the handle radius + the palm radius (first proposal 3 - 3.5 units), not on it
+@assert vr.body.right.custom.palmToGrip ge 2.5
+@assert vr.body.right.custom.palmToGrip le 4.5
+
+# Capturing the current conforming pose succeeds and the hilt pose is the captured one from then on
+grip capture
+@frames 15
+@assert vr.hands.right.hiltPose eq captured
+@assert vr.body.right.custom.palmToGrip ge 2.5
+@assert vr.body.right.custom.palmToGrip le 4.5
+
+# The held rule is unchanged: the tracked fingers say open, the hand stays on the hilt
+vr-sim hand right fingers 0 0 0
+@frames 30
+@assert vr.body.right.fingers.source eq held
+@assert vr.hands.right.hiltPose ne none
+
+# The hand before the face: the closed hand on the hilt (judged on the capture)
+vr-sim hand right pos 0.12 -0.1 -0.35
+vr-sim hand right rot 0 90 0
+vr-sim head rot 0 -15 0
+@frames 20
+@assert vr.body.right.error lt 1
+@shot hand-conforming
+
+@assert errors eq 0

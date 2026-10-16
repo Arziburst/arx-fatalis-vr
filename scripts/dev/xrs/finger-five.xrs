@@ -1,0 +1,237 @@
+# Five tracked fingers on the custom hand (#385.4, D-041, D-042): each finger of the custom hand bends by
+# its own three joint angles, from the 26 hand joints (source joints), from the controls (controls) or closed
+# on a weapon's grip (held). PROPOSED status.json shape (385.4 implements it; the status writer has objects
+# but no arrays, so the three angles are three keys of an object, degrees, 0 = straight):
+#   vr.body.<hand>.custom.fingers.<thumb|index|middle|ring|little>.<root|mid|tip>
+#   vr.body.<hand>.custom.fingers.source = joints | controls | held | none
+# root = the first joint (the thumb's carpometacarpal, a finger's knuckle), mid = the second, tip = the last.
+# The limits are 90 / 100 / 70 (thumb 40 / 50 / 70): "high" is gt a threshold under them, "low" is lt 10.
+# The simulated hand: `vr-sim hand <side> fingers <thumb> <index> <middle> <ring> <little>` (0 open, 1 a fist).
+# The LEFT hand carries the single-finger steps (it holds nothing); the right hand holds the sword (mvp-items).
+#   .\scripts\dev\xrs-run.ps1 finger-five
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence finger-five -Save mvp-items
+@sim idle
+@save mvp-items
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+# The custom arms: a test-only model since #466 (classic is the default) until #486 removes it
+arms custom
+@frames 5
+@assert vr.body.active eq true
+@assert vr.body.left.posed eq true
+@assert vr.body.right.posed eq true
+@assert vr.body.armsModel eq custom
+
+# Open to begin with: every joint low, read from the hand joints
+@assert vr.body.left.custom.fingers.source eq joints
+@assert vr.body.left.custom.fingers.thumb.root lt 10
+@assert vr.body.left.custom.fingers.index.root lt 10
+@assert vr.body.left.custom.fingers.little.tip lt 10
+
+# The thumb closed alone: its three joints high (limits 40 / 50 / 70), the other four fingers low
+vr-sim hand left fingers 1 0 0 0 0
+@frames 30
+@assert vr.body.left.custom.fingers.source eq joints
+@assert vr.body.left.custom.fingers.thumb.root gt 20
+@assert vr.body.left.custom.fingers.thumb.mid gt 25
+@assert vr.body.left.custom.fingers.thumb.tip gt 35
+@assert vr.body.left.custom.fingers.index.root lt 10
+@assert vr.body.left.custom.fingers.index.mid lt 10
+@assert vr.body.left.custom.fingers.index.tip lt 10
+@assert vr.body.left.custom.fingers.middle.root lt 10
+@assert vr.body.left.custom.fingers.middle.mid lt 10
+@assert vr.body.left.custom.fingers.middle.tip lt 10
+@assert vr.body.left.custom.fingers.ring.root lt 10
+@assert vr.body.left.custom.fingers.ring.mid lt 10
+@assert vr.body.left.custom.fingers.ring.tip lt 10
+@assert vr.body.left.custom.fingers.little.root lt 10
+@assert vr.body.left.custom.fingers.little.mid lt 10
+@assert vr.body.left.custom.fingers.little.tip lt 10
+@shot finger-five-thumb
+
+# The index finger closed alone (limits 90 / 100 / 70)
+vr-sim hand left fingers 0 1 0 0 0
+@frames 30
+@assert vr.body.left.custom.fingers.index.root gt 60
+@assert vr.body.left.custom.fingers.index.mid gt 70
+@assert vr.body.left.custom.fingers.index.tip gt 45
+@assert vr.body.left.custom.fingers.thumb.root lt 10
+@assert vr.body.left.custom.fingers.thumb.mid lt 10
+@assert vr.body.left.custom.fingers.thumb.tip lt 10
+@assert vr.body.left.custom.fingers.middle.root lt 10
+@assert vr.body.left.custom.fingers.middle.mid lt 10
+@assert vr.body.left.custom.fingers.middle.tip lt 10
+@assert vr.body.left.custom.fingers.ring.root lt 10
+@assert vr.body.left.custom.fingers.ring.mid lt 10
+@assert vr.body.left.custom.fingers.ring.tip lt 10
+@assert vr.body.left.custom.fingers.little.root lt 10
+@assert vr.body.left.custom.fingers.little.mid lt 10
+@assert vr.body.left.custom.fingers.little.tip lt 10
+@shot finger-five-index
+
+# The middle finger closed alone
+vr-sim hand left fingers 0 0 1 0 0
+@frames 30
+@assert vr.body.left.custom.fingers.middle.root gt 60
+@assert vr.body.left.custom.fingers.middle.mid gt 70
+@assert vr.body.left.custom.fingers.middle.tip gt 45
+@assert vr.body.left.custom.fingers.thumb.root lt 10
+@assert vr.body.left.custom.fingers.thumb.mid lt 10
+@assert vr.body.left.custom.fingers.thumb.tip lt 10
+@assert vr.body.left.custom.fingers.index.root lt 10
+@assert vr.body.left.custom.fingers.index.mid lt 10
+@assert vr.body.left.custom.fingers.index.tip lt 10
+@assert vr.body.left.custom.fingers.ring.root lt 10
+@assert vr.body.left.custom.fingers.ring.mid lt 10
+@assert vr.body.left.custom.fingers.ring.tip lt 10
+@assert vr.body.left.custom.fingers.little.root lt 10
+@assert vr.body.left.custom.fingers.little.mid lt 10
+@assert vr.body.left.custom.fingers.little.tip lt 10
+@shot finger-five-middle
+
+# The ring finger closed alone
+vr-sim hand left fingers 0 0 0 1 0
+@frames 30
+@assert vr.body.left.custom.fingers.ring.root gt 60
+@assert vr.body.left.custom.fingers.ring.mid gt 70
+@assert vr.body.left.custom.fingers.ring.tip gt 45
+@assert vr.body.left.custom.fingers.thumb.root lt 10
+@assert vr.body.left.custom.fingers.thumb.mid lt 10
+@assert vr.body.left.custom.fingers.thumb.tip lt 10
+@assert vr.body.left.custom.fingers.index.root lt 10
+@assert vr.body.left.custom.fingers.index.mid lt 10
+@assert vr.body.left.custom.fingers.index.tip lt 10
+@assert vr.body.left.custom.fingers.middle.root lt 10
+@assert vr.body.left.custom.fingers.middle.mid lt 10
+@assert vr.body.left.custom.fingers.middle.tip lt 10
+@assert vr.body.left.custom.fingers.little.root lt 10
+@assert vr.body.left.custom.fingers.little.mid lt 10
+@assert vr.body.left.custom.fingers.little.tip lt 10
+@shot finger-five-ring
+
+# The little finger closed alone
+vr-sim hand left fingers 0 0 0 0 1
+@frames 30
+@assert vr.body.left.custom.fingers.little.root gt 60
+@assert vr.body.left.custom.fingers.little.mid gt 70
+@assert vr.body.left.custom.fingers.little.tip gt 45
+@assert vr.body.left.custom.fingers.thumb.root lt 10
+@assert vr.body.left.custom.fingers.thumb.mid lt 10
+@assert vr.body.left.custom.fingers.thumb.tip lt 10
+@assert vr.body.left.custom.fingers.index.root lt 10
+@assert vr.body.left.custom.fingers.index.mid lt 10
+@assert vr.body.left.custom.fingers.index.tip lt 10
+@assert vr.body.left.custom.fingers.middle.root lt 10
+@assert vr.body.left.custom.fingers.middle.mid lt 10
+@assert vr.body.left.custom.fingers.middle.tip lt 10
+@assert vr.body.left.custom.fingers.ring.root lt 10
+@assert vr.body.left.custom.fingers.ring.mid lt 10
+@assert vr.body.left.custom.fingers.ring.tip lt 10
+@shot finger-five-little
+
+# Open again: all fifteen joints low
+vr-sim hand left fingers 0 0 0 0 0
+@frames 30
+@assert vr.body.left.custom.fingers.thumb.root lt 10
+@assert vr.body.left.custom.fingers.thumb.mid lt 10
+@assert vr.body.left.custom.fingers.thumb.tip lt 10
+@assert vr.body.left.custom.fingers.index.root lt 10
+@assert vr.body.left.custom.fingers.index.mid lt 10
+@assert vr.body.left.custom.fingers.index.tip lt 10
+@assert vr.body.left.custom.fingers.middle.root lt 10
+@assert vr.body.left.custom.fingers.middle.mid lt 10
+@assert vr.body.left.custom.fingers.middle.tip lt 10
+@assert vr.body.left.custom.fingers.ring.root lt 10
+@assert vr.body.left.custom.fingers.ring.mid lt 10
+@assert vr.body.left.custom.fingers.ring.tip lt 10
+@assert vr.body.left.custom.fingers.little.root lt 10
+@assert vr.body.left.custom.fingers.little.mid lt 10
+@assert vr.body.left.custom.fingers.little.tip lt 10
+
+# A fist from the joints: all five high
+vr-sim hand left fingers 1 1 1 1 1
+@frames 30
+@assert vr.body.left.custom.fingers.thumb.tip gt 35
+@assert vr.body.left.custom.fingers.index.root gt 60
+@assert vr.body.left.custom.fingers.middle.mid gt 70
+@assert vr.body.left.custom.fingers.ring.root gt 60
+@assert vr.body.left.custom.fingers.little.tip gt 45
+@shot finger-five-fist
+vr-sim hand left fingers 0 0 0 0 0
+@frames 15
+
+# Without hand joints the fingers follow the controls (D-041): the trigger is the index finger, the grip
+# the middle, ring and little finger; a value below the press threshold, so no gameplay event fires
+# The controls close each finger from the open hand toward MRTK3's Grab (#385.7): at 0.4 a knuckle bends about
+# 0.4 x Grab's own knuckle bend (index 64.5, middle 72.9, ring 74.8, little 73.2 degrees, data/core/vr/hands);
+# each threshold is 0.3 x that bend, rounded down (index 19, middle 21, ring 22, little 21)
+vr-sim hand left fingers off
+@frames 15
+@assert vr.body.left.custom.fingers.source eq controls
+vr-sim action trigger left 0.4
+@frames 30
+@assert vr.body.left.custom.fingers.index.root gt 19
+@assert vr.body.left.custom.fingers.middle.root lt 10
+@assert vr.body.left.custom.fingers.ring.root lt 10
+@assert vr.body.left.custom.fingers.little.root lt 10
+vr-sim action trigger left 0
+vr-sim action grip left 0.4
+@frames 30
+@assert vr.body.left.custom.fingers.middle.root gt 21
+@assert vr.body.left.custom.fingers.ring.root gt 22
+@assert vr.body.left.custom.fingers.little.root gt 21
+@assert vr.body.left.custom.fingers.index.root lt 10
+vr-sim action grip left 0
+vr-sim hand left fingers on
+vr-sim hand left fingers 0 0 0 0 0
+@frames 30
+@assert vr.body.left.custom.fingers.source eq joints
+
+# The right hand holds the sword (D-042): all five fingers closed on the grip whatever its joints say,
+# the left hand still follows its own joints
+vr-sim hand right fingers 0 0 0 0 0
+@frames 30
+@assert vr.hands.right.active eq true
+@assert vr.body.right.custom.fingers.source eq held
+@assert vr.body.right.custom.fingers.thumb.root gt 15
+@assert vr.body.right.custom.fingers.thumb.mid gt 20
+@assert vr.body.right.custom.fingers.thumb.tip gt 30
+@assert vr.body.right.custom.fingers.index.root gt 60
+@assert vr.body.right.custom.fingers.index.mid gt 70
+@assert vr.body.right.custom.fingers.index.tip gt 45
+@assert vr.body.right.custom.fingers.middle.root gt 60
+@assert vr.body.right.custom.fingers.middle.mid gt 70
+@assert vr.body.right.custom.fingers.middle.tip gt 45
+@assert vr.body.right.custom.fingers.ring.root gt 60
+@assert vr.body.right.custom.fingers.ring.mid gt 70
+@assert vr.body.right.custom.fingers.ring.tip gt 45
+@assert vr.body.right.custom.fingers.little.root gt 60
+@assert vr.body.right.custom.fingers.little.mid gt 70
+@assert vr.body.right.custom.fingers.little.tip gt 45
+@assert vr.body.left.custom.fingers.source eq joints
+@assert vr.body.left.custom.fingers.index.root lt 10
+
+# The fist on the hilt before the face (judged on the capture; weapon-hold.xrs proves the weapon's place)
+vr-sim hand right pos 0.12 -0.1 -0.35
+vr-sim hand right rot 0 90 0
+vr-sim head rot 0 -15 0
+@frames 20
+@assert vr.body.right.error lt 1
+@assert vr.body.right.custom.fingers.source eq held
+@shot finger-five-weapon-fist
+
+# Without the right controller the grip is given back; with it, held again
+vr-sim hand right off
+@frames 15
+@assert vr.body.right.custom.fingers.source eq none
+vr-sim hand right on
+@frames 30
+@assert vr.body.right.custom.fingers.source eq held
+
+# D-042, the weapon on either hand, is proven by the host tests of the held rule (no channel command swaps
+# the weapon hand today).
+
+@assert errors eq 0

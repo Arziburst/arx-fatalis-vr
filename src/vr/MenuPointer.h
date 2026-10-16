@@ -145,6 +145,9 @@ public:
 	u64 offPanelPresses() const { return m_offPanelPresses; } //!< presses on no target, muted
 	u64 ownerChanges() const { return m_ownerChanges; }
 
+	//! Another event that clicks only on the panel was pressed off it (use, the menus' right button, #398): muted too
+	void mutePress() { m_offPanelPresses++; }
+
 private:
 
 	void setOwner(Hand hand);

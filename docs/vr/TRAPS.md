@@ -1326,3 +1326,18 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** `vr-point right container`, trigger down, `vr-point right <bag pixel>`, trigger up: `item.toinventory container=chest_...` (back in the chest) or `item.drop how=throw`, never into the bag (#38).
 **Cause:** the engine puts a dragged item where its **icon** is - the cursor plus the offset the icon had when the drag started (`g_draggedIconOffset`). A simulated hand jumps: the pointer holds the press pixel inside its click dead zone (16 px), so the drag starts only on the jump, with the cursor already at the bag and an offset of hundreds of pixels; and after a short move the icon still hangs beside the cursor, left of the slot it aims at.
 **Do:** move the hand past the dead zone first (`vr-point right container 30 0`, a few frames), then `vr-point right bag` - it aims so that the icon covers the first free slot. A real hand moves gradually and places the icon by eye.
+
+## 2026-10-13 - The character creation shows only the hero's portrait on black
+**Symptom:** after a development launch (`--dev-launch`) or a key during the publisher logos, New game opens a character creation with only the portrait; the background and every widget are missing, for good (no fade). After the level 10 intro (a player's launch, `--skiplogo`) the same screen is fine (#399).
+**Cause:** the portrait (`Book.cpp`) prepares its own camera and then restores the one prepared before it with `RestorePreparedCamera()`, viewport included. Without a level ever loaded no camera was prepared: the restored viewport is the default `0 x 0`, and everything drawn after the first portrait - the rest of that frame, the background of the next - lands in it.
+**Do:** a 2D screen that can come before any level sets its own viewport (`GRenderer->SetViewport(g_size)`, as the logos and `CharacterCreation::render()` do) and sets it again after drawing anything that restores a camera. Check such a screen from a development launch, not only after the intro.
+
+## 2026-10-13 - In VR the desktop mouse does nothing
+**Symptom:** in a VR session (the headset or `--vr-sim`) moving, clicking or scrolling the mouse over the game window changes nothing - the menu under the cursor is not clicked, the camera does not turn.
+**Cause:** by design (#338, the owner): in VR the window only mirrors the headset; `Input::update()` drops the real mouse's movement, buttons and wheel while `vr::isEnabled()` (`desktopMouse` in `status.json`, `[input] desktop mouse:` lines in `arx.log`). The keyboard is unchanged.
+**Do:** in VR aim the hands (`vr-point`, the controllers); test the real mouse flat (`--no-vr`) with the channel's `desktop-mouse`.
+
+## 2026-10-14 - `@key` fails in CI with "process has no window"
+**Symptom:** a sequence that passes locally fails in CI at its first `@key`: `@key: process <pid> has no window` (#399, PR #458).
+**Cause:** `@key` posts a keyboard message to the game's main window. The CI runner is a service in session 0, with no desktop, so the game process has no window handle to post to.
+**Do:** in a sequence CI runs, press keys through the test channel: `desktop-key <name> down`, a few frames, `desktop-key <name> up` (SDL's event queue, like `desktop-mouse`).

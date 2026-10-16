@@ -60,7 +60,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell",
+        "matcher": "Bash|PowerShell|SendMessage",
         "hooks": [
           {
             "type": "command",

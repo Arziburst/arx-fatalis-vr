@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: The desktop window takes no input in VR, and a test run's window none at all
+## D-052: The desktop window takes no input in VR, and a test run's window none at all
 
 - **Date:** 2026-10-16
 - **Status:** Accepted

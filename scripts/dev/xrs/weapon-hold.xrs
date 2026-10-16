@@ -51,11 +51,7 @@ vr-sim hand right rot 0 90 0
 @assert vr.weapon.bladeAngle lt 2
 @shot sword-up
 @diff sword-ahead sword-ahead-still lt 1.5 left
-# The raised sword changes the picture: a weak sanity check behind the tip numbers above (the tip and the
-# blade angle are the proof) - the change depends on how the arm lies: 2.0x on #36's rig, 1.88 left / 1.53
-# right on #304's roll-aware one, 1.50 - 1.76 left with the custom arms of #385 (four CI runs); the still
-# floor 0.36 on the runner. #75's "gt 2" fails since #304; lowered to 1 pending the owner's yes (#385's PR)
-@diff sword-ahead sword-up gt 1 left
+@diff sword-ahead sword-up gt 2 left
 
 # The hand moves 30 cm right: the hilt goes with the palm, the blade stays on the handle
 @remember hiltX0 vr.weapon.hilt.x

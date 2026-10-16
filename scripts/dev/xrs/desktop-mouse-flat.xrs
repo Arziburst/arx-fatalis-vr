@@ -1,0 +1,79 @@
+# Flat mode keeps the desktop mouse (#338: only a VR session drops it), and a key during the publisher logos - the
+# flat player's way past them - reaches a main menu whose character creation draws completely (#399: without the
+# level 10 intro no camera was ever prepared, and the screen showed only the portrait on black). A player's launch
+# without VR; New game, two attribute clicks and the camera turn are all done with the desktop mouse, through SDL's
+# event queue like a real mouse's (the channel's desktop-mouse); the keys go the same way (desktop-key: @key needs a
+# game window, which the CI runner's session does not have). The VR counterpart: desktop-mouse.xrs.
+#   .\scripts\dev\xrs-run.ps1 desktop-mouse-flat
+@player
+@save mvp-new-game
+@args --no-vr
+
+# A key during the first logo: straight to the main menu, no level 10 intro
+@until state eq LOGO 60s
+desktop-key Space down
+@frames 5
+desktop-key Space up
+@log GameEvent:.*startup\.logo name=\w+ state=end how=key 10s
+@until state eq MENU 30s
+@assert menuMode eq mainmenu
+@frames 60
+@assert desktopMouse.ignored eq false
+@nolog startup\.intro state=start
+
+# New game with the desktop mouse
+desktop-mouse at menu newquest
+@frames 5
+@assert ui.menuHover eq newquest
+desktop-mouse button 1 down
+@frames 5
+desktop-mouse button 1 up
+@until menuMode eq charactercreation 15s
+@frames 120                                  # the screen fades in
+@assert hero.strength eq 6
+@assert hero.attributePoints eq 16
+
+# The screen fills the window: the background and the widgets in every quarter, not the portrait on black (#399)
+shot window-chargen
+@until capture.name eq window-chargen 5s
+@assert capture.topLeft.verdict eq world
+@assert capture.topRight.verdict eq world
+@assert capture.bottomLeft.verdict eq world
+@assert capture.bottomRight.verdict eq world
+
+# The left button spends a point on strength, the right one takes it back
+desktop-mouse at menu strength
+@frames 5
+@assert ui.menuHover eq strength
+desktop-mouse button 1 down
+@frames 5
+desktop-mouse button 1 up
+@frames 5
+@assert hero.strength eq 7
+@assert hero.attributePoints eq 15
+desktop-mouse button 2 down
+@frames 5
+desktop-mouse button 2 up
+@frames 5
+@assert hero.strength eq 6
+@assert hero.attributePoints eq 16
+@assert desktopMouse.droppedButtons eq 0
+
+# Back to the main menu, and into the game: the mouse turns the camera
+desktop-key Escape down
+@frames 5
+desktop-key Escape up
+@until menuMode eq mainmenu 10s
+loadslot 0
+@until state eq GAMEPLAY 60s
+@wait 3000                                   # past the level's fade-in
+@assert player.controlsBlocked eq false
+@assert player.freelook eq true
+@remember yaw player.yaw
+desktop-mouse move 300 0
+@frames 5
+desktop-mouse move 300 0
+@frames 10
+@assert player.yaw ne {yaw}
+@assert desktopMouse.droppedMoves eq 0
+@assert errors eq 0

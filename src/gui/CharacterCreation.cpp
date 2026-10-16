@@ -115,6 +115,11 @@ static void characterCreationAddDescription(std::string_view text) {
 void CharacterCreation::render() {
 	arx_assert(ARXmenu.mode() == Mode_CharacterCreation);
 	
+	// The screen covers the whole interface. The hero's portrait restores the camera prepared before it, which
+	// without a level ever loaded (#399: a development launch or a key during the logos skips the level 10 intro)
+	// has an empty viewport: the background and every widget drawn after the first portrait vanished
+	GRenderer->SetViewport(g_size);
+	
 	GRenderer->Clear(Renderer::ColorBuffer);
 	
 	//-------------------------------------------------------------------------
@@ -127,6 +132,7 @@ void CharacterCreation::render() {
 	EERIEDrawBitmap(Rectf(Vec2f(0, 0), g_size.width(), g_size.height()), 0.9f, BookBackground, Color::white);
 	
 	g_playerBook.stats.manageNewQuest();
+	GRenderer->SetViewport(g_size);
 		
 	bool DONE = (player.Skill_Redistribute == 0 && player.Attribute_Redistribute == 0);
 	

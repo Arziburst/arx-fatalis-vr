@@ -55,6 +55,13 @@ public:
 	void stopTextInput() override;
 	std::string getKeyName(Keyboard::Key key) const override;
 	
+	// The test channel (#338): pushed into SDL's event queue, read back by onEvent()
+	bool injectMouseMove(const Vec2i & motion) override;
+	bool injectMouseAt(const Vec2i & windowPos) override;
+	bool injectMouseButton(int buttonId, bool down) override;
+	bool injectMouseWheel(int steps) override;
+	bool injectKey(int keyId, bool down) override;
+	
 	void onEvent(const SDL_Event & event);
 	
 private:

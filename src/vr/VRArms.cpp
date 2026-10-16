@@ -70,21 +70,18 @@ const float GloveUnitsPerMeter = 100.f;
 //! The colour of a missing texture: plain leather brown
 const u8 ArmsLeather[3] = { 92, 60, 38 };
 
-//! The playground's arms lever counts its pulls in this global script variable (scripts/dev/playground/build.mjs)
-const char * const ArmsLeverPulls = "#pg_arms_pulls";
-
 /*!
- * The arms models (#385.8), in the lever's cycle; the first is the default (cfg.ini, a name no model has). Each new
- * model is one row here and one value of ArmsModel
+ * The arms models (#385.8). The first is the default and the only one a player can choose: the owner kept classic
+ * (2026-10-16, #466), and cfg.ini reads any other name as it. The others are reachable only through the test
+ * channel's `arms <model>` until they are deleted with their tests (#486)
  */
 const ArmsModelInfo ArmsModelTable[] = {
 	// model             name       glove  sleeve upperArm forearmKept  arxArms classicSkin
+	{ ArmsModel::Classic, "classic", false, false, false,   0.f,         true,   true },
 	{ ArmsModel::Custom,  "custom",  true,  true,  true,    1.f,         false,  false },
 	{ ArmsModel::Forearm, "forearm", true,  true,  false,   ForearmKept, false,  false },
 	{ ArmsModel::Hands,   "hands",   true,  false, false,   0.f,         false,  false },
 	{ ArmsModel::Arx,     "arx",     false, false, false,   0.f,         true,   false },
-	{ ArmsModel::Classic, "classic", false, false, false,   0.f,         true,   true },
-	// { ArmsModel::Library, "library", ... }, // #467: the WebXR hand
 };
 const size_t ArmsModelCount = sizeof(ArmsModelTable) / sizeof(ArmsModelTable[0]);
 
@@ -158,7 +155,6 @@ struct CustomArm {
 };
 
 std::array<CustomArm, HandCount> g_customArms;
-long g_armsLeverPulls = -1; //!< the pulls seen last, -1 outside the playground
 float g_armsBodyHeight = -1.f; //!< the character's height as the setting makes it, units; -1 before it was known
 
 /*!
@@ -488,10 +484,9 @@ void poseGloveHand(CustomArm & arm, const LogicalArm & logical, const glm::mat4 
 
 } // anonymous namespace
 
-ArmsModel parseArmsModel(std::string_view text) {
-	ArmsModel model = ArmsModelTable[0].model;
-	parseArmsModelStrict(text, model);
-	return model;
+ArmsModel parseArmsModel(std::string_view /* text */) {
+	// Only the default is a player's choice (#466): a model the arms lever or the channel saved before reads as it
+	return ArmsModelTable[0].model;
 }
 
 bool parseArmsModelStrict(std::string_view text, ArmsModel & model) {
@@ -522,10 +517,6 @@ const ArmsModelInfo & armsModelInfo(ArmsModel model) {
 	return ArmsModelTable[armsModelIndex(model)];
 }
 
-ArmsModel nextArmsModel(ArmsModel model) {
-	return ArmsModelTable[(armsModelIndex(model) + 1) % ArmsModelCount].model;
-}
-
 float clampWeaponElbowDrop(float share) {
 	return std::isfinite(share) ? glm::clamp(share, 0.f, 1.f) : DefaultWeaponElbowDrop;
 }
@@ -535,7 +526,10 @@ float clampHandScale(float scale) {
 }
 
 ArmsModel armsModel() {
-	return parseArmsModel(config.input.vrArmsModel);
+	// What is set now: cfg.ini's choice, or a model the test channel switched to
+	ArmsModel model = ArmsModelTable[0].model;
+	parseArmsModelStrict(config.input.vrArmsModel, model);
+	return model;
 }
 
 const ArmsModelInfo & armsModelInfo() {
@@ -596,23 +590,6 @@ void setHandScale(float scale, const char * by) {
 		LogInfo << "[vr] arms: hand scale " << clamped << " (" << by << ")";
 		gameevent::Event("vr.arms.handScale")("scale", clamped)("by", by);
 	}
-}
-
-void followArmsLever() {
-	if(!isPlaygroundArea(g_currentArea)) {
-		g_armsLeverPulls = -1;
-		return;
-	}
-	const long pulls = GETVarValueLong(svar, ArmsLeverPulls);
-	if(g_armsLeverPulls >= 0 && pulls > g_armsLeverPulls) {
-		// Each pull steps once through the cycle (#385.8)
-		ArmsModel model = armsModel();
-		for(long step = (pulls - g_armsLeverPulls) % long(ArmsModelCount); step > 0; step--) {
-			model = nextArmsModel(model);
-		}
-		setArmsModel(model, "the playground lever");
-	}
-	g_armsLeverPulls = pulls; // first sight (a level just loaded) or fewer (a new game): nothing pulled yet
 }
 
 void resetCustomArms() {

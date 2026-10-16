@@ -26,7 +26,10 @@ vr-sim hand right rot 0 0 0
 @frames 15
 @assert vr.body.right.posed eq true
 
-# 0. The default stays custom: the full arm
+# 0. The default is classic (the owner's pick, #466); custom, forearm and hands are test-only until #486 removes them
+@assert vr.body.armsModel eq classic
+arms custom
+@frames 5
 @assert vr.body.armsModel eq custom
 @assert vr.body.arxArmsHidden eq true
 @assert vr.body.right.custom.gloveDrawn eq true

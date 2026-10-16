@@ -249,7 +249,7 @@ struct PlayerBodyStatus {
 	float upperShare = 0.f;
 	float elbowShare = 0.f;
 	float twistOverflow = 0.f;
-	const char * armsModel = "custom"; //!< cfg.ini vr_arms_model: the arms drawn in VR, custom or arx (#385.3)
+	const char * armsModel = "classic"; //!< cfg.ini vr_arms_model: the arms drawn in VR (#385.3; classic only for a player, #466)
 	bool arxArmsHidden = false;   //!< an Arx arm's faces are not drawn this frame: a custom arm is drawn in their place
 	// The body variant (#385.11): cfg.ini vr_body, and what of the player model the last frame drew (both eyes counted)
 	const char * bodyMode = "full";

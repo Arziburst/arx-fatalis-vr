@@ -1,4 +1,4 @@
-# The arms model switch (#385.3): cfg vr_arms_model = custom | arx (default custom), the channel command
+# The arms model switch (#385.3): cfg vr_arms_model = classic (the only player choice since #466), the channel command
 # `arms custom|arx`, and the hand size vr_hand_scale. status.json: vr.body.armsModel,
 # vr.body.arxArmsHidden (true while the Arx arm faces are not drawn = custom; PROPOSED name, 385.3 implements it),
 # vr.body.<hand>.handScale, vr.body.<hand>.custom.tipLength (palm to fingertip, units).
@@ -24,7 +24,12 @@ vr-sim hand right rot 0 0 0
 @frames 15
 @assert vr.body.right.posed eq true
 
-# 1. The default is the custom arms; the Arx arm faces are hidden
+# 1. The default is classic (the owner's pick, #466); the custom arms (test-only until #486 removes them) hide the
+#    Arx arm faces
+@assert vr.body.armsModel eq classic
+@assert vr.body.arxArmsHidden eq false
+arms custom
+@frames 5
 @assert vr.body.armsModel eq custom
 @assert vr.body.arxArmsHidden eq true
 @shot model-custom

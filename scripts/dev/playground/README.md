@@ -27,9 +27,6 @@ The tester zip (`package-tester.ps1`) does not carry the playground yet.
 - **Two levers** on the north wall right of the table (visible from the start): the mode lever (nearer the table; down =
   aggressive, up = peaceful) and the respawn lever. Both are the game's `fix_inter/lever`, pulled by hand like any lever
   (#38). A dead NPC runs no script events, so the respawn lever revives it from outside (`revive -it <entity>`).
-- **The arms lever** (#385.3), third on the wall: each pull steps the VR arms to the next model - custom, forearm, hands,
-  arx, classic, then custom again (#385.8, #466.2; it counts pulls in the global `#pg_arms_pulls`, `src/vr/VRArms.cpp`
-  follows it; the setting is cfg.ini `vr_arms_model`).
 - **Worked by hand** (#38, `DOOR`, `CHEST`, `CORPSE` in `layout.mjs`), all a few steps from the hero's start, each
   the game's own class with its own state: a **door** (`fix_inter/light_door`, `light_door_9001`) standing free ahead-left,
   closed and unlocked (the class locks every door; the instance script unlocks it); a **metal chest**
@@ -44,7 +41,7 @@ The tester zip (`package-tester.ps1`) does not carry the playground yet.
 - Instance ids start at `FIRST_ID` (9001): the original levels ship instance scripts for the low numbers of every class,
   which the engine would run for an item without a script of its own.
 - The test channel finds these entities by the text variable `£pg_role` their scripts set (`npc`, `lever_mode`,
-  `lever_respawn`, `lever_arms`, `door`, `chest`, `corpse`); status.json `playground`, `player.level`, `player.allRunes` and the commands
+  `lever_respawn`, `door`, `chest`, `corpse`); status.json `playground`, `player.level`, `player.allRunes` and the commands
   `playground pull|kill|place|hit` are described in `docs/vr/TESTING.md`. Sequences: `scripts/dev/xrs/playground-levers.xrs`,
-  `scripts/dev/xrs/playground-hands.xrs` (the lever, the door, the chest and the body by each hand, #38), `arms-variants-lever.xrs`.
+  `scripts/dev/xrs/playground-hands.xrs` (the lever, the door, the chest and the body by each hand, #38).
 - The mode lever does nothing while the goblin is dead (a dead NPC runs no script events): use the respawn lever.

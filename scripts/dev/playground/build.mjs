@@ -210,14 +210,6 @@ const addLever = (id, x, role, orders, before = '') => {
 addLever(FIRST_ID, LEVER_WALL.xMode, 'lever_mode', { on: 'aggressive', off: 'peaceful' })
 addLever(FIRST_ID + 1, LEVER_WALL.xRespawn, 'lever_respawn', { on: 'respawn', off: 'respawn' }, `revive -it ${goblin.ref}\n `)
 
-// The arms lever (#385.3): every pull, up or down, counts in the global #pg_arms_pulls; the game (src/vr/VRArms.cpp)
-// steps the VR arms to the next model on each new pull (custom, forearm, hands, arx, #385.8), so the owner compares
-// them in the headset
-const armsLever = new Lever({ id: FIRST_ID + 2, position: at(LEVER_WALL.xArms, -LEVER_HEIGHT, LEVER_WALL.z), orientation: leverRotation })
-armsLever.script.on('init', 'set £pg_role "lever_arms"')
-armsLever.script.on('custom', ['on', 'off'].map((param) => `if (^$param1 == "${param}") {\n inc #pg_arms_pulls 1\n}`))
-map.entities.push(armsLever)
-
 // A door, a chest and a body worked by hand (#38). Each is the game's own class, its state the class script's own
 // variables (status.json playground.door / chest / corpse); £pg_role tells the test channel which is which. The
 // instance script runs after the class script's init (SendInitScriptEvent), so its settings win.

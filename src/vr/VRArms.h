@@ -64,20 +64,19 @@ class TextureContainer;
  */
 namespace vr {
 
-//! The arms drawn in VR (#385.8: a choice of five, the owner picks in the headset); what each draws is its ArmsModelInfo
+//! The arms drawn in VR (#385.8); what each draws is its ArmsModelInfo. The owner kept Classic (2026-10-16, #466): the
+//! only one cfg.ini selects; the others are test-channel only until they are deleted (#486)
 enum class ArmsModel : u8 {
-	Custom,  //!< our own arms: the glove and the whole sleeve (the default)
+	Custom,  //!< our own arms: the glove and the whole sleeve
 	Forearm, //!< the glove and a short forearm ending in a closed cuff before the elbow (research F-305, F-467)
 	Hands,   //!< the glove alone, closed at the wrist (Half-Life: Alyx, research F-303)
 	Arx,     //!< the player model's own arms
-	Classic, //!< the player model's own arms with one elbow and a rigid forearm (#466.1, vr/ArxArmFix.h)
-	// Library, //!< #467: the WebXR hand
+	Classic, //!< the player model's own arms with one elbow and a rigid forearm (#466.1, vr/ArxArmFix.h; the default)
 };
 
 /*!
- * What one arms model draws (#385.8). The models are one table (VRArms.cpp ArmsModelTable), in the order the
- * playground's arms lever cycles them; the code reads these properties, never the model itself, so a new model is
- * one row
+ * What one arms model draws (#385.8). The models are one table (VRArms.cpp ArmsModelTable), the default first; the
+ * code reads these properties, never the model itself
  */
 struct ArmsModelInfo {
 	ArmsModel model;
@@ -112,23 +111,22 @@ constexpr float DefaultWeaponElbowDrop = 0.75f;
 //! \return \a share within [0, 1] (DefaultWeaponElbowDrop for a value that is not a number)
 float clampWeaponElbowDrop(float share);
 
-//! \return the model a cfg.ini value names; a name no model has is our own arms (custom)
+//! \return the model cfg.ini selects: always the default, classic (#466) - a value an earlier build saved reads as it
 ArmsModel parseArmsModel(std::string_view text);
-//! \return false unless \a text names a model (the channel's \c arms command)
+//! \return false unless \a text names a model (the test channel's \c arms command)
 bool parseArmsModelStrict(std::string_view text, ArmsModel & model);
 const char * armsModelName(ArmsModel model);
 //! The models' names for a message: "custom, forearm, hands, arx or classic"
 std::string armsModelNames();
 const ArmsModelInfo & armsModelInfo(ArmsModel model);
-//! The model after \a model in the lever's cycle (the last one is followed by the first)
-ArmsModel nextArmsModel(ArmsModel model);
+
 float clampHandScale(float scale);
 
 //! The model cfg.ini asks for (vr_arms_model)
 ArmsModel armsModel();
 //! What it draws
 const ArmsModelInfo & armsModelInfo();
-//! Switch the model live and save it to cfg.ini; \a by says who asked (the channel, the playground lever)
+//! Switch the model live and save it to cfg.ini; \a by says who asked (the test channel)
 void setArmsModel(ArmsModel model, const char * by);
 
 //! The hand at the end of the classic arm (#466.2, research F-281, F-282): the owner compares them in the headset
@@ -148,9 +146,6 @@ ClassicHand classicHand();
 void setClassicHand(ClassicHand hand, const char * by);
 //! Set vr_hand_scale live (clamped) and save it to cfg.ini
 void setHandScale(float scale, const char * by);
-
-//! The playground's arms lever (#385.3, role lever_arms): each pull steps to the next model (#385.8); call once per frame
-void followArmsLever();
 
 /*!
  * The logical Arx arm of one hand this frame: what the custom arm is solved from (#385.6) - its shoulder, the Arx

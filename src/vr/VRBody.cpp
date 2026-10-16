@@ -944,8 +944,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	status.drawnArmFaces = g_body.drawingArmFaces;
 	g_body.drawingBodyFaces = 0;
 	g_body.drawingArmFaces = 0;
-	// The custom arms (#385.3): the playground lever may switch them; nothing is drawn until an arm is posed again
-	followArmsLever();
+	// The custom arms (#385.3): nothing is drawn until an arm is posed again
 	resetCustomArms();
 	g_body.reskinned.clear();
 	g_body.shift = Vec3f(0.f);

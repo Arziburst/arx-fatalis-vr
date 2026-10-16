@@ -615,7 +615,7 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 }
 
 //! The test playground's entities (#321.2) tell the channel what they are: their instance scripts set the
-//! text variable pg_role ("npc", "lever_mode", "lever_respawn", "lever_arms", scripts/dev/playground/build.mjs)
+//! text variable pg_role ("npc", "lever_mode", "lever_respawn", "door", "chest", "corpse", scripts/dev/playground/build.mjs)
 Entity * findPlaygroundEntity(std::string_view role) {
 	for(Entity & entity : entities) {
 		if(GETVarValueText(entity.m_variables, "\xA3pg_role") == role) {
@@ -1163,8 +1163,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("shiftX", body.shift.x);
 		json.value("shiftZ", body.shift.z);
 		json.value("facingYaw", body.facingYaw);
-		// the arms drawn in VR (#385.3): cfg.ini vr_arms_model (custom | forearm | hands | arx, #385.8), and whether an
-		// Arx arm's faces gave way to a custom arm
+		// the arms drawn in VR (#385.3): cfg.ini vr_arms_model (classic; the others by the test channel, #466, #486), and
+		// whether an Arx arm's faces gave way to a custom arm
 		json.value("armsModel", body.armsModel);
 		json.value("arxArmsHidden", body.arxArmsHidden);
 		// the body variant (#385.11): cfg.ini vr_body, and the body's and the Arx arms' faces the last frame drew
@@ -2234,8 +2234,9 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "arms") {
-		// The arms drawn on the player in VR (#385.3): arms custom|forearm|hands|arx|classic switches the model live
-		// (#385.8, #466), arms scale <factor> sets the custom hands' size (vr_hand_scale), arms classic-hand arx|glove
+		// The arms drawn on the player in VR (#385.3): arms classic|custom|forearm|hands|arx switches the model live
+		// (#385.8, #466; only classic is a player choice, the others stay for their tests until #486), arms scale <factor>
+		// sets the custom hands' size (vr_hand_scale), arms classic-hand arx|glove
 		// the classic arm's hand (vr_classic_hand, #466.2); all are saved to cfg.ini
 		std::string_view args;
 		std::string_view what = firstWord(rest, args);
@@ -3125,7 +3126,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "playground") {
-		// playground pull mode|respawn|arms | kill | place <ahead> [<right>] | hit <n>: the test playground's NPC and
+		// playground pull mode|respawn | kill | place <ahead> [<right>] | hit <n>: the test playground's NPC and
 		// levers (#321.2). pull sends the lever what a hand pull sends it (Interface.cpp: SM_ACTION from the player)
 		if(!isPlaygroundArea(g_currentArea) || !entities.player()) {
 			return refuse("playground: needs the playground level (area 30) on screen");
@@ -3135,9 +3136,9 @@ std::string execute(std::string_view line) {
 		Entity * npc = findPlaygroundEntity("npc");
 		if(what == "pull") {
 			std::string role = "lever_" + std::string(args);
-			Entity * lever = (args == "mode" || args == "respawn" || args == "arms") ? findPlaygroundEntity(role) : nullptr;
+			Entity * lever = (args == "mode" || args == "respawn") ? findPlaygroundEntity(role) : nullptr;
 			if(!lever) {
-				return refuse("playground pull: expected mode, respawn or arms, got \"" + std::string(args) + "\"");
+				return refuse("playground pull: expected mode or respawn, got \"" + std::string(args) + "\"");
 			}
 			SendIOScriptEvent(entities.player(), lever, SM_ACTION);
 			LogInfo << "[channel] playground: " << lever->idString() << " pulled (" << args << ")";

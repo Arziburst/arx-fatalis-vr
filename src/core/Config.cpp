@@ -87,7 +87,7 @@ constexpr const std::string_view
 	             BOOST_PP_STRINGIZE(ARX_DEFAULT_HEIGHT),
 	debugLevels,
 	realtimeOverride,
-	vrArmsModel = "custom",
+	vrArmsModel = "classic",
 	vrClassicHand = "arx",
 	vrBody = "full",
 	bufferUpload,

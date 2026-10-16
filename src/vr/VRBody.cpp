@@ -32,8 +32,10 @@
 #include <glm/glm.hpp>
 
 #include "animation/Skeleton.h"
+#include "core/Config.h"
 #include "core/GameEvent.h"
 #include "core/GameTime.h"
+#include "game/Camera.h"
 #include "game/Entity.h"
 #include "game/EntityManager.h"
 #include "game/Equipment.h"
@@ -42,9 +44,15 @@
 #include "io/log/Logger.h"
 #include "platform/Time.h"
 #include "scene/Object.h"
+#include "util/String.h"
 #include "vr/ArmIK.h"
+#include "vr/ArmRoll.h"
+#include "vr/ArxArmFix.h"
+#include "vr/BodyView.h"
+#include "vr/EyeProjection.h"
 #include "vr/HeadTracking.h"
 #include "vr/SceneView.h"
+#include "vr/VRArms.h"
 #include "vr/VRInput.h"
 #include "vr/VRSystem.h"
 
@@ -55,6 +63,16 @@ namespace {
 //! How far the shoulder may slide towards a target the arm cannot reach (units; F-52)
 const float MaxShoulderSlide = 20.f;
 
+/*!
+ * The base pole of the elbow in the body frame, before the hand's roll swings it (D-050): down, back
+ * and a little outward - where a relaxed elbow points. Only the part across the shoulder-target line
+ * counts, so a hanging arm bends back (and a little out), a hand raised ahead bends down (and out), a
+ * hand held out to the side bends down and back. #36's pole (down, half out, a fifth back) pointed a
+ * hanging arm's elbow outward, 50 degrees from where the hand's thumb says the bend is.
+ */
+const float ElbowPoleDown = 1.f;
+const float ElbowPoleOut = 0.3f;
+const float ElbowPoleBack = 1.f;
 //! The bend of the model's finger segments at a fist (#305); the one place to tune from the headset
 const FingerCurlLimits CurlLimits;
 
@@ -70,6 +88,12 @@ enum FingerGroup : u8 {
 };
 
 const u8 NoFinger = 0xff;
+
+//! What a face of the bound model is to the custom arms (#385.3): the body, an Arx arm face (its arm's upper arm and
+//! everything under it - hidden while the custom arm is drawn), or a face of the cap that closes the shoulder then
+const u8 FaceBody = 0;
+const u8 FaceArm = 1;     //!< + the hand
+const u8 FaceArmCap = 3;  //!< + the hand
 
 //! One finger group of a hand: its segments from the knuckle out, and the axis they bend about
 struct FingerChain {
@@ -94,12 +118,21 @@ struct ArmChain {
 	glm::quat handToGrip = quat_identity(); //!< wrist bone rest frame -> grip frame in engine axes
 	std::string names;                     //!< "upper>forearm>wrist[>hand]", or why there is no chain
 	std::string thumbGroup;                //!< the thumb group the lateral axis was read from, if any
+	ArmRest rest;                          //!< the chain at rest in mesh space (D-050): the two bones, the model's back, the thumb axis
+	Vec3f restElbow = Vec3f(0.f);          //!< the direction the elbow sticks out at rest, across the shoulder-wrist line
+	const char * restElbowSource = "";     //!< what named restElbow (the model's back, the rest triangle, the thumb)
+	float restBend = 0.f;                  //!< degrees between the upper arm and the forearm at rest
 	// The fingers (#305)
 	bool haveFingers = false;              //!< at least one finger group was found under the hand
 	std::array<FingerChain, FingerGroupCount> fingers;
 	Vec3f outwardLocal = Vec3f(0.f);       //!< the palm's face, in the wrist's rest frame: where the fingers curl towards
 	//! per bone of the model: the finger group and the segment it is, or NoFinger
 	std::vector<std::pair<u8, u8>> fingerOf;
+	// The classic Arx arm (#466.1, vr/ArxArmFix.h)
+	ArxArmRest armRest;                    //!< the arm at rest, each vertex with the part its group is in
+	ArxArmDiagnosis diagnosis;             //!< the arm's rings along its axis
+	std::vector<ArmPart> classicParts;     //!< per vertex: the part the classic arm skins it to
+	std::vector<VertexId> reassigned;      //!< the vertices whose classic part is not their group's
 };
 
 //! A posed hand's world axes, for the landmarks of status.json
@@ -119,8 +152,10 @@ struct BodyState {
 	std::array<ArmChain, HandCount> chains;
 	std::array<bool, HandCount> haveSim = { };
 	std::array<HandSample, HandCount> sim;
+	std::array<ArmRollState, HandCount> roll;     //!< the overflow side of each arm's roll, between frames (D-050)
 	Vec3f shift = Vec3f(0.f);
 	std::array<bool, HandCount> posedBefore = { }; //!< for the per-arm events
+	std::array<int, HandCount> overflowBefore = { }; //!< for the roll overflow events
 	std::array<std::string, HandCount> fingerSourceBefore; //!< for the per-hand finger events
 	std::array<FingerCurl, HandCount> curl;       //!< the fingers' bend, approaching what the tracking says
 	std::array<HandAxes, HandCount> axes;         //!< the posed hands' axes this frame
@@ -129,6 +164,23 @@ struct BodyState {
 	std::vector<char> touched;                    //!< scratch: bones recomputed after the chain
 	std::vector<char> headVertex;                 //!< per vertex of the bound model: in the head or the neck
 	size_t capStart = 0;                          //!< the first cap face added to the bound model (its face count without one)
+	size_t boundFaces = 0;                        //!< the bound model's faces with the caps (a reloaded model has fewer)
+	//! per face of the bound model: what it is to the custom arms (#385.3) - FaceBody, FaceArm + hand, FaceArmCap + hand
+	std::vector<u8> faceRole;
+	//! per face of the bound model: 1 for a face of an Arx hand on the classic skin - every corner on the hand (#466.2)
+	std::vector<u8> arxHandFace;
+	//! per arm: the vertices where the classic hand's faces meet the faces kept - the Arx wrist ring the glove meets (#466.2)
+	std::array<std::vector<VertexId>, HandCount> arxWristRing;
+	//! the vertices the classic arm skinned on another bone this frame, with the rotation they turned with (#466.1)
+	std::vector<ReskinnedVertex> reskinned;
+	//! per face of the bound model: hidden this frame because it is too near an eye (#385.9), and the pose it was
+	//! worked out for (status.poseCalls) - once per frame, the same faces for both eyes
+	std::vector<char> nearEye;
+	u64 nearEyePose = u64(-1);
+	//! the body's and the Arx arms' faces drawn since the player was last posed (#385.11): status.json reports the
+	//! last frame's
+	size_t drawingBodyFaces = 0;
+	size_t drawingArmFaces = 0;
 	PlayerBodyStatus status;
 };
 
@@ -220,6 +272,18 @@ ArmChain findChain(const EERIE_3DOBJ * obj, Hand hand) {
 	if(chain.frame.valid) {
 		chain.handToGrip = handToGrip(chain.frame);
 	}
+
+	// The chain at rest, in mesh space (transinit_global is a bone's joint from its father's, at rest):
+	// what the roll of every bone is measured against (D-050)
+	chain.rest.upper = rig.bones[forearm].transinit_global;
+	chain.rest.forearm = rig.bones[wrist].transinit_global;
+	chain.rest.thumb = chain.frame.valid ? chain.frame.thumb : Vec3f(0.f);
+	chain.restElbow = restElbowDirection(chain.rest, &chain.restElbowSource);
+	const float restUpper = glm::length(chain.rest.upper);
+	const float restForearm = glm::length(chain.rest.forearm);
+	chain.restBend = (restUpper > 1e-4f && restForearm > 1e-4f)
+	                 ? glm::degrees(std::acos(glm::clamp(glm::dot(chain.rest.upper / restUpper, chain.rest.forearm / restForearm), -1.f, 1.f)))
+	                 : 0.f;
 	// The fingertips: the vertex farthest from the wrist along the hand
 	chain.tip = palm;
 	float farthest = 0.f;
@@ -359,12 +423,14 @@ float segmentAngle(const FingerCurl & curl, u8 group, u8 segment) {
  * vertex in the head or the neck) and the visible ones is walked as loops, and each loop is closed by
  * a triangle fan with the material and texture coordinates of the visible faces on it. The cap faces are
  * appended to the model's face list and drawn only under a tracked head (\ref bodyCapStart).
+ *
+ * The same walk closes a shoulder when the custom arms hide an Arx arm (#385.3, research row F-234):
+ * \a hiddenVertex then marks the arm's vertices. \return the faces added
  */
-void addNeckCap(EERIE_3DOBJ * obj) {
+size_t addCap(EERIE_3DOBJ * obj, const std::vector<char> & hiddenVertex, const char * what) {
 
-	g_body.capStart = obj->facelist.size();
-	if(g_body.headVertex.size() != obj->vertexlist.size()) {
-		return;
+	if(hiddenVertex.size() != obj->vertexlist.size()) {
+		return 0;
 	}
 
 	typedef std::pair<size_t, size_t> EdgeKey;
@@ -383,7 +449,7 @@ void addNeckCap(EERIE_3DOBJ * obj) {
 		}
 		bool hidden = false;
 		for(VertexId vertex : face.vid) {
-			hidden = hidden || g_body.headVertex[size_t(vertex)];
+			hidden = hidden || hiddenVertex[size_t(vertex)];
 		}
 		for(size_t k = 0; k < 3; k++) {
 			const size_t a = size_t(face.vid[k]);
@@ -477,8 +543,126 @@ void addNeckCap(EERIE_3DOBJ * obj) {
 		}
 	}
 
-	LogInfo << "[vr] body: neck opening closed with " << capFaces << " cap face(s) over " << loops
+	LogInfo << "[vr] body: " << what << " closed with " << capFaces << " cap face(s) over " << loops
 	        << " boundary loop(s) (" << boundaryFace.size() << " boundary edges); drawn under a tracked head only";
+	return capFaces;
+}
+
+/*!
+ * \brief The faces the custom arms hide and the caps that close the shoulders then (#385.3, research rows F-233, F-234)
+ *
+ * An Arx arm is its upper arm group with everything under it (the forearm, the hand, the fingers); the shoulder
+ * group above stays. A face with any vertex in the arm is the arm's; the opening its faces leave in the torso is
+ * closed with a cap like the neck's, drawn only while the arm is hidden. Called after the neck cap, so the caps
+ * sit behind \c capStart and flat mode and the book never see them.
+ */
+void addArmCaps(EERIE_3DOBJ * obj) {
+
+	g_body.faceRole.assign(obj->facelist.size(), FaceBody);
+	g_body.arxHandFace.assign(obj->facelist.size(), 0);
+	for(std::vector<VertexId> & ring : g_body.arxWristRing) {
+		ring.clear();
+	}
+	if(!obj->m_skeleton) {
+		return;
+	}
+	const Skeleton & rig = *obj->m_skeleton;
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		const ArmChain & chain = g_body.chains[hand];
+		if(!chain.valid) {
+			continue;
+		}
+		std::vector<char> armVertex(obj->vertexlist.size(), 0);
+		for(VertexGroupId group : obj->grouplist.handles()) {
+			VertexGroupId ancestor = group;
+			while(ancestor && ancestor != chain.upper) {
+				ancestor = rig.bones[ancestor].father;
+			}
+			if(!ancestor) {
+				continue;
+			}
+			for(VertexId vertex : obj->m_boneVertices[group]) {
+				armVertex[size_t(vertex)] = 1;
+			}
+		}
+		size_t armFaces = 0;
+		size_t handFaces = 0;
+		for(size_t f = 0; f < obj->facelist.size(); f++) {
+			for(VertexId vertex : obj->facelist[f].vid) {
+				if(armVertex[size_t(vertex)]) {
+					g_body.faceRole[f] = u8(FaceArm + hand);
+					armFaces++;
+					break;
+				}
+			}
+			// The classic arm's hand (#466.2): a face with every corner on the hand in the classic skin - the wrist
+			// ring and past it - is left out under our glove; the band from the forearm to the wrist ring stays, so the
+			// Arx forearm ends at the wrist joint the glove's cuff sits on
+			if(g_body.faceRole[f] == FaceArm + hand && chain.classicParts.size() == obj->vertexlist.size()) {
+				bool onHand = true;
+				for(VertexId vertex : obj->facelist[f].vid) {
+					onHand = onHand && chain.classicParts[size_t(vertex)] == ArmPart::Hand;
+				}
+				if(onHand) {
+					g_body.arxHandFace[f] = 1;
+					handFaces++;
+				}
+			}
+		}
+		// The wrist ring the glove's cuff meets: the corners the hidden hand faces share with the arm faces kept
+		std::vector<char> inHandFace(obj->vertexlist.size(), 0);
+		std::vector<char> inKeptFace(obj->vertexlist.size(), 0);
+		for(size_t f = 0; f < obj->facelist.size(); f++) {
+			if(g_body.faceRole[f] == FaceArm + hand) {
+				for(VertexId vertex : obj->facelist[f].vid) {
+					(g_body.arxHandFace[f] ? inHandFace : inKeptFace)[size_t(vertex)] = 1;
+				}
+			}
+		}
+		for(size_t v = 0; v < obj->vertexlist.size(); v++) {
+			if(inHandFace[v] && inKeptFace[v]) {
+				g_body.arxWristRing[hand].push_back(VertexId(v));
+			}
+		}
+		const std::string what = std::string(handName(Hand(hand))) + " shoulder (" + std::to_string(armFaces)
+		                         + " arm faces hidden under the custom arm, " + std::to_string(handFaces)
+		                         + " hand faces under the classic arm's glove, its wrist ring "
+		                         + std::to_string(g_body.arxWristRing[hand].size()) + " vertices)";
+		addCap(obj, armVertex, what.c_str());
+		g_body.faceRole.resize(obj->facelist.size(), u8(FaceArmCap + hand));
+		g_body.arxHandFace.resize(obj->facelist.size(), 0);
+	}
+}
+
+//! One arm of the bound model at rest for vr/ArxArmFix.h: its joints, and each vertex with the part of the arm it is in
+ArxArmRest armRestOf(const EERIE_3DOBJ * obj, const ArmChain & chain) {
+
+	ArxArmRest rest;
+	const Skeleton & rig = *obj->m_skeleton;
+	rest.shoulder = obj->vertexlist[obj->grouplist[chain.upper].origin].v;
+	rest.elbow = obj->vertexlist[obj->grouplist[chain.forearm].origin].v;
+	rest.wrist = obj->vertexlist[obj->grouplist[chain.hand].origin].v;
+	rest.positions.reserve(obj->vertexlist.size());
+	for(const EERIE_VERTEX & vertex : obj->vertexlist) {
+		rest.positions.push_back(vertex.v);
+	}
+	rest.parts.assign(obj->vertexlist.size(), ArmPart::Body);
+	for(VertexGroupId group : obj->grouplist.handles()) {
+		// The nearest of the chain's groups at or above this one
+		ArmPart part = ArmPart::Body;
+		for(VertexGroupId ancestor = group; ancestor && part == ArmPart::Body; ancestor = rig.bones[ancestor].father) {
+			part = (ancestor == chain.hand) ? ArmPart::Hand : (ancestor == chain.forearm) ? ArmPart::Forearm
+			       : (ancestor == chain.upper) ? ArmPart::Upper : ArmPart::Body;
+		}
+		for(VertexId vertex : obj->m_boneVertices[group]) {
+			rest.parts[size_t(vertex)] = part;
+		}
+	}
+	rest.faces.reserve(obj->facelist.size());
+	for(const EERIE_FACE & face : obj->facelist) {
+		rest.faces.push_back({ size_t(face.vid[0]), size_t(face.vid[1]), size_t(face.vid[2]) });
+	}
+	return rest;
 }
 
 void bind(EERIE_3DOBJ * obj) {
@@ -574,9 +758,25 @@ void bind(EERIE_3DOBJ * obj) {
 		        << ": knuckles " << vectorText(chain.frame.knuckles) << " thumb " << vectorText(chain.frame.thumb)
 		        << " palm " << vectorText(chain.frame.palm) << ", length " << std::fixed << std::setprecision(1)
 		        << chain.frame.length << ", thumb side " << chain.frame.thumbExtent << " vs "
-		        << chain.frame.otherExtent;
+		        << chain.frame.otherExtent << "; at rest the arm bends " << std::setprecision(1) << chain.restBend
+		        << " degrees (upper " << vectorText(chain.rest.upper, 1) << ", forearm " << vectorText(chain.rest.forearm, 1)
+		        << "), the elbow points " << vectorText(chain.restElbow) << " (from " << chain.restElbowSource << ")";
 		status.chains += std::string(hand ? "; " : "") + name + ": " + chain.names;
 		status.bound = true;
+
+		// The Arx arm along its axis (#466.1): what makes its second elbow, and the vertices the classic arm skins
+		// on another bone than their group's
+		chain.armRest = armRestOf(obj, chain);
+		chain.diagnosis = diagnoseArxArm(chain.armRest);
+		chain.classicParts = classicArmParts(chain.armRest, chain.diagnosis);
+		chain.reassigned.clear();
+		for(size_t v = 0; v < chain.classicParts.size(); v++) {
+			if(chain.classicParts[v] != chain.armRest.parts[v]) {
+				chain.reassigned.push_back(VertexId(v));
+			}
+		}
+		LogInfo << "[vr] body: " << name << " Arx arm " << diagnosisText(chain.diagnosis) << "; the classic arm skins "
+		        << chain.reassigned.size() << " vertices on another bone";
 
 		// The fingers (#305): the groups found under the hand and the axes they bend about
 		std::string fingers;
@@ -599,7 +799,10 @@ void bind(EERIE_3DOBJ * obj) {
 		status.fingers += std::string(hand ? "; " : "") + name + ": " + fingers;
 	}
 
-	addNeckCap(obj);
+	g_body.capStart = obj->facelist.size();
+	addCap(obj, g_body.headVertex, "neck opening");
+	addArmCaps(obj);
+	g_body.boundFaces = obj->facelist.size();
 
 	gameevent::Event("vr.body.model")("model", status.model)("chains", status.chains)("bound", status.bound)
 		("fingers", status.fingers);
@@ -626,6 +829,90 @@ void noteArm(size_t hand, bool posed, const char * source) {
 	}
 }
 
+//! The hand's roll crossed a half turn, or came back: the side it continues on (D-050)
+void noteRollOverflow(size_t hand, int overflow, float handRoll) {
+	if(overflow != g_body.overflowBefore[hand]) {
+		g_body.overflowBefore[hand] = overflow;
+		gameevent::Event("vr.body.roll", 200)("hand", handName(Hand(hand)))("overflow", overflow)("handRoll", handRoll);
+	}
+}
+
+//! The shares of the hand's roll along the arm, as cfg.ini has them (vr_arm_*, D-050)
+ArmRollParams rollParams() {
+	ArmRollParams params;
+	params.forearmShare = config.input.vrArmForearmTwist;
+	params.upperShare = config.input.vrArmUpperTwist;
+	params.elbowShare = config.input.vrArmElbowRoll;
+	params.overflowDegrees = config.input.vrArmTwistOverflow;
+	return params;
+}
+
+//! Where the body sits behind the eyes and how near them its faces may be drawn, as cfg.ini has them (#385.9)
+BodyViewParams bodyViewParams() {
+	BodyViewParams params;
+	params.push = config.input.vrBodyPush;
+	params.pushDown = config.input.vrBodyPushDown;
+	params.clearance = config.input.vrBodyClearance;
+	return params;
+}
+
+/*!
+ * \brief Work out once per frame which faces of the bound model are too near an eye to draw (#385.9, research F-472)
+ *
+ * The eyes are the head camera's (g_playerCamera, where the head pose put it) with this frame's eye offsets in
+ * stereo, the head camera itself otherwise. The faces looked at are the ones the two-sided view draws: not hidden
+ * by the engine, not given way to a custom arm. An Arx arm's own faces follow the controller - a hand brought to
+ * the face stays drawn - so the rule and the nearest-vertex count leave them out.
+ */
+void updateNearEye(const EERIE_3DOBJ * obj) {
+
+	PlayerBodyStatus & status = g_body.status;
+	if(g_body.nearEyePose == status.poseCalls && g_body.nearEye.size() == obj->facelist.size()) {
+		return;
+	}
+	g_body.nearEyePose = status.poseCalls;
+	g_body.nearEye.assign(obj->facelist.size(), 0);
+
+	Vec3f eyes[2] = { g_playerCamera.m_pos, g_playerCamera.m_pos };
+	if(stereoActive()) {
+		const glm::mat4x4 headWorldToView = cameraWorldToView(g_playerCamera);
+		const std::array<EyeRig, 2> & rigs = eyeRigs();
+		for(size_t eye = 0; eye < rigs.size(); eye++) {
+			eyes[eye] = eyeWorldPosition(headWorldToView, rigs[eye]);
+		}
+	}
+
+	const BodyViewParams params = bodyViewParams();
+	size_t hidden = 0;
+	float nearest = -1.f;
+	bool legs = false;
+	for(size_t f = 0; f < obj->facelist.size(); f++) {
+		const EERIE_FACE & face = obj->facelist[f];
+		if(!face.material || (face.facetype & POLY_HIDE) || !drawsBodyFace(obj, f)) {
+			continue;
+		}
+		if(f < g_body.faceRole.size() && (g_body.faceRole[f] == FaceArm || g_body.faceRole[f] == FaceArm + 1)) {
+			continue;
+		}
+		const Vec3f & a = obj->vertexWorldPositions[face.vid[0]].v;
+		const Vec3f & b = obj->vertexWorldPositions[face.vid[1]].v;
+		const Vec3f & c = obj->vertexWorldPositions[face.vid[2]].v;
+		if(hideFaceNearEye(a, b, c, eyes[0], eyes[1], params)) {
+			g_body.nearEye[f] = 1;
+			hidden++;
+			continue;
+		}
+		const float distance = faceDistanceToEyes(a, b, c, eyes[0], eyes[1]);
+		nearest = (nearest < 0.f) ? distance : std::min(nearest, distance);
+		legs = legs || faceBelowKeepLine(a, b, c, eyes[0], eyes[1], params);
+	}
+
+	status.clearance = params.clearance;
+	status.hiddenNearEye = hidden;
+	status.nearestBodyToEye = nearest;
+	status.legsDrawn = legs;
+}
+
 void noteBody(bool active, const char * inactive) {
 	PlayerBodyStatus & status = g_body.status;
 	status.active = active;
@@ -648,13 +935,22 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	}
 
 	if(g_body.boundObject != eobj || g_body.boundGroups != eobj->grouplist.size()
-	   || g_body.boundVertices != eobj->vertexlist.size()) {
+	   || g_body.boundVertices != eobj->vertexlist.size() || g_body.boundFaces != eobj->facelist.size()) {
 		bind(eobj);
 	}
 
 	status.poseCalls++;
+	// What the last frame drew of the player model (#385.11)
+	status.drawnBodyFaces = g_body.drawingBodyFaces;
+	status.drawnArmFaces = g_body.drawingArmFaces;
+	g_body.drawingBodyFaces = 0;
+	g_body.drawingArmFaces = 0;
+	// The custom arms (#385.3): nothing is drawn until an arm is posed again
+	resetCustomArms();
+	g_body.reskinned.clear();
 	g_body.shift = Vec3f(0.f);
 	status.shift = Vec3f(0.f);
+	status.push = 0.f;
 	for(size_t hand = 0; hand < HandCount; hand++) {
 		PlayerArmStatus & arm = status.hands[hand];
 		arm.source = "none";
@@ -664,6 +960,9 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		arm.fingerGroups = g_body.chains[hand].haveFingers;
 		arm.joints = false;
 		arm.holds = false;
+		arm.armSkin = "none";
+		arm.bend = ArmBend();
+		arm.classicDrawn = false;
 		g_body.axes[hand].valid = false;
 	}
 
@@ -694,7 +993,11 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	// The body under the head: the lean - the head's movement less what the collision cylinder already walked
 	// after it (#26), the same offset the camera takes - moves every bone
 	const float bodyYaw = player.angle.getYaw();
-	const HeadCamera camera = headToCamera(head, headState.reference, bodyYaw, headState.anchor);
+	// The character height setting (#260) as the camera that renders takes it: the hands are placed from this
+	// camera, so they rise with the view and stay on the controllers (#482); the body stays on its feet
+	HeadCameraParams cameraParams;
+	cameraParams.heightOffsetMeters = headState.heightOffset;
+	const HeadCamera camera = headToCamera(head, headState.reference, bodyYaw, headState.anchor, cameraParams);
 	const Vec3f shift(camera.offset.x, 0.f, camera.offset.z);
 	for(Bone & bone : skeleton.bones) {
 		bone.anim.trans += shift;
@@ -714,18 +1017,36 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 
 	// The model faces where the body yaw of #25 says - the heading plus the body's offset after the
 	// head - not the heading the engine built the skeleton with: every bone turns about the vertical
-	// through the model's origin (the eye above was read before the turn: the camera does not turn)
+	// through the neck pivot under the eyes (#385.9; the eye above was read before the turn: the camera
+	// does not turn)
 	const float facingOffset = bodyStatus().offset;
 	if(std::abs(facingOffset) > 0.01f) {
-		const Vec3f root = skeleton.bones.front().anim.trans;
+		const Vec3f pivot(eye.x, 0.f, eye.z);
 		const glm::quat turn = glm::angleAxis(-glm::radians(facingOffset), Vec3f(0.f, 1.f, 0.f));
 		for(Bone & bone : skeleton.bones) {
-			bone.anim.trans = root + turnAboutVertical(bone.anim.trans - root, facingOffset);
+			bone.anim.trans = pivot + turnAboutVertical(bone.anim.trans - pivot, facingOffset);
 			bone.anim.quat = turn * bone.anim.quat;
 		}
 	}
 	const float facingYaw = bodyYaw + facingOffset;
 	status.facingYaw = wrapDegrees(facingYaw);
+
+	// The body hangs from the neck pivot below the eyes, pushed back behind them along its facing (#385.9,
+	// research F-471): looking down shows the chest and the legs ahead of the feet, not the inside of the
+	// shoulders. Only across the floor - the body keeps standing on its feet - and never the camera or the
+	// hands, which were placed from the eye above. A little looking ahead, more as the head looks down
+	BodyViewParams view = bodyViewParams();
+	const float pitch = camera.angle.getPitch(); // engine degrees in [0, 360), positive down
+	view.push = pushForPitch(pitch > 180.f ? pitch - 360.f : pitch, view);
+	const Vec3f modelNeck = eye + Vec3f(0.f, view.neckBelowEye, 0.f);
+	Vec3f push = bodyOffset(headCamera, facingYaw, modelNeck, view);
+	push.y = 0.f;
+	for(Bone & bone : skeleton.bones) {
+		bone.anim.trans += push;
+	}
+	g_body.shift = shift + push;
+	status.push = glm::length(push);
+	status.neckPivot = neckPivot(headCamera, facingYaw, view);
 
 	// The body's axes for the elbow hints: engine x right, y down, z forward
 	const float yaw = glm::radians(facingYaw);
@@ -771,18 +1092,49 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		const float upperLength = glm::length(upperVector);
 		const float forearmLength = glm::length(forearmVector);
 
+		// The base pole: the elbow bends down, back and a little outward; the hand's roll swings it
+		// from there (D-050)
 		const float side = (Hand(hand) == Hand::Right) ? 1.f : -1.f;
-		const Vec3f hint = down + right * (0.5f * side) - forward * 0.2f;
+		const Vec3f hint = down * ElbowPoleDown + right * (ElbowPoleOut * side) - forward * ElbowPoleBack;
 		ArmIKParams params;
 		params.maxShoulderSlide = MaxShoulderSlide;
-		const ArmPose pose = solveArm(upper.anim.trans, target, upperLength, forearmLength, hint, params);
+		ArmRollParams roll = rollParams();
+		if(!chain.frame.valid) {
+			// No controller orientation for this hand: nothing to share, the bones sit in their bend plane
+			roll.forearmShare = roll.upperShare = roll.elbowShare = 0.f;
+		}
+		// The logical arm - what the wrist bars, the held weapon and the status read - solves from the player's
+		// own shoulder, before the body was pushed back behind the eyes (#385.9: the push moves the drawn torso,
+		// never the arm the game reads); the custom arm hangs from the drawn, pushed shoulder below. With the Arx
+		// arms drawn the logical arm is the drawn one: it stays on the pushed shoulder, so the shoulder's band of
+		// faces is not stretched (the wrist bars read a second solve from the own shoulder, below)
+		const Vec3f shoulder = upper.anim.trans;
+		const Vec3f realShoulder = armsModelInfo().arxArms ? shoulder : shoulder - push;
+		const ArmRollPose posed = solveArmRoll(realShoulder, target, handQuat, upperLength, forearmLength, hint,
+		                                       chain.rest, params, roll, g_body.roll[hand]);
+		const ArmPose & pose = posed.pose;
 
-		// Write the chain back: world rotations that put each bone on its joints, the animated twist kept
+		// The wrist bars (#116) lie along the arm from the player's own shoulder: on the pushed one of the Arx
+		// arms the elbow sits back, and a watch pose turned the inner wrist some 15 degrees further from the
+		// eyes (wrist-vitals: 64 - 69 against 48). A second solve on a copy of the roll state, so the drawn arm's
+		// overflow side is untouched
+		Vec3f barsElbow = pose.elbow;
+		Vec3f barsWrist = pose.wrist;
+		if(realShoulder != shoulder - push) {
+			ArmRollState barsRoll = g_body.roll[hand];
+			const ArmPose bars = solveArmRoll(shoulder - push, target, handQuat, upperLength, forearmLength, hint,
+			                                  chain.rest, params, roll, barsRoll).pose;
+			barsElbow = bars.elbow;
+			barsWrist = bars.wrist;
+		}
+
+		// Write the chain back: every rotation built from the bend plane and the hand's roll, nothing
+		// of the animation's roll kept (research section 16a: the engine skins one bone per vertex, so
+		// a roll difference between two bones is drawn by the one band of faces between them)
 		upper.anim.trans = pose.shoulder;
-		upper.anim.quat = rotationBetween(upper.anim.quat * upperVector, pose.elbow - pose.shoulder) * upper.anim.quat;
+		upper.anim.quat = posed.upper;
 		forearm.anim.trans = pose.elbow;
-		const glm::quat forearmFollowing = upper.anim.quat * forearm.init.quat;
-		forearm.anim.quat = rotationBetween(forearmFollowing * forearmVector, pose.wrist - pose.elbow) * forearmFollowing;
+		forearm.anim.quat = posed.forearm;
 		handBone.anim.trans = pose.wrist;
 		handBone.anim.quat = chain.frame.valid ? handQuat : forearm.anim.quat * handBone.init.quat;
 
@@ -865,13 +1217,59 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		arm.shoulder = pose.shoulder;
 		arm.elbow = pose.elbow;
 		arm.wrist = pose.wrist;
+		arm.barsElbow = barsElbow;
+		arm.barsWrist = barsWrist;
 		arm.reach = pose.reach;
 		arm.armLength = upperLength + forearmLength;
 		arm.error = pose.error;
 		arm.slide = pose.slide;
 		arm.stretched = pose.stretched;
+		arm.handRoll = posed.handRoll;
+		arm.elbowSwing = posed.elbowSwing;
+		arm.residualRoll = posed.residualRoll;
+		arm.forearmRoll = posed.forearmRoll;
+		arm.upperRoll = posed.upperRoll;
+		arm.wristTwist = posed.wristTwist;
+		arm.elbowTwist = posed.elbowTwist;
+		arm.overflow = posed.overflow;
+		noteRollOverflow(hand, posed.overflow, posed.handRoll);
 		noteArm(hand, true, source);
 		any = true;
+
+		// How the drawn Arx arm bends along its rings (#466.1): on the classic skin when it is drawn, else on the engine's
+		const bool classic = armsModelInfo().classicSkin;
+		arm.armSkin = classic ? "classic" : "arx";
+		arm.bend = measureArm(chain.armRest, chain.diagnosis, classic ? chain.classicParts : chain.armRest.parts,
+		                      { upper.anim.quat, forearm.anim.quat, handBone.anim.quat });
+
+		// The custom arm (#385.3) hangs from this logical arm's shoulder and solves its own chain (#385.6); its Arx
+		// faces are then not drawn (drawsBodyFace)
+		if(chain.frame.valid) {
+			LogicalArm logical;
+			logical.shoulder = shoulder;
+			logical.hand = handQuat;
+			logical.rest = chain.rest;
+			logical.restElbow = chain.restElbow;
+			logical.elbowHint = hint;
+			logical.holdsWeapon = holds;
+			logical.roll = roll;
+			logical.grip = grip;
+			logical.gripOrientation = placement.orientation;
+			logical.upperLength = upperLength;
+			logical.forearmLength = forearmLength;
+			logical.arxWrist = pose.wrist;
+			// The glove's five fingers (#385.4) read the same sources as the Arx fingers above
+			logical.joints = joints;
+			logical.fingers.controls = std::strcmp(source, "xr") == 0;
+			if(logical.fingers.controls) {
+				const ControllerInput & input = controllerInput();
+				logical.fingers.trigger = input.trigger[hand];
+				logical.fingers.grip = input.grip[hand];
+				logical.fingers.thumbTouch = input.thumbTouch[hand];
+			}
+			logical.seconds = seconds;
+			poseCustomArm(Hand(hand), logical);
+		}
 	}
 	for(size_t hand = 0; hand < HandCount; hand++) {
 		if(!status.hands[hand].posed) {
@@ -882,6 +1280,11 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	if(any) {
 		status.posedFrames++;
 	}
+	const ArmRollParams roll = rollParams();
+	status.forearmShare = roll.forearmShare;
+	status.upperShare = roll.upperShare;
+	status.elbowShare = roll.elbowShare;
+	status.twistOverflow = roll.overflowDegrees;
 	noteBody(any, any ? "" : "no tracked hand");
 }
 
@@ -899,7 +1302,7 @@ bool isHeadVertex(EERIE_3DOBJ * obj, VertexId vertex) {
 		return false;
 	}
 	if(g_body.boundObject != obj || g_body.boundGroups != obj->grouplist.size()
-	   || g_body.boundVertices != obj->vertexlist.size()) {
+	   || g_body.boundVertices != obj->vertexlist.size() || g_body.boundFaces != obj->facelist.size()) {
 		bind(obj);
 	}
 	return size_t(vertex) < g_body.headVertex.size() && g_body.headVertex[size_t(vertex)];
@@ -907,6 +1310,122 @@ bool isHeadVertex(EERIE_3DOBJ * obj, VertexId vertex) {
 
 size_t bodyCapStart(const EERIE_3DOBJ * obj) {
 	return (obj && obj == g_body.boundObject) ? g_body.capStart : (obj ? obj->facelist.size() : 0);
+}
+
+void skinPlayerArms(EERIE_3DOBJ * obj) {
+
+	if(!obj || obj != g_body.boundObject || !obj->m_skeleton) {
+		return;
+	}
+	g_body.reskinned.clear();
+	if(!armsModelInfo().classicSkin) {
+		return;
+	}
+	const Skeleton & rig = *obj->m_skeleton;
+	PlayerBodyStatus & status = g_body.status;
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		const ArmChain & chain = g_body.chains[hand];
+		if(!chain.valid || !status.hands[hand].posed || chain.classicParts.size() != obj->vertexlist.size()) {
+			continue;
+		}
+		for(VertexId vertex : chain.reassigned) {
+			const ArmPart part = chain.classicParts[size_t(vertex)];
+			const VertexGroupId group = (part == ArmPart::Upper) ? chain.upper : (part == ArmPart::Forearm) ? chain.forearm
+			                            : chain.hand;
+			const Bone & bone = rig.bones[group];
+			const Vec3f local = obj->vertexlist[vertex].v - obj->vertexlist[obj->grouplist[group].origin].v;
+			obj->vertexWorldPositions[vertex].v = skinOnBone(bone.anim.quat, bone.anim.trans, bone.anim.scale, local);
+			g_body.reskinned.push_back({ vertex, bone.anim.quat });
+		}
+		status.hands[hand].classicDrawn = true;
+		// The glove at the wrist (#466.2): how far the Arx wrist ring, as skinned now, lies from the glove's cuff
+		const std::vector<VertexId> & ring = g_body.arxWristRing[hand];
+		if(arxHandHidden(Hand(hand)) && !ring.empty()) {
+			Vec3f centre(0.f);
+			for(VertexId vertex : ring) {
+				centre += obj->vertexWorldPositions[vertex].v;
+			}
+			noteArxWristRing(Hand(hand), centre / float(ring.size()));
+		}
+	}
+}
+
+const std::vector<ReskinnedVertex> & reskinnedArmVertices(const EERIE_3DOBJ * obj) {
+	static const std::vector<ReskinnedVertex> none;
+	return (obj && obj == g_body.boundObject) ? g_body.reskinned : none;
+}
+
+bool drawsBodyFace(const EERIE_3DOBJ * obj, size_t face) {
+	if(!obj || obj != g_body.boundObject || face >= g_body.faceRole.size()) {
+		return true;
+	}
+	const u8 role = g_body.faceRole[face];
+	const bool hidden = bodyMode() == BodyMode::Hidden;
+	if(role == FaceBody) {
+		return !hidden;
+	}
+	if(role >= FaceArmCap) {
+		// The cap closes the torso's shoulder while the custom arm is drawn; with the body hidden it closes the open
+		// end of the Arx arm drawn alone
+		const bool customArm = customArmDrawn(Hand(role - FaceArmCap));
+		return hidden ? !customArm : customArm;
+	}
+	const Hand hand = Hand(role - FaceArm);
+	if(customArmDrawn(hand)) {
+		return false;
+	}
+	// The classic arm's Arx hand while our glove is drawn at its wrist (#466.2)
+	return !(arxHandHidden(hand) && face < g_body.arxHandFace.size() && g_body.arxHandFace[face]);
+}
+
+BodyMode parseBodyMode(std::string_view text) {
+	return (util::toLowercase(std::string(text)) == "hidden") ? BodyMode::Hidden : BodyMode::Full;
+}
+
+bool parseBodyModeStrict(std::string_view text, BodyMode & mode) {
+	const std::string name = util::toLowercase(std::string(text));
+	if(name == "full") {
+		mode = BodyMode::Full;
+	} else if(name == "hidden") {
+		mode = BodyMode::Hidden;
+	} else {
+		return false;
+	}
+	return true;
+}
+
+const char * bodyModeName(BodyMode mode) {
+	return mode == BodyMode::Hidden ? "hidden" : "full";
+}
+
+BodyMode bodyMode() {
+	return parseBodyMode(config.input.vrBody);
+}
+
+void setBodyMode(BodyMode mode, const char * by) {
+	const char * name = bodyModeName(mode);
+	if(config.input.vrBody != name) {
+		config.input.vrBody = name;
+		config.save();
+		LogInfo << "[vr] body: mode " << name << " (" << by << ")";
+		gameevent::Event("vr.body.mode")("mode", name)("by", by);
+	}
+}
+
+void noteBodyFaceDrawn(const EERIE_3DOBJ * obj, size_t face) {
+	if(!obj || obj != g_body.boundObject) {
+		return;
+	}
+	const bool arm = face < g_body.faceRole.size() && g_body.faceRole[face] != FaceBody;
+	(arm ? g_body.drawingArmFaces : g_body.drawingBodyFaces)++;
+}
+
+bool hidesBodyFaceNearEye(const EERIE_3DOBJ * obj, size_t face) {
+	if(!obj || obj != g_body.boundObject) {
+		return false;
+	}
+	updateNearEye(obj);
+	return face < g_body.nearEye.size() && g_body.nearEye[face];
 }
 
 bool handLandmarks(Hand hand, HandLandmarks & landmarks) {
@@ -960,7 +1479,11 @@ void clearSimulatedHand(Hand hand) {
 }
 
 const PlayerBodyStatus & playerBodyStatus() {
-	return g_body.status;
+	PlayerBodyStatus & status = g_body.status;
+	status.armsModel = armsModelName(armsModel());
+	status.arxArmsHidden = customArmDrawn(Hand::Left) || customArmDrawn(Hand::Right);
+	status.bodyMode = bodyModeName(bodyMode());
+	return status;
 }
 
 } // namespace vr

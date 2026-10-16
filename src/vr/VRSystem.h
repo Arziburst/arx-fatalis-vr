@@ -261,6 +261,8 @@ struct HandJointsStatus {
 	bool extension = false;  //!< the runtime lists the extension and the instance has its functions
 	bool supported = false;  //!< the headset reports hand tracking
 	bool trackers = false;   //!< a tracker per hand exists on the session
+	//! XR_EXT_hand_joints_motion_range is enabled: the joints are asked for conforming to the controller (#385.7)
+	bool motionRange = false;
 	std::array<bool, HandCount> active = { { false, false } }; //!< the joints were located in the last frame
 	u64 locates = 0;         //!< frames the joints were asked for
 	std::array<u64, HandCount> activeFrames = { { 0, 0 } };   //!< frames with active joints per hand
@@ -336,6 +338,9 @@ void setMenuOpen(const char * menu);
  */
 void setSceneScreen(bool on);
 
+//! \return true while this frame is drawn flat for the scene's screen (#29): the game's own flat picture
+bool sceneScreenFrame();
+
 //! The floating UI panel as status.json reports it (#49)
 struct PanelStatus {
 	std::string mode = "head";     //!< "world" while the panel is placed for an open menu, else "head"
@@ -405,6 +410,41 @@ void setHandReticle(Hand hand, bool shown, const Vec3f & hit = Vec3f(0.f), bool 
 
 //! The hand's reticle was part of the last submitted frame
 bool handReticleShown(Hand hand);
+
+//! The radial menu images' size in pixels, square (#376)
+const s32 RadialImagePixels = 512;
+
+/*!
+ * \brief Draw a hand's radial menu image this frame (#376): its own swapchain becomes the render target
+ *
+ * The image (\ref RadialImagePixels square, made with the session) is cleared to transparent; the caller
+ * draws the menu in 2D (premultiplied by the renderer's alpha, like the flat frame) and calls
+ * \ref endRadialImage. Only in stereo frames.
+ * \return false when the frame is not a stereo frame or the session has no image for it (logged once)
+ */
+bool beginRadialImage(Hand hand);
+
+//! Both radial menu images were made with the session (status.json: vr.radial.images)
+bool radialImagesMade();
+
+//! Hand the image back to the compositor and make the flat frame the render target again
+void endRadialImage(Hand hand);
+
+/*!
+ * \brief A hand's radial menu for this frame (#376): its image as a quad layer on top of everything
+ *
+ * \a center and \a orientation in the LOCAL space (meters; the face +z towards the eyes), \a size its
+ * width and height. Drawn only when \ref endRadialImage released an image this frame. Set every frame -
+ * \c shown false hides it.
+ */
+void setRadialLayer(Hand hand, bool shown, const Vec3f & center = Vec3f(0.f),
+                    const glm::quat & orientation = glm::quat(1.f, 0.f, 0.f, 0.f), float size = 0.f);
+
+//! The hand's radial menu was part of the last submitted frame
+bool radialLayerShown(Hand hand);
+
+//! Why the last \ref beginRadialImage of the hand drew nothing ("not a stereo frame", ...), empty when it drew (#377)
+const char * radialImageRefusal(Hand hand);
 
 //! Place the panel anew at the head on the next frame while a menu is open (a recenter, F-180)
 void recenterPanel();

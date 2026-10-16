@@ -14,7 +14,10 @@
 @assert scene.shown eq none
 scene view first
 
-# T1: Kultar's scene, three voiced lines, placement above
+# T1: Kultar's scene, three voiced lines, placement above. With the HUD frame off (#471) the engine's speech text
+# under the letterbox is never drawn in VR: the scene's subtitles are this view's own, not the engine's band
+@assert vr.hud.frame eq off
+vr-hud reset
 scene subtitles above
 scene meter reset
 vr-input stick left 0 1
@@ -28,6 +31,7 @@ vr-input stick left 0 0
 @assert vr.sim.shots.sub-t1.left.scene.verdict ne background
 @assert vr.sim.shots.sub-t1.right.scene.verdict ne background
 @until scene.active eq false 120s
+@assert vr.hud.drawn.speech eq 0                 # the engine's band drew nothing, the subtitles above were ours
 @nolog vr\.scene\.subtitle .*speaker=player
 @log vr\.scene\.subtitle placement=above speaker="Am Shaegar"     # the hero's own line names him (the owner, #29)
 @assert scene.subtitle.voicedLines ge 3

@@ -148,7 +148,13 @@ public:
 	
 	float getScale();
 	const Rectf & getArea();
-	
+
+	/*!
+	 * Where the bookmark of a page is on the interface while the book is open (the test channel's
+	 * vr-point <hand> menu book_<page>, #377); false for the page shown, which has no bookmark
+	 */
+	bool tabRect(ARX_INTERFACE_BOOK_MODE page, Rectf & rect) const;
+
 private:
 	
 	Vec2f lastRatio;

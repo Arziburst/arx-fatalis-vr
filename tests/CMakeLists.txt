@@ -97,10 +97,20 @@ set(arxtest_TESTCASES
 
 	tests/vr/ArmIKTest.h
 	tests/vr/ArmIKTest.cpp
+	tests/vr/ArmRollTest.h
+	tests/vr/ArmRollTest.cpp
+	tests/vr/ArxArmFixTest.h
+	tests/vr/ArxArmFixTest.cpp
 	tests/vr/WristVitalsTest.h
 	tests/vr/WristVitalsTest.cpp
+	tests/vr/HudFrameTest.h
+	tests/vr/HudFrameTest.cpp
 	tests/vr/WeaponGripTest.h
 	tests/vr/WeaponGripTest.cpp
+	tests/vr/WeaponInGloveTest.h
+	tests/vr/WeaponInGloveTest.cpp
+	tests/vr/WeaponHiltFrameTest.h
+	tests/vr/WeaponHiltFrameTest.cpp
 	tests/vr/MeleeSwingTest.h
 	tests/vr/MeleeSwingTest.cpp
 
@@ -112,6 +122,32 @@ set(arxtest_TESTCASES
 
 	tests/vr/FingerCurlTest.h
 	tests/vr/FingerCurlTest.cpp
+
+	tests/vr/ArmMeshTest.h
+	tests/vr/ArmMeshTest.cpp
+
+	tests/vr/HandRigTest.h
+	tests/vr/HandRigTest.cpp
+
+	tests/vr/CustomFingersTest.h
+	tests/vr/CustomFingersTest.cpp
+
+	tests/vr/HandConformingTest.h
+	tests/vr/HandConformingTest.cpp
+
+	tests/vr/HandShapeTest.h
+	tests/vr/HandShapeTest.cpp
+
+	tests/vr/ArmFitTest.h
+	tests/vr/ArmFitTest.cpp
+
+	tests/vr/BodyViewTest.h
+	tests/vr/BodyViewTest.cpp
+	tests/vr/BodyPushTest.h
+	tests/vr/BodyPushTest.cpp
+
+	tests/vr/RadialMenuTest.h
+	tests/vr/RadialMenuTest.cpp
 
 	tests/vr/PerfStatsTest.h
 	tests/vr/PerfStatsTest.cpp
@@ -164,14 +200,22 @@ set(arxtest_SOURCES
 	src/vr/MenuPointer.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/ArmIK.cpp
+	src/vr/ArmRoll.cpp
+	src/vr/ArxArmFix.cpp
 	src/vr/WristVitals.cpp
 	src/vr/HandReticle.cpp
 	src/vr/WeaponGrip.cpp
 	src/vr/Locomotion.cpp
 	src/vr/FingerCurl.cpp
+	src/vr/ArmMesh.cpp
+	src/vr/HandRig.cpp
+	src/vr/ArmFit.cpp
+	src/vr/BodyView.cpp
 	src/vr/RuneTrail.cpp
 	src/vr/MeleeSwing.cpp
 	src/vr/SceneView.cpp
+	src/vr/RadialMenu.cpp
+	src/vr/HudFrame.cpp
 
 
 	${arxtest_TESTCASES}

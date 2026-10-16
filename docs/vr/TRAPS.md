@@ -8,6 +8,71 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-14 — The Arx arm grows a second elbow in the middle of the forearm, though the IK has only one (#466.1)
+
+**Symptom:** with the Arx arms drawn (`arms arx`) the owner sees a second elbow and wants the arm one solid
+piece up to the elbow; the research blamed the flat upper-arm rings (H1) or a few faces spanning the upper arm
+and the wrist (H2), and later the upper arm's last ring past the elbow (F-308).
+**Cause (measured on `human_base`, both arms, the `[vr] body: ... Arx arm` bind line):** the forearm group
+`right_elbow` holds only the forearm's first third - 11 vertices, 2.5 .. 11.3 units past the elbow on a 30.5 bone.
+The other two thirds are skinned to the **wrist** group: 8 vertices at 10.7 .. 20.1 past the elbow (14 of the wrist
+group's vertices lie before the wrist joint, the wrist ring included). So every bend of the wrist and the wrist
+band's share of the roll fold the forearm in its middle, across the 12 faces between the two groups. One of those
+wrist vertices (671 right, 10.7 past the elbow) is joined straight to the upper arm's 92 and 674 by 3 faces (143,
+1198, 1210): H2's web. The elbow ring itself mixes 6 upper-arm vertices (up to 3.1 past the joint) with 4 of the
+forearm (2.5 .. 3.9), so even the elbow folds in two bands. H1 is not it: only one upper-arm ring is flat (mid
+upper arm, rigid on one bone). Measured with `vr.body.<hand>.classic` (`arms arx`): 2 - 4 bands bent past 20
+degrees at the elbow bent 57 - 111 degrees, the forearm rings' roll spread up to 55.6 degrees with the hand
+rolled 180.
+**Do:** read the arm by where its vertices are, not by their group (`vr/ArxArmFix.h` `diagnoseArxArm`). `arms
+classic` re-skins by ring in VR only (`skinPlayerArms` after the engine's transform): one band bent, spread 0.
+A crease count on a **straight** arm is 0, not 1 - pick the bent poses for `eq 1`. human_base reloads on every
+equipment change; the classic parts are rebuilt in `bind`, which runs again for the new object.
+## 2026-10-14 — The build fails with `git.exe ... missing and no known rule to make it` after a Git update (#377)
+
+**Symptom:** `build-windows.ps1` stops at "Building" with
+`ninja: error: 'C:/Program Files/Git/mingw64/bin/git.exe', needed by 'arx-version.rc', missing and no known rule to make it`.
+The same build directory built a few minutes earlier, and `git` works in the shell.
+**Cause:** Git for Windows 2.56 moved its binaries from `mingw64\bin` to `ucrt64\bin`. CMake found git once and keeps
+its path in the build directory's cache (`GIT_COMMAND:FILEPATH` in `CMakeCache.txt`); the version rule depends on that
+file, so ninja refuses to build. Every existing build directory has the old path; a fresh one does not.
+**Do:** set `GIT_COMMAND:FILEPATH=C:/Program Files/Git/ucrt64/bin/git.exe` in that build directory's
+`CMakeCache.txt` (or build with `-Clean`), then build again.
+
+## 2026-10-14 — `input-check.ps1` / `game-input-check.ps1`: trigger and face-button presses are not counted on `--loadlevel 10` (#473)
+
+**Symptom:** the control table check reports `use_right`, `act_right`, the chord's `jump` and `book` as 0 presses;
+only the stick taps (jump, crouch, the stick click) count. Neither check runs in CI.
+**Cause:** level 10 starts with a scripted scene (`scene state=start ... controlsBlocked=yes`). Since #394, A, B and
+the triggers skip a playing scene and reach nothing else, so the presses the check sends in the scene's first seconds
+skip it (`vr.skip what=SCENE` in arx.log) and never reach the control table.
+**Do:** until #473 is fixed, do not count these two checks as evidence; the `.xrs` sequences wait for
+`player.controlsBlocked eq false` first.
+
+## 2026-10-14 — `playground-hands.xrs`: the left hand's reticle misses the pulled lever on CI, passes locally (#377)
+
+**Symptom:** CI run 38477911299 (PR #456) failed at `@until vr.reticle.left.under eq lever_9002 5s`: the ray hit
+the wall at (8378.7, -128.4, 8400), right behind the handle. The same sequence on the same commit passed 243/243
+locally; both runs aimed at the same face (8378.6, -130.5, 8399.2).
+**Cause:** the hands of the idle rig still rise after a `setpos` - the left hand's start was y -135.6 at the
+first aim, -127.2 at the second and -125.1 a moment later on the busy runner (locally the second aim already started
+at -125.1). `vr-point` aims from where the hand is in that frame, so the ray drifted 2 units up past the pulled
+handle, which lies 0.8 units in front of the wall.
+**Do:** after a teleport give the hands 30 frames and aim at a thin target once more before waiting on the reticle
+(`playground-hands.xrs` does this for the lever).
+
+## 2026-10-13 — A quad layer is in every simulated shot and invisible in the headset (#376)
+
+**Symptom:** the radial menus passed their sequence on the simulated headset (drawn, `overlayPixels` in both eyes)
+and could not be seen at all on the owner's Index, while the log showed them opening, hovering and running items.
+**Cause:** their swapchains were made lazily, the first time a menu opened - in `updateInput`, inside the frame,
+while the flat frame quad's image was acquired. SteamVR answered `xrCreateSwapchain` with
+`XR_ERROR_RUNTIME_FAILURE` (one `[E] VRSwapchain` line, then the menus worked unseen); the simulated runtime made it.
+Every other lazily made swapchain (beam, reticles) is made in `submitFrame` after the quad's release.
+**Do:** make swapchains with the session, or at least with no image of any swapchain acquired. The simulated runtime
+now refuses `xrCreateSwapchain` while another swapchain's image is acquired, with an `[E]` line, as SteamVR did; read
+the run digest of a headset run for `[E] VRSwapchain` before suspecting the composition.
+
 ## 2026-10-13 — In VR the inventory will not close and melee is refused after New game or `--loadlevel` (#394.5)
 
 **Symptom:** a new game or a `--loadlevel` start in VR: the inventory stays open (closing it reopens it), `melee.state state=off reason=inventory`; a save load is fine, and so is New game in a player's launch.
@@ -178,6 +243,17 @@ pointer dangled. The radial menu's quick load in a real game takes the same path
 **Do:** never keep an `Entity *` across frames without resolving it again - `heldEntity()` checks it against
 the player's weapon slot. Regression check: the end of `reach-lever.xrs` (`loadslot 0` with the sword held,
 then `vr.weapon.place eq hand`), and every `make-test-saves.ps1 -VrSim` run reloads all its saves.
+
+## 2026-10-13 — The game crashes on quit in `FT_Done_Face` after a feature drew text (#376)
+
+**Symptom:** a run that worked ends with exit code 1, no `Clean shutdown`, and a crash report whose stack is
+`freetype.dll!FT_Done_Face()` under `xtree` / `xmemory` from `ArxGame.cpp` (the shutdown). Nothing in the log says why.
+**Cause:** a `Font` taken with `FontCache::getFont` and never given back with `FontCache::releaseFont`. At the exit
+`FontCache::shutdown` deletes the cache: its destructor only *asserts* that every font was released (nothing in a
+Release build), frees the FreeType library, and then the leaked font's face is destroyed against the freed library.
+The first radial menu kept two fonts of its own for the whole run.
+**Do:** draw with the game's fonts (`hFontControls`, `hFontInGame`, … in `gui/Text.h`: the right language's glyphs,
+replaced when the interface is laid out again), or release an own font before `ARX_Text_Close`.
 
 ## 2026-10-12 — An instant `vr-sim hand ... pos` set-up move counts as a melee swing on a busy runner (#349)
 
@@ -386,6 +462,10 @@ A joint-position check cannot see it.
 its arms, what Arx's model and textures allow: twist bones, roll limits, a separate VR arm rig). Until then,
 judge arms in the headset or on a capture with the controllers *rolled*, not from `vr.body` alone; the
 `arms-follow` sequence rolls nothing.
+**Resolved by #304 (D-050):** the three arm rotations are built from the bend plane and the hand's roll is
+shared along the arm (vr/ArmRoll.h); `vr.body.<hand>.wristTwist` / `elbowTwist` / `upperRoll` now say what each
+band of faces carries, and the `arms-roll` sequence rolls the controller 0–180° and asserts on them. The lesson
+stays: a joint-position check sees no twist.
 
 ## 2026-10-09 — The body is nowhere in a `--vr-sim` shot that looks down, although `vr.body` says both arms are posed with `error` 0 (#36)
 
@@ -1242,3 +1322,26 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** `<npc>.speak -c ... [kultar_letmeout2]` plays, but `scene.subtitle.text` stays empty and `voicedLines` does not count it (#29).
 **Cause:** a speech variant's text is not a section named after its sample (`kultar_letmeout2.wav`): it is the key `string2` in the line's own section `[kultar_letmeout]`. No section `[kultar_letmeout2]` exists.
 **Do:** speak the line's own key (`[kultar_letmeout]`); the subtitle takes the text of the variant actually played (`string<N>`).
+## 2026-10-13 - A file under data/core is in the repository but the game says "not found"
+**Symptom:** `[W] VRArms: [vr] arms: vr/arms/Hand_Glove_low_R.gltf not found` (#385.3), while the file is in `data/core/vr/arms/` and the build's data dirs point at `data/core`; the host tests that load the same file pass.
+**Cause:** two rules of the resource system. `src/io/resource/ResourceSetup.cpp` mounts only a fixed list of top-level folders of each data dir (`editor`, `game`, `graph`, `localisation`, `misc`, `sfx`, `speech`, and now `vr`), so a new folder is invisible until it is added there; and every resource name is lower case (`PakReader::addFiles`), so `vr/arms/Hand_Glove_low_R.gltf` must be asked for as `vr/arms/hand_glove_low_r.gltf`. Host tests read data/core straight from the source tree and see neither rule.
+**Do:** a new folder under data/core goes into that list in the same change; ask for resources in lower case; prove an asset in a game run (a sequence that asserts the loaded state), not only in a host test.
+
+## 2026-10-13 - A test or source file fails to compile with C2059 "syntax error: 'const'" on an innocent name
+**Symptom:** `tests/vr/ArmMeshTest.cpp(48): error C2059: syntax error: 'const'` on a helper `void near(...)`, or C2628 "'vr::SleeveParams' followed by 'char'" on a variable named `small` (#385.1).
+**Cause:** `arx` and `arxtest` are unity builds (`ub_arxtest.cpp`): `windows.h`, included earlier in the same unit by FilesystemWindows.cpp, Process.cpp or WindowsUtils.cpp, defines the macros `near` and `far` (empty) and `small` (`char`). Names in anonymous namespaces also collide across the files of one unit.
+**Do:** never name anything `near`, `far` or `small`; give file-scope helpers unique names (a file prefix).
+## 2026-10-13 - In the playground a hand's press lands on the panel, not on the lever it aims at
+**Symptom:** `--vr-sim` in the playground (`-Playground`): the reticle is on a lever (`vr.reticle.right.entity`), grip + trigger fires `act_right`, but nothing is pulled; `vr.pointer.click hand=right` is logged instead, `vr.panel.menu` is `inventory`. `ui inventory close` closes the bag and the next frame opens it again (#38).
+**Cause:** a level started with `--loadlevel` stays in the engine's cursor mode (no free look), and in cursor mode the engine keeps the inventory open: the floating panel hangs in front of the hands and takes their rays. Opening a chest or a body leaves free look again (the original's own rule).
+**Do:** `freelook on; ui inventory close` before the hands act in the world, and again after a drag from a chest or a body (`playground-hands.xrs`). For the player this goes with the first-run flow (#394 / #405).
+
+## 2026-10-13 - `vr-point` hits the wall behind a lever, or the hover passes and is gone again
+**Symptom:** `vr-point right entity lever_9002`: the ray ends on the wall 5 units behind the lever (`vr.reticle.right.point` z 8400), `under` stays `none`; or `@until vr.reticle.right.entity eq lever_9002` passes and the act a few frames later finds nothing (#38).
+**Cause:** two things. A lever on a wall is thin: the middle of its box is air, and a pulled lever's handle lies against the wall. And turning a simulated hand moves the start of its aim ray (it turns about the grip): the aim is computed from where the ray started before the turn, a few degrees off for a small target - the hover can catch the lever on the way and keep it for its 150 ms hold.
+**Do:** `vr-point <hand> face <id>` (a face of the mesh the hand's ray reaches without the level in the way), given twice a few frames apart; wait for `under` (this frame) before `entity` (the hover).
+
+## 2026-10-13 - An item dragged from a chest onto the bag falls back into the chest or is thrown
+**Symptom:** `vr-point right container`, trigger down, `vr-point right <bag pixel>`, trigger up: `item.toinventory container=chest_...` (back in the chest) or `item.drop how=throw`, never into the bag (#38).
+**Cause:** the engine puts a dragged item where its **icon** is - the cursor plus the offset the icon had when the drag started (`g_draggedIconOffset`). A simulated hand jumps: the pointer holds the press pixel inside its click dead zone (16 px), so the drag starts only on the jump, with the cursor already at the bag and an offset of hundreds of pixels; and after a short move the icon still hangs beside the cursor, left of the slot it aims at.
+**Do:** move the hand past the dead zone first (`vr-point right container 30 0`, a few frames), then `vr-point right bag` - it aims so that the icon covers the first free slot. A real hand moves gradually and places the icon by eye.

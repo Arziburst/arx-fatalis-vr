@@ -25,6 +25,16 @@ export const NPC_SPOT = { x: 200, y: 0, z: 100 }
 export const LEVER_WALL = { z: ROOM.depth / 2 - 5, xMode: 280, xRespawn: 380 }
 export const LEVER_HEIGHT = 130
 
+// Things worked by hand (#38), all within a few steps of the hero's start: a door standing free west of the middle (the
+// game's light_door, closed and unlocked, facing the hero), a metal chest by the east wall holding CHEST_ITEMS, and a dead
+// goblin ahead of the hero holding CORPSE_ITEMS. Yaw in degrees as for the levers (180 faces south, into the room)
+export const DOOR = { x: -150, z: 150, yaw: 180 }
+export const CHEST = { x: 420, z: 60, yaw: 90 }
+export const CORPSE = { x: 100, z: -50, yaw: 180 }
+// Class paths under graph/obj3d/interactive/items, as the script command `inventory add` takes them
+export const CHEST_ITEMS = ['magic/potion_life/potion_life', 'provisions/bread/bread']
+export const CORPSE_ITEMS = ['provisions/cheese/cheese', 'provisions/food_apple/food_apple']
+
 // A long table along the west wall for the weapons: WEAPON_COLUMNS columns, rows along the wall (321.2)
 export const WEAPON_TABLE = { x: -400, z: 0, width: 180, depth: 620, height: 90, top: 8 }
 export const WEAPON_COLUMNS = 4

@@ -52,6 +52,7 @@ class SimRigTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testShotCannotBeARamp);
 	CPPUNIT_TEST(testFocusAndFault);
 	CPPUNIT_TEST(testFingers);
+	CPPUNIT_TEST(testFiveFingers);
 	CPPUNIT_TEST(testSessionEndsAndExitFaults);
 	CPPUNIT_TEST_SUITE_END();
 
@@ -77,6 +78,7 @@ public:
 	void testShotCannotBeARamp();
 	void testFocusAndFault();
 	void testFingers();
+	void testFiveFingers();
 	void testSessionEndsAndExitFaults();
 
 };

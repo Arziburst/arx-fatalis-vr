@@ -84,6 +84,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "util/Range.h"
 
 #include "vr/SceneSubtitles.h"
+#include "vr/VRHud.h"
 #include "vr/VRSystem.h"
 
 
@@ -383,6 +384,12 @@ void ARX_SPEECH_Update() {
 	
 	if(!cinematicBorder.isActive() || cinematicBorder.CINEMA_DECAL < 100.f) {
 		vr::noteFlatSubtitle(false);
+		return;
+	}
+	
+	// The speech text under the letterbox: not drawn in VR, where the owner decides its place (#469) - but a scene
+	// shot on the hybrid's screen is the game's own flat picture, its band included (#29)
+	if(!vr::sceneScreenFrame() && !vr::hudDraw(vr::HudElement::Speech)) {
 		return;
 	}
 	

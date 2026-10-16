@@ -19,6 +19,7 @@
 
 #include "vr/FingerCurlTest.h"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 
@@ -52,7 +53,7 @@ vr::HandShape handShape(float thumb, float index, float fingers) {
 	vr::HandShape shape;
 	shape.thumb = thumb;
 	shape.index = index;
-	shape.fingers = fingers;
+	shape.middle = shape.ring = shape.little = fingers;
 	return shape;
 }
 
@@ -210,4 +211,198 @@ void FingerCurlTest::testApproachStepsTowardsTheTarget() {
 	// No step: nothing moves; a negative step is no step
 	curlCheckAll("zero step", vr::FingerCurl(), vr::approachCurl(vr::FingerCurl(), closed, 0.f));
 	curlCheckAll("negative step", vr::FingerCurl(), vr::approachCurl(vr::FingerCurl(), closed, -5.f));
+}
+
+// ---- Five-finger pose (#385, 385.2) ----
+
+namespace {
+
+//! Joint angles are exact geometry in float: a couple of degrees is generous
+const float PoseEpsilon = 2.f;
+
+const char * const FingerNames[] = { "thumb", "index", "middle", "ring", "little" };
+
+float & shapeOf(vr::HandShape & shape, size_t finger) {
+	float * fields[] = { &shape.thumb, &shape.index, &shape.middle, &shape.ring, &shape.little };
+	return *fields[finger];
+}
+
+//! The synthesized angle at each joint of a fully closed finger (the thumb's metacarpal joint has no synthesized bend)
+const float ClosedAngles[5][3] = {
+	{ 0.f, 50.f, 70.f }, { 90.f, 100.f, 70.f }, { 90.f, 100.f, 70.f }, { 90.f, 100.f, 70.f }, { 90.f, 100.f, 70.f },
+};
+
+float poseFlex(const vr::FingerPose & pose, size_t finger, size_t joint) {
+	return pose.flex[finger][joint];
+}
+
+//! Compares every joint; the thumb's metacarpal joint is skipped (the synthesized hand does not define it)
+void poseCheck(const char * what, const vr::FingerPose & expected, const vr::FingerPose & actual, float tolerance) {
+	for(size_t finger = 0; finger < 5; finger++) {
+		for(size_t joint = (finger == 0) ? 1 : 0; joint < 3; joint++) {
+			curlCheck((std::string(what) + ": " + FingerNames[finger] + " joint " + std::to_string(joint)).c_str(),
+			          poseFlex(expected, finger, joint), poseFlex(actual, finger, joint), tolerance);
+		}
+	}
+}
+
+} // anonymous namespace
+
+void FingerCurlTest::testPoseEachFingerClosedAlone() {
+	for(size_t closed = 0; closed < 5; closed++) {
+		vr::HandShape shape;
+		shapeOf(shape, closed) = 1.f;
+		const vr::HandJoints joints = vr::synthesizeHandJoints(vr::Hand::Right, shape);
+		CPPUNIT_ASSERT(joints.valid);
+		const vr::FingerPose pose = vr::fingerPoseFromJoints(joints);
+		for(size_t finger = 0; finger < 5; finger++) {
+			for(size_t joint = (finger == 0) ? 1 : 0; joint < 3; joint++) {
+				const float expected = (finger == closed) ? ClosedAngles[finger][joint] : 0.f;
+				curlCheck((std::string(FingerNames[closed]) + " closed alone: " + FingerNames[finger] + " joint "
+				           + std::to_string(joint)).c_str(), expected, poseFlex(pose, finger, joint), PoseEpsilon);
+			}
+		}
+	}
+}
+
+void FingerCurlTest::testPoseOpenAndInvalidHand() {
+	vr::HandShape open;
+	const vr::FingerPose pose = vr::fingerPoseFromJoints(vr::synthesizeHandJoints(vr::Hand::Right, open));
+	poseCheck("open hand", vr::FingerPose(), pose, PoseEpsilon);
+	// Joints that were not located: an open hand, never garbage - including the thumb's first joint and the spread
+	vr::HandShape fist;
+	fist.thumb = fist.index = fist.middle = fist.ring = fist.little = 1.f;
+	vr::HandJoints none = vr::synthesizeHandJoints(vr::Hand::Right, fist);
+	none.valid = false;
+	const vr::FingerPose invalid = vr::fingerPoseFromJoints(none);
+	for(size_t finger = 0; finger < 5; finger++) {
+		curlCheck("invalid joints: spread", 0.f, invalid.spread[finger], 0.0001f);
+		for(size_t joint = 0; joint < 3; joint++) {
+			curlCheck("invalid joints: flex", 0.f, poseFlex(invalid, finger, joint), 0.0001f);
+		}
+	}
+	// A real fist reaches the synthesized angles on every finger
+	const vr::FingerPose closed = vr::fingerPoseFromJoints(vr::synthesizeHandJoints(vr::Hand::Right, fist));
+	for(size_t finger = 0; finger < 5; finger++) {
+		for(size_t joint = (finger == 0) ? 1 : 0; joint < 3; joint++) {
+			curlCheck("fist", ClosedAngles[finger][joint], poseFlex(closed, finger, joint), PoseEpsilon);
+		}
+	}
+}
+
+void FingerCurlTest::testPoseIgnoresTheSpaceAndTheHand() {
+	vr::HandShape shape;
+	shape.thumb = 0.6f;
+	shape.index = 0.3f;
+	shape.middle = 0.8f;
+	shape.ring = 0.5f;
+	shape.little = 1.f;
+	const vr::FingerPose reference = vr::fingerPoseFromJoints(vr::synthesizeHandJoints(vr::Hand::Right, shape));
+	// The five fingers really differ from each other (the test would pass on a constant otherwise)
+	CPPUNIT_ASSERT(poseFlex(reference, 2, 0) > poseFlex(reference, 3, 0) + 10.f);
+	CPPUNIT_ASSERT(poseFlex(reference, 3, 0) > poseFlex(reference, 1, 0) + 10.f);
+	const glm::quat turn = glm::normalize(glm::quat(0.7f, 0.3f, -0.5f, 0.4f));
+	const vr::FingerPose placed = vr::fingerPoseFromJoints(
+		vr::synthesizeHandJoints(vr::Hand::Right, shape, Vec3f(-2.f, 1.f, 5.f), turn));
+	poseCheck("placed hand", reference, placed, 0.5f);
+	const vr::FingerPose left = vr::fingerPoseFromJoints(vr::synthesizeHandJoints(vr::Hand::Left, shape));
+	poseCheck("left hand", reference, left, 0.5f);
+	const vr::FingerPose leftPlaced = vr::fingerPoseFromJoints(
+		vr::synthesizeHandJoints(vr::Hand::Left, shape, Vec3f(3.f, -1.f, 0.5f), turn));
+	poseCheck("left hand placed", reference, leftPlaced, 0.5f);
+}
+
+void FingerCurlTest::testPoseControlsFallback() {
+	const vr::FingerPose closed = vr::fingerPoseClosed();
+	const size_t Thumb = size_t(vr::Finger::Thumb), Index = size_t(vr::Finger::Index);
+	const size_t Middle = size_t(vr::Finger::Middle), Little = size_t(vr::Finger::Little);
+
+	// Nothing pressed: open; negative values clamp to open, values past 1 to the limit
+	poseCheck("nothing pressed", vr::FingerPose(), vr::fingerPoseFromControls(0.f, 0.f, false), 0.001f);
+	poseCheck("negative values", vr::FingerPose(), vr::fingerPoseFromControls(-1.f, -0.5f, false), 0.001f);
+	poseCheck("everything, clamped", closed, vr::fingerPoseFromControls(1.5f, 2.f, true), 0.001f);
+
+	// The trigger is the index finger and only it
+	const vr::FingerPose trigger = vr::fingerPoseFromControls(1.f, 0.f, false);
+	for(size_t finger = 0; finger < 5; finger++) {
+		for(size_t joint = 0; joint < 3; joint++) {
+			curlCheck("trigger", (finger == Index) ? poseFlex(closed, finger, joint) : 0.f,
+			          poseFlex(trigger, finger, joint), 0.001f);
+		}
+	}
+	CPPUNIT_ASSERT(poseFlex(trigger, Index, 0) > 1.f);
+
+	// The grip closes the middle, ring and little finger and not the index finger or the thumb
+	const vr::FingerPose grip = vr::fingerPoseFromControls(0.f, 1.f, false);
+	for(size_t finger = 0; finger < 5; finger++) {
+		const bool gripped = finger >= Middle && finger <= Little;
+		for(size_t joint = 0; joint < 3; joint++) {
+			curlCheck("grip", gripped ? poseFlex(closed, finger, joint) : 0.f, poseFlex(grip, finger, joint), 0.001f);
+		}
+	}
+	// Half a grip is strictly between open and closed
+	const vr::FingerPose half = vr::fingerPoseFromControls(0.f, 0.5f, false);
+	for(size_t finger = Middle; finger <= Little; finger++) {
+		for(size_t joint = 0; joint < 3; joint++) {
+			CPPUNIT_ASSERT(poseFlex(half, finger, joint) > 0.5f);
+			CPPUNIT_ASSERT(poseFlex(half, finger, joint) < poseFlex(closed, finger, joint) - 0.5f);
+		}
+	}
+
+	// A thumb resting on a control is the thumb and only it
+	const vr::FingerPose thumb = vr::fingerPoseFromControls(0.f, 0.f, true);
+	for(size_t finger = 0; finger < 5; finger++) {
+		for(size_t joint = 0; joint < 3; joint++) {
+			curlCheck("thumb resting", (finger == Thumb) ? poseFlex(closed, finger, joint) : 0.f,
+			          poseFlex(thumb, finger, joint), 0.001f);
+		}
+	}
+	CPPUNIT_ASSERT(poseFlex(thumb, Thumb, 1) > 1.f);
+}
+
+void FingerCurlTest::testPoseClosed() {
+	// A held weapon closes all five fingers: every joint of every finger bends to a real limit
+	const vr::FingerPose closed = vr::fingerPoseClosed();
+	for(size_t finger = 0; finger < 5; finger++) {
+		for(size_t joint = 0; joint < 3; joint++) {
+			const float flex = poseFlex(closed, finger, joint);
+			CPPUNIT_ASSERT_MESSAGE(std::string(FingerNames[finger]) + " joint " + std::to_string(joint) + " is closed",
+			                       flex >= 20.f && flex <= 120.f);
+		}
+	}
+	// The same pose from the joints of a fist and from full controls
+	vr::HandShape fist;
+	fist.thumb = fist.index = fist.middle = fist.ring = fist.little = 1.f;
+	poseCheck("fist joints", closed, vr::fingerPoseFromJoints(vr::synthesizeHandJoints(vr::Hand::Right, fist)), PoseEpsilon);
+	poseCheck("full controls", closed, vr::fingerPoseFromControls(1.f, 1.f, true), 0.001f);
+}
+
+void FingerCurlTest::testPoseApproach() {
+	const vr::FingerPose closed = vr::fingerPoseClosed();
+	const vr::FingerPose open;
+	// One step of 30 degrees towards the fist: every joint moves 30 or lands on a smaller target
+	const vr::FingerPose step = vr::approachPose(open, closed, 30.f);
+	for(size_t finger = 0; finger < 5; finger++) {
+		for(size_t joint = 0; joint < 3; joint++) {
+			curlCheck("step", std::min(30.f, poseFlex(closed, finger, joint)), poseFlex(step, finger, joint), 0.001f);
+		}
+	}
+	// A big step lands on the target exactly
+	poseCheck("big step", closed, vr::approachPose(open, closed, 1000.f), 0.001f);
+	// Back towards open from the fist: at most 50 per joint, none past open
+	const vr::FingerPose back = vr::approachPose(closed, open, 50.f);
+	for(size_t finger = 0; finger < 5; finger++) {
+		for(size_t joint = 0; joint < 3; joint++) {
+			curlCheck("back", std::max(0.f, poseFlex(closed, finger, joint) - 50.f), poseFlex(back, finger, joint), 0.001f);
+		}
+	}
+	// No step and a negative step: nothing moves
+	poseCheck("zero step", open, vr::approachPose(open, closed, 0.f), 0.001f);
+	poseCheck("negative step", open, vr::approachPose(open, closed, -5.f), 0.001f);
+	// Repeated steps arrive and stay
+	vr::FingerPose now = open;
+	for(int i = 0; i < 20; i++) {
+		now = vr::approachPose(now, closed, 10.f);
+	}
+	poseCheck("repeated steps", closed, now, 0.001f);
 }

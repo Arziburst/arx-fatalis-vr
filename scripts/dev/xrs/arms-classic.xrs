@@ -1,0 +1,89 @@
+# The classic Arx arm fixed (#466.1): `arms classic` draws the Arx arm itself (arxArmsHidden false) with one clean
+# bend at the elbow and a rigid forearm. status.json (PROPOSED names, 466.1 implements them):
+#   vr.body.<hand>.classic.creases           bands between consecutive vertex rings along the arm whose bend angle
+#                                            exceeds classic.creaseThreshold (PROPOSED, 20 degrees): the elbow is 1
+#   vr.body.<hand>.classic.forearmTwistSpread degrees of roll spread along the forearm's rings: rigid is < 2
+# Poses: hanging, ahead (nearly straight), the elbow bent ~90 and ~135 (tight, as in arms-elbow), the hand rolled 90 / 180.
+# Needs the first-person save:
+#   .\scripts\dev\xrs-run.ps1 arms-classic
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence arms-classic -Save mvp-new-game
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.body.bound eq true
+@assert vr.body.active eq true
+
+vr-sim head rot 0 -65 0
+vr-sim hand left off
+
+arms classic
+@frames 10
+@assert vr.body.armsModel eq classic
+@assert vr.body.arxArmsHidden eq false
+
+# 1. Hanging by the side: the arm is straight, the forearm vertical; one bend at most
+vr-sim hand right pos 0.2 -0.55 -0.1
+vr-sim hand right rot 0 0 0
+@frames 15
+@assert vr.body.right.posed eq true
+@assert vr.body.right.error lt 1
+@assert vr.body.right.classic.creases eq 1
+@assert vr.body.right.classic.forearmTwistSpread lt 2
+@shot classic-hanging
+
+# 2. Ahead, reached out
+vr-sim hand right pos 0.2 -0.3 -0.55
+vr-sim hand right rot 0 90 0
+@frames 15
+@assert vr.body.right.error lt 1
+# the arm is straight here (measured elbowBend 9.7, the rest bend straightened out): no crease, never a second one
+@assert vr.body.right.classic.creases le 1
+@assert vr.body.right.classic.forearmTwistSpread lt 2
+@shot classic-ahead
+
+# 3. The elbow bent about 90 degrees (hand ahead at chest height)
+vr-sim hand right pos 0.12 -0.2 -0.35
+@frames 15
+@assert vr.body.right.error lt 1
+@assert vr.body.right.classic.creases eq 1
+@assert vr.body.right.classic.forearmTwistSpread lt 2
+@shot classic-bend090
+
+# 4. The elbow bent about 135 degrees (pulled in to the chest)
+vr-sim hand right pos 0.06 -0.12 -0.1
+@frames 15
+@assert vr.body.right.classic.creases eq 1
+@assert vr.body.right.classic.forearmTwistSpread lt 2
+@shot classic-bend135
+
+# 5. The hand rolled a quarter and a half turn, ahead: the forearm stays rigid, the roll goes to the wrist or elbow band
+vr-sim hand right pos 0.12 -0.2 -0.35
+vr-sim hand right rot 90 0 90
+@frames 15
+@assert vr.body.right.error lt 1
+@assert vr.body.right.classic.creases eq 1
+@assert vr.body.right.classic.forearmTwistSpread lt 2
+@shot classic-roll090
+vr-sim hand right rot 180 -90 0
+@frames 15
+@assert vr.body.right.error lt 1
+@assert vr.body.right.classic.creases eq 1
+@assert vr.body.right.classic.forearmTwistSpread lt 2
+@shot classic-roll180
+
+# 6. The original is untouched for comparison, and custom comes back
+arms arx
+@frames 5
+@assert vr.body.armsModel eq arx
+@assert vr.body.arxArmsHidden eq false
+@shot classic-vs-arx
+arms custom
+@frames 5
+@assert vr.body.armsModel eq custom
+@assert vr.body.arxArmsHidden eq true
+
+@assert errors eq 0

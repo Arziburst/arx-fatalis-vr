@@ -142,6 +142,9 @@ const s64 PacingWindowUs = 3000000;
 //! How long an orderly exit may take: xrRequestExitSession to EXITING
 const std::chrono::milliseconds ExitTimeout(2000);
 
+//! A radial menu's image (#376), made with the session
+const Vec2i RadialImageSize(RadialImagePixels, RadialImagePixels);
+
 struct OpenXRState {
 
 	XrInstance instance = XR_NULL_HANDLE;
@@ -249,6 +252,21 @@ struct OpenXRState {
 	};
 	std::array<HandReticle, HandCount> reticles;
 
+	//! The radial menus (#376): an image per hand drawn by the game while its menu is open, set every frame
+	struct RadialMenu {
+		Swapchain image;
+		bool acquired = false;  //!< bound as the render target between beginRadialImage and endRadialImage
+		bool drawn = false;     //!< an image was released this frame
+		bool requested = false;
+		Vec3f center = Vec3f(0.f); //!< LOCAL space
+		glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f);
+		float size = 0.f;
+		bool submitted = false; //!< part of the last frame's layers
+		const char * refusal = ""; //!< why the last beginRadialImage drew nothing, empty when it did (#377)
+	};
+	std::array<RadialMenu, HandCount> radials;
+	bool radialFailed = false; //!< an image could not be made: not retried this session
+
 	//! The stereo render as status.json reports it; \c active is the current frame's, the rest the last stereo frame's
 	StereoStatus stereo;
 	bool stereoLogged = false; //!< the stereo banner was logged for this session
@@ -259,8 +277,9 @@ struct OpenXRState {
 		XrCompositionLayerProjection projection = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
 		XrCompositionLayerQuad quad = { XR_TYPE_COMPOSITION_LAYER_QUAD };
 		XrCompositionLayerQuad beam = { XR_TYPE_COMPOSITION_LAYER_QUAD }; //!< the menu pointer, above the panel (#34)
-		std::array<XrCompositionLayerQuad, HandCount> reticles = { }; //!< the hand reticles, on top (#37)
-		std::array<const XrCompositionLayerBaseHeader *, 3 + HandCount> list = { };
+		std::array<XrCompositionLayerQuad, HandCount> reticles = { }; //!< the hand reticles (#37)
+		std::array<XrCompositionLayerQuad, HandCount> radials = { };  //!< the radial menus, on top (#376)
+		std::array<const XrCompositionLayerBaseHeader *, 3 + 2 * HandCount> list = { };
 		u32 count = 0;
 	} layers;
 
@@ -628,8 +647,13 @@ bool createInstance() {
 	std::vector<const char *> extensions = { XR_KHR_OPENGL_ENABLE_EXTENSION_NAME };
 	XrResult listFailure = XR_SUCCESS;
 	const bool handTracking = extensionListed(HandTracking::extensionName(), listFailure);
+	// The joints conforming to the controller (#385.7): asked for with the hand tracking when the runtime has it
+	const bool motionRange = handTracking && extensionListed(HandTracking::motionRangeExtensionName(), listFailure);
 	if(handTracking) {
 		extensions.push_back(HandTracking::extensionName());
+		if(motionRange) {
+			extensions.push_back(HandTracking::motionRangeExtensionName());
+		}
 	} else {
 		LogInfo << "[vr] hands: the runtime does not list " << HandTracking::extensionName()
 		        << " - the fingers follow the controls (trigger, grip, thumb)";
@@ -657,7 +681,7 @@ bool createInstance() {
 	}
 
 	if(handTracking) {
-		g_xr.handTracking.bind(g_xr.instance);
+		g_xr.handTracking.bind(g_xr.instance, motionRange);
 	}
 
 	XrInstanceProperties properties = { XR_TYPE_INSTANCE_PROPERTIES };
@@ -853,6 +877,11 @@ void destroySession() {
 	}
 	g_xr.reticleFailed = false;
 	g_xr.reticles = { };
+	for(OpenXRState::RadialMenu & radial : g_xr.radials) {
+		radial.image.destroy();
+		radial = OpenXRState::RadialMenu();
+	}
+	g_xr.radialFailed = false;
 	g_xr.mirror.destroy();
 	g_xr.colorFormat = 0;
 
@@ -959,6 +988,22 @@ bool createSessionResources() {
 		if(!g_xr.eyes[i].create(g_xr.session, g_xr.colorFormat, size, true, names[i], samples)) {
 			return false;
 		}
+	}
+
+	// The radial menus' images (#376), made here with no swapchain image acquired: SteamVR refused one made
+	// in the frame while the flat frame's image was acquired (XR_ERROR_RUNTIME_FAILURE, TRAPS.md). Without
+	// them the menus still work, unseen - said once here, and in status.json (vr.radial.images)
+	const char * const radialNames[] = { "radial menu (left)", "radial menu (right)" };
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		Swapchain & image = g_xr.radials[hand].image;
+		if(!image.create(g_xr.session, g_xr.colorFormat, RadialImageSize, true, radialNames[hand])) {
+			image.destroy();
+			g_xr.radialFailed = true;
+		}
+	}
+	if(g_xr.radialFailed) {
+		LogWarning << "[vr] radial menu: no image of " << RadialImageSize.x << 'x' << RadialImageSize.y
+		           << ", the radial menus work but are not drawn";
 	}
 
 	return true;
@@ -1489,6 +1534,44 @@ void describeReticleLayers(OpenXRState::Layers & layers) {
 }
 
 /*!
+ * The radial menus (#376): each hand's image, drawn by the game this frame, as a quad layer on top of
+ * everything - a menu held in front of the hand is never hidden by the world or the hand itself.
+ */
+void describeRadialLayers(OpenXRState::Layers & layers) {
+
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		OpenXRState::RadialMenu & radial = g_xr.radials[hand];
+		const bool drawn = radial.drawn;
+		radial.drawn = false;
+		if(!radial.requested || !drawn || radial.size <= 0.f || layers.count >= layers.list.size()) {
+			if(radial.requested && drawn && layers.count >= layers.list.size()) {
+				radial.refusal = "the frame's layer list is full";
+			}
+			continue;
+		}
+		XrCompositionLayerQuad & layer = layers.radials[hand];
+		layer = { XR_TYPE_COMPOSITION_LAYER_QUAD };
+		layer.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+		layer.space = g_xr.localSpace;
+		layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+		layer.subImage.swapchain = radial.image.handle();
+		layer.subImage.imageRect = radial.image.rect();
+		layer.subImage.imageArrayIndex = 0;
+		layer.pose.orientation.x = radial.orientation.x;
+		layer.pose.orientation.y = radial.orientation.y;
+		layer.pose.orientation.z = radial.orientation.z;
+		layer.pose.orientation.w = radial.orientation.w;
+		layer.pose.position.x = radial.center.x;
+		layer.pose.position.y = radial.center.y;
+		layer.pose.position.z = radial.center.z;
+		layer.size.width = radial.size;
+		layer.size.height = radial.size;
+		layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
+		radial.submitted = true;
+	}
+}
+
+/*!
  * Describe the quad that shows the flat frame swapchain's most recently released image: the
  * floating panel in the world-locked space while a menu is open (#49), otherwise the head-locked
  * quad in front of the eyes.
@@ -1713,6 +1796,7 @@ bool finishFlatFrame(OpenXRState::Layers & layers) {
 	describeQuadLayer(layers, frame.stereo ? XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT : 0);
 	if(frame.stereo) {
 		describeReticleLayers(layers);
+		describeRadialLayers(layers);
 	}
 
 	return true;
@@ -2488,6 +2572,9 @@ void submitFrame(const Vec2i & windowSize) {
 		for(OpenXRState::HandReticle & reticle : g_xr.reticles) {
 			reticle.submitted = false;
 		}
+		for(OpenXRState::RadialMenu & radial : g_xr.radials) {
+			radial.submitted = false;
+		}
 		eyes = describeEyeLayer(g_xr.layers);
 		if(!eyes) {
 			background = renderBackground(g_xr.layers);
@@ -2660,6 +2747,10 @@ void setSceneScreen(bool on) {
 	g_xr.panel.sceneScreenWanted = on;
 }
 
+bool sceneScreenFrame() {
+	return g_xr.panel.sceneScreen;
+}
+
 PanelStatus panelStatus() {
 	const OpenXRState::Panel & panel = g_xr.panel;
 	PanelStatus status;
@@ -2748,6 +2839,76 @@ void setHandReticle(Hand hand, bool shown, const Vec3f & hit, bool bright) {
 
 bool handReticleShown(Hand hand) {
 	return g_xr.reticles[size_t(hand)].submitted;
+}
+
+bool beginRadialImage(Hand hand) {
+
+	OpenXRState::Frame & frame = g_xr.frame;
+	OpenXRState::RadialMenu & radial = g_xr.radials[size_t(hand)];
+	radial.drawn = false;
+	// The images are made with the session (createSwapchains), never in a frame
+	if(!stereoActive() || frame.eyeInRender != size_t(-1) || !radial.image.isValid()) {
+		radial.refusal = !stereoActive() ? (frame.begun ? "not a stereo frame" : "no frame begun")
+		                 : frame.eyeInRender != size_t(-1) ? "an eye in render" : "no image";
+		return false;
+	}
+	if(!radial.image.acquire()) {
+		radial.refusal = "the image acquire failed";
+		return false;
+	}
+	radial.refusal = "";
+
+	bindTarget(radial.image.framebuffer(), radial.image.size());
+	GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
+	glDisable(GL_SCISSOR_TEST);
+	const GLfloat transparent[4] = { 0.f, 0.f, 0.f, 0.f };
+	const GLfloat depth = 1.f;
+	glClearBufferfv(GL_COLOR, 0, transparent);
+	glClearBufferfv(GL_DEPTH, 0, &depth);
+	if(scissor) {
+		glEnable(GL_SCISSOR_TEST);
+	}
+	radial.acquired = true;
+
+	return true;
+}
+
+void endRadialImage(Hand hand) {
+
+	OpenXRState::RadialMenu & radial = g_xr.radials[size_t(hand)];
+	if(!radial.acquired) {
+		return;
+	}
+	radial.image.release();
+	radial.acquired = false;
+	radial.drawn = true;
+
+	// Back to the flat frame for the 2D interface, or to the window when there is no quad
+	if(g_xr.frame.quadAcquired) {
+		bindTarget(g_xr.quad.framebuffer(), g_xr.quad.size());
+	} else {
+		restoreWindowTarget();
+	}
+}
+
+void setRadialLayer(Hand hand, bool shown, const Vec3f & center, const glm::quat & orientation, float size) {
+	OpenXRState::RadialMenu & radial = g_xr.radials[size_t(hand)];
+	radial.requested = shown;
+	radial.center = center;
+	radial.orientation = orientation;
+	radial.size = size;
+}
+
+bool radialLayerShown(Hand hand) {
+	return g_xr.radials[size_t(hand)].submitted;
+}
+
+const char * radialImageRefusal(Hand hand) {
+	return g_xr.radials[size_t(hand)].refusal;
+}
+
+bool radialImagesMade() {
+	return g_xr.radials[0].image.isValid() && g_xr.radials[1].image.isValid();
 }
 
 void recenterPanel() {
@@ -2900,6 +3061,10 @@ void setMenuOpen(const char * /* menu */) { }
 
 void setSceneScreen(bool /* on */) { }
 
+bool sceneScreenFrame() {
+	return false;
+}
+
 PanelStatus panelStatus() {
 	return PanelStatus();
 }
@@ -2930,6 +3095,27 @@ void setHandReticle(Hand /* hand */, bool /* shown */, const Vec3f & /* hit */, 
 
 bool handReticleShown(Hand /* hand */) {
 	return false;
+}
+
+bool beginRadialImage(Hand /* hand */) {
+	return false;
+}
+
+bool radialImagesMade() {
+	return false;
+}
+
+void endRadialImage(Hand /* hand */) { }
+
+void setRadialLayer(Hand /* hand */, bool /* shown */, const Vec3f & /* center */, const glm::quat & /* orientation */,
+                    float /* size */) { }
+
+bool radialLayerShown(Hand /* hand */) {
+	return false;
+}
+
+const char * radialImageRefusal(Hand /* hand */) {
+	return "no VR";
 }
 
 void recenterPanel() { }

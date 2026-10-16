@@ -296,6 +296,7 @@ function Invoke-SmokeRun([int]$Run) {
 		$launchTime = Get-Date
 		# Shown without taking the focus (SDL hint from the environment, restored right after the start)
 		$previousHint = Set-ArxBackgroundWindow
+		$foregroundBefore = Get-ArxForegroundWindow
 		try {
 			$process = Start-Process -FilePath $exe -ArgumentList $argList -PassThru `
 				-RedirectStandardOutput (Join-Path $TestDir 'stdout.txt') -RedirectStandardError (Join-Path $TestDir 'stderr.txt')
@@ -328,7 +329,11 @@ function Invoke-SmokeRun([int]$Run) {
 
 		if ($reached) {
 			# Evidence for the no-focus rule (D-014): the window of a self-test must not take the focus
-			if ($status.window) { Write-Host "  window: focused=$($status.window.focused) minimized=$($status.window.minimized) $($status.window.width)x$($status.window.height)" }
+			if ($status.window) { Write-Host "  window: focused=$($status.window.focused) minimized=$($status.window.minimized) $($status.window.width)x$($status.window.height) activation=$($status.window.activation) placement=$($status.window.placement) at $($status.window.x),$($status.window.y)" }
+			# ... and the foreground stays with whoever works at the PC (#487)
+			$foreground = Test-ArxForegroundKept $foregroundBefore (Get-ArxForegroundWindow) $process.Id
+			Write-Check $foreground.Ok "foreground after the start: $($foreground.Text)"
+			if (-not $foreground.Ok) { $reasons.Add("after the start: $($foreground.Text)") }
 			if ($Playground) {
 				$inPlayground = [int]$status.area -eq $script:ArxPlaygroundArea
 				Write-Check $inPlayground "playground: the game is in area $($status.area) (expected $script:ArxPlaygroundArea) in state $($status.state)"
@@ -382,6 +387,11 @@ function Invoke-SmokeRun([int]$Run) {
 				} catch { $reasons.Add("$_ (timeline $($status.vr.sim.timeline), $($status.vr.sim.pending) lines pending)") }
 			}
 			if ($process.HasExited) { $reasons.Add("the game exited on its own with code $($process.ExitCode) while it should have been running") }
+			else {
+				$foreground = Test-ArxForegroundKept $foregroundBefore (Get-ArxForegroundWindow) $process.Id
+				Write-Check $foreground.Ok "foreground before the quit: $($foreground.Text)"
+				if (-not $foreground.Ok) { $reasons.Add("before the quit: $($foreground.Text)") }
+			}
 
 			# A 'drawcheck' sent through -Commands draws the scene twice per frame with the same camera
 			# (docs/vr/TESTING.md): it must finish, and the two pictures must be identical in every frame

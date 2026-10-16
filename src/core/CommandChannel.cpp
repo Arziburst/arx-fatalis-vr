@@ -900,6 +900,23 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("droppedWheel", mouse.droppedWheel);
 		json.value("droppedMoves", mouse.droppedMoves);
 		json.end();
+		// ... and the keyboard (#487)
+		const InputBackend::DroppedInput keyboard = GInput->droppedKeyboard();
+		json.object("desktopKeyboard");
+		json.value("ignored", keyboard.ignored);
+		json.value("droppedKeys", keyboard.keys);
+		json.value("droppedText", keyboard.text);
+		json.end();
+		// A test run's window takes no real mouse or keyboard, only what the channel injects (#487)
+		const InputBackend::DroppedInput real = GInput->droppedRealInput();
+		json.object("realInput");
+		json.value("ignored", real.ignored);
+		json.value("droppedKeys", real.keys);
+		json.value("droppedText", real.text);
+		json.value("droppedButtons", real.buttons);
+		json.value("droppedWheel", real.wheel);
+		json.value("droppedMoves", real.moves);
+		json.end();
 	}
 
 	// The hero as the character creation makes it (#394): the attributes and skills before modifiers, the
@@ -958,6 +975,11 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("focused", window.hasFocus());
 		json.value("minimized", window.isMinimized());
 		json.value("fullscreen", window.isFullScreen());
+		// A test run's window (#487): never activated, placed in the corner of the main display
+		json.value("activation", window.isBackground() ? "never" : "normal");
+		json.value("placement", window.isBackground() ? "corner" : "default");
+		json.value("x", window.getPosition().x);
+		json.value("y", window.getPosition().y);
 		json.end();
 	}
 
@@ -2708,6 +2730,45 @@ std::string execute(std::string_view line) {
 			return refuse("desktop-key: the input backend cannot inject \"" + std::string(rest) + "\"");
 		}
 		LogInfo << "[channel] desktop key: " << rest;
+		return std::string();
+	}
+
+	if(word == "real-input") {
+		// real-input key <name> down|up | mouse at <x> <y> | mouse button <1-3> down|up | mouse wheel <steps>
+		// (#487): the window system's own messages posted to the game window, the path of the real mouse and
+		// keyboard - a test run's window must drop them, unlike desktop-mouse / desktop-key. Windows only
+		std::string_view args;
+		const std::string device(firstWord(rest, args));
+		std::string_view tail;
+		const std::string what(firstWord(args, tail));
+		std::string_view value;
+		const std::string first(firstWord(tail, value));
+		std::vector<float> numbers;
+		bool posted = false;
+		if(!GInput) {
+			return refuse("real-input: no input yet");
+		} else if(device == "key") {
+			const InputKeyId key = Input::getKeyId(what);
+			if(key < Keyboard::KeyBase || key >= Keyboard::KeyMax || (tail != "down" && tail != "up")) {
+				return refuse("real-input key: expected <key name> down|up, got \"" + std::string(args) + "\"");
+			}
+			posted = GInput->postDesktopKey(key, tail == "down");
+		} else if(device == "mouse" && what == "at" && parseFloats(tail, numbers) && numbers.size() == 2) {
+			posted = GInput->postDesktopMouseAt(Vec2s(Vec2f(numbers[0], numbers[1])));
+		} else if(device == "mouse" && what == "button" && parseFloats(first, numbers) && numbers.size() == 1
+		          && numbers[0] >= 1.f && numbers[0] <= 3.f && (value == "down" || value == "up")) {
+			posted = GInput->postDesktopMouseButton(Mouse::ButtonBase + int(numbers[0]) - 1, value == "down");
+		} else if(device == "mouse" && what == "wheel" && parseFloats(tail, numbers) && numbers.size() == 1
+		          && numbers[0] != 0.f) {
+			posted = GInput->postDesktopMouseWheel(int(numbers[0]));
+		} else {
+			return refuse("real-input: expected key <name> down|up | mouse at <x> <y> | mouse button <1-3> down|up"
+			              " | mouse wheel <steps>, got \"" + std::string(rest) + "\"");
+		}
+		if(!posted) {
+			return refuse("real-input: cannot post \"" + std::string(rest) + "\" to the game window (Windows only)");
+		}
+		LogInfo << "[channel] real input: " << rest;
 		return std::string();
 	}
 

@@ -513,7 +513,11 @@ void Input::update(float time) {
 		LogInfo << "[input] desktop mouse: " << (ignoreMouse ? "ignored - the window mirrors the headset (#338)"
 		                                                     : "drives the game again");
 	}
-	
+	// ... and neither does the desktop keyboard (#487, the owner): only the headset and the controllers
+	if(backend) {
+		backend->setKeyboardIgnored(vr::isEnabled());
+	}
+
 	for(int buttonId = Mouse::ButtonBase; buttonId < Mouse::ButtonMax; buttonId++) {
 		int i = buttonId - Mouse::ButtonBase;
 		
@@ -883,6 +887,32 @@ bool Input::injectDesktopMouseWheel(int steps) {
 
 bool Input::injectDesktopKey(int keyId, bool down) {
 	return backend && backend->injectKey(keyId, down);
+}
+
+bool Input::postDesktopMouseAt(const Vec2s & position) {
+	Vec2i windowPos = vr::interfaceToWindow(Vec2i(position), mainApp->getWindow()->getSize(), interfaceSize());
+	return backend && backend->postMouseAt(windowPos);
+}
+
+bool Input::postDesktopMouseButton(int buttonId, bool down) {
+	arx_assert(buttonId >= Mouse::ButtonBase && buttonId < Mouse::ButtonMax);
+	return backend && backend->postMouseButton(buttonId, down);
+}
+
+bool Input::postDesktopMouseWheel(int steps) {
+	return backend && backend->postMouseWheel(steps);
+}
+
+bool Input::postDesktopKey(int keyId, bool down) {
+	return backend && backend->postKey(keyId, down);
+}
+
+InputBackend::DroppedInput Input::droppedRealInput() const {
+	return backend ? backend->droppedRealInput() : InputBackend::DroppedInput();
+}
+
+InputBackend::DroppedInput Input::droppedKeyboard() const {
+	return backend ? backend->droppedKeyboard() : InputBackend::DroppedInput();
 }
 
 void Input::setVirtualAction(ControlAction actionId, bool down) {

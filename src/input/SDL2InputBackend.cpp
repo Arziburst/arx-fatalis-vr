@@ -19,7 +19,17 @@
 
 #include "input/SDL2InputBackend.h"
 
+#include <algorithm>
+#include <cstdlib>
+
 #include <glm/glm.hpp>
+
+#include "platform/Platform.h"
+
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+#include <windows.h>
+#include <SDL_syswm.h>
+#endif
 
 #include "io/log/Logger.h"
 #include "math/Rectangle.h"
@@ -31,6 +41,7 @@ static Mouse::Button sdlToArxButton[10];
 
 SDL2InputBackend::SDL2InputBackend(SDL2Window * window)
 	: m_window(window)
+	, m_injectedEventType(Uint32(-1))
 	, m_textHandler(nullptr)
 	, m_editCursorPos(0)
 	, m_editCursorLength(0)
@@ -345,7 +356,10 @@ bool SDL2InputBackend::getAbsoluteMouseCoords(int & absX, int & absY) const {
 
 void SDL2InputBackend::setAbsoluteMouseCoords(int absX, int absY) {
 	cursorAbs = Vec2i(absX, absY);
-	SDL_WarpMouseInWindow(m_window->m_window, absX, absY);
+	// A test run never moves the real cursor of whoever works at the PC (#487)
+	if(!m_window->isBackground()) {
+		SDL_WarpMouseInWindow(m_window->m_window, absX, absY);
+	}
 }
 
 void SDL2InputBackend::getRelativeMouseCoords(int & relX, int & relY, int & wheelDir) const {
@@ -370,7 +384,7 @@ bool SDL2InputBackend::injectMouseAt(const Vec2i & windowPos) {
 	event.motion.y = windowPos.y;
 	event.motion.xrel = windowPos.x - cursorAbs.x;
 	event.motion.yrel = windowPos.y - cursorAbs.y;
-	return SDL_PushEvent(&event) == 1;
+	return inject(event);
 }
 
 bool SDL2InputBackend::injectMouseButton(int buttonId, bool down) {
@@ -384,7 +398,7 @@ bool SDL2InputBackend::injectMouseButton(int buttonId, bool down) {
 			event.button.clicks = 1;
 			event.button.x = cursorAbs.x;
 			event.button.y = cursorAbs.y;
-			return SDL_PushEvent(&event) == 1;
+			return inject(event);
 		}
 	}
 	return false;
@@ -395,7 +409,7 @@ bool SDL2InputBackend::injectMouseWheel(int steps) {
 	event.type = SDL_MOUSEWHEEL;
 	event.wheel.windowID = SDL_GetWindowID(m_window->m_window);
 	event.wheel.y = steps;
-	return SDL_PushEvent(&event) == 1;
+	return inject(event);
 }
 
 bool SDL2InputBackend::injectKey(int keyId, bool down) {
@@ -407,10 +421,151 @@ bool SDL2InputBackend::injectKey(int keyId, bool down) {
 			event.key.state = down ? SDL_PRESSED : SDL_RELEASED;
 			event.key.keysym.scancode = SDL_Scancode(scancode);
 			event.key.keysym.sym = SDL_GetKeyFromScancode(SDL_Scancode(scancode));
-			return SDL_PushEvent(&event) == 1;
+			return inject(event);
 		}
 	}
 	return false;
+}
+
+bool SDL2InputBackend::inject(const SDL_Event & event) {
+
+	// The event itself waits here; its place in SDL's queue - in order with the window system's events - is
+	// held by a marker that only an injection pushes, so onEvent() can tell injected events from real ones
+	if(m_injectedEventType == Uint32(-1)) {
+		m_injectedEventType = SDL_RegisterEvents(1);
+		if(m_injectedEventType == Uint32(-1)) {
+			return false;
+		}
+		SDL_EventState(m_injectedEventType, SDL_ENABLE); // the window ignores SDL_USEREVENT, the first user type
+	}
+
+	SDL_Event marker = { };
+	marker.type = m_injectedEventType;
+	if(SDL_PushEvent(&marker) != 1) {
+		return false;
+	}
+	m_injected.push_back(event);
+	return true;
+}
+
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+
+static HWND getNativeWindow(SDL_Window * window) {
+	SDL_SysWMinfo info;
+	SDL_VERSION(&info.version);
+	if(!SDL_GetWindowWMInfo(window, &info) || info.subsystem != SDL_SYSWM_WINDOWS) {
+		return nullptr;
+	}
+	return info.info.win.window;
+}
+
+bool SDL2InputBackend::postMouseAt(const Vec2i & windowPos) {
+	HWND window = getNativeWindow(m_window->m_window);
+	return window && PostMessageW(window, WM_MOUSEMOVE, 0, MAKELPARAM(windowPos.x, windowPos.y));
+}
+
+bool SDL2InputBackend::postMouseButton(int buttonId, bool down) {
+
+	HWND window = getNativeWindow(m_window->m_window);
+	UINT message;
+	WPARAM held;
+	switch(buttonId) {
+		case Mouse::Button_0: message = down ? WM_LBUTTONDOWN : WM_LBUTTONUP, held = MK_LBUTTON; break;
+		case Mouse::Button_1: message = down ? WM_RBUTTONDOWN : WM_RBUTTONUP, held = MK_RBUTTON; break;
+		case Mouse::Button_2: message = down ? WM_MBUTTONDOWN : WM_MBUTTONUP, held = MK_MBUTTON; break;
+		default: return false;
+	}
+
+	return window && PostMessageW(window, message, down ? held : 0, MAKELPARAM(cursorAbs.x, cursorAbs.y));
+}
+
+bool SDL2InputBackend::postMouseWheel(int steps) {
+
+	HWND window = getNativeWindow(m_window->m_window);
+	POINT point = { cursorAbs.x, cursorAbs.y };
+	if(!window || !ClientToScreen(window, &point)) {
+		return false;
+	}
+
+	return PostMessageW(window, WM_MOUSEWHEEL, MAKEWPARAM(0, WORD(steps * WHEEL_DELTA)), MAKELPARAM(point.x, point.y));
+}
+
+//! The Windows virtual key of a key the tests press, 0 for the others
+static UINT toVirtualKey(SDL_Keycode key) {
+
+	if(key >= SDLK_a && key <= SDLK_z) {
+		return UINT('A' + (key - SDLK_a));
+	}
+	if(key >= SDLK_F1 && key <= SDLK_F12) {
+		return UINT(VK_F1 + (key - SDLK_F1));
+	}
+	switch(key) {
+		case SDLK_0: case SDLK_1: case SDLK_2: case SDLK_3: case SDLK_4:
+		case SDLK_5: case SDLK_6: case SDLK_7: case SDLK_8: case SDLK_9: return UINT(key);
+		case SDLK_SPACE: return VK_SPACE;
+		case SDLK_ESCAPE: return VK_ESCAPE;
+		case SDLK_RETURN: return VK_RETURN;
+		case SDLK_TAB: return VK_TAB;
+		case SDLK_BACKSPACE: return VK_BACK;
+		case SDLK_LEFT: return VK_LEFT;
+		case SDLK_RIGHT: return VK_RIGHT;
+		case SDLK_UP: return VK_UP;
+		case SDLK_DOWN: return VK_DOWN;
+		default: return 0;
+	}
+}
+
+bool SDL2InputBackend::postKey(int keyId, bool down) {
+
+	HWND window = getNativeWindow(m_window->m_window);
+	for(size_t scancode = 0; window && scancode < std::size(sdlToArxKey); scancode++) {
+		if(sdlToArxKey[scancode] != keyId) {
+			continue;
+		}
+		const SDL_Keycode key = SDL_GetKeyFromScancode(SDL_Scancode(scancode));
+		const UINT vk = toVirtualKey(key);
+		if(!vk) {
+			return false;
+		}
+		// lParam as the keyboard driver fills it: repeat count, scan code, extended, previous state, transition
+		const bool extended = (key == SDLK_LEFT || key == SDLK_RIGHT || key == SDLK_UP || key == SDLK_DOWN);
+		LPARAM info = 1 | LPARAM(MapVirtualKeyW(vk, MAPVK_VK_TO_VSC) << 16) | (extended ? LPARAM(1) << 24 : 0);
+		if(!down) {
+			info |= (LPARAM(1) << 30) | (LPARAM(1) << 31);
+		}
+		return PostMessageW(window, down ? WM_KEYDOWN : WM_KEYUP, WPARAM(vk), info) != 0;
+	}
+	return false;
+}
+
+#else
+
+bool SDL2InputBackend::postMouseAt(const Vec2i & /* windowPos */) { return false; }
+bool SDL2InputBackend::postMouseButton(int /* buttonId */, bool /* down */) { return false; }
+bool SDL2InputBackend::postMouseWheel(int /* steps */) { return false; }
+bool SDL2InputBackend::postKey(int /* keyId */, bool /* down */) { return false; }
+
+#endif
+
+InputBackend::DroppedInput SDL2InputBackend::droppedRealInput() const {
+	DroppedInput dropped = m_droppedReal;
+	dropped.ignored = m_window->isBackground();
+	return dropped;
+}
+
+void SDL2InputBackend::setKeyboardIgnored(bool ignored) {
+
+	if(ignored == m_droppedKeyboard.ignored) {
+		return;
+	}
+
+	m_droppedKeyboard.ignored = ignored;
+	if(ignored) {
+		// Keys held now are released: their release would be dropped
+		std::fill_n(keyStates, std::size(keyStates), false);
+	}
+	LogInfo << "[input] desktop keyboard: " << (ignored ? "ignored - the window mirrors the headset (#487)"
+	                                                     : "drives the game again");
 }
 
 bool SDL2InputBackend::isKeyboardKeyPressed(int keyId) const {
@@ -462,10 +617,73 @@ std::string SDL2InputBackend::getKeyName(Keyboard::Key key) const {
 	return std::string();
 }
 
-void SDL2InputBackend::onEvent(const SDL_Event & event) {
-	
+bool SDL2InputBackend::drop(const SDL_Event & event, DroppedInput & dropped) {
+
 	switch(event.type) {
-		
+		case SDL_KEYDOWN:         dropped.keys++; break;
+		case SDL_TEXTINPUT:       dropped.text++; break;
+		case SDL_MOUSEBUTTONDOWN: dropped.buttons++; break;
+		case SDL_MOUSEWHEEL:      dropped.wheel += u64(std::abs(event.wheel.y)); break;
+		case SDL_MOUSEMOTION:     dropped.moves++; break;
+		case SDL_KEYUP:
+		case SDL_TEXTEDITING:
+		case SDL_MOUSEBUTTONUP:   break;
+		default:                  return false;
+	}
+
+	return true;
+}
+
+void SDL2InputBackend::onEvent(const SDL_Event & event) {
+
+	if(event.type == m_injectedEventType) {
+		if(!m_injected.empty()) {
+			SDL_Event injected = m_injected.front();
+			m_injected.pop_front();
+			handleEvent(injected, true);
+		}
+		return;
+	}
+
+	handleEvent(event, false);
+}
+
+void SDL2InputBackend::handleEvent(const SDL_Event & event, bool injected) {
+
+	// In VR the window only mirrors the headset (#487): no keyboard, real or injected, drives the game
+	const bool keyboard = event.type == SDL_KEYDOWN || event.type == SDL_KEYUP || event.type == SDL_TEXTINPUT
+	                      || event.type == SDL_TEXTEDITING;
+	if(keyboard && m_droppedKeyboard.ignored) {
+		drop(event, m_droppedKeyboard);
+		if(event.type == SDL_KEYDOWN) {
+			LogInfo << "[input] desktop keyboard: " << SDL_GetScancodeName(event.key.keysym.scancode)
+			        << (injected ? " (injected)" : "") << " dropped (VR)";
+		}
+		return;
+	}
+
+	// A test run's window takes only the events the test channel injects (#487): the real mouse and keyboard
+	// belong to whoever works at the PC, and the cursor merely passing over the window is no input either
+	if(!injected && m_window->isBackground()) {
+		if(drop(event, m_droppedReal)) {
+			// Movement is only counted: it comes every frame the cursor crosses the window
+			if(event.type == SDL_KEYDOWN) {
+				LogInfo << "[input] real key " << SDL_GetScancodeName(event.key.keysym.scancode) << " dropped (test run)";
+			} else if(event.type == SDL_MOUSEBUTTONDOWN) {
+				LogInfo << "[input] real mouse button " << int(event.button.button) << " dropped (test run)";
+			} else if(event.type == SDL_MOUSEWHEEL) {
+				LogInfo << "[input] real mouse wheel " << event.wheel.y << " dropped (test run)";
+			}
+			return;
+		}
+		if(event.type == SDL_WINDOWEVENT && (event.window.event == SDL_WINDOWEVENT_ENTER
+		                                     || event.window.event == SDL_WINDOWEVENT_LEAVE)) {
+			return;
+		}
+	}
+
+	switch(event.type) {
+
 		case SDL_WINDOWEVENT: {
 			if(event.window.event == SDL_WINDOWEVENT_ENTER) {
 				cursorInWindow = true;

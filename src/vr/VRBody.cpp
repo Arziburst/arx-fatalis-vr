@@ -1099,12 +1099,26 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		// own shoulder, before the body was pushed back behind the eyes (#385.9: the push moves the drawn torso,
 		// never the arm the game reads); the custom arm hangs from the drawn, pushed shoulder below. With the Arx
 		// arms drawn the logical arm is the drawn one: it stays on the pushed shoulder, so the shoulder's band of
-		// faces is not stretched (the wrist bars may lean a little looking down there)
+		// faces is not stretched (the wrist bars read a second solve from the own shoulder, below)
 		const Vec3f shoulder = upper.anim.trans;
 		const Vec3f realShoulder = armsModelInfo().arxArms ? shoulder : shoulder - push;
 		const ArmRollPose posed = solveArmRoll(realShoulder, target, handQuat, upperLength, forearmLength, hint,
 		                                       chain.rest, params, roll, g_body.roll[hand]);
 		const ArmPose & pose = posed.pose;
+
+		// The wrist bars (#116) lie along the arm from the player's own shoulder: on the pushed one of the Arx
+		// arms the elbow sits back, and a watch pose turned the inner wrist some 15 degrees further from the
+		// eyes (wrist-vitals: 64 - 69 against 48). A second solve on a copy of the roll state, so the drawn arm's
+		// overflow side is untouched
+		Vec3f barsElbow = pose.elbow;
+		Vec3f barsWrist = pose.wrist;
+		if(realShoulder != shoulder - push) {
+			ArmRollState barsRoll = g_body.roll[hand];
+			const ArmPose bars = solveArmRoll(shoulder - push, target, handQuat, upperLength, forearmLength, hint,
+			                                  chain.rest, params, roll, barsRoll).pose;
+			barsElbow = bars.elbow;
+			barsWrist = bars.wrist;
+		}
 
 		// Write the chain back: every rotation built from the bend plane and the hand's roll, nothing
 		// of the animation's roll kept (research section 16a: the engine skins one bone per vertex, so
@@ -1195,6 +1209,8 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		arm.shoulder = pose.shoulder;
 		arm.elbow = pose.elbow;
 		arm.wrist = pose.wrist;
+		arm.barsElbow = barsElbow;
+		arm.barsWrist = barsWrist;
 		arm.reach = pose.reach;
 		arm.armLength = upperLength + forearmLength;
 		arm.error = pose.error;

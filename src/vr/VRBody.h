@@ -202,6 +202,10 @@ struct PlayerArmStatus {
 	Vec3f shoulder = Vec3f(0.f);  //!< the posed joints (units) - where the model's arm is
 	Vec3f elbow = Vec3f(0.f);
 	Vec3f wrist = Vec3f(0.f);
+	//! The elbow of the arm solved from the player's own shoulder, before the body was pushed back (#385.9): what
+	//! the wrist bars lie along (#116), so they face the eyes as on the unpushed arm whichever arm is drawn
+	Vec3f barsElbow = Vec3f(0.f);
+	Vec3f barsWrist = Vec3f(0.f); //!< that arm's wrist
 	float reach = 0.f;            //!< shoulder to target
 	float armLength = 0.f;        //!< upper arm + forearm of the model
 	float error = 0.f;            //!< wrist to target: 0 when the hand is where the controller is

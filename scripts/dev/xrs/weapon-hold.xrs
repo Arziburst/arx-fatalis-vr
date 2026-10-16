@@ -51,8 +51,22 @@ vr-sim hand right rot 0 90 0
 @assert vr.weapon.bladeAngle lt 2
 @shot sword-up
 @diff sword-ahead sword-ahead-still lt 1.5 left
-@diff sword-ahead sword-up gt 2 left
-
+# The picture changes with the blade - a sanity check behind the tip numbers above (the tip and the blade angle
+# are the proof). Ahead against up changed it by only 1.9 - 2.4 on the classic arm (#466, the runner and the
+# eyes differ), so the pair is the hand nearer the middle of the view, the sword ahead and then turned across
+# the view (3.4 left / 3.1 right measured), on both eyes
+vr-sim hand right pos 0.08 -0.3 -0.3
+vr-sim hand right rot 0 0 0
+@frames 15
+@shot sword-near
+vr-sim hand right rot 90 0 0
+@frames 10
+@shot sword-across
+@diff sword-near sword-across gt 2 left
+@diff sword-near sword-across gt 2 right
+vr-sim hand right pos 0.2 -0.45 -0.35
+vr-sim hand right rot 0 90 0
+@frames 10
 # The hand moves 30 cm right: the hilt goes with the palm, the blade stays on the handle
 @remember hiltX0 vr.weapon.hilt.x
 vr-sim hand right pos 0.5 -0.45 -0.35

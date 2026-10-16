@@ -184,6 +184,15 @@ try {
 	Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# A test run's game never takes the foreground (#487): the verdict on what Get-ArxForegroundWindow reports
+$before = [pscustomobject]@{ Handle = 100; ProcessId = 7 }
+Check 'foreground: the game''s window has it - fail' (-not (Test-ArxForegroundKept $before ([pscustomobject]@{ Handle = 200; ProcessId = 42 }) 42).Ok)
+Check 'foreground: the window that had it keeps it - ok' (Test-ArxForegroundKept $before ([pscustomobject]@{ Handle = 100; ProcessId = 7 }) 42).Ok
+Check 'foreground: another window took it, not the game - ok' (Test-ArxForegroundKept $before ([pscustomobject]@{ Handle = 300; ProcessId = 9 }) 42).Ok
+Check 'foreground: none in a session without a desktop - ok' (Test-ArxForegroundKept $null ([pscustomobject]@{ Handle = 0; ProcessId = 0 }) 42).Ok
+$now = Get-ArxForegroundWindow
+Check 'foreground: Get-ArxForegroundWindow answers' ($null -ne $now -and $now.Handle -ge 0)
+
 if ($script:failures) { Write-Host "test-launch-lib: $($script:failures) check(s) FAILED" -ForegroundColor Red; exit 1 }
 Write-Host 'test-launch-lib: all checks passed' -ForegroundColor Green
 exit 0

@@ -21,6 +21,7 @@
 #define ARX_INPUT_SDL2INPUTBACKEND_H
 
 #include <stddef.h>
+#include <deque>
 #include <string>
 
 #include <SDL.h>
@@ -55,11 +56,39 @@ public:
 	void stopTextInput() override;
 	std::string getKeyName(Keyboard::Key key) const override;
 	
+	// The test channel (#338): pushed into SDL's event queue, read back by onEvent() marked as injected (#487)
+	bool injectMouseMove(const Vec2i & motion) override;
+	bool injectMouseAt(const Vec2i & windowPos) override;
+	bool injectMouseButton(int buttonId, bool down) override;
+	bool injectMouseWheel(int steps) override;
+	bool injectKey(int keyId, bool down) override;
+
+	// Window messages posted to the game window, read back by SDL like the real devices' (#487; Windows only)
+	bool postMouseAt(const Vec2i & windowPos) override;
+	bool postMouseButton(int buttonId, bool down) override;
+	bool postMouseWheel(int steps) override;
+	bool postKey(int keyId, bool down) override;
+
+	DroppedInput droppedRealInput() const override;
+	void setKeyboardIgnored(bool ignored) override;
+	DroppedInput droppedKeyboard() const override { return m_droppedKeyboard; }
+
 	void onEvent(const SDL_Event & event);
-	
+
 private:
-	
+
+	bool inject(const SDL_Event & event);
+	//! \return true if the event is dropped (#487), counted in \p dropped
+	static bool drop(const SDL_Event & event, DroppedInput & dropped);
+	void handleEvent(const SDL_Event & event, bool injected);
+
 	SDL2Window * m_window;
+
+	//! The injected events, in order: each one's place in SDL's queue is held by an event of this type
+	Uint32 m_injectedEventType;
+	std::deque<SDL_Event> m_injected;
+	DroppedInput m_droppedReal;
+	DroppedInput m_droppedKeyboard;
 	
 	TextInputHandler * m_textHandler;
 	std::string m_editText;

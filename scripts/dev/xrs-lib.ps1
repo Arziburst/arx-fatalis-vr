@@ -35,6 +35,7 @@
 #                                  shot twice is below ~0.5; a head turn is several levels.
 #   @key <name> [n] [ms]           press a key n times (default 1), ms apart (default 300), in the game window,
 #                                  without taking the focus (a posted keyboard message): Escape, Enter, Space, A-Z, 0-9, F1-F12 ...
+#                                  Real input: a test run's window drops it (#487) - press keys with desktop-key
 #   @pending <#issue> <step>       a step that the game cannot pass yet (the feature is issue #N): its failure is
 #                                  reported as pending, not as a failure; once it passes the run FAILS until the
 #                                  @pending is removed - an expectation cannot go stale.

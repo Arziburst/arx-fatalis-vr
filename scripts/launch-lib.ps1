@@ -20,7 +20,8 @@
 #      branch, build, mode, pid, exit code, duration), read by scripts/dev/cycle-report.ps1.
 #   5. The launch budget: 10 launches per task (WORKFLOW.md); Write-ArxLaunchBudgetNote warns past it.
 #   6. Self-test windows do not take the focus: Set-ArxBackgroundWindow sets the SDL hint that shows
-#      the window without activating it (SW_SHOWNA).
+#      the window without activating it (SW_SHOWNA). Since #487 the game does it itself for every
+#      --test-dir run (never activated, in a corner, no real input); Test-ArxForegroundKept checks it.
 
 . (Join-Path $PSScriptRoot 'build-paths.ps1')
 
@@ -493,4 +494,32 @@ function Set-ArxBackgroundWindow {
 
 function Restore-ArxBackgroundWindow($Previous) {
 	if ($null -eq $Previous) { Remove-Item Env:SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN -ErrorAction SilentlyContinue } else { $env:SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN = $Previous }
+}
+
+# The foreground window now and its process (#487); Handle 0 in a session without a desktop (the CI runner)
+function Get-ArxForegroundWindow {
+	if (-not ('ArxForegroundNative' -as [type])) {
+		Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class ArxForegroundNative {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+}
+'@
+	}
+	$window = [ArxForegroundNative]::GetForegroundWindow()
+	[uint32]$owner = 0
+	if ($window -ne [IntPtr]::Zero) { $null = [ArxForegroundNative]::GetWindowThreadProcessId($window, [ref]$owner) }
+	[pscustomobject]@{ Handle = [int64]$window; ProcessId = [int]$owner }
+}
+
+# A test run's game never takes the foreground (#487): the verdict on the foreground window $Now (from
+# Get-ArxForegroundWindow) against the one $Before the launch. Ok is false only when the game's own window has it -
+# another window the person at the PC switched to is theirs to take.
+function Test-ArxForegroundKept($Before, $Now, [int]$GameProcessId) {
+	if (-not $Now -or $Now.Handle -eq 0) { return [pscustomobject]@{ Ok = $true; Text = 'no foreground window (a session without a desktop)' } }
+	if ($Now.ProcessId -eq $GameProcessId) { return [pscustomobject]@{ Ok = $false; Text = "the game's window took the foreground (#487)" } }
+	if ($Before -and $Now.Handle -eq $Before.Handle) { return [pscustomobject]@{ Ok = $true; Text = "kept by the window that had it before the launch (pid $($Now.ProcessId))" } }
+	[pscustomobject]@{ Ok = $true; Text = "another window has it (pid $($Now.ProcessId)), not the game" }
 }

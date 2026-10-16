@@ -507,7 +507,9 @@ bool ArxGame::initWindow(RenderWindow * window) {
 	m_MainWindow->setMinTextureUnits(3);
 	m_MainWindow->setMaxMSAALevel(config.video.antialiasing ? 8 : 1);
 	m_MainWindow->setVSync(benchmark::isEnabled() ? 0 : config.video.vsync);
-	
+	// A test run (--test-dir) never takes the focus or the desktop's real input from whoever works at the PC (#487)
+	m_MainWindow->setBackground(channel::isEnabled());
+
 	setWindowSize(config.video.fullscreen);
 	
 	if(!m_MainWindow->initialize()) {

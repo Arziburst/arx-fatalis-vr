@@ -40,7 +40,10 @@ a changed decision keeps its history in that cell.
 - A test run cannot be poked by hand any more; launch without the channel for that (`run-windows.ps1`).
 - The window is placed in a corner, not minimised: a minimised window renders no frames (`ArxGame::run`).
 - The proof posts window messages instead of `SendInput`: `SendInput` reaches only the window with the focus, which a
-  test run never has, and does not exist in the CI runner's session; posting goes through the same window procedure.
+  test run never has, and does not exist in the CI runner's session. A real keyboard or mouse reaches the game the same
+  way: Windows turns its input into `WM_KEYDOWN` / `WM_MOUSEMOVE` / `WM_LBUTTONDOWN` / `WM_MOUSEWHEEL` messages for the
+  game window, and SDL's window procedure (WndProc) turns those into SDL events. A posted message enters that same
+  WndProc path, so it is what the game sees from a real device.
 
 ### Consequences
 - `status.json`: `realInput`, `desktopKeyboard`, `window.activation` / `placement` / `x` / `y`; the channel's

@@ -2951,6 +2951,13 @@ same eight shots.
 The capture of that sheet (eight shots of #36's arm rolled 0 / 45 / 90 / 180°) is not kept in the repository — game
 captures live only in CI artifacts; regenerate it by running the sequence above.
 
+**After A1 (#304, D-050):** the same eight poses on the roll-aware rig — the elbow swings with the roll, the
+forearm takes two thirds of what is left, the upper arm half of the forearm's (`scripts/dev/xrs/arms-roll.xrs`,
+sheet by `scripts/dev/shot-sheet.ps1`). The wrist band carries about 20° at a 90° roll and 40° at 180° where it
+carried the whole roll before.
+
+(The sheet of #304's arm rolled 0 / 45 / 90 / 180 degrees is a game capture: it lives in the `game-checks` artifact of a CI run and the local capture folder, never in git - the owner, 2026-10-13.)
+
 ## Sources
 
 Dishonored VR (branch `VR-Main`, commit `b15e4d32a`):

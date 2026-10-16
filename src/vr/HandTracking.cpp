@@ -21,6 +21,8 @@
 
 #if ARX_HAVE_OPENXR
 
+#include <string>
+
 #include "core/GameEvent.h"
 #include "io/log/Logger.h"
 #include "vr/FingerCurl.h"
@@ -40,7 +42,11 @@ const char * HandTracking::extensionName() {
 	return XR_EXT_HAND_TRACKING_EXTENSION_NAME;
 }
 
-bool HandTracking::bind(XrInstance instance) {
+const char * HandTracking::motionRangeExtensionName() {
+	return XR_EXT_HAND_JOINTS_MOTION_RANGE_EXTENSION_NAME;
+}
+
+bool HandTracking::bind(XrInstance instance, bool motionRange) {
 
 	unbind();
 
@@ -60,8 +66,11 @@ bool HandTracking::bind(XrInstance instance) {
 	}
 
 	m_status.extension = true;
+	m_status.motionRange = motionRange;
 	LogInfo << "[vr] hands: " << extensionName() << " v" << XR_EXT_hand_tracking_SPEC_VERSION
-	        << " enabled on the instance (the fingers follow the real fingers once the session has trackers)";
+	        << " enabled on the instance (the fingers follow the real fingers once the session has trackers); "
+	        << (motionRange ? std::string(motionRangeExtensionName()) + ": the joints conform to the controller"
+	                        : std::string("no ") + motionRangeExtensionName() + ": the joints are the runtime's unobstructed range");
 
 	return true;
 }
@@ -117,6 +126,12 @@ void HandTracking::locate(XrSpace space, XrTime time, FrameHands & hands) {
 			XrHandJointsLocateInfoEXT info = { XR_TYPE_HAND_JOINTS_LOCATE_INFO_EXT };
 			info.baseSpace = space;
 			info.time = time;
+			// SteamVR's own hand around the controller's handle, thumb included (#385.7, research F-464)
+			XrHandJointsMotionRangeInfoEXT range = { XR_TYPE_HAND_JOINTS_MOTION_RANGE_INFO_EXT };
+			range.handJointsMotionRange = XR_HAND_JOINTS_MOTION_RANGE_CONFORMING_TO_CONTROLLER_EXT;
+			if(m_status.motionRange) {
+				info.next = &range;
+			}
 			std::array<XrHandJointLocationEXT, XR_HAND_JOINT_COUNT_EXT> locations = { };
 			XrHandJointLocationsEXT located = { XR_TYPE_HAND_JOINT_LOCATIONS_EXT };
 			located.jointCount = uint32_t(locations.size());
@@ -130,15 +145,19 @@ void HandTracking::locate(XrSpace space, XrTime time, FrameHands & hands) {
 					           << (m_status.failures == MaxLoggedLocateFailures ? " (further failures are not logged)" : "");
 				}
 			} else if(located.isActive) {
-				// Every joint must have a position: the curl is read from the angles between them
+				// Every joint must have a position (the curl is read from the angles between them) and an
+				// orientation (the glove is posed by them, #385.7)
 				active = true;
+				const XrSpaceLocationFlags needed = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
 				for(size_t joint = 0; joint < locations.size(); joint++) {
-					if(!(locations[joint].locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT)) {
+					if((locations[joint].locationFlags & needed) != needed) {
 						active = false;
 						break;
 					}
 					const XrVector3f & p = locations[joint].pose.position;
+					const XrQuaternionf & q = locations[joint].pose.orientation;
 					joints.position[joint] = Vec3f(p.x, p.y, p.z);
+					joints.orientation[joint] = glm::normalize(glm::quat(q.w, q.x, q.y, q.z));
 				}
 			}
 		}

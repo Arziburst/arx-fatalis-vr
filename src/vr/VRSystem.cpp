@@ -644,8 +644,13 @@ bool createInstance() {
 	std::vector<const char *> extensions = { XR_KHR_OPENGL_ENABLE_EXTENSION_NAME };
 	XrResult listFailure = XR_SUCCESS;
 	const bool handTracking = extensionListed(HandTracking::extensionName(), listFailure);
+	// The joints conforming to the controller (#385.7): asked for with the hand tracking when the runtime has it
+	const bool motionRange = handTracking && extensionListed(HandTracking::motionRangeExtensionName(), listFailure);
 	if(handTracking) {
 		extensions.push_back(HandTracking::extensionName());
+		if(motionRange) {
+			extensions.push_back(HandTracking::motionRangeExtensionName());
+		}
 	} else {
 		LogInfo << "[vr] hands: the runtime does not list " << HandTracking::extensionName()
 		        << " - the fingers follow the controls (trigger, grip, thumb)";
@@ -673,7 +678,7 @@ bool createInstance() {
 	}
 
 	if(handTracking) {
-		g_xr.handTracking.bind(g_xr.instance);
+		g_xr.handTracking.bind(g_xr.instance, motionRange);
 	}
 
 	XrInstanceProperties properties = { XR_TYPE_INSTANCE_PROPERTIES };

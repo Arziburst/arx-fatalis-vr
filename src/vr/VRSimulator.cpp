@@ -146,6 +146,8 @@ struct SimRuntime {
 	std::set<u64> actionSets;
 	bool attached = false;
 	std::map<u64, size_t> handTrackers; //!< XR_EXT_hand_tracking trackers by handle: the hand (#305)
+	//! The motion range the game asked for last per hand (XR_EXT_hand_joints_motion_range, #385.7): 0 none
+	std::array<u32, 2> motionRange = { { 0, 0 } };
 
 	// The frame loop
 	u64 frames = 0;
@@ -331,6 +333,7 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrEnumerateInstanceExtensionProperties(const 
 	const struct { const char * name; uint32_t version; } extensions[] = {
 		{ XR_KHR_OPENGL_ENABLE_EXTENSION_NAME, XR_KHR_opengl_enable_SPEC_VERSION },
 		{ XR_EXT_HAND_TRACKING_EXTENSION_NAME, XR_EXT_hand_tracking_SPEC_VERSION },
+		{ XR_EXT_HAND_JOINTS_MOTION_RANGE_EXTENSION_NAME, XR_EXT_hand_joints_motion_range_SPEC_VERSION },
 	};
 	*count = uint32_t(std::size(extensions));
 	if(capacity == 0) {
@@ -350,7 +353,8 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrEnumerateInstanceExtensionProperties(const 
 XRAPI_ATTR XrResult XRAPI_CALL sim_xrCreateInstance(const XrInstanceCreateInfo * info, XrInstance * instance) {
 	for(uint32_t i = 0; i < info->enabledExtensionCount; i++) {
 		if(std::strcmp(info->enabledExtensionNames[i], XR_KHR_OPENGL_ENABLE_EXTENSION_NAME) != 0
-		   && std::strcmp(info->enabledExtensionNames[i], XR_EXT_HAND_TRACKING_EXTENSION_NAME) != 0) {
+		   && std::strcmp(info->enabledExtensionNames[i], XR_EXT_HAND_TRACKING_EXTENSION_NAME) != 0
+		   && std::strcmp(info->enabledExtensionNames[i], XR_EXT_HAND_JOINTS_MOTION_RANGE_EXTENSION_NAME) != 0) {
 			LogError << "[vr] sim: the game asks for the extension " << info->enabledExtensionNames[i]
 			         << ", which the simulator does not have - add it to vr/VRSimulator.cpp";
 			return XR_ERROR_EXTENSION_NOT_PRESENT;
@@ -405,6 +409,20 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrLocateHandJointsEXT(XrHandTrackerEXT tracke
 	}
 	const size_t hand = it->second;
 	const SimRig & rig = g_sim->sim.rig;
+	// XR_EXT_hand_joints_motion_range (#385.7): the range asked for, said once per change. The simulated hand
+	// holds no real handle, so the conforming joints are the script's hand as it is
+	u32 range = 0;
+	for(const XrBaseInStructure * next = static_cast<const XrBaseInStructure *>(info->next); next; next = next->next) {
+		if(next->type == XR_TYPE_HAND_JOINTS_MOTION_RANGE_INFO_EXT) {
+			range = u32(reinterpret_cast<const XrHandJointsMotionRangeInfoEXT *>(next)->handJointsMotionRange);
+		}
+	}
+	if(range != g_sim->motionRange[hand]) {
+		g_sim->motionRange[hand] = range;
+		LogInfo << "[vr] sim: the " << (hand == 0 ? "left" : "right") << " hand's joints are asked for "
+		        << (range == XR_HAND_JOINTS_MOTION_RANGE_CONFORMING_TO_CONTROLLER_EXT ? "conforming to the controller"
+		            : range == XR_HAND_JOINTS_MOTION_RANGE_UNOBSTRUCTED_EXT ? "unobstructed" : "with no motion range");
+	}
 	locations->isActive = XR_FALSE;
 	Vec3f basePosition(0.f);
 	glm::quat baseOrientation(1.f, 0.f, 0.f, 0.f);
@@ -417,11 +435,13 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrLocateHandJointsEXT(XrHandTrackerEXT tracke
 	HandShape shape;
 	shape.thumb = rig.fingers[hand].curl.x;
 	shape.index = rig.fingers[hand].curl.y;
-	shape.fingers = rig.fingers[hand].curl.z;
+	shape.middle = rig.fingers[hand].curl.z;
+	shape.ring = rig.fingers[hand].outer.x;
+	shape.little = rig.fingers[hand].outer.y;
 	const HandJoints joints = synthesizeHandJoints(Hand(hand), shape, rig.hands[hand].position, rig.hands[hand].orientation());
 	for(uint32_t i = 0; i < locations->jointCount; i++) {
 		Vec3f position = joints.position[i];
-		glm::quat orientation = rig.hands[hand].orientation();
+		glm::quat orientation = joints.orientation[i]; // the joint's own OpenXR frame (#385.7)
 		poseInSpace(basePosition, baseOrientation, position, orientation);
 		locations->jointLocations[i].pose = toPose(position, orientation);
 		locations->jointLocations[i].radius = 0.01f;

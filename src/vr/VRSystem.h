@@ -261,6 +261,8 @@ struct HandJointsStatus {
 	bool extension = false;  //!< the runtime lists the extension and the instance has its functions
 	bool supported = false;  //!< the headset reports hand tracking
 	bool trackers = false;   //!< a tracker per hand exists on the session
+	//! XR_EXT_hand_joints_motion_range is enabled: the joints are asked for conforming to the controller (#385.7)
+	bool motionRange = false;
 	std::array<bool, HandCount> active = { { false, false } }; //!< the joints were located in the last frame
 	u64 locates = 0;         //!< frames the joints were asked for
 	std::array<u64, HandCount> activeFrames = { { 0, 0 } };   //!< frames with active joints per hand

@@ -44,6 +44,9 @@
  * is scaled so the model's segment reaches its limit when the real finger reaches a fist. The
  * action values give fractions: the trigger is the index finger, the grip the three-finger block,
  * a thumb resting on a control a closed thumb. A hand on a weapon's grip is the closed hand.
+ *
+ * The custom VR hand (#385) has five fingers of three joints each: its FingerPose is read the same
+ * way, one angle per joint, with the grip closing the middle, ring and little finger.
  */
 namespace vr {
 
@@ -80,10 +83,28 @@ enum class HandJoint : u8 {
 
 const size_t HandJointCount = size_t(HandJoint::Count); //!< 26, XR_HAND_JOINT_COUNT_EXT
 
-//! One hand's joints as located for a frame: positions only (the curl is read from the angles between the bones)
+//! Every joint's orientation the identity
+inline std::array<glm::quat, HandJointCount> identityJointOrientations() {
+	std::array<glm::quat, HandJointCount> orientations;
+	orientations.fill(glm::quat(1.f, 0.f, 0.f, 0.f));
+	return orientations;
+}
+
+/*!
+ * \brief One hand's joints as located for a frame: positions and orientations
+ *
+ * The curl is read from the angles between the bones (the positions); the custom glove is posed by the
+ * orientations (#385.7, vr/HandRig.h poseHandFromJoints). An orientation is the OpenXR joint frame
+ * (XR_EXT_hand_tracking's "Conventions of hand joints"): -Z along the bone toward the fingertip, +Y on
+ * the back of the hand (the thumb's: toward the thumb's side, away from the fingers), X completing a
+ * right-handed frame; the palm and the wrist point -Z along the middle finger. A tip has its distal
+ * bone's frame.
+ */
 struct HandJoints {
 	bool valid = false; //!< every joint was located this frame
 	std::array<Vec3f, HandJointCount> position = { }; //!< meters, all in one space
+	//! the OpenXR joint frames, in the space of the positions (the identity until located)
+	std::array<glm::quat, HandJointCount> orientation = identityJointOrientations();
 	const Vec3f & operator[](HandJoint joint) const { return position[size_t(joint)]; }
 	Vec3f & operator[](HandJoint joint) { return position[size_t(joint)]; }
 };
@@ -147,11 +168,79 @@ FingerCurl approachCurl(const FingerCurl & current, const FingerCurl & target, f
 //! The angle between two bone directions in degrees, 0 for a degenerate one
 float flexionDegrees(const Vec3f & before, const Vec3f & after);
 
-//! How far a hand is closed, per finger group: 0 open, 1 a fist (the simulated runtime's script)
+//! The five fingers of a real hand, in the order of \c XR_EXT_hand_tracking's joints
+enum class Finger : u8 {
+	Thumb,
+	Index,
+	Middle,
+	Ring,
+	Little,
+	Count
+};
+
+const size_t FingerCount = size_t(Finger::Count); //!< 5
+
+/*!
+ * \brief How far each joint of a five-finger hand bends (#385): the custom VR hand's fingers
+ *
+ * Degrees, 0 = straight; \c flex[finger][joint] from the root: the thumb's metacarpal (carpometacarpal),
+ * proximal and distal joint, a finger's knuckle (metacarpophalangeal), middle and last joint.
+ * \c spread is the knuckle's sideways turn, signed (+ towards the thumb's side), 0 = in line with
+ * its metacarpal; the thumb's spread stays 0 (its sideways motion is in its three flexions).
+ */
+struct FingerPose {
+	std::array<std::array<float, 3>, FingerCount> flex = { };
+	std::array<float, FingerCount> spread = { };
+};
+
+/*!
+ * \brief The bend of each joint at a closed fist, degrees: the custom hand's limits (#385)
+ *
+ * A first proposal, tuned in the headset: a finger bends 90 at the knuckle, 100 at the middle
+ * joint and 70 at the last one, the thumb 40, 50 and 70. A real angle past its limit is held there.
+ */
+struct FingerPoseLimits {
+	std::array<std::array<float, 3>, FingerCount> flex = { {
+		{ 40.f, 50.f, 70.f },
+		{ 90.f, 100.f, 70.f },
+		{ 90.f, 100.f, 70.f },
+		{ 90.f, 100.f, 70.f },
+		{ 90.f, 100.f, 70.f },
+	} };
+};
+
+/*!
+ * \brief The five-finger pose from a located hand
+ *
+ * The flexion at each joint is the angle between the bone before it and the bone after it (as
+ * fingerCurlFromJoints reads it), so the joints may be in any space and either hand; each is held
+ * within 0 and its limit. Invalid joints give an open hand.
+ */
+FingerPose fingerPoseFromJoints(const HandJoints & joints, const FingerPoseLimits & limits = FingerPoseLimits());
+
+/*!
+ * \brief The five-finger pose from the controller's action values, for a runtime without hand joints
+ *
+ * \param trigger    0 - 1: the index finger
+ * \param grip       0 - 1: the middle, ring and little finger
+ * \param thumbTouch the thumb rests on a control - a closed thumb
+ */
+FingerPose fingerPoseFromControls(float trigger, float grip, bool thumbTouch,
+                                  const FingerPoseLimits & limits = FingerPoseLimits());
+
+//! The closed hand: every joint of all five fingers at its limit (a hand on a weapon's grip)
+FingerPose fingerPoseClosed(const FingerPoseLimits & limits = FingerPoseLimits());
+
+//! \return \a current moved towards \a target by at most \a stepDegrees per joint and spread
+FingerPose approachPose(const FingerPose & current, const FingerPose & target, float stepDegrees);
+
+//! How far a hand is closed, per finger: 0 open, 1 a fist (the simulated runtime's script)
 struct HandShape {
 	float thumb = 0.f;
 	float index = 0.f;
-	float fingers = 0.f; //!< the middle, ring and little finger
+	float middle = 0.f;
+	float ring = 0.f;
+	float little = 0.f;
 };
 
 /*!
@@ -160,10 +249,26 @@ struct HandShape {
  * Built in the OpenXR grip frame of \a hand (the palm centroid at the origin, the fingers along -Y,
  * the thumb towards -Z, the palm facing -X for the right hand and +X for the left, as the spec's
  * grip pose says) and placed by \a gripPosition / \a gripOrientation. A fully closed finger bends
- * 90 degrees at the knuckle, 100 at the middle joint and 70 at the last one; the thumb 50 and 70.
+ * 90 degrees at the knuckle, 100 at the middle joint and 70 at the last one; the thumb 40 at its
+ * first joint (the metacarpal on the wrist: a real thumb closing into a fist flexes there too, #385.4), 50 and 70.
+ * The orientations are the joints' OpenXR frames (orientHandJoints, #385.7).
  */
 HandJoints synthesizeHandJoints(Hand hand, const HandShape & shape, const Vec3f & gripPosition = Vec3f(0.f),
                                 const glm::quat & gripOrientation = glm::quat(1.f, 0.f, 0.f, 0.f));
+
+/*!
+ * \brief Every joint's OpenXR frame from the positions of \a joints (#385.7)
+ *
+ * \param along     the hand's direction from the wrist to the fingers (the palm's and the wrist's -Z)
+ * \param back      out of the back of the hand (the palm's +Y)
+ * \param thumbSide across the hand toward the thumb (the thumb joints' +Y)
+ *
+ * A finger joint's -Z runs along its bone to the next joint (a tip takes its distal's frame) and its X is
+ * the hand's sideways axis (\a back x -\a along) made square to the bone - the axis a finger flexes about,
+ * so a curled finger keeps its frame's roll; a thumb joint's +Y is \a thumbSide made square to its bone.
+ * The three directions are in the space of the positions and need not be unit.
+ */
+void orientHandJoints(HandJoints & joints, const Vec3f & along, const Vec3f & back, const Vec3f & thumbSide);
 
 } // namespace vr
 

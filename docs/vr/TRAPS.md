@@ -8,6 +8,26 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-14 — The Arx arm grows a second elbow in the middle of the forearm, though the IK has only one (#466.1)
+
+**Symptom:** with the Arx arms drawn (`arms arx`) the owner sees a second elbow and wants the arm one solid
+piece up to the elbow; the research blamed the flat upper-arm rings (H1) or a few faces spanning the upper arm
+and the wrist (H2), and later the upper arm's last ring past the elbow (F-308).
+**Cause (measured on `human_base`, both arms, the `[vr] body: ... Arx arm` bind line):** the forearm group
+`right_elbow` holds only the forearm's first third - 11 vertices, 2.5 .. 11.3 units past the elbow on a 30.5 bone.
+The other two thirds are skinned to the **wrist** group: 8 vertices at 10.7 .. 20.1 past the elbow (14 of the wrist
+group's vertices lie before the wrist joint, the wrist ring included). So every bend of the wrist and the wrist
+band's share of the roll fold the forearm in its middle, across the 12 faces between the two groups. One of those
+wrist vertices (671 right, 10.7 past the elbow) is joined straight to the upper arm's 92 and 674 by 3 faces (143,
+1198, 1210): H2's web. The elbow ring itself mixes 6 upper-arm vertices (up to 3.1 past the joint) with 4 of the
+forearm (2.5 .. 3.9), so even the elbow folds in two bands. H1 is not it: only one upper-arm ring is flat (mid
+upper arm, rigid on one bone). Measured with `vr.body.<hand>.classic` (`arms arx`): 2 - 4 bands bent past 20
+degrees at the elbow bent 57 - 111 degrees, the forearm rings' roll spread up to 55.6 degrees with the hand
+rolled 180.
+**Do:** read the arm by where its vertices are, not by their group (`vr/ArxArmFix.h` `diagnoseArxArm`). `arms
+classic` re-skins by ring in VR only (`skinPlayerArms` after the engine's transform): one band bent, spread 0.
+A crease count on a **straight** arm is 0, not 1 - pick the bent poses for `eq 1`. human_base reloads on every
+equipment change; the classic parts are rebuilt in `bind`, which runs again for the new object.
 ## 2026-10-14 — The build fails with `git.exe ... missing and no known rule to make it` after a Git update (#377)
 
 **Symptom:** `build-windows.ps1` stops at "Building" with
@@ -442,6 +462,10 @@ A joint-position check cannot see it.
 its arms, what Arx's model and textures allow: twist bones, roll limits, a separate VR arm rig). Until then,
 judge arms in the headset or on a capture with the controllers *rolled*, not from `vr.body` alone; the
 `arms-follow` sequence rolls nothing.
+**Resolved by #304 (D-050):** the three arm rotations are built from the bend plane and the hand's roll is
+shared along the arm (vr/ArmRoll.h); `vr.body.<hand>.wristTwist` / `elbowTwist` / `upperRoll` now say what each
+band of faces carries, and the `arms-roll` sequence rolls the controller 0–180° and asserts on them. The lesson
+stays: a joint-position check sees no twist.
 
 ## 2026-10-09 — The body is nowhere in a `--vr-sim` shot that looks down, although `vr.body` says both arms are posed with `error` 0 (#36)
 
@@ -1279,6 +1303,15 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Cause:** the PC, not the game: other workers build in parallel (the game lock serialises game runs, not compiles), and a starved CPU stretches every phase of the frame at once.
 **Do:** judge pacing and frame costs only from windows at full rate, or repeat the run; a real cost of the game shows in one phase (`cause`), the same way in every run. `perf-summary.ps1` lists the hitches by cause.
 
+## 2026-10-13 - A file under data/core is in the repository but the game says "not found"
+**Symptom:** `[W] VRArms: [vr] arms: vr/arms/Hand_Glove_low_R.gltf not found` (#385.3), while the file is in `data/core/vr/arms/` and the build's data dirs point at `data/core`; the host tests that load the same file pass.
+**Cause:** two rules of the resource system. `src/io/resource/ResourceSetup.cpp` mounts only a fixed list of top-level folders of each data dir (`editor`, `game`, `graph`, `localisation`, `misc`, `sfx`, `speech`, and now `vr`), so a new folder is invisible until it is added there; and every resource name is lower case (`PakReader::addFiles`), so `vr/arms/Hand_Glove_low_R.gltf` must be asked for as `vr/arms/hand_glove_low_r.gltf`. Host tests read data/core straight from the source tree and see neither rule.
+**Do:** a new folder under data/core goes into that list in the same change; ask for resources in lower case; prove an asset in a game run (a sequence that asserts the loaded state), not only in a host test.
+
+## 2026-10-13 - A test or source file fails to compile with C2059 "syntax error: 'const'" on an innocent name
+**Symptom:** `tests/vr/ArmMeshTest.cpp(48): error C2059: syntax error: 'const'` on a helper `void near(...)`, or C2628 "'vr::SleeveParams' followed by 'char'" on a variable named `small` (#385.1).
+**Cause:** `arx` and `arxtest` are unity builds (`ub_arxtest.cpp`): `windows.h`, included earlier in the same unit by FilesystemWindows.cpp, Process.cpp or WindowsUtils.cpp, defines the macros `near` and `far` (empty) and `small` (`char`). Names in anonymous namespaces also collide across the files of one unit.
+**Do:** never name anything `near`, `far` or `small`; give file-scope helpers unique names (a file prefix).
 ## 2026-10-13 - In the playground a hand's press lands on the panel, not on the lever it aims at
 **Symptom:** `--vr-sim` in the playground (`-Playground`): the reticle is on a lever (`vr.reticle.right.entity`), grip + trigger fires `act_right`, but nothing is pulled; `vr.pointer.click hand=right` is logged instead, `vr.panel.menu` is `inventory`. `ui inventory close` closes the bag and the next frame opens it again (#38).
 **Cause:** a level started with `--loadlevel` stays in the engine's cursor mode (no free look), and in cursor mode the engine keeps the inventory open: the floating panel hangs in front of the hands and takes their rays. Opening a chest or a body leaves free look again (the original's own rule).

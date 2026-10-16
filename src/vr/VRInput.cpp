@@ -382,10 +382,9 @@ void updatePointer() {
 	// trigger's
 	const bool menu = ARXmenu.mode() != Mode_InGame;
 	for(size_t hand = 0; hand < HandCount; hand++) {
-		const Event use = Hand(hand) == Hand::Left ? Event::UseLeft : Event::UseRight;
-		if(!g_input.resolver.active(use)) {
+		if(!g_input.resolver.active(useEvents[hand])) {
 			g_input.useOnPanel[hand] = false;
-		} else if(g_input.resolver.pressed(use)) {
+		} else if(g_input.resolver.pressed(useEvents[hand])) {
 			g_input.useOnPanel[hand] = g_input.rays[hand].onPanel;
 			if(menu && !g_input.rays[hand].onPanel) {
 				pointer.mutePress();

@@ -60,9 +60,10 @@ vr-sim action trigger right 0
 @assert hero.attributePoints eq 15
 @assert vr.pointer.clicks eq {clicks+2}
 
-# A press off the panel clicks nothing: the trigger and both grips with both hands behind the head. The engine's
-# mouse stays on strength, where the right hand left it, and the desktop mouse is parked over it too and clicks
-# both buttons (#338: in VR the window takes no mouse input) - the grip used to right-click there (#398)
+# A press off the panel clicks nothing: the trigger, and each hand's use chord (grip, then trigger: the right button
+# in the menus since D-042), with both hands behind the head. The engine's mouse stays on strength, where the right
+# hand left it, and the desktop mouse is parked over it too and clicks both buttons (#338: in VR the window takes no
+# mouse input) - the use used to right-click there (#398)
 desktop-mouse at menu strength
 @frames 5
 vr-sim hand left rot 180 0 0
@@ -75,13 +76,19 @@ vr-sim action trigger right 1
 @frames 5
 vr-sim action trigger right 0
 @frames 5
+@assert vr.pointer.offPanelPresses eq {muted+1}
 vr-sim action grip right 1
 @frames 5
-vr-sim action grip right 0
+vr-sim action trigger right 1
 @frames 5
+vr-sim action trigger right 0; vr-sim action grip right 0
+@frames 5
+@assert vr.pointer.offPanelPresses eq {muted+2}
 vr-sim action grip left 1
 @frames 5
-vr-sim action grip left 0
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0; vr-sim action grip left 0
 @frames 5
 desktop-mouse button 2 down
 @frames 5

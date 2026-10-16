@@ -609,6 +609,8 @@ bool SDL2Window::initialize() {
 	// docs/vr/WORKFLOW.md "Parallel work"): report the focus SDL actually has instead of assuming it,
 	// so status.json "window.focused" tells the truth. A later focus change arrives as an SDL event.
 	onFocus((SDL_GetWindowFlags(m_window) & SDL_WINDOW_INPUT_FOCUS) != 0);
+	// Where it was placed (a test run's corner, #487): SDL reports only later moves
+	SDL_GetWindowPosition(m_window, &m_position.x, &m_position.y);
 
 	return true;
 }

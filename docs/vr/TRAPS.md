@@ -1334,10 +1334,15 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 
 ## 2026-10-13 - In VR the desktop mouse does nothing
 **Symptom:** in a VR session (the headset or `--vr-sim`) moving, clicking or scrolling the mouse over the game window changes nothing - the menu under the cursor is not clicked, the camera does not turn.
-**Cause:** by design (#338, the owner): in VR the window only mirrors the headset; `Input::update()` drops the real mouse's movement, buttons and wheel while `vr::isEnabled()` (`desktopMouse` in `status.json`, `[input] desktop mouse:` lines in `arx.log`). The keyboard is unchanged.
+**Cause:** by design (#338, the owner): in VR the window only mirrors the headset; `Input::update()` drops the real mouse's movement, buttons and wheel while `vr::isEnabled()` (`desktopMouse` in `status.json`, `[input] desktop mouse:` lines in `arx.log`). Since #487 the keyboard is dropped too (below).
 **Do:** in VR aim the hands (`vr-point`, the controllers); test the real mouse flat (`--no-vr`) with the channel's `desktop-mouse`.
 
 ## 2026-10-14 - `@key` fails in CI with "process has no window"
 **Symptom:** a sequence that passes locally fails in CI at its first `@key`: `@key: process <pid> has no window` (#399, PR #458).
 **Cause:** `@key` posts a keyboard message to the game's main window. The CI runner is a service in session 0, with no desktop, so the game process has no window handle to post to.
 **Do:** in a sequence CI runs, press keys through the test channel: `desktop-key <name> down`, a few frames, `desktop-key <name> up` (SDL's event queue, like `desktop-mouse`).
+
+## 2026-10-16 - A test run ignores my mouse and keyboard, and in VR the keyboard does nothing
+**Symptom:** clicking, scrolling or typing into the window of a test run (`--test-dir`: the smoke test, `xrs-run.ps1`, CI, `run-windows.ps1 -TestChannel`) changes nothing, the window cannot be activated and sits in the bottom right corner; an `.xrs` `@key` does nothing any more. In VR (headset or `--vr-sim`) no key of the desktop keyboard - not even the channel's `desktop-key` - reaches the game (#487).
+**Cause:** by design (#487, the owner): a test run must not take the focus or the input of whoever works at the PC. The game shows the window without activation (`WS_EX_NOACTIVATE`) in the corner and `SDL2InputBackend` drops every real mouse and keyboard event; only the events the channel injects (`desktop-mouse`, `desktop-key`, marked as injected) and the simulated controllers pass (`realInput` in `status.json`, `[input] real ... dropped (test run)` in `arx.log`). `@key` posts a window message - real input. In VR the window only mirrors the headset: the keyboard is dropped whatever its origin (`desktopKeyboard`), like the mouse (#338).
+**Do:** drive a test run through the channel (`desktop-key`, `desktop-mouse`, `vr-sim`, `vr-point`); test the keyboard flat (`--no-vr`) with `desktop-key`. To try something by hand, launch without the channel (`run-windows.ps1` without `-TestChannel`).

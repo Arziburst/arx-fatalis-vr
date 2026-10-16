@@ -13,6 +13,42 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: The desktop window takes no input in VR, and a test run's window none at all
+
+- **Date:** 2026-10-16
+- **Status:** Accepted
+- **Decided by:** project owner (#487, 2026-10-16: test runs steal his focus, mouse and keyboard; in VR "the desktop
+  window is only the mirror of the eye" - this answers #338's open keyboard question)
+- **Amends:** #338 (PR #458: the desktop mouse dropped in VR)
+
+### Decision
+- **VR:** while a VR session runs, neither the desktop mouse (#338) nor the desktop keyboard drives the game - real or
+  injected by the channel (`desktopMouse`, `desktopKeyboard` in `status.json`). Only the headset and the controllers do.
+  Flat mode keeps both as in the original.
+- **Test runs** (`--test-dir`): the game itself shows its window without activation, never lets it be activated
+  (`WS_EX_NOACTIVATE`), puts it in the bottom right corner of the main display, never warps the real cursor, and drops
+  every real mouse and keyboard event (`realInput`). The channel's injected events (`desktop-mouse`, `desktop-key`) are
+  marked as injected in `SDL2InputBackend` and pass; `real-input` posts window messages - the real devices' path - to
+  prove the drop. The owner's own launches (no `--test-dir`) are unchanged.
+
+### Why
+- The owner works at the same PC while workers and leads run tests: a test window popping up in the middle of the
+  screen took his focus, and his mouse and typing reached the game and could break a running test.
+- In VR the window is a mirror: a key or a mouse pressed by someone else at the desk must not act in the player's game.
+
+### Trade-offs accepted
+- A test run cannot be poked by hand any more; launch without the channel for that (`run-windows.ps1`).
+- The window is placed in a corner, not minimised: a minimised window renders no frames (`ArxGame::run`).
+- The proof posts window messages instead of `SendInput`: `SendInput` reaches only the window with the focus, which a
+  test run never has, and does not exist in the CI runner's session; posting goes through the same window procedure.
+
+### Consequences
+- `status.json`: `realInput`, `desktopKeyboard`, `window.activation` / `placement` / `x` / `y`; the channel's
+  `real-input`; `real-input.xrs`, `real-input-flat.xrs`; the smoke test fails a run whose window holds the foreground.
+  `@key` is now real input, dropped by a test run. [TESTING.md](TESTING.md), [TRAPS.md](TRAPS.md).
+
+---
+
 ## D-051: The classic Arx arm - one elbow, the forearm one rigid piece, re-skinned by ring in VR; the glove optional at its wrist
 
 - **Date:** 2026-10-14

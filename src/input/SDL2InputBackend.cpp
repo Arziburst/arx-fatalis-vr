@@ -358,6 +358,61 @@ void SDL2InputBackend::getMouseButtonClickCount(int buttonId, int & numClick, in
 	numClick = currentClickCount[i], numUnClick = currentUnclickCount[i];
 }
 
+bool SDL2InputBackend::injectMouseMove(const Vec2i & motion) {
+	return injectMouseAt(cursorAbs + motion);
+}
+
+bool SDL2InputBackend::injectMouseAt(const Vec2i & windowPos) {
+	SDL_Event event = { };
+	event.type = SDL_MOUSEMOTION;
+	event.motion.windowID = SDL_GetWindowID(m_window->m_window);
+	event.motion.x = windowPos.x;
+	event.motion.y = windowPos.y;
+	event.motion.xrel = windowPos.x - cursorAbs.x;
+	event.motion.yrel = windowPos.y - cursorAbs.y;
+	return SDL_PushEvent(&event) == 1;
+}
+
+bool SDL2InputBackend::injectMouseButton(int buttonId, bool down) {
+	for(size_t button = 0; button < std::size(sdlToArxButton); button++) {
+		if(sdlToArxButton[button] == buttonId) {
+			SDL_Event event = { };
+			event.type = down ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
+			event.button.windowID = SDL_GetWindowID(m_window->m_window);
+			event.button.button = Uint8(button);
+			event.button.state = down ? SDL_PRESSED : SDL_RELEASED;
+			event.button.clicks = 1;
+			event.button.x = cursorAbs.x;
+			event.button.y = cursorAbs.y;
+			return SDL_PushEvent(&event) == 1;
+		}
+	}
+	return false;
+}
+
+bool SDL2InputBackend::injectMouseWheel(int steps) {
+	SDL_Event event = { };
+	event.type = SDL_MOUSEWHEEL;
+	event.wheel.windowID = SDL_GetWindowID(m_window->m_window);
+	event.wheel.y = steps;
+	return SDL_PushEvent(&event) == 1;
+}
+
+bool SDL2InputBackend::injectKey(int keyId, bool down) {
+	for(size_t scancode = 0; scancode < std::size(sdlToArxKey); scancode++) {
+		if(sdlToArxKey[scancode] == keyId) {
+			SDL_Event event = { };
+			event.type = down ? SDL_KEYDOWN : SDL_KEYUP;
+			event.key.windowID = SDL_GetWindowID(m_window->m_window);
+			event.key.state = down ? SDL_PRESSED : SDL_RELEASED;
+			event.key.keysym.scancode = SDL_Scancode(scancode);
+			event.key.keysym.sym = SDL_GetKeyFromScancode(SDL_Scancode(scancode));
+			return SDL_PushEvent(&event) == 1;
+		}
+	}
+	return false;
+}
+
 bool SDL2InputBackend::isKeyboardKeyPressed(int keyId) const {
 	arx_assert(keyId >= Keyboard::KeyBase && keyId < Keyboard::KeyMax);
 	return keyStates[keyId - Keyboard::KeyBase];

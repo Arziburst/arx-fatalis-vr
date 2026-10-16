@@ -610,7 +610,9 @@ bool SDL2Window::initialize() {
 	// so status.json "window.focused" tells the truth. A later focus change arrives as an SDL event.
 	onFocus((SDL_GetWindowFlags(m_window) & SDL_WINDOW_INPUT_FOCUS) != 0);
 	// Where it was placed (a test run's corner, #487): SDL reports only later moves
-	SDL_GetWindowPosition(m_window, &m_position.x, &m_position.y);
+	int x = 0, y = 0;
+	SDL_GetWindowPosition(m_window, &x, &y);
+	m_position = Vec2i(x, y);
 
 	return true;
 }

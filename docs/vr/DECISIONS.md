@@ -16,8 +16,9 @@ a changed decision keeps its history in that cell.
 ## D-051: The classic Arx arm - one elbow, the forearm one rigid piece, re-skinned by ring in VR; the glove optional at its wrist
 
 - **Date:** 2026-10-14
-- **Status:** Accepted (the classic arm's hand defaults to the Arx hand until the owner compares it with the glove in
-  the headset)
+- **Status:** Accepted; the owner's pick (2026-10-16, headset test of #472: "the bend is gone; the arms satisfy me fully")
+  - classic is the default and the only model a player chooses (D-047). Its hand defaults to the Arx hand; the glove is
+  the other `vr_classic_hand`
 - **Decided by:** project owner (#466: the Arx arm one solid piece up to the elbow, a fifth model behind
   `vr_arms_model`; asked whether the classic arm could wear the five-finger glove); #466.1 and #466.2 for the formulation
 - **Amends:** D-047 (a fifth model, `classic`, the row it reserved)
@@ -26,9 +27,8 @@ a changed decision keeps its history in that cell.
 `vr_arms_model = classic` draws the player model's own arm with **one elbow**: in VR only, after the engine's transform,
 the arm's vertices are re-skinned by the ring of the arm they lie in, not by their group (`src/vr/ArxArmFix.*`,
 `skinPlayerArms`) - the rings before the elbow ring on the upper arm, the elbow ring up to the wrist ring on the forearm,
-the wrist ring and the hand on the hand. The arm folds in one band at the elbow and the forearm is rigid. `arx` stays the
-engine's skin, for comparison. It is a row of the model table (`arxArms` true: the logical arm stays on the drawn,
-pushed shoulder) and the lever's fifth step (custom -> forearm -> hands -> arx -> classic -> custom).
+the wrist ring and the hand on the hand. The arm folds in one band at the elbow and the forearm is rigid. It is a row of
+the model table (`arxArms` true: the logical arm stays on the drawn, pushed shoulder), its first: the default.
 
 Its hand is a second switch, `vr_classic_hand` = `arx` (default) | `glove` (`arms classic-hand <hand>`): with `glove`
 the Arx hand faces (every corner on the classic hand: the wrist ring and past it) are left out and the custom arms'
@@ -54,56 +54,59 @@ same grip frame as the Arx hand (D-032, research F-281); no sleeve - the Arx for
 
 ### Consequences
 - status.json `vr.body.<hand>.classic.{skin, drawn, creases, creaseThreshold, creaseBands, maxBend, elbowBend,
-  forearmTwistSpread}` (#466.1) and `.hand`, `.arxHandHidden` (#466.2); `arms-classic.xrs`, `arms-classic-glove.xrs`
-  and the five-step `arms-variants-lever.xrs`. How to switch: [TESTING.md](TESTING.md).
+  forearmTwistSpread}` (#466.1) and `.hand`, `.arxHandHidden` (#466.2); `arms-classic.xrs`, `arms-classic-glove.xrs`.
+  The hand's switch: [TESTING.md](TESTING.md).
 
 ---
 
-## D-047: The VR arms are a choice of four - custom, forearm, hands, arx - switched live; full arms are not the only VR body
+## D-047: The VR arms are the classic Arx arm (D-051) - picked by the owner from five arm models compared live in the headset
 
-- **Date:** 2026-10-14
-- **Status:** Accepted (the default stays `custom` until the owner picks in the headset; the forearm's length and the
-  cuff's look are first proposals)
-- **Decided by:** project owner (2026-10-13, via the coordinator: full, forearm, hands and arx all selectable live; the
-  forearm ends in a closed cuff before the elbow; the default stays custom); #385.8 for the formulation
-- **Amends:** D-009 (full body with IK arms: the arms drawn are now a choice, the full arm one of them) and the
-  "visible full only" point of D-049
+- **Date:** 2026-10-14 (the comparison), 2026-10-16 (the pick)
+- **Status:** Accepted: **classic** (D-051) is the default and the only model a player chooses; the other models are
+  kept for their tests only until they are deleted (#486)
+- **Decided by:** project owner (2026-10-13, via the coordinator: build the variants and switch them live; 2026-10-16,
+  headset test of #472: "keep this variant; you can delete the others" - of custom and forearm earlier: "delete, never
+  come back to them"; the library hand of #467 was dropped unmerged); #385.8 for the formulation
+- **Amends:** D-009 (full body with IK arms: the VR arm is the classic Arx arm, not a full own arm) and D-049 (the own
+  arms are no longer drawn for a player)
 
 ### Decision
-cfg.ini `vr_arms_model` = `custom` | `forearm` | `hands` | `arx`, switched live by the channel's `arms <model>` and the
-playground's arms lever (each pull steps custom -> forearm -> hands -> arx -> custom); status.json `vr.body.armsModel`:
+cfg.ini `vr_arms_model` = `classic` (the default; any other value a build saved before reads as classic), status.json
+`vr.body.armsModel`. The playground's arms lever that cycled the models is gone. Compared before the pick, each a row of
+the model table in `src/vr/VRArms.cpp` and still reachable through the test channel's `arms <model>`:
 - **custom** - the glove and the whole sleeve, shoulder to wrist (D-049, D-048);
 - **forearm** - the glove and a short forearm: the sleeve from the glove's wrist along the forearm of the custom arm's
   own solve, cut at `ForearmKept` = 0.6 of the forearm's length and closed there by a cuff; no upper arm, no elbow;
 - **hands** - the glove alone, its wrist opening closed by a cuff (Half-Life: Alyx);
-- **arx** - the player model's own arms.
-The forearm and hands models pose the same custom arm and draw less of it; the Arx arm faces are hidden for the three
-own models. The models are one table in `src/vr/VRArms.cpp` (what each draws: the glove, the sleeve, the upper arm, the
-Arx faces), so a new model is one row. Flat mode and the inventory book keep the Arx arms.
+- **arx** - the player model's own arms, as the engine skins them (with the second elbow D-051 fixes);
+- **library** - the WebXR generic hand (#467, PR #470 closed unmerged).
+The forearm and hands models pose the same custom arm and draw less of it. Flat mode and the inventory book keep the
+engine's Arx arms.
 
 ### Why
 - No arm solver matches the player's real elbow (15-22 cm off in motion, research F-461); the owner found the full
   custom arm a rubber tube whose elbow never matches.
 - Players ignore missing limbs more easily than wrong ones (F-305); Half-Life: Alyx shows gloved hands only (F-303).
   A forearm ending before the elbow keeps some arm and hides the wrong elbow.
-- The owner picks by feel in the headset, so all four stay switchable live.
+- The owner picked by feel in the headset: the classic arm keeps the game's look and has one elbow (D-051), where the
+  own arms' elbows never matched his.
 
 ### Trade-offs accepted
 - Ultraleap's forearm (Apache-2.0, F-467) is FBX and needs Blender to convert; the forearm is the #430 sleeve cut short
   instead. A modelled forearm or full arms v2 come later.
-- Four models to keep working; the logic reads only the table's properties.
+- Until #486 removes them, the unused models and their tests stay in the code (the custom solve shares
+  `poseCustomArm` with the glove the classic arm can wear).
 
 ### Consequences
-- status.json `vr.body.<hand>.custom.sleeveDrawn`, `.upperArmDrawn`, `.gloveDrawn` and `.forearmLength` (the forearm
-  as drawn); `arms-variants.xrs` and `arms-variants-lever.xrs` check them. How to switch: [TESTING.md](TESTING.md).
-- Two more models are planned as rows: `classic` (#466) and `library` (#467).
+- status.json `vr.body.armsModel` (`classic`); the test-only models' `vr.body.<hand>.custom.*`, checked by
+  `arms-variants.xrs` and `arms-model.xrs` until #486. [TESTING.md](TESTING.md).
 
 ---
 
 ## D-048: The custom arm solves its own chain - fitted to the player's reach, a small stretch, the elbow down with a weapon
 
 - **Date:** 2026-10-13
-- **Status:** Accepted (the stretch limit and the elbow drop are first proposals for the owner to tune in the headset)
+- **Status:** Superseded for the player by D-047 (2026-10-16: the classic Arx arm, D-051): the custom arm's own solve is test-only until #486
 - **Decided by:** project owner (2026-10-13: "the arm's own length must fit first", "arm stretch yes", "elbow drop yes"); #385.6
 - **Builds on:** D-049 (own arms), the roll-aware IK (D-050 of #313)
 
@@ -141,8 +144,8 @@ Arx faces), so a new model is one row. Flat mode and the inventory book keep the
 ## D-049: Own VR arms behind `vr_arms_model` — the Godot XR Tools glove hand (CC0), cgltf and CPU skinning, the logical Arx arm kept
 
 - **Date:** 2026-10-13
-- **Status:** Accepted (a first proposal; the look is the owner's to judge in the headset); "visible full only" amended
-  by D-047 (forearm and hands models)
+- **Status:** Superseded for the player by D-047 (2026-10-16: the owner kept the classic Arx arm, D-051); the glove stays as
+  the classic arm's optional hand (`vr_classic_hand = glove`), the own arms are test-only until #486
 - **Decided by:** project owner (variant B of #385); the worker of #385.5 for the formulation; within D-009 / D-032
 
 ### Decision

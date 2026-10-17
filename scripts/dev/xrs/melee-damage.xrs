@@ -196,45 +196,46 @@ vr-sim @+1-5 hand right pos 0 -0.8 -0.35
 @log melee\.hit source=player target=goblin_base_\d+ .*aim=1\.00 speed=\S+ size=\S+ kind=thrust
 melee stab dagger default
 
-# 7. The goblin fighting the player: a touch of the slowly swept dagger deals the minimum - a touch, no swing hit. The
-# set-up: the mode lever (aggressive: the goblin's script takes the hits), then its fight behaviour and target set
-# directly (playground fight) - the playground's goblin did not reach both on its own within 15 s, the save's goblin
-# of melee-swing does after a hit
+# 7. The goblin fighting the player: the dagger in it deals the minimum - a touch, no swing hit. The set-up: the mode
+# lever (aggressive), the goblin placed against the resting dagger - not fighting yet, so the blade does nothing to it
+# (a touch reaches only an NPC fighting the player) - then its fight set directly (playground fight) and the dagger
+# swept through it. The playground goblin's script drops the fight - its behaviour and its target - as soon as it is
+# hit (TRAPS.md), so the first touch is the one checked
 vr-sim @+1-40 hand right pos 0.45 -0.8 -0.35
 @frames 50
 playground pull mode
 @until playground.npcMode eq aggressive 5s
-playground fight
-@until playground.npcFighting eq true 5s
 playground place 60
-@frames 60
-# Still fighting the player, still in reach of the sweep
-@assert playground.npcFightBehaviour eq true
-@assert playground.npcTargetsPlayer eq true
-@assert playground.npcDistance lt 100
+@frames 30
+@assert playground.npcFighting eq false
 @remember touches vr.melee.touches
 @remember hits vr.melee.hits
+@frames 30
+@assert vr.melee.touches eq {touches}
 @mark
+playground fight
+@until playground.npcFighting eq true 5s
+@assert playground.npcDistance lt 100
 vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
 @until vr.melee.touches ge {touches+1} 5s
-@frames 10
 @assert vr.melee.hits eq {hits}
 @assert vr.melee.last.swing eq 0
 @assert vr.melee.last.aim eq 0.1
 @log melee\.hit source=player target=goblin_base_\d+ weapon=\S+ damage=\S+ aim=0\.10 speed=\S+ size=\S+ kind=\S+
 
-# 8. vr_melee_noswing=none (set live): a touch deals nothing, also to the fighting goblin (whose own strikes on the
-# player are source=goblin...)
+# 8. vr_melee_noswing=none (set live): a touch deals nothing, also to the fighting goblin - it fights all the way back
+# through the sweep (no hit drops its fight), so a touch could have reached it (its own strikes on the player are
+# source=goblin...)
 melee noswing none
 @until vr.melee.params.noSwing eq none 5s
-vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
-@frames 75
-playground place 60
+playground fight
+@until playground.npcFighting eq true 5s
 @remember touches vr.melee.touches
 @mark
-vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
+vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
 @frames 75
 @assert vr.melee.touches eq {touches}
+@assert playground.npcFighting eq true
 @nolog melee\.hit source=player
 melee noswing min
 @until vr.melee.params.noSwing eq min 5s

@@ -255,6 +255,28 @@ The first radial menu kept two fonts of its own for the whole run.
 **Do:** draw with the game's fonts (`hFontControls`, `hFontInGame`, … in `gui/Text.h`: the right language's glyphs,
 replaced when the interface is laid out again), or release an own font before `ARX_Text_Close`.
 
+## 2026-10-13 — Melee in the playground: the inventory reopens itself, a second equip leaves a weapon on the cursor (#323)
+
+**Symptom:** in a playground sequence (`@playground`) `vr.melee.refused` stayed `inventory`. `ui inventory close` closed
+the bag, and the next frame logged `ui.inventory state=open` again. After a weapon was equipped, equipping a second
+one turned melee off with `reason="an item is dragged"`.
+**Cause:** a level started with `--loadlevel` never turns on the engine's free look. Loading a save does
+(`ChangeLevel.cpp`). In cursor mode the engine reopens the inventory every frame (`Interface.cpp`), #405 / #394.
+A script `<item>.equip player` puts the weapon it replaces on the cursor (`item.take from=world`), not back into the bag.
+**Do:** `freelook on` (test channel) before anything in a playground sequence, until #394 keeps VR gameplay in free
+look. Equip one weapon per run. The game's numbers for every weapon type are in `vr.melee.recovery.games`, so there is
+no need to equip each type.
+
+## 2026-10-13 — A simulated swing splits in two or reads above its ramp's speed (#323)
+
+**Symptom:** a `vr-sim @+1-8 hand right pos ...` ramp (0.85 m, 9.6 m/s at 90 Hz) gave three swings, the last two at
+3 m/s, or peaks of 12-13 m/s instead of 9.6.
+**Cause:** the simulated hand moves one step per frame, not per second. A frame that stalls (a hit's effects, a busy
+PC) slows the hand for real, and the detector now measures over the real time step (#352). The game's frame clock
+(`frameStart`) also jitters against the simulator's display slots, which raises the peaks.
+**Do:** in sequences, count swings with `ge` and hits exactly. Prove swing counts and peaks over frame times in the
+host test (`MeleeSwingTest::testSameSwingsAt45And90Hz`: 45, 90 and an uneven 90 Hz).
+
 ## 2026-10-12 — An instant `vr-sim hand ... pos` set-up move counts as a melee swing on a busy runner (#349)
 
 **Symptom:** `melee-swing.xrs` failed on CI at its first `@assert vr.melee.swings eq 0` for runs in a row with only
@@ -264,7 +286,8 @@ docs merged; `melee.swing` reported a swing with `peak=40.88` (above the 20 m/s 
 step's raw speed against 20 m/s, so 0.43 m over an 11 ms frame (39 m/s) is dropped, but over a 22 ms frame (45 fps,
 the runner shares the PC with builds and other games) it is 19.5 m/s, and over a 99 ms gap 4.3 m/s — a real swing
 (reproduced on purpose with `vr-sim rate 45`). The peak's 40.88 is that move divided by the next frame's step
-(the median of three lags one sample, #352).
+(the median of three lags one sample, #352 — *resolved* for the peak: since #323 the median's move is divided by
+the time it spans, so the same move reads 4.3 m/s).
 **Do:** in a melee sequence move the hand in a ramp only (`vr-sim @+1-60 hand right pos ...`: slow, frame by frame);
 reproduce a slow runner with `vr-sim rate 45` in a scratch copy of the sequence.
 

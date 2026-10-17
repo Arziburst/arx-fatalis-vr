@@ -166,6 +166,7 @@ constexpr const float
 	vrMeleeFullSpeed = vr::SwingParams().fullSpeed,
 	vrMeleeWeakAim = vr::SwingParams().weakAim,
 	vrMeleeTargetCooldown = vr::SwingParams().targetCooldown,
+	vrMeleeRecovery = -1.f, // the weapon type's default (#323, vr::defaultRecovery)
 	vrHiltKnuckle = vr::HiltAngles().knuckle,
 	vrHiltMiddle = vr::HiltAngles().middle,
 	vrHiltLast = vr::HiltAngles().last,
@@ -385,6 +386,9 @@ constexpr const std::string_view
 	vrMeleeFullSpeed = "vr_melee_full_speed",
 	vrMeleeWeakAim = "vr_melee_weak_aim",
 	vrMeleeTargetCooldown = "vr_melee_target_cooldown",
+	vrMeleeRecoveryDagger = "vr_melee_recovery_dagger",
+	vrMeleeRecovery1h = "vr_melee_recovery_1h",
+	vrMeleeRecovery2h = "vr_melee_recovery_2h",
 	vrHiltKnuckle = "vr_hilt_knuckle",
 	vrHiltMiddle = "vr_hilt_middle",
 	vrHiltLast = "vr_hilt_last",
@@ -700,6 +704,9 @@ bool Config::save() {
 	writer.writeKey(Key::vrMeleeFullSpeed, input.vrMeleeFullSpeed);
 	writer.writeKey(Key::vrMeleeWeakAim, input.vrMeleeWeakAim);
 	writer.writeKey(Key::vrMeleeTargetCooldown, input.vrMeleeTargetCooldown);
+	writer.writeKey(Key::vrMeleeRecoveryDagger, input.vrMeleeRecoveryDagger);
+	writer.writeKey(Key::vrMeleeRecovery1h, input.vrMeleeRecovery1h);
+	writer.writeKey(Key::vrMeleeRecovery2h, input.vrMeleeRecovery2h);
 	writer.writeKey(Key::vrHiltKnuckle, input.vrHiltKnuckle);
 	writer.writeKey(Key::vrHiltMiddle, input.vrHiltMiddle);
 	writer.writeKey(Key::vrHiltLast, input.vrHiltLast);
@@ -934,6 +941,14 @@ bool Config::init(const fs::path & file) {
 	input.vrMeleeWeakAim = glm::clamp(vrMeleeWeakAim, 0.1f, 1.f);
 	float vrMeleeTargetCooldown = reader.getKey(Section::Input, Key::vrMeleeTargetCooldown, Default::vrMeleeTargetCooldown);
 	input.vrMeleeTargetCooldown = glm::clamp(vrMeleeTargetCooldown, 0.f, 2.f);
+	// The recovery after a hit per weapon type (#323): seconds, or negative for the type's default
+	auto meleeRecovery = [&reader](std::string_view key) {
+		const float seconds = reader.getKey(Section::Input, key, Default::vrMeleeRecovery);
+		return seconds < 0.f ? -1.f : std::min(seconds, 5.f);
+	};
+	input.vrMeleeRecoveryDagger = meleeRecovery(Key::vrMeleeRecoveryDagger);
+	input.vrMeleeRecovery1h = meleeRecovery(Key::vrMeleeRecovery1h);
+	input.vrMeleeRecovery2h = meleeRecovery(Key::vrMeleeRecovery2h);
 	// A hand on a hilt (#385.7): each angle within 0 and its fist limit
 	vr::HiltAngles hilt;
 	hilt.knuckle = reader.getKey(Section::Input, Key::vrHiltKnuckle, Default::vrHiltKnuckle);

@@ -1377,9 +1377,10 @@ bool makeBeamImage() {
 		}
 	}
 
+	// RGBA rows are a multiple of 4 at any GL_UNPACK_ALIGNMENT, so the engine's tight state (1) is kept: the
+	// alignment 4 once set here leaked into every later upload and crashed on a cinematic tile (#495, TRAPS.md)
 	g_xr.mirror.setOverlayImage(DesktopMirror::BeamImage, BeamImageSize, pixels.data());
 	glBindTexture(GL_TEXTURE_2D, g_xr.beam.texture());
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, BeamImageSize.x, BeamImageSize.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
 	glBindTexture(GL_TEXTURE_2D, 0);
 	g_xr.beam.release();
@@ -1478,8 +1479,7 @@ bool makeReticleImages() {
 		g_xr.mirror.setOverlayImage(i == 0 ? DesktopMirror::ReticleDimImage : DesktopMirror::ReticleBrightImage, size,
 		                            pixels.data());
 		glBindTexture(GL_TEXTURE_2D, image.texture());
-		glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, size.x, size.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, size.x, size.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data()); // tight state kept (#495)
 		glBindTexture(GL_TEXTURE_2D, 0);
 		image.release();
 	}

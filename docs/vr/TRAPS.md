@@ -8,6 +8,44 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-17 — GL pixel-store state is global, set it per upload: an intermittent access violation inside the AMD driver under `glTexImage2D` while a cinematic loads (#495)
+
+**Symptom:** the owner's headset run crashed right after character creation, `atio6axx.dll` under
+`OPENGL32.dll!glTexImage2D` ← `GLTexture.cpp:142` ← `CinematicTexture.cpp` while `akbaa_dream_c.cin` loaded its
+images; two runs before it in the same session passed the same point. The faulting address was page-aligned
+(`0x28011cd0000`): a read just past the end of a heap region. Nothing in the cinematic code had changed.
+**Cause:** the GL pixel-store state. The engine sets `GL_UNPACK_ALIGNMENT` to 1 once at start-up
+(`OpenGLRenderer.cpp`) and every `Image` is tightly packed (stride = width × bytes per pixel); `GLTexture::upload`
+trusted that. The menu pointer's beam (`VRSystem.cpp`), the hand reticle rings and the desktop mirror's overlays
+(`VRMirror.cpp`) set the alignment to 4 for their RGBA uploads and never restored it - the log shows the beam image
+created in the main menu (`menu pointer: beam image 8x64`) a few lines before `Loading cinematic`. `akbaa dream.tga`
+is 1390 × 1390, a 16-bit TGA loaded as RGB (3 bytes per pixel) and cut into 256-wide tiles whose last column is
+110 wide: a 330-byte row, read 332 bytes apart under alignment 4, so the 110 × 256 tile (84480 bytes) was read to
+84990 - 510 bytes past its buffer, a crash only when the buffer ended near a page boundary. 17 cinematic images in
+12 of the 19 cinematics have such a last column (tile widths 50, 51, 66, 81, 86, 110, 139, 161, 199, 207); plenty
+of other RGB textures of the game do too, so the crash could have landed anywhere after the first overlay.
+**Do:** never trust global GL client state across modules: `GLTexture::upload` now sets the tight unpack state
+itself before every `glTexImage2D` and logs an `[E]` with the numbers when the state it found is not the tight
+one (`pixelstore::bytesRead`, `graphics/image/PixelStore.h`, host-tested) - the leak, not only the overflow: a
+check that fired only when the dirty upload itself overflowed stayed green with the leak put back, because the
+first texture after the beam happened to be RGBA and the reset hid the state from the cinematic tiles that
+followed. Code that needs another state sets it and puts it back. A crash inside the driver under a texture upload with a page-aligned address is
+an out-of-bounds read of the client buffer - compute the bytes GL reads (alignment, row length, skips) against
+the image's size before suspecting the driver. `cinematics.xrs` loads all 19 cinematics after the beam was created.
+
+## 2026-10-17 — A scripted run waits forever on a message box; logging it from the critical error dialog hangs (#501)
+
+**Symptom:** an unattended run (a worker, CI, autopilot) never ends: `arx.exe --no-such-option` or a
+critical error at startup leaves a "Critical Error" message box on screen and the script waits on it. Simply
+logging the dialog where it is shown, instead of showing it, would hang the game at exit.
+**Cause:** the critical error dialog is a log backend (`logger::CriticalErrorDialog`): it shows its dialog
+in its destructor, which `Logger::shutdown` runs while it holds the logger's (non-recursive) mutex - a
+`LogError` from there waits on that mutex forever. And `ARX_UNATTENDED` only silenced the crash processor.
+**Do:** scripted launches set `ARXVR_NO_DIALOGS=1` (`Set-ArxDialogEnv -NoDialogs`, restored after the start; [TESTING.md](TESTING.md#runs-without-dialogs-501)):
+every dialog becomes a `[dialog]` line and an error exits with code 1. `Startup.cpp` removes and deletes the
+critical error dialog *before* `Logger::shutdown`, so its line reaches the file and stderr. Never log from a
+log backend's destructor or `log()`.
+
 ## 2026-10-14 — The Arx arm grows a second elbow in the middle of the forearm, though the IK has only one (#466.1)
 
 **Symptom:** with the Arx arms drawn (`arms arx`) the owner sees a second elbow and wants the arm one solid
@@ -1129,7 +1167,8 @@ exited with code 1, and closing it opens the crash report folder in Explorer.
 **Cause:** the crash processor is a second `arx.exe --crashinfo=…` that shows a message box and then
 *always* launches the report directory; without `arxcrashreporter` nothing closes it for a script.
 **Do:** automated runs set `ARX_UNATTENDED=1` (the test channel does it for the game, `smoke-test.ps1`
-for the process): the report is still written, the dialog is skipped. A leftover dialog is best
+for the process): the report is still written, the dialog is skipped. Since #501 every scripted launch sets
+`ARXVR_NO_DIALOGS=1`, which does the same for the crash dialog and every other one. A leftover dialog is best
 stopped with `Stop-Process` (closing it would open Explorer).
 
 ## 2026-10-08 — A rebuild fails with `LNK1104: cannot open file 'arx.exe'`

@@ -51,17 +51,32 @@ the runtime skip one or two display slots; the swing detector's median then move
 was divided by one frame's step (#352). **Do:** look for `H ... missed=` lines in `arx-perf.log` at the swing's
 time before suspecting the detector; #409 fixes the divisor.
 ## 2026-10-17 — The playground's aggressive goblin never counts as fighting the player (#465)
+## 2026-10-17 — A weapon pushed through a wall does not ring on it (#465)
+
+**Symptom:** in `melee-damage.xrs` a fast swing along the playground's north wall left `vr.melee.worldHit` false, though
+the blade's tip was 29 units past the wall's plane (status `tip` z 8429, wall z 8400).
+**Cause:** the engine's strike check tests the weapon's hit spheres only, not the blade: the dagger has one, radius 15,
+about 89 units ahead of the player (`melee.spheres count=1 ... at=8191.2,-305.7,8444.3/15.0`). A sphere wholly behind a
+thin wall touches no polygon of it - the engine's own strike never reaches that far into a wall, a VR hand does.
+**Do:** to strike a wall in a sequence, put the hit sphere across the wall's plane (read `melee.spheres`); do not
+judge by the blade's tip.
+
+## 2026-10-17 — The playground's goblin drops its fight when it is hit, so it never counts as fighting the player (#465)
 
 **Symptom:** in `melee-damage.xrs` the playground goblin in the aggressive mode (the mode lever: `npcMode`
 `aggressive`), even after a real swing hit it, did not reach `playground.npcFighting` (its fight behaviour
 `BEHAVIOUR_FIGHT` *and* the player as its `targetinfo`) within 15 s - so a VR touch, which reaches only an NPC fighting
 the player, never reached it. The save's goblin (`mvp-goblin-fight`, `melee-swing.xrs`) does reach it after a hit.
-**Cause:** not established - that run had no split fields, so which of the two was missing is unknown. The mode lever
-sends `attack_player` to the game's own goblin class script, which decides when it fights; the instance script only
-refuses `ouch` / `aggression` while peaceful.
-**Do:** to test what only fighting NPCs feel, set the fight up with `playground fight` (the fight behaviour and the
-player as the target, as a fight script sets them) and wait for `playground.npcFighting`; read
-`npcFightBehaviour` / `npcTargetsPlayer` to see which half the goblin lacks on its own.
+The same goblin set fighting with `playground fight` took one touch (`aim=0.10`), and every touch after it was refused.
+**Cause:** the playground goblin's script drops the fight when it is hit: right after the first touch's hit,
+`melee.touch target=goblin_base_9001 result=refused fight=no targetsPlayer=no`, and `npcFightBehaviour` false before
+the next sweep (CI run 38995941095 and a local run on f4720ca27). Its own fight never starts from the mode lever or a
+swing's hit for the same reason - the hit's reaction clears what `attack_player` set. Which script line does it is not
+known: the class script is the game's (`npc/goblin_base`); the instance script only refuses `ouch` / `aggression` while
+peaceful. The save's goblin (`mvp-goblin-fight`) keeps fighting after hits.
+**Do:** to test what only fighting NPCs feel in the playground, set the fight with `playground fight` right before the
+check, let nothing hit the goblin in between (a peaceful-in-fact goblin refuses touches: `melee.touch ... refused`),
+and check the first hit only; `npcFightBehaviour` / `npcTargetsPlayer` show which half is missing.
 
 ## 2026-10-17 — A changed cfg.ini default does not show in a test run (#465)
 

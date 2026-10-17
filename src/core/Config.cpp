@@ -965,8 +965,8 @@ bool Config::init(const fs::path & file) {
 	// Physical melee (#39)
 	float vrMeleeSwingSpeed = reader.getKey(Section::Input, Key::vrMeleeSwingSpeed, Default::vrMeleeSwingSpeed);
 	input.vrMeleeSwingSpeed = glm::clamp(vrMeleeSwingSpeed, 0.5f, 10.f);
-	// The damage from the swing's size and speed (#465): per weapon class "<path min> <path max> <speed min> <speed max>",
-	// empty for the class's default - a value that does not parse is dropped (the default, and a log line)
+	// The damage from the swing's size and speed (#465): per weapon class "<path min> <path max> <speed min> <speed max>
+	// [<cap>]", empty for the class's default - a value that does not parse is dropped (the default, and a log line)
 	for(vr::MeleeClass meleeClass : vr::MeleeClasses) {
 		for(const char * kind : { "slash", "stab" }) {
 			const std::string key = meleeRangeKey(kind, meleeClass);
@@ -975,7 +975,7 @@ bool Config::init(const fs::path & file) {
 			vr::parseDamageRange(value, vr::DamageRange(), &ok);
 			if(!ok) {
 				LogWarning << "cfg.ini " << key << "=\"" << value << "\": expected <path min> <path max> <speed min> "
-				           << "<speed max> (0-20), using the default";
+				           << "<speed max> (0-20) [<cap> (0-1)], using the default";
 				value.clear();
 			}
 			(std::string_view(kind) == "slash" ? input.vrMeleeSlash : input.vrMeleeStab)[size_t(meleeClass)] = value;

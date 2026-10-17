@@ -662,6 +662,21 @@ void MeleeSwingTest::testTargetCooldown() {
 	CPPUNIT_ASSERT(cooldown.allowed(7, 3, 5.0, wait));
 }
 
+void MeleeSwingTest::testTouchCooldown() {
+	// #465: a touch outside a swing asks as swing Touch - after a swing's hit only the cooldown holds it back, never the
+	// swing's own once per target
+	vr::TargetCooldown cooldown;
+	const float wait = 0.25f;
+	const u64 touch = vr::TargetCooldown::Touch;
+	cooldown.hit(7, 4, 1.0);
+	CPPUNIT_ASSERT(!cooldown.allowed(7, touch, 1.1, wait));
+	CPPUNIT_ASSERT(!cooldown.blocked(touch, 1.1, wait).empty());
+	CPPUNIT_ASSERT(cooldown.allowed(7, touch, 1.3, wait));
+	CPPUNIT_ASSERT(cooldown.blocked(touch, 1.3, wait).empty());
+	CPPUNIT_ASSERT(!cooldown.allowed(7, 4, 1.3, wait)); // the swing itself still not
+	CPPUNIT_ASSERT(cooldown.allowed(8, touch, 1.1, wait));
+}
+
 void MeleeSwingTest::testHitchIsNoSwing() {
 	// #352: a hand reaching at 1 m/s with 11 ms frames and one 50 ms hitch moves 5 cm in the long frame; the
 	// median moves those 5 cm one sample later, in an 11 ms frame - 4.5 m/s over the frame's step, 1 m/s over

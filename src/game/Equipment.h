@@ -129,6 +129,13 @@ struct StrikeContact {
 	bool npc = false;
 };
 
+//! A hit sphere a VR strike check tested (#465, diagnostics): where, how big, and whether it reached the world's geometry
+struct StrikeSphere {
+	Vec3f origin = Vec3f(0.f);
+	float radius = 0.f;
+	bool background = false;
+};
+
 //! What a VR contact hit asks of a strike check (#39): targets to leave out (the per-target cooldown), and
 //! the targets it touched
 struct StrikeTargets {
@@ -138,6 +145,8 @@ struct StrikeTargets {
 	 * an item, a crate, a friend or a merchant) and never the world's geometry (no wall sound, no durability)
 	 */
 	bool touch = false;
+	std::vector<EntityHandle> refused; //!< a touch: the NPCs it reached that do not fight the player
+	std::vector<StrikeSphere> spheres; //!< the hit spheres the check tested
 	// VR (#465): the stroke the aim ratio was measured from, for the melee.hit line
 	float speed = 0.f;           //!< m/s, the lever point's
 	float size = 0.f;            //!< m, the hand's path (a thrust: its lunge)

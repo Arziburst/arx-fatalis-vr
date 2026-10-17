@@ -20,6 +20,8 @@
 #include "vr/VRMelee.h"
 
 #include <algorithm>
+#include <iomanip>
+#include <sstream>
 #include <string_view>
 
 #include "animation/Animation.h"
@@ -29,6 +31,7 @@
 #include "game/Entity.h"
 #include "game/EntityManager.h"
 #include "game/Equipment.h"
+#include "game/NPC.h"
 #include "game/Player.h"
 #include "gui/Speech.h"
 #include "io/log/Logger.h"
@@ -62,11 +65,14 @@ struct MeleeState {
 	SwingKind swingKind = SwingKind::None;
 	float swingAim = 0.f;            //!< the strongest aim ratio of its hits
 	bool swingSpoke = false;         //!< it said the strike speech
+	std::vector<StrikeSphere> swingSpheres; //!< the hit spheres of its last check (diagnostics, #465)
+	bool swingBackground = false;    //!< a hit sphere of it reached the world's geometry
 	bool swingRecovering = false;    //!< it started within the recovery: it hits nothing
 	u64 swingHits = 0;
 	double swingStart = 0.;
 	float humpPeak = 0.f;            //!< the peak of a motion that has not become a swing yet
 	std::string refusedBefore = "-";
+	EntityHandle touchRefused;       //!< the NPC the last melee.touch event refused (#465)
 	MeleeStatus status;
 };
 
@@ -246,6 +252,8 @@ void startSwing() {
 	m.swingKind = m.detector.kind();
 	m.swingAim = 0.f;
 	m.swingSpoke = false;
+	m.swingSpheres.clear();
+	m.swingBackground = false;
 	m.swingHits = 0;
 	m.swingStart = meleeClock();
 	m.humpPeak = 0.f;
@@ -273,6 +281,37 @@ void endSwing(SwingChange change) {
 	gameevent::Event("melee.swing", 1000)("kind", swingKindName(m.swingKind))("result", result)
 		("peak", d.peak(), 2)("aim", m.swingAim, 2)("hits", m.swingHits)
 		("ms", int((meleeClock() - m.swingStart) * 1000.));
+	if(!m.swingSpheres.empty()) {
+		// The weapon's hit spheres of the swing's last check, world x,y,z/radius, and whether any of its checks reached
+		// the world's geometry: why a swing does or does not ring on a wall (#465)
+		std::ostringstream at;
+		at << std::fixed << std::setprecision(1);
+		for(const StrikeSphere & sphere : m.swingSpheres) {
+			at << (at.tellp() > 0 ? ";" : "") << sphere.origin.x << ',' << sphere.origin.y << ',' << sphere.origin.z
+			   << '/' << sphere.radius << (sphere.background ? "!" : "");
+		}
+		gameevent::Event("melee.spheres", 200)("count", m.swingSpheres.size())("background", m.swingBackground)
+			("at", at.str());
+	}
+}
+
+/*!
+ * A melee.touch event when a touch reaches an NPC that does not fight the player (and so does nothing to it) - once
+ * per NPC until the touch reaches another or none: why a resting blade did not hit (#465)
+ */
+void noteRefusedTouch(const std::vector<EntityHandle> & refused) {
+	MeleeState & m = g_melee;
+	const EntityHandle first = refused.empty() ? EntityHandle() : refused.front();
+	if(first == m.touchRefused) {
+		return;
+	}
+	m.touchRefused = first;
+	const Entity * npc = entities.get(first);
+	if(!npc || !npc->_npcdata) {
+		return;
+	}
+	gameevent::Event("melee.touch", 200)("target", gameevent::entityName(npc))("result", "refused")
+		("fight", (npc->_npcdata->behavior & BEHAVIOUR_FIGHT) != 0)("targetsPlayer", npc->targetinfo == EntityHandle_Player);
 }
 
 //! The engine's strike speech, as its strike of a nearly full charge says it
@@ -316,6 +355,13 @@ void contact(Entity * weapon, double now, bool swing) {
 	targets.size = measure.size;
 	targets.kind = contactKindName(measure.kind);
 	ARX_EQUIPMENT_Strike_Check(entities.player(), weapon, aim, 0, EntityHandle(), &targets);
+	noteRefusedTouch(targets.refused);
+	if(swing) {
+		m.swingSpheres = targets.spheres;
+		for(const StrikeSphere & sphere : targets.spheres) {
+			m.swingBackground = m.swingBackground || sphere.background;
+		}
+	}
 	if(targets.touched.empty()) {
 		return;
 	}

@@ -650,6 +650,9 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 				arx_assert(target);
 				arx_assert(target->obj);
 				if(targets && targets->touch && !fightsPlayer(*target)) {
+					if(target->ioflags & IO_NPC) {
+						targets->refused.push_back(target->index());
+					}
 					continue;
 				}
 				{
@@ -828,6 +831,9 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 		}
 
 		const EERIEPOLY * ep = (targets && targets->touch) ? nullptr : CheckBackgroundInSphere(sphere);
+		if(targets) {
+			targets->spheres.push_back(StrikeSphere{ sphere.origin, sphere.radius, ep != nullptr });
+		}
 		if(ep) {
 			if(io_source == entities.player()) {
 				if(!io_source->isHit) {

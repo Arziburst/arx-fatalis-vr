@@ -209,6 +209,9 @@ elseif ($ArxArgs -notcontains '--no-vr' -and -not (Get-Process vrserver -ErrorAc
 if ($Playground) { $runArgs.Playground = $true }
 if ($Isolated) { $runArgs.Isolated = $true }
 if ($Saves) { $runArgs.Isolated = $true; $runArgs.Saves = $Saves }
+# The owner's launch keeps the game's dialogs, -Isolated too (#501); a branch from before #501 has no switch and no
+# dialog-free launches
+if (Select-String -LiteralPath (Join-Path $wt 'scripts\run-windows.ps1') -Pattern '\[switch\]\$Dialogs' -Quiet) { $runArgs.Dialogs = $true }
 & (Join-Path $wt 'scripts\run-windows.ps1') @runArgs
 $gameExit = $LASTEXITCODE
 

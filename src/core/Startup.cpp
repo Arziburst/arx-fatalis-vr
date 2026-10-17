@@ -64,6 +64,7 @@
 
 #include "platform/Architecture.h"
 #include "platform/Compiler.h"
+#include "platform/Dialog.h"
 #include "platform/CrashHandler.h"
 #include "platform/Environment.h"
 #include "platform/Process.h"
@@ -387,7 +388,8 @@ int utf8_main(int argc, char ** argv) {
 	// Also initialize the logging system early as we might need it
 	Logger::initialize();
 	CrashHandler::registerCrashCallback(Logger::quickShutdown);
-	Logger::add(new logger::CriticalErrorDialog);
+	logger::CriticalErrorDialog * criticalErrorDialog = new logger::CriticalErrorDialog;
+	Logger::add(criticalErrorDialog);
 	
 	// Parse the command line and process options
 	ExitStatus status = parseCommandLine(argc, argv);
@@ -432,13 +434,20 @@ int utf8_main(int argc, char ** argv) {
 	
 	benchmark::shutdown();
 	
+	// If there has been a critical error, a dialog will be shown now - before the logging system shuts
+	// down, so that in a run without dialogs (#501) its line still reaches the log and stderr
+	Logger::remove(criticalErrorDialog);
+	delete criticalErrorDialog;
+
 	// Shutdown the logging system
-	// If there has been a critical error, a dialog will be shown now
 	Logger::shutdown();
 	
 	CrashHandler::shutdown();
 	
 	Random::shutdown();
 	
-	return (status == ExitFailure) ? EXIT_FAILURE : EXIT_SUCCESS;
+	// An error answered without a dialog (#501) fails the run: the script that started it must see it
+	bool failed = (status == ExitFailure) || platform::errorDialogSuppressed();
+
+	return failed ? EXIT_FAILURE : EXIT_SUCCESS;
 }

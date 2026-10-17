@@ -22,6 +22,8 @@
 #   6. Self-test windows do not take the focus: Set-ArxBackgroundWindow sets the SDL hint that shows
 #      the window without activating it (SW_SHOWNA). Since #487 the game does it itself for every
 #      --test-dir run (never activated, in a corner, no real input); Test-ArxForegroundKept checks it.
+#   7. Scripted launches show no dialogs (#501): Set-ArxNoDialogs puts ARXVR_NO_DIALOGS=1 into the game's
+#      environment; a dialog becomes a '[dialog]' line in arx.log and stderr (Get-ArxDialogLines reads it back).
 
 . (Join-Path $PSScriptRoot 'build-paths.ps1')
 
@@ -522,4 +524,50 @@ function Test-ArxForegroundKept($Before, $Now, [int]$GameProcessId) {
 	if ($Now.ProcessId -eq $GameProcessId) { return [pscustomobject]@{ Ok = $false; Text = "the game's window took the foreground (#487)" } }
 	if ($Before -and $Now.Handle -eq $Before.Handle) { return [pscustomobject]@{ Ok = $true; Text = "kept by the window that had it before the launch (pid $($Now.ProcessId))" } }
 	[pscustomobject]@{ Ok = $true; Text = "another window has it (pid $($Now.ProcessId)), not the game" }
+}
+
+# --- 7. Scripted launches show no dialogs ------------------------------------------------------------------------------
+
+# A game started by a script, a worker or CI never blocks on a message box (#501): with ARXVR_NO_DIALOGS=1 in its
+# environment the game writes every dialog to arx.log and stderr as one '[dialog] <type>: <title>: <message>' line,
+# answers it with its default (a question: no) and after an error exits with a failure code. The crash processor
+# inherits it: no crash dialog, no Explorer window. The owner's own launches (test-pr.ps1, run-windows.ps1 by hand,
+# the desktop and the Steam shortcut) keep the dialogs. Returns the previous value, to restore after the launch
+# (Restore-ArxNoDialogs) - the scripts run in the caller's session, which must not inherit it.
+function Set-ArxNoDialogs {
+	$previous = $env:ARXVR_NO_DIALOGS
+	$env:ARXVR_NO_DIALOGS = '1'
+	$previous
+}
+
+function Restore-ArxNoDialogs($Previous) {
+	if ($null -eq $Previous) { Remove-Item Env:ARXVR_NO_DIALOGS -ErrorAction SilentlyContinue } else { $env:ARXVR_NO_DIALOGS = $Previous }
+}
+
+# Whether a run-windows.ps1 launch is a scripted one, without dialogs: with the test channel (-TestChannel or
+# --test-dir) or an isolated user directory (-Isolated), a worker's runs - unless -Dialogs, which the owner's test
+# station (test-pr.ps1) passes.
+function Test-ArxScriptedLaunch([string[]]$ArxArgs, [switch]$TestChannel, [switch]$Isolated, [switch]$Dialogs) {
+	if ($Dialogs) { return $false }
+	[bool]($TestChannel -or $Isolated -or (@($ArxArgs) -contains '--test-dir'))
+}
+
+# The '[dialog]' lines a run without dialogs wrote (#501), from its arx.log and its stderr: the text from '[dialog]'
+# on (the log prefix "[E] Dialog:123  " cut), each once. Missing files are skipped.
+function Get-ArxDialogLines([string[]]$Paths) {
+	$lines = foreach ($path in @($Paths)) {
+		if (-not $path -or -not (Test-Path -LiteralPath $path)) { continue }
+		foreach ($line in [IO.File]::ReadAllLines($path)) {
+			$at = $line.IndexOf('[dialog] ')
+			if ($at -ge 0) { $line.Substring($at).TrimEnd() }
+		}
+	}
+	@($lines | Select-Object -Unique)
+}
+
+# The failure reason of a run that ended on a dialog: the first '[dialog]' line, and how many more there were
+function Get-ArxDialogReason([string[]]$Lines) {
+	$Lines = @($Lines | Where-Object { $_ })
+	if (-not $Lines) { return $null }
+	"the game ended on a dialog: $($Lines[0])$(if ($Lines.Count -gt 1) { " (and $($Lines.Count - 1) more)" })"
 }

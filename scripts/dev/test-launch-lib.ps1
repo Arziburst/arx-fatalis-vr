@@ -193,6 +193,66 @@ Check 'foreground: none in a session without a desktop - ok' (Test-ArxForeground
 $now = Get-ArxForegroundWindow
 Check 'foreground: Get-ArxForegroundWindow answers' ($null -ne $now -and $now.Handle -ge 0)
 
+# --- Scripted launches show no dialogs (#501) ---------------------------------------------------------------------
+Write-Host '==> scripted launches show no dialogs (#501)'
+$dialogRoot = Join-Path ([IO.Path]::GetTempPath()) "arxvr-dialog-test-$PID"
+New-Item -ItemType Directory -Force $dialogRoot | Out-Null
+try {
+	# The environment a started process gets: ARXVR_NO_DIALOGS=1 while set, nothing after the restore
+	$shellBefore = $env:ARXVR_NO_DIALOGS
+	Remove-Item Env:ARXVR_NO_DIALOGS -ErrorAction SilentlyContinue
+	$probe = { param($Name)
+		$file = Join-Path $dialogRoot "$Name.txt"
+		$p = Start-Process $pwsh -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile', '-Command', "Set-Content -LiteralPath '$file' -Value ""[`$env:ARXVR_NO_DIALOGS]""")
+		$p.WaitForExit()
+		(Get-Content -LiteralPath $file -Raw).Trim()
+	}
+	$previous = Set-ArxNoDialogs
+	$seen = & $probe 'scripted'
+	Restore-ArxNoDialogs $previous
+	Check 'a process started after Set-ArxNoDialogs has ARXVR_NO_DIALOGS=1' ($seen -eq '[1]') $seen
+	Check 'Restore-ArxNoDialogs removes it from the shell again' ($null -eq $env:ARXVR_NO_DIALOGS)
+	$seen = & $probe 'owner'
+	Check 'a process started after the restore (the owner''s next launch) has none' ($seen -eq '[]') $seen
+	$env:ARXVR_NO_DIALOGS = 'kept'
+	Restore-ArxNoDialogs (Set-ArxNoDialogs)
+	Check 'a value set before is put back' ($env:ARXVR_NO_DIALOGS -eq 'kept')
+	if ($null -eq $shellBefore) { Remove-Item Env:ARXVR_NO_DIALOGS -ErrorAction SilentlyContinue } else { $env:ARXVR_NO_DIALOGS = $shellBefore }
+
+	# Which run-windows.ps1 launches are scripted ones
+	Check 'run-windows -TestChannel: no dialogs' (Test-ArxScriptedLaunch -TestChannel)
+	Check 'run-windows -Isolated: no dialogs' (Test-ArxScriptedLaunch -Isolated)
+	Check 'run-windows -- --test-dir <dir>: no dialogs' (Test-ArxScriptedLaunch -ArxArgs @('--no-vr', '--test-dir', 'x'))
+	Check 'run-windows by hand (no switch): dialogs shown' (-not (Test-ArxScriptedLaunch -ArxArgs @('--skiplogo', '--loadslot', '0')))
+	Check 'test-pr.ps1 -Isolated (run-windows -Isolated -Dialogs): dialogs shown' (-not (Test-ArxScriptedLaunch -Isolated -Dialogs))
+	$runText = & $text 'run-windows.ps1'
+	Check 'run-windows.ps1 decides with Test-ArxScriptedLaunch from its own switches' ($runText -match 'Test-ArxScriptedLaunch -ArxArgs \$ArxArgs -TestChannel:\$TestChannel -Isolated:\$Isolated -Dialogs:\$Dialogs')
+	Check 'run-windows.ps1 sets it around the start and restores it' ($runText -match 'Set-ArxNoDialogs' -and $runText -match 'Restore-ArxNoDialogs' -and $runText.IndexOf('Set-ArxNoDialogs') -lt $runText.IndexOf('Start-Process -FilePath $exe'))
+	$smokeText = & $text 'dev\smoke-test.ps1'
+	Check 'smoke-test.ps1 (and xrs-run.ps1 through it) start the game with it' ($smokeText.IndexOf('Set-ArxNoDialogs') -ge 0 -and $smokeText.IndexOf('Set-ArxNoDialogs') -lt $smokeText.IndexOf('Start-Process -FilePath $exe') -and ((& $text 'dev\xrs-run.ps1') -match "'smoke-test\.ps1'\) @smokeArgs"))
+	Check 'ci-smoke.ps1 (CI) sets it for the whole job' ((& $text 'dev\ci-smoke.ps1') -match "(?m)^\`$env:ARXVR_NO_DIALOGS = '1'")
+	Check 'make-test-saves.ps1 sets it; package-tester.ps1''s verify run sets ARX_UNATTENDED, which counts too' (((& $text 'dev\make-test-saves.ps1') -match "\`$env:ARXVR_NO_DIALOGS = '1'") -and ((& $text 'package-tester.ps1') -match "\`$env:ARX_UNATTENDED = '1'"))
+	Check 'test-pr.ps1 (the owner) keeps the dialogs: passes -Dialogs' ((& $text 'dev\test-pr.ps1') -match '\$runArgs\.Dialogs = \$true')
+	Check 'the desktop shortcut launches without -Isolated / -TestChannel: dialogs shown' ((& $text 'launch-shortcut.ps1') -notmatch '-Isolated|-TestChannel|ARXVR_NO_DIALOGS')
+	$playerLaunchers = @(Get-ChildItem (Join-Path $scripts 'tester') -File) + @(Get-Item (Join-Path $scripts 'add-steam-shortcut.ps1'), (Join-Path $scripts 'steam-shortcuts-lib.ps1'))
+	Check 'the Steam shortcut and the tester zip''s launchers never set it' (-not ($playerLaunchers | Where-Object { (Get-Content -Raw $_.FullName) -match 'ARXVR_NO_DIALOGS|ARX_UNATTENDED' })) "$($playerLaunchers.Name)"
+
+	# The failure reason of a run that ended on a dialog: the line from arx.log and from stderr, once
+	$dialogLog = Join-Path $dialogRoot 'arx.log'
+	$dialogErr = Join-Path $dialogRoot 'stderr.txt'
+	$line = '[dialog] error: Critical Error - Arx Fatalis VR: unknown option: --no-such-option'
+	[IO.File]::WriteAllLines($dialogLog, @('[I] Startup:164           Starting Arx Fatalis VR', "[E] Dialog:533            $line"))
+	[IO.File]::WriteAllLines($dialogErr, @("[E] Dialog:533            $line", 'Usage: arx [options]'))
+	$lines = @(Get-ArxDialogLines @($dialogLog, $dialogErr, $null, (Join-Path $dialogRoot 'missing.txt')))
+	Check 'Get-ArxDialogLines: the line from arx.log and stderr, once, without the log prefix' ($lines.Count -eq 1 -and $lines[0] -eq $line) "$lines"
+	Check 'the reason names the dialog line' ((Get-ArxDialogReason $lines) -eq "the game ended on a dialog: $line")
+	Check 'two dialogs: the first and a count' ((Get-ArxDialogReason @($line, '[dialog] info: x: y')) -eq "the game ended on a dialog: $line (and 1 more)")
+	Check 'no dialog: no reason' ($null -eq (Get-ArxDialogReason @()) -and @(Get-ArxDialogLines @((Join-Path $dialogRoot 'missing.txt'))).Count -eq 0)
+	Check 'smoke-test.ps1 puts the dialog line first among the failure reasons' ($smokeText -match '\$reasons\.Insert\(0, \(Get-ArxDialogReason \$dialogLines\)\)')
+} finally {
+	Remove-Item $dialogRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($script:failures) { Write-Host "test-launch-lib: $($script:failures) check(s) FAILED" -ForegroundColor Red; exit 1 }
 Write-Host 'test-launch-lib: all checks passed' -ForegroundColor Green
 exit 0

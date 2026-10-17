@@ -259,6 +259,8 @@ try {
 	if ($Verify) { $argList += '--loadslot', '0'; $launchArgs += '--loadslot', '0' }
 	Write-Host "=== arx.exe $($argList -join ' ')" -ForegroundColor Cyan
 	$env:ARX_UNATTENDED = '1'
+	# No dialog blocks the run: it goes to arx.log and stderr (#501)
+	$env:ARXVR_NO_DIALOGS = '1'
 	$launchTime = Get-Date
 	$previousHint = Set-ArxBackgroundWindow
 	try {

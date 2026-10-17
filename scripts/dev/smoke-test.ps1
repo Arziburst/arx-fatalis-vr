@@ -294,13 +294,15 @@ function Invoke-SmokeRun([int]$Run) {
 		Write-Host "=== run $Run/$Repeat`: arx.exe $($argList -join ' ')" -ForegroundColor Cyan
 		$env:ARX_UNATTENDED = '1'
 		$launchTime = Get-Date
-		# Shown without taking the focus (SDL hint from the environment, restored right after the start)
+		# Shown without taking the focus (SDL hint from the environment, restored right after the start), and never
+		# blocking on a dialog: it goes to arx.log and stderr (#501)
 		$previousHint = Set-ArxBackgroundWindow
+		$previousNoDialogs = Set-ArxNoDialogs
 		$foregroundBefore = Get-ArxForegroundWindow
 		try {
 			$process = Start-Process -FilePath $exe -ArgumentList $argList -PassThru `
 				-RedirectStandardOutput (Join-Path $TestDir 'stdout.txt') -RedirectStandardError (Join-Path $TestDir 'stderr.txt')
-		} finally { Restore-ArxBackgroundWindow $previousHint }
+		} finally { Restore-ArxBackgroundWindow $previousHint; Restore-ArxNoDialogs $previousNoDialogs }
 		Set-ArxGameLockGame $lock $process.Id
 		# The game is running: a check driving it from outside starts its timeouts only now, not during the lock wait (#258)
 		Set-Content -LiteralPath (Get-ArxLaunchMarker $TestDir) -Value "pid=$($process.Id) run=$Run" -Encoding ascii
@@ -494,6 +496,10 @@ function Invoke-SmokeRun([int]$Run) {
 		if ($newCrashes) { $reasons.Add("new crash report: $($newCrashes -join ', ')") }
 		if ($errorLines) { $reasons.Add("$($errorLines.Count) [E] line(s) in arx.log") }
 		if ($final -and [int]$final.errors -ne 0) { $reasons.Add("status.json errors=$($final.errors)") }
+		# A dialog the game wrote instead of showing it (#501) is what ended the run: its line is the first reason
+		$dialogLines = Get-ArxDialogLines @($(if ($logFresh) { $log }), (Join-Path $TestDir 'stderr.txt'))
+		Write-Check ($dialogLines.Count -eq 0) "no dialog ($($dialogLines.Count) '[dialog]' line(s) in arx.log / stderr)"
+		if ($dialogLines) { $reasons.Insert(0, (Get-ArxDialogReason $dialogLines)) }
 
 		if ($errorLines -or $warningLines) {
 			Write-Host '  --- [E]/[W] lines:'

@@ -69,6 +69,8 @@ New-Item -ItemType Directory -Force $OutDir | Out-Null
 
 # A CI run on a pull request branch must not file bugs on its own (#131): the failing step is the report
 $env:ARXVR_AUTOREPORT = '0'
+# Nobody clicks a dialog on the runner (#501): every game of this job writes it to arx.log and stderr instead
+$env:ARXVR_NO_DIALOGS = '1'
 
 # --- Where is this job running ---------------------------------------------------------------------------------
 $session = [Diagnostics.Process]::GetCurrentProcess().SessionId

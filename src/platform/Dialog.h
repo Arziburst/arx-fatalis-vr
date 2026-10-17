@@ -21,6 +21,7 @@
 #define ARX_PLATFORM_DIALOG_H
 
 #include <string>
+#include <string_view>
 
 namespace platform {
 
@@ -140,6 +141,88 @@ bool askYesNoWarning(const std::string & question, const std::string & title = "
  *         closed the dialog.
  */
 bool askOkCancel(const std::string & question, const std::string & title = "Ok/Cancel?");
+
+/*!
+ * \brief Whether this run shows no dialogs (#501)
+ *
+ * Scripted and test launches set \c ARXVR_NO_DIALOGS=1 (the test channel sets \c ARX_UNATTENDED=1,
+ * which counts too): nobody is there to click a message box. Every dialog is then written to the log -
+ * and through it to stderr - as one line (\ref formatDialogLine) and answered with its default
+ * (\ref dialogDefaultAnswer) instead of being shown.
+ */
+bool dialogsDisabled();
+
+/*!
+ * \brief Whether an error dialog was answered without being shown
+ *
+ * The game then exits with a failure code, so the script that started it sees the error.
+ */
+bool errorDialogSuppressed();
+
+//! The decision of \ref dialogsDisabled from the two environment values (\c nullptr when not set)
+inline bool dialogsDisabledBy(const char * noDialogs, const char * unattended) {
+	bool noDialogsSet = noDialogs && *noDialogs && std::string_view(noDialogs) != "0";
+	return noDialogsSet || (unattended && *unattended);
+}
+
+//! The name of a dialog type in the line that replaces the dialog
+inline std::string_view dialogTypeName(DialogType type) {
+	switch(type) {
+		case DialogInfo:      return "info";
+		case DialogWarning:   return "warning";
+		case DialogError:     return "error";
+		case DialogYesNo:     return "yes-no";
+		case DialogWarnYesNo: return "warn-yes-no";
+		case DialogOkCancel:  return "ok-cancel";
+	}
+	return "unknown";
+}
+
+/*!
+ * \brief The answer to a dialog that is not shown
+ *
+ * A message is acknowledged (\c true, "OK"); a question gets the answer of closing the dialog - "No" or
+ * "Cancel" (\c false), so nothing it offers to do (run the data installer, ...) is done unasked.
+ */
+inline bool dialogDefaultAnswer(DialogType type) {
+	return type == DialogInfo || type == DialogWarning || type == DialogError;
+}
+
+/*!
+ * \brief The single line written instead of a dialog
+ *
+ * "[dialog] <type>: <title>: <message>", the message's line breaks (and blank lines) joined into one
+ * " | ", and for a question the answer given: " [answered: no]" or " [answered: cancel]".
+ */
+inline std::string formatDialogLine(DialogType type, std::string_view title, std::string_view message) {
+
+	std::string line = "[dialog] ";
+	line += dialogTypeName(type);
+	line += ": ";
+	line += title;
+	line += ": ";
+
+	bool text = false;
+	bool lineBreak = false;
+	for(char c : message) {
+		if(c == '\n' || c == '\r') {
+			lineBreak = text;
+			continue;
+		}
+		if(lineBreak) {
+			line += " | ";
+			lineBreak = false;
+		}
+		line += c;
+		text = true;
+	}
+
+	if(!dialogDefaultAnswer(type)) {
+		line += (type == DialogOkCancel) ? " [answered: cancel]" : " [answered: no]";
+	}
+
+	return line;
+}
 
 } // namespace platform
 

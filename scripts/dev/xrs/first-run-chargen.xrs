@@ -104,6 +104,8 @@ vr-sim action button_a right 1
 @frames 5
 vr-sim action button_a right 0
 @frames 5
+@assert hero.strength eq 7
+@assert hero.attributePoints eq 15
 @assert desktopMouse.ignored eq true
 @assert desktopMouse.droppedButtons eq {droppedButtons+2}
 @log \[input\] desktop mouse: button 2 dropped \(VR\)

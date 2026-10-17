@@ -79,6 +79,10 @@ SwingParams paramsFromConfig() {
 	params.endSpeed = std::min(params.endSpeed, params.startSpeed * 0.6f);
 	params.speedMin = config.input.vrMeleeSpeedMin;
 	params.speedMax = std::max(config.input.vrMeleeSpeedMax, params.speedMin);
+	params.sizeMin = config.input.vrMeleeSizeMin;
+	params.sizeMax = std::max(config.input.vrMeleeSizeMax, params.sizeMin);
+	params.lungeMin = config.input.vrMeleeLungeMin;
+	params.lungeMax = std::max(config.input.vrMeleeLungeMax, params.lungeMin);
 	params.noSwing = parseNoSwing(config.input.vrMeleeNoSwing);
 	params.targetCooldown = config.input.vrMeleeTargetCooldown;
 	return params;
@@ -238,7 +242,7 @@ void strikeSpeech(Entity * weapon) {
 
 /*!
  * The engine's strike check on the weapon where the hand holds it: each hit sphere deals the aim of its own point
- * of the blade, from that point's speed (#465) - \a swing false for a touch outside a swing (\ref contactAim)
+ * of the blade, from that point's speed and stroke (#465) - \a swing false for a touch outside a swing (\ref contactAim)
  */
 void contact(Entity * weapon, double now, bool swing, const Vec3f & hilt, const Vec3f & tip) {
 
@@ -251,6 +255,9 @@ void contact(Entity * weapon, double now, bool swing, const Vec3f & hilt, const 
 	for(size_t target : m.cooldown.blocked(number, now, params.targetCooldown)) {
 		targets.skip.push_back(EntityHandle(target));
 	}
+	// A touch is the original's uncharged click on an enemy: the blade resting on an item or a crate does nothing
+	// to it, and starts no recovery
+	targets.npcOnly = !swing;
 
 	// A sphere's point is its distance from the hilt along the blade, in meters: its velocity relative to the
 	// head is the detector's (the controller's grip is the hilt, the blade along its -Z)
@@ -258,12 +265,18 @@ void contact(Entity * weapon, double now, bool swing, const Vec3f & hilt, const 
 	const float length = glm::length(axis);
 	const SwingDetector & detector = m.detector;
 	targets.aim = [&](const Vec3f & point) {
-		const float along = length > 0.f ? std::max(glm::dot(point - hilt, axis) / length, 0.f) : 0.f;
-		const Vec3f velocity = detector.pointVelocity(along / UnitsPerMeter);
+		const float along = length > 0.f ? std::max(glm::dot(point - hilt, axis) / length, 0.f) / UnitsPerMeter : 0.f;
+		const Vec3f velocity = detector.pointVelocity(along);
+		ContactMeasure measure;
+		measure.speed = glm::length(velocity);
+		measure.kind = contactKind(velocity, detector.blade(), params);
+		measure.size = measure.kind == ContactKind::Thrust ? detector.strokeLunge(along) : detector.strokePath(along);
+		measure.swing = swing;
 		StrikeAim aim;
-		aim.speed = glm::length(velocity);
-		aim.kind = contactKindName(contactKind(velocity, detector.blade(), params));
-		aim.ratio = contactAim(aim.speed, swing, params);
+		aim.speed = measure.speed;
+		aim.size = measure.size;
+		aim.kind = contactKindName(measure.kind);
+		aim.ratio = contactAim(measure, params);
 		return aim;
 	};
 	ARX_EQUIPMENT_Strike_Check(entities.player(), weapon, 0.f, 0, EntityHandle(), &targets);
@@ -283,6 +296,7 @@ void contact(Entity * weapon, double now, bool swing, const Vec3f & hilt, const 
 		s.lastAim = touched.aim;
 		s.lastDamage = touched.damage;
 		s.lastSpeed = touched.speed;
+		s.lastSize = touched.size;
 		s.lastKind = touched.kind;
 		s.lastSwing = swing ? number : 0;
 		if(swing) {
@@ -357,7 +371,7 @@ void updateMelee(const char * refusal) {
 	}
 
 	// A swing checks its contacts unless it started within the recovery (#323); outside a swing the blade touches
-	// once the recovery is over - and deals nothing, or the minimum (vr_melee_noswing, #465)
+	// once the recovery is over - and deals the minimum, or nothing (vr_melee_noswing, #465)
 	s.placed = placeHeldWeapon(s.hilt, s.tip);
 	if(s.placed) {
 		if(m.detector.swinging()) {

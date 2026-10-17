@@ -130,6 +130,7 @@ struct StrikeContact {
 	bool npc = false;
 	float aim = 0.f;    //!< the aim ratio it was dealt with (#465)
 	float speed = 0.f;  //!< m/s, the speed of the blade's point that touched (#465)
+	float size = 0.f;   //!< m, the stroke of that point so far: a slash's path, a thrust's lunge (#465)
 	const char * kind = "slash"; //!< how that point moved: "slash", "thrust" (#465)
 };
 
@@ -137,6 +138,7 @@ struct StrikeContact {
 struct StrikeAim {
 	float ratio = 0.f;  //!< the aim ratio (1 = the fully charged strike); 0 or less: the point touches nothing
 	float speed = 0.f;  //!< m/s, the point's speed
+	float size = 0.f;   //!< m, its stroke so far
 	const char * kind = "slash";
 };
 
@@ -147,6 +149,8 @@ struct StrikeTargets {
 	//! VR (#465): the aim of each hit sphere from its centre (world) instead of the check's one ratio; the fastest
 	//! sphere touches first
 	std::function<StrikeAim(const Vec3f & point)> aim;
+	//! VR (#465): only NPCs are touched - a blade resting on an item or a crate outside a swing does nothing to it
+	bool npcOnly = false;
 	std::vector<StrikeContact> touched;
 };
 

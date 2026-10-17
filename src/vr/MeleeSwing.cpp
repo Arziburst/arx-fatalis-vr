@@ -62,13 +62,27 @@ ContactKind contactKind(const Vec3f & velocity, const Vec3f & blade, const Swing
 	return glm::dot(velocity, blade) >= params.thrustCosine * speed ? ContactKind::Thrust : ContactKind::Slash;
 }
 
-float contactAim(float speed, bool swing, const SwingParams & params) {
-	if(!swing || speed < params.speedMin) {
-		return params.noSwing == NoSwing::Min ? MinStrikeAim : 0.f;
+namespace {
+
+//! 0 at \a low, 1 at \a high and above (1 from \a low on when they are the same)
+float ramp(float value, float low, float high) {
+	return high > low ? glm::clamp((value - low) / (high - low), 0.f, 1.f) : 1.f;
+}
+
+} // anonymous namespace
+
+float contactAim(const ContactMeasure & contact, const SwingParams & params) {
+	const float floor = params.noSwing == NoSwing::Min ? MinStrikeAim : 0.f;
+	const bool thrust = contact.kind == ContactKind::Thrust;
+	const float sizeMin = thrust ? params.lungeMin : params.sizeMin;
+	const float sizeMax = thrust ? params.lungeMax : params.sizeMax;
+	if(!contact.swing || contact.speed < params.speedMin || contact.size < sizeMin) {
+		return floor;
 	}
-	const float range = params.speedMax - params.speedMin;
-	const float t = range > 0.f ? glm::clamp((speed - params.speedMin) / range, 0.f, 1.f) : 1.f;
-	return MinStrikeAim + (1.f - MinStrikeAim) * t;
+	// The weaker factor decides: only a big and fast stroke is the full strike
+	const float factor = std::min(ramp(contact.speed, params.speedMin, params.speedMax),
+	                              ramp(contact.size, sizeMin, sizeMax));
+	return MinStrikeAim + (1.f - MinStrikeAim) * factor;
 }
 
 namespace {
@@ -93,6 +107,7 @@ SwingChange SwingDetector::drop() {
 	m_kind = SwingKind::None;
 	m_seeded = false;
 	m_count = 0;
+	m_stroke.clear();
 	m_speed = 0.f;
 	m_thrust = 0.f;
 	m_thrusts.clear();
@@ -121,6 +136,7 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 		m_blades[0] = blade;
 		m_times[0] = sample.time;
 		m_count = 1;
+		m_stroke.assign(1, StrokeSample{ sample.hand, blade });
 		return SwingChange::None;
 	}
 
@@ -167,6 +183,16 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 		update(sample, true);
 		return change;
 	}
+
+	// The stroke (#465): it starts over from the sample before while the lever point is slow outside a swing - the
+	// filtered speed lags a sample, so that one already moved
+	if(!swinging() && m_speed < m_params.endSpeed) {
+		m_stroke.assign(1, StrokeSample{ m_hands[1], m_blades[1] });
+	}
+	if(m_stroke.size() >= MaxStroke) {
+		m_stroke.erase(m_stroke.begin());
+	}
+	m_stroke.push_back(StrokeSample{ sample.hand, blade });
 
 	// The thrust along the blade within the stab window (F-61)
 	const float along = glm::dot(sample.hand - m_lastHand, blade);
@@ -221,6 +247,26 @@ Vec3f SwingDetector::pointVelocity(float distance) const {
 	const Vec3f before = median(point(1), point(2), point(3));
 	const float span = float(m_times[1] - m_times[2]); // at least minStep: skipped samples never get here
 	return (now - before) / span;
+}
+
+float SwingDetector::strokePath(float distance) const {
+	float path = 0.f;
+	for(size_t i = 1; i < m_stroke.size(); i++) {
+		const Vec3f from = m_stroke[i - 1].hand + m_stroke[i - 1].blade * distance;
+		const Vec3f to = m_stroke[i].hand + m_stroke[i].blade * distance;
+		path += glm::length(to - from);
+	}
+	return path;
+}
+
+float SwingDetector::strokeLunge(float distance) const {
+	if(m_stroke.size() < 2) {
+		return 0.f;
+	}
+	const StrokeSample & first = m_stroke.front();
+	const StrokeSample & last = m_stroke.back();
+	const Vec3f moved = (last.hand + last.blade * distance) - (first.hand + first.blade * distance);
+	return std::max(glm::dot(moved, last.blade), 0.f);
 }
 
 bool TargetCooldown::allowed(size_t target, u64 swing, double time, float cooldown) const {

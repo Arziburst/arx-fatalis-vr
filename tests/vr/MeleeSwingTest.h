@@ -25,8 +25,8 @@
 
 /*!
  * The decision core of physical melee (#39): a swing from the controller's motion (lever point, median of
- * three, gaps and tracking jumps, stab rule, the longest swing), the aim a hit is dealt with from the speed of the
- * blade's point that touched - a thrust like a slash, no charge (#465) - the per-target cooldown; the speed over
+ * three, gaps and tracking jumps, stab rule, the longest swing), the aim a hit is dealt with from the speed and the
+ * stroke of the blade's point that touched - a thrust by the same rule, no charge (#465) - the per-target cooldown; the speed over
  * uneven frame times (#352) and the recovery after a hit per weapon type (#323).
  */
 class MeleeSwingTest final : public CppUnit::TestFixture {
@@ -42,6 +42,7 @@ class MeleeSwingTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testLongestSwing);
 	CPPUNIT_TEST(testContactAim);
 	CPPUNIT_TEST(testPointVelocity);
+	CPPUNIT_TEST(testStrokeSize);
 	CPPUNIT_TEST(testThrustCountsLikeSlash);
 	CPPUNIT_TEST(testTouchCooldown);
 	CPPUNIT_TEST(testTargetCooldown);
@@ -64,6 +65,7 @@ public:
 	void testLongestSwing();
 	void testContactAim();
 	void testPointVelocity();
+	void testStrokeSize();
 	void testThrustCountsLikeSlash();
 	void testTouchCooldown();
 	void testTargetCooldown();

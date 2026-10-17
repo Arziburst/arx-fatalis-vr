@@ -90,7 +90,7 @@ constexpr const std::string_view
 	vrArmsModel = "classic",
 	vrClassicHand = "arx",
 	vrBody = "full",
-	vrMeleeNoSwing = "none",
+	vrMeleeNoSwing = "min",
 	bufferUpload,
 	extensionOverride,
 	thumbnailSize = BOOST_PP_STRINGIZE(THUMBNAIL_DEFAULT_WIDTH) "x"
@@ -163,6 +163,10 @@ constexpr const float
 	vrMeleeSwingSpeed = vr::SwingParams().startSpeed,
 	vrMeleeSpeedMin = vr::SwingParams().speedMin,
 	vrMeleeSpeedMax = vr::SwingParams().speedMax,
+	vrMeleeSizeMin = vr::SwingParams().sizeMin,
+	vrMeleeSizeMax = vr::SwingParams().sizeMax,
+	vrMeleeLungeMin = vr::SwingParams().lungeMin,
+	vrMeleeLungeMax = vr::SwingParams().lungeMax,
 	vrMeleeTargetCooldown = vr::SwingParams().targetCooldown,
 	vrMeleeRecovery = -1.f, // the weapon type's default (#323, vr::defaultRecovery)
 	vrHiltKnuckle = vr::HiltAngles().knuckle,
@@ -380,6 +384,10 @@ constexpr const std::string_view
 	vrMeleeSwingSpeed = "vr_melee_swing_speed",
 	vrMeleeSpeedMin = "vr_melee_speed_min",
 	vrMeleeSpeedMax = "vr_melee_speed_max",
+	vrMeleeSizeMin = "vr_melee_size_min",
+	vrMeleeSizeMax = "vr_melee_size_max",
+	vrMeleeLungeMin = "vr_melee_lunge_min",
+	vrMeleeLungeMax = "vr_melee_lunge_max",
 	vrMeleeNoSwing = "vr_melee_noswing",
 	vrMeleeTargetCooldown = "vr_melee_target_cooldown",
 	vrMeleeRecoveryDagger = "vr_melee_recovery_dagger",
@@ -696,6 +704,10 @@ bool Config::save() {
 	writer.writeKey(Key::vrMeleeSwingSpeed, input.vrMeleeSwingSpeed);
 	writer.writeKey(Key::vrMeleeSpeedMin, input.vrMeleeSpeedMin);
 	writer.writeKey(Key::vrMeleeSpeedMax, input.vrMeleeSpeedMax);
+	writer.writeKey(Key::vrMeleeSizeMin, input.vrMeleeSizeMin);
+	writer.writeKey(Key::vrMeleeSizeMax, input.vrMeleeSizeMax);
+	writer.writeKey(Key::vrMeleeLungeMin, input.vrMeleeLungeMin);
+	writer.writeKey(Key::vrMeleeLungeMax, input.vrMeleeLungeMax);
 	writer.writeKey(Key::vrMeleeNoSwing, input.vrMeleeNoSwing);
 	writer.writeKey(Key::vrMeleeTargetCooldown, input.vrMeleeTargetCooldown);
 	writer.writeKey(Key::vrMeleeRecoveryDagger, input.vrMeleeRecoveryDagger);
@@ -925,11 +937,19 @@ bool Config::init(const fs::path & file) {
 	// Physical melee (#39)
 	float vrMeleeSwingSpeed = reader.getKey(Section::Input, Key::vrMeleeSwingSpeed, Default::vrMeleeSwingSpeed);
 	input.vrMeleeSwingSpeed = glm::clamp(vrMeleeSwingSpeed, 0.5f, 10.f);
-	// The damage from the speed at the contact point (#465): the full-damage speed is never below the minimum one
+	// The damage from the swing's speed and size at the contact point (#465): each full value is never below its minimum
 	float vrMeleeSpeedMin = reader.getKey(Section::Input, Key::vrMeleeSpeedMin, Default::vrMeleeSpeedMin);
 	input.vrMeleeSpeedMin = glm::clamp(vrMeleeSpeedMin, 0.f, 10.f);
 	float vrMeleeSpeedMax = reader.getKey(Section::Input, Key::vrMeleeSpeedMax, Default::vrMeleeSpeedMax);
 	input.vrMeleeSpeedMax = glm::clamp(vrMeleeSpeedMax, input.vrMeleeSpeedMin, 20.f);
+	float vrMeleeSizeMin = reader.getKey(Section::Input, Key::vrMeleeSizeMin, Default::vrMeleeSizeMin);
+	input.vrMeleeSizeMin = glm::clamp(vrMeleeSizeMin, 0.f, 3.f);
+	float vrMeleeSizeMax = reader.getKey(Section::Input, Key::vrMeleeSizeMax, Default::vrMeleeSizeMax);
+	input.vrMeleeSizeMax = glm::clamp(vrMeleeSizeMax, input.vrMeleeSizeMin, 3.f);
+	float vrMeleeLungeMin = reader.getKey(Section::Input, Key::vrMeleeLungeMin, Default::vrMeleeLungeMin);
+	input.vrMeleeLungeMin = glm::clamp(vrMeleeLungeMin, 0.f, 2.f);
+	float vrMeleeLungeMax = reader.getKey(Section::Input, Key::vrMeleeLungeMax, Default::vrMeleeLungeMax);
+	input.vrMeleeLungeMax = glm::clamp(vrMeleeLungeMax, input.vrMeleeLungeMin, 2.f);
 	input.vrMeleeNoSwing = vr::noSwingName(vr::parseNoSwing(reader.getKey(Section::Input, Key::vrMeleeNoSwing,
 	                                                                      Default::vrMeleeNoSwing)));
 	float vrMeleeTargetCooldown = reader.getKey(Section::Input, Key::vrMeleeTargetCooldown, Default::vrMeleeTargetCooldown);

@@ -1528,6 +1528,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("aim", melee.lastAim);
 		json.value("damage", melee.lastDamage);
 		json.value("speed", melee.lastSpeed);
+		json.value("size", melee.lastSize);
 		json.value("kind", melee.lastKind);
 		json.value("swing", melee.lastSwing);
 		json.end();
@@ -1551,6 +1552,10 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("endSpeed", melee.params.endSpeed);
 		json.value("speedMin", melee.params.speedMin);
 		json.value("speedMax", melee.params.speedMax);
+		json.value("sizeMin", melee.params.sizeMin);
+		json.value("sizeMax", melee.params.sizeMax);
+		json.value("lungeMin", melee.params.lungeMin);
+		json.value("lungeMax", melee.params.lungeMax);
 		json.value("noSwing", vr::noSwingName(melee.params.noSwing));
 		json.value("targetCooldown", melee.params.targetCooldown);
 		json.end();
@@ -2443,8 +2448,9 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "melee") {
-		// The damage from the swing (#465) live, not saved: melee noswing none|min sets vr_melee_noswing, melee speed
-		// <min> <max> vr_melee_speed_min and _max (m/s at the contact point) - one run tests both modes
+		// The damage from the swing (#465) live, not saved: melee noswing none|min sets vr_melee_noswing; melee speed,
+		// size and lunge <min> <max> vr_melee_speed_min / _max (m/s at the contact point), vr_melee_size_min / _max and
+		// vr_melee_lunge_min / _max (m) - one run tests each factor alone
 		std::string_view args;
 		const std::string_view what = firstWord(rest, args);
 		if(what == "noswing") {
@@ -2454,18 +2460,32 @@ std::string execute(std::string_view line) {
 			config.input.vrMeleeNoSwing = std::string(args);
 			return std::string();
 		}
-		if(what == "speed") {
-			float speedMin = 0.f;
-			float speedMax = 0.f;
-			std::istringstream iss{std::string(args)};
-			if(!(iss >> speedMin >> speedMax) || speedMin < 0.f || speedMax < speedMin || speedMax > 20.f) {
-				return refuse("melee speed: expected <min> <max> m/s, 0 <= min <= max <= 20, got \"" + std::string(args) + "\"");
+		struct Range {
+			const char * name;
+			float * low;
+			float * high;
+		};
+		const Range ranges[] = {
+			{ "speed", &config.input.vrMeleeSpeedMin, &config.input.vrMeleeSpeedMax },
+			{ "size", &config.input.vrMeleeSizeMin, &config.input.vrMeleeSizeMax },
+			{ "lunge", &config.input.vrMeleeLungeMin, &config.input.vrMeleeLungeMax },
+		};
+		for(const Range & range : ranges) {
+			if(what != range.name) {
+				continue;
 			}
-			config.input.vrMeleeSpeedMin = speedMin;
-			config.input.vrMeleeSpeedMax = speedMax;
+			float low = 0.f;
+			float high = 0.f;
+			std::istringstream iss{std::string(args)};
+			if(!(iss >> low >> high) || low < 0.f || high < low || high > 20.f) {
+				return refuse("melee " + std::string(range.name) + ": expected <min> <max>, 0 <= min <= max <= 20, got \""
+				              + std::string(args) + "\"");
+			}
+			*range.low = low;
+			*range.high = high;
 			return std::string();
 		}
-		return refuse("melee: expected noswing none|min or speed <min> <max>, got \"" + std::string(rest) + "\"");
+		return refuse("melee: expected noswing none|min, or speed|size|lunge <min> <max>, got \"" + std::string(rest) + "\"");
 	}
 
 	if(word == "crouch") {

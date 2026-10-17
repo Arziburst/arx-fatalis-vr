@@ -669,6 +669,9 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 			for(Entity * target : sphereContent) {
 				arx_assert(target);
 				arx_assert(target->obj);
+				if(targets && targets->npcOnly && !(target->ioflags & IO_NPC)) {
+					continue;
+				}
 				{
 					
 					bool HIT_SPARK = false;
@@ -707,13 +710,13 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 							// One per swing: a hit on an NPC (the player is one) returns true and the
 							// caller stops checking until the next swing; props would repeat every frame.
 							// damage=0 is a hit that the armour class roll turned into a miss. A VR contact adds
-							// the speed of the blade's point that touched and how it moved (#465)
+							// the speed of the blade's point that touched, its stroke's size and how it moved (#465)
 							gameevent::Event event("melee.hit");
 							event("source", gameevent::entityName(io_source))
 								("target", gameevent::entityName(target))("weapon", gameevent::entityName(io_weapon))
 								("damage", dmgs, 1)("aim", hit.aim.ratio, 2);
 							if(vrAim) {
-								event("speed", hit.aim.speed, 2)("kind", hit.aim.kind);
+								event("speed", hit.aim.speed, 2)("size", hit.aim.size, 2)("kind", hit.aim.kind);
 							}
 						}
 
@@ -753,6 +756,7 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 							contact.npc = (target->ioflags & IO_NPC) != 0;
 							contact.aim = hit.aim.ratio;
 							contact.speed = hit.aim.speed;
+							contact.size = hit.aim.size;
 							contact.kind = hit.aim.kind;
 							targets->touched.push_back(contact);
 						}

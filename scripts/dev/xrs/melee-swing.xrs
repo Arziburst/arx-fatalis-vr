@@ -1,6 +1,6 @@
-# Physical melee (#39, D-038, D-NEW): a swing of the sword in the IK hand hits, its damage from the speed of the blade
-# where it touched (#465; the damage scale itself is melee-damage.xrs); the trigger charges nothing and never starts the
-# engine's strike while the IK hand holds the weapon.
+# Physical melee (#39, D-038, D-NEW): a swing of the sword in the IK hand hits, its damage from the size and the speed of
+# the blade's stroke where it touched, a touch the minimum (#465; the damage scale itself is melee-damage.xrs); the
+# trigger charges nothing and never starts the engine's strike while the IK hand holds the weapon.
 # Runs on the test save mvp-goblin-fight (#70: a sword equipped, a goblin ahead in a corridor):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence melee-swing -Save mvp-goblin-fight
 # The swings are ramps of the simulated right controller: 0.85 m in 8 frames - 9.6 m/s at 90 fps, 3.2 m/s at 30 fps,
@@ -29,23 +29,28 @@ vr-sim head rot 0 -25 0
 @assert vr.melee.swings eq 0
 @shot goblin-in-reach
 
-# 1. A slow sweep through the goblin (0.85 m in 60 frames: under 1.3 m/s) is no swing and hits nothing
+# 1. A slow sweep through the goblin (0.85 m in 60 frames: under 1.3 m/s) is no swing: a touch, the minimum (#465)
 vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
 @frames 75
 @assert vr.melee.swings eq 0
-@assert vr.melee.hits eq 0
+@assert vr.melee.hits ge 1
+@assert vr.melee.last.swing eq 0
+@assert vr.melee.last.aim eq 0.1
 
-# 2. A swing back through it: one hit, its damage from the speed of the blade's point that touched
+# 2. A swing back through it: one hit, its damage from the size and the speed of the blade's stroke that touched
+@until vr.melee.recovery.left eq 0 5s
+@remember hits vr.melee.hits
 @mark
 vr-sim @+1-8 hand right pos 0.45 -0.8 -0.35
 @until vr.melee.swings ge 1 5s
 @frames 30
 @assert vr.melee.swinging eq false
-@assert vr.melee.hits eq 1
+@assert vr.melee.hits eq {hits+1}
 @assert vr.melee.last.target eq goblin_base_0036
-@assert vr.melee.last.aim gt 0.1
+@assert vr.melee.last.swing gt 0
+@assert vr.melee.last.aim ge 0.1
 @assert vr.melee.last.speed gt 1.5
-@log melee\.hit source=player target=goblin_base_0036 .*aim=\S+ speed=\S+ kind=(slash|thrust)
+@log melee\.hit source=player target=goblin_base_0036 .*aim=\S+ speed=\S+ size=\S+ kind=(slash|thrust)
 @log melee\.swing kind=slash result=hit .*hits=1
 
 # 3. The trigger held 2 s, then a swing: a hit like any other - the trigger charges nothing (#465)
@@ -54,11 +59,13 @@ vr-sim action trigger right 1
 @frames 180
 @assert vr.melee.trigger eq true
 @until vr.melee.recovery.left eq 0 5s
+@remember hits vr.melee.hits
 vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35
 @until vr.melee.swings ge 2 5s
 @frames 30
-@assert vr.melee.hits eq 2
-@assert vr.melee.last.aim gt 0.1
+@assert vr.melee.hits eq {hits+1}
+@assert vr.melee.last.swing gt 0
+@assert vr.melee.last.aim ge 0.1
 vr-sim action trigger right 0
 @frames 5
 @assert vr.melee.trigger eq false

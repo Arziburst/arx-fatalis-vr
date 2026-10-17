@@ -13,6 +13,55 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: Melee damage comes from the swing - the blade's speed where it touches; no charge
+
+- **Date:** 2026-10-17
+- **Status:** Accepted (the owner's design; the speed numbers are defaults the owner tunes in the headset)
+- **Decided by:** the owner (#465, 2026-10-14 and 2026-10-17: "in VR, damage comes from the real swing"); the mapping
+  by the worker of #465
+- **Supersedes:** D-038's charge (the trigger held charged the strike; a plain swing was weak) - D-038's swing detector,
+  gates, contact through the engine's check and #323's recovery stay
+
+### Decision
+- **No charge.** The trigger of the weapon hand does nothing - held long, short or not at all, a hit is the same. The
+  HUD's hit strength gauge stays empty while the IK hand holds the weapon.
+- **The damage of a hit is the speed of the blade's point that touched.** Each hit sphere of the weapon deals the
+  engine's aim ratio (its `ratioaim`, the damage fraction of the fully charged strike) from the filtered speed of its
+  own point of the blade, relative to the head (the detector's median of three, #352): below **`vr_melee_speed_min`
+  = 1.5 m/s** nothing (**`vr_melee_noswing=none`**, the default) or the engine's weakest strike, 0.1 (`min`); from 1.5
+  to **`vr_melee_speed_max` = 4.5 m/s** linearly from 0.1 to 1; faster stays 1. The fastest touching sphere hits first.
+- **A hit needs a swing** (D-038's detector, F-61): a contact outside a swing - the blade resting on an enemy, a wrist
+  flick of the tip - is "no swing": nothing, or with `min` the minimum once the recovery is over.
+- **A thrust counts like a slash at the same speed.** The kind is logged only: `thrust` when the point moves within 45°
+  of the blade's way towards the tip (F-178's 0.707), `slash` otherwise.
+- **One log line per hit:** the engine's `melee.hit` with `aim`, `speed` and `kind`.
+
+### Why
+- The owner: holding a button to charge is the mouse's way; in VR the arm is the strike. No swing, no damage; a fast,
+  humanly sane slash or thrust is the full one.
+- **1.5 m/s** is the detector's own end speed - a hand that slows below it no longer swings - and above F-178's 1.0
+  m/s floor (a reach or a touch); **4.5 m/s** is PLANCK's arm-swing speed (F-195, F-74) and F-178's 4.0 maximum, a
+  committed but not athletic swing. Measured at the contact point, the tip of a slash of the arm is faster than the
+  grip, so a real swing reaches the full damage, a careful one does not.
+- 0.1, not 0, at the minimum speed: the engine's own weakest strike (`StrikeAimtime`'s floor), and the `min` mode's
+  value.
+- Prior art (a short look, #465): VHVR scales by speed up to full at cooldown + 5 m/s (F-63); F-178's strength is
+  (peak − min) / max; PLANCK tells a stab by the hand moving along the blade (dot ≥ 0.8, F-195); Blade & Sorcery and
+  Boneworks take the hit point's velocity from physics. Ours is the hit point's speed through the engine's own check.
+
+### Rules out
+The charge and the trigger's role in melee; damage from the swing's peak instead of the speed at contact; a thrust
+bonus or malus.
+
+### Consequences
+- cfg.ini `vr_melee_speed_min`, `vr_melee_speed_max`, `vr_melee_noswing` replace `vr_melee_full_speed` and
+  `vr_melee_weak_aim`; the `melee.charge` event and `vr.melee.charge` are gone, `vr.melee.trigger` shows the trigger
+  changing nothing; `vr.melee.last` has the contact's `speed` and `kind`; the channel's `melee noswing|speed` sets the
+  keys live for tests.
+- `melee-damage.xrs` proves the scale in the playground; `melee-swing.xrs` and `controls-v2.xrs` no longer see a charge.
+
+---
+
 ## D-052: The desktop window takes no input in VR, and a test run's window none at all
 
 - **Date:** 2026-10-16
@@ -666,7 +715,8 @@ swaps them as a whole).
 ## D-038: Physical melee — the swing is the strike, the trigger charges it with the game's own charge
 
 - **Date:** 2026-10-10
-- **Status:** Accepted (the owner's design; the numbers are MVP defaults the owner tunes in the headset)
+- **Status:** Accepted (the owner's design; the numbers are MVP defaults the owner tunes in the headset); the charge
+  and the speed factor superseded by D-NEW (#465: the damage comes from the blade's speed at contact, no charge)
 - **Decided by:** the owner (after a headset fight with #75's sword, relayed by the coordinator on #39); the
   mechanism by the worker of #39; builds on D-009, D-016, D-019, D-032 (the body) and D-033 (the weapon in the IK hand, #75)
 

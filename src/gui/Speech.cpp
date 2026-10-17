@@ -330,10 +330,12 @@ static void updateSubtitlesInVR() {
 	
 	bool named = false;
 	const std::string name = subtitleSpeakerName(*shown->speaker, &named);
-	// An off-voice line has no speaker to stand over: the chest panel
+	// An off-voice line has no speaker to stand over, and the hero's own line is read below the centre of the view (the
+	// owner, 2026-10-17; the NPC's above the NPC's head): the chest panel
 	const bool offVoice = (shown->flags & ARX_SPEECH_FLAG_OFFVOICE);
+	const bool hero = (shown->speaker == entities.player());
 	const Vec3f headTop = speakerHeadTop(*shown->speaker);
-	vr::showSubtitle(shown->subtitleLine, name, shown->spokenText, named, offVoice ? nullptr : &headTop);
+	vr::showSubtitle(shown->subtitleLine, name, shown->spokenText, named, (offVoice || hero) ? nullptr : &headTop);
 	
 }
 

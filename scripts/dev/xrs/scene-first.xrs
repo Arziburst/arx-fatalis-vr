@@ -108,6 +108,8 @@ human_base_0028.speak -c ccclistener_r player 40 40 [kultar_cantgo]
 @assert scene.meter.maxYawStepDeg lt 1
 @remember cuts5 scene.meter.cuts
 @assert scene.meter.fadedCuts eq {cuts5}
+@assert scene.meter.cuts eq 0                     # no blink between the lines (the owner, 2026-10-17)
+@assert scene.meter.fadeFrames eq 0
 @assert scene.meter.letterboxFrames eq 0
 
 # Input in a speak -c scene (a separate stretch, not judged by the meter): the stick turn works, walking stays blocked.

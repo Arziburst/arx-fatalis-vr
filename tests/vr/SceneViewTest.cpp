@@ -52,6 +52,8 @@ SceneInput sceneOf(SceneInput in, SceneKind kind, u64 shot, SceneViewSetting set
 	in.kind = kind;
 	in.shot = shot;
 	in.setting = setting;
+	// A camera entity's shot in these tests is a cinematic one (the view's own) unless the test says it is dialogue
+	in.cinematicShot = (kind == SceneKind::Entity);
 	return in;
 }
 
@@ -111,13 +113,18 @@ void SceneViewTest::namesTest() {
 void SceneViewTest::shownViewTest() {
 
 	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::First, SceneKind::Entity) == SceneShown::First);
-	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Ghost, SceneKind::Speech) == SceneShown::Ghost);
+	// Dialogue is the hero's own eyes in every view (the owner, 2026-10-17): a speak -c line, a camera near the hero
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Ghost, SceneKind::Speech) == SceneShown::First);
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Ghost, SceneKind::Speech, true) == SceneShown::First);
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Ghost, SceneKind::Entity) == SceneShown::First);
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Observer, SceneKind::Entity) == SceneShown::First);
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Observer, SceneKind::Speech) == SceneShown::First);
 	// The letterbox alone has no scene camera: the hero's head in every view
 	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Ghost, SceneKind::None) == SceneShown::First);
 	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Observer, SceneKind::None) == SceneShown::First);
-	// The observer watches every scene camera's scene
-	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Observer, SceneKind::Entity) == SceneShown::Observer);
-	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Observer, SceneKind::Speech) == SceneShown::Observer);
+	// A cinematic shot is the view's own
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Observer, SceneKind::Entity, true) == SceneShown::Observer);
+	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Ghost, SceneKind::Entity, true) == SceneShown::Ghost);
 	// The hybrid: the screen only for a camera entity's shot that wants it; a speak -c line is a dialogue
 	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Hybrid, SceneKind::Speech) == SceneShown::First);
 	CPPUNIT_ASSERT(chooseShownView(SceneViewSetting::Hybrid, SceneKind::Speech, true) == SceneShown::First);
@@ -317,19 +324,19 @@ void SceneViewTest::hybridScreenTest() {
 
 	// A dialogue camera near the hero: first person
 	SceneInput scene = sceneOf(in, SceneKind::Entity, 8, SceneViewSetting::Hybrid);
+	scene.cinematicShot = false;
 	settle(director, scene);
 	CPPUNIT_ASSERT(director.shown() == SceneShown::First);
 
-	// Another camera entity wants the screen (far, or the hero's scripted body): cut behind the fade, the eyes'
-	// camera stays at the hero's head and its yaw while the game's camera plays on the screen
+	// Another camera entity wants the screen (far, or the hero's scripted body): at once, no blink (the owner,
+	// 2026-10-17) - the eyes' camera stays at the hero's head and its yaw while the game's camera plays on the screen
 	scene.shot = 9;
-	scene.hybridScreen = true;
+	scene.cinematicShot = true;
 	scene.enginePos = Vec3f(4000.f, -500.f, 6000.f);
-	bool held = false;
-	int frames = 0;
-	SceneOutput out = untilCut(director, scene, in.firstPos, held, frames);
-	CPPUNIT_ASSERT(held);
-	CPPUNIT_ASSERT(out.fade >= BehindFade);
+	SceneOutput out = director.update(scene);
+	CPPUNIT_ASSERT(out.seamless);
+	CPPUNIT_ASSERT(!out.cut);
+	CPPUNIT_ASSERT_EQUAL(0.f, out.fade);
 	CPPUNIT_ASSERT_EQUAL(std::string("camera"), std::string(out.cutReason));
 	CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
 	CPPUNIT_ASSERT(!showsHeroOutside(out.shown));
@@ -339,7 +346,7 @@ void SceneViewTest::hybridScreenTest() {
 	// nearer); the hero turned by the script, a camera entity after it on the screen too: no cut, the eyes'
 	// camera and its yaw stay
 	for(int i = 0; i < 120; i++) {
-		scene.hybridScreen = (i >= 60);
+		scene.cinematicShot = (i >= 60);
 		scene.shot = (i < 60) ? 9 : 10;
 		scene.playerYaw = 40.f + 2.f * float(i);
 		scene.enginePos.x -= 20.f;
@@ -350,20 +357,21 @@ void SceneViewTest::hybridScreenTest() {
 		CPPUNIT_ASSERT(yawDistance(scene.playerYaw + out.yawDelta, 40.f) < SvEps);
 	}
 
-	// A camera near the hero again: back to first person behind the fade, the hero's yaw now
+	// A camera near the hero again: back to first person at once, the hero's yaw now
 	scene.shot = 11;
-	scene.hybridScreen = false;
-	out = untilCut(director, scene, in.firstPos, held, frames);
-	CPPUNIT_ASSERT(held);
-	CPPUNIT_ASSERT(out.fade >= BehindFade);
+	scene.cinematicShot = false;
+	out = director.update(scene);
+	CPPUNIT_ASSERT(out.seamless);
+	CPPUNIT_ASSERT_EQUAL(0.f, out.fade);
 	CPPUNIT_ASSERT(out.shown == SceneShown::First);
 	CPPUNIT_ASSERT_EQUAL(0.f, out.yawDelta);
 
 	// A speak -c line is a dialogue: first person even if a camera entity's rule would say screen
-	SceneInput line = sceneOf(in, SceneKind::Speech, 12, SceneViewSetting::Hybrid);
-	line.hybridScreen = true;
-	out = untilCut(director, line, in.firstPos, held, frames);
+	SceneInput line = sceneOf(scene, SceneKind::Speech, 12, SceneViewSetting::Hybrid);
+	line.cinematicShot = true;
+	out = director.update(line);
 	CPPUNIT_ASSERT(out.shown == SceneShown::First);
+	CPPUNIT_ASSERT_EQUAL(0.f, out.fade);
 }
 
 void SceneViewTest::blindTest() {
@@ -387,9 +395,9 @@ void SceneViewTest::blindTest() {
 
 	// The intro's script places him and its camera starts: the cut is taken at once, then the world fades in
 	SceneInput camera = sceneOf(standing(), SceneKind::Entity, 4, SceneViewSetting::Hybrid);
-	camera.hybridScreen = true;
+	camera.cinematicShot = true;
 	out = director.update(camera);
-	CPPUNIT_ASSERT(out.cut);
+	CPPUNIT_ASSERT(out.seamless);
 	CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
 	settle(director, camera);
 	CPPUNIT_ASSERT_EQUAL(0.f, director.fade());
@@ -816,21 +824,44 @@ void SceneViewTest::ghostJumpIsNewShotTest() {
 	CPPUNIT_ASSERT(same(out.pos, scene.enginePos));
 }
 
-void SceneViewTest::speechLineCutTest() {
+void SceneViewTest::speechLineSeamlessTest() {
 
+	// The next speak -c line of a dialogue (hero, NPC, hero): the hero's head stays, so no blink (the owner, 2026-10-17)
+	// in every view - the line changes at once
+	for(SceneViewSetting setting : { SceneViewSetting::First, SceneViewSetting::Hybrid, SceneViewSetting::Observer,
+	                                 SceneViewSetting::Ghost }) {
+		SceneDirector director;
+		director.update(standing());
+		SceneInput scene = sceneOf(standing(), SceneKind::Speech, 1, setting);
+		SceneOutput out = director.update(scene);
+		CPPUNIT_ASSERT(out.seamless);
+		CPPUNIT_ASSERT(out.started);
+		CPPUNIT_ASSERT(out.shown == SceneShown::First);
+		scene.shot = 2;
+		out = director.update(scene);
+		CPPUNIT_ASSERT(out.seamless);
+		CPPUNIT_ASSERT(!out.cut);
+		CPPUNIT_ASSERT_EQUAL(0.f, out.fade);
+		CPPUNIT_ASSERT_EQUAL(std::string("line"), std::string(out.cutReason));
+		CPPUNIT_ASSERT(!out.started);
+		// The dialogue ends: the game's own view, at once
+		out = director.update(standing());
+		CPPUNIT_ASSERT(out.seamless);
+		CPPUNIT_ASSERT(out.ended);
+		CPPUNIT_ASSERT_EQUAL(0.f, out.fade);
+	}
+
+	// The hero teleported by the script as a line starts: the world would jump - behind the fade
 	SceneDirector director;
-	SceneInput scene = sceneOf(standing(), SceneKind::Speech, 1, SceneViewSetting::First);
-	settle(director, scene);
-
-	// The next speak -c line: a cut behind the fade (SPEC.md), though the hero's head stays
-	scene.shot = 2;
+	director.update(standing());
+	SceneInput moved = sceneOf(standing(), SceneKind::Speech, 3, SceneViewSetting::Hybrid);
+	moved.firstPos.x += 200.f;
 	bool held = false;
 	int frames = 0;
-	SceneOutput out = untilCut(director, scene, scene.firstPos, held, frames);
+	SceneOutput out = untilCut(director, moved, standing().firstPos, held, frames);
 	CPPUNIT_ASSERT(out.cut);
+	CPPUNIT_ASSERT(held);
 	CPPUNIT_ASSERT(out.fade >= BehindFade);
-	CPPUNIT_ASSERT_EQUAL(std::string("line"), std::string(out.cutReason));
-	CPPUNIT_ASSERT(!out.started);
 }
 
 void SceneViewTest::sceneEndTest() {
@@ -868,11 +899,13 @@ void SceneViewTest::letterboxOnlyTest() {
 	SceneDirector director;
 	director.update(standing());
 
-	// The letterbox first, the camera entity a moment later: two starts, the first one's end between
+	// The letterbox first (at once: the hero's own eyes), the camera entity a moment later: two starts, the first one's
+	// end between
 	SceneInput bars = sceneOf(standing(), SceneKind::None, 0, SceneViewSetting::Ghost);
 	bool held = false;
 	int frames = 0;
-	SceneOutput out = untilCut(director, bars, bars.firstPos, held, frames);
+	SceneOutput out = director.update(bars);
+	CPPUNIT_ASSERT(out.seamless);
 	CPPUNIT_ASSERT(out.started);
 	CPPUNIT_ASSERT(out.shown == SceneShown::First);
 	CPPUNIT_ASSERT(out.kind == SceneKind::None);

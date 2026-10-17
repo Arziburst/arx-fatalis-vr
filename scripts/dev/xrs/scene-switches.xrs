@@ -55,7 +55,7 @@ scene meter reset
 @mark
 human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_encourage2]
 @log vr\.scene state=start kind=speech view=first shown=first
-@log vr\.scene\.cut faded=(yes|no) reason=(line|start)
+@log vr\.scene\.switch reason=start shown=first        # no blink: the eyes stay in the hero's head (the owner)
 @assert scene.active eq true
 @assert scene.kind eq speech
 @assert scene.shown eq first
@@ -65,7 +65,8 @@ human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_encourage2]
 @log vr\.scene state=end kind=speech
 @assert scene.shown eq none
 @assert scene.meter.sceneFrames gt 0
-@assert scene.meter.cuts gt 0
+@assert scene.meter.cuts eq 0
+@assert scene.meter.fadeFrames eq 0
 @assert scene.meter.letterboxFrames eq 0
 
 # playerlookat: counted by the meter, logged with the mode

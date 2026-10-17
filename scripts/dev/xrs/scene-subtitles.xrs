@@ -33,7 +33,7 @@ vr-input stick left 0 0
 @until scene.active eq false 120s
 @assert vr.hud.drawn.speech eq 0                 # the engine's band drew nothing, the subtitles above were ours
 @nolog vr\.scene\.subtitle .*speaker=player
-@log vr\.scene\.subtitle placement=above speaker="Am Shaegar"     # the hero's own line names him (the owner, #29)
+@log vr\.scene\.subtitle placement=above speaker="Am Shaegar" drawn=chest   # the hero's own line names him, below the centre of the view (the owner)
 @assert scene.subtitle.voicedLines ge 3
 @remember voiced scene.subtitle.voicedLines
 @assert scene.subtitle.lines eq {voiced}

@@ -2170,15 +2170,16 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 	in.headYaw = head.referenced ? vr::wrapSignedDegrees(head.head.getYaw() - head.reference.yaw) : 0.f;
 	in.seconds = toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
 	in.stickTurned = vr::turnState().turned();
-	// The hybrid: a camera entity's shot of a far place, or of the hero's body played by a script, on the screen
-	if(in.kind == vr::SceneKind::Entity && in.setting == vr::SceneViewSetting::Hybrid) {
+	// A cinematic shot: a camera entity's shot of a far place, or of the hero's body played by a script - the view's
+	// own (the hybrid's screen, the observer, the ghost); every other shot is dialogue, in first person
+	if(in.kind == vr::SceneKind::Entity) {
 		vr::HybridShot shot;
 		shot.camera = engineCamera.m_pos;
 		shot.heroHead = player.pos;
 		shot.lineOfSight = !raycastScene(shot.heroHead, shot.camera, POLY_WATER | POLY_TRANS | POLY_NOCOL);
 		const Entity * hero = entities.player();
 		shot.heroScripted = hero && (hero->animlayer[0].flags & EA_FORCEPLAY);
-		in.hybridScreen = vr::hybridWantsScreen(shot);
+		in.cinematicShot = vr::hybridWantsScreen(shot);
 	}
 	const Vec3f gameCamera = engineCamera.m_pos;
 	in.placeObserver = [speech, gameCamera]() { return placeSceneObserver(speech, gameCamera); };
@@ -2210,6 +2211,10 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 	if(out.cut) {
 		gameevent::Event("vr.scene.cut", 500)("faded", out.fade >= vr::BehindFade ? "yes" : "no")
 			("reason", out.cutReason);
+	}
+	if(out.seamless) {
+		// A shot change the eyes see no jump in: no fade (the owner, 2026-10-17)
+		gameevent::Event("vr.scene.switch", 500)("reason", out.cutReason)("shown", vr::sceneShownName(out.shown));
 	}
 
 	return out;

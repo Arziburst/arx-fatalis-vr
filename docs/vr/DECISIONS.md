@@ -13,12 +13,14 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-053: Scripted scenes in VR - the view is a switch, every cut is behind a fade, no letterbox in the eyes
+## D-053: Scripted scenes in VR - hybrid by default, dialogue in first person, no blink where the eyes see no jump, no letterbox in the eyes
 
 - **Date:** 2026-10-14
-- **Status:** Proposed - the views and the comfort numbers are for the owner to pick and tune in the headset (#29)
+- **Status:** Accepted for `hybrid` (the owner's headset test, 2026-10-17); `first`, `observer` and `ghost` stay as
+  switches, deferred (#497, #498)
 - **Decided by:** the owner (2026-10-13 on #29: every sensible variant behind a switch, default hybrid; turning allowed
-  in dialogues, walking blocked; playerlookat both ways, default ignored); the fade timings are the worker's proposal
+  in dialogues, walking blocked; playerlookat both ways, default ignored; 2026-10-17 after testing all four views:
+  hybrid stays the default, dialogue is always first person, no blink where avoidable, the subtitles' places)
 
 ### Decision
 - A scripted scene (a `speak -c` line, a camera entity of `cameraactivate`, the letterbox of `cinemascope`) no longer
@@ -33,10 +35,17 @@ a changed decision keeps its history in that cell.
   cutscene levels - or the hero's body played by a script, `playanim -p` / `forceanim`, as the goblins dragging him in
   the prison intro; a shot keeps the screen once it wanted it; `speak -c` lines and letterbox-only stretches stay
   `first`). Default `hybrid`.
-- **Every change of the shot the eyes see is a cut behind a fade**: the shot shown is held while the world fades out,
-  the new one is taken at black, then the world fades in. A shot changes with the scene's start and end, a new
-  `speak -c` line, another camera entity, and a jump (> 50 cm) of a view that follows the hero (the script teleporting
-  him). The ghost's yaw is set at each cut so that where the player looks is where the game's camera looked.
+- **Dialogue is always first person, in every view** (the owner, 2026-10-17): a `speak -c` line, the letterbox alone and
+  a camera entity's shot near the hero are the hero's own eyes; a view applies to cinematic shots only - the hybrid's
+  rule (far, out of sight, or the hero's body scripted) decides what is cinematic in every view.
+- **No blink where the eyes see no jump** (the owner, 2026-10-17: "if we can get rid of it, we must"): a dialogue's new
+  line or camera, a scene's start and end while the eyes stay in the hero's head, and the switch between the world and
+  the screen (no motion: the world goes, the screen is there) happen at once (`vr.scene.switch`). **A cut behind a fade**
+  is left only where the world would jump around the player: the hero teleported by the script (more than 50 cm in
+  a frame) or turned at once (more than 10 degrees), a cut into or out of a ghost's or the observer's shot, and an eye
+  that must not be seen (no floor under it; first person too low with `black`) - the shot shown is held while the world
+  fades out, the new one is taken at black, then the world fades in. The ghost's yaw is set at each cut so that where
+  the player looks is where the game's camera looked.
 - **`playerlookat`** (cfg.ini `vr_scene_lookat`): `ignore` (default) leaves the hero's yaw; `fade` turns him at the
   black of a short fade. Never an un-faded snap.
 - **No eye without a floor under it** (the owner, #29): in every view the fade stays black while the eyes' point - the
@@ -50,8 +59,8 @@ a changed decision keeps its history in that cell.
 - **Subtitles in VR** (cfg.ini `vr_subtitles`, default `above`): every voiced line of a scene (a `speak -c` line, a
   camera entity, or the letterbox on) gets a subtitle with the speaker's localised name - also a line the original
   plays without text for want of the letterbox; the text follows the variant played (key `string<N>` in the line's
-  section). `above`: over the speaker's head, facing the player (an off-screen, off-voice or too-near speaker, the hero
-  himself, falls back to the chest panel); `chest`: a panel placed in the room at the player's chest when the line
+  section). `above`: over the NPC's head, facing the player; the hero's own line below the centre of the view (the
+  chest panel - the owner, 2026-10-17), and an off-screen or off-voice speaker there too; `chest`: a panel placed in the room at the player's chest when the line
   appears; `lowerthird`: on the head-locked interface quad. A subtitle shows once the eyes see the scene, not under the
   fade it starts behind. The hero's own lines name him Am Shaegar (the owner: the game gives him no name at character
   creation, and its texts have no key for the name alone). Talk outside scenes (barks, a merchant's greeting) gets none yet. Proposals for the owner
@@ -62,13 +71,10 @@ a changed decision keeps its history in that cell.
 - **The IK arms are off while the hero is shown in third person** (a ghost shot, any external view of the game).
 - Flat mode is unchanged. The test channel's `scene ...` commands change the switches for the session only (cfg.ini
   keeps the player's choice).
-- **Proposal, for the owner to tune:** a cut fades out in 0.15 s (the head-in-wall fade's speed) and in in 0.25 s; a
-  `playerlookat` fade is 0.1 s out and 0.1 s in; black is held two frames after a switch. In `first`, a scene's start
-  and end and a new `speak -c` line fade too, although the hero's head stays - the rule is "every shot change", and the
-  script's teleport at a scene start hides behind that fade; if the owner finds those fades needless in `first`, they
-  can be limited to jumps. One place: `SceneFadeParams` in `src/vr/SceneView.h`. The hybrid's 6 m (`HybridFarUnits`),
-  the screen's size and distance and the observer's distances are proposals too; `observer` and the screen keep the
-  eyes through a scene's new lines and cameras (no cut), `first` and `ghost` fade on each of them.
+- **Proposal, for the owner to tune:** a cut (only the jumps above) fades out in 0.15 s (the head-in-wall fade's speed)
+  and in in 0.25 s; a `playerlookat` fade is 0.1 s out and 0.1 s in; black is held two frames after a switch. One place:
+  `SceneFadeParams` in `src/vr/SceneView.h`. The hybrid's 6 m (`HybridFarUnits`), the screen's size and distance and
+  the observer's distances are proposals too.
 
 ### Why
 - The jerks the owner felt are the scene camera's own moves: un-faded cuts (a yaw cut rotates the world), dollies and

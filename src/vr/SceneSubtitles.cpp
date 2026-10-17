@@ -84,7 +84,7 @@ void countSubtitleShown() {
 		g_subtitles.countedLine = g_subtitles.line;
 		g_subtitles.status.lines++;
 		gameevent::Event("vr.scene.subtitle", 200)("placement", subtitlePlacementName(g_subtitles.status.placement))
-			("speaker", g_subtitles.status.speaker);
+			("speaker", g_subtitles.status.speaker)("drawn", subtitlePlacementName(g_subtitles.drawn));
 	}
 }
 

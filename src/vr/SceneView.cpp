@@ -177,19 +177,23 @@ void SceneFade::holdBlack() {
 	}
 }
 
-SceneShown chooseShownView(SceneViewSetting setting, SceneKind kind, bool hybridScreen) {
+//! The eyes are in the hero's head: his own first person, a scene's or none
+static bool inHead(SceneShown shown) {
+	return shown == SceneShown::None || shown == SceneShown::First;
+}
 
-	// Only the letterbox: the game's camera is the hero's own, there is no scene camera to hold
-	if(kind == SceneKind::None) {
+SceneShown chooseShownView(SceneViewSetting setting, SceneKind kind, bool cinematicShot) {
+
+	// Dialogue is the hero's own eyes in every view (the owner, 2026-10-17): the letterbox alone (the game's camera is
+	// the hero's), a speak -c line, a camera near the hero. A view applies to cinematic shots only
+	if(kind != SceneKind::Entity || !cinematicShot) {
 		return SceneShown::First;
 	}
 
 	switch(setting) {
 		case SceneViewSetting::Ghost: return SceneShown::Ghost;
 		case SceneViewSetting::Observer: return SceneShown::Observer;
-		case SceneViewSetting::Hybrid: {
-			return (kind == SceneKind::Entity && hybridScreen) ? SceneShown::Screen : SceneShown::First;
-		}
+		case SceneViewSetting::Hybrid: return SceneShown::Screen;
 		case SceneViewSetting::First: return SceneShown::First;
 	}
 
@@ -272,6 +276,73 @@ ObserverPlace placeObserver(const ObserverInput & in, const ObserverWorld & worl
 	return place;
 }
 
+void SceneDirector::switchTo(const Shot & target, const Vec3f & targetPos, const SceneInput & in, SceneOutput & out,
+                             bool differs) {
+
+	if(m_shown.shown == SceneShown::None && target.shown != SceneShown::None) {
+		out.cutReason = "start";
+		out.started = true;
+	} else if(m_shown.shown != SceneShown::None && target.shown == SceneShown::None) {
+		out.cutReason = "end";
+		out.ended = true;
+		out.endedKind = m_shown.kind;
+	} else if(m_shown.kind != target.kind) {
+		// A scene of another kind (the letterbox first, the camera entity a moment later): its own start
+		out.cutReason = "start";
+		out.ended = true;
+		out.endedKind = m_shown.kind;
+		out.started = true;
+	} else if(!differs) {
+		out.cutReason = "jump";
+	} else if(target.kind == SceneKind::Speech && target.shot != m_shown.shot) {
+		out.cutReason = "line";
+	} else {
+		out.cutReason = "camera";
+	}
+	m_shown = target;
+	switch(target.shown) {
+		case SceneShown::Ghost: {
+			// Where the player looks now is where the game's camera looked when the shot began
+			m_pos = targetPos;
+			m_yawDelta = wrapSignedDegrees(m_ghost.yaw - in.headYaw - in.playerYaw);
+			fixYaw(m_ghost.yaw - in.headYaw, in.stickTurned);
+			break;
+		}
+		case SceneShown::Observer: {
+			// Placed once for the scene, now that its first shot has set the speakers up
+			if(!m_observer.valid) {
+				m_observer.valid = true;
+				if(in.placeObserver) {
+					m_observer.place = in.placeObserver();
+				} else {
+					m_observer.place.pos = in.firstPos;
+					m_observer.place.yaw = in.playerYaw;
+				}
+			}
+			// Where the player looks now is the middle of the heads
+			m_pos = m_observer.place.pos;
+			m_yawDelta = wrapSignedDegrees(m_observer.place.yaw - in.headYaw - in.playerYaw);
+			fixYaw(m_observer.place.yaw - in.headYaw, in.stickTurned);
+			break;
+		}
+		case SceneShown::Screen: {
+			// The eyes' camera stays where it was, at the yaw it had: the game's camera is on the screen
+			m_heldYaw = m_haveLastYaw ? m_lastYaw : in.playerYaw + m_yawDelta;
+			m_yawDelta = 0.f;
+			m_fixedYaw = false;
+			break;
+		}
+		case SceneShown::None:
+		case SceneShown::First: {
+			m_pos = targetPos;
+			m_yawDelta = 0.f;
+			m_fixedYaw = false;
+			break;
+		}
+	}
+
+}
+
 SceneOutput SceneDirector::update(const SceneInput & in) {
 
 	SceneOutput out;
@@ -283,7 +354,7 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 			m_hybrid.shot = in.shot;
 			m_hybrid.screen = false;
 		}
-		m_hybrid.screen = m_hybrid.screen || in.hybridScreen;
+		m_hybrid.screen = m_hybrid.screen || in.cinematicShot;
 	} else {
 		m_hybrid = HybridChoice();
 	}
@@ -359,12 +430,29 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 	const bool turnJump = std::abs(scriptTurn) > CutJumpDegrees;
 	const bool jump = !differs && following && !m_lowHeld && target.shown != SceneShown::None
 	                  && (glm::distance(targetPos, m_pos) > CutJumpUnits || turnJump);
+	// No blink where the eyes see no jump (the owner, 2026-10-17: "if we can get rid of it, we must"): a new line or
+	// camera of a dialogue, a scene's start or end - the eyes stay in the hero's head - and the switch between the world
+	// and the screen (no motion: the world goes, the screen is there). Only the hero's head jumping in the world - a
+	// teleport, a script's instant turn - is still a cut behind the fade, and the ghost's and the observer's shots
+	const bool worldJump = following && !m_lowHeld && inHead(m_shown.shown)
+	                       && (glm::distance(targetPos, m_pos) > CutJumpUnits || turnJump);
+	// ...and an eye that must not be seen at all (no floor under it, first person too low with black) is reached the old
+	// way: the view shown is held while the fade goes black
+	const bool targetBlind = target.shown == SceneShown::First
+	                         && (!in.firstOnFloor || (in.firstLow == SceneFirstLow::Black && firstTooLow));
+	const bool seamless = (differs || jump) && !m_cutPending && !worldJump && !targetBlind
+	                      && ((inHead(m_shown.shown) && inHead(target.shown))
+	                          || (m_shown.shown == SceneShown::Screen && inHead(target.shown))
+	                          || (inHead(m_shown.shown) && target.shown == SceneShown::Screen));
 	// A cut that waits with no fade under way would wait for ever: fade again (#29)
 	if(m_cutPending && !m_fade.busy()) {
 		m_cutPending = false;
 		out.cutRestarted = true;
 	}
-	if(differs || jump) {
+	if(seamless) {
+		out.seamless = true;
+		switchTo(target, targetPos, in, out, differs);
+	} else if(differs || jump) {
 		if(!m_cutPending) {
 			m_cutPending = true;
 			m_turnCut = jump && turnJump;
@@ -386,66 +474,7 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 		m_turnCut = false;
 		if(differsNow || jumpNow) {
 			out.cut = true;
-			if(m_shown.shown == SceneShown::None && target.shown != SceneShown::None) {
-				out.cutReason = "start";
-				out.started = true;
-			} else if(m_shown.shown != SceneShown::None && target.shown == SceneShown::None) {
-				out.cutReason = "end";
-				out.ended = true;
-				out.endedKind = m_shown.kind;
-			} else if(m_shown.kind != target.kind) {
-				// A scene of another kind (the letterbox first, the camera entity a moment later): its own start
-				out.cutReason = "start";
-				out.ended = true;
-				out.endedKind = m_shown.kind;
-				out.started = true;
-			} else if(!differsNow) {
-				out.cutReason = "jump";
-			} else if(target.kind == SceneKind::Speech && target.shot != m_shown.shot) {
-				out.cutReason = "line";
-			} else {
-				out.cutReason = "camera";
-			}
-			m_shown = target;
-			switch(target.shown) {
-				case SceneShown::Ghost: {
-					// Where the player looks now is where the game's camera looked when the shot began
-					m_pos = targetPos;
-					m_yawDelta = wrapSignedDegrees(m_ghost.yaw - in.headYaw - in.playerYaw);
-					fixYaw(m_ghost.yaw - in.headYaw, in.stickTurned);
-					break;
-				}
-				case SceneShown::Observer: {
-					// Placed once for the scene, now that its first shot has set the speakers up
-					if(!m_observer.valid) {
-						m_observer.valid = true;
-						if(in.placeObserver) {
-							m_observer.place = in.placeObserver();
-						} else {
-							m_observer.place.pos = in.firstPos;
-							m_observer.place.yaw = in.playerYaw;
-						}
-					}
-					// Where the player looks now is the middle of the heads
-					m_pos = m_observer.place.pos;
-					m_yawDelta = wrapSignedDegrees(m_observer.place.yaw - in.headYaw - in.playerYaw);
-					fixYaw(m_observer.place.yaw - in.headYaw, in.stickTurned);
-					break;
-				}
-				case SceneShown::Screen: {
-					// The eyes' camera stays where it was, at the yaw held: the game's camera is on the screen
-					m_yawDelta = 0.f;
-					m_fixedYaw = false;
-					break;
-				}
-				case SceneShown::None:
-				case SceneShown::First: {
-					m_pos = targetPos;
-					m_yawDelta = 0.f;
-					m_fixedYaw = false;
-					break;
-				}
-			}
+			switchTo(target, targetPos, in, out, differsNow);
 			m_fade.holdBlack();
 		}
 	}
@@ -542,9 +571,16 @@ void SceneMeter::add(const SceneMeterFrame & frame) {
 	if(frame.blind) {
 		m_blindFrames++;
 	}
+	if(frame.fade > 0.f) {
+		m_fadeFrames++;
+	}
 	m_havePrevious = true;
 	m_previousPos = frame.pos;
 	m_previousYaw = frame.yaw;
+	// The screen shows no world: nothing to compare across it, the world after it is a new view
+	if(frame.shown == SceneShown::Screen) {
+		m_havePrevious = false;
+	}
 
 	// Height and steps on the scene's frames that are seen: one game unit is a centimetre
 	const bool measured = frame.shown != SceneShown::None && frame.shown != SceneShown::Screen && !behindFade;

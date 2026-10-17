@@ -36,6 +36,14 @@ newgame
 @remember cuts2 scene.meter.cuts
 @assert scene.meter.fadedCuts eq {cuts2}
 @assert scene.meter.letterboxFrames eq 0
+# No black square left in front of the player after the intro (the owner, 2026-10-17): back in the world the quad carries
+# nothing (no HUD frame in VR, #471), and it is not the screen any more
+@frames 45
+@shot hybrid-after-t2
+@assert scene.shown eq none
+@assert vr.panel.mode ne screen
+@assert vr.sim.shots.hybrid-after-t2.left.quadPixels eq 0
+@assert vr.sim.shots.hybrid-after-t2.right.quadPixels eq 0
 
 # T1: Kultar at the bars - first person (the camera entities show the dialogue near the hero)
 # The intro leaves the hero 6 m short of Kultar's trigger (TRAPS.md): to the scene-kultar save's spot first, outside the stretch
@@ -54,6 +62,7 @@ vr-input stick left 0 0
 @assert vr.sim.shots.hybrid-t1.left.scene.verdict ne background
 @assert vr.sim.shots.hybrid-t1.right.scene.verdict ne background
 @until scene.active eq false 120s
+@nolog vr\.scene\.cut .*reason=(line|camera)    # no blink between the dialogue's lines and cameras (the owner)
 @assert scene.meter.cuts gt 0
 @assert scene.meter.sceneFrames gt 0
 @assert scene.meter.minAboveFloorM ge 1.2

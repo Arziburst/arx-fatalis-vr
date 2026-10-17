@@ -179,11 +179,12 @@ private:
 /*!
  * \brief The view a scene is shown in: the place where the shown view is chosen per frame
  *
- * A scene without a scene camera (only the letterbox) has nothing to hold: \c first in every view. The
- * hybrid shows a camera entity's shot on the screen when \a hybridScreen (\ref hybridWantsScreen), every
- * other shot - a \c speak \c -c line, a camera near the hero - in first person.
+ * Dialogue is always the hero's own eyes, in every view (the owner, 2026-10-17): a \c speak \c -c line, the letterbox
+ * alone and a camera entity's shot near the hero are \c first. A view applies to a cinematic shot only - a camera
+ * entity's shot of a far place or of the hero's scripted body (\a cinematicShot, \ref hybridWantsScreen): the hybrid
+ * puts it on the screen, the observer and the ghost show it their way, \c first stays in the hero's head.
  */
-SceneShown chooseShownView(SceneViewSetting setting, SceneKind kind, bool hybridScreen = false);
+SceneShown chooseShownView(SceneViewSetting setting, SceneKind kind, bool cinematicShot = false);
 
 //! One frame of a camera entity's shot, for the hybrid
 struct HybridShot {
@@ -278,7 +279,7 @@ struct SceneInput {
 	float headYaw = 0.f;            //!< the head's own yaw since its reference, degrees
 	float stickTurned = 0.f;        //!< the stick's turn so far, degrees, right positive (the hero's yaw goes down)
 	float seconds = 0.f;            //!< the frame's duration
-	bool hybridScreen = false;      //!< this frame of a camera entity's shot wants the hybrid's screen
+	bool cinematicShot = false;     //!< this frame of a camera entity's shot is a cinematic one (\ref hybridWantsScreen)
 	bool firstOnFloor = true;       //!< a floor under the hero's eye (\c firstPos)
 	float firstFloorY = 0.f;        //!< that floor (y down), when \c firstOnFloor
 	SceneFirstLow firstLow = DefaultSceneFirstLow; //!< what first person does while that eye is too low
@@ -306,6 +307,7 @@ struct SceneOutput {
 	bool applyLookAt = false;            //!< turn the hero to the pending \c playerlookat now (at black)
 	bool blind = false;                  //!< held black: the eye has no floor under it, or first person's eye is too low
 	bool cutRestarted = false;           //!< a pending cut had no fade under way and was asked for again (diagnostics)
+	bool seamless = false;               //!< the shot changed without a cut: the eyes see no jump (\c cutReason says why)
 
 };
 
@@ -363,6 +365,10 @@ private:
 		}
 		bool operator!=(const Shot & o) const { return !(*this == o); }
 	};
+
+	//! Take \a target as the shot shown now - at a cut's black or at once (\ref SceneOutput::seamless); \a differs:
+	//! another shot, not the same one jumping
+	void switchTo(const Shot & target, const Vec3f & targetPos, const SceneInput & in, SceneOutput & out, bool differs);
 
 	struct Ghost {
 		bool valid = false;
@@ -468,6 +474,8 @@ public:
 	//! Scene frames the eyes see the world in a scene view (first, observer, ghost): with \ref screenFrames and
 	//! \ref openingFrames every scene frame is counted once
 	u64 worldFrames() const { return m_worldFrames; }
+	//! Frames with any scene fade drawn (a blink): 0 over a stretch with no cut
+	u64 fadeFrames() const { return m_fadeFrames; }
 
 private:
 
@@ -486,6 +494,7 @@ private:
 	u64 m_blindFrames = 0;
 	u64 m_openingFrames = 0;
 	u64 m_worldFrames = 0;
+	u64 m_fadeFrames = 0;
 
 	bool m_havePrevious = false;  //!< the last frame, for jumps
 	Vec3f m_previousPos = Vec3f(0.f);

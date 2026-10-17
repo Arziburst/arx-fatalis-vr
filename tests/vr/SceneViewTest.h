@@ -35,7 +35,7 @@ class SceneViewTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(firstFollowsHeroTest);
 	CPPUNIT_TEST(ghostHoldsShotTest);
 	CPPUNIT_TEST(ghostJumpIsNewShotTest);
-	CPPUNIT_TEST(speechLineCutTest);
+	CPPUNIT_TEST(speechLineSeamlessTest);
 	CPPUNIT_TEST(sceneEndTest);
 	CPPUNIT_TEST(letterboxOnlyTest);
 	CPPUNIT_TEST(lookAtTest);
@@ -65,7 +65,7 @@ public:
 	void firstFollowsHeroTest();
 	void ghostHoldsShotTest();
 	void ghostJumpIsNewShotTest();
-	void speechLineCutTest();
+	void speechLineSeamlessTest();
 	void sceneEndTest();
 	void letterboxOnlyTest();
 	void lookAtTest();

@@ -746,6 +746,7 @@ void writeSceneStatus(JsonWriter & json) {
 	json.value("blindFrames", meter.blindFrames());
 	json.value("openingFrames", meter.openingFrames());
 	json.value("worldFrames", meter.worldFrames());
+	json.value("fadeFrames", meter.fadeFrames());
 	json.end();
 	json.object("subtitle");
 	json.value("visible", subtitle.visible);

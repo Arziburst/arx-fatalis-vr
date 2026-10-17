@@ -64,8 +64,8 @@
 
 #include "platform/Architecture.h"
 #include "platform/Compiler.h"
-#include "platform/Dialog.h"
 #include "platform/CrashHandler.h"
+#include "platform/Dialog.h"
 #include "platform/Environment.h"
 #include "platform/Process.h"
 #include "platform/profiler/Profiler.h"
@@ -438,7 +438,7 @@ int utf8_main(int argc, char ** argv) {
 	// down, so that in a run without dialogs (#501) its line still reaches the log and stderr
 	Logger::remove(criticalErrorDialog);
 	delete criticalErrorDialog;
-
+	
 	// Shutdown the logging system
 	Logger::shutdown();
 	
@@ -448,6 +448,6 @@ int utf8_main(int argc, char ** argv) {
 	
 	// An error answered without a dialog (#501) fails the run: the script that started it must see it
 	bool failed = (status == ExitFailure) || platform::errorDialogSuppressed();
-
+	
 	return failed ? EXIT_FAILURE : EXIT_SUCCESS;
 }

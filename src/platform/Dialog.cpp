@@ -476,11 +476,11 @@ bool errorDialogSuppressed() {
 
 // Show the dialog - or, in a run without dialogs (#501), log it as one line and give its default answer
 static bool showOrLogDialog(DialogType type, const std::string & message, const std::string & title) {
-
+	
 	if(!dialogsDisabled()) {
 		return showDialog(type, message, title);
 	}
-
+	
 	// The console logger writes warnings and errors to stderr. A warning question carries a critical
 	// error (CriticalErrorDialog with an exit question): it is an error too.
 	if(type == DialogError || type == DialogWarnYesNo) {
@@ -489,7 +489,7 @@ static bool showOrLogDialog(DialogType type, const std::string & message, const 
 	} else {
 		LogWarning << formatDialogLine(type, title, message);
 	}
-
+	
 	return dialogDefaultAnswer(type);
 }
 

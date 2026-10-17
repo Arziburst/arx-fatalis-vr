@@ -195,13 +195,13 @@ inline bool dialogDefaultAnswer(DialogType type) {
  * " | ", and for a question the answer given: " [answered: no]" or " [answered: cancel]".
  */
 inline std::string formatDialogLine(DialogType type, std::string_view title, std::string_view message) {
-
+	
 	std::string line = "[dialog] ";
 	line += dialogTypeName(type);
 	line += ": ";
 	line += title;
 	line += ": ";
-
+	
 	bool text = false;
 	bool lineBreak = false;
 	for(char c : message) {
@@ -216,11 +216,11 @@ inline std::string formatDialogLine(DialogType type, std::string_view title, std
 		line += c;
 		text = true;
 	}
-
+	
 	if(!dialogDefaultAnswer(type)) {
 		line += (type == DialogOkCancel) ? " [answered: cancel]" : " [answered: no]";
 	}
-
+	
 	return line;
 }
 

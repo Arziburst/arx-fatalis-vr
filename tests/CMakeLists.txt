@@ -10,7 +10,9 @@ set(arxtest_TESTCASES
 	
 	tests/graphics/ColorTest.h
 	tests/graphics/ColorTest.cpp
-	
+	tests/graphics/PixelStoreTest.h
+	tests/graphics/PixelStoreTest.cpp
+
 	tests/core/GameEventTest.h
 	tests/core/GameEventTest.cpp
 	

@@ -67,6 +67,8 @@ set(arxtest_TESTCASES
 	tests/vr/HeadReferenceGateTest.cpp
 	tests/vr/PhysicalCrouchTest.h
 	tests/vr/PhysicalCrouchTest.cpp
+	tests/vr/StableViewTest.h
+	tests/vr/StableViewTest.cpp
 
 	tests/vr/VRControlsTest.h
 	tests/vr/VRControlsTest.cpp
@@ -184,6 +186,7 @@ set(arxtest_SOURCES
 	src/vr/HeadPose.cpp
 	src/vr/HeadReferenceGate.cpp
 	src/vr/PhysicalCrouch.cpp
+	src/vr/StableView.cpp
 	src/vr/VRControls.cpp
 	src/vr/BindingCapture.cpp
 	src/vr/VRGameInput.cpp

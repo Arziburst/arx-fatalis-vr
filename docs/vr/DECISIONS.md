@@ -13,6 +13,46 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-053: In VR the camera stands on the body's real travel, never on the animated model; death is a still ghost
+
+- **Date:** 2026-10-13
+- **Status:** Accepted; the variants' defaults are proposals until the owner's headset verdict (#416)
+- **Decided by:** project owner (the rule: "nothing but the head and the body's real movement moves the view; at death a
+  motionless ghost that can only turn", #416); the worker for the mechanism and the limits
+
+### Decision
+- With the VR rules on (`vr::comfort().stableView`, D-018 / #76), the first-person camera is **not** read from the player
+  model's eye vertex any more. It stands on the collision cylinder: horizontally exactly where the body is, vertically
+  the body's feet plus the eye of its stance — 170 units standing, 120 crouched (the cylinder's heights), 200 levitating (the model's head floats 30 units higher; the owner: the view rises with it, gliding). No animation
+  (walk, run, jump, landing, crouch, strike, charge, cast, hit, death) can move or tilt it. The head pose goes on top
+  as before (D-018).
+- Height changes are smoothed: at most **1.8 m/s** (2 cm per frame at 90 Hz, the same speed at 45 Hz), timed by the
+  display (OpenXR's predicted display times) and never more than one display slot per shown frame — a hitch slows the
+  glide, it never makes the view jump. A fall faster
+  than that pulls the view along at most 60 cm behind the body (a fall is real travel); a move of more than 150 units
+  in one frame is a cut (teleport, load, respawn).
+- What is a matter of feel is a cfg.ini switch plus a channel command (`view jump|crouch|death <variant>`), the
+  calmest the default: `vr_view_jump` = **level** (the view never rises above the take-off; `arc`: a soft hop at the
+  speed limit), `vr_view_crouch` = **slow** (0.5 m/s; `medium` 1 m/s, `fast` 1.8 m/s), `vr_death_view` = **headless**
+  (the head stays hidden while the body falls; `body`: the whole body as the engine shows a dead hero).
+- **Death** with the VR rules on: the view stays where the eye was at the moment of death; only the head and the stick
+  turn (snap or smooth) move it; the arms are no longer posed from the controllers; the darkening and the main menu
+  after 7 s stay. The body is drawn where the view's feet are (`vr.body.shiftY`), so a level jump does not lift the
+  body through the view, and the hands stay rigid with the real camera.
+- Flat mode keeps the engine's camera, bobbing and death camera unchanged.
+
+### Why
+Every motion of the view the player's head did not make is a motion-sickness trigger for VR newcomers (owner,
+2026-10-13). View bobbing was already off in VR (#76), but the "stable position of the paused animation" still came
+from the animated model; the catalog in #416's PR measures what that left (a jump lifts the view by the model's own
+arc, the crouch drops it in the animation's steps, death drops and swings it over the body).
+
+### Ruled out
+Compensating the animation after the fact (filtering the eye vertex): any animation the filter misses still reaches
+the view. The view is computed from the body's physics, so a new animation cannot move it.
+
+---
+
 ## D-052: The desktop window takes no input in VR, and a test run's window none at all
 
 - **Date:** 2026-10-16

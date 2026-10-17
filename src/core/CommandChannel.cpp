@@ -820,7 +820,50 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("width", g_preparedCamera.m_viewport.width());
 		json.value("height", g_preparedCamera.m_viewport.height());
 		json.end();
+		// The camera's motion since the last "view meter reset" (#416): the steps of the camera the frames
+		// rendered with (head and quake included) against the body's travel and turn, cm and degrees
+		{
+			const vr::CameraMotion & motion = vr::cameraMotion();
+			const Vec3f range = motion.offsetRange();
+			json.object("motion");
+			json.value("frames", motion.frames);
+			json.value("maxDtMs", motion.maxDt * 1000.f);
+			json.value("maxStepY", motion.maxStepY);
+			json.value("maxSpeedY", motion.maxSpeedY);
+			json.value("maxStepY90", motion.maxSpeedY / 90.f);
+			json.value("maxStepXZ", motion.maxStepXZ);
+			json.value("maxOffStepXZ", motion.maxOffStepXZ);
+			json.value("maxOffStepY", motion.maxOffStepY);
+			json.value("maxPitchStep", motion.maxPitchStep);
+			json.value("maxRollStep", motion.maxRollStep);
+			json.value("maxYawStep", motion.maxYawStep);
+			json.value("maxOffYawStep", motion.maxOffYawStep);
+			json.value("rangeX", range.x);
+			json.value("rangeY", range.y);
+			json.value("rangeZ", range.z);
+			json.value("rangeXZ", std::sqrt(range.x * range.x + range.z * range.z));
+			json.value("cameraRangeY", motion.cameraRangeY());
+			json.value("bodyRangeY", motion.bodyRangeY());
+			json.end();
+		}
 		json.end();
+		// The stable view (#416): whether it placed the camera, its variants, the ghost
+		{
+			const vr::StableView & view = vr::stableView();
+			const vr::ViewVariants & variants = vr::viewVariants();
+			json.object("view");
+			json.value("mode", vr::comfortModeName(vr::stableViewMode()));
+			json.value("active", vr::comfort().stableView);
+			json.value("placed", vr::stableViewPlaced());
+			json.value("ghost", vr::deathGhost());
+			json.value("jump", vr::jumpViewName(variants.jump));
+			json.value("crouch", vr::crouchGlideName(variants.crouch));
+			json.value("death", vr::deathViewName(variants.death));
+			json.value("eye", view.eye);
+			json.value("feetLag", view.valid ? view.feetY - player.basePosition().y : 0.f);
+			json.value("cuts", view.cuts);
+			json.end();
+		}
 		// Spells by type: active now, and launched since the level was loaded - the evidence that a spellcast
 		// really started a spell (#155: queued casts on the player never launch, TRAPS.md)
 		std::array<size_t, SPELL_TYPES_COUNT> active = {};
@@ -864,6 +907,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("viewBobbing", policy.viewBobbing);
 		json.value("screenShake", policy.screenShake);
 		json.value("fovZoom", policy.fovZoom);
+		json.value("stableView", policy.stableView);
 		json.end();
 	}
 
@@ -1194,6 +1238,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("inactive", body.inactive);
 		json.value("posedFrames", body.posedFrames);
 		json.value("shiftX", body.shift.x);
+		json.value("shiftY", body.shift.y); // the stable view's feet lag: the body drawn where the view stands (#416)
 		json.value("shiftZ", body.shift.z);
 		json.value("facingYaw", body.facingYaw);
 		// the arms drawn in VR (#385.3): cfg.ini vr_arms_model (classic; the others by the test channel, #466, #486), and
@@ -2264,6 +2309,48 @@ std::string execute(std::string_view line) {
 			return refuse("comfort: expected auto, on or off, got \"" + std::string(rest) + "\"");
 		}
 		return std::string();
+	}
+
+	if(word == "view") {
+		// The stable view (#416): "stable auto|on|off" forces it like comfort does, "jump|crouch|death <variant>"
+		// sets a variant as cfg.ini would, "meter reset" starts a new stretch of camera.motion, "meter report <name>"
+		// writes it as one vr.view.motion game event (a row of the catalog)
+		std::string_view value;
+		std::string what(firstWord(rest, value));
+		if(what == "stable") {
+			if(value == "auto") {
+				vr::setStableViewMode(vr::ComfortMode::Auto);
+			} else if(value == "on") {
+				vr::setStableViewMode(vr::ComfortMode::On);
+			} else if(value == "off") {
+				vr::setStableViewMode(vr::ComfortMode::Off);
+			} else {
+				return refuse("view stable: expected auto, on or off, got \"" + std::string(value) + "\"");
+			}
+			return std::string();
+		}
+		if(what == "meter") {
+			std::string_view name;
+			std::string verb(firstWord(value, name));
+			if(verb == "reset") {
+				vr::resetCameraMotion(vr::cameraMotion());
+			} else if(verb == "report" && !name.empty()) {
+				vr::reportCameraMotion(name);
+			} else {
+				return refuse("view meter: expected reset or report <name>, got \"" + std::string(value) + "\"");
+			}
+			return std::string();
+		}
+		if(what == "trace") {
+			long frames = 0;
+			if(!parseIndex(value, frames)) {
+				return refuse("view trace: expected a frame count, got \"" + std::string(value) + "\"");
+			}
+			vr::setViewTrace(int(std::min(frames, 2000l)));
+			return std::string();
+		}
+		std::string error = vr::setViewVariant(what, value);
+		return error.empty() ? error : refuse(error);
 	}
 
 	if(word == "arms") {

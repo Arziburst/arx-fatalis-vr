@@ -196,18 +196,25 @@ vr-sim @+1-5 hand right pos 0 -0.8 -0.35
 @log melee\.hit source=player target=goblin_base_\d+ .*aim=1\.00 speed=\S+ size=\S+ kind=thrust
 melee stab dagger default
 
-# 7. The goblin fighting the player (the mode lever: aggressive): a touch of the resting dagger, and a slow sweep
-# through it, deal the minimum - touches, no swing hits
+# 7. The goblin fighting the player (the mode lever: aggressive, and a swing's hit to start the fight): a touch of the
+# slowly swept dagger deals the minimum - a touch, no swing hit
 vr-sim @+1-40 hand right pos 0.45 -0.8 -0.35
 @frames 50
 playground pull mode
 @until playground.npcMode eq aggressive 5s
-@until playground.npcFighting eq true 5s
 playground place 60
+@frames 10
+@until vr.melee.recovery.left eq 0 5s
+@remember hits vr.melee.hits
+vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35
+@until vr.melee.hits ge {hits+1} 5s
+@until playground.npcFighting eq true 15s
+playground place 60
+@frames 60
 @remember touches vr.melee.touches
 @remember hits vr.melee.hits
 @mark
-vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
+vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
 @until vr.melee.touches ge {touches+1} 5s
 @frames 10
 @assert vr.melee.hits eq {hits}

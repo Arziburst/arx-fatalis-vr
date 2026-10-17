@@ -211,7 +211,7 @@ playground place 60
 @remember touches vr.melee.touches
 @remember hits vr.melee.hits
 @mark
-vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
+vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
 @until vr.melee.touches ge {touches+1} 5s
 @frames 10
 @assert vr.melee.hits eq {hits}

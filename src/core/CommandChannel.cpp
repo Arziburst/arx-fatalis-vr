@@ -51,6 +51,7 @@
 #include "game/Camera.h"
 #include "game/Damage.h"
 #include "game/EntityManager.h"
+#include "game/Equipment.h"
 #include "game/Inventory.h"
 #include "game/Levels.h"
 #include "game/NPC.h"
@@ -671,6 +672,7 @@ void writePlaygroundStatus(JsonWriter & json) {
 		const IO_NPCDATA & data = *npc->_npcdata;
 		json.value("npcMode", playgroundNpcAggressive(*npc) ? "aggressive" : "peaceful");
 		json.value("npcAlive", data.lifePool.current > 0.f);
+		json.value("npcFighting", fightsPlayer(*npc)); // what a VR touch may reach (#465)
 		json.value("npcLife", data.lifePool.current);
 		json.value("npcLifeMax", data.lifePool.max);
 		// Back at the place the level put it (revive -i takes it there): within a step, floor plane only
@@ -1521,6 +1523,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("nearMisses", melee.nearMisses);
 		json.value("lastNearMiss", melee.lastNearMiss);
 		json.value("trigger", melee.trigger);
+		json.value("worldHit", melee.worldHit);
 		json.value("hits", melee.hits);
 		json.value("touches", melee.touches);
 		json.value("contacts", melee.contacts);
@@ -1561,6 +1564,7 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("pathMax", range.range.pathMax);
 			json.value("speedMin", range.range.speedMin);
 			json.value("speedMax", range.range.speedMax);
+			json.value("cap", range.range.cap);
 			json.end();
 		}
 		json.value("pathScale", melee.damage.pathScale);

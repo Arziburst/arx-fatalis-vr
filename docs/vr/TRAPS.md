@@ -12,12 +12,14 @@ Format: **symptom** — what is really going on — what to do.
 
 **Symptom:** after `vr_melee_noswing`'s default changed from `none` to `min` in the code, `melee-damage.xrs` failed at
 `@assert vr.melee.params.noSwing eq min` (`none`) on a fresh build.
-**Cause:** the game writes every key to cfg.ini when it quits, defaults included. A working copy's test runs share one
-user dir (`userdirs\<folder>-<hash>`), so the cfg.ini of an earlier run keeps the old default, and it wins over the new
-one. The same happens to a player who ran an earlier build.
+**Cause:** when the game saves its config it writes every key with its current value - a default it read is written as
+a value. A working copy's test runs share one user dir (`userdirs\<folder>-<hash>`), so from then on cfg.ini holds the
+old default as if the user had chosen it, and it wins over the new default. The same happens to a player who ran an
+earlier build.
 **Do:** a sequence that needs a value sets it live (a channel command such as `melee noswing min`) instead of trusting
-the default; prove the default itself in a host test (`MeleeSwingTest::testContactAim` checks `SwingParams`), or run
-with a fresh user dir.
+the default; prove the default itself in a host test (`MeleeSwingTest::testContactAim` checks `DamageParams`), or run
+with a fresh user dir. A key whose empty value means "the code's default" (`vr_melee_slash_<class>`) does not have
+the trap.
 
 
 ## 2026-10-14 — The Arx arm grows a second elbow in the middle of the forearm, though the IK has only one (#466.1)

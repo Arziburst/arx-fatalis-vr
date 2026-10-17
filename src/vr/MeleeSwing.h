@@ -76,8 +76,8 @@ enum class NoSwing : u8 {
 //! "none", "min"
 const char * noSwingName(NoSwing noSwing);
 
-//! "min" is \ref NoSwing::Min, anything else \ref NoSwing::None
-NoSwing parseNoSwing(std::string_view name);
+//! "none" is \ref NoSwing::None, anything else the default \ref NoSwing::Min (\a ok false unless it is "min")
+NoSwing parseNoSwing(std::string_view name, bool * ok = nullptr);
 
 //! The engine's weakest strike: the floor of its charge ratio (\c StrikeAimtime's 0.1)
 constexpr float MinStrikeAim = 0.1f;
@@ -148,6 +148,7 @@ struct DamageRange {
 	float pathMax = 0.f;
 	float speedMin = 0.f; //!< m/s of the lever point at contact
 	float speedMax = 0.f;
+	float cap = 1.f;      //!< the most quality a stroke of this kind reaches; 0: the weapon has no such strike (#502)
 };
 
 //! A weapon class's ranges
@@ -160,8 +161,8 @@ struct MeleeRanges {
 MeleeRanges defaultRanges(MeleeClass meleeClass);
 
 /*!
- * \return \a text as "<path min> <path max> <speed min> <speed max>" (a cfg.ini value), each max not below its min;
- *         \a fallback for an empty text or one that is not four numbers of 0 to 20 (\a ok false for the latter)
+ * \return \a text as "<path min> <path max> <speed min> <speed max> [<cap>]" (a cfg.ini value; 0 to 20, the cap 0 to 1,
+ *         1 when left out), each max not below its min; \a fallback for an empty text or a wrong one (\a ok false)
  */
 DamageRange parseDamageRange(std::string_view text, const DamageRange & fallback, bool * ok = nullptr);
 
@@ -197,9 +198,10 @@ struct ContactMeasure {
 
 /*!
  * \return the aim ratio a contact deals (the engine's damage = attack * ratio, 1 = the fully charged strike), whatever
- *         the trigger does: outside a swing, or below the kind's speed or path minimum, \ref MinStrikeAim (or 0,
- *         \ref DamageParams::noSwing); else 0.1 + 0.9 q, q of the speed's and the path's factor by
- *         \ref DamageParams::quality - a slow big swing and a fast tiny one both stay low
+ *         the trigger does: outside a swing, below the kind's speed or path minimum, or of a kind the weapon has not
+ *         (its cap 0), \ref MinStrikeAim (or 0, \ref DamageParams::noSwing); else 0.1 + 0.9 q, q of the speed's and
+ *         the path's factor by \ref DamageParams::quality, at most the kind's cap - a slow big swing and a fast tiny
+ *         one both stay low
  */
 float contactAim(const ContactMeasure & contact, const DamageParams & params);
 
@@ -247,8 +249,8 @@ public:
 	Vec3f blade() const { return m_count > 0 ? m_blades[0] : Vec3f(0.f, 0.f, -1.f); }
 	/*!
 	 * \return the path (m) the blade's point \a distance m from the grip travelled in the stroke so far - since the
-	 *         last sample before the lever point last moved slower than \ref SwingParams::endSpeed outside a swing:
-	 *         a slash's size (#465)
+	 *         last sample before the lever point last moved slower than \ref SwingParams::endSpeed outside a swing, or
+	 *         the hand last turned back (its way against three samples before): a slash's size (#465)
 	 */
 	float strokePath(float distance) const;
 	//! \return how far (m) that point moved along the blade, towards the tip, in the stroke so far: a thrust's lunge
@@ -290,6 +292,7 @@ private:
 	std::array<double, 4> m_times = { };
 	size_t m_count = 0;
 	std::vector<StrokeSample> m_stroke;   //!< the stroke so far, oldest first
+	std::array<Vec3f, 4> m_handVelocities = { }; //!< the hand's filtered velocity of the last four samples, newest first
 	std::vector<Thrust> m_thrusts;
 	float m_speed = 0.f;
 	float m_thrust = 0.f;
@@ -311,14 +314,14 @@ ContactMeasure measureContact(const SwingDetector & detector);
 /*!
  * \brief Who may be hit now: one hit per target per swing, and not again within the cooldown (F-62)
  *
- * Targets are the engine's entity indices. A contact outside a swing (\ref NoSwing::Min) is swing \ref Touch:
- * only the cooldown holds it back.
+ * Targets are the engine's entity indices. A touch outside a swing (\ref NoSwing::Min) asks as swing \ref Touch and
+ * records nothing: only the cooldown after a swing's hit holds it back.
  */
 class TargetCooldown {
 
 public:
 
-	//! The swing number of a contact outside a swing
+	//! The swing number of a touch outside a swing: never a swing's
 	static constexpr u64 Touch = ~u64(0);
 
 	//! \return true when \a target may be hit by swing \a swing at \a time

@@ -264,8 +264,8 @@ void strikeSpeech(Entity * weapon) {
 }
 
 /*!
- * The engine's strike check on the weapon where the hand holds it: each hit sphere deals the aim of its own point
- * of the blade, from that point's speed and stroke (#465) - \a swing false for a touch outside a swing (\ref contactAim)
+ * The engine's strike check on the weapon where the hand holds it, with the aim of the stroke so far (#465,
+ * \ref measureContact, \ref contactAim): \a swing true for the swing in progress, false for a touch outside a swing
  */
 void contact(Entity * weapon, double now, bool swing) {
 
@@ -286,9 +286,10 @@ void contact(Entity * weapon, double now, bool swing) {
 	for(size_t target : m.cooldown.blocked(number, now, params.targetCooldown)) {
 		targets.skip.push_back(EntityHandle(target));
 	}
-	// A touch is the original's uncharged click on an enemy: the blade resting on an item or a crate does nothing
-	// to it, and starts no recovery
-	targets.npcOnly = !swing;
+	// A touch is the original's uncharged click on an enemy: only an NPC that fights the player - the blade resting
+	// on an item, a crate, a friend, a merchant, the floor or a wall does nothing (the coordinator's decision until the
+	// owner's, D-NEW)
+	targets.touch = !swing;
 	targets.speed = measure.speed;
 	targets.size = measure.size;
 	targets.kind = contactKindName(measure.kind);
@@ -438,6 +439,7 @@ void updateMelee(const char * refusal) {
 	s.jumps = m.detector.jumps();
 	s.recoveryLeft = m.recovery.remaining(now);
 	s.recovering = m.swingRecovering;
+	s.worldHit = entities.player()->isHit;
 }
 
 bool meleeOwnsStrikes() {

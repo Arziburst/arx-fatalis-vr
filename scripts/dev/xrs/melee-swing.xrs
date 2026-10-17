@@ -17,7 +17,7 @@
 @assert vr.weapon.place eq hand
 @assert vr.melee.active eq true
 @assert vr.melee.placed eq true
-# A touch is the minimum (the default, set live: a cfg.ini of an earlier build keeps its value, TRAPS.md)
+# A touch is the minimum (the default, set live: a cfg.ini of an earlier build may keep another value, TRAPS.md)
 melee noswing min
 @assert vr.melee.swings eq 0
 
@@ -31,14 +31,12 @@ vr-sim head rot 0 -25 0
 @assert vr.melee.swings eq 0
 @shot goblin-in-reach
 
-# 1. A slow sweep through the goblin (0.85 m in 60 frames: under 1.3 m/s) is no swing: a touch, the minimum (#465)
+# 1. A slow sweep through the goblin (0.85 m in 60 frames: under 1.3 m/s) is no swing: no swing hit (a touch, the
+# minimum, reaches it only while it fights the player - melee-damage.xrs, #465)
 vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
 @frames 75
 @assert vr.melee.swings eq 0
 @assert vr.melee.hits eq 0
-@assert vr.melee.touches ge 1
-@assert vr.melee.last.swing eq 0
-@assert vr.melee.last.aim eq 0.1
 
 # 2. A swing back through it: one hit, its damage from the size and the speed of the blade's stroke that touched
 @until vr.melee.recovery.left eq 0 5s
@@ -87,7 +85,7 @@ vr-sim action trigger right 0
 @frames 30
 @nolog vr\.body\.armAnim.*strike
 # No engine strike's hit: its melee.hit has no kind - the resting sword's own touches (the minimum, #465) have one, and
-# a goblin they angered may strike the player (source=goblin...)
+# a goblin the swings angered may strike the player (source=goblin...)
 @nolog melee\.hit source=player (?!.* kind=)
 combat off
 @frames 30

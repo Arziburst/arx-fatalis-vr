@@ -20,6 +20,8 @@
 #include "vr/VRMelee.h"
 
 #include <algorithm>
+#include <iomanip>
+#include <sstream>
 #include <string_view>
 
 #include "animation/Animation.h"
@@ -62,6 +64,8 @@ struct MeleeState {
 	SwingKind swingKind = SwingKind::None;
 	float swingAim = 0.f;            //!< the strongest aim ratio of its hits
 	bool swingSpoke = false;         //!< it said the strike speech
+	std::vector<StrikeSphere> swingSpheres; //!< the hit spheres of its last check (diagnostics, #465)
+	bool swingBackground = false;    //!< a hit sphere of it reached the world's geometry
 	bool swingRecovering = false;    //!< it started within the recovery: it hits nothing
 	u64 swingHits = 0;
 	double swingStart = 0.;
@@ -226,6 +230,8 @@ void startSwing() {
 	m.swingKind = m.detector.kind();
 	m.swingAim = 0.f;
 	m.swingSpoke = false;
+	m.swingSpheres.clear();
+	m.swingBackground = false;
 	m.swingHits = 0;
 	m.swingStart = meleeClock();
 	m.humpPeak = 0.f;
@@ -253,6 +259,18 @@ void endSwing(SwingChange change) {
 	gameevent::Event("melee.swing", 1000)("kind", swingKindName(m.swingKind))("result", result)
 		("peak", d.peak(), 2)("aim", m.swingAim, 2)("hits", m.swingHits)
 		("ms", int((meleeClock() - m.swingStart) * 1000.));
+	if(!m.swingSpheres.empty()) {
+		// The weapon's hit spheres of the swing's last check, world x,y,z/radius, and whether any of its checks reached
+		// the world's geometry: why a swing does or does not ring on a wall (#465)
+		std::ostringstream at;
+		at << std::fixed << std::setprecision(1);
+		for(const StrikeSphere & sphere : m.swingSpheres) {
+			at << (at.tellp() > 0 ? ";" : "") << sphere.origin.x << ',' << sphere.origin.y << ',' << sphere.origin.z
+			   << '/' << sphere.radius << (sphere.background ? "!" : "");
+		}
+		gameevent::Event("melee.spheres", 200)("count", m.swingSpheres.size())("background", m.swingBackground)
+			("at", at.str());
+	}
 }
 
 /*!
@@ -316,6 +334,12 @@ void contact(Entity * weapon, double now, bool swing) {
 	targets.kind = contactKindName(measure.kind);
 	ARX_EQUIPMENT_Strike_Check(entities.player(), weapon, aim, 0, EntityHandle(), &targets);
 	noteRefusedTouch(targets.refused);
+	if(swing) {
+		m.swingSpheres = targets.spheres;
+		for(const StrikeSphere & sphere : targets.spheres) {
+			m.swingBackground = m.swingBackground || sphere.background;
+		}
+	}
 	if(targets.touched.empty()) {
 		return;
 	}

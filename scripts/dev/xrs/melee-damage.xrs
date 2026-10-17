@@ -243,10 +243,10 @@ playground pull mode
 @until playground.npcMode eq peaceful 5s
 
 # 9. A resting blade touches no world geometry - no wall sound, no durability (the engine's isHit stays false) - while
-# a swing into the wall still strikes it, once: the player 70 units before the north wall (layout.mjs: z 8400) facing
+# a swing into the wall still strikes it, once: the player 45 units before the north wall (layout.mjs: z 8400) facing
 # it, between the table (to x 8150) and the mode lever (x 8280), the dagger held into the wall slowly, then swept
 # along it
-setpos 8215 -170 8330 0
+setpos 8215 -170 8355 0
 @frames 30
 vr-sim head rot 0 0 0
 vr-sim @+1-60 hand right pos 0.25 -0.35 -0.7
@@ -257,6 +257,7 @@ vr-sim @+1-60 hand right pos 0.25 -0.35 -0.7
 vr-sim @+1-8 hand right pos -0.35 -0.35 -0.7
 @until vr.melee.swings ge {swings+1} 5s
 @until vr.melee.swinging eq false 5s
+@log melee\.spheres count=\d+
 @assert vr.melee.worldHit eq true
 
 @assert errors eq 0

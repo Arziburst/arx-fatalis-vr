@@ -86,7 +86,8 @@ vr-sim action trigger right 1
 vr-sim action trigger right 0
 @frames 30
 @nolog vr\.body\.armAnim.*strike
-@nolog melee\.hit
+# No engine strike's hit: its melee.hit has no kind - the resting sword's own touches (the minimum, #465) have one
+@nolog melee\.hit (?!.* kind=)
 combat off
 @frames 30
 

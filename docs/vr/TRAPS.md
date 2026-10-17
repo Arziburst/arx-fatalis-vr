@@ -8,6 +8,17 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-18 — A melee sequence's timing passes locally and fails on CI: the timeline counts frames (#409)
+
+**Symptom:** `melee-recovery.xrs` passed locally (90 fps) and failed on CI at `@assert vr.melee.hits eq 1` (read 2).
+The CI run's VR pacing was UNDER-SUBMITTING at 41.8 fps.
+**Cause:** `vr-sim @+33-40 ...` is 33 *frames* after the batch, not 0.37 s. At 41.8 fps it is 0.8 s, past the dagger's
+0.6 s recovery, so the second swing hit as it should. The simulator's timeline and `@frames` count game frames, and a
+busy runner plays far below the simulator's rate.
+**Do:** never put a time window between frame-scheduled events. Either make the gap as short as the test allows, so
+that it stays inside the window at any rate, and assert the mechanism's own marker. Or wait on a time the game
+reports (`@until vr.melee.recovery.left eq 0`) before the next step.
+
 ## 2026-10-17 — The main menu ignores the trigger while the Index controller is held firmly (#496)
 
 **Symptom:** New game does not react to the trigger in the headset. `arx.log` has `[vr] input: use_right

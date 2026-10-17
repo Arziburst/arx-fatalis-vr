@@ -8,6 +8,22 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-17 — The main menu ignores the trigger while the Index controller is held firmly (#496)
+
+**Symptom:** New game does not react to the trigger in the headset. `arx.log` has `[vr] input: use_right
+(right.grip+right.trigger)` for every press, no `interact_right` and no `vr.pointer.click`; holding the controller loosely,
+the same press clicks.
+**Cause:** a firm, resting hold of the Index sits at 0.52 - 0.59 on `squeeze/value` (`[vr] input: right grip down
+at 0.55 (threshold 0.5 / 0.3)`), over the 0.50 press the 2026-10-10 entry below chose for a light close. With the
+grip down, the trigger completes the grip + trigger chord (use / act, D-042) and its own binding, the click, does
+not fire: a chord consumes its second control.
+**Do:** the Index grip presses at 0.70 and lets go at 0.40 (`IndexGripThreshold`, cfg `vr_grip_press` /
+`vr_grip_release`): a resting hold is no grip, and a closed hand's flicker stays one hold. In the menus a hand
+pointing at the panel makes no chord at all (`ControlResolver::setChords`, `src/vr/VRInput.cpp`): its trigger
+clicks whatever the grip reads, and the menus' right click is A (D-053). Read the grip value in the crossing lines or `vr.input.grip` before blaming the
+pointer; `menu-trigger-grip.xrs` holds the grip at 0.55 and 0.95.
+
+---
 ## 2026-10-17 — GL pixel-store state is global, set it per upload: an intermittent access violation inside the AMD driver under `glTexImage2D` while a cinematic loads (#495)
 
 **Symptom:** the owner's headset run crashed right after character creation, `atio6axx.dll` under
@@ -663,7 +679,9 @@ squeeze) was tried in round 2 and dropped before a headset run for that reason.
 0.50 / 0.30); a chord leader's release is debounced (`ControlResolver::releaseDebounceMs`), so a flicker is
 one hold; "use" fires when the hand opens without a trigger (D-019). Every grip crossing is logged with its
 value (`[vr] input: right grip down at 0.55 (threshold 0.5 / 0.3)`), and `status.json` → `vr.input.grip`
-shows it live — tune the threshold from those numbers, not by feel.
+shows it live — tune the threshold from those numbers, not by feel. *Changed 2026-10-17 (#496):* the press
+is 0.70 / the release 0.40 now - a firm resting hold read 0.52 - 0.59 and turned every trigger press into the chord
+(the entry above).
 
 ## 2026-10-09 — A non-Steam shortcut written into `shortcuts.vdf` disappears
 

@@ -1,10 +1,10 @@
 # New game and the character creation in VR, the way a player meets them on the first run (#394): a plain launch
 # on the simulated headset. New game is clicked with the hand pointer; the character creation screen fills its
 # floating panel and the desktop window (#334); a point is spent on an attribute with the trigger (the left mouse
-# button), the quick generation makes the average hero and then re-rolls, grip + trigger (the right button in the
-# menus) takes an attribute and a skill point back and the trigger spends them elsewhere, and Done starts the
-# game - all by pointer clicks, one press = one click, a press off the panel (the trigger or the grip, #398) clicks
-# nothing. Arx asks for no name.
+# button), the quick generation makes the average hero and then re-rolls, the pointing hand's A (the right button in
+# the menus, #496) takes an attribute and a skill point back and the trigger spends them elsewhere, and Done starts
+# the game - all by pointer clicks, one press = one click, a press off the panel (the trigger, the grip chord or A,
+# #398) clicks nothing. Arx asks for no name.
 #   .\scripts\dev\xrs-run.ps1 first-run-chargen
 @sim idle
 @args --dev-launch
@@ -99,6 +99,13 @@ desktop-mouse button 1 down
 desktop-mouse button 1 up
 @frames 5
 @assert vr.pointer.offPanelPresses eq {muted+3}
+# A off the panel is no right click either (#496)
+vr-sim action button_a right 1
+@frames 5
+vr-sim action button_a right 0
+@frames 5
+@assert hero.strength eq 7
+@assert hero.attributePoints eq 15
 @assert desktopMouse.ignored eq true
 @assert desktopMouse.droppedButtons eq {droppedButtons+2}
 @log \[input\] desktop mouse: button 2 dropped \(VR\)
@@ -123,15 +130,13 @@ vr-sim action trigger right 0
 @assert hero.skillPoints eq 0
 @assert hero.skills.stealth eq 2
 
-# Grip, then trigger (the right button in the menus since D-042, #377; the grip alone does nothing) takes a point
-# back from strength, the trigger puts it on dexterity; the same for a skill
+# The pointing hand's A (the right button in the menus, #496: no grip + trigger chord forms on a menu panel) takes a
+# point back from strength, the trigger puts it on dexterity; the same for a skill
 vr-point right menu strength
 @frames 5
-vr-sim action grip right 1
+vr-sim action button_a right 1
 @frames 5
-vr-sim action trigger right 1
-@frames 5
-vr-sim action trigger right 0; vr-sim action grip right 0
+vr-sim action button_a right 0
 @frames 5
 @assert hero.strength eq 9
 @assert hero.attributePoints eq 1
@@ -145,11 +150,9 @@ vr-sim action trigger right 0
 @assert hero.attributePoints eq 0
 vr-point right menu stealth
 @frames 5
-vr-sim action grip right 1
+vr-sim action button_a right 1
 @frames 5
-vr-sim action trigger right 1
-@frames 5
-vr-sim action trigger right 0; vr-sim action grip right 0
+vr-sim action button_a right 0
 @frames 5
 @assert hero.skills.stealth eq 1
 @assert hero.skillPoints eq 1

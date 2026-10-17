@@ -2,8 +2,8 @@
 #   .\scripts\dev\xrs-run.ps1 scene-hybrid
 # Red until #29 is built: the scene command and the status.json scene.* fields are not in the game yet (29.0, SPEC.md).
 # One run: the new game's intro (T2), then - the hero put at the scene-kultar save's spot, facing +z - the walk into the Kultar zone (T1),
-# then level 5 (T8). Per stretch: minAboveFloorM >= 1.2 and maxStepCm < 5 over the non-screen frames, every cut behind a fade,
-# no letterbox bars in an eye.
+# then level 5 (T8). Per stretch: minAboveFloorM >= 1.2 and maxStepCm < 5 over the non-screen frames, no jump nobody asked for
+# (unexplainedCuts 0; no fade at all by default, vr_scene_cut instant), no letterbox bars in an eye.
 @sim idle
 @args --skiplogo
 
@@ -33,7 +33,6 @@ newgame
 @assert scene.meter.minAboveFloorM ge 1.2
 @assert scene.meter.maxStepCm lt 5
 @assert scene.meter.maxYawStepDeg lt 1
-@remember cuts2 scene.meter.cuts
 @assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.letterboxFrames eq 0
 # No black square left in front of the player after the intro (the owner, 2026-10-17): back in the world the quad carries
@@ -68,7 +67,6 @@ vr-input stick left 0 0
 @assert scene.meter.minAboveFloorM ge 1.2
 @assert scene.meter.maxStepCm lt 5
 @assert scene.meter.maxYawStepDeg lt 1
-@remember cuts1 scene.meter.cuts
 @assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.fadeFrames eq 0                # the teleport at the scene's start too: no fade at all (the owner, vr_scene_cut instant)
 @assert scene.meter.letterboxFrames eq 0
@@ -91,16 +89,14 @@ sendevent cinematic camera_0137 ""
 @assert scene.meter.sceneFrames gt 0
 # The whole vision-ball scene is on the screen: no frame puts the eyes' world camera at the scene view, so the
 # height has nothing to measure (29.1's -1); steps stay 0 (the lead's test change, coordinator's ruling: the
-# height/step asserts apply to frames whose eyes' world camera is the scene view, cuts == fadedCuts over all)
-# Every scene frame is on the screen or behind the opening fade (the start cut's fade-out, before the switch to the
-# screen: one fade, 0.15 s at 90 Hz plus its 2 black frames) - none shows the world: screenFrames + openingFrames =
-# sceneFrames exactly
+# height/step asserts apply to frames whose eyes' world camera is the scene view, no unexplained cut over all)
+# Every scene frame is on the screen - the switch from the world to the screen is at once, no opening fade (CI
+# 38998065631: openingFrames 0, screenFrames = sceneFrames) - none shows the world
 @assert scene.meter.worldFrames eq 0
 @assert scene.meter.openingFrames le 16
 @assert scene.meter.minAboveFloorM eq -1
 @assert scene.meter.maxStepCm lt 5
 @assert scene.meter.maxYawStepDeg lt 1
-@remember cuts8 scene.meter.cuts
 @assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.letterboxFrames eq 0
 @assert errors eq 0

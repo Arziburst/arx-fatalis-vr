@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-053: Scripted scenes in VR - hybrid by default, dialogue in first person, no blink where the eyes see no jump, no letterbox in the eyes
+## D-053: Scripted scenes in VR - hybrid by default, dialogue in first person, no fades, no letterbox in the eyes
 
 - **Date:** 2026-10-14
 - **Status:** Accepted for `hybrid` (the owner's headset test, 2026-10-17); `first`, `observer` and `ghost` stay as
@@ -44,9 +44,9 @@ a changed decision keeps its history in that cell.
   see a jump in** - the hero teleported by the script (more than 50 cm in a frame) or turned at once (more than 10
   degrees), a cut into or out of a ghost's or the observer's shot - are taken at once too by default (cfg.ini
   `vr_scene_cut` `instant`; the owner, 2026-10-17: "no fades at all"); `fade` puts them behind a short fade, kept for
-  later. Only an eye that must not be seen (no floor under it; first person too low with `black`) is always reached behind
-  the fade: the shot shown is held while the world fades out, the new one is taken at black, then the world fades in. The ghost's yaw is set at each cut so that where
-  the player looks is where the game's camera looked.
+  later. Only an eye that must not be seen (no floor under it; first person too low with `black`) is always reached
+  behind the fade: the shot shown is held while the world fades out, the new one is taken at black, then the world fades
+  in. The ghost's yaw is set at each cut so that where the player looks is where the game's camera looked.
 - **`playerlookat`** (cfg.ini `vr_scene_lookat`): `ignore` (default) leaves the hero's yaw; `fade` turns him at the
   black of a short fade. Never an un-faded snap.
 - **No eye without a floor under it** (the owner, #29): in every view the fade stays black while the eyes' point - the
@@ -58,24 +58,25 @@ a changed decision keeps its history in that cell.
   the scene on the screen in the room until it ends.
 - **No cinematic bars in the eyes**; the cinemascope state stays for the game (the hidden HUD, the skip rules).
 - **Subtitles in VR** (cfg.ini `vr_subtitles`, default `above`): every voiced line of a scene (a `speak -c` line, a
-  camera entity, or the letterbox on) gets a subtitle with the speaker's localised name - also a line the original
-  plays without text for want of the letterbox; the text follows the variant played (key `string<N>` in the line's
-  section). `above`: over the NPC's head, facing the player; the hero's own line below the centre of the view (the
-  chest panel - the owner, 2026-10-17), and an off-screen or off-voice speaker there too; `chest`: a panel placed in the room at the player's chest when the line
-  appears; `lowerthird`: on the head-locked interface quad. A subtitle shows once the eyes see the scene, not under the
-  fade it starts behind. The hero's own lines name him Am Shaegar (the owner: the game gives him no name at character
-  creation, and its texts have no key for the name alone). Talk outside scenes (barks, a merchant's greeting) gets none yet. Proposals for the owner
-  (`SubtitleParams`): the game's subtitle font (about 1.4 degrees), the box at most 32 degrees wide, black at 60%, the
-  name in warm gold over white text; `above` 0.25 m over the head, `chest` 0.8 m ahead and 0.45 m below the eyes,
-  `lowerthird` up to 60% of the quad's width with its lower edge at 92% of its height.
+  camera entity, or the letterbox on) gets a subtitle with the speaker's localised name - also a line the original plays
+  without text for want of the letterbox; the text follows the variant played (key `string<N>` in the line's section).
+  `above`: over the NPC's head, facing the player; the hero's own line below the centre of the view (the chest panel -
+  the owner, 2026-10-17), and an off-screen or off-voice speaker there too; `chest`: a panel placed in the room at the
+  player's chest when the line appears; `lowerthird`: on the head-locked interface quad. A subtitle shows once the eyes
+  see the scene, not under the fade it starts behind. The hero's own lines name him Am Shaegar (the owner: the game
+  gives him no name at character creation, and its texts have no key for the name alone). Talk outside scenes (barks, a
+  merchant's greeting) gets none yet. Proposals for the owner (`SubtitleParams`): the game's subtitle font (about 1.4
+  degrees), the box at most 32 degrees wide, black at 60%, the name in warm gold over white text; `above` 0.25 m over
+  the head, `chest` 0.8 m ahead and 0.45 m below the eyes, `lowerthird` up to 60% of the quad's width with its lower
+  edge at 92% of its height.
 - **Walking is blocked during a scene in VR, the stick turn works** (also where the script holds the controls).
 - **The IK arms are off while the hero is shown in third person** (a ghost shot, any external view of the game).
 - Flat mode is unchanged. The test channel's `scene ...` commands change the switches for the session only (cfg.ini
   keeps the player's choice).
-- **Proposal, for the owner to tune:** a faded cut (`vr_scene_cut fade`, and the eye that must not be seen) fades out in 0.15 s (the head-in-wall fade's speed)
-  and in in 0.25 s; a `playerlookat` fade is 0.1 s out and 0.1 s in; black is held two frames after a switch. One place:
-  `SceneFadeParams` in `src/vr/SceneView.h`. The hybrid's 6 m (`HybridFarUnits`), the screen's size and distance and
-  the observer's distances are proposals too.
+- **Proposal, for the owner to tune:** a faded cut (`vr_scene_cut fade`, and the eye that must not be seen) fades out in
+  0.15 s (the head-in-wall fade's speed) and in in 0.25 s; a `playerlookat` fade is 0.1 s out and 0.1 s in; black is
+  held two frames after a switch. One place: `SceneFadeParams` in `src/vr/SceneView.h`. The hybrid's 6 m
+  (`HybridFarUnits`), the screen's size and distance and the observer's distances are proposals too.
 
 ### Why
 - The jerks the owner felt are the scene camera's own moves: un-faded cuts (a yaw cut rotates the world), dollies and

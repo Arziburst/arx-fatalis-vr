@@ -33,7 +33,6 @@ vr-input stick left 0 0
 @assert scene.meter.minAboveFloorM ge 1.2
 @assert scene.meter.maxStepCm lt 5
 @assert scene.meter.maxYawStepDeg lt 1
-@remember cuts1 scene.meter.cuts
 @assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.fadeFrames eq 0                # the teleport at the scene's start too: no fade at all (the owner, vr_scene_cut instant)
 @assert scene.meter.letterboxFrames eq 0
@@ -107,7 +106,6 @@ human_base_0028.speak -c ccclistener_r player 40 40 [kultar_cantgo]
 @assert scene.meter.minAboveFloorM ge 1.2
 @assert scene.meter.maxStepCm lt 5
 @assert scene.meter.maxYawStepDeg lt 1
-@remember cuts5 scene.meter.cuts
 @assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.cuts eq 0                     # no blink between the lines (the owner, 2026-10-17)
 @assert scene.meter.fadeFrames eq 0
@@ -152,7 +150,6 @@ newgame
 @until player.controlsBlocked eq false 120s
 @until scene.active eq false 30s
 @assert scene.meter.sceneFrames gt 0
-@remember cuts2clamp scene.meter.cuts
 @assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.letterboxFrames eq 0
 @assert scene.meter.minAboveFloorM ge 1.2                 # the eye raised
@@ -171,7 +168,6 @@ newgame
 @until player.controlsBlocked eq false 120s
 @until scene.active eq false 30s
 @assert scene.meter.sceneFrames gt 0
-@remember cuts2black scene.meter.cuts
 @assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.letterboxFrames eq 0
 @assert scene.meter.minAboveFloorM ge 1.2                 # no low frame seen: black instead
@@ -190,7 +186,6 @@ newgame
 @until player.controlsBlocked eq false 120s
 @until scene.active eq false 30s
 @assert scene.meter.sceneFrames gt 0
-@remember cuts2screen scene.meter.cuts
 @assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.letterboxFrames eq 0
 @assert scene.meter.screenFrames gt 0

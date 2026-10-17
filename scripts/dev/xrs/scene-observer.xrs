@@ -1,8 +1,9 @@
 # Scene view 'observer' (#29, SPEC.md): comfort in scripted scenes - T1 Kultar at the bars (camera entities) and T5 (every speak -c mode).
 #   .\scripts\dev\xrs-run.ps1 scene-observer
 # Red until #29 is built: the scene command and the status.json scene.* fields are not in the game yet (29.0, SPEC.md).
-# Per stretch: the eyes' camera never lower than 1.2 m above the floor, steps < 5 cm, yaw steps < 1 deg, every cut behind a fade,
-# no letterbox bars drawn into an eye; the hero is shown in third person, so the IK arms are off.
+# Per stretch: the eyes' camera never lower than 1.2 m above the floor, steps < 5 cm, yaw steps < 1 deg, no jump nobody asked for
+# (unexplainedCuts 0; a cut is taken at once by default, vr_scene_cut instant), no letterbox bars drawn into an eye; while the
+# hero is shown in third person (a cinematic shot) the IK arms are off.
 # The owner (2026-10-17): dialogue is always first person, in every view - T1 (Kultar's camera entities near the hero)
 # and T5 (speak -c lines) are the hero's own eyes under 'observer' too; the view applies to cinematic shots (T2)
 @sim idle
@@ -36,7 +37,6 @@ vr-input stick left 0 0
 @assert scene.meter.minAboveFloorM ge 1.2
 @assert scene.meter.maxStepCm lt 5
 @assert scene.meter.maxYawStepDeg lt 1
-@remember cuts1 scene.meter.cuts
 @assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.fadeFrames eq 0                # the teleport at the scene's start too: no fade at all (the owner, vr_scene_cut instant)
 @assert scene.meter.letterboxFrames eq 0
@@ -110,7 +110,6 @@ human_base_0028.speak -c ccclistener_r player 40 40 [kultar_cantgo]
 @assert scene.meter.minAboveFloorM ge 1.2
 @assert scene.meter.maxStepCm lt 5
 @assert scene.meter.maxYawStepDeg lt 1
-@remember cuts5 scene.meter.cuts
 @assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.cuts eq 0                     # no blink between the lines (the owner, 2026-10-17)
 @assert scene.meter.fadeFrames eq 0
@@ -128,7 +127,6 @@ newgame
 @until scene.active eq false 30s
 @assert scene.meter.sceneFrames gt 0
 @assert scene.meter.minAboveFloorM ge 1.2
-@remember cuts2 scene.meter.cuts
 @assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.letterboxFrames eq 0
 @assert errors eq 0

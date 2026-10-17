@@ -323,16 +323,7 @@ void SceneDirector::switchTo(const Shot & target, const Vec3f & targetPos, const
 			break;
 		}
 		case SceneShown::Observer: {
-			// Placed once for the scene, now that its first shot has set the speakers up
-			if(!m_observer.valid) {
-				m_observer.valid = true;
-				if(in.placeObserver) {
-					m_observer.place = in.placeObserver();
-				} else {
-					m_observer.place.pos = in.firstPos;
-					m_observer.place.yaw = in.playerYaw;
-				}
-			}
+			placeObserverOnce(in);
 			// Where the player looks now is the middle of the heads
 			m_pos = m_observer.place.pos;
 			m_yawDelta = wrapSignedDegrees(m_observer.place.yaw - in.headYaw - in.playerYaw);
@@ -355,6 +346,19 @@ void SceneDirector::switchTo(const Shot & target, const Vec3f & targetPos, const
 		}
 	}
 
+}
+
+void SceneDirector::placeObserverOnce(const SceneInput & in) {
+	// Placed once for the scene, when its first shot has set the speakers up
+	if(!m_observer.valid) {
+		m_observer.valid = true;
+		if(in.placeObserver) {
+			m_observer.place = in.placeObserver();
+		} else {
+			m_observer.place.pos = in.firstPos;
+			m_observer.place.yaw = in.playerYaw;
+		}
+	}
 }
 
 SceneOutput SceneDirector::update(const SceneInput & in) {
@@ -446,14 +450,22 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 	                  && (glm::distance(targetPos, m_pos) > CutJumpUnits || turnJump);
 	// No blink where the eyes see no jump (the owner, 2026-10-17: "if we can get rid of it, we must"): a new line or
 	// camera of a dialogue, a scene's start or end - the eyes stay in the hero's head - and the switch between the world
-	// and the screen (no motion: the world goes, the screen is there). Only the hero's head jumping in the world - a
-	// teleport, a script's instant turn - is still a cut behind the fade, and the ghost's and the observer's shots
+	// and the screen (no motion: the world goes, the screen is there). The hero's head jumping in the world - a teleport,
+	// a script's instant turn - and the ghost's and the observer's shots are cuts: at once by default (vr_scene_cut
+	// instant, below), behind the fade with fade
 	const bool worldJump = following && !m_lowHeld && inHead(m_shown.shown)
 	                       && (glm::distance(targetPos, m_pos) > CutJumpUnits || turnJump);
 	// ...and an eye that must not be seen at all (no floor under it, first person too low with black) is reached the old
 	// way: the view shown is held while the fade goes black
-	const bool targetBlind = target.shown == SceneShown::First
-	                         && (!in.firstOnFloor || (in.firstLow == SceneFirstLow::Black && firstTooLow));
+	// The observer's point is known before the cut is taken: placed once, when the observer's first shot is wanted
+	if(target.shown == SceneShown::Observer) {
+		placeObserverOnce(in);
+		targetPos = m_observer.place.pos;
+	}
+	const bool heldShotBlind = (target.shown == SceneShown::Ghost || target.shown == SceneShown::Observer)
+	                           && in.hasFloor && !in.hasFloor(targetPos);
+	const bool targetBlind = heldShotBlind || (target.shown == SceneShown::First
+	                                          && (!in.firstOnFloor || (in.firstLow == SceneFirstLow::Black && firstTooLow)));
 	const bool seamless = (differs || jump) && !m_cutPending && !worldJump && !targetBlind
 	                      && ((inHead(m_shown.shown) && inHead(target.shown))
 	                          || (m_shown.shown == SceneShown::Screen && inHead(target.shown))

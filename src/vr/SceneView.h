@@ -41,14 +41,17 @@
  *    only (pitch and roll come from the head), never lower than \ref GhostMinAboveFloor;
  *  - \c observer (b): one point beside the line between the speakers' heads (\ref placeObserver), at the
  *    player's real eye height above the floor there, kept for the whole scene; the hero in third person;
- *  - \c hybrid (d): \c first for the dialogue, and a camera entity's shot of a far place or of the hero's
+ *  - \c hybrid (d): a camera entity's shot of a far place or of the hero's
  *    scripted body (\ref hybridWantsScreen) on a virtual screen fixed in the room - the game's own camera,
  *    drawn flat, as the intro and the cinematics are (#394).
  *
- * Every change of the shot the eyes see is a cut behind a fade (\ref SceneFade): the previous shot is held
- * while the world fades out, the new one is taken at black, then the world fades in. A shot is the
- * scene's identity (a new \c speak \c -c line, another camera entity, the scene's start and end) plus,
- * for a view that follows the hero, a jump of its position (a teleport). \c playerlookat either changes
+ * A view applies to cinematic shots only: dialogue is the hero's own eyes in every view (the owner, 2026-10-17).
+ * A shot is the scene's identity (a new \c speak \c -c line, another camera entity, the scene's start and end)
+ * plus, for a view that follows the hero, a jump of its position (a teleport). Where the eyes see no jump the
+ * shot changes at once; a jump is taken at once too by default (cfg.ini \c vr_scene_cut \c instant: no fades
+ * at all), or behind a fade (\ref SceneFade) with \c fade: the previous shot is held while the world fades
+ * out, the new one is taken at black, then the world fades in. An eye that must not be seen (no floor under
+ * it) is always reached behind the fade. \c playerlookat either changes
  * nothing (\c ignore) or turns the hero behind a short fade (\c fade, cfg.ini \c vr_scene_lookat).
  *
  * \ref SceneMeter measures the result for the tests (status.json \c scene.meter).
@@ -326,8 +329,9 @@ struct SceneOutput {
  * \brief Decides per frame which shot the eyes see and when it changes
  *
  * The shot the eyes should see (the target) follows the game: no scene - the game's first person; a scene -
- * \ref chooseShownView. A different target, or a jump of a following view, starts a cut: the shot shown is
- * held until the fade is black, then the target is taken. A ghost shot is the game's camera where the shot
+ * \ref chooseShownView. A different target, or a jump of a following view, is taken at once (no jump the eyes
+ * see, or \ref SceneCut::Instant), or starts a faded cut: the shot shown is held until the fade is black, then
+ * the target is taken. A ghost shot is the game's camera where the shot
  * starts, and a new one when the game's camera jumps within it; its yaw is set at the switch so that where
  * the player looks now is where the game's camera looked. The observer's point is placed at its first cut and
  * kept while the scene shows the observer; its yaw looks at the middle of the heads the same way. The screen
@@ -376,6 +380,9 @@ private:
 		}
 		bool operator!=(const Shot & o) const { return !(*this == o); }
 	};
+
+	//! The observer's point for this scene, placed at the first call (\ref SceneInput::placeObserver)
+	void placeObserverOnce(const SceneInput & in);
 
 	//! Take \a target as the shot shown now - at a cut's black or at once (\ref SceneOutput::seamless); \a differs:
 	//! another shot, not the same one jumping

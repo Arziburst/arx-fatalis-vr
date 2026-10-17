@@ -632,6 +632,22 @@ void SceneViewTest::instantCutTest() {
 	CPPUNIT_ASSERT(!out.seamless);
 	CPPUNIT_ASSERT(out.fade > 0.f);
 
+	// ...and so is a ghost's shot or the observer's point with no floor under it: never shown at fade 0
+	for(SceneViewSetting setting : { SceneViewSetting::Ghost, SceneViewSetting::Observer }) {
+		SceneDirector held;
+		held.update(in);
+		SceneInput floorless = sceneOf(in, SceneKind::Entity, 6, setting);
+		floorless.enginePos = Vec3f(500.f, -200.f, 500.f);
+		floorless.hasFloor = [](const Vec3f &) { return false; };
+		out = held.update(floorless);
+		CPPUNIT_ASSERT(!out.cut);
+		CPPUNIT_ASSERT(held.shown() == SceneShown::None);
+		CPPUNIT_ASSERT(out.fade > 0.f);
+		settle(held, floorless);
+		CPPUNIT_ASSERT(held.shown() != SceneShown::None);
+		CPPUNIT_ASSERT(held.fade() >= BehindFade);
+	}
+
 	// The meter: an instant cut is a cut, not a step, and explained
 	SceneMeter meter;
 	SceneMeterFrame frame;

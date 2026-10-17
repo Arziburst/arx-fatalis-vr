@@ -26,6 +26,13 @@ dagger_9001.equip player
 @until vr.melee.recovery.weapon eq dagger 5s
 @assert vr.melee.active eq true
 @assert vr.weapon.place eq hand
+# The provisional defaults, set live: a cfg.ini kept from an earlier build keeps its old values (TRAPS.md); the
+# defaults themselves are MeleeSwingTest::testContactAim's
+melee noswing min
+melee speed 1.5 4.5
+melee size 0.1 0.4
+melee lunge 0.05 0.25
+@frames 2
 @assert vr.melee.params.speedMin eq 1.5
 @assert vr.melee.params.speedMax eq 4.5
 @assert vr.melee.params.sizeMin eq 0.1

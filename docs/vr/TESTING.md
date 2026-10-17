@@ -309,7 +309,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `vr-sim <command>` | a command of the simulated headset (#112), only in a `--vr-sim` run: `head rot 25 0 0`, `head pos 0 -0.3 0`, `action trigger right 1`, `shot <name>`, `session visible`, `fault swap-eyes on`, … — now, or `@+<n> <command>` n frames from now on its timeline. See [The simulated headset](#the-simulated-headset---vr-sim-112) |
 | `combat on\|off` | the engine's combat mode without a key (#75): what the weapon key does — `on` draws the weapon (ready clips), `off` puts it away; a strike is then the mouse button — or, with the weapon in the VR hand, a physical swing (#39: the trigger only charges). VR has no control for it (D-019); `vr.weapon.combatMode` in the status |
 | `freelook on\|off` | the engine's free look without the mouse (#323): `on` leaves the cursor mode, as loading a save does. A level started with `--loadlevel` (the playground) stays in cursor mode, where the engine keeps the inventory open and VR melee is refused (#405). A test-only workaround: it goes once #394 keeps VR gameplay in free look |
-| `melee noswing none\|min`, `melee speed <min> <max>` | the damage from the swing (#465) live, not saved: `vr_melee_noswing` and `vr_melee_speed_min` / `_max` (m/s at the contact point), so one run tests both modes; `vr.melee.params` shows them |
+| `melee noswing none\|min`, `melee speed\|size\|lunge <min> <max>` | the damage from the swing (#465) live, not saved: `vr_melee_noswing`, `vr_melee_speed_min` / `_max` (m/s at the contact point), `vr_melee_size_min` / `_max` and `vr_melee_lunge_min` / `_max` (m), so one run tests each mode and each factor alone; `vr.melee.params` shows them |
 | `crouch on\|off` | the crouch toggle without an input device, for flat runs (#263): `on` crouches the character, `off` lets it stand up when there is room for its head. `player.crouchToggle` / `player.crouched` in the status |
 | `comfort auto\|on\|off` | who decides the VR comfort policy (#76, `vr::comfort()`): `auto` = the VR session (the default: view bobbing, screen shake and FOV zoom off in VR, `cfg.ini` decides in flat mode), `on` / `off` force the VR rules on or off — so a flat run can measure them. `comfort` and `camera` in the status; one `[vr] comfort:` log line per change |
 | anything else | the **script console**: `[entity.]command args`, exactly as typed in the in-game console (`` ` ``). Context defaults to the player. Refused (and counted in the ack) when the entity or the command is unknown |
@@ -649,15 +649,16 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   filtered speed over 20 m/s), `nearMisses` / `lastNearMiss` (motions that peaked
   within 20 % below the swing speed, F-60); `trigger` (the weapon hand's trigger is held — it changes nothing, #465);
   `hits` (NPCs hit), `contacts` (anything touched); `last` (`target`, `aim` — the engine's `ratioaim`, the damage
-  fraction of the fully charged strike, from the speed of the blade's point that touched (#465, D-NEW): 0 or 0.1 below
-  `speedMin` and outside a swing, 0.1 → 1 up to `speedMax`, 1 above — `damage`, `speed` (m/s of that point), `kind`
-  (`slash`, `thrust`: the point moving within 45° of the blade's way), `swing` (0: a touch outside a swing));
+  fraction of the fully charged strike (#465, D-NEW): 0.1 (0 with `noSwing` `none`) for a touch outside a swing or
+  below a minimum, else 0.1 + 0.9 × the weaker of the speed's and the size's factor — `damage`, `speed` (m/s of the
+  blade's point that touched), `size` (m: a slash's path of that point in the stroke so far, a thrust's lunge along the
+  blade), `kind` (`slash`, `thrust`: the point moving within 45° of the blade's way), `swing` (0: a touch));
   `recovery` (#323: after a hit a swing that starts within the recovery hits nothing — `weapon` `dagger`/`1h`/`2h`,
   `seconds` its recovery, `source` `default` (0.6 / 0.8 / 1.0 s) or `config` (`vr_melee_recovery_dagger` / `_1h` / `_2h`),
   for comparison `game` the game's own strike for it and `games.dagger` / `games.1h` / `games.2h` for every type (the
   hero's strike start + strike animations: 1.79 / 1.5 / 1.79 s; 0 when not loaded), `left`
   seconds until a swing may hit again, `recovering` the swing in progress or the last one started within it,
-  `swings` such swings so far); `params` (`swingSpeed`, `endSpeed`, `speedMin`, `speedMax`, `noSwing` `none`|`min`, `targetCooldown`, from cfg.ini); `placed`, `hilt`,
+  `swings` such swings so far); `params` (`swingSpeed`, `endSpeed`, `speedMin`, `speedMax`, `sizeMin`, `sizeMax`, `lungeMin`, `lungeMax`, `noSwing` `min`|`none`, `targetCooldown`, from cfg.ini); `placed`, `hilt`,
   `tip` (the weapon placed for this frame's check, world).
 - `player` is present only while a level is loaded; the `.xrs` runner (#113) asserts on these keys
   with `@modassert`.
@@ -1132,7 +1133,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `spell.cast` | a spell launches (player or NPC) | `spell`, `caster`, `level`, `target` |
 | `spell.precast` | the player stores a spell | `spell`, `level` |
 | `spell.refused` | the player's spell does not launch | `spell`, `reason` (`runes-not-learned`, `no-mana` with `mana` / `cost`, `magic-disabled-by-level`, `spell-cannot-launch` — the spell's own silent check, `no-demon-within-900`, `not-implemented`) |
-| `melee.hit` | a weapon strike reaches an NPC and the player is the attacker or the target — one per swing (a VR swing: one per target it touches, #39) | `source`, `target`, `weapon`, `damage` (0 = the armour-class roll made it a miss), `aim` (the damage fraction of the fully charged strike); a VR hit also `speed` (m/s of the blade's point that touched) and `kind=slash\|thrust` (#465) |
+| `melee.hit` | a weapon strike reaches an NPC and the player is the attacker or the target — one per swing (a VR swing: one per target it touches, #39) | `source`, `target`, `weapon`, `damage` (0 = the armour-class roll made it a miss), `aim` (the damage fraction of the fully charged strike); a VR hit also `speed` (m/s of the blade's point that touched), `size` (m, its stroke so far) and `kind=slash\|thrust` (#465) |
 | `damage.number` | a damage number over an NPC closes, only in the test playground (#321): every hit on an NPC shows its damage above the target for 1.2 s; hits on one target within 250 ms add up into one number, logged 250 ms after its first hit. `damageNumbers.visible` in the status: the numbers shown now | `entity`, `amount` (the hits' damage), `dealt` (the life taken: less on a killing blow), `hits`, `views` (the scene views it was drawn into in the last frame: 2 = both eyes), `x0` `y0` / `x1` `y1` (where in view 0 / 1 - the left / right eye image in VR - in pixels) |
 | `item.take` / `item.drop` | an item goes onto / off the cursor | `item`, `from=world\|inventory`; `how=throw\|drop\|place`, `count` |
 | `item.toinventory` | an item enters the player's inventory or the container the player has open | `item`, `container` |

@@ -13,51 +13,64 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: Melee damage comes from the swing - the blade's speed where it touches; no charge
+## D-NEW: Melee damage comes from the swing - its size and its speed where the blade touches; no charge
 
 - **Date:** 2026-10-17
-- **Status:** Accepted (the owner's design; the speed numbers are defaults the owner tunes in the headset)
-- **Decided by:** the owner (#465, 2026-10-14 and 2026-10-17: "in VR, damage comes from the real swing"); the mapping
-  by the worker of #465
+- **Status:** Accepted (the owner's design; every number is a provisional cfg.ini default - the real ones, per weapon
+  class and enemy, come from a research task and the owner's headset)
+- **Decided by:** the owner (#465, 2026-10-14 and 2026-10-17: "in VR, damage comes from the real swing"; refined the
+  same day, relayed by the coordinator: a touch is the minimum, size and speed together); the mapping by the worker
+  of #465
 - **Supersedes:** D-038's charge (the trigger held charged the strike; a plain swing was weak) - D-038's swing detector,
   gates, contact through the engine's check and #323's recovery stay
 
 ### Decision
 - **No charge.** The trigger of the weapon hand does nothing - held long, short or not at all, a hit is the same. The
   HUD's hit strength gauge stays empty while the IK hand holds the weapon.
-- **The damage of a hit is the speed of the blade's point that touched.** Each hit sphere of the weapon deals the
-  engine's aim ratio (its `ratioaim`, the damage fraction of the fully charged strike) from the filtered speed of its
-  own point of the blade, relative to the head (the detector's median of three, #352): below **`vr_melee_speed_min`
-  = 1.5 m/s** nothing (**`vr_melee_noswing=none`**, the default) or the engine's weakest strike, 0.1 (`min`); from 1.5
-  to **`vr_melee_speed_max` = 4.5 m/s** linearly from 0.1 to 1; faster stays 1. The fastest touching sphere hits first.
-- **A hit needs a swing** (D-038's detector, F-61): a contact outside a swing - the blade resting on an enemy, a wrist
-  flick of the tip - is "no swing": nothing, or with `min` the minimum once the recovery is over.
-- **A thrust counts like a slash at the same speed.** The kind is logged only: `thrust` when the point moves within 45°
-  of the blade's way towards the tip (F-178's 0.707), `slash` otherwise.
-- **One log line per hit:** the engine's `melee.hit` with `aim`, `speed` and `kind`.
+- **A touch is the minimum.** A contact outside a swing (D-038's detector, F-61) - a touch, a tap, the blade resting on
+  an enemy, a wrist flick of the tip - deals the engine's weakest strike, 0.1 of the full one (its `StrikeAimtime`
+  floor), like the original's uncharged click: **`vr_melee_noswing=min`**, the default; `none` makes it nothing. Once
+  per recovery (#323), so spamming stays possible but inefficient. A touch reaches NPCs only: a blade resting on an
+  item or a crate does nothing to it and starts no recovery.
+- **A swing's damage is its size and its speed together.** Each hit sphere of the weapon measures its own point of the
+  blade: the filtered **speed** at contact, relative to the head (the detector's median of three, #352), and the
+  **size** of the stroke so far - since the hand last moved slower than the swing's end speed: for a slash the path
+  that point travelled, for a thrust (the point moving within 45° of the blade's way towards the tip, F-178's 0.707)
+  the lunge, how far it moved along the blade. Each gives a factor, 0 at its minimum and 1 at its maximum; **the
+  weaker of the two** decides: aim = 0.1 + 0.9 × min(speed factor, size factor). Below either minimum: the touch's
+  value (0.1, or 0 with `none`). A slow big swing and a fast tiny flick both stay low; only big and fast is the full
+  strike (the engine's `ratioaim` 1). The fastest touching sphere hits first.
+- **Provisional thresholds (cfg.ini):** speed `vr_melee_speed_min` 1.5 / `_max` 4.5 m/s; slash size
+  `vr_melee_size_min` 0.1 / `_max` 0.4 m; lunge `vr_melee_lunge_min` 0.05 / `_max` 0.25 m.
+- **One log line per hit:** the engine's `melee.hit` with `aim` (the damage fraction), `speed`, `size` and `kind`.
 
 ### Why
-- The owner: holding a button to charge is the mouse's way; in VR the arm is the strike. No swing, no damage; a fast,
-  humanly sane slash or thrust is the full one.
-- **1.5 m/s** is the detector's own end speed - a hand that slows below it no longer swings - and above F-178's 1.0
-  m/s floor (a reach or a touch); **4.5 m/s** is PLANCK's arm-swing speed (F-195, F-74) and F-178's 4.0 maximum, a
-  committed but not athletic swing. Measured at the contact point, the tip of a slash of the arm is faster than the
-  grip, so a real swing reaches the full damage, a careful one does not.
-- 0.1, not 0, at the minimum speed: the engine's own weakest strike (`StrikeAimtime`'s floor), and the `min` mode's
-  value.
+- The owner: holding a button to charge is the mouse's way; in VR the arm is the strike. A touch is the uncharged
+  click; a big, fast, humanly sane slash or thrust is the full strike; either a slow or a tiny motion is little.
+- **The weaker factor, not their product:** each threshold keeps its own meaning (a swing with a full size factor is
+  exactly as strong as its speed says, and the other way round), so the two ranges can be tuned one at a time; a
+  product would also halve a swing that is medium in both (0.5 × 0.5).
+- **Size up to the contact**, not of the whole stroke: the damage is dealt at contact, and the wind-up before it is what
+  makes a swing big. The stroke starts at the sample before the filtered speed rose (it lags a sample).
+- **1.5 m/s** is the detector's own end speed and above F-178's 1.0 m/s floor (a reach or a touch); **4.5 m/s** is
+  PLANCK's arm-swing speed (F-195, F-74) and close to F-178's 4.0 maximum. **0.4 m** of path at the contact point is
+  a short arm's slash (a tip travels 1 m and more in a full one); **0.25 m** of lunge a forearm's push. All provisional.
+- **A touch reaches NPCs only:** at the minimum every 0.6-1.0 s, a resting blade would otherwise break crates (the
+  engine damages props by the player's full damage, whatever the ratio) and keep the hand in its recovery.
 - Prior art (a short look, #465): VHVR scales by speed up to full at cooldown + 5 m/s (F-63); F-178's strength is
   (peak − min) / max; PLANCK tells a stab by the hand moving along the blade (dot ≥ 0.8, F-195); Blade & Sorcery and
   Boneworks take the hit point's velocity from physics. Ours is the hit point's speed through the engine's own check.
 
 ### Rules out
-The charge and the trigger's role in melee; damage from the swing's peak instead of the speed at contact; a thrust
-bonus or malus.
+The charge and the trigger's role in melee; damage from the swing's peak instead of the speed at contact; damage from
+speed alone or size alone; a thrust bonus or malus (a lunge has its own size range, the same rule).
 
 ### Consequences
-- cfg.ini `vr_melee_speed_min`, `vr_melee_speed_max`, `vr_melee_noswing` replace `vr_melee_full_speed` and
-  `vr_melee_weak_aim`; the `melee.charge` event and `vr.melee.charge` are gone, `vr.melee.trigger` shows the trigger
-  changing nothing; `vr.melee.last` has the contact's `speed` and `kind`; the channel's `melee noswing|speed` sets the
-  keys live for tests.
+- cfg.ini `vr_melee_speed_min` / `_max`, `vr_melee_size_min` / `_max`, `vr_melee_lunge_min` / `_max`, `vr_melee_noswing`
+  replace `vr_melee_full_speed` and `vr_melee_weak_aim`; the `melee.charge` event and `vr.melee.charge` are gone,
+  `vr.melee.trigger` shows the trigger changing nothing; `vr.melee.last` has the contact's `speed`, `size` and `kind`;
+  the channel's `melee noswing|speed|size|lunge` sets the keys live for tests.
+- The real numbers per weapon class and enemy are a research task's (the coordinator's, 2026-10-17).
 - `melee-damage.xrs` proves the scale in the playground; `melee-swing.xrs` and `controls-v2.xrs` no longer see a charge.
 
 ---
@@ -716,7 +729,7 @@ swaps them as a whole).
 
 - **Date:** 2026-10-10
 - **Status:** Accepted (the owner's design; the numbers are MVP defaults the owner tunes in the headset); the charge
-  and the speed factor superseded by D-NEW (#465: the damage comes from the blade's speed at contact, no charge)
+  and the speed factor superseded by D-NEW (#465: the damage comes from the swing's size and speed, no charge)
 - **Decided by:** the owner (after a headset fight with #75's sword, relayed by the coordinator on #39); the
   mechanism by the worker of #39; builds on D-009, D-016, D-019, D-032 (the body) and D-033 (the weapon in the IK hand, #75)
 

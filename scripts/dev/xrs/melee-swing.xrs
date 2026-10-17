@@ -17,6 +17,8 @@
 @assert vr.weapon.place eq hand
 @assert vr.melee.active eq true
 @assert vr.melee.placed eq true
+# A touch is the minimum (the default, set live: a cfg.ini of an earlier build keeps its value, TRAPS.md)
+melee noswing min
 @assert vr.melee.swings eq 0
 
 # The goblin held still 80 units ahead (the save has it walking away down the corridor), the sword level with its

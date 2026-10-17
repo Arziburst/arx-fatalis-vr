@@ -92,11 +92,10 @@ void ManageFade() {
 	
 	if(vr::stereoActive()) {
 		// The eyes were faded over their whole view (drawFadeOverView). The flat frame is a quad in the
-		// middle of the view: faded like the window it would darken that middle twice and leave the rest
-		// bright - the black square in front of the player after the prison intro (#22, #29). Only the
-		// interface drawn on it fades, and it covers no more of the eyes than it did
-		UseRenderState state(render2D().blend(BlendDstAlpha, BlendInvSrcAlpha));
-		EERIEDrawBitmap(Rectf(g_size), 0.0001f, nullptr, Color(Color4f(FADECOLOR * Visibility, Visibility)));
+		// middle of the view: faded like the window it would be a black square there with the world bright
+		// around it - the square after the prison intro (#29). Nothing is drawn on it: the renderer
+		// accumulates the quad's alpha whatever the colour blend (OpenGLRenderer), so even a fade of the
+		// interface alone would cover the eyes behind the whole quad
 		return;
 	}
 	

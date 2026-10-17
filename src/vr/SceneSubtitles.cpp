@@ -328,4 +328,5 @@ void drawSubtitlesOnInterface() {
 	s.status.panelYawDeg = glm::degrees(yaw);
 	s.status.panelWidthM = size.x;
 }
+
 } // namespace vr

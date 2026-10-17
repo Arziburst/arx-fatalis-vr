@@ -693,27 +693,49 @@ void SceneViewTest::dialogueStaysFirstTest() {
 		CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
 	}
 
-	// A cinematic the hero speaks in is a dialogue from his line on
+	// The talk after the goblin fight as its script plays it: camera_0080 activated on Kultar while he walks out - a far
+	// shot, the hero teleported, no line for 6 s - the camera on an NPC is a talk cue: first person from the first frame
+	{
+		SceneDirector director;
+		director.update(standing());
+		SceneInput talk = sceneOf(standing(), SceneKind::Entity, 1, SceneViewSetting::Hybrid);
+		talk.cinematicShot = true;
+		talk.talkCue = true;
+		for(int i = 0; i < 120; i++) {
+			const SceneOutput out = director.update(talk);
+			CPPUNIT_ASSERT(out.shown == SceneShown::First);
+			CPPUNIT_ASSERT(director.dialogue());
+			talk.talkCue = (i < 10); // the camera turns to the cell door later: still the dialogue
+		}
+	}
+
+	// A cinematic a talk cue comes in (the hero speaks, the camera turns to an NPC) is a dialogue from then on
 	{
 		SceneDirector director;
 		director.update(standing());
 		SceneInput film = sceneOf(standing(), SceneKind::Entity, 1, SceneViewSetting::Hybrid);
 		SceneOutput out = director.update(film);
 		CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
-		film.heroSpeaks = true;
+		film.talkCue = true;
 		out = director.update(film);
 		CPPUNIT_ASSERT(out.shown == SceneShown::First);
-		film.heroSpeaks = false;
+		film.talkCue = false;
 		film.shot = 2;
 		out = director.update(film);
 		CPPUNIT_ASSERT(out.shown == SceneShown::First);
 	}
 
 	// The prison intro: the letterbox first, then camera shots of the hero dragged - a cinematic, on the screen through
-	// all its camera entities (no conversation)
+	// all its camera entities (no conversation). Before it the startup intro (level 10) talked and ended in the menu, the
+	// director never saw it end: the new level forgets its dialogue
 	{
 		SceneDirector director;
 		director.update(standing());
+		SceneInput startup = sceneOf(standing(), SceneKind::Entity, 9, SceneViewSetting::Hybrid);
+		startup.talkCue = true;
+		director.update(startup);
+		CPPUNIT_ASSERT(director.dialogue());
+		director.endDialogue();
 		director.update(sceneOf(standing(), SceneKind::None, 0, SceneViewSetting::Hybrid));
 		SceneInput intro = sceneOf(standing(), SceneKind::Entity, 1, SceneViewSetting::Hybrid);
 		for(u64 shot = 1; shot <= 5; shot++) {

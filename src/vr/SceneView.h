@@ -293,7 +293,9 @@ struct SceneInput {
 	float stickTurned = 0.f;        //!< the stick's turn so far, degrees, right positive (the hero's yaw goes down)
 	float seconds = 0.f;            //!< the frame's duration
 	bool cinematicShot = false;     //!< this frame of a camera entity's shot is a cinematic one (\ref hybridWantsScreen)
-	bool heroSpeaks = false;        //!< the hero has a voiced line playing (a scene with it is a dialogue)
+	//! A conversation shows this frame: the camera entity looks at an NPC, a playerlookat turned the hero to one in this
+	//! scene, or the hero has a voiced line playing - the scene is a dialogue (\ref SceneDirector::dialogue)
+	bool talkCue = false;
 	bool firstOnFloor = true;       //!< a floor under the hero's eye (\c firstPos)
 	float firstFloorY = 0.f;        //!< that floor (y down), when \c firstOnFloor
 	SceneFirstLow firstLow = DefaultSceneFirstLow; //!< what first person does while that eye is too low
@@ -363,6 +365,8 @@ public:
 	SceneShown shown() const { return m_shown.shown; }
 	//! The scene is a dialogue, in first person to its end (status.json \c scene.dialogue)
 	bool dialogue() const { return m_dialogue; }
+	//! A new level: a scene left behind (the startup intro ended in the menu, never seen to end) is no dialogue here
+	void endDialogue() { m_dialogue = false; m_entitySeen = false; }
 
 private:
 
@@ -413,8 +417,8 @@ private:
 		bool screen = false;
 	};
 
-	//! The scene is a dialogue, in first person to its end (the owner, 2026-10-17): it started with a camera
-	//! entity's shot that is not a cinematic one, a \c speak \c -c line played in it, or the hero spoke in it
+	//! The scene is a dialogue, in first person to its end (the owner, 2026-10-17): its first camera entity frame was
+	//! not a cinematic shot, a \c speak \c -c line played in it, or a talk cue came (\ref SceneInput::talkCue)
 	bool m_dialogue = false;
 	bool m_entitySeen = false; //!< the scene's first camera entity frame was classified
 
@@ -554,6 +558,7 @@ struct SceneState {
 	bool active = false;             //!< a scripted scene owns the game's camera (last VR frame)
 	SceneKind kind = SceneKind::None; //!< what owns it
 	bool armsIk = true;               //!< the IK arms are on: the hero is not shown in third person
+	bool lookAtNpc = false;           //!< a playerlookat turned the hero to an NPC in this scene (a talk cue)
 
 	bool lookAtPending = false;       //!< a \c playerlookat waits for the fade's black
 	Anglef lookAtAngle;               //!< the angle it turns the hero to

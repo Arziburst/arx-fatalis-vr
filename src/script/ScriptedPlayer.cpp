@@ -545,6 +545,8 @@ public:
 		player.desiredangle = desired;
 		const vr::SceneLookAt mode = scene.lookAt;
 		scene.meter.lookAtSeen();
+		// Turned to an NPC: a conversation (the scene is a dialogue, vr/SceneView.h)
+		scene.lookAtNpc = scene.lookAtNpc || (t != entities.player() && (t->ioflags & IO_NPC));
 		gameevent::Event("vr.scene.lookat", 200)("how", vr::sceneLookAtName(mode))("target", t->idString());
 		if(scene.director.lookAt(mode)) {
 			scene.lookAtPending = true;

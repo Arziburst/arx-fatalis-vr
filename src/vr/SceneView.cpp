@@ -379,13 +379,14 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 
 	// A dialogue stays in first person even where its script cuts to a camera (the owner, 2026-10-17, the talk after
 	// the goblin fight going to the screen); only a scene with no conversation is a cinematic. Latched until the scene
-	// ends: its first camera entity's shot near the hero, a speak -c line, or a line of the hero's
+	// ends: its first camera entity frame not a cinematic shot, a speak -c line, or a talk cue (the camera on an NPC - the
+	// talk after the goblin fight from its first frame - the hero turned to one, the hero speaking)
 	if(in.active) {
 		if(in.kind == SceneKind::Entity && !m_entitySeen) {
 			m_entitySeen = true;
 			m_dialogue = m_dialogue || !in.cinematicShot;
 		}
-		m_dialogue = m_dialogue || in.kind == SceneKind::Speech || in.heroSpeaks;
+		m_dialogue = m_dialogue || in.kind == SceneKind::Speech || in.talkCue;
 	} else {
 		m_dialogue = false;
 		m_entitySeen = false;

@@ -39,10 +39,13 @@ a changed decision keeps its history in that cell.
   a camera entity's shot near the hero are the hero's own eyes; a view applies to cinematic shots only - the hybrid's
   rule (far, out of sight, or the hero's body scripted) decides what is cinematic in every view. **A dialogue stays
   first person to its end, even where its script cuts to a camera** (the owner's retest, 2026-10-17: the talk after the
-  goblin fight went to the screen): a scene is a dialogue once it started with a camera entity's shot that is not
-  cinematic, a `speak -c` line played in it, or the hero spoke in it; only a scene with no conversation (the prison
-  intro) is a cinematic. **In a cinematic the hero keeps his head**: the VR body's head-only hiding, its two-sided faces
-  and its own arms apply only while the eyes are his (`vr::hidesHeadOnly`).
+  goblin fight went to the screen): a scene is a dialogue - first person from that frame to its end - once its first
+  camera entity frame is not a cinematic shot, a `speak -c` line plays in it, or a talk cue comes: the camera entity
+  looks at an NPC (that talk's camera_0080 is on Kultar from its first frame, while he walks out and before any line), a
+  `playerlookat` turns the hero to an NPC, or the hero has a voiced line; it is forgotten when the scene ends and at a
+  new level (the startup intro talks and ends in the menu). A scene with no conversation is a cinematic: the prison
+  intro's cameras look at markers, a vision ball's at the hero. **In a cinematic the hero keeps his head**: the VR
+  body's head-only hiding, its two-sided faces and its own arms apply only while the eyes are his (`vr::hidesHeadOnly`).
 - **No blink where the eyes see no jump** (the owner, 2026-10-17: "if we can get rid of it, we must"): a dialogue's new
   line or camera, a scene's start and end while the eyes stay in the hero's head, and the switch between the world and
   the screen (no motion: the world goes, the screen is there) happen at once (`vr.scene.switch`). **The cuts the eyes
@@ -67,7 +70,8 @@ a changed decision keeps its history in that cell.
   without text for want of the letterbox; the text follows the variant played (key `string<N>` in the line's section).
   **A subtitle is a panel fixed in the world** (the owner's retest, 2026-10-17: never turning with the head): placed
   once when the line starts, facing where the player was then, drawn into its own image and shown as a quad layer,
-  always on top. `above`: over the NPC's head; the hero's own line below the centre of the view (the chest panel - the
+  always on top (the desktop mirror does not show it: it copies the flat frame, the menu pointer and the reticles
+  only). `above`: over the NPC's head; the hero's own line below the centre of the view (the chest panel - the
   owner, 2026-10-17), and a speaker out of view or off-voice there too; `chest`: that panel for every line;
   `lowerthird`: on the head-locked interface quad. A subtitle shows once the eyes see the scene, not under the fade it
   starts behind. The hero's own lines name him Am Shaegar (the owner: the game gives him no name at character creation,

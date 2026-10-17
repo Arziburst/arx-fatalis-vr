@@ -105,6 +105,25 @@ human_base_0028.cameraactivate none
 @nolog vr\.scene\.switch .*shown=screen
 @assert scene.meter.screenFrames eq 0
 
+# T10: the talk after the goblin fight, driven by its real trigger (the owner, 2026-10-17): the guard's death reaches
+# Kultar, the lever is pulled - Kultar walks out, camera_0080 shows him (the hero teleported) and the talk follows with
+# SPEAK -o / -po lines, no speak -c. First person from the scene's first frame to its end, never the screen
+@wait 2000
+scene meter reset
+@mark
+sendevent custom human_base_0028 "DEAD"
+@wait 3000
+sendevent action lever_0012 ""
+@until scene.kind eq entity 30s
+@assert scene.shown eq first
+@assert scene.dialogue eq true
+@log vr\.scene state=start kind=entity view=hybrid shown=first
+@until scene.active eq false 150s
+@nolog vr\.scene\.switch .*shown=screen
+@nolog vr\.scene state=start .*shown=screen
+@assert scene.meter.screenFrames eq 0
+@assert scene.subtitle.voicedLines ge 4        # Kultar's and the hero's lines of the talk played
+@assert scene.meter.unexplainedCuts eq 0
 # T8: level 5, a vision ball's camera - a shot of a far place: on the screen
 loadlevel 5
 @until area eq 5 90s

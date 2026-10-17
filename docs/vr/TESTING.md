@@ -304,9 +304,10 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `desktop-key <name> down\|up` | a key of the desktop keyboard pressed or released through SDL's event queue, the same way (#399); `<name>` as `cfg.ini` names keys (`Space`, `Escape`, `Enter`, `A` …). Works without a game window, where the `.xrs` `@key` cannot: the CI runner's session has none. One `[channel] desktop key:` log line each. Both commands' events are marked as injected (#487): a test run's window takes them, but not the real devices'; in VR the keyboard is dropped whatever its origin (`desktopKeyboard`) |
 | `real-input key <name> down\|up`, `real-input mouse at <x> <y>`, `real-input mouse button <1-3> down\|up`, `real-input mouse wheel <steps>` | the **real** mouse and keyboard (#487, Windows only): the window system's own messages (`WM_KEYDOWN`, `WM_MOUSEMOVE`, `WM_LBUTTONDOWN`, `WM_MOUSEWHEEL` …) posted by the game to its own window, so SDL reads them as it reads the real devices' - also in the CI runner's session, and without the focus that `SendInput` would need. A test run's window drops them all (`realInput` in the status); in VR a key is dropped by the VR rule first (`desktopKeyboard`). A button is posted at the cursor's position (put it there with `desktop-mouse at …`). One `[channel] real input:` log line each |
 | `vr-point left\|right entity <id> [<dx> <dy> <dz>]`, `vr-point left\|right at <x> <y> <z>` | a simulated hand (`--vr-sim` only) turned so its hidden ray (#37) points at the middle of an entity's box in the world (optionally that many game units beside it) or at a point of the world (game units, y down) — from where the hand is this frame, through the inverse of the hand's mapping into the world. Only aims: what the reticle hits and what the engine makes of it is the game's path (`vr.reticle`). Refused without the simulator, for an unknown entity, or while the reticles are off (no ray in the world) |
+| `motion reset` / `motion clear` | the motion probe (#23): `status.json` → `motion`'s totals (walked, turned, jumps) start from zero with the next frame; `clear` also forgets the `motion.records` the simulated headset's `record <name>` took. See `motion` in [status.json](#statusjson) |
 | `watch <id>` / `watch off` | report one entity's place in `status.json` → `watch` (#37): where an item is, whether it is dragged, in the scene or in an inventory |
 | `handpose left\|right <yaw> <pitch> <roll> [<x> <y> <z>]` / `handpose left\|right off` | a simulated controller for the body without one (#36): the grip pose in the same terms as `headpose` (degrees as a person says them, metres in the OpenXR LOCAL space); the body poses that arm towards it exactly as towards a located controller (`vr.body.<hand>` in the status, `source=sim`). A located controller wins over it; `off` removes it. Needs a head too (`headpose`, or a headset / `--vr-sim`), since hands are placed rigid with the head camera |
-| `vr-sim <command>` | a command of the simulated headset (#112), only in a `--vr-sim` run: `head rot 25 0 0`, `head pos 0 -0.3 0`, `action trigger right 1`, `shot <name>`, `session visible`, `fault swap-eyes on`, … — now, or `@+<n> <command>` n frames from now on its timeline. See [The simulated headset](#the-simulated-headset---vr-sim-112) |
+| `vr-sim <command>` | a command of the simulated headset (#112), only in a `--vr-sim` run: `head rot 25 0 0`, `head pos 0 -0.3 0`, `action trigger right 1`, `shot <name>`, `session visible`, `fault swap-eyes on`, … — now, or `@+<n> <command>` n frames from now on its timeline, `@+<t>ms <command>` t ms of display time from now (#23), `record <name>` (the frame's `motion` values into `motion.records`). See [The simulated headset](#the-simulated-headset---vr-sim-112) |
 | `combat on\|off` | the engine's combat mode without a key (#75): what the weapon key does — `on` draws the weapon (ready clips), `off` puts it away; a strike is then the mouse button — or, with the weapon in the VR hand, a physical swing (#39: the trigger only charges). VR has no control for it (D-019); `vr.weapon.combatMode` in the status |
 | `crouch on\|off` | the crouch toggle without an input device, for flat runs (#263): `on` crouches the character, `off` lets it stand up when there is room for its head. `player.crouchToggle` / `player.crouched` in the status |
 | `comfort auto\|on\|off` | who decides the VR comfort policy (#76, `vr::comfort()`): `auto` = the VR session (the default: view bobbing, screen shake and FOV zoom off in VR, `cfg.ini` decides in flat mode), `on` / `off` force the VR rules on or off — so a flat run can measure them. `comfort` and `camera` in the status; one `[vr] comfort:` log line per change |
@@ -457,7 +458,7 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   pose), `hit` (the ray hits something within 20 m), `onWorld` (a target for the mouse: hit, not on the panel,
   in front of the head), `ring` (asked for this frame), `shown` (in the last submitted frame), `bright` (over
   an item that can be taken), `under` (the interactive entity in reach under the ray this frame), `entity`
-  (the hover after the hysteresis: 2 frames in, 150 ms out), `distance` (game units), `pixelX` / `pixelY`
+  (the hover after the hysteresis: 10 ms in (two frames at 90 Hz, a time since #23), 150 ms out), `distance` (game units), `pixelX` / `pixelY`
   (the engine mouse for the hit: the projection with the head camera plus 16384 in x — the world band, where
   no widget of the interface is), `origin` / `direction` / `point` (the ray and its hit in the world).
 - `ui` (#34): the 2D interface under the mouse. `mouseX`, `mouseY`: the engine's mouse on the interface
@@ -676,6 +677,21 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   whether the VR rules apply (`active`) and what is allowed right now (#76). The status is written
   at the **start** of a frame, so the write that acknowledges a `comfort` command still carries the
   previous policy's camera — a check skips that sample (`comfort-check.ps1`).
+- `motion` (with `player`, #23): what the refresh-rate check compares, as the last frame left it after
+  its update (`src/vr/MotionProbe.h`, fed by the channel after every frame). Totals since `motion reset`
+  (`resets` counts them): `frames`, `seconds` (the frame clock), `walked` (horizontal units, frame by
+  frame; a step over 200 units in one frame is a teleport and not counted), `turned` (the heading's yaw,
+  signed, unwrapped), `jumps` landed and the last one's `jumpApex` (units above its take-off) and
+  `jumpSeconds` (its time above 50 cm, the crossings placed between frames - below that the engine's
+  jump hangs before it lands, #435), `airborne`. Now: `yaw`, `cameraYaw`, `cameraPitch`, `cameraTurn`
+  (the camera against the heading: the head's part, D-018), on the simulated headset `headYaw` (the
+  rig's head) and `cameraLag` (`headYaw` − `cameraTurn`: 0 when the camera is where the head is, however
+  late the frame), `bodyOffset`, `armError` (the right arm), `curl` / `curlTarget` (the free left hand's
+  index finger, degrees) and `curlSpeed` (its bend's degrees per second since the target last changed,
+  while on its way), the swing detector's `swings`, `swingKind`, `swingSpeed`, `swingPeak`, `swingJumps`,
+  `swingGaps`; `timelineMs` (the simulated display time). `motion.records.<name>`: the same values as a
+  frame named by the simulated headset's `record <name>` left them - taken after that frame was updated
+  and drawn, kept until `motion clear`, also logged as one `[channel] record <name>: {...}` line.
 - `spells` (with `player`, #155): `active` spells right now and `launched` since the level was loaded
   (the spell manager is cleared on a level change), each also by type (script names, only the types
   with a non-zero count). A spell counts as launched once it passed its own `CanLaunch` and started —
@@ -1393,6 +1409,26 @@ names the file in a `[perf] performance log:` line. `--no-perf-log` turns it off
 .\scripts\dev\perf-summary.ps1                 # the last run: this copy's isolated one if it has a log, else the owner's Saved Games
 .\scripts\dev\perf-summary.ps1 -Previous 1     # the run before it (arx-perf.1.log)
 .\scripts\dev\perf-summary.ps1 -Path <file> -Top 10
+.\scripts\dev\perf-summary.ps1 -ExpectHz 120     # the headset was set to 120 Hz: did the runtime give it, did the game keep up (#23)
+```
+
+**The display rate (#23).** The game knows one rate: in VR the runtime's predicted display period
+(`xrWaitFrame`), flat the monitor or `fps_limit`. `arx.log` names it at the start and at every change -
+the player switching the Index from 90 to 120 Hz, a simulated `vr-sim rate`:
+`[perf] display: 120.0 Hz (8.33 ms) from the runtime's predicted display period, expected 120.0 frames/s - was 90.0 Hz`
+(at most 20 changes per run). The summary groups the seconds by display rate and judges each group's
+frames against rate / `div` (MISMATCH when more than 5 % off: the game did not keep up, or nothing paced
+it); the second the rate changed in mixes both and is named, not judged. `-ExpectHz` checks the rate the
+run was meant to have. From a `refresh-rate.xrs` run on a PC busy with other work during the 120 Hz block:
+
+```
+Display rates (in VR the runtime's predicted display period; expected frames/s = rate / div):
+    90.0 Hz (11.11 ms) div 1 vr    t=0-18      19 s,   1605 frames: 86.0 frames/s of 90.0 expected: matched, 1 of 19 s under 95 %
+    82.2 Hz (12.16 ms) div 1 vr    t=19         1 s,     82 frames: the rate changed within this second (its line mixes both)
+    72.0 Hz (13.89 ms) div 1 vr    t=20-33     14 s,   1003 frames: 71.6 frames/s of 72.0 expected: matched, 0 of 14 s under 95 %
+   118.1 Hz (8.47 ms) div 1 vr    t=34         1 s,    118 frames: the rate changed within this second (its line mixes both)
+   120.0 Hz (8.33 ms) div 1 vr    t=35-49     15 s,    881 frames: 60.7 frames/s of 120.0 expected: MISMATCH, 11 of 15 s under 95 %
+Expected display rate 144.0 Hz: MISMATCH - the runtime ran at 72.0 Hz, 90.0 Hz, 120.0 Hz
 ```
 
 ```
@@ -1593,7 +1629,17 @@ add, D-014); a script with an error means flat mode, with the line named in the 
 at once, `@<frame> <command>` at that frame of the timeline, `@<a>-<b> <command>` moves the numbers
 there linearly (a ramp), `@+<n>` counts from the previous timed line. Frame 0 of the timeline is the
 first frame the game is playable (`timeline gameplay`, the default) or of the session (`timeline
-session`). Commands: `rate <hz>` (0 = no pacing), `eye-size <w> <h>`, `ipd <m>`, `fov left|right <l>
+session`). **Display time instead of frames (#23):** the same forms with `ms` — `@<t>ms`, `@<a>-<b>ms`,
+`@+<t>ms`, `@+<a>-<b>ms` — count milliseconds of the predicted display time (`@+` from the channel: from
+the frame advanced last; in a script: from the previous `ms` line's end). A frame-counted line is a
+different length of time at every rate; a timed one is the same motion at any rate. Poses are where the
+display time puts them in each frame; an `action` is what the controller held when the frame's interval
+began, so a stick pushed `@+0ms` and let go `@+500ms` is held for exactly 500 ms of frame steps;
+everything else runs at the first frame whose display time reached its time (`vr.sim.timelineMs`). On a
+busy PC a frame can come a slot or two late: a value read at a moment of a motion moves with it, a lag or
+a total does not (`refresh-rate.xrs`). `record <name>`: the test channel keeps that frame's `motion`
+values (`status.json` → `motion.records.<name>`). Commands: `rate <hz>` (0 = no pacing; also mid-run: the
+runtime's display period changes as when the player switches the headset's rate), `eye-size <w> <h>`, `ipd <m>`, `fov left|right <l>
 <r> <u> <d>` (degrees, OpenXR signs), `head pos <x> <y> <z>` (meters, the room's LOCAL space: x right,
 y up, −z forward), `head rot <yaw> <pitch> <roll>` (degrees: yaw + turns left, pitch + looks up),
 `hand left|right pos|rot …`, `hand left|right on|off`, `hand left|right fingers <thumb> <index> <middle> <ring> <little>`
@@ -1747,6 +1793,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `vr-remap` | the VR settings' remapping (#178) on the simulated Index controllers: `menu pause` + `menu vr` open the page; `jump` captured as `right.b` (a conflict with `radial_right` since #376: `conflicts` 1, shown in red), `magic_mode` as the chord `left.grip+left.a`, `crouch_toggle` as `right.stick_click:long`; the walk stick refused, a cancel. Leaves the layout saved | — |
 | `vr-remap-saved` | the saved layout read back as a start reads it: `jump` captured as `right.b` (saved), `vr-input reset` (not saved), `vr-input reload` → `remapped`, `jump` = `right.b`; `vr-input default` → the file removed, `reload` gives the default. Every #178 sequence starts and ends with the default layout: CI runs all sequences in one user directory, in any order | — |
 | `vr-settings-flat` | a plain launch (`@args --skiplogo`: the main menu) on the simulated headset — "VR" in the Options list after "Input", the VR page with the default Index layout, shots `options` and `vr-menu` (the name is from its first, flat version) | — |
+| `refresh-rate` | refresh-rate independence (#23) on `mvp-goblin-fight` — `smoke-test.ps1 -VrSim idle -Save mvp-goblin-fight -Sequence refresh-rate`: the same display-timed inputs at 90 Hz (the reference, also checked against what the inputs ask for), 72, 120 and 144 Hz (`vr-sim rate`), each switch named by the perf log (`[perf] display: 72.0 Hz (13.89 ms) from the runtime's predicted display period`). Per rate, as `record`s: the stick 500 ms forward walks the same distance within 3 % (measured 127.7–129.7 units), a 500 ms smooth turn 60° within 0.6°, the camera's lag behind the head 0 within 0.3° (D-018), the free hand's bend 720 °/s within 5 %, a jump 130 units high within 3 % and its time above 50 cm within 40 ms, a 9.4 m/s swing one swing with its peak within 5 % and a 1.2 m/s return none; each measured span first must have kept up with the rate (≥ 90 % of its frames). The swing checks fail whenever display slots are missed during a swing until #409 fixes #352. The tolerances and their reasons are in the sequence's header | — (swing: #409) |
 | `vr-turning-settings` | the VR settings' turning and height page (#260) on `mvp-new-game`: `menu pause` + `menu vr-turning` open it; the snap angle slider's dot dragged to the middle of the bar makes the snap 60°, to the right end 90° (past it still 90°, one step left 85°) at once (`vr.input.turn.snapAngle`, a `vr.settings row=angle` game event); the turning row snap → smooth → snap, the speed slider at its right end "very fast" (240) and in the middle "medium" (120), the repeat slider off → 0.25 s → off, each read back from `vr.input.turn` at once; five `menu step height right` make the character 10 cm taller; back in the game (`menu resume`) `vr.head.heightOffset` is 0.1, `vr.head.offsetY` 10 units lower and `camera.eyeAboveFeet` 10 units higher, and one push of the stick turns 90°. Leaves `vr_snap_turn_angle=90` and `vr_height_offset=0.1` in the run's `cfg.ini` | — |
 | `first-run-menu` | the main menu as a player meets it (#394, #334), a plain development launch (`@args --dev-launch`: the main menu after about a second): the flat frame has the interface's own size (918 × 689) and covers part of both eyes; the window shot is `world` in all four quarters (before the fix the top ones were the eye's flat background); every entry under the right and then the left hand's pointer (`ui.menuHover`; Resume game greyed out without a save: the mouse on it, `menuTargetEnabled` false); Load / save, Quit (No), the language page and the credits (left A back) opened and closed by clicks; Options > Interface > Crosshair turned off — `settings.crosshair` false, one click per press (`vr.pointer.clicks`); both hands behind the head: a press is muted (`offPanelPresses` + 1), nothing changes; back twice; the window resized to 1024 × 600: the interface laid out again, the window still filled, the pointer still on Options. Leaves `show_crosshair=false` in `cfg.ini` | — |
 | `readback/first-run-menu-readback` | not a sequence of its own (one level below, so `ci-smoke.ps1` never runs it on a fresh user directory; it runs it itself right after `first-run-menu`, in that sequence's user directory): the **second launch** after `first-run-menu` in the same user directory — `settings.crosshair` is `false` at the start, read from `cfg.ini`; turned on again by pointer, so the pair leaves the directory as it found it. `smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir> -- --dev-launch`, then `smoke-test.ps1 -VrSim idle -Sequence scripts\dev\xrs\readback\first-run-menu-readback.xrs -UserDir <dir> -- --dev-launch` | — |

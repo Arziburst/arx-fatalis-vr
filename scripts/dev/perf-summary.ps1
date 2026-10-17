@@ -8,6 +8,9 @@
 	hitch, a frame over 1.5 expected frame times (the display period in VR, times vr_frame_divisor). This prints:
 	  - the run: seconds, frames, mean frame time, the display rate, the display slots OpenXR saw missed, hitches,
 	    the log's own cost per frame
+	  - the display rates (#23): in VR the runtime's predicted display period, each with the frames per second the game
+	    made against the rate it should have (MISMATCH when more than 5 % off); -ExpectHz names the rate the run was meant
+	    to have
 	  - the frame budget: the mean ms per frame of each phase over the run (input, channel, load, save, update,
 	    script, physics, particles, render, textures, present, limit, vrwait, vrend, other) and its share
 	  - the worst seconds by p95, with their three largest phases
@@ -30,17 +33,24 @@
 .PARAMETER Top
 	How many worst seconds to list (default 5).
 
+.PARAMETER ExpectHz
+	The display rate(s) the run was meant to have, e.g. 120 after setting the headset to 120 Hz in SteamVR (#23): each
+	is reported matched, or MISMATCH with the rates the runtime gave instead. Without it the display rates are still
+	listed, each judged against its own frames.
+
 .EXAMPLE
 	.\scripts\dev\perf-summary.ps1                      # the last run
 	.\scripts\dev\perf-summary.ps1 -Previous 1          # the run before it
 	.\scripts\dev\perf-summary.ps1 -Path .\evidence\arx-perf.log -Top 10
+	.\scripts\dev\perf-summary.ps1 -ExpectHz 120                # the headset was set to 120 Hz: did the runtime give it?
 #>
 [CmdletBinding()]
 param(
 	[string]$Path,
 	[string]$UserDir,
 	[ValidateRange(0, 9)][int]$Previous = 0,
-	[int]$Top = 5
+	[int]$Top = 5,
+	[double[]]$ExpectHz = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -70,7 +80,7 @@ try {
 	$stream.Dispose()
 }
 
-$summary = Get-ArxPerfSummary (Read-ArxPerfLog $lines) -Top $Top
+$summary = Get-ArxPerfSummary (Read-ArxPerfLog $lines) -Top $Top -ExpectHz $ExpectHz
 # Only the file's name: the output goes into reports, and the full path carries the account name
 Format-ArxPerfSummary $summary -Path (Split-Path -Leaf $Path) | ForEach-Object { Write-Output $_ }
 exit 0

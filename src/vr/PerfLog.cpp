@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <memory>
 #include <string>
@@ -242,9 +243,43 @@ void frameBegun() {
 }
 
 void setDisplay(s64 periodUs, u32 divisor, bool vr) {
+
 	g.frame.period = periodUs;
 	g.frame.divisor = divisor;
 	g.frame.vr = vr;
+
+	// What paces the game, said once per change (#23): the runtime's display period is the only rate the game
+	// knows - a headset switched from 90 to 120 Hz, a simulated `rate`, flat mode's monitor. Changes under 1 %
+	// are the same rate (a runtime's period moves by microseconds)
+	static s64 loggedPeriod = -1;
+	static u32 loggedDivisor = 0;
+	static bool loggedVr = false;
+	const bool samePeriod = loggedPeriod >= 0 && std::abs(periodUs - loggedPeriod) * 100 <= loggedPeriod;
+	if(samePeriod && divisor == loggedDivisor && vr == loggedVr) {
+		return;
+	}
+	char line[256];
+	const double hz = periodUs > 0 ? 1e6 / double(periodUs) : 0.0;
+	const u32 div = std::max(divisor, u32(1));
+	std::snprintf(line, sizeof(line), "%.1f Hz (%.2f ms) %s, expected %.1f frames/s%s", hz, double(periodUs) / 1000.0,
+	              vr ? "from the runtime's predicted display period" : "flat: the monitor or fps_limit",
+	              hz / double(div), div > 1 ? " (vr_frame_divisor)" : "");
+	std::string was;
+	if(loggedPeriod > 0) {
+		char before[48];
+		std::snprintf(before, sizeof(before), " - was %.1f Hz", 1e6 / double(loggedPeriod));
+		was = before;
+	}
+	// Bounded: a pacing that flips every frame says so 20 times, not every frame
+	static u32 changes = 0;
+	const u32 MaxLoggedChanges = 20;
+	if(++changes <= MaxLoggedChanges) {
+		LogInfo << "[perf] display: " << (periodUs > 0 ? line : "rate unknown") << was
+		        << (changes == MaxLoggedChanges ? " (further changes are not logged)" : "");
+	}
+	loggedPeriod = periodUs;
+	loggedDivisor = divisor;
+	loggedVr = vr;
 }
 
 void addMissed(u32 slots) {

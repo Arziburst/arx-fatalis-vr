@@ -34,6 +34,7 @@ class HandReticleTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST_SUITE(HandReticleTest);
 	CPPUNIT_TEST(testHoverNeedsTwoFrames);
 	CPPUNIT_TEST(testHoverHeldBriefly);
+	CPPUNIT_TEST(testHoverInIsTheSameTimeAtEveryRate);
 	CPPUNIT_TEST(testWorldBand);
 	CPPUNIT_TEST(testPickHistory);
 	CPPUNIT_TEST(testReticleQuad);
@@ -47,6 +48,7 @@ public:
 
 	void testHoverNeedsTwoFrames();
 	void testHoverHeldBriefly();
+	void testHoverInIsTheSameTimeAtEveryRate();
 	void testWorldBand();
 	void testPickHistory();
 	void testReticleQuad();

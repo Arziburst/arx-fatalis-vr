@@ -69,6 +69,14 @@ std::string simCommand(std::string_view line);
 //! Where shots are saved (the channel's capture directory); without it, \c vrsim in the user directory
 void setSimCaptureDir(const std::string & dir);
 
+/*!
+ * \brief The \c record names due since the last call (#23), and forget them
+ *
+ * The test channel takes them after the frame was updated and drawn: a record holds the state the
+ * frame displays, at the display time its timeline line named.
+ */
+std::vector<std::string> takeSimRecords();
+
 //! One eye of a shot
 struct SimShotEye {
 	std::string file;    //!< what the eye sees, composed
@@ -107,6 +115,7 @@ struct SimStatus {
 	std::string timeline;  //!< "waiting for gameplay", "running", "done"
 	u64 frame = 0;         //!< frames the simulator paced
 	u64 timelineFrame = 0;
+	double timelineMs = 0.0; //!< the display time of that frame since the timeline started (the ms lines, #23)
 	size_t pending = 0;    //!< timeline lines not yet run
 	SimView view;
 	SimRig rig;

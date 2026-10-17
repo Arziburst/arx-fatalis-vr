@@ -20,6 +20,9 @@
 #include "vr/MeleeSwing.h"
 
 #include <algorithm>
+#include <cmath>
+#include <sstream>
+#include <string>
 
 #include <glm/glm.hpp>
 
@@ -32,6 +35,133 @@ const char * swingKindName(SwingKind kind) {
 		case SwingKind::Stab: return "stab";
 	}
 	return "none";
+}
+
+const char * contactKindName(ContactKind kind) {
+	switch(kind) {
+		case ContactKind::Slash: return "slash";
+		case ContactKind::Thrust: return "thrust";
+	}
+	return "slash";
+}
+
+const char * noSwingName(NoSwing noSwing) {
+	switch(noSwing) {
+		case NoSwing::None: return "none";
+		case NoSwing::Min: return "min";
+	}
+	return "none";
+}
+
+NoSwing parseNoSwing(std::string_view name) {
+	return name == "min" ? NoSwing::Min : NoSwing::None;
+}
+
+ContactKind contactKind(const Vec3f & velocity, const Vec3f & blade, const SwingParams & params) {
+	const float speed = glm::length(velocity);
+	if(speed <= 0.f) {
+		return ContactKind::Slash;
+	}
+	return glm::dot(velocity, blade) >= params.thrustCosine * speed ? ContactKind::Thrust : ContactKind::Slash;
+}
+
+namespace {
+
+//! 0 at \a low, 1 at \a high and above (1 from \a low on when they are the same)
+float ramp(float value, float low, float high) {
+	return high > low ? glm::clamp((value - low) / (high - low), 0.f, 1.f) : 1.f;
+}
+
+} // anonymous namespace
+
+const char * meleeClassName(MeleeClass meleeClass) {
+	switch(meleeClass) {
+		case MeleeClass::Dagger: return "dagger";
+		case MeleeClass::Sword: return "sword";
+		case MeleeClass::Blunt: return "blunt";
+		case MeleeClass::TwoHandedSword: return "2h_sword";
+		case MeleeClass::TwoHandedBlunt: return "2h_blunt";
+	}
+	return "sword";
+}
+
+MeleeRanges defaultRanges(MeleeClass meleeClass) {
+	// Research #502: a slash's hand path and lever speed from the minimum to the full strike, a stab's lunge and speed
+	switch(meleeClass) {
+		case MeleeClass::Dagger: return { { 0.25f, 0.6f, 2.f, 5.f }, { 0.2f, 0.45f, 2.f, 4.5f } };
+		case MeleeClass::Sword: return { { 0.3f, 0.8f, 2.5f, 6.f }, { 0.2f, 0.5f, 2.f, 4.f } };
+		case MeleeClass::Blunt: return { { 0.35f, 0.9f, 2.5f, 5.5f }, { 0.2f, 0.5f, 2.f, 4.f } };
+		case MeleeClass::TwoHandedSword: return { { 0.4f, 1.1f, 2.5f, 5.f }, { 0.25f, 0.5f, 2.f, 3.5f } };
+		case MeleeClass::TwoHandedBlunt: return { { 0.5f, 1.2f, 2.5f, 4.5f }, { 0.25f, 0.5f, 2.f, 3.5f } };
+	}
+	return defaultRanges(MeleeClass::Sword);
+}
+
+DamageRange parseDamageRange(std::string_view text, const DamageRange & fallback, bool * ok) {
+	if(ok) {
+		*ok = true;
+	}
+	if(text.find_first_not_of(" \t") == std::string_view::npos) {
+		return fallback;
+	}
+	std::istringstream iss{std::string(text)};
+	DamageRange range;
+	std::string rest;
+	if(!(iss >> range.pathMin >> range.pathMax >> range.speedMin >> range.speedMax) || (iss >> rest)) {
+		if(ok) {
+			*ok = false;
+		}
+		return fallback;
+	}
+	for(float value : { range.pathMin, range.pathMax, range.speedMin, range.speedMax }) {
+		if(!(value >= 0.f && value <= 20.f)) {
+			if(ok) {
+				*ok = false;
+			}
+			return fallback;
+		}
+	}
+	range.pathMax = std::max(range.pathMax, range.pathMin);
+	range.speedMax = std::max(range.speedMax, range.speedMin);
+	return range;
+}
+
+const char * qualityName(Quality quality) {
+	switch(quality) {
+		case Quality::Min: return "min";
+		case Quality::GeoMean: return "geomean";
+		case Quality::Product: return "product";
+	}
+	return "min";
+}
+
+Quality parseQuality(std::string_view name) {
+	if(name == "geomean") {
+		return Quality::GeoMean;
+	}
+	if(name == "product") {
+		return Quality::Product;
+	}
+	return Quality::Min;
+}
+
+float contactAim(const ContactMeasure & contact, const DamageParams & params) {
+	const float floor = params.noSwing == NoSwing::Min ? MinStrikeAim : 0.f;
+	const DamageRange & range = contact.kind == ContactKind::Thrust ? params.stab : params.slash;
+	const float pathMin = range.pathMin * params.pathScale;
+	const float pathMax = range.pathMax * params.pathScale;
+	if(!contact.swing || contact.speed < range.speedMin || contact.size < pathMin) {
+		return floor;
+	}
+	const float speed = ramp(contact.speed, range.speedMin, range.speedMax);
+	const float path = ramp(contact.size, pathMin, pathMax);
+	float quality = std::min(speed, path); // only a big and fast stroke is the full strike
+	if(params.quality == Quality::GeoMean) {
+		quality = std::sqrt(speed * path);
+	} else if(params.quality == Quality::Product) {
+		quality = speed * path;
+	}
+	return MinStrikeAim + (1.f - MinStrikeAim) * quality;
 }
 
 namespace {
@@ -55,8 +185,8 @@ SwingChange SwingDetector::drop() {
 	const bool was = swinging();
 	m_kind = SwingKind::None;
 	m_seeded = false;
-	m_pointCount = 0;
-	m_filteredValid = false;
+	m_count = 0;
+	m_stroke.clear();
 	m_speed = 0.f;
 	m_thrust = 0.f;
 	m_thrusts.clear();
@@ -81,9 +211,11 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 		m_lastTime = sample.time;
 		m_lastPoint = point;
 		m_lastHand = sample.hand;
-		m_points[0] = point;
+		m_hands[0] = sample.hand;
+		m_blades[0] = blade;
 		m_times[0] = sample.time;
-		m_pointCount = 1;
+		m_count = 1;
+		m_stroke.assign(1, StrokeSample{ sample.hand, blade });
 		return SwingChange::None;
 	}
 
@@ -111,22 +243,16 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 	// positions: a sample that is off and back gives two fast speeds, but its position is never the median).
 	// The median lags a sample: it moved over the step between the middle samples, not over this frame's -
 	// divided by this frame's step, a long frame followed by a short one reads a speed the hand never had (#352)
-	m_points[2] = m_points[1];
-	m_points[1] = m_points[0];
-	m_points[0] = point;
-	m_times[2] = m_times[1];
-	m_times[1] = m_times[0];
-	m_times[0] = sample.time;
-	m_pointCount = std::min<size_t>(m_pointCount + 1, 3);
-	if(m_pointCount == 3) {
-		const Vec3f filtered = median(m_points[0], m_points[1], m_points[2]);
-		const float span = float(m_times[1] - m_times[2]); // at least minStep: skipped samples never get here
-		m_speed = m_filteredValid ? glm::length(filtered - m_filtered) / span : 0.f;
-		m_filtered = filtered;
-		m_filteredValid = true;
-	} else {
-		m_speed = 0.f;
+	for(size_t i = m_hands.size() - 1; i > 0; i--) {
+		m_hands[i] = m_hands[i - 1];
+		m_blades[i] = m_blades[i - 1];
+		m_times[i] = m_times[i - 1];
 	}
+	m_hands[0] = sample.hand;
+	m_blades[0] = blade;
+	m_times[0] = sample.time;
+	m_count = std::min(m_count + 1, m_hands.size());
+	m_speed = glm::length(pointVelocity(m_params.lever));
 	if(m_speed > m_params.jumpSpeed) {
 		// A guard that cannot fire (#352): over its true span the median never outruns the raw speed of that
 		// step, already checked above (on each axis both medians lie between the two samples they share). It
@@ -136,6 +262,16 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 		update(sample, true);
 		return change;
 	}
+
+	// The stroke (#465): it starts over from the sample before while the lever point is slow outside a swing - the
+	// filtered speed lags a sample, so that one already moved
+	if(!swinging() && m_speed < m_params.endSpeed) {
+		m_stroke.assign(1, StrokeSample{ m_hands[1], m_blades[1] });
+	}
+	if(m_stroke.size() >= MaxStroke) {
+		m_stroke.erase(m_stroke.begin());
+	}
+	m_stroke.push_back(StrokeSample{ sample.hand, blade });
 
 	// The thrust along the blade within the stab window (F-61)
 	const float along = glm::dot(sample.hand - m_lastHand, blade);
@@ -181,48 +317,45 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 	return SwingChange::None;
 }
 
-float SwingDetector::factor() const {
-	const float range = m_params.fullSpeed - m_params.startSpeed;
-	const float t = range > 0.f ? glm::clamp((m_peak - m_params.startSpeed) / range, 0.f, 1.f) : 1.f;
-	return m_params.minFactor + (1.f - m_params.minFactor) * t;
+Vec3f SwingDetector::pointVelocity(float distance) const {
+	if(m_count < m_hands.size()) {
+		return Vec3f(0.f);
+	}
+	const auto point = [&](size_t i) { return m_hands[i] + m_blades[i] * distance; };
+	const Vec3f now = median(point(0), point(1), point(2));
+	const Vec3f before = median(point(1), point(2), point(3));
+	const float span = float(m_times[1] - m_times[2]); // at least minStep: skipped samples never get here
+	return (now - before) / span;
 }
 
-void StrikeCharge::update(bool held, float seconds) {
-	if(!held) {
-		m_held = false;
-		m_spent = false; // released: the next press charges again
-		m_seconds = 0.f;
-		return;
+float SwingDetector::strokePath(float distance) const {
+	float path = 0.f;
+	for(size_t i = 1; i < m_stroke.size(); i++) {
+		const Vec3f from = m_stroke[i - 1].hand + m_stroke[i - 1].blade * distance;
+		const Vec3f to = m_stroke[i].hand + m_stroke[i].blade * distance;
+		path += glm::length(to - from);
 	}
-	if(!m_held) {
-		m_held = true;
-		m_seconds = 0.f;
-	}
-	if(!m_spent) {
-		m_seconds += std::max(seconds, 0.f);
-	}
+	return path;
 }
 
-void StrikeCharge::spend() {
-	m_spent = true;
-	m_seconds = 0.f;
-	m_spends++;
+ContactMeasure measureContact(const SwingDetector & detector) {
+	ContactMeasure contact;
+	const Vec3f velocity = detector.pointVelocity(detector.params().lever);
+	contact.speed = glm::length(velocity);
+	contact.kind = contactKind(velocity, detector.blade(), detector.params());
+	contact.size = contact.kind == ContactKind::Thrust ? detector.strokeLunge(0.f) : detector.strokePath(0.f);
+	contact.swing = detector.swinging();
+	return contact;
 }
 
-float StrikeCharge::ratio(float fullSeconds) const {
-	if(!charging()) {
+float SwingDetector::strokeLunge(float distance) const {
+	if(m_stroke.size() < 2) {
 		return 0.f;
 	}
-	if(fullSeconds <= 0.f) {
-		return 1.f;
-	}
-	// The engine's StrikeAimtime: the time held against Full_AimTime, 0.1 to 1
-	return glm::clamp(m_seconds / fullSeconds, 0.1f, 1.f);
-}
-
-float strikeAim(float chargeRatio, float speedFactor, const SwingParams & params) {
-	const float base = chargeRatio > 0.f ? std::max(params.weakAim, chargeRatio) : params.weakAim;
-	return base * glm::clamp(speedFactor, 0.f, 1.f);
+	const StrokeSample & first = m_stroke.front();
+	const StrokeSample & last = m_stroke.back();
+	const Vec3f moved = (last.hand + last.blade * distance) - (first.hand + first.blade * distance);
+	return std::max(glm::dot(moved, last.blade), 0.f);
 }
 
 bool TargetCooldown::allowed(size_t target, u64 swing, double time, float cooldown) const {
@@ -230,7 +363,7 @@ bool TargetCooldown::allowed(size_t target, u64 swing, double time, float cooldo
 		if(hit.target != target) {
 			continue;
 		}
-		if(hit.swing == swing || time - hit.time < double(cooldown)) {
+		if((swing != Touch && hit.swing == swing) || time - hit.time < double(cooldown)) {
 			return false;
 		}
 	}

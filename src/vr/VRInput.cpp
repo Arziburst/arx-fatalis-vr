@@ -360,8 +360,9 @@ void updatePointer() {
 	const Event useEvents[HandCount] = { Event::UseLeft, Event::UseRight };
 	const Event stashEvents[HandCount] = { Event::StashLeft, Event::StashRight };
 	const Event interactEvents[HandCount] = { Event::InteractLeft, Event::InteractRight };
-	// The weapon hand (the right until #380) with a drawn weapon in the world: its trigger charges the strike
-	// (vr/VRMelee.h, active since the last frame) and clicks nothing (D-042); on the panel it clicks as ever
+	// The weapon hand (the right until #380) with a drawn weapon in the world: its trigger does nothing - no charge,
+	// the swing is the strike (vr/VRMelee.h, active since the last frame, #465) - and clicks nothing (D-042); on the
+	// panel it clicks as ever
 	g_input.charging = { };
 	g_input.charging[size_t(Hand::Right)] = meleeStatus().active && !g_input.rays[size_t(Hand::Right)].onPanel;
 	for(size_t hand = 0; hand < HandCount; hand++) {

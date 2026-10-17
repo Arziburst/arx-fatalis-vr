@@ -50,6 +50,18 @@ hitch (here: the 22-26 ms that come with each `Cursor escaped the window` warnin
 the runtime skip one or two display slots; the swing detector's median then moved over two or three slots and
 was divided by one frame's step (#352). **Do:** look for `H ... missed=` lines in `arx-perf.log` at the swing's
 time before suspecting the detector; #409 fixes the divisor.
+## 2026-10-17 — A changed cfg.ini default does not show in a test run (#465)
+
+**Symptom:** after `vr_melee_noswing`'s default changed from `none` to `min` in the code, `melee-damage.xrs` failed at
+`@assert vr.melee.params.noSwing eq min` (`none`) on a fresh build.
+**Cause:** the game writes every key to cfg.ini when it quits, defaults included. A working copy's test runs share one
+user dir (`userdirs\<folder>-<hash>`), so the cfg.ini of an earlier run keeps the old default, and it wins over the new
+one. The same happens to a player who ran an earlier build.
+**Do:** a sequence that needs a value sets it live (a channel command such as `melee noswing min`) instead of trusting
+the default; prove the default itself in a host test (`MeleeSwingTest::testContactAim` checks `SwingParams`), or run
+with a fresh user dir.
+
+
 ## 2026-10-14 — The Arx arm grows a second elbow in the middle of the forearm, though the IK has only one (#466.1)
 
 **Symptom:** with the Arx arms drawn (`arms arx`) the owner sees a second elbow and wants the arm one solid

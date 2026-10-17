@@ -133,6 +133,12 @@ struct StrikeContact {
 //! the targets it touched
 struct StrikeTargets {
 	std::vector<EntityHandle> skip;
+	//! VR (#465): only NPCs are touched - a blade resting on an item or a crate outside a swing does nothing to it
+	bool npcOnly = false;
+	// VR (#465): the stroke the aim ratio was measured from, for the melee.hit line
+	float speed = 0.f;           //!< m/s, the lever point's
+	float size = 0.f;            //!< m, the hand's path (a thrust: its lunge)
+	const char * kind = nullptr; //!< "slash", "thrust"; nullptr: not a VR contact
 	std::vector<StrikeContact> touched;
 };
 

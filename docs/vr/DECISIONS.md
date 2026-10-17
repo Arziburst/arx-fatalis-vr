@@ -13,6 +13,83 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-056: Melee damage comes from the swing - its size and its speed, per weapon class; no charge
+
+- **Date:** 2026-10-17
+- **Status:** Accepted (the owner's design; every number is a provisional cfg.ini default from research #502 - the
+  owner tunes them in the headset, per weapon class and later per enemy)
+- **Decided by:** the owner (#465, 2026-10-14 and 2026-10-17: "in VR, damage comes from the real swing"; refined the
+  same day, relayed by the coordinator: a touch is the minimum, size and speed together, #502's measures and numbers,
+  a quality switch and a seated path scale); the mapping by the worker of #465
+- **Supersedes:** D-038's charge (the trigger held charged the strike; a plain swing was weak) - D-038's swing detector,
+  gates, contact through the engine's check and #323's recovery times stay
+
+### Decision
+- **No charge.** The trigger of the weapon hand does nothing - held long, short or not at all, a hit is the same. The
+  HUD's hit strength gauge stays empty while the IK hand holds the weapon.
+- **A touch is the minimum.** A contact outside a swing (D-038's detector, F-61) - a touch, a tap, the blade resting on
+  an enemy, a wrist flick - deals the engine's weakest strike, 0.1 of the full one (its `StrikeAimtime` floor), like
+  the original's uncharged click: **`vr_melee_noswing=min`**, the default; `none` makes it nothing. A touch waits for
+  the weapon type's recovery (#323's 0.6 / 0.8 / 1.0 s) after any hit, so spamming stays possible but inefficient. It
+  does not restart the swing's recovery or the per-target cooldown (a blade resting in an enemy would keep a real swing
+  from ever hitting it), and it reaches NPCs only: a blade resting on an item or a crate does nothing to it.
+- **A swing's damage is its size and its speed together** (research #502's measures): the **path** the hand travelled
+  since the stroke started (the sample before the lever point last rose above the swing's end speed) - for a thrust
+  (the lever point moving within 45° of the blade's way towards the tip, F-178's 0.707) its **lunge** along the blade -
+  and the lever point's filtered **speed** at contact (0.125 m along the blade, relative to the head, #352). Each gives
+  a factor, 0 at its range's minimum and 1 at its maximum; aim (the engine's `ratioaim`) = **0.1 + 0.9 q**, q by
+  **`vr_melee_quality`**: `min` (the weaker factor, the default), `geomean`, `product` - the owner compares them. Below
+  either minimum: the touch's value. A slow big swing and a fast tiny flick both stay low; only big and fast is the full
+  strike.
+- **The ranges are per weapon class** (`vr_melee_slash_<class>` / `vr_melee_stab_<class>` = `"<path min> <path max>
+  <speed min> <speed max>"`, empty = the default; the path ranges times **`vr_melee_path_scale`**, 1.0, for seated
+  play). #502's provisional numbers (path m, speed m/s):
+
+  | class (`<class>`) | slash | stab |
+  |---|---|---|
+  | dagger (`dagger`) | 0.25 → 0.6, 2.0 → 5.0 | 0.20 → 0.45, 2.0 → 4.5 |
+  | one-handed sword (`sword`) | 0.30 → 0.8, 2.5 → 6.0 | 0.20 → 0.50, 2.0 → 4.0 |
+  | one-handed axe, club, hammer, mace (`blunt`) | 0.35 → 0.9, 2.5 → 5.5 | 0.20 → 0.50, 2.0 → 4.0 |
+  | two-handed sword, giant slayer (`2h_sword`) | 0.40 → 1.1, 2.5 → 5.0 | 0.25 → 0.50, 2.0 → 3.5 |
+  | two-handed axe, smith's club (`2h_blunt`) | 0.50 → 1.2, 2.5 → 4.5 | 0.25 → 0.50, 2.0 → 3.5 |
+
+  #502 gives no stab of its own for the one-handed and two-handed blunt weapons: they take the sword's and the
+  two-handed sword's (the coordinator, 2026-10-17). The class: a dagger or a two-handed weapon by its type; an axe, club, hammer or mace by its item class or material
+  (`vr/WeaponGrip.h`'s rule, applied to two-handed weapons too); anything else a sword.
+- **One log line per hit:** the engine's `melee.hit` with `aim` (the damage fraction), `speed`, `size` and `kind`.
+
+### Why
+- The owner: holding a button to charge is the mouse's way; in VR the arm is the strike. A touch is the uncharged
+  click; a big, fast, humanly sane slash or lunge is the full strike; either a slow or a tiny motion is little.
+- **The weaker factor by default:** each range keeps its own meaning, so the two can be tuned one at a time; a product
+  would also halve a swing that is medium in both (0.5 × 0.5). The switch lets the owner feel the others.
+- **Size up to the contact**, not of the whole stroke: the damage is dealt at contact, and the wind-up before it is what
+  makes a swing big.
+- **The hand's path and the lever's speed** (#502), not the blade's tip: a wrist flick turns a tip fast and far but is
+  no swing (F-61); the numbers of #502 are measured that way.
+- **A string key per class and kind** rather than four numbers each: 10 keys instead of 40, one readable line per
+  class; an empty value follows the code's defaults, so a cfg.ini written by an earlier build keeps no stale numbers
+  (TRAPS.md, 2026-10-17).
+- **A touch reaches NPCs only and blocks no swing:** at the minimum every recovery, a resting blade would otherwise break
+  crates (the engine damages props by the player's full damage, whatever the ratio) and keep the hand from hitting.
+- Prior art (a short look, #465): VHVR scales by speed up to full at cooldown + 5 m/s (F-63); F-178's strength is
+  (peak − min) / max; PLANCK tells a stab by the hand moving along the blade (dot ≥ 0.8, F-195); Blade & Sorcery and
+  Boneworks take the hit point's velocity from physics; research #502 for the classes' numbers.
+
+### Rules out
+The charge and the trigger's role in melee; damage from the swing's peak; damage from speed alone or size alone; a
+thrust bonus or malus (a stab has its own ranges, the same rule).
+
+### Consequences
+- cfg.ini `vr_melee_slash_<class>`, `vr_melee_stab_<class>`, `vr_melee_quality`, `vr_melee_path_scale`,
+  `vr_melee_noswing` replace `vr_melee_full_speed` and `vr_melee_weak_aim`; the `melee.charge` event and
+  `vr.melee.charge` are gone, `vr.melee.trigger` shows the trigger changing nothing; `vr.melee.touches` counts touches
+  apart from `vr.melee.hits` (swings); `vr.melee.last` has the contact's `speed`, `size` and `kind`, `vr.melee.params`
+  the class and its ranges; the channel's `melee noswing|quality|pathscale|slash|stab` sets the keys live for tests.
+- Per enemy (#502's later stage) and haptics by strength are later work.
+- `melee-damage.xrs` proves each factor, the trigger and both modes in the playground; `melee-swing.xrs` and
+  `controls-v2.xrs` no longer see a charge.
+
 ## D-055: In the menus the trigger always clicks and A is the right click; the Index grip presses at 0.70
 
 - **Date:** 2026-10-17
@@ -787,7 +864,8 @@ swaps them as a whole).
 ## D-038: Physical melee — the swing is the strike, the trigger charges it with the game's own charge
 
 - **Date:** 2026-10-10
-- **Status:** Accepted (the owner's design; the numbers are MVP defaults the owner tunes in the headset)
+- **Status:** Accepted (the owner's design; the numbers are MVP defaults the owner tunes in the headset); the charge
+  and the speed factor superseded by D-056 (#465: the damage comes from the swing's size and speed, no charge)
 - **Decided by:** the owner (after a headset fight with #75's sword, relayed by the coordinator on #39); the
   mechanism by the worker of #39; builds on D-009, D-016, D-019, D-032 (the body) and D-033 (the weapon in the IK hand, #75)
 

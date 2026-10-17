@@ -642,6 +642,9 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 			for(Entity * target : sphereContent) {
 				arx_assert(target);
 				arx_assert(target->obj);
+				if(targets && targets->npcOnly && !(target->ioflags & IO_NPC)) {
+					continue;
+				}
 				{
 					
 					bool HIT_SPARK = false;
@@ -679,10 +682,15 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 						if((target->ioflags & IO_NPC) && (io_source == entities.player() || target == entities.player())) {
 							// One per swing: a hit on an NPC (the player is one) returns true and the
 							// caller stops checking until the next swing; props would repeat every frame.
-							// damage=0 is a hit that the armour class roll turned into a miss.
-							gameevent::Event("melee.hit")("source", gameevent::entityName(io_source))
+							// damage=0 is a hit that the armour class roll turned into a miss. A VR contact adds
+							// the stroke the aim was measured from (#465)
+							gameevent::Event event("melee.hit");
+							event("source", gameevent::entityName(io_source))
 								("target", gameevent::entityName(target))("weapon", gameevent::entityName(io_weapon))
 								("damage", dmgs, 1)("aim", ratioaim, 2);
+							if(targets && targets->kind) {
+								event("speed", targets->speed, 2)("size", targets->size, 2)("kind", targets->kind);
+							}
 						}
 
 						if(target->ioflags & IO_NPC) {

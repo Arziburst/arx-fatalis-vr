@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: In the menus the trigger always clicks and A is the right click; the Index grip presses at 0.70
+## D-053: In the menus the trigger always clicks and A is the right click; the Index grip presses at 0.70
 
 - **Date:** 2026-10-17
 - **Status:** Accepted
@@ -444,7 +444,7 @@ change for the slots.
 - **Status:** Accepted; replaces D-019's button layout and D-040's stance binding and cast rule. Implemented by #375 ("Control scheme v2",
   #376–#381); each part is judged in the headset in the test playground. The radial menu and the A / B buttons were
   changed by the owner on 2026-10-14 (one ring on the right B, 3 + 3 slots, the map on the left B, the bag on the left A):
-  see "The owner's layout" at the end. Amended by D-NEW (2026-10-17, #496): no chord on a menu panel, A the menus' right
+  see "The owner's layout" at the end. Amended by D-053 (2026-10-17, #496): no chord on a menu panel, A the menus' right
   click, the Index grip at 0.70 / 0.40
 - **Decided by:** project owner (the scheme, by a design discussion with the coordinator, 2026-10-13); the coordinator
   for the defaults the owner accepted (jump threshold, eight radial segments, the quick-slot rules)
@@ -461,9 +461,9 @@ layout on both controllers (Index; on the Touch, X / Y take A / B's places):
 | **B** (upper face button), held | That hand's **radial menu**; two can be open at once. Selected by moving the hand; released, the item under the hand runs |
 | **Trigger, empty hand, no stance** | **Grab and drag** an item with that hand's reticle. Two hands drag two items at once (an engine change) |
 | **Trigger, weapon in the hand** | **Charge the strike**; the strike is that hand's swing |
-| **Grip + trigger** (grip first) | **Use / interact**: doors, levers, chests, bodies, items. Empty hand only. *In the menus (D-NEW, #496):* a hand pointing at the panel makes no chord - its trigger is the left click whatever the grip; the bag, the book and a container are in game and keep the chord |
-| **A, on a menu panel** (D-NEW, #496) | The menus' **right click** (the character creation takes a point back with it), from the pointing hand only; off the panel nothing |
-| **Grip alone** | Nothing (the model's fingers only). The Index grip is down from 0.70, up below 0.40 (D-NEW: `vr_grip_press` / `vr_grip_release`) |
+| **Grip + trigger** (grip first) | **Use / interact**: doors, levers, chests, bodies, items. Empty hand only. *In the menus (D-053, #496):* a hand pointing at the panel makes no chord - its trigger is the left click whatever the grip; the bag, the book and a container are in game and keep the chord |
+| **A, on a menu panel** (D-053, #496) | The menus' **right click** (the character creation takes a point back with it), from the pointing hand only; off the panel nothing |
+| **Grip alone** | Nothing (the model's fingers only). The Index grip is down from 0.70, up below 0.40 (D-053: `vr_grip_press` / `vr_grip_release`) |
 | **Stick click** | **Draw / sheathe** the weapon equipped in that hand |
 | **Left stick** | Walk along the look; the deflection sets sneak / walk / run (as now) |
 | **Right stick** | Left / right: turn (snap or smooth, as set). **Up: jump** (up beyond 0.7 and more than sideways, so a diagonal turn does not jump). **Down: crouch toggle** |

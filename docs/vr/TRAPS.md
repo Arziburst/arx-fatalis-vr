@@ -20,7 +20,7 @@ not fire: a chord consumes its second control.
 **Do:** the Index grip presses at 0.70 and lets go at 0.40 (`IndexGripThreshold`, cfg `vr_grip_press` /
 `vr_grip_release`): a resting hold is no grip, and a closed hand's flicker stays one hold. In the menus a hand
 pointing at the panel makes no chord at all (`ControlResolver::setChords`, `src/vr/VRInput.cpp`): its trigger
-clicks whatever the grip reads, and the menus' right click is A (D-NEW). Read the grip value in the crossing lines or `vr.input.grip` before blaming the
+clicks whatever the grip reads, and the menus' right click is A (D-053). Read the grip value in the crossing lines or `vr.input.grip` before blaming the
 pointer; `menu-trigger-grip.xrs` holds the grip at 0.55 and 0.95.
 
 ---

@@ -296,9 +296,9 @@ function Invoke-SmokeRun([int]$Run) {
 		# Shown without taking the focus (SDL hint from the environment), and never blocking on a dialog: it goes to
 		# arx.log and stderr, the crash dialog is skipped (ARXVR_NO_DIALOGS / ARX_UNATTENDED, #501) - all restored right
 		# after the start, so the shell that ran the test is unchanged
+		$foregroundBefore = Get-ArxForegroundWindow
 		$previousHint = Set-ArxBackgroundWindow
 		$previousDialogEnv = Set-ArxDialogEnv -NoDialogs
-		$foregroundBefore = Get-ArxForegroundWindow
 		try {
 			$process = Start-Process -FilePath $exe -ArgumentList $argList -PassThru `
 				-RedirectStandardOutput (Join-Path $TestDir 'stdout.txt') -RedirectStandardError (Join-Path $TestDir 'stderr.txt')

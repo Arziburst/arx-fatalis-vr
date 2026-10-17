@@ -243,10 +243,11 @@ playground pull mode
 @until playground.npcMode eq peaceful 5s
 
 # 9. A resting blade touches no world geometry - no wall sound, no durability (the engine's isHit stays false) - while
-# a swing into the wall still strikes it, once: the player 45 units before the north wall (layout.mjs: z 8400) facing
-# it, between the table (to x 8150) and the mode lever (x 8280), the dagger held into the wall slowly, then swept
-# along it
-setpos 8215 -170 8355 0
+# a swing into the wall still strikes it, once: the player before the north wall (layout.mjs: z 8400) facing it,
+# between the table (to x 8150) and the mode lever (x 8280), the dagger held into the wall slowly, then swept along it.
+# The dagger has one hit sphere, radius 15, about 89 units ahead of the player (melee.spheres): it must straddle the
+# wall's plane - 8318 puts it near z 8407; 25 units further in and it sits wholly behind the thin wall, touching nothing
+setpos 8215 -170 8318 0
 @frames 30
 vr-sim head rot 0 0 0
 vr-sim @+1-60 hand right pos 0.25 -0.35 -0.7

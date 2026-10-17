@@ -25,9 +25,11 @@ is 1390 × 1390, a 16-bit TGA loaded as RGB (3 bytes per pixel) and cut into 256
 12 of the 19 cinematics have such a last column (tile widths 50, 51, 66, 81, 86, 110, 139, 161, 199, 207); plenty
 of other RGB textures of the game do too, so the crash could have landed anywhere after the first overlay.
 **Do:** never trust global GL client state across modules: `GLTexture::upload` now sets the tight unpack state
-itself before every `glTexImage2D` and logs an `[E]` with the numbers when the state it found would have read
-past the image (`pixelstore::bytesRead`, `graphics/image/PixelStore.h`, host-tested); code that needs another
-state sets it and puts it back. A crash inside the driver under a texture upload with a page-aligned address is
+itself before every `glTexImage2D` and logs an `[E]` with the numbers when the state it found is not the tight
+one (`pixelstore::bytesRead`, `graphics/image/PixelStore.h`, host-tested) - the leak, not only the overflow: a
+check that fired only when the dirty upload itself overflowed stayed green with the leak put back, because the
+first texture after the beam happened to be RGBA and the reset hid the state from the cinematic tiles that
+followed. Code that needs another state sets it and puts it back. A crash inside the driver under a texture upload with a page-aligned address is
 an out-of-bounds read of the client buffer - compute the bytes GL reads (alignment, row length, skips) against
 the image's size before suspecting the driver. `cinematics.xrs` loads all 19 cinematics after the beam was created.
 

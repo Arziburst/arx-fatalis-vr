@@ -34,8 +34,9 @@
  * code that changes the unpack state and leaves it (the VR overlays did: alignment 4) makes GL read
  * every row at a padded stride, past the end of a buffer whose rows are not a multiple of the
  * alignment - an access violation inside the driver on a cinematic tile 110 pixels wide. So each
- * upload sets the state it needs itself, and the state it found is checked first: one that would have
- * read out of bounds is a bug of whoever left it, reported once per run with the numbers.
+ * upload sets the state it needs itself, and the state it found is checked first: any state other than
+ * the engine's tight one is a bug of whoever left it (the next upload of a vulnerable image would have
+ * crashed), reported once per run with the bytes it would have read from this image.
  */
 static void setTightUnpack(const Image & image) {
 
@@ -45,20 +46,22 @@ static void setTightUnpack(const Image & image) {
 	glGetIntegerv(GL_UNPACK_SKIP_PIXELS, &found.skipPixels);
 	glGetIntegerv(GL_UNPACK_SKIP_ROWS, &found.skipRows);
 
-	size_t bytes = pixelstore::bytesRead(image.getWidth(), image.getHeight(), image.getNumChannels(), found);
-	if(bytes > image.getSize()) {
+	const pixelstore::Unpack tight = pixelstore::tightUnpack();
+	if(found.alignment != tight.alignment || found.rowLength != tight.rowLength
+	   || found.skipPixels != tight.skipPixels || found.skipRows != tight.skipRows) {
 		static bool reported = false;
 		if(!reported) {
 			reported = true;
-			LogError << "Texture upload would read " << bytes << " bytes of a " << image.getSize() << "-byte "
-			         << image.getWidth() << 'x' << image.getHeight() << ' ' << image.getFormat()
-			         << " image: GL_UNPACK_ALIGNMENT " << found.alignment << ", ROW_LENGTH " << found.rowLength
-			         << ", SKIP_PIXELS " << found.skipPixels << ", SKIP_ROWS " << found.skipRows
-			         << " left behind by an earlier upload (#495) - reset to tight rows";
+			size_t bytes = pixelstore::bytesRead(image.getWidth(), image.getHeight(), image.getNumChannels(), found);
+			LogError << "Texture upload found GL_UNPACK_ALIGNMENT " << found.alignment << ", ROW_LENGTH "
+			         << found.rowLength << ", SKIP_PIXELS " << found.skipPixels << ", SKIP_ROWS " << found.skipRows
+			         << " left behind by an earlier upload (#495): it would read " << bytes << " bytes of a "
+			         << image.getSize() << "-byte " << image.getWidth() << 'x' << image.getHeight() << ' '
+			         << image.getFormat() << " image" << (bytes > image.getSize() ? " - past its end" : "")
+			         << "; reset to tight rows";
 		}
 	}
 
-	const pixelstore::Unpack tight = pixelstore::tightUnpack();
 	if(found.alignment != tight.alignment) {
 		glPixelStorei(GL_UNPACK_ALIGNMENT, tight.alignment);
 	}

@@ -90,8 +90,10 @@ The event check of #130, the one to re-run after touching anything that logs a g
 
 It prints the state timeline (`+1.1s state GAMEPLAY (frame 2)`), the acks, the `[E]`/`[W]` lines,
 the last lines of the log, the head of a new crash report, and `PASS` / `FAIL` with every reason.
-`-Repeat N` adds a table and a `passed X/N` line. The game runs with `ARX_UNATTENDED=1`: a crash
-writes its report and exits instead of waiting for someone to click the crash dialog.
+`-Repeat N` adds a table and a `passed X/N` line. The game runs with `ARX_UNATTENDED=1` and
+`ARXVR_NO_DIALOGS=1`: a crash writes its report and exits instead of waiting for someone to click the
+crash dialog, and any other dialog becomes a `[dialog]` line - the first failure reason of the run
+(`the game ended on a dialog: [dialog] error: ...`, [Runs without dialogs](#runs-without-dialogs-501)).
 `-EvidenceDir <dir>` keeps every **failed** run's evidence in `<dir>\runNN-<time>\` before the next run
 replaces it (#146): `arx.log`, `stdout.txt`, `stderr.txt`, `status.json`, the run's new crash reports,
 `reasons.txt` and, with `-Vr`, the SteamVR logs written during the run (`Steam\logs\vrserver*`,
@@ -145,6 +147,36 @@ read back by the second launch).
 **What it does not cover (#92, #54):** only the intro's `introduction.cin` is played and skipped on the VR screen. The
 in-game cutscenes (the forced cameras that #29 / #54 are about) are not walked by any sequence: #92 (restore cinematics
 for players) must not ship before they are covered.
+
+## Runs without dialogs (#501)
+
+The owner leaves the PC running unattended: a game started by a script, a worker or CI must never wait
+for a click. With `ARXVR_NO_DIALOGS=1` in its environment (or `ARX_UNATTENDED=1`, which the test channel
+sets) the game shows **no dialog of any kind** (`platform::dialogsDisabled`, `src/platform/Dialog.h`):
+
+- the dialog is written to `arx.log` and stderr as one line, its line breaks joined with ` | `:
+  `[E] Dialog:NNN  [dialog] error: Critical Error - Arx Fatalis VR: <message>`
+  (`[W]` for an info or a plain question);
+- it gets its default answer: a message "OK"; a question "No" / "Cancel", logged as `[answered: no]`, so
+  nothing it offers (the data installer) runs unasked;
+- after an error dialog the game exits with a failure code (`EXIT_FAILURE`), so a bad argument
+  (`arx.exe --no-such-option`) ends the run at once with code 1 and the line in stderr;
+- the crash processor inherits the variable: no crash dialog, no Explorer window.
+
+Who sets it: `launch-lib.ps1` `Set-ArxDialogEnv -NoDialogs` around the start (both variables to 1) -
+`run-windows.ps1` with `-TestChannel`, `--test-dir` or `-Isolated` (a worker's runs; `-Dialogs` keeps them),
+`smoke-test.ps1` (and `xrs-run.ps1` through it), `ci-smoke.ps1` for the whole CI job, `make-test-saves.ps1` and
+`package-tester.ps1`'s verify run. Every one puts the shell's previous values back right after the start
+(`Restore-ArxDialogEnv` in a `finally`): a smoke test never leaves a variable behind for the owner's next launch.
+The owner's launches keep the dialogs and **remove both variables** from the game's environment, whatever the shell
+holds: `run-windows.ps1` by hand or with `-Dialogs` (`Set-ArxDialogEnv` without `-NoDialogs`), `test-pr.ps1` (it
+passes `-Dialogs`, also with `-Isolated`, and clears them itself for a branch from before #501), the desktop
+shortcut (through `run-windows.ps1`) and Steam.
+
+Who reads the line: `smoke-test.ps1` checks `no dialog` and puts the `[dialog]` line first among the
+failure reasons (`Get-ArxDialogLines` / `Get-ArxDialogReason`); the [run digest](#the-run-digest-131)
+files a `[dialog]` line like a crash - when new, level C, signature from the type, title and normalised
+message (`Get-ArxDialogProblems`, issue title `Dialog: <type>: <title>: <message>`).
 
 ## The exit hook (#146)
 
@@ -708,6 +740,9 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   a walk since the start; a game event `vr.walk state=pace pace=…` each, and `pace=` on `state=start`).
 - `menuPage` (#178): the page of the main / pause menu shown — `none`, `options`, `input`, `vr`, `vr-turning`,
   `loadsave`, `interface`, `quit`, `language` (#394) or `other`; `none` outside the menu.
+- `menuRows` (#374): the rows the VR turning page shows, top to bottom, named as `menu step` / `menu drag` name
+  them — with Snap `turn,angle,repeat,height`, with Smooth `turn,speed,repeat,height` (only the active mode's
+  row shows; `step` / `drag` on the hidden one is refused); empty when that page is not open.
 - `hero` (#394, in the character creation and while a level is loaded): the attributes `strength`, `mind`,
   `dexterity`, `constitution` and the `skills` (`stealth`, `mecanism`, `intuition`, `etheral_link`,
   `object_knowledge`, `casting`, `close_combat`, `projectile`, `defense`) before modifiers, the points still to
@@ -1749,7 +1784,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `vr-remap` | the VR settings' remapping (#178) on the simulated Index controllers: `menu pause` + `menu vr` open the page; `jump` captured as `right.b` (a conflict with `radial_right` since #376: `conflicts` 1, shown in red), `magic_mode` as the chord `left.grip+left.a`, `crouch_toggle` as `right.stick_click:long`; the walk stick refused, a cancel. Leaves the layout saved | — |
 | `vr-remap-saved` | the saved layout read back as a start reads it: `jump` captured as `right.b` (saved), `vr-input reset` (not saved), `vr-input reload` → `remapped`, `jump` = `right.b`; `vr-input default` → the file removed, `reload` gives the default. Every #178 sequence starts and ends with the default layout: CI runs all sequences in one user directory, in any order | — |
 | `vr-settings-flat` | a plain launch (`@args --skiplogo`: the main menu) on the simulated headset — "VR" in the Options list after "Input", the VR page with the default Index layout, shots `options` and `vr-menu` (the name is from its first, flat version) | — |
-| `vr-turning-settings` | the VR settings' turning and height page (#260) on `mvp-new-game`: `menu pause` + `menu vr-turning` open it; the snap angle slider's dot dragged to the middle of the bar makes the snap 60°, to the right end 90° (past it still 90°, one step left 85°) at once (`vr.input.turn.snapAngle`, a `vr.settings row=angle` game event); the turning row snap → smooth → snap, the speed slider at its right end "very fast" (240) and in the middle "medium" (120), the repeat slider off → 0.25 s → off, each read back from `vr.input.turn` at once; five `menu step height right` make the character 10 cm taller; back in the game (`menu resume`) `vr.head.heightOffset` is 0.1, `vr.head.offsetY` 10 units lower and `camera.eyeAboveFeet` 10 units higher, and one push of the stick turns 90°. Leaves `vr_snap_turn_angle=90` and `vr_height_offset=0.1` in the run's `cfg.ini` | — |
+| `vr-turning-settings` | the VR settings' turning and height page (#260) on `mvp-new-game`: `menu pause` + `menu vr-turning` open it; the snap angle slider's dot dragged to the middle of the bar makes the snap 60°, to the right end 90° (past it still 90°, one step left 85°) at once (`vr.input.turn.snapAngle`, a `vr.settings row=angle` game event); the turning row snap → smooth → snap with only the active mode's row shown (#374: `menuRows` is `turn,angle,repeat,height` with Snap, `turn,speed,repeat,height` with Smooth; shots `vr-turning-smooth`, `vr-turning-snap`), the speed slider (Smooth) at its right end "very fast" (240) and in the middle "medium" (120), the repeat slider off → 0.25 s → off, each read back from `vr.input.turn` at once; five `menu step height right` make the character 10 cm taller; back in the game (`menu resume`) `vr.head.heightOffset` is 0.1, `vr.head.offsetY` 10 units lower and `camera.eyeAboveFeet` 10 units higher, and one push of the stick turns 90°. Leaves `vr_snap_turn_angle=90` and `vr_height_offset=0.1` in the run's `cfg.ini` | — |
 | `first-run-menu` | the main menu as a player meets it (#394, #334), a plain development launch (`@args --dev-launch`: the main menu after about a second): the flat frame has the interface's own size (918 × 689) and covers part of both eyes; the window shot is `world` in all four quarters (before the fix the top ones were the eye's flat background); every entry under the right and then the left hand's pointer (`ui.menuHover`; Resume game greyed out without a save: the mouse on it, `menuTargetEnabled` false); Load / save, Quit (No), the language page and the credits (left A back) opened and closed by clicks; Options > Interface > Crosshair turned off — `settings.crosshair` false, one click per press (`vr.pointer.clicks`); both hands behind the head: a press is muted (`offPanelPresses` + 1), nothing changes; back twice; the window resized to 1024 × 600: the interface laid out again, the window still filled, the pointer still on Options. Leaves `show_crosshair=false` in `cfg.ini` | — |
 | `readback/first-run-menu-readback` | not a sequence of its own (one level below, so `ci-smoke.ps1` never runs it on a fresh user directory; it runs it itself right after `first-run-menu`, in that sequence's user directory): the **second launch** after `first-run-menu` in the same user directory — `settings.crosshair` is `false` at the start, read from `cfg.ini`; turned on again by pointer, so the pair leaves the directory as it found it. `smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir> -- --dev-launch`, then `smoke-test.ps1 -VrSim idle -Sequence scripts\dev\xrs\readback\first-run-menu-readback.xrs -UserDir <dir> -- --dev-launch` | — |
 | `first-run` | the whole first run from one player launch (`@player`, #394.3): logos skipped with A and the trigger, the level 10 intro on the VR screen skipped with A in `INTRO` (before `introduction.cin`, no `cinematic.start`), the menu with no leaked click (`vr.pointer.clicks` 0), shots `intro` and `menu` in both eyes, Options > Interface > Crosshair off by pointer and back, New game, the quick generation and Done by pointer clicks, the prison (area 1, `GAMEPLAY`, `player.controlsBlocked` false) with the made hero, a left-stick walk that moves `player.z` | — |
@@ -1763,6 +1798,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `level-load-hang` | a stalled level load is reported as a hang with its stack (#440): `watchdog 1000`, `stall load 3000`, `loadlevel 1` - `[hang] main thread stalled ... last beat at level load`, `platform::stallThisThread` and the load under it in the stack, `responsive again`, level 1 loaded, `hangWatchdog.stalls` ≥ 1 ([The hang watchdog](#the-hang-watchdog-440)) | — |
 | `hud-frame` | VR without the old HUD frame (#469) on `mvp-new-game` - `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence hud-frame`: in play no panel (`vr.panel.shown` false), no pointer, none of the frame's 21 elements drawn, the quad empty (`quadPixels` 0) (`vr.hud.drawnTotal` 0); `vr-hud frame on` brings the bag and book icons back (the quad's pixels grow), `keep book` only the book; the bag and the book on the panel with nothing of the frame; `addxp` levels up: the game's level-up message is there (`notifications` > 0) but not drawn (`drawn.notifications` 0, the quad still empty), the radial Character item marked and the gold wrist notice (drawn into the eyes in the watch pose, on the arc of the open ring, a `vr.levelup` event), each `vr_levelup` mode, the notice gone after 8 s with the mark kept; the radial ring (the right B, #377's layout) opened six times over the bag and six times over the book, `vr.radial.right.shown` and `submitted` in every checked frame, `undrawn` none (#456's "ring not drawn", #474); released over nothing the bag stays open and the left A closes it, the book closes (#377). Shots `noframe`, `frame`, `bag`, `book`, `levelup-message`, `levelup-wrist`, `levelup-radial`, `ring-bag`, `ring-book` | — |
 | `hud-frame-flat` | the HUD frame flat (#469), `--no-vr` on `mvp-new-game`: the orbs, the bag, book and level-up icons and the active spells drawn as before (`vr.hud.drawn.*` > 0); a level-up counts the flat icon and draws none of the VR indication | — |
+| `cinematics` | every cinematic image uploads inside its buffer (#495) on `mvp-items`, `--cinematics`: the menu pointer's beam is created first (the RGBA overlay upload that used to leave `GL_UNPACK_ALIGNMENT` 4 behind), then all 19 `.cin` of data.pak are started through the script command `cine <name>` and skipped with B; `GLTexture::upload` logs an `[E]` when the pixel-store state it finds is not the engine's tight one (with the bytes it would have read from that image), so the check is `errors eq 0`, 19 `cinematic.start` / `cinematic.end`; with the leak put back the run is red at the first upload after the beam | — |
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
 `scripts\dev\test-xrs.ps1` (a fake game answering the channel files; in `run-script-tests.ps1`, so in CI).
@@ -1958,6 +1994,7 @@ launch rules D-014 / #147). What keeps their runs apart — all derived from the
 | the PC (GPU, desktop) and the headset | the game lock below: one game at a time, flat or VR |
 | SteamVR | nobody but the owner starts it: a launch without `--no-vr` is made flat while `vrserver.exe` is not running; `-StartSteamVR` is the owner's switch |
 | the owner's focus, mouse and keyboard | every test run (`--test-dir`: the smoke test, `xrs-run.ps1`, CI, `run-windows.ps1 -TestChannel`) is shown by the game itself without activation, never activated (`WS_EX_NOACTIVATE`), in the bottom right corner, and takes no real mouse or keyboard and never moves the real cursor (#487, `window.activation`, `realInput` in the status); the smoke test fails a run whose window holds the foreground (`foreground after the start` / `before the quit`). The owner's own launches (`test-pr.ps1`, `run-windows.ps1` without `-TestChannel`, the desktop shortcut) are unchanged. `run-windows.ps1 -Background` still sets `SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN` for a launch without the channel |
+| a message box nobody clicks | every scripted launch runs without dialogs (`ARXVR_NO_DIALOGS=1`, #501): a dialog becomes a `[dialog]` line in `arx.log` and stderr, an error exits the game with a failure code - see [Runs without dialogs](#runs-without-dialogs-501). The owner's launches keep them |
 | who launched what | the ledger `%LOCALAPPDATA%\ArxFatalisVR\launches.log`, one line per launch; `cycle-report.ps1` → `LAUNCHES` |
 
 **The game lock** (`scripts/launch-lib.ps1`): `%ProgramData%\ArxFatalisVR\locks\game-<n>.lock` (slots

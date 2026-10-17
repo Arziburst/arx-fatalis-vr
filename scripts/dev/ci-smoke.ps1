@@ -144,6 +144,9 @@ function Invoke-Phase([string]$Name, $Script, [hashtable]$Params, [string]$Evide
 }
 
 $results = @()
+# Nobody clicks a dialog on the runner (#501): every game of this job writes it to arx.log and stderr instead (the
+# phases set it for their own launches too); the shell gets its variables back at the end
+$previousDialogEnv = Set-ArxDialogEnv -NoDialogs
 try {
 	if ($Phase -in 'all', 'smoke') {
 		$p = @{ Config = $Config; Seconds = 3; Commands = @('loadlevel 1', 'loadlevel 10', 'drawcheck 120'); LockTimeoutSec = $LockTimeoutSec } + $dataArgs
@@ -220,6 +223,7 @@ try {
 		}
 	}
 } finally {
+	Restore-ArxDialogEnv $previousDialogEnv
 	# Never leave a game behind - but only ours: the ones that run from this working copy's build directory
 	foreach ($proc in Get-Process arx -ErrorAction SilentlyContinue) {
 		if ($proc.Path -and $proc.Path.StartsWith($buildDir, [StringComparison]::OrdinalIgnoreCase)) {

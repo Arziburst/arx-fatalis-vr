@@ -19,6 +19,7 @@
  
 #include "platform/Dialog.h"
 
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -39,6 +40,7 @@
 #endif
 
 #include "core/Version.h"
+#include "io/log/Logger.h"
 #include "platform/Process.h"
 #include "platform/WindowsUtils.h"
 #include "util/String.h"
@@ -462,28 +464,57 @@ static bool showDialog(DialogType type, const std::string & message,
 
 #endif
 
+static std::atomic<bool> g_errorDialogSuppressed = false;
+
+bool dialogsDisabled() {
+	return dialogsDisabledBy(std::getenv("ARXVR_NO_DIALOGS"), std::getenv("ARX_UNATTENDED"));
+}
+
+bool errorDialogSuppressed() {
+	return g_errorDialogSuppressed;
+}
+
+// Show the dialog - or, in a run without dialogs (#501), log it as one line and give its default answer
+static bool showOrLogDialog(DialogType type, const std::string & message, const std::string & title) {
+	
+	if(!dialogsDisabled()) {
+		return showDialog(type, message, title);
+	}
+	
+	// The console logger writes warnings and errors to stderr. A warning question carries a critical
+	// error (CriticalErrorDialog with an exit question): it is an error too.
+	if(type == DialogError || type == DialogWarnYesNo) {
+		LogError << formatDialogLine(type, title, message);
+		g_errorDialogSuppressed = true;
+	} else {
+		LogWarning << formatDialogLine(type, title, message);
+	}
+	
+	return dialogDefaultAnswer(type);
+}
+
 void showInfoDialog(const std::string & message, const std::string & title) {
-	showDialog(DialogInfo, message, title);
+	showOrLogDialog(DialogInfo, message, title);
 }
 
 void showWarningDialog(const std::string & message, const std::string & title) {
-	showDialog(DialogWarning, message, title);
+	showOrLogDialog(DialogWarning, message, title);
 }
 
 void showErrorDialog(const std::string & message, const std::string & title) {
-	showDialog(DialogError, message, title);
+	showOrLogDialog(DialogError, message, title);
 }
 
 bool askYesNo(const std::string & question, const std::string & title) {
-	return showDialog(DialogYesNo, question, title);
+	return showOrLogDialog(DialogYesNo, question, title);
 }
 
 bool askYesNoWarning(const std::string & question, const std::string & title) {
-	return showDialog(DialogWarnYesNo, question, title);
+	return showOrLogDialog(DialogWarnYesNo, question, title);
 }
 
 bool askOkCancel(const std::string & question, const std::string & title) {
-	return showDialog(DialogOkCancel, question, title);
+	return showOrLogDialog(DialogOkCancel, question, title);
 }
 
 } // namespace platform

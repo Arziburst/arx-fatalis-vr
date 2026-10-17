@@ -258,13 +258,14 @@ try {
 	if ($simScript) { $argList += '--vr-sim', "`"$simScript`""; $launchArgs += '--vr-sim', (Split-Path -Leaf $simScript) }
 	if ($Verify) { $argList += '--loadslot', '0'; $launchArgs += '--loadslot', '0' }
 	Write-Host "=== arx.exe $($argList -join ' ')" -ForegroundColor Cyan
-	$env:ARX_UNATTENDED = '1'
 	$launchTime = Get-Date
 	$previousHint = Set-ArxBackgroundWindow
+	# No dialog blocks the run: it goes to arx.log and stderr (#501); the shell gets its variables back after the start
+	$previousDialogEnv = Set-ArxDialogEnv -NoDialogs
 	try {
 		$process = Start-Process -FilePath (Join-Path $BuildDir 'arx.exe') -ArgumentList $argList -PassThru `
 			-RedirectStandardOutput (Join-Path $TestDir 'stdout.txt') -RedirectStandardError (Join-Path $TestDir 'stderr.txt')
-	} finally { Restore-ArxBackgroundWindow $previousHint }
+	} finally { Restore-ArxBackgroundWindow $previousHint; Restore-ArxDialogEnv $previousDialogEnv }
 	Set-ArxGameLockGame $lock $process.Id
 
 	$firstState = if ($Verify) { 'GAMEPLAY' } else { 'MENU' }

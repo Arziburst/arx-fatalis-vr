@@ -180,12 +180,40 @@ function Get-ArxLogProblems($Run) {
 	$groups = [ordered]@{}
 	foreach ($e in $Run.Entries) {
 		if ($e.Level -notin 'W', 'E', 'C') { continue }
+		if ($e.Text.StartsWith('[dialog] ')) { continue }   # Get-ArxDialogProblems
 		$norm = ConvertTo-ArxNormalizedText $e.Text
 		$key = "$($e.Level)|$($e.Context)|$norm"
 		if (-not $groups.Contains($key)) {
 			$groups[$key] = [pscustomobject]@{
 				Hash = Get-ArxHash $key; Kind = 'log'; Level = $e.Level; Source = "$($e.Context):$($e.Line)"; Context = $e.Context
 				Message = $e.Text; Normalized = $norm; Count = 0; First = $e.Index; Lines = $e.Raw
+				Allowed = $false; IsNew = $false; Runs = 0; Issue = $null; Action = ''
+			}
+		}
+		$groups[$key].Count++
+	}
+	@($groups.Values)
+}
+
+# --- Dialogs ----------------------------------------------------------------------------------------------------
+
+# A run without dialogs (#501) writes each dialog as one line "[dialog] <type>: <title>: <message>[ [answered: no]]":
+# the game stopped on it (an error dialog exits the game), so it is filed like a crash - when new, level C. The
+# signature is the type, the title and the normalised message, so the same failure in another run is one problem.
+function Get-ArxDialogProblems($Run) {
+	$groups = [ordered]@{}
+	foreach ($e in $Run.Entries) {
+		if (-not $e.Text.StartsWith('[dialog] ')) { continue }
+		$line = ($e.Text -replace "`n.*", '').Trim()
+		$m = [regex]::Match($line, '^\[dialog\] ([\w-]+): (.*?)(?: \[answered: \w+\])?$')
+		$type = if ($m.Success) { $m.Groups[1].Value } else { 'unknown' }
+		$text = if ($m.Success) { $m.Groups[2].Value } else { $line }
+		$norm = ConvertTo-ArxNormalizedText $text
+		$key = "dialog|$type|$norm"
+		if (-not $groups.Contains($key)) {
+			$groups[$key] = [pscustomobject]@{
+				Hash = Get-ArxHash $key; Kind = 'dialog'; Level = 'C'; Source = "$($e.Context):$($e.Line)"; Context = $e.Context
+				DialogType = $type; Message = $line; Normalized = $key; Count = 0; First = $e.Index; Lines = $e.Raw
 				Allowed = $false; IsNew = $false; Runs = 0; Issue = $null; Action = ''
 			}
 		}
@@ -396,7 +424,15 @@ function Format-ArxDigest($Info) {
 	$null = $o.AppendLine("- **Log:** $($Info.Run.Path) ($($Info.Run.Entries.Count) lines of this run); copy: ``arx.log`` next to this file")
 	$errors = @($Info.Problems | Where-Object { $_.Level -in 'E', 'C' })
 	$warnings = @($Info.Problems | Where-Object { $_.Level -eq 'W' })
-	$null = $o.AppendLine("- **Problems:** $($errors.Count) error signature(s) ($(@($errors | Where-Object IsNew).Count) new), $($warnings.Count) warning signature(s) ($(@($warnings | Where-Object IsNew).Count) new), $(@($Info.Crashes).Count) crash report(s)").AppendLine()
+	$null = $o.AppendLine("- **Problems:** $($errors.Count) error signature(s) ($(@($errors | Where-Object IsNew).Count) new), $($warnings.Count) warning signature(s) ($(@($warnings | Where-Object IsNew).Count) new), $(@($Info.Dialogs).Count) dialog(s), $(@($Info.Crashes).Count) crash report(s)").AppendLine()
+
+	if ($Info.Dialogs) {
+		$null = $o.AppendLine('## Dialogs (the game stopped on them; #501)').AppendLine()
+		foreach ($d in $Info.Dialogs) {
+			$null = $o.AppendLine("- ``$($d.Message)`` - $($d.Count) time(s), signature ``$($d.Hash)``: $($d.Action)$(if ($d.Issue) { ", issue #$($d.Issue)" })")
+		}
+		$null = $o.AppendLine()
+	}
 
 	if ($Info.Crashes) {
 		$null = $o.AppendLine('## Crash reports').AppendLine()
@@ -481,15 +517,16 @@ function Invoke-ArxRunDigest(
 		} while ((Get-Date) -lt $until)
 	}
 	$problems = @(Get-ArxLogProblems $run)
+	$dialogs = @(Get-ArxDialogProblems $run)
 	$crashes = @(Get-ArxNewCrashReports $crashDir $started)
-	$all = @($problems) + @($crashes | ForEach-Object { $_ | Add-Member -NotePropertyName Allowed -NotePropertyValue $false -PassThru | Add-Member -NotePropertyName IsNew -NotePropertyValue $false -PassThru | Add-Member -NotePropertyName Runs -NotePropertyValue 0 -PassThru | Add-Member -NotePropertyName Issue -NotePropertyValue $null -PassThru | Add-Member -NotePropertyName Action -NotePropertyValue '' -PassThru | Add-Member -NotePropertyName First -NotePropertyValue -1 -PassThru })
+	$all = @($problems) + @($dialogs) + @($crashes | ForEach-Object { $_ | Add-Member -NotePropertyName Allowed -NotePropertyValue $false -PassThru | Add-Member -NotePropertyName IsNew -NotePropertyValue $false -PassThru | Add-Member -NotePropertyName Runs -NotePropertyValue 0 -PassThru | Add-Member -NotePropertyName Issue -NotePropertyValue $null -PassThru | Add-Member -NotePropertyName Action -NotePropertyValue '' -PassThru | Add-Member -NotePropertyName First -NotePropertyValue -1 -PassThru })
 	$allow = Read-ArxAllowList
 	Update-ArxSignatures -Problems $all -RunId $runId -Banner $banner -AllowList $allow -NoReport:$NoReport | Out-Null
 
 	# One root cause often logs several lines, and a broken build can log hundreds: new issues per run are capped;
 	# the rest stay in the digest and are filed by a later run if they come back
 	$newIssues = 0
-	foreach ($p in (@($crashes) + @($problems))) {
+	foreach ($p in (@($crashes) + @($dialogs) + @($problems))) {
 		if ($p.Action -eq 'file' -and ++$newIssues -gt $script:ArxMaxNewIssuesPerRun) {
 			$p.Action = "new, not filed: more than $script:ArxMaxNewIssuesPerRun new problems in one run (a later run files it if it comes back)"
 		}
@@ -497,7 +534,7 @@ function Invoke-ArxRunDigest(
 
 	$info = [pscustomobject]@{
 		RunId = $runId; Run = $run; Source = $Source; ExitCode = $ExitCode; DurationSec = $DurationSec; CleanShutdown = $clean
-		Problems = $problems; Crashes = $crashes; All = $all; Condensed = Get-ArxCondensed $run; Dir = ''; Queued = 0; Copy = $Copy
+		Problems = $problems; Dialogs = $dialogs; Crashes = $crashes; All = $all; Condensed = Get-ArxCondensed $run; Dir = ''; Queued = 0; Copy = $Copy
 	}
 
 	# The run folder
@@ -519,7 +556,7 @@ function Invoke-ArxRunDigest(
 	[IO.File]::WriteAllText((Join-Path $dir 'digest.json'), ($json | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
 
 	# Queue the reports
-	foreach ($p in (@($crashes) + @($problems))) {
+	foreach ($p in (@($crashes) + @($dialogs) + @($problems))) {
 		if ($p.Action -notin 'file', 'comment') { continue }
 		Add-ArxPendingReport $info $p
 		$info.Queued++
@@ -533,7 +570,9 @@ function Invoke-ArxRunDigest(
 function Get-ArxIssueTitle($P) {
 	$msg = (ConvertTo-ArxNormalizedText ($P.Message -replace "`n.*", '')) -replace '<path>', '...'
 	if ($msg.Length -gt 90) { $msg = $msg.Substring(0, 87) + '...' }
-	if ($P.Kind -eq 'crash') { "Crash: $($P.Title) at $(Protect-ArxText $P.Source)" } else { "[$($P.Level)] $($P.Context): $msg" }
+	if ($P.Kind -eq 'crash') { "Crash: $($P.Title) at $(Protect-ArxText $P.Source)" }
+	elseif ($P.Kind -eq 'dialog') { "Dialog: $(Protect-ArxText ($msg -replace '^\[dialog\] ', ''))" }
+	else { "[$($P.Level)] $($P.Context): $msg" }
 }
 
 function Get-ArxIssueBody($Info, $P) {
@@ -553,6 +592,10 @@ function Get-ArxIssueBody($Info, $P) {
 		$null = $o.AppendLine('```').AppendLine()
 		$null = $o.AppendLine("The full report (``crash.txt``, ``crash.dmp``) and the log are in the reporter's run folder ``runs\$($Info.RunId)``; ask the owner if you need them.").AppendLine()
 	} else {
+		if ($P.Kind -eq 'dialog') {
+			$null = $o.AppendLine("## Dialog ($($P.DialogType)) - the game stopped on it in a run without dialogs (#501)").AppendLine().AppendLine('```')
+			$null = $o.AppendLine((Protect-ArxText $P.Message)).AppendLine('```').AppendLine()
+		}
 		$null = $o.AppendLine('## Log excerpt (around the first occurrence)').AppendLine().AppendLine('```')
 		$null = $o.AppendLine((Protect-ArxText (Get-ArxExcerpt $Info.Run $P.First)))
 		$null = $o.AppendLine('```').AppendLine()
@@ -715,7 +758,7 @@ function Write-ArxDigestSummary($Info) {
 	$errors = @($Info.All | Where-Object { $_.Level -in 'E', 'C' })
 	$warnings = @($Info.All | Where-Object { $_.Level -eq 'W' })
 	Write-Host "==> Run digest: $(Join-Path $Info.Dir 'digest.md')" -ForegroundColor Cyan
-	Write-Host "    $(if ($b.Commit) { "$($b.Commit.Substring(0, [Math]::Min(9, $b.Commit.Length))) on $($b.Branch)" } else { 'build unknown (no banner)' }), exit $(if ($null -ne $Info.ExitCode) { $Info.ExitCode } else { '?' }), $(Format-ArxDuration $Info.DurationSec), $(if ($Info.CleanShutdown) { 'clean shutdown' } else { 'NO clean shutdown' }); errors $($errors.Count) ($(@($errors | Where-Object { $_.IsNew -and -not $_.Allowed }).Count) new), warnings $($warnings.Count) ($(@($warnings | Where-Object { $_.IsNew -and -not $_.Allowed }).Count) new), crashes $(@($Info.Crashes).Count)"
+	Write-Host "    $(if ($b.Commit) { "$($b.Commit.Substring(0, [Math]::Min(9, $b.Commit.Length))) on $($b.Branch)" } else { 'build unknown (no banner)' }), exit $(if ($null -ne $Info.ExitCode) { $Info.ExitCode } else { '?' }), $(Format-ArxDuration $Info.DurationSec), $(if ($Info.CleanShutdown) { 'clean shutdown' } else { 'NO clean shutdown' }); errors $($errors.Count) ($(@($errors | Where-Object { $_.IsNew -and -not $_.Allowed }).Count) new), warnings $($warnings.Count) ($(@($warnings | Where-Object { $_.IsNew -and -not $_.Allowed }).Count) new), dialogs $(@($Info.Dialogs).Count), crashes $(@($Info.Crashes).Count)"
 	foreach ($p in ($Info.All | Where-Object { $_.IsNew -and -not $_.Allowed } | Select-Object -First 5)) {
 		$msg = $p.Message -replace "`n.*", ''
 		if ($msg.Length -gt 100) { $msg = $msg.Substring(0, 97) + '...' }

@@ -79,6 +79,9 @@ constexpr float ViewMaxSpeed = 180.f;   //!< units per second the view's height 
 constexpr float ViewMaxLag = 60.f;      //!< units a fall may leave the view above the body before it pulls it along
 constexpr float ViewCatchUp = 360.f;    //!< units per second a lag beyond \ref ViewMaxLag left by a jump's arc closes at
 constexpr float ViewTeleport = 150.f;   //!< the body's feet moving more than this in one frame are a cut, not travel
+//! units a landing may be off the take-off and still be the same floor: the collision brings the feet back to a few
+//! units of where they were (1.3 measured on CI after a strafe, #416), and the view does not follow that
+constexpr float ViewLandBand = 5.f;
 //! units the levitating character's eye is above its standing eye: the player model's eye in its levitation pose
 //! (the camera motion catalog of #416: 30.5); the collision cylinder does not move, the model floats over it
 constexpr float LevitateEyeRise = 30.f;
@@ -91,6 +94,7 @@ struct StableViewParams {
 	float maxLag = ViewMaxLag;
 	float catchUp = ViewCatchUp;
 	float teleport = ViewTeleport;
+	float landBand = ViewLandBand;
 };
 
 //! The body this frame
@@ -110,6 +114,7 @@ struct StableView {
 	bool jumping = false;   //!< a jump was under way last frame
 	float takeoffY = 0.f;   //!< the view's feet at the take-off of the current jump
 	float lagCap = ViewMaxLag; //!< the lag allowed now: above \ref ViewMaxLag only while a jump's arc closes
+	bool landed = false;    //!< the last jump came down within \ref ViewLandBand of its take-off: the view keeps that floor
 	u64 cuts = 0;           //!< teleports and first frames: the view jumped to the body
 
 	//! The camera's height, engine y

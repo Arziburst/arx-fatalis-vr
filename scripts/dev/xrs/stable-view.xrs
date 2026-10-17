@@ -237,7 +237,7 @@ view meter report after-strafe
 @assert camera.motion.maxOffYawStep le 0.01
 
 # The level jump (the default): the body goes up and down, the view does not move at all
-view meter reset
+view meter reset; view trace 300                # the per-frame body and view feet in arx.log ([vr] view trace:), for a CI failure here
 vr-input stick right 0 0.9; vr-input down right.stick_up   # jump: right stick up (D-042, #377)
 @until player.jumping eq true 2s
 vr-input up right.stick_up; vr-input stick right 0 0

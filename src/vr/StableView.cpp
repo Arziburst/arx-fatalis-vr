@@ -115,6 +115,7 @@ void updateStableView(StableView & view, const StableViewInput & input, const St
 		view.bodyFeetY = input.feetY;
 		view.jumping = input.jumping;
 		view.takeoffY = input.feetY;
+		view.landed = false;
 		view.lagCap = params.maxLag;
 		view.cuts++;
 		return;
@@ -126,13 +127,25 @@ void updateStableView(StableView & view, const StableViewInput & input, const St
 
 	if(input.jumping && !view.jumping) {
 		view.takeoffY = view.feetY;
+		view.landed = false;
+	}
+	// A jump that comes down on the floor it left - within the landing band: the collision does not put the feet
+	// back to the unit - leaves the view where it was, until the body really goes elsewhere
+	if(!input.jumping && view.jumping && std::abs(input.feetY - view.takeoffY) <= params.landBand) {
+		view.landed = true;
+	}
+	if(view.landed && std::abs(input.feetY - view.takeoffY) > params.landBand) {
+		view.landed = false;
 	}
 	view.jumping = input.jumping;
 
-	// Where the view's feet go: the body's feet - in a level jump never above the take-off (engine y is down)
+	// Where the view's feet go: the body's feet - in a level jump never above the take-off (engine y is down) nor
+	// below it within the landing band, and the take-off's floor after a landing on it
 	float target = input.feetY;
 	if(input.jumping && params.jump == JumpView::Level) {
-		target = std::max(input.feetY, view.takeoffY);
+		target = (input.feetY - view.takeoffY > params.landBand) ? input.feetY : view.takeoffY;
+	} else if(view.landed) {
+		target = view.takeoffY;
 	}
 	const float feetBefore = view.feetY;
 	view.feetY = moveTowards(view.feetY, target, maxStep);

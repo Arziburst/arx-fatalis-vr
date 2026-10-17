@@ -26,6 +26,7 @@
 #include <glm/glm.hpp>
 
 #include "animation/AnimationRender.h"
+#include "core/Config.h"
 #include "core/GameEvent.h"
 #include "game/Entity.h"
 #include "game/EntityManager.h"
@@ -35,6 +36,7 @@
 #include "io/log/Logger.h"
 #include "scene/Object.h"
 #include "vr/ArmIK.h"
+#include "vr/VRArms.h"
 #include "vr/VRBody.h"
 #include "vr/WeaponGrip.h"
 
@@ -52,6 +54,12 @@ struct HeldWeaponState {
 	VertexId tip;
 	bool corrected = false;
 	glm::quat correction = glm::quat(1.f, 0.f, 0.f, 0.f);
+	// The glove's frame (#385.10): the blade's axis, its handle and edge in the mesh, the class the anchor is read by
+	Vec3f bladeAxis = Vec3f(0.f, 0.f, 1.f);
+	WeaponHandle handle;
+	WeaponClass weaponClass = WeaponClass::Sword;
+	glm::quat placedRotation = glm::quat(1.f, 0.f, 0.f, 0.f); //!< the last placement's rotation (the draw, the melee)
+	bool placedInGlove = false;                                //!< and its frame
 	// The arm layer (F-67)
 	bool suppressedBefore = false;
 	std::string animationBefore;
@@ -79,6 +87,11 @@ const char * weaponKind(const Entity * weapon) {
 	return "none";
 }
 
+//! A weapon the IK hand holds: a dagger, a one- or two-handed weapon (bows are left to the engine)
+bool isMeleeWeapon(const Entity * weapon) {
+	return weapon && (weapon->type_flags & (OBJECT_TYPE_DAGGER | OBJECT_TYPE_1H | OBJECT_TYPE_2H));
+}
+
 //! The player's link holding \a weapon, or nullptr
 const EERIE_LINKED * findLink(const EERIE_3DOBJ * obj, const Entity * weapon) {
 	if(!obj || !weapon) {
@@ -90,6 +103,18 @@ const EERIE_LINKED * findLink(const EERIE_3DOBJ * obj, const Entity * weapon) {
 		}
 	}
 	return nullptr;
+}
+
+/*!
+ * The weapon this module holds, resolved again through the player's weapon slot: a load (`loadslot`, a quick
+ * load) frees the entities before the next updateHeldWeapon, and the kept pointer would dangle (#210)
+ */
+Entity * heldEntity() {
+	if(!g_weapon.inHand || !g_weapon.weapon) {
+		return nullptr;
+	}
+	Entity * equipped = entities.get(player.equiped[EQUIP_SLOT_WEAPON]);
+	return equipped == g_weapon.weapon ? equipped : nullptr;
 }
 
 void noteState(const char * state, const char * reason, const Entity * weapon) {
@@ -134,21 +159,65 @@ void measure(Entity * weapon, const EERIE_LINKED & link) {
 	g_weapon.tip = VertexId(blade.tip);
 	g_weapon.correction = bladeOntoHandle(blade.axis, frame->thumb);
 	g_weapon.corrected = true;
+	// For the glove's frame (#385.10): the handle the fingers close on, the edge, the anchor's class
+	g_weapon.bladeAxis = blade.axis;
+	g_weapon.handle = weaponHandleFromMesh(vertices, blade);
+	g_weapon.weaponClass = weaponClassOf((weapon->type_flags & OBJECT_TYPE_DAGGER) != 0,
+	                                     (weapon->type_flags & OBJECT_TYPE_2H) != 0, weapon->className(),
+	                                     weapon->weaponmaterial);
 
 	status.measured = true;
 	status.bladeLength = blade.length;
 	status.assetAngle = angleDegrees(blade.axis, frame->thumb);
 	status.correction = status.assetAngle;
+	status.weaponClass = weaponClassName(g_weapon.weaponClass);
+	status.handleLength = g_weapon.handle.length;
 
 	std::ostringstream text;
 	text << std::fixed << std::setprecision(1) << "blade " << blade.length << " units, the asset's blade "
 	     << status.assetAngle << " deg from the handle axis (knuckles " << angleDegrees(blade.axis, frame->knuckles)
-	     << ", palm " << angleDegrees(blade.axis, frame->palm) << ")";
+	     << ", palm " << angleDegrees(blade.axis, frame->palm) << "); class " << status.weaponClass << " (material \""
+	     << weapon->weaponmaterial << "\"), handle " << g_weapon.handle.length << " units from the pommel end "
+	     << g_weapon.handle.pommel << (g_weapon.handle.guardFound ? " to the guard" : " (no guard found)") << ", radius "
+	     << g_weapon.handle.radius;
 	LogInfo << "[vr] weapon: " << weapon->idString() << " (" << weaponKind(weapon) << ", " << obj->vertexlist.size()
 	        << " vertices, attach vertex " << size_t(link.lidx2) << "): " << text.str()
 	        << " - turned onto the handle (grip -Z)";
 	gameevent::Event("vr.weapon.grip")("item", weapon->idString())("bladeLength", blade.length)
-		("assetAngle", status.assetAngle);
+		("assetAngle", status.assetAngle)("class", status.weaponClass)("handle", g_weapon.handle.length);
+}
+
+/*!
+ * The held weapon is drawn from the glove's hilt frame (#385.10): the model draws our glove and the right one was
+ * posed this frame; else (arx, a glove that did not load) from the Arx hand as before
+ */
+const CustomArmStatus * gloveHiltFrame() {
+	if(!armsModelInfo().glove || !customArmDrawn(Hand::Right)) {
+		return nullptr;
+	}
+	const CustomArmStatus & glove = customArmStatus(Hand::Right);
+	return glove.hiltFrame ? &glove : nullptr;
+}
+
+//! The sword's tilt in use (cfg.ini vr_sword_tilt): only a sword leans; the other classes are held along the handle
+float appliedTilt() {
+	return g_weapon.weaponClass == WeaponClass::Sword ? swordTiltVariant(config.input.vrSwordTilt) : 0.f;
+}
+
+//! The weapon mesh to the world in the glove: the blade along the glove's handle line, the edge to its knuckles, tilted
+glm::quat gloveRotation(const CustomArmStatus & glove) {
+	GloveHilt hilt;
+	hilt.centre = glove.hiltCentre;
+	hilt.axis = glove.hiltAxis;
+	hilt.knuckles = glove.knuckles;
+	return weaponInGlove(g_weapon.bladeAxis, g_weapon.handle.edge, hilt, appliedTilt());
+}
+
+//! The anchor (the point of the handle on the glove's grip axis) in the mesh, off the attach vertex; \a scale the weapon's
+Vec3f anchorInMesh(const CustomArmStatus & glove, float scale) {
+	const WeaponHandle & handle = g_weapon.handle;
+	const float offset = weaponAnchorOffset(g_weapon.weaponClass, handle.length, glove.handWidth / std::max(scale, 1e-3f));
+	return handle.centre + g_weapon.bladeAxis * (handle.pommel + offset);
 }
 
 } // anonymous namespace
@@ -168,10 +237,10 @@ void updateHeldWeapon() {
 	status.item = weapon ? weapon->idString() : std::string();
 	status.kind = weaponKind(weapon);
 
-	const bool melee = weapon && (weapon->type_flags & (OBJECT_TYPE_DAGGER | OBJECT_TYPE_1H | OBJECT_TYPE_2H));
+	const bool melee = isMeleeWeapon(weapon);
 	const bool driven = playerBodyStatus().hands[size_t(Hand::Right)].posed;
 
-	if(melee && driven) {
+	if(melee && driven && !status.sheathed) {
 		const EERIE_LINKED * link = findLink(io->obj, weapon);
 		if(!link || link->lidx != io->obj->fastaccess.primary_attach) {
 			ARX_EQUIPMENT_AttachPlayerWeaponToHand();
@@ -210,15 +279,46 @@ void updateHeldWeapon() {
 	status.inHand = false;
 	status.place = weapon ? "engine" : "none";
 	noteState(weapon ? "engine" : "none",
-	          !weapon ? "no weapon equipped" : !melee ? "not a melee weapon" : "the right arm is the engine's", weapon);
+	          !weapon ? "no weapon equipped" : !melee ? "not a melee weapon"
+	          : status.sheathed ? "sheathed" : "the right arm is the engine's", weapon);
 }
 
-bool heldWeaponRotation(const Entity * linked, glm::quat & rotation) {
+const char * toggleHeldWeapon() {
+
+	HeldWeaponStatus & status = g_weapon.status;
+	Entity * weapon = entities.get(player.equiped[EQUIP_SLOT_WEAPON]);
+	const char * result = "no_weapon";
+	if(isMeleeWeapon(weapon) && weapon->obj) {
+		status.sheathed = !status.sheathed;
+		status.toggles++;
+		result = status.sheathed ? "sheathed" : "drawn";
+	}
+	gameevent::Event("vr.weapon.toggle")("result", result)
+		("item", weapon ? weapon->idString() : std::string("none"))("kind", weaponKind(weapon));
+	return result;
+}
+
+bool heldWeaponTransform(const Entity * linked, Vec3f & attach, glm::quat & rotation) {
 	if(!g_weapon.inHand || !linked || linked != g_weapon.weapon || !g_weapon.corrected
 	   || linked->obj != g_weapon.measuredObject) {
 		return false;
 	}
-	rotation = rotation * g_weapon.correction;
+	const CustomArmStatus * glove = gloveHiltFrame();
+	if(!glove || !g_weapon.handle.valid) {
+		rotation = rotation * g_weapon.correction;
+		g_weapon.placedRotation = rotation;
+		g_weapon.placedInGlove = false;
+		return true;
+	}
+	// The anchor on the glove's hold point: the engine draws vertex v at attach + rotation * (v + origin - attach
+	// vertex) * scale (AnimationRender.cpp), so the attach point is chosen to put the anchor (off the attach vertex)
+	// there
+	const EERIE_3DOBJ * obj = linked->obj;
+	const float scale = linked->scale;
+	rotation = gloveRotation(*glove);
+	attach = glove->hiltCentre - rotation * ((anchorInMesh(*glove, scale) + obj->vertexlist[obj->origin].v) * scale);
+	g_weapon.placedRotation = rotation;
+	g_weapon.placedInGlove = true;
 	return true;
 }
 
@@ -248,20 +348,21 @@ bool suppressArmAnimation(const Entity * io, const std::string & armAnimation) {
 }
 
 Entity * weaponInHand() {
-	return g_weapon.inHand ? g_weapon.weapon : nullptr;
+	return heldEntity();
 }
 
 bool placeHeldWeapon(Vec3f & hilt, Vec3f & tip) {
 
-	if(!g_weapon.inHand || !g_weapon.weapon) {
+	const Entity * weapon = heldEntity();
+	if(!weapon) {
 		return false;
 	}
 	Entity * io = entities.player();
 	if(!io || !io->obj || !io->obj->m_skeleton) {
 		return false;
 	}
-	const EERIE_LINKED * link = findLink(io->obj, g_weapon.weapon);
-	if(!link || !link->lgroup || !link->obj || link->obj != g_weapon.weapon->obj) {
+	const EERIE_LINKED * link = findLink(io->obj, weapon);
+	if(!link || !link->lgroup || !link->obj || link->obj != weapon->obj) {
 		return false;
 	}
 	EERIE_3DOBJ * obj = link->obj;
@@ -271,8 +372,9 @@ bool placeHeldWeapon(Vec3f & hilt, Vec3f & tip) {
 
 	// As Cedric_AnimateDrawEntityRender draws the player's linked objects
 	glm::quat rotation = io->obj->m_skeleton->bones[link->lgroup].anim.quat;
-	heldWeaponRotation(link->io, rotation);
-	TransformInfo t(io->obj->vertexWorldPositions[link->lidx].v, rotation, link->io ? link->io->scale : 1.f);
+	Vec3f attach = io->obj->vertexWorldPositions[link->lidx].v;
+	heldWeaponTransform(link->io, attach, rotation);
+	TransformInfo t(attach, rotation, link->io ? link->io->scale : 1.f);
 	t.pos = t(obj->vertexlist[obj->origin].v - obj->vertexlist[link->lidx2].v);
 	DrawEERIEInter_ModelTransform(obj, t);
 
@@ -285,27 +387,55 @@ const HeldWeaponStatus & heldWeaponStatus() {
 
 	HeldWeaponStatus & status = g_weapon.status;
 	status.drawn = false;
+	status.frame = (gloveHiltFrame() && g_weapon.handle.valid) ? "glove" : "arx";
+	status.tilt = swordTiltVariant(config.input.vrSwordTilt);
 	if(!g_weapon.inHand || !g_weapon.weapon || !status.measured) {
 		return status; // nothing held yet: before the player entity exists, entities.player() must not be asked
 	}
+	const Entity * weapon = heldEntity();
 	Entity * io = entities.player();
 	const HandFrame * frame = handRestFrame(Hand::Right);
-	if(!io || !io->obj || !frame) {
+	if(!weapon || !io || !io->obj || !frame) {
 		return status;
 	}
-	const EERIE_3DOBJ * obj = g_weapon.weapon->obj;
+	const EERIE_3DOBJ * obj = weapon->obj;
 	if(!obj || obj != g_weapon.measuredObject || obj->vertexWorldPositions.size() != obj->vertexlist.size()) {
 		return status;
 	}
-	const EERIE_LINKED * link = findLink(io->obj, g_weapon.weapon);
+	const EERIE_LINKED * link = findLink(io->obj, weapon);
 	if(!link || !link->lgroup || !io->obj->m_skeleton) {
 		return status;
 	}
 
 	status.hilt = obj->vertexWorldPositions[g_weapon.attach].v;
 	status.tip = obj->vertexWorldPositions[g_weapon.tip].v;
-	const glm::quat & hand = io->obj->m_skeleton->bones[link->lgroup].anim.quat;
-	status.bladeGrip = directionInGrip(status.tip - status.hilt, hand, handToGrip(*frame));
+	const CustomArmStatus * glove = g_weapon.placedInGlove ? gloveHiltFrame() : nullptr;
+	if(glove) {
+		// In the glove (#385.10): the blade read in the controller grip's own axes, the drawn anchor against the glove's
+		// hold point now, the drawn edge against its knuckles
+		status.bladeGrip = directionInGrip(status.tip - status.hilt, glove->hiltGrip, quat_identity());
+		const float scale = weapon->scale;
+		const Vec3f anchor = status.hilt + g_weapon.placedRotation * (anchorInMesh(*glove, scale) * scale);
+		status.hiltToGrip = glm::distance(anchor, glove->hiltCentre);
+		const Vec3f blade = g_weapon.placedRotation * g_weapon.bladeAxis;
+		const Vec3f edge = g_weapon.placedRotation * g_weapon.handle.edge;
+		status.edgeToKnuckles = angleDegrees(edge - blade * glm::dot(edge, blade),
+		                                     glove->knuckles - blade * glm::dot(glove->knuckles, blade));
+		status.anchor = weaponAnchorOffset(g_weapon.weaponClass, g_weapon.handle.length,
+		                                   glove->handWidth / std::max(scale, 1e-3f)) * scale;
+		status.handWidth = glove->handWidth;
+		status.tiltApplied = appliedTilt();
+		status.frame = "glove";
+	} else {
+		status.frame = "arx";
+		const glm::quat & hand = io->obj->m_skeleton->bones[link->lgroup].anim.quat;
+		status.bladeGrip = directionInGrip(status.tip - status.hilt, hand, handToGrip(*frame));
+		status.hiltToGrip = 0.f;
+		status.edgeToKnuckles = 0.f;
+		status.anchor = 0.f;
+		status.handWidth = 0.f;
+		status.tiltApplied = 0.f;
+	}
 	if(glm::length(status.bladeGrip) > 0.f) {
 		status.bladeGrip = glm::normalize(status.bladeGrip);
 	}

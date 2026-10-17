@@ -1,0 +1,60 @@
+# The custom arm's elbow and shoulder (#385.3): the shots arms-roll does not take - the right hand held at chest
+# height ahead, pulled in to the chest (the tightest bend, drawn at most 150 degrees), reached out almost straight,
+# and ahead with the hand rolled, each seen from above so the elbow and the shoulder seam are in the picture.
+# status.json vr.body.right.custom: the sleeve's last ring meets the glove's cuff (wristGap), the drawn bend is
+# clamped (drawnBend), the logical arm is untouched (error).
+#   .\scripts\dev\xrs-run.ps1 arms-elbow
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence arms-elbow -Save mvp-new-game
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+# The custom arms: a test-only model since #466 (classic is the default) until #486 removes it
+arms custom
+@frames 5
+@assert vr.body.armsModel eq custom
+
+vr-sim head rot 0 -65 0
+vr-sim hand left off
+
+# 1. Ahead at chest height, the fingers forward: a right-angle bend below the eyes
+vr-sim hand right pos 0.12 -0.2 -0.35
+vr-sim hand right rot 0 90 0
+@frames 15
+@assert vr.body.right.posed eq true
+@assert vr.body.right.error lt 1
+@assert vr.body.right.custom.drawn eq true
+@assert vr.body.right.custom.wristGap lt 0.5
+@shot elbow-ahead
+
+# 2. Pulled in to the chest: the tightest bend; the sleeve is drawn bent at most 150 degrees
+vr-sim hand right pos 0.06 -0.12 -0.1
+@frames 15
+@assert vr.body.right.custom.drawn eq true
+@assert vr.body.right.custom.drawnBend lt 150.5
+@assert vr.body.right.custom.wristGap lt 0.5
+@shot elbow-tight
+
+# 3. Reached out, nearly straight
+vr-sim hand right pos 0.2 -0.3 -0.55
+@frames 15
+@assert vr.body.right.custom.drawn eq true
+@assert vr.body.right.custom.drawnBend lt 60
+@assert vr.body.right.custom.wristGap lt 0.5
+@shot elbow-straight
+
+# 4. Ahead again with the hand rolled a quarter turn each way: the twist goes into the forearm, not the elbow
+vr-sim hand right pos 0.12 -0.2 -0.35
+vr-sim hand right rot 90 0 90
+@frames 15
+@assert vr.body.right.custom.wristGap lt 0.5
+@shot elbow-roll090
+vr-sim hand right rot -90 0 -90
+@frames 15
+@assert vr.body.right.custom.wristGap lt 0.5
+@shot elbow-roll-090
+
+@assert errors eq 0

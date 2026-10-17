@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <map>
@@ -38,9 +39,14 @@
 #include "io/fs/Filesystem.h"
 #include "io/fs/SystemPaths.h"
 #include "io/log/Logger.h"
+#include "platform/ExitTrace.h"
 #include "platform/ProgramOptions.h"
 #include "platform/Thread.h"
 #include "platform/Time.h"
+
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+#include <windows.h>
+#endif
 
 #if ARX_HAVE_OPENXR
 #include "vr/FingerCurl.h"
@@ -129,6 +135,7 @@ struct SimRuntime {
 	XrSessionState state = XR_SESSION_STATE_UNKNOWN;
 	bool running = false;
 	bool exitRequested = false;
+	bool runtimeEnds = false; //!< the script's "session exiting": exiting follows xrEndSession (#146)
 	std::deque<XrEventDataBuffer> events;
 
 	std::vector<std::string> paths; //!< XrPath n is paths[n - 1]
@@ -139,6 +146,8 @@ struct SimRuntime {
 	std::set<u64> actionSets;
 	bool attached = false;
 	std::map<u64, size_t> handTrackers; //!< XR_EXT_hand_tracking trackers by handle: the hand (#305)
+	//! The motion range the game asked for last per hand (XR_EXT_hand_joints_motion_range, #385.7): 0 none
+	std::array<u32, 2> motionRange = { { 0, 0 } };
 
 	// The frame loop
 	u64 frames = 0;
@@ -324,6 +333,7 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrEnumerateInstanceExtensionProperties(const 
 	const struct { const char * name; uint32_t version; } extensions[] = {
 		{ XR_KHR_OPENGL_ENABLE_EXTENSION_NAME, XR_KHR_opengl_enable_SPEC_VERSION },
 		{ XR_EXT_HAND_TRACKING_EXTENSION_NAME, XR_EXT_hand_tracking_SPEC_VERSION },
+		{ XR_EXT_HAND_JOINTS_MOTION_RANGE_EXTENSION_NAME, XR_EXT_hand_joints_motion_range_SPEC_VERSION },
 	};
 	*count = uint32_t(std::size(extensions));
 	if(capacity == 0) {
@@ -343,7 +353,8 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrEnumerateInstanceExtensionProperties(const 
 XRAPI_ATTR XrResult XRAPI_CALL sim_xrCreateInstance(const XrInstanceCreateInfo * info, XrInstance * instance) {
 	for(uint32_t i = 0; i < info->enabledExtensionCount; i++) {
 		if(std::strcmp(info->enabledExtensionNames[i], XR_KHR_OPENGL_ENABLE_EXTENSION_NAME) != 0
-		   && std::strcmp(info->enabledExtensionNames[i], XR_EXT_HAND_TRACKING_EXTENSION_NAME) != 0) {
+		   && std::strcmp(info->enabledExtensionNames[i], XR_EXT_HAND_TRACKING_EXTENSION_NAME) != 0
+		   && std::strcmp(info->enabledExtensionNames[i], XR_EXT_HAND_JOINTS_MOTION_RANGE_EXTENSION_NAME) != 0) {
 			LogError << "[vr] sim: the game asks for the extension " << info->enabledExtensionNames[i]
 			         << ", which the simulator does not have - add it to vr/VRSimulator.cpp";
 			return XR_ERROR_EXTENSION_NOT_PRESENT;
@@ -398,6 +409,20 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrLocateHandJointsEXT(XrHandTrackerEXT tracke
 	}
 	const size_t hand = it->second;
 	const SimRig & rig = g_sim->sim.rig;
+	// XR_EXT_hand_joints_motion_range (#385.7): the range asked for, said once per change. The simulated hand
+	// holds no real handle, so the conforming joints are the script's hand as it is
+	u32 range = 0;
+	for(const XrBaseInStructure * next = static_cast<const XrBaseInStructure *>(info->next); next; next = next->next) {
+		if(next->type == XR_TYPE_HAND_JOINTS_MOTION_RANGE_INFO_EXT) {
+			range = u32(reinterpret_cast<const XrHandJointsMotionRangeInfoEXT *>(next)->handJointsMotionRange);
+		}
+	}
+	if(range != g_sim->motionRange[hand]) {
+		g_sim->motionRange[hand] = range;
+		LogInfo << "[vr] sim: the " << (hand == 0 ? "left" : "right") << " hand's joints are asked for "
+		        << (range == XR_HAND_JOINTS_MOTION_RANGE_CONFORMING_TO_CONTROLLER_EXT ? "conforming to the controller"
+		            : range == XR_HAND_JOINTS_MOTION_RANGE_UNOBSTRUCTED_EXT ? "unobstructed" : "with no motion range");
+	}
 	locations->isActive = XR_FALSE;
 	Vec3f basePosition(0.f);
 	glm::quat baseOrientation(1.f, 0.f, 0.f, 0.f);
@@ -410,11 +435,13 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrLocateHandJointsEXT(XrHandTrackerEXT tracke
 	HandShape shape;
 	shape.thumb = rig.fingers[hand].curl.x;
 	shape.index = rig.fingers[hand].curl.y;
-	shape.fingers = rig.fingers[hand].curl.z;
+	shape.middle = rig.fingers[hand].curl.z;
+	shape.ring = rig.fingers[hand].outer.x;
+	shape.little = rig.fingers[hand].outer.y;
 	const HandJoints joints = synthesizeHandJoints(Hand(hand), shape, rig.hands[hand].position, rig.hands[hand].orientation());
 	for(uint32_t i = 0; i < locations->jointCount; i++) {
 		Vec3f position = joints.position[i];
-		glm::quat orientation = rig.hands[hand].orientation();
+		glm::quat orientation = joints.orientation[i]; // the joint's own OpenXR frame (#385.7)
 		poseInSpace(basePosition, baseOrientation, position, orientation);
 		locations->jointLocations[i].pose = toPose(position, orientation);
 		locations->jointLocations[i].radius = 0.01f;
@@ -431,7 +458,12 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrGetInstanceProperties(XrInstance /* instanc
 	return XR_SUCCESS;
 }
 
+void runRequests();
+
 XRAPI_ATTR XrResult XRAPI_CALL sim_xrPollEvent(XrInstance /* instance */, XrEventDataBuffer * event) {
+	// The game polls every frame, with a session or without: commands sent after the runtime ended the
+	// session (#146: "runtime lost", "fault exit") still run
+	runRequests();
 	if(g_sim->events.empty()) {
 		return XR_EVENT_UNAVAILABLE;
 	}
@@ -540,6 +572,7 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrCreateSession(XrInstance /* instance */, co
 	g_sim->session = true;
 	g_sim->running = false;
 	g_sim->exitRequested = false;
+	g_sim->runtimeEnds = false;
 	g_sim->state = XR_SESSION_STATE_IDLE;
 	*session = sessionHandle();
 	setState(XR_SESSION_STATE_READY);
@@ -581,7 +614,7 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrEndSession(XrSession /* session */) {
 	}
 	g_sim->running = false;
 	setState(XR_SESSION_STATE_IDLE);
-	if(g_sim->exitRequested) {
+	if(g_sim->exitRequested || g_sim->runtimeEnds) {
 		setState(XR_SESSION_STATE_EXITING);
 	}
 	return XR_SUCCESS;
@@ -694,6 +727,16 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrCreateSwapchain(XrSession /* session */, co
 		return XR_ERROR_SWAPCHAIN_FORMAT_UNSUPPORTED;
 	}
 
+	// As SteamVR answered on the owner's Index (#376): a swapchain asked for while an image of another one is
+	// acquired is refused - the radial menu's image made in the frame, with the flat frame's image acquired
+	for(const auto & other : g_sim->swapchains) {
+		if(other.second.acquired >= 0) {
+			logFailure("xrCreateSwapchain while an image of another swapchain is acquired: XR_ERROR_RUNTIME_FAILURE,"
+			           " as SteamVR answers");
+			return XR_ERROR_RUNTIME_FAILURE;
+		}
+	}
+
 	SimSwapchain s;
 	s.format = info->format;
 	s.size = Vec2i(s32(info->width), s32(info->height));
@@ -788,6 +831,56 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrReleaseSwapchainImage(XrSwapchain swapchain
 
 // --- The frame loop -----------------------------------------------------------------------------
 
+//! The runtime ends the session on its own, as the script's "session exiting|loss-pending" and "runtime lost" ask (#146)
+void endSessionFromRuntime(SimSessionEnd how) {
+
+	if(how == SimSessionEnd::RuntimeLost) {
+		LogInfo << "[vr] sim: the runtime shuts down (instance loss pending)";
+		XrEventDataInstanceLossPending event = { XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING };
+		event.lossTime = nowNs();
+		queueEvent(&event, sizeof(event));
+		return;
+	}
+
+	if(!g_sim->session) {
+		LogWarning << "[vr] sim: no session for the runtime to end";
+		return;
+	}
+
+	if(how == SimSessionEnd::LossPending) {
+		LogInfo << "[vr] sim: the session is about to be lost (loss pending)";
+		setState(XR_SESSION_STATE_LOSS_PENDING);
+		return;
+	}
+
+	// As a runtime quitting the app: down to stopping; xrEndSession then goes idle and exiting
+	LogInfo << "[vr] sim: the runtime ends the session (stopping, exiting after xrEndSession)";
+	g_sim->runtimeEnds = true;
+	if(!g_sim->running) {
+		setState(XR_SESSION_STATE_EXITING);
+		return;
+	}
+	if(g_sim->state == XR_SESSION_STATE_FOCUSED) {
+		setState(XR_SESSION_STATE_VISIBLE);
+	}
+	setState(XR_SESSION_STATE_SYNCHRONIZED);
+	setState(XR_SESSION_STATE_STOPPING);
+}
+
+//! The script's "fault exit|exit-process <code>": the process ends the way #146 ended, for the exit hook to report
+[[noreturn]] void exitAsFault(SimExit how, int code) {
+	const bool exitProcess = (how == SimExit::ExitProcess);
+	LogInfo << "[vr] sim: fault: the process ends with " << (exitProcess ? "ExitProcess(" : "std::exit(") << code << ")";
+	if(exitProcess) {
+		#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+		ExitProcess(UINT(code));
+		#else
+		std::_Exit(code);
+		#endif
+	}
+	std::exit(code);
+}
+
 void runRequests() {
 
 	SimRequests requests = g_sim->sim.takeRequests();
@@ -829,11 +922,17 @@ void runRequests() {
 	if(requests.profileChanged) {
 		profileChanged();
 	}
+	if(requests.sessionEnd != SimSessionEnd::None) {
+		endSessionFromRuntime(requests.sessionEnd);
+	}
 	if(requests.quit) {
-		LogInfo << "[vr] sim: the script asks the game to quit";
+		platform::logQuitRequest("the simulated headset's script (vr-sim quit)");
 		if(mainApp) {
 			mainApp->quit();
 		}
+	}
+	if(requests.exit != SimExit::None) {
+		exitAsFault(requests.exit, requests.exitCode);
 	}
 }
 

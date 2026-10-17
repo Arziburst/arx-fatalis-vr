@@ -60,11 +60,12 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell",
+        "matcher": "Bash|PowerShell|SendMessage",
         "hooks": [
           {
             "type": "command",
             "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"E:/dev/arx-fatalis-vr/coordinator/core/scripts/hooks/safety-guard.ps1\"",
+            "onFailure": "block",
             "timeout": 10
           }
         ]

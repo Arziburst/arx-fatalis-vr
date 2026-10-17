@@ -22,7 +22,8 @@
 .PARAMETER Model
 	The worker's model (CORE section 7; plan-next.ps1 suggests it). Required by the core.
 .PARAMETER Effort
-	The effort, written into the brief (the CLI has no confirmed effort flag for --bg).
+	The effort (the contract's budget.effort): written into the brief and passed to the session as claude --effort
+	(through the core's -Effort); without it the session takes the user's modelSettings default for its model.
 .PARAMETER PermissionMode
 	auto (default) or acceptEdits. bypassPermissions is refused by the core script.
 .PARAMETER ReportTo
@@ -100,6 +101,7 @@ $briefFile = Join-Path ([IO.Path]::GetTempPath()) "arxvr-brief-$Issue.md"
 $coreArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $core 'scripts\start-worker.ps1'),
 	'-Repo', $repoRoot, '-LaunchFrom', $repoRoot, '-Name', "#$Issue worker: $title", '-Branch', $branch,
 	'-Model', $Model, '-ReportTo', $ReportTo, '-BriefFile', $briefFile, '-Safety', (Join-Path $coord 'worker-settings.json'), '-Mode', $PermissionMode)
+if ($Effort) { $coreArgs += @('-Effort', $Effort) }
 if ($DryRun) { $coreArgs += '-DryRun' }
 & (Get-Process -Id $PID).Path @coreArgs
 exit $LASTEXITCODE

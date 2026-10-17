@@ -90,8 +90,10 @@ The event check of #130, the one to re-run after touching anything that logs a g
 
 It prints the state timeline (`+1.1s state GAMEPLAY (frame 2)`), the acks, the `[E]`/`[W]` lines,
 the last lines of the log, the head of a new crash report, and `PASS` / `FAIL` with every reason.
-`-Repeat N` adds a table and a `passed X/N` line. The game runs with `ARX_UNATTENDED=1`: a crash
-writes its report and exits instead of waiting for someone to click the crash dialog.
+`-Repeat N` adds a table and a `passed X/N` line. The game runs with `ARX_UNATTENDED=1` and
+`ARXVR_NO_DIALOGS=1`: a crash writes its report and exits instead of waiting for someone to click the
+crash dialog, and any other dialog becomes a `[dialog]` line - the first failure reason of the run
+(`the game ended on a dialog: [dialog] error: ...`, [Runs without dialogs](#runs-without-dialogs-501)).
 `-EvidenceDir <dir>` keeps every **failed** run's evidence in `<dir>\runNN-<time>\` before the next run
 replaces it (#146): `arx.log`, `stdout.txt`, `stderr.txt`, `status.json`, the run's new crash reports,
 `reasons.txt` and, with `-Vr`, the SteamVR logs written during the run (`Steam\logs\vrserver*`,
@@ -145,6 +147,36 @@ read back by the second launch).
 **What it does not cover (#92, #54):** only the intro's `introduction.cin` is played and skipped on the VR screen. The
 in-game cutscenes (the forced cameras that #29 / #54 are about) are not walked by any sequence: #92 (restore cinematics
 for players) must not ship before they are covered.
+
+## Runs without dialogs (#501)
+
+The owner leaves the PC running unattended: a game started by a script, a worker or CI must never wait
+for a click. With `ARXVR_NO_DIALOGS=1` in its environment (or `ARX_UNATTENDED=1`, which the test channel
+sets) the game shows **no dialog of any kind** (`platform::dialogsDisabled`, `src/platform/Dialog.h`):
+
+- the dialog is written to `arx.log` and stderr as one line, its line breaks joined with ` | `:
+  `[E] Dialog:NNN  [dialog] error: Critical Error - Arx Fatalis VR: <message>`
+  (`[W]` for an info or a plain question);
+- it gets its default answer: a message "OK"; a question "No" / "Cancel", logged as `[answered: no]`, so
+  nothing it offers (the data installer) runs unasked;
+- after an error dialog the game exits with a failure code (`EXIT_FAILURE`), so a bad argument
+  (`arx.exe --no-such-option`) ends the run at once with code 1 and the line in stderr;
+- the crash processor inherits the variable: no crash dialog, no Explorer window.
+
+Who sets it: `launch-lib.ps1` `Set-ArxDialogEnv -NoDialogs` around the start (both variables to 1) -
+`run-windows.ps1` with `-TestChannel`, `--test-dir` or `-Isolated` (a worker's runs; `-Dialogs` keeps them),
+`smoke-test.ps1` (and `xrs-run.ps1` through it), `ci-smoke.ps1` for the whole CI job, `make-test-saves.ps1` and
+`package-tester.ps1`'s verify run. Every one puts the shell's previous values back right after the start
+(`Restore-ArxDialogEnv` in a `finally`): a smoke test never leaves a variable behind for the owner's next launch.
+The owner's launches keep the dialogs and **remove both variables** from the game's environment, whatever the shell
+holds: `run-windows.ps1` by hand or with `-Dialogs` (`Set-ArxDialogEnv` without `-NoDialogs`), `test-pr.ps1` (it
+passes `-Dialogs`, also with `-Isolated`, and clears them itself for a branch from before #501), the desktop
+shortcut (through `run-windows.ps1`) and Steam.
+
+Who reads the line: `smoke-test.ps1` checks `no dialog` and puts the `[dialog]` line first among the
+failure reasons (`Get-ArxDialogLines` / `Get-ArxDialogReason`); the [run digest](#the-run-digest-131)
+files a `[dialog]` line like a crash - when new, level C, signature from the type, title and normalised
+message (`Get-ArxDialogProblems`, issue title `Dialog: <type>: <title>: <message>`).
 
 ## The exit hook (#146)
 
@@ -1955,6 +1987,7 @@ launch rules D-014 / #147). What keeps their runs apart — all derived from the
 | the PC (GPU, desktop) and the headset | the game lock below: one game at a time, flat or VR |
 | SteamVR | nobody but the owner starts it: a launch without `--no-vr` is made flat while `vrserver.exe` is not running; `-StartSteamVR` is the owner's switch |
 | the owner's focus, mouse and keyboard | every test run (`--test-dir`: the smoke test, `xrs-run.ps1`, CI, `run-windows.ps1 -TestChannel`) is shown by the game itself without activation, never activated (`WS_EX_NOACTIVATE`), in the bottom right corner, and takes no real mouse or keyboard and never moves the real cursor (#487, `window.activation`, `realInput` in the status); the smoke test fails a run whose window holds the foreground (`foreground after the start` / `before the quit`). The owner's own launches (`test-pr.ps1`, `run-windows.ps1` without `-TestChannel`, the desktop shortcut) are unchanged. `run-windows.ps1 -Background` still sets `SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN` for a launch without the channel |
+| a message box nobody clicks | every scripted launch runs without dialogs (`ARXVR_NO_DIALOGS=1`, #501): a dialog becomes a `[dialog]` line in `arx.log` and stderr, an error exits the game with a failure code - see [Runs without dialogs](#runs-without-dialogs-501). The owner's launches keep them |
 | who launched what | the ledger `%LOCALAPPDATA%\ArxFatalisVR\launches.log`, one line per launch; `cycle-report.ps1` → `LAUNCHES` |
 
 **The game lock** (`scripts/launch-lib.ps1`): `%ProgramData%\ArxFatalisVR\locks\game-<n>.lock` (slots

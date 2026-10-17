@@ -133,14 +133,23 @@ struct StrikeContact {
 //! the targets it touched
 struct StrikeTargets {
 	std::vector<EntityHandle> skip;
-	//! VR (#465): only NPCs are touched - a blade resting on an item or a crate outside a swing does nothing to it
-	bool npcOnly = false;
+	/*!
+	 * VR (#465): a touch outside a swing - it reaches only NPCs that fight the player (a resting blade does nothing to
+	 * an item, a crate, a friend or a merchant) and never the world's geometry (no wall sound, no durability)
+	 */
+	bool touch = false;
 	// VR (#465): the stroke the aim ratio was measured from, for the melee.hit line
 	float speed = 0.f;           //!< m/s, the lever point's
 	float size = 0.f;            //!< m, the hand's path (a thrust: its lunge)
 	const char * kind = nullptr; //!< "slash", "thrust"; nullptr: not a VR contact
 	std::vector<StrikeContact> touched;
 };
+
+/*!
+ * \return true for an NPC fighting the player: in its fight behaviour with the player as its target - what a VR touch
+ *         may reach (#465; the target alone is not enough: a merchant or a friend looks at the player too)
+ */
+bool fightsPlayer(const Entity & target);
 
 bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ratioaim, long flags,
                                 EntityHandle targ = EntityHandle(), StrikeTargets * targets = nullptr);

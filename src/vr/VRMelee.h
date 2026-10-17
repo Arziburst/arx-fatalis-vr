@@ -88,6 +88,9 @@ struct MeleeStatus {
 	u64 nearMisses = 0;             //!< motions that peaked within 20 % below the swing speed (F-60)
 	float lastNearMiss = 0.f;       //!< the peak of the last one
 	bool trigger = false;           //!< the weapon hand's trigger is held - it changes nothing (#465)
+	//! The engine's isHit: the swing (since its start) struck the world or an object - the wall sound and the
+	//! durability loss, once per swing; a touch outside a swing never sets it (#465)
+	bool worldHit = false;
 	// Hits
 	u64 hits = 0;                   //!< NPCs hit by a swing (an armour class miss included)
 	u64 touches = 0;                //!< NPCs hit by a touch outside a swing: the minimum (#465)

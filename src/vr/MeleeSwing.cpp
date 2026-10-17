@@ -53,8 +53,11 @@ const char * noSwingName(NoSwing noSwing) {
 	return "none";
 }
 
-NoSwing parseNoSwing(std::string_view name) {
-	return name == "min" ? NoSwing::Min : NoSwing::None;
+NoSwing parseNoSwing(std::string_view name, bool * ok) {
+	if(ok) {
+		*ok = name == "none" || name == "min";
+	}
+	return name == "none" ? NoSwing::None : NoSwing::Min;
 }
 
 ContactKind contactKind(const Vec3f & velocity, const Vec3f & blade, const SwingParams & params) {
@@ -90,9 +93,11 @@ MeleeRanges defaultRanges(MeleeClass meleeClass) {
 	switch(meleeClass) {
 		case MeleeClass::Dagger: return { { 0.25f, 0.6f, 2.f, 5.f }, { 0.2f, 0.45f, 2.f, 4.5f } };
 		case MeleeClass::Sword: return { { 0.3f, 0.8f, 2.5f, 6.f }, { 0.2f, 0.5f, 2.f, 4.f } };
-		case MeleeClass::Blunt: return { { 0.35f, 0.9f, 2.5f, 5.5f }, { 0.2f, 0.5f, 2.f, 4.f } };
+		// A one-handed blunt weapon's stab is a poke: the sword's ranges, half the strike at most; a two-handed one has
+		// no stab (a thrust deals what a touch does)
+		case MeleeClass::Blunt: return { { 0.35f, 0.9f, 2.5f, 5.5f }, { 0.2f, 0.5f, 2.f, 4.f, 0.5f } };
 		case MeleeClass::TwoHandedSword: return { { 0.4f, 1.1f, 2.5f, 5.f }, { 0.25f, 0.5f, 2.f, 3.5f } };
-		case MeleeClass::TwoHandedBlunt: return { { 0.5f, 1.2f, 2.5f, 4.5f }, { 0.25f, 0.5f, 2.f, 3.5f } };
+		case MeleeClass::TwoHandedBlunt: return { { 0.5f, 1.2f, 2.5f, 4.5f }, { 0.25f, 0.5f, 2.f, 3.5f, 0.f } };
 	}
 	return defaultRanges(MeleeClass::Sword);
 }
@@ -107,19 +112,21 @@ DamageRange parseDamageRange(std::string_view text, const DamageRange & fallback
 	std::istringstream iss{std::string(text)};
 	DamageRange range;
 	std::string rest;
-	if(!(iss >> range.pathMin >> range.pathMax >> range.speedMin >> range.speedMax) || (iss >> rest)) {
+	bool good = bool(iss >> range.pathMin >> range.pathMax >> range.speedMin >> range.speedMax);
+	if(good && !(iss >> range.cap)) {
+		good = iss.eof(); // the cap left out
+		range.cap = 1.f;
+	} else if(good) {
+		good = !(iss >> rest) && range.cap >= 0.f && range.cap <= 1.f;
+	}
+	for(float value : { range.pathMin, range.pathMax, range.speedMin, range.speedMax }) {
+		good = good && value >= 0.f && value <= 20.f;
+	}
+	if(!good) {
 		if(ok) {
 			*ok = false;
 		}
 		return fallback;
-	}
-	for(float value : { range.pathMin, range.pathMax, range.speedMin, range.speedMax }) {
-		if(!(value >= 0.f && value <= 20.f)) {
-			if(ok) {
-				*ok = false;
-			}
-			return fallback;
-		}
 	}
 	range.pathMax = std::max(range.pathMax, range.pathMin);
 	range.speedMax = std::max(range.speedMax, range.speedMin);
@@ -150,7 +157,7 @@ float contactAim(const ContactMeasure & contact, const DamageParams & params) {
 	const DamageRange & range = contact.kind == ContactKind::Thrust ? params.stab : params.slash;
 	const float pathMin = range.pathMin * params.pathScale;
 	const float pathMax = range.pathMax * params.pathScale;
-	if(!contact.swing || contact.speed < range.speedMin || contact.size < pathMin) {
+	if(!contact.swing || range.cap <= 0.f || contact.speed < range.speedMin || contact.size < pathMin) {
 		return floor;
 	}
 	const float speed = ramp(contact.speed, range.speedMin, range.speedMax);
@@ -161,7 +168,7 @@ float contactAim(const ContactMeasure & contact, const DamageParams & params) {
 	} else if(params.quality == Quality::Product) {
 		quality = speed * path;
 	}
-	return MinStrikeAim + (1.f - MinStrikeAim) * quality;
+	return MinStrikeAim + (1.f - MinStrikeAim) * std::min(quality, range.cap);
 }
 
 namespace {
@@ -187,6 +194,7 @@ SwingChange SwingDetector::drop() {
 	m_seeded = false;
 	m_count = 0;
 	m_stroke.clear();
+	m_handVelocities = { };
 	m_speed = 0.f;
 	m_thrust = 0.f;
 	m_thrusts.clear();
@@ -264,8 +272,15 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 	}
 
 	// The stroke (#465): it starts over from the sample before while the lever point is slow outside a swing - the
-	// filtered speed lags a sample, so that one already moved
-	if(!swinging() && m_speed < m_params.endSpeed) {
+	// filtered speed lags a sample, so that one already moved - and when the hand turns back: a waggle is many small
+	// strokes, not one big one. The hand's way now against three samples ago: at a sharp turn the median stands still
+	// on the turning axis for two samples
+	for(size_t i = m_handVelocities.size() - 1; i > 0; i--) {
+		m_handVelocities[i] = m_handVelocities[i - 1];
+	}
+	m_handVelocities[0] = pointVelocity(0.f);
+	const bool turnedBack = glm::dot(m_handVelocities[0], m_handVelocities.back()) < 0.f;
+	if((!swinging() && m_speed < m_params.endSpeed) || turnedBack) {
 		m_stroke.assign(1, StrokeSample{ m_hands[1], m_blades[1] });
 	}
 	if(m_stroke.size() >= MaxStroke) {
@@ -363,7 +378,7 @@ bool TargetCooldown::allowed(size_t target, u64 swing, double time, float cooldo
 		if(hit.target != target) {
 			continue;
 		}
-		if((swing != Touch && hit.swing == swing) || time - hit.time < double(cooldown)) {
+		if(hit.swing == swing || time - hit.time < double(cooldown)) {
 			return false;
 		}
 	}

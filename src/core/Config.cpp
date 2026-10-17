@@ -22,6 +22,7 @@
 #include <stddef.h>
 #include <algorithm>
 // #include <exception>
+#include <iterator>
 #include <sstream>
 #include <string_view>
 
@@ -470,6 +471,10 @@ constexpr const std::string_view
 	realtimeOverride = "realtime_override";
 
 } // namespace Key
+
+static_assert(std::size(vr::MeleeClasses) == std::tuple_size_v<decltype(config.input.vrMeleeSlash)>
+              && std::size(vr::MeleeClasses) == std::tuple_size_v<decltype(config.input.vrMeleeStab)>,
+              "a cfg.ini damage range per weapon class (#465)");
 
 //! vr_melee_slash_<class> / vr_melee_stab_<class>: a weapon class's damage range (#465)
 std::string meleeRangeKey(std::string_view kind, vr::MeleeClass meleeClass) {
@@ -980,8 +985,15 @@ bool Config::init(const fs::path & file) {
 	                                                                      Default::vrMeleeQuality)));
 	float vrMeleePathScale = reader.getKey(Section::Input, Key::vrMeleePathScale, Default::vrMeleePathScale);
 	input.vrMeleePathScale = glm::clamp(vrMeleePathScale, 0.25f, 2.f);
-	input.vrMeleeNoSwing = vr::noSwingName(vr::parseNoSwing(reader.getKey(Section::Input, Key::vrMeleeNoSwing,
-	                                                                      Default::vrMeleeNoSwing)));
+	{
+		const std::string_view noSwing = reader.getKey(Section::Input, Key::vrMeleeNoSwing, Default::vrMeleeNoSwing);
+		bool ok = true;
+		input.vrMeleeNoSwing = vr::noSwingName(vr::parseNoSwing(noSwing, &ok));
+		if(!ok) {
+			LogWarning << "cfg.ini " << Key::vrMeleeNoSwing << "=\"" << noSwing << "\": expected min or none, using "
+			           << input.vrMeleeNoSwing;
+		}
+	}
 	float vrMeleeTargetCooldown = reader.getKey(Section::Input, Key::vrMeleeTargetCooldown, Default::vrMeleeTargetCooldown);
 	input.vrMeleeTargetCooldown = glm::clamp(vrMeleeTargetCooldown, 0.f, 2.f);
 	// The recovery after a hit per weapon type (#323): seconds, or negative for the type's default

@@ -56,15 +56,17 @@ playground place 60
 @assert vr.melee.swings eq 0
 @assert vr.melee.hits eq 0
 
-# 1. A slow touch: the dagger swept through the goblin at 1.3 m/s is no swing - the minimum, no swing hit
+# 1. A slow touch: the dagger swept through the goblin at 1.3 m/s is no swing - and the goblin is peaceful: a touch
+# reaches only an NPC that fights the player (the coordinator's decision, D-056), so nothing happens
+@assert playground.npcFighting eq false
 @remember touches vr.melee.touches
 @mark
 vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
 @frames 75
 @assert vr.melee.swings eq 0
 @assert vr.melee.hits eq 0
-@assert vr.melee.touches ge {touches+1}
-@log melee\.hit source=player target=goblin_base_\d+ weapon=\S+ damage=\S+ aim=0\.10 speed=\S+ size=\S+ kind=\S+
+@assert vr.melee.touches eq {touches}
+@nolog melee\.hit source=player
 
 # 2. With the defaults, a fast swing back: a swing hit with its measured speed and size in the log
 @until vr.melee.recovery.left eq 0 5s
@@ -194,18 +196,63 @@ vr-sim @+1-5 hand right pos 0 -0.8 -0.35
 @log melee\.hit source=player target=goblin_base_\d+ .*aim=1\.00 speed=\S+ size=\S+ kind=thrust
 melee stab dagger default
 
-# 7. vr_melee_noswing=none (set live): a slow touch deals nothing - the dagger drawn out slowly and swept back
+# 7. The goblin fighting the player: a touch of the slowly swept dagger deals the minimum - a touch, no swing hit. The
+# set-up: the mode lever (aggressive: the goblin's script takes the hits), then its fight behaviour and target set
+# directly (playground fight) - the playground's goblin did not reach both on its own within 15 s, the save's goblin
+# of melee-swing does after a hit
+vr-sim @+1-40 hand right pos 0.45 -0.8 -0.35
+@frames 50
+playground pull mode
+@until playground.npcMode eq aggressive 5s
+playground fight
+@until playground.npcFighting eq true 5s
+playground place 60
+@frames 60
+@remember touches vr.melee.touches
+@remember hits vr.melee.hits
+@mark
+vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
+@until vr.melee.touches ge {touches+1} 5s
+@frames 10
+@assert vr.melee.hits eq {hits}
+@assert vr.melee.last.swing eq 0
+@assert vr.melee.last.aim eq 0.1
+@log melee\.hit source=player target=goblin_base_\d+ weapon=\S+ damage=\S+ aim=0\.10 speed=\S+ size=\S+ kind=\S+
+
+# 8. vr_melee_noswing=none (set live): a touch deals nothing, also to the fighting goblin (whose own strikes on the
+# player are source=goblin...)
 melee noswing none
 @until vr.melee.params.noSwing eq none 5s
 vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
 @frames 75
+playground place 60
 @remember touches vr.melee.touches
 @mark
 vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
 @frames 75
 @assert vr.melee.touches eq {touches}
-@nolog melee\.hit
+@nolog melee\.hit source=player
 melee noswing min
 @until vr.melee.params.noSwing eq min 5s
+playground pull mode
+@until playground.npcMode eq peaceful 5s
+
+# 9. A resting blade touches no world geometry - no wall sound, no durability (the engine's isHit stays false) - while
+# a swing into the wall still strikes it, once: the player at the respawn lever's wall, the dagger held into the wall
+# slowly, then swept along it
+approach lever_9002
+@frames 10
+approach lever_9002
+@frames 30
+vr-sim head rot 0 0 0
+vr-sim @+1-60 hand right pos 0.25 -0.35 -0.6
+@frames 90
+@assert vr.melee.swinging eq false
+@assert vr.melee.worldHit eq false
+@remember swings vr.melee.swings
+vr-sim @+1-8 hand right pos -0.35 -0.35 -0.6
+@until vr.melee.swings ge {swings+1} 5s
+@until vr.melee.swinging eq false 5s
+@assert vr.melee.worldHit eq true
 
 @assert errors eq 0

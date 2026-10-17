@@ -594,6 +594,13 @@ static float ARX_EQUIPMENT_GetSpecialValue(Entity * io, long val) {
 	return -1;
 }
 
+bool fightsPlayer(const Entity & target) {
+	if(!(target.ioflags & IO_NPC) || !target._npcdata) {
+		return false;
+	}
+	return (target._npcdata->behavior & BEHAVIOUR_FIGHT) && target.targetinfo == EntityHandle_Player;
+}
+
 // flags & 1 = blood spawn only
 bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ratioaim, long flags, EntityHandle targ,
                                 StrikeTargets * targets) {
@@ -642,7 +649,7 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 			for(Entity * target : sphereContent) {
 				arx_assert(target);
 				arx_assert(target->obj);
-				if(targets && targets->npcOnly && !(target->ioflags & IO_NPC)) {
+				if(targets && targets->touch && !fightsPlayer(*target)) {
 					continue;
 				}
 				{
@@ -820,7 +827,7 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 			}
 		}
 
-		const EERIEPOLY * ep = CheckBackgroundInSphere(sphere);
+		const EERIEPOLY * ep = (targets && targets->touch) ? nullptr : CheckBackgroundInSphere(sphere);
 		if(ep) {
 			if(io_source == entities.player()) {
 				if(!io_source->isHit) {

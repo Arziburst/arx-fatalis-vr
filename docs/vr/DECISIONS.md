@@ -29,12 +29,17 @@ a changed decision keeps its history in that cell.
   HUD's hit strength gauge stays empty while the IK hand holds the weapon.
 - **A touch is the minimum.** A contact outside a swing (D-038's detector, F-61) - a touch, a tap, the blade resting on
   an enemy, a wrist flick - deals the engine's weakest strike, 0.1 of the full one (its `StrikeAimtime` floor), like
-  the original's uncharged click: **`vr_melee_noswing=min`**, the default; `none` makes it nothing. A touch waits for
-  the weapon type's recovery (#323's 0.6 / 0.8 / 1.0 s) after any hit, so spamming stays possible but inefficient. It
-  does not restart the swing's recovery or the per-target cooldown (a blade resting in an enemy would keep a real swing
-  from ever hitting it), and it reaches NPCs only: a blade resting on an item or a crate does nothing to it.
+  the original's uncharged click: **`vr_melee_noswing=min`**, the default (an unknown value is the default too, with a
+  log warning); `none` makes it nothing. A touch waits for the weapon type's recovery (#323's 0.6 / 0.8 / 1.0 s) after
+  any hit, so spamming stays possible but inefficient. It does not restart the swing's recovery or the per-target
+  cooldown (a blade resting in an enemy would keep a real swing from ever hitting it). **A touch reaches only an NPC
+  that fights the player** (its fight behaviour, the player its target): a friend, a merchant, an item or a crate get no
+  damage and no aggression from a resting blade, and the world's geometry is never checked - no wall sound, no
+  durability loss from a blade resting on the floor or a wall. Real swings hit anyone and anything, as in the original.
+  *The NPC rule is the coordinator's decision until the owner's - an open question for the owner.*
 - **A swing's damage is its size and its speed together** (research #502's measures): the **path** the hand travelled
-  since the stroke started (the sample before the lever point last rose above the swing's end speed) - for a thrust
+  since the stroke started (the sample before the lever point last rose above the swing's end speed, or the hand last
+  turned back - a waggle is many small strokes, not one big one) - for a thrust
   (the lever point moving within 45° of the blade's way towards the tip, F-178's 0.707) its **lunge** along the blade -
   and the lever point's filtered **speed** at contact (0.125 m along the blade, relative to the head, #352). Each gives
   a factor, 0 at its range's minimum and 1 at its maximum; aim (the engine's `ratioaim`) = **0.1 + 0.9 q**, q by
@@ -42,19 +47,20 @@ a changed decision keeps its history in that cell.
   either minimum: the touch's value. A slow big swing and a fast tiny flick both stay low; only big and fast is the full
   strike.
 - **The ranges are per weapon class** (`vr_melee_slash_<class>` / `vr_melee_stab_<class>` = `"<path min> <path max>
-  <speed min> <speed max>"`, empty = the default; the path ranges times **`vr_melee_path_scale`**, 1.0, for seated
+  <speed min> <speed max> [<cap>]"`, empty = the default; the cap, 0-1 and 1 when left out, is the most quality the
+  kind reaches, 0 = the weapon has no such strike; the path ranges times **`vr_melee_path_scale`**, 1.0, for seated
   play). #502's provisional numbers (path m, speed m/s):
 
   | class (`<class>`) | slash | stab |
   |---|---|---|
   | dagger (`dagger`) | 0.25 → 0.6, 2.0 → 5.0 | 0.20 → 0.45, 2.0 → 4.5 |
   | one-handed sword (`sword`) | 0.30 → 0.8, 2.5 → 6.0 | 0.20 → 0.50, 2.0 → 4.0 |
-  | one-handed axe, club, hammer, mace (`blunt`) | 0.35 → 0.9, 2.5 → 5.5 | 0.20 → 0.50, 2.0 → 4.0 |
+  | one-handed axe, club, hammer, mace (`blunt`) | 0.35 → 0.9, 2.5 → 5.5 | 0.20 → 0.50, 2.0 → 4.0, cap 0.5 |
   | two-handed sword, giant slayer (`2h_sword`) | 0.40 → 1.1, 2.5 → 5.0 | 0.25 → 0.50, 2.0 → 3.5 |
-  | two-handed axe, smith's club (`2h_blunt`) | 0.50 → 1.2, 2.5 → 4.5 | 0.25 → 0.50, 2.0 → 3.5 |
+  | two-handed axe, smith's club (`2h_blunt`) | 0.50 → 1.2, 2.5 → 4.5 | none (cap 0) |
 
-  #502 gives no stab of its own for the one-handed and two-handed blunt weapons: they take the sword's and the
-  two-handed sword's (the coordinator, 2026-10-17). The class: a dagger or a two-handed weapon by its type; an axe, club, hammer or mace by its item class or material
+  #502: a one-handed blunt weapon's stab is a poke - the sword's ranges, at most half the quality (cap 0.5); a
+  two-handed blunt one has no stab - a thrust with it deals what a touch does. The class: a dagger or a two-handed weapon by its type; an axe, club, hammer or mace by its item class or material
   (`vr/WeaponGrip.h`'s rule, applied to two-handed weapons too); anything else a sword.
 - **One log line per hit:** the engine's `melee.hit` with `aim` (the damage fraction), `speed`, `size` and `kind`.
 
@@ -70,8 +76,10 @@ a changed decision keeps its history in that cell.
 - **A string key per class and kind** rather than four numbers each: 10 keys instead of 40, one readable line per
   class; an empty value follows the code's defaults, so a cfg.ini written by an earlier build keeps no stale numbers
   (TRAPS.md, 2026-10-17).
-- **A touch reaches NPCs only and blocks no swing:** at the minimum every recovery, a resting blade would otherwise break
-  crates (the engine damages props by the player's full damage, whatever the ratio) and keep the hand from hitting.
+- **A touch reaches only an NPC fighting the player, no geometry, and blocks no swing:** at the minimum every recovery,
+  a resting blade would otherwise break crates (the engine damages props by the player's full damage, whatever the
+  ratio), anger a friend or a merchant (the engine's aggression event comes with any hit), ring and wear on the floor
+  or a wall, and keep the hand from hitting.
 - Prior art (a short look, #465): VHVR scales by speed up to full at cooldown + 5 m/s (F-63); F-178's strength is
   (peak − min) / max; PLANCK tells a stab by the hand moving along the blade (dot ≥ 0.8, F-195); Blade & Sorcery and
   Boneworks take the hit point's velocity from physics; research #502 for the classes' numbers.

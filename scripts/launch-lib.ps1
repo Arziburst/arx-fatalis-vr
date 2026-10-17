@@ -22,8 +22,9 @@
 #   6. Self-test windows do not take the focus: Set-ArxBackgroundWindow sets the SDL hint that shows
 #      the window without activating it (SW_SHOWNA). Since #487 the game does it itself for every
 #      --test-dir run (never activated, in a corner, no real input); Test-ArxForegroundKept checks it.
-#   7. Scripted launches show no dialogs (#501): Set-ArxNoDialogs puts ARXVR_NO_DIALOGS=1 into the game's
-#      environment; a dialog becomes a '[dialog]' line in arx.log and stderr (Get-ArxDialogLines reads it back).
+#   7. Scripted launches show no dialogs (#501): Set-ArxDialogEnv -NoDialogs puts ARXVR_NO_DIALOGS=1 into the
+#      game's environment, an owner's launch gets neither variable; a dialog becomes a '[dialog]' line in arx.log
+#      and stderr (Get-ArxDialogLines reads it back).
 
 . (Join-Path $PSScriptRoot 'build-paths.ps1')
 
@@ -532,16 +533,27 @@ function Test-ArxForegroundKept($Before, $Now, [int]$GameProcessId) {
 # environment the game writes every dialog to arx.log and stderr as one '[dialog] <type>: <title>: <message>' line,
 # answers it with its default (a question: no) and after an error exits with a failure code. The crash processor
 # inherits it: no crash dialog, no Explorer window. The owner's own launches (test-pr.ps1, run-windows.ps1 by hand,
-# the desktop and the Steam shortcut) keep the dialogs. Returns the previous value, to restore after the launch
-# (Restore-ArxNoDialogs) - the scripts run in the caller's session, which must not inherit it.
-function Set-ArxNoDialogs {
-	$previous = $env:ARXVR_NO_DIALOGS
-	$env:ARXVR_NO_DIALOGS = '1'
+# the desktop and the Steam shortcut) keep the dialogs. The game also counts ARX_UNATTENDED - any non-empty value -
+# which the test channel sets for the crash processor, so both are handled together.
+#
+# Set-ArxDialogEnv -NoDialogs sets both to 1 for the game about to be started; without -NoDialogs (an owner's launch)
+# it removes both, so a variable left in the shell by an earlier script cannot take the owner's dialogs away. It
+# returns the previous values: Restore-ArxDialogEnv puts them back right after the start, in a finally - the scripts
+# run in the caller's session, which must come out of a launch unchanged (the started game keeps its own copy).
+$script:ArxDialogVariables = @('ARXVR_NO_DIALOGS', 'ARX_UNATTENDED')
+
+function Set-ArxDialogEnv([switch]$NoDialogs) {
+	$previous = @{}
+	foreach ($name in $script:ArxDialogVariables) {
+		$previous[$name] = [Environment]::GetEnvironmentVariable($name)
+		[Environment]::SetEnvironmentVariable($name, $(if ($NoDialogs) { '1' } else { $null }))
+	}
 	$previous
 }
 
-function Restore-ArxNoDialogs($Previous) {
-	if ($null -eq $Previous) { Remove-Item Env:ARXVR_NO_DIALOGS -ErrorAction SilentlyContinue } else { $env:ARXVR_NO_DIALOGS = $Previous }
+function Restore-ArxDialogEnv($Previous) {
+	if (-not $Previous) { return }
+	foreach ($name in $script:ArxDialogVariables) { [Environment]::SetEnvironmentVariable($name, $Previous[$name]) }
 }
 
 # Whether a run-windows.ps1 launch is a scripted one, without dialogs: with the test channel (-TestChannel or

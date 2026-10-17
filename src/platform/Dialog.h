@@ -145,8 +145,8 @@ bool askOkCancel(const std::string & question, const std::string & title = "Ok/C
 /*!
  * \brief Whether this run shows no dialogs (#501)
  *
- * Scripted and test launches set \c ARXVR_NO_DIALOGS=1 (the test channel sets \c ARX_UNATTENDED=1,
- * which counts too): nobody is there to click a message box. Every dialog is then written to the log -
+ * Scripted and test launches set \c ARXVR_NO_DIALOGS=1 (the test channel sets \c ARX_UNATTENDED=1;
+ * any non-empty \c ARX_UNATTENDED counts too): nobody is there to click a message box. Every dialog is then written to the log -
  * and through it to stderr - as one line (\ref formatDialogLine) and answered with its default
  * (\ref dialogDefaultAnswer) instead of being shown.
  */
@@ -159,7 +159,11 @@ bool dialogsDisabled();
  */
 bool errorDialogSuppressed();
 
-//! The decision of \ref dialogsDisabled from the two environment values (\c nullptr when not set)
+/*!
+ * The decision of \ref dialogsDisabled from the two environment values (\c nullptr when not set):
+ * \c ARXVR_NO_DIALOGS counts unless empty or "0"; \c ARX_UNATTENDED counts with any non-empty value,
+ * "0" included - as the crash processor has always read it.
+ */
 inline bool dialogsDisabledBy(const char * noDialogs, const char * unattended) {
 	bool noDialogsSet = noDialogs && *noDialogs && std::string_view(noDialogs) != "0";
 	return noDialogsSet || (unattended && *unattended);

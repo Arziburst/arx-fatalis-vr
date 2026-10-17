@@ -241,8 +241,8 @@ $process = $null
 $started = Get-Date
 $previousHint = $null
 if ($Background) { $previousHint = Set-ArxBackgroundWindow }
-$previousNoDialogs = $null
-if ($noDialogs) { $previousNoDialogs = Set-ArxNoDialogs }
+# Scripted: ARXVR_NO_DIALOGS=1; by hand: neither variable, even if an earlier script in this shell left one (#501)
+$previousDialogEnv = Set-ArxDialogEnv -NoDialogs:$noDialogs
 try {
 	$process = Start-Process -FilePath $exe -ArgumentList $argList -PassThru -NoNewWindow
 	Set-ArxGameLockGame $lock $process.Id
@@ -250,7 +250,7 @@ try {
 	$code = $process.ExitCode
 } finally {
 	if ($Background) { Restore-ArxBackgroundWindow $previousHint }
-	if ($noDialogs) { Restore-ArxNoDialogs $previousNoDialogs }
+	Restore-ArxDialogEnv $previousDialogEnv
 	Exit-ArxGameLock $lock
 	Add-ArxLaunchRecord -Script 'run-windows.ps1' -Copy $SourceDir -Branch $copy.Branch -Build $stamp -Vr $vr.Vr `
 		-GamePid $(if ($process) { $process.Id } else { 0 }) -ExitCode $code -DurationSec ((Get-Date) - $started).TotalSeconds -ArxArgs $ArxArgs -Time $started

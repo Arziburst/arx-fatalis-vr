@@ -36,6 +36,8 @@ void DialogPolicyTest::testEnvironment() {
 	// The test channel (--test-dir) sets ARX_UNATTENDED=1: no dialog either
 	CPPUNIT_ASSERT(platform::dialogsDisabledBy(nullptr, "1"));
 	CPPUNIT_ASSERT(platform::dialogsDisabledBy("0", "1"));
+	// Any non-empty ARX_UNATTENDED counts, as the crash processor has always read it
+	CPPUNIT_ASSERT(platform::dialogsDisabledBy(nullptr, "0"));
 }
 
 void DialogPolicyTest::testErrorLine() {

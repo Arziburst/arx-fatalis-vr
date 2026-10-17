@@ -16,7 +16,7 @@ logging the dialog where it is shown, instead of showing it, would hang the game
 **Cause:** the critical error dialog is a log backend (`logger::CriticalErrorDialog`): it shows its dialog
 in its destructor, which `Logger::shutdown` runs while it holds the logger's (non-recursive) mutex - a
 `LogError` from there waits on that mutex forever. And `ARX_UNATTENDED` only silenced the crash processor.
-**Do:** scripted launches set `ARXVR_NO_DIALOGS=1` (`Set-ArxNoDialogs`, [TESTING.md](TESTING.md#runs-without-dialogs-501)):
+**Do:** scripted launches set `ARXVR_NO_DIALOGS=1` (`Set-ArxDialogEnv -NoDialogs`, restored after the start; [TESTING.md](TESTING.md#runs-without-dialogs-501)):
 every dialog becomes a `[dialog]` line and an error exits with code 1. `Startup.cpp` removes and deletes the
 critical error dialog *before* `Logger::shutdown`, so its line reaches the file and stderr. Never log from a
 log backend's destructor or `log()`.

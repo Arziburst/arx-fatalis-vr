@@ -163,11 +163,15 @@ sets) the game shows **no dialog of any kind** (`platform::dialogsDisabled`, `sr
   (`arx.exe --no-such-option`) ends the run at once with code 1 and the line in stderr;
 - the crash processor inherits the variable: no crash dialog, no Explorer window.
 
-Who sets it: `launch-lib.ps1` `Set-ArxNoDialogs` around the start - `run-windows.ps1` with `-TestChannel`,
-`--test-dir` or `-Isolated` (a worker's runs; `-Dialogs` keeps them), `smoke-test.ps1` (and `xrs-run.ps1`
-through it), `ci-smoke.ps1` for the whole CI job, `make-test-saves.ps1`; `package-tester.ps1`'s verify run
-sets `ARX_UNATTENDED`. The owner's launches keep the dialogs: `test-pr.ps1` (it passes `-Dialogs`, also with
-`-Isolated`), `run-windows.ps1` by hand, the desktop shortcut and Steam.
+Who sets it: `launch-lib.ps1` `Set-ArxDialogEnv -NoDialogs` around the start (both variables to 1) -
+`run-windows.ps1` with `-TestChannel`, `--test-dir` or `-Isolated` (a worker's runs; `-Dialogs` keeps them),
+`smoke-test.ps1` (and `xrs-run.ps1` through it), `ci-smoke.ps1` for the whole CI job, `make-test-saves.ps1` and
+`package-tester.ps1`'s verify run. Every one puts the shell's previous values back right after the start
+(`Restore-ArxDialogEnv` in a `finally`): a smoke test never leaves a variable behind for the owner's next launch.
+The owner's launches keep the dialogs and **remove both variables** from the game's environment, whatever the shell
+holds: `run-windows.ps1` by hand or with `-Dialogs` (`Set-ArxDialogEnv` without `-NoDialogs`), `test-pr.ps1` (it
+passes `-Dialogs`, also with `-Isolated`, and clears them itself for a branch from before #501), the desktop
+shortcut (through `run-windows.ps1`) and Steam.
 
 Who reads the line: `smoke-test.ps1` checks `no dialog` and puts the `[dialog]` line first among the
 failure reasons (`Get-ArxDialogLines` / `Get-ArxDialogReason`); the [run digest](#the-run-digest-131)

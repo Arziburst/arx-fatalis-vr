@@ -212,8 +212,19 @@ if ($Saves) { $runArgs.Isolated = $true; $runArgs.Saves = $Saves }
 # The owner's launch keeps the game's dialogs, -Isolated too (#501); a branch from before #501 has no switch and no
 # dialog-free launches
 if (Select-String -LiteralPath (Join-Path $wt 'scripts\run-windows.ps1') -Pattern '\[switch\]\$Dialogs' -Quiet) { $runArgs.Dialogs = $true }
-& (Join-Path $wt 'scripts\run-windows.ps1') @runArgs
-$gameExit = $LASTEXITCODE
+# ... and neither dialog variable reaches the game, whatever an earlier script left in this shell (a branch from before
+# #501 does not clear them itself); this shell gets them back afterwards
+$dialogEnv = @{}
+foreach ($name in 'ARXVR_NO_DIALOGS', 'ARX_UNATTENDED') {
+	$dialogEnv[$name] = [Environment]::GetEnvironmentVariable($name)
+	[Environment]::SetEnvironmentVariable($name, $null)
+}
+try {
+	& (Join-Path $wt 'scripts\run-windows.ps1') @runArgs
+	$gameExit = $LASTEXITCODE
+} finally {
+	foreach ($name in $dialogEnv.Keys) { [Environment]::SetEnvironmentVariable($name, $dialogEnv[$name]) }
+}
 
 # The owner's switch: SteamVR quits the way its own "Exit SteamVR" does, so the headset powers down (#171)
 if ($StopSteamVR) {

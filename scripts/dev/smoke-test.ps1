@@ -292,17 +292,17 @@ function Invoke-SmokeRun([int]$Run) {
 		if ($sim) { $argList += '--vr-sim', "`"$simScript`"" }
 		$argList += $ArxArgs
 		Write-Host "=== run $Run/$Repeat`: arx.exe $($argList -join ' ')" -ForegroundColor Cyan
-		$env:ARX_UNATTENDED = '1'
 		$launchTime = Get-Date
-		# Shown without taking the focus (SDL hint from the environment, restored right after the start), and never
-		# blocking on a dialog: it goes to arx.log and stderr (#501)
+		# Shown without taking the focus (SDL hint from the environment), and never blocking on a dialog: it goes to
+		# arx.log and stderr, the crash dialog is skipped (ARXVR_NO_DIALOGS / ARX_UNATTENDED, #501) - all restored right
+		# after the start, so the shell that ran the test is unchanged
 		$previousHint = Set-ArxBackgroundWindow
-		$previousNoDialogs = Set-ArxNoDialogs
+		$previousDialogEnv = Set-ArxDialogEnv -NoDialogs
 		$foregroundBefore = Get-ArxForegroundWindow
 		try {
 			$process = Start-Process -FilePath $exe -ArgumentList $argList -PassThru `
 				-RedirectStandardOutput (Join-Path $TestDir 'stdout.txt') -RedirectStandardError (Join-Path $TestDir 'stderr.txt')
-		} finally { Restore-ArxBackgroundWindow $previousHint; Restore-ArxNoDialogs $previousNoDialogs }
+		} finally { Restore-ArxBackgroundWindow $previousHint; Restore-ArxDialogEnv $previousDialogEnv }
 		Set-ArxGameLockGame $lock $process.Id
 		# The game is running: a check driving it from outside starts its timeouts only now, not during the lock wait (#258)
 		Set-Content -LiteralPath (Get-ArxLaunchMarker $TestDir) -Value "pid=$($process.Id) run=$Run" -Encoding ascii

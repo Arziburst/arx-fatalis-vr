@@ -92,17 +92,30 @@ void MotionProbe::update(const MotionSample & sample) {
 			m_airborne = false;
 			m_takeoffY = m_last.position.y;
 			m_peak = 0.f;
+			m_moveSeconds = sample.seconds;
+			m_moveHeight = 0.f;
 		}
 
 		if(m_jump) {
-			const float before = m_takeoffY - m_last.position.y; // y points down: up is positive here
+			// y points down: up is positive here
 			const float now = m_takeoffY - sample.position.y;
+			// The engine moves a jumping player in steps of 25-35 ms and the frames between two steps show the
+			// last step's position: a crossing is placed between the two moves (when each position was real), not
+			// between two frames, one of which only repeats an old position - that would move it by up to a step
+			// with the rate's phase (#435)
+			const bool moved = sample.position.y != m_last.position.y;
+			const float before = m_moveHeight;
+			const double beforeSeconds = m_moveSeconds;
+			if(moved) {
+				m_moveSeconds = sample.seconds;
+				m_moveHeight = now;
+			}
 			m_peak = std::max(m_peak, now);
 			if(!m_airborne && now > AirborneUnits) {
 				m_airborne = true;
-				m_left = probeCrossing(m_last.seconds, sample.seconds, before, now, AirborneUnits);
+				m_left = probeCrossing(beforeSeconds, sample.seconds, before, now, AirborneUnits);
 			} else if(m_airborne && now <= AirborneUnits) {
-				m_air = probeCrossing(m_last.seconds, sample.seconds, before, now, AirborneUnits) - m_left;
+				m_air = probeCrossing(beforeSeconds, sample.seconds, before, now, AirborneUnits) - m_left;
 				m_apex = m_peak;
 				m_jumps++;
 				m_jump = false;

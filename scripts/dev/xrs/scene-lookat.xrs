@@ -53,9 +53,12 @@ vr-input stick left 0 0
 @assert scene.meter.maxYawStepDeg lt 1
 @assert scene.meter.letterboxFrames eq 0
 @remember yawF player.yaw
+@remember ffF scene.meter.fadeFrames
 playerlookat human_base_0028
-@until scene.fade gt 0 5s
+# The fade is 0.2 s: counted by the meter, not caught by polling the status
+@until scene.meter.fadedLookats eq {lkF+1} 5s
 @wait 1000
+@assert scene.meter.fadeFrames gt {ffF}
 @assert scene.meter.lookats eq {lkF+1}
 @assert scene.meter.fadedLookats eq {lkF+1}
 @assert player.yaw ne {yawF}

@@ -6,13 +6,14 @@
 .DESCRIPTION
 	Runs smoke-test.ps1 (flat, --loadlevel 10, isolated, every launch rule of D-014) with 'vr-input'
 	commands - controls pressed as if a controller did it, no headset needed:
-	  tap right.a                               jump (a single binding fires on the press)
-	  down right.grip, tap right.trigger, up    stash_right (an ordered chord; no click, no use)
-	  tap right.grip                            use_right (the chord's leader taps on the release)
+	  tap right.stick_up                        jump (a single binding fires on the press, D-042)
+	  down right.grip, tap right.trigger, up    use_right and act_right (an ordered chord; no click, no stash)
+	  tap right.grip                            nothing (the grip alone does nothing, D-042)
 	  bind jump left.b+left.a                   remap jump to a chord led by the book's button
 	  down left.b, tap left.a, up left.b        jump again (the chord; the book does not fire)
 	  tap left.b                                book (now a tap on the release)
 	  tap right.stick_down                      crouch_toggle (a stick direction)
+	  tap right.stick_click                     weapon (draw / sheathe, #377)
 	  reset                                     the default layout again
 	A 'mark' after the release of a chord's leader lets its release debounce window (150 ms) pass,
 	so the next tap is a new press and not the same hold.
@@ -45,22 +46,26 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'test-lib.ps1')
 
 $commands = @()
+# B holds the radial menu since #376 (D-042), the left B the map and the left A the bag since #377: the book event goes
+# back on left B and the left A is left to the chord below, as the check was written
+$commands += @('vr-input bind radial_left none', 'vr-input bind map none', 'vr-input bind inventory none', 'vr-input bind book left.b')
 if ($Unbind) { $commands += 'vr-input bind jump none' }
 $commands += @(
-	'vr-input tap right.a',
+	'vr-input tap right.stick_up',
 	'vr-input down right.grip', 'vr-input tap right.trigger', 'vr-input up right.grip', 'mark release debounce (150 ms)',
 	'vr-input tap right.grip',
 	'vr-input bind jump left.b+left.a',
 	'vr-input down left.b', 'vr-input tap left.a', 'vr-input up left.b', 'mark release debounce (150 ms)',
 	'vr-input tap left.b',
 	'vr-input tap right.stick_down',
+	'vr-input tap right.stick_click',
 	'vr-input reset'
 )
 
 # Events and how often each must have fired; the zeros catch a press that counts as two events
 $expected = [ordered]@{
-	jump = 2; stash_right = 1; use_right = 1; interact_right = 0; book = 1; crouch_toggle = 1
-	interact_left = 0; use_left = 0; stash_left = 0; inventory = 0; menu = 0; recenter = 0; magic_mode = 0
+	jump = 2; use_right = 1; act_right = 1; stash_right = 0; interact_right = 0; book = 1; crouch_toggle = 1; weapon = 1
+	interact_left = 0; use_left = 0; act_left = 0; stash_left = 0; inventory = 0; menu = 0; recenter = 0; magic_mode = 0; map = 0
 }
 
 $smokeArgs = @{ Commands = $commands; Seconds = 1 }
@@ -91,7 +96,7 @@ if (-not $vrInput) {
 		if ($presses -ne $expected[$name]) { $reasons += "$name fired $presses times, expected $($expected[$name])" }
 	}
 	Write-Host "layout after reset: jump = $($vrInput.layout.jump), book = $($vrInput.layout.book); controllers: $($vrInput.controllers); down: '$($vrInput.down)'"
-	if ($vrInput.layout.jump -ne 'right.a') { $reasons += "jump is bound to '$($vrInput.layout.jump)' after reset, expected right.a" }
+	if ($vrInput.layout.jump -ne 'right.stick_up') { $reasons += "jump is bound to '$($vrInput.layout.jump)' after reset, expected right.stick_up" }
 	if ($vrInput.down) { $reasons += "controls still held at the end: $($vrInput.down)" }
 }
 

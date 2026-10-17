@@ -285,7 +285,7 @@ void BindingCaptureTest::brokenLayoutFileTest() {
 		CPPUNIT_ASSERT_MESSAGE(error, error.find(file.reason) != std::string::npos);
 		CPPUNIT_ASSERT_MESSAGE(error, error.find("line 2") != std::string::npos);
 		CPPUNIT_ASSERT_MESSAGE(file.text, layout == index);
-		CPPUNIT_ASSERT_EQUAL(std::string("right.a"), formatBinding(layout[Event::Jump]));
+		CPPUNIT_ASSERT_EQUAL(std::string("right.stick_up"), formatBinding(layout[Event::Jump])); // the default (#377)
 	}
 
 	// An empty file (only comments) is the default, read fine
@@ -303,9 +303,9 @@ void BindingCaptureTest::layoutChangesTest() {
 	ControlLayout layout = base;
 	layout[Event::Jump] = Binding::single(CapRightB);
 	layout[Event::MagicMode] = Binding::chord(CapLeftGrip, CapLeftA);
-	layout[Event::Recenter] = Binding();
+	layout[Event::CrouchToggle] = Binding(); // a default the player unbinds is written as "none"
 	const std::string text = formatLayoutChanges(layout, base);
-	CPPUNIT_ASSERT_EQUAL(std::string("jump = right.b\nrecenter = none\nmagic_mode = left.grip+left.a\n"), text);
+	CPPUNIT_ASSERT_EQUAL(std::string("jump = right.b\ncrouch_toggle = none\nmagic_mode = left.grip+left.a\n"), text);
 
 	ControlLayout loaded = base;
 	std::string error;
@@ -319,8 +319,8 @@ void BindingCaptureTest::layoutChangesTest() {
 	touch[Event::Jump] = Binding::single(CapRightB);
 	CPPUNIT_ASSERT(saved == touch);
 
-	// Jump on right B now shares it with the inventory: shown as a conflict
+	// Jump on right B now shares it with the right hand's radial menu (D-042): shown as a conflict
 	CPPUNIT_ASSERT(findConflicts(layout).size() == 1);
 	CPPUNIT_ASSERT(findConflicts(layout)[0].first == Event::Jump);
-	CPPUNIT_ASSERT(findConflicts(layout)[0].second == Event::Inventory);
+	CPPUNIT_ASSERT(findConflicts(layout)[0].second == Event::RadialRight);
 }

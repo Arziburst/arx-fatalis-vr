@@ -28,10 +28,13 @@ $tests = @(
 	'test-steam-shortcut.ps1' # the non-Steam VR shortcut (#80): binary shortcuts.vdf round-trip, add / update / remove on copies
 	'test-save-library.ps1'  # the test save library (#70): the scenario parser, the verification steps and slot order, Use-ArxSave
 	'test-number-decisions.ps1' # decision numbers at merge (#274): two branches adding D-NEW get consecutive numbers; the clash gate
+	'test-perf-summary.ps1'  # the performance log summary (#327): a fixture arx-perf.log, the totals, worst seconds, hitches, the script
+	'test-private-data.ps1' # the personal-data check of tracked files (#428): made-up paths, ids, e-mails, docs images fail; placeholders pass
 	'test-plan-next.ps1'    # the coordinator's task order (#187): MVP.md parsing and every start rule
 	'test-wait-launch.ps1'   # the launch marker (#258): checks wait out the game lock before their gameplay timeout; a lock skip is exit 2
 	'test-xrs.ps1'           # the .xrs sequence runner and img-diff (#113): parser, conditions, log marks, @pending, shots, a fake game
-	'test-usage-plan.ps1'    # the usage accounting (#217): calibration, burn, task costs, the worker-count recommendation
+	'test-tree-fingerprint.ps1' # the build stamp's tree fingerprint (#306): an edit after a build makes it stale, no change stays fresh
+	'test-usage-plan.ps1'   # the usage accounting (#217): calibration, burn, task costs, the worker-count recommendation
 	'test-start-steamvr.ps1' # starting and quitting SteamVR on the owner's switches (#171): stubbed processes and clock, SteamVR is not touched
 )
 # test-*.ps1 files that are libraries or tools, not tests

@@ -50,6 +50,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include <string>
 #include <map>
 #include <cmath>
+#include <cstdlib>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -68,6 +69,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "util/Number.h"
 
 #include "vr/InterfaceSize.h"
+#include "vr/VRSystem.h"
 
 #include "window/RenderWindow.h"
 
@@ -504,12 +506,34 @@ void Input::update(float time) {
 	
 	const PlatformInstant now = g_platformTime.frameStart();
 	
+	// In VR the window only mirrors the headset (#338): the desktop mouse drives nothing
+	const bool ignoreMouse = vr::isEnabled();
+	if(ignoreMouse != m_desktopMouse.ignored) {
+		m_desktopMouse.ignored = ignoreMouse;
+		LogInfo << "[input] desktop mouse: " << (ignoreMouse ? "ignored - the window mirrors the headset (#338)"
+		                                                     : "drives the game again");
+	}
+	// ... and neither does the desktop keyboard (#487, the owner): only the headset and the controllers
+	if(backend) {
+		backend->setKeyboardIgnored(vr::isEnabled());
+	}
+
 	for(int buttonId = Mouse::ButtonBase; buttonId < Mouse::ButtonMax; buttonId++) {
 		int i = buttonId - Mouse::ButtonBase;
 		
 		int iNumClick;
 		int iNumUnClick;
 		backend->getMouseButtonClickCount(buttonId, iNumClick, iNumUnClick);
+		
+		if(ignoreMouse) {
+			if(iNumClick > 0) {
+				m_desktopMouse.droppedButtons += u64(iNumClick);
+				LogInfo << "[input] desktop mouse: button " << (i + 1) << " dropped (VR)";
+			}
+			iNumClick = iNumUnClick = 0;
+			iOldNumClick[i] = 0;
+			m_realMouseButton[i] = false;
+		}
 		
 		iOldNumClick[i] += iNumClick + iNumUnClick;
 		
@@ -561,7 +585,15 @@ void Input::update(float time) {
 	Vec2s newMousePosition(absX, absY);
 	
 	Vec2i wndSize = mainApp->getWindow()->getSize();
-	if(absX >= 0 && absX < wndSize.x && absY >= 0 && absY < wndSize.y) {
+	if(ignoreMouse) {
+		
+		// The cursor stays where the hands left it; the exploration mode's crosshair is the center
+		if(m_mouseMode == Mouse::Relative) {
+			iMouseA = interfaceSize() / s32(2);
+		}
+		mouseInWindow = false;
+	
+	} else if(absX >= 0 && absX < wndSize.x && absY >= 0 && absY < wndSize.y) {
 		
 		// The absolute mouse position reported by the backend, on the interface's virtual screen (#73):
 		// as is while that is the window
@@ -585,7 +617,26 @@ void Input::update(float time) {
 	int relX, relY;
 	backend->getRelativeMouseCoords(relX, relY, iWheelDir);
 	
-	if(m_mouseMode == Mouse::Relative) {
+	if(ignoreMouse) {
+		
+		if(iWheelDir != 0) {
+			m_desktopMouse.droppedWheel += u64(std::abs(iWheelDir));
+			LogInfo << "[input] desktop mouse: wheel " << iWheelDir << " dropped (VR)";
+			iWheelDir = 0;
+		}
+		// One line per burst of movement, not per frame
+		if(relX != 0 || relY != 0 || newMousePosition != m_lastMousePosition) {
+			m_desktopMouse.droppedMoves++;
+			if(m_lastDroppedMove == 0 || now - m_lastDroppedMove > 1s) {
+				LogInfo << "[input] desktop mouse: movement dropped (VR)";
+			}
+			m_lastDroppedMove = now;
+		}
+		// No look, and the system cursor is not warped back to the center
+		m_mouseMovement = Vec2f(0.f);
+		m_lastMousePosition = newMousePosition;
+	
+	} else if(m_mouseMode == Mouse::Relative) {
 		
 		if(m_useRawMouseInput) {
 			m_mouseMovement = Vec2f(relX * 2, relY * 2);
@@ -814,6 +865,54 @@ void Input::setVirtualMouseButton(int buttonId, bool down) {
 	arx_assert(buttonId >= Mouse::ButtonBase && buttonId < Mouse::ButtonMax);
 
 	m_virtualMouseButtonsSet[buttonId - Mouse::ButtonBase] = down;
+}
+
+bool Input::injectDesktopMouseMove(const Vec2i & motion) {
+	return backend && backend->injectMouseMove(motion);
+}
+
+bool Input::injectDesktopMouseAt(const Vec2s & position) {
+	Vec2i windowPos = vr::interfaceToWindow(Vec2i(position), mainApp->getWindow()->getSize(), interfaceSize());
+	return backend && backend->injectMouseAt(windowPos);
+}
+
+bool Input::injectDesktopMouseButton(int buttonId, bool down) {
+	arx_assert(buttonId >= Mouse::ButtonBase && buttonId < Mouse::ButtonMax);
+	return backend && backend->injectMouseButton(buttonId, down);
+}
+
+bool Input::injectDesktopMouseWheel(int steps) {
+	return backend && backend->injectMouseWheel(steps);
+}
+
+bool Input::injectDesktopKey(int keyId, bool down) {
+	return backend && backend->injectKey(keyId, down);
+}
+
+bool Input::postDesktopMouseAt(const Vec2s & position) {
+	Vec2i windowPos = vr::interfaceToWindow(Vec2i(position), mainApp->getWindow()->getSize(), interfaceSize());
+	return backend && backend->postMouseAt(windowPos);
+}
+
+bool Input::postDesktopMouseButton(int buttonId, bool down) {
+	arx_assert(buttonId >= Mouse::ButtonBase && buttonId < Mouse::ButtonMax);
+	return backend && backend->postMouseButton(buttonId, down);
+}
+
+bool Input::postDesktopMouseWheel(int steps) {
+	return backend && backend->postMouseWheel(steps);
+}
+
+bool Input::postDesktopKey(int keyId, bool down) {
+	return backend && backend->postKey(keyId, down);
+}
+
+InputBackend::DroppedInput Input::droppedRealInput() const {
+	return backend ? backend->droppedRealInput() : InputBackend::DroppedInput();
+}
+
+InputBackend::DroppedInput Input::droppedKeyboard() const {
+	return backend ? backend->droppedKeyboard() : InputBackend::DroppedInput();
 }
 
 void Input::setVirtualAction(ControlAction actionId, bool down) {

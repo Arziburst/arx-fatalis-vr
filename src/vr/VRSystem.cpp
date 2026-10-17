@@ -47,6 +47,7 @@
 #include "io/fs/Filesystem.h"
 #include "io/log/Logger.h"
 #include "platform/CrashHandler.h"
+#include "platform/ExitTrace.h"
 #include "platform/ProgramOptions.h"
 #include "platform/Thread.h"
 #include "platform/Time.h"
@@ -62,6 +63,7 @@
 #include "vr/InterfaceSize.h"
 #include "vr/MenuPointer.h"
 #include "vr/OpenXRUtil.h"
+#include "vr/PerfLog.h"
 #include "vr/UIPanel.h"
 #include "vr/VRActions.h"
 #include "vr/VRMirror.h"
@@ -139,6 +141,9 @@ const s64 PacingWindowUs = 3000000;
 
 //! How long an orderly exit may take: xrRequestExitSession to EXITING
 const std::chrono::milliseconds ExitTimeout(2000);
+
+//! A radial menu's image (#376), made with the session
+const Vec2i RadialImageSize(RadialImagePixels, RadialImagePixels);
 
 struct OpenXRState {
 
@@ -222,6 +227,9 @@ struct OpenXRState {
 		PanelPlacement lastPlacement = PanelPlacement::None;
 		PanelMode loggedMode = PanelMode::HeadLocked;
 		Vec2f size = Vec2f(0.f); //!< the panel as last submitted, meters
+		//! The screen of the logos and the cinematics (#394): the same anchor rules, its own place and size
+		PanelAnchor screen;
+		PanelMode loggedScreenMode = PanelMode::HeadLocked;
 	} panel;
 
 	//! The menu pointer's beam (#34), set by the input module every frame
@@ -241,6 +249,21 @@ struct OpenXRState {
 	};
 	std::array<HandReticle, HandCount> reticles;
 
+	//! The radial menus (#376): an image per hand drawn by the game while its menu is open, set every frame
+	struct RadialMenu {
+		Swapchain image;
+		bool acquired = false;  //!< bound as the render target between beginRadialImage and endRadialImage
+		bool drawn = false;     //!< an image was released this frame
+		bool requested = false;
+		Vec3f center = Vec3f(0.f); //!< LOCAL space
+		glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f);
+		float size = 0.f;
+		bool submitted = false; //!< part of the last frame's layers
+		const char * refusal = ""; //!< why the last beginRadialImage drew nothing, empty when it did (#377)
+	};
+	std::array<RadialMenu, HandCount> radials;
+	bool radialFailed = false; //!< an image could not be made: not retried this session
+
 	//! The stereo render as status.json reports it; \c active is the current frame's, the rest the last stereo frame's
 	StereoStatus stereo;
 	bool stereoLogged = false; //!< the stereo banner was logged for this session
@@ -251,8 +274,9 @@ struct OpenXRState {
 		XrCompositionLayerProjection projection = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
 		XrCompositionLayerQuad quad = { XR_TYPE_COMPOSITION_LAYER_QUAD };
 		XrCompositionLayerQuad beam = { XR_TYPE_COMPOSITION_LAYER_QUAD }; //!< the menu pointer, above the panel (#34)
-		std::array<XrCompositionLayerQuad, HandCount> reticles = { }; //!< the hand reticles, on top (#37)
-		std::array<const XrCompositionLayerBaseHeader *, 3 + HandCount> list = { };
+		std::array<XrCompositionLayerQuad, HandCount> reticles = { }; //!< the hand reticles (#37)
+		std::array<XrCompositionLayerQuad, HandCount> radials = { };  //!< the radial menus, on top (#376)
+		std::array<const XrCompositionLayerBaseHeader *, 3 + 2 * HandCount> list = { };
 		u32 count = 0;
 	} layers;
 
@@ -620,8 +644,13 @@ bool createInstance() {
 	std::vector<const char *> extensions = { XR_KHR_OPENGL_ENABLE_EXTENSION_NAME };
 	XrResult listFailure = XR_SUCCESS;
 	const bool handTracking = extensionListed(HandTracking::extensionName(), listFailure);
+	// The joints conforming to the controller (#385.7): asked for with the hand tracking when the runtime has it
+	const bool motionRange = handTracking && extensionListed(HandTracking::motionRangeExtensionName(), listFailure);
 	if(handTracking) {
 		extensions.push_back(HandTracking::extensionName());
+		if(motionRange) {
+			extensions.push_back(HandTracking::motionRangeExtensionName());
+		}
 	} else {
 		LogInfo << "[vr] hands: the runtime does not list " << HandTracking::extensionName()
 		        << " - the fingers follow the controls (trigger, grip, thumb)";
@@ -649,7 +678,7 @@ bool createInstance() {
 	}
 
 	if(handTracking) {
-		g_xr.handTracking.bind(g_xr.instance);
+		g_xr.handTracking.bind(g_xr.instance, motionRange);
 	}
 
 	XrInstanceProperties properties = { XR_TYPE_INSTANCE_PROPERTIES };
@@ -845,6 +874,11 @@ void destroySession() {
 	}
 	g_xr.reticleFailed = false;
 	g_xr.reticles = { };
+	for(OpenXRState::RadialMenu & radial : g_xr.radials) {
+		radial.image.destroy();
+		radial = OpenXRState::RadialMenu();
+	}
+	g_xr.radialFailed = false;
 	g_xr.mirror.destroy();
 	g_xr.colorFormat = 0;
 
@@ -951,6 +985,22 @@ bool createSessionResources() {
 		if(!g_xr.eyes[i].create(g_xr.session, g_xr.colorFormat, size, true, names[i], samples)) {
 			return false;
 		}
+	}
+
+	// The radial menus' images (#376), made here with no swapchain image acquired: SteamVR refused one made
+	// in the frame while the flat frame's image was acquired (XR_ERROR_RUNTIME_FAILURE, TRAPS.md). Without
+	// them the menus still work, unseen - said once here, and in status.json (vr.radial.images)
+	const char * const radialNames[] = { "radial menu (left)", "radial menu (right)" };
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		Swapchain & image = g_xr.radials[hand].image;
+		if(!image.create(g_xr.session, g_xr.colorFormat, RadialImageSize, true, radialNames[hand])) {
+			image.destroy();
+			g_xr.radialFailed = true;
+		}
+	}
+	if(g_xr.radialFailed) {
+		LogWarning << "[vr] radial menu: no image of " << RadialImageSize.x << 'x' << RadialImageSize.y
+		           << ", the radial menus work but are not drawn";
 	}
 
 	return true;
@@ -1481,6 +1531,44 @@ void describeReticleLayers(OpenXRState::Layers & layers) {
 }
 
 /*!
+ * The radial menus (#376): each hand's image, drawn by the game this frame, as a quad layer on top of
+ * everything - a menu held in front of the hand is never hidden by the world or the hand itself.
+ */
+void describeRadialLayers(OpenXRState::Layers & layers) {
+
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		OpenXRState::RadialMenu & radial = g_xr.radials[hand];
+		const bool drawn = radial.drawn;
+		radial.drawn = false;
+		if(!radial.requested || !drawn || radial.size <= 0.f || layers.count >= layers.list.size()) {
+			if(radial.requested && drawn && layers.count >= layers.list.size()) {
+				radial.refusal = "the frame's layer list is full";
+			}
+			continue;
+		}
+		XrCompositionLayerQuad & layer = layers.radials[hand];
+		layer = { XR_TYPE_COMPOSITION_LAYER_QUAD };
+		layer.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+		layer.space = g_xr.localSpace;
+		layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+		layer.subImage.swapchain = radial.image.handle();
+		layer.subImage.imageRect = radial.image.rect();
+		layer.subImage.imageArrayIndex = 0;
+		layer.pose.orientation.x = radial.orientation.x;
+		layer.pose.orientation.y = radial.orientation.y;
+		layer.pose.orientation.z = radial.orientation.z;
+		layer.pose.orientation.w = radial.orientation.w;
+		layer.pose.position.x = radial.center.x;
+		layer.pose.position.y = radial.center.y;
+		layer.pose.position.z = radial.center.z;
+		layer.size.width = radial.size;
+		layer.size.height = radial.size;
+		layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
+		radial.submitted = true;
+	}
+}
+
+/*!
  * Describe the quad that shows the flat frame swapchain's most recently released image: the
  * floating panel in the world-locked space while a menu is open (#49), otherwise the head-locked
  * quad in front of the eyes.
@@ -1502,9 +1590,11 @@ void describeQuadLayer(OpenXRState::Layers & layers, XrCompositionLayerFlags lay
 	layer.subImage.imageRect = swapchain.rect();
 	layer.subImage.imageArrayIndex = 0;
 
-	if(g_xr.panel.anchor.mode() == PanelMode::World) {
-		const PanelPose & pose = g_xr.panel.anchor.pose();
-		const Vec2f size = panelSize(g_xr.panel.params.width, swapchain.size());
+	// A logo or a cinematic on its screen (#394), else an open menu on the floating panel (#49)
+	const bool screen = g_xr.panel.screen.mode() == PanelMode::World;
+	if(screen || g_xr.panel.anchor.mode() == PanelMode::World) {
+		const PanelPose & pose = screen ? g_xr.panel.screen.pose() : g_xr.panel.anchor.pose();
+		const Vec2f size = panelSize(screen ? ScreenWidth : g_xr.panel.params.width, swapchain.size());
 		layer.space = g_xr.localSpace;
 		layer.pose.orientation.x = pose.orientation.x;
 		layer.pose.orientation.y = pose.orientation.y;
@@ -1531,9 +1621,15 @@ void describeQuadLayer(OpenXRState::Layers & layers, XrCompositionLayerFlags lay
 
 	layers.list[layers.count++] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
 
-	if(layer.space == g_xr.localSpace) {
+	if(layer.space == g_xr.localSpace && !screen) {
 		describeBeamLayer(layers);
 	}
+}
+
+//! The game shows a logo, the intro or a cinematic: on the screen in the room, not the eyes (#394)
+bool onScreen(gameevent::GameState state) {
+	return state == gameevent::GameState::Logo || state == gameevent::GameState::Intro
+	       || state == gameevent::GameState::Cinematic;
 }
 
 //! The panel settings from cfg.ini (clamped when read)
@@ -1583,6 +1679,31 @@ void updatePanel() {
 	if(mode != panel.loggedMode) {
 		panel.loggedMode = mode;
 		gameevent::Event("vr.panel")("mode", panelModeName(mode))("menu", panel.menu.empty() ? "none" : panel.menu);
+	}
+
+	// The logos and the cinematics play on a screen fixed in the room (#394): placed where the player
+	// looks when one starts, like a menu's panel, never head-locked (a picture glued to the face)
+	const gameevent::GameState state = gameevent::currentGameState();
+	const bool playing = onScreen(state);
+	PanelParams screenParams;
+	screenParams.distance = ScreenDistance;
+	screenParams.drop = ScreenDrop;
+	screenParams.width = ScreenWidth;
+	const PanelPlacement screenPlaced = panel.screen.update(playing, nowUs, tracked, screenParams);
+	if(screenPlaced != PanelPlacement::None) {
+		const PanelPose & pose = panel.screen.pose();
+		const Vec3f heading = pose.orientation * Vec3f(0.f, 0.f, -1.f);
+		gameevent::Event("vr.screen.placed")("reason", panelPlacementName(screenPlaced))
+			("for", gameevent::gameStateName(state))
+			("x", pose.position.x, 2)("y", pose.position.y, 2)("z", pose.position.z, 2)
+			("yawDeg", glm::degrees(std::atan2(-heading.x, -heading.z)), 1)
+			("distanceM", ScreenDistance, 2)("widthM", ScreenWidth, 2)("headY", head.position.y, 2);
+	}
+	const PanelMode screenMode = panel.screen.mode();
+	if(screenMode != panel.loggedScreenMode) {
+		panel.loggedScreenMode = screenMode;
+		gameevent::Event("vr.screen")("state", screenMode == PanelMode::World ? "on" : "off")
+			("for", gameevent::gameStateName(state));
 	}
 }
 
@@ -1670,6 +1791,7 @@ bool finishFlatFrame(OpenXRState::Layers & layers) {
 	describeQuadLayer(layers, frame.stereo ? XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT : 0);
 	if(frame.stereo) {
 		describeReticleLayers(layers);
+		describeRadialLayers(layers);
 	}
 
 	return true;
@@ -1749,7 +1871,10 @@ void beginFrameTargets(const Vec2i & windowSize, FrameTargets targets) {
 		return;
 	}
 
-	if(targets == FrameTargets::Game && frame.state.shouldRender && frame.views.valid) {
+	// The intro's scripted scene is a film on the screen (#394): drawn flat into the quad like the
+	// cinematics, never per eye (the state of the last frame: this one has not been decided yet)
+	if(targets == FrameTargets::Game && frame.state.shouldRender && frame.views.valid
+	   && gameevent::currentGameState() != gameevent::GameState::Intro) {
 		beginStereo(frame);
 	} else if(interfaceSize == windowSize) {
 		// The interface is the window: drawn there, copied onto the quad (#18)
@@ -1937,7 +2062,11 @@ bool endFrame(bool resubmit) {
 	endInfo.layers = count ? layers.list.data() : nullptr;
 
 	frame.timing.endStart = toUs(platform::getTime());
-	XrResult result = xrEndFrame(g_xr.session, &endInfo);
+	XrResult result;
+	{
+		perf::Scope perfEnd(PerfPhase::VrEnd);
+		result = xrEndFrame(g_xr.session, &endInfo);
+	}
 	frame.timing.endEnd = toUs(platform::getTime());
 	frame.begun = false;
 	if(XR_FAILED(result)) {
@@ -2200,19 +2329,27 @@ void pollEvents() {
 				if(changed.state == XR_SESSION_STATE_READY) {
 					beginSession();
 				} else if(changed.state == XR_SESSION_STATE_STOPPING) {
+					if(!g_xr.exitRequested) {
+						// The runtime ends the session on its own: the exit report names it if the process follows (#146)
+						platform::noteExitCause("OpenXR session stopping: the runtime asks the game to end the session");
+					}
 					endSession();
 				} else if(changed.state == XR_SESSION_STATE_EXITING && g_xr.exitRequested) {
 					// Our own exit (requestExit): shutdown destroys the session
 					g_xr.exited = true;
 				} else if(changed.state == XR_SESSION_STATE_LOSS_PENDING || changed.state == XR_SESSION_STATE_EXITING) {
-					LogWarning << "OpenXR session ended by the runtime, continuing in flat mode";
+					const std::string cause = std::string("OpenXR session ended by the runtime (")
+					                          + sessionStateName(changed.state) + ")";
+					LogWarning << cause << ", continuing in flat mode";
+					platform::noteExitCause(cause);
 					destroySession();
 				}
 				break;
 			}
 
 			case XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING: {
-				LogWarning << "OpenXR runtime is shutting down, continuing in flat mode";
+				LogWarning << "OpenXR runtime is shutting down (instance loss pending), continuing in flat mode";
+				platform::noteExitCause("OpenXR runtime is shutting down (instance loss pending)");
 				// No orderly exit from a dying runtime: the session goes first, then the instance
 				destroySession();
 				shutdown();
@@ -2286,29 +2423,47 @@ bool beginFrameFor(const Vec2i & windowSize, FrameTargets targets) {
 		endFrame(true);
 	}
 
-	// The even-cadence cap (F-26): sleep past the slots to skip, so that xrWaitFrame - the only
-	// display clock, a timer of our own slips (F-117) - hands out every n-th slot, not the next one
-	if(g_xr.divisor > 1 && frame.haveLastWait && frame.period > 0) {
-		s64 skipUs = s64((double(g_xr.divisor) - 0.5) * double(frame.period));
-		PlatformInstant deadline = frame.lastWaitReturn + PlatformDuration(std::chrono::microseconds(skipUs));
-		PlatformDuration left = deadline - platform::getTime();
-		if(left > 0) {
-			Thread::sleep(left);
+	XrResult result;
+	PlatformInstant waited;
+	{
+		// The cap's sleep and xrWaitFrame: the time the headset paces the game (#327's vrwait)
+		perf::Scope perfWait(PerfPhase::VrWait);
+
+		// The even-cadence cap (F-26): sleep past the slots to skip, so that xrWaitFrame - the only
+		// display clock, a timer of our own slips (F-117) - hands out every n-th slot, not the next one
+		if(g_xr.divisor > 1 && frame.haveLastWait && frame.period > 0) {
+			s64 skipUs = s64((double(g_xr.divisor) - 0.5) * double(frame.period));
+			PlatformInstant deadline = frame.lastWaitReturn + PlatformDuration(std::chrono::microseconds(skipUs));
+			PlatformDuration left = deadline - platform::getTime();
+			if(left > 0) {
+				Thread::sleep(left);
+			}
 		}
+
+		frame.timing = FrameTiming();
+		frame.timing.waitStart = toUs(platform::getTime());
+
+		XrFrameWaitInfo waitInfo = { XR_TYPE_FRAME_WAIT_INFO };
+		frame.state = { XR_TYPE_FRAME_STATE };
+		result = xrWaitFrame(g_xr.session, &waitInfo, &frame.state);
+		waited = platform::getTime();
 	}
-
-	frame.timing = FrameTiming();
-	frame.timing.waitStart = toUs(platform::getTime());
-
-	XrFrameWaitInfo waitInfo = { XR_TYPE_FRAME_WAIT_INFO };
-	frame.state = { XR_TYPE_FRAME_STATE };
-	XrResult result = xrWaitFrame(g_xr.session, &waitInfo, &frame.state);
-	PlatformInstant waited = platform::getTime();
 	frame.timing.waitEnd = toUs(waited);
 	if(XR_FAILED(result)) {
 		logFrameFailure("xrWaitFrame", result);
 		return false;
 	}
+	// Missed frames as OpenXR sees them: display slots the predicted display time skipped beyond the
+	// expected ones (the performance log, #327)
+	if(g_xr.lastDisplayTime != 0 && frame.state.predictedDisplayPeriod > 0
+	   && frame.state.predictedDisplayTime > g_xr.lastDisplayTime) {
+		XrTime slots = (frame.state.predictedDisplayTime - g_xr.lastDisplayTime + frame.state.predictedDisplayPeriod / 2)
+		               / frame.state.predictedDisplayPeriod;
+		if(slots > XrTime(g_xr.divisor)) {
+			perf::addMissed(u32(slots - XrTime(g_xr.divisor)));
+		}
+	}
+	perf::setDisplay(frame.state.predictedDisplayPeriod / 1000, g_xr.divisor, true);
 	g_xr.lastDisplayTime = frame.state.predictedDisplayTime;
 	frame.period = frame.state.predictedDisplayPeriod / 1000; // OpenXR nanoseconds
 	frame.timing.displayPeriod = frame.period;
@@ -2407,6 +2562,9 @@ void submitFrame(const Vec2i & windowSize) {
 		for(OpenXRState::HandReticle & reticle : g_xr.reticles) {
 			reticle.submitted = false;
 		}
+		for(OpenXRState::RadialMenu & radial : g_xr.radials) {
+			radial.submitted = false;
+		}
 		eyes = describeEyeLayer(g_xr.layers);
 		if(!eyes) {
 			background = renderBackground(g_xr.layers);
@@ -2437,10 +2595,11 @@ void submitFrame(const Vec2i & windowSize) {
 		oss << "First VR frame shown: " << (eyes ? "the scene per eye" : background ? "dark background" : "no background");
 		if(flatFrame) {
 			const bool world = g_xr.layers.quad.space == g_xr.localSpace;
+			const bool screen = g_xr.panel.screen.mode() == PanelMode::World;
 			oss << ", flat frame " << g_xr.quad.size().x << 'x' << g_xr.quad.size().y
-			    << (world ? " on the floating panel " : " on a head-locked quad ") << g_xr.layers.quad.size.width
-			    << " x " << g_xr.layers.quad.size.height << " m at "
-			    << (world ? g_xr.panel.params.distance : QuadDistance)
+			    << (!world ? " on a head-locked quad " : screen ? " on the logo / cinematic screen " : " on the floating panel ")
+			    << g_xr.layers.quad.size.width << " x " << g_xr.layers.quad.size.height << " m at "
+			    << (!world ? QuadDistance : screen ? ScreenDistance : g_xr.panel.params.distance)
 			    << " m" << (g_xr.layers.quad.layerFlags & XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT
 			                ? " (2D interface, blended by its alpha)" : " (a copy of the window)");
 		} else {
@@ -2577,19 +2736,21 @@ void setMenuOpen(const char * menu) {
 PanelStatus panelStatus() {
 	const OpenXRState::Panel & panel = g_xr.panel;
 	PanelStatus status;
-	status.mode = panelModeName(panel.anchor.mode());
+	// While a logo or a cinematic plays the quad is its screen (#394): mode "screen", its pose and size
+	const bool screen = panel.screen.mode() == PanelMode::World;
+	status.mode = screen ? "screen" : panelModeName(panel.anchor.mode());
 	status.menu = panel.menu;
 	status.placements = panel.anchor.placements();
 	status.lastPlacement = panelPlacementName(panel.lastPlacement);
-	const PanelPose & pose = panel.anchor.pose();
+	const PanelPose & pose = screen ? panel.screen.pose() : panel.anchor.pose();
 	const Vec3f heading = pose.orientation * Vec3f(0.f, 0.f, -1.f);
 	const Vec3f face = pose.orientation * Vec3f(0.f, 0.f, 1.f);
 	status.position = pose.position;
 	status.yawDeg = glm::degrees(std::atan2(-heading.x, -heading.z));
 	status.tiltDeg = glm::degrees(std::asin(std::clamp(face.y, -1.f, 1.f)));
 	status.size = panel.size;
-	status.distance = panel.params.distance;
-	status.drop = panel.params.drop;
+	status.distance = screen ? ScreenDistance : panel.params.distance;
+	status.drop = screen ? ScreenDrop : panel.params.drop;
 	return status;
 }
 
@@ -2662,8 +2823,79 @@ bool handReticleShown(Hand hand) {
 	return g_xr.reticles[size_t(hand)].submitted;
 }
 
+bool beginRadialImage(Hand hand) {
+
+	OpenXRState::Frame & frame = g_xr.frame;
+	OpenXRState::RadialMenu & radial = g_xr.radials[size_t(hand)];
+	radial.drawn = false;
+	// The images are made with the session (createSwapchains), never in a frame
+	if(!stereoActive() || frame.eyeInRender != size_t(-1) || !radial.image.isValid()) {
+		radial.refusal = !stereoActive() ? (frame.begun ? "not a stereo frame" : "no frame begun")
+		                 : frame.eyeInRender != size_t(-1) ? "an eye in render" : "no image";
+		return false;
+	}
+	if(!radial.image.acquire()) {
+		radial.refusal = "the image acquire failed";
+		return false;
+	}
+	radial.refusal = "";
+
+	bindTarget(radial.image.framebuffer(), radial.image.size());
+	GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
+	glDisable(GL_SCISSOR_TEST);
+	const GLfloat transparent[4] = { 0.f, 0.f, 0.f, 0.f };
+	const GLfloat depth = 1.f;
+	glClearBufferfv(GL_COLOR, 0, transparent);
+	glClearBufferfv(GL_DEPTH, 0, &depth);
+	if(scissor) {
+		glEnable(GL_SCISSOR_TEST);
+	}
+	radial.acquired = true;
+
+	return true;
+}
+
+void endRadialImage(Hand hand) {
+
+	OpenXRState::RadialMenu & radial = g_xr.radials[size_t(hand)];
+	if(!radial.acquired) {
+		return;
+	}
+	radial.image.release();
+	radial.acquired = false;
+	radial.drawn = true;
+
+	// Back to the flat frame for the 2D interface, or to the window when there is no quad
+	if(g_xr.frame.quadAcquired) {
+		bindTarget(g_xr.quad.framebuffer(), g_xr.quad.size());
+	} else {
+		restoreWindowTarget();
+	}
+}
+
+void setRadialLayer(Hand hand, bool shown, const Vec3f & center, const glm::quat & orientation, float size) {
+	OpenXRState::RadialMenu & radial = g_xr.radials[size_t(hand)];
+	radial.requested = shown;
+	radial.center = center;
+	radial.orientation = orientation;
+	radial.size = size;
+}
+
+bool radialLayerShown(Hand hand) {
+	return g_xr.radials[size_t(hand)].submitted;
+}
+
+const char * radialImageRefusal(Hand hand) {
+	return g_xr.radials[size_t(hand)].refusal;
+}
+
+bool radialImagesMade() {
+	return g_xr.radials[0].image.isValid() && g_xr.radials[1].image.isValid();
+}
+
 void recenterPanel() {
 	g_xr.panel.anchor.recenter();
+	g_xr.panel.screen.recenter();
 }
 
 std::string runtimeName() {
@@ -2839,6 +3071,27 @@ void setHandReticle(Hand /* hand */, bool /* shown */, const Vec3f & /* hit */, 
 
 bool handReticleShown(Hand /* hand */) {
 	return false;
+}
+
+bool beginRadialImage(Hand /* hand */) {
+	return false;
+}
+
+bool radialImagesMade() {
+	return false;
+}
+
+void endRadialImage(Hand /* hand */) { }
+
+void setRadialLayer(Hand /* hand */, bool /* shown */, const Vec3f & /* center */, const glm::quat & /* orientation */,
+                    float /* size */) { }
+
+bool radialLayerShown(Hand /* hand */) {
+	return false;
+}
+
+const char * radialImageRefusal(Hand /* hand */) {
+	return "no VR";
 }
 
 void recenterPanel() { }

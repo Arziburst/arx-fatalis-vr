@@ -44,6 +44,7 @@ public:
 	
 	void setChecked(bool checked);
 	bool checked() const { return m_checked; }
+	const std::string & label() const { return m_label->text(); }
 	
 	std::function<void(bool /* checked */)> stateChanged;
 	

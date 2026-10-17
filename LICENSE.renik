@@ -1,0 +1,31 @@
+src/vr/ArmRoll.cpp (the roll-aware arm IK of the VR body, #304) ports the rules of the limb solver
+of RENIK, https://github.com/V-Sekai/renik at commit 1d4028a65b21a05c86714baa48a459a3a7aaaeca
+(renik/renik_limb.h, renik.cpp: solve_trig_ik_redux and the arm defaults): how the hand's roll is
+shared between the forearm and the upper arm (lower_limb_twist, upper_limb_twist), how it steers the
+joint (target_rotation_influence), and the inflection point with its overflow hysteresis
+(twist_inflection_point_offset, twist_overflow, overflow_state). RENIK distributes those files
+under the MIT License; its notices are reproduced below. Nothing of RENIK is compiled into this
+tree: the C++ here is our own writing of the rules against this engine's skeleton (bend-plane frames
+from the model's rest pose, a swing-twist split), distributed under the GPLv3+ like the rest of the
+tree.
+
+MIT License
+
+Copyright 2020 MMMaellon
+Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md).
+Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

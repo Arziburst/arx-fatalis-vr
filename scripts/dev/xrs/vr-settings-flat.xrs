@@ -20,7 +20,7 @@ menu vr
 @until menuPage eq vr 10s
 @frames 30
 @shot vr-menu
-@assert vr.input.layout.jump eq right.a
+@assert vr.input.layout.jump eq right.stick_up
 @assert vr.input.conflicts eq 0
 
 menu none

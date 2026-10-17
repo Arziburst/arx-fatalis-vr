@@ -20,6 +20,7 @@
 #ifndef ARX_GUI_NOTIFICATION_H
 #define ARX_GUI_NOTIFICATION_H
 
+#include <stddef.h>
 #include <string>
 
 void notification_ClearAll();
@@ -31,5 +32,8 @@ void notification_ClearAll();
 void notification_add(std::string && text);
 
 void notification_check();
+
+//! The notifications on screen now: not past their deadline (the test channel waits for none, #370)
+size_t notification_count();
 
 #endif // ARX_GUI_NOTIFICATION_H

@@ -25,6 +25,7 @@
 #include "input/Keyboard.h"
 #include "input/Mouse.h"
 #include "math/Types.h"
+#include "platform/Platform.h"
 
 
 class TextInputHandler;
@@ -50,6 +51,35 @@ public:
 	virtual void stopTextInput() = 0;
 	virtual std::string getKeyName(Keyboard::Key key) const = 0;
 	
+	// The test channel (#338): mouse events as the window system delivers them; false when not supported
+	virtual bool injectMouseMove(const Vec2i & /* motion */) { return false; }
+	virtual bool injectMouseAt(const Vec2i & /* windowPos */) { return false; }
+	virtual bool injectMouseButton(int /* buttonId */, bool /* down */) { return false; }
+	virtual bool injectMouseWheel(int /* steps */) { return false; }
+	virtual bool injectKey(int /* keyId */, bool /* down */) { return false; }
+
+	// Real desktop input as the window system's own messages to the game window (#487): what the real
+	// devices send, for tests that must prove it is dropped; false when not supported
+	virtual bool postMouseAt(const Vec2i & /* windowPos */) { return false; }
+	virtual bool postMouseButton(int /* buttonId */, bool /* down */) { return false; }
+	virtual bool postMouseWheel(int /* steps */) { return false; }
+	virtual bool postKey(int /* keyId */, bool /* down */) { return false; }
+
+	//! Desktop input dropped before the game saw it (#487)
+	struct DroppedInput {
+		bool ignored = false; //!< dropped now
+		u64 keys = 0;         //!< key presses
+		u64 text = 0;         //!< text input events
+		u64 buttons = 0;      //!< mouse button presses
+		u64 wheel = 0;        //!< wheel steps
+		u64 moves = 0;        //!< mouse motion events
+	};
+	//! The real mouse and keyboard in a test run's window (Window::isBackground): only injected events count
+	virtual DroppedInput droppedRealInput() const { return { }; }
+	//! The keyboard, real or injected, dropped while ignored (VR: the window only mirrors the headset)
+	virtual void setKeyboardIgnored(bool /* ignored */) { }
+	virtual DroppedInput droppedKeyboard() const { return { }; }
+
 protected:
 	
 	virtual ~InputBackend() = default;

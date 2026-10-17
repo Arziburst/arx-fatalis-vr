@@ -81,14 +81,11 @@ Work-in-progress limits: see [Parallel work](#parallel-work) (sequential mode: o
 
 ## The development loop
 
-One task per session, one pull request per task. The owner drives it with three commands
-(Claude Code project commands in `.claude/commands/`):
-
-| Command | What happens |
-|---|---|
-| `/next-task` | Claude takes the next task from the [MVP task queue](MVP.md#task-queue), implements it on its own branch, opens a PR, waits for CI. Non-VR work is merged automatically; VR behavior goes to **Testing** with step-by-step test instructions. |
-| `/accept-task` | The owner tested it in the headset and it is good → Claude merges the PR and moves the task to **Done**. |
-| `/reject-task <what is wrong>` | The owner tested it and something is off → Claude fixes it in the same PR and puts it back to **Testing**. |
+One task per session, one pull request per task. The owner does not start tasks by command: the coordinator
+takes the next task from the [MVP task queue](MVP.md#task-queue), writes its contract and starts a worker
+with `scripts/dev/start-worker.ps1`; the worker implements it on its own branch, opens a PR and waits for CI.
+VR behavior goes to **Testing** with step-by-step test instructions; the owner gives the headset verdict
+(OK, or what is wrong) to the coordinator, who merges on OK or sends the worker back to fix it in the same PR.
 
 Start each task in a **new Claude Code session** in the owner's working copy, so every task starts
 with a clean context; everything a session needs to know lives in the repository and on the board.
@@ -105,7 +102,7 @@ Workers are named by start-worker (`#<n> worker: <title>`). A project hook (`.cl
   complete rule set: [coordinator/](../../coordinator/) — the local core plus PROJECT.md and BINDINGS.md
   (`/coordinator` on any machine).
 - **Worker session** — a fresh session per task, possibly with a different model. It implements exactly
-  one task in its own PR (`/next-task <n>`), and handles the owner's verdict (`/accept-task`, `/reject-task`).
+  one task in its own PR, and fixes what the coordinator relays from the owner's verdict.
   In parallel mode the coordinator starts workers itself as background sessions
   (`scripts/dev/start-worker.ps1 <n>`, decision D-011): each in its own worktree, without permission
   prompts. The owner sees them in `claude agents` and opens one with `claude attach <id>`.
@@ -162,7 +159,7 @@ they are in **different areas**:
 When in doubt, run them one after the other.
 
 **Each worker in its own working copy** — in parallel mode a worker never works in the owner's copy.
-It works in its own git worktree under `C:\Users\arzib\arx-fatalis-vr-wt\ARXVR-<n>-<type>-<name>`
+It works in its own git worktree under `%USERPROFILE%\arx-fatalis-vr-wt\ARXVR-<n>-<type>-<name>`
 (outside OneDrive), created from `origin/main` with `scripts/dev/new-worktree.ps1` (#123). Build
 directories are per copy already. The owner's copy on the desktop stays on `main` and serves as the
 test station.
@@ -198,16 +195,20 @@ test station.
   `-Repeat 10` is ten. Repeated-run evidence loops only after asking the coordinator, sequential and
   flat. Say in the narration how many launches are coming before starting them. The scripts print a
   note past the budget; the coordinator sees the count in `/new-cycle`.
-- **Self-test windows stay in the background:** the smoke test and `run-windows.ps1 -Background`
-  show the game window without activating it (SDL hint), so a test never takes the focus from the
-  owner's work; `status.json` → `window.focused` is `false` for such a run.
+- **Self-test windows stay in the background:** every test run (`--test-dir`: the smoke test,
+  `xrs-run.ps1`, CI, `run-windows.ps1 -TestChannel`) shows the game window without activating it,
+  never lets it be activated, puts it in the bottom right corner and takes no real mouse or keyboard
+  (#487) - a test never takes the focus or the input from the owner's work, and the owner's input never
+  disturbs a test. Drive it through the channel (`desktop-key`, `desktop-mouse`, `vr-sim`);
+  `status.json` → `window.activation` `never`, `realInput`; the smoke test fails a run whose window holds
+  the foreground. `run-windows.ps1 -Background` keeps a launch without the channel unfocused too.
 
 **Merging parallel PRs** — first green, first merged. Before merging, a PR must be up to date with
 `main` and green on that state (`gh pr update-branch <pr>`, wait for CI). Conflicts are resolved by
 the PR's worker. After each merge the coordinator updates the other open PRs in `/new-cycle`.
 
-**Decision numbers are assigned at merge (#274).** <!-- d-new-literal --> Nobody picks a number while a PR is open: a new
-decision is written `## D-NEW: <title>` and referenced as `D-NEW` (code comments, TESTING, TRAPS, the PR body); a second decision
+**Decision numbers are assigned at merge (#274).** Nobody picks a number while a PR is open: a new <!-- d-new-literal -->
+decision is written `## D-NEW: <title>` and referenced as `D-NEW` (code comments, TESTING, TRAPS, the PR body); a second decision <!-- d-new-literal -->
 in the same PR is `D-NEW-<tag>`. <!-- d-new-literal --> Right after `git merge origin/main` and right before the merge, run
 `.\scripts\dev\number-decisions.ps1 -Pr <pr>`: the next free numbers replace the placeholders in every file the branch changed and
 in the PR body (a line carrying the marker `d-new-literal` is left alone — for docs that talk about the placeholder); commit and push
@@ -256,7 +257,7 @@ the log, the timing); extend its table when a rule changes.
 
 ### Worker sessions prepare everything themselves
 
-The owner only opens a session and types `/next-task <n>`. Everything else at the start of a task is
+The coordinator starts the worker with the task number. Everything else at the start of a task is
 the worker's job, without asking: fetch and pull `main`, leave a branch of an already merged task,
 build `main` once (which also sets up vcpkg and dependencies) to make sure the base is healthy, and
 install or add anything missing for the task (tools via `winget`, libraries via `vcpkg.json`).
@@ -345,7 +346,7 @@ menu exists (checkpoint B). `run-windows.ps1` starts the game in a window (`--wi
 opts out), and a plain launch goes straight to the main menu — logos, the intro and every `.cin`
 cinematic are skipped during development (`--intro` shows the logos and the intro, `--cinematics`
 every cinematic; #92 restores them for players).
-After `/accept-task` the worker merges and switches the copy back to `main`.
+After the owner's OK the coordinator merges and the copy goes back to `main`.
 
 Helper scripts used by the commands:
 - `scripts/dev/next-task.ps1` — which task is next (Testing / In Progress first, then the queue)
@@ -403,7 +404,7 @@ human in a headset:
 | PR type | Label | Who merges | Condition |
 |---|---|---|---|
 | Everything that does not need in-headset testing: build, CI, tooling, docs, refactoring, engine plumbing | — | **Claude, on its own** | CI is green |
-| Gameplay / VR behavior that can only be judged in the headset | `needs-vr-test` | **Claude, after the owner's OK** (`/accept-task`) | CI is green **and** the owner tested it in VR |
+| Gameplay / VR behavior that can only be judged in the headset | `needs-vr-test` | **Claude, after the owner's OK** (the owner's verdict, given to the coordinator) | CI is green **and** the owner tested it in VR |
 
 - **Never merge with failing or pending CI.** Fix the PR instead.
 - **CI runs on a self-hosted runner on the owner's PC** (Windows service, label `arxvr`, installed in
@@ -495,7 +496,9 @@ Every game run is evidence, with nothing for the owner to do (plan decided on 20
   `test-pr.ps1`, the smoke test) a digest runs automatically; a **new** error signature or a crash is
   filed as an issue labeled `bug` + `auto-reported`, a known one gets a throttled "seen again" comment.
   Read `scripts/dev/log-digest.ps1 -Print` instead of `arx.log` ([TESTING.md](TESTING.md#the-run-digest-131));
-  GitHub calls of the filing are REST only (the GraphQL quota is shared by all sessions).
+  GitHub calls of the filing are REST only (the GraphQL quota is shared by all sessions). The repository
+  is public: every report is scrubbed of personal data first, and one that cannot be made clean stays
+  queued (#387, [TESTING.md](TESTING.md#scrubbing-personal-data-387)).
 - **D4 (#132)** crash reports verified under SteamVR, debug symbols kept for every tester build.
 
 **Triage:** the coordinator goes through new `auto-reported` issues in every `/new-cycle`: confirm or

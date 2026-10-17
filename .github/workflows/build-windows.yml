@@ -17,12 +17,17 @@ on:
     # steps and only the decision-number check runs (seconds, no build).
   push:
     branches: [ main ]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - '.claude/**'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/pull_request_template.md'
+    # Same effect as a paths-ignore of the docs-only set, but DECISIONS.md is re-included (a later pattern wins): an
+    # unnumbered D-NEW most likely arrives in a docs-only merge, and the strict decision check (#383) must see it.
+    # The Scope step keeps such a push light (no build).
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!**/*.md'
+      - '!.claude/**'
+      - '!.github/ISSUE_TEMPLATE/**'
+      - '!.github/pull_request_template.md'
+      - 'docs/vr/DECISIONS.md'
   workflow_dispatch:
 
 concurrency:
@@ -58,28 +63,44 @@ jobs:
 
     # Seconds (#274, #296): a PR must not add a numbered D-0xx that main already has; new decisions are D-NEW and
     # numbered by scripts/dev/number-decisions.ps1 right before the merge. Only for a PR that touches those files.
+    # On a push to main nothing may stay unnumbered (-Strict, #383).
     - name: Decision numbers
-      if: github.event_name == 'pull_request'
+      if: github.event_name == 'pull_request' || github.event_name == 'push'
       shell: pwsh
       run: |
+        if ('${{ github.event_name }}' -eq 'push') { git fetch --no-tags origin main:refs/remotes/origin/main; ./scripts/dev/number-decisions.ps1 -Check -Strict; exit $LASTEXITCODE }
         git fetch --no-tags origin main:refs/remotes/origin/main
         $changed = @(git diff --name-only origin/main HEAD)
         if ($changed -contains 'docs/vr/DECISIONS.md' -or $changed -contains 'scripts/dev/number-decisions.ps1') { ./scripts/dev/number-decisions.ps1 -Check }
         else { Write-Host 'decision numbers: DECISIONS.md untouched, nothing to check' }
 
     # A pull request that changes only docs (and DECISIONS.md, which wakes this workflow) needs no build: the
-    # heavy steps below run only when something outside the docs-only set changed (push / manual runs: always).
+    # heavy steps below run only when something outside the docs-only set changed. A push is compared with the commit
+    # before it (the push trigger lets a DECISIONS.md-only push through for the strict check, #383); when that commit
+    # is unknown (new branch, all zeros) or cannot be fetched (force push), or on a manual run: heavy.
     - name: Scope
       id: scope
       shell: pwsh
       run: |
         $heavy = $true
+        $light = '^(docs/|\.claude/|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md$)|\.md$'
         if ('${{ github.event_name }}' -eq 'pull_request') {
-          $light = '^(docs/|\.claude/|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md$)|\.md$'
           $heavy = [bool]@(git diff --name-only origin/main HEAD | Where-Object { $_ -notmatch $light }).Count
+        } elseif ('${{ github.event_name }}' -eq 'push' -and '${{ github.event.before }}' -notmatch '^0+$') {
+          git fetch --no-tags --depth=1 origin '${{ github.event.before }}'
+          if ($LASTEXITCODE -eq 0) {
+            $heavy = [bool]@(git diff --name-only '${{ github.event.before }}' '${{ github.sha }}' | Where-Object { $_ -notmatch $light }).Count
+          }
+          $global:LASTEXITCODE = 0 # a failed fetch is handled (heavy), not a failed step
         }
         "heavy=$($heavy.ToString().ToLower())" >> $env:GITHUB_OUTPUT
         Write-Host "heavy steps: $heavy"
+
+    # The repository is public: no personal paths, ids or e-mails in tracked files, no images under docs/ (#428).
+    # Runs on every change, docs-only ones included.
+    - name: No personal data in tracked files
+      shell: pwsh
+      run: ./scripts/dev/check-private-data.ps1
 
     # Seconds, no game: the PowerShell self-tests of the dev scripts (scripts/dev/test-*.ps1) first,
     # so a broken tool fails before the build.
@@ -92,6 +113,15 @@ jobs:
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
       run: ./scripts/build-windows.ps1 -Config Release
+
+    # The playground sequences generate their level with node (#321, #412). The runner service cannot see the owner's
+    # per-user install, so node comes from the workflow: a pinned LTS major, downloaded once into the runner's tool
+    # cache and reused by later runs. ci-smoke.ps1 still reports NOT RUN when a runner has no node at all.
+    - name: Set up node (playground generator)
+      if: steps.scope.outputs.heavy == 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
 
     # Flat game on the runner: smoke test (start, play, draw check, quit, evidence) and the spell draw
     # check. Fails the job on FAIL, and also when it could not run (exit 2: another game kept the game

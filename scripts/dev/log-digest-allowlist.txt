@@ -9,3 +9,17 @@
 # OpenAL's mixer thread starved while the PC was busy (parallel worker builds): seen in 1 of 30 kept runs, 449 lines in
 # 11 s, nothing audible reported (#300). The digest still shows it; a real audio fault shows as a crash or an error
 ^\[W\] OpenALSource:\d+\s+\[.*\] buffer underrun detected
+
+# The OpenXR runtime ended the session or shut down (SteamVR quit the app or closed, the headset was lost): handled,
+# the game goes on in flat mode (#146). The shipped sequences vr-session-end / vr-session-loss force these on the
+# simulated headset in every CI run. An exit of the process that follows names itself in [E] ExitTrace lines
+^\[W\] VRSystem:\d+\s+OpenXR session ended by the runtime \((exiting|loss pending)\), continuing in flat mode$
+^\[W\] VRSystem:\d+\s+OpenXR runtime is shutting down \(instance loss pending\), continuing in flat mode$
+
+# The hang watchdog (#440): the first line of a report ("[hang] main thread stalled for ...") carries the signature;
+# its stack lines, a missing stack and the end of the stall are its context - filed, each frame became an issue.
+# Closed as noise: #441-#445, the frame lines of the deliberate stall of level-load-hang.xrs
+^\[W\] CommandChannel:\d+\s+\[hang\]   [#(]
+^\[W\] CommandChannel:\d+\s+\[hang\] main thread responsive again after \d+ ms$
+# A stall the test channel asks for on purpose (stall / stall load; level-load-hang.xrs in every CI run)
+^\[W\] CommandChannel:\d+\s+\[hang\] main thread stalled for \d+ ms \(report \d of at most \d\), last beat at .*, then a stall the test channel asked for$

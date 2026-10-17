@@ -67,6 +67,12 @@ void updateReticles(const std::array<HandAim, HandCount> & aims, double now);
 //! The reticles are on: in the game, first person, nothing that takes the mouse from the world
 bool reticlesOn();
 
+/*!
+ * The hands are the mouse (D-016): the reticles are on, or the floating panel shows (the book stays in freelook in
+ * VR, #377) - the engine's freelook then takes the mouse from the pointer, not the screen's centre
+ */
+bool handsAreTheMouse();
+
 //! The hand's world target for the arbiter (\c onWorld and \c pixel; untouched when it has none)
 void reticleTarget(Hand hand, PointerRay & ray);
 
@@ -79,11 +85,26 @@ bool reticleClaims(Hand hand);
  */
 void afterPointer(const MenuPointer & pointer, const std::array<PointerRay, HandCount> & rays);
 
+/*!
+ * \a hand's act fired this frame (#38, D-042: doors, levers, chests, NPCs and corpses): when its reticle is on
+ * such an entity in reach, the entity is acted on as by the engine's double click (\ref takeReticleAct).
+ * Over an item it does nothing: the same chord uses the item (VRControls.h, sharesBindingByDesign).
+ * Called after \ref updateReticles
+ * \return whether the act was taken (an entity to act on is under the hand's reticle)
+ */
+bool reticleAct(Hand hand);
+
+/*!
+ * The entity a hand's act chose this frame, once (nullptr when none): the engine's world interaction
+ * (ArxGame::managePlayerControls) takes it as the target of its double click
+ */
+Entity * takeReticleAct();
+
 //! What the engine's pick should do with a mouse position
 enum class ReticlePick {
 	NotMine, //!< the reticles are off: the engine's own pick
 	Found,   //!< a world reticle's pixel: \a entity is what its ray picked (may be null)
-	Blocked  //!< a pixel of the 2D interface: it never picks the world while the reticles are on
+	Blocked  //!< a pixel of the 2D interface: it never picks the world - the reticles on, or off for the panel (#377)
 };
 
 ReticlePick reticlePickAt(const Vec2s & pos, Entity *& entity);
@@ -130,6 +151,9 @@ struct ReticleStatus {
 	bool cursor = false;            //!< the engine's mouse is a world reticle
 	std::string cursorEntity = "none";
 	u64 presses = 0;                //!< trigger presses with a reticle in the world
+	u64 acts = 0;                   //!< acts on a door, lever, chest, NPC or corpse (#38)
+	std::string lastAct = "none";   //!< what the last act was on, and with which hand
+	std::string lastActHand = "none";
 	u64 hoverChanges = 0;
 	u64 picks = 0;                  //!< the engine asked what a world pixel stands for
 	u64 blocked = 0;                //!< the engine asked about an interface pixel and got nothing from the world

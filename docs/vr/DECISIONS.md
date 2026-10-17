@@ -48,7 +48,9 @@ a changed decision keeps its history in that cell.
   body is no conversation cue. **A camera shot of the hero's body played by a script is a cutscene on the screen, even
   inside a dialogue** (the verifier's decision, #460): the level 3 ambush's dialogue (human_base_0116, a `speak -pc`
   line) has human_base_0116 send DRAG to human_base_0183, which drags the hero under camera_0107 - that shot goes to the
-  screen; the hero free again, the dialogue is first person. The dialogue decides only the shots with the hero free.
+  screen; the hero free again, the dialogue is first person. A camera shot with the hero not on the level (no floor
+  under his eye: the startup intro's talk on level 10 as a scene) goes to the screen inside a dialogue too. The dialogue
+  decides only the shots with the hero free and there.
   **In a cinematic the hero keeps his head**: the VR body's head-only hiding, its two-sided faces and its own arms apply
   only while the eyes are his (`vr::hidesHeadOnly`).
 - **No blink where the eyes see no jump** (the owner, 2026-10-17: "if we can get rid of it, we must"): a dialogue's new

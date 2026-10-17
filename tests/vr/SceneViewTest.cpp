@@ -716,6 +716,24 @@ void SceneViewTest::dialogueStaysFirstTest() {
 		CPPUNIT_ASSERT(out.shown == SceneShown::First);
 	}
 
+	// The startup intro's talk on level 10 (--loadlevel 10, a scene there): its cameras look at the talking NPCs, but the
+	// hero is not on the level - no floor under his eye: on the screen, not his blind eyes
+	{
+		SceneDirector director;
+		director.update(standing());
+		SceneInput talk = sceneOf(standing(), SceneKind::Entity, 1, SceneViewSetting::Hybrid);
+		talk.cameraOnNpc = true;
+		talk.firstOnFloor = false;
+		for(int i = 0; i < 30; i++) {
+			const SceneOutput out = director.update(talk);
+			CPPUNIT_ASSERT(director.dialogue());
+			if(director.fade() < BehindFade) {
+				CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
+			}
+		}
+		CPPUNIT_ASSERT(director.shown() == SceneShown::Screen);
+	}
+
 	// The talk after the goblin fight as its script plays it: camera_0080 activated on Kultar while he walks out - a far
 	// shot, the hero teleported, no line for 6 s - the camera on an NPC with the hero free: first person from the first frame
 	{

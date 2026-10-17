@@ -401,8 +401,11 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 	Shot target;
 	if(in.active) {
 		// A dialogue decides the shots with the hero free; a camera shot of his body played by a script is a cutscene even
-		// inside one (the level 3 ambush: the dialogue's drag under camera_0107), and the hero free again is first person
-		const bool cinematic = m_dialogue ? (in.kind == SceneKind::Entity && in.heroScripted) : m_hybrid.screen;
+		// inside one (the level 3 ambush: the dialogue's drag under camera_0107), and the hero free again is first person.
+		// A camera shot with the hero not there (no floor under his eye: the startup intro's talk on level 10) is the
+		// screen too - his eyes would be held black
+		const bool cinematic = m_dialogue ? (in.kind == SceneKind::Entity && (in.heroScripted || !in.firstOnFloor))
+		                                  : m_hybrid.screen;
 		target.shown = chooseShownView(in.setting, in.kind, cinematic);
 		target.kind = in.kind;
 		// First person's eye too low (the hero lying or dragged by a script): the screen, for the rest of the scene

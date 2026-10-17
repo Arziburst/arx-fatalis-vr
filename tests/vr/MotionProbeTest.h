@@ -34,6 +34,7 @@ class MotionProbeTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testTurnUnwrapsAcrossZero);
 	CPPUNIT_TEST(testTeleportIsNoWalk);
 	CPPUNIT_TEST(testJumpIsTheSameAtEveryRate);
+	CPPUNIT_TEST(testSteppedJumpIsTheSameAtEveryRate);
 	CPPUNIT_TEST(testJumpThatNeverLeavesTheGround);
 	CPPUNIT_TEST(testResetStartsFromZero);
 	CPPUNIT_TEST_SUITE_END();
@@ -44,6 +45,7 @@ public:
 	void testTurnUnwrapsAcrossZero();
 	void testTeleportIsNoWalk();
 	void testJumpIsTheSameAtEveryRate();
+	void testSteppedJumpIsTheSameAtEveryRate();
 	void testJumpThatNeverLeavesTheGround();
 	void testResetStartsFromZero();
 

@@ -112,6 +112,37 @@ void MotionProbeTest::testJumpIsTheSameAtEveryRate() {
 	}
 }
 
+void MotionProbeTest::testSteppedJumpIsTheSameAtEveryRate() {
+	// The engine moves a jumping player in steps of 25-35 ms (#435): between two steps the frames show the last
+	// step's position. The same 0.6 s parabola, 130 units high, stepped every 25, 30 and 35 ms from different
+	// phases and watched at 72, 90, 120 and 144 Hz: the time above 50 units is the parabola's within a few ms,
+	// where placing the crossings between frames was off by up to a step (CI: 0.300 s at 90 Hz, 0.343 at 120)
+	const double start = 0.2, air = 0.6;
+	const float apex = 130.f;
+	const double s = 0.5 * (1.0 - std::sqrt(1.0 - double(vr::MotionProbe::AirborneUnits) / double(apex)));
+	const double expected = air * (1.0 - 2.0 * s);
+	const double steps[] = { 0.025, 0.030, 0.035 };
+	const double phases[] = { 0.0, 0.4, 0.8 };
+	for(double rate : ProbeRates) {
+		for(double step : steps) {
+			for(double phase : phases) {
+				vr::MotionProbe probe;
+				const int frames = int(std::lround(rate * 1.2));
+				for(int i = 0; i <= frames; i++) {
+					const double t = double(i) / rate;
+					// The last engine step at or before this frame
+					const double moveTime = std::floor((t - phase * step) / step) * step + phase * step;
+					const double at = std::max(moveTime, 0.0);
+					const bool jumping = t >= start && t < start + air + 0.1;
+					probe.update(probeSample(t, Vec3f(0.f, probeJumpY(at, start, air, apex), 0.f), 0.f, jumping));
+				}
+				CPPUNIT_ASSERT_EQUAL(u32(1), probe.jumps());
+				CPPUNIT_ASSERT_DOUBLES_EQUAL(expected, probe.jumpSeconds(), 0.012);
+			}
+		}
+	}
+}
+
 void MotionProbeTest::testJumpThatNeverLeavesTheGround() {
 	// The engine's jump under a low ceiling: the phases run, the player stays on the floor - no jump landed
 	vr::MotionProbe probe;

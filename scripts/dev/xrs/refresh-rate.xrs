@@ -34,7 +34,10 @@
 #                   the target changed (motion.curlSpeed, 720 deg/s) within 5 % - a bend smoothed per frame would be
 #                   twice as fast at 144 as at 72
 #   jump            the apex within 3 % and the time above 50 cm within 40 ms: the engine moves a jumping player in
-#                   steps of 25-35 ms at any rate (#435), so leaving and landing move by up to a step
+#                   steps of 25-35 ms at any rate (#435) and the frames between two steps repeat the last position, so the
+#                   crossings of 50 cm are placed between the two steps (MotionProbe), never between two frames: placed
+#                   between frames the same jump read 0.300 s at 90 Hz and 0.343 at 120 in CI (a step of 33 ms, not the
+#                   rate). What is left of 40 ms is the step-size dependence of the engine's own integration (#435)
 #   swing           0.85 m in 90 ms (9.4 m/s) is one swing at every rate, its peak speed within 5 %; 0.85 m back in
 #                   700 ms (1.2 m/s, under the 2.5 m/s swing speed) is none. Until #409 lands these fail whenever display
 #                   slots are missed during a swing (#352: the median's move over two or three slots divided by one

@@ -6,7 +6,7 @@
 # and the casting stance's press (the right A) closes everything open first (the owner's headset test); the right stick
 # up jumps (beyond 0.7, more up than sideways), down toggles the crouch, sideways still turns; grip, then trigger acts
 # on a door and a lever (the trigger alone no longer does) and uses an item (a pie eaten, a sword equipped); the
-# weapon hand's trigger charges the strike, its stick click sheathes the weapon - then the trigger drags - and draws
+# weapon hand's trigger clicks nothing in the world (it charges nothing either, #465), its stick click sheathes the weapon - then the trigger drags - and draws
 # it again. The controls go through the simulated runtime (vr-sim action) where a test can: the stick's directions
 # and the stick click are the game's own path from OpenXR; B through vr-input (the radial-menu sequence's way).
 # The playground's ids (scripts/dev/playground/layout.mjs, FIRST_ID 9001): light_door_9001, lever_9002 (respawn),
@@ -583,17 +583,17 @@ vr-sim action trigger right 0; vr-sim action grip right 0
 @assert vr.weapon.sheathed eq false
 @until vr.melee.active eq true 5s
 
-# ---- 4. The weapon hand: the trigger charges; the stick click sheathes (the trigger drags) and draws -------------
+# ---- 4. The weapon hand: the trigger clicks nothing; the stick click sheathes (the trigger drags) and draws ------
 
 @remember clicks0 vr.pointer.worldClicks
 vr-sim action trigger right 1
 @frames 30
-@assert vr.melee.charge.charging eq true
+@assert vr.melee.trigger eq true
 @assert vr.pointer.worldClicks eq {clicks0}
 @assert ui.drag eq none
 vr-sim action trigger right 0
 @frames 10
-@assert vr.melee.charge.charging eq false
+@assert vr.melee.trigger eq false
 # Sheathed with the right stick click: the sword goes where the engine keeps it, the hand is empty, no swing hits
 vr-sim action thumbstick_click right 1
 @frames 5
@@ -618,10 +618,10 @@ vr-sim action trigger right 1
 vr-point right entity potion_mana_9001 0 0 40
 @frames 10
 @assert ui.drag eq potion_mana_9001
-@assert vr.melee.charge.charging eq false
+@assert vr.melee.trigger eq false
 vr-sim action trigger right 0
 @until ui.drag eq none 5s
-# Drawn again with the same click: in the hand, the trigger charges again
+# Drawn again with the same click: in the hand, the trigger is the weapon hand's again
 vr-sim action thumbstick_click right 1
 @frames 5
 vr-sim action thumbstick_click right 0
@@ -630,7 +630,7 @@ vr-sim action thumbstick_click right 0
 @assert vr.weapon.toggles eq 2
 @until vr.melee.active eq true 5s
 # Casting with the sword in the hand (the owner): the right A held, the weapon hand's trigger is the pen - a stroke,
-# no charge, no strike
+# no strike
 @remember strokes0 vr.magic.strokes
 @mark
 vr-input down right.a
@@ -640,13 +640,13 @@ vr-input down right.a
 vr-sim action trigger right 1
 @frames 10
 @assert vr.magic.drawing eq true
-@assert vr.melee.charge.charging eq false
+@assert vr.melee.trigger eq false
 vr-sim hand right pos 0.32 -0.2 -0.38
 @frames 20
 vr-sim action trigger right 0
 @frames 10
 @assert vr.magic.strokes gt {strokes0}
-@assert vr.melee.charge.charging eq false
+@assert vr.melee.trigger eq false
 vr-input up right.a
 @until vr.magic.stance eq false 5s
 @until vr.melee.active eq true 5s

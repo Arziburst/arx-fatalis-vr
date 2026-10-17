@@ -1,6 +1,5 @@
-# Physical melee (#39, D-038): a swing of the sword in the IK hand hits; a plain swing is weak, the trigger held charges
-# the strike with the game's own charge (the time held against Full_AimTime) and a swing then hits at full strength;
-# a charged hit spends the charge until the trigger is released and pressed again. The trigger alone never starts the
+# Physical melee (#39, D-038, D-NEW): a swing of the sword in the IK hand hits, its damage from the speed of the blade
+# where it touched (#465; the damage scale itself is melee-damage.xrs); the trigger charges nothing and never starts the
 # engine's strike while the IK hand holds the weapon.
 # Runs on the test save mvp-goblin-fight (#70: a sword equipped, a goblin ahead in a corridor):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence melee-swing -Save mvp-goblin-fight
@@ -36,64 +35,34 @@ vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
 @assert vr.melee.swings eq 0
 @assert vr.melee.hits eq 0
 
-# 2. A plain swing back through it: one weak hit - the uncharged aim (0.25) times the speed factor (0.5 .. 1)
+# 2. A swing back through it: one hit, its damage from the speed of the blade's point that touched
+@mark
 vr-sim @+1-8 hand right pos 0.45 -0.8 -0.35
 @until vr.melee.swings ge 1 5s
 @frames 30
 @assert vr.melee.swinging eq false
 @assert vr.melee.hits eq 1
 @assert vr.melee.last.target eq goblin_base_0036
-@assert vr.melee.last.charged eq false
-@assert vr.melee.last.aim le 0.25
-@assert vr.melee.last.aim ge 0.12
-@assert vr.melee.chargedHits eq 0
-@log melee\.hit source=player target=goblin_base_0036 .*aim=0\.[12]
-@log melee\.swing kind=slash result=hit .*charge=0\.00 .*charged=no hits=1
+@assert vr.melee.last.aim gt 0.1
+@assert vr.melee.last.speed gt 1.5
+@log melee\.hit source=player target=goblin_base_0036 .*aim=\S+ speed=\S+ kind=(slash|thrust)
+@log melee\.swing kind=slash result=hit .*hits=1
 
-# 3. The trigger held: the game's charge grows to full (Full_AimTime, 1.5 s or more), then a swing hits at full strength
+# 3. The trigger held 2 s, then a swing: a hit like any other - the trigger charges nothing (#465)
+@mark
 vr-sim action trigger right 1
-@frames 10
-@assert vr.melee.charge.charging eq true
-@assert vr.melee.charge.ratio gt 0
-@until vr.melee.charge.ratio ge 1 10s
-@log melee\.charge state=full
+@frames 180
+@assert vr.melee.trigger eq true
+@until vr.melee.recovery.left eq 0 5s
 vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35
 @until vr.melee.swings ge 2 5s
 @frames 30
 @assert vr.melee.hits eq 2
-@assert vr.melee.last.charged eq true
-@assert vr.melee.last.aim ge 0.5
-@assert vr.melee.chargedHits eq 1
-@log melee\.hit source=player target=goblin_base_0036 .*aim=(1\.00|0\.[5-9])
-@log melee\.charge state=spent ratio=1\.00
-# The charge is spent: the trigger still held does not charge again
-@assert vr.melee.charge.held eq true
-@assert vr.melee.charge.spent eq true
-@frames 60
-@assert vr.melee.charge.ratio eq 0
-@assert vr.melee.charge.charging eq false
-
-# 4. Still held, another swing is a plain one (the goblin may be dead by now: the swing's own charge is what counts)
-vr-sim @+1-8 hand right pos 0.45 -0.8 -0.35
-@until vr.melee.swings ge 3 5s
-@frames 30
-@log melee\.swing kind=slash .*charge=0\.00 .*charged=no
-@assert vr.melee.chargedHits eq 1
-
-# 5. Released and pressed again: it charges again; released before a swing, the charge is gone
+@assert vr.melee.last.aim gt 0.1
 vr-sim action trigger right 0
 @frames 5
-@assert vr.melee.charge.spent eq false
-@assert vr.melee.charge.held eq false
-vr-sim action trigger right 1
-@frames 20
-@assert vr.melee.charge.charging eq true
-@assert vr.melee.charge.ratio gt 0
-vr-sim action trigger right 0
-@frames 5
-@assert vr.melee.charge.charging eq false
-@assert vr.melee.charge.ratio eq 0
-@log melee\.charge state=released
+@assert vr.melee.trigger eq false
+@nolog melee\.charge
 
 # 6. The engine's own strike no longer starts from the trigger while the IK hand holds the weapon - also in the combat
 # mode, where it used to strike without any animation (the owner's headset fight, 2026-10-10)
@@ -103,7 +72,7 @@ combat on
 @frames 30
 vr-sim action trigger right 1
 @frames 40
-@assert vr.melee.charge.charging eq true
+@assert vr.melee.trigger eq true
 vr-sim action trigger right 0
 @frames 30
 @nolog vr\.body\.armAnim.*strike

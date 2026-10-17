@@ -21,6 +21,7 @@
 #define ARX_VR_MELEESWING_H
 
 #include <array>
+#include <string_view>
 #include <vector>
 
 #include <glm/gtc/quaternion.hpp>
@@ -30,15 +31,15 @@
 
 /*!
  * \file
- * \brief The decision core of physical melee (#39, D-038): is the weapon swung, how hard, is the strike charged
+ * \brief The decision core of physical melee (#39, D-038, D-NEW): is the weapon swung, how hard does it hit
  *
- * The owner's design (2026-10-10): a physical swing of the weapon hits; a plain swing is a weak, fast
- * hit; holding the trigger charges the strike with the game's own charge (the time the attack button
- * is held against the player's \c Full_AimTime, the engine's \c StrikeAimtime), and a swing then hits
- * much harder; after a charged hit the charge is gone until the trigger is released and pressed again.
+ * The owner's design (2026-10-17, #465): a physical swing of the weapon hits, and its damage comes from the
+ * swing alone - the speed of the blade where it touches: no swing, no damage (or the minimum, a cfg.ini choice),
+ * a fast slash or thrust the full damage of the engine's fully charged strike. The trigger charges nothing.
  *
- *  - \ref SwingDetector: the controller's motion -> a swing in progress, its kind (slash or stab) and
- *    its speed factor. The speed is the one of a point \ref SwingParams::lever along the blade from the
+ *  - \ref SwingDetector: the controller's motion -> a swing in progress and its kind (slash or stab), and the
+ *    velocity of any point of the blade (\ref SwingDetector::pointVelocity). A swing's speed is the one of a
+ *    point \ref SwingParams::lever along the blade from the
  *    hand (F-61: a wrist flick turns a long blade's tip fast but this point slowly), measured relative
  *    to the head (F-59: leaning or stepping with a still arm is no swing; the room-space position
  *    already ignores the stick's walk and turn, F-178), from the median of the last three positions (F-59) over
@@ -47,9 +48,11 @@
  *    A swing starts at \ref SwingParams::startSpeed - or as a stab: a thrust of \ref SwingParams::stabDistance
  *    along the blade within \ref SwingParams::stabWindow at \ref SwingParams::stabSpeed (F-61) - and
  *    ends below \ref SwingParams::endSpeed or after \ref SwingParams::maxDuration.
- *  - \ref StrikeCharge: the trigger -> the charge ratio, spent by a charged hit, re-armed by a release.
- *  - \ref strikeAim: the ratio the engine's damage is scaled by (\c ARX_EQUIPMENT_ComputeDamages'
- *    \c ratioaim): the charge (or \ref SwingParams::weakAim without one) times the speed factor (F-63).
+ *  - \ref contactAim: the speed of the blade's point that touches -> the ratio the engine's damage is scaled by
+ *    (\c ARX_EQUIPMENT_ComputeDamages' \c ratioaim, 1 = the fully charged strike): nothing or \ref MinStrikeAim
+ *    below \ref SwingParams::speedMin and outside a swing (\ref SwingParams::noSwing), rising to 1 at
+ *    \ref SwingParams::speedMax (F-178's strength curve, F-63); \ref contactKind: a slash or a thrust, which
+ *    count alike at the same speed.
  *  - \ref TargetCooldown: one hit per target per swing, and not within \ref SwingParams::targetCooldown
  *    of the last one (F-62).
  *  - \ref StrikeRecovery: after a hit the hand recovers - a swing started within \ref recoveryTime of the hit
@@ -61,13 +64,30 @@
  */
 namespace vr {
 
+//! What a hit below \ref SwingParams::speedMin, or outside a swing, deals [vr_melee_noswing]
+enum class NoSwing : u8 {
+	None, //!< nothing: the blade touches, nothing happens
+	Min   //!< the minimum, \ref MinStrikeAim
+};
+
+//! "none", "min"
+const char * noSwingName(NoSwing noSwing);
+
+//! "min" is \ref NoSwing::Min, anything else \ref NoSwing::None
+NoSwing parseNoSwing(std::string_view name);
+
+//! The engine's weakest strike: the floor of its charge ratio (\c StrikeAimtime's 0.1)
+constexpr float MinStrikeAim = 0.1f;
+
 //! The thresholds (the speeds in m/s, the cfg.ini keys in brackets)
 struct SwingParams {
 	float lever = 0.125f;        //!< m along the blade from the grip where the speed is measured (F-61)
 	float startSpeed = 2.5f;     //!< a swing starts at this speed [vr_melee_swing_speed]
 	float endSpeed = 1.5f;       //!< and ends below this one (hysteresis)
-	float fullSpeed = 6.f;       //!< the speed factor reaches 1 here [vr_melee_full_speed]
-	float minFactor = 0.5f;      //!< the speed factor of a swing at \ref startSpeed
+	float speedMin = 1.5f;       //!< m/s at the contact point a hit damages from [vr_melee_speed_min]
+	float speedMax = 4.5f;       //!< m/s at the contact point a hit has the full damage at [vr_melee_speed_max]
+	NoSwing noSwing = NoSwing::None; //!< a hit below \ref speedMin or outside a swing [vr_melee_noswing]
+	float thrustCosine = 0.707f; //!< the contact point moving within 45 degrees of the blade's way is a thrust (F-178)
 	float stabSpeed = 2.f;       //!< a thrust along the blade at this speed ...
 	float stabDistance = 0.2f;   //!< ... covering this distance ...
 	float stabWindow = 0.25f;    //!< ... within this time is a stab, below \ref startSpeed too (F-61)
@@ -75,7 +95,6 @@ struct SwingParams {
 	float jumpSpeed = 20.f;      //!< faster (raw or filtered) is a tracking jump, not a swing (F-59, #352)
 	float minStep = 0.004f;      //!< s: samples closer than this are skipped
 	float maxStep = 0.1f;        //!< s: a longer gap starts over
-	float weakAim = 0.25f;       //!< the aim ratio of an uncharged swing [vr_melee_weak_aim]
 	float targetCooldown = 0.25f; //!< s before a target can be hit again, by a new swing [vr_melee_target_cooldown]
 };
 
@@ -94,6 +113,27 @@ enum class SwingKind : u8 {
 
 //! "none", "slash", "stab"
 const char * swingKindName(SwingKind kind);
+
+//! How the blade's point moved when it touched (a swing's \ref SwingKind is how it started)
+enum class ContactKind : u8 {
+	Slash, //!< across the blade
+	Thrust //!< along the blade, towards the tip (within \ref SwingParams::thrustCosine)
+};
+
+//! "slash", "thrust"
+const char * contactKindName(ContactKind kind);
+
+//! \return the kind of a contact whose point moved at \a velocity with the blade along \a blade (a unit vector)
+ContactKind contactKind(const Vec3f & velocity, const Vec3f & blade, const SwingParams & params);
+
+/*!
+ * \return the aim ratio a contact deals (the engine's damage = attack * ratio, 1 = the fully charged strike), from
+ *         the speed of the blade's point that touched, \a speed m/s, whatever the trigger does: below
+ *         \ref SwingParams::speedMin - and for a contact outside a swing (\a swing false: a touch, a wrist flick,
+ *         F-61) - 0 or \ref MinStrikeAim (\ref SwingParams::noSwing); from \ref SwingParams::speedMin to
+ *         \ref SwingParams::speedMax linearly from \ref MinStrikeAim to 1; faster 1
+ */
+float contactAim(float speed, bool swing, const SwingParams & params);
 
 //! What one sample changed
 enum class SwingChange : u8 {
@@ -129,8 +169,14 @@ public:
 	float thrust() const { return m_thrust; }
 	//! The fastest filtered speed of the swing in progress (or of the last one)
 	float peak() const { return m_peak; }
-	//! The speed factor of the swing in progress (or of the last one): \ref SwingParams::minFactor .. 1
-	float factor() const;
+	/*!
+	 * \return the filtered velocity (m/s, relative to the head) of the blade's point \a distance m from the grip - the
+	 *         contact point of a hit (#465), filtered like \ref speed (which is the one of \ref SwingParams::lever);
+	 *         0 before four samples
+	 */
+	Vec3f pointVelocity(float distance) const;
+	//! The blade's direction in the last sample (the grip's -Z), relative to the head
+	Vec3f blade() const { return m_count > 0 ? m_blades[0] : Vec3f(0.f, 0.f, -1.f); }
 	//! When the swing in progress (or the last one) started, seconds
 	double startTime() const { return m_startTime; }
 	//! Swings started since the start - a swing's number
@@ -153,11 +199,12 @@ private:
 	double m_lastTime = 0.;
 	Vec3f m_lastPoint = Vec3f(0.f);
 	Vec3f m_lastHand = Vec3f(0.f);
-	std::array<Vec3f, 3> m_points = { };  //!< the last three lever points, newest first
-	std::array<double, 3> m_times = { };  //!< and their times
-	size_t m_pointCount = 0;
-	Vec3f m_filtered = Vec3f(0.f);        //!< their median
-	bool m_filteredValid = false;
+	// The last four samples, newest first: the median of the newest three against the one before it is the
+	// filtered velocity of any point of the blade (F-59)
+	std::array<Vec3f, 4> m_hands = { };
+	std::array<Vec3f, 4> m_blades = { };
+	std::array<double, 4> m_times = { };
+	size_t m_count = 0;
 	std::vector<Thrust> m_thrusts;
 	float m_speed = 0.f;
 	float m_thrust = 0.f;
@@ -171,62 +218,17 @@ private:
 };
 
 /*!
- * \brief The strike's charge from the trigger (the game's own: the time held against \c Full_AimTime)
- *
- * Held, the charge grows; let go, it is gone (the engine's strike also needs the button held until the
- * release). \ref spend after a charged hit empties it, and it stays empty until the trigger is released.
- */
-class StrikeCharge {
-
-public:
-
-	/*!
-	 * \param held the trigger is held this frame (and the swing is allowed: no menu, nothing dragged)
-	 * \param seconds the frame's duration
-	 */
-	void update(bool held, float seconds);
-
-	//! A charged hit used the charge: empty until the trigger is released
-	void spend();
-
-	bool held() const { return m_held; }
-	//! Charging: held and not spent
-	bool charging() const { return m_held && !m_spent; }
-	bool spent() const { return m_spent; }
-	//! Seconds charged (0 when not charging)
-	float seconds() const { return charging() ? m_seconds : 0.f; }
-	/*!
-	 * \return the engine's charge ratio for \a fullSeconds (the player's \c Full_AimTime): the time held
-	 *         against it, 0.1 to 1 like \c StrikeAimtime - 0 when not charging
-	 */
-	float ratio(float fullSeconds) const;
-	//! Charged hits since the start
-	u64 spends() const { return m_spends; }
-
-private:
-
-	bool m_held = false;
-	bool m_spent = false;
-	float m_seconds = 0.f;
-	u64 m_spends = 0;
-
-};
-
-/*!
- * \return the aim ratio a hit is dealt with (the engine's damage = attack * ratio): the charge ratio of a
- *         charged swing (never below \ref SwingParams::weakAim), \ref SwingParams::weakAim otherwise,
- *         times the swing's speed factor
- */
-float strikeAim(float chargeRatio, float speedFactor, const SwingParams & params);
-
-/*!
  * \brief Who may be hit now: one hit per target per swing, and not again within the cooldown (F-62)
  *
- * Targets are the engine's entity indices.
+ * Targets are the engine's entity indices. A contact outside a swing (\ref NoSwing::Min) is swing \ref Touch:
+ * only the cooldown holds it back.
  */
 class TargetCooldown {
 
 public:
+
+	//! The swing number of a contact outside a swing
+	static constexpr u64 Touch = ~u64(0);
 
 	//! \return true when \a target may be hit by swing \a swing at \a time
 	bool allowed(size_t target, u64 swing, double time, float cooldown) const;

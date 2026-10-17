@@ -1505,7 +1505,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("combatMode", (player.Interface & INTER_COMBATMODE) != 0);
 		json.end();
 	}
-	// Physical melee (#39): the swing detector, the charge, the hits
+	// Physical melee (#39): the swing detector, the hits and their damage from the swing (#465)
 	{
 		const vr::MeleeStatus & melee = vr::meleeStatus();
 		json.object("melee");
@@ -1515,29 +1515,20 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("kind", melee.kind);
 		json.value("speed", melee.speed);
 		json.value("peak", melee.peak);
-		json.value("factor", melee.factor);
 		json.value("swings", melee.swings);
 		json.value("gaps", melee.gaps);
 		json.value("jumps", melee.jumps);
 		json.value("nearMisses", melee.nearMisses);
 		json.value("lastNearMiss", melee.lastNearMiss);
-		json.object("charge");
-		json.value("held", melee.chargeHeld);
-		json.value("charging", melee.charging);
-		json.value("spent", melee.chargeSpent);
-		json.value("seconds", melee.chargeSeconds);
-		json.value("ratio", melee.chargeRatio);
-		json.value("fullAimSeconds", melee.fullAimSeconds);
-		json.end();
+		json.value("trigger", melee.trigger);
 		json.value("hits", melee.hits);
 		json.value("contacts", melee.contacts);
-		json.value("chargedHits", melee.chargedHits);
 		json.object("last");
 		json.value("target", melee.lastTarget);
 		json.value("aim", melee.lastAim);
 		json.value("damage", melee.lastDamage);
-		json.value("charged", melee.lastCharged);
 		json.value("speed", melee.lastSpeed);
+		json.value("kind", melee.lastKind);
 		json.value("swing", melee.lastSwing);
 		json.end();
 		// The recovery after a hit (#323): a swing started within it hits nothing
@@ -1558,8 +1549,9 @@ std::string buildStatus(PlatformInstant now) {
 		json.object("params");
 		json.value("swingSpeed", melee.params.startSpeed);
 		json.value("endSpeed", melee.params.endSpeed);
-		json.value("fullSpeed", melee.params.fullSpeed);
-		json.value("weakAim", melee.params.weakAim);
+		json.value("speedMin", melee.params.speedMin);
+		json.value("speedMax", melee.params.speedMax);
+		json.value("noSwing", vr::noSwingName(melee.params.noSwing));
 		json.value("targetCooldown", melee.params.targetCooldown);
 		json.end();
 		json.value("placed", melee.placed);
@@ -2448,6 +2440,32 @@ std::string execute(std::string_view line) {
 			return refuse("freelook: expected on or off, got \"" + std::string(rest) + "\"");
 		}
 		return std::string();
+	}
+
+	if(word == "melee") {
+		// The damage from the swing (#465) live, not saved: melee noswing none|min sets vr_melee_noswing, melee speed
+		// <min> <max> vr_melee_speed_min and _max (m/s at the contact point) - one run tests both modes
+		std::string_view args;
+		const std::string_view what = firstWord(rest, args);
+		if(what == "noswing") {
+			if(args != vr::noSwingName(vr::NoSwing::None) && args != vr::noSwingName(vr::NoSwing::Min)) {
+				return refuse("melee noswing: expected none or min, got \"" + std::string(args) + "\"");
+			}
+			config.input.vrMeleeNoSwing = std::string(args);
+			return std::string();
+		}
+		if(what == "speed") {
+			float speedMin = 0.f;
+			float speedMax = 0.f;
+			std::istringstream iss{std::string(args)};
+			if(!(iss >> speedMin >> speedMax) || speedMin < 0.f || speedMax < speedMin || speedMax > 20.f) {
+				return refuse("melee speed: expected <min> <max> m/s, 0 <= min <= max <= 20, got \"" + std::string(args) + "\"");
+			}
+			config.input.vrMeleeSpeedMin = speedMin;
+			config.input.vrMeleeSpeedMax = speedMax;
+			return std::string();
+		}
+		return refuse("melee: expected noswing none|min or speed <min> <max>, got \"" + std::string(rest) + "\"");
 	}
 
 	if(word == "crouch") {

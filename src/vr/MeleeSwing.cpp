@@ -34,6 +34,43 @@ const char * swingKindName(SwingKind kind) {
 	return "none";
 }
 
+const char * contactKindName(ContactKind kind) {
+	switch(kind) {
+		case ContactKind::Slash: return "slash";
+		case ContactKind::Thrust: return "thrust";
+	}
+	return "slash";
+}
+
+const char * noSwingName(NoSwing noSwing) {
+	switch(noSwing) {
+		case NoSwing::None: return "none";
+		case NoSwing::Min: return "min";
+	}
+	return "none";
+}
+
+NoSwing parseNoSwing(std::string_view name) {
+	return name == "min" ? NoSwing::Min : NoSwing::None;
+}
+
+ContactKind contactKind(const Vec3f & velocity, const Vec3f & blade, const SwingParams & params) {
+	const float speed = glm::length(velocity);
+	if(speed <= 0.f) {
+		return ContactKind::Slash;
+	}
+	return glm::dot(velocity, blade) >= params.thrustCosine * speed ? ContactKind::Thrust : ContactKind::Slash;
+}
+
+float contactAim(float speed, bool swing, const SwingParams & params) {
+	if(!swing || speed < params.speedMin) {
+		return params.noSwing == NoSwing::Min ? MinStrikeAim : 0.f;
+	}
+	const float range = params.speedMax - params.speedMin;
+	const float t = range > 0.f ? glm::clamp((speed - params.speedMin) / range, 0.f, 1.f) : 1.f;
+	return MinStrikeAim + (1.f - MinStrikeAim) * t;
+}
+
 namespace {
 
 //! The blade's direction: the grip's -Z (#75 lays the blade along the controller's handle)
@@ -55,8 +92,7 @@ SwingChange SwingDetector::drop() {
 	const bool was = swinging();
 	m_kind = SwingKind::None;
 	m_seeded = false;
-	m_pointCount = 0;
-	m_filteredValid = false;
+	m_count = 0;
 	m_speed = 0.f;
 	m_thrust = 0.f;
 	m_thrusts.clear();
@@ -81,9 +117,10 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 		m_lastTime = sample.time;
 		m_lastPoint = point;
 		m_lastHand = sample.hand;
-		m_points[0] = point;
+		m_hands[0] = sample.hand;
+		m_blades[0] = blade;
 		m_times[0] = sample.time;
-		m_pointCount = 1;
+		m_count = 1;
 		return SwingChange::None;
 	}
 
@@ -111,22 +148,16 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 	// positions: a sample that is off and back gives two fast speeds, but its position is never the median).
 	// The median lags a sample: it moved over the step between the middle samples, not over this frame's -
 	// divided by this frame's step, a long frame followed by a short one reads a speed the hand never had (#352)
-	m_points[2] = m_points[1];
-	m_points[1] = m_points[0];
-	m_points[0] = point;
-	m_times[2] = m_times[1];
-	m_times[1] = m_times[0];
-	m_times[0] = sample.time;
-	m_pointCount = std::min<size_t>(m_pointCount + 1, 3);
-	if(m_pointCount == 3) {
-		const Vec3f filtered = median(m_points[0], m_points[1], m_points[2]);
-		const float span = float(m_times[1] - m_times[2]); // at least minStep: skipped samples never get here
-		m_speed = m_filteredValid ? glm::length(filtered - m_filtered) / span : 0.f;
-		m_filtered = filtered;
-		m_filteredValid = true;
-	} else {
-		m_speed = 0.f;
+	for(size_t i = m_hands.size() - 1; i > 0; i--) {
+		m_hands[i] = m_hands[i - 1];
+		m_blades[i] = m_blades[i - 1];
+		m_times[i] = m_times[i - 1];
 	}
+	m_hands[0] = sample.hand;
+	m_blades[0] = blade;
+	m_times[0] = sample.time;
+	m_count = std::min(m_count + 1, m_hands.size());
+	m_speed = glm::length(pointVelocity(m_params.lever));
 	if(m_speed > m_params.jumpSpeed) {
 		// A guard that cannot fire (#352): over its true span the median never outruns the raw speed of that
 		// step, already checked above (on each axis both medians lie between the two samples they share). It
@@ -181,48 +212,15 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 	return SwingChange::None;
 }
 
-float SwingDetector::factor() const {
-	const float range = m_params.fullSpeed - m_params.startSpeed;
-	const float t = range > 0.f ? glm::clamp((m_peak - m_params.startSpeed) / range, 0.f, 1.f) : 1.f;
-	return m_params.minFactor + (1.f - m_params.minFactor) * t;
-}
-
-void StrikeCharge::update(bool held, float seconds) {
-	if(!held) {
-		m_held = false;
-		m_spent = false; // released: the next press charges again
-		m_seconds = 0.f;
-		return;
+Vec3f SwingDetector::pointVelocity(float distance) const {
+	if(m_count < m_hands.size()) {
+		return Vec3f(0.f);
 	}
-	if(!m_held) {
-		m_held = true;
-		m_seconds = 0.f;
-	}
-	if(!m_spent) {
-		m_seconds += std::max(seconds, 0.f);
-	}
-}
-
-void StrikeCharge::spend() {
-	m_spent = true;
-	m_seconds = 0.f;
-	m_spends++;
-}
-
-float StrikeCharge::ratio(float fullSeconds) const {
-	if(!charging()) {
-		return 0.f;
-	}
-	if(fullSeconds <= 0.f) {
-		return 1.f;
-	}
-	// The engine's StrikeAimtime: the time held against Full_AimTime, 0.1 to 1
-	return glm::clamp(m_seconds / fullSeconds, 0.1f, 1.f);
-}
-
-float strikeAim(float chargeRatio, float speedFactor, const SwingParams & params) {
-	const float base = chargeRatio > 0.f ? std::max(params.weakAim, chargeRatio) : params.weakAim;
-	return base * glm::clamp(speedFactor, 0.f, 1.f);
+	const auto point = [&](size_t i) { return m_hands[i] + m_blades[i] * distance; };
+	const Vec3f now = median(point(0), point(1), point(2));
+	const Vec3f before = median(point(1), point(2), point(3));
+	const float span = float(m_times[1] - m_times[2]); // at least minStep: skipped samples never get here
+	return (now - before) / span;
 }
 
 bool TargetCooldown::allowed(size_t target, u64 swing, double time, float cooldown) const {
@@ -230,7 +228,7 @@ bool TargetCooldown::allowed(size_t target, u64 swing, double time, float cooldo
 		if(hit.target != target) {
 			continue;
 		}
-		if(hit.swing == swing || time - hit.time < double(cooldown)) {
+		if((swing != Touch && hit.swing == swing) || time - hit.time < double(cooldown)) {
 			return false;
 		}
 	}

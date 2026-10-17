@@ -263,67 +263,153 @@ void MeleeSwingTest::testLongestSwing() {
 	CPPUNIT_ASSERT_EQUAL(size_t(1), ended);
 }
 
-void MeleeSwingTest::testSpeedFactor() {
+void MeleeSwingTest::testContactAim() {
+	// #465: in a swing, nothing below 1.5 m/s at the contact point; from 1.5 the engine's weakest strike (0.1) rising
+	// to the fully charged one (1) at 4.5; faster stays full. vr_melee_noswing=min: the minimum instead of nothing
 	vr::SwingParams params;
-	for(float speed : { 2.6f, 4.25f, 9.f }) {
+	CPPUNIT_ASSERT_EQUAL(1.5f, params.speedMin);
+	CPPUNIT_ASSERT_EQUAL(4.5f, params.speedMax);
+	CPPUNIT_ASSERT(params.noSwing == vr::NoSwing::None);
+	struct Case {
+		float speed;
+		float aim;
+	};
+	const Case cases[] = { { 0.f, 0.f }, { 1.49f, 0.f }, { 1.5f, 0.1f }, { 2.25f, 0.325f }, { 3.f, 0.55f },
+	                       { 4.f, 0.85f }, { 4.5f, 1.f }, { 6.f, 1.f }, { 15.f, 1.f } };
+	for(const Case & c : cases) {
+		params.noSwing = vr::NoSwing::None;
+		const float none = vr::contactAim(c.speed, true, params);
+		params.noSwing = vr::NoSwing::Min;
+		const float min = vr::contactAim(c.speed, true, params);
+		const float expectedMin = c.speed < 1.5f ? vr::MinStrikeAim : c.aim;
+		if(std::abs(none - c.aim) > 1e-5f || std::abs(min - expectedMin) > 1e-5f) {
+			CPPUNIT_FAIL("speed " + std::to_string(c.speed) + ": none " + std::to_string(none) + ", min "
+			             + std::to_string(min) + ", expected " + std::to_string(c.aim));
+		}
+	}
+	// Outside a swing (a touch, a wrist flick) any speed is no swing: nothing, or the minimum
+	for(float speed : { 0.f, 3.f, 9.f }) {
+		params.noSwing = vr::NoSwing::None;
+		CPPUNIT_ASSERT_EQUAL(0.f, vr::contactAim(speed, false, params));
+		params.noSwing = vr::NoSwing::Min;
+		CPPUNIT_ASSERT_EQUAL(vr::MinStrikeAim, vr::contactAim(speed, false, params));
+	}
+	// The same speeds both ends: a step from nothing to full
+	params.noSwing = vr::NoSwing::None;
+	params.speedMin = params.speedMax = 3.f;
+	CPPUNIT_ASSERT_EQUAL(0.f, vr::contactAim(2.9f, true, params));
+	CPPUNIT_ASSERT_EQUAL(1.f, vr::contactAim(3.f, true, params));
+	// The cfg.ini names
+	CPPUNIT_ASSERT(vr::parseNoSwing("min") == vr::NoSwing::Min);
+	CPPUNIT_ASSERT(vr::parseNoSwing("none") == vr::NoSwing::None);
+	CPPUNIT_ASSERT(vr::parseNoSwing("bogus") == vr::NoSwing::None);
+	CPPUNIT_ASSERT_EQUAL(std::string("min"), std::string(vr::noSwingName(vr::NoSwing::Min)));
+	CPPUNIT_ASSERT_EQUAL(std::string("none"), std::string(vr::noSwingName(vr::NoSwing::None)));
+}
+
+void MeleeSwingTest::testPointVelocity() {
+	// The lever point's velocity is the detector's speed
+	{
+		vr::SwingDetector detector;
+		double time = 0.;
+		Vec3f hand = Rest;
+		move(detector, time, hand, Vec3f(0.f), 5);
+		move(detector, time, hand, Vec3f(-3.f, 0.f, 0.f), 6);
+		CPPUNIT_ASSERT_EQUAL(detector.speed(), glm::length(detector.pointVelocity(detector.params().lever)));
+		CPPUNIT_ASSERT(std::abs(glm::length(detector.pointVelocity(0.8f)) - 3.f) < 1e-3f);
+	}
+	// A wrist turn at 5 rad/s with the hand still: the tip 0.8 m out moves at 4 m/s, the grip not at all, and the
+	// lever point too slowly for a swing (F-61) - a contact of the tip outside a swing deals nothing
+	{
+		vr::SwingDetector detector;
+		const float rate = 5.f;
+		double time = 0.;
+		for(int i = 0; i < 12; i++) {
+			time += Frame;
+			const glm::quat turn = glm::angleAxis(rate * float(time), Vec3f(0.f, 1.f, 0.f));
+			CPPUNIT_ASSERT(detector.update(sample(time, Rest, turn), true) == vr::SwingChange::None);
+		}
+		CPPUNIT_ASSERT(!detector.swinging());
+		const float tip = glm::length(detector.pointVelocity(0.8f));
+		if(std::abs(tip - rate * 0.8f) > 0.02f) {
+			CPPUNIT_FAIL("the tip of a wrist turn at 5 rad/s read " + std::to_string(tip) + " m/s");
+		}
+		CPPUNIT_ASSERT(glm::length(detector.pointVelocity(0.f)) < 1e-4f);
+		CPPUNIT_ASSERT_EQUAL(0.f, vr::contactAim(tip, detector.swinging(), detector.params()));
+	}
+	// Before four samples: no velocity
+	{
+		vr::SwingDetector detector;
+		double time = 0.;
+		Vec3f hand = Rest;
+		move(detector, time, hand, Vec3f(-3.f, 0.f, 0.f), 3);
+		CPPUNIT_ASSERT_EQUAL(0.f, glm::length(detector.pointVelocity(0.5f)));
+	}
+}
+
+void MeleeSwingTest::testThrustCountsLikeSlash() {
+	// A thrust along the blade (forward, -z) and a slash across it (sideways) at the same 3 m/s: the same contact
+	// speed and the same damage, told apart only by their kind
+	const vr::SwingParams params;
+	struct Motion {
+		Vec3f velocity;
+		vr::ContactKind kind;
+		float speed = 0.f;
+		float aim = 0.f;
+		vr::ContactKind seen = vr::ContactKind::Slash;
+	};
+	Motion motions[] = { { Vec3f(0.f, 0.f, -3.f), vr::ContactKind::Thrust }, { Vec3f(-3.f, 0.f, 0.f), vr::ContactKind::Slash },
+	                     { Vec3f(0.f, 3.f, 0.f), vr::ContactKind::Slash } };
+	for(Motion & motion : motions) {
 		vr::SwingDetector detector(params);
 		double time = 0.;
 		Vec3f hand = Rest;
 		move(detector, time, hand, Vec3f(0.f), 5);
-		move(detector, time, hand, Vec3f(-speed, 0.f, 0.f), 8);
+		move(detector, time, hand, motion.velocity, 6);
 		CPPUNIT_ASSERT(detector.swinging());
-		const float expected = (speed >= params.fullSpeed) ? 1.f
-		                       : params.minFactor + (1.f - params.minFactor)
-		                         * (speed - params.startSpeed) / (params.fullSpeed - params.startSpeed);
-		if(std::abs(detector.factor() - expected) > 0.01f) {
-			CPPUNIT_FAIL("speed " + std::to_string(speed) + ": factor " + std::to_string(detector.factor())
-			             + ", expected " + std::to_string(expected));
-		}
+		const Vec3f velocity = detector.pointVelocity(0.5f);
+		motion.speed = glm::length(velocity);
+		motion.aim = vr::contactAim(motion.speed, detector.swinging(), params);
+		motion.seen = vr::contactKind(velocity, detector.blade(), params);
 	}
+	for(const Motion & motion : motions) {
+		CPPUNIT_ASSERT(motion.seen == motion.kind);
+		CPPUNIT_ASSERT(std::abs(motion.speed - 3.f) < 1e-3f);
+		CPPUNIT_ASSERT(std::abs(motion.aim - motions[0].aim) < 1e-6f);
+		CPPUNIT_ASSERT(std::abs(motion.aim - 0.55f) < 1e-3f);
+	}
+	// A fast thrust is full damage; pulling the blade back is no thrust
+	{
+		vr::SwingDetector detector(params);
+		double time = 0.;
+		Vec3f hand = Rest;
+		move(detector, time, hand, Vec3f(0.f), 5);
+		move(detector, time, hand, Vec3f(0.f, 0.f, -6.f), 6);
+		const Vec3f velocity = detector.pointVelocity(0.3f);
+		CPPUNIT_ASSERT(vr::contactKind(velocity, detector.blade(), params) == vr::ContactKind::Thrust);
+		CPPUNIT_ASSERT_EQUAL(1.f, vr::contactAim(glm::length(velocity), detector.swinging(), params));
+		CPPUNIT_ASSERT(vr::contactKind(-velocity, detector.blade(), params) == vr::ContactKind::Slash);
+	}
+	CPPUNIT_ASSERT_EQUAL(std::string("thrust"), std::string(vr::contactKindName(vr::ContactKind::Thrust)));
+	CPPUNIT_ASSERT_EQUAL(std::string("slash"), std::string(vr::contactKindName(vr::ContactKind::Slash)));
 }
 
-void MeleeSwingTest::testCharge() {
-	const float full = 1.5f; // the engine's minimum Full_AimTime
-	vr::StrikeCharge charge;
-	charge.update(false, 0.1f);
-	CPPUNIT_ASSERT(!charge.charging());
-	CPPUNIT_ASSERT_EQUAL(0.f, charge.ratio(full));
-	// A tap gives the engine's floor of 0.1, half the full time 0.5, longer is capped at 1
-	charge.update(true, 0.05f);
-	CPPUNIT_ASSERT(charge.charging());
-	CPPUNIT_ASSERT(std::abs(charge.ratio(full) - 0.1f) < 1e-4f);
-	charge.update(true, 0.7f);
-	CPPUNIT_ASSERT(std::abs(charge.ratio(full) - 0.5f) < 1e-4f);
-	charge.update(true, 3.f);
-	CPPUNIT_ASSERT_EQUAL(1.f, charge.ratio(full));
-	// A charged hit spends it: held on, it does not charge again
-	charge.spend();
-	CPPUNIT_ASSERT(!charge.charging());
-	CPPUNIT_ASSERT(charge.spent());
-	charge.update(true, 3.f);
-	CPPUNIT_ASSERT_EQUAL(0.f, charge.ratio(full));
-	CPPUNIT_ASSERT_EQUAL(u64(1), charge.spends());
-	// Released and pressed again: charges from zero
-	charge.update(false, 0.01f);
-	CPPUNIT_ASSERT(!charge.spent());
-	charge.update(true, 0.75f);
-	CPPUNIT_ASSERT(std::abs(charge.ratio(full) - 0.5f) < 1e-4f);
-	// Released before a swing: the charge is gone
-	charge.update(false, 0.01f);
-	CPPUNIT_ASSERT_EQUAL(0.f, charge.ratio(full));
-}
-
-void MeleeSwingTest::testStrikeAim() {
-	vr::SwingParams params;
-	// Uncharged: the weak aim, scaled by the speed factor
-	CPPUNIT_ASSERT(std::abs(vr::strikeAim(0.f, 1.f, params) - params.weakAim) < 1e-6f);
-	CPPUNIT_ASSERT(std::abs(vr::strikeAim(0.f, 0.5f, params) - params.weakAim * 0.5f) < 1e-6f);
-	// Charged: the charge ratio, never weaker than an uncharged swing
-	CPPUNIT_ASSERT(std::abs(vr::strikeAim(1.f, 1.f, params) - 1.f) < 1e-6f);
-	CPPUNIT_ASSERT(std::abs(vr::strikeAim(1.f, 0.75f, params) - 0.75f) < 1e-6f);
-	CPPUNIT_ASSERT(std::abs(vr::strikeAim(0.1f, 1.f, params) - params.weakAim) < 1e-6f);
-	// A full charge is four times a plain swing of the same speed
-	CPPUNIT_ASSERT(vr::strikeAim(1.f, 0.6f, params) >= 3.9f * vr::strikeAim(0.f, 0.6f, params));
+void MeleeSwingTest::testTouchCooldown() {
+	// A touch outside a swing (vr_melee_noswing=min) is held back by the cooldown only, never by its swing number
+	vr::TargetCooldown cooldown;
+	const float wait = 0.25f;
+	const u64 touch = vr::TargetCooldown::Touch;
+	cooldown.hit(7, touch, 1.0);
+	CPPUNIT_ASSERT(!cooldown.allowed(7, touch, 1.1, wait));
+	CPPUNIT_ASSERT(cooldown.allowed(7, touch, 1.3, wait));
+	CPPUNIT_ASSERT(cooldown.blocked(touch, 1.3, wait).empty());
+	// A swing after a touch: the cooldown, then it hits
+	CPPUNIT_ASSERT(!cooldown.allowed(7, 4, 1.1, wait));
+	CPPUNIT_ASSERT(cooldown.allowed(7, 4, 1.3, wait));
+	// A touch after a swing's hit: the cooldown, not the swing's own once-per-target
+	cooldown.hit(7, 4, 2.0);
+	CPPUNIT_ASSERT(!cooldown.allowed(7, 4, 3.0, wait));
+	CPPUNIT_ASSERT(cooldown.allowed(7, touch, 3.0, wait));
 }
 
 void MeleeSwingTest::testTargetCooldown() {

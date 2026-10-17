@@ -25,9 +25,9 @@
 
 /*!
  * The decision core of physical melee (#39): a swing from the controller's motion (lever point, median of
- * three, gaps and tracking jumps, stab rule, the longest swing), the charge from the trigger (the engine's
- * ratio, spent by a charged hit until released), the aim a hit is dealt with, the per-target cooldown; the
- * speed over uneven frame times (#352) and the recovery after a hit per weapon type (#323).
+ * three, gaps and tracking jumps, stab rule, the longest swing), the aim a hit is dealt with from the speed of the
+ * blade's point that touched - a thrust like a slash, no charge (#465) - the per-target cooldown; the speed over
+ * uneven frame times (#352) and the recovery after a hit per weapon type (#323).
  */
 class MeleeSwingTest final : public CppUnit::TestFixture {
 
@@ -40,9 +40,10 @@ class MeleeSwingTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testGapAndLostTracking);
 	CPPUNIT_TEST(testStab);
 	CPPUNIT_TEST(testLongestSwing);
-	CPPUNIT_TEST(testSpeedFactor);
-	CPPUNIT_TEST(testCharge);
-	CPPUNIT_TEST(testStrikeAim);
+	CPPUNIT_TEST(testContactAim);
+	CPPUNIT_TEST(testPointVelocity);
+	CPPUNIT_TEST(testThrustCountsLikeSlash);
+	CPPUNIT_TEST(testTouchCooldown);
 	CPPUNIT_TEST(testTargetCooldown);
 	CPPUNIT_TEST(testHitchIsNoSwing);
 	CPPUNIT_TEST(testUnevenFramesPeak);
@@ -61,9 +62,10 @@ public:
 	void testGapAndLostTracking();
 	void testStab();
 	void testLongestSwing();
-	void testSpeedFactor();
-	void testCharge();
-	void testStrikeAim();
+	void testContactAim();
+	void testPointVelocity();
+	void testThrustCountsLikeSlash();
+	void testTouchCooldown();
 	void testTargetCooldown();
 	void testHitchIsNoSwing();
 	void testUnevenFramesPeak();

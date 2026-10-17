@@ -90,6 +90,7 @@ constexpr const std::string_view
 	vrArmsModel = "classic",
 	vrClassicHand = "arx",
 	vrBody = "full",
+	vrMeleeNoSwing = "none",
 	bufferUpload,
 	extensionOverride,
 	thumbnailSize = BOOST_PP_STRINGIZE(THUMBNAIL_DEFAULT_WIDTH) "x"
@@ -160,8 +161,8 @@ constexpr const float
 	vrSneakBelow = vr::StickPace().sneakBelow,
 	vrRunAbove = vr::StickPace().runAbove,
 	vrMeleeSwingSpeed = vr::SwingParams().startSpeed,
-	vrMeleeFullSpeed = vr::SwingParams().fullSpeed,
-	vrMeleeWeakAim = vr::SwingParams().weakAim,
+	vrMeleeSpeedMin = vr::SwingParams().speedMin,
+	vrMeleeSpeedMax = vr::SwingParams().speedMax,
 	vrMeleeTargetCooldown = vr::SwingParams().targetCooldown,
 	vrMeleeRecovery = -1.f, // the weapon type's default (#323, vr::defaultRecovery)
 	vrHiltKnuckle = vr::HiltAngles().knuckle,
@@ -377,8 +378,9 @@ constexpr const std::string_view
 	vrArmMaxStretch = "vr_arm_max_stretch",
 	vrArmWeaponElbowDrop = "vr_arm_weapon_elbow_drop",
 	vrMeleeSwingSpeed = "vr_melee_swing_speed",
-	vrMeleeFullSpeed = "vr_melee_full_speed",
-	vrMeleeWeakAim = "vr_melee_weak_aim",
+	vrMeleeSpeedMin = "vr_melee_speed_min",
+	vrMeleeSpeedMax = "vr_melee_speed_max",
+	vrMeleeNoSwing = "vr_melee_noswing",
 	vrMeleeTargetCooldown = "vr_melee_target_cooldown",
 	vrMeleeRecoveryDagger = "vr_melee_recovery_dagger",
 	vrMeleeRecovery1h = "vr_melee_recovery_1h",
@@ -692,8 +694,9 @@ bool Config::save() {
 	writer.writeKey(Key::vrArmMaxStretch, input.vrArmMaxStretch);
 	writer.writeKey(Key::vrArmWeaponElbowDrop, input.vrArmWeaponElbowDrop);
 	writer.writeKey(Key::vrMeleeSwingSpeed, input.vrMeleeSwingSpeed);
-	writer.writeKey(Key::vrMeleeFullSpeed, input.vrMeleeFullSpeed);
-	writer.writeKey(Key::vrMeleeWeakAim, input.vrMeleeWeakAim);
+	writer.writeKey(Key::vrMeleeSpeedMin, input.vrMeleeSpeedMin);
+	writer.writeKey(Key::vrMeleeSpeedMax, input.vrMeleeSpeedMax);
+	writer.writeKey(Key::vrMeleeNoSwing, input.vrMeleeNoSwing);
 	writer.writeKey(Key::vrMeleeTargetCooldown, input.vrMeleeTargetCooldown);
 	writer.writeKey(Key::vrMeleeRecoveryDagger, input.vrMeleeRecoveryDagger);
 	writer.writeKey(Key::vrMeleeRecovery1h, input.vrMeleeRecovery1h);
@@ -919,13 +922,16 @@ bool Config::init(const fs::path & file) {
 	input.vrArmMaxStretch = vr::clampArmMaxStretch(reader.getKey(Section::Input, Key::vrArmMaxStretch, Default::vrArmMaxStretch));
 	input.vrArmWeaponElbowDrop = vr::clampWeaponElbowDrop(reader.getKey(Section::Input, Key::vrArmWeaponElbowDrop,
 	                                                                    Default::vrArmWeaponElbowDrop));
-	// Physical melee (#39): the full-damage speed is never below the swing speed
+	// Physical melee (#39)
 	float vrMeleeSwingSpeed = reader.getKey(Section::Input, Key::vrMeleeSwingSpeed, Default::vrMeleeSwingSpeed);
 	input.vrMeleeSwingSpeed = glm::clamp(vrMeleeSwingSpeed, 0.5f, 10.f);
-	float vrMeleeFullSpeed = reader.getKey(Section::Input, Key::vrMeleeFullSpeed, Default::vrMeleeFullSpeed);
-	input.vrMeleeFullSpeed = glm::clamp(vrMeleeFullSpeed, input.vrMeleeSwingSpeed, 20.f);
-	float vrMeleeWeakAim = reader.getKey(Section::Input, Key::vrMeleeWeakAim, Default::vrMeleeWeakAim);
-	input.vrMeleeWeakAim = glm::clamp(vrMeleeWeakAim, 0.1f, 1.f);
+	// The damage from the speed at the contact point (#465): the full-damage speed is never below the minimum one
+	float vrMeleeSpeedMin = reader.getKey(Section::Input, Key::vrMeleeSpeedMin, Default::vrMeleeSpeedMin);
+	input.vrMeleeSpeedMin = glm::clamp(vrMeleeSpeedMin, 0.f, 10.f);
+	float vrMeleeSpeedMax = reader.getKey(Section::Input, Key::vrMeleeSpeedMax, Default::vrMeleeSpeedMax);
+	input.vrMeleeSpeedMax = glm::clamp(vrMeleeSpeedMax, input.vrMeleeSpeedMin, 20.f);
+	input.vrMeleeNoSwing = vr::noSwingName(vr::parseNoSwing(reader.getKey(Section::Input, Key::vrMeleeNoSwing,
+	                                                                      Default::vrMeleeNoSwing)));
 	float vrMeleeTargetCooldown = reader.getKey(Section::Input, Key::vrMeleeTargetCooldown, Default::vrMeleeTargetCooldown);
 	input.vrMeleeTargetCooldown = glm::clamp(vrMeleeTargetCooldown, 0.f, 2.f);
 	// The recovery after a hit per weapon type (#323): seconds, or negative for the type's default

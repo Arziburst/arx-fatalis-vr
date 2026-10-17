@@ -1,0 +1,160 @@
+# Melee damage from the swing (#465, D-NEW): no charge - a hit's damage fraction (the aim ratio, 1 = the engine's fully
+# charged strike) comes from the speed of the blade's point that touched: below vr_melee_speed_min (1.5 m/s) or
+# outside a swing nothing (vr_melee_noswing=none, the default) or the minimum 0.1 (min), rising to the full damage
+# at vr_melee_speed_max (4.5 m/s); a thrust counts like a slash. The trigger, held long or short, changes nothing.
+# Every hit logs melee.hit with aim, speed and kind.
+#   .\scripts\dev\smoke-test.ps1 -Playground -VrSim idle -Sequence melee-damage
+# The swings are ramps of the simulated right controller (0.85 m): in 60 frames 1.3 m/s (no swing), in 24 frames
+# 3.2 m/s at 90 Hz (part of the damage), in 8 frames 9.6 m/s (full). Damage itself has the engine's rolls (critical,
+# armour class), so the sequence asserts the aim. The goblin is respawned between the groups of hits.
+@sim idle
+@playground
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert area eq 30
+# Free look closes the inventory a --loadlevel start keeps open (TRAPS.md, #394)
+freelook on
+@until vr.melee.refused ne inventory 5s
+
+# One weapon per run (TRAPS.md): the dagger, recovery 0.6 s after a hit
+inventory playeraddfromscene dagger_9001
+dagger_9001.equip player
+@until vr.melee.recovery.weapon eq dagger 5s
+@assert vr.melee.active eq true
+@assert vr.weapon.place eq hand
+@assert vr.melee.params.speedMin eq 1.5
+@assert vr.melee.params.speedMax eq 4.5
+@assert vr.melee.params.noSwing eq none
+
+# The peaceful goblin 60 units ahead, the dagger level with its chest, the hand to the right - moved there slowly
+playground place 60
+vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
+vr-sim head rot 0 -25 0
+@frames 75
+@assert playground.npcAlive eq true
+@remember npc playground.npc
+@assert vr.melee.swings eq 0
+@assert vr.melee.hits eq 0
+
+# 1. A slow touch: the dagger swept through the goblin at 1.3 m/s is no swing - no hit, no damage
+@mark
+vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
+@frames 75
+@assert vr.melee.swings eq 0
+@assert vr.melee.hits eq 0
+@nolog melee\.hit
+
+# 2. A medium swing back (3.2 m/s): one hit with part of the damage
+@mark
+vr-sim @+1-24 hand right pos 0.45 -0.8 -0.35
+@until vr.melee.swings ge 1 5s
+@until vr.melee.swinging eq false 5s
+@frames 20
+@assert vr.melee.hits eq 1
+@assert vr.melee.last.target eq {npc}
+@assert vr.melee.last.aim gt 0.1
+@assert vr.melee.last.aim lt 0.95
+@assert vr.melee.last.speed gt 1.5
+@assert vr.melee.last.speed lt 4.5
+@assert vr.melee.last.kind eq slash
+@log melee\.hit source=player target=goblin_base_\d+ weapon=\S+ damage=\S+ aim=0\.\d\d speed=[1-4]\.\d\d kind=slash
+
+# 3. A fast swing (9.6 m/s): the full damage
+@until vr.melee.recovery.left eq 0 5s
+@remember swings vr.melee.swings
+@mark
+vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35
+@until vr.melee.swings ge {swings+1} 5s
+@until vr.melee.swinging eq false 5s
+@frames 20
+@assert vr.melee.hits eq 2
+@assert vr.melee.last.aim ge 0.99
+@assert vr.melee.last.kind eq slash
+@log melee\.hit source=player target=goblin_base_\d+ .*aim=1\.00 speed=\S+ kind=slash
+@remember full vr.melee.last.aim
+
+# 4. The trigger changes nothing: held 2 s, the same fast swing deals the same; a medium swing with it held still
+# deals part of the damage (the old charge made it full); a short press during a fast swing the same full damage
+playground kill
+@until playground.npcAlive eq false 5s
+playground pull respawn
+@until playground.npcAlive eq true 5s
+playground place 60
+@mark
+vr-sim action trigger right 1
+@frames 180
+@assert vr.melee.trigger eq true
+@until vr.melee.recovery.left eq 0 5s
+@remember swings vr.melee.swings
+vr-sim @+1-8 hand right pos 0.45 -0.8 -0.35
+@until vr.melee.swings ge {swings+1} 5s
+@until vr.melee.swinging eq false 5s
+@frames 20
+@assert vr.melee.trigger eq true
+@assert vr.melee.hits eq 3
+@assert vr.melee.last.aim eq {full}
+@until vr.melee.recovery.left eq 0 5s
+@remember swings vr.melee.swings
+vr-sim @+1-24 hand right pos -0.4 -0.8 -0.35
+@until vr.melee.swings ge {swings+1} 5s
+@until vr.melee.swinging eq false 5s
+@frames 20
+@assert vr.melee.hits eq 4
+@assert vr.melee.last.aim gt 0.1
+@assert vr.melee.last.aim lt 0.95
+vr-sim action trigger right 0
+@frames 10
+@assert vr.melee.trigger eq false
+@until vr.melee.recovery.left eq 0 5s
+@remember swings vr.melee.swings
+vr-sim action trigger right 1; vr-sim @+1-8 hand right pos 0.45 -0.8 -0.35; vr-sim @+5 action trigger right 0
+@until vr.melee.swings ge {swings+1} 5s
+@until vr.melee.swinging eq false 5s
+@frames 20
+@assert vr.melee.hits eq 5
+@assert vr.melee.last.aim eq {full}
+@nolog melee\.charge
+
+# 5. A fast thrust along the blade (8 m/s): the full damage, kind thrust. The hand drawn back and to the middle
+# slowly first
+playground kill
+@until playground.npcAlive eq false 5s
+playground pull respawn
+@until playground.npcAlive eq true 5s
+playground place 60
+vr-sim @+1-40 hand right pos 0.45 -0.8 0.1; vr-sim @+41-80 hand right pos 0 -0.8 0.1
+@frames 95
+@until vr.melee.recovery.left eq 0 5s
+@remember swings vr.melee.swings
+@remember hits vr.melee.hits
+@mark
+vr-sim @+1-5 hand right pos 0 -0.8 -0.35
+@until vr.melee.swings ge {swings+1} 5s
+@until vr.melee.swinging eq false 5s
+@frames 20
+@assert vr.melee.hits eq {hits+1}
+@assert vr.melee.last.kind eq thrust
+@assert vr.melee.last.aim ge 0.99
+@log melee\.hit source=player target=goblin_base_\d+ .*aim=1\.00 speed=\S+ kind=thrust
+
+# 6. vr_melee_noswing=min (set live): the still dagger in the goblin, no swing, deals the minimum
+melee noswing min
+@until vr.melee.params.noSwing eq min 5s
+playground kill
+@until playground.npcAlive eq false 5s
+playground pull respawn
+@until playground.npcAlive eq true 5s
+@remember hits vr.melee.hits
+@mark
+playground place 60
+@until vr.melee.hits ge {hits+1} 5s
+@assert vr.melee.swinging eq false
+@assert vr.melee.last.swing eq 0
+@assert vr.melee.last.aim eq 0.1
+@log melee\.hit source=player target=goblin_base_\d+ .*aim=0\.10 speed=\S+ kind=\S+
+melee noswing none
+@until vr.melee.params.noSwing eq none 5s
+
+@assert errors eq 0

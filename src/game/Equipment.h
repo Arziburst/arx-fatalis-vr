@@ -48,6 +48,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #define ARX_GAME_EQUIPMENT_H
 
 #include <stddef.h>
+#include <functional>
 #include <string_view>
 #include <vector>
 
@@ -127,12 +128,25 @@ struct StrikeContact {
 	EntityHandle target;
 	float damage = 0.f; //!< 0 for a miss of the armour class roll, and for objects
 	bool npc = false;
+	float aim = 0.f;    //!< the aim ratio it was dealt with (#465)
+	float speed = 0.f;  //!< m/s, the speed of the blade's point that touched (#465)
+	const char * kind = "slash"; //!< how that point moved: "slash", "thrust" (#465)
+};
+
+//! How a VR contact at a point of the blade hits (#465)
+struct StrikeAim {
+	float ratio = 0.f;  //!< the aim ratio (1 = the fully charged strike); 0 or less: the point touches nothing
+	float speed = 0.f;  //!< m/s, the point's speed
+	const char * kind = "slash";
 };
 
 //! What a VR contact hit asks of a strike check (#39): targets to leave out (the per-target cooldown), and
 //! the targets it touched
 struct StrikeTargets {
 	std::vector<EntityHandle> skip;
+	//! VR (#465): the aim of each hit sphere from its centre (world) instead of the check's one ratio; the fastest
+	//! sphere touches first
+	std::function<StrikeAim(const Vec3f & point)> aim;
 	std::vector<StrikeContact> touched;
 };
 

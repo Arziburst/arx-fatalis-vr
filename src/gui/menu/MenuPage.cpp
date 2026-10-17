@@ -150,6 +150,16 @@ void MenuPage::addCenter(std::unique_ptr<Widget> widget, bool centerX) {
 	
 }
 
+void MenuPage::addInRowOf(std::unique_ptr<Widget> widget, const Widget & row) {
+
+	arx_assert(widget);
+
+	widget->setPosition(Vec2f(row.m_rect.left, row.m_rect.top));
+
+	m_children.add(std::move(widget));
+
+}
+
 void MenuPage::addBackButton(MENUSTATE page) {
 	
 	auto cb = std::make_unique<ButtonWidget>(buttonSize(16, 16), "graph/interface/menus/back");

@@ -265,18 +265,6 @@ void MeleeSwingTest::testLongestSwing() {
 
 namespace {
 
-//! A contact of the blade's point \a distance m from the grip now, measured as VRMelee measures it (#465)
-vr::ContactMeasure measure(const vr::SwingDetector & detector, float distance) {
-	vr::ContactMeasure contact;
-	const Vec3f velocity = detector.pointVelocity(distance);
-	contact.speed = glm::length(velocity);
-	contact.kind = vr::contactKind(velocity, detector.blade(), detector.params());
-	contact.size = contact.kind == vr::ContactKind::Thrust ? detector.strokeLunge(distance)
-	                                                       : detector.strokePath(distance);
-	contact.swing = detector.swinging();
-	return contact;
-}
-
 vr::ContactMeasure contact(float speed, float size, vr::ContactKind kind = vr::ContactKind::Slash, bool swing = true) {
 	vr::ContactMeasure c;
 	c.speed = speed;
@@ -286,18 +274,21 @@ vr::ContactMeasure contact(float speed, float size, vr::ContactKind kind = vr::C
 	return c;
 }
 
+bool nearly(float a, float b) {
+	return std::abs(a - b) < 1e-4f;
+}
+
 } // anonymous namespace
 
 void MeleeSwingTest::testContactAim() {
-	// #465: the provisional defaults - a touch is the minimum
-	vr::SwingParams params;
-	CPPUNIT_ASSERT_EQUAL(1.5f, params.speedMin);
-	CPPUNIT_ASSERT_EQUAL(4.5f, params.speedMax);
-	CPPUNIT_ASSERT_EQUAL(0.1f, params.sizeMin);
-	CPPUNIT_ASSERT_EQUAL(0.4f, params.sizeMax);
-	CPPUNIT_ASSERT_EQUAL(0.05f, params.lungeMin);
-	CPPUNIT_ASSERT_EQUAL(0.25f, params.lungeMax);
+	// #465: the sword's ranges of research #502 - a slash's path 0.3 -> 0.8 m and speed 2.5 -> 6 m/s, a stab's lunge
+	// 0.2 -> 0.5 m and speed 2 -> 4 m/s; a touch is the minimum
+	vr::DamageParams params;
+	params.slash = vr::defaultRanges(vr::MeleeClass::Sword).slash;
+	params.stab = vr::defaultRanges(vr::MeleeClass::Sword).stab;
 	CPPUNIT_ASSERT(params.noSwing == vr::NoSwing::Min);
+	CPPUNIT_ASSERT(params.quality == vr::Quality::Min);
+	CPPUNIT_ASSERT_EQUAL(1.f, params.pathScale);
 	struct Case {
 		float speed;
 		float size;
@@ -307,48 +298,109 @@ void MeleeSwingTest::testContactAim() {
 	const vr::ContactKind slash = vr::ContactKind::Slash;
 	const vr::ContactKind thrust = vr::ContactKind::Thrust;
 	const Case cases[] = {
-		// A big slash: the speed decides - the minimum below 1.5 m/s, the full strike from 4.5
-		{ 0.f, 1.f, slash, 0.1f }, { 1.49f, 1.f, slash, 0.1f }, { 1.5f, 1.f, slash, 0.1f }, { 3.f, 1.f, slash, 0.55f },
-		{ 4.5f, 1.f, slash, 1.f }, { 9.f, 1.f, slash, 1.f },
-		// A fast slash: the size decides - the minimum below 0.1 m, the full strike from 0.4
-		{ 9.f, 0.05f, slash, 0.1f }, { 9.f, 0.1f, slash, 0.1f }, { 9.f, 0.25f, slash, 0.55f }, { 9.f, 0.4f, slash, 1.f },
-		// The weaker factor decides: half the speed range and a quarter of the size range is a quarter
-		{ 3.f, 0.175f, slash, 0.325f }, { 3.f, 0.4f, slash, 0.55f },
+		// A big slash: the speed decides - the minimum up to 2.5 m/s, the full strike from 6
+		{ 0.f, 2.f, slash, 0.1f }, { 2.49f, 2.f, slash, 0.1f }, { 2.5f, 2.f, slash, 0.1f }, { 4.25f, 2.f, slash, 0.55f },
+		{ 6.f, 2.f, slash, 1.f }, { 9.f, 2.f, slash, 1.f },
+		// A fast slash: the path decides - the minimum up to 0.3 m, the full strike from 0.8
+		{ 9.f, 0.2f, slash, 0.1f }, { 9.f, 0.3f, slash, 0.1f }, { 9.f, 0.55f, slash, 0.55f }, { 9.f, 0.8f, slash, 1.f },
+		// The weaker factor decides: half the speed range and a quarter of the path's is a quarter
+		{ 4.25f, 0.425f, slash, 0.325f },
 		// A slow big swing and a fast tiny flick both stay low
-		{ 1.6f, 2.f, slash, 0.13f }, { 9.f, 0.11f, slash, 0.13f },
-		// A thrust: the lunge's own range, the same rule
-		{ 9.f, 0.25f, thrust, 1.f }, { 9.f, 0.15f, thrust, 0.55f }, { 3.f, 0.25f, thrust, 0.55f }, { 9.f, 0.04f, thrust, 0.1f },
-		{ 1.f, 0.5f, thrust, 0.1f }
+		{ 2.6f, 2.f, slash, 0.1f + 0.9f * 0.1f / 3.5f }, { 9.f, 0.31f, slash, 0.1f + 0.9f * 0.02f },
+		// A thrust: the stab's ranges, the same rule
+		{ 9.f, 0.5f, thrust, 1.f }, { 9.f, 0.35f, thrust, 0.55f }, { 3.f, 0.5f, thrust, 0.55f }, { 9.f, 0.19f, thrust, 0.1f },
+		{ 1.9f, 0.5f, thrust, 0.1f }
 	};
 	for(const Case & c : cases) {
 		const float aim = vr::contactAim(contact(c.speed, c.size, c.kind), params);
-		if(std::abs(aim - c.aim) > 1e-4f) {
+		if(!nearly(aim, c.aim)) {
 			CPPUNIT_FAIL(std::string(vr::contactKindName(c.kind)) + " " + std::to_string(c.speed) + " m/s, "
 			             + std::to_string(c.size) + " m: " + std::to_string(aim) + ", expected " + std::to_string(c.aim));
 		}
 	}
 	// Outside a swing (a touch, a tap, a wrist flick) any stroke is the minimum
 	for(float speed : { 0.f, 3.f, 9.f }) {
-		CPPUNIT_ASSERT_EQUAL(vr::MinStrikeAim, vr::contactAim(contact(speed, 1.f, slash, false), params));
-		CPPUNIT_ASSERT_EQUAL(vr::MinStrikeAim, vr::contactAim(contact(speed, 1.f, thrust, false), params));
+		CPPUNIT_ASSERT_EQUAL(vr::MinStrikeAim, vr::contactAim(contact(speed, 2.f, slash, false), params));
+		CPPUNIT_ASSERT_EQUAL(vr::MinStrikeAim, vr::contactAim(contact(speed, 2.f, thrust, false), params));
 	}
-	// vr_melee_noswing=none: nothing instead of the minimum; above the thresholds the same
+	// The other qualities of half the speed range and a quarter of the path's: the geometric mean, the product
+	params.quality = vr::Quality::GeoMean;
+	CPPUNIT_ASSERT(nearly(vr::contactAim(contact(4.25f, 0.425f), params), 0.1f + 0.9f * std::sqrt(0.125f)));
+	CPPUNIT_ASSERT(nearly(vr::contactAim(contact(9.f, 0.3f), params), 0.1f));
+	params.quality = vr::Quality::Product;
+	CPPUNIT_ASSERT(nearly(vr::contactAim(contact(4.25f, 0.425f), params), 0.1f + 0.9f * 0.125f));
+	CPPUNIT_ASSERT(nearly(vr::contactAim(contact(9.f, 2.f), params), 1.f));
+	params.quality = vr::Quality::Min;
+	// Seated (the path ranges halved): 0.15 -> 0.4 m
+	params.pathScale = 0.5f;
+	CPPUNIT_ASSERT(nearly(vr::contactAim(contact(9.f, 0.275f), params), 0.55f));
+	CPPUNIT_ASSERT(nearly(vr::contactAim(contact(9.f, 0.4f), params), 1.f));
+	params.pathScale = 1.f;
+	// vr_melee_noswing=none: nothing instead of the minimum; above the ranges the same
 	params.noSwing = vr::NoSwing::None;
-	CPPUNIT_ASSERT_EQUAL(0.f, vr::contactAim(contact(9.f, 1.f, slash, false), params));
-	CPPUNIT_ASSERT_EQUAL(0.f, vr::contactAim(contact(1.f, 1.f), params));
-	CPPUNIT_ASSERT_EQUAL(0.f, vr::contactAim(contact(9.f, 0.05f), params));
-	CPPUNIT_ASSERT(std::abs(vr::contactAim(contact(3.f, 1.f), params) - 0.55f) < 1e-4f);
-	// The same numbers at both ends of a range: a step to the full factor
+	CPPUNIT_ASSERT_EQUAL(0.f, vr::contactAim(contact(9.f, 2.f, slash, false), params));
+	CPPUNIT_ASSERT_EQUAL(0.f, vr::contactAim(contact(1.f, 2.f), params));
+	CPPUNIT_ASSERT_EQUAL(0.f, vr::contactAim(contact(9.f, 0.1f), params));
+	CPPUNIT_ASSERT(nearly(vr::contactAim(contact(4.25f, 2.f), params), 0.55f));
+	// The same numbers at both ends of a range: a step to the full factor; 0 0 is always full
 	params.noSwing = vr::NoSwing::Min;
-	params.speedMin = params.speedMax = 3.f;
-	CPPUNIT_ASSERT_EQUAL(vr::MinStrikeAim, vr::contactAim(contact(2.9f, 1.f), params));
-	CPPUNIT_ASSERT_EQUAL(1.f, vr::contactAim(contact(3.f, 1.f), params));
+	params.slash = { 0.f, 0.f, 3.f, 3.f };
+	CPPUNIT_ASSERT_EQUAL(vr::MinStrikeAim, vr::contactAim(contact(2.9f, 0.f), params));
+	CPPUNIT_ASSERT_EQUAL(1.f, vr::contactAim(contact(3.f, 0.f), params));
 	// The cfg.ini names
 	CPPUNIT_ASSERT(vr::parseNoSwing("min") == vr::NoSwing::Min);
 	CPPUNIT_ASSERT(vr::parseNoSwing("none") == vr::NoSwing::None);
 	CPPUNIT_ASSERT(vr::parseNoSwing("bogus") == vr::NoSwing::None);
 	CPPUNIT_ASSERT_EQUAL(std::string("min"), std::string(vr::noSwingName(vr::NoSwing::Min)));
 	CPPUNIT_ASSERT_EQUAL(std::string("none"), std::string(vr::noSwingName(vr::NoSwing::None)));
+	for(vr::Quality quality : { vr::Quality::Min, vr::Quality::GeoMean, vr::Quality::Product }) {
+		CPPUNIT_ASSERT(vr::parseQuality(vr::qualityName(quality)) == quality);
+	}
+	CPPUNIT_ASSERT(vr::parseQuality("bogus") == vr::Quality::Min);
+}
+
+void MeleeSwingTest::testDamageRanges() {
+	// Research #502's provisional numbers per class: a slash's path and speed, a stab's lunge and speed
+	struct Expected {
+		vr::MeleeClass meleeClass;
+		const char * name;
+		vr::DamageRange slash;
+		vr::DamageRange stab;
+	};
+	const Expected expected[] = {
+		{ vr::MeleeClass::Dagger, "dagger", { 0.25f, 0.6f, 2.f, 5.f }, { 0.2f, 0.45f, 2.f, 4.5f } },
+		{ vr::MeleeClass::Sword, "sword", { 0.3f, 0.8f, 2.5f, 6.f }, { 0.2f, 0.5f, 2.f, 4.f } },
+		{ vr::MeleeClass::Blunt, "blunt", { 0.35f, 0.9f, 2.5f, 5.5f }, { 0.2f, 0.5f, 2.f, 4.f } },
+		{ vr::MeleeClass::TwoHandedSword, "2h_sword", { 0.4f, 1.1f, 2.5f, 5.f }, { 0.25f, 0.5f, 2.f, 3.5f } },
+		{ vr::MeleeClass::TwoHandedBlunt, "2h_blunt", { 0.5f, 1.2f, 2.5f, 4.5f }, { 0.25f, 0.5f, 2.f, 3.5f } },
+	};
+	auto same = [](const vr::DamageRange & a, const vr::DamageRange & b) {
+		return a.pathMin == b.pathMin && a.pathMax == b.pathMax && a.speedMin == b.speedMin && a.speedMax == b.speedMax;
+	};
+	size_t index = 0;
+	for(const Expected & e : expected) {
+		CPPUNIT_ASSERT(vr::MeleeClasses[index++] == e.meleeClass);
+		const vr::MeleeRanges ranges = vr::defaultRanges(e.meleeClass);
+		CPPUNIT_ASSERT_EQUAL(std::string(e.name), std::string(vr::meleeClassName(e.meleeClass)));
+		CPPUNIT_ASSERT(same(ranges.slash, e.slash));
+		CPPUNIT_ASSERT(same(ranges.stab, e.stab));
+	}
+	// The cfg.ini value: four numbers, empty for the default; anything else is the default and not ok
+	const vr::DamageRange fallback = { 1.f, 2.f, 3.f, 4.f };
+	bool ok = false;
+	CPPUNIT_ASSERT(same(vr::parseDamageRange("0.25 0.6 2 5", fallback, &ok), { 0.25f, 0.6f, 2.f, 5.f }));
+	CPPUNIT_ASSERT(ok);
+	CPPUNIT_ASSERT(same(vr::parseDamageRange("", fallback, &ok), fallback));
+	CPPUNIT_ASSERT(ok);
+	CPPUNIT_ASSERT(same(vr::parseDamageRange("  ", fallback, &ok), fallback));
+	CPPUNIT_ASSERT(ok);
+	for(const char * bad : { "1 2 3", "1 2 3 4 5", "-1 2 3 4", "1 2 3 25", "a b c d" }) {
+		CPPUNIT_ASSERT(same(vr::parseDamageRange(bad, fallback, &ok), fallback));
+		CPPUNIT_ASSERT(!ok);
+	}
+	// A maximum below its minimum is raised to it
+	CPPUNIT_ASSERT(same(vr::parseDamageRange("2 1 4 3", fallback, &ok), { 2.f, 2.f, 4.f, 4.f }));
+	CPPUNIT_ASSERT(ok);
 }
 
 void MeleeSwingTest::testPointVelocity() {
@@ -360,10 +412,11 @@ void MeleeSwingTest::testPointVelocity() {
 		move(detector, time, hand, Vec3f(0.f), 5);
 		move(detector, time, hand, Vec3f(-3.f, 0.f, 0.f), 6);
 		CPPUNIT_ASSERT_EQUAL(detector.speed(), glm::length(detector.pointVelocity(detector.params().lever)));
+		CPPUNIT_ASSERT_EQUAL(detector.speed(), vr::measureContact(detector).speed);
 		CPPUNIT_ASSERT(std::abs(glm::length(detector.pointVelocity(0.8f)) - 3.f) < 1e-3f);
 	}
 	// A wrist turn at 5 rad/s with the hand still: the tip 0.8 m out moves at 4 m/s, the grip not at all, and the
-	// lever point too slowly for a swing (F-61) - a contact of the tip is a touch: the minimum
+	// lever point too slowly for a swing (F-61) - a contact is a touch: the minimum
 	{
 		vr::SwingDetector detector;
 		const float rate = 5.f;
@@ -374,12 +427,15 @@ void MeleeSwingTest::testPointVelocity() {
 			CPPUNIT_ASSERT(detector.update(sample(time, Rest, turn), true) == vr::SwingChange::None);
 		}
 		CPPUNIT_ASSERT(!detector.swinging());
-		const vr::ContactMeasure tip = measure(detector, 0.8f);
-		if(std::abs(tip.speed - rate * 0.8f) > 0.02f) {
-			CPPUNIT_FAIL("the tip of a wrist turn at 5 rad/s read " + std::to_string(tip.speed) + " m/s");
+		const float tip = glm::length(detector.pointVelocity(0.8f));
+		if(std::abs(tip - rate * 0.8f) > 0.02f) {
+			CPPUNIT_FAIL("the tip of a wrist turn at 5 rad/s read " + std::to_string(tip) + " m/s");
 		}
 		CPPUNIT_ASSERT(glm::length(detector.pointVelocity(0.f)) < 1e-4f);
-		CPPUNIT_ASSERT_EQUAL(vr::MinStrikeAim, vr::contactAim(tip, detector.params()));
+		const vr::ContactMeasure flick = vr::measureContact(detector);
+		CPPUNIT_ASSERT(!flick.swing);
+		CPPUNIT_ASSERT(std::abs(flick.speed - rate * detector.params().lever) < 0.01f);
+		CPPUNIT_ASSERT_EQUAL(vr::MinStrikeAim, vr::contactAim(flick, vr::DamageParams()));
 	}
 	// Before four samples: no velocity
 	{
@@ -402,17 +458,20 @@ void MeleeSwingTest::testStrokeSize() {
 		for(int frames = 1; frames <= 12; frames++) {
 			move(detector, time, hand, Vec3f(-3.f, 0.f, 0.f), 1);
 			const float expected = 3.f * float(frames) * float(Frame);
-			if(std::abs(detector.strokePath(0.5f) - expected) > 1e-4f) {
-				CPPUNIT_FAIL(std::to_string(frames) + " frames at 3 m/s: a path of " + std::to_string(detector.strokePath(0.5f))
+			if(std::abs(detector.strokePath(0.f) - expected) > 1e-4f) {
+				CPPUNIT_FAIL(std::to_string(frames) + " frames at 3 m/s: a path of " + std::to_string(detector.strokePath(0.f))
 				             + " m, expected " + std::to_string(expected));
 			}
-			CPPUNIT_ASSERT(detector.strokeLunge(0.5f) < 1e-5f); // across the blade: no lunge
+			CPPUNIT_ASSERT(detector.strokeLunge(0.f) < 1e-5f); // across the blade: no lunge
 		}
 		CPPUNIT_ASSERT(detector.swinging());
+		const vr::ContactMeasure slash = vr::measureContact(detector);
+		CPPUNIT_ASSERT(slash.kind == vr::ContactKind::Slash);
+		CPPUNIT_ASSERT_EQUAL(detector.strokePath(0.f), slash.size);
 		// Stopped: the swing ends and the next stroke starts from the rest
 		move(detector, time, hand, Vec3f(0.f), 6);
 		CPPUNIT_ASSERT(!detector.swinging());
-		CPPUNIT_ASSERT(detector.strokePath(0.5f) < 1e-5f);
+		CPPUNIT_ASSERT(detector.strokePath(0.f) < 1e-5f);
 	}
 	// A slow reach (1 m/s, below the end speed) keeps starting over: no stroke builds up
 	{
@@ -421,7 +480,7 @@ void MeleeSwingTest::testStrokeSize() {
 		Vec3f hand = Rest;
 		move(detector, time, hand, Vec3f(0.f), 5);
 		move(detector, time, hand, Vec3f(1.f, 0.f, 0.f), 60);
-		CPPUNIT_ASSERT(detector.strokePath(0.5f) < 1.f * 2.f * float(Frame) + 1e-4f);
+		CPPUNIT_ASSERT(detector.strokePath(0.f) < 1.f * 2.f * float(Frame) + 1e-4f);
 	}
 	// A lunge along the blade at 3 m/s for 10 frames: 0.33 m, at any point of the blade; pulled back: none
 	{
@@ -434,6 +493,9 @@ void MeleeSwingTest::testStrokeSize() {
 		CPPUNIT_ASSERT(std::abs(detector.strokeLunge(0.f) - expected) < 1e-4f);
 		CPPUNIT_ASSERT(std::abs(detector.strokeLunge(0.7f) - expected) < 1e-4f);
 		CPPUNIT_ASSERT(std::abs(detector.strokePath(0.3f) - expected) < 1e-4f);
+		const vr::ContactMeasure lunge = vr::measureContact(detector);
+		CPPUNIT_ASSERT(lunge.kind == vr::ContactKind::Thrust);
+		CPPUNIT_ASSERT_EQUAL(detector.strokeLunge(0.f), lunge.size);
 	}
 	{
 		vr::SwingDetector detector;
@@ -443,8 +505,8 @@ void MeleeSwingTest::testStrokeSize() {
 		move(detector, time, hand, Vec3f(0.f, 0.f, 3.f), 10);
 		CPPUNIT_ASSERT_EQUAL(0.f, detector.strokeLunge(0.3f));
 	}
-	// A swing of the forearm about the elbow (0.35 m back of the grip) at 8 rad/s: the tip 0.8 m out of the grip
-	// travels its arc, (0.35 + 0.8) m per radian, the grip 0.35 m per radian
+	// A swing of the forearm about the elbow (0.35 m back of the grip) at 8 rad/s: each point of the blade travels its
+	// arc - the tip 0.8 m out of the grip (0.35 + 0.8) m per radian, the hand 0.35 m per radian
 	{
 		vr::SwingDetector detector;
 		const Vec3f elbow = Rest + Vec3f(0.f, 0.f, 0.35f);
@@ -467,18 +529,15 @@ void MeleeSwingTest::testStrokeSize() {
 		CPPUNIT_ASSERT(detector.swinging());
 		CPPUNIT_ASSERT(std::abs(detector.strokePath(0.8f) - angle * 1.15f) < 0.01f);
 		CPPUNIT_ASSERT(std::abs(detector.strokePath(0.f) - angle * 0.35f) < 0.01f);
-		// Big and fast at the tip: the full strike; the same swing near the grip is smaller and slower
-		const vr::ContactMeasure tip = measure(detector, 0.8f);
-		CPPUNIT_ASSERT(tip.kind == vr::ContactKind::Slash);
-		CPPUNIT_ASSERT_EQUAL(1.f, vr::contactAim(tip, detector.params()));
-		CPPUNIT_ASSERT(vr::contactAim(measure(detector, 0.f), detector.params()) < 1.f);
+		CPPUNIT_ASSERT(std::abs(vr::measureContact(detector).speed - rate * (0.35f + detector.params().lever)) < 0.05f);
 	}
 }
 
 void MeleeSwingTest::testThrustCountsLikeSlash() {
 	// A thrust along the blade (forward, -z) and a slash across it (sideways, up) at the same 3 m/s, both long
-	// strokes: the same damage by the same rule, told apart only by their kind
-	const vr::SwingParams params;
+	// strokes, with the same ranges: the same damage by the same rule, told apart only by their kind
+	vr::DamageParams params;
+	params.slash = params.stab = { 0.2f, 0.5f, 2.f, 4.f };
 	struct Motion {
 		Vec3f velocity;
 		vr::ContactKind kind;
@@ -489,13 +548,13 @@ void MeleeSwingTest::testThrustCountsLikeSlash() {
 	                     { Vec3f(-3.f, 0.f, 0.f), vr::ContactKind::Slash, { }, 0.f },
 	                     { Vec3f(0.f, 3.f, 0.f), vr::ContactKind::Slash, { }, 0.f } };
 	for(Motion & motion : motions) {
-		vr::SwingDetector detector(params);
+		vr::SwingDetector detector;
 		double time = 0.;
 		Vec3f hand = Rest;
 		move(detector, time, hand, Vec3f(0.f), 5);
 		move(detector, time, hand, motion.velocity, 20);
 		CPPUNIT_ASSERT(detector.swinging());
-		motion.seen = measure(detector, 0.5f);
+		motion.seen = vr::measureContact(detector);
 		motion.aim = vr::contactAim(motion.seen, params);
 	}
 	for(const Motion & motion : motions) {
@@ -504,33 +563,35 @@ void MeleeSwingTest::testThrustCountsLikeSlash() {
 		CPPUNIT_ASSERT(std::abs(motion.seen.size - 20.f * 3.f * float(Frame)) < 1e-3f);
 		CPPUNIT_ASSERT(std::abs(motion.aim - 0.55f) < 1e-3f);
 	}
-	// A fast long lunge is the full strike, a fast short jab (0.2 m) less; pulling the blade back is no thrust
+	// The sword's own stab range (0.2 -> 0.5 m, 2 -> 4 m/s): a fast long lunge is the full strike, a fast short jab
+	// (0.2 m) little; pulling the blade back is no thrust
+	params.stab = vr::defaultRanges(vr::MeleeClass::Sword).stab;
 	{
-		vr::SwingDetector detector(params);
+		vr::SwingDetector detector;
 		double time = 0.;
 		Vec3f hand = Rest;
 		move(detector, time, hand, Vec3f(0.f), 5);
-		move(detector, time, hand, Vec3f(0.f, 0.f, -6.f), 6);
-		const vr::ContactMeasure lunge = measure(detector, 0.3f);
+		move(detector, time, hand, Vec3f(0.f, 0.f, -6.f), 8);
+		const vr::ContactMeasure lunge = vr::measureContact(detector);
 		CPPUNIT_ASSERT(lunge.kind == vr::ContactKind::Thrust);
-		CPPUNIT_ASSERT(std::abs(lunge.size - 0.4f) < 1e-3f);
+		CPPUNIT_ASSERT(std::abs(lunge.size - 6.f * 8.f * float(Frame)) < 1e-3f);
 		CPPUNIT_ASSERT_EQUAL(1.f, vr::contactAim(lunge, params));
-		const Vec3f velocity = detector.pointVelocity(0.3f);
-		CPPUNIT_ASSERT(vr::contactKind(-velocity, detector.blade(), params) == vr::ContactKind::Slash);
+		const Vec3f velocity = detector.pointVelocity(detector.params().lever);
+		CPPUNIT_ASSERT(vr::contactKind(-velocity, detector.blade(), detector.params()) == vr::ContactKind::Slash);
 	}
 	{
-		vr::SwingDetector detector(params);
+		vr::SwingDetector detector;
 		double time = 0.;
 		Vec3f hand = Rest;
 		move(detector, time, hand, Vec3f(0.f), 5);
 		move(detector, time, hand, Vec3f(0.f, 0.f, -6.f), 3);
 		move(detector, time, hand, Vec3f(0.f, 0.f, -0.6f), 1); // stopping: the median still reads the jab's speed
-		const vr::ContactMeasure jab = measure(detector, 0.3f);
+		const vr::ContactMeasure jab = vr::measureContact(detector);
 		CPPUNIT_ASSERT(detector.swinging());
 		CPPUNIT_ASSERT(jab.kind == vr::ContactKind::Thrust);
-		CPPUNIT_ASSERT(jab.speed > params.speedMax);
+		CPPUNIT_ASSERT(jab.speed > params.stab.speedMax);
 		CPPUNIT_ASSERT(jab.size < 0.21f);
-		CPPUNIT_ASSERT(vr::contactAim(jab, params) < 0.9f);
+		CPPUNIT_ASSERT(vr::contactAim(jab, params) < 0.2f);
 	}
 	CPPUNIT_ASSERT_EQUAL(std::string("thrust"), std::string(vr::contactKindName(vr::ContactKind::Thrust)));
 	CPPUNIT_ASSERT_EQUAL(std::string("slash"), std::string(vr::contactKindName(vr::ContactKind::Slash)));

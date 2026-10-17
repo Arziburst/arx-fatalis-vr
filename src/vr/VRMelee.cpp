@@ -37,7 +37,7 @@
 #include "vr/VRBody.h"
 #include "vr/VRInput.h"
 #include "vr/VRWeapon.h"
-#include "vr/WorldScale.h"
+#include "vr/WeaponGrip.h"
 
 namespace vr {
 
@@ -51,8 +51,10 @@ const float SpeechAim = 0.8f;
 
 struct MeleeState {
 	SwingDetector detector;
+	DamageParams damage;             //!< of the weapon's class (#465)
 	TargetCooldown cooldown;
-	StrikeRecovery recovery;         //!< the weapon hand's, after a hit (#323)
+	StrikeRecovery recovery;         //!< the weapon hand's, after a swing's hit (#323)
+	StrikeRecovery touchRecovery;    //!< after any hit: the next touch outside a swing waits for it (#465)
 	RecoveryTime recoveryTime;       //!< of the weapon type in the hand
 	std::string recoveryNoted;       //!< the last melee.recovery event's values
 	// The swing in progress
@@ -77,14 +79,35 @@ SwingParams paramsFromConfig() {
 	SwingParams params;
 	params.startSpeed = config.input.vrMeleeSwingSpeed;
 	params.endSpeed = std::min(params.endSpeed, params.startSpeed * 0.6f);
-	params.speedMin = config.input.vrMeleeSpeedMin;
-	params.speedMax = std::max(config.input.vrMeleeSpeedMax, params.speedMin);
-	params.sizeMin = config.input.vrMeleeSizeMin;
-	params.sizeMax = std::max(config.input.vrMeleeSizeMax, params.sizeMin);
-	params.lungeMin = config.input.vrMeleeLungeMin;
-	params.lungeMax = std::max(config.input.vrMeleeLungeMax, params.lungeMin);
-	params.noSwing = parseNoSwing(config.input.vrMeleeNoSwing);
 	params.targetCooldown = config.input.vrMeleeTargetCooldown;
+	return params;
+}
+
+/*!
+ * The damage class of the weapon (#502): a dagger or a two-handed weapon by its type, an axe, club, hammer or mace by
+ * its item class or material (vr/WeaponGrip.h's rule, applied to two-handed weapons too), anything else a sword
+ */
+MeleeClass meleeClassOf(const Entity & weapon) {
+	if(weapon.type_flags & OBJECT_TYPE_DAGGER) {
+		return MeleeClass::Dagger;
+	}
+	const WeaponClass shape = weaponClassOf(false, false, weapon.className(), weapon.weaponmaterial);
+	const bool blunt = shape == WeaponClass::Axe || shape == WeaponClass::Mace;
+	if(weapon.type_flags & OBJECT_TYPE_2H) {
+		return blunt ? MeleeClass::TwoHandedBlunt : MeleeClass::TwoHandedSword;
+	}
+	return blunt ? MeleeClass::Blunt : MeleeClass::Sword;
+}
+
+//! The damage parameters for the weapon's class: its cfg.ini ranges, or the class's defaults
+DamageParams damageFromConfig(MeleeClass meleeClass) {
+	const MeleeRanges defaults = defaultRanges(meleeClass);
+	DamageParams params;
+	params.slash = parseDamageRange(config.input.vrMeleeSlash[size_t(meleeClass)], defaults.slash);
+	params.stab = parseDamageRange(config.input.vrMeleeStab[size_t(meleeClass)], defaults.stab);
+	params.pathScale = config.input.vrMeleePathScale;
+	params.quality = parseQuality(config.input.vrMeleeQuality);
+	params.noSwing = parseNoSwing(config.input.vrMeleeNoSwing);
 	return params;
 }
 
@@ -244,12 +267,20 @@ void strikeSpeech(Entity * weapon) {
  * The engine's strike check on the weapon where the hand holds it: each hit sphere deals the aim of its own point
  * of the blade, from that point's speed and stroke (#465) - \a swing false for a touch outside a swing (\ref contactAim)
  */
-void contact(Entity * weapon, double now, bool swing, const Vec3f & hilt, const Vec3f & tip) {
+void contact(Entity * weapon, double now, bool swing) {
 
 	MeleeState & m = g_melee;
 	MeleeStatus & s = m.status;
 	const SwingParams & params = m.detector.params();
 	const u64 number = swing ? m.detector.swings() : TargetCooldown::Touch;
+
+	// The stroke as research #502 measures it: the hand's path (a thrust's lunge) and the lever point's speed
+	ContactMeasure measure = measureContact(m.detector);
+	measure.swing = swing;
+	const float aim = contactAim(measure, m.damage);
+	if(aim <= 0.f) {
+		return; // vr_melee_noswing=none: below a range or outside a swing the blade touches nothing
+	}
 
 	StrikeTargets targets;
 	for(size_t target : m.cooldown.blocked(number, now, params.targetCooldown)) {
@@ -258,35 +289,24 @@ void contact(Entity * weapon, double now, bool swing, const Vec3f & hilt, const 
 	// A touch is the original's uncharged click on an enemy: the blade resting on an item or a crate does nothing
 	// to it, and starts no recovery
 	targets.npcOnly = !swing;
-
-	// A sphere's point is its distance from the hilt along the blade, in meters: its velocity relative to the
-	// head is the detector's (the controller's grip is the hilt, the blade along its -Z)
-	const Vec3f axis = tip - hilt;
-	const float length = glm::length(axis);
-	const SwingDetector & detector = m.detector;
-	targets.aim = [&](const Vec3f & point) {
-		const float along = length > 0.f ? std::max(glm::dot(point - hilt, axis) / length, 0.f) / UnitsPerMeter : 0.f;
-		const Vec3f velocity = detector.pointVelocity(along);
-		ContactMeasure measure;
-		measure.speed = glm::length(velocity);
-		measure.kind = contactKind(velocity, detector.blade(), params);
-		measure.size = measure.kind == ContactKind::Thrust ? detector.strokeLunge(along) : detector.strokePath(along);
-		measure.swing = swing;
-		StrikeAim aim;
-		aim.speed = measure.speed;
-		aim.size = measure.size;
-		aim.kind = contactKindName(measure.kind);
-		aim.ratio = contactAim(measure, params);
-		return aim;
-	};
-	ARX_EQUIPMENT_Strike_Check(entities.player(), weapon, 0.f, 0, EntityHandle(), &targets);
+	targets.speed = measure.speed;
+	targets.size = measure.size;
+	targets.kind = contactKindName(measure.kind);
+	ARX_EQUIPMENT_Strike_Check(entities.player(), weapon, aim, 0, EntityHandle(), &targets);
 	if(targets.touched.empty()) {
 		return;
 	}
-	m.recovery.hit(now, m.recoveryTime.seconds);
+	// A swing's hit is the hand's recovery for swings and touches alike (#323); a touch only spaces the next touch -
+	// a blade resting in an enemy must not keep a real swing from hitting it
+	if(swing) {
+		m.recovery.hit(now, m.recoveryTime.seconds);
+	}
+	m.touchRecovery.hit(now, m.recoveryTime.seconds);
 
 	for(const StrikeContact & touched : targets.touched) {
-		m.cooldown.hit(size_t(touched.target.handleData()), number, now);
+		if(swing) {
+			m.cooldown.hit(size_t(touched.target.handleData()), number, now);
+		}
 		s.contacts++;
 		if(!touched.npc) {
 			continue;
@@ -297,16 +317,16 @@ void contact(Entity * weapon, double now, bool swing, const Vec3f & hilt, const 
 			s.touches++;
 		}
 		s.lastTarget = gameevent::entityName(entities.get(touched.target));
-		s.lastAim = touched.aim;
+		s.lastAim = aim;
 		s.lastDamage = touched.damage;
-		s.lastSpeed = touched.speed;
-		s.lastSize = touched.size;
-		s.lastKind = touched.kind;
+		s.lastSpeed = measure.speed;
+		s.lastSize = measure.size;
+		s.lastKind = targets.kind;
 		s.lastSwing = swing ? number : 0;
 		if(swing) {
 			m.swingHits++;
-			m.swingAim = std::max(m.swingAim, touched.aim);
-			if(touched.aim > SpeechAim && !m.swingSpoke) {
+			m.swingAim = std::max(m.swingAim, aim);
+			if(aim > SpeechAim && !m.swingSpoke) {
 				m.swingSpoke = true;
 				strikeSpeech(weapon);
 			}
@@ -357,6 +377,10 @@ void updateMelee(const char * refusal) {
 	s.active = true;
 	s.refused.clear();
 	updateRecoveryTime();
+	const MeleeClass meleeClass = meleeClassOf(*weapon);
+	m.damage = damageFromConfig(meleeClass);
+	s.meleeClass = meleeClassName(meleeClass);
+	s.damage = m.damage;
 
 	// No charge (#465): the trigger of the weapon hand changes nothing - reported only, to prove it - and the
 	// engine's charge (the HUD's hit strength gauge) stays empty
@@ -375,15 +399,16 @@ void updateMelee(const char * refusal) {
 	}
 
 	// A swing checks its contacts unless it started within the recovery (#323); outside a swing the blade touches
-	// once the recovery is over - and deals the minimum, or nothing (vr_melee_noswing, #465)
+	// once the recovery after the last hit of any kind is over - and deals the minimum, or nothing (vr_melee_noswing,
+	// #465)
 	s.placed = placeHeldWeapon(s.hilt, s.tip);
 	if(s.placed) {
 		if(m.detector.swinging()) {
 			if(!m.swingRecovering) {
-				contact(weapon, now, true, s.hilt, s.tip);
+				contact(weapon, now, true);
 			}
-		} else if(m.recovery.ready(now)) {
-			contact(weapon, now, false, s.hilt, s.tip);
+		} else if(m.recovery.ready(now) && m.touchRecovery.ready(now)) {
+			contact(weapon, now, false);
 		}
 	}
 

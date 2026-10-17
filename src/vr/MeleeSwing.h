@@ -49,12 +49,13 @@
  *    A swing starts at \ref SwingParams::startSpeed - or as a stab: a thrust of \ref SwingParams::stabDistance
  *    along the blade within \ref SwingParams::stabWindow at \ref SwingParams::stabSpeed (F-61) - and
  *    ends below \ref SwingParams::endSpeed or after \ref SwingParams::maxDuration.
- *  - \ref contactAim: the stroke's size and the speed of the blade's point that touches (\ref ContactMeasure) -> the
- *    ratio the engine's damage is scaled by (\c ARX_EQUIPMENT_ComputeDamages' \c ratioaim, 1 = the fully charged
- *    strike): \ref MinStrikeAim (or nothing, \ref SwingParams::noSwing) outside a swing and below either threshold,
- *    else rising with the weaker of the two factors to 1 (F-178's strength curve, F-63); \ref contactKind: a slash
- *    (its size the point's path, \ref SwingDetector::strokePath) or a thrust (its size the lunge,
- *    \ref SwingDetector::strokeLunge), which count by the same rule.
+ *  - \ref contactAim: the stroke's size and speed at contact (\ref ContactMeasure: the hand's path since the stroke
+ *    started - for a thrust its lunge along the blade - and the lever point's speed, #502) -> the ratio the engine's
+ *    damage is scaled by (\c ARX_EQUIPMENT_ComputeDamages' \c ratioaim, 1 = the fully charged strike):
+ *    \ref MinStrikeAim (or nothing, \ref DamageParams::noSwing) outside a swing and below either range, else
+ *    0.1 + 0.9 q, q the quality of the two factors (\ref Quality: by default the weaker one). The ranges are per
+ *    weapon class (\ref MeleeClass, \ref defaultRanges: research #502), a slash's and a stab's; \ref contactKind
+ *    tells a slash from a thrust.
  *  - \ref TargetCooldown: one hit per target per swing, and not within \ref SwingParams::targetCooldown
  *    of the last one (F-62).
  *  - \ref StrikeRecovery: after a hit the hand recovers - a swing started within \ref recoveryTime of the hit
@@ -86,15 +87,7 @@ struct SwingParams {
 	float lever = 0.125f;        //!< m along the blade from the grip where the speed is measured (F-61)
 	float startSpeed = 2.5f;     //!< a swing starts at this speed [vr_melee_swing_speed]
 	float endSpeed = 1.5f;       //!< and ends below this one (hysteresis)
-	// The damage from the swing (#465): provisional numbers, the owner and a research task set the real ones
-	float speedMin = 1.5f;       //!< m/s at the contact point the speed factor rises from [vr_melee_speed_min]
-	float speedMax = 4.5f;       //!< m/s at the contact point it is full [vr_melee_speed_max]
-	float sizeMin = 0.1f;        //!< m the contact point travelled in a slash before it touched: the size factor rises from [vr_melee_size_min]
-	float sizeMax = 0.4f;        //!< m: it is full [vr_melee_size_max]
-	float lungeMin = 0.05f;      //!< m a thrust moved the contact point along the blade: the size factor rises from [vr_melee_lunge_min]
-	float lungeMax = 0.25f;      //!< m: it is full [vr_melee_lunge_max]
-	NoSwing noSwing = NoSwing::Min; //!< a hit outside a swing or below a threshold [vr_melee_noswing]
-	float thrustCosine = 0.707f; //!< the contact point moving within 45 degrees of the blade's way is a thrust (F-178)
+	float thrustCosine = 0.707f; //!< the lever point moving within 45 degrees of the blade's way is a thrust (F-178)
 	float stabSpeed = 2.f;       //!< a thrust along the blade at this speed ...
 	float stabDistance = 0.2f;   //!< ... covering this distance ...
 	float stabWindow = 0.25f;    //!< ... within this time is a stab, below \ref startSpeed too (F-61)
@@ -133,22 +126,82 @@ const char * contactKindName(ContactKind kind);
 //! \return the kind of a contact whose point moved at \a velocity with the blade along \a blade (a unit vector)
 ContactKind contactKind(const Vec3f & velocity, const Vec3f & blade, const SwingParams & params);
 
-//! A contact of the blade's point with a target, measured
+//! The weapon classes the damage ranges are kept for (#502)
+enum class MeleeClass : u8 {
+	Dagger,
+	Sword,          //!< one-handed
+	Blunt,          //!< one-handed axe, club, hammer, mace
+	TwoHandedSword, //!< two-handed sword, giant slayer
+	TwoHandedBlunt  //!< two-handed axe, smith's club
+};
+
+//! The classes, in order
+constexpr MeleeClass MeleeClasses[] = { MeleeClass::Dagger, MeleeClass::Sword, MeleeClass::Blunt,
+                                        MeleeClass::TwoHandedSword, MeleeClass::TwoHandedBlunt };
+
+//! "dagger", "sword", "blunt", "2h_sword", "2h_blunt" - the cfg.ini keys' suffixes
+const char * meleeClassName(MeleeClass meleeClass);
+
+//! A size and a speed range: each factor is 0 at its minimum and 1 at its maximum
+struct DamageRange {
+	float pathMin = 0.f;  //!< m of the hand's path (a stab: its lunge along the blade)
+	float pathMax = 0.f;
+	float speedMin = 0.f; //!< m/s of the lever point at contact
+	float speedMax = 0.f;
+};
+
+//! A weapon class's ranges
+struct MeleeRanges {
+	DamageRange slash;
+	DamageRange stab;
+};
+
+//! \return research #502's provisional ranges of \a meleeClass (the owner tunes them)
+MeleeRanges defaultRanges(MeleeClass meleeClass);
+
+/*!
+ * \return \a text as "<path min> <path max> <speed min> <speed max>" (a cfg.ini value), each max not below its min;
+ *         \a fallback for an empty text or one that is not four numbers of 0 to 20 (\a ok false for the latter)
+ */
+DamageRange parseDamageRange(std::string_view text, const DamageRange & fallback, bool * ok = nullptr);
+
+//! How the two factors combine [vr_melee_quality]
+enum class Quality : u8 {
+	Min,     //!< the weaker one (the default): each range keeps its own meaning
+	GeoMean, //!< their geometric mean
+	Product  //!< their product
+};
+
+//! "min", "geomean", "product"
+const char * qualityName(Quality quality);
+
+//! "geomean" and "product", anything else \ref Quality::Min
+Quality parseQuality(std::string_view name);
+
+//! How a hit's damage is decided (#465)
+struct DamageParams {
+	DamageRange slash = defaultRanges(MeleeClass::Sword).slash;
+	DamageRange stab = defaultRanges(MeleeClass::Sword).stab;
+	float pathScale = 1.f;          //!< the path ranges are scaled by it: seated play has shorter arms' paths [vr_melee_path_scale]
+	Quality quality = Quality::Min;  //!< [vr_melee_quality]
+	NoSwing noSwing = NoSwing::Min;  //!< a hit outside a swing or below a range [vr_melee_noswing]
+};
+
+//! A contact with a target, measured (#502's measures)
 struct ContactMeasure {
-	float speed = 0.f;     //!< m/s, the point's filtered speed relative to the head
-	float size = 0.f;      //!< m, the stroke so far: a slash's path of the point, a thrust's lunge along the blade
+	float speed = 0.f;     //!< m/s, the lever point's filtered speed relative to the head
+	float size = 0.f;      //!< m, the stroke so far: the hand's path - a thrust's lunge along the blade
 	ContactKind kind = ContactKind::Slash;
 	bool swing = false;    //!< in a swing (false: a touch, a tap, a wrist flick - F-61)
 };
 
 /*!
  * \return the aim ratio a contact deals (the engine's damage = attack * ratio, 1 = the fully charged strike), whatever
- *         the trigger does: outside a swing, or below \ref SwingParams::speedMin or the kind's size minimum
- *         (\ref SwingParams::sizeMin, \ref SwingParams::lungeMin), \ref MinStrikeAim (or 0, \ref SwingParams::noSwing);
- *         else \ref MinStrikeAim rising to 1 with the weaker of two factors, each 0 at its minimum and 1 at its
- *         maximum: the speed's and the size's - a slow big swing and a fast tiny one both stay low
+ *         the trigger does: outside a swing, or below the kind's speed or path minimum, \ref MinStrikeAim (or 0,
+ *         \ref DamageParams::noSwing); else 0.1 + 0.9 q, q of the speed's and the path's factor by
+ *         \ref DamageParams::quality - a slow big swing and a fast tiny one both stay low
  */
-float contactAim(const ContactMeasure & contact, const SwingParams & params);
+float contactAim(const ContactMeasure & contact, const DamageParams & params);
 
 //! What one sample changed
 enum class SwingChange : u8 {
@@ -248,6 +301,12 @@ private:
 	u64 m_jumps = 0;
 
 };
+
+/*!
+ * \return the contact the weapon would make now (#502's measures): the lever point's filtered speed and how it moves
+ *         (a thrust or a slash), the hand's path in the stroke so far - for a thrust its lunge along the blade
+ */
+ContactMeasure measureContact(const SwingDetector & detector);
 
 /*!
  * \brief Who may be hit now: one hit per target per swing, and not again within the cooldown (F-62)

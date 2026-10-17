@@ -20,6 +20,7 @@
 #ifndef ARX_CORE_CONFIG_H
 #define ARX_CORE_CONFIG_H
 
+#include <array>
 #include <string>
 
 #include "audio/AudioTypes.h"
@@ -254,12 +255,12 @@ public:
 		float vrArmMaxStretch; //!< VR: how far [0, 0.3] the custom arm stretches past its fitted length to reach the controller (#385.6)
 		float vrArmWeaponElbowDrop; //!< VR: the share [0, 1] of its angle the elbow of a hand holding a weapon drops by (#385.6)
 		float vrMeleeSwingSpeed; //!< VR: m/s a weapon swing hits from (#39, vr/MeleeSwing.h)
-		float vrMeleeSpeedMin; //!< VR: m/s at the contact point the speed factor rises from (#465, vr/MeleeSwing.h)
-		float vrMeleeSpeedMax; //!< VR: m/s at the contact point the speed factor is full at (#465)
-		float vrMeleeSizeMin; //!< VR: m a slash's contact point travelled the size factor rises from (#465)
-		float vrMeleeSizeMax; //!< VR: m it is full at (#465)
-		float vrMeleeLungeMin; //!< VR: m a thrust's lunge along the blade the size factor rises from (#465)
-		float vrMeleeLungeMax; //!< VR: m it is full at (#465)
+		//! VR: per weapon class (vr::MeleeClass) a slash's "<path min> <path max> <speed min> <speed max>", m and m/s;
+		//! empty = the class's default (#465, vr::defaultRanges)
+		std::array<std::string, 5> vrMeleeSlash;
+		std::array<std::string, 5> vrMeleeStab; //!< VR: the same for a stab: its lunge along the blade (#465)
+		std::string vrMeleeQuality; //!< VR: how size and speed combine: "min" (the default), "geomean", "product" (#465)
+		float vrMeleePathScale; //!< VR: the path ranges scaled by it, e.g. for seated play (#465)
 		std::string vrMeleeNoSwing; //!< VR: a hit outside a swing or below a threshold deals "min" (the default) or "none" (#465)
 		float vrMeleeTargetCooldown; //!< VR: seconds before a new swing can hit the same target (#39)
 		float vrMeleeRecoveryDagger; //!< VR: seconds after a dagger hit before a new swing hits; -1 = the default, 0.6 (#323)

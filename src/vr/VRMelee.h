@@ -35,10 +35,11 @@
  *    from the controller's LOCAL pose;
  *  - the weapon is placed where the hand holds it this frame and the engine's own strike check runs on it
  *    (\c ARX_EQUIPMENT_Strike_Check: the weapon's hit spheres, the to-hit roll, damage, armour, knockback,
- *    blood, sounds, durability, and #42's haptics); each hit sphere deals the aim ratio of \ref contactAim from
- *    the speed of its own point of the blade and that point's stroke so far (#465) - a big and fast swing the
- *    engine's fully charged strike, a touch, a tap or a stroke below a threshold the minimum (or nothing,
- *    \c vr_melee_noswing); targets hit by this swing or within the cooldown are left out (F-62);
+ *    blood, sounds, durability, and #42's haptics) with the aim ratio of \ref contactAim from the stroke so far -
+ *    the hand's path (a thrust's lunge) and the lever point's speed, against the weapon class's ranges (#465,
+ *    research #502): a big and fast swing the engine's fully charged strike, a touch, a tap or a stroke below a
+ *    range the minimum (or nothing, \c vr_melee_noswing); targets hit by this swing or within the cooldown are left
+ *    out (F-62);
  *  - the trigger charges nothing (#465): a hit depends on the swing alone, and the HUD's hit strength gauge
  *    stays empty;
  *  - after a contact the hand recovers for the weapon type's \ref recoveryTime: a swing started within it hits
@@ -51,8 +52,8 @@
  * Gates (F-66): a weapon in the IK hand, the right controller tracked, a head, no menu, inventory or book,
  * nothing dragged, the controls not blocked, not in the casting stance (A held: the trigger is the pen, #377) - the
  * caller names what refuses (\ref updateMelee).
- * Thresholds: cfg.ini \c vr_melee_swing_speed, \c vr_melee_speed_min / \c _max, \c vr_melee_size_min / \c _max,
- * \c vr_melee_lunge_min / \c _max, \c vr_melee_noswing,
+ * Thresholds: cfg.ini \c vr_melee_swing_speed, \c vr_melee_slash_<class> / \c vr_melee_stab_<class>,
+ * \c vr_melee_quality, \c vr_melee_path_scale, \c vr_melee_noswing,
  * \c vr_melee_target_cooldown, \c vr_melee_recovery_dagger, \c vr_melee_recovery_1h, \c vr_melee_recovery_2h.
  */
 namespace vr {
@@ -74,6 +75,8 @@ struct MeleeStatus {
 	bool active = false;            //!< swings count now
 	std::string refused;            //!< why not, when not
 	SwingParams params;             //!< the thresholds in use
+	const char * meleeClass = "sword"; //!< the weapon's damage class (#465): dagger, sword, blunt, 2h_sword, 2h_blunt
+	DamageParams damage;            //!< its ranges in use, the quality and the touch's value (#465)
 	// The swing detector
 	bool swinging = false;
 	const char * kind = "none";     //!< of the swing in progress, or of the last one

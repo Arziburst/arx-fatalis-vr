@@ -20,6 +20,9 @@
 #include "vr/MeleeSwing.h"
 
 #include <algorithm>
+#include <cmath>
+#include <sstream>
+#include <string>
 
 #include <glm/glm.hpp>
 
@@ -71,18 +74,94 @@ float ramp(float value, float low, float high) {
 
 } // anonymous namespace
 
-float contactAim(const ContactMeasure & contact, const SwingParams & params) {
+const char * meleeClassName(MeleeClass meleeClass) {
+	switch(meleeClass) {
+		case MeleeClass::Dagger: return "dagger";
+		case MeleeClass::Sword: return "sword";
+		case MeleeClass::Blunt: return "blunt";
+		case MeleeClass::TwoHandedSword: return "2h_sword";
+		case MeleeClass::TwoHandedBlunt: return "2h_blunt";
+	}
+	return "sword";
+}
+
+MeleeRanges defaultRanges(MeleeClass meleeClass) {
+	// Research #502: a slash's hand path and lever speed from the minimum to the full strike, a stab's lunge and speed
+	switch(meleeClass) {
+		case MeleeClass::Dagger: return { { 0.25f, 0.6f, 2.f, 5.f }, { 0.2f, 0.45f, 2.f, 4.5f } };
+		case MeleeClass::Sword: return { { 0.3f, 0.8f, 2.5f, 6.f }, { 0.2f, 0.5f, 2.f, 4.f } };
+		case MeleeClass::Blunt: return { { 0.35f, 0.9f, 2.5f, 5.5f }, { 0.2f, 0.5f, 2.f, 4.f } };
+		case MeleeClass::TwoHandedSword: return { { 0.4f, 1.1f, 2.5f, 5.f }, { 0.25f, 0.5f, 2.f, 3.5f } };
+		case MeleeClass::TwoHandedBlunt: return { { 0.5f, 1.2f, 2.5f, 4.5f }, { 0.25f, 0.5f, 2.f, 3.5f } };
+	}
+	return defaultRanges(MeleeClass::Sword);
+}
+
+DamageRange parseDamageRange(std::string_view text, const DamageRange & fallback, bool * ok) {
+	if(ok) {
+		*ok = true;
+	}
+	if(text.find_first_not_of(" \t") == std::string_view::npos) {
+		return fallback;
+	}
+	std::istringstream iss{std::string(text)};
+	DamageRange range;
+	std::string rest;
+	if(!(iss >> range.pathMin >> range.pathMax >> range.speedMin >> range.speedMax) || (iss >> rest)) {
+		if(ok) {
+			*ok = false;
+		}
+		return fallback;
+	}
+	for(float value : { range.pathMin, range.pathMax, range.speedMin, range.speedMax }) {
+		if(!(value >= 0.f && value <= 20.f)) {
+			if(ok) {
+				*ok = false;
+			}
+			return fallback;
+		}
+	}
+	range.pathMax = std::max(range.pathMax, range.pathMin);
+	range.speedMax = std::max(range.speedMax, range.speedMin);
+	return range;
+}
+
+const char * qualityName(Quality quality) {
+	switch(quality) {
+		case Quality::Min: return "min";
+		case Quality::GeoMean: return "geomean";
+		case Quality::Product: return "product";
+	}
+	return "min";
+}
+
+Quality parseQuality(std::string_view name) {
+	if(name == "geomean") {
+		return Quality::GeoMean;
+	}
+	if(name == "product") {
+		return Quality::Product;
+	}
+	return Quality::Min;
+}
+
+float contactAim(const ContactMeasure & contact, const DamageParams & params) {
 	const float floor = params.noSwing == NoSwing::Min ? MinStrikeAim : 0.f;
-	const bool thrust = contact.kind == ContactKind::Thrust;
-	const float sizeMin = thrust ? params.lungeMin : params.sizeMin;
-	const float sizeMax = thrust ? params.lungeMax : params.sizeMax;
-	if(!contact.swing || contact.speed < params.speedMin || contact.size < sizeMin) {
+	const DamageRange & range = contact.kind == ContactKind::Thrust ? params.stab : params.slash;
+	const float pathMin = range.pathMin * params.pathScale;
+	const float pathMax = range.pathMax * params.pathScale;
+	if(!contact.swing || contact.speed < range.speedMin || contact.size < pathMin) {
 		return floor;
 	}
-	// The weaker factor decides: only a big and fast stroke is the full strike
-	const float factor = std::min(ramp(contact.speed, params.speedMin, params.speedMax),
-	                              ramp(contact.size, sizeMin, sizeMax));
-	return MinStrikeAim + (1.f - MinStrikeAim) * factor;
+	const float speed = ramp(contact.speed, range.speedMin, range.speedMax);
+	const float path = ramp(contact.size, pathMin, pathMax);
+	float quality = std::min(speed, path); // only a big and fast stroke is the full strike
+	if(params.quality == Quality::GeoMean) {
+		quality = std::sqrt(speed * path);
+	} else if(params.quality == Quality::Product) {
+		quality = speed * path;
+	}
+	return MinStrikeAim + (1.f - MinStrikeAim) * quality;
 }
 
 namespace {
@@ -257,6 +336,16 @@ float SwingDetector::strokePath(float distance) const {
 		path += glm::length(to - from);
 	}
 	return path;
+}
+
+ContactMeasure measureContact(const SwingDetector & detector) {
+	ContactMeasure contact;
+	const Vec3f velocity = detector.pointVelocity(detector.params().lever);
+	contact.speed = glm::length(velocity);
+	contact.kind = contactKind(velocity, detector.blade(), detector.params());
+	contact.size = contact.kind == ContactKind::Thrust ? detector.strokeLunge(0.f) : detector.strokePath(0.f);
+	contact.swing = detector.swinging();
+	return contact;
 }
 
 float SwingDetector::strokeLunge(float distance) const {

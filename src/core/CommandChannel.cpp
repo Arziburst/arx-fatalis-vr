@@ -1551,13 +1551,21 @@ std::string buildStatus(PlatformInstant now) {
 		json.object("params");
 		json.value("swingSpeed", melee.params.startSpeed);
 		json.value("endSpeed", melee.params.endSpeed);
-		json.value("speedMin", melee.params.speedMin);
-		json.value("speedMax", melee.params.speedMax);
-		json.value("sizeMin", melee.params.sizeMin);
-		json.value("sizeMax", melee.params.sizeMax);
-		json.value("lungeMin", melee.params.lungeMin);
-		json.value("lungeMax", melee.params.lungeMax);
-		json.value("noSwing", vr::noSwingName(melee.params.noSwing));
+		json.value("class", melee.meleeClass);
+		const struct { const char * name; const vr::DamageRange & range; } ranges[] = {
+			{ "slash", melee.damage.slash }, { "stab", melee.damage.stab }
+		};
+		for(const auto & range : ranges) {
+			json.object(range.name);
+			json.value("pathMin", range.range.pathMin);
+			json.value("pathMax", range.range.pathMax);
+			json.value("speedMin", range.range.speedMin);
+			json.value("speedMax", range.range.speedMax);
+			json.end();
+		}
+		json.value("pathScale", melee.damage.pathScale);
+		json.value("quality", vr::qualityName(melee.damage.quality));
+		json.value("noSwing", vr::noSwingName(melee.damage.noSwing));
 		json.value("targetCooldown", melee.params.targetCooldown);
 		json.end();
 		json.value("placed", melee.placed);
@@ -2449,9 +2457,9 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "melee") {
-		// The damage from the swing (#465) live, not saved: melee noswing none|min sets vr_melee_noswing; melee speed,
-		// size and lunge <min> <max> vr_melee_speed_min / _max (m/s at the contact point), vr_melee_size_min / _max and
-		// vr_melee_lunge_min / _max (m) - one run tests each factor alone
+		// The damage from the swing (#465) live, not saved: melee noswing none|min, melee quality min|geomean|product,
+		// melee pathscale <factor>, melee slash|stab <class> <path min> <path max> <speed min> <speed max> | default -
+		// the cfg.ini keys vr_melee_noswing, _quality, _path_scale, _slash_<class>, _stab_<class>
 		std::string_view args;
 		const std::string_view what = firstWord(rest, args);
 		if(what == "noswing") {
@@ -2461,32 +2469,43 @@ std::string execute(std::string_view line) {
 			config.input.vrMeleeNoSwing = std::string(args);
 			return std::string();
 		}
-		struct Range {
-			const char * name;
-			float * low;
-			float * high;
-		};
-		const Range ranges[] = {
-			{ "speed", &config.input.vrMeleeSpeedMin, &config.input.vrMeleeSpeedMax },
-			{ "size", &config.input.vrMeleeSizeMin, &config.input.vrMeleeSizeMax },
-			{ "lunge", &config.input.vrMeleeLungeMin, &config.input.vrMeleeLungeMax },
-		};
-		for(const Range & range : ranges) {
-			if(what != range.name) {
-				continue;
+		if(what == "quality") {
+			if(args != vr::qualityName(vr::parseQuality(args))) {
+				return refuse("melee quality: expected min, geomean or product, got \"" + std::string(args) + "\"");
 			}
-			float low = 0.f;
-			float high = 0.f;
-			std::istringstream iss{std::string(args)};
-			if(!(iss >> low >> high) || low < 0.f || high < low || high > 20.f) {
-				return refuse("melee " + std::string(range.name) + ": expected <min> <max>, 0 <= min <= max <= 20, got \""
-				              + std::string(args) + "\"");
-			}
-			*range.low = low;
-			*range.high = high;
+			config.input.vrMeleeQuality = std::string(args);
 			return std::string();
 		}
-		return refuse("melee: expected noswing none|min, or speed|size|lunge <min> <max>, got \"" + std::string(rest) + "\"");
+		if(what == "pathscale") {
+			float scale = 0.f;
+			std::istringstream iss{std::string(args)};
+			if(!(iss >> scale) || scale < 0.25f || scale > 2.f) {
+				return refuse("melee pathscale: expected a factor from 0.25 to 2, got \"" + std::string(args) + "\"");
+			}
+			config.input.vrMeleePathScale = scale;
+			return std::string();
+		}
+		if(what == "slash" || what == "stab") {
+			std::string_view range;
+			const std::string_view name = firstWord(args, range);
+			for(vr::MeleeClass meleeClass : vr::MeleeClasses) {
+				if(name != vr::meleeClassName(meleeClass)) {
+					continue;
+				}
+				bool ok = false;
+				vr::parseDamageRange(range, vr::DamageRange(), &ok);
+				if(range != "default" && (!ok || range.empty())) {
+					return refuse("melee " + std::string(what) + ": expected <path min> <path max> <speed min> <speed max>"
+					              " (0-20) or default, got \"" + std::string(range) + "\"");
+				}
+				auto & ranges = what == "slash" ? config.input.vrMeleeSlash : config.input.vrMeleeStab;
+				ranges[size_t(meleeClass)] = range == "default" ? std::string() : std::string(range);
+				return std::string();
+			}
+			return refuse("melee " + std::string(what) + ": expected a class (dagger, sword, blunt, 2h_sword, 2h_blunt), got \""
+			              + std::string(name) + "\"");
+		}
+		return refuse("melee: expected noswing, quality, pathscale, slash or stab, got \"" + std::string(rest) + "\"");
 	}
 
 	if(word == "crouch") {

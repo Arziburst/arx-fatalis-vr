@@ -622,14 +622,6 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 	float drain_life = ARX_EQUIPMENT_GetSpecialValue(io_weapon, IO_SPECIAL_ELEM_DRAIN_LIFE);
 	float paralyse = ARX_EQUIPMENT_GetSpecialValue(io_weapon, IO_SPECIAL_ELEM_PARALYZE);
 	
-	// The hit spheres with their aim: the check's ratio, or for a VR contact the one of the sphere's own point of the
-	// blade, from its speed (#465) - a point too slow touches nothing, and the fastest touches first
-	struct HitSphere {
-		Sphere sphere;
-		StrikeAim aim;
-	};
-	std::vector<HitSphere> hitSpheres;
-	const bool vrAim = targets && targets->aim;
 	for(const EERIE_ACTIONLIST & action : io_weapon->obj->actionlist) {
 		
 		float rad = GetHitValue(action.name);
@@ -637,32 +629,13 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 			continue;
 		}
 		
-		HitSphere hit;
-		hit.sphere.origin = io_weapon->obj->vertexWorldPositions[action.idx].v;
-		hit.sphere.radius = rad;
+		Sphere sphere;
+		sphere.origin = io_weapon->obj->vertexWorldPositions[action.idx].v;
+		sphere.radius = rad;
 		
 		if(io_source != entities.player()) {
-			hit.sphere.radius += 15.f;
+			sphere.radius += 15.f;
 		}
-
-		hit.aim.ratio = ratioaim;
-		if(vrAim) {
-			hit.aim = targets->aim(hit.sphere.origin);
-			if(hit.aim.ratio <= 0.f) {
-				continue;
-			}
-		}
-		hitSpheres.push_back(hit);
-	}
-	if(vrAim) {
-		std::stable_sort(hitSpheres.begin(), hitSpheres.end(), [](const HitSphere & a, const HitSphere & b) {
-			return a.aim.speed > b.aim.speed;
-		});
-	}
-
-	for(const HitSphere & hit : hitSpheres) {
-
-		const Sphere & sphere = hit.sphere;
 		
 		std::vector<Entity *> sphereContent;
 		if(CheckEverythingInSphere(sphere, io_source, entities.get(targ), sphereContent)) {
@@ -704,19 +677,19 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 					float dmgs = 0.f;
 					if(!(flags & 1)) {
 						
-						dmgs = ARX_EQUIPMENT_ComputeDamages(io_source, target, hit.aim.ratio, &pos);
+						dmgs = ARX_EQUIPMENT_ComputeDamages(io_source, target, ratioaim, &pos);
 
 						if((target->ioflags & IO_NPC) && (io_source == entities.player() || target == entities.player())) {
 							// One per swing: a hit on an NPC (the player is one) returns true and the
 							// caller stops checking until the next swing; props would repeat every frame.
 							// damage=0 is a hit that the armour class roll turned into a miss. A VR contact adds
-							// the speed of the blade's point that touched, its stroke's size and how it moved (#465)
+							// the stroke the aim was measured from (#465)
 							gameevent::Event event("melee.hit");
 							event("source", gameevent::entityName(io_source))
 								("target", gameevent::entityName(target))("weapon", gameevent::entityName(io_weapon))
-								("damage", dmgs, 1)("aim", hit.aim.ratio, 2);
-							if(vrAim) {
-								event("speed", hit.aim.speed, 2)("size", hit.aim.size, 2)("kind", hit.aim.kind);
+								("damage", dmgs, 1)("aim", ratioaim, 2);
+							if(targets && targets->kind) {
+								event("speed", targets->speed, 2)("size", targets->size, 2)("kind", targets->kind);
 							}
 						}
 
@@ -754,10 +727,6 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 							contact.target = target->index();
 							contact.damage = dmgs;
 							contact.npc = (target->ioflags & IO_NPC) != 0;
-							contact.aim = hit.aim.ratio;
-							contact.speed = hit.aim.speed;
-							contact.size = hit.aim.size;
-							contact.kind = hit.aim.kind;
 							targets->touched.push_back(contact);
 						}
 					}

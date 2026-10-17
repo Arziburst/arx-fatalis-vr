@@ -41,6 +41,7 @@ class MeleeSwingTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testStab);
 	CPPUNIT_TEST(testLongestSwing);
 	CPPUNIT_TEST(testContactAim);
+	CPPUNIT_TEST(testDamageRanges);
 	CPPUNIT_TEST(testPointVelocity);
 	CPPUNIT_TEST(testStrokeSize);
 	CPPUNIT_TEST(testThrustCountsLikeSlash);
@@ -64,6 +65,7 @@ public:
 	void testStab();
 	void testLongestSwing();
 	void testContactAim();
+	void testDamageRanges();
 	void testPointVelocity();
 	void testStrokeSize();
 	void testThrustCountsLikeSlash();

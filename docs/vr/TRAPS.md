@@ -8,6 +8,29 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-17 — GL pixel-store state is global, set it per upload: an intermittent access violation inside the AMD driver under `glTexImage2D` while a cinematic loads (#495)
+
+**Symptom:** the owner's headset run crashed right after character creation, `atio6axx.dll` under
+`OPENGL32.dll!glTexImage2D` ← `GLTexture.cpp:142` ← `CinematicTexture.cpp` while `akbaa_dream_c.cin` loaded its
+images; two runs before it in the same session passed the same point. The faulting address was page-aligned
+(`0x28011cd0000`): a read just past the end of a heap region. Nothing in the cinematic code had changed.
+**Cause:** the GL pixel-store state. The engine sets `GL_UNPACK_ALIGNMENT` to 1 once at start-up
+(`OpenGLRenderer.cpp`) and every `Image` is tightly packed (stride = width × bytes per pixel); `GLTexture::upload`
+trusted that. The menu pointer's beam (`VRSystem.cpp`), the hand reticle rings and the desktop mirror's overlays
+(`VRMirror.cpp`) set the alignment to 4 for their RGBA uploads and never restored it - the log shows the beam image
+created in the main menu (`menu pointer: beam image 8x64`) a few lines before `Loading cinematic`. `akbaa dream.tga`
+is 1390 × 1390, a 16-bit TGA loaded as RGB (3 bytes per pixel) and cut into 256-wide tiles whose last column is
+110 wide: a 330-byte row, read 332 bytes apart under alignment 4, so the 110 × 256 tile (84480 bytes) was read to
+84990 - 510 bytes past its buffer, a crash only when the buffer ended near a page boundary. 17 cinematic images in
+12 of the 19 cinematics have such a last column (tile widths 50, 51, 66, 81, 86, 110, 139, 161, 199, 207); plenty
+of other RGB textures of the game do too, so the crash could have landed anywhere after the first overlay.
+**Do:** never trust global GL client state across modules: `GLTexture::upload` now sets the tight unpack state
+itself before every `glTexImage2D` and logs an `[E]` with the numbers when the state it found would have read
+past the image (`pixelstore::bytesRead`, `graphics/image/PixelStore.h`, host-tested); code that needs another
+state sets it and puts it back. A crash inside the driver under a texture upload with a page-aligned address is
+an out-of-bounds read of the client buffer - compute the bytes GL reads (alignment, row length, skips) against
+the image's size before suspecting the driver. `cinematics.xrs` loads all 19 cinematics after the beam was created.
+
 ## 2026-10-14 — The Arx arm grows a second elbow in the middle of the forearm, though the IK has only one (#466.1)
 
 **Symptom:** with the Arx arms drawn (`arms arx`) the owner sees a second elbow and wants the arm one solid

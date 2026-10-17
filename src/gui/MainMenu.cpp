@@ -1882,13 +1882,19 @@ public:
 			                                            getLocalised("system_menus_options_vr_turn_mode", "Turning"));
 			cb->addEntry(getLocalised("system_menus_options_vr_turn_snap", "Snap"));
 			cb->addEntry(getLocalised("system_menus_options_vr_turn_smooth", "Smooth"));
-			cb->valueChanged = [](int pos, std::string_view /* string */) {
+			cb->valueChanged = [this](int pos, std::string_view /* string */) {
 				config.input.vrSmoothTurn = (pos == 1);
-				gameevent::Event("vr.settings")("row", "turn")("value", config.input.vrSmoothTurn ? "smooth" : "snap");
+				updateModeRows();
+				gameevent::Event("vr.settings")("row", "turn")("value", config.input.vrSmoothTurn ? "smooth" : "snap")
+					("shown", config.input.vrSmoothTurn ? "speed" : "angle");
 			};
 			m_mode = cb.get();
 			addCenter(std::move(cb));
 		}
+
+		// Only one turning mode is on, so only its row shows (#374): the smooth speed takes the snap angle's row
+		// (added last, as addCenter lays all the rows out)
+		std::unique_ptr<NotchSliderWidget> smoothSpeed;
 
 		{
 			// The menu font has no degree sign
@@ -1915,7 +1921,7 @@ public:
 				gameevent::Event("vr.settings")("row", "speed")("value", config.input.vrSmoothTurnSpeed, 0)
 					("preset", vr::smoothSpeedName(size_t(notch)));
 			};
-			addCenter(std::move(slider));
+			smoothSpeed = std::move(slider);
 		}
 
 		{
@@ -1945,6 +1951,8 @@ public:
 			addCenter(std::move(cb));
 		}
 
+		addInRowOf(std::move(smoothSpeed), *m_sliders[size_t(Slider::SnapAngle)]);
+
 		addBackButton(Page_OptionsVR);
 
 		refresh();
@@ -1972,6 +1980,9 @@ public:
 		} else if(name == "height") {
 			m_height->step(delta);
 		} else if(NotchSliderWidget * slider = findSlider(name)) {
+			if(!slider->isVisible()) {
+				return hiddenRowError(name);
+			}
 			slider->step(delta);
 		} else {
 			return "unknown row \"" + std::string(name) + "\", expected turn, angle, speed, repeat or height";
@@ -1987,8 +1998,22 @@ public:
 		if(!slider) {
 			return "no slider \"" + std::string(name) + "\", expected angle, speed or repeat";
 		}
+		if(!slider->isVisible()) {
+			return hiddenRowError(name);
+		}
 		slider->dragTo(fraction);
 		return std::string();
+	}
+
+	//! For the test channel: the rows the page shows, top to bottom, as \c menu \c step / \c drag name them
+	std::string visibleRows() const {
+		std::string rows = "turn";
+		for(size_t i = 0; i < size_t(Slider::Count); i++) {
+			if(m_sliders[i]->isVisible()) {
+				rows += std::string(",") + SliderNames[i];
+			}
+		}
+		return rows + ",height";
 	}
 
 private:
@@ -2004,6 +2029,10 @@ private:
 		return widget;
 	}
 
+	static std::string hiddenRowError(std::string_view name) {
+		return "the row \"" + std::string(name) + "\" is hidden in this turning mode (a player cannot reach it)";
+	}
+
 	NotchSliderWidget * findSlider(std::string_view name) const {
 		for(size_t i = 0; i < size_t(Slider::Count); i++) {
 			if(name == SliderNames[i]) {
@@ -2013,11 +2042,19 @@ private:
 		return nullptr;
 	}
 
+	//! Only the active turning mode's row shows: the snap angle with Snap, the smooth speed with Smooth (#374)
+	void updateModeRows() {
+		bool smooth = config.input.vrSmoothTurn;
+		m_sliders[size_t(Slider::SnapAngle)]->setVisible(!smooth);
+		m_sliders[size_t(Slider::SmoothSpeed)]->setVisible(smooth);
+	}
+
 	void refresh() {
 		if(!m_mode) {
 			return;
 		}
 		m_mode->setValue(config.input.vrSmoothTurn ? 1 : 0);
+		updateModeRows();
 		m_sliders[size_t(Slider::SnapAngle)]->setValue(int(vr::nearestChoice(vr::snapAngleChoices(),
 		                                                                       config.input.vrSnapTurnAngle)));
 		m_sliders[size_t(Slider::SmoothSpeed)]->setValue(int(vr::nearestChoice(vr::smoothSpeedChoices(),
@@ -2043,6 +2080,11 @@ static VRTurningMenuPage * openVRTurningPage() {
 std::string stepVRSettingRow(std::string_view row, int delta) {
 	VRTurningMenuPage * page = openVRTurningPage();
 	return page ? page->step(row, delta) : "menu step: needs the VR turning page open (menu vr-turning)";
+}
+
+std::string visibleVRSettingRows() {
+	VRTurningMenuPage * page = openVRTurningPage();
+	return page ? page->visibleRows() : std::string();
 }
 
 std::string dragVRSettingSlider(std::string_view row, float fraction) {

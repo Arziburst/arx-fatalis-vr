@@ -91,7 +91,11 @@ public:
 	
 	virtual void setEnabled(bool enable);
 	bool isEnabled() const { return m_enabled; }
-	
+
+	//! A hidden widget is neither drawn nor hit by the pointer; it keeps its place in the layout
+	void setVisible(bool visible) { m_visible = visible; }
+	bool isVisible() const { return m_visible; }
+
 	virtual void move(const Vec2f & offset);
 	void setPosition(Vec2f pos) { move(pos - m_rect.topLeft()); }
 	
@@ -107,7 +111,8 @@ public:
 protected:
 	
 	bool m_enabled;
-	
+	bool m_visible;
+
 private:
 	
 	MENUSTATE m_targetPage;

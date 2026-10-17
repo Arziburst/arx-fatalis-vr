@@ -30,7 +30,7 @@
 
 /*!
  * \file
- * \brief What the eyes see in a scripted scene (#29, D-053)
+ * \brief What the eyes see in a scripted scene (#29, D-054)
  *
  * A scripted scene owns the game's camera: a \c speak \c -c line moves it every frame (hard cuts between
  * lines, dollies and pans within one), a camera entity (\c cameraactivate) glides it on a path, and the
@@ -300,7 +300,7 @@ struct SceneInput {
 	//! camera frame a conversation's setup - the talk after the goblin fight; a scripted body (a drag) is a cutscene
 	bool cameraOnNpc = false;
 	//! The hero's body is played by a script (a drag, the prison intro): under a camera entity a cutscene shot, on the
-	//! screen even inside a dialogue (D-053)
+	//! screen even inside a dialogue (D-054)
 	bool heroScripted = false;
 	bool firstOnFloor = true;       //!< a floor under the hero's eye (\c firstPos)
 	float firstFloorY = 0.f;        //!< that floor (y down), when \c firstOnFloor

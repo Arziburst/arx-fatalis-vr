@@ -60,6 +60,7 @@
 #include "vr/VRArms.h"
 #include "vr/WeaponGrip.h"
 #include "vr/VRBody.h"
+#include "vr/VRControls.h"
 #include "vr/VRSystem.h"
 #include "vr/VRTurn.h"
 
@@ -206,6 +207,11 @@ constexpr const float
 	vrBodyPush = vr::BodyViewParams().push,
 	vrBodyPushDown = vr::BodyViewParams().pushDown,
 	vrBodyClearance = vr::BodyViewParams().clearance;
+
+// The Index grip as a button (#496): pressed above a firm resting hold, let go below a closed hand's flicker
+const float
+	vrGripPress = vr::IndexGripThreshold.press,
+	vrGripRelease = vr::IndexGripThreshold.release;
 
 constexpr const ActionKey actions[NUM_ACTION_KEY] = {
 	ActionKey(Keyboard::Key_Spacebar), // JUMP
@@ -401,6 +407,10 @@ constexpr const std::string_view
 	vrBodyClearance = "vr_body_clearance",
 	vrRadialPlace = "vr_radial_place",
 	vrRadialGazeDeg = "vr_radial_gaze_deg";
+
+constexpr const std::string_view
+	vrGripPress = "vr_grip_press",
+	vrGripRelease = "vr_grip_release";
 
 // Input key options
 constexpr const std::string_view actions[NUM_ACTION_KEY] = {
@@ -718,6 +728,8 @@ bool Config::save() {
 	writer.writeKey(Key::vrBodyClearance, input.vrBodyClearance);
 	writer.writeKey(Key::vrRadialPlace, input.vrRadialPlace);
 	writer.writeKey(Key::vrRadialGazeDeg, input.vrRadialGazeDeg);
+	writer.writeKey(Key::vrGripPress, input.vrGripPress);
+	writer.writeKey(Key::vrGripRelease, input.vrGripRelease);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -979,6 +991,12 @@ bool Config::init(const fs::path & file) {
 	}
 	float vrRadialGazeDeg = reader.getKey(Section::Input, Key::vrRadialGazeDeg, Default::vrRadialGazeDeg);
 	input.vrRadialGazeDeg = glm::clamp(vrRadialGazeDeg, 10.f, 120.f);
+
+	// The Index grip's press / release (#496): the release stays below the press, or a closed hand would flicker
+	float vrGripPress = reader.getKey(Section::Input, Key::vrGripPress, Default::vrGripPress);
+	input.vrGripPress = glm::clamp(vrGripPress, 0.1f, 1.f);
+	float vrGripRelease = reader.getKey(Section::Input, Key::vrGripRelease, Default::vrGripRelease);
+	input.vrGripRelease = glm::clamp(vrGripRelease, 0.f, input.vrGripPress - 0.05f);
 
 	// Get action key settings
 	for(size_t i = 0; i < NUM_ACTION_KEY; i++) {

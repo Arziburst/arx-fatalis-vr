@@ -223,6 +223,10 @@ void updateMelee(const char * refusal) {
 	HeadSample head;
 	const bool haveHead = peekHead(head);
 	const char * refused = refusal;
+	// The casting stance held (A): the weapon hand's trigger is the pen - no charge, no strike (#377, the owner)
+	if(!refused && controls().active(Event::MagicMode)) {
+		refused = "casting stance";
+	}
 	if(!refused && !weapon) {
 		refused = "no weapon in the hand";
 	} else if(!refused && !arm.tracked) {

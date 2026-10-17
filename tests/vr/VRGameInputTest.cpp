@@ -41,6 +41,27 @@ const Control GiRightB = control(Hand::Right, ControlKind::B);
 const Control GiRightTrigger = control(Hand::Right, ControlKind::Trigger);
 const Control GiRightGrip = control(Hand::Right, ControlKind::Grip);
 const Control GiRightStickDown = control(Hand::Right, ControlKind::StickDown);
+const Control GiRightStickUp = control(Hand::Right, ControlKind::StickUp);
+const Control GiRightStickClick = control(Hand::Right, ControlKind::StickClick);
+const Control GiLeftGrip = control(Hand::Left, ControlKind::Grip);
+
+/*!
+ * D-019's layout, which the mapping rules were written against and a player can still bind (#377 changed the
+ * defaults): the grip uses when it opens, grip + trigger stashes, the left A is the game menu, a long left stick
+ * click recenters, the left trackpad is the casting stance
+ */
+ControlLayout giRuleLayout() {
+	ControlLayout layout = defaultLayout(ControllerType::Index);
+	layout[Event::Jump] = Binding::single(GiRightA);
+	layout[Event::UseRight] = Binding::single(GiRightGrip);
+	layout[Event::UseLeft] = Binding::single(GiLeftGrip);
+	layout[Event::StashRight] = Binding::chord(GiRightGrip, GiRightTrigger);
+	layout[Event::StashLeft] = Binding::chord(GiLeftGrip, GiLeftTrigger);
+	layout[Event::Menu] = Binding::single(GiLeftA);
+	layout[Event::Recenter] = Binding::hold(GiLeftStickClick);
+	layout[Event::MagicMode] = Binding::single(control(Hand::Left, ControlKind::Trackpad));
+	return layout;
+}
 
 ControlSet downSet(std::initializer_list<Control> list = { }) {
 	ControlSet result;
@@ -53,15 +74,18 @@ ControlSet downSet(std::initializer_list<Control> list = { }) {
 //! The resolver and the mapper of one frame after another, as VRInput.cpp runs them
 struct Frames {
 
-	ControlResolver resolver = ControlResolver(defaultLayout(ControllerType::Index));
+	ControlResolver resolver;
 	GameInputMapper mapper;
 	ControllerInput input;
+	HandRoles roles;
 	s64 time = 0;
+
+	explicit Frames(const ControlLayout & layout = defaultLayout(ControllerType::Index)) : resolver(layout) { }
 
 	const GameInputState & frame(const ControlSet & down, const ControlSet & taps = ControlSet()) {
 		time += 11; // 90 Hz
 		resolver.update(time, down, taps);
-		return mapper.update(resolver, input);
+		return mapper.update(resolver, input, roles);
 	}
 
 	//! Frames with nothing held until the debounce window of every released control is over
@@ -107,7 +131,7 @@ void VRGameInputTest::clickTest() {
 
 void VRGameInputTest::useTest() {
 
-	Frames f;
+	Frames f(giRuleLayout());
 
 	// The grip is a closed hand: nothing while it is closed, "use" for one frame when it opens
 	for(int i = 0; i < 30; i++) {
@@ -128,7 +152,7 @@ void VRGameInputTest::useTest() {
 
 void VRGameInputTest::stashTest() {
 
-	Frames f;
+	Frames f(giRuleLayout());
 
 	// Grip + trigger: the left button with stealth held - the original's stealth-click
 	f.frame(downSet({ GiRightGrip }));
@@ -158,33 +182,57 @@ void VRGameInputTest::buttonActionsTest() {
 
 	Frames f;
 
+	// The right B holds the radial menu (D-042, #376): no engine action of its own - the book is an item of the menu.
+	// The left B is the book's map page, the left A the bag (the owner, #377). Bound by the player, the inventory and
+	// book events give theirs anywhere
+	ControlLayout menus = defaultLayout(ControllerType::Index);
+	menus[Event::Inventory] = Binding::single(GiRightB);
+	menus[Event::Book] = Binding::single(GiLeftB);
+	menus[Event::RadialLeft] = Binding();
+	menus[Event::Map] = Binding();
+	menus[Event::RadialRight] = Binding();
+	Frames remapped;
+	remapped.resolver.setLayout(menus);
+
+	for(const GameInputState & held : { f.frame(downSet({ GiRightB })) }) {
+		for(size_t i = 0; i < GameActionCount; i++) {
+			CPPUNIT_ASSERT(!held.actions[i]);
+		}
+	}
+	f.frame(downSet());
+	f.settle();
+
 	// Each button is the engine action of its event while held
-	struct Case { Control control; GameAction action; };
+	struct Case { Frames & frames; Control control; GameAction action; };
 	const Case cases[] = {
-		{ GiRightA, GameAction::Jump },
-		{ GiRightB, GameAction::Inventory },
-		{ GiLeftB, GameAction::Book },
-		{ GiRightStickDown, GameAction::CrouchToggle },
+		{ f, GiRightStickUp, GameAction::Jump },
+		{ f, GiLeftB, GameAction::BookMap },
+		{ f, GiLeftA, GameAction::Inventory },
+		{ remapped, GiRightB, GameAction::Inventory },
+		{ remapped, GiLeftB, GameAction::Book },
+		{ f, GiRightStickDown, GameAction::CrouchToggle },
 	};
 	for(const Case & c : cases) {
-		const GameInputState & held = f.frame(downSet({ c.control }));
+		const GameInputState & held = c.frames.frame(downSet({ c.control }));
 		CPPUNIT_ASSERT(held.action(c.action));
 		for(size_t i = 0; i < GameActionCount; i++) {
 			CPPUNIT_ASSERT_EQUAL(GameAction(i) == c.action, held.actions[i]);
 		}
 		CPPUNIT_ASSERT(!held.click && !held.use && !held.escape);
-		CPPUNIT_ASSERT(f.frame(downSet({ c.control })).action(c.action));
-		CPPUNIT_ASSERT(!f.frame(downSet()).action(c.action));
+		CPPUNIT_ASSERT(c.frames.frame(downSet({ c.control })).action(c.action));
+		CPPUNIT_ASSERT(!c.frames.frame(downSet()).action(c.action));
+		c.frames.settle();
 	}
 
-	// Magic mode (#43): held with the Index's left trackpad, as long as it is pressed, and not by the face buttons
-	CPPUNIT_ASSERT(!f.frame(downSet({ GiLeftA, GiLeftB, GiRightA, GiRightB })).action(GameAction::MagicMode));
+	// Magic mode (#43): held with the right A (D-042: A is the casting stance; one for both hands until #378, the
+	// owner), as long as it is pressed, and not by the other face buttons or the trackpads (free by default)
+	CPPUNIT_ASSERT(!f.frame(downSet({ GiLeftA, GiLeftB, GiRightB, control(Hand::Left, ControlKind::Trackpad),
+	                                  control(Hand::Right, ControlKind::Trackpad) })).action(GameAction::MagicMode));
 	f.settle();
-	const Control leftTrackpad = control(Hand::Left, ControlKind::Trackpad);
-	CPPUNIT_ASSERT(f.frame(downSet({ leftTrackpad })).action(GameAction::MagicMode));
-	CPPUNIT_ASSERT(f.frame(downSet({ leftTrackpad })).action(GameAction::MagicMode));
+	CPPUNIT_ASSERT(f.frame(downSet({ GiRightA })).action(GameAction::MagicMode));
+	CPPUNIT_ASSERT(f.frame(downSet({ GiRightA })).action(GameAction::MagicMode));
 	// a trigger held in the stance is still the click: the engine draws the rune with it
-	const GameInputState & drawing = f.frame(downSet({ leftTrackpad, control(Hand::Right, ControlKind::Trigger) }));
+	const GameInputState & drawing = f.frame(downSet({ GiRightA, control(Hand::Right, ControlKind::Trigger) }));
 	CPPUNIT_ASSERT(drawing.action(GameAction::MagicMode) && drawing.click);
 	CPPUNIT_ASSERT(!f.frame(downSet()).action(GameAction::MagicMode));
 	f.settle();
@@ -198,9 +246,9 @@ void VRGameInputTest::buttonActionsTest() {
 
 void VRGameInputTest::menuTest() {
 
-	Frames f;
+	Frames f(giRuleLayout());
 
-	// Left A on the Index is the game menu: Escape held as long as the button
+	// The game menu's event (D-019's left A; the Touch's menu button): Escape held as long as the button
 	CPPUNIT_ASSERT(f.frame(downSet({ GiLeftA })).escape);
 	CPPUNIT_ASSERT(f.frame(downSet({ GiLeftA })).escape);
 	CPPUNIT_ASSERT(f.frame(downSet({ GiLeftA })).escape);
@@ -215,7 +263,7 @@ void VRGameInputTest::menuTest() {
 
 void VRGameInputTest::recenterTest() {
 
-	Frames f;
+	Frames f(giRuleLayout());
 
 	// A long press of the left stick click: one request, when the hold is long enough
 	int requests = 0;
@@ -284,4 +332,85 @@ void VRGameInputTest::crouchDoesNotTurnTest() {
 	CPPUNIT_ASSERT(f.frame(downSet()).turn > 0.f);
 	f.input.sticks[size_t(Hand::Right)] = Stick{ -0.9f, 0.4f };
 	CPPUNIT_ASSERT(f.frame(downSet()).turn < 0.f);
+}
+
+void VRGameInputTest::defaultUseTest() {
+
+	Frames f;
+
+	// D-042 (#377): the grip alone is nothing - held, opened
+	for(int i = 0; i < 30; i++) {
+		const GameInputState & state = f.frame(downSet({ GiRightGrip }));
+		CPPUNIT_ASSERT(!state.use && !state.click && state.actions.none());
+	}
+	CPPUNIT_ASSERT(!f.settle().use);
+	CPPUNIT_ASSERT_EQUAL(u32(0), f.resolver.presses(Event::UseRight));
+
+	// Grip, then trigger: the original's right click (use) while both are held - no click, no stealth (stash)
+	f.frame(downSet({ GiRightGrip }));
+	for(int i = 0; i < 5; i++) {
+		const GameInputState & state = f.frame(downSet({ GiRightGrip, GiRightTrigger }));
+		CPPUNIT_ASSERT(state.use && state.action(GameAction::Use));
+		CPPUNIT_ASSERT(!state.click);
+		CPPUNIT_ASSERT(!state.action(GameAction::Stealth));
+	}
+	CPPUNIT_ASSERT(!f.frame(downSet({ GiRightGrip })).use);
+	f.settle();
+
+	// The left hand the same
+	f.frame(downSet({ GiLeftGrip }));
+	CPPUNIT_ASSERT(f.frame(downSet({ GiLeftGrip, GiLeftTrigger })).use);
+	f.settle();
+}
+
+void VRGameInputTest::handRolesTest() {
+
+	Frames f;
+
+	// A hand with a drawn weapon charges with its trigger: no click from that hand (D-042, #377) ...
+	f.roles.charges[size_t(Hand::Right)] = true;
+	CPPUNIT_ASSERT(!f.frame(downSet({ GiRightTrigger })).click);
+	CPPUNIT_ASSERT(!f.frame(downSet({ GiRightTrigger })).click);
+	// ... the other hand still clicks and drags, also while the weapon hand charges
+	CPPUNIT_ASSERT(f.frame(downSet({ GiRightTrigger, GiLeftTrigger })).click);
+	CPPUNIT_ASSERT(f.frame(downSet({ GiLeftTrigger })).click);
+	CPPUNIT_ASSERT(!f.frame(downSet()).click);
+	// Sheathed again, the trigger clicks
+	f.roles.charges = { };
+	CPPUNIT_ASSERT(f.frame(downSet({ GiRightTrigger })).click);
+	CPPUNIT_ASSERT(!f.frame(downSet()).click);
+	f.settle();
+
+	// A chord that acted on a door, lever, chest or body (#38) is no use of that hand; the other hand's use stays
+	f.frame(downSet({ GiRightGrip, GiLeftGrip }));
+	f.roles.acts[size_t(Hand::Right)] = true;
+	const GameInputState & acted = f.frame(downSet({ GiRightGrip, GiRightTrigger, GiLeftGrip }));
+	CPPUNIT_ASSERT(!acted.use && !acted.action(GameAction::Use) && !acted.click);
+	CPPUNIT_ASSERT(f.frame(downSet({ GiRightGrip, GiRightTrigger, GiLeftGrip, GiLeftTrigger })).use);
+	f.roles.acts = { };
+	f.settle();
+
+	// A stash the player bound onto the chord: no stealth-click either when the chord acted
+	Frames stash(giRuleLayout());
+	stash.roles.acts[size_t(Hand::Right)] = true;
+	stash.frame(downSet({ GiRightGrip }));
+	const GameInputState & stashActed = stash.frame(downSet({ GiRightGrip, GiRightTrigger }));
+	CPPUNIT_ASSERT(!stashActed.click && !stashActed.action(GameAction::Stealth));
+}
+
+void VRGameInputTest::jumpDoesNotTurnTest() {
+
+	Frames f;
+
+	// The right stick pushed up jumps (D-042, #377) and does not turn: x is below 0.6 of y (F-121 axis dominance)
+	f.input.sticks[size_t(Hand::Right)] = Stick{ 0.3f, 0.95f };
+	const GameInputState & up = f.frame(downSet({ GiRightStickUp }));
+	CPPUNIT_ASSERT(up.action(GameAction::Jump));
+	CPPUNIT_ASSERT(up.turn == 0.f);
+	CPPUNIT_ASSERT(!f.frame(downSet()).action(GameAction::Jump));
+
+	// The stick click draws / sheathes the weapon: no engine action of its own (vr/VRWeapon.h does it)
+	const GameInputState & click = f.frame(downSet({ GiRightStickClick }));
+	CPPUNIT_ASSERT(f.resolver.pressed(Event::Weapon));
+	CPPUNIT_ASSERT(click.actions.none() && !click.click && !click.use && !click.escape && !click.recenter);
 }

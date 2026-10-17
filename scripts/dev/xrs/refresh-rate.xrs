@@ -91,7 +91,9 @@ vr-sim @+0ms action thumbstick right -1 0; vr-sim @+500ms action thumbstick righ
 @until player.jumping eq false 5s
 @wait 500
 motion reset
-vr-input tap right.a
+vr-input stick right 0.3 0.9; vr-input down right.stick_up
+@until player.jumping eq true 2s
+vr-input up right.stick_up; vr-input stick right 0 0
 @until motion.jumps ge 1 5s
 vr-sim record jump90
 @until motion.records.jump90.frames ge 0 10s
@@ -165,7 +167,9 @@ vr-sim @+0ms action thumbstick right -1 0; vr-sim @+500ms action thumbstick righ
 @until player.jumping eq false 5s
 @wait 500
 motion reset
-vr-input tap right.a
+vr-input stick right 0.3 0.9; vr-input down right.stick_up
+@until player.jumping eq true 2s
+vr-input up right.stick_up; vr-input stick right 0 0
 @until motion.jumps ge 1 5s
 vr-sim record jump72
 @until motion.records.jump72.frames ge 0 10s
@@ -231,7 +235,9 @@ vr-sim @+0ms action thumbstick right -1 0; vr-sim @+500ms action thumbstick righ
 @until player.jumping eq false 5s
 @wait 500
 motion reset
-vr-input tap right.a
+vr-input stick right 0.3 0.9; vr-input down right.stick_up
+@until player.jumping eq true 2s
+vr-input up right.stick_up; vr-input stick right 0 0
 @until motion.jumps ge 1 5s
 vr-sim record jump120
 @until motion.records.jump120.frames ge 0 10s
@@ -297,7 +303,9 @@ vr-sim @+0ms action thumbstick right -1 0; vr-sim @+500ms action thumbstick righ
 @until player.jumping eq false 5s
 @wait 500
 motion reset
-vr-input tap right.a
+vr-input stick right 0.3 0.9; vr-input down right.stick_up
+@until player.jumping eq true 2s
+vr-input up right.stick_up; vr-input stick right 0 0
 @until motion.jumps ge 1 5s
 vr-sim record jump144
 @until motion.records.jump144.frames ge 0 10s

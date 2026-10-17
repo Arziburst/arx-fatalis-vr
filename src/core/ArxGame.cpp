@@ -114,6 +114,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "graphics/particle/Spark.h"
 #include "graphics/texture/TextureStage.h"
 
+#include "gui/CinematicBorder.h"
 #include "gui/Console.h"
 #include "gui/Cursor.h"
 #include "gui/Dragging.h"
@@ -176,6 +177,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "scene/Scene.h"
 #include "scene/Tiles.h"
 
+#include "script/Script.h"
 #include "script/ScriptEvent.h"
 
 #include "util/String.h"
@@ -208,6 +210,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 InfoPanels g_debugInfo = InfoPanelNone;
 
 extern bool START_NEW_QUEST;
+extern bool REQUEST_SPEECH_SKIP;
 SavegameHandle LOADQUEST_SLOT = SavegameHandle(); // OH NO, ANOTHER GLOBAL! - TEMP PATCH TO CLEAN CODE FLOW
 static fs::path g_saveToLoad;
 
@@ -497,7 +500,9 @@ bool ArxGame::initWindow(RenderWindow * window) {
 	m_MainWindow->setMinTextureUnits(3);
 	m_MainWindow->setMaxMSAALevel(config.video.antialiasing ? 8 : 1);
 	m_MainWindow->setVSync(benchmark::isEnabled() ? 0 : config.video.vsync);
-	
+	// A test run (--test-dir) never takes the focus or the desktop's real input from whoever works at the PC (#487)
+	m_MainWindow->setBackground(channel::isEnabled());
+
 	setWindowSize(config.video.fullscreen);
 	
 	if(!m_MainWindow->initialize()) {
@@ -632,26 +637,117 @@ static AreaId g_areaToLoad = AreaId(10);
 static bool g_initialPlayerCollision = true;
 
 /*
- * During development a plain launch goes straight to the main menu: the publisher logos and the
- * intro cinematic are skipped (owner's decision, 2026-10-08). Bringing them back for players is #92;
- * --intro shows the original startup sequence until then. Every .cin cinematic - the intro that the
- * level 10 script plays when a new game starts, and the in-game cutscenes - is skipped as well
- * (#124, owner's decision: no cutscenes at all during development); --cinematics shows them. The
- * skip itself lives in the cinematic controller (cinematicLaunchWaiting(), cinematicRequestStart())
- * and ends the cinematic through the same path as pressing Esc, without loading its file.
+ * A plain launch is the player's (#394), the original game's start: the publisher logos, then the
+ * intro - level 10, a scripted scene around the introduction.cin cinematic, which ends in the main
+ * menu by itself - and every .cin cinematic in the game. In VR the logos, the intro and the
+ * cinematics are shown on a screen in front of the player, and A, B or a trigger skips the one on
+ * screen (vr/VRInput.cpp sets g_vrSkipPressed): a logo goes to the next part, the intro straight to
+ * the main menu, a cinematic ends through cinematicEnd() as Esc does.
+ *
+ * Development and test launches pass --dev-launch (run-windows.ps1, smoke-test.ps1, test-pr.ps1 do):
+ * straight to the main menu or the game, no logos, no intro, no cutscenes (owner's decisions,
+ * 2026-10-08 and #124). --intro brings the logos and the intro back, --cinematics every cinematic. The
+ * skip of a development launch lives in the cinematic controller (cinematicLaunchWaiting(),
+ * cinematicRequestStart()) and ends the cinematic through the same path as pressing Esc, without
+ * loading its file.
  */
+bool g_devLaunch = false;
 bool g_showIntro = false;
 bool g_showCinematics = false;
+bool g_vrSkipPressed = false;
+
+static void devLaunch() {
+	g_devLaunch = true;
+}
+ARX_PROGRAM_OPTION("dev-launch", "", "Development launch: skip the publisher logos and every .cin cinematic",
+                   &devLaunch)
 
 static void showIntro() {
 	g_showIntro = true;
 }
-ARX_PROGRAM_OPTION("intro", "", "Show the publisher logos and the intro cinematic at startup", &showIntro)
+ARX_PROGRAM_OPTION("intro", "", "With --dev-launch: show the publisher logos and the intro cinematic anyway",
+                   &showIntro)
 
 static void showCinematics() {
 	g_showCinematics = true;
 }
-ARX_PROGRAM_OPTION("cinematics", "", "Show the .cin cinematics (new-game intro, in-game cutscenes)", &showCinematics)
+ARX_PROGRAM_OPTION("cinematics", "", "With --dev-launch: show every .cin cinematic anyway (new-game intro, cutscenes)",
+                   &showCinematics)
+
+//! The publisher logo on screen (#394): "fishtank", "arkane", or nullptr
+static const char * g_startupLogo = nullptr;
+
+const char * startupLogoName() {
+	return g_startupLogo;
+}
+
+//! A logo comes on screen, or goes (\a name nullptr); \a how the previous one ended: time, skip, key
+static void setStartupLogo(const char * name, const char * how) {
+	if(g_startupLogo) {
+		gameevent::Event("startup.logo")("name", g_startupLogo)("state", "end")("how", how);
+	}
+	g_startupLogo = name;
+	if(name) {
+		gameevent::Event("startup.logo")("name", name)("state", "shown");
+	}
+}
+
+//! The level 10 intro after the logos plays (#394): until the main menu opens
+static bool g_startupIntro = false;
+
+bool startupIntroPlaying() {
+	return g_startupIntro;
+}
+
+//! The intro is over: \a how "done" (it reached the main menu by itself) or "skip"
+static void endStartupIntro(const char * how) {
+	g_startupIntro = false;
+	gameevent::Event("startup.intro")("state", "end")("how", how);
+}
+
+/*!
+ * Skip the whole intro (#394, VR): to the main menu as its own end does (the intro's script ends it
+ * through the player's death, ARX_PLAYER_Manage_Death()). A playing introduction.cin ends first so
+ * its sound and speech stop; the level's scripts then wait behind the menu like after the real end.
+ */
+static void skipStartupIntro() {
+	if(isInCinematic()) {
+		cinematicEnd();
+	}
+	ARX_SPEECH_Reset();
+	ARX_MENU_Launch(false);
+	endStartupIntro("skip");
+}
+
+bool scriptedScenePlaying() {
+	return ARXmenu.mode() == Mode_InGame && g_currentArea && !isInCinematic() && !g_startupIntro
+	       && cinematicBorder.isActive();
+}
+
+void skipScriptedScene(const char * how) {
+	gameevent::Event event("scene.skip");
+	event("how", how)("area", u32(g_currentArea))("camera", idString(g_cameraEntity));
+	// Disabling the skip while fading in or out, and in the scene's first 3 s
+	if(FADEDIR || cinematicBorder.elapsedTime() < 3s) {
+		event("result", "early");
+		return;
+	}
+	// Every script gets it and the scene's skip handlers end the scene themselves: the prison intro
+	// places the hero at its end and gives the controls back. A script that refuses it (any, not only
+	// the scene's) keeps the speech playing
+	const bool refused = SendMsgToAllIO(nullptr, SM_KEY_PRESSED) == REFUSE;
+	if(!refused) {
+		REQUEST_SPEECH_SKIP = true;
+	}
+	event("result", "sent")("refused", refused);
+}
+
+//! A skip press of the VR controllers this frame, taken once
+static bool takeVrSkip() {
+	const bool pressed = g_vrSkipPressed;
+	g_vrSkipPressed = false;
+	return pressed;
+}
 
 static void skipLogo() {
 	if(GameFlow::getTransition() != GameFlow::LoadingScreen) {
@@ -683,8 +779,31 @@ static void loadSave(const std::string & saveFile) {
 }
 ARX_PROGRAM_OPTION_ARG("loadsave", "", "Load a specific savegame file", &loadSave, "SAVEFILE")
 
+//! From the logos to the main menu; \a how the logo on screen ended (nullptr: none was shown)
+static void startMainMenu(const char * how) {
+	if(how) {
+		setStartupLogo(nullptr, how);
+	}
+	ARX_INTERFACE_KillFISHTANK();
+	ARX_INTERFACE_KillARKANE();
+	ARXmenu.requestMode(Mode_MainMenu);
+	ARX_MENU_Launch(false);
+	GameFlow::setTransition(GameFlow::InGame);
+}
+
+/*!
+ * From the logos to the intro (#394): the original's loading screen loads level 10, whose script plays
+ * the intro and ends in the main menu; \a how the ARKANE logo ended
+ */
+static void startStartupIntro(const char * how) {
+	setStartupLogo(nullptr, how);
+	GameFlow::setTransition(GameFlow::LoadingScreen);
+	g_startupIntro = true;
+	gameevent::Event("startup.intro")("state", "start")("area", u32(g_areaToLoad));
+}
+
 static bool HandleGameFlowTransitions() {
-	
+
 	const PlatformDuration TRANSITION_DURATION = 3600ms;
 	static PlatformInstant TRANSITION_START = 0;
 
@@ -692,13 +811,33 @@ static bool HandleGameFlowTransitions() {
 		return false;
 	}
 
-	// A plain launch starts at the main menu, exactly like pressing a key during the logos does
-	bool skipIntro = (GameFlow::getTransition() == GameFlow::FirstLogo && !g_showIntro);
+	const bool logo = GameFlow::getTransition() == GameFlow::FirstLogo
+	                  || GameFlow::getTransition() == GameFlow::SecondLogo;
 
-	if(skipIntro || GInput->isAnyKeyPressed()) {
-		ARXmenu.requestMode(Mode_MainMenu);
-		ARX_MENU_Launch(false);
-		GameFlow::setTransition(GameFlow::InGame);
+	if(logo) {
+		// No camera is prepared for a logo, so nothing else sets the viewport: in VR the interface is
+		// larger than the window and a logo drawn in the window's viewport is cut off (#394)
+		GRenderer->SetViewport(g_size);
+		if(g_devLaunch && !g_showIntro) {
+			// A development launch starts at the main menu, exactly like pressing a key during the logos does
+			startMainMenu(nullptr);
+			return false;
+		}
+		// A key goes straight to the main menu as in the original game
+		if(GInput->isAnyKeyPressed()) {
+			startMainMenu("key");
+			return false;
+		}
+		// The VR skip (#394) skips the logo on screen: the next one follows, after ARKANE the intro
+		if(takeVrSkip()) {
+			TRANSITION_START = 0;
+			if(GameFlow::getTransition() == GameFlow::SecondLogo) {
+				startStartupIntro("skip");
+				return true;
+			}
+			setStartupLogo(nullptr, "skip");
+			GameFlow::setTransition(GameFlow::SecondLogo);
+		}
 	}
 
 	if(GameFlow::getTransition() == GameFlow::FirstLogo) {
@@ -712,6 +851,7 @@ static bool HandleGameFlowTransitions() {
 			}
 			
 			TRANSITION_START = g_platformTime.frameStart();
+			setStartupLogo("fishtank", "time");
 		}
 
 		ARX_INTERFACE_ShowFISHTANK();
@@ -732,21 +872,22 @@ static bool HandleGameFlowTransitions() {
 		
 		if(TRANSITION_START == 0) {
 			if(!ARX_INTERFACE_InitARKANE()) {
-				GameFlow::setTransition(GameFlow::LoadingScreen);
+				startStartupIntro("time");
 				return true;
 			}
-			
+
 			TRANSITION_START = g_platformTime.frameStart();
+			setStartupLogo("arkane", "time");
 			ARX_SOUND_PlayInterface(g_snd.PLAYER_HEART_BEAT);
 		}
 
 		ARX_INTERFACE_ShowARKANE();
-		
+
 		PlatformDuration elapsed = g_platformTime.frameStart() - TRANSITION_START;
 
 		if(elapsed > TRANSITION_DURATION) {
 			TRANSITION_START = 0;
-			GameFlow::setTransition(GameFlow::LoadingScreen);
+			startStartupIntro("time");
 		}
 
 		return true;
@@ -1359,7 +1500,18 @@ void ArxGame::doFrame() {
 
 	// Game event log: state and UI changes (before the channel, which reports the same state);
 	// the OpenXR events were polled at the top of the frame, before vr::beginFrame()
+	const gameevent::GameState stateBefore = gameevent::currentGameState();
 	gameevent::update();
+
+	// In VR the game is always played in freelook (#394): the hands are the mouse (D-016) and VR has no
+	// freelook control. Only a save load sets it (ARX_GAME_Reset); New game and --loadlevel keep the
+	// player out of it, and the pause menu turns it off - in cursor mode the engine keeps the inventory
+	// open and refuses melee. The inventory the player opened stays open (bInverseInventory)
+	if(vr::isEnabled() && stateBefore != gameevent::GameState::Gameplay
+	   && gameevent::currentGameState() == gameevent::GameState::Gameplay && !TRUE_PLAYER_MOUSELOOK_ON) {
+		TRUE_PLAYER_MOUSELOOK_ON = true;
+		gameevent::Event("vr.freelook")("state", "on")("was", gameevent::gameStateName(stateBefore));
+	}
 
 	// Crash reports under SteamVR: the overlay or the runtime may replace our exception filter (#132)
 	{
@@ -1414,6 +1566,22 @@ void ArxGame::doFrame() {
 		vr::perf::Scope perfPresent(vr::PerfPhase::Present);
 		m_MainWindow->showFrame();
 		return;
+	}
+
+	// The intro ends in the main menu by itself (#394); the VR skip ends it there at once, a cinematic
+	// through cinematicEnd() and a scripted scene through its skip handlers, as Esc does (scripts get
+	// cine_end / key_pressed)
+	if(g_startupIntro && ARXmenu.mode() != Mode_InGame) {
+		endStartupIntro("done");
+	}
+	if(takeVrSkip()) {
+		if(g_startupIntro) {
+			skipStartupIntro();
+		} else if(isInCinematic()) {
+			cinematicEnd();
+		} else if(scriptedScenePlaying()) {
+			skipScriptedScene("vr");
+		}
 	}
 
 	// Clicked on New Quest ? (TODO:need certainly to be moved somewhere else...)
@@ -1907,7 +2075,8 @@ void ArxGame::updateActiveCamera() {
 		vr::setCharacterEyeHeight(player.basePosition().y - g_playerCameraStablePos.y,
 		                          !crouching && !player.levitate);
 	}
-	if(vr::applyHeadPose(cam->m_pos, cam->angle, engineAngle.getYaw())) {
+	// The intro (#394) is a film on the screen in front of the player: its scripted camera is not the head
+	if(!g_startupIntro && vr::applyHeadPose(cam->m_pos, cam->angle, engineAngle.getYaw())) {
 		m_headView = HeadView{ cam, enginePos, engineAngle };
 		if(cam == &g_playerCamera) {
 			g_playerCameraStablePos += cam->m_pos - enginePos;

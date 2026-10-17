@@ -28,7 +28,7 @@ function Near([double]$A, [double]$B, [double]$Tolerance = 0.001) { [math]::Abs(
 
 $phases = 'other input channel load save update script physics particles render textures present limit vrwait vrend' -split ' '
 function PhaseText([hashtable]$Values, [string]$Format) {
-	($phases | ForEach-Object { "$_=" + ([double]($Values[$_] ?? 0)).ToString($Format, [Globalization.CultureInfo]::InvariantCulture) }) -join ' '
+	($phases | ForEach-Object { "$_=" + ([double]$(if ($null -ne $Values[$_]) { $Values[$_] } else { 0 })).ToString($Format, [Globalization.CultureInfo]::InvariantCulture) }) -join ' '
 }
 function SecondLine($T, $Frames, $Min, $Mean, $P95, $Max, $Missed, $Hitches, [hashtable]$P, $Vr = 1, $Uploads = 0, $Self = 0.4, $SelfMax = 3) {
 	$c = [Globalization.CultureInfo]::InvariantCulture

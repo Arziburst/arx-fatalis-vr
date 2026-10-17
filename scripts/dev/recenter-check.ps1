@@ -11,7 +11,7 @@
 
 	  seated      head 25 cm right, 40 cm lower, 10 cm back,    calibrated standing at the start: offset
 	              turned 40 left                                 48.2 units, 40 of them down; turned +40
-	  (the left stick click held for 1 s: a long press = recenter)
+	  (the left stick click held for 1 s: a long press = recenter, bound by the check - no default since D-042)
 	  recentered  the same head                                  reason "button", one more reference,
 	                                                             offset 0, turned 0, eye height 0.40 lower
 	  back        head back at the start                         the same reference; 26.9 units aside,
@@ -52,9 +52,11 @@ $windows = [ordered]@{
 }
 
 $smokeTest = Join-Path $PSScriptRoot 'smoke-test.ps1'
-$jobArgs = @{ VrSim = 'recenter'; Seconds = 9 }
+# Recenter has no button by default since D-042 (#377: the radial menu's half-ring has it); the check binds the long
+# press of the left stick click, as a player can, and judges the calibration it runs
+$jobArgs = @{ VrSim = 'recenter'; Seconds = 9; Commands = @('vr-input bind recenter left.stick_click:long') }
 # A tap instead of the long press: an earlier release (the script's own release at 470 then changes nothing)
-if ($NoPress) { $jobArgs.Commands = @('vr-sim @390 action thumbstick_click left 0') }
+if ($NoPress) { $jobArgs.Commands += 'vr-sim @390 action thumbstick_click left 0' }
 if ($Rebuild) { $jobArgs.Rebuild = $true }
 
 Write-Host "==> recenter check$(if ($NoPress) { ' (-NoPress: a tap, no recenter - must FAIL)' }): sampling $testDir\status.json"

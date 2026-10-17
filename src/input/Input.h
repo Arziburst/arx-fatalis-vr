@@ -54,6 +54,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "core/Config.h"
 #include "core/TimeTypes.h"
+#include "input/InputBackend.h"
 #include "input/InputKey.h"
 #include "input/Keyboard.h"
 #include "input/Mouse.h"
@@ -203,6 +204,49 @@ public:
 		m_virtualMouseInRelativeMode = inRelativeMode;
 	}
 	
+	/*!
+	 * The desktop mouse in VR (#338): while a VR session runs the window only mirrors the headset, so
+	 * \ref update drops the real mouse's movement, buttons and wheel - the hands are the mouse (D-016),
+	 * the head is the camera (D-018). The virtual input is unchanged; the keyboard is dropped by the
+	 * backend (\ref droppedKeyboard, #487).
+	 */
+	struct DesktopMouseStatus {
+		bool ignored = false;   //!< the real mouse is dropped now
+		u64 droppedButtons = 0; //!< button presses dropped
+		u64 droppedWheel = 0;   //!< wheel steps dropped
+		u64 droppedMoves = 0;   //!< updates in which the dropped mouse moved
+	};
+	const DesktopMouseStatus & desktopMouseStatus() const { return m_desktopMouse; }
+	
+	/*!
+	 * The test channel (#338): a desktop mouse event as the window system delivers it, through the
+	 * backend's own event queue, so it reaches the game exactly as the real mouse does.
+	 * \return false when the backend cannot inject events
+	 */
+	bool injectDesktopMouseMove(const Vec2i & motion);
+	//! \param position on the interface's virtual screen, like \ref getMousePosition
+	bool injectDesktopMouseAt(const Vec2s & position);
+	bool injectDesktopMouseButton(int buttonId, bool down);
+	bool injectDesktopMouseWheel(int steps);
+	//! A key of the desktop keyboard, the same way (a window-less test run cannot post one to the window)
+	bool injectDesktopKey(int keyId, bool down);
+
+	/*!
+	 * Real desktop input (#487): the window system's own messages posted to the game window, which reach the
+	 * game the way the real devices' do - unlike the injected events above, a test run's window drops them.
+	 * A position is on the interface's virtual screen, like \ref getMousePosition.
+	 * \return false when the backend cannot post them (only Windows can)
+	 */
+	bool postDesktopMouseAt(const Vec2s & position);
+	bool postDesktopMouseButton(int buttonId, bool down);
+	bool postDesktopMouseWheel(int steps);
+	bool postDesktopKey(int keyId, bool down);
+
+	//! The real mouse and keyboard dropped in a test run's window (Window::isBackground, #487)
+	InputBackend::DroppedInput droppedRealInput() const;
+	//! The keyboard dropped in VR (#487): the window only mirrors the headset, like the mouse (#338)
+	InputBackend::DroppedInput droppedKeyboard() const;
+
 private:
 	
 	void centerMouse();
@@ -249,6 +293,9 @@ private:
 	std::optional<Vec2s> m_virtualMousePosition;
 	bool m_virtualMouseInRelativeMode = false;
 	
+	DesktopMouseStatus m_desktopMouse;
+	PlatformInstant m_lastDroppedMove = 0;
+
 };
 
 extern Input * GInput;

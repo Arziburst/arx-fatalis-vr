@@ -69,11 +69,11 @@ vr-sim head rot 0 -89 0
 vr-sim head rot 0 -70 0
 @frames 15
 
-# The right hand goes 25 cm up and 30 cm out: the wrist target rises by 25 units (engine y is down) and
+# The right hand goes 25 cm up and 20 cm out (x 0.3 keeps the arm in the picture; 0.5 gave 3.9 on the classic arm): the wrist target rises by 25 units (engine y is down) and
 # the model's wrist follows it; the picture of both eyes changes more than the still floor
 @remember rightWristY vr.body.right.wrist.y
 @remember rightTargetY vr.body.right.target.y
-vr-sim hand right pos 0.5 -0.2 -0.45
+vr-sim hand right pos 0.3 -0.2 -0.45
 @frames 15
 @assert vr.body.right.posed eq true
 @assert vr.body.right.target.y lt {rightTargetY-20}

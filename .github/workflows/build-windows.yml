@@ -96,6 +96,12 @@ jobs:
         "heavy=$($heavy.ToString().ToLower())" >> $env:GITHUB_OUTPUT
         Write-Host "heavy steps: $heavy"
 
+    # The repository is public: no personal paths, ids or e-mails in tracked files, no images under docs/ (#428).
+    # Runs on every change, docs-only ones included.
+    - name: No personal data in tracked files
+      shell: pwsh
+      run: ./scripts/dev/check-private-data.ps1
+
     # Seconds, no game: the PowerShell self-tests of the dev scripts (scripts/dev/test-*.ps1) first,
     # so a broken tool fails before the build.
     - name: Script self-tests

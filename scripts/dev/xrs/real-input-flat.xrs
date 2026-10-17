@@ -1,0 +1,70 @@
+# A flat test run's window takes no real input either, while the channel's injected mouse and keys drive it as
+# before (#487). The real mouse and keyboard are the window system's own messages posted to the game window (the
+# channel's real-input); desktop-mouse / desktop-key go through SDL's event queue marked as injected. Flat, the
+# keyboard is not dropped for being a keyboard (desktopKeyboard.ignored false) - only for being real in a test
+# run. Each real press lands where it would act: on New game, on the character creation's Escape. The VR
+# counterpart: real-input.xrs.
+#   .\scripts\dev\xrs-run.ps1 real-input-flat
+@args --dev-launch --no-vr
+
+@until state eq MENU 30s
+@assert menuMode eq mainmenu
+@frames 60
+@assert window.activation eq never
+@assert window.placement eq corner
+@assert window.focused eq false
+@assert realInput.ignored eq true
+@assert desktopKeyboard.ignored eq false
+@assert desktopMouse.ignored eq false
+
+# The cursor on New game (injected), a real click there: dropped, still the main menu
+desktop-mouse at menu newquest
+@frames 5
+@assert ui.menuHover eq newquest
+@remember mx ui.mouseX
+@remember my ui.mouseY
+@remember buttons realInput.droppedButtons
+real-input mouse button 1 down
+@frames 5
+real-input mouse button 1 up
+@frames 30
+@assert menuMode eq mainmenu
+@assert realInput.droppedButtons eq {buttons+1}
+@log \[input\] real mouse button 1 dropped \(test run\)
+
+# A real move and wheel: dropped, the cursor stays on New game
+@remember moves realInput.droppedMoves
+@remember wheel realInput.droppedWheel
+real-input mouse at 20 20
+@frames 5
+real-input mouse wheel 3
+@frames 5
+@assert ui.mouseX eq {mx}
+@assert ui.mouseY eq {my}
+@assert realInput.droppedMoves gt {moves}
+@assert realInput.droppedWheel eq {wheel+3}
+
+# The same click injected: New game opens
+desktop-mouse button 1 down
+@frames 5
+desktop-mouse button 1 up
+@until menuMode eq charactercreation 15s
+@frames 60
+
+# A real Escape: dropped, still the character creation; the injected one goes back to the main menu
+@remember keys realInput.droppedKeys
+real-input key Escape down
+@frames 5
+real-input key Escape up
+@frames 30
+@assert menuMode eq charactercreation
+@assert realInput.droppedKeys eq {keys+1}
+@log \[input\] real key Escape dropped \(test run\)
+desktop-key Escape down
+@frames 5
+desktop-key Escape up
+@until menuMode eq mainmenu 10s
+@assert desktopKeyboard.droppedKeys eq 0
+@assert desktopMouse.droppedButtons eq 0
+@assert window.focused eq false
+@assert errors eq 0

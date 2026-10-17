@@ -77,6 +77,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "gui/TextManager.h"
 #include "gui/menu/MenuCursor.h"
 #include "gui/menu/MenuFader.h"
+#include "gui/widget/CheckboxWidget.h"
 #include "gui/widget/CycleTextWidget.h"
 #include "gui/widget/KeybindWidget.h"
 #include "gui/widget/PanelWidget.h"
@@ -154,6 +155,95 @@ void ARX_QuickLoad() {
 
 bool MENU_NoActiveWindow() {
 	return (!g_mainMenu || !g_mainMenu->m_window || g_mainMenu->m_window->currentPageId() == Page_None);
+}
+
+namespace {
+
+//! The main menu's entries for the test channel: the localisation key of their text, or the page they open
+const struct { const char * name; const char * key; MENUSTATE page; } MainMenuEntries[] = {
+	{ "resume", "system_menus_main_resumegame", NOP },
+	{ "newquest", "system_menus_main_newquest", NOP },
+	{ "loadsave", "system_menus_main_editquest", NOP },
+	{ "options", "system_menus_main_options", NOP },
+	{ "credits", "system_menus_main_credits", NOP },
+	{ "quit", "system_menus_main_quit", NOP },
+	{ "language", nullptr, Page_Localization },
+};
+
+MenuPage * openMenuPage() {
+	if(!g_mainMenu || !g_mainMenu->m_window) {
+		return nullptr;
+	}
+	return g_mainMenu->m_window->getPage(g_mainMenu->m_window->currentPageId());
+}
+
+std::string_view widgetText(const Widget & widget) {
+	switch(widget.type()) {
+		case WidgetType_Text: return static_cast<const TextWidget &>(widget).text();
+		case WidgetType_Checkbox: return static_cast<const CheckboxWidget &>(widget).label();
+		default: return std::string_view();
+	}
+}
+
+} // anonymous namespace
+
+Widget * findMenuWidget(std::string_view name, std::string & why) {
+
+	if(!g_mainMenu) {
+		why = "no main menu";
+		return nullptr;
+	}
+
+	for(const auto & entry : MainMenuEntries) {
+		if(name != entry.name) {
+			continue;
+		}
+		for(Widget & widget : g_mainMenu->widgets().widgets()) {
+			if(entry.key ? widgetText(widget) == getLocalised(entry.key) : widget.targetPage() == entry.page) {
+				return &widget;
+			}
+		}
+		why = "the main menu shows no entry \"" + std::string(name) + "\"";
+		return nullptr;
+	}
+
+	MenuPage * page = openMenuPage();
+	if(!page) {
+		why = "\"" + std::string(name) + "\" is not a main menu entry (resume, newquest, loadsave, options, credits, quit,"
+		      " language) and no page is open";
+		return nullptr;
+	}
+	for(Widget & widget : page->children()) {
+		const bool match = (name == "back")
+		                   ? (widget.type() == WidgetType_Button && widget.shortcut() == Keyboard::Key_Escape)
+		                   : (!widgetText(widget).empty() && widgetText(widget) == getLocalised(name));
+		if(match) {
+			return &widget;
+		}
+	}
+	why = "the open page has no widget \"" + std::string(name) + "\" (back, or the localisation key of a text"
+	      " or a checkbox's label)";
+	return nullptr;
+}
+
+Widget * menuWidgetAt(const Vec2f & pos) {
+
+	if(!g_mainMenu) {
+		return nullptr;
+	}
+
+	if(MenuPage * page = openMenuPage()) {
+		for(Widget & widget : page->children()) {
+			if(!widget.isEnabled()) {
+				continue;
+			}
+			if(Widget * hit = widget.getWidgetAt(pos)) {
+				return hit;
+			}
+		}
+	}
+
+	return g_mainMenu->widgets().getWidgetAt(pos);
 }
 
 void MainMenuDoFrame() {

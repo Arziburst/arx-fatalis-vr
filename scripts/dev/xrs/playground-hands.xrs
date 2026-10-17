@@ -1,0 +1,289 @@
+# Doors, levers, chests and bodies by hand (#38, D-016, D-042): each hand's reticle and that hand's act - grip held, then
+# the trigger (VRControls.cpp: act_left / act_right, the use chord since #377; on a door, lever, chest, NPC or corpse it
+# acts as the engine's double click, on an item it uses). With the right hand, then again with the left: pull a lever, open and
+# close the door, open the chest and drag an item from it into the bag, search the body and drag an item from it into
+# the bag. No desktop mouse: vr-point turns a simulated hand, vr-sim action presses its controls.
+# The playground's door, chest and body (scripts/dev/playground/layout.mjs; ids from FIRST_ID 9001): light_door_9001
+# (DOOR x -150 z 150), chest_metal_9001 (CHEST x 420 z 60, a life potion and bread), goblin_base_9002 (CORPSE x 100 z -50,
+# cheese and an apple, killed at start); the respawn lever lever_9002 (the mode lever would set the goblin on the hero).
+# Positions are the room centre 8000/8000 plus the layout's; setpos takes the eye (floor y 0 - 170), yaw 0 faces north.
+# Every aim is given twice: turning a simulated hand moves the start of its ray, and a lever is thin (TRAPS.md).
+#   .\scripts\dev\smoke-test.ps1 -Playground -VrSim idle -Sequence playground-hands
+@sim idle
+@playground
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert area eq 30
+@until vr.reticle.on eq true 5s
+
+# The content: the three are there, the body dead with its items, the door closed and unlocked, the chest full
+entities _900
+@assert playground.door.id eq light_door_9001
+@assert playground.chest.id eq chest_metal_9001
+@assert playground.corpse.id eq goblin_base_9002
+@assert playground.leverRespawn.id eq lever_9002
+@until playground.corpse.alive eq false 10s
+@assert playground.corpse.items eq 2
+@assert playground.chest.items eq 2
+@assert playground.door.open eq false
+@assert playground.door.locked eq false
+@assert playground.leverRespawn.pulled eq false
+@assert ui.container eq none
+@remember bag0 player.inventoryItems
+
+# A level started with --loadlevel stays in the engine's cursor mode, which keeps the bag open on the panel (until
+# #394 / #405): free look on and the bag closed, the hands are in the world. Below the bag is opened and closed again
+# around each drag (opening a chest or a body leaves free look, as in the game), so no panel hangs in front of the
+# hands while they act; an open chest or body closes by itself once the hero walks off (350 units, as in the game)
+freelook on; ui inventory close
+@until vr.panel.mode eq head 5s
+@until vr.pointer.shown eq false 5s
+
+# ---- The right hand -------------------------------------------------------------------------------------------------
+
+# 1. The lever: pulled down
+setpos 8380 -170 8200 0
+@frames 30
+vr-point right face lever_9002
+@frames 5
+vr-point right face lever_9002
+@frames 30                                    # the hands still settle after a teleport on a busy runner: aim again from where they
+vr-point right face lever_9002                # are (the pulled handle lies against the wall, TRAPS.md)
+@until vr.reticle.right.under eq lever_9002 5s
+@until vr.reticle.right.entity eq lever_9002 5s
+vr-sim action grip right 1
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0; vr-sim action grip right 0
+@until playground.leverRespawn.pulled eq true 5s
+@assert vr.reticle.lastAct eq lever_9002
+@assert vr.reticle.lastActHand eq right
+@assert ui.drag eq none
+
+# 2. The door: opened, then closed (the door is not interactive while it swings)
+setpos 7850 -170 7900 0
+@frames 30
+vr-point right face light_door_9001
+@frames 5
+vr-point right face light_door_9001
+@until vr.reticle.right.under eq light_door_9001 5s
+@until vr.reticle.right.entity eq light_door_9001 5s
+vr-sim action grip right 1
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0; vr-sim action grip right 0
+@until playground.door.open eq true 5s
+@assert vr.reticle.lastAct eq light_door_9001
+@wait 2000
+vr-point right face light_door_9001
+@frames 5
+vr-point right face light_door_9001
+@until vr.reticle.right.under eq light_door_9001 5s
+@until vr.reticle.right.entity eq light_door_9001 5s
+vr-sim action grip right 1
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0; vr-sim action grip right 0
+@until playground.door.open eq false 5s
+@wait 2000
+
+# 3. The chest: opened on the panel, its first item dragged into the bag (opened with the inventory button)
+setpos 8420 -170 7820 0
+@frames 30
+vr-point right face chest_metal_9001
+@frames 5
+vr-point right face chest_metal_9001
+@until vr.reticle.right.under eq chest_metal_9001 5s
+@until vr.reticle.right.entity eq chest_metal_9001 5s
+vr-sim action grip right 1
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0; vr-sim action grip right 0
+@until ui.container eq chest_metal_9001 5s
+@assert playground.chest.open eq true
+@assert vr.reticle.lastAct eq chest_metal_9001
+ui inventory open
+@until player.inventoryOpen eq true 5s
+@until vr.panel.mode eq world 5s
+@frames 60
+vr-point right container
+@frames 10
+vr-sim action trigger right 1
+@frames 5
+vr-point right container 30 0                 # past the click dead zone (16 px): the drag starts near the item (TRAPS.md)
+@frames 10
+vr-point right bag
+@frames 10
+@assert ui.drag ne none
+vr-sim action trigger right 0
+@until ui.drag eq none 5s
+@until player.inventoryItems eq {bag0+1} 5s
+@assert playground.chest.items eq 1
+freelook on; ui inventory close
+@until player.inventoryOpen eq false 5s
+
+# 4. The body: searched, its first item dragged into the bag. Walking over to it closes the chest
+setpos 8100 -170 7750 0
+@until ui.container eq none 5s
+@frames 30
+vr-point right face goblin_base_9002
+@frames 5
+vr-point right face goblin_base_9002
+@until vr.reticle.right.under eq goblin_base_9002 5s
+@until vr.reticle.right.entity eq goblin_base_9002 5s
+vr-sim action grip right 1
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0; vr-sim action grip right 0
+@until ui.container eq goblin_base_9002 5s
+@assert playground.corpse.open eq true
+@assert vr.reticle.lastAct eq goblin_base_9002
+ui inventory open
+@until player.inventoryOpen eq true 5s
+@frames 60
+vr-point right container
+@frames 10
+vr-sim action trigger right 1
+@frames 5
+vr-point right container 30 0                 # past the click dead zone (16 px): the drag starts near the item (TRAPS.md)
+@frames 10
+vr-point right bag
+@frames 10
+@assert ui.drag ne none
+vr-sim action trigger right 0
+@until ui.drag eq none 5s
+@until player.inventoryItems eq {bag0+2} 5s
+@assert playground.corpse.items eq 1
+freelook on; ui inventory close
+@until player.inventoryOpen eq false 5s
+@assert vr.reticle.acts eq 5
+@assert vr.reticle.lastActHand eq right
+
+# ---- The left hand: the same ----------------------------------------------------------------------------------------
+
+# 1. The lever: pulled up again. Walking over to it closes the body
+setpos 8380 -170 8200 0
+@until ui.container eq none 5s
+@frames 30
+vr-point left face lever_9002
+@frames 5
+vr-point left face lever_9002
+@frames 30                                    # the hands still settle after a teleport on a busy runner: aim again from where they
+vr-point left face lever_9002                # are (the pulled handle lies against the wall, TRAPS.md)
+@until vr.reticle.left.under eq lever_9002 5s
+@until vr.reticle.left.entity eq lever_9002 5s
+vr-sim action grip left 1
+@frames 5
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0; vr-sim action grip left 0
+@until playground.leverRespawn.pulled eq false 5s
+@assert vr.reticle.lastAct eq lever_9002
+@assert vr.reticle.lastActHand eq left
+
+# 2. The door: opened, then closed
+setpos 7850 -170 7900 0
+@frames 30
+vr-point left face light_door_9001
+@frames 5
+vr-point left face light_door_9001
+@until vr.reticle.left.under eq light_door_9001 5s
+@until vr.reticle.left.entity eq light_door_9001 5s
+vr-sim action grip left 1
+@frames 5
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0; vr-sim action grip left 0
+@until playground.door.open eq true 5s
+@assert vr.reticle.lastActHand eq left
+@wait 2000
+vr-point left face light_door_9001
+@frames 5
+vr-point left face light_door_9001
+@until vr.reticle.left.under eq light_door_9001 5s
+@until vr.reticle.left.entity eq light_door_9001 5s
+vr-sim action grip left 1
+@frames 5
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0; vr-sim action grip left 0
+@until playground.door.open eq false 5s
+@wait 2000
+
+# 3. The chest: its other item into the bag
+setpos 8420 -170 7820 0
+@frames 30
+vr-point left face chest_metal_9001
+@frames 5
+vr-point left face chest_metal_9001
+@until vr.reticle.left.under eq chest_metal_9001 5s
+@until vr.reticle.left.entity eq chest_metal_9001 5s
+vr-sim action grip left 1
+@frames 5
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0; vr-sim action grip left 0
+@until ui.container eq chest_metal_9001 5s
+@assert vr.reticle.lastActHand eq left
+ui inventory open
+@until player.inventoryOpen eq true 5s
+@frames 60
+vr-point left container
+@frames 10
+vr-sim action trigger left 1
+@frames 5
+vr-point left container 30 0                 # past the click dead zone (16 px): the drag starts near the item (TRAPS.md)
+@frames 10
+vr-point left bag
+@frames 10
+@assert ui.drag ne none
+vr-sim action trigger left 0
+@until ui.drag eq none 5s
+@until player.inventoryItems eq {bag0+3} 5s
+@assert playground.chest.items eq 0
+freelook on; ui inventory close
+@until player.inventoryOpen eq false 5s
+
+# 4. The body: its other item into the bag
+setpos 8100 -170 7750 0
+@until ui.container eq none 5s
+@frames 30
+vr-point left face goblin_base_9002
+@frames 5
+vr-point left face goblin_base_9002
+@until vr.reticle.left.under eq goblin_base_9002 5s
+@until vr.reticle.left.entity eq goblin_base_9002 5s
+vr-sim action grip left 1
+@frames 5
+vr-sim action trigger left 1
+@frames 5
+vr-sim action trigger left 0; vr-sim action grip left 0
+@until ui.container eq goblin_base_9002 5s
+@assert vr.reticle.lastActHand eq left
+ui inventory open
+@until player.inventoryOpen eq true 5s
+@frames 60
+vr-point left container
+@frames 10
+vr-sim action trigger left 1
+@frames 5
+vr-point left container 30 0                 # past the click dead zone (16 px): the drag starts near the item (TRAPS.md)
+@frames 10
+vr-point left bag
+@frames 10
+@assert ui.drag ne none
+vr-sim action trigger left 0
+@until ui.drag eq none 5s
+@until player.inventoryItems eq {bag0+4} 5s
+@assert playground.corpse.items eq 0
+@assert vr.reticle.acts eq 10
+# An act is no click as well: the engine never started a drag of the lever, the door, the chest or the body
+@nolog item\.take item=(lever|light_door|chest_metal|goblin_base)_
+@assert errors eq 0

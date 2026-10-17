@@ -22,6 +22,7 @@
 #include <utility>
 
 #include "core/Core.h"
+#include "core/GameEvent.h"
 #include "core/GameTime.h"
 #include "core/Localisation.h"
 #include "game/Player.h"
@@ -76,6 +77,19 @@ void CharacterCreation::freeData() {
 	BookBackground = nullptr;
 }
 
+bool CharacterCreation::targetRect(std::string_view name, Rectf & rect) const {
+	if(name == "quickgen") {
+		rect = m_quickGenerateButton;
+	} else if(name == "skin") {
+		rect = m_skinButton;
+	} else if(name == "done") {
+		rect = m_doneButton;
+	} else {
+		return StatsPage::slotRect(name, rect);
+	}
+	return true;
+}
+
 void CharacterCreation::resetCheat() {
 	m_cheatSkinButtonClickCount = 0;
 	m_cheatQuickGenButtonClickCount = 0;
@@ -101,6 +115,11 @@ static void characterCreationAddDescription(std::string_view text) {
 void CharacterCreation::render() {
 	arx_assert(ARXmenu.mode() == Mode_CharacterCreation);
 	
+	// The screen covers the whole interface. The hero's portrait restores the camera prepared before it, which
+	// without a level ever loaded (#399: a development launch or a key during the logos skips the level 10 intro)
+	// has an empty viewport: the background and every widget drawn after the first portrait vanished
+	GRenderer->SetViewport(g_size);
+	
 	GRenderer->Clear(Renderer::ColorBuffer);
 	
 	//-------------------------------------------------------------------------
@@ -113,6 +132,7 @@ void CharacterCreation::render() {
 	EERIEDrawBitmap(Rectf(Vec2f(0, 0), g_size.width(), g_size.height()), 0.9f, BookBackground, Color::white);
 	
 	g_playerBook.stats.manageNewQuest();
+	GRenderer->SetViewport(g_size);
 		
 	bool DONE = (player.Skill_Redistribute == 0 && player.Attribute_Redistribute == 0);
 	
@@ -156,8 +176,10 @@ void CharacterCreation::render() {
 			if(bQuickGenFirstClick) {
 				ARX_PLAYER_MakeAverageHero();
 				bQuickGenFirstClick = false;
+				gameevent::Event("chargen.roll")("kind", "average");
 			} else {
 				ARX_PLAYER_QuickGeneration();
+				gameevent::Event("chargen.roll")("kind", "random");
 			}
 			player.skin = skin;
 			
@@ -241,6 +263,10 @@ void CharacterCreation::render() {
 	}
 	
 	ARX_UNICODE_DrawTextInRect(hFontMenu, doneButton.topLeft(), 999999, str_button_done, color);
+
+	m_quickGenerateButton = quickGenerateButton;
+	m_skinButton = skinButton;
+	m_doneButton = doneButton;
 	}
 	
 	EERIE_LIGHT * light = lightHandleGet(torchLightHandle);

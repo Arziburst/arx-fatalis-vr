@@ -36,6 +36,22 @@ const Control LeftStickClick = control(Hand::Left, ControlKind::StickClick);
 const Control RightA = control(Hand::Right, ControlKind::A);
 const Control RightTrigger = control(Hand::Right, ControlKind::Trigger);
 const Control RightGrip = control(Hand::Right, ControlKind::Grip);
+const Control LeftTrigger = control(Hand::Left, ControlKind::Trigger);
+const Control LeftGrip = control(Hand::Left, ControlKind::Grip);
+
+/*!
+ * The press rules' fixture: D-019's grip that uses when it opens and leads the stash chord, right A a plain
+ * single binding - the rules the resolver keeps for any layout a player binds, no longer the defaults (#377)
+ */
+ControlLayout ruleLayout() {
+	ControlLayout layout = defaultLayout(ControllerType::Index);
+	layout[Event::Jump] = Binding::single(RightA);
+	layout[Event::UseLeft] = Binding::single(LeftGrip);
+	layout[Event::UseRight] = Binding::single(RightGrip);
+	layout[Event::StashLeft] = Binding::chord(LeftGrip, LeftTrigger);
+	layout[Event::StashRight] = Binding::chord(RightGrip, RightTrigger);
+	return layout;
+}
 
 ControlSet controls(std::initializer_list<Control> list = { }) {
 	ControlSet result;
@@ -49,7 +65,7 @@ ControlSet controls(std::initializer_list<Control> list = { }) {
 
 void VRControlsTest::singlePressTest() {
 
-	ControlResolver resolver(defaultLayout(ControllerType::Index));
+	ControlResolver resolver(ruleLayout());
 
 	// Fires on the press itself: right A leads no chord and has no long press
 	resolver.update(0, controls({ RightA }));
@@ -76,7 +92,7 @@ void VRControlsTest::singlePressTest() {
 
 void VRControlsTest::tapBetweenUpdatesTest() {
 
-	ControlResolver resolver(defaultLayout(ControllerType::Index));
+	ControlResolver resolver(ruleLayout());
 
 	// Pressed and released between two updates: delivered once, on for exactly one update
 	resolver.update(0, controls(), controls({ RightA }));
@@ -102,17 +118,21 @@ void VRControlsTest::tapBetweenUpdatesTest() {
 
 void VRControlsTest::chordTest() {
 
-	ControlResolver resolver(defaultLayout(ControllerType::Index));
+	ControlResolver resolver(ruleLayout());
 
 	// Hold the grip, press the trigger: straight into the inventory, neither click nor use
 	resolver.update(0, controls({ RightGrip }));
 	CPPUNIT_ASSERT(!resolver.active(Event::UseRight));
 	resolver.update(16, controls({ RightGrip, RightTrigger }));
 	CPPUNIT_ASSERT(resolver.pressed(Event::StashRight));
+	// The same chord acts on a door, lever, chest or body (#38): the reticle's target decides which one does something
+	CPPUNIT_ASSERT(resolver.pressed(Event::ActRight));
+	CPPUNIT_ASSERT(!resolver.active(Event::ActLeft));
 	CPPUNIT_ASSERT(!resolver.active(Event::InteractRight));
 
 	resolver.update(32, controls({ RightGrip }));
 	CPPUNIT_ASSERT(resolver.released(Event::StashRight));
+	CPPUNIT_ASSERT(resolver.released(Event::ActRight));
 
 	// Both controls were used by the chord: releasing the grip is no tap
 	resolver.update(48, controls());
@@ -130,7 +150,7 @@ void VRControlsTest::chordTest() {
 
 void VRControlsTest::chordLeaderTapTest() {
 
-	ControlResolver resolver(defaultLayout(ControllerType::Index));
+	ControlResolver resolver(ruleLayout());
 
 	// The grip leads a chord, so its own binding (use) fires on a short release
 	resolver.update(0, controls({ RightGrip }));
@@ -167,7 +187,7 @@ void VRControlsTest::chordLeaderTapTest() {
 
 void VRControlsTest::simultaneousChordTest() {
 
-	ControlResolver resolver(defaultLayout(ControllerType::Index));
+	ControlResolver resolver(ruleLayout());
 
 	// Both in one update count as the chord, whatever the order of the controls' numbers
 	resolver.update(0, controls({ RightTrigger, RightGrip }));
@@ -180,7 +200,7 @@ void VRControlsTest::simultaneousChordTest() {
 
 void VRControlsTest::gripFlickerTest() {
 
-	ControlResolver resolver(defaultLayout(ControllerType::Index));
+	ControlResolver resolver(ruleLayout());
 
 	// The owner's headset run of #30: the grip flickers around its threshold before the chord.
 	// One hold, then the chord - and not a single "use"
@@ -331,7 +351,7 @@ void VRControlsTest::longChordTest() {
 
 void VRControlsTest::layoutChangeTest() {
 
-	ControlResolver resolver(defaultLayout(ControllerType::Index));
+	ControlResolver resolver(ruleLayout());
 	resolver.update(0, controls({ RightA }));
 	CPPUNIT_ASSERT(resolver.active(Event::Jump));
 
@@ -434,8 +454,8 @@ void VRControlsTest::layoutTextTest() {
 
 	// Comments and empty lines are skipped, events not named keep their binding
 	ControlLayout layout = index;
-	CPPUNIT_ASSERT(parseLayout("# remapped\n\njump = left.a\r\n", layout, &error));
-	CPPUNIT_ASSERT(layout[Event::Jump] == Binding::single(LeftA));
+	CPPUNIT_ASSERT(parseLayout("# remapped\n\njump = right.a\r\n", layout, &error));
+	CPPUNIT_ASSERT(layout[Event::Jump] == Binding::single(RightA));
 	CPPUNIT_ASSERT(layout[Event::Book] == index[Event::Book]);
 
 	// An error names the line and changes nothing
@@ -447,9 +467,34 @@ void VRControlsTest::layoutTextTest() {
 
 	// Conflicts: two events on the same binding
 	CPPUNIT_ASSERT(findConflicts(index).empty());
-	CPPUNIT_ASSERT(findConflicts(layout).size() == 1); // jump and menu both on left.a now
+	CPPUNIT_ASSERT(findConflicts(layout).size() == 1); // jump and the casting stance both on right.a now
 	CPPUNIT_ASSERT(findConflicts(layout)[0].first == Event::Jump);
-	CPPUNIT_ASSERT(findConflicts(layout)[0].second == Event::Menu);
+	CPPUNIT_ASSERT(findConflicts(layout)[0].second == Event::MagicMode);
+
+	// #38, #377, D-042: a hand's act and its use (or stash) share grip + trigger by design - not a conflict; any
+	// other pair is
+	ControlLayout shared = index;
+	CPPUNIT_ASSERT(shared[Event::ActLeft] == shared[Event::UseLeft]);
+	CPPUNIT_ASSERT(sharesBindingByDesign(Event::ActRight, Event::UseRight));
+	CPPUNIT_ASSERT(sharesBindingByDesign(Event::UseLeft, Event::ActLeft));
+	CPPUNIT_ASSERT(sharesBindingByDesign(Event::ActRight, Event::StashRight));
+	CPPUNIT_ASSERT(sharesBindingByDesign(Event::StashLeft, Event::ActLeft));
+	CPPUNIT_ASSERT(!sharesBindingByDesign(Event::StashLeft, Event::ActRight));
+	CPPUNIT_ASSERT(!sharesBindingByDesign(Event::UseLeft, Event::ActRight));
+	CPPUNIT_ASSERT(!sharesBindingByDesign(Event::UseLeft, Event::StashLeft));
+	CPPUNIT_ASSERT(!sharesBindingByDesign(Event::ActLeft, Event::InteractLeft));
+	shared[Event::ActRight] = shared[Event::UseLeft]; // the right act on the left chord: three events on it
+	CPPUNIT_ASSERT_EQUAL(size_t(2), findConflicts(shared).size());
+	CPPUNIT_ASSERT(findConflicts(shared)[0].first == Event::UseLeft);
+	CPPUNIT_ASSERT(findConflicts(shared)[0].second == Event::ActRight);
+	CPPUNIT_ASSERT(findConflicts(shared)[1].first == Event::ActLeft);
+	CPPUNIT_ASSERT(findConflicts(shared)[1].second == Event::ActRight);
+	// A stash the player binds onto the use chord is the act's partner, but the use's conflict
+	shared = index;
+	shared[Event::StashLeft] = shared[Event::UseLeft];
+	CPPUNIT_ASSERT_EQUAL(size_t(1), findConflicts(shared).size());
+	CPPUNIT_ASSERT(findConflicts(shared)[0].first == Event::UseLeft);
+	CPPUNIT_ASSERT(findConflicts(shared)[0].second == Event::StashLeft);
 }
 
 void VRControlsTest::defaultLayoutTest() {
@@ -459,22 +504,56 @@ void VRControlsTest::defaultLayoutTest() {
 	CPPUNIT_ASSERT(controllerTypeFromProfile("/interaction_profiles/khr/simple_controller") == ControllerType::Simple);
 	CPPUNIT_ASSERT(controllerTypeFromProfile("") == ControllerType::Unknown);
 
-	// D-019: A right jumps, B right inventory, B left book, right stick down crouches
+	// The D-042 table (#377), every event: the trigger clicks and drags; grip, then trigger uses an item or acts on
+	// a door, lever, chest, NPC or corpse; the right B holds the radial menu (the book, the game menu, recenter and
+	// both hands' quick slots are in it); the left B toggles the map, the left A the bag (the owner); the right stick
+	// up jumps, down crouches; the right stick click draws / sheathes; the casting stance is the right A until #378
+	// (the owner). Removed: the stash chord, the game menu on the left A, recenter on the left stick click, the
+	// stance on the left trackpad, jump on the right A, the left hand's radial menu
+	const std::string table =
+		"interact_left = left.trigger\n"
+		"interact_right = right.trigger\n"
+		"use_left = left.grip+left.trigger\n"
+		"use_right = right.grip+right.trigger\n"
+		"stash_left = none\n"
+		"stash_right = none\n"
+		"jump = right.stick_up\n"
+		"crouch_toggle = right.stick_down\n"
+		"inventory = left.a\n"
+		"book = none\n"
+		"menu = none\n"
+		"recenter = none\n"
+		"magic_mode = right.a\n"
+		"act_left = left.grip+left.trigger\n"
+		"act_right = right.grip+right.trigger\n"
+		"radial_left = none\n"
+		"radial_right = right.b\n"
+		"weapon = right.stick_click\n"
+		"map = left.b\n";
 	const ControlLayout index = defaultLayout(ControllerType::Index);
-	CPPUNIT_ASSERT_EQUAL(std::string("right.a"), formatBinding(index[Event::Jump]));
-	CPPUNIT_ASSERT_EQUAL(std::string("right.b"), formatBinding(index[Event::Inventory]));
-	CPPUNIT_ASSERT_EQUAL(std::string("left.b"), formatBinding(index[Event::Book]));
-	CPPUNIT_ASSERT_EQUAL(std::string("right.stick_down"), formatBinding(index[Event::CrouchToggle]));
-	CPPUNIT_ASSERT_EQUAL(std::string("left.grip+left.trigger"), formatBinding(index[Event::StashLeft]));
-	CPPUNIT_ASSERT_EQUAL(std::string("left.a"), formatBinding(index[Event::Menu]));
-	// #43: magic mode held with the left hand - the Index's trackpad, the Touch's free X
-	CPPUNIT_ASSERT_EQUAL(std::string("left.trackpad"), formatBinding(index[Event::MagicMode]));
+	CPPUNIT_ASSERT_EQUAL(table, formatLayout(index));
+	CPPUNIT_ASSERT(findConflicts(index).empty());
 
+	// The Touch: the same table (X / Y are its left A / B); its left menu button is free too (the owner, #456)
 	const ControlLayout touch = defaultLayout(ControllerType::Touch);
-	CPPUNIT_ASSERT_EQUAL(std::string("left.menu"), formatBinding(touch[Event::Menu]));
-	CPPUNIT_ASSERT_EQUAL(std::string("left.a"), formatBinding(touch[Event::MagicMode]));
-	CPPUNIT_ASSERT(touch[Event::Jump] == index[Event::Jump]);
+	CPPUNIT_ASSERT_EQUAL(table, formatLayout(touch));
+	CPPUNIT_ASSERT(touch == index);
 	CPPUNIT_ASSERT(findConflicts(touch).empty());
+	CPPUNIT_ASSERT_EQUAL(std::string("Right A"), bindingLabel(touch[Event::MagicMode], ControllerType::Touch));
+	CPPUNIT_ASSERT_EQUAL(std::string("Left Y"), bindingLabel(touch[Event::Map], ControllerType::Touch));
+	CPPUNIT_ASSERT_EQUAL(std::string("Left X"), bindingLabel(touch[Event::Inventory], ControllerType::Touch));
+
+	// No default needs a trackpad (the Touch has none), and the grip alone does nothing on either controller
+	for(const ControlLayout * layout : { &index, &touch }) {
+		for(const Binding & binding : layout->bindings) {
+			if(!binding.isBound()) {
+				continue;
+			}
+			CPPUNIT_ASSERT(controlKind(binding.first) != ControlKind::Trackpad);
+			CPPUNIT_ASSERT(!binding.isChord() || controlKind(binding.second) != ControlKind::Trackpad);
+			CPPUNIT_ASSERT(binding.isChord() || controlKind(binding.first) != ControlKind::Grip);
+		}
+	}
 
 	const ControlLayout simple = defaultLayout(ControllerType::Simple);
 	CPPUNIT_ASSERT_EQUAL(std::string("right.trigger"), formatBinding(simple[Event::InteractRight]));
@@ -491,4 +570,109 @@ void VRControlsTest::defaultLayoutTest() {
 	for(size_t i = 0; i < ControlCount; i++) {
 		CPPUNIT_ASSERT(parseControl(controlName(Control(i))) == Control(i));
 	}
+}
+
+void VRControlsTest::defaultChordTest() {
+
+	ControlResolver resolver(defaultLayout(ControllerType::Index));
+
+	// The grip alone does nothing - held, let go, held long (D-042)
+	resolver.update(0, controls({ RightGrip }));
+	resolver.update(1000, controls({ RightGrip }));
+	resolver.update(1100, controls());
+	resolver.update(1100 + resolver.releaseDebounceMs, controls());
+	for(size_t i = 0; i < EventCount; i++) {
+		CPPUNIT_ASSERT_EQUAL(u32(0), resolver.presses(Event(i)));
+	}
+
+	// Grip, then trigger: use and act together (the reticle's target picks one), no click, no stash
+	resolver.update(2000, controls({ RightGrip }));
+	resolver.update(2100, controls({ RightGrip, RightTrigger }));
+	CPPUNIT_ASSERT(resolver.pressed(Event::UseRight));
+	CPPUNIT_ASSERT(resolver.pressed(Event::ActRight));
+	CPPUNIT_ASSERT(!resolver.active(Event::InteractRight));
+	CPPUNIT_ASSERT(!resolver.active(Event::UseLeft));
+	resolver.update(2200, controls());
+	resolver.update(2200 + resolver.releaseDebounceMs, controls());
+	CPPUNIT_ASSERT(!resolver.active(Event::UseRight));
+	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::UseRight));
+	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::ActRight));
+	CPPUNIT_ASSERT_EQUAL(u32(0), resolver.presses(Event::InteractRight));
+	CPPUNIT_ASSERT_EQUAL(u32(0), resolver.presses(Event::StashRight));
+
+	// Trigger first, then grip: a click and drag, the grip adds nothing
+	resolver.update(3000, controls({ RightTrigger }));
+	CPPUNIT_ASSERT(resolver.pressed(Event::InteractRight));
+	resolver.update(3100, controls({ RightTrigger, RightGrip }));
+	CPPUNIT_ASSERT(resolver.active(Event::InteractRight));
+	CPPUNIT_ASSERT(!resolver.active(Event::UseRight));
+	resolver.update(3200, controls());
+	resolver.update(3200 + resolver.releaseDebounceMs, controls());
+	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::UseRight));
+
+	// The left hand the same, its own events
+	resolver.update(4000, controls({ LeftGrip }));
+	resolver.update(4100, controls({ LeftGrip, LeftTrigger }));
+	CPPUNIT_ASSERT(resolver.pressed(Event::UseLeft));
+	CPPUNIT_ASSERT(resolver.pressed(Event::ActLeft));
+	CPPUNIT_ASSERT(!resolver.active(Event::ActRight));
+	CPPUNIT_ASSERT(!resolver.active(Event::InteractLeft));
+
+	// B and the stick click fire on the press: they lead no chord and have no long press
+	resolver.update(5000, controls());
+	resolver.update(5000 + resolver.releaseDebounceMs, controls());
+	resolver.update(6000, controls({ control(Hand::Left, ControlKind::B) }));
+	CPPUNIT_ASSERT(resolver.pressed(Event::Map));
+	resolver.update(6100, controls({ control(Hand::Right, ControlKind::StickClick) }));
+	CPPUNIT_ASSERT(resolver.pressed(Event::Weapon));
+	CPPUNIT_ASSERT(resolver.released(Event::Map));
+	// The casting stance is the right A (the owner, until #378); the left A and the left stick click do nothing
+	resolver.update(6200, controls({ RightA }));
+	CPPUNIT_ASSERT(resolver.pressed(Event::MagicMode));
+	resolver.update(6250, controls());
+	const u32 weapons = resolver.presses(Event::Weapon);
+	resolver.update(6300, controls({ LeftA }));
+	resolver.update(6350, controls({ control(Hand::Left, ControlKind::StickClick) }));
+	resolver.update(6400, controls());
+	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::MagicMode));
+	CPPUNIT_ASSERT_EQUAL(weapons, resolver.presses(Event::Weapon));
+	CPPUNIT_ASSERT_EQUAL(u32(0), resolver.presses(Event::Recenter));
+}
+
+void VRControlsTest::jumpStickTest() {
+
+	// The right stick up jumps (D-042): up beyond 0.7 and more up than sideways, so a turn does not jump
+	ControlResolver resolver(defaultLayout(ControllerType::Index));
+	s64 time = 0;
+	ControlSet down;
+	const auto push = [&](float x, float y) {
+		updateStickDirections(down, Hand::Right, x, y);
+		time += 16;
+		resolver.update(time, down);
+	};
+
+	push(0.f, 0.69f);
+	CPPUNIT_ASSERT(!resolver.active(Event::Jump));
+	push(0.f, 0.71f);
+	CPPUNIT_ASSERT(resolver.pressed(Event::Jump));
+	push(0.f, 0.f);
+	CPPUNIT_ASSERT(resolver.released(Event::Jump));
+
+	// A turn pushed up more than ever needed, but more sideways than up: no jump
+	push(0.9f, 0.85f);
+	CPPUNIT_ASSERT(!resolver.active(Event::Jump));
+	push(-1.f, 0.f);
+	push(0.f, 0.f);
+	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::Jump));
+
+	// Down toggles the crouch, also when pushed a little sideways
+	push(0.3f, -0.9f);
+	CPPUNIT_ASSERT(resolver.pressed(Event::CrouchToggle));
+	push(0.f, 0.f);
+
+	// The left stick (walking) never jumps
+	updateStickDirections(down, Hand::Left, 0.f, 1.f);
+	time += 16;
+	resolver.update(time, down);
+	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::Jump));
 }

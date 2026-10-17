@@ -100,7 +100,7 @@ function Save-Evidence([string]$Name, [string]$UserDir = $userDir) {
 	$dest = Join-Path $OutDir $Name
 	New-Item -ItemType Directory -Force $dest | Out-Null
 	foreach ($log in Get-ChildItem $UserDir -Filter 'arx*.log' -File -ErrorAction SilentlyContinue) { Copy-Item $log.FullName $dest -Force }
-	foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt') {
+	foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt', 'hang.txt') {
 		$p = Join-Path $testDir $f
 		if (Test-Path $p) { Copy-Item $p $dest -Force }
 	}
@@ -202,8 +202,20 @@ try {
 			$p.UserDir = $seqUserDir
 			if ($seq.Save) { $p.Save = $seq.Save }
 			if ($seq.Playground) { $p.Playground = $true }
+			if ($seq.Player) { $p.Player = $true }
 			if ($seq.Args) { $p.ArxArgs = @($seq.Args) }
 			$results += Invoke-Phase "xrs-$($seq.Name)" 'smoke-test.ps1' $p $seqUserDir
+			# A read-back (xrs\readback\<name>-readback.xrs, #394): a second launch in the same user dir checks what the
+			# first one left behind (cfg.ini is written when the game quits); skipped when the first launch did not pass
+			$readback = Join-Path $PSScriptRoot "xrs\readback\$($seq.Name)-readback.xrs"
+			if ((Test-Path $readback) -and $results[-1].Exit -eq 0) {
+				$rb = Read-ArxSequence $readback
+				$rp = @{ Config = $Config; Sequence = $rb.Path; LockTimeoutSec = $LockTimeoutSec; UserDir = $seqUserDir } + $dataArgs
+				if ($rb.Sim) { $rp.VrSim = $rb.Sim } elseif ($rb.Args -notcontains '--no-vr') { $rp.VrSim = 'idle' }
+				if ($rb.Player) { $rp.Player = $true }
+				if ($rb.Args) { $rp.ArxArgs = @($rb.Args) }
+				$results += Invoke-Phase "xrs-$($rb.Name)" 'smoke-test.ps1' $rp $seqUserDir
+			}
 			Remove-Item -LiteralPath $seqUserDir -Recurse -Force -ErrorAction SilentlyContinue
 		}
 	}

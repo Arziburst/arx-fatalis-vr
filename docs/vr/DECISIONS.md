@@ -53,7 +53,8 @@ a changed decision keeps its history in that cell.
   | two-handed sword, giant slayer (`2h_sword`) | 0.40 → 1.1, 2.5 → 5.0 | 0.25 → 0.50, 2.0 → 3.5 |
   | two-handed axe, smith's club (`2h_blunt`) | 0.50 → 1.2, 2.5 → 4.5 | 0.25 → 0.50, 2.0 → 3.5 |
 
-  The class: a dagger or a two-handed weapon by its type; an axe, club, hammer or mace by its item class or material
+  #502 gives no stab of its own for the one-handed and two-handed blunt weapons: they take the sword's and the
+  two-handed sword's (the coordinator, 2026-10-17). The class: a dagger or a two-handed weapon by its type; an axe, club, hammer or mace by its item class or material
   (`vr/WeaponGrip.h`'s rule, applied to two-handed weapons too); anything else a sword.
 - **One log line per hit:** the engine's `melee.hit` with `aim` (the damage fraction), `speed`, `size` and `kind`.
 

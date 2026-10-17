@@ -7,8 +7,8 @@
 # The sweeps are ramps of the simulated right controller across the goblin (1.5 m, from 0.8 m right to 0.7 m left):
 # in 100 frames 1.35 m/s (no swing: a touch), in 42 frames 3.2 m/s at 90 Hz (part of the damage), in 14 frames
 # 9.6 m/s (full). Damage itself has the engine's rolls (critical, armour class), so the sequence asserts the aim.
-# Hits are counted relative to a remembered count: a touch hits once per recovery. The goblin is respawned between
-# the groups of hits.
+# Swing hits (vr.melee.hits) and touches (vr.melee.touches: once per recovery) are counted apart, relative to a
+# remembered count. The goblin is respawned between the groups of hits.
 @sim idle
 @playground
 
@@ -41,22 +41,27 @@ melee lunge 0.05 0.25
 @assert vr.melee.params.lungeMax eq 0.25
 @assert vr.melee.params.noSwing eq min
 
-# The peaceful goblin 60 units ahead, the dagger level with its chest, the hand well to the right - moved there slowly
-playground place 60
+# The dagger level with the goblin's chest, the hand well to the right - moved there slowly - then the peaceful goblin
+# 60 units ahead (placed after the hand, which would touch it on the way)
 vr-sim @+1-80 hand right pos 0.8 -0.8 -0.35
 vr-sim head rot 0 -25 0
 @frames 95
+playground place 60
+@frames 20
 @assert playground.npcAlive eq true
 @remember npc playground.npc
 @assert vr.melee.swings eq 0
 @assert vr.melee.hits eq 0
+@assert vr.melee.touches eq 0
 
-# 1. A slow touch: the dagger swept through the goblin at 1.35 m/s is no swing - the minimum
+# 1. A slow touch: the dagger swept through the goblin at 1.35 m/s is no swing - the minimum (a touch, once per
+# recovery)
 @mark
 vr-sim @+1-100 hand right pos -0.7 -0.8 -0.35
 @frames 115
 @assert vr.melee.swings eq 0
-@assert vr.melee.hits ge 1
+@assert vr.melee.hits eq 0
+@assert vr.melee.touches ge 1
 @assert vr.melee.last.target eq {npc}
 @assert vr.melee.last.swing eq 0
 @assert vr.melee.last.aim eq 0.1
@@ -205,11 +210,11 @@ melee noswing none
 @until vr.melee.params.noSwing eq none 5s
 vr-sim @+1-60 hand right pos 0.8 -0.8 -0.35
 @frames 75
-@remember hits vr.melee.hits
+@remember touches vr.melee.touches
 @mark
 vr-sim @+1-100 hand right pos -0.7 -0.8 -0.35
 @frames 115
-@assert vr.melee.hits eq {hits}
+@assert vr.melee.touches eq {touches}
 @nolog melee\.hit
 melee noswing min
 @until vr.melee.params.noSwing eq min 5s

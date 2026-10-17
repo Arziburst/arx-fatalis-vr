@@ -291,7 +291,11 @@ void contact(Entity * weapon, double now, bool swing, const Vec3f & hilt, const 
 		if(!touched.npc) {
 			continue;
 		}
-		s.hits++;
+		if(swing) {
+			s.hits++;
+		} else {
+			s.touches++;
+		}
 		s.lastTarget = gameevent::entityName(entities.get(touched.target));
 		s.lastAim = touched.aim;
 		s.lastDamage = touched.damage;

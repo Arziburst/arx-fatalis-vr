@@ -86,7 +86,8 @@ struct MeleeStatus {
 	float lastNearMiss = 0.f;       //!< the peak of the last one
 	bool trigger = false;           //!< the weapon hand's trigger is held - it changes nothing (#465)
 	// Hits
-	u64 hits = 0;                   //!< NPCs hit (an armour class miss included)
+	u64 hits = 0;                   //!< NPCs hit by a swing (an armour class miss included)
+	u64 touches = 0;                //!< NPCs hit by a touch outside a swing: the minimum (#465)
 	u64 contacts = 0;               //!< anything touched (NPCs, objects)
 	std::string lastTarget;
 	float lastAim = 0.f;            //!< the aim ratio of the last NPC hit: its damage fraction of the full strike

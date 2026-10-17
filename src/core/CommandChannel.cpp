@@ -1522,6 +1522,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("lastNearMiss", melee.lastNearMiss);
 		json.value("trigger", melee.trigger);
 		json.value("hits", melee.hits);
+		json.value("touches", melee.touches);
 		json.value("contacts", melee.contacts);
 		json.object("last");
 		json.value("target", melee.lastTarget);

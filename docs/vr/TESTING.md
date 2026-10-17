@@ -648,7 +648,7 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   `peak`, `swings`, `gaps` and `jumps` (samples refused: a time step outside 4-100 ms, a raw or
   filtered speed over 20 m/s), `nearMisses` / `lastNearMiss` (motions that peaked
   within 20 % below the swing speed, F-60); `trigger` (the weapon hand's trigger is held — it changes nothing, #465);
-  `hits` (NPCs hit), `contacts` (anything touched); `last` (`target`, `aim` — the engine's `ratioaim`, the damage
+  `hits` (NPCs hit by swings), `touches` (NPCs hit by a touch outside a swing, #465), `contacts` (anything touched); `last` (`target`, `aim` — the engine's `ratioaim`, the damage
   fraction of the fully charged strike (#465, D-NEW): 0.1 (0 with `noSwing` `none`) for a touch outside a swing or
   below a minimum, else 0.1 + 0.9 × the weaker of the speed's and the size's factor — `damage`, `speed` (m/s of the
   blade's point that touched), `size` (m: a slash's path of that point in the stroke so far, a thrust's lunge along the

@@ -35,7 +35,8 @@ vr-sim head rot 0 -25 0
 vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
 @frames 75
 @assert vr.melee.swings eq 0
-@assert vr.melee.hits ge 1
+@assert vr.melee.hits eq 0
+@assert vr.melee.touches ge 1
 @assert vr.melee.last.swing eq 0
 @assert vr.melee.last.aim eq 0.1
 

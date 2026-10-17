@@ -149,6 +149,31 @@ void StableViewTest::testLevelJumpOntoALedge() {
 	CPPUNIT_ASSERT_EQUAL(u64(1), view.cuts);
 }
 
+void StableViewTest::testLandingNearTheTakeOff() {
+	// The collision puts the feet back 1.3 units off where they took off (measured on CI): the same floor - the view
+	// does not move, in either jump; walking on from there, 10 units down a slope, it follows again
+	for(vr::JumpView mode : { vr::JumpView::Level, vr::JumpView::Arc }) {
+		vr::StableViewParams params;
+		params.jump = mode;
+		std::vector<BodyFrame> frames = jump(90.f, 1.3f, 100);
+		const size_t landed = frames.size();
+		for(int i = 1; i <= 100; i++) {
+			frames.push_back({ 1.3f + 10.f * std::min(float(i) / 50.f, 1.f), Standing, false });
+		}
+		frames.resize(frames.size() + 100, BodyFrame{ 11.3f, Standing, false });
+		const std::vector<float> heights = run(frames, 90.f, params);
+		if(mode == vr::JumpView::Level) {
+			for(size_t i = 0; i < landed; i++) {
+				CPPUNIT_ASSERT_EQUAL(-Standing, heights[i]);
+			}
+		} else {
+			CPPUNIT_ASSERT_EQUAL(-Standing, heights[landed - 1]);
+		}
+		CPPUNIT_ASSERT(largestStep(heights) <= 2.f + 1e-3f);
+		CPPUNIT_ASSERT_DOUBLES_EQUAL(11.3f - Standing, heights.back(), 1e-3f);
+	}
+}
+
 void StableViewTest::testArcJumpIsSoft() {
 	// The arc: a soft hop - up and back, never faster than the limit, much lower than the jump's 130 units
 	vr::StableViewParams params;

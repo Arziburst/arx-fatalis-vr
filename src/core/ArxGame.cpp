@@ -1762,13 +1762,19 @@ void ArxGame::updateFirstPersonCamera() {
 			}
 			// A jump from the take-off to the landing; a fall off a ledge is travel the view follows. The engine ends
 			// the jump while the body still hangs over the floor (21 units at the end of its landing animation) and
-			// drops it there a frame later: the jump lasts until the body is on firm ground, half a second at most (a
-			// platform or water may never count as firm ground)
+			// drops it there a frame later, and in that frame it may already call the hover firm ground: the jump
+			// lasts until the body has stood still on firm ground for 0.1 s of display time, and half a second at
+			// most (a platform or water may never count as firm ground)
 			vr::StableView & view = vr::stableView();
 			static float landing = 0.f;
+			static float settled = 0.f;
+			static float lastFeetY = 0.f;
 			const bool engineJump = player.jumpphase != NotJumping && !player.falling;
 			landing = engineJump ? 0.f : landing + input.dt;
-			input.jumping = engineJump || (view.valid && view.jumping && !player.onfirmground && landing < 0.5f);
+			const bool standing = player.onfirmground && std::abs(input.feetY - lastFeetY) < 0.5f;
+			settled = (engineJump || !standing) ? 0.f : settled + input.dt;
+			lastFeetY = input.feetY;
+			input.jumping = engineJump || (view.valid && view.jumping && settled < 0.1f && landing < 0.5f);
 			vr::updateStableView(view, input, vr::stableViewParams());
 			if(vr::takeViewTraceFrame()) {
 				LogInfo << "[vr] view trace: bodyFeet=" << input.feetY << " viewFeet=" << view.feetY << " eye=" << view.eye

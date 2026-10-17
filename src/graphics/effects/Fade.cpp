@@ -25,6 +25,8 @@
 #include "graphics/Draw.h"
 #include "graphics/Renderer.h"
 
+#include "vr/VRSystem.h"
+
 static PlatformDuration FADEDURATION = 0;
 long FADEDIR = 0;
 static PlatformInstant FADESTART = 0;
@@ -57,19 +59,29 @@ void fadeRequestStart(FadeType type, const PlatformDuration duration) {
 	FADESTART = g_platformTime.frameStart();
 }
 
-void ManageFade() {
+//! The fade's opacity this frame; false before it starts, below 0 once it has run out
+static bool fadeVisibility(float & visibility) {
 	
 	PlatformDuration elapsed = g_platformTime.frameStart() - FADESTART;
 	if(elapsed < 0)
-		return;
+		return false;
 
-	float Visibility = elapsed / FADEDURATION;
+	visibility = elapsed / FADEDURATION;
 
 	if(FADEDIR > 0)
-		Visibility = 1.f - Visibility;
+		visibility = 1.f - visibility;
 
-	if(Visibility > 1.f)
-		Visibility = 1.f;
+	if(visibility > 1.f)
+		visibility = 1.f;
+
+	return true;
+}
+
+void ManageFade() {
+	
+	float Visibility;
+	if(!fadeVisibility(Visibility))
+		return;
 
 	if(Visibility < 0.f) {
 		FADEDIR = 0;
@@ -78,8 +90,29 @@ void ManageFade() {
 	
 	LAST_FADEVALUE = Visibility;
 	
+	if(vr::stereoActive()) {
+		// The eyes were faded over their whole view (drawFadeOverView). The flat frame is a quad in the
+		// middle of the view: faded like the window it would darken that middle twice and leave the rest
+		// bright - the black square in front of the player after the prison intro (#22, #29). Only the
+		// interface drawn on it fades, and it covers no more of the eyes than it did
+		UseRenderState state(render2D().blend(BlendDstAlpha, BlendInvSrcAlpha));
+		EERIEDrawBitmap(Rectf(g_size), 0.0001f, nullptr, Color(Color4f(FADECOLOR * Visibility, Visibility)));
+		return;
+	}
+	
 	UseRenderState state(render2D());
 	
 	EERIEDrawBitmap(Rectf(g_size), 0.0001f, nullptr, Color(Color4f(FADECOLOR, Visibility)));
 	
+}
+
+void drawFadeOverView() {
+	
+	float visibility;
+	if(!FADEDIR || !fadeVisibility(visibility) || visibility <= 0.f) {
+		return;
+	}
+
+	UseRenderState state(render2D());
+	EERIEDrawBitmap(Rectf(g_size), 0.0001f, nullptr, Color(Color4f(FADECOLOR, visibility)));
 }

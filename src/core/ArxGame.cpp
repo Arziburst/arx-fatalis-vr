@@ -2938,6 +2938,12 @@ void ArxGame::renderSceneView() {
 		EERIEDrawBitmap(Rectf(g_size), 0.0001f, nullptr, Color(Color4f(Color3f::black, headFade)));
 	}
 
+	// A scripted fade (worldfade) over the whole view of this eye; the flat frame fades only its own
+	// interface (ManageFade, #22) - not the black square the quad was after the prison intro (#29)
+	if(vr::stereoActive()) {
+		drawFadeOverView();
+	}
+
 }
 
 void ArxGame::renderInterface() {

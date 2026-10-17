@@ -1303,6 +1303,16 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Cause:** the PC, not the game: other workers build in parallel (the game lock serialises game runs, not compiles), and a starved CPU stretches every phase of the frame at once.
 **Do:** judge pacing and frame costs only from windows at full rate, or repeat the run; a real cost of the game shows in one phase (`cause`), the same way in every run. `perf-summary.ps1` lists the hitches by cause.
 
+## 2026-10-13 - In VR an animation never shows in `camera.pitch` / `camera.roll`
+**Symptom:** the camera motion catalog of #416 measured 0 degrees of pitch and roll for every animation with the engine's eye, while the view visibly moved.
+**Cause:** in VR the head pose replaces the engine camera's angles (D-018): only the yaw keeps the body's heading. What the animations did reached the view only through the **position** of the eye vertex.
+**Do:** measure an animation's effect on the VR view by the camera's position against the body (`camera.motion.maxOffStepXZ`, `cameraRangeY` vs `bodyRangeY`), not by its angles.
+
+## 2026-10-13 - The engine says the jump is over while the body still hangs over the floor
+**Symptom:** with the stable view's level jump (#416) the camera, still for the whole jump, moved 1.3-1.9 cm at the landing: `player.jumping` was already false.
+**Cause:** the engine's jump ends (`jumpphase = NotJumping`) while the body still hangs 21 units over the floor, where it waited through the landing animation; the next frame drops it onto the floor (`onfirmground` then true). Found with `view trace 200` (TESTING.md).
+**Do:** treat a jump as lasting until the body is on firm ground (at most 0.5 s more), as `ArxGame::updateFirstPersonCamera` does; never take `player.jumping` as "the body is down".
+
 ## 2026-10-13 - A file under data/core is in the repository but the game says "not found"
 **Symptom:** `[W] VRArms: [vr] arms: vr/arms/Hand_Glove_low_R.gltf not found` (#385.3), while the file is in `data/core/vr/arms/` and the build's data dirs point at `data/core`; the host tests that load the same file pass.
 **Cause:** two rules of the resource system. `src/io/resource/ResourceSetup.cpp` mounts only a fixed list of top-level folders of each data dir (`editor`, `game`, `graph`, `localisation`, `misc`, `sfx`, `speech`, and now `vr`), so a new folder is invisible until it is added there; and every resource name is lower case (`PakReader::addFiles`), so `vr/arms/Hand_Glove_low_R.gltf` must be asked for as `vr/arms/hand_glove_low_r.gltf`. Host tests read data/core straight from the source tree and see neither rule.

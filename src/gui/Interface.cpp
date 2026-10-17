@@ -134,6 +134,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "vr/HeadTracking.h"
 #include "vr/Locomotion.h"
+#include "vr/VRComfort.h"
 #include "vr/VRInput.h"
 #include "vr/VRReticle.h"
 #include "vr/VRSystem.h"
@@ -1468,7 +1469,9 @@ void ArxGame::manageKeyMouse() {
 	// VR: the right stick turns the body (#32); the head's own yaw stays on top of it (#24), so the
 	// play-space heading turns. Updated every frame so a stick held through a menu does not snap after it.
 	// Also with the book or the bag open (#377, the owner: he could not turn with the book open)
-	const bool vrTurnAllowed = !BLOCK_PLAYER_CONTROLS && ARXmenu.mode() == Mode_InGame && !isInCinematic();
+	// The still ghost at death (#416) turns with the stick although the controls are blocked
+	const bool vrGhost = vr::deathGhost();
+	const bool vrTurnAllowed = (!BLOCK_PLAYER_CONTROLS || vrGhost) && ARXmenu.mode() == Mode_InGame && !isInCinematic();
 	const float vrTurn = vr::updateTurn(toMsf(g_platformTime.lastFrameDuration()) / 1000.f, vrTurnAllowed);
 
 	// Player/Eyeball Freelook Management
@@ -1666,6 +1669,8 @@ void ArxGame::manageKeyMouse() {
 				player.desiredangle.setYaw(MAKEANGLE(player.desiredangle.getYaw() - vrTurn));
 			}
 		}
+	} else if(vrGhost && vrTurn != 0.f) {
+		player.desiredangle.setYaw(MAKEANGLE(player.desiredangle.getYaw() - vrTurn));
 	}
 	
 	manageEntityDescription();

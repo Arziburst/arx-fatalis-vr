@@ -1298,6 +1298,7 @@ set(VR_SOURCES
 	src/vr/PerfStats.cpp
 	src/vr/PerfWriter.cpp
 	src/vr/SimRig.cpp
+	src/vr/StableView.cpp
 	src/vr/UIPanel.cpp
 	src/vr/VRActions.cpp
 	src/vr/VRArms.cpp

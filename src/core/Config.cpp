@@ -80,6 +80,9 @@ constexpr const std::string_view
 	vrHudKeep,
 	vrLevelUp = "both",
 	renderer = "auto",
+	vrViewJump = "level",
+	vrViewCrouch = "slow",
+	vrDeathView = "headless",
 	resolution = "auto",
 	audioBackend = "auto",
 	audioDevice = "auto",
@@ -300,6 +303,9 @@ constexpr const std::string_view
 	vrPhysicalCrouch = "vr_physical_crouch",
 	vrCrouchEnter = "vr_crouch_enter",
 	vrCrouchExit = "vr_crouch_exit",
+	vrViewJump = "vr_view_jump",
+	vrViewCrouch = "vr_view_crouch",
+	vrDeathView = "vr_death_view",
 	fov = "fov",
 	viewBobbing = "view_bobbing",
 	screenShake = "screen_shake",
@@ -609,6 +615,9 @@ bool Config::save() {
 	writer.writeKey(Key::vrPhysicalCrouch, video.vrPhysicalCrouch);
 	writer.writeKey(Key::vrCrouchEnter, video.vrCrouchEnter);
 	writer.writeKey(Key::vrCrouchExit, video.vrCrouchExit);
+	writer.writeKey(Key::vrViewJump, video.vrViewJump);
+	writer.writeKey(Key::vrViewCrouch, video.vrViewCrouch);
+	writer.writeKey(Key::vrDeathView, video.vrDeathView);
 	writer.writeKey(Key::fov, video.fov);
 	writer.writeKey(Key::viewBobbing, video.viewBobbing);
 	writer.writeKey(Key::screenShake, video.screenShake);
@@ -809,6 +818,10 @@ bool Config::init(const fs::path & file) {
 	video.vrCrouchEnter = glm::clamp(vrCrouchEnter, 0.05f, 1.5f);
 	float vrCrouchExit = reader.getKey(Section::Video, Key::vrCrouchExit, Default::vrCrouchExit);
 	video.vrCrouchExit = glm::clamp(vrCrouchExit, 0.f, video.vrCrouchEnter);
+	// The stable view (#416): the variants the owner picks in the headset - checked where they are used (vr/VRComfort.cpp)
+	video.vrViewJump = reader.getKey(Section::Video, Key::vrViewJump, Default::vrViewJump);
+	video.vrViewCrouch = reader.getKey(Section::Video, Key::vrViewCrouch, Default::vrViewCrouch);
+	video.vrDeathView = reader.getKey(Section::Video, Key::vrDeathView, Default::vrDeathView);
 	float fov = reader.getKey(Section::Video, Key::fov, Default::fov);
 	video.fov = std::max(fov, 10.f);
 	video.viewBobbing = reader.getKey(Section::Video, Key::viewBobbing, Default::viewBobbing);

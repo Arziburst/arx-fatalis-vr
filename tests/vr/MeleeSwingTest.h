@@ -46,6 +46,7 @@ class MeleeSwingTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testStrokeSize);
 	CPPUNIT_TEST(testThrustCountsLikeSlash);
 	CPPUNIT_TEST(testTargetCooldown);
+	CPPUNIT_TEST(testTouchCooldown);
 	CPPUNIT_TEST(testHitchIsNoSwing);
 	CPPUNIT_TEST(testUnevenFramesPeak);
 	CPPUNIT_TEST(testSameSwingsAt45And90Hz);
@@ -69,6 +70,7 @@ public:
 	void testStrokeSize();
 	void testThrustCountsLikeSlash();
 	void testTargetCooldown();
+	void testTouchCooldown();
 	void testHitchIsNoSwing();
 	void testUnevenFramesPeak();
 	void testSameSwingsAt45And90Hz();

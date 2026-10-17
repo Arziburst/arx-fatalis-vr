@@ -52,6 +52,7 @@ class SceneViewTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(fadeAtBlackTest);
 	CPPUNIT_TEST(meterFramesTest);
 	CPPUNIT_TEST(instantCutTest);
+	CPPUNIT_TEST(dialogueStaysFirstTest);
 	CPPUNIT_TEST(heldYawTest);
 	CPPUNIT_TEST_SUITE_END();
 
@@ -83,6 +84,7 @@ public:
 	void fadeAtBlackTest();
 	void meterFramesTest();
 	void instantCutTest();
+	void dialogueStaysFirstTest();
 	void heldYawTest();
 
 };

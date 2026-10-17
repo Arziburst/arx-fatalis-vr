@@ -1293,8 +1293,10 @@ Vec3f bodyShift() {
 }
 
 bool hidesHeadOnly() {
-	// A head drives the camera (a headset, the last headset sample, or a simulated head)
-	return std::strcmp(headStatus().source, "none") != 0;
+	// A head drives the camera (a headset, the last headset sample, or a simulated head) and the eyes are the hero's:
+	// shown from outside - a cinema shot on the screen, a ghost's or the observer's shot - he keeps his head and the
+	// engine's whole model (#29, the owner: "in cinema shots the head must be drawn")
+	return std::strcmp(headStatus().source, "none") != 0 && sceneState().armsIk;
 }
 
 bool isHeadVertex(EERIE_3DOBJ * obj, VertexId vertex) {

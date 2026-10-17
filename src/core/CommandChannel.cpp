@@ -732,6 +732,9 @@ void writeSceneStatus(JsonWriter & json) {
 	json.value("cut", vr::sceneCutName(scene.cut));
 	json.value("fade", scene.director.fade());
 	json.value("armsIk", scene.armsIk);
+	json.value("dialogue", scene.director.dialogue());
+	// The hero's head: hidden by the first-person selection or by the VR body's head-only view (the eyes inside it)
+	json.value("heroHead", (HERO_SHOW_1ST == 1 || vr::hidesHeadOnly()) ? "hidden" : "drawn");
 	json.object("meter");
 	json.value("frames", meter.frames());
 	json.value("sceneFrames", meter.sceneFrames());
@@ -758,6 +761,16 @@ void writeSceneStatus(JsonWriter & json) {
 	json.value("placement", vr::subtitlePlacementName(subtitle.placement));
 	json.value("lines", subtitle.lines);
 	json.value("voicedLines", subtitle.voicedLines);
+	// The panel fixed in the world for the line (#29): its pose as submitted this frame, LOCAL meters and degrees
+	json.value("drawn", vr::subtitlePlacementName(subtitle.drawn));
+	json.value("panel", vr::subtitleLayerShown());
+	json.object("panelLocal");
+	json.value("x", subtitle.panelLocal.x);
+	json.value("y", subtitle.panelLocal.y);
+	json.value("z", subtitle.panelLocal.z);
+	json.value("yawDeg", subtitle.panelYawDeg);
+	json.value("widthM", subtitle.panelWidthM);
+	json.end();
 	json.end();
 	json.end();
 

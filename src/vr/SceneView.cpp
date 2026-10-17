@@ -377,6 +377,20 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 		m_hybrid = HybridChoice();
 	}
 
+	// A dialogue stays in first person even where its script cuts to a camera (the owner, 2026-10-17, the talk after
+	// the goblin fight going to the screen); only a scene with no conversation is a cinematic. Latched until the scene
+	// ends: its first camera entity's shot near the hero, a speak -c line, or a line of the hero's
+	if(in.active) {
+		if(in.kind == SceneKind::Entity && !m_entitySeen) {
+			m_entitySeen = true;
+			m_dialogue = m_dialogue || !in.cinematicShot;
+		}
+		m_dialogue = m_dialogue || in.kind == SceneKind::Speech || in.heroSpeaks;
+	} else {
+		m_dialogue = false;
+		m_entitySeen = false;
+	}
+
 	// The hero's eye lower than a standing player's minimum above the floor under it (#29)
 	const bool firstTooLow = in.firstOnFloor && in.firstFloorY - in.firstPos.y < GhostMinAboveFloor;
 
@@ -384,7 +398,7 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 	// scene's camera entities and lines - only a change of view or kind is a cut
 	Shot target;
 	if(in.active) {
-		target.shown = chooseShownView(in.setting, in.kind, m_hybrid.screen);
+		target.shown = chooseShownView(in.setting, in.kind, m_hybrid.screen && !m_dialogue);
 		target.kind = in.kind;
 		// First person's eye too low (the hero lying or dragged by a script): the screen, for the rest of the scene
 		if(target.shown == SceneShown::First && in.firstLow == SceneFirstLow::Screen && (firstTooLow || m_lowScreen)) {

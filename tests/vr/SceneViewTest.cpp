@@ -324,22 +324,18 @@ void SceneViewTest::hybridScreenTest() {
 	in.playerYaw = 40.f;
 	director.update(in);
 
-	// A dialogue camera near the hero: first person
-	SceneInput scene = sceneOf(in, SceneKind::Entity, 8, SceneViewSetting::Hybrid);
-	scene.cinematicShot = false;
-	settle(director, scene);
-	CPPUNIT_ASSERT(director.shown() == SceneShown::First);
-
-	// Another camera entity wants the screen (far, or the hero's scripted body): at once, no blink (the owner,
-	// 2026-10-17) - the eyes' camera stays at the hero's head and its yaw while the game's camera plays on the screen
-	scene.shot = 9;
+	// A cinematic starts - its camera entity wants the screen (far, or the hero's scripted body): at once, no blink
+	// (the owner, 2026-10-17) - the eyes' camera stays at the hero's head and its yaw while the game's camera plays on
+	// the screen
+	SceneInput scene = sceneOf(in, SceneKind::Entity, 9, SceneViewSetting::Hybrid);
 	scene.cinematicShot = true;
 	scene.enginePos = Vec3f(4000.f, -500.f, 6000.f);
 	SceneOutput out = director.update(scene);
 	CPPUNIT_ASSERT(out.seamless);
+	CPPUNIT_ASSERT(out.started);
 	CPPUNIT_ASSERT(!out.cut);
 	CPPUNIT_ASSERT_EQUAL(0.f, out.fade);
-	CPPUNIT_ASSERT_EQUAL(std::string("camera"), std::string(out.cutReason));
+	CPPUNIT_ASSERT_EQUAL(std::string("start"), std::string(out.cutReason));
 	CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
 	CPPUNIT_ASSERT(!showsHeroOutside(out.shown));
 	CPPUNIT_ASSERT(same(out.pos, in.firstPos));
@@ -614,7 +610,8 @@ void SceneViewTest::instantCutTest() {
 	CPPUNIT_ASSERT_EQUAL(0.f, out.fade);
 	CPPUNIT_ASSERT(same(out.pos, moved.firstPos));
 
-	// A ghost's shot too
+	// A ghost's shot too (a cinematic after the dialogue ended)
+	director.update(in);
 	SceneInput shot = sceneOf(in, SceneKind::Entity, 4, SceneViewSetting::Ghost);
 	shot.enginePos = Vec3f(500.f, -200.f, 500.f);
 	out = director.update(shot);
@@ -634,18 +631,18 @@ void SceneViewTest::instantCutTest() {
 
 	// ...and so is a ghost's shot or the observer's point with no floor under it: never shown at fade 0
 	for(SceneViewSetting setting : { SceneViewSetting::Ghost, SceneViewSetting::Observer }) {
-		SceneDirector held;
-		held.update(in);
+		SceneDirector shotDirector;
+		shotDirector.update(in);
 		SceneInput floorless = sceneOf(in, SceneKind::Entity, 6, setting);
 		floorless.enginePos = Vec3f(500.f, -200.f, 500.f);
 		floorless.hasFloor = [](const Vec3f &) { return false; };
-		out = held.update(floorless);
+		out = shotDirector.update(floorless);
 		CPPUNIT_ASSERT(!out.cut);
-		CPPUNIT_ASSERT(held.shown() == SceneShown::None);
+		CPPUNIT_ASSERT(shotDirector.shown() == SceneShown::None);
 		CPPUNIT_ASSERT(out.fade > 0.f);
-		settle(held, floorless);
-		CPPUNIT_ASSERT(held.shown() != SceneShown::None);
-		CPPUNIT_ASSERT(held.fade() >= BehindFade);
+		settle(shotDirector, floorless);
+		CPPUNIT_ASSERT(shotDirector.shown() != SceneShown::None);
+		CPPUNIT_ASSERT(shotDirector.fade() >= BehindFade);
 	}
 
 	// The meter: an instant cut is a cut, not a step, and explained
@@ -670,6 +667,61 @@ void SceneViewTest::instantCutTest() {
 	frame.pos.x += 300.f;
 	meter.add(frame);
 	CPPUNIT_ASSERT_EQUAL(u64(1), meter.unexplainedCuts());
+}
+
+void SceneViewTest::dialogueStaysFirstTest() {
+
+	// The talk after the goblin fight (the owner, 2026-10-17): it starts with a camera near the hero, then the script
+	// cuts to a far camera - still a dialogue, first person to the scene's end
+	{
+		SceneDirector director;
+		director.update(standing());
+		SceneInput talk = sceneOf(standing(), SceneKind::Entity, 1, SceneViewSetting::Hybrid);
+		talk.cinematicShot = false;
+		SceneOutput out = director.update(talk);
+		CPPUNIT_ASSERT(out.shown == SceneShown::First);
+		talk.shot = 2;
+		talk.cinematicShot = true;
+		for(int i = 0; i < 60; i++) {
+			out = director.update(talk);
+			CPPUNIT_ASSERT(out.shown == SceneShown::First);
+		}
+		// The scene ends: the next one is classified anew
+		director.update(standing());
+		SceneInput film = sceneOf(standing(), SceneKind::Entity, 3, SceneViewSetting::Hybrid);
+		out = director.update(film);
+		CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
+	}
+
+	// A cinematic the hero speaks in is a dialogue from his line on
+	{
+		SceneDirector director;
+		director.update(standing());
+		SceneInput film = sceneOf(standing(), SceneKind::Entity, 1, SceneViewSetting::Hybrid);
+		SceneOutput out = director.update(film);
+		CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
+		film.heroSpeaks = true;
+		out = director.update(film);
+		CPPUNIT_ASSERT(out.shown == SceneShown::First);
+		film.heroSpeaks = false;
+		film.shot = 2;
+		out = director.update(film);
+		CPPUNIT_ASSERT(out.shown == SceneShown::First);
+	}
+
+	// The prison intro: the letterbox first, then camera shots of the hero dragged - a cinematic, on the screen through
+	// all its camera entities (no conversation)
+	{
+		SceneDirector director;
+		director.update(standing());
+		director.update(sceneOf(standing(), SceneKind::None, 0, SceneViewSetting::Hybrid));
+		SceneInput intro = sceneOf(standing(), SceneKind::Entity, 1, SceneViewSetting::Hybrid);
+		for(u64 shot = 1; shot <= 5; shot++) {
+			intro.shot = shot;
+			const SceneOutput out = director.update(intro);
+			CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
+		}
+	}
 }
 
 void SceneViewTest::heldYawTest() {

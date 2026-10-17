@@ -446,6 +446,29 @@ bool radialLayerShown(Hand hand);
 //! Why the last \ref beginRadialImage of the hand drew nothing ("not a stereo frame", ...), empty when it drew (#377)
 const char * radialImageRefusal(Hand hand);
 
+//! The subtitle panel's image in pixels (#29): an eye's pixels at the panel's distance, the box drawn in its middle
+const s32 SubtitleImageWidth = 1024;
+const s32 SubtitleImageHeight = 512;
+
+/*!
+ * \brief Draw a scene line's subtitle panel this frame (#29): its own swapchain becomes the render target,
+ *        cleared to transparent; the caller draws the box in 2D and calls \ref endSubtitleImage. Stereo frames only.
+ */
+bool beginSubtitleImage();
+
+//! Hand the subtitle image back to the compositor and make the flat frame the render target again
+void endSubtitleImage();
+
+/*!
+ * \brief The subtitle panel for this frame (#29): its image as a quad layer in the LOCAL space (meters; the face +z
+ *        towards the viewer), \a size its width and height. Set every frame - \c shown false hides it.
+ */
+void setSubtitleLayer(bool shown, const Vec3f & center = Vec3f(0.f),
+                      const glm::quat & orientation = glm::quat(1.f, 0.f, 0.f, 0.f), const Vec2f & size = Vec2f(0.f));
+
+//! The subtitle panel was part of the last submitted frame
+bool subtitleLayerShown();
+
 //! Place the panel anew at the head on the next frame while a menu is open (a recenter, F-180)
 void recenterPanel();
 

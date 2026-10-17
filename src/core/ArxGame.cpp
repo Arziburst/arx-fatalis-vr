@@ -2172,6 +2172,10 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 	in.headYaw = head.referenced ? vr::wrapSignedDegrees(head.head.getYaw() - head.reference.yaw) : 0.f;
 	in.seconds = toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
 	in.stickTurned = vr::turnState().turned();
+	// A line of the hero's makes the scene a dialogue (first person to its end)
+	const Entity * heroEntity = entities.player();
+	const Speech * heroLine = heroEntity ? getSpeechForEntity(*heroEntity) : nullptr;
+	in.heroSpeaks = heroLine && heroLine->sample.getSampleId() != audio::SampleHandle();
 	// A cinematic shot: a camera entity's shot of a far place, or of the hero's body played by a script - the view's
 	// own (the hybrid's screen, the observer, the ghost); every other shot is dialogue, in first person
 	if(in.kind == vr::SceneKind::Entity) {

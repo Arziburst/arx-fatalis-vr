@@ -20,6 +20,8 @@ newgame
 @until scene.active eq true 60s
 @until scene.shown eq screen 60s
 @assert scene.kind eq entity
+@assert scene.dialogue eq false                  # a cinematic: no conversation
+@assert scene.heroHead eq drawn                   # the cinema shot shows the hero with his head (the owner, 2026-10-17)
 @wait 2000
 @shot hybrid-t2
 @assert vr.sim.shots.hybrid-t2.left.quadPixels gt 0
@@ -28,6 +30,10 @@ newgame
 @assert vr.sim.shots.hybrid-t2.right.scene.verdict ne background
 @until player.controlsBlocked eq false 120s
 @until scene.active eq false 30s
+# The whole intro on the screen (the owner, 2026-10-17): no skip, no switch to first person inside it, to its own end
+@nolog scene\.skip how=vr
+@nolog vr\.scene\.switch reason=(camera|line) shown=first
+@log vr\.scene\.lookat how=ignore target=porticullis_0013
 @assert scene.meter.screenFrames gt 0
 @assert scene.meter.sceneFrames gt 0
 @assert scene.meter.minAboveFloorM ge 1.2
@@ -58,6 +64,7 @@ vr-input stick left 0 0
 @until scene.shown eq first 20s
 @assert scene.armsIk eq true
 @shot hybrid-t1
+@assert scene.heroHead eq hidden                  # in his own eyes the hero's head is hidden
 @assert vr.sim.shots.hybrid-t1.left.scene.verdict ne background
 @assert vr.sim.shots.hybrid-t1.right.scene.verdict ne background
 @until scene.active eq false 120s
@@ -70,6 +77,33 @@ vr-input stick left 0 0
 @assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.fadeFrames eq 0                # the teleport at the scene's start too: no fade at all (the owner, vr_scene_cut instant)
 @assert scene.meter.letterboxFrames eq 0
+
+# T9: a script's camera in a dialogue (the owner, 2026-10-17: the talk after the goblin fight went to the screen).
+# camera_0080, the camera of that talk, alone is a cinematic shot from here - on the screen; the same camera cut to in a
+# speak -c line stays in first person: the scene is a dialogue to its end
+@wait 2000
+@mark
+human_base_0028.cameraactivate camera_0080
+@until scene.kind eq entity 10s
+@until scene.shown eq screen 5s
+@assert scene.dialogue eq false
+human_base_0028.cameraactivate none
+@until scene.active eq false 10s
+scene meter reset
+@mark
+human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
+@until scene.kind eq speech 15s
+@assert scene.dialogue eq true
+human_base_0028.cameraactivate camera_0080
+@until scene.kind eq entity 10s
+@frames 30
+@assert scene.shown eq first
+@assert scene.dialogue eq true
+@assert scene.heroHead eq hidden
+human_base_0028.cameraactivate none
+@until scene.active eq false 30s
+@nolog vr\.scene\.switch .*shown=screen
+@assert scene.meter.screenFrames eq 0
 
 # T8: level 5, a vision ball's camera - a shot of a far place: on the screen
 loadlevel 5

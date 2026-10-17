@@ -24,6 +24,8 @@
 #include <string>
 #include <vector>
 
+#include <glm/gtc/quaternion.hpp>
+
 #include "core/Core.h"
 #include "core/GameEvent.h"
 #include "game/Camera.h"
@@ -33,6 +35,7 @@
 #include "graphics/data/Mesh.h"
 #include "graphics/font/Font.h"
 #include "gui/Text.h"
+#include "vr/HeadPose.h"
 #include "vr/HeadTracking.h"
 #include "vr/SceneView.h"
 #include "vr/VRSystem.h"
@@ -61,11 +64,13 @@ struct SubtitleDrawState {
 
 	//! The placement drawn now: the setting, or \c chest for an \c above without a usable speaker
 	SubtitlePlacement drawn = DefaultSubtitlePlacement;
-	bool decided = false;  //!< \ref drawn was decided for this line (by the interface pass)
+	bool decided = false;  //!< \ref drawn and the panel were decided for this line (by the interface pass)
 
-	bool chestPlaced = false;
-	Vec3f chestRoom = Vec3f(0.f);   //!< the chest panel in the room (LOCAL, engine axes, meters)
-	Vec3f chestWorld = Vec3f(0.f);  //!< the same in the world this frame
+	// The panel fixed in the world for the line (the owner, 2026-10-17): placed once, never turning with the head
+	Vec3f anchorWorld = Vec3f(0.f); //!< \c above: the box's lower middle; \c chest: its middle (world, game units)
+	Vec3f facingWorld = Vec3f(0.f); //!< the player's eye when the line started: the panel faces it
+	float metersPerPixel = 0.f;     //!< an eye's pixel at the panel's distance when placed
+	float eyePixelsPerUnit = 0.f;   //!< the last eye's pixels per view unit at depth 1
 
 };
 
@@ -192,7 +197,6 @@ void showSubtitle(u64 line, std::string_view speaker, std::string_view text, boo
 	if(s.line != line) {
 		// A new line: its own chest panel where the player looks now, its own decision for above
 		s.line = line;
-		s.chestPlaced = false;
 		s.decided = false;
 	}
 
@@ -239,61 +243,89 @@ void resetSubtitleCounts() {
 }
 
 void drawSubtitlesInEye() {
+	// The panel's text has the size it had drawn into the eyes: an eye's pixel at the panel's distance
+	g_subtitles.eyePixelsPerUnit = g_preparedCamera.m_pixelsPerUnit;
+}
 
-	const SubtitleDrawState & s = g_subtitles;
-	if(!s.line || !s.status.visible || !s.decided || s.drawn == SubtitlePlacement::LowerThird) {
-		return;
-	}
-
-	const bool above = (s.drawn == SubtitlePlacement::Above);
-	const Vec3f anchor = above ? subtitleAboveAnchor(s.headTop, subtitleParams()) : s.chestWorld;
-
-	// The eye's own projection of a point in the world: the two eyes see the box at the anchor's depth
-	const Vec4f p = worldToClipSpace(anchor);
-	if(p.w <= 0.f) {
-		return;
-	}
-
-	drawSubtitleBox(Vec2f(p) / p.w, above ? SubtitleAlign::Above : SubtitleAlign::Center,
-	        subtitleMaxWidth(g_preparedCamera.m_pixelsPerUnit, subtitleParams()), false);
+//! \return a world point (game units) in the LOCAL space (OpenXR axes, meters) of the head camera prepared now
+static Vec3f worldToLocal(const Vec3f & world, const Vec3f & head, const Anglef & headAngles) {
+	const Vec3f view(g_preparedCamera.m_worldToView * Vec4f(world, 1.f));
+	const glm::mat3 roomToView(toRotationMatrix(headAngles));
+	const Vec3f room = head + glm::transpose(roomToView) * (view / subtitleParams().unitsPerMeter);
+	return toEngineAxes(room);
 }
 
 void drawSubtitlesOnInterface() {
 
 	SubtitleDrawState & s = g_subtitles;
+	setSubtitleLayer(false);
 	if(!s.line || !s.status.visible) {
 		return;
 	}
 
-	// The head camera of this frame (prepared for the interface after the eyes): the eyes of the next
-	// frame draw with what is decided here
-
-	// The chest panel stays where it was placed in the room; the room moves with the camera the head
-	// is on (a scene's camera, a scripted walk)
+	// The head camera of this frame (prepared for the interface after the eyes)
+	const SubtitleParams params = subtitleParams();
 	Vec3f head;
 	Anglef headAngles;
 	subtitleHeadInRoom(head, headAngles);
-	if(!s.chestPlaced) {
-		s.chestPlaced = true;
-		s.chestRoom = subtitleChestPanel(head, headAngles.getYaw(), subtitleParams());
-	}
-	const Vec3f chestView = subtitleRoomToView(s.chestRoom, head, headAngles, subtitleParams());
-	s.chestWorld = Vec3f(g_preparedCamera.m_viewToWorld * Vec4f(chestView, 1.f));
 
-	SubtitlePlacement drawn = s.status.placement;
-	if(drawn == SubtitlePlacement::Above) {
-		const bool wasAbove = s.decided && s.drawn == SubtitlePlacement::Above;
-		const Vec3f view(g_preparedCamera.m_worldToView * Vec4f(subtitleAboveAnchor(s.headTop, subtitleParams()), 1.f));
-		if(!s.hasHead || !subtitleAnchorInView(view, tangents(unionEyeFov()), wasAbove, subtitleParams())) {
-			drawn = SubtitlePlacement::Chest;
+	if(!s.decided) {
+		// Placed once for the line: over the NPC's head if the player sees it, else below the centre of the view
+		SubtitlePlacement drawn = s.status.placement;
+		const Vec3f eye(g_preparedCamera.m_viewToWorld * Vec4f(0.f, 0.f, 0.f, 1.f));
+		if(drawn == SubtitlePlacement::Above) {
+			const Vec3f anchor = subtitleAboveAnchor(s.headTop, params);
+			const Vec3f view(g_preparedCamera.m_worldToView * Vec4f(anchor, 1.f));
+			if(s.hasHead && subtitleAnchorInView(view, tangents(unionEyeFov()), false, params)) {
+				s.anchorWorld = anchor;
+			} else {
+				drawn = SubtitlePlacement::Chest;
+			}
 		}
+		if(drawn == SubtitlePlacement::Chest) {
+			const Vec3f chestRoom = subtitleChestPanel(head, headAngles.getYaw(), params);
+			const Vec3f chestView = subtitleRoomToView(chestRoom, head, headAngles, params);
+			s.anchorWorld = Vec3f(g_preparedCamera.m_viewToWorld * Vec4f(chestView, 1.f));
+		}
+		s.facingWorld = eye;
+		const float distanceM = glm::distance(s.anchorWorld, eye) / params.unitsPerMeter;
+		const float pixelsPerUnit = s.eyePixelsPerUnit > 0.f ? s.eyePixelsPerUnit : g_preparedCamera.m_pixelsPerUnit;
+		s.metersPerPixel = pixelsPerUnit > 0.f ? distanceM / pixelsPerUnit : 0.f;
+		s.drawn = drawn;
+		s.status.drawn = drawn;
+		s.decided = true;
 	}
-	s.drawn = drawn;
-	s.decided = true;
 
-	if(drawn == SubtitlePlacement::LowerThird) {
-		drawSubtitleBox(Vec2f(0.f), SubtitleAlign::Above, float(g_size.width()) * subtitleParams().lowerThirdWidth, true);
+	if(s.drawn == SubtitlePlacement::LowerThird) {
+		drawSubtitleBox(Vec2f(0.f), SubtitleAlign::Above, float(g_size.width()) * params.lowerThirdWidth, true);
+		return;
 	}
+	if(s.metersPerPixel <= 0.f || !beginSubtitleImage()) {
+		return;
+	}
+
+	// The box in the middle of its image, its lower edge on the image's for above (the box over the head)
+	const Vec2f image{ float(SubtitleImageWidth), float(SubtitleImageHeight) };
+	const bool above = (s.drawn == SubtitlePlacement::Above);
+	const float pixelsPerUnit = s.eyePixelsPerUnit > 0.f ? s.eyePixelsPerUnit : g_preparedCamera.m_pixelsPerUnit;
+	const float maxWidth = std::min(subtitleMaxWidth(pixelsPerUnit, params), image.x * 0.9f);
+	{
+		GRenderer->SetViewport(Rect(SubtitleImageWidth, SubtitleImageHeight));
+		drawSubtitleBox(above ? Vec2f(image.x * 0.5f, image.y) : image * 0.5f,
+		                above ? SubtitleAlign::Above : SubtitleAlign::Center, maxWidth, false);
+		GRenderer->SetViewport(g_preparedCamera.m_viewport);
+	}
+	endSubtitleImage();
+
+	// Its pose in the room this frame from its place in the world: the head turning moves nothing
+	const Vec2f size = image * s.metersPerPixel;
+	const Vec3f middleWorld = above ? s.anchorWorld - Vec3f(0.f, size.y * 0.5f * params.unitsPerMeter, 0.f) : s.anchorWorld;
+	const Vec3f middle = worldToLocal(middleWorld, head, headAngles);
+	const Vec3f toEye = worldToLocal(s.facingWorld, head, headAngles) - middle;
+	const float yaw = std::atan2(toEye.x, toEye.z);
+	setSubtitleLayer(true, middle, glm::angleAxis(yaw, Vec3f(0.f, 1.f, 0.f)), size);
+	s.status.panelLocal = middle;
+	s.status.panelYawDeg = glm::degrees(yaw);
+	s.status.panelWidthM = size.x;
 }
-
 } // namespace vr

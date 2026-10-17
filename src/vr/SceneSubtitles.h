@@ -45,7 +45,7 @@
  * chest height, or a lower third that follows the head. Flat mode keeps the original band.
  *
  * gui/Speech.cpp says which line plays (\ref startSubtitle, \ref showSubtitle); the eyes' pass draws
- * \c above and \c chest into each eye (\ref drawSubtitlesInEye), the interface layer the lower third
+ * \c above and \c chest as a panel fixed in the world, the interface layer the lower third
  * (\ref drawSubtitlesOnInterface). The placement math below is pure and host-tested
  * (tests/vr/SceneSubtitlesTest.cpp).
  */
@@ -168,6 +168,11 @@ struct SubtitleStatus {
 	std::string speaker;    //!< the speaker's display name
 	u64 lines = 0;          //!< voiced lines shown since the meter reset
 	u64 voicedLines = 0;    //!< voiced lines started since the meter reset
+	//! Where the line is drawn: \c above, or \c chest for the hero's own line and a speaker out of view
+	SubtitlePlacement drawn = DefaultSubtitlePlacement;
+	Vec3f panelLocal = Vec3f(0.f); //!< the panel's middle as submitted, LOCAL (OpenXR axes), meters
+	float panelYawDeg = 0.f;       //!< the panel's facing about the vertical in LOCAL, degrees
+	float panelWidthM = 0.f;       //!< the panel's image width, meters
 };
 
 const SubtitleStatus & subtitleStatus();
@@ -199,12 +204,14 @@ void noteFlatSubtitle(bool visible, std::string_view speaker = std::string_view(
 //! A new measuring stretch (\c scene \c meter \c reset): the line counts start again
 void resetSubtitleCounts();
 
-//! \c above and \c chest drawn into the eye being rendered (the scene pass, once per eye)
+//! The eye being rendered (the scene pass, once per eye): its pixel scale, the subtitle panel's text size
 void drawSubtitlesInEye();
 
 /*!
- * The lower third drawn on the head-locked interface layer; also where the head camera of the frame
- * decides between \c above and its chest fallback and carries the chest panel along with the room
+ * The lower third drawn on the head-locked interface layer; \c above and \c chest as a panel fixed in the world
+ * (the owner, 2026-10-17: never turning with the head): placed once when the line starts - over the NPC's head, or
+ * below the centre of the view for the hero's own line and a speaker out of view - facing where the player was,
+ * drawn into its own image and submitted as a quad layer, its LOCAL pose taken from the world each frame
  */
 void drawSubtitlesOnInterface();
 

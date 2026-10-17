@@ -38,8 +38,10 @@ vr-input stick left 0 0
 @remember voiced scene.subtitle.voicedLines
 @assert scene.subtitle.lines eq {voiced}
 
-# T5: a voiced speak -c line, placement above
+# T5: a voiced speak -c line, placement above - the hero facing Kultar, so the line sits over his head
 scene subtitles above
+lookat human_base_0028
+@frames 10
 @assert scene.subtitle.placement eq above
 scene meter reset
 human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
@@ -51,6 +53,29 @@ human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
 @shot sub-above
 @assert vr.sim.shots.sub-above.left.scene.verdict ne background
 @assert vr.sim.shots.sub-above.right.scene.verdict ne background
+@assert vr.sim.shots.sub-above.left.overlayPixels gt 1000      # the panel's layer is in the eyes (the reticles alone: about 300)
+@assert vr.sim.shots.sub-above.right.overlayPixels gt 1000
+# Fixed in the world (the owner, 2026-10-17): the panel is placed once for the line and never turns with the head - its
+# pose in the room stays while the head turns 40 degrees
+@assert scene.subtitle.panel eq true
+@assert scene.subtitle.drawn eq above
+@remember px scene.subtitle.panelLocal.x
+@remember py scene.subtitle.panelLocal.y
+@remember pz scene.subtitle.panelLocal.z
+@remember pyaw scene.subtitle.panelLocal.yawDeg
+vr-sim head rot 0 -40 0
+@frames 20
+@assert scene.subtitle.panel eq true
+@assert scene.subtitle.panelLocal.x ge {px-0.01}
+@assert scene.subtitle.panelLocal.x le {px+0.01}
+@assert scene.subtitle.panelLocal.y ge {py-0.01}
+@assert scene.subtitle.panelLocal.y le {py+0.01}
+@assert scene.subtitle.panelLocal.z ge {pz-0.01}
+@assert scene.subtitle.panelLocal.z le {pz+0.01}
+@assert scene.subtitle.panelLocal.yawDeg ge {pyaw-1}
+@assert scene.subtitle.panelLocal.yawDeg le {pyaw+1}
+vr-sim head rot 0 0 0
+@frames 5
 @log vr\.scene\.subtitle placement=above speaker=
 @until scene.kind eq none 30s
 @assert scene.subtitle.voicedLines eq 1
@@ -60,7 +85,7 @@ human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
 scene subtitles chest
 @assert scene.subtitle.placement eq chest
 scene meter reset
-human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
+human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_cantgo]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq chest
 @assert scene.subtitle.speaker ne none
@@ -69,6 +94,29 @@ human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
 @shot sub-chest
 @assert vr.sim.shots.sub-chest.left.scene.verdict ne background
 @assert vr.sim.shots.sub-chest.right.scene.verdict ne background
+@assert vr.sim.shots.sub-chest.left.overlayPixels gt 1000      # the panel's layer is in the eyes (the reticles alone: about 300)
+@assert vr.sim.shots.sub-chest.right.overlayPixels gt 1000
+# Fixed in the world (the owner, 2026-10-17): the panel is placed once for the line and never turns with the head - its
+# pose in the room stays while the head turns 40 degrees
+@assert scene.subtitle.panel eq true
+@assert scene.subtitle.drawn eq chest
+@remember px scene.subtitle.panelLocal.x
+@remember py scene.subtitle.panelLocal.y
+@remember pz scene.subtitle.panelLocal.z
+@remember pyaw scene.subtitle.panelLocal.yawDeg
+vr-sim head rot 0 -40 0
+@frames 20
+@assert scene.subtitle.panel eq true
+@assert scene.subtitle.panelLocal.x ge {px-0.01}
+@assert scene.subtitle.panelLocal.x le {px+0.01}
+@assert scene.subtitle.panelLocal.y ge {py-0.01}
+@assert scene.subtitle.panelLocal.y le {py+0.01}
+@assert scene.subtitle.panelLocal.z ge {pz-0.01}
+@assert scene.subtitle.panelLocal.z le {pz+0.01}
+@assert scene.subtitle.panelLocal.yawDeg ge {pyaw-1}
+@assert scene.subtitle.panelLocal.yawDeg le {pyaw+1}
+vr-sim head rot 0 0 0
+@frames 5
 @log vr\.scene\.subtitle placement=chest speaker=
 @until scene.kind eq none 30s
 @assert scene.subtitle.voicedLines eq 1

@@ -43,6 +43,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "animation/AnimationRender.h"
 
+#include "vr/VRArms.h"
 #include "vr/VRBody.h"
 #include "vr/VRWeapon.h"
 
@@ -1041,15 +1042,30 @@ static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io,
 			continue;
 		}
 
+		// The custom arms (#385.3) are drawn in place of the Arx arms' faces, which stay the posed logical arm; with
+		// vr_body = hidden (#385.11) only the arms are drawn - no face, no halo of the body
+		if(twoSided && !vr::drawsBodyFace(eobj, i)) {
+			continue;
+		}
+
+		// The own body never covers the eyes (#385.9): its faces within the clearance of an eye are not drawn
+		if(twoSided && vr::hidesBodyFaceNearEye(eobj, i)) {
+			continue;
+		}
+
 		if((!twoSided && CullFace(eobj, face)) || !face.material) {
 			continue;
 		}
-		
+
 		TextureContainer * pTex = eobj->materials[face.material];
 		if(!pTex) {
 			continue;
 		}
-		
+
+		if(twoSided) {
+			vr::noteBodyFaceDrawn(eobj, i);
+		}
+
 		float fTransp = 0.f;
 		
 		TexturedVertex * tvList = GetNewVertexList(pTex->m_modelBatch, face, invisibility, fTransp);
@@ -1078,6 +1094,58 @@ static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io,
 	}
 }
 
+/*!
+ * The custom VR arms (#385.3, vr/VRArms.h) in place of the player's Arx arms: skinned once per frame after the
+ * body was posed, lit here with the player's lights and colour, projected for the eye being drawn and put into
+ * the model batch, two-sided like the VR body (D-032, research row F-231)
+ */
+static void Cedric_RenderVRArms(ShaderLight lights[], size_t lightsCount, const ColorMod & colorMod, float invisibility) {
+
+	vr::CustomArmMesh meshes[4];
+	const size_t count = vr::customArmMeshes(meshes);
+
+	// What GetNewVertexList reads of a face: opaque, unless the player is invisible
+	EERIE_FACE face;
+	face.facetype = POLY_DOUBLESIDED;
+
+	static std::vector<ColorRGBA> colors;
+	static std::vector<Vec4f> clip;
+	for(size_t m = 0; m < count; m++) {
+		const vr::CustomArmMesh & mesh = meshes[m];
+		if(!mesh.texture) {
+			continue;
+		}
+		const std::vector<Vec3f> & positions = *mesh.positions;
+		const std::vector<Vec2f> & uvs = *mesh.uvs;
+		const size_t vertices = std::min(positions.size(), std::min(mesh.normals->size(), uvs.size()));
+		colors.resize(vertices);
+		clip.resize(vertices);
+		for(size_t v = 0; v < vertices; v++) {
+			colors[v] = ApplyLight(lights, lightsCount, positions[v], (*mesh.normals)[v], colorMod);
+			clip[v] = worldToClipSpace(positions[v]);
+		}
+		const std::vector<u16> & indices = *mesh.indices;
+		for(size_t i = 0; i + 2 < indices.size(); i += 3) {
+			if(indices[i] >= vertices || indices[i + 1] >= vertices || indices[i + 2] >= vertices) {
+				continue;
+			}
+			float fTransp = 0.f;
+			TexturedVertex * tvList = GetNewVertexList(mesh.texture->m_modelBatch, face, invisibility, fTransp);
+			for(size_t n = 0; n < 3; n++) {
+				const size_t vertex = indices[i + n];
+				tvList[n].p = Vec3f(clip[vertex]);
+				tvList[n].w = clip[vertex].w;
+				tvList[n].uv = uvs[vertex];
+				tvList[n].color = colors[vertex];
+			}
+			if(invisibility > 0.f) {
+				tvList[0].color = tvList[1].color = tvList[2].color = Color::gray(fTransp).toRGB();
+			}
+		}
+	}
+
+}
+
 static void Cedric_AnimateDrawEntityRender(EERIE_3DOBJ * eobj, const Vec3f & pos,
                                            Entity * io, float invisibility) {
 	
@@ -1103,9 +1171,22 @@ static void Cedric_AnimateDrawEntityRender(EERIE_3DOBJ * eobj, const Vec3f & pos
 	UpdateLlights(lights, lightsCount, tv, false);
 	
 	Cedric_ApplyLighting(lights, lightsCount, eobj, obj, colorMod);
-	
+	if(io && io == entities.player() && eobj == io->obj && !IN_BOOK_DRAW) {
+		// The classic Arx arm (#466.1): a vertex skinned on another bone than its group's turns its normal with it
+		for(const vr::ReskinnedVertex & reskinned : vr::reskinnedArmVertices(eobj)) {
+			const VertexId vertex = reskinned.vertex;
+			const Vec3f normal = reskinned.rotation * eobj->vertexlist[vertex].norm;
+			eobj->vertexColors[vertex] = ApplyLight(lights, lightsCount, eobj->vertexWorldPositions[vertex].v, normal, colorMod);
+		}
+	}
+
 	Cedric_RenderObject(eobj, obj, io, pos, invisibility);
-	
+
+	// The VR body's own arms (#385.3): only in the view under a tracked head, never in the book or flat
+	if(io && io == entities.player() && eobj == io->obj && !IN_BOOK_DRAW && vr::hidesHeadOnly() && invisibility < 1.f) {
+		Cedric_RenderVRArms(lights, lightsCount, colorMod, invisibility);
+	}
+
 	// Now we can render Linked Objects
 	for(const EERIE_LINKED & link : eobj->linked) {
 		
@@ -1120,11 +1201,13 @@ static void Cedric_AnimateDrawEntityRender(EERIE_3DOBJ * eobj, const Vec3f & pos
 		}
 		
 		glm::quat rotation = eobj->m_skeleton->bones[link.lgroup].anim.quat;
+		Vec3f attach = eobj->vertexWorldPositions[link.lidx].v;
 		if(io && io == entities.player()) {
-			// The weapon in the VR hand (#75): the blade turned onto the controller's handle
-			vr::heldWeaponRotation(link.io, rotation);
+			// The weapon in the VR hand (#75): the blade turned onto the controller's handle; in our glove drawn from
+			// the glove's hilt frame (#385.10)
+			vr::heldWeaponTransform(link.io, attach, rotation);
 		}
-		TransformInfo t(eobj->vertexWorldPositions[link.lidx].v, rotation, link.io ? link.io->scale : 1.f);
+		TransformInfo t(attach, rotation, link.io ? link.io->scale : 1.f);
 		t.pos = t(link.obj->vertexlist[link.obj->origin].v - link.obj->vertexlist[link.lidx2].v);
 		
 		DrawEERIEInter(link.obj, t, link.io, true, invisibility);
@@ -1508,6 +1591,10 @@ void EERIEDrawAnimQuatUpdate(EERIE_3DOBJ * eobj,
 	animateSkeleton(eobj, animlayer, angle, pos, scale, ftr, io, *eobj->m_skeleton, io ? &io->animBlend : nullptr);
 	
 	Cedric_TransformVerts(eobj);
+	if(io && io == entities.player()) {
+		// The classic Arx arm in VR (#466.1): one elbow, the forearm one rigid piece
+		vr::skinPlayerArms(eobj);
+	}
 	if(io) {
 		io->bbox3D = UpdateBbox3d(eobj);
 	}

@@ -1,0 +1,85 @@
+# A test run's window takes no real input, and in VR the desktop keyboard drives nothing (#487). The real mouse and
+# keyboard are the window system's own messages posted to the game window (the channel's real-input - the path
+# of the real devices, also in the CI runner's session); the channel's desktop-mouse / desktop-key go through
+# SDL's event queue marked as injected. In VR the keyboard is dropped whatever its origin, like the mouse (#338);
+# the window is never activated and sits in a corner. The flat counterpart: real-input-flat.xrs.
+#   .\scripts\dev\xrs-run.ps1 real-input
+@sim idle
+@args --dev-launch
+
+@until state eq MENU 30s
+@assert menuMode eq mainmenu
+@until vr.sessionState eq focused 30s
+@until vr.panel.mode eq world 10s
+@frames 60
+
+# The window of a test run: never activated, in the corner, no real input; in VR no keyboard either
+@assert window.activation eq never
+@assert window.placement eq corner
+@assert window.focused eq false
+@assert realInput.ignored eq true
+@assert desktopKeyboard.ignored eq true
+@assert desktopMouse.ignored eq true
+
+# Both hands behind the head: nothing points at the menu
+vr-sim hand left rot 180 0 0
+vr-sim hand right rot 180 0 0
+@frames 5
+@assert vr.pointer.active eq false
+
+# A real key and an injected one: both dropped by VR and counted
+@remember keys desktopKeyboard.droppedKeys
+real-input key Escape down
+@frames 5
+real-input key Escape up
+@frames 5
+desktop-key Escape down
+@frames 5
+desktop-key Escape up
+@frames 5
+@assert desktopKeyboard.droppedKeys eq {keys+2}
+@log \[input\] desktop keyboard: Escape dropped \(VR\)
+@log \[input\] desktop keyboard: Escape \(injected\) dropped \(VR\)
+@assert menuMode eq mainmenu
+
+# The real mouse: dropped before the game's input sees it (the desktop mouse's own VR counters do not move)
+@remember buttons realInput.droppedButtons
+@remember wheel realInput.droppedWheel
+@remember moves realInput.droppedMoves
+@remember vrButtons desktopMouse.droppedButtons
+real-input mouse at 40 30
+@frames 5
+real-input mouse at 80 60
+@frames 5
+real-input mouse button 1 down
+@frames 5
+real-input mouse button 1 up
+@frames 5
+real-input mouse wheel -2
+@frames 30
+@assert realInput.droppedButtons eq {buttons+1}
+@assert realInput.droppedWheel eq {wheel+2}
+@assert realInput.droppedMoves gt {moves}
+@assert desktopMouse.droppedButtons eq {vrButtons}
+@log \[input\] real mouse button 1 dropped \(test run\)
+@log \[input\] real mouse wheel -2 dropped \(test run\)
+@assert menuPage eq none
+@assert menuMode eq mainmenu
+
+# The channel's own input still works: an injected mouse click reaches the game's input (and its VR rule, #338),
+# and the simulated hand opens Options
+desktop-mouse button 1 down
+@frames 5
+desktop-mouse button 1 up
+@frames 5
+@assert desktopMouse.droppedButtons eq {vrButtons+1}
+vr-sim hand right rot 0 0 0
+vr-point right menu options
+@frames 5
+@assert ui.menuHover eq options
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@until menuPage eq options 5s
+@assert window.focused eq false
+@assert errors eq 0

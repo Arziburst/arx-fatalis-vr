@@ -68,8 +68,9 @@ vr-input stick left 0 0
 view meter report before-strafe
 
 view meter reset
-vr-input tap right.a
+vr-input stick right 0 0.9; vr-input down right.stick_up   # jump: right stick up (D-042, #377)
 @until player.jumping eq true 2s
+vr-input up right.stick_up; vr-input stick right 0 0
 @until player.jumping eq false 5s
 @frames 60
 view meter report before-jump
@@ -237,8 +238,9 @@ view meter report after-strafe
 
 # The level jump (the default): the body goes up and down, the view does not move at all
 view meter reset
-vr-input tap right.a
+vr-input stick right 0 0.9; vr-input down right.stick_up   # jump: right stick up (D-042, #377)
 @until player.jumping eq true 2s
+vr-input up right.stick_up; vr-input stick right 0 0
 @until player.jumping eq false 5s
 @frames 60
 view meter report after-jump-level
@@ -255,8 +257,9 @@ view meter report after-jump-level
 view jump arc
 @assert view.jump eq arc
 view meter reset
-vr-input tap right.a
+vr-input stick right 0 0.9; vr-input down right.stick_up   # jump: right stick up (D-042, #377)
 @until player.jumping eq true 2s
+vr-input up right.stick_up; vr-input stick right 0 0
 @until player.jumping eq false 5s
 @frames 90
 view meter report after-jump-arc
@@ -277,6 +280,7 @@ crouch on
 @until player.crouched eq true 5s
 @wait 1800
 view meter report after-crouch-down
+@until view.eye ge 119.9 4s            # the glide takes its time on a slow test frame rate (a late frame moves it one slot at most)
 @assert view.eye ge 119.9
 @assert view.eye le 120.1
 @assert camera.motion.cameraRangeY ge 49.5
@@ -292,6 +296,7 @@ crouch off
 @until player.crouched eq false 5s
 @wait 1800
 view meter report after-crouch-up
+@until view.eye ge 169.9 4s            # the glide takes its time on a slow test frame rate (a late frame moves it one slot at most)
 @assert view.eye ge 169.9
 @assert view.eye le 170.1
 @assert camera.motion.cameraRangeY ge 49.5
@@ -422,6 +427,7 @@ view meter reset
 spellcast -fsmx 5 levitate self
 @wait 2500
 view meter report after-levitate
+@until view.eye ge 199.9 4s            # the glide takes its time on a slow test frame rate (a late frame moves it one slot at most)
 @assert view.eye ge 199.9
 @assert view.eye le 200.1
 @assert camera.motion.cameraRangeY ge 29.5
@@ -436,6 +442,7 @@ view meter reset
 spellcast -k levitate
 @wait 2500
 view meter report after-levitate-end
+@until view.eye ge 169.9 4s            # the glide takes its time on a slow test frame rate (a late frame moves it one slot at most)
 @assert view.eye ge 169.9
 @assert view.eye le 170.1
 @assert camera.motion.cameraRangeY ge 29.5
@@ -476,8 +483,9 @@ view meter report after45-run
 @assert camera.motion.maxOffYawStep le 0.01
 
 view meter reset
-vr-input tap right.a
+vr-input stick right 0 0.9; vr-input down right.stick_up   # jump: right stick up (D-042, #377)
 @until player.jumping eq true 2s
+vr-input up right.stick_up; vr-input stick right 0 0
 @until player.jumping eq false 5s
 @frames 30
 view meter report after45-jump-level
@@ -489,8 +497,9 @@ view meter report after45-jump-level
 
 view jump arc
 view meter reset
-vr-input tap right.a
+vr-input stick right 0 0.9; vr-input down right.stick_up   # jump: right stick up (D-042, #377)
 @until player.jumping eq true 2s
+vr-input up right.stick_up; vr-input stick right 0 0
 @until player.jumping eq false 5s
 @frames 45
 view meter report after45-jump-arc

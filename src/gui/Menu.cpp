@@ -94,8 +94,6 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "scene/GameSound.h"
 #include "scene/Light.h"
 
-extern bool REQUEST_SPEECH_SKIP;
-
 ARX_MENU_DATA ARXmenu;
 bool g_canResumeGame = true;
 
@@ -168,12 +166,8 @@ void ARX_Menu_Manage() {
 				if(isInCinematic()) {
 					cinematicEnd();
 				} else if(cinematicBorder.isActive()) {
-					// Disabling ESC capture while fading in or out.
-					if(!FADEDIR && cinematicBorder.elapsedTime() >= 3s) {
-						if(SendMsgToAllIO(nullptr, SM_KEY_PRESSED) != REFUSE) {
-							REQUEST_SPEECH_SKIP = true;
-						}
-					}
+					// The VR skip takes the same path (#394, core/ArxGame.cpp)
+					skipScriptedScene("key");
 				} else if((player.Interface & INTER_PLAYERBOOK) || g_note.isOpen()) {
 					g_playerBook.close();
 					ARX_INTERFACE_NoteClose();

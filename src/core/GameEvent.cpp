@@ -22,6 +22,7 @@
 #include "cinematic/CinematicController.h"
 #include "core/Core.h"
 #include "core/TimeTypes.h"
+#include "game/Camera.h"
 #include "game/Entity.h"
 #include "game/EntityManager.h"
 #include "game/Equipment.h"
@@ -57,6 +58,7 @@ struct UiState {
 struct State {
 	Limiter limiter;
 	GameState state = GameState::Startup;
+	bool scene = false;
 	UiState ui;
 	AreaId loadingArea;
 	PlatformInstant loadStart = 0;
@@ -188,6 +190,8 @@ Event::~Event() {
 const char * gameStateName(GameState state) {
 	switch(state) {
 		case GameState::Startup:   return "STARTUP";
+		case GameState::Logo:      return "LOGO";
+		case GameState::Intro:     return "INTRO";
 		case GameState::Menu:      return "MENU";
 		case GameState::Loading:   return "LOADING";
 		case GameState::Gameplay:  return "GAMEPLAY";
@@ -198,6 +202,9 @@ const char * gameStateName(GameState state) {
 }
 
 GameState detectGameState() {
+	if(startupLogoName()) {
+		return GameState::Logo;
+	}
 	if(ARXmenu.mode() != Mode_InGame) {
 		return GameState::Menu;
 	}
@@ -206,6 +213,9 @@ GameState detectGameState() {
 	}
 	if(isInCinematic()) {
 		return GameState::Cinematic;
+	}
+	if(startupIntroPlaying()) {
+		return GameState::Intro;
 	}
 	return GameState::Gameplay;
 }
@@ -225,6 +235,14 @@ void update() {
 	}
 
 	setState(detectGameState());
+
+	// A scripted scene in the game starts or ends (#394): the prison intro after a new game among them
+	const bool scene = scriptedScenePlaying();
+	if(scene != g.scene) {
+		g.scene = scene;
+		Event("scene")("state", scene ? "start" : "end")("area", u32(g_currentArea))
+			("camera", entityName(g_cameraEntity))("controlsBlocked", BLOCK_PLAYER_CONTROLS);
+	}
 
 	// UI changes only count while the player plays: the menu hides the interface without closing it
 	if(g.state == GameState::Gameplay && entities.player()) {

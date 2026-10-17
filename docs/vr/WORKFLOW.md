@@ -159,7 +159,7 @@ they are in **different areas**:
 When in doubt, run them one after the other.
 
 **Each worker in its own working copy** — in parallel mode a worker never works in the owner's copy.
-It works in its own git worktree under `C:\Users\arzib\arx-fatalis-vr-wt\ARXVR-<n>-<type>-<name>`
+It works in its own git worktree under `%USERPROFILE%\arx-fatalis-vr-wt\ARXVR-<n>-<type>-<name>`
 (outside OneDrive), created from `origin/main` with `scripts/dev/new-worktree.ps1` (#123). Build
 directories are per copy already. The owner's copy on the desktop stays on `main` and serves as the
 test station.
@@ -195,9 +195,13 @@ test station.
   `-Repeat 10` is ten. Repeated-run evidence loops only after asking the coordinator, sequential and
   flat. Say in the narration how many launches are coming before starting them. The scripts print a
   note past the budget; the coordinator sees the count in `/new-cycle`.
-- **Self-test windows stay in the background:** the smoke test and `run-windows.ps1 -Background`
-  show the game window without activating it (SDL hint), so a test never takes the focus from the
-  owner's work; `status.json` → `window.focused` is `false` for such a run.
+- **Self-test windows stay in the background:** every test run (`--test-dir`: the smoke test,
+  `xrs-run.ps1`, CI, `run-windows.ps1 -TestChannel`) shows the game window without activating it,
+  never lets it be activated, puts it in the bottom right corner and takes no real mouse or keyboard
+  (#487) - a test never takes the focus or the input from the owner's work, and the owner's input never
+  disturbs a test. Drive it through the channel (`desktop-key`, `desktop-mouse`, `vr-sim`);
+  `status.json` → `window.activation` `never`, `realInput`; the smoke test fails a run whose window holds
+  the foreground. `run-windows.ps1 -Background` keeps a launch without the channel unfocused too.
 
 **Merging parallel PRs** — first green, first merged. Before merging, a PR must be up to date with
 `main` and green on that state (`gh pr update-branch <pr>`, wait for CI). Conflicts are resolved by

@@ -51,8 +51,17 @@ public:
 	//! The extension's name, for the instance's list
 	static const char * extensionName();
 
-	//! The instance was created with the extension: get its functions. False when the runtime lacks one.
-	bool bind(XrInstance instance);
+	/*!
+	 * \c XR_EXT_hand_joints_motion_range (#385.7): enabled with the hand tracking when the runtime lists it, the
+	 * joints are asked for conforming to the controller - SteamVR's own hand around the Index handle (research F-464)
+	 */
+	static const char * motionRangeExtensionName();
+
+	/*!
+	 * The instance was created with the extension: get its functions. False when the runtime lacks one.
+	 * \a motionRange: the instance has XR_EXT_hand_joints_motion_range too
+	 */
+	bool bind(XrInstance instance, bool motionRange);
 
 	//! What the system reports (\c XrSystemHandTrackingPropertiesEXT chained to \c xrGetSystemProperties)
 	void setSupported(bool supported);

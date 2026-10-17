@@ -1,0 +1,67 @@
+# The own body never blocks the view (#385.9, #451): looking down 30, 60 and 85 degrees the body sits on a neck
+# pivot pushed back behind the eyes, the faces within the clearance of an eye are hidden, the legs stay drawn.
+# status.json (PROPOSED names, 385.9 implements them; units = engine units):
+#   vr.body.push              the push-back along the facing now (units, > 0)
+#   vr.body.neckPivot         the neck pivot (object x y z)
+#   vr.body.nearestBodyToEye  the nearest DRAWN body vertex to either eye (units); must stay beyond the clearance
+#   vr.body.clearance         the clearance (units; cfg default 15)
+#   vr.body.hiddenNearEye     the faces hidden by the near-eye rule this frame (>= 0; > 0 looking down)
+#   vr.body.legsDrawn         true while faces below keepBelow are still drawn
+# The sim's head pitch is the 2nd angle of `vr-sim head rot <yaw> <pitch> <roll>`: + looks up, so down is negative.
+# Captures go to the evidence folder (%LOCALAPPDATA%\ArxFatalisVR\evidence\385.9\), never into git.
+#   .\scripts\dev\xrs-run.ps1 body-look-down
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence body-look-down -Save mvp-new-game
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.body.bound eq true
+@assert vr.body.active eq true
+@assert vr.body.clearance gt 0
+@remember clearance vr.body.clearance
+
+# Looking ahead: the push is there, the body is drawn
+vr-sim head rot 0 0 0
+@frames 15
+@assert vr.body.push gt 0
+@assert vr.body.hiddenNearEye ge 0
+@assert vr.body.legsDrawn eq true
+@shot ahead
+
+# 30 degrees down
+vr-sim head rot 0 -30 0
+@frames 15
+@assert vr.body.push gt 0
+@assert vr.body.nearestBodyToEye gt {clearance}
+@assert vr.body.hiddenNearEye ge 0
+@assert vr.body.legsDrawn eq true
+@shot down-30
+
+# 60 degrees down
+vr-sim head rot 0 -60 0
+@frames 15
+@assert vr.body.push gt 0
+@assert vr.body.nearestBodyToEye gt {clearance}
+@assert vr.body.hiddenNearEye ge 0
+@assert vr.body.legsDrawn eq true
+@shot down-60
+
+# 85 degrees down: the torso is right under the eyes - faces are hidden, none is within the clearance, the legs stay
+vr-sim head rot 0 -85 0
+@frames 15
+@assert vr.body.push gt 0
+@assert vr.body.nearestBodyToEye gt {clearance}
+@assert vr.body.hiddenNearEye ge 0
+@assert vr.body.legsDrawn eq true
+@shot down-85
+
+# Back up: nothing is left hidden by the rule beyond what the pose needs, the body is still drawn
+vr-sim head rot 0 0 0
+@frames 15
+@assert vr.body.legsDrawn eq true
+@assert vr.body.nearestBodyToEye gt {clearance}
+
+@assert errors eq 0

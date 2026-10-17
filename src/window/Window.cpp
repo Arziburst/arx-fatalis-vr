@@ -61,6 +61,7 @@ Window::Window()
 	, m_visible(false)
 	, m_fullscreen(false)
 	, m_focused(false)
+	, m_background(false)
 { }
 
 void Window::addListener(Listener * listener) {

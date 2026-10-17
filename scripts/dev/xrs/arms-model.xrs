@@ -1,0 +1,82 @@
+# The arms model switch (#385.3): cfg vr_arms_model = classic (the only player choice since #466), the channel command
+# `arms custom|arx`, and the hand size vr_hand_scale. status.json: vr.body.armsModel,
+# vr.body.arxArmsHidden (true while the Arx arm faces are not drawn = custom; PROPOSED name, 385.3 implements it),
+# vr.body.<hand>.handScale, vr.body.<hand>.custom.tipLength (palm to fingertip, units).
+# The hand scale steps use the PROPOSED channel command `arms scale <factor>` (live vr_hand_scale, range 0.8 - 1.5);
+# the channel has no generic live cfg set today.
+# Needs the first-person save:
+#   .\scripts\dev\xrs-run.ps1 arms-model
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence arms-model -Save mvp-new-game
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.body.bound eq true
+@assert vr.body.active eq true
+
+vr-sim head rot 0 -40 0
+vr-sim hand left off
+vr-sim hand right pos 0.15 -0.3 -0.4
+vr-sim hand right rot 0 0 0
+@frames 15
+@assert vr.body.right.posed eq true
+
+# 1. The default is classic (the owner's pick, #466); the custom arms (test-only until #486 removes them) hide the
+#    Arx arm faces
+@assert vr.body.armsModel eq classic
+@assert vr.body.arxArmsHidden eq false
+arms custom
+@frames 5
+@assert vr.body.armsModel eq custom
+@assert vr.body.arxArmsHidden eq true
+@shot model-custom
+
+# 2. The Arx arms: the faces are drawn again, the posed logical arm is unchanged
+arms arx
+@frames 5
+@assert vr.body.armsModel eq arx
+@assert vr.body.arxArmsHidden eq false
+@assert vr.body.right.posed eq true
+@shot model-arx
+
+# 3. Back to custom
+arms custom
+@frames 5
+@assert vr.body.armsModel eq custom
+@assert vr.body.arxArmsHidden eq true
+
+# 4. Both ways again (the hide mask survives the switch)
+arms arx
+@frames 3
+@assert vr.body.armsModel eq arx
+@assert vr.body.arxArmsHidden eq false
+arms custom
+@frames 3
+@assert vr.body.armsModel eq custom
+@assert vr.body.arxArmsHidden eq true
+
+# 5. Hands bigger than the Arx hands by default (first proposal 1.15); the length grows with the setting
+@assert vr.body.right.handScale gt 1.0
+@assert vr.body.right.custom.tipLength gt 0
+@remember tip0 vr.body.right.custom.tipLength
+@remember scale0 vr.body.right.handScale
+arms scale 1.4
+@frames 5
+@assert vr.body.right.handScale gt 1.35
+@assert vr.body.right.handScale lt 1.45
+@assert vr.body.right.handScale gt {scale0}
+@assert vr.body.right.custom.tipLength gt {tip0}
+@shot hand-scale-140
+arms scale 1.0
+@frames 5
+@assert vr.body.right.handScale lt 1.05
+@assert vr.body.right.custom.tipLength lt {tip0}
+arms scale 1.15
+@frames 5
+@assert vr.body.right.handScale gt 1.1
+@assert vr.body.right.handScale lt 1.2
+
+@assert errors eq 0

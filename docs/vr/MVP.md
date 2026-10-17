@@ -143,6 +143,7 @@ dependencies are met; when a task is split, replace it with its parts.
 31. #33 — Jump on A, crouch toggle on right stick down, stealth by partial deflection (F-47)
 32. #70 — Test save library for MVP scenarios *(done: new game, items, goblin fight; levers, doors and chests are #210, recorded by the owner)*
 33. #36 — Full body: the player model with arms driven by the controllers via IK (D-009, F-52, F-49)
+33. #304 — VR arms: roll-aware IK (A1, RENIK's rules) — the hand's roll shared along the arm, no twisting from the shoulder or the elbow (F-212)
 33. #261 — VR settings, Controls: left-handed mode, physical crouch rows, grip input (after #100, #36)
 34. #116 — Health and mana as two bars on the left wrist (F-83)
 35. #166 — Research: world interaction in Valheim VR — the reference for D-016, #37, #38
@@ -220,6 +221,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | #33 jump, crouch toggle, stealth | input | VR | #74 |
 | #70 test saves | build | plain | #99, #123 |
 | #36 full body with IK arms | render | VR | #72, #24, #74, decisions on #118 / #120 |
+| #304 roll-aware arm IK (A1, F-212) | render | VR | #36, the owner's pick on #298 |
 | #116 wrist vitals | ui | VR | #36 |
 | #166 research: VHVR world interaction | docs | plain | — (owner's decisions before #37 / #38) |
 | #37 a reticle per hand: drag, into the inventory | combat | VR | #74, #166 (no longer #36, D-016) |
@@ -246,7 +248,7 @@ tie-breaker. The coordinator keeps this plan current in `/new-cycle`.
 | **3** | #74, #72, #27, #25, #35 | #73, #70, #127 |
 | **4** — finishes checkpoint A | #28, #100, #26, #31, #32, #42 | #80 |
 | **5** — checkpoint B | #49, #33, #36 | #88 → #132 *(after the owner's decisions on #118 / #120)* |
-| **6** | #34, #116, #37, #75, #178 → #260, #261 | — |
+| **6** | #34, #116, #37, #75, #304, #178 → #260, #261 | — |
 | **7** — checkpoints C, D | #38, #288, #39, #43 → #44 → #45 | #16 |
 | **8** — MVP done | #77 | — |
 

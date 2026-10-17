@@ -60,6 +60,12 @@ const EventInfo Events[EventCount] = {
 	{ "menu", "Game menu" },
 	{ "recenter", "Recenter" },
 	{ "magic_mode", "Draw runes" },
+	{ "act_left", "Open / pull, left" },
+	{ "act_right", "Open / pull, right" },
+	{ "radial_left", "Radial menu, left" },
+	{ "radial_right", "Radial menu, right" },
+	{ "weapon", "Draw / sheathe weapon" },
+	{ "map", "Map" },
 };
 
 const std::string_view LongSuffix = ":long";
@@ -237,25 +243,32 @@ ControlLayout defaultLayout(ControllerType type) {
 		return layout;
 	}
 
-	// The D-019 table: positions are the same on the Index and the Touch (A/B right, X/Y left)
+	// The D-042 table (#377): the same on both hands, positions the same on the Index and the Touch (A / B right,
+	// X / Y left). Use / interact is grip, then trigger: the reticle's target decides (sharesBindingByDesign) - a
+	// door, lever, chest, NPC or corpse is acted on, an item is used (eaten, drunk, equipped). The grip alone does
+	// nothing; nothing goes straight into the inventory any more (stash has no control by default)
 	const Control leftGrip = control(Hand::Left, ControlKind::Grip);
 	const Control rightGrip = control(Hand::Right, ControlKind::Grip);
-	layout[Event::UseLeft] = Binding::single(leftGrip);
-	layout[Event::UseRight] = Binding::single(rightGrip);
-	layout[Event::StashLeft] = Binding::chord(leftGrip, leftTrigger);
-	layout[Event::StashRight] = Binding::chord(rightGrip, rightTrigger);
-	layout[Event::Jump] = Binding::single(control(Hand::Right, ControlKind::A));
+	layout[Event::UseLeft] = Binding::chord(leftGrip, leftTrigger);
+	layout[Event::UseRight] = Binding::chord(rightGrip, rightTrigger);
+	layout[Event::ActLeft] = Binding::chord(leftGrip, leftTrigger);
+	layout[Event::ActRight] = Binding::chord(rightGrip, rightTrigger);
+	// The right stick: left / right turn (VRGameInput.h), up jumps, down toggles the crouch - a stick direction is
+	// pressed beyond 0.7 along its dominant axis, so a turn pushed a little up does not jump
+	layout[Event::Jump] = Binding::single(control(Hand::Right, ControlKind::StickUp));
 	layout[Event::CrouchToggle] = Binding::single(control(Hand::Right, ControlKind::StickDown));
-	layout[Event::Inventory] = Binding::single(control(Hand::Right, ControlKind::B));
-	layout[Event::Book] = Binding::single(control(Hand::Left, ControlKind::B));
-	// The Touch has a menu button on the left; the Index does not, its left A is free in D-019
-	layout[Event::Menu] = Binding::single(control(Hand::Left, type == ControllerType::Touch ? ControlKind::Menu
-	                                                                                         : ControlKind::A));
-	layout[Event::Recenter] = Binding::hold(control(Hand::Left, ControlKind::StickClick));
-	// Magic mode (#43, D-019): held by the left hand while a trigger draws - the engine's Ctrl. The Index's
-	// left trackpad pressed; the Touch has no trackpad, its X is free (the game menu is on its menu button)
-	layout[Event::MagicMode] = Binding::single(control(Hand::Left, type == ControllerType::Touch ? ControlKind::A
-	                                                                                              : ControlKind::Trackpad));
+	// The right B holds the radial menu (#376; only the right one, the owner, #377): the book's pages, the game menu,
+	// recenter and both hands' quick slots are in it. The left B toggles the book's map page, the left A the bag
+	layout[Event::RadialRight] = Binding::single(control(Hand::Right, ControlKind::B));
+	layout[Event::Map] = Binding::single(control(Hand::Left, ControlKind::B));
+	layout[Event::Inventory] = Binding::single(control(Hand::Left, ControlKind::A));
+	// No game menu button on either (the owner, #456): the radial menu has it, and B is the game menu key where no
+	// radial menu opens; the Touch's left menu button is free like the Index's trackpads
+	// The stick click draws / sheathes the weapon of its hand: only the right hand holds one until #380
+	layout[Event::Weapon] = Binding::single(control(Hand::Right, ControlKind::StickClick));
+	// The casting stance (#43) on A: one stance for both hands until each hand has its own (#378) - the right A
+	// (the owner, the headset test of #456)
+	layout[Event::MagicMode] = Binding::single(control(Hand::Right, ControlKind::A));
 
 	return layout;
 }
@@ -379,6 +392,14 @@ bool readSavedLayout(std::string_view text, ControllerType type, ControlLayout &
 	return true;
 }
 
+bool sharesBindingByDesign(Event a, Event b) {
+	const auto pair = [a, b](Event x, Event y) {
+		return (a == x && b == y) || (a == y && b == x);
+	};
+	return pair(Event::UseLeft, Event::ActLeft) || pair(Event::UseRight, Event::ActRight)
+	       || pair(Event::StashLeft, Event::ActLeft) || pair(Event::StashRight, Event::ActRight);
+}
+
 std::vector<Conflict> findConflicts(const ControlLayout & layout) {
 	std::vector<Conflict> conflicts;
 	for(size_t i = 0; i < EventCount; i++) {
@@ -386,7 +407,7 @@ std::vector<Conflict> findConflicts(const ControlLayout & layout) {
 			continue;
 		}
 		for(size_t j = i + 1; j < EventCount; j++) {
-			if(layout.bindings[j] == layout.bindings[i]) {
+			if(layout.bindings[j] == layout.bindings[i] && !sharesBindingByDesign(Event(i), Event(j))) {
 				conflicts.push_back({ Event(i), Event(j) });
 			}
 		}

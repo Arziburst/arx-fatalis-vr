@@ -8,6 +8,158 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-14 — The Arx arm grows a second elbow in the middle of the forearm, though the IK has only one (#466.1)
+
+**Symptom:** with the Arx arms drawn (`arms arx`) the owner sees a second elbow and wants the arm one solid
+piece up to the elbow; the research blamed the flat upper-arm rings (H1) or a few faces spanning the upper arm
+and the wrist (H2), and later the upper arm's last ring past the elbow (F-308).
+**Cause (measured on `human_base`, both arms, the `[vr] body: ... Arx arm` bind line):** the forearm group
+`right_elbow` holds only the forearm's first third - 11 vertices, 2.5 .. 11.3 units past the elbow on a 30.5 bone.
+The other two thirds are skinned to the **wrist** group: 8 vertices at 10.7 .. 20.1 past the elbow (14 of the wrist
+group's vertices lie before the wrist joint, the wrist ring included). So every bend of the wrist and the wrist
+band's share of the roll fold the forearm in its middle, across the 12 faces between the two groups. One of those
+wrist vertices (671 right, 10.7 past the elbow) is joined straight to the upper arm's 92 and 674 by 3 faces (143,
+1198, 1210): H2's web. The elbow ring itself mixes 6 upper-arm vertices (up to 3.1 past the joint) with 4 of the
+forearm (2.5 .. 3.9), so even the elbow folds in two bands. H1 is not it: only one upper-arm ring is flat (mid
+upper arm, rigid on one bone). Measured with `vr.body.<hand>.classic` (`arms arx`): 2 - 4 bands bent past 20
+degrees at the elbow bent 57 - 111 degrees, the forearm rings' roll spread up to 55.6 degrees with the hand
+rolled 180.
+**Do:** read the arm by where its vertices are, not by their group (`vr/ArxArmFix.h` `diagnoseArxArm`). `arms
+classic` re-skins by ring in VR only (`skinPlayerArms` after the engine's transform): one band bent, spread 0.
+A crease count on a **straight** arm is 0, not 1 - pick the bent poses for `eq 1`. human_base reloads on every
+equipment change; the classic parts are rebuilt in `bind`, which runs again for the new object.
+## 2026-10-14 — The build fails with `git.exe ... missing and no known rule to make it` after a Git update (#377)
+
+**Symptom:** `build-windows.ps1` stops at "Building" with
+`ninja: error: 'C:/Program Files/Git/mingw64/bin/git.exe', needed by 'arx-version.rc', missing and no known rule to make it`.
+The same build directory built a few minutes earlier, and `git` works in the shell.
+**Cause:** Git for Windows 2.56 moved its binaries from `mingw64\bin` to `ucrt64\bin`. CMake found git once and keeps
+its path in the build directory's cache (`GIT_COMMAND:FILEPATH` in `CMakeCache.txt`); the version rule depends on that
+file, so ninja refuses to build. Every existing build directory has the old path; a fresh one does not.
+**Do:** set `GIT_COMMAND:FILEPATH=C:/Program Files/Git/ucrt64/bin/git.exe` in that build directory's
+`CMakeCache.txt` (or build with `-Clean`), then build again.
+
+## 2026-10-14 — `input-check.ps1` / `game-input-check.ps1`: trigger and face-button presses are not counted on `--loadlevel 10` (#473)
+
+**Symptom:** the control table check reports `use_right`, `act_right`, the chord's `jump` and `book` as 0 presses;
+only the stick taps (jump, crouch, the stick click) count. Neither check runs in CI.
+**Cause:** level 10 starts with a scripted scene (`scene state=start ... controlsBlocked=yes`). Since #394, A, B and
+the triggers skip a playing scene and reach nothing else, so the presses the check sends in the scene's first seconds
+skip it (`vr.skip what=SCENE` in arx.log) and never reach the control table.
+**Do:** until #473 is fixed, do not count these two checks as evidence; the `.xrs` sequences wait for
+`player.controlsBlocked eq false` first.
+
+## 2026-10-14 — `playground-hands.xrs`: the left hand's reticle misses the pulled lever on CI, passes locally (#377)
+
+**Symptom:** CI run 38477911299 (PR #456) failed at `@until vr.reticle.left.under eq lever_9002 5s`: the ray hit
+the wall at (8378.7, -128.4, 8400), right behind the handle. The same sequence on the same commit passed 243/243
+locally; both runs aimed at the same face (8378.6, -130.5, 8399.2).
+**Cause:** the hands of the idle rig still rise after a `setpos` - the left hand's start was y -135.6 at the
+first aim, -127.2 at the second and -125.1 a moment later on the busy runner (locally the second aim already started
+at -125.1). `vr-point` aims from where the hand is in that frame, so the ray drifted 2 units up past the pulled
+handle, which lies 0.8 units in front of the wall.
+**Do:** after a teleport give the hands 30 frames and aim at a thin target once more before waiting on the reticle
+(`playground-hands.xrs` does this for the lever).
+
+## 2026-10-13 — A quad layer is in every simulated shot and invisible in the headset (#376)
+
+**Symptom:** the radial menus passed their sequence on the simulated headset (drawn, `overlayPixels` in both eyes)
+and could not be seen at all on the owner's Index, while the log showed them opening, hovering and running items.
+**Cause:** their swapchains were made lazily, the first time a menu opened - in `updateInput`, inside the frame,
+while the flat frame quad's image was acquired. SteamVR answered `xrCreateSwapchain` with
+`XR_ERROR_RUNTIME_FAILURE` (one `[E] VRSwapchain` line, then the menus worked unseen); the simulated runtime made it.
+Every other lazily made swapchain (beam, reticles) is made in `submitFrame` after the quad's release.
+**Do:** make swapchains with the session, or at least with no image of any swapchain acquired. The simulated runtime
+now refuses `xrCreateSwapchain` while another swapchain's image is acquired, with an `[E]` line, as SteamVR did; read
+the run digest of a headset run for `[E] VRSwapchain` before suspecting the composition.
+
+## 2026-10-13 — In VR the inventory will not close and melee is refused after New game or `--loadlevel` (#394.5)
+
+**Symptom:** a new game or a `--loadlevel` start in VR: the inventory stays open (closing it reopens it), `melee.state state=off reason=inventory`; a save load is fine, and so is New game in a player's launch.
+**Cause:** the engine's freelook (`TRUE_PLAYER_MOUSELOOK_ON`) starts `false`; off is cursor mode, in which `ARX_INTERFACE_Manage` reopens the inventory every frame. Only `ARX_GAME_Reset` with `!DONT_ERASE_PLAYER` (a save load, or level 10 of a player's launch through `DanaeClearLevel`) turns it on; `--loadlevel` never resets and `DANAE_StartNewQuest` sets `DONT_ERASE_PLAYER`; the pause menu turns it off. VR has no freelook control.
+**Do:** ArxGame turns it on whenever the game enters `GAMEPLAY` in VR (a `vr.freelook` event). Check `player.freelook` / `player.inventoryOpen` before blaming the inventory or melee code. An event of the first loaded frame is logged before a sequence's first mark: assert it with `events.byName`, not `@log`.
+
+## 2026-10-13 — A scripted scene's skip "refused" although the scene was skipped (#394.4)
+
+**Symptom:** `scene.skip ... refused=yes` for a skip of the prison intro, yet the controls come back 5 s later and the hero stands at `MARKER_0112` (the intro's own end takes about 35 s).
+**Cause:** `SendMsgToAllIO(key_pressed)` returns `REFUSE` when **any** of the level's scripts refuses the event; every script still gets it, and the scene's skip handlers end the scene. The engine only uses the result to decide whether the speech is cut (`REQUEST_SPEECH_SKIP`).
+**Do:** judge a scene skip by what the scene does (`scene state=end`, `player.controlsBlocked`, the hero's place), not by `refused`; `result=early` (a fade, or the letterbox's first 3 s) is the real refusal.
+
+## 2026-10-13 — A sequence that changes a setting fails on its second local run (#394.4)
+
+**Symptom:** `first-run.xrs` passes, then fails at `@assert settings.crosshair eq true` when run again with `xrs-run.ps1`.
+**Cause:** the isolated user directory of a working copy is kept between launches, and `cfg.ini` in it still has the crosshair the previous run turned off. CI starts from an empty directory.
+**Do:** delete `cfg.ini` in `%LOCALAPPDATA%\ArxFatalisVR\userdirs\<copy>\` before re-running a sequence that changes a setting.
+
+## 2026-10-13 — The level 10 intro is the original game's startup, not New game's (#394)
+
+**Symptom:** a test of "the intro" from `--loadlevel 10`, `--skiplogo` or New game shows a different thing than a player sees; New game never plays level 10.
+**Cause:** the original start is logos -> level 10 (a scripted scene that plays `introduction.cin` and ends in the main menu through the player's death, `ARX_PLAYER_Manage_Death`) -> main menu. New game loads area 1 (`DANAE_StartNewQuest`).
+**Do:** test the intro from a player's launch (`@player`, `-Player`); `first-run.xrs` / `first-run-intro.xrs`.
+
+## 2026-10-13 — A one-frame virtual Escape never ends a cinematic (#394)
+
+**Symptom:** a simulated Escape / skip press during a `.cin` does nothing.
+**Cause:** `Menu.cpp` ends a cinematic on `isKeyPressedNowUnPressed`, which needs `keysStates == 1` after the release; a key held for one update goes 1 -> 0.
+**Do:** #394 uses `g_vrSkipPressed` and calls `cinematicEnd()` itself; do not "fix" a skip with a faster key press.
+
+## 2026-10-13 — In VR a logo is cut off at the window's size (#394, #73)
+
+**Symptom:** a publisher logo on the VR screen fills only the window's size while the interface (the quad) is larger.
+**Cause:** nothing prepares a camera for the logos, so the GL viewport stays the window's while the interface is the larger quad (#73).
+**Do:** `GRenderer->SetViewport(g_size)` for 2D drawn outside the camera paths.
+
+## 2026-10-13 — The character creation screen is black but for the portrait on a cold development start (#394.3)
+
+**Symptom:** `first-run-chargen.xrs` started at the main menu by `@args --dev-launch` fails at the window shot (`capture.topRight.verdict` black; the quad shot shows only the hero's portrait on black). The same sequence passes when the process first played the level 10 scene (`@args --skiplogo`), and `first-run.xrs` (a player's launch) passes through the same screen.
+**Cause:** not found; a longer wait before the shot (600 frames) changes nothing, so it is not the fade-in. Probably something the level 10 load initialises that a cold menu start does not.
+**Do:** tracked as #399; `first-run-chargen.xrs` stays on `@args --skiplogo` (90 s) until it is fixed - do not loosen the shot's check.
+
+## 2026-10-13 — In VR the main menu sits in a corner of the desktop window and the mouse clicks invisible buttons (#334)
+
+**Symptom:** with VR on, the desktop window showed the main menu (and the character creation) as a small picture
+in one part of the window, the rest dark; the owner reached the character creation only by clicking where nothing
+was drawn. The headset itself showed the menu whole.
+**Cause:** the desktop mirror (#21) showed the right eye, and in the eye the menu is the floating panel (#49) 0.9 m
+ahead and 0.3 m down - a trapezoid at the bottom (or wherever the panel was placed). The desktop mouse, though, is
+mapped from the whole window onto the whole 2D interface (#73), so it hit widgets where the window showed none.
+**Do:** nothing since #394.2: while a menu without the world is shown (`ARXmenu.mode() != Mode_InGame`) the mirror
+draws the flat frame over the whole window (`[vr] desktop mirror: a menu without the world - the window shows the
+2D interface`); the in-game menus (inventory, book) keep the eye. `capture.<quarter>.verdict` of a window `shot`
+tells a picture that fills the window from one in a corner of it.
+
+## 2026-10-13 — `smoke-test.ps1 -Sequence` ignores the sequence's `@args`
+
+**Symptom:** a sequence with `@args --skiplogo` run through `smoke-test.ps1 -VrSim idle -Sequence <name>` launched
+`arx.exe ... --loadlevel 10`.
+**Cause:** `@sim`, `@args` and `@save` are read by `xrs-run.ps1` and `ci-smoke.ps1`; `smoke-test.ps1` takes the
+arx.exe arguments from its own command line (default `--loadlevel 10`).
+**Do:** run a sequence with `xrs-run.ps1 <name>`, or pass the same arguments to the smoke test after `--`
+(`smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir> -- --skiplogo`) - the way to give it a user
+directory of your own.
+
+## 2026-10-13 — The smoke test's `loadlevel 1` "hangs" on the desktop and passes in CI (#440)
+
+**Symptom:** `smoke-test.ps1 -Seconds 3 -Commands 'loadlevel 1','loadlevel 10','drawcheck 120'` failed every time on
+the owner's PC (main too) with `timed out after 10 s waiting for the game to acknowledge 'loadlevel 1'`; the log
+stopped at `level.load area=1`, no crash, no `Done loading level`. The same phase passed in CI, and level 1 loaded
+in 250 ms from a save.
+**Cause:** not a hang - a load bound by the present. The game's window in an interactive session is in the
+background (shown without focus), and the compositor throttles its presents: every `SwapBuffers` took ~30 ms
+(`present=30` in every frame of `arx-perf.log`). The loading screen draws a frame when 16 ms have passed and the
+progress bar moved, but it counted the 16 ms from *before* its present - with a 30 ms present every step of the
+load drew and presented a frame, and the change from level 10 to level 1 (hundreds of progress steps) outlasted the
+10 s ack. In CI (the runner service, session 0, no compositor) a present costs nothing. The hang watchdog (#440)
+gave the stack: `ZwWaitForAlertByThreadId` < `atio6axx.dll` < `wglSwapBuffers` < `SDL2` < `LoadLevelScreen` <
+`loadLevel` < `ARX_CHANGELEVEL_PopLevel` < `ARX_CHANGELEVEL_Change` < `channel::execute` - but only once the
+progress beat was taken out: every step still beat, so the watchdog rightly saw no hang.
+**Do:** the 16 ms are counted from the end of the present now (level 10 → 1 in ~0.9 s with 15 loading frames, the
+start's level 10 load 1.7 s → 0.22 s). A load that seems to hang: read `[hang]` in `arx.log` / `hang.txt`; no report
+means the main thread still makes progress - the `[channel] level N loaded in ... the loading screen drew ...`
+line and `present=` in `arx-perf.log` say where the time goes. Mind: a thread-stack walk from inside the process
+must never load DbgHelp or query modules while the thread is stopped (a thread stuck in the loader holds that lock),
+and must give up when the thread does not stop (a driver call blocks suspension).
+
 ## 2026-10-13 — `walk-look.xrs`: the walk left on a busy PC drifts 12.6 units in z (#370)
 
 **Symptom:** `walk-look` failed on CI (run 38339943784, PR #391, nothing related changed) at its first push:
@@ -91,6 +243,17 @@ pointer dangled. The radial menu's quick load in a real game takes the same path
 **Do:** never keep an `Entity *` across frames without resolving it again - `heldEntity()` checks it against
 the player's weapon slot. Regression check: the end of `reach-lever.xrs` (`loadslot 0` with the sword held,
 then `vr.weapon.place eq hand`), and every `make-test-saves.ps1 -VrSim` run reloads all its saves.
+
+## 2026-10-13 — The game crashes on quit in `FT_Done_Face` after a feature drew text (#376)
+
+**Symptom:** a run that worked ends with exit code 1, no `Clean shutdown`, and a crash report whose stack is
+`freetype.dll!FT_Done_Face()` under `xtree` / `xmemory` from `ArxGame.cpp` (the shutdown). Nothing in the log says why.
+**Cause:** a `Font` taken with `FontCache::getFont` and never given back with `FontCache::releaseFont`. At the exit
+`FontCache::shutdown` deletes the cache: its destructor only *asserts* that every font was released (nothing in a
+Release build), frees the FreeType library, and then the leaked font's face is destroyed against the freed library.
+The first radial menu kept two fonts of its own for the whole run.
+**Do:** draw with the game's fonts (`hFontControls`, `hFontInGame`, … in `gui/Text.h`: the right language's glyphs,
+replaced when the interface is laid out again), or release an own font before `ARX_Text_Close`.
 
 ## 2026-10-12 — An instant `vr-sim hand ... pos` set-up move counts as a melee swing on a busy runner (#349)
 
@@ -285,7 +448,7 @@ in a sequence, bound only what the game decides, never how many times something 
 
 **Symptom:** the body, the solid torso and the hands following the controllers are right in the headset
 ("руки работают"), but as soon as a controller rolls, the upper arm and the forearm of the model twist into
-flat spirals between the shoulder and the hand (`C:\Users\arzib\arx-fatalis-vr-wt\arms-twist-owner.png`:
+flat spirals between the shoulder and the hand (the owner's headset screenshot, kept out of the repository:
 both arms reach in from the sides as twisted ribbons while the hands themselves look fine). Every number in
 `status.json` is still perfect — `error` 0, the wrist on its target — because the numbers describe joints,
 not the mesh between them.
@@ -299,6 +462,10 @@ A joint-position check cannot see it.
 its arms, what Arx's model and textures allow: twist bones, roll limits, a separate VR arm rig). Until then,
 judge arms in the headset or on a capture with the controllers *rolled*, not from `vr.body` alone; the
 `arms-follow` sequence rolls nothing.
+**Resolved by #304 (D-050):** the three arm rotations are built from the bend plane and the hand's roll is
+shared along the arm (vr/ArmRoll.h); `vr.body.<hand>.wristTwist` / `elbowTwist` / `upperRoll` now say what each
+band of faces carries, and the `arms-roll` sequence rolls the controller 0–180° and asserts on them. The lesson
+stays: a joint-position check sees no twist.
 
 ## 2026-10-09 — The body is nowhere in a `--vr-sim` shot that looks down, although `vr.body` says both arms are posed with `error` 0 (#36)
 
@@ -1065,7 +1232,7 @@ also refuses `git -C <owner copy>` and commands with runtime-computed paths: use
 ## 2026-10-09 — `claude --bg` refuses a worker's worktree: "Workspace not trusted"
 
 **Symptom:** `start-worker.ps1` fails with `Workspace not trusted. Run claude in <worktree> once and accept
-the trust prompt`, even after the owner trusted the parent folder `C:\Users\arzib\arx-fatalis-vr-wt`.
+the trust prompt`, even after the owner trusted the parent folder `%USERPROFILE%\arx-fatalis-vr-wt`.
 **Cause:** Claude Code's workspace trust is checked for the launch folder itself; trusting a parent does
 not cover a new subfolder. Every worktree is a new folder.
 **Do:** launch workers in the owner's copy (trusted) and let them enter the worktree first —
@@ -1145,3 +1312,47 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** with the stable view's level jump (#416) the camera, still for the whole jump, moved 1.3-1.9 cm at the landing: `player.jumping` was already false.
 **Cause:** the engine's jump ends (`jumpphase = NotJumping`) while the body still hangs 21 units over the floor, where it waited through the landing animation; the next frame drops it onto the floor (`onfirmground` then true). Found with `view trace 200` (TESTING.md).
 **Do:** treat a jump as lasting until the body is on firm ground (at most 0.5 s more), as `ArxGame::updateFirstPersonCamera` does; never take `player.jumping` as "the body is down".
+
+## 2026-10-13 - A file under data/core is in the repository but the game says "not found"
+**Symptom:** `[W] VRArms: [vr] arms: vr/arms/Hand_Glove_low_R.gltf not found` (#385.3), while the file is in `data/core/vr/arms/` and the build's data dirs point at `data/core`; the host tests that load the same file pass.
+**Cause:** two rules of the resource system. `src/io/resource/ResourceSetup.cpp` mounts only a fixed list of top-level folders of each data dir (`editor`, `game`, `graph`, `localisation`, `misc`, `sfx`, `speech`, and now `vr`), so a new folder is invisible until it is added there; and every resource name is lower case (`PakReader::addFiles`), so `vr/arms/Hand_Glove_low_R.gltf` must be asked for as `vr/arms/hand_glove_low_r.gltf`. Host tests read data/core straight from the source tree and see neither rule.
+**Do:** a new folder under data/core goes into that list in the same change; ask for resources in lower case; prove an asset in a game run (a sequence that asserts the loaded state), not only in a host test.
+
+## 2026-10-13 - A test or source file fails to compile with C2059 "syntax error: 'const'" on an innocent name
+**Symptom:** `tests/vr/ArmMeshTest.cpp(48): error C2059: syntax error: 'const'` on a helper `void near(...)`, or C2628 "'vr::SleeveParams' followed by 'char'" on a variable named `small` (#385.1).
+**Cause:** `arx` and `arxtest` are unity builds (`ub_arxtest.cpp`): `windows.h`, included earlier in the same unit by FilesystemWindows.cpp, Process.cpp or WindowsUtils.cpp, defines the macros `near` and `far` (empty) and `small` (`char`). Names in anonymous namespaces also collide across the files of one unit.
+**Do:** never name anything `near`, `far` or `small`; give file-scope helpers unique names (a file prefix).
+## 2026-10-13 - In the playground a hand's press lands on the panel, not on the lever it aims at
+**Symptom:** `--vr-sim` in the playground (`-Playground`): the reticle is on a lever (`vr.reticle.right.entity`), grip + trigger fires `act_right`, but nothing is pulled; `vr.pointer.click hand=right` is logged instead, `vr.panel.menu` is `inventory`. `ui inventory close` closes the bag and the next frame opens it again (#38).
+**Cause:** a level started with `--loadlevel` stays in the engine's cursor mode (no free look), and in cursor mode the engine keeps the inventory open: the floating panel hangs in front of the hands and takes their rays. Opening a chest or a body leaves free look again (the original's own rule).
+**Do:** `freelook on; ui inventory close` before the hands act in the world, and again after a drag from a chest or a body (`playground-hands.xrs`). For the player this goes with the first-run flow (#394 / #405).
+
+## 2026-10-13 - `vr-point` hits the wall behind a lever, or the hover passes and is gone again
+**Symptom:** `vr-point right entity lever_9002`: the ray ends on the wall 5 units behind the lever (`vr.reticle.right.point` z 8400), `under` stays `none`; or `@until vr.reticle.right.entity eq lever_9002` passes and the act a few frames later finds nothing (#38).
+**Cause:** two things. A lever on a wall is thin: the middle of its box is air, and a pulled lever's handle lies against the wall. And turning a simulated hand moves the start of its aim ray (it turns about the grip): the aim is computed from where the ray started before the turn, a few degrees off for a small target - the hover can catch the lever on the way and keep it for its 150 ms hold.
+**Do:** `vr-point <hand> face <id>` (a face of the mesh the hand's ray reaches without the level in the way), given twice a few frames apart; wait for `under` (this frame) before `entity` (the hover).
+
+## 2026-10-13 - An item dragged from a chest onto the bag falls back into the chest or is thrown
+**Symptom:** `vr-point right container`, trigger down, `vr-point right <bag pixel>`, trigger up: `item.toinventory container=chest_...` (back in the chest) or `item.drop how=throw`, never into the bag (#38).
+**Cause:** the engine puts a dragged item where its **icon** is - the cursor plus the offset the icon had when the drag started (`g_draggedIconOffset`). A simulated hand jumps: the pointer holds the press pixel inside its click dead zone (16 px), so the drag starts only on the jump, with the cursor already at the bag and an offset of hundreds of pixels; and after a short move the icon still hangs beside the cursor, left of the slot it aims at.
+**Do:** move the hand past the dead zone first (`vr-point right container 30 0`, a few frames), then `vr-point right bag` - it aims so that the icon covers the first free slot. A real hand moves gradually and places the icon by eye.
+
+## 2026-10-13 - The character creation shows only the hero's portrait on black
+**Symptom:** after a development launch (`--dev-launch`) or a key during the publisher logos, New game opens a character creation with only the portrait; the background and every widget are missing, for good (no fade). After the level 10 intro (a player's launch, `--skiplogo`) the same screen is fine (#399).
+**Cause:** the portrait (`Book.cpp`) prepares its own camera and then restores the one prepared before it with `RestorePreparedCamera()`, viewport included. Without a level ever loaded no camera was prepared: the restored viewport is the default `0 x 0`, and everything drawn after the first portrait - the rest of that frame, the background of the next - lands in it.
+**Do:** a 2D screen that can come before any level sets its own viewport (`GRenderer->SetViewport(g_size)`, as the logos and `CharacterCreation::render()` do) and sets it again after drawing anything that restores a camera. Check such a screen from a development launch, not only after the intro.
+
+## 2026-10-13 - In VR the desktop mouse does nothing
+**Symptom:** in a VR session (the headset or `--vr-sim`) moving, clicking or scrolling the mouse over the game window changes nothing - the menu under the cursor is not clicked, the camera does not turn.
+**Cause:** by design (#338, the owner): in VR the window only mirrors the headset; `Input::update()` drops the real mouse's movement, buttons and wheel while `vr::isEnabled()` (`desktopMouse` in `status.json`, `[input] desktop mouse:` lines in `arx.log`). Since #487 the keyboard is dropped too (below).
+**Do:** in VR aim the hands (`vr-point`, the controllers); test the real mouse flat (`--no-vr`) with the channel's `desktop-mouse`.
+
+## 2026-10-14 - `@key` fails in CI with "process has no window"
+**Symptom:** a sequence that passes locally fails in CI at its first `@key`: `@key: process <pid> has no window` (#399, PR #458).
+**Cause:** `@key` posts a keyboard message to the game's main window. The CI runner is a service in session 0, with no desktop, so the game process has no window handle to post to.
+**Do:** in a sequence CI runs, press keys through the test channel: `desktop-key <name> down`, a few frames, `desktop-key <name> up` (SDL's event queue, like `desktop-mouse`).
+
+## 2026-10-16 - A test run ignores my mouse and keyboard, and in VR the keyboard does nothing
+**Symptom:** clicking, scrolling or typing into the window of a test run (`--test-dir`: the smoke test, `xrs-run.ps1`, CI, `run-windows.ps1 -TestChannel`) changes nothing, the window cannot be activated and sits in the bottom right corner; an `.xrs` `@key` does nothing any more. In VR (headset or `--vr-sim`) no key of the desktop keyboard - not even the channel's `desktop-key` - reaches the game (#487).
+**Cause:** by design (#487, the owner): a test run must not take the focus or the input of whoever works at the PC. The game shows the window without activation (`WS_EX_NOACTIVATE`) in the corner and `SDL2InputBackend` drops every real mouse and keyboard event; only the events the channel injects (`desktop-mouse`, `desktop-key`, marked as injected) and the simulated controllers pass (`realInput` in `status.json`, `[input] real ... dropped (test run)` in `arx.log`). `@key` posts a window message - real input. In VR the window only mirrors the headset: the keyboard is dropped whatever its origin (`desktopKeyboard`), like the mouse (#338).
+**Do:** drive a test run through the channel (`desktop-key`, `desktop-mouse`, `vr-sim`, `vr-point`); test the keyboard flat (`--no-vr`) with `desktop-key`. To try something by hand, launch without the channel (`run-windows.ps1` without `-TestChannel`).

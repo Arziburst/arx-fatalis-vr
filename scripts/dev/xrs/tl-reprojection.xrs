@@ -33,6 +33,9 @@ pick blank_form_0001
 # no more of the eyes than before - additive light has no coverage. The player's own body (#36) must be out of
 # view for this part - its arms follow the controllers and move between shots (max 121 on one channel looking
 # down, 86 looking level with the hands in front): the head looks level and the hands hang down by the sides
+# The flash flies off the book icon, which is not drawn in VR since #469: the icon is kept for this part (vr_hud_keep),
+# so the source of the 2D particles is the same as before
+vr-hud keep book
 vr-sim head rot 0 0 0; vr-sim hand left pos -0.25 -0.9 0.1; vr-sim hand right pos 0.25 -0.9 0.1
 @frames 20
 @shot fx-floor
@@ -49,4 +52,5 @@ specialfx newspell 1                           # the script command reads one wo
 @diff fx-before fx-after max lt 64 right-layer
 @remember covered vr.sim.shots.fx-before.quad.covered
 @assert vr.sim.shots.fx-after.quad.covered le {covered+50}
+vr-hud keep none
 @assert errors eq 0

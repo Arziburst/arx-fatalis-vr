@@ -2,7 +2,8 @@
 # samples status.json in the windows named below and judges the head numbers.
 # Calibrated standing at the start; the head sits down (40 cm lower), moves and turns; the left stick
 # click is held for a second (a long press: recenter = calibrate seated); the head goes back to where it
-# started. Frames at 90 Hz.
+# started. Frames at 90 Hz. Recenter has no button by default since D-042 (#377): the check binds the long press
+# first ('vr-input bind recenter left.stick_click:long').
 
 timeline gameplay
 

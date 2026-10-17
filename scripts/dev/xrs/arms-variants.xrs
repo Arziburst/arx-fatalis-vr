@@ -1,0 +1,100 @@
+# The four arm variants (#385.8): vr_arms_model = custom | forearm | hands | arx, switched live by the channel
+# command `arms <model>`. status.json: vr.body.armsModel, vr.body.arxArmsHidden (Arx arm faces not drawn),
+# and the PROPOSED names (385.8 implements them):
+#   vr.body.<hand>.custom.sleeveDrawn     custom true, forearm true, hands false, arx false
+#   vr.body.<hand>.custom.upperArmDrawn   custom true, forearm/hands/arx false
+#   vr.body.<hand>.custom.gloveDrawn      custom/forearm/hands true, arx false
+#   vr.body.arxArmsHidden                 custom/forearm/hands true, arx false
+#   vr.body.<hand>.custom.forearmLength   forearm: gt 5 and lt 25 units (shorter than the full forearm)
+# Needs the first-person save:
+#   .\scripts\dev\xrs-run.ps1 arms-variants
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence arms-variants -Save mvp-new-game
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.body.bound eq true
+@assert vr.body.active eq true
+
+vr-sim head rot 0 -40 0
+vr-sim hand left off
+vr-sim hand right pos 0.15 -0.3 -0.4
+vr-sim hand right rot 0 0 0
+@frames 15
+@assert vr.body.right.posed eq true
+
+# 0. The default is classic (the owner's pick, #466); custom, forearm and hands are test-only until #486 removes them
+@assert vr.body.armsModel eq classic
+arms custom
+@frames 5
+@assert vr.body.armsModel eq custom
+@assert vr.body.arxArmsHidden eq true
+@assert vr.body.right.custom.gloveDrawn eq true
+@assert vr.body.right.custom.sleeveDrawn eq true
+@assert vr.body.right.custom.upperArmDrawn eq true
+@remember fullLen vr.body.right.custom.forearmLength
+@shot variant-custom
+
+# 1. forearm: glove + short forearm ending in a cuff, no upper arm
+arms forearm
+@frames 5
+@assert vr.body.armsModel eq forearm
+@assert vr.body.arxArmsHidden eq true
+@assert vr.body.right.posed eq true
+@assert vr.body.right.custom.gloveDrawn eq true
+@assert vr.body.right.custom.sleeveDrawn eq true
+@assert vr.body.right.custom.upperArmDrawn eq false
+@assert vr.body.right.custom.forearmLength gt 5
+@assert vr.body.right.custom.forearmLength lt 25
+@assert vr.body.right.custom.forearmLength lt {fullLen}
+@shot variant-forearm
+
+# 2. hands: the glove only, nothing of the arm
+arms hands
+@frames 5
+@assert vr.body.armsModel eq hands
+@assert vr.body.arxArmsHidden eq true
+@assert vr.body.right.posed eq true
+@assert vr.body.right.custom.gloveDrawn eq true
+@assert vr.body.right.custom.sleeveDrawn eq false
+@assert vr.body.right.custom.upperArmDrawn eq false
+@shot variant-hands
+
+# 3. arx: the Arx arm faces are drawn, no custom parts
+arms arx
+@frames 5
+@assert vr.body.armsModel eq arx
+@assert vr.body.arxArmsHidden eq false
+@assert vr.body.right.posed eq true
+@assert vr.body.right.custom.gloveDrawn eq false
+@assert vr.body.right.custom.sleeveDrawn eq false
+@assert vr.body.right.custom.upperArmDrawn eq false
+@shot variant-arx
+
+# 4. back to custom
+arms custom
+@frames 5
+@assert vr.body.armsModel eq custom
+@assert vr.body.arxArmsHidden eq true
+@assert vr.body.right.custom.gloveDrawn eq true
+@assert vr.body.right.custom.sleeveDrawn eq true
+@assert vr.body.right.custom.upperArmDrawn eq true
+
+# 5. A direct hop between non-neighbours (the hide mask follows each switch)
+arms hands
+@frames 3
+@assert vr.body.armsModel eq hands
+@assert vr.body.right.custom.sleeveDrawn eq false
+arms forearm
+@frames 3
+@assert vr.body.armsModel eq forearm
+@assert vr.body.right.custom.sleeveDrawn eq true
+@assert vr.body.right.custom.upperArmDrawn eq false
+arms arx
+@frames 3
+@assert vr.body.arxArmsHidden eq false
+
+@assert errors eq 0

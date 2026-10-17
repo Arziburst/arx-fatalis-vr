@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: In VR the camera stands on the body's real travel, never on the animated model; death is a still ghost
+## D-053: In VR the camera stands on the body's real travel, never on the animated model; death is a still ghost
 
 - **Date:** 2026-10-13
 - **Status:** Accepted; the variants' defaults are proposals until the owner's headset verdict (#416)
@@ -53,11 +53,395 @@ the view. The view is computed from the body's physics, so a new animation canno
 
 ---
 
+## D-052: The desktop window takes no input in VR, and a test run's window none at all
+
+- **Date:** 2026-10-16
+- **Status:** Accepted
+- **Decided by:** project owner (#487, 2026-10-16: test runs steal his focus, mouse and keyboard; in VR "the desktop
+  window is only the mirror of the eye" - this answers #338's open keyboard question)
+- **Amends:** #338 (PR #458: the desktop mouse dropped in VR)
+
+### Decision
+- **VR:** while a VR session runs, neither the desktop mouse (#338) nor the desktop keyboard drives the game - real or
+  injected by the channel (`desktopMouse`, `desktopKeyboard` in `status.json`). Only the headset and the controllers do.
+  Flat mode keeps both as in the original.
+- **Test runs** (`--test-dir`): the game itself shows its window without activation, never lets it be activated
+  (`WS_EX_NOACTIVATE`), puts it in the bottom right corner of the main display, never warps the real cursor, and drops
+  every real mouse and keyboard event (`realInput`). The channel's injected events (`desktop-mouse`, `desktop-key`) are
+  marked as injected in `SDL2InputBackend` and pass; `real-input` posts window messages - the real devices' path - to
+  prove the drop. The owner's own launches (no `--test-dir`) are unchanged.
+
+### Why
+- The owner works at the same PC while workers and leads run tests: a test window popping up in the middle of the
+  screen took his focus, and his mouse and typing reached the game and could break a running test.
+- In VR the window is a mirror: a key or a mouse pressed by someone else at the desk must not act in the player's game.
+
+### Trade-offs accepted
+- A test run cannot be poked by hand any more; launch without the channel for that (`run-windows.ps1`).
+- The window is placed in a corner, not minimised: a minimised window renders no frames (`ArxGame::run`).
+- The proof posts window messages instead of `SendInput`: `SendInput` reaches only the window with the focus, which a
+  test run never has, and does not exist in the CI runner's session. A real keyboard or mouse reaches the game the same
+  way: Windows turns its input into `WM_KEYDOWN` / `WM_MOUSEMOVE` / `WM_LBUTTONDOWN` / `WM_MOUSEWHEEL` messages for the
+  game window, and SDL's window procedure (WndProc) turns those into SDL events. A posted message enters that same
+  WndProc path, so it is what the game sees from a real device.
+
+### Consequences
+- `status.json`: `realInput`, `desktopKeyboard`, `window.activation` / `placement` / `x` / `y`; the channel's
+  `real-input`; `real-input.xrs`, `real-input-flat.xrs`; the smoke test fails a run whose window holds the foreground.
+  `@key` is now real input, dropped by a test run. [TESTING.md](TESTING.md), [TRAPS.md](TRAPS.md).
+
+---
+
+## D-051: The classic Arx arm - one elbow, the forearm one rigid piece, re-skinned by ring in VR; the glove optional at its wrist
+
+- **Date:** 2026-10-14
+- **Status:** Accepted; the owner's pick (2026-10-16, headset test of #472: "the bend is gone; the arms satisfy me fully")
+  - classic is the default and the only model a player chooses (D-047). Its hand defaults to the Arx hand; the glove is
+  the other `vr_classic_hand`
+- **Decided by:** project owner (#466: the Arx arm one solid piece up to the elbow, a fifth model behind
+  `vr_arms_model`; asked whether the classic arm could wear the five-finger glove); #466.1 and #466.2 for the formulation
+- **Amends:** D-047 (a fifth model, `classic`, the row it reserved)
+
+### Decision
+`vr_arms_model = classic` draws the player model's own arm with **one elbow**: in VR only, after the engine's transform,
+the arm's vertices are re-skinned by the ring of the arm they lie in, not by their group (`src/vr/ArxArmFix.*`,
+`skinPlayerArms`) - the rings before the elbow ring on the upper arm, the elbow ring up to the wrist ring on the forearm,
+the wrist ring and the hand on the hand. The arm folds in one band at the elbow and the forearm is rigid. It is a row of
+the model table (`arxArms` true: the logical arm stays on the drawn, pushed shoulder), its first: the default.
+
+Its hand is a second switch, `vr_classic_hand` = `arx` (default) | `glove` (`arms classic-hand <hand>`): with `glove`
+the Arx hand faces (every corner on the classic hand: the wrist ring and past it) are left out and the custom arms'
+five-finger glove (#385.7: joints, controls, the hilt pose) is drawn with its cuff on the Arx wrist joint, turned by the
+same grip frame as the Arx hand (D-032, research F-281); no sleeve - the Arx forearm ends in the glove's cuff.
+
+### Why
+- **The measured cause** of the second elbow (TRAPS.md 2026-10-14, `human_base`, both arms): the forearm group holds
+  only the forearm's first third (11 vertices, 2.5 .. 11.3 units past the elbow of 30.5); the other two thirds are in
+  the wrist group, so every wrist bend and the wrist band's share of the roll fold the forearm in its middle; 3 faces
+  join a wrist vertex straight to the upper arm, and the elbow ring mixes both groups. The research's flat-ring (H1) and
+  stray-face (H2 alone) hypotheses were not it. Re-skinning by ring removes the cause without new art.
+- The owner keeps the Arx look as an option beside the own arms (D-047) and asked for the five fingers on
+  it; the glove already exists with its finger sources, so it is an option, not new work.
+
+### Trade-offs accepted
+- The re-skin is VR only: flat mode and the inventory book keep the engine's arm (and its second elbow).
+- The glove at the Arx wrist follows the Arx hand's frame, not its own curl's turn onto the handle (#385.7): measured in
+  the sim's idle pose, the curl's turn tilts the glove some 30 degrees off the Arx hand and leaves the end of the Arx
+  forearm open beside it, while the Arx frame lays its palm along the Arx palm (9.6 vs 8.0 units below the wrist, the
+  same direction) - at the price of the closed fingers' line lying 31 degrees off the handle (`custom.curlAngle`, 0 on
+  the own arms). The owner judges the seam and the grip in the headset.
+
+### Consequences
+- status.json `vr.body.<hand>.classic.{skin, drawn, creases, creaseThreshold, creaseBands, maxBend, elbowBend,
+  forearmTwistSpread}` (#466.1) and `.hand`, `.arxHandHidden` (#466.2); `arms-classic.xrs`, `arms-classic-glove.xrs`.
+  The hand's switch: [TESTING.md](TESTING.md).
+
+---
+
+## D-047: The VR arms are the classic Arx arm (D-051) - picked by the owner from five arm models compared live in the headset
+
+- **Date:** 2026-10-14 (the comparison), 2026-10-16 (the pick)
+- **Status:** Accepted: **classic** (D-051) is the default and the only model a player chooses; the other models are
+  kept for their tests only until they are deleted (#486)
+- **Decided by:** project owner (2026-10-13, via the coordinator: build the variants and switch them live; 2026-10-16,
+  headset test of #472: "keep this variant; you can delete the others" - of custom and forearm earlier: "delete, never
+  come back to them"; the library hand of #467 was dropped unmerged); #385.8 for the formulation
+- **Amends:** D-009 (full body with IK arms: the VR arm is the classic Arx arm, not a full own arm) and D-049 (the own
+  arms are no longer drawn for a player)
+
+### Decision
+cfg.ini `vr_arms_model` = `classic` (the default; any other value a build saved before reads as classic), status.json
+`vr.body.armsModel`. The playground's arms lever that cycled the models is gone. Compared before the pick, each a row of
+the model table in `src/vr/VRArms.cpp` and still reachable through the test channel's `arms <model>`:
+- **custom** - the glove and the whole sleeve, shoulder to wrist (D-049, D-048);
+- **forearm** - the glove and a short forearm: the sleeve from the glove's wrist along the forearm of the custom arm's
+  own solve, cut at `ForearmKept` = 0.6 of the forearm's length and closed there by a cuff; no upper arm, no elbow;
+- **hands** - the glove alone, its wrist opening closed by a cuff (Half-Life: Alyx);
+- **arx** - the player model's own arms, as the engine skins them (with the second elbow D-051 fixes);
+- **library** - the WebXR generic hand (#467, PR #470 closed unmerged).
+The forearm and hands models pose the same custom arm and draw less of it. Flat mode and the inventory book keep the
+engine's Arx arms.
+
+### Why
+- No arm solver matches the player's real elbow (15-22 cm off in motion, research F-461); the owner found the full
+  custom arm a rubber tube whose elbow never matches.
+- Players ignore missing limbs more easily than wrong ones (F-305); Half-Life: Alyx shows gloved hands only (F-303).
+  A forearm ending before the elbow keeps some arm and hides the wrong elbow.
+- The owner picked by feel in the headset: the classic arm keeps the game's look and has one elbow (D-051), where the
+  own arms' elbows never matched his.
+
+### Trade-offs accepted
+- Ultraleap's forearm (Apache-2.0, F-467) is FBX and needs Blender to convert; the forearm is the #430 sleeve cut short
+  instead. A modelled forearm or full arms v2 come later.
+- Until #486 removes them, the unused models and their tests stay in the code (the custom solve shares
+  `poseCustomArm` with the glove the classic arm can wear).
+
+### Consequences
+- status.json `vr.body.armsModel` (`classic`); the test-only models' `vr.body.<hand>.custom.*`, checked by
+  `arms-variants.xrs` and `arms-model.xrs` until #486. [TESTING.md](TESTING.md).
+
+---
+
+## D-048: The custom arm solves its own chain - fitted to the player's reach, a small stretch, the elbow down with a weapon
+
+- **Date:** 2026-10-13
+- **Status:** Superseded for the player by D-047 (2026-10-16: the classic Arx arm, D-051): the custom arm's own solve is test-only until #486
+- **Decided by:** project owner (2026-10-13: "the arm's own length must fit first", "arm stretch yes", "elbow drop yes"); #385.6
+- **Builds on:** D-049 (own arms), the roll-aware IK (D-050 of #313)
+
+### Decision
+- The custom arm (D-049) is posed by **its own** roll-aware solve, from the logical Arx shoulder to the glove's
+  wrist, with **its own segment lengths**; the logical Arx arm keeps its own solve for the weapon, reticle, wrist bars
+  and melee.
+- **Length fit:** first from the character height setting (#260; Drillis and Contini's segment ratios, the Arx upper
+  arm to forearm ratio), then from the **measured reach** - a running maximum of the shoulder-to-wrist distance at
+  full extension, one outlier ignored, used once enough samples are in (`src/vr/ArmFit.h`). The drawn lengths ease to
+  a new fit over half a second.
+- **Stretch instead of the shoulder slide:** past its fitted length the custom arm stretches by at most
+  `vr_arm_max_stretch` (default 0.10, cfg.ini) to keep the hand on the controller; past that the hand stops short.
+  The shoulder no longer slides for the custom arm.
+- **Elbow drop with a weapon** (VHVR's rule, F-300): a hand holding a weapon, on either hand, turns its elbow toward
+  its lowest position about the shoulder-target line by `vr_arm_weapon_elbow_drop` (default 0.75, cfg.ini).
+- **Fallback:** a glove that cannot be loaded logs an error (status `vr.body.customArms`) and the arm stays the Arx arm.
+
+### Why
+- A fixed-length arm on a real player either falls short or folds; a too-long or rubbery arm was ruled out by the owner.
+- Stretch kept the best embodiment in a user study (F-307, CHI'24), where a sliding shoulder moves the body.
+- A low elbow reads as holding a weight; VHVR does the same.
+
+### Trade-offs accepted
+- The first extension refits the arm once (eased); a long reach held for a while lengthens the fit (for a player taller
+  than the height setting).
+- Two solves per arm per frame (logical and custom), plus one more while a weapon is held; cheap.
+
+### Consequences
+- status.json `vr.body.<hand>.custom.*` shows the fit (`upperLength`, `forearmLength`, `fitSource`), `stretch`,
+  `error` and `elbowDrop`; `arm-fit.xrs` checks them.
+
+---
+
+## D-049: Own VR arms behind `vr_arms_model` — the Godot XR Tools glove hand (CC0), cgltf and CPU skinning, the logical Arx arm kept
+
+- **Date:** 2026-10-13
+- **Status:** Superseded for the player by D-047 (2026-10-16: the owner kept the classic Arx arm, D-051); the glove stays as
+  the classic arm's optional hand (`vr_classic_hand = glove`), the own arms are test-only until #486
+- **Decided by:** project owner (variant B of #385); the worker of #385.5 for the formulation; within D-009 / D-032
+
+### Decision
+The VR body can wear **its own arms** (#385) instead of the Arx arm models:
+- **Variant B:** the hand is the low-poly glove hand of Godot XR Tools (`Hand_Glove_low_L/R.gltf`, CC0, skinned to the 26
+  joints of `XR_EXT_hand_tracking`), plus a generated low-poly sleeve along the arm. The files are read with **cgltf**
+  and skinned **on the CPU** (`src/vr/ArmMesh.h`); the engine's renderer draws the result, no new rendering path.
+- **The logical Arx arm is kept:** the Arx arm skeleton and its IK of D-009 / D-032 still drive the pose; the custom
+  meshes follow its joints, and the Arx arm models are hidden while the custom ones are shown. Reach, shoulder and roll
+  rules do not change.
+- **A switch, not a replacement:** cfg.ini `vr_arms_model` (`custom` | `arx`, default `custom`) and `vr_hand_scale`
+  (default 1.15, range 0.8 - 1.5; the owner found the Arx fingers too small and thin). In the test playground: the
+  `lever_arms` lever and the channel commands `arms custom|arx` / `arms scale <factor>`.
+- **Flat mode and the inventory book always keep the Arx arms.**
+- **Visible full only:** no forearm-only or hands-only modes; no hiding near the eye; **no bracer** — the hand/sleeve
+  seam stays visible for now.
+- The arm's length is fitted to the player's reach with a small stretch (~10%) instead of the shoulder slide, and the
+  elbow drops when the hand holds a weapon (both in #385.6).
+- The textures are a first proposal from CC0 sources only (`data/core/vr/arms/README.md`): a dark worn leather glove and
+  a coarse cloth sleeve.
+
+### Why
+- The Arx hands are too small and thin for VR; arms as good as Valheim VR's need a real hand mesh with fingers that
+  follow the tracked joints.
+- The Godot XR Tools glove is CC0, already rigged to the OpenXR hand joints and light enough to skin on the CPU.
+- Keeping the logical Arx arm means the tuned arm rules stay and there is an easy way back.
+
+### Trade-offs accepted
+- Two arm models to maintain; the book and flat mode still show the Arx one.
+- CPU skinning costs a little per frame; fine for two small meshes.
+- A visible seam between glove and sleeve until the owner picks a look.
+
+### Consequences
+- The owner compares the two in the playground ([TESTING.md](TESTING.md)); the final look (bare or glove, sleeve
+  material, colours) is decided after that. No per-armour sleeve textures for now.
+
+---
+
+## D-050: The VR arms are roll-aware — rotations from the bend plane, the hand's roll shared along the arm (RENIK's rules)
+
+- **Date:** 2026-10-10
+- **Status:** Accepted (the owner's pick of option A1 from research section 16e; the shares are the owner's to tune in the headset)
+- **Decided by:** project owner (A1), the worker of #304 for the formulation; within D-009 / D-032
+
+### Decision
+How the arms of D-032 are rolled (#304, `src/vr/ArmRoll.h`, research row F-212):
+- **Every arm rotation is built from the bend plane, not on top of the animation.** The upper arm and the
+  forearm each get the world rotation that puts the bone on its joints *and* its rest bend reference
+  (the inside of the bend, opposite the elbow) into the plane of the posed arm. Nothing of the engine's
+  animation roll is kept for these two bones; the hand bone takes the controller's orientation as before.
+  The rest bend reference comes from the model's own rest pose — the rest triangle when the rest arm
+  bends, opposite the thumb when it is straight — so there is no calibrated constant.
+- **The hand's roll is measured against the neutral forearm** (the swing-twist split of the hand's
+  rotation relative to that forearm, about the forearm's axis), and **unwrapped past a half turn with
+  RENIK's overflow rule**: near ±180° the roll remembers which side it came from and continues on it
+  (190°, 200° …) until it is `vr_arm_twist_overflow` (45°) beyond the half turn, then flips to the
+  complement. So a slowly turning wrist never makes the arm snap at 180°.
+- **The roll is shared** (RENIK's arm defaults, named constants in `ArmRoll.h`, cfg.ini keys):
+  the elbow swings about the shoulder-target line by `vr_arm_elbow_roll` (⅓) of the roll — the bend plane
+  follows the hand, so a far-rolled hand moves the elbow instead of the mesh; the forearm takes
+  `vr_arm_forearm_twist` (⅔) of what is left against the final bend plane; the upper arm
+  `vr_arm_upper_twist` (½) of the forearm's. The wrist band of faces shows the remainder, the elbow band
+  the difference between the forearm and the upper arm, the shoulder band the upper arm's roll: a
+  controller rolled 90° leaves 15–25° on each band and 180° leaves 20–35° (measured by the `arms-roll`
+  sequence on the simulated headset) — against 90° and 180° on the one wrist band before (the candy
+  wrapper of research section 16a).
+- **The base pole is a relaxed elbow** — down, back and a little outward in the body frame (#36's
+  pole pointed a hanging arm's elbow outward, 50° from where the hand's thumb says the bend is) — and
+  is only swung by the roll. The shares are reported per hand in `status.json` (`handRoll`, `elbowSwing`,
+  `residualRoll`, `forearmRoll`, `upperRoll`, `wristTwist`, `elbowTwist`, `rollOverflow`) and asserted by
+  the `arms-roll` sequence; a change of the overflow side is a `vr.body.roll` game event.
+- **Licence:** the rules are ported from RENIK (V-Sekai/renik, MIT) — `LICENSE.renik` keeps its notice;
+  Final IK (the Unity package VHVR uses) was read to understand VRIK and nothing of it is copied.
+
+### Why
+The owner judged #36's arms "not for the MVP": a rolled controller wrung the forearm into a ribbon and the
+upper arm into a spiral, because the engine skins one bone per vertex and #36 rolled only the hand. The
+research (section 16) found that Valheim VR's arms look right through exactly these rules (VRIK's) plus
+skin weights Arx does not have; A1 ports the rules and leaves the weights to A2 (synthetic twist rings,
+F-213) only if the wrist band still reads as a ribbon in the headset. A pure core with host tests and a
+simulated-headset sequence means the headset answers only "how does it look", not "does it work".
+
+### Rules out
+Keeping the animation's roll on the arm bones; a fixed elbow with the whole roll on the wrist band; a
+separate VR arm rig or mesh (F-216) and hands-only (F-217) for the MVP; shares hard-coded without cfg keys.
+
+---
+
+## D-046: No screen-frame HUD in VR - every element on a VR element or an open question for the owner
+
+- **Date:** 2026-10-14
+- **Status:** Accepted (the owner, #464 / #469); the level-up indication and the homes of the elements without an
+  obvious one are proposals behind switches, for the owner to judge in the headset
+- **Decided by:** the owner (remove the frame and its edge icons in VR entirely; health and mana stay on the wrist;
+  the radial menu reaches the character page, the inventory and the book); the worker for the switches and the proposals
+
+### Decision
+- **In VR no element of the original HUD frame is drawn on the 2D interface**, nor takes a click: the orbs, the
+  level-up, book, bag and purse icons, the active and precast spells, the stealth gauge, the torch, steal, damaged
+  equipment, zone-change and quick-save icons, the memorized runes, the swing charge, the cursor mode's hint and edge
+  arrows, the corner minimap, the info messages and the characters' speech text (`vr/HudFrame.h`). In play nothing of it is on the head-locked quad; the panel is shown only for a real panel
+  (the bag, the book, a container, a note, a menu) and carries only that panel. Flat mode is unchanged.
+- **Each element's VR home** is listed in TESTING.md ([The HUD frame in VR](TESTING.md#the-hud-frame-in-vr-469)):
+  health and mana on the left wrist (#116; the orbs come back only without a posed left arm); the book, the bag and the
+  torch in the radial menu (#376); the level-up as a gold mark on the radial menu's Character item and a gold notice
+  beside the wrist bars for 8 s (`vr_levelup`: `both`, `radial`, `wrist`, `off`). The others have no VR home yet and
+  are listed as owner questions.
+- **Switches:** `vr_hud_frame` brings the whole old frame back in VR (to compare); `vr_hud_keep` keeps single elements
+  on the 2D interface until they have a home.
+
+### Why
+The frame was the monitor's edge. In VR it is a rectangle floating in the view (the head-locked quad, the panel's
+borders around the book and the bag) that clutters the view, and its icons duplicate what the radial menu and the wrist
+already do.
+
+### Rules out
+The flat HUD frame in VR by default; new HUD elements on the 2D interface in VR.
+
+---
+
+## D-045: The radial menus — at the hand, drawn by the engine into a quad layer per hand; each hand's quick slots kept in the save as script variables
+
+- **Date:** 2026-10-13
+- **Status:** Accepted for the technique; the look and the sizes are proposals the owner judges in the headset (#376)
+- **Decided by:** the owner (each hand has its own seven quick slots; the torch lit through the engine's own path, its
+  hand recorded - drawing it in that hand is a separate task), relayed by the coordinator; the worker for the internals
+
+### Decision
+- **Where it hangs.** Holding B places the hand's ring at the hand's grip, pushed 4 cm further from the eyes, facing
+  them, upright, fixed in the OpenXR LOCAL space - the room - until B is let go. Stick walking and turning move the
+  world, not LOCAL, so the ring stays with the player and in reach; the hand moving selects. Both rings can be open.
+- **Selection** (`vr/RadialMenu.h`, host test `RadialMenuTest`, meters in the ring's plane): the middle (4 cm) selects
+  nothing; outside it, the segment in the hand's direction, kept 6° past its edge; the hand above the ring's top
+  edge (12.5 cm) opens the half-ring - 9 items left to right over 180°: game menu, character, spells, map, quests,
+  quick save, quick load, recenter, cancel spell - which closes when the hand comes back inside the ring (10 cm) or
+  drops below its middle. Released over nothing, nothing runs.
+- **Drawing.** Each open menu is drawn by the engine's own 2D drawing (filled sectors, line icons, the game's fonts and
+  item icons) into a 512 × 512 swapchain of its hand - made with the session: SteamVR refuses one made in a frame
+  while another image is acquired (TRAPS.md) - and submitted as a quad layer 0.46 m wide on top of every other
+  layer - never hidden by the world or the hand, the same in both eyes. The proposed look (after the owner's
+  reference): dark see-through segments, the one under the hand lit amber with an arc outside it and its name in a
+  dark disc in the middle, white line icons, a faint arc above the ring saying the half-ring is there, a dot where the
+  hand is. Names are the game's own strings where it has them (its key-binding names, item names), so they follow
+  its language; "Game menu" and "Recenter" have none and are English. The desktop mirror (#21) does not show the
+  menus yet: its overlays are fixed images, a menu's image changes every frame.
+- **Running the items.** The engine's own paths: the inventory, quick save / load and cancel spell as their keys pressed
+  for one update; the game menu as Escape (an open book or note is closed first, so it always opens the menu); the
+  book's pages as their keys do - the book opens on the page or turns to it, and the same item closes the book it
+  shows (like the inventory item, what an item opened it closes: the owner's headset run); recenter as a new head reference (`reason=radial`). A quick slot uses an item of
+  its kind from the bag as the item's own use does (a potion is drunk, food eaten, a torch lit); a lit torch of the
+  kind is put out instead. Time is not paused.
+- **Quick slots.** Each hand has 7, holding an item **kind** (`potion_life`), so the next one of the kind refills the
+  slot. An item dragged out of the bag and released (B) onto a slot fills it; the item goes back into the bag and the
+  held trigger is kept up for the engine until let go, so it picks nothing up again. The slots are the global script
+  text variables `$vr_quickslots_left` / `$vr_quickslots_right` (`potion_life|torch|||||`): the save keeps global
+  variables already, so no save format changes, and old saves load with empty slots.
+- **The torch's hand.** The torch lit from a hand's slot is recorded as that hand's (`vr.radial.torchHand`, a
+  `vr.radial.torch` event); the engine's torch is a light at the player and no held model, so drawing it in that hand
+  is a separate task.
+
+### Why
+A layer per hand keeps the menu readable over any scene and lets the engine draw it with what it already has (text in
+the game's language, item icons) instead of a 3D text renderer. Kinds in script variables survive save and load with
+no change to the save format the original game shares. Running the items through the engine's own key paths keeps
+their rules (no quick save while the controls are blocked, the inventory's own toggle).
+
+### Rules out
+A head-locked or panel menu; items running on the press of B; slots that hold one particular item; a save format
+change for the slots.
+
+---
+
+## D-044: The player's launch is the original start; logos, the intro and cinematics play on a screen fixed in the room
+
+- **Date:** 2026-10-13
+- **Status:** Proposed - the screen's distance and size are the worker's proposal for the owner to judge in the headset (#394)
+- **Decided by:** the coordinator (the original flow, player vs. development launch, the skip buttons A / B / triggers);
+  the screen's numbers are a proposal (D-017: the owner decides how it looks)
+
+### Decision
+- **A plain `arx.exe` is the player's launch, the original game's start**: the FISHTANK and ARKANE logos, then the
+  **intro** - level 10, a scripted scene around the `introduction.cin` cinematic, which ends in the main menu by itself -
+  then the main menu; New game starts in the prison (area 1). Every `.cin` cinematic of the game plays. The desktop
+  shortcut, the Steam shortcut, the SteamVR library entry and the tester zip launch that way. **Development and test
+  launches add `--dev-launch`** (the scripts do it themselves; `-Player` / `@player` opt out): no logos, no intro, no
+  cinematics, as before (#124); `--intro` / `--cinematics` bring them back.
+- **In VR the logos, the intro and the cinematics play on a screen fixed in the room**, never on the head-locked quad and
+  never per eye: the intro's scripted 3D scene is drawn flat onto the screen like a film, and its scripted camera does not
+  take the head. The screen is placed when one starts where the player looks (yaw only) and stays put while the head
+  moves, like the menu panel (#49). **Proposal:** the screen's centre **2.5 m ahead at eye height**, **2.6 m wide**
+  (about 55 degrees of the view - a cinema seat in the middle rows; the height follows the picture, about 1.95 m at 4:3),
+  not tilted. A logo shows as the logo's own picture on that screen; the rest of the screen stays clear. One place to
+  change them: `ScreenDistance` / `ScreenDrop` / `ScreenWidth` in `src/vr/UIPanel.h`.
+- **Skip:** A, B or the trigger of either hand skips what is on screen: a logo (the next part follows), **the whole
+  intro** (straight to the main menu; a playing `introduction.cin` ends through `cinematicEnd()`), any other cinematic
+  (through `cinematicEnd()`, as Escape does: the scripts get `cine_end`). Only while one of them plays; the press is
+  kept from the game until it is released, so it never clicks in the menu, opens a radial menu or jumps. In flat mode
+  the keys work as in the original (a key during the logos goes to the main menu, Escape ends a cinematic).
+
+### Why
+- A picture glued to the face (the head-locked quad) is uncomfortable and reads as broken in VR; a screen at a fixed
+  place in the room is how VR players watch flat video. Far enough for the eyes to rest (2.5 m), big enough to fill the
+  centre of the view without turning the head.
+- Players must see the game's real start; developers and the test runs must not wait through it.
+
+### Rules out
+- Logos and cinematics on the head-locked quad in VR; a plain `arx.exe` that skips the logos or the cinematics.
+
+---
+
 ## D-042: Control scheme v2 — two equal hands: a casting stance and a radial menu per hand, dual wielding
 
 - **Date:** 2026-10-13
 - **Status:** Accepted; replaces D-019's button layout and D-040's stance binding and cast rule. Implemented by #375 ("Control scheme v2",
-  #376–#381); each part is judged in the headset in the test playground
+  #376–#381); each part is judged in the headset in the test playground. The radial menu and the A / B buttons were
+  changed by the owner on 2026-10-14 (one ring on the right B, 3 + 3 slots, the map on the left B, the bag on the left A):
+  see "The owner's layout" at the end
 - **Decided by:** project owner (the scheme, by a design discussion with the coordinator, 2026-10-13); the coordinator
   for the defaults the owner accepted (jump threshold, eight radial segments, the quick-slot rules)
 
@@ -120,6 +504,50 @@ gives a clear moment to cast without a pause or an extra gesture.
 - PR #310 (runes in the air, #44) and the haptics PR #264 wait until this scheme lands; #310 is reviewed against it.
 - Issues #324 (full rebinding) and #325 (radial menu) are folded into the epic; the remapping screen (D-039) keeps
   working on the new actions.
+- **The defaults as built (#377, the worker's calls the coordinator delegated; the owner judges them in the headset):**
+  grip + trigger on an **item uses it** (the original's right click: eaten, drunk, equipped) - the table's "use", and
+  the stash chord is dropped; the stash event stays bindable. Until each hand has its stance (#378) the one stance is
+  the **right A** (the owner, the headset test of #456; the left A is free); until a weapon per hand (#380) the
+  **right** stick click draws / sheathes the right hand's weapon, the left stick click is free; the game starts with the weapon **drawn** (as the hand held
+  it before). The Touch's **left menu button is free** like the rest (the owner, #456: the Touch is the Index, the
+  game menu is in the radial menu and on B's game menu key; first built with the game menu on it). "The game
+  menu must not break": a B press that **cannot open a radial menu** - in any menu (the game menu, the character
+  creation, the credits: the Index has no other Escape), or in the game with the head or the hand not tracked - is
+  the **game menu key** (it opens the game menu or goes back); not a hold fallback.
+  The trigger's double click no longer acts on doors, levers, chests or NPCs while the hands are the mouse.
+- **Amendments by the owner (headset test of #456, 2026-10-14):** B **released over nothing** while the book, the
+  bag, a container or a note is open **closes it** (instead of "over nothing nothing runs"); the radial menu opens over
+  them, and its half-ring switches the book's pages. The casting stance's press (A) **first closes everything open** -
+  the radial menus, the book, the bag, a container, a note; not the game menu - then the stance starts. In VR the book
+  no longer switches the game to the engine's cursor mode (it kept the bag open with the book and stayed after it
+  closed), and a click on the panel never picks the world behind it. Next, not in #456: the grip alone as use /
+  interact (the chord goes); the book as a depth-tested panel the hands cover; the runes recognised from the hands' strokes (#44).
+  Casting with a weapon in the hand: while the stance is held the weapon hand's trigger is the pen - no charge, no
+  strike. **A variant for the owner to pick** (open): where the ring opens - `vr_radial_place = hand` (the default, at
+  the hand) or `gaze_when_off` (before the eyes at the hand's height when the hand is more than `vr_radial_gaze_deg`,
+  45, off the gaze: with a panel open his hand was beside his head and the ring opened out of view).
+- **The owner's layout before the headset test of #456 (2026-10-14), as built - replaces "a radial menu per hand":**
+  the radial menu opens on the **right B only** (`radial_left` is unbound; a player may bind it, it opens the same
+  ring). **One ring of 6 segments**: the right half is the right hand's three quick slots - R1 on top, R2 upper right,
+  R3 lower right - the left half the left hand's: L1 upper left, L2 lower left, L3 at the bottom. The inventory
+  segment is gone. The half-ring over the ring is unchanged ("it's ideal"). A slot acts for **its side's hand**,
+  whichever hand holds the menu: a consumable (potion, food, scroll) is used, a torch lights in that hand; equipment
+  is equipped by the engine's use - armour and clothes as usual, a shield to the shield slot, and a weapon into the
+  slot's hand, which until #380 (a weapon per hand) is always the right one: a weapon from an L slot goes to the right
+  hand, noted in the log (`vr.radial.use ... note=weapon_right_hand_until_380`). Slots are filled by dragging an item
+  onto a segment, as before. The **left B toggles the map** (the book on its map page, the engine's map key: pressed
+  again, closed) - a new `map` event; the **left A toggles the bag** (`inventory`); the right A stays the casting
+  stance. 6 slots for now; a setting for more or fewer comes later. A save made with the first layout (7 slots per
+  hand in `$vr_quickslots_left` / `_right`) keeps each hand's first three; the rest is dropped.
+- **Fixes after the owner's headset run of that layout (2026-10-14), as built:** every slot shows its side's letter,
+  **R or L**, on the plus and on a filled slot (at the icon's upper left; the count stays at its lower right). **The
+  ring and the open bag coexist:** B released over nothing closes the book, a note and a container but **never the
+  bag** - only the left A closes it (or the casting stance's press, which still closes everything). The flow: the
+  left A opens the bag, hold the right B, drag an item out of the bag with the left hand (its trigger press takes the
+  panel's cursor from the hand holding the ring, the owner rule 13g), let B go over a segment - the slot holds it,
+  the ring closes, the bag stays open. A container opens with the engine's bag: B closes the container and leaves
+  that bag open. No game menu key on the left B (the owner: it is the map); the ring opens at the hand
+  (`vr_radial_place = hand` stays the default).
 
 ---
 
@@ -1396,7 +1824,7 @@ The old 2D menus are small, so a pointer stays — but only where there is a men
 ## D-009: Full body in VR — the player model with arms driven by IK, in the MVP
 
 - **Date:** 2026-10-08
-- **Status:** Accepted
+- **Status:** Accepted; amended by D-047 (the arms drawn are a choice of four, the full arm one of them)
 - **Decided by:** project owner
 
 ### Decision

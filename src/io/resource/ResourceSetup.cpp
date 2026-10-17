@@ -111,7 +111,8 @@ bool addDefaultResources(PakReader * reader) {
 		filter.emplace_back("speech/english");
 	}
 	
-	const char * const directories[] = { "editor", "game", "graph", "localisation", "misc", "sfx", "speech" };
+	// vr: the VR arms meshes and textures in data/core/vr (#385)
+	const char * const directories[] = { "editor", "game", "graph", "localisation", "misc", "sfx", "speech", "vr" };
 	const RequiredArchive archives[] = {
 		{ "data", nullptr }, { "loc", nullptr }, { "data2", nullptr }, { "sfx", nullptr }, { "speech", &speechFilter }
 	};

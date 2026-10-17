@@ -29,8 +29,9 @@ view meter report flat-run
 
 # A jump moves the view with the model
 view meter reset
-vr-input tap right.a
+vr-input stick right 0 0.9; vr-input down right.stick_up   # jump: right stick up (D-042, #377)
 @until player.jumping eq true 2s
+vr-input up right.stick_up; vr-input stick right 0 0
 @until player.jumping eq false 5s
 @frames 60
 view meter report flat-jump

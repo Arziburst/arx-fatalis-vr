@@ -126,7 +126,9 @@ public:
 	 * \brief Draw what the mirrored eye sees into the window's back buffer
 	 *
 	 * Call after the frame was submitted and before the buffers are swapped, only for frames that
-	 * carried this frame's mirrored eye (\ref copyEye).
+	 * carried this frame's mirrored eye (\ref copyEye). While a menu without the world is shown (the
+	 * main and pause menu, the character creation, the credits) the window shows the flat frame itself,
+	 * filling it, instead of the eye (#334): the desktop mouse is mapped onto the whole interface.
 	 *
 	 * \param fov            the mirrored eye's field of view for this frame
 	 * \param eyePosition    the mirrored eye's position in the quad's space, for placing the quad
@@ -151,6 +153,8 @@ public:
 private:
 
 	bool prepareTexture(GLuint & texture, Vec2i & size, const Vec2i & wanted);
+	//! The flat frame stretched over the whole window (a menu without the world, #334)
+	void drawInterface(const Vec2i & windowSize, bool blended);
 
 	void stop(const std::string & why);
 
@@ -162,6 +166,7 @@ private:
 	bool m_haveEye = false;   //!< the eye texture holds this frame's mirrored eye
 	bool m_haveFlat = false;  //!< the flat texture holds this frame's flat frame
 	bool m_logged = false;    //!< the geometry of the first mirrored frame was logged
+	bool m_showsInterface = false; //!< the last mirrored frame showed the flat frame filling the window
 
 	GLuint m_eyeTexture = 0;
 	Vec2i m_eyeSize = Vec2i(0);

@@ -8,6 +8,19 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-17 — The playground's aggressive goblin never counts as fighting the player (#465)
+
+**Symptom:** in `melee-damage.xrs` the playground goblin in the aggressive mode (the mode lever: `npcMode`
+`aggressive`), even after a real swing hit it, did not reach `playground.npcFighting` (its fight behaviour
+`BEHAVIOUR_FIGHT` *and* the player as its `targetinfo`) within 15 s - so a VR touch, which reaches only an NPC fighting
+the player, never reached it. The save's goblin (`mvp-goblin-fight`, `melee-swing.xrs`) does reach it after a hit.
+**Cause:** not established - that run had no split fields, so which of the two was missing is unknown. The mode lever
+sends `attack_player` to the game's own goblin class script, which decides when it fights; the instance script only
+refuses `ouch` / `aggression` while peaceful.
+**Do:** to test what only fighting NPCs feel, set the fight up with `playground fight` (the fight behaviour and the
+player as the target, as a fight script sets them) and wait for `playground.npcFighting`; read
+`npcFightBehaviour` / `npcTargetsPlayer` to see which half the goblin lacks on its own.
+
 ## 2026-10-17 — A changed cfg.ini default does not show in a test run (#465)
 
 **Symptom:** after `vr_melee_noswing`'s default changed from `none` to `min` in the code, `melee-damage.xrs` failed at

@@ -107,16 +107,15 @@ human_base_0028.cameraactivate none
 @assert scene.meter.screenFrames eq 0
 
 # T10: the talk after the goblin fight, driven by its real trigger (the owner, 2026-10-17): the guard's death reaches
-# Kultar, the lever is pulled (what lever_0012's ON ACTION sends: its portcullis opened, LEVER_DOWN to Kultar - a console
-# sendevent action to the lever started nothing in a run) - Kultar walks out, camera_0080 shows him (the hero teleported) and the talk follows with
+# Kultar, the lever lever_0012 is pulled (its ON ACTION: the portcullis opened, LEVER_DOWN to Kultar) - Kultar walks out, camera_0080 shows him (the hero teleported) and the talk follows with
 # SPEAK -o / -po lines, no speak -c. First person from the scene's first frame to its end, never the screen
 @wait 2000
 scene meter reset
 @mark
-sendevent custom human_base_0028 "DEAD"
+# The game lowercases its scripts on load (TRAPS.md): a custom event's parameter is compared in lowercase
+sendevent custom human_base_0028 "dead"
 @wait 3000
-sendevent open porticullis_0015 ""
-sendevent custom human_base_0028 "LEVER_DOWN"
+sendevent action lever_0012 ""
 @until scene.kind eq entity 30s
 @assert scene.shown eq first
 @assert scene.dialogue eq true

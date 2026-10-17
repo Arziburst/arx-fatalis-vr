@@ -672,7 +672,10 @@ void writePlaygroundStatus(JsonWriter & json) {
 		const IO_NPCDATA & data = *npc->_npcdata;
 		json.value("npcMode", playgroundNpcAggressive(*npc) ? "aggressive" : "peaceful");
 		json.value("npcAlive", data.lifePool.current > 0.f);
-		json.value("npcFighting", fightsPlayer(*npc)); // what a VR touch may reach (#465)
+		// What a VR touch may reach (#465): both of the fight behaviour and the player as the target
+		json.value("npcFighting", fightsPlayer(*npc));
+		json.value("npcFightBehaviour", (data.behavior & BEHAVIOUR_FIGHT) != 0);
+		json.value("npcTargetsPlayer", npc->targetinfo == EntityHandle_Player);
 		json.value("npcLife", data.lifePool.current);
 		json.value("npcLifeMax", data.lifePool.max);
 		// Back at the place the level put it (revive -i takes it there): within a step, floor plane only
@@ -3335,7 +3338,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "playground") {
-		// playground pull mode|respawn | kill | place <ahead> [<right>] | hit <n>: the test playground's NPC and
+		// playground pull mode|respawn | kill | fight | place <ahead> [<right>] | hit <n>: the test playground's NPC and
 		// levers (#321.2). pull sends the lever what a hand pull sends it (Interface.cpp: SM_ACTION from the player)
 		if(!isPlaygroundArea(g_currentArea) || !entities.player()) {
 			return refuse("playground: needs the playground level (area 30) on screen");
@@ -3358,6 +3361,13 @@ std::string execute(std::string_view line) {
 		}
 		if(what == "kill") {
 			ARX_DAMAGES_ForceDeath(*npc, entities.player());
+			return std::string();
+		}
+		if(what == "fight") {
+			// The NPC fights the player now, as a fight script sets it (behavior -f move_to, settarget player): a
+			// test's set-up for what only fighting NPCs feel - a VR touch (#465)
+			ARX_NPC_Behaviour_Change(npc, BEHAVIOUR_FIGHT | BEHAVIOUR_MOVE_TO, 0);
+			npc->targetinfo = EntityHandle_Player;
 			return std::string();
 		}
 		if(what == "place") {
@@ -3384,7 +3394,7 @@ std::string execute(std::string_view line) {
 			damageNpc(*npc, damage, entities.player(), nullptr, DAMAGE_TYPE_METAL, &npc->pos);
 			return std::string();
 		}
-		return refuse("playground: expected pull, kill, place or hit, got \"" + std::string(what) + "\"");
+		return refuse("playground: expected pull, kill, fight, place or hit, got \"" + std::string(what) + "\"");
 	}
 
 	if(word == "loadlevel") {

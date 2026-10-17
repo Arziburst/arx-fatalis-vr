@@ -47,7 +47,8 @@
  *    shorter than \ref ControlResolver::longPressMs, a chord's leader taps after any hold (D-019:
  *    the grip is a closed hand, "use" when it opens without a trigger, stash with one);
  *  - a chord fires when its second control is pressed while the first is held; both controls are
- *    then consumed until released (no tap, no long press, no single binding of the second);
+ *    then consumed until released (no tap, no long press, no single binding of the second); with the
+ *    hand's chords off (\ref ControlResolver::setChords) the second fires its single binding instead;
  *  - a long press fires once, when the control has been held for \ref ControlResolver::longPressMs;
  *  - the release of a control that leads a chord or has a long press counts only after it stayed up
  *    for \ref ControlResolver::releaseDebounceMs: a flicker is one hold, not a series of taps;
@@ -312,12 +313,18 @@ const Hysteresis GripThreshold = { 0.70f, 0.55f };
  * strapped to the hand, so a light close is the grip and an open hand (the controller hanging on
  * the strap) is none (D-019, owner 2026-10-10). The relaxed closed hand flickered around 0.6 - 0.7
  * in the owner's first headset run of #30, against 0.70 / 0.55: six "use" events nobody made
- * (TRAPS.md); a low press and a wide gap keep a closed hand closed.
+ * (TRAPS.md); a wide gap keeps a closed hand closed. A firm hold of the controller rests at 0.52 - 0.59
+ * (the owner's headset test of #460): against 0.50 every trigger press became the grip + trigger
+ * chord, so the press is 0.70, above a resting hold, and the release 0.40, below the flicker of a
+ * closed hand (#496). The player tunes both: vr_grip_press / vr_grip_release.
  */
-const Hysteresis IndexGripThreshold = { 0.50f, 0.30f };
+const Hysteresis IndexGripThreshold = { 0.70f, 0.40f };
 
-//! The grip threshold for the controllers of one hand, by the value their binding reports
-const Hysteresis & gripThreshold(ControllerType type);
+/*!
+ * The grip threshold for the controllers of one hand, by the value their binding reports: \a index
+ * for the Index (the player's vr_grip_press / vr_grip_release), \ref GripThreshold for the others
+ */
+Hysteresis gripThreshold(ControllerType type, const Hysteresis & index = IndexGripThreshold);
 const Hysteresis TrackpadThreshold = { 0.40f, 0.25f };
 const Hysteresis StickDirectionThreshold = { 0.70f, 0.50f };
 
@@ -377,6 +384,15 @@ public:
 	 */
 	void update(s64 timeMs, const ControlSet & down, const ControlSet & taps = ControlSet());
 
+	/*!
+	 * Whether the chords of a hand form (on by default). Off, a control pressed while its chord's leader
+	 * is held fires its own single binding instead, and the leader is consumed - no tap when it is let go
+	 * (#496: on a menu panel the trigger clicks however firmly the hand holds the grip). A chord already
+	 * on stays on until its controls are released.
+	 */
+	void setChords(Hand hand, bool on) { m_chords[size_t(hand)] = on; }
+	bool chords(Hand hand) const { return m_chords[size_t(hand)]; }
+
 	//! \return true while the event is on
 	bool active(Event event) const { return m_events[size_t(event)].active; }
 	//! \return true if the event came on in the last update
@@ -418,6 +434,7 @@ private:
 	ControlSet m_deferred;
 	//! Controls with a long press of their own: their tap must be shorter than \ref longPressMs
 	ControlSet m_hasLongPress;
+	std::array<bool, HandCount> m_chords = { true, true };
 
 	ControlSet m_down;
 	std::array<ControlState, ControlCount> m_controls;

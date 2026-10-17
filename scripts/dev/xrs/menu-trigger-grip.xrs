@@ -1,0 +1,73 @@
+# The trigger clicks in the menus however the controller is held (#496): in the owner's headset test the right grip
+# read 0.52 - 0.59 from a firm hold of the Index, over the old 0.50 threshold, and every trigger press on New game
+# became the grip + trigger chord (use / act) instead of a click. Now a resting hold is below the Index grip's press
+# (vr_grip_press 0.70), and a hand pointing at a menu panel makes no chord at all: with the grip held at 0.55 and at
+# 0.95 the trigger on New game is one click, the menu changes, and neither use nor act fires.
+#   .\scripts\dev\xrs-run.ps1 menu-trigger-grip
+@sim idle
+@args --dev-launch
+
+@until state eq MENU 30s
+@assert menuMode eq mainmenu
+@until vr.sessionState eq focused 30s
+@until vr.panel.mode eq world 10s
+@assert vr.input.controllers eq index
+@frames 60
+
+# A firm resting hold, 0.55: no grip press (0.70 / 0.40 on the Index)
+vr-point right menu newquest
+@frames 5
+@assert ui.menuHover eq newquest
+@assert vr.pointer.rightOnPanel eq true
+vr-sim action grip right 0.55
+@frames 10
+@assert vr.input.grip.right gt 0.54
+@assert vr.input.grip.right lt 0.56
+@assert vr.input.down ne right.grip
+@remember clicks vr.pointer.clicks
+@remember interact vr.input.presses.interact_right
+@remember use vr.input.presses.use_right
+@remember act vr.input.presses.act_right
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@until menuMode eq charactercreation 15s
+@assert vr.pointer.clicks eq {clicks+1}
+@assert vr.input.presses.interact_right eq {interact+1}
+@assert vr.input.presses.use_right eq {use}
+@assert vr.input.presses.act_right eq {act}
+vr-sim action grip right 0
+@frames 30
+
+# Back to the main menu: the right B is the game menu key in a menu (#377)
+@until vr.panel.menu eq charactercreation 5s
+@frames 120                                  # the screen fades in
+vr-input tap right.b
+@until menuMode eq mainmenu 15s
+@until vr.panel.menu eq mainmenu 5s
+@frames 60
+
+# A full squeeze, 0.95: the grip is down - and on the panel the trigger still clicks, no chord
+vr-point right menu newquest
+@frames 5
+@assert ui.menuHover eq newquest
+vr-sim action grip right 0.95
+@frames 10
+@assert vr.input.down eq right.grip
+@remember clicks vr.pointer.clicks
+@remember interact vr.input.presses.interact_right
+vr-sim action trigger right 1
+@frames 5
+@assert vr.input.active eq interact_right
+vr-sim action trigger right 0
+@until menuMode eq charactercreation 15s
+@assert vr.pointer.clicks eq {clicks+1}
+@assert vr.input.presses.interact_right eq {interact+1}
+@assert vr.input.presses.use_right eq {use}
+@assert vr.input.presses.act_right eq {act}
+# The grip let go after the click makes nothing either
+vr-sim action grip right 0
+@frames 30
+@assert vr.input.presses.use_right eq {use}
+@assert vr.input.presses.act_right eq {act}
+@assert menuMode eq charactercreation

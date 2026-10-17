@@ -9,6 +9,8 @@
 	  - the run totals and the frame budget are weighted by frames, the budget sorted largest first
 	  - the worst seconds come by p95 (ties by max), every hitch is listed with its cause
 	  - a log without an end line is called out; a log with no seconds says so instead of failing
+	  - the display rates (#23): consecutive seconds of one rate grouped, judged by their frames against rate / div
+	    (MISMATCH over 5 % off), the second of a switch named and not judged, -ExpectHz matched or MISMATCH
 	  - perf-summary.ps1 reads a file the game still holds open, prints the summary and exits 0; a missing log is exit 1
 	Exit code 0 when everything passed, 1 otherwise.
 #>
@@ -90,6 +92,37 @@ Check ($text -match 't=   3 s  p95   30\.00  max   260\.0') 'the worst second li
 Check ($text -match 't=    2\.200 s    211\.1 ms \(19\.0 slots\)  cause channel') 'the stall hitch with its cause'
 Check ($text -match 'cause load .*\| load 231\.0, textures 9\.0, render 5\.0, vrwait 3\.0') 'the load hitch with its largest phases'
 Check ($text -match 'before the stall') 'the marks'
+
+Write-Host '==> display rates (#23)'
+$d = @($summary.Displays)
+Check ($d.Count -eq 1 -and (Near $d[0].Hz 90.0) -and $d[0].Seconds -eq 4 -and $d[0].Frames -eq 312) "one display rate, 90 Hz over the 4 seconds ($($d.Count))"
+Check ((Near $d[0].Fps (312 * 1000.0 / (90 * 11.11 + 90 * 11.11 + 72 * 13.89 + 60 * 16.67)) 0.01) -and $d[0].Verdict -eq 'MISMATCH' -and $d[0].Below -eq 2) "78.0 frames/s of 90: MISMATCH, 2 seconds under 95 % ($($d[0].Fps), $($d[0].Verdict), $($d[0].Below))"
+Check ($text -match 'Display rates' -and $text -match '90\.0 Hz \(11\.11 ms\) div 1 vr .*78\.0 frames/s of 90\.0 expected: MISMATCH, 2 of 4 s under 95 %') 'the display line'
+Check ($text -match 'display 90\.0 Hz \(11\.11 ms\)') 'one rate: the run line names it'
+
+# A simulated run switched 72 -> 144 Hz (the refresh-rate check): the second of the switch mixes both, the 144 Hz part
+# lost frames
+function RateLine($T, $Frames, $Mean, $Hz, $Period) {
+	[string]::Format([Globalization.CultureInfo]::InvariantCulture, 'S t={0} frames={1} min={2:0.00} mean={2:0.00} p95={2:0.00} max={2:0.00} hz={3:0.0} period={4:0.00} div=1 vr=1 missed=0 hitches=0 | {5} | uploads=0 self=0.4 selfmax=3',
+		$T, $Frames, $Mean, $Hz, $Period, (PhaseText @{ vrwait = $Mean } '0.00'))
+}
+$rates = @(
+	(RateLine 0 72 13.89 72.0 13.89), (RateLine 1 72 13.89 72.0 13.89), (RateLine 2 72 13.89 72.0 13.89),
+	(RateLine 3 60 16.67 100.0 10.00),
+	(RateLine 4 144 6.94 144.1 6.94), (RateLine 5 144 6.94 144.1 6.94), (RateLine 6 100 10.0 144.1 6.94),
+	'# end: 736 frames'
+)
+$switched = Get-ArxPerfSummary (Read-ArxPerfLog $rates) -ExpectHz 144, 120
+$g = @($switched.Displays)
+Check ($g.Count -eq 3 -and (Near $g[0].Hz 72.0) -and (Near $g[2].Hz 144.1)) "three groups: 72, the switch, 144 ($(($g | ForEach-Object Hz) -join ', '))"
+Check ($g[0].Verdict -eq 'matched' -and $g[1].Verdict -eq 'switch' -and $g[2].Verdict -eq 'MISMATCH' -and $g[2].Below -eq 1) "72 matched, the switch not judged, 144 MISMATCH with 1 second under ($(($g | ForEach-Object Verdict) -join ', '))"
+$switchedText = (Format-ArxPerfSummary $switched) -join "`n"
+Check ($switchedText -match 'display several rates \(below\)') 'several rates: the run line does not average them'
+Check ($switchedText -match 'the rate changed within this second') 'the switch second is named'
+Check ($switchedText -match 'Expected display rate 144\.0 Hz: matched - the runtime ran at it for 3 s') 'an expected rate the runtime gave'
+Check ($switchedText -match 'Expected display rate 120\.0 Hz: MISMATCH - the runtime ran at 72\.0 Hz, 144\.1 Hz') 'an expected rate the runtime never gave'
+$flat = Get-ArxPerfSummary (Read-ArxPerfLog @((SecondLine 0 60 16.6 16.67 16.8 17.0 0 0 @{ limit = 10.0 } -Vr 0), '# end')) -ExpectHz 90
+Check ((((Format-ArxPerfSummary $flat) -join "`n") -match 'Expected display rate 90\.0 Hz: MISMATCH - the runtime ran at no VR rate at all')) 'a flat run never matches an expected headset rate'
 
 $unclean = Get-ArxPerfSummary (Read-ArxPerfLog ($lines | Where-Object { $_ -notlike '# end*' }))
 Check (((Format-ArxPerfSummary $unclean) -join "`n") -match 'NO end line') 'a log without its end line is called out'

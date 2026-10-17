@@ -19,6 +19,7 @@
 
 #include "vr/SimRigTest.h"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 
@@ -362,4 +363,97 @@ void SimRigTest::testSessionEndsAndExitFaults() {
 	CPPUNIT_ASSERT(sim.takeRequests().empty());
 	sim.advance(5);
 	CPPUNIT_ASSERT(vr::SimSessionEnd::Exiting == sim.takeRequests().sessionEnd);
+}
+
+namespace {
+
+//! The simulated runtime's display period at a rate: whole nanoseconds, as sim_xrWaitFrame computes it
+s64 simPeriodNs(double rate) {
+	return s64(1e9 / rate);
+}
+
+} // anonymous namespace
+
+void SimRigTest::testMsLineRunsAtItsDisplayTime() {
+	// 500 ms is 36 slots of 72 Hz, which end 32 ns early (13888888 ns each): still the frame of 500 ms
+	vr::Simulation sim;
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.load("@500ms head rot 10 0 0\n@250ms record half\n"));
+	const s64 period = simPeriodNs(72.0);
+	for(u64 frame = 0; frame <= 36; frame++) {
+		sim.advance(frame, s64(frame) * period / 1000);
+		const vr::SimRequests requests = sim.takeRequests();
+		CPPUNIT_ASSERT_EQUAL(frame == 18 ? size_t(1) : size_t(0), requests.records.size());
+		CPPUNIT_ASSERT_DOUBLES_EQUAL(frame == 36 ? 10.0 : 0.0, sim.rig.head.angles.x, RigEpsilon);
+	}
+	CPPUNIT_ASSERT_EQUAL(size_t(0), sim.pending());
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("record walk-90"));
+	CPPUNIT_ASSERT_EQUAL(std::string("walk-90"), sim.takeRequests().records.at(0));
+	CPPUNIT_ASSERT(!sim.execute("record").empty());
+	CPPUNIT_ASSERT(!sim.execute("record ../x").empty());
+	CPPUNIT_ASSERT(rigStartsWith(sim.load("@1-5ms record a\n"), "line 1: @1-5ms: record cannot be a ramp"));
+}
+
+void SimRigTest::testMsActionIsHeldForItsTime() {
+	// A stick pushed now and let go 500 ms later is held over 500 ms of frame intervals at every rate: from
+	// the frame after the one advanced last up to the one whose interval ends at 500 ms
+	const double rates[] = { 72.0, 90.0, 120.0, 144.0 };
+	for(double rate : rates) {
+		vr::Simulation sim;
+		const s64 period = simPeriodNs(rate);
+		u64 frame = 0;
+		for(; frame < 10; frame++) {
+			sim.advance(frame, s64(frame) * period / 1000);
+		}
+		CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("@+0ms action thumbstick left 0 1"));
+		CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("@+500ms action thumbstick left 0 0"));
+		s64 held = 0;
+		for(; frame < 200; frame++) {
+			sim.advance(frame, s64(frame) * period / 1000);
+			if(sim.rig.actions["thumbstick"][0].y > 0.5f) {
+				held += period; // the interval this frame's step covers
+			}
+		}
+		CPPUNIT_ASSERT_DOUBLES_EQUAL(500.0, double(held) / 1e6, 0.001);
+	}
+}
+
+void SimRigTest::testMsRampFollowsTheDisplayTime() {
+	// A hand moved 0.9 m in 90 ms is where the display time says at every frame: the same speed at any rate
+	const double rates[] = { 72.0, 144.0 };
+	for(double rate : rates) {
+		vr::Simulation sim;
+		CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("hand right pos 0 0 0"));
+		const s64 period = simPeriodNs(rate);
+		sim.advance(0, 0);
+		CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("@+0-90ms hand right pos 0.9 0 0"));
+		for(u64 frame = 1; frame < 20; frame++) {
+			const s64 nowUs = s64(frame) * period / 1000;
+			sim.advance(frame, nowUs);
+			const double expected = std::min(0.9, 0.9 * double(nowUs) / 90000.0);
+			CPPUNIT_ASSERT_DOUBLES_EQUAL(expected, sim.rig.hands[1].position.x, 1e-3);
+		}
+		CPPUNIT_ASSERT_EQUAL(size_t(0), sim.pending());
+	}
+}
+
+void SimRigTest::testMsLinesInAScriptFollowEachOther() {
+	// @+<t>ms in a script counts from the previous ms line's end; frame lines keep their own count
+	vr::Simulation sim;
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.load("@100-200ms ipd 0.07\n@+5 shot frames\n@+50ms shot later\n"));
+	sim.advance(4, 240000);
+	CPPUNIT_ASSERT(sim.takeRequests().shots.empty());
+	sim.advance(5, 249000);
+	vr::SimRequests requests = sim.takeRequests();
+	CPPUNIT_ASSERT_EQUAL(size_t(1), requests.shots.size());
+	CPPUNIT_ASSERT_EQUAL(std::string("frames"), requests.shots[0]);
+	sim.advance(6, 250000);
+	requests = sim.takeRequests();
+	CPPUNIT_ASSERT_EQUAL(size_t(1), requests.shots.size());
+	CPPUNIT_ASSERT_EQUAL(std::string("later"), requests.shots[0]);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.07, sim.view.ipd, RigEpsilon);
+	// Without a display time an ms line waits
+	vr::Simulation still;
+	CPPUNIT_ASSERT_EQUAL(std::string(), still.load("@10ms shot never\n"));
+	still.advance(1000);
+	CPPUNIT_ASSERT_EQUAL(size_t(1), still.pending());
 }

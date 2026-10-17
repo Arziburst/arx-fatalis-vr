@@ -96,6 +96,32 @@ void HandReticleTest::testHoverHeldBriefly() {
 	CPPUNIT_ASSERT_EQUAL(vr::HoverFilter::None, hover.hovered());
 }
 
+void HandReticleTest::testHoverInIsTheSameTimeAtEveryRate() {
+	// #23: the hysteresis is a time - an item takes over 10 ms after it came under the ray (at the first frame
+	// from then on) at 72, 90, 120 and 144 Hz alike, and a sweep past it in 8 ms never does, even where that
+	// sweep spans two frames (144 Hz: counted in frames it was hovered)
+	const double rates[] = { 72.0, 90.0, 120.0, 144.0 };
+	for(double rate : rates) {
+		const double frame = 1.0 / rate;
+		vr::HoverFilter hover;
+		double took = -1.0;
+		for(int i = 0; i < 10 && took < 0.0; i++) {
+			if(hover.update(ReticleKey, 1.0 + double(i) * frame) == ReticleKey) {
+				took = double(i) * frame;
+			}
+		}
+		CPPUNIT_ASSERT(took >= double(vr::HoverInSeconds) - 1e-9);
+		CPPUNIT_ASSERT(took < double(vr::HoverInSeconds) + frame);
+
+		vr::HoverFilter sweep;
+		double t = 1.0;
+		for(; t < 1.008; t += frame) {
+			CPPUNIT_ASSERT_EQUAL(vr::HoverFilter::None, sweep.update(ReticleNote, t));
+		}
+		CPPUNIT_ASSERT_EQUAL(vr::HoverFilter::None, sweep.update(vr::HoverFilter::None, t));
+	}
+}
+
 void HandReticleTest::testWorldBand() {
 	// Right of the interface, distances kept; the interface's own pixels are never in the band
 	const Vec2s a = vr::worldCursorPixel(Vec2f(640.f, 900.f));

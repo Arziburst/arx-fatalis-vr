@@ -209,7 +209,7 @@ std::string simProfilePath(std::string_view name) {
 struct Simulation::Command {
 	enum Op {
 		Rate, EyeSize, Ipd, Fov, Timeline, HeadPos, HeadRot, HandPos, HandRot, HandTracked, HandFingers, HandJoints,
-		Profile, Action, Session, Shot, Mark, Quit, Fault, Layers, SessionEnd, FaultExit,
+		Profile, Action, Session, Shot, Mark, Record, Quit, Fault, Layers, SessionEnd, FaultExit,
 	};
 	Op op = Rate;
 	size_t index = 0; //!< eye or hand; 2 = both hands
@@ -433,6 +433,15 @@ std::string Simulation::parse(std::string_view line, Command & command) const {
 		return std::string();
 	}
 
+	if(word == "record") {
+		command.op = Command::Record;
+		if(words.size() != 2 || !validShotName(words[1])) {
+			return "record: expected a name of letters, digits, - and _";
+		}
+		command.text = std::string(words[1]);
+		return std::string();
+	}
+
 	if(word == "quit") {
 		command.op = Command::Quit;
 		return words.size() == 1 ? std::string() : "quit: takes no arguments";
@@ -557,6 +566,7 @@ void Simulation::apply(const Command & command) {
 			m_requests.shots.push_back(command.text.empty() ? "sim" + std::to_string(m_shots) : command.text);
 			return;
 		case Command::Mark: m_requests.marks.push_back(command.text); return;
+		case Command::Record: m_requests.records.push_back(command.text); return;
 		case Command::Quit: m_requests.quit = true; return;
 		case Command::Fault: rig.swapEyes = command.flag; return;
 		case Command::SessionEnd: m_requests.sessionEnd = command.sessionEnd; return;
@@ -582,9 +592,10 @@ std::string Simulation::execute(std::string_view text) {
 	}
 
 	if(line.front() == '@') {
-		// A timed line from the channel: absolute frames, or @+n from the next frame on
-		u64 last = 0;
-		return addTimed(line, m_advanced ? m_frame + 1 : 0, last);
+		// A timed line from the channel: absolute frames, or @+n from the next frame on; @+<t>ms from the
+		// display time of the frame advanced last
+		u64 last = 0, lastUs = 0;
+		return addTimed(line, m_advanced ? m_frame + 1 : 0, last, m_advanced ? u64(std::max<s64>(m_timeUs, 0)) : 0, lastUs);
 	}
 
 	Command command;
@@ -599,7 +610,7 @@ std::string Simulation::execute(std::string_view text) {
 std::string Simulation::load(std::string_view text) {
 
 	Simulation copy = *this;
-	u64 previous = 0;
+	u64 previous = 0, previousUs = 0;
 	size_t number = 0;
 
 	for(size_t pos = 0; pos <= text.size(); ) {
@@ -616,8 +627,9 @@ std::string Simulation::load(std::string_view text) {
 			continue;
 		}
 
-		// @+n in a script counts from the previous timed line's last frame
-		std::string error = line.front() == '@' ? copy.addTimed(line, previous, previous) : copy.execute(line);
+		// @+n in a script counts from the previous timed line's last frame, @+<t>ms from the previous ms line's end
+		std::string error = line.front() == '@' ? copy.addTimed(line, previous, previous, previousUs, previousUs)
+		                                        : copy.execute(line);
 		if(!error.empty()) {
 			return "line " + std::to_string(number) + ": " + error;
 		}
@@ -627,7 +639,7 @@ std::string Simulation::load(std::string_view text) {
 	return std::string();
 }
 
-std::string Simulation::addTimed(std::string_view line, u64 base, u64 & last) {
+std::string Simulation::addTimed(std::string_view line, u64 base, u64 & last, u64 baseUs, u64 & lastUs) {
 
 	size_t space = line.find_first_of(" \t");
 	if(space == std::string_view::npos) {
@@ -640,19 +652,28 @@ std::string Simulation::addTimed(std::string_view line, u64 base, u64 & last) {
 	if(relative) {
 		when.remove_prefix(1);
 	}
-
+	// Milliseconds of display time instead of frames (#23)
 	Entry entry;
+	if(when.size() > 2 && when.substr(when.size() - 2) == "ms") {
+		entry.timed = true;
+		when.remove_suffix(2);
+	}
+
 	size_t dash = when.find('-');
 	if(!parseFrame(when.substr(0, dash), entry.from)
 	   || (dash != std::string_view::npos && !parseFrame(when.substr(dash + 1), entry.to))) {
-		return "@" + written + ": expected @<frame>, @<from>-<to>, @+<n> or @+<n>-<m>";
+		return "@" + written + ": expected @<frame>, @<from>-<to>, @+<n> or @+<n>-<m>, frames or with ms";
 	}
 	if(dash == std::string_view::npos) {
 		entry.to = entry.from;
 	}
+	if(entry.timed) {
+		entry.from *= 1000;
+		entry.to *= 1000;
+	}
 	if(relative) {
-		entry.from += base;
-		entry.to += base;
+		entry.from += entry.timed ? baseUs : base;
+		entry.to += entry.timed ? baseUs : base;
 	}
 	if(entry.to < entry.from) {
 		return "@" + written + ": a ramp must end after it starts";
@@ -667,24 +688,42 @@ std::string Simulation::addTimed(std::string_view line, u64 base, u64 & last) {
 	if(entry.to != entry.from && !command.rampable()) {
 		return "@" + written + ": " + lowercase(splitWords(entry.text)[0]) + " cannot be a ramp";
 	}
+	entry.action = (command.op == Command::Action);
 
-	last = entry.to;
+	(entry.timed ? lastUs : last) = entry.to;
 	m_timeline.push_back(std::move(entry));
+	// Frame lines before ms lines, each in the order of their start (stable: the order written for equal starts)
 	std::stable_sort(m_timeline.begin(), m_timeline.end(), [](const Entry & a, const Entry & b) {
-		return a.from < b.from;
+		return a.timed != b.timed ? !a.timed : a.from < b.from;
 	});
 
 	return std::string();
 }
 
-void Simulation::advance(u64 frame) {
+namespace {
 
+/*!
+ * A display time this close below a line's time counts as reached: the runtime's period is whole
+ * nanoseconds (72 Hz: 13888888 ns), so 36 slots end 32 ns short of 500 ms
+ */
+const u64 TimeSlackUs = 50;
+
+} // anonymous namespace
+
+void Simulation::advance(u64 frame, s64 timeUs) {
+
+	// An action is what the controller held when the frame's interval began: the previous frame's display time
+	const u64 previousUs = u64(std::max<s64>(m_advanced ? m_timeUs : timeUs, 0));
+	const u64 nowUs = u64(std::max<s64>(timeUs, 0));
 	m_frame = frame;
+	m_timeUs = timeUs;
 	m_advanced = true;
 
 	for(Entry & entry : m_timeline) {
 
-		if(entry.done || entry.from > frame) {
+		const u64 at = !entry.timed ? frame : (entry.action ? previousUs : nowUs);
+		const u64 reached = entry.timed ? at + TimeSlackUs : at;
+		if(entry.done || entry.from > reached) {
 			continue;
 		}
 
@@ -708,12 +747,14 @@ void Simulation::advance(u64 frame) {
 				entry.start.push_back(*value);
 			}
 		}
-		float t = std::min(1.f, float(frame - entry.from) / float(entry.to - entry.from));
+		const bool end = reached >= entry.to;
+		const u64 into = at > entry.from ? at - entry.from : 0;
+		const float t = end ? 1.f : float(double(into) / double(entry.to - entry.from));
 		for(size_t i = 0; i < values.size() && i < entry.start.size(); i++) {
 			float target = command.values[i % command.count];
 			*values[i] = entry.start[i] + (target - entry.start[i]) * t;
 		}
-		if(frame >= entry.to) {
+		if(end) {
 			entry.done = true;
 		}
 	}

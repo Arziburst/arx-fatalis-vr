@@ -1,0 +1,351 @@
+# Refresh-rate independence (#23): the same timed inputs give the same results at 72, 90, 120 and 144 Hz. The simulated
+# headset switches its display rate (`vr-sim rate`) and runs one block of actions per rate; 90 Hz goes first and is the
+# reference the others are compared with (and is checked against what the inputs ask for). Every input is timed in
+# display milliseconds (`@+<t>ms`, src/vr/SimRig.h), so it is the same motion at every rate, and every result is a
+# `record` the game took after the frame of a given display time (status.json motion.records, the values also in
+# arx.log) - never a value read whenever the runner looked. Runs on the test save mvp-goblin-fight (a sword equipped, a
+# corridor ahead, the goblin held still):
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-goblin-fight -Sequence refresh-rate
+# No teleports between the measurements: `setpos` leaves the player in the engine's fall for seconds (TRAPS.md). The walk
+# goes back by distance (`stick-for`), the turn back by time.
+#
+# The tolerances, stated before the numbers (each against the 90 Hz block; why):
+#   swing span      the 90 ms swing ramp plus 30 ms ran at least 90 % of the rate's frames (motion.records.span<rate>):
+#                   the detector needs three samples inside the ramp, so a PC that shows the hand in two frames of 45 ms
+#                   sees no swing at all - the step fails naming the frames, not a misleading 'swings 0'
+#   frames          each timed span ran at least 90 % of the rate's frames (motion.records.<what>.frames since the
+#                   `motion reset`): a PC too busy to keep up quantizes every input to its long frames - a turn held
+#                   500 ms at 30 frames/s on 120 Hz turned 64.9 degrees - so the step fails there, naming the frames,
+#                   before a result is judged
+#   perf log        arx.log says "[perf] display: <rate> Hz (<period> ms) from the runtime's predicted display period" at
+#                   every switch: the runtime's period is the only rate the game knows
+#   walk            the stick held forward 500 ms, the coast included: the distance within 3 % (the frame clock's
+#                   jitter at both ends of the hold, ~1 ms each, is 0.4 %; the engine damps the velocity per frame by
+#                   1 - 0.009 * dt, rate-dependent only to second order; measured 127.7-129.4 units)
+#   turn            the right stick held 500 ms in smooth turn at 120 deg/s (60 degrees): within 0.6 degrees (1 %)
+#   head camera     the head turned 0 to 40 degrees over 1 s, recorded at 500 ms: the camera's turn against the heading
+#                   behind the simulated head of the same frame (motion.cameraLag) within 0.3 degrees at every rate - 0
+#                   by design (D-018). The lag, not the angle: on a busy PC the record's frame comes a slot or two late
+#                   and the head has turned on (0.56 degrees per 72 Hz slot), the lag stays 0
+#   body follow     the body's yaw behind the head at that moment is recorded (motion.records.head<rate>.bodyOffset) but
+#                   not judged: an exponential settle read at one moment moves with a late frame. Its rate independence
+#                   is the host test BodyYawTest::testStepSizeDoesNotMatter
+#   fingers         the free (left) hand closed to a fist, recorded at 50 ms (the bend still on its way): its speed since
+#                   the target changed (motion.curlSpeed, 720 deg/s) within 5 % - a bend smoothed per frame would be
+#                   twice as fast at 144 as at 72
+#   jump            the apex within 3 % and the time above 50 cm within 40 ms: the engine moves a jumping player in
+#                   steps of 25-35 ms at any rate (#435), so leaving and landing move by up to a step
+#   swing           0.85 m in 90 ms (9.4 m/s) is one swing at every rate, its peak speed within 5 %; 0.85 m back in
+#                   700 ms (1.2 m/s, under the 2.5 m/s swing speed) is none. Until #409 lands these fail whenever display
+#                   slots are missed during a swing (#352: the median's move over two or three slots divided by one
+#                   frame's step): seen as a peak of 18.89 at 144 Hz and 28.33 at 90 (perf log: H ... missed=2), and a
+#                   phantom swing on the slow return at 72
+@sim idle
+@save mvp-goblin-fight
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s in: past the fade-in, the head reference taken
+setplayercontrols on
+@assert player.controlsBlocked eq false
+@assert vr.melee.active eq true
+@assert vr.sim.view.rate eq 90
+# The goblin stays where the save has it; smooth turn at its default speed
+goblin_base_0036.setspeed 0
+vr-input turn smooth
+@assert vr.input.turn.mode eq smooth
+@assert vr.input.turn.smoothSpeed eq 120
+# The sword hand moved to the swing's start slowly (0.43 m in 600 ms: 0.7 m/s)
+vr-sim @+0-600ms hand right pos 0.45 -0.8 -0.35
+@wait 1000
+
+# --- 90 Hz: the reference (the sequence starts at the simulator's default) --------------------------------------------
+vr-sim rate 90
+@frames 20
+# The head turned 0 to 40 degrees over 1 s: the camera and the body behind it, recorded at 500 ms
+@until player.jumping eq false 5s
+@wait 500
+motion reset; vr-sim @+0-1000ms head rot 40 0 0; vr-sim @+500ms record head90
+@until motion.records.head90.frames ge 0 10s
+@assert motion.records.head90.frames ge 40
+vr-sim @+0-500ms head rot 0 0 0
+@wait 1500
+# The free hand closed to a fist: its index finger 50 ms later
+vr-sim @+0ms hand left fingers 1 1 1; vr-sim @+50ms record curl90
+@until motion.records.curl90.frames ge 0 10s
+vr-sim hand left fingers 0 0 0
+# The left stick forward for 500 ms: the distance walked, the coast to a stop included
+@until player.jumping eq false 5s
+@wait 500
+motion reset; vr-sim @+0ms action thumbstick left 0 1; vr-sim @+500ms action thumbstick left 0 0; vr-sim @+1500ms record walk90
+@until motion.records.walk90.frames ge 0 10s
+@assert motion.records.walk90.frames ge 121
+stick-for left 0 -1 100
+@until stickFor.active eq false 10s
+# The right stick held for 500 ms in smooth turn
+@until player.jumping eq false 5s
+@wait 500
+motion reset; vr-sim @+0ms action thumbstick right 1 0; vr-sim @+500ms action thumbstick right 0 0; vr-sim @+1000ms record turn90
+@until motion.records.turn90.frames ge 0 10s
+@assert motion.records.turn90.frames ge 81
+vr-sim @+0ms action thumbstick right -1 0; vr-sim @+500ms action thumbstick right 0 0
+@wait 1000
+# A jump: its apex and its time in the air
+@until player.jumping eq false 5s
+@wait 500
+motion reset
+vr-input stick right 0.3 0.9; vr-input down right.stick_up
+@until player.jumping eq true 2s
+vr-input up right.stick_up; vr-input stick right 0 0
+@until motion.jumps ge 1 5s
+vr-sim record jump90
+@until motion.records.jump90.frames ge 0 10s
+# A swing of the sword (0.85 m in 90 ms), then the hand back slowly (0.85 m in 700 ms): one swing
+@remember swings vr.melee.swings
+motion reset; vr-sim @+0-90ms hand right pos -0.4 -0.8 -0.35; vr-sim @+120ms record span90
+@until motion.records.span90.frames ge 0 10s
+@assert motion.records.span90.frames ge 9
+@until vr.melee.swings ge {swings+1} 5s
+@until vr.melee.swinging eq false 5s
+vr-sim record swing90
+@until motion.records.swing90.frames ge 0 10s
+vr-sim @+0-700ms hand right pos 0.45 -0.8 -0.35
+@wait 1500
+@assert vr.melee.swings eq {swings+1}
+@remember curl90 motion.records.curl90.curlSpeed
+@remember walk90 motion.records.walk90.walked
+@remember turn90 motion.records.turn90.turned
+@remember apex90 motion.records.jump90.jumpApex
+@remember air90 motion.records.jump90.jumpSeconds
+@remember peak90 motion.records.swing90.swingPeak
+# The reference is what the inputs ask for
+@assert motion.records.head90.cameraTurn gt 15
+@assert motion.records.head90.cameraTurn lt 25
+@assert motion.records.head90.cameraLag ge -0.3
+@assert motion.records.head90.cameraLag le 0.3
+@assert motion.records.curl90.curlSpeed ge 684
+@assert motion.records.curl90.curlSpeed le 756
+@assert motion.records.walk90.walked gt 100
+@assert motion.records.walk90.walked lt 160
+@assert motion.records.turn90.turned ge -60.6
+@assert motion.records.turn90.turned le -59.4
+@assert motion.records.jump90.jumpApex ge 126
+@assert motion.records.jump90.jumpApex le 134
+@assert motion.records.jump90.jumpSeconds gt 0.15
+@assert motion.records.jump90.jumpSeconds lt 0.8
+@assert motion.records.swing90.swingPeak ge 9.0
+@assert motion.records.swing90.swingPeak le 9.9
+
+# --- 72 Hz (Quest) ----------------------------------------------------------------------------------------------------
+vr-sim rate 72
+@log \[perf\] display: 72\.0 Hz \(13\.89 ms\) from the runtime's predicted display period
+@frames 20
+# The head turned 0 to 40 degrees over 1 s: the camera and the body behind it, recorded at 500 ms
+@until player.jumping eq false 5s
+@wait 500
+motion reset; vr-sim @+0-1000ms head rot 40 0 0; vr-sim @+500ms record head72
+@until motion.records.head72.frames ge 0 10s
+@assert motion.records.head72.frames ge 32
+vr-sim @+0-500ms head rot 0 0 0
+@wait 1500
+# The free hand closed to a fist: its index finger 50 ms later
+vr-sim @+0ms hand left fingers 1 1 1; vr-sim @+50ms record curl72
+@until motion.records.curl72.frames ge 0 10s
+vr-sim hand left fingers 0 0 0
+# The left stick forward for 500 ms: the distance walked, the coast to a stop included
+@until player.jumping eq false 5s
+@wait 500
+motion reset; vr-sim @+0ms action thumbstick left 0 1; vr-sim @+500ms action thumbstick left 0 0; vr-sim @+1500ms record walk72
+@until motion.records.walk72.frames ge 0 10s
+@assert motion.records.walk72.frames ge 97
+stick-for left 0 -1 100
+@until stickFor.active eq false 10s
+# The right stick held for 500 ms in smooth turn
+@until player.jumping eq false 5s
+@wait 500
+motion reset; vr-sim @+0ms action thumbstick right 1 0; vr-sim @+500ms action thumbstick right 0 0; vr-sim @+1000ms record turn72
+@until motion.records.turn72.frames ge 0 10s
+@assert motion.records.turn72.frames ge 64
+vr-sim @+0ms action thumbstick right -1 0; vr-sim @+500ms action thumbstick right 0 0
+@wait 1000
+# A jump: its apex and its time in the air
+@until player.jumping eq false 5s
+@wait 500
+motion reset
+vr-input stick right 0.3 0.9; vr-input down right.stick_up
+@until player.jumping eq true 2s
+vr-input up right.stick_up; vr-input stick right 0 0
+@until motion.jumps ge 1 5s
+vr-sim record jump72
+@until motion.records.jump72.frames ge 0 10s
+# A swing of the sword (0.85 m in 90 ms), then the hand back slowly (0.85 m in 700 ms): one swing
+@remember swings vr.melee.swings
+motion reset; vr-sim @+0-90ms hand right pos -0.4 -0.8 -0.35; vr-sim @+120ms record span72
+@until motion.records.span72.frames ge 0 10s
+@assert motion.records.span72.frames ge 7
+@until vr.melee.swings ge {swings+1} 5s
+@until vr.melee.swinging eq false 5s
+vr-sim record swing72
+@until motion.records.swing72.frames ge 0 10s
+vr-sim @+0-700ms hand right pos 0.45 -0.8 -0.35
+@wait 1500
+@assert vr.melee.swings eq {swings+1}
+# The same as at 90 Hz, within the tolerances of the header
+@assert motion.records.head72.cameraLag ge -0.3
+@assert motion.records.head72.cameraLag le 0.3
+@assert motion.records.curl72.curlSpeed ge {curl90*0.95}
+@assert motion.records.curl72.curlSpeed le {curl90*1.05}
+@assert motion.records.walk72.walked ge {walk90*0.97}
+@assert motion.records.walk72.walked le {walk90*1.03}
+@assert motion.records.turn72.turned ge {turn90-0.6}
+@assert motion.records.turn72.turned le {turn90+0.6}
+@assert motion.records.jump72.jumpApex ge {apex90*0.97}
+@assert motion.records.jump72.jumpApex le {apex90*1.03}
+@assert motion.records.jump72.jumpSeconds ge {air90-0.04}
+@assert motion.records.jump72.jumpSeconds le {air90+0.04}
+@assert motion.records.swing72.swingPeak ge {peak90*0.95}
+@assert motion.records.swing72.swingPeak le {peak90*1.05}
+
+# --- 120 Hz (Index, Quest) --------------------------------------------------------------------------------------------
+vr-sim rate 120
+@log \[perf\] display: 120\.0 Hz \(8\.33 ms\) from the runtime's predicted display period
+@frames 20
+# The head turned 0 to 40 degrees over 1 s: the camera and the body behind it, recorded at 500 ms
+@until player.jumping eq false 5s
+@wait 500
+motion reset; vr-sim @+0-1000ms head rot 40 0 0; vr-sim @+500ms record head120
+@until motion.records.head120.frames ge 0 10s
+@assert motion.records.head120.frames ge 54
+vr-sim @+0-500ms head rot 0 0 0
+@wait 1500
+# The free hand closed to a fist: its index finger 50 ms later
+vr-sim @+0ms hand left fingers 1 1 1; vr-sim @+50ms record curl120
+@until motion.records.curl120.frames ge 0 10s
+vr-sim hand left fingers 0 0 0
+# The left stick forward for 500 ms: the distance walked, the coast to a stop included
+@until player.jumping eq false 5s
+@wait 500
+motion reset; vr-sim @+0ms action thumbstick left 0 1; vr-sim @+500ms action thumbstick left 0 0; vr-sim @+1500ms record walk120
+@until motion.records.walk120.frames ge 0 10s
+@assert motion.records.walk120.frames ge 162
+stick-for left 0 -1 100
+@until stickFor.active eq false 10s
+# The right stick held for 500 ms in smooth turn
+@until player.jumping eq false 5s
+@wait 500
+motion reset; vr-sim @+0ms action thumbstick right 1 0; vr-sim @+500ms action thumbstick right 0 0; vr-sim @+1000ms record turn120
+@until motion.records.turn120.frames ge 0 10s
+@assert motion.records.turn120.frames ge 108
+vr-sim @+0ms action thumbstick right -1 0; vr-sim @+500ms action thumbstick right 0 0
+@wait 1000
+# A jump: its apex and its time in the air
+@until player.jumping eq false 5s
+@wait 500
+motion reset
+vr-input stick right 0.3 0.9; vr-input down right.stick_up
+@until player.jumping eq true 2s
+vr-input up right.stick_up; vr-input stick right 0 0
+@until motion.jumps ge 1 5s
+vr-sim record jump120
+@until motion.records.jump120.frames ge 0 10s
+# A swing of the sword (0.85 m in 90 ms), then the hand back slowly (0.85 m in 700 ms): one swing
+@remember swings vr.melee.swings
+motion reset; vr-sim @+0-90ms hand right pos -0.4 -0.8 -0.35; vr-sim @+120ms record span120
+@until motion.records.span120.frames ge 0 10s
+@assert motion.records.span120.frames ge 12
+@until vr.melee.swings ge {swings+1} 5s
+@until vr.melee.swinging eq false 5s
+vr-sim record swing120
+@until motion.records.swing120.frames ge 0 10s
+vr-sim @+0-700ms hand right pos 0.45 -0.8 -0.35
+@wait 1500
+@assert vr.melee.swings eq {swings+1}
+# The same as at 90 Hz, within the tolerances of the header
+@assert motion.records.head120.cameraLag ge -0.3
+@assert motion.records.head120.cameraLag le 0.3
+@assert motion.records.curl120.curlSpeed ge {curl90*0.95}
+@assert motion.records.curl120.curlSpeed le {curl90*1.05}
+@assert motion.records.walk120.walked ge {walk90*0.97}
+@assert motion.records.walk120.walked le {walk90*1.03}
+@assert motion.records.turn120.turned ge {turn90-0.6}
+@assert motion.records.turn120.turned le {turn90+0.6}
+@assert motion.records.jump120.jumpApex ge {apex90*0.97}
+@assert motion.records.jump120.jumpApex le {apex90*1.03}
+@assert motion.records.jump120.jumpSeconds ge {air90-0.04}
+@assert motion.records.jump120.jumpSeconds le {air90+0.04}
+@assert motion.records.swing120.swingPeak ge {peak90*0.95}
+@assert motion.records.swing120.swingPeak le {peak90*1.05}
+
+# --- 144 Hz (Index) ---------------------------------------------------------------------------------------------------
+vr-sim rate 144
+@log \[perf\] display: 144\.0 Hz \(6\.94 ms\) from the runtime's predicted display period
+@frames 20
+# The head turned 0 to 40 degrees over 1 s: the camera and the body behind it, recorded at 500 ms
+@until player.jumping eq false 5s
+@wait 500
+motion reset; vr-sim @+0-1000ms head rot 40 0 0; vr-sim @+500ms record head144
+@until motion.records.head144.frames ge 0 10s
+@assert motion.records.head144.frames ge 64
+vr-sim @+0-500ms head rot 0 0 0
+@wait 1500
+# The free hand closed to a fist: its index finger 50 ms later
+vr-sim @+0ms hand left fingers 1 1 1; vr-sim @+50ms record curl144
+@until motion.records.curl144.frames ge 0 10s
+vr-sim hand left fingers 0 0 0
+# The left stick forward for 500 ms: the distance walked, the coast to a stop included
+@until player.jumping eq false 5s
+@wait 500
+motion reset; vr-sim @+0ms action thumbstick left 0 1; vr-sim @+500ms action thumbstick left 0 0; vr-sim @+1500ms record walk144
+@until motion.records.walk144.frames ge 0 10s
+@assert motion.records.walk144.frames ge 194
+stick-for left 0 -1 100
+@until stickFor.active eq false 10s
+# The right stick held for 500 ms in smooth turn
+@until player.jumping eq false 5s
+@wait 500
+motion reset; vr-sim @+0ms action thumbstick right 1 0; vr-sim @+500ms action thumbstick right 0 0; vr-sim @+1000ms record turn144
+@until motion.records.turn144.frames ge 0 10s
+@assert motion.records.turn144.frames ge 129
+vr-sim @+0ms action thumbstick right -1 0; vr-sim @+500ms action thumbstick right 0 0
+@wait 1000
+# A jump: its apex and its time in the air
+@until player.jumping eq false 5s
+@wait 500
+motion reset
+vr-input stick right 0.3 0.9; vr-input down right.stick_up
+@until player.jumping eq true 2s
+vr-input up right.stick_up; vr-input stick right 0 0
+@until motion.jumps ge 1 5s
+vr-sim record jump144
+@until motion.records.jump144.frames ge 0 10s
+# A swing of the sword (0.85 m in 90 ms), then the hand back slowly (0.85 m in 700 ms): one swing
+@remember swings vr.melee.swings
+motion reset; vr-sim @+0-90ms hand right pos -0.4 -0.8 -0.35; vr-sim @+120ms record span144
+@until motion.records.span144.frames ge 0 10s
+@assert motion.records.span144.frames ge 15
+@until vr.melee.swings ge {swings+1} 5s
+@until vr.melee.swinging eq false 5s
+vr-sim record swing144
+@until motion.records.swing144.frames ge 0 10s
+vr-sim @+0-700ms hand right pos 0.45 -0.8 -0.35
+@wait 1500
+@assert vr.melee.swings eq {swings+1}
+# The same as at 90 Hz, within the tolerances of the header
+@assert motion.records.head144.cameraLag ge -0.3
+@assert motion.records.head144.cameraLag le 0.3
+@assert motion.records.curl144.curlSpeed ge {curl90*0.95}
+@assert motion.records.curl144.curlSpeed le {curl90*1.05}
+@assert motion.records.walk144.walked ge {walk90*0.97}
+@assert motion.records.walk144.walked le {walk90*1.03}
+@assert motion.records.turn144.turned ge {turn90-0.6}
+@assert motion.records.turn144.turned le {turn90+0.6}
+@assert motion.records.jump144.jumpApex ge {apex90*0.97}
+@assert motion.records.jump144.jumpApex le {apex90*1.03}
+@assert motion.records.jump144.jumpSeconds ge {air90-0.04}
+@assert motion.records.jump144.jumpSeconds le {air90+0.04}
+@assert motion.records.swing144.swingPeak ge {peak90*0.95}
+@assert motion.records.swing144.swingPeak le {peak90*1.05}
+
+# Back to 90 Hz: the perf log names the switch back too
+vr-sim rate 90
+@log \[perf\] display: 90\.0 Hz \(11\.11 ms\) from the runtime's predicted display period.* - was 144\.0 Hz

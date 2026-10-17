@@ -157,7 +157,9 @@ struct SimRuntime {
 	s64 displayTime = 0; //!< of the current frame
 	bool timelineStarted = false;
 	u64 timelineStart = 0;
+	s64 timelineStartTime = 0; //!< the display time of the timeline's frame 0, nanoseconds
 	bool timelineDoneLogged = false;
+	std::vector<std::string> pendingRecords; //!< \c record names for the test channel (#23)
 
 	// Input: the action values as of the last two syncs, by (action, hand)
 	std::map<std::pair<u64, size_t>, Vec2f> synced;
@@ -894,6 +896,9 @@ void runRequests() {
 	for(const std::string & shot : requests.shots) {
 		g_sim->pendingShots.push_back(shot);
 	}
+	for(const std::string & record : requests.records) {
+		g_sim->pendingRecords.push_back(record);
+	}
 	if(requests.focusChanged && g_sim->running) {
 		const bool focused = g_sim->sim.rig.focused;
 		const bool worn = g_sim->sim.rig.worn;
@@ -947,12 +952,14 @@ void advanceTimeline() {
 		}
 		s.timelineStarted = true;
 		s.timelineStart = s.frames;
+		s.timelineStartTime = s.displayTime;
 		LogInfo << "[vr] sim: timeline starts at frame " << s.frames << " ("
 		        << (s.sim.timeline == SimTimeline::Session ? "first frame of the session" : "the game is playable")
 		        << "), " << s.sim.pending() << " timed lines";
 	}
 
-	s.sim.advance(s.frames - s.timelineStart);
+	// The ms lines (#23) count the predicted display time: the same motion at any rate
+	s.sim.advance(s.frames - s.timelineStart, (s.displayTime - s.timelineStartTime) / 1000);
 	if(s.sim.pending() == 0 && !s.timelineDoneLogged) {
 		s.timelineDoneLogged = true;
 		LogInfo << "[vr] sim: timeline done at its frame " << s.sim.frame();
@@ -1584,6 +1591,15 @@ void setSimCaptureDir(const std::string & dir) {
 	g_sim->captureDir = dir;
 }
 
+std::vector<std::string> takeSimRecords() {
+	if(!g_sim) {
+		return { };
+	}
+	std::vector<std::string> records = std::move(g_sim->pendingRecords);
+	g_sim->pendingRecords.clear();
+	return records;
+}
+
 SimStatus simStatus() {
 
 	SimStatus status;
@@ -1597,6 +1613,7 @@ SimStatus simStatus() {
 	status.script = s.script;
 	status.frame = s.frames;
 	status.timelineFrame = s.timelineStarted ? s.sim.frame() : 0;
+	status.timelineMs = s.timelineStarted ? double(s.sim.timeUs()) / 1000.0 : 0.0;
 	status.pending = s.sim.pending();
 	status.timeline = !s.timelineStarted ? (s.sim.timeline == SimTimeline::Session ? "waiting for the session"
 	                                                                             : "waiting for gameplay")
@@ -1629,6 +1646,10 @@ std::string simCommand(std::string_view /* line */) {
 }
 
 void setSimCaptureDir(const std::string & /* dir */) { }
+
+std::vector<std::string> takeSimRecords() {
+	return { };
+}
 
 SimStatus simStatus() {
 	return SimStatus();

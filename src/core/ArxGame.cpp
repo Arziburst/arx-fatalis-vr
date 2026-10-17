@@ -2181,6 +2181,7 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 	const Entity * cameraTarget = g_cameraEntity ? entities.get(g_cameraEntity->targetinfo) : nullptr;
 	const bool heroScripted = hero && (hero->animlayer[0].flags & EA_FORCEPLAY);
 	in.cameraOnNpc = cameraTarget && cameraTarget != hero && (cameraTarget->ioflags & IO_NPC) && !heroScripted;
+	in.heroScripted = heroScripted;
 	const Speech * heroLine = hero ? getSpeechForEntity(*hero) : nullptr;
 	const bool heroSpeaks = heroLine && heroLine->sample.getSampleId() != audio::SampleHandle();
 	if(!in.active) {

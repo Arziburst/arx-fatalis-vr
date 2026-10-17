@@ -45,9 +45,12 @@ a changed decision keeps its history in that cell.
   a `playerlookat` turns the hero to an NPC, or the hero has a voiced line; it is forgotten when the scene ends and at a
   new level (the startup intro talks and ends in the menu). A scene with no conversation is a cinematic: the prison
   intro's cameras look at markers, a vision ball's at the hero, and a camera on an NPC while a script plays the hero's
-  body (a drag: human_base_0116's DRAG under camera_0107) is a cutscene, also when the drag ends. **In a cinematic the
-  hero keeps his head**: the VR body's head-only hiding, its two-sided faces and its own arms apply only while the eyes
-  are his (`vr::hidesHeadOnly`).
+  body is no conversation cue. **A camera shot of the hero's body played by a script is a cutscene on the screen, even
+  inside a dialogue** (the verifier's decision, #460): the level 3 ambush's dialogue (human_base_0116, a `speak -pc`
+  line) has human_base_0116 send DRAG to human_base_0183, which drags the hero under camera_0107 - that shot goes to the
+  screen; the hero free again, the dialogue is first person. The dialogue decides only the shots with the hero free.
+  **In a cinematic the hero keeps his head**: the VR body's head-only hiding, its two-sided faces and its own arms apply
+  only while the eyes are his (`vr::hidesHeadOnly`).
 - **No blink where the eyes see no jump** (the owner, 2026-10-17: "if we can get rid of it, we must"): a dialogue's new
   line or camera, a scene's start and end while the eyes stay in the hero's head, and the switch between the world and
   the screen (no motion: the world goes, the screen is there) happen at once (`vr.scene.switch`). **The cuts the eyes

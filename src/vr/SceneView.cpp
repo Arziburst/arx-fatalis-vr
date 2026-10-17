@@ -400,7 +400,10 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 	// scene's camera entities and lines - only a change of view or kind is a cut
 	Shot target;
 	if(in.active) {
-		target.shown = chooseShownView(in.setting, in.kind, m_hybrid.screen && !m_dialogue);
+		// A dialogue decides the shots with the hero free; a camera shot of his body played by a script is a cutscene even
+		// inside one (the level 3 ambush: the dialogue's drag under camera_0107), and the hero free again is first person
+		const bool cinematic = m_dialogue ? (in.kind == SceneKind::Entity && in.heroScripted) : m_hybrid.screen;
+		target.shown = chooseShownView(in.setting, in.kind, cinematic);
 		target.kind = in.kind;
 		// First person's eye too low (the hero lying or dragged by a script): the screen, for the rest of the scene
 		if(target.shown == SceneShown::First && in.firstLow == SceneFirstLow::Screen && (firstTooLow || m_lowScreen)) {

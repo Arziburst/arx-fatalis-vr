@@ -299,6 +299,9 @@ struct SceneInput {
 	//! The camera entity looks at an NPC while the hero's body is free (not played by a script): at the scene's first
 	//! camera frame a conversation's setup - the talk after the goblin fight; a scripted body (a drag) is a cutscene
 	bool cameraOnNpc = false;
+	//! The hero's body is played by a script (a drag, the prison intro): under a camera entity a cutscene shot, on the
+	//! screen even inside a dialogue (D-053)
+	bool heroScripted = false;
 	bool firstOnFloor = true;       //!< a floor under the hero's eye (\c firstPos)
 	float firstFloorY = 0.f;        //!< that floor (y down), when \c firstOnFloor
 	SceneFirstLow firstLow = DefaultSceneFirstLow; //!< what first person does while that eye is too low

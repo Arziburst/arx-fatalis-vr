@@ -693,6 +693,29 @@ void SceneViewTest::dialogueStaysFirstTest() {
 		CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
 	}
 
+	// The level 3 ambush as its scripts play it: a speak -pc line latches the dialogue (human_base_0116's DIALOGUE01), then
+	// human_base_0116 sends DRAG to human_base_0183, which drags the hero under camera_0107 - his body scripted, a cutscene
+	// on the screen inside the dialogue; the hero free again, the dialogue is first person
+	{
+		SceneDirector director;
+		director.update(standing());
+		SceneInput line = sceneOf(standing(), SceneKind::Speech, 1, SceneViewSetting::Hybrid);
+		SceneOutput out = director.update(line);
+		CPPUNIT_ASSERT(out.shown == SceneShown::First);
+		CPPUNIT_ASSERT(director.dialogue());
+		SceneInput drag = sceneOf(standing(), SceneKind::Entity, 2, SceneViewSetting::Hybrid);
+		drag.cinematicShot = true;
+		drag.heroScripted = true;
+		for(int i = 0; i < 60; i++) {
+			out = director.update(drag);
+			CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
+		}
+		CPPUNIT_ASSERT(director.dialogue());
+		drag.heroScripted = false;
+		out = director.update(drag);
+		CPPUNIT_ASSERT(out.shown == SceneShown::First);
+	}
+
 	// The talk after the goblin fight as its script plays it: camera_0080 activated on Kultar while he walks out - a far
 	// shot, the hero teleported, no line for 6 s - the camera on an NPC with the hero free: first person from the first frame
 	{
@@ -729,7 +752,7 @@ void SceneViewTest::dialogueStaysFirstTest() {
 		CPPUNIT_ASSERT(!director.dialogue());
 	}
 
-	// A cinematic a talk cue comes in (the hero speaks, the camera turns to an NPC) is a dialogue from then on
+	// A cinematic a talk cue comes in (the hero speaks, or a playerlookat turns him to an NPC) is a dialogue from then on
 	{
 		SceneDirector director;
 		director.update(standing());

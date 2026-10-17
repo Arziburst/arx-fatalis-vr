@@ -276,6 +276,8 @@ public:
 		//! when the hand is more than \ref vrRadialGazeDeg off the gaze
 		std::string vrRadialPlace;
 		float vrRadialGazeDeg; //!< VR: degrees off the gaze beyond which gaze_when_off moves the ring (#377)
+		float vrGripPress; //!< VR: the Index grip value [0, 1] that presses the grip (#496, vr/VRControls.h IndexGripThreshold)
+		float vrGripRelease; //!< VR: the Index grip value it is let go below, under \ref vrGripPress (#496)
 
 	} input;
 	

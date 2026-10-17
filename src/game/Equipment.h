@@ -138,6 +138,7 @@ struct StrikeTargets {
 	 * an item, a crate, a friend or a merchant) and never the world's geometry (no wall sound, no durability)
 	 */
 	bool touch = false;
+	std::vector<EntityHandle> refused; //!< a touch: the NPCs it reached that do not fight the player
 	// VR (#465): the stroke the aim ratio was measured from, for the melee.hit line
 	float speed = 0.f;           //!< m/s, the lever point's
 	float size = 0.f;            //!< m, the hand's path (a thrust: its lunge)

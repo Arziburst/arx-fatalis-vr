@@ -650,6 +650,9 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 				arx_assert(target);
 				arx_assert(target->obj);
 				if(targets && targets->touch && !fightsPlayer(*target)) {
+					if(target->ioflags & IO_NPC) {
+						targets->refused.push_back(target->index());
+					}
 					continue;
 				}
 				{

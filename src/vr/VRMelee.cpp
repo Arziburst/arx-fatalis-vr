@@ -29,6 +29,7 @@
 #include "game/Entity.h"
 #include "game/EntityManager.h"
 #include "game/Equipment.h"
+#include "game/NPC.h"
 #include "game/Player.h"
 #include "gui/Speech.h"
 #include "io/log/Logger.h"
@@ -66,6 +67,7 @@ struct MeleeState {
 	double swingStart = 0.;
 	float humpPeak = 0.f;            //!< the peak of a motion that has not become a swing yet
 	std::string refusedBefore = "-";
+	EntityHandle touchRefused;       //!< the NPC the last melee.touch event refused (#465)
 	MeleeStatus status;
 };
 
@@ -253,6 +255,25 @@ void endSwing(SwingChange change) {
 		("ms", int((meleeClock() - m.swingStart) * 1000.));
 }
 
+/*!
+ * A melee.touch event when a touch reaches an NPC that does not fight the player (and so does nothing to it) - once
+ * per NPC until the touch reaches another or none: why a resting blade did not hit (#465)
+ */
+void noteRefusedTouch(const std::vector<EntityHandle> & refused) {
+	MeleeState & m = g_melee;
+	const EntityHandle first = refused.empty() ? EntityHandle() : refused.front();
+	if(first == m.touchRefused) {
+		return;
+	}
+	m.touchRefused = first;
+	const Entity * npc = entities.get(first);
+	if(!npc || !npc->_npcdata) {
+		return;
+	}
+	gameevent::Event("melee.touch", 200)("target", gameevent::entityName(npc))("result", "refused")
+		("fight", (npc->_npcdata->behavior & BEHAVIOUR_FIGHT) != 0)("targetsPlayer", npc->targetinfo == EntityHandle_Player);
+}
+
 //! The engine's strike speech, as its strike of a nearly full charge says it
 void strikeSpeech(Entity * weapon) {
 	Entity * io = entities.player();
@@ -294,6 +315,7 @@ void contact(Entity * weapon, double now, bool swing) {
 	targets.size = measure.size;
 	targets.kind = contactKindName(measure.kind);
 	ARX_EQUIPMENT_Strike_Check(entities.player(), weapon, aim, 0, EntityHandle(), &targets);
+	noteRefusedTouch(targets.refused);
 	if(targets.touched.empty()) {
 		return;
 	}

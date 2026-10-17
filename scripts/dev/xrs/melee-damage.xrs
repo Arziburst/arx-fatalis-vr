@@ -208,6 +208,10 @@ playground fight
 @until playground.npcFighting eq true 5s
 playground place 60
 @frames 60
+# Still fighting the player, still in reach of the sweep
+@assert playground.npcFightBehaviour eq true
+@assert playground.npcTargetsPlayer eq true
+@assert playground.npcDistance lt 100
 @remember touches vr.melee.touches
 @remember hits vr.melee.hits
 @mark

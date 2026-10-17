@@ -676,6 +676,8 @@ void writePlaygroundStatus(JsonWriter & json) {
 		json.value("npcFighting", fightsPlayer(*npc));
 		json.value("npcFightBehaviour", (data.behavior & BEHAVIOUR_FIGHT) != 0);
 		json.value("npcTargetsPlayer", npc->targetinfo == EntityHandle_Player);
+		// Units from the hero on the floor plane: whether the NPC stands where a sequence put it
+		json.value("npcDistance", glm::distance(Vec2f(npc->pos.x, npc->pos.z), Vec2f(player.pos.x, player.pos.z)));
 		json.value("npcLife", data.lifePool.current);
 		json.value("npcLifeMax", data.lifePool.max);
 		// Back at the place the level put it (revive -i takes it there): within a step, floor plane only

@@ -89,6 +89,13 @@ enum class SceneFirstLow : u8 {
 	Screen //!< the scene goes on the screen in the room, as the hybrid's far shots, until it ends
 };
 
+//! How a cut is taken where the eyes see a jump - a teleport or an instant turn of the hero, a ghost's or the observer's
+//! shot (cfg.ini \c vr_scene_cut; the owner, 2026-10-17: "no fades at all")
+enum class SceneCut : u8 {
+	Instant, //!< at once, the world jumps (default)
+	Fade     //!< behind a short fade: the shot shown is held while the world fades out, the new one taken at black
+};
+
 //! What owns the game's camera (status.json \c scene.kind)
 enum class SceneKind : u8 {
 	None,   //!< no scene camera (also a scene with only the letterbox on)
@@ -103,12 +110,15 @@ const char * sceneLookAtName(SceneLookAt lookAt);
 std::optional<SceneLookAt> parseSceneLookAt(std::string_view name);
 const char * sceneFirstLowName(SceneFirstLow low);
 std::optional<SceneFirstLow> parseSceneFirstLow(std::string_view name);
+const char * sceneCutName(SceneCut cut);
+std::optional<SceneCut> parseSceneCut(std::string_view name);
 const char * sceneKindName(SceneKind kind);
 
 //! The defaults (owner's answers on #29, 2026-10-13; the final pick is in the headset)
 constexpr SceneViewSetting DefaultSceneView = SceneViewSetting::Hybrid;
 constexpr SceneLookAt DefaultSceneLookAt = SceneLookAt::Ignore;
 constexpr SceneFirstLow DefaultSceneFirstLow = SceneFirstLow::Clamp; //!< the lead's proposal (#29)
+constexpr SceneCut DefaultSceneCut = SceneCut::Instant; //!< the owner, 2026-10-17
 
 //! A change of the eyes' camera bigger than this in one frame is a cut (SPEC.md): 50 cm, 10 degrees
 constexpr float CutJumpUnits = 50.f;
@@ -283,6 +293,7 @@ struct SceneInput {
 	bool firstOnFloor = true;       //!< a floor under the hero's eye (\c firstPos)
 	float firstFloorY = 0.f;        //!< that floor (y down), when \c firstOnFloor
 	SceneFirstLow firstLow = DefaultSceneFirstLow; //!< what first person does while that eye is too low
+	SceneCut cut = DefaultSceneCut;  //!< how a cut the eyes see a jump in is taken
 	//! Whether there is a floor under a point the eyes would see from (a ghost's or the observer's shot); none: yes
 	std::function<bool(const Vec3f & pos)> hasFloor;
 	//! The observer's point for this scene (\ref placeObserver), asked once, at the observer's first cut
@@ -465,6 +476,10 @@ public:
 	float maxYawStepDeg() const { return m_maxYawStep; }
 	u64 cuts() const { return m_cuts; }
 	u64 fadedCuts() const { return m_fadedCuts; }
+	//! Cuts the director took at once (\ref SceneCut::Instant): not a step, the chain starts anew
+	u64 instantCuts() const { return m_instantCuts; }
+	//! Cuts neither behind the fade nor taken by the director: a jump nobody asked for - always 0
+	u64 unexplainedCuts() const { return m_cuts - m_fadedCuts - m_instantCuts; }
 	u64 lookats() const { return m_lookats; }
 	u64 fadedLookats() const { return m_fadedLookats; }
 	u64 letterboxFrames() const { return m_letterboxFrames; }
@@ -488,6 +503,7 @@ private:
 	float m_maxYawStep = 0.f;
 	u64 m_cuts = 0;
 	u64 m_fadedCuts = 0;
+	u64 m_instantCuts = 0;
 	u64 m_lookats = 0;
 	u64 m_fadedLookats = 0;
 	u64 m_letterboxFrames = 0;
@@ -518,6 +534,7 @@ struct SceneState {
 	SceneViewSetting view = DefaultSceneView;
 	SceneLookAt lookAt = DefaultSceneLookAt;
 	SceneFirstLow firstLow = DefaultSceneFirstLow;
+	SceneCut cut = DefaultSceneCut;
 
 	bool active = false;             //!< a scripted scene owns the game's camera (last VR frame)
 	SceneKind kind = SceneKind::None; //!< what owns it

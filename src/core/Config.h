@@ -153,6 +153,7 @@ public:
 		std::string vrSceneView; //!< VR: the view of scripted scenes: first, observer, ghost, hybrid (#29, vr/SceneView.h)
 		std::string vrSceneLookAt; //!< VR: what playerlookat does: ignore, fade (#29)
 		std::string vrSceneFirstLow; //!< VR: first person's eye too low in a scene: black, clamp, screen (#29)
+		std::string vrSceneCut; //!< VR: a scene's cut the eyes see a jump in: instant, fade (#29)
 		std::string vrSubtitles; //!< VR: where scene subtitles go: above, chest, lowerthird (#29, vr/SceneSubtitles.h)
 
 		float fov;

@@ -15,6 +15,7 @@
 # Defaults (a fresh isolated user dir): hybrid, ignore, above
 @assert scene.view eq hybrid
 @assert scene.lookat eq ignore
+@assert scene.cut eq instant                     # no fades at all by default (the owner, 2026-10-17)
 @assert scene.subtitle.placement eq above
 @assert scene.kind eq none
 @assert scene.fade eq 0
@@ -34,6 +35,10 @@ scene lookat fade
 @assert scene.lookat eq fade
 scene lookat ignore
 @assert scene.lookat eq ignore
+scene cut fade
+@assert scene.cut eq fade
+scene cut instant
+@assert scene.cut eq instant
 scene subtitles chest
 @assert scene.subtitle.placement eq chest
 scene subtitles lowerthird

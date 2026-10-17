@@ -44,6 +44,8 @@ SceneInput standing() {
 	in.engineFloorY = 0.f;
 	in.engineFloor = true;
 	in.seconds = SvFrame;
+	// The cuts behind the fade (vr_scene_cut fade): the default takes them at once (instantCutTest)
+	in.cut = SceneCut::Fade;
 	return in;
 }
 
@@ -591,6 +593,67 @@ void SceneViewTest::meterFramesTest() {
 	CPPUNIT_ASSERT_EQUAL(u64(2), meter.openingFrames());
 	CPPUNIT_ASSERT_EQUAL(u64(1), meter.screenFrames());
 	CPPUNIT_ASSERT_EQUAL(u64(1), meter.worldFrames());
+}
+
+void SceneViewTest::instantCutTest() {
+
+	CPPUNIT_ASSERT(DefaultSceneCut == SceneCut::Instant);
+	CPPUNIT_ASSERT(parseSceneCut("fade") == SceneCut::Fade);
+	CPPUNIT_ASSERT(!parseSceneCut("blink"));
+
+	// The owner (2026-10-17): no fades at all - the script teleporting the hero as a dialogue starts is taken at once
+	SceneDirector director;
+	SceneInput in = standing();
+	in.cut = SceneCut::Instant;
+	director.update(in);
+	SceneInput moved = sceneOf(in, SceneKind::Speech, 3, SceneViewSetting::Hybrid);
+	moved.firstPos.x += 200.f;
+	SceneOutput out = director.update(moved);
+	CPPUNIT_ASSERT(out.cut);
+	CPPUNIT_ASSERT(out.started);
+	CPPUNIT_ASSERT_EQUAL(0.f, out.fade);
+	CPPUNIT_ASSERT(same(out.pos, moved.firstPos));
+
+	// A ghost's shot too
+	SceneInput shot = sceneOf(in, SceneKind::Entity, 4, SceneViewSetting::Ghost);
+	shot.enginePos = Vec3f(500.f, -200.f, 500.f);
+	out = director.update(shot);
+	CPPUNIT_ASSERT(out.cut);
+	CPPUNIT_ASSERT(out.shown == SceneShown::Ghost);
+	CPPUNIT_ASSERT_EQUAL(0.f, out.fade);
+
+	// An eye that must not be seen is still reached behind the fade: no floor under the hero's eye
+	SceneDirector blind;
+	blind.update(in);
+	SceneInput off = sceneOf(in, SceneKind::None, 0, SceneViewSetting::Hybrid);
+	off.firstOnFloor = false;
+	out = blind.update(off);
+	CPPUNIT_ASSERT(!out.cut);
+	CPPUNIT_ASSERT(!out.seamless);
+	CPPUNIT_ASSERT(out.fade > 0.f);
+
+	// The meter: an instant cut is a cut, not a step, and explained
+	SceneMeter meter;
+	SceneMeterFrame frame;
+	frame.active = true;
+	frame.shown = SceneShown::First;
+	frame.pos = Vec3f(0.f, -170.f, 0.f);
+	frame.aboveFloor = 1.7f;
+	meter.add(frame);
+	frame.pos.x += 200.f;
+	frame.shotChanged = true;
+	meter.add(frame);
+	frame.shotChanged = false;
+	frame.pos.x += 1.f;
+	meter.add(frame);
+	CPPUNIT_ASSERT_EQUAL(u64(1), meter.cuts());
+	CPPUNIT_ASSERT_EQUAL(u64(1), meter.instantCuts());
+	CPPUNIT_ASSERT_EQUAL(u64(0), meter.unexplainedCuts());
+	CPPUNIT_ASSERT(meter.maxStepCm() < 2.f);
+	// A jump the director did not take is unexplained
+	frame.pos.x += 300.f;
+	meter.add(frame);
+	CPPUNIT_ASSERT_EQUAL(u64(1), meter.unexplainedCuts());
 }
 
 void SceneViewTest::heldYawTest() {

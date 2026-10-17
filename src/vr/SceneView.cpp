@@ -81,6 +81,20 @@ std::optional<SceneFirstLow> parseSceneFirstLow(std::string_view name) {
 	return std::nullopt;
 }
 
+const char * sceneCutName(SceneCut cut) {
+	return cut == SceneCut::Fade ? "fade" : "instant";
+}
+
+std::optional<SceneCut> parseSceneCut(std::string_view name) {
+	if(name == "instant") {
+		return SceneCut::Instant;
+	}
+	if(name == "fade") {
+		return SceneCut::Fade;
+	}
+	return std::nullopt;
+}
+
 const char * sceneLookAtName(SceneLookAt lookAt) {
 	return lookAt == SceneLookAt::Fade ? "fade" : "ignore";
 }
@@ -449,8 +463,14 @@ SceneOutput SceneDirector::update(const SceneInput & in) {
 		m_cutPending = false;
 		out.cutRestarted = true;
 	}
+	// The rest is a cut the eyes see a jump in: at once by default (the owner: "no fades at all"), behind the fade with
+	// vr_scene_cut fade; an eye that must not be seen is always reached behind the fade
+	const bool instant = !seamless && (differs || jump) && !m_cutPending && in.cut == SceneCut::Instant && !targetBlind;
 	if(seamless) {
 		out.seamless = true;
+		switchTo(target, targetPos, in, out, differs);
+	} else if(instant) {
+		out.cut = true;
 		switchTo(target, targetPos, in, out, differs);
 	} else if(differs || jump) {
 		if(!m_cutPending) {
@@ -566,6 +586,10 @@ void SceneMeter::add(const SceneMeterFrame & frame) {
 		m_cuts++;
 		if(behindFade) {
 			m_fadedCuts++;
+		} else if(frame.shotChanged) {
+			// Taken at once by the director: a cut, not a step - nothing is compared across it
+			m_instantCuts++;
+			m_haveMeasured = false;
 		}
 	}
 	if(frame.blind) {

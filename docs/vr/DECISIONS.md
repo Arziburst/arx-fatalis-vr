@@ -40,11 +40,12 @@ a changed decision keeps its history in that cell.
   rule (far, out of sight, or the hero's body scripted) decides what is cinematic in every view.
 - **No blink where the eyes see no jump** (the owner, 2026-10-17: "if we can get rid of it, we must"): a dialogue's new
   line or camera, a scene's start and end while the eyes stay in the hero's head, and the switch between the world and
-  the screen (no motion: the world goes, the screen is there) happen at once (`vr.scene.switch`). **A cut behind a fade**
-  is left only where the world would jump around the player: the hero teleported by the script (more than 50 cm in
-  a frame) or turned at once (more than 10 degrees), a cut into or out of a ghost's or the observer's shot, and an eye
-  that must not be seen (no floor under it; first person too low with `black`) - the shot shown is held while the world
-  fades out, the new one is taken at black, then the world fades in. The ghost's yaw is set at each cut so that where
+  the screen (no motion: the world goes, the screen is there) happen at once (`vr.scene.switch`). **The cuts the eyes
+  see a jump in** - the hero teleported by the script (more than 50 cm in a frame) or turned at once (more than 10
+  degrees), a cut into or out of a ghost's or the observer's shot - are taken at once too by default (cfg.ini
+  `vr_scene_cut` `instant`; the owner, 2026-10-17: "no fades at all"); `fade` puts them behind a short fade, kept for
+  later. Only an eye that must not be seen (no floor under it; first person too low with `black`) is always reached behind
+  the fade: the shot shown is held while the world fades out, the new one is taken at black, then the world fades in. The ghost's yaw is set at each cut so that where
   the player looks is where the game's camera looked.
 - **`playerlookat`** (cfg.ini `vr_scene_lookat`): `ignore` (default) leaves the hero's yaw; `fade` turns him at the
   black of a short fade. Never an un-faded snap.
@@ -71,7 +72,7 @@ a changed decision keeps its history in that cell.
 - **The IK arms are off while the hero is shown in third person** (a ghost shot, any external view of the game).
 - Flat mode is unchanged. The test channel's `scene ...` commands change the switches for the session only (cfg.ini
   keeps the player's choice).
-- **Proposal, for the owner to tune:** a cut (only the jumps above) fades out in 0.15 s (the head-in-wall fade's speed)
+- **Proposal, for the owner to tune:** a faded cut (`vr_scene_cut fade`, and the eye that must not be seen) fades out in 0.15 s (the head-in-wall fade's speed)
   and in in 0.25 s; a `playerlookat` fade is 0.1 s out and 0.1 s in; black is held two frames after a switch. One place:
   `SceneFadeParams` in `src/vr/SceneView.h`. The hybrid's 6 m (`HybridFarUnits`), the screen's size and distance and
   the observer's distances are proposals too.

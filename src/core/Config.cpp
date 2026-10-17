@@ -97,6 +97,7 @@ constexpr const std::string_view
 	vrSceneView = "hybrid",
 	vrSceneLookAt = "ignore",
 	vrSceneFirstLow = "clamp",
+	vrSceneCut = "instant",
 	vrSubtitles = "above",
 	thumbnailSize = BOOST_PP_STRINGIZE(THUMBNAIL_DEFAULT_WIDTH) "x"
 	                BOOST_PP_STRINGIZE(THUMBNAIL_DEFAULT_HEIGHT);
@@ -309,6 +310,7 @@ constexpr const std::string_view
 	vrSceneView = "vr_scene_view",
 	vrSceneLookAt = "vr_scene_lookat",
 	vrSceneFirstLow = "vr_scene_first_low",
+	vrSceneCut = "vr_scene_cut",
 	vrSubtitles = "vr_subtitles",
 	fov = "fov",
 	viewBobbing = "view_bobbing",
@@ -622,6 +624,7 @@ bool Config::save() {
 	writer.writeKey(Key::vrSceneView, video.vrSceneView);
 	writer.writeKey(Key::vrSceneLookAt, video.vrSceneLookAt);
 	writer.writeKey(Key::vrSceneFirstLow, video.vrSceneFirstLow);
+	writer.writeKey(Key::vrSceneCut, video.vrSceneCut);
 	writer.writeKey(Key::vrSubtitles, video.vrSubtitles);
 	writer.writeKey(Key::fov, video.fov);
 	writer.writeKey(Key::viewBobbing, video.viewBobbing);
@@ -830,6 +833,8 @@ bool Config::init(const fs::path & file) {
 	video.vrSceneLookAt = vr::sceneLookAtName(vr::parseSceneLookAt(vrSceneLookAt).value_or(vr::DefaultSceneLookAt));
 	std::string vrSceneFirstLow(reader.getKey(Section::Video, Key::vrSceneFirstLow, Default::vrSceneFirstLow));
 	video.vrSceneFirstLow = vr::sceneFirstLowName(vr::parseSceneFirstLow(vrSceneFirstLow).value_or(vr::DefaultSceneFirstLow));
+	std::string vrSceneCut(reader.getKey(Section::Video, Key::vrSceneCut, Default::vrSceneCut));
+	video.vrSceneCut = vr::sceneCutName(vr::parseSceneCut(vrSceneCut).value_or(vr::DefaultSceneCut));
 	std::string vrSubtitles(reader.getKey(Section::Video, Key::vrSubtitles, Default::vrSubtitles));
 	video.vrSubtitles = vr::subtitlePlacementName(
 		vr::parseSubtitlePlacement(vrSubtitles).value_or(vr::DefaultSubtitlePlacement));

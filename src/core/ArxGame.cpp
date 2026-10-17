@@ -413,6 +413,7 @@ bool ArxGame::initConfig() {
 	vr::sceneState().view = vr::parseSceneView(config.video.vrSceneView).value_or(vr::DefaultSceneView);
 	vr::sceneState().lookAt = vr::parseSceneLookAt(config.video.vrSceneLookAt).value_or(vr::DefaultSceneLookAt);
 	vr::sceneState().firstLow = vr::parseSceneFirstLow(config.video.vrSceneFirstLow).value_or(vr::DefaultSceneFirstLow);
+	vr::sceneState().cut = vr::parseSceneCut(config.video.vrSceneCut).value_or(vr::DefaultSceneCut);
 	vr::setSubtitlePlacement(vr::parseSubtitlePlacement(config.video.vrSubtitles).value_or(vr::DefaultSubtitlePlacement));
 	
 	Logger::configure(config.misc.debug);
@@ -2164,6 +2165,7 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 	in.firstPos = g_sceneFirstPos;
 	in.firstFloorY = floorBelow(in.firstPos, in.firstOnFloor);
 	in.firstLow = state.firstLow;
+	in.cut = state.cut;
 	in.hasFloor = [](const Vec3f & pos) { bool found = false; floorBelow(pos, found); return found; };
 	in.playerYaw = player.angle.getYaw();
 	const vr::HeadStatus & head = vr::headStatus();

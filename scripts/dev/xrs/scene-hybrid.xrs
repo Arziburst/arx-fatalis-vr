@@ -34,7 +34,7 @@ newgame
 @assert scene.meter.maxStepCm lt 5
 @assert scene.meter.maxYawStepDeg lt 1
 @remember cuts2 scene.meter.cuts
-@assert scene.meter.fadedCuts eq {cuts2}
+@assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.letterboxFrames eq 0
 # No black square left in front of the player after the intro (the owner, 2026-10-17): back in the world the quad carries
 # nothing (no HUD frame in VR, #471), and it is not the screen any more
@@ -69,7 +69,8 @@ vr-input stick left 0 0
 @assert scene.meter.maxStepCm lt 5
 @assert scene.meter.maxYawStepDeg lt 1
 @remember cuts1 scene.meter.cuts
-@assert scene.meter.fadedCuts eq {cuts1}
+@assert scene.meter.unexplainedCuts eq 0
+@assert scene.meter.fadeFrames eq 0                # the teleport at the scene's start too: no fade at all (the owner, vr_scene_cut instant)
 @assert scene.meter.letterboxFrames eq 0
 
 # T8: level 5, a vision ball's camera - a shot of a far place: on the screen
@@ -100,6 +101,6 @@ sendevent cinematic camera_0137 ""
 @assert scene.meter.maxStepCm lt 5
 @assert scene.meter.maxYawStepDeg lt 1
 @remember cuts8 scene.meter.cuts
-@assert scene.meter.fadedCuts eq {cuts8}
+@assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.letterboxFrames eq 0
 @assert errors eq 0

@@ -34,7 +34,8 @@ vr-input stick left 0 0
 @assert scene.meter.maxStepCm lt 5
 @assert scene.meter.maxYawStepDeg lt 1
 @remember cuts1 scene.meter.cuts
-@assert scene.meter.fadedCuts eq {cuts1}
+@assert scene.meter.unexplainedCuts eq 0
+@assert scene.meter.fadeFrames eq 0                # the teleport at the scene's start too: no fade at all (the owner, vr_scene_cut instant)
 @assert scene.meter.letterboxFrames eq 0
 
 # T5: every speak -c mode on Kultar (one stretch, no input)
@@ -107,7 +108,7 @@ human_base_0028.speak -c ccclistener_r player 40 40 [kultar_cantgo]
 @assert scene.meter.maxStepCm lt 5
 @assert scene.meter.maxYawStepDeg lt 1
 @remember cuts5 scene.meter.cuts
-@assert scene.meter.fadedCuts eq {cuts5}
+@assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.cuts eq 0                     # no blink between the lines (the owner, 2026-10-17)
 @assert scene.meter.fadeFrames eq 0
 @assert scene.meter.letterboxFrames eq 0
@@ -152,7 +153,7 @@ newgame
 @until scene.active eq false 30s
 @assert scene.meter.sceneFrames gt 0
 @remember cuts2clamp scene.meter.cuts
-@assert scene.meter.fadedCuts eq {cuts2clamp}
+@assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.letterboxFrames eq 0
 @assert scene.meter.minAboveFloorM ge 1.2                 # the eye raised
 @remember blindClamp scene.meter.blindFrames
@@ -171,7 +172,7 @@ newgame
 @until scene.active eq false 30s
 @assert scene.meter.sceneFrames gt 0
 @remember cuts2black scene.meter.cuts
-@assert scene.meter.fadedCuts eq {cuts2black}
+@assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.letterboxFrames eq 0
 @assert scene.meter.minAboveFloorM ge 1.2                 # no low frame seen: black instead
 @assert scene.meter.blindFrames gt {blindClamp*3}           # black far longer than the 2 s off the level
@@ -190,7 +191,7 @@ newgame
 @until scene.active eq false 30s
 @assert scene.meter.sceneFrames gt 0
 @remember cuts2screen scene.meter.cuts
-@assert scene.meter.fadedCuts eq {cuts2screen}
+@assert scene.meter.unexplainedCuts eq 0
 @assert scene.meter.letterboxFrames eq 0
 @assert scene.meter.screenFrames gt 0
 

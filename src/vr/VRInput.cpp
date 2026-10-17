@@ -460,6 +460,12 @@ void updateInput() {
 
 	const bool skip = takeSkipControls(input);
 
+	// In the menus a hand pointing at the panel (the last update's rays) clicks with its trigger however firmly it
+	// holds the grip: its chords are off (#496). The book, the bag and a container are in game: their use stays
+	const bool menu = ARXmenu.mode() != Mode_InGame;
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		g_input.resolver.setChords(Hand(hand), !(menu && g_input.rays[hand].onPanel));
+	}
 	g_input.resolver.update(toMsi(platform::getTime()), input.down, input.taps);
 	g_input.input = input;
 

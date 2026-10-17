@@ -54,6 +54,10 @@ class SimRigTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testFingers);
 	CPPUNIT_TEST(testFiveFingers);
 	CPPUNIT_TEST(testSessionEndsAndExitFaults);
+	CPPUNIT_TEST(testMsLineRunsAtItsDisplayTime);
+	CPPUNIT_TEST(testMsActionIsHeldForItsTime);
+	CPPUNIT_TEST(testMsRampFollowsTheDisplayTime);
+	CPPUNIT_TEST(testMsLinesInAScriptFollowEachOther);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -80,6 +84,10 @@ public:
 	void testFingers();
 	void testFiveFingers();
 	void testSessionEndsAndExitFaults();
+	void testMsLineRunsAtItsDisplayTime();
+	void testMsActionIsHeldForItsTime();
+	void testMsRampFollowsTheDisplayTime();
+	void testMsLinesInAScriptFollowEachOther();
 
 };
 

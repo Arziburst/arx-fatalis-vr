@@ -22,6 +22,7 @@
 #include <stddef.h>
 #include <algorithm>
 // #include <exception>
+#include <iterator>
 #include <sstream>
 #include <string_view>
 
@@ -58,6 +59,7 @@
 #include "vr/VRArms.h"
 #include "vr/WeaponGrip.h"
 #include "vr/VRBody.h"
+#include "vr/VRControls.h"
 #include "vr/VRSystem.h"
 #include "vr/VRTurn.h"
 
@@ -80,6 +82,9 @@ constexpr const std::string_view
 	vrHudKeep,
 	vrLevelUp = "both",
 	renderer = "auto",
+	vrViewJump = "level",
+	vrViewCrouch = "slow",
+	vrDeathView = "headless",
 	resolution = "auto",
 	audioBackend = "auto",
 	audioDevice = "auto",
@@ -90,6 +95,9 @@ constexpr const std::string_view
 	vrArmsModel = "classic",
 	vrClassicHand = "arx",
 	vrBody = "full",
+	vrMeleeNoSwing = "min",
+	vrMeleeQuality = "min",
+	vrMeleeRange, // empty: the weapon class's default (#465, vr::defaultRanges)
 	bufferUpload,
 	extensionOverride,
 	thumbnailSize = BOOST_PP_STRINGIZE(THUMBNAIL_DEFAULT_WIDTH) "x"
@@ -160,9 +168,9 @@ constexpr const float
 	vrSneakBelow = vr::StickPace().sneakBelow,
 	vrRunAbove = vr::StickPace().runAbove,
 	vrMeleeSwingSpeed = vr::SwingParams().startSpeed,
-	vrMeleeFullSpeed = vr::SwingParams().fullSpeed,
-	vrMeleeWeakAim = vr::SwingParams().weakAim,
+	vrMeleePathScale = 1.f,
 	vrMeleeTargetCooldown = vr::SwingParams().targetCooldown,
+	vrMeleeRecovery = -1.f, // the weapon type's default (#323, vr::defaultRecovery)
 	vrHiltKnuckle = vr::HiltAngles().knuckle,
 	vrHiltMiddle = vr::HiltAngles().middle,
 	vrHiltLast = vr::HiltAngles().last,
@@ -199,6 +207,11 @@ constexpr const float
 	vrBodyPush = vr::BodyViewParams().push,
 	vrBodyPushDown = vr::BodyViewParams().pushDown,
 	vrBodyClearance = vr::BodyViewParams().clearance;
+
+// The Index grip as a button (#496): pressed above a firm resting hold, let go below a closed hand's flicker
+const float
+	vrGripPress = vr::IndexGripThreshold.press,
+	vrGripRelease = vr::IndexGripThreshold.release;
 
 constexpr const ActionKey actions[NUM_ACTION_KEY] = {
 	ActionKey(Keyboard::Key_Spacebar), // JUMP
@@ -300,6 +313,9 @@ constexpr const std::string_view
 	vrPhysicalCrouch = "vr_physical_crouch",
 	vrCrouchEnter = "vr_crouch_enter",
 	vrCrouchExit = "vr_crouch_exit",
+	vrViewJump = "vr_view_jump",
+	vrViewCrouch = "vr_view_crouch",
+	vrDeathView = "vr_death_view",
 	fov = "fov",
 	viewBobbing = "view_bobbing",
 	screenShake = "screen_shake",
@@ -376,9 +392,13 @@ constexpr const std::string_view
 	vrArmMaxStretch = "vr_arm_max_stretch",
 	vrArmWeaponElbowDrop = "vr_arm_weapon_elbow_drop",
 	vrMeleeSwingSpeed = "vr_melee_swing_speed",
-	vrMeleeFullSpeed = "vr_melee_full_speed",
-	vrMeleeWeakAim = "vr_melee_weak_aim",
+	vrMeleeQuality = "vr_melee_quality",
+	vrMeleePathScale = "vr_melee_path_scale",
+	vrMeleeNoSwing = "vr_melee_noswing",
 	vrMeleeTargetCooldown = "vr_melee_target_cooldown",
+	vrMeleeRecoveryDagger = "vr_melee_recovery_dagger",
+	vrMeleeRecovery1h = "vr_melee_recovery_1h",
+	vrMeleeRecovery2h = "vr_melee_recovery_2h",
 	vrHiltKnuckle = "vr_hilt_knuckle",
 	vrHiltMiddle = "vr_hilt_middle",
 	vrHiltLast = "vr_hilt_last",
@@ -389,6 +409,10 @@ constexpr const std::string_view
 	vrBodyClearance = "vr_body_clearance",
 	vrRadialPlace = "vr_radial_place",
 	vrRadialGazeDeg = "vr_radial_gaze_deg";
+
+constexpr const std::string_view
+	vrGripPress = "vr_grip_press",
+	vrGripRelease = "vr_grip_release";
 
 // Input key options
 constexpr const std::string_view actions[NUM_ACTION_KEY] = {
@@ -447,6 +471,15 @@ constexpr const std::string_view
 	realtimeOverride = "realtime_override";
 
 } // namespace Key
+
+static_assert(std::size(vr::MeleeClasses) == std::tuple_size_v<decltype(config.input.vrMeleeSlash)>
+              && std::size(vr::MeleeClasses) == std::tuple_size_v<decltype(config.input.vrMeleeStab)>,
+              "a cfg.ini damage range per weapon class (#465)");
+
+//! vr_melee_slash_<class> / vr_melee_stab_<class>: a weapon class's damage range (#465)
+std::string meleeRangeKey(std::string_view kind, vr::MeleeClass meleeClass) {
+	return "vr_melee_" + std::string(kind) + '_' + vr::meleeClassName(meleeClass);
+}
 
 class ConfigReader : public IniReader {
 	
@@ -609,6 +642,9 @@ bool Config::save() {
 	writer.writeKey(Key::vrPhysicalCrouch, video.vrPhysicalCrouch);
 	writer.writeKey(Key::vrCrouchEnter, video.vrCrouchEnter);
 	writer.writeKey(Key::vrCrouchExit, video.vrCrouchExit);
+	writer.writeKey(Key::vrViewJump, video.vrViewJump);
+	writer.writeKey(Key::vrViewCrouch, video.vrViewCrouch);
+	writer.writeKey(Key::vrDeathView, video.vrDeathView);
 	writer.writeKey(Key::fov, video.fov);
 	writer.writeKey(Key::viewBobbing, video.viewBobbing);
 	writer.writeKey(Key::screenShake, video.screenShake);
@@ -688,9 +724,17 @@ bool Config::save() {
 	writer.writeKey(Key::vrArmMaxStretch, input.vrArmMaxStretch);
 	writer.writeKey(Key::vrArmWeaponElbowDrop, input.vrArmWeaponElbowDrop);
 	writer.writeKey(Key::vrMeleeSwingSpeed, input.vrMeleeSwingSpeed);
-	writer.writeKey(Key::vrMeleeFullSpeed, input.vrMeleeFullSpeed);
-	writer.writeKey(Key::vrMeleeWeakAim, input.vrMeleeWeakAim);
+	for(vr::MeleeClass meleeClass : vr::MeleeClasses) {
+		writer.writeKey(meleeRangeKey("slash", meleeClass), input.vrMeleeSlash[size_t(meleeClass)]);
+		writer.writeKey(meleeRangeKey("stab", meleeClass), input.vrMeleeStab[size_t(meleeClass)]);
+	}
+	writer.writeKey(Key::vrMeleeQuality, input.vrMeleeQuality);
+	writer.writeKey(Key::vrMeleePathScale, input.vrMeleePathScale);
+	writer.writeKey(Key::vrMeleeNoSwing, input.vrMeleeNoSwing);
 	writer.writeKey(Key::vrMeleeTargetCooldown, input.vrMeleeTargetCooldown);
+	writer.writeKey(Key::vrMeleeRecoveryDagger, input.vrMeleeRecoveryDagger);
+	writer.writeKey(Key::vrMeleeRecovery1h, input.vrMeleeRecovery1h);
+	writer.writeKey(Key::vrMeleeRecovery2h, input.vrMeleeRecovery2h);
 	writer.writeKey(Key::vrHiltKnuckle, input.vrHiltKnuckle);
 	writer.writeKey(Key::vrHiltMiddle, input.vrHiltMiddle);
 	writer.writeKey(Key::vrHiltLast, input.vrHiltLast);
@@ -701,6 +745,8 @@ bool Config::save() {
 	writer.writeKey(Key::vrBodyClearance, input.vrBodyClearance);
 	writer.writeKey(Key::vrRadialPlace, input.vrRadialPlace);
 	writer.writeKey(Key::vrRadialGazeDeg, input.vrRadialGazeDeg);
+	writer.writeKey(Key::vrGripPress, input.vrGripPress);
+	writer.writeKey(Key::vrGripRelease, input.vrGripRelease);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -809,6 +855,10 @@ bool Config::init(const fs::path & file) {
 	video.vrCrouchEnter = glm::clamp(vrCrouchEnter, 0.05f, 1.5f);
 	float vrCrouchExit = reader.getKey(Section::Video, Key::vrCrouchExit, Default::vrCrouchExit);
 	video.vrCrouchExit = glm::clamp(vrCrouchExit, 0.f, video.vrCrouchEnter);
+	// The stable view (#416): the variants the owner picks in the headset - checked where they are used (vr/VRComfort.cpp)
+	video.vrViewJump = reader.getKey(Section::Video, Key::vrViewJump, Default::vrViewJump);
+	video.vrViewCrouch = reader.getKey(Section::Video, Key::vrViewCrouch, Default::vrViewCrouch);
+	video.vrDeathView = reader.getKey(Section::Video, Key::vrDeathView, Default::vrDeathView);
 	float fov = reader.getKey(Section::Video, Key::fov, Default::fov);
 	video.fov = std::max(fov, 10.f);
 	video.viewBobbing = reader.getKey(Section::Video, Key::viewBobbing, Default::viewBobbing);
@@ -912,15 +962,48 @@ bool Config::init(const fs::path & file) {
 	input.vrArmMaxStretch = vr::clampArmMaxStretch(reader.getKey(Section::Input, Key::vrArmMaxStretch, Default::vrArmMaxStretch));
 	input.vrArmWeaponElbowDrop = vr::clampWeaponElbowDrop(reader.getKey(Section::Input, Key::vrArmWeaponElbowDrop,
 	                                                                    Default::vrArmWeaponElbowDrop));
-	// Physical melee (#39): the full-damage speed is never below the swing speed
+	// Physical melee (#39)
 	float vrMeleeSwingSpeed = reader.getKey(Section::Input, Key::vrMeleeSwingSpeed, Default::vrMeleeSwingSpeed);
 	input.vrMeleeSwingSpeed = glm::clamp(vrMeleeSwingSpeed, 0.5f, 10.f);
-	float vrMeleeFullSpeed = reader.getKey(Section::Input, Key::vrMeleeFullSpeed, Default::vrMeleeFullSpeed);
-	input.vrMeleeFullSpeed = glm::clamp(vrMeleeFullSpeed, input.vrMeleeSwingSpeed, 20.f);
-	float vrMeleeWeakAim = reader.getKey(Section::Input, Key::vrMeleeWeakAim, Default::vrMeleeWeakAim);
-	input.vrMeleeWeakAim = glm::clamp(vrMeleeWeakAim, 0.1f, 1.f);
+	// The damage from the swing's size and speed (#465): per weapon class "<path min> <path max> <speed min> <speed max>
+	// [<cap>]", empty for the class's default - a value that does not parse is dropped (the default, and a log line)
+	for(vr::MeleeClass meleeClass : vr::MeleeClasses) {
+		for(const char * kind : { "slash", "stab" }) {
+			const std::string key = meleeRangeKey(kind, meleeClass);
+			std::string value(reader.getKey(Section::Input, key, Default::vrMeleeRange));
+			bool ok = true;
+			vr::parseDamageRange(value, vr::DamageRange(), &ok);
+			if(!ok) {
+				LogWarning << "cfg.ini " << key << "=\"" << value << "\": expected <path min> <path max> <speed min> "
+				           << "<speed max> (0-20) [<cap> (0-1)], using the default";
+				value.clear();
+			}
+			(std::string_view(kind) == "slash" ? input.vrMeleeSlash : input.vrMeleeStab)[size_t(meleeClass)] = value;
+		}
+	}
+	input.vrMeleeQuality = vr::qualityName(vr::parseQuality(reader.getKey(Section::Input, Key::vrMeleeQuality,
+	                                                                      Default::vrMeleeQuality)));
+	float vrMeleePathScale = reader.getKey(Section::Input, Key::vrMeleePathScale, Default::vrMeleePathScale);
+	input.vrMeleePathScale = glm::clamp(vrMeleePathScale, 0.25f, 2.f);
+	{
+		const std::string_view noSwing = reader.getKey(Section::Input, Key::vrMeleeNoSwing, Default::vrMeleeNoSwing);
+		bool ok = true;
+		input.vrMeleeNoSwing = vr::noSwingName(vr::parseNoSwing(noSwing, &ok));
+		if(!ok) {
+			LogWarning << "cfg.ini " << Key::vrMeleeNoSwing << "=\"" << noSwing << "\": expected min or none, using "
+			           << input.vrMeleeNoSwing;
+		}
+	}
 	float vrMeleeTargetCooldown = reader.getKey(Section::Input, Key::vrMeleeTargetCooldown, Default::vrMeleeTargetCooldown);
 	input.vrMeleeTargetCooldown = glm::clamp(vrMeleeTargetCooldown, 0.f, 2.f);
+	// The recovery after a hit per weapon type (#323): seconds, or negative for the type's default
+	auto meleeRecovery = [&reader](std::string_view key) {
+		const float seconds = reader.getKey(Section::Input, key, Default::vrMeleeRecovery);
+		return seconds < 0.f ? -1.f : std::min(seconds, 5.f);
+	};
+	input.vrMeleeRecoveryDagger = meleeRecovery(Key::vrMeleeRecoveryDagger);
+	input.vrMeleeRecovery1h = meleeRecovery(Key::vrMeleeRecovery1h);
+	input.vrMeleeRecovery2h = meleeRecovery(Key::vrMeleeRecovery2h);
 	// A hand on a hilt (#385.7): each angle within 0 and its fist limit
 	vr::HiltAngles hilt;
 	hilt.knuckle = reader.getKey(Section::Input, Key::vrHiltKnuckle, Default::vrHiltKnuckle);
@@ -950,6 +1033,12 @@ bool Config::init(const fs::path & file) {
 	}
 	float vrRadialGazeDeg = reader.getKey(Section::Input, Key::vrRadialGazeDeg, Default::vrRadialGazeDeg);
 	input.vrRadialGazeDeg = glm::clamp(vrRadialGazeDeg, 10.f, 120.f);
+
+	// The Index grip's press / release (#496): the release stays below the press, or a closed hand would flicker
+	float vrGripPress = reader.getKey(Section::Input, Key::vrGripPress, Default::vrGripPress);
+	input.vrGripPress = glm::clamp(vrGripPress, 0.1f, 1.f);
+	float vrGripRelease = reader.getKey(Section::Input, Key::vrGripRelease, Default::vrGripRelease);
+	input.vrGripRelease = glm::clamp(vrGripRelease, 0.f, input.vrGripPress - 0.05f);
 
 	// Get action key settings
 	for(size_t i = 0; i < NUM_ACTION_KEY; i++) {

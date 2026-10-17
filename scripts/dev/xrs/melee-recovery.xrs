@@ -1,0 +1,98 @@
+# The recovery after a melee hit (#323) and the swing speed over the frame time (#352) in the test playground (#321):
+# after a hit the weapon hand recovers for its weapon type's time (cfg.ini vr_melee_recovery_dagger / _1h / _2h, by default
+# 0.6 / 0.8 / 1.0 s) - a swing started within it hits nothing, a swing after it hits. The same swings at 90 Hz and at
+# 45 Hz give the same hits.
+#   .\scripts\dev\smoke-test.ps1 -Playground -VrSim idle -Sequence melee-recovery
+# The swings are ramps of the simulated right controller (0.85 m in 89 ms: 8 frames at 90 Hz, 4 at 45 Hz); the second
+# swing of a pair starts 0.36 s after the first - past the per-target cooldown (0.25 s), within the recovery.
+# Swings are counted with ge, hits exactly: the simulated hand moves a step per frame, not per second, so a frame that
+# stalls (a hit's effects) slows it for real and may split one ramp into two swings - the host test MeleeSwingTest
+# proves the same swings at 45, 90 and an uneven 90 Hz.
+@sim idle
+@playground
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert area eq 30
+# A level started with --loadlevel stays in the engine's cursor mode, which keeps the inventory open (no swings while it
+# is); free look closes it, as loading a save does (a test-only workaround until #394)
+freelook on
+@until vr.melee.refused ne inventory 5s
+
+# 1. The dagger's recovery: the default 0.6 s (the dagger shortest, 1h 0.8, 2h 1.0 - host test MeleeSwingTest). The
+# game's own strike of every type is reported next to it, read from the hero's animations (one weapon is equipped: a
+# script equip leaves the weapon it replaces on the cursor, an item dragged - no swings)
+inventory playeraddfromscene dagger_9001
+dagger_9001.equip player
+@until vr.melee.recovery.weapon eq dagger 5s
+@assert vr.melee.active eq true
+@assert vr.weapon.place eq hand
+@assert vr.melee.recovery.source eq default
+@assert vr.melee.recovery.seconds eq 0.6
+@assert vr.melee.recovery.games.dagger gt 0
+@assert vr.melee.recovery.games.1h gt 0
+@assert vr.melee.recovery.games.2h gt 0
+@log melee\.recovery weapon=dagger seconds=0\.60 source=default game=\S+ dagger=\S+\.tea 1h=\S+\.tea 2h=\S+\.tea
+
+# The peaceful goblin 60 units ahead, the dagger level with its chest, the hand to the right - moved there slowly
+playground place 60
+vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
+vr-sim head rot 0 -25 0
+@frames 75
+@assert playground.npcAlive eq true
+@assert vr.melee.swings eq 0
+@assert vr.melee.hits eq 0
+@shot goblin-in-reach
+
+# 2. At 90 Hz: a swing through the goblin and straight back 0.36 s later - one hit; the second swing is in the recovery
+@mark
+vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35; vr-sim @+33-40 hand right pos 0.45 -0.8 -0.35
+@until vr.melee.swings ge 2 5s
+@until vr.melee.swinging eq false 5s
+@frames 30
+@assert vr.melee.hits eq 1
+@assert vr.melee.recovery.swings ge 1
+@log melee\.swing kind=slash result=hit
+@log melee\.swing kind=slash result=recovering .*hits=0
+# A third swing once the recovery is over: it hits
+@until vr.melee.recovery.left eq 0 5s
+@remember swings vr.melee.swings
+vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35
+@until vr.melee.swings ge {swings+1} 5s
+@until vr.melee.swinging eq false 5s
+@frames 30
+@assert vr.melee.hits eq 2
+@log melee\.swing kind=slash result=hit
+
+# 3. At 45 Hz the same swings in the same time (half the frames): the same hits. A fresh goblin first (the respawn
+# lever), so that the hits so far cannot have killed it
+playground kill
+@until playground.npcAlive eq false 5s
+playground pull respawn
+@until playground.npcAlive eq true 5s
+playground place 60
+vr-sim rate 45
+@frames 20
+@until vr.melee.recovery.left eq 0 5s
+@remember swings vr.melee.swings
+@remember recovering vr.melee.recovery.swings
+@mark
+vr-sim @+1-4 hand right pos 0.45 -0.8 -0.35; vr-sim @+17-20 hand right pos -0.4 -0.8 -0.35
+@until vr.melee.swings ge {swings+2} 5s
+@until vr.melee.swinging eq false 5s
+@frames 15
+@assert vr.melee.hits eq 3
+@assert vr.melee.recovery.swings ge {recovering+1}
+@log melee\.swing kind=slash result=hit
+@log melee\.swing kind=slash result=recovering .*hits=0
+@until vr.melee.recovery.left eq 0 5s
+@remember swings vr.melee.swings
+vr-sim @+1-4 hand right pos 0.45 -0.8 -0.35
+@until vr.melee.swings ge {swings+1} 5s
+@until vr.melee.swinging eq false 5s
+@frames 15
+@assert vr.melee.hits eq 4
+@log melee\.swing kind=slash result=hit
+@assert vr.melee.jumps eq 0
+@assert errors eq 0

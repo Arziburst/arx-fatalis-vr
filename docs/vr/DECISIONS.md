@@ -13,6 +13,210 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-056: Melee damage comes from the swing - its size and its speed, per weapon class; no charge
+
+- **Date:** 2026-10-17
+- **Status:** Accepted (the owner's design; every number is a provisional cfg.ini default from research #502 - the
+  owner tunes them in the headset, per weapon class and later per enemy)
+- **Decided by:** the owner (#465, 2026-10-14 and 2026-10-17: "in VR, damage comes from the real swing"; refined the
+  same day, relayed by the coordinator: a touch is the minimum, size and speed together, #502's measures and numbers,
+  a quality switch and a seated path scale); the mapping by the worker of #465
+- **Supersedes:** D-038's charge (the trigger held charged the strike; a plain swing was weak) - D-038's swing detector,
+  gates, contact through the engine's check and #323's recovery times stay
+
+### Decision
+- **No charge.** The trigger of the weapon hand does nothing - held long, short or not at all, a hit is the same. The
+  HUD's hit strength gauge stays empty while the IK hand holds the weapon.
+- **A touch is the minimum.** A contact outside a swing (D-038's detector, F-61) - a touch, a tap, the blade resting on
+  an enemy, a wrist flick - deals the engine's weakest strike, 0.1 of the full one (its `StrikeAimtime` floor), like
+  the original's uncharged click: **`vr_melee_noswing=min`**, the default (an unknown value is the default too, with a
+  log warning); `none` makes it nothing. A touch waits for the weapon type's recovery (#323's 0.6 / 0.8 / 1.0 s) after
+  any hit, so spamming stays possible but inefficient. It does not restart the swing's recovery or the per-target
+  cooldown (a blade resting in an enemy would keep a real swing from ever hitting it). **A touch reaches only an NPC
+  that fights the player** (its fight behaviour, the player its target): a friend, a merchant, an item or a crate get no
+  damage and no aggression from a resting blade, and the world's geometry is never checked - no wall sound, no
+  durability loss from a blade resting on the floor or a wall. Real swings hit anyone and anything, as in the original.
+  *The NPC rule is the coordinator's decision until the owner's - an open question for the owner.*
+- **A swing's damage is its size and its speed together** (research #502's measures): the **path** the hand travelled
+  since the stroke started (the sample before the lever point last rose above the swing's end speed, or the hand last
+  turned back - a waggle is many small strokes, not one big one) - for a thrust
+  (the lever point moving within 45° of the blade's way towards the tip, F-178's 0.707) its **lunge** along the blade -
+  and the lever point's filtered **speed** at contact (0.125 m along the blade, relative to the head, #352). Each gives
+  a factor, 0 at its range's minimum and 1 at its maximum; aim (the engine's `ratioaim`) = **0.1 + 0.9 q**, q by
+  **`vr_melee_quality`**: `min` (the weaker factor, the default), `geomean`, `product` - the owner compares them. Below
+  either minimum: the touch's value. A slow big swing and a fast tiny flick both stay low; only big and fast is the full
+  strike.
+- **The ranges are per weapon class** (`vr_melee_slash_<class>` / `vr_melee_stab_<class>` = `"<path min> <path max>
+  <speed min> <speed max> [<cap>]"`, empty = the default; the cap, 0-1 and 1 when left out, is the most quality the
+  kind reaches, 0 = the weapon has no such strike; the path ranges times **`vr_melee_path_scale`**, 1.0, for seated
+  play). #502's provisional numbers (path m, speed m/s):
+
+  | class (`<class>`) | slash | stab |
+  |---|---|---|
+  | dagger (`dagger`) | 0.25 → 0.6, 2.0 → 5.0 | 0.20 → 0.45, 2.0 → 4.5 |
+  | one-handed sword (`sword`) | 0.30 → 0.8, 2.5 → 6.0 | 0.20 → 0.50, 2.0 → 4.0 |
+  | one-handed axe, club, hammer, mace (`blunt`) | 0.35 → 0.9, 2.5 → 5.5 | 0.20 → 0.50, 2.0 → 4.0, cap 0.5 |
+  | two-handed sword, giant slayer (`2h_sword`) | 0.40 → 1.1, 2.5 → 5.0 | 0.25 → 0.50, 2.0 → 3.5 |
+  | two-handed axe, smith's club (`2h_blunt`) | 0.50 → 1.2, 2.5 → 4.5 | none (cap 0) |
+
+  #502: a one-handed blunt weapon's stab is a poke - the sword's ranges, at most half the quality (cap 0.5); a
+  two-handed blunt one has no stab - a thrust with it deals what a touch does. The class: a dagger or a two-handed weapon by its type; an axe, club, hammer or mace by its item class or material
+  (`vr/WeaponGrip.h`'s rule, applied to two-handed weapons too); anything else a sword.
+- **One log line per hit:** the engine's `melee.hit` with `aim` (the damage fraction), `speed`, `size` and `kind`.
+
+### Why
+- The owner: holding a button to charge is the mouse's way; in VR the arm is the strike. A touch is the uncharged
+  click; a big, fast, humanly sane slash or lunge is the full strike; either a slow or a tiny motion is little.
+- **The weaker factor by default:** each range keeps its own meaning, so the two can be tuned one at a time; a product
+  would also halve a swing that is medium in both (0.5 × 0.5). The switch lets the owner feel the others.
+- **Size up to the contact**, not of the whole stroke: the damage is dealt at contact, and the wind-up before it is what
+  makes a swing big.
+- **The hand's path and the lever's speed** (#502), not the blade's tip: a wrist flick turns a tip fast and far but is
+  no swing (F-61); the numbers of #502 are measured that way.
+- **A string key per class and kind** rather than four numbers each: 10 keys instead of 40, one readable line per
+  class; an empty value follows the code's defaults, so a cfg.ini written by an earlier build keeps no stale numbers
+  (TRAPS.md, 2026-10-17).
+- **A touch reaches only an NPC fighting the player, no geometry, and blocks no swing:** at the minimum every recovery,
+  a resting blade would otherwise break crates (the engine damages props by the player's full damage, whatever the
+  ratio), anger a friend or a merchant (the engine's aggression event comes with any hit), ring and wear on the floor
+  or a wall, and keep the hand from hitting.
+- Prior art (a short look, #465): VHVR scales by speed up to full at cooldown + 5 m/s (F-63); F-178's strength is
+  (peak − min) / max; PLANCK tells a stab by the hand moving along the blade (dot ≥ 0.8, F-195); Blade & Sorcery and
+  Boneworks take the hit point's velocity from physics; research #502 for the classes' numbers.
+
+### Rules out
+The charge and the trigger's role in melee; damage from the swing's peak; damage from speed alone or size alone; a
+thrust bonus or malus (a stab has its own ranges, the same rule).
+
+### Consequences
+- cfg.ini `vr_melee_slash_<class>`, `vr_melee_stab_<class>`, `vr_melee_quality`, `vr_melee_path_scale`,
+  `vr_melee_noswing` replace `vr_melee_full_speed` and `vr_melee_weak_aim`; the `melee.charge` event and
+  `vr.melee.charge` are gone, `vr.melee.trigger` shows the trigger changing nothing; `vr.melee.touches` counts touches
+  apart from `vr.melee.hits` (swings); `vr.melee.last` has the contact's `speed`, `size` and `kind`, `vr.melee.params`
+  the class and its ranges; the channel's `melee noswing|quality|pathscale|slash|stab` sets the keys live for tests.
+- Per enemy (#502's later stage) and haptics by strength are later work.
+- `melee-damage.xrs` proves each factor, the trigger and both modes in the playground; `melee-swing.xrs` and
+  `controls-v2.xrs` no longer see a charge.
+
+## D-055: In the menus the trigger always clicks and A is the right click; the Index grip presses at 0.70
+
+- **Date:** 2026-10-17
+- **Status:** Accepted
+- **Decided by:** project owner (#496: the menu must click however the controller is held; the right click on A,
+  option B of the worker's question, through the coordinator); the 0.70 / 0.40 defaults by the coordinator's contract,
+  the owner tunes them
+- **Amends:** D-042 (its table), and the Index threshold of D-019 / TRAPS.md 2026-10-10 (0.50 / 0.30)
+
+### Decision
+- **Menus** (the main menu and its pages, the character creation, the credits - `ARXmenu.mode() != Mode_InGame`): a
+  hand pointing at the panel makes **no chord** (`ControlResolver::setChords`). Its trigger is the left click whatever
+  the grip reads, and a grip held through the click taps nothing when it is let go.
+- **The menus' right click** is the pointing hand's **A**, pressed with that hand on the panel; that hand takes the
+  cursor. A off the panel clicks nothing. The use event (#398) still right-clicks from the panel when the player binds
+  it to something other than the grip + trigger chord.
+- **In game** the bag, the book and a container are on the same panel and keep the grip + trigger chord as the use
+  (eat, drink, equip).
+- **The Index grip** presses at **0.70** and lets go below **0.40** on `squeeze/value` (cfg `vr_grip_press` /
+  `vr_grip_release`, input section; the release is kept at least 0.05 under the press). The Touch and the simple
+  controller keep 0.70 / 0.55.
+
+### Why
+- In the owner's headset test (PR #460 build) a firm, resting hold of the Index read 0.52 - 0.59, over the 0.50
+  press: every trigger press on New game became `use_right (right.grip+right.trigger)`, and the menu did not react.
+- A raised press alone would still lose the click to a deliberate squeeze; in a menu the trigger has one meaning, so
+  the chord goes there. The menus still need a right click (the character creation takes a point back with it): A
+  is free in the menus (the casting stance and the bag are game actions).
+- 0.70 sits above the resting hold; 0.40 sits below the 0.6 - 0.7 flicker of a closed hand (TRAPS.md 2026-10-10),
+  so a closed hand stays one hold.
+
+### Trade-offs accepted
+- Grabbing and using in the world take a firmer squeeze than the light close of 2026-10-10; the owner judges it in
+  the headset and tunes the cfg keys.
+- The menus' right click moved from grip + trigger to A: a player who learned the chord in the menus learns A.
+
+### Consequences
+- `VRControlsTest::chordsOffTest`, `indexGripThresholdTest` (the thresholds per controller); `menu-trigger-grip.xrs`
+  (grip 0.55 and 0.95 + trigger on New game); `first-run-chargen.xrs` takes its points back with A. Game event
+  `vr.pointer.rightclick`. [TESTING.md](TESTING.md), [TRAPS.md](TRAPS.md).
+
+## D-054: Refresh-rate independence — times, not frames; a sample is timed by the display time it is for
+
+- **Date:** 2026-10-13
+- **Status:** Accepted
+- **Decided by:** worker of #23 (technical internals, D-017)
+
+### Decision
+- **Nothing in the game counts frames for a length of time or smooths by a factor per frame.** Players run the
+  Index at 80/90/120/144 Hz, a Quest at 72-120, a Beyond at 75/90; the runtime's predicted display period is the
+  only rate the game knows (D-024). Every timer, hysteresis and smoothing is a time: a count of frames becomes the
+  time it took **at 90 Hz**, the rate the VR features were tuned on (the simulator's default) - the hand reticle's
+  "2 frames in" is 10 ms, the engine magic's "every second frame" at the hand is 22 ms, a per-frame ease of the
+  external view (half the gap, a tenth of the turn) is `1 - keep^(dt * 90)`. Rates of change are per second.
+- **A sample is timed by the display time it is for.** The controllers and the head are located for the frame's
+  predicted display time (D-024), so the melee swing detector divides their moves by display-time steps, not by
+  the frame clock's (a millisecond of its jitter is 14 % of a 144 Hz frame); the frame clock where there is no
+  display time (flat mode).
+- **The proof is a simulated run at four rates.** The simulated headset's timeline takes display milliseconds
+  (`@+500ms`): the same motion at every rate (poses at the frame's display time, controller actions as held when
+  the frame's interval began), and `record <name>` keeps a frame's motion values. `refresh-rate.xrs` compares
+  72, 120 and 144 Hz against 90 within tolerances its header states, and judges lags and totals - never a value
+  read at a moment of a motion, which moves when a frame comes late.
+- **The perf log names the display rate** at every change, and `perf-summary.ps1` judges the frames of each rate
+  against rate / divisor (`-ExpectHz` for the rate the headset was set to).
+
+### Why
+A filter tuned at one rate and stepped per frame is twice as fast at 144 Hz as at 72; a frame count is half the
+time. Measured before the fix where it showed: none of the gameplay totals moved with the rate once the inputs
+were timed (walk, turn, jump apex, camera, fingers), the frame-counted pieces were found by reading the code
+(the audit in #23's PR).
+
+### What it rules out
+- New per-frame constants in VR code: a value "per frame" needs a time (and a host test at 72 and 144 Hz).
+- Fixed-step simulation with render interpolation: the engine's own variable step is kept; its 25-35 ms jump
+  steps (#435) are the same at every rate and are a separate bug.
+
+---
+
+## D-053: In VR the camera stands on the body's real travel, never on the animated model; death is a still ghost
+
+- **Date:** 2026-10-13
+- **Status:** Accepted; the variants' defaults are proposals until the owner's headset verdict (#416)
+- **Decided by:** project owner (the rule: "nothing but the head and the body's real movement moves the view; at death a
+  motionless ghost that can only turn", #416); the worker for the mechanism and the limits
+
+### Decision
+- With the VR rules on (`vr::comfort().stableView`, D-018 / #76), the first-person camera is **not** read from the player
+  model's eye vertex any more. It stands on the collision cylinder: horizontally exactly where the body is, vertically
+  the body's feet plus the eye of its stance — 170 units standing, 120 crouched (the cylinder's heights), 200 levitating (the model's head floats 30 units higher; the owner: the view rises with it, gliding). No animation
+  (walk, run, jump, landing, crouch, strike, charge, cast, hit, death) can move or tilt it. The head pose goes on top
+  as before (D-018).
+- Height changes are smoothed: at most **1.8 m/s** (2 cm per frame at 90 Hz, the same speed at 45 Hz), timed by the
+  display (OpenXR's predicted display times) and never more than one display slot per shown frame — a hitch slows the
+  glide, it never makes the view jump. A fall faster
+  than that pulls the view along at most 60 cm behind the body (a fall is real travel); a move of more than 150 units
+  in one frame is a cut (teleport, load, respawn).
+- What is a matter of feel is a cfg.ini switch plus a channel command (`view jump|crouch|death <variant>`), the
+  calmest the default: `vr_view_jump` = **level** (the view never rises above the take-off; `arc`: a soft hop at the
+  speed limit), `vr_view_crouch` = **slow** (0.5 m/s; `medium` 1 m/s, `fast` 1.8 m/s), `vr_death_view` = **headless**
+  (the head stays hidden while the body falls; `body`: the whole body as the engine shows a dead hero).
+- **Death** with the VR rules on: the view stays where the eye was at the moment of death; only the head and the stick
+  turn (snap or smooth) move it; the arms are no longer posed from the controllers; the darkening and the main menu
+  after 7 s stay. The body is drawn where the view's feet are (`vr.body.shiftY`), so a level jump does not lift the
+  body through the view, and the hands stay rigid with the real camera.
+- Flat mode keeps the engine's camera, bobbing and death camera unchanged.
+
+### Why
+Every motion of the view the player's head did not make is a motion-sickness trigger for VR newcomers (owner,
+2026-10-13). View bobbing was already off in VR (#76), but the "stable position of the paused animation" still came
+from the animated model; the catalog in #416's PR measures what that left (a jump lifts the view by the model's own
+arc, the crouch drops it in the animation's steps, death drops and swings it over the body).
+
+### Ruled out
+Compensating the animation after the fact (filtering the eye vertex): any animation the filter misses still reaches
+the view. The view is computed from the body's physics, so a new animation cannot move it.
+
+---
+
 ## D-052: The desktop window takes no input in VR, and a test run's window none at all
 
 - **Date:** 2026-10-16
@@ -401,7 +605,8 @@ change for the slots.
 - **Status:** Accepted; replaces D-019's button layout and D-040's stance binding and cast rule. Implemented by #375 ("Control scheme v2",
   #376–#381); each part is judged in the headset in the test playground. The radial menu and the A / B buttons were
   changed by the owner on 2026-10-14 (one ring on the right B, 3 + 3 slots, the map on the left B, the bag on the left A):
-  see "The owner's layout" at the end
+  see "The owner's layout" at the end. Amended by D-055 (2026-10-17, #496): no chord on a menu panel, A the menus' right
+  click, the Index grip at 0.70 / 0.40
 - **Decided by:** project owner (the scheme, by a design discussion with the coordinator, 2026-10-13); the coordinator
   for the defaults the owner accepted (jump threshold, eight radial segments, the quick-slot rules)
 
@@ -417,8 +622,9 @@ layout on both controllers (Index; on the Touch, X / Y take A / B's places):
 | **B** (upper face button), held | That hand's **radial menu**; two can be open at once. Selected by moving the hand; released, the item under the hand runs |
 | **Trigger, empty hand, no stance** | **Grab and drag** an item with that hand's reticle. Two hands drag two items at once (an engine change) |
 | **Trigger, weapon in the hand** | **Charge the strike**; the strike is that hand's swing |
-| **Grip + trigger** (grip first) | **Use / interact**: doors, levers, chests, bodies, items. Empty hand only |
-| **Grip alone** | Nothing (the model's fingers only) |
+| **Grip + trigger** (grip first) | **Use / interact**: doors, levers, chests, bodies, items. Empty hand only. *In the menus (D-055, #496):* a hand pointing at the panel makes no chord - its trigger is the left click whatever the grip; the bag, the book and a container are in game and keep the chord |
+| **A, on a menu panel** (D-055, #496) | The menus' **right click** (the character creation takes a point back with it), from the pointing hand only; off the panel nothing |
+| **Grip alone** | Nothing (the model's fingers only). The Index grip is down from 0.70, up below 0.40 (D-055: `vr_grip_press` / `vr_grip_release`) |
 | **Stick click** | **Draw / sheathe** the weapon equipped in that hand |
 | **Left stick** | Walk along the look; the deflection sets sneak / walk / run (as now) |
 | **Right stick** | Left / right: turn (snap or smooth, as set). **Up: jump** (up beyond 0.7 and more than sideways, so a diagonal turn does not jump). **Down: crouch toggle** |
@@ -666,7 +872,8 @@ swaps them as a whole).
 ## D-038: Physical melee — the swing is the strike, the trigger charges it with the game's own charge
 
 - **Date:** 2026-10-10
-- **Status:** Accepted (the owner's design; the numbers are MVP defaults the owner tunes in the headset)
+- **Status:** Accepted (the owner's design; the numbers are MVP defaults the owner tunes in the headset); the charge
+  and the speed factor superseded by D-056 (#465: the damage comes from the swing's size and speed, no charge)
 - **Decided by:** the owner (after a headset fight with #75's sword, relayed by the coordinator on #39); the
   mechanism by the worker of #39; builds on D-009, D-016, D-019, D-032 (the body) and D-033 (the weapon in the IK hand, #75)
 
@@ -717,6 +924,20 @@ The engine's click attack while a weapon is in the VR hand; damage from swing sp
   sound by strength (F-178) and the per-target outline (F-62) are later tasks.
 - `weapon-hold.xrs` no longer sees a strike clip in combat mode; `melee-swing.xrs` proves the design on
   `mvp-goblin-fight`.
+
+### Amendment (2026-10-13, #323, #352): a recovery after a hit; the swing speed over the real time step
+- **Plain swings are no longer spam-able** (the owner's headset run, 2026-10-10: waving the dagger in front of you hit
+  again and again). After a hit the weapon hand recovers: a swing that starts within the recovery hits nothing (and
+  is not the engine's strike: no `strike` event, no speech), even once the recovery ends. The swing that hit goes on
+  hitting other targets. **Dagger 0.6 s, one-handed 0.8 s, two-handed 1.0 s** (the coordinator's option, confirmed by
+  the owner on 2026-10-13), cfg.ini `vr_melee_recovery_dagger` / `_1h` / `_2h` (-1 = the default).
+- **Not the game's own attack timing:** the hero's strike start + strike animations take 1.79 s with the dagger, 1.5 s
+  one-handed and 1.79 s two-handed. The dagger is not the fastest, and each is slow for a swing of the arm. They are
+  reported next to the recovery (`vr.melee.recovery.games`, the `melee.recovery` event) for comparison.
+- **The detector (#352, approved by the owner):** the median's move is divided by the time between the middle samples
+  it moved over, not by this frame's step. Before, a frame hitch (a 50 ms frame followed by an 11 ms one) read 4.5 m/s
+  for a hand at 1 m/s, a phantom hit. A filtered speed above 20 m/s is a jump like a raw one. With the right step
+  that can no longer happen: on each axis both medians lie between the two samples they share. The check stays as a guard.
 
 ---
 

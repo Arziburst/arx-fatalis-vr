@@ -47,6 +47,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <sstream>
 #include <string_view>
@@ -1711,6 +1712,14 @@ void ArxGame::updateFirstPersonCamera() {
 	Vec3f targetPos = g_playerCamera.m_pos;
 	Anglef targetAngle = g_playerCamera.angle;
 	
+	// The stable view (#416) starts afresh where the body is once it is switched on again; its steps are timed by
+	// the display (vr::noteViewFrame)
+	vr::noteViewFrame(toMsf(g_platformTime.lastFrameDuration()) / 1000.f);
+	vr::setStableViewPlaced(false);
+	if(!vr::comfort().stableView) {
+		vr::stableView().valid = false;
+	}
+	
 	if(eyeball.isActive()) {
 		
 		targetPos = eyeball.getPosition();
@@ -1737,7 +1746,47 @@ void ArxGame::updateFirstPersonCamera() {
 		
 		g_playerCamera.angle = player.angle;
 		
-		if(VertexId viewVertex = io->obj->fastaccess.view_attach) {
+		if(vr::comfort().stableView) {
+
+			// The stable view (#416): in VR the camera stands on the body's real travel, never on the animated
+			// model - horizontally where the collision cylinder is, vertically its feet plus the stance's eye,
+			// height changes smoothed (vr/StableView.h). The head pose goes on top as before (D-018)
+			vr::StableViewInput input;
+			input.dt = vr::viewStepSeconds();
+			input.feetY = player.basePosition().y;
+			// The stance's eye: crouched, standing, or levitating - the levitating character's head really floats
+			// over its feet (the owner's call, #416), glided to like the crouch
+			const bool crouched = (player.m_currentMovement & PLAYER_CROUCH) != 0;
+			input.eyeAboveFeet = -(crouched ? player.crouchHeight() : player.baseHeight());
+			if(player.levitate && !crouched) {
+				input.eyeAboveFeet += vr::LevitateEyeRise;
+			}
+			// A jump from the take-off to the landing; a fall off a ledge is travel the view follows. The engine ends
+			// the jump while the body still hangs over the floor (21 units at the end of its landing animation) and
+			// drops it there a frame later, and in that frame it may already call the hover firm ground: the jump
+			// lasts until the body has stood still on firm ground for 0.1 s of display time, and half a second at
+			// most (a platform or water may never count as firm ground)
+			vr::StableView & view = vr::stableView();
+			static float landing = 0.f;
+			static float settled = 0.f;
+			static float lastFeetY = 0.f;
+			const bool engineJump = player.jumpphase != NotJumping && !player.falling;
+			landing = engineJump ? 0.f : landing + input.dt;
+			const bool standing = player.onfirmground && std::abs(input.feetY - lastFeetY) < 0.5f;
+			settled = (engineJump || !standing) ? 0.f : settled + input.dt;
+			lastFeetY = input.feetY;
+			input.jumping = engineJump || (view.valid && view.jumping && settled < 0.1f && landing < 0.5f);
+			vr::updateStableView(view, input, vr::stableViewParams());
+			if(vr::takeViewTraceFrame()) {
+				LogInfo << "[vr] view trace: bodyFeet=" << input.feetY << " viewFeet=" << view.feetY << " eye=" << view.eye
+				        << " jumping=" << input.jumping << " phase=" << int(player.jumpphase)
+				        << " falling=" << player.falling << " onFirmGround=" << player.onfirmground
+				        << " dt=" << input.dt;
+			}
+			g_playerCameraStablePos = g_playerCamera.m_pos = Vec3f(player.pos.x, view.cameraY(), player.pos.z);
+			vr::setStableViewPlaced(true);
+
+		} else if(VertexId viewVertex = io->obj->fastaccess.view_attach) {
 
 			// The VR body is drawn under the tracked head (#36): its shift is the head's own lean,
 			// which the head pose adds to the camera itself - so the engine's eye is the unshifted one
@@ -1790,8 +1839,13 @@ void ArxGame::updateFirstPersonCamera() {
 	}
 	
 	if(EXTERNALVIEW) {
-		g_playerCameraStablePos = g_playerCamera.m_pos = (g_playerCamera.m_pos + targetPos) * 0.5f;
-		g_playerCamera.angle = interpolate(g_playerCamera.angle, targetAngle, 0.1f);
+		// The external view eases towards its target: half the gap and a tenth of the turn per frame at 90 Hz,
+		// by the frame's time - per frame it closed twice as fast at 144 Hz as at 72 (#23)
+		const float frames90 = toMsf(g_platformTime.lastFrameDuration()) * (90.f / 1000.f);
+		const float closePos = 1.f - std::pow(0.5f, frames90);
+		const float closeAngle = 1.f - std::pow(0.9f, frames90);
+		g_playerCameraStablePos = g_playerCamera.m_pos = g_playerCamera.m_pos + (targetPos - g_playerCamera.m_pos) * closePos;
+		g_playerCamera.angle = interpolate(g_playerCamera.angle, targetAngle, closeAngle);
 	}
 	
 }
@@ -1923,6 +1977,30 @@ void ArxGame::speechControlledCinematic() {
 
 void ArxGame::handlePlayerDeath() {
 	
+	if(player.lifePool.current <= 0 && vr::comfort().stableView) {
+
+		// The still ghost (#416): the view stays where the eye was at the moment of death - the stable view's
+		// camera of this frame on the first dead frame - and only the head and the stick turn move it (the head
+		// pose goes on top in updateActiveCamera). The body falls below; the darkening and the menu stay
+		static Vec3f ghostPos;
+		if(!vr::deathGhost()) {
+			ghostPos = g_playerCamera.m_pos;
+			vr::setDeathGhost(true);
+			gameevent::Event("vr.view.ghost")("x", ghostPos.x, 0)("y", ghostPos.y, 0)("z", ghostPos.z, 0)
+				("eyeAboveFeet", player.basePosition().y - ghostPos.y, 1)
+				("death", vr::deathViewName(vr::viewVariants().death));
+		}
+		player.DeadTime += g_gameTime.lastFrameDuration();
+		g_playerCameraStablePos = g_playerCamera.m_pos = ghostPos;
+		g_playerCamera.angle = Anglef(0.f, player.angle.getYaw(), 0.f);
+		EXTERNALVIEW = true;
+		BLOCK_PLAYER_CONTROLS = true;
+		return;
+	}
+	if(player.lifePool.current > 0 && vr::deathGhost()) {
+		vr::setDeathGhost(false);
+	}
+
 	if(player.lifePool.current <= 0) {
 		
 		player.DeadTime += g_gameTime.lastFrameDuration();
@@ -2090,6 +2168,17 @@ void ArxGame::updateActiveCamera() {
 	// Where the hands' rays start next frame, and how their hits become the mouse (#37)
 	vr::noteHeadCamera(cam == &g_playerCamera && !EXTERNALVIEW && m_headView.camera == cam, cam->m_pos,
 	                   engineAngle.getYaw(), g_preparedCamera.m_worldToScreen);
+
+	// The camera this frame renders with against the body's travel and turn (#416): status.json camera.motion
+	{
+		vr::CameraSample sample;
+		sample.dt = vr::viewFrameSeconds();
+		sample.camera = cam->m_pos;
+		sample.angle = cam->angle;
+		sample.body = player.pos;
+		sample.bodyYaw = player.angle.getYaw();
+		vr::addCameraSample(vr::cameraMotion(), sample);
+	}
 
 }
 
@@ -2337,6 +2426,10 @@ void ArxGame::updateLevel() {
 	}
 	
 	if(!EXTERNALVIEW) {
+		ARX_INTERACTIVE_Show_Hide_1st(entities.player(), true);
+	}
+	// The ghost's view (#416): the head stays hidden as in life, so the ghost never looks out of the falling head
+	if(vr::deathGhost() && vr::viewVariants().death == vr::DeathView::Headless) {
 		ARX_INTERACTIVE_Show_Hide_1st(entities.player(), true);
 	}
 	

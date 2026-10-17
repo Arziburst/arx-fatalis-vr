@@ -51,6 +51,7 @@
 #include "game/Camera.h"
 #include "game/Damage.h"
 #include "game/EntityManager.h"
+#include "game/Equipment.h"
 #include "game/Inventory.h"
 #include "game/Levels.h"
 #include "game/NPC.h"
@@ -97,9 +98,11 @@
 #include "script/Script.h"
 #include "util/Number.h"
 #include "util/String.h"
+#include "vr/BodyYaw.h"
 #include "vr/ArmFit.h"
 #include "vr/EyeImage.h"
 #include "vr/HeadTracking.h"
+#include "vr/MotionProbe.h"
 #include "vr/PerfLog.h"
 #include "vr/VRArms.h"
 #include "vr/VRBody.h"
@@ -323,6 +326,13 @@ public:
 		return *this;
 	}
 
+	//! A value that is JSON already (a record kept from an earlier frame)
+	JsonWriter & raw(std::string_view name, std::string_view json) {
+		key(name);
+		m_out << json;
+		return *this;
+	}
+
 	std::string str() {
 		while(!m_first.empty()) {
 			end();
@@ -419,6 +429,15 @@ struct State {
 		vr::WalkStatus walk;         //!< The stick walk of the hold's last frame that walked
 	} stickFor;
 
+	//! motion: the player's walk, turn and jumps since `motion reset`, fed after every frame (#23)
+	vr::MotionProbe motion;
+	u32 motionResets = 0;
+	//! The simulated headset's `record <name>`: the motion values of the frame it named, as JSON, in order
+	std::vector<std::pair<std::string, std::string>> records;
+	//! The free (left) hand's index finger: its bend and target last frame, where and when its approach started
+	float curlLast = 0.f, curlTargetLast = 0.f, curlFrom = 0.f;
+	double curlLastSeconds = 0.0, curlFromSeconds = 0.0;
+	float curlSpeed = 0.f; //!< degrees per second since the target changed
 	//! The hang watchdog of the main thread (#440), started at the first frame
 	std::unique_ptr<platform::HangWatchdog> watchdog;
 	bool watchdogLogged = false;     //!< Its "watching" line is in the log
@@ -507,6 +526,7 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 	json.value("timeline", sim.timeline);
 	json.value("frame", sim.frame);
 	json.value("timelineFrame", sim.timelineFrame);
+	json.value("timelineMs", float(sim.timelineMs));
 	json.value("pending", u64(sim.pending));
 
 	json.object("view");
@@ -671,6 +691,12 @@ void writePlaygroundStatus(JsonWriter & json) {
 		const IO_NPCDATA & data = *npc->_npcdata;
 		json.value("npcMode", playgroundNpcAggressive(*npc) ? "aggressive" : "peaceful");
 		json.value("npcAlive", data.lifePool.current > 0.f);
+		// What a VR touch may reach (#465): both of the fight behaviour and the player as the target
+		json.value("npcFighting", fightsPlayer(*npc));
+		json.value("npcFightBehaviour", (data.behavior & BEHAVIOUR_FIGHT) != 0);
+		json.value("npcTargetsPlayer", npc->targetinfo == EntityHandle_Player);
+		// Units from the hero on the floor plane: whether the NPC stands where a sequence put it
+		json.value("npcDistance", glm::distance(Vec2f(npc->pos.x, npc->pos.z), Vec2f(player.pos.x, player.pos.z)));
 		json.value("npcLife", data.lifePool.current);
 		json.value("npcLifeMax", data.lifePool.max);
 		// Back at the place the level put it (revive -i takes it there): within a step, floor plane only
@@ -713,6 +739,57 @@ void writePlaygroundStatus(JsonWriter & json) {
 
 }
 
+/*!
+ * The values the refresh-rate check compares (#23), as they are after the frame was updated: the motion
+ * probe's totals, the head-tracked camera, the body's follow of the head, the weapon arm and the free
+ * (left) hand's fingers, the swing detector. Written as \c motion and kept as a record when the
+ * simulated headset asks
+ */
+void writeMotionValues(JsonWriter & json) {
+
+	const vr::SimStatus sim = vr::simStatus();
+	json.value("timelineMs", float(sim.timelineMs));
+	json.value("frames", g.motion.frames());
+	json.value("seconds", float(g.motion.seconds()));
+	json.value("walked", g.motion.walked());
+	json.value("turned", g.motion.turned());
+	json.value("jumps", g.motion.jumps());
+	json.value("airborne", g.motion.airborne());
+	json.value("jumpApex", g.motion.jumpApex());
+	json.value("jumpSeconds", float(g.motion.jumpSeconds()));
+	json.value("yaw", player.angle.getYaw());
+	json.value("cameraYaw", g_playerCamera.angle.getYaw());
+	// The head's part of the camera's yaw (D-018): the camera against the heading, (-180, 180]; on the simulated
+	// headset how far it is behind the head itself in this frame - 0 when the camera is where the head is, however
+	// late the frame came (a late frame moves both)
+	const float cameraTurn = vr::wrapSignedDegrees(g_playerCamera.angle.getYaw() - player.angle.getYaw());
+	json.value("cameraTurn", cameraTurn);
+	if(sim.active) {
+		json.value("headYaw", sim.rig.head.angles.x);
+		json.value("cameraLag", vr::wrapSignedDegrees(sim.rig.head.angles.x - cameraTurn));
+	}
+	json.value("cameraPitch", g_playerCamera.angle.getPitch());
+	json.value("bodyOffset", vr::bodyStatus().offset);
+
+	// The weapon hand's arm and the free hand's fingers (a hand holding a weapon is closed on its grip, #305)
+	const vr::PlayerBodyStatus & body = vr::playerBodyStatus();
+	json.value("armError", body.hands[size_t(vr::Hand::Right)].error);
+	const vr::PlayerArmStatus & free = body.hands[size_t(vr::Hand::Left)];
+	json.value("curl", free.curl.indexRoot);
+	json.value("curlTarget", free.curlTarget.indexRoot);
+	// How fast the bend went since its target last changed, degrees per second of the frame clock - the fingers'
+	// smoothing as a speed, the same whichever frame reads it (until the bend arrives)
+	json.value("curlSpeed", g.curlSpeed);
+
+	const vr::MeleeStatus & melee = vr::meleeStatus();
+	json.value("swings", melee.swings);
+	json.value("swingKind", melee.kind);
+	json.value("swingSpeed", melee.speed);
+	json.value("swingPeak", melee.peak);
+	json.value("swingJumps", melee.jumps);
+	json.value("swingGaps", melee.gaps);
+}
+
 std::string buildStatus(PlatformInstant now) {
 
 	JsonWriter json;
@@ -735,6 +812,7 @@ std::string buildStatus(PlatformInstant now) {
 
 	json.value("menuMode", menuModeName(ARXmenu.mode()));
 	json.value("menuPage", ARXmenu.mode() == Mode_MainMenu ? menuPageName(currentMenuPage()) : "none");
+	json.value("menuRows", ARXmenu.mode() == Mode_MainMenu ? visibleVRSettingRows() : std::string());
 	json.value("area", g_currentArea ? u32(g_currentArea) : 0u);
 	json.value("paused", g_gameTime.isPaused() != 0);
 	// The game clock: it runs while a VR radial menu is open (#376), stops in the pause menu
@@ -820,6 +898,60 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("width", g_preparedCamera.m_viewport.width());
 		json.value("height", g_preparedCamera.m_viewport.height());
 		json.end();
+		// The camera's motion since the last "view meter reset" (#416): the steps of the camera the frames
+		// rendered with (head and quake included) against the body's travel and turn, cm and degrees
+		{
+			const vr::CameraMotion & motion = vr::cameraMotion();
+			const Vec3f range = motion.offsetRange();
+			json.object("motion");
+			json.value("frames", motion.frames);
+			json.value("maxDtMs", motion.maxDt * 1000.f);
+			json.value("maxStepY", motion.maxStepY);
+			json.value("maxSpeedY", motion.maxSpeedY);
+			json.value("maxStepY90", motion.maxSpeedY / 90.f);
+			json.value("maxStepXZ", motion.maxStepXZ);
+			json.value("maxOffStepXZ", motion.maxOffStepXZ);
+			json.value("maxOffStepY", motion.maxOffStepY);
+			json.value("maxPitchStep", motion.maxPitchStep);
+			json.value("maxRollStep", motion.maxRollStep);
+			json.value("maxYawStep", motion.maxYawStep);
+			json.value("maxOffYawStep", motion.maxOffYawStep);
+			json.value("rangeX", range.x);
+			json.value("rangeY", range.y);
+			json.value("rangeZ", range.z);
+			json.value("rangeXZ", std::sqrt(range.x * range.x + range.z * range.z));
+			json.value("cameraRangeY", motion.cameraRangeY());
+			json.value("bodyRangeY", motion.bodyRangeY());
+			json.end();
+		}
+		json.end();
+		// The stable view (#416): whether it placed the camera, its variants, the ghost
+		{
+			const vr::StableView & view = vr::stableView();
+			const vr::ViewVariants & variants = vr::viewVariants();
+			json.object("view");
+			json.value("mode", vr::comfortModeName(vr::stableViewMode()));
+			json.value("active", vr::comfort().stableView);
+			json.value("placed", vr::stableViewPlaced());
+			json.value("ghost", vr::deathGhost());
+			json.value("jump", vr::jumpViewName(variants.jump));
+			json.value("crouch", vr::crouchGlideName(variants.crouch));
+			json.value("death", vr::deathViewName(variants.death));
+			json.value("eye", view.eye);
+			json.value("feetLag", view.valid ? view.feetY - player.basePosition().y : 0.f);
+			json.value("cuts", view.cuts);
+			json.end();
+		}
+		// The refresh-rate check (#23): totals since `motion reset` as of the last frame, and the records the
+		// simulated headset's `record <name>` took after the frame it named
+		json.object("motion");
+		writeMotionValues(json);
+		json.value("resets", g.motionResets);
+		json.object("records");
+		for(const auto & record : g.records) {
+			json.raw(record.first, record.second);
+		}
+		json.end();
 		json.end();
 		// Spells by type: active now, and launched since the level was loaded - the evidence that a spellcast
 		// really started a spell (#155: queued casts on the player never launch, TRAPS.md)
@@ -864,6 +996,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("viewBobbing", policy.viewBobbing);
 		json.value("screenShake", policy.screenShake);
 		json.value("fovZoom", policy.fovZoom);
+		json.value("stableView", policy.stableView);
 		json.end();
 	}
 
@@ -1194,6 +1327,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("inactive", body.inactive);
 		json.value("posedFrames", body.posedFrames);
 		json.value("shiftX", body.shift.x);
+		json.value("shiftY", body.shift.y); // the stable view's feet lag: the body drawn where the view stands (#416)
 		json.value("shiftZ", body.shift.z);
 		json.value("facingYaw", body.facingYaw);
 		// the arms drawn in VR (#385.3): cfg.ini vr_arms_model (classic; the others by the test channel, #466, #486), and
@@ -1505,7 +1639,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("combatMode", (player.Interface & INTER_COMBATMODE) != 0);
 		json.end();
 	}
-	// Physical melee (#39): the swing detector, the charge, the hits
+	// Physical melee (#39): the swing detector, the hits and their damage from the swing (#465)
 	{
 		const vr::MeleeStatus & melee = vr::meleeStatus();
 		json.object("melee");
@@ -1515,36 +1649,59 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("kind", melee.kind);
 		json.value("speed", melee.speed);
 		json.value("peak", melee.peak);
-		json.value("factor", melee.factor);
 		json.value("swings", melee.swings);
 		json.value("gaps", melee.gaps);
 		json.value("jumps", melee.jumps);
 		json.value("nearMisses", melee.nearMisses);
 		json.value("lastNearMiss", melee.lastNearMiss);
-		json.object("charge");
-		json.value("held", melee.chargeHeld);
-		json.value("charging", melee.charging);
-		json.value("spent", melee.chargeSpent);
-		json.value("seconds", melee.chargeSeconds);
-		json.value("ratio", melee.chargeRatio);
-		json.value("fullAimSeconds", melee.fullAimSeconds);
-		json.end();
+		json.value("trigger", melee.trigger);
+		json.value("worldHit", melee.worldHit);
 		json.value("hits", melee.hits);
+		json.value("touches", melee.touches);
 		json.value("contacts", melee.contacts);
-		json.value("chargedHits", melee.chargedHits);
 		json.object("last");
 		json.value("target", melee.lastTarget);
 		json.value("aim", melee.lastAim);
 		json.value("damage", melee.lastDamage);
-		json.value("charged", melee.lastCharged);
 		json.value("speed", melee.lastSpeed);
+		json.value("size", melee.lastSize);
+		json.value("kind", melee.lastKind);
 		json.value("swing", melee.lastSwing);
+		json.end();
+		// The recovery after a hit (#323): a swing started within it hits nothing
+		json.object("recovery");
+		json.value("weapon", melee.weapon);
+		json.value("seconds", melee.recovery);
+		json.value("source", melee.recoverySource);
+		json.value("game", melee.recoveryGame);
+		json.object("games"); // the game's own strike of every type, whatever is in the hand
+		for(vr::MeleeWeapon type : { vr::MeleeWeapon::Dagger, vr::MeleeWeapon::OneHanded, vr::MeleeWeapon::TwoHanded }) {
+			json.value(vr::meleeWeaponName(type), melee.gameStrike[size_t(type)]);
+		}
+		json.end();
+		json.value("left", melee.recoveryLeft);
+		json.value("recovering", melee.recovering);
+		json.value("swings", melee.recoverySwings);
 		json.end();
 		json.object("params");
 		json.value("swingSpeed", melee.params.startSpeed);
 		json.value("endSpeed", melee.params.endSpeed);
-		json.value("fullSpeed", melee.params.fullSpeed);
-		json.value("weakAim", melee.params.weakAim);
+		json.value("class", melee.meleeClass);
+		const struct { const char * name; const vr::DamageRange & range; } ranges[] = {
+			{ "slash", melee.damage.slash }, { "stab", melee.damage.stab }
+		};
+		for(const auto & range : ranges) {
+			json.object(range.name);
+			json.value("pathMin", range.range.pathMin);
+			json.value("pathMax", range.range.pathMax);
+			json.value("speedMin", range.range.speedMin);
+			json.value("speedMax", range.range.speedMax);
+			json.value("cap", range.range.cap);
+			json.end();
+		}
+		json.value("pathScale", melee.damage.pathScale);
+		json.value("quality", vr::qualityName(melee.damage.quality));
+		json.value("noSwing", vr::noSwingName(melee.damage.noSwing));
 		json.value("targetCooldown", melee.params.targetCooldown);
 		json.end();
 		json.value("placed", melee.placed);
@@ -2210,6 +2367,21 @@ std::string execute(std::string_view line) {
 		return std::string();
 	}
 
+	if(word == "motion") {
+		// motion reset: the walk, turn and jump totals of status.json motion start from zero (#23); motion clear:
+		// the records too
+		const std::string what = std::string(trim(rest));
+		if(what != "reset" && what != "clear") {
+			return refuse("motion: expected reset or clear, got \"" + what + "\"");
+		}
+		g.motion.reset();
+		g.motionResets++;
+		if(what == "clear") {
+			g.records.clear();
+		}
+		return std::string();
+	}
+
 	if(word == "vr-hud") {
 		// The screen-frame HUD in VR (#469): frame on|off, keep <names>|none, levelup <mode>, reset - cfg.ini's, live
 		std::string error = vr::hudCommand(rest);
@@ -2264,6 +2436,48 @@ std::string execute(std::string_view line) {
 			return refuse("comfort: expected auto, on or off, got \"" + std::string(rest) + "\"");
 		}
 		return std::string();
+	}
+
+	if(word == "view") {
+		// The stable view (#416): "stable auto|on|off" forces it like comfort does, "jump|crouch|death <variant>"
+		// sets a variant as cfg.ini would, "meter reset" starts a new stretch of camera.motion, "meter report <name>"
+		// writes it as one vr.view.motion game event (a row of the catalog)
+		std::string_view value;
+		std::string what(firstWord(rest, value));
+		if(what == "stable") {
+			if(value == "auto") {
+				vr::setStableViewMode(vr::ComfortMode::Auto);
+			} else if(value == "on") {
+				vr::setStableViewMode(vr::ComfortMode::On);
+			} else if(value == "off") {
+				vr::setStableViewMode(vr::ComfortMode::Off);
+			} else {
+				return refuse("view stable: expected auto, on or off, got \"" + std::string(value) + "\"");
+			}
+			return std::string();
+		}
+		if(what == "meter") {
+			std::string_view name;
+			std::string verb(firstWord(value, name));
+			if(verb == "reset") {
+				vr::resetCameraMotion(vr::cameraMotion());
+			} else if(verb == "report" && !name.empty()) {
+				vr::reportCameraMotion(name);
+			} else {
+				return refuse("view meter: expected reset or report <name>, got \"" + std::string(value) + "\"");
+			}
+			return std::string();
+		}
+		if(what == "trace") {
+			long frames = 0;
+			if(!parseIndex(value, frames)) {
+				return refuse("view trace: expected a frame count, got \"" + std::string(value) + "\"");
+			}
+			vr::setViewTrace(int(std::min(frames, 2000l)));
+			return std::string();
+		}
+		std::string error = vr::setViewVariant(what, value);
+		return error.empty() ? error : refuse(error);
 	}
 
 	if(word == "arms") {
@@ -2433,6 +2647,58 @@ std::string execute(std::string_view line) {
 			return refuse("freelook: expected on or off, got \"" + std::string(rest) + "\"");
 		}
 		return std::string();
+	}
+
+	if(word == "melee") {
+		// The damage from the swing (#465) live, not saved: melee noswing none|min, melee quality min|geomean|product,
+		// melee pathscale <factor>, melee slash|stab <class> <path min> <path max> <speed min> <speed max> | default -
+		// the cfg.ini keys vr_melee_noswing, _quality, _path_scale, _slash_<class>, _stab_<class>
+		std::string_view args;
+		const std::string_view what = firstWord(rest, args);
+		if(what == "noswing") {
+			if(args != vr::noSwingName(vr::NoSwing::None) && args != vr::noSwingName(vr::NoSwing::Min)) {
+				return refuse("melee noswing: expected none or min, got \"" + std::string(args) + "\"");
+			}
+			config.input.vrMeleeNoSwing = std::string(args);
+			return std::string();
+		}
+		if(what == "quality") {
+			if(args != vr::qualityName(vr::parseQuality(args))) {
+				return refuse("melee quality: expected min, geomean or product, got \"" + std::string(args) + "\"");
+			}
+			config.input.vrMeleeQuality = std::string(args);
+			return std::string();
+		}
+		if(what == "pathscale") {
+			float scale = 0.f;
+			std::istringstream iss{std::string(args)};
+			if(!(iss >> scale) || scale < 0.25f || scale > 2.f) {
+				return refuse("melee pathscale: expected a factor from 0.25 to 2, got \"" + std::string(args) + "\"");
+			}
+			config.input.vrMeleePathScale = scale;
+			return std::string();
+		}
+		if(what == "slash" || what == "stab") {
+			std::string_view range;
+			const std::string_view name = firstWord(args, range);
+			for(vr::MeleeClass meleeClass : vr::MeleeClasses) {
+				if(name != vr::meleeClassName(meleeClass)) {
+					continue;
+				}
+				bool ok = false;
+				vr::parseDamageRange(range, vr::DamageRange(), &ok);
+				if(range != "default" && (!ok || range.empty())) {
+					return refuse("melee " + std::string(what) + ": expected <path min> <path max> <speed min> <speed max>"
+					              " (0-20) or default, got \"" + std::string(range) + "\"");
+				}
+				auto & ranges = what == "slash" ? config.input.vrMeleeSlash : config.input.vrMeleeStab;
+				ranges[size_t(meleeClass)] = range == "default" ? std::string() : std::string(range);
+				return std::string();
+			}
+			return refuse("melee " + std::string(what) + ": expected a class (dagger, sword, blunt, 2h_sword, 2h_blunt), got \""
+			              + std::string(name) + "\"");
+		}
+		return refuse("melee: expected noswing, quality, pathscale, slash or stab, got \"" + std::string(rest) + "\"");
 	}
 
 	if(word == "crouch") {
@@ -3258,7 +3524,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "playground") {
-		// playground pull mode|respawn | kill | place <ahead> [<right>] | hit <n>: the test playground's NPC and
+		// playground pull mode|respawn | kill | fight | place <ahead> [<right>] | hit <n>: the test playground's NPC and
 		// levers (#321.2). pull sends the lever what a hand pull sends it (Interface.cpp: SM_ACTION from the player)
 		if(!isPlaygroundArea(g_currentArea) || !entities.player()) {
 			return refuse("playground: needs the playground level (area 30) on screen");
@@ -3281,6 +3547,13 @@ std::string execute(std::string_view line) {
 		}
 		if(what == "kill") {
 			ARX_DAMAGES_ForceDeath(*npc, entities.player());
+			return std::string();
+		}
+		if(what == "fight") {
+			// The NPC fights the player now, as a fight script sets it (behavior -f move_to, settarget player): a
+			// test's set-up for what only fighting NPCs feel - a VR touch (#465)
+			ARX_NPC_Behaviour_Change(npc, BEHAVIOUR_FIGHT | BEHAVIOUR_MOVE_TO, 0);
+			npc->targetinfo = EntityHandle_Player;
 			return std::string();
 		}
 		if(what == "place") {
@@ -3307,7 +3580,7 @@ std::string execute(std::string_view line) {
 			damageNpc(*npc, damage, entities.player(), nullptr, DAMAGE_TYPE_METAL, &npc->pos);
 			return std::string();
 		}
-		return refuse("playground: expected pull, kill, place or hit, got \"" + std::string(what) + "\"");
+		return refuse("playground: expected pull, kill, fight, place or hit, got \"" + std::string(what) + "\"");
 	}
 
 	if(word == "loadlevel") {
@@ -3516,7 +3789,53 @@ void update() {
 
 void afterRender() {
 
-	if(!g.enabled || g.pendingCapture.empty()) {
+	if(!g.enabled) {
+		return;
+	}
+
+	// The motion probe (#23) after the frame's update, and the records the simulated headset asked for in it:
+	// the state this frame displays, at the display time its timeline named
+	if(g_currentArea && entities.player()) {
+		vr::MotionSample sample;
+		sample.seconds = double(toUs(g_platformTime.frameStart() - PlatformInstant(0))) * 1e-6;
+		sample.position = player.pos;
+		sample.yaw = player.angle.getYaw();
+		sample.jumping = player.jumpphase != NotJumping;
+		g.motion.update(sample);
+		// The free hand's bend: its speed since the target changed, measured while it is on its way
+		const vr::PlayerArmStatus & free = vr::playerBodyStatus().hands[size_t(vr::Hand::Left)];
+		const float curl = free.curl.indexRoot;
+		const float target = free.curlTarget.indexRoot;
+		if(target != g.curlTargetLast) {
+			g.curlFrom = g.curlLast;
+			g.curlFromSeconds = g.curlLastSeconds;
+		}
+		if(curl != target && sample.seconds > g.curlFromSeconds) {
+			g.curlSpeed = std::abs(curl - g.curlFrom) / float(sample.seconds - g.curlFromSeconds);
+		}
+		g.curlLast = curl;
+		g.curlTargetLast = target;
+		g.curlLastSeconds = sample.seconds;
+	}
+	for(const std::string & name : vr::takeSimRecords()) {
+		std::string json = "{}";
+		if(g_currentArea && entities.player()) {
+			JsonWriter values;
+			writeMotionValues(values);
+			json = values.str();
+			json.pop_back(); // the newline
+		}
+		auto found = std::find_if(g.records.begin(), g.records.end(), [&](const auto & record) { return record.first == name; });
+		if(found != g.records.end()) {
+			found->second = json;
+		} else {
+			g.records.emplace_back(name, json);
+		}
+		// The values in the log too: the evidence of a CI run outlives its status.json
+		LogInfo << "[channel] record " << name << ": " << json;
+	}
+
+	if(g.pendingCapture.empty()) {
 		return;
 	}
 

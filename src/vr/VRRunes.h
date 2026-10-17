@@ -47,6 +47,12 @@ const float RuneFlareScale = 0.5f;
 const float RuneTrailStep = 1.2f;
 
 /*!
+ * How often the engine's magic draws at the hand, seconds: its step runs every second frame (\c snip),
+ * 22 ms at 90 Hz - counted in frames that was 36 big flares a second at 72 Hz and 72 at 144 (#23)
+ */
+const float RuneDrawSeconds = 2.f / 90.f;
+
+/*!
  * \return true while the hands draw the runes: a VR session runs, or a controller is simulated (the
  *         test channel's \c handpose) - the engine's trail at the cursor is then not drawn (D-010)
  */

@@ -8,6 +8,90 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-17 — The main menu ignores the trigger while the Index controller is held firmly (#496)
+
+**Symptom:** New game does not react to the trigger in the headset. `arx.log` has `[vr] input: use_right
+(right.grip+right.trigger)` for every press, no `interact_right` and no `vr.pointer.click`; holding the controller loosely,
+the same press clicks.
+**Cause:** a firm, resting hold of the Index sits at 0.52 - 0.59 on `squeeze/value` (`[vr] input: right grip down
+at 0.55 (threshold 0.5 / 0.3)`), over the 0.50 press the 2026-10-10 entry below chose for a light close. With the
+grip down, the trigger completes the grip + trigger chord (use / act, D-042) and its own binding, the click, does
+not fire: a chord consumes its second control.
+**Do:** the Index grip presses at 0.70 and lets go at 0.40 (`IndexGripThreshold`, cfg `vr_grip_press` /
+`vr_grip_release`): a resting hold is no grip, and a closed hand's flicker stays one hold. In the menus a hand
+pointing at the panel makes no chord at all (`ControlResolver::setChords`, `src/vr/VRInput.cpp`): its trigger
+clicks whatever the grip reads, and the menus' right click is A (D-055). Read the grip value in the crossing lines or `vr.input.grip` before blaming the
+pointer; `menu-trigger-grip.xrs` holds the grip at 0.55 and 0.95.
+
+---
+
+## 2026-10-13 — The same 500 ms walk measured 77, 100, 107 and 109 units at four rates (#23)
+
+**Symptom:** a walk timed exactly in display time gave wildly different distances per rate, and not in the
+order of the rates - it looked like a rate-dependent walk. **Cause:** each measurement started with `setpos` to
+the same spot. `setpos` puts the player where the engine starts a fall (`player.falling`): a per-frame trace
+showed him hanging 16 units above the floor in the jump's end phase for seconds, and `falling` still set when the
+walk began, so the walk started from a landing. The walk itself is the same at every rate (127.7-129.7 units once
+nothing was teleported). **Do:** never teleport between measurements that compare motion; return by motion
+(`stick-for` back, a turn back by time). Wait for `player.jumping eq false` and half a second after any teleport.
+
+## 2026-10-13 — A jump's "time in the air" read 0.40 s or 1.0 s at the same rate (#23, #435)
+
+**Symptom:** the time above 20 cm of the same jump differed by 0.6 s between runs. **Cause:** the engine moves a
+jumping player in 25-35 ms steps; a step that would end below the floor is refused, so the player hangs where the
+last step ended - 6 or 24 units above the floor - until the landing animation ends, then snaps down. A gauge
+below that height reads the hang. **Do:** measure a jump above 50 cm (`MotionProbe::AirborneUnits`); the hang is
+#435.
+
+## 2026-10-13 — A swing peaked at 2x or 3x its speed, a slow hand made a phantom swing, on the simulated headset (#23, #352)
+
+**Symptom:** a 9.4 m/s swing peaked at 18.89 or 28.33; a 1.2 m/s return counted as a swing. **Cause:** a frame
+hitch (here: the 22-26 ms that come with each `Cursor escaped the window` warning in a background run, #198) makes
+the runtime skip one or two display slots; the swing detector's median then moved over two or three slots and
+was divided by one frame's step (#352). **Do:** look for `H ... missed=` lines in `arx-perf.log` at the swing's
+time before suspecting the detector; #409 fixes the divisor.
+## 2026-10-17 — The playground's aggressive goblin never counts as fighting the player (#465)
+## 2026-10-17 — A weapon pushed through a wall does not ring on it (#465)
+
+**Symptom:** in `melee-damage.xrs` a fast swing along the playground's north wall left `vr.melee.worldHit` false, though
+the blade's tip was 29 units past the wall's plane (status `tip` z 8429, wall z 8400).
+**Cause:** the engine's strike check tests the weapon's hit spheres only, not the blade: the dagger has one, radius 15,
+about 89 units ahead of the player (`melee.spheres count=1 ... at=8191.2,-305.7,8444.3/15.0`). A sphere wholly behind a
+thin wall touches no polygon of it - the engine's own strike never reaches that far into a wall, a VR hand does.
+**Do:** to strike a wall in a sequence, put the hit sphere across the wall's plane (read `melee.spheres`); do not
+judge by the blade's tip.
+
+## 2026-10-17 — The playground's goblin drops its fight when it is hit, so it never counts as fighting the player (#465)
+
+**Symptom:** in `melee-damage.xrs` the playground goblin in the aggressive mode (the mode lever: `npcMode`
+`aggressive`), even after a real swing hit it, did not reach `playground.npcFighting` (its fight behaviour
+`BEHAVIOUR_FIGHT` *and* the player as its `targetinfo`) within 15 s - so a VR touch, which reaches only an NPC fighting
+the player, never reached it. The save's goblin (`mvp-goblin-fight`, `melee-swing.xrs`) does reach it after a hit.
+The same goblin set fighting with `playground fight` took one touch (`aim=0.10`), and every touch after it was refused.
+**Cause:** the playground goblin's script drops the fight when it is hit: right after the first touch's hit,
+`melee.touch target=goblin_base_9001 result=refused fight=no targetsPlayer=no`, and `npcFightBehaviour` false before
+the next sweep (CI run 38995941095 and a local run on f4720ca27). Its own fight never starts from the mode lever or a
+swing's hit for the same reason - the hit's reaction clears what `attack_player` set. Which script line does it is not
+known: the class script is the game's (`npc/goblin_base`); the instance script only refuses `ouch` / `aggression` while
+peaceful. The save's goblin (`mvp-goblin-fight`) keeps fighting after hits.
+**Do:** to test what only fighting NPCs feel in the playground, set the fight with `playground fight` right before the
+check, let nothing hit the goblin in between (a peaceful-in-fact goblin refuses touches: `melee.touch ... refused`),
+and check the first hit only; `npcFightBehaviour` / `npcTargetsPlayer` show which half is missing.
+
+## 2026-10-17 — A changed cfg.ini default does not show in a test run (#465)
+
+**Symptom:** after `vr_melee_noswing`'s default changed from `none` to `min` in the code, `melee-damage.xrs` failed at
+`@assert vr.melee.params.noSwing eq min` (`none`) on a fresh build.
+**Cause:** when the game saves its config it writes every key with its current value - a default it read is written as
+a value. A working copy's test runs share one user dir (`userdirs\<folder>-<hash>`), so from then on cfg.ini holds the
+old default as if the user had chosen it, and it wins over the new default. The same happens to a player who ran an
+earlier build.
+**Do:** a sequence that needs a value sets it live (a channel command such as `melee noswing min`) instead of trusting
+the default; prove the default itself in a host test (`MeleeSwingTest::testContactAim` checks `DamageParams`), or run
+with a fresh user dir. A key whose empty value means "the code's default" (`vr_melee_slash_<class>`) does not have
+the trap.
+
+
 ## 2026-10-14 — The Arx arm grows a second elbow in the middle of the forearm, though the IK has only one (#466.1)
 
 **Symptom:** with the Arx arms drawn (`arms arx`) the owner sees a second elbow and wants the arm one solid
@@ -255,6 +339,28 @@ The first radial menu kept two fonts of its own for the whole run.
 **Do:** draw with the game's fonts (`hFontControls`, `hFontInGame`, … in `gui/Text.h`: the right language's glyphs,
 replaced when the interface is laid out again), or release an own font before `ARX_Text_Close`.
 
+## 2026-10-13 — Melee in the playground: the inventory reopens itself, a second equip leaves a weapon on the cursor (#323)
+
+**Symptom:** in a playground sequence (`@playground`) `vr.melee.refused` stayed `inventory`. `ui inventory close` closed
+the bag, and the next frame logged `ui.inventory state=open` again. After a weapon was equipped, equipping a second
+one turned melee off with `reason="an item is dragged"`.
+**Cause:** a level started with `--loadlevel` never turns on the engine's free look. Loading a save does
+(`ChangeLevel.cpp`). In cursor mode the engine reopens the inventory every frame (`Interface.cpp`), #405 / #394.
+A script `<item>.equip player` puts the weapon it replaces on the cursor (`item.take from=world`), not back into the bag.
+**Do:** `freelook on` (test channel) before anything in a playground sequence, until #394 keeps VR gameplay in free
+look. Equip one weapon per run. The game's numbers for every weapon type are in `vr.melee.recovery.games`, so there is
+no need to equip each type.
+
+## 2026-10-13 — A simulated swing splits in two or reads above its ramp's speed (#323)
+
+**Symptom:** a `vr-sim @+1-8 hand right pos ...` ramp (0.85 m, 9.6 m/s at 90 Hz) gave three swings, the last two at
+3 m/s, or peaks of 12-13 m/s instead of 9.6.
+**Cause:** the simulated hand moves one step per frame, not per second. A frame that stalls (a hit's effects, a busy
+PC) slows the hand for real, and the detector now measures over the real time step (#352). The game's frame clock
+(`frameStart`) also jitters against the simulator's display slots, which raises the peaks.
+**Do:** in sequences, count swings with `ge` and hits exactly. Prove swing counts and peaks over frame times in the
+host test (`MeleeSwingTest::testSameSwingsAt45And90Hz`: 45, 90 and an uneven 90 Hz).
+
 ## 2026-10-12 — An instant `vr-sim hand ... pos` set-up move counts as a melee swing on a busy runner (#349)
 
 **Symptom:** `melee-swing.xrs` failed on CI at its first `@assert vr.melee.swings eq 0` for runs in a row with only
@@ -264,7 +370,8 @@ docs merged; `melee.swing` reported a swing with `peak=40.88` (above the 20 m/s 
 step's raw speed against 20 m/s, so 0.43 m over an 11 ms frame (39 m/s) is dropped, but over a 22 ms frame (45 fps,
 the runner shares the PC with builds and other games) it is 19.5 m/s, and over a 99 ms gap 4.3 m/s — a real swing
 (reproduced on purpose with `vr-sim rate 45`). The peak's 40.88 is that move divided by the next frame's step
-(the median of three lags one sample, #352).
+(the median of three lags one sample, #352 — *resolved* for the peak: since #323 the median's move is divided by
+the time it spans, so the same move reads 4.3 m/s).
 **Do:** in a melee sequence move the hand in a ramp only (`vr-sim @+1-60 hand right pos ...`: slow, frame by frame);
 reproduce a slow runner with `vr-sim rate 45` in a scratch copy of the sequence.
 
@@ -625,7 +732,9 @@ squeeze) was tried in round 2 and dropped before a headset run for that reason.
 0.50 / 0.30); a chord leader's release is debounced (`ControlResolver::releaseDebounceMs`), so a flicker is
 one hold; "use" fires when the hand opens without a trigger (D-019). Every grip crossing is logged with its
 value (`[vr] input: right grip down at 0.55 (threshold 0.5 / 0.3)`), and `status.json` → `vr.input.grip`
-shows it live — tune the threshold from those numbers, not by feel.
+shows it live — tune the threshold from those numbers, not by feel. *Changed 2026-10-17 (#496):* the press
+is 0.70 / the release 0.40 now - a firm resting hold read 0.52 - 0.59 and turned every trigger press into the chord
+(the entry above).
 
 ## 2026-10-09 — A non-Steam shortcut written into `shortcuts.vdf` disappears
 
@@ -1302,6 +1411,16 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** an idle `--vr-sim` run (`idle.vrsim`, no commands) shows several `[vr] rate:` windows UNDER-SUBMITTING at 20-40/s with a worst frame near 100 ms, then 90/s again; `arx-perf.log` has a burst of `H` lines whose `update`, `render` and `vrwait` all grow together, with no `load` and no uploads (#327: in one pair of runs the burst came with the log on, in the next pair with it off).
 **Cause:** the PC, not the game: other workers build in parallel (the game lock serialises game runs, not compiles), and a starved CPU stretches every phase of the frame at once.
 **Do:** judge pacing and frame costs only from windows at full rate, or repeat the run; a real cost of the game shows in one phase (`cause`), the same way in every run. `perf-summary.ps1` lists the hitches by cause.
+
+## 2026-10-13 - In VR an animation never shows in `camera.pitch` / `camera.roll`
+**Symptom:** the camera motion catalog of #416 measured 0 degrees of pitch and roll for every animation with the engine's eye, while the view visibly moved.
+**Cause:** in VR the head pose replaces the engine camera's angles (D-018): only the yaw keeps the body's heading. What the animations did reached the view only through the **position** of the eye vertex.
+**Do:** measure an animation's effect on the VR view by the camera's position against the body (`camera.motion.maxOffStepXZ`, `cameraRangeY` vs `bodyRangeY`), not by its angles.
+
+## 2026-10-13 - The engine says the jump is over while the body still hangs over the floor
+**Symptom:** with the stable view's level jump (#416) the camera, still for the whole jump, moved 1.3-1.9 cm at the landing: `player.jumping` was already false.
+**Cause:** the engine's jump ends (`jumpphase = NotJumping`) while the body still hangs 21 units over the floor, where it waited through the landing animation; the next frame drops it onto the floor (`onfirmground` then true). Found with `view trace 200` (TESTING.md).
+**Do:** treat a jump as lasting until the body is on firm ground (at most 0.5 s more), as `ArxGame::updateFirstPersonCamera` does; never take `player.jumping` as "the body is down".
 
 ## 2026-10-13 - A file under data/core is in the repository but the game says "not found"
 **Symptom:** `[W] VRArms: [vr] arms: vr/arms/Hand_Glove_low_R.gltf not found` (#385.3), while the file is in `data/core/vr/arms/` and the build's data dirs point at `data/core`; the host tests that load the same file pass.

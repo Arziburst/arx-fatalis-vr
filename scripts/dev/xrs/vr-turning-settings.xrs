@@ -51,15 +51,16 @@ menu drag angle 1.4
 @frames 10
 @shot vr-turning-angle-90
 
-# The turning row: snap -> smooth -> snap (the cycle wraps)
+# Only the active mode's row shows (#374): with Snap the snap angle, with Smooth the smooth speed - both take the
+# same row, so the rows below stay where they are. menuRows lists the rows the page shows
+@assert menuRows eq turn,angle,repeat,height
 menu step turn right
 @frames 2
 @assert vr.input.turn.mode eq smooth
-@log vr\.settings row=turn value=smooth
-menu step turn right
-@frames 2
-@assert vr.input.turn.mode eq snap
-@log vr\.settings row=turn value=snap
+@log vr\.settings row=turn value=smooth shown=speed
+@assert menuRows eq turn,speed,repeat,height
+@frames 10
+@shot vr-turning-smooth
 
 # The smooth speed slider: five named presets, no degrees shown; the right end is "very fast" (240 deg/s), the
 # middle "medium" (#32's 120)
@@ -71,6 +72,15 @@ menu drag speed 0.5
 @frames 2
 @assert vr.input.turn.smoothSpeed eq 120
 @log vr\.settings row=speed value=120 preset="?medium
+
+# Back to Snap: the snap angle row is shown again, the repeat slider is in either mode
+menu step turn right
+@frames 2
+@assert vr.input.turn.mode eq snap
+@log vr\.settings row=turn value=snap shown=angle
+@assert menuRows eq turn,angle,repeat,height
+@frames 10
+@shot vr-turning-snap
 
 # The repeat slider: off -> 0.25 s -> off (the held push below must stay one snap)
 menu drag repeat 0.2

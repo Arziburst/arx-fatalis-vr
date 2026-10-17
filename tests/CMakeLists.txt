@@ -67,6 +67,8 @@ set(arxtest_TESTCASES
 	tests/vr/HeadReferenceGateTest.cpp
 	tests/vr/PhysicalCrouchTest.h
 	tests/vr/PhysicalCrouchTest.cpp
+	tests/vr/StableViewTest.h
+	tests/vr/StableViewTest.cpp
 
 	tests/vr/VRControlsTest.h
 	tests/vr/VRControlsTest.cpp
@@ -94,6 +96,8 @@ set(arxtest_TESTCASES
 	tests/vr/InterfaceSizeTest.cpp
 	tests/vr/LocomotionTest.h
 	tests/vr/LocomotionTest.cpp
+	tests/vr/MotionProbeTest.h
+	tests/vr/MotionProbeTest.cpp
 
 	tests/vr/ArmIKTest.h
 	tests/vr/ArmIKTest.cpp
@@ -184,6 +188,7 @@ set(arxtest_SOURCES
 	src/vr/HeadPose.cpp
 	src/vr/HeadReferenceGate.cpp
 	src/vr/PhysicalCrouch.cpp
+	src/vr/StableView.cpp
 	src/vr/VRControls.cpp
 	src/vr/BindingCapture.cpp
 	src/vr/VRGameInput.cpp
@@ -208,6 +213,7 @@ set(arxtest_SOURCES
 	src/vr/BodyView.cpp
 	src/vr/RuneTrail.cpp
 	src/vr/MeleeSwing.cpp
+	src/vr/MotionProbe.cpp
 	src/vr/RadialMenu.cpp
 	src/vr/HudFrame.cpp
 

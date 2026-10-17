@@ -34,7 +34,7 @@ class Entity;
  *
  *  - While the IK drives the right arm (vr/VRBody.h), an equipped dagger, one- or two-handed weapon is
  *    linked to the model's right hand - outside the engine's combat mode too: VR's draw / sheathe is its
- *    own (\ref toggleHeldWeapon, D-042), drawn the trigger charges and #39's swings hit. When
+ *    own (\ref toggleHeldWeapon, D-042), drawn #39's swings hit (the trigger charges nothing, #465). When
  *    the right arm goes back to the engine (no controller, flat mode) the weapon goes back to where the
  *    engine keeps it (the back, or the hand in combat mode). Bows are left to the engine.
  *  - With the Arx arms (vr_arms_model arx) the hilt sits on the palm attach point and the blade lies along the

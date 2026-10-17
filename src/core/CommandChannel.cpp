@@ -51,6 +51,7 @@
 #include "game/Camera.h"
 #include "game/Damage.h"
 #include "game/EntityManager.h"
+#include "game/Equipment.h"
 #include "game/Inventory.h"
 #include "game/Levels.h"
 #include "game/NPC.h"
@@ -671,6 +672,12 @@ void writePlaygroundStatus(JsonWriter & json) {
 		const IO_NPCDATA & data = *npc->_npcdata;
 		json.value("npcMode", playgroundNpcAggressive(*npc) ? "aggressive" : "peaceful");
 		json.value("npcAlive", data.lifePool.current > 0.f);
+		// What a VR touch may reach (#465): both of the fight behaviour and the player as the target
+		json.value("npcFighting", fightsPlayer(*npc));
+		json.value("npcFightBehaviour", (data.behavior & BEHAVIOUR_FIGHT) != 0);
+		json.value("npcTargetsPlayer", npc->targetinfo == EntityHandle_Player);
+		// Units from the hero on the floor plane: whether the NPC stands where a sequence put it
+		json.value("npcDistance", glm::distance(Vec2f(npc->pos.x, npc->pos.z), Vec2f(player.pos.x, player.pos.z)));
 		json.value("npcLife", data.lifePool.current);
 		json.value("npcLifeMax", data.lifePool.max);
 		// Back at the place the level put it (revive -i takes it there): within a step, floor plane only
@@ -1505,7 +1512,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("combatMode", (player.Interface & INTER_COMBATMODE) != 0);
 		json.end();
 	}
-	// Physical melee (#39): the swing detector, the charge, the hits
+	// Physical melee (#39): the swing detector, the hits and their damage from the swing (#465)
 	{
 		const vr::MeleeStatus & melee = vr::meleeStatus();
 		json.object("melee");
@@ -1515,29 +1522,23 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("kind", melee.kind);
 		json.value("speed", melee.speed);
 		json.value("peak", melee.peak);
-		json.value("factor", melee.factor);
 		json.value("swings", melee.swings);
 		json.value("gaps", melee.gaps);
 		json.value("jumps", melee.jumps);
 		json.value("nearMisses", melee.nearMisses);
 		json.value("lastNearMiss", melee.lastNearMiss);
-		json.object("charge");
-		json.value("held", melee.chargeHeld);
-		json.value("charging", melee.charging);
-		json.value("spent", melee.chargeSpent);
-		json.value("seconds", melee.chargeSeconds);
-		json.value("ratio", melee.chargeRatio);
-		json.value("fullAimSeconds", melee.fullAimSeconds);
-		json.end();
+		json.value("trigger", melee.trigger);
+		json.value("worldHit", melee.worldHit);
 		json.value("hits", melee.hits);
+		json.value("touches", melee.touches);
 		json.value("contacts", melee.contacts);
-		json.value("chargedHits", melee.chargedHits);
 		json.object("last");
 		json.value("target", melee.lastTarget);
 		json.value("aim", melee.lastAim);
 		json.value("damage", melee.lastDamage);
-		json.value("charged", melee.lastCharged);
 		json.value("speed", melee.lastSpeed);
+		json.value("size", melee.lastSize);
+		json.value("kind", melee.lastKind);
 		json.value("swing", melee.lastSwing);
 		json.end();
 		// The recovery after a hit (#323): a swing started within it hits nothing
@@ -1558,8 +1559,22 @@ std::string buildStatus(PlatformInstant now) {
 		json.object("params");
 		json.value("swingSpeed", melee.params.startSpeed);
 		json.value("endSpeed", melee.params.endSpeed);
-		json.value("fullSpeed", melee.params.fullSpeed);
-		json.value("weakAim", melee.params.weakAim);
+		json.value("class", melee.meleeClass);
+		const struct { const char * name; const vr::DamageRange & range; } ranges[] = {
+			{ "slash", melee.damage.slash }, { "stab", melee.damage.stab }
+		};
+		for(const auto & range : ranges) {
+			json.object(range.name);
+			json.value("pathMin", range.range.pathMin);
+			json.value("pathMax", range.range.pathMax);
+			json.value("speedMin", range.range.speedMin);
+			json.value("speedMax", range.range.speedMax);
+			json.value("cap", range.range.cap);
+			json.end();
+		}
+		json.value("pathScale", melee.damage.pathScale);
+		json.value("quality", vr::qualityName(melee.damage.quality));
+		json.value("noSwing", vr::noSwingName(melee.damage.noSwing));
 		json.value("targetCooldown", melee.params.targetCooldown);
 		json.end();
 		json.value("placed", melee.placed);
@@ -2450,6 +2465,58 @@ std::string execute(std::string_view line) {
 		return std::string();
 	}
 
+	if(word == "melee") {
+		// The damage from the swing (#465) live, not saved: melee noswing none|min, melee quality min|geomean|product,
+		// melee pathscale <factor>, melee slash|stab <class> <path min> <path max> <speed min> <speed max> | default -
+		// the cfg.ini keys vr_melee_noswing, _quality, _path_scale, _slash_<class>, _stab_<class>
+		std::string_view args;
+		const std::string_view what = firstWord(rest, args);
+		if(what == "noswing") {
+			if(args != vr::noSwingName(vr::NoSwing::None) && args != vr::noSwingName(vr::NoSwing::Min)) {
+				return refuse("melee noswing: expected none or min, got \"" + std::string(args) + "\"");
+			}
+			config.input.vrMeleeNoSwing = std::string(args);
+			return std::string();
+		}
+		if(what == "quality") {
+			if(args != vr::qualityName(vr::parseQuality(args))) {
+				return refuse("melee quality: expected min, geomean or product, got \"" + std::string(args) + "\"");
+			}
+			config.input.vrMeleeQuality = std::string(args);
+			return std::string();
+		}
+		if(what == "pathscale") {
+			float scale = 0.f;
+			std::istringstream iss{std::string(args)};
+			if(!(iss >> scale) || scale < 0.25f || scale > 2.f) {
+				return refuse("melee pathscale: expected a factor from 0.25 to 2, got \"" + std::string(args) + "\"");
+			}
+			config.input.vrMeleePathScale = scale;
+			return std::string();
+		}
+		if(what == "slash" || what == "stab") {
+			std::string_view range;
+			const std::string_view name = firstWord(args, range);
+			for(vr::MeleeClass meleeClass : vr::MeleeClasses) {
+				if(name != vr::meleeClassName(meleeClass)) {
+					continue;
+				}
+				bool ok = false;
+				vr::parseDamageRange(range, vr::DamageRange(), &ok);
+				if(range != "default" && (!ok || range.empty())) {
+					return refuse("melee " + std::string(what) + ": expected <path min> <path max> <speed min> <speed max>"
+					              " (0-20) or default, got \"" + std::string(range) + "\"");
+				}
+				auto & ranges = what == "slash" ? config.input.vrMeleeSlash : config.input.vrMeleeStab;
+				ranges[size_t(meleeClass)] = range == "default" ? std::string() : std::string(range);
+				return std::string();
+			}
+			return refuse("melee " + std::string(what) + ": expected a class (dagger, sword, blunt, 2h_sword, 2h_blunt), got \""
+			              + std::string(name) + "\"");
+		}
+		return refuse("melee: expected noswing, quality, pathscale, slash or stab, got \"" + std::string(rest) + "\"");
+	}
+
 	if(word == "crouch") {
 		// The crouch toggle without an input device, for flat runs (#263)
 		std::string mode(rest);
@@ -3273,7 +3340,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "playground") {
-		// playground pull mode|respawn | kill | place <ahead> [<right>] | hit <n>: the test playground's NPC and
+		// playground pull mode|respawn | kill | fight | place <ahead> [<right>] | hit <n>: the test playground's NPC and
 		// levers (#321.2). pull sends the lever what a hand pull sends it (Interface.cpp: SM_ACTION from the player)
 		if(!isPlaygroundArea(g_currentArea) || !entities.player()) {
 			return refuse("playground: needs the playground level (area 30) on screen");
@@ -3296,6 +3363,13 @@ std::string execute(std::string_view line) {
 		}
 		if(what == "kill") {
 			ARX_DAMAGES_ForceDeath(*npc, entities.player());
+			return std::string();
+		}
+		if(what == "fight") {
+			// The NPC fights the player now, as a fight script sets it (behavior -f move_to, settarget player): a
+			// test's set-up for what only fighting NPCs feel - a VR touch (#465)
+			ARX_NPC_Behaviour_Change(npc, BEHAVIOUR_FIGHT | BEHAVIOUR_MOVE_TO, 0);
+			npc->targetinfo = EntityHandle_Player;
 			return std::string();
 		}
 		if(what == "place") {
@@ -3322,7 +3396,7 @@ std::string execute(std::string_view line) {
 			damageNpc(*npc, damage, entities.player(), nullptr, DAMAGE_TYPE_METAL, &npc->pos);
 			return std::string();
 		}
-		return refuse("playground: expected pull, kill, place or hit, got \"" + std::string(what) + "\"");
+		return refuse("playground: expected pull, kill, fight, place or hit, got \"" + std::string(what) + "\"");
 	}
 
 	if(word == "loadlevel") {

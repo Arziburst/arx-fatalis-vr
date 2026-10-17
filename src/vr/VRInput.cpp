@@ -89,8 +89,8 @@ struct InputState {
 
 	//! The hand's use / interact chord acted on a door, lever, chest or body (#38): no use or click until released
 	std::array<bool, HandCount> acting = { };
-	//! The hand holds a drawn weapon in the world (#377): its trigger charges the strike, it is no click
-	std::array<bool, HandCount> charging = { };
+	//! The hand holds a drawn weapon in the world (#377): its trigger is no click (and charges nothing, #465)
+	std::array<bool, HandCount> armed = { };
 
 	//! The radial menu's game menu item holds Escape for this many more updates (#376)
 	u32 radialEscapeUpdates = 0;
@@ -354,10 +354,11 @@ void updatePointer() {
 	const Event useEvents[HandCount] = { Event::UseLeft, Event::UseRight };
 	const Event stashEvents[HandCount] = { Event::StashLeft, Event::StashRight };
 	const Event interactEvents[HandCount] = { Event::InteractLeft, Event::InteractRight };
-	// The weapon hand (the right until #380) with a drawn weapon in the world: its trigger charges the strike
-	// (vr/VRMelee.h, active since the last frame) and clicks nothing (D-042); on the panel it clicks as ever
-	g_input.charging = { };
-	g_input.charging[size_t(Hand::Right)] = meleeStatus().active && !g_input.rays[size_t(Hand::Right)].onPanel;
+	// The weapon hand (the right until #380) with a drawn weapon in the world: its trigger does nothing - no charge,
+	// the swing is the strike (vr/VRMelee.h, active since the last frame, #465) - and clicks nothing (D-042); on the
+	// panel it clicks as ever
+	g_input.armed = { };
+	g_input.armed[size_t(Hand::Right)] = meleeStatus().active && !g_input.rays[size_t(Hand::Right)].onPanel;
 	for(size_t hand = 0; hand < HandCount; hand++) {
 		if(g_input.resolver.pressed(actEvents[hand])) {
 			g_input.acting[hand] = !g_input.rays[hand].onPanel && reticleAct(Hand(hand));
@@ -367,7 +368,7 @@ void updatePointer() {
 		          && !g_input.resolver.active(useEvents[hand])) {
 			g_input.acting[hand] = false;
 		}
-		trigger[hand] = (g_input.resolver.active(interactEvents[hand]) && !g_input.charging[hand])
+		trigger[hand] = (g_input.resolver.active(interactEvents[hand]) && !g_input.armed[hand])
 		                || (g_input.resolver.active(stashEvents[hand]) && !g_input.acting[hand]);
 		// The use acts under its own hand (D-019): the hand that uses takes an idle cursor
 		claims[hand] = claims[hand] || g_input.resolver.pressed(useEvents[hand]);
@@ -479,7 +480,7 @@ void updateInput() {
 	// capture a binding, so pressing the menu's or the inventory's control only binds it (#178)
 	// - also in the update that ends it, whose events were resolved with the old layout
 	HandRoles roles;
-	roles.charges = g_input.charging;
+	roles.armed = g_input.armed;
 	roles.acts = g_input.acting;
 	const GameInputState & resolved = g_input.game.update(g_input.resolver, g_input.input, roles);
 	const bool capturing = g_input.capture.active();

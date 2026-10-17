@@ -1,0 +1,264 @@
+# Melee damage from the swing (#465, D-NEW): no charge - a hit's damage fraction (the aim ratio, 1 = the engine's fully
+# charged strike) comes from the stroke's size and the speed of the blade's point that touched, the weaker of the two
+# deciding: a touch outside a swing, or a stroke below a minimum, deals the minimum 0.1 (vr_melee_noswing=min, the
+# default; none: nothing); a big and fast slash or lunge the full damage. The trigger, held long or short, changes
+# nothing. Every hit logs melee.hit with aim, speed, size and kind.
+#   .\scripts\dev\smoke-test.ps1 -Playground -VrSim idle -Sequence melee-damage
+# The swings are ramps of the simulated right controller through the goblin (0.85 m): in 60 frames 1.3 m/s (no swing:
+# a touch), in 24 frames 3.2 m/s at 90 Hz (part of the speed range), in 8 frames 9.6 m/s (above it). Where the blade
+# first touches the goblin - so a stroke's size at contact - depends on the IK arm's reach and the goblin's mesh, so each
+# factor is proven alone with the other one's range set live to "always full" (min = max = 0) or out of reach; the
+# scale itself is MeleeSwingTest's. Damage has the engine's rolls (critical, armour class): the sequence asserts the
+# aim. Swing hits (vr.melee.hits) and touches (vr.melee.touches) are counted apart; asserts on vr.melee.last follow a
+# swing's end at once (a touch of the resting blade comes 0.6 s after a hit at the earliest). The goblin is respawned
+# between the groups of hits.
+@sim idle
+@playground
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert area eq 30
+# Free look closes the inventory a --loadlevel start keeps open (TRAPS.md, #394)
+freelook on
+@until vr.melee.refused ne inventory 5s
+
+# One weapon per run (TRAPS.md): the dagger, recovery 0.6 s after a hit
+inventory playeraddfromscene dagger_9001
+dagger_9001.equip player
+@until vr.melee.recovery.weapon eq dagger 5s
+@assert vr.melee.active eq true
+@assert vr.weapon.place eq hand
+# The provisional defaults, set live: a cfg.ini kept from an earlier build keeps its old values (TRAPS.md); the
+# defaults themselves are MeleeSwingTest::testContactAim's
+melee noswing min
+melee quality min
+melee pathscale 1
+melee slash dagger default
+melee stab dagger default
+@frames 2
+@assert vr.melee.params.class eq dagger
+@assert vr.melee.params.noSwing eq min
+@assert vr.melee.params.quality eq min
+@assert vr.melee.params.slash.pathMin eq 0.25
+@assert vr.melee.params.slash.speedMax eq 5
+@assert vr.melee.params.stab.pathMax eq 0.45
+
+# The dagger level with the goblin's chest, the hand to the right - moved there slowly - then the peaceful goblin 60
+# units ahead
+vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
+vr-sim head rot 0 -25 0
+@frames 75
+playground place 60
+@frames 10
+@assert playground.npcAlive eq true
+@remember npc playground.npc
+@assert vr.melee.swings eq 0
+@assert vr.melee.hits eq 0
+
+# 1. A slow touch: the dagger swept through the goblin at 1.3 m/s is no swing - and the goblin is peaceful: a touch
+# reaches only an NPC that fights the player (the coordinator's decision, D-NEW), so nothing happens
+@assert playground.npcFighting eq false
+@remember touches vr.melee.touches
+@mark
+vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
+@frames 75
+@assert vr.melee.swings eq 0
+@assert vr.melee.hits eq 0
+@assert vr.melee.touches eq {touches}
+@nolog melee\.hit source=player
+
+# 2. With the defaults, a fast swing back: a swing hit with its measured speed and size in the log
+@until vr.melee.recovery.left eq 0 5s
+@remember hits vr.melee.hits
+@mark
+vr-sim @+1-8 hand right pos 0.45 -0.8 -0.35
+@until vr.melee.swings ge 1 5s
+@until vr.melee.swinging eq false 5s
+@assert vr.melee.hits eq {hits+1}
+@assert vr.melee.last.target eq {npc}
+@assert vr.melee.last.swing gt 0
+@assert vr.melee.last.aim ge 0.1
+@assert vr.melee.last.speed gt 1.5
+@log melee\.hit source=player target=goblin_base_\d+ .*aim=\d\.\d\d speed=\d+\.\d\d size=\d\.\d\d kind=slash
+
+# 3. The speed alone (the size range set to always full): a medium swing part of the damage, a fast one the full
+melee slash dagger 0 0 2 5
+@until vr.melee.params.slash.pathMax eq 0 5s
+@until vr.melee.recovery.left eq 0 5s
+@remember hits vr.melee.hits
+@mark
+vr-sim @+1-24 hand right pos -0.4 -0.8 -0.35
+@until vr.melee.hits ge {hits+1} 5s
+@until vr.melee.swinging eq false 5s
+@assert vr.melee.last.swing gt 0
+@assert vr.melee.last.aim gt 0.1
+@assert vr.melee.last.aim lt 0.95
+@assert vr.melee.last.speed gt 2
+@assert vr.melee.last.speed lt 5
+@assert vr.melee.last.kind eq slash
+@log melee\.hit source=player target=goblin_base_\d+ .*aim=0\.\d\d speed=[2-4]\.\d\d size=\S+ kind=slash
+@until vr.melee.recovery.left eq 0 5s
+@remember hits vr.melee.hits
+@mark
+vr-sim @+1-8 hand right pos 0.45 -0.8 -0.35
+@until vr.melee.hits ge {hits+1} 5s
+@until vr.melee.swinging eq false 5s
+@assert vr.melee.last.aim ge 0.99
+@log melee\.hit source=player target=goblin_base_\d+ .*aim=1\.00 speed=\S+ size=\S+ kind=slash
+@remember full vr.melee.last.aim
+
+# 4. The trigger changes nothing: held 2 s, the same fast swing deals the same; a medium swing with it held still deals
+# part of the damage (the old charge made it full); a short press during a fast swing the same as without
+playground kill
+@until playground.npcAlive eq false 5s
+playground pull respawn
+@until playground.npcAlive eq true 5s
+playground place 60
+@mark
+vr-sim action trigger right 1
+@frames 180
+@assert vr.melee.trigger eq true
+@until vr.melee.recovery.left eq 0 5s
+@remember hits vr.melee.hits
+vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35
+@until vr.melee.hits ge {hits+1} 5s
+@until vr.melee.swinging eq false 5s
+@assert vr.melee.trigger eq true
+@assert vr.melee.last.aim eq {full}
+@until vr.melee.recovery.left eq 0 5s
+@remember hits vr.melee.hits
+vr-sim @+1-24 hand right pos 0.45 -0.8 -0.35
+@until vr.melee.hits ge {hits+1} 5s
+@until vr.melee.swinging eq false 5s
+@assert vr.melee.last.aim gt 0.1
+@assert vr.melee.last.aim lt 0.95
+vr-sim action trigger right 0
+@frames 10
+@assert vr.melee.trigger eq false
+@until vr.melee.recovery.left eq 0 5s
+@remember hits vr.melee.hits
+vr-sim action trigger right 1; vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35; vr-sim @+5 action trigger right 0
+@until vr.melee.hits ge {hits+1} 5s
+@until vr.melee.swinging eq false 5s
+@assert vr.melee.last.aim eq {full}
+@nolog melee\.charge
+
+# 5. Either factor alone keeps a swing low: the speed range out of reach (a fast swing too slow for it), then the size
+# range out of reach (a fast swing too small for it) - both the minimum
+playground kill
+@until playground.npcAlive eq false 5s
+playground pull respawn
+@until playground.npcAlive eq true 5s
+playground place 60
+melee slash dagger 0 0 15 19
+@until vr.melee.params.slash.speedMin eq 15 5s
+@until vr.melee.recovery.left eq 0 5s
+@remember hits vr.melee.hits
+vr-sim @+1-8 hand right pos 0.45 -0.8 -0.35
+@until vr.melee.hits ge {hits+1} 5s
+@until vr.melee.swinging eq false 5s
+@assert vr.melee.last.swing gt 0
+@assert vr.melee.last.aim eq 0.1
+melee slash dagger 2 3 0 0
+@until vr.melee.params.slash.pathMin eq 2 5s
+@until vr.melee.recovery.left eq 0 5s
+@remember hits vr.melee.hits
+vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35
+@until vr.melee.hits ge {hits+1} 5s
+@until vr.melee.swinging eq false 5s
+@assert vr.melee.last.swing gt 0
+@assert vr.melee.last.speed gt 4.5
+@assert vr.melee.last.aim eq 0.1
+melee slash dagger default
+
+# 6. A fast lunge along the blade (8 m/s, the lunge range set to always full): the full damage, kind thrust. The hand
+# drawn back and to the middle slowly first
+playground kill
+@until playground.npcAlive eq false 5s
+playground pull respawn
+@until playground.npcAlive eq true 5s
+playground place 60
+melee stab dagger 0 0 2 4.5
+@until vr.melee.params.stab.pathMax eq 0 5s
+vr-sim @+1-40 hand right pos 0.45 -0.8 0.1; vr-sim @+41-80 hand right pos 0 -0.8 0.1
+@frames 95
+@until vr.melee.recovery.left eq 0 5s
+@remember swings vr.melee.swings
+@remember hits vr.melee.hits
+@mark
+vr-sim @+1-5 hand right pos 0 -0.8 -0.35
+@until vr.melee.swings ge {swings+1} 5s
+@until vr.melee.swinging eq false 5s
+@assert vr.melee.hits ge {hits+1}
+@assert vr.melee.last.kind eq thrust
+@assert vr.melee.last.aim ge 0.99
+@log melee\.hit source=player target=goblin_base_\d+ .*aim=1\.00 speed=\S+ size=\S+ kind=thrust
+melee stab dagger default
+
+# 7. The goblin fighting the player: the dagger in it deals the minimum - a touch, no swing hit. The set-up: the mode
+# lever (aggressive), the goblin placed against the resting dagger - not fighting yet, so the blade does nothing to it
+# (a touch reaches only an NPC fighting the player) - then its fight set directly (playground fight) and the dagger
+# swept through it. The playground goblin's script drops the fight - its behaviour and its target - as soon as it is
+# hit (TRAPS.md), so the first touch is the one checked
+vr-sim @+1-40 hand right pos 0.45 -0.8 -0.35
+@frames 50
+playground pull mode
+@until playground.npcMode eq aggressive 5s
+playground place 60
+@frames 30
+@assert playground.npcFighting eq false
+@remember touches vr.melee.touches
+@remember hits vr.melee.hits
+@frames 30
+@assert vr.melee.touches eq {touches}
+@mark
+playground fight
+@until playground.npcFighting eq true 5s
+@assert playground.npcDistance lt 100
+vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
+@until vr.melee.touches ge {touches+1} 5s
+@assert vr.melee.hits eq {hits}
+@assert vr.melee.last.swing eq 0
+@assert vr.melee.last.aim eq 0.1
+@log melee\.hit source=player target=goblin_base_\d+ weapon=\S+ damage=\S+ aim=0\.10 speed=\S+ size=\S+ kind=\S+
+
+# 8. vr_melee_noswing=none (set live): a touch deals nothing, also to the fighting goblin - it fights all the way back
+# through the sweep (no hit drops its fight), so a touch could have reached it (its own strikes on the player are
+# source=goblin...)
+melee noswing none
+@until vr.melee.params.noSwing eq none 5s
+playground fight
+@until playground.npcFighting eq true 5s
+@remember touches vr.melee.touches
+@mark
+vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
+@frames 75
+@assert vr.melee.touches eq {touches}
+@assert playground.npcFighting eq true
+@nolog melee\.hit source=player
+melee noswing min
+@until vr.melee.params.noSwing eq min 5s
+playground pull mode
+@until playground.npcMode eq peaceful 5s
+
+# 9. A resting blade touches no world geometry - no wall sound, no durability (the engine's isHit stays false) - while
+# a swing into the wall still strikes it, once: the player before the north wall (layout.mjs: z 8400) facing it,
+# between the table (to x 8150) and the mode lever (x 8280), the dagger held into the wall slowly, then swept along it.
+# The dagger has one hit sphere, radius 15, about 89 units ahead of the player (melee.spheres): it must straddle the
+# wall's plane - 8318 puts it near z 8407; 25 units further in and it sits wholly behind the thin wall, touching nothing
+setpos 8215 -170 8318 0
+@frames 30
+vr-sim head rot 0 0 0
+vr-sim @+1-60 hand right pos 0.25 -0.35 -0.7
+@frames 90
+@assert vr.melee.swinging eq false
+@assert vr.melee.worldHit eq false
+@remember swings vr.melee.swings
+vr-sim @+1-8 hand right pos -0.35 -0.35 -0.7
+@until vr.melee.swings ge {swings+1} 5s
+@until vr.melee.swinging eq false 5s
+@log melee\.spheres count=\d+
+@assert vr.melee.worldHit eq true
+
+@assert errors eq 0

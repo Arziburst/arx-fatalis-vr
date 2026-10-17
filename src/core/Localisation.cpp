@@ -405,3 +405,7 @@ std::string_view getLocalised(std::string_view name) {
 std::string_view getLocalised(std::string_view name, const std::string_view default_value) {
 	return g_localisation.getKey(name, std::string_view(), default_value);
 }
+
+std::string_view getLocalised(std::string_view name, std::string_view key, std::string_view default_value) {
+	return g_localisation.getKey(name, key, default_value);
+}

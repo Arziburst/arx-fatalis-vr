@@ -330,6 +330,17 @@ MirrorStatus mirrorStatus();
  */
 void setMenuOpen(const char * menu);
 
+/*!
+ * \brief The scene view shows the hybrid's screen (#29): once per frame, from the camera
+ *
+ * The next frame is then drawn flat into the quad, which becomes the screen fixed in the room that the
+ * logos and the cinematics play on (#394) - the game's own scene camera as a film, never in the eyes.
+ */
+void setSceneScreen(bool on);
+
+//! \return true while this frame is drawn flat for the scene's screen (#29): the game's own flat picture
+bool sceneScreenFrame();
+
 //! The floating UI panel as status.json reports it (#49)
 struct PanelStatus {
 	std::string mode = "head";     //!< "world" while the panel is placed for an open menu, else "head"
@@ -434,6 +445,29 @@ bool radialLayerShown(Hand hand);
 
 //! Why the last \ref beginRadialImage of the hand drew nothing ("not a stereo frame", ...), empty when it drew (#377)
 const char * radialImageRefusal(Hand hand);
+
+//! The subtitle panel's image in pixels (#29): an eye's pixels at the panel's distance, the box drawn in its middle
+const s32 SubtitleImageWidth = 1024;
+const s32 SubtitleImageHeight = 512;
+
+/*!
+ * \brief Draw a scene line's subtitle panel this frame (#29): its own swapchain becomes the render target,
+ *        cleared to transparent; the caller draws the box in 2D and calls \ref endSubtitleImage. Stereo frames only.
+ */
+bool beginSubtitleImage();
+
+//! Hand the subtitle image back to the compositor and make the flat frame the render target again
+void endSubtitleImage();
+
+/*!
+ * \brief The subtitle panel for this frame (#29): its image as a quad layer in the LOCAL space (meters; the face +z
+ *        towards the viewer), \a size its width and height. Set every frame - \c shown false hides it.
+ */
+void setSubtitleLayer(bool shown, const Vec3f & center = Vec3f(0.f),
+                      const glm::quat & orientation = glm::quat(1.f, 0.f, 0.f, 0.f), const Vec2f & size = Vec2f(0.f));
+
+//! The subtitle panel was part of the last submitted frame
+bool subtitleLayerShown();
 
 //! Place the panel anew at the head on the next frame while a menu is open (a recenter, F-180)
 void recenterPanel();

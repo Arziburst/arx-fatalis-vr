@@ -1360,6 +1360,25 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Cause:** the PC, not the game: other workers build in parallel (the game lock serialises game runs, not compiles), and a starved CPU stretches every phase of the frame at once.
 **Do:** judge pacing and frame costs only from windows at full rate, or repeat the run; a real cost of the game shows in one phase (`cause`), the same way in every run. `perf-summary.ps1` lists the hitches by cause.
 
+## 2026-10-14 - Kultar's scene never starts although the hero walked into KULTAR_WAKE
+**Symptom:** on a save in the start cell the hero walks into the zone KULTAR_WAKE (`player.z` well inside it), yet `scene.active` stays false for a minute: no letterbox, no camera, no teleport (#29).
+**Cause:** the zone only sends Kultar to the bars between the cells (`MARKER_0117`, 9103 8836) and has him say his introduction; his scene (`>>dialogue`: the teleport, the cameras, the letterbox, `playerlookat`) starts from his `CHECK_DIST` timer only while `^DIST_PLAYER < 500` - the hero within 5 m of him. Walking straight ahead from the middle of the cell ends at the portcullis about 6 m away; at x 8740 and beyond, the cell's wall holds the hero at once.
+**Do:** start from the test save `scene-kultar` (8700 8660, facing +z: the walk stops 4.1 m from Kultar) or `setpos 8700 3105 8840` (`scene-flat.xrs`). The zone fires once per game: a second try needs the save loaded again.
+
+## 2026-10-14 - A console `speak -c` line ends after about 2 s although its sample is longer
+**Symptom:** `<npc>.speak -c ... [kultar_letmeout]` (a 5 s sample) through the test channel ends after about 2 s - a sequence's input in that line runs past its end; the same line from the game's own script plays in full (#29).
+**Cause:** without the letterbox (`cinematicBorder` off) a `speak` line is a "no text" line, and `ARX_SPEECH_AddSpeech` plays a random variant of its sample: `kultar_letmeout2` / `3` are 2.1 s. Lines with the letterbox on (a real scene) never pick a variant.
+**Do:** for a line that must last, take one without variants (`kultar_cantgo`, 8.4 s; `kultar_traveler`, 22 s) or turn the letterbox on first.
+
+## 2026-10-14 - A new game's hero stands off the level for 2 s before the prison intro
+**Symptom:** the scene meter's `minAboveFloorM` is 0 for a stretch from `newgame`: the eyes in first person over no floor (#29).
+**Cause:** after `GAME_READY` the intro waits 2 s (letterbox on, controls off) before its `TELEPORT -PA 180`; until then the hero is at the level's editor position, where `CheckInPoly` finds no floor.
+**Do:** every scene view keeps the fade black while there is no floor under its eye; any measurement from `newgame` meets these 2 s.
+
+## 2026-10-14 - A console `speak` line of a variant's sample name shows no subtitle
+**Symptom:** `<npc>.speak -c ... [kultar_letmeout2]` plays, but `scene.subtitle.text` stays empty and `voicedLines` does not count it (#29).
+**Cause:** a speech variant's text is not a section named after its sample (`kultar_letmeout2.wav`): it is the key `string2` in the line's own section `[kultar_letmeout]`. No section `[kultar_letmeout2]` exists.
+**Do:** speak the line's own key (`[kultar_letmeout]`); the subtitle takes the text of the variant actually played (`string<N>`).
 ## 2026-10-13 - A file under data/core is in the repository but the game says "not found"
 **Symptom:** `[W] VRArms: [vr] arms: vr/arms/Hand_Glove_low_R.gltf not found` (#385.3), while the file is in `data/core/vr/arms/` and the build's data dirs point at `data/core`; the host tests that load the same file pass.
 **Cause:** two rules of the resource system. `src/io/resource/ResourceSetup.cpp` mounts only a fixed list of top-level folders of each data dir (`editor`, `game`, `graph`, `localisation`, `misc`, `sfx`, `speech`, and now `vr`), so a new folder is invisible until it is added there; and every resource name is lower case (`PakReader::addFiles`), so `vr/arms/Hand_Glove_low_R.gltf` must be asked for as `vr/arms/hand_glove_low_r.gltf`. Host tests read data/core straight from the source tree and see neither rule.
@@ -1403,3 +1422,8 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** clicking, scrolling or typing into the window of a test run (`--test-dir`: the smoke test, `xrs-run.ps1`, CI, `run-windows.ps1 -TestChannel`) changes nothing, the window cannot be activated and sits in the bottom right corner; an `.xrs` `@key` does nothing any more. In VR (headset or `--vr-sim`) no key of the desktop keyboard - not even the channel's `desktop-key` - reaches the game (#487).
 **Cause:** by design (#487, the owner): a test run must not take the focus or the input of whoever works at the PC. The game shows the window without activation (`WS_EX_NOACTIVATE`) in the corner and `SDL2InputBackend` drops every real mouse and keyboard event; only the events the channel injects (`desktop-mouse`, `desktop-key`, marked as injected) and the simulated controllers pass (`realInput` in `status.json`, `[input] real ... dropped (test run)` in `arx.log`). `@key` posts a window message - real input. In VR the window only mirrors the headset: the keyboard is dropped whatever its origin (`desktopKeyboard`), like the mouse (#338).
 **Do:** drive a test run through the channel (`desktop-key`, `desktop-mouse`, `vr-sim`, `vr-point`); test the keyboard flat (`--no-vr`) with `desktop-key`. To try something by hand, launch without the channel (`run-windows.ps1` without `-TestChannel`).
+
+## 2026-10-17 - A channel `sendevent custom <npc> "PARAM"` does nothing
+**Symptom:** a test sends an NPC the custom event its script waits for (`sendevent custom human_base_0028 "DEAD"`): no warning in `arx.log`, the command succeeds, and the NPC does nothing - the scene it starts never comes (#29, scene-hybrid T10).
+**Cause:** the game lowercases every script when it loads it (`src/script/Script.cpp`, `util::toLowercase(file->read())`): the handler compares `^$PARAM1 == "dead"`. A console or channel line is run as it is typed, so `"DEAD"` never matches. A release build has no script debug log (`LogDebug` is compiled out), so `--debug script` shows nothing.
+**Do:** write a custom event's parameter in lowercase (`sendevent custom human_base_0028 "dead"`); to read a script, unpack `data2.pak` with `arxunpak` into a temp folder, never into the repo.

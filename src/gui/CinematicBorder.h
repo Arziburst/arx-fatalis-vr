@@ -34,7 +34,8 @@ public:
 	void update();
 	void set(bool status, bool smooth);
 	
-	void render() const;
+	//! Draw the bars, return whether any were drawn
+	bool render() const;
 	
 	float CINEMA_DECAL;
 	

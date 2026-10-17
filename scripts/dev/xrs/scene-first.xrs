@@ -1,0 +1,193 @@
+# Scene view 'first' (#29, SPEC.md): the eyes' camera stays at the hero's head in scripted scenes; T1 Kultar (camera entities) and T5 (every speak -c mode).
+#   .\scripts\dev\xrs-run.ps1 scene-first
+# Red until #29 is built: the scene command and the status.json scene.* fields are not in the game yet (29.0, SPEC.md).
+# Comfort per stretch, then the input in a scene: a stick turn changes player.yaw, walking does not move the hero.
+@sim idle
+@save scene-kultar
+@args --loadslot 0
+
+# T1: the save is one step before the KULTAR_WAKE zone, facing +z (scripts/dev/test-saves/scenarios.txt)
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # past the level's fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert scene.active eq false
+@assert scene.shown eq none
+scene view first
+@assert scene.view eq first
+scene meter reset
+@mark
+vr-input stick left 0 1
+@until scene.active eq true 60s
+vr-input stick left 0 0
+@log vr\.scene state=start kind=entity view=first
+@until scene.shown eq first 20s
+@assert scene.kind eq entity
+@assert scene.armsIk eq true
+@shot first-t1
+@assert vr.sim.shots.first-t1.left.scene.verdict ne background
+@assert vr.sim.shots.first-t1.right.scene.verdict ne background
+@until scene.active eq false 120s
+@log vr\.scene state=end kind=entity
+@assert scene.meter.cuts gt 0
+@assert scene.meter.sceneFrames gt 0
+@assert scene.meter.minAboveFloorM ge 1.2
+@assert scene.meter.maxStepCm lt 5
+@assert scene.meter.maxYawStepDeg lt 1
+@assert scene.meter.unexplainedCuts eq 0
+@assert scene.meter.fadeFrames eq 0                # the teleport at the scene's start too: no fade at all (the owner, vr_scene_cut instant)
+@assert scene.meter.letterboxFrames eq 0
+
+# T5: every speak -c mode on Kultar (one stretch, no input)
+scene meter reset
+# zoom
+human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_cantgo]
+@until scene.kind eq speech 15s
+@until scene.shown eq first 5s
+@assert scene.active eq true
+@assert scene.armsIk eq true
+@until scene.kind eq none 30s
+# keep
+human_base_0028.speak -c keep [kultar_cantgo]
+@until scene.kind eq speech 15s
+@until scene.shown eq first 5s
+@assert scene.active eq true
+@assert scene.armsIk eq true
+@until scene.kind eq none 30s
+# side
+human_base_0028.speak -c side player 5 5 90 90 0 [kultar_cantgo]
+@until scene.kind eq speech 15s
+@until scene.shown eq first 5s
+@assert scene.active eq true
+@assert scene.armsIk eq true
+@until scene.kind eq none 30s
+# side_l
+human_base_0028.speak -c side_l player 5 5 90 90 0 [kultar_cantgo]
+@until scene.kind eq speech 15s
+@until scene.shown eq first 5s
+@assert scene.active eq true
+@assert scene.armsIk eq true
+@until scene.kind eq none 30s
+# side_r
+human_base_0028.speak -c side_r player 5 95 400 150 -10 [kultar_cantgo]
+@until scene.kind eq speech 15s
+@until scene.shown eq first 5s
+@assert scene.active eq true
+@assert scene.armsIk eq true
+@until scene.kind eq none 30s
+# ccctalker_l
+human_base_0028.speak -c ccctalker_l player 90 100 [kultar_cantgo]
+@until scene.kind eq speech 15s
+@until scene.shown eq first 5s
+@assert scene.active eq true
+@assert scene.armsIk eq true
+@until scene.kind eq none 30s
+# ccctalker_r
+human_base_0028.speak -c ccctalker_r player 80 40 [kultar_cantgo]
+@until scene.kind eq speech 15s
+@until scene.shown eq first 5s
+@assert scene.active eq true
+@assert scene.armsIk eq true
+@until scene.kind eq none 30s
+# ccclistener_l
+human_base_0028.speak -c ccclistener_l player 50 50 [kultar_cantgo]
+@until scene.kind eq speech 15s
+@until scene.shown eq first 5s
+@assert scene.active eq true
+@assert scene.armsIk eq true
+@until scene.kind eq none 30s
+# ccclistener_r
+human_base_0028.speak -c ccclistener_r player 40 40 [kultar_cantgo]
+@until scene.kind eq speech 15s
+@until scene.shown eq first 5s
+@assert scene.active eq true
+@assert scene.armsIk eq true
+@until scene.kind eq none 30s
+@assert scene.meter.sceneFrames gt 0
+@assert scene.meter.minAboveFloorM ge 1.2
+@assert scene.meter.maxStepCm lt 5
+@assert scene.meter.maxYawStepDeg lt 1
+@assert scene.meter.unexplainedCuts eq 0
+@assert scene.meter.cuts eq 0                     # no blink between the lines (the owner, 2026-10-17)
+@assert scene.meter.fadeFrames eq 0
+@assert scene.meter.letterboxFrames eq 0
+
+# Input in a speak -c scene (a separate stretch, not judged by the meter): the stick turn works, walking stays blocked.
+# A line without variants, longer than the stretch: without the letterbox a line plays a random variant of its sample
+# (kultar_letmeout2 / 3 are 2.1 s), which ended before the walk
+vr-input turn smooth
+human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_cantgo]
+@until scene.kind eq speech 15s
+@remember yaw0 player.yaw
+@remember x0 player.x
+@remember z0 player.z
+vr-input stick right 0.6 0
+@frames 45
+vr-input stick right 0 0
+@assert player.yaw ne {yaw0}
+vr-input stick left 0 1
+@frames 45
+vr-input stick left 0 0
+@assert player.x eq {x0}
+@assert player.z eq {z0}
+@assert scene.shown eq first
+@until scene.kind eq none 30s
+vr-input turn snap
+# T2, the new game's prison intro from the pause menu (the owner, #29): the hero stands off the level for 2 s (TRAPS.md) -
+# every view stays black there - and is then dragged lying by the goblins, first person's eye 10 cm over the floor. What
+# first person does with an eye below 1.2 m is vr_scene_first_low (the owner picks): clamp (default) raises it, black
+# holds the fade, screen shows the scene on the screen in the room
+@assert scene.firstLow eq clamp
+# T2 with vr_scene_first_low clamp
+scene firstlow clamp
+@assert scene.firstLow eq clamp
+menu pause
+@until menuMode eq mainmenu 10s
+scene meter reset
+newgame
+@until state eq GAMEPLAY 60s
+@until scene.active eq true 60s
+@until scene.shown eq first 30s
+@until player.controlsBlocked eq false 120s
+@until scene.active eq false 30s
+@assert scene.meter.sceneFrames gt 0
+@assert scene.meter.unexplainedCuts eq 0
+@assert scene.meter.letterboxFrames eq 0
+@assert scene.meter.minAboveFloorM ge 1.2                 # the eye raised
+@remember blindClamp scene.meter.blindFrames
+
+# T2 with vr_scene_first_low black
+scene firstlow black
+@assert scene.firstLow eq black
+menu pause
+@until menuMode eq mainmenu 10s
+scene meter reset
+newgame
+@until state eq GAMEPLAY 60s
+@until scene.active eq true 60s
+@until scene.shown eq first 30s
+@until player.controlsBlocked eq false 120s
+@until scene.active eq false 30s
+@assert scene.meter.sceneFrames gt 0
+@assert scene.meter.unexplainedCuts eq 0
+@assert scene.meter.letterboxFrames eq 0
+@assert scene.meter.minAboveFloorM ge 1.2                 # no low frame seen: black instead
+@assert scene.meter.blindFrames gt {blindClamp*3}           # black far longer than the 2 s off the level
+
+# T2 with vr_scene_first_low screen
+scene firstlow screen
+@assert scene.firstLow eq screen
+menu pause
+@until menuMode eq mainmenu 10s
+scene meter reset
+newgame
+@until state eq GAMEPLAY 60s
+@until scene.active eq true 60s
+@until scene.shown eq screen 60s
+@until player.controlsBlocked eq false 120s
+@until scene.active eq false 30s
+@assert scene.meter.sceneFrames gt 0
+@assert scene.meter.unexplainedCuts eq 0
+@assert scene.meter.letterboxFrames eq 0
+@assert scene.meter.screenFrames gt 0
+
+@assert errors eq 0

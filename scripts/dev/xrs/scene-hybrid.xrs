@@ -1,0 +1,159 @@
+# Scene view 'hybrid' (#29, 29.2): first person for dialogue, a virtual screen for far camera shots and the hero's scripted body - T2 the prison intro, T1 Kultar, T8 a level 5 vision ball.
+#   .\scripts\dev\xrs-run.ps1 scene-hybrid
+# Red until #29 is built: the scene command and the status.json scene.* fields are not in the game yet (29.0, SPEC.md).
+# One run: the new game's intro (T2), then - the hero put at the scene-kultar save's spot, facing +z - the walk into the Kultar zone (T1),
+# then level 5 (T8). Per stretch: minAboveFloorM >= 1.2 and maxStepCm < 5 over the non-screen frames, no jump nobody asked for
+# (unexplainedCuts 0; no fade at all by default, vr_scene_cut instant), no letterbox bars in an eye.
+@sim idle
+@args --skiplogo
+
+@until state eq MENU 60s
+@until vr.input.controllers eq index 30s
+scene view hybrid
+@assert scene.view eq hybrid
+
+# T2: the prison intro (camera entities, the hero dragged by goblins - a scripted body): on the screen
+scene meter reset
+newgame
+@until area eq 1 60s
+@until state eq GAMEPLAY 30s
+@until scene.active eq true 60s
+@until scene.shown eq screen 60s
+@assert scene.kind eq entity
+@assert scene.dialogue eq false                  # a cinematic: no conversation
+@assert scene.heroHead eq drawn                   # the cinema shot shows the hero with his head (the owner, 2026-10-17)
+@wait 2000
+@shot hybrid-t2
+@assert vr.sim.shots.hybrid-t2.left.quadPixels gt 0
+@assert vr.sim.shots.hybrid-t2.right.quadPixels gt 0
+@assert vr.sim.shots.hybrid-t2.left.scene.verdict ne background
+@assert vr.sim.shots.hybrid-t2.right.scene.verdict ne background
+@until player.controlsBlocked eq false 120s
+@until scene.active eq false 30s
+# The whole intro on the screen (the owner, 2026-10-17): no skip, no switch to first person inside it, to its own end
+@nolog scene\.skip how=vr
+@nolog vr\.scene\.switch reason=(camera|line) shown=first
+@log vr\.scene\.lookat how=ignore target=porticullis_0013
+@assert scene.meter.screenFrames gt 0
+@assert scene.meter.sceneFrames gt 0
+@assert scene.meter.minAboveFloorM ge 1.2
+@assert scene.meter.maxStepCm lt 5
+@assert scene.meter.maxYawStepDeg lt 1
+@assert scene.meter.unexplainedCuts eq 0
+@assert scene.meter.letterboxFrames eq 0
+# No black square left in front of the player after the intro (the owner, 2026-10-17): back in the world the quad carries
+# nothing (no HUD frame in VR, #471), and it is not the screen any more
+@frames 45
+@shot hybrid-after-t2
+@assert scene.shown eq none
+@assert vr.panel.mode ne screen
+@assert vr.sim.shots.hybrid-after-t2.left.quadPixels eq 0
+@assert vr.sim.shots.hybrid-after-t2.right.quadPixels eq 0
+
+# T1: Kultar at the bars - first person (the camera entities show the dialogue near the hero)
+# The intro leaves the hero 6 m short of Kultar's trigger (TRAPS.md): to the scene-kultar save's spot first, outside the stretch
+@wait 2000
+setpos 8700 3105 8660 0
+@wait 1000
+scene meter reset
+@mark
+vr-input stick left 0 1
+@until scene.active eq true 60s
+vr-input stick left 0 0
+@log vr\.scene state=start kind=entity view=hybrid shown=first
+@until scene.shown eq first 20s
+@assert scene.armsIk eq true
+@shot hybrid-t1
+@assert scene.heroHead eq hidden                  # in his own eyes the hero's head is hidden
+@assert vr.sim.shots.hybrid-t1.left.scene.verdict ne background
+@assert vr.sim.shots.hybrid-t1.right.scene.verdict ne background
+@until scene.active eq false 120s
+@nolog vr\.scene\.cut .*reason=(line|camera)    # no blink between the dialogue's lines and cameras (the owner)
+@assert scene.meter.cuts gt 0
+@assert scene.meter.sceneFrames gt 0
+@assert scene.meter.minAboveFloorM ge 1.2
+@assert scene.meter.maxStepCm lt 5
+@assert scene.meter.maxYawStepDeg lt 1
+@assert scene.meter.unexplainedCuts eq 0
+@assert scene.meter.fadeFrames eq 0                # the teleport at the scene's start too: no fade at all (the owner, vr_scene_cut instant)
+@assert scene.meter.letterboxFrames eq 0
+
+# T9: a script's camera in a dialogue (the owner, 2026-10-17: the talk after the goblin fight went to the screen).
+# camera_0080, the camera of that talk, looks at Kultar: a talk cue - first person even alone, though a far shot; the same
+# camera cut to in a speak -c line stays in first person too: the scene is a dialogue to its end
+@wait 2000
+@mark
+human_base_0028.cameraactivate camera_0080
+@until scene.kind eq entity 10s
+@frames 30
+@assert scene.shown eq first
+@assert scene.dialogue eq true
+human_base_0028.cameraactivate none
+@until scene.active eq false 10s
+scene meter reset
+@mark
+human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
+@until scene.kind eq speech 15s
+@assert scene.dialogue eq true
+human_base_0028.cameraactivate camera_0080
+@until scene.kind eq entity 10s
+@frames 30
+@assert scene.shown eq first
+@assert scene.dialogue eq true
+@assert scene.heroHead eq hidden
+human_base_0028.cameraactivate none
+@until scene.active eq false 30s
+@nolog vr\.scene\.switch .*shown=screen
+@assert scene.meter.screenFrames eq 0
+
+# T10: the talk after the goblin fight, driven by its real trigger (the owner, 2026-10-17): the guard's death reaches
+# Kultar, the lever lever_0012 is pulled (its ON ACTION: the portcullis opened, LEVER_DOWN to Kultar) - Kultar walks out,
+# camera_0080 shows him (the hero teleported) and the talk follows with SPEAK -o / -po lines, no speak -c. First person
+# from the scene's first frame to its end, never the screen
+@wait 2000
+scene meter reset
+@mark
+# The game lowercases its scripts on load (TRAPS.md): a custom event's parameter is compared in lowercase
+sendevent custom human_base_0028 "dead"
+@wait 3000
+sendevent action lever_0012 ""
+@until scene.kind eq entity 30s
+@assert scene.shown eq first
+@assert scene.dialogue eq true
+@log vr\.scene state=start kind=entity view=hybrid shown=first
+@until scene.active eq false 150s
+@nolog vr\.scene\.switch .*shown=screen
+@nolog vr\.scene state=start .*shown=screen
+@assert scene.meter.screenFrames eq 0
+@assert scene.subtitle.voicedLines ge 4        # Kultar's and the hero's lines of the talk played
+@assert scene.meter.unexplainedCuts eq 0
+
+# T8: level 5, a vision ball's camera - a shot of a far place: on the screen
+loadlevel 5
+@until area eq 5 90s
+@until state eq GAMEPLAY 60s
+@wait 3000
+scene meter reset
+sendevent cinematic camera_0137 ""
+@until scene.active eq true 15s
+@until scene.shown eq screen 10s
+@assert scene.kind eq entity
+@shot hybrid-t8
+@assert vr.sim.shots.hybrid-t8.left.quadPixels gt 0
+@assert vr.sim.shots.hybrid-t8.right.quadPixels gt 0
+@until scene.active eq false 60s
+@assert scene.meter.screenFrames gt 0
+@assert scene.meter.sceneFrames gt 0
+# The whole vision-ball scene is on the screen: no frame puts the eyes' world camera at the scene view, so the
+# height has nothing to measure (29.1's -1); steps stay 0 (the lead's test change, coordinator's ruling: the
+# height/step asserts apply to frames whose eyes' world camera is the scene view, no unexplained cut over all)
+# Every scene frame is on the screen - the switch from the world to the screen is at once, no opening fade (CI
+# 38998065631: openingFrames 0, screenFrames = sceneFrames) - none shows the world
+@assert scene.meter.worldFrames eq 0
+@assert scene.meter.openingFrames le 16
+@assert scene.meter.minAboveFloorM eq -1
+@assert scene.meter.maxStepCm lt 5
+@assert scene.meter.maxYawStepDeg lt 1
+@assert scene.meter.unexplainedCuts eq 0
+@assert scene.meter.letterboxFrames eq 0
+@assert errors eq 0

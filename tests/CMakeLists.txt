@@ -10,7 +10,9 @@ set(arxtest_TESTCASES
 	
 	tests/graphics/ColorTest.h
 	tests/graphics/ColorTest.cpp
-	
+	tests/graphics/PixelStoreTest.h
+	tests/graphics/PixelStoreTest.cpp
+
 	tests/core/GameEventTest.h
 	tests/core/GameEventTest.cpp
 	
@@ -32,6 +34,8 @@ set(arxtest_TESTCASES
 	tests/io/IniTest.h
 	tests/io/IniTest.cpp
 	
+	tests/platform/DialogPolicyTest.h
+	tests/platform/DialogPolicyTest.cpp
 	tests/platform/ExitReportTest.h
 	tests/platform/ExitReportTest.cpp
 	tests/platform/HangWatchdogTest.h

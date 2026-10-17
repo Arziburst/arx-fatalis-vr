@@ -10,6 +10,9 @@
 # goes back by distance (`stick-for`), the turn back by time.
 #
 # The tolerances, stated before the numbers (each against the 90 Hz block; why):
+#   swing span      the 90 ms swing ramp plus 30 ms ran at least 90 % of the rate's frames (motion.records.span<rate>):
+#                   the detector needs three samples inside the ramp, so a PC that shows the hand in two frames of 45 ms
+#                   sees no swing at all - the step fails naming the frames, not a misleading 'swings 0'
 #   frames          each timed span ran at least 90 % of the rate's frames (motion.records.<what>.frames since the
 #                   `motion reset`): a PC too busy to keep up quantizes every input to its long frames - a turn held
 #                   500 ms at 30 frames/s on 120 Hz turned 64.9 degrees - so the step fails there, naming the frames,
@@ -99,7 +102,9 @@ vr-sim record jump90
 @until motion.records.jump90.frames ge 0 10s
 # A swing of the sword (0.85 m in 90 ms), then the hand back slowly (0.85 m in 700 ms): one swing
 @remember swings vr.melee.swings
-vr-sim @+0-90ms hand right pos -0.4 -0.8 -0.35
+motion reset; vr-sim @+0-90ms hand right pos -0.4 -0.8 -0.35; vr-sim @+120ms record span90
+@until motion.records.span90.frames ge 0 10s
+@assert motion.records.span90.frames ge 9
 @until vr.melee.swings ge {swings+1} 5s
 @until vr.melee.swinging eq false 5s
 vr-sim record swing90
@@ -175,7 +180,9 @@ vr-sim record jump72
 @until motion.records.jump72.frames ge 0 10s
 # A swing of the sword (0.85 m in 90 ms), then the hand back slowly (0.85 m in 700 ms): one swing
 @remember swings vr.melee.swings
-vr-sim @+0-90ms hand right pos -0.4 -0.8 -0.35
+motion reset; vr-sim @+0-90ms hand right pos -0.4 -0.8 -0.35; vr-sim @+120ms record span72
+@until motion.records.span72.frames ge 0 10s
+@assert motion.records.span72.frames ge 7
 @until vr.melee.swings ge {swings+1} 5s
 @until vr.melee.swinging eq false 5s
 vr-sim record swing72
@@ -243,7 +250,9 @@ vr-sim record jump120
 @until motion.records.jump120.frames ge 0 10s
 # A swing of the sword (0.85 m in 90 ms), then the hand back slowly (0.85 m in 700 ms): one swing
 @remember swings vr.melee.swings
-vr-sim @+0-90ms hand right pos -0.4 -0.8 -0.35
+motion reset; vr-sim @+0-90ms hand right pos -0.4 -0.8 -0.35; vr-sim @+120ms record span120
+@until motion.records.span120.frames ge 0 10s
+@assert motion.records.span120.frames ge 12
 @until vr.melee.swings ge {swings+1} 5s
 @until vr.melee.swinging eq false 5s
 vr-sim record swing120
@@ -311,7 +320,9 @@ vr-sim record jump144
 @until motion.records.jump144.frames ge 0 10s
 # A swing of the sword (0.85 m in 90 ms), then the hand back slowly (0.85 m in 700 ms): one swing
 @remember swings vr.melee.swings
-vr-sim @+0-90ms hand right pos -0.4 -0.8 -0.35
+motion reset; vr-sim @+0-90ms hand right pos -0.4 -0.8 -0.35; vr-sim @+120ms record span144
+@until motion.records.span144.frames ge 0 10s
+@assert motion.records.span144.frames ge 15
 @until vr.melee.swings ge {swings+1} 5s
 @until vr.melee.swinging eq false 5s
 vr-sim record swing144

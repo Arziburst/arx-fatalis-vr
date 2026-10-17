@@ -293,9 +293,12 @@ struct SceneInput {
 	float stickTurned = 0.f;        //!< the stick's turn so far, degrees, right positive (the hero's yaw goes down)
 	float seconds = 0.f;            //!< the frame's duration
 	bool cinematicShot = false;     //!< this frame of a camera entity's shot is a cinematic one (\ref hybridWantsScreen)
-	//! A conversation shows this frame: the camera entity looks at an NPC, a playerlookat turned the hero to one in this
-	//! scene, or the hero has a voiced line playing - the scene is a dialogue (\ref SceneDirector::dialogue)
+	//! A conversation shows this frame: a playerlookat turned the hero to an NPC in this scene, or the hero has a voiced
+	//! line playing - the scene is a dialogue (\ref SceneDirector::dialogue)
 	bool talkCue = false;
+	//! The camera entity looks at an NPC while the hero's body is free (not played by a script): at the scene's first
+	//! camera frame a conversation's setup - the talk after the goblin fight; a scripted body (a drag) is a cutscene
+	bool cameraOnNpc = false;
 	bool firstOnFloor = true;       //!< a floor under the hero's eye (\c firstPos)
 	float firstFloorY = 0.f;        //!< that floor (y down), when \c firstOnFloor
 	SceneFirstLow firstLow = DefaultSceneFirstLow; //!< what first person does while that eye is too low
@@ -418,7 +421,8 @@ private:
 	};
 
 	//! The scene is a dialogue, in first person to its end (the owner, 2026-10-17): its first camera entity frame was
-	//! not a cinematic shot, a \c speak \c -c line played in it, or a talk cue came (\ref SceneInput::talkCue)
+	//! not a cinematic shot or had the camera on an NPC with the hero free (\ref SceneInput::cameraOnNpc), a \c speak \c -c
+	//! line played in it, or a talk cue came (\ref SceneInput::talkCue)
 	bool m_dialogue = false;
 	bool m_entitySeen = false; //!< the scene's first camera entity frame was classified
 

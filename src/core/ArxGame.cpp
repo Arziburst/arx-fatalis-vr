@@ -2174,17 +2174,19 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 	in.headYaw = head.referenced ? vr::wrapSignedDegrees(head.head.getYaw() - head.reference.yaw) : 0.f;
 	in.seconds = toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
 	in.stickTurned = vr::turnState().turned();
-	// A talk cue makes the scene a dialogue, first person to its end: the camera entity looks at an NPC (the talk after
-	// the goblin fight: camera_0080 on Kultar from its first frame), a playerlookat turned the hero to one, his own line
+	// Conversation cues make the scene a dialogue, first person to its end: the camera entity on an NPC with the hero's
+	// body free (the talk after the goblin fight: camera_0080 on Kultar from its first frame; a dragged hero is a
+	// cutscene), a playerlookat that turned the hero to an NPC, his own line
 	const Entity * hero = entities.player();
 	const Entity * cameraTarget = g_cameraEntity ? entities.get(g_cameraEntity->targetinfo) : nullptr;
-	const bool cameraOnNpc = cameraTarget && cameraTarget != hero && (cameraTarget->ioflags & IO_NPC);
+	const bool heroScripted = hero && (hero->animlayer[0].flags & EA_FORCEPLAY);
+	in.cameraOnNpc = cameraTarget && cameraTarget != hero && (cameraTarget->ioflags & IO_NPC) && !heroScripted;
 	const Speech * heroLine = hero ? getSpeechForEntity(*hero) : nullptr;
 	const bool heroSpeaks = heroLine && heroLine->sample.getSampleId() != audio::SampleHandle();
 	if(!in.active) {
 		state.lookAtNpc = false;
 	}
-	in.talkCue = cameraOnNpc || state.lookAtNpc || heroSpeaks;
+	in.talkCue = state.lookAtNpc || heroSpeaks;
 	// A cinematic shot: a camera entity's shot of a far place, or of the hero's body played by a script - the view's
 	// own (the hybrid's screen, the observer, the ghost); every other shot is dialogue, in first person
 	if(in.kind == vr::SceneKind::Entity) {
@@ -2192,7 +2194,7 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 		shot.camera = engineCamera.m_pos;
 		shot.heroHead = player.pos;
 		shot.lineOfSight = !raycastScene(shot.heroHead, shot.camera, POLY_WATER | POLY_TRANS | POLY_NOCOL);
-		shot.heroScripted = hero && (hero->animlayer[0].flags & EA_FORCEPLAY);
+		shot.heroScripted = heroScripted;
 		in.cinematicShot = vr::hybridWantsScreen(shot);
 	}
 	const Vec3f gameCamera = engineCamera.m_pos;

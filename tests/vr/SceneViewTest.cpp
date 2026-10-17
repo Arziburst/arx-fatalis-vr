@@ -694,19 +694,39 @@ void SceneViewTest::dialogueStaysFirstTest() {
 	}
 
 	// The talk after the goblin fight as its script plays it: camera_0080 activated on Kultar while he walks out - a far
-	// shot, the hero teleported, no line for 6 s - the camera on an NPC is a talk cue: first person from the first frame
+	// shot, the hero teleported, no line for 6 s - the camera on an NPC with the hero free: first person from the first frame
 	{
 		SceneDirector director;
 		director.update(standing());
 		SceneInput talk = sceneOf(standing(), SceneKind::Entity, 1, SceneViewSetting::Hybrid);
 		talk.cinematicShot = true;
-		talk.talkCue = true;
+		talk.cameraOnNpc = true;
 		for(int i = 0; i < 120; i++) {
 			const SceneOutput out = director.update(talk);
 			CPPUNIT_ASSERT(out.shown == SceneShown::First);
 			CPPUNIT_ASSERT(director.dialogue());
-			talk.talkCue = (i < 10); // the camera turns to the cell door later: still the dialogue
+			talk.cameraOnNpc = (i < 10); // the camera turns to the cell door later: still the dialogue
 		}
+	}
+
+	// A cutscene that drags the hero (human_base_0116's DRAG: the hero's body played by a script, the camera on the NPC
+	// dragging him, no line): the scripted body makes the camera no conversation cue - on the screen, also when the drag
+	// ends while the camera stays on that NPC
+	{
+		SceneDirector director;
+		director.update(standing());
+		SceneInput drag = sceneOf(standing(), SceneKind::Entity, 1, SceneViewSetting::Hybrid);
+		drag.cinematicShot = true; // the hero's body scripted
+		drag.cameraOnNpc = false;  // a camera on an NPC counts only with the hero free (core/ArxGame.cpp)
+		SceneOutput out = director.update(drag);
+		CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
+		CPPUNIT_ASSERT(!director.dialogue());
+		drag.cameraOnNpc = true;   // the drag over, the camera still on the NPC: past the first frame, no cue
+		for(int i = 0; i < 60; i++) {
+			out = director.update(drag);
+			CPPUNIT_ASSERT(out.shown == SceneShown::Screen);
+		}
+		CPPUNIT_ASSERT(!director.dialogue());
 	}
 
 	// A cinematic a talk cue comes in (the hero speaks, the camera turns to an NPC) is a dialogue from then on

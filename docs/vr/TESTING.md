@@ -756,7 +756,7 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   game's first person - or the view of the shot shown; `screen`: the frame is drawn flat into the quad on the screen
   fixed in the room, `vr.screen ... for=scene`; it changes at the black of a cut, with the `vr.scene` events);
   `fade`: the scene fade now (0..1); `armsIk`: the IK arms are on (false while the hero is shown in third person); `dialogue`: the scene is a dialogue,
-  first person to its end (D-053: a first camera frame not cinematic, a `speak -c` line, the camera on an NPC, the hero turned to one or speaking); `heroHead`: `hidden` (the eyes are the hero's; also flat first person, the engine's own
+  first person to its end (D-053: a first camera frame not cinematic or on an NPC with the hero free, a `speak -c` line, the hero turned to an NPC or speaking); `heroHead`: `hidden` (the eyes are the hero's; also flat first person, the engine's own
   first-person selection) or `drawn` (a cinema shot, a ghost or observer shot, an external view).
   `meter`, since `scene meter reset`, VR frames only: `frames`, `sceneFrames` (`active`), `screenFrames`;
   `minAboveFloorM`, `maxStepCm`, `maxYawStepDeg` over the frames that show a scene and are not behind the fade (fade

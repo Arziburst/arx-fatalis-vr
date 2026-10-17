@@ -79,14 +79,15 @@ vr-input stick left 0 0
 @assert scene.meter.letterboxFrames eq 0
 
 # T9: a script's camera in a dialogue (the owner, 2026-10-17: the talk after the goblin fight went to the screen).
-# camera_0080, the camera of that talk, alone is a cinematic shot from here - on the screen; the same camera cut to in a
-# speak -c line stays in first person: the scene is a dialogue to its end
+# camera_0080, the camera of that talk, looks at Kultar: a talk cue - first person even alone, though a far shot; the same
+# camera cut to in a speak -c line stays in first person too: the scene is a dialogue to its end
 @wait 2000
 @mark
 human_base_0028.cameraactivate camera_0080
 @until scene.kind eq entity 10s
-@until scene.shown eq screen 5s
-@assert scene.dialogue eq false
+@frames 30
+@assert scene.shown eq first
+@assert scene.dialogue eq true
 human_base_0028.cameraactivate none
 @until scene.active eq false 10s
 scene meter reset

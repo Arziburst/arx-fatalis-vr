@@ -15,6 +15,11 @@ set(arxtest_TESTCASES
 
 	tests/core/GameEventTest.h
 	tests/core/GameEventTest.cpp
+	tests/core/FileReplaceTest.h
+	tests/core/FileReplaceTest.cpp
+
+	tests/game/JumpPhysicsTest.h
+	tests/game/JumpPhysicsTest.cpp
 	
 	tests/io/fs/FilePathTest.h
 	tests/io/fs/FilePathTest.cpp
@@ -98,6 +103,8 @@ set(arxtest_TESTCASES
 	tests/vr/InterfaceSizeTest.cpp
 	tests/vr/LocomotionTest.h
 	tests/vr/LocomotionTest.cpp
+	tests/vr/MotionProbeTest.h
+	tests/vr/MotionProbeTest.cpp
 
 	tests/vr/ArmIKTest.h
 	tests/vr/ArmIKTest.cpp
@@ -217,6 +224,7 @@ set(arxtest_SOURCES
 	src/vr/BodyView.cpp
 	src/vr/RuneTrail.cpp
 	src/vr/MeleeSwing.cpp
+	src/vr/MotionProbe.cpp
 	src/vr/SceneView.cpp
 	src/vr/RadialMenu.cpp
 	src/vr/HudFrame.cpp

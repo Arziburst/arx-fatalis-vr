@@ -105,9 +105,9 @@ src/vr/ArmMesh.* -> arm-fit arms-elbow arms-roll arms-variants arms-model
 src/vr/ArmRoll.* -> arms-roll arms-elbow
 src/vr/ArxArmFix.* -> arms-classic arms-classic-glove arms-model
 src/vr/BodyView.* -> body-look-down body-hidden arms-follow
-src/vr/BodyYaw.* -> arms-follow body-look-down snap-turn walk-look real-steps
+src/vr/BodyYaw.* -> refresh-rate arms-follow body-look-down snap-turn walk-look real-steps
 src/vr/HandRig.* -> arms-follow hand-conforming finger-five arms-classic-glove weapon-in-glove
-src/vr/FingerCurl.* -> finger-five finger-held finger-tracking hand-conforming
+src/vr/FingerCurl.* -> refresh-rate finger-five finger-held finger-tracking hand-conforming
 src/vr/HandTracking.* -> finger-five finger-held finger-tracking hand-conforming
 data/core/vr/arms/* -> arms-classic-glove arms-variants finger-five hand-conforming weapon-in-glove weapon-classes body-hidden arm-fit
 data/core/vr/hands/* -> hand-conforming finger-five finger-tracking finger-held
@@ -119,33 +119,33 @@ src/vr/SceneSubtitles.* -> scene-switches
 
 # --- The head and the camera ---------------------------------------------------------------------------------------
 src/vr/HeadPose.* -> look-around recenter real-steps arms-follow vr-turning-settings walk-look body-look-down tl-reprojection
-src/vr/HeadTracking.* -> look-around recenter real-steps arms-follow physical-crouch ui-panel vr-turning-settings walk-look height-hands
+src/vr/HeadTracking.* -> refresh-rate look-around recenter real-steps arms-follow physical-crouch ui-panel vr-turning-settings walk-look height-hands
 src/vr/HeadLean.* -> real-steps look-around
 src/vr/HeadReferenceGate.* -> recenter physical-crouch real-steps
 src/vr/EyeImage.* -> tl-reprojection look-around
-src/vr/FramePacing.* -> tl-reprojection look-around vr-session-end vr-session-loss
+src/vr/FramePacing.* -> refresh-rate tl-reprojection look-around vr-session-end vr-session-loss
 src/vr/Perf*.* -> tl-reprojection
 src/vr/VRComfort.* -> snap-turn walk-forward walk-look real-steps
 
 # --- Movement ------------------------------------------------------------------------------------------------------
 src/vr/Locomotion.* -> walk-forward walk-look sneak-jump-crouch controls-v2 playground-respawn
-src/vr/VRTurn.* -> snap-turn vr-turning-settings controls-v2
+src/vr/VRTurn.* -> refresh-rate snap-turn vr-turning-settings controls-v2
 src/vr/PhysicalCrouch.* -> physical-crouch stand-up sneak-jump-crouch
 src/vr/VRGameInput.* -> sneak-jump-crouch walk-forward walk-look controls-v2 stand-up
 src/physics/* -> stand-up real-steps physical-crouch sneak-jump-crouch walk-forward walk-look playground-respawn melee-swing
 src/game/Player.* -> stand-up real-steps physical-crouch sneak-jump-crouch walk-forward walk-look height-hands playground-respawn playground-levers wrist-vitals
 
 # --- Hands in the world: reticles, reach, weapons, melee -----------------------------------------------------------
-src/vr/HandReticle.* -> hand-reticle menu-pointer playground-hands reach-chest reach-door reach-lever
+src/vr/HandReticle.* -> refresh-rate hand-reticle menu-pointer playground-hands reach-chest reach-door reach-lever
 src/vr/VRReticle.* -> hand-reticle menu-pointer controls-v2 rune-trail playground-hands reach-chest reach-door reach-lever
 src/vr/VRWeapon.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery melee-damage reach-lever finger-held
 src/vr/WeaponGrip.* -> weapon-classes weapon-hold weapon-in-glove finger-held melee-damage
-src/vr/VRMelee.* -> melee-swing melee-recovery melee-damage damage-numbers damage-numbers-off controls-v2 weapon-hold
-src/vr/MeleeSwing.* -> melee-swing melee-recovery melee-damage damage-numbers weapon-hold
+src/vr/VRMelee.* -> refresh-rate melee-swing melee-recovery melee-damage damage-numbers damage-numbers-off controls-v2 weapon-hold
+src/vr/MeleeSwing.* -> refresh-rate melee-swing melee-recovery melee-damage damage-numbers weapon-hold
 src/game/Equipment.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery melee-damage finger-held damage-numbers
 src/game/Damage.* -> damage-numbers damage-numbers-off melee-swing melee-recovery melee-damage playground-respawn
 src/game/Inventory.* -> menu-pointer hand-reticle ui-panel playground-hands
-src/game/Spells.* -> rune-trail spell-drawcheck
+src/game/Spells.* -> refresh-rate rune-trail spell-drawcheck
 src/game/spell/* -> rune-trail spell-drawcheck
 src/game/magic/* -> rune-trail spell-drawcheck
 src/game/effect/* -> spell-drawcheck rune-trail
@@ -269,3 +269,8 @@ AUTHORS -> core
 CHANGELOG -> core
 .gitignore -> core
 .gitattributes -> core
+
+# --- Refresh-rate independence (#23): the sequence runs the same actions at four display rates ---------------------------
+src/vr/MotionProbe.* -> refresh-rate
+src/vr/PerfLog.* -> refresh-rate
+src/vr/PerfStats.* -> refresh-rate

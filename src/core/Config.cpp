@@ -19,6 +19,8 @@
 
 #include "core/Config.h"
 
+#include "game/JumpPhysics.h"
+
 #include <stddef.h>
 #include <algorithm>
 // #include <exception>
@@ -214,6 +216,7 @@ constexpr const float
 
 // The Index grip as a button (#496): pressed above a firm resting hold, let go below a closed hand's flicker
 const float
+	jumpTimeScale = JumpTimeScaleDefault,
 	vrGripPress = vr::IndexGripThreshold.press,
 	vrGripRelease = vr::IndexGripThreshold.release;
 
@@ -474,7 +477,8 @@ constexpr const std::string_view
 	migration = "migration",
 	quicksaveSlots = "quicksave_slots",
 	debugLevels = "debug",
-	realtimeOverride = "realtime_override";
+	realtimeOverride = "realtime_override",
+	jumpTimeScale = "jump_time_scale";
 
 } // namespace Key
 
@@ -773,6 +777,7 @@ bool Config::save() {
 	writer.writeKey(Key::quicksaveSlots, misc.quicksaveSlots);
 	writer.writeKey(Key::debugLevels, misc.debug);
 	writer.writeKey(Key::realtimeOverride, misc.realtimeOverride);
+	writer.writeKey(Key::jumpTimeScale, misc.jumpTimeScale);
 	
 	return writer.flush();
 }
@@ -1067,6 +1072,7 @@ bool Config::init(const fs::path & file) {
 	misc.quicksaveSlots = std::max(reader.getKey(Section::Misc, Key::quicksaveSlots, Default::quicksaveSlots), 1);
 	misc.debug = reader.getKey(Section::Misc, Key::debugLevels, Default::debugLevels);
 	misc.realtimeOverride = reader.getKey(Section::Misc, Key::realtimeOverride, Default::realtimeOverride);
+	misc.jumpTimeScale = glm::clamp(reader.getKey(Section::Misc, Key::jumpTimeScale, Default::jumpTimeScale), 1.f, 1.5f);
 	
 	return loaded;
 }

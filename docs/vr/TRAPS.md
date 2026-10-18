@@ -8,6 +8,73 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-18 — A 118 ms hitch of cause `channel` in the middle of a pacing measurement: `status.json` is renamed with a Sleep(100) (#23)
+
+**Symptom:** `refresh-rate.xrs` failed one run in two beside another game with a number that made no sense
+(`turn72.turned` -58.6 for -60, `walk72.walked` 141 for 129, a jump's air time off by 12 ms): `arx-perf.log` showed
+one frame of **117-119 ms, 8.5 slots at 72 Hz, `cause=channel`** inside the span, always about that long.
+**Cause:** the test channel writes `status.json` as a temporary file and renames it over the old one; the engine's
+`fs::rename` (FilesystemWindows.cpp) retries a file a reader holds open with `Sleep(100)` per try, and the runner
+reads `status.json` all the time - the game's main thread then sleeps 100 ms in the middle of the frame. A hitch that
+long moves what a stick held for 500 ms did (the long frame takes the whole interval at the held value), and the
+Euler step of the walk. **Do:** the channel replaces the file itself (`core::replaceFile`, src/core/FileReplace.h, host test
+`FileReplaceTest`): a write a test waits for tries every millisecond until the reader lets go (2 s at most, then it
+stays pending and every frame tries once more - a waited-for write is never dropped), the 250 ms timer's write gives up
+when a reader holds the file and the next one comes. After it, five runs beside a paced third game: 5 of 5 (before: 3 of 5). When a
+pacing number looks wrong, look in `arx-perf.log` for an `H` line at that time before the code.
+
+## 2026-10-18 — `@assert` right after an acknowledged command reads the state of the command before (#23)
+
+**Symptom:** the merge gate (full suite, two lanes, the CI runner busy) failed `scene-switches` at `@assert scene.view eq
+observer` with `scene.view (first)`, 7 s into the run, right after `scene view observer` was acknowledged (`seq=2`).
+Green on main and in 10 of 10 local runs. **Cause:** the game wrote `ack.txt` first and `status.json` after it (status
+build, temporary file, rename); the runner polls the ack every 10 ms and reads `status.json` at once - when the PC is
+loaded, the status of the batch is a few milliseconds late and the read gets the file of the batch before. It was
+first thought to be a dropped status write (the 20 ms patience of the first fix): the gate's `arx.log` has no
+"could not write" line, so it was not - and a dropped or delayed write would have been read stale the same way.
+**Do:** the batch's end writes the status first and the ack after it (CommandChannel.cpp, `runBatch`): an ack always
+finds the status of its batch. When an `@assert` after a command reads the old value, look at that order and at
+`status.json`'s `cmdSeq` before the code under test.
+## 2026-10-18 — A jump's air time varied by up to 60 ms between runs: the "fixed timestep" loop stepped by all the time that had added up (#23, #537)
+
+**Symptom:** `jump<rate>.jumpSeconds` differed by up to 57 ms between two blocks of one run beside a busy third game
+(0.289 ... 0.346 s), and by 63 ms on the quiet CI runner (0.299 at 90 Hz, 0.362 at 120), though every apex was 130.
+**Cause:** `ARX_PLAYER_Manage_Movement`'s loop looked like a fixed step (`while(DeltaTime > FIXED_TIMESTEP)`) but
+passed the WHOLE pile to each iteration and took 25 off it - a step of 25-35 ms depending on the rate's phase, and
+of a hitch's whole length after one (its own TODO said so: the forward push was applied in the first iteration
+only). An Euler fall with a variable step, and a per-step friction, follow the frames. And the remainder was
+integrated twice: 25 ms of frames became 29-33 ms of physics, so the jump everyone knows fell 1.2-1.33 times
+quicker than `WORLD_GRAVITY` says - a true fixed step of 25 ms made the jump 10 % longer in the air (0.34 s above
+50 cm for 0.31) until that was put back as a time scale. **Do:** the jumping player moves in fixed 25 ms steps from
+a `FixedStepClock` (src/game/JumpPhysics.h), the input re-armed for every step, each step integrating
+`jump_time_scale` (1.2) times its length; the flight is a function of the step count (JumpPhysicsTest). When a
+"fixed step" loop misbehaves, check what it passes to the step, not only how often it runs - and measure the old
+arc before replacing the loop, the game may have been tuned to its bug.
+## 2026-10-13 — The same 500 ms walk measured 77, 100, 107 and 109 units at four rates (#23)
+
+**Symptom:** a walk timed exactly in display time gave wildly different distances per rate, and not in the
+order of the rates - it looked like a rate-dependent walk. **Cause:** each measurement started with `setpos` to
+the same spot. `setpos` puts the player where the engine starts a fall (`player.falling`): a per-frame trace
+showed him hanging 16 units above the floor in the jump's end phase for seconds, and `falling` still set when the
+walk began, so the walk started from a landing. The walk itself is the same at every rate (127.7-129.7 units once
+nothing was teleported). **Do:** never teleport between measurements that compare motion; return by motion
+(`stick-for` back, a turn back by time). Wait for `player.jumping eq false` and half a second after any teleport.
+
+## 2026-10-13 — A jump's "time in the air" read 0.40 s or 1.0 s at the same rate (#23, #435)
+
+**Symptom:** the time above 20 cm of the same jump differed by 0.6 s between runs. **Cause:** the engine moves a
+jumping player in 25-35 ms steps; a step that would end below the floor is refused, so the player hangs where the
+last step ended - 6 or 24 units above the floor - until the landing animation ends, then snaps down. A gauge
+below that height reads the hang. **Do:** measure a jump above 50 cm (`MotionProbe::AirborneUnits`); the hang is
+#435.
+
+## 2026-10-13 — A swing peaked at 2x or 3x its speed, a slow hand made a phantom swing, on the simulated headset (#23, #352)
+
+**Symptom:** a 9.4 m/s swing peaked at 18.89 or 28.33; a 1.2 m/s return counted as a swing. **Cause:** a frame
+hitch (here: the 22-26 ms that come with each `Cursor escaped the window` warning in a background run, #198) makes
+the runtime skip one or two display slots; the swing detector's median then moved over two or three slots and
+was divided by one frame's step (#352). **Do:** look for `H ... missed=` lines in `arx-perf.log` at the swing's
+time before suspecting the detector; #409 fixes the divisor.
 ## 2026-10-18 - A channel batch vanishes: no ack for 60 s, no line in arx.log, and the quit afterwards takes the lost batch's seq
 
 **Symptom:** a sequence step (`@frames 5` in vr-remap, CI run 39120032077 attempt 1) times out "waiting for the game to

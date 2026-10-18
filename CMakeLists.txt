@@ -1296,6 +1296,7 @@ set(VR_SOURCES
 	src/vr/SceneSubtitles.cpp
 	src/vr/SceneView.cpp
 	src/vr/MeleeSwing.cpp
+	src/vr/MotionProbe.cpp
 	src/vr/PerfLog.cpp
 	src/vr/PerfStats.cpp
 	src/vr/PerfWriter.cpp

@@ -44,6 +44,7 @@ scripts/dev/vrsim/idle.vrsim -> *
 scripts/launch-lib.ps1 -> *
 scripts/build-paths.ps1 -> *
 scripts/build-windows.ps1 -> *
+scripts/dev/xrs/manual/* -> core
 src/vr/VRSimulator.* -> *
 src/vr/SimRig.* -> *
 vcpkg.json -> *
@@ -113,8 +114,8 @@ data/core/vr/hands/* -> hand-conforming finger-five finger-tracking finger-held
 src/animation/* -> arms-follow arms-classic weapon-hold tl-reprojection melee-swing
 
 # --- Scripted scenes in VR (#29): the view, the subtitles, the hero's body in a cinema shot -------------------------
-src/vr/SceneView.* -> scene-first scene-ghost scene-observer scene-hybrid scene-switches scene-lookat scene-flat scene-subtitles
-src/vr/SceneSubtitles.* -> scene-subtitles scene-hybrid scene-switches scene-flat
+src/vr/SceneView.* -> scene-switches
+src/vr/SceneSubtitles.* -> scene-switches
 
 # --- The head and the camera ---------------------------------------------------------------------------------------
 src/vr/HeadPose.* -> look-around recenter real-steps arms-follow vr-turning-settings walk-look body-look-down tl-reprojection

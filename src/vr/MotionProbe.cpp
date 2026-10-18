@@ -99,7 +99,7 @@ void MotionProbe::update(const MotionSample & sample) {
 		if(m_jump) {
 			// y points down: up is positive here
 			const float now = m_takeoffY - sample.position.y;
-			// The engine moves a jumping player in steps of 25-35 ms and the frames between two steps show the
+			// The engine moves a jumping player in steps of 25 ms and the frames between two steps show the
 			// last step's position: a crossing is placed between the two moves (when each position was real), not
 			// between two frames, one of which only repeats an old position - that would move it by up to a step
 			// with the rate's phase (#435)

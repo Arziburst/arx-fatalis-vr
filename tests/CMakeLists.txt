@@ -17,6 +17,9 @@ set(arxtest_TESTCASES
 	tests/core/GameEventTest.cpp
 	tests/core/FileReplaceTest.h
 	tests/core/FileReplaceTest.cpp
+
+	tests/game/JumpPhysicsTest.h
+	tests/game/JumpPhysicsTest.cpp
 	
 	tests/io/fs/FilePathTest.h
 	tests/io/fs/FilePathTest.cpp

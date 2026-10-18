@@ -54,7 +54,7 @@ struct MotionSample {
  *  - \ref turned: the yaw change, signed, unwrapped (+ turns left as the engine's yaw grows).
  *  - A jump starts when the engine's jump does, at the height it stands on; it is in the air while the
  *    player is more than \ref AirborneUnits above that, and lands when he is back. Leaving and landing
- *    are placed between the two moves of the engine's stepped jump (25-35 ms apart, #435) that lie on
+ *    are placed between the two moves of the engine's stepped jump (25 ms apart, JumpPhysics.h) that lie on
  *    both sides, so the air time does not move by a frame, or by a step's phase, with the rate. \ref jumpApex is the highest point above the take-off.
  */
 class MotionProbe {
@@ -67,9 +67,9 @@ public:
 	 * Above the take-off by more than this is in the air: 50 units, 50 cm. The frames on both sides of the
 	 * crossing are on the flight's curve (the jump rises 130 units in 200 ms: 77 ms to get there), never one
 	 * still on the floor - which would move the crossing with the rate. And it is above where the engine's
-	 * jump hangs before it lands: it moves a jumping player in steps of 25-35 ms, a step that would end
-	 * below the floor is refused, and the player hovers up to a step (~35 units) above the floor until the
-	 * landing animation ends (#435) - a gauge at 20 cm read 0.4 s or 1.0 s for the same jump
+	 * jump hangs before it lands: it moves a jumping player in steps of 25 ms, a step that would end below
+	 * the floor is refused, and the player hovers up to a step (~30 units) above the floor until the landing
+	 * animation ends (#435) - a gauge at 20 cm read 0.4 s or 1.0 s for the same jump
 	 */
 	static constexpr float AirborneUnits = 50.f;
 

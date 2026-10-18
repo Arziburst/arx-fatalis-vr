@@ -86,7 +86,8 @@ function Wait-ArxStatus(
 	do {
 		$s = Read-ArxStatus $Dir
 		if ($s -and (& $Until $s)) { return $s }
-		Start-Sleep -Milliseconds 200
+		# Twice as often as the game writes status.json (every 100 ms, #522): a condition is seen within 50 ms of the write that shows it
+		Start-Sleep -Milliseconds 50
 	} while ((Get-Date) -lt $deadline)
 	$last = if ($s) { $s | ConvertTo-Json -Compress -Depth 4 } else { 'none' }
 	throw "timed out after $TimeoutSec s waiting for $What (last status: $last)"
@@ -125,7 +126,9 @@ function Send-ArxCommand(
 	do {
 		$ack = Read-ArxAck $Dir
 		if ($ack -and [int]$ack.Seq -gt $seq) { return $ack.Text }
-		Start-Sleep -Milliseconds 50
+		# The game answers in the next frame (it looks for command.txt every frame, #522), a waitframes when its frames
+		# are rendered: a fine poll keeps the round trip near that, a small file read each time
+		Start-Sleep -Milliseconds 10
 	} while ((Get-Date) -lt $deadline)
 	$last = if ($before) { $before | ConvertTo-Json -Compress -Depth 4 } else { 'none' }
 	# A main thread stuck in the batch is reported by the game's hang watchdog with its stack (#440): the reason, not a bare timeout

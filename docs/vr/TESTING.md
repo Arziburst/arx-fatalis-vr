@@ -276,13 +276,14 @@ records only the extra arguments, not `--mute`.
 
 Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While enabled the game:
 
-- **polls `<dir>\command.txt`** every 100 ms: one command per line, `#` comments, consumed on read
+- **polls `<dir>\command.txt`** every frame (#522; a file lookup, read only when it is there): one command per line, `#` comments, consumed on read
   (deleted), a file older than the process start is discarded with a log line. Write it with
   `scripts/dev/game-cmd.ps1` or `Send-ArxCommand` from `scripts/dev/test-lib.ps1`: both write a
   temporary file and rename it, so the game never reads a half-written batch, and wait for the ack.
 - **answers every batch in `<dir>\ack.txt`**: `seq=<batch> frame=<frame> errors=<refused lines>
   last=<last line> error=<reason or ->`.
-- **rewrites `<dir>\status.json`** every 250 ms, after every batch and on every state change —
+- **rewrites `<dir>\status.json`** every 100 ms (#522; 250 ms before), after every batch (right after its ack), once
+  a `shot` or a simulated headset's shot asked for through the channel is saved, and on every state change —
   atomically (`status.json.tmp`, then rename), so a reader sees whole files only.
 - **flushes `arx.log`** at the same cadence, so `game.state` events and `[mark]` lines are readable
   while the game runs (since #129 the file logger flushes on its own after every warning or error
@@ -298,6 +299,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | Line | Effect |
 |---|---|
 | `status` | nothing extra — the status is written after every batch anyway |
+| `waitframes <n>` | hold the batch until the game rendered `n` more frames (#522): the lines after it run, and the ack is written, at the start of the next frame once those are rendered — its `frame=` is the frame the batch was read in plus `n`. No new batch is read meanwhile. The `.xrs` `@frames` sends it: a frame wait costs the frames and the ack's pickup, no `status.json` polling. Anywhere in a batch; `0` waits for nothing; not a number: refused |
 | `shot [name]` | after the next rendered frame, save it as `<dir>\capture\<name>.bmp` (default `shot<N>`); `captureSeq` and `lastCapture` in the status, and `capture`: what each quarter of the picture shows (#334) |
 | `window <width> <height>` | resize the game window as a player dragging its border does (#334): the interface is laid out again for the new size at the next frame (`window` and `vr.interface.windowWidth/Height` in the status). At least 320 × 240; refused in fullscreen. The size is saved to `cfg.ini` when the game quits |
 | `mark <text>` | `[mark] <text>` in the log — an anchor for "the line I wait for must come after this"; also an `M` line in [the performance log](#the-performance-log-arx-perflog-327) |
@@ -498,6 +500,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   (`FlyingOverIO`) or `none`; `drag`: the item being dragged or `none`; `container`: the chest or body whose
   inventory is open (#38) or `none`; `target`, `targetX`, `targetY`: what the last `vr-point` aimed at.
   `player.inventoryItems` (#38): the items in the hero's bag.
+  `player.inventorySlide` (#522): how far the bag is still slid down (the engine's own slide, 110 to 0 in about
+  28 frames at 90 fps), 0 = fully open: a shot of the open bag waits `@until player.inventorySlide eq 0 5s`.
   `menuHover` (#394): in the main menu and the character creation, the name a
   `vr-point ... menu` aimed at while the widget under the mouse is that one — what a click lands on; `other` for
   another widget of the main menu, `none` for nothing (a greyed-out entry counts as nothing: the engine does not click
@@ -709,7 +713,12 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
 - `camera` (with `player`): the first-person camera as the frame before left it — position, angles,
   `fov` in degrees, `bob` = its distance from the stable head position of the paused animation (view
   bobbing; 0 when off), `shake` = the quake amplitude applied that frame (0 without a quake or when
-  screen shake is off). `camera.prepared`: the camera the last frame's interface pass ended with —
+  screen shake is off). `stillMs` (#522): milliseconds since the camera last moved more than 0.0005 units or
+  turned more than 0.0005° (on any axis) from where it was then — any move resets it, a slow drift too, and so
+  does the simulated head's motion; a sequence that aims from the camera or compares the hands' points exactly
+  waits `@until camera.stillMs ge 200 5s` (after a `setpos` the hero falls and the camera settles for about
+  1.3 s). The status written right after a batch can still show the stillness from before it: wait a few frames
+  first. `camera.prepared`: the camera the last frame's interface pass ended with —
   its projection's scale `m00`/`m11`, off-axis shift `m20`/`m21` and viewport `width`/`height`; in
   VR the head camera's union projection, the same with the book open as closed (#247). `comfort`: who decides the VR comfort policy (`mode`: `auto` / `on` / `off`),
   whether the VR rules apply (`active`) and what is allowed right now (#76). The status is written
@@ -1638,7 +1647,7 @@ add, D-014); a script with an error means flat mode, with the line named in the 
 at once, `@<frame> <command>` at that frame of the timeline, `@<a>-<b> <command>` moves the numbers
 there linearly (a ramp), `@+<n>` counts from the previous timed line. Frame 0 of the timeline is the
 first frame the game is playable (`timeline gameplay`, the default) or of the session (`timeline
-session`). Commands: `rate <hz>` (0 = no pacing), `eye-size <w> <h>`, `ipd <m>`, `fov left|right <l>
+session`). Commands: `rate <hz> [clock|cap]` (0 = no pacing; see *Pacing* below), `eye-size <w> <h>`, `ipd <m>`, `fov left|right <l>
 <r> <u> <d>` (degrees, OpenXR signs), `head pos <x> <y> <z>` (meters, the room's LOCAL space: x right,
 y up, −z forward), `head rot <yaw> <pitch> <roll>` (degrees: yaw + turns left, pitch + looks up),
 `hand left|right pos|rot …`, `hand left|right on|off`, `hand left|right fingers <thumb> <index> <middle> <ring> <little>`
@@ -1652,6 +1661,22 @@ on a runtime that cannot read fingers, or joints again), `profile index|touch|si
 focused|visible|idle` (`idle`: the headset is taken off - the session falls back to `synchronized`, the eyes are still located, nothing is shown, #27), `session exiting|loss-pending` and `runtime lost` (the runtime ends the session on its own - stopping, then exiting after `xrEndSession`, as SteamVR quitting the app; the session about to be lost; the runtime shutting down: the game goes on flat and names the cause, #146, see [The exit hook](#the-exit-hook-146)), `shot [name]`, `mark <text>`, `quit`, `fault swap-eyes on|off`, `fault exit|exit-process <code>` (the process ends from inside with `std::exit` or `ExitProcess`, the shape of #146 - only for `exit-trace-check.ps1`), `layers on|off` (shots also save each eye's projection layer without the quad, `<name>-left-layer.bmp` / `-right-layer.bmp`: what the game drew into the eye itself, #72). The defaults: Index
 panel size 1440 × 1600, IPD 64 mm, 90 Hz, the asymmetric, mirrored field of view of research row
 F-165, both Index controllers in front of the body.
+
+**Pacing (#522)** — `rate <hz> clock` (the default) is a display clock: a slot every 1/rate s, a frame that misses
+its slot waits for the next one, as on a headset; `rate <hz> cap` only keeps frames 1/rate s apart: a late frame
+starts at once, no slot is skipped; `rate 0` does not pace at all. `rate <hz>` alone keeps the pacing it had
+(`vr-sim rate 45` in a sequence on `idle` is a 45 Hz cap). `vr.sim.view.pacing` in the status (`clock`, `cap`, `none`)
+and the simulator's start line in the log say which one ran. `basic.vrsim` (and every other script that names no
+pacing) has the 90 Hz clock; `msaa.vrsim` runs unpaced (`rate 0`, it measures what the PC draws); **`idle.vrsim`, the
+`@sim` of the sequences, has the 90 Hz cap**. Why not the clock: a 10-12 ms frame on the CI runner misses every other
+90 Hz slot, so the sequences played at 45 fps (run 39077145444); under the cap such a frame costs only its length,
+83-90 fps (measured on the owner's PC: 90.008 frames/s, `melee-swing`). Why not `rate 0`: the ramps of the sequences
+(`vr-sim @+1-8 hand right pos …`) and their `@frames` count frames, written for about 90 per second — unpaced, the owner's
+PC played the same sequence at 278 fps, and `melee-swing`'s slow set-up move (0.43 m over 60 frames, meant as under
+0.7 m/s) became 2 m/s and its swings (0.85 m over 8 frames) 29 m/s, over the 20 m/s of a tracking jump: three swings
+where none was asserted (TRAPS.md). **A sequence that asserts the frame pacing** (the rate line, missed slots, the
+refresh-rate checks of #436's `refresh-rate.xrs`) needs the clock: it declares `@sim basic` or a script of its own.
+To reproduce a slow-runner bug locally, run the sequence on a copy of `idle.vrsim` with `rate 42 cap` (`smoke-test.ps1 -VrSim <the copy>`).
 
 **The compositor** counts, per submitted frame, whether both eye images were released in the same
 frame (`vr.sim.compositor`: `projectionFrames`, `pairedFrames`, `staleFrames`, `freshFrames`,
@@ -1737,7 +1762,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 |---|---|
 | `# ...` | comment (also after a step, as ` # ...`) |
 | `<command>[; <command>]` | any [channel command](#commands) (`vr-sim head rot 25 0 0`, `vr-input tap right.a`, `loadlevel 10`, a script-console line); `;` makes one batch, applied in the same frame. A refused command fails the step |
-| `@wait <ms>` / `@frames <n>` | sleep / wait for n more rendered frames |
+| `@wait <ms>` / `@frames <n>` | sleep / wait for n more rendered frames: the channel's `waitframes <n>`, whose ack comes once the frames are rendered (#522) — n frames cost n / fps plus the ack's pickup (the runner reads `ack.txt` every 10 ms), measured 875 ms for 75 frames and 372 ms for 30 at 90 fps. Frames are not time: a wait for something the game does in time is an `@until` |
 | `@until <path> <op> <v> [<n>s]` | wait up to n s (default 30) until `status.json` satisfies the condition |
 | `@assert <path> <op> <v>` | `status.json` now. `path` is dotted, `"quoted"` where a key holds a dot (`events.byName."spell.cast"`); `op` is `eq ne gt ge lt le`; numbers compare as numbers, anything else as text |
 | `@remember <name> <path>` | keep a value; later `@assert` / `@until` values can be `{name}`, `{name+5}` / `{name-5}` (the yaw before a turn, the position before a walk) or `{name*0.9}` (a relative threshold: "at least 10 % less") |
@@ -1778,7 +1803,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `recenter` | a head offset is set and read back; `recenter` is accepted (#28) | — |
 | `tl-reprojection` | picking reads the head camera after the eyes, the book icon's particles are on the quad and add no coverage (#72), on the save `mvp-items`; the book icon is kept for that part (`vr-hud keep book`: VR draws no HUD frame since #469) | — |
 | `real-steps` (#26; run with `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence real-steps`) | 8 cm is a lean (the body stays); 1 m forward is a real step (the body walks 0.9 m, the lean stays 0.1 m, no fade); into the cell wall the body is held, the head goes `inside` then `behind` it, both eyes black; back out, the fade clears | — |
-| `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105; the pair waits for `notifications eq 0`, since the save's tutorial hint on the HUD expires by game time, #370); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
+| `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105; the pair waits for `notifications eq 0`, since the save's tutorial hint on the HUD expires by game time, #370); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is the host test `UIPanelTest`'s; the sequence reopens past it explicitly (`@until uptimeMs ge {closedAt+300}`: since #522 the channel's round trip is far below the old ≈ 600 ms) | — |
 | `menu-pointer` | the menu pointer (#34) on the test save `mvp-items` — run with `smoke-test.ps1 -VrSim idle -Sequence menu-pointer -Save mvp-items`: no pointer and no beam without a menu (`overlayPixels` 0); the key from the table put in the bag, the inventory opened, the right hand aimed at it (`vr-point right item`): the engine's mouse on the key's pixel (192, 606 = the target), `ui.hover` the key, the beam drawn above the panel (`overlayPixels` 2125 left / 1997 right); the trigger clicks (`vr.pointer.click`), a hand move of 8 px keeps the cursor on the key (dead zone, no drag), 40 px drags **the key the click landed on**; released over the bag it goes back; the left hand's trigger takes the cursor and its click lands on the key too; both hands pointing behind the head (since #37 a hand pointing ahead in the game is a world reticle): no cursor, no beam, a press is muted (`offPanelPresses` 1, nothing dragged); closed: the pointer goes. Host test `MenuPointerTest` | — |
 | `physical-crouch` | physical crouch (#100, D-034) on `mvp-new-game` — `smoke-test.ps1 -VrSim idle -Sequence physical-crouch -Save mvp-new-game`: the button crouches and stands at that spot first; the head 25 cm down follows the view and stands, 35 cm crouches the character (one `vr.head.crouch` episode), back at 25 cm stays crouched, 15 cm stands; the view never above the head nor twice as low; the crouch button still crouches and stands with the head up | — |
 | `weapon-hold` | the weapon in the IK hand (#75, D-033): on `mvp-items` the equipped short sword is in the right hand without the combat mode (`vr.weapon.place` `hand`), its blade read from the mesh (65.8 units; the asset 9.1° off the handle axis) and drawn 0.1° from the grip's -Z, the hilt on the palm attach point; the handle pitched up puts the tip 66 units above the hilt; a moved hand keeps the hilt on the palm; a controller switched off gives the sword back to the engine (`engine`), switched on it is back; `combat on` + the trigger held: the arm layer's ready and wait clips are `suppressed`, no strike clip starts (since #39 the swing is the strike), the shoulder stays, the sword stays in the hand. The shots `sword-ahead`, `sword-up` and `sword-at-face` (the raised blade 0.1 m from the eyes, F-39) are judged by eye. With the default custom arms the weapon is drawn from the glove's frame (#385.10): "the hilt on the palm" is then the handle anchor on the glove's hold point (`hiltToPalm` = `hiltToGrip`). `smoke-test.ps1 -VrSim idle -Sequence weapon-hold -Save mvp-items` | — |

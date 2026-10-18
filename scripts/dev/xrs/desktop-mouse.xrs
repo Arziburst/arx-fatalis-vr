@@ -41,6 +41,10 @@ desktop-mouse button 2 up
 @assert menuPage eq none
 desktop-mouse wheel -3
 @frames 5
+# The game logs one "movement dropped" line per burst, and a burst ends after 1 s without a dropped move (Input.cpp):
+# the move below must start a burst of its own, not join the one of "at menu options" above. The game reports no
+# such time, so it is a wait; the old harness's slack made it by chance (#522)
+@wait 1100
 desktop-mouse move 40 30
 @frames 5
 @assert ui.mouseX eq {mx}

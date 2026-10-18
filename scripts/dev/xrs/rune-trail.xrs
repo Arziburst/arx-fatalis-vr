@@ -50,6 +50,9 @@ vr-sim action trigger right 1
 @assert vr.magic.strokes eq 1
 @assert vr.magic.flares gt 3
 @log GameEvent:.*magic\.stroke state=start hand=right
+# The point follows the head camera every frame, the last flare only when one is emitted: the exact comparison
+# below needs a camera that has stopped moving (#522: the old harness's slack gave it the time)
+@until camera.stillMs ge 200 5s
 @remember pointX vr.magic.point.x
 @remember pointY vr.magic.point.y
 @remember pointZ vr.magic.point.z

@@ -1669,6 +1669,7 @@ PC played the same sequence at 278 fps, and `melee-swing`'s slow set-up move (0.
 0.7 m/s) became 2 m/s and its swings (0.85 m over 8 frames) 29 m/s, over the 20 m/s of a tracking jump: three swings
 where none was asserted (TRAPS.md). **A sequence that asserts the frame pacing** (the rate line, missed slots, the
 refresh-rate checks of #436's `refresh-rate.xrs`) needs the clock: it declares `@sim basic` or a script of its own.
+To reproduce a slow-runner bug locally, run the sequence on a copy of `idle.vrsim` with `rate 42 cap` (`smoke-test.ps1 -VrSim <the copy>`).
 
 **The compositor** counts, per submitted frame, whether both eye images were released in the same
 frame (`vr.sim.compositor`: `projectionFrames`, `pairedFrames`, `staleFrames`, `freshFrames`,

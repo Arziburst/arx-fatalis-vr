@@ -1,4 +1,4 @@
-# The rune trail (#43, D-010): the magic button held (the Index's left trackpad, D-019) is the casting
+# The rune trail (#43, D-010): the magic button held (the right A, D-042, #377, the owner until #378) is the casting
 # stance; the trigger of a hand draws a stroke with that hand, and the engine's magic flares are put at the
 # point 8 cm ahead of the grip - not at the cursor. The trigger alone is a click (no stroke), the stance
 # alone draws nothing; the point follows the hand's position and its orientation; one hand draws at a time.
@@ -35,7 +35,7 @@ vr-sim action trigger right 0
 @frames 10
 
 # The stance alone draws nothing
-vr-sim action trackpad_press left 1
+vr-sim action button_a right 1
 @frames 10
 @assert vr.magic.stance eq true
 @assert vr.magic.drawing eq false
@@ -50,6 +50,9 @@ vr-sim action trigger right 1
 @assert vr.magic.strokes eq 1
 @assert vr.magic.flares gt 3
 @log GameEvent:.*magic\.stroke state=start hand=right
+# The point follows the head camera every frame, the last flare only when one is emitted: the exact comparison
+# below needs a camera that has stopped moving (#522: the old harness's slack gave it the time)
+@until camera.stillMs ge 200 5s
 @remember pointX vr.magic.point.x
 @remember pointY vr.magic.point.y
 @remember pointZ vr.magic.point.z
@@ -123,7 +126,7 @@ vr-sim action trigger left 1
 @assert vr.magic.drawing eq true
 @assert vr.magic.hand eq left
 @assert vr.magic.strokes eq 2
-vr-sim action trackpad_press left 0
+vr-sim action button_a right 0
 @frames 10
 @assert vr.magic.stance eq false
 @assert vr.magic.drawing eq false

@@ -17,7 +17,7 @@
 	     arguments after -- replace the default ones. Launch control applies (D-014): with SteamVR off
 	     the game starts flat unless -StartSteamVR, the owner's switch, starts SteamVR first; the game
 	     lock makes it wait for any other game on this PC (one at a time).
-	The verdict goes to /accept-task <pr> or /reject-task <pr> <what is wrong>, with the build id.
+	The headset verdict (OK, or what is wrong) goes to the coordinator, with the build id.
 
 .PARAMETER Pr
 	The pull request number.
@@ -50,6 +50,11 @@
 .PARAMETER Playground
 	Launch the test playground (run-windows.ps1 -Playground, #321) instead of the default save.
 
+.PARAMETER Player
+	Launch as a player does (run-windows.ps1 -Player, #394): no --dev-launch and no default arguments - the
+	publisher logos, the main menu, and the intro cinematic after New game. Without it the launch is a development
+	launch (logos and cinematics skipped) of the default save.
+
 .PARAMETER Saves
 	With -Isolated: save slots to copy into the isolated user directory (e.g. save0000).
 
@@ -62,6 +67,9 @@
 	.\scripts\dev\test-pr.ps1 131 -- --skiplogo --loadslot 2
 .EXAMPLE
 	.\scripts\dev\test-pr.ps1 131 -NoLaunch
+.EXAMPLE
+	.\scripts\dev\test-pr.ps1 131 -Player
+	# the first run as a player sees it: logos, main menu, New game, the intro cinematic
 #>
 [CmdletBinding(PositionalBinding = $false)]
 param(
@@ -74,6 +82,7 @@ param(
 	[string]$Branch,
 	[switch]$Isolated,
 	[switch]$Playground,
+	[switch]$Player,
 	[string[]]$Saves,
 	[ValidateSet('Release', 'RelWithDebInfo', 'Debug')] [string]$Config = 'Release',
 	[Parameter(ValueFromRemainingArguments)] [string[]]$ArxArgs
@@ -159,8 +168,8 @@ $stampFile = Join-Path $buildDir 'built-from.txt'
 $stamp = if (Test-Path $stampFile) { (Get-Content $stampFile -Raw).Trim() } else { '' }
 $reason = if ($Rebuild) { '-Rebuild' }
 	elseif (-not (Test-Path $exe)) { 'no arx.exe yet' }
-	elseif ($dirty) { 'uncommitted changes in the worktree' }
-	elseif ($stamp -ne $head) { "built from '$(Short $stamp)', HEAD is $(Short $head)" }
+	elseif (($stamp -split ' ')[0] -ne $head) { "built from '$(Short ($stamp -split ' ')[0])', HEAD is $(Short $head)" }
+	elseif ((Get-ArxStampFingerprint $stamp) -ne (Get-ArxTreeFingerprint $wt)) { 'the worktree changed since the build' }
 if ($reason) {
 	Write-Host "    building: $reason" -ForegroundColor Cyan
 	& (Join-Path $wt 'scripts\build-windows.ps1') -Config $Config
@@ -182,9 +191,16 @@ Write-Host "==> Build id: $(Short $head)$(if ($dirty) { ' + uncommitted changes'
 # --- Launch ------------------------------------------------------------------------------------------
 
 if ($NoLaunch) { return }
-if (-not $ArxArgs -and -not $Playground) { $ArxArgs = @('--skiplogo', '--loadslot', '0') }
+if (-not $ArxArgs -and -not $Playground -and -not $Player) { $ArxArgs = @('--skiplogo', '--loadslot', '0') }
 if (-not $ArxArgs) { $ArxArgs = @() }
 $runArgs = @{ Config = $Config; ArxArgs = $ArxArgs; Sound = $true } # the owner's launches have sound (#345)
+if ($Player) {
+	# A branch from before #394 has no player launch: its run-windows.ps1 would refuse the switch less clearly
+	if (-not (Select-String -LiteralPath (Join-Path $wt 'scripts\run-windows.ps1') -Pattern '\[switch\]\$Player' -Quiet)) {
+		throw "-Player: the PR's run-windows.ps1 has no player launch (#394) - merge main into its branch first"
+	}
+	$runArgs.Player = $true
+}
 if ($DryRun) { $runArgs.DryRun = $true }
 if ($StartSteamVR) { $runArgs.StartSteamVR = $true }
 elseif ($ArxArgs -notcontains '--no-vr' -and -not (Get-Process vrserver -ErrorAction SilentlyContinue)) {
@@ -193,8 +209,22 @@ elseif ($ArxArgs -notcontains '--no-vr' -and -not (Get-Process vrserver -ErrorAc
 if ($Playground) { $runArgs.Playground = $true }
 if ($Isolated) { $runArgs.Isolated = $true }
 if ($Saves) { $runArgs.Isolated = $true; $runArgs.Saves = $Saves }
-& (Join-Path $wt 'scripts\run-windows.ps1') @runArgs
-$gameExit = $LASTEXITCODE
+# The owner's launch keeps the game's dialogs, -Isolated too (#501); a branch from before #501 has no switch and no
+# dialog-free launches
+if (Select-String -LiteralPath (Join-Path $wt 'scripts\run-windows.ps1') -Pattern '\[switch\]\$Dialogs' -Quiet) { $runArgs.Dialogs = $true }
+# ... and neither dialog variable reaches the game, whatever an earlier script left in this shell (a branch from before
+# #501 does not clear them itself); this shell gets them back afterwards
+$dialogEnv = @{}
+foreach ($name in 'ARXVR_NO_DIALOGS', 'ARX_UNATTENDED') {
+	$dialogEnv[$name] = [Environment]::GetEnvironmentVariable($name)
+	[Environment]::SetEnvironmentVariable($name, $null)
+}
+try {
+	& (Join-Path $wt 'scripts\run-windows.ps1') @runArgs
+	$gameExit = $LASTEXITCODE
+} finally {
+	foreach ($name in $dialogEnv.Keys) { [Environment]::SetEnvironmentVariable($name, $dialogEnv[$name]) }
+}
 
 # The owner's switch: SteamVR quits the way its own "Exit SteamVR" does, so the headset powers down (#171)
 if ($StopSteamVR) {

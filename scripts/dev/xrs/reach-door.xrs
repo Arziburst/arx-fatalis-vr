@@ -1,0 +1,20 @@
+# The test save mvp-door (#210, made by `approach porticullis_0015` in make-test-saves.ps1): a sword in the hand and the
+# right hand's reticle on the closed portcullis from where the save stands - in the engine's reach, nothing before it.
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence reach-door -Save mvp-door
+@sim idle
+@save mvp-door
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.weapon.place eq hand
+@until vr.reticle.on eq true 5s
+
+vr-point right entity porticullis_0015
+@frames 10
+@assert vr.reticle.right.under eq porticullis_0015
+@assert vr.reticle.right.entity eq porticullis_0015
+@assert ui.hover eq porticullis_0015
+@shot door
+@assert errors eq 0

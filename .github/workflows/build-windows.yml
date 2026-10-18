@@ -7,7 +7,9 @@ name: Build (Windows)
 # The job is the automatic quality gate of every pull request (#127, decision D-021): the PowerShell
 # self-tests of the dev scripts, the build with the host unit tests (arxtest, run by build-windows.ps1),
 # then the flat game checks - smoke test with the draw check, and the spell draw check. A red step blocks
-# the merge. The evidence of the game checks is the artifact "game-checks".
+# the merge. A pull request runs the game checks its change selects (#522, scripts/dev/xrs/impact.txt); the whole
+# suite runs on a push to main and once more on the pull request's head right before the merge (a manual run). The evidence of the game checks is the artifact "game-checks" when the job failed; a green run keeps it on
+# the runner only (#522).
 
 on:
   pull_request:
@@ -17,13 +19,29 @@ on:
     # steps and only the decision-number check runs (seconds, no build).
   push:
     branches: [ main ]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - '.claude/**'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/pull_request_template.md'
+    # Same effect as a paths-ignore of the docs-only set, but DECISIONS.md is re-included (a later pattern wins): an
+    # unnumbered D-NEW most likely arrives in a docs-only merge, and the strict decision check (#383) must see it.
+    # The Scope step keeps such a push light (no build).
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!**/*.md'
+      - '!.claude/**'
+      - '!.github/ISSUE_TEMPLATE/**'
+      - '!.github/pull_request_template.md'
+      - 'docs/vr/DECISIONS.md'
+  # A manual run (#522): suite=full is the merge gate - the coordinator's queue starts it on a pull request's head
+  # branch right before the merge (gh workflow run build-windows.yml --ref <branch> -f suite=full); suite=pr runs that
+  # branch's selection against main. No `labeled` trigger: every label would start a run, and a job skipped for a
+  # label it does not care about reports "success" over a red check of the same commit - the Scope step reads the
+  # label full-ci live instead, so adding it and re-running the PR's last run (or pushing) runs everything.
   workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Game checks: full (every phase, the merge gate) or pr (the selection of the change against main)'
+        type: choice
+        options: [ full, pr ]
+        default: full
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -58,57 +76,182 @@ jobs:
 
     # Seconds (#274, #296): a PR must not add a numbered D-0xx that main already has; new decisions are D-NEW and
     # numbered by scripts/dev/number-decisions.ps1 right before the merge. Only for a PR that touches those files.
+    # On a push to main nothing may stay unnumbered (-Strict, #383).
     - name: Decision numbers
-      if: github.event_name == 'pull_request'
+      if: github.event_name == 'pull_request' || github.event_name == 'push'
       shell: pwsh
       run: |
+        if ('${{ github.event_name }}' -eq 'push') { git fetch --no-tags origin main:refs/remotes/origin/main; ./scripts/dev/number-decisions.ps1 -Check -Strict; exit $LASTEXITCODE }
         git fetch --no-tags origin main:refs/remotes/origin/main
         $changed = @(git diff --name-only origin/main HEAD)
         if ($changed -contains 'docs/vr/DECISIONS.md' -or $changed -contains 'scripts/dev/number-decisions.ps1') { ./scripts/dev/number-decisions.ps1 -Check }
         else { Write-Host 'decision numbers: DECISIONS.md untouched, nothing to check' }
 
     # A pull request that changes only docs (and DECISIONS.md, which wakes this workflow) needs no build: the
-    # heavy steps below run only when something outside the docs-only set changed (push / manual runs: always).
+    # heavy steps below run only when something outside the docs-only set changed. A push is compared with the commit
+    # before it (the push trigger lets a DECISIONS.md-only push through for the strict check, #383); when that commit
+    # is unknown (new branch, all zeros) or cannot be fetched (force push), or on a manual run: heavy.
     - name: Scope
       id: scope
       shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+        SUITE_INPUT: ${{ inputs.suite }}
       run: |
         $heavy = $true
+        $light = '^(docs/|\.claude/|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md$)|\.md$'
         if ('${{ github.event_name }}' -eq 'pull_request') {
-          $light = '^(docs/|\.claude/|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md$)|\.md$'
           $heavy = [bool]@(git diff --name-only origin/main HEAD | Where-Object { $_ -notmatch $light }).Count
+        } elseif ('${{ github.event_name }}' -eq 'push' -and '${{ github.event.before }}' -notmatch '^0+$') {
+          git fetch --no-tags --depth=1 origin '${{ github.event.before }}'
+          if ($LASTEXITCODE -eq 0) {
+            $heavy = [bool]@(git diff --name-only '${{ github.event.before }}' '${{ github.sha }}' | Where-Object { $_ -notmatch $light }).Count
+          }
+          $global:LASTEXITCODE = 0 # a failed fetch is handled (heavy), not a failed step
         }
         "heavy=$($heavy.ToString().ToLower())" >> $env:GITHUB_OUTPUT
         Write-Host "heavy steps: $heavy"
+        # The game checks' suite (#522): a pull request runs its selection (scripts/dev/xrs/impact.txt) unless it carries
+        # the label full-ci, read live (a re-run after adding the label sees it; the event's own copy would not); a push
+        # to main runs everything; a manual run its input (default full: the merge gate). Labels unknown: everything.
+        $suite = 'full'
+        $why = 'a push to main'
+        if ('${{ github.event_name }}' -eq 'pull_request') {
+          try {
+            $labels = @(Invoke-RestMethod -Uri "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/issues/${{ github.event.pull_request.number }}/labels" -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' } | ForEach-Object name)
+            if ($labels -contains 'full-ci') { $why = 'the pull request has the label full-ci' } else { $suite = 'pr'; $why = 'a pull request without the label full-ci' }
+          } catch { $why = "the labels of the pull request could not be read ($($_.Exception.Message))" }
+        } elseif ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+          if ($env:SUITE_INPUT -in 'full', 'pr') { $suite = $env:SUITE_INPUT }
+          $why = "a manual run with suite=$suite"
+        }
+        "suite=$suite" >> $env:GITHUB_OUTPUT
+        Write-Host "game check suite: $suite ($why)"
 
-    # Seconds, no game: the PowerShell self-tests of the dev scripts (scripts/dev/test-*.ps1) first,
-    # so a broken tool fails before the build.
-    - name: Script self-tests
+    # The repository is public: no personal paths, ids or e-mails in tracked files, no images under docs/ (#428).
+    # Runs on every change, docs-only ones included.
+    - name: No personal data in tracked files
+      shell: pwsh
+      run: ./scripts/dev/check-private-data.ps1
+
+    # CI owns the game slots (#527): from here until the job ends, the marker ci-runner.marker in the machine-wide lock
+    # folder tells every other scripted launch of the PC (a worker's ci-local, smoke-test, make-test-saves) to wait
+    # without a slot, so the game checks never starve behind them; the owner's own launch ignores it. The marker names
+    # the job's process (Runner.Worker.exe, the parent of every step; this step's own pwsh as the fallback): a marker of
+    # a process that is gone is stale and blocks nobody. Cleared in a step that always runs, after the last game.
+    - name: Game slots to CI (runner marker)
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
-      run: ./scripts/dev/run-script-tests.ps1
+      run: |
+        . ./scripts/launch-lib.ps1
+        $runnerPid = $PID
+        $p = Get-CimInstance Win32_Process -Filter "ProcessId=$PID"
+        for ($i = 0; $p -and $i -lt 8; $i++) {
+          if ($p.Name -like 'Runner.Worker*') { $runnerPid = [int]$p.ProcessId; break }
+          $p = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.ParentProcessId)"
+        }
+        Set-ArxRunnerMarker -RunnerPid $runnerPid -What "CI run $env:GITHUB_RUN_ID attempt $env:GITHUB_RUN_ATTEMPT ($env:GITHUB_REF_NAME)"
+
+    # About a minute, no game: the PowerShell self-tests of the dev scripts (scripts/dev/test-*.ps1) run beside the
+    # build (#522), not before it: started here as a background process (output and exit code into RUNNER_TEMP), joined
+    # right after the build. They touch nothing in the working copy, so the build's tree fingerprint stays its own.
+    # The process must not inherit this step's output pipes: Start-Process with -RedirectStandardOutput does, the runner
+    # then waits for the pipes after the step's pwsh exited and kills the whole tree (see TRAPS.md). So it is started
+    # without redirection (no handles inherited) and redirects its own output into out.txt.
+    - name: Script self-tests (start)
+      if: steps.scope.outputs.heavy == 'true'
+      shell: pwsh
+      run: |
+        $dir = Join-Path $env:RUNNER_TEMP 'script-tests'
+        New-Item -ItemType Directory -Force $dir | Out-Null
+        $exitFile = Join-Path $dir 'exit.txt'
+        $outFile = Join-Path $dir 'out.txt'
+        Remove-Item $exitFile, $outFile -Force -ErrorAction SilentlyContinue
+        $command = "& './scripts/dev/run-script-tests.ps1' *> '$outFile'; Set-Content -LiteralPath '$exitFile' -Value `$LASTEXITCODE"
+        $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+        $p = Start-Process pwsh -ArgumentList '-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded -WorkingDirectory $env:GITHUB_WORKSPACE -WindowStyle Hidden -PassThru
+        Set-Content -LiteralPath (Join-Path $dir 'pid.txt') -Value $p.Id
+        Write-Host "script self-tests started in the background (pid $($p.Id)), joined after the build"
 
     - name: Build
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
       run: ./scripts/build-windows.ps1 -Config Release
 
+    # Waits for the background self-tests, prints their whole output and fails on a non-zero exit code - also when the
+    # process ended without writing one (it threw). Runs after a failed build too, so their verdict is never lost.
+    - name: Script self-tests (join)
+      if: (success() || failure()) && steps.scope.outputs.heavy == 'true'
+      shell: pwsh
+      run: |
+        $dir = Join-Path $env:RUNNER_TEMP 'script-tests'
+        $exitFile = Join-Path $dir 'exit.txt'
+        if (-not (Test-Path -LiteralPath (Join-Path $dir 'pid.txt'))) { Write-Host 'script self-tests: not started (an earlier step failed)'; exit 1 }
+        $testsPid = [int](Get-Content -LiteralPath (Join-Path $dir 'pid.txt'))
+        while (-not (Test-Path -LiteralPath $exitFile) -and (Get-Process -Id $testsPid -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 500 }
+        Wait-Process -Id $testsPid -Timeout 30 -ErrorAction SilentlyContinue # the exit file is written just before it ends
+        $out = Join-Path $dir 'out.txt'
+        if (Test-Path -LiteralPath $out) { Get-Content -LiteralPath $out | Write-Host }
+        # A process that writes no exit code was ended from outside (killed with its tree) or crashed: its exit code cannot
+        # be read here (only a handle opened before it ended could), so the line says what is known
+        if (-not (Test-Path -LiteralPath $exitFile)) { Write-Host "::error::the script self-tests (pid $testsPid) ended without writing an exit code: killed from outside or crashed, their output above stops where it happened"; exit 1 }
+        $code = [int](Get-Content -LiteralPath $exitFile -Raw).Trim()
+        Write-Host "script self-tests: exit $code"
+        exit $code
+
+    # The playground sequences generate their level with node (#321, #412). The runner service cannot see the owner's
+    # per-user install, so node comes from the workflow: a pinned LTS major, downloaded once into the runner's tool
+    # cache and reused by later runs. ci-smoke.ps1 still reports NOT RUN when a runner has no node at all.
+    - name: Set up node (playground generator)
+      if: steps.scope.outputs.heavy == 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
     # Flat game on the runner: smoke test (start, play, draw check, quit, evidence) and the spell draw
     # check. Fails the job on FAIL, and also when it could not run (exit 2: another game kept the game
     # lock) - a gate that did not run is not a pass. Never leaves arx.exe behind.
     # Then (#255) every shipped .xrs sequence, one launch each, on the test save library of the service account
     # (verified, or generated when missing or stale).
+    # Two games at once (#522): ARXVR_MAX_GAMES=2 lets this step's launches hold two slots of the game lock (everyone
+    # else keeps one); ci-smoke.ps1 drops to one lane while a game that is not this job's holds a slot. The evidence
+    # stays on the runner, in the service's %LOCALAPPDATA%\ArxFatalisVR\ci-evidence\<run id>-<attempt> (the last 10
+    # runs), and is uploaded only when the job failed.
+    # What runs is the Scope step's suite (#522): on a pull request the core plus what its changed paths select in
+    # scripts/dev/xrs/impact.txt (the log lists them); everything on a push to main, with the label full-ci and on a
+    # manual run with suite=full (the merge gate). A pull request's run stops at the first FAIL (#527).
+    # ARXVR_CI_RUNNER marks the launches as the job's own (#527): they take the slots the runner marker keeps free.
     - name: Game checks (smoke test, draw check, spell draw check, .xrs sequences)
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
-      run: ./scripts/dev/ci-smoke.ps1 -OutDir "$env:GITHUB_WORKSPACE/ci-artifacts"
+      env:
+        ARXVR_MAX_GAMES: '2'
+        ARXVR_CI_RUNNER: '1'
+      run: |
+        $evidence = Join-Path $env:LOCALAPPDATA "ArxFatalisVR\ci-evidence\$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+        "CI_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+        # The selection is the diff against main (#522): a pull request fetched it in the Decision numbers step, a manual
+        # run fetches it here
+        if ('${{ github.event_name }}' -eq 'workflow_dispatch') { git fetch --no-tags origin main:refs/remotes/origin/main; $global:LASTEXITCODE = 0 }
+        ./scripts/dev/ci-smoke.ps1 -OutDir $evidence -Suite '${{ steps.scope.outputs.suite }}' -Base origin/main
 
     # The tester package (#88): the zip built from this build, extracted into a clean folder and started with a
     # PATH of only Windows folders. Fails when a DLL is missing from the zip or the extracted game does not run.
     - name: Tester package (zip, extracted-game check)
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
+      env:
+        ARXVR_CI_RUNNER: '1'
       run: ./scripts/package-tester.ps1 -NoBuild -OutDir "$env:GITHUB_WORKSPACE/dist"
+
+    # The last game of the job ran: the PC's game slots go back to the workers and the owner (#527). Always, so a
+    # failed or cancelled job never leaves the marker behind (a marker of a dead job is stale anyway).
+    - name: Game slots back (clear the runner marker)
+      if: always()
+      shell: pwsh
+      run: |
+        . ./scripts/launch-lib.ps1
+        Clear-ArxRunnerMarker
 
     # The uploads never fail the job (#360): an upload can fail for reasons outside the change (the artifact
     # storage quota of the private repository), and the build and the game checks above are the gate. The last
@@ -136,15 +279,16 @@ jobs:
         if-no-files-found: error
         retention-days: 90
 
-    # Read only when a run fails, so kept briefly (#360)
+    # Read only when a run fails, so kept briefly (#360) and uploaded only then (#522): a green run's ~1 GB of eye shots
+    # stays on the runner (CI_EVIDENCE, set by the game checks step)
     - name: Upload game check evidence
       id: upload-game-checks
-      if: always()
+      if: failure() && env.CI_EVIDENCE != ''
       continue-on-error: true
       uses: actions/upload-artifact@v4
       with:
         name: game-checks
-        path: ci-artifacts
+        path: ${{ env.CI_EVIDENCE }}
         if-no-files-found: ignore
         retention-days: 3
 

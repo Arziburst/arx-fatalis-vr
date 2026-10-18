@@ -47,7 +47,8 @@
  *    shorter than \ref ControlResolver::longPressMs, a chord's leader taps after any hold (D-019:
  *    the grip is a closed hand, "use" when it opens without a trigger, stash with one);
  *  - a chord fires when its second control is pressed while the first is held; both controls are
- *    then consumed until released (no tap, no long press, no single binding of the second);
+ *    then consumed until released (no tap, no long press, no single binding of the second); with the
+ *    hand's chords off (\ref ControlResolver::setChords) the second fires its single binding instead;
  *  - a long press fires once, when the control has been held for \ref ControlResolver::longPressMs;
  *  - the release of a control that leads a chord or has a long press counts only after it stayed up
  *    for \ref ControlResolver::releaseDebounceMs: a flicker is one hold, not a series of taps;
@@ -127,6 +128,12 @@ enum class Event : u8 {
 	Menu,          //!< the game menu
 	Recenter,
 	MagicMode,     //!< held: the casting stance - a trigger draws runes with its hand (#43)
+	ActLeft,       //!< act on the door, lever, chest, NPC or corpse under the left reticle (the double click, #38, D-042)
+	ActRight,
+	RadialLeft,    //!< held: the radial menu at the left hand, released: its item under the hand runs (#376, D-042; unbound by default, #377)
+	RadialRight,
+	Weapon,        //!< draw / sheathe the weapon of the weapon hand - the right one until #380 (#377, D-042)
+	Map,           //!< the book on its map page, and closed again (#377, the owner: the left B)
 	Count
 };
 
@@ -218,9 +225,16 @@ struct ControlLayout {
 };
 
 /*!
- * The default layout for a controller type: the D-019 table (#35). The Index and the Touch share
- * the button positions, the game menu is on left A on the Index and on the left menu button on the
- * Touch; the simple controller has select (click / drag) and the menu buttons: left = game menu,
+ * The default layout for a controller type. The Index and the Touch: the D-042 table (#377), the same on
+ * both hands and on both controllers (X / Y in A / B's places on the left Touch): the trigger clicks and
+ * drags; grip, then trigger uses / acts (the reticle's target decides, \ref sharesBindingByDesign); the grip
+ * alone does nothing; the right B holds the radial menu (#376), which has the book's pages, the game menu,
+ * recenter and both hands' quick slots - the book and recenter have no control of their own; the left B
+ * toggles the book's map page, the left A the bag (the owner, #456); the right stick up jumps, down toggles
+ * the crouch; the right stick click draws / sheathes the weapon (the right hand's until #380); the trackpads
+ * are free. The casting stance is the right A (the owner) until each hand has its own (#378). The Index and
+ * the Touch layouts are the same: the Touch's left menu button is free too (the owner, #456).
+ * The simple controller has select (click / drag) and the menu buttons: left = game menu,
  * long = recenter; right = inventory, long = book. An unknown controller gets the Index layout,
  * because SteamVR's automatic rebinding emulates one of the profiles we suggest.
  * Every control a layout uses is bound by its profile's suggestions (VRBindings.h, tested).
@@ -269,7 +283,13 @@ struct Conflict {
 	Event second;
 };
 
-//! The events that share a binding - shown to the player when remapping (#178)
+/*!
+ * Two events that may share a binding: one hand's act and its use or stash (#38, D-042, #377) - the reticle's
+ * target decides which one acts (a door, lever, chest, NPC or corpse is acted on, an item is used or stashed)
+ */
+bool sharesBindingByDesign(Event a, Event b);
+
+//! The events that share a binding - shown to the player when remapping (#178); not a pair of \ref sharesBindingByDesign
 std::vector<Conflict> findConflicts(const ControlLayout & layout);
 
 //! A press / release threshold pair for an analog input used as a button
@@ -293,12 +313,18 @@ const Hysteresis GripThreshold = { 0.70f, 0.55f };
  * strapped to the hand, so a light close is the grip and an open hand (the controller hanging on
  * the strap) is none (D-019, owner 2026-10-10). The relaxed closed hand flickered around 0.6 - 0.7
  * in the owner's first headset run of #30, against 0.70 / 0.55: six "use" events nobody made
- * (TRAPS.md); a low press and a wide gap keep a closed hand closed.
+ * (TRAPS.md); a wide gap keeps a closed hand closed. A firm hold of the controller rests at 0.52 - 0.59
+ * (the owner's headset test of #460): against 0.50 every trigger press became the grip + trigger
+ * chord, so the press is 0.70, above a resting hold, and the release 0.40, below the flicker of a
+ * closed hand (#496). The player tunes both: vr_grip_press / vr_grip_release.
  */
-const Hysteresis IndexGripThreshold = { 0.50f, 0.30f };
+const Hysteresis IndexGripThreshold = { 0.70f, 0.40f };
 
-//! The grip threshold for the controllers of one hand, by the value their binding reports
-const Hysteresis & gripThreshold(ControllerType type);
+/*!
+ * The grip threshold for the controllers of one hand, by the value their binding reports: \a index
+ * for the Index (the player's vr_grip_press / vr_grip_release), \ref GripThreshold for the others
+ */
+Hysteresis gripThreshold(ControllerType type, const Hysteresis & index = IndexGripThreshold);
 const Hysteresis TrackpadThreshold = { 0.40f, 0.25f };
 const Hysteresis StickDirectionThreshold = { 0.70f, 0.50f };
 
@@ -319,6 +345,7 @@ struct Stick {
 struct ControllerInput {
 	ControlSet down;  //!< the controls held now, analog ones past their threshold
 	ControlSet taps;  //!< controls pressed and released since the last read
+	ControlSet newlyBound; //!< controls the runtime bound in this read: one held then is no press (#513)
 	std::array<Stick, HandCount> sticks;
 	std::array<float, HandCount> trigger = { };
 	std::array<float, HandCount> grip = { };
@@ -357,6 +384,15 @@ public:
 	 * \param taps   controls pressed and released since the last update (not in \a down)
 	 */
 	void update(s64 timeMs, const ControlSet & down, const ControlSet & taps = ControlSet());
+
+	/*!
+	 * Whether the chords of a hand form (on by default). Off, a control pressed while its chord's leader
+	 * is held fires its own single binding instead, and the leader is consumed - no tap when it is let go
+	 * (#496: on a menu panel the trigger clicks however firmly the hand holds the grip). A chord already
+	 * on stays on until its controls are released.
+	 */
+	void setChords(Hand hand, bool on) { m_chords[size_t(hand)] = on; }
+	bool chords(Hand hand) const { return m_chords[size_t(hand)]; }
 
 	//! \return true while the event is on
 	bool active(Event event) const { return m_events[size_t(event)].active; }
@@ -399,6 +435,7 @@ private:
 	ControlSet m_deferred;
 	//! Controls with a long press of their own: their tap must be shorter than \ref longPressMs
 	ControlSet m_hasLongPress;
+	std::array<bool, HandCount> m_chords = { true, true };
 
 	ControlSet m_down;
 	std::array<ControlState, ControlCount> m_controls;

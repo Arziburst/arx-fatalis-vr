@@ -88,6 +88,11 @@
 .PARAMETER Menu
 	A plain launch that expects the main menu (no --loadlevel 10 default); combine with -Commands 'loadslot 0'.
 
+.PARAMETER Player
+	A player's launch (#394): arx.exe without --dev-launch, so the publisher logos, the main menu and every .cin
+	cinematic are shown. Without arguments for arx.exe the game is expected in LOGO (or MENU) - the sequence takes
+	over while the first logo is up. Every other run is a development launch (--dev-launch: no logos, no cinematics).
+
 .PARAMETER Playground
 	Start the test playground (#321, scripts\dev\playground): generates the level when it is missing or older than
 	the generator, starts a new game in it (--data-dir <level folder> --loadlevel 30) and fails unless the game reaches
@@ -120,11 +125,19 @@
 .PARAMETER CloseWindow
 	Quit with WM_CLOSE (what a player does) instead of the channel's quit command.
 
+.PARAMETER EvidenceDir
+	Keep each FAILED run's evidence in <EvidenceDir>\runNN-<time>\ before the next run replaces it (#146): arx.log,
+	stdout.txt, stderr.txt, status.json, the run's new crash reports, reasons.txt and, with -Vr, the SteamVR logs
+	(Steam\logs\vrserver*, vrcompositor*, vrmonitor*, vrclient_arx*, xrclient_arx*) written during the run.
+
 .EXAMPLE
 	.\scripts\dev\smoke-test.ps1
 	# flat, --loadlevel 10 (the default when no arguments for arx.exe are given)
 .EXAMPLE
 	.\scripts\dev\smoke-test.ps1 -Repeat 10 -Seconds 5
+.EXAMPLE
+	.\scripts\dev\smoke-test.ps1 -Vr -Repeat 10 -Seconds 3 -EvidenceDir $env:LOCALAPPDATA\ArxFatalisVR\evidence\146
+	# the #146 hunt, only while the owner has SteamVR running: every failed run keeps its logs
 .EXAMPLE
 	.\scripts\dev\smoke-test.ps1 -Vr -- --loadslot 0
 .EXAMPLE
@@ -157,6 +170,7 @@ param(
 	[switch]$Sound,
 	[string]$VrSim,
 	[switch]$Menu,
+	[switch]$Player,
 	[switch]$Playground,
 	[int]$Seconds = 10,
 	[int]$Repeat = 1,
@@ -165,6 +179,7 @@ param(
 	[string]$Sequence,
 	[string[]]$ExpectEvents = @(),
 	[switch]$CloseWindow,
+	[string]$EvidenceDir,
 	[Parameter(ValueFromRemainingArguments)]
 	[string[]]$ArxArgs
 )
@@ -210,11 +225,13 @@ if ($Playground) {
 	. (Join-Path $PSScriptRoot 'playground\playground-lib.ps1')
 	$ArxArgs = @(Get-ArxPlaygroundArgs (Initialize-ArxPlaygroundLevel)) + @($ArxArgs)
 }
-if (-not $ArxArgs -and -not $Menu) { $ArxArgs = @('--loadlevel', '10') }
+if (-not $ArxArgs -and -not $Menu -and -not $Player) { $ArxArgs = @('--loadlevel', '10') }
 if (-not $ArxArgs) { $ArxArgs = @() }
 
 $loadsSomething = ($ArxArgs -join ' ') -match '--load(level|slot|save)'
 $expectedStates = if ($loadsSomething) { @('GAMEPLAY', 'CINEMATIC') } else { @('MENU') }
+# A player's launch starts with the publisher logos (#394): the checks start as soon as the first one is up
+if ($Player -and -not $loadsSomething) { $expectedStates = @('LOGO', 'MENU') }
 
 $log = Get-ArxLogPath $UserDir
 $crashDir = Get-ArxCrashDir $UserDir
@@ -229,6 +246,25 @@ function Write-Check([bool]$Ok, [string]$Text) {
 	if ($Ok) { Write-Host "  [ok]   $Text" -ForegroundColor Green } else { Write-Host "  [FAIL] $Text" -ForegroundColor Red }
 }
 
+# A failed run's evidence (-EvidenceDir, #146), copied before the next run replaces it: the game's log, stdout,
+# stderr and status, its new crash reports and, with -Vr, the SteamVR logs written during the run
+function Save-SmokeEvidence([int]$Run, [DateTime]$Since, [string[]]$Crashes, [string]$Why) {
+	$dir = Join-Path $EvidenceDir ('run{0:00}-{1:yyyyMMdd-HHmmss}' -f $Run, $Since)
+	New-Item -ItemType Directory -Force $dir | Out-Null
+	foreach ($file in @($log, (Join-Path $TestDir 'stdout.txt'), (Join-Path $TestDir 'stderr.txt'), (Join-Path $TestDir 'status.json'), (Join-Path $TestDir 'hang.txt'))) {
+		if (Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination $dir }
+	}
+	foreach ($c in $Crashes) { Copy-Item -LiteralPath (Join-Path $crashDir $c) -Destination $dir -Recurse }
+	$steam = if ($Vr) { Get-SteamPath } else { $null }
+	if ($steam) {
+		Get-ChildItem (Join-Path $steam 'logs') -File -ErrorAction SilentlyContinue |
+			Where-Object { $_.Name -match '^(vrserver|vrcompositor|vrmonitor|vrclient_arx|xrclient_arx)' -and $_.LastWriteTime -ge $Since } |
+			Copy-Item -Destination $dir
+	}
+	Set-Content -LiteralPath (Join-Path $dir 'reasons.txt') -Value $Why -Encoding utf8
+	Write-Host "  evidence kept in $dir"
+}
+
 function Invoke-SmokeRun([int]$Run) {
 	$reasons = [Collections.Generic.List[string]]::new()
 	$result = [ordered]@{ Run = $Run; Result = 'FAIL'; Exit = $null; State = '-'; Frames = 0; Fps = 0; VR = '-'; Errors = '-'; Warnings = '-'; Crash = '-'; DrawCheck = '-'; Reasons = '' }
@@ -236,7 +272,7 @@ function Invoke-SmokeRun([int]$Run) {
 	$launchTime = Get-Date
 	try {
 		New-Item -ItemType Directory -Force $TestDir | Out-Null
-		foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt', 'launched.txt') {
+		foreach ($f in 'status.json', 'ack.txt', 'command.txt', 'stdout.txt', 'stderr.txt', 'launched.txt', 'hang.txt') {
 			Remove-Item (Join-Path $TestDir $f) -Force -ErrorAction SilentlyContinue
 		}
 		# arx.log is not deleted here: the game rotates the previous run to arx.1.log itself (#129), and
@@ -247,6 +283,8 @@ function Invoke-SmokeRun([int]$Run) {
 		$argList = @()
 		if ($DataDir) { $argList += '--data-dir', "`"$DataDir`"" }
 		$argList += '--windowed', '--test-dir', "`"$TestDir`""
+		# A development launch (no logos, no cinematics) unless -Player (#394)
+		$argList += Get-ArxLaunchKindArgs -Player:$Player
 		if (-not $Shared) { $argList += '--user-dir', "`"$UserDir`"", '--config-dir', "`"$UserDir`"" }
 		if (-not $Vr) { $argList += '--no-vr' }
 		if (-not $Sound) { $argList += '--mute' }
@@ -254,14 +292,19 @@ function Invoke-SmokeRun([int]$Run) {
 		if ($sim) { $argList += '--vr-sim', "`"$simScript`"" }
 		$argList += $ArxArgs
 		Write-Host "=== run $Run/$Repeat`: arx.exe $($argList -join ' ')" -ForegroundColor Cyan
-		$env:ARX_UNATTENDED = '1'
 		$launchTime = Get-Date
-		# Shown without taking the focus (SDL hint from the environment, restored right after the start)
+		# Shown without taking the focus (SDL hint from the environment), and never blocking on a dialog: it goes to
+		# arx.log and stderr, the crash dialog is skipped (ARXVR_NO_DIALOGS / ARX_UNATTENDED, #501) - all restored right
+		# after the start, so the shell that ran the test is unchanged
+		$foregroundBefore = Get-ArxForegroundWindow
 		$previousHint = Set-ArxBackgroundWindow
+		$previousDialogEnv = Set-ArxDialogEnv -NoDialogs
 		try {
 			$process = Start-Process -FilePath $exe -ArgumentList $argList -PassThru `
 				-RedirectStandardOutput (Join-Path $TestDir 'stdout.txt') -RedirectStandardError (Join-Path $TestDir 'stderr.txt')
-		} finally { Restore-ArxBackgroundWindow $previousHint }
+		} finally { Restore-ArxBackgroundWindow $previousHint; Restore-ArxDialogEnv $previousDialogEnv }
+		# The game dies with this script, killed or not (#526): never a game left behind holding a slot
+		$null = Register-ArxGameProcess $process
 		Set-ArxGameLockGame $lock $process.Id
 		# The game is running: a check driving it from outside starts its timeouts only now, not during the lock wait (#258)
 		Set-Content -LiteralPath (Get-ArxLaunchMarker $TestDir) -Value "pid=$($process.Id) run=$Run" -Encoding ascii
@@ -290,7 +333,11 @@ function Invoke-SmokeRun([int]$Run) {
 
 		if ($reached) {
 			# Evidence for the no-focus rule (D-014): the window of a self-test must not take the focus
-			if ($status.window) { Write-Host "  window: focused=$($status.window.focused) minimized=$($status.window.minimized) $($status.window.width)x$($status.window.height)" }
+			if ($status.window) { Write-Host "  window: focused=$($status.window.focused) minimized=$($status.window.minimized) $($status.window.width)x$($status.window.height) activation=$($status.window.activation) placement=$($status.window.placement) at $($status.window.x),$($status.window.y)" }
+			# ... and the foreground stays with whoever works at the PC (#487)
+			$foreground = Test-ArxForegroundKept $foregroundBefore (Get-ArxForegroundWindow) $process.Id
+			Write-Check $foreground.Ok "foreground after the start: $($foreground.Text)"
+			if (-not $foreground.Ok) { $reasons.Add("after the start: $($foreground.Text)") }
 			if ($Playground) {
 				$inPlayground = [int]$status.area -eq $script:ArxPlaygroundArea
 				Write-Check $inPlayground "playground: the game is in area $($status.area) (expected $script:ArxPlaygroundArea) in state $($status.state)"
@@ -316,10 +363,17 @@ function Invoke-SmokeRun([int]$Run) {
 				elseif ($status.vr.sessionState -ne 'focused') { $reasons.Add("the simulated session is not focused (state $($status.vr.sessionState))") }
 			}
 
+			# Each batch gets its own ack: seq advances by one per command and 'last=' names the command (#142: a
+			# level change inside a batch once exposed the next seq in status.json before the ack existed)
+			$lastAckSeq = $null
 			foreach ($command in $Commands) {
 				$ack = Send-ArxCommand -Lines @($command) -Dir $TestDir
 				Write-Host "  > $command`n    $ack"
 				if ($ack -notmatch 'errors=0 ') { $reasons.Add("command '$command' failed: $ack") }
+				$ackSeq = if ($ack -match '^seq=(\d+) ') { [int]$Matches[1] } else { -1 }
+				if ($ack -notmatch ('last=' + [regex]::Escape($command) + ' error=')) { $reasons.Add("the ack for '$command' belongs to another batch: $ack") }
+				if ($null -ne $lastAckSeq -and $ackSeq -ne $lastAckSeq + 1) { $reasons.Add("the ack for '$command' has seq $ackSeq, expected $($lastAckSeq + 1): $ack") }
+				$lastAckSeq = $ackSeq
 			}
 
 			if ($sequenceToRun) {
@@ -337,6 +391,11 @@ function Invoke-SmokeRun([int]$Run) {
 				} catch { $reasons.Add("$_ (timeline $($status.vr.sim.timeline), $($status.vr.sim.pending) lines pending)") }
 			}
 			if ($process.HasExited) { $reasons.Add("the game exited on its own with code $($process.ExitCode) while it should have been running") }
+			else {
+				$foreground = Test-ArxForegroundKept $foregroundBefore (Get-ArxForegroundWindow) $process.Id
+				Write-Check $foreground.Ok "foreground before the quit: $($foreground.Text)"
+				if (-not $foreground.Ok) { $reasons.Add("before the quit: $($foreground.Text)") }
+			}
 
 			# A 'drawcheck' sent through -Commands draws the scene twice per frame with the same camera
 			# (docs/vr/TESTING.md): it must finish, and the two pictures must be identical in every frame
@@ -439,6 +498,10 @@ function Invoke-SmokeRun([int]$Run) {
 		if ($newCrashes) { $reasons.Add("new crash report: $($newCrashes -join ', ')") }
 		if ($errorLines) { $reasons.Add("$($errorLines.Count) [E] line(s) in arx.log") }
 		if ($final -and [int]$final.errors -ne 0) { $reasons.Add("status.json errors=$($final.errors)") }
+		# A dialog the game wrote instead of showing it (#501) is what ended the run: its line is the first reason
+		$dialogLines = Get-ArxDialogLines @($(if ($logFresh) { $log }), (Join-Path $TestDir 'stderr.txt'))
+		Write-Check ($dialogLines.Count -eq 0) "no dialog ($($dialogLines.Count) '[dialog]' line(s) in arx.log / stderr)"
+		if ($dialogLines) { $reasons.Insert(0, (Get-ArxDialogReason $dialogLines)) }
 
 		if ($errorLines -or $warningLines) {
 			Write-Host '  --- [E]/[W] lines:'
@@ -477,6 +540,10 @@ function Invoke-SmokeRun([int]$Run) {
 
 	$result.Reasons = $reasons -join '; '
 	$result.Result = if ($reasons.Count -eq 0) { 'PASS' } else { 'FAIL' }
+	if ($EvidenceDir -and $reasons.Count -gt 0 -and $launchTime) {
+		try { Save-SmokeEvidence -Run $Run -Since $launchTime -Crashes $newCrashes -Why $result.Reasons }
+		catch { Write-Warning "keeping the evidence failed (the verdict is unaffected): $($_.Exception.Message)" }
+	}
 	$color = if ($result.Result -eq 'PASS') { 'Green' } else { 'Red' }
 	Write-Host "  => $($result.Result) $($result.Reasons)" -ForegroundColor $color
 	[pscustomobject]$result

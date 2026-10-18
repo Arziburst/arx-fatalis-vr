@@ -18,7 +18,10 @@
 @assert vr.panel.mode eq head
 @assert vr.panel.placements eq 0
 
-# Gameplay: the head-locked quad covers the same pixels whatever the head does
+# Gameplay: the head-locked quad covers the same pixels whatever the head does. The quad also carries the timed
+# notifications - this save's tutorial hint ("Right-click to toggle ...") is on screen for about 6 s of game time -
+# so the two shots wait until none is shown: on a busy PC the pair straddled the hint's expiry (#370, TRAPS.md)
+@until notifications eq 0 30s
 @shot hudahead
 vr-sim head rot 40 0 0
 @frames 10
@@ -48,6 +51,9 @@ ui inventory open
 @assert vr.panel.tilt lt 19
 @assert vr.panel.width eq 1
 @assert events.byName."vr.panel.placed" eq 1
+# The bag slides in for a while after it opens (about 28 frames at 90 fps): the shots of the panel, this one and the
+# two below, want it fully open (#522: the old harness's slack waited for it)
+@until player.inventorySlide eq 0 5s
 @shot panelahead
 
 # The head turns 40 degrees left: the panel stays in the play space, so it slides to the right of the view
@@ -85,12 +91,15 @@ vr-sim head rot 0 0 0
 # Closed: back to the head-locked quad
 ui inventory close
 @until vr.panel.mode eq head 5s              # the bag slides away on the panel first
-# (Opened again within 250 ms - inventory -> book - the panel keeps its place. The channel's round trip is
-# longer than that, measured about 600 ms: host test UIPanelTest::testShortCloseKeepsThePose covers it.)
+# (Opened again within 250 ms - inventory -> book - the panel keeps its place: host test
+# UIPanelTest::testShortCloseKeepsThePose covers it. The channel's round trip was about 600 ms; since #522 it is
+# far shorter, so the open below waits past the grace explicitly.)
+@remember closedAt uptimeMs
 
 # Opened again looking 30 degrees left: placed anew where the head looks
 vr-sim head rot 30 0 0
 @frames 5
+@until uptimeMs ge {closedAt+300} 5s          # past the 250 ms reopen grace (UIPanel.h reopenGraceUs)
 ui inventory open
 @frames 5
 @assert vr.panel.mode eq world

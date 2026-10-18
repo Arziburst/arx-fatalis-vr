@@ -122,5 +122,5 @@ By default, optional components will be automatically disabled if their dependen
   * `all` Generate all possible icon types
   * `none` Don't generate any icons
 
-* `DATA_FILES` (default: *not set*): Locations to search for pre-built data files. This is only useful when building git checkouts as release and development snapshot tarballs already include those files in the source tree. See the *Git Build Dependencies* section in README.md.
+* `DATA_FILES` (default: *not set*): Locations to search for pre-built data files. This is only useful when building git checkouts as release and development snapshot tarballs already include those files in the source tree. See the *Git Build Dependencies* section in docs/ARX-LIBERTATIS.md.
 * `OPTIMIZE_ICONS` (default: ON): Optimize the compression of generated PNG files using OptiPNG. This is only useful when building git checkouts as release and development snapshot tarballs already include pre-built images that this option doesn't apply to.

@@ -1,0 +1,271 @@
+# The impact map of the CI game checks (#522): which checks a pull request runs besides the core.
+#
+# A pull request runs the core, every name of a line whose glob matches a path it changes, and the .xrs files it
+# changes or adds themselves (a read-back selects its sequence). A changed path that no line matches runs
+# everything: a new folder or file is safe until it gets a line here. A push to main, a manual run with suite=full
+# and a pull request with the label full-ci run everything, and so does the merge gate before every merge.
+#
+#   core: <name> ...                 run on every pull request
+#   <path glob> -> <name> ...        a change of a matching path also runs these
+#   <path glob> -> *                 ... runs everything (the harness every check stands on)
+#   <path glob> -> core              ... is covered by the core alone
+#
+# A name is a sequence (scripts/dev/xrs/<name>.xrs) or smoke-test / spell-drawcheck. A glob is a repository path
+# with / and the wildcards of PowerShell's -like, any case: * also crosses folders (src/gui/* is the whole folder).
+# Several lines may match one path: their names add up, and one '-> *' among them runs everything.
+# A new sequence needs a line (or a place in core): the coverage check of test-ci-smoke.ps1 fails a sequence that no
+# line names, and a name that is no sequence. Docs: docs/vr/TESTING.md "The CI gate".
+
+# --- The core: every pull request ----------------------------------------------------------------------------------
+# Start-up, a level load, a save load, the head, movement, input, the full body, the HUD, the menus and the VR
+# session's life, with the two draw checks: fast checks that a break of a file every feature touches
+# (CommandChannel.cpp, Config.cpp, VRSystem.cpp, CMakeLists.txt) shows up in. The save library runs with them (most
+# core sequences load a save). arms-follow (the full body) is here also because a red main once failed it on pull
+# requests that did not touch the body (#489).
+core: smoke-test spell-drawcheck
+core: first-run look-around walk-forward snap-turn recenter real-input arms-follow
+core: hud-frame-flat menu-pointer level-load-hang vr-session-end vr-session-loss
+
+# --- The harness every check stands on: everything ------------------------------------------------------------------
+scripts/dev/smoke-test.ps1 -> *
+scripts/dev/test-lib.ps1 -> *
+scripts/dev/xrs-lib.ps1 -> *
+scripts/dev/img-diff.ps1 -> *
+scripts/dev/log-digest.ps1 -> *
+scripts/dev/log-digest-lib.ps1 -> *
+scripts/dev/log-digest-allowlist.txt -> *
+scripts/dev/spell-drawcheck.ps1 -> spell-drawcheck
+scripts/dev/ci-smoke.ps1 -> *
+scripts/dev/ci-smoke-lib.ps1 -> *
+scripts/dev/make-test-saves.ps1 -> *
+scripts/dev/test-saves/scenario-lib.ps1 -> *
+scripts/dev/test-saves/scenarios.txt -> *
+scripts/dev/vrsim/idle.vrsim -> *
+scripts/launch-lib.ps1 -> *
+scripts/build-paths.ps1 -> *
+scripts/build-windows.ps1 -> *
+scripts/dev/xrs/manual/* -> core
+src/vr/VRSimulator.* -> *
+src/vr/SimRig.* -> *
+vcpkg.json -> *
+cmake/* -> *
+.github/workflows/* -> *
+
+# --- The engine's foundations: everything ----------------------------------------------------------------------------
+# Rarely changed by a VR task, and a break there can show anywhere
+src/graphics/* -> *
+src/window/* -> *
+src/platform/* -> *
+src/io/* -> *
+src/util/* -> *
+src/math/* -> *
+src/lib/* -> *
+src/scene/* -> *
+src/script/* -> *
+src/ai/* -> *
+src/audio/* -> *
+data/core/misc/* -> *
+data/CMakeLists.txt -> *
+thirdparty/* -> *
+VERSION -> *
+src/core/Startup.* -> *
+src/core/Application.* -> *
+src/core/Core.* -> *
+src/core/GameTime.* -> *
+src/core/SaveGame.* -> *
+src/core/Localisation.* -> first-run-intro first-run-menu first-run-chargen vr-settings-flat cinematics
+src/vr/VRSwapchain.* -> *
+src/vr/XRDispatch.* -> *
+src/vr/XRFunctions.h -> *
+src/vr/OpenXRUtil.h -> *
+src/vr/WorldScale.h -> *
+src/vr/EyeProjection.* -> *
+src/game/Camera.* -> *
+
+# --- Hub files every feature touches: the core ---------------------------------------------------------------------
+# Each feature adds its status keys, config keys, frame hooks and source files here; a general break of them fails the
+# core, and the feature's own files (below) select its sequences. As '-> *' they would make nearly every pull request
+# run everything: replayed over the last 30 pull request runs (scripts/dev/impact-replay.ps1, 2026-10-18), 28 of 30
+# would have been full; with them on the core, all 11 failed phases of those runs were still in the selection. What
+# this leaves open - a feature whose sequence reads a hub file's key but has no files of its own here - is caught by
+# the full suite before the merge, and closed by a line for that sequence (docs/vr/TESTING.md "The CI gate").
+src/core/CommandChannel.* -> core
+src/core/Config.* -> core
+src/core/ArxGame.* -> core
+src/core/GameEvent.* -> first-run-intro first-run-chargen cinematics
+src/vr/VRSystem.* -> core
+CMakeLists.txt -> core
+
+# --- The VR body: arms, hands, fingers -----------------------------------------------------------------------------
+src/vr/VRBody.* -> arm-fit arms-classic arms-classic-glove arms-elbow arms-follow arms-model arms-roll arms-variants body-hidden body-look-down finger-five finger-held finger-tracking hand-conforming height-hands weapon-hold weapon-in-glove wrist-vitals real-steps physical-crouch
+src/vr/VRArms.* -> arm-fit arms-classic arms-classic-glove arms-elbow arms-follow arms-model arms-roll arms-variants body-hidden finger-five hand-conforming weapon-in-glove
+src/vr/ArmFit.* -> arm-fit arms-elbow arms-variants height-hands
+src/vr/ArmIK.* -> arm-fit arms-elbow arms-follow arms-roll arms-variants height-hands weapon-hold
+src/vr/ArmMesh.* -> arm-fit arms-elbow arms-roll arms-variants arms-model
+src/vr/ArmRoll.* -> arms-roll arms-elbow
+src/vr/ArxArmFix.* -> arms-classic arms-classic-glove arms-model
+src/vr/BodyView.* -> body-look-down body-hidden arms-follow
+src/vr/BodyYaw.* -> arms-follow body-look-down snap-turn walk-look real-steps
+src/vr/HandRig.* -> arms-follow hand-conforming finger-five arms-classic-glove weapon-in-glove
+src/vr/FingerCurl.* -> finger-five finger-held finger-tracking hand-conforming
+src/vr/HandTracking.* -> finger-five finger-held finger-tracking hand-conforming
+data/core/vr/arms/* -> arms-classic-glove arms-variants finger-five hand-conforming weapon-in-glove weapon-classes body-hidden arm-fit
+data/core/vr/hands/* -> hand-conforming finger-five finger-tracking finger-held
+src/animation/* -> arms-follow arms-classic weapon-hold tl-reprojection melee-swing
+
+# --- Scripted scenes in VR (#29): the view, the subtitles, the hero's body in a cinema shot -------------------------
+src/vr/SceneView.* -> scene-switches
+src/vr/SceneSubtitles.* -> scene-switches
+
+# --- The head and the camera ---------------------------------------------------------------------------------------
+src/vr/HeadPose.* -> look-around recenter real-steps arms-follow vr-turning-settings walk-look body-look-down tl-reprojection
+src/vr/HeadTracking.* -> look-around recenter real-steps arms-follow physical-crouch ui-panel vr-turning-settings walk-look height-hands
+src/vr/HeadLean.* -> real-steps look-around
+src/vr/HeadReferenceGate.* -> recenter physical-crouch real-steps
+src/vr/EyeImage.* -> tl-reprojection look-around
+src/vr/FramePacing.* -> tl-reprojection look-around vr-session-end vr-session-loss
+src/vr/Perf*.* -> tl-reprojection
+src/vr/VRComfort.* -> snap-turn walk-forward walk-look real-steps
+
+# --- Movement ------------------------------------------------------------------------------------------------------
+src/vr/Locomotion.* -> walk-forward walk-look sneak-jump-crouch controls-v2 playground-respawn
+src/vr/VRTurn.* -> snap-turn vr-turning-settings controls-v2
+src/vr/PhysicalCrouch.* -> physical-crouch stand-up sneak-jump-crouch
+src/vr/VRGameInput.* -> sneak-jump-crouch walk-forward walk-look controls-v2 stand-up
+src/physics/* -> stand-up real-steps physical-crouch sneak-jump-crouch walk-forward walk-look playground-respawn melee-swing
+src/game/Player.* -> stand-up real-steps physical-crouch sneak-jump-crouch walk-forward walk-look height-hands playground-respawn playground-levers wrist-vitals
+
+# --- Hands in the world: reticles, reach, weapons, melee -----------------------------------------------------------
+src/vr/HandReticle.* -> hand-reticle menu-pointer playground-hands reach-chest reach-door reach-lever
+src/vr/VRReticle.* -> hand-reticle menu-pointer controls-v2 rune-trail playground-hands reach-chest reach-door reach-lever
+src/vr/VRWeapon.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery melee-damage reach-lever finger-held
+src/vr/WeaponGrip.* -> weapon-classes weapon-hold weapon-in-glove finger-held melee-damage
+src/vr/VRMelee.* -> melee-swing melee-recovery melee-damage damage-numbers damage-numbers-off controls-v2 weapon-hold
+src/vr/MeleeSwing.* -> melee-swing melee-recovery melee-damage damage-numbers weapon-hold
+src/game/Equipment.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery melee-damage finger-held damage-numbers
+src/game/Damage.* -> damage-numbers damage-numbers-off melee-swing melee-recovery melee-damage playground-respawn
+src/game/Inventory.* -> menu-pointer hand-reticle ui-panel playground-hands
+src/game/Spells.* -> rune-trail spell-drawcheck
+src/game/spell/* -> rune-trail spell-drawcheck
+src/game/magic/* -> rune-trail spell-drawcheck
+src/game/effect/* -> spell-drawcheck rune-trail
+src/vr/RuneTrail.* -> rune-trail controls-v2
+src/vr/VRRunes.* -> rune-trail controls-v2 spell-drawcheck
+
+# --- Controls, bindings and settings -------------------------------------------------------------------------------
+src/vr/VRInput.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail sneak-jump-crouch walk-look physical-crouch vr-turning-settings hand-reticle playground-hands desktop-mouse first-run-chargen first-run-menu finger-held finger-tracking
+src/vr/VRActions.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail sneak-jump-crouch walk-look physical-crouch vr-turning-settings hand-reticle playground-hands desktop-mouse first-run-chargen first-run-menu finger-held finger-tracking arms-follow hand-conforming
+src/vr/VRControls.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail finger-held finger-tracking hand-reticle playground-hands
+src/vr/VRBindings.* -> controls-v2 vr-remap vr-remap-saved vr-settings-flat finger-held finger-tracking
+src/vr/BindingCapture.* -> vr-remap vr-remap-saved vr-settings-flat
+src/vr/VRSettingsRows.* -> vr-turning-settings vr-settings-flat vr-remap
+src/input/* -> real-input real-input-flat desktop-mouse desktop-mouse-flat first-run-chargen menu-pointer hand-reticle vr-remap menu-trigger-grip
+
+# --- Menus, panels and the HUD -------------------------------------------------------------------------------------
+src/vr/MenuPointer.* -> menu-pointer menu-trigger-grip desktop-mouse desktop-mouse-flat first-run-chargen first-run-menu hand-reticle vr-settings-flat
+src/vr/UIPanel.* -> ui-panel menu-pointer first-run-menu first-run-chargen
+src/vr/VRMirror.* -> ui-panel menu-pointer first-run-menu first-run-chargen cinematics desktop-mouse
+src/vr/MirrorGeometry.h -> ui-panel menu-pointer first-run-menu first-run-chargen cinematics desktop-mouse
+src/vr/RadialMenu.* -> radial-menu controls-v2 vr-remap hand-reticle first-run-menu
+src/vr/VRRadial.* -> radial-menu controls-v2 hud-frame first-run-menu first-run-chargen rune-trail tl-reprojection
+src/vr/HudFrame.* -> hud-frame hud-frame-flat tl-reprojection
+src/vr/VRHud.* -> hud-frame hud-frame-flat tl-reprojection wrist-vitals ui-panel
+src/vr/WristHud.* -> wrist-vitals hud-frame hud-frame-flat weapon-hold tl-reprojection
+src/vr/WristVitals.* -> wrist-vitals
+src/vr/InterfaceSize.* -> ui-panel tl-reprojection hud-frame menu-pointer
+src/gui/Hud.* -> hud-frame hud-frame-flat wrist-vitals tl-reprojection
+src/gui/MiniMap.* -> hud-frame hud-frame-flat
+src/gui/Notification.* -> hud-frame hud-frame-flat ui-panel walk-look
+src/gui/Speech.* -> hud-frame hud-frame-flat first-run-intro cinematics
+src/gui/hud/* -> hud-frame hud-frame-flat wrist-vitals
+src/gui/Interface.* -> hand-reticle menu-pointer ui-panel controls-v2 walk-forward walk-look snap-turn sneak-jump-crouch physical-crouch playground-hands
+src/gui/Cursor.* -> hand-reticle menu-pointer rune-trail desktop-mouse
+src/gui/Dragging.* -> hand-reticle menu-pointer
+src/gui/DamageNumbers.* -> damage-numbers damage-numbers-off
+src/gui/book/* -> rune-trail controls-v2 first-run-menu first-run-chargen radial-menu
+src/gui/CharacterCreation.* -> first-run-chargen first-run desktop-mouse desktop-mouse-flat
+src/gui/MainMenu.* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-remap-saved vr-turning-settings menu-trigger-grip
+src/gui/Menu.* -> first-run first-run-intro first-run-menu first-run-chargen vr-settings-flat
+src/gui/MenuPublic.* -> first-run-menu vr-settings-flat
+src/gui/MenuWidgets.* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-turning-settings
+src/gui/menu/* -> first-run-menu vr-settings-flat vr-remap vr-turning-settings
+src/gui/widget/* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-remap-saved vr-turning-settings
+src/gui/Logo.* -> first-run first-run-intro desktop-mouse-flat
+src/gui/LoadLevelScreen.* -> level-load-hang first-run-intro
+src/gui/CinematicBorder.* -> cinematics first-run-intro
+src/cinematic/* -> cinematics first-run-intro
+data/core/localisation/* -> first-run-intro first-run-menu first-run-chargen vr-settings-flat vr-remap cinematics
+
+# --- The test playground (#321) ------------------------------------------------------------------------------------
+scripts/dev/playground/* -> controls-v2 damage-numbers melee-recovery playground-hands playground-levers playground-respawn weapon-classes
+
+# --- Covered by the core alone: no game behaviour ------------------------------------------------------------------
+# Docs, the host unit tests (built and run by every build), the other dev scripts (their self-tests run on every pull
+# request) and this map (its coverage check is one of them)
+docs/* -> core
+*.md -> core
+.claude/* -> core
+.github/ISSUE_TEMPLATE/* -> core
+.github/pull_request_template.md -> core
+tests/* -> core
+tools/* -> core
+plugins/* -> core
+scripts/dev/xrs/impact.txt -> core
+scripts/dev/test-*.ps1 -> core
+scripts/dev/board.ps1 -> core
+scripts/dev/body-check.ps1 -> core
+scripts/dev/check-private-data.ps1 -> core
+scripts/dev/comfort-check.ps1 -> core
+scripts/dev/cycle-report.ps1 -> core
+scripts/dev/exit-trace-check.ps1 -> core
+scripts/dev/eye-check.ps1 -> core
+scripts/dev/eye-check-lib.ps1 -> core
+scripts/dev/eye-height-check.ps1 -> core
+scripts/dev/game-cmd.ps1 -> core
+scripts/dev/game-input-check.ps1 -> core
+scripts/dev/game-status.ps1 -> core
+scripts/dev/github-lib.ps1 -> core
+scripts/dev/head-check.ps1 -> core
+scripts/dev/hooks/* -> core
+scripts/dev/impact-replay.ps1 -> core
+scripts/dev/ci-local.ps1 -> core
+scripts/dev/input-check.ps1 -> core
+scripts/dev/make-steamvr-tile.ps1 -> core
+scripts/dev/new-worktree.ps1 -> core
+scripts/dev/next-task.ps1 -> core
+scripts/dev/number-decisions.ps1 -> core
+scripts/dev/perf-summary.ps1 -> core
+scripts/dev/perf-summary-lib.ps1 -> core
+scripts/dev/plan-next.ps1 -> core
+scripts/dev/plan-next-lib.ps1 -> core
+scripts/dev/pr-checks.ps1 -> core
+scripts/dev/recenter-check.ps1 -> core
+scripts/dev/run-script-tests.ps1 -> core
+scripts/dev/scrub-auto-reports.ps1 -> core
+scripts/dev/set-status.ps1 -> core
+scripts/dev/setup-coordinator.ps1 -> core
+scripts/dev/shot-sheet.ps1 -> core
+scripts/dev/start-worker.ps1 -> core
+scripts/dev/statusline.ps1 -> core
+scripts/dev/stop-steamvr.ps1 -> core
+scripts/dev/usage-lib.ps1 -> core
+scripts/dev/usage-plan.ps1 -> core
+scripts/dev/xrs-run.ps1 -> core
+scripts/add-steam-shortcut.ps1 -> core
+scripts/create-desktop-shortcut.ps1 -> core
+scripts/launch-shortcut.ps1 -> core
+scripts/package-tester.ps1 -> core
+scripts/register-steamvr.ps1 -> core
+scripts/run-windows.ps1 -> core
+scripts/steam-shortcuts-lib.ps1 -> core
+scripts/tester/* -> core
+scripts/dev/vrsim/* -> core
+data/vr/* -> core
+data/icons/* -> core
+data/man/* -> core
+LICENSE* -> core
+COPYING -> core
+AUTHORS -> core
+CHANGELOG -> core
+.gitignore -> core
+.gitattributes -> core

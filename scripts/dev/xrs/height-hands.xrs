@@ -1,0 +1,45 @@
+# The hands with the character height setting (#482): vr_height_offset (#260) lifts the camera; the hands are placed
+# rigid with that camera, so they rise with it by the same amount and stay on the controllers. Engine y is down, 100
+# units to the meter: +0.2 m is 20 units less y for the camera and for the right hand's grip
+# (vr.body.right.controller, the world point the glove and the Arx hand are put on).
+# Needs the first-person save:
+#   .\scripts\dev\xrs-run.ps1 height-hands
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence height-hands -Save mvp-new-game
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.body.active eq true
+
+vr-sim head pos 0 0 0
+vr-sim head rot 0 0 0
+vr-sim hand left off
+vr-sim hand right pos 0.15 -0.3 -0.4
+vr-sim hand right rot 0 0 0
+vr-input height 0
+@frames 30
+@assert vr.body.right.posed eq true
+@assert vr.head.heightOffset eq 0
+@remember cam0 camera.y
+@remember grip0 vr.body.right.controller.y
+@shot height-0
+
+# 1. +20 cm: the camera 20 units higher, the hand with it
+vr-input height 0.2
+@frames 15
+@assert vr.head.heightOffset eq 0.2
+@assert camera.y le {cam0-18}
+@assert camera.y ge {cam0-22}
+@assert vr.body.right.controller.y le {grip0-18}
+@assert vr.body.right.controller.y ge {grip0-22}
+@shot height-20
+
+# 2. Back to 0: the hand where it was
+vr-input height 0
+@frames 15
+@assert vr.head.heightOffset eq 0
+@assert vr.body.right.controller.y ge {grip0-2}
+@assert vr.body.right.controller.y le {grip0+2}

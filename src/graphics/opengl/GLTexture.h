@@ -47,6 +47,9 @@ public:
 	
 	void updateMaxAnisotropy();
 	
+	//! The GL texture, for a framebuffer that draws into it (the VR subtitle panel, #29)
+	GLuint glId() const { return tex; }
+	
 private:
 	
 	OpenGLRenderer * renderer;

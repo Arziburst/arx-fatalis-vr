@@ -12,7 +12,7 @@
 vr-input default
 @frames 2
 @assert vr.input.remapped eq false
-@assert vr.input.layout.jump eq right.a
+@assert vr.input.layout.jump eq right.stick_up
 
 # The pause menu, then Options -> VR
 menu pause
@@ -22,7 +22,7 @@ menu vr
 @frames 30
 @shot vr-page
 
-# Jump on right B with a single press: right B opens the inventory, so the two conflict - shown and counted
+# Jump on right B with a single press: right B holds the right radial menu (#376), so the two conflict - shown and counted
 @mark
 vr-input capture jump
 @frames 2
@@ -35,7 +35,7 @@ vr-input tap right.b
 @assert vr.input.layout.jump eq right.b
 @assert vr.input.remapped eq true
 @assert vr.input.conflicts eq 1
-@assert vr.input.conflictList eq jump+inventory
+@assert vr.input.conflictList eq jump+radial_right
 @assert vr.input.capture.count eq 1
 @log GameEvent:\d+\s+vr\.remap event=jump binding="?right\.b
 @log \[vr\] input: layout jump = right\.b \(VR settings\)
@@ -77,7 +77,7 @@ vr-input up left.stick_up
 vr-input cancel
 @frames 2
 @assert vr.input.capture.state eq cancelled
-@assert vr.input.layout.book eq left.b
+@assert vr.input.layout.book eq none
 @assert vr.input.capture.count eq 3
 
 menu none

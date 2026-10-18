@@ -1,0 +1,88 @@
+# The player's first run (#394), the original game's start: a plain arx.exe launch (no --dev-launch) shows the
+# FISHTANK and ARKANE logos, then the intro - level 10's scripted scene around introduction.cin - which ends in the
+# main menu. In VR all of it plays on a screen fixed in the room in front of the player (vr.panel.mode screen: the
+# flat-frame quad, quadPixels in both eyes); A, B or a trigger skips the logo on screen, the whole intro, and the press
+# reaches nothing after it. New game then starts in the prison (area 1): its intro runs to its end without a skip,
+# then the left stick walks.
+#   .\scripts\dev\xrs-run.ps1 first-run-intro
+@sim idle
+@player
+
+# The first logo, on the screen straight ahead at eye height
+@until state eq LOGO 90s
+@assert events.byName."startup.logo" eq 1     # fishtank shown (logged before the sequence's first mark)
+@until vr.panel.mode eq screen 10s
+@assert vr.panel.distance eq 2.5
+@assert vr.panel.width gt 2.59
+@assert vr.panel.width lt 2.61
+@shot logo
+@assert vr.sim.shots.logo.left.quadPixels gt 0
+@assert vr.sim.shots.logo.right.quadPixels gt 0
+@assert vr.sim.shots.logo.left.scene.verdict ne background
+@assert vr.sim.shots.logo.right.scene.verdict ne background
+
+# Right A skips FISHTANK: ARKANE follows (still LOGO)
+vr-input tap right.a
+@log GameEvent:.*startup\.logo name=fishtank state=end how=skip
+@log GameEvent:.*startup\.logo name=arkane state=shown 5s
+@assert state eq LOGO
+@until events.byName."vr.skip" eq 1 5s
+
+# The right trigger skips ARKANE: the intro - level 10 - on the same screen, drawn flat (no stereo), not head-driven
+vr-input tap right.trigger
+@log GameEvent:.*startup\.logo name=arkane state=end how=skip
+@log GameEvent:.*startup\.intro state=start area=10 5s
+@until state eq INTRO 30s
+@assert area eq 10
+@until events.byName."vr.skip" eq 2 5s
+@until vr.panel.mode eq screen 5s
+@wait 3000                                   # the level fades in
+@shot intro
+@assert vr.sim.shots.intro.left.quadPixels gt 0
+@assert vr.sim.shots.intro.right.quadPixels gt 0
+@assert vr.sim.shots.intro.left.scene.verdict ne background
+@assert vr.sim.shots.intro.right.scene.verdict ne background
+@assert vr.stereo.active eq false
+
+# The intro's cinematic: introduction.cin on the screen
+@until state eq CINEMATIC 60s
+@log GameEvent:.*cinematic\.start name=introduction\.cin 10s
+@until vr.panel.mode eq screen 5s
+@wait 3000                                   # the cinematic's first picture fades in
+@shot cine
+@assert vr.sim.shots.cine.left.quadPixels gt 0
+@assert vr.sim.shots.cine.right.quadPixels gt 0
+@assert vr.sim.shots.cine.left.scene.verdict ne background
+@assert vr.sim.shots.cine.right.scene.verdict ne background
+
+# Right B skips the whole intro: the cinematic ends through cinematicEnd(), the main menu opens, nothing clicked
+vr-input tap right.b
+@until state eq MENU 10s
+@log GameEvent:.*cinematic\.end name=introduction\.cin how=skip 5s
+@log GameEvent:.*startup\.intro state=end how=skip 5s
+@assert menuMode eq mainmenu
+@until events.byName."vr.skip" eq 3 5s
+@frames 30
+@nolog GameEvent:.*vr\.pointer\.click
+@assert menuMode eq mainmenu
+
+# New game (an average hero, as the menu's New game and character creation do): the prison, area 1; its intro (a
+# scripted scene, the controls held) runs to its end untouched and frees the controls; the left stick walks
+newgame
+@until area eq 1 60s
+@until state eq GAMEPLAY 30s
+@log GameEvent:.*scene state=start area=1 30s
+@assert player.controlsBlocked eq true
+@until player.controlsBlocked eq false 90s
+@nolog GameEvent:.*scene\.skip               # nothing skipped it since it started
+@log GameEvent:.*scene state=end area=1 30s
+@until events.byName."vr.skip" eq 3 5s
+@nolog GameEvent:.*player\.jump
+@remember z0 player.z
+vr-input stick left 0 1
+@frames 45
+@assert vr.input.walk.walking eq true
+vr-input stick left 0 0
+@frames 10
+@log GameEvent:.*vr\.walk state=start
+@assert player.z gt {z0+50}                  # the prison start faces +z (yaw about 0): the walk goes along it

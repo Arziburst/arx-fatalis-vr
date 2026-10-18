@@ -53,15 +53,18 @@
  * default) or the first frame of the session (\c timeline \c session).
  *
  * Commands (the channel's \c vr-sim takes the same):
- *  - \c rate \c <hz>: display rate, 0 = no pacing; \c eye-size \c <w> \c <h> (set-up only);
+ *  - \c rate \c <hz> \c [clock|cap]: display rate, 0 = no pacing; \c clock (the default) paces to the
+ *    display's slots as a headset does, \c cap only keeps frames 1/rate apart (#522); without the word
+ *    the pacing stays as it is; \c eye-size \c <w> \c <h> (set-up only);
  *    \c ipd \c <meters>; \c fov \c left|right \c <left> \c <right> \c <up> \c <down> (degrees,
  *    OpenXR signs: left and down negative); \c timeline \c gameplay|session (set-up only)
  *  - \c head \c pos \c <x> \c <y> \c <z>; \c head \c rot \c <yaw> \c <pitch> \c <roll> - yaw + turns
  *    left, pitch + looks up, roll + tilts the head to the left
  *  - \c hand \c left|right \c pos|rot \c ...; \c hand \c left|right \c on|off (tracked or not)
- *  - \c hand \c left|right \c fingers \c <thumb> \c <index> \c <rest>: how far the real fingers are
- *    closed, 0 open to 1 a fist (the thumb, the index finger, the other three) - the hand joints of
- *    XR_EXT_hand_tracking the simulated runtime gives (#305); \c hand \c left|right \c fingers
+ *  - \c hand \c left|right \c fingers \c <thumb> \c <index> \c <middle> \c <ring> \c <little>: how far
+ *    the real fingers are closed, 0 open to 1 a fist - the hand joints of XR_EXT_hand_tracking the
+ *    simulated runtime gives (#305, five fingers #385); \c fingers \c <thumb> \c <index> \c <rest>
+ *    closes the middle, ring and little finger together; \c hand \c left|right \c fingers
  *    \c off|on: no joints for that hand (a runtime that cannot read fingers: the game falls back to
  *    the action values), or joints again. Default: joints, open
  *  - \c profile \c index|touch|simple|none|<path>: the interaction profile of both hands
@@ -75,6 +78,12 @@
  *  - \c mark \c <text>: a line in arx.log; \c quit: ask the game to quit
  *  - \c fault \c swap-eyes \c on|off: the compositor shows each eye the other eye's image - the
  *    bug class the two-eyes check (F-06) must catch
+ *  - \c session \c exiting: the runtime ends the session on its own (stopping, then exiting after
+ *    xrEndSession - SteamVR quitting the app); \c session \c loss-pending: the session is about to be
+ *    lost (the headset or the runtime gone); \c runtime \c lost: the runtime shuts down (instance loss
+ *    pending). The game goes on in flat mode and names the cause in arx.log (#146)
+ *  - \c fault \c exit|exit-process \c <code>: end the process the way #146 ended - std::exit, or
+ *    ExitProcess as a library does (std::_Exit off Windows) - to check that the exit hook reports it
  *  - \c layers \c on|off: shots also save each eye's projection layer without the quad
  *    (\c <name>-left-layer.bmp, \c -right-layer.bmp): what the game drew into the eyes themselves (#72)
  */
@@ -108,6 +117,12 @@ struct SimView {
 	float ipd = 0.064f;
 	std::array<MirrorFov, 2> fov;
 	float rate = 90.f;
+	/*!
+	 * The rate is a cap, not a display clock (#522): a frame starts 1/rate after the last one started, or at once
+	 * when it is late - it never waits for the next slot, so a frame a little longer than the period costs a little,
+	 * not a whole slot (a 10-12 ms frame on a 90 Hz clock runs at 45 fps)
+	 */
+	bool cap = false;
 	SimView();
 };
 
@@ -134,7 +149,8 @@ enum class SimTimeline {
 //! The real fingers of one simulated hand (#305): what its XR_EXT_hand_tracking joints show
 struct SimFingers {
 	bool joints = true;        //!< the runtime gives joints for this hand
-	Vec3f curl = Vec3f(0.f);   //!< how far the thumb (x), the index finger (y) and the other three (z) are closed, 0 - 1
+	Vec3f curl = Vec3f(0.f);   //!< how far the thumb (x), the index finger (y) and the middle finger (z) are closed, 0 - 1
+	Vec2f outer = Vec2f(0.f);  //!< how far the ring finger (x) and the little finger (y) are closed, 0 - 1
 };
 
 //! The state of the simulated headset, controllers and runtime that commands change
@@ -153,6 +169,21 @@ struct SimRig {
 	SimRig();
 };
 
+//! How the simulated runtime ends the session (#146)
+enum class SimSessionEnd {
+	None,
+	Exiting,     //!< stopping, then exiting: the runtime quits the app
+	LossPending, //!< the session is about to be lost
+	RuntimeLost, //!< the runtime shuts down: instance loss pending
+};
+
+//! How \c fault \c exit ends the process (#146)
+enum class SimExit {
+	None,
+	Exit,        //!< std::exit: the C runtime's atexit handlers run
+	ExitProcess, //!< ExitProcess (std::_Exit off Windows): what a library calls
+};
+
 //! What a command asks of the simulated runtime beyond the rig
 struct SimRequests {
 	std::vector<std::string> shots;
@@ -160,8 +191,12 @@ struct SimRequests {
 	bool quit = false;
 	bool focusChanged = false;
 	bool profileChanged = false;
+	SimSessionEnd sessionEnd = SimSessionEnd::None;
+	SimExit exit = SimExit::None;
+	int exitCode = 0;
 	bool empty() const {
-		return shots.empty() && marks.empty() && !quit && !focusChanged && !profileChanged;
+		return shots.empty() && marks.empty() && !quit && !focusChanged && !profileChanged
+		       && sessionEnd == SimSessionEnd::None && exit == SimExit::None;
 	}
 };
 

@@ -29,6 +29,7 @@
 Widget::Widget()
 	: m_rect(0, 0, 0, 0)
 	, m_enabled(true)
+	, m_visible(true)
 	, m_targetPage(NOP)
 	, m_shortcut(ActionKey::UNUSED)
 { }

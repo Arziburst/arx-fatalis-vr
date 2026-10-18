@@ -80,6 +80,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "util/Cast.h"
 #include "util/Range.h"
 
+#include "vr/VRHud.h"
+
 
 MiniMap g_miniMap; // TODO: remove this
 
@@ -216,6 +218,11 @@ void MiniMap::purgeTexContainer() {
 void MiniMap::showPlayerMiniMap(MapLevel level) {
 	
 	ARX_PROFILE_FUNC();
+	
+	// A corner of the screen frame: not drawn in VR, where the radial menu's Map item opens the map (#469)
+	if(!vr::hudDraw(vr::HudElement::MiniMap)) {
+		return;
+	}
 	
 	float scale = minSizeRatio();
 	const float miniMapZoom = 300.f * scale; // zoom of the minimap

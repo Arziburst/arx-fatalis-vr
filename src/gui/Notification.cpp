@@ -31,6 +31,7 @@
 #include "gui/Text.h"
 #include "gui/TextManager.h"
 #include "math/Rectangle.h"
+#include "vr/VRHud.h"
 
 struct Notification {
 	
@@ -63,6 +64,11 @@ void notification_add(std::string && text) {
 	
 }
 
+size_t notification_count() {
+	return size_t(std::count_if(g_notifications.begin(), g_notifications.end(),
+	                            [](const auto & entry) { return g_gameTime.now() <= entry.deadline; }));
+}
+
 void notification_check() {
 	
 	g_notifications.erase(std::remove_if(g_notifications.begin(), g_notifications.end(),
@@ -74,6 +80,11 @@ void notification_check() {
 	}
 	
 	pTextManage->Clear();
+	
+	// Down the frame's top left: not drawn in VR, where the owner decides their place (#469); they still expire
+	if(!vr::hudDraw(vr::HudElement::Notifications)) {
+		return;
+	}
 	
 	long igrec = 14;
 	

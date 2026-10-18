@@ -20,10 +20,64 @@
 #include "graphics/opengl/GLTexture.h"
 
 #include "graphics/Math.h"
+#include "graphics/image/PixelStore.h"
 #include "graphics/opengl/GLTextureStage.h"
 #include "graphics/opengl/OpenGLRenderer.h"
 #include "graphics/opengl/OpenGLUtil.h"
 #include "io/fs/FilePath.h" // TODO remove
+#include "io/log/Logger.h"
+#include "vr/PerfLog.h"
+
+/*!
+ * The pixel-store state glTexImage2D reads the image with (#495). An Image is tightly packed (its
+ * stride is width * bytes per pixel) and the renderer sets GL_UNPACK_ALIGNMENT to 1 at start-up, but
+ * code that changes the unpack state and leaves it (the VR overlays did: alignment 4) makes GL read
+ * every row at a padded stride, past the end of a buffer whose rows are not a multiple of the
+ * alignment - an access violation inside the driver on a cinematic tile 110 pixels wide. So each
+ * upload sets the state it needs itself, and the state it found is checked first: any state other than
+ * the engine's tight one is a bug of whoever left it (the next upload of a vulnerable image would have
+ * crashed), reported once per run with the bytes it would have read from this image.
+ */
+static void setTightUnpack(const Image & image) {
+
+	pixelstore::Unpack found;
+	glGetIntegerv(GL_UNPACK_ALIGNMENT, &found.alignment);
+	glGetIntegerv(GL_UNPACK_ROW_LENGTH, &found.rowLength);
+	glGetIntegerv(GL_UNPACK_SKIP_PIXELS, &found.skipPixels);
+	glGetIntegerv(GL_UNPACK_SKIP_ROWS, &found.skipRows);
+
+	const pixelstore::Unpack tight = pixelstore::tightUnpack();
+	if(found.alignment != tight.alignment || found.rowLength != tight.rowLength
+	   || found.skipPixels != tight.skipPixels || found.skipRows != tight.skipRows) {
+		static bool reported = false;
+		if(!reported) {
+			reported = true;
+			size_t bytes = pixelstore::bytesRead(image.getWidth(), image.getHeight(), image.getNumChannels(), found);
+			LogError << "Texture upload found GL_UNPACK_ALIGNMENT " << found.alignment << ", ROW_LENGTH "
+			         << found.rowLength << ", SKIP_PIXELS " << found.skipPixels << ", SKIP_ROWS " << found.skipRows
+			         << " left behind by an earlier upload (#495): it would read " << bytes << " bytes of a "
+			         << image.getSize() << "-byte " << image.getWidth() << 'x' << image.getHeight() << ' '
+			         << image.getFormat() << " image" << (bytes > image.getSize() ? " - past its end" : "")
+			         << "; reset to tight rows";
+		}
+	}
+
+	if(found.alignment != tight.alignment) {
+		glPixelStorei(GL_UNPACK_ALIGNMENT, tight.alignment);
+	}
+	if(found.rowLength != tight.rowLength) {
+		glPixelStorei(GL_UNPACK_ROW_LENGTH, tight.rowLength);
+	}
+	if(found.skipPixels != tight.skipPixels) {
+		glPixelStorei(GL_UNPACK_SKIP_PIXELS, tight.skipPixels);
+	}
+	if(found.skipRows != tight.skipRows) {
+		glPixelStorei(GL_UNPACK_SKIP_ROWS, tight.skipRows);
+	}
+
+	arx_assert(pixelstore::bytesRead(image.getWidth(), image.getHeight(), image.getNumChannels(), tight)
+	           == image.getSize());
+}
 
 
 GLTexture::GLTexture(OpenGLRenderer * _renderer)
@@ -60,7 +114,11 @@ bool GLTexture::create() {
 void GLTexture::upload() {
 	
 	arx_assert(tex != GL_NONE);
-	
+
+	// Uploads are a hitch suspect: their count and time go into the performance log (#327)
+	vr::perf::Scope perfScope(vr::PerfPhase::Textures);
+	vr::perf::countUpload();
+
 	glBindTexture(GL_TEXTURE_2D, tex);
 	renderer->GetTextureStage(0)->current = this;
 	
@@ -131,9 +189,11 @@ void GLTexture::upload() {
 		Image extended;
 		extended.create(size_t(getStoredSize().x), size_t(getStoredSize().y), m_image.getFormat());
 		extended.extendClampToEdgeBorder(m_image);
+		setTightUnpack(extended);
 		glTexImage2D(GL_TEXTURE_2D, 0, internal, getStoredSize().x, getStoredSize().y, 0, format,
 		             GL_UNSIGNED_BYTE, extended.getData());
 	} else {
+		setTightUnpack(m_image);
 		glTexImage2D(GL_TEXTURE_2D, 0, internal, getSize().x, getSize().y, 0, format,
 		             GL_UNSIGNED_BYTE, m_image.getData());
 	}

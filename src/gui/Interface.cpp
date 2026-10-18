@@ -134,6 +134,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "vr/HeadTracking.h"
 #include "vr/Locomotion.h"
+#include "vr/SceneView.h"
 #include "vr/VRInput.h"
 #include "vr/VRReticle.h"
 #include "vr/VRSystem.h"
@@ -649,11 +650,17 @@ void ArxGame::managePlayerControls() {
 	
 	ARX_PROFILE_FUNC();
 	
-	if(eeMouseDoubleClick1() && !(player.Interface & INTER_COMBATMODE) && !player.doingmagic
+	// VR (#38, D-042): a hand's act is the double click on what its reticle is on (vr/VRReticle.h). While the
+	// hands are the mouse a double trigger click is no act: doors, levers, chests and NPCs answer to grip +
+	// trigger only (#377)
+	Entity * reticleAct = vr::takeReticleAct();
+	const bool doubleClick = eeMouseDoubleClick1() && !vr::reticlesOn();
+
+	if((doubleClick || reticleAct) && !(player.Interface & INTER_COMBATMODE) && !player.doingmagic
 	   && !g_secondaryInventoryHud.containsPos(DANAEMouse) && !g_playerInventoryHud.containsPos(DANAEMouse)
 	   && !g_cursorOverBook && eMouseState != MOUSE_IN_NOTE) {
 		
-		Entity * t = InterClick(DANAEMouse);
+		Entity * t = reticleAct ? reticleAct : InterClick(DANAEMouse);
 
 		if(t) {
 			if(t->ioflags & IO_NPC) {
@@ -1316,7 +1323,7 @@ void ArxGame::manageKeyMouse() {
 				if(config.input.mouseLookToggle && config.input.autoReadyWeapon != AlwaysAutoReadyWeapon) {
 					
 					// VR (#37): the exploration mode's crosshair is the hand that owns the mouse, not the screen centre
-					DANAEMouse = vr::reticlesOn() ? GInput->getMousePosition() : Vec2s(g_size.center());
+					DANAEMouse = vr::handsAreTheMouse() ? GInput->getMousePosition() : Vec2s(g_size.center());
 					
 					pIO = FlyingOverObject(DANAEMouse);
 					if(pIO) {
@@ -1460,9 +1467,11 @@ void ArxGame::manageKeyMouse() {
 	}
 
 	// VR: the right stick turns the body (#32); the head's own yaw stays on top of it (#24), so the
-	// play-space heading turns. Updated every frame so a stick held through a menu does not snap after it
-	const bool vrTurnAllowed = !BLOCK_PLAYER_CONTROLS && ARXmenu.mode() == Mode_InGame && !isInCinematic()
-	                           && !(player.Interface & INTER_PLAYERBOOK);
+	// play-space heading turns. Updated every frame so a stick held through a menu does not snap after it.
+	// Also with the book or the bag open (#377, the owner: he could not turn with the book open), and in a VR scene that
+	// holds the controls (#29: turning allowed in dialogues, walking blocked)
+	const bool vrTurnAllowed = (!BLOCK_PLAYER_CONTROLS || (vr::isEnabled() && vr::sceneState().inScene()))
+	                           && ARXmenu.mode() == Mode_InGame && !isInCinematic();
 	const float vrTurn = vr::updateTurn(toMsf(g_platformTime.lastFrameDuration()) / 1000.f, vrTurnAllowed);
 
 	// Player/Eyeball Freelook Management
@@ -1660,8 +1669,11 @@ void ArxGame::manageKeyMouse() {
 				player.desiredangle.setYaw(MAKEANGLE(player.desiredangle.getYaw() - vrTurn));
 			}
 		}
+	} else if(vrTurn != 0.f) {
+		// A scripted scene in VR that holds the controls still lets the stick turn the hero (#29)
+		player.desiredangle.setYaw(MAKEANGLE(player.desiredangle.getYaw() - vrTurn));
 	}
-	
+
 	manageEntityDescription();
 }
 
@@ -1730,7 +1742,7 @@ void ArxGame::manageEditorControls() {
 	if(   TRUE_PLAYER_MOUSELOOK_ON
 	   && config.input.autoReadyWeapon != AlwaysAutoReadyWeapon
 	   && config.input.mouseLookToggle
-	   && !vr::reticlesOn() // VR (#37): the hand that owns the mouse is the crosshair
+	   && !vr::handsAreTheMouse() // VR (#37, #377): the hand that owns the mouse is the crosshair - or the panel
 	) {
 		DANAEMouse = g_size.center();
 	}

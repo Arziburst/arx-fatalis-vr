@@ -22,9 +22,14 @@
 
 #include <array>
 #include <string>
+#include <string_view>
+#include <vector>
+
+#include <glm/gtc/quaternion.hpp>
 
 #include "math/Types.h"
 #include "platform/Platform.h"
+#include "vr/ArxArmFix.h"
 #include "vr/FingerCurl.h"
 #include "vr/HeadPose.h"
 #include "vr/VRControls.h"
@@ -78,13 +83,15 @@ struct HandFrame;
  */
 void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io);
 
-//! The horizontal shift the body was drawn with this frame (units); the engine camera takes it off
+//! The horizontal shift the body was drawn with this frame (units): the lean and the push back behind the eyes
+//! (#385.9); the engine camera takes it off
 Vec3f bodyShift();
 
 /*!
- * \return true while a head drives the camera: the first-person view then hides only the head and
- *         the neck of the player model (D-009 - the torso stays, the engine's own first-person
- *         selection hides the chest too), see \ref ARX_INTERACTIVE_Show_Hide_1st
+ * \return true while a head drives the camera and the eyes are the hero's (not a third-person scene shot,
+ *         #29): the first-person view then hides only the head and the neck of the player model (D-009 -
+ *         the torso stays, the engine's own first-person selection hides the chest too), see
+ *         \ref ARX_INTERACTIVE_Show_Hide_1st
  */
 bool hidesHeadOnly();
 
@@ -97,6 +104,65 @@ bool isHeadVertex(EERIE_3DOBJ * obj, VertexId vertex);
  *         head, where the model is drawn two-sided), or the face count of a model without one
  */
 size_t bodyCapStart(const EERIE_3DOBJ * obj);
+
+/*!
+ * \brief Skin the classic Arx arm (#466.1, vr/ArxArmFix.h) - after the engine transformed the vertices of the
+ *        player's own skeleton posed by \ref posePlayerBody
+ *
+ * With \c vr_arms_model = classic, the vertices of each posed arm whose ring the classic arm gives another bone than
+ * their group's are placed again on that bone. Nothing else changes: flat mode (no posed arm), the inventory book
+ * (its own update, never through here) and the other models keep the engine's skin.
+ */
+void skinPlayerArms(EERIE_3DOBJ * obj);
+
+//! A vertex the classic arm skinned on another bone than its group's this frame, and the rotation it turned with
+struct ReskinnedVertex {
+	VertexId vertex;
+	glm::quat rotation = glm::quat(1.f, 0.f, 0.f, 0.f);
+};
+
+//! The vertices of \a obj \ref skinPlayerArms placed this frame, for their lighting (empty for any other model)
+const std::vector<ReskinnedVertex> & reskinnedArmVertices(const EERIE_3DOBJ * obj);
+
+/*!
+ * \return false for a face of the player model not drawn under a tracked head this frame (#385.3): an Arx arm's
+ *         face while the custom arm (vr/VRArms.h) is drawn in its place, or a face of the cap that closes that
+ *         shoulder while it is not; with vr_body = hidden (#385.11) every face of the body, and the cap of a shoulder
+ *         then closes the drawn Arx arm's open end instead. Asked only for the two-sided view of the VR body (never
+ *         the book, never flat)
+ */
+bool drawsBodyFace(const EERIE_3DOBJ * obj, size_t face);
+
+/*!
+ * What of the player model is drawn under a tracked head (#385.11, cfg.ini vr_body): the whole body pushed back
+ * behind the eyes (#385.9), or the arms and hands only. Flat mode and the inventory book always draw the whole model.
+ */
+enum class BodyMode : u8 {
+	Full,  //!< the body, pushed back behind the eyes (the default)
+	Hidden //!< no torso, legs, neck or head: only the arms - the custom arms, or the Arx arms with their shoulder caps
+};
+
+//! \return the mode a cfg.ini value names: "hidden" hides the body, anything else draws it
+BodyMode parseBodyMode(std::string_view text);
+//! \return false unless \a text is "full" or "hidden" (the channel's \c body command)
+bool parseBodyModeStrict(std::string_view text, BodyMode & mode);
+const char * bodyModeName(BodyMode mode);
+
+//! The mode cfg.ini asks for (vr_body)
+BodyMode bodyMode();
+//! Switch the mode live and save it to cfg.ini; \a by says who asked (the channel)
+void setBodyMode(BodyMode mode, const char * by);
+
+//! A face of the player model went into the two-sided view of the VR body this frame - for status.json (#385.11)
+void noteBodyFaceDrawn(const EERIE_3DOBJ * obj, size_t face);
+
+/*!
+ * \return true for a face of the player model too near an eye to draw under a tracked head this frame (#385.9,
+ *         vr/BodyView.h): a face of the torso, the shoulders or the caps with a corner within the clearance of an
+ *         eye - never the legs, never an Arx arm. Worked out once per frame for both eyes, after the vertices were
+ *         transformed; asked only for the two-sided view of the VR body (never the book, never flat)
+ */
+bool hidesBodyFaceNearEye(const EERIE_3DOBJ * obj, size_t face);
 
 //! Where the posed hand ended up, after the vertices were transformed - for status.json
 struct HandLandmarks {
@@ -137,11 +203,27 @@ struct PlayerArmStatus {
 	Vec3f shoulder = Vec3f(0.f);  //!< the posed joints (units) - where the model's arm is
 	Vec3f elbow = Vec3f(0.f);
 	Vec3f wrist = Vec3f(0.f);
+	//! The elbow of the arm solved from the player's own shoulder, before the body was pushed back (#385.9): what
+	//! the wrist bars lie along (#116), so they face the eyes as on the unpushed arm whichever arm is drawn
+	Vec3f barsElbow = Vec3f(0.f);
+	Vec3f barsWrist = Vec3f(0.f); //!< that arm's wrist
 	float reach = 0.f;            //!< shoulder to target
 	float armLength = 0.f;        //!< upper arm + forearm of the model
 	float error = 0.f;            //!< wrist to target: 0 when the hand is where the controller is
 	float slide = 0.f;            //!< how far the shoulder slid towards an out-of-reach target
 	bool stretched = false;
+	//! Where the hand's roll went (degrees, D-050, vr/ArmRoll.h): the hand's roll about the forearm against
+	//! the base bend plane (unwrapped past a half turn), how far it swung the elbow, what was left against the
+	//! final bend plane, the forearm's and the upper arm's roll off that plane, and what the bands between the
+	//! bones show - the wrist band (hand vs forearm) and the elbow band (forearm vs upper arm)
+	float handRoll = 0.f;
+	float elbowSwing = 0.f;
+	float residualRoll = 0.f;
+	float forearmRoll = 0.f;
+	float upperRoll = 0.f;
+	float wristTwist = 0.f;
+	float elbowTwist = 0.f;
+	int overflow = 0;             //!< the side the roll continues on past a half turn: 0 none, +1, -1
 	// The fingers (#305)
 	const char * fingerSource = "none"; //!< joints (XR_EXT_hand_tracking), controls (trigger, grip, thumb rest), held (a weapon in the hand), none
 	bool fingerGroups = false;    //!< the model has finger groups under this hand
@@ -149,6 +231,10 @@ struct PlayerArmStatus {
 	bool holds = false;           //!< the hand holds a weapon: the fingers are closed on its grip
 	FingerCurl curl;              //!< the segments' bend this frame (degrees), approaching \c curlTarget
 	FingerCurl curlTarget;        //!< what the source asked for
+	// The Arx arm along its rings (#466.1, vr/ArxArmFix.h)
+	const char * armSkin = "none"; //!< the skin it was measured on: classic, arx (the engine's), none (not posed)
+	ArmBend bend;                 //!< the creases, the elbow's bend and the forearm's twist spread on that skin
+	bool classicDrawn = false;    //!< the classic arm re-skinned this arm's vertices this frame
 };
 
 //! The body as status.json reports it (the look and the body yaw of #25 are vr::BodyStatus in HeadTracking.h)
@@ -163,6 +249,24 @@ struct PlayerBodyStatus {
 	u64 poseCalls = 0;            //!< frames the player's skeleton was posed at all (a still count: the model was not animated)
 	Vec3f shift = Vec3f(0.f);     //!< this frame's horizontal shift of the body (units)
 	float facingYaw = 0.f;        //!< engine degrees [0, 360): where the model was turned to face (#25's body yaw)
+	//! the shares of the hand's roll in use (cfg.ini vr_arm_*, D-050): forearm, upper arm, elbow swing, overflow degrees
+	float forearmShare = 0.f;
+	float upperShare = 0.f;
+	float elbowShare = 0.f;
+	float twistOverflow = 0.f;
+	const char * armsModel = "classic"; //!< cfg.ini vr_arms_model: the arms drawn in VR (#385.3; classic only for a player, #466)
+	bool arxArmsHidden = false;   //!< an Arx arm's faces are not drawn this frame: a custom arm is drawn in their place
+	// The body variant (#385.11): cfg.ini vr_body, and what of the player model the last frame drew (both eyes counted)
+	const char * bodyMode = "full";
+	size_t drawnBodyFaces = 0;    //!< the body's faces: torso, legs, the neck cap, the head - not the arms
+	size_t drawnArmFaces = 0;     //!< the Arx arms' faces and the caps that close their shoulders
+	// The own body out of the eyes (#385.9, vr/BodyView.h)
+	float push = 0.f;             //!< how far the body was pushed back behind the eyes along its facing this frame (units)
+	Vec3f neckPivot = Vec3f(0.f); //!< the neck pivot below and behind the eyes the body hangs from
+	float clearance = 0.f;        //!< faces within this distance of an eye are not drawn (units)
+	size_t hiddenNearEye = 0;     //!< faces not drawn this frame because they were within the clearance
+	float nearestBodyToEye = -1.f; //!< the nearest drawn body vertex to either eye (units; Arx arms aside), -1 none drawn
+	bool legsDrawn = false;       //!< faces wholly below the keep line (the legs) were drawn this frame
 	std::array<PlayerArmStatus, HandCount> hands; //!< left, right
 };
 

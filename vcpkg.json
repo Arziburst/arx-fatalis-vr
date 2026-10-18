@@ -32,6 +32,7 @@
     "boost-range",
     "boost-scope-exit",
     "boost-smart-ptr",
-    "boost-utility"
+    "boost-utility",
+    "cgltf"
   ]
 }

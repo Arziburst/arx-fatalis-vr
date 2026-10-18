@@ -1,6 +1,7 @@
 # Speed by deflection, jump and the crouch toggle (#33, D-019): a slight push of the left stick sneaks (the stealth
-# walk, slower), a full push runs, the band between keeps the pace; right A jumps; right stick down toggles the crouch
-# and does not turn even when it drifts sideways (F-121). Run on the test save mvp-new-game (heading about 0: +z):
+# walk, slower), a full push runs, the band between keeps the pace; right stick up jumps (D-042, #377); right stick
+# down toggles the crouch; neither turns even when it drifts sideways (F-121). Run on the test save mvp-new-game
+# (heading about 0: +z):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence sneak-jump-crouch
 @sim idle
 @save mvp-new-game
@@ -60,11 +61,13 @@ vr-input stick left 0 0.65
 vr-input stick left 0 0
 @frames 10
 
-# Right A: a jump
+# Right stick up (D-042, #377), drifting sideways past the turn dead zone: a jump, the heading stays
 @assert player.jumping eq false
-vr-input tap right.a
+vr-input stick right 0.3 0.9; vr-input down right.stick_up
 @until player.jumping eq true 2s
+vr-input up right.stick_up; vr-input stick right 0 0
 @until player.jumping eq false 5s
+@assert player.yaw eq {heading}
 
 # Right stick down, drifting sideways past the turn dead zone: the crouch toggles on, the heading stays
 @assert player.crouchToggle eq false

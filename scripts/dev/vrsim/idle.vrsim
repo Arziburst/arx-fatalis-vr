@@ -1,7 +1,12 @@
 # The simulated headset at rest, with no timed lines and no shots (#113): the base of the .xrs sequences
 # (scripts/dev/xrs), which move the head and take their shots themselves through the test channel
-# ("vr-sim head rot 25 0 0", "@shot name"). The defaults of basic.vrsim, without its shot.
+# ("vr-sim head rot 25 0 0", "@shot name"). The defaults of basic.vrsim, without its shot, and with a 90 Hz cap
+# instead of its display clock (#522): on the clock a 10-12 ms frame misses every other slot (45 fps on CI), under
+# the cap it costs only its own length (83-90 fps). Not rate 0: the ramps of the sequences count frames, and an
+# unpaced fast PC (278 fps) makes a slow hand move a swing (TRAPS.md). A sequence that asserts the frame pacing
+# declares the clock (basic.vrsim or its own).
 
+rate 90 cap                    # frames at least 1/90 s apart, a late one starts at once: no slot is skipped
 timeline gameplay
 
 head pos 0 0 0                 # the room's LOCAL space: x right, y up, -z forward, meters

@@ -75,12 +75,13 @@ void cinematicPrepare(std::string_view name, bool preload) {
 }
 
 /*!
- * Development launches skip every .cin cinematic (#124, owner's decision: straight into the game
- * or the menu, no cutscenes; --cinematics shows them, #92 restores them for players). --intro keeps
- * showing the intro cinematic that the level 10 script plays when a new game starts (#91).
+ * Development launches (--dev-launch) skip every .cin cinematic (#124, owner's decision: straight
+ * into the game or the menu, no cutscenes; --cinematics shows them); a player's launch shows them
+ * all (#394). --intro keeps showing the intro cinematic that the level 10 script plays when a new
+ * game starts (#91).
  */
 static bool skipCinematic(std::string_view name) {
-	if(g_showCinematics) {
+	if(!g_devLaunch || g_showCinematics) {
 		return false;
 	}
 	return !(g_showIntro && name == "introduction.cin");
@@ -193,19 +194,28 @@ bool isInCinematic() {
 	return PLAY_LOADED_CINEMATIC != Cinematic_Stopped && ControlCinematique && ControlCinematique->projectload;
 }
 
+//! How a playing cinematic ends for its cinematic.end event: "skip" unless the cinematic itself ran out
+static const char * g_cinematicEndHow = "skip";
+
 void cinematicEnd() {
-	
+
+	// A shown cinematic's end is one game event (#394); a skipped one logged cinematic.skip already
+	if(isInCinematic()) {
+		gameevent::Event("cinematic.end")("name", LAST_LAUNCHED_CINE)("how", g_cinematicEndHow);
+	}
+	g_cinematicEndHow = "skip";
+
 	StopSoundKeyFramer();
 	cinematicKill();
-	
+
 	if(g_camera) {
 		arx_assert(isallfinite(g_originalCameraPosition));
 		g_camera->m_pos = g_originalCameraPosition;
 	}
-	
+
 	ARX_SPEECH_Reset();
 	SendMsgToAllIO(nullptr, SM_CINE_END, LAST_LAUNCHED_CINE);
-	
+
 }
 
 // Manages Currently playing 2D cinematic
@@ -215,6 +225,7 @@ void cinematicRender() {
 
 	if(PLAY_LOADED_CINEMATIC == Cinematic_StartRequested) {
 		LogDebug("really starting cinematic now");
+		gameevent::Event("cinematic.start")("name", LAST_LAUNCHED_CINE);
 		diff = 0;
 		PLAY_LOADED_CINEMATIC = Cinematic_Started;
 	}
@@ -225,7 +236,8 @@ void cinematicRender() {
 
 	// end the animation
 	if(!ControlCinematique->m_key) {
+		g_cinematicEndHow = "done";
 		cinematicEnd();
 	}
-	
+
 }

@@ -8,6 +8,457 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-18 - A channel batch vanishes: no ack for 60 s, no line in arx.log, and the quit afterwards takes the lost batch's seq
+
+**Symptom:** a sequence step (`@frames 5` in vr-remap, CI run 39120032077 attempt 1) times out "waiting for the game to
+acknowledge 'waitframes 5' (last ack seq 14)" while the game renders at 90 fps, its hang watchdog says nothing, and
+`arx.log` has no `[channel]` line about it; the evidence's `ack.txt` then says `seq=15 ... last=quit` - the quit got the
+number the lost batch should have had, so the game never read `command.txt`.
+**Cause:** the harness writes `command.txt.tmp` and renames it into place (`Move-Item`). On Windows the renamer still
+holds the file open with DELETE access for a moment after the new name is visible, and an open that does not share
+delete - `std::ifstream`, so `fs::read` - fails with a sharing violation then. The channel read `""`, deleted the file
+(DeleteFile shares everything, so it succeeded) and acknowledged nothing. The moment is microseconds on an idle PC and
+grows with every preemption of the writer's thread: it hit under three games (two CI lanes and a worker's). Seen once in
+about 900 launches.
+**Do:** read a file another process renames into place with `FILE_SHARE_DELETE` (the channel does, with a retry next
+frame when the open fails: `readCommandFile` in `src/core/CommandChannel.cpp`). When an ack is missing, read the
+evidence's `ack.txt`: a quit with the missing seq means the batch never arrived; a quit with the next seq means the ack
+was written and the harness missed it.
+
+## 2026-10-18 - A CI job's phases end SKIPPED after 900 s although nothing of the job holds a slot; a killed ci-local leaves a game for hours
+
+**Symptom:** run 39109130415 (main): every phase SKIPPED, the lock lines name two workers' `make-test-saves.ps1` /
+`smoke-test.ps1` games that took the slots as fast as CI released them. #526: a worker's `ci-local.ps1` run as a tool
+command with a 10-minute timeout; the timeout killed the pwsh parent, lane 1's `arx.exe` lived on for two hours holding
+a slot, and another worker's `ci-local` starved on it.
+**Cause:** the lock had no priority (first come, first served, 900 s), and a game started with `Start-Process` is not a
+child the OS ends with its parent: a killed launcher drops its lock handle (the slot looks free to the probe) but the
+game keeps running, and `Get-ArxGamesOutsideLock` still counted it as "inside the lock" because the stale lock file
+named its pid.
+**Do:** #527 - CI's runner marker makes workers wait without a slot while a job runs; the games of a script are in a
+job object that kills on close (`Register-ArxGameProcess`, and `Register-ArxLauncherChain` for the whole `ci-local`
+chain); the next launch stops an orphan (lock file not held, launcher gone, `arx.exe` alive) and says so. Run
+`ci-local.ps1` detached or in the background, never under a short tool timeout (WORKFLOW.md).
+
+## 2026-10-18 — The unpaced simulator makes a slow hand move a swing: why idle.vrsim is a 90 Hz cap, not rate 0 (#522)
+
+**Symptom:** with `rate 0` in `idle.vrsim` (to stop the 90 Hz display clock halving a 10-12 ms CI frame to 45 fps),
+`melee-swing.xrs` failed on the owner's PC at line 30 `@assert vr.melee.swings eq 0` (read 3), before any swing.
+The run's pacing line: `278.022/s on 90.001 slots/s`.
+**Cause:** the sequences' ramps count frames and were written for about 90 per second. At 278 fps the "slow" set-up
+move `vr-sim @+1-60 hand right pos …` (0.43 m in 60 frames, under 0.7 m/s at 90 fps) lasted 0.22 s, ~2 m/s, and the
+8-frame swings (0.85 m) became 29 m/s, over the 20 m/s tracking-jump limit. An unpaced simulator gives every PC its
+own speeds; the CI runner (~85-100 fps unpaced) and a fast desktop disagree.
+**Do:** sequences run on `rate 90 cap` (the simulator's cap: frames at least 1/90 s apart, a late frame starts at
+once, no slot skipped) - 83-90 fps on CI, 90 on a fast PC, the ramps mean what they say. Use `rate 0` only for a
+script that measures what the PC draws (`msaa.vrsim`), the clock (`basic.vrsim`) only for pacing checks.
+
+## 2026-10-18 — A background process started in one workflow step is gone in the next (#522)
+
+**Symptom:** the CI step "Script self-tests (join)" fails with "ended without writing an exit code"; the tests' output
+stops a few seconds in, in the middle of the first test. Locally the same command runs to the end.
+**Cause:** the start step used `Start-Process ... -RedirectStandardOutput`: that starts the process with handle
+inheritance, so it also inherits the step's own stdout/stderr pipes to the runner. The step's pwsh exits, the pipes stay
+open, and after ~5 s the runner kills the step's whole process tree (`_diag\Worker_*.log`: "Need kill all child processes
+trees", the start step taking 5 s instead of 1). A local run has no runner waiting on a pipe.
+**Do:** a process that must outlive its step is started without redirection (`Start-Process` without `-Redirect*`,
+`-WindowStyle Hidden`) and redirects its own output (`*> out.txt` inside its command). Check: the start step takes about
+a second; the runner's Worker log shows no kill of the step's children.
+
+## 2026-10-18 — A script self-test's time limit fails in CI only: the self-tests run beside the build (#522)
+
+**Symptom:** a `scripts/dev/test-*.ps1` check with a wall-clock limit (e.g. `test-tree-fingerprint.ps1`'s fingerprint
+of the real copy under 1000 ms, 175 ms on an idle runner) passes locally and fails in CI, now and then.
+**Cause:** since #522 CI starts the script self-tests in the background and builds at the same time: the MSVC build
+takes every core, so a timed check gets a fraction of the CPU it gets alone.
+**Do:** read a timing failure of a self-test in CI as load first (re-run, or run `run-script-tests.ps1` alone); never
+widen the limit to make it pass - a check that measures wall-clock time belongs in a quiet step or measures work instead.
+
+## 2026-10-18 — `ci-smoke.ps1` dies in `New-ArxSequenceUserDir`: a file of another sequence's user dir is in use (#522)
+
+**Symptom:** a full `ci-smoke.ps1` run stops at a sequence with `Remove-Item ...\ci-userdirs\real-input\arx-perf.log ...
+being used by another process`, while another working copy's game checks run on the same PC.
+**Cause:** the per-sequence user directories (#296) lived in `%LOCALAPPDATA%\ArxFatalisVR\ci-userdirs\<sequence>`, one
+root for every working copy (the build, test channel and user directory carry `<folder>-<hash>`, this root did not). Two
+copies running the suite delete and reuse each other's directories - one copy's fresh directory is another's running game.
+**Do:** every per-copy folder gets the copy key: `Get-ArxCiUserDirRoot` (`ci-userdirs\<folder>-<hash>`). A new folder a
+test run writes to is per working copy (and per lane when two lanes could use it at once) from the start.
+
+## 2026-10-18 — A melee sequence's timing passes locally and fails on CI: the timeline counts frames (#409)
+
+**Symptom:** `melee-recovery.xrs` passed locally (90 fps) and failed on CI at `@assert vr.melee.hits eq 1` (read 2).
+The CI run's VR pacing was UNDER-SUBMITTING at 41.8 fps.
+**Cause:** `vr-sim @+33-40 ...` is 33 *frames* after the batch, not 0.37 s. At 41.8 fps it is 0.8 s, past the dagger's
+0.6 s recovery, so the second swing hit as it should. The simulator's timeline and `@frames` count game frames, and a
+busy runner plays far below the simulator's rate.
+**Do:** never put a time window between frame-scheduled events. Either make the gap as short as the test allows, so
+that it stays inside the window at any rate, and assert the mechanism's own marker. Or wait on a time the game
+reports (`@until vr.melee.recovery.left eq 0`) before the next step.
+
+## 2026-10-17 — The main menu ignores the trigger while the Index controller is held firmly (#496)
+
+**Symptom:** New game does not react to the trigger in the headset. `arx.log` has `[vr] input: use_right
+(right.grip+right.trigger)` for every press, no `interact_right` and no `vr.pointer.click`; holding the controller loosely,
+the same press clicks.
+**Cause:** a firm, resting hold of the Index sits at 0.52 - 0.59 on `squeeze/value` (`[vr] input: right grip down
+at 0.55 (threshold 0.5 / 0.3)`), over the 0.50 press the 2026-10-10 entry below chose for a light close. With the
+grip down, the trigger completes the grip + trigger chord (use / act, D-042) and its own binding, the click, does
+not fire: a chord consumes its second control.
+**Do:** the Index grip presses at 0.70 and lets go at 0.40 (`IndexGripThreshold`, cfg `vr_grip_press` /
+`vr_grip_release`): a resting hold is no grip, and a closed hand's flicker stays one hold. In the menus a hand
+pointing at the panel makes no chord at all (`ControlResolver::setChords`, `src/vr/VRInput.cpp`): its trigger
+clicks whatever the grip reads, and the menus' right click is A (D-053). Read the grip value in the crossing lines or `vr.input.grip` before blaming the
+pointer; `menu-trigger-grip.xrs` holds the grip at 0.55 and 0.95.
+
+---
+## 2026-10-17 — GL pixel-store state is global, set it per upload: an intermittent access violation inside the AMD driver under `glTexImage2D` while a cinematic loads (#495)
+
+**Symptom:** the owner's headset run crashed right after character creation, `atio6axx.dll` under
+`OPENGL32.dll!glTexImage2D` ← `GLTexture.cpp:142` ← `CinematicTexture.cpp` while `akbaa_dream_c.cin` loaded its
+images; two runs before it in the same session passed the same point. The faulting address was page-aligned
+(`0x28011cd0000`): a read just past the end of a heap region. Nothing in the cinematic code had changed.
+**Cause:** the GL pixel-store state. The engine sets `GL_UNPACK_ALIGNMENT` to 1 once at start-up
+(`OpenGLRenderer.cpp`) and every `Image` is tightly packed (stride = width × bytes per pixel); `GLTexture::upload`
+trusted that. The menu pointer's beam (`VRSystem.cpp`), the hand reticle rings and the desktop mirror's overlays
+(`VRMirror.cpp`) set the alignment to 4 for their RGBA uploads and never restored it - the log shows the beam image
+created in the main menu (`menu pointer: beam image 8x64`) a few lines before `Loading cinematic`. `akbaa dream.tga`
+is 1390 × 1390, a 16-bit TGA loaded as RGB (3 bytes per pixel) and cut into 256-wide tiles whose last column is
+110 wide: a 330-byte row, read 332 bytes apart under alignment 4, so the 110 × 256 tile (84480 bytes) was read to
+84990 - 510 bytes past its buffer, a crash only when the buffer ended near a page boundary. 17 cinematic images in
+12 of the 19 cinematics have such a last column (tile widths 50, 51, 66, 81, 86, 110, 139, 161, 199, 207); plenty
+of other RGB textures of the game do too, so the crash could have landed anywhere after the first overlay.
+**Do:** never trust global GL client state across modules: `GLTexture::upload` now sets the tight unpack state
+itself before every `glTexImage2D` and logs an `[E]` with the numbers when the state it found is not the tight
+one (`pixelstore::bytesRead`, `graphics/image/PixelStore.h`, host-tested) - the leak, not only the overflow: a
+check that fired only when the dirty upload itself overflowed stayed green with the leak put back, because the
+first texture after the beam happened to be RGBA and the reset hid the state from the cinematic tiles that
+followed. Code that needs another state sets it and puts it back. A crash inside the driver under a texture upload with a page-aligned address is
+an out-of-bounds read of the client buffer - compute the bytes GL reads (alignment, row length, skips) against
+the image's size before suspecting the driver. `cinematics.xrs` loads all 19 cinematics after the beam was created.
+
+## 2026-10-17 — A scripted run waits forever on a message box; logging it from the critical error dialog hangs (#501)
+
+**Symptom:** an unattended run (a worker, CI, autopilot) never ends: `arx.exe --no-such-option` or a
+critical error at startup leaves a "Critical Error" message box on screen and the script waits on it. Simply
+logging the dialog where it is shown, instead of showing it, would hang the game at exit.
+**Cause:** the critical error dialog is a log backend (`logger::CriticalErrorDialog`): it shows its dialog
+in its destructor, which `Logger::shutdown` runs while it holds the logger's (non-recursive) mutex - a
+`LogError` from there waits on that mutex forever. And `ARX_UNATTENDED` only silenced the crash processor.
+**Do:** scripted launches set `ARXVR_NO_DIALOGS=1` (`Set-ArxDialogEnv -NoDialogs`, restored after the start; [TESTING.md](TESTING.md#runs-without-dialogs-501)):
+every dialog becomes a `[dialog]` line and an error exits with code 1. `Startup.cpp` removes and deletes the
+critical error dialog *before* `Logger::shutdown`, so its line reaches the file and stderr. Never log from a
+log backend's destructor or `log()`.
+
+## 2026-10-17 — A weapon pushed through a wall does not ring on it (#465)
+
+**Symptom:** in `melee-damage.xrs` a fast swing along the playground's north wall left `vr.melee.worldHit` false, though
+the blade's tip was 29 units past the wall's plane (status `tip` z 8429, wall z 8400).
+**Cause:** the engine's strike check tests the weapon's hit spheres only, not the blade: the dagger has one, radius 15,
+about 89 units ahead of the player (`melee.spheres count=1 ... at=8191.2,-305.7,8444.3/15.0`). A sphere wholly behind a
+thin wall touches no polygon of it - the engine's own strike never reaches that far into a wall, a VR hand does.
+**Do:** to strike a wall in a sequence, put the hit sphere across the wall's plane (read `melee.spheres`); do not
+judge by the blade's tip.
+
+## 2026-10-17 — The playground's goblin drops its fight when it is hit, so it never counts as fighting the player (#465)
+
+**Symptom:** in `melee-damage.xrs` the playground goblin in the aggressive mode (the mode lever: `npcMode`
+`aggressive`), even after a real swing hit it, did not reach `playground.npcFighting` (its fight behaviour
+`BEHAVIOUR_FIGHT` *and* the player as its `targetinfo`) within 15 s - so a VR touch, which reaches only an NPC fighting
+the player, never reached it. The save's goblin (`mvp-goblin-fight`, `melee-swing.xrs`) does reach it after a hit.
+The same goblin set fighting with `playground fight` took one touch (`aim=0.10`), and every touch after it was refused.
+**Cause:** the playground goblin's script drops the fight when it is hit: right after the first touch's hit,
+`melee.touch target=goblin_base_9001 result=refused fight=no targetsPlayer=no`, and `npcFightBehaviour` false before
+the next sweep (CI run 38995941095 and a local run on f4720ca27). Its own fight never starts from the mode lever or a
+swing's hit for the same reason - the hit's reaction clears what `attack_player` set. Which script line does it is not
+known: the class script is the game's (`npc/goblin_base`); the instance script only refuses `ouch` / `aggression` while
+peaceful. The save's goblin (`mvp-goblin-fight`) keeps fighting after hits.
+**Do:** to test what only fighting NPCs feel in the playground, set the fight with `playground fight` right before the
+check, let nothing hit the goblin in between (a peaceful-in-fact goblin refuses touches: `melee.touch ... refused`),
+and check the first hit only; `npcFightBehaviour` / `npcTargetsPlayer` show which half is missing.
+
+## 2026-10-17 — A changed cfg.ini default does not show in a test run (#465)
+
+**Symptom:** after `vr_melee_noswing`'s default changed from `none` to `min` in the code, `melee-damage.xrs` failed at
+`@assert vr.melee.params.noSwing eq min` (`none`) on a fresh build.
+**Cause:** when the game saves its config it writes every key with its current value - a default it read is written as
+a value. A working copy's test runs share one user dir (`userdirs\<folder>-<hash>`), so from then on cfg.ini holds the
+old default as if the user had chosen it, and it wins over the new default. The same happens to a player who ran an
+earlier build.
+**Do:** a sequence that needs a value sets it live (a channel command such as `melee noswing min`) instead of trusting
+the default; prove the default itself in a host test (`MeleeSwingTest::testContactAim` checks `DamageParams`), or run
+with a fresh user dir. A key whose empty value means "the code's default" (`vr_melee_slash_<class>`) does not have
+the trap.
+
+
+## 2026-10-14 — The Arx arm grows a second elbow in the middle of the forearm, though the IK has only one (#466.1)
+
+**Symptom:** with the Arx arms drawn (`arms arx`) the owner sees a second elbow and wants the arm one solid
+piece up to the elbow; the research blamed the flat upper-arm rings (H1) or a few faces spanning the upper arm
+and the wrist (H2), and later the upper arm's last ring past the elbow (F-308).
+**Cause (measured on `human_base`, both arms, the `[vr] body: ... Arx arm` bind line):** the forearm group
+`right_elbow` holds only the forearm's first third - 11 vertices, 2.5 .. 11.3 units past the elbow on a 30.5 bone.
+The other two thirds are skinned to the **wrist** group: 8 vertices at 10.7 .. 20.1 past the elbow (14 of the wrist
+group's vertices lie before the wrist joint, the wrist ring included). So every bend of the wrist and the wrist
+band's share of the roll fold the forearm in its middle, across the 12 faces between the two groups. One of those
+wrist vertices (671 right, 10.7 past the elbow) is joined straight to the upper arm's 92 and 674 by 3 faces (143,
+1198, 1210): H2's web. The elbow ring itself mixes 6 upper-arm vertices (up to 3.1 past the joint) with 4 of the
+forearm (2.5 .. 3.9), so even the elbow folds in two bands. H1 is not it: only one upper-arm ring is flat (mid
+upper arm, rigid on one bone). Measured with `vr.body.<hand>.classic` (`arms arx`): 2 - 4 bands bent past 20
+degrees at the elbow bent 57 - 111 degrees, the forearm rings' roll spread up to 55.6 degrees with the hand
+rolled 180.
+**Do:** read the arm by where its vertices are, not by their group (`vr/ArxArmFix.h` `diagnoseArxArm`). `arms
+classic` re-skins by ring in VR only (`skinPlayerArms` after the engine's transform): one band bent, spread 0.
+A crease count on a **straight** arm is 0, not 1 - pick the bent poses for `eq 1`. human_base reloads on every
+equipment change; the classic parts are rebuilt in `bind`, which runs again for the new object.
+## 2026-10-14 — The build fails with `git.exe ... missing and no known rule to make it` after a Git update (#377)
+
+**Symptom:** `build-windows.ps1` stops at "Building" with
+`ninja: error: 'C:/Program Files/Git/mingw64/bin/git.exe', needed by 'arx-version.rc', missing and no known rule to make it`.
+The same build directory built a few minutes earlier, and `git` works in the shell.
+**Cause:** Git for Windows 2.56 moved its binaries from `mingw64\bin` to `ucrt64\bin`. CMake found git once and keeps
+its path in the build directory's cache (`GIT_COMMAND:FILEPATH` in `CMakeCache.txt`); the version rule depends on that
+file, so ninja refuses to build. Every existing build directory has the old path; a fresh one does not.
+**Do:** set `GIT_COMMAND:FILEPATH=C:/Program Files/Git/ucrt64/bin/git.exe` in that build directory's
+`CMakeCache.txt` (or build with `-Clean`), then build again.
+
+## 2026-10-14 — `input-check.ps1` / `game-input-check.ps1`: trigger and face-button presses are not counted on `--loadlevel 10` (#473)
+
+**Symptom:** the control table check reports `use_right`, `act_right`, the chord's `jump` and `book` as 0 presses;
+only the stick taps (jump, crouch, the stick click) count. Neither check runs in CI.
+**Cause:** level 10 starts with a scripted scene (`scene state=start ... controlsBlocked=yes`). Since #394, A, B and
+the triggers skip a playing scene and reach nothing else, so the presses the check sends in the scene's first seconds
+skip it (`vr.skip what=SCENE` in arx.log) and never reach the control table.
+**Do:** until #473 is fixed, do not count these two checks as evidence; the `.xrs` sequences wait for
+`player.controlsBlocked eq false` first.
+
+## 2026-10-14 — `playground-hands.xrs`: the left hand's reticle misses the pulled lever on CI, passes locally (#377)
+
+**Symptom:** CI run 38477911299 (PR #456) failed at `@until vr.reticle.left.under eq lever_9002 5s`: the ray hit
+the wall at (8378.7, -128.4, 8400), right behind the handle. The same sequence on the same commit passed 243/243
+locally; both runs aimed at the same face (8378.6, -130.5, 8399.2).
+**Cause:** the hands of the idle rig still rise after a `setpos` - the left hand's start was y -135.6 at the
+first aim, -127.2 at the second and -125.1 a moment later on the busy runner (locally the second aim already started
+at -125.1). `vr-point` aims from where the hand is in that frame, so the ray drifted 2 units up past the pulled
+handle, which lies 0.8 units in front of the wall.
+**Do:** after a teleport give the hands 30 frames and aim at a thin target once more before waiting on the reticle
+(`playground-hands.xrs` does this for the lever).
+
+## 2026-10-13 — A quad layer is in every simulated shot and invisible in the headset (#376)
+
+**Symptom:** the radial menus passed their sequence on the simulated headset (drawn, `overlayPixels` in both eyes)
+and could not be seen at all on the owner's Index, while the log showed them opening, hovering and running items.
+**Cause:** their swapchains were made lazily, the first time a menu opened - in `updateInput`, inside the frame,
+while the flat frame quad's image was acquired. SteamVR answered `xrCreateSwapchain` with
+`XR_ERROR_RUNTIME_FAILURE` (one `[E] VRSwapchain` line, then the menus worked unseen); the simulated runtime made it.
+Every other lazily made swapchain (beam, reticles) is made in `submitFrame` after the quad's release.
+**Do:** make swapchains with the session, or at least with no image of any swapchain acquired. The simulated runtime
+now refuses `xrCreateSwapchain` while another swapchain's image is acquired, with an `[E]` line, as SteamVR did; read
+the run digest of a headset run for `[E] VRSwapchain` before suspecting the composition.
+
+## 2026-10-13 — In VR the inventory will not close and melee is refused after New game or `--loadlevel` (#394.5)
+
+**Symptom:** a new game or a `--loadlevel` start in VR: the inventory stays open (closing it reopens it), `melee.state state=off reason=inventory`; a save load is fine, and so is New game in a player's launch.
+**Cause:** the engine's freelook (`TRUE_PLAYER_MOUSELOOK_ON`) starts `false`; off is cursor mode, in which `ARX_INTERFACE_Manage` reopens the inventory every frame. Only `ARX_GAME_Reset` with `!DONT_ERASE_PLAYER` (a save load, or level 10 of a player's launch through `DanaeClearLevel`) turns it on; `--loadlevel` never resets and `DANAE_StartNewQuest` sets `DONT_ERASE_PLAYER`; the pause menu turns it off. VR has no freelook control.
+**Do:** ArxGame turns it on whenever the game enters `GAMEPLAY` in VR (a `vr.freelook` event). Check `player.freelook` / `player.inventoryOpen` before blaming the inventory or melee code. An event of the first loaded frame is logged before a sequence's first mark: assert it with `events.byName`, not `@log`.
+
+## 2026-10-13 — A scripted scene's skip "refused" although the scene was skipped (#394.4)
+
+**Symptom:** `scene.skip ... refused=yes` for a skip of the prison intro, yet the controls come back 5 s later and the hero stands at `MARKER_0112` (the intro's own end takes about 35 s).
+**Cause:** `SendMsgToAllIO(key_pressed)` returns `REFUSE` when **any** of the level's scripts refuses the event; every script still gets it, and the scene's skip handlers end the scene. The engine only uses the result to decide whether the speech is cut (`REQUEST_SPEECH_SKIP`).
+**Do:** judge a scene skip by what the scene does (`scene state=end`, `player.controlsBlocked`, the hero's place), not by `refused`; `result=early` (a fade, or the letterbox's first 3 s) is the real refusal.
+
+## 2026-10-13 — A sequence that changes a setting fails on its second local run (#394.4)
+
+**Symptom:** `first-run.xrs` passes, then fails at `@assert settings.crosshair eq true` when run again with `xrs-run.ps1`.
+**Cause:** the isolated user directory of a working copy is kept between launches, and `cfg.ini` in it still has the crosshair the previous run turned off. CI starts from an empty directory.
+**Do:** delete `cfg.ini` in `%LOCALAPPDATA%\ArxFatalisVR\userdirs\<copy>\` before re-running a sequence that changes a setting.
+
+## 2026-10-13 — The level 10 intro is the original game's startup, not New game's (#394)
+
+**Symptom:** a test of "the intro" from `--loadlevel 10`, `--skiplogo` or New game shows a different thing than a player sees; New game never plays level 10.
+**Cause:** the original start is logos -> level 10 (a scripted scene that plays `introduction.cin` and ends in the main menu through the player's death, `ARX_PLAYER_Manage_Death`) -> main menu. New game loads area 1 (`DANAE_StartNewQuest`).
+**Do:** test the intro from a player's launch (`@player`, `-Player`); `first-run.xrs` / `first-run-intro.xrs`.
+
+## 2026-10-13 — A one-frame virtual Escape never ends a cinematic (#394)
+
+**Symptom:** a simulated Escape / skip press during a `.cin` does nothing.
+**Cause:** `Menu.cpp` ends a cinematic on `isKeyPressedNowUnPressed`, which needs `keysStates == 1` after the release; a key held for one update goes 1 -> 0.
+**Do:** #394 uses `g_vrSkipPressed` and calls `cinematicEnd()` itself; do not "fix" a skip with a faster key press.
+
+## 2026-10-13 — In VR a logo is cut off at the window's size (#394, #73)
+
+**Symptom:** a publisher logo on the VR screen fills only the window's size while the interface (the quad) is larger.
+**Cause:** nothing prepares a camera for the logos, so the GL viewport stays the window's while the interface is the larger quad (#73).
+**Do:** `GRenderer->SetViewport(g_size)` for 2D drawn outside the camera paths.
+
+## 2026-10-13 — The character creation screen is black but for the portrait on a cold development start (#394.3)
+
+**Symptom:** `first-run-chargen.xrs` started at the main menu by `@args --dev-launch` fails at the window shot (`capture.topRight.verdict` black; the quad shot shows only the hero's portrait on black). The same sequence passes when the process first played the level 10 scene (`@args --skiplogo`), and `first-run.xrs` (a player's launch) passes through the same screen.
+**Cause:** not found; a longer wait before the shot (600 frames) changes nothing, so it is not the fade-in. Probably something the level 10 load initialises that a cold menu start does not.
+**Do:** tracked as #399; `first-run-chargen.xrs` stays on `@args --skiplogo` (90 s) until it is fixed - do not loosen the shot's check.
+
+## 2026-10-13 — In VR the main menu sits in a corner of the desktop window and the mouse clicks invisible buttons (#334)
+
+**Symptom:** with VR on, the desktop window showed the main menu (and the character creation) as a small picture
+in one part of the window, the rest dark; the owner reached the character creation only by clicking where nothing
+was drawn. The headset itself showed the menu whole.
+**Cause:** the desktop mirror (#21) showed the right eye, and in the eye the menu is the floating panel (#49) 0.9 m
+ahead and 0.3 m down - a trapezoid at the bottom (or wherever the panel was placed). The desktop mouse, though, is
+mapped from the whole window onto the whole 2D interface (#73), so it hit widgets where the window showed none.
+**Do:** nothing since #394.2: while a menu without the world is shown (`ARXmenu.mode() != Mode_InGame`) the mirror
+draws the flat frame over the whole window (`[vr] desktop mirror: a menu without the world - the window shows the
+2D interface`); the in-game menus (inventory, book) keep the eye. `capture.<quarter>.verdict` of a window `shot`
+tells a picture that fills the window from one in a corner of it.
+
+## 2026-10-13 — `smoke-test.ps1 -Sequence` ignores the sequence's `@args`
+
+**Symptom:** a sequence with `@args --skiplogo` run through `smoke-test.ps1 -VrSim idle -Sequence <name>` launched
+`arx.exe ... --loadlevel 10`.
+**Cause:** `@sim`, `@args` and `@save` are read by `xrs-run.ps1` and `ci-smoke.ps1`; `smoke-test.ps1` takes the
+arx.exe arguments from its own command line (default `--loadlevel 10`).
+**Do:** run a sequence with `xrs-run.ps1 <name>`, or pass the same arguments to the smoke test after `--`
+(`smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir> -- --skiplogo`) - the way to give it a user
+directory of your own.
+
+## 2026-10-13 — The smoke test's `loadlevel 1` "hangs" on the desktop and passes in CI (#440)
+
+**Symptom:** `smoke-test.ps1 -Seconds 3 -Commands 'loadlevel 1','loadlevel 10','drawcheck 120'` failed every time on
+the owner's PC (main too) with `timed out after 10 s waiting for the game to acknowledge 'loadlevel 1'`; the log
+stopped at `level.load area=1`, no crash, no `Done loading level`. The same phase passed in CI, and level 1 loaded
+in 250 ms from a save.
+**Cause:** not a hang - a load bound by the present. The game's window in an interactive session is in the
+background (shown without focus), and the compositor throttles its presents: every `SwapBuffers` took ~30 ms
+(`present=30` in every frame of `arx-perf.log`). The loading screen draws a frame when 16 ms have passed and the
+progress bar moved, but it counted the 16 ms from *before* its present - with a 30 ms present every step of the
+load drew and presented a frame, and the change from level 10 to level 1 (hundreds of progress steps) outlasted the
+10 s ack. In CI (the runner service, session 0, no compositor) a present costs nothing. The hang watchdog (#440)
+gave the stack: `ZwWaitForAlertByThreadId` < `atio6axx.dll` < `wglSwapBuffers` < `SDL2` < `LoadLevelScreen` <
+`loadLevel` < `ARX_CHANGELEVEL_PopLevel` < `ARX_CHANGELEVEL_Change` < `channel::execute` - but only once the
+progress beat was taken out: every step still beat, so the watchdog rightly saw no hang.
+**Do:** the 16 ms are counted from the end of the present now (level 10 → 1 in ~0.9 s with 15 loading frames, the
+start's level 10 load 1.7 s → 0.22 s). A load that seems to hang: read `[hang]` in `arx.log` / `hang.txt`; no report
+means the main thread still makes progress - the `[channel] level N loaded in ... the loading screen drew ...`
+line and `present=` in `arx-perf.log` say where the time goes. Mind: a thread-stack walk from inside the process
+must never load DbgHelp or query modules while the thread is stopped (a thread stuck in the loader holds that lock),
+and must give up when the thread does not stop (a driver call blocks suspension).
+
+## 2026-10-13 — `walk-look.xrs`: the walk left on a busy PC drifts 12.6 units in z (#370)
+
+**Symptom:** `walk-look` failed on CI (run 38339943784, PR #391, nothing related changed) at its first push:
+`ASSERT FAILED: player.z (8472.643) lt 8470` - the head turned left, the stick walked -x as it should
+(`walk.dirX = -1`, `yaw = 89.748`), yet z moved +12.6. Green runs end that push at x ≈ 8347, z 8460.07.
+**Cause:** the push was timed by the runner, not by the distance: stick on, `@frames 40`, four status reads,
+stick off. On the busy runner (18.7 frames/s, worst frame 105 ms) that took 106 frames and 4.8 s (`vr.walk`
+start t=7.94, end t=12.71) instead of 67 frames and 0.75 s, so the player walked the whole way to the start
+cell's wall: x stopped at 8302.06. The cell is x 8302-8798 from the start at 8540, and walking into its wall
+slides the player along it in z (measured on a quiet PC by walking on: z 8460.07 -> 8463.25 at the left wall,
++11.8 at the right one; the busy run's +12.6 is the same slide).
+**Do:** bound a walk by its distance, never by frames or the runner's pace: `stick-for left 0 1 100` - the game
+lets the stick go 100 units on - then `@until stickFor.active eq false` and assert on `stickFor.walk` (the walk
+of its last walking frame, kept after the release). Mind the walls: a push needs room for its distance plus
+the coast after the release (≈ 28 units at 90 fps).
+
+## 2026-10-13 — `ui-panel.xrs`: the head-locked HUD loses half its pixels between two shots (#370)
+
+**Symptom:** `ui-panel` failed on CI (run 38293812665, PR #358, a busy PC) at `@assert
+vr.sim.shots.hudturned.left.quadPixels ge {hudq-1000}`: `2690 ge 5709` - the HUD quad covered 6709 eye pixels
+with the head ahead and 2690 a moment later with it turned, although the quad is head-locked.
+**Cause:** not the turn: the save `mvp-new-game` starts with a timed notification on the HUD, the tutorial hint
+"Right-click to toggle from 'CURSOR MODE' to 'MOUSELOOK MODE'" (`gui/Notification.cpp`: 2 s + 60 ms per character
+of game time, about 6 s). On a quiet PC both shots fall inside it; on a busy one the frames and the runner's
+round trips between the shots are slower and the pair straddles its expiry. Measured with one shot a second:
+the hint on screen (`notifications = 1`) for 4 more seconds after frame 270, 8791 px with it, 2690 px without
+it - the failing value exactly - and 2690 with the head turned 40°.
+**Do:** before comparing HUD pixels over time, `@until notifications eq 0` (status.json, #370); a sequence that
+needs a hint on screen can put one up with `herosay <text>`.
+
+## 2026-10-13 — The game vanishes with exit code -1: no crash report, no "Clean shutdown", nothing in arx.log (#146)
+
+**Symptom:** a VR self-test with SteamVR running died 3-4 s after `xrCreateSession` (2 of 15 runs, 2026-10-09) with
+exit code -1, no crash report, no `Clean shutdown` and nothing in `arx.log` about why. SteamVR's `xrclient_arx.txt`
+logged `VR_Shutdown called` before the disconnect, and `vrserver.txt` no `Sending Quit event` to the game.
+**Cause:** `exit()` or `ExitProcess(-1)` inside the process - the client's DLL detach ran, so it was not a
+`TerminateProcess` from outside - by a module that is not ours: on Windows `main` returns 0 or 1, the crash handler
+ends with 1, and no OpenXR failure ends the process (every failed call and every session end - stopping, exiting,
+loss pending, instance loss - goes on in flat mode; read in `VRSystem.cpp`). Which module was not provable: the
+failing runs' logs were overwritten (before #129), and the simulated headset cannot reproduce SteamVR. The suspect
+is SteamVR's client: run 1 was the first launch right after SteamVR started (SteamVR Home was being asked to quit),
+and at the time the session sat in `ready` without `xrBeginSession` (#20 runs the frame loop since), which a
+runtime may treat as a hung app. An `ExitProcess` also skips the game's `atexit` handlers and loses up to a second
+of buffered info lines - which is why nothing was in the log.
+**Do:** read the `[E] ExitTrace:0` lines at the end of `arx.log` or `stderr.txt` ([The exit hook](TESTING.md#the-exit-hook-146)):
+the way out, the exit code, the last quit request or VR session end before it, and the stack - the module after
+`KERNEL32.DLL` / `ucrtbase.dll` called it. None of those lines and no crash report = killed from outside. The hunt
+with SteamVR is the owner's: `smoke-test.ps1 -Vr -Repeat 10 -Seconds 3 -EvidenceDir <dir>` keeps every failed run's
+logs, SteamVR's included.
+
+## 2026-10-13 — An executable's TLS callback never sees the "process is terminating" flag (#146)
+
+**Symptom:** the exit hook's TLS callback was in `arx.exe` (`dumpbin /tls` listed it) but wrote nothing when
+`ExitProcess` ended the game.
+**Cause:** it returned early on `reserved == nullptr`, copying `DllMain`'s rule (`lpvReserved != NULL` = the process
+terminates). The loader calls TLS callbacks with a null reserved on process detach, always.
+**Do:** in a TLS callback of the executable treat every `DLL_PROCESS_DETACH` as the end of the process - an `.exe`
+is never unloaded. Check such a hook with a deliberate exit (`exit-trace-check.ps1`), never by reading the code.
+
+## 2026-10-13 — `setpos` y is the feet, not the eye: the player stood 170 units above the floor (#210)
+
+**Symptom:** a save placed in reach of `lever_0012` loaded in `--vr-sim` with the hand reticle's ray ending on the
+lever's box, yet `vr.reticle.right.under` stayed `none`; the hand rays started at y 2810 over a floor at 3105
+(the eye 340 above it), and `entities` listed the player entity at y 2935 — its position is its feet.
+**Cause:** the channel's `setpos` (and the new `approach` at first) call `ARX_INTERACTIVE_Teleport(player, p)`,
+which sets `player.pos = p + baseOffset()`: `p` is the **feet**, the eye ends 170 units higher. Everything
+written before took setpos's y for the eye (the floor minus 170), so eye coordinates put the feet in the air: the eye
+340 units above the floor, out of the pick's reach of a floor object (350 units from the eye), on wall tops
+(what `hand-reticle.xrs` works around for `mvp-items`). The player does not fall back down by itself.
+**Do:** `setpos <x> <floor y> <z>` for a player standing on that floor; check `player.y` (the eye) and
+`camera.eyeAboveFeet` in the status. For a spot at an object use `approach <entity>` (TESTING.md), which finds
+the floor itself. `mvp-items` and `mvp-goblin-fight` still stand 170 up until #417 regenerates them.
+
+## 2026-10-13 — A load with a weapon in the IK hand crashed at `VRWeapon.cpp:296` (#210)
+
+**Symptom:** `make-test-saves.ps1 -VrSim idle` crashed (ACCESS_VIOLATION, `VRWeapon.cpp:296`) at its first
+channel `loadslot`, with the sword in the right hand; a launch with `--loadslot 0` never crashed.
+**Cause:** `vr::heldWeaponStatus()` (the status writer, every frame) and `placeHeldWeapon()` used the weapon
+pointer kept from the last `updateHeldWeapon()`; a load frees the entities before the next update, so the
+pointer dangled. The radial menu's quick load in a real game takes the same path.
+**Do:** never keep an `Entity *` across frames without resolving it again - `heldEntity()` checks it against
+the player's weapon slot. Regression check: the end of `reach-lever.xrs` (`loadslot 0` with the sword held,
+then `vr.weapon.place eq hand`), and every `make-test-saves.ps1 -VrSim` run reloads all its saves.
+
+## 2026-10-13 — The game crashes on quit in `FT_Done_Face` after a feature drew text (#376)
+
+**Symptom:** a run that worked ends with exit code 1, no `Clean shutdown`, and a crash report whose stack is
+`freetype.dll!FT_Done_Face()` under `xtree` / `xmemory` from `ArxGame.cpp` (the shutdown). Nothing in the log says why.
+**Cause:** a `Font` taken with `FontCache::getFont` and never given back with `FontCache::releaseFont`. At the exit
+`FontCache::shutdown` deletes the cache: its destructor only *asserts* that every font was released (nothing in a
+Release build), frees the FreeType library, and then the leaked font's face is destroyed against the freed library.
+The first radial menu kept two fonts of its own for the whole run.
+**Do:** draw with the game's fonts (`hFontControls`, `hFontInGame`, … in `gui/Text.h`: the right language's glyphs,
+replaced when the interface is laid out again), or release an own font before `ARX_Text_Close`.
+
+## 2026-10-13 — Melee in the playground: the inventory reopens itself, a second equip leaves a weapon on the cursor (#323)
+
+**Symptom:** in a playground sequence (`@playground`) `vr.melee.refused` stayed `inventory`. `ui inventory close` closed
+the bag, and the next frame logged `ui.inventory state=open` again. After a weapon was equipped, equipping a second
+one turned melee off with `reason="an item is dragged"`.
+**Cause:** a level started with `--loadlevel` never turns on the engine's free look. Loading a save does
+(`ChangeLevel.cpp`). In cursor mode the engine reopens the inventory every frame (`Interface.cpp`), #405 / #394.
+A script `<item>.equip player` puts the weapon it replaces on the cursor (`item.take from=world`), not back into the bag.
+**Do:** `freelook on` (test channel) before anything in a playground sequence, until #394 keeps VR gameplay in free
+look. Equip one weapon per run. The game's numbers for every weapon type are in `vr.melee.recovery.games`, so there is
+no need to equip each type.
+
+## 2026-10-13 — A simulated swing splits in two or reads above its ramp's speed (#323)
+
+**Symptom:** a `vr-sim @+1-8 hand right pos ...` ramp (0.85 m, 9.6 m/s at 90 Hz) gave three swings, the last two at
+3 m/s, or peaks of 12-13 m/s instead of 9.6.
+**Cause:** the simulated hand moves one step per frame, not per second. A frame that stalls (a hit's effects, a busy
+PC) slows the hand for real, and the detector now measures over the real time step (#352). The game's frame clock
+(`frameStart`) also jitters against the simulator's display slots, which raises the peaks.
+**Do:** in sequences, count swings with `ge` and hits exactly. Prove swing counts and peaks over frame times in the
+host test (`MeleeSwingTest::testSameSwingsAt45And90Hz`: 45, 90 and an uneven 90 Hz).
+
 ## 2026-10-12 — An instant `vr-sim hand ... pos` set-up move counts as a melee swing on a busy runner (#349)
 
 **Symptom:** `melee-swing.xrs` failed on CI at its first `@assert vr.melee.swings eq 0` for runs in a row with only
@@ -17,7 +468,8 @@ docs merged; `melee.swing` reported a swing with `peak=40.88` (above the 20 m/s 
 step's raw speed against 20 m/s, so 0.43 m over an 11 ms frame (39 m/s) is dropped, but over a 22 ms frame (45 fps,
 the runner shares the PC with builds and other games) it is 19.5 m/s, and over a 99 ms gap 4.3 m/s — a real swing
 (reproduced on purpose with `vr-sim rate 45`). The peak's 40.88 is that move divided by the next frame's step
-(the median of three lags one sample, #352).
+(the median of three lags one sample, #352 — *resolved* for the peak: since #323 the median's move is divided by
+the time it spans, so the same move reads 4.3 m/s).
 **Do:** in a melee sequence move the hand in a ramp only (`vr-sim @+1-60 hand right pos ...`: slow, frame by frame);
 reproduce a slow runner with `vr-sim rate 45` in a scratch copy of the sequence.
 
@@ -55,6 +507,8 @@ including "the charge is spent".
 *dirty* flag only: a build of `<sha> dirty` counts as fresh for any later uncommitted change on the same commit, so
 the game ran the previous build. **Do:** after editing uncommitted code, run `.\scripts\build-windows.ps1` yourself
 before a launch (it always builds what changed); a break-on-purpose run is only valid after an explicit build.
+**Resolved (#306):** the build stamp carries a fingerprint of the uncommitted tree (`fp=<hash>`); an edit after
+the build makes the launch scripts' check stale and `-Rebuild` rebuilds.
 
 ## 2026-10-10 — `player.pos + player.baseOffset()` is not the feet: an NPC placed there floats (#39)
 
@@ -82,6 +536,8 @@ added a minute ago: `vr.wrist.along.x (<absent>)`.
 clean `HEAD` followed by edits still counts as fresh, so `-Rebuild` does not rebuild and the old `arx.exe` runs.
 **Do:** after editing, run `.\scripts\build-windows.ps1` yourself before the launch (or commit first); it costs
 a launch from the budget otherwise.
+**Resolved (#306, #294):** the build stamp carries a fingerprint of the uncommitted tree (`fp=<hash>`); the
+fresh-build check sees edits made after a build (clean or dirty) and `-Rebuild` rebuilds.
 
 ## 2026-10-10 — `@diff` of two still shots of the body is as large as a small HUD change (#116)
 
@@ -197,7 +653,7 @@ in a sequence, bound only what the game decides, never how many times something 
 
 **Symptom:** the body, the solid torso and the hands following the controllers are right in the headset
 ("руки работают"), but as soon as a controller rolls, the upper arm and the forearm of the model twist into
-flat spirals between the shoulder and the hand (`C:\Users\arzib\arx-fatalis-vr-wt\arms-twist-owner.png`:
+flat spirals between the shoulder and the hand (the owner's headset screenshot, kept out of the repository:
 both arms reach in from the sides as twisted ribbons while the hands themselves look fine). Every number in
 `status.json` is still perfect — `error` 0, the wrist on its target — because the numbers describe joints,
 not the mesh between them.
@@ -211,6 +667,10 @@ A joint-position check cannot see it.
 its arms, what Arx's model and textures allow: twist bones, roll limits, a separate VR arm rig). Until then,
 judge arms in the headset or on a capture with the controllers *rolled*, not from `vr.body` alone; the
 `arms-follow` sequence rolls nothing.
+**Resolved by #304 (D-050):** the three arm rotations are built from the bend plane and the hand's roll is
+shared along the arm (vr/ArmRoll.h); `vr.body.<hand>.wristTwist` / `elbowTwist` / `upperRoll` now say what each
+band of faces carries, and the `arms-roll` sequence rolls the controller 0–180° and asserts on them. The lesson
+stays: a joint-position check sees no twist.
 
 ## 2026-10-09 — The body is nowhere in a `--vr-sim` shot that looks down, although `vr.body` says both arms are posed with `error` 0 (#36)
 
@@ -370,7 +830,9 @@ squeeze) was tried in round 2 and dropped before a headset run for that reason.
 0.50 / 0.30); a chord leader's release is debounced (`ControlResolver::releaseDebounceMs`), so a flicker is
 one hold; "use" fires when the hand opens without a trigger (D-019). Every grip crossing is logged with its
 value (`[vr] input: right grip down at 0.55 (threshold 0.5 / 0.3)`), and `status.json` → `vr.input.grip`
-shows it live — tune the threshold from those numbers, not by feel.
+shows it live — tune the threshold from those numbers, not by feel. *Changed 2026-10-17 (#496):* the press
+is 0.70 / the release 0.40 now - a firm resting hold read 0.52 - 0.59 and turned every trigger press into the chord
+(the entry above).
 
 ## 2026-10-09 — A non-Steam shortcut written into `shortcuts.vdf` disappears
 
@@ -555,13 +1017,18 @@ first (see `script.error` in `ScriptEvent.cpp`, #130), or print through `operato
 
 ## 2026-10-09 — A lever, a chest, a door cannot be found by coordinates (#70)
 
+*Resolved (#210):* `approach <entity>` finds the spot in the game (TESTING.md); cause (2) below is wrong -
+`setpos` takes the **feet** (the 2026-10-13 entry), so the eye was 340 units above the floor, which explains
+the wall tops and the picks that found nothing.
+
 **Symptoms:** `setpos` next to `lever_0012` / `chest_metal_0052` and a screenshot shows a bare wall, a
 black screen, the player's own feet, or a goblin; the entity is nowhere in the picture. About 6 of
 the 13 launches of #70 went into it before this was written down.
 **Causes, all measured:** (1) an entity's `pos` — from `entities` — is its **floor** position, so
 looking at "the entity" from 2 m with pitch 0 aims 1.7 m above it; `lookat` now aims 40 units above the
-floor and sets the pitch. (2) `setpos` / `player.pos` is the **eye**: `y` = floor − 170; a floor-level
-`y` puts the eye in the floor (black or a wall's back) until gravity pulls the player up. (3) The
+floor and sets the pitch. (2) *Wrong, see the 2026-10-13 entry "`setpos` y is the feet":* this entry
+first took `setpos`'s `y` for the eye and placed the player with eye coordinates, which put the feet 170
+units above the floor - the eye 340 above it, on wall tops, out of the pick's reach. (3) The
 level is narrow corridors and cells: many points 1.5-2.5 m away on a ring around an object are
 inside a wall or in another room (black or wall-only screenshots in the contact sheets of the 4
 compass points around each of 7 objects); which ones are valid cannot be told without a picture. (4) The pick that decides what a click acts on is not exposed: `FlyingOverIO` is cleared in
@@ -788,8 +1255,8 @@ the middle of loading the new level, with no crash report — it looks like the 
 **Cause:** a test-tool bug, not the game: the channel's `loadlevel` runs synchronously, the level
 change writes `status.json` with the new `cmdSeq` before `ack.txt` exists, `Send-ArxCommand` reads a
 missing ack, throws, and the smoke test kills the game in its error handler (#142).
-**Do:** until #142 is fixed, change levels with `-- --loadlevel N` (one launch per level), not with
-the channel command.
+**Do:** fixed in #142: `status.json` reports `cmdSeq` only once the batch's `ack.txt` is written, so
+`loadlevel` / `load` batches work through the channel (the old `-- --loadlevel N` workaround is no longer needed).
 
 ## 2026-10-09 — A crash report folder is dated "yesterday" and the VR self-test crashes where the flat one is clean
 
@@ -869,7 +1336,8 @@ exited with code 1, and closing it opens the crash report folder in Explorer.
 **Cause:** the crash processor is a second `arx.exe --crashinfo=…` that shows a message box and then
 *always* launches the report directory; without `arxcrashreporter` nothing closes it for a script.
 **Do:** automated runs set `ARX_UNATTENDED=1` (the test channel does it for the game, `smoke-test.ps1`
-for the process): the report is still written, the dialog is skipped. A leftover dialog is best
+for the process): the report is still written, the dialog is skipped. Since #501 every scripted launch sets
+`ARXVR_NO_DIALOGS=1`, which does the same for the crash dialog and every other one. A leftover dialog is best
 stopped with `Stop-Process` (closing it would open Explorer).
 
 ## 2026-10-08 — A rebuild fails with `LNK1104: cannot open file 'arx.exe'`
@@ -972,7 +1440,7 @@ also refuses `git -C <owner copy>` and commands with runtime-computed paths: use
 ## 2026-10-09 — `claude --bg` refuses a worker's worktree: "Workspace not trusted"
 
 **Symptom:** `start-worker.ps1` fails with `Workspace not trusted. Run claude in <worktree> once and accept
-the trust prompt`, even after the owner trusted the parent folder `C:\Users\arzib\arx-fatalis-vr-wt`.
+the trust prompt`, even after the owner trusted the parent folder `%USERPROFILE%\arx-fatalis-vr-wt`.
 **Cause:** Claude Code's workspace trust is checked for the launch folder itself; trusting a parent does
 not cover a new subfolder. Every worktree is a new folder.
 **Do:** launch workers in the owner's copy (trusted) and let them enter the worktree first —
@@ -1037,3 +1505,81 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** on the test save `mvp-new-game` the character crouched (button, toggle or the head, #100) and never stood up: the toggle went off (`player.crouch state=off`), `PLAYER_CROUCH` stayed set for good; on `mvp-items` the same sequence stood up (#263).
 **Cause:** the engine's own stand-up check, not VR code - flat Arx Libertatis did the same. `ARX_PLAYER_Manage_Visual` checked the **whole** standing cylinder with `CheckAnythingInCylinder`, and at the awakening spot that cylinder grazes a sloped floor polygon 21 units above the feet (`background=-21.0 ... normY=-0.3`). Standing there is fine - the check runs only to stand up - but the crouched character could never pass it.
 **Do:** the stand-up (and the jump from a crouch) now checks only the part of the standing cylinder above the crouched one (`standUpCylinder()` in `src/game/Player.cpp`). A refused stand-up logs one `player.standup.blocked` event with what is in the way (`describeCylinderBlocker`); read it before blaming crouch code. `stand-up.xrs` checks both directions.
+
+## 2026-10-13 - A `--vr-sim` run drops to 20-40 fps for a few seconds with nothing happening in the game
+**Symptom:** an idle `--vr-sim` run (`idle.vrsim`, no commands) shows several `[vr] rate:` windows UNDER-SUBMITTING at 20-40/s with a worst frame near 100 ms, then 90/s again; `arx-perf.log` has a burst of `H` lines whose `update`, `render` and `vrwait` all grow together, with no `load` and no uploads (#327: in one pair of runs the burst came with the log on, in the next pair with it off).
+**Cause:** the PC, not the game: other workers build in parallel (the game lock serialises game runs, not compiles), and a starved CPU stretches every phase of the frame at once.
+**Do:** judge pacing and frame costs only from windows at full rate, or repeat the run; a real cost of the game shows in one phase (`cause`), the same way in every run. `perf-summary.ps1` lists the hitches by cause.
+
+## 2026-10-14 - Kultar's scene never starts although the hero walked into KULTAR_WAKE
+**Symptom:** on a save in the start cell the hero walks into the zone KULTAR_WAKE (`player.z` well inside it), yet `scene.active` stays false for a minute: no letterbox, no camera, no teleport (#29).
+**Cause:** the zone only sends Kultar to the bars between the cells (`MARKER_0117`, 9103 8836) and has him say his introduction; his scene (`>>dialogue`: the teleport, the cameras, the letterbox, `playerlookat`) starts from his `CHECK_DIST` timer only while `^DIST_PLAYER < 500` - the hero within 5 m of him. Walking straight ahead from the middle of the cell ends at the portcullis about 6 m away; at x 8740 and beyond, the cell's wall holds the hero at once.
+**Do:** start from the test save `scene-kultar` (8700 8660, facing +z: the walk stops 4.1 m from Kultar) or `setpos 8700 3105 8840` (`scene-flat.xrs`). The zone fires once per game: a second try needs the save loaded again.
+
+## 2026-10-14 - A console `speak -c` line ends after about 2 s although its sample is longer
+**Symptom:** `<npc>.speak -c ... [kultar_letmeout]` (a 5 s sample) through the test channel ends after about 2 s - a sequence's input in that line runs past its end; the same line from the game's own script plays in full (#29).
+**Cause:** without the letterbox (`cinematicBorder` off) a `speak` line is a "no text" line, and `ARX_SPEECH_AddSpeech` plays a random variant of its sample: `kultar_letmeout2` / `3` are 2.1 s. Lines with the letterbox on (a real scene) never pick a variant.
+**Do:** for a line that must last, take one without variants (`kultar_cantgo`, 8.4 s; `kultar_traveler`, 22 s) or turn the letterbox on first.
+
+## 2026-10-14 - A new game's hero stands off the level for 2 s before the prison intro
+**Symptom:** the scene meter's `minAboveFloorM` is 0 for a stretch from `newgame`: the eyes in first person over no floor (#29).
+**Cause:** after `GAME_READY` the intro waits 2 s (letterbox on, controls off) before its `TELEPORT -PA 180`; until then the hero is at the level's editor position, where `CheckInPoly` finds no floor.
+**Do:** every scene view keeps the fade black while there is no floor under its eye; any measurement from `newgame` meets these 2 s.
+
+## 2026-10-14 - A console `speak` line of a variant's sample name shows no subtitle
+**Symptom:** `<npc>.speak -c ... [kultar_letmeout2]` plays, but `scene.subtitle.text` stays empty and `voicedLines` does not count it (#29).
+**Cause:** a speech variant's text is not a section named after its sample (`kultar_letmeout2.wav`): it is the key `string2` in the line's own section `[kultar_letmeout]`. No section `[kultar_letmeout2]` exists.
+**Do:** speak the line's own key (`[kultar_letmeout]`); the subtitle takes the text of the variant actually played (`string<N>`).
+## 2026-10-13 - A file under data/core is in the repository but the game says "not found"
+**Symptom:** `[W] VRArms: [vr] arms: vr/arms/Hand_Glove_low_R.gltf not found` (#385.3), while the file is in `data/core/vr/arms/` and the build's data dirs point at `data/core`; the host tests that load the same file pass.
+**Cause:** two rules of the resource system. `src/io/resource/ResourceSetup.cpp` mounts only a fixed list of top-level folders of each data dir (`editor`, `game`, `graph`, `localisation`, `misc`, `sfx`, `speech`, and now `vr`), so a new folder is invisible until it is added there; and every resource name is lower case (`PakReader::addFiles`), so `vr/arms/Hand_Glove_low_R.gltf` must be asked for as `vr/arms/hand_glove_low_r.gltf`. Host tests read data/core straight from the source tree and see neither rule.
+**Do:** a new folder under data/core goes into that list in the same change; ask for resources in lower case; prove an asset in a game run (a sequence that asserts the loaded state), not only in a host test.
+
+## 2026-10-13 - A test or source file fails to compile with C2059 "syntax error: 'const'" on an innocent name
+**Symptom:** `tests/vr/ArmMeshTest.cpp(48): error C2059: syntax error: 'const'` on a helper `void near(...)`, or C2628 "'vr::SleeveParams' followed by 'char'" on a variable named `small` (#385.1).
+**Cause:** `arx` and `arxtest` are unity builds (`ub_arxtest.cpp`): `windows.h`, included earlier in the same unit by FilesystemWindows.cpp, Process.cpp or WindowsUtils.cpp, defines the macros `near` and `far` (empty) and `small` (`char`). Names in anonymous namespaces also collide across the files of one unit.
+**Do:** never name anything `near`, `far` or `small`; give file-scope helpers unique names (a file prefix).
+## 2026-10-13 - In the playground a hand's press lands on the panel, not on the lever it aims at
+**Symptom:** `--vr-sim` in the playground (`-Playground`): the reticle is on a lever (`vr.reticle.right.entity`), grip + trigger fires `act_right`, but nothing is pulled; `vr.pointer.click hand=right` is logged instead, `vr.panel.menu` is `inventory`. `ui inventory close` closes the bag and the next frame opens it again (#38).
+**Cause:** a level started with `--loadlevel` stays in the engine's cursor mode (no free look), and in cursor mode the engine keeps the inventory open: the floating panel hangs in front of the hands and takes their rays. Opening a chest or a body leaves free look again (the original's own rule).
+**Do:** `freelook on; ui inventory close` before the hands act in the world, and again after a drag from a chest or a body (`playground-hands.xrs`). For the player this goes with the first-run flow (#394 / #405).
+
+## 2026-10-13 - `vr-point` hits the wall behind a lever, or the hover passes and is gone again
+**Symptom:** `vr-point right entity lever_9002`: the ray ends on the wall 5 units behind the lever (`vr.reticle.right.point` z 8400), `under` stays `none`; or `@until vr.reticle.right.entity eq lever_9002` passes and the act a few frames later finds nothing (#38).
+**Cause:** two things. A lever on a wall is thin: the middle of its box is air, and a pulled lever's handle lies against the wall. And turning a simulated hand moves the start of its aim ray (it turns about the grip): the aim is computed from where the ray started before the turn, a few degrees off for a small target - the hover can catch the lever on the way and keep it for its 150 ms hold.
+**Do:** `vr-point <hand> face <id>` (a face of the mesh the hand's ray reaches without the level in the way), given twice a few frames apart; wait for `under` (this frame) before `entity` (the hover).
+
+## 2026-10-13 - An item dragged from a chest onto the bag falls back into the chest or is thrown
+**Symptom:** `vr-point right container`, trigger down, `vr-point right <bag pixel>`, trigger up: `item.toinventory container=chest_...` (back in the chest) or `item.drop how=throw`, never into the bag (#38).
+**Cause:** the engine puts a dragged item where its **icon** is - the cursor plus the offset the icon had when the drag started (`g_draggedIconOffset`). A simulated hand jumps: the pointer holds the press pixel inside its click dead zone (16 px), so the drag starts only on the jump, with the cursor already at the bag and an offset of hundreds of pixels; and after a short move the icon still hangs beside the cursor, left of the slot it aims at.
+**Do:** move the hand past the dead zone first (`vr-point right container 30 0`, a few frames), then `vr-point right bag` - it aims so that the icon covers the first free slot. A real hand moves gradually and places the icon by eye.
+
+## 2026-10-13 - The character creation shows only the hero's portrait on black
+**Symptom:** after a development launch (`--dev-launch`) or a key during the publisher logos, New game opens a character creation with only the portrait; the background and every widget are missing, for good (no fade). After the level 10 intro (a player's launch, `--skiplogo`) the same screen is fine (#399).
+**Cause:** the portrait (`Book.cpp`) prepares its own camera and then restores the one prepared before it with `RestorePreparedCamera()`, viewport included. Without a level ever loaded no camera was prepared: the restored viewport is the default `0 x 0`, and everything drawn after the first portrait - the rest of that frame, the background of the next - lands in it.
+**Do:** a 2D screen that can come before any level sets its own viewport (`GRenderer->SetViewport(g_size)`, as the logos and `CharacterCreation::render()` do) and sets it again after drawing anything that restores a camera. Check such a screen from a development launch, not only after the intro.
+
+## 2026-10-13 - In VR the desktop mouse does nothing
+**Symptom:** in a VR session (the headset or `--vr-sim`) moving, clicking or scrolling the mouse over the game window changes nothing - the menu under the cursor is not clicked, the camera does not turn.
+**Cause:** by design (#338, the owner): in VR the window only mirrors the headset; `Input::update()` drops the real mouse's movement, buttons and wheel while `vr::isEnabled()` (`desktopMouse` in `status.json`, `[input] desktop mouse:` lines in `arx.log`). Since #487 the keyboard is dropped too (below).
+**Do:** in VR aim the hands (`vr-point`, the controllers); test the real mouse flat (`--no-vr`) with the channel's `desktop-mouse`.
+
+## 2026-10-14 - `@key` fails in CI with "process has no window"
+**Symptom:** a sequence that passes locally fails in CI at its first `@key`: `@key: process <pid> has no window` (#399, PR #458).
+**Cause:** `@key` posts a keyboard message to the game's main window. The CI runner is a service in session 0, with no desktop, so the game process has no window handle to post to.
+**Do:** in a sequence CI runs, press keys through the test channel: `desktop-key <name> down`, a few frames, `desktop-key <name> up` (SDL's event queue, like `desktop-mouse`).
+
+## 2026-10-16 - A test run ignores my mouse and keyboard, and in VR the keyboard does nothing
+**Symptom:** clicking, scrolling or typing into the window of a test run (`--test-dir`: the smoke test, `xrs-run.ps1`, CI, `run-windows.ps1 -TestChannel`) changes nothing, the window cannot be activated and sits in the bottom right corner; an `.xrs` `@key` does nothing any more. In VR (headset or `--vr-sim`) no key of the desktop keyboard - not even the channel's `desktop-key` - reaches the game (#487).
+**Cause:** by design (#487, the owner): a test run must not take the focus or the input of whoever works at the PC. The game shows the window without activation (`WS_EX_NOACTIVATE`) in the corner and `SDL2InputBackend` drops every real mouse and keyboard event; only the events the channel injects (`desktop-mouse`, `desktop-key`, marked as injected) and the simulated controllers pass (`realInput` in `status.json`, `[input] real ... dropped (test run)` in `arx.log`). `@key` posts a window message - real input. In VR the window only mirrors the headset: the keyboard is dropped whatever its origin (`desktopKeyboard`), like the mouse (#338).
+**Do:** drive a test run through the channel (`desktop-key`, `desktop-mouse`, `vr-sim`, `vr-point`); test the keyboard flat (`--no-vr`) with `desktop-key`. To try something by hand, launch without the channel (`run-windows.ps1` without `-TestChannel`).
+
+## 2026-10-17 - A channel `sendevent custom <npc> "PARAM"` does nothing
+**Symptom:** a test sends an NPC the custom event its script waits for (`sendevent custom human_base_0028 "DEAD"`): no warning in `arx.log`, the command succeeds, and the NPC does nothing - the scene it starts never comes (#29, scene-hybrid T10).
+**Cause:** the game lowercases every script when it loads it (`src/script/Script.cpp`, `util::toLowercase(file->read())`): the handler compares `^$PARAM1 == "dead"`. A console or channel line is run as it is typed, so `"DEAD"` never matches. A release build has no script debug log (`LogDebug` is compiled out), so `--debug script` shows nothing.
+**Do:** write a custom event's parameter in lowercase (`sendevent custom human_base_0028 "dead"`); to read a script, unpack `data2.pak` with `arxunpak` into a temp folder, never into the repo.
+
+## 2026-10-18 - A CI run's checkout log names a merge of another pull request
+**Symptom:** reading a past CI run's diff from its log, the first `HEAD is now at <sha> Merge <head> into <base>` line of the checkout step names a head that is not the run's (`gh run view <id> --json headSha`), and the changed files of `compare/<base>...<head>` belong to another pull request (#522, the impact map's replay first counted 9 of 14 failures as missed this way).
+**Cause:** the self-hosted runner keeps its workspace between jobs: the checkout first prints where the workspace stood - the previous job's merge commit - and only its last `HEAD is now at` line is the merge this run built.
+**Do:** take the last such line of the checkout step and check that its head is the run's `headSha` (`scripts/dev/impact-replay.ps1` does both).

@@ -299,3 +299,85 @@ void SimRigTest::testFingers() {
 	sim.advance(20);
 	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.0, sim.rig.fingers[0].curl.z, RigEpsilon);
 }
+
+void SimRigTest::testFiveFingers() {
+	vr::Simulation sim;
+	// Each finger on its own (#385): the thumb, index, middle, ring and little finger
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("hand left fingers 0.1 0.2 0.3 0.4 0.5"));
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.1, sim.rig.fingers[0].curl.x, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.2, sim.rig.fingers[0].curl.y, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.3, sim.rig.fingers[0].curl.z, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.4, sim.rig.fingers[0].outer.x, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.5, sim.rig.fingers[0].outer.y, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.0, sim.rig.fingers[1].outer.y, RigEpsilon);
+	// The three-value form closes the middle, ring and little finger together
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("hand left fingers 0 0 0.7"));
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.7, sim.rig.fingers[0].curl.z, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.7, sim.rig.fingers[0].outer.x, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.7, sim.rig.fingers[0].outer.y, RigEpsilon);
+	// Four or six values, or one out of range, is an error
+	CPPUNIT_ASSERT(!sim.execute("hand left fingers 0 0 0 0").empty());
+	CPPUNIT_ASSERT(!sim.execute("hand left fingers 0 0 0 0 1.5").empty());
+	CPPUNIT_ASSERT(!sim.execute("hand left fingers 0 0 0 0 0 0").empty());
+	// A ramp moves all five
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.load("@10-20 hand right fingers 0 0 0 1 0.5\n"));
+	sim.advance(15);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.5, sim.rig.fingers[1].outer.x, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.25, sim.rig.fingers[1].outer.y, RigEpsilon);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.0, sim.rig.fingers[1].curl.z, RigEpsilon);
+	sim.advance(20);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(1.0, sim.rig.fingers[1].outer.x, RigEpsilon);
+}
+
+void SimRigTest::testSessionEndsAndExitFaults() {
+	vr::Simulation sim;
+	// The ways a runtime ends the session (#146) are requests to the simulated runtime
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("session exiting"));
+	CPPUNIT_ASSERT(vr::SimSessionEnd::Exiting == sim.takeRequests().sessionEnd);
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("session loss-pending"));
+	CPPUNIT_ASSERT(vr::SimSessionEnd::LossPending == sim.takeRequests().sessionEnd);
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("runtime lost"));
+	CPPUNIT_ASSERT(vr::SimSessionEnd::RuntimeLost == sim.takeRequests().sessionEnd);
+	CPPUNIT_ASSERT(sim.takeRequests().empty());
+	CPPUNIT_ASSERT(!sim.execute("runtime").empty());
+	CPPUNIT_ASSERT(!sim.execute("runtime found").empty());
+	// The rig is untouched: the focus stays as it was
+	CPPUNIT_ASSERT(sim.rig.worn && sim.rig.focused);
+	// The process ends the way #146 ended
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("fault exit-process -1"));
+	vr::SimRequests requests = sim.takeRequests();
+	CPPUNIT_ASSERT(vr::SimExit::ExitProcess == requests.exit);
+	CPPUNIT_ASSERT_EQUAL(-1, requests.exitCode);
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("fault exit 3"));
+	requests = sim.takeRequests();
+	CPPUNIT_ASSERT(vr::SimExit::Exit == requests.exit);
+	CPPUNIT_ASSERT_EQUAL(3, requests.exitCode);
+	CPPUNIT_ASSERT(!sim.execute("fault exit").empty());
+	CPPUNIT_ASSERT(!sim.execute("fault exit soon").empty());
+	CPPUNIT_ASSERT(!sim.execute("fault exit 99999999999").empty());
+	CPPUNIT_ASSERT(sim.takeRequests().empty());
+	// On the timeline like any other command
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.load("@5 session exiting\n"));
+	sim.advance(4);
+	CPPUNIT_ASSERT(sim.takeRequests().empty());
+	sim.advance(5);
+	CPPUNIT_ASSERT(vr::SimSessionEnd::Exiting == sim.takeRequests().sessionEnd);
+}
+
+void SimRigTest::testRatePacing() {
+	// rate <hz> [clock|cap] (#522): the display clock by default, a cap on request; a rate alone keeps the pacing
+	vr::Simulation sim;
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.load("rate 90 cap\n"));
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(90.0, sim.view.rate, RigEpsilon);
+	CPPUNIT_ASSERT(sim.view.cap);
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("rate 45"));
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(45.0, sim.view.rate, RigEpsilon);
+	CPPUNIT_ASSERT(sim.view.cap);
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("rate 90 clock"));
+	CPPUNIT_ASSERT(!sim.view.cap);
+	vr::Simulation fresh;
+	CPPUNIT_ASSERT_EQUAL(std::string(), fresh.load("rate 72\n"));
+	CPPUNIT_ASSERT(!fresh.view.cap);
+	CPPUNIT_ASSERT(rigStartsWith(fresh.load("rate 90 slots\n"), "line 1: rate: expected clock or cap"));
+	CPPUNIT_ASSERT(rigStartsWith(fresh.load("rate 90 cap now\n"), "line 1: rate: expected"));
+}

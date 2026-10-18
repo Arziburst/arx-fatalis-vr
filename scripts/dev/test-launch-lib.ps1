@@ -17,7 +17,7 @@
 	    left behind without a holder is free
 	  - a game outside the lock is found through WMI even though its .Path may be hidden (another account), and
 	    stops being a holder once a lock names its pid
-	  - settings.json is read from the lock folder first
+	  - settings.json is read from the lock folder first; $env:ARXVR_MAX_GAMES (the CI lanes, #522) overrides it
 	Exit code 0 when everything passed, 1 otherwise.
 #>
 [CmdletBinding()]
@@ -30,6 +30,7 @@ $legacyBase = Join-Path $root 'local'
 New-Item -ItemType Directory -Force $legacyBase | Out-Null
 $env:ARXVR_LOCK_DIR = $lockDir
 $env:LOCALAPPDATA = $legacyBase
+Remove-Item Env:ARXVR_MAX_GAMES -ErrorAction SilentlyContinue
 $legacyDir = Join-Path $legacyBase 'ArxFatalisVR'
 . (Join-Path $PSScriptRoot '..\launch-lib.ps1')
 
@@ -54,6 +55,24 @@ function Wait-Until([scriptblock]$Condition, [int]$Sec = 20) {
 	while ((Get-Date) -lt $deadline) { if (& $Condition) { return $true }; Start-Sleep -Milliseconds 200 }
 	$false
 }
+
+# --- The kind of launch (#394) ---------------------------------------------------------------------------------
+# A plain arx.exe is the player's launch (logos, main menu, every cinematic); the dev launchers add --dev-launch, the
+# player launchers (the desktop shortcut, the Steam shortcut, the tester zip) never do
+Write-Host '==> development and player launches'
+$devArgs = @(Get-ArxLaunchKindArgs)
+Check 'a launch is a development launch by default: --dev-launch' ($devArgs.Count -eq 1 -and $devArgs[0] -eq '--dev-launch') "$devArgs"
+Check '-Player adds nothing: arx.exe as a player starts it' (@(Get-ArxLaunchKindArgs -Player).Count -eq 0)
+$scripts = Split-Path -Parent $PSScriptRoot
+$text = { param($Path) [IO.File]::ReadAllText((Join-Path $scripts $Path)) }
+Check 'run-windows.ps1 takes its launch kind from launch-lib, -Player opts out' ((& $text 'run-windows.ps1') -match 'Get-ArxLaunchKindArgs -Player:\$Player')
+Check 'smoke-test.ps1 takes its launch kind from launch-lib, -Player opts out' ((& $text 'dev\smoke-test.ps1') -match 'Get-ArxLaunchKindArgs -Player:\$Player')
+Check 'xrs-run.ps1 and ci-smoke.ps1 pass a sequence''s @player on' (((& $text 'dev\xrs-run.ps1') -match '\$parsed\.Player') -and ((& $text 'dev\ci-smoke.ps1') -match '\$seq\.Player'))
+Check 'test-pr.ps1 has -Player and passes it to run-windows.ps1' ((& $text 'dev\test-pr.ps1') -match '\$runArgs\.Player = \$true')
+Check 'the desktop shortcut (launch-shortcut.ps1) launches as a player' ((& $text 'launch-shortcut.ps1') -match "run-windows\.ps1'\) [^\r\n]*-Player")
+Check 'the verify run of package-tester.ps1 and make-test-saves.ps1 are development launches' (((& $text 'package-tester.ps1') -match "'--dev-launch'") -and ((& $text 'dev\make-test-saves.ps1') -match "'--dev-launch'"))
+$testerLaunchers = @(Get-ChildItem (Join-Path $scripts 'tester') -Filter '*.cmd' | Where-Object { (Get-Content -Raw $_.FullName) -match 'arx\.exe' })
+Check 'the tester zip''s launchers start arx.exe as a player (no --dev-launch)' ($testerLaunchers.Count -ge 2 -and -not ($testerLaunchers | Where-Object { (Get-Content -Raw $_.FullName) -match '--dev-launch' })) "$($testerLaunchers.Name)"
 
 try {
 	# --- The folder and its ACL ---------------------------------------------------------------------------------
@@ -140,7 +159,22 @@ try {
 	Check 'the old settings.json is still read' ((Get-ArxLaunchSettings).maxGames -eq 2)
 	Set-Content (Join-Path $lockDir 'settings.json') '{ "maxGames": 3 }'
 	Check 'the lock folder settings.json wins' ((Get-ArxLaunchSettings).maxGames -eq 3)
+	# ARXVR_MAX_GAMES (#522, set by the CI workflow for its two lanes) wins over settings.json and over the default
+	$env:ARXVR_MAX_GAMES = '2'
+	Check 'ARXVR_MAX_GAMES overrides settings.json' ((Get-ArxLaunchSettings).maxGames -eq 2)
 	Remove-Item (Join-Path $lockDir 'settings.json'), (Join-Path $legacyDir 'settings.json')
+	Check 'ARXVR_MAX_GAMES overrides the default' ((Get-ArxLaunchSettings).maxGames -eq 2)
+	$lane1 = Enter-ArxGameLock -What 'lane 1' -Copy 'c' -Branch 'b' -TimeoutSec 0
+	$lane2 = Enter-ArxGameLock -What 'lane 2' -Copy 'c' -Branch 'b' -TimeoutSec 0
+	Check 'ARXVR_MAX_GAMES=2: two launches hold slots 1 and 2' ($lane1 -and $lane2 -and $lane1.Slot -eq 1 -and $lane2.Slot -eq 2)
+	Exit-ArxGameLock $lane1
+	Exit-ArxGameLock $lane2
+	$env:ARXVR_MAX_GAMES = '0'
+	Check 'ARXVR_MAX_GAMES=0 still allows one game' ((Get-ArxLaunchSettings).maxGames -eq 1)
+	$env:ARXVR_MAX_GAMES = 'two'
+	Check 'a non-number ARXVR_MAX_GAMES is ignored (the default)' ((Get-ArxLaunchSettings 3>$null).maxGames -eq 1)
+	Remove-Item Env:ARXVR_MAX_GAMES
+	Check 'without ARXVR_MAX_GAMES the default is one game again' ((Get-ArxLaunchSettings).maxGames -eq 1)
 
 	# --- Games outside the lock ----------------------------------------------------------------------------------
 	Write-Host '==> a game outside the lock'
@@ -164,6 +198,103 @@ try {
 	foreach ($c in $children) { try { Stop-Process -Id $c.Id -Force -ErrorAction SilentlyContinue } catch { } }
 	Start-Sleep -Milliseconds 300
 	Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# A test run's game never takes the foreground (#487): the verdict on what Get-ArxForegroundWindow reports
+$before = [pscustomobject]@{ Handle = 100; ProcessId = 7 }
+Check 'foreground: the game''s window has it - fail' (-not (Test-ArxForegroundKept $before ([pscustomobject]@{ Handle = 200; ProcessId = 42 }) 42).Ok)
+Check 'foreground: the window that had it keeps it - ok' (Test-ArxForegroundKept $before ([pscustomobject]@{ Handle = 100; ProcessId = 7 }) 42).Ok
+Check 'foreground: another window took it, not the game - ok' (Test-ArxForegroundKept $before ([pscustomobject]@{ Handle = 300; ProcessId = 9 }) 42).Ok
+Check 'foreground: none in a session without a desktop - ok' (Test-ArxForegroundKept $null ([pscustomobject]@{ Handle = 0; ProcessId = 0 }) 42).Ok
+$now = Get-ArxForegroundWindow
+Check 'foreground: Get-ArxForegroundWindow answers' ($null -ne $now -and $now.Handle -ge 0)
+
+# --- Scripted launches show no dialogs (#501) ---------------------------------------------------------------------
+Write-Host '==> scripted launches show no dialogs (#501)'
+$dialogRoot = Join-Path ([IO.Path]::GetTempPath()) "arxvr-dialog-test-$PID"
+New-Item -ItemType Directory -Force $dialogRoot | Out-Null
+try {
+	# The environment a started process gets, and the shell after the start - the way every launch script starts the
+	# game: Set-ArxDialogEnv, Start-Process, Restore-ArxDialogEnv in a finally. The "game" is a pwsh that writes down
+	# both variables as it sees them.
+	$shellBefore = @{ ARXVR_NO_DIALOGS = $env:ARXVR_NO_DIALOGS; ARX_UNATTENDED = $env:ARX_UNATTENDED }
+	$launch = { param($Name, [switch]$NoDialogs)
+		$file = Join-Path $dialogRoot "$Name.txt"
+		$previous = Set-ArxDialogEnv -NoDialogs:$NoDialogs
+		try {
+			$p = Start-Process $pwsh -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile', '-Command', "Set-Content -LiteralPath '$file' -Value ""[`$env:ARXVR_NO_DIALOGS][`$env:ARX_UNATTENDED]""")
+		} finally { Restore-ArxDialogEnv $previous }
+		$p.WaitForExit()
+		(Get-Content -LiteralPath $file -Raw).Trim()
+	}
+	$shellNow = { "[$env:ARXVR_NO_DIALOGS][$env:ARX_UNATTENDED]" }
+	foreach ($case in @(@{ What = 'a clean shell'; NoDialogs = $null; Unattended = $null }, @{ What = 'a shell holding values'; NoDialogs = 'shell-a'; Unattended = 'shell-b' })) {
+		[Environment]::SetEnvironmentVariable('ARXVR_NO_DIALOGS', $case.NoDialogs)
+		[Environment]::SetEnvironmentVariable('ARX_UNATTENDED', $case.Unattended)
+		$before = & $shellNow
+		$seen = & $launch 'scripted' -NoDialogs
+		Check "a scripted launch from $($case.What): the game gets ARXVR_NO_DIALOGS=1 and ARX_UNATTENDED=1" ($seen -eq '[1][1]') $seen
+		Check "a scripted launch from $($case.What): the shell's variables are unchanged after it" ((& $shellNow) -eq $before) "$(& $shellNow), was $before"
+	}
+	# The owner after a script that left both behind (a smoke test of an older script, or a hand-set variable)
+	$env:ARXVR_NO_DIALOGS = '1'
+	$env:ARX_UNATTENDED = '1'
+	$seen = & $launch 'owner'
+	Check 'an owner launch with both variables pre-set starts the game without them' ($seen -eq '[][]') $seen
+	Check 'and the shell keeps its own values after it' ((& $shellNow) -eq '[1][1]') (& $shellNow)
+	foreach ($name in $shellBefore.Keys) { [Environment]::SetEnvironmentVariable($name, $shellBefore[$name]) }
+
+	# Every launch script starts the game that way, and nothing sets either variable by hand (it would stay in the shell)
+	$launchScripts = [ordered]@{
+		'run-windows.ps1' = 'Set-ArxDialogEnv -NoDialogs:\$noDialogs'
+		'dev\smoke-test.ps1' = 'Set-ArxDialogEnv -NoDialogs'
+		'dev\make-test-saves.ps1' = 'Set-ArxDialogEnv -NoDialogs'
+		'package-tester.ps1' = 'Set-ArxDialogEnv -NoDialogs'
+	}
+	foreach ($script in $launchScripts.Keys) {
+		$t = & $text $script
+		$set = [regex]::Match($t, $launchScripts[$script])
+		$start = $t.IndexOf('Start-Process -FilePath', [Math]::Max(0, $set.Index))
+		$finally = if ($start -ge 0) { $t.IndexOf('finally {', $start) } else { -1 }
+		$restore = if ($finally -ge 0) { $t.IndexOf('Restore-ArxDialogEnv $previousDialogEnv', $finally) } else { -1 }
+		Check "$script`: Set-ArxDialogEnv before Start-Process, Restore-ArxDialogEnv in the finally after it" ($set.Success -and $start -gt $set.Index -and $finally -gt $start -and $restore -gt $finally -and ($restore - $finally) -lt 200)
+	}
+	$ciText = & $text 'dev\ci-smoke.ps1'
+	Check 'ci-smoke.ps1: Set-ArxDialogEnv -NoDialogs for the job, restored in its finally' ($ciText -match '\$previousDialogEnv = Set-ArxDialogEnv -NoDialogs\s*\r?\ntry \{' -and $ciText -match '\} finally \{\s*\r?\n\s*Restore-ArxDialogEnv \$previousDialogEnv')
+	$byHand = @(Get-ChildItem $scripts -Recurse -Filter '*.ps1' -File | Where-Object { $_.Name -ne 'test-launch-lib.ps1' -and (Get-Content -Raw $_.FullName) -match '\$env:(ARX_UNATTENDED|ARXVR_NO_DIALOGS)\s*=' })
+	Check 'no script sets ARX_UNATTENDED / ARXVR_NO_DIALOGS by hand' ($byHand.Count -eq 0) "$($byHand.Name)"
+	$prText = & $text 'dev\test-pr.ps1'
+	Check 'test-pr.ps1 clears both variables around run-windows.ps1 and puts them back in a finally' ($prText -match "foreach \(\`$name in 'ARXVR_NO_DIALOGS', 'ARX_UNATTENDED'\)" -and $prText -match '(?s)SetEnvironmentVariable\(\$name, \$null\).*?try \{.*?run-windows\.ps1.*?\} finally \{\s*foreach \(\$name in \$dialogEnv\.Keys\)')
+
+	# Which run-windows.ps1 launches are scripted ones
+	Check 'run-windows -TestChannel: no dialogs' (Test-ArxScriptedLaunch -TestChannel)
+	Check 'run-windows -Isolated: no dialogs' (Test-ArxScriptedLaunch -Isolated)
+	Check 'run-windows -- --test-dir <dir>: no dialogs' (Test-ArxScriptedLaunch -ArxArgs @('--no-vr', '--test-dir', 'x'))
+	Check 'run-windows by hand (no switch): dialogs shown' (-not (Test-ArxScriptedLaunch -ArxArgs @('--skiplogo', '--loadslot', '0')))
+	Check 'test-pr.ps1 -Isolated (run-windows -Isolated -Dialogs): dialogs shown' (-not (Test-ArxScriptedLaunch -Isolated -Dialogs))
+	$runText = & $text 'run-windows.ps1'
+	Check 'run-windows.ps1 decides with Test-ArxScriptedLaunch from its own switches' ($runText -match 'Test-ArxScriptedLaunch -ArxArgs \$ArxArgs -TestChannel:\$TestChannel -Isolated:\$Isolated -Dialogs:\$Dialogs')
+	$smokeText = & $text 'dev\smoke-test.ps1'
+	Check 'xrs-run.ps1 launches through smoke-test.ps1' ((& $text 'dev\xrs-run.ps1') -match "'smoke-test\.ps1'\) @smokeArgs")
+	Check 'test-pr.ps1 (the owner) keeps the dialogs: passes -Dialogs' ($prText -match '\$runArgs\.Dialogs = \$true')
+	Check 'the desktop shortcut launches without -Isolated / -TestChannel: dialogs shown' ((& $text 'launch-shortcut.ps1') -notmatch '-Isolated|-TestChannel|ARXVR_NO_DIALOGS')
+	$playerLaunchers = @(Get-ChildItem (Join-Path $scripts 'tester') -File) + @(Get-Item (Join-Path $scripts 'add-steam-shortcut.ps1'), (Join-Path $scripts 'steam-shortcuts-lib.ps1'))
+	Check 'the Steam shortcut and the tester zip''s launchers never set it' (-not ($playerLaunchers | Where-Object { (Get-Content -Raw $_.FullName) -match 'ARXVR_NO_DIALOGS|ARX_UNATTENDED' })) "$($playerLaunchers.Name)"
+
+	# The failure reason of a run that ended on a dialog: the line from arx.log and from stderr, once
+	$dialogLog = Join-Path $dialogRoot 'arx.log'
+	$dialogErr = Join-Path $dialogRoot 'stderr.txt'
+	$line = '[dialog] error: Critical Error - Arx Fatalis VR: unknown option: --no-such-option'
+	[IO.File]::WriteAllLines($dialogLog, @('[I] Startup:164           Starting Arx Fatalis VR', "[E] Dialog:533            $line"))
+	[IO.File]::WriteAllLines($dialogErr, @("[E] Dialog:533            $line", 'Usage: arx [options]'))
+	$lines = @(Get-ArxDialogLines @($dialogLog, $dialogErr, $null, (Join-Path $dialogRoot 'missing.txt')))
+	Check 'Get-ArxDialogLines: the line from arx.log and stderr, once, without the log prefix' ($lines.Count -eq 1 -and $lines[0] -eq $line) "$lines"
+	Check 'the reason names the dialog line' ((Get-ArxDialogReason $lines) -eq "the game ended on a dialog: $line")
+	Check 'two dialogs: the first and a count' ((Get-ArxDialogReason @($line, '[dialog] info: x: y')) -eq "the game ended on a dialog: $line (and 1 more)")
+	Check 'no dialog: no reason' ($null -eq (Get-ArxDialogReason @()) -and @(Get-ArxDialogLines @((Join-Path $dialogRoot 'missing.txt'))).Count -eq 0)
+	Check 'smoke-test.ps1 puts the dialog line first among the failure reasons' ($smokeText -match '\$reasons\.Insert\(0, \(Get-ArxDialogReason \$dialogLines\)\)')
+} finally {
+	Remove-Item $dialogRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 if ($script:failures) { Write-Host "test-launch-lib: $($script:failures) check(s) FAILED" -ForegroundColor Red; exit 1 }

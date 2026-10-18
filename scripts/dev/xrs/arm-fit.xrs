@@ -1,0 +1,88 @@
+# The custom arm fitted to the player (#385.6): its segment lengths come from the character height until the
+# reach is measured (fitSource height -> reach), a controller out of reach is met by stretching the arm by at
+# most MaxArmStretch (0.10 of the arm) instead of sliding the shoulder, and a hand holding a weapon drops its
+# elbow (F-300). status.json, per hand (the custom arm, vr_arms_model = custom):
+#   vr.body.<hand>.custom.upperLength / .forearmLength  the fitted segment lengths, units
+#   vr.body.<hand>.custom.fitSource                      height | reach
+#   vr.body.<hand>.custom.stretch                        0 .. 0.10, the stretch fraction in use
+#   vr.body.<hand>.custom.error                          PROPOSED: wrist to controller, units (like vr.body.<hand>.error)
+#   vr.body.<hand>.custom.elbowDrop                      PROPOSED unit: elbow height below the no-weapon elbow, units (0 = none)
+# The pose numbers (metres from the rig, vr-sim hand pos) are a first guess: if the arm's real reach makes
+# "just past reach" miss, move the POSE - never the assertions.
+#   .\scripts\dev\xrs-run.ps1 arm-fit
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence arm-fit -Save mvp-items
+@sim idle
+@save mvp-items
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+# The custom arms: a test-only model since #466 (classic is the default) until #486 removes it
+arms custom
+@frames 5
+@assert vr.body.active eq true
+@assert vr.body.armsModel eq custom
+@assert vr.body.right.posed eq true
+@assert vr.body.left.posed eq true
+
+# 1. The fit: lengths set, in the Arx ratio (27.6 : 30.5), from the height until the reach is measured
+@assert vr.body.right.custom.upperLength gt 10
+@assert vr.body.right.custom.forearmLength gt 10
+@remember upperLen vr.body.right.custom.upperLength
+@assert vr.body.right.custom.forearmLength gt {upperLen}
+@assert vr.body.right.custom.fitSource eq height
+@assert vr.body.left.custom.fitSource eq height
+@assert vr.body.right.custom.stretch eq 0
+
+# 2. A hand far out of reach: the arm stretches, but by at most MaxArmStretch (0.10); the shoulder does not slide
+vr-sim head rot 0 0 0
+vr-sim hand left off
+@remember shoulderY0 vr.body.right.shoulder.y
+vr-sim hand right pos 0.2 -0.3 -1.5
+vr-sim hand right rot 0 0 0
+@frames 20
+@assert vr.body.right.posed eq true
+@assert vr.body.right.custom.stretch gt 0
+@assert vr.body.right.custom.stretch le 0.1
+@assert vr.body.right.shoulder.y gt {shoulderY0-1}
+@assert vr.body.right.shoulder.y lt {shoulderY0+1}
+@shot fit-far
+
+# 3. A hand just past the reach (z -0.535: measured in 385.6 without a body push, the height-fitted arm reached
+#    z -0.55 and its 10% stretch ended before z -0.60; 385.9 pushes the body 4 units back looking ahead, which moves
+#    that window nearer: measured there, stretch 0.08 at z -0.535): within the limit, so the hand is on the controller
+#    (error < 0.5 units)
+vr-sim hand right pos 0.2 -0.3 -0.535
+@frames 20
+@assert vr.body.right.custom.stretch gt 0
+@assert vr.body.right.custom.stretch lt 0.1
+@assert vr.body.right.custom.error lt 0.5
+@shot fit-near-limit
+
+# 4. A hand well within the reach: no stretch, the hand on the controller
+vr-sim hand right pos 0.2 -0.3 -0.3
+@frames 20
+@assert vr.body.right.custom.stretch eq 0
+@assert vr.body.right.custom.error lt 0.5
+
+# 5. The elbow drop: the right hand holds the sword (mvp-items), the empty left hand does not
+vr-sim hand left on
+vr-sim hand left pos -0.2 -0.3 -0.35
+vr-sim hand right pos 0.2 -0.3 -0.35
+vr-sim hand right rot 0 90 0
+vr-sim hand left rot 0 90 0
+@frames 20
+@assert vr.weapon.inHand eq true
+@assert vr.body.right.custom.elbowDrop gt 0
+@assert vr.body.left.custom.elbowDrop eq 0
+@shot elbow-drop
+
+# 6. The right controller lost and found again: the sword is back in the hand and the drop with it
+vr-sim hand right off
+@frames 10
+vr-sim hand right on
+@frames 20
+@assert vr.body.right.custom.elbowDrop gt 0
+
+@assert errors eq 0

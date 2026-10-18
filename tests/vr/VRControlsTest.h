@@ -33,6 +33,7 @@ class VRControlsTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(simultaneousChordTest);
 	CPPUNIT_TEST(gripFlickerTest);
 	CPPUNIT_TEST(indexGripThresholdTest);
+	CPPUNIT_TEST(chordsOffTest);
 	CPPUNIT_TEST(longPressTest);
 	CPPUNIT_TEST(longChordTest);
 	CPPUNIT_TEST(layoutChangeTest);
@@ -41,6 +42,8 @@ class VRControlsTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(bindingTextTest);
 	CPPUNIT_TEST(layoutTextTest);
 	CPPUNIT_TEST(defaultLayoutTest);
+	CPPUNIT_TEST(defaultChordTest);
+	CPPUNIT_TEST(jumpStickTest);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -52,6 +55,7 @@ public:
 	void simultaneousChordTest();
 	void gripFlickerTest();
 	void indexGripThresholdTest();
+	void chordsOffTest();
 	void longPressTest();
 	void longChordTest();
 	void layoutChangeTest();
@@ -60,6 +64,8 @@ public:
 	void bindingTextTest();
 	void layoutTextTest();
 	void defaultLayoutTest();
+	void defaultChordTest();
+	void jumpStickTest();
 
 };
 

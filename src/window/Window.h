@@ -135,7 +135,15 @@ public:
 	DisplayMode getDisplayMode() const { return m_mode; }
 	
 	bool isFullScreen() const { return m_fullscreen; }
-	
+
+	/*!
+	 * A test run's window (#487, \c --test-dir): shown without activation in a corner of the screen, never
+	 * activated, and the desktop's real mouse and keyboard do not reach the game - only the events the test
+	 * channel injects. Set before \ref initialize().
+	 */
+	void setBackground(bool background) { m_background = background; }
+	bool isBackground() const { return m_background; }
+
 	virtual InputBackend * getInputBackend() = 0;
 	
 protected:
@@ -162,6 +170,7 @@ protected:
 	bool m_visible;      //!< Is visible ?
 	bool m_fullscreen;   //!< Is fullscreen ?
 	bool m_focused;      //!< Has focus ?
+	bool m_background;   //!< A test run's window (#487)
 	
 private:
 	

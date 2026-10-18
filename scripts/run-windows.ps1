@@ -7,18 +7,22 @@
 	with it as the data directory. Any extra arguments are passed through to arx.exe.
 
 	Test runs start in a window (arx.exe --windowed) so the game does not take over the desktop;
-	pass -Fullscreen to use the fullscreen setting from cfg.ini instead. A plain launch goes straight
-	to the main menu and every .cin cinematic is skipped; add --intro to see the publisher logos and
-	the intro cinematic, --cinematics to see all cinematics (new-game intro, in-game cutscenes).
+	pass -Fullscreen to use the fullscreen setting from cfg.ini instead. A launch from here is a
+	development launch (arx.exe --dev-launch, #394): straight to the main menu and every .cin cinematic
+	is skipped; add --intro to see the publisher logos and the intro cinematic, --cinematics to see all
+	cinematics (new-game intro, in-game cutscenes). -Player launches as a player does - arx.exe without
+	--dev-launch: the logos, the main menu and every cinematic (the desktop shortcut does that).
 
 	Launch control (docs/vr/WORKFLOW.md "Parallel work", decision D-014; scripts/launch-lib.ps1):
 	  - no SteamVR start: without --no-vr the game may start in VR only when SteamVR (vrserver.exe) is
 	    already running; otherwise the launch is made flat (--no-vr) with a note. -StartSteamVR, the
 	    owner's switch, starts SteamVR first (the headset turns on) and is never used by a worker.
 	  - one game at a time on this PC: the launch holds a game lock slot while the game runs (a VR
-	    launch also the VR lock), waits up to -LockTimeoutSec for the holder and names it.
+	    launch also the VR lock), waits up to -LockTimeoutSec for the holder and names it. A launch by
+	    hand (no -TestChannel / -Isolated / --test-dir, or -Dialogs) is the owner's: it takes its slot even
+	    while the CI runner runs a job, which every scripted launch waits for (#527).
 	  - only this working copy's own fresh build: an arx.exe from another copy, or whose built-from.txt
-	    does not name the copy's HEAD, is refused ("dirty" is fine); -Rebuild builds first.
+	    does not name the copy's HEAD or predates later uncommitted edits (tree fingerprint, #306), is refused; -Rebuild builds first.
 	  - the launch is written to the ledger %LOCALAPPDATA%\ArxFatalisVR\launches.log.
 	  - -Background shows the window without taking the focus (self-tests).
 
@@ -54,6 +58,10 @@
 
 .PARAMETER Fullscreen
 	Do not force windowed mode; use the fullscreen setting from cfg.ini.
+
+.PARAMETER Player
+	A player's launch (#394): no --dev-launch, so the publisher logos, the main menu and every .cin cinematic are
+	shown as in the original game. launch-shortcut.ps1 (the desktop shortcut) passes it.
 
 .PARAMETER Isolated
 	Use this working copy's own user and config directory (--user-dir / --config-dir) instead of the
@@ -91,6 +99,12 @@
 .PARAMETER Background
 	Show the game window without activating it, so the launch does not take the focus (self-tests).
 
+.PARAMETER Dialogs
+	Keep the game's dialogs in a launch that would otherwise go without them. A launch with the test channel
+	(-TestChannel or --test-dir) or an isolated user directory (-Isolated) is a scripted one: the game gets
+	ARXVR_NO_DIALOGS=1 and writes every dialog to arx.log and stderr as a '[dialog]' line instead of waiting
+	for a click (#501). test-pr.ps1 - the owner's launch - passes -Dialogs.
+
 .PARAMETER LockTimeoutSec
 	How long to wait for the game lock when another game runs (default 300). 0: do not wait.
 
@@ -100,6 +114,9 @@
 	.\scripts\run-windows.ps1 -- --skiplogo --loadslot 0
 .EXAMPLE
 	.\scripts\run-windows.ps1 -Fullscreen -Config Debug -- --no-vr
+.EXAMPLE
+	.\scripts\run-windows.ps1 -Player
+	# as a player: the publisher logos, the main menu, the intro cinematic after New game
 .EXAMPLE
 	.\scripts\run-windows.ps1 -Isolated -Saves save0000 -TestChannel -Background -- --no-vr --loadslot 0
 #>
@@ -111,6 +128,7 @@ param(
 	[string]$BuildDir,
 	[string]$DataDir,
 	[switch]$Fullscreen,
+	[switch]$Player,
 	[switch]$Isolated,
 	[switch]$Playground,
 	[string]$UserDir,
@@ -124,6 +142,7 @@ param(
 	[switch]$DryRun,
 	[switch]$Rebuild,
 	[switch]$Background,
+	[switch]$Dialogs,
 	[Alias('VrLockTimeoutSec')]
 	[int]$LockTimeoutSec = 300,
 	[Parameter(ValueFromRemainingArguments)]
@@ -151,6 +170,8 @@ $dataArgs = if ($DataDir) { @('--data-dir', $DataDir) } else { @() }
 
 $modeArgs = @()
 if (-not $Fullscreen) { $modeArgs += '--windowed' }
+# A development launch skips the logos and the cinematics; -Player launches as a player does (#394)
+$modeArgs += Get-ArxLaunchKindArgs -Player:$Player
 # By hand the game has sound; a background launch (-Background, -TestChannel) is silent unless -Sound (#345)
 if ($Mute -or (($Background -or $TestChannel) -and -not $Sound)) { $modeArgs += '--mute' }
 
@@ -170,6 +191,9 @@ Write-Host "    build: $(ConvertTo-ShortSha $stamp) ($($copy.Branch))"
 Write-Host "    data: $(if ($DataDir) { "$DataDir (--data-dir)" } else { 'found by the game in the Steam libraries (arx.log: Steam data)' })"
 if ($Isolated) { Write-Host "    user dir: $UserDir (isolated)" } else { Write-Host "    user dir: $(Get-SharedUserDir) (shared)" }
 if ($TestChannel) { Write-Host "    test channel: $(Get-DefaultTestDir $SourceDir)" }
+# A scripted launch (test channel, isolated user dir) never blocks on a message box (#501); by hand the dialogs stay
+$noDialogs = Test-ArxScriptedLaunch -ArxArgs $ArxArgs -TestChannel:$TestChannel -Isolated:$Isolated -Dialogs:$Dialogs
+Write-Host "    dialogs: $(if ($noDialogs) { 'off (ARXVR_NO_DIALOGS=1: written to arx.log and stderr)' } else { 'shown' })"
 if ($DryRun) {
 	# Nothing is written or started: the saves are not copied and SteamVR is not started (D-014)
 	if ($Saves) { Write-Host "    dry run: would copy the saves $($Saves -join ', ')" }
@@ -207,8 +231,10 @@ if ($DryRun) {
 }
 Write-ArxLaunchBudgetNote -Copy $SourceDir -Branch $copy.Branch
 
-# One game at a time: hold a game lock slot (and the VR lock for a VR launch) while the game runs
-$lock = Enter-ArxGameLock -What 'run-windows.ps1' -Copy $SourceDir -Branch $copy.Branch -Vr:$vr.Vr -TimeoutSec $LockTimeoutSec
+# One game at a time: hold a game lock slot (and the VR lock for a VR launch) while the game runs. A launch by hand
+# (no test channel, no isolated user dir, or -Dialogs: the owner's) is the owner's own (#527): it takes its slot even
+# while CI runs a job, and its game is never stopped; a scripted launch waits for CI like every worker's
+$lock = Enter-ArxGameLock -What 'run-windows.ps1' -Copy $SourceDir -Branch $copy.Branch -Vr:$vr.Vr -TimeoutSec $LockTimeoutSec -Owner:(-not $noDialogs)
 if (-not $lock) {
 	throw "another game is running on this PC (one at a time, D-014):`n  $((Get-ArxLockHolders) -join "`n  ")`nWait for it to end, then launch again."
 }
@@ -219,6 +245,8 @@ $process = $null
 $started = Get-Date
 $previousHint = $null
 if ($Background) { $previousHint = Set-ArxBackgroundWindow }
+# Scripted: ARXVR_NO_DIALOGS=1; by hand: neither variable, even if an earlier script in this shell left one (#501)
+$previousDialogEnv = Set-ArxDialogEnv -NoDialogs:$noDialogs
 try {
 	$process = Start-Process -FilePath $exe -ArgumentList $argList -PassThru -NoNewWindow
 	Set-ArxGameLockGame $lock $process.Id
@@ -226,6 +254,7 @@ try {
 	$code = $process.ExitCode
 } finally {
 	if ($Background) { Restore-ArxBackgroundWindow $previousHint }
+	Restore-ArxDialogEnv $previousDialogEnv
 	Exit-ArxGameLock $lock
 	Add-ArxLaunchRecord -Script 'run-windows.ps1' -Copy $SourceDir -Branch $copy.Branch -Build $stamp -Vr $vr.Vr `
 		-GamePid $(if ($process) { $process.Id } else { 0 }) -ExitCode $code -DurationSec ((Get-Date) - $started).TotalSeconds -ArxArgs $ArxArgs -Time $started

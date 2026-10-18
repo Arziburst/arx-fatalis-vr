@@ -6,7 +6,7 @@
 	A sequence is test-channel commands with asserts, log checks and shots (the directives are listed at the
 	top of xrs-lib.ps1 and in docs/vr/TESTING.md, "Scripted sequences"). By default this script launches the
 	game for the sequence through smoke-test.ps1 -Sequence - on the simulated headset (--vr-sim, no runtime,
-	no SteamVR), with the start the sequence asks for (@sim, @args, @save, @playground; default idle and
+	no SteamVR), with the start the sequence asks for (@sim, @args, @save, @playground, @player for a player's launch; default idle, a development launch and
 	--loadlevel 10) - and
 	so also checks exit code, clean shutdown, crash reports and [E] lines like every smoke test.
 
@@ -86,6 +86,7 @@ if ($parsed.Sim) { $smokeArgs.VrSim = $parsed.Sim } elseif ($parsed.Args -notcon
 if ($TestDir) { $smokeArgs.TestDir = $TestDir }
 if ($parsed.Save) { $smokeArgs.Save = $parsed.Save }
 if ($parsed.Playground) { $smokeArgs.Playground = $true }
+if ($parsed.Player) { $smokeArgs.Player = $true }
 $launchArgs = @(if ($ArxArgs) { $ArxArgs } elseif ($parsed.Args) { $parsed.Args })
 & (Join-Path $PSScriptRoot 'smoke-test.ps1') @smokeArgs @launchArgs
 exit $LASTEXITCODE

@@ -32,7 +32,9 @@ void WidgetContainer::update() {
 
 void WidgetContainer::render(const Widget * selected) {
 	for(Widget & widget : widgets()) {
-		widget.render(&widget == selected);
+		if(widget.isVisible()) {
+			widget.render(&widget == selected);
+		}
 	}
 }
 
@@ -45,7 +47,7 @@ Widget * WidgetContainer::getWidgetAt(const Vec2f & mousePos) const {
 	
 	for(Widget & widget : widgets()) {
 		
-		if(!widget.isEnabled()) {
+		if(!widget.isEnabled() || !widget.isVisible()) {
 			continue;
 		}
 		

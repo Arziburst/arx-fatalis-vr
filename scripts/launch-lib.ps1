@@ -13,13 +13,27 @@
 #      Like the VR lock of #123, a lock is a file opened without write sharing: Windows releases the
 #      handle when the holder dies, so a crash or a kill leaves no stale lock. A game that runs outside
 #      the lock (a raw arx.exe) counts as a holder too. settings.json ("maxGames") allows more slots.
+#      CI owns the slots (#527): while the CI runner runs a job (the marker ci-runner.marker it writes,
+#      Set-ArxRunnerMarker), every other scripted launch waits without taking a slot, and only the job's
+#      own launches ($env:ARXVR_CI_RUNNER) take them; a game that already holds a slot finishes. The
+#      owner's own launch (-Owner: run-windows.ps1 by hand, test-pr.ps1) ignores the marker and is never
+#      stopped. A waiting launch names the holders at once and every -ReportSec, and the timeout line names
+#      them too; an orphan game (a lock file no process holds any more, naming an arx.exe whose launcher
+#      is gone) is stopped (Stop-ArxOrphanGames). A game a script starts dies with the script
+#      (Register-ArxGameProcess: a job object with KILL_ON_JOB_CLOSE, #526), and ci-local / ci-smoke put
+#      their whole process chain into one (Register-ArxLauncherChain).
 #   3. Only the working copy's own fresh build: Assert-ArxFreshBuild refuses a build directory of
-#      another copy and a built-from.txt whose commit is not the copy's HEAD ("dirty" is allowed).
+#      another copy and a built-from.txt whose commit is not the copy's HEAD or whose tree fingerprint
+#      (git diff HEAD plus untracked files, #306) differs from the copy's now.
 #   4. The launch ledger %LOCALAPPDATA%\ArxFatalisVR\launches.log: one line per launch (time, copy,
 #      branch, build, mode, pid, exit code, duration), read by scripts/dev/cycle-report.ps1.
 #   5. The launch budget: 10 launches per task (WORKFLOW.md); Write-ArxLaunchBudgetNote warns past it.
 #   6. Self-test windows do not take the focus: Set-ArxBackgroundWindow sets the SDL hint that shows
-#      the window without activating it (SW_SHOWNA).
+#      the window without activating it (SW_SHOWNA). Since #487 the game does it itself for every
+#      --test-dir run (never activated, in a corner, no real input); Test-ArxForegroundKept checks it.
+#   7. Scripted launches show no dialogs (#501): Set-ArxDialogEnv -NoDialogs puts ARXVR_NO_DIALOGS=1 into the
+#      game's environment, an owner's launch gets neither variable; a dialog becomes a '[dialog]' line in arx.log
+#      and stderr (Get-ArxDialogLines reads it back).
 
 . (Join-Path $PSScriptRoot 'build-paths.ps1')
 
@@ -30,7 +44,8 @@ function ConvertTo-ShortSha([string]$Sha) { if ($Sha -and $Sha.Length -gt 9) { $
 # Machine-wide launch settings: settings.json in the lock folder (%ProgramData%\ArxFatalisVR\locks, so the
 # CI runner service reads the same file), else the old %LOCALAPPDATA%\ArxFatalisVR\settings.json, e.g.
 # { "maxGames": 2 } (how many games may run at once; default 1 - the owner's rule). Missing file or key:
-# the defaults.
+# the defaults. $env:ARXVR_MAX_GAMES overrides maxGames for the launches of one process tree: the CI workflow
+# sets it to 2, so its two lanes (ci-smoke.ps1, #522) may hold two slots while everyone else keeps one.
 function Get-ArxLaunchSettings {
 	$settings = @{ maxGames = 1 }
 	$file = @(Get-ArxLockDirs | ForEach-Object { Join-Path $_ 'settings.json' } | Where-Object { Test-Path $_ })[0]
@@ -41,6 +56,11 @@ function Get-ArxLaunchSettings {
 		} catch {
 			Write-Warning "ignoring $file ($($_.Exception.Message))"
 		}
+	}
+	if ($env:ARXVR_MAX_GAMES) {
+		$n = 0
+		if ([int]::TryParse($env:ARXVR_MAX_GAMES, [ref]$n)) { $settings.maxGames = [Math]::Max(1, $n) }
+		else { Write-Warning "ignoring ARXVR_MAX_GAMES='$env:ARXVR_MAX_GAMES' (not a number)" }
 	}
 	[pscustomobject]$settings
 }
@@ -178,10 +198,22 @@ function Resolve-ArxVrMode([string[]]$ArxArgs, [switch]$StartSteamVR) {
 	return [pscustomobject]@{ Vr = $false; Args = @($ArxArgs) + '--no-vr'; Reason = 'SteamVR not running, --no-vr added' }
 }
 
+# The kind of launch (#394). A plain arx.exe is the player's launch: the publisher logos, the main menu and every
+# .cin cinematic (the new-game intro, the cutscenes) - the desktop shortcut and the Steam shortcut launch that way.
+# Development and test launches add --dev-launch: no logos and no cutscenes, straight to the menu or the game
+# (--intro / --cinematics bring them back). The scripts that start the game take their arguments from here.
+$script:ArxDevLaunchArg = '--dev-launch'
+
+function Get-ArxLaunchKindArgs([switch]$Player) {
+	if ($Player) { return @() }
+	return @($script:ArxDevLaunchArg)
+}
+
 # --- 3. The working copy's own fresh build ---------------------------------------------------------------
 
 # Refuse (or with -Rebuild, rebuild) unless $BuildDir is a build directory of $SourceDir holding an
-# arx.exe whose built-from.txt names the copy's HEAD ("<sha>" or "<sha> dirty"). Returns the stamp.
+# arx.exe whose built-from.txt names the copy's HEAD and the fingerprint of its uncommitted state
+# ("<sha>[ dirty] fp=<hash>"). Returns the stamp.
 function Assert-ArxFreshBuild([string]$SourceDir, [string]$BuildDir, [string]$Config, [string]$Head, [switch]$Rebuild) {
 	$root = Join-Path (Get-ArxAppDataDir) "build\$(Get-WorkingCopyKey $SourceDir)"
 	$full = [IO.Path]::GetFullPath($BuildDir).TrimEnd('\')
@@ -195,6 +227,8 @@ function Assert-ArxFreshBuild([string]$SourceDir, [string]$BuildDir, [string]$Co
 	$problem = if (-not (Test-Path $exe)) { "no arx.exe in $BuildDir" }
 		elseif (-not $stamp) { 'the build has no built-from.txt (made before the stamp existed)' }
 		elseif ($Head -and ($stamp -split ' ')[0] -ne $Head) { "built from $(ConvertTo-ShortSha (($stamp -split ' ')[0])), HEAD is $(ConvertTo-ShortSha $Head)" }
+		elseif ($Head -and -not (Get-ArxStampFingerprint $stamp)) { 'the build stamp has no tree fingerprint (made before #306)' }
+		elseif ($Head -and (Get-ArxStampFingerprint $stamp) -ne (Get-ArxTreeFingerprint $SourceDir)) { 'the working tree changed since the build (uncommitted edits, #306)' }
 	if (-not $problem) { return $stamp }
 	if (-not $Rebuild) {
 		throw "stale build: $problem. Build first (.\scripts\build-windows.ps1 -Config $Config) or pass -Rebuild - a launch runs only a fresh build of its working copy (D-014)."
@@ -351,20 +385,109 @@ function Close-ArxLockFiles($Files) {
 	}
 }
 
+# --- The CI runner's priority (#527) ---
+# While the CI runner runs a job it writes ci-runner.marker into the lock folder: 'pid=<n> since=<time> what=<job>',
+# the pid of a process that lives as long as the job (the workflow writes it before the build and clears it in a
+# step that always runs). While the marker's process is alive, every scripted launch that is not the job's own
+# ($env:ARXVR_CI_RUNNER, set by the workflow for the job) and not the owner's (-Owner) waits without taking a slot,
+# so the runner's phases get the PC as soon as the running games finish. A marker whose process is gone, or older
+# than a job can be, is stale and counts as none - a job that died never blocks the PC.
+$script:ArxRunnerMarkerMaxAgeHours = 2
+
+function Get-ArxRunnerMarkerPath { Join-Path (Get-ArxLockDir) 'ci-runner.marker' }
+
+function Set-ArxRunnerMarker([int]$RunnerPid, [string]$What) {
+	Initialize-ArxLockDir (Get-ArxLockDir)
+	$text = "pid=$RunnerPid since=$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) what=$What"
+	[IO.File]::WriteAllText((Get-ArxRunnerMarkerPath), $text, [Text.UTF8Encoding]::new($false))
+	Write-Host "game lock: the CI runner marker is up ($text)"
+}
+
+function Clear-ArxRunnerMarker {
+	$path = Get-ArxRunnerMarkerPath
+	if (Test-Path -LiteralPath $path) {
+		Remove-Item -LiteralPath $path -Force
+		Write-Host 'game lock: the CI runner marker is cleared'
+	}
+}
+
+# The running CI job the marker names, { Pid; Since; What }, or $null: no marker, or a stale one (its process is
+# gone, started after the marker was written - a reused pid - or the marker is older than a job can be)
+function Get-ArxRunnerMarker {
+	$path = Get-ArxRunnerMarkerPath
+	if (-not (Test-Path -LiteralPath $path)) { return $null }
+	try { $text = [IO.File]::ReadAllText($path).Trim() } catch { return $null }
+	if ($text -notmatch '^pid=(\d+) since=(\S+ \S+) what=(.*)$') { return $null }
+	$runnerPid = [int]$Matches[1]
+	$since = [DateTime]::MinValue
+	if (-not [DateTime]::TryParseExact($Matches[2], 'yyyy-MM-dd HH:mm:ss', [Globalization.CultureInfo]::InvariantCulture, 'None', [ref]$since)) { return $null }
+	if ((Get-Date) - $since -gt [TimeSpan]::FromHours($script:ArxRunnerMarkerMaxAgeHours)) { return $null }
+	$process = Get-Process -Id $runnerPid -ErrorAction SilentlyContinue
+	if (-not $process) { return $null }
+	try { if ($process.StartTime -gt $since.AddMinutes(1)) { return $null } } catch { }
+	[pscustomobject]@{ Pid = $runnerPid; Since = $Matches[2]; What = $Matches[3] }
+}
+
+# --- Orphan games (#527) ---
+# A game whose launcher died without stopping it (a killed ci-local, #526): its lock file is no longer held (the
+# handle went with the launcher), still says game=<pid>, and that arx.exe runs on. Such a game is stopped and the
+# file removed; one line per orphan says so. Never stopped: a process that is not arx.exe (the pid was reused), the
+# game of a holder that is alive, and the owner's own game (a lock taken with -Owner, '(owner)' in its what=).
+function Stop-ArxOrphanGames {
+	$lines = @()
+	foreach ($dir in Get-ArxLockDirs) {
+		foreach ($file in Get-ChildItem $dir -Filter 'game-*.lock' -File -ErrorAction SilentlyContinue) {
+			try {
+				$probe = [IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+				$probe.Dispose()
+			} catch { continue } # held by a live process, or unreadable: not ours to judge
+			$text = Read-ArxLockHolder $file.FullName
+			if ($text -notmatch 'pid=(\d+) game=(\d+)') { continue }
+			$launcher = [int]$Matches[1]
+			$game = [int]$Matches[2]
+			if ($text -match 'what=[^\r\n]*\(owner\)') { continue }
+			if (Get-Process -Id $launcher -ErrorAction SilentlyContinue) { continue }
+			$process = Get-Process -Id $game -ErrorAction SilentlyContinue
+			if ($process -and $process.ProcessName -eq 'arx') {
+				try {
+					Stop-Process -Id $game -Force -ErrorAction Stop
+					Wait-Process -Id $game -Timeout 5 -ErrorAction SilentlyContinue
+					$lines += "game lock: stopped the orphan arx.exe pid $game - its launcher pid $launcher is gone ($($file.Name): $text)"
+				} catch {
+					$lines += "game lock: could not stop the orphan arx.exe pid $game - its launcher pid $launcher is gone ($($file.Name): $text): $($_.Exception.Message)"
+					continue
+				}
+			}
+			Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
+		}
+	}
+	$lines
+}
+
 # Take a game lock slot (and with -Vr the VR lock), waiting up to $TimeoutSec seconds while every slot
-# is held or a game runs outside the lock. Prints the holders while waiting. Returns the lock object
-# (keep it, pass it to Set-ArxGameLockGame and Exit-ArxGameLock) or $null when the wait timed out.
-function Enter-ArxGameLock([string]$What, [string]$Copy, [string]$Branch, [switch]$Vr, [int]$TimeoutSec = 300) {
+# is held, a game runs outside the lock, or the CI runner runs a job (unless this is the job's own launch,
+# $env:ARXVR_CI_RUNNER, or the owner's, -Owner). Orphan games are stopped first. Names the holders at once and
+# every -ReportSec while waiting, and on the timeout. Returns the lock object (keep it, pass it to
+# Set-ArxGameLockGame and Exit-ArxGameLock) or $null when the wait timed out.
+function Enter-ArxGameLock([string]$What, [string]$Copy, [string]$Branch, [switch]$Vr, [int]$TimeoutSec = 300, [int]$ReportSec = 30, [switch]$Owner) {
 	foreach ($dir in Get-ArxLockDirs) { Initialize-ArxLockDir $dir }
 	$maxGames = (Get-ArxLaunchSettings).maxGames
+	if ($Owner) { $What = "$What (owner)" }
+	$yields = -not $Owner -and -not $env:ARXVR_CI_RUNNER
 	$deadline = (Get-Date).AddSeconds($TimeoutSec)
 	$lastReport = [DateTime]::MinValue
+	$busy = $null
 	do {
 		$taken = @()
 		$slot = 0
 		$busy = $null
 		try {
-			if ($Vr) {
+			foreach ($line in Stop-ArxOrphanGames) { Write-Host $line -ForegroundColor Yellow }
+			if ($yields) {
+				$runner = Get-ArxRunnerMarker
+				if ($runner) { $busy = "the CI runner runs a job - $($runner.What), pid $($runner.Pid) since $($runner.Since) - and CI has the game slots first (#527)" }
+			}
+			if (-not $busy -and $Vr) {
 				try { $taken += Open-ArxLockFiles 'vr.lock' } catch [IO.IOException] { $busy = 'the VR lock is held' }
 			}
 			if (-not $busy) {
@@ -386,14 +509,96 @@ function Enter-ArxGameLock([string]$What, [string]$Copy, [string]$Branch, [switc
 			$busy = "cannot take the lock: $($_.Exception.Message)"
 		}
 		Close-ArxLockFiles $taken
-		if (((Get-Date) - $lastReport).TotalSeconds -ge 30) {
+		if (((Get-Date) - $lastReport).TotalSeconds -ge $ReportSec) {
 			Write-Host "game lock busy ($busy)$(if ($TimeoutSec -gt 0) { " - waiting up to $TimeoutSec s, one game at a time on this PC (D-014)" })" -ForegroundColor Yellow
 			foreach ($line in Get-ArxLockHolders) { Write-Host "  held: $line" -ForegroundColor Yellow }
 			$lastReport = Get-Date
 		}
 		if ($TimeoutSec -gt 0) { Start-Sleep -Milliseconds 500 }
 	} while ((Get-Date) -lt $deadline)
+	$holders = @(Get-ArxLockHolders)
+	Write-Host "game lock: timed out after $TimeoutSec s ($busy) - held: $(if ($holders) { $holders -join '; ' } else { 'no lock file (a game outside the lock, or the CI runner)' })" -ForegroundColor Yellow
 	return $null
+}
+
+# --- Games die with their launcher (#526) ---
+# A Windows job object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: every process in it is killed when the last handle
+# to the job closes, which happens when the process holding the handle ends - killed or not. The handle lives in
+# this process ($script:ArxLauncherJob), one job per process, made on first use.
+function Initialize-ArxJobNative {
+	if ('ArxJobNative' -as [type]) { return }
+	Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class ArxJobNative {
+  [StructLayout(LayoutKind.Sequential)]
+  public struct JOBOBJECT_BASIC_LIMIT_INFORMATION {
+    public long PerProcessUserTimeLimit; public long PerJobUserTimeLimit; public uint LimitFlags;
+    public UIntPtr MinimumWorkingSetSize; public UIntPtr MaximumWorkingSetSize; public uint ActiveProcessLimit;
+    public UIntPtr Affinity; public uint PriorityClass; public uint SchedulingClass;
+  }
+  [StructLayout(LayoutKind.Sequential)]
+  public struct IO_COUNTERS {
+    public ulong ReadOperationCount; public ulong WriteOperationCount; public ulong OtherOperationCount;
+    public ulong ReadTransferCount; public ulong WriteTransferCount; public ulong OtherTransferCount;
+  }
+  [StructLayout(LayoutKind.Sequential)]
+  public struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+    public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation; public IO_COUNTERS IoInfo;
+    public UIntPtr ProcessMemoryLimit; public UIntPtr JobMemoryLimit; public UIntPtr PeakProcessMemoryUsed; public UIntPtr PeakJobMemoryUsed;
+  }
+  public const int JobObjectExtendedLimitInformation = 9;
+  public const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
+  [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] public static extern IntPtr CreateJobObjectW(IntPtr attributes, string name);
+  [DllImport("kernel32.dll", SetLastError = true)] public static extern bool SetInformationJobObject(IntPtr job, int infoClass, ref JOBOBJECT_EXTENDED_LIMIT_INFORMATION info, int size);
+  [DllImport("kernel32.dll", SetLastError = true)] public static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+  [DllImport("kernel32.dll", SetLastError = true)] public static extern bool IsProcessInJob(IntPtr process, IntPtr job, out bool result);
+}
+'@
+}
+
+# The job object of this process (made once): $null, with a warning, when Windows refuses it
+function Get-ArxLauncherJob {
+	if ($script:ArxLauncherJob) { return $script:ArxLauncherJob }
+	try {
+		Initialize-ArxJobNative
+		$job = [ArxJobNative]::CreateJobObjectW([IntPtr]::Zero, $null)
+		if ($job -eq [IntPtr]::Zero) { throw "CreateJobObject failed ($([Runtime.InteropServices.Marshal]::GetLastWin32Error()))" }
+		$info = [ArxJobNative+JOBOBJECT_EXTENDED_LIMIT_INFORMATION]::new()
+		# A nested struct comes back as a copy: set it whole
+		$basic = $info.BasicLimitInformation
+		$basic.LimitFlags = [ArxJobNative]::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+		$info.BasicLimitInformation = $basic
+		$size = [Runtime.InteropServices.Marshal]::SizeOf($info)
+		if (-not [ArxJobNative]::SetInformationJobObject($job, [ArxJobNative]::JobObjectExtendedLimitInformation, [ref]$info, $size)) {
+			throw "SetInformationJobObject failed ($([Runtime.InteropServices.Marshal]::GetLastWin32Error()))"
+		}
+		$script:ArxLauncherJob = $job
+		$job
+	} catch {
+		Write-Warning "no job object for the games of this process ($($_.Exception.Message)): a game would outlive a killed launcher (#526)"
+		$null
+	}
+}
+
+# Put $Process (a Process object, e.g. from Start-Process -PassThru) into this process's job: it is killed when this
+# process ends. Returns $true when it is in the job, $false (with a warning) when Windows refused.
+function Register-ArxGameProcess($Process) {
+	if (-not $Process) { return $false }
+	$job = Get-ArxLauncherJob
+	if (-not $job) { return $false }
+	$inJob = $false
+	if ([ArxJobNative]::IsProcessInJob($Process.Handle, $job, [ref]$inJob) -and $inJob) { return $true }
+	if ([ArxJobNative]::AssignProcessToJobObject($job, $Process.Handle)) { return $true }
+	Write-Warning "could not put pid $($Process.Id) into this process's job object (error $([Runtime.InteropServices.Marshal]::GetLastWin32Error())): it would outlive a killed launcher (#526)"
+	$false
+}
+
+# Put this process itself into its job: every process it starts from now on (a child pwsh, a background job, the
+# games they start) is in the job too and dies with it (#526: a killed ci-local must take its ci-smoke, the phase
+# processes and their games with it). Returns $true when this process is in the job.
+function Register-ArxLauncherChain {
+	Register-ArxGameProcess (Get-Process -Id $PID)
 }
 
 # Record the game's pid in the lock, so other launchers know this arx.exe runs under the lock
@@ -417,7 +622,7 @@ function Get-ArxLaunchLogPath { Join-Path (Get-ArxAppDataDir) 'launches.log' }
 function Add-ArxLaunchRecord([string]$Script, [string]$Copy, [string]$Branch, [string]$Build, [bool]$Vr, [int]$GamePid, $ExitCode, [double]$DurationSec, [string[]]$ArxArgs, [DateTime]$Time = (Get-Date), [bool]$Sim = $false) {
 	$fields = [ordered]@{
 		time = $Time.ToString('yyyy-MM-ddTHH:mm:ss'); script = $Script; copy = $Copy; branch = $Branch
-		build = ($Build -replace ' dirty$', '+dirty') -replace '^([0-9a-f]{9})[0-9a-f]+', '$1'
+		build = (($Build -replace ' fp=[0-9a-f]+$', '') -replace ' dirty$', '+dirty') -replace '^([0-9a-f]{9})[0-9a-f]+', '$1'
 		# sim: the simulated headset (--vr-sim, #112) - VR code, no runtime, no headset
 		mode = $(if ($Vr) { 'vr' } elseif ($Sim) { 'sim' } else { 'flat' }); pid = $GamePid; exit = $(if ($null -eq $ExitCode) { '-' } else { $ExitCode })
 		duration = $DurationSec.ToString('0.0', [Globalization.CultureInfo]::InvariantCulture); args = ($ArxArgs -join ' ')
@@ -478,4 +683,89 @@ function Set-ArxBackgroundWindow {
 
 function Restore-ArxBackgroundWindow($Previous) {
 	if ($null -eq $Previous) { Remove-Item Env:SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN -ErrorAction SilentlyContinue } else { $env:SDL_WINDOW_NO_ACTIVATION_WHEN_SHOWN = $Previous }
+}
+
+# The foreground window now and its process (#487); Handle 0 in a session without a desktop (the CI runner)
+function Get-ArxForegroundWindow {
+	if (-not ('ArxForegroundNative' -as [type])) {
+		Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class ArxForegroundNative {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+}
+'@
+	}
+	$window = [ArxForegroundNative]::GetForegroundWindow()
+	[uint32]$owner = 0
+	if ($window -ne [IntPtr]::Zero) { $null = [ArxForegroundNative]::GetWindowThreadProcessId($window, [ref]$owner) }
+	[pscustomobject]@{ Handle = [int64]$window; ProcessId = [int]$owner }
+}
+
+# A test run's game never takes the foreground (#487): the verdict on the foreground window $Now (from
+# Get-ArxForegroundWindow) against the one $Before the launch. Ok is false only when the game's own window has it -
+# another window the person at the PC switched to is theirs to take.
+function Test-ArxForegroundKept($Before, $Now, [int]$GameProcessId) {
+	if (-not $Now -or $Now.Handle -eq 0) { return [pscustomobject]@{ Ok = $true; Text = 'no foreground window (a session without a desktop)' } }
+	if ($Now.ProcessId -eq $GameProcessId) { return [pscustomobject]@{ Ok = $false; Text = "the game's window took the foreground (#487)" } }
+	if ($Before -and $Now.Handle -eq $Before.Handle) { return [pscustomobject]@{ Ok = $true; Text = "kept by the window that had it before the launch (pid $($Now.ProcessId))" } }
+	[pscustomobject]@{ Ok = $true; Text = "another window has it (pid $($Now.ProcessId)), not the game" }
+}
+
+# --- 7. Scripted launches show no dialogs ------------------------------------------------------------------------------
+
+# A game started by a script, a worker or CI never blocks on a message box (#501): with ARXVR_NO_DIALOGS=1 in its
+# environment the game writes every dialog to arx.log and stderr as one '[dialog] <type>: <title>: <message>' line,
+# answers it with its default (a question: no) and after an error exits with a failure code. The crash processor
+# inherits it: no crash dialog, no Explorer window. The owner's own launches (test-pr.ps1, run-windows.ps1 by hand,
+# the desktop and the Steam shortcut) keep the dialogs. The game also counts ARX_UNATTENDED - any non-empty value -
+# which the test channel sets for the crash processor, so both are handled together.
+#
+# Set-ArxDialogEnv -NoDialogs sets both to 1 for the game about to be started; without -NoDialogs (an owner's launch)
+# it removes both, so a variable left in the shell by an earlier script cannot take the owner's dialogs away. It
+# returns the previous values: Restore-ArxDialogEnv puts them back right after the start, in a finally - the scripts
+# run in the caller's session, which must come out of a launch unchanged (the started game keeps its own copy).
+$script:ArxDialogVariables = @('ARXVR_NO_DIALOGS', 'ARX_UNATTENDED')
+
+function Set-ArxDialogEnv([switch]$NoDialogs) {
+	$previous = @{}
+	foreach ($name in $script:ArxDialogVariables) {
+		$previous[$name] = [Environment]::GetEnvironmentVariable($name)
+		[Environment]::SetEnvironmentVariable($name, $(if ($NoDialogs) { '1' } else { $null }))
+	}
+	$previous
+}
+
+function Restore-ArxDialogEnv($Previous) {
+	if (-not $Previous) { return }
+	foreach ($name in $script:ArxDialogVariables) { [Environment]::SetEnvironmentVariable($name, $Previous[$name]) }
+}
+
+# Whether a run-windows.ps1 launch is a scripted one, without dialogs: with the test channel (-TestChannel or
+# --test-dir) or an isolated user directory (-Isolated), a worker's runs - unless -Dialogs, which the owner's test
+# station (test-pr.ps1) passes.
+function Test-ArxScriptedLaunch([string[]]$ArxArgs, [switch]$TestChannel, [switch]$Isolated, [switch]$Dialogs) {
+	if ($Dialogs) { return $false }
+	[bool]($TestChannel -or $Isolated -or (@($ArxArgs) -contains '--test-dir'))
+}
+
+# The '[dialog]' lines a run without dialogs wrote (#501), from its arx.log and its stderr: the text from '[dialog]'
+# on (the log prefix "[E] Dialog:123  " cut), each once. Missing files are skipped.
+function Get-ArxDialogLines([string[]]$Paths) {
+	$lines = foreach ($path in @($Paths)) {
+		if (-not $path -or -not (Test-Path -LiteralPath $path)) { continue }
+		foreach ($line in [IO.File]::ReadAllLines($path)) {
+			$at = $line.IndexOf('[dialog] ')
+			if ($at -ge 0) { $line.Substring($at).TrimEnd() }
+		}
+	}
+	@($lines | Select-Object -Unique)
+}
+
+# The failure reason of a run that ended on a dialog: the first '[dialog]' line, and how many more there were
+function Get-ArxDialogReason([string[]]$Lines) {
+	$Lines = @($Lines | Where-Object { $_ })
+	if (-not $Lines) { return $null }
+	"the game ended on a dialog: $($Lines[0])$(if ($Lines.Count -gt 1) { " (and $($Lines.Count - 1) more)" })"
 }

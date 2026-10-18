@@ -1,0 +1,88 @@
+# In VR the desktop window only mirrors the headset (#338): the desktop mouse's movement, buttons and wheel reach
+# nothing - not the main menu under it, not the camera in the game. The hands are the mouse (D-016), the head is the
+# camera (D-018); the keyboard is unchanged. The mouse events go through SDL's event queue like a real mouse's
+# (the channel's desktop-mouse). The flat counterpart, where the mouse still looks: desktop-mouse-flat.xrs.
+#   .\scripts\dev\xrs-run.ps1 desktop-mouse
+@sim idle
+@save mvp-new-game
+@args --dev-launch
+
+@until state eq MENU 30s
+@assert menuMode eq mainmenu
+@until vr.sessionState eq focused 30s
+@until vr.panel.mode eq world 10s
+@frames 60
+@assert desktopMouse.ignored eq true
+
+# The main menu: the desktop mouse parked over Options and clicked opens nothing, with both hands off the panel
+vr-point right menu options
+@frames 5
+@assert ui.menuHover eq options
+desktop-mouse at menu options
+@frames 5
+vr-sim hand left rot 180 0 0
+vr-sim hand right rot 180 0 0
+@frames 5
+@assert vr.pointer.active eq false
+@assert ui.mouseInWindow eq false
+@remember mx ui.mouseX
+@remember my ui.mouseY
+@remember buttons desktopMouse.droppedButtons
+@remember wheel desktopMouse.droppedWheel
+@remember moves desktopMouse.droppedMoves
+desktop-mouse button 1 down
+@frames 5
+desktop-mouse button 1 up
+@frames 5
+desktop-mouse button 2 down
+@frames 5
+desktop-mouse button 2 up
+@frames 30
+@assert menuPage eq none
+desktop-mouse wheel -3
+@frames 5
+# The game logs one "movement dropped" line per burst, and a burst ends after 1 s without a dropped move (Input.cpp):
+# the move below must start a burst of its own, not join the one of "at menu options" above. The game reports no
+# such time, so it is a wait; the old harness's slack made it by chance (#522)
+@wait 1100
+desktop-mouse move 40 30
+@frames 5
+@assert ui.mouseX eq {mx}
+@assert ui.mouseY eq {my}
+@assert desktopMouse.droppedButtons eq {buttons+2}
+@assert desktopMouse.droppedWheel eq {wheel+3}
+@assert desktopMouse.droppedMoves gt {moves}
+@log \[input\] desktop mouse: button 1 dropped \(VR\)
+@log \[input\] desktop mouse: button 2 dropped \(VR\)
+@log \[input\] desktop mouse: wheel -3 dropped \(VR\)
+@log \[input\] desktop mouse: movement dropped \(VR\)
+@assert menuPage eq none
+@assert menuMode eq mainmenu
+
+# The game: the desktop mouse does not turn the camera or the body
+vr-sim hand left rot 0 0 0
+vr-sim hand right rot 0 0 0
+loadslot 0
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # past the level's fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert player.freelook eq true
+@frames 10
+@remember yaw player.yaw
+@remember camYaw camera.yaw
+@remember camPitch camera.pitch
+@remember moves desktopMouse.droppedMoves
+desktop-mouse move 300 0
+@frames 5
+desktop-mouse move 300 0
+@frames 5
+desktop-mouse move 0 200
+@frames 5
+desktop-mouse wheel 2
+@frames 30
+@assert player.yaw eq {yaw}
+@assert camera.yaw eq {camYaw}
+@assert camera.pitch eq {camPitch}
+@assert desktopMouse.droppedMoves ge {moves+3}
+@assert desktopMouse.ignored eq true
+@assert errors eq 0

@@ -57,7 +57,12 @@ public:
 	MENUSTATE requestedPage() const {
 		return m_requestedPage;
 	}
-	
+
+	//! The main menu's own entries (resume, new game, load / save, options, credits, quit, version, language)
+	const WidgetContainer & widgets() const {
+		return m_widgets;
+	}
+
 private:
 	
 	MENUSTATE m_requestedPage;
@@ -79,6 +84,9 @@ extern MainMenu * g_mainMenu;
  * \return an empty string, or why it was refused
  */
 std::string stepVRSettingRow(std::string_view row, int delta);
+
+//! The rows the VR turning page shows (e.g. "turn,angle,repeat,height"), empty when the page is not open (#374)
+std::string visibleVRSettingRows();
 
 /*!
  * The dot of a slider of the VR turning page (#260) - angle, speed or repeat - dragged to \a fraction of its

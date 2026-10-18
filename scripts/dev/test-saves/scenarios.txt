@@ -1,12 +1,14 @@
-# The scenarios of the test save library (#70), played by scripts\dev\make-test-saves.ps1 in ONE flat
-# game run: a new game from the main menu, then the player is put at each scenario point with channel
-# commands and saved there. Format and directives: the header of make-test-saves.ps1.
+# The scenarios of the test save library (#70), played by scripts\dev\make-test-saves.ps1 in ONE game run
+# (flat, or on the simulated headset with -VrSim): a new game from the main menu, then the player is put at
+# each scenario point with channel commands and saved there. Format and directives: the header of
+# make-test-saves.ps1.
 #
 # Level 1 (the goblin prison, where a new game starts). Ids and coordinates come from the `entities`
-# channel command (docs/vr/TESTING.md); a position is "x y z" in world units (about 100 per metre) and y
-# is the eye: the floor is 170 higher. An entity's own position is on the floor, and walls are everywhere:
-# a spot is found with a screenshot (`shot`), never by arithmetic alone. Levers, chests and doors are not
-# here: nothing placed the player where one is under the reticle, see the follow-up task named in #70.
+# channel command (docs/vr/TESTING.md); a position is "x y z" in world units (about 100 per metre). `setpos`
+# takes the feet: its y is the floor the player stands on, and the eye (`player.y`) ends 170 units higher
+# (smaller y; TRAPS.md, #210). An entity's own position is on the floor, and walls are everywhere:
+# a spot set with `setpos` is checked with a screenshot (`shot`), never by arithmetic alone. A spot in the
+# hand reticles' reach of an entity is found by the game itself with `approach <entity>` (#210).
 #
 # Save names are folder names: scripts use them as `smoke-test.ps1 -Save <name>`.
 
@@ -22,6 +24,21 @@ newgame
 shot mvp-new-game
 @wait 1
 save mvp-new-game
+
+# --- scene-kultar: T1 of #29, one step before the Kultar scene's trigger --------------------------------------------
+# After the prison intro the hero stands at MARKER_0112 (8540 3105 8460), yaw 0, facing +z; the zone KULTAR_WAKE (armed by
+# the intro) is a strip about 1 m deep across the cell, 2.5-3.5 m ahead. Entering it only sends Kultar to the bars between
+# the cells (MARKER_0117, 9103 8836); his scene starts once the hero is within 5 m of him there (his CHECK_DIST), so this
+# spot is on the cell's right side, towards those bars: 8700 8660 (at 8740 and beyond the wall holds the hero), facing +z,
+# the zone 0.8 m ahead; a walk forward stops at z 8898, 4.1 m from Kultar (#29: from 8540 the hero stopped at the portcullis
+# 6 m away and the scene never started). A walk forward starts the scene (Kultar at the bars: camera entities,
+# cinemascope, playerlookat, three voiced lines).
+setpos 8700 3105 8660 0
+@wait 2
+@describe Kultar at the bars (#29, T1): the hero one step before the trigger zone KULTAR_WAKE, by the bars to Kultar's cell, facing +z; walking forward about a metre starts the scene (camera entities) once Kultar reached the bars.
+shot scene-kultar
+@wait 1
+save scene-kultar
 
 # The next scenarios fight and pick things up: a sword in the right hand (demo step 3), and the player
 # cannot be killed while the script walks him around (switched off again before every save).
@@ -51,3 +68,44 @@ invulnerability off
 shot mvp-goblin-fight
 @wait 1
 save mvp-goblin-fight
+invulnerability on
+
+# --- mvp-lever, mvp-door, mvp-chest: a lever, a portcullis, a chest in the hand reticles' reach (#210) -------------
+# `approach <entity>` finds the spot by number (docs/vr/TESTING.md): a floor with room for the player, the eye within
+# the pick's reach and nothing of the level before the entity on the rays from the eye and both hands. Called twice:
+# far away an entity is not updated, so the first call can only test the level; the second, from there, its faces.
+# lever_0012 opens porticullis_0015 (#403); pulled once its goblin is dead, it starts the 'Kultar freed' scene.
+approach lever_0012
+@wait 1
+approach lever_0012
+@wait 2
+@print player.x player.y player.z camera.eyeAboveFeet
+invulnerability off
+@describe Lever: a sword equipped; lever_0012 (opens porticullis_0015) in the hand reticles' reach ahead (#38).
+shot mvp-lever
+@wait 1
+save mvp-lever
+invulnerability on
+
+approach porticullis_0015
+@wait 1
+approach porticullis_0015
+@wait 2
+@print player.x player.y player.z camera.eyeAboveFeet
+invulnerability off
+@describe Door: a sword equipped; the closed portcullis porticullis_0015 in the hand reticles' reach ahead (#38).
+shot mvp-door
+@wait 1
+save mvp-door
+invulnerability on
+
+approach chest_metal_0052
+@wait 1
+approach chest_metal_0052
+@wait 2
+@print player.x player.y player.z camera.eyeAboveFeet
+invulnerability off
+@describe Chest: a sword equipped; chest_metal_0052 in the hand reticles' reach ahead (#38, open it, take what is inside).
+shot mvp-chest
+@wait 1
+save mvp-chest

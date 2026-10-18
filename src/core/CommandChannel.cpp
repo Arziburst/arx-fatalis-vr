@@ -1830,6 +1830,14 @@ std::string buildStatus(PlatformInstant now) {
 		json.end();
 		// The player's remapping in the VR settings (#178): saved per controller type, conflicts, the capture
 		json.value("remapped", vr::layoutRemapped());
+		// The game menu stays reachable whatever is remapped (#326)
+		json.value("menuReachable", vr::menuReachable(controls.layout()));
+		json.value("remapRefusals", vr::remapRefusals());
+		json.object("menuFallback");
+		json.value("control", std::string("both.stick_click"));
+		json.value("holdMs", vr::ControlResolver::menuFallbackMs);
+		json.value("opens", controls.menuFallbackOpens());
+		json.end();
 		json.value("layoutFile", vr::layoutFileName(vr::controllerType()));
 		{
 			const std::vector<vr::Conflict> conflicts = vr::findConflicts(controls.layout());

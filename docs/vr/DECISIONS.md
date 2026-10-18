@@ -13,6 +13,23 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: The game menu stays reachable whatever is rebound - a refused last binding and a fixed two-stick hold
+
+- **Date:** 2026-10-18
+- **Status:** Accepted (#326; amends D-042's table and D-019's menu rule)
+- **Decided by:** the owner (the Index has no menu button the game can read; the fallback is both thumbstick clicks held
+  for 2 s)
+
+### Decision
+- A way to the game menu is the menu event or a radial menu event (D-042). `vr::assignBinding` refuses an assignment
+  that would leave none bound (the layout stays, the VR settings page shows a short note, `vr.input.remapRefusals`
+  counts it). A saved controls file that leaves none gets the default way back (`readSavedLayout`).
+- Fixed fallback, not part of the layout and not rebindable: **both thumbstick clicks held together for 2 s** press the
+  game menu key once, while still held (`ControlResolver::menuFallback`).
+
+### Consequences
+- The right stick click draws the weapon in the default layout, so the fallback hold toggles it as well.
+
 ## D-056: CI owns the game slots - workers' launches wait for a running CI job, a PR's run fails fast
 
 - **Date:** 2026-10-18

@@ -284,6 +284,20 @@ struct Conflict {
 };
 
 /*!
+ * Whether a binding of \a layout leads to the game menu (#326): the menu event, or a radial menu event (its ring has
+ * the game menu, and where it cannot open its press is the game menu key, D-042) is bound
+ */
+bool menuReachable(const ControlLayout & layout);
+
+/*!
+ * The player's remapping (#178, #326): bind \a event to \a binding in \a layout - unless that leaves the game menu
+ * without a binding (\ref menuReachable): then \a layout is unchanged and \a note is a short reason for the VR
+ * settings page.
+ * \return whether the binding was made
+ */
+bool assignBinding(ControlLayout & layout, Event event, const Binding & binding, std::string * note = nullptr);
+
+/*!
  * Two events that may share a binding: one hand's act and its use or stash (#38, D-042, #377) - the reticle's
  * target decides which one acts (a door, lever, chest, NPC or corpse is acted on, an item is used or stashed)
  */
@@ -406,6 +420,17 @@ public:
 	//! The controls held after the last update
 	const ControlSet & down() const { return m_down; }
 
+	/*!
+	 * How long both thumbstick clicks are held together to open the game menu whatever the layout is (#326, the
+	 * owner: the Index has no menu button the game can read). Fixed, not part of the layout.
+	 */
+	static constexpr s64 menuFallbackMs = 2000;
+
+	//! The fallback opened the game menu in the last update (once per hold, while both are still held)
+	bool menuFallback() const { return m_menuFallback; }
+	//! How often the fallback opened the game menu since the resolver was created
+	u32 menuFallbackOpens() const { return m_menuFallbackOpens; }
+
 private:
 
 	struct ControlState {
@@ -436,6 +461,11 @@ private:
 	//! Controls with a long press of their own: their tap must be shorter than \ref longPressMs
 	ControlSet m_hasLongPress;
 	std::array<bool, HandCount> m_chords = { true, true };
+
+	s64 m_bothSticksSince = -1;  //!< when both stick clicks were first down together, -1 when not both are down
+	bool m_menuFallbackFired = false;
+	bool m_menuFallback = false;
+	u32 m_menuFallbackOpens = 0;
 
 	ControlSet m_down;
 	std::array<ControlState, ControlCount> m_controls;

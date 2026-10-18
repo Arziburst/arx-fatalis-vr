@@ -389,6 +389,30 @@ bool readSavedLayout(std::string_view text, ControllerType type, ControlLayout &
 		layout = defaultLayout(type);
 		return false;
 	}
+	// A file that leaves no way to the game menu gets the default way back (#326)
+	if(!menuReachable(layout)) {
+		const ControlLayout base = defaultLayout(type);
+		for(Event event : { Event::Menu, Event::RadialLeft, Event::RadialRight }) {
+			layout[event] = base[event];
+		}
+	}
+	return true;
+}
+
+bool menuReachable(const ControlLayout & layout) {
+	return layout[Event::Menu].isBound() || layout[Event::RadialLeft].isBound() || layout[Event::RadialRight].isBound();
+}
+
+bool assignBinding(ControlLayout & layout, Event event, const Binding & binding, std::string * note) {
+	ControlLayout changed = layout;
+	changed[event] = binding;
+	if(!menuReachable(changed)) {
+		if(note) {
+			*note = "The game menu needs a binding: this would remove its last one.";
+		}
+		return false;
+	}
+	layout = changed;
 	return true;
 }
 
@@ -601,6 +625,22 @@ void ControlResolver::release(Control control, s64 timeMs) {
 }
 
 void ControlResolver::update(s64 timeMs, const ControlSet & down, const ControlSet & taps) {
+
+	// The menu fallback (#326): both stick clicks held together for menuFallbackMs, whatever the layout is
+	m_menuFallback = false;
+	if(down[control(Hand::Left, ControlKind::StickClick)] && down[control(Hand::Right, ControlKind::StickClick)]) {
+		if(m_bothSticksSince < 0) {
+			m_bothSticksSince = timeMs;
+		}
+		if(!m_menuFallbackFired && timeMs - m_bothSticksSince >= menuFallbackMs) {
+			m_menuFallbackFired = true;
+			m_menuFallback = true;
+			m_menuFallbackOpens++;
+		}
+	} else {
+		m_bothSticksSince = -1;
+		m_menuFallbackFired = false;
+	}
 
 	for(size_t i = 0; i < EventCount; i++) {
 		EventState & event = m_events[i];

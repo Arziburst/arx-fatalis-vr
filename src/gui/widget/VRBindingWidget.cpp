@@ -166,6 +166,12 @@ void VRControlsInfoWidget::update() {
 		return;
 	}
 
+	if(!vr::remapNote().empty()) {
+		m_text = vr::remapNote();
+		m_warning = true;
+		return;
+	}
+
 	const std::vector<vr::Conflict> conflicts = vr::findConflicts(layout);
 	if(!conflicts.empty()) {
 		const vr::Conflict & conflict = conflicts.front();

@@ -160,6 +160,12 @@ Event captureEvent();
 //! How many captures ended with a binding since the start
 u32 captureCount();
 
+//! How many assignments were refused since the start because they would have left the game menu without a binding (#326)
+u32 remapRefusals();
+
+//! Why the last assignment was refused (#326), shown on the VR settings page; empty after one that was made
+const std::string & remapNote();
+
 /*!
  * \brief The test channel's \c vr-input command
  *

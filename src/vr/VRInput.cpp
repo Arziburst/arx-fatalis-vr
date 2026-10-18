@@ -79,6 +79,9 @@ struct InputState {
 	BindingCapture capture;
 	Event captureEvent = Event::Jump;
 	u32 captures = 0;
+	//! Assignments refused because they would have left the game menu without a binding (#326), and why the last was
+	u32 remapRefusals = 0;
+	std::string remapNote;
 
 	//! The menu pointer (#34): the hand on the floating panel is the mouse
 	MenuPointer pointer;
@@ -736,13 +739,20 @@ bool layoutRemapped() {
 
 void setPlayerBinding(Event event, const Binding & binding) {
 	ControlLayout layout = g_input.resolver.layout();
-	layout[event] = binding;
+	if(!assignBinding(layout, event, binding, &g_input.remapNote)) {
+		g_input.remapRefusals++;
+		LogInfo << "[vr] input: " << eventName(event) << " = " << formatBinding(binding) << " refused: "
+		        << g_input.remapNote;
+		return;
+	}
+	g_input.remapNote.clear();
 	const std::string why = std::string(eventName(event)) + " = " + formatBinding(binding) + " (VR settings)";
 	applyLayout(layout, why.c_str());
 	savePlayerLayout(layout);
 }
 
 void restoreDefaultLayout() {
+	g_input.remapNote.clear();
 	cancelCapture();
 	applyLayout(defaultLayout(g_input.type), "reset to the default (VR settings)");
 	savePlayerLayout(g_input.resolver.layout());
@@ -751,6 +761,7 @@ void restoreDefaultLayout() {
 }
 
 void startCapture(Event event) {
+	g_input.remapNote.clear();
 	cancelCapture();
 	g_input.captureEvent = event;
 	g_input.capture.longPressMs = g_input.resolver.longPressMs;
@@ -776,6 +787,14 @@ Event captureEvent() {
 
 u32 captureCount() {
 	return g_input.captures;
+}
+
+u32 remapRefusals() {
+	return g_input.remapRefusals;
+}
+
+const std::string & remapNote() {
+	return g_input.remapNote;
 }
 
 TurnSettings turnSettings() {
@@ -885,7 +904,13 @@ std::string inputCommand(std::string_view arguments) {
 			return "vr-input bind: " + error;
 		}
 		ControlLayout layout = g_input.resolver.layout();
-		layout[*event] = *binding;
+		if(!assignBinding(layout, *event, *binding, &g_input.remapNote)) {
+			g_input.remapRefusals++;
+			LogInfo << "[vr] input: " << eventName(*event) << " = " << formatBinding(*binding) << " refused: "
+			        << g_input.remapNote;
+			return std::string();
+		}
+		g_input.remapNote.clear();
 		std::string why = std::string(eventName(*event)) + " = " + formatBinding(*binding) + " (test channel)";
 		applyLayout(layout, why.c_str());
 		return std::string();

@@ -29,6 +29,7 @@
 
 #include "core/Core.h"
 #include "core/GameEvent.h"
+#include "core/GameTime.h"
 #include "game/Camera.h"
 #include "graphics/Color.h"
 #include "graphics/Draw.h"
@@ -76,6 +77,9 @@ struct SubtitleDrawState {
 	float eyePixelsPerUnit = 0.f;   //!< the last eye's pixels per view unit at depth 1
 	bool imageReady = false;        //!< the panel's image holds this line at its place: the eyes draw it
 	bool panelLogged = false;       //!< the line's placement was logged (vr.subtitle.panel)
+	bool gliding = false;           //!< the hero's panel is on its way back below the centre of the view
+	float glideT = 0.f;             //!< 0..1 along that way
+	Vec3f glideFrom = Vec3f(0.f);   //!< where it started
 	std::array<Vec3f, 4> cornersWorld = { }; //!< the panel's corners in the world: top left, top right, bottom right, bottom left
 	float eyePixels[2] = { 0.f, 0.f };       //!< the pixels the panel covered in the eyes drawn this frame
 	int eyeDraws = 0;                         //!< eyes the panel was drawn into this frame
@@ -313,6 +317,18 @@ void drawSubtitlesInEye() {
 	s.eyeDraws++;
 }
 
+//! \return how far \a point is off the head camera's forward, horizontally, in degrees (0 straight ahead)
+static float yawFromHeadDeg(const Vec3f & eye, const Vec3f & point) {
+	Vec3f forward(g_preparedCamera.m_viewToWorld * Vec4f(0.f, 0.f, 1.f, 0.f));
+	Vec3f to = point - eye;
+	forward.y = 0.f;
+	to.y = 0.f;
+	if(glm::length(forward) < 1e-4f || glm::length(to) < 1e-4f) {
+		return 0.f;
+	}
+	return glm::degrees(std::acos(glm::clamp(glm::dot(glm::normalize(forward), glm::normalize(to)), -1.f, 1.f)));
+}
+
 //! \return a world point (game units) in the LOCAL space (OpenXR axes, meters) of the head camera prepared now
 static Vec3f worldToLocal(const Vec3f & world, const Vec3f & head, const Anglef & headAngles) {
 	const Vec3f view(g_preparedCamera.m_worldToView * Vec4f(world, 1.f));
@@ -339,34 +355,59 @@ void drawSubtitlesOnInterface() {
 	Anglef headAngles;
 	subtitleHeadInRoom(head, headAngles);
 
+	const Vec3f eye(g_preparedCamera.m_viewToWorld * Vec4f(0.f, 0.f, 0.f, 1.f));
 	if(!s.decided) {
-		// Placed once for the line: over the NPC's head if the player sees it, else below the centre of the view
+		// An NPC's line is always over his head, in view or not (the owner, 2026-10-18); the hero's own line and an
+		// off-voice one (no head) go below the centre of the view
 		SubtitlePlacement drawn = s.status.placement;
-		const Vec3f eye(g_preparedCamera.m_viewToWorld * Vec4f(0.f, 0.f, 0.f, 1.f));
-		if(drawn == SubtitlePlacement::Above) {
-			const Vec3f anchor = subtitleAboveAnchor(s.headTop, params);
-			const Vec3f view(g_preparedCamera.m_worldToView * Vec4f(anchor, 1.f));
-			if(s.hasHead && subtitleAnchorInView(view, tangents(unionEyeFov()), false, params)) {
-				s.anchorWorld = anchor;
-			} else {
-				drawn = SubtitlePlacement::Chest;
-			}
+		if(drawn == SubtitlePlacement::Above && !s.hasHead) {
+			drawn = SubtitlePlacement::Chest;
 		}
-		if(drawn == SubtitlePlacement::Chest) {
+		if(drawn == SubtitlePlacement::Above) {
+			s.anchorWorld = subtitleAboveAnchor(s.headTop, params);
+		} else if(drawn == SubtitlePlacement::Chest) {
 			const Vec3f chestRoom = subtitleChestPanel(head, headAngles.getYaw(), params);
 			const Vec3f chestView = subtitleRoomToView(chestRoom, head, headAngles, params);
 			s.anchorWorld = Vec3f(g_preparedCamera.m_viewToWorld * Vec4f(chestView, 1.f));
 		}
-		s.facingWorld = eye;
 		const float distanceM = glm::distance(s.anchorWorld, eye) / params.unitsPerMeter;
 		const float pixelsPerUnit = s.eyePixelsPerUnit > 0.f ? s.eyePixelsPerUnit : g_preparedCamera.m_pixelsPerUnit;
 		s.metersPerPixel = pixelsPerUnit > 0.f ? distanceM / pixelsPerUnit * params.panelScale : 0.f;
 		s.panelLogged = false;
+		s.gliding = false;
 		s.drawn = drawn;
 		s.status.drawn = drawn;
 		s.decided = true;
 	}
 
+	if(s.drawn == SubtitlePlacement::Above) {
+		// Over the speaker's head wherever he goes (Kultar walks out while he talks)
+		s.anchorWorld = subtitleAboveAnchor(s.headTop, params);
+	} else if(s.drawn == SubtitlePlacement::Chest) {
+		// The lazy follow (the owner, 2026-10-18): the panel stays put in the world while the head moves a little,
+		// readable and still; the head further off it glides it back below the centre of the view, smoothly
+		const Vec3f chestRoom = subtitleChestPanel(head, headAngles.getYaw(), params);
+		const Vec3f chestView = subtitleRoomToView(chestRoom, head, headAngles, params);
+		const Vec3f ideal(g_preparedCamera.m_viewToWorld * Vec4f(chestView, 1.f));
+		if(!s.gliding && yawFromHeadDeg(eye, s.anchorWorld) > params.followDeg) {
+			s.gliding = true;
+			s.glideT = 0.f;
+			s.glideFrom = s.anchorWorld;
+		}
+		if(s.gliding) {
+			const float dt = toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
+			s.glideT += params.followSeconds > 0.f ? dt / params.followSeconds : 1.f;
+			if(s.glideT >= 1.f) {
+				s.anchorWorld = ideal;
+				s.gliding = false;
+			} else {
+				const float t = s.glideT * s.glideT * (3.f - 2.f * s.glideT);
+				s.anchorWorld = glm::mix(s.glideFrom, ideal, t);
+			}
+		}
+	}
+	s.facingWorld = eye;
+	s.status.panelYawFromHeadDeg = yawFromHeadDeg(eye, s.anchorWorld);
 	if(s.drawn == SubtitlePlacement::LowerThird) {
 		drawSubtitleBox(Vec2f(0.f), SubtitleAlign::Above, float(g_size.width()) * params.lowerThirdWidth, true);
 		return;
@@ -388,8 +429,8 @@ void drawSubtitlesOnInterface() {
 	}
 	endSubtitleImage();
 
-	// The panel in the world: its middle, facing where the player's eye was when the line started (the facing rule),
-	// upright; the eyes draw its corners from here on
+	// The panel in the world: its middle, facing the player's head (yaw only), upright; the eyes draw its corners from
+	// here on
 	const Vec2f size = image * s.metersPerPixel;
 	const Vec3f middleWorld = above ? s.anchorWorld - Vec3f(0.f, size.y * 0.5f * params.unitsPerMeter, 0.f) : s.anchorWorld;
 	Vec3f toEye = s.facingWorld - middleWorld;

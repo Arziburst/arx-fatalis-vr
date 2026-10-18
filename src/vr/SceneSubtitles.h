@@ -90,6 +90,8 @@ struct SubtitleParams {
 	float chestDropM = 0.45f;       //!< \c chest: the panel below the eyes
 	float widthDeg = 32.f;          //!< the widest box in the world, as the eyes see it
 	float panelScale = 1.4f;        //!< the world-fixed panel's text and box over the game's font size (the owner: bigger)
+	float followDeg = 35.f;         //!< the hero's panel: the head this far off it glides it back below the centre of the view
+	float followSeconds = 0.3f;     //!< the hero's panel: how long that glide takes
 	float lowerThirdWidth = 0.6f;   //!< \c lowerthird: the widest box, of the interface's width
 	float lowerThirdBottom = 0.92f; //!< \c lowerthird: the box's lower edge, of the interface's height from the top
 };
@@ -173,6 +175,7 @@ struct SubtitleStatus {
 	SubtitlePlacement drawn = DefaultSubtitlePlacement;
 	bool panel = false;            //!< the panel was drawn into both eyes this frame
 	float panelPixels = 0.f;       //!< the eye pixels the panel covers (the smaller eye), 0 when not drawn
+	float panelYawFromHeadDeg = 0.f; //!< the panel's middle off the head's forward, horizontally, degrees
 	Vec3f panelLocal = Vec3f(0.f); //!< the panel's middle, LOCAL (OpenXR axes), meters
 	float panelYawDeg = 0.f;       //!< the panel's facing about the vertical in LOCAL, degrees
 	float panelWidthM = 0.f;       //!< the panel's image width, meters
@@ -218,9 +221,11 @@ void drawSubtitlesInEye();
 
 /*!
  * The lower third drawn on the head-locked interface layer; \c above and \c chest as a panel fixed in the world
- * (the owner, 2026-10-17: never turning with the head): placed once when the line starts - over the NPC's head, or
- * below the centre of the view for the hero's own line and a speaker out of view - facing where the player was,
- * drawn into its own image here, which the eyes of the next frame sample (\ref drawSubtitlesInEye)
+ * (the owner, 2026-10-17/18: never turning with the head): an NPC's line always over his head, in view or not; the
+ * hero's own line (and an off-voice one) below the centre of the view, placed once and left while the head moves a
+ * little, gliding back below the centre when the head is more than \ref SubtitleParams::followDeg off it - both facing
+ * the player's head (yaw only), drawn into their image here, which the eyes of the next frame sample
+ * (\ref drawSubtitlesInEye)
  */
 void drawSubtitlesOnInterface();
 

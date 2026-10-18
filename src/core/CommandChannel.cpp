@@ -766,6 +766,7 @@ void writeSceneStatus(JsonWriter & json) {
 	json.value("drawn", vr::subtitlePlacementName(subtitle.drawn));
 	json.value("panel", subtitle.panel);
 	json.value("panelPixels", subtitle.panelPixels);
+	json.value("panelYawFromHeadDeg", subtitle.panelYawFromHeadDeg);
 	json.object("panelLocal");
 	json.value("x", subtitle.panelLocal.x);
 	json.value("y", subtitle.panelLocal.y);

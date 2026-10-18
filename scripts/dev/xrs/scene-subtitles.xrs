@@ -38,10 +38,10 @@ vr-input stick left 0 0
 @remember voiced scene.subtitle.voicedLines
 @assert scene.subtitle.lines eq {voiced}
 
-# T5: a voiced speak -c line, placement above - the hero facing Kultar, so the line sits over his head
+# T5: a voiced speak -c line, placement above: always over the NPC's head (the owner, 2026-10-18) - Kultar stands out of
+# the hero's view here, so the panel is placed behind the view's edge and the player turns to see it
 scene subtitles above
-lookat human_base_0028
-@frames 10
+vr-sim head rot 0 0 0
 @assert scene.subtitle.placement eq above
 scene meter reset
 human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
@@ -50,21 +50,14 @@ human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
 @assert scene.subtitle.speaker ne none
 @assert scene.subtitle.text ne none
 @wait 500
-@shot sub-above
-@assert vr.sim.shots.sub-above.left.scene.verdict ne background
-@assert vr.sim.shots.sub-above.right.scene.verdict ne background
-@assert scene.subtitle.panelPixels gt 1000       # the panel drawn into both eyes (its outline, the smaller eye)
-# Fixed in the world (the owner, 2026-10-17): the panel is placed once for the line and never turns with the head - its
-# pose in the room stays while the head turns 40 degrees
-@assert scene.subtitle.panel eq true
-@assert scene.subtitle.drawn eq above
+@assert scene.subtitle.drawn eq above            # no chest fallback for an NPC out of view
+# Fixed in the world: its pose in the room stays while the head turns 40 degrees away
 @remember px scene.subtitle.panelLocal.x
 @remember py scene.subtitle.panelLocal.y
 @remember pz scene.subtitle.panelLocal.z
 @remember pyaw scene.subtitle.panelLocal.yawDeg
 vr-sim head rot 0 -40 0
 @frames 20
-@assert scene.subtitle.panel eq true
 @assert scene.subtitle.panelLocal.x ge {px-0.01}
 @assert scene.subtitle.panelLocal.x le {px+0.01}
 @assert scene.subtitle.panelLocal.y ge {py-0.01}
@@ -73,6 +66,14 @@ vr-sim head rot 0 -40 0
 @assert scene.subtitle.panelLocal.z le {pz+0.01}
 @assert scene.subtitle.panelLocal.yawDeg ge {pyaw-1}
 @assert scene.subtitle.panelLocal.yawDeg le {pyaw+1}
+# The player turns to Kultar: the panel over his head is in both eyes
+vr-sim head rot 0 65 0
+@frames 20
+@assert scene.subtitle.panel eq true
+@assert scene.subtitle.panelPixels gt 1000       # the panel drawn into both eyes (its outline, the smaller eye)
+@shot sub-above
+@assert vr.sim.shots.sub-above.left.scene.verdict ne background
+@assert vr.sim.shots.sub-above.right.scene.verdict ne background
 vr-sim head rot 0 0 0
 @frames 5
 @log vr\.scene\.subtitle placement=above speaker=
@@ -80,6 +81,35 @@ vr-sim head rot 0 0 0
 @assert scene.subtitle.voicedLines eq 1
 @assert scene.subtitle.lines eq 1
 
+# T5: the hero's own line - below the centre of the view with a lazy follow (the owner, 2026-10-18): still while the
+# head turns 15 degrees, back below the centre (0.3 s) after a 60 degree turn
+scene meter reset
+speak -c zoom 0 20 0 20 100 100 [player_welcome_kultar]
+@until scene.subtitle.visible eq true 15s
+@wait 500
+@assert scene.subtitle.drawn eq chest
+@assert scene.subtitle.panel eq true
+@assert scene.subtitle.panelPixels gt 1000
+@assert scene.subtitle.panelYawFromHeadDeg lt 5
+@remember hx scene.subtitle.panelLocal.x
+@remember hz scene.subtitle.panelLocal.z
+vr-sim head rot 0 15 0
+@frames 40
+@assert scene.subtitle.panelLocal.x ge {hx-0.01}
+@assert scene.subtitle.panelLocal.x le {hx+0.01}
+@assert scene.subtitle.panelLocal.z ge {hz-0.01}
+@assert scene.subtitle.panelLocal.z le {hz+0.01}
+@assert scene.subtitle.panelYawFromHeadDeg ge 10
+@assert scene.subtitle.panelYawFromHeadDeg le 20
+vr-sim head rot 0 60 0
+@frames 45
+@assert scene.subtitle.panelYawFromHeadDeg lt 5
+@assert scene.subtitle.panel eq true
+@shot sub-hero
+vr-sim head rot 0 0 0
+@frames 5
+@log vr\.scene\.subtitle placement=above speaker="Am Shaegar" drawn=chest
+@until scene.kind eq none 30s
 # T5: a voiced speak -c line, placement chest
 scene subtitles chest
 @assert scene.subtitle.placement eq chest

@@ -974,6 +974,9 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrWaitFrame(XrSession /* session */, const Xr
 	s64 now = nowNs();
 	if(s.nextSlot == 0 || rate <= 0.f) {
 		s.nextSlot = now;
+	} else if(s.nextSlot < now && s.sim.view.cap) {
+		// A cap (#522): a late frame starts at once, its successor 1/rate later - no slot is skipped
+		s.nextSlot = now;
 	} else if(s.nextSlot < now) {
 		s.nextSlot += ((now - s.nextSlot) / period + 1) * period;
 	}
@@ -1547,7 +1550,7 @@ bool installSimulator() {
 	const SimView & view = runtime->sim.view;
 	LogInfo << "[vr] sim: simulated headset from " << file << ": eyes " << view.eyeSize.x << 'x' << view.eyeSize.y
 	        << ", ipd " << view.ipd * 1000.f << " mm, " << view.rate << " Hz"
-	        << (view.rate > 0.f ? "" : " (no pacing)") << ", fov left eye " << glm::degrees(view.fov[0].left) << ' '
+	        << (view.rate > 0.f ? (view.cap ? " cap (no slot skipped)" : " clock") : " (no pacing)") << ", fov left eye " << glm::degrees(view.fov[0].left) << ' '
 	        << glm::degrees(view.fov[0].right) << ' ' << glm::degrees(view.fov[0].up) << ' '
 	        << glm::degrees(view.fov[0].down) << " deg, " << runtime->sim.pending() << " timed lines; no OpenXR runtime is used";
 

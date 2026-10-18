@@ -18,7 +18,9 @@
 	    already running; otherwise the launch is made flat (--no-vr) with a note. -StartSteamVR, the
 	    owner's switch, starts SteamVR first (the headset turns on) and is never used by a worker.
 	  - one game at a time on this PC: the launch holds a game lock slot while the game runs (a VR
-	    launch also the VR lock), waits up to -LockTimeoutSec for the holder and names it.
+	    launch also the VR lock), waits up to -LockTimeoutSec for the holder and names it. A launch by
+	    hand (no -TestChannel / -Isolated / --test-dir, or -Dialogs) is the owner's: it takes its slot even
+	    while the CI runner runs a job, which every scripted launch waits for (#527).
 	  - only this working copy's own fresh build: an arx.exe from another copy, or whose built-from.txt
 	    does not name the copy's HEAD or predates later uncommitted edits (tree fingerprint, #306), is refused; -Rebuild builds first.
 	  - the launch is written to the ledger %LOCALAPPDATA%\ArxFatalisVR\launches.log.
@@ -229,8 +231,10 @@ if ($DryRun) {
 }
 Write-ArxLaunchBudgetNote -Copy $SourceDir -Branch $copy.Branch
 
-# One game at a time: hold a game lock slot (and the VR lock for a VR launch) while the game runs
-$lock = Enter-ArxGameLock -What 'run-windows.ps1' -Copy $SourceDir -Branch $copy.Branch -Vr:$vr.Vr -TimeoutSec $LockTimeoutSec
+# One game at a time: hold a game lock slot (and the VR lock for a VR launch) while the game runs. A launch by hand
+# (no test channel, no isolated user dir, or -Dialogs: the owner's) is the owner's own (#527): it takes its slot even
+# while CI runs a job, and its game is never stopped; a scripted launch waits for CI like every worker's
+$lock = Enter-ArxGameLock -What 'run-windows.ps1' -Copy $SourceDir -Branch $copy.Branch -Vr:$vr.Vr -TimeoutSec $LockTimeoutSec -Owner:(-not $noDialogs)
 if (-not $lock) {
 	throw "another game is running on this PC (one at a time, D-014):`n  $((Get-ArxLockHolders) -join "`n  ")`nWait for it to end, then launch again."
 }

@@ -134,6 +134,24 @@ jobs:
       shell: pwsh
       run: ./scripts/dev/check-private-data.ps1
 
+    # CI owns the game slots (#527): from here until the job ends, the marker ci-runner.marker in the machine-wide lock
+    # folder tells every other scripted launch of the PC (a worker's ci-local, smoke-test, make-test-saves) to wait
+    # without a slot, so the game checks never starve behind them; the owner's own launch ignores it. The marker names
+    # the job's process (Runner.Worker.exe, the parent of every step; this step's own pwsh as the fallback): a marker of
+    # a process that is gone is stale and blocks nobody. Cleared in a step that always runs, after the last game.
+    - name: Game slots to CI (runner marker)
+      if: steps.scope.outputs.heavy == 'true'
+      shell: pwsh
+      run: |
+        . ./scripts/launch-lib.ps1
+        $runnerPid = $PID
+        $p = Get-CimInstance Win32_Process -Filter "ProcessId=$PID"
+        for ($i = 0; $p -and $i -lt 8; $i++) {
+          if ($p.Name -like 'Runner.Worker*') { $runnerPid = [int]$p.ProcessId; break }
+          $p = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.ParentProcessId)"
+        }
+        Set-ArxRunnerMarker -RunnerPid $runnerPid -What "CI run $env:GITHUB_RUN_ID attempt $env:GITHUB_RUN_ATTEMPT ($env:GITHUB_REF_NAME)"
+
     # About a minute, no game: the PowerShell self-tests of the dev scripts (scripts/dev/test-*.ps1) run beside the
     # build (#522), not before it: started here as a background process (output and exit code into RUNNER_TEMP), joined
     # right after the build. They touch nothing in the working copy, so the build's tree fingerprint stays its own.
@@ -201,12 +219,14 @@ jobs:
     # runs), and is uploaded only when the job failed.
     # What runs is the Scope step's suite (#522): on a pull request the core plus what its changed paths select in
     # scripts/dev/xrs/impact.txt (the log lists them); everything on a push to main, with the label full-ci and on a
-    # manual run with suite=full (the merge gate).
+    # manual run with suite=full (the merge gate). A pull request's run stops at the first FAIL (#527).
+    # ARXVR_CI_RUNNER marks the launches as the job's own (#527): they take the slots the runner marker keeps free.
     - name: Game checks (smoke test, draw check, spell draw check, .xrs sequences)
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
       env:
         ARXVR_MAX_GAMES: '2'
+        ARXVR_CI_RUNNER: '1'
       run: |
         $evidence = Join-Path $env:LOCALAPPDATA "ArxFatalisVR\ci-evidence\$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
         "CI_EVIDENCE=$evidence" >> $env:GITHUB_ENV
@@ -220,7 +240,18 @@ jobs:
     - name: Tester package (zip, extracted-game check)
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
+      env:
+        ARXVR_CI_RUNNER: '1'
       run: ./scripts/package-tester.ps1 -NoBuild -OutDir "$env:GITHUB_WORKSPACE/dist"
+
+    # The last game of the job ran: the PC's game slots go back to the workers and the owner (#527). Always, so a
+    # failed or cancelled job never leaves the marker behind (a marker of a dead job is stale anyway).
+    - name: Game slots back (clear the runner marker)
+      if: always()
+      shell: pwsh
+      run: |
+        . ./scripts/launch-lib.ps1
+        Clear-ArxRunnerMarker
 
     # The uploads never fail the job (#360): an upload can fail for reasons outside the change (the artifact
     # storage quota of the private repository), and the build and the game checks above are the gate. The last

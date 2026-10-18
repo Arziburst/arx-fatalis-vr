@@ -50,6 +50,10 @@
 	                                           the game ends when the launcher process ends, killed or not
 	  scripts/dev/smoke-test.ps1 and make-test-saves.ps1 call it for every game they start (the games of ci-smoke and
 	  ci-local are started by those two)
+	  Register-ArxLauncherChain                (added by the worker, #526's real chain) puts the calling process itself
+	                                           into such a job, so every process it starts from then on - a child
+	                                           pwsh, a background job, their games - dies with it; ci-local.ps1 and
+	                                           ci-smoke.ps1 call it first thing
 
 	Exit code 0 when everything passed, 1 otherwise.
 #>
@@ -298,6 +302,48 @@ try {
 		$registerAt = $t.IndexOf('Register-ArxGameProcess', [Math]::Max(0, $startAt))
 		Check "$s registers the game it starts with its launcher (Register-ArxGameProcess after Start-Process)" ($startAt -ge 0 -and $registerAt -gt $startAt)
 	}
+
+	# --- The whole chain of ci-local dies with it (#526, added by the worker) -------------------------------------
+	# What really happened in #526: a tool timeout killed ci-local's top pwsh; its child ci-smoke, the phase's background
+	# job (a pwsh of its own) and that job's game lived on. The top process puts itself into a job object that kills on
+	# close (Register-ArxLauncherChain); every process it starts from then on is in the job, three levels deep here:
+	# top pwsh -> a child pwsh (the fake ci-smoke) -> a background job (the fake phase) -> the stand-in game
+	Write-Host '==> a killed ci-local takes its ci-smoke, the phase job and the game with it (#526)'
+	$chainPid = Join-Path $root 'chain-game-pid.txt'
+	$chainMid = Join-Path $root 'chain-middle-pid.txt'
+	$chainOk = Join-Path $root 'chain-registered.txt'
+	$chainPhase = Join-Path $root 'chain-phase.ps1'
+	$chainMiddle = Join-Path $root 'chain-middle.ps1'
+	$chainTop = Join-Path $root 'chain-top.ps1'
+	Set-Content -LiteralPath $chainPhase -Value @"
+`$p = Start-Process -FilePath '$fakeArx' -ArgumentList '-n','120','127.0.0.1' -PassThru -WindowStyle Hidden
+Set-Content -LiteralPath '$chainPid' -Value `$p.Id
+Start-Sleep 120
+"@
+	Set-Content -LiteralPath $chainMiddle -Value @"
+Set-Content -LiteralPath '$chainMid' -Value `$PID
+`$job = Start-Job -FilePath '$chainPhase'
+Start-Sleep 120
+"@
+	Set-Content -LiteralPath $chainTop -Value @"
+. '$libPath'
+Set-Content -LiteralPath '$chainOk' -Value (Register-ArxLauncherChain)
+& '$pwsh' -NoProfile -File '$chainMiddle'
+"@
+	$top = Start-Process $pwsh -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile', '-File', $chainTop)
+	$script:children += $top
+	Check 'the top process is in its job object (Register-ArxLauncherChain)' ((Wait-Until { Test-Path $chainOk } 20) -and (Get-Content $chainOk -Raw).Trim() -eq 'True') "$(if (Test-Path $chainOk) { Get-Content $chainOk -Raw })"
+	Check 'the chain started its game three levels down' (Wait-Until { (Test-Path $chainPid) -and (Test-Path $chainMid) } 30)
+	$chainGame = $null
+	$middle = $null
+	if (Test-Path $chainPid) { $chainGame = Get-Process -Id ([int](Get-Content $chainPid -Raw).Trim()) -ErrorAction SilentlyContinue; if ($chainGame) { $script:children += $chainGame } }
+	if (Test-Path $chainMid) { $middle = Get-Process -Id ([int](Get-Content $chainMid -Raw).Trim()) -ErrorAction SilentlyContinue; if ($middle) { $script:children += $middle } }
+	Start-Sleep -Seconds 1
+	Check 'the game and the middle process run while the top runs' ((Test-Alive $chainGame) -and (Test-Alive $middle))
+	Stop-Process -Id $top.Id -Force
+	Check 'the top killed: the game is gone within 5 s' (Wait-Until { -not (Test-Alive $chainGame) } 5)
+	Check 'the top killed: the middle process (ci-smoke) is gone within 5 s' (Wait-Until { -not (Test-Alive $middle) } 5)
+	Stop-Children
 } finally {
 	Remove-Item Env:ARXVR_CI_RUNNER, Env:ARXVR_MAX_GAMES -ErrorAction SilentlyContinue
 	foreach ($c in $script:children) { try { Stop-Process -Id $c.Id -Force -ErrorAction SilentlyContinue } catch { } }

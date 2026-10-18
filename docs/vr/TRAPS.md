@@ -8,6 +8,38 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-18 - A channel batch vanishes: no ack for 60 s, no line in arx.log, and the quit afterwards takes the lost batch's seq
+
+**Symptom:** a sequence step (`@frames 5` in vr-remap, CI run 39120032077 attempt 1) times out "waiting for the game to
+acknowledge 'waitframes 5' (last ack seq 14)" while the game renders at 90 fps, its hang watchdog says nothing, and
+`arx.log` has no `[channel]` line about it; the evidence's `ack.txt` then says `seq=15 ... last=quit` - the quit got the
+number the lost batch should have had, so the game never read `command.txt`.
+**Cause:** the harness writes `command.txt.tmp` and renames it into place (`Move-Item`). On Windows the renamer still
+holds the file open with DELETE access for a moment after the new name is visible, and an open that does not share
+delete - `std::ifstream`, so `fs::read` - fails with a sharing violation then. The channel read `""`, deleted the file
+(DeleteFile shares everything, so it succeeded) and acknowledged nothing. The moment is microseconds on an idle PC and
+grows with every preemption of the writer's thread: it hit under three games (two CI lanes and a worker's). Seen once in
+about 900 launches.
+**Do:** read a file another process renames into place with `FILE_SHARE_DELETE` (the channel does, with a retry next
+frame when the open fails: `readCommandFile` in `src/core/CommandChannel.cpp`). When an ack is missing, read the
+evidence's `ack.txt`: a quit with the missing seq means the batch never arrived; a quit with the next seq means the ack
+was written and the harness missed it.
+
+## 2026-10-18 - A CI job's phases end SKIPPED after 900 s although nothing of the job holds a slot; a killed ci-local leaves a game for hours
+
+**Symptom:** run 39109130415 (main): every phase SKIPPED, the lock lines name two workers' `make-test-saves.ps1` /
+`smoke-test.ps1` games that took the slots as fast as CI released them. #526: a worker's `ci-local.ps1` run as a tool
+command with a 10-minute timeout; the timeout killed the pwsh parent, lane 1's `arx.exe` lived on for two hours holding
+a slot, and another worker's `ci-local` starved on it.
+**Cause:** the lock had no priority (first come, first served, 900 s), and a game started with `Start-Process` is not a
+child the OS ends with its parent: a killed launcher drops its lock handle (the slot looks free to the probe) but the
+game keeps running, and `Get-ArxGamesOutsideLock` still counted it as "inside the lock" because the stale lock file
+named its pid.
+**Do:** #527 - CI's runner marker makes workers wait without a slot while a job runs; the games of a script are in a
+job object that kills on close (`Register-ArxGameProcess`, and `Register-ArxLauncherChain` for the whole `ci-local`
+chain); the next launch stops an orphan (lock file not held, launcher gone, `arx.exe` alive) and says so. Run
+`ci-local.ps1` detached or in the background, never under a short tool timeout (WORKFLOW.md).
+
 ## 2026-10-18 — The unpaced simulator makes a slow hand move a swing: why idle.vrsim is a 90 Hz cap, not rate 0 (#522)
 
 **Symptom:** with `rate 0` in `idle.vrsim` (to stop the 90 Hz display clock halving a 10-12 ms CI frame to 45 fps),

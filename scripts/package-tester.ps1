@@ -266,6 +266,8 @@ if ($SkipVerify) {
 			$process = Start-Process -FilePath $exe -ArgumentList $argList -PassThru -WorkingDirectory (Split-Path -Parent $exe) `
 				-RedirectStandardOutput (Join-Path $verifyTest 'stdout.txt') -RedirectStandardError (Join-Path $verifyTest 'stderr.txt')
 		} finally { Restore-ArxBackgroundWindow $previousHint; Restore-ArxDialogEnv $previousDialogEnv; $env:PATH = $savedPath }
+		# The game dies with this script, killed or not (#526)
+		$null = Register-ArxGameProcess $process
 		Set-ArxGameLockGame $lock $process.Id
 		$deadline = (Get-Date).AddSeconds(90)
 		$status = $null

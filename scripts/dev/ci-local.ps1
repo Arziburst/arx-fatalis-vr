@@ -20,6 +20,12 @@
 	suite about 70, so the note of the launch budget (10 per task, WORKFLOW.md) is expected here - it is a warning, not
 	a refusal. Never starts SteamVR: the sequences run flat or on the simulated headset (--vr-sim).
 
+	CI first (#527): while the CI runner runs a job (its marker in the lock folder), this script's games wait without a
+	slot - each phase names the holder at once and every 30 s, up to 30 minutes - so a pull request's CI never starves
+	behind a worker's run. Run this script detached (Start-Process) or as a background command, never under a short
+	tool timeout: it takes 5-15 minutes. If it is killed anyway, its whole process chain - ci-smoke, the phases, their
+	games - dies with it (a job object, #526), and the game slots are free at once.
+
 	Exit code 0 only when every step passed; 1 when one failed, 2 when the game checks could not run (the game lock
 	stayed busy: re-run when the game is closed), 3 when this machine cannot run a game at all.
 
@@ -54,6 +60,10 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot 'test-lib.ps1')
 . (Join-Path $PSScriptRoot 'ci-smoke-lib.ps1')
+
+# A killed ci-local takes its ci-smoke, the phase processes and their games with it (#526): the whole chain is in
+# one job object that kills on close, the handle lives in this process
+if (-not (Register-ArxLauncherChain)) { Write-Host 'ci-local: no job object for the process chain - a killed run could leave a game behind (#526)' -ForegroundColor Yellow }
 
 $root = Join-Path (Get-ArxAppDataDir) 'ci-local'
 if (-not $OutDir) { $OutDir = Join-Path $root "$(Get-WorkingCopyKey $ArxSourceDir)-$((Get-Date).ToString('yyyyMMdd-HHmmss'))" }
@@ -99,7 +109,9 @@ if ($buildExit -eq 0) {
 	$previousMax = $env:ARXVR_MAX_GAMES
 	$env:ARXVR_MAX_GAMES = "$Lanes"
 	try {
-		$smokeArgs = @('-Suite', $suite, '-Base', $Base, '-Lanes', "$Lanes", '-OutDir', (Join-Path $OutDir 'game-checks'), '-DurationsFile', (Join-Path $root 'ci-durations.json'))
+		# A worker yields to CI (#527): while the CI runner runs a job the phases wait without a slot - a job is up to
+		# about 15 minutes, so a phase may wait 30 (it names the holder at once and every 30 s; CI's own limit is 300 s)
+		$smokeArgs = @('-Suite', $suite, '-Base', $Base, '-Lanes', "$Lanes", '-OutDir', (Join-Path $OutDir 'game-checks'), '-DurationsFile', (Join-Path $root 'ci-durations.json'), '-LockTimeoutSec', '1800')
 		$smokeExit = Invoke-Step 'game-checks' "game checks (suite $suite, $Lanes lane(s))" (Join-Path $PSScriptRoot 'ci-smoke.ps1') $smokeArgs
 	} finally {
 		$env:ARXVR_MAX_GAMES = $previousMax

@@ -105,12 +105,37 @@ void HudFrameTest::testVrDrawsNoFrame() {
 		CPPUNIT_ASSERT_MESSAGE(vr::hudElementInfo(element(i)).name, !vr::hudElementDrawn(element(i), gate));
 	}
 
-	// No left arm posed (no left controller): health and mana have no other home, the orbs stay
+	// No left arm posed (no left controller): no fallback, the orbs are not drawn on the 2D interface either (#484)
 	gate.wristVitals = false;
-	CPPUNIT_ASSERT(vr::hudElementDrawn(HudElement::Health, gate));
-	CPPUNIT_ASSERT(vr::hudElementDrawn(HudElement::Mana, gate));
+	CPPUNIT_ASSERT(!vr::hudElementDrawn(HudElement::Health, gate));
+	CPPUNIT_ASSERT(!vr::hudElementDrawn(HudElement::Mana, gate));
 	CPPUNIT_ASSERT(!vr::hudElementDrawn(HudElement::LevelUp, gate));
 	CPPUNIT_ASSERT(!vr::hudElementDrawn(HudElement::Backpack, gate));
+}
+
+void HudFrameTest::testNoOrbFallbackWithoutLeftArm() {
+
+	// The owner (#484, 2026-10-15): before the controllers come on, no HP/mana half-spheres on the head-locked quad.
+	// VR, the default switches, no left arm posed: every element of the frame stays off, the orbs included
+	vr::HudGate gate;
+	gate.vr = true;
+	gate.wristVitals = false;
+	for(size_t i = 0; i < vr::HudElementCount; i++) {
+		CPPUNIT_ASSERT_MESSAGE(vr::hudElementInfo(element(i)).name, !vr::hudElementDrawn(element(i), gate));
+	}
+
+	// The left arm posed and lost again, frame by frame: never the orbs on the 2D interface
+	for(bool posed : { true, false, true, false }) {
+		gate.wristVitals = posed;
+		CPPUNIT_ASSERT(!vr::hudElementDrawn(HudElement::Health, gate));
+		CPPUNIT_ASSERT(!vr::hudElementDrawn(HudElement::Mana, gate));
+	}
+
+	// Flat mode is not touched: the orbs are drawn there without wrist bars, as before
+	vr::HudGate flat;
+	flat.wristVitals = false;
+	CPPUNIT_ASSERT(vr::hudElementDrawn(HudElement::Health, flat));
+	CPPUNIT_ASSERT(vr::hudElementDrawn(HudElement::Mana, flat));
 }
 
 void HudFrameTest::testSwitchesBringItBack() {

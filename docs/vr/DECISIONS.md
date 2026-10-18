@@ -13,6 +13,111 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-055: Scripted scenes in VR - hybrid by default, dialogue in first person, no fades, no letterbox in the eyes
+
+- **Date:** 2026-10-14
+- **Status:** Accepted for `hybrid` (the owner's headset test, 2026-10-17); `first`, `observer` and `ghost` stay as
+  switches, deferred (#497, #498)
+- **Decided by:** the owner (2026-10-13 on #29: every sensible variant behind a switch, default hybrid; turning allowed
+  in dialogues, walking blocked; playerlookat both ways, default ignored; 2026-10-17 after testing all four views:
+  hybrid stays the default, dialogue is always first person, no blink where avoidable, the subtitles' places)
+
+### Decision
+- A scripted scene (a `speak -c` line, a camera entity of `cameraactivate`, the letterbox of `cinemascope`) no longer
+  hands the game's camera to the eyes. What the eyes get is **cfg.ini `vr_scene_view`**: `first` (the hero's head, the
+  game's scene cameras ignored), `ghost` (the game's camera positions, each shot held where it starts - no dolly, no
+  pan - yaw only, pitch and roll from the head, never lower than 1.2 m above the floor under it), `observer` (one
+  point per scene beside the line between the hero's head and the shot's NPC, 0.75 x their distance clamped to
+  1.5-3 m, ray-checked 40 cm off walls, the game camera's side when both fit, at the player's real eye height above the
+  floor there; kept through the scene's camera entities and lines) and `hybrid` (`first` for dialogues; a camera
+  entity's shot that `first` would lose goes on the virtual screen fixed in the room - the intro's screen, 2.5 m ahead,
+  2.6 m wide: the camera more than 6 m from the hero's head or without a line of sight to it - vision balls, portals,
+  cutscene levels - or the hero's body played by a script, `playanim -p` / `forceanim`, as the goblins dragging him in
+  the prison intro; a shot keeps the screen once it wanted it; `speak -c` lines and letterbox-only stretches stay
+  `first`). Default `hybrid`.
+- **Dialogue is always first person, in every view** (the owner, 2026-10-17): a `speak -c` line, the letterbox alone and
+  a camera entity's shot near the hero are the hero's own eyes; a view applies to cinematic shots only - the hybrid's
+  rule (far, out of sight, or the hero's body scripted) decides what is cinematic in every view. **A dialogue stays
+  first person to its end, even where its script cuts to a camera** (the owner's retest, 2026-10-17: the talk after the
+  goblin fight went to the screen): a scene is a dialogue - first person from that frame to its end - once its first
+  camera entity frame is not a cinematic shot or has the camera on an NPC with the hero's body free (that talk's
+  camera_0080 is on Kultar from its first frame, while he walks out and before any line), a `speak -c` line plays in it,
+  a `playerlookat` turns the hero to an NPC, or the hero has a voiced line; it is forgotten when the scene ends and at a
+  new level (the startup intro talks and ends in the menu). A scene with no conversation is a cinematic: the prison
+  intro's cameras look at markers, a vision ball's at the hero, and a camera on an NPC while a script plays the hero's
+  body is no conversation cue. **A camera shot of the hero's body played by a script is a cutscene on the screen, even
+  inside a dialogue** (the verifier's decision, #460): the level 3 ambush's dialogue (human_base_0116, a `speak -pc`
+  line) has human_base_0116 send DRAG to human_base_0183, which drags the hero under camera_0107 - that shot goes to the
+  screen; the hero free again, the dialogue is first person. A camera shot with the hero not on the level (no floor
+  under his eye: the startup intro's talk on level 10 as a scene) goes to the screen inside a dialogue too. The dialogue
+  decides only the shots with the hero free and there.
+  **In a cinematic the hero keeps his head**: the VR body's head-only hiding, its two-sided faces and its own arms apply
+  only while the eyes are his (`vr::hidesHeadOnly`).
+- **No blink where the eyes see no jump** (the owner, 2026-10-17: "if we can get rid of it, we must"): a dialogue's new
+  line or camera, a scene's start and end while the eyes stay in the hero's head, and the switch between the world and
+  the screen (no motion: the world goes, the screen is there) happen at once (`vr.scene.switch`). **The cuts the eyes
+  see a jump in** - the hero teleported by the script (more than 50 cm in a frame) or turned at once (more than 10
+  degrees), a cut into or out of a ghost's or the observer's shot - are taken at once too by default (cfg.ini
+  `vr_scene_cut` `instant`; the owner, 2026-10-17: "no fades at all"); `fade` puts them behind a short fade, kept for
+  later. Only an eye that must not be seen (no floor under it; first person too low with `black`) is always reached
+  behind the fade: the shot shown is held while the world fades out, the new one is taken at black, then the world fades
+  in. The ghost's yaw is set at each cut so that where the player looks is where the game's camera looked.
+- **`playerlookat`** (cfg.ini `vr_scene_lookat`): `ignore` (default) leaves the hero's yaw; `fade` turns him at the
+  black of a short fade. Never an un-faded snap.
+- **No eye without a floor under it** (the owner, #29): in every view the fade stays black while the eyes' point - the
+  hero's eye, a ghost's shot, the observer's point - has no floor under it (a new game's hero stands off the level for
+  2 s before the prison intro).
+- **First person's eye too low** (cfg.ini `vr_scene_first_low`; the owner picks in the headset): while the hero's eye is
+  below 1.2 m above the floor in a scene - he lies or is dragged by a script, the prison intro - `clamp` (default, the
+  lead's proposal) raises the eye to 1.2 m as a ghost's shot, `black` holds the fade until he is up, `screen` puts
+  the scene on the screen in the room until it ends.
+- **No cinematic bars in the eyes**; the cinemascope state stays for the game (the hidden HUD, the skip rules).
+- **Subtitles in VR** (cfg.ini `vr_subtitles`, default `above`): every voiced line of a scene (a `speak -c` line, a
+  camera entity, or the letterbox on) gets a subtitle with the speaker's localised name - also a line the original plays
+  without text for want of the letterbox; the text follows the variant played (key `string<N>` in the line's section).
+  **A subtitle is a panel fixed in the world** (the owner's retest, 2026-10-17: never turning with the head): placed
+  once when the line starts, facing where the player was then, drawn into its own image and sampled into each eye as a
+  quad in the world after the world, depth test off - always on top, also in the desktop mirror and a stream (#519; a
+  compositor quad layer of it stayed invisible on SteamVR). `above`: always over the NPC's head, in view or not (the
+  owner, 2026-10-18: behind him is behind him, he turns to see it), gliding after his head once it moved 15 cm (he walks
+  out while he talks; his idle sway moves nothing); the hero's own line (and an off-voice one) below the centre of the
+  view - placed once and left while the head moves a little, gliding back below the centre in 0.3 s once the head is
+  more than 35 degrees off it; both face the player's head (yaw only); `chest`: the hero's kind of panel for every line;
+  `lowerthird`: on the head-locked interface quad. A subtitle shows once the eyes see the scene, not under the fade it
+  starts behind. The hero's own lines name him Am Shaegar (the owner: the game gives him no name at character creation,
+  and its texts have no key for the name alone). Talk outside scenes (barks, a merchant's greeting) gets none yet.
+  Proposals for the owner (`SubtitleParams`): the game's subtitle font (about 1.4 degrees), the box at most 32 degrees
+  wide, black at 60%, the name in warm gold over white text; `above` 0.25 m over the head, `chest` 0.8 m ahead and 0.45
+  m below the eyes, `lowerthird` up to 60% of the quad's width with its lower edge at 92% of its height.
+- **Walking is blocked during a scene in VR, the stick turn works** (also where the script holds the controls).
+- **The IK arms are off while the hero is shown in third person** (a ghost shot, any external view of the game).
+- Flat mode is unchanged. The test channel's `scene ...` commands change the switches for the session only (cfg.ini
+  keeps the player's choice).
+- **Proposal, for the owner to tune:** a faded cut (`vr_scene_cut fade`, and the eye that must not be seen) fades out in
+  0.15 s (the head-in-wall fade's speed) and in in 0.25 s; a `playerlookat` fade is 0.1 s out and 0.1 s in; black is
+  held two frames after a switch. One place: `SceneFadeParams` in `src/vr/SceneView.h`. The hybrid's 6 m
+  (`HybridFarUnits`), the screen's size and distance and the observer's distances are proposals too.
+
+### Why
+- The jerks the owner felt are the scene camera's own moves: un-faded cuts (a yaw cut rotates the world), dollies and
+  per-frame look-at pans (vection), camera paths diving to the floor ("on the floor looking up": camera_0039 of the
+  prison scene dips to 0.5 m), `playerlookat` as an un-faded snap turn, and the letterbox drawn into each eye as
+  head-locked bars. Holding each shot, fading every cut and keeping the head's own rotation removes all of them.
+- Doom 3 BFG VR's "immersive" cutscenes (research F-358..F-362) do the same for the ghost view.
+- The hybrid's screen: the game's dialogue cameras stand 2-5 m from the hero, its far cameras 20-60 m; a far shot or the
+  hero's scripted body (the only near case where first person would see from inside a dragged or lying model) is lost
+  in `first`, and a flat screen in the room is the comfortable way to show it (UEVR's 2D screen mode, RE4 VR's theatre).
+
+### Trade-offs accepted
+- The ghost view loses the game's camera motion within a shot; `first` loses the authored framing altogether.
+- A fade per shot change can feel busy in a dialogue of many short lines.
+
+### Consequences
+- `src/vr/SceneView.*` (the director, the fade, the meter), `src/vr/SceneSubtitles.*` (#29.3), status.json `scene.*`,
+  the `vr.scene*` events, the sequences `scene-*.xrs` (TESTING.md).
+
+---
+
 ## D-054: Melee damage comes from the swing - its size and its speed, per weapon class; no charge
 
 - **Date:** 2026-10-17

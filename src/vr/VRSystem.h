@@ -69,6 +69,8 @@
  * simulated headset of \c --vr-sim (vr/VRSimulator.h, #112), which runs all of this without a
  * runtime or a headset.
  */
+class Texture;
+
 namespace vr {
 
 /*!
@@ -330,6 +332,17 @@ MirrorStatus mirrorStatus();
  */
 void setMenuOpen(const char * menu);
 
+/*!
+ * \brief The scene view shows the hybrid's screen (#29): once per frame, from the camera
+ *
+ * The next frame is then drawn flat into the quad, which becomes the screen fixed in the room that the
+ * logos and the cinematics play on (#394) - the game's own scene camera as a film, never in the eyes.
+ */
+void setSceneScreen(bool on);
+
+//! \return true while this frame is drawn flat for the scene's screen (#29): the game's own flat picture
+bool sceneScreenFrame();
+
 //! The floating UI panel as status.json reports it (#49)
 struct PanelStatus {
 	std::string mode = "head";     //!< "world" while the panel is placed for an open menu, else "head"
@@ -434,6 +447,26 @@ bool radialLayerShown(Hand hand);
 
 //! Why the last \ref beginRadialImage of the hand drew nothing ("not a stereo frame", ...), empty when it drew (#377)
 const char * radialImageRefusal(Hand hand);
+
+//! The subtitle panel's image in pixels (#29): an eye's pixels at the panel's distance, the box drawn in its middle
+const s32 SubtitleImageWidth = 1024;
+const s32 SubtitleImageHeight = 512;
+
+/*!
+ * \brief Draw a scene line's subtitle panel this frame (#29): its texture's framebuffer becomes the render target,
+ *        cleared to transparent; the caller draws the box in 2D and calls \ref endSubtitleImage. Stereo frames only.
+ */
+bool beginSubtitleImage();
+
+//! Make the flat frame (or the window) the render target again
+void endSubtitleImage();
+
+/*!
+ * \brief The subtitle panel's texture (#29, #519): what \ref beginSubtitleImage drew, premultiplied alpha, its row 0
+ *        the panel's bottom - sampled into each eye as a quad fixed in the world (vr/SceneSubtitles.cpp); nullptr
+ *        without one
+ */
+Texture * subtitleTexture();
 
 //! Place the panel anew at the head on the next frame while a menu is open (a recenter, F-180)
 void recenterPanel();

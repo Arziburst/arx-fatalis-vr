@@ -134,6 +134,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "vr/HeadTracking.h"
 #include "vr/Locomotion.h"
+#include "vr/SceneView.h"
 #include "vr/VRInput.h"
 #include "vr/VRReticle.h"
 #include "vr/VRSystem.h"
@@ -1467,8 +1468,10 @@ void ArxGame::manageKeyMouse() {
 
 	// VR: the right stick turns the body (#32); the head's own yaw stays on top of it (#24), so the
 	// play-space heading turns. Updated every frame so a stick held through a menu does not snap after it.
-	// Also with the book or the bag open (#377, the owner: he could not turn with the book open)
-	const bool vrTurnAllowed = !BLOCK_PLAYER_CONTROLS && ARXmenu.mode() == Mode_InGame && !isInCinematic();
+	// Also with the book or the bag open (#377, the owner: he could not turn with the book open), and in a VR scene that
+	// holds the controls (#29: turning allowed in dialogues, walking blocked)
+	const bool vrTurnAllowed = (!BLOCK_PLAYER_CONTROLS || (vr::isEnabled() && vr::sceneState().inScene()))
+	                           && ARXmenu.mode() == Mode_InGame && !isInCinematic();
 	const float vrTurn = vr::updateTurn(toMsf(g_platformTime.lastFrameDuration()) / 1000.f, vrTurnAllowed);
 
 	// Player/Eyeball Freelook Management
@@ -1666,8 +1669,11 @@ void ArxGame::manageKeyMouse() {
 				player.desiredangle.setYaw(MAKEANGLE(player.desiredangle.getYaw() - vrTurn));
 			}
 		}
+	} else if(vrTurn != 0.f) {
+		// A scripted scene in VR that holds the controls still lets the stick turn the hero (#29)
+		player.desiredangle.setYaw(MAKEANGLE(player.desiredangle.getYaw() - vrTurn));
 	}
-	
+
 	manageEntityDescription();
 }
 

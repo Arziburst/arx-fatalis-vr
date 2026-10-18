@@ -20,6 +20,7 @@
 #ifndef ARX_VR_VRMELEE_H
 #define ARX_VR_VRMELEE_H
 
+#include <array>
 #include <string>
 
 #include "math/Types.h"
@@ -30,26 +31,30 @@
  * \brief Physical melee (#39, D-038): the weapon in the IK hand hits what it is swung into
  *
  * While the IK hand holds a melee weapon (vr/VRWeapon.h), once per frame after the body was posed:
- *  - the right trigger charges the strike with the game's own charge - the time held against the
- *    player's \c Full_AimTime, shown on the HUD's hit strength gauge like the engine's (\c player.m_aimTime);
  *  - the right controller's motion is fed to the swing detector (vr/MeleeSwing.h): relative to the head,
  *    from the controller's LOCAL pose;
- *  - while a swing is in progress the weapon is placed where the hand holds it this frame and the engine's
- *    own strike check runs on it (\c ARX_EQUIPMENT_Strike_Check: the weapon's hit spheres, the to-hit roll,
- *    damage, armour, knockback, blood, sounds, durability, and #42's haptics) with the aim ratio of
- *    \ref strikeAim; targets hit by this swing or within the cooldown are left out (F-62);
- *  - the first contact of a charged swing spends the charge: the trigger must be released and pressed
- *    again to charge another;
- *  - a swing start is the engine's strike: the player becomes visible, the \c strike script event, and the
- *    strike speech of a nearly full charge.
+ *  - the weapon is placed where the hand holds it this frame and the engine's own strike check runs on it
+ *    (\c ARX_EQUIPMENT_Strike_Check: the weapon's hit spheres, the to-hit roll, damage, armour, knockback,
+ *    blood, sounds, durability, and #42's haptics) with the aim ratio of \ref contactAim from the stroke so far -
+ *    the hand's path (a thrust's lunge) and the lever point's speed, against the weapon class's ranges (#465,
+ *    research #502): a big and fast swing the engine's fully charged strike, a touch, a tap or a stroke below a
+ *    range the minimum (or nothing, \c vr_melee_noswing); targets hit by this swing or within the cooldown are left
+ *    out (F-62);
+ *  - the trigger charges nothing (#465): a hit depends on the swing alone, and the HUD's hit strength gauge
+ *    stays empty;
+ *  - after a contact the hand recovers for the weapon type's \ref recoveryTime: a swing started within it hits
+ *    nothing (#323), and the blade touches nothing outside a swing before it is over;
+ *  - a swing start is the engine's strike: the player becomes visible, the \c strike script event; a swing's
+ *    first hit above 0.8 says the strike speech (the engine's: a nearly full charge).
  * The engine's own strike (the attack button's charge-and-release in combat mode, which hit without any
  * animation in VR) does not start while the IK hand holds the weapon (\ref meleeOwnsStrikes).
  *
  * Gates (F-66): a weapon in the IK hand, the right controller tracked, a head, no menu, inventory or book,
  * nothing dragged, the controls not blocked, not in the casting stance (A held: the trigger is the pen, #377) - the
  * caller names what refuses (\ref updateMelee).
- * Thresholds: cfg.ini \c vr_melee_swing_speed, \c vr_melee_full_speed, \c vr_melee_weak_aim,
- * \c vr_melee_target_cooldown.
+ * Thresholds: cfg.ini \c vr_melee_swing_speed, \c vr_melee_slash_<class> / \c vr_melee_stab_<class>,
+ * \c vr_melee_quality, \c vr_melee_path_scale, \c vr_melee_noswing,
+ * \c vr_melee_target_cooldown, \c vr_melee_recovery_dagger, \c vr_melee_recovery_1h, \c vr_melee_recovery_2h.
  */
 namespace vr {
 
@@ -70,34 +75,42 @@ struct MeleeStatus {
 	bool active = false;            //!< swings count now
 	std::string refused;            //!< why not, when not
 	SwingParams params;             //!< the thresholds in use
+	const char * meleeClass = "sword"; //!< the weapon's damage class (#465): dagger, sword, blunt, 2h_sword, 2h_blunt
+	DamageParams damage;            //!< its ranges in use, the quality and the touch's value (#465)
 	// The swing detector
 	bool swinging = false;
 	const char * kind = "none";     //!< of the swing in progress, or of the last one
 	float speed = 0.f;              //!< m/s, the lever point's filtered speed now
 	float peak = 0.f;               //!< m/s, of the swing in progress or the last one
-	float factor = 0.f;             //!< its speed factor
 	u64 swings = 0;
 	u64 gaps = 0;
 	u64 jumps = 0;
 	u64 nearMisses = 0;             //!< motions that peaked within 20 % below the swing speed (F-60)
 	float lastNearMiss = 0.f;       //!< the peak of the last one
-	// The charge (the game's own: the trigger held against Full_AimTime)
-	bool chargeHeld = false;
-	bool charging = false;
-	bool chargeSpent = false;       //!< a charged hit used it; the trigger is still held
-	float chargeSeconds = 0.f;
-	float chargeRatio = 0.f;        //!< 0.1 .. 1 while charging, else 0
-	float fullAimSeconds = 0.f;     //!< the player's Full_AimTime
+	bool trigger = false;           //!< the weapon hand's trigger is held - it changes nothing (#465)
+	//! The engine's isHit: the swing (since its start) struck the world or an object - the wall sound and the
+	//! durability loss, once per swing; a touch outside a swing never sets it (#465)
+	bool worldHit = false;
 	// Hits
-	u64 hits = 0;                   //!< NPCs touched by a swing (an armour class miss included)
+	u64 hits = 0;                   //!< NPCs hit by a swing (an armour class miss included)
+	u64 touches = 0;                //!< NPCs hit by a touch outside a swing: the minimum (#465)
 	u64 contacts = 0;               //!< anything touched (NPCs, objects)
-	u64 chargedHits = 0;            //!< swings whose charge was spent on a hit
 	std::string lastTarget;
-	float lastAim = 0.f;            //!< the aim ratio of the last NPC hit
+	float lastAim = 0.f;            //!< the aim ratio of the last NPC hit: its damage fraction of the full strike
 	float lastDamage = 0.f;
-	bool lastCharged = false;
-	float lastSpeed = 0.f;          //!< the swing's peak speed then
-	u64 lastSwing = 0;              //!< which swing
+	float lastSpeed = 0.f;          //!< m/s, the speed of the blade's point that touched (#465)
+	float lastSize = 0.f;           //!< m, its stroke so far: a slash's path, a thrust's lunge (#465)
+	const char * lastKind = "slash"; //!< how that point moved: slash, thrust
+	u64 lastSwing = 0;              //!< which swing, 0 for a touch outside a swing
+	// The recovery after a hit (#323)
+	const char * weapon = "none";   //!< the weapon type in the hand: dagger, 1h, 2h
+	float recovery = 0.f;           //!< s, its recovery after a hit
+	const char * recoverySource = "default"; //!< default, config
+	float recoveryGame = 0.f;       //!< s, the game's own strike for the type, for comparison (0: not known)
+	std::array<float, 3> gameStrike = { }; //!< s, the game's own strike per \ref MeleeWeapon (0: not known)
+	float recoveryLeft = 0.f;       //!< s until a new swing may hit
+	bool recovering = false;        //!< the swing in progress (or the last one) started within the recovery: no hits
+	u64 recoverySwings = 0;         //!< swings that started within the recovery
 	// The weapon placed for the check
 	bool placed = false;
 	Vec3f hilt = Vec3f(0.f);

@@ -1,0 +1,92 @@
+# The switches, status and events of #29 (SPEC.md): defaults, live changes, the meter reset, the vr.scene* events.
+#   .\scripts\dev\xrs-run.ps1 scene-switches
+# Red until #29 is built: the scene command and the status.json scene.* fields are not in the game yet (29.0, SPEC.md).
+@sim idle
+@save scene-kultar
+@args --loadslot 0
+
+# T1: the save is one step before the KULTAR_WAKE zone, facing +z (scripts/dev/test-saves/scenarios.txt)
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # past the level's fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert scene.active eq false
+@assert scene.shown eq none
+
+# Defaults (a fresh isolated user dir): hybrid, ignore, above
+@assert scene.view eq hybrid
+@assert scene.lookat eq ignore
+@assert scene.cut eq instant                     # no fades at all by default (the owner, 2026-10-17)
+@assert scene.subtitle.placement eq above
+@assert scene.kind eq none
+@assert scene.fade eq 0
+@assert scene.subtitle.visible eq false
+
+# Each switch changes live
+scene view first
+@assert scene.view eq first
+scene view observer
+@assert scene.view eq observer
+scene view ghost
+@assert scene.view eq ghost
+scene view hybrid
+@assert scene.view eq hybrid
+scene view first
+scene lookat fade
+@assert scene.lookat eq fade
+scene lookat ignore
+@assert scene.lookat eq ignore
+scene cut fade
+@assert scene.cut eq fade
+scene cut instant
+@assert scene.cut eq instant
+scene subtitles chest
+@assert scene.subtitle.placement eq chest
+scene subtitles lowerthird
+@assert scene.subtitle.placement eq lowerthird
+scene subtitles above
+@assert scene.subtitle.placement eq above
+
+# The meter: a reset starts a new stretch
+scene meter reset
+@frames 20
+@assert scene.meter.frames gt 0
+@assert scene.meter.frames le 60
+@assert scene.meter.sceneFrames eq 0
+@assert scene.meter.cuts eq 0
+@assert scene.meter.lookats eq 0
+@assert scene.subtitle.voicedLines eq 0
+
+# A speak -c scene: state, shot, the events
+@mark
+human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_encourage2]
+@log vr\.scene state=start kind=speech view=first shown=first
+@log vr\.scene\.switch reason=start shown=first        # no blink: the eyes stay in the hero's head (the owner)
+@assert scene.active eq true
+@assert scene.kind eq speech
+@assert scene.shown eq first
+@assert scene.view eq first
+@log vr\.scene\.subtitle placement=above speaker=
+@until scene.kind eq none 30s
+@log vr\.scene state=end kind=speech
+@assert scene.shown eq none
+@assert scene.meter.sceneFrames gt 0
+@assert scene.meter.cuts eq 0
+@assert scene.meter.fadeFrames eq 0
+@assert scene.meter.letterboxFrames eq 0
+
+# playerlookat: counted by the meter, logged with the mode
+@remember yaw0 player.yaw
+@mark
+playerlookat human_base_0028
+@log vr\.scene\.lookat how=ignore
+@assert scene.meter.lookats eq 1
+@assert player.yaw eq {yaw0}
+scene lookat fade
+@mark
+playerlookat human_base_0028
+@log vr\.scene\.lookat how=fade
+@assert scene.meter.lookats eq 2
+@wait 800
+@assert scene.meter.fadedLookats eq 1
+scene lookat ignore
+@assert errors eq 0

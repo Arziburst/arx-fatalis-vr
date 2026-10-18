@@ -15,7 +15,7 @@
 #                                  loadlevel 10, a script-console line ...); ';' sends them as ONE batch, which the
 #                                  game applies in the same frame. A refused command (errors>0 in the ack) fails the step.
 #   @wait <ms>                     sleep
-#   @frames <n>                    wait until the game rendered n more frames
+#   @frames <n>                    wait until the game rendered n more frames (the channel's waitframes: its ack comes then)
 #   @until <path> <op> <v> [<n>s]  wait up to n seconds (default 30) for status.json to satisfy the condition
 #   @assert <path> <op> <v>        status.json, read fresh now. path: dotted, "quoted" where a key holds a dot
 #                                  (events.byName."spell.cast"); op: eq ne gt ge lt le
@@ -45,6 +45,8 @@
 #                                  smoke-test.ps1 -Save) - with @args --loadslot 0; ignored while running
 #   @playground                    launch information: start in the test playground (#321, smoke-test.ps1
 #                                  -Playground: the generated level in area 30); ignored while running
+#   @solo                          launch information: the sequence measures frame pacing (#436, #527): CI runs it
+#                                  alone, no other game on the other lane; ignored while running
 #   @player                        launch information: a player's launch (#394, smoke-test.ps1 -Player): no
 #                                  --dev-launch, so the publisher logos, the main menu and every cinematic are
 #                                  shown; without @args the sequence starts while the first logo is up (state LOGO)
@@ -111,13 +113,14 @@ function ConvertTo-XrsStep([string]$Line, [int]$Number) {
 		$step.Kind = 'pending'; $step.Issue = [int]$Matches[1]
 		if ($Matches[2] -match '^@pending') { throw '@pending cannot be nested' }
 		$step.Inner = ConvertTo-XrsStep $Matches[2] $Number
-		if ($step.Inner.Kind -in 'mark', 'wait', 'sim', 'args', 'save', 'playground', 'player') { throw "@pending needs a step that can fail, not @$($step.Inner.Kind)" }
+		if ($step.Inner.Kind -in 'mark', 'wait', 'sim', 'args', 'save', 'playground', 'player', 'solo') { throw "@pending needs a step that can fail, not @$($step.Inner.Kind)" }
 	}
 	elseif ($Line -match '^@sim\s+(\S+)\s*$') { $step.Kind = 'sim'; $step.Name = $Matches[1] }
 	elseif ($Line -match '^@args\s+(.+?)\s*$') { $step.Kind = 'args'; $step.Args = @($Matches[1] -split '\s+') }
 	elseif ($Line -match '^@save\s+(\S+)\s*$') { $step.Kind = 'save'; $step.Name = $Matches[1] }
 	elseif ($Line -match '^@playground\s*$') { $step.Kind = 'playground' }
 	elseif ($Line -match '^@player\s*$') { $step.Kind = 'player' }
+	elseif ($Line -match '^@solo\s*$') { $step.Kind = 'solo' }
 	else { throw "unknown or malformed directive" }
 	[pscustomobject]$step
 }
@@ -144,13 +147,14 @@ function Read-ArxSequence([string]$Name) {
 	[pscustomobject]@{
 		Path  = $path
 		Name  = [IO.Path]::GetFileNameWithoutExtension($path)
-		Steps = @($steps | Where-Object { $_.Kind -notin 'sim', 'args', 'save', 'playground', 'player' })
+		Steps = @($steps | Where-Object { $_.Kind -notin 'sim', 'args', 'save', 'playground', 'player', 'solo' })
 		Sim   = if ($sim) { $sim[0].Name } else { $null }
 		# @( ) keeps a one-word @args an array: an if-expression unrolls it into a string, which splats char by char
 		Args  = @(if ($argsStep) { $argsStep[0].Args })
 		Save  = if ($save) { $save[0].Name } else { $null }
 		Playground = [bool]($steps | Where-Object Kind -eq 'playground')
 		Player = [bool]($steps | Where-Object Kind -eq 'player')
+		Solo = [bool]($steps | Where-Object Kind -eq 'solo')
 	}
 }
 
@@ -308,8 +312,10 @@ function Invoke-XrsStep($Context, $Step) {
 	switch ($Step.Kind) {
 		'wait' { Start-Sleep -Milliseconds $Step.Ms }
 		'frames' {
-			$from = [int64](Read-ArxStatus $dir).frame
-			$null = Wait-ArxStatus { param($s) [int64]$s.frame -ge $from + $Step.Count } -TimeoutSec 60 -Dir $dir -What "$($Step.Count) more frames"
+			# The game holds the ack until it rendered the frames (#522): no status.json polling, no slack
+			$ack = Send-ArxCommand -Lines @("waitframes $($Step.Count)") -Dir $dir -TimeoutSec 60
+			Write-XrsLine $Context "      $ack" 'DarkGray'
+			if ($ack -notmatch 'errors=0 ') { throw "the game refused the frame wait: $ack" }
 		}
 		'command' {
 			$ack = Send-ArxCommand -Lines $Step.Commands -Dir $dir
@@ -408,8 +414,11 @@ function Invoke-ArxSequence($Sequence, [string]$TestDir, [string]$LogPath, [swit
 	foreach ($step in $Sequence.Steps) {
 		$i++
 		Write-XrsLine $ctx "  [$i/$count] $($step.Line)" 'White'
+		$clock = [Diagnostics.Stopwatch]::StartNew()
 		try {
 			Invoke-XrsStep $ctx $step
+			# The step's wall time (#522): what the harness's waits cost, read off a transcript
+			Write-XrsLine $ctx "      $($clock.ElapsedMilliseconds) ms" 'DarkGray'
 			if ($step.Kind -eq 'pending' -and $step.PSObject.Properties['WasPending']) { $pending += $step }
 		} catch {
 			$reason = "line $($step.N) '$($step.Line)': $($_.Exception.Message)"

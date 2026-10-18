@@ -84,6 +84,8 @@ public:
 	
 	void close();
 	bool isClosing() const;
+	//! How far the bag is still slid down, 0 = fully open (a test waits for it, #522)
+	long inventorySlide() const { return m_inventoryY; }
 	void resetPos();
 	
 	[[nodiscard]] bool isSlotVisible(InventoryPos pos) const noexcept;

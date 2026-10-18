@@ -51,6 +51,7 @@
 #include "game/Camera.h"
 #include "game/Damage.h"
 #include "game/EntityManager.h"
+#include "game/Equipment.h"
 #include "game/Inventory.h"
 #include "game/Levels.h"
 #include "game/NPC.h"
@@ -101,6 +102,8 @@
 #include "vr/EyeImage.h"
 #include "vr/HeadTracking.h"
 #include "vr/PerfLog.h"
+#include "vr/SceneSubtitles.h"
+#include "vr/SceneView.h"
 #include "vr/VRArms.h"
 #include "vr/VRBody.h"
 #include "vr/VRComfort.h"
@@ -344,7 +347,6 @@ struct State {
 	u64 frame = 0;
 	u64 lastStatusFrame = 0;
 	PlatformInstant lastStatusTime = 0;
-	PlatformInstant lastPollTime = 0;
 	float fps = 0.f;
 
 	GameState state = GameState::Startup;
@@ -352,6 +354,7 @@ struct State {
 
 	unsigned cmdSeq = 0; //!< Command batches started so far (the running batch included)
 	unsigned ackedSeq = 0; //!< Command batches whose ack.txt is written; this is what status.json reports (#142)
+	unsigned commandReadRetries = 0; //!< Frames command.txt could not be opened (its writer still had it, #527)
 	std::string lastCmd;
 	std::string lastCmdError;
 
@@ -425,6 +428,28 @@ struct State {
 	long watchdogThresholdMs = 5000; //!< Below the 10 s a test waits for an ack: the report comes first
 	long stallLoadMs = 0;            //!< stall load: how long the next level load sleeps, 0 = it does not
 
+	//! The running batch (#522): kept while a waitframes in it holds the ack until the frames are rendered
+	struct Batch {
+		std::vector<std::string> lines;
+		size_t next = 0;             //!< The first line not run yet
+		unsigned errors = 0;
+		u64 resumeFrame = 0;         //!< The frame the rest of the batch runs in; 0 = not waiting
+	} batch;
+
+	//! A simulated headset's shot asked for through the channel: status.json is written once it is saved (#522)
+	struct SimShotWatch {
+		bool active = false;
+		size_t shots = 0;            //!< The simulator's shots when it was asked for
+		u64 lastFrame = 0;           //!< Watched up to this frame: a shot that never comes has the 100 ms status
+	} simShotWatch;
+
+	//! camera.stillMs (#522): when the first-person camera last moved more than a hair from where it was then
+	struct CameraWatch {
+		Vec3f pos = Vec3f(0.f);
+		Vec3f angles = Vec3f(0.f);   //!< pitch, yaw, roll in degrees
+		PlatformInstant movedAt = 0;
+	} cameraWatch;
+
 };
 
 State g;
@@ -459,8 +484,9 @@ std::string menuHover(const Vec2f & mouse) {
 //! When the delayed deliberate crash of "crash steal" fires (#132); zero = none pending
 PlatformInstant g_crashAt = PlatformInstant(0);
 
-const s64 PollIntervalMs = 100;
-const s64 StatusIntervalMs = 250;
+// command.txt is looked for every frame (a stat; it is read only when it is there), status.json is
+// replaced every 100 ms and after every batch, shot and state change (#522)
+const s64 StatusIntervalMs = 100;
 
 void setTestDir(const std::string & dir) {
 	g.dir = dir;
@@ -514,6 +540,7 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 	json.value("eyeHeight", sim.view.eyeSize.y);
 	json.value("ipd", sim.view.ipd);
 	json.value("rate", sim.view.rate);
+	json.value("pacing", sim.view.rate <= 0.f ? "none" : (sim.view.cap ? "cap" : "clock")); // #522
 	json.end();
 
 	json.object("rig");
@@ -671,6 +698,12 @@ void writePlaygroundStatus(JsonWriter & json) {
 		const IO_NPCDATA & data = *npc->_npcdata;
 		json.value("npcMode", playgroundNpcAggressive(*npc) ? "aggressive" : "peaceful");
 		json.value("npcAlive", data.lifePool.current > 0.f);
+		// What a VR touch may reach (#465): both of the fight behaviour and the player as the target
+		json.value("npcFighting", fightsPlayer(*npc));
+		json.value("npcFightBehaviour", (data.behavior & BEHAVIOUR_FIGHT) != 0);
+		json.value("npcTargetsPlayer", npc->targetinfo == EntityHandle_Player);
+		// Units from the hero on the floor plane: whether the NPC stands where a sequence put it
+		json.value("npcDistance", glm::distance(Vec2f(npc->pos.x, npc->pos.z), Vec2f(player.pos.x, player.pos.z)));
 		json.value("npcLife", data.lifePool.current);
 		json.value("npcLifeMax", data.lifePool.max);
 		// Back at the place the level put it (revive -i takes it there): within a step, floor plane only
@@ -713,6 +746,70 @@ void writePlaygroundStatus(JsonWriter & json) {
 
 }
 
+//! status.json \c scene: the scene view of scripted scenes in VR, its meter and its subtitle (#29, SPEC.md)
+void writeSceneStatus(JsonWriter & json) {
+
+	const vr::SceneState & scene = vr::sceneState();
+	const vr::SceneMeter & meter = scene.meter;
+	const vr::SubtitleStatus & subtitle = vr::subtitleStatus();
+
+	json.object("scene");
+	json.value("active", scene.active);
+	json.value("kind", vr::sceneKindName(scene.kind));
+	json.value("view", vr::sceneViewName(scene.view));
+	json.value("shown", vr::sceneShownName(scene.director.shown()));
+	json.value("lookat", vr::sceneLookAtName(scene.lookAt));
+	json.value("firstLow", vr::sceneFirstLowName(scene.firstLow));
+	json.value("cut", vr::sceneCutName(scene.cut));
+	json.value("fade", scene.director.fade());
+	json.value("armsIk", scene.armsIk);
+	json.value("dialogue", scene.director.dialogue());
+	// The hero's head: hidden by the first-person selection or by the VR body's head-only view (the eyes inside it)
+	json.value("heroHead", (HERO_SHOW_1ST == 1 || vr::hidesHeadOnly()) ? "hidden" : "drawn");
+	json.object("meter");
+	json.value("frames", meter.frames());
+	json.value("sceneFrames", meter.sceneFrames());
+	json.value("screenFrames", meter.screenFrames());
+	json.value("minAboveFloorM", meter.minAboveFloorM());
+	json.value("maxStepCm", meter.maxStepCm());
+	json.value("maxYawStepDeg", meter.maxYawStepDeg());
+	json.value("cuts", meter.cuts());
+	json.value("fadedCuts", meter.fadedCuts());
+	json.value("instantCuts", meter.instantCuts());
+	json.value("unexplainedCuts", meter.unexplainedCuts());
+	json.value("lookats", meter.lookats());
+	json.value("fadedLookats", meter.fadedLookats());
+	json.value("letterboxFrames", meter.letterboxFrames());
+	json.value("blindFrames", meter.blindFrames());
+	json.value("openingFrames", meter.openingFrames());
+	json.value("worldFrames", meter.worldFrames());
+	json.value("fadeFrames", meter.fadeFrames());
+	json.end();
+	json.object("subtitle");
+	json.value("visible", subtitle.visible);
+	json.value("text", subtitle.text);
+	json.value("speaker", subtitle.speaker);
+	json.value("placement", vr::subtitlePlacementName(subtitle.placement));
+	json.value("lines", subtitle.lines);
+	json.value("voicedLines", subtitle.voicedLines);
+	// The panel fixed in the world for the line (#29): drawn into both eyes this frame, the pixels it covers, its pose
+	// in LOCAL meters and degrees
+	json.value("drawn", vr::subtitlePlacementName(subtitle.drawn));
+	json.value("panel", subtitle.panel);
+	json.value("panelPixels", subtitle.panelPixels);
+	json.value("panelYawFromHeadDeg", subtitle.panelYawFromHeadDeg);
+	json.object("panelLocal");
+	json.value("x", subtitle.panelLocal.x);
+	json.value("y", subtitle.panelLocal.y);
+	json.value("z", subtitle.panelLocal.z);
+	json.value("yawDeg", subtitle.panelYawDeg);
+	json.value("widthM", subtitle.panelWidthM);
+	json.end();
+	json.end();
+	json.end();
+
+}
+
 std::string buildStatus(PlatformInstant now) {
 
 	JsonWriter json;
@@ -735,6 +832,7 @@ std::string buildStatus(PlatformInstant now) {
 
 	json.value("menuMode", menuModeName(ARXmenu.mode()));
 	json.value("menuPage", ARXmenu.mode() == Mode_MainMenu ? menuPageName(currentMenuPage()) : "none");
+	json.value("menuRows", ARXmenu.mode() == Mode_MainMenu ? visibleVRSettingRows() : std::string());
 	json.value("area", g_currentArea ? u32(g_currentArea) : 0u);
 	json.value("paused", g_gameTime.isPaused() != 0);
 	// The game clock: it runs while a VR radial menu is open (#376), stops in the pause menu
@@ -780,6 +878,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("jumping", player.jumpphase != NotJumping);
 		// The stealth walk in this update: the key or a slight push of the stick (#33)
 		json.value("stealth", (player.m_currentMovement & PLAYER_MOVE_STEALTH) != 0);
+		// The bag's slide in or out, 0 = fully open: a shot of the open bag waits for it (#522)
+		json.value("inventorySlide", s64(g_playerInventoryHud.inventorySlide()));
 		// The speed the current body animation moves the player at, units per second - what the engine walks
 		// with (ARX_PLAYER_Manage_Movement), independent of walls and the frame rate: the run vs the sneak (#33)
 		if(entities.player() && entities.player()->animlayer[0].cur_anim) {
@@ -808,6 +908,8 @@ std::string buildStatus(PlatformInstant now) {
 		// mode; in VR the eye plus the head's movement since its reference (#27)
 		json.value("eyeAboveFeet", player.basePosition().y - g_playerCameraStablePos.y);
 		json.value("shake", quakeAmplitude());
+		// How long the camera has not moved (#522): a test that aims from it waits until it settled
+		json.value("stillMs", toMsi(now - g.cameraWatch.movedAt));
 		// The camera the last frame's interface pass ended with (the status is written before this
 		// frame's update prepares a new one): the projection's scale (m00, m11) and off-axis shift
 		// (m20, m21) and the viewport - in VR the head camera's union projection, also with the book
@@ -855,6 +957,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.end();
 		json.end();
 	}
+
+	writeSceneStatus(json);
 
 	{
 		const vr::ComfortPolicy & policy = vr::comfort();
@@ -1505,7 +1609,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("combatMode", (player.Interface & INTER_COMBATMODE) != 0);
 		json.end();
 	}
-	// Physical melee (#39): the swing detector, the charge, the hits
+	// Physical melee (#39): the swing detector, the hits and their damage from the swing (#465)
 	{
 		const vr::MeleeStatus & melee = vr::meleeStatus();
 		json.object("melee");
@@ -1515,36 +1619,59 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("kind", melee.kind);
 		json.value("speed", melee.speed);
 		json.value("peak", melee.peak);
-		json.value("factor", melee.factor);
 		json.value("swings", melee.swings);
 		json.value("gaps", melee.gaps);
 		json.value("jumps", melee.jumps);
 		json.value("nearMisses", melee.nearMisses);
 		json.value("lastNearMiss", melee.lastNearMiss);
-		json.object("charge");
-		json.value("held", melee.chargeHeld);
-		json.value("charging", melee.charging);
-		json.value("spent", melee.chargeSpent);
-		json.value("seconds", melee.chargeSeconds);
-		json.value("ratio", melee.chargeRatio);
-		json.value("fullAimSeconds", melee.fullAimSeconds);
-		json.end();
+		json.value("trigger", melee.trigger);
+		json.value("worldHit", melee.worldHit);
 		json.value("hits", melee.hits);
+		json.value("touches", melee.touches);
 		json.value("contacts", melee.contacts);
-		json.value("chargedHits", melee.chargedHits);
 		json.object("last");
 		json.value("target", melee.lastTarget);
 		json.value("aim", melee.lastAim);
 		json.value("damage", melee.lastDamage);
-		json.value("charged", melee.lastCharged);
 		json.value("speed", melee.lastSpeed);
+		json.value("size", melee.lastSize);
+		json.value("kind", melee.lastKind);
 		json.value("swing", melee.lastSwing);
+		json.end();
+		// The recovery after a hit (#323): a swing started within it hits nothing
+		json.object("recovery");
+		json.value("weapon", melee.weapon);
+		json.value("seconds", melee.recovery);
+		json.value("source", melee.recoverySource);
+		json.value("game", melee.recoveryGame);
+		json.object("games"); // the game's own strike of every type, whatever is in the hand
+		for(vr::MeleeWeapon type : { vr::MeleeWeapon::Dagger, vr::MeleeWeapon::OneHanded, vr::MeleeWeapon::TwoHanded }) {
+			json.value(vr::meleeWeaponName(type), melee.gameStrike[size_t(type)]);
+		}
+		json.end();
+		json.value("left", melee.recoveryLeft);
+		json.value("recovering", melee.recovering);
+		json.value("swings", melee.recoverySwings);
 		json.end();
 		json.object("params");
 		json.value("swingSpeed", melee.params.startSpeed);
 		json.value("endSpeed", melee.params.endSpeed);
-		json.value("fullSpeed", melee.params.fullSpeed);
-		json.value("weakAim", melee.params.weakAim);
+		json.value("class", melee.meleeClass);
+		const struct { const char * name; const vr::DamageRange & range; } ranges[] = {
+			{ "slash", melee.damage.slash }, { "stab", melee.damage.stab }
+		};
+		for(const auto & range : ranges) {
+			json.object(range.name);
+			json.value("pathMin", range.range.pathMin);
+			json.value("pathMax", range.range.pathMax);
+			json.value("speedMin", range.range.speedMin);
+			json.value("speedMax", range.range.speedMax);
+			json.value("cap", range.range.cap);
+			json.end();
+		}
+		json.value("pathScale", melee.damage.pathScale);
+		json.value("quality", vr::qualityName(melee.damage.quality));
+		json.value("noSwing", vr::noSwingName(melee.damage.noSwing));
 		json.value("targetCooldown", melee.params.targetCooldown);
 		json.end();
 		json.value("placed", melee.placed);
@@ -2225,6 +2352,11 @@ std::string execute(std::string_view line) {
 	if(word == "vr-sim") {
 		// The simulated headset (#112): any script command, now or @<frame> on its timeline
 		std::string error = vr::simCommand(rest);
+		if(error.empty() && rest.find("shot") != std::string_view::npos && !g.simShotWatch.active) {
+			g.simShotWatch.active = true;
+			g.simShotWatch.shots = vr::simStatus().shots.size();
+			g.simShotWatch.lastFrame = g.frame + 600;
+		}
 		return error.empty() ? error : refuse("vr-sim: " + error);
 	}
 
@@ -2263,6 +2395,37 @@ std::string execute(std::string_view line) {
 		} else {
 			return refuse("comfort: expected auto, on or off, got \"" + std::string(rest) + "\"");
 		}
+		return std::string();
+	}
+
+	if(word == "scene") {
+		// Scripted scenes in VR (#29, SPEC.md): scene view first|observer|ghost|hybrid, scene lookat ignore|fade,
+		// scene subtitles above|chest|lowerthird - live, for this session (cfg.ini keeps the player's choice: the
+		// sequences start from the defaults in any order); scene meter reset starts a new
+		// measuring stretch of status.json scene.meter. Accepted in flat mode too, where they change nothing
+		std::string_view value;
+		std::string what(firstWord(rest, value));
+		util::makeLowercase(what);
+		std::string name(trim(value));
+		util::makeLowercase(name);
+		if(what == "view" && vr::parseSceneView(name)) {
+			vr::sceneState().view = *vr::parseSceneView(name);
+		} else if(what == "lookat" && vr::parseSceneLookAt(name)) {
+			vr::sceneState().lookAt = *vr::parseSceneLookAt(name);
+		} else if(what == "firstlow" && vr::parseSceneFirstLow(name)) {
+			vr::sceneState().firstLow = *vr::parseSceneFirstLow(name);
+		} else if(what == "cut" && vr::parseSceneCut(name)) {
+			vr::sceneState().cut = *vr::parseSceneCut(name);
+		} else if(what == "subtitles" && vr::parseSubtitlePlacement(name)) {
+			vr::setSubtitlePlacement(*vr::parseSubtitlePlacement(name));
+		} else if(what == "meter" && name == "reset") {
+			vr::sceneState().meter.reset();
+			vr::resetSubtitleCounts();
+		} else {
+			return refuse("scene: expected view first|observer|ghost|hybrid, lookat ignore|fade, firstlow black|clamp|screen, cut instant|fade, "
+			              "subtitles above|chest|lowerthird or meter reset, got \"" + std::string(rest) + "\"");
+		}
+		LogInfo << "[channel] scene " << what << ' ' << name;
 		return std::string();
 	}
 
@@ -2433,6 +2596,58 @@ std::string execute(std::string_view line) {
 			return refuse("freelook: expected on or off, got \"" + std::string(rest) + "\"");
 		}
 		return std::string();
+	}
+
+	if(word == "melee") {
+		// The damage from the swing (#465) live, not saved: melee noswing none|min, melee quality min|geomean|product,
+		// melee pathscale <factor>, melee slash|stab <class> <path min> <path max> <speed min> <speed max> | default -
+		// the cfg.ini keys vr_melee_noswing, _quality, _path_scale, _slash_<class>, _stab_<class>
+		std::string_view args;
+		const std::string_view what = firstWord(rest, args);
+		if(what == "noswing") {
+			if(args != vr::noSwingName(vr::NoSwing::None) && args != vr::noSwingName(vr::NoSwing::Min)) {
+				return refuse("melee noswing: expected none or min, got \"" + std::string(args) + "\"");
+			}
+			config.input.vrMeleeNoSwing = std::string(args);
+			return std::string();
+		}
+		if(what == "quality") {
+			if(args != vr::qualityName(vr::parseQuality(args))) {
+				return refuse("melee quality: expected min, geomean or product, got \"" + std::string(args) + "\"");
+			}
+			config.input.vrMeleeQuality = std::string(args);
+			return std::string();
+		}
+		if(what == "pathscale") {
+			float scale = 0.f;
+			std::istringstream iss{std::string(args)};
+			if(!(iss >> scale) || scale < 0.25f || scale > 2.f) {
+				return refuse("melee pathscale: expected a factor from 0.25 to 2, got \"" + std::string(args) + "\"");
+			}
+			config.input.vrMeleePathScale = scale;
+			return std::string();
+		}
+		if(what == "slash" || what == "stab") {
+			std::string_view range;
+			const std::string_view name = firstWord(args, range);
+			for(vr::MeleeClass meleeClass : vr::MeleeClasses) {
+				if(name != vr::meleeClassName(meleeClass)) {
+					continue;
+				}
+				bool ok = false;
+				vr::parseDamageRange(range, vr::DamageRange(), &ok);
+				if(range != "default" && (!ok || range.empty())) {
+					return refuse("melee " + std::string(what) + ": expected <path min> <path max> <speed min> <speed max>"
+					              " (0-20) or default, got \"" + std::string(range) + "\"");
+				}
+				auto & ranges = what == "slash" ? config.input.vrMeleeSlash : config.input.vrMeleeStab;
+				ranges[size_t(meleeClass)] = range == "default" ? std::string() : std::string(range);
+				return std::string();
+			}
+			return refuse("melee " + std::string(what) + ": expected a class (dagger, sword, blunt, 2h_sword, 2h_blunt), got \""
+			              + std::string(name) + "\"");
+		}
+		return refuse("melee: expected noswing, quality, pathscale, slash or stab, got \"" + std::string(rest) + "\"");
 	}
 
 	if(word == "crouch") {
@@ -3258,7 +3473,7 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "playground") {
-		// playground pull mode|respawn | kill | place <ahead> [<right>] | hit <n>: the test playground's NPC and
+		// playground pull mode|respawn | kill | fight | place <ahead> [<right>] | hit <n>: the test playground's NPC and
 		// levers (#321.2). pull sends the lever what a hand pull sends it (Interface.cpp: SM_ACTION from the player)
 		if(!isPlaygroundArea(g_currentArea) || !entities.player()) {
 			return refuse("playground: needs the playground level (area 30) on screen");
@@ -3281,6 +3496,13 @@ std::string execute(std::string_view line) {
 		}
 		if(what == "kill") {
 			ARX_DAMAGES_ForceDeath(*npc, entities.player());
+			return std::string();
+		}
+		if(what == "fight") {
+			// The NPC fights the player now, as a fight script sets it (behavior -f move_to, settarget player): a
+			// test's set-up for what only fighting NPCs feel - a VR touch (#465)
+			ARX_NPC_Behaviour_Change(npc, BEHAVIOUR_FIGHT | BEHAVIOUR_MOVE_TO, 0);
+			npc->targetinfo = EntityHandle_Player;
 			return std::string();
 		}
 		if(what == "place") {
@@ -3307,7 +3529,7 @@ std::string execute(std::string_view line) {
 			damageNpc(*npc, damage, entities.player(), nullptr, DAMAGE_TYPE_METAL, &npc->pos);
 			return std::string();
 		}
-		return refuse("playground: expected pull, kill, place or hit, got \"" + std::string(what) + "\"");
+		return refuse("playground: expected pull, kill, fight, place or hit, got \"" + std::string(what) + "\"");
 	}
 
 	if(word == "loadlevel") {
@@ -3341,6 +3563,81 @@ std::string execute(std::string_view line) {
 	return std::string();
 }
 
+/*
+ * Run the batch's lines from the first one not run yet. A `waitframes <n>` stops it: the rest of the
+ * lines run, and the ack is written, in the update of the frame after n more frames were rendered
+ * (#522) - so a test waiting for frames needs no status.json polling, only the ack it waits for anyway.
+ */
+void runBatch() {
+
+	State::Batch & batch = g.batch;
+	batch.resumeFrame = 0;
+	while(batch.next < batch.lines.size()) {
+		const std::string & line = batch.lines[batch.next++];
+		g.lastCmd = line;
+		std::string_view rest;
+		std::string word(firstWord(line, rest));
+		util::makeLowercase(word);
+		if(word == "waitframes") {
+			long frames = 0;
+			if(!parseIndex(rest, frames)) {
+				batch.errors++;
+				g.lastCmdError = refuse("waitframes: expected a number of frames, got \"" + std::string(rest) + "\"");
+				continue;
+			}
+			if(frames > 0) {
+				batch.resumeFrame = g.frame + u64(frames);
+				return;
+			}
+			continue;
+		}
+		std::string error = execute(line);
+		if(!error.empty()) {
+			batch.errors++;
+			g.lastCmdError = error;
+		}
+	}
+
+	writeAck(batch.errors);
+	g.ackedSeq = g.cmdSeq;
+	batch = State::Batch();
+	writeStatus(platform::getTime());
+}
+
+/*
+ * Read command.txt whole, sharing the file with whoever still has it open. The test writes command.txt.tmp and
+ * renames it into place; on Windows the renamer still holds the file open with DELETE access for a moment after
+ * the new name is visible, and an open without FILE_SHARE_DELETE (std::ifstream, fs::read) fails then with a
+ * sharing violation. The old code read "" in that moment, deleted the file and acknowledged nothing: the batch was
+ * lost without a line in the log (CI run 39120032077 attempt 1, vr-remap's 'waitframes 5' after 'vr-input down
+ * left.grip': the ack of the quit came back as seq 15, the lost batch's number; #527). The moment is microseconds
+ * when the PC is idle and grows with every preemption of the writer's thread, so it hit under three games. Returns
+ * false when the file could not be opened: then it is left alone and read next frame.
+ */
+bool readCommandFile(const fs::path & file, std::string & contents) {
+
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+	HANDLE handle = CreateFileW(platform::WinPath(file), GENERIC_READ,
+	                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+	                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if(handle == INVALID_HANDLE_VALUE) {
+		return false;
+	}
+	contents.clear();
+	char buffer[4096];
+	DWORD read = 0;
+	while(ReadFile(handle, buffer, sizeof(buffer), &read, nullptr) && read != 0) {
+		contents.append(buffer, read);
+	}
+	CloseHandle(handle);
+	return true;
+#else
+	contents = fs::read(file);
+	return true;
+#endif
+
+}
+
 void pollCommands() {
 
 	fs::path file = g.dir / "command.txt";
@@ -3354,14 +3651,29 @@ void pollCommands() {
 		return;
 	}
 
-	std::string contents = fs::read(file);
+	std::string contents;
+	if(!readCommandFile(file, contents)) {
+		// Still open by the test's rename (see above): the file stays, the next frame reads it
+		g.commandReadRetries++;
+		if(g.commandReadRetries == 1 || g.commandReadRetries % 100 == 0) {
+			LogInfo << "[channel] " << file << " cannot be opened yet (its writer still has it open), reading it next frame"
+			        << (g.commandReadRetries > 1 ? " (" + std::to_string(g.commandReadRetries) + " frames so far)" : "");
+		}
+		if(g.commandReadRetries >= 900) {
+			LogWarning << "[channel] giving up on " << file << " after " << g.commandReadRetries << " frames: it stays open";
+			g.commandReadRetries = 0;
+			fs::remove(file);
+		}
+		return;
+	}
+	g.commandReadRetries = 0;
 	if(!fs::remove(file)) {
 		// Do not run the same batch again next frame
 		LogWarning << "[channel] could not delete " << file << " after reading it";
 		fs::write(file, std::string_view());
 	}
 
-	std::vector<std::string_view> lines;
+	std::vector<std::string> lines;
 	for(size_t pos = 0; pos < contents.size(); ) {
 		size_t end = contents.find('\n', pos);
 		if(end == std::string::npos) {
@@ -3369,7 +3681,7 @@ void pollCommands() {
 		}
 		std::string_view line = trim(std::string_view(contents).substr(pos, end - pos));
 		if(!line.empty() && line.front() != '#') {
-			lines.push_back(line);
+			lines.emplace_back(line);
 		}
 		pos = end + 1;
 	}
@@ -3378,20 +3690,10 @@ void pollCommands() {
 	}
 
 	g.cmdSeq++;
-	unsigned errors = 0;
 	g.lastCmdError.clear();
-	for(std::string_view line : lines) {
-		g.lastCmd = std::string(line);
-		std::string error = execute(line);
-		if(!error.empty()) {
-			errors++;
-			g.lastCmdError = error;
-		}
-	}
-
-	writeAck(errors);
-	g.ackedSeq = g.cmdSeq;
-	writeStatus(platform::getTime());
+	g.batch = State::Batch();
+	g.batch.lines = std::move(lines);
+	runBatch();
 }
 
 //! stick-for: keep the walk the hold made, and let the stick go once the player has walked far enough (#370)
@@ -3503,8 +3805,26 @@ void update() {
 
 	updateStickFor();
 
-	if(toMsi(now - g.lastPollTime) >= PollIntervalMs) {
-		g.lastPollTime = now;
+	// camera.stillMs (#522): measured from where the camera was when it last moved, so a slow drift counts too
+	{
+		State::CameraWatch & watch = g.cameraWatch;
+		const Vec3f angles(g_playerCamera.angle.getPitch(), g_playerCamera.angle.getYaw(), g_playerCamera.angle.getRoll());
+		const float threshold = 0.0005f; // units and degrees: below what status.json shows (0.001)
+		const Vec3f turn = glm::abs(angles - watch.angles);
+		if(watch.movedAt == PlatformInstant(0) || glm::distance(g_playerCamera.m_pos, watch.pos) > threshold
+		   || turn.x > threshold || turn.y > threshold || turn.z > threshold) {
+			watch.pos = g_playerCamera.m_pos;
+			watch.angles = angles;
+			watch.movedAt = now;
+		}
+	}
+
+	if(g.batch.resumeFrame != 0) {
+		// A batch waits for frames (waitframes): no new batch before its ack
+		if(g.frame >= g.batch.resumeFrame) {
+			runBatch();
+		}
+	} else {
 		pollCommands();
 	}
 
@@ -3516,7 +3836,21 @@ void update() {
 
 void afterRender() {
 
-	if(!g.enabled || g.pendingCapture.empty()) {
+	if(!g.enabled) {
+		return;
+	}
+
+	if(g.simShotWatch.active) {
+		// The simulator saves its shots when the frame ends (xrEndFrame), before this; a test waits for the
+		// shot in status.json
+		const vr::SimStatus sim = vr::simStatus();
+		if(sim.shots.size() > g.simShotWatch.shots || g.frame >= g.simShotWatch.lastFrame) {
+			g.simShotWatch.active = false;
+			writeStatus(platform::getTime());
+		}
+	}
+
+	if(g.pendingCapture.empty()) {
 		return;
 	}
 

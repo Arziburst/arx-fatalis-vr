@@ -248,24 +248,25 @@ void VRControlsTest::gripFlickerTest() {
 
 void VRControlsTest::indexGripThresholdTest() {
 
-	// The Index grip is how far the strapped hand is closed (D-019, owner 2026-10-10):
-	// an open hand, fingers off or resting lightly, is no grip
-	const Hysteresis & index = gripThreshold(ControllerType::Index);
+	// The Index grip is how far the strapped hand is closed (D-019, owner 2026-10-10): an open hand, fingers
+	// off or resting lightly, is no grip - nor is a firm resting hold of the controller, 0.52 - 0.59 in the
+	// owner's headset test of #460, where every trigger press became the grip + trigger chord (#496)
+	const Hysteresis index = gripThreshold(ControllerType::Index);
 	bool down = false;
-	for(float value : { 0.f, 0.05f, 0.15f, 0.30f, 0.22f, 0.45f, 0.10f }) {
+	for(float value : { 0.f, 0.05f, 0.15f, 0.30f, 0.22f, 0.45f, 0.52f, 0.59f, 0.55f, 0.65f, 0.10f }) {
 		down = index.update(down, value);
 		CPPUNIT_ASSERT(!down);
 	}
-	// A light close is the grip, and the relaxed closed hand's flicker around 0.6 - 0.7 (the owner's
-	// first headset run, six false "use" events against 0.70 / 0.55) keeps it closed
-	down = index.update(down, 0.55f);
+	// A squeeze is the grip, and the closed hand's flicker around 0.6 - 0.7 (the owner's first headset run,
+	// six false "use" events against 0.70 / 0.55) keeps it closed
+	down = index.update(down, 0.72f);
 	CPPUNIT_ASSERT(down);
-	for(float value : { 0.62f, 0.68f, 0.58f, 0.71f, 0.60f, 0.35f }) {
+	for(float value : { 0.62f, 0.68f, 0.58f, 0.71f, 0.60f, 0.45f }) {
 		down = index.update(down, value);
 		CPPUNIT_ASSERT(down);
 	}
 	// Opening the hand lets go
-	down = index.update(down, 0.25f);
+	down = index.update(down, 0.35f);
 	CPPUNIT_ASSERT(!down);
 
 	// The same flicker against the Touch's squeeze threshold would release and press again
@@ -274,11 +275,87 @@ void VRControlsTest::indexGripThresholdTest() {
 	touch = GripThreshold.update(touch, 0.54f);
 	CPPUNIT_ASSERT(!touch);
 
-	// The others keep squeeze/value with 0.70 / 0.55 (F-41)
-	CPPUNIT_ASSERT(&gripThreshold(ControllerType::Touch) == &GripThreshold);
-	CPPUNIT_ASSERT(&gripThreshold(ControllerType::Simple) == &GripThreshold);
-	CPPUNIT_ASSERT(&gripThreshold(ControllerType::Unknown) == &GripThreshold);
-	CPPUNIT_ASSERT(&gripThreshold(ControllerType::Index) == &IndexGripThreshold);
+	// The Index takes the player's vr_grip_press / vr_grip_release, 0.70 / 0.40 by default; the others keep
+	// squeeze/value with 0.70 / 0.55 whatever the player set (F-41)
+	CPPUNIT_ASSERT_EQUAL(0.70f, IndexGripThreshold.press);
+	CPPUNIT_ASSERT_EQUAL(0.40f, IndexGripThreshold.release);
+	const Hysteresis custom = { 0.85f, 0.25f };
+	CPPUNIT_ASSERT_EQUAL(custom.press, gripThreshold(ControllerType::Index, custom).press);
+	CPPUNIT_ASSERT_EQUAL(custom.release, gripThreshold(ControllerType::Index, custom).release);
+	for(ControllerType type : { ControllerType::Touch, ControllerType::Simple, ControllerType::Unknown }) {
+		CPPUNIT_ASSERT_EQUAL(GripThreshold.press, gripThreshold(type).press);
+		CPPUNIT_ASSERT_EQUAL(GripThreshold.release, gripThreshold(type).release);
+		CPPUNIT_ASSERT_EQUAL(GripThreshold.press, gripThreshold(type, custom).press);
+		CPPUNIT_ASSERT_EQUAL(GripThreshold.release, gripThreshold(type, custom).release);
+	}
+}
+
+void VRControlsTest::chordsOffTest() {
+
+	ControlResolver resolver(defaultLayout(ControllerType::Index));
+
+	// A hand pointing at a menu panel (#496): its trigger clicks however firmly the grip is held - no use,
+	// no act, and the grip let go after the click makes nothing either
+	resolver.setChords(Hand::Right, false);
+	CPPUNIT_ASSERT(!resolver.chords(Hand::Right));
+	CPPUNIT_ASSERT(resolver.chords(Hand::Left));
+	resolver.update(0, controls({ RightGrip }));
+	resolver.update(500, controls({ RightGrip, RightTrigger }));
+	CPPUNIT_ASSERT(resolver.pressed(Event::InteractRight));
+	CPPUNIT_ASSERT(!resolver.active(Event::UseRight));
+	CPPUNIT_ASSERT(!resolver.active(Event::ActRight));
+	resolver.update(600, controls({ RightGrip }));
+	CPPUNIT_ASSERT(resolver.released(Event::InteractRight));
+	resolver.update(700, controls());
+	resolver.update(700 + resolver.releaseDebounceMs, controls());
+	// Grip and trigger in the same update: the click too
+	resolver.update(1000, controls({ RightGrip, RightTrigger }));
+	CPPUNIT_ASSERT(resolver.pressed(Event::InteractRight));
+	resolver.update(1100, controls());
+	resolver.update(1100 + resolver.releaseDebounceMs, controls());
+	CPPUNIT_ASSERT_EQUAL(u32(2), resolver.presses(Event::InteractRight));
+	for(Event event : { Event::UseRight, Event::ActRight, Event::StashRight }) {
+		CPPUNIT_ASSERT_EQUAL(u32(0), resolver.presses(event));
+	}
+
+	// The other hand keeps its chords
+	resolver.update(2000, controls({ LeftGrip }));
+	resolver.update(2100, controls({ LeftGrip, LeftTrigger }));
+	CPPUNIT_ASSERT(resolver.pressed(Event::UseLeft));
+	CPPUNIT_ASSERT(!resolver.active(Event::InteractLeft));
+	resolver.update(2200, controls());
+	resolver.update(2200 + resolver.releaseDebounceMs, controls());
+
+	// A chord made before the hand reached the panel stays until it is let go
+	resolver.setChords(Hand::Right, true);
+	resolver.update(3000, controls({ RightGrip }));
+	resolver.update(3100, controls({ RightGrip, RightTrigger }));
+	CPPUNIT_ASSERT(resolver.pressed(Event::UseRight));
+	resolver.setChords(Hand::Right, false);
+	resolver.update(3200, controls({ RightGrip, RightTrigger }));
+	CPPUNIT_ASSERT(resolver.active(Event::UseRight));
+	CPPUNIT_ASSERT(!resolver.active(Event::InteractRight));
+	resolver.update(3300, controls());
+	resolver.update(3300 + resolver.releaseDebounceMs, controls());
+	CPPUNIT_ASSERT(!resolver.active(Event::UseRight));
+	CPPUNIT_ASSERT_EQUAL(u32(1), resolver.presses(Event::UseRight));
+	CPPUNIT_ASSERT_EQUAL(u32(2), resolver.presses(Event::InteractRight));
+
+	// A grip with a binding of its own (the press rules' layout): no tap after it was held through a click,
+	// its tap as ever without one
+	ControlResolver rules(ruleLayout());
+	rules.setChords(Hand::Right, false);
+	rules.update(0, controls({ RightGrip }));
+	rules.update(100, controls({ RightGrip, RightTrigger }));
+	CPPUNIT_ASSERT(rules.pressed(Event::InteractRight));
+	CPPUNIT_ASSERT(!rules.active(Event::StashRight));
+	rules.update(200, controls());
+	rules.update(200 + rules.releaseDebounceMs, controls());
+	CPPUNIT_ASSERT_EQUAL(u32(0), rules.presses(Event::UseRight));
+	rules.update(1000, controls({ RightGrip }));
+	rules.update(1100, controls());
+	rules.update(1100 + rules.releaseDebounceMs, controls());
+	CPPUNIT_ASSERT_EQUAL(u32(1), rules.presses(Event::UseRight));
 }
 
 void VRControlsTest::longPressTest() {

@@ -292,15 +292,19 @@ function Invoke-SmokeRun([int]$Run) {
 		if ($sim) { $argList += '--vr-sim', "`"$simScript`"" }
 		$argList += $ArxArgs
 		Write-Host "=== run $Run/$Repeat`: arx.exe $($argList -join ' ')" -ForegroundColor Cyan
-		$env:ARX_UNATTENDED = '1'
 		$launchTime = Get-Date
-		# Shown without taking the focus (SDL hint from the environment, restored right after the start)
-		$previousHint = Set-ArxBackgroundWindow
+		# Shown without taking the focus (SDL hint from the environment), and never blocking on a dialog: it goes to
+		# arx.log and stderr, the crash dialog is skipped (ARXVR_NO_DIALOGS / ARX_UNATTENDED, #501) - all restored right
+		# after the start, so the shell that ran the test is unchanged
 		$foregroundBefore = Get-ArxForegroundWindow
+		$previousHint = Set-ArxBackgroundWindow
+		$previousDialogEnv = Set-ArxDialogEnv -NoDialogs
 		try {
 			$process = Start-Process -FilePath $exe -ArgumentList $argList -PassThru `
 				-RedirectStandardOutput (Join-Path $TestDir 'stdout.txt') -RedirectStandardError (Join-Path $TestDir 'stderr.txt')
-		} finally { Restore-ArxBackgroundWindow $previousHint }
+		} finally { Restore-ArxBackgroundWindow $previousHint; Restore-ArxDialogEnv $previousDialogEnv }
+		# The game dies with this script, killed or not (#526): never a game left behind holding a slot
+		$null = Register-ArxGameProcess $process
 		Set-ArxGameLockGame $lock $process.Id
 		# The game is running: a check driving it from outside starts its timeouts only now, not during the lock wait (#258)
 		Set-Content -LiteralPath (Get-ArxLaunchMarker $TestDir) -Value "pid=$($process.Id) run=$Run" -Encoding ascii
@@ -494,6 +498,10 @@ function Invoke-SmokeRun([int]$Run) {
 		if ($newCrashes) { $reasons.Add("new crash report: $($newCrashes -join ', ')") }
 		if ($errorLines) { $reasons.Add("$($errorLines.Count) [E] line(s) in arx.log") }
 		if ($final -and [int]$final.errors -ne 0) { $reasons.Add("status.json errors=$($final.errors)") }
+		# A dialog the game wrote instead of showing it (#501) is what ended the run: its line is the first reason
+		$dialogLines = Get-ArxDialogLines @($(if ($logFresh) { $log }), (Join-Path $TestDir 'stderr.txt'))
+		Write-Check ($dialogLines.Count -eq 0) "no dialog ($($dialogLines.Count) '[dialog]' line(s) in arx.log / stderr)"
+		if ($dialogLines) { $reasons.Insert(0, (Get-ArxDialogReason $dialogLines)) }
 
 		if ($errorLines -or $warningLines) {
 			Write-Host '  --- [E]/[W] lines:'

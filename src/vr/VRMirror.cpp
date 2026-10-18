@@ -228,9 +228,10 @@ void DesktopMirror::setOverlayImage(OverlayImage image, const Vec2i & size, cons
 		glGenTextures(1, &texture);
 	}
 
-	// The caller restores the texture binding, as for the other textures of the mirror
+	// The caller restores the texture binding, as for the other textures of the mirror. The engine's tight
+	// GL_UNPACK_ALIGNMENT (1) is kept: RGBA rows are a multiple of 4 anyway, and the 4 once set here leaked
+	// into every later upload and crashed on a cinematic tile (#495, TRAPS.md)
 	glBindTexture(GL_TEXTURE_2D, texture);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);

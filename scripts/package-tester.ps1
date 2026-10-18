@@ -259,12 +259,15 @@ if ($SkipVerify) {
 	try {
 		# What a tester's PC has: Windows and nothing else - no vcpkg, no compiler, no OpenXR SDK
 		$env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
-		$env:ARX_UNATTENDED = '1'
 		$previousHint = Set-ArxBackgroundWindow
+		# No dialog blocks the verify run (#501); the shell gets its variables back after the start
+		$previousDialogEnv = Set-ArxDialogEnv -NoDialogs
 		try {
 			$process = Start-Process -FilePath $exe -ArgumentList $argList -PassThru -WorkingDirectory (Split-Path -Parent $exe) `
 				-RedirectStandardOutput (Join-Path $verifyTest 'stdout.txt') -RedirectStandardError (Join-Path $verifyTest 'stderr.txt')
-		} finally { Restore-ArxBackgroundWindow $previousHint; $env:PATH = $savedPath }
+		} finally { Restore-ArxBackgroundWindow $previousHint; Restore-ArxDialogEnv $previousDialogEnv; $env:PATH = $savedPath }
+		# The game dies with this script, killed or not (#526)
+		$null = Register-ArxGameProcess $process
 		Set-ArxGameLockGame $lock $process.Id
 		$deadline = (Get-Date).AddSeconds(90)
 		$status = $null

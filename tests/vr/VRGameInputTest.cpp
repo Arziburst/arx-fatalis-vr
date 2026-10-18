@@ -367,16 +367,16 @@ void VRGameInputTest::handRolesTest() {
 
 	Frames f;
 
-	// A hand with a drawn weapon charges with its trigger: no click from that hand (D-042, #377) ...
-	f.roles.charges[size_t(Hand::Right)] = true;
+	// A hand with a drawn weapon: no click from its trigger (D-042, #377) ...
+	f.roles.armed[size_t(Hand::Right)] = true;
 	CPPUNIT_ASSERT(!f.frame(downSet({ GiRightTrigger })).click);
 	CPPUNIT_ASSERT(!f.frame(downSet({ GiRightTrigger })).click);
-	// ... the other hand still clicks and drags, also while the weapon hand charges
+	// ... the other hand still clicks and drags, also while the weapon hand's trigger is held
 	CPPUNIT_ASSERT(f.frame(downSet({ GiRightTrigger, GiLeftTrigger })).click);
 	CPPUNIT_ASSERT(f.frame(downSet({ GiLeftTrigger })).click);
 	CPPUNIT_ASSERT(!f.frame(downSet()).click);
 	// Sheathed again, the trigger clicks
-	f.roles.charges = { };
+	f.roles.armed = { };
 	CPPUNIT_ASSERT(f.frame(downSet({ GiRightTrigger })).click);
 	CPPUNIT_ASSERT(!f.frame(downSet()).click);
 	f.settle();

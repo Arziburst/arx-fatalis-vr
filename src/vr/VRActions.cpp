@@ -25,6 +25,7 @@
 #include <sstream>
 #include <vector>
 
+#include "core/Config.h"
 #include "core/GameEvent.h"
 #include "io/log/Logger.h"
 #include "util/String.h"
@@ -497,15 +498,18 @@ bool ActionSet::sync(ControllerInput & input, XrSpace viewSpace, XrTime time) {
 
 	ControlSet down;
 	ControlSet bound;
+	// The Index grip's press / release are the player's (#496): a firm hold of the controller is no press
+	const Hysteresis indexGrip = { config.input.vrGripPress, config.input.vrGripRelease };
 	for(size_t i = 0; i < HandCount; i++) {
 
 		const Hand hand = Hand(i);
 		bool isActive = false;
 
-		struct { XrAction action; ControlKind kind; const Hysteresis & threshold; float * value; } analog[] = {
+		struct { XrAction action; ControlKind kind; Hysteresis threshold; float * value; } analog[] = {
 			{ m_actions.trigger, ControlKind::Trigger, TriggerThreshold, &input.trigger[i] },
-			// The Index grip is a light close of the strapped hand, the Touch grip a squeeze (D-019)
-			{ m_actions.grip, ControlKind::Grip, gripThreshold(controllerTypeFromProfile(m_profiles[i])), &input.grip[i] },
+			// The Index grip is how far the strapped hand is closed, above a resting hold (#496); the Touch grip a squeeze
+			{ m_actions.grip, ControlKind::Grip, gripThreshold(controllerTypeFromProfile(m_profiles[i]), indexGrip),
+			  &input.grip[i] },
 			{ m_actions.trackpad, ControlKind::Trackpad, TrackpadThreshold, nullptr },
 		};
 		for(const auto & entry : analog) {
@@ -563,6 +567,7 @@ bool ActionSet::sync(ControllerInput & input, XrSpace viewSpace, XrTime time) {
 
 	m_down = down;
 	input.down = down;
+	input.newlyBound = m_loggedBound ? (bound & ~m_bound) : bound;
 
 	// "Bound" is what the runtime reports active, not what was suggested (F-123)
 	if(bound != m_bound || !m_loggedBound) {

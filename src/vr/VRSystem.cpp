@@ -42,6 +42,7 @@
 #include "core/GameEvent.h"
 #include "core/Version.h"
 #include "graphics/Renderer.h"
+#include "graphics/opengl/GLTexture.h"
 #include "gui/Credits.h"
 #include "io/fs/FilePath.h"
 #include "io/fs/Filesystem.h"
@@ -230,6 +231,9 @@ struct OpenXRState {
 		//! The screen of the logos and the cinematics (#394): the same anchor rules, its own place and size
 		PanelAnchor screen;
 		PanelMode loggedScreenMode = PanelMode::HeadLocked;
+		//! The hybrid's screen (#29): wanted by the scene view, and the frame being drawn for it
+		bool sceneScreenWanted = false;
+		bool sceneScreen = false;
 	} panel;
 
 	//! The menu pointer's beam (#34), set by the input module every frame
@@ -263,6 +267,15 @@ struct OpenXRState {
 	};
 	std::array<RadialMenu, HandCount> radials;
 	bool radialFailed = false; //!< an image could not be made: not retried this session
+
+	//! A scene line's subtitle panel (#29): its image, the engine's own texture drawn by the game while a subtitle shows
+	//! and sampled into each eye as a quad fixed in the world (#519; a compositor quad layer stayed invisible on SteamVR)
+	struct SubtitlePanel {
+		Texture * texture = nullptr;
+		GLuint framebuffer = 0;
+		bool acquired = false;
+	};
+	SubtitlePanel subtitle;
 
 	//! The stereo render as status.json reports it; \c active is the current frame's, the rest the last stereo frame's
 	StereoStatus stereo;
@@ -820,6 +833,16 @@ void flushPacing() {
  * The window is the render target again: after a frame was submitted, when the session goes away,
  * and whenever a target of ours is abandoned.
  */
+//! The subtitle panel's texture and framebuffer (#29), with the session
+static void destroySubtitleImage() {
+	OpenXRState::SubtitlePanel & panel = g_xr.subtitle;
+	if(panel.framebuffer) {
+		glDeleteFramebuffers(1, &panel.framebuffer);
+	}
+	delete panel.texture;
+	panel = OpenXRState::SubtitlePanel();
+}
+
 void restoreWindowTarget() {
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	if(GRenderer) {
@@ -879,6 +902,7 @@ void destroySession() {
 		radial = OpenXRState::RadialMenu();
 	}
 	g_xr.radialFailed = false;
+	destroySubtitleImage();
 	g_xr.mirror.destroy();
 	g_xr.colorFormat = 0;
 
@@ -1001,6 +1025,33 @@ bool createSessionResources() {
 	if(g_xr.radialFailed) {
 		LogWarning << "[vr] radial menu: no image of " << RadialImageSize.x << 'x' << RadialImageSize.y
 		           << ", the radial menus work but are not drawn";
+	}
+	// The subtitle panel's image (#29, #519): the engine's own texture with a framebuffer to draw it, sampled into each
+	// eye by the game - no swapchain: a compositor quad layer of it stayed invisible on SteamVR
+	if(GRenderer) {
+		OpenXRState::SubtitlePanel & panel = g_xr.subtitle;
+		panel.texture = GRenderer->createTexture();
+		bool complete = false;
+		if(panel.texture
+		   && panel.texture->create(size_t(SubtitleImageWidth), size_t(SubtitleImageHeight), Image::Format_R8G8B8A8)) {
+			panel.texture->upload();
+			GLint previous = 0;
+			glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previous);
+			glGenFramebuffers(1, &panel.framebuffer);
+			glBindFramebuffer(GL_FRAMEBUFFER, panel.framebuffer);
+			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+			                       static_cast<GLTexture *>(panel.texture)->glId(), 0);
+			complete = (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+			glBindFramebuffer(GL_FRAMEBUFFER, GLuint(previous));
+		}
+		if(complete) {
+			LogInfo << "[vr] subtitle panel: image " << SubtitleImageWidth << 'x' << SubtitleImageHeight
+			        << ", drawn into the eyes";
+		} else {
+			LogWarning << "[vr] subtitles: no image of " << SubtitleImageWidth << 'x' << SubtitleImageHeight
+			           << ", the scene subtitles are not drawn";
+			destroySubtitleImage();
+		}
 	}
 
 	return true;
@@ -1374,9 +1425,10 @@ bool makeBeamImage() {
 		}
 	}
 
+	// RGBA rows are a multiple of 4 at any GL_UNPACK_ALIGNMENT, so the engine's tight state (1) is kept: the
+	// alignment 4 once set here leaked into every later upload and crashed on a cinematic tile (#495, TRAPS.md)
 	g_xr.mirror.setOverlayImage(DesktopMirror::BeamImage, BeamImageSize, pixels.data());
 	glBindTexture(GL_TEXTURE_2D, g_xr.beam.texture());
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, BeamImageSize.x, BeamImageSize.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
 	glBindTexture(GL_TEXTURE_2D, 0);
 	g_xr.beam.release();
@@ -1475,8 +1527,7 @@ bool makeReticleImages() {
 		g_xr.mirror.setOverlayImage(i == 0 ? DesktopMirror::ReticleDimImage : DesktopMirror::ReticleBrightImage, size,
 		                            pixels.data());
 		glBindTexture(GL_TEXTURE_2D, image.texture());
-		glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, size.x, size.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, size.x, size.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data()); // tight state kept (#495)
 		glBindTexture(GL_TEXTURE_2D, 0);
 		image.release();
 	}
@@ -1682,9 +1733,11 @@ void updatePanel() {
 	}
 
 	// The logos and the cinematics play on a screen fixed in the room (#394): placed where the player
-	// looks when one starts, like a menu's panel, never head-locked (a picture glued to the face)
+	// looks when one starts, like a menu's panel, never head-locked (a picture glued to the face). The
+	// hybrid's scene shots (#29) on the same screen, while this frame is drawn flat for it
 	const gameevent::GameState state = gameevent::currentGameState();
-	const bool playing = onScreen(state);
+	const bool sceneScreen = panel.sceneScreen && !frame.stereo;
+	const bool playing = onScreen(state) || sceneScreen;
 	PanelParams screenParams;
 	screenParams.distance = ScreenDistance;
 	screenParams.drop = ScreenDrop;
@@ -1694,7 +1747,7 @@ void updatePanel() {
 		const PanelPose & pose = panel.screen.pose();
 		const Vec3f heading = pose.orientation * Vec3f(0.f, 0.f, -1.f);
 		gameevent::Event("vr.screen.placed")("reason", panelPlacementName(screenPlaced))
-			("for", gameevent::gameStateName(state))
+			("for", sceneScreen ? "scene" : gameevent::gameStateName(state))
 			("x", pose.position.x, 2)("y", pose.position.y, 2)("z", pose.position.z, 2)
 			("yawDeg", glm::degrees(std::atan2(-heading.x, -heading.z)), 1)
 			("distanceM", ScreenDistance, 2)("widthM", ScreenWidth, 2)("headY", head.position.y, 2);
@@ -1703,7 +1756,7 @@ void updatePanel() {
 	if(screenMode != panel.loggedScreenMode) {
 		panel.loggedScreenMode = screenMode;
 		gameevent::Event("vr.screen")("state", screenMode == PanelMode::World ? "on" : "off")
-			("for", gameevent::gameStateName(state));
+			("for", sceneScreen ? "scene" : gameevent::gameStateName(state));
 	}
 }
 
@@ -1871,10 +1924,15 @@ void beginFrameTargets(const Vec2i & windowSize, FrameTargets targets) {
 		return;
 	}
 
-	// The intro's scripted scene is a film on the screen (#394): drawn flat into the quad like the
-	// cinematics, never per eye (the state of the last frame: this one has not been decided yet)
+	// The intro's scripted scene is a film on the screen (#394), and so is a scene shot the hybrid puts on
+	// its screen (#29): drawn flat into the quad like the cinematics, never per eye (the state of the last
+	// frame: this one has not been decided yet)
+	// Only while the game is played: a scene left by the menu or a load (the in-game intro ends in the main menu)
+	// takes its screen with it
+	g_xr.panel.sceneScreen = targets == FrameTargets::Game && g_xr.panel.sceneScreenWanted
+	                         && gameevent::currentGameState() == gameevent::GameState::Gameplay;
 	if(targets == FrameTargets::Game && frame.state.shouldRender && frame.views.valid
-	   && gameevent::currentGameState() != gameevent::GameState::Intro) {
+	   && gameevent::currentGameState() != gameevent::GameState::Intro && !g_xr.panel.sceneScreen) {
 		beginStereo(frame);
 	} else if(interfaceSize == windowSize) {
 		// The interface is the window: drawn there, copied onto the quad (#18)
@@ -2733,6 +2791,14 @@ void setMenuOpen(const char * menu) {
 	g_xr.panel.menu = menu ? menu : "";
 }
 
+void setSceneScreen(bool on) {
+	g_xr.panel.sceneScreenWanted = on;
+}
+
+bool sceneScreenFrame() {
+	return g_xr.panel.sceneScreen;
+}
+
 PanelStatus panelStatus() {
 	const OpenXRState::Panel & panel = g_xr.panel;
 	PanelStatus status;
@@ -2893,6 +2959,41 @@ bool radialImagesMade() {
 	return g_xr.radials[0].image.isValid() && g_xr.radials[1].image.isValid();
 }
 
+bool beginSubtitleImage() {
+
+	OpenXRState::SubtitlePanel & panel = g_xr.subtitle;
+	if(!stereoActive() || g_xr.frame.eyeInRender != size_t(-1) || !panel.texture || !panel.framebuffer) {
+		return false;
+	}
+	bindTarget(panel.framebuffer, panel.texture->getSize());
+	GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
+	glDisable(GL_SCISSOR_TEST);
+	const GLfloat transparent[4] = { 0.f, 0.f, 0.f, 0.f };
+	glClearBufferfv(GL_COLOR, 0, transparent);
+	if(scissor) {
+		glEnable(GL_SCISSOR_TEST);
+	}
+	panel.acquired = true;
+	return true;
+}
+
+void endSubtitleImage() {
+
+	OpenXRState::SubtitlePanel & panel = g_xr.subtitle;
+	if(!panel.acquired) {
+		return;
+	}
+	panel.acquired = false;
+	if(g_xr.frame.quadAcquired) {
+		bindTarget(g_xr.quad.framebuffer(), g_xr.quad.size());
+	} else {
+		restoreWindowTarget();
+	}
+}
+
+Texture * subtitleTexture() {
+	return g_xr.subtitle.framebuffer ? g_xr.subtitle.texture : nullptr;
+}
 void recenterPanel() {
 	g_xr.panel.anchor.recenter();
 	g_xr.panel.screen.recenter();
@@ -3041,6 +3142,12 @@ MirrorStatus mirrorStatus() {
 
 void setMenuOpen(const char * /* menu */) { }
 
+void setSceneScreen(bool /* on */) { }
+
+bool sceneScreenFrame() {
+	return false;
+}
+
 PanelStatus panelStatus() {
 	return PanelStatus();
 }
@@ -3088,6 +3195,16 @@ void setRadialLayer(Hand /* hand */, bool /* shown */, const Vec3f & /* center *
 
 bool radialLayerShown(Hand /* hand */) {
 	return false;
+}
+
+bool beginSubtitleImage() {
+	return false;
+}
+
+void endSubtitleImage() { }
+
+Texture * subtitleTexture() {
+	return nullptr;
 }
 
 const char * radialImageRefusal(Hand /* hand */) {

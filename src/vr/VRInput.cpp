@@ -23,6 +23,8 @@
 #include <array>
 #include <cmath>
 #include <optional>
+#include <string>
+#include <string_view>
 
 #include "core/Config.h"
 #include "core/Core.h"
@@ -85,12 +87,15 @@ struct InputState {
 	u64 loggedOffPanelPresses = 0;
 	//! A hand's use event as the menus' right button (#398): held since a press with that hand on the panel
 	std::array<bool, HandCount> useOnPanel = { };
+	//! The pointing hand's A as the menus' right button (#496): held since a press with that hand on the panel
+	std::array<bool, HandCount> aOnPanel = { };
+	std::array<bool, HandCount> aDown = { };
 	WalkStatus walk;
 
 	//! The hand's use / interact chord acted on a door, lever, chest or body (#38): no use or click until released
 	std::array<bool, HandCount> acting = { };
-	//! The hand holds a drawn weapon in the world (#377): its trigger charges the strike, it is no click
-	std::array<bool, HandCount> charging = { };
+	//! The hand holds a drawn weapon in the world (#377): its trigger is no click (and charges nothing, #465)
+	std::array<bool, HandCount> armed = { };
 
 	//! The radial menu's game menu item holds Escape for this many more updates (#376)
 	u32 radialEscapeUpdates = 0;
@@ -100,10 +105,34 @@ struct InputState {
 	//! The skip controls (#394) down in the last update, and those kept from the game until released
 	ControlSet skipDown;
 	ControlSet skipHeld;
+	//! A scripted scene skips on a hold, not a press (#513): when the hold began, and whether it skipped already
+	bool skipHolding = false;
+	bool skipHoldFired = false;
+	PlatformInstant skipHoldStart = 0;
+	//! Skip controls held when the runtime bound them or when the scene started: no press until released (#513)
+	ControlSet skipIgnored;
+	bool skipWasPlaying = false;
+	int lastSkipControl = -1; //!< the control of the last skip, for the vr.skip event; -1 none
 
 };
 
 InputState g_input;
+
+//! How long A, B or a trigger is held to skip a scripted scene (#513): a press alone is no skip there
+const float SceneSkipHoldSeconds = 0.6f;
+//! A trigger skips a scripted scene only pulled this far (#513): the owner's lines were skipped by a light pull while
+//! he held the controllers - the ordinary threshold is 0.55
+const float SceneSkipTriggerPull = 0.9f;
+
+//! \return the first control of \a set, -1 for none (the vr.skip event)
+static int firstSkipControl(const ControlSet & set) {
+	for(size_t c = 0; c < ControlCount; c++) {
+		if(set.test(c)) {
+			return int(c);
+		}
+	}
+	return -1;
+}
 
 //! The controls that skip a logo or a cinematic (#394): A, B and the trigger of either hand
 ControlSet skipControls() {
@@ -145,9 +174,21 @@ const char * skippable() {
 bool takeSkipControls(ControllerInput & input) {
 
 	static const ControlSet controls = skipControls();
-	const bool playing = skippable() != nullptr;
+	const char * what = skippable();
+	const bool playing = what != nullptr;
+	const bool scene = playing && std::string_view(what) == "SCENE";
 
-	const ControlSet pressed = ((input.down & ~g_input.skipDown) | input.taps) & controls;
+	// A control held when the runtime bound it (the controllers woken or re-bound mid-scene) or when the scene started
+	// is no press, until it is released (#513)
+	ControlSet ignoredNow = input.newlyBound & input.down;
+	if(playing && !g_input.skipWasPlaying) {
+		ignoredNow |= input.down;
+	}
+	g_input.skipWasPlaying = playing;
+	g_input.skipIgnored = (g_input.skipIgnored | ignoredNow) & input.down & controls;
+	const ControlSet pressed = ((input.down & ~g_input.skipDown) | input.taps) & controls & ~g_input.skipIgnored;
+	const ControlSet heldNow = input.down & controls & ~g_input.skipIgnored;
+	const std::array<float, HandCount> trigger = input.trigger;
 	g_input.skipDown = input.down & controls;
 	g_input.skipHeld = playing ? g_input.skipDown : (g_input.skipHeld & input.down);
 
@@ -160,9 +201,46 @@ bool takeSkipControls(ControllerInput & input) {
 		}
 	}
 
-	return playing && pressed.any();
-}
+	g_input.lastSkipControl = -1;
+	if(scene) {
+		// A scripted scene - a dialogue - skips only on a deliberate hold (#513): A or B clicked, or a trigger pulled
+		// all the way, for SceneSkipHoldSeconds. A logo, the intro and a cinematic still skip on a press (#394)
+		ControlSet strong;
+		for(size_t hand = 0; hand < HandCount; hand++) {
+			for(ControlKind kind : { ControlKind::A, ControlKind::B }) {
+				if(heldNow.test(control(Hand(hand), kind))) {
+					strong.set(control(Hand(hand), kind));
+				}
+			}
+			if(heldNow.test(control(Hand(hand), ControlKind::Trigger)) && trigger[hand] >= SceneSkipTriggerPull) {
+				strong.set(control(Hand(hand), ControlKind::Trigger));
+			}
+		}
+		if(!strong.any()) {
+			g_input.skipHolding = false;
+			return false;
+		}
+		const PlatformInstant now = platform::getTime();
+		if(!g_input.skipHolding) {
+			g_input.skipHolding = true;
+			g_input.skipHoldFired = false;
+			g_input.skipHoldStart = now;
+		}
+		if(!g_input.skipHoldFired && toS(now - g_input.skipHoldStart) >= SceneSkipHoldSeconds) {
+			g_input.skipHoldFired = true;
+			g_input.lastSkipControl = firstSkipControl(strong);
+			return true;
+		}
+		return false;
+	}
+	g_input.skipHolding = false;
 
+	if(playing && pressed.any()) {
+		g_input.lastSkipControl = firstSkipControl(pressed);
+		return true;
+	}
+	return false;
+}
 //! The right hand decides (the trigger hand of most players), the left one when the right has no profile
 ControllerType typeFromProfiles(const std::array<std::string, HandCount> & profiles) {
 	ControllerType right = controllerTypeFromProfile(profiles[size_t(Hand::Right)]);
@@ -311,9 +389,12 @@ void applyToEngine(const GameInputState & state) {
 		GInput->setVirtualMousePosition(std::nullopt);
 	}
 	// The original's right click: the use action in game, the right button in the menus (in game
-	// the right button is free look) - there only from a hand on the panel, like the trigger (#398)
+	// the right button is free look) - there only from a hand on the panel, like the trigger (#398), and the
+	// pointing hand's A, as no chord forms on a menu panel (#496)
 	const bool useOnPanel = g_input.useOnPanel[size_t(Hand::Left)] || g_input.useOnPanel[size_t(Hand::Right)];
-	GInput->setVirtualMouseButton(Mouse::Button_1, state.use && ARXmenu.mode() != Mode_InGame && useOnPanel);
+	const bool aOnPanel = g_input.aOnPanel[size_t(Hand::Left)] || g_input.aOnPanel[size_t(Hand::Right)];
+	GInput->setVirtualMouseButton(Mouse::Button_1,
+	                              ARXmenu.mode() != Mode_InGame && ((state.use && useOnPanel) || aOnPanel));
 	GInput->setVirtualKey(Keyboard::Key_Escape, state.escape);
 	for(size_t i = 0; i < GameActionCount; i++) {
 		GInput->setVirtualAction(engineAction(GameAction(i)), state.actions[i]);
@@ -354,10 +435,11 @@ void updatePointer() {
 	const Event useEvents[HandCount] = { Event::UseLeft, Event::UseRight };
 	const Event stashEvents[HandCount] = { Event::StashLeft, Event::StashRight };
 	const Event interactEvents[HandCount] = { Event::InteractLeft, Event::InteractRight };
-	// The weapon hand (the right until #380) with a drawn weapon in the world: its trigger charges the strike
-	// (vr/VRMelee.h, active since the last frame) and clicks nothing (D-042); on the panel it clicks as ever
-	g_input.charging = { };
-	g_input.charging[size_t(Hand::Right)] = meleeStatus().active && !g_input.rays[size_t(Hand::Right)].onPanel;
+	// The weapon hand (the right until #380) with a drawn weapon in the world: its trigger does nothing - no charge,
+	// the swing is the strike (vr/VRMelee.h, active since the last frame, #465) - and clicks nothing (D-042); on the
+	// panel it clicks as ever
+	g_input.armed = { };
+	g_input.armed[size_t(Hand::Right)] = meleeStatus().active && !g_input.rays[size_t(Hand::Right)].onPanel;
 	for(size_t hand = 0; hand < HandCount; hand++) {
 		if(g_input.resolver.pressed(actEvents[hand])) {
 			g_input.acting[hand] = !g_input.rays[hand].onPanel && reticleAct(Hand(hand));
@@ -367,10 +449,25 @@ void updatePointer() {
 		          && !g_input.resolver.active(useEvents[hand])) {
 			g_input.acting[hand] = false;
 		}
-		trigger[hand] = (g_input.resolver.active(interactEvents[hand]) && !g_input.charging[hand])
+		trigger[hand] = (g_input.resolver.active(interactEvents[hand]) && !g_input.armed[hand])
 		                || (g_input.resolver.active(stashEvents[hand]) && !g_input.acting[hand]);
 		// The use acts under its own hand (D-019): the hand that uses takes an idle cursor
 		claims[hand] = claims[hand] || g_input.resolver.pressed(useEvents[hand]);
+	}
+	// The pointing hand's A is the menus' right button (#496, the owner): pressed with that hand on the panel, it
+	// clicks until it is let go, and the hand takes the cursor so the click lands where it points
+	const bool menu = ARXmenu.mode() != Mode_InGame;
+	std::array<bool, HandCount> aPressed = { };
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		const bool a = g_input.input.down[control(Hand(hand), ControlKind::A)];
+		if(!a) {
+			g_input.aOnPanel[hand] = false;
+		} else if(!g_input.aDown[hand]) {
+			aPressed[hand] = menu && g_input.rays[hand].onPanel && !g_input.capture.active();
+			g_input.aOnPanel[hand] = aPressed[hand];
+			claims[hand] = claims[hand] || aPressed[hand];
+		}
+		g_input.aDown[hand] = a;
 	}
 
 	MenuPointer & pointer = g_input.pointer;
@@ -380,7 +477,6 @@ void updatePointer() {
 	// A hand's use event, whatever control it is bound to, is the right button in the menus (#398): it clicks
 	// only while that hand pressed it on the panel; a press off the panel clicks nothing and is muted like the
 	// trigger's
-	const bool menu = ARXmenu.mode() != Mode_InGame;
 	for(size_t hand = 0; hand < HandCount; hand++) {
 		if(!g_input.resolver.active(useEvents[hand])) {
 			g_input.useOnPanel[hand] = false;
@@ -414,6 +510,10 @@ void updatePointer() {
 		const bool pressed = trigger[hand] && pointer.pressedOnPanel(Hand(hand));
 		if(pressed) {
 			gameevent::Event("vr.pointer.click")("hand", handName(Hand(hand)))
+				("x", g_input.rays[hand].pixel.x, 0)("y", g_input.rays[hand].pixel.y, 0);
+		}
+		if(aPressed[hand]) {
+			gameevent::Event("vr.pointer.rightclick")("hand", handName(Hand(hand)))
 				("x", g_input.rays[hand].pixel.x, 0)("y", g_input.rays[hand].pixel.y, 0);
 		}
 	}
@@ -460,6 +560,12 @@ void updateInput() {
 
 	const bool skip = takeSkipControls(input);
 
+	// In the menus a hand pointing at the panel (the last update's rays) clicks with its trigger however firmly it
+	// holds the grip: its chords are off (#496). The book, the bag and a container are in game: their use stays
+	const bool menu = ARXmenu.mode() != Mode_InGame;
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		g_input.resolver.setChords(Hand(hand), !(menu && g_input.rays[hand].onPanel));
+	}
 	g_input.resolver.update(toMsi(platform::getTime()), input.down, input.taps);
 	g_input.input = input;
 
@@ -479,13 +585,17 @@ void updateInput() {
 	// capture a binding, so pressing the menu's or the inventory's control only binds it (#178)
 	// - also in the update that ends it, whose events were resolved with the old layout
 	HandRoles roles;
-	roles.charges = g_input.charging;
+	roles.armed = g_input.armed;
 	roles.acts = g_input.acting;
 	const GameInputState & resolved = g_input.game.update(g_input.resolver, g_input.input, roles);
 	const bool capturing = g_input.capture.active();
 	updateCapture(toMsi(platform::getTime()));
 	const bool controlsTaken = capturing || g_input.capture.active();
 	GameInputState game = controlsTaken ? GameInputState() : resolved;
+	if(controlsTaken) {
+		// The A that binds a control in the VR settings is no right click either (#496)
+		g_input.aOnPanel = { };
+	}
 
 	// Draw / sheathe the weapon (#377, D-042: the stick click of the weapon hand), in the game only
 	if(g_input.resolver.pressed(Event::Weapon) && !controlsTaken && ARXmenu.mode() == Mode_InGame) {
@@ -533,7 +643,8 @@ void updateInput() {
 	if(skip) {
 		g_vrSkipPressed = true;
 		const char * what = skippable();
-		gameevent::Event("vr.skip")("what", what ? what : "none");
+		gameevent::Event("vr.skip")("what", what ? what : "none")
+			("control", g_input.lastSkipControl >= 0 ? controlName(Control(g_input.lastSkipControl)) : std::string("none"));
 	}
 
 	// Recenter (#28; unbound by default since D-042, the radial menu has it - the player may bind it): the head as

@@ -529,6 +529,7 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 	json.value("eyeHeight", sim.view.eyeSize.y);
 	json.value("ipd", sim.view.ipd);
 	json.value("rate", sim.view.rate);
+	json.value("pacing", sim.view.rate <= 0.f ? "none" : (sim.view.cap ? "cap" : "clock")); // #522
 	json.end();
 
 	json.object("rig");

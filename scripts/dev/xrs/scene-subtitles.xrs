@@ -52,21 +52,22 @@ human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
 @wait 1500                                       # Kultar turns to the player as he speaks: let his head settle
 @assert scene.subtitle.drawn eq above            # no chest fallback for an NPC out of view
 # Over the NPC, not on the head: the head turning 40 degrees (vr-sim head rot <yaw> <pitch> <roll>) leaves the panel's
-# pose in the room as it is
+# pose in the room as it is - within 5 cm and 2 degrees: the room pose is read back through the head camera, whose
+# eye middle moves a few centimetres on a turn (1.6 cm measured in the CI harness); a panel on the head would move 1.85 m
 @remember px scene.subtitle.panelLocal.x
 @remember py scene.subtitle.panelLocal.y
 @remember pz scene.subtitle.panelLocal.z
 @remember pyaw scene.subtitle.panelLocal.yawDeg
 vr-sim head rot -40 0 0
 @frames 20
-@assert scene.subtitle.panelLocal.x ge {px-0.01}
-@assert scene.subtitle.panelLocal.x le {px+0.01}
-@assert scene.subtitle.panelLocal.y ge {py-0.01}
-@assert scene.subtitle.panelLocal.y le {py+0.01}
-@assert scene.subtitle.panelLocal.z ge {pz-0.01}
-@assert scene.subtitle.panelLocal.z le {pz+0.01}
-@assert scene.subtitle.panelLocal.yawDeg ge {pyaw-1}
-@assert scene.subtitle.panelLocal.yawDeg le {pyaw+1}
+@assert scene.subtitle.panelLocal.x ge {px-0.05}
+@assert scene.subtitle.panelLocal.x le {px+0.05}
+@assert scene.subtitle.panelLocal.y ge {py-0.05}
+@assert scene.subtitle.panelLocal.y le {py+0.05}
+@assert scene.subtitle.panelLocal.z ge {pz-0.05}
+@assert scene.subtitle.panelLocal.z le {pz+0.05}
+@assert scene.subtitle.panelLocal.yawDeg ge {pyaw-2}
+@assert scene.subtitle.panelLocal.yawDeg le {pyaw+2}
 # The head turns to Kultar (he stands to the right: panelLocal.x +2.7 m; a positive sim yaw is left): the panel over his
 # head is in both eyes. Not the channel lookat: in VR the body drags the hero back after the head within a second
 vr-sim head rot -90 0 0

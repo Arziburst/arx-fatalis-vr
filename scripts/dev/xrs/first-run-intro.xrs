@@ -26,7 +26,7 @@ vr-input tap right.a
 @log GameEvent:.*startup\.logo name=fishtank state=end how=skip
 @log GameEvent:.*startup\.logo name=arkane state=shown 5s
 @assert state eq LOGO
-@assert events.byName."vr.skip" eq 1
+@until events.byName."vr.skip" eq 1 5s
 
 # The right trigger skips ARKANE: the intro - level 10 - on the same screen, drawn flat (no stereo), not head-driven
 vr-input tap right.trigger
@@ -34,7 +34,7 @@ vr-input tap right.trigger
 @log GameEvent:.*startup\.intro state=start area=10 5s
 @until state eq INTRO 30s
 @assert area eq 10
-@assert events.byName."vr.skip" eq 2
+@until events.byName."vr.skip" eq 2 5s
 @until vr.panel.mode eq screen 5s
 @wait 3000                                   # the level fades in
 @shot intro
@@ -61,7 +61,7 @@ vr-input tap right.b
 @log GameEvent:.*cinematic\.end name=introduction\.cin how=skip 5s
 @log GameEvent:.*startup\.intro state=end how=skip 5s
 @assert menuMode eq mainmenu
-@assert events.byName."vr.skip" eq 3
+@until events.byName."vr.skip" eq 3 5s
 @frames 30
 @nolog GameEvent:.*vr\.pointer\.click
 @assert menuMode eq mainmenu
@@ -76,7 +76,7 @@ newgame
 @until player.controlsBlocked eq false 90s
 @nolog GameEvent:.*scene\.skip               # nothing skipped it since it started
 @log GameEvent:.*scene state=end area=1 30s
-@assert events.byName."vr.skip" eq 3
+@until events.byName."vr.skip" eq 3 5s
 @nolog GameEvent:.*player\.jump
 @remember z0 player.z
 vr-input stick left 0 1

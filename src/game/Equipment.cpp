@@ -594,6 +594,13 @@ static float ARX_EQUIPMENT_GetSpecialValue(Entity * io, long val) {
 	return -1;
 }
 
+bool fightsPlayer(const Entity & target) {
+	if(!(target.ioflags & IO_NPC) || !target._npcdata) {
+		return false;
+	}
+	return (target._npcdata->behavior & BEHAVIOUR_FIGHT) && target.targetinfo == EntityHandle_Player;
+}
+
 // flags & 1 = blood spawn only
 bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ratioaim, long flags, EntityHandle targ,
                                 StrikeTargets * targets) {
@@ -642,6 +649,12 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 			for(Entity * target : sphereContent) {
 				arx_assert(target);
 				arx_assert(target->obj);
+				if(targets && targets->touch && !fightsPlayer(*target)) {
+					if(target->ioflags & IO_NPC) {
+						targets->refused.push_back(target->index());
+					}
+					continue;
+				}
 				{
 					
 					bool HIT_SPARK = false;
@@ -679,10 +692,15 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 						if((target->ioflags & IO_NPC) && (io_source == entities.player() || target == entities.player())) {
 							// One per swing: a hit on an NPC (the player is one) returns true and the
 							// caller stops checking until the next swing; props would repeat every frame.
-							// damage=0 is a hit that the armour class roll turned into a miss.
-							gameevent::Event("melee.hit")("source", gameevent::entityName(io_source))
+							// damage=0 is a hit that the armour class roll turned into a miss. A VR contact adds
+							// the stroke the aim was measured from (#465)
+							gameevent::Event event("melee.hit");
+							event("source", gameevent::entityName(io_source))
 								("target", gameevent::entityName(target))("weapon", gameevent::entityName(io_weapon))
 								("damage", dmgs, 1)("aim", ratioaim, 2);
+							if(targets && targets->kind) {
+								event("speed", targets->speed, 2)("size", targets->size, 2)("kind", targets->kind);
+							}
 						}
 
 						if(target->ioflags & IO_NPC) {
@@ -812,7 +830,10 @@ bool ARX_EQUIPMENT_Strike_Check(Entity * io_source, Entity * io_weapon, float ra
 			}
 		}
 
-		const EERIEPOLY * ep = CheckBackgroundInSphere(sphere);
+		const EERIEPOLY * ep = (targets && targets->touch) ? nullptr : CheckBackgroundInSphere(sphere);
+		if(targets) {
+			targets->spheres.push_back(StrikeSphere{ sphere.origin, sphere.radius, ep != nullptr });
+		}
 		if(ep) {
 			if(io_source == entities.player()) {
 				if(!io_source->isHit) {

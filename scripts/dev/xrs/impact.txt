@@ -44,6 +44,7 @@ scripts/dev/vrsim/idle.vrsim -> *
 scripts/launch-lib.ps1 -> *
 scripts/build-paths.ps1 -> *
 scripts/build-windows.ps1 -> *
+scripts/dev/xrs/manual/* -> core
 src/vr/VRSimulator.* -> *
 src/vr/SimRig.* -> *
 vcpkg.json -> *
@@ -112,6 +113,10 @@ data/core/vr/arms/* -> arms-classic-glove arms-variants finger-five hand-conform
 data/core/vr/hands/* -> hand-conforming finger-five finger-tracking finger-held
 src/animation/* -> arms-follow arms-classic weapon-hold tl-reprojection melee-swing
 
+# --- Scripted scenes in VR (#29): the view, the subtitles, the hero's body in a cinema shot -------------------------
+src/vr/SceneView.* -> scene-switches
+src/vr/SceneSubtitles.* -> scene-switches
+
 # --- The head and the camera ---------------------------------------------------------------------------------------
 src/vr/HeadPose.* -> look-around recenter real-steps arms-follow vr-turning-settings walk-look body-look-down tl-reprojection
 src/vr/HeadTracking.* -> refresh-rate look-around recenter real-steps arms-follow physical-crouch ui-panel vr-turning-settings walk-look height-hands
@@ -133,14 +138,14 @@ src/game/Player.* -> stand-up real-steps physical-crouch sneak-jump-crouch walk-
 # --- Hands in the world: reticles, reach, weapons, melee -----------------------------------------------------------
 src/vr/HandReticle.* -> refresh-rate hand-reticle menu-pointer playground-hands reach-chest reach-door reach-lever
 src/vr/VRReticle.* -> hand-reticle menu-pointer controls-v2 rune-trail playground-hands reach-chest reach-door reach-lever
-src/vr/VRWeapon.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery reach-lever finger-held
-src/vr/WeaponGrip.* -> weapon-classes weapon-hold weapon-in-glove finger-held
-src/vr/VRMelee.* -> refresh-rate melee-swing melee-recovery damage-numbers damage-numbers-off controls-v2 weapon-hold
-src/vr/MeleeSwing.* -> refresh-rate melee-swing melee-recovery damage-numbers weapon-hold
-src/game/Equipment.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery finger-held damage-numbers
-src/game/Damage.* -> damage-numbers damage-numbers-off melee-swing melee-recovery playground-respawn
+src/vr/VRWeapon.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery melee-damage reach-lever finger-held
+src/vr/WeaponGrip.* -> weapon-classes weapon-hold weapon-in-glove finger-held melee-damage
+src/vr/VRMelee.* -> refresh-rate melee-swing melee-recovery melee-damage damage-numbers damage-numbers-off controls-v2 weapon-hold
+src/vr/MeleeSwing.* -> refresh-rate melee-swing melee-recovery melee-damage damage-numbers weapon-hold
+src/game/Equipment.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery melee-damage finger-held damage-numbers
+src/game/Damage.* -> damage-numbers damage-numbers-off melee-swing melee-recovery melee-damage playground-respawn
 src/game/Inventory.* -> menu-pointer hand-reticle ui-panel playground-hands
-src/game/Spells.* -> rune-trail spell-drawcheck refresh-rate
+src/game/Spells.* -> refresh-rate rune-trail spell-drawcheck
 src/game/spell/* -> rune-trail spell-drawcheck
 src/game/magic/* -> rune-trail spell-drawcheck
 src/game/effect/* -> spell-drawcheck rune-trail
@@ -265,7 +270,7 @@ CHANGELOG -> core
 .gitignore -> core
 .gitattributes -> core
 
-# --- Refresh-rate independence (#23): the sequence runs the same actions at four display rates -------------------------
+# --- Refresh-rate independence (#23): the sequence runs the same actions at four display rates ---------------------------
 src/vr/MotionProbe.* -> refresh-rate
 src/vr/PerfLog.* -> refresh-rate
 src/vr/PerfStats.* -> refresh-rate

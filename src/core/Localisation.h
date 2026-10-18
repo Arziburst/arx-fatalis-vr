@@ -55,6 +55,14 @@ std::string_view getLocalised(std::string_view name);
  */
 std::string_view getLocalised(std::string_view name, std::string_view default_value);
 
+/*!
+ * Returns one key of a localised section: \c string2 is the text of a speech's second variant (#29.3)
+ * \param name    The section to be looked up
+ * \param key     The key in it
+ * \return The localized string, \a default_value if there is none
+ */
+std::string_view getLocalised(std::string_view name, std::string_view key, std::string_view default_value);
+
 long getLocalisedKeyCount(std::string_view sectionname);
 
 #endif // ARX_CORE_LOCALISATION_H

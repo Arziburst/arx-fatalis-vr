@@ -1293,6 +1293,8 @@ set(VR_SOURCES
 	src/vr/Locomotion.cpp
 	src/vr/RadialMenu.cpp
 	src/vr/RuneTrail.cpp
+	src/vr/SceneSubtitles.cpp
+	src/vr/SceneView.cpp
 	src/vr/MeleeSwing.cpp
 	src/vr/MotionProbe.cpp
 	src/vr/PerfLog.cpp

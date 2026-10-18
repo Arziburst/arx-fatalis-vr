@@ -88,9 +88,10 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io);
 Vec3f bodyShift();
 
 /*!
- * \return true while a head drives the camera: the first-person view then hides only the head and
- *         the neck of the player model (D-009 - the torso stays, the engine's own first-person
- *         selection hides the chest too), see \ref ARX_INTERACTIVE_Show_Hide_1st
+ * \return true while a head drives the camera and the eyes are the hero's (not a third-person scene shot,
+ *         #29): the first-person view then hides only the head and the neck of the player model (D-009 -
+ *         the torso stays, the engine's own first-person selection hides the chest too), see
+ *         \ref ARX_INTERACTIVE_Show_Hide_1st
  */
 bool hidesHeadOnly();
 

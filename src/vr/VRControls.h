@@ -345,6 +345,7 @@ struct Stick {
 struct ControllerInput {
 	ControlSet down;  //!< the controls held now, analog ones past their threshold
 	ControlSet taps;  //!< controls pressed and released since the last read
+	ControlSet newlyBound; //!< controls the runtime bound in this read: one held then is no press (#513)
 	std::array<Stick, HandCount> sticks;
 	std::array<float, HandCount> trigger = { };
 	std::array<float, HandCount> grip = { };

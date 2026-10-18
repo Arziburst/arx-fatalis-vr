@@ -26,9 +26,20 @@
 	and while a game that is not this run's holds a slot (the owner plays, a worker tests) only one lane runs. The
 	save-library phase goes first and every sequence with a @save waits for it; smoke-test and spell-drawcheck share
 	this working copy's user directory and never run at the same time; a read-back runs after its sequence, in its
-	user directory. The order: the .xrs files the change touches first (git diff against -Base), then the rest by
-	the last run's duration, longest first (ci-durations.json, written at the end of every run; a phase without a
-	recorded time counts as the longest). The summary lists every phase in the serial order, whatever ran first.
+	user directory; a sequence with @solo (it measures frame pacing, #527) starts only with empty lanes and nothing
+	starts while it runs. The risk order (#527): the .xrs files the change touches first (git diff against -Base),
+	then the sequences the impact map selects for the changed files, then what failed in the last 5 runs
+	(ci-history.json beside the durations, written at the end of every run), then the rest by the last run's duration,
+	longest first (ci-durations.json; a phase without a recorded time counts as the longest). The summary lists every
+	phase in the serial order, whatever ran first.
+
+	Fail fast (#527): on a pull request's run (-Suite pr) the first FAIL starts nothing more - the phases running then
+	finish, the rest are NOT RUN - and the script ends red naming the failure; the full suite runs everything.
+
+	CI owns the game slots (#527): while the CI runner runs a job every other scripted launch of the PC waits without a
+	slot (scripts/launch-lib.ps1), so this script's phases never starve behind a worker's ci-local; a phase that cannot
+	get a slot names the holder at once and every 30 s, gives up after -LockTimeoutSec (300 s) naming it, and an
+	orphan game (its launcher gone) is stopped on the way. The games of this script die with it (#526).
 
 	Evidence, in -OutDir: one transcript per phase (<phase>.log, printed to the log when the phase ends), and after
 	each phase the game's arx.log files, status.json / ack.txt / stdout / stderr of the lane's test channel, the crash
@@ -55,7 +66,8 @@
 	The Arx Fatalis install folder (default: $env:ARXVR_DATA_DIR, else the game finds it in the Steam libraries).
 
 .PARAMETER LockTimeoutSec
-	How long a phase waits for the game lock before it is skipped (default 900).
+	How long a phase waits for the game lock before it is skipped (default 300, #527: a phase names the holder at once
+	and every 30 s while it waits; a wait longer than that is a holder that must be looked at, not waited out).
 
 .PARAMETER Config
 	Which build to run (default Release, what the workflow builds).
@@ -99,7 +111,7 @@
 param(
 	[string]$OutDir,
 	[string]$DataDir = $env:ARXVR_DATA_DIR,
-	[int]$LockTimeoutSec = 900,
+	[int]$LockTimeoutSec = 300,
 	[ValidateSet('Release', 'RelWithDebInfo', 'Debug')]
 	[string]$Config = 'Release',
 	[ValidateSet('all', 'smoke', 'spells', 'sequences')]
@@ -122,6 +134,9 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ci-smoke-lib.ps1')
 $scriptDir = $PSScriptRoot
 $libPath = Join-Path $PSScriptRoot 'ci-smoke-lib.ps1'
+
+# The lanes' jobs and their games die with this script (#526); under ci-local they are in its job already
+$null = Register-ArxLauncherChain
 
 if (-not $OutDir) { $OutDir = Join-Path $ArxSourceDir 'ci-artifacts' }
 New-Item -ItemType Directory -Force $OutDir | Out-Null
@@ -311,6 +326,7 @@ if ($Phase -in 'all', 'sequences') {
 		if ($seq.Player) { $p.Player = $true }
 		if ($seq.Args) { $p.ArxArgs = @($seq.Args) }
 		$name = "xrs-$($seq.Name)"
+		# A sequence that measures frame pacing (@solo, #527) runs alone on the lanes
 		Add-Phase $name 'smoke-test.ps1' $p $seqUserDir -DependsOn $(if ($seq.Save) { @('save-library') } else { @() }) `
 			-Exclusive $(if ($seq.Playground) { $playgroundExclusive }) -Gate $(if ($seq.Save) { $saveGate }) -FreshUserDir $seqUserDir -Solo:$seq.Solo
 		$unit = [pscustomobject]@{ Phases = @($name); Paths = @([IO.Path]::GetRelativePath($ArxSourceDir, $seq.Path)) }
@@ -332,19 +348,35 @@ if ($Phase -in 'all', 'sequences') {
 }
 
 # --- The order --------------------------------------------------------------------------------------------------
-# The save library first (the @save sequences wait for it), then the two short checks, then the sequences: the changed
-# ones first, then by the last run's duration, longest first
+# The save library first (the @save sequences wait for it), then the two short checks, then the sequences in the risk
+# order (#527): the changed .xrs first, then what the impact map selects for the changed files, then what failed in
+# the recent runs (ci-history.json beside the durations), then the rest by the last run's duration, longest first
 $durations = Read-ArxPhaseDurations $DurationsFile
+$historyFile = Get-ArxPhaseHistoryPath $DurationsFile
 $changed = if ($Changed) { @($Changed) } else { @(Get-ArxChangedFiles $ArxSourceDir $Base) }
 $changedXrs = @($changed | Where-Object { $_ -like 'scripts/dev/xrs/*.xrs' })
-$sequenceOrder = @(Get-ArxPhaseOrder $units $changed $durations)
+# What the map selects for the changed files, the core left out (it is on every run, the change did not pick it); in
+# the full suite the map orders the run the same way
+$affected = @()
+if ($changed) {
+	try {
+		$mapForOrder = Read-ArxImpactMap $ImpactMap
+		if (-not $mapForOrder.Errors) {
+			$selForOrder = Get-ArxImpactSelection $mapForOrder $changed
+			$affected = @($selForOrder.Reasons.Keys | Where-Object { $selForOrder.Reasons[$_] -ne 'core' } | ForEach-Object { if ($_ -in $ArxImpactChecks) { $_ } else { "xrs-$_" } })
+		}
+	} catch { Write-Host "ci-smoke: the impact map gives no order ($_)" -ForegroundColor Yellow }
+}
+$recentFailures = @(Get-ArxRecentFailures $historyFile 5)
+$sequenceOrder = @(Get-ArxPhaseOrder $units $changed $durations -Affected $affected -RecentFailures $recentFailures)
 $byName = @{}
 foreach ($ph in $phases) { $byName[$ph.Name] = $ph }
 $dispatch = @(@('save-library', 'smoke-test', 'spell-drawcheck') + $sequenceOrder | Where-Object { $byName.ContainsKey($_) -and -not $byName[$_].Skip } | ForEach-Object { $byName[$_] })
 $known = @($dispatch | Where-Object { $durations.ContainsKey($_.Name) }).Count
 Write-Host "ci-smoke: $($dispatch.Count) phase(s) to run; changed $(if ($Changed) { '(given by -Changed)' } elseif ($Base) { "against $Base" } else { 'against nothing (no base)' }): $(if ($changedXrs) { $changedXrs -join ', ' } else { 'no .xrs' })"
+Write-Host "ci-smoke: risk order: map-affected: $(if ($affected) { $affected -join ', ' } else { 'none' }); failed in the last 5 runs ($historyFile): $(if ($recentFailures) { $recentFailures -join ', ' } else { 'none' })"
 Write-Host "ci-smoke: last run's durations from $DurationsFile$(if (-not (Test-Path -LiteralPath $DurationsFile)) { ' (none yet)' }): $known known, $($dispatch.Count - $known) unknown (counted as the longest)"
-Write-Host "ci-smoke: order: $(($dispatch | ForEach-Object Name) -join ', ')"
+Write-Host "ci-smoke: order: $(($dispatch | ForEach-Object Name) -join ', ')$(if (@($dispatch | Where-Object Solo)) { "; alone (@solo): $((@($dispatch | Where-Object Solo | ForEach-Object Name)) -join ', ')" })"
 if ($selection) {
 	# The selected checks that exist here (a deleted .xrs selects nothing), each with why: core, or the path that chose it
 	$picked = @(foreach ($name in $selection.Names) {
@@ -419,11 +451,16 @@ $laneLimit = {
 
 $checksStarted = Get-Date
 $outcome = @()
+# Fail fast on a pull request's run (#527): the first FAIL starts nothing more, the job ends red with the failure named;
+# the full suite (a push to main, suite=full - the merge gate, ci-local -Full) runs everything
+$failFast = $Suite -eq 'pr'
+$notRun = @()
+Write-Host "ci-smoke: $(if ($failFast) { 'fail fast: the first FAIL stops the run (a pull request)' } else { 'every phase runs, a FAIL does not stop the run (the full suite)' })"
 # Nobody clicks a dialog on the runner (#501): every game of this job writes it to arx.log and stderr instead (the
 # phases set it for their own launches too, and the lanes' jobs inherit it); the shell gets its variables back at the end
 $previousDialogEnv = Set-ArxDialogEnv -NoDialogs
 try {
-	$outcome = @(Invoke-ArxPhaseSchedule -Phases $dispatch -Lanes $laneCount -Start $startPhase -Finish $finishPhase -LaneLimit $laneLimit)
+	$outcome = @(Invoke-ArxPhaseSchedule -Phases $dispatch -Lanes $laneCount -Start $startPhase -Finish $finishPhase -LaneLimit $laneLimit -StopOnFail:$failFast -NotRun ([ref]$notRun))
 } finally {
 	Restore-ArxDialogEnv $previousDialogEnv
 	# A job left behind (the run was interrupted) and its game: never leave a game behind - but only ours, the ones
@@ -450,13 +487,22 @@ if ((Split-Path -Parent $OutDir) -eq $evidenceRoot.TrimEnd('\')) {
 	Write-Host "ci-smoke: evidence kept in $OutDir (the last $KeepRuns runs stay in $evidenceRoot$(if ($removed) { "; removed $($removed -join ', ')" }))"
 }
 
-# The summary, in the serial order
+# The summary, in the serial order; the phases fail fast never started are NOT RUN
 $index = @{}
 foreach ($ph in $phases) { $index[$ph.Name] = $ph.Index }
+foreach ($name in $notRun) { $results += [pscustomobject]@{ Name = $name; Exit = 0; Verdict = 'NOT RUN'; Index = $index[$name] } }
 $results = @(@($results) + @($outcome) | Sort-Object { $index[$_.Name] })
+# The run into the failure history (#527): what failed now goes early next time
+try { Add-ArxPhaseHistory $historyFile $results } catch { Write-Warning "could not write $historyFile ($($_.Exception.Message))" }
 foreach ($r in $results) { Write-Host ("  {0,-8} {1}" -f $r.Verdict, $r.Name) -ForegroundColor $(if ($r.Verdict -eq 'NOT RUN') { 'Yellow' } elseif ($r.Exit -eq 0) { 'Green' } else { 'Red' }) }
 if ($selection) { Write-Host "ci-smoke: suite pr - the checks the change does not select did not run; the full suite runs before the merge" }
-if (@($results | Where-Object Verdict -eq 'FAIL')) { Write-Host 'ci-smoke: FAILED' -ForegroundColor Red; exit 1 }
+$failed = @($results | Where-Object Verdict -eq 'FAIL')
+if ($failed) {
+	$named = ($failed | ForEach-Object Name) -join ', '
+	Write-Host "ci-smoke: FAILED - $named$(if ($notRun) { "; fail fast: $($notRun.Count) phase(s) not run after the first failure (they run in the full suite)" })" -ForegroundColor Red
+	Write-Host "::error title=Game checks failed::$named failed$(if ($notRun) { " - fail fast, $($notRun.Count) phase(s) not run" }); the phase's transcript above and the game-checks artifact have the evidence"
+	exit 1
+}
 if (@($results | Where-Object Verdict -eq 'SKIPPED')) {
 	Write-Host "ci-smoke: SKIPPED - the game lock stayed busy for $LockTimeoutSec s; a gate that did not run is not a pass, re-run the job when the game is closed" -ForegroundColor Red
 	exit 2

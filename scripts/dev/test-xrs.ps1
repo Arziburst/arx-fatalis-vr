@@ -8,8 +8,12 @@
 	background process that answers the test channel files (command.txt -> ack.txt, status.json, shot
 	files) - passing steps, a failing assert that stops the run, a refused command, @pending (reported
 	while it fails, an error once it passes), @log / @nolog / @mark on a fake arx.log, @shot and @diff.
-	Also parses every sequence shipped in scripts\dev\xrs. No game, no network. Exit code 0 when everything
+	Also parses every sequence shipped in scripts\dev\xrs and scripts\dev\xrs\manual. No game, no network. Exit code 0 when everything
 	passed, 1 otherwise.
+
+	#527 (written before the implementation) assumes the directive @solo in xrs-lib.ps1, as #436's c7dce4453 has it: a
+	line '@solo' (no argument) is launch information, not a step; Read-ArxSequence returns Solo = $true for it and
+	$false without it; '@pending #<n> @solo' is refused ('@pending needs a step that can fail').
 #>
 [CmdletBinding()]
 param()
@@ -69,8 +73,6 @@ Check 'no save unless one is named' ($null -eq $seq.Save)
 $saved = Get-Parse "@sim idle`n@save mvp-new-game`n@args --loadslot 0`n@frames 1"
 Check '@save names the start save and is not a step' ($saved -isnot [string] -and $saved.Save -eq 'mvp-new-game' -and @($saved.Steps).Count -eq 1) $saved
 Check 'no playground unless asked' (-not $seq.Playground)
-$soloSeq = Get-Parse "@sim idle`n@solo`n@frames 1"
-Check '@solo marks the sequence for a lane of its own and is not a step' ($soloSeq -isnot [string] -and $soloSeq.Solo -and @($soloSeq.Steps).Count -eq 1 -and -not $seq.Solo) $soloSeq
 $inPlayground = Get-Parse "@sim idle`n@playground`n@frames 1"
 Check '@playground starts in the playground and is not a step' ($inPlayground -isnot [string] -and $inPlayground.Playground -and @($inPlayground.Steps).Count -eq 1) $inPlayground
 Check 'a development launch unless @player (#394)' (-not $seq.Player)
@@ -78,6 +80,16 @@ $asPlayer = Get-Parse "@sim idle`n@player`n@until state eq LOGO 60s"
 Check '@player is a player''s launch and is not a step' ($asPlayer -isnot [string] -and $asPlayer.Player -and @($asPlayer.Steps).Count -eq 1 -and -not $asPlayer.Args) $asPlayer
 $badPlayer = Get-Parse "@player now"
 Check '@player takes no argument' ($badPlayer -is [string] -and $badPlayer -match 'malformed') $badPlayer
+# @solo (#527, ported from #436's c7dce4453): launch information - the sequence measures frame pacing and CI runs it
+# alone (Read-ArxSequence returns Solo = $true; ci-smoke.ps1 gives it a phase with Solo). Not a step, no argument, and
+# @pending cannot wrap it (it cannot fail).
+$soloSeq = Get-Parse "@sim idle`n@solo`n@frames 1"
+Check '@solo marks the sequence to run alone and is not a step' ($soloSeq -isnot [string] -and $soloSeq.Solo -eq $true -and @($soloSeq.Steps).Count -eq 1) $soloSeq
+Check 'no solo unless asked' ($seq.PSObject.Properties['Solo'] -and $seq.Solo -eq $false) "$($seq.PSObject.Properties['Solo'])"
+$badSolo = Get-Parse "@solo now"
+Check '@solo takes no argument' ($badSolo -is [string] -and $badSolo -match 'malformed') $badSolo
+$pendingSolo = Get-Parse "@sim idle`n@pending #23 @solo`n@frames 1"
+Check '@pending cannot wrap @solo' ($pendingSolo -is [string] -and $pendingSolo -match 'needs a step that can fail') $pendingSolo
 $kinds = ($seq.Steps | ForEach-Object Kind) -join ' '
 Check 'every directive has its kind' ($kinds -eq 'wait frames until assert remember assert mark log nolog shot diff key pending command command') $kinds
 Check 'the trailing comment is dropped' ($seq.Steps[0].Ms -eq 100)
@@ -305,7 +317,8 @@ vr-sim head rot 50 0 0
 
 # --- the shipped sequences -------------------------------------------------------------------------------------
 Write-Host 'shipped sequences'
-$shipped = @(Get-ChildItem (Join-Path $PSScriptRoot 'xrs') -Filter '*.xrs')
+# xrs\manual (#529) is parsed too (parse and @save checks), never run in CI
+$shipped = @(Get-ChildItem (Join-Path $PSScriptRoot 'xrs') -Filter '*.xrs') + @(Get-ChildItem (Join-Path $PSScriptRoot 'xrs\manual') -Filter '*.xrs')
 Check 'sequences are shipped' ($shipped.Count -ge 4) $shipped.Count
 foreach ($file in $shipped) {
 	$parsed = try { Read-ArxSequence $file.FullName } catch { "$_" }

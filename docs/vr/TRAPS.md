@@ -33,6 +33,38 @@ hitch (here: the 22-26 ms that come with each `Cursor escaped the window` warnin
 the runtime skip one or two display slots; the swing detector's median then moved over two or three slots and
 was divided by one frame's step (#352). **Do:** look for `H ... missed=` lines in `arx-perf.log` at the swing's
 time before suspecting the detector; #409 fixes the divisor.
+## 2026-10-18 - A channel batch vanishes: no ack for 60 s, no line in arx.log, and the quit afterwards takes the lost batch's seq
+
+**Symptom:** a sequence step (`@frames 5` in vr-remap, CI run 39120032077 attempt 1) times out "waiting for the game to
+acknowledge 'waitframes 5' (last ack seq 14)" while the game renders at 90 fps, its hang watchdog says nothing, and
+`arx.log` has no `[channel]` line about it; the evidence's `ack.txt` then says `seq=15 ... last=quit` - the quit got the
+number the lost batch should have had, so the game never read `command.txt`.
+**Cause:** the harness writes `command.txt.tmp` and renames it into place (`Move-Item`). On Windows the renamer still
+holds the file open with DELETE access for a moment after the new name is visible, and an open that does not share
+delete - `std::ifstream`, so `fs::read` - fails with a sharing violation then. The channel read `""`, deleted the file
+(DeleteFile shares everything, so it succeeded) and acknowledged nothing. The moment is microseconds on an idle PC and
+grows with every preemption of the writer's thread: it hit under three games (two CI lanes and a worker's). Seen once in
+about 900 launches.
+**Do:** read a file another process renames into place with `FILE_SHARE_DELETE` (the channel does, with a retry next
+frame when the open fails: `readCommandFile` in `src/core/CommandChannel.cpp`). When an ack is missing, read the
+evidence's `ack.txt`: a quit with the missing seq means the batch never arrived; a quit with the next seq means the ack
+was written and the harness missed it.
+
+## 2026-10-18 - A CI job's phases end SKIPPED after 900 s although nothing of the job holds a slot; a killed ci-local leaves a game for hours
+
+**Symptom:** run 39109130415 (main): every phase SKIPPED, the lock lines name two workers' `make-test-saves.ps1` /
+`smoke-test.ps1` games that took the slots as fast as CI released them. #526: a worker's `ci-local.ps1` run as a tool
+command with a 10-minute timeout; the timeout killed the pwsh parent, lane 1's `arx.exe` lived on for two hours holding
+a slot, and another worker's `ci-local` starved on it.
+**Cause:** the lock had no priority (first come, first served, 900 s), and a game started with `Start-Process` is not a
+child the OS ends with its parent: a killed launcher drops its lock handle (the slot looks free to the probe) but the
+game keeps running, and `Get-ArxGamesOutsideLock` still counted it as "inside the lock" because the stale lock file
+named its pid.
+**Do:** #527 - CI's runner marker makes workers wait without a slot while a job runs; the games of a script are in a
+job object that kills on close (`Register-ArxGameProcess`, and `Register-ArxLauncherChain` for the whole `ci-local`
+chain); the next launch stops an orphan (lock file not held, launcher gone, `arx.exe` alive) and says so. Run
+`ci-local.ps1` detached or in the background, never under a short tool timeout (WORKFLOW.md).
+
 ## 2026-10-18 — The unpaced simulator makes a slow hand move a swing: why idle.vrsim is a 90 Hz cap, not rate 0 (#522)
 
 **Symptom:** with `rate 0` in `idle.vrsim` (to stop the 90 Hz display clock halving a 10-12 ms CI frame to 45 fps),
@@ -141,6 +173,47 @@ in its destructor, which `Logger::shutdown` runs while it holds the logger's (no
 every dialog becomes a `[dialog]` line and an error exits with code 1. `Startup.cpp` removes and deletes the
 critical error dialog *before* `Logger::shutdown`, so its line reaches the file and stderr. Never log from a
 log backend's destructor or `log()`.
+
+## 2026-10-17 — A weapon pushed through a wall does not ring on it (#465)
+
+**Symptom:** in `melee-damage.xrs` a fast swing along the playground's north wall left `vr.melee.worldHit` false, though
+the blade's tip was 29 units past the wall's plane (status `tip` z 8429, wall z 8400).
+**Cause:** the engine's strike check tests the weapon's hit spheres only, not the blade: the dagger has one, radius 15,
+about 89 units ahead of the player (`melee.spheres count=1 ... at=8191.2,-305.7,8444.3/15.0`). A sphere wholly behind a
+thin wall touches no polygon of it - the engine's own strike never reaches that far into a wall, a VR hand does.
+**Do:** to strike a wall in a sequence, put the hit sphere across the wall's plane (read `melee.spheres`); do not
+judge by the blade's tip.
+
+## 2026-10-17 — The playground's goblin drops its fight when it is hit, so it never counts as fighting the player (#465)
+
+**Symptom:** in `melee-damage.xrs` the playground goblin in the aggressive mode (the mode lever: `npcMode`
+`aggressive`), even after a real swing hit it, did not reach `playground.npcFighting` (its fight behaviour
+`BEHAVIOUR_FIGHT` *and* the player as its `targetinfo`) within 15 s - so a VR touch, which reaches only an NPC fighting
+the player, never reached it. The save's goblin (`mvp-goblin-fight`, `melee-swing.xrs`) does reach it after a hit.
+The same goblin set fighting with `playground fight` took one touch (`aim=0.10`), and every touch after it was refused.
+**Cause:** the playground goblin's script drops the fight when it is hit: right after the first touch's hit,
+`melee.touch target=goblin_base_9001 result=refused fight=no targetsPlayer=no`, and `npcFightBehaviour` false before
+the next sweep (CI run 38995941095 and a local run on f4720ca27). Its own fight never starts from the mode lever or a
+swing's hit for the same reason - the hit's reaction clears what `attack_player` set. Which script line does it is not
+known: the class script is the game's (`npc/goblin_base`); the instance script only refuses `ouch` / `aggression` while
+peaceful. The save's goblin (`mvp-goblin-fight`) keeps fighting after hits.
+**Do:** to test what only fighting NPCs feel in the playground, set the fight with `playground fight` right before the
+check, let nothing hit the goblin in between (a peaceful-in-fact goblin refuses touches: `melee.touch ... refused`),
+and check the first hit only; `npcFightBehaviour` / `npcTargetsPlayer` show which half is missing.
+
+## 2026-10-17 — A changed cfg.ini default does not show in a test run (#465)
+
+**Symptom:** after `vr_melee_noswing`'s default changed from `none` to `min` in the code, `melee-damage.xrs` failed at
+`@assert vr.melee.params.noSwing eq min` (`none`) on a fresh build.
+**Cause:** when the game saves its config it writes every key with its current value - a default it read is written as
+a value. A working copy's test runs share one user dir (`userdirs\<folder>-<hash>`), so from then on cfg.ini holds the
+old default as if the user had chosen it, and it wins over the new default. The same happens to a player who ran an
+earlier build.
+**Do:** a sequence that needs a value sets it live (a channel command such as `melee noswing min`) instead of trusting
+the default; prove the default itself in a host test (`MeleeSwingTest::testContactAim` checks `DamageParams`), or run
+with a fresh user dir. A key whose empty value means "the code's default" (`vr_melee_slash_<class>`) does not have
+the trap.
+
 
 ## 2026-10-14 — The Arx arm grows a second elbow in the middle of the forearm, though the IK has only one (#466.1)
 
@@ -1463,6 +1536,25 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Cause:** the PC, not the game: other workers build in parallel (the game lock serialises game runs, not compiles), and a starved CPU stretches every phase of the frame at once.
 **Do:** judge pacing and frame costs only from windows at full rate, or repeat the run; a real cost of the game shows in one phase (`cause`), the same way in every run. `perf-summary.ps1` lists the hitches by cause.
 
+## 2026-10-14 - Kultar's scene never starts although the hero walked into KULTAR_WAKE
+**Symptom:** on a save in the start cell the hero walks into the zone KULTAR_WAKE (`player.z` well inside it), yet `scene.active` stays false for a minute: no letterbox, no camera, no teleport (#29).
+**Cause:** the zone only sends Kultar to the bars between the cells (`MARKER_0117`, 9103 8836) and has him say his introduction; his scene (`>>dialogue`: the teleport, the cameras, the letterbox, `playerlookat`) starts from his `CHECK_DIST` timer only while `^DIST_PLAYER < 500` - the hero within 5 m of him. Walking straight ahead from the middle of the cell ends at the portcullis about 6 m away; at x 8740 and beyond, the cell's wall holds the hero at once.
+**Do:** start from the test save `scene-kultar` (8700 8660, facing +z: the walk stops 4.1 m from Kultar) or `setpos 8700 3105 8840` (`scene-flat.xrs`). The zone fires once per game: a second try needs the save loaded again.
+
+## 2026-10-14 - A console `speak -c` line ends after about 2 s although its sample is longer
+**Symptom:** `<npc>.speak -c ... [kultar_letmeout]` (a 5 s sample) through the test channel ends after about 2 s - a sequence's input in that line runs past its end; the same line from the game's own script plays in full (#29).
+**Cause:** without the letterbox (`cinematicBorder` off) a `speak` line is a "no text" line, and `ARX_SPEECH_AddSpeech` plays a random variant of its sample: `kultar_letmeout2` / `3` are 2.1 s. Lines with the letterbox on (a real scene) never pick a variant.
+**Do:** for a line that must last, take one without variants (`kultar_cantgo`, 8.4 s; `kultar_traveler`, 22 s) or turn the letterbox on first.
+
+## 2026-10-14 - A new game's hero stands off the level for 2 s before the prison intro
+**Symptom:** the scene meter's `minAboveFloorM` is 0 for a stretch from `newgame`: the eyes in first person over no floor (#29).
+**Cause:** after `GAME_READY` the intro waits 2 s (letterbox on, controls off) before its `TELEPORT -PA 180`; until then the hero is at the level's editor position, where `CheckInPoly` finds no floor.
+**Do:** every scene view keeps the fade black while there is no floor under its eye; any measurement from `newgame` meets these 2 s.
+
+## 2026-10-14 - A console `speak` line of a variant's sample name shows no subtitle
+**Symptom:** `<npc>.speak -c ... [kultar_letmeout2]` plays, but `scene.subtitle.text` stays empty and `voicedLines` does not count it (#29).
+**Cause:** a speech variant's text is not a section named after its sample (`kultar_letmeout2.wav`): it is the key `string2` in the line's own section `[kultar_letmeout]`. No section `[kultar_letmeout2]` exists.
+**Do:** speak the line's own key (`[kultar_letmeout]`); the subtitle takes the text of the variant actually played (`string<N>`).
 ## 2026-10-13 - A file under data/core is in the repository but the game says "not found"
 **Symptom:** `[W] VRArms: [vr] arms: vr/arms/Hand_Glove_low_R.gltf not found` (#385.3), while the file is in `data/core/vr/arms/` and the build's data dirs point at `data/core`; the host tests that load the same file pass.
 **Cause:** two rules of the resource system. `src/io/resource/ResourceSetup.cpp` mounts only a fixed list of top-level folders of each data dir (`editor`, `game`, `graph`, `localisation`, `misc`, `sfx`, `speech`, and now `vr`), so a new folder is invisible until it is added there; and every resource name is lower case (`PakReader::addFiles`), so `vr/arms/Hand_Glove_low_R.gltf` must be asked for as `vr/arms/hand_glove_low_r.gltf`. Host tests read data/core straight from the source tree and see neither rule.
@@ -1506,6 +1598,11 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** clicking, scrolling or typing into the window of a test run (`--test-dir`: the smoke test, `xrs-run.ps1`, CI, `run-windows.ps1 -TestChannel`) changes nothing, the window cannot be activated and sits in the bottom right corner; an `.xrs` `@key` does nothing any more. In VR (headset or `--vr-sim`) no key of the desktop keyboard - not even the channel's `desktop-key` - reaches the game (#487).
 **Cause:** by design (#487, the owner): a test run must not take the focus or the input of whoever works at the PC. The game shows the window without activation (`WS_EX_NOACTIVATE`) in the corner and `SDL2InputBackend` drops every real mouse and keyboard event; only the events the channel injects (`desktop-mouse`, `desktop-key`, marked as injected) and the simulated controllers pass (`realInput` in `status.json`, `[input] real ... dropped (test run)` in `arx.log`). `@key` posts a window message - real input. In VR the window only mirrors the headset: the keyboard is dropped whatever its origin (`desktopKeyboard`), like the mouse (#338).
 **Do:** drive a test run through the channel (`desktop-key`, `desktop-mouse`, `vr-sim`, `vr-point`); test the keyboard flat (`--no-vr`) with `desktop-key`. To try something by hand, launch without the channel (`run-windows.ps1` without `-TestChannel`).
+
+## 2026-10-17 - A channel `sendevent custom <npc> "PARAM"` does nothing
+**Symptom:** a test sends an NPC the custom event its script waits for (`sendevent custom human_base_0028 "DEAD"`): no warning in `arx.log`, the command succeeds, and the NPC does nothing - the scene it starts never comes (#29, scene-hybrid T10).
+**Cause:** the game lowercases every script when it loads it (`src/script/Script.cpp`, `util::toLowercase(file->read())`): the handler compares `^$PARAM1 == "dead"`. A console or channel line is run as it is typed, so `"DEAD"` never matches. A release build has no script debug log (`LogDebug` is compiled out), so `--debug script` shows nothing.
+**Do:** write a custom event's parameter in lowercase (`sendevent custom human_base_0028 "dead"`); to read a script, unpack `data2.pak` with `arxunpak` into a temp folder, never into the repo.
 
 ## 2026-10-18 - A CI run's checkout log names a merge of another pull request
 **Symptom:** reading a past CI run's diff from its log, the first `HEAD is now at <sha> Merge <head> into <base>` line of the checkout step names a head that is not the run's (`gh run view <id> --json headSha`), and the changed files of `compare/<base>...<head>` belong to another pull request (#522, the impact map's replay first counted 9 of 14 failures as missed this way).

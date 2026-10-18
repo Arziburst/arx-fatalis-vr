@@ -45,8 +45,8 @@
 #                                  smoke-test.ps1 -Save) - with @args --loadslot 0; ignored while running
 #   @playground                    launch information: start in the test playground (#321, smoke-test.ps1
 #                                  -Playground: the generated level in area 30); ignored while running
-#   @solo                          launch information: the sequence asserts pacing (#23): CI runs it alone, no other game on
-#                                  the other lane; ignored while running
+#   @solo                          launch information: the sequence measures frame pacing (#436, #527): CI runs it
+#                                  alone, no other game on the other lane; ignored while running
 #   @player                        launch information: a player's launch (#394, smoke-test.ps1 -Player): no
 #                                  --dev-launch, so the publisher logos, the main menu and every cinematic are
 #                                  shown; without @args the sequence starts while the first logo is up (state LOGO)

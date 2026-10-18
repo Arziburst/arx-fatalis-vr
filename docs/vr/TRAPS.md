@@ -8,6 +8,50 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-18 — The unpaced simulator makes a slow hand move a swing: why idle.vrsim is a 90 Hz cap, not rate 0 (#522)
+
+**Symptom:** with `rate 0` in `idle.vrsim` (to stop the 90 Hz display clock halving a 10-12 ms CI frame to 45 fps),
+`melee-swing.xrs` failed on the owner's PC at line 30 `@assert vr.melee.swings eq 0` (read 3), before any swing.
+The run's pacing line: `278.022/s on 90.001 slots/s`.
+**Cause:** the sequences' ramps count frames and were written for about 90 per second. At 278 fps the "slow" set-up
+move `vr-sim @+1-60 hand right pos …` (0.43 m in 60 frames, under 0.7 m/s at 90 fps) lasted 0.22 s, ~2 m/s, and the
+8-frame swings (0.85 m) became 29 m/s, over the 20 m/s tracking-jump limit. An unpaced simulator gives every PC its
+own speeds; the CI runner (~85-100 fps unpaced) and a fast desktop disagree.
+**Do:** sequences run on `rate 90 cap` (the simulator's cap: frames at least 1/90 s apart, a late frame starts at
+once, no slot skipped) - 83-90 fps on CI, 90 on a fast PC, the ramps mean what they say. Use `rate 0` only for a
+script that measures what the PC draws (`msaa.vrsim`), the clock (`basic.vrsim`) only for pacing checks.
+
+## 2026-10-18 — A background process started in one workflow step is gone in the next (#522)
+
+**Symptom:** the CI step "Script self-tests (join)" fails with "ended without writing an exit code"; the tests' output
+stops a few seconds in, in the middle of the first test. Locally the same command runs to the end.
+**Cause:** the start step used `Start-Process ... -RedirectStandardOutput`: that starts the process with handle
+inheritance, so it also inherits the step's own stdout/stderr pipes to the runner. The step's pwsh exits, the pipes stay
+open, and after ~5 s the runner kills the step's whole process tree (`_diag\Worker_*.log`: "Need kill all child processes
+trees", the start step taking 5 s instead of 1). A local run has no runner waiting on a pipe.
+**Do:** a process that must outlive its step is started without redirection (`Start-Process` without `-Redirect*`,
+`-WindowStyle Hidden`) and redirects its own output (`*> out.txt` inside its command). Check: the start step takes about
+a second; the runner's Worker log shows no kill of the step's children.
+
+## 2026-10-18 — A script self-test's time limit fails in CI only: the self-tests run beside the build (#522)
+
+**Symptom:** a `scripts/dev/test-*.ps1` check with a wall-clock limit (e.g. `test-tree-fingerprint.ps1`'s fingerprint
+of the real copy under 1000 ms, 175 ms on an idle runner) passes locally and fails in CI, now and then.
+**Cause:** since #522 CI starts the script self-tests in the background and builds at the same time: the MSVC build
+takes every core, so a timed check gets a fraction of the CPU it gets alone.
+**Do:** read a timing failure of a self-test in CI as load first (re-run, or run `run-script-tests.ps1` alone); never
+widen the limit to make it pass - a check that measures wall-clock time belongs in a quiet step or measures work instead.
+
+## 2026-10-18 — `ci-smoke.ps1` dies in `New-ArxSequenceUserDir`: a file of another sequence's user dir is in use (#522)
+
+**Symptom:** a full `ci-smoke.ps1` run stops at a sequence with `Remove-Item ...\ci-userdirs\real-input\arx-perf.log ...
+being used by another process`, while another working copy's game checks run on the same PC.
+**Cause:** the per-sequence user directories (#296) lived in `%LOCALAPPDATA%\ArxFatalisVR\ci-userdirs\<sequence>`, one
+root for every working copy (the build, test channel and user directory carry `<folder>-<hash>`, this root did not). Two
+copies running the suite delete and reuse each other's directories - one copy's fresh directory is another's running game.
+**Do:** every per-copy folder gets the copy key: `Get-ArxCiUserDirRoot` (`ci-userdirs\<folder>-<hash>`). A new folder a
+test run writes to is per working copy (and per lane when two lanes could use it at once) from the start.
+
 ## 2026-10-18 — A melee sequence's timing passes locally and fails on CI: the timeline counts frames (#409)
 
 **Symptom:** `melee-recovery.xrs` passed locally (90 fps) and failed on CI at `@assert vr.melee.hits eq 1` (read 2).
@@ -1461,3 +1505,8 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** a test sends an NPC the custom event its script waits for (`sendevent custom human_base_0028 "DEAD"`): no warning in `arx.log`, the command succeeds, and the NPC does nothing - the scene it starts never comes (#29, scene-hybrid T10).
 **Cause:** the game lowercases every script when it loads it (`src/script/Script.cpp`, `util::toLowercase(file->read())`): the handler compares `^$PARAM1 == "dead"`. A console or channel line is run as it is typed, so `"DEAD"` never matches. A release build has no script debug log (`LogDebug` is compiled out), so `--debug script` shows nothing.
 **Do:** write a custom event's parameter in lowercase (`sendevent custom human_base_0028 "dead"`); to read a script, unpack `data2.pak` with `arxunpak` into a temp folder, never into the repo.
+
+## 2026-10-18 - A CI run's checkout log names a merge of another pull request
+**Symptom:** reading a past CI run's diff from its log, the first `HEAD is now at <sha> Merge <head> into <base>` line of the checkout step names a head that is not the run's (`gh run view <id> --json headSha`), and the changed files of `compare/<base>...<head>` belong to another pull request (#522, the impact map's replay first counted 9 of 14 failures as missed this way).
+**Cause:** the self-hosted runner keeps its workspace between jobs: the checkout first prints where the workspace stood - the previous job's merge commit - and only its last `HEAD is now at` line is the merge this run built.
+**Do:** take the last such line of the checkout step and check that its head is the run's `headSha` (`scripts/dev/impact-replay.ps1` does both).

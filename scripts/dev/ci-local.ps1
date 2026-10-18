@@ -67,10 +67,11 @@ function Invoke-Step([string]$Name, [string]$Label, [string]$Script, [string[]]$
 	Write-Host ''
 	Write-Host "==> ci-local: $Label" -ForegroundColor Cyan
 	$started = Get-Date
-	& $pwsh -NoProfile -File $Script @Arguments *>&1 | Tee-Object -FilePath (Join-Path $OutDir "$Name.log")
+	# To the host, never to the output: the function returns the exit code alone
+	& $pwsh -NoProfile -File $Script @Arguments *>&1 | Tee-Object -FilePath (Join-Path $OutDir "$Name.log") | ForEach-Object { Write-Host $_ }
 	$exit = $LASTEXITCODE
 	$script:steps += [pscustomobject]@{ Name = $Name; Label = $Label; Exit = $exit; Seconds = ((Get-Date) - $started).TotalSeconds }
-	$exit
+	return [int]$exit
 }
 
 # --- 1. The base ------------------------------------------------------------------------------------------------
@@ -121,6 +122,8 @@ $selected = Select-String -LiteralPath (Join-Path $OutDir 'game-checks.log') -Pa
 foreach ($line in $selected) { Write-Host "  $line" }
 Write-Host "ci-local: transcripts and evidence in $OutDir$(if ($removed) { " (older runs removed: $($removed -join ', '))" })"
 $failed = @($steps | Where-Object Exit -ne 0)
+# A pass needs all three steps: a step that did not run is not a pass
+if (@($steps).Count -lt 3 -and -not $failed) { $failed = @([pscustomobject]@{ Name = 'not all steps ran' }) }
 if (-not $failed) { Write-Host 'ci-local: all steps passed - ready to push' -ForegroundColor Green; exit 0 }
 Write-Host "ci-local: FAILED - $(($failed | ForEach-Object Name) -join ', ')" -ForegroundColor Red
 if ($buildExit -eq 0 -and $smokeExit -in 2, 3 -and @($failed).Count -eq 1) { exit $smokeExit }

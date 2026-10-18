@@ -342,7 +342,7 @@ $byName = @{}
 foreach ($ph in $phases) { $byName[$ph.Name] = $ph }
 $dispatch = @(@('save-library', 'smoke-test', 'spell-drawcheck') + $sequenceOrder | Where-Object { $byName.ContainsKey($_) -and -not $byName[$_].Skip } | ForEach-Object { $byName[$_] })
 $known = @($dispatch | Where-Object { $durations.ContainsKey($_.Name) }).Count
-Write-Host "ci-smoke: $($dispatch.Count) phase(s) to run; changed against $(if ($Base) { $Base } else { 'nothing (no base)' }): $(if ($changedXrs) { $changedXrs -join ', ' } else { 'no .xrs' })"
+Write-Host "ci-smoke: $($dispatch.Count) phase(s) to run; changed $(if ($Changed) { '(given by -Changed)' } elseif ($Base) { "against $Base" } else { 'against nothing (no base)' }):$(if ($changedXrs) { $changedXrs -join ', ' } else { 'no .xrs' })"
 Write-Host "ci-smoke: last run's durations from $DurationsFile$(if (-not (Test-Path -LiteralPath $DurationsFile)) { ' (none yet)' }): $known known, $($dispatch.Count - $known) unknown (counted as the longest)"
 Write-Host "ci-smoke: order: $(($dispatch | ForEach-Object Name) -join ', ')"
 if ($selection) {

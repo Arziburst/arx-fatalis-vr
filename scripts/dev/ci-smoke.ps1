@@ -75,6 +75,10 @@
 .PARAMETER ImpactMap
 	The impact map of -Suite pr (default scripts\dev\xrs\impact.txt).
 
+.PARAMETER Changed
+	Repository paths that stand for the change instead of the diff against -Base: what -Suite pr runs for them (to try
+	the map, or to time the selection of a past pull request).
+
 .PARAMETER Base
 	The ref the change is compared with for the changed sequences and the selection (default: origin/<the PR's base>
 	in CI, none on a push; origin/main by hand).
@@ -105,6 +109,7 @@ param(
 	[ValidateSet('full', 'pr')]
 	[string]$Suite = 'full',
 	[string]$ImpactMap,
+	[string[]]$Changed,
 	[string]$Base = $(if ($env:GITHUB_BASE_REF) { "origin/$env:GITHUB_BASE_REF" } elseif (-not $env:GITHUB_ACTIONS) { 'origin/main' }),
 	[string]$DurationsFile,
 	[int]$KeepRuns = 10
@@ -192,11 +197,13 @@ function Clear-LaneChannel([string]$TestDir) {
 # --- The suite (#522) -------------------------------------------------------------------------------------------
 # pr: only the selection of the change from the impact map; full - or a selection the map cannot make: every phase
 if (-not $ImpactMap) { $ImpactMap = Join-Path $PSScriptRoot 'xrs\impact.txt' }
+# pwsh -File hands a list over as one string: a,b,c
+$Changed = @($Changed | ForEach-Object { $_ -split ',' } | ForEach-Object Trim | Where-Object { $_ })
 $selection = $null
 $suiteWhy = 'asked for'
 $changedSet = $null
 if ($Suite -eq 'pr') {
-	$changedSet = Get-ArxChangedFileSet $ArxSourceDir $Base
+	$changedSet = if ($Changed) { [pscustomobject]@{ Ok = $true; Files = $Changed } } else { Get-ArxChangedFileSet $ArxSourceDir $Base }
 	if (-not $changedSet.Ok) { $suiteWhy = "the change is unknown ($(if ($Base) { "cannot diff against $Base" } else { 'no base' }))" }
 	else {
 		$impact = Read-ArxImpactMap $ImpactMap
@@ -210,7 +217,7 @@ if ($Suite -eq 'pr') {
 		}
 	}
 }
-$suiteLine = if ($selection) { "suite pr - the core and what the $(@($changedSet.Files).Count) changed file(s) against $Base select ($ImpactMap)" }
+$suiteLine = if ($selection) { "suite pr - the core and what the $(@($changedSet.Files).Count) changed file(s) $(if ($Changed) { 'given by -Changed' } else { "against $Base" }) select ($ImpactMap)" }
 	elseif ($Suite -eq 'pr') { "suite full - a pull request's selection was asked for, but $suiteWhy" }
 	else { 'suite full - every phase (asked for)' }
 Write-Host "ci-smoke: $suiteLine"
@@ -328,7 +335,7 @@ if ($Phase -in 'all', 'sequences') {
 # The save library first (the @save sequences wait for it), then the two short checks, then the sequences: the changed
 # ones first, then by the last run's duration, longest first
 $durations = Read-ArxPhaseDurations $DurationsFile
-$changed = @(Get-ArxChangedFiles $ArxSourceDir $Base)
+$changed = if ($Changed) { @($Changed) } else { @(Get-ArxChangedFiles $ArxSourceDir $Base) }
 $changedXrs = @($changed | Where-Object { $_ -like 'scripts/dev/xrs/*.xrs' })
 $sequenceOrder = @(Get-ArxPhaseOrder $units $changed $durations)
 $byName = @{}

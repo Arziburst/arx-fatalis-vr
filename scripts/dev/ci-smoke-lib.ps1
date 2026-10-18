@@ -1,5 +1,6 @@
-# The testable parts of ci-smoke.ps1 (#522): the order of the phases, the lane scheduler, the lane count from the game
-# lock, the durations file, the evidence kept on the runner and the run digest of a phase. Dot-source it after
+# The testable parts of ci-smoke.ps1 (#522): the order of the phases, the selection of a pull request from the impact
+# map, the lane scheduler, the lane count from the game lock, the durations file, the evidence kept on the runner and
+# the run digest of a phase. Dot-source it after
 # test-lib.ps1 (the lock functions of launch-lib.ps1 are used at call time):
 #   . (Join-Path $PSScriptRoot 'ci-smoke-lib.ps1')
 # scripts/dev/test-ci-smoke.ps1 tests every function here without a game.
@@ -63,14 +64,21 @@ function Write-ArxPhaseDurations([string]$Path, [hashtable]$Old, $Results) {
 # then the two-dot diff against the base, which for the merge commit CI checks out is the same list. No base (a push
 # to main, a manual run): nothing counts as changed.
 function Get-ArxChangedFiles([string]$SourceDir, [string]$Base) {
-	if (-not $Base) { return @() }
+	$set = Get-ArxChangedFileSet $SourceDir $Base
+	if ($Base -and -not $set.Ok) { Write-Warning "cannot diff against ${Base}: no sequence counts as changed" }
+	$set.Files
+}
+
+# The same, telling an empty change from a diff that could not be made: { Ok = the diff ran; Files }. The selection of
+# a pull request (#522) runs everything when it does not know what changed.
+function Get-ArxChangedFileSet([string]$SourceDir, [string]$Base) {
+	if (-not $Base) { return [pscustomobject]@{ Ok = $false; Files = @() } }
 	foreach ($range in @("$Base...HEAD"), @($Base, 'HEAD')) {
 		$files = @(git -C $SourceDir diff --name-only @range 2>$null)
-		if ($LASTEXITCODE -eq 0) { $global:LASTEXITCODE = 0; return $files }
+		if ($LASTEXITCODE -eq 0) { $global:LASTEXITCODE = 0; return [pscustomobject]@{ Ok = $true; Files = $files } }
 	}
 	$global:LASTEXITCODE = 0
-	Write-Warning "cannot diff against ${Base}: no sequence counts as changed"
-	@()
+	[pscustomobject]@{ Ok = $false; Files = @() }
 }
 
 # The run order of the sequence phases. $Units: one per sequence, in the serial (name) order, each
@@ -94,6 +102,124 @@ function Get-ArxPhaseOrder($Units, [string[]]$Changed = @(), [hashtable]$Duratio
 	}
 	@($rows | Sort-Object @{ Expression = 'Changed'; Descending = $true }, @{ Expression = 'Duration'; Descending = $true }, @{ Expression = 'Index'; Descending = $false } |
 		ForEach-Object { $_.Phases })
+}
+
+# --- The selection of a pull request (#522) -------------------------------------------------------------------------
+
+# The checks that are phases of their own, not sequences, and may stand in the impact map like a sequence
+$ArxImpactChecks = @('smoke-test', 'spell-drawcheck')
+
+# The impact map, scripts\dev\xrs\impact.txt: which game checks a change of a path can break. A line is
+#   core: <name> [<name> ...]                       run on every pull request (several core: lines add up)
+#   <path glob> -> <name> [<name> ...]              a changed path that matches selects these
+#   <path glob> -> *                                ... selects everything (the harness every check runs on)
+#   <path glob> -> core                             ... is covered by the core alone (docs, the map itself)
+# A name is a sequence (the .xrs file name without the extension; its read-back follows it) or one of
+# $ArxImpactChecks. A glob is a repository path with / and the wildcards of -like (* also crosses folders), any case.
+# '#' starts a comment. Returns { Path; Core; Rules = { Glob; Targets; Line; Pattern }; Errors } - a line that is
+# none of these is an error, never skipped in silence.
+function Read-ArxImpactMap([string]$Path) {
+	$core = [Collections.Generic.List[string]]::new()
+	$rules = [Collections.Generic.List[object]]::new()
+	$errors = [Collections.Generic.List[string]]::new()
+	$n = 0
+	foreach ($raw in [IO.File]::ReadAllLines($Path)) {
+		$n++
+		$line = ($raw -replace '(^|\s)#.*$', '').Trim()
+		if (-not $line) { continue }
+		if ($line -match '^core:(.*)$') {
+			foreach ($name in -split $Matches[1]) { $core.Add($name) }
+			continue
+		}
+		if ($line -match '^(\S+)\s+->(.*)$') {
+			$glob = $Matches[1]
+			$targets = @(-split $Matches[2])
+			if (-not $targets) { $errors.Add("line ${n}: '$line' names nothing (a path the core covers says '-> core')"); continue }
+			if ($targets.Count -gt 1 -and ($targets -contains '*' -or $targets -contains 'core')) { $errors.Add("line ${n}: '$line': '*' and 'core' stand alone"); continue }
+			$rules.Add([pscustomobject]@{ Glob = $glob; Targets = $targets; Line = $n; Pattern = [WildcardPattern]::new($glob, [Management.Automation.WildcardOptions]::IgnoreCase) })
+			continue
+		}
+		$errors.Add("line ${n}: '$line' is neither 'core: <name> ...' nor '<path glob> -> <name> ...'")
+	}
+	[pscustomobject]@{ Path = $Path; Core = @($core); Rules = @($rules); Errors = @($errors) }
+}
+
+# The sequence a changed .xrs file selects by itself: scripts/dev/xrs/<name>.xrs and its read-back
+# scripts/dev/xrs/readback/<name>-readback.xrs both give <name>; any other path gives $null
+function Get-ArxChangedSequenceName([string]$Path) {
+	$p = $Path -replace '\\', '/'
+	if ($p -match '^scripts/dev/xrs/readback/(.+)-readback\.xrs$') { return $Matches[1] }
+	if ($p -match '^scripts/dev/xrs/([^/]+)\.xrs$') { return $Matches[1] }
+	$null
+}
+
+# The game checks of a change set: the core, every name of a rule whose glob matches a changed path, and the changed or
+# added .xrs files themselves (a read-back selects its sequence). A changed path that no rule matches (and that is not
+# an .xrs) or a rule '-> *' makes it Full: everything runs. Returns
+#   { Full; Names (sorted, without duplicates); Reasons (name -> the first reason: 'core' or the path); FullBecause
+#     (the lines that made it Full); Unmapped (the paths no rule matched) }
+# Names lists the selection even when Full, for the log.
+function Get-ArxImpactSelection($Map, [string[]]$Changed = @()) {
+	$reasons = @{}
+	foreach ($name in $Map.Core) { if (-not $reasons.ContainsKey($name)) { $reasons[$name] = 'core' } }
+	$fullBecause = [Collections.Generic.List[string]]::new()
+	$unmapped = [Collections.Generic.List[string]]::new()
+	foreach ($raw in @($Changed)) {
+		if (-not $raw) { continue }
+		$path = $raw -replace '\\', '/'
+		$own = Get-ArxChangedSequenceName $path
+		if ($own -and -not $reasons.ContainsKey($own)) { $reasons[$own] = $path }
+		$matched = [bool]$own
+		foreach ($rule in $Map.Rules) {
+			if (-not $rule.Pattern.IsMatch($path)) { continue }
+			$matched = $true
+			if ($rule.Targets[0] -eq '*') { $fullBecause.Add("$path (line $($rule.Line): $($rule.Glob) -> *)"); continue }
+			if ($rule.Targets[0] -eq 'core') { continue }
+			foreach ($name in $rule.Targets) { if (-not $reasons.ContainsKey($name)) { $reasons[$name] = $path } }
+		}
+		if (-not $matched) {
+			$unmapped.Add($path)
+			$fullBecause.Add("$path (no rule matches it)")
+		}
+	}
+	[pscustomobject]@{
+		Full = [bool]$fullBecause.Count; Names = @($reasons.Keys | Sort-Object); Reasons = $reasons
+		FullBecause = @($fullBecause); Unmapped = @($unmapped)
+	}
+}
+
+# The coverage check of the map: its syntax errors, a name that is neither a sequence of $Sequences nor one of
+# $ArxImpactChecks, a glob listed twice, and a sequence or check that is neither in the core nor named by a rule (it
+# would run only in the full suite - a rule '-> *' does not count). Returns the problems, one line each; none: @().
+function Test-ArxImpactMap($Map, [string[]]$Sequences) {
+	$problems = [Collections.Generic.List[string]]::new()
+	foreach ($e in $Map.Errors) { $problems.Add($e) }
+	$known = @{}
+	foreach ($name in @($Sequences) + $ArxImpactChecks) { $known[$name] = $true }
+	$reached = @{}
+	foreach ($name in $Map.Core) {
+		if (-not $known.ContainsKey($name)) { $problems.Add("core: '$name' is no sequence (scripts/dev/xrs/$name.xrs) and no check") }
+		$reached[$name] = $true
+	}
+	$globs = @{}
+	foreach ($rule in $Map.Rules) {
+		if ($globs.ContainsKey($rule.Glob.ToLowerInvariant())) { $problems.Add("line $($rule.Line): the glob $($rule.Glob) is listed twice (also line $($globs[$rule.Glob.ToLowerInvariant()]))") }
+		else { $globs[$rule.Glob.ToLowerInvariant()] = $rule.Line }
+		if ($rule.Targets[0] -in '*', 'core') { continue }
+		foreach ($name in $rule.Targets) {
+			if (-not $known.ContainsKey($name)) { $problems.Add("line $($rule.Line): '$name' is no sequence (scripts/dev/xrs/$name.xrs) and no check") }
+			$reached[$name] = $true
+		}
+	}
+	foreach ($name in $known.Keys | Sort-Object) {
+		if (-not $reached.ContainsKey($name)) { $problems.Add("'$name' is in no core: line and named by no rule: a pull request would run it only when everything runs") }
+	}
+	@($problems)
+}
+
+# The sequence names of a folder of .xrs files (the read-backs in readback\ follow their sequence and are not listed)
+function Get-ArxSequenceNames([string]$XrsDir) {
+	@(Get-ChildItem -LiteralPath $XrsDir -Filter '*.xrs' -File | ForEach-Object BaseName | Sort-Object)
 }
 
 # --- The lane count -------------------------------------------------------------------------------------------------

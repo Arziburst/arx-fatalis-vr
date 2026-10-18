@@ -282,7 +282,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
   temporary file and rename it, so the game never reads a half-written batch, and wait for the ack.
 - **answers every batch in `<dir>\ack.txt`**: `seq=<batch> frame=<frame> errors=<refused lines>
   last=<last line> error=<reason or ->`.
-- **rewrites `<dir>status.json`** every 100 ms (#522; 250 ms before), after every batch (just BEFORE its ack since #23: a
+- **rewrites `<dir>\status.json`** every 100 ms (#522; 250 ms before), after every batch (just BEFORE its ack since #23: a
   test that reads the status right after the ack finds the batch's state), once a `shot` or a simulated headset's shot
   asked for through the channel is saved, and on every state change - atomically (`status.json.tmp`, then rename), so a
   reader sees whole files only. A reader that holds the file delays the rename by the time it holds it (every

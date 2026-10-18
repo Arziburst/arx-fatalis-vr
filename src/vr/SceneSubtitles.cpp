@@ -225,6 +225,10 @@ void hideSubtitle() {
 	s.status.speaker.clear();
 }
 
+void replaceSubtitlePanel() {
+	g_subtitles.decided = false;
+}
+
 void noteFlatSubtitle(bool visible, std::string_view speaker, std::string_view text) {
 	SubtitleStatus & status = g_subtitles.status;
 	status.visible = visible;

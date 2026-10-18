@@ -567,6 +567,7 @@ bool ActionSet::sync(ControllerInput & input, XrSpace viewSpace, XrTime time) {
 
 	m_down = down;
 	input.down = down;
+	input.newlyBound = m_loggedBound ? (bound & ~m_bound) : bound;
 
 	// "Bound" is what the runtime reports active, not what was suggested (F-123)
 	if(bound != m_bound || !m_loggedBound) {

@@ -120,14 +120,21 @@ vr-sim action trigger right 0
 @assert player.freelook eq true             # in VR the game is always in freelook (#394; here level 10's reset set it)
 @log GameEvent:.*scene state=start area=1 30s
 @assert player.controlsBlocked eq true
-vr-input tap right.a                         # too early: nothing is sent to the scene, the press reaches nothing
+vr-input tap right.a                         # a tap is no skip in a scene (#513): nothing is sent
+@frames 30
+@nolog GameEvent:.*vr\.skip what=SCENE
+vr-input down right.a                        # a hold of 0.6 s skips - too early: nothing is sent to the scene
+@wait 900
+vr-input up right.a
 @log GameEvent:.*scene\.skip how=vr area=1 .*result=early 5s
 @frames 30
 @assert player.controlsBlocked eq true
 @nolog GameEvent:.*player\.jump
 @wait 6000                                   # the skip handlers take a skip 3 s into the letterbox, outside a fade
 @mark
-vr-input tap right.a
+vr-input down right.a                        # the deliberate hold (#513)
+@wait 900
+vr-input up right.a
 @until player.controlsBlocked eq false 15s
 @frames 30
 @nolog GameEvent:.*player\.jump

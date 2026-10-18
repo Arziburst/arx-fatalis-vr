@@ -198,6 +198,9 @@ void showSubtitle(u64 line, std::string_view speaker, std::string_view text, boo
 //! No line to show in VR
 void hideSubtitle();
 
+//! The scene took a cut (a teleport, a scripted turn, another shot): the line's panel is placed anew (#460)
+void replaceSubtitlePanel();
+
 //! Flat mode: the original band shows \a text by \a speaker, or nothing (\a visible false) - the status only
 void noteFlatSubtitle(bool visible, std::string_view speaker = std::string_view(),
                       std::string_view text = std::string_view());

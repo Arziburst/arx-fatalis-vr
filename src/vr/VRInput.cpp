@@ -103,10 +103,17 @@ struct InputState {
 	//! The skip controls (#394) down in the last update, and those kept from the game until released
 	ControlSet skipDown;
 	ControlSet skipHeld;
+	//! A scripted scene skips on a hold, not a press (#513): when the hold began, and whether it skipped already
+	bool skipHolding = false;
+	bool skipHoldFired = false;
+	PlatformInstant skipHoldStart = 0;
 
 };
 
 InputState g_input;
+
+//! How long A, B or a trigger is held to skip a scripted scene (#513): a press alone is no skip there
+const float SceneSkipHoldSeconds = 0.6f;
 
 //! The controls that skip a logo or a cinematic (#394): A, B and the trigger of either hand
 ControlSet skipControls() {
@@ -148,9 +155,12 @@ const char * skippable() {
 bool takeSkipControls(ControllerInput & input) {
 
 	static const ControlSet controls = skipControls();
-	const bool playing = skippable() != nullptr;
+	const char * what = skippable();
+	const bool playing = what != nullptr;
 
-	const ControlSet pressed = ((input.down & ~g_input.skipDown) | input.taps) & controls;
+	// A control the runtime bound only now (the controllers woken or re-bound mid-scene) is held, not pressed (#513)
+	const ControlSet pressed = ((input.down & ~g_input.skipDown) | input.taps) & controls & ~input.newlyBound;
+	const ControlSet heldNow = input.down & controls;
 	g_input.skipDown = input.down & controls;
 	g_input.skipHeld = playing ? g_input.skipDown : (g_input.skipHeld & input.down);
 
@@ -162,6 +172,26 @@ bool takeSkipControls(ControllerInput & input) {
 			input.trigger[hand] = 0.f;
 		}
 	}
+
+	// A scripted scene - a dialogue - skips only on a deliberate hold (#513): a touch of the trigger or of A while
+	// holding the controllers skipped the owner's lines; a logo, the intro and a cinematic still skip on a press (#394)
+	if(playing && std::string_view(what) == "SCENE") {
+		const PlatformInstant now = platform::getTime();
+		if(pressed.any() && !g_input.skipHolding) {
+			g_input.skipHolding = true;
+			g_input.skipHoldFired = false;
+			g_input.skipHoldStart = now;
+		}
+		if(!(heldNow & ~input.newlyBound).any()) {
+			g_input.skipHolding = false;
+		}
+		if(g_input.skipHolding && !g_input.skipHoldFired && toS(now - g_input.skipHoldStart) >= SceneSkipHoldSeconds) {
+			g_input.skipHoldFired = true;
+			return true;
+		}
+		return false;
+	}
+	g_input.skipHolding = false;
 
 	return playing && pressed.any();
 }

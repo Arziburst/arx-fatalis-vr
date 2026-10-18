@@ -2228,6 +2228,8 @@ static vr::SceneOutput updateSceneView(const Camera & engineCamera) {
 	if(out.cut) {
 		gameevent::Event("vr.scene.cut", 500)("faded", out.fade >= vr::BehindFade ? "yes" : "no")
 			("reason", out.cutReason);
+		// The world jumped around the player (a teleport, a scripted turn): a panel placed before it would be left behind
+		vr::replaceSubtitlePanel();
 	}
 	if(out.seamless) {
 		// A shot change the eyes see no jump in: no fade (the owner, 2026-10-17)

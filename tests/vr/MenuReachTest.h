@@ -25,11 +25,13 @@
 
 /*!
  * The game menu stays reachable whatever the player binds (#326), with the interfaces that exist today:
- *  - a long press (about 2 s) of the LEFT controller's menu button opens the game menu with ANY layout - also one
- *    with no binding to the menu at all, and one where the player bound that button to other events; a short
- *    press does not (the fallback is fixed, not part of the layout). "Opens the game menu" is the Escape key the
- *    controls give the engine (GameInputMapper's GameInputState::escape, VRGameInput.h), wherever the worker puts
- *    the fallback (ControlResolver or GameInputMapper);
+ *  - both thumbsticks clicked (pressed in) and held TOGETHER for 2 s (the owner, 2026-10-18) open the game menu with
+ *    ANY layout - also one with no binding to the menu at all, and one where the player bound the stick clicks to
+ *    other events - between 1.5 s and 2.1 s after both are down, while they are still held; one stick alone, or
+ *    both for a short time, open nothing (the fallback is fixed, not part of the layout). "Opens the game menu" is
+ *    the Escape key the controls give the engine (GameInputMapper's GameInputState::escape, VRGameInput.h) coming
+ *    on and going off again - the engine acts on its release - wherever the worker puts the fallback
+ *    (ControlResolver or GameInputMapper);
  *  - a saved controls file (readSavedLayout, vr-controls-<type>.ini) that is empty, broken, or leaves no way to the
  *    game menu gives back the default way to it; a file that only moves the way elsewhere is kept.
  * The way to the game menu (D-042): the menu event, or a radial menu event - its ring has the game menu, and where

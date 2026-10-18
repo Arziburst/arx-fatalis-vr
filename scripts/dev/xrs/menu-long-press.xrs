@@ -1,16 +1,16 @@
-# A fixed fallback opens the game menu whatever the bindings are (#326; written before the implementation): the LEFT
-# controller's menu button held about 2 s - not part of the layout, not rebindable. On the simulated Index, with a
-# binding set that has no menu entry, saved into vr-controls-index.ini as the VR settings page saves it and read back
-# as a start reads it: the radial menu (the only way to the game menu, D-042) moved to the left trackpad, the menu
-# event unbound. The right B then opens nothing, a tap of the left menu button is no long press, a 2.5 s hold opens
-# the game menu, and the VR settings' reset to default is reachable from it.
-# The Index has no menu button the game can read (SteamVR keeps the system button): the simulated button is pressed
-# through the channel. Which button the Index uses is the owner's choice (the contract's do_not_decide).
+# A fixed fallback opens the game menu whatever the bindings are (#326; written before the implementation): both
+# thumbsticks clicked (pressed in) and held TOGETHER for 2 s (the owner, 2026-10-18: the Index has no menu button the
+# game can read) - not part of the layout, not rebindable; the menu opens at 2 s while they are still held. On the
+# simulated Index, with a binding set that has no menu entry, saved into vr-controls-index.ini as the VR settings page
+# saves it and read back as a start reads it: the radial menu (the only way to the game menu, D-042) moved to the left
+# trackpad, the menu event unbound. The right B then opens nothing; one stick click held 3 s and a tap of both open
+# nothing; both held open the game menu while held; the VR settings' reset to default is reachable from it.
 #
 # Assumes (the worker adds them to status.json, src/core/CommandChannel.cpp, named exactly):
-#   vr.input.menuFallback.control  (text)    the fallback's control as vr::controlName writes it: left.menu
-#   vr.input.menuFallback.holdMs   (number)  how long it is held before the game menu opens, in ms: 2000
-#   vr.input.menuFallback.opens    (count)   how often the long press opened the game menu since the start
+#   vr.input.menuFallback.control  (text)    the fallback's controls: both.stick_click (both hands' stick clicks
+#                                            together - the kind name of vr::controlName, "both" for the two hands)
+#   vr.input.menuFallback.holdMs   (number)  how long both are held before the game menu opens, in ms: 2000
+#   vr.input.menuFallback.opens    (count)   how often the fallback opened the game menu since the start
 # Self-contained: it ends with the default layout and no saved file (CI runs every sequence in one user directory).
 @sim idle
 @args --loadlevel 10
@@ -22,7 +22,7 @@ vr-input default
 @frames 2
 @assert vr.input.remapped eq false
 @assert menuMode eq ingame
-@assert vr.input.menuFallback.control eq left.menu
+@assert vr.input.menuFallback.control eq both.stick_click
 @assert vr.input.menuFallback.holdMs eq 2000
 @remember opens0 vr.input.menuFallback.opens
 
@@ -46,21 +46,32 @@ vr-input reload
 @assert vr.input.layout.radial_left eq none
 @assert vr.input.layout.menu eq none
 
-# The right B opens nothing now; a tap of the left menu button is no long press
+# The right B opens nothing now
 vr-input tap right.b
 @wait 1000
 @assert menuMode eq ingame
-vr-input tap left.menu
+
+# One stick click alone held 3 s, and a tap of both: no fallback
+vr-input down left.stick_click
+@wait 3000
+vr-input up left.stick_click
+@wait 500
+@assert menuMode eq ingame
+vr-input tap left.stick_click; vr-input tap right.stick_click
 @wait 1000
 @assert menuMode eq ingame
 @assert vr.input.menuFallback.opens eq {opens0}
 
-# The long press: the left menu button held 2.5 s opens the game menu
-vr-input down left.menu
-@wait 2500
-vr-input up left.menu
-@until menuMode eq mainmenu 5s
+# Both stick clicks held together: not open after 1 s, open by 2.5 s (+ the channel's latency) while still held
+vr-input down left.stick_click; vr-input down right.stick_click
+@wait 1000
+@assert menuMode eq ingame
+@wait 1500
+@until menuMode eq mainmenu 2s
 @assert vr.input.menuFallback.opens eq {opens0+1}
+vr-input up left.stick_click; vr-input up right.stick_click
+@wait 500
+@assert menuMode eq mainmenu
 
 # From it the VR settings' reset to default: the right B's radial menu is back, the saved file gone
 menu vr

@@ -53,8 +53,7 @@ human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
 @shot sub-above
 @assert vr.sim.shots.sub-above.left.scene.verdict ne background
 @assert vr.sim.shots.sub-above.right.scene.verdict ne background
-@assert vr.sim.shots.sub-above.left.overlayPixels gt 1000      # the panel's layer is in the eyes (the reticles alone: about 300)
-@assert vr.sim.shots.sub-above.right.overlayPixels gt 1000
+@assert scene.subtitle.panelPixels gt 1000       # the panel drawn into both eyes (its outline, the smaller eye)
 # Fixed in the world (the owner, 2026-10-17): the panel is placed once for the line and never turns with the head - its
 # pose in the room stays while the head turns 40 degrees
 @assert scene.subtitle.panel eq true
@@ -94,8 +93,7 @@ human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_cantgo]
 @shot sub-chest
 @assert vr.sim.shots.sub-chest.left.scene.verdict ne background
 @assert vr.sim.shots.sub-chest.right.scene.verdict ne background
-@assert vr.sim.shots.sub-chest.left.overlayPixels gt 1000      # the panel's layer is in the eyes (the reticles alone: about 300)
-@assert vr.sim.shots.sub-chest.right.overlayPixels gt 1000
+@assert scene.subtitle.panelPixels gt 1000       # the panel drawn into both eyes (its outline, the smaller eye)
 # Fixed in the world (the owner, 2026-10-17): the panel is placed once for the line and never turns with the head - its
 # pose in the room stays while the head turns 40 degrees
 @assert scene.subtitle.panel eq true

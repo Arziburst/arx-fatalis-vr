@@ -69,6 +69,8 @@
  * simulated headset of \c --vr-sim (vr/VRSimulator.h, #112), which runs all of this without a
  * runtime or a headset.
  */
+class Texture;
+
 namespace vr {
 
 /*!
@@ -451,23 +453,20 @@ const s32 SubtitleImageWidth = 1024;
 const s32 SubtitleImageHeight = 512;
 
 /*!
- * \brief Draw a scene line's subtitle panel this frame (#29): its own swapchain becomes the render target,
+ * \brief Draw a scene line's subtitle panel this frame (#29): its texture's framebuffer becomes the render target,
  *        cleared to transparent; the caller draws the box in 2D and calls \ref endSubtitleImage. Stereo frames only.
  */
 bool beginSubtitleImage();
 
-//! Hand the subtitle image back to the compositor and make the flat frame the render target again
+//! Make the flat frame (or the window) the render target again
 void endSubtitleImage();
 
 /*!
- * \brief The subtitle panel for this frame (#29): its image as a quad layer in the LOCAL space (meters; the face +z
- *        towards the viewer), \a size its width and height. Set every frame - \c shown false hides it.
+ * \brief The subtitle panel's texture (#29, #519): what \ref beginSubtitleImage drew, premultiplied alpha, its row 0
+ *        the panel's bottom - sampled into each eye as a quad fixed in the world (vr/SceneSubtitles.cpp); nullptr
+ *        without one
  */
-void setSubtitleLayer(bool shown, const Vec3f & center = Vec3f(0.f),
-                      const glm::quat & orientation = glm::quat(1.f, 0.f, 0.f, 0.f), const Vec2f & size = Vec2f(0.f));
-
-//! The subtitle panel was part of the last submitted frame
-bool subtitleLayerShown();
+Texture * subtitleTexture();
 
 //! Place the panel anew at the head on the next frame while a menu is open (a recenter, F-180)
 void recenterPanel();

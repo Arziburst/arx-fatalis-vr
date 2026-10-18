@@ -171,7 +171,9 @@ struct SubtitleStatus {
 	u64 voicedLines = 0;    //!< voiced lines started since the meter reset
 	//! Where the line is drawn: \c above, or \c chest for the hero's own line and a speaker out of view
 	SubtitlePlacement drawn = DefaultSubtitlePlacement;
-	Vec3f panelLocal = Vec3f(0.f); //!< the panel's middle as submitted, LOCAL (OpenXR axes), meters
+	bool panel = false;            //!< the panel was drawn into both eyes this frame
+	float panelPixels = 0.f;       //!< the eye pixels the panel covers (the smaller eye), 0 when not drawn
+	Vec3f panelLocal = Vec3f(0.f); //!< the panel's middle, LOCAL (OpenXR axes), meters
 	float panelYawDeg = 0.f;       //!< the panel's facing about the vertical in LOCAL, degrees
 	float panelWidthM = 0.f;       //!< the panel's image width, meters
 };
@@ -208,14 +210,17 @@ void noteFlatSubtitle(bool visible, std::string_view speaker = std::string_view(
 //! A new measuring stretch (\c scene \c meter \c reset): the line counts start again
 void resetSubtitleCounts();
 
-//! The eye being rendered (the scene pass, once per eye): its pixel scale, the subtitle panel's text size
+/*!
+ * The eye being rendered (the scene pass, after the world, once per eye): the panel of \c above and \c chest drawn as
+ * a quad fixed in the world, depth test off - always readable, also in the desktop mirror (#519)
+ */
 void drawSubtitlesInEye();
 
 /*!
  * The lower third drawn on the head-locked interface layer; \c above and \c chest as a panel fixed in the world
  * (the owner, 2026-10-17: never turning with the head): placed once when the line starts - over the NPC's head, or
  * below the centre of the view for the hero's own line and a speaker out of view - facing where the player was,
- * drawn into its own image and submitted as a quad layer, its LOCAL pose taken from the world each frame
+ * drawn into its own image here, which the eyes of the next frame sample (\ref drawSubtitlesInEye)
  */
 void drawSubtitlesOnInterface();
 

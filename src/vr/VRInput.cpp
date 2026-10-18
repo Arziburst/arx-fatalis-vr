@@ -23,6 +23,8 @@
 #include <array>
 #include <cmath>
 #include <optional>
+#include <string>
+#include <string_view>
 
 #include "core/Config.h"
 #include "core/Core.h"
@@ -107,6 +109,10 @@ struct InputState {
 	bool skipHolding = false;
 	bool skipHoldFired = false;
 	PlatformInstant skipHoldStart = 0;
+	//! Skip controls held when the runtime bound them or when the scene started: no press until released (#513)
+	ControlSet skipIgnored;
+	bool skipWasPlaying = false;
+	int lastSkipControl = -1; //!< the control of the last skip, for the vr.skip event; -1 none
 
 };
 
@@ -114,6 +120,19 @@ InputState g_input;
 
 //! How long A, B or a trigger is held to skip a scripted scene (#513): a press alone is no skip there
 const float SceneSkipHoldSeconds = 0.6f;
+//! A trigger skips a scripted scene only pulled this far (#513): the owner's lines were skipped by a light pull while
+//! he held the controllers - the ordinary threshold is 0.55
+const float SceneSkipTriggerPull = 0.9f;
+
+//! \return the first control of \a set, -1 for none (the vr.skip event)
+static int firstSkipControl(const ControlSet & set) {
+	for(size_t c = 0; c < ControlCount; c++) {
+		if(set.test(c)) {
+			return int(c);
+		}
+	}
+	return -1;
+}
 
 //! The controls that skip a logo or a cinematic (#394): A, B and the trigger of either hand
 ControlSet skipControls() {
@@ -157,10 +176,19 @@ bool takeSkipControls(ControllerInput & input) {
 	static const ControlSet controls = skipControls();
 	const char * what = skippable();
 	const bool playing = what != nullptr;
+	const bool scene = playing && std::string_view(what) == "SCENE";
 
-	// A control the runtime bound only now (the controllers woken or re-bound mid-scene) is held, not pressed (#513)
-	const ControlSet pressed = ((input.down & ~g_input.skipDown) | input.taps) & controls & ~input.newlyBound;
-	const ControlSet heldNow = input.down & controls;
+	// A control held when the runtime bound it (the controllers woken or re-bound mid-scene) or when the scene started
+	// is no press, until it is released (#513)
+	ControlSet ignoredNow = input.newlyBound & input.down;
+	if(playing && !g_input.skipWasPlaying) {
+		ignoredNow |= input.down;
+	}
+	g_input.skipWasPlaying = playing;
+	g_input.skipIgnored = (g_input.skipIgnored | ignoredNow) & input.down & controls;
+	const ControlSet pressed = ((input.down & ~g_input.skipDown) | input.taps) & controls & ~g_input.skipIgnored;
+	const ControlSet heldNow = input.down & controls & ~g_input.skipIgnored;
+	const std::array<float, HandCount> trigger = input.trigger;
 	g_input.skipDown = input.down & controls;
 	g_input.skipHeld = playing ? g_input.skipDown : (g_input.skipHeld & input.down);
 
@@ -173,29 +201,46 @@ bool takeSkipControls(ControllerInput & input) {
 		}
 	}
 
-	// A scripted scene - a dialogue - skips only on a deliberate hold (#513): a touch of the trigger or of A while
-	// holding the controllers skipped the owner's lines; a logo, the intro and a cinematic still skip on a press (#394)
-	if(playing && std::string_view(what) == "SCENE") {
+	g_input.lastSkipControl = -1;
+	if(scene) {
+		// A scripted scene - a dialogue - skips only on a deliberate hold (#513): A or B clicked, or a trigger pulled
+		// all the way, for SceneSkipHoldSeconds. A logo, the intro and a cinematic still skip on a press (#394)
+		ControlSet strong;
+		for(size_t hand = 0; hand < HandCount; hand++) {
+			for(ControlKind kind : { ControlKind::A, ControlKind::B }) {
+				if(heldNow.test(control(Hand(hand), kind))) {
+					strong.set(control(Hand(hand), kind));
+				}
+			}
+			if(heldNow.test(control(Hand(hand), ControlKind::Trigger)) && trigger[hand] >= SceneSkipTriggerPull) {
+				strong.set(control(Hand(hand), ControlKind::Trigger));
+			}
+		}
+		if(!strong.any()) {
+			g_input.skipHolding = false;
+			return false;
+		}
 		const PlatformInstant now = platform::getTime();
-		if(pressed.any() && !g_input.skipHolding) {
+		if(!g_input.skipHolding) {
 			g_input.skipHolding = true;
 			g_input.skipHoldFired = false;
 			g_input.skipHoldStart = now;
 		}
-		if(!(heldNow & ~input.newlyBound).any()) {
-			g_input.skipHolding = false;
-		}
-		if(g_input.skipHolding && !g_input.skipHoldFired && toS(now - g_input.skipHoldStart) >= SceneSkipHoldSeconds) {
+		if(!g_input.skipHoldFired && toS(now - g_input.skipHoldStart) >= SceneSkipHoldSeconds) {
 			g_input.skipHoldFired = true;
+			g_input.lastSkipControl = firstSkipControl(strong);
 			return true;
 		}
 		return false;
 	}
 	g_input.skipHolding = false;
 
-	return playing && pressed.any();
+	if(playing && pressed.any()) {
+		g_input.lastSkipControl = firstSkipControl(pressed);
+		return true;
+	}
+	return false;
 }
-
 //! The right hand decides (the trigger hand of most players), the left one when the right has no profile
 ControllerType typeFromProfiles(const std::array<std::string, HandCount> & profiles) {
 	ControllerType right = controllerTypeFromProfile(profiles[size_t(Hand::Right)]);
@@ -597,7 +642,8 @@ void updateInput() {
 	if(skip) {
 		g_vrSkipPressed = true;
 		const char * what = skippable();
-		gameevent::Event("vr.skip")("what", what ? what : "none");
+		gameevent::Event("vr.skip")("what", what ? what : "none")
+			("control", g_input.lastSkipControl >= 0 ? controlName(Control(g_input.lastSkipControl)) : std::string("none"));
 	}
 
 	// Recenter (#28; unbound by default since D-042, the radial menu has it - the player may bind it): the head as

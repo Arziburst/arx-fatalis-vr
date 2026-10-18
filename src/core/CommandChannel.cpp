@@ -761,9 +761,11 @@ void writeSceneStatus(JsonWriter & json) {
 	json.value("placement", vr::subtitlePlacementName(subtitle.placement));
 	json.value("lines", subtitle.lines);
 	json.value("voicedLines", subtitle.voicedLines);
-	// The panel fixed in the world for the line (#29): its pose as submitted this frame, LOCAL meters and degrees
+	// The panel fixed in the world for the line (#29): drawn into both eyes this frame, the pixels it covers, its pose
+	// in LOCAL meters and degrees
 	json.value("drawn", vr::subtitlePlacementName(subtitle.drawn));
-	json.value("panel", vr::subtitleLayerShown());
+	json.value("panel", subtitle.panel);
+	json.value("panelPixels", subtitle.panelPixels);
 	json.object("panelLocal");
 	json.value("x", subtitle.panelLocal.x);
 	json.value("y", subtitle.panelLocal.y);

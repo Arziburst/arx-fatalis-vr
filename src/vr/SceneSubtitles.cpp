@@ -20,6 +20,7 @@
 #include "vr/SceneSubtitles.h"
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <string>
 #include <vector>
@@ -33,7 +34,9 @@
 #include "graphics/Draw.h"
 #include "graphics/Renderer.h"
 #include "graphics/data/Mesh.h"
+#include "graphics/Vertex.h"
 #include "graphics/font/Font.h"
+#include "graphics/texture/Texture.h"
 #include "gui/Text.h"
 #include "vr/HeadPose.h"
 #include "vr/HeadTracking.h"
@@ -71,7 +74,11 @@ struct SubtitleDrawState {
 	Vec3f facingWorld = Vec3f(0.f); //!< the player's eye when the line started: the panel faces it
 	float metersPerPixel = 0.f;     //!< an eye's pixel at the panel's distance when placed
 	float eyePixelsPerUnit = 0.f;   //!< the last eye's pixels per view unit at depth 1
-	int panelChecks = 0;            //!< frames left to check the panel reached the frame's layers (logged once per line)
+	bool imageReady = false;        //!< the panel's image holds this line at its place: the eyes draw it
+	bool panelLogged = false;       //!< the line's placement was logged (vr.subtitle.panel)
+	std::array<Vec3f, 4> cornersWorld = { }; //!< the panel's corners in the world: top left, top right, bottom right, bottom left
+	float eyePixels[2] = { 0.f, 0.f };       //!< the pixels the panel covered in the eyes drawn this frame
+	int eyeDraws = 0;                         //!< eyes the panel was drawn into this frame
 
 };
 
@@ -199,6 +206,7 @@ void showSubtitle(u64 line, std::string_view speaker, std::string_view text, boo
 		// A new line: its own chest panel where the player looks now, its own decision for above
 		s.line = line;
 		s.decided = false;
+		s.imageReady = false;
 	}
 
 	// Shown once the eyes see the scene: a scene starts behind a short fade (vr/SceneView.h)
@@ -220,6 +228,9 @@ void hideSubtitle() {
 	SubtitleDrawState & s = g_subtitles;
 	s.line = 0;
 	s.decided = false;
+	s.imageReady = false;
+	s.status.panel = false;
+	s.status.panelPixels = 0.f;
 	s.status.visible = false;
 	s.status.text.clear();
 	s.status.speaker.clear();
@@ -227,6 +238,7 @@ void hideSubtitle() {
 
 void replaceSubtitlePanel() {
 	g_subtitles.decided = false;
+	g_subtitles.imageReady = false;
 }
 
 void noteFlatSubtitle(bool visible, std::string_view speaker, std::string_view text) {
@@ -248,8 +260,57 @@ void resetSubtitleCounts() {
 }
 
 void drawSubtitlesInEye() {
+
+	SubtitleDrawState & s = g_subtitles;
 	// The panel's text has the size it had drawn into the eyes: an eye's pixel at the panel's distance
-	g_subtitles.eyePixelsPerUnit = g_preparedCamera.m_pixelsPerUnit;
+	s.eyePixelsPerUnit = g_preparedCamera.m_pixelsPerUnit;
+	if(!s.line || !s.status.visible || !s.decided || !s.imageReady || s.drawn == SubtitlePlacement::LowerThird) {
+		return;
+	}
+	Texture * texture = subtitleTexture();
+	if(!texture) {
+		return;
+	}
+
+	// The panel's corners through this eye's own projection (x, y, z and w homogeneous, as a sprite's); the image's
+	// row 0 is the panel's bottom (drawn through the renderer into a GL texture), so v runs up
+	static const Vec2f uv[4] = { Vec2f(0.f, 1.f), Vec2f(1.f, 1.f), Vec2f(1.f, 0.f), Vec2f(0.f, 0.f) };
+	const ColorRGBA white = Color::white.toRGBA();
+	TexturedVertex v[4];
+	Vec2f screen[4];
+	for(size_t i = 0; i < 4; i++) {
+		worldToClipSpace(s.cornersWorld[i], v[i]);
+		if(!(v[i].w > 0.f)) {
+			return; // a corner behind the eye
+		}
+		v[i].color = white;
+		v[i].uv = uv[i];
+		screen[i] = Vec2f(v[i].p) / v[i].w;
+	}
+
+	{
+		// Premultiplied over the world, no depth test: always readable (D-054)
+		UseRenderState state(render2D().blend(BlendOne, BlendInvSrcAlpha));
+		UseTextureState textureState(TextureStage::FilterLinear, TextureStage::WrapClamp);
+		GRenderer->SetTexture(0, texture);
+		EERIEDRAWPRIM(Renderer::TriangleFan, v, 4);
+		GRenderer->ResetTexture(0);
+	}
+
+	// The pixels it covers in this eye: its outline clamped to the viewport (status.json scene.subtitle.panelPixels)
+	const Rect & viewport = g_preparedCamera.m_viewport;
+	float area = 0.f;
+	for(size_t i = 0; i < 4; i++) {
+		const Vec2f a(glm::clamp(screen[i].x, float(viewport.left), float(viewport.right)),
+		              glm::clamp(screen[i].y, float(viewport.top), float(viewport.bottom)));
+		const Vec2f b(glm::clamp(screen[(i + 1) % 4].x, float(viewport.left), float(viewport.right)),
+		              glm::clamp(screen[(i + 1) % 4].y, float(viewport.top), float(viewport.bottom)));
+		area += a.x * b.y - b.x * a.y;
+	}
+	if(s.eyeDraws < 2) {
+		s.eyePixels[s.eyeDraws] = std::abs(area) * 0.5f;
+	}
+	s.eyeDraws++;
 }
 
 //! \return a world point (game units) in the LOCAL space (OpenXR axes, meters) of the head camera prepared now
@@ -263,7 +324,11 @@ static Vec3f worldToLocal(const Vec3f & world, const Vec3f & head, const Anglef 
 void drawSubtitlesOnInterface() {
 
 	SubtitleDrawState & s = g_subtitles;
-	setSubtitleLayer(false);
+	// What the eyes of this frame drew (they ran before the interface): the status, then the count starts anew
+	s.status.panel = (s.eyeDraws >= 2 && s.eyePixels[0] > 0.f && s.eyePixels[1] > 0.f);
+	s.status.panelPixels = s.status.panel ? std::min(s.eyePixels[0], s.eyePixels[1]) : 0.f;
+	s.eyeDraws = 0;
+	s.eyePixels[0] = s.eyePixels[1] = 0.f;
 	if(!s.line || !s.status.visible) {
 		return;
 	}
@@ -296,7 +361,7 @@ void drawSubtitlesOnInterface() {
 		const float distanceM = glm::distance(s.anchorWorld, eye) / params.unitsPerMeter;
 		const float pixelsPerUnit = s.eyePixelsPerUnit > 0.f ? s.eyePixelsPerUnit : g_preparedCamera.m_pixelsPerUnit;
 		s.metersPerPixel = pixelsPerUnit > 0.f ? distanceM / pixelsPerUnit * params.panelScale : 0.f;
-		s.panelChecks = 3;
+		s.panelLogged = false;
 		s.drawn = drawn;
 		s.status.drawn = drawn;
 		s.decided = true;
@@ -323,27 +388,35 @@ void drawSubtitlesOnInterface() {
 	}
 	endSubtitleImage();
 
-	// Its pose in the room this frame from its place in the world: the head turning moves nothing
+	// The panel in the world: its middle, facing where the player's eye was when the line started (the facing rule),
+	// upright; the eyes draw its corners from here on
 	const Vec2f size = image * s.metersPerPixel;
 	const Vec3f middleWorld = above ? s.anchorWorld - Vec3f(0.f, size.y * 0.5f * params.unitsPerMeter, 0.f) : s.anchorWorld;
+	Vec3f toEye = s.facingWorld - middleWorld;
+	toEye.y = 0.f;
+	const float toEyeLength = glm::length(toEye);
+	const Vec3f facing = toEyeLength > 1e-3f ? toEye / toEyeLength : Vec3f(0.f, 0.f, -1.f);
+	// The viewer's right along the panel (engine axes: x right, y down, z ahead)
+	const Vec3f halfRight = Vec3f(-facing.z, 0.f, facing.x) * (size.x * 0.5f * params.unitsPerMeter);
+	const Vec3f halfUp(0.f, -size.y * 0.5f * params.unitsPerMeter, 0.f);
+	s.cornersWorld[0] = middleWorld - halfRight + halfUp;
+	s.cornersWorld[1] = middleWorld + halfRight + halfUp;
+	s.cornersWorld[2] = middleWorld + halfRight - halfUp;
+	s.cornersWorld[3] = middleWorld - halfRight - halfUp;
+	s.imageReady = true;
+
+	// Its pose in the room this frame, for the status and the log: the head turning moves nothing
 	const Vec3f middle = worldToLocal(middleWorld, head, headAngles);
-	const Vec3f toEye = worldToLocal(s.facingWorld, head, headAngles) - middle;
-	const float yaw = std::atan2(toEye.x, toEye.z);
-	const bool finite = std::isfinite(middle.x) && std::isfinite(middle.y) && std::isfinite(middle.z) && std::isfinite(yaw)
-	                    && std::isfinite(size.x) && std::isfinite(size.y);
-	setSubtitleLayer(finite, middle, glm::angleAxis(yaw, Vec3f(0.f, 1.f, 0.f)), size);
-	// Where the panel went, once per line: the headset's compositor draws it, no picture of it comes back (#460)
-	if(s.panelChecks == 3) {
+	const Vec3f toEyeLocal = worldToLocal(s.facingWorld, head, headAngles) - middle;
+	const float yaw = std::atan2(toEyeLocal.x, toEyeLocal.z);
+	if(!s.panelLogged) {
+		s.panelLogged = true;
 		gameevent::Event("vr.subtitle.panel", 200)("drawn", subtitlePlacementName(s.drawn))("x", middle.x, 2)("y", middle.y, 2)
 			("z", middle.z, 2)("yawDeg", glm::degrees(yaw), 1)("widthM", size.x, 2)("heightM", size.y, 2)
-			("headX", head.x, 2)("headY", -head.y, 2)("headZ", -head.z, 2)("finite", finite ? "yes" : "no");
-	}
-	if(s.panelChecks > 0 && --s.panelChecks == 0 && !subtitleLayerShown()) {
-		LogWarning << "[vr] subtitle panel: requested but not in the frame's layers (shown " << subtitleLayerShown() << ')';
+			("headX", head.x, 2)("headY", -head.y, 2)("headZ", -head.z, 2);
 	}
 	s.status.panelLocal = middle;
 	s.status.panelYawDeg = glm::degrees(yaw);
 	s.status.panelWidthM = size.x;
 }
-
 } // namespace vr

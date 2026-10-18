@@ -76,9 +76,9 @@ a changed decision keeps its history in that cell.
   camera entity, or the letterbox on) gets a subtitle with the speaker's localised name - also a line the original plays
   without text for want of the letterbox; the text follows the variant played (key `string<N>` in the line's section).
   **A subtitle is a panel fixed in the world** (the owner's retest, 2026-10-17: never turning with the head): placed
-  once when the line starts, facing where the player was then, drawn into its own image and shown as a quad layer,
-  always on top (the desktop mirror does not show it: it copies the flat frame, the menu pointer and the reticles
-  only). `above`: over the NPC's head; the hero's own line below the centre of the view (the chest panel - the
+  once when the line starts, facing where the player was then, drawn into its own image and sampled into each eye
+  as a quad in the world after the world, depth test off - always on top, also in the desktop mirror and a stream
+  (#519; a compositor quad layer of it stayed invisible on SteamVR). `above`: over the NPC's head; the hero's own line below the centre of the view (the chest panel - the
   owner, 2026-10-17), and a speaker out of view or off-voice there too; `chest`: that panel for every line;
   `lowerthird`: on the head-locked interface quad. A subtitle shows once the eyes see the scene, not under the fade it
   starts behind. The hero's own lines name him Am Shaegar (the owner: the game gives him no name at character creation,

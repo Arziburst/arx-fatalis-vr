@@ -1799,6 +1799,20 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 .\scripts\dev\img-diff.ps1 -A a.bmp -B b.bmp [-Grid 16 | -Bands 16]   # two shots: mean difference 0-255, which regions changed
 ```
 
+**`scripts/dev/xrs/manual/` (#529)** holds sequences that CI does not run: the seven heavy scene-view sequences of #29
+(`scene-first`, `scene-hybrid`, `scene-ghost`, `scene-observer`, `scene-subtitles`, `scene-lookat`, `scene-flat`; their rows
+in the table below still describe them). They cost about 6.5 minutes of every full suite and merge gate, so the owner moved
+them out for CI time; they are kept unchanged so they can be run by hand when scenes are worked on again. `ci-smoke` and
+`ci-local` do not look into this folder; `test-xrs.ps1` still parses every file there (syntax and `@save` checks, no run),
+so they do not rot silently. Run one by hand:
+
+```powershell
+.\scripts\dev\xrs-run.ps1 manual\scene-first          # or any path to the file; also -Rebuild, as for any sequence
+```
+
+`scene-switches` stays in CI as the scene-view guard (with the `first-run*` sequences); `impact.txt` maps `SceneView.*` and
+`SceneSubtitles.*` to it.
+
 | Line | Meaning |
 |---|---|
 | `# ...` | comment (also after a step, as ` # ...`) |

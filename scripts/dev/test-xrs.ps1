@@ -8,7 +8,7 @@
 	background process that answers the test channel files (command.txt -> ack.txt, status.json, shot
 	files) - passing steps, a failing assert that stops the run, a refused command, @pending (reported
 	while it fails, an error once it passes), @log / @nolog / @mark on a fake arx.log, @shot and @diff.
-	Also parses every sequence shipped in scripts\dev\xrs. No game, no network. Exit code 0 when everything
+	Also parses every sequence shipped in scripts\dev\xrs and scripts\dev\xrs\manual. No game, no network. Exit code 0 when everything
 	passed, 1 otherwise.
 
 	#527 (written before the implementation) assumes the directive @solo in xrs-lib.ps1, as #436's c7dce4453 has it: a
@@ -317,7 +317,8 @@ vr-sim head rot 50 0 0
 
 # --- the shipped sequences -------------------------------------------------------------------------------------
 Write-Host 'shipped sequences'
-$shipped = @(Get-ChildItem (Join-Path $PSScriptRoot 'xrs') -Filter '*.xrs')
+# xrs\manual (#529) is parsed too (parse and @save checks), never run in CI
+$shipped = @(Get-ChildItem (Join-Path $PSScriptRoot 'xrs') -Filter '*.xrs') + @(Get-ChildItem (Join-Path $PSScriptRoot 'xrs\manual') -Filter '*.xrs')
 Check 'sequences are shipped' ($shipped.Count -ge 4) $shipped.Count
 foreach ($file in $shipped) {
 	$parsed = try { Read-ArxSequence $file.FullName } catch { "$_" }

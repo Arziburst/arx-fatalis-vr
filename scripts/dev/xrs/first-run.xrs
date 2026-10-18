@@ -124,16 +124,17 @@ vr-input tap right.a                         # a tap is no skip in a scene (#513
 @frames 30
 @nolog GameEvent:.*vr\.skip what=SCENE
 vr-input down right.a                        # a hold of 0.6 s skips - too early: nothing is sent to the scene
-@wait 900
+@wait 1200
 vr-input up right.a
 @log GameEvent:.*scene\.skip how=vr area=1 .*result=early 5s
 @frames 30
 @assert player.controlsBlocked eq true
 @nolog GameEvent:.*player\.jump
-@wait 6000                                   # the skip handlers take a skip 3 s into the letterbox, outside a fade
+@wait 4500                                   # the skip handlers take a skip 3 s into the letterbox, outside a fade: the hold
+                                             # fires 0.6 s after the press, 7.5 s in - before the intro fades out around 9 s
 @mark
-vr-input down right.a                        # the deliberate hold (#513)
-@wait 900
+vr-input down right.a                        # the deliberate hold (#513): 1.2 s, room for a late poll under the CI load
+@wait 1200
 vr-input up right.a
 @until player.controlsBlocked eq false 15s
 @frames 30

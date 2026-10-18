@@ -1,5 +1,5 @@
 # Refresh-rate independence (#23): the same timed inputs give the same results at 72, 90, 120 and 144 Hz. The simulated
-# headset switches its display rate (`vr-sim rate`) and runs one block of actions per rate; 90 Hz goes first and is the
+# headset switches its display rate (`vr-sim rate N clock`: the display clock, not the CI sim's 90 Hz cap of #522 - this sequence asserts pacing) and runs one block of actions per rate; 90 Hz goes first and is the
 # reference the others are compared with (and is checked against what the inputs ask for). Every input is timed in
 # display milliseconds (`@+<t>ms`, src/vr/SimRig.h), so it is the same motion at every rate, and every result is a
 # `record` the game took after the frame of a given display time (status.json motion.records, the values also in
@@ -63,7 +63,7 @@ vr-sim @+0-600ms hand right pos 0.45 -0.8 -0.35
 @wait 1000
 
 # --- 90 Hz: the reference (the sequence starts at the simulator's default) --------------------------------------------
-vr-sim rate 90
+vr-sim rate 90 clock
 @frames 20
 # The head turned 0 to 40 degrees over 1 s: the camera and the body behind it, recorded at 500 ms
 @until player.jumping eq false 5s
@@ -140,7 +140,7 @@ vr-sim @+0-700ms hand right pos 0.45 -0.8 -0.35
 @assert motion.records.swing90.swingPeak le 9.9
 
 # --- 72 Hz (Quest) ----------------------------------------------------------------------------------------------------
-vr-sim rate 72
+vr-sim rate 72 clock
 @log \[perf\] display: 72\.0 Hz \(13\.89 ms\) from the runtime's predicted display period
 @frames 20
 # The head turned 0 to 40 degrees over 1 s: the camera and the body behind it, recorded at 500 ms
@@ -210,7 +210,7 @@ vr-sim @+0-700ms hand right pos 0.45 -0.8 -0.35
 @assert motion.records.swing72.swingPeak le {peak90*1.05}
 
 # --- 120 Hz (Index, Quest) --------------------------------------------------------------------------------------------
-vr-sim rate 120
+vr-sim rate 120 clock
 @log \[perf\] display: 120\.0 Hz \(8\.33 ms\) from the runtime's predicted display period
 @frames 20
 # The head turned 0 to 40 degrees over 1 s: the camera and the body behind it, recorded at 500 ms
@@ -280,7 +280,7 @@ vr-sim @+0-700ms hand right pos 0.45 -0.8 -0.35
 @assert motion.records.swing120.swingPeak le {peak90*1.05}
 
 # --- 144 Hz (Index) ---------------------------------------------------------------------------------------------------
-vr-sim rate 144
+vr-sim rate 144 clock
 @log \[perf\] display: 144\.0 Hz \(6\.94 ms\) from the runtime's predicted display period
 @frames 20
 # The head turned 0 to 40 degrees over 1 s: the camera and the body behind it, recorded at 500 ms
@@ -350,5 +350,5 @@ vr-sim @+0-700ms hand right pos 0.45 -0.8 -0.35
 @assert motion.records.swing144.swingPeak le {peak90*1.05}
 
 # Back to 90 Hz: the perf log names the switch back too
-vr-sim rate 90
+vr-sim rate 90 clock
 @log \[perf\] display: 90\.0 Hz \(11\.11 ms\) from the runtime's predicted display period.* - was 144\.0 Hz

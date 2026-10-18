@@ -457,3 +457,21 @@ void SimRigTest::testMsLinesInAScriptFollowEachOther() {
 	still.advance(1000);
 	CPPUNIT_ASSERT_EQUAL(size_t(1), still.pending());
 }
+
+void SimRigTest::testRatePacing() {
+	// rate <hz> [clock|cap] (#522): the display clock by default, a cap on request; a rate alone keeps the pacing
+	vr::Simulation sim;
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.load("rate 90 cap\n"));
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(90.0, sim.view.rate, RigEpsilon);
+	CPPUNIT_ASSERT(sim.view.cap);
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("rate 45"));
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(45.0, sim.view.rate, RigEpsilon);
+	CPPUNIT_ASSERT(sim.view.cap);
+	CPPUNIT_ASSERT_EQUAL(std::string(), sim.execute("rate 90 clock"));
+	CPPUNIT_ASSERT(!sim.view.cap);
+	vr::Simulation fresh;
+	CPPUNIT_ASSERT_EQUAL(std::string(), fresh.load("rate 72\n"));
+	CPPUNIT_ASSERT(!fresh.view.cap);
+	CPPUNIT_ASSERT(rigStartsWith(fresh.load("rate 90 slots\n"), "line 1: rate: expected clock or cap"));
+	CPPUNIT_ASSERT(rigStartsWith(fresh.load("rate 90 cap now\n"), "line 1: rate: expected"));
+}

@@ -276,13 +276,14 @@ records only the extra arguments, not `--mute`.
 
 Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While enabled the game:
 
-- **polls `<dir>\command.txt`** every 100 ms: one command per line, `#` comments, consumed on read
+- **polls `<dir>\command.txt`** every frame (#522; a file lookup, read only when it is there): one command per line, `#` comments, consumed on read
   (deleted), a file older than the process start is discarded with a log line. Write it with
   `scripts/dev/game-cmd.ps1` or `Send-ArxCommand` from `scripts/dev/test-lib.ps1`: both write a
   temporary file and rename it, so the game never reads a half-written batch, and wait for the ack.
 - **answers every batch in `<dir>\ack.txt`**: `seq=<batch> frame=<frame> errors=<refused lines>
   last=<last line> error=<reason or ->`.
-- **rewrites `<dir>\status.json`** every 250 ms, after every batch and on every state change —
+- **rewrites `<dir>\status.json`** every 100 ms (#522; 250 ms before), after every batch (right after its ack), once
+  a `shot` or a simulated headset's shot asked for through the channel is saved, and on every state change —
   atomically (`status.json.tmp`, then rename), so a reader sees whole files only.
 - **flushes `arx.log`** at the same cadence, so `game.state` events and `[mark]` lines are readable
   while the game runs (since #129 the file logger flushes on its own after every warning or error
@@ -298,6 +299,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | Line | Effect |
 |---|---|
 | `status` | nothing extra — the status is written after every batch anyway |
+| `waitframes <n>` | hold the batch until the game rendered `n` more frames (#522): the lines after it run, and the ack is written, at the start of the next frame once those are rendered — its `frame=` is the frame the batch was read in plus `n`. No new batch is read meanwhile. The `.xrs` `@frames` sends it: a frame wait costs the frames and the ack's pickup, no `status.json` polling. Anywhere in a batch; `0` waits for nothing; not a number: refused |
 | `shot [name]` | after the next rendered frame, save it as `<dir>\capture\<name>.bmp` (default `shot<N>`); `captureSeq` and `lastCapture` in the status, and `capture`: what each quarter of the picture shows (#334) |
 | `window <width> <height>` | resize the game window as a player dragging its border does (#334): the interface is laid out again for the new size at the next frame (`window` and `vr.interface.windowWidth/Height` in the status). At least 320 × 240; refused in fullscreen. The size is saved to `cfg.ini` when the game quits |
 | `mark <text>` | `[mark] <text>` in the log — an anchor for "the line I wait for must come after this"; also an `M` line in [the performance log](#the-performance-log-arx-perflog-327) |
@@ -499,6 +501,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   (`FlyingOverIO`) or `none`; `drag`: the item being dragged or `none`; `container`: the chest or body whose
   inventory is open (#38) or `none`; `target`, `targetX`, `targetY`: what the last `vr-point` aimed at.
   `player.inventoryItems` (#38): the items in the hero's bag.
+  `player.inventorySlide` (#522): how far the bag is still slid down (the engine's own slide, 110 to 0 in about
+  28 frames at 90 fps), 0 = fully open: a shot of the open bag waits `@until player.inventorySlide eq 0 5s`.
   `menuHover` (#394): in the main menu and the character creation, the name a
   `vr-point ... menu` aimed at while the widget under the mouse is that one — what a click lands on; `other` for
   another widget of the main menu, `none` for nothing (a greyed-out entry counts as nothing: the engine does not click
@@ -710,7 +714,12 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
 - `camera` (with `player`): the first-person camera as the frame before left it — position, angles,
   `fov` in degrees, `bob` = its distance from the stable head position of the paused animation (view
   bobbing; 0 when off), `shake` = the quake amplitude applied that frame (0 without a quake or when
-  screen shake is off). `camera.prepared`: the camera the last frame's interface pass ended with —
+  screen shake is off). `stillMs` (#522): milliseconds since the camera last moved more than 0.0005 units or
+  turned more than 0.0005° (on any axis) from where it was then — any move resets it, a slow drift too, and so
+  does the simulated head's motion; a sequence that aims from the camera or compares the hands' points exactly
+  waits `@until camera.stillMs ge 200 5s` (after a `setpos` the hero falls and the camera settles for about
+  1.3 s). The status written right after a batch can still show the stillness from before it: wait a few frames
+  first. `camera.prepared`: the camera the last frame's interface pass ended with —
   its projection's scale `m00`/`m11`, off-axis shift `m20`/`m21` and viewport `width`/`height`; in
   VR the head camera's union projection, the same with the book open as closed (#247). `comfort`: who decides the VR comfort policy (`mode`: `auto` / `on` / `off`),
   whether the VR rules apply (`active`) and what is allowed right now (#76). The status is written
@@ -1683,7 +1692,7 @@ began, so a stick pushed `@+0ms` and let go `@+500ms` is held for exactly 500 ms
 everything else runs at the first frame whose display time reached its time (`vr.sim.timelineMs`). On a
 busy PC a frame can come a slot or two late: a value read at a moment of a motion moves with it, a lag or
 a total does not (`refresh-rate.xrs`). `record <name>`: the test channel keeps that frame's `motion`
-values (`status.json` → `motion.records.<name>`). Commands: `rate <hz>` (0 = no pacing; also mid-run: the
+values (`status.json` → `motion.records.<name>`). Commands: `rate <hz> [clock|cap]` (0 = no pacing; see *Pacing* below; also mid-run: the
 runtime's display period changes as when the player switches the headset's rate), `eye-size <w> <h>`, `ipd <m>`, `fov left|right <l>
 <r> <u> <d>` (degrees, OpenXR signs), `head pos <x> <y> <z>` (meters, the room's LOCAL space: x right,
 y up, −z forward), `head rot <yaw> <pitch> <roll>` (degrees: yaw + turns left, pitch + looks up),
@@ -1698,6 +1707,22 @@ on a runtime that cannot read fingers, or joints again), `profile index|touch|si
 focused|visible|idle` (`idle`: the headset is taken off - the session falls back to `synchronized`, the eyes are still located, nothing is shown, #27), `session exiting|loss-pending` and `runtime lost` (the runtime ends the session on its own - stopping, then exiting after `xrEndSession`, as SteamVR quitting the app; the session about to be lost; the runtime shutting down: the game goes on flat and names the cause, #146, see [The exit hook](#the-exit-hook-146)), `shot [name]`, `mark <text>`, `quit`, `fault swap-eyes on|off`, `fault exit|exit-process <code>` (the process ends from inside with `std::exit` or `ExitProcess`, the shape of #146 - only for `exit-trace-check.ps1`), `layers on|off` (shots also save each eye's projection layer without the quad, `<name>-left-layer.bmp` / `-right-layer.bmp`: what the game drew into the eye itself, #72). The defaults: Index
 panel size 1440 × 1600, IPD 64 mm, 90 Hz, the asymmetric, mirrored field of view of research row
 F-165, both Index controllers in front of the body.
+
+**Pacing (#522)** — `rate <hz> clock` (the default) is a display clock: a slot every 1/rate s, a frame that misses
+its slot waits for the next one, as on a headset; `rate <hz> cap` only keeps frames 1/rate s apart: a late frame
+starts at once, no slot is skipped; `rate 0` does not pace at all. `rate <hz>` alone keeps the pacing it had
+(`vr-sim rate 45` in a sequence on `idle` is a 45 Hz cap). `vr.sim.view.pacing` in the status (`clock`, `cap`, `none`)
+and the simulator's start line in the log say which one ran. `basic.vrsim` (and every other script that names no
+pacing) has the 90 Hz clock; `msaa.vrsim` runs unpaced (`rate 0`, it measures what the PC draws); **`idle.vrsim`, the
+`@sim` of the sequences, has the 90 Hz cap**. Why not the clock: a 10-12 ms frame on the CI runner misses every other
+90 Hz slot, so the sequences played at 45 fps (run 39077145444); under the cap such a frame costs only its length,
+83-90 fps (measured on the owner's PC: 90.008 frames/s, `melee-swing`). Why not `rate 0`: the ramps of the sequences
+(`vr-sim @+1-8 hand right pos …`) and their `@frames` count frames, written for about 90 per second — unpaced, the owner's
+PC played the same sequence at 278 fps, and `melee-swing`'s slow set-up move (0.43 m over 60 frames, meant as under
+0.7 m/s) became 2 m/s and its swings (0.85 m over 8 frames) 29 m/s, over the 20 m/s of a tracking jump: three swings
+where none was asserted (TRAPS.md). **A sequence that asserts the frame pacing** (the rate line, missed slots, the
+refresh-rate checks of #436's `refresh-rate.xrs`) needs the clock: it declares `@sim basic` or a script of its own.
+To reproduce a slow-runner bug locally, run the sequence on a copy of `idle.vrsim` with `rate 42 cap` (`smoke-test.ps1 -VrSim <the copy>`).
 
 **The compositor** counts, per submitted frame, whether both eye images were released in the same
 frame (`vr.sim.compositor`: `projectionFrames`, `pairedFrames`, `staleFrames`, `freshFrames`,
@@ -1783,7 +1808,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 |---|---|
 | `# ...` | comment (also after a step, as ` # ...`) |
 | `<command>[; <command>]` | any [channel command](#commands) (`vr-sim head rot 25 0 0`, `vr-input tap right.a`, `loadlevel 10`, a script-console line); `;` makes one batch, applied in the same frame. A refused command fails the step |
-| `@wait <ms>` / `@frames <n>` | sleep / wait for n more rendered frames |
+| `@wait <ms>` / `@frames <n>` | sleep / wait for n more rendered frames: the channel's `waitframes <n>`, whose ack comes once the frames are rendered (#522) — n frames cost n / fps plus the ack's pickup (the runner reads `ack.txt` every 10 ms), measured 875 ms for 75 frames and 372 ms for 30 at 90 fps. Frames are not time: a wait for something the game does in time is an `@until` |
 | `@until <path> <op> <v> [<n>s]` | wait up to n s (default 30) until `status.json` satisfies the condition |
 | `@assert <path> <op> <v>` | `status.json` now. `path` is dotted, `"quoted"` where a key holds a dot (`events.byName."spell.cast"`); `op` is `eq ne gt ge lt le`; numbers compare as numbers, anything else as text |
 | `@remember <name> <path>` | keep a value; later `@assert` / `@until` values can be `{name}`, `{name+5}` / `{name-5}` (the yaw before a turn, the position before a walk) or `{name*0.9}` (a relative threshold: "at least 10 % less") |
@@ -1824,7 +1849,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `recenter` | a head offset is set and read back; `recenter` is accepted (#28) | — |
 | `tl-reprojection` | picking reads the head camera after the eyes, the book icon's particles are on the quad and add no coverage (#72), on the save `mvp-items`; the book icon is kept for that part (`vr-hud keep book`: VR draws no HUD frame since #469) | — |
 | `real-steps` (#26; run with `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence real-steps`) | 8 cm is a lean (the body stays); 1 m forward is a real step (the body walks 0.9 m, the lean stays 0.1 m, no fade); into the cell wall the body is held, the head goes `inside` then `behind` it, both eyes black; back out, the fade clears | — |
-| `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105; the pair waits for `notifications eq 0`, since the save's tutorial hint on the HUD expires by game time, #370); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
+| `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105; the pair waits for `notifications eq 0`, since the save's tutorial hint on the HUD expires by game time, #370); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is the host test `UIPanelTest`'s; the sequence reopens past it explicitly (`@until uptimeMs ge {closedAt+300}`: since #522 the channel's round trip is far below the old ≈ 600 ms) | — |
 | `menu-pointer` | the menu pointer (#34) on the test save `mvp-items` — run with `smoke-test.ps1 -VrSim idle -Sequence menu-pointer -Save mvp-items`: no pointer and no beam without a menu (`overlayPixels` 0); the key from the table put in the bag, the inventory opened, the right hand aimed at it (`vr-point right item`): the engine's mouse on the key's pixel (192, 606 = the target), `ui.hover` the key, the beam drawn above the panel (`overlayPixels` 2125 left / 1997 right); the trigger clicks (`vr.pointer.click`), a hand move of 8 px keeps the cursor on the key (dead zone, no drag), 40 px drags **the key the click landed on**; released over the bag it goes back; the left hand's trigger takes the cursor and its click lands on the key too; both hands pointing behind the head (since #37 a hand pointing ahead in the game is a world reticle): no cursor, no beam, a press is muted (`offPanelPresses` 1, nothing dragged); closed: the pointer goes. Host test `MenuPointerTest` | — |
 | `physical-crouch` | physical crouch (#100, D-034) on `mvp-new-game` — `smoke-test.ps1 -VrSim idle -Sequence physical-crouch -Save mvp-new-game`: the button crouches and stands at that spot first; the head 25 cm down follows the view and stands, 35 cm crouches the character (one `vr.head.crouch` episode), back at 25 cm stays crouched, 15 cm stands; the view never above the head nor twice as low; the crouch button still crouches and stands with the head up | — |
 | `weapon-hold` | the weapon in the IK hand (#75, D-033): on `mvp-items` the equipped short sword is in the right hand without the combat mode (`vr.weapon.place` `hand`), its blade read from the mesh (65.8 units; the asset 9.1° off the handle axis) and drawn 0.1° from the grip's -Z, the hilt on the palm attach point; the handle pitched up puts the tip 66 units above the hilt; a moved hand keeps the hilt on the palm; a controller switched off gives the sword back to the engine (`engine`), switched on it is back; `combat on` + the trigger held: the arm layer's ready and wait clips are `suppressed`, no strike clip starts (since #39 the swing is the strike), the shoulder stays, the sword stays in the hand. The shots `sword-ahead`, `sword-up` and `sword-at-face` (the raised blade 0.1 m from the eyes, F-39) are judged by eye. With the default custom arms the weapon is drawn from the glove's frame (#385.10): "the hilt on the palm" is then the handle anchor on the glove's hold point (`hiltToPalm` = `hiltToGrip`). `smoke-test.ps1 -VrSim idle -Sequence weapon-hold -Save mvp-items` | — |
@@ -1977,11 +2002,11 @@ self-hosted runner (D-021: CI is the automatic gate; a red step blocks the merge
 
 | Step | What | Fails when |
 |---|---|---|
-| Script self-tests | `scripts/dev/run-script-tests.ps1`: every `scripts/dev/test-*.ps1` in its own pwsh (`test-log-digest.ps1` incl. the `-Id` / `-Find` / `-Condense` / `-Print` modes on a fixture log, `test-github-lib.ps1`, `test-launch-lib.ps1`) | a test exits non-zero, or a `test-*.ps1` is in neither list of the script (a new test cannot be forgotten) |
+| Script self-tests | beside the build (#522): started in the background before it, joined right after it (their output printed, their exit code checked) — `scripts/dev/run-script-tests.ps1`: every `scripts/dev/test-*.ps1` in its own pwsh (`test-log-digest.ps1` incl. the `-Id` / `-Find` / `-Condense` / `-Print` modes on a fixture log, `test-github-lib.ps1`, `test-launch-lib.ps1`) | a test exits non-zero, or a `test-*.ps1` is in neither list of the script (a new test cannot be forgotten) |
 | Build | `build-windows.ps1 -Config Release`, which also builds and runs the host unit tests (`arxtest`) | the build, or a CppUnit test, fails |
 | Game checks | `scripts/dev/ci-smoke.ps1`: `smoke-test.ps1 -Seconds 3 -Commands 'drawcheck 120'`, then `spell-drawcheck.ps1` — the same scripts a worker runs, flat, `--loadlevel 10` | either returns `FAIL`, **or was skipped** (exit 2: the game lock stayed busy for 15 min) — a gate that did not run is not a pass, re-run the job |
-| Sequences (#255) | the same script, phase `sequences`: every `scripts/dev/xrs/*.xrs` (`look-around`, `snap-turn`, `walk-forward`, `stand-up`, `recenter`, `ui-panel`, see [Scripted sequences](#scripted-sequences-xrs-113)) as one launch each — `smoke-test.ps1 -Sequence <name>` with the `@sim` / `@args` / `@save` the file declares (idle simulated headset by default, flat when its `@args` say `--no-vr`) | a step fails, **a `@pending` step starts passing** (remove the `@pending`), or the launch was skipped (exit 2). A new `.xrs` file is picked up by itself |
-| Upload | the artifact `game-checks`, also when a step failed | — |
+| Sequences (#255) | the same script, phase `sequences`: every `scripts/dev/xrs/*.xrs` (`look-around`, `snap-turn`, `walk-forward`, `stand-up`, `recenter`, `ui-panel`, see [Scripted sequences](#scripted-sequences-xrs-113)) as one launch each — `smoke-test.ps1 -Sequence <name>` with the `@sim` / `@args` / `@save` the file declares (idle simulated headset by default, flat when its `@args` say `--no-vr`) | a step fails, **a `@pending` step starts passing** (remove the `@pending`), or the launch was skipped (exit 2). A new `.xrs` file is picked up by itself. A pull request runs the core and the sequences its change selects ([the impact map](#what-a-pull-request-runs-the-impact-map-522)); a push to main and the merge gate run all |
+| Upload | the artifact `game-checks`, **only when the job failed** (#522); a green run keeps its evidence on the runner | — |
 
 **The save library on the runner (#255).** Sequences with a `@save` (`snap-turn`, `stand-up`, `ui-panel`: `mvp-new-game`)
 need the test saves (D-023: derived from the game's data, generated per machine, never committed). The phase
@@ -2006,14 +2031,123 @@ How the runner differs from a worker's copy — none of it needs action, all of 
   directory (`arx.log`, `crashes\`), test channel and `launches.log` of CI are there, not in the owner's
   profile. The **game lock** is not: it lives in `%ProgramData%\ArxFatalisVR\locks`, which both accounts
   can write, so CI waits for a game the owner or a worker runs and they wait for CI (#205, see
-  [the game lock](#isolation-and-the-game-lock-parallel-work)). CI's own jobs never overlap (one runner).
+  [the game lock](#isolation-and-the-game-lock-parallel-work)). CI's own jobs never overlap (one runner). Since #522
+  the game checks may hold two slots (`ARXVR_MAX_GAMES=2`): while another game holds one, CI goes on with one lane in
+  the other slot instead of waiting; a launch of the owner or a worker (which tries slot 1 only) still waits while CI
+  holds slot 1.
 - The service has no Steam registry entry of the owner, so the workflow passes the install folder:
   `ARXVR_DATA_DIR` in the workflow `env` (read by `ci-smoke.ps1`, passed as `--data-dir`).
 - `ARXVR_AUTOREPORT=0`: a CI run files no bug issues by itself (#131); the failed step is the report.
 - The cleanup stops only `arx.exe` processes that run from the CI build directory, never a game it did not start.
 
 Run it by hand: `.\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence` (needs a fresh build of the
-copy; `-Phase smoke|spells` runs one half; exit 0 pass, 1 fail, 2 skipped, 3 cannot run here).
+copy; `-Phase smoke|spells` runs one half; exit 0 pass, 1 fail, 2 skipped, 3 cannot run here). On a PC whose lock
+allows one game (the owner's rule, no `settings.json`) it runs on one lane; `$env:ARXVR_MAX_GAMES = 2` first runs it on
+two, as CI does.
+
+### Two lanes, the order and the durations file (#522)
+
+The game checks are most of the job, so `ci-smoke.ps1` runs two games at once:
+- **Lanes.** A scheduler (`scripts/dev/ci-smoke-lib.ps1`, `Invoke-ArxPhaseSchedule`) hands the next phase to a free lane;
+  each phase runs in its own background pwsh, and each lane has its own test channel folder (lane 1 the copy's usual one,
+  lane 2 the same path with `-lane2`), given as `-TestDir` and as `ARXVR_TEST_DIR` to every script of the phase. Every
+  sequence already has its own user directory (#296), under `ci-userdirs\<folder>-<hash>` of the working copy, so two
+  copies running the suite never share one; `smoke-test` and `spell-drawcheck` share the copy's and never run
+  together; `save-library` goes first and every `@save` sequence waits for it; a read-back runs after its sequence passed,
+  in its user directory; the playground level is generated once before the lanes start. A phase's transcript is printed
+  when it ends, then `==> ci-smoke phase '<name>': PASS (exit 0, 15 s) on lane 2`; the summary at the end lists every phase
+  in the serial order, as a serial run would. `-Lanes 1` runs one at a time.
+- **The game lock decides how many.** The lanes are capped at the lock's `maxGames`: the workflow sets `ARXVR_MAX_GAMES=2`
+  on the game checks step (it overrides `settings.json` and the default 1, for that step's launches only; everyone else
+  keeps one slot). Before a second lane starts a phase, the scheduler looks at the lock: while a game slot is held by a
+  launcher whose `copy=` is not this working copy, or an `arx.exe` runs outside the lock from another folder (the owner
+  plays, a worker tests), it uses one lane (`ci-smoke: 1 lane while another game of this PC runs: ...`), and two again
+  once that game is gone.
+- **The order.** The `.xrs` files the change touches go first (`git diff --name-only <base>...HEAD`, the two-dot diff in
+  CI's shallow checkout; a changed read-back counts for its sequence), so a fix round sees its own sequence early; then
+  the rest by the last run's duration, longest first (a sequence and its read-back count together), so the lanes end
+  close together. The durations are `ci-durations.json` in `%LOCALAPPDATA%\ArxFatalisVR\ci-evidence` (the service's on
+  the runner), one entry per phase, written at the end of every run (a phase that did not run keeps its old time); a
+  phase without an entry counts as the longest. The log prints the order and how many times were known.
+- **Evidence on the runner.** The workflow passes `-OutDir %LOCALAPPDATA%\ArxFatalisVR\ci-evidence\<run id>-<attempt>`
+  (in the service's profile, `C:\Windows\ServiceProfiles\NetworkService\AppData\Local\...`); the folder keeps the last 10
+  runs, older ones are deleted at the end of a run. Only a failed job uploads it as `game-checks` (about 1 GB of eye
+  shots; 2 min of upload saved on every green run); a green run's evidence is read on the PC itself, as an
+  administrator. A phase's run digest is the one of its game's pid (`status.json`, else `launched.txt`), never the
+  newest folder of `runs\`: the other lane writes digests too.
+- `scripts/dev/test-ci-smoke.ps1` checks all of it without a game (fake phases on thread jobs, a scratch lock folder).
+
+### What a pull request runs: the impact map (#522)
+
+A pull request proves its own change; the whole suite runs once more right before the merge. The **suites** of
+`ci-smoke.ps1`:
+
+| Suite | When | What runs |
+|---|---|---|
+| `pr` | a pull request without the label `full-ci`; `ci-local.ps1` (below) | the **selection**: the core, every sequence a line of the map gives for a changed path, and the changed or added `.xrs` files themselves (a changed read-back selects its sequence; the save library when a selected sequence has a `@save`) |
+| `full` | a push to main, a manual run with `suite=full` (**the merge gate**), a pull request with the label `full-ci`, `ci-local.ps1 -Full` | every phase |
+
+The workflow's Scope step decides (its log line `game check suite: pr (...)` says why); the label is read live through
+the API, so adding `full-ci` and re-running the PR's last run (`gh run rerun <id>`) or pushing runs everything. A
+selection falls back to everything when it cannot be sure: a changed path that no line of the map matches (a new
+folder, a new file in a folder that is listed file by file), a line `-> *`, or a diff that cannot be made. The log of
+the game checks names the suite and why (`ci-smoke: suite pr - ...` / `ci-smoke: suite full - ...`), lists the
+selection with the reason of each check (`ci-smoke: selected 19 of 66 checks: arms-follow (core), melee-swing
+(src/vr/VRMelee.cpp), ...`), and the job summary repeats both lines.
+
+**The map**, `scripts/dev/xrs/impact.txt`, one rule per line, a comment per group:
+
+```
+core: smoke-test spell-drawcheck first-run look-around ...    # every pull request (several core: lines add up)
+src/vr/VRMelee.* -> melee-swing melee-recovery ...            # a changed path that matches selects these
+scripts/dev/smoke-test.ps1 -> *                              # the harness: everything
+src/core/CommandChannel.* -> core                            # covered by the core alone
+```
+
+A glob is a repository path with `/` and the wildcards of `-like`, any case; `*` also crosses folders. Every line that
+matches a path adds its names; one `-> *` among them runs everything. The groups: the **harness** every check stands
+on (`smoke-test.ps1`, `test-lib.ps1`, `xrs-lib.ps1`, `ci-smoke*.ps1`, `launch-lib.ps1`, `build-paths.ps1`, the save
+library's generator, `vrsim/idle.vrsim`, `VRSimulator.*`, `SimRig.*`, `vcpkg.json`, `cmake/`, the workflows) and the
+**engine foundations** (`src/graphics`, `io`, `platform`, `scene`, `script`, `window`, ...) run everything; the **hub
+files** every feature touches (`CommandChannel.*`, `Config.*`, `ArxGame.*`, `VRSystem.*`, `CMakeLists.txt`) run the core
+alone - as `-> *` they made 28 of the last 30 pull request runs full, and with them on the core every one of those
+runs' 11 failed phases was still selected (`impact-replay.ps1`, below); the rest is one line per module of `src/vr`,
+`src/gui`, `src/game`, the playground and the data, and `-> core` for docs, host tests and the dev scripts that no game
+check uses.
+
+**Rules for authors.**
+- **A new sequence needs a line** that names it (or a place in core): the coverage check fails otherwise. Name it on the
+  lines of the source files it tests.
+- **A new channel command or status field for a feature is selected by that feature's source files**: the hub file it
+  lives in (`CommandChannel.cpp`, `Config.cpp`) selects only the core, so a sequence that only reads such a field and
+  tests no file of its own needs a glob line for the files that compute it. This is the gap the hub rule leaves; the
+  full suite before the merge catches what a missing line lets through.
+- A new source folder or a new file in a listed folder runs everything until it gets a line - safe, but slow: add the
+  line in the same pull request.
+
+**The coverage check** (`Test-ArxImpactMap` in `ci-smoke-lib.ps1`, run by `test-ci-smoke.ps1` in the script
+self-tests of every pull request) fails on a sequence or check that is neither in core nor named by a line (`-> *` does
+not count), a name that is no sequence, a line that is not `core: ...` or `<glob> -> ...`, and a glob listed twice.
+`ci-smoke.ps1` prints the same problems as warnings and, on a broken map, runs everything.
+
+**Replaying the map**: `.\scripts\dev\impact-replay.ps1` takes the last 30 pull request runs with a game check verdict,
+reads each run's base and head from its checkout log (the merge commit it built), the changed files from GitHub's
+compare (`gh api`), the failed phases from its log, and prints a table - run, PR, the selection, the failed phase,
+selected? - and the totals; exit 1 when a failure would not have been selected. After a change of the map (or of the
+core) run it again: the facts are cached in `%LOCALAPPDATA%\ArxFatalisVR\impact-replay`, so a replay costs no API
+calls. `-DurationsFile` adds each selection's own time.
+
+**The merge gate.** Before the merge the coordinator's queue runs the whole suite on the pull request's head branch:
+`gh workflow run build-windows.yml --ref <branch> -f suite=full`, finds that run
+(`gh run list --workflow build-windows.yml --branch <branch> --event workflow_dispatch`) and merges only on its
+`success` on the same head commit. A branch made before #522 has no `suite` input: merge main into it first.
+
+**Locally, before every push**: `.\scripts\dev\ci-local.ps1` builds the working copy (with `arxtest`), runs the
+script self-tests, then `ci-smoke.ps1 -Suite pr` against `origin/main` (fetched first) on two lanes - one while another
+game of the PC holds a slot - and prints a summary with each step's time, the suite line and the selection; exit 0 only
+when every step passed (2: the game lock stayed busy). `-Full` runs everything. The selection is of the commits
+(`origin/main...HEAD`): commit first. Its evidence goes to `%LOCALAPPDATA%\ArxFatalisVR\ci-local\<copy>-<time>` (the last
+5 runs of the copy stay). A selection is 15-35 launches, so the launch budget's note is expected.
 
 ## The tester package (#88)
 
@@ -2055,7 +2189,8 @@ launch rules D-014 / #147). What keeps their runs apart — all derived from the
 | who launched what | the ledger `%LOCALAPPDATA%\ArxFatalisVR\launches.log`, one line per launch; `cycle-report.ps1` → `LAUNCHES` |
 
 **The game lock** (`scripts/launch-lib.ps1`): `%ProgramData%\ArxFatalisVR\locks\game-<n>.lock` (slots
-`1..maxGames`, `maxGames` = 1 unless `settings.json` next to it says otherwise) plus `vr.lock` for a
+`1..maxGames`, `maxGames` = 1 unless `settings.json` next to it says otherwise, or `$env:ARXVR_MAX_GAMES` for the
+launches of one process tree - CI's two lanes, #522) plus `vr.lock` for a
 VR launch — each a file opened for writing without write sharing by the launching script and held
 until the game exits. Windows drops the handle with the process, so a crash or a kill cannot leave a
 stale lock.

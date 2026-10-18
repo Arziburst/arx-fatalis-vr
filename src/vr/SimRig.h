@@ -64,7 +64,9 @@
  * display time has reached its time.
  *
  * Commands (the channel's \c vr-sim takes the same):
- *  - \c rate \c <hz>: display rate, 0 = no pacing; \c eye-size \c <w> \c <h> (set-up only);
+ *  - \c rate \c <hz> \c [clock|cap]: display rate, 0 = no pacing; \c clock (the default) paces to the
+ *    display's slots as a headset does, \c cap only keeps frames 1/rate apart (#522); without the word
+ *    the pacing stays as it is; \c eye-size \c <w> \c <h> (set-up only);
  *    \c ipd \c <meters>; \c fov \c left|right \c <left> \c <right> \c <up> \c <down> (degrees,
  *    OpenXR signs: left and down negative); \c timeline \c gameplay|session (set-up only)
  *  - \c head \c pos \c <x> \c <y> \c <z>; \c head \c rot \c <yaw> \c <pitch> \c <roll> - yaw + turns
@@ -128,6 +130,12 @@ struct SimView {
 	float ipd = 0.064f;
 	std::array<MirrorFov, 2> fov;
 	float rate = 90.f;
+	/*!
+	 * The rate is a cap, not a display clock (#522): a frame starts 1/rate after the last one started, or at once
+	 * when it is late - it never waits for the next slot, so a frame a little longer than the period costs a little,
+	 * not a whole slot (a 10-12 ms frame on a 90 Hz clock runs at 45 fps)
+	 */
+	bool cap = false;
 	SimView();
 };
 

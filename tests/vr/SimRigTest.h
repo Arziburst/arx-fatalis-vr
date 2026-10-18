@@ -58,6 +58,7 @@ class SimRigTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testMsActionIsHeldForItsTime);
 	CPPUNIT_TEST(testMsRampFollowsTheDisplayTime);
 	CPPUNIT_TEST(testMsLinesInAScriptFollowEachOther);
+	CPPUNIT_TEST(testRatePacing);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -88,6 +89,7 @@ public:
 	void testMsActionIsHeldForItsTime();
 	void testMsRampFollowsTheDisplayTime();
 	void testMsLinesInAScriptFollowEachOther();
+	void testRatePacing();
 
 };
 

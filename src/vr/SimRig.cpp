@@ -264,7 +264,17 @@ std::string Simulation::parse(std::string_view line, Command & command) const {
 
 	if(word == "rate") {
 		command.op = Command::Rate;
-		std::string error = numbers(1, 1, "a rate in Hz (0 = no pacing)");
+		// rate <hz> [clock|cap]: index 0 keeps the pacing, 1 is the display clock, 2 the cap (#522)
+		command.index = 0;
+		if(words.size() == 3) {
+			const std::string pacing = lowercase(words[2]);
+			if(pacing != "clock" && pacing != "cap") {
+				return "rate: expected clock or cap after the rate, got \"" + std::string(words[2]) + "\"";
+			}
+			command.index = (pacing == "cap") ? 2 : 1;
+			words.pop_back();
+		}
+		std::string error = numbers(1, 1, "a rate in Hz (0 = no pacing) [clock|cap]");
 		if(error.empty() && (command.values[0] < 0.f || command.values[0] > 1000.f)) {
 			return "rate: expected 0-1000 Hz";
 		}
@@ -524,7 +534,12 @@ std::vector<float *> Simulation::targets(const Command & command) {
 void Simulation::apply(const Command & command) {
 
 	switch(command.op) {
-		case Command::Rate: view.rate = command.values[0]; return;
+		case Command::Rate:
+			view.rate = command.values[0];
+			if(command.index != 0) {
+				view.cap = (command.index == 2);
+			}
+			return;
 		case Command::EyeSize: view.eyeSize = Vec2i(s32(command.values[0]), s32(command.values[1])); return;
 		case Command::Fov: {
 			MirrorFov & fov = view.fov[command.index];

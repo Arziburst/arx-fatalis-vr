@@ -70,6 +70,18 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"E:/dev/arx-fatalis-vr/coordinator/core/scripts/hooks/after-compact.ps1\" coordinator",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

@@ -71,6 +71,7 @@ struct SubtitleDrawState {
 	Vec3f facingWorld = Vec3f(0.f); //!< the player's eye when the line started: the panel faces it
 	float metersPerPixel = 0.f;     //!< an eye's pixel at the panel's distance when placed
 	float eyePixelsPerUnit = 0.f;   //!< the last eye's pixels per view unit at depth 1
+	int panelChecks = 0;            //!< frames left to check the panel reached the frame's layers (logged once per line)
 
 };
 
@@ -290,7 +291,8 @@ void drawSubtitlesOnInterface() {
 		s.facingWorld = eye;
 		const float distanceM = glm::distance(s.anchorWorld, eye) / params.unitsPerMeter;
 		const float pixelsPerUnit = s.eyePixelsPerUnit > 0.f ? s.eyePixelsPerUnit : g_preparedCamera.m_pixelsPerUnit;
-		s.metersPerPixel = pixelsPerUnit > 0.f ? distanceM / pixelsPerUnit : 0.f;
+		s.metersPerPixel = pixelsPerUnit > 0.f ? distanceM / pixelsPerUnit * params.panelScale : 0.f;
+		s.panelChecks = 3;
 		s.drawn = drawn;
 		s.status.drawn = drawn;
 		s.decided = true;
@@ -323,7 +325,18 @@ void drawSubtitlesOnInterface() {
 	const Vec3f middle = worldToLocal(middleWorld, head, headAngles);
 	const Vec3f toEye = worldToLocal(s.facingWorld, head, headAngles) - middle;
 	const float yaw = std::atan2(toEye.x, toEye.z);
-	setSubtitleLayer(true, middle, glm::angleAxis(yaw, Vec3f(0.f, 1.f, 0.f)), size);
+	const bool finite = std::isfinite(middle.x) && std::isfinite(middle.y) && std::isfinite(middle.z) && std::isfinite(yaw)
+	                    && std::isfinite(size.x) && std::isfinite(size.y);
+	setSubtitleLayer(finite, middle, glm::angleAxis(yaw, Vec3f(0.f, 1.f, 0.f)), size);
+	// Where the panel went, once per line: the headset's compositor draws it, no picture of it comes back (#460)
+	if(s.panelChecks == 3) {
+		gameevent::Event("vr.subtitle.panel", 200)("drawn", subtitlePlacementName(s.drawn))("x", middle.x, 2)("y", middle.y, 2)
+			("z", middle.z, 2)("yawDeg", glm::degrees(yaw), 1)("widthM", size.x, 2)("heightM", size.y, 2)
+			("headX", head.x, 2)("headY", -head.y, 2)("headZ", -head.z, 2)("finite", finite ? "yes" : "no");
+	}
+	if(s.panelChecks > 0 && --s.panelChecks == 0 && !subtitleLayerShown()) {
+		LogWarning << "[vr] subtitle panel: requested but not in the frame's layers (shown " << subtitleLayerShown() << ')';
+	}
 	s.status.panelLocal = middle;
 	s.status.panelYawDeg = glm::degrees(yaw);
 	s.status.panelWidthM = size.x;

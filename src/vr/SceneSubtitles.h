@@ -89,6 +89,7 @@ struct SubtitleParams {
 	float chestDistanceM = 0.8f;    //!< \c chest: the panel ahead of the head, horizontally
 	float chestDropM = 0.45f;       //!< \c chest: the panel below the eyes
 	float widthDeg = 32.f;          //!< the widest box in the world, as the eyes see it
+	float panelScale = 1.4f;        //!< the world-fixed panel's text and box over the game's font size (the owner: bigger)
 	float lowerThirdWidth = 0.6f;   //!< \c lowerthird: the widest box, of the interface's width
 	float lowerThirdBottom = 0.92f; //!< \c lowerthird: the box's lower edge, of the interface's height from the top
 };

@@ -3,7 +3,8 @@
 	The coordinator's usage plan (#217, D-022): the weekly and 5-hour limits, what tasks cost, how many workers to run.
 
 .DESCRIPTION
-	Reads the samples the status line writes (~/.claude/statusline/usage.jsonl) and the session ledger, records the cost
+	Reads the core's status-line files (~/.claude/coordinator/statusline.json and sessions/<id>.json), keeps its own samples
+	of them (~/.claude/arxvr-usage/usage.jsonl) and the session ledger, records the cost
 	of finished sessions per task (tasks.jsonl), and prints a short plan:
 	  NOW       week % and 5-hour % with their resets, the burn rate, the calibration (% of a limit per dollar, with confidence)
 	  BUDGET    % left to the caps (week 90, 5-hour 95), the ETA to each cap at the current burn and with the advised workers
@@ -17,7 +18,9 @@
 .PARAMETER Json
 	Print the whole answer as JSON.
 .PARAMETER Dir
-	The statusline folder (default ~/.claude/statusline) - for what-if runs and the self-test.
+	Our state folder (default ~/.claude/arxvr-usage: usage.jsonl, tasks.jsonl, sizes.json) - for what-if runs.
+.PARAMETER StatusDir
+	The core's status-line folder (default ~/.claude/coordinator) - for what-if runs.
 .PARAMETER NoQueue
 	Do not call plan-next.ps1 (no forecast for queued tasks).
 .PARAMETER Offline
@@ -26,17 +29,27 @@
 	Optional worker cap (default 0 = none, D-027).
 #>
 [CmdletBinding()]
-param([switch]$Record, [switch]$Json, [string]$Dir, [switch]$NoQueue, [int]$MaxWorkers = 0, [switch]$Offline)
+param([switch]$Record, [switch]$Json, [string]$Dir, [string]$StatusDir, [switch]$NoQueue, [int]$MaxWorkers = 0, [switch]$Offline)
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'usage-lib.ps1')
 if (-not $Dir) { $Dir = Get-UsageDir }
+if (-not $StatusDir) { $StatusDir = Get-CoreStatusDir }
+New-Item -ItemType Directory -Force $Dir | Out-Null
 $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 
 $last = $null
-try { $last = Get-Content (Join-Path $Dir 'last.json') -Raw | ConvertFrom-Json } catch {}
-$samples = @(Read-JsonLines (Join-Path $Dir 'usage.jsonl'))
-$ledger = @(Get-ChildItem (Join-Path $Dir 'sessions') -Filter '*.json' -ErrorAction SilentlyContinue | ForEach-Object { try { Get-Content $_.FullName -Raw | ConvertFrom-Json } catch {} })
+try { $last = Get-Content (Join-Path $StatusDir 'statusline.json') -Raw | ConvertFrom-Json } catch {}
+$ledger = @(Read-CoreSessions $StatusDir)
+
+# The core keeps no history of the limits: one sample a minute at most, taken here from its files.
+$samplesFile = Join-Path $Dir 'usage.jsonl'
+$samples = @(Read-JsonLines $samplesFile)
+$sample = New-UsageSample $last $ledger $now
+if ($sample -and (-not $samples.Count -or $now - $samples[-1].t -ge 60)) {
+	Add-Content -Path $samplesFile -Value ($sample | ConvertTo-Json -Compress -Depth 4) -Encoding utf8
+	$samples = @(Read-JsonLines $samplesFile)
+}
 
 $weekCal = Get-UsageCalibration $samples 'wk'
 $fiveCal = Get-UsageCalibration $samples 'fh'

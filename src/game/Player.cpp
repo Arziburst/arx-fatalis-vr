@@ -73,6 +73,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "game/Equipment.h"
 #include "game/Inventory.h"
 #include "game/Item.h"
+#include "game/JumpPhysics.h"
 #include "game/Levels.h"
 #include "game/Missile.h"
 #include "game/NPC.h"
@@ -141,10 +142,10 @@ extern bool REQUEST_SPEECH_SKIP;
 extern bool DONT_ERASE_PLAYER;
 extern bool GLOBAL_MAGIC_MODE;
 
-static const float WORLD_GRAVITY = 0.1f;
-static const float JUMP_GRAVITY = 0.02f;
+static const float WORLD_GRAVITY = PlayerWorldGravity;
+static const float JUMP_GRAVITY = PlayerJumpGravity;
 static const float STEP_DISTANCE = 120.f;
-static const float TARGET_DT = 1000.f / 30.f;
+static const float TARGET_DT = PlayerTargetDt;
 
 extern Vec3f PUSH_PLAYER_FORCE;
 extern long COLLIDED_CLIMB_POLY;
@@ -1566,6 +1567,8 @@ void ARX_PLAYER_Manage_Visual() {
 			}
 			case JumpAscending: { // Moving up
 				request0_anim = alist[ANIM_JUMP_UP];
+				// The step that reaches the apex ends the rise itself (PlayerMovementIterate, #23); this is for a rise
+				// that had no step, a loaded save's
 				if(player.jumplastposition >= 1.f) {
 					player.jumpphase = JumpDescending;
 					request0_anim = alist[ANIM_JUMP_CYCLE];
@@ -1580,6 +1583,10 @@ void ARX_PLAYER_Manage_Visual() {
 				   || player.onfirmground) {
 					player.jumpphase = JumpEnd;
 					request0_anim = alist[ANIM_JUMP_END_PART2];
+				} else if(layer0.cur_anim == alist[ANIM_JUMP_UP]) {
+					// The step that reached the apex began the fall (PlayerMovementIterate, #23): the frame of the
+					// in-the-air cycle the rise's end used to request stays, before the landing's anticipation
+					request0_anim = alist[ANIM_JUMP_CYCLE];
 				} else {
 					request0_anim = alist[ANIM_JUMP_END];
 				}
@@ -1817,46 +1824,58 @@ static void setPlayerPositionColor() {
 	
 }
 
+/*!
+ * A jump asked for (REQUEST_JUMP, Interface.cpp) starts here, once per frame and before the frame's physics (#23,
+ * #537): the crouch stood up from where there is room, only where a jump is possible, within 350 ms of the request.
+ * It was the first thing of every movement iteration: a frame's physics then began with a push as long as the frame,
+ * and the jump's fixed steps only from the next frame.
+ */
+static void PlayerStartRequestedJump() {
+	
+	if(REQUEST_JUMP == 0) {
+		return;
+	}
+	
+	if((player.m_currentMovement & PLAYER_CROUCH)
+	   || player.physics.cyl.height > player.baseHeight()) {
+		float old = player.physics.cyl.height;
+		player.physics.cyl.height = player.baseHeight();
+		player.physics.cyl.origin = player.basePosition();
+		// The same room to stand up as without a jump (#263)
+		float anything = CheckAnythingInCylinder(standUpCylinder(), entities.player(), CFLAG_JUST_TEST);
+		if(anything < 0.f) {
+			player.m_currentMovement |= PLAYER_CROUCH;
+			player.physics.cyl.height = old;
+			REQUEST_JUMP = 0;
+		} else {
+			bGCroucheToggle = false;
+			player.m_currentMovement &= ~PLAYER_CROUCH;
+			player.physics.cyl.height = player.baseHeight();
+		}
+	}
+	
+	if(!Valid_Jump_Pos()) {
+		REQUEST_JUMP = 0;
+	}
+	
+	if(REQUEST_JUMP != 0) {
+		PlatformDuration t = g_platformTime.frameStart() - REQUEST_JUMP;
+		if(t >= 0 && t <= 350ms) {
+			REQUEST_JUMP = 0;
+			spawnAudibleSound(player.pos, *entities.player());
+			ARX_SPEECH_AddSpeech(*entities.player(), "player_jump", ANIM_TALK_NEUTRAL, ARX_SPEECH_FLAG_NOTEXT);
+			player.onfirmground = false;
+			player.jumpphase = JumpStart;
+		}
+	}
+	
+}
+
 static void PlayerMovementIterate(float DeltaTime) {
 	
 	float d = 0;
 	
 	if(USE_PLAYERCOLLISIONS) {
-		// A jump is requested so let's go !
-		if(REQUEST_JUMP != 0) {
-			if((player.m_currentMovement & PLAYER_CROUCH)
-			   || player.physics.cyl.height > player.baseHeight()) {
-				float old = player.physics.cyl.height;
-				player.physics.cyl.height = player.baseHeight();
-				player.physics.cyl.origin = player.basePosition();
-				// The same room to stand up as without a jump (#263)
-				float anything = CheckAnythingInCylinder(standUpCylinder(), entities.player(), CFLAG_JUST_TEST);
-				if(anything < 0.f) {
-					player.m_currentMovement |= PLAYER_CROUCH;
-					player.physics.cyl.height = old;
-					REQUEST_JUMP = 0;
-				} else {
-					bGCroucheToggle = false;
-					player.m_currentMovement &= ~PLAYER_CROUCH;
-					player.physics.cyl.height = player.baseHeight();
-				}
-			}
-			
-			if(!Valid_Jump_Pos()) {
-				REQUEST_JUMP = 0;
-			}
-			
-			if(REQUEST_JUMP != 0) {
-				PlatformDuration t = g_platformTime.frameStart() - REQUEST_JUMP;
-				if(t >= 0 && t <= 350ms) {
-					REQUEST_JUMP = 0;
-					spawnAudibleSound(player.pos, *entities.player());
-					ARX_SPEECH_AddSpeech(*entities.player(), "player_jump", ANIM_TALK_NEUTRAL, ARX_SPEECH_FLAG_NOTEXT);
-					player.onfirmground = false;
-					player.jumpphase = JumpStart;
-				}
-			}
-		}
 		
 		if(entities.player()->_npcdata->climb_count != 0.f && g_framedelay > 0) {
 			entities.player()->_npcdata->climb_count -= MAX_ALLOWED_CLIMBS_PER_SECOND * g_framedelay * 0.1f;
@@ -2068,18 +2087,8 @@ static void PlayerMovementIterate(float DeltaTime) {
 		}
 		
 		// Apply velocity damping (natural velocity attenuation, stands for friction)
-		float dampen = 1.f - (0.009f * DeltaTime);
-		if(dampen < 0.001f) {
-			dampen = 0.f;
-		}
-		player.physics.velocity.x *= dampen;
-		player.physics.velocity.z *= dampen;
-		if(glm::abs(player.physics.velocity.x) < 0.001f) {
-			player.physics.velocity.x = 0;
-		}
-		if(glm::abs(player.physics.velocity.z) < 0.001f) {
-			player.physics.velocity.z = 0;
-		}
+		player.physics.velocity.x = dampenVelocity(player.physics.velocity.x, DeltaTime);
+		player.physics.velocity.z = dampenVelocity(player.physics.velocity.z, DeltaTime);
 		
 		// Apply attraction
 		player.physics.forces += ARX_SPECIAL_ATTRACTORS_ComputeForIO(*entities.player()) / TARGET_DT;
@@ -2137,23 +2146,14 @@ static void PlayerMovementIterate(float DeltaTime) {
 		player.physics.startpos = player.physics.cyl.origin;
 		player.physics.targetpos = player.physics.startpos + player.physics.velocity * DeltaTime;
 		
-		// Jump impulse
+		// Jump impulse: the rise in step time, the same in every frame of every rate (#23, #537); it followed the clock.
+		// Only the fixed steps of ARX_PLAYER_Manage_Movement's jump loop come here, and the rise is per step of frames
+		// (200 ms of them), not per the physics time the step integrates (JumpTimeScaleDefault)
 		if(player.jumpphase == JumpAscending) {
-			
 			if(player.jumplastposition == -1.f) {
-				player.jumplastposition = 0;
-				player.jumpstarttime = g_platformTime.frameStart();
+				player.jumplastposition = 0.f;
 			}
-			
-			const float jump_up_time = 200.f;
-			const float jump_up_height = 130.f;
-			const PlatformInstant now = g_platformTime.frameStart();
-			const float elapsed = toMsf(now - player.jumpstarttime);
-			float position = glm::clamp(elapsed / jump_up_time, 0.f, 1.f);
-			
-			float p = (position - player.jumplastposition) * jump_up_height;
-			player.physics.targetpos.y -= p;
-			player.jumplastposition = position;
+			player.physics.targetpos.y -= jumpRise(player.jumplastposition, JumpStepMs);
 			levitate = 0;
 		}
 		
@@ -2262,6 +2262,14 @@ static void PlayerMovementIterate(float DeltaTime) {
 	player.pos = g_moveto;
 	
 	setPlayerPositionColor();
+	
+	// The apex ends the rise in the step that reached it, whatever frame that is (#23, #537), and the fall begins with
+	// the next step. It was found at the frame's end (ARX_PLAYER_Manage_Visual), which let a step after it in the same
+	// frame hang in the air. The animation follows there.
+	if(player.jumpphase == JumpAscending && player.jumplastposition >= 1.f) {
+		player.jumpphase = JumpDescending;
+		ARX_PLAYER_StartFall();
+	}
 }
 
 /*!
@@ -2323,33 +2331,37 @@ void ARX_PLAYER_Manage_Movement() {
 		speedfactor = 0;
 
 	// Compute time things
-	const float FIXED_TIMESTEP = 25.f;
 	const float MAX_FRAME_TIME = 200.f;
-
-	static float StoredTime = 0;
-
-	float DeltaTime = std::min(toMsf(g_platformTime.lastFrameDuration()), MAX_FRAME_TIME);
-	DeltaTime = StoredTime + DeltaTime * speedfactor;
+	
+	static FixedStepClock stepClock(JumpStepMs);
+	
+	float frameTime = std::min(toMsf(g_platformTime.lastFrameDuration()), MAX_FRAME_TIME);
+	stepClock.add(frameTime * speedfactor);
+	
+	if(USE_PLAYERCOLLISIONS) {
+		// A jump asked for starts before this frame's physics: its first step is a whole one
+		PlayerStartRequestedJump();
+	}
 	
 	if(player.jumpphase != NotJumping) {
-		while(DeltaTime > FIXED_TIMESTEP) {
-			/*
-			 * TODO: should be PlayerMovementIterate(FIXED_TIMESTEP);
-			 * However, jump forward movement is only applied the the first
-			 * iteration, so we need this to not completely break the jump
-			 * at lower framerates.
-			 * Should only cause minor differences at higher framerates.
-			 * Fix this once PlayerMovementIterate has been cleaned up!
-			 */
-			PlayerMovementIterate(DeltaTime);
-			DeltaTime -= FIXED_TIMESTEP;
+		/*
+		 * A jumping player moves in fixed steps, what is left of the frame waiting for the next (#23, #537): the
+		 * same flight at every refresh rate, and after a hitch, which takes its steps at once. The loop used to
+		 * iterate once by all the time that had added up (25 to 35 ms, more after a hitch), so the Euler fall and
+		 * the damped push followed the frames. The frame's input (g_moveto, Interface.cpp) goes to every step: an
+		 * iteration leaves g_moveto where it arrived, and a second step in the frame would push nowhere.
+		 */
+		const Vec3f intent = g_moveto - player.pos;
+		while(stepClock.takeStep()) {
+			g_moveto = player.pos + intent;
+			// A step integrates jump_time_scale times its length of physics: the flat game's loop integrated its
+			// remainder twice, and the jump players know falls and pushes that much quicker than the constants
+			// (JumpTimeScaleDefault); the rise above is in the frames' time, as it was
+			PlayerMovementIterate(JumpStepMs * config.misc.jumpTimeScale);
 		}
 	} else {
-		PlayerMovementIterate(DeltaTime);
-		DeltaTime = 0;
+		PlayerMovementIterate(stepClock.takeAll());
 	}
-
-	StoredTime = DeltaTime;
 
 	PlayerFollowHead();
 }

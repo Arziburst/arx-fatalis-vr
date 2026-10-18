@@ -31,25 +31,19 @@ s32 HoverFilter::update(s32 candidate, double now) {
 	if(candidate != None && candidate == m_hovered) {
 		m_lastSeen = now;
 		m_candidate = None;
-		m_candidateFrames = 0;
 		return m_hovered;
 	}
 
-	// Something new under the ray: it takes over once it was there for HoverFramesIn frames in a row
-	if(candidate == None) {
-		m_candidate = None;
-		m_candidateFrames = 0;
-	} else if(candidate == m_candidate) {
-		m_candidateFrames++;
-	} else {
+	// Something new under the ray: it takes over once it was there for HoverInSeconds in a row - a time, not a
+	// count of frames, so a sweep past it is filtered the same at every display rate (#23)
+	if(candidate != m_candidate) {
 		m_candidate = candidate;
-		m_candidateFrames = 1;
+		m_candidateSince = now;
 	}
-	if(m_candidate != None && m_candidateFrames >= HoverFramesIn) {
+	if(m_candidate != None && now - m_candidateSince >= double(HoverInSeconds)) {
 		m_hovered = m_candidate;
 		m_lastSeen = now;
 		m_candidate = None;
-		m_candidateFrames = 0;
 		return m_hovered;
 	}
 

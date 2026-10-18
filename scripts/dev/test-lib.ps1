@@ -101,7 +101,8 @@ function Send-ArxCommand(
 	[string]$Dir = (Get-ArxTestDir),
 	[int]$TimeoutSec = 10
 ) {
-	# The game writes ack.txt first and status.json later, so status.json can still show the batch before the
+	# The game writes status.json first and ack.txt right after (#23; it was the other way round, and a read of the status
+	# after the ack found the old state), so status.json can show a batch before its ack - and may still show the batch before the
 	# previous one: a baseline taken from it alone lets that late update (and the previous ack) pass for the
 	# answer to this batch (#250). The baseline is the newest seq of both files; the answer is the ack file itself.
 	$before = Read-ArxStatus $Dir

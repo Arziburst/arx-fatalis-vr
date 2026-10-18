@@ -310,6 +310,8 @@ public:
 		
 		std::string realtimeOverride;
 		
+		float jumpTimeScale; //!< the jumping player's physics time per real time (JumpPhysics.h, #537): 1.2 is the flat game's arc, 1 the constants' own
+		
 	} misc;
 	
 	bool setActionKey(ControlAction actionId, size_t index, InputKeyId key);

@@ -30,6 +30,58 @@ a changed decision keeps its history in that cell.
 ### Consequences
 - The right stick click draws the weapon in the default layout, so the fallback hold toggles it as well.
 
+
+## D-057: Refresh-rate independence — times, not frames; a sample is timed by the display time it is for
+
+- **Date:** 2026-10-13
+- **Status:** Accepted
+- **Decided by:** worker of #23 (technical internals, D-017)
+
+### Decision
+- **Nothing in the game counts frames for a length of time or smooths by a factor per frame.** Players run the
+  Index at 80/90/120/144 Hz, a Quest at 72-120, a Beyond at 75/90; the runtime's predicted display period is the
+  only rate the game knows (D-024). Every timer, hysteresis and smoothing is a time: a count of frames becomes the
+  time it took **at 90 Hz**, the rate the VR features were tuned on (the simulator's default) - the hand reticle's
+  "2 frames in" is 10 ms, the engine magic's "every second frame" at the hand is 22 ms, a per-frame ease of the
+  external view (half the gap, a tenth of the turn) is `1 - keep^(dt * 90)`. Rates of change are per second.
+- **A sample is timed by the display time it is for.** The controllers and the head are located for the frame's
+  predicted display time (D-024), so the melee swing detector divides their moves by display-time steps, not by
+  the frame clock's (a millisecond of its jitter is 14 % of a 144 Hz frame); the frame clock where there is no
+  display time (flat mode).
+- **The proof is a simulated run at four rates.** The simulated headset's timeline takes display milliseconds
+  (`@+500ms`): the same motion at every rate (poses at the frame's display time, controller actions as held when
+  the frame's interval began), and `record <name>` keeps a frame's motion values. `refresh-rate.xrs` compares
+  72, 120 and 144 Hz against 90 within tolerances its header states, and judges lags and totals - never a value
+  read at a moment of a motion, which moves when a frame comes late.
+- **The perf log names the display rate** at every change, and `perf-summary.ps1` judges the frames of each rate
+  against rate / divisor (`-ExpectHz` for the rate the headset was set to).
+- **The jumping player moves in fixed physics steps** (2026-10-18, the owner: fix it here, #537 folded into #436).
+  `ARX_PLAYER_Manage_Movement` puts the frame's time into a `FixedStepClock` and moves a jumping player by 25 ms
+  at a time (`src/game/JumpPhysics.h`), what is left waiting for the next frame; the rise is in step time, the apex
+  ends the rise in the step that reached it, and the frame's input goes to every step. The flight is a function of
+  the number of steps alone: the same at 72-144 Hz and after a hitch (the host test `JumpPhysicsTest`). The step is
+  the engine's own `FIXED_TIMESTEP`. **The flat game's arc is kept by a time scale, not by the step:** the old loop
+  integrated the remainder it carried a second time, so 25 ms of frames were 29-33 ms of physics at 60-144 Hz and
+  the fall and the push were 1.2-1.33 times quicker than the gravity and friction constants say (measured above
+  50 cm: 0.30-0.32 s; the constants' own arc 0.34 s). A step integrates `jump_time_scale` (cfg.ini `[misc]`, default
+  1.2, 1 to 1.5) times its length of physics; the rise stays 200 ms of frames as it was. 1.2: 130 units up in
+  200 ms, 0.30 s above 50 cm, down after 0.45 s - the jump as played; 1: 0.34 s and 0.5 s. The owner picks in the
+  headset (#436's test), the other value is one line of cfg.ini away.
+
+### Why
+A filter tuned at one rate and stepped per frame is twice as fast at 144 Hz as at 72; a frame count is half the
+time. Measured before the fix where it showed: none of the gameplay totals moved with the rate once the inputs
+were timed (walk, turn, jump apex, camera, fingers), the frame-counted pieces were found by reading the code
+(the audit in #23's PR).
+
+### What it rules out
+- New per-frame constants in VR code: a value "per frame" needs a time (and a host test at 72 and 144 Hz).
+- Fixed-step simulation of everything, with render interpolation: the walk keeps the engine's variable step (one
+  iteration per frame); only the jump moves in fixed steps, because its loop was never the fixed step it looked
+  like - it stepped once by all the time that had added up (25-35 ms, a hitch's whole length), so the Euler fall
+  and the damped push followed the frames (air times of 0.29-0.36 s for one jump). The 25 ms stepping of the
+  position between rendered frames while jumping (#435's judder, and the hang above the floor) is unchanged.
+
 ## D-056: CI owns the game slots - workers' launches wait for a running CI job, a PR's run fails fast
 
 - **Date:** 2026-10-18
@@ -1664,6 +1716,8 @@ without a headset session (F-07).
   the cost of finished tasks per model / effort / size, a forecast for the READY tasks). Run every cycle and before starting a worker; it
   names the binding limit and the number of workers that keeps the week at <= 90% by its reset and the 5-hour window < 95%.
   The coordinator starts no more than it recommends; one line of its output goes to the status page (#193).
+  Since #346 the inputs are the core's status-line files (`~/.claude/coordinator/statusline.json`, `sessions/<id>.json`);
+  the samples and the task ledger are kept by `usage-plan.ps1` itself in `~/.claude/arxvr-usage/`.
 - **Autopilot (owner, 2026-10-10):** the coordinator runs the work on its own while the limits last. It reads the limits and
   `usage-plan.ps1` on a timer (about every 30 minutes) and before starting a worker, starts every unblocked task the budget
   allows with a sensible model / effort, loads a 5-hour window that has headroom before its reset, but paces the week to <= 90%
@@ -1999,7 +2053,7 @@ The owner wants the desktop quiet while workers run, and the headset untouched u
   work that needs no headset goes on meanwhile — or (3) the budget is reached. The owner gives VR
   verdicts to the coordinator ("#18 ok" / what is wrong); the coordinator merges or passes the feedback
   to the worker.
-- **Budget:** the common weekly limit up to **70%** — from there no new workers start, running ones finish
+- *(The 70% budget point is superseded by D-022: weekly 90%, five-hour 95%.)* **Budget:** the common weekly limit up to **70%** — from there no new workers start, running ones finish
   their PRs; the 5-hour limit may be used up (sessions wait for its reset and continue,
   `autoContinueAtUsageLimit`); Fable's separate weekly limit may be used up.
 - *(Superseded by D-015: Opus by default, Fable only for really hard tasks.)* **Models** (replaced D-012's table): **Fable** for every engine task (any area except build and docs)

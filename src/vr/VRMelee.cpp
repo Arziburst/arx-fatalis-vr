@@ -39,6 +39,7 @@
 #include "vr/HeadTracking.h"
 #include "vr/VRBody.h"
 #include "vr/VRInput.h"
+#include "vr/VRSystem.h"
 #include "vr/VRWeapon.h"
 #include "vr/WeaponGrip.h"
 
@@ -77,8 +78,29 @@ struct MeleeState {
 
 MeleeState g_melee;
 
+/*!
+ * The melee clock, seconds (#23): the predicted display time the frame's controller and head were located
+ * for, so a swing's speed is its distance over the time between those poses - the frame clock's jitter
+ * (a millisecond is 14 % of a 144 Hz frame) never enters it. Where no display time exists (flat mode, the
+ * channel's handpose) the frame clock; across a switch it runs on from where it was. The same value for
+ * every call within a frame
+ */
 double meleeClock() {
-	return double(toUs(g_platformTime.frameStart() - PlatformInstant(0))) * 1e-6;
+	static double clock = 0.0;
+	static PlatformInstant frame = PlatformInstant(0);
+	static s64 display = 0; // the last display time counted, 0 = none
+	if(g_platformTime.frameStart() == frame) {
+		return clock;
+	}
+	const FrameViews & views = frameViews();
+	if(views.valid && display != 0 && views.displayTime > display) {
+		clock += double(views.displayTime - display) * 1e-9;
+	} else if(frame != PlatformInstant(0)) {
+		clock += double(toUs(g_platformTime.frameStart() - frame)) * 1e-6;
+	}
+	frame = g_platformTime.frameStart();
+	display = views.valid ? views.displayTime : 0;
+	return clock;
 }
 
 SwingParams paramsFromConfig() {

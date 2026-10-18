@@ -31,6 +31,7 @@
 #include <iomanip>
 #include <limits>
 #include <memory>
+#include <filesystem>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -43,6 +44,7 @@
 #include "core/ArxGame.h"
 #include "core/Config.h"
 #include "core/Core.h"
+#include "core/FileReplace.h"
 #include "core/GameEvent.h"
 #include "core/GameTime.h"
 #include "core/SaveGame.h"
@@ -98,9 +100,11 @@
 #include "script/Script.h"
 #include "util/Number.h"
 #include "util/String.h"
+#include "vr/BodyYaw.h"
 #include "vr/ArmFit.h"
 #include "vr/EyeImage.h"
 #include "vr/HeadTracking.h"
+#include "vr/MotionProbe.h"
 #include "vr/PerfLog.h"
 #include "vr/SceneSubtitles.h"
 #include "vr/SceneView.h"
@@ -326,6 +330,13 @@ public:
 		return *this;
 	}
 
+	//! A value that is JSON already (a record kept from an earlier frame)
+	JsonWriter & raw(std::string_view name, std::string_view json) {
+		key(name);
+		m_out << json;
+		return *this;
+	}
+
 	std::string str() {
 		while(!m_first.empty()) {
 			end();
@@ -353,7 +364,7 @@ struct State {
 	bool cleanShutdown = false;
 
 	unsigned cmdSeq = 0; //!< Command batches started so far (the running batch included)
-	unsigned ackedSeq = 0; //!< Command batches whose ack.txt is written; this is what status.json reports (#142)
+	unsigned ackedSeq = 0; //!< Command batches finished; this is what status.json reports (#142), written just before their ack.txt (#23)
 	unsigned commandReadRetries = 0; //!< Frames command.txt could not be opened (its writer still had it, #527)
 	std::string lastCmd;
 	std::string lastCmdError;
@@ -422,6 +433,19 @@ struct State {
 		vr::WalkStatus walk;         //!< The stick walk of the hold's last frame that walked
 	} stickFor;
 
+	//! motion: the player's walk, turn and jumps since `motion reset`, fed after every frame (#23)
+	vr::MotionProbe motion;
+	u32 motionResets = 0;
+	//! A status write a test waits for did not land (a reader held status.json for the whole patience): written again
+	//! every frame until it does (#23)
+	bool statusPending = false;
+
+	//! The simulated headset's `record <name>`: the motion values of the frame it named, as JSON, in order
+	std::vector<std::pair<std::string, std::string>> records;
+	//! The free (left) hand's index finger: its bend and target last frame, where and when its approach started
+	float curlLast = 0.f, curlTargetLast = 0.f, curlFrom = 0.f;
+	double curlLastSeconds = 0.0, curlFromSeconds = 0.0;
+	float curlSpeed = 0.f; //!< degrees per second since the target changed
 	//! The hang watchdog of the main thread (#440), started at the first frame
 	std::unique_ptr<platform::HangWatchdog> watchdog;
 	bool watchdogLogged = false;     //!< Its "watching" line is in the log
@@ -533,6 +557,7 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 	json.value("timeline", sim.timeline);
 	json.value("frame", sim.frame);
 	json.value("timelineFrame", sim.timelineFrame);
+	json.value("timelineMs", float(sim.timelineMs));
 	json.value("pending", u64(sim.pending));
 
 	json.object("view");
@@ -746,6 +771,57 @@ void writePlaygroundStatus(JsonWriter & json) {
 
 }
 
+/*!
+ * The values the refresh-rate check compares (#23), as they are after the frame was updated: the motion
+ * probe's totals, the head-tracked camera, the body's follow of the head, the weapon arm and the free
+ * (left) hand's fingers, the swing detector. Written as \c motion and kept as a record when the
+ * simulated headset asks
+ */
+void writeMotionValues(JsonWriter & json) {
+
+	const vr::SimStatus sim = vr::simStatus();
+	json.value("timelineMs", float(sim.timelineMs));
+	json.value("frames", g.motion.frames());
+	json.value("seconds", float(g.motion.seconds()));
+	json.value("walked", g.motion.walked());
+	json.value("turned", g.motion.turned());
+	json.value("jumps", g.motion.jumps());
+	json.value("airborne", g.motion.airborne());
+	json.value("jumpApex", g.motion.jumpApex());
+	json.value("jumpSeconds", float(g.motion.jumpSeconds()));
+	json.value("yaw", player.angle.getYaw());
+	json.value("cameraYaw", g_playerCamera.angle.getYaw());
+	// The head's part of the camera's yaw (D-018): the camera against the heading, (-180, 180]; on the simulated
+	// headset how far it is behind the head itself in this frame - 0 when the camera is where the head is, however
+	// late the frame came (a late frame moves both)
+	const float cameraTurn = vr::wrapSignedDegrees(g_playerCamera.angle.getYaw() - player.angle.getYaw());
+	json.value("cameraTurn", cameraTurn);
+	if(sim.active) {
+		json.value("headYaw", sim.rig.head.angles.x);
+		json.value("cameraLag", vr::wrapSignedDegrees(sim.rig.head.angles.x - cameraTurn));
+	}
+	json.value("cameraPitch", g_playerCamera.angle.getPitch());
+	json.value("bodyOffset", vr::bodyStatus().offset);
+
+	// The weapon hand's arm and the free hand's fingers (a hand holding a weapon is closed on its grip, #305)
+	const vr::PlayerBodyStatus & body = vr::playerBodyStatus();
+	json.value("armError", body.hands[size_t(vr::Hand::Right)].error);
+	const vr::PlayerArmStatus & free = body.hands[size_t(vr::Hand::Left)];
+	json.value("curl", free.curl.indexRoot);
+	json.value("curlTarget", free.curlTarget.indexRoot);
+	// How fast the bend went since its target last changed, degrees per second of the frame clock - the fingers'
+	// smoothing as a speed, the same whichever frame reads it (until the bend arrives)
+	json.value("curlSpeed", g.curlSpeed);
+
+	const vr::MeleeStatus & melee = vr::meleeStatus();
+	json.value("swings", melee.swings);
+	json.value("swingKind", melee.kind);
+	json.value("swingSpeed", melee.speed);
+	json.value("swingPeak", melee.peak);
+	json.value("swingJumps", melee.jumps);
+	json.value("swingGaps", melee.gaps);
+	}
+
 //! status.json \c scene: the scene view of scripted scenes in VR, its meter and its subtitle (#29, SPEC.md)
 void writeSceneStatus(JsonWriter & json) {
 
@@ -921,6 +997,17 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("m21", g_preparedCamera.m_viewToClip[2][1]);
 		json.value("width", g_preparedCamera.m_viewport.width());
 		json.value("height", g_preparedCamera.m_viewport.height());
+		json.end();
+		json.end();
+		// The refresh-rate check (#23): totals since `motion reset` as of the last frame, and the records the
+		// simulated headset's `record <name>` took after the frame it named
+		json.object("motion");
+		writeMotionValues(json);
+		json.value("resets", g.motionResets);
+		json.object("records");
+		for(const auto & record : g.records) {
+			json.raw(record.first, record.second);
+		}
 		json.end();
 		json.end();
 		// Spells by type: active now, and launched since the level was loaded - the evidence that a spellcast
@@ -2035,7 +2122,8 @@ std::string buildStatus(PlatformInstant now) {
 	return json.str();
 }
 
-void writeStatus(PlatformInstant now) {
+//! \param periodic the write of the 250 ms timer: it is skipped when a reader holds the file (the next one is near)
+void writeStatus(PlatformInstant now, bool periodic = false) {
 
 	if(g.lastStatusTime != PlatformInstant(0)) {
 		s64 ms = toMsi(now - g.lastStatusTime);
@@ -2046,19 +2134,34 @@ void writeStatus(PlatformInstant now) {
 	g.lastStatusTime = now;
 	g.lastStatusFrame = g.frame;
 
-	// Written to a temporary file and renamed, so a reader never sees a half-written status
+	// Written to a temporary file and renamed, so a reader never sees a half-written status. The engine's own rename
+	// sleeps 100 ms per try while a reader holds the file - the test runner reads status.json all the time - and the
+	// main thread stalled 118 ms inside a frame (#23, TRAPS.md): core::replaceFile tries every millisecond instead. A
+	// write a test waits for is never dropped: it waits for the reader, and when even that fails it stays pending and
+	// the next frame writes it again
 	fs::path file = g.dir / "status.json";
 	fs::path tmp = g.dir / "status.json.tmp";
 	static bool warned = false;
-	if((!fs::write(tmp, buildStatus(now)) || !fs::rename(tmp, file, true)) && !warned) {
-		warned = true;
-		LogWarning << "[channel] could not write " << file;
+	if(!fs::write(tmp, buildStatus(now))) {
+		if(!warned) {
+			warned = true;
+			LogWarning << "[channel] could not write " << tmp;
+		}
+	} else if(core::replaceFile(std::filesystem::path(tmp.string()), std::filesystem::path(file.string()),
+	                            periodic ? core::ReplaceMode::Once : core::ReplaceMode::Patient)) {
+		g.statusPending = false;
+	} else if(!periodic) {
+		g.statusPending = true;
+		static bool pendingLogged = false;
+		if(!pendingLogged) {
+			pendingLogged = true;
+			LogWarning << "[channel] status.json is held by a reader, the write waits for the next frame";
+		}
 	}
 
 	// The file logger flushes on its own every second (#129); a test reading arx.log wants it fresher
 	Logger::flush();
 }
-
 void writeAck(unsigned errors) {
 	std::ostringstream oss;
 	oss << "seq=" << g.cmdSeq << " frame=" << g.frame << " errors=" << errors
@@ -2342,6 +2445,21 @@ std::string execute(std::string_view line) {
 		hold.deadline = g_gameTime.now() + GameDuration(std::chrono::milliseconds(s64(seconds * 1000.f)));
 		hold.timedOut = false;
 		hold.walk = vr::WalkStatus();
+		return std::string();
+	}
+
+	if(word == "motion") {
+		// motion reset: the walk, turn and jump totals of status.json motion start from zero (#23); motion clear:
+		// the records too
+		const std::string what = std::string(trim(rest));
+		if(what != "reset" && what != "clear") {
+			return refuse("motion: expected reset or clear, got \"" + what + "\"");
+		}
+		g.motion.reset();
+		g.motionResets++;
+		if(what == "clear") {
+			g.records.clear();
+		}
 		return std::string();
 	}
 
@@ -3606,10 +3724,15 @@ void runBatch() {
 		}
 	}
 
-	writeAck(batch.errors);
+	// The status first, then the ack (#23): a test that waits for the ack reads status.json right after it, and the ack
+	// written first left a window - the status still of the batch before - in which that read got the old state (the
+	// merge gate's scene-switches: `scene view observer` acked, `scene.view` read `first`). The status carries the
+	// batch's number (cmdSeq = ackedSeq) from the moment it shows the batch's effects, as the ack follows at once
+	const unsigned errors = batch.errors;
 	g.ackedSeq = g.cmdSeq;
 	batch = State::Batch();
 	writeStatus(platform::getTime());
+	writeAck(errors);
 }
 
 /*
@@ -3836,8 +3959,10 @@ void update() {
 		pollCommands();
 	}
 
-	if(toMsi(now - g.lastStatusTime) >= StatusIntervalMs) {
-		writeStatus(now);
+	if(g.statusPending) {
+		writeStatus(now, true); // one quick try a frame: no stall, and pending until it lands
+	} else if(toMsi(now - g.lastStatusTime) >= StatusIntervalMs) {
+		writeStatus(now, true);
 	}
 
 }
@@ -3846,6 +3971,48 @@ void afterRender() {
 
 	if(!g.enabled) {
 		return;
+	}
+
+	// The motion probe (#23) after the frame's update, and the records the simulated headset asked for in it:
+	// the state this frame displays, at the display time its timeline named
+	if(g_currentArea && entities.player()) {
+		vr::MotionSample sample;
+		sample.seconds = double(toUs(g_platformTime.frameStart() - PlatformInstant(0))) * 1e-6;
+		sample.position = player.pos;
+		sample.yaw = player.angle.getYaw();
+		sample.jumping = player.jumpphase != NotJumping;
+		g.motion.update(sample);
+		// The free hand's bend: its speed since the target changed, measured while it is on its way
+		const vr::PlayerArmStatus & free = vr::playerBodyStatus().hands[size_t(vr::Hand::Left)];
+		const float curl = free.curl.indexRoot;
+		const float target = free.curlTarget.indexRoot;
+		if(target != g.curlTargetLast) {
+			g.curlFrom = g.curlLast;
+			g.curlFromSeconds = g.curlLastSeconds;
+		}
+		if(curl != target && sample.seconds > g.curlFromSeconds) {
+			g.curlSpeed = std::abs(curl - g.curlFrom) / float(sample.seconds - g.curlFromSeconds);
+		}
+		g.curlLast = curl;
+		g.curlTargetLast = target;
+		g.curlLastSeconds = sample.seconds;
+	}
+	for(const std::string & name : vr::takeSimRecords()) {
+		std::string json = "{}";
+		if(g_currentArea && entities.player()) {
+			JsonWriter values;
+			writeMotionValues(values);
+			json = values.str();
+			json.pop_back(); // the newline
+		}
+		auto found = std::find_if(g.records.begin(), g.records.end(), [&](const auto & record) { return record.first == name; });
+		if(found != g.records.end()) {
+			found->second = json;
+		} else {
+			g.records.emplace_back(name, json);
+		}
+		// The values in the log too: the evidence of a CI run outlives its status.json
+		LogInfo << "[channel] record " << name << ": " << json;
 	}
 
 	if(g.simShotWatch.active) {

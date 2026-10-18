@@ -47,6 +47,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <sstream>
 #include <string_view>
@@ -1804,8 +1805,13 @@ void ArxGame::updateFirstPersonCamera() {
 	}
 	
 	if(EXTERNALVIEW) {
-		g_playerCameraStablePos = g_playerCamera.m_pos = (g_playerCamera.m_pos + targetPos) * 0.5f;
-		g_playerCamera.angle = interpolate(g_playerCamera.angle, targetAngle, 0.1f);
+		// The external view eases towards its target: half the gap and a tenth of the turn per frame at 90 Hz,
+		// by the frame's time - per frame it closed twice as fast at 144 Hz as at 72 (#23)
+		const float frames90 = toMsf(g_platformTime.lastFrameDuration()) * (90.f / 1000.f);
+		const float closePos = 1.f - std::pow(0.5f, frames90);
+		const float closeAngle = 1.f - std::pow(0.9f, frames90);
+		g_playerCameraStablePos = g_playerCamera.m_pos = g_playerCamera.m_pos + (targetPos - g_playerCamera.m_pos) * closePos;
+		g_playerCamera.angle = interpolate(g_playerCamera.angle, targetAngle, closeAngle);
 	}
 	
 }

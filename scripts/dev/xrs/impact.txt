@@ -112,6 +112,10 @@ data/core/vr/arms/* -> arms-classic-glove arms-variants finger-five hand-conform
 data/core/vr/hands/* -> hand-conforming finger-five finger-tracking finger-held
 src/animation/* -> arms-follow arms-classic weapon-hold tl-reprojection melee-swing
 
+# --- Scripted scenes in VR (#29): the view, the subtitles, the hero's body in a cinema shot -------------------------
+src/vr/SceneView.* -> scene-first scene-ghost scene-observer scene-hybrid scene-switches scene-lookat scene-flat scene-subtitles
+src/vr/SceneSubtitles.* -> scene-subtitles scene-hybrid scene-switches scene-flat
+
 # --- The head and the camera ---------------------------------------------------------------------------------------
 src/vr/HeadPose.* -> look-around recenter real-steps arms-follow vr-turning-settings walk-look body-look-down tl-reprojection
 src/vr/HeadTracking.* -> look-around recenter real-steps arms-follow physical-crouch ui-panel vr-turning-settings walk-look height-hands

@@ -67,10 +67,10 @@ vr-sim head rot -40 0 0
 @assert scene.subtitle.panelLocal.z le {pz+0.01}
 @assert scene.subtitle.panelLocal.yawDeg ge {pyaw-1}
 @assert scene.subtitle.panelLocal.yawDeg le {pyaw+1}
-# The hero turns to Kultar: the panel over his head is in both eyes
-vr-sim head rot 0 0 0
-lookat human_base_0028
-@frames 30
+# The head turns to Kultar (he stands to the right: panelLocal.x +2.7 m; a positive sim yaw is left): the panel over his
+# head is in both eyes. Not the channel lookat: in VR the body drags the hero back after the head within a second
+vr-sim head rot -90 0 0
+@frames 20
 @assert scene.subtitle.panel eq true
 @assert scene.subtitle.panelPixels gt 1000       # the panel drawn into both eyes (its outline, the smaller eye)
 @shot sub-above
@@ -175,47 +175,47 @@ human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
 scene subtitles above
 scene meter reset
 # zoom
-human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_cantgo]
+human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
 # keep
-human_base_0028.speak -c keep [kultar_cantgo]
+human_base_0028.speak -c keep [kultar_letmeout]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
 # side
-human_base_0028.speak -c side player 5 5 90 90 0 [kultar_cantgo]
+human_base_0028.speak -c side player 5 5 90 90 0 [kultar_letmeout]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
 # side_l
-human_base_0028.speak -c side_l player 5 5 90 90 0 [kultar_cantgo]
+human_base_0028.speak -c side_l player 5 5 90 90 0 [kultar_letmeout]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
 # side_r
-human_base_0028.speak -c side_r player 5 95 400 150 -10 [kultar_cantgo]
+human_base_0028.speak -c side_r player 5 95 400 150 -10 [kultar_letmeout]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
 # ccctalker_l
-human_base_0028.speak -c ccctalker_l player 90 100 [kultar_cantgo]
+human_base_0028.speak -c ccctalker_l player 90 100 [kultar_letmeout]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
 # ccctalker_r
-human_base_0028.speak -c ccctalker_r player 80 40 [kultar_cantgo]
+human_base_0028.speak -c ccctalker_r player 80 40 [kultar_letmeout]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
 # ccclistener_l
-human_base_0028.speak -c ccclistener_l player 50 50 [kultar_cantgo]
+human_base_0028.speak -c ccclistener_l player 50 50 [kultar_letmeout]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s
 # ccclistener_r
-human_base_0028.speak -c ccclistener_r player 40 40 [kultar_cantgo]
+human_base_0028.speak -c ccclistener_r player 40 40 [kultar_letmeout]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @until scene.kind eq none 30s

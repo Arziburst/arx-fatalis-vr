@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: CI owns the game slots - workers' launches wait for a running CI job, a PR's run fails fast
+## D-056: CI owns the game slots - workers' launches wait for a running CI job, a PR's run fails fast
 
 - **Date:** 2026-10-18
 - **Status:** Accepted (#527; amends D-014's "one game at a time")

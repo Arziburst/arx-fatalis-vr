@@ -8,6 +8,15 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-18 — A script self-test's time limit fails in CI only: the self-tests run beside the build (#522)
+
+**Symptom:** a `scripts/dev/test-*.ps1` check with a wall-clock limit (e.g. `test-tree-fingerprint.ps1`'s fingerprint
+of the real copy under 1000 ms, 175 ms on an idle runner) passes locally and fails in CI, now and then.
+**Cause:** since #522 CI starts the script self-tests in the background and builds at the same time: the MSVC build
+takes every core, so a timed check gets a fraction of the CPU it gets alone.
+**Do:** read a timing failure of a self-test in CI as load first (re-run, or run `run-script-tests.ps1` alone); never
+widen the limit to make it pass - a check that measures wall-clock time belongs in a quiet step or measures work instead.
+
 ## 2026-10-18 — `ci-smoke.ps1` dies in `New-ArxSequenceUserDir`: a file of another sequence's user dir is in use (#522)
 
 **Symptom:** a full `ci-smoke.ps1` run stops at a sequence with `Remove-Item ...\ci-userdirs\real-input\arx-perf.log ...

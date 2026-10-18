@@ -114,7 +114,7 @@ try {
 	Write-Host '==> the changed files of a branch'
 	$repo = Join-Path $root 'repo'
 	New-Item -ItemType Directory -Force (Join-Path $repo 'scripts\dev\xrs') | Out-Null
-	$git = { git -C $repo -c user.name=t -c user.email=t@example.invalid -c core.autocrlf=false @args 2>&1 | Out-Null }
+	$git = { git -C $repo -c user.name=t -c user.email=t@example.com -c core.autocrlf=false @args 2>&1 | Out-Null }
 	& $git init -q -b main
 	Set-Content (Join-Path $repo 'scripts\dev\xrs\a.xrs') 'mark a'
 	Set-Content (Join-Path $repo 'scripts\dev\xrs\b.xrs') 'mark b'

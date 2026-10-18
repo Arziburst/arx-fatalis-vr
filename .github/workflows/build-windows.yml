@@ -133,6 +133,7 @@ jobs:
       run: |
         $dir = Join-Path $env:RUNNER_TEMP 'script-tests'
         $exitFile = Join-Path $dir 'exit.txt'
+        if (-not (Test-Path -LiteralPath (Join-Path $dir 'pid.txt'))) { Write-Host 'script self-tests: not started (an earlier step failed)'; exit 1 }
         $testsPid = [int](Get-Content -LiteralPath (Join-Path $dir 'pid.txt'))
         while (-not (Test-Path -LiteralPath $exitFile) -and (Get-Process -Id $testsPid -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 500 }
         Wait-Process -Id $testsPid -Timeout 30 -ErrorAction SilentlyContinue # the exit file is written just before it ends

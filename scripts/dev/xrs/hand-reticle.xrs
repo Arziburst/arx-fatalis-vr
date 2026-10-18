@@ -55,7 +55,7 @@ vr-point left entity blank_form_0001
 @assert vr.pointer.owner eq left
 @assert ui.hover eq blank_form_0001
 
-# The save's sword is drawn in the right hand, whose trigger then charges the strike (D-042, #377): sheathed with
+# The save's sword is drawn in the right hand, whose trigger then clicks nothing (D-042, #377, #465): sheathed with
 # the right stick click, the hand is empty and its trigger drags
 vr-input tap right.stick_click
 @until vr.weapon.sheathed eq true 5s

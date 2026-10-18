@@ -29,8 +29,8 @@ namespace {
 
 //! In the order of HudElement; the list in docs/vr/TESTING.md (The HUD frame in VR) follows it
 const std::array<HudElementInfo, HudElementCount> ElementInfo = { {
-	{ "health", HudHome::Wrist, "the red bar on the left wrist (#116); the orb only while no left arm is posed" },
-	{ "mana", HudHome::Wrist, "the blue bar on the left wrist (#116); the orb only while no left arm is posed" },
+	{ "health", HudHome::Wrist, "the red bar on the left wrist (#116); nothing while no left arm is posed (#484)" },
+	{ "mana", HudHome::Wrist, "the blue bar on the left wrist (#116); nothing while no left arm is posed (#484)" },
 	{ "level_up", HudHome::Radial,
 	  "a gold mark on the radial menu's Character item, which opens the character page, and a gold notice on the "
 	  "left wrist for 8 s (vr_levelup)" },
@@ -136,8 +136,8 @@ bool hudElementDrawn(HudElement element, const HudGate & gate) {
 	if(!gate.vr || gate.frame || (gate.keep & hudElementBit(element))) {
 		return true;
 	}
-	// Without a posed left arm health and mana have no other home: the orbs stay (an owner question)
-	return orb;
+	// Without a posed left arm the orbs are drawn nowhere: no head-locked fallback (#484)
+	return false;
 }
 
 const char * levelUpModeName(LevelUpMode mode) {

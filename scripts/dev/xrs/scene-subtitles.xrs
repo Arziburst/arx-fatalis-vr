@@ -44,7 +44,8 @@ scene subtitles above
 vr-sim head rot 0 0 0
 @assert scene.subtitle.placement eq above
 scene meter reset
-human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
+# A long line (7 s): the settle wait, the pose check and the turn to him take 2 s at 90 Hz - letmeout (1.9 s) ended first
+human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_cantgo]
 @until scene.subtitle.visible eq true 15s
 @assert scene.subtitle.placement eq above
 @assert scene.subtitle.speaker ne none

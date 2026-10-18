@@ -17,7 +17,7 @@
 	    left behind without a holder is free
 	  - a game outside the lock is found through WMI even though its .Path may be hidden (another account), and
 	    stops being a holder once a lock names its pid
-	  - settings.json is read from the lock folder first
+	  - settings.json is read from the lock folder first; $env:ARXVR_MAX_GAMES (the CI lanes, #522) overrides it
 	Exit code 0 when everything passed, 1 otherwise.
 #>
 [CmdletBinding()]
@@ -30,6 +30,7 @@ $legacyBase = Join-Path $root 'local'
 New-Item -ItemType Directory -Force $legacyBase | Out-Null
 $env:ARXVR_LOCK_DIR = $lockDir
 $env:LOCALAPPDATA = $legacyBase
+Remove-Item Env:ARXVR_MAX_GAMES -ErrorAction SilentlyContinue
 $legacyDir = Join-Path $legacyBase 'ArxFatalisVR'
 . (Join-Path $PSScriptRoot '..\launch-lib.ps1')
 
@@ -158,7 +159,22 @@ try {
 	Check 'the old settings.json is still read' ((Get-ArxLaunchSettings).maxGames -eq 2)
 	Set-Content (Join-Path $lockDir 'settings.json') '{ "maxGames": 3 }'
 	Check 'the lock folder settings.json wins' ((Get-ArxLaunchSettings).maxGames -eq 3)
+	# ARXVR_MAX_GAMES (#522, set by the CI workflow for its two lanes) wins over settings.json and over the default
+	$env:ARXVR_MAX_GAMES = '2'
+	Check 'ARXVR_MAX_GAMES overrides settings.json' ((Get-ArxLaunchSettings).maxGames -eq 2)
 	Remove-Item (Join-Path $lockDir 'settings.json'), (Join-Path $legacyDir 'settings.json')
+	Check 'ARXVR_MAX_GAMES overrides the default' ((Get-ArxLaunchSettings).maxGames -eq 2)
+	$lane1 = Enter-ArxGameLock -What 'lane 1' -Copy 'c' -Branch 'b' -TimeoutSec 0
+	$lane2 = Enter-ArxGameLock -What 'lane 2' -Copy 'c' -Branch 'b' -TimeoutSec 0
+	Check 'ARXVR_MAX_GAMES=2: two launches hold slots 1 and 2' ($lane1 -and $lane2 -and $lane1.Slot -eq 1 -and $lane2.Slot -eq 2)
+	Exit-ArxGameLock $lane1
+	Exit-ArxGameLock $lane2
+	$env:ARXVR_MAX_GAMES = '0'
+	Check 'ARXVR_MAX_GAMES=0 still allows one game' ((Get-ArxLaunchSettings).maxGames -eq 1)
+	$env:ARXVR_MAX_GAMES = 'two'
+	Check 'a non-number ARXVR_MAX_GAMES is ignored (the default)' ((Get-ArxLaunchSettings 3>$null).maxGames -eq 1)
+	Remove-Item Env:ARXVR_MAX_GAMES
+	Check 'without ARXVR_MAX_GAMES the default is one game again' ((Get-ArxLaunchSettings).maxGames -eq 1)
 
 	# --- Games outside the lock ----------------------------------------------------------------------------------
 	Write-Host '==> a game outside the lock'

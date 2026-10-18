@@ -21,6 +21,37 @@ own speeds; the CI runner (~85-100 fps unpaced) and a fast desktop disagree.
 once, no slot skipped) - 83-90 fps on CI, 90 on a fast PC, the ramps mean what they say. Use `rate 0` only for a
 script that measures what the PC draws (`msaa.vrsim`), the clock (`basic.vrsim`) only for pacing checks.
 
+## 2026-10-18 — A background process started in one workflow step is gone in the next (#522)
+
+**Symptom:** the CI step "Script self-tests (join)" fails with "ended without writing an exit code"; the tests' output
+stops a few seconds in, in the middle of the first test. Locally the same command runs to the end.
+**Cause:** the start step used `Start-Process ... -RedirectStandardOutput`: that starts the process with handle
+inheritance, so it also inherits the step's own stdout/stderr pipes to the runner. The step's pwsh exits, the pipes stay
+open, and after ~5 s the runner kills the step's whole process tree (`_diag\Worker_*.log`: "Need kill all child processes
+trees", the start step taking 5 s instead of 1). A local run has no runner waiting on a pipe.
+**Do:** a process that must outlive its step is started without redirection (`Start-Process` without `-Redirect*`,
+`-WindowStyle Hidden`) and redirects its own output (`*> out.txt` inside its command). Check: the start step takes about
+a second; the runner's Worker log shows no kill of the step's children.
+
+## 2026-10-18 — A script self-test's time limit fails in CI only: the self-tests run beside the build (#522)
+
+**Symptom:** a `scripts/dev/test-*.ps1` check with a wall-clock limit (e.g. `test-tree-fingerprint.ps1`'s fingerprint
+of the real copy under 1000 ms, 175 ms on an idle runner) passes locally and fails in CI, now and then.
+**Cause:** since #522 CI starts the script self-tests in the background and builds at the same time: the MSVC build
+takes every core, so a timed check gets a fraction of the CPU it gets alone.
+**Do:** read a timing failure of a self-test in CI as load first (re-run, or run `run-script-tests.ps1` alone); never
+widen the limit to make it pass - a check that measures wall-clock time belongs in a quiet step or measures work instead.
+
+## 2026-10-18 — `ci-smoke.ps1` dies in `New-ArxSequenceUserDir`: a file of another sequence's user dir is in use (#522)
+
+**Symptom:** a full `ci-smoke.ps1` run stops at a sequence with `Remove-Item ...\ci-userdirs\real-input\arx-perf.log ...
+being used by another process`, while another working copy's game checks run on the same PC.
+**Cause:** the per-sequence user directories (#296) lived in `%LOCALAPPDATA%\ArxFatalisVR\ci-userdirs\<sequence>`, one
+root for every working copy (the build, test channel and user directory carry `<folder>-<hash>`, this root did not). Two
+copies running the suite delete and reuse each other's directories - one copy's fresh directory is another's running game.
+**Do:** every per-copy folder gets the copy key: `Get-ArxCiUserDirRoot` (`ci-userdirs\<folder>-<hash>`). A new folder a
+test run writes to is per working copy (and per lane when two lanes could use it at once) from the start.
+
 ## 2026-10-18 — A melee sequence's timing passes locally and fails on CI: the timeline counts frames (#409)
 
 **Symptom:** `melee-recovery.xrs` passed locally (90 fps) and failed on CI at `@assert vr.melee.hits eq 1` (read 2).

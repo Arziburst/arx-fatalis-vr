@@ -60,9 +60,10 @@ function Write-ArxPhaseDurations([string]$Path, [hashtable]$Old, $Results) {
 
 # --- The order of the sequences -------------------------------------------------------------------------------------
 
-# The files a pull request changes: git diff --name-only <base>...HEAD. A shallow checkout (CI's) has no merge base:
-# then the two-dot diff against the base, which for the merge commit CI checks out is the same list. No base (a push
-# to main, a manual run): nothing counts as changed.
+# The files a pull request changes: git diff --name-only --no-renames <base>...HEAD (a rename lists the old and the new
+# path, so the map's lines for both apply). A shallow checkout (CI's) has no merge base: then the two-dot diff against
+# the base, which for the merge commit CI checks out is the same list. No base (a push to main, a manual run): nothing
+# counts as changed.
 function Get-ArxChangedFiles([string]$SourceDir, [string]$Base) {
 	$set = Get-ArxChangedFileSet $SourceDir $Base
 	if ($Base -and -not $set.Ok) { Write-Warning "cannot diff against ${Base}: no sequence counts as changed" }
@@ -74,7 +75,7 @@ function Get-ArxChangedFiles([string]$SourceDir, [string]$Base) {
 function Get-ArxChangedFileSet([string]$SourceDir, [string]$Base) {
 	if (-not $Base) { return [pscustomobject]@{ Ok = $false; Files = @() } }
 	foreach ($range in @("$Base...HEAD"), @($Base, 'HEAD')) {
-		$files = @(git -C $SourceDir diff --name-only @range 2>$null)
+		$files = @(git -C $SourceDir diff --name-only --no-renames @range 2>$null)
 		if ($LASTEXITCODE -eq 0) { $global:LASTEXITCODE = 0; return [pscustomobject]@{ Ok = $true; Files = $files } }
 	}
 	$global:LASTEXITCODE = 0

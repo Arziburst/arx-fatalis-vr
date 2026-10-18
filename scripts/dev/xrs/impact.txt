@@ -39,6 +39,7 @@ scripts/dev/ci-smoke.ps1 -> *
 scripts/dev/ci-smoke-lib.ps1 -> *
 scripts/dev/make-test-saves.ps1 -> *
 scripts/dev/test-saves/scenario-lib.ps1 -> *
+scripts/dev/test-saves/scenarios.txt -> *
 scripts/dev/vrsim/idle.vrsim -> *
 scripts/launch-lib.ps1 -> *
 scripts/build-paths.ps1 -> *
@@ -127,7 +128,7 @@ src/vr/VRTurn.* -> snap-turn vr-turning-settings controls-v2
 src/vr/PhysicalCrouch.* -> physical-crouch stand-up sneak-jump-crouch
 src/vr/VRGameInput.* -> sneak-jump-crouch walk-forward walk-look controls-v2 stand-up
 src/physics/* -> stand-up real-steps physical-crouch sneak-jump-crouch walk-forward walk-look playground-respawn melee-swing
-src/game/Player.* -> stand-up real-steps physical-crouch sneak-jump-crouch walk-forward walk-look height-hands playground-respawn wrist-vitals
+src/game/Player.* -> stand-up real-steps physical-crouch sneak-jump-crouch walk-forward walk-look height-hands playground-respawn playground-levers wrist-vitals
 
 # --- Hands in the world: reticles, reach, weapons, melee -----------------------------------------------------------
 src/vr/HandReticle.* -> hand-reticle menu-pointer playground-hands reach-chest reach-door reach-lever
@@ -253,7 +254,6 @@ scripts/register-steamvr.ps1 -> core
 scripts/run-windows.ps1 -> core
 scripts/steam-shortcuts-lib.ps1 -> core
 scripts/tester/* -> core
-scripts/dev/test-saves/scenarios.txt -> core
 scripts/dev/vrsim/* -> core
 data/vr/* -> core
 data/icons/* -> core

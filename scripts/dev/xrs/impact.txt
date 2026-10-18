@@ -131,7 +131,7 @@ src/vr/VRComfort.* -> snap-turn walk-forward walk-look real-steps
 src/vr/Locomotion.* -> walk-forward walk-look sneak-jump-crouch controls-v2 playground-respawn
 src/vr/VRTurn.* -> snap-turn vr-turning-settings controls-v2
 src/vr/PhysicalCrouch.* -> physical-crouch stand-up sneak-jump-crouch
-src/vr/VRGameInput.* -> sneak-jump-crouch walk-forward walk-look controls-v2 stand-up
+src/vr/VRGameInput.* -> sneak-jump-crouch walk-forward walk-look controls-v2 stand-up menu-long-press
 src/physics/* -> stand-up real-steps physical-crouch sneak-jump-crouch walk-forward walk-look playground-respawn melee-swing
 src/game/Player.* -> stand-up real-steps physical-crouch sneak-jump-crouch walk-forward walk-look height-hands playground-respawn playground-levers wrist-vitals
 
@@ -153,11 +153,11 @@ src/vr/RuneTrail.* -> rune-trail controls-v2
 src/vr/VRRunes.* -> rune-trail controls-v2 spell-drawcheck
 
 # --- Controls, bindings and settings -------------------------------------------------------------------------------
-src/vr/VRInput.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail sneak-jump-crouch walk-look physical-crouch vr-turning-settings hand-reticle playground-hands desktop-mouse first-run-chargen first-run-menu finger-held finger-tracking
-src/vr/VRActions.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail sneak-jump-crouch walk-look physical-crouch vr-turning-settings hand-reticle playground-hands desktop-mouse first-run-chargen first-run-menu finger-held finger-tracking arms-follow hand-conforming
-src/vr/VRControls.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail finger-held finger-tracking hand-reticle playground-hands
+src/vr/VRInput.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail sneak-jump-crouch walk-look physical-crouch vr-turning-settings hand-reticle playground-hands desktop-mouse first-run-chargen first-run-menu finger-held finger-tracking menu-rebind-kept menu-long-press
+src/vr/VRActions.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail sneak-jump-crouch walk-look physical-crouch vr-turning-settings hand-reticle playground-hands desktop-mouse first-run-chargen first-run-menu finger-held finger-tracking arms-follow hand-conforming menu-rebind-kept menu-long-press
+src/vr/VRControls.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail finger-held finger-tracking hand-reticle playground-hands menu-rebind-kept menu-long-press
 src/vr/VRBindings.* -> controls-v2 vr-remap vr-remap-saved vr-settings-flat finger-held finger-tracking
-src/vr/BindingCapture.* -> vr-remap vr-remap-saved vr-settings-flat
+src/vr/BindingCapture.* -> vr-remap vr-remap-saved vr-settings-flat menu-rebind-kept menu-long-press
 src/vr/VRSettingsRows.* -> vr-turning-settings vr-settings-flat vr-remap
 src/input/* -> real-input real-input-flat desktop-mouse desktop-mouse-flat first-run-chargen menu-pointer hand-reticle vr-remap menu-trigger-grip
 
@@ -166,8 +166,8 @@ src/vr/MenuPointer.* -> menu-pointer menu-trigger-grip desktop-mouse desktop-mou
 src/vr/UIPanel.* -> ui-panel menu-pointer first-run-menu first-run-chargen
 src/vr/VRMirror.* -> ui-panel menu-pointer first-run-menu first-run-chargen cinematics desktop-mouse
 src/vr/MirrorGeometry.h -> ui-panel menu-pointer first-run-menu first-run-chargen cinematics desktop-mouse
-src/vr/RadialMenu.* -> radial-menu controls-v2 vr-remap hand-reticle first-run-menu
-src/vr/VRRadial.* -> radial-menu controls-v2 hud-frame first-run-menu first-run-chargen rune-trail tl-reprojection
+src/vr/RadialMenu.* -> radial-menu controls-v2 vr-remap hand-reticle first-run-menu menu-rebind-kept
+src/vr/VRRadial.* -> radial-menu controls-v2 hud-frame first-run-menu first-run-chargen rune-trail tl-reprojection menu-rebind-kept
 src/vr/HudFrame.* -> hud-frame hud-frame-flat tl-reprojection
 src/vr/VRHud.* -> hud-frame hud-frame-flat tl-reprojection wrist-vitals ui-panel
 src/vr/WristHud.* -> wrist-vitals hud-frame hud-frame-flat weapon-hold tl-reprojection
@@ -184,12 +184,12 @@ src/gui/Dragging.* -> hand-reticle menu-pointer
 src/gui/DamageNumbers.* -> damage-numbers damage-numbers-off
 src/gui/book/* -> rune-trail controls-v2 first-run-menu first-run-chargen radial-menu
 src/gui/CharacterCreation.* -> first-run-chargen first-run desktop-mouse desktop-mouse-flat
-src/gui/MainMenu.* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-remap-saved vr-turning-settings menu-trigger-grip
+src/gui/MainMenu.* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-remap-saved vr-turning-settings menu-trigger-grip menu-rebind-kept menu-long-press
 src/gui/Menu.* -> first-run first-run-intro first-run-menu first-run-chargen vr-settings-flat
 src/gui/MenuPublic.* -> first-run-menu vr-settings-flat
 src/gui/MenuWidgets.* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-turning-settings
 src/gui/menu/* -> first-run-menu vr-settings-flat vr-remap vr-turning-settings
-src/gui/widget/* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-remap-saved vr-turning-settings
+src/gui/widget/* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-remap-saved vr-turning-settings menu-rebind-kept menu-long-press
 src/gui/Logo.* -> first-run first-run-intro desktop-mouse-flat
 src/gui/LoadLevelScreen.* -> level-load-hang first-run-intro
 src/gui/CinematicBorder.* -> cinematics first-run-intro

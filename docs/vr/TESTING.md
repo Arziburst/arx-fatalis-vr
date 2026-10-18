@@ -1958,7 +1958,7 @@ self-hosted runner (D-021: CI is the automatic gate; a red step blocks the merge
 | Script self-tests | beside the build (#522): started in the background before it, joined right after it (their output printed, their exit code checked) — `scripts/dev/run-script-tests.ps1`: every `scripts/dev/test-*.ps1` in its own pwsh (`test-log-digest.ps1` incl. the `-Id` / `-Find` / `-Condense` / `-Print` modes on a fixture log, `test-github-lib.ps1`, `test-launch-lib.ps1`) | a test exits non-zero, or a `test-*.ps1` is in neither list of the script (a new test cannot be forgotten) |
 | Build | `build-windows.ps1 -Config Release`, which also builds and runs the host unit tests (`arxtest`) | the build, or a CppUnit test, fails |
 | Game checks | `scripts/dev/ci-smoke.ps1`: `smoke-test.ps1 -Seconds 3 -Commands 'drawcheck 120'`, then `spell-drawcheck.ps1` — the same scripts a worker runs, flat, `--loadlevel 10` | either returns `FAIL`, **or was skipped** (exit 2: the game lock stayed busy for 15 min) — a gate that did not run is not a pass, re-run the job |
-| Sequences (#255) | the same script, phase `sequences`: every `scripts/dev/xrs/*.xrs` (`look-around`, `snap-turn`, `walk-forward`, `stand-up`, `recenter`, `ui-panel`, see [Scripted sequences](#scripted-sequences-xrs-113)) as one launch each — `smoke-test.ps1 -Sequence <name>` with the `@sim` / `@args` / `@save` the file declares (idle simulated headset by default, flat when its `@args` say `--no-vr`) | a step fails, **a `@pending` step starts passing** (remove the `@pending`), or the launch was skipped (exit 2). A new `.xrs` file is picked up by itself |
+| Sequences (#255) | the same script, phase `sequences`: every `scripts/dev/xrs/*.xrs` (`look-around`, `snap-turn`, `walk-forward`, `stand-up`, `recenter`, `ui-panel`, see [Scripted sequences](#scripted-sequences-xrs-113)) as one launch each — `smoke-test.ps1 -Sequence <name>` with the `@sim` / `@args` / `@save` the file declares (idle simulated headset by default, flat when its `@args` say `--no-vr`) | a step fails, **a `@pending` step starts passing** (remove the `@pending`), or the launch was skipped (exit 2). A new `.xrs` file is picked up by itself. A pull request runs the core and the sequences its change selects ([the impact map](#what-a-pull-request-runs-the-impact-map-522)); a push to main and the merge gate run all |
 | Upload | the artifact `game-checks`, **only when the job failed** (#522); a green run keeps its evidence on the runner | — |
 
 **The save library on the runner (#255).** Sequences with a `@save` (`snap-turn`, `stand-up`, `ui-panel`: `mvp-new-game`)
@@ -2029,6 +2029,78 @@ The game checks are most of the job, so `ci-smoke.ps1` runs two games at once:
   administrator. A phase's run digest is the one of its game's pid (`status.json`, else `launched.txt`), never the
   newest folder of `runs\`: the other lane writes digests too.
 - `scripts/dev/test-ci-smoke.ps1` checks all of it without a game (fake phases on thread jobs, a scratch lock folder).
+
+### What a pull request runs: the impact map (#522)
+
+A pull request proves its own change; the whole suite runs once more right before the merge. The **suites** of
+`ci-smoke.ps1`:
+
+| Suite | When | What runs |
+|---|---|---|
+| `pr` | a pull request without the label `full-ci`; `ci-local.ps1` (below) | the **selection**: the core, every sequence a line of the map gives for a changed path, and the changed or added `.xrs` files themselves (a changed read-back selects its sequence; the save library when a selected sequence has a `@save`) |
+| `full` | a push to main, a manual run with `suite=full` (**the merge gate**), a pull request with the label `full-ci`, `ci-local.ps1 -Full` | every phase |
+
+The workflow's Scope step decides (its log line `game check suite: pr (...)` says why); the label is read live through
+the API, so adding `full-ci` and re-running the PR's last run (`gh run rerun <id>`) or pushing runs everything. A
+selection falls back to everything when it cannot be sure: a changed path that no line of the map matches (a new
+folder, a new file in a folder that is listed file by file), a line `-> *`, or a diff that cannot be made. The log of
+the game checks names the suite and why (`ci-smoke: suite pr - ...` / `ci-smoke: suite full - ...`), lists the
+selection with the reason of each check (`ci-smoke: selected 19 of 66 checks: arms-follow (core), melee-swing
+(src/vr/VRMelee.cpp), ...`), and the job summary repeats both lines.
+
+**The map**, `scripts/dev/xrs/impact.txt`, one rule per line, a comment per group:
+
+```
+core: smoke-test spell-drawcheck first-run look-around ...    # every pull request (several core: lines add up)
+src/vr/VRMelee.* -> melee-swing melee-recovery ...            # a changed path that matches selects these
+scripts/dev/smoke-test.ps1 -> *                              # the harness: everything
+src/core/CommandChannel.* -> core                            # covered by the core alone
+```
+
+A glob is a repository path with `/` and the wildcards of `-like`, any case; `*` also crosses folders. Every line that
+matches a path adds its names; one `-> *` among them runs everything. The groups: the **harness** every check stands
+on (`smoke-test.ps1`, `test-lib.ps1`, `xrs-lib.ps1`, `ci-smoke*.ps1`, `launch-lib.ps1`, `build-paths.ps1`, the save
+library's generator, `vrsim/idle.vrsim`, `VRSimulator.*`, `SimRig.*`, `vcpkg.json`, `cmake/`, the workflows) and the
+**engine foundations** (`src/graphics`, `io`, `platform`, `scene`, `script`, `window`, ...) run everything; the **hub
+files** every feature touches (`CommandChannel.*`, `Config.*`, `ArxGame.*`, `VRSystem.*`, `CMakeLists.txt`) run the core
+alone - as `-> *` they made 28 of the last 30 pull request runs full, and with them on the core every one of those
+runs' 11 failed phases was still selected (`impact-replay.ps1`, below); the rest is one line per module of `src/vr`,
+`src/gui`, `src/game`, the playground and the data, and `-> core` for docs, host tests and the dev scripts that no game
+check uses.
+
+**Rules for authors.**
+- **A new sequence needs a line** that names it (or a place in core): the coverage check fails otherwise. Name it on the
+  lines of the source files it tests.
+- **A new channel command or status field for a feature is selected by that feature's source files**: the hub file it
+  lives in (`CommandChannel.cpp`, `Config.cpp`) selects only the core, so a sequence that only reads such a field and
+  tests no file of its own needs a glob line for the files that compute it. This is the gap the hub rule leaves; the
+  full suite before the merge catches what a missing line lets through.
+- A new source folder or a new file in a listed folder runs everything until it gets a line - safe, but slow: add the
+  line in the same pull request.
+
+**The coverage check** (`Test-ArxImpactMap` in `ci-smoke-lib.ps1`, run by `test-ci-smoke.ps1` in the script
+self-tests of every pull request) fails on a sequence or check that is neither in core nor named by a line (`-> *` does
+not count), a name that is no sequence, a line that is not `core: ...` or `<glob> -> ...`, and a glob listed twice.
+`ci-smoke.ps1` prints the same problems as warnings and, on a broken map, runs everything.
+
+**Replaying the map**: `.\scripts\dev\impact-replay.ps1` takes the last 30 pull request runs with a game check verdict,
+reads each run's base and head from its checkout log (the merge commit it built), the changed files from GitHub's
+compare (`gh api`), the failed phases from its log, and prints a table - run, PR, the selection, the failed phase,
+selected? - and the totals; exit 1 when a failure would not have been selected. After a change of the map (or of the
+core) run it again: the facts are cached in `%LOCALAPPDATA%\ArxFatalisVR\impact-replay`, so a replay costs no API
+calls. `-DurationsFile` adds each selection's own time.
+
+**The merge gate.** Before the merge the coordinator's queue runs the whole suite on the pull request's head branch:
+`gh workflow run build-windows.yml --ref <branch> -f suite=full`, finds that run
+(`gh run list --workflow build-windows.yml --branch <branch> --event workflow_dispatch`) and merges only on its
+`success` on the same head commit. A branch made before #522 has no `suite` input: merge main into it first.
+
+**Locally, before every push**: `.\scripts\dev\ci-local.ps1` builds the working copy (with `arxtest`), runs the
+script self-tests, then `ci-smoke.ps1 -Suite pr` against `origin/main` (fetched first) on two lanes - one while another
+game of the PC holds a slot - and prints a summary with each step's time, the suite line and the selection; exit 0 only
+when every step passed (2: the game lock stayed busy). `-Full` runs everything. The selection is of the commits
+(`origin/main...HEAD`): commit first. Its evidence goes to `%LOCALAPPDATA%\ArxFatalisVR\ci-local\<copy>-<time>` (the last
+5 runs of the copy stay). A selection is 15-35 launches, so the launch budget's note is expected.
 
 ## The tester package (#88)
 

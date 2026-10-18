@@ -15,6 +15,11 @@
 	                                                           a warning in the log and the job summary (#321)
 	All are the same scripts the workers run (docs/vr/TESTING.md); a FAIL of any fails this script.
 
+	Suites (#522): -Suite full runs every phase (a push to main, a manual run with suite=full, a pull request with the
+	label full-ci, the merge gate); -Suite pr runs the selection of the change against -Base from the impact map
+	scripts\dev\xrs\impact.txt (the core, the sequences of the changed paths, the changed .xrs files), and everything
+	when the map cannot say (a path in no line, a line '-> *', no diff). The log names the suite and lists the selection.
+
 	Lanes (#522): the phases run on up to -Lanes games at once (default 2), each lane with its own test channel
 	folder; a scheduler hands the next phase to a free lane. The game lock decides how many may run: the lanes are
 	capped at its maxGames (the workflow sets ARXVR_MAX_GAMES=2; on a PC without it a run by hand stays on one lane),
@@ -61,9 +66,22 @@
 .PARAMETER Lanes
 	How many games may run at once (default 2), capped by the game lock's maxGames ($env:ARXVR_MAX_GAMES).
 
+.PARAMETER Suite
+	full (default): every phase. pr: the selection of a pull request (#522) - the core, the sequences the changed paths
+	select in scripts\dev\xrs\impact.txt and the changed .xrs files themselves, against -Base; everything when a changed
+	path is in no line of the map, a line says '-> *', or the diff cannot be made. The log says which suite ran and why,
+	and lists the selected phases with the reason of each.
+
+.PARAMETER ImpactMap
+	The impact map of -Suite pr (default scripts\dev\xrs\impact.txt).
+
+.PARAMETER Changed
+	Repository paths that stand for the change instead of the diff against -Base: what -Suite pr runs for them (to try
+	the map, or to time the selection of a past pull request).
+
 .PARAMETER Base
-	The ref the change is compared with for the changed sequences (default: origin/<the PR's base> in CI, none on a
-	push; origin/main by hand).
+	The ref the change is compared with for the changed sequences and the selection (default: origin/<the PR's base>
+	in CI, none on a push; origin/main by hand).
 
 .PARAMETER DurationsFile
 	The phase times of the last run (default: %LOCALAPPDATA%\ArxFatalisVR\ci-evidence\ci-durations.json).
@@ -88,6 +106,10 @@ param(
 	[string]$Phase = 'all',
 	[ValidateRange(1, 8)]
 	[int]$Lanes = 2,
+	[ValidateSet('full', 'pr')]
+	[string]$Suite = 'full',
+	[string]$ImpactMap,
+	[string[]]$Changed,
 	[string]$Base = $(if ($env:GITHUB_BASE_REF) { "origin/$env:GITHUB_BASE_REF" } elseif (-not $env:GITHUB_ACTIONS) { 'origin/main' }),
 	[string]$DurationsFile,
 	[int]$KeepRuns = 10
@@ -172,6 +194,36 @@ function Clear-LaneChannel([string]$TestDir) {
 	Remove-Item (Join-Path $TestDir 'capture') -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# --- The suite (#522) -------------------------------------------------------------------------------------------
+# pr: only the selection of the change from the impact map; full - or a selection the map cannot make: every phase
+if (-not $ImpactMap) { $ImpactMap = Join-Path $PSScriptRoot 'xrs\impact.txt' }
+# pwsh -File hands a list over as one string: a,b,c
+$Changed = @($Changed | ForEach-Object { $_ -split ',' } | ForEach-Object Trim | Where-Object { $_ })
+$selection = $null
+$suiteWhy = 'asked for'
+$changedSet = $null
+if ($Suite -eq 'pr') {
+	$changedSet = if ($Changed) { [pscustomobject]@{ Ok = $true; Files = $Changed } } else { Get-ArxChangedFileSet $ArxSourceDir $Base }
+	if (-not $changedSet.Ok) { $suiteWhy = "the change is unknown ($(if ($Base) { "cannot diff against $Base" } else { 'no base' }))" }
+	else {
+		$impact = Read-ArxImpactMap $ImpactMap
+		# The coverage check fails in the script self-tests; here it is only said
+		foreach ($problem in @(Test-ArxImpactMap $impact (Get-ArxSequenceNames (Join-Path $PSScriptRoot 'xrs')))) { Write-Host "ci-smoke: impact map: $problem" -ForegroundColor Yellow }
+		if ($impact.Errors) { $suiteWhy = "the impact map $ImpactMap has errors" }
+		else {
+			$sel = Get-ArxImpactSelection $impact $changedSet.Files
+			if ($sel.Full) { $suiteWhy = "the change needs everything: $($sel.FullBecause -join '; ')" }
+			else { $selection = $sel }
+		}
+	}
+}
+$suiteLine = if ($selection) { "suite pr - the core and what the $(@($changedSet.Files).Count) changed file(s) $(if ($Changed) { 'given by -Changed' } else { "against $Base" }) select ($ImpactMap)" }
+	elseif ($Suite -eq 'pr') { "suite full - a pull request's selection was asked for, but $suiteWhy" }
+	else { 'suite full - every phase (asked for)' }
+Write-Host "ci-smoke: $suiteLine"
+if ($env:GITHUB_STEP_SUMMARY) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "**Game checks:** $suiteLine" }
+function Test-Selected([string]$Name) { -not $script:selection -or $script:selection.Reasons.ContainsKey($Name) }
+
 # --- The phases -------------------------------------------------------------------------------------------------
 # In the serial order (the summary's); each runs as a background job on a lane
 $phases = [Collections.Generic.List[object]]::new()
@@ -183,12 +235,12 @@ function Add-Phase([string]$Name, [string]$Command, [hashtable]$Params, [string]
 	})
 }
 
-if ($Phase -in 'all', 'smoke') {
+if ($Phase -in 'all', 'smoke' -and (Test-Selected 'smoke-test')) {
 	$p = @{ Config = $Config; Seconds = 3; Commands = @('loadlevel 1', 'loadlevel 10', 'drawcheck 120'); LockTimeoutSec = $LockTimeoutSec } + $dataArgs
 	# smoke-test and spell-drawcheck both use this copy's isolated user directory: never at the same time
 	Add-Phase 'smoke-test' 'smoke-test.ps1' $p $userDir -Exclusive 'copy-user-dir'
 }
-if ($Phase -in 'all', 'spells') {
+if ($Phase -in 'all', 'spells' -and (Test-Selected 'spell-drawcheck')) {
 	$p = @{ LockTimeoutSec = $LockTimeoutSec } + $dataArgs
 	Add-Phase 'spell-drawcheck' 'spell-drawcheck.ps1' $p $userDir -Exclusive 'copy-user-dir'
 }
@@ -198,6 +250,8 @@ $seqUserDirsMade = @()
 if ($Phase -in 'all', 'sequences') {
 	# Every shipped sequence (#255), parsed first: a syntax error costs no launch
 	$sequences = @(Get-ChildItem (Join-Path $PSScriptRoot 'xrs') -Filter '*.xrs' | Sort-Object Name | ForEach-Object { Read-ArxSequence $_.FullName })
+	# Of them the selection of a pull request (#522); the save library runs only when one of those loads a save
+	$sequences = @($sequences | Where-Object { Test-Selected $_.Name })
 	$needed = @($sequences | Where-Object Save | ForEach-Object Save | Sort-Object -Unique)
 	if ($needed) {
 		# The test save library of this account (D-023): verified, else generated (Invoke-ArxSaveLibraryPhase); its game
@@ -281,16 +335,25 @@ if ($Phase -in 'all', 'sequences') {
 # The save library first (the @save sequences wait for it), then the two short checks, then the sequences: the changed
 # ones first, then by the last run's duration, longest first
 $durations = Read-ArxPhaseDurations $DurationsFile
-$changed = @(Get-ArxChangedFiles $ArxSourceDir $Base)
+$changed = if ($Changed) { @($Changed) } else { @(Get-ArxChangedFiles $ArxSourceDir $Base) }
 $changedXrs = @($changed | Where-Object { $_ -like 'scripts/dev/xrs/*.xrs' })
 $sequenceOrder = @(Get-ArxPhaseOrder $units $changed $durations)
 $byName = @{}
 foreach ($ph in $phases) { $byName[$ph.Name] = $ph }
 $dispatch = @(@('save-library', 'smoke-test', 'spell-drawcheck') + $sequenceOrder | Where-Object { $byName.ContainsKey($_) -and -not $byName[$_].Skip } | ForEach-Object { $byName[$_] })
 $known = @($dispatch | Where-Object { $durations.ContainsKey($_.Name) }).Count
-Write-Host "ci-smoke: $($dispatch.Count) phase(s) to run; changed against $(if ($Base) { $Base } else { 'nothing (no base)' }): $(if ($changedXrs) { $changedXrs -join ', ' } else { 'no .xrs' })"
+Write-Host "ci-smoke: $($dispatch.Count) phase(s) to run; changed $(if ($Changed) { '(given by -Changed)' } elseif ($Base) { "against $Base" } else { 'against nothing (no base)' }): $(if ($changedXrs) { $changedXrs -join ', ' } else { 'no .xrs' })"
 Write-Host "ci-smoke: last run's durations from $DurationsFile$(if (-not (Test-Path -LiteralPath $DurationsFile)) { ' (none yet)' }): $known known, $($dispatch.Count - $known) unknown (counted as the longest)"
 Write-Host "ci-smoke: order: $(($dispatch | ForEach-Object Name) -join ', ')"
+if ($selection) {
+	# The selected checks that exist here (a deleted .xrs selects nothing), each with why: core, or the path that chose it
+	$picked = @(foreach ($name in $selection.Names) {
+		if ($byName.ContainsKey($name) -or $byName.ContainsKey("xrs-$name")) { "$name ($($selection.Reasons[$name]))" }
+	})
+	$total = $ArxImpactChecks.Count + @(Get-ArxSequenceNames (Join-Path $PSScriptRoot 'xrs')).Count
+	Write-Host "ci-smoke: selected $($picked.Count) of $total checks: $($picked -join ', ')"
+	if ($env:GITHUB_STEP_SUMMARY) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "Selected $($picked.Count) of $total checks: $($picked -join ', ')" }
+}
 
 # --- Running them -----------------------------------------------------------------------------------------------
 # One phase in its own pwsh process (a background job): the lane's test channel goes to every script of the phase
@@ -392,6 +455,7 @@ $index = @{}
 foreach ($ph in $phases) { $index[$ph.Name] = $ph.Index }
 $results = @(@($results) + @($outcome) | Sort-Object { $index[$_.Name] })
 foreach ($r in $results) { Write-Host ("  {0,-8} {1}" -f $r.Verdict, $r.Name) -ForegroundColor $(if ($r.Verdict -eq 'NOT RUN') { 'Yellow' } elseif ($r.Exit -eq 0) { 'Green' } else { 'Red' }) }
+if ($selection) { Write-Host "ci-smoke: suite pr - the checks the change does not select did not run; the full suite runs before the merge" }
 if (@($results | Where-Object Verdict -eq 'FAIL')) { Write-Host 'ci-smoke: FAILED' -ForegroundColor Red; exit 1 }
 if (@($results | Where-Object Verdict -eq 'SKIPPED')) {
 	Write-Host "ci-smoke: SKIPPED - the game lock stayed busy for $LockTimeoutSec s; a gate that did not run is not a pass, re-run the job when the game is closed" -ForegroundColor Red

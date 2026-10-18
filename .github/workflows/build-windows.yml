@@ -7,7 +7,8 @@ name: Build (Windows)
 # The job is the automatic quality gate of every pull request (#127, decision D-021): the PowerShell
 # self-tests of the dev scripts, the build with the host unit tests (arxtest, run by build-windows.ps1),
 # then the flat game checks - smoke test with the draw check, and the spell draw check. A red step blocks
-# the merge. The evidence of the game checks is the artifact "game-checks" when the job failed; a green run keeps it on
+# the merge. A pull request runs the game checks its change selects (#522, scripts/dev/xrs/impact.txt); the whole
+# suite runs on a push to main and once more on the pull request's head right before the merge (a manual run). The evidence of the game checks is the artifact "game-checks" when the job failed; a green run keeps it on
 # the runner only (#522).
 
 on:
@@ -29,7 +30,18 @@ on:
       - '!.github/ISSUE_TEMPLATE/**'
       - '!.github/pull_request_template.md'
       - 'docs/vr/DECISIONS.md'
+  # A manual run (#522): suite=full is the merge gate - the coordinator's queue starts it on a pull request's head
+  # branch right before the merge (gh workflow run build-windows.yml --ref <branch> -f suite=full); suite=pr runs that
+  # branch's selection against main. No `labeled` trigger: every label would start a run, and a job skipped for a
+  # label it does not care about reports "success" over a red check of the same commit - the Scope step reads the
+  # label full-ci live instead, so adding it and re-running the PR's last run (or pushing) runs everything.
   workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Game checks: full (every phase, the merge gate) or pr (the selection of the change against main)'
+        type: choice
+        options: [ full, pr ]
+        default: full
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -82,6 +94,9 @@ jobs:
     - name: Scope
       id: scope
       shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+        SUITE_INPUT: ${{ inputs.suite }}
       run: |
         $heavy = $true
         $light = '^(docs/|\.claude/|\.github/ISSUE_TEMPLATE/|\.github/pull_request_template\.md$)|\.md$'
@@ -96,6 +111,22 @@ jobs:
         }
         "heavy=$($heavy.ToString().ToLower())" >> $env:GITHUB_OUTPUT
         Write-Host "heavy steps: $heavy"
+        # The game checks' suite (#522): a pull request runs its selection (scripts/dev/xrs/impact.txt) unless it carries
+        # the label full-ci, read live (a re-run after adding the label sees it; the event's own copy would not); a push
+        # to main runs everything; a manual run its input (default full: the merge gate). Labels unknown: everything.
+        $suite = 'full'
+        $why = 'a push to main'
+        if ('${{ github.event_name }}' -eq 'pull_request') {
+          try {
+            $labels = @(Invoke-RestMethod -Uri "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/issues/${{ github.event.pull_request.number }}/labels" -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' } | ForEach-Object name)
+            if ($labels -contains 'full-ci') { $why = 'the pull request has the label full-ci' } else { $suite = 'pr'; $why = 'a pull request without the label full-ci' }
+          } catch { $why = "the labels of the pull request could not be read ($($_.Exception.Message))" }
+        } elseif ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+          if ($env:SUITE_INPUT -in 'full', 'pr') { $suite = $env:SUITE_INPUT }
+          $why = "a manual run with suite=$suite"
+        }
+        "suite=$suite" >> $env:GITHUB_OUTPUT
+        Write-Host "game check suite: $suite ($why)"
 
     # The repository is public: no personal paths, ids or e-mails in tracked files, no images under docs/ (#428).
     # Runs on every change, docs-only ones included.
@@ -168,6 +199,9 @@ jobs:
     # else keeps one); ci-smoke.ps1 drops to one lane while a game that is not this job's holds a slot. The evidence
     # stays on the runner, in the service's %LOCALAPPDATA%\ArxFatalisVR\ci-evidence\<run id>-<attempt> (the last 10
     # runs), and is uploaded only when the job failed.
+    # What runs is the Scope step's suite (#522): on a pull request the core plus what its changed paths select in
+    # scripts/dev/xrs/impact.txt (the log lists them); everything on a push to main, with the label full-ci and on a
+    # manual run with suite=full (the merge gate).
     - name: Game checks (smoke test, draw check, spell draw check, .xrs sequences)
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
@@ -176,7 +210,10 @@ jobs:
       run: |
         $evidence = Join-Path $env:LOCALAPPDATA "ArxFatalisVR\ci-evidence\$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
         "CI_EVIDENCE=$evidence" >> $env:GITHUB_ENV
-        ./scripts/dev/ci-smoke.ps1 -OutDir $evidence
+        # The selection is the diff against main (#522): a pull request fetched it in the Decision numbers step, a manual
+        # run fetches it here
+        if ('${{ github.event_name }}' -eq 'workflow_dispatch') { git fetch --no-tags origin main:refs/remotes/origin/main; $global:LASTEXITCODE = 0 }
+        ./scripts/dev/ci-smoke.ps1 -OutDir $evidence -Suite '${{ steps.scope.outputs.suite }}' -Base origin/main
 
     # The tester package (#88): the zip built from this build, extracted into a clean folder and started with a
     # PATH of only Windows folders. Fails when a DLL is missing from the zip or the extracted game does not run.

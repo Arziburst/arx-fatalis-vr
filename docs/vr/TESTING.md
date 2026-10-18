@@ -500,6 +500,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   (`FlyingOverIO`) or `none`; `drag`: the item being dragged or `none`; `container`: the chest or body whose
   inventory is open (#38) or `none`; `target`, `targetX`, `targetY`: what the last `vr-point` aimed at.
   `player.inventoryItems` (#38): the items in the hero's bag.
+  `player.inventorySlide` (#522): how far the bag is still slid down (the engine's own slide, 110 to 0 in about
+  28 frames at 90 fps), 0 = fully open: a shot of the open bag waits `@until player.inventorySlide eq 0 5s`.
   `menuHover` (#394): in the main menu and the character creation, the name a
   `vr-point ... menu` aimed at while the widget under the mouse is that one — what a click lands on; `other` for
   another widget of the main menu, `none` for nothing (a greyed-out entry counts as nothing: the engine does not click
@@ -711,7 +713,12 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
 - `camera` (with `player`): the first-person camera as the frame before left it — position, angles,
   `fov` in degrees, `bob` = its distance from the stable head position of the paused animation (view
   bobbing; 0 when off), `shake` = the quake amplitude applied that frame (0 without a quake or when
-  screen shake is off). `camera.prepared`: the camera the last frame's interface pass ended with —
+  screen shake is off). `stillMs` (#522): milliseconds since the camera last moved more than 0.0005 units or
+  turned more than 0.0005° (on any axis) from where it was then — any move resets it, a slow drift too, and so
+  does the simulated head's motion; a sequence that aims from the camera or compares the hands' points exactly
+  waits `@until camera.stillMs ge 200 5s` (after a `setpos` the hero falls and the camera settles for about
+  1.3 s). The status written right after a batch can still show the stillness from before it: wait a few frames
+  first. `camera.prepared`: the camera the last frame's interface pass ended with —
   its projection's scale `m00`/`m11`, off-axis shift `m20`/`m21` and viewport `width`/`height`; in
   VR the head camera's union projection, the same with the book open as closed (#247). `comfort`: who decides the VR comfort policy (`mode`: `auto` / `on` / `off`),
   whether the VR rules apply (`active`) and what is allowed right now (#76). The status is written

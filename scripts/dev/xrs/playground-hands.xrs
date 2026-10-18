@@ -45,9 +45,9 @@ freelook on; ui inventory close
 
 # 1. The lever: pulled down
 setpos 8380 -170 8200 0
-@until player.y eq -170 5s                    # the eye is given (floor y 0 - 170), so the hero falls 170 units to the floor first,
-@until camera.y ge -170.1 5s                  # and the camera (the hands follow it) settles after the landing - not frames (#522)
 @frames 30
+@until camera.stillMs ge 200 5s               # the eye is given, so the hero falls 170 units to the floor first: the camera (the hands
+                                              # follow it) lands and settles, by time, not frames (#522)
 vr-point right face lever_9002
 @frames 5
 vr-point right face lever_9002
@@ -67,9 +67,8 @@ vr-sim action trigger right 0; vr-sim action grip right 0
 
 # 2. The door: opened, then closed (the door is not interactive while it swings)
 setpos 7850 -170 7900 0
-@until player.y eq -170 5s                    # landed (see the first setpos)
-@until camera.y ge -170.1 5s                  # the camera settled after the landing
 @frames 30
+@until camera.stillMs ge 200 5s               # landed and settled (see the first setpos)
 vr-point right face light_door_9001
 @frames 5
 vr-point right face light_door_9001
@@ -98,9 +97,8 @@ vr-sim action trigger right 0; vr-sim action grip right 0
 
 # 3. The chest: opened on the panel, its first item dragged into the bag (opened with the inventory button)
 setpos 8420 -170 7820 0
-@until player.y eq -170 5s                    # landed (see the first setpos)
-@until camera.y ge -170.1 5s                  # the camera settled after the landing
 @frames 30
+@until camera.stillMs ge 200 5s               # landed and settled (see the first setpos)
 vr-point right face chest_metal_9001
 @frames 5
 vr-point right face chest_metal_9001
@@ -136,10 +134,9 @@ freelook on; ui inventory close
 
 # 4. The body: searched, its first item dragged into the bag. Walking over to it closes the chest
 setpos 8100 -170 7750 0
-@until player.y eq -170 5s                    # landed (see the first setpos)
-@until camera.y ge -170.1 5s                  # the camera settled after the landing
 @until ui.container eq none 5s
 @frames 30
+@until camera.stillMs ge 200 5s               # landed and settled (see the first setpos)
 vr-point right face goblin_base_9002
 @frames 5
 vr-point right face goblin_base_9002
@@ -178,10 +175,9 @@ freelook on; ui inventory close
 
 # 1. The lever: pulled up again. Walking over to it closes the body
 setpos 8380 -170 8200 0
-@until player.y eq -170 5s                    # landed (see the first setpos)
-@until camera.y ge -170.1 5s                  # the camera settled after the landing
 @until ui.container eq none 5s
 @frames 30
+@until camera.stillMs ge 200 5s               # landed and settled (see the first setpos)
 vr-point left face lever_9002
 @frames 5
 vr-point left face lever_9002
@@ -200,9 +196,8 @@ vr-sim action trigger left 0; vr-sim action grip left 0
 
 # 2. The door: opened, then closed
 setpos 7850 -170 7900 0
-@until player.y eq -170 5s                    # landed (see the first setpos)
-@until camera.y ge -170.1 5s                  # the camera settled after the landing
 @frames 30
+@until camera.stillMs ge 200 5s               # landed and settled (see the first setpos)
 vr-point left face light_door_9001
 @frames 5
 vr-point left face light_door_9001
@@ -231,9 +226,8 @@ vr-sim action trigger left 0; vr-sim action grip left 0
 
 # 3. The chest: its other item into the bag
 setpos 8420 -170 7820 0
-@until player.y eq -170 5s                    # landed (see the first setpos)
-@until camera.y ge -170.1 5s                  # the camera settled after the landing
 @frames 30
+@until camera.stillMs ge 200 5s               # landed and settled (see the first setpos)
 vr-point left face chest_metal_9001
 @frames 5
 vr-point left face chest_metal_9001
@@ -267,10 +261,9 @@ freelook on; ui inventory close
 
 # 4. The body: its other item into the bag
 setpos 8100 -170 7750 0
-@until player.y eq -170 5s                    # landed (see the first setpos)
-@until camera.y ge -170.1 5s                  # the camera settled after the landing
 @until ui.container eq none 5s
 @frames 30
+@until camera.stillMs ge 200 5s               # landed and settled (see the first setpos)
 vr-point left face goblin_base_9002
 @frames 5
 vr-point left face goblin_base_9002

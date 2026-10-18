@@ -439,6 +439,13 @@ struct State {
 		u64 lastFrame = 0;           //!< Watched up to this frame: a shot that never comes has the 100 ms status
 	} simShotWatch;
 
+	//! camera.stillMs (#522): when the first-person camera last moved more than a hair from where it was then
+	struct CameraWatch {
+		Vec3f pos = Vec3f(0.f);
+		Vec3f angles = Vec3f(0.f);   //!< pitch, yaw, roll in degrees
+		PlatformInstant movedAt = 0;
+	} cameraWatch;
+
 };
 
 State g;
@@ -797,6 +804,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("jumping", player.jumpphase != NotJumping);
 		// The stealth walk in this update: the key or a slight push of the stick (#33)
 		json.value("stealth", (player.m_currentMovement & PLAYER_MOVE_STEALTH) != 0);
+		// The bag's slide in or out, 0 = fully open: a shot of the open bag waits for it (#522)
+		json.value("inventorySlide", s64(g_playerInventoryHud.inventorySlide()));
 		// The speed the current body animation moves the player at, units per second - what the engine walks
 		// with (ARX_PLAYER_Manage_Movement), independent of walls and the frame rate: the run vs the sneak (#33)
 		if(entities.player() && entities.player()->animlayer[0].cur_anim) {
@@ -825,6 +834,8 @@ std::string buildStatus(PlatformInstant now) {
 		// mode; in VR the eye plus the head's movement since its reference (#27)
 		json.value("eyeAboveFeet", player.basePosition().y - g_playerCameraStablePos.y);
 		json.value("shake", quakeAmplitude());
+		// How long the camera has not moved (#522): a test that aims from it waits until it settled
+		json.value("stillMs", toMsi(now - g.cameraWatch.movedAt));
 		// The camera the last frame's interface pass ended with (the status is written before this
 		// frame's update prepares a new one): the projection's scale (m00, m11) and off-axis shift
 		// (m20, m21) and the viewport - in VR the head camera's union projection, also with the book
@@ -3570,6 +3581,20 @@ void update() {
 	}
 
 	updateStickFor();
+
+	// camera.stillMs (#522): measured from where the camera was when it last moved, so a slow drift counts too
+	{
+		State::CameraWatch & watch = g.cameraWatch;
+		const Vec3f angles(g_playerCamera.angle.getPitch(), g_playerCamera.angle.getYaw(), g_playerCamera.angle.getRoll());
+		const float threshold = 0.0005f; // units and degrees: below what status.json shows (0.001)
+		const Vec3f turn = glm::abs(angles - watch.angles);
+		if(watch.movedAt == PlatformInstant(0) || glm::distance(g_playerCamera.m_pos, watch.pos) > threshold
+		   || turn.x > threshold || turn.y > threshold || turn.z > threshold) {
+			watch.pos = g_playerCamera.m_pos;
+			watch.angles = angles;
+			watch.movedAt = now;
+		}
+	}
 
 	if(g.batch.resumeFrame != 0) {
 		// A batch waits for frames (waitframes): no new batch before its ack

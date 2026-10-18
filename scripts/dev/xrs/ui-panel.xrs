@@ -51,6 +51,9 @@ ui inventory open
 @assert vr.panel.tilt lt 19
 @assert vr.panel.width eq 1
 @assert events.byName."vr.panel.placed" eq 1
+# The bag slides in for a while after it opens (about 28 frames at 90 fps): the shots of the panel, this one and the
+# two below, want it fully open (#522: the old harness's slack waited for it)
+@until player.inventorySlide eq 0 5s
 @shot panelahead
 
 # The head turns 40 degrees left: the panel stays in the play space, so it slides to the right of the view

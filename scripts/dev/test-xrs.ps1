@@ -69,6 +69,8 @@ Check 'no save unless one is named' ($null -eq $seq.Save)
 $saved = Get-Parse "@sim idle`n@save mvp-new-game`n@args --loadslot 0`n@frames 1"
 Check '@save names the start save and is not a step' ($saved -isnot [string] -and $saved.Save -eq 'mvp-new-game' -and @($saved.Steps).Count -eq 1) $saved
 Check 'no playground unless asked' (-not $seq.Playground)
+$soloSeq = Get-Parse "@sim idle`n@solo`n@frames 1"
+Check '@solo marks the sequence for a lane of its own and is not a step' ($soloSeq -isnot [string] -and $soloSeq.Solo -and @($soloSeq.Steps).Count -eq 1 -and -not $seq.Solo) $soloSeq
 $inPlayground = Get-Parse "@sim idle`n@playground`n@frames 1"
 Check '@playground starts in the playground and is not a step' ($inPlayground -isnot [string] -and $inPlayground.Playground -and @($inPlayground.Steps).Count -eq 1) $inPlayground
 Check 'a development launch unless @player (#394)' (-not $seq.Player)

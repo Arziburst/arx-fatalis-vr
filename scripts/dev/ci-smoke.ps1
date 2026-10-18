@@ -228,10 +228,10 @@ function Test-Selected([string]$Name) { -not $script:selection -or $script:selec
 # In the serial order (the summary's); each runs as a background job on a lane
 $phases = [Collections.Generic.List[object]]::new()
 $results = @()
-function Add-Phase([string]$Name, [string]$Command, [hashtable]$Params, [string]$UserDir, [string[]]$DependsOn = @(), [string]$Exclusive, $Gate, [string]$FreshUserDir) {
+function Add-Phase([string]$Name, [string]$Command, [hashtable]$Params, [string]$UserDir, [string[]]$DependsOn = @(), [string]$Exclusive, $Gate, [string]$FreshUserDir, [switch]$Solo) {
 	$script:phases.Add([pscustomobject]@{
 		Name = $Name; Index = $script:phases.Count; Command = $Command; Params = $Params; UserDir = $UserDir
-		DependsOn = $DependsOn; Exclusive = $(if ($Exclusive) { $Exclusive } else { $null }); Gate = $Gate; FreshUserDir = $FreshUserDir
+		DependsOn = $DependsOn; Exclusive = $(if ($Exclusive) { $Exclusive } else { $null }); Gate = $Gate; FreshUserDir = $FreshUserDir; Solo = [bool]$Solo
 	})
 }
 
@@ -312,7 +312,7 @@ if ($Phase -in 'all', 'sequences') {
 		if ($seq.Args) { $p.ArxArgs = @($seq.Args) }
 		$name = "xrs-$($seq.Name)"
 		Add-Phase $name 'smoke-test.ps1' $p $seqUserDir -DependsOn $(if ($seq.Save) { @('save-library') } else { @() }) `
-			-Exclusive $(if ($seq.Playground) { $playgroundExclusive }) -Gate $(if ($seq.Save) { $saveGate }) -FreshUserDir $seqUserDir
+			-Exclusive $(if ($seq.Playground) { $playgroundExclusive }) -Gate $(if ($seq.Save) { $saveGate }) -FreshUserDir $seqUserDir -Solo:$seq.Solo
 		$unit = [pscustomobject]@{ Phases = @($name); Paths = @([IO.Path]::GetRelativePath($ArxSourceDir, $seq.Path)) }
 		# A read-back (xrs\readback\<name>-readback.xrs, #394): a second launch in the same user dir checks what the
 		# first one left behind (cfg.ini is written when the game quits); skipped when the first launch did not pass

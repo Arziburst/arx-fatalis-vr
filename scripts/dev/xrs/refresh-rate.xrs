@@ -46,6 +46,7 @@
 @sim idle
 @save mvp-goblin-fight
 @args --loadslot 0
+@solo
 
 @until state eq GAMEPLAY 60s
 @until vr.sim.timelineFrame ge 270 60s       # 3 s in: past the fade-in, the head reference taken

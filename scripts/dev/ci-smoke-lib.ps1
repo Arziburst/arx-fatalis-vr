@@ -251,6 +251,8 @@ function Get-ArxLaneCount([int]$Lanes, [string]$Copy, [string]$BuildDir) {
 # Run $Phases on up to $Lanes lanes at once, in the given order, every phase exactly once. A phase:
 #   Name; DependsOn   names that must have finished first (a name not among $Phases counts as finished)
 #   Exclusive         a key: two phases with the same key never run at the same time ($null: none)
+#   Solo              runs alone (#23, a sequence that asserts pacing): nothing else is started while it is due until the
+#                     running phases ended, and nothing while it runs
 #   Gate              optional { param($Done, $Phase) } asked when the phase is due ($Done: name -> result of the finished):
 #                     $null runs it, 'omit' drops it without a result, an object is its result without running it
 # $Start { param($Phase, $Lane) } starts a phase and returns its job; $Finish { param($Phase, $Lane, $Job, $Seconds) } is called
@@ -294,10 +296,14 @@ function Invoke-ArxPhaseSchedule(
 			if (-not $free) { break }
 			$running = @($busy.Values | ForEach-Object { $_.Phase })
 			$next = $null
+			# A solo phase runs alone: while one runs nothing starts
+			if (@($running | Where-Object { $_.Solo })) { break }
 			foreach ($p in $queue) {
 				$waits = @($p.DependsOn | Where-Object { $_ -and $known.ContainsKey($_) -and -not $finished.ContainsKey($_) })
 				if ($waits) { continue }
 				if ($p.Exclusive -and @($running | Where-Object { $_.Exclusive -eq $p.Exclusive })) { continue }
+				# A solo phase that is due holds the queue until the lanes are empty - the others wait behind it
+				if ($p.Solo -and $running.Count) { break }
 				$next = $p
 				break
 			}

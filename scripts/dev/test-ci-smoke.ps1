@@ -226,6 +226,17 @@ try {
 	$script:runs.Clear()
 	$outside = @(Invoke-ArxPhaseSchedule -Phases @((Fake 'x' 10 -DependsOn 'save-library')) -Lanes 2 -Start $start -Finish $finish -PollMs 20)
 	Check 'a dependency that is not scheduled counts as done' ($outside.Count -eq 1 -and $outside[0].Verdict -eq 'PASS')
+	# A solo phase (#23, a sequence that asserts pacing) runs alone: nothing before it still running, nothing started
+	# while it runs; the others wait behind it, and still all run once
+	$script:runs.Clear()
+	$soloPhases = @((Fake 'a' 200), (Fake 'b' 200), (Fake 'solo' 200), (Fake 'c' 100), (Fake 'd' 100))
+	$soloPhases[2] | Add-Member -NotePropertyName Solo -NotePropertyValue $true
+	$soloRuns = @(Invoke-ArxPhaseSchedule -Phases $soloPhases -Lanes 2 -Start $start -Finish $finish -PollMs 20)
+	$soloByName = @{}
+	foreach ($r in $script:runs) { $soloByName[$r.Name] = $r }
+	Check 'a solo phase runs alone: nothing overlaps it' (-not @($script:runs | Where-Object { $_.Name -ne 'solo' -and (Test-Overlap $_ $soloByName['solo']) }))
+	Check 'a solo phase: the others still run, once each' ($script:runs.Count -eq 5 -and @($soloRuns | Where-Object Verdict -eq 'PASS').Count -eq 5)
+	Check 'a solo phase: the phases before it ran together (two lanes)' (Test-Overlap $soloByName['a'] $soloByName['b'])
 
 	# --- The lane count -----------------------------------------------------------------------------------------------
 	Write-Host '==> the lane count from the game lock'

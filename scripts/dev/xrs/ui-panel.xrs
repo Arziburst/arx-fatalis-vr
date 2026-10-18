@@ -91,12 +91,15 @@ vr-sim head rot 0 0 0
 # Closed: back to the head-locked quad
 ui inventory close
 @until vr.panel.mode eq head 5s              # the bag slides away on the panel first
-# (Opened again within 250 ms - inventory -> book - the panel keeps its place. The channel's round trip is
-# longer than that, measured about 600 ms: host test UIPanelTest::testShortCloseKeepsThePose covers it.)
+# (Opened again within 250 ms - inventory -> book - the panel keeps its place: host test
+# UIPanelTest::testShortCloseKeepsThePose covers it. The channel's round trip was about 600 ms; since #522 it is
+# far shorter, so the open below waits past the grace explicitly.)
+@remember closedAt uptimeMs
 
 # Opened again looking 30 degrees left: placed anew where the head looks
 vr-sim head rot 30 0 0
 @frames 5
+@until uptimeMs ge {closedAt+300} 5s          # past the 250 ms reopen grace (UIPanel.h reopenGraceUs)
 ui inventory open
 @frames 5
 @assert vr.panel.mode eq world

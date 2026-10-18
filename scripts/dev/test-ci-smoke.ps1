@@ -18,8 +18,13 @@
 	  - the lane count: a free lock folder gives 2, a slot held by this copy 2, a slot held by another copy 1, a game
 	    outside the lock that runs from another folder 1, one from this copy's build 2
 	  - the run digest of a phase picked by its game's pid (status.json, else launched.txt), not the newest folder
+	  - the impact map (scripts\dev\xrs\impact.txt): the selection of sample change sets (core, a mapped path, two
+	    rules, a changed .xrs and read-back, a path no line matches and a harness path: everything), the coverage check
+	    red on a sequence without a line, a name that is no sequence, a syntax error and a glob listed twice - and green
+	    on the shipped map
 	  - the workflow: the evidence is uploaded only on failure, the game checks get ARXVR_MAX_GAMES=2, the script
-	    self-tests start before the build and are joined after it
+	    self-tests start before the build and are joined after it, the suite input of a manual run, no labeled trigger,
+	    the label full-ci read live by the Scope step and its suite passed to the game checks
 	Exit code 0 when everything passed, 1 otherwise.
 #>
 [CmdletBinding()]
@@ -264,6 +269,67 @@ try {
 	Set-Content (Join-Path $chan 'status.json') '{ "state": "EXITED", "pid": 222 }'
 	Check 'status.json''s pid first' ((Get-ArxPhaseGamePid $chan) -eq 222)
 
+	# --- The impact map ---------------------------------------------------------------------------------------------
+	Write-Host '==> the impact map: the selection of a pull request'
+	$mapFile = Join-Path $root 'impact.txt'
+	Set-Content $mapFile -Encoding utf8 -Value @(
+		'# a sample map'
+		'core: smoke-test first   # the start'
+		'core: look'
+		'scripts/dev/smoke-test.ps1 -> *'
+		'src/vr/VRMelee.* -> melee-swing melee-recovery'
+		'src/vr/VRWeapon.* -> weapon-hold melee-swing'
+		'src/gui/* -> hud'
+		'src/core/CommandChannel.* -> core'
+		'docs/* -> core'
+		'*.md -> core'
+	)
+	$map = Read-ArxImpactMap $mapFile
+	Check 'the map: core lines add up, comments are dropped' (($map.Core -join ',') -eq 'smoke-test,first,look') ($map.Core -join ',')
+	Check 'the map: one rule per glob line, no errors' ($map.Rules.Count -eq 7 -and $map.Errors.Count -eq 0) "$($map.Rules.Count) rules, $($map.Errors -join '; ')"
+	function Select-Names($Changed) { $s = Get-ArxImpactSelection $map $Changed; if ($s.Full) { 'FULL' } else { $s.Names -join ',' } }
+	Check 'no change: the core alone' ((Select-Names @()) -eq 'first,look,smoke-test') (Select-Names @())
+	Check 'docs and a hub file: the core alone, not everything' ((Select-Names @('docs/vr/TESTING.md', 'README.md', 'src/core/CommandChannel.cpp')) -eq 'first,look,smoke-test') (Select-Names @('docs/vr/TESTING.md', 'README.md', 'src/core/CommandChannel.cpp'))
+	Check 'a mapped source file: the core and its sequences' ((Select-Names @('src/vr/VRMelee.cpp')) -eq 'first,look,melee-recovery,melee-swing,smoke-test') (Select-Names @('src/vr/VRMelee.cpp'))
+	Check 'two rules: their names add up, once each' ((Select-Names @('src/vr/VRMelee.h', 'src/vr/VRWeapon.cpp')) -eq 'first,look,melee-recovery,melee-swing,smoke-test,weapon-hold') (Select-Names @('src/vr/VRMelee.h', 'src/vr/VRWeapon.cpp'))
+	Check 'a glob crosses folders and ignores case; a backslash path is a path' ((Select-Names @('SRC\GUI\widget\Widget.cpp')) -eq 'first,hud,look,smoke-test') (Select-Names @('SRC\GUI\widget\Widget.cpp'))
+	Check 'a changed or added .xrs selects itself, without a line' ((Select-Names @('scripts/dev/xrs/brand-new.xrs', 'docs/x.md')) -eq 'brand-new,first,look,smoke-test') (Select-Names @('scripts/dev/xrs/brand-new.xrs'))
+	Check 'a changed read-back selects its sequence' ((Select-Names @('scripts/dev/xrs/readback/menu-readback.xrs')) -eq 'first,look,menu,smoke-test') (Select-Names @('scripts/dev/xrs/readback/menu-readback.xrs'))
+	$sel = Get-ArxImpactSelection $map @('src/vr/VRMelee.cpp', 'src/brand/New.cpp')
+	Check 'a path no line matches: everything, and it is named' ($sel.Full -and ($sel.Unmapped -join ',') -eq 'src/brand/New.cpp' -and $sel.FullBecause[0] -match 'no rule matches') "$($sel.FullBecause -join '; ')"
+	$sel = Get-ArxImpactSelection $map @('scripts/dev/smoke-test.ps1')
+	Check 'a harness path (-> *): everything, with the line that says so' ($sel.Full -and -not $sel.Unmapped -and $sel.FullBecause[0] -match 'line 4') "$($sel.FullBecause -join '; ')"
+	Check 'a selection says why each check is in it' ($sel.Reasons['first'] -eq 'core' -and (Get-ArxImpactSelection $map @('src/vr/VRMelee.cpp')).Reasons['melee-swing'] -eq 'src/vr/VRMelee.cpp')
+	Check 'Full still lists the partial selection for the log' ((Get-ArxImpactSelection $map @('src/vr/VRMelee.cpp', 'x/y')).Names -contains 'melee-swing')
+
+	Write-Host '==> the impact map: the coverage check'
+	$universe = @('first', 'look', 'melee-swing', 'melee-recovery', 'weapon-hold', 'hud')
+	$problems = @(Test-ArxImpactMap $map $universe)
+	Check 'a check in no line (spell-drawcheck) is a problem' ($problems.Count -eq 1 -and $problems[0] -match "'spell-drawcheck' is in no core: line") "$problems"
+	$problems = @(Test-ArxImpactMap $map ($universe + 'orphan'))
+	Check 'a sequence no glob reaches and not in core: red, named' (@($problems | Where-Object { $_ -match "'orphan' is in no core: line and named by no rule" }).Count -eq 1) "$problems"
+	$problems = @(Test-ArxImpactMap $map @($universe | Where-Object { $_ -ne 'hud' }))
+	Check 'a name that is no sequence: red, with its line' (@($problems | Where-Object { $_ -match "line 7: 'hud' is no sequence" }).Count -eq 1) "$problems"
+	$bad = Join-Path $root 'impact-bad.txt'
+	Set-Content $bad -Encoding utf8 -Value @('core: first', 'src/a/* -> first', 'src/A/* -> first', 'src/b/* ->', 'src/c/* -> * first', 'just words')
+	$badMap = Read-ArxImpactMap $bad
+	$problems = @(Test-ArxImpactMap $badMap @('first'))
+	Check 'syntax errors are problems, never skipped: a line naming nothing, * with a name, no arrow' ($badMap.Errors.Count -eq 3 -and @($problems | Where-Object { $_ -match '^line (4|5|6):' }).Count -eq 3) "$problems"
+	Check 'a glob listed twice (any case) is a problem' (@($problems | Where-Object { $_ -match 'listed twice' }).Count -eq 1) "$problems"
+	$shippedDir = Join-Path $PSScriptRoot 'xrs'
+	$shipped = Read-ArxImpactMap (Join-Path $shippedDir 'impact.txt')
+	$shippedNames = @(Get-ArxSequenceNames $shippedDir)
+	$problems = @(Test-ArxImpactMap $shipped $shippedNames)
+	Check "the shipped map covers all $($shippedNames.Count) shipped sequences and the two checks" ($problems.Count -eq 0 -and $shippedNames.Count -gt 0) ($problems -join '; ')
+	Check 'the shipped map has a core with both checks' ($shipped.Core -contains 'smoke-test' -and $shipped.Core -contains 'spell-drawcheck')
+	$problems = @(Test-ArxImpactMap $shipped ($shippedNames + 'a-sequence-without-a-line'))
+	Check 'the shipped map is red for a sequence it has no line for' (@($problems | Where-Object { $_ -match "'a-sequence-without-a-line'" }).Count -eq 1) ($problems -join '; ')
+	$hub = Get-ArxImpactSelection $shipped @('src/core/CommandChannel.cpp', 'CMakeLists.txt', 'docs/vr/TESTING.md', 'tests/vr/X.cpp')
+	Check 'the shipped map: hub files, docs and host tests select the core alone' (-not $hub.Full -and $hub.Names.Count -eq $shipped.Core.Count) "$($hub.FullBecause -join '; ')"
+	Check 'the shipped map: the harness selects everything' ((Get-ArxImpactSelection $shipped @('scripts/dev/smoke-test.ps1')).Full -and (Get-ArxImpactSelection $shipped @('src/vr/VRSimulator.cpp')).Full)
+	Check 'the shipped map: a new source folder selects everything' ((Get-ArxImpactSelection $shipped @('src/brandnew/Thing.cpp')).Full)
+	Check 'the change set of a diff that cannot be made is not Ok (everything runs), an empty one is' (-not (Get-ArxChangedFileSet $repo 'origin/nowhere').Ok -and -not (Get-ArxChangedFileSet $repo '').Ok -and (Get-ArxChangedFileSet $repo 'feature').Ok -and @((Get-ArxChangedFileSet $repo 'feature').Files).Count -eq 0)
+
 	# --- The workflow ---------------------------------------------------------------------------------------------------
 	Write-Host '==> the workflow'
 	$wf = Get-Content -Raw (Join-Path $PSScriptRoot '..\..\.github\workflows\build-windows.yml')
@@ -278,6 +344,13 @@ try {
 	# A background process that inherits the step's output pipes is killed with its tree when the step ends (TRAPS.md)
 	$startStep = [regex]::Match($wf, '(?s)- name: Script self-tests \(start\).*?(?=\r?\n    - name:)').Value
 	Check 'the background self-tests are started without -RedirectStandard* (no inherited pipes) and redirect their own output' ($startStep -match 'Start-Process pwsh' -and $startStep -notmatch '-RedirectStandard' -and $startStep -match '\*> ') $startStep
+	# The suites (#522): a manual run picks one (full is the merge gate), the Scope step decides, the game checks run it
+	$on = [regex]::Match($wf, '(?s)\non:.*?(?=\r?\nconcurrency:)').Value
+	Check 'a manual run takes the input suite: full (the default) or pr' ($on -match '(?s)workflow_dispatch:\s+inputs:\s+suite:.*options: \[ full, pr \].*default: full') $on
+	Check 'no labeled trigger (a skipped run over a red check of the same commit)' ($on -notmatch 'types:[^\n]*labeled') $on
+	$scope = [regex]::Match($wf, '(?s)- name: Scope.*?(?=\r?\n    - name:)').Value
+	Check 'the Scope step reads the label full-ci live and outputs the suite' ($scope -match '/labels' -and $scope -match "'full-ci'" -and $scope -match 'suite=\$suite' -and $scope -match "\`$suite = 'pr'") $scope
+	Check 'the game checks run the Scope step''s suite against main' ($checks -match "-Suite '\$\{\{ steps\.scope\.outputs\.suite \}\}'" -and $checks -match '-Base origin/main') $checks
 } finally {
 	Get-Job -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
 	Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue

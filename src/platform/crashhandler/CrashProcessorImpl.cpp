@@ -276,10 +276,11 @@ void CrashHandlerImpl::processCrash() {
 			       " crash information!\n\n";
 		}
 		std::cout << "\n\n" << oss.str() << '\n';
-		// An automated run (ARX_UNATTENDED=1, set by --test-dir and scripts/dev/smoke-test.ps1):
-		// the report is on disk, nobody is there to click OK, and the dialog would outlive the game
-		if(const char * unattended = std::getenv("ARX_UNATTENDED"); unattended && *unattended) {
-			std::cout << "ARX_UNATTENDED is set: not showing the crash dialog\n";
+		// An automated run (ARXVR_NO_DIALOGS=1 from every scripted launch, #501, or ARX_UNATTENDED=1 from
+		// --test-dir): the report is on disk, nobody is there to click OK, and the dialog would outlive the
+		// game - and the directory must not be opened either
+		if(platform::dialogsDisabled()) {
+			std::cout << "ARXVR_NO_DIALOGS / ARX_UNATTENDED is set: not showing the crash dialog\n";
 			return;
 		}
 		if(m_pCrashInfo) {

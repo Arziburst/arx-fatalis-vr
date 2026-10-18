@@ -11,6 +11,7 @@
 	  - a lost signatures.json does not duplicate: the issue is found again by its marker
 	  - a warning is filed only when it repeats in a second run; an allow-listed line never
 	  - a crash is filed with its stack; paths of the user profile are redacted
+	  - a '[dialog]' line of a run without dialogs (#501) is filed like a crash, its signature from the message
 	  - without a network the report stays queued and is sent exactly once later
 	  - the repository is public: titles, bodies and comments are scrubbed of personal data (home paths in both
 	    slash styles, account and machine names, Steam ids and userdata paths, e-mails, IPs, GUIDs) before the
@@ -351,6 +352,32 @@ $acl = Use-ArxStore { param($s)
 	try { [System.Threading.ThreadingAclExtensions]::GetAccessControl($m).GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]) | ForEach-Object { "$($_.IdentityReference.Value) $($_.AccessControlType)" } } finally { $m.Dispose() }
 }
 Check (@($acl) -contains 'S-1-1-0 Allow') 'the mutex grants Everyone (S-1-1-0) access'
+
+Write-Host '13. a run that ended on a dialog: filed like a crash (#501)' -ForegroundColor Cyan
+Reset-Calls
+$before = $fake.Issues.Count
+$null = New-FixtureRun @('[E] Dialog:533            [dialog] error: Critical Error - Arx Fatalis VR: Could not load level 12 | You might want to look at the log for more details: | C:\Users\tester\arx.log') -NoClean
+$info = Digest -Exit 1
+$d = @($info.Dialogs)
+Check ($d.Count -eq 1 -and $d[0].Kind -eq 'dialog' -and $d[0].Level -eq 'C' -and $d[0].DialogType -eq 'error') 'the [dialog] line is a dialog problem, level C'
+Check (-not ($info.Problems | Where-Object { $_.Message -like '`[dialog`]*' })) 'it is not also counted as a plain [E] line'
+Check ($d[0].IsNew -and $d[0].Action -eq 'file' -and $info.Queued -eq 1) "a new dialog is filed at once, like a crash: $($d[0].Action)"
+$dialogHash = $d[0].Hash
+$digestText = Get-Content (Join-Path $info.Dir 'digest.md') -Raw
+Check ($digestText -match '## Dialogs' -and $digestText -match '1 dialog\(s\)') 'digest.md lists the dialog'
+$r = Invoke-ArxReportFlush
+$issue = $fake.Issues | Where-Object { $_.body -match "sig=$dialogHash" }
+Check ($r.Created.Count -eq 1 -and $fake.Issues.Count -eq $before + 1 -and $issue) 'one issue for the dialog'
+Check ($issue.title -like 'Dialog: error: Critical Error - Arx Fatalis VR: Could not load level N*') "the title comes from the message: $($issue.title)"
+Check ($issue.body -match '## Dialog \(error\)' -and $issue.body -notmatch '\\Users\\tester') 'the body names the dialog, the home path is scrubbed'
+$null = New-FixtureRun @('[E] Dialog:540            [dialog] error: Critical Error - Arx Fatalis VR: Could not load level 3 | You might want to look at the log for more details: | D:\other\arx.log') -NoClean
+$info = Digest -Exit 1
+Check (@($info.Dialogs)[0].Hash -eq $dialogHash -and -not @($info.Dialogs)[0].IsNew) 'the same dialog in another run (other numbers, line, path) is the same signature'
+$null = New-FixtureRun @('[W] Dialog:520            [dialog] yes-no: Arx Fatalis VR: Install the data now? [answered: no]')
+$info = Digest
+$q = @($info.Dialogs)
+Check ($q.Count -eq 1 -and $q[0].DialogType -eq 'yes-no' -and $q[0].Normalized -eq 'dialog|yes-no|Arx Fatalis VR: Install the data now?') "a question's signature leaves its answer out: $($q[0].Normalized)"
+Get-ChildItem (Get-ArxPendingDir) -Filter '*.json' -ErrorAction SilentlyContinue | Remove-Item -Force
 Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item Env:ARXVR_DIGEST_ROOT
 if ($failures) { Write-Host "log digest self-test: $failures check(s) FAILED" -ForegroundColor Red; exit 1 }

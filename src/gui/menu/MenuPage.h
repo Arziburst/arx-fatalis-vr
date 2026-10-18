@@ -91,6 +91,9 @@ protected:
 	
 	void addCenter(std::unique_ptr<Widget> widget, bool centerX = true);
 	
+	//! Add \a widget in the row of \a row (already added), without a row of its own: the two take turns
+	void addInRowOf(std::unique_ptr<Widget> widget, const Widget & row);
+
 	void addBackButton(MENUSTATE page);
 	
 	void reserveTop();

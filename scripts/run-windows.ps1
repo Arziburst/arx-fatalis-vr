@@ -97,6 +97,12 @@
 .PARAMETER Background
 	Show the game window without activating it, so the launch does not take the focus (self-tests).
 
+.PARAMETER Dialogs
+	Keep the game's dialogs in a launch that would otherwise go without them. A launch with the test channel
+	(-TestChannel or --test-dir) or an isolated user directory (-Isolated) is a scripted one: the game gets
+	ARXVR_NO_DIALOGS=1 and writes every dialog to arx.log and stderr as a '[dialog]' line instead of waiting
+	for a click (#501). test-pr.ps1 - the owner's launch - passes -Dialogs.
+
 .PARAMETER LockTimeoutSec
 	How long to wait for the game lock when another game runs (default 300). 0: do not wait.
 
@@ -134,6 +140,7 @@ param(
 	[switch]$DryRun,
 	[switch]$Rebuild,
 	[switch]$Background,
+	[switch]$Dialogs,
 	[Alias('VrLockTimeoutSec')]
 	[int]$LockTimeoutSec = 300,
 	[Parameter(ValueFromRemainingArguments)]
@@ -182,6 +189,9 @@ Write-Host "    build: $(ConvertTo-ShortSha $stamp) ($($copy.Branch))"
 Write-Host "    data: $(if ($DataDir) { "$DataDir (--data-dir)" } else { 'found by the game in the Steam libraries (arx.log: Steam data)' })"
 if ($Isolated) { Write-Host "    user dir: $UserDir (isolated)" } else { Write-Host "    user dir: $(Get-SharedUserDir) (shared)" }
 if ($TestChannel) { Write-Host "    test channel: $(Get-DefaultTestDir $SourceDir)" }
+# A scripted launch (test channel, isolated user dir) never blocks on a message box (#501); by hand the dialogs stay
+$noDialogs = Test-ArxScriptedLaunch -ArxArgs $ArxArgs -TestChannel:$TestChannel -Isolated:$Isolated -Dialogs:$Dialogs
+Write-Host "    dialogs: $(if ($noDialogs) { 'off (ARXVR_NO_DIALOGS=1: written to arx.log and stderr)' } else { 'shown' })"
 if ($DryRun) {
 	# Nothing is written or started: the saves are not copied and SteamVR is not started (D-014)
 	if ($Saves) { Write-Host "    dry run: would copy the saves $($Saves -join ', ')" }
@@ -231,6 +241,8 @@ $process = $null
 $started = Get-Date
 $previousHint = $null
 if ($Background) { $previousHint = Set-ArxBackgroundWindow }
+# Scripted: ARXVR_NO_DIALOGS=1; by hand: neither variable, even if an earlier script in this shell left one (#501)
+$previousDialogEnv = Set-ArxDialogEnv -NoDialogs:$noDialogs
 try {
 	$process = Start-Process -FilePath $exe -ArgumentList $argList -PassThru -NoNewWindow
 	Set-ArxGameLockGame $lock $process.Id
@@ -238,6 +250,7 @@ try {
 	$code = $process.ExitCode
 } finally {
 	if ($Background) { Restore-ArxBackgroundWindow $previousHint }
+	Restore-ArxDialogEnv $previousDialogEnv
 	Exit-ArxGameLock $lock
 	Add-ArxLaunchRecord -Script 'run-windows.ps1' -Copy $SourceDir -Branch $copy.Branch -Build $stamp -Vr $vr.Vr `
 		-GamePid $(if ($process) { $process.Id } else { 0 }) -ExitCode $code -DurationSec ((Get-Date) - $started).TotalSeconds -ArxArgs $ArxArgs -Time $started

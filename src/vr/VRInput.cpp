@@ -85,6 +85,9 @@ struct InputState {
 	u64 loggedOffPanelPresses = 0;
 	//! A hand's use event as the menus' right button (#398): held since a press with that hand on the panel
 	std::array<bool, HandCount> useOnPanel = { };
+	//! The pointing hand's A as the menus' right button (#496): held since a press with that hand on the panel
+	std::array<bool, HandCount> aOnPanel = { };
+	std::array<bool, HandCount> aDown = { };
 	WalkStatus walk;
 
 	//! The hand's use / interact chord acted on a door, lever, chest or body (#38): no use or click until released
@@ -311,9 +314,12 @@ void applyToEngine(const GameInputState & state) {
 		GInput->setVirtualMousePosition(std::nullopt);
 	}
 	// The original's right click: the use action in game, the right button in the menus (in game
-	// the right button is free look) - there only from a hand on the panel, like the trigger (#398)
+	// the right button is free look) - there only from a hand on the panel, like the trigger (#398), and the
+	// pointing hand's A, as no chord forms on a menu panel (#496)
 	const bool useOnPanel = g_input.useOnPanel[size_t(Hand::Left)] || g_input.useOnPanel[size_t(Hand::Right)];
-	GInput->setVirtualMouseButton(Mouse::Button_1, state.use && ARXmenu.mode() != Mode_InGame && useOnPanel);
+	const bool aOnPanel = g_input.aOnPanel[size_t(Hand::Left)] || g_input.aOnPanel[size_t(Hand::Right)];
+	GInput->setVirtualMouseButton(Mouse::Button_1,
+	                              ARXmenu.mode() != Mode_InGame && ((state.use && useOnPanel) || aOnPanel));
 	GInput->setVirtualKey(Keyboard::Key_Escape, state.escape);
 	for(size_t i = 0; i < GameActionCount; i++) {
 		GInput->setVirtualAction(engineAction(GameAction(i)), state.actions[i]);
@@ -373,6 +379,21 @@ void updatePointer() {
 		// The use acts under its own hand (D-019): the hand that uses takes an idle cursor
 		claims[hand] = claims[hand] || g_input.resolver.pressed(useEvents[hand]);
 	}
+	// The pointing hand's A is the menus' right button (#496, the owner): pressed with that hand on the panel, it
+	// clicks until it is let go, and the hand takes the cursor so the click lands where it points
+	const bool menu = ARXmenu.mode() != Mode_InGame;
+	std::array<bool, HandCount> aPressed = { };
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		const bool a = g_input.input.down[control(Hand(hand), ControlKind::A)];
+		if(!a) {
+			g_input.aOnPanel[hand] = false;
+		} else if(!g_input.aDown[hand]) {
+			aPressed[hand] = menu && g_input.rays[hand].onPanel && !g_input.capture.active();
+			g_input.aOnPanel[hand] = aPressed[hand];
+			claims[hand] = claims[hand] || aPressed[hand];
+		}
+		g_input.aDown[hand] = a;
+	}
 
 	MenuPointer & pointer = g_input.pointer;
 	pointer.update(shown || world, g_input.rays, trigger, PointerParams(), claims);
@@ -381,7 +402,6 @@ void updatePointer() {
 	// A hand's use event, whatever control it is bound to, is the right button in the menus (#398): it clicks
 	// only while that hand pressed it on the panel; a press off the panel clicks nothing and is muted like the
 	// trigger's
-	const bool menu = ARXmenu.mode() != Mode_InGame;
 	for(size_t hand = 0; hand < HandCount; hand++) {
 		if(!g_input.resolver.active(useEvents[hand])) {
 			g_input.useOnPanel[hand] = false;
@@ -415,6 +435,10 @@ void updatePointer() {
 		const bool pressed = trigger[hand] && pointer.pressedOnPanel(Hand(hand));
 		if(pressed) {
 			gameevent::Event("vr.pointer.click")("hand", handName(Hand(hand)))
+				("x", g_input.rays[hand].pixel.x, 0)("y", g_input.rays[hand].pixel.y, 0);
+		}
+		if(aPressed[hand]) {
+			gameevent::Event("vr.pointer.rightclick")("hand", handName(Hand(hand)))
 				("x", g_input.rays[hand].pixel.x, 0)("y", g_input.rays[hand].pixel.y, 0);
 		}
 	}
@@ -461,6 +485,12 @@ void updateInput() {
 
 	const bool skip = takeSkipControls(input);
 
+	// In the menus a hand pointing at the panel (the last update's rays) clicks with its trigger however firmly it
+	// holds the grip: its chords are off (#496). The book, the bag and a container are in game: their use stays
+	const bool menu = ARXmenu.mode() != Mode_InGame;
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		g_input.resolver.setChords(Hand(hand), !(menu && g_input.rays[hand].onPanel));
+	}
 	g_input.resolver.update(toMsi(platform::getTime()), input.down, input.taps);
 	g_input.input = input;
 
@@ -487,6 +517,10 @@ void updateInput() {
 	updateCapture(toMsi(platform::getTime()));
 	const bool controlsTaken = capturing || g_input.capture.active();
 	GameInputState game = controlsTaken ? GameInputState() : resolved;
+	if(controlsTaken) {
+		// The A that binds a control in the VR settings is no right click either (#496)
+		g_input.aOnPanel = { };
+	}
 
 	// Draw / sheathe the weapon (#377, D-042: the stick click of the weapon hand), in the game only
 	if(g_input.resolver.pressed(Event::Weapon) && !controlsTaken && ARXmenu.mode() == Mode_InGame) {

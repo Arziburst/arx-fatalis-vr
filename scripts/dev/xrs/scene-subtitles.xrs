@@ -51,21 +51,13 @@ human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
 @assert scene.subtitle.text ne none
 @wait 500
 @assert scene.subtitle.drawn eq above            # no chest fallback for an NPC out of view
-# Fixed in the world: its pose in the room stays while the head turns 40 degrees away
-@remember px scene.subtitle.panelLocal.x
-@remember py scene.subtitle.panelLocal.y
-@remember pz scene.subtitle.panelLocal.z
-@remember pyaw scene.subtitle.panelLocal.yawDeg
+# Over the NPC, not on the head: the head turning 40 degrees away from Kultar leaves the panel over him - its angle
+# off the head's forward grows by about the turn (Kultar turns to the player and steps here, so his head, and the
+# panel after it, is no fixed point in the room; the hero's own panel below checks the room pose stays)
+@remember yaw0 scene.subtitle.panelYawFromHeadDeg
 vr-sim head rot 0 -40 0
 @frames 20
-@assert scene.subtitle.panelLocal.x ge {px-0.01}
-@assert scene.subtitle.panelLocal.x le {px+0.01}
-@assert scene.subtitle.panelLocal.y ge {py-0.01}
-@assert scene.subtitle.panelLocal.y le {py+0.01}
-@assert scene.subtitle.panelLocal.z ge {pz-0.01}
-@assert scene.subtitle.panelLocal.z le {pz+0.01}
-@assert scene.subtitle.panelLocal.yawDeg ge {pyaw-1}
-@assert scene.subtitle.panelLocal.yawDeg le {pyaw+1}
+@assert scene.subtitle.panelYawFromHeadDeg ge {yaw0+30}
 # The player turns to Kultar: the panel over his head is in both eyes
 vr-sim head rot 0 65 0
 @frames 20

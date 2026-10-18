@@ -8,6 +8,28 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-18 — A 118 ms hitch of cause `channel` in the middle of a pacing measurement: `status.json` is renamed with a Sleep(100) (#23)
+
+**Symptom:** `refresh-rate.xrs` failed one run in two beside another game with a number that made no sense
+(`turn72.turned` -58.6 for -60, `walk72.walked` 141 for 129, a jump's air time off by 12 ms): `arx-perf.log` showed
+one frame of **117-119 ms, 8.5 slots at 72 Hz, `cause=channel`** inside the span, always about that long.
+**Cause:** the test channel writes `status.json` as a temporary file and renames it over the old one; the engine's
+`fs::rename` (FilesystemWindows.cpp) retries a file a reader holds open with `Sleep(100)` per try, and the runner
+reads `status.json` all the time - the game's main thread then sleeps 100 ms in the middle of the frame. A hitch that
+long moves what a stick held for 500 ms did (the long frame takes the whole interval at the held value), and the
+Euler step of the walk. **Do:** the channel replaces the file itself (`replaceStatusFile`, CommandChannel.cpp): a
+write a test waits for retries every 0.5 ms (at most 40 times), the 250 ms timer's write gives up when a reader holds
+the file and the next one comes. After it, five runs beside a paced third game: 5 of 5 (before: 3 of 5). When a
+pacing number looks wrong, look in `arx-perf.log` for an `H` line at that time before the code.
+
+## 2026-10-18 — A jump's air time varies by an engine step (25-35 ms) between runs even when measured between the moves (#23, #435)
+
+**Symptom:** beside a GPU-saturating third game, `jump<rate>.jumpSeconds` differed by up to 57 ms between two
+blocks of one run (0.289 ... 0.346 s) though both apexes were 130. **Cause:** the engine moves a jumping player in
+steps of 25-35 ms whose size follows the frame times (#435): the Euler descent of the step sizes it happens to take
+differs; on a quiet machine the spread is 12 ms (0.303 / 0.305 / 0.315 / 0.315 s at 90 / 72 / 120 / 144 Hz).
+Measuring between the moves (MotionProbe) took out the measurement's share, the rest is the engine's. **Do:** do not
+read a few milliseconds of a jump's air time as a refresh-rate fault; #435 is the fix (one iteration per frame).
 ## 2026-10-13 — The same 500 ms walk measured 77, 100, 107 and 109 units at four rates (#23)
 
 **Symptom:** a walk timed exactly in display time gave wildly different distances per rate, and not in the

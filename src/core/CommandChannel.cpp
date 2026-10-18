@@ -31,6 +31,7 @@
 #include <iomanip>
 #include <limits>
 #include <memory>
+#include <filesystem>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -2108,7 +2109,34 @@ std::string buildStatus(PlatformInstant now) {
 	return json.str();
 }
 
-void writeStatus(PlatformInstant now) {
+/*!
+ * Replace status.json by the finished temporary file, without stalling the frame (#23)
+ *
+ * The engine's own rename retries a file a reader holds open with a Sleep(100) per try: a test runner sampling
+ * status.json made the game's main thread stall 100-120 ms, a hitch of 8 display slots at 72 Hz that fell in a
+ * measurement window of refresh-rate.xrs (arx-perf.log: cause=channel, ms=118 each time). A reader holds the file for
+ * a millisecond, so: a few quick tries (\a patient, for a write a test waits for); a periodic write that finds the
+ * file held gives up - the next one is 250 ms away.
+ */
+bool replaceStatusFile(const fs::path & tmp, const fs::path & file, bool patient) {
+	const std::filesystem::path from(tmp.string());
+	const std::filesystem::path to(file.string());
+	const int tries = patient ? 40 : 1;
+	for(int attempt = 1; attempt <= tries; attempt++) {
+		std::error_code error;
+		std::filesystem::rename(from, to, error);
+		if(!error) {
+			return true;
+		}
+		if(attempt < tries) {
+			Thread::sleep(PlatformDuration(std::chrono::microseconds(500)));
+		}
+	}
+	return false;
+}
+
+//! \param periodic the write of the 250 ms timer: it may be skipped when a reader holds the file
+void writeStatus(PlatformInstant now, bool periodic = false) {
 
 	if(g.lastStatusTime != PlatformInstant(0)) {
 		s64 ms = toMsi(now - g.lastStatusTime);
@@ -2123,7 +2151,7 @@ void writeStatus(PlatformInstant now) {
 	fs::path file = g.dir / "status.json";
 	fs::path tmp = g.dir / "status.json.tmp";
 	static bool warned = false;
-	if((!fs::write(tmp, buildStatus(now)) || !fs::rename(tmp, file, true)) && !warned) {
+	if((!fs::write(tmp, buildStatus(now)) || !replaceStatusFile(tmp, file, !periodic)) && !warned && !periodic) {
 		warned = true;
 		LogWarning << "[channel] could not write " << file;
 	}
@@ -3925,7 +3953,7 @@ void update() {
 	}
 
 	if(toMsi(now - g.lastStatusTime) >= StatusIntervalMs) {
-		writeStatus(now);
+		writeStatus(now, true);
 	}
 
 }

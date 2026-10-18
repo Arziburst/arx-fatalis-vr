@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <string_view>
 
+#include "animation/Animation.h"
 #include "core/Config.h"
 #include "core/GameEvent.h"
 #include "core/GameTime.h"
@@ -49,12 +50,16 @@ struct MeleeState {
 	SwingDetector detector;
 	StrikeCharge charge;
 	TargetCooldown cooldown;
+	StrikeRecovery recovery;         //!< the weapon hand's, after a hit (#323)
+	RecoveryTime recoveryTime;       //!< of the weapon type in the hand
+	std::string recoveryNoted;       //!< the last melee.recovery event's values
 	bool ownsAim = false;            //!< this module set player.m_aimTime
 	// The swing in progress
 	SwingKind swingKind = SwingKind::None;
 	float swingCharge = 0.f;         //!< the charge ratio when it started
 	float swingAim = -1.f;           //!< the aim ratio fixed by its first contact, -1 before
 	bool swingCharged = false;
+	bool swingRecovering = false;    //!< it started within the recovery: it hits nothing
 	u64 swingHits = 0;
 	double swingStart = 0.;
 	float humpPeak = 0.f;            //!< the peak of a motion that has not become a swing yet
@@ -111,6 +116,93 @@ const char * weaponTypeName() {
 	return "bare";
 }
 
+MeleeWeapon meleeWeapon() {
+	switch(ARX_EQUIPMENT_GetPlayerWeaponType()) {
+		case WEAPON_DAGGER: return MeleeWeapon::Dagger;
+		case WEAPON_2H: return MeleeWeapon::TwoHanded;
+		case WEAPON_1H:
+		case WEAPON_BARE:
+		case WEAPON_BOW: break; // bare hands and bows are never in the IK hand
+	}
+	return MeleeWeapon::OneHanded;
+}
+
+/*!
+ * The game's own strike for a weapon type, seconds - diagnostics next to the recovery (#323): the player's strike
+ * start and strike animations, what the attack button plays from the weapon at rest to the weapon at rest
+ * (Core.cpp), in the default (left) direction, without the charge held in between; 0 while they are not loaded.
+ * \a anims gets their file names
+ */
+float gameStrikeSeconds(MeleeWeapon weapon, std::string * anims = nullptr) {
+	AnimationNumber start = ANIM_1H_STRIKE_LEFT_START;
+	AnimationNumber strike = ANIM_1H_STRIKE_LEFT;
+	switch(weapon) {
+		case MeleeWeapon::Dagger: {
+			start = ANIM_DAGGER_STRIKE_LEFT_START;
+			strike = ANIM_DAGGER_STRIKE_LEFT;
+			break;
+		}
+		case MeleeWeapon::OneHanded: break;
+		case MeleeWeapon::TwoHanded: {
+			start = ANIM_2H_STRIKE_LEFT_START;
+			strike = ANIM_2H_STRIKE_LEFT;
+			break;
+		}
+	}
+	const Entity * io = entities.player();
+	if(!io) {
+		return 0.f;
+	}
+	float seconds = 0.f;
+	for(AnimationNumber number : { start, strike }) {
+		const ANIM_HANDLE * anim = io->anims[number];
+		if(!anim || anim->anims.empty() || !anim->anims[0]) {
+			return 0.f;
+		}
+		seconds += toS(anim->anims[0]->anim_time);
+		if(anims) {
+			*anims += (anims->empty() ? "" : "+") + std::string(anim->path.filename());
+		}
+	}
+	return seconds;
+}
+
+float configuredRecovery(MeleeWeapon weapon) {
+	switch(weapon) {
+		case MeleeWeapon::Dagger: return config.input.vrMeleeRecoveryDagger;
+		case MeleeWeapon::OneHanded: return config.input.vrMeleeRecovery1h;
+		case MeleeWeapon::TwoHanded: return config.input.vrMeleeRecovery2h;
+	}
+	return -1.f;
+}
+
+//! The recovery of the weapon type in the hand, into the state and the status; a melee.recovery event when it changes
+void updateRecoveryTime() {
+	MeleeState & m = g_melee;
+	MeleeStatus & s = m.status;
+	const MeleeWeapon weapon = meleeWeapon();
+	std::array<std::string, 3> anims;
+	for(MeleeWeapon type : { MeleeWeapon::Dagger, MeleeWeapon::OneHanded, MeleeWeapon::TwoHanded }) {
+		s.gameStrike[size_t(type)] = gameStrikeSeconds(type, &anims[size_t(type)]);
+	}
+	const float game = s.gameStrike[size_t(weapon)];
+	m.recoveryTime = recoveryTime(weapon, configuredRecovery(weapon));
+	s.weapon = meleeWeaponName(weapon);
+	s.recovery = m.recoveryTime.seconds;
+	s.recoverySource = recoverySourceName(m.recoveryTime.source);
+	s.recoveryGame = game;
+	const std::string noted = std::string(s.weapon) + ' ' + std::to_string(s.recovery) + ' ' + s.recoverySource;
+	if(noted != m.recoveryNoted) {
+		m.recoveryNoted = noted;
+		// The animations of every type: what the game's timing was read from
+		gameevent::Event("melee.recovery", 200)("weapon", s.weapon)("seconds", s.recovery, 2)
+			("source", s.recoverySource)("game", game, 2)
+			("dagger", anims[size_t(MeleeWeapon::Dagger)].empty() ? "-" : anims[size_t(MeleeWeapon::Dagger)])
+			("1h", anims[size_t(MeleeWeapon::OneHanded)].empty() ? "-" : anims[size_t(MeleeWeapon::OneHanded)])
+			("2h", anims[size_t(MeleeWeapon::TwoHanded)].empty() ? "-" : anims[size_t(MeleeWeapon::TwoHanded)]);
+	}
+}
+
 float fullAimSeconds() {
 	const float seconds = toS(player.Full_AimTime);
 	return seconds > 0.f ? seconds : 1.5f;
@@ -136,6 +228,13 @@ void startSwing(Entity * weapon) {
 	m.swingStart = meleeClock();
 	m.humpPeak = 0.f;
 
+	// Within the recovery after a hit the swing is no strike: it hits nothing, even once the recovery is over (#323)
+	m.swingRecovering = !m.recovery.ready(m.swingStart);
+	if(m.swingRecovering) {
+		m.status.recoverySwings++;
+		return;
+	}
+
 	// What the engine does when a strike starts (Core.cpp, the release of the attack button)
 	Entity * io = entities.player();
 	io->isHit = false; // the wall sound and the durability loss once per swing
@@ -153,7 +252,9 @@ void startSwing(Entity * weapon) {
 void endSwing(SwingChange change) {
 	MeleeState & m = g_melee;
 	const SwingDetector & d = m.detector;
-	const char * result = change == SwingChange::Lost ? "lost" : m.swingHits > 0 ? "hit" : "miss";
+	const char * result = change == SwingChange::Lost ? "lost"
+	                      : m.swingRecovering ? "recovering"
+	                      : m.swingHits > 0 ? "hit" : "miss";
 	gameevent::Event("melee.swing", 1000)("kind", swingKindName(m.swingKind))("result", result)
 		("peak", d.peak(), 2)("factor", d.factor(), 2)("charge", m.swingCharge, 2)
 		("aim", m.swingAim >= 0.f ? m.swingAim : 0.f, 2)("charged", m.swingCharged ? "yes" : "no")
@@ -178,6 +279,7 @@ void contact(Entity * weapon, double now) {
 	if(targets.touched.empty()) {
 		return;
 	}
+	m.recovery.hit(now, m.recoveryTime.seconds);
 
 	if(m.swingAim < 0.f) {
 		// The first contact fixes the swing's strength; a charged one spends the charge
@@ -256,6 +358,7 @@ void updateMelee(const char * refusal) {
 	}
 	s.active = true;
 	s.refused.clear();
+	updateRecoveryTime();
 
 	// The charge: the trigger of the weapon hand, the game's own charge time
 	const bool held = controllerInput().down[control(Hand::Right, ControlKind::Trigger)];
@@ -290,7 +393,7 @@ void updateMelee(const char * refusal) {
 	}
 
 	s.placed = placeHeldWeapon(s.hilt, s.tip);
-	if(m.detector.swinging() && s.placed) {
+	if(m.detector.swinging() && s.placed && !m.swingRecovering) {
 		contact(weapon, now);
 	}
 
@@ -319,6 +422,8 @@ void updateMelee(const char * refusal) {
 	s.swings = m.detector.swings();
 	s.gaps = m.detector.gaps();
 	s.jumps = m.detector.jumps();
+	s.recoveryLeft = m.recovery.remaining(now);
+	s.recovering = m.swingRecovering;
 	s.chargeHeld = m.charge.held();
 	s.charging = m.charge.charging();
 	s.chargeSpent = m.charge.spent();

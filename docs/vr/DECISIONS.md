@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-053: Refresh-rate independence — times, not frames; a sample is timed by the display time it is for
+## D-054: Refresh-rate independence — times, not frames; a sample is timed by the display time it is for
 
 - **Date:** 2026-10-13
 - **Status:** Accepted
@@ -48,6 +48,49 @@ were timed (walk, turn, jump apex, camera, fingers), the frame-counted pieces we
 - New per-frame constants in VR code: a value "per frame" needs a time (and a host test at 72 and 144 Hz).
 - Fixed-step simulation with render interpolation: the engine's own variable step is kept; its 25-35 ms jump
   steps (#435) are the same at every rate and are a separate bug.
+## D-053: In the menus the trigger always clicks and A is the right click; the Index grip presses at 0.70
+
+- **Date:** 2026-10-17
+- **Status:** Accepted
+- **Decided by:** project owner (#496: the menu must click however the controller is held; the right click on A,
+  option B of the worker's question, through the coordinator); the 0.70 / 0.40 defaults by the coordinator's contract,
+  the owner tunes them
+- **Amends:** D-042 (its table), and the Index threshold of D-019 / TRAPS.md 2026-10-10 (0.50 / 0.30)
+
+### Decision
+- **Menus** (the main menu and its pages, the character creation, the credits - `ARXmenu.mode() != Mode_InGame`): a
+  hand pointing at the panel makes **no chord** (`ControlResolver::setChords`). Its trigger is the left click whatever
+  the grip reads, and a grip held through the click taps nothing when it is let go.
+- **The menus' right click** is the pointing hand's **A**, pressed with that hand on the panel; that hand takes the
+  cursor. A off the panel clicks nothing. The use event (#398) still right-clicks from the panel when the player binds
+  it to something other than the grip + trigger chord.
+- **In game** the bag, the book and a container are on the same panel and keep the grip + trigger chord as the use
+  (eat, drink, equip).
+- **The Index grip** presses at **0.70** and lets go below **0.40** on `squeeze/value` (cfg `vr_grip_press` /
+  `vr_grip_release`, input section; the release is kept at least 0.05 under the press). The Touch and the simple
+  controller keep 0.70 / 0.55.
+
+### Why
+- In the owner's headset test (PR #460 build) a firm, resting hold of the Index read 0.52 - 0.59, over the 0.50
+  press: every trigger press on New game became `use_right (right.grip+right.trigger)`, and the menu did not react.
+- A raised press alone would still lose the click to a deliberate squeeze; in a menu the trigger has one meaning, so
+  the chord goes there. The menus still need a right click (the character creation takes a point back with it): A
+  is free in the menus (the casting stance and the bag are game actions).
+- 0.70 sits above the resting hold; 0.40 sits below the 0.6 - 0.7 flicker of a closed hand (TRAPS.md 2026-10-10),
+  so a closed hand stays one hold.
+
+### Trade-offs accepted
+- Grabbing and using in the world take a firmer squeeze than the light close of 2026-10-10; the owner judges it in
+  the headset and tunes the cfg keys.
+- The menus' right click moved from grip + trigger to A: a player who learned the chord in the menus learns A.
+
+### Consequences
+- `VRControlsTest::chordsOffTest`, `indexGripThresholdTest` (the thresholds per controller); `menu-trigger-grip.xrs`
+  (grip 0.55 and 0.95 + trigger on New game); `first-run-chargen.xrs` takes its points back with A. Game event
+  `vr.pointer.rightclick`. [TESTING.md](TESTING.md), [TRAPS.md](TRAPS.md).
+
+---
+
 ## D-052: The desktop window takes no input in VR, and a test run's window none at all
 
 - **Date:** 2026-10-16
@@ -436,7 +479,8 @@ change for the slots.
 - **Status:** Accepted; replaces D-019's button layout and D-040's stance binding and cast rule. Implemented by #375 ("Control scheme v2",
   #376–#381); each part is judged in the headset in the test playground. The radial menu and the A / B buttons were
   changed by the owner on 2026-10-14 (one ring on the right B, 3 + 3 slots, the map on the left B, the bag on the left A):
-  see "The owner's layout" at the end
+  see "The owner's layout" at the end. Amended by D-053 (2026-10-17, #496): no chord on a menu panel, A the menus' right
+  click, the Index grip at 0.70 / 0.40
 - **Decided by:** project owner (the scheme, by a design discussion with the coordinator, 2026-10-13); the coordinator
   for the defaults the owner accepted (jump threshold, eight radial segments, the quick-slot rules)
 
@@ -452,8 +496,9 @@ layout on both controllers (Index; on the Touch, X / Y take A / B's places):
 | **B** (upper face button), held | That hand's **radial menu**; two can be open at once. Selected by moving the hand; released, the item under the hand runs |
 | **Trigger, empty hand, no stance** | **Grab and drag** an item with that hand's reticle. Two hands drag two items at once (an engine change) |
 | **Trigger, weapon in the hand** | **Charge the strike**; the strike is that hand's swing |
-| **Grip + trigger** (grip first) | **Use / interact**: doors, levers, chests, bodies, items. Empty hand only |
-| **Grip alone** | Nothing (the model's fingers only) |
+| **Grip + trigger** (grip first) | **Use / interact**: doors, levers, chests, bodies, items. Empty hand only. *In the menus (D-053, #496):* a hand pointing at the panel makes no chord - its trigger is the left click whatever the grip; the bag, the book and a container are in game and keep the chord |
+| **A, on a menu panel** (D-053, #496) | The menus' **right click** (the character creation takes a point back with it), from the pointing hand only; off the panel nothing |
+| **Grip alone** | Nothing (the model's fingers only). The Index grip is down from 0.70, up below 0.40 (D-053: `vr_grip_press` / `vr_grip_release`) |
 | **Stick click** | **Draw / sheathe** the weapon equipped in that hand |
 | **Left stick** | Walk along the look; the deflection sets sneak / walk / run (as now) |
 | **Right stick** | Left / right: turn (snap or smooth, as set). **Up: jump** (up beyond 0.7 and more than sideways, so a diagonal turn does not jump). **Down: crouch toggle** |
@@ -752,6 +797,20 @@ The engine's click attack while a weapon is in the VR hand; damage from swing sp
   sound by strength (F-178) and the per-target outline (F-62) are later tasks.
 - `weapon-hold.xrs` no longer sees a strike clip in combat mode; `melee-swing.xrs` proves the design on
   `mvp-goblin-fight`.
+
+### Amendment (2026-10-13, #323, #352): a recovery after a hit; the swing speed over the real time step
+- **Plain swings are no longer spam-able** (the owner's headset run, 2026-10-10: waving the dagger in front of you hit
+  again and again). After a hit the weapon hand recovers: a swing that starts within the recovery hits nothing (and
+  is not the engine's strike: no `strike` event, no speech), even once the recovery ends. The swing that hit goes on
+  hitting other targets. **Dagger 0.6 s, one-handed 0.8 s, two-handed 1.0 s** (the coordinator's option, confirmed by
+  the owner on 2026-10-13), cfg.ini `vr_melee_recovery_dagger` / `_1h` / `_2h` (-1 = the default).
+- **Not the game's own attack timing:** the hero's strike start + strike animations take 1.79 s with the dagger, 1.5 s
+  one-handed and 1.79 s two-handed. The dagger is not the fastest, and each is slow for a swing of the arm. They are
+  reported next to the recovery (`vr.melee.recovery.games`, the `melee.recovery` event) for comparison.
+- **The detector (#352, approved by the owner):** the median's move is divided by the time between the middle samples
+  it moved over, not by this frame's step. Before, a frame hitch (a 50 ms frame followed by an 11 ms one) read 4.5 m/s
+  for a hand at 1 m/s, a phantom hit. A filtered speed above 20 m/s is a jump like a raw one. With the right step
+  that can no longer happen: on each axis both medians lie between the two samples they share. The check stays as a guard.
 
 ---
 

@@ -58,6 +58,7 @@
 #include "vr/VRArms.h"
 #include "vr/WeaponGrip.h"
 #include "vr/VRBody.h"
+#include "vr/VRControls.h"
 #include "vr/VRSystem.h"
 #include "vr/VRTurn.h"
 
@@ -163,6 +164,7 @@ constexpr const float
 	vrMeleeFullSpeed = vr::SwingParams().fullSpeed,
 	vrMeleeWeakAim = vr::SwingParams().weakAim,
 	vrMeleeTargetCooldown = vr::SwingParams().targetCooldown,
+	vrMeleeRecovery = -1.f, // the weapon type's default (#323, vr::defaultRecovery)
 	vrHiltKnuckle = vr::HiltAngles().knuckle,
 	vrHiltMiddle = vr::HiltAngles().middle,
 	vrHiltLast = vr::HiltAngles().last,
@@ -199,6 +201,11 @@ constexpr const float
 	vrBodyPush = vr::BodyViewParams().push,
 	vrBodyPushDown = vr::BodyViewParams().pushDown,
 	vrBodyClearance = vr::BodyViewParams().clearance;
+
+// The Index grip as a button (#496): pressed above a firm resting hold, let go below a closed hand's flicker
+const float
+	vrGripPress = vr::IndexGripThreshold.press,
+	vrGripRelease = vr::IndexGripThreshold.release;
 
 constexpr const ActionKey actions[NUM_ACTION_KEY] = {
 	ActionKey(Keyboard::Key_Spacebar), // JUMP
@@ -379,6 +386,9 @@ constexpr const std::string_view
 	vrMeleeFullSpeed = "vr_melee_full_speed",
 	vrMeleeWeakAim = "vr_melee_weak_aim",
 	vrMeleeTargetCooldown = "vr_melee_target_cooldown",
+	vrMeleeRecoveryDagger = "vr_melee_recovery_dagger",
+	vrMeleeRecovery1h = "vr_melee_recovery_1h",
+	vrMeleeRecovery2h = "vr_melee_recovery_2h",
 	vrHiltKnuckle = "vr_hilt_knuckle",
 	vrHiltMiddle = "vr_hilt_middle",
 	vrHiltLast = "vr_hilt_last",
@@ -389,6 +399,10 @@ constexpr const std::string_view
 	vrBodyClearance = "vr_body_clearance",
 	vrRadialPlace = "vr_radial_place",
 	vrRadialGazeDeg = "vr_radial_gaze_deg";
+
+constexpr const std::string_view
+	vrGripPress = "vr_grip_press",
+	vrGripRelease = "vr_grip_release";
 
 // Input key options
 constexpr const std::string_view actions[NUM_ACTION_KEY] = {
@@ -691,6 +705,9 @@ bool Config::save() {
 	writer.writeKey(Key::vrMeleeFullSpeed, input.vrMeleeFullSpeed);
 	writer.writeKey(Key::vrMeleeWeakAim, input.vrMeleeWeakAim);
 	writer.writeKey(Key::vrMeleeTargetCooldown, input.vrMeleeTargetCooldown);
+	writer.writeKey(Key::vrMeleeRecoveryDagger, input.vrMeleeRecoveryDagger);
+	writer.writeKey(Key::vrMeleeRecovery1h, input.vrMeleeRecovery1h);
+	writer.writeKey(Key::vrMeleeRecovery2h, input.vrMeleeRecovery2h);
 	writer.writeKey(Key::vrHiltKnuckle, input.vrHiltKnuckle);
 	writer.writeKey(Key::vrHiltMiddle, input.vrHiltMiddle);
 	writer.writeKey(Key::vrHiltLast, input.vrHiltLast);
@@ -701,6 +718,8 @@ bool Config::save() {
 	writer.writeKey(Key::vrBodyClearance, input.vrBodyClearance);
 	writer.writeKey(Key::vrRadialPlace, input.vrRadialPlace);
 	writer.writeKey(Key::vrRadialGazeDeg, input.vrRadialGazeDeg);
+	writer.writeKey(Key::vrGripPress, input.vrGripPress);
+	writer.writeKey(Key::vrGripRelease, input.vrGripRelease);
 	if(input.allowConsole) {
 		// Only write this if true so that switching from release to debug builds enables the console
 		writer.writeKey(Key::allowConsole, input.allowConsole);
@@ -921,6 +940,14 @@ bool Config::init(const fs::path & file) {
 	input.vrMeleeWeakAim = glm::clamp(vrMeleeWeakAim, 0.1f, 1.f);
 	float vrMeleeTargetCooldown = reader.getKey(Section::Input, Key::vrMeleeTargetCooldown, Default::vrMeleeTargetCooldown);
 	input.vrMeleeTargetCooldown = glm::clamp(vrMeleeTargetCooldown, 0.f, 2.f);
+	// The recovery after a hit per weapon type (#323): seconds, or negative for the type's default
+	auto meleeRecovery = [&reader](std::string_view key) {
+		const float seconds = reader.getKey(Section::Input, key, Default::vrMeleeRecovery);
+		return seconds < 0.f ? -1.f : std::min(seconds, 5.f);
+	};
+	input.vrMeleeRecoveryDagger = meleeRecovery(Key::vrMeleeRecoveryDagger);
+	input.vrMeleeRecovery1h = meleeRecovery(Key::vrMeleeRecovery1h);
+	input.vrMeleeRecovery2h = meleeRecovery(Key::vrMeleeRecovery2h);
 	// A hand on a hilt (#385.7): each angle within 0 and its fist limit
 	vr::HiltAngles hilt;
 	hilt.knuckle = reader.getKey(Section::Input, Key::vrHiltKnuckle, Default::vrHiltKnuckle);
@@ -950,6 +977,12 @@ bool Config::init(const fs::path & file) {
 	}
 	float vrRadialGazeDeg = reader.getKey(Section::Input, Key::vrRadialGazeDeg, Default::vrRadialGazeDeg);
 	input.vrRadialGazeDeg = glm::clamp(vrRadialGazeDeg, 10.f, 120.f);
+
+	// The Index grip's press / release (#496): the release stays below the press, or a closed hand would flicker
+	float vrGripPress = reader.getKey(Section::Input, Key::vrGripPress, Default::vrGripPress);
+	input.vrGripPress = glm::clamp(vrGripPress, 0.1f, 1.f);
+	float vrGripRelease = reader.getKey(Section::Input, Key::vrGripRelease, Default::vrGripRelease);
+	input.vrGripRelease = glm::clamp(vrGripRelease, 0.f, input.vrGripPress - 0.05f);
 
 	// Get action key settings
 	for(size_t i = 0; i < NUM_ACTION_KEY; i++) {

@@ -415,8 +415,8 @@ std::vector<Conflict> findConflicts(const ControlLayout & layout) {
 	return conflicts;
 }
 
-const Hysteresis & gripThreshold(ControllerType type) {
-	return type == ControllerType::Index ? IndexGripThreshold : GripThreshold;
+Hysteresis gripThreshold(ControllerType type, const Hysteresis & index) {
+	return type == ControllerType::Index ? index : GripThreshold;
 }
 
 void updateStickDirections(ControlSet & down, Hand hand, float x, float y) {
@@ -519,8 +519,12 @@ void ControlResolver::press(Control control, s64 timeMs) {
 	for(size_t i = 0; i < EventCount; i++) {
 		const Binding & binding = m_layout.bindings[i];
 		if(binding.isChord() && binding.second == control && m_down[binding.first]) {
-			chord = true;
 			m_controls[binding.first].consumed = true;
+			if(!m_chords[size_t(controlHand(control))]) {
+				// The hand's chords are off: the control's own binding below, the leader made no tap
+				continue;
+			}
+			chord = true;
 			m_controls[control].consumed = true;
 			if(binding.longPress) {
 				m_events[i].pending = timeMs;

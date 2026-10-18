@@ -805,6 +805,7 @@ std::string buildStatus(PlatformInstant now) {
 
 	json.value("menuMode", menuModeName(ARXmenu.mode()));
 	json.value("menuPage", ARXmenu.mode() == Mode_MainMenu ? menuPageName(currentMenuPage()) : "none");
+	json.value("menuRows", ARXmenu.mode() == Mode_MainMenu ? visibleVRSettingRows() : std::string());
 	json.value("area", g_currentArea ? u32(g_currentArea) : 0u);
 	json.value("paused", g_gameTime.isPaused() != 0);
 	// The game clock: it runs while a VR radial menu is open (#376), stops in the pause menu
@@ -1620,6 +1621,21 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("charged", melee.lastCharged);
 		json.value("speed", melee.lastSpeed);
 		json.value("swing", melee.lastSwing);
+		json.end();
+		// The recovery after a hit (#323): a swing started within it hits nothing
+		json.object("recovery");
+		json.value("weapon", melee.weapon);
+		json.value("seconds", melee.recovery);
+		json.value("source", melee.recoverySource);
+		json.value("game", melee.recoveryGame);
+		json.object("games"); // the game's own strike of every type, whatever is in the hand
+		for(vr::MeleeWeapon type : { vr::MeleeWeapon::Dagger, vr::MeleeWeapon::OneHanded, vr::MeleeWeapon::TwoHanded }) {
+			json.value(vr::meleeWeaponName(type), melee.gameStrike[size_t(type)]);
+		}
+		json.end();
+		json.value("left", melee.recoveryLeft);
+		json.value("recovering", melee.recovering);
+		json.value("swings", melee.recoverySwings);
 		json.end();
 		json.object("params");
 		json.value("swingSpeed", melee.params.startSpeed);

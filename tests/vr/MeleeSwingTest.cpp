@@ -19,6 +19,7 @@
 
 #include "vr/MeleeSwingTest.h"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -54,6 +55,27 @@ std::vector<vr::SwingChange> move(vr::SwingDetector & detector, double & time, V
 		vr::SwingChange change = detector.update(sample(time, hand), true);
 		if(change != vr::SwingChange::None) {
 			changes.push_back(change);
+		}
+	}
+	return changes;
+}
+
+/*!
+ * Feed samples of the hand moving by \a velocity (m/s) over the frame times \a steps (seconds); \return the changes
+ * seen, and the fastest filtered speed in \a fastest
+ */
+std::vector<vr::SwingChange> moveSteps(vr::SwingDetector & detector, double & time, Vec3f & hand, Vec3f velocity,
+                                       const std::vector<double> & steps, float * fastest = nullptr) {
+	std::vector<vr::SwingChange> changes;
+	for(double step : steps) {
+		time += step;
+		hand += velocity * float(step);
+		vr::SwingChange change = detector.update(sample(time, hand), true);
+		if(change != vr::SwingChange::None) {
+			changes.push_back(change);
+		}
+		if(fastest) {
+			*fastest = std::max(*fastest, detector.speed());
 		}
 	}
 	return changes;
@@ -322,4 +344,211 @@ void MeleeSwingTest::testTargetCooldown() {
 	cooldown.hit(7, 2, 1.3);
 	CPPUNIT_ASSERT(!cooldown.allowed(7, 2, 5.0, wait));
 	CPPUNIT_ASSERT(cooldown.allowed(7, 3, 5.0, wait));
+}
+
+void MeleeSwingTest::testHitchIsNoSwing() {
+	// #352: a hand reaching at 1 m/s with 11 ms frames and one 50 ms hitch moves 5 cm in the long frame; the
+	// median moves those 5 cm one sample later, in an 11 ms frame - 4.5 m/s over the frame's step, 1 m/s over
+	// the step it really moved over
+	{
+		vr::SwingDetector detector;
+		double time = 0.;
+		Vec3f hand = Rest;
+		move(detector, time, hand, Vec3f(0.f), 10);
+		std::vector<double> steps(10, 0.011);
+		steps.push_back(0.05);
+		steps.insert(steps.end(), 10, 0.011);
+		float fastest = 0.f;
+		CPPUNIT_ASSERT(moveSteps(detector, time, hand, Vec3f(1.f, 0.f, 0.f), steps, &fastest).empty());
+		CPPUNIT_ASSERT_EQUAL(u64(0), detector.swings());
+		if(std::abs(fastest - 1.f) > 0.01f) {
+			CPPUNIT_FAIL("1 m/s through a hitch read " + std::to_string(fastest) + " m/s");
+		}
+	}
+	// A stuttering game: 50 ms and 11 ms frames by turns, the hand at 2 m/s (below the swing speed) - every
+	// short frame read 9.1 m/s before
+	{
+		vr::SwingDetector detector;
+		double time = 0.;
+		Vec3f hand = Rest;
+		move(detector, time, hand, Vec3f(0.f), 10);
+		std::vector<double> steps;
+		for(int i = 0; i < 10; i++) {
+			steps.push_back(0.05);
+			steps.push_back(0.011);
+		}
+		float fastest = 0.f;
+		CPPUNIT_ASSERT(moveSteps(detector, time, hand, Vec3f(0.f, 2.f, 0.f), steps, &fastest).empty());
+		CPPUNIT_ASSERT_EQUAL(u64(0), detector.swings());
+		CPPUNIT_ASSERT(std::abs(fastest - 2.f) < 0.01f);
+	}
+}
+
+void MeleeSwingTest::testUnevenFramesPeak() {
+	// A 9.6 m/s swing over frames of 50 ms and 11 ms by turns: one swing, its peak the hand's speed
+	{
+		vr::SwingDetector detector;
+		double time = 0.;
+		Vec3f hand = Rest;
+		move(detector, time, hand, Vec3f(0.f), 10);
+		std::vector<double> steps;
+		for(int i = 0; i < 6; i++) {
+			steps.push_back(0.05);
+			steps.push_back(0.011);
+		}
+		std::vector<vr::SwingChange> changes = moveSteps(detector, time, hand, Vec3f(-9.6f, 0.f, 0.f), steps);
+		CPPUNIT_ASSERT_EQUAL(size_t(1), count(changes, vr::SwingChange::Started));
+		CPPUNIT_ASSERT(detector.swinging());
+		if(std::abs(detector.peak() - 9.6f) > 0.05f) {
+			CPPUNIT_FAIL("9.6 m/s over uneven frames peaked at " + std::to_string(detector.peak()) + " m/s");
+		}
+	}
+	// The CI case of #352 (run 38089069974): the hand moved 0.43 m in one 99.5 ms frame and then stood, frames of
+	// 10.5 ms - the peak is the 4.3 m/s it moved at, not 40.9
+	{
+		vr::SwingDetector detector;
+		double time = 0.;
+		Vec3f hand = Rest;
+		moveSteps(detector, time, hand, Vec3f(0.f), std::vector<double>(10, 0.0105));
+		time += 0.0995;
+		hand += Vec3f(0.43f, 0.f, 0.f);
+		detector.update(sample(time, hand), true);
+		moveSteps(detector, time, hand, Vec3f(0.f), std::vector<double>(10, 0.0105));
+		CPPUNIT_ASSERT_EQUAL(u64(0), detector.jumps());
+		if(std::abs(detector.peak() - 0.43f / 0.0995f) > 0.01f) {
+			CPPUNIT_FAIL("0.43 m in 99.5 ms peaked at " + std::to_string(detector.peak()) + " m/s");
+		}
+	}
+}
+
+void MeleeSwingTest::testSameSwingsAt45And90Hz() {
+	// The same three swings (0.85 m in 89 ms, the sequences' ramp, then 0.4 s still) at 90 Hz, at 45 Hz and at
+	// an uneven 90 (8 and 14 ms frames by turns): the same swings with the same peaks
+	struct Run {
+		const char * name;
+		std::vector<double> steps; //!< repeated
+		u64 swings = 0;
+		std::vector<float> peaks;
+	};
+	Run runs[] = { { "90 Hz", { 1. / 90. } }, { "45 Hz", { 1. / 45. } }, { "uneven 90 Hz", { 0.008, 0.014 } } };
+	const double ramp = 8. / 90.;
+	const float distance = 0.85f;
+	const double starts[] = { 0.5, 1.0, 1.5 };
+	for(Run & run : runs) {
+		vr::SwingDetector detector;
+		double time = 0.;
+		size_t step = 0;
+		while(time < 2.) {
+			time += run.steps[step++ % run.steps.size()];
+			// The hand's way: back and forth between two points, a ramp at each start
+			float x = 0.f;
+			for(size_t i = 0; i < 3; i++) {
+				const float t = glm::clamp(float((time - starts[i]) / ramp), 0.f, 1.f);
+				x += (i % 2 == 0 ? -distance : distance) * t;
+			}
+			if(detector.update(sample(time, Rest + Vec3f(x, 0.f, 0.f)), true) == vr::SwingChange::Ended) {
+				run.peaks.push_back(detector.peak());
+			}
+		}
+		run.swings = detector.swings();
+	}
+	const float speed = distance / float(ramp);
+	for(const Run & run : runs) {
+		CPPUNIT_ASSERT_EQUAL(u64(3), run.swings);
+		CPPUNIT_ASSERT_EQUAL(size_t(3), run.peaks.size());
+		for(float peak : run.peaks) {
+			if(std::abs(peak - speed) > speed * 0.01f) {
+				CPPUNIT_FAIL(std::string(run.name) + ": a swing of " + std::to_string(speed) + " m/s peaked at "
+				             + std::to_string(peak));
+			}
+		}
+	}
+}
+
+void MeleeSwingTest::testRecoveryTime() {
+	const vr::MeleeWeapon weapons[] = { vr::MeleeWeapon::Dagger, vr::MeleeWeapon::OneHanded, vr::MeleeWeapon::TwoHanded };
+	for(vr::MeleeWeapon weapon : weapons) {
+		// The cfg.ini key wins (0 too: no recovery), a negative one is the type's default
+		vr::RecoveryTime time = vr::recoveryTime(weapon, -1.f);
+		CPPUNIT_ASSERT(time.source == vr::RecoverySource::Default);
+		CPPUNIT_ASSERT_EQUAL(vr::defaultRecovery(weapon), time.seconds);
+		time = vr::recoveryTime(weapon, 0.4f);
+		CPPUNIT_ASSERT(time.source == vr::RecoverySource::Config);
+		CPPUNIT_ASSERT_EQUAL(0.4f, time.seconds);
+		time = vr::recoveryTime(weapon, 0.f);
+		CPPUNIT_ASSERT(time.source == vr::RecoverySource::Config);
+		CPPUNIT_ASSERT_EQUAL(0.f, time.seconds);
+	}
+	// The dagger recovers fastest, the two-handed weapon slowest: 0.6, 0.8, 1.0 s
+	CPPUNIT_ASSERT_EQUAL(0.6f, vr::defaultRecovery(vr::MeleeWeapon::Dagger));
+	CPPUNIT_ASSERT_EQUAL(0.8f, vr::defaultRecovery(vr::MeleeWeapon::OneHanded));
+	CPPUNIT_ASSERT_EQUAL(1.f, vr::defaultRecovery(vr::MeleeWeapon::TwoHanded));
+	CPPUNIT_ASSERT_EQUAL(std::string("dagger"), std::string(vr::meleeWeaponName(vr::MeleeWeapon::Dagger)));
+	CPPUNIT_ASSERT_EQUAL(std::string("1h"), std::string(vr::meleeWeaponName(vr::MeleeWeapon::OneHanded)));
+	CPPUNIT_ASSERT_EQUAL(std::string("2h"), std::string(vr::meleeWeaponName(vr::MeleeWeapon::TwoHanded)));
+	// Before a hit any swing may hit; after one, not before the recovery is over
+	vr::StrikeRecovery recovery;
+	CPPUNIT_ASSERT(recovery.ready(0.));
+	CPPUNIT_ASSERT_EQUAL(0.f, recovery.remaining(0.));
+	recovery.hit(1.0, 0.6f);
+	CPPUNIT_ASSERT(!recovery.ready(1.3));
+	CPPUNIT_ASSERT(std::abs(recovery.remaining(1.3) - 0.3f) < 1e-5f);
+	CPPUNIT_ASSERT(recovery.ready(1.61));
+	CPPUNIT_ASSERT_EQUAL(0.f, recovery.remaining(1.7));
+	recovery.hit(2.0, 0.f);
+	CPPUNIT_ASSERT(recovery.ready(2.0));
+	recovery.hit(3.0, 0.6f);
+	recovery.clear();
+	CPPUNIT_ASSERT(recovery.ready(3.1));
+}
+
+void MeleeSwingTest::testRecoveryPerWeapon() {
+	// Per weapon type, as VRMelee decides: a swing hits when it starts after the recovery of the last hit. A first
+	// swing hits; a second one straight back does not; one started just before the recovery ends does not; one
+	// after it does
+	const vr::MeleeWeapon weapons[] = { vr::MeleeWeapon::Dagger, vr::MeleeWeapon::OneHanded, vr::MeleeWeapon::TwoHanded };
+	for(vr::MeleeWeapon weapon : weapons) {
+		const float seconds = vr::recoveryTime(weapon, -1.f).seconds;
+		vr::SwingDetector detector;
+		vr::StrikeRecovery recovery;
+		double time = 0.;
+		Vec3f hand = Rest;
+		double lastHit = -1.;
+		std::vector<bool> hits;
+		// A swing at 4 m/s for 8 frames, then still until it ended; it touches the target as it starts
+		auto swing = [&](float direction) {
+			std::vector<vr::SwingChange> changes = move(detector, time, hand, Vec3f(4.f * direction, 0.f, 0.f), 8);
+			CPPUNIT_ASSERT_EQUAL(size_t(1), count(changes, vr::SwingChange::Started));
+			const bool hit = recovery.ready(detector.startTime());
+			if(hit) {
+				recovery.hit(detector.startTime(), seconds);
+				lastHit = detector.startTime();
+			}
+			hits.push_back(hit);
+			changes = move(detector, time, hand, Vec3f(0.f), 4);
+			CPPUNIT_ASSERT_EQUAL(size_t(1), count(changes, vr::SwingChange::Ended));
+		};
+		// Still until the hand's next swing starts \a after seconds after the last hit (it starts 2 frames in)
+		auto waitUntil = [&](double after) {
+			const double until = lastHit + after - 2 * Frame;
+			while(time + Frame < until) {
+				move(detector, time, hand, Vec3f(0.f), 1);
+			}
+		};
+		move(detector, time, hand, Vec3f(0.f), 10);
+		swing(-1.f);
+		swing(1.f);
+		waitUntil(double(seconds) - 0.05);
+		swing(-1.f);
+		waitUntil(double(seconds) + 0.03);
+		swing(1.f);
+		const std::vector<bool> expected = { true, false, false, true };
+		if(hits != expected) {
+			std::string seen;
+			for(bool hit : hits) {
+				seen += hit ? "hit " : "no ";
+			}
+			CPPUNIT_FAIL(std::string(vr::meleeWeaponName(weapon)) + ": " + seen);
+		}
+	}
 }

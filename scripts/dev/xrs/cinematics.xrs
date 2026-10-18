@@ -1,0 +1,184 @@
+# Every cinematic of the game loads after the VR overlays (#495): the owner's headset run crashed in the AMD driver
+# inside glTexImage2D while akbaa_dream_c.cin loaded its images, right after the menu pointer's beam had been
+# created. The beam, the reticle rings and the desktop mirror's overlays set GL_UNPACK_ALIGNMENT to 4 and left it;
+# the engine's images are tightly packed, so the next RGB tile whose row is not a multiple of 4 (akbaa dream.tga's
+# last column, 110 x 256: 330-byte rows read 332 apart) was read 510 bytes past its buffer. GLTexture::upload now
+# sets the tight state itself and logs an [E] with the numbers when the state it found is not the engine's tight
+# one - so this sequence creates the beam first and then loads all 19 .cin of data.pak (every image uploaded on
+# load, --cinematics so a development launch shows them), skipping each with B as a player would: no [E], errors 0.
+# With the leak put back (the three glPixelStorei lines) the first upload after the beam reports it and the run
+# is red: proven once on 2026-10-17, PR #505.
+#
+# Runs on the test save mvp-items (#70: controls free, a key on the table, the bag closed):
+#   .\scripts\dev\xrs-run.ps1 cinematics
+# (smoke-test.ps1 -Sequence takes the arx.exe arguments from its own command line, TRAPS.md: with it pass
+#  -VrSim idle -Save mvp-items -- --loadslot 0 --cinematics)
+@sim idle
+@save mvp-items
+@args --loadslot 0 --cinematics
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+
+# The menu pointer's beam (#34): the bag open on the floating panel, the right hand aiming at the key - the beam
+# image is uploaded (RGBA 8 x 64), the pixel-store state the cinematic tiles meet next
+inventory playeraddfromscene key_base_0005
+@frames 5
+ui inventory open
+@until vr.panel.mode eq world 5s
+@frames 60                                   # the bag slides up
+vr-sim head rot 0 -20 0
+@frames 5
+vr-point right item
+@frames 5
+@assert vr.pointer.active eq true
+@assert vr.pointer.beam eq true
+@log VRSystem:.*menu pointer: beam image
+ui inventory close
+@until vr.panel.mode eq head 5s
+@frames 5
+
+# Each cinematic: the script command prepares it, the next frame loads it (every image cut into 256 x 256 tiles and
+# uploaded) and starts it; the right B skips it (#394) and the game is back in gameplay
+cine akbaa_dream_a
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/akbaa_dream_a\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine akbaa_dream_b
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/akbaa_dream_b\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+# The owner's crash: akbaa dream.tga 1390 x 1390, the last column of tiles 110 wide
+cine akbaa_dream_c
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/akbaa_dream_c\.cin"
+@assert errors eq 0
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine end_game
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/end_game\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine end_game_new
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/end_game_new\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine end_game_old
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/end_game_old\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine erzog_die
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/erzog_die\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine erzog_sacrifice
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/erzog_sacrifice\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine florence_debrief
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/florence_debrief\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine introduction
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/introduction\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine noden
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/noden\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine noden_briefing
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/noden_briefing\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine noden_briefing_tmp
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/noden_briefing_tmp\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine sacrifice
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/sacrifice\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine sky_breach
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/sky_breach\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine sky_nobreach
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/sky_nobreach\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine test
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/test\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine traitee
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/traitee\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+cine ylside
+@until state eq CINEMATIC 60s
+@log CinematicLoad:.*Loading cinematic "graph/interface/illustrations/ylside\.cin"
+vr-input tap right.b
+@until state eq GAMEPLAY 30s
+@frames 5
+
+# Every image of every cinematic was uploaded inside its buffer: no upload found a pixel-store state that would
+# have read past it, nothing else went wrong
+@assert events.byName."cinematic.start" eq 19
+@assert events.byName."cinematic.end" eq 19
+@nolog GLTexture:.*Texture upload found GL_UNPACK
+@assert errors eq 0

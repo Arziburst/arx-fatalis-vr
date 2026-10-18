@@ -85,6 +85,9 @@ extern MainMenu * g_mainMenu;
  */
 std::string stepVRSettingRow(std::string_view row, int delta);
 
+//! The rows the VR turning page shows (e.g. "turn,angle,repeat,height"), empty when the page is not open (#374)
+std::string visibleVRSettingRows();
+
 /*!
  * The dot of a slider of the VR turning page (#260) - angle, speed or repeat - dragged to \a fraction of its
  * bar (0 left end, 1 right end) and let go there, for the test channel; the page must be open

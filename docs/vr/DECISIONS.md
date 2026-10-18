@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: The game menu stays reachable whatever is rebound - a refused last binding and a fixed two-stick hold
+## D-058: The game menu stays reachable whatever is rebound - a refused last binding and a fixed two-stick hold
 
 - **Date:** 2026-10-18
 - **Status:** Accepted (#326; amends D-042's table and D-019's menu rule)

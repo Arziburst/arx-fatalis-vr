@@ -51,6 +51,7 @@
 #include "vr/BodyView.h"
 #include "vr/EyeProjection.h"
 #include "vr/HeadTracking.h"
+#include "vr/SceneView.h"
 #include "vr/VRArms.h"
 #include "vr/VRInput.h"
 #include "vr/VRSystem.h"
@@ -970,6 +971,13 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		return;
 	}
 
+	// The hero shown in third person - a ghost shot, a scene camera of the game's own - keeps the engine's
+	// body: arms reaching for controllers the viewer holds elsewhere look broken from outside (#29)
+	if(!sceneState().armsIk) {
+		noteBody(false, "third person");
+		return;
+	}
+
 	// The head: the sample the camera takes this frame, against its reference
 	HeadSample head;
 	if(!peekHead(head)) {
@@ -1285,8 +1293,10 @@ Vec3f bodyShift() {
 }
 
 bool hidesHeadOnly() {
-	// A head drives the camera (a headset, the last headset sample, or a simulated head)
-	return std::strcmp(headStatus().source, "none") != 0;
+	// A head drives the camera (a headset, the last headset sample, or a simulated head) and the eyes are the hero's:
+	// shown from outside - a cinema shot on the screen, a ghost's or the observer's shot - he keeps his head and the
+	// engine's whole model (#29, the owner: "in cinema shots the head must be drawn")
+	return std::strcmp(headStatus().source, "none") != 0 && sceneState().armsIk;
 }
 
 bool isHeadVertex(EERIE_3DOBJ * obj, VertexId vertex) {

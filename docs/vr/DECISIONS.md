@@ -13,6 +13,242 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-056: CI owns the game slots - workers' launches wait for a running CI job, a PR's run fails fast
+
+- **Date:** 2026-10-18
+- **Status:** Accepted (#527; amends D-014's "one game at a time")
+- **Decided by:** the owner (the contract of #527: the faster CI of #522 only helps if CI gets the PC); the coordinator
+  on the open points (the owner's own launch ignores the marker; the CI wait limit is 300 s; the phases fail fast never
+  started are NOT RUN; inside a tier, longest first)
+
+### Decision
+- **The CI runner has the game slots first.** While a CI job runs on this PC it keeps a marker
+  (`%ProgramData%\ArxFatalisVR\locks\ci-runner.marker`, written before the build, cleared in a step that always runs,
+  naming the job's process so a dead job's marker is stale) and every scripted launch of the PC - a worker's `ci-local`,
+  `smoke-test`, `make-test-saves`, `xrs-run` - **waits without taking a slot**. The job's own launches
+  (`ARXVR_CI_RUNNER`) take the slots as they free; a worker's game that already runs finishes its phase, never
+  preempted. Workers' `ci-local` waits up to 30 minutes for a job (naming the holder every 30 s), CI's own phases
+  give up after 300 s naming the holder.
+- **The owner's own launch** (`run-windows.ps1` by hand - no test channel, no isolated user dir - and `test-pr.ps1`)
+  ignores the marker, takes its slot (CI then drops to one lane, the earlier rule) and is never stopped or preempted.
+- **No silent waits.** A launch that cannot get a slot names the holders (pid, what, copy, since) at once and
+  periodically, and on the timeout; an **orphan game** - a lock file nobody holds any more, its launcher gone, its
+  `arx.exe` running - is stopped by the next launch and logged. The games of a script die with the script (a job
+  object with KILL_ON_JOB_CLOSE, #526); `ci-local` and `ci-smoke` put their whole process chain in one.
+- **A pull request's run fails fast:** the first FAIL starts nothing more, the phases running then finish, the rest
+  are `NOT RUN`, the job ends red naming the failure. The full suite (a push to main, `suite=full` - the merge gate,
+  `ci-local -Full`) runs everything.
+- **The risk order:** the PR's own `.xrs` first, then what the impact map selects for its changed files, then what
+  failed in the last 5 runs on the runner (`ci-history.json` beside `ci-durations.json`), then the rest; inside a tier
+  longest first. A sequence that measures frame pacing says `@solo` and runs alone on the lanes.
+
+### Why
+- Run 39109130415 (main) ended SKIPPED: its phases waited 900 s behind two workers' `make-test-saves` / `smoke-test`
+  games, which took the slots as fast as CI released them. Run 39120032077 attempt 1 lost a channel batch under the
+  load of three games (the cause and its fix: `src/core/CommandChannel.cpp`, TRAPS.md). #526: a `ci-local` killed by
+  a tool timeout left its game holding a slot for two hours, starving another worker's run.
+- A 900 s wait that ends in SKIPPED is 15 minutes with no verdict and no name of the culprit; 300 s with the holder
+  named is a verdict.
+
+### Rules out
+- Preempting a running game, the owner's included: a slot changes hands only when its game ends.
+- A second runner, or changes to the merge gate (`coordinator/tools/mergeq.sh`): the gate runs the full suite as before.
+- Taking a slot from the owner's own game is not decided here (the owner's call, raised in #527's report).
+
+---
+
+## D-055: Scripted scenes in VR - hybrid by default, dialogue in first person, no fades, no letterbox in the eyes
+
+- **Date:** 2026-10-14
+- **Status:** Accepted for `hybrid` (the owner's headset test, 2026-10-17); `first`, `observer` and `ghost` stay as
+  switches, deferred (#497, #498)
+- **Decided by:** the owner (2026-10-13 on #29: every sensible variant behind a switch, default hybrid; turning allowed
+  in dialogues, walking blocked; playerlookat both ways, default ignored; 2026-10-17 after testing all four views:
+  hybrid stays the default, dialogue is always first person, no blink where avoidable, the subtitles' places)
+
+### Decision
+- A scripted scene (a `speak -c` line, a camera entity of `cameraactivate`, the letterbox of `cinemascope`) no longer
+  hands the game's camera to the eyes. What the eyes get is **cfg.ini `vr_scene_view`**: `first` (the hero's head, the
+  game's scene cameras ignored), `ghost` (the game's camera positions, each shot held where it starts - no dolly, no
+  pan - yaw only, pitch and roll from the head, never lower than 1.2 m above the floor under it), `observer` (one
+  point per scene beside the line between the hero's head and the shot's NPC, 0.75 x their distance clamped to
+  1.5-3 m, ray-checked 40 cm off walls, the game camera's side when both fit, at the player's real eye height above the
+  floor there; kept through the scene's camera entities and lines) and `hybrid` (`first` for dialogues; a camera
+  entity's shot that `first` would lose goes on the virtual screen fixed in the room - the intro's screen, 2.5 m ahead,
+  2.6 m wide: the camera more than 6 m from the hero's head or without a line of sight to it - vision balls, portals,
+  cutscene levels - or the hero's body played by a script, `playanim -p` / `forceanim`, as the goblins dragging him in
+  the prison intro; a shot keeps the screen once it wanted it; `speak -c` lines and letterbox-only stretches stay
+  `first`). Default `hybrid`.
+- **Dialogue is always first person, in every view** (the owner, 2026-10-17): a `speak -c` line, the letterbox alone and
+  a camera entity's shot near the hero are the hero's own eyes; a view applies to cinematic shots only - the hybrid's
+  rule (far, out of sight, or the hero's body scripted) decides what is cinematic in every view. **A dialogue stays
+  first person to its end, even where its script cuts to a camera** (the owner's retest, 2026-10-17: the talk after the
+  goblin fight went to the screen): a scene is a dialogue - first person from that frame to its end - once its first
+  camera entity frame is not a cinematic shot or has the camera on an NPC with the hero's body free (that talk's
+  camera_0080 is on Kultar from its first frame, while he walks out and before any line), a `speak -c` line plays in it,
+  a `playerlookat` turns the hero to an NPC, or the hero has a voiced line; it is forgotten when the scene ends and at a
+  new level (the startup intro talks and ends in the menu). A scene with no conversation is a cinematic: the prison
+  intro's cameras look at markers, a vision ball's at the hero, and a camera on an NPC while a script plays the hero's
+  body is no conversation cue. **A camera shot of the hero's body played by a script is a cutscene on the screen, even
+  inside a dialogue** (the verifier's decision, #460): the level 3 ambush's dialogue (human_base_0116, a `speak -pc`
+  line) has human_base_0116 send DRAG to human_base_0183, which drags the hero under camera_0107 - that shot goes to the
+  screen; the hero free again, the dialogue is first person. A camera shot with the hero not on the level (no floor
+  under his eye: the startup intro's talk on level 10 as a scene) goes to the screen inside a dialogue too. The dialogue
+  decides only the shots with the hero free and there.
+  **In a cinematic the hero keeps his head**: the VR body's head-only hiding, its two-sided faces and its own arms apply
+  only while the eyes are his (`vr::hidesHeadOnly`).
+- **No blink where the eyes see no jump** (the owner, 2026-10-17: "if we can get rid of it, we must"): a dialogue's new
+  line or camera, a scene's start and end while the eyes stay in the hero's head, and the switch between the world and
+  the screen (no motion: the world goes, the screen is there) happen at once (`vr.scene.switch`). **The cuts the eyes
+  see a jump in** - the hero teleported by the script (more than 50 cm in a frame) or turned at once (more than 10
+  degrees), a cut into or out of a ghost's or the observer's shot - are taken at once too by default (cfg.ini
+  `vr_scene_cut` `instant`; the owner, 2026-10-17: "no fades at all"); `fade` puts them behind a short fade, kept for
+  later. Only an eye that must not be seen (no floor under it; first person too low with `black`) is always reached
+  behind the fade: the shot shown is held while the world fades out, the new one is taken at black, then the world fades
+  in. The ghost's yaw is set at each cut so that where the player looks is where the game's camera looked.
+- **`playerlookat`** (cfg.ini `vr_scene_lookat`): `ignore` (default) leaves the hero's yaw; `fade` turns him at the
+  black of a short fade. Never an un-faded snap.
+- **No eye without a floor under it** (the owner, #29): in every view the fade stays black while the eyes' point - the
+  hero's eye, a ghost's shot, the observer's point - has no floor under it (a new game's hero stands off the level for
+  2 s before the prison intro).
+- **First person's eye too low** (cfg.ini `vr_scene_first_low`; the owner picks in the headset): while the hero's eye is
+  below 1.2 m above the floor in a scene - he lies or is dragged by a script, the prison intro - `clamp` (default, the
+  lead's proposal) raises the eye to 1.2 m as a ghost's shot, `black` holds the fade until he is up, `screen` puts
+  the scene on the screen in the room until it ends.
+- **No cinematic bars in the eyes**; the cinemascope state stays for the game (the hidden HUD, the skip rules).
+- **Subtitles in VR** (cfg.ini `vr_subtitles`, default `above`): every voiced line of a scene (a `speak -c` line, a
+  camera entity, or the letterbox on) gets a subtitle with the speaker's localised name - also a line the original plays
+  without text for want of the letterbox; the text follows the variant played (key `string<N>` in the line's section).
+  **A subtitle is a panel fixed in the world** (the owner's retest, 2026-10-17: never turning with the head): placed
+  once when the line starts, facing where the player was then, drawn into its own image and sampled into each eye as a
+  quad in the world after the world, depth test off - always on top, also in the desktop mirror and a stream (#519; a
+  compositor quad layer of it stayed invisible on SteamVR). `above`: always over the NPC's head, in view or not (the
+  owner, 2026-10-18: behind him is behind him, he turns to see it), gliding after his head once it moved 15 cm (he walks
+  out while he talks; his idle sway moves nothing); the hero's own line (and an off-voice one) below the centre of the
+  view - placed once and left while the head moves a little, gliding back below the centre in 0.3 s once the head is
+  more than 35 degrees off it; both face the player's head (yaw only); `chest`: the hero's kind of panel for every line;
+  `lowerthird`: on the head-locked interface quad. A subtitle shows once the eyes see the scene, not under the fade it
+  starts behind. The hero's own lines name him Am Shaegar (the owner: the game gives him no name at character creation,
+  and its texts have no key for the name alone). Talk outside scenes (barks, a merchant's greeting) gets none yet.
+  Proposals for the owner (`SubtitleParams`): the game's subtitle font (about 1.4 degrees), the box at most 32 degrees
+  wide, black at 60%, the name in warm gold over white text; `above` 0.25 m over the head, `chest` 0.8 m ahead and 0.45
+  m below the eyes, `lowerthird` up to 60% of the quad's width with its lower edge at 92% of its height.
+- **Walking is blocked during a scene in VR, the stick turn works** (also where the script holds the controls).
+- **The IK arms are off while the hero is shown in third person** (a ghost shot, any external view of the game).
+- Flat mode is unchanged. The test channel's `scene ...` commands change the switches for the session only (cfg.ini
+  keeps the player's choice).
+- **Proposal, for the owner to tune:** a faded cut (`vr_scene_cut fade`, and the eye that must not be seen) fades out in
+  0.15 s (the head-in-wall fade's speed) and in in 0.25 s; a `playerlookat` fade is 0.1 s out and 0.1 s in; black is
+  held two frames after a switch. One place: `SceneFadeParams` in `src/vr/SceneView.h`. The hybrid's 6 m
+  (`HybridFarUnits`), the screen's size and distance and the observer's distances are proposals too.
+
+### Why
+- The jerks the owner felt are the scene camera's own moves: un-faded cuts (a yaw cut rotates the world), dollies and
+  per-frame look-at pans (vection), camera paths diving to the floor ("on the floor looking up": camera_0039 of the
+  prison scene dips to 0.5 m), `playerlookat` as an un-faded snap turn, and the letterbox drawn into each eye as
+  head-locked bars. Holding each shot, fading every cut and keeping the head's own rotation removes all of them.
+- Doom 3 BFG VR's "immersive" cutscenes (research F-358..F-362) do the same for the ghost view.
+- The hybrid's screen: the game's dialogue cameras stand 2-5 m from the hero, its far cameras 20-60 m; a far shot or the
+  hero's scripted body (the only near case where first person would see from inside a dragged or lying model) is lost
+  in `first`, and a flat screen in the room is the comfortable way to show it (UEVR's 2D screen mode, RE4 VR's theatre).
+
+### Trade-offs accepted
+- The ghost view loses the game's camera motion within a shot; `first` loses the authored framing altogether.
+- A fade per shot change can feel busy in a dialogue of many short lines.
+
+### Consequences
+- `src/vr/SceneView.*` (the director, the fade, the meter), `src/vr/SceneSubtitles.*` (#29.3), status.json `scene.*`,
+  the `vr.scene*` events, the sequences `scene-*.xrs` (TESTING.md).
+
+---
+
+## D-054: Melee damage comes from the swing - its size and its speed, per weapon class; no charge
+
+- **Date:** 2026-10-17
+- **Status:** Accepted (the owner's design; every number is a provisional cfg.ini default from research #502 - the
+  owner tunes them in the headset, per weapon class and later per enemy)
+- **Decided by:** the owner (#465, 2026-10-14 and 2026-10-17: "in VR, damage comes from the real swing"; refined the
+  same day, relayed by the coordinator: a touch is the minimum, size and speed together, #502's measures and numbers,
+  a quality switch and a seated path scale); the mapping by the worker of #465
+- **Supersedes:** D-038's charge (the trigger held charged the strike; a plain swing was weak) - D-038's swing detector,
+  gates, contact through the engine's check and #323's recovery times stay
+
+### Decision
+- **No charge.** The trigger of the weapon hand does nothing - held long, short or not at all, a hit is the same. The
+  HUD's hit strength gauge stays empty while the IK hand holds the weapon.
+- **A touch is the minimum.** A contact outside a swing (D-038's detector, F-61) - a touch, a tap, the blade resting on
+  an enemy, a wrist flick - deals the engine's weakest strike, 0.1 of the full one (its `StrikeAimtime` floor), like
+  the original's uncharged click: **`vr_melee_noswing=min`**, the default (an unknown value is the default too, with a
+  log warning); `none` makes it nothing. A touch waits for the weapon type's recovery (#323's 0.6 / 0.8 / 1.0 s) after
+  any hit, so spamming stays possible but inefficient. It does not restart the swing's recovery or the per-target
+  cooldown (a blade resting in an enemy would keep a real swing from ever hitting it). **A touch reaches only an NPC
+  that fights the player** (its fight behaviour, the player its target): a friend, a merchant, an item or a crate get no
+  damage and no aggression from a resting blade, and the world's geometry is never checked - no wall sound, no
+  durability loss from a blade resting on the floor or a wall. Real swings hit anyone and anything, as in the original.
+  *The NPC rule is the coordinator's decision until the owner's - an open question for the owner.*
+- **A swing's damage is its size and its speed together** (research #502's measures): the **path** the hand travelled
+  since the stroke started (the sample before the lever point last rose above the swing's end speed, or the hand last
+  turned back - a waggle is many small strokes, not one big one) - for a thrust
+  (the lever point moving within 45° of the blade's way towards the tip, F-178's 0.707) its **lunge** along the blade -
+  and the lever point's filtered **speed** at contact (0.125 m along the blade, relative to the head, #352). Each gives
+  a factor, 0 at its range's minimum and 1 at its maximum; aim (the engine's `ratioaim`) = **0.1 + 0.9 q**, q by
+  **`vr_melee_quality`**: `min` (the weaker factor, the default), `geomean`, `product` - the owner compares them. Below
+  either minimum: the touch's value. A slow big swing and a fast tiny flick both stay low; only big and fast is the full
+  strike.
+- **The ranges are per weapon class** (`vr_melee_slash_<class>` / `vr_melee_stab_<class>` = `"<path min> <path max>
+  <speed min> <speed max> [<cap>]"`, empty = the default; the cap, 0-1 and 1 when left out, is the most quality the
+  kind reaches, 0 = the weapon has no such strike; the path ranges times **`vr_melee_path_scale`**, 1.0, for seated
+  play). #502's provisional numbers (path m, speed m/s):
+
+  | class (`<class>`) | slash | stab |
+  |---|---|---|
+  | dagger (`dagger`) | 0.25 → 0.6, 2.0 → 5.0 | 0.20 → 0.45, 2.0 → 4.5 |
+  | one-handed sword (`sword`) | 0.30 → 0.8, 2.5 → 6.0 | 0.20 → 0.50, 2.0 → 4.0 |
+  | one-handed axe, club, hammer, mace (`blunt`) | 0.35 → 0.9, 2.5 → 5.5 | 0.20 → 0.50, 2.0 → 4.0, cap 0.5 |
+  | two-handed sword, giant slayer (`2h_sword`) | 0.40 → 1.1, 2.5 → 5.0 | 0.25 → 0.50, 2.0 → 3.5 |
+  | two-handed axe, smith's club (`2h_blunt`) | 0.50 → 1.2, 2.5 → 4.5 | none (cap 0) |
+
+  #502: a one-handed blunt weapon's stab is a poke - the sword's ranges, at most half the quality (cap 0.5); a
+  two-handed blunt one has no stab - a thrust with it deals what a touch does. The class: a dagger or a two-handed weapon by its type; an axe, club, hammer or mace by its item class or material
+  (`vr/WeaponGrip.h`'s rule, applied to two-handed weapons too); anything else a sword.
+- **One log line per hit:** the engine's `melee.hit` with `aim` (the damage fraction), `speed`, `size` and `kind`.
+
+### Why
+- The owner: holding a button to charge is the mouse's way; in VR the arm is the strike. A touch is the uncharged
+  click; a big, fast, humanly sane slash or lunge is the full strike; either a slow or a tiny motion is little.
+- **The weaker factor by default:** each range keeps its own meaning, so the two can be tuned one at a time; a product
+  would also halve a swing that is medium in both (0.5 × 0.5). The switch lets the owner feel the others.
+- **Size up to the contact**, not of the whole stroke: the damage is dealt at contact, and the wind-up before it is what
+  makes a swing big.
+- **The hand's path and the lever's speed** (#502), not the blade's tip: a wrist flick turns a tip fast and far but is
+  no swing (F-61); the numbers of #502 are measured that way.
+- **A string key per class and kind** rather than four numbers each: 10 keys instead of 40, one readable line per
+  class; an empty value follows the code's defaults, so a cfg.ini written by an earlier build keeps no stale numbers
+  (TRAPS.md, 2026-10-17).
+- **A touch reaches only an NPC fighting the player, no geometry, and blocks no swing:** at the minimum every recovery,
+  a resting blade would otherwise break crates (the engine damages props by the player's full damage, whatever the
+  ratio), anger a friend or a merchant (the engine's aggression event comes with any hit), ring and wear on the floor
+  or a wall, and keep the hand from hitting.
+- Prior art (a short look, #465): VHVR scales by speed up to full at cooldown + 5 m/s (F-63); F-178's strength is
+  (peak − min) / max; PLANCK tells a stab by the hand moving along the blade (dot ≥ 0.8, F-195); Blade & Sorcery and
+  Boneworks take the hit point's velocity from physics; research #502 for the classes' numbers.
+
+### Rules out
+The charge and the trigger's role in melee; damage from the swing's peak; damage from speed alone or size alone; a
+thrust bonus or malus (a stab has its own ranges, the same rule).
+
+### Consequences
+- cfg.ini `vr_melee_slash_<class>`, `vr_melee_stab_<class>`, `vr_melee_quality`, `vr_melee_path_scale`,
+  `vr_melee_noswing` replace `vr_melee_full_speed` and `vr_melee_weak_aim`; the `melee.charge` event and
+  `vr.melee.charge` are gone, `vr.melee.trigger` shows the trigger changing nothing; `vr.melee.touches` counts touches
+  apart from `vr.melee.hits` (swings); `vr.melee.last` has the contact's `speed`, `size` and `kind`, `vr.melee.params`
+  the class and its ranges; the channel's `melee noswing|quality|pathscale|slash|stab` sets the keys live for tests.
+- Per enemy (#502's later stage) and haptics by strength are later work.
+- `melee-damage.xrs` proves each factor, the trigger and both modes in the playground; `melee-swing.xrs` and
+  `controls-v2.xrs` no longer see a charge.
+
+---
+
 ## D-053: In the menus the trigger always clicks and A is the right click; the Index grip presses at 0.70
 
 - **Date:** 2026-10-17
@@ -711,7 +947,8 @@ swaps them as a whole).
 ## D-038: Physical melee — the swing is the strike, the trigger charges it with the game's own charge
 
 - **Date:** 2026-10-10
-- **Status:** Accepted (the owner's design; the numbers are MVP defaults the owner tunes in the headset)
+- **Status:** Accepted (the owner's design; the numbers are MVP defaults the owner tunes in the headset); the charge
+  and the speed factor superseded by D-054 (#465: the damage comes from the swing's size and speed, no charge)
 - **Decided by:** the owner (after a headset fight with #75's sword, relayed by the coordinator on #39); the
   mechanism by the worker of #39; builds on D-009, D-016, D-019, D-032 (the body) and D-033 (the weapon in the IK hand, #75)
 
@@ -762,6 +999,20 @@ The engine's click attack while a weapon is in the VR hand; damage from swing sp
   sound by strength (F-178) and the per-target outline (F-62) are later tasks.
 - `weapon-hold.xrs` no longer sees a strike clip in combat mode; `melee-swing.xrs` proves the design on
   `mvp-goblin-fight`.
+
+### Amendment (2026-10-13, #323, #352): a recovery after a hit; the swing speed over the real time step
+- **Plain swings are no longer spam-able** (the owner's headset run, 2026-10-10: waving the dagger in front of you hit
+  again and again). After a hit the weapon hand recovers: a swing that starts within the recovery hits nothing (and
+  is not the engine's strike: no `strike` event, no speech), even once the recovery ends. The swing that hit goes on
+  hitting other targets. **Dagger 0.6 s, one-handed 0.8 s, two-handed 1.0 s** (the coordinator's option, confirmed by
+  the owner on 2026-10-13), cfg.ini `vr_melee_recovery_dagger` / `_1h` / `_2h` (-1 = the default).
+- **Not the game's own attack timing:** the hero's strike start + strike animations take 1.79 s with the dagger, 1.5 s
+  one-handed and 1.79 s two-handed. The dagger is not the fastest, and each is slow for a swing of the arm. They are
+  reported next to the recovery (`vr.melee.recovery.games`, the `melee.recovery` event) for comparison.
+- **The detector (#352, approved by the owner):** the median's move is divided by the time between the middle samples
+  it moved over, not by this frame's step. Before, a frame hitch (a 50 ms frame followed by an 11 ms one) read 4.5 m/s
+  for a hand at 1 m/s, a phantom hit. A filtered speed above 20 m/s is a jump like a raw one. With the right step
+  that can no longer happen: on each axis both medians lie between the two samples they share. The check stays as a guard.
 
 ---
 

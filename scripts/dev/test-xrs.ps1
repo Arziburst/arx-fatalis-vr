@@ -8,8 +8,12 @@
 	background process that answers the test channel files (command.txt -> ack.txt, status.json, shot
 	files) - passing steps, a failing assert that stops the run, a refused command, @pending (reported
 	while it fails, an error once it passes), @log / @nolog / @mark on a fake arx.log, @shot and @diff.
-	Also parses every sequence shipped in scripts\dev\xrs. No game, no network. Exit code 0 when everything
+	Also parses every sequence shipped in scripts\dev\xrs and scripts\dev\xrs\manual. No game, no network. Exit code 0 when everything
 	passed, 1 otherwise.
+
+	#527 (written before the implementation) assumes the directive @solo in xrs-lib.ps1, as #436's c7dce4453 has it: a
+	line '@solo' (no argument) is launch information, not a step; Read-ArxSequence returns Solo = $true for it and
+	$false without it; '@pending #<n> @solo' is refused ('@pending needs a step that can fail').
 #>
 [CmdletBinding()]
 param()
@@ -76,6 +80,16 @@ $asPlayer = Get-Parse "@sim idle`n@player`n@until state eq LOGO 60s"
 Check '@player is a player''s launch and is not a step' ($asPlayer -isnot [string] -and $asPlayer.Player -and @($asPlayer.Steps).Count -eq 1 -and -not $asPlayer.Args) $asPlayer
 $badPlayer = Get-Parse "@player now"
 Check '@player takes no argument' ($badPlayer -is [string] -and $badPlayer -match 'malformed') $badPlayer
+# @solo (#527, ported from #436's c7dce4453): launch information - the sequence measures frame pacing and CI runs it
+# alone (Read-ArxSequence returns Solo = $true; ci-smoke.ps1 gives it a phase with Solo). Not a step, no argument, and
+# @pending cannot wrap it (it cannot fail).
+$soloSeq = Get-Parse "@sim idle`n@solo`n@frames 1"
+Check '@solo marks the sequence to run alone and is not a step' ($soloSeq -isnot [string] -and $soloSeq.Solo -eq $true -and @($soloSeq.Steps).Count -eq 1) $soloSeq
+Check 'no solo unless asked' ($seq.PSObject.Properties['Solo'] -and $seq.Solo -eq $false) "$($seq.PSObject.Properties['Solo'])"
+$badSolo = Get-Parse "@solo now"
+Check '@solo takes no argument' ($badSolo -is [string] -and $badSolo -match 'malformed') $badSolo
+$pendingSolo = Get-Parse "@sim idle`n@pending #23 @solo`n@frames 1"
+Check '@pending cannot wrap @solo' ($pendingSolo -is [string] -and $pendingSolo -match 'needs a step that can fail') $pendingSolo
 $kinds = ($seq.Steps | ForEach-Object Kind) -join ' '
 Check 'every directive has its kind' ($kinds -eq 'wait frames until assert remember assert mark log nolog shot diff key pending command command') $kinds
 Check 'the trailing comment is dropped' ($seq.Steps[0].Ms -eq 100)
@@ -152,32 +166,42 @@ $fake = {
 	[IO.File]::WriteAllText((Join-Path $Dir 'started'), '1')
 	Add-Type -AssemblyName System.Drawing
 	$seq = 0; $frame = 0; $capture = 0; $yaw = 0.0; $shots = [ordered]@{}; $errors = 0
+	# The running batch: kept while a waitframes in it holds the ack (#522), the rest of its lines run once the frames are there
+	$batch = $null
 	$stop = Join-Path $Dir 'stop'
 	while (-not (Test-Path $stop)) {
-		$last = ''; $lineErrors = 0
 		$cmd = Join-Path $Dir 'command.txt'
-		if (Test-Path $cmd) {
+		if ($null -eq $batch -and (Test-Path $cmd)) {
 			# A transient sharing violation (the test's own read, a scanner on the runner) must not lose the batch:
 			# the file is removed only after it was read, and a failed read is tried again on the next pass (#275).
 			$lines = $null
 			try { $lines = @([IO.File]::ReadAllLines($cmd)); Remove-Item $cmd -Force -ErrorAction Stop } catch { $lines = $null }
 			if ($null -eq $lines) { Start-Sleep -Milliseconds 30; continue }
-			foreach ($l in $lines) {
-				$l = $l.Trim(); if (-not $l) { continue }
-				$last = $l
-				if ($l -match '^shot (\S+)') {
+			$batch = @{ Lines = @($lines | ForEach-Object { $_.Trim() } | Where-Object { $_ }); Next = 0; Errors = 0; Last = ''; Resume = 0 }
+		}
+		if ($batch -and $frame -ge $batch.Resume) {
+			$waiting = $false
+			while (-not $waiting -and $batch.Next -lt $batch.Lines.Count) {
+				$l = $batch.Lines[$batch.Next]; $batch.Next++
+				$batch.Last = $l
+				if ($l -match '^waitframes (\d+)$') { $batch.Resume = $frame + [int]$Matches[1]; $waiting = $true }
+				elseif ($l -match '^waitframes') { $batch.Errors++ }
+				elseif ($l -match '^shot (\S+)') {
 					$capture++
 					$bmp = [Drawing.Bitmap]::new(40, 20, [Drawing.Imaging.PixelFormat]::Format24bppRgb)
 					$g = [Drawing.Graphics]::FromImage($bmp); $g.Clear([Drawing.Color]::FromArgb(100 + [int]($yaw * 0.3), 100, 100)); $g.Dispose()
 					$bmp.Save((Join-Path $Dir "capture\$($Matches[1]).bmp"), [Drawing.Imaging.ImageFormat]::Bmp); $bmp.Dispose()
 				}
 				elseif ($l -match '^vr-sim head rot (\S+)') { $yaw = [double]$Matches[1] }
-				elseif ($l -match '^refuse') { $lineErrors++ }
+				elseif ($l -match '^refuse') { $batch.Errors++ }
 			}
-			$seq++
-			# The test reads ack.txt every 50 ms; a write that hits its open handle is retried, never dropped (#275).
-			for ($try = 0; $try -lt 50; $try++) {
-				try { [IO.File]::WriteAllText((Join-Path $Dir 'ack.txt'), "seq=$seq frame=$frame errors=$lineErrors last=$last error=-"); break } catch { Start-Sleep -Milliseconds 20 }
+			if (-not $waiting) {
+				$seq++
+				# The test reads ack.txt every 10 ms (#522); a write that hits its open handle is retried, never dropped (#275).
+				for ($try = 0; $try -lt 50; $try++) {
+					try { [IO.File]::WriteAllText((Join-Path $Dir 'ack.txt'), "seq=$seq frame=$frame errors=$($batch.Errors) last=$($batch.Last) error=-"); break } catch { Start-Sleep -Milliseconds 20 }
+				}
+				$batch = $null
 			}
 		}
 		$frame += 3
@@ -218,6 +242,21 @@ mark hello; mark again
 @wait 50
 '@
 	Check 'a passing sequence passes' ($r.Passed -and $r.Ran -eq 9 -and $r.Failures.Count -eq 0) ($r | ConvertTo-Json -Compress)
+
+	# @frames is the channel's waitframes (#522): the game holds the ack until it rendered the frames
+	$framesOut = [Collections.Generic.List[string]]::new()
+	$framesCtx = New-XrsContext $testDir $logPath { param($Text, $Color) $framesOut.Add($Text) }
+	$frameBefore = [int64](Read-XrsStatus $testDir).frame
+	Invoke-XrsStep $framesCtx (Read-ArxSequence (Write-Seq 'frames' '@frames 30')).Steps[0]
+	$framesAck = @($framesOut | Where-Object { $_ -match 'seq=\d+ frame=' })[0]
+	$ackFrame = if ($framesAck -match 'frame=(\d+)') { [int64]$Matches[1] } else { -1 }
+	Check '@frames sends waitframes and its ack comes 30 or more frames later' ($framesAck -match 'last=waitframes 30 ' -and $ackFrame -ge $frameBefore + 30) "$framesAck (frame before: $frameBefore)"
+	$ack = Send-ArxCommand -Lines @('waitframes 9', 'vr-sim head rot 7 0 0') -Dir $testDir
+	$turned = try { [bool](Wait-ArxStatus { param($s) $s.camera.yaw -eq 7 } -TimeoutSec 5 -Dir $testDir) } catch { $false }
+	Check 'the lines after a waitframes run once the frames are there, the ack after them' ($ack -match 'errors=0 last=vr-sim head rot 7 0 0 ' -and $turned) $ack
+	# Back to the yaw the checks below expect
+	$null = Send-ArxCommand -Lines @('vr-sim head rot 40 0 0') -Dir $testDir
+	$null = Wait-ArxStatus { param($s) $s.camera.yaw -eq 40 } -TimeoutSec 5 -Dir $testDir
 
 	$r = Run-Seq "@assert camera.yaw eq 999`n@wait 10"
 	Check 'a failed assert stops the run and names the value' (-not $r.Passed -and $r.Ran -eq 1 -and $r.Failures[0] -match 'ASSERT FAILED: camera.yaw \(40\) eq 999') ($r | ConvertTo-Json -Compress)
@@ -278,7 +317,8 @@ vr-sim head rot 50 0 0
 
 # --- the shipped sequences -------------------------------------------------------------------------------------
 Write-Host 'shipped sequences'
-$shipped = @(Get-ChildItem (Join-Path $PSScriptRoot 'xrs') -Filter '*.xrs')
+# xrs\manual (#529) is parsed too (parse and @save checks), never run in CI
+$shipped = @(Get-ChildItem (Join-Path $PSScriptRoot 'xrs') -Filter '*.xrs') + @(Get-ChildItem (Join-Path $PSScriptRoot 'xrs\manual') -Filter '*.xrs')
 Check 'sequences are shipped' ($shipped.Count -ge 4) $shipped.Count
 foreach ($file in $shipped) {
 	$parsed = try { Read-ArxSequence $file.FullName } catch { "$_" }

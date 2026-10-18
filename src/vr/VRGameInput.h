@@ -98,8 +98,9 @@ std::string formatGameInput(const GameInputState & state);
 
 //! What a hand's controls stand for this frame beyond the control table (D-042, #377)
 struct HandRoles {
-	//! The hand holds a drawn weapon in the world: its trigger charges the strike (vr/VRMelee.h), it is no click
-	std::array<bool, HandCount> charges = { };
+	//! The hand holds a drawn weapon in the world: its trigger is no click (and charges nothing, the swing is the
+	//! strike: vr/VRMelee.h, #465)
+	std::array<bool, HandCount> armed = { };
 	//! The hand's use / interact chord acted on a door, lever, chest or body (#38): it is no use (or stash) of an item
 	std::array<bool, HandCount> acts = { };
 };

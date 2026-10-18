@@ -34,7 +34,7 @@ vr-input tap right.a
 @log GameEvent:.*startup\.intro state=end how=skip 5s
 @nolog GameEvent:.*cinematic\.start name=introduction\.cin
 @assert menuMode eq mainmenu
-@assert events.byName."vr.skip" eq 3
+@until events.byName."vr.skip" eq 3 5s
 @until vr.sessionState eq focused 30s
 @until vr.panel.mode eq world 10s
 @frames 60
@@ -120,14 +120,22 @@ vr-sim action trigger right 0
 @assert player.freelook eq true             # in VR the game is always in freelook (#394; here level 10's reset set it)
 @log GameEvent:.*scene state=start area=1 30s
 @assert player.controlsBlocked eq true
-vr-input tap right.a                         # too early: nothing is sent to the scene, the press reaches nothing
+vr-input tap right.a                         # a tap is no skip in a scene (#513): nothing is sent
+@frames 30
+@nolog GameEvent:.*vr\.skip what=SCENE
+vr-input down right.a                        # a hold of 0.6 s skips - too early: nothing is sent to the scene
+@wait 1200
+vr-input up right.a
 @log GameEvent:.*scene\.skip how=vr area=1 .*result=early 5s
 @frames 30
 @assert player.controlsBlocked eq true
 @nolog GameEvent:.*player\.jump
-@wait 6000                                   # the skip handlers take a skip 3 s into the letterbox, outside a fade
+@wait 4500                                   # the skip handlers take a skip 3 s into the letterbox, outside a fade: the hold
+                                             # fires 0.6 s after the press, 7.5 s in - before the intro fades out around 9 s
 @mark
-vr-input tap right.a
+vr-input down right.a                        # the deliberate hold (#513): 1.2 s, room for a late poll under the CI load
+@wait 1200
+vr-input up right.a
 @until player.controlsBlocked eq false 15s
 @frames 30
 @nolog GameEvent:.*player\.jump
@@ -136,7 +144,7 @@ vr-input tap right.a
 @log GameEvent:.*vr\.skip what=SCENE 5s
 @log GameEvent:.*scene\.skip how=vr area=1 .*result=sent 5s
 @log GameEvent:.*scene state=end area=1 5s
-@assert events.byName."vr.skip" eq 5
+@until events.byName."vr.skip" eq 5 5s
 watch marker_0112
 @frames 5
 @assert watch.found eq true

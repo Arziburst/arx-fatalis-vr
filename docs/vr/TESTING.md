@@ -276,13 +276,14 @@ records only the extra arguments, not `--mute`.
 
 Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While enabled the game:
 
-- **polls `<dir>\command.txt`** every 100 ms: one command per line, `#` comments, consumed on read
+- **polls `<dir>\command.txt`** every frame (#522; a file lookup, read only when it is there): one command per line, `#` comments, consumed on read
   (deleted), a file older than the process start is discarded with a log line. Write it with
   `scripts/dev/game-cmd.ps1` or `Send-ArxCommand` from `scripts/dev/test-lib.ps1`: both write a
   temporary file and rename it, so the game never reads a half-written batch, and wait for the ack.
 - **answers every batch in `<dir>\ack.txt`**: `seq=<batch> frame=<frame> errors=<refused lines>
   last=<last line> error=<reason or ->`.
-- **rewrites `<dir>\status.json`** every 250 ms, after every batch and on every state change —
+- **rewrites `<dir>\status.json`** every 100 ms (#522; 250 ms before), after every batch (right after its ack), once
+  a `shot` or a simulated headset's shot asked for through the channel is saved, and on every state change —
   atomically (`status.json.tmp`, then rename), so a reader sees whole files only.
 - **flushes `arx.log`** at the same cadence, so `game.state` events and `[mark]` lines are readable
   while the game runs (since #129 the file logger flushes on its own after every warning or error
@@ -298,6 +299,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | Line | Effect |
 |---|---|
 | `status` | nothing extra — the status is written after every batch anyway |
+| `waitframes <n>` | hold the batch until the game rendered `n` more frames (#522): the lines after it run, and the ack is written, at the start of the next frame once those are rendered — its `frame=` is the frame the batch was read in plus `n`. No new batch is read meanwhile. The `.xrs` `@frames` sends it: a frame wait costs the frames and the ack's pickup, no `status.json` polling. Anywhere in a batch; `0` waits for nothing; not a number: refused |
 | `shot [name]` | after the next rendered frame, save it as `<dir>\capture\<name>.bmp` (default `shot<N>`); `captureSeq` and `lastCapture` in the status, and `capture`: what each quarter of the picture shows (#334) |
 | `window <width> <height>` | resize the game window as a player dragging its border does (#334): the interface is laid out again for the new size at the next frame (`window` and `vr.interface.windowWidth/Height` in the status). At least 320 × 240; refused in fullscreen. The size is saved to `cfg.ini` when the game quits |
 | `mark <text>` | `[mark] <text>` in the log — an anchor for "the line I wait for must come after this"; also an `M` line in [the performance log](#the-performance-log-arx-perflog-327) |
@@ -339,8 +341,11 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `watch <id>` / `watch off` | report one entity's place in `status.json` → `watch` (#37): where an item is, whether it is dragged, in the scene or in an inventory |
 | `handpose left\|right <yaw> <pitch> <roll> [<x> <y> <z>]` / `handpose left\|right off` | a simulated controller for the body without one (#36): the grip pose in the same terms as `headpose` (degrees as a person says them, metres in the OpenXR LOCAL space); the body poses that arm towards it exactly as towards a located controller (`vr.body.<hand>` in the status, `source=sim`). A located controller wins over it; `off` removes it. Needs a head too (`headpose`, or a headset / `--vr-sim`), since hands are placed rigid with the head camera |
 | `vr-sim <command>` | a command of the simulated headset (#112), only in a `--vr-sim` run: `head rot 25 0 0`, `head pos 0 -0.3 0`, `action trigger right 1`, `shot <name>`, `session visible`, `fault swap-eyes on`, … — now, or `@+<n> <command>` n frames from now on its timeline. See [The simulated headset](#the-simulated-headset---vr-sim-112) |
-| `combat on\|off` | the engine's combat mode without a key (#75): what the weapon key does — `on` draws the weapon (ready clips), `off` puts it away; a strike is then the mouse button — or, with the weapon in the VR hand, a physical swing (#39: the trigger only charges). VR has no control for it (D-019); `vr.weapon.combatMode` in the status |
+| `combat on\|off` | the engine's combat mode without a key (#75): what the weapon key does — `on` draws the weapon (ready clips), `off` puts it away; a strike is then the mouse button — or, with the weapon in the VR hand, a physical swing (#39; the trigger does nothing, #465). VR has no control for it (D-019); `vr.weapon.combatMode` in the status |
+| `freelook on\|off` | the engine's free look without the mouse (#323): `on` leaves the cursor mode, as loading a save does. A level started with `--loadlevel` (the playground) stays in cursor mode, where the engine keeps the inventory open and VR melee is refused (#405). A test-only workaround: it goes once #394 keeps VR gameplay in free look |
+| `melee noswing none\|min`, `melee quality min\|geomean\|product`, `melee pathscale <factor>`, `melee slash\|stab <class> <path min> <path max> <speed min> <speed max>\|default` | the damage from the swing (#465) live: `vr_melee_noswing`, `vr_melee_quality`, `vr_melee_path_scale` (0.25-2), `vr_melee_slash_<class>` / `vr_melee_stab_<class>` (m, m/s, 0-20; `default` empties it), so one run tests each mode and each factor alone (`0 0` as a range is always full); `vr.melee.params` shows the weapon's |
 | `crouch on\|off` | the crouch toggle without an input device, for flat runs (#263): `on` crouches the character, `off` lets it stand up when there is room for its head. `player.crouchToggle` / `player.crouched` in the status |
+| `scene view first\|observer\|ghost\|hybrid`, `scene lookat ignore\|fade`, `scene firstlow black\|clamp\|screen`, `scene cut instant\|fade`, `scene subtitles above\|chest\|lowerthird`, `scene meter reset` | the switches of scripted scenes in VR (#29, D-055) for this session - `cfg.ini` (`vr_scene_view`, `vr_scene_lookat`, `vr_scene_first_low`, `vr_scene_cut`, `vr_subtitles`; defaults `hybrid`, `ignore`, `clamp`, `instant`, `above`) keeps the player's choice, so sequences start from it in any order; `meter reset` starts a new stretch of `scene.meter` (and the subtitle line counts). Accepted in flat mode, where they change nothing |
 | `comfort auto\|on\|off` | who decides the VR comfort policy (#76, `vr::comfort()`): `auto` = the VR session (the default: view bobbing, screen shake and FOV zoom off in VR, `cfg.ini` decides in flat mode), `on` / `off` force the VR rules on or off — so a flat run can measure them. `comfort` and `camera` in the status; one `[vr] comfort:` log line per change |
 | anything else | the **script console**: `[entity.]command args`, exactly as typed in the in-game console (`` ` ``). Context defaults to the player. Refused (and counted in the ack) when the entity or the command is unknown |
 
@@ -361,9 +366,10 @@ A refused line costs nothing: `[W] [channel] script command failed: Unknown comm
 `errors=1` in the ack, no `[E]`.
 
 In the test playground (area 30, #321.2): `playground pull mode|respawn` (the lever gets exactly what a hand pull
-gives it: `SM_ACTION` from the player), `playground kill` (the NPC dies as from a hit), `playground place <ahead> [<right>]`
+gives it: `SM_ACTION` from the player), `playground kill` (the NPC dies as from a hit), `playground fight` (the NPC's fight behaviour and the player as its
+target set directly, as a fight script sets them - a set-up for a VR touch, #465), `playground place <ahead> [<right>]`
 (the NPC stands there facing the hero, like `place`) and `playground hit <n>` (the hero deals n damage through
-`damageNpc`, as a weapon hit). status.json has `playground` (`npc`, `npcMode` peaceful|aggressive, `npcAlive`, `npcLife`,
+`damageNpc`, as a weapon hit). status.json has `playground` (`npc`, `npcMode` peaceful|aggressive, `npcAlive`, `npcFighting` (its fight behaviour with the player as its target: what a VR touch reaches, #465; the two apart in `npcFightBehaviour`, `npcTargetsPlayer`), `npcDistance` (units from the hero, floor plane), `npcLife`,
 `npcLifeMax`, `npcAtSpot`, `items`) in area 30, and `player.level` / `player.allRunes` always. The things worked by hand
 (#38), each with its `id`: `playground.leverMode` / `leverRespawn` (`pulled`), `playground.door` (`open`, `locked` —
 the class script's `§open` / `§unlock`), `playground.chest` and `playground.corpse` (`open`: its inventory is the one
@@ -497,6 +503,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   (`FlyingOverIO`) or `none`; `drag`: the item being dragged or `none`; `container`: the chest or body whose
   inventory is open (#38) or `none`; `target`, `targetX`, `targetY`: what the last `vr-point` aimed at.
   `player.inventoryItems` (#38): the items in the hero's bag.
+  `player.inventorySlide` (#522): how far the bag is still slid down (the engine's own slide, 110 to 0 in about
+  28 frames at 90 fps), 0 = fully open: a shot of the open bag waits `@until player.inventorySlide eq 0 5s`.
   `menuHover` (#394): in the main menu and the character creation, the name a
   `vr-point ... menu` aimed at while the widget under the mouse is that one — what a click lands on; `other` for
   another widget of the main menu, `none` for nothing (a greyed-out entry counts as nothing: the engine does not click
@@ -674,13 +682,23 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
 - `vr.melee` (#39, D-038): physical melee. `active` (swings count now) or `refused` (why not: `no weapon in the
   hand`, a menu's name such as `inventory`, `controls blocked`, `an item is dragged`, …); the swing detector:
   `swinging`, `kind` (`slash`, `stab`, `none`; of the swing in progress or the last one), `speed` (m/s of the point
-  0.125 m along the blade, relative to the head, now), `peak`, `factor` (0.5..1), `swings`, `gaps` and `jumps` (samples
-  refused: a time step outside 4-100 ms, a speed over 20 m/s), `nearMisses` / `lastNearMiss` (motions that peaked
-  within 20 % below the swing speed, F-60); `charge` (`held`, `charging`, `spent` — a charged hit used it and the
-  trigger is still held — `seconds`, `ratio` 0.1..1 while charging, `fullAimSeconds` = the player's `Full_AimTime`);
-  `hits` (NPCs touched by swings), `contacts` (anything touched), `chargedHits`; `last` (`target`, `aim` — the
-  engine's `ratioaim`: 0.25 × factor plain, the charge × factor charged — `damage`, `charged`, `speed`, `swing`);
-  `params` (`swingSpeed`, `endSpeed`, `fullSpeed`, `weakAim`, `targetCooldown`, from cfg.ini); `placed`, `hilt`,
+  0.125 m along the blade, relative to the head, now; the median's move over the time between the middle samples, #352),
+  `peak`, `swings`, `gaps` and `jumps` (samples refused: a time step outside 4-100 ms, a raw or
+  filtered speed over 20 m/s), `nearMisses` / `lastNearMiss` (motions that peaked
+  within 20 % below the swing speed, F-60); `trigger` (the weapon hand's trigger is held — it changes nothing, #465); `worldHit` (the engine's `isHit`: the
+  swing since its start struck the world or an object — the wall sound and the durability loss, once per swing; a touch
+  never sets it);
+  `hits` (NPCs hit by swings), `touches` (NPCs hit by a touch outside a swing, #465), `contacts` (anything touched); `last` (`target`, `aim` — the engine's `ratioaim`, the damage
+  fraction of the fully charged strike (#465, D-054): 0.1 (0 with `noSwing` `none`) for a touch outside a swing or
+  below a range, else 0.1 + 0.9 q of the speed's and the path's factor (`params.quality`) — `damage`, `speed` (m/s of
+  the lever point at contact), `size` (m: the hand's path in the stroke so far, a thrust's lunge along the blade),
+  `kind` (`slash`, `thrust`: the lever point moving within 45° of the blade's way), `swing` (0: a touch));
+  `recovery` (#323: after a hit a swing that starts within the recovery hits nothing — `weapon` `dagger`/`1h`/`2h`,
+  `seconds` its recovery, `source` `default` (0.6 / 0.8 / 1.0 s) or `config` (`vr_melee_recovery_dagger` / `_1h` / `_2h`),
+  for comparison `game` the game's own strike for it and `games.dagger` / `games.1h` / `games.2h` for every type (the
+  hero's strike start + strike animations: 1.79 / 1.5 / 1.79 s; 0 when not loaded), `left`
+  seconds until a swing may hit again, `recovering` the swing in progress or the last one started within it,
+  `swings` such swings so far); `params` (`swingSpeed`, `endSpeed`, `targetCooldown`; the damage, #465: `class` — `dagger`, `sword`, `blunt`, `2h_sword`, `2h_blunt` — its `slash` and `stab` ranges `pathMin` / `pathMax` / `speedMin` / `speedMax` / `cap`, `pathScale`, `quality` `min`|`geomean`|`product`, `noSwing` `min`|`none`; from cfg.ini); `placed`, `hilt`,
   `tip` (the weapon placed for this frame's check, world).
 - `player` is present only while a level is loaded; the `.xrs` runner (#113) asserts on these keys
   with `@modassert`.
@@ -702,7 +720,12 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
 - `camera` (with `player`): the first-person camera as the frame before left it — position, angles,
   `fov` in degrees, `bob` = its distance from the stable head position of the paused animation (view
   bobbing; 0 when off), `shake` = the quake amplitude applied that frame (0 without a quake or when
-  screen shake is off). `camera.prepared`: the camera the last frame's interface pass ended with —
+  screen shake is off). `stillMs` (#522): milliseconds since the camera last moved more than 0.0005 units or
+  turned more than 0.0005° (on any axis) from where it was then — any move resets it, a slow drift too, and so
+  does the simulated head's motion; a sequence that aims from the camera or compares the hands' points exactly
+  waits `@until camera.stillMs ge 200 5s` (after a `setpos` the hero falls and the camera settles for about
+  1.3 s). The status written right after a batch can still show the stillness from before it: wait a few frames
+  first. `camera.prepared`: the camera the last frame's interface pass ended with —
   its projection's scale `m00`/`m11`, off-axis shift `m20`/`m21` and viewport `width`/`height`; in
   VR the head camera's union projection, the same with the book open as closed (#247). `comfort`: who decides the VR comfort policy (`mode`: `auto` / `on` / `off`),
   whether the VR rules apply (`active`) and what is allowed right now (#76). The status is written
@@ -751,6 +774,33 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   click a random one — one `chargen.roll kind=average|random` game event per click.
 - `settings` (#394): `crosshair` — `config.interface.showCrosshair` (`show_crosshair` in `cfg.ini`), the setting
   `first-run-menu` changes by pointer clicks and its second launch reads back.
+- `scene` (#29, D-055): scripted scenes in VR (`src/vr/SceneView.h`); flat mode leaves it at rest (`shown` `none`,
+  `fade` 0, no meter frames). `active`: a scripted scene owns the game's camera (a `speak -c` line, a camera entity,
+  the letterbox) on the last VR frame; `kind` `none` | `speech` | `entity`; `view` (`first` | `observer` | `ghost` |
+  `hybrid`), `lookat` (`ignore` | `fade`) and `firstLow` (`black` | `clamp` | `screen`): the switches now; `shown`: what the eyes see (`none` - no scene, the
+  game's first person - or the view of the shot shown; `screen`: the frame is drawn flat into the quad on the screen
+  fixed in the room, `vr.screen ... for=scene`; it changes at the black of a cut, with the `vr.scene` events);
+  `fade`: the scene fade now (0..1); `armsIk`: the IK arms are on (false while the hero is shown in third person); `dialogue`: the scene is a dialogue,
+  first person to its end (D-055: a first camera frame not cinematic or on an NPC with the hero free, a `speak -c` line, the hero turned to an NPC or speaking; a camera shot of the hero's scripted body is on the screen even inside one); `heroHead`: `hidden` (the eyes are the hero's; also flat first person, the engine's own
+  first-person selection) or `drawn` (a cinema shot, a ghost or observer shot, an external view).
+  `meter`, since `scene meter reset`, VR frames only: `frames`, `sceneFrames` (`active`), `screenFrames`;
+  `minAboveFloorM`, `maxStepCm`, `maxYawStepDeg` over the frames that show a scene and are not behind the fade (fade
+  >= 0.99), measured on the camera the head goes on (the head's own motion and the player's stick turn excluded; a step
+  is from the last measured frame, so nothing is compared across a fade; `minAboveFloorM` -1 while no frame was
+  measured, a frame with no floor under it counts 0); `cuts` (over all frames: a shot change - a scene's start or end, a
+  new `speak -c` line, another camera entity - or a jump of the eyes' camera, > 50 cm or > 10 degrees in one frame) and
+  `fadedCuts` (those behind the fade); `lookats` / `fadedLookats` (`playerlookat` seen / applied behind the fade);
+  `letterboxFrames` (eye frames that got cinematic bars: always 0); `blindFrames` (frames held black because the eye has no
+  floor under it, or first person's eye is too low with `firstLow` `black`); `openingFrames` (scene frames before its start cut is
+  taken: the old view fading out) and `worldFrames` (scene frames the eyes see the world in): with `screenFrames` every
+  scene frame counted once; `fadeFrames` (frames with any scene fade drawn: 0 under the default `cut` `instant` but where an eye must not be seen);
+  `instantCuts` (cuts the director took at once: not a step, nothing compared across them) and `unexplainedCuts` (cuts
+  neither faded nor taken by the director - a jump nobody asked for: always 0); a level load and the
+  screen break the chain (no cut, no step across them). `subtitle` (#29.3): `visible`, `text`, `speaker`,
+  `placement` (`above` | `chest` | `lowerthird`), `drawn` (where the line is: `chest` for the hero's own line and a speaker
+  out of view), `panel` (the world-fixed panel was drawn into both eyes this frame), `panelPixels` (the eye pixels it covers, the smaller eye), `panelYawFromHeadDeg` (its middle off the head's forward) and `panelLocal` (`x`, `y`, `z`, `yawDeg`, `widthM`:
+  its pose in the room this frame - it stays while the head turns); `voicedLines`: scene lines with a text started since the meter reset (also with
+  the audio muted), `lines`: those drawn at least once. Flat mode reports the band (`visible` only with the bars), no counts.
 - `drawCheck` appears once a `drawcheck` was requested: `{"seq":1,"running":false,"frames":120,
   "framesDiffering":0,"pixels":307200,"maxPixelsDiffering":0,"maxDelta":0,"capture":""}` —
   `frames` compared so far, `framesDiffering` of them with at least one differing pixel,
@@ -780,6 +830,7 @@ which.
 | Save | Where the player stands (level 1, the goblin prison) | For |
 |---|---|---|
 | `mvp-new-game` | in the start cell after the awakening, controls free, nothing equipped | demo step 1-2: look, walk, turn |
+| `scene-kultar` | in the start cell at 8700 8660, facing +z, one step before the zone KULTAR_WAKE; a walk forward starts Kultar's scene at the bars (camera entities) once he reached them - his scene needs the hero within 5 m (TRAPS.md) | #29: T1, the scene views |
 | `mvp-items` | a sword equipped; 2.3 m from a table with a key, a note and a form (`key_base_0005`, `note_0004`, `blank_form_0001`); dark room, the items are low in the view | demo step 3: pick up, drag into the inventory (#37) |
 | `mvp-goblin-fight` | a sword equipped; `goblin_base_0036` 3.5 m ahead in a corridor, walking away | demo step 5: melee (#39) |
 | `mvp-lever` | a sword equipped; `lever_0012` (opens `porticullis_0015`) 1.6 m ahead on the floor, in the hand reticles' reach | #38: pull a lever |
@@ -986,7 +1037,7 @@ by `VRControlsTest::defaultLayoutTest`. Played through in `controls-v2.xrs` (the
 | Input | Event (`vr.input.layout`) | What it does |
 |---|---|---|
 | Trigger, empty hand | `interact_left` / `interact_right` | Click, grab and drag with that hand's reticle (on the panel: the pointer's click) |
-| Trigger, weapon drawn in the hand | the same | Charges the strike (`vr.melee.charge`), no click in the world (the right hand until #380; on the panel it clicks) |
+| Trigger, weapon drawn in the hand | the same | Nothing: no click in the world, no charge - a hit's damage is the swing's (#465; `vr.melee.trigger`; the right hand until #380; on the panel it clicks) |
 | A, on a menu panel | — (the physical A of the pointing hand) | The menus' right click (D-053, #496): the character creation takes a point back; game event `vr.pointer.rightclick`. Off the panel nothing. In game A is still the stance (right) and the bag (left) |
 | Grip, then trigger | `act_*` and `use_*` (`left.grip+left.trigger`) | Use / interact: a door, lever, chest, NPC or corpse is acted on (`vr.reticle.lastAct`); an item is used - eaten, drunk, equipped (the original's right click). In the menus a hand pointing at the panel makes no chord: its trigger clicks whatever the grip (D-053, #496); the bag, book and containers are in game and keep it. Not on the item into the bag any more. The trigger alone - also a double click - no longer opens doors, levers or chests |
 | Grip alone | — | Nothing (the model's fingers only). The Index grip is down from 0.70 and up below 0.40 on `squeeze/value` (cfg `vr_grip_press` / `vr_grip_release`, #496): a firm resting hold, 0.52 - 0.59, is no grip; the Touch keeps 0.70 / 0.55 |
@@ -1041,7 +1092,7 @@ where its function lives in VR (`vr/HudFrame.cpp`, host test `HudFrameTest`; sta
 | `change_level` | the zone-change icon at a level's exit, a click goes | jump goes (the default `quick_level_transition` = jump, right stick up); the "you can go" sign - **owner question** |
 | `quick_save` | the quick save's flash | **owner question**: the radial menu's Quick save gives no confirmation |
 | `memorized_runes` | the runes of the spell being drawn | **owner question**: only the rune trail (#43) |
-| `hit_strength` | the combat mode's swing charge | **owner question**: the held trigger charges a swing (#39), nothing shows it |
+| `hit_strength` | the combat mode's swing charge | not shown in VR: there is no charge, a hit's strength is the swing's (#465, D-054); the gauge stays empty while the IK hand holds the weapon |
 | `mechanism_hint`, `screen_arrows` | the cursor mode's hint cog, the edge arrows that turn the view | none needed: the hands are the mouse and the head turns the view |
 | `minimap` | the minimap in the top right corner | the radial menu's Map item opens the book's map page (#376); a map always in view - **owner question** |
 | `notifications` | the info messages down the top left (tutorial hints, "you cannot …", the level-up message) | **owner question** (the owner, #469: they go to a VR element he picks); they still run their time and count in `notifications` |
@@ -1148,6 +1199,11 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.freelook` (#394) | in VR the game enters `GAMEPLAY` with freelook off (a `--loadlevel` start, New game from the pause menu or a development launch, the return from the pause menu) and the VR side turns it on | `state=on`, `was=<state>` |
 | `scene` (#394) | a scripted scene in the game (the letterbox outside a cinematic and the startup intro: the prison intro after New game) starts / ends | `state=start\|end`, `area`, `camera` (the scripted camera, `none` before it is set), `controlsBlocked` |
 | `scene.skip` (#394) | Esc (`how=key`) or the VR skip (`how=vr`) skips a scripted scene: its scripts get `key_pressed` and their skip handlers end it | `how`, `area`, `camera`, `result=sent\|early` (`early`: a fade runs, or the letterbox has not been on for 3 s - nothing sent), `refused` (some script refused it: the speech plays on; the scene is still skipped, see TRAPS.md) |
+| `vr.scene` (#29) | the eyes see a scene's first shot / see the game's view again (at once by default; at the black of a fade only for an eye that must not be seen, or with `vr_scene_cut fade`); a scene of another kind (the letterbox first, a camera a moment later) is an end and a start | `state=start\|end`, `kind=speech\|entity\|none` (`none`: only the letterbox), `view` (the setting), `shown` (what the eyes see now) |
+| `vr.scene.cut` (#29) | the shot the eyes see jumps: the hero teleported or turned at once, a ghost's or the observer's shot (at once with `cut` `instant`, the default), an eye that must not be seen (always behind the fade) | `faded=yes\|no`, `reason=start\|end\|line\|camera\|jump` |
+| `vr.scene.switch` (#29) | the shot changes at once, no blink (D-055): a dialogue's line or camera, a scene's start or end in the hero's head, the world to the screen and back | `reason=start\|end\|line\|camera`, `shown` |
+| `vr.scene.lookat` (#29) | a script's `playerlookat` in VR | `how=ignore\|fade`, `target` |
+| `vr.scene.subtitle` (#29.3) | a scene line's subtitle is drawn for the first time (VR only) | `placement` (the setting), `speaker`, `drawn` (where it is drawn: `above`, or `chest` for the hero's own line and a speaker out of view) |
 | `chargen.roll` (#394) | a click of the quick generation | `kind=average\|random` |
 | `player.death` | the player dies | `source` (entity id), `damage`, `type` (damage type flags) |
 | `player.respawn` | the player died in the test playground (#321) and is back at its start, alive, in the same frame | `x` `y` `z` (the start), `fromX` `fromZ` (where he died), `life` |
@@ -1159,7 +1215,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `spell.cast` | a spell launches (player or NPC) | `spell`, `caster`, `level`, `target` |
 | `spell.precast` | the player stores a spell | `spell`, `level` |
 | `spell.refused` | the player's spell does not launch | `spell`, `reason` (`runes-not-learned`, `no-mana` with `mana` / `cost`, `magic-disabled-by-level`, `spell-cannot-launch` — the spell's own silent check, `no-demon-within-900`, `not-implemented`) |
-| `melee.hit` | a weapon strike reaches an NPC and the player is the attacker or the target — one per swing (a VR swing: one per target it touches, #39) | `source`, `target`, `weapon`, `damage` (0 = the armour-class roll made it a miss), `aim` |
+| `melee.hit` | a weapon strike reaches an NPC and the player is the attacker or the target — one per swing (a VR swing: one per target it touches, #39) | `source`, `target`, `weapon`, `damage` (0 = the armour-class roll made it a miss), `aim` (the damage fraction of the fully charged strike); a VR hit also `speed` (m/s of the blade's point that touched), `size` (m, its stroke so far) and `kind=slash\|thrust` (#465) |
 | `damage.number` | a damage number over an NPC closes, only in the test playground (#321): every hit on an NPC shows its damage above the target for 1.2 s; hits on one target within 250 ms add up into one number, logged 250 ms after its first hit. `damageNumbers.visible` in the status: the numbers shown now | `entity`, `amount` (the hits' damage), `dealt` (the life taken: less on a killing blow), `hits`, `views` (the scene views it was drawn into in the last frame: 2 = both eyes), `x0` `y0` / `x1` `y1` (where in view 0 / 1 - the left / right eye image in VR - in pixels) |
 | `item.take` / `item.drop` | an item goes onto / off the cursor | `item`, `from=world\|inventory`; `how=throw\|drop\|place`, `count` |
 | `item.toinventory` | an item enters the player's inventory or the container the player has open | `item`, `container` |
@@ -1202,8 +1258,10 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.weapon.grip` | a weapon's blade was read from its mesh (once per weapon and hand frame) | `item`, `bladeLength` (units), `assetAngle` (degrees between the asset's blade and the handle axis), `class` (the anchor's class, #385.10), `handle` (units) |
 | `vr.weapon.tilt` | the sword's tilt in the glove was set (`grip tilt <deg>`, #385.10) | `tilt` (the variant: 0, -15, -30), `asked` (degrees) |
 | `melee.state` | physical melee (#39) is switched on or off, and why | `state=on\|off`, `reason` (`allowed`, `no weapon in the hand`, `the right controller is not tracked`, a menu, `controls blocked`, `an item is dragged`, `dead`; limit 200) |
-| `melee.swing` | a swing of the weapon in the IK hand ended (#39): one line per swing | `kind=slash\|stab`, `result=hit\|miss\|lost` (lost: tracking or the gate dropped it), `peak` (m/s), `factor`, `charge` (the ratio when it started), `aim` (of its hits), `charged=yes\|no` (its charge was spent), `hits`, `ms` (limit 1000) |
-| `melee.charge` | the trigger's charge (#39): `start`, `full` (the ratio reached 1), `spent` (a charged hit used it), `released` (let go while charging) | `state`, `full` (seconds of `Full_AimTime`), `seconds`, `ratio` (limit 1000) |
+| `melee.swing` | a swing of the weapon in the IK hand ended (#39): one line per swing | `kind=slash\|stab`, `result=hit\|miss\|lost\|recovering` (lost: tracking or the gate dropped it; recovering: it started within the recovery after a hit and could not hit, #323), `peak` (m/s), `aim` (the strongest of its hits, #465), `hits`, `ms` (limit 1000) |
+| `melee.spheres` | a swing that checked contacts ended (#465, diagnostics): the weapon's hit spheres of its last check | `count`, `background=yes\|no` (any check of the swing reached the world's geometry), `at` (each sphere `x,y,z/radius`, world, `!` when it reached the geometry; limit 200) |
+| `melee.touch` | a touch outside a swing reached an NPC that does not fight the player, so it did nothing to it (#465): once per NPC until the touch reaches another or none | `target`, `result=refused`, `fight=yes\|no` (its fight behaviour), `targetsPlayer=yes\|no` (limit 200) |
+| `melee.recovery` | the recovery after a hit of the weapon type in the hand changed (#323): another weapon type, a cfg.ini value | `weapon`, `seconds`, `source=default\|config`, `game` (the game's own strike for it, for comparison), `dagger` / `1h` / `2h` (the strike start + strike animation files every type's game value was read from, `-` when not loaded; limit 200) |
 | `melee.nearMiss` | a hand motion peaked within 20 % below the swing speed without becoming a swing (#39, F-60): the census to tune `vr_melee_swing_speed` | `peak`, `swingSpeed` (limit 200) |
 | `vr.reticle` | the hand reticles went on or off (#37) | `state=on\|off`, `reason` (`game`, or why off — see `vr.reticle.off` in the status; limit 200) |
 | `vr.reticle.hover` | a hand's hover changed, after the hysteresis (#37) | `hand`, `item` (`none` when it left), `takeable=yes\|no` (limit 500) |
@@ -1630,7 +1688,7 @@ add, D-014); a script with an error means flat mode, with the line named in the 
 at once, `@<frame> <command>` at that frame of the timeline, `@<a>-<b> <command>` moves the numbers
 there linearly (a ramp), `@+<n>` counts from the previous timed line. Frame 0 of the timeline is the
 first frame the game is playable (`timeline gameplay`, the default) or of the session (`timeline
-session`). Commands: `rate <hz>` (0 = no pacing), `eye-size <w> <h>`, `ipd <m>`, `fov left|right <l>
+session`). Commands: `rate <hz> [clock|cap]` (0 = no pacing; see *Pacing* below), `eye-size <w> <h>`, `ipd <m>`, `fov left|right <l>
 <r> <u> <d>` (degrees, OpenXR signs), `head pos <x> <y> <z>` (meters, the room's LOCAL space: x right,
 y up, −z forward), `head rot <yaw> <pitch> <roll>` (degrees: yaw + turns left, pitch + looks up),
 `hand left|right pos|rot …`, `hand left|right on|off`, `hand left|right fingers <thumb> <index> <middle> <ring> <little>`
@@ -1644,6 +1702,22 @@ on a runtime that cannot read fingers, or joints again), `profile index|touch|si
 focused|visible|idle` (`idle`: the headset is taken off - the session falls back to `synchronized`, the eyes are still located, nothing is shown, #27), `session exiting|loss-pending` and `runtime lost` (the runtime ends the session on its own - stopping, then exiting after `xrEndSession`, as SteamVR quitting the app; the session about to be lost; the runtime shutting down: the game goes on flat and names the cause, #146, see [The exit hook](#the-exit-hook-146)), `shot [name]`, `mark <text>`, `quit`, `fault swap-eyes on|off`, `fault exit|exit-process <code>` (the process ends from inside with `std::exit` or `ExitProcess`, the shape of #146 - only for `exit-trace-check.ps1`), `layers on|off` (shots also save each eye's projection layer without the quad, `<name>-left-layer.bmp` / `-right-layer.bmp`: what the game drew into the eye itself, #72). The defaults: Index
 panel size 1440 × 1600, IPD 64 mm, 90 Hz, the asymmetric, mirrored field of view of research row
 F-165, both Index controllers in front of the body.
+
+**Pacing (#522)** — `rate <hz> clock` (the default) is a display clock: a slot every 1/rate s, a frame that misses
+its slot waits for the next one, as on a headset; `rate <hz> cap` only keeps frames 1/rate s apart: a late frame
+starts at once, no slot is skipped; `rate 0` does not pace at all. `rate <hz>` alone keeps the pacing it had
+(`vr-sim rate 45` in a sequence on `idle` is a 45 Hz cap). `vr.sim.view.pacing` in the status (`clock`, `cap`, `none`)
+and the simulator's start line in the log say which one ran. `basic.vrsim` (and every other script that names no
+pacing) has the 90 Hz clock; `msaa.vrsim` runs unpaced (`rate 0`, it measures what the PC draws); **`idle.vrsim`, the
+`@sim` of the sequences, has the 90 Hz cap**. Why not the clock: a 10-12 ms frame on the CI runner misses every other
+90 Hz slot, so the sequences played at 45 fps (run 39077145444); under the cap such a frame costs only its length,
+83-90 fps (measured on the owner's PC: 90.008 frames/s, `melee-swing`). Why not `rate 0`: the ramps of the sequences
+(`vr-sim @+1-8 hand right pos …`) and their `@frames` count frames, written for about 90 per second — unpaced, the owner's
+PC played the same sequence at 278 fps, and `melee-swing`'s slow set-up move (0.43 m over 60 frames, meant as under
+0.7 m/s) became 2 m/s and its swings (0.85 m over 8 frames) 29 m/s, over the 20 m/s of a tracking jump: three swings
+where none was asserted (TRAPS.md). **A sequence that asserts the frame pacing** (the rate line, missed slots, the
+refresh-rate checks of #436's `refresh-rate.xrs`) needs the clock: it declares `@sim basic` or a script of its own.
+To reproduce a slow-runner bug locally, run the sequence on a copy of `idle.vrsim` with `rate 42 cap` (`smoke-test.ps1 -VrSim <the copy>`).
 
 **The compositor** counts, per submitted frame, whether both eye images were released in the same
 frame (`vr.sim.compositor`: `projectionFrames`, `pairedFrames`, `staleFrames`, `freshFrames`,
@@ -1725,11 +1799,25 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 .\scripts\dev\img-diff.ps1 -A a.bmp -B b.bmp [-Grid 16 | -Bands 16]   # two shots: mean difference 0-255, which regions changed
 ```
 
+**`scripts/dev/xrs/manual/` (#529)** holds sequences that CI does not run: the seven heavy scene-view sequences of #29
+(`scene-first`, `scene-hybrid`, `scene-ghost`, `scene-observer`, `scene-subtitles`, `scene-lookat`, `scene-flat`; their rows
+in the table below still describe them). They cost about 6.5 minutes of every full suite and merge gate, so the owner moved
+them out for CI time; they are kept unchanged so they can be run by hand when scenes are worked on again. `ci-smoke` and
+`ci-local` do not look into this folder; `test-xrs.ps1` still parses every file there (syntax and `@save` checks, no run),
+so they do not rot silently. Run one by hand:
+
+```powershell
+.\scripts\dev\xrs-run.ps1 manual\scene-first          # or any path to the file; also -Rebuild, as for any sequence
+```
+
+`scene-switches` stays in CI as the scene-view guard (with the `first-run*` sequences); `impact.txt` maps `SceneView.*` and
+`SceneSubtitles.*` to it.
+
 | Line | Meaning |
 |---|---|
 | `# ...` | comment (also after a step, as ` # ...`) |
 | `<command>[; <command>]` | any [channel command](#commands) (`vr-sim head rot 25 0 0`, `vr-input tap right.a`, `loadlevel 10`, a script-console line); `;` makes one batch, applied in the same frame. A refused command fails the step |
-| `@wait <ms>` / `@frames <n>` | sleep / wait for n more rendered frames |
+| `@wait <ms>` / `@frames <n>` | sleep / wait for n more rendered frames: the channel's `waitframes <n>`, whose ack comes once the frames are rendered (#522) — n frames cost n / fps plus the ack's pickup (the runner reads `ack.txt` every 10 ms), measured 875 ms for 75 frames and 372 ms for 30 at 90 fps. Frames are not time: a wait for something the game does in time is an `@until` |
 | `@until <path> <op> <v> [<n>s]` | wait up to n s (default 30) until `status.json` satisfies the condition |
 | `@assert <path> <op> <v>` | `status.json` now. `path` is dotted, `"quoted"` where a key holds a dot (`events.byName."spell.cast"`); `op` is `eq ne gt ge lt le`; numbers compare as numbers, anything else as text |
 | `@remember <name> <path>` | keep a value; later `@assert` / `@until` values can be `{name}`, `{name+5}` / `{name-5}` (the yaw before a turn, the position before a walk) or `{name*0.9}` (a relative threshold: "at least 10 % less") |
@@ -1741,6 +1829,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 | `@sim <name>`, `@args <...>` | what `xrs-run.ps1` launches: the `scripts\dev\vrsim` script (default `idle`: no timed lines, no shots) and the arx.exe arguments (default `--loadlevel 10`); ignored while running |
 | `@player` | a player's launch (#394; `smoke-test.ps1 -Player`): no `--dev-launch`, so the logos, the intro and every cinematic play; without `@args` the sequence starts while the first logo is up (`LOGO`). `@args --dev-launch` is the other extreme: the main menu at once, no default `--loadlevel 10` |
 | `@save <name>` | start from this save of the test save library (#70; `smoke-test.ps1 -Save`, the only save of the isolated user directory), with `@args --loadslot 0`. Anything the **body** does — turning, walking — needs a first-person save: on level 10 the intro conversation's camera owns the view (TRAPS.md) |
+| `@solo` | the sequence measures frame pacing (#436, #527): CI runs it alone - it starts only when no lane is busy and nothing starts on the other lane while it runs - because a loaded PC drops display slots and every rate check then reads the load. Ignored while running |
 | `@playground` | start in the test playground (#321; `smoke-test.ps1 -Playground`: the generated level, area 30, a fresh max-level hero). CI sets up node itself (#412); on a machine without node it is NOT RUN with a warning |
 
 Rules: a sequence waits for `state eq GAMEPLAY` and for `vr.sim.timelineFrame ge 270` (3 s) before its
@@ -1770,16 +1859,18 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `recenter` | a head offset is set and read back; `recenter` is accepted (#28) | — |
 | `tl-reprojection` | picking reads the head camera after the eyes, the book icon's particles are on the quad and add no coverage (#72), on the save `mvp-items`; the book icon is kept for that part (`vr-hud keep book`: VR draws no HUD frame since #469) | — |
 | `real-steps` (#26; run with `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence real-steps`) | 8 cm is a lean (the body stays); 1 m forward is a real step (the body walks 0.9 m, the lean stays 0.1 m, no fade); into the cell wall the body is held, the head goes `inside` then `behind` it, both eyes black; back out, the fade clears | — |
-| `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105; the pair waits for `notifications eq 0`, since the save's tutorial hint on the HUD expires by game time, #370); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is below the channel's round trip (≈ 600 ms): host test `UIPanelTest` | — |
+| `ui-panel` | the floating UI panel (#49) on the test save `mvp-new-game` — run with `smoke-test.ps1 -VrSim idle -Sequence ui-panel -Save mvp-new-game`: the head-locked HUD covers the same eye pixels with the head turned 40° (24105 = 24105; the pair waits for `notifications eq 0`, since the save's tutorial hint on the HUD expires by game time, #370); the inventory's panel is placed at (0, −0.3, −0.9) facing the eyes, stays there when the head turns (eye pixels of the drawn interface 152703 → 110911, back to 151950 with the head back), is placed anew on reopening and on a recenter. The 250 ms grace is the host test `UIPanelTest`'s; the sequence reopens past it explicitly (`@until uptimeMs ge {closedAt+300}`: since #522 the channel's round trip is far below the old ≈ 600 ms) | — |
 | `menu-pointer` | the menu pointer (#34) on the test save `mvp-items` — run with `smoke-test.ps1 -VrSim idle -Sequence menu-pointer -Save mvp-items`: no pointer and no beam without a menu (`overlayPixels` 0); the key from the table put in the bag, the inventory opened, the right hand aimed at it (`vr-point right item`): the engine's mouse on the key's pixel (192, 606 = the target), `ui.hover` the key, the beam drawn above the panel (`overlayPixels` 2125 left / 1997 right); the trigger clicks (`vr.pointer.click`), a hand move of 8 px keeps the cursor on the key (dead zone, no drag), 40 px drags **the key the click landed on**; released over the bag it goes back; the left hand's trigger takes the cursor and its click lands on the key too; both hands pointing behind the head (since #37 a hand pointing ahead in the game is a world reticle): no cursor, no beam, a press is muted (`offPanelPresses` 1, nothing dragged); closed: the pointer goes. Host test `MenuPointerTest` | — |
 | `physical-crouch` | physical crouch (#100, D-034) on `mvp-new-game` — `smoke-test.ps1 -VrSim idle -Sequence physical-crouch -Save mvp-new-game`: the button crouches and stands at that spot first; the head 25 cm down follows the view and stands, 35 cm crouches the character (one `vr.head.crouch` episode), back at 25 cm stays crouched, 15 cm stands; the view never above the head nor twice as low; the crouch button still crouches and stands with the head up | — |
 | `weapon-hold` | the weapon in the IK hand (#75, D-033): on `mvp-items` the equipped short sword is in the right hand without the combat mode (`vr.weapon.place` `hand`), its blade read from the mesh (65.8 units; the asset 9.1° off the handle axis) and drawn 0.1° from the grip's -Z, the hilt on the palm attach point; the handle pitched up puts the tip 66 units above the hilt; a moved hand keeps the hilt on the palm; a controller switched off gives the sword back to the engine (`engine`), switched on it is back; `combat on` + the trigger held: the arm layer's ready and wait clips are `suppressed`, no strike clip starts (since #39 the swing is the strike), the shoulder stays, the sword stays in the hand. The shots `sword-ahead`, `sword-up` and `sword-at-face` (the raised blade 0.1 m from the eyes, F-39) are judged by eye. With the default custom arms the weapon is drawn from the glove's frame (#385.10): "the hilt on the palm" is then the handle anchor on the glove's hold point (`hiltToPalm` = `hiltToGrip`). `smoke-test.ps1 -VrSim idle -Sequence weapon-hold -Save mvp-items` | — |
 | `weapon-in-glove` | the weapon in the glove (#385.10, research #453 F-485, F-489) on `mvp-items`: with the custom arms the sword is drawn from the glove's hilt frame (`vr.weapon.frame` `glove`, `hiltToGrip` < 0.5, `edgeToKnuckles` < 5), held ahead, raised to the face and with the hand 1.5 m out past the reach (the arm stretched, the weapon still in the glove); the forearm and hands models take the same frame; `grip tilt -15` / `-30` lean the blade by 15 / 30° (`bladeAngle`), `0` puts it back, `grip tilt 40` snaps to a variant; `arms arx` gives the Arx placement (`frame` `arx`). `xrs-run.ps1 weapon-in-glove` | — |
 | `weapon-classes` | one item of each class from the playground's weapon table in the glove (#385.10, F-487): long sword and dagger anchored at the handle's centre, axe and club 15 - 25 % from the handle's end, the two-handed sword a hand-width above the pommel; a capture of each for the owner. Playground only (not in CI): `xrs-run.ps1 weapon-classes` | — |
-| `melee-swing` | physical melee (#39, D-038) on `mvp-goblin-fight`: the goblin held still and `place`d 80 units ahead, the sword at its chest; a slow sweep through it (under 1.3 m/s) is no swing; a plain swing (0.85 m in 8 frames) hits it once with aim 0.25 × the speed factor (`melee.hit`, `vr.melee.last`); the trigger held to a full charge (`melee.charge state=full`), a swing hits with aim ≥ 0.5 (measured 1.00 and damage 7.4 against 0.25 and 1.8) and spends the charge; held on, it does not charge again and the next swing is plain; released and pressed, it charges again; `combat on` + the trigger: no engine strike clip, no hit; the inventory open: no swing (`refused=inventory`). Shots `goblin-in-reach`, `after-hits` judged by eye. Broken on purpose (the charge never spent): fails at `vr.melee.charge.spent`. `smoke-test.ps1 -VrSim idle -Sequence melee-swing -Save mvp-goblin-fight` | — |
-| `hand-reticle` | the hand reticles (#37) on the test save `mvp-items` — run with `smoke-test.ps1 -VrSim idle -Sequence hand-reticle -Save mvp-items`: in the game both hands' rings are drawn (`overlayPixels` > 0 in both eyes), dim, nothing hovered; the player put on the floor by the table (the save stands it on the wall top, TRAPS.md); the right hand at the note: `under` / `entity` the note, `bright`, the engine's hover the note; the left hand onto the form takes the idle mouse (D-019); the right trigger takes it back and presses on the note (`vr.reticle.press`), the hand moved: the note is dragged and follows the ring, released: `item.drop how=place` on the floor at the ring; the bag open, the left hand drags the form from the table onto the bag on the panel: `item.toinventory`; the sword sheathed with the right stick click first (a drawn weapon charges with the trigger, #377); grip + trigger on the note with the stash bound to that chord as a player can (no default since D-042): straight into the bag; the book open: the reticles off (`book`). Host test `HandReticleTest` | — |
+| `melee-swing` | physical melee (#39, D-038) on `mvp-goblin-fight`: the goblin held still and `place`d 80 units ahead, the sword at its chest; a slow sweep through it (under 1.3 m/s) is no swing, no swing hit; a swing (0.85 m in 8 frames) hits it once, its `melee.hit` with `aim`, `speed`, `size` and `kind`; the trigger held 2 s, a swing hits like any other and no `melee.charge` is logged; `combat on` + the trigger: no engine strike clip, no hit; the inventory open: no swing (`refused=inventory`). Shots `goblin-in-reach`, `after-hits` judged by eye. `smoke-test.ps1 -VrSim idle -Sequence melee-swing -Save mvp-goblin-fight` | — |
+| `melee-recovery` | the recovery after a hit (#323) in the test playground: `freelook on` (the `--loadlevel` start sits in cursor mode, #405), the dagger equipped (recovery 0.6 s, `default`; the game's strike of every type in `vr.melee.recovery.games`), the peaceful goblin `place`d 60 units ahead; at 90 Hz a swing through it and one straight back two still frames later: one hit, the second within the recovery at any frame rate down to ~14 fps (the timeline counts frames: on a 41.8 fps runner a 33-frame gap lasted 0.8 s, #409), shown by its own marker (`vr.melee.recovery.recovering`, `melee.swing result=recovering hits=0`: such a swing never runs the strike check, whatever the per-target cooldown); once `recovery.left` is 0 (a time) a third swing hits; at 45 Hz (`vr-sim rate 45`, the goblin respawned) the same swings: the same hits; no jumps. Swings counted with `ge` (TRAPS.md). `smoke-test.ps1 -Playground -VrSim idle -Sequence melee-recovery` | — |
+| `melee-damage` | the damage from the swing (#465, D-054) in the playground with the dagger and the peaceful goblin, the defaults set live (`class` `dagger`, its #502 ranges, `noSwing` `min`, `quality` `min`): a slow sweep through the peaceful goblin (1.3 m/s) no swing, no touch, no `melee.hit` (a touch reaches only an NPC fighting the player); a fast swing with the defaults: a swing hit with `speed` and `size` logged; the speed alone (`melee slash dagger 0 0 2 5`): a medium swing (0.85 m in 24 frames, 3.2 m/s at 90 Hz) `aim` above 0.1 and below 0.95, a fast one (8 frames) `aim=1.00`; the trigger held 2 s: the same fast swing the same aim, a medium one with it still held part of the damage, a short press during a fast swing the same, no `melee.charge`; each factor alone keeps it low (`0 0 15 19`, `2 3 0 0`): a fast swing `aim` 0.1; a fast lunge (`melee stab dagger 0 0 2 4.5`) `aim=1.00 kind=thrust`; the goblin against the resting dagger, aggressive but not fighting: no touch; set fighting (`playground fight` right before the check - the playground goblin's script drops its fight at the first hit, TRAPS.md - `npcFighting`): the first touch `aim=0.10`, `last.swing` 0, no swing hit; `melee noswing none` and the goblin set fighting again: a slow sweep through it no touch, no player `melee.hit`, still `npcFighting`; before the north wall (`setpos`, between the table and the levers; the dagger's one hit sphere, radius 15, straddling the wall's plane - `melee.spheres`) the dagger held into the wall: `worldHit` false (no wall sound, no durability), a swing along it: `worldHit` true. Each `melee.hit` line has `aim`, `speed`, `size`, `kind`. `smoke-test.ps1 -Playground -VrSim idle -Sequence melee-damage` | — |
+| `hand-reticle` | the hand reticles (#37) on the test save `mvp-items` — run with `smoke-test.ps1 -VrSim idle -Sequence hand-reticle -Save mvp-items`: in the game both hands' rings are drawn (`overlayPixels` > 0 in both eyes), dim, nothing hovered; the player put on the floor by the table (the save stands it on the wall top, TRAPS.md); the right hand at the note: `under` / `entity` the note, `bright`, the engine's hover the note; the left hand onto the form takes the idle mouse (D-019); the right trigger takes it back and presses on the note (`vr.reticle.press`), the hand moved: the note is dragged and follows the ring, released: `item.drop how=place` on the floor at the ring; the bag open, the left hand drags the form from the table onto the bag on the panel: `item.toinventory`; the sword sheathed with the right stick click first (a drawn weapon's trigger clicks nothing, #377); grip + trigger on the note with the stash bound to that chord as a player can (no default since D-042): straight into the bag; the book open: the reticles off (`book`). Host test `HandReticleTest` | — |
 | `playground-hands` | doors, levers, chests and bodies by hand (#38, D-016, D-042) in the playground — `smoke-test.ps1 -Playground -VrSim idle -Sequence playground-hands`: the door, the chest (two items), the dead goblin (two items) and the respawn lever are there (`entities _900`, `playground.*`); free look on and the bag closed (the playground starts in the cursor mode); with the **right** hand, then again with the **left**: the reticle on the lever (`under` / `entity`), grip + trigger pulls it (`playground.leverRespawn.pulled`, `vr.reticle.lastAct` / `lastActHand`); the door opened and closed (`playground.door.open`); the chest opened on the panel (`ui.container`), its first item dragged onto the bag (`player.inventoryItems` +1, `playground.chest.items` −1); walked off, the chest closes; the body searched the same way. 10 acts in all, and no act also clicked (`@nolog item.take` of the lever, door, chest or body). Host test `VRControlsTest` (the act shares the use chord by design since #377 - and a stash a player binds there: no conflict; any other event on it is one) | — |
-| `controls-v2` | the default controls of D-042 (#377) played through in the playground on the simulated Index — `smoke-test.ps1 -Playground -VrSim idle -Sequence controls-v2`: the layout as the game has it (every event of [The default controls](#the-default-controls-d-042-377)); the left A opens and closes the bag (`player.inventoryOpen`, no ring, no stance), the left B the book on its map page (`player.bookPage` `map`, `vr.radial.left.opens` 0); the radial menu on the right B (`r1` on top) opens and closes the book (`player.bookOpen`, the character item twice) and the game menu (`menuMode` `mainmenu`), and in the game menu the right B is the game menu key back into the game (`refused` `menu`, `gameMenuKeys`); the right hand untracked (`vr-sim hand right off`): its B opens the game menu and goes back (`hand_not_tracked`); `menu` never pressed. The book from the half-ring: no bag with it, freelook stays; a trigger click on its quests bookmark turns the page in freelook (`vr-point right menu book_quests`); the radial menu opens over it and its half-ring switches the page; B released over nothing closes it (`result` `closed`), the reticles back; the bag: the ring opens over it and B over nothing leaves it open (`result` `none`), the left A closes it; the book and the bag open, a B tap over nothing closes the book only; the chest closed by B leaves the engine's bag open for the left A; with the book and the bag open the right A closes both and starts the stance (`vr.panels.closed`); the left A is the bag, never the stance; the game menu item closes the book first. The right stick through the simulated runtime: up 0.65 nothing, up 0.9 with 0.3 sideways a jump and no turn, 0.9 sideways / 0.8 up a turn and no jump, down twice the crouch on and off. The door: a double trigger click leaves it closed, no act; grip + trigger (left) opens it; the respawn lever by the right hand; grip + trigger on the apple pie: used (`watch.found` false), no act, nothing into the bag; on the short sword: equipped and drawn in the hand (`vr.weapon.inHand`, `vr.melee.active`); the trigger charges (`vr.melee.charge.charging`) with no world click; the right stick click sheathes it (`sheathed`, `place` `engine`, melee off), the empty hand's trigger drags the mana potion; the click draws it again (`toggles` 2); the left stick click does nothing (`recenter` 0) | — |
+| `controls-v2` | the default controls of D-042 (#377) played through in the playground on the simulated Index — `smoke-test.ps1 -Playground -VrSim idle -Sequence controls-v2`: the layout as the game has it (every event of [The default controls](#the-default-controls-d-042-377)); the left A opens and closes the bag (`player.inventoryOpen`, no ring, no stance), the left B the book on its map page (`player.bookPage` `map`, `vr.radial.left.opens` 0); the radial menu on the right B (`r1` on top) opens and closes the book (`player.bookOpen`, the character item twice) and the game menu (`menuMode` `mainmenu`), and in the game menu the right B is the game menu key back into the game (`refused` `menu`, `gameMenuKeys`); the right hand untracked (`vr-sim hand right off`): its B opens the game menu and goes back (`hand_not_tracked`); `menu` never pressed. The book from the half-ring: no bag with it, freelook stays; a trigger click on its quests bookmark turns the page in freelook (`vr-point right menu book_quests`); the radial menu opens over it and its half-ring switches the page; B released over nothing closes it (`result` `closed`), the reticles back; the bag: the ring opens over it and B over nothing leaves it open (`result` `none`), the left A closes it; the book and the bag open, a B tap over nothing closes the book only; the chest closed by B leaves the engine's bag open for the left A; with the book and the bag open the right A closes both and starts the stance (`vr.panels.closed`); the left A is the bag, never the stance; the game menu item closes the book first. The right stick through the simulated runtime: up 0.65 nothing, up 0.9 with 0.3 sideways a jump and no turn, 0.9 sideways / 0.8 up a turn and no jump, down twice the crouch on and off. The door: a double trigger click leaves it closed, no act; grip + trigger (left) opens it; the respawn lever by the right hand; grip + trigger on the apple pie: used (`watch.found` false), no act, nothing into the bag; on the short sword: equipped and drawn in the hand (`vr.weapon.inHand`, `vr.melee.active`); the trigger held (`vr.melee.trigger`) clicks nothing in the world; the right stick click sheathes it (`sheathed`, `place` `engine`, melee off), the empty hand's trigger drags the mana potion; the click draws it again (`toggles` 2); the left stick click does nothing (`recenter` 0) | — |
 | `radial-menu` | the radial menu (#376, D-042; the owner's layout of #377) on `mvp-new-game` (not the playground, which CI runs only with node on the runner; `rune all` for the spells page) on the simulated Index: the layout (`radial_right` = right B, `radial_left` unbound, `map` = left B, `inventory` = left A, `book` unbound); the hands before the chest; the menu opens on the right B, is drawn, and released in the middle runs nothing; the left B opens no ring (`vr.radial.left.opens` 0) and toggles the book on its map page; the game time runs while the menu is open (`gameTimeMs` +1 s in 1.5 s, not paused); the hand over each of the 6 segments: `r1` `r2` `r3` `l3` `l2` `l1`; shots `one-open` (the menu in both eyes: `overlayPixels` above the closed shot's + 20000), `half-ring`, and the two-eyes check's `still-a` / `still-b` / `yaw25` of an open menu (`eye-check.ps1 -StatusFile <test dir>\status.json` after the run); the half-ring opens the book on `stats`, `spells`, `map`, `quests`, recenters (`vr.head.reference reason=radial`) and ends a running `magic_sight`; a potion, a torch and the prison's short sword put in the bag (opened and closed with the left A), the potion dragged onto R1, the torch onto R2 and, dragged by the left hand, onto L3, the sword onto L1; then the owner's flow - the right B held first with the bag open (it stays open), the LEFT hand's trigger takes the cursor (`vr.pointer.owner` left) and drags the potion onto R3 and the torch onto L2, the release closes the ring, the bag stays open, a B tap over nothing leaves it open, the R / L letters drawn (`vr.radial.sideLetters`) (`slot_filled`, `vr.radial.slot hand=left slot=l3`, the item back in the bag, nothing dragged once the trigger is let go; R3 stays empty); the potion used from R1 (`used`, then `nothing_left`), the torch lit from R2 (`torchHand` right), put out from L3 (`torch_out`), lit from L3 (`torchHand` left); the sword from L1 equipped in the right hand (`vr.weapon.item`, `note=weapon_right_hand_until_380`); quick save from the half-ring, a slot changed after it (`set $vr_quickslots_right changed`), quick load: the saved slots are back; a save of the first 7-a-hand layout (`set $vr_quickslots_left` with 7 entries): its first three are L1 … L3, shown and used (`nothing_left`) without a crash; the game menu from the menu (`menuMode` `mainmenu`), `menu resume`. Leaves a quick save in the user directory. `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence radial-menu` | — |
 | `vr-remap` | the VR settings' remapping (#178) on the simulated Index controllers: `menu pause` + `menu vr` open the page; `jump` captured as `right.b` (a conflict with `radial_right` since #376: `conflicts` 1, shown in red), `magic_mode` as the chord `left.grip+left.a`, `crouch_toggle` as `right.stick_click:long`; the walk stick refused, a cancel. Leaves the layout saved | — |
 | `vr-remap-saved` | the saved layout read back as a start reads it: `jump` captured as `right.b` (saved), `vr-input reset` (not saved), `vr-input reload` → `remapped`, `jump` = `right.b`; `vr-input default` → the file removed, `reload` gives the default. Every #178 sequence starts and ends with the default layout: CI runs all sequences in one user directory, in any order | — |
@@ -1796,6 +1887,14 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `real-input` | a test run's window takes no real input and in VR no keyboard at all (#487), on the simulated headset from a development launch: the window `activation` never, `placement` corner, not focused; `realInput`, `desktopKeyboard` and `desktopMouse` ignored; with both hands behind the head a real Escape (`real-input`) and an injected one (`desktop-key`) are both dropped by VR (`desktopKeyboard.droppedKeys` + 2, both logged); real mouse moves, a left click and the wheel are dropped before the game's input (`realInput` counts, `desktopMouse.droppedButtons` unchanged, no menu page opened); the injected click still reaches the game's input (`desktopMouse.droppedButtons` + 1) and the right hand's trigger opens Options | — |
 | `real-input-flat` | the same flat (#487), `--no-vr`: the keyboard is not ignored for being a keyboard; the cursor on New game (`desktop-mouse at menu`), a real left click there opens nothing (`realInput.droppedButtons` + 1), a real move and the wheel leave the cursor on New game; the injected click opens the character creation, a real Escape leaves it open (`realInput.droppedKeys` + 1), the injected one goes back to the main menu; nothing dropped by the VR rules | — |
 | `level-load-hang` | a stalled level load is reported as a hang with its stack (#440): `watchdog 1000`, `stall load 3000`, `loadlevel 1` - `[hang] main thread stalled ... last beat at level load`, `platform::stallThisThread` and the load under it in the stack, `responsive again`, level 1 loaded, `hangWatchdog.stalls` ≥ 1 ([The hang watchdog](#the-hang-watchdog-440)) | — |
+| `scene-switches` | the switches of scripted scenes (#29): on the test save `scene-kultar` the defaults `hybrid` / `ignore` / `instant` / `above`, each `scene ...` command live (`scene cut fade` and back), `scene meter reset`; a `speak -c` line on Kultar: `vr.scene state=start kind=speech`, taken at once (`vr.scene.switch`, no cut, no fade frame), its subtitle event, `state=end`, the meter counted it, no letterbox; `playerlookat` counted with `ignore` (the yaw stays) and turned behind the fade with `fade` | — |
+| `scene-first` | the `first` view (#29) on `scene-kultar`: T1 - a walk into KULTAR_WAKE, Kultar's scene at the bars (camera entities, the hero teleported) seen from the hero's head: `kind=entity`, IK arms on, both eyes see the world, the teleport taken at once (no fade, `fadeFrames` 0, `unexplainedCuts` 0), the eyes 1.70 m above the floor, steps 0.009 cm, no yaw step, no letterbox; T5 - every `speak -c` mode on Kultar from the hero's head, the lines changing at once; in a line the stick turns the hero, the stick walk does not move him; T2 - a new game's prison intro from the pause menu, once per `firstlow` mode: `clamp` the eye never below 1.2 m, `black` held black (`blindFrames`) instead of a low eye, `screen` the intro on the screen; every view stays black while the hero stands off the level (the same T2 stretch ends `scene-ghost` and `scene-observer`); T5 with no blink between the lines (`cuts` 0, `fadeFrames` 0) | — |
+| `scene-ghost` | the `ghost` view (#29): dialogue first person as in `scene-observer` (T1, T5: no blink between the lines); T2 the prison intro, a cinematic shot, from the game's camera positions held at each shot's first frame and never lower than 1.2 m, IK arms off | — |
+| `scene-observer` | the `observer` view (#29) on `scene-kultar`: dialogue is first person in every view (D-055) - T1 Kultar and T5 every `speak -c` mode from the hero's eyes, the IK arms on, no blink between the lines (`cuts` 0, `fadeFrames` 0); T2 the prison intro, a cinematic shot, from one point beside the speakers, black while there is no floor under it; height >= 1.2 m, steps < 5 cm, yaw steps < 1 degree, no unexplained cut (`unexplainedCuts` 0), no letterbox | — |
+| `scene-hybrid` | the `hybrid` view (#29) in one run: T2 the new game's prison intro on the screen (`vr.panel.mode` `screen`, `quadPixels` in both eyes), T1 Kultar in first person (the hero `setpos` to the `scene-kultar` spot first), T8 a level 5 vision ball (`camera_0137`) on the screen - the whole scene, so no world frame is measured (`minAboveFloorM` -1, `screenFrames` = `sceneFrames`); no fade at all by default (T1's teleport too: `fadeFrames` 0), no unexplained cut, no letterbox; as in every view, the eyes stay black while there is no floor under them (a new game's hero stands off the level for 2 s before T2); no black square after the intro (the quad empty in both eyes, not the screen), no blink between the lines and cameras of Kultar's dialogue (no `line`/`camera` cut); the intro plays to its own end on the screen (no `scene.skip`, no switch to first person inside it), the hero's head drawn there (`heroHead` `drawn`) and hidden in first person; T9 - `camera_0080` (the talk after the goblin fight, on Kultar) alone in first person (a talk cue: `dialogue` true), and cut to inside a `speak -c` line too (no `screen` switch); T10 - the same talk by its real trigger (`sendevent custom human_base_0028 "dead"`, then `sendevent action lever_0012 ""`: the lever pulled): Kultar walks out under `camera_0080` and the talk plays with `-o` / `-po` lines - first person from the scene's first frame to its end, no `screen` switch, `screenFrames` 0 | — |
+| `scene-lookat` | `playerlookat` (#29): T1 with `ignore` (counted, the yaw stays, also a console `playerlookat`), the save loaded again and T1 with `fade` (every lookat applied behind the fade, no yaw step, the fade back to 0) | — |
+| `scene-subtitles` | the subtitles of scenes in VR (#29) on `scene-kultar`: T1 - Kultar's three lines all subtitled (`lines` = `voicedLines`), the hero's own line named `Am Shaegar`; T5 - a line in each placement `above` / `chest` / `lowerthird` switched live, visible with its text and speaker, the `vr.scene.subtitle` event and an eye shot each; `above` (over Kultar's head though he stands out of view: no chest fallback; its pose in the room unchanged, 1 cm and 1 degree, while the simulated head turns 40 degrees; the hero turned to him sees it, `panelPixels` > 1000) and `chest` (its pose unchanged on a 20 degree head turn) are panels in the world, drawn into both eyes; the hero's own line below the centre of the view stays on a 15 degree head turn and glides back below the centre after a 60 degree one (`panelYawFromHeadDeg`); every `speak -c` mode subtitled (9 = 9) | — |
+| `scene-flat` | flat mode unchanged (#29, `--no-vr`): the switches accepted and ignored, the game's own `scene state=start` (the letterbox) on entering KULTAR_WAKE by the bars, `scene.shown` `none`, no meter frames, no `vr.scene` event | — |
 | `hud-frame` | VR without the old HUD frame (#469) on `mvp-new-game` - `smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence hud-frame`: in play no panel (`vr.panel.shown` false), no pointer, none of the frame's 21 elements drawn, the quad empty (`quadPixels` 0) (`vr.hud.drawnTotal` 0); `vr-hud frame on` brings the bag and book icons back (the quad's pixels grow), `keep book` only the book; the bag and the book on the panel with nothing of the frame; `addxp` levels up: the game's level-up message is there (`notifications` > 0) but not drawn (`drawn.notifications` 0, the quad still empty), the radial Character item marked and the gold wrist notice (drawn into the eyes in the watch pose, on the arc of the open ring, a `vr.levelup` event), each `vr_levelup` mode, the notice gone after 8 s with the mark kept; the radial ring (the right B, #377's layout) opened six times over the bag and six times over the book, `vr.radial.right.shown` and `submitted` in every checked frame, `undrawn` none (#456's "ring not drawn", #474); released over nothing the bag stays open and the left A closes it, the book closes (#377). Shots `noframe`, `frame`, `bag`, `book`, `levelup-message`, `levelup-wrist`, `levelup-radial`, `ring-bag`, `ring-book` | — |
 | `hud-frame-flat` | the HUD frame flat (#469), `--no-vr` on `mvp-new-game`: the orbs, the bag, book and level-up icons and the active spells drawn as before (`vr.hud.drawn.*` > 0); a level-up counts the flat icon and draws none of the VR indication | — |
 | `cinematics` | every cinematic image uploads inside its buffer (#495) on `mvp-items`, `--cinematics`: the menu pointer's beam is created first (the RGBA overlay upload that used to leave `GL_UNPACK_ALIGNMENT` 4 behind), then all 19 `.cin` of data.pak are started through the script command `cine <name>` and skipped with B; `GLTexture::upload` logs an `[E]` when the pixel-store state it finds is not the engine's tight one (with the bytes it would have read from that image), so the check is `errors eq 0`, 19 `cinematic.start` / `cinematic.end`; with the leak put back the run is red at the first upload after the beam | — |
@@ -1884,7 +1983,9 @@ view sizes, a hidden WGL context, the runtime's OpenGL requirements, a session, 
 | 2026-10-10, #304: `ArmRollTest` (9 cases: the swing-twist split, RENIK's overflow rule, the rest bend reference, the rest relation, the shares, a 170° roll, the overflow through the solver, a straight rest arm, the old rule); `smoke-test.ps1 -VrSim idle -Sequence arms-roll -Save mvp-new-game` (113 steps, the eight shots of the §16g baseline), `-Sequence arms-follow`, `eye-check.ps1`, the flat `smoke-test.ps1` | Host tests `OK (239 tests)`; with the forearm share forced to 0 (the old rule) the suite fails (the distribution cases) — proven. `arms-roll` **113 of 113** `PASS`: the hanging hand at the identity grip sits **30°** from the model's rest relation (its elbow swung 10°, wrist band **4.4°**); yawed 45 / 90 / 180° the bands stay at **0.2 / 5 / 20°** (wrist, elbow and shoulder alike — thirds of what is left after the elbow swing); the hand ahead rolled ±90 / 180° about the forward axis: **15 / 25 / 34°** per band; `error` **0** in every pose. The by-the-side hand yawed in steps: roll 123 → 165 → **209** (`rollOverflow` 1, continuing past 180) → **−100** after 225 (flipped, 0). The roll sheet against the #298 baseline sheet: no ribbon at the wrist at 90 / 180°, the elbow swings with the roll; the upper arm still reads thin from above at some elbow directions (its cross-section is a flat slab — the model, not the roll). Found on the way: `human_base` faces −z in mesh space (the right arm along −x, the thumbs on −z, the elbows bent 10° to +z at rest), so the rest triangle names the bend reference and a "model's back" prior of (0, 0, −1) turned the bend plane round (a 138° roll in the natural pose, dropped); #36's elbow pole (down, half out, a fifth back) put a hanging arm's elbow outward, 50° from the thumb's bend — a relaxed pole (down, back, 0.3 out) halves the natural pose's roll. `arms-follow` 79 of 79 (the hand-up picture change **5.0**, its threshold lowered from 4 to 2.5 after a 3.6 on the first pole), `eye-check` PASS (pairing 428/428, difference 4.24, parallax 14, yaw 5.9 / 6.2), flat smoke PASS. SteamVR off all session: no VR run. Launches 10 of 10 |
 | 2026-10-10, #43: `RuneTrailTest` (6 cases); `smoke-test.ps1 -VrSim idle -Sequence rune-trail -Save mvp-new-game`; `eye-check.ps1`; a flat `smoke-test.ps1` | Host tests `OK (227 tests)`; the tip direction reversed on purpose turns them red. The sequence **108 of 108** `PASS`: no stroke or flare from the trigger alone or the stance alone; the stroke at the right hand with the last flare exactly at `vr.magic.point`; the hand moved 30 cm in six steps: `length` **30.0**, flares 25 → **188**, the point level (y unchanged); pitched up 90°: the point **8.0** units higher; the left trigger `ignored` while the right drew; ended `trigger` (no flare after it: 291 = 291), the second stroke ended `stance`; `magic.stroke … lengthCm=52.6 ms=6067` (30 cm plus the 90° pitch and back, 2 × 11.3). Pictures: the still pair **0.10 / 0.09** (left / right eye), drawn **8.07 / 7.82**, the line **10.83 / 13.09**. The first run failed one step only: the event log writes a bool as `yes`. `eye-check.ps1` `PASS` (difference 4.25, parallax +14, yaw 5.9 / 6.2); flat smoke test `PASS`; CI (runner service): `rune-trail` 108 of 108. SteamVR ran for the owner's batch: no real-controller run; launches 4 |
 | 2026-10-10, #116: `WristVitalsTest` (5 cases: placement on the inner wrist, fill by value, the watch pose reads red-left / blue-right upright, the fade 50°→80°, degenerate arms); `smoke-test.ps1 -VrSim idle -Sequence wrist-vitals -Save mvp-new-game`; flat `smoke-test.ps1` | `OK (226 tests)`; **the suite can fail**: health and mana swapped on purpose → 2 failures (`testBarsOnTheInnerWrist`, `testWatchPoseReadsLikeTheFlatHud`). Sequence `PASS` 49 of 49: away `facingDeg` 148 → `alpha` 0; watch pose `facingDeg` 37.6 → `alpha` 1, `along` (0.70, −0.56, 0.43), `across` (−0.62, −0.78, 0.00); `heal -9` / `mana -6` → 0.551 / 0.407; turned 30° → `alpha` 0.61; left controller off → `shown false`, the orbs back on the quad (quad diff 0.31). Captures eye-checked. Flat: `PASS`, `vr.wrist.shown false` (`no left controller`) |
+| 2026-10-13, #323 + #352: `MeleeSwingTest` (5 new cases: a hitch, uneven frames, 45 / 90 / uneven 90 Hz, the recovery time, the recovery per weapon type); `smoke-test.ps1 -Playground -VrSim idle -Sequence melee-recovery`; `-Sequence melee-swing -Save mvp-goblin-fight` | `OK (329 tests)`. **The suite can fail:** the median's move divided by the frame's step again (the old code) → 3 failures (`testHitchIsNoSwing`: a swing from 1 m/s through a 50 ms hitch; `testUnevenFramesPeak`; `testSameSwingsAt45And90Hz`: uneven 90 Hz peaked at 16.73 for 9.56 m/s). `melee-recovery` **71 of 71**: the dagger's recovery 0.60 `default`, the game's strike 1.792 / 1.5 / 1.792 s (dagger / 1h / 2h); at 90 Hz a swing and one back 0.36 s later: `hits` 1, the second `result=recovering hits=0` (peak 12.08); after the recovery a third hits (`hits` 2); at 45 Hz (`vr-sim rate 45`, a respawned goblin) the same: hits 3, a `recovering` swing, then 4; `jumps` 0. `vr_melee_recovery_dagger=0` in cfg.ini: `source` `config` (the run stops there). `melee-swing` **92 of 92** with the sword's 0.8 s. Four runs to get the playground set-up right (cursor mode, a second equip, split swings: TRAPS.md); launches 10 |
 | 2026-10-13, #38: `VRControlsTest` (the act's default chord, the shared stash / act pair, a conflict of any other event on it, the resolver firing both); `smoke-test.ps1 -Playground -VrSim idle -Sequence playground-hands`; `smoke-test.ps1 -VrSim idle -Sequence hand-reticle -Save mvp-items` (the stash and click path) | `OK (338 tests)`. Sequence `PASS` 243 of 243: `entities _900` lists `light_door_9001` (7850, 0, 8150), `chest_metal_9001` (8420, 0, 8060), `goblin_base_9002` (8100, 0, 7950, life 0); 10 acts (`vr.reticle.act`) — lever 158 / 164 units, door 214–236, chest 194, body 199, right then left; the potion, the cheese, the bread and the apple `item.toinventory container=player`; no `item.take` of a fix entity or the body. `hand-reticle` `PASS` 99 of 99. Found on the way: the playground starts in the cursor mode with the bag open (the panel took the first press), a stash chord that acts also clicked (a drag of the chest every frame, fixed), and the drag icon offset and the thin lever (TRAPS.md) |
+| 2026-10-17, #465: `MeleeSwingTest` (the charge's 3 cases out with the charge; 6 new: the mapping at the edges and in the middle for both factors, the qualities, the path scale and both modes; #502's ranges and the cfg.ini value; the lever / point velocity; the stroke's path and lunge; a thrust by the slash's rule; a touch's cooldown); `smoke-test.ps1 -Playground -VrSim idle -Sequence melee-damage`, `-Sequence melee-recovery`; `-Sequence melee-swing -Save mvp-goblin-fight` | `OK (484 tests)`. `melee-damage` **168 of 168**: a slow touch `aim=0.10 speed=1.33 size=0.01`; with the dagger's defaults a fast swing `aim=0.10 speed=10.06 size=0.24` - the hand starts 0.45 m right of the head and touches the goblin after 0.24 m, below the dagger's 0.25 m (the sim's geometry; a real swing starts further); speed alone a medium swing `aim=0.53 speed=3.42`, a fast one `aim=1.00 speed=9.95`; a lunge `aim=1.00 speed=10.17 kind=thrust`. `melee-recovery` (#409's, unchanged) **71 of 71**, `melee-swing` **76 of 76**. Found on the way: a blade resting in an enemy touched it every recovery and so blocked every real swing (#409's sequence failed: `hits` 0) - touches now block no swing; a cfg.ini of an earlier build kept a changed default (TRAPS.md); a goblin angered by touches strikes the player in `melee-swing`. Launches 14 (10 + 4 granted) |
 
 Conclusions:
 
@@ -1920,11 +2021,11 @@ self-hosted runner (D-021: CI is the automatic gate; a red step blocks the merge
 
 | Step | What | Fails when |
 |---|---|---|
-| Script self-tests | `scripts/dev/run-script-tests.ps1`: every `scripts/dev/test-*.ps1` in its own pwsh (`test-log-digest.ps1` incl. the `-Id` / `-Find` / `-Condense` / `-Print` modes on a fixture log, `test-github-lib.ps1`, `test-launch-lib.ps1`) | a test exits non-zero, or a `test-*.ps1` is in neither list of the script (a new test cannot be forgotten) |
+| Script self-tests | beside the build (#522): started in the background before it, joined right after it (their output printed, their exit code checked) — `scripts/dev/run-script-tests.ps1`: every `scripts/dev/test-*.ps1` in its own pwsh (`test-log-digest.ps1` incl. the `-Id` / `-Find` / `-Condense` / `-Print` modes on a fixture log, `test-github-lib.ps1`, `test-launch-lib.ps1`) | a test exits non-zero, or a `test-*.ps1` is in neither list of the script (a new test cannot be forgotten) |
 | Build | `build-windows.ps1 -Config Release`, which also builds and runs the host unit tests (`arxtest`) | the build, or a CppUnit test, fails |
 | Game checks | `scripts/dev/ci-smoke.ps1`: `smoke-test.ps1 -Seconds 3 -Commands 'drawcheck 120'`, then `spell-drawcheck.ps1` — the same scripts a worker runs, flat, `--loadlevel 10` | either returns `FAIL`, **or was skipped** (exit 2: the game lock stayed busy for 15 min) — a gate that did not run is not a pass, re-run the job |
-| Sequences (#255) | the same script, phase `sequences`: every `scripts/dev/xrs/*.xrs` (`look-around`, `snap-turn`, `walk-forward`, `stand-up`, `recenter`, `ui-panel`, see [Scripted sequences](#scripted-sequences-xrs-113)) as one launch each — `smoke-test.ps1 -Sequence <name>` with the `@sim` / `@args` / `@save` the file declares (idle simulated headset by default, flat when its `@args` say `--no-vr`) | a step fails, **a `@pending` step starts passing** (remove the `@pending`), or the launch was skipped (exit 2). A new `.xrs` file is picked up by itself |
-| Upload | the artifact `game-checks`, also when a step failed | — |
+| Sequences (#255) | the same script, phase `sequences`: every `scripts/dev/xrs/*.xrs` (`look-around`, `snap-turn`, `walk-forward`, `stand-up`, `recenter`, `ui-panel`, see [Scripted sequences](#scripted-sequences-xrs-113)) as one launch each — `smoke-test.ps1 -Sequence <name>` with the `@sim` / `@args` / `@save` the file declares (idle simulated headset by default, flat when its `@args` say `--no-vr`) | a step fails, **a `@pending` step starts passing** (remove the `@pending`), or the launch was skipped (exit 2). A new `.xrs` file is picked up by itself. A pull request runs the core and the sequences its change selects ([the impact map](#what-a-pull-request-runs-the-impact-map-522)); a push to main and the merge gate run all |
+| Upload | the artifact `game-checks`, **only when the job failed** (#522); a green run keeps its evidence on the runner | — |
 
 **The save library on the runner (#255).** Sequences with a `@save` (`snap-turn`, `stand-up`, `ui-panel`: `mvp-new-game`)
 need the test saves (D-023: derived from the game's data, generated per machine, never committed). The phase
@@ -1949,14 +2050,123 @@ How the runner differs from a worker's copy — none of it needs action, all of 
   directory (`arx.log`, `crashes\`), test channel and `launches.log` of CI are there, not in the owner's
   profile. The **game lock** is not: it lives in `%ProgramData%\ArxFatalisVR\locks`, which both accounts
   can write, so CI waits for a game the owner or a worker runs and they wait for CI (#205, see
-  [the game lock](#isolation-and-the-game-lock-parallel-work)). CI's own jobs never overlap (one runner).
+  [the game lock](#isolation-and-the-game-lock-parallel-work)). CI's own jobs never overlap (one runner). Since #522
+  the game checks may hold two slots (`ARXVR_MAX_GAMES=2`): while another game holds one, CI goes on with one lane in
+  the other slot instead of waiting; a launch of the owner or a worker (which tries slot 1 only) still waits while CI
+  holds slot 1.
 - The service has no Steam registry entry of the owner, so the workflow passes the install folder:
   `ARXVR_DATA_DIR` in the workflow `env` (read by `ci-smoke.ps1`, passed as `--data-dir`).
 - `ARXVR_AUTOREPORT=0`: a CI run files no bug issues by itself (#131); the failed step is the report.
 - The cleanup stops only `arx.exe` processes that run from the CI build directory, never a game it did not start.
 
 Run it by hand: `.\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence` (needs a fresh build of the
-copy; `-Phase smoke|spells` runs one half; exit 0 pass, 1 fail, 2 skipped, 3 cannot run here).
+copy; `-Phase smoke|spells` runs one half; exit 0 pass, 1 fail, 2 skipped, 3 cannot run here). On a PC whose lock
+allows one game (the owner's rule, no `settings.json`) it runs on one lane; `$env:ARXVR_MAX_GAMES = 2` first runs it on
+two, as CI does.
+
+### Two lanes, the order and the durations file (#522)
+
+The game checks are most of the job, so `ci-smoke.ps1` runs two games at once:
+- **Lanes.** A scheduler (`scripts/dev/ci-smoke-lib.ps1`, `Invoke-ArxPhaseSchedule`) hands the next phase to a free lane;
+  each phase runs in its own background pwsh, and each lane has its own test channel folder (lane 1 the copy's usual one,
+  lane 2 the same path with `-lane2`), given as `-TestDir` and as `ARXVR_TEST_DIR` to every script of the phase. Every
+  sequence already has its own user directory (#296), under `ci-userdirs\<folder>-<hash>` of the working copy, so two
+  copies running the suite never share one; `smoke-test` and `spell-drawcheck` share the copy's and never run
+  together; `save-library` goes first and every `@save` sequence waits for it; a read-back runs after its sequence passed,
+  in its user directory; the playground level is generated once before the lanes start. A phase's transcript is printed
+  when it ends, then `==> ci-smoke phase '<name>': PASS (exit 0, 15 s) on lane 2`; the summary at the end lists every phase
+  in the serial order, as a serial run would. `-Lanes 1` runs one at a time.
+- **The game lock decides how many.** The lanes are capped at the lock's `maxGames`: the workflow sets `ARXVR_MAX_GAMES=2`
+  on the game checks step (it overrides `settings.json` and the default 1, for that step's launches only; everyone else
+  keeps one slot). Before a second lane starts a phase, the scheduler looks at the lock: while a game slot is held by a
+  launcher whose `copy=` is not this working copy, or an `arx.exe` runs outside the lock from another folder (the owner
+  plays, a worker tests), it uses one lane (`ci-smoke: 1 lane while another game of this PC runs: ...`), and two again
+  once that game is gone.
+- **The order.** The `.xrs` files the change touches go first (`git diff --name-only <base>...HEAD`, the two-dot diff in
+  CI's shallow checkout; a changed read-back counts for its sequence), so a fix round sees its own sequence early; then
+  the rest by the last run's duration, longest first (a sequence and its read-back count together), so the lanes end
+  close together. The durations are `ci-durations.json` in `%LOCALAPPDATA%\ArxFatalisVR\ci-evidence` (the service's on
+  the runner), one entry per phase, written at the end of every run (a phase that did not run keeps its old time); a
+  phase without an entry counts as the longest. The log prints the order and how many times were known.
+- **Evidence on the runner.** The workflow passes `-OutDir %LOCALAPPDATA%\ArxFatalisVR\ci-evidence\<run id>-<attempt>`
+  (in the service's profile, `C:\Windows\ServiceProfiles\NetworkService\AppData\Local\...`); the folder keeps the last 10
+  runs, older ones are deleted at the end of a run. Only a failed job uploads it as `game-checks` (about 1 GB of eye
+  shots; 2 min of upload saved on every green run); a green run's evidence is read on the PC itself, as an
+  administrator. A phase's run digest is the one of its game's pid (`status.json`, else `launched.txt`), never the
+  newest folder of `runs\`: the other lane writes digests too.
+- `scripts/dev/test-ci-smoke.ps1` checks all of it without a game (fake phases on thread jobs, a scratch lock folder).
+
+### What a pull request runs: the impact map (#522)
+
+A pull request proves its own change; the whole suite runs once more right before the merge. The **suites** of
+`ci-smoke.ps1`:
+
+| Suite | When | What runs |
+|---|---|---|
+| `pr` | a pull request without the label `full-ci`; `ci-local.ps1` (below) | the **selection**: the core, every sequence a line of the map gives for a changed path, and the changed or added `.xrs` files themselves (a changed read-back selects its sequence; the save library when a selected sequence has a `@save`) |
+| `full` | a push to main, a manual run with `suite=full` (**the merge gate**), a pull request with the label `full-ci`, `ci-local.ps1 -Full` | every phase |
+
+The workflow's Scope step decides (its log line `game check suite: pr (...)` says why); the label is read live through
+the API, so adding `full-ci` and re-running the PR's last run (`gh run rerun <id>`) or pushing runs everything. A
+selection falls back to everything when it cannot be sure: a changed path that no line of the map matches (a new
+folder, a new file in a folder that is listed file by file), a line `-> *`, or a diff that cannot be made. The log of
+the game checks names the suite and why (`ci-smoke: suite pr - ...` / `ci-smoke: suite full - ...`), lists the
+selection with the reason of each check (`ci-smoke: selected 19 of 66 checks: arms-follow (core), melee-swing
+(src/vr/VRMelee.cpp), ...`), and the job summary repeats both lines.
+
+**The map**, `scripts/dev/xrs/impact.txt`, one rule per line, a comment per group:
+
+```
+core: smoke-test spell-drawcheck first-run look-around ...    # every pull request (several core: lines add up)
+src/vr/VRMelee.* -> melee-swing melee-recovery ...            # a changed path that matches selects these
+scripts/dev/smoke-test.ps1 -> *                              # the harness: everything
+src/core/CommandChannel.* -> core                            # covered by the core alone
+```
+
+A glob is a repository path with `/` and the wildcards of `-like`, any case; `*` also crosses folders. Every line that
+matches a path adds its names; one `-> *` among them runs everything. The groups: the **harness** every check stands
+on (`smoke-test.ps1`, `test-lib.ps1`, `xrs-lib.ps1`, `ci-smoke*.ps1`, `launch-lib.ps1`, `build-paths.ps1`, the save
+library's generator, `vrsim/idle.vrsim`, `VRSimulator.*`, `SimRig.*`, `vcpkg.json`, `cmake/`, the workflows) and the
+**engine foundations** (`src/graphics`, `io`, `platform`, `scene`, `script`, `window`, ...) run everything; the **hub
+files** every feature touches (`CommandChannel.*`, `Config.*`, `ArxGame.*`, `VRSystem.*`, `CMakeLists.txt`) run the core
+alone - as `-> *` they made 28 of the last 30 pull request runs full, and with them on the core every one of those
+runs' 11 failed phases was still selected (`impact-replay.ps1`, below); the rest is one line per module of `src/vr`,
+`src/gui`, `src/game`, the playground and the data, and `-> core` for docs, host tests and the dev scripts that no game
+check uses.
+
+**Rules for authors.**
+- **A new sequence needs a line** that names it (or a place in core): the coverage check fails otherwise. Name it on the
+  lines of the source files it tests.
+- **A new channel command or status field for a feature is selected by that feature's source files**: the hub file it
+  lives in (`CommandChannel.cpp`, `Config.cpp`) selects only the core, so a sequence that only reads such a field and
+  tests no file of its own needs a glob line for the files that compute it. This is the gap the hub rule leaves; the
+  full suite before the merge catches what a missing line lets through.
+- A new source folder or a new file in a listed folder runs everything until it gets a line - safe, but slow: add the
+  line in the same pull request.
+
+**The coverage check** (`Test-ArxImpactMap` in `ci-smoke-lib.ps1`, run by `test-ci-smoke.ps1` in the script
+self-tests of every pull request) fails on a sequence or check that is neither in core nor named by a line (`-> *` does
+not count), a name that is no sequence, a line that is not `core: ...` or `<glob> -> ...`, and a glob listed twice.
+`ci-smoke.ps1` prints the same problems as warnings and, on a broken map, runs everything.
+
+**Replaying the map**: `.\scripts\dev\impact-replay.ps1` takes the last 30 pull request runs with a game check verdict,
+reads each run's base and head from its checkout log (the merge commit it built), the changed files from GitHub's
+compare (`gh api`), the failed phases from its log, and prints a table - run, PR, the selection, the failed phase,
+selected? - and the totals; exit 1 when a failure would not have been selected. After a change of the map (or of the
+core) run it again: the facts are cached in `%LOCALAPPDATA%\ArxFatalisVR\impact-replay`, so a replay costs no API
+calls. `-DurationsFile` adds each selection's own time.
+
+**The merge gate.** Before the merge the coordinator's queue runs the whole suite on the pull request's head branch:
+`gh workflow run build-windows.yml --ref <branch> -f suite=full`, finds that run
+(`gh run list --workflow build-windows.yml --branch <branch> --event workflow_dispatch`) and merges only on its
+`success` on the same head commit. A branch made before #522 has no `suite` input: merge main into it first.
+
+**Locally, before every push**: `.\scripts\dev\ci-local.ps1` builds the working copy (with `arxtest`), runs the
+script self-tests, then `ci-smoke.ps1 -Suite pr` against `origin/main` (fetched first) on two lanes - one while another
+game of the PC holds a slot - and prints a summary with each step's time, the suite line and the selection; exit 0 only
+when every step passed (2: the game lock stayed busy). `-Full` runs everything. The selection is of the commits
+(`origin/main...HEAD`): commit first. Its evidence goes to `%LOCALAPPDATA%\ArxFatalisVR\ci-local\<copy>-<time>` (the last
+5 runs of the copy stay). A selection is 15-35 launches, so the launch budget's note is expected.
 
 ## The tester package (#88)
 
@@ -1998,7 +2208,8 @@ launch rules D-014 / #147). What keeps their runs apart — all derived from the
 | who launched what | the ledger `%LOCALAPPDATA%\ArxFatalisVR\launches.log`, one line per launch; `cycle-report.ps1` → `LAUNCHES` |
 
 **The game lock** (`scripts/launch-lib.ps1`): `%ProgramData%\ArxFatalisVR\locks\game-<n>.lock` (slots
-`1..maxGames`, `maxGames` = 1 unless `settings.json` next to it says otherwise) plus `vr.lock` for a
+`1..maxGames`, `maxGames` = 1 unless `settings.json` next to it says otherwise, or `$env:ARXVR_MAX_GAMES` for the
+launches of one process tree - CI's two lanes, #522) plus `vr.lock` for a
 VR launch — each a file opened for writing without write sharing by the launching script and held
 until the game exits. Windows drops the handle with the process, so a crash or a kill cannot leave a
 stale lock.

@@ -362,6 +362,9 @@ vr-input up right.b
 @frames 5
 @assert vr.radial.right.result eq used
 @log vr\.radial\.use hand=right slot=r1 item=potion_life result=used .*note=none 5s
+# The drunk potion turns into an empty bottle half a second after its use, and until then the slot still finds it
+# (#522: the old harness's slack waited for it)
+@log item\.toinventory item=bottle_empty 5s
 vr-input down right.b
 @frames 3
 vr-radial point right r1

@@ -20,14 +20,18 @@
 #include "vr/VRMelee.h"
 
 #include <algorithm>
+#include <iomanip>
+#include <sstream>
 #include <string_view>
 
+#include "animation/Animation.h"
 #include "core/Config.h"
 #include "core/GameEvent.h"
 #include "core/GameTime.h"
 #include "game/Entity.h"
 #include "game/EntityManager.h"
 #include "game/Equipment.h"
+#include "game/NPC.h"
 #include "game/Player.h"
 #include "gui/Speech.h"
 #include "io/log/Logger.h"
@@ -36,6 +40,7 @@
 #include "vr/VRBody.h"
 #include "vr/VRInput.h"
 #include "vr/VRWeapon.h"
+#include "vr/WeaponGrip.h"
 
 namespace vr {
 
@@ -44,21 +49,29 @@ namespace {
 //! A motion that peaks this close below the swing speed is a near miss (F-60)
 const float NearMissShare = 0.8f;
 
+//! A hit this strong says the strike speech, as the engine's strike of a nearly full charge does
+const float SpeechAim = 0.8f;
+
 struct MeleeState {
 	SwingDetector detector;
-	StrikeCharge charge;
+	DamageParams damage;             //!< of the weapon's class (#465)
 	TargetCooldown cooldown;
-	bool ownsAim = false;            //!< this module set player.m_aimTime
+	StrikeRecovery recovery;         //!< the weapon hand's, after a swing's hit (#323)
+	StrikeRecovery touchRecovery;    //!< after any hit: the next touch outside a swing waits for it (#465)
+	RecoveryTime recoveryTime;       //!< of the weapon type in the hand
+	std::string recoveryNoted;       //!< the last melee.recovery event's values
 	// The swing in progress
 	SwingKind swingKind = SwingKind::None;
-	float swingCharge = 0.f;         //!< the charge ratio when it started
-	float swingAim = -1.f;           //!< the aim ratio fixed by its first contact, -1 before
-	bool swingCharged = false;
+	float swingAim = 0.f;            //!< the strongest aim ratio of its hits
+	bool swingSpoke = false;         //!< it said the strike speech
+	std::vector<StrikeSphere> swingSpheres; //!< the hit spheres of its last check (diagnostics, #465)
+	bool swingBackground = false;    //!< a hit sphere of it reached the world's geometry
+	bool swingRecovering = false;    //!< it started within the recovery: it hits nothing
 	u64 swingHits = 0;
 	double swingStart = 0.;
 	float humpPeak = 0.f;            //!< the peak of a motion that has not become a swing yet
-	bool chargeFullNoted = false;
 	std::string refusedBefore = "-";
+	EntityHandle touchRefused;       //!< the NPC the last melee.touch event refused (#465)
 	MeleeStatus status;
 };
 
@@ -72,9 +85,35 @@ SwingParams paramsFromConfig() {
 	SwingParams params;
 	params.startSpeed = config.input.vrMeleeSwingSpeed;
 	params.endSpeed = std::min(params.endSpeed, params.startSpeed * 0.6f);
-	params.fullSpeed = std::max(config.input.vrMeleeFullSpeed, params.startSpeed + 0.01f);
-	params.weakAim = config.input.vrMeleeWeakAim;
 	params.targetCooldown = config.input.vrMeleeTargetCooldown;
+	return params;
+}
+
+/*!
+ * The damage class of the weapon (#502): a dagger or a two-handed weapon by its type, an axe, club, hammer or mace by
+ * its item class or material (vr/WeaponGrip.h's rule, applied to two-handed weapons too), anything else a sword
+ */
+MeleeClass meleeClassOf(const Entity & weapon) {
+	if(weapon.type_flags & OBJECT_TYPE_DAGGER) {
+		return MeleeClass::Dagger;
+	}
+	const WeaponClass shape = weaponClassOf(false, false, weapon.className(), weapon.weaponmaterial);
+	const bool blunt = shape == WeaponClass::Axe || shape == WeaponClass::Mace;
+	if(weapon.type_flags & OBJECT_TYPE_2H) {
+		return blunt ? MeleeClass::TwoHandedBlunt : MeleeClass::TwoHandedSword;
+	}
+	return blunt ? MeleeClass::Blunt : MeleeClass::Sword;
+}
+
+//! The damage parameters for the weapon's class: its cfg.ini ranges, or the class's defaults
+DamageParams damageFromConfig(MeleeClass meleeClass) {
+	const MeleeRanges defaults = defaultRanges(meleeClass);
+	DamageParams params;
+	params.slash = parseDamageRange(config.input.vrMeleeSlash[size_t(meleeClass)], defaults.slash);
+	params.stab = parseDamageRange(config.input.vrMeleeStab[size_t(meleeClass)], defaults.stab);
+	params.pathScale = config.input.vrMeleePathScale;
+	params.quality = parseQuality(config.input.vrMeleeQuality);
+	params.noSwing = parseNoSwing(config.input.vrMeleeNoSwing);
 	return params;
 }
 
@@ -89,9 +128,91 @@ const char * weaponTypeName() {
 	return "bare";
 }
 
-float fullAimSeconds() {
-	const float seconds = toS(player.Full_AimTime);
-	return seconds > 0.f ? seconds : 1.5f;
+MeleeWeapon meleeWeapon() {
+	switch(ARX_EQUIPMENT_GetPlayerWeaponType()) {
+		case WEAPON_DAGGER: return MeleeWeapon::Dagger;
+		case WEAPON_2H: return MeleeWeapon::TwoHanded;
+		case WEAPON_1H:
+		case WEAPON_BARE:
+		case WEAPON_BOW: break; // bare hands and bows are never in the IK hand
+	}
+	return MeleeWeapon::OneHanded;
+}
+
+/*!
+ * The game's own strike for a weapon type, seconds - diagnostics next to the recovery (#323): the player's strike
+ * start and strike animations, what the attack button plays from the weapon at rest to the weapon at rest
+ * (Core.cpp), in the default (left) direction, without the charge held in between; 0 while they are not loaded.
+ * \a anims gets their file names
+ */
+float gameStrikeSeconds(MeleeWeapon weapon, std::string * anims = nullptr) {
+	AnimationNumber start = ANIM_1H_STRIKE_LEFT_START;
+	AnimationNumber strike = ANIM_1H_STRIKE_LEFT;
+	switch(weapon) {
+		case MeleeWeapon::Dagger: {
+			start = ANIM_DAGGER_STRIKE_LEFT_START;
+			strike = ANIM_DAGGER_STRIKE_LEFT;
+			break;
+		}
+		case MeleeWeapon::OneHanded: break;
+		case MeleeWeapon::TwoHanded: {
+			start = ANIM_2H_STRIKE_LEFT_START;
+			strike = ANIM_2H_STRIKE_LEFT;
+			break;
+		}
+	}
+	const Entity * io = entities.player();
+	if(!io) {
+		return 0.f;
+	}
+	float seconds = 0.f;
+	for(AnimationNumber number : { start, strike }) {
+		const ANIM_HANDLE * anim = io->anims[number];
+		if(!anim || anim->anims.empty() || !anim->anims[0]) {
+			return 0.f;
+		}
+		seconds += toS(anim->anims[0]->anim_time);
+		if(anims) {
+			*anims += (anims->empty() ? "" : "+") + std::string(anim->path.filename());
+		}
+	}
+	return seconds;
+}
+
+float configuredRecovery(MeleeWeapon weapon) {
+	switch(weapon) {
+		case MeleeWeapon::Dagger: return config.input.vrMeleeRecoveryDagger;
+		case MeleeWeapon::OneHanded: return config.input.vrMeleeRecovery1h;
+		case MeleeWeapon::TwoHanded: return config.input.vrMeleeRecovery2h;
+	}
+	return -1.f;
+}
+
+//! The recovery of the weapon type in the hand, into the state and the status; a melee.recovery event when it changes
+void updateRecoveryTime() {
+	MeleeState & m = g_melee;
+	MeleeStatus & s = m.status;
+	const MeleeWeapon weapon = meleeWeapon();
+	std::array<std::string, 3> anims;
+	for(MeleeWeapon type : { MeleeWeapon::Dagger, MeleeWeapon::OneHanded, MeleeWeapon::TwoHanded }) {
+		s.gameStrike[size_t(type)] = gameStrikeSeconds(type, &anims[size_t(type)]);
+	}
+	const float game = s.gameStrike[size_t(weapon)];
+	m.recoveryTime = recoveryTime(weapon, configuredRecovery(weapon));
+	s.weapon = meleeWeaponName(weapon);
+	s.recovery = m.recoveryTime.seconds;
+	s.recoverySource = recoverySourceName(m.recoveryTime.source);
+	s.recoveryGame = game;
+	const std::string noted = std::string(s.weapon) + ' ' + std::to_string(s.recovery) + ' ' + s.recoverySource;
+	if(noted != m.recoveryNoted) {
+		m.recoveryNoted = noted;
+		// The animations of every type: what the game's timing was read from
+		gameevent::Event("melee.recovery", 200)("weapon", s.weapon)("seconds", s.recovery, 2)
+			("source", s.recoverySource)("game", game, 2)
+			("dagger", anims[size_t(MeleeWeapon::Dagger)].empty() ? "-" : anims[size_t(MeleeWeapon::Dagger)])
+			("1h", anims[size_t(MeleeWeapon::OneHanded)].empty() ? "-" : anims[size_t(MeleeWeapon::OneHanded)])
+			("2h", anims[size_t(MeleeWeapon::TwoHanded)].empty() ? "-" : anims[size_t(MeleeWeapon::TwoHanded)]);
+	}
 }
 
 void noteRefusal(const char * refused) {
@@ -103,85 +224,160 @@ void noteRefusal(const char * refused) {
 	gameevent::Event("melee.state", 200)("state", refused ? "off" : "on")("reason", refused ? refused : "allowed");
 }
 
-void startSwing(Entity * weapon) {
+void startSwing() {
 
 	MeleeState & m = g_melee;
 	m.swingKind = m.detector.kind();
-	m.swingCharge = m.charge.ratio(fullAimSeconds());
-	m.swingAim = -1.f;
-	m.swingCharged = false;
+	m.swingAim = 0.f;
+	m.swingSpoke = false;
+	m.swingSpheres.clear();
+	m.swingBackground = false;
 	m.swingHits = 0;
 	m.swingStart = meleeClock();
 	m.humpPeak = 0.f;
+
+	// Within the recovery after a hit the swing is no strike: it hits nothing, even once the recovery is over (#323)
+	m.swingRecovering = !m.recovery.ready(m.swingStart);
+	if(m.swingRecovering) {
+		m.status.recoverySwings++;
+		return;
+	}
 
 	// What the engine does when a strike starts (Core.cpp, the release of the attack button)
 	Entity * io = entities.player();
 	io->isHit = false; // the wall sound and the durability loss once per swing
 	ARX_PLAYER_Remove_Invisibility();
 	SendIOScriptEvent(nullptr, io, SM_STRIKE, weaponTypeName());
-	if(m.swingCharge > 0.8f) {
-		std::string_view speech = io->strikespeech;
-		if(!weapon->strikespeech.empty()) {
-			speech = weapon->strikespeech;
-		}
-		ARX_SPEECH_AddSpeech(*io, speech, ANIM_TALK_NEUTRAL, ARX_SPEECH_FLAG_NOTEXT);
-	}
 }
 
 void endSwing(SwingChange change) {
 	MeleeState & m = g_melee;
 	const SwingDetector & d = m.detector;
-	const char * result = change == SwingChange::Lost ? "lost" : m.swingHits > 0 ? "hit" : "miss";
+	const char * result = change == SwingChange::Lost ? "lost"
+	                      : m.swingRecovering ? "recovering"
+	                      : m.swingHits > 0 ? "hit" : "miss";
 	gameevent::Event("melee.swing", 1000)("kind", swingKindName(m.swingKind))("result", result)
-		("peak", d.peak(), 2)("factor", d.factor(), 2)("charge", m.swingCharge, 2)
-		("aim", m.swingAim >= 0.f ? m.swingAim : 0.f, 2)("charged", m.swingCharged ? "yes" : "no")
-		("hits", m.swingHits)("ms", int((meleeClock() - m.swingStart) * 1000.));
+		("peak", d.peak(), 2)("aim", m.swingAim, 2)("hits", m.swingHits)
+		("ms", int((meleeClock() - m.swingStart) * 1000.));
+	if(!m.swingSpheres.empty()) {
+		// The weapon's hit spheres of the swing's last check, world x,y,z/radius, and whether any of its checks reached
+		// the world's geometry: why a swing does or does not ring on a wall (#465)
+		std::ostringstream at;
+		at << std::fixed << std::setprecision(1);
+		for(const StrikeSphere & sphere : m.swingSpheres) {
+			at << (at.tellp() > 0 ? ";" : "") << sphere.origin.x << ',' << sphere.origin.y << ',' << sphere.origin.z
+			   << '/' << sphere.radius << (sphere.background ? "!" : "");
+		}
+		gameevent::Event("melee.spheres", 200)("count", m.swingSpheres.size())("background", m.swingBackground)
+			("at", at.str());
+	}
 }
 
-void contact(Entity * weapon, double now) {
+/*!
+ * A melee.touch event when a touch reaches an NPC that does not fight the player (and so does nothing to it) - once
+ * per NPC until the touch reaches another or none: why a resting blade did not hit (#465)
+ */
+void noteRefusedTouch(const std::vector<EntityHandle> & refused) {
+	MeleeState & m = g_melee;
+	const EntityHandle first = refused.empty() ? EntityHandle() : refused.front();
+	if(first == m.touchRefused) {
+		return;
+	}
+	m.touchRefused = first;
+	const Entity * npc = entities.get(first);
+	if(!npc || !npc->_npcdata) {
+		return;
+	}
+	gameevent::Event("melee.touch", 200)("target", gameevent::entityName(npc))("result", "refused")
+		("fight", (npc->_npcdata->behavior & BEHAVIOUR_FIGHT) != 0)("targetsPlayer", npc->targetinfo == EntityHandle_Player);
+}
+
+//! The engine's strike speech, as its strike of a nearly full charge says it
+void strikeSpeech(Entity * weapon) {
+	Entity * io = entities.player();
+	std::string_view speech = io->strikespeech;
+	if(!weapon->strikespeech.empty()) {
+		speech = weapon->strikespeech;
+	}
+	ARX_SPEECH_AddSpeech(*io, speech, ANIM_TALK_NEUTRAL, ARX_SPEECH_FLAG_NOTEXT);
+}
+
+/*!
+ * The engine's strike check on the weapon where the hand holds it, with the aim of the stroke so far (#465,
+ * \ref measureContact, \ref contactAim): \a swing true for the swing in progress, false for a touch outside a swing
+ */
+void contact(Entity * weapon, double now, bool swing) {
 
 	MeleeState & m = g_melee;
 	MeleeStatus & s = m.status;
 	const SwingParams & params = m.detector.params();
-	const u64 swing = m.detector.swings();
+	const u64 number = swing ? m.detector.swings() : TargetCooldown::Touch;
 
-	StrikeTargets targets;
-	for(size_t target : m.cooldown.blocked(swing, now, params.targetCooldown)) {
-		targets.skip.push_back(EntityHandle(target));
+	// The stroke as research #502 measures it: the hand's path (a thrust's lunge) and the lever point's speed
+	ContactMeasure measure = measureContact(m.detector);
+	measure.swing = swing;
+	const float aim = contactAim(measure, m.damage);
+	if(aim <= 0.f) {
+		return; // vr_melee_noswing=none: below a range or outside a swing the blade touches nothing
 	}
 
-	const float chargeRatio = m.charge.ratio(fullAimSeconds());
-	const float aim = m.swingAim >= 0.f ? m.swingAim : strikeAim(chargeRatio, m.detector.factor(), params);
+	StrikeTargets targets;
+	for(size_t target : m.cooldown.blocked(number, now, params.targetCooldown)) {
+		targets.skip.push_back(EntityHandle(target));
+	}
+	// A touch is the original's uncharged click on an enemy: only an NPC that fights the player - the blade resting
+	// on an item, a crate, a friend, a merchant, the floor or a wall does nothing (the coordinator's decision until the
+	// owner's, D-054)
+	targets.touch = !swing;
+	targets.speed = measure.speed;
+	targets.size = measure.size;
+	targets.kind = contactKindName(measure.kind);
 	ARX_EQUIPMENT_Strike_Check(entities.player(), weapon, aim, 0, EntityHandle(), &targets);
+	noteRefusedTouch(targets.refused);
+	if(swing) {
+		m.swingSpheres = targets.spheres;
+		for(const StrikeSphere & sphere : targets.spheres) {
+			m.swingBackground = m.swingBackground || sphere.background;
+		}
+	}
 	if(targets.touched.empty()) {
 		return;
 	}
-
-	if(m.swingAim < 0.f) {
-		// The first contact fixes the swing's strength; a charged one spends the charge
-		m.swingAim = aim;
-		m.swingCharged = chargeRatio > params.weakAim;
-		if(m.swingCharged) {
-			m.charge.spend();
-			s.chargedHits++;
-			gameevent::Event("melee.charge", 1000)("state", "spent")("ratio", chargeRatio, 2);
-		}
+	// A swing's hit is the hand's recovery for swings and touches alike (#323); a touch only spaces the next touch -
+	// a blade resting in an enemy must not keep a real swing from hitting it
+	if(swing) {
+		m.recovery.hit(now, m.recoveryTime.seconds);
 	}
+	m.touchRecovery.hit(now, m.recoveryTime.seconds);
 
 	for(const StrikeContact & touched : targets.touched) {
-		m.cooldown.hit(size_t(touched.target.handleData()), swing, now);
+		if(swing) {
+			m.cooldown.hit(size_t(touched.target.handleData()), number, now);
+		}
 		s.contacts++;
 		if(!touched.npc) {
 			continue;
 		}
-		m.swingHits++;
-		s.hits++;
+		if(swing) {
+			s.hits++;
+		} else {
+			s.touches++;
+		}
 		s.lastTarget = gameevent::entityName(entities.get(touched.target));
-		s.lastAim = m.swingAim;
+		s.lastAim = aim;
 		s.lastDamage = touched.damage;
-		s.lastCharged = m.swingCharged;
-		s.lastSpeed = m.detector.peak();
-		s.lastSwing = swing;
+		s.lastSpeed = measure.speed;
+		s.lastSize = measure.size;
+		s.lastKind = targets.kind;
+		s.lastSwing = swing ? number : 0;
+		if(swing) {
+			m.swingHits++;
+			m.swingAim = std::max(m.swingAim, aim);
+			if(aim > SpeechAim && !m.swingSpoke) {
+				m.swingSpoke = true;
+				strikeSpeech(weapon);
+			}
+		}
 	}
 }
 
@@ -194,14 +390,13 @@ void updateMelee(const char * refusal) {
 
 	m.detector.setParams(paramsFromConfig());
 	s.params = m.detector.params();
-	s.fullAimSeconds = fullAimSeconds();
 
 	Entity * weapon = weaponInHand();
 	const PlayerArmStatus & arm = playerBodyStatus().hands[size_t(Hand::Right)];
 	HeadSample head;
 	const bool haveHead = peekHead(head);
 	const char * refused = refusal;
-	// The casting stance held (A): the weapon hand's trigger is the pen - no charge, no strike (#377, the owner)
+	// The casting stance held (A): the weapon hand's trigger is the pen - no strike (#377, the owner)
 	if(!refused && controls().active(Event::MagicMode)) {
 		refused = "casting stance";
 	}
@@ -219,42 +414,25 @@ void updateMelee(const char * refusal) {
 			endSwing(SwingChange::Lost);
 		}
 		m.detector.reset();
-		m.charge.update(false, 0.f);
-		if(m.ownsAim) {
-			player.m_aimTime = 0;
-			m.ownsAim = false;
-		}
 		s.active = false;
 		s.refused = refused;
 		s.swinging = false;
 		s.placed = false;
-		s.chargeHeld = s.charging = s.chargeSpent = false;
-		s.chargeSeconds = s.chargeRatio = 0.f;
+		s.trigger = false;
 		return;
 	}
 	s.active = true;
 	s.refused.clear();
+	updateRecoveryTime();
+	const MeleeClass meleeClass = meleeClassOf(*weapon);
+	m.damage = damageFromConfig(meleeClass);
+	s.meleeClass = meleeClassName(meleeClass);
+	s.damage = m.damage;
 
-	// The charge: the trigger of the weapon hand, the game's own charge time
-	const bool held = controllerInput().down[control(Hand::Right, ControlKind::Trigger)];
-	const bool wasCharging = m.charge.charging();
-	const bool wasHeld = m.charge.held();
-	m.charge.update(held, toS(g_platformTime.lastFrameDuration()));
-	const float ratio = m.charge.ratio(s.fullAimSeconds);
-	if(m.charge.charging() && !wasCharging) {
-		m.chargeFullNoted = false;
-		gameevent::Event("melee.charge", 1000)("state", "start")("full", s.fullAimSeconds, 2);
-	} else if(!m.charge.held() && wasHeld && wasCharging) {
-		gameevent::Event("melee.charge", 1000)("state", "released")("ratio", s.chargeRatio, 2);
-	}
-	if(m.charge.charging() && ratio >= 1.f && !m.chargeFullNoted) {
-		m.chargeFullNoted = true;
-		gameevent::Event("melee.charge", 1000)("state", "full")("seconds", m.charge.seconds(), 2);
-	}
-	// The HUD's hit strength gauge shows the charge, as for the engine's strike
-	player.m_aimTime = m.charge.charging() ? PlatformDuration(std::chrono::duration<float>(m.charge.seconds()))
-	                                       : PlatformDuration(0);
-	m.ownsAim = true;
+	// No charge (#465): the trigger of the weapon hand changes nothing - reported only, to prove it - and the
+	// engine's charge (the HUD's hit strength gauge) stays empty
+	s.trigger = controllerInput().down[control(Hand::Right, ControlKind::Trigger)];
+	player.m_aimTime = 0;
 
 	// The swing: the controller relative to the head, both in the LOCAL space
 	const double now = meleeClock();
@@ -264,12 +442,21 @@ void updateMelee(const char * refusal) {
 	sample.orientation = arm.sample.orientation;
 	const SwingChange change = m.detector.update(sample, true);
 	if(change == SwingChange::Started) {
-		startSwing(weapon);
+		startSwing();
 	}
 
+	// A swing checks its contacts unless it started within the recovery (#323); outside a swing the blade touches
+	// once the recovery after the last hit of any kind is over - and deals the minimum, or nothing (vr_melee_noswing,
+	// #465)
 	s.placed = placeHeldWeapon(s.hilt, s.tip);
-	if(m.detector.swinging() && s.placed) {
-		contact(weapon, now);
+	if(s.placed) {
+		if(m.detector.swinging()) {
+			if(!m.swingRecovering) {
+				contact(weapon, now, true);
+			}
+		} else if(m.recovery.ready(now) && m.touchRecovery.ready(now)) {
+			contact(weapon, now, false);
+		}
 	}
 
 	if(change == SwingChange::Ended || change == SwingChange::Lost) {
@@ -293,15 +480,12 @@ void updateMelee(const char * refusal) {
 	s.kind = swingKindName(s.swinging ? m.detector.kind() : m.swingKind);
 	s.speed = m.detector.speed();
 	s.peak = m.detector.peak();
-	s.factor = m.detector.factor();
 	s.swings = m.detector.swings();
 	s.gaps = m.detector.gaps();
 	s.jumps = m.detector.jumps();
-	s.chargeHeld = m.charge.held();
-	s.charging = m.charge.charging();
-	s.chargeSpent = m.charge.spent();
-	s.chargeSeconds = m.charge.seconds();
-	s.chargeRatio = ratio;
+	s.recoveryLeft = m.recovery.remaining(now);
+	s.recovering = m.swingRecovering;
+	s.worldHit = entities.player()->isHit;
 }
 
 bool meleeOwnsStrikes() {

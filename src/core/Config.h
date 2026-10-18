@@ -20,6 +20,7 @@
 #ifndef ARX_CORE_CONFIG_H
 #define ARX_CORE_CONFIG_H
 
+#include <array>
 #include <string>
 
 #include "audio/AudioTypes.h"
@@ -150,6 +151,11 @@ public:
 		bool vrPhysicalCrouch; //!< VR: the head going down crouches the character (#100)
 		float vrCrouchEnter; //!< VR: the head this far below the calibrated eye crouches, meters (#100)
 		float vrCrouchExit; //!< VR: the character stands again once the head is back above this depth, meters (#100)
+		std::string vrSceneView; //!< VR: the view of scripted scenes: first, observer, ghost, hybrid (#29, vr/SceneView.h)
+		std::string vrSceneLookAt; //!< VR: what playerlookat does: ignore, fade (#29)
+		std::string vrSceneFirstLow; //!< VR: first person's eye too low in a scene: black, clamp, screen (#29)
+		std::string vrSceneCut; //!< VR: a scene's cut the eyes see a jump in: instant, fade (#29)
+		std::string vrSubtitles; //!< VR: where scene subtitles go: above, chest, lowerthird (#29, vr/SceneSubtitles.h)
 
 		float fov;
 		bool viewBobbing;
@@ -254,9 +260,17 @@ public:
 		float vrArmMaxStretch; //!< VR: how far [0, 0.3] the custom arm stretches past its fitted length to reach the controller (#385.6)
 		float vrArmWeaponElbowDrop; //!< VR: the share [0, 1] of its angle the elbow of a hand holding a weapon drops by (#385.6)
 		float vrMeleeSwingSpeed; //!< VR: m/s a weapon swing hits from (#39, vr/MeleeSwing.h)
-		float vrMeleeFullSpeed; //!< VR: m/s a swing has its full damage at (#39)
-		float vrMeleeWeakAim; //!< VR: the damage ratio of an uncharged swing; a full charge is 1 (#39)
+		//! VR: per weapon class (vr::MeleeClass) a slash's "<path min> <path max> <speed min> <speed max>", m and m/s;
+		//! empty = the class's default (#465, vr::defaultRanges)
+		std::array<std::string, 5> vrMeleeSlash;
+		std::array<std::string, 5> vrMeleeStab; //!< VR: the same for a stab: its lunge along the blade (#465)
+		std::string vrMeleeQuality; //!< VR: how size and speed combine: "min" (the default), "geomean", "product" (#465)
+		float vrMeleePathScale; //!< VR: the path ranges scaled by it, e.g. for seated play (#465)
+		std::string vrMeleeNoSwing; //!< VR: a hit outside a swing or below a threshold deals "min" (the default) or "none" (#465)
 		float vrMeleeTargetCooldown; //!< VR: seconds before a new swing can hit the same target (#39)
+		float vrMeleeRecoveryDagger; //!< VR: seconds after a dagger hit before a new swing hits; -1 = the default, 0.6 (#323)
+		float vrMeleeRecovery1h; //!< VR: the same for one-handed weapons; the default 0.8 (#323)
+		float vrMeleeRecovery2h; //!< VR: the same for two-handed weapons; the default 1.0 (#323)
 		// VR: how far a custom hand on a weapon's hilt is closed, degrees (#385.7, vr/HandRig.h HiltAngles)
 		float vrHiltKnuckle; //!< the four fingers' knuckles
 		float vrHiltMiddle;  //!< their middle joints

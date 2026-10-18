@@ -1,0 +1,226 @@
+# Scene subtitles in VR (#29, 29.3): every voiced line has a subtitle with the speaker, in the three placements, switchable live; T1 and T5.
+#   .\scripts\dev\xrs-run.ps1 scene-subtitles
+# Red until #29 is built: the scene command and the status.json scene.* fields are not in the game yet (29.0, SPEC.md).
+# lines == voicedLines over a stretch; text, speaker and placement of the line; the text in both eye shots (@shot, the pixels are a CI artifact).
+@sim idle
+@save scene-kultar
+@args --loadslot 0
+
+# T1: the save is one step before the KULTAR_WAKE zone, facing +z (scripts/dev/test-saves/scenarios.txt)
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # past the level's fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert scene.active eq false
+@assert scene.shown eq none
+scene view first
+
+# T1: Kultar's scene, three voiced lines, placement above. With the HUD frame off (#471) the engine's speech text
+# under the letterbox is never drawn in VR: the scene's subtitles are this view's own, not the engine's band
+@assert vr.hud.frame eq off
+vr-hud reset
+scene subtitles above
+scene meter reset
+vr-input stick left 0 1
+@until scene.active eq true 60s
+vr-input stick left 0 0
+@until scene.subtitle.visible eq true 60s
+@assert scene.subtitle.placement eq above
+@assert scene.subtitle.speaker ne none
+@assert scene.subtitle.text ne none
+@shot sub-t1
+@assert vr.sim.shots.sub-t1.left.scene.verdict ne background
+@assert vr.sim.shots.sub-t1.right.scene.verdict ne background
+@until scene.active eq false 120s
+@assert vr.hud.drawn.speech eq 0                 # the engine's band drew nothing, the subtitles above were ours
+@nolog vr\.scene\.subtitle .*speaker=player
+@log vr\.scene\.subtitle placement=above speaker="Am Shaegar" drawn=chest   # the hero's own line names him, below the centre of the view (the owner)
+@assert scene.subtitle.voicedLines ge 3
+@remember voiced scene.subtitle.voicedLines
+@assert scene.subtitle.lines eq {voiced}
+
+# T5: a voiced speak -c line, placement above: always over the NPC's head (the owner, 2026-10-18) - Kultar stands out of
+# the hero's view here, so the panel is placed behind the view's edge and the player turns to see it
+scene subtitles above
+vr-sim head rot 0 0 0
+@assert scene.subtitle.placement eq above
+scene meter reset
+# A long line (7 s): the settle wait, the pose check and the turn to him take 2 s at 90 Hz - letmeout (1.9 s) ended first
+human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_cantgo]
+@until scene.subtitle.visible eq true 15s
+@assert scene.subtitle.placement eq above
+@assert scene.subtitle.speaker ne none
+@assert scene.subtitle.text ne none
+@wait 1500                                       # Kultar turns to the player as he speaks: let his head settle
+@assert scene.subtitle.drawn eq above            # no chest fallback for an NPC out of view
+# Over the NPC, not on the head: the head turning 40 degrees (vr-sim head rot <yaw> <pitch> <roll>) leaves the panel's
+# pose in the room as it is - within 5 cm and 2 degrees: the room pose is read back through the head camera, whose
+# eye middle moves a few centimetres on a turn (1.6 cm measured in the CI harness); a panel on the head would move 1.85 m
+@remember px scene.subtitle.panelLocal.x
+@remember py scene.subtitle.panelLocal.y
+@remember pz scene.subtitle.panelLocal.z
+@remember pyaw scene.subtitle.panelLocal.yawDeg
+vr-sim head rot -40 0 0
+@frames 20
+@assert scene.subtitle.panelLocal.x ge {px-0.05}
+@assert scene.subtitle.panelLocal.x le {px+0.05}
+@assert scene.subtitle.panelLocal.y ge {py-0.05}
+@assert scene.subtitle.panelLocal.y le {py+0.05}
+@assert scene.subtitle.panelLocal.z ge {pz-0.05}
+@assert scene.subtitle.panelLocal.z le {pz+0.05}
+@assert scene.subtitle.panelLocal.yawDeg ge {pyaw-2}
+@assert scene.subtitle.panelLocal.yawDeg le {pyaw+2}
+# The head turns to Kultar (he stands to the right: panelLocal.x +2.7 m; a positive sim yaw is left): the panel over his
+# head is in both eyes. Not the channel lookat: in VR the body drags the hero back after the head within a second
+vr-sim head rot -90 0 0
+@frames 20
+@assert scene.subtitle.panel eq true
+@assert scene.subtitle.panelPixels gt 1000       # the panel drawn into both eyes (its outline, the smaller eye)
+@shot sub-above
+@assert vr.sim.shots.sub-above.left.scene.verdict ne background
+@assert vr.sim.shots.sub-above.right.scene.verdict ne background
+vr-sim head rot 0 0 0
+@frames 5
+@log vr\.scene\.subtitle placement=above speaker=
+@until scene.kind eq none 30s
+@assert scene.subtitle.voicedLines eq 1
+@assert scene.subtitle.lines eq 1
+
+# T5: the hero's own line - below the centre of the view with a lazy follow (the owner, 2026-10-18): still while the
+# head turns 15 degrees, back below the centre (0.3 s) after a 60 degree turn
+scene meter reset
+speak -c zoom 0 20 0 20 100 100 [player_welcome_kultar]
+@until scene.subtitle.visible eq true 15s
+@wait 500
+@assert scene.subtitle.drawn eq chest
+@assert scene.subtitle.panel eq true
+@assert scene.subtitle.panelPixels gt 1000
+@assert scene.subtitle.panelYawFromHeadDeg lt 5
+@remember hx scene.subtitle.panelLocal.x
+@remember hz scene.subtitle.panelLocal.z
+vr-sim head rot 15 0 0
+@frames 40
+@assert scene.subtitle.panelLocal.x ge {hx-0.01}
+@assert scene.subtitle.panelLocal.x le {hx+0.01}
+@assert scene.subtitle.panelLocal.z ge {hz-0.01}
+@assert scene.subtitle.panelLocal.z le {hz+0.01}
+@assert scene.subtitle.panelYawFromHeadDeg ge 10
+@assert scene.subtitle.panelYawFromHeadDeg le 20
+vr-sim head rot 60 0 0
+@frames 45
+@assert scene.subtitle.panelYawFromHeadDeg lt 5
+@assert scene.subtitle.panel eq true
+@shot sub-hero
+vr-sim head rot 0 0 0
+@frames 5
+@log vr\.scene\.subtitle placement=above speaker="Am Shaegar" drawn=chest
+@until scene.kind eq none 30s
+# T5: a voiced speak -c line, placement chest
+scene subtitles chest
+@assert scene.subtitle.placement eq chest
+scene meter reset
+human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_cantgo]
+@until scene.subtitle.visible eq true 15s
+@assert scene.subtitle.placement eq chest
+@assert scene.subtitle.speaker ne none
+@assert scene.subtitle.text ne none
+@wait 500
+@shot sub-chest
+@assert vr.sim.shots.sub-chest.left.scene.verdict ne background
+@assert vr.sim.shots.sub-chest.right.scene.verdict ne background
+@assert scene.subtitle.panelPixels gt 1000       # the panel drawn into both eyes (its outline, the smaller eye)
+# Fixed in the world (the owner, 2026-10-17): the panel is placed once for the line and never turns with the head - its
+# pose in the room stays while the head turns 20 degrees (past 35 the lazy follow glides it back below the centre)
+@assert scene.subtitle.panel eq true
+@assert scene.subtitle.drawn eq chest
+@remember px scene.subtitle.panelLocal.x
+@remember py scene.subtitle.panelLocal.y
+@remember pz scene.subtitle.panelLocal.z
+@remember pyaw scene.subtitle.panelLocal.yawDeg
+vr-sim head rot -20 0 0
+@frames 20
+@assert scene.subtitle.panel eq true
+@assert scene.subtitle.panelLocal.x ge {px-0.01}
+@assert scene.subtitle.panelLocal.x le {px+0.01}
+@assert scene.subtitle.panelLocal.y ge {py-0.01}
+@assert scene.subtitle.panelLocal.y le {py+0.01}
+@assert scene.subtitle.panelLocal.z ge {pz-0.01}
+@assert scene.subtitle.panelLocal.z le {pz+0.01}
+@assert scene.subtitle.panelLocal.yawDeg ge {pyaw-1}
+@assert scene.subtitle.panelLocal.yawDeg le {pyaw+1}
+vr-sim head rot 0 0 0
+@frames 5
+@log vr\.scene\.subtitle placement=chest speaker=
+@until scene.kind eq none 30s
+@assert scene.subtitle.voicedLines eq 1
+@assert scene.subtitle.lines eq 1
+
+# T5: a voiced speak -c line, placement lowerthird
+scene subtitles lowerthird
+@assert scene.subtitle.placement eq lowerthird
+scene meter reset
+human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
+@until scene.subtitle.visible eq true 15s
+@assert scene.subtitle.placement eq lowerthird
+@assert scene.subtitle.speaker ne none
+@assert scene.subtitle.text ne none
+@wait 500
+@shot sub-lowerthird
+@assert vr.sim.shots.sub-lowerthird.left.scene.verdict ne background
+@assert vr.sim.shots.sub-lowerthird.right.scene.verdict ne background
+@log vr\.scene\.subtitle placement=lowerthird speaker=
+@until scene.kind eq none 30s
+@assert scene.subtitle.voicedLines eq 1
+@assert scene.subtitle.lines eq 1
+
+# T5: every speak -c mode has its subtitle (placement above); each key is a line with a localised text (the
+# sample names of variants, kultar_letmeout2 and the like, have none: a variant's text is string<N> in its line)
+scene subtitles above
+scene meter reset
+# zoom
+human_base_0028.speak -c zoom 0 20 0 20 100 100 [kultar_letmeout]
+@until scene.subtitle.visible eq true 15s
+@assert scene.subtitle.placement eq above
+@until scene.kind eq none 30s
+# keep
+human_base_0028.speak -c keep [kultar_letmeout]
+@until scene.subtitle.visible eq true 15s
+@assert scene.subtitle.placement eq above
+@until scene.kind eq none 30s
+# side
+human_base_0028.speak -c side player 5 5 90 90 0 [kultar_letmeout]
+@until scene.subtitle.visible eq true 15s
+@assert scene.subtitle.placement eq above
+@until scene.kind eq none 30s
+# side_l
+human_base_0028.speak -c side_l player 5 5 90 90 0 [kultar_letmeout]
+@until scene.subtitle.visible eq true 15s
+@assert scene.subtitle.placement eq above
+@until scene.kind eq none 30s
+# side_r
+human_base_0028.speak -c side_r player 5 95 400 150 -10 [kultar_letmeout]
+@until scene.subtitle.visible eq true 15s
+@assert scene.subtitle.placement eq above
+@until scene.kind eq none 30s
+# ccctalker_l
+human_base_0028.speak -c ccctalker_l player 90 100 [kultar_letmeout]
+@until scene.subtitle.visible eq true 15s
+@assert scene.subtitle.placement eq above
+@until scene.kind eq none 30s
+# ccctalker_r
+human_base_0028.speak -c ccctalker_r player 80 40 [kultar_letmeout]
+@until scene.subtitle.visible eq true 15s
+@assert scene.subtitle.placement eq above
+@until scene.kind eq none 30s
+# ccclistener_l
+human_base_0028.speak -c ccclistener_l player 50 50 [kultar_letmeout]
+@until scene.subtitle.visible eq true 15s
+@assert scene.subtitle.placement eq above
+@until scene.kind eq none 30s
+# ccclistener_r
+human_base_0028.speak -c ccclistener_r player 40 40 [kultar_letmeout]
+@until scene.subtitle.visible eq true 15s
+@assert scene.subtitle.placement eq above
+@until scene.kind eq none 30s
+@assert scene.subtitle.voicedLines eq 9
+@assert scene.subtitle.lines eq 9
+@assert errors eq 0

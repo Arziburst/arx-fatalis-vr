@@ -266,7 +266,20 @@ and never discards uncommitted changes it finds; it reports them instead.
 
 ### Workers test the game themselves first
 
-Before a task goes to **Testing** (or is merged without a VR test), the worker runs the game itself
+**Before every push, run the CI checks locally** (#522):
+
+```powershell
+.\scripts\dev\ci-local.ps1          # build (with arxtest), script self-tests, then this branch's game checks vs origin/main
+.\scripts\dev\ci-local.ps1 -Full    # every game check, as the merge gate runs them
+```
+
+It runs what the PR's CI run will run - the core and the sequences the branch's commits select in
+`scripts/dev/xrs/impact.txt` ([TESTING.md](TESTING.md#what-a-pull-request-runs-the-impact-map-522)) - on two
+lanes (one while another game of the PC holds a slot), and exits 0 only when every step passed; push only then.
+Commit first: the selection is of the commits. A selection is 15-35 launches, so the launch budget's note is
+expected (a warning, not a refusal). Its summary goes into the PR's *How verified*.
+
+Before a task goes to **Testing** (or is merged without a VR test), the worker also runs the game itself
 with the smoke test ([TESTING.md](TESTING.md)):
 
 ```powershell
@@ -415,7 +428,23 @@ human in a headset:
   draw check — run on every PR, a few minutes in total. A red step blocks the merge; a game check that
   was skipped (game lock busy) is red too. A new `scripts/dev/test-*.ps1` must be added to
   `scripts/dev/run-script-tests.ps1`. The game runs in the runner service's session; evidence is the
-  artifact `game-checks` — see [TESTING.md](TESTING.md#the-ci-gate-127).
+  artifact `game-checks` — see [TESTING.md](TESTING.md#the-ci-gate-127). Since #522 it is uploaded **only when
+  the job failed**: a green run keeps its evidence on the runner (the service's
+  `%LOCALAPPDATA%\ArxFatalisVR\ci-evidence\<run id>-<attempt>`, the last 10 runs), and the game checks run on two
+  lanes (two games at once, one while another game of the PC holds a lock slot).
+- **A PR runs its own selection, the merge runs everything (#522).** On a pull request the game checks run the
+  core plus the sequences its changed paths select in `scripts/dev/xrs/impact.txt` and its own changed `.xrs`
+  files; a path the map does not know, or a harness file, runs everything. The game checks' log names the suite
+  and lists the selection ([TESTING.md](TESTING.md#what-a-pull-request-runs-the-impact-map-522)). Everything also
+  runs on a push to main, on a manual run with `suite=full` and on a PR with the label **`full-ci`** - the label
+  is read when the run starts, so after adding it re-run the PR's last run (`gh run rerun <id>`) or push; adding a
+  label starts no run by itself. **The merge gate:** right before the merge the coordinator runs the whole suite
+  on the PR's head (`gh workflow run build-windows.yml --ref <branch> -f suite=full`) and merges only when that
+  run is green on the same head commit. A new sequence gets its line in the map in the same PR (the coverage
+  check fails otherwise).
+- **Run `scripts/dev/ci-local.ps1` before every push** - the same selection on this PC (see
+  [Workers test the game themselves first](#workers-test-the-game-themselves-first)); CI is not the first place a
+  sequence should fail.
 - **One vcpkg for the whole machine:** `C:\vcpkg-shared` holds the vcpkg checkout, source downloads and
   binary packages, used by CI (workflow `env`) and by the owner's builds (user environment variables
   `VCPKG_ROOT`, `VCPKG_DOWNLOADS`, `VCPKG_DEFAULT_BINARY_CACHE`). A dependency built once — locally or

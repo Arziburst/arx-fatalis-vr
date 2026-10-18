@@ -15,7 +15,7 @@
 #                                  loadlevel 10, a script-console line ...); ';' sends them as ONE batch, which the
 #                                  game applies in the same frame. A refused command (errors>0 in the ack) fails the step.
 #   @wait <ms>                     sleep
-#   @frames <n>                    wait until the game rendered n more frames
+#   @frames <n>                    wait until the game rendered n more frames (the channel's waitframes: its ack comes then)
 #   @until <path> <op> <v> [<n>s]  wait up to n seconds (default 30) for status.json to satisfy the condition
 #   @assert <path> <op> <v>        status.json, read fresh now. path: dotted, "quoted" where a key holds a dot
 #                                  (events.byName."spell.cast"); op: eq ne gt ge lt le
@@ -308,8 +308,10 @@ function Invoke-XrsStep($Context, $Step) {
 	switch ($Step.Kind) {
 		'wait' { Start-Sleep -Milliseconds $Step.Ms }
 		'frames' {
-			$from = [int64](Read-ArxStatus $dir).frame
-			$null = Wait-ArxStatus { param($s) [int64]$s.frame -ge $from + $Step.Count } -TimeoutSec 60 -Dir $dir -What "$($Step.Count) more frames"
+			# The game holds the ack until it rendered the frames (#522): no status.json polling, no slack
+			$ack = Send-ArxCommand -Lines @("waitframes $($Step.Count)") -Dir $dir -TimeoutSec 60
+			Write-XrsLine $Context "      $ack" 'DarkGray'
+			if ($ack -notmatch 'errors=0 ') { throw "the game refused the frame wait: $ack" }
 		}
 		'command' {
 			$ack = Send-ArxCommand -Lines $Step.Commands -Dir $dir
@@ -408,8 +410,11 @@ function Invoke-ArxSequence($Sequence, [string]$TestDir, [string]$LogPath, [swit
 	foreach ($step in $Sequence.Steps) {
 		$i++
 		Write-XrsLine $ctx "  [$i/$count] $($step.Line)" 'White'
+		$clock = [Diagnostics.Stopwatch]::StartNew()
 		try {
 			Invoke-XrsStep $ctx $step
+			# The step's wall time (#522): what the harness's waits cost, read off a transcript
+			Write-XrsLine $ctx "      $($clock.ElapsedMilliseconds) ms" 'DarkGray'
 			if ($step.Kind -eq 'pending' -and $step.PSObject.Properties['WasPending']) { $pending += $step }
 		} catch {
 			$reason = "line $($step.N) '$($step.Line)': $($_.Exception.Message)"

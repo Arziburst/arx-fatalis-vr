@@ -35,7 +35,8 @@ function ConvertTo-ShortSha([string]$Sha) { if ($Sha -and $Sha.Length -gt 9) { $
 # Machine-wide launch settings: settings.json in the lock folder (%ProgramData%\ArxFatalisVR\locks, so the
 # CI runner service reads the same file), else the old %LOCALAPPDATA%\ArxFatalisVR\settings.json, e.g.
 # { "maxGames": 2 } (how many games may run at once; default 1 - the owner's rule). Missing file or key:
-# the defaults.
+# the defaults. $env:ARXVR_MAX_GAMES overrides maxGames for the launches of one process tree: the CI workflow
+# sets it to 2, so its two lanes (ci-smoke.ps1, #522) may hold two slots while everyone else keeps one.
 function Get-ArxLaunchSettings {
 	$settings = @{ maxGames = 1 }
 	$file = @(Get-ArxLockDirs | ForEach-Object { Join-Path $_ 'settings.json' } | Where-Object { Test-Path $_ })[0]
@@ -46,6 +47,11 @@ function Get-ArxLaunchSettings {
 		} catch {
 			Write-Warning "ignoring $file ($($_.Exception.Message))"
 		}
+	}
+	if ($env:ARXVR_MAX_GAMES) {
+		$n = 0
+		if ([int]::TryParse($env:ARXVR_MAX_GAMES, [ref]$n)) { $settings.maxGames = [Math]::Max(1, $n) }
+		else { Write-Warning "ignoring ARXVR_MAX_GAMES='$env:ARXVR_MAX_GAMES' (not a number)" }
 	}
 	[pscustomobject]$settings
 }

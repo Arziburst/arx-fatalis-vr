@@ -81,6 +81,10 @@ set(arxtest_TESTCASES
 	tests/vr/VRControlsTest.cpp
 	tests/vr/BindingCaptureTest.h
 	tests/vr/BindingCaptureTest.cpp
+	tests/vr/MenuReachTest.h
+	tests/vr/MenuReachTest.cpp
+	tests/vr/MenuRebindTest.h
+	tests/vr/MenuRebindTest.cpp
 
 	tests/vr/VRGameInputTest.h
 	tests/vr/VRGameInputTest.cpp

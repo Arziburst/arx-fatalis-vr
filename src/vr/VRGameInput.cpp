@@ -100,7 +100,7 @@ const GameInputState & GameInputMapper::update(const ControlResolver & controls,
 	state.use = either(Event::UseLeft, Event::UseRight, roles.acts);
 	// The game acts on Escape's release, which the engine only sees for a key it saw held for two
 	// updates: a press that started and ended in one update stays one more
-	state.escape = controls.active(Event::Menu) || m_escapeUpdates == 1;
+	state.escape = controls.active(Event::Menu) || controls.menuFallback() || m_escapeUpdates == 1;
 	m_escapeUpdates = state.escape ? m_escapeUpdates + 1 : 0;
 	state.recenter = controls.pressed(Event::Recenter);
 

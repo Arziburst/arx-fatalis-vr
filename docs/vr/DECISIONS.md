@@ -13,6 +13,24 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-058: The game menu stays reachable whatever is rebound - a refused last binding and a fixed two-stick hold
+
+- **Date:** 2026-10-18
+- **Status:** Accepted (#326; amends D-042's table and D-019's menu rule)
+- **Decided by:** the owner (the Index has no menu button the game can read; the fallback is both thumbstick clicks held
+  for 2 s)
+
+### Decision
+- A way to the game menu is the menu event or a radial menu event (D-042). `vr::assignBinding` refuses an assignment
+  that would leave none bound (the layout stays, the VR settings page shows a short note, `vr.input.remapRefusals`
+  counts it). A saved controls file that leaves none gets the default way back (`readSavedLayout`).
+- Fixed fallback, not part of the layout and not rebindable: **both thumbstick clicks held together for 2 s** press the
+  game menu key once, while still held (`ControlResolver::menuFallback`).
+
+### Consequences
+- The right stick click draws the weapon in the default layout, so the fallback hold toggles it as well.
+
+
 ## D-057: Refresh-rate independence — times, not frames; a sample is timed by the display time it is for
 
 - **Date:** 2026-10-13
@@ -63,6 +81,7 @@ were timed (walk, turn, jump apex, camera, fingers), the frame-counted pieces we
   like - it stepped once by all the time that had added up (25-35 ms, a hitch's whole length), so the Euler fall
   and the damped push followed the frames (air times of 0.29-0.36 s for one jump). The 25 ms stepping of the
   position between rendered frames while jumping (#435's judder, and the hang above the floor) is unchanged.
+
 ## D-056: CI owns the game slots - workers' launches wait for a running CI job, a PR's run fails fast
 
 - **Date:** 2026-10-18

@@ -21,7 +21,8 @@ $ErrorActionPreference = 'Stop'
 
 # The self-tests. Keep the list sorted.
 $tests = @(
-	'test-eye-check.ps1'      # the two-eyes check's judge (#112, F-06): every leg passes on good eyes, fails on its broken case
+	'test-ci-smoke.ps1'       # the CI game checks' lanes (#522): the order, the scheduler over fake phases, the lane count, durations, evidence
+	'test-eye-check.ps1'     # the two-eyes check's judge (#112, F-06): every leg passes on good eyes, fails on its broken case
 	'test-github-lib.ps1'     # the GitHub access of the dev scripts (#186): REST first, the board cache, rate limits, the move queue
 	'test-launch-lib.ps1'     # the machine-wide game lock (#205): the lock folder and its ACL, old and new location, holders, stale files
 	'test-log-digest.ps1'    # the run digest and the automatic bug filing (#131): fixture logs, a fake GitHub, the command line modes

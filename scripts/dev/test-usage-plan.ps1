@@ -137,5 +137,27 @@ Check 'unknown size uses the model / effort pool' ($eU.N -eq 6 -and $eU.Basis -e
 Check 'unseen model falls back to all tasks' ((Get-TaskCostEstimate $done 'fable' 'xhigh' 'S').Basis -eq 'all models')
 $sz = @(Get-TaskCosts @([pscustomobject]@{ session_id = 'x'; issue = 9; role = 'worker'; model = 'Sonnet 5.5'; effort = 'high'; cost_usd = 3; duration_h = 1 }) @{ 9 = 'S' })
 Check 'Get-TaskCosts carries the size of the issue' ($sz[0].Size -eq 'S')
+
+Write-Host "the core's status-line files"
+$tmp = Join-Path ([IO.Path]::GetTempPath()) "usage-core-$PID"
+New-Item -ItemType Directory -Force (Join-Path $tmp 'sessions') | Out-Null
+try {
+	# A sample of the core's status JSON (coordinator/core/scripts/statusline.ps1 -> sessions/<id>.json).
+	$core = '{"session_id":"w9","session_name":"#9 worker: x","model":{"id":"claude-sonnet-5-5","display_name":"Sonnet 5.5"},"effort":{"level":"medium"},"cost":{"total_cost_usd":3.5,"total_duration_ms":7200000},"context_window":{"used_percentage":40},"rate_limits":{"five_hour":{"used_percentage":25,"resets_at":1791862800},"seven_day":{"used_percentage":12,"resets_at":1792429200}},"worktree":{"branch":"ARXVR-9-feat-x"}}'
+	Set-Content (Join-Path $tmp 'sessions\w9.json') $core -NoNewline
+	$ledger = @(Read-CoreSessions $tmp)
+	Check 'a core session file becomes a ledger record' ($ledger.Count -eq 1 -and $ledger[0].session_id -eq 'w9' -and $ledger[0].branch -eq 'ARXVR-9-feat-x' -and $ledger[0].name -like '#9 worker*' -and $ledger[0].cost_usd -eq 3.5 -and $ledger[0].effort -eq 'medium' -and $ledger[0].context_pct -eq 40 -and $ledger[0].duration_ms -eq 7200000) ($ledger | ConvertTo-Json -Compress)
+	$nowE = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+	$smp = New-UsageSample ($core | ConvertFrom-Json) $ledger $nowE
+	Check 'the sample carries both limits with their resets and the live session cost' ($smp.fh -eq 25 -and $smp.fhr -eq 1791862800 -and $smp.wk -eq 12 -and $smp.wkr -eq 1792429200 -and $smp.s['w9'] -eq 3.5) ($smp | ConvertTo-Json -Compress)
+	Check 'a session idle for 30 minutes is not live in the sample' (-not (New-UsageSample ($core | ConvertFrom-Json) $ledger ($nowE + 1800)).s.Contains('w9'))
+	Check 'no rate_limits (API-key setup) -> no sample' ($null -eq (New-UsageSample ('{"session_id":"x"}' | ConvertFrom-Json) $ledger $nowE))
+	$rec = @(Get-FinishedTaskRecords -Ledger $ledger -Recorded @() -Now ($nowE + 3600) -WeekPerUsd $null -FivePerUsd $null)
+	Check 'a finished core session is recorded for its task (issue from the branch, peak context falls back to the current)' ($rec.Count -eq 1 -and $rec[0].issue -eq 9 -and $rec[0].ctx_peak_pct -eq 40 -and $rec[0].duration_h -eq 2) ($rec | ConvertTo-Json -Compress)
+	Check 'a missing folder reads as no sessions' (@(Read-CoreSessions (Join-Path $tmp 'nope')).Count -eq 0)
+} finally { Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue }
+Check 'the default status folder is the core''s, ~/.claude/coordinator' ((Get-CoreStatusDir) -like '*coordinator')
+Check 'our state folder is not the old ~/.claude/statusline' ((Get-UsageDir) -notlike '*statusline*')
+
 if ($script:failures) { Write-Host "`n$script:failures check(s) failed" -ForegroundColor Red; exit 1 }
 Write-Host "`nall checks passed" -ForegroundColor Green

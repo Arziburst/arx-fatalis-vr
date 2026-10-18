@@ -1,17 +1,51 @@
-# Usage accounting of the Claude limits (#217, D-022): the samples written by statusline.ps1, the calibration
+# Usage accounting of the Claude limits (#217, D-022): the samples of the limits and costs, the calibration
 # "% of a limit per dollar", the per-task cost ledger and the worker-count recommendation. Pure functions - the
-# self-test (test-usage-plan.ps1) feeds them synthetic samples; usage-plan.ps1 feeds them the real files.
+# self-test (test-usage-plan.ps1) feeds them synthetic samples and a sample of the core's status JSON; usage-plan.ps1
+# feeds them the real files.
 #
-# Files in ~/.claude/statusline/:
+# Input - the coordinator core's status line (coordinator/core/scripts/statusline.ps1, #346), in ~/.claude/coordinator/:
+#   statusline.json     the last status JSON drawn by any session: rate_limits.{five_hour,seven_day}.{used_percentage,resets_at}
+#   sessions/<id>.json  one status JSON per session: session_name, worktree.branch, model.display_name, effort.level,
+#                       context_window.used_percentage, cost.total_cost_usd, cost.total_duration_ms; the file's write time
+#                       is when the session last drew its status line
+# Our own state - ~/.claude/arxvr-usage/ (the core keeps no history of the limits, so the samples are ours):
 #   usage.jsonl  one line per minute at most: {t, fh, fhr, wk, wkr, s: {<session id>: cost_usd}}
 #                t = epoch seconds, fh / wk = used % of the 5-hour / weekly limit, fhr / wkr = their reset (epoch seconds),
-#                s = cumulative cost_usd of the sessions that were live (ledger updated within 10 minutes)
+#                s = cumulative cost_usd of the sessions that were live (status file written within 10 minutes)
 #   tasks.jsonl  one line per finished session: {issue, role, session_id, name, model, effort, cost_usd, ctx_peak_pct,
 #                duration_h, launches, week_pct, five_hour_pct, ended}
 # cost_usd is Claude Code's API-equivalent dollars, so it already normalises the models; the ratio to the limit's
 # percent is what the calibration measures.
+# (Until #346 a statusline.ps1 of this repository wrote ~/.claude/statusline/; since the user status line is the core's,
+# those files no longer update and nothing reads them.)
 
-function Get-UsageDir { Join-Path $env:USERPROFILE '.claude\statusline' }
+function Get-UsageDir { Join-Path $env:USERPROFILE '.claude\arxvr-usage' }
+
+function Get-CoreStatusDir { Join-Path $(if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $env:USERPROFILE '.claude' }) 'coordinator' }
+
+# The core's sessions/<id>.json files as ledger records (the shape Get-FinishedTaskRecords reads). ctx peak is not kept by the core.
+function Read-CoreSessions([string]$StatusDir) {
+	foreach ($f in Get-ChildItem (Join-Path $StatusDir 'sessions') -Filter '*.json' -ErrorAction SilentlyContinue) {
+		try { $j = Get-Content $f.FullName -Raw | ConvertFrom-Json } catch { continue }
+		if (-not $j.session_id) { continue }
+		[pscustomobject]@{
+			session_id = $j.session_id; name = $j.session_name; branch = $j.worktree.branch; model = $j.model.display_name
+			effort = $j.effort.level; context_pct = $j.context_window.used_percentage; cost_usd = $j.cost.total_cost_usd
+			duration_ms = $j.cost.total_duration_ms; updated = $f.LastWriteTime.ToString('s')
+		}
+	}
+}
+
+# One usage.jsonl line from the core's last status JSON and the ledger; $null when the status JSON has no limits (API-key setup).
+function New-UsageSample($Last, $Ledger, [double]$Now, [int]$LiveMinutes = 10) {
+	$rl = $Last.rate_limits
+	if (-not $rl -or -not ($rl.five_hour -or $rl.seven_day)) { return $null }
+	$live = [ordered]@{}
+	foreach ($s in $Ledger) {
+		if ($null -ne $s.cost_usd -and $Now - (ConvertTo-Epoch $s.updated) -lt $LiveMinutes * 60) { $live[$s.session_id] = [math]::Round([double]$s.cost_usd, 4) }
+	}
+	[ordered]@{ t = $Now; fh = $rl.five_hour.used_percentage; fhr = $rl.five_hour.resets_at; wk = $rl.seven_day.used_percentage; wkr = $rl.seven_day.resets_at; s = $live }
+}
 
 function Read-JsonLines([string]$Path) {
 	if (-not (Test-Path $Path)) { return @() }

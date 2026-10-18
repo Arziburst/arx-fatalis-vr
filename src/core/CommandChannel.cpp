@@ -344,7 +344,6 @@ struct State {
 	u64 frame = 0;
 	u64 lastStatusFrame = 0;
 	PlatformInstant lastStatusTime = 0;
-	PlatformInstant lastPollTime = 0;
 	float fps = 0.f;
 
 	GameState state = GameState::Startup;
@@ -425,6 +424,21 @@ struct State {
 	long watchdogThresholdMs = 5000; //!< Below the 10 s a test waits for an ack: the report comes first
 	long stallLoadMs = 0;            //!< stall load: how long the next level load sleeps, 0 = it does not
 
+	//! The running batch (#522): kept while a waitframes in it holds the ack until the frames are rendered
+	struct Batch {
+		std::vector<std::string> lines;
+		size_t next = 0;             //!< The first line not run yet
+		unsigned errors = 0;
+		u64 resumeFrame = 0;         //!< The frame the rest of the batch runs in; 0 = not waiting
+	} batch;
+
+	//! A simulated headset's shot asked for through the channel: status.json is written once it is saved (#522)
+	struct SimShotWatch {
+		bool active = false;
+		size_t shots = 0;            //!< The simulator's shots when it was asked for
+		u64 lastFrame = 0;           //!< Watched up to this frame: a shot that never comes has the 100 ms status
+	} simShotWatch;
+
 };
 
 State g;
@@ -459,8 +473,9 @@ std::string menuHover(const Vec2f & mouse) {
 //! When the delayed deliberate crash of "crash steal" fires (#132); zero = none pending
 PlatformInstant g_crashAt = PlatformInstant(0);
 
-const s64 PollIntervalMs = 100;
-const s64 StatusIntervalMs = 250;
+// command.txt is looked for every frame (a stat; it is read only when it is there), status.json is
+// replaced every 100 ms and after every batch, shot and state change (#522)
+const s64 StatusIntervalMs = 100;
 
 void setTestDir(const std::string & dir) {
 	g.dir = dir;
@@ -2241,6 +2256,11 @@ std::string execute(std::string_view line) {
 	if(word == "vr-sim") {
 		// The simulated headset (#112): any script command, now or @<frame> on its timeline
 		std::string error = vr::simCommand(rest);
+		if(error.empty() && rest.find("shot") != std::string_view::npos && !g.simShotWatch.active) {
+			g.simShotWatch.active = true;
+			g.simShotWatch.shots = vr::simStatus().shots.size();
+			g.simShotWatch.lastFrame = g.frame + 600;
+		}
 		return error.empty() ? error : refuse("vr-sim: " + error);
 	}
 
@@ -3357,6 +3377,47 @@ std::string execute(std::string_view line) {
 	return std::string();
 }
 
+/*
+ * Run the batch's lines from the first one not run yet. A `waitframes <n>` stops it: the rest of the
+ * lines run, and the ack is written, in the update of the frame after n more frames were rendered
+ * (#522) - so a test waiting for frames needs no status.json polling, only the ack it waits for anyway.
+ */
+void runBatch() {
+
+	State::Batch & batch = g.batch;
+	batch.resumeFrame = 0;
+	while(batch.next < batch.lines.size()) {
+		const std::string & line = batch.lines[batch.next++];
+		g.lastCmd = line;
+		std::string_view rest;
+		std::string word(firstWord(line, rest));
+		util::makeLowercase(word);
+		if(word == "waitframes") {
+			long frames = 0;
+			if(!parseIndex(rest, frames)) {
+				batch.errors++;
+				g.lastCmdError = refuse("waitframes: expected a number of frames, got \"" + std::string(rest) + "\"");
+				continue;
+			}
+			if(frames > 0) {
+				batch.resumeFrame = g.frame + u64(frames);
+				return;
+			}
+			continue;
+		}
+		std::string error = execute(line);
+		if(!error.empty()) {
+			batch.errors++;
+			g.lastCmdError = error;
+		}
+	}
+
+	writeAck(batch.errors);
+	g.ackedSeq = g.cmdSeq;
+	batch = State::Batch();
+	writeStatus(platform::getTime());
+}
+
 void pollCommands() {
 
 	fs::path file = g.dir / "command.txt";
@@ -3377,7 +3438,7 @@ void pollCommands() {
 		fs::write(file, std::string_view());
 	}
 
-	std::vector<std::string_view> lines;
+	std::vector<std::string> lines;
 	for(size_t pos = 0; pos < contents.size(); ) {
 		size_t end = contents.find('\n', pos);
 		if(end == std::string::npos) {
@@ -3385,7 +3446,7 @@ void pollCommands() {
 		}
 		std::string_view line = trim(std::string_view(contents).substr(pos, end - pos));
 		if(!line.empty() && line.front() != '#') {
-			lines.push_back(line);
+			lines.emplace_back(line);
 		}
 		pos = end + 1;
 	}
@@ -3394,20 +3455,10 @@ void pollCommands() {
 	}
 
 	g.cmdSeq++;
-	unsigned errors = 0;
 	g.lastCmdError.clear();
-	for(std::string_view line : lines) {
-		g.lastCmd = std::string(line);
-		std::string error = execute(line);
-		if(!error.empty()) {
-			errors++;
-			g.lastCmdError = error;
-		}
-	}
-
-	writeAck(errors);
-	g.ackedSeq = g.cmdSeq;
-	writeStatus(platform::getTime());
+	g.batch = State::Batch();
+	g.batch.lines = std::move(lines);
+	runBatch();
 }
 
 //! stick-for: keep the walk the hold made, and let the stick go once the player has walked far enough (#370)
@@ -3519,8 +3570,12 @@ void update() {
 
 	updateStickFor();
 
-	if(toMsi(now - g.lastPollTime) >= PollIntervalMs) {
-		g.lastPollTime = now;
+	if(g.batch.resumeFrame != 0) {
+		// A batch waits for frames (waitframes): no new batch before its ack
+		if(g.frame >= g.batch.resumeFrame) {
+			runBatch();
+		}
+	} else {
 		pollCommands();
 	}
 
@@ -3532,7 +3587,21 @@ void update() {
 
 void afterRender() {
 
-	if(!g.enabled || g.pendingCapture.empty()) {
+	if(!g.enabled) {
+		return;
+	}
+
+	if(g.simShotWatch.active) {
+		// The simulator saves its shots when the frame ends (xrEndFrame), before this; a test waits for the
+		// shot in status.json
+		const vr::SimStatus sim = vr::simStatus();
+		if(sim.shots.size() > g.simShotWatch.shots || g.frame >= g.simShotWatch.lastFrame) {
+			g.simShotWatch.active = false;
+			writeStatus(platform::getTime());
+		}
+	}
+
+	if(g.pendingCapture.empty()) {
 		return;
 	}
 

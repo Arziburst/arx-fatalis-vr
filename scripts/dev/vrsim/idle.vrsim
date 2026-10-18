@@ -1,7 +1,10 @@
 # The simulated headset at rest, with no timed lines and no shots (#113): the base of the .xrs sequences
 # (scripts/dev/xrs), which move the head and take their shots themselves through the test channel
-# ("vr-sim head rot 25 0 0", "@shot name"). The defaults of basic.vrsim, without its shot.
+# ("vr-sim head rot 25 0 0", "@shot name"). The defaults of basic.vrsim, without its shot, and without its pacing:
+# a frame starts as soon as the last one is drawn (#522) - a 90 Hz display clock makes a 10-12 ms frame miss every other
+# slot (45 fps on CI). A sequence that asserts the frame pacing declares a 90 Hz simulator (basic.vrsim or its own).
 
+rate 0                         # no pacing: xrWaitFrame returns at once
 timeline gameplay
 
 head pos 0 0 0                 # the room's LOCAL space: x right, y up, -z forward, meters

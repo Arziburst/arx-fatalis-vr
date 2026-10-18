@@ -17,11 +17,24 @@ one frame of **117-119 ms, 8.5 slots at 72 Hz, `cause=channel`** inside the span
 `fs::rename` (FilesystemWindows.cpp) retries a file a reader holds open with `Sleep(100)` per try, and the runner
 reads `status.json` all the time - the game's main thread then sleeps 100 ms in the middle of the frame. A hitch that
 long moves what a stick held for 500 ms did (the long frame takes the whole interval at the held value), and the
-Euler step of the walk. **Do:** the channel replaces the file itself (`replaceStatusFile`, CommandChannel.cpp): a
-write a test waits for retries every 0.5 ms (at most 40 times), the 250 ms timer's write gives up when a reader holds
-the file and the next one comes. After it, five runs beside a paced third game: 5 of 5 (before: 3 of 5). When a
+Euler step of the walk. **Do:** the channel replaces the file itself (`core::replaceFile`, src/core/FileReplace.h, host test
+`FileReplaceTest`): a write a test waits for tries every millisecond until the reader lets go (2 s at most, then it
+stays pending and every frame tries once more - a waited-for write is never dropped), the 250 ms timer's write gives up
+when a reader holds the file and the next one comes. After it, five runs beside a paced third game: 5 of 5 (before: 3 of 5). When a
 pacing number looks wrong, look in `arx-perf.log` for an `H` line at that time before the code.
 
+## 2026-10-18 — `@assert` right after an acknowledged command reads the state of the command before (#23)
+
+**Symptom:** the merge gate (full suite, two lanes, the CI runner busy) failed `scene-switches` at `@assert scene.view eq
+observer` with `scene.view (first)`, 7 s into the run, right after `scene view observer` was acknowledged (`seq=2`).
+Green on main and in 10 of 10 local runs. **Cause:** the game wrote `ack.txt` first and `status.json` after it (status
+build, temporary file, rename); the runner polls the ack every 10 ms and reads `status.json` at once - when the PC is
+loaded, the status of the batch is a few milliseconds late and the read gets the file of the batch before. It was
+first thought to be a dropped status write (the 20 ms patience of the first fix): the gate's `arx.log` has no
+"could not write" line, so it was not - and a dropped or delayed write would have been read stale the same way.
+**Do:** the batch's end writes the status first and the ack after it (CommandChannel.cpp, `runBatch`): an ack always
+finds the status of its batch. When an `@assert` after a command reads the old value, look at that order and at
+`status.json`'s `cmdSeq` before the code under test.
 ## 2026-10-18 — A jump's air time varies by an engine step (25-35 ms) between runs even when measured between the moves (#23, #435)
 
 **Symptom:** beside a GPU-saturating third game, `jump<rate>.jumpSeconds` differed by up to 57 ms between two

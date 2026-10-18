@@ -44,6 +44,7 @@
 #include "core/ArxGame.h"
 #include "core/Config.h"
 #include "core/Core.h"
+#include "core/FileReplace.h"
 #include "core/GameEvent.h"
 #include "core/GameTime.h"
 #include "core/SaveGame.h"
@@ -363,7 +364,7 @@ struct State {
 	bool cleanShutdown = false;
 
 	unsigned cmdSeq = 0; //!< Command batches started so far (the running batch included)
-	unsigned ackedSeq = 0; //!< Command batches whose ack.txt is written; this is what status.json reports (#142)
+	unsigned ackedSeq = 0; //!< Command batches finished; this is what status.json reports (#142), written just before their ack.txt (#23)
 	unsigned commandReadRetries = 0; //!< Frames command.txt could not be opened (its writer still had it, #527)
 	std::string lastCmd;
 	std::string lastCmdError;
@@ -435,6 +436,10 @@ struct State {
 	//! motion: the player's walk, turn and jumps since `motion reset`, fed after every frame (#23)
 	vr::MotionProbe motion;
 	u32 motionResets = 0;
+	//! A status write a test waits for did not land (a reader held status.json for the whole patience): written again
+	//! every frame until it does (#23)
+	bool statusPending = false;
+
 	//! The simulated headset's `record <name>`: the motion values of the frame it named, as JSON, in order
 	std::vector<std::pair<std::string, std::string>> records;
 	//! The free (left) hand's index finger: its bend and target last frame, where and when its approach started
@@ -2109,33 +2114,7 @@ std::string buildStatus(PlatformInstant now) {
 	return json.str();
 }
 
-/*!
- * Replace status.json by the finished temporary file, without stalling the frame (#23)
- *
- * The engine's own rename retries a file a reader holds open with a Sleep(100) per try: a test runner sampling
- * status.json made the game's main thread stall 100-120 ms, a hitch of 8 display slots at 72 Hz that fell in a
- * measurement window of refresh-rate.xrs (arx-perf.log: cause=channel, ms=118 each time). A reader holds the file for
- * a millisecond, so: a few quick tries (\a patient, for a write a test waits for); a periodic write that finds the
- * file held gives up - the next one is 250 ms away.
- */
-bool replaceStatusFile(const fs::path & tmp, const fs::path & file, bool patient) {
-	const std::filesystem::path from(tmp.string());
-	const std::filesystem::path to(file.string());
-	const int tries = patient ? 40 : 1;
-	for(int attempt = 1; attempt <= tries; attempt++) {
-		std::error_code error;
-		std::filesystem::rename(from, to, error);
-		if(!error) {
-			return true;
-		}
-		if(attempt < tries) {
-			Thread::sleep(PlatformDuration(std::chrono::microseconds(500)));
-		}
-	}
-	return false;
-}
-
-//! \param periodic the write of the 250 ms timer: it may be skipped when a reader holds the file
+//! \param periodic the write of the 250 ms timer: it is skipped when a reader holds the file (the next one is near)
 void writeStatus(PlatformInstant now, bool periodic = false) {
 
 	if(g.lastStatusTime != PlatformInstant(0)) {
@@ -2147,19 +2126,34 @@ void writeStatus(PlatformInstant now, bool periodic = false) {
 	g.lastStatusTime = now;
 	g.lastStatusFrame = g.frame;
 
-	// Written to a temporary file and renamed, so a reader never sees a half-written status
+	// Written to a temporary file and renamed, so a reader never sees a half-written status. The engine's own rename
+	// sleeps 100 ms per try while a reader holds the file - the test runner reads status.json all the time - and the
+	// main thread stalled 118 ms inside a frame (#23, TRAPS.md): core::replaceFile tries every millisecond instead. A
+	// write a test waits for is never dropped: it waits for the reader, and when even that fails it stays pending and
+	// the next frame writes it again
 	fs::path file = g.dir / "status.json";
 	fs::path tmp = g.dir / "status.json.tmp";
 	static bool warned = false;
-	if((!fs::write(tmp, buildStatus(now)) || !replaceStatusFile(tmp, file, !periodic)) && !warned && !periodic) {
-		warned = true;
-		LogWarning << "[channel] could not write " << file;
+	if(!fs::write(tmp, buildStatus(now))) {
+		if(!warned) {
+			warned = true;
+			LogWarning << "[channel] could not write " << tmp;
+		}
+	} else if(core::replaceFile(std::filesystem::path(tmp.string()), std::filesystem::path(file.string()),
+	                            periodic ? core::ReplaceMode::Once : core::ReplaceMode::Patient)) {
+		g.statusPending = false;
+	} else if(!periodic) {
+		g.statusPending = true;
+		static bool pendingLogged = false;
+		if(!pendingLogged) {
+			pendingLogged = true;
+			LogWarning << "[channel] status.json is held by a reader, the write waits for the next frame";
+		}
 	}
 
 	// The file logger flushes on its own every second (#129); a test reading arx.log wants it fresher
 	Logger::flush();
 }
-
 void writeAck(unsigned errors) {
 	std::ostringstream oss;
 	oss << "seq=" << g.cmdSeq << " frame=" << g.frame << " errors=" << errors
@@ -3722,10 +3716,15 @@ void runBatch() {
 		}
 	}
 
-	writeAck(batch.errors);
+	// The status first, then the ack (#23): a test that waits for the ack reads status.json right after it, and the ack
+	// written first left a window - the status still of the batch before - in which that read got the old state (the
+	// merge gate's scene-switches: `scene view observer` acked, `scene.view` read `first`). The status carries the
+	// batch's number (cmdSeq = ackedSeq) from the moment it shows the batch's effects, as the ack follows at once
+	const unsigned errors = batch.errors;
 	g.ackedSeq = g.cmdSeq;
 	batch = State::Batch();
 	writeStatus(platform::getTime());
+	writeAck(errors);
 }
 
 /*
@@ -3952,7 +3951,9 @@ void update() {
 		pollCommands();
 	}
 
-	if(toMsi(now - g.lastStatusTime) >= StatusIntervalMs) {
+	if(g.statusPending) {
+		writeStatus(now, true); // one quick try a frame: no stall, and pending until it lands
+	} else if(toMsi(now - g.lastStatusTime) >= StatusIntervalMs) {
 		writeStatus(now, true);
 	}
 

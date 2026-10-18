@@ -354,6 +354,7 @@ vr-input up left.a
 @frames 30
 
 # 7. Used: the potion from R1 is drunk; the bag has no other, so the slot then has nothing left
+@remember bagBeforeDrink player.inventoryItems
 vr-input down right.b
 @frames 3
 vr-radial point right r1
@@ -362,6 +363,9 @@ vr-input up right.b
 @frames 5
 @assert vr.radial.right.result eq used
 @log vr\.radial\.use hand=right slot=r1 item=potion_life result=used .*note=none 5s
+# The drunk potion leaves the bag a moment after its use, and until then the slot still finds it (#522: the old
+# harness's slack waited for it)
+@until player.inventoryItems lt {bagBeforeDrink} 5s
 vr-input down right.b
 @frames 3
 vr-radial point right r1

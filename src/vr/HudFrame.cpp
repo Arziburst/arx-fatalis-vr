@@ -49,7 +49,7 @@ const std::array<HudElementInfo, HudElementCount> ElementInfo = { {
 	  "a level's exit: jump goes (quick_level_transition = jump); the 'you can go' sign has no VR place yet" },
 	{ "quick_save", HudHome::Question, "the radial menu's Quick save gives no confirmation yet" },
 	{ "memorized_runes", HudHome::Question, "the runes drawn so far have no VR display besides the trail (#43)" },
-	{ "hit_strength", HudHome::Question, "the charge of a swing (the held trigger, #39) has no VR display yet" },
+	{ "hit_strength", HudHome::Question, "VR has no charge - a hit's strength is the swing's (#465); a gauge of the last hit's has no VR place yet" },
 	{ "mechanism_hint", HudHome::None, "a hint at the mouse's cursor mode - the hands are the mouse in VR" },
 	{ "screen_arrows", HudHome::None, "the monitor's edges turn the view - the head turns it in VR" },
 	{ "minimap", HudHome::Radial,

@@ -137,12 +137,12 @@ src/game/Player.* -> stand-up real-steps physical-crouch sneak-jump-crouch walk-
 # --- Hands in the world: reticles, reach, weapons, melee -----------------------------------------------------------
 src/vr/HandReticle.* -> hand-reticle menu-pointer playground-hands reach-chest reach-door reach-lever
 src/vr/VRReticle.* -> hand-reticle menu-pointer controls-v2 rune-trail playground-hands reach-chest reach-door reach-lever
-src/vr/VRWeapon.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery reach-lever finger-held
-src/vr/WeaponGrip.* -> weapon-classes weapon-hold weapon-in-glove finger-held
-src/vr/VRMelee.* -> melee-swing melee-recovery damage-numbers damage-numbers-off controls-v2 weapon-hold
-src/vr/MeleeSwing.* -> melee-swing melee-recovery damage-numbers weapon-hold
-src/game/Equipment.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery finger-held damage-numbers
-src/game/Damage.* -> damage-numbers damage-numbers-off melee-swing melee-recovery playground-respawn
+src/vr/VRWeapon.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery melee-damage reach-lever finger-held
+src/vr/WeaponGrip.* -> weapon-classes weapon-hold weapon-in-glove finger-held melee-damage
+src/vr/VRMelee.* -> melee-swing melee-recovery melee-damage damage-numbers damage-numbers-off controls-v2 weapon-hold
+src/vr/MeleeSwing.* -> melee-swing melee-recovery melee-damage damage-numbers weapon-hold
+src/game/Equipment.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery melee-damage finger-held damage-numbers
+src/game/Damage.* -> damage-numbers damage-numbers-off melee-swing melee-recovery melee-damage playground-respawn
 src/game/Inventory.* -> menu-pointer hand-reticle ui-panel playground-hands
 src/game/Spells.* -> rune-trail spell-drawcheck
 src/game/spell/* -> rune-trail spell-drawcheck

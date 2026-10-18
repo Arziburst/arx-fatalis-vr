@@ -293,7 +293,7 @@ void drawSubtitlesInEye() {
 	}
 
 	{
-		// Premultiplied over the world, no depth test: always readable (D-054)
+		// Premultiplied over the world, no depth test: always readable (D-055)
 		UseRenderState state(render2D().blend(BlendOne, BlendInvSrcAlpha));
 		UseTextureState textureState(TextureStage::FilterLinear, TextureStage::WrapClamp);
 		GRenderer->SetTexture(0, texture);

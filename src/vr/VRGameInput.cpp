@@ -92,11 +92,11 @@ const GameInputState & GameInputMapper::update(const ControlResolver & controls,
 		return (controls.active(left) && !taken[size_t(Hand::Left)])
 		       || (controls.active(right) && !taken[size_t(Hand::Right)]);
 	};
-	// A hand with a drawn weapon charges with its trigger instead of clicking; a hand whose chord acted on a door,
+	// A hand with a drawn weapon does not click with its trigger; a hand whose chord acted on a door,
 	// lever, chest or body neither uses nor stashes the item that is not there
 	const bool stash = either(Event::StashLeft, Event::StashRight, roles.acts);
 
-	state.click = either(Event::InteractLeft, Event::InteractRight, roles.charges) || stash;
+	state.click = either(Event::InteractLeft, Event::InteractRight, roles.armed) || stash;
 	state.use = either(Event::UseLeft, Event::UseRight, roles.acts);
 	// The game acts on Escape's release, which the engine only sees for a key it saw held for two
 	// updates: a press that started and ended in one update stays one more

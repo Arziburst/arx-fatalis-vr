@@ -117,6 +117,47 @@ every dialog becomes a `[dialog]` line and an error exits with code 1. `Startup.
 critical error dialog *before* `Logger::shutdown`, so its line reaches the file and stderr. Never log from a
 log backend's destructor or `log()`.
 
+## 2026-10-17 — A weapon pushed through a wall does not ring on it (#465)
+
+**Symptom:** in `melee-damage.xrs` a fast swing along the playground's north wall left `vr.melee.worldHit` false, though
+the blade's tip was 29 units past the wall's plane (status `tip` z 8429, wall z 8400).
+**Cause:** the engine's strike check tests the weapon's hit spheres only, not the blade: the dagger has one, radius 15,
+about 89 units ahead of the player (`melee.spheres count=1 ... at=8191.2,-305.7,8444.3/15.0`). A sphere wholly behind a
+thin wall touches no polygon of it - the engine's own strike never reaches that far into a wall, a VR hand does.
+**Do:** to strike a wall in a sequence, put the hit sphere across the wall's plane (read `melee.spheres`); do not
+judge by the blade's tip.
+
+## 2026-10-17 — The playground's goblin drops its fight when it is hit, so it never counts as fighting the player (#465)
+
+**Symptom:** in `melee-damage.xrs` the playground goblin in the aggressive mode (the mode lever: `npcMode`
+`aggressive`), even after a real swing hit it, did not reach `playground.npcFighting` (its fight behaviour
+`BEHAVIOUR_FIGHT` *and* the player as its `targetinfo`) within 15 s - so a VR touch, which reaches only an NPC fighting
+the player, never reached it. The save's goblin (`mvp-goblin-fight`, `melee-swing.xrs`) does reach it after a hit.
+The same goblin set fighting with `playground fight` took one touch (`aim=0.10`), and every touch after it was refused.
+**Cause:** the playground goblin's script drops the fight when it is hit: right after the first touch's hit,
+`melee.touch target=goblin_base_9001 result=refused fight=no targetsPlayer=no`, and `npcFightBehaviour` false before
+the next sweep (CI run 38995941095 and a local run on f4720ca27). Its own fight never starts from the mode lever or a
+swing's hit for the same reason - the hit's reaction clears what `attack_player` set. Which script line does it is not
+known: the class script is the game's (`npc/goblin_base`); the instance script only refuses `ouch` / `aggression` while
+peaceful. The save's goblin (`mvp-goblin-fight`) keeps fighting after hits.
+**Do:** to test what only fighting NPCs feel in the playground, set the fight with `playground fight` right before the
+check, let nothing hit the goblin in between (a peaceful-in-fact goblin refuses touches: `melee.touch ... refused`),
+and check the first hit only; `npcFightBehaviour` / `npcTargetsPlayer` show which half is missing.
+
+## 2026-10-17 — A changed cfg.ini default does not show in a test run (#465)
+
+**Symptom:** after `vr_melee_noswing`'s default changed from `none` to `min` in the code, `melee-damage.xrs` failed at
+`@assert vr.melee.params.noSwing eq min` (`none`) on a fresh build.
+**Cause:** when the game saves its config it writes every key with its current value - a default it read is written as
+a value. A working copy's test runs share one user dir (`userdirs\<folder>-<hash>`), so from then on cfg.ini holds the
+old default as if the user had chosen it, and it wins over the new default. The same happens to a player who ran an
+earlier build.
+**Do:** a sequence that needs a value sets it live (a channel command such as `melee noswing min`) instead of trusting
+the default; prove the default itself in a host test (`MeleeSwingTest::testContactAim` checks `DamageParams`), or run
+with a fresh user dir. A key whose empty value means "the code's default" (`vr_melee_slash_<class>`) does not have
+the trap.
+
+
 ## 2026-10-14 — The Arx arm grows a second elbow in the middle of the forearm, though the IK has only one (#466.1)
 
 **Symptom:** with the Arx arms drawn (`arms arx`) the owner sees a second elbow and wants the arm one solid

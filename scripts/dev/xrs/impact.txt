@@ -44,6 +44,7 @@ scripts/dev/vrsim/idle.vrsim -> *
 scripts/launch-lib.ps1 -> *
 scripts/build-paths.ps1 -> *
 scripts/build-windows.ps1 -> *
+scripts/dev/xrs/manual/* -> core
 src/vr/VRSimulator.* -> *
 src/vr/SimRig.* -> *
 vcpkg.json -> *

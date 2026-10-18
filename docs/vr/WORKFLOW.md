@@ -415,7 +415,10 @@ human in a headset:
   draw check — run on every PR, a few minutes in total. A red step blocks the merge; a game check that
   was skipped (game lock busy) is red too. A new `scripts/dev/test-*.ps1` must be added to
   `scripts/dev/run-script-tests.ps1`. The game runs in the runner service's session; evidence is the
-  artifact `game-checks` — see [TESTING.md](TESTING.md#the-ci-gate-127).
+  artifact `game-checks` — see [TESTING.md](TESTING.md#the-ci-gate-127). Since #522 it is uploaded **only when
+  the job failed**: a green run keeps its evidence on the runner (the service's
+  `%LOCALAPPDATA%\ArxFatalisVR\ci-evidence\<run id>-<attempt>`, the last 10 runs), and the game checks run on two
+  lanes (two games at once, one while another game of the PC holds a lock slot).
 - **One vcpkg for the whole machine:** `C:\vcpkg-shared` holds the vcpkg checkout, source downloads and
   binary packages, used by CI (workflow `env`) and by the owner's builds (user environment variables
   `VCPKG_ROOT`, `VCPKG_DOWNLOADS`, `VCPKG_DEFAULT_BINARY_CACHE`). A dependency built once — locally or

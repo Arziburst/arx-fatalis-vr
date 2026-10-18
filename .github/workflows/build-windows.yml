@@ -106,6 +106,9 @@ jobs:
     # About a minute, no game: the PowerShell self-tests of the dev scripts (scripts/dev/test-*.ps1) run beside the
     # build (#522), not before it: started here as a background process (output and exit code into RUNNER_TEMP), joined
     # right after the build. They touch nothing in the working copy, so the build's tree fingerprint stays its own.
+    # The process must not inherit this step's output pipes: Start-Process with -RedirectStandardOutput does, the runner
+    # then waits for the pipes after the step's pwsh exited and kills the whole tree (see TRAPS.md). So it is started
+    # without redirection (no handles inherited) and redirects its own output into out.txt.
     - name: Script self-tests (start)
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
@@ -113,10 +116,11 @@ jobs:
         $dir = Join-Path $env:RUNNER_TEMP 'script-tests'
         New-Item -ItemType Directory -Force $dir | Out-Null
         $exitFile = Join-Path $dir 'exit.txt'
-        Remove-Item $exitFile -Force -ErrorAction SilentlyContinue
-        $command = "& './scripts/dev/run-script-tests.ps1'; Set-Content -LiteralPath '$exitFile' -Value `$LASTEXITCODE"
-        $p = Start-Process pwsh -ArgumentList '-NoProfile', '-Command', $command -WorkingDirectory $env:GITHUB_WORKSPACE -PassThru `
-          -RedirectStandardOutput (Join-Path $dir 'out.txt') -RedirectStandardError (Join-Path $dir 'err.txt')
+        $outFile = Join-Path $dir 'out.txt'
+        Remove-Item $exitFile, $outFile -Force -ErrorAction SilentlyContinue
+        $command = "& './scripts/dev/run-script-tests.ps1' *> '$outFile'; Set-Content -LiteralPath '$exitFile' -Value `$LASTEXITCODE"
+        $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+        $p = Start-Process pwsh -ArgumentList '-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded -WorkingDirectory $env:GITHUB_WORKSPACE -WindowStyle Hidden -PassThru
         Set-Content -LiteralPath (Join-Path $dir 'pid.txt') -Value $p.Id
         Write-Host "script self-tests started in the background (pid $($p.Id)), joined after the build"
 
@@ -137,8 +141,11 @@ jobs:
         $testsPid = [int](Get-Content -LiteralPath (Join-Path $dir 'pid.txt'))
         while (-not (Test-Path -LiteralPath $exitFile) -and (Get-Process -Id $testsPid -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 500 }
         Wait-Process -Id $testsPid -Timeout 30 -ErrorAction SilentlyContinue # the exit file is written just before it ends
-        foreach ($f in 'out.txt', 'err.txt') { $p = Join-Path $dir $f; if (Test-Path -LiteralPath $p) { Get-Content -LiteralPath $p | Write-Host } }
-        if (-not (Test-Path -LiteralPath $exitFile)) { Write-Host '::error::the script self-tests ended without an exit code (see their output above)'; exit 1 }
+        $out = Join-Path $dir 'out.txt'
+        if (Test-Path -LiteralPath $out) { Get-Content -LiteralPath $out | Write-Host }
+        # A process that writes no exit code was ended from outside (killed with its tree) or crashed: its exit code cannot
+        # be read here (only a handle opened before it ended could), so the line says what is known
+        if (-not (Test-Path -LiteralPath $exitFile)) { Write-Host "::error::the script self-tests (pid $testsPid) ended without writing an exit code: killed from outside or crashed, their output above stops where it happened"; exit 1 }
         $code = [int](Get-Content -LiteralPath $exitFile -Raw).Trim()
         Write-Host "script self-tests: exit $code"
         exit $code

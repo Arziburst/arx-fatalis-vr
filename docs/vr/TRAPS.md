@@ -8,6 +8,18 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-18 — A background process started in one workflow step is gone in the next (#522)
+
+**Symptom:** the CI step "Script self-tests (join)" fails with "ended without writing an exit code"; the tests' output
+stops a few seconds in, in the middle of the first test. Locally the same command runs to the end.
+**Cause:** the start step used `Start-Process ... -RedirectStandardOutput`: that starts the process with handle
+inheritance, so it also inherits the step's own stdout/stderr pipes to the runner. The step's pwsh exits, the pipes stay
+open, and after ~5 s the runner kills the step's whole process tree (`_diag\Worker_*.log`: "Need kill all child processes
+trees", the start step taking 5 s instead of 1). A local run has no runner waiting on a pipe.
+**Do:** a process that must outlive its step is started without redirection (`Start-Process` without `-Redirect*`,
+`-WindowStyle Hidden`) and redirects its own output (`*> out.txt` inside its command). Check: the start step takes about
+a second; the runner's Worker log shows no kill of the step's children.
+
 ## 2026-10-18 — A script self-test's time limit fails in CI only: the self-tests run beside the build (#522)
 
 **Symptom:** a `scripts/dev/test-*.ps1` check with a wall-clock limit (e.g. `test-tree-fingerprint.ps1`'s fingerprint

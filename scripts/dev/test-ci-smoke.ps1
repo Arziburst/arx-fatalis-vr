@@ -275,6 +275,9 @@ try {
 	$buildAt = $wf.IndexOf('- name: Build')
 	$joinAt = $wf.IndexOf('- name: Script self-tests (join)')
 	Check 'the script self-tests start before the build and are joined after it' ($startAt -ge 0 -and $startAt -lt $buildAt -and $joinAt -gt $buildAt)
+	# A background process that inherits the step's output pipes is killed with its tree when the step ends (TRAPS.md)
+	$startStep = [regex]::Match($wf, '(?s)- name: Script self-tests \(start\).*?(?=\r?\n    - name:)').Value
+	Check 'the background self-tests are started without -RedirectStandard* (no inherited pipes) and redirect their own output' ($startStep -match 'Start-Process pwsh' -and $startStep -notmatch '-RedirectStandard' -and $startStep -match '\*> ') $startStep
 } finally {
 	Get-Job -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
 	Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue

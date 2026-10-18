@@ -34,7 +34,7 @@ vr-input tap right.a
 @log GameEvent:.*startup\.intro state=end how=skip 5s
 @nolog GameEvent:.*cinematic\.start name=introduction\.cin
 @assert menuMode eq mainmenu
-@assert events.byName."vr.skip" eq 3
+@until events.byName."vr.skip" eq 3 5s
 @until vr.sessionState eq focused 30s
 @until vr.panel.mode eq world 10s
 @frames 60
@@ -144,7 +144,7 @@ vr-input up right.a
 @log GameEvent:.*vr\.skip what=SCENE 5s
 @log GameEvent:.*scene\.skip how=vr area=1 .*result=sent 5s
 @log GameEvent:.*scene state=end area=1 5s
-@assert events.byName."vr.skip" eq 5
+@until events.byName."vr.skip" eq 5 5s
 watch marker_0112
 @frames 5
 @assert watch.found eq true

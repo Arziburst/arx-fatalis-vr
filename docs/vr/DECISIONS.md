@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: Melee damage comes from the swing - its size and its speed, per weapon class; no charge
+## D-054: Melee damage comes from the swing - its size and its speed, per weapon class; no charge
 
 - **Date:** 2026-10-17
 - **Status:** Accepted (the owner's design; every number is a provisional cfg.ini default from research #502 - the
@@ -799,7 +799,7 @@ swaps them as a whole).
 
 - **Date:** 2026-10-10
 - **Status:** Accepted (the owner's design; the numbers are MVP defaults the owner tunes in the headset); the charge
-  and the speed factor superseded by D-NEW (#465: the damage comes from the swing's size and speed, no charge)
+  and the speed factor superseded by D-054 (#465: the damage comes from the swing's size and speed, no charge)
 - **Decided by:** the owner (after a headset fight with #75's sword, relayed by the coordinator on #39); the
   mechanism by the worker of #39; builds on D-009, D-016, D-019, D-032 (the body) and D-033 (the weapon in the IK hand, #75)
 

@@ -1,4 +1,4 @@
-# Physical melee (#39, D-038, D-NEW): a swing of the sword in the IK hand hits, its damage from the size and the speed of
+# Physical melee (#39, D-038, D-054): a swing of the sword in the IK hand hits, its damage from the size and the speed of
 # the blade's stroke where it touched, a touch the minimum (#465; the damage scale itself is melee-damage.xrs); the
 # trigger charges nothing and never starts the engine's strike while the IK hand holds the weapon.
 # Runs on the test save mvp-goblin-fight (#70: a sword equipped, a goblin ahead in a corridor):

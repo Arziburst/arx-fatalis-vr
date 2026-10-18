@@ -327,7 +327,7 @@ void contact(Entity * weapon, double now, bool swing) {
 	}
 	// A touch is the original's uncharged click on an enemy: only an NPC that fights the player - the blade resting
 	// on an item, a crate, a friend, a merchant, the floor or a wall does nothing (the coordinator's decision until the
-	// owner's, D-NEW)
+	// owner's, D-054)
 	targets.touch = !swing;
 	targets.speed = measure.speed;
 	targets.size = measure.size;

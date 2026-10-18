@@ -31,7 +31,7 @@
 
 /*!
  * \file
- * \brief The decision core of physical melee (#39, D-038, D-NEW): is the weapon swung, how hard does it hit
+ * \brief The decision core of physical melee (#39, D-038, D-054): is the weapon swung, how hard does it hit
  *
  * The owner's design (2026-10-17, #465): a physical swing of the weapon hits, and its damage comes from the
  * swing alone - its size and its speed where the blade touches: a touch or a tap the minimum (like the original's

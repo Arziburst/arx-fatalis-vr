@@ -1979,7 +1979,8 @@ The game checks are most of the job, so `ci-smoke.ps1` runs two games at once:
 - **Lanes.** A scheduler (`scripts/dev/ci-smoke-lib.ps1`, `Invoke-ArxPhaseSchedule`) hands the next phase to a free lane;
   each phase runs in its own background pwsh, and each lane has its own test channel folder (lane 1 the copy's usual one,
   lane 2 the same path with `-lane2`), given as `-TestDir` and as `ARXVR_TEST_DIR` to every script of the phase. Every
-  sequence already has its own user directory (#296); `smoke-test` and `spell-drawcheck` share the copy's and never run
+  sequence already has its own user directory (#296), under `ci-userdirs\<folder>-<hash>` of the working copy, so two
+  copies running the suite never share one; `smoke-test` and `spell-drawcheck` share the copy's and never run
   together; `save-library` goes first and every `@save` sequence waits for it; a read-back runs after its sequence passed,
   in its user directory; the playground level is generated once before the lanes start. A phase's transcript is printed
   when it ends, then `==> ci-smoke phase '<name>': PASS (exit 0, 15 s) on lane 2`; the summary at the end lists every phase

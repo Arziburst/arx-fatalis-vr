@@ -8,6 +8,16 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-18 — `ci-smoke.ps1` dies in `New-ArxSequenceUserDir`: a file of another sequence's user dir is in use (#522)
+
+**Symptom:** a full `ci-smoke.ps1` run stops at a sequence with `Remove-Item ...\ci-userdirs\real-input\arx-perf.log ...
+being used by another process`, while another working copy's game checks run on the same PC.
+**Cause:** the per-sequence user directories (#296) lived in `%LOCALAPPDATA%\ArxFatalisVR\ci-userdirs\<sequence>`, one
+root for every working copy (the build, test channel and user directory carry `<folder>-<hash>`, this root did not). Two
+copies running the suite delete and reuse each other's directories - one copy's fresh directory is another's running game.
+**Do:** every per-copy folder gets the copy key: `Get-ArxCiUserDirRoot` (`ci-userdirs\<folder>-<hash>`). A new folder a
+test run writes to is per working copy (and per lane when two lanes could use it at once) from the start.
+
 ## 2026-10-18 — A melee sequence's timing passes locally and fails on CI: the timeline counts frames (#409)
 
 **Symptom:** `melee-recovery.xrs` passed locally (90 fps) and failed on CI at `@assert vr.melee.hits eq 1` (read 2).

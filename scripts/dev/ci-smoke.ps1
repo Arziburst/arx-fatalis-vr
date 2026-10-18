@@ -193,7 +193,7 @@ if ($Phase -in 'all', 'spells') {
 	Add-Phase 'spell-drawcheck' 'spell-drawcheck.ps1' $p $userDir -Exclusive 'copy-user-dir'
 }
 $units = @()
-$sequenceUserDirs = Join-Path (Get-ArxAppDataDir) 'ci-userdirs'
+$sequenceUserDirs = Get-ArxCiUserDirRoot $ArxSourceDir
 $seqUserDirsMade = @()
 if ($Phase -in 'all', 'sequences') {
 	# Every shipped sequence (#255), parsed first: a syntax error costs no launch

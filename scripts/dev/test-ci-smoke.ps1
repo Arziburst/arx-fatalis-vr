@@ -6,6 +6,7 @@
 	In scratch folders ($env:ARXVR_LOCK_DIR and a fake %LOCALAPPDATA%; the real locks, evidence and digests of the PC
 	are not touched):
 	  - the evidence kept on the runner: the last 10 run folders stay, older ones go, ci-durations.json stays
+	  - the per-sequence user directories: a root per working copy, never shared by two copies
 	  - the durations file: missing or broken is an empty table; a run writes the phases that ran over the old table
 	  - the order: changed sequences first, then the last run's duration, longest first, a phase without a recorded
 	    duration as the longest, ties in the serial order, a read-back right after its sequence
@@ -60,6 +61,14 @@ try {
 	Check 'ci-durations.json is not a run and stays' (Test-Path (Join-Path $evidence 'ci-durations.json'))
 	Check 'ten runs, keep 10: nothing is removed' (@(Remove-ArxOldCiEvidence $evidence 10).Count -eq 0 -and @(Get-ChildItem $evidence -Directory).Count -eq 10)
 	Check 'a missing root removes nothing' (@(Remove-ArxOldCiEvidence (Join-Path $root 'nowhere') 10).Count -eq 0)
+
+	# --- The per-sequence user directories ------------------------------------------------------------------------
+	Write-Host '==> the per-sequence user directories'
+	$rootA = Get-ArxCiUserDirRoot 'E:\dev\arx-fatalis-vr\.claude\worktrees\ARXVR-522-1-feat-ci-lanes'
+	$rootB = Get-ArxCiUserDirRoot 'E:\dev\arx-fatalis-vr\.claude\worktrees\ARXVR-522-2-feat-harness-latency'
+	Check 'the root is ci-userdirs\<folder>-<hash> of the working copy' ($rootA -like (Join-Path $localBase 'ArxFatalisVR\ci-userdirs\arxvr-522-1-feat-ci-lanes-*')) $rootA
+	Check 'two working copies never share the root' ($rootA -ne $rootB)
+	Check 'the same copy always gets the same root' ($rootA -eq (Get-ArxCiUserDirRoot 'E:\dev\arx-fatalis-vr\.claude\worktrees\ARXVR-522-1-feat-ci-lanes'))
 
 	# --- The durations file -----------------------------------------------------------------------------------------
 	Write-Host '==> the durations file'

@@ -19,6 +19,12 @@ function Remove-ArxOldCiEvidence([string]$Root, [int]$Keep = 10) {
 	}
 }
 
+# The root of the per-sequence user directories of one working copy (#296): ci-userdirs\<folder>-<hash>, like the
+# copy's build, test channel and user directory. Without the key every copy on the PC shares one root, and a run of one
+# copy deletes the directory a sequence of another copy is running in. Within one run the lanes never share a directory:
+# one per sequence name, and a read-back reuses its own sequence's after it.
+function Get-ArxCiUserDirRoot([string]$SourceDir) { Join-Path (Get-ArxAppDataDir) "ci-userdirs\$(Get-WorkingCopyKey $SourceDir)" }
+
 # --- The durations of the last run ----------------------------------------------------------------------------------
 
 # ci-durations.json next to the evidence: { "<phase>": <seconds>, ... } as the last run measured them. Missing or

@@ -126,7 +126,9 @@ function Send-ArxCommand(
 	do {
 		$ack = Read-ArxAck $Dir
 		if ($ack -and [int]$ack.Seq -gt $seq) { return $ack.Text }
-		Start-Sleep -Milliseconds 50
+		# The game answers in the next frame (it looks for command.txt every frame, #522), a waitframes when its frames
+		# are rendered: a fine poll keeps the round trip near that, a small file read each time
+		Start-Sleep -Milliseconds 10
 	} while ((Get-Date) -lt $deadline)
 	$last = if ($before) { $before | ConvertTo-Json -Compress -Depth 4 } else { 'none' }
 	# A main thread stuck in the batch is reported by the game's hang watchdog with its stack (#440): the reason, not a bare timeout

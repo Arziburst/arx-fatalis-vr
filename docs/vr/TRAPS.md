@@ -8,6 +8,19 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-18 — The unpaced simulator makes a slow hand move a swing: why idle.vrsim is a 90 Hz cap, not rate 0 (#522)
+
+**Symptom:** with `rate 0` in `idle.vrsim` (to stop the 90 Hz display clock halving a 10-12 ms CI frame to 45 fps),
+`melee-swing.xrs` failed on the owner's PC at line 30 `@assert vr.melee.swings eq 0` (read 3), before any swing.
+The run's pacing line: `278.022/s on 90.001 slots/s`.
+**Cause:** the sequences' ramps count frames and were written for about 90 per second. At 278 fps the "slow" set-up
+move `vr-sim @+1-60 hand right pos …` (0.43 m in 60 frames, under 0.7 m/s at 90 fps) lasted 0.22 s, ~2 m/s, and the
+8-frame swings (0.85 m) became 29 m/s, over the 20 m/s tracking-jump limit. An unpaced simulator gives every PC its
+own speeds; the CI runner (~85-100 fps unpaced) and a fast desktop disagree.
+**Do:** sequences run on `rate 90 cap` (the simulator's cap: frames at least 1/90 s apart, a late frame starts at
+once, no slot skipped) - 83-90 fps on CI, 90 on a fast PC, the ramps mean what they say. Use `rate 0` only for a
+script that measures what the PC draws (`msaa.vrsim`), the clock (`basic.vrsim`) only for pacing checks.
+
 ## 2026-10-18 — A melee sequence's timing passes locally and fails on CI: the timeline counts frames (#409)
 
 **Symptom:** `melee-recovery.xrs` passed locally (90 fps) and failed on CI at `@assert vr.melee.hits eq 1` (read 2).

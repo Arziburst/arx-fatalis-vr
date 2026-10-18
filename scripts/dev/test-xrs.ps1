@@ -183,7 +183,7 @@ $fake = {
 			}
 			if (-not $waiting) {
 				$seq++
-				# The test reads ack.txt every 50 ms; a write that hits its open handle is retried, never dropped (#275).
+				# The test reads ack.txt every 10 ms (#522); a write that hits its open handle is retried, never dropped (#275).
 				for ($try = 0; $try -lt 50; $try++) {
 					try { [IO.File]::WriteAllText((Join-Path $Dir 'ack.txt'), "seq=$seq frame=$frame errors=$($batch.Errors) last=$($batch.Last) error=-"); break } catch { Start-Sleep -Milliseconds 20 }
 				}

@@ -11,12 +11,16 @@
 #                                            together - the kind name of vr::controlName, "both" for the two hands)
 #   vr.input.menuFallback.holdMs   (number)  how long both are held before the game menu opens, in ms: 2000
 #   vr.input.menuFallback.opens    (count)   how often the fallback opened the game menu since the start
+# On the first-person test save, like menu-rebind-kept.xrs: --loadlevel 10 starts inside a scripted scene, where
+# Escape skips the scene instead of opening the game menu.
 # Self-contained: it ends with the default layout and no saved file (CI runs every sequence in one user directory).
 @sim idle
-@args --loadlevel 10
+@save mvp-new-game
+@args --loadslot 0
 
 @until state eq GAMEPLAY 60s
-@until vr.sim.timelineFrame ge 120 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
 @assert vr.input.controllers eq index
 vr-input default
 @frames 2

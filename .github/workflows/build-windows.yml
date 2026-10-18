@@ -7,7 +7,8 @@ name: Build (Windows)
 # The job is the automatic quality gate of every pull request (#127, decision D-021): the PowerShell
 # self-tests of the dev scripts, the build with the host unit tests (arxtest, run by build-windows.ps1),
 # then the flat game checks - smoke test with the draw check, and the spell draw check. A red step blocks
-# the merge. The evidence of the game checks is the artifact "game-checks".
+# the merge. The evidence of the game checks is the artifact "game-checks" when the job failed; a green run keeps it on
+# the runner only (#522).
 
 on:
   pull_request:
@@ -102,17 +103,44 @@ jobs:
       shell: pwsh
       run: ./scripts/dev/check-private-data.ps1
 
-    # Seconds, no game: the PowerShell self-tests of the dev scripts (scripts/dev/test-*.ps1) first,
-    # so a broken tool fails before the build.
-    - name: Script self-tests
+    # About a minute, no game: the PowerShell self-tests of the dev scripts (scripts/dev/test-*.ps1) run beside the
+    # build (#522), not before it: started here as a background process (output and exit code into RUNNER_TEMP), joined
+    # right after the build. They touch nothing in the working copy, so the build's tree fingerprint stays its own.
+    - name: Script self-tests (start)
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
-      run: ./scripts/dev/run-script-tests.ps1
+      run: |
+        $dir = Join-Path $env:RUNNER_TEMP 'script-tests'
+        New-Item -ItemType Directory -Force $dir | Out-Null
+        $exitFile = Join-Path $dir 'exit.txt'
+        Remove-Item $exitFile -Force -ErrorAction SilentlyContinue
+        $command = "& './scripts/dev/run-script-tests.ps1'; Set-Content -LiteralPath '$exitFile' -Value `$LASTEXITCODE"
+        $p = Start-Process pwsh -ArgumentList '-NoProfile', '-Command', $command -WorkingDirectory $env:GITHUB_WORKSPACE -PassThru `
+          -RedirectStandardOutput (Join-Path $dir 'out.txt') -RedirectStandardError (Join-Path $dir 'err.txt')
+        Set-Content -LiteralPath (Join-Path $dir 'pid.txt') -Value $p.Id
+        Write-Host "script self-tests started in the background (pid $($p.Id)), joined after the build"
 
     - name: Build
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
       run: ./scripts/build-windows.ps1 -Config Release
+
+    # Waits for the background self-tests, prints their whole output and fails on a non-zero exit code - also when the
+    # process ended without writing one (it threw). Runs after a failed build too, so their verdict is never lost.
+    - name: Script self-tests (join)
+      if: (success() || failure()) && steps.scope.outputs.heavy == 'true'
+      shell: pwsh
+      run: |
+        $dir = Join-Path $env:RUNNER_TEMP 'script-tests'
+        $exitFile = Join-Path $dir 'exit.txt'
+        $testsPid = [int](Get-Content -LiteralPath (Join-Path $dir 'pid.txt'))
+        while (-not (Test-Path -LiteralPath $exitFile) -and (Get-Process -Id $testsPid -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 500 }
+        Wait-Process -Id $testsPid -Timeout 30 -ErrorAction SilentlyContinue # the exit file is written just before it ends
+        foreach ($f in 'out.txt', 'err.txt') { $p = Join-Path $dir $f; if (Test-Path -LiteralPath $p) { Get-Content -LiteralPath $p | Write-Host } }
+        if (-not (Test-Path -LiteralPath $exitFile)) { Write-Host '::error::the script self-tests ended without an exit code (see their output above)'; exit 1 }
+        $code = [int](Get-Content -LiteralPath $exitFile -Raw).Trim()
+        Write-Host "script self-tests: exit $code"
+        exit $code
 
     # The playground sequences generate their level with node (#321, #412). The runner service cannot see the owner's
     # per-user install, so node comes from the workflow: a pinned LTS major, downloaded once into the runner's tool
@@ -128,10 +156,19 @@ jobs:
     # lock) - a gate that did not run is not a pass. Never leaves arx.exe behind.
     # Then (#255) every shipped .xrs sequence, one launch each, on the test save library of the service account
     # (verified, or generated when missing or stale).
+    # Two games at once (#522): ARXVR_MAX_GAMES=2 lets this step's launches hold two slots of the game lock (everyone
+    # else keeps one); ci-smoke.ps1 drops to one lane while a game that is not this job's holds a slot. The evidence
+    # stays on the runner, in the service's %LOCALAPPDATA%\ArxFatalisVR\ci-evidence\<run id>-<attempt> (the last 10
+    # runs), and is uploaded only when the job failed.
     - name: Game checks (smoke test, draw check, spell draw check, .xrs sequences)
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
-      run: ./scripts/dev/ci-smoke.ps1 -OutDir "$env:GITHUB_WORKSPACE/ci-artifacts"
+      env:
+        ARXVR_MAX_GAMES: '2'
+      run: |
+        $evidence = Join-Path $env:LOCALAPPDATA "ArxFatalisVR\ci-evidence\$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+        "CI_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+        ./scripts/dev/ci-smoke.ps1 -OutDir $evidence
 
     # The tester package (#88): the zip built from this build, extracted into a clean folder and started with a
     # PATH of only Windows folders. Fails when a DLL is missing from the zip or the extracted game does not run.
@@ -166,15 +203,16 @@ jobs:
         if-no-files-found: error
         retention-days: 90
 
-    # Read only when a run fails, so kept briefly (#360)
+    # Read only when a run fails, so kept briefly (#360) and uploaded only then (#522): a green run's ~1 GB of eye shots
+    # stays on the runner (CI_EVIDENCE, set by the game checks step)
     - name: Upload game check evidence
       id: upload-game-checks
-      if: always()
+      if: failure() && env.CI_EVIDENCE != ''
       continue-on-error: true
       uses: actions/upload-artifact@v4
       with:
         name: game-checks
-        path: ci-artifacts
+        path: ${{ env.CI_EVIDENCE }}
         if-no-files-found: ignore
         retention-days: 3
 

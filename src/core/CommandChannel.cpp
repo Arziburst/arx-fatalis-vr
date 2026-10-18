@@ -354,6 +354,7 @@ struct State {
 
 	unsigned cmdSeq = 0; //!< Command batches started so far (the running batch included)
 	unsigned ackedSeq = 0; //!< Command batches whose ack.txt is written; this is what status.json reports (#142)
+	unsigned commandReadRetries = 0; //!< Frames command.txt could not be opened (its writer still had it, #527)
 	std::string lastCmd;
 	std::string lastCmdError;
 
@@ -3603,6 +3604,40 @@ void runBatch() {
 	writeStatus(platform::getTime());
 }
 
+/*
+ * Read command.txt whole, sharing the file with whoever still has it open. The test writes command.txt.tmp and
+ * renames it into place; on Windows the renamer still holds the file open with DELETE access for a moment after
+ * the new name is visible, and an open without FILE_SHARE_DELETE (std::ifstream, fs::read) fails then with a
+ * sharing violation. The old code read "" in that moment, deleted the file and acknowledged nothing: the batch was
+ * lost without a line in the log (CI run 39120032077 attempt 1, vr-remap's 'waitframes 5' after 'vr-input down
+ * left.grip': the ack of the quit came back as seq 15, the lost batch's number; #527). The moment is microseconds
+ * when the PC is idle and grows with every preemption of the writer's thread, so it hit under three games. Returns
+ * false when the file could not be opened: then it is left alone and read next frame.
+ */
+bool readCommandFile(const fs::path & file, std::string & contents) {
+
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+	HANDLE handle = CreateFileW(platform::WinPath(file), GENERIC_READ,
+	                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+	                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if(handle == INVALID_HANDLE_VALUE) {
+		return false;
+	}
+	contents.clear();
+	char buffer[4096];
+	DWORD read = 0;
+	while(ReadFile(handle, buffer, sizeof(buffer), &read, nullptr) && read != 0) {
+		contents.append(buffer, read);
+	}
+	CloseHandle(handle);
+	return true;
+#else
+	contents = fs::read(file);
+	return true;
+#endif
+
+}
+
 void pollCommands() {
 
 	fs::path file = g.dir / "command.txt";
@@ -3616,7 +3651,22 @@ void pollCommands() {
 		return;
 	}
 
-	std::string contents = fs::read(file);
+	std::string contents;
+	if(!readCommandFile(file, contents)) {
+		// Still open by the test's rename (see above): the file stays, the next frame reads it
+		g.commandReadRetries++;
+		if(g.commandReadRetries == 1 || g.commandReadRetries % 100 == 0) {
+			LogInfo << "[channel] " << file << " cannot be opened yet (its writer still has it open), reading it next frame"
+			        << (g.commandReadRetries > 1 ? " (" + std::to_string(g.commandReadRetries) + " frames so far)" : "");
+		}
+		if(g.commandReadRetries >= 900) {
+			LogWarning << "[channel] giving up on " << file << " after " << g.commandReadRetries << " frames: it stays open";
+			g.commandReadRetries = 0;
+			fs::remove(file);
+		}
+		return;
+	}
+	g.commandReadRetries = 0;
 	if(!fs::remove(file)) {
 		// Do not run the same batch again next frame
 		LogWarning << "[channel] could not delete " << file << " after reading it";

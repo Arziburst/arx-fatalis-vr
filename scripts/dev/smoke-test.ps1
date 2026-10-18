@@ -303,6 +303,8 @@ function Invoke-SmokeRun([int]$Run) {
 			$process = Start-Process -FilePath $exe -ArgumentList $argList -PassThru `
 				-RedirectStandardOutput (Join-Path $TestDir 'stdout.txt') -RedirectStandardError (Join-Path $TestDir 'stderr.txt')
 		} finally { Restore-ArxBackgroundWindow $previousHint; Restore-ArxDialogEnv $previousDialogEnv }
+		# The game dies with this script, killed or not (#526): never a game left behind holding a slot
+		$null = Register-ArxGameProcess $process
 		Set-ArxGameLockGame $lock $process.Id
 		# The game is running: a check driving it from outside starts its timeouts only now, not during the lock wait (#258)
 		Set-Content -LiteralPath (Get-ArxLaunchMarker $TestDir) -Value "pid=$($process.Id) run=$Run" -Encoding ascii

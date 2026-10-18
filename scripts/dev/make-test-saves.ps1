@@ -266,6 +266,8 @@ try {
 		$process = Start-Process -FilePath (Join-Path $BuildDir 'arx.exe') -ArgumentList $argList -PassThru `
 			-RedirectStandardOutput (Join-Path $TestDir 'stdout.txt') -RedirectStandardError (Join-Path $TestDir 'stderr.txt')
 	} finally { Restore-ArxBackgroundWindow $previousHint; Restore-ArxDialogEnv $previousDialogEnv }
+	# The game dies with this script, killed or not (#526)
+	$null = Register-ArxGameProcess $process
 	Set-ArxGameLockGame $lock $process.Id
 
 	$firstState = if ($Verify) { 'GAMEPLAY' } else { 'MENU' }

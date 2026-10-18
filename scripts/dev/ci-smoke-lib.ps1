@@ -82,27 +82,81 @@ function Get-ArxChangedFileSet([string]$SourceDir, [string]$Base) {
 	[pscustomobject]@{ Ok = $false; Files = @() }
 }
 
-# The run order of the sequence phases. $Units: one per sequence, in the serial (name) order, each
-# { Phases = the phase names in run order (the sequence, then its read-back); Paths = their .xrs files, repo-relative }.
-# A unit one of whose files is in $Changed goes first; then by the last run's duration ($Durations, phase name ->
-# seconds; a unit's is the sum of its phases), longest first; a unit whose sequence has no recorded duration counts as
-# the longest. Ties keep the serial order. Returns the phase names, each read-back right after its sequence.
-function Get-ArxPhaseOrder($Units, [string[]]$Changed = @(), [hashtable]$Durations = @{}) {
+# The run order of the sequence phases - the risk order (#527). $Units: one per sequence, in the serial (name) order,
+# each { Phases = the phase names in run order (the sequence, then its read-back); Paths = their .xrs files,
+# repo-relative }. Four tiers, a unit in the first one it qualifies for:
+#   1. a unit one of whose files is in $Changed (the pull request's own .xrs)
+#   2. a unit one of whose phases is in $Affected (what the impact map selects for the changed files, as xrs-<name>)
+#   3. a unit one of whose phases is in $RecentFailures (what failed in recent runs, Get-ArxRecentFailures)
+#   4. the rest
+# Inside a tier by the last run's duration ($Durations, phase name -> seconds; a unit's is the sum of its phases),
+# longest first; a unit whose sequence has no recorded duration counts as the longest. Ties keep the serial order.
+# Returns the phase names, each read-back right after its sequence.
+function Get-ArxPhaseOrder($Units, [string[]]$Changed = @(), [hashtable]$Durations = @{}, [string[]]$Affected = @(), [string[]]$RecentFailures = @()) {
 	$changedSet = @{}
 	foreach ($c in @($Changed)) { if ($c) { $changedSet[($c -replace '\\', '/').ToLowerInvariant()] = $true } }
+	$affectedSet = @{}
+	foreach ($a in @($Affected)) { if ($a) { $affectedSet[$a] = $true } }
+	$failedSet = @{}
+	foreach ($f in @($RecentFailures)) { if ($f) { $failedSet[$f] = $true } }
 	$i = 0
 	$rows = foreach ($u in @($Units)) {
 		$phases = @($u.Phases)
-		$isChanged = [bool]@($u.Paths | Where-Object { $changedSet.ContainsKey(("$_" -replace '\\', '/').ToLowerInvariant()) }).Count
+		$tier = 4
+		if (@($u.Paths | Where-Object { $changedSet.ContainsKey(("$_" -replace '\\', '/').ToLowerInvariant()) }).Count) { $tier = 1 }
+		elseif (@($phases | Where-Object { $affectedSet.ContainsKey($_) }).Count) { $tier = 2 }
+		elseif (@($phases | Where-Object { $failedSet.ContainsKey($_) }).Count) { $tier = 3 }
 		$duration = [double]::PositiveInfinity
 		if ($Durations.ContainsKey($phases[0])) {
 			$duration = 0.0
 			foreach ($p in $phases) { if ($Durations.ContainsKey($p)) { $duration += [double]$Durations[$p] } }
 		}
-		[pscustomobject]@{ Phases = $phases; Changed = $isChanged; Duration = $duration; Index = $i++ }
+		[pscustomobject]@{ Phases = $phases; Tier = $tier; Duration = $duration; Index = $i++ }
 	}
-	@($rows | Sort-Object @{ Expression = 'Changed'; Descending = $true }, @{ Expression = 'Duration'; Descending = $true }, @{ Expression = 'Index'; Descending = $false } |
+	@($rows | Sort-Object @{ Expression = 'Tier'; Descending = $false }, @{ Expression = 'Duration'; Descending = $true }, @{ Expression = 'Index'; Descending = $false } |
 		ForEach-Object { $_.Phases })
+}
+
+# --- The failure history (#527) -------------------------------------------------------------------------------------
+
+# ci-history.json beside the durations file: the verdict of every phase of the last runs, so the next run can put what
+# failed recently early (the risk order). [ { "time": "<when>", "phases": { "<phase>": "<verdict>", ... } }, ... ]
+function Get-ArxPhaseHistoryPath([string]$DurationsFile) { Join-Path (Split-Path -Parent $DurationsFile) 'ci-history.json' }
+
+# The runs of the history file, oldest first; a missing file is no history, a broken one is a warning and no history
+function Read-ArxPhaseHistory([string]$Path) {
+	if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return @() }
+	try {
+		$json = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+		return @($json | Where-Object { $_ -and $_.PSObject.Properties['phases'] })
+	} catch {
+		Write-Warning "ignoring $Path ($($_.Exception.Message)): the failure history starts again"
+		return @()
+	}
+}
+
+# Append one run ($Results: objects with Name and Verdict) and keep the last $Keep runs
+function Add-ArxPhaseHistory([string]$Path, $Results, [int]$Keep = 20) {
+	$runs = [Collections.Generic.List[object]]::new()
+	foreach ($r in Read-ArxPhaseHistory $Path) { $runs.Add($r) }
+	$phases = [ordered]@{}
+	foreach ($r in @($Results)) { if ($r -and $r.Name) { $phases[$r.Name] = "$($r.Verdict)" } }
+	$runs.Add([pscustomobject]@{ time = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'); phases = [pscustomobject]$phases })
+	while ($runs.Count -gt [Math]::Max(1, $Keep)) { $runs.RemoveAt(0) }
+	New-Item -ItemType Directory -Force (Split-Path -Parent $Path) | Out-Null
+	$tmp = "$Path.tmp"
+	[IO.File]::WriteAllText($tmp, (ConvertTo-Json @($runs) -Depth 4), [Text.UTF8Encoding]::new($false))
+	Move-Item -LiteralPath $tmp -Destination $Path -Force
+}
+
+# The phases with the verdict FAIL in the last $Runs runs of the history, each once (a SKIPPED or NOT RUN is no failure)
+function Get-ArxRecentFailures([string]$Path, [int]$Runs) {
+	$history = @(Read-ArxPhaseHistory $Path)
+	$failed = [ordered]@{}
+	foreach ($run in ($history | Select-Object -Last $Runs)) {
+		foreach ($p in $run.phases.PSObject.Properties) { if ("$($p.Value)" -eq 'FAIL') { $failed[$p.Name] = $true } }
+	}
+	@($failed.Keys)
 }
 
 # --- The selection of a pull request (#522) -------------------------------------------------------------------------
@@ -251,15 +305,20 @@ function Get-ArxLaneCount([int]$Lanes, [string]$Copy, [string]$BuildDir) {
 # Run $Phases on up to $Lanes lanes at once, in the given order, every phase exactly once. A phase:
 #   Name; DependsOn   names that must have finished first (a name not among $Phases counts as finished)
 #   Exclusive         a key: two phases with the same key never run at the same time ($null: none)
+#   Solo              runs alone (#436, #527: a sequence that measures frame pacing): it starts only when no lane is
+#                     busy - while it is due the phases behind it wait too - and nothing starts while it runs
 #   Gate              optional { param($Done, $Phase) } asked when the phase is due ($Done: name -> result of the finished):
 #                     $null runs it, 'omit' drops it without a result, an object is its result without running it
 # $Start { param($Phase, $Lane) } starts a phase and returns its job; $Finish { param($Phase, $Lane, $Job, $Seconds) } is called
 # when the job left the Running state and returns the phase's result (an object with Name, Exit, Verdict).
 # $LaneLimit { } is asked before a phase goes to a lane while another lane is busy (at most every $LimitCacheMs).
+# -StopOnFail (#527, a pull request's run): after the first result with the verdict FAIL (a run's or a gate's) nothing
+# starts any more; the phases running then finish with their own verdicts, and the names of the phases still queued
+# go into -NotRun (a [ref] to a list) - the full suite runs everything.
 # Returns the results in the order the phases finished, each with Lane, Started and Seconds added.
 function Invoke-ArxPhaseSchedule(
 	$Phases, [int]$Lanes = 2, [scriptblock]$Start, [scriptblock]$Finish, [scriptblock]$LaneLimit,
-	[int]$PollMs = 200, [int]$LimitCacheMs = 2000
+	[int]$PollMs = 200, [int]$LimitCacheMs = 2000, [switch]$StopOnFail, [ref]$NotRun
 ) {
 	$queue = [Collections.Generic.List[object]]::new()
 	foreach ($p in @($Phases)) { $queue.Add($p) }
@@ -273,6 +332,17 @@ function Invoke-ArxPhaseSchedule(
 	$outcome = [Collections.Generic.List[object]]::new()
 	$limitValue = $Lanes
 	$limitAt = [DateTime]::MinValue
+	$stopped = $false
+	# Fail fast (#527): the first FAIL empties the queue; what was still in it is reported through -NotRun
+	$stopOn = {
+		param($Result)
+		if (-not $StopOnFail -or $stopped -or $Result.Verdict -ne 'FAIL') { return }
+		Set-Variable -Name stopped -Value $true -Scope 1
+		$left = @($queue | ForEach-Object Name)
+		if ($NotRun) { $NotRun.Value = $left }
+		Write-Host "scheduler: '$($Result.Name)' FAILED - fail fast: nothing more starts$(if ($left) { ", $($left.Count) phase(s) not run: $($left -join ', ')" }); the running phase(s) finish" -ForegroundColor Red
+		$queue.Clear()
+	}
 	while ($queue.Count -or $busy.Count) {
 		foreach ($lane in @($busy.Keys)) {
 			$slot = $busy[$lane]
@@ -286,6 +356,7 @@ function Invoke-ArxPhaseSchedule(
 			$finished[$slot.Phase.Name] = $result
 			$outcome.Add($result)
 			$busy.Remove($lane)
+			& $stopOn $result
 		}
 		$progress = $true
 		while ($progress -and $queue.Count) {
@@ -293,11 +364,15 @@ function Invoke-ArxPhaseSchedule(
 			$free = @(1..$Lanes | Where-Object { -not $busy.ContainsKey($_) })[0]
 			if (-not $free) { break }
 			$running = @($busy.Values | ForEach-Object { $_.Phase })
+			# A solo phase runs alone: while one runs nothing starts
+			if (@($running | Where-Object { $_.Solo })) { break }
 			$next = $null
 			foreach ($p in $queue) {
 				$waits = @($p.DependsOn | Where-Object { $_ -and $known.ContainsKey($_) -and -not $finished.ContainsKey($_) })
 				if ($waits) { continue }
 				if ($p.Exclusive -and @($running | Where-Object { $_.Exclusive -eq $p.Exclusive })) { continue }
+				# A solo phase that is due holds the queue until the lanes are empty - the others wait behind it
+				if ($p.Solo -and $running.Count) { break }
 				$next = $p
 				break
 			}
@@ -316,6 +391,7 @@ function Invoke-ArxPhaseSchedule(
 			if ($gate) {
 				$finished[$next.Name] = $gate
 				$outcome.Add($gate)
+				& $stopOn $gate
 				continue
 			}
 			$busy[$free] = [pscustomobject]@{ Phase = $next; Job = (& $Start $next $free); Started = Get-Date }

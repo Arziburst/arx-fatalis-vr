@@ -13,6 +13,50 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-056: CI owns the game slots - workers' launches wait for a running CI job, a PR's run fails fast
+
+- **Date:** 2026-10-18
+- **Status:** Accepted (#527; amends D-014's "one game at a time")
+- **Decided by:** the owner (the contract of #527: the faster CI of #522 only helps if CI gets the PC); the coordinator
+  on the open points (the owner's own launch ignores the marker; the CI wait limit is 300 s; the phases fail fast never
+  started are NOT RUN; inside a tier, longest first)
+
+### Decision
+- **The CI runner has the game slots first.** While a CI job runs on this PC it keeps a marker
+  (`%ProgramData%\ArxFatalisVR\locks\ci-runner.marker`, written before the build, cleared in a step that always runs,
+  naming the job's process so a dead job's marker is stale) and every scripted launch of the PC - a worker's `ci-local`,
+  `smoke-test`, `make-test-saves`, `xrs-run` - **waits without taking a slot**. The job's own launches
+  (`ARXVR_CI_RUNNER`) take the slots as they free; a worker's game that already runs finishes its phase, never
+  preempted. Workers' `ci-local` waits up to 30 minutes for a job (naming the holder every 30 s), CI's own phases
+  give up after 300 s naming the holder.
+- **The owner's own launch** (`run-windows.ps1` by hand - no test channel, no isolated user dir - and `test-pr.ps1`)
+  ignores the marker, takes its slot (CI then drops to one lane, the earlier rule) and is never stopped or preempted.
+- **No silent waits.** A launch that cannot get a slot names the holders (pid, what, copy, since) at once and
+  periodically, and on the timeout; an **orphan game** - a lock file nobody holds any more, its launcher gone, its
+  `arx.exe` running - is stopped by the next launch and logged. The games of a script die with the script (a job
+  object with KILL_ON_JOB_CLOSE, #526); `ci-local` and `ci-smoke` put their whole process chain in one.
+- **A pull request's run fails fast:** the first FAIL starts nothing more, the phases running then finish, the rest
+  are `NOT RUN`, the job ends red naming the failure. The full suite (a push to main, `suite=full` - the merge gate,
+  `ci-local -Full`) runs everything.
+- **The risk order:** the PR's own `.xrs` first, then what the impact map selects for its changed files, then what
+  failed in the last 5 runs on the runner (`ci-history.json` beside `ci-durations.json`), then the rest; inside a tier
+  longest first. A sequence that measures frame pacing says `@solo` and runs alone on the lanes.
+
+### Why
+- Run 39109130415 (main) ended SKIPPED: its phases waited 900 s behind two workers' `make-test-saves` / `smoke-test`
+  games, which took the slots as fast as CI released them. Run 39120032077 attempt 1 lost a channel batch under the
+  load of three games (the cause and its fix: `src/core/CommandChannel.cpp`, TRAPS.md). #526: a `ci-local` killed by
+  a tool timeout left its game holding a slot for two hours, starving another worker's run.
+- A 900 s wait that ends in SKIPPED is 15 minutes with no verdict and no name of the culprit; 300 s with the holder
+  named is a verdict.
+
+### Rules out
+- Preempting a running game, the owner's included: a slot changes hands only when its game ends.
+- A second runner, or changes to the merge gate (`coordinator/tools/mergeq.sh`): the gate runs the full suite as before.
+- Taking a slot from the owner's own game is not decided here (the owner's call, raised in #527's report).
+
+---
+
 ## D-055: Scripted scenes in VR - hybrid by default, dialogue in first person, no fades, no letterbox in the eyes
 
 - **Date:** 2026-10-14

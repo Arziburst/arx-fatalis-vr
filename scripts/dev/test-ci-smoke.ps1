@@ -25,6 +25,30 @@
 	  - the workflow: the evidence is uploaded only on failure, the game checks get ARXVR_MAX_GAMES=2, the script
 	    self-tests start before the build and are joined after it, the suite input of a manual run, no labeled trigger,
 	    the label full-ci read live by the Scope step and its suite passed to the game checks
+	  - #527 (written before the implementation, tests first): @solo, fail fast, the risk order and the failure history.
+	    The interface they assume, in ci-smoke-lib.ps1:
+	      Invoke-ArxPhaseSchedule ... -StopOnFail
+	                         a pull request's run: after the first result with Verdict FAIL (a run or a Gate's result) no
+	                         phase starts any more; the phases running then finish and their results are returned. Without
+	                         the switch (the full suite: workflow_dispatch suite=full, the merge gate, ci-local -Full)
+	                         everything runs as before
+	      a phase's Solo     ($true; #436's c7dce4453, ported): the phase starts only when no lane is busy, and nothing
+	                         starts while it runs; while it is due and waits, the phases behind it wait too
+	      Get-ArxPhaseOrder $Units $Changed $Durations -Affected <phase names> -RecentFailures <phase names>
+	                         tiers: a unit with a changed file, then a unit one of whose phases is in -Affected (the impact
+	                         map's selection for the changed files, as xrs-<name>), then one in -RecentFailures, then the
+	                         rest; inside a tier by duration, longest first (unknown as the longest), ties in the serial
+	                         order; a read-back stays right after its sequence. Both default to none (the old order)
+	      Get-ArxPhaseHistoryPath <durations file>   -> ci-history.json in the same folder
+	      Add-ArxPhaseHistory <path> <results> [-Keep <n>]
+	                         appends one run (its phases' verdicts) and keeps the last -Keep runs (the default is the
+	                         worker's); a missing or broken file starts a new history (a warning, no throw)
+	      Get-ArxRecentFailures <path> <runs>
+	                         the phase names with Verdict FAIL in the last <runs> runs (SKIPPED is no failure); a missing
+	                         or broken file: none
+	    and ci-smoke.ps1 passes -Solo:$seq.Solo to the sequence phases, -StopOnFail:<pr run> to the scheduler, -Affected and
+	    -RecentFailures to Get-ArxPhaseOrder, and records every run with Add-ArxPhaseHistory beside its durations file.
+	    xrs-lib.ps1's @solo directive is tested in test-xrs.ps1; the lock side of #527 in test-ci-slots.ps1.
 	Exit code 0 when everything passed, 1 otherwise.
 #>
 [CmdletBinding()]
@@ -114,6 +138,59 @@ try {
 	Check 'no durations and no change: the serial order' (($plain -join ',') -eq 'xrs-a,xrs-b,xrs-c,xrs-c2,xrs-d,xrs-d-readback,xrs-e,xrs-g,xrs-g-readback,xrs-h') ($plain -join ',')
 	Check 'every phase exactly once' ($order.Count -eq 10 -and @($order | Sort-Object -Unique).Count -eq 10)
 	Check 'no units: nothing' (@(Get-ArxPhaseOrder @() @() @{}).Count -eq 0)
+
+	# --- The risk order (#527) ----------------------------------------------------------------------------------------
+	# changed .xrs -> what the impact map selects for the changed files (-Affected) -> what failed in recent runs
+	# (-RecentFailures) -> the rest by duration, longest first. A unit is in a tier when one of its phases is named.
+	Write-Host '==> the risk order (#527)'
+	try {
+		$riskUnits = @((Unit 'a'), (Unit 'b'), (Unit 'c'), (Unit 'd' -Readback), (Unit 'e'), (Unit 'f'), (Unit 'g'))
+		$riskDurs = @{ 'xrs-a' = 10; 'xrs-b' = 30; 'xrs-c' = 5; 'xrs-d' = 15; 'xrs-d-readback' = 5; 'xrs-e' = 50; 'xrs-g' = 40 }
+		$riskOrder = @(Get-ArxPhaseOrder $riskUnits @('scripts/dev/xrs/c.xrs', 'src/vr/VRMelee.cpp') $riskDurs -Affected @('xrs-a', 'xrs-c') -RecentFailures @('xrs-d-readback', 'xrs-a'))
+		$riskWant = 'xrs-c,xrs-a,xrs-d,xrs-d-readback,xrs-f,xrs-e,xrs-g,xrs-b'
+		Check 'risk order: changed, then map-affected, then recently failed, then the rest by duration (unknown as the longest)' (($riskOrder -join ',') -eq $riskWant) ($riskOrder -join ',')
+		Check 'risk order: a changed sequence before a longer map-affected one (c 5 s before a 10 s)' ($riskOrder.IndexOf('xrs-c') -ge 0 -and $riskOrder.IndexOf('xrs-c') -lt $riskOrder.IndexOf('xrs-a'))
+		Check 'risk order: a map-affected sequence before a longer recently failed one (a 10 s before d 20 s)' ($riskOrder.IndexOf('xrs-a') -ge 0 -and $riskOrder.IndexOf('xrs-a') -lt $riskOrder.IndexOf('xrs-d'))
+		Check 'risk order: a recently failed sequence before longer untouched ones (d before f unknown and e 50 s)' ($riskOrder.IndexOf('xrs-d') -ge 0 -and $riskOrder.IndexOf('xrs-d') -lt $riskOrder.IndexOf('xrs-f') -and $riskOrder.IndexOf('xrs-d') -lt $riskOrder.IndexOf('xrs-e'))
+		Check 'risk order: a failed read-back brings its sequence, the read-back right after it' ($riskOrder.IndexOf('xrs-d-readback') -eq $riskOrder.IndexOf('xrs-d') + 1)
+		$affectedOnly = @(Get-ArxPhaseOrder $riskUnits @() $riskDurs -Affected @('xrs-b'))
+		Check 'risk order: a map-affected sequence alone goes first' ($affectedOnly.Count -gt 0 -and $affectedOnly[0] -eq 'xrs-b') ($affectedOnly -join ',')
+		$failedOnly = @(Get-ArxPhaseOrder $riskUnits @() $riskDurs -RecentFailures @('xrs-c'))
+		Check 'risk order: a recently failed sequence alone goes first' ($failedOnly.Count -gt 0 -and $failedOnly[0] -eq 'xrs-c') ($failedOnly -join ',')
+		Check 'risk order: every phase exactly once' ($riskOrder.Count -eq 8 -and @($riskOrder | Sort-Object -Unique).Count -eq 8)
+	} catch { Check 'risk order: the cases ran without an error' $false "$_" }
+
+	# The history of failures beside ci-durations.json (#527): one record per run, the last -Keep runs kept
+	Write-Host '==> the failure history (#527)'
+	try {
+		$histDur = Join-Path $root 'hist\ci-durations.json'
+		$histFile = Join-Path $root 'hist\ci-history.json'
+		Check 'the history file is ci-history.json beside ci-durations.json' ((Get-ArxPhaseHistoryPath $histDur) -eq $histFile) "$(Get-ArxPhaseHistoryPath $histDur)"
+		Check 'no history: no recent failures' (@(Get-ArxRecentFailures $histFile 5).Count -eq 0)
+		function Run([string[]]$Fail = @(), [string[]]$Pass = @(), [string[]]$Skip = @()) {
+			@($Fail | ForEach-Object { [pscustomobject]@{ Name = $_; Exit = 1; Verdict = 'FAIL'; Seconds = 1.0 } }) +
+			@($Pass | ForEach-Object { [pscustomobject]@{ Name = $_; Exit = 0; Verdict = 'PASS'; Seconds = 1.0 } }) +
+			@($Skip | ForEach-Object { [pscustomobject]@{ Name = $_; Exit = 2; Verdict = 'SKIPPED'; Seconds = 900.0 } })
+		}
+		Add-ArxPhaseHistory $histFile (Run -Fail 'xrs-old' -Pass 'xrs-x')
+		Add-ArxPhaseHistory $histFile (Run -Fail 'xrs-x' -Pass 'xrs-y')
+		Add-ArxPhaseHistory $histFile (Run -Pass 'xrs-x', 'xrs-y')
+		Add-ArxPhaseHistory $histFile (Run -Pass 'xrs-x', 'xrs-y')
+		Add-ArxPhaseHistory $histFile (Run -Pass 'xrs-x', 'xrs-y')
+		Add-ArxPhaseHistory $histFile (Run -Fail 'xrs-z' -Pass 'xrs-x' -Skip 'xrs-s')
+		$recent = @(Get-ArxRecentFailures $histFile 5 | Sort-Object)
+		Check 'recent failures: the FAILs of the last 5 runs, not older ones, not a SKIPPED' (($recent -join ',') -eq 'xrs-x,xrs-z') ($recent -join ',')
+		Check 'recent failures: the last run only' ((@(Get-ArxRecentFailures $histFile 1) -join ',') -eq 'xrs-z') (@(Get-ArxRecentFailures $histFile 1) -join ',')
+		Add-ArxPhaseHistory $histFile (Run -Pass 'xrs-x') -Keep 3
+		$kept = @(Get-ArxRecentFailures $histFile 100 | Sort-Object)
+		Check 'the history keeps the last -Keep runs' (($kept -join ',') -eq 'xrs-z') ($kept -join ',')
+		Set-Content $histFile '{ not json'
+		Check 'a broken history: no recent failures, no throw' (@(Get-ArxRecentFailures $histFile 5 3>$null).Count -eq 0)
+		Add-ArxPhaseHistory $histFile (Run -Fail 'xrs-new') 3>$null
+		Check 'a run written over a broken history starts it again' ((@(Get-ArxRecentFailures $histFile 5) -join ',') -eq 'xrs-new')
+		$null = Remove-ArxOldCiEvidence (Split-Path $histFile) 0
+		Check 'the history is not a run folder: the evidence cleanup leaves it' (Test-Path $histFile)
+	} catch { Check 'the failure history: the cases ran without an error' $false "$_" }
 
 	# --- The changed files ------------------------------------------------------------------------------------------
 	Write-Host '==> the changed files of a branch'
@@ -226,6 +303,52 @@ try {
 	$script:runs.Clear()
 	$outside = @(Invoke-ArxPhaseSchedule -Phases @((Fake 'x' 10 -DependsOn 'save-library')) -Lanes 2 -Start $start -Finish $finish -PollMs 20)
 	Check 'a dependency that is not scheduled counts as done' ($outside.Count -eq 1 -and $outside[0].Verdict -eq 'PASS')
+
+	# A solo phase (#527, from #436's c7dce4453: a sequence that measures frame pacing) runs alone: it starts only with
+	# empty lanes, nothing starts while it runs; the others wait behind it, and still all run once
+	Write-Host '==> @solo: a phase that runs alone (#527)'
+	try {
+		$script:runs.Clear()
+		$soloPhases = @((Fake 'a' 200), (Fake 'b' 200), (Fake 'solo' 300), (Fake 'c' 100), (Fake 'd' 100))
+		$soloPhases[2] | Add-Member -NotePropertyName Solo -NotePropertyValue $true
+		$soloRuns = @(Invoke-ArxPhaseSchedule -Phases $soloPhases -Lanes 2 -Start $start -Finish $finish -LaneLimit { 2 } -PollMs 20)
+		$soloByName = @{}
+		foreach ($r in $script:runs) { $soloByName[$r.Name] = $r }
+		Check 'a solo phase runs alone: nothing overlaps it' ($soloByName.ContainsKey('solo') -and -not @($script:runs | Where-Object { $_.Name -ne 'solo' -and (Test-Overlap $_ $soloByName['solo']) })) (($script:runs | ForEach-Object { "$($_.Name)@$($_.Lane)" }) -join ',')
+		Check 'a solo phase starts only after the running phases ended' ($soloByName['solo'].Start -ge $soloByName['a'].End -and $soloByName['solo'].Start -ge $soloByName['b'].End)
+		Check 'nothing starts while a solo phase runs: the phases after it start when it ended' ($soloByName['c'].Start -ge $soloByName['solo'].End -and $soloByName['d'].Start -ge $soloByName['solo'].End)
+		Check 'a solo phase: the others still run, once each' ($script:runs.Count -eq 5 -and @($soloRuns | Where-Object Verdict -eq 'PASS').Count -eq 5)
+		Check 'a solo phase: the phases before it ran together (two lanes)' (Test-Overlap $soloByName['a'] $soloByName['b'])
+		$script:runs.Clear()
+		$soloLast = @((Fake 'a' 150), (Fake 'b' 150), (Fake 'c' 150), (Fake 'solo' 200))
+		$soloLast[3] | Add-Member -NotePropertyName Solo -NotePropertyValue $true
+		$null = @(Invoke-ArxPhaseSchedule -Phases $soloLast -Lanes 2 -Start $start -Finish $finish -LaneLimit { 2 } -PollMs 20)
+		$lastByName = @{}
+		foreach ($r in $script:runs) { $lastByName[$r.Name] = $r }
+		Check 'a solo phase that is due waits for a lane that is still busy (c), it does not join it' ($lastByName.ContainsKey('solo') -and $lastByName['solo'].Start -ge $lastByName['c'].End)
+	} catch { Check '@solo: the scheduler cases ran without an error' $false "$_" }
+
+	# Fail fast (#527): a pull request's run (-StopOnFail) starts nothing after the first FAIL; the phases already running
+	# finish with their own verdict. The full suite (no -StopOnFail) runs everything.
+	Write-Host '==> fail fast on a pull request run (#527)'
+	try {
+		function New-FailFastPhases { @((Fake 'ff-fail' 150 1), (Fake 'ff-long' 900), (Fake 'ff-after1' 100), (Fake 'ff-after2' 100), (Fake 'ff-after3' 100)) }
+		$script:runs.Clear()
+		$ff = @(Invoke-ArxPhaseSchedule -Phases (New-FailFastPhases) -Lanes 2 -Start $start -Finish $finish -LaneLimit { 2 } -PollMs 20 -StopOnFail)
+		$ffRuns = @($script:runs)
+		$ffByName = @{}
+		foreach ($r in $ffRuns) { $ffByName[$r.Name] = $r }
+		Check 'fail fast: nothing starts after the first FAIL' ($ffByName.ContainsKey('ff-fail') -and -not @($ffRuns | Where-Object { $_.Start -ge $ffByName['ff-fail'].End })) (($ffRuns | ForEach-Object Name) -join ',')
+		Check 'fail fast: only the failed phase and the one running beside it ran' ((@($ffRuns | ForEach-Object Name | Sort-Object) -join ',') -eq 'ff-fail,ff-long') (($ffRuns | ForEach-Object Name) -join ',')
+		Check 'fail fast: the phase that was running finishes with its own verdict' (@($ff | Where-Object { $_.Name -eq 'ff-long' -and $_.Verdict -eq 'PASS' }).Count -eq 1)
+		Check 'fail fast: the failure is in the results' (@($ff | Where-Object { $_.Name -eq 'ff-fail' -and $_.Verdict -eq 'FAIL' }).Count -eq 1)
+		$script:runs.Clear()
+		$ffOne = @(Invoke-ArxPhaseSchedule -Phases (New-FailFastPhases) -Lanes 1 -Start $start -Finish $finish -PollMs 20 -StopOnFail)
+		Check 'fail fast on one lane: the first phase fails, nothing else runs' ((@($script:runs | ForEach-Object Name) -join ',') -eq 'ff-fail') (($script:runs | ForEach-Object Name) -join ',')
+		$script:runs.Clear()
+		$full = @(Invoke-ArxPhaseSchedule -Phases (New-FailFastPhases) -Lanes 2 -Start $start -Finish $finish -LaneLimit { 2 } -PollMs 20)
+		Check 'the full suite (no -StopOnFail) runs every phase after a FAIL' ($script:runs.Count -eq 5 -and @($full | Where-Object Verdict -eq 'FAIL').Count -eq 1) (($script:runs | ForEach-Object Name) -join ',')
+	} catch { Check 'fail fast: the scheduler cases ran without an error' $false "$_" }
 
 	# --- The lane count -----------------------------------------------------------------------------------------------
 	Write-Host '==> the lane count from the game lock'
@@ -351,6 +474,15 @@ try {
 	$scope = [regex]::Match($wf, '(?s)- name: Scope.*?(?=\r?\n    - name:)').Value
 	Check 'the Scope step reads the label full-ci live and outputs the suite' ($scope -match '/labels' -and $scope -match "'full-ci'" -and $scope -match 'suite=\$suite' -and $scope -match "\`$suite = 'pr'") $scope
 	Check 'the game checks run the Scope step''s suite against main' ($checks -match "-Suite '\$\{\{ steps\.scope\.outputs\.suite \}\}'" -and $checks -match '-Base origin/main') $checks
+
+	# --- ci-smoke.ps1 uses them (#527) ----------------------------------------------------------------------------------
+	Write-Host '==> ci-smoke.ps1: @solo, fail fast, the risk order (#527)'
+	$ci = Get-Content -Raw (Join-Path $PSScriptRoot 'ci-smoke.ps1')
+	Check 'ci-smoke.ps1 passes a sequence''s @solo to its phase' ($ci -match '-Solo:\$seq\.Solo') 'no -Solo:$seq.Solo'
+	$scheduleCall = [regex]::Match($ci, 'Invoke-ArxPhaseSchedule [^\r\n]*').Value
+	Check 'ci-smoke.ps1 schedules with -StopOnFail bound to the suite (a pull request''s run stops, the full suite does not)' ($scheduleCall -match '-StopOnFail:') $scheduleCall
+	Check 'ci-smoke.ps1 orders by the risk tiers: the impact selection (-Affected) and the recent failures (-RecentFailures)' ($ci -match 'Get-ArxPhaseOrder [^\r\n]*-Affected' -and $ci -match 'Get-ArxPhaseOrder [^\r\n]*-RecentFailures' -and $ci -match 'Get-ArxRecentFailures')
+	Check 'ci-smoke.ps1 records each run in the failure history beside the durations' ($ci -match 'Add-ArxPhaseHistory' -and $ci -match 'Get-ArxPhaseHistoryPath')
 } finally {
 	Get-Job -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
 	Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue

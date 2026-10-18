@@ -380,30 +380,34 @@ void drawSubtitlesOnInterface() {
 		s.decided = true;
 	}
 
+	// The lazy follow (the owner, 2026-10-18): the panel stays put in the world - readable and still - and glides to
+	// where it belongs, smoothly, once that is far enough: the hero's panel when the head is more than followDeg off it,
+	// the NPC's when his head moved aboveFollowM (he walks out while he talks; his idle sway moves nothing)
+	Vec3f ideal = s.anchorWorld;
+	bool wanted = false;
 	if(s.drawn == SubtitlePlacement::Above) {
-		// Over the speaker's head wherever he goes (Kultar walks out while he talks)
-		s.anchorWorld = subtitleAboveAnchor(s.headTop, params);
+		ideal = subtitleAboveAnchor(s.headTop, params);
+		wanted = glm::distance(ideal, s.anchorWorld) > params.aboveFollowM * params.unitsPerMeter;
 	} else if(s.drawn == SubtitlePlacement::Chest) {
-		// The lazy follow (the owner, 2026-10-18): the panel stays put in the world while the head moves a little,
-		// readable and still; the head further off it glides it back below the centre of the view, smoothly
 		const Vec3f chestRoom = subtitleChestPanel(head, headAngles.getYaw(), params);
 		const Vec3f chestView = subtitleRoomToView(chestRoom, head, headAngles, params);
-		const Vec3f ideal(g_preparedCamera.m_viewToWorld * Vec4f(chestView, 1.f));
-		if(!s.gliding && yawFromHeadDeg(eye, s.anchorWorld) > params.followDeg) {
-			s.gliding = true;
-			s.glideT = 0.f;
-			s.glideFrom = s.anchorWorld;
-		}
-		if(s.gliding) {
-			const float dt = toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
-			s.glideT += params.followSeconds > 0.f ? dt / params.followSeconds : 1.f;
-			if(s.glideT >= 1.f) {
-				s.anchorWorld = ideal;
-				s.gliding = false;
-			} else {
-				const float t = s.glideT * s.glideT * (3.f - 2.f * s.glideT);
-				s.anchorWorld = glm::mix(s.glideFrom, ideal, t);
-			}
+		ideal = Vec3f(g_preparedCamera.m_viewToWorld * Vec4f(chestView, 1.f));
+		wanted = yawFromHeadDeg(eye, s.anchorWorld) > params.followDeg;
+	}
+	if(!s.gliding && wanted) {
+		s.gliding = true;
+		s.glideT = 0.f;
+		s.glideFrom = s.anchorWorld;
+	}
+	if(s.gliding) {
+		const float dt = toMsf(g_platformTime.lastFrameDuration()) / 1000.f;
+		s.glideT += params.followSeconds > 0.f ? dt / params.followSeconds : 1.f;
+		if(s.glideT >= 1.f) {
+			s.anchorWorld = ideal;
+			s.gliding = false;
+		} else {
+			const float t = s.glideT * s.glideT * (3.f - 2.f * s.glideT);
+			s.anchorWorld = glm::mix(s.glideFrom, ideal, t);
 		}
 	}
 	s.facingWorld = eye;

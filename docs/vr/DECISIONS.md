@@ -79,16 +79,16 @@ a changed decision keeps its history in that cell.
   once when the line starts, facing where the player was then, drawn into its own image and sampled into each eye as a
   quad in the world after the world, depth test off - always on top, also in the desktop mirror and a stream (#519; a
   compositor quad layer of it stayed invisible on SteamVR). `above`: always over the NPC's head, in view or not (the
-  owner, 2026-10-18: behind him is behind him, he turns to see it), following the head wherever the NPC goes; the hero's
-  own line (and an off-voice one) below the centre of the view - placed once and left while the head moves a little,
-  gliding back below the centre in 0.3 s once the head is more than 35 degrees off it; both face the player's head (yaw
-  only); `chest`: the hero's kind of panel for every line; `lowerthird`: on the head-locked interface quad. A subtitle
-  shows once the eyes see the scene, not under the fade it starts behind. The hero's own lines name him Am Shaegar (the
-  owner: the game gives him no name at character creation, and its texts have no key for the name alone). Talk outside
-  scenes (barks, a merchant's greeting) gets none yet. Proposals for the owner (`SubtitleParams`): the game's subtitle
-  font (about 1.4 degrees), the box at most 32 degrees wide, black at 60%, the name in warm gold over white text;
-  `above` 0.25 m over the head, `chest` 0.8 m ahead and 0.45 m below the eyes, `lowerthird` up to 60% of the quad's
-  width with its lower edge at 92% of its height.
+  owner, 2026-10-18: behind him is behind him, he turns to see it), gliding after his head once it moved 15 cm (he walks
+  out while he talks; his idle sway moves nothing); the hero's own line (and an off-voice one) below the centre of the
+  view - placed once and left while the head moves a little, gliding back below the centre in 0.3 s once the head is
+  more than 35 degrees off it; both face the player's head (yaw only); `chest`: the hero's kind of panel for every line;
+  `lowerthird`: on the head-locked interface quad. A subtitle shows once the eyes see the scene, not under the fade it
+  starts behind. The hero's own lines name him Am Shaegar (the owner: the game gives him no name at character creation,
+  and its texts have no key for the name alone). Talk outside scenes (barks, a merchant's greeting) gets none yet.
+  Proposals for the owner (`SubtitleParams`): the game's subtitle font (about 1.4 degrees), the box at most 32 degrees
+  wide, black at 60%, the name in warm gold over white text; `above` 0.25 m over the head, `chest` 0.8 m ahead and 0.45
+  m below the eyes, `lowerthird` up to 60% of the quad's width with its lower edge at 92% of its height.
 - **Walking is blocked during a scene in VR, the stick turn works** (also where the script holds the controls).
 - **The IK arms are off while the hero is shown in third person** (a ghost shot, any external view of the game).
 - Flat mode is unchanged. The test channel's `scene ...` commands change the switches for the session only (cfg.ini

@@ -91,7 +91,8 @@ struct SubtitleParams {
 	float widthDeg = 32.f;          //!< the widest box in the world, as the eyes see it
 	float panelScale = 1.4f;        //!< the world-fixed panel's text and box over the game's font size (the owner: bigger)
 	float followDeg = 35.f;         //!< the hero's panel: the head this far off it glides it back below the centre of the view
-	float followSeconds = 0.3f;     //!< the hero's panel: how long that glide takes
+	float followSeconds = 0.3f;     //!< the hero's panel: how long that glide takes (the NPC's panel glides after him the same way)
+	float aboveFollowM = 0.15f;     //!< the NPC's panel: his head this far from it glides it after him (not his idle sway)
 	float lowerThirdWidth = 0.6f;   //!< \c lowerthird: the widest box, of the interface's width
 	float lowerThirdBottom = 0.92f; //!< \c lowerthird: the box's lower edge, of the interface's height from the top
 };

@@ -43,9 +43,13 @@ set(arxtest_TESTCASES
 	tests/platform/DialogPolicyTest.cpp
 	tests/platform/ExitReportTest.h
 	tests/platform/ExitReportTest.cpp
+	tests/platform/FlightRecorderTest.h
+	tests/platform/FlightRecorderTest.cpp
 	tests/platform/HangWatchdogTest.h
 	tests/platform/HangWatchdogTest.cpp
-	
+	tests/platform/ProcessResourcesTest.h
+	tests/platform/ProcessResourcesTest.cpp
+
 	tests/math/AssertionTraits.h
 	tests/math/LegacyMath.h
 	tests/math/LegacyMathTest.cpp

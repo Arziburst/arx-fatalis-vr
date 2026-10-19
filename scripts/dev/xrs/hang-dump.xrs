@@ -1,0 +1,16 @@
+# A stall gets a hang report with a dump (#545): the hang watchdog runs in every launch with a default threshold below
+# 6 s, and for a stall the dump helper (arx.exe --dump-helper) writes <user dir>\hangs\<utc>\ - report.txt (kind=hang),
+# the dump of the game and its flight recorder - named in arx.log with a path relative to the user directory (no user
+# path in the log). One dump per stall: the 6 s stall is reported once. The game runs on.
+# scripts/dev/flight-recorder-check.ps1 -Case clean checks the folder's files themselves.
+@args --no-vr --loadlevel 10
+
+@until state eq GAMEPLAY 60s
+@until hangWatchdog.watching eq true 30s
+@assert hangWatchdog.stalls eq 0
+
+stall 6000
+@log \[hang\] main thread stalled for \d+ ms \(report 1 of at most 3\) 15s
+@log \[hang\] dump written: hangs[\\/]\d{4}-\d\d-\d\d-\d\d-\d\d-\d\d-\d\d[\\/][^\\/\s]+\.dmp 20s
+@until hangWatchdog.stalls eq 1 15s
+@until state eq GAMEPLAY 10s

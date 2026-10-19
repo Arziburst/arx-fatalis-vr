@@ -687,7 +687,8 @@ function Invoke-ReplayCrashCase {
 	$sessionStart = Get-Date
 	Check ($null -ne $run.Process) 'replay-crash: the game''s process'
 	if (-not $run.Process) { Complete-ArxCheckRun $run; return }
-	try { $ack = Send-ArxCommand -Lines @('vr-sim @+0-20000ms head rot 60 10 0; vr-sim @+0-20000ms hand right pos 0.3 -0.3 -0.5') -Dir $testDir } catch { $ack = "$_" }
+	# Two lines of one batch (the channel does not split a line at ';' - only the .xrs runner does)
+	try { $ack = Send-ArxCommand -Lines @('vr-sim @+0-20000ms head rot 60 10 0', 'vr-sim @+0-20000ms hand right pos 0.3 -0.3 -0.5') -Dir $testDir } catch { $ack = "$_" }
 	Check ($ack -match 'errors=0 ') "replay-crash: the head and the hand move ($ack)"
 	Start-Sleep -Seconds 25
 

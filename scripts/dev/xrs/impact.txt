@@ -282,3 +282,12 @@ src/platform/crashhandler/* -> hang-dump
 scripts/dev/crash-report.ps1 -> core
 scripts/dev/flight-recorder-check.ps1 -> core
 scripts/dev/crash-notice-check.ps1 -> core
+
+# --- Record and replay (#550): 10 s of a recorded session replayed as a script; the recorder runs in every VR session ----
+src/vr/ReplayClip.* -> replay-clip
+src/vr/ReplayRecorder.* -> replay-clip
+scripts/dev/vrsim/replay-clip.vrsim -> replay-clip
+# The replay, the converter and the hand-run record-and-replay check (two launches, judged after the quit) are no game check
+scripts/dev/replay.ps1 -> core
+scripts/dev/clip-to-xrs.ps1 -> core
+scripts/dev/replay-check.ps1 -> core

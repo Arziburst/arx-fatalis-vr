@@ -57,6 +57,8 @@ set(arxtest_TESTCASES
 	tests/math/AssertionTraits.h
 	tests/math/LegacyMath.h
 	tests/math/LegacyMathTest.cpp
+	tests/math/RandomTest.h
+	tests/math/RandomTest.cpp
 	
 	tests/util/StringTest.h
 	tests/util/StringTest.cpp
@@ -107,6 +109,10 @@ set(arxtest_TESTCASES
 	tests/vr/EyeImageTest.cpp
 	tests/vr/SimRigTest.h
 	tests/vr/SimRigTest.cpp
+	tests/vr/ReplayClipTest.h
+	tests/vr/ReplayClipTest.cpp
+	tests/vr/ReplayRingTest.h
+	tests/vr/ReplayRingTest.cpp
 	tests/vr/UIPanelTest.h
 	tests/vr/UIPanelTest.cpp
 	tests/vr/MenuPointerTest.h

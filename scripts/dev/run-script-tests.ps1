@@ -23,6 +23,7 @@ $ErrorActionPreference = 'Stop'
 $tests = @(
 	'test-ci-smoke.ps1'       # the CI game checks' lanes (#522): the order, the scheduler over fake phases, the lane count, durations, evidence; the impact map's selection and coverage
 	'test-ci-slots.ps1'       # CI owns the game slots (#527, #526): the runner marker's priority, holder lines, orphans stopped, games die with their launcher
+	'test-clip-to-xrs.ps1'    # a replay clip cut into a CI sequence (#550): the 30 s window, the state at its start, IPD and height stripped, no user path
 	'test-crash-report.ps1'   # the crash report command (#545): fixture crashes\ and hangs\ folders, the newest, the sections, the last 100 events, cdb or not, no user path
 	'test-dump-helper.ps1'    # the dump helper is not a game (#545): arx.exe --dump-helper never keeps a launch waiting for the game lock
 	'test-eye-check.ps1'     # the two-eyes check's judge (#112, F-06): every leg passes on good eyes, fails on its broken case
@@ -35,6 +36,7 @@ $tests = @(
 	'test-perf-summary.ps1'  # the performance log summary (#327): a fixture arx-perf.log, the totals, worst seconds, hitches, the script
 	'test-private-data.ps1' # the personal-data check of tracked files (#428): made-up paths, ids, e-mails, docs images fail; placeholders pass
 	'test-plan-next.ps1'    # the coordinator's task order (#187): MVP.md parsing and every start rule
+	'test-replay.ps1'         # the replay of a recorded VR session (#550): the plan from a fixture clip - save, seed, rate, window, shots, .gz, no user path
 	'test-resource-trend.ps1' # the resource trend of the performance log (#545): R lines, first / last / max / slope / step, the leak's step
 	'test-wait-launch.ps1'   # the launch marker (#258): checks wait out the game lock before their gameplay timeout; a lock skip is exit 2
 	'test-xrs.ps1'           # the .xrs sequence runner and img-diff (#113): parser, conditions, log marks, @pending, shots, a fake game

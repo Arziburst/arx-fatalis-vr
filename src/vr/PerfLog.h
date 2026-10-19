@@ -76,6 +76,19 @@ void addMissed(u32 slots);
 //! A texture was uploaded to the GPU in this frame
 void countUpload();
 
+/*!
+ * \brief The renderer's and OpenXR's live-object counts for the resource line (#545)
+ *
+ * GL textures and buffers and OpenXR swapchains, counted as they are created and destroyed, so the R line
+ * of arx-perf.log shows a leak of them as a trend (src/platform/ProcessResources.h). Thread-safe.
+ */
+void addTexture();
+void removeTexture();
+void addBuffer();
+void removeBuffer();
+void addSwapchain();
+void removeSwapchain();
+
 //! A line "M t=<s> <text>" between the seconds, e.g. a test channel mark
 void mark(std::string_view text);
 

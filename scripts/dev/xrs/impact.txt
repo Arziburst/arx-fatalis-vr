@@ -274,3 +274,11 @@ CHANGELOG -> core
 src/vr/MotionProbe.* -> refresh-rate
 src/vr/PerfLog.* -> refresh-rate
 src/vr/PerfStats.* -> refresh-rate
+
+# --- The flight recorder (#545): a stall gets a hang report with a dump --------------------------------------------------
+src/platform/HangWatchdog.* -> hang-dump
+src/platform/crashhandler/* -> hang-dump
+# The report reader and the hand-run check (every way the game can end) touch no game check
+scripts/dev/crash-report.ps1 -> core
+scripts/dev/flight-recorder-check.ps1 -> core
+scripts/dev/crash-notice-check.ps1 -> core

@@ -102,8 +102,10 @@ protected:
 	CrashInfo * m_pCrashInfo;
 	size_t m_textLength;
 	
-	// Protect against multiple accesses.
-	std::mutex m_mutex;
+	// Protect against multiple accesses. Recursive: a fault inside the crash handler itself comes back
+	// here on the same thread, and a plain mutex would throw instead of letting the handler end the
+	// process (#545)
+	std::recursive_mutex m_mutex;
 	
 	// Crash callbacks
 	std::vector<CrashHandler::CrashCallback> m_crashCallbacks;

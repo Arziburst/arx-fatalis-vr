@@ -33,6 +33,8 @@
 
 #include "io/log/Logger.h"
 
+#include "vr/PerfLog.h" // the live GL buffer count for the resource line (#545)
+
 template <class Vertex>
 static void setVertexArray(OpenGLRenderer * renderer, const Vertex * vertices, const void * ref);
 
@@ -137,6 +139,7 @@ public:
 	{
 		glGenBuffers(1, &m_buffer);
 		arx_assert(m_buffer != GL_NONE);
+		vr::perf::addBuffer();
 	}
 	
 	void draw(Renderer::Primitive primitive, size_t count, size_t offset) const override {
@@ -223,6 +226,7 @@ public:
 		clearVertexArray(this);
 		unbindBuffer(m_buffer);
 		glDeleteBuffers(1, &m_buffer);
+		vr::perf::removeBuffer();
 	}
 	
 protected:

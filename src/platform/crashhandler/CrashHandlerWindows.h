@@ -70,6 +70,9 @@ private:
 	// Crash handlers to restore
 	struct PlatformCrashHandlers * m_pPreviousCrashHandlers;
 	static CrashHandlerWindows * m_sInstance;
+
+	// The vectored handler for the codes that never reach the unhandled exception filter (#545)
+	void * m_vectoredHandler = nullptr;
 	
 };
 

@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <exception>
 #include <iomanip>
 #include <limits>
 #include <memory>
@@ -35,6 +36,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -86,6 +88,7 @@
 #include "io/log/LogBackend.h"
 #include "io/log/Logger.h"
 #include "physics/Collisions.h"
+#include "platform/DumpHelper.h"
 #include "platform/Environment.h"
 #include "platform/ExitTrace.h"
 #include "platform/HangWatchdog.h"
@@ -159,6 +162,7 @@ const struct { MENUSTATE page; const char * name; } MenuPages[] = {
 	{ Page_OptionsInterface, "interface" },
 	{ Page_QuitConfirm, "quit" },
 	{ Page_Localization, "language" },
+	{ Page_CrashNotice, "crashnotice" },
 };
 
 const char * menuPageName(MENUSTATE page) {
@@ -909,6 +913,12 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("menuMode", menuModeName(ARXmenu.mode()));
 	json.value("menuPage", ARXmenu.mode() == Mode_MainMenu ? menuPageName(currentMenuPage()) : "none");
 	json.value("menuRows", ARXmenu.mode() == Mode_MainMenu ? visibleVRSettingRows() : std::string());
+
+	// The next-launch crash notice (#545, M6): shown at the main menu until OK, and the report it names
+	json.object("crashNotice");
+	json.value("state", crashNoticeShown() ? "shown" : "none");
+	json.value("report", crashNoticeShown() ? crashNoticeReport() : std::string());
+	json.end();
 	json.value("area", g_currentArea ? u32(g_currentArea) : 0u);
 	json.value("paused", g_gameTime.isPaused() != 0);
 	// The game clock: it runs while a VR radial menu is open (#376), stops in the pause menu
@@ -2178,20 +2188,41 @@ void writeAck(unsigned errors) {
  */
 void reportHang(std::string_view report) {
 
-	{
+	// hang.txt only when the test channel gave us a directory (a plain launch has none)
+	if(g.enabled && !g.dir.empty()) {
 		fs::ofstream file(g.dir / "hang.txt", std::ios::out | std::ios::app);
 		file << report;
 	}
 
+	// One [hang] log line per report line; the indented frames become the report's stack
+	std::string stack;
 	for(size_t pos = 0; pos < report.size(); ) {
 		size_t end = report.find('\n', pos);
 		if(end == std::string_view::npos) {
 			end = report.size();
 		}
-		LogWarning << "[hang] " << report.substr(pos, end - pos);
+		std::string_view line = report.substr(pos, end - pos);
+		LogWarning << "[hang] " << line;
+		if(!line.empty() && (line[0] == ' ' || line[0] == '\t')) {
+			stack += line;
+			stack += '\n';
+		}
 		pos = end + 1;
 	}
 	Logger::flush();
+
+	// On the first report of a stall, ask the out-of-process dump helper for a hang report with a dump of
+	// every thread, and name the folder it made in the log (#545); the game runs on
+	if(report.find("(report 1 of") != std::string_view::npos && platform::dumpHelperEnabled()) {
+		std::string killer = std::to_string(platform::mainThreadId()) + " main thread";
+		platform::requestReport(platform::DumpKind::Hang, true, platform::mainThreadId(), 0,
+		                        killer, std::string_view(), std::string_view(), stack, 8000);
+		std::string folder = platform::dumpLastReportFolder();
+		if(!folder.empty()) {
+			LogWarning << "[hang] dump written: hangs\\" << folder << "\\arx.dmp";
+			Logger::flush();
+		}
+	}
 }
 
 void setState(GameState state) {
@@ -2262,6 +2293,9 @@ std::string execute(std::string_view line) {
 	std::string word(firstWord(line, rest));
 	util::makeLowercase(word);
 
+	// The flight recorder keeps every command (#545): the report shows what the game was asked to do last
+	platform::flightRecord(platform::RecordKind::Command, line);
+
 	if(word == "status") {
 		// Nothing to do: the status is written after every batch
 		return std::string();
@@ -2312,9 +2346,10 @@ std::string execute(std::string_view line) {
 		if(!load) {
 			value = rest;
 		}
+		// Up to 60 s: over the watchdog's default 5 s threshold, so a stall can force a hang report (#545)
 		long stallMs = 0;
-		if(!parseIndex(value, stallMs) || stallMs < 1 || stallMs > 5000) {
-			return refuse("stall: expected [load] and milliseconds 1..5000, got \"" + std::string(rest) + "\"");
+		if(!parseIndex(value, stallMs) || stallMs < 1 || stallMs > 60000) {
+			return refuse("stall: expected [load] and milliseconds 1..60000, got \"" + std::string(rest) + "\"");
 		}
 		if(load) {
 			g.stallLoadMs = stallMs;
@@ -2505,6 +2540,99 @@ std::string execute(std::string_view line) {
 		LogWarning << "[crash] deliberate crash requested through the test channel";
 		volatile int * nothing = nullptr;
 		*nothing = 1;
+		return std::string();
+	}
+
+	if(word == "abort") {
+		// abort() on the main thread (SIGABRT): the crash handler reports it, kind=abort (#545)
+		LogWarning << "[channel] abort() requested through the test channel";
+		std::abort();
+	}
+
+	if(word == "terminate") {
+		std::string mode(rest);
+		util::makeLowercase(mode);
+		if(mode == "thread") {
+			// std::terminate() on a new std::thread - a thread the game's handlers were never set up on
+			LogWarning << "[channel] std::terminate() on a foreign thread requested through the test channel";
+			std::thread([] { std::terminate(); }).detach();
+			return std::string();
+		}
+		if(!mode.empty()) {
+			return refuse("terminate: expected nothing or thread, got \"" + std::string(rest) + "\"");
+		}
+		LogWarning << "[channel] std::terminate() requested through the test channel";
+		std::terminate();
+	}
+
+	if(word == "heapcorrupt") {
+		// A heap corruption the heap detects (STATUS_HEAP_CORRUPTION, 0xc0000374): the vectored handler
+		// reports it, kind=crash (#545)
+		LogWarning << "[channel] heap corruption requested through the test channel";
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+		// Overwrite a block's own header on the process heap, then free it: the heap decodes the header,
+		// finds it corrupt and raises STATUS_HEAP_CORRUPTION (termination on corruption is on by default)
+		HANDLE heap = GetProcessHeap();
+		unsigned char * block = static_cast<unsigned char *>(HeapAlloc(heap, 0, 64));
+		if(block) {
+			std::memset(block - 16, 0xcc, 16);
+			HeapFree(heap, 0, block);
+		}
+#endif
+		return std::string();
+	}
+
+	if(word == "exitprocess") {
+		// A thread whose start routine IS ExitProcess, as a foreign kill does (#544): the ExitGuard catches
+		// it and asks for a report before the exit proceeds (#545)
+		long code = 0;
+		if(!parseIndex(rest, code)) {
+			return refuse("exitprocess: expected an exit code, got \"" + std::string(rest) + "\"");
+		}
+		LogWarning << "[channel] exitprocess " << code << " requested (a thread that starts at ExitProcess)";
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+		HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
+		LPTHREAD_START_ROUTINE exitProcess = reinterpret_cast<LPTHREAD_START_ROUTINE>(
+			reinterpret_cast<void *>(GetProcAddress(kernel32, "ExitProcess")));
+		if(exitProcess) {
+			HANDLE thread = CreateThread(nullptr, 0, exitProcess,
+			                             reinterpret_cast<LPVOID>(static_cast<uintptr_t>(u32(code))), 0, nullptr);
+			if(thread) {
+				CloseHandle(thread);
+			}
+		}
+#endif
+		return std::string();
+	}
+
+	if(word == "crashnotice") {
+		// The crash notice's buttons (#545, M6): ok dismisses it (the reports get their marker), open opens the folder
+		std::string what(rest);
+		util::makeLowercase(what);
+		if(!crashNoticeShown()) {
+			return refuse("crashnotice: no notice is on screen");
+		}
+		if(what == "ok") {
+			crashNoticeOk();
+			return std::string();
+		}
+		if(what == "open") {
+			crashNoticeOpen();
+			return std::string();
+		}
+		return refuse("crashnotice: expected ok or open, got \"" + std::string(rest) + "\"");
+	}
+
+	if(word == "leak") {
+		// Allocate and touch <MiB> of private memory and keep it until the exit: the R lines of arx-perf.log
+		// show the step, perf-summary shows the trend (#545)
+		long mb = 0;
+		if(!parseIndex(rest, mb) || mb < 1 || mb > 4096) {
+			return refuse("leak: expected MiB 1..4096, got \"" + std::string(rest) + "\"");
+		}
+		static std::vector<std::vector<char>> leaks;
+		leaks.emplace_back(size_t(mb) << 20, char(1));
+		LogWarning << "[channel] leaked " << mb << " MiB on purpose (kept until the exit)";
 		return std::string();
 	}
 
@@ -3904,24 +4032,34 @@ void initialize() {
 
 void update() {
 
+	// The hang watchdog runs in every launch, with or without the test channel (#440; always-on since
+	// #545): the main thread beats every frame and a stall is reported with its stack and a dump (reportHang)
+	if(!g.watchdog) {
+		g.watchdog = std::make_unique<platform::HangWatchdog>("main thread",
+			std::chrono::milliseconds(g.watchdogThresholdMs), reportHang);
+	}
+	g.watchdog->beat("frame");
+	// One beat record a second in the flight recorder (#545): a stall shows as the gap before the hang's exit cause
+	{
+		static PlatformInstant s_lastBeatRecord = PlatformInstant(0);
+		const PlatformInstant beatNow = platform::getTime();
+		if(s_lastBeatRecord == PlatformInstant(0) || toMsi(beatNow - s_lastBeatRecord) >= 1000) {
+			s_lastBeatRecord = beatNow;
+			platform::flightRecord(platform::RecordKind::Beat, "frame", s64(g.watchdog->stalls()));
+		}
+	}
+	if(!g.watchdogLogged && g.watchdog->watching()) {
+		g.watchdogLogged = true;
+		LogInfo << "[channel] hang watchdog: watching the main thread, threshold "
+		        << g.watchdog->threshold().count() << " ms";
+	}
+
 	if(!g.enabled) {
 		return;
 	}
 
 	g.frame++;
 	PlatformInstant now = platform::getTime();
-
-	// Watched from the first frame on: the start-up before it has the smoke test's own timeout
-	if(!g.watchdog) {
-		g.watchdog = std::make_unique<platform::HangWatchdog>("main thread",
-			std::chrono::milliseconds(g.watchdogThresholdMs), reportHang);
-	}
-	g.watchdog->beat("frame");
-	if(!g.watchdogLogged && g.watchdog->watching()) {
-		g.watchdogLogged = true;
-		LogInfo << "[channel] hang watchdog: watching the main thread, threshold "
-		        << g.watchdog->threshold().count() << " ms";
-	}
 
 	if(g_crashAt != PlatformInstant(0) && toUs(now - g_crashAt) >= 0) {
 		LogWarning << "[crash] deliberate crash requested through the test channel";
@@ -4184,12 +4322,13 @@ void note(const char * what) {
 
 void shutdown() {
 
+	// The game is down: nothing beats any more (the watchdog runs even without the test channel, so it is
+	// stopped here whether or not the channel was enabled)
+	g.watchdog.reset();
+
 	if(!g.enabled) {
 		return;
 	}
-
-	// The game is down: nothing beats any more
-	g.watchdog.reset();
 
 	g.state = GameState::Exited;
 	g.cleanShutdown = true;

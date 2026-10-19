@@ -25,6 +25,7 @@
 #include <sstream>
 
 #include "io/log/Logger.h"
+#include "vr/PerfLog.h" // the live OpenXR swapchain count for the resource line (#545)
 
 namespace vr {
 
@@ -126,6 +127,7 @@ bool Swapchain::create(XrSession session, s64 format, Vec2i size, bool framebuff
 		return false;
 	}
 	m_size = size;
+	vr::perf::addSwapchain(); // a live-object count for the resource line (#545)
 
 	uint32_t count = 0;
 	result = xrEnumerateSwapchainImages(m_handle, 0, &count, nullptr);
@@ -281,6 +283,7 @@ void Swapchain::destroy() {
 	if(m_handle != XR_NULL_HANDLE) {
 		xrDestroySwapchain(m_handle);
 		m_handle = XR_NULL_HANDLE;
+		vr::perf::removeSwapchain();
 	}
 
 	m_size = Vec2i(0);

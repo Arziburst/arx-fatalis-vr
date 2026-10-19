@@ -76,6 +76,9 @@
 #include "io/log/Logger.h"
 
 #include "platform/Platform.h"
+#include "platform/CrashNotice.h"
+#include "platform/Process.h"
+#include "io/fs/SystemPaths.h"
 
 #include "scene/GameSound.h"
 
@@ -130,6 +133,88 @@ public:
 		
 	}
 	
+};
+
+// The next-launch crash notice (#545, M6): the report folder it is about, "" when none is shown
+static std::string g_crashNoticeReport;
+
+static fs::path crashReportsDir() {
+	return fs::getUserDir() / "crashes";
+}
+
+const std::string & crashNoticeReport() {
+	return g_crashNoticeReport;
+}
+
+bool crashNoticeShown() {
+	return !g_crashNoticeReport.empty() && ARXmenu.mode() == Mode_MainMenu;
+}
+
+void crashNoticeOk() {
+	size_t marked = platform::markCrashReportsShown(crashReportsDir());
+	LogInfo << "[crash] notice dismissed: " << marked << " report(s) marked shown";
+	g_crashNoticeReport.clear();
+	if(g_mainMenu) {
+		g_mainMenu->requestPage(Page_None);
+	}
+}
+
+void crashNoticeOpen() {
+	if(g_crashNoticeReport.empty()) {
+		return;
+	}
+	LogInfo << "[crash] notice: opening the report folder " << g_crashNoticeReport;
+	platform::launchDefaultProgram((crashReportsDir() / g_crashNoticeReport).string());
+}
+
+/*
+ * "The game ended with an error last time. A report was saved." with [Open folder] and [OK], shown at the
+ * main menu - flat, on the VR panel and in the desktop mirror, since they all draw this 2D menu - once per
+ * new report (platform/CrashNotice.h). Stage 3 adds "Send the report?" here.
+ */
+class CrashNoticeMenuPage final : public MenuPage {
+
+public:
+
+	CrashNoticeMenuPage()
+		: MenuPage(Page_CrashNotice)
+	{ }
+
+	void init() override {
+
+		reserveBottom();
+
+		{
+			auto txt = std::make_unique<TextWidget>(hFontMenu, "The game ended with an error last time.");
+			txt->setEnabled(false);
+			addCenter(std::move(txt));
+		}
+
+		{
+			auto txt = std::make_unique<TextWidget>(hFontMenu, "A report was saved.");
+			txt->setEnabled(false);
+			addCenter(std::move(txt));
+		}
+
+		{
+			auto txt = std::make_unique<TextWidget>(hFontMenu, "Open folder");
+			txt->clicked = [](Widget * /* widget */) {
+				crashNoticeOpen();
+			};
+			addCorner(std::move(txt), BottomLeft);
+		}
+
+		{
+			auto txt = std::make_unique<TextWidget>(hFontMenu, "OK");
+			txt->clicked = [](Widget * /* widget */) {
+				crashNoticeOk();
+			};
+			txt->setShortcut(Keyboard::Key_Escape);
+			addCorner(std::move(txt), BottomRight);
+		}
+
+	}
+
 };
 
 class SaveConfirmMenuPage final : public MenuPage {
@@ -2162,6 +2247,7 @@ void MainMenu::initWindowPages() {
 	
 	m_window->add(std::make_unique<QuitConfirmMenuPage>());
 	m_window->add(std::make_unique<LocalizationMenuPage>());
+	m_window->add(std::make_unique<CrashNoticeMenuPage>());
 	
 }
 
@@ -2183,6 +2269,13 @@ MainMenu::~MainMenu() {
 void MainMenu::init() {
 	
 	m_background = TextureContainer::LoadUI("graph/interface/menus/menu_main_background", TextureContainer::NoColorKey);
+
+	// A report the last run left that nobody has seen yet: the notice first (#545, M6)
+	g_crashNoticeReport = platform::findUnseenCrashReport(crashReportsDir());
+	if(!g_crashNoticeReport.empty()) {
+		LogInfo << "[crash] a report of the last run is announced at the main menu: " << g_crashNoticeReport;
+		requestPage(Page_CrashNotice);
+	}
 	
 	Vec2f pos = RATIO_2(Vec2f(370, 100));
 	float yOffset = RATIO_Y(50);

@@ -29,6 +29,7 @@
 
 #include "core/Benchmark.h"
 #include "io/log/Logger.h"
+#include "platform/DumpHelper.h" // record a GL error in the flight recorder (#545)
 #include "platform/ProgramOptions.h"
 #include "util/cmdline/Optional.h"
 
@@ -234,6 +235,7 @@ void endFrame() {
 	
 	if(GLenum error = glGetError()) {
 		LogError << "GL error: " << error << " = " << getGLErrorString(error);
+		platform::flightRecord(platform::RecordKind::GlError, getGLErrorString(error), s64(error));
 	}
 }
 

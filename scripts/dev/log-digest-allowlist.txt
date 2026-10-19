@@ -23,3 +23,9 @@
 ^\[W\] CommandChannel:\d+\s+\[hang\] main thread responsive again after \d+ ms$
 # A stall the test channel asks for on purpose (stall / stall load; level-load-hang.xrs in every CI run)
 ^\[W\] CommandChannel:\d+\s+\[hang\] main thread stalled for \d+ ms \(report \d of at most \d\), last beat at .*, then a stall the test channel asked for$
+
+# The flight recorder (#545): a stall's hang report names its dump (hang-dump.xrs in CI), and the channel's deliberate
+# ends of the game - abort, terminate, heapcorrupt, exitprocess, leak - say so before they act (flight-recorder-check.ps1)
+^\[W\] CommandChannel:\d+\s+\[hang\] dump written: hangs[\\/]
+^\[W\] CommandChannel:\d+\s+\[channel\] (abort\(\)|std::terminate\(\)( on a foreign thread)?|heap corruption|exitprocess -?\d+) requested
+^\[W\] CommandChannel:\d+\s+\[channel\] leaked \d+ MiB on purpose

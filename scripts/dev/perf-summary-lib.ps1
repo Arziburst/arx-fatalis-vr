@@ -29,12 +29,13 @@ function ConvertFrom-ArxPerfPairs([string]$Text) {
 # The lines of a log as objects: Header (the '#' lines), Seconds, Hitches, Marks, Ended (the '# end' line was written)
 function Read-ArxPerfLog([string[]]$Lines) {
 	$log = [pscustomobject]@{
-		Header  = [Collections.Generic.List[string]]::new()
-		Seconds = [Collections.Generic.List[object]]::new()
-		Hitches = [Collections.Generic.List[object]]::new()
-		Marks   = [Collections.Generic.List[object]]::new()
-		Ended   = $false
-		Unknown = 0
+		Header    = [Collections.Generic.List[string]]::new()
+		Seconds   = [Collections.Generic.List[object]]::new()
+		Hitches   = [Collections.Generic.List[object]]::new()
+		Marks     = [Collections.Generic.List[object]]::new()
+		Resources = [Collections.Generic.List[object]]::new()
+		Ended     = $false
+		Unknown   = 0
 	}
 	foreach ($line in $Lines) {
 		if (-not $line) { continue }
@@ -55,6 +56,9 @@ function Read-ArxPerfLog([string[]]$Lines) {
 			$log.Hitches.Add([pscustomobject]$h)
 		} elseif ($line -match '^M t=([0-9.]+) ?(.*)$') {
 			$log.Marks.Add([pscustomobject]@{ t = [double]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture); Text = $Matches[2] })
+		} elseif ($line.StartsWith('R ') -and $parts.Count -eq 1) {
+			# A resource line (#545): "R t=<s> priv=<MiB> ws=<MiB> commit=<MiB> handles= gdi= user= threads= tex= buf= xrsc="
+			$log.Resources.Add([pscustomobject](ConvertFrom-ArxPerfPairs $line.Substring(2)))
 		} else {
 			$log.Unknown++
 		}
@@ -103,6 +107,60 @@ function Get-ArxPerfDisplays($Seconds, [double]$Tolerance = 0.05) {
 		else { $g.Verdict = 'MISMATCH' }
 	}
 	, $groups
+}
+
+# The resource trend (#545): one entry per R-line field, in the R line's order, each with the number of
+# samples, the first / last / max value, the least-squares slope per minute and the largest single rise
+# between two consecutive samples (0 when the field never rose) with the t of the sample after it (the
+# first such rise on a tie). Empty when the log has no R line. src/platform/ProcessResources.h defines
+# the fields; scripts/dev/test-resource-trend.ps1 covers this.
+function Get-ArxResourceTrend($Resources) {
+	$trend = [ordered]@{}
+	$rows = @($Resources | Where-Object { $null -ne $_ })
+	if ($rows.Count -eq 0) { return $trend }
+	$fields = 'priv', 'ws', 'commit', 'handles', 'gdi', 'user', 'threads', 'tex', 'buf', 'xrsc'
+	$ts = @($rows | ForEach-Object { [double]$_.t })
+	$tMean = ($ts | Measure-Object -Average).Average
+	$denT = 0.0
+	foreach ($t in $ts) { $denT += ($t - $tMean) * ($t - $tMean) }
+	foreach ($field in $fields) {
+		$vs = @($rows | ForEach-Object { [double]$_.$field })
+		$vMean = ($vs | Measure-Object -Average).Average
+		$num = 0.0
+		for ($i = 0; $i -lt $vs.Count; $i++) { $num += ($ts[$i] - $tMean) * ($vs[$i] - $vMean) }
+		$slope = if ($denT -ne 0) { 60.0 * $num / $denT } else { 0.0 }
+		$step = 0.0
+		$stepT = $rows[0].t
+		for ($i = 1; $i -lt $vs.Count; $i++) {
+			$rise = $vs[$i] - $vs[$i - 1]
+			if ($rise -gt $step) { $step = $rise; $stepT = $rows[$i].t }
+		}
+		$trend[$field] = [pscustomobject]@{
+			Samples = $vs.Count
+			First   = $vs[0]
+			Last    = $vs[-1]
+			Max     = ($vs | Measure-Object -Maximum).Maximum
+			Slope   = $slope
+			Step    = $step
+			StepT   = $stepT
+		}
+	}
+	$trend
+}
+
+# The resource trend as text rows, the field name first (shared by Format-ArxPerfSummary's "Resources"
+# section and scripts/dev/crash-report.ps1's "Resource trend" section)
+function Format-ArxResourceRows($Trend) {
+	$c = [Globalization.CultureInfo]::InvariantCulture
+	$out = @()
+	if (-not $Trend) { return $out }
+	foreach ($kv in $Trend.GetEnumerator()) {
+		$v = $kv.Value
+		$slope = if ($v.Slope -ge 0) { '+' + [string]::Format($c, '{0:0.0}', $v.Slope) } else { [string]::Format($c, '{0:0.0}', $v.Slope) }
+		$out += [string]::Format($c, '  {0,-8} first {1:0.0}  last {2:0.0}  max {3:0.0}  slope {4}/min  step +{5:0.0} at t={6}',
+			$kv.Key, $v.First, $v.Last, $v.Max, $slope, $v.Step, $v.StepT)
+	}
+	$out
 }
 
 # The summary of a read log: Run totals, Budget (phase -> mean ms per frame over the run, largest first),
@@ -167,6 +225,7 @@ function Get-ArxPerfSummary($Log, [int]$Top = 5, [double[]]$ExpectHz = @()) {
 		Marks   = @($Log.Marks)
 		Displays = $displays
 		Expect  = @($expectations)
+		Resources = Get-ArxResourceTrend $(if ($Log.PSObject.Properties['Resources']) { $Log.Resources } else { @() })
 	}
 }
 
@@ -233,6 +292,12 @@ function Format-ArxPerfSummary($Summary, [string]$Path = '') {
 	if ($Summary.Marks.Count) {
 		$out.Add('Marks:')
 		foreach ($m in $Summary.Marks) { $out.Add([string]::Format($c, '  t={0,9:0.000} s  {1}', $m.t, $m.Text)) }
+	}
+
+	# The resource trend (#545): process memory, handles, threads and the renderer's / OpenXR's objects
+	if ($Summary.PSObject.Properties['Resources'] -and @($Summary.Resources.Keys).Count) {
+		$out.Add('Resources (process memory in MiB, handles, threads, renderer and OpenXR objects; first / last / max / slope per minute / largest step):')
+		foreach ($row in Format-ArxResourceRows $Summary.Resources) { $out.Add($row) }
 	}
 	$out
 }

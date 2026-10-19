@@ -33,6 +33,7 @@
 #include "gui/book/Book.h"
 #include "gui/hud/SecondaryInventory.h"
 #include "io/log/Logger.h"
+#include "platform/DumpHelper.h"
 #include "platform/Time.h"
 
 extern bool bGCroucheToggle;
@@ -84,6 +85,8 @@ void setState(GameState state, AreaId area = AreaId()) {
 		event("area", u32(g_currentArea));
 	}
 	g.state = state;
+	// The flight recorder keeps the state changes in every launch (#545)
+	platform::flightRecord(platform::RecordKind::State, std::string("game ") + gameStateName(state));
 }
 
 const char * bookPageName(ARX_INTERFACE_BOOK_MODE page) {
@@ -242,6 +245,7 @@ void update() {
 		g.scene = scene;
 		Event("scene")("state", scene ? "start" : "end")("area", u32(g_currentArea))
 			("camera", entityName(g_cameraEntity))("controlsBlocked", BLOCK_PLAYER_CONTROLS);
+		platform::flightRecord(platform::RecordKind::State, scene ? "scene start" : "scene end", s64(u32(g_currentArea)));
 	}
 
 	// UI changes only count while the player plays: the menu hides the interface without closing it
@@ -255,6 +259,7 @@ void levelLoading(AreaId area) {
 	g.loadStart = platform::getTime();
 	setState(GameState::Loading, area);
 	Event("level.load")("area", u32(area));
+	platform::flightRecord(platform::RecordKind::State, "level load", s64(u32(area)));
 }
 
 void levelLoaded(AreaId area, bool success) {

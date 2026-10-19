@@ -165,6 +165,9 @@ $copy = Get-ArxWorkingCopyInfo $SourceDir
 $stamp = Assert-ArxFreshBuild -SourceDir $SourceDir -BuildDir $BuildDir -Config $Config -Head $copy.Head -Rebuild:$Rebuild
 $exe = Join-Path $BuildDir 'arx.exe'
 
+# Keep this build's arx.pdb under its exe hash so a later crash report of it can be symbolised (#545, stage 0)
+$null = Save-ArxSymbolArchive -BuildDir $BuildDir -Branch $copy.Branch -Config $Config
+
 # The game finds the data in the Steam libraries itself (#79); --data-dir only for -DataDir
 $dataArgs = if ($DataDir) { @('--data-dir', $DataDir) } else { @() }
 

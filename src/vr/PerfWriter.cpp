@@ -95,6 +95,13 @@ size_t PerfWriter::dropped() {
 	return m_dropped + m_heldDropped;
 }
 
+void PerfWriter::setPeriodic(std::chrono::milliseconds every, std::function<std::string()> make) {
+	std::scoped_lock lock(m_mutex);
+	m_periodicEvery = every;
+	m_periodic = std::move(make);
+	m_periodicNext = std::chrono::steady_clock::now() + every;
+}
+
 void PerfWriter::run() {
 
 	std::string batch;
@@ -103,6 +110,25 @@ void PerfWriter::run() {
 	while(true) {
 
 		m_wake.wait_for(lock, m_interval, [this] { return m_stop || m_flushWanted; });
+
+		// The periodic line, on a fixed schedule (a writer thread held up for long starts afresh from now,
+		// so two lines never come at once)
+		if(m_periodic && m_periodicEvery.count() > 0 && std::chrono::steady_clock::now() >= m_periodicNext) {
+			auto now = std::chrono::steady_clock::now();
+			m_periodicNext += m_periodicEvery;
+			if(now - m_periodicNext >= m_periodicEvery) {
+				m_periodicNext = now + m_periodicEvery;
+			}
+			std::function<std::string()> make = m_periodic;
+			lock.unlock();
+			std::string line = make();
+			lock.lock();
+			if(!line.empty() && m_pending.size() + line.size() + 1 <= m_maxPending) {
+				m_pending.append(line);
+				m_pending.push_back('\n');
+				m_pushed++;
+			}
+		}
 
 		batch.clear();
 		batch.swap(m_pending);

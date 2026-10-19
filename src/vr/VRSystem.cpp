@@ -48,6 +48,7 @@
 #include "io/fs/Filesystem.h"
 #include "io/log/Logger.h"
 #include "platform/CrashHandler.h"
+#include "platform/DumpHelper.h"
 #include "platform/ExitTrace.h"
 #include "platform/ProgramOptions.h"
 #include "platform/Thread.h"
@@ -1730,6 +1731,8 @@ void updatePanel() {
 	if(mode != panel.loggedMode) {
 		panel.loggedMode = mode;
 		gameevent::Event("vr.panel")("mode", panelModeName(mode))("menu", panel.menu.empty() ? "none" : panel.menu);
+		platform::flightRecord(platform::RecordKind::State, std::string("panel ") + panelModeName(mode)
+		                       + ' ' + (panel.menu.empty() ? "none" : panel.menu));
 	}
 
 	// The logos and the cinematics play on a screen fixed in the room (#394): placed where the player
@@ -2381,6 +2384,7 @@ void pollEvents() {
 				g_xr.sessionState = changed.state;
 				gameevent::Event("vr.session")("state", sessionStateName(changed.state))
 					("was", sessionStateName(previous))("meaning", sessionStateMeaning(changed.state));
+				platform::flightRecord(platform::RecordKind::State, std::string("vr ") + sessionStateName(changed.state));
 				if(previous == XR_SESSION_STATE_FOCUSED) {
 					logFocusLost();
 				}

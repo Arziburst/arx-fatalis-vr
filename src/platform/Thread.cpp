@@ -44,6 +44,7 @@
 #include "math/Random.h"
 
 #include "platform/CrashHandler.h"
+#include "platform/DumpHelper.h"
 #include "platform/Platform.h"
 #include "platform/WindowsUtils.h"
 #include "platform/profiler/Profiler.h"
@@ -156,11 +157,14 @@ void * Thread::entryPoint(void * param) {
 	Random::seed();
 	CrashHandler::registerThreadCrashHandlers();
 	profiler::registerThread(thread.m_threadName);
+	platform::flightNameThread(thread.m_threadName);
+	platform::flightRecord(platform::RecordKind::Thread,
+	                       "start " + (thread.m_threadName.empty() ? std::string("thread") : thread.m_threadName));
 	thread.run();
 	profiler::unregisterThread();
 	CrashHandler::unregisterThreadCrashHandlers();
 	Random::shutdown();
-	
+
 	return nullptr;
 }
 
@@ -270,11 +274,16 @@ DWORD WINAPI Thread::entryPoint(LPVOID param) {
 	Random::seed();
 	CrashHandler::registerThreadCrashHandlers();
 	profiler::registerThread(static_cast<Thread *>(param)->m_threadName);
+	{
+		const std::string & name = static_cast<Thread *>(param)->m_threadName;
+		platform::flightNameThread(name);
+		platform::flightRecord(platform::RecordKind::Thread, "start " + (name.empty() ? std::string("thread") : name));
+	}
 	static_cast<Thread *>(param)->run();
 	profiler::unregisterThread();
 	CrashHandler::unregisterThreadCrashHandlers();
 	Random::shutdown();
-	
+
 	return 0;
 }
 

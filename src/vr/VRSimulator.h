@@ -28,6 +28,7 @@
 
 #include "platform/Platform.h"
 #include "vr/EyeImage.h"
+#include "vr/ReplayClip.h"
 #include "vr/SimRig.h"
 
 /*!
@@ -132,6 +133,10 @@ struct SimStatus {
 	u64 syncs = 0;         //!< xrSyncActions while focused
 	std::vector<SimShot> shots;
 	size_t pendingShots = 0;
+	//! A recorded clip streamed into the rig (#550, the `play` command): status.json vr.sim.play while one was started
+	bool playing = false;
+	ClipStatus play;
+	std::string playError; //!< the clip player's error, or why the file could not be played
 };
 
 SimStatus simStatus();

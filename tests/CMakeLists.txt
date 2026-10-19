@@ -216,6 +216,7 @@ set(arxtest_SOURCES
 	src/vr/FramePacing.cpp
 	src/vr/PerfStats.cpp
 	src/vr/PerfWriter.cpp
+	src/vr/ReplayClip.cpp
 	src/vr/VRBindings.cpp
 	src/vr/HeadLean.cpp
 	src/vr/HeadPose.cpp

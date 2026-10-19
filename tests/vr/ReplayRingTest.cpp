@@ -189,7 +189,7 @@ void ringAssertSelfContained(const std::string & clip, size_t firstK, size_t las
 	CPPUNIT_ASSERT_EQUAL(std::string(), script.load(clip));
 }
 
-} // namespace ARX_ANONYMOUS_NAMESPACE
+} ARX_END_ANONYMOUS_NAMESPACE
 
 void ReplayRingTest::testKeepsTheLastSixtySeconds() {
 

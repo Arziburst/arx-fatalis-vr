@@ -11,8 +11,9 @@
 	  <user dir>\hangs\<utc>\     the hang watchdog's report of a stall (the game ran on)
 
 	Each folder holds report.txt (key=value lines, then "stack:" and the stack), arx-recorder.txt (the flight
-	recorder, tests/platform/FlightRecorderTest.h), arx-perf.log (the run's performance log) and, when the game
-	was still there to dump, the minidump named by dump=.
+	recorder, tests/platform/FlightRecorderTest.h), arx-perf.log (the run's performance log), arx-replay.vrsim
+	when the game recorded a VR session (the last 60 s of poses and inputs, #550: "Replay clip: ..." names it;
+	scripts/dev/replay.ps1 plays it) and, when the game was still there to dump, the minidump named by dump=.
 
 	This prints one report. With a cdb.exe it symbolises the dump's stack; without one (or without a dump) it
 	prints the stack report.txt already holds (the game symbolised arx.exe's frames with DbgHelp at the crash).
@@ -181,6 +182,16 @@ if ($perfLines.Count) {
 		Emit 'Resource trend (arx-perf.log; first / last / max / slope per minute / largest step):'
 		foreach ($row in Format-ArxResourceRows $trend) { Emit $row }
 	}
+}
+
+# --- The replay clip (#550): the last 60 s of poses and inputs before the report ----------------------
+
+$clipTimes = @(Read-ReportLines (Join-Path $folder 'arx-replay.vrsim') | ForEach-Object { if ($_ -match '^@(\d+)ms\s+(?!anchor\b)') { [long]$Matches[1] } })
+if ($clipTimes.Count) {
+	$span = (($clipTimes[-1] - $clipTimes[0]) / 1000.0).ToString('0.0', [Globalization.CultureInfo]::InvariantCulture)
+	Emit "Replay clip: arx-replay.vrsim, $($clipTimes.Count) frames, $span s (replay it: scripts/dev/replay.ps1 <the report folder>\arx-replay.vrsim)"
+} else {
+	Emit 'Replay clip: none'
 }
 
 exit 0

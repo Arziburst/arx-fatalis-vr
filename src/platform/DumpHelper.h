@@ -70,9 +70,22 @@ const char * dumpKindName(DumpKind kind) noexcept;
  * \param userDir   the user directory; the helper writes userDir\\crashes\\ and userDir\\hangs\\
  * \param version   arx_name + " " + arx_version, for the report
  * \param enabled   false with --no-recorder
+ * \param regionBytes  bytes of a region after the recorder the game fills itself (\ref dumpHelperRegion: the
+ *                  replay ring, #550); the helper writes it into every report through \ref setDumpRegionWriter
  */
 bool initializeDumpHelper(const std::string & exePath, const std::string & userDir,
-                          const std::string & version, bool enabled);
+                          const std::string & version, bool enabled, size_t regionBytes = 0);
+
+//! The region of the shared memory reserved by \a regionBytes (\a size gets its bytes), 16-aligned; null without one
+void * dumpHelperRegion(size_t & size) noexcept;
+
+/*!
+ * \brief How the helper turns the region into a report file (#550: vr::replayRingClip -> arx-replay.vrsim)
+ *
+ * Called in the helper process (utf8_main, before runDumpHelper): \a writer gets the region's bytes (a copy of the
+ * game's, untrusted) and returns the file's text, "" for none; \a fileName is the file's name in the report folder
+ */
+void setDumpRegionWriter(std::string (*writer)(const void * image, size_t size), const char * fileName) noexcept;
 
 //! The game's flight recorder, or nullptr when it is off; name the calling thread's ring once
 FlightRecorder * flightRecorder() noexcept;

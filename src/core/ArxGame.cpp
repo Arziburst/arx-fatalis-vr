@@ -188,6 +188,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "vr/HeadLean.h"
 #include "vr/HeadTracking.h"
 #include "vr/PerfLog.h"
+#include "vr/ReplayRecorder.h"
 #include "vr/SceneSubtitles.h"
 #include "vr/SceneView.h"
 #include "vr/VRBody.h"
@@ -1183,6 +1184,8 @@ void ArxGame::shutdown() {
 
 	// The last second of frames, before the slow parts of the shutdown
 	vr::perf::shutdown();
+	// The session's clip (#550): closed and compressed
+	vr::replay::shutdown();
 
 	if(m_gameInitialized)
 		shutdownGame();
@@ -1546,6 +1549,12 @@ void ArxGame::doFrame() {
 	{
 		vr::perf::Scope perfChannel(vr::PerfPhase::Channel);
 		channel::update();
+	}
+
+	// The replay recorder (#550): this frame's poses and inputs, as the runtime gave them, to arx-replay.log
+	{
+		vr::perf::Scope perfInput(vr::PerfPhase::Input);
+		vr::replay::frame();
 	}
 
 	{

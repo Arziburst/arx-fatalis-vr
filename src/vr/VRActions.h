@@ -93,6 +93,9 @@ public:
 	//! How often the actions were synced while focused
 	u64 syncs() const { return m_syncs; }
 
+	//! The raw values the last sync read (#550): zeros while not focused
+	const RawActionValues & raw() const { return m_raw; }
+
 	//! A hand's aim pose: the pointer ray starts at \c position and runs along the orientation's -z
 	struct AimPose {
 		bool valid = false; //!< position and orientation are tracked
@@ -148,6 +151,7 @@ private:
 	bool m_focused = false;
 	u32 m_syncFailures = 0;
 	u64 m_syncs = 0;
+	RawActionValues m_raw; //!< what the last sync read, for the replay recorder (#550)
 
 	std::array<std::string, HandCount> m_profiles;
 	bool m_profileCheckDue = true;

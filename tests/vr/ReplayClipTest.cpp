@@ -207,7 +207,7 @@ void clipAssertPoseNear(const std::string & what, const vr::SimPose & expected, 
 	}
 }
 
-} // namespace ARX_ANONYMOUS_NAMESPACE
+} ARX_END_ANONYMOUS_NAMESPACE
 
 void ReplayClipTest::testDialectCommands() {
 
@@ -514,8 +514,8 @@ void ReplayClipTest::testFrameSizeBudget() {
 	vr::ReplayFrame still = frame;
 	still.timeUs = 1800000000;
 	still.rig.head.angles.x += 0.5f;
-	const std::string small = vr::formatReplayFrame(still, &frame);
-	CPPUNIT_ASSERT_MESSAGE(small, small.size() <= 100);
+	const std::string smallLine = vr::formatReplayFrame(still, &frame);
+	CPPUNIT_ASSERT_MESSAGE(smallLine, smallLine.size() <= 100);
 }
 
 void ReplayClipTest::testPlayerReadsNoFurtherThanOneLineAhead() {

@@ -30,6 +30,7 @@
 #include "io/log/Logger.h"
 #include "io/resource/PakReader.h"
 #include "scene/ChangeLevel.h"
+#include "vr/ReplayRecorder.h"
 
 const fs::path SAVEGAME_NAME = "gsave.sav";
 
@@ -44,6 +45,17 @@ enum SaveGameChange {
 	SaveGameUnchanged,
 	SaveGameChanged
 };
+
+/*!
+ * The replay recorder's save slots (#550, vr/ReplayRecorder.cpp): save9000 .. save9004, the save made at every VR
+ * session's record start. They stay out of the load menu and the slot numbers (--loadslot 0 is the player's newest
+ * save, not the recorder's) unless they are the only saves - a replay's own user directory holds nothing else
+ */
+bool isReplaySlot(const fs::path & dirname) {
+	const std::string name = dirname.string();
+	return name.size() == 8 && name.compare(0, 4, "save") == 0 && name.compare(4, 4, "9000") >= 0
+	       && name.compare(4, 4, "9004") <= 0;
+}
 
 int saveTimeCompare(const SaveGame & a, const SaveGame & b) {
 	return (a.stime > b.stime);
@@ -69,12 +81,23 @@ void SaveGameList::update(bool verbose) {
 	if(verbose) {
 		LogInfo << "Using save game dir " << savedir;
 	}
-	
+
+	// The replay recorder's slots are listed only when no other save exists (#550)
+	bool ordinary = false;
+	for(fs::directory_iterator it(savedir); !it.end() && !ordinary; ++it) {
+		fs::path dirname = it.name();
+		ordinary = !isReplaySlot(dirname) && fs::last_write_time(savedir / dirname / SAVEGAME_NAME) != 0;
+	}
+
 	for(fs::directory_iterator it(savedir); !it.end(); ++it) {
-		
+
 		fs::path dirname = it.name();
 		fs::path path = savedir / dirname / SAVEGAME_NAME;
-		
+
+		if(ordinary && isReplaySlot(dirname)) {
+			continue;
+		}
+
 		std::time_t stime = fs::last_write_time(path);
 		if(stime == 0) {
 			LogDebug("Ignoring directory without " << SAVEGAME_NAME << ": " << path);
@@ -243,9 +266,12 @@ bool SaveGameList::save(std::string_view name, SavegameHandle overwrite, const I
 	if(thumbnail.isValid() && !thumbnail.save(savefile.parent() / SAVEGAME_THUMBNAIL)) {
 		LogWarning << "Failed to save screenshot to " << (savefile.parent() / SAVEGAME_THUMBNAIL);
 	}
-	
+
+	// A replay of this session holds at this point until the replayed game plays again (#550)
+	vr::replay::noteSave();
+
 	update();
-	
+
 	return true;
 }
 

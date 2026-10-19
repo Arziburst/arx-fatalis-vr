@@ -486,6 +486,7 @@ bool ActionSet::sync(ControllerInput & input, XrSpace viewSpace, XrTime time) {
 		                                                        : "off - session not focused, no input");
 		m_focused = focused;
 	}
+	m_raw = RawActionValues();
 	if(!focused) {
 		m_down.reset();
 		return false;
@@ -505,16 +506,18 @@ bool ActionSet::sync(ControllerInput & input, XrSpace viewSpace, XrTime time) {
 		const Hand hand = Hand(i);
 		bool isActive = false;
 
-		struct { XrAction action; ControlKind kind; Hysteresis threshold; float * value; } analog[] = {
-			{ m_actions.trigger, ControlKind::Trigger, TriggerThreshold, &input.trigger[i] },
+		// The raw index: the action's place in RawActionValues (the replay recorder, #550)
+		struct { XrAction action; ControlKind kind; Hysteresis threshold; float * value; size_t raw; } analog[] = {
+			{ m_actions.trigger, ControlKind::Trigger, TriggerThreshold, &input.trigger[i], 0 },
 			// The Index grip is how far the strapped hand is closed, above a resting hold (#496); the Touch grip a squeeze
 			{ m_actions.grip, ControlKind::Grip, gripThreshold(controllerTypeFromProfile(m_profiles[i]), indexGrip),
-			  &input.grip[i] },
-			{ m_actions.trackpad, ControlKind::Trackpad, TrackpadThreshold, nullptr },
+			  &input.grip[i], 1 },
+			{ m_actions.trackpad, ControlKind::Trackpad, TrackpadThreshold, nullptr, 6 },
 		};
 		for(const auto & entry : analog) {
 			const Control c = control(hand, entry.kind);
 			float value = readFloat(entry.action, hand, isActive);
+			m_raw.values[entry.raw][i].x = value;
 			bound[c] = isActive;
 			down[c] = entry.threshold.update(m_down[c], value);
 			if(entry.kind == ControlKind::Grip && down[c] != m_down[c]) {
@@ -527,16 +530,17 @@ bool ActionSet::sync(ControllerInput & input, XrSpace viewSpace, XrTime time) {
 			}
 		}
 
-		const struct { XrAction action; ControlKind kind; } buttons[] = {
-			{ m_actions.a, ControlKind::A },
-			{ m_actions.b, ControlKind::B },
-			{ m_actions.stickClick, ControlKind::StickClick },
-			{ m_actions.menu, ControlKind::Menu },
+		const struct { XrAction action; ControlKind kind; size_t raw; } buttons[] = {
+			{ m_actions.a, ControlKind::A, 2 },
+			{ m_actions.b, ControlKind::B, 3 },
+			{ m_actions.stickClick, ControlKind::StickClick, 5 },
+			{ m_actions.menu, ControlKind::Menu, 7 },
 		};
 		for(const auto & entry : buttons) {
 			const Control c = control(hand, entry.kind);
 			bool tapped = false;
 			down[c] = readBoolean(entry.action, hand, isActive, tapped);
+			m_raw.values[entry.raw][i].x = down[c] ? 1.f : 0.f;
 			bound[c] = isActive;
 			input.taps[c] = tapped && !m_down[c];
 		}
@@ -545,6 +549,7 @@ bool ActionSet::sync(ControllerInput & input, XrSpace viewSpace, XrTime time) {
 		{
 			bool tapped = false;
 			input.thumbTouch[i] = readBoolean(m_actions.thumbTouch, hand, isActive, tapped);
+			m_raw.values[8][i].x = input.thumbTouch[i] ? 1.f : 0.f;
 		}
 
 		XrActionStateGetInfo info = { XR_TYPE_ACTION_STATE_GET_INFO };
@@ -555,6 +560,7 @@ bool ActionSet::sync(ControllerInput & input, XrSpace viewSpace, XrTime time) {
 		if(stickActive) {
 			input.sticks[i].x = stick.currentState.x;
 			input.sticks[i].y = stick.currentState.y;
+			m_raw.values[4][i] = Vec2f(stick.currentState.x, stick.currentState.y);
 		}
 		for(ControlKind kind : { ControlKind::StickUp, ControlKind::StickDown, ControlKind::StickLeft,
 		                         ControlKind::StickRight }) {

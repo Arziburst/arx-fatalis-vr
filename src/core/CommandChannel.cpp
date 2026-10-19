@@ -109,6 +109,7 @@
 #include "vr/HeadTracking.h"
 #include "vr/MotionProbe.h"
 #include "vr/PerfLog.h"
+#include "vr/ReplayRecorder.h"
 #include "vr/SceneSubtitles.h"
 #include "vr/SceneView.h"
 #include "vr/VRArms.h"
@@ -598,6 +599,24 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 	}
 	json.end();
 	json.end();
+
+	// A recorded clip streamed into the rig (#550, the `play` command): where it is, what it served, the drift
+	if(sim.playing) {
+		json.object("play");
+		json.value("file", sim.play.file);
+		json.value("positionMs", float(sim.play.positionMs));
+		json.value("framesServed", sim.play.framesServed);
+		json.value("done", sim.play.done);
+		json.value("anchorsWaiting", u64(sim.play.anchorsWaiting));
+		json.object("drift");
+		json.value("current", sim.play.drift.current);
+		json.value("max", sim.play.drift.max);
+		json.value("frames", sim.play.drift.frames);
+		json.end();
+		json.value("eventsReplayed", sim.play.eventsReplayed);
+		json.value("error", sim.playError);
+		json.end();
+	}
 
 	// The eyes as the runtime located them last, in the room (meters; yaw / pitch in degrees)
 	json.object("eyes");
@@ -2507,6 +2526,12 @@ std::string execute(std::string_view line) {
 	if(word == "vr-radial") {
 		// The radial menus (#376): point <hand> <item> moves the simulated hand onto an item of its open menu
 		std::string error = vr::radialCommand(rest);
+		return error.empty() ? error : refuse(error);
+	}
+
+	if(word == "replay") {
+		// The replay recorder (#550): mark <name> [<seconds>] cuts the last seconds of the session into a clip
+		std::string error = vr::replay::command(rest);
 		return error.empty() ? error : refuse(error);
 	}
 

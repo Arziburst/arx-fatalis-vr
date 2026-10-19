@@ -40,7 +40,7 @@ std::vector<double> randomDraws(size_t count) {
 	return draws;
 }
 
-} // namespace ARX_ANONYMOUS_NAMESPACE
+} ARX_END_ANONYMOUS_NAMESPACE
 
 void RandomTest::testSeedRepeatsTheSequence() {
 	Random::seed(4242);

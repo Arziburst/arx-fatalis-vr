@@ -2750,6 +2750,28 @@ const FrameHands & frameHands() {
 	return g_xr.frame.hands;
 }
 
+std::array<AimSample, HandCount> frameAims() {
+	std::array<AimSample, HandCount> aims;
+	if(!g_xr.running || !g_xr.frame.begun) {
+		return aims;
+	}
+	const std::array<ActionSet::AimPose, HandCount> poses = g_xr.actions.locateAim(g_xr.localSpace, g_xr.frame.state.predictedDisplayTime);
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		aims[hand].valid = poses[hand].valid;
+		aims[hand].position = poses[hand].position;
+		aims[hand].orientation = poses[hand].orientation;
+	}
+	return aims;
+}
+
+s64 displayPeriodUs() {
+	return g_xr.running ? g_xr.frame.period : 0;
+}
+
+const RawActionValues & rawControllerValues() {
+	return g_xr.actions.raw();
+}
+
 bool isEnabled() {
 	return g_xr.session != XR_NULL_HANDLE;
 }
@@ -3119,6 +3141,19 @@ const FrameHands & frameHands() {
 	return none;
 }
 
+std::array<AimSample, HandCount> frameAims() {
+	return { };
+}
+
+s64 displayPeriodUs() {
+	return 0;
+}
+
+const RawActionValues & rawControllerValues() {
+	static const RawActionValues none;
+	return none;
+}
+
 const char * sessionStateString() {
 	return "none";
 }
@@ -3254,5 +3289,12 @@ FrameCounters frameCounters() {
 void shutdown() { }
 
 #endif // !ARX_HAVE_OPENXR
+
+const char * RawActionValues::name(size_t index) {
+	static const char * const names[Count] = {
+		"trigger", "grip", "button_a", "button_b", "thumbstick", "thumbstick_click", "trackpad_press", "menu", "thumb_touch",
+	};
+	return index < Count ? names[index] : "";
+}
 
 } // namespace vr

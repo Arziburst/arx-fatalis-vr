@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: Crash diagnostics are a flight recorder in shared memory plus an out-of-process dump helper, shipped in stages
+## D-059: Crash diagnostics are a flight recorder in shared memory plus an out-of-process dump helper, shipped in stages
 
 - **Date:** 2026-10-19
 - **Status:** Accepted (#545, stage 1; the research is `coordinator/plans/2026-10-19-flight-recorder-research.md`)

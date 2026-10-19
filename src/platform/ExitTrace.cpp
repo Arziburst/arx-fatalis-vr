@@ -222,9 +222,10 @@ void onCrtExit() {
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32 && ARX_COMPILER_MSVC
 
 // The ExitGuard (#545): every thread, as it is born, is logged with its start routine; a thread that
-// starts straight at ExitProcess / ExitThread / TerminateProcess / RtlExitUserProcess is an exit from
-// outside the game's own shutdown (the #544 shape: a foreign CreateThread / CreateRemoteThread), so we ask
-// the dump helper for a report of every thread before the exit proceeds - record only, never refuse the kill.
+// starts straight at ExitProcess / TerminateProcess / RtlExitUserProcess is an exit from outside the
+// game's own shutdown (the #544 shape: a foreign CreateThread / CreateRemoteThread), so we ask the dump
+// helper for a report of every thread before the exit proceeds - record only, never refuse the kill. A
+// thread that starts at ExitThread ends only itself: it is named in the record, nothing more.
 namespace {
 
 void exitGuardOnThreadStart() {

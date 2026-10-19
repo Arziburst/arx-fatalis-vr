@@ -13,6 +13,45 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: Crash diagnostics are a flight recorder in shared memory plus an out-of-process dump helper, shipped in stages
+
+- **Date:** 2026-10-19
+- **Status:** Accepted (#545, stage 1; the research is `coordinator/plans/2026-10-19-flight-recorder-research.md`)
+- **Decided by:** the owner (the stages, the 5 MiB / 0.05 ms budget, one report folder per death, the dump scrubbed in
+  place); the worker of #545 (the ring layout, the helper protocol - technical internals, D-017)
+
+### Decision
+- **The flight recorder** keeps the run's last events (frames, state changes, channel commands, thread births with their
+  start routine, GL errors, texture / buffer creates, watchdog beats, exit causes) in **per-thread lock-free rings of
+  fixed 64-byte records** (`src/platform/FlightRecorder.h`): one producer per ring, a per-record sequence lock for the
+  reader, no pointers and no absolute addresses in the image, so a byte copy - or the bytes read from another process
+  or from a minidump - serialises to the same text. Serialising never trusts the image.
+- **The rings live in a file mapping the game shares with `arx.exe --dump-helper`**, a second copy of the executable
+  started at launch (`src/platform/DumpHelper.h`). The helper writes the minidump out of process while the game is
+  still alive (every thread before the exit proceeds, ThreadInfo / HandleData / UnloadedModules, the recorder as a
+  user stream) and the report files - `report.txt`, `arx-recorder.txt`, a copy of `arx-perf.log` - **after the game
+  has exited**, so the exit code is the real one; a hang is reported at once and the game runs on. A game killed from
+  outside (`TerminateProcess`) still gets `kind=terminated` with its real exit code and the recorder, because the
+  helper outlives it by a bounded time. **Exactly one folder per death** (`crashes\<utc>\`, `hangs\<utc>\`); the five
+  newest are kept; every file of a folder, the dump included, is rewritten in place with same-length placeholders
+  where a user path, the account or the machine name stood (#387).
+- **The ExitGuard** (`src/platform/ExitTrace.cpp`): every thread birth is logged with its start routine; a thread that
+  starts straight at `ExitProcess` / `TerminateProcess` (the #544 shape) asks the helper for the report first, waits
+  a bounded 15 s, and never refuses the kill.
+- **Always on, measured:** the hang watchdog runs in every launch, not only with `--test-dir`; `arx-perf.log` gets a
+  resource line every 5 s; `--no-recorder` turns the recorder and the helper off and is the overhead baseline
+  (budget: 0.05 ms per frame, 5 MiB for the game plus the helper). `scripts/dev/crash-report.ps1` is the one command
+  that reads a report.
+- **Stages:** 0 = local extras without code (the WER LocalDumps key, WinDbg, the `arx.pdb` archive per exe hash);
+  1 = this; 2 = a WER runtime-exception module only if WER is not enough; 3 = upload (Sentry Native or our own
+  HTTPS) - later, no network and no third-party crash SDK before that.
+
+### Consequences
+- The old `--crashinfo` processor is no longer the owner of a crash folder: the helper is. A crash still leaves a
+  `crash.txt` next to `report.txt` so the run digest and the smoke test keep reading it.
+- The helper is the same `arx.exe`: `launch-lib`'s "game outside the lock" check and the digest's crash wait know
+  `--dump-helper`; the helper breaks away from a launcher's kill-on-close job so it can finish its report.
+
 ## D-058: The game menu stays reachable whatever is rebound - a refused last binding and a fixed two-stick hold
 
 - **Date:** 2026-10-18

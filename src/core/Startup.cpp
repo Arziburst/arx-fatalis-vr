@@ -66,6 +66,7 @@
 #include "platform/Compiler.h"
 #include "platform/CrashHandler.h"
 #include "platform/Dialog.h"
+#include "platform/DumpHelper.h"
 #include "platform/Environment.h"
 #include "platform/Process.h"
 #include "platform/profiler/Profiler.h"
@@ -336,6 +337,12 @@ void logStartupBanner(int argc, char ** argv, const fs::path & logFile,
 
 int utf8_main(int argc, char ** argv) {
 
+	// The flight recorder's out-of-process dump helper (#545): handle it before anything else - no engine,
+	// no crash handler, no logger - so the helper process stays tiny (it only maps shared memory and waits)
+	if(argc >= 2 && std::string_view(argv[1]) == "--dump-helper") {
+		return platform::runDumpHelper(argc, argv);
+	}
+
 	// GCC -ffast-math disables denormal before main() - do the same for other compilers
 	Thread::disableFloatDenormals();
 	
@@ -424,6 +431,11 @@ int utf8_main(int argc, char ** argv) {
 		Logger::add(new MemoryLogger(&g_console.buffer()));
 
 		profiler::initialize();
+
+		// The flight recorder and its out-of-process dump helper (#545): started once the user directory
+		// is known (that is where the reports go); --no-recorder keeps both off (the overhead baseline)
+		platform::initializeDumpHelper(platform::getExecutablePath().string(), fs::getUserDir().string(),
+		                               arx_name + " " + arx_version, platform::flightRecorderRequested());
 
 		// 14: Start the game already!
 		LogInfo << "Starting " << arx_name << ' ' << arx_version;

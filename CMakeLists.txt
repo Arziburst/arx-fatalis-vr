@@ -1194,6 +1194,7 @@ endif()
 # Extra platform abstraction - depends on the crash handler or SDL
 set(PLATFORM_EXTRA_SOURCES
 	src/platform/Dialog.cpp
+	src/platform/DumpHelper.cpp
 	src/platform/ExitReport.cpp
 	src/platform/ExitTrace.cpp
 	src/platform/FlightRecorder.cpp

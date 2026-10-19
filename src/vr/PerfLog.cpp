@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -33,6 +34,8 @@
 #include "io/fs/SystemPaths.h"
 #include "io/log/FileLogger.h"
 #include "io/log/Logger.h"
+#include "platform/DumpHelper.h"
+#include "platform/ProcessResources.h"
 #include "platform/ProgramOptions.h"
 #include "platform/Time.h"
 #include "vr/PerfWriter.h"
@@ -52,6 +55,14 @@ bool g_disabled = false;
 void disable() {
 	g_disabled = true;
 }
+
+// Live GL / OpenXR objects for the resource line (#545): counted as they are created and destroyed
+std::atomic<u32> g_glTextures(0);
+std::atomic<u32> g_glBuffers(0);
+std::atomic<u32> g_xrSwapchains(0);
+
+//! When the last R line was written; 0 = none yet (the first sampleResources() writes at once)
+PlatformInstant g_lastResource = PlatformInstant(0);
 
 //! Scopes time only on the thread that opened the log (the main thread) while it is open
 thread_local bool t_timing = false;
@@ -170,6 +181,7 @@ void initialize() {
 	               " 1.5 expected frame times, with its phases; M = a mark. Summary: scripts/dev/perf-summary.ps1");
 
 	g.origin = platform::getTime();
+	g_lastResource = PlatformInstant(0);
 	t_timing = true;
 
 	LogInfo << "[perf] performance log: " << path << " (a line per second and per hitch; --no-perf-log turns it off)";
@@ -291,6 +303,40 @@ void countUpload() {
 	if(t_timing) {
 		g.frame.uploads++;
 	}
+}
+
+void addTexture() {
+	u32 n = g_glTextures.fetch_add(1, std::memory_order_relaxed) + 1;
+	platform::flightRecord(platform::RecordKind::Texture, std::string_view(), s64(n));
+}
+void removeTexture() { g_glTextures.fetch_sub(1, std::memory_order_relaxed); }
+void addBuffer() {
+	u32 n = g_glBuffers.fetch_add(1, std::memory_order_relaxed) + 1;
+	platform::flightRecord(platform::RecordKind::Buffer, std::string_view(), s64(n));
+}
+void removeBuffer() { g_glBuffers.fetch_sub(1, std::memory_order_relaxed); }
+void addSwapchain() { g_xrSwapchains.fetch_add(1, std::memory_order_relaxed); }
+void removeSwapchain() { g_xrSwapchains.fetch_sub(1, std::memory_order_relaxed); }
+
+void sampleResources() {
+
+	if(!g.writer) {
+		return;
+	}
+
+	PlatformInstant now = platform::getTime();
+	if(g_lastResource != PlatformInstant(0) && toMsi(now - g_lastResource) < 5000) {
+		return;
+	}
+	g_lastResource = now;
+
+	platform::ResourceSample sample;
+	sample.second = u32(std::max<s64>(toUs(now - g.origin) / 1000000, 0));
+	sample.process = platform::sampleProcessResources();
+	sample.textures = g_glTextures.load(std::memory_order_relaxed);
+	sample.buffers = g_glBuffers.load(std::memory_order_relaxed);
+	sample.swapchains = g_xrSwapchains.load(std::memory_order_relaxed);
+	g.writer->push(platform::formatResources(sample));
 }
 
 void mark(std::string_view text) {

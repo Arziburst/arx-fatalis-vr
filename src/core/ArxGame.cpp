@@ -160,6 +160,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "platform/CrashHandler.h"
 #include "platform/Dialog.h"
+#include "platform/DumpHelper.h"
 #include "platform/ExitTrace.h"
 #include "platform/Platform.h"
 #include "platform/Process.h"
@@ -1197,6 +1198,8 @@ void ArxGame::shutdown() {
 
 	LogInfo << "Clean shutdown";
 	platform::markCleanExit();
+	// Tell the flight recorder's dump helper this exit is clean: no report, just let it go (#545)
+	platform::dumpHelperMarkClean();
 }
 
 void ArxGame::shutdownGame() {
@@ -1474,6 +1477,16 @@ void ArxGame::doFrame() {
 
 	// The performance log (#327): the previous frame ends here, this one's phases are timed from now on
 	vr::perf::frameStart();
+
+	// The flight recorder (#545): one event per frame, and a resource line into arx-perf.log every 5 s
+	// (off with --no-recorder, the overhead baseline). The hang watchdog beats inside channel::update.
+	{
+		static s64 s_frame = 0;
+		platform::flightRecord(platform::RecordKind::Frame, std::string_view(), ++s_frame);
+		if(platform::dumpHelperEnabled()) {
+			vr::perf::sampleResources();
+		}
+	}
 
 	{
 		vr::perf::Scope perfInput(vr::PerfPhase::Input);

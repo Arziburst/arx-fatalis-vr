@@ -1193,6 +1193,7 @@ endif()
 
 # Extra platform abstraction - depends on the crash handler or SDL
 set(PLATFORM_EXTRA_SOURCES
+	src/platform/CrashNotice.cpp
 	src/platform/Dialog.cpp
 	src/platform/DumpHelper.cpp
 	src/platform/ExitReport.cpp

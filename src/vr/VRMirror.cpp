@@ -26,6 +26,7 @@
 #include "core/GameEvent.h"
 #include "gui/Menu.h"
 #include "io/log/Logger.h"
+#include "vr/PerfLog.h" // the live GL texture count for the resource line (#545)
 #include "vr/VRSwapchain.h"
 
 namespace vr {
@@ -147,15 +148,18 @@ void DesktopMirror::stop(const std::string & why) {
 void DesktopMirror::destroy() {
 	if(m_eyeTexture) {
 		glDeleteTextures(1, &m_eyeTexture);
+		vr::perf::removeTexture();
 		m_eyeTexture = 0;
 	}
 	if(m_flatTexture) {
 		glDeleteTextures(1, &m_flatTexture);
+		vr::perf::removeTexture();
 		m_flatTexture = 0;
 	}
 	for(GLuint & texture : m_overlayTextures) {
 		if(texture) {
 			glDeleteTextures(1, &texture);
+			vr::perf::removeTexture();
 			texture = 0;
 		}
 	}
@@ -177,6 +181,7 @@ bool DesktopMirror::prepareTexture(GLuint & texture, Vec2i & size, const Vec2i &
 
 	if(!texture) {
 		glGenTextures(1, &texture);
+		vr::perf::addTexture();
 	}
 
 	// The caller (GLStateGuard in VRSystem) restores the texture binding
@@ -226,6 +231,7 @@ void DesktopMirror::setOverlayImage(OverlayImage image, const Vec2i & size, cons
 	GLuint & texture = m_overlayTextures[image];
 	if(!texture) {
 		glGenTextures(1, &texture);
+		vr::perf::addTexture();
 	}
 
 	// The caller restores the texture binding, as for the other textures of the mirror. The engine's tight

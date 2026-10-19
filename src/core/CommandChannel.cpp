@@ -162,6 +162,7 @@ const struct { MENUSTATE page; const char * name; } MenuPages[] = {
 	{ Page_OptionsInterface, "interface" },
 	{ Page_QuitConfirm, "quit" },
 	{ Page_Localization, "language" },
+	{ Page_CrashNotice, "crashnotice" },
 };
 
 const char * menuPageName(MENUSTATE page) {
@@ -912,6 +913,12 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("menuMode", menuModeName(ARXmenu.mode()));
 	json.value("menuPage", ARXmenu.mode() == Mode_MainMenu ? menuPageName(currentMenuPage()) : "none");
 	json.value("menuRows", ARXmenu.mode() == Mode_MainMenu ? visibleVRSettingRows() : std::string());
+
+	// The next-launch crash notice (#545, M6): shown at the main menu until OK, and the report it names
+	json.object("crashNotice");
+	json.value("state", crashNoticeShown() ? "shown" : "none");
+	json.value("report", crashNoticeShown() ? crashNoticeReport() : std::string());
+	json.end();
 	json.value("area", g_currentArea ? u32(g_currentArea) : 0u);
 	json.value("paused", g_gameTime.isPaused() != 0);
 	// The game clock: it runs while a VR radial menu is open (#376), stops in the pause menu
@@ -2221,7 +2228,6 @@ void reportHang(std::string_view report) {
 void setState(GameState state) {
 	// Logged by the event log (game.state), which saw the change earlier in this frame
 	g.state = state;
-	platform::flightRecord(platform::RecordKind::State, std::string("game ") + gameStateName(state));
 	writeStatus(platform::getTime());
 }
 
@@ -2597,6 +2603,24 @@ std::string execute(std::string_view line) {
 		}
 #endif
 		return std::string();
+	}
+
+	if(word == "crashnotice") {
+		// The crash notice's buttons (#545, M6): ok dismisses it (the reports get their marker), open opens the folder
+		std::string what(rest);
+		util::makeLowercase(what);
+		if(!crashNoticeShown()) {
+			return refuse("crashnotice: no notice is on screen");
+		}
+		if(what == "ok") {
+			crashNoticeOk();
+			return std::string();
+		}
+		if(what == "open") {
+			crashNoticeOpen();
+			return std::string();
+		}
+		return refuse("crashnotice: expected ok or open, got \"" + std::string(rest) + "\"");
 	}
 
 	if(word == "leak") {
@@ -4015,6 +4039,15 @@ void update() {
 			std::chrono::milliseconds(g.watchdogThresholdMs), reportHang);
 	}
 	g.watchdog->beat("frame");
+	// One beat record a second in the flight recorder (#545): a stall shows as the gap before the hang's exit cause
+	{
+		static PlatformInstant s_lastBeatRecord = PlatformInstant(0);
+		const PlatformInstant beatNow = platform::getTime();
+		if(s_lastBeatRecord == PlatformInstant(0) || toMsi(beatNow - s_lastBeatRecord) >= 1000) {
+			s_lastBeatRecord = beatNow;
+			platform::flightRecord(platform::RecordKind::Beat, "frame", s64(g.watchdog->stalls()));
+		}
+	}
 	if(!g.watchdogLogged && g.watchdog->watching()) {
 		g.watchdogLogged = true;
 		LogInfo << "[channel] hang watchdog: watching the main thread, threshold "

@@ -41,6 +41,8 @@ set(arxtest_TESTCASES
 	
 	tests/platform/CrashNoticeTest.h
 	tests/platform/CrashNoticeTest.cpp
+	tests/platform/CrashNoticeKindTest.h
+	tests/platform/CrashNoticeKindTest.cpp
 	tests/platform/DialogPolicyTest.h
 	tests/platform/DialogPolicyTest.cpp
 	tests/platform/ExitReportTest.h
@@ -198,6 +200,7 @@ set(arxtest_SOURCES
 	src/io/IniSection.cpp
 	src/io/log/FileLogger.cpp
 	src/io/resource/ResourcePath.cpp
+	src/platform/CrashNotice.cpp
 	src/platform/ExitReport.cpp
 	src/platform/FlightRecorder.cpp
 	src/platform/HangWatchdog.cpp

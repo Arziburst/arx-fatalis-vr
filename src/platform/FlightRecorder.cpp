@@ -91,6 +91,20 @@ u64 currentThreadId() noexcept {
 	#endif
 }
 
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+//! The thread still exists (its ring is in use); a thread that ended frees its ring for the next one
+bool threadAlive(u64 tid) noexcept {
+	HANDLE thread = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, DWORD(tid));
+	if(!thread) {
+		return false;
+	}
+	DWORD code = 0;
+	bool alive = GetExitCodeThread(thread, &code) && code == STILL_ACTIVE;
+	CloseHandle(thread);
+	return alive;
+}
+#endif
+
 // Plain reads of fixed-width fields from a byte image (serialise side; bounds are checked by the caller)
 u32 readU32(const unsigned char * p) noexcept {
 	u32 value = 0;
@@ -306,6 +320,26 @@ void FlightRecorder::record(RecordKind kind, std::string_view text, s64 value) n
 				}
 			}
 		}
+		#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+		if(index == maxThreads) {
+			// Every ring is taken: one whose thread is gone is recycled (its history goes; the live thread's
+			// records matter more). Only now, so the aliveness probe costs nothing on the usual path.
+			for(u32 i = 0; i < maxThreads; i++) {
+				std::atomic<u64> & slotTid = atomicU64(b + HeaderSize + i * stride + R_tid);
+				u64 owner = slotTid.load(std::memory_order_acquire);
+				if(owner == 0 || owner == myTid || threadAlive(owner)) {
+					continue;
+				}
+				if(slotTid.compare_exchange_strong(owner, myTid, std::memory_order_acq_rel)) {
+					unsigned char * ring = b + HeaderSize + i * stride;
+					std::memset(ring + R_name, 0, R_nameCap);
+					atomicU64(ring + R_count).store(0, std::memory_order_release);
+					index = i;
+					break;
+				}
+			}
+		}
+		#endif
 		if(index == maxThreads) {
 			atomicU64(b + H_dropped).fetch_add(1, std::memory_order_relaxed);
 			return;

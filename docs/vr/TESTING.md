@@ -313,6 +313,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `stall <ms>` | the main thread sleeps 1..60000 ms in this frame: a forced hitch, which the performance log must mark with `cause=channel` (#327); over the watchdog's threshold (6000) it forces a hang report with a dump (#545, `hang-dump.xrs`) |
 | `leak <MiB>` | allocate and touch 1..4096 MiB of private memory and keep it until the exit: the `R` lines of the performance log show the step, `perf-summary.ps1` the trend (#545) |
 | `abort`, `terminate`, `terminate thread`, `heapcorrupt`, `exitprocess <code>` | end the game on purpose for the crash-report checks (#545, `flight-recorder-check.ps1`): `abort()`, `std::terminate()` on the main thread or on a new `std::thread`, a heap corruption the heap detects (`STATUS_HEAP_CORRUPTION`), a thread that starts straight at `ExitProcess` (the #544 shape, caught by the ExitGuard). Each leaves one `crashes\<utc>\` report; the killing ones never get an ack |
+| `crashnotice ok`, `crashnotice open` | the buttons of the next-launch crash notice at the main menu (#545, M6): OK dismisses it (every announced report gets `notice-shown.txt`), Open folder opens the report; `crashNotice.state` / `.report` in the status; `scripts/dev/crash-notice-check.ps1` |
 | `stall load <ms>` | the **next level load** sleeps 1..5000 ms right after its `Loading level` line: a stalled load for the [hang watchdog](#the-hang-watchdog-440) (#440, `level-load-hang.xrs`) |
 | `watchdog <ms>` | the hang watchdog's threshold, 100..60000 ms (default 5000): a main thread without a beat for this long is reported with its stack (#440); `hangWatchdog.thresholdMs` in the status |
 | `quit` | ask the game to quit at the end of the frame (the same path as closing the window) |
@@ -2337,14 +2338,33 @@ Measured (owner's PC, 2026-10-09, #123):
 
 ### The flight recorder and the dump helper (#545)
 
-The flight recorder keeps a short, crash-safe history of the run - frames, game / VR / level / scene / panel
-state changes, channel commands, thread births with their start `module!export`, GL errors, texture and
-buffer creates, hang-watchdog beats and the cause of an exit - in per-thread lock-free rings
-(`src/platform/FlightRecorder.h`), in a block of memory the out-of-process dump helper shares, so it can be
-read after the game is gone. It is written into the crash dump as a user stream and to `arx-recorder.txt` on
-every exit. `scripts/dev/crash-report.ps1` prints the newest report's kind, exit code, killer thread,
-faulting module and stack, the last 100 recorder events and the resource trend, all scrubbed of personal data
-(`Protect-ArxText`). `--no-recorder` turns the recorder and the dump helper off (the overhead baseline).
+The flight recorder keeps a short, crash-safe history of the run in every launch - frames, the game / VR
+session / level / scene / panel state changes (`state` records: `game GAMEPLAY`, `vr FOCUSED`, `level load`,
+`scene start`, `panel ...`), channel commands, thread births with their start `module!export`, GL errors,
+texture and buffer creates, one hang-watchdog `beat` a second and the cause of an exit (every `noteExitCause`,
+the kind of a report) - in per-thread lock-free rings (`src/platform/FlightRecorder.h`), in a block of memory
+the out-of-process dump helper shares, so it can be read after the game is gone. It is written into the crash
+dump as a user stream and to `arx-recorder.txt` on every exit. `scripts/dev/crash-report.ps1` prints the newest
+report's kind, exit code, killer thread, faulting module and stack, the last 100 recorder events and the
+resource trend, all scrubbed of personal data (`Protect-ArxText`). `--no-recorder` turns the recorder and the
+dump helper off (the overhead baseline).
+
+The kinds a report can have (`report.txt` `kind=`): `crash` (an exception, a heap corruption), `abort`,
+`terminate`, `exit from outside` (a thread made from outside that starts at `ExitProcess`, #544),
+`exit (in process)` (`exit()` / `ExitProcess` called by the game's or a library's code before the shutdown -
+from `exit()` with a dump of every thread, from the process detach with the calling frames only),
+`terminated` (a `TerminateProcess` from outside: no code of the game ran, no dump) and `hang`. `exe=` and
+`exehash=` name the build: the archived `arx.pdb` under `%LOCALAPPDATA%\ArxFatalisVR\symbols\<exehash>\` is the
+one that matches, and `crash-report.ps1` hands it to cdb.
+
+**The next-launch notice (M6):** with the dump helper on there is no "Fatal Error" dialog any more. At the next
+launch the main menu - flat, on the VR panel and in the desktop mirror, which all draw the same 2D menu - says
+"The game ended with an error last time. A report was saved." with [Open folder] and [OK], once per new report
+(`src/platform/CrashNotice.h`: a `crashes\<utc>\` folder with a `report.txt` and no `notice-shown.txt`; OK
+writes the marker into every such folder). A `kind=terminated` report is never announced - the owner quits
+SteamVR on purpose - and `hangs\` never is. Host tests `CrashNoticeTest` (the rule) and `CrashNoticeKindTest`
+(the kinds); `scripts/dev/crash-notice-check.ps1` (two flat launches) checks the game. Stage 3 adds "Send the
+report?" to the same notice.
 
 The performance log gains an `R` line every 5 s (`src/platform/ProcessResources.h`): private bytes, working
 set, the system commit charge, kernel / GDI / USER handles, threads, GL textures and buffers and OpenXR

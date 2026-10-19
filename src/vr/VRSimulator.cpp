@@ -42,6 +42,7 @@
 #include "platform/ExitTrace.h"
 #include "platform/ProgramOptions.h"
 #include "platform/Thread.h"
+#include "vr/PerfLog.h" // the simulated swapchains' textures count for the resource line (#545)
 #include "platform/Time.h"
 
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
@@ -747,6 +748,9 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrCreateSwapchain(XrSession /* session */, co
 	GLint bound = 0;
 	glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound);
 	glGenTextures(GLsizei(s.textures.size()), s.textures.data());
+	for(size_t i = 0; i < s.textures.size(); i++) {
+		vr::perf::addTexture();
+	}
 	for(GLuint texture : s.textures) {
 		glBindTexture(GL_TEXTURE_2D, texture);
 		glTexImage2D(GL_TEXTURE_2D, 0, GLint(info->format), s.size.x, s.size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -767,6 +771,9 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrDestroySwapchain(XrSwapchain swapchain) {
 		return XR_ERROR_HANDLE_INVALID;
 	}
 	glDeleteTextures(GLsizei(it->second.textures.size()), it->second.textures.data());
+	for(size_t i = 0; i < it->second.textures.size(); i++) {
+		vr::perf::removeTexture();
+	}
 	g_sim->swapchains.erase(it);
 	return XR_SUCCESS;
 }

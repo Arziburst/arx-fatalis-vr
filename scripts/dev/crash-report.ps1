@@ -139,8 +139,15 @@ $cdbExe = if ($Cdb -and $Cdb -ne 'none') { $Cdb } else { $null }
 
 if ($cdbExe -and $haveDump) {
 	Emit 'Stack (cdb):'
-	# -z <dump> -c "<commands>; q": the faulting thread's stack with source lines, then quit
-	$cdbArgs = @('-z', $dumpFile, '-lines', '-n', '-c', '~#k; q')
+	# -z <dump> -c "<commands>; q": the faulting thread's stack with source lines, then quit. The symbols: the
+	# arx.pdb archived under the exe's hash (report.txt exehash=, scripts/launch-lib.ps1 Save-ArxSymbolArchive)
+	$cdbArgs = @('-z', $dumpFile, '-lines', '-n')
+	$exeHash = "$($fields['exehash'])".Trim().ToLowerInvariant()
+	if ($exeHash -match '^[0-9a-f]{64}$') {
+		$symbolDir = Join-Path $env:LOCALAPPDATA "ArxFatalisVR\symbols\$exeHash"
+		if (Test-Path -LiteralPath (Join-Path $symbolDir 'arx.pdb')) { $cdbArgs += @('-y', $symbolDir) }
+	}
+	$cdbArgs += @('-c', '~#k; q')
 	$cdbOutput = @()
 	try {
 		$cdbOutput = @(& $cdbExe @cdbArgs 2>&1 | ForEach-Object { "$_" })

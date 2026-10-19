@@ -178,10 +178,13 @@ if ($reason) {
 }
 
 # Keep this build's arx.pdb under its exe hash so a crash report of the headset build can be symbolised
-# later (#545, stage 0), even after the worktree's build directory is gone
-. (Join-Path $wt 'scripts\launch-lib.ps1')
-$symbols = Save-ArxSymbolArchive -BuildDir $buildDir -Branch $branch -Config $Config
-if ($symbols) { Write-Host "    symbols archived: $symbols" }
+# later (#545, stage 0), even after the worktree's build directory is gone. This script's own launch-lib
+# (the PR's worktree may predate the helper), and only when it has the function.
+. (Join-Path $PSScriptRoot '..\launch-lib.ps1')
+if (Get-Command Save-ArxSymbolArchive -ErrorAction SilentlyContinue) {
+	$symbols = Save-ArxSymbolArchive -BuildDir $buildDir -Branch $branch -Config $Config
+	if ($symbols) { Write-Host "    symbols archived: $symbols" }
+}
 
 # --- The one question ---------------------------------------------------------------------------------
 

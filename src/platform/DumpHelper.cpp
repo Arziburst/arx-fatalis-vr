@@ -34,6 +34,7 @@
 
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
 #include <windows.h>
+#include <wincrypt.h>
 #include <dbghelp.h>
 #endif
 
@@ -60,6 +61,7 @@ const char * dumpKindName(DumpKind kind) noexcept {
 		case DumpKind::ExitOutside: return "exit from outside";
 		case DumpKind::Hang:        return "hang";
 		case DumpKind::Terminated:  return "terminated";
+		case DumpKind::ExitInProcess: return "exit (in process)";
 	}
 	return "crash";
 }
@@ -103,6 +105,7 @@ struct DumpShared {
 	char stack[8192];
 	char exeVersion[96];
 	char lastReportFolder[64]; // the helper writes the leaf name of the folder it just made, for the game's log line
+	wchar_t exePath[520];      // the helper hashes it for report.txt's exehash= (the pdb archive's key)
 	wchar_t reportRoot[520];
 	wchar_t homePath[260];
 	wchar_t userName[128];
@@ -233,6 +236,7 @@ bool initializeDumpHelper(const std::string & exePath, const std::string & userD
 	g_shared->recorderOffset = u32(sizeof(DumpShared));
 	g_shared->recorderSize = u32(recorderSize);
 	copyNarrow(g_shared->exeVersion, sizeof(g_shared->exeVersion), version);
+	copyWide(g_shared->exePath, std::size(g_shared->exePath), widen(exePath));
 	copyWide(g_shared->reportRoot, std::size(g_shared->reportRoot), widen(userDir));
 
 	// What the helper masks out of the dump (the public repo must carry no personal data, #387)
@@ -349,10 +353,16 @@ void requestReport(DumpKind kind, bool wantDump, u32 faultThreadId, u64 exceptio
 	LONG seq = InterlockedIncrement(&g_shared->requestSeq);
 	SetEvent(g_reqEvent);
 
-	// Wait a bounded time for the helper to take the dump (never refuse the kill)
+	// Wait a bounded time for the helper to take the dump (never refuse the kill); a helper that is gone is
+	// not waited for
+	bool done = false;
 	DWORD deadline = GetTickCount() + timeoutMs;
 	while(true) {
 		if(g_shared->doneSeq >= seq) {
+			done = true;
+			break;
+		}
+		if(WaitForSingleObject(g_helperProcess, 0) == WAIT_OBJECT_0) {
 			break;
 		}
 		DWORD now = GetTickCount();
@@ -366,9 +376,16 @@ void requestReport(DumpKind kind, bool wantDump, u32 faultThreadId, u64 exceptio
 		}
 	}
 
-	// A hang is one-shot; the game runs on and may report again
-	if(kind == DumpKind::Hang) {
+	// A hang is one-shot (the game runs on and may report again); a request the helper never answered must
+	// not block a later, real one either
+	if(kind == DumpKind::Hang || !done) {
 		g_requestInFlight.store(false);
+	}
+}
+
+void setReportStack(std::string_view stack) noexcept {
+	if(g_shared) {
+		copyNarrow(g_shared->stack, sizeof(g_shared->stack), stack);
 	}
 }
 
@@ -453,16 +470,17 @@ std::string threadStartLabel(bool & isExit) {
 	if(query) {
 		query(GetCurrentThread(), 9 /* ThreadQuerySetWin32StartAddress */, &start, sizeof(start), nullptr);
 	}
-	struct Routine { const char * name; void * address; };
+	// ExitThread ends only the thread: named, but no exit of the process
+	struct Routine { const char * name; void * address; bool exitsProcess; };
 	static const Routine routines[] = {
-		{ "KERNEL32!ExitProcess", reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "ExitProcess")) },
-		{ "KERNEL32!ExitThread", reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "ExitThread")) },
-		{ "KERNEL32!TerminateProcess", reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "TerminateProcess")) },
-		{ "ntdll!RtlExitUserProcess", reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlExitUserProcess")) },
+		{ "KERNEL32!ExitProcess", reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "ExitProcess")), true },
+		{ "KERNEL32!TerminateProcess", reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "TerminateProcess")), true },
+		{ "ntdll!RtlExitUserProcess", reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlExitUserProcess")), true },
+		{ "KERNEL32!ExitThread", reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "ExitThread")), false },
 	};
 	for(const Routine & routine : routines) {
 		if(start && start == routine.address) {
-			isExit = true;
+			isExit = routine.exitsProcess;
 			return routine.name;
 		}
 	}
@@ -498,6 +516,10 @@ std::string symbolizedStack(const void * contextIn) {
 	frame.AddrStack.Mode = AddrModeFlat;
 
 	HANDLE process = g_symProcess ? g_symProcess : GetCurrentProcess();
+	if(g_symReady) {
+		// Modules loaded since the start (the OpenXR runtime, a driver): named too
+		SymRefreshModuleList(process);
+	}
 	for(int i = 0; i < 64; i++) {
 		BOOL ok = StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, GetCurrentThread(), &frame, &context, nullptr,
 		                      SymFunctionTableAccess64, SymGetModuleBase64, nullptr);
@@ -598,19 +620,73 @@ void writeTextFile(const std::wstring & path, const std::string & text) {
 	writeFileBytes(path, text.data(), text.size());
 }
 
-// Mask every occurrence of a byte pattern in place with the same-length replacement
+unsigned char lowerAscii(unsigned char c) {
+	return (c >= 'A' && c <= 'Z') ? static_cast<unsigned char>(c + ('a' - 'A')) : c;
+}
+
+// Mask every occurrence of a byte pattern in place with the same-length replacement; ASCII letters match
+// whatever their case (a path is spelled c:\users\ as often as C:\Users\), which holds for the UTF-16 form
+// too, since its high bytes are zero for these characters
 void maskBytes(std::vector<unsigned char> & bytes, const std::string & pattern, const std::string & replacement) {
 	if(pattern.empty() || pattern.size() != replacement.size() || bytes.size() < pattern.size()) {
 		return;
 	}
 	for(size_t i = 0; i + pattern.size() <= bytes.size(); ) {
-		if(std::memcmp(bytes.data() + i, pattern.data(), pattern.size()) == 0) {
+		bool match = true;
+		for(size_t k = 0; k < pattern.size(); k++) {
+			if(lowerAscii(bytes[i + k]) != lowerAscii(static_cast<unsigned char>(pattern[k]))) {
+				match = false;
+				break;
+			}
+		}
+		if(match) {
 			std::memcpy(bytes.data() + i, replacement.data(), replacement.size());
 			i += pattern.size();
 		} else {
 			i++;
 		}
 	}
+}
+
+// The SHA-256 of a file as lower-case hex (the pdb archive's key, scripts/launch-lib.ps1), or ""
+std::string fileSha256(const std::wstring & path) {
+	HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+	                          nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if(file == INVALID_HANDLE_VALUE) {
+		return std::string();
+	}
+	std::string result;
+	HCRYPTPROV provider = 0;
+	HCRYPTHASH hash = 0;
+	if(CryptAcquireContextW(&provider, nullptr, nullptr, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)
+	   && CryptCreateHash(provider, CALG_SHA_256, 0, 0, &hash)) {
+		std::vector<unsigned char> chunk(1 << 16);
+		DWORD read = 0;
+		bool ok = true;
+		while(ReadFile(file, chunk.data(), DWORD(chunk.size()), &read, nullptr) && read) {
+			if(!CryptHashData(hash, chunk.data(), read, 0)) {
+				ok = false;
+				break;
+			}
+		}
+		unsigned char digest[32];
+		DWORD length = sizeof(digest);
+		if(ok && CryptGetHashParam(hash, HP_HASHVAL, digest, &length, 0)) {
+			char hex[65];
+			for(DWORD i = 0; i < length && i < 32; i++) {
+				std::snprintf(hex + i * 2, 3, "%02x", unsigned(digest[i]));
+			}
+			result.assign(hex, size_t(length) * 2);
+		}
+	}
+	if(hash) {
+		CryptDestroyHash(hash);
+	}
+	if(provider) {
+		CryptReleaseContext(provider, 0);
+	}
+	CloseHandle(file);
+	return result;
 }
 
 // The UTF-16LE bytes of an ASCII-ish wide string
@@ -823,6 +899,13 @@ void writeReportFolder(const std::wstring & folder, DumpShared * shared, DumpKin
 	report += "module=";
 	report += (shared->faultModule[0] ? shared->faultModule : "none");
 	report += "\n";
+	// The build: its version and the exe's hash, the key of the archived arx.pdb that matches this report
+	report += "exe=";
+	report += shared->exeVersion;
+	report += "\n";
+	report += "exehash=";
+	report += fileSha256(shared->exePath);
+	report += "\n";
 	report += "dump=";
 	report += (haveDump ? narrowBytes(dumpName) : std::string("none"));
 	report += "\n";
@@ -880,6 +963,7 @@ bool dumpHelperEnabled() noexcept { return false; }
 void requestReport(DumpKind, bool, u32, u64, std::string_view, std::string_view, std::string_view,
                    std::string_view, u32) noexcept { }
 void dumpHelperMarkClean() noexcept { }
+void setReportStack(std::string_view) noexcept { }
 std::string dumpLastReportFolder() { return std::string(); }
 std::string moduleLabel(u64) { return std::string(); }
 std::string exceptionCodeName(u32) { return std::string(); }
@@ -941,10 +1025,8 @@ int runDumpHelper(int argc, char ** argv) {
 		bool request = reqEvent && which == WAIT_OBJECT_0;
 
 		if(request) {
-			// A clean shutdown just wakes us to notice the game will exit; no report
-			if(InterlockedCompareExchange(&shared->cleanExit, 1, 1) == 1) {
-				continue;
-			}
+			// A clean shutdown only wakes us (no new request); a crash during the exit (a static destructor, a
+			// runtime unloading) after markClean is still a request and still gets its report
 			LONG seq = shared->requestSeq;
 			if(seq <= handled) {
 				continue;

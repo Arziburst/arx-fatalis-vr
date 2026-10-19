@@ -149,7 +149,7 @@ void writeExitReport(std::string_view text) {
 
 }
 
-void reportExit(std::string_view via, bool exitCodeKnown, s64 exitCode) {
+void reportExit(std::string_view via, bool exitCodeKnown, s64 exitCode, bool threadsAlive) {
 
 	if(!g_exitTraceInstalled.load() || g_cleanExit.load()) {
 		return;
@@ -192,10 +192,31 @@ void reportExit(std::string_view via, bool exitCodeKnown, s64 exitCode) {
 	describeExit(text, facts);
 	writeExitReport(text.text());
 
+	// The dump helper's report (#545): kind=exit (in process) with the stack that called the end. From exit()
+	// the other threads are still alive and a dump is taken; from the process detach they are gone and the
+	// modules are being unloaded, so only the frames captured above go into the report, no dump
+	#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+	flightRecord(RecordKind::Exit, via);
+	if(dumpHelperEnabled()) {
+		std::string stackText;
+		for(size_t i = 0; i < stack.count; i++) {
+			char line[160];
+			std::snprintf(line, sizeof(line), "  #%u %.*s+0x%llx\n", unsigned(i), int(stack.frames[i].module.size()),
+			              stack.frames[i].module.data(), static_cast<unsigned long long>(stack.frames[i].offset));
+			stackText += line;
+		}
+		std::string module = stack.count ? stackText.substr(5, stackText.find('\n') - 5) : std::string();
+		requestReport(DumpKind::ExitInProcess, threadsAlive, GetCurrentThreadId(), 0, killerLabel(), module,
+		              std::string_view(), stackText, 15000);
+	}
+	#else
+	ARX_UNUSED(threadsAlive);
+	#endif
+
 }
 
 void onCrtExit() {
-	reportExit("exit() was called before the game's shutdown finished", false, 0);
+	reportExit("exit() was called before the game's shutdown finished", false, 0, true);
 }
 
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32 && ARX_COMPILER_MSVC
@@ -238,7 +259,7 @@ void NTAPI exitTraceTlsCallback(PVOID /* module */, DWORD reason, PVOID /* reser
 	DWORD code = STILL_ACTIVE;
 	bool known = GetExitCodeProcess(GetCurrentProcess(), &code) && code != STILL_ACTIVE;
 	reportExit("ExitProcess (or _exit / abort) was called inside the process, not exit() of the game's"
-	           " C runtime - the stack names the module that called it", known, s64(s32(code)));
+	           " C runtime - the stack names the module that called it", known, s64(s32(code)), false);
 
 }
 
@@ -276,6 +297,9 @@ void noteExitCause(std::string_view cause) {
 	noted.text[size] = '\0';
 	noted.ns.store(exitClockNs());
 	g_exitCause.store(slot, std::memory_order_release);
+
+	// The flight recorder keeps the cause too (#545)
+	flightRecord(RecordKind::Exit, cause);
 
 }
 

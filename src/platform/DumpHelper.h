@@ -52,10 +52,11 @@ enum class DumpKind : u32 {
 	Terminate,    //!< std::terminate() (kind=terminate)
 	ExitOutside,  //!< a thread that started at ExitProcess / TerminateProcess (kind=exit from outside)
 	Hang,         //!< the hang watchdog reported a stall (kind=hang); the game runs on
-	Terminated    //!< the game was killed from outside and ran no code on the way out (kind=terminated)
+	Terminated,   //!< the game was killed from outside and ran no code on the way out (kind=terminated)
+	ExitInProcess //!< exit() / ExitProcess called by the game's or a library's code before the shutdown (kind=exit (in process))
 };
 
-//! "crash", "abort", "terminate", "exit from outside", "hang", "terminated"
+//! "crash", "abort", "terminate", "exit from outside", "hang", "terminated", "exit (in process)"
 const char * dumpKindName(DumpKind kind) noexcept;
 
 /*!
@@ -105,6 +106,14 @@ void requestReport(DumpKind kind, bool wantDump, u32 faultThreadId, u64 exceptio
 
 //! The game's own shutdown is done: tell the helper no report is wanted, and let it exit
 void dumpHelperMarkClean() noexcept;
+
+/*!
+ * \brief The stack for the pending report, set after the dump was taken
+ *
+ * A crash asks for the dump first (the process is in an unknown state, symbols load afterwards) and fills the
+ * stack in once it is symbolised: the helper writes report.txt after the game has exited and reads it then.
+ */
+void setReportStack(std::string_view stack) noexcept;
 
 //! The leaf name of the report folder the helper last wrote (for the game's "[hang] dump written" line), or ""
 std::string dumpLastReportFolder();

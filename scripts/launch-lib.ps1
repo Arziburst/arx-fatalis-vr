@@ -349,8 +349,13 @@ function Get-ArxGamesOutsideLock {
 			if ((Read-ArxLockHolder $file.FullName) -match 'game=(\d+)') { $known += [int]$Matches[1] }
 		}
 	}
-	@(Get-CimInstance Win32_Process -Filter "Name='arx.exe'" -ErrorAction SilentlyContinue | Where-Object {
-		[int]$_.ProcessId -notin $known -and "$($_.CommandLine)" -notmatch '--(crashinfo|dump-helper)' -and
+	# The helper and the crash processor are children of a game: a process whose parent is itself an arx.exe is
+	# never a game - this holds even where WMI shows no command line (a process of another account, the CI runner)
+	$all = @(Get-CimInstance Win32_Process -Filter "Name='arx.exe'" -ErrorAction SilentlyContinue)
+	$arxPids = @($all | ForEach-Object { [int]$_.ProcessId })
+	@($all | Where-Object {
+		[int]$_.ProcessId -notin $known -and [int]$_.ParentProcessId -notin $arxPids -and
+		"$($_.CommandLine)" -notmatch '--(crashinfo|dump-helper)' -and
 		(-not $_.ExecutablePath -or $_.ExecutablePath.EndsWith('\arx.exe', [StringComparison]::OrdinalIgnoreCase))
 	} | ForEach-Object { [pscustomobject]@{ Id = [int]$_.ProcessId; Path = "$($_.ExecutablePath)" } })
 }
@@ -563,6 +568,7 @@ public static class ArxJobNative {
   }
   public const int JobObjectExtendedLimitInformation = 9;
   public const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
+  public const uint JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x800;
   [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] public static extern IntPtr CreateJobObjectW(IntPtr attributes, string name);
   [DllImport("kernel32.dll", SetLastError = true)] public static extern bool SetInformationJobObject(IntPtr job, int infoClass, ref JOBOBJECT_EXTENDED_LIMIT_INFORMATION info, int size);
   [DllImport("kernel32.dll", SetLastError = true)] public static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
@@ -581,7 +587,9 @@ function Get-ArxLauncherJob {
 		$info = [ArxJobNative+JOBOBJECT_EXTENDED_LIMIT_INFORMATION]::new()
 		# A nested struct comes back as a copy: set it whole
 		$basic = $info.BasicLimitInformation
-		$basic.LimitFlags = [ArxJobNative]::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+		# BREAKAWAY_OK: the game's dump helper (arx.exe --dump-helper, #545) asks to break away from the job so it
+		# can finish its report after a killed launcher took the game; everything else stays in the job and dies with it
+		$basic.LimitFlags = [ArxJobNative]::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE -bor [ArxJobNative]::JOB_OBJECT_LIMIT_BREAKAWAY_OK
 		$info.BasicLimitInformation = $basic
 		$size = [Runtime.InteropServices.Marshal]::SizeOf($info)
 		if (-not [ArxJobNative]::SetInformationJobObject($job, [ArxJobNative]::JobObjectExtendedLimitInformation, [ref]$info, $size)) {
@@ -803,6 +811,9 @@ function Save-ArxSymbolArchive([string]$BuildDir, [string]$Branch = '', [string]
 		$build = @("arx.exe sha256: $exeHash", "config: $Config", "branch: $Branch",
 			"archived: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))")
 		[IO.File]::WriteAllText((Join-Path $archiveDir 'BUILD.txt'), (($build -join "`r`n") + "`r`n"), [Text.UTF8Encoding]::new($false))
+		# Only the 20 newest builds stay (a pdb is ~35 MB); the newest by the time it was archived
+		$all = @(Get-ChildItem (Split-Path -Parent $archiveDir) -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+		foreach ($old in ($all | Select-Object -Skip 20)) { Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 		return $archiveDir
 	} catch {
 		# Never fail a launch over symbol archiving

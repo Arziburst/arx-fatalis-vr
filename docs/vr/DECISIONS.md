@@ -37,7 +37,15 @@ a changed decision keeps its history in that cell.
   where a user path, the account or the machine name stood (#387).
 - **The ExitGuard** (`src/platform/ExitTrace.cpp`): every thread birth is logged with its start routine; a thread that
   starts straight at `ExitProcess` / `TerminateProcess` (the #544 shape) asks the helper for the report first, waits
-  a bounded 15 s, and never refuses the kill.
+  a bounded 15 s, and never refuses the kill (`ExitThread` ends only a thread: named, not an exit). An `exit()` /
+  `ExitProcess` by the game's own or a library's code before the shutdown is `kind=exit (in process)` with the
+  calling frames - from `exit()` with a dump of every thread, from the process detach (the threads are gone, the
+  modules unloading) without one.
+- **No "Fatal Error" dialog any more; a notice at the next launch instead** (M6, the owner): the main menu - flat,
+  on the VR panel, in the desktop mirror - says "The game ended with an error last time. A report was saved." with
+  [Open folder] and [OK], once per new report (`src/platform/CrashNotice.h`, the marker `notice-shown.txt`). A
+  `kind=terminated` report (SteamVR's own quit, the task manager) is not an error of the game and is never announced.
+  Stage 3 adds "Send the report?" to the same notice.
 - **Always on, measured:** the hang watchdog runs in every launch, not only with `--test-dir`; `arx-perf.log` gets a
   resource line every 5 s; `--no-recorder` turns the recorder and the helper off and is the overhead baseline
   (budget: 0.05 ms per frame, 5 MiB for the game plus the helper). `scripts/dev/crash-report.ps1` is the one command
@@ -50,7 +58,12 @@ a changed decision keeps its history in that cell.
 - The old `--crashinfo` processor is no longer the owner of a crash folder: the helper is. A crash still leaves a
   `crash.txt` next to `report.txt` so the run digest and the smoke test keep reading it.
 - The helper is the same `arx.exe`: `launch-lib`'s "game outside the lock" check and the digest's crash wait know
-  `--dump-helper`; the helper breaks away from a launcher's kill-on-close job so it can finish its report.
+  `--dump-helper`; the launcher's kill-on-close job allows breakaway (`JOB_OBJECT_LIMIT_BREAKAWAY_OK`), so the helper
+  breaks away and finishes its report after a killed launcher took the game.
+- The helper is a full `arx.exe` process: about 6 MiB of private memory before `main` sees `--dump-helper` (the
+  engine's static initialisers, the DLLs' writable data). The owner set the budget at 8 MiB for the game plus the
+  helper (measured: +7.2 MiB, +0.000 ms per frame); a separate tiny helper executable would bring it under 1 MiB
+  if that ever matters.
 
 ## D-058: The game menu stays reachable whatever is rebound - a refused last binding and a fixed two-stick hold
 

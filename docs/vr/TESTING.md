@@ -2328,3 +2328,46 @@ Measured (owner's PC, 2026-10-09, #123):
   the zip as the artifact `tester-symbols` (90 days). A tester's support bundle (`system.txt`, `BUILD.txt`) names the hash of
   the exe that crashed: take the pdb of that hash, nothing else matches.
 - **The support bundle** already holds `arx.log` + previous runs and `crashes\` (#88); it now also has the exe hash and `BUILD.txt`.
+
+### The flight recorder and the dump helper (#545)
+
+The flight recorder keeps a short, crash-safe history of the run - frames, game / VR / level / scene / panel
+state changes, channel commands, thread births with their start `module!export`, GL errors, texture and
+buffer creates, hang-watchdog beats and the cause of an exit - in per-thread lock-free rings
+(`src/platform/FlightRecorder.h`), in a block of memory the out-of-process dump helper shares, so it can be
+read after the game is gone. It is written into the crash dump as a user stream and to `arx-recorder.txt` on
+every exit. `scripts/dev/crash-report.ps1` prints the newest report's kind, exit code, killer thread,
+faulting module and stack, the last 100 recorder events and the resource trend, all scrubbed of personal data
+(`Protect-ArxText`). `--no-recorder` turns the recorder and the dump helper off (the overhead baseline).
+
+The performance log gains an `R` line every 5 s (`src/platform/ProcessResources.h`): private bytes, working
+set, the system commit charge, kernel / GDI / USER handles, threads, GL textures and buffers and OpenXR
+swapchains. `perf-summary.ps1` prints the trend (first / last / max / slope per minute / largest step), so a
+leak shows as a step of `priv`. The channel's `leak <MiB>` forces one.
+
+`scripts/dev/flight-recorder-check.ps1` ends the game every way it can end and checks that each leaves one
+obvious report (a hand-run check, not CI: most cases kill the game on purpose). `scripts/dev/xrs/hang-dump.xrs`
+(CI) checks that a stall gets a hang report with a dump.
+
+#### Stage 0: optional local extras (no code)
+
+Two Windows features make a crash easier to inspect on this PC; neither is required (the dump helper writes a
+full report without them) and neither ships to players:
+
+- **WER LocalDumps** - have Windows Error Reporting keep a full dump of `arx.exe` even for a fail-fast
+  (`STATUS_STACK_BUFFER_OVERRUN` / `__fastfail`, which the in-process handler cannot catch). Create the key
+  (one time, as administrator) and dumps land in `%LOCALAPPDATA%\CrashDumps`:
+
+  ```powershell
+  $k = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\arx.exe'
+  New-Item -Path $k -Force | Out-Null
+  New-ItemProperty -Path $k -Name DumpType  -Value 2 -PropertyType DWord -Force | Out-Null   # 2 = full dump
+  New-ItemProperty -Path $k -Name DumpCount -Value 10 -PropertyType DWord -Force | Out-Null
+  ```
+
+- **WinDbg / cdb** - a debugger lets `crash-report.ps1` symbolise a dump beyond what `report.txt` already
+  holds. Install it once: `winget install Microsoft.WinDbg`. Without it `crash-report.ps1` prints the stack the
+  game captured in `report.txt` (arx.exe frames already symbolised from the build's `arx.pdb`). The owner's
+  launches (`run-windows.ps1`, `test-pr.ps1`) archive each build's `arx.pdb` under its exe hash in
+  `%LOCALAPPDATA%\ArxFatalisVR\symbols\<sha256>\`, so a later report of that build can be symbolised even after
+  its build directory is gone.

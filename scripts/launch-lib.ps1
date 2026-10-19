@@ -771,3 +771,30 @@ function Get-ArxDialogReason([string[]]$Lines) {
 	if (-not $Lines) { return $null }
 	"the game ended on a dialog: $($Lines[0])$(if ($Lines.Count -gt 1) { " (and $($Lines.Count - 1) more)" })"
 }
+
+# Archive arx.pdb under the exe's SHA-256 (#545, stage 0; extends D4 / #132's symbol archive): the symbols
+# of a build the owner launches stay on this PC, keyed by the exe hash, so a crash report of that build can
+# be symbolised later (scripts/dev/crash-report.ps1 with cdb) even after the build directory is gone. The
+# location and BUILD.txt match scripts/package-tester.ps1 (%LOCALAPPDATA%\ArxFatalisVR\symbols\<sha256>\).
+# Cheap and idempotent: it hashes the exe and returns at once when that hash is already archived. Returns the
+# archive directory, or $null when the build has no arx.pdb (a Release build without debug symbols).
+function Save-ArxSymbolArchive([string]$BuildDir, [string]$Branch = '', [string]$Config = 'Release') {
+	$exe = Join-Path $BuildDir 'arx.exe'
+	$pdb = Join-Path $BuildDir 'arx.pdb'
+	if (-not (Test-Path -LiteralPath $exe) -or -not (Test-Path -LiteralPath $pdb)) { return $null }
+	try {
+		$exeHash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+		$archiveDir = Join-Path $env:LOCALAPPDATA "ArxFatalisVR\symbols\$exeHash"
+		if (Test-Path -LiteralPath (Join-Path $archiveDir 'arx.pdb')) { return $archiveDir }
+		New-Item -ItemType Directory -Force $archiveDir | Out-Null
+		Copy-Item -Force -LiteralPath $pdb -Destination $archiveDir
+		$build = @("arx.exe sha256: $exeHash", "config: $Config", "branch: $Branch",
+			"archived: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))")
+		[IO.File]::WriteAllText((Join-Path $archiveDir 'BUILD.txt'), (($build -join "`r`n") + "`r`n"), [Text.UTF8Encoding]::new($false))
+		return $archiveDir
+	} catch {
+		# Never fail a launch over symbol archiving
+		Write-Warning "could not archive arx.pdb ($($_.Exception.Message))"
+		return $null
+	}
+}

@@ -177,6 +177,12 @@ if ($reason) {
 	Write-Host "    build is current: $exe (built from $(Short $head))"
 }
 
+# Keep this build's arx.pdb under its exe hash so a crash report of the headset build can be symbolised
+# later (#545, stage 0), even after the worktree's build directory is gone
+. (Join-Path $wt 'scripts\launch-lib.ps1')
+$symbols = Save-ArxSymbolArchive -BuildDir $buildDir -Branch $branch -Config $Config
+if ($symbols) { Write-Host "    symbols archived: $symbols" }
+
 # --- The one question ---------------------------------------------------------------------------------
 
 $how = [regex]::Match([string]$pull.body, '(?ms)^#{2,}\s*How to test\s*\r?\n(.*?)(?=^#{2,}\s|\z)').Groups[1].Value.Trim()

@@ -329,7 +329,9 @@ if(WIN32)
 	
 	add_definitions(-DNOMINMAX)
 	add_definitions(-DWIN32_LEAN_AND_MEAN)
-	list(APPEND BASE_LIBRARIES version)
+	# psapi and user32 back the process resource sampler (#545, src/platform/ProcessResources.cpp,
+	# also linked into arxtest through BASE_LIBRARIES); version backs the crash handler's module info
+	list(APPEND BASE_LIBRARIES version psapi user32)
 	list(APPEND ARX_LIBRARIES gdi32 shell32 comdlg32 ole32 comctl32)
 endif()
 
@@ -1194,7 +1196,9 @@ set(PLATFORM_EXTRA_SOURCES
 	src/platform/Dialog.cpp
 	src/platform/ExitReport.cpp
 	src/platform/ExitTrace.cpp
+	src/platform/FlightRecorder.cpp
 	src/platform/HangWatchdog.cpp
+	src/platform/ProcessResources.cpp
 	src/platform/Thread.cpp
 )
 if(MACOS)

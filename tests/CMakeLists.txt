@@ -197,7 +197,9 @@ set(arxtest_SOURCES
 	src/io/log/FileLogger.cpp
 	src/io/resource/ResourcePath.cpp
 	src/platform/ExitReport.cpp
+	src/platform/FlightRecorder.cpp
 	src/platform/HangWatchdog.cpp
+	src/platform/ProcessResources.cpp
 	src/vr/BodyYaw.cpp
 	src/vr/EyeProjection.cpp
 	src/vr/FramePacing.cpp

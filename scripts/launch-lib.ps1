@@ -338,8 +338,10 @@ function Get-ArxLockHolders {
 }
 
 # arx.exe processes that no lock names (started by hand, or by a script before it recorded the pid);
-# the crash processor (arx.exe --crashinfo=...) is not a game. The process list comes from WMI, not from
-# Get-Process: the .Path of a process of another account (the CI runner service) is empty there (#205).
+# the crash processor (arx.exe --crashinfo=...) and the flight-recorder dump helper (arx.exe --dump-helper,
+# #545) are not games - the helper outlives its game by a bounded time to write its report, and must not keep
+# the next launch waiting for a game that is not there. The process list comes from WMI, not from Get-Process:
+# the .Path of a process of another account (the CI runner service) is empty there (#205).
 function Get-ArxGamesOutsideLock {
 	$known = @()
 	foreach ($dir in Get-ArxLockDirs) {
@@ -348,7 +350,7 @@ function Get-ArxGamesOutsideLock {
 		}
 	}
 	@(Get-CimInstance Win32_Process -Filter "Name='arx.exe'" -ErrorAction SilentlyContinue | Where-Object {
-		[int]$_.ProcessId -notin $known -and "$($_.CommandLine)" -notmatch '--crashinfo' -and
+		[int]$_.ProcessId -notin $known -and "$($_.CommandLine)" -notmatch '--(crashinfo|dump-helper)' -and
 		(-not $_.ExecutablePath -or $_.ExecutablePath.EndsWith('\arx.exe', [StringComparison]::OrdinalIgnoreCase))
 	} | ForEach-Object { [pscustomobject]@{ Id = [int]$_.ProcessId; Path = "$($_.ExecutablePath)" } })
 }

@@ -39,6 +39,8 @@ set(arxtest_TESTCASES
 	tests/io/IniTest.h
 	tests/io/IniTest.cpp
 	
+	tests/platform/CrashNoticeTest.h
+	tests/platform/CrashNoticeTest.cpp
 	tests/platform/DialogPolicyTest.h
 	tests/platform/DialogPolicyTest.cpp
 	tests/platform/ExitReportTest.h

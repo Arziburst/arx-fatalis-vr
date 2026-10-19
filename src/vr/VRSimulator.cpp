@@ -46,6 +46,7 @@
 #include "platform/ProgramOptions.h"
 #include "platform/Thread.h"
 #include "vr/PerfLog.h" // the simulated swapchains' textures count for the resource line (#545)
+#include "vr/ReplayRecorder.h" // the clip clock a play runs on (#550)
 #include "platform/Time.h"
 
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
@@ -1044,13 +1045,16 @@ void advanceTimeline() {
 		s.timelineDoneLogged = false;
 	}
 
-	// A recorded clip (#550): started when asked for, then streamed into the rig at the timeline's clock
-	if(s.pendingPlay.requested) {
-		startPlay(s.pendingPlay, s.pendingPlay.setup ? 0 : u64(std::max<s64>(timelineUs, 0)));
+	// A recorded clip (#550): started when asked for, then streamed into the rig on the clip clock - the display time
+	// since the first playable frame of the game loop, where a recording's time 0 is (a loading screen's frames
+	// start this timeline earlier than that); before the clock runs the play waits
+	const s64 clockUs = replay::clipClockUs(s.displayTime);
+	if(s.pendingPlay.requested && (clockUs >= 0 || !s.pendingPlay.setup)) {
+		startPlay(s.pendingPlay, s.pendingPlay.setup ? 0 : u64(std::max<s64>(clockUs, 0)));
 		s.pendingPlay = SimPlayRequest();
 	}
-	if(s.clip && !s.clip->status().done) {
-		const u64 nowUs = u64(std::max<s64>(timelineUs, 0));
+	if(s.clip && !s.clip->status().done && clockUs >= 0) {
+		const u64 nowUs = u64(clockUs);
 		ReplayGame game;
 		game.playable = gameevent::detectGameState() == gameevent::GameState::Gameplay;
 		game.player.position = player.pos;

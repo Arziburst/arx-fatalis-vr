@@ -219,6 +219,7 @@ struct OpenXRState {
 		bool quadAcquired = false;          //!< the flat frame image is acquired and bound as the 2D target
 		size_t eyeInRender = size_t(-1);    //!< the eye whose image is bound right now, or none
 		Vec2i windowSize = Vec2i(0);        //!< the window, i.e. the flat frame, this frame
+		bool game = false;                  //!< a frame of the game loop, not a loading screen's or a copied window's (#550)
 	} frame;
 
 	//! The floating UI panel (#49): the engine's menu state and where the 2D interface's quad is shown
@@ -2484,6 +2485,8 @@ bool beginFrameFor(const Vec2i & windowSize, FrameTargets targets) {
 		abandonFrameTargets();
 		endFrame(true);
 	}
+	// Known before xrWaitFrame: the replay clock starts at the first game-loop frame that is playable (#550)
+	frame.game = (targets == FrameTargets::Game);
 
 	XrResult result;
 	PlatformInstant waited;
@@ -2766,6 +2769,10 @@ std::array<AimSample, HandCount> frameAims() {
 
 s64 displayPeriodUs() {
 	return g_xr.running ? g_xr.frame.period : 0;
+}
+
+bool gameFrame() {
+	return g_xr.running && g_xr.frame.game;
 }
 
 const RawActionValues & rawControllerValues() {
@@ -3147,6 +3154,10 @@ std::array<AimSample, HandCount> frameAims() {
 
 s64 displayPeriodUs() {
 	return 0;
+}
+
+bool gameFrame() {
+	return false;
 }
 
 const RawActionValues & rawControllerValues() {

@@ -106,39 +106,63 @@ std::string formatReplayHeader(const ReplayHeader & header) {
 
 void formatReplayFrameText(const ReplayFrame & frame, ReplayFrameText & text) {
 
-	text.keys.clear();
-	text.commands.clear();
+	// The slots of the last call are written over (their strings keep their room): no allocation in steady state
 	const SimRig & rig = frame.rig;
-	auto add = [&](std::string key, std::string command) {
-		text.keys.push_back(std::move(key));
-		text.commands.push_back(std::move(command));
+	size_t slot = 0;
+	auto add = [&](std::string_view key, std::string_view command) {
+		if(slot < text.keys.size()) {
+			text.keys[slot].assign(key);
+			text.commands[slot].assign(command);
+		} else {
+			text.keys.emplace_back(key);
+			text.commands.emplace_back(command);
+		}
+		slot++;
 	};
 
-	std::string command;
+	// Two strings reused for every command: their room grows once (the recorder keeps the text between frames)
+	std::string & key = text.scratchKey;
+	std::string & command = text.scratchCommand;
 	command = "head ";
 	formatPose(command, rig.head);
 	add("head", command);
 
 	for(size_t hand = 0; hand < 2; hand++) {
-		const std::string prefix = std::string("hand ") + ClipHandNames[hand];
-		command = prefix + ' ';
+		key = "hand ";
+		key += ClipHandNames[hand];
+		command = key;
+		command += ' ';
 		formatPose(command, rig.hands[hand]);
-		add(prefix, command);
+		add(key, command);
 	}
 	for(size_t hand = 0; hand < 2; hand++) {
-		const std::string prefix = std::string("hand ") + ClipHandNames[hand] + " aim";
-		command = prefix + ' ';
+		key = "hand ";
+		key += ClipHandNames[hand];
+		key += " aim";
+		command = key;
+		command += ' ';
 		formatPose(command, rig.aims[hand]);
-		add(prefix, command);
+		add(key, command);
 	}
 	for(size_t hand = 0; hand < 2; hand++) {
-		const std::string prefix = std::string("hand ") + ClipHandNames[hand];
-		add(prefix + " tracked", prefix + (rig.handTracked[hand] ? " on" : " off"));
+		key = "hand ";
+		key += ClipHandNames[hand];
+		command = key;
+		command += (rig.handTracked[hand] ? " on" : " off");
+		key += " tracked";
+		add(key, command);
 	}
 	for(size_t hand = 0; hand < 2; hand++) {
-		const std::string prefix = std::string("hand ") + ClipHandNames[hand] + " fingers";
-		add(prefix + " joints", prefix + (rig.fingers[hand].joints ? " on" : " off"));
-		command = prefix + ' ';
+		key = "hand ";
+		key += ClipHandNames[hand];
+		key += " fingers";
+		command = key;
+		command += (rig.fingers[hand].joints ? " on" : " off");
+		key += " joints";
+		add(key, command);
+		key.resize(key.size() - 7); // "hand <side> fingers" again
+		command = key;
+		command += ' ';
 		const SimFingers & fingers = rig.fingers[hand];
 		const float curls[5] = { fingers.curl.x, fingers.curl.y, fingers.curl.z, fingers.outer.x, fingers.outer.y };
 		for(size_t i = 0; i < 5; i++) {
@@ -147,23 +171,31 @@ void formatReplayFrameText(const ReplayFrame & frame, ReplayFrameText & text) {
 			}
 			formatNumber(command, curls[i], 2);
 		}
-		add(prefix, command);
+		add(key, command);
 	}
 
-	add("profile", "profile " + (rig.profile.empty() ? std::string("none") : rig.profile));
-	add("session", std::string("session ") + (!rig.worn ? "idle" : rig.focused ? "focused" : "visible"));
+	command = "profile ";
+	command += rig.profile.empty() ? std::string_view("none") : std::string_view(rig.profile);
+	add("profile", command);
+	command = "session ";
+	command += (!rig.worn ? "idle" : rig.focused ? "focused" : "visible");
+	add("session", command);
 
 	for(const auto & [name, values] : rig.actions) {
 		const bool vector = vectorAction(name);
 		for(size_t hand = 0; hand < 2; hand++) {
-			const std::string prefix = "action " + name + ' ' + ClipHandNames[hand];
-			command = prefix + ' ';
+			key = "action ";
+			key += name;
+			key += ' ';
+			key += ClipHandNames[hand];
+			command = key;
+			command += ' ';
 			formatNumber(command, values[hand].x, 2);
 			if(vector) {
 				command += ' ';
 				formatNumber(command, values[hand].y, 2);
 			}
-			add(prefix, command);
+			add(key, command);
 		}
 	}
 
@@ -178,6 +210,8 @@ void formatReplayFrameText(const ReplayFrame & frame, ReplayFrameText & text) {
 	command += ' ';
 	command += std::to_string(rig.player.area);
 	add("player", command);
+	text.keys.resize(slot);
+	text.commands.resize(slot);
 }
 
 std::string formatReplayFrame(const ReplayFrame & frame, const ReplayFrameText * previous, ReplayFrameText & text) {

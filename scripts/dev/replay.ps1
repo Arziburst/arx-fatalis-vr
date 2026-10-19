@@ -150,6 +150,17 @@ foreach ($shot in $Shots) {
 
 function Test-SaveFolder([string]$Dir) { $Dir -and (Test-Path -LiteralPath (Join-Path $Dir 'gsave.sav') -PathType Leaf) }
 
+# The input events of a run's arx.log, in order: "<event> (<binding>)" and "<hand> grip down|up" (the game may still hold the file)
+function Get-InputEvents([string]$Path) {
+	if (-not (Test-Path -LiteralPath $Path)) { return @() }
+	$stream = [IO.FileStream]::new($Path, 'Open', 'Read', 'ReadWrite, Delete')
+	try { $lines = @(([IO.StreamReader]::new($stream)).ReadToEnd() -split "`r?`n") } finally { $stream.Dispose() }
+	@($lines | ForEach-Object {
+		if ($_ -match '\[vr\] input: ([a-z_]+) \(([^()]*)\)\s*$') { "$($Matches[1]) ($($Matches[2]))" }
+		elseif ($_ -match '\[vr\] input: (left|right) grip (down|up) at ') { "$($Matches[1]) grip $($Matches[2])" }
+	})
+}
+
 $saveDir = $null
 $saveWhere = ''
 if ($Save) {
@@ -278,14 +289,10 @@ try {
 	Write-Host "replay: $_" -ForegroundColor Red
 }
 
-if ($done) {
-	# Let the frame after the end write its status, then end the run
-	Start-Sleep -Seconds 1
-	try { $null = Send-ArxCommand -Lines @('quit') -Dir $testDir } catch { }
-}
+# The run ends when smoke-test's seconds are up (a quit of our own would count as an early exit there)
 Complete-Run
 
-$events = @(Read-ArxSharedLinesForReplay (Get-ArxLogPath $userDir))
+$events = @(Get-InputEvents (Get-ArxLogPath $userDir))
 Write-Host ''
 if ($final) {
 	Write-Host ("Drift: current {0} m, max {1} m ({2} frames compared)" -f ([double]$final.drift.current).ToString('0.000', $inv), ([double]$final.drift.max).ToString('0.000', $inv), $final.drift.frames)

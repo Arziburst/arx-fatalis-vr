@@ -77,17 +77,20 @@ const u32 ReplaySlotCount = 5;
 const size_t ClipHistory = 10;
 
 struct State {
+	bool clockStarted = false;   //!< the clip clock runs: the first playable frame of the game loop was seen
+	s64 startNs = 0;             //!< the display time the clock started at
 	bool recording = false;
 	bool ended = false;          //!< the session's clip was closed: no second record in this run
-	s64 startNs = 0;             //!< the display time of the first recorded frame
 	u64 lastUs = 0;              //!< the last frame's time on the clip's clock
 	u64 frames = 0;
 	fs::path file;
 	std::unique_ptr<fs::ofstream> stream;
 	std::unique_ptr<PerfWriter> writer; //!< destroyed before the stream
+	ReplayFrame frame;           //!< this frame, its action names made once (no allocation per frame)
 	ReplayFrameText previous;
 	ReplayFrameText current;
 	bool havePrevious = false;
+	std::string line;
 	std::vector<unsigned char> ringHeap; //!< the ring's memory when the dump helper has none to share
 	void * ringMemory = nullptr;
 	size_t ringSize = 0;
@@ -168,7 +171,7 @@ std::string makeStartSave() {
 	return folder + " " + name;
 }
 
-void pushLine(const std::string & line) {
+void pushLine(std::string_view line) {
 	if(!g.writer) {
 		return;
 	}
@@ -176,21 +179,19 @@ void pushLine(const std::string & line) {
 	size_t pos = 0;
 	while(pos < line.size()) {
 		size_t end = line.find('\n', pos);
-		if(end == std::string::npos) {
+		if(end == std::string_view::npos) {
 			end = line.size();
 		}
 		if(end > pos) {
-			g.writer->push(std::string_view(line).substr(pos, end - pos));
+			g.writer->push(line.substr(pos, end - pos));
 		}
 		pos = end + 1;
 	}
 }
 
-SimPose poseOf(const Vec3f & position, const glm::quat & orientation) {
-	SimPose pose;
+void setPose(SimPose & pose, const Vec3f & position, const glm::quat & orientation) {
 	pose.position = position;
 	pose.angles = simAngles(orientation);
-	return pose;
 }
 
 //! How far each finger is closed, 0 - 1, from the joints: the mean of its joints' bends against the fist's
@@ -248,7 +249,8 @@ void start() {
 	// The ring: in the dump helper's shared memory when it has the room, else on the heap
 	size_t size = 0;
 	void * memory = platform::dumpHelperRegion(size);
-	const size_t wanted = ReplayRing::memorySize(RingSeconds, u32(std::ceil(std::max(g.header.rate, 1.f))));
+	const u32 rate = u32(std::ceil(std::max(g.header.rate, 1.f)));
+	const size_t wanted = ReplayRing::memorySize(RingSeconds, rate);
 	if(!memory || size < wanted) {
 		g.ringHeap.assign(wanted + 16, 0);
 		uintptr_t address = reinterpret_cast<uintptr_t>(g.ringHeap.data());
@@ -257,10 +259,15 @@ void start() {
 	}
 	g.ringMemory = memory;
 	g.ringSize = size;
-	g.ring = std::make_unique<ReplayRing>(memory, size, RingSeconds, u32(std::ceil(std::max(g.header.rate, 1.f))));
+	g.ring = std::make_unique<ReplayRing>(memory, size, RingSeconds, rate);
 	g.ring->setHeader(g.header);
 
-	g.startNs = views.displayTime;
+	// The frame's action names, once
+	g.frame = ReplayFrame();
+	for(size_t i = 0; i < RawActionValues::Count; i++) {
+		g.frame.rig.actions[RawActionValues::name(i)] = { Vec2f(0.f), Vec2f(0.f) };
+	}
+
 	g.lastUs = 0;
 	g.frames = 0;
 	g.havePrevious = false;
@@ -439,11 +446,18 @@ void noteSave() {
 	}
 }
 
-void frame() {
-
-	if(g_disabled || g.ended) {
-		return;
+s64 clipClockUs(s64 displayTimeNs) {
+	if(!g.clockStarted) {
+		if(!gameFrame() || !isEnabled() || gameevent::detectGameState() != gameevent::GameState::Gameplay) {
+			return -1;
+		}
+		g.clockStarted = true;
+		g.startNs = displayTimeNs;
 	}
+	return displayTimeNs >= g.startNs ? (displayTimeNs - g.startNs) / 1000 : -1;
+}
+
+void frame() {
 
 	const FrameViews & views = frameViews();
 	if(!isEnabled() || !views.valid) {
@@ -453,6 +467,12 @@ void frame() {
 		return;
 	}
 
+	// The clock starts at the first playable frame of the game loop (the simulated runtime may have started it at
+	// this frame's xrWaitFrame already, on the same display time)
+	const s64 clockUs = clipClockUs(views.displayTime);
+	if(clockUs < 0 || g_disabled || g.ended) {
+		return;
+	}
 	const bool playable = gameevent::detectGameState() == gameevent::GameState::Gameplay;
 	if(!g.recording) {
 		if(!playable) {
@@ -464,25 +484,25 @@ void frame() {
 		}
 	}
 
-	ReplayFrame frame;
-	frame.timeUs = views.displayTime > g.startNs ? u64(views.displayTime - g.startNs) / 1000 : 0;
+	ReplayFrame & frame = g.frame;
+	frame.timeUs = u64(clockUs);
 	SimRig & rig = frame.rig;
 
 	// The head: between the eyes, turned as they are
-	rig.head = poseOf((views.eyes[0].position + views.eyes[1].position) * 0.5f,
-	                  glm::normalize(glm::slerp(views.eyes[0].orientation, views.eyes[1].orientation, 0.5f)));
+	setPose(rig.head, (views.eyes[0].position + views.eyes[1].position) * 0.5f,
+	        glm::normalize(glm::slerp(views.eyes[0].orientation, views.eyes[1].orientation, 0.5f)));
 
 	const FrameHands & hands = frameHands();
 	const std::array<AimSample, HandCount> aims = frameAims();
 	for(size_t hand = 0; hand < HandCount; hand++) {
 		rig.handTracked[hand] = hands.tracked[hand];
-		rig.hands[hand] = poseOf(hands.hands[hand].position, hands.hands[hand].orientation);
+		setPose(rig.hands[hand], hands.hands[hand].position, hands.hands[hand].orientation);
 		// The aim in the grip's space: a fixed offset per controller, so it seldom changes
 		if(aims[hand].valid && hands.tracked[hand]) {
 			Vec3f position = aims[hand].position;
 			glm::quat orientation = aims[hand].orientation;
 			poseInSpace(hands.hands[hand].position, hands.hands[hand].orientation, position, orientation);
-			rig.aims[hand] = poseOf(position, orientation);
+			setPose(rig.aims[hand], position, orientation);
 		}
 		rig.fingers[hand].joints = hands.joints[hand].valid;
 		if(hands.joints[hand].valid) {
@@ -493,13 +513,22 @@ void frame() {
 	}
 
 	const std::array<std::string, HandCount> profiles = controllerProfiles();
-	rig.profile = !profiles[1].empty() ? profiles[1] : profiles[0];
+	const std::string & profile = !profiles[1].empty() ? profiles[1] : profiles[0];
+	if(rig.profile != profile) {
+		rig.profile = profile;
+	}
 	rig.worn = isWorn();
 	rig.focused = std::string_view(sessionStateString()) == "focused";
 
 	const RawActionValues & raw = rawControllerValues();
-	for(size_t i = 0; i < RawActionValues::Count; i++) {
-		rig.actions[RawActionValues::name(i)] = raw.values[i];
+	for(auto & entry : rig.actions) {
+		// The map is sorted by name, the raw values by index: nine names, no allocation
+		for(size_t k = 0; k < RawActionValues::Count; k++) {
+			if(entry.first == RawActionValues::name(k)) {
+				entry.second = raw.values[k];
+				break;
+			}
+		}
 	}
 
 	rig.player.position = player.pos;
@@ -520,13 +549,13 @@ void frame() {
 		pushLine("@" + std::to_string((frame.timeUs + 500) / 1000) + "ms anchor save");
 	}
 
-	std::string line = formatReplayFrame(frame, g.havePrevious ? &g.previous : nullptr, g.current);
+	g.line = formatReplayFrame(frame, g.havePrevious ? &g.previous : nullptr, g.current);
 	std::swap(g.previous, g.current);
 	g.havePrevious = true;
-	if(!line.empty() && line.back() == '\n') {
-		line.pop_back();
+	if(!g.line.empty() && g.line.back() == '\n') {
+		g.line.pop_back();
 	}
-	g.writer->push(line);
+	g.writer->push(g.line);
 	g.ring->push(frame);
 	g.lastUs = frame.timeUs;
 	g.frames++;

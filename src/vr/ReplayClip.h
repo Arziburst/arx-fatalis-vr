@@ -79,6 +79,8 @@ struct ReplayFrame {
 struct ReplayFrameText {
 	std::vector<std::string> keys;     //!< what each command sets ("head", "hand left", "action trigger left", ...)
 	std::vector<std::string> commands; //!< the command, e.g. "head 0.0000 0.0000 0.0000 0.00 0.00 0.00"
+	std::string scratchKey;            //!< the formatter's working strings, kept for their room
+	std::string scratchCommand;
 };
 
 //! Every command of \a frame, in the clip's order

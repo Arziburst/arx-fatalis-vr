@@ -46,6 +46,16 @@ namespace replay {
 //! Once per frame, after the input was read and the channel ran (ArxGame::doFrame): record it, start the record first
 void frame();
 
+/*!
+ * \brief The clip's clock: microseconds of predicted display time since the record start, or -1 before it
+ *
+ * The record starts at the first frame of the game loop that is playable (a loading screen's frame is not the game
+ * loop's); the clock starts there whether or not anything is recorded (\c --no-replay-log), so a replay in the
+ * same run plays on the clock the recording was made on. Called at xrWaitFrame by the simulated runtime (the
+ * \c play command) and by the recorder itself; \a displayTimeNs is the frame's predicted display time.
+ */
+s64 clipClockUs(s64 displayTimeNs);
+
 //! Close the session's clip (gzip): the game shuts down
 void shutdown();
 

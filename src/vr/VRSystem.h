@@ -271,6 +271,9 @@ std::array<AimSample, HandCount> frameAims();
 //! The current frame's predicted display period in microseconds (0 outside a session)
 s64 displayPeriodUs();
 
+//! True while the current frame is the game loop's (not a loading screen's or a copied window's): the replay clock (#550)
+bool gameFrame();
+
 /*!
  * \brief The raw values of the game's OpenXR actions as the last sync read them (#550), by action name, per hand
  *

@@ -9,8 +9,8 @@
 @args --loadslot 0 --seed 4242
 
 @until state eq GAMEPLAY 60s
-# This session is recorded too (every VR session records): the recorder starts at the first playable frame
-@log \[replay\] recording arx-replay\.log: save save\d+ "VR replay [^"]*", seed 4242, 90 Hz 5s
+# (this session is recorded too - every VR session records - but its "[replay] recording" line comes at the first
+# playable frame, before this sequence's first mark: replay-check.ps1 reads it from the whole log)
 setplayercontrols on
 @assert player.controlsBlocked eq false
 

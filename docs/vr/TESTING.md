@@ -215,8 +215,12 @@ the way out: a `TerminateProcess` from outside (the task manager, a launcher, a 
 
 ## The hang watchdog (#440)
 
-With the test channel the game watches its main thread (`platform/HangWatchdog`, from the first frame): the main
-thread beats every frame, when a level load starts and at every step of a load's progress bar. When no beat came
+In every launch - with or without the test channel, since #545 - the game watches its main thread
+(`platform/HangWatchdog`, from the first frame; `arx.log` says `hang watchdog: watching the main thread, threshold
+5000 ms`): the main thread beats every frame, when a level load starts and at every step of a load's progress bar.
+The first report of a stall also asks the dump helper for a hang report - `hangs\<utc>\` with `report.txt`
+(`kind=hang`), a minidump of every thread, the flight recorder and the performance log - and names it in the log:
+`[hang] dump written: hangs\<utc>\arx.dmp` (`scripts/dev/crash-report.ps1` reads it; `hang-dump.xrs` in CI checks it). When no beat came
 for the threshold (5 s, below the 10 s a test waits for an ack; the channel's `watchdog <ms>` changes it) a thread
 of the watchdog suspends the main thread just long enough to walk its stack, resumes it and writes the report to
 `<dir>\hang.txt` (first, without the logger) and as `[W] ... [hang]` lines of `arx.log`:
@@ -306,7 +310,9 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `shot [name]` | after the next rendered frame, save it as `<dir>\capture\<name>.bmp` (default `shot<N>`); `captureSeq` and `lastCapture` in the status, and `capture`: what each quarter of the picture shows (#334) |
 | `window <width> <height>` | resize the game window as a player dragging its border does (#334): the interface is laid out again for the new size at the next frame (`window` and `vr.interface.windowWidth/Height` in the status). At least 320 × 240; refused in fullscreen. The size is saved to `cfg.ini` when the game quits |
 | `mark <text>` | `[mark] <text>` in the log — an anchor for "the line I wait for must come after this"; also an `M` line in [the performance log](#the-performance-log-arx-perflog-327) |
-| `stall <ms>` | the main thread sleeps 1..5000 ms in this frame: a forced hitch, which the performance log must mark with `cause=channel` (#327) |
+| `stall <ms>` | the main thread sleeps 1..60000 ms in this frame: a forced hitch, which the performance log must mark with `cause=channel` (#327); over the watchdog's threshold (6000) it forces a hang report with a dump (#545, `hang-dump.xrs`) |
+| `leak <MiB>` | allocate and touch 1..4096 MiB of private memory and keep it until the exit: the `R` lines of the performance log show the step, `perf-summary.ps1` the trend (#545) |
+| `abort`, `terminate`, `terminate thread`, `heapcorrupt`, `exitprocess <code>` | end the game on purpose for the crash-report checks (#545, `flight-recorder-check.ps1`): `abort()`, `std::terminate()` on the main thread or on a new `std::thread`, a heap corruption the heap detects (`STATUS_HEAP_CORRUPTION`), a thread that starts straight at `ExitProcess` (the #544 shape, caught by the ExitGuard). Each leaves one `crashes\<utc>\` report; the killing ones never get an ack |
 | `stall load <ms>` | the **next level load** sleeps 1..5000 ms right after its `Loading level` line: a stalled load for the [hang watchdog](#the-hang-watchdog-440) (#440, `level-load-hang.xrs`) |
 | `watchdog <ms>` | the hang watchdog's threshold, 100..60000 ms (default 5000): a main thread without a beat for this long is reported with its stack (#440); `hangWatchdog.thresholdMs` in the status |
 | `quit` | ask the game to quit at the end of the frame (the same path as closing the window) |

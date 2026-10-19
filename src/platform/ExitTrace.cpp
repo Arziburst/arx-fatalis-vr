@@ -206,64 +206,9 @@ void onCrtExit() {
 // the dump helper for a report of every thread before the exit proceeds - record only, never refuse the kill.
 namespace {
 
-void * threadStartAddress() {
-	using NtQueryInformationThreadFn = LONG (NTAPI *)(HANDLE, int, PVOID, ULONG, PULONG);
-	static NtQueryInformationThreadFn query = reinterpret_cast<NtQueryInformationThreadFn>(
-		reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationThread")));
-	if(!query) {
-		return nullptr;
-	}
-	void * start = nullptr;
-	// ThreadQuerySetWin32StartAddress = 9
-	query(GetCurrentThread(), 9, &start, sizeof(start), nullptr);
-	return start;
-}
-
-struct ExitRoutines {
-	void * exitProcess = reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "ExitProcess"));
-	void * exitThread = reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "ExitThread"));
-	void * terminateProcess = reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "TerminateProcess"));
-	void * rtlExit = reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlExitUserProcess"));
-};
-
-//! "KERNEL32!ExitProcess" for an exit routine, else "<module>+0x<offset>"; \a isExit set for an exit routine
-std::string describeStart(void * address, bool & isExit) {
-	static const ExitRoutines routines;
-	isExit = false;
-	if(address == routines.exitProcess) { isExit = true; return "KERNEL32!ExitProcess"; }
-	if(address == routines.exitThread) { isExit = true; return "KERNEL32!ExitThread"; }
-	if(address == routines.terminateProcess) { isExit = true; return "KERNEL32!TerminateProcess"; }
-	if(address == routines.rtlExit) { isExit = true; return "ntdll!RtlExitUserProcess"; }
-	HMODULE module = nullptr;
-	DWORD flags = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
-	if(GetModuleHandleExW(flags, reinterpret_cast<LPCWSTR>(address), &module) && module) {
-		wchar_t path[MAX_PATH];
-		if(GetModuleFileNameW(module, path, MAX_PATH) != 0) {
-			const wchar_t * file = path;
-			for(const wchar_t * c = path; *c != L'\0'; c++) {
-				if(*c == L'\\' || *c == L'/') {
-					file = c + 1;
-				}
-			}
-			char nameBuf[MAX_PATH];
-			int n = WideCharToMultiByte(CP_UTF8, 0, file, -1, nameBuf, int(sizeof(nameBuf)), nullptr, nullptr);
-			std::string name = (n > 1) ? std::string(nameBuf, size_t(n - 1)) : std::string("?");
-			char buffer[32];
-			std::snprintf(buffer, sizeof(buffer), "+0x%llx",
-			              static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(address)
-			                                              - reinterpret_cast<uintptr_t>(module)));
-			return name + buffer;
-		}
-	}
-	char buffer[32];
-	std::snprintf(buffer, sizeof(buffer), "0x%llx", static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(address)));
-	return buffer;
-}
-
 void exitGuardOnThreadStart() {
-	void * start = threadStartAddress();
 	bool isExit = false;
-	std::string label = describeStart(start, isExit);
+	std::string label = threadStartLabel(isExit);
 	flightRecord(RecordKind::Thread, "start " + label);
 	if(isExit) {
 		std::string killer = std::to_string(GetCurrentThreadId()) + " start " + label;

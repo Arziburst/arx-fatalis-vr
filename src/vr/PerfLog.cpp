@@ -61,8 +61,7 @@ std::atomic<u32> g_glTextures(0);
 std::atomic<u32> g_glBuffers(0);
 std::atomic<u32> g_xrSwapchains(0);
 
-//! When the last R line was written; 0 = none yet (the first sampleResources() writes at once)
-PlatformInstant g_lastResource = PlatformInstant(0);
+std::string resourceLine();
 
 //! Scopes time only on the thread that opened the log (the main thread) while it is open
 thread_local bool t_timing = false;
@@ -181,8 +180,12 @@ void initialize() {
 	               " 1.5 expected frame times, with its phases; M = a mark. Summary: scripts/dev/perf-summary.ps1");
 
 	g.origin = platform::getTime();
-	g_lastResource = PlatformInstant(0);
 	t_timing = true;
+
+	// The resource line every 5 s (#545), with the recorder; --no-recorder is the overhead baseline
+	if(platform::dumpHelperEnabled()) {
+		g.writer->setPeriodic(std::chrono::seconds(5), resourceLine);
+	}
 
 	LogInfo << "[perf] performance log: " << path << " (a line per second and per hitch; --no-perf-log turns it off)";
 }
@@ -318,26 +321,21 @@ void removeBuffer() { g_glBuffers.fetch_sub(1, std::memory_order_relaxed); }
 void addSwapchain() { g_xrSwapchains.fetch_add(1, std::memory_order_relaxed); }
 void removeSwapchain() { g_xrSwapchains.fetch_sub(1, std::memory_order_relaxed); }
 
-void sampleResources() {
+namespace {
 
-	if(!g.writer) {
-		return;
-	}
-
-	PlatformInstant now = platform::getTime();
-	if(g_lastResource != PlatformInstant(0) && toMsi(now - g_lastResource) < 5000) {
-		return;
-	}
-	g_lastResource = now;
-
+//! The "R" line (#545), made on the writer's thread every 5 s: off the frame path, and it keeps coming while
+//! the frame thread stalls or loads (a sample driven by frames would be late by a stall's length)
+std::string resourceLine() {
 	platform::ResourceSample sample;
-	sample.second = u32(std::max<s64>(toUs(now - g.origin) / 1000000, 0));
+	sample.second = u32(std::max<s64>(toUs(platform::getTime() - g.origin) / 1000000, 0));
 	sample.process = platform::sampleProcessResources();
 	sample.textures = g_glTextures.load(std::memory_order_relaxed);
 	sample.buffers = g_glBuffers.load(std::memory_order_relaxed);
 	sample.swapchains = g_xrSwapchains.load(std::memory_order_relaxed);
-	g.writer->push(platform::formatResources(sample));
+	return platform::formatResources(sample);
 }
+
+} // anonymous namespace
 
 void mark(std::string_view text) {
 	if(!g.writer) {

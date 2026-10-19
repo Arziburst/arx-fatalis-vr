@@ -68,9 +68,11 @@ const char * dumpKindName(DumpKind kind) noexcept {
 
 namespace {
 
-// The recorder: enough to keep ~90 s of frames at 90 Hz on the main thread so a long run still has its
-// early state changes, small enough for the 5 MiB budget (8 rings * 8192 * 64 B = 4 MiB).
-const size_t RecorderThreads = 8;
+// The recorder: a ring for every thread the game has (about 20 at a time, plus the short-lived ones a kill
+// from outside makes - a thread without a ring loses its birth record), each long enough to keep ~90 s of
+// frames at 90 Hz so a long run still has its early state changes. 24 * 8192 * 64 B = 12 MiB of a pagefile
+// section: pages the game touches land in its working set, not in its private bytes (the 5 MiB budget).
+const size_t RecorderThreads = 24;
 const size_t RecorderRecords = 8192;
 
 const u32 SharedMagic = 0x46524431; // "FRD1"
@@ -120,6 +122,35 @@ HANDLE g_helperProcess = nullptr;
 bool g_enabled = false;
 u32 g_mainThreadId = 0;
 std::atomic<bool> g_requestInFlight(false);
+
+// In-process symbols for the crash stack (#545): a handle of our own (DbgHelp keys its state by the handle
+// value, and the hang watchdog already uses the pseudo-handle), deferred loads so the start costs nothing -
+// arx.pdb is read at the first lookup, inside the crash handler
+HANDLE g_symProcess = nullptr;
+bool g_symReady = false;
+
+void initializeSymbols() {
+	g_symProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, GetCurrentProcessId());
+	if(!g_symProcess) {
+		return;
+	}
+	SymSetOptions(SYMOPT_UNDNAME | SYMOPT_LOAD_LINES | SYMOPT_DEFERRED_LOADS | SYMOPT_FAIL_CRITICAL_ERRORS
+	              | SYMOPT_NO_PROMPTS);
+	// The executable's folder holds its .pdb
+	wchar_t path[MAX_PATH] = {};
+	DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
+	if(length != 0 && length < MAX_PATH) {
+		for(wchar_t * c = path + length; c > path; c--) {
+			if(c[-1] == L'\\' || c[-1] == L'/') {
+				*c = L'\0';
+				break;
+			}
+		}
+	} else {
+		path[0] = L'\0';
+	}
+	g_symReady = SymInitializeW(g_symProcess, path[0] ? path : nullptr, TRUE) == TRUE;
+}
 
 std::wstring widen(const std::string & text) {
 	if(text.empty()) {
@@ -221,6 +252,7 @@ bool initializeDumpHelper(const std::string & exePath, const std::string & userD
 	g_recorder = &recorder;
 	g_mainThreadId = GetCurrentThreadId();
 	g_recorder->nameThread("main thread");
+	initializeSymbols();
 
 	std::wstring reqName = L"Local\\arxfr-req-" + id;
 	std::wstring doneName = L"Local\\arxfr-done-" + id;
@@ -355,6 +387,160 @@ std::string dumpLastReportFolder() {
 	}
 	return std::string(g_shared->lastReportFolder,
 	                   strnlen(g_shared->lastReportFolder, sizeof(g_shared->lastReportFolder)));
+}
+
+std::string moduleLabel(u64 address) {
+	char buffer[64];
+	HMODULE module = nullptr;
+	DWORD flags = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
+	if(GetModuleHandleExW(flags, reinterpret_cast<LPCWSTR>(static_cast<uintptr_t>(address)), &module) && module) {
+		wchar_t path[MAX_PATH];
+		if(GetModuleFileNameW(module, path, MAX_PATH) != 0) {
+			const wchar_t * file = path;
+			for(const wchar_t * c = path; *c != L'\0'; c++) {
+				if(*c == L'\\' || *c == L'/') {
+					file = c + 1;
+				}
+			}
+			char name[MAX_PATH];
+			int n = WideCharToMultiByte(CP_UTF8, 0, file, -1, name, int(sizeof(name)), nullptr, nullptr);
+			std::snprintf(buffer, sizeof(buffer), "+0x%llx",
+			              static_cast<unsigned long long>(address - reinterpret_cast<uintptr_t>(module)));
+			return (n > 1 ? std::string(name, size_t(n - 1)) : std::string("?")) + buffer;
+		}
+	}
+	std::snprintf(buffer, sizeof(buffer), "0x%llx", static_cast<unsigned long long>(address));
+	return buffer;
+}
+
+std::string exceptionCodeName(u32 code) {
+	const char * name = nullptr;
+	switch(code) {
+		case 0xC0000005: name = "EXCEPTION_ACCESS_VIOLATION"; break;
+		case 0xC0000006: name = "EXCEPTION_IN_PAGE_ERROR"; break;
+		case 0x80000003: name = "EXCEPTION_BREAKPOINT"; break;
+		case 0x80000004: name = "EXCEPTION_SINGLE_STEP"; break;
+		case 0xC000008C: name = "EXCEPTION_ARRAY_BOUNDS_EXCEEDED"; break;
+		case 0xC000008E: name = "EXCEPTION_FLT_DIVIDE_BY_ZERO"; break;
+		case 0xC0000090: name = "EXCEPTION_FLT_INVALID_OPERATION"; break;
+		case 0xC0000094: name = "EXCEPTION_INT_DIVIDE_BY_ZERO"; break;
+		case 0xC0000095: name = "EXCEPTION_INT_OVERFLOW"; break;
+		case 0xC0000096: name = "EXCEPTION_PRIV_INSTRUCTION"; break;
+		case 0xC000001D: name = "EXCEPTION_ILLEGAL_INSTRUCTION"; break;
+		case 0xC0000025: name = "EXCEPTION_NONCONTINUABLE_EXCEPTION"; break;
+		case 0xC00000FD: name = "EXCEPTION_STACK_OVERFLOW"; break;
+		case 0xC0000374: name = "STATUS_HEAP_CORRUPTION"; break;
+		case 0xC0000409: name = "STATUS_STACK_BUFFER_OVERRUN"; break;
+		case 0xC0000417: name = "STATUS_INVALID_CRUNTIME_PARAMETER"; break;
+		case 0xE06D7363: name = "CPP_EXCEPTION"; break;
+		default: break;
+	}
+	char buffer[80];
+	if(name) {
+		std::snprintf(buffer, sizeof(buffer), "0x%08x %s", unsigned(code), name);
+	} else {
+		std::snprintf(buffer, sizeof(buffer), "0x%08x", unsigned(code));
+	}
+	return buffer;
+}
+
+std::string threadStartLabel(bool & isExit) {
+	isExit = false;
+	using NtQueryInformationThreadFn = LONG (NTAPI *)(HANDLE, int, PVOID, ULONG, PULONG);
+	static NtQueryInformationThreadFn query = reinterpret_cast<NtQueryInformationThreadFn>(
+		reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationThread")));
+	void * start = nullptr;
+	if(query) {
+		query(GetCurrentThread(), 9 /* ThreadQuerySetWin32StartAddress */, &start, sizeof(start), nullptr);
+	}
+	struct Routine { const char * name; void * address; };
+	static const Routine routines[] = {
+		{ "KERNEL32!ExitProcess", reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "ExitProcess")) },
+		{ "KERNEL32!ExitThread", reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "ExitThread")) },
+		{ "KERNEL32!TerminateProcess", reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "TerminateProcess")) },
+		{ "ntdll!RtlExitUserProcess", reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlExitUserProcess")) },
+	};
+	for(const Routine & routine : routines) {
+		if(start && start == routine.address) {
+			isExit = true;
+			return routine.name;
+		}
+	}
+	return moduleLabel(u64(reinterpret_cast<uintptr_t>(start)));
+}
+
+std::string killerLabel() {
+	DWORD tid = GetCurrentThreadId();
+	if(tid == g_mainThreadId) {
+		return std::to_string(tid) + " main thread";
+	}
+	bool isExit = false;
+	return std::to_string(tid) + " start " + threadStartLabel(isExit);
+}
+
+std::string symbolizedStack(const void * contextIn) {
+
+	std::string out;
+	#if ARX_ARCH == ARX_ARCH_X86_64
+	if(!contextIn) {
+		return out;
+	}
+	CONTEXT context;
+	std::memcpy(&context, contextIn, sizeof(context));
+
+	STACKFRAME64 frame;
+	std::memset(&frame, 0, sizeof(frame));
+	frame.AddrPC.Offset = context.Rip;
+	frame.AddrPC.Mode = AddrModeFlat;
+	frame.AddrFrame.Offset = context.Rsp;
+	frame.AddrFrame.Mode = AddrModeFlat;
+	frame.AddrStack.Offset = context.Rsp;
+	frame.AddrStack.Mode = AddrModeFlat;
+
+	HANDLE process = g_symProcess ? g_symProcess : GetCurrentProcess();
+	for(int i = 0; i < 64; i++) {
+		BOOL ok = StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, GetCurrentThread(), &frame, &context, nullptr,
+		                      SymFunctionTableAccess64, SymGetModuleBase64, nullptr);
+		if(ok != TRUE || frame.AddrPC.Offset == 0) {
+			break;
+		}
+		DWORD64 address = frame.AddrPC.Offset;
+		std::string line = "  #" + std::to_string(i) + " " + moduleLabel(u64(address));
+		if(g_symReady) {
+			alignas(SYMBOL_INFO) char buffer[sizeof(SYMBOL_INFO) + 512] = {};
+			SYMBOL_INFO * symbol = reinterpret_cast<SYMBOL_INFO *>(buffer);
+			symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+			symbol->MaxNameLen = 511;
+			DWORD64 displacement = 0;
+			if(SymFromAddr(process, address, &displacement, symbol) == TRUE) {
+				line.push_back(' ');
+				line.append(symbol->Name, std::min<size_t>(symbol->NameLen, 511));
+			}
+			IMAGEHLP_LINE64 lineInfo;
+			std::memset(&lineInfo, 0, sizeof(lineInfo));
+			lineInfo.SizeOfStruct = sizeof(lineInfo);
+			DWORD lineDisplacement = 0;
+			if(SymGetLineFromAddr64(process, address, &lineDisplacement, &lineInfo) == TRUE && lineInfo.FileName) {
+				const char * file = lineInfo.FileName;
+				for(const char * c = lineInfo.FileName; *c != '\0'; c++) {
+					if(*c == '\\' || *c == '/') {
+						file = c + 1;
+					}
+				}
+				line += " (";
+				line += file;
+				line += ':';
+				line += std::to_string(lineInfo.LineNumber);
+				line += ')';
+			}
+		}
+		out += line;
+		out.push_back('\n');
+	}
+	#else
+	ARX_UNUSED(contextIn);
+	#endif
+	return out;
 }
 
 // =====================================================================================================
@@ -695,6 +881,11 @@ void requestReport(DumpKind, bool, u32, u64, std::string_view, std::string_view,
                    std::string_view, u32) noexcept { }
 void dumpHelperMarkClean() noexcept { }
 std::string dumpLastReportFolder() { return std::string(); }
+std::string moduleLabel(u64) { return std::string(); }
+std::string exceptionCodeName(u32) { return std::string(); }
+std::string threadStartLabel(bool & isExit) { isExit = false; return std::string(); }
+std::string killerLabel() { return std::string(); }
+std::string symbolizedStack(const void *) { return std::string(); }
 
 #endif // ARX_PLATFORM_WIN32
 

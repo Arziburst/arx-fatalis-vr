@@ -109,6 +109,32 @@ void dumpHelperMarkClean() noexcept;
 //! The leaf name of the report folder the helper last wrote (for the game's "[hang] dump written" line), or ""
 std::string dumpLastReportFolder();
 
+//! "arx.exe+0x1234" for an address inside a loaded module, else "0x<address>" - the faulting module of a report
+std::string moduleLabel(u64 address);
+
+//! "0xc0000005 EXCEPTION_ACCESS_VIOLATION": a Windows exception code with its name (the code alone when unknown)
+std::string exceptionCodeName(u32 code);
+
+/*!
+ * \brief The calling thread's start routine: "KERNEL32!ExitProcess" or "<module>+0x<offset>"
+ *
+ * \a isExit is set when the thread starts straight at ExitProcess / ExitThread / TerminateProcess /
+ * RtlExitUserProcess - a thread made to end the process from outside (the ExitGuard, #544).
+ */
+std::string threadStartLabel(bool & isExit);
+
+//! The report's killer line for the calling thread: "<tid> main thread", or "<tid> start <threadStartLabel>"
+std::string killerLabel();
+
+/*!
+ * \brief The calling thread's stack from a context, symbolised in process
+ *
+ * One "  #<n> <module>+0x<offset> <function> (<file>:<line>)" line per frame (the function and the line where
+ * the build's arx.pdb or a module's exports name them). \a context is a CONTEXT of the calling thread (copied,
+ * not changed). The symbols were set up by initializeDumpHelper with deferred loads: the first lookup loads them.
+ */
+std::string symbolizedStack(const void * context);
+
 //! The id of the main thread (the one that called flightNameThread("main thread")), for the killer line
 u32 mainThreadId() noexcept;
 

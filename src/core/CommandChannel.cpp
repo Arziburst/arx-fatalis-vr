@@ -2340,9 +2340,10 @@ std::string execute(std::string_view line) {
 		if(!load) {
 			value = rest;
 		}
+		// Up to 60 s: over the watchdog's default 5 s threshold, so a stall can force a hang report (#545)
 		long stallMs = 0;
-		if(!parseIndex(value, stallMs) || stallMs < 1 || stallMs > 5000) {
-			return refuse("stall: expected [load] and milliseconds 1..5000, got \"" + std::string(rest) + "\"");
+		if(!parseIndex(value, stallMs) || stallMs < 1 || stallMs > 60000) {
+			return refuse("stall: expected [load] and milliseconds 1..60000, got \"" + std::string(rest) + "\"");
 		}
 		if(load) {
 			g.stallLoadMs = stallMs;
@@ -2563,13 +2564,13 @@ std::string execute(std::string_view line) {
 		// reports it, kind=crash (#545)
 		LogWarning << "[channel] heap corruption requested through the test channel";
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
-		HANDLE heap = HeapCreate(0, 0, 0);
-		if(heap) {
-			void * block = HeapAlloc(heap, 0, 32);
-			// Write past the block, then free: the heap raises STATUS_HEAP_CORRUPTION
-			std::memset(block, 0xcc, 128);
+		// Overwrite a block's own header on the process heap, then free it: the heap decodes the header,
+		// finds it corrupt and raises STATUS_HEAP_CORRUPTION (termination on corruption is on by default)
+		HANDLE heap = GetProcessHeap();
+		unsigned char * block = static_cast<unsigned char *>(HeapAlloc(heap, 0, 64));
+		if(block) {
+			std::memset(block - 16, 0xcc, 16);
 			HeapFree(heap, 0, block);
-			HeapDestroy(heap);
 		}
 #endif
 		return std::string();

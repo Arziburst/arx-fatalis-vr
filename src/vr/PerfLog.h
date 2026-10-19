@@ -89,14 +89,6 @@ void removeBuffer();
 void addSwapchain();
 void removeSwapchain();
 
-/*!
- * \brief Sample the process's resources and write one "R" line, at most once every 5 s (#545)
- *
- * Called every frame from the main loop; it throttles itself. The caller gates it on the recorder being on
- * (--no-recorder is the overhead baseline). Cheap: the sample is off the frame's hot path once per 5 s.
- */
-void sampleResources();
-
 //! A line "M t=<s> <text>" between the seconds, e.g. a test channel mark
 void mark(std::string_view text);
 

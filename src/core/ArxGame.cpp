@@ -1478,14 +1478,11 @@ void ArxGame::doFrame() {
 	// The performance log (#327): the previous frame ends here, this one's phases are timed from now on
 	vr::perf::frameStart();
 
-	// The flight recorder (#545): one event per frame, and a resource line into arx-perf.log every 5 s
-	// (off with --no-recorder, the overhead baseline). The hang watchdog beats inside channel::update.
+	// The flight recorder (#545): one event per frame (a no-op with --no-recorder). The resource line goes
+	// into arx-perf.log from the performance log's own thread; the hang watchdog beats inside channel::update.
 	{
 		static s64 s_frame = 0;
 		platform::flightRecord(platform::RecordKind::Frame, std::string_view(), ++s_frame);
-		if(platform::dumpHelperEnabled()) {
-			vr::perf::sampleResources();
-		}
 	}
 
 	{

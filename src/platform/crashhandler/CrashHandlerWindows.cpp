@@ -30,6 +30,7 @@
 #include "io/log/Logger.h"
 
 #include "platform/Architecture.h"
+#include "platform/DumpHelper.h"
 #include "platform/Platform.h"
 
 
@@ -57,6 +58,7 @@ struct PlatformCrashHandlers {
 };
 
 LONG WINAPI SEHHandler(PEXCEPTION_POINTERS pExceptionPtrs);
+LONG WINAPI VectoredHandler(PEXCEPTION_POINTERS pExceptionPtrs);
 void PureCallHandler();
 int NewHandler(size_t);
 void InvalidParameterHandler(const wchar_t * expression, const wchar_t * function, const wchar_t * file, unsigned int line, uintptr_t pReserved);
@@ -101,7 +103,11 @@ bool CrashHandlerWindows::registerCrashHandlers() {
 	
 	// Unhandled exception handler.
 	m_pPreviousCrashHandlers->m_SEHHandler = SetUnhandledExceptionFilter(SEHHandler);
-	
+
+	// A heap corruption and a fail-fast end the process without ever reaching the unhandled exception
+	// filter: a vectored handler sees them first (#545)
+	m_vectoredHandler = AddVectoredExceptionHandler(1, VectoredHandler);
+
 	// Prevent dialog box.
 	_set_error_mode(_OUT_TO_STDERR);
 	
@@ -152,7 +158,11 @@ bool CrashHandlerWindows::rearm() {
 void CrashHandlerWindows::unregisterCrashHandlers() {
 	
 	unregisterThreadCrashHandlersImpl();
-	
+
+	if(m_vectoredHandler) {
+		RemoveVectoredExceptionHandler(m_vectoredHandler);
+		m_vectoredHandler = nullptr;
+	}
 	SetUnhandledExceptionFilter(m_pPreviousCrashHandlers->m_SEHHandler);
 	_set_purecall_handler(m_pPreviousCrashHandlers->m_pureCallHandler);
 	_set_new_handler(m_pPreviousCrashHandlers->m_newHandler);
@@ -326,7 +336,41 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 	
 	// Get current thread id
 	m_pCrashInfo->threadId = u32(GetCurrentThreadId());
-	
+
+	// The flight recorder's dump helper owns the report (#545): exactly one folder per death, the dump of
+	// every thread written out of process while we wait here, the files once the process has ended
+	if(platform::dumpHelperEnabled()) {
+		std::string stack = platform::symbolizedStack(pointers->ContextRecord);
+		u32 code = pointers->ExceptionRecord ? u32(pointers->ExceptionRecord->ExceptionCode) : 0;
+		platform::DumpKind kind = platform::DumpKind::Crash;
+		std::string exceptionName;
+		if(crashType == TERMINATE_CALL) {
+			kind = platform::DumpKind::Terminate;
+		} else if(crashType == SIGNAL_SIGABRT || crashType == USER_CRASH) {
+			// A foreign thread's std::terminate() has no handler of ours and ends in abort(): its stack says so
+			kind = (stack.find("terminate") != std::string::npos) ? platform::DumpKind::Terminate
+			                                                       : platform::DumpKind::Abort;
+		} else if(code != 0) {
+			exceptionName = platform::exceptionCodeName(code);
+		}
+		u64 faultAddress = 0;
+		if(m_pCrashInfo->hasAddress) {
+			faultAddress = m_pCrashInfo->address;
+		} else {
+			#if ARX_ARCH == ARX_ARCH_X86_64
+			faultAddress = u64(pointers->ContextRecord->Rip);
+			#elif ARX_ARCH == ARX_ARCH_X86
+			faultAddress = u64(pointers->ContextRecord->Eip);
+			#endif
+		}
+		platform::requestReport(kind, true, u32(GetCurrentThreadId()), u64(reinterpret_cast<uintptr_t>(pointers)),
+		                        platform::killerLabel(), platform::moduleLabel(faultAddress), exceptionName, stack,
+		                        15000);
+		UINT exitCode = (code != 0 && kind == platform::DumpKind::Crash) ? UINT(code) : 3u;
+		TerminateProcess(GetCurrentProcess(), exitCode);
+		std::abort();
+	}
+
 	writeCrashDump(pointers);
 	
 	// Try to spawn a sub-process to process the crash info
@@ -360,6 +404,16 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 
 LONG WINAPI SEHHandler(PEXCEPTION_POINTERS pExceptionPtrs) {
 	CrashHandlerWindows::getInstance().handleCrash(SEH_EXCEPTION, pExceptionPtrs);
+}
+
+LONG WINAPI VectoredHandler(PEXCEPTION_POINTERS pExceptionPtrs) {
+	// STATUS_HEAP_CORRUPTION and STATUS_STACK_BUFFER_OVERRUN: the process would end before the unhandled
+	// exception filter runs; everything else goes on to the structured handlers as before (#545)
+	DWORD code = pExceptionPtrs->ExceptionRecord->ExceptionCode;
+	if(code == 0xC0000374 || code == 0xC0000409) {
+		CrashHandlerWindows::getInstance().handleCrash(SEH_EXCEPTION, pExceptionPtrs);
+	}
+	return EXCEPTION_CONTINUE_SEARCH;
 }
 
 void TerminateHandler() {

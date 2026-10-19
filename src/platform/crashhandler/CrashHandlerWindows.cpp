@@ -22,6 +22,7 @@
 #include <new.h>     // <new> won't do it... we need some MS specific functions...
 #include <intrin.h>  // _ReturnAddress()
 #include <wchar.h>
+#include <atomic>
 #include <csignal>
 #include <map>
 
@@ -288,7 +289,15 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 }
 
 [[noreturn]] void CrashHandlerWindows::handleCrash(int crashType, void * crashExtraInfo, int fpeCode) {
-	
+
+	// A second crash while this one is being reported (a fault inside the handler, a crash on another
+	// thread): the first report is the one that counts, this thread just ends the process (#545)
+	static std::atomic<bool> s_handling(false);
+	if(s_handling.exchange(true)) {
+		TerminateProcess(GetCurrentProcess(), 1);
+		std::abort();
+	}
+
 	std::scoped_lock lock(m_mutex);
 	
 	// Run the callbacks
@@ -308,6 +317,9 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 	memset(context, 0, sizeof(*context));
 	EXCEPTION_POINTERS fakePointers;
 	EXCEPTION_RECORD exception;
+	// CrashInfo is packed: its contextRecord is not aligned, and RtlCaptureContext (movaps) faults on it -
+	// a crash inside the crash handler for every abort() / terminate() (#545). Capture aligned, then copy.
+	alignas(16) CONTEXT captured;
 	if(pointers) {
 		u32 code = m_pCrashInfo->exceptionCode = pointers->ExceptionRecord->ExceptionCode;
 		m_pCrashInfo->address = u64(pointers->ExceptionRecord->ExceptionAddress);
@@ -327,9 +339,11 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 		#endif
 		std::memcpy(context, pointers->ContextRecord, sizeof(*context));
 	} else {
-		RtlCaptureContext(context);
+		std::memset(&captured, 0, sizeof(captured));
+		RtlCaptureContext(&captured);
+		std::memcpy(context, &captured, sizeof(captured));
 		std::memset(&exception, 0, sizeof(exception));
-		fakePointers.ContextRecord = context;
+		fakePointers.ContextRecord = &captured;
 		fakePointers.ExceptionRecord = &exception;
 		pointers = &fakePointers;
 	}
@@ -340,7 +354,10 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 	// The flight recorder's dump helper owns the report (#545): exactly one folder per death, the dump of
 	// every thread written out of process while we wait here, the files once the process has ended
 	if(platform::dumpHelperEnabled()) {
+		// The steps go into the recorder: a fault inside this handler shows where in arx-recorder.txt
+		platform::flightRecord(platform::RecordKind::Note, "crash handler: stack", crashType);
 		std::string stack = platform::symbolizedStack(pointers->ContextRecord);
+		platform::flightRecord(platform::RecordKind::Note, "crash handler: request", s64(stack.size()));
 		u32 code = pointers->ExceptionRecord ? u32(pointers->ExceptionRecord->ExceptionCode) : 0;
 		platform::DumpKind kind = platform::DumpKind::Crash;
 		std::string exceptionName;
@@ -441,17 +458,21 @@ int NewHandler(size_t) {
 void SignalHandler(int signalCode) {
 	
 	int crashType;
+	// The C runtime fills _pxcptinfoptrs only for the signals it raises from an exception (SIGSEGV, SIGFPE,
+	// SIGILL); for abort(), SIGINT and SIGTERM it holds whatever an earlier exception left - a pointer into a
+	// stack that is gone. A stack walk from it faults inside the handler (#545).
+	bool fromException = true;
 	switch(signalCode) {
-		case SIGABRT: crashType = SIGNAL_SIGABRT; break;
+		case SIGABRT: crashType = SIGNAL_SIGABRT; fromException = false; break;
 		case SIGILL:  crashType = SIGNAL_SIGILL; break;
-		case SIGINT:  crashType = SIGNAL_SIGINT; break;
+		case SIGINT:  crashType = SIGNAL_SIGINT; fromException = false; break;
 		case SIGSEGV: crashType = SIGNAL_SIGSEGV; break;
-		case SIGTERM: crashType = SIGNAL_SIGTERM; break;
+		case SIGTERM: crashType = SIGNAL_SIGTERM; fromException = false; break;
 		case SIGFPE:  crashType = SIGNAL_SIGFPE; break;
-		default:      crashType = SIGNAL_UNKNOWN; break;
+		default:      crashType = SIGNAL_UNKNOWN; fromException = false; break;
 	}
-	
-	CrashHandlerWindows::getInstance().handleCrash(crashType, _pxcptinfoptrs);
+
+	CrashHandlerWindows::getInstance().handleCrash(crashType, fromException ? _pxcptinfoptrs : nullptr);
 }
 
 void SIGFPEHandler(int code, int FPECode) {

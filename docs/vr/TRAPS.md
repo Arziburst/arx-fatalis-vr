@@ -8,6 +8,31 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-19 — `abort()` / `std::terminate()` leave no crash report, the process ends with 0xE06D7363 or a fail-fast 0xC0000409 (#545)
+
+**Symptom:** the channel's `abort` ended the game with exit code 0xE06D7363 (a C++ exception) and `terminate` with
+0xC0000409 (`STATUS_STACK_BUFFER_OVERRUN`), nothing from the crash handler in `arx.log`, the dump helper's folder said
+`kind=terminated`. The `crash` command (an access violation) was reported fine. **Cause:** two faults inside the crash
+handler itself, on the path a signal or `terminate()` takes (no exception pointers), which #132 had never exercised:
+(1) `CrashInfo` is `#pragma pack(1)` and lives in shared memory, so its `contextRecord` is not 16-byte aligned, and
+`RtlCaptureContext` writing straight into it faults (`movaps`); (2) `SignalHandler` passed `_pxcptinfoptrs` for every
+signal, but the C runtime fills it only for the signals it raises from an exception (SIGSEGV, SIGFPE, SIGILL) - for
+`abort()` it is a stale pointer into a stack that is gone. The nested fault re-entered `handleCrash`, which took its
+plain `std::mutex` a second time on the same thread (`system_error` → 0xE06D7363) or, via `terminate()`, ended in the
+runtime's fail-fast. **Do:** capture the context into an aligned local and copy it; pass no pointers for SIGABRT /
+SIGINT / SIGTERM; a recursive mutex and a re-entry guard in `handleCrash`. When a crash path ends with a code that is
+not the crash's own, suspect the handler before the game: the flight recorder's `note` events (`crash handler: ...`)
+in the report's `arx-recorder.txt` show how far it got.
+
+## 2026-10-19 — A check started with `Start-ThreadJob` "ends without launching the game", yet its smoke test passes (#545)
+
+**Symptom:** every case of `flight-recorder-check.ps1` failed with "the game was launched (smoke-test exit 0)" while
+the smoke run under it ran its full time and passed. **Cause:** `Wait-ArxGameLaunched` treated any job state but
+`Running` as "the job ended" - and a thread job is `NotStarted` for a moment right after `Start-ThreadJob` (a
+`Start-Job` child is `Running` at once, which is why every older check was fine). **Do:** `NotStarted` is "on its
+way", not "ended" (`scripts/dev/test-lib.ps1`); a check that sees this symptom has not driven the game at all, so
+nothing it asserts about the run means anything.
+
 ## 2026-10-18 — A 118 ms hitch of cause `channel` in the middle of a pacing measurement: `status.json` is renamed with a Sleep(100) (#23)
 
 **Symptom:** `refresh-rate.xrs` failed one run in two beside another game with a number that made no sense

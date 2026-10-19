@@ -194,21 +194,11 @@ void setPose(SimPose & pose, const Vec3f & position, const glm::quat & orientati
 	pose.angles = simAngles(orientation);
 }
 
-//! How far each finger is closed, 0 - 1, from the joints: the mean of its joints' bends against the fist's
+//! How far each finger is closed, 0 - 1, from the joints: the shape the simulated runtime would synthesize them from
 void curlsFromJoints(const HandJoints & joints, Vec3f & curl, Vec2f & outer) {
-	const FingerPoseLimits limits;
-	const FingerPose pose = fingerPoseFromJoints(joints, limits);
-	float closed[FingerCount];
-	for(size_t finger = 0; finger < FingerCount; finger++) {
-		float sum = 0.f;
-		for(size_t joint = 0; joint < 3; joint++) {
-			const float limit = limits.flex[finger][joint];
-			sum += limit > 0.f ? std::clamp(pose.flex[finger][joint] / limit, 0.f, 1.f) : 0.f;
-		}
-		closed[finger] = sum / 3.f;
-	}
-	curl = Vec3f(closed[0], closed[1], closed[2]);
-	outer = Vec2f(closed[3], closed[4]);
+	const HandShape shape = handShapeFromJoints(joints);
+	curl = Vec3f(shape.thumb, shape.index, shape.middle);
+	outer = Vec2f(shape.ring, shape.little);
 }
 
 void start() {

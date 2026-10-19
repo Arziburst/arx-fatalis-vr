@@ -233,7 +233,8 @@ void start() {
 	g.header.build = arx_name + " " + arx_version;
 	g.header.save = save;
 	g.header.seed = Random::currentSeed();
-	g.header.rate = period > 0 ? float(1e6 / double(period)) : 0.f;
+	// The period is whole microseconds (90 Hz: 11111): the rate to 0.1 Hz, the display's own number
+	g.header.rate = period > 0 ? float(std::round(1e7 / double(period)) / 10.0) : 0.f;
 	g.header.ipd = glm::length(views.eyes[1].position - views.eyes[0].position);
 	g.header.floor = views.floorValid ? views.localAboveFloor : 0.f;
 

@@ -356,7 +356,19 @@ function Get-ArxGamesOutsideLock {
 }
 
 function Open-ArxLockFile([string]$Path) {
-	$stream = [IO.File]::Open($Path, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::Read)
+	# A lock file another lane is deleting right now (Close-ArxLockFiles, the legacy copy in particular) is
+	# "delete pending" for a few milliseconds: Open answers "access denied", not "in use". Try again a few times
+	# before giving up (#545); a sharing violation (the slot is held) is not retried and keeps its meaning.
+	$stream = $null
+	for ($try = 0; ; $try++) {
+		try {
+			$stream = [IO.File]::Open($Path, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::Read)
+			break
+		} catch [UnauthorizedAccessException] {
+			if ($try -ge 10) { throw }
+			Start-Sleep -Milliseconds 50
+		}
+	}
 	[pscustomobject]@{ Path = $Path; Stream = $stream; Writer = [IO.StreamWriter]::new($stream, [Text.UTF8Encoding]::new($false)) }
 }
 

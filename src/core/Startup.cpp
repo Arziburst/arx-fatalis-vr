@@ -412,7 +412,8 @@ int utf8_main(int argc, char ** argv) {
 		
 		// Configure the crash report location
 		CrashHandler::setReportLocation(fs::getUserDir() / "crashes");
-		CrashHandler::deleteOldReports(/* nb to keep = */1);
+		// The five newest reports stay (#545); the dump helper prunes to the same number
+		CrashHandler::deleteOldReports(/* nb to keep = */5);
 		
 		// Now that data directories are initialized, create a log file
 		fs::path logFile = fs::getUserDir() / "arx.log";

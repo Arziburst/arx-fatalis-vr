@@ -22,7 +22,7 @@
 	    rules, a changed .xrs and read-back, a path no line matches and a harness path: everything), the coverage check
 	    red on a sequence without a line, a name that is no sequence, a syntax error and a glob listed twice - and green
 	    on the shipped map
-	  - the workflow: the evidence is uploaded only on failure, the CI lane count is one ARXVR_MAX_GAMES (1-5, #563) in
+	  - the workflow: the evidence is uploaded only on failure, the CI lane count is one ARXVR_MAX_GAMES (1-4, #563) in
 	    the game checks step and ci-smoke.ps1 gets no -Lanes of its own (Get-ArxCiLaneCount, read by ci-local), the script
 	    self-tests start before the build and are joined after it, the suite input of a manual run, no labeled trigger,
 	    the label full-ci read live by the Scope step and its suite passed to the game checks
@@ -460,11 +460,12 @@ try {
 	$upload = [regex]::Match($wf, '(?s)- name: Upload game check evidence.*?(?=\r?\n    - name:)').Value
 	Check 'the game check evidence is uploaded only when the job failed' ($upload -match '\n\s+if: failure\(\)' -and $upload -notmatch 'always\(\)') $upload
 	$checks = [regex]::Match($wf, '(?s)- name: Game checks.*?(?=\r?\n    - name:)').Value
-	# The lane count is one setting (#563): one ARXVR_MAX_GAMES in the workflow, in the game checks step, 1 to 5 (the
-	# owner's cap, 2026-10-20 - more is his call); ci-smoke.ps1 takes it from the game lock, no -Lanes of its own
+	# The lane count is one setting (#563): one ARXVR_MAX_GAMES in the workflow, in the game checks step, 1 to 4 (the
+	# count #563 measured and chose - more is the owner's call); ci-smoke.ps1 takes it from the game lock, no -Lanes of
+	# its own
 	$wfPath = Join-Path $PSScriptRoot '..\..\.github\workflows\build-windows.yml'
 	$ciLanes = Get-ArxCiLaneCount $wfPath
-	Check 'the workflow sets the CI lane count once: one ARXVR_MAX_GAMES of 1 to 5' ($ciLanes -ge 1 -and $ciLanes -le 5) "$ciLanes"
+	Check 'the workflow sets the CI lane count once: one ARXVR_MAX_GAMES of 1 to 4' ($ciLanes -ge 1 -and $ciLanes -le 4) "$ciLanes"
 	Check 'the game checks run with that ARXVR_MAX_GAMES into the evidence folder of the run' ($checks -match "ARXVR_MAX_GAMES: '$ciLanes'" -and $checks -match 'ci-evidence') $checks
 	Check 'the game checks pass ci-smoke.ps1 no lane count of their own (the lock''s is the one)' ($checks -match 'ci-smoke\.ps1' -and $checks -notmatch 'ci-smoke\.ps1[^\r\n]*-Lanes') $checks
 	$wfScratch = Join-Path $root 'workflow-lanes.yml'

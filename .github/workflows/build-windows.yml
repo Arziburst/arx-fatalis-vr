@@ -215,11 +215,11 @@ jobs:
     # (verified, or generated when missing or stale).
     # Several games at once (#522, #563): ARXVR_MAX_GAMES is the CI lane count, the one place it is set - this step's
     # launches may hold that many slots of the game lock (everyone else keeps one), ci-smoke.ps1 runs as many lanes as the
-    # lock allows, and ci-local.ps1 reads it from here so a worker's run has CI's load. 3 since #563 (measured against 2
-    # and 4 in its pull request); more than 4 is the owner's call. ci-smoke.ps1 drops to one lane while a game that is
-    # not this job's holds a slot. The evidence
-    # stays on the runner, in the service's %LOCALAPPDATA%\ArxFatalisVR\ci-evidence\<run id>-<attempt> (the last 10
-    # runs), and is uploaded only when the job failed.
+    # lock allows, and ci-local.ps1 reads it from here so a worker's run has CI's load. 4 since #563 (measured in its
+    # pull request: 2 -> 3 -> 4 lanes each over 20% faster, 5 only 13% faster than 4 with a CPU peak over 60%); more than
+    # 4 is the owner's call. ci-smoke.ps1 drops to one lane while a game that is not this job's holds a slot. The
+    # evidence stays on the runner, in the service's %LOCALAPPDATA%\ArxFatalisVR\ci-evidence\<run id>-<attempt> (the
+    # last 10 runs), and is uploaded only when the job failed.
     # What runs is the Scope step's suite (#522): on a pull request the core plus what its changed paths select in
     # scripts/dev/xrs/impact.txt (the log lists them); everything on a push to main, with the label full-ci and on a
     # manual run with suite=full (the merge gate). A pull request's run stops at the first FAIL (#527).
@@ -228,7 +228,7 @@ jobs:
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
       env:
-        ARXVR_MAX_GAMES: '5'
+        ARXVR_MAX_GAMES: '4'
         ARXVR_CI_RUNNER: '1'
       run: |
         $evidence = Join-Path $env:LOCALAPPDATA "ArxFatalisVR\ci-evidence\$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"

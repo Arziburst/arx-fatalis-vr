@@ -221,6 +221,7 @@ scripts/dev/exit-trace-check.ps1 -> core
 scripts/dev/eye-check.ps1 -> core
 scripts/dev/eye-check-lib.ps1 -> core
 scripts/dev/eye-height-check.ps1 -> core
+scripts/dev/fixtures/* -> core
 scripts/dev/game-cmd.ps1 -> core
 scripts/dev/game-input-check.ps1 -> core
 scripts/dev/game-status.ps1 -> core
@@ -236,6 +237,9 @@ scripts/dev/next-task.ps1 -> core
 scripts/dev/number-decisions.ps1 -> core
 scripts/dev/perf-summary.ps1 -> core
 scripts/dev/perf-summary-lib.ps1 -> core
+scripts/dev/perf-noise.ps1 -> core
+scripts/dev/perf-track.ps1 -> core
+scripts/dev/perf-track-lib.ps1 -> core
 scripts/dev/plan-next.ps1 -> core
 scripts/dev/plan-next-lib.ps1 -> core
 scripts/dev/pr-checks.ps1 -> core

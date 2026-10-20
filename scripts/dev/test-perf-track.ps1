@@ -92,7 +92,7 @@
 	      Missing or broken file, or no run with this lane count: an empty dictionary.
 
 	  Compare-ArxPhasePerf -RunPerf <run> -Baseline <Get-ArxPerfBaseline> [-Metrics <names>] [-K <k>] [-FloorPct <p>]
-	                       [-MinRuns <n>]
+	                       [-MinRuns <n>] [-Info]
 	      One row per phase of the run (only the run's phases) and per metric of -Metrics:
 	        { phase; metric; status; baseline (the median, $null without one); spread; samples; value; delta (value -
 	          median); deltaPct (100 x delta / median); limit }
@@ -101,6 +101,10 @@
 	        'ok'           value <= limit
 	        'no-baseline'  the phase or metric is not in the baseline, or has fewer than -MinRuns samples
 	        'no-data'      the run's record of the phase is not valid
+	        'info'         with the switch -Info, a row that has a baseline: shown in the table (baseline, value, delta)
+	                       for information, NEVER 'regressed' and never an annotation ('no-baseline' / 'no-data' as above)
+	      The flagged rows are a call with -Metrics $ArxPerfMetrics, the information rows a second call with
+	      -Metrics $ArxPerfInfoMetrics -Info; perf-track.ps1 puts both into the table.
 	      -Baseline may be $null or empty (every row 'no-baseline'). -RunPerf may come from Get-ArxRunPerf or
 	      Read-ArxRunPerf.
 
@@ -108,11 +112,14 @@
 	  parameters' defaults:
 	      $ArxPerfK          k of the limit
 	      $ArxPerfFloorPct   the floor in percent of the median
-	      $ArxPerfMetrics    the metrics compared (must include p95Ms)
-	      $ArxPerfMinRuns    fewer baseline samples than this: 'no-baseline'
-	      $ArxPerfRuns       the -Runs of the rolling baseline (10 in the contract's example)
-	  With these defaults a +30 % p95 on a phase of a tight baseline is flagged and a run inside the baseline's own
-	  range is not (checked below).
+	      $ArxPerfMetrics      the metrics flagged: meanMs and medianMs, NOT p95Ms (the coordinator's decision from the
+	                           measured noise, 7 green 4-lane runs x 75 phases: p95Ms is bimodal - the 95 % rank lands in or
+	                           out of the level-load second - 34-37 false flags in 525 even with a 20-25 % floor; meanMs 3)
+	      $ArxPerfInfoMetrics  the metrics shown for information only: p95Ms, maxMs, hitches, missed
+	      $ArxPerfMinRuns      fewer baseline samples than this: 'no-baseline'
+	      $ArxPerfRuns         the -Runs of the rolling baseline (10 in the contract's example)
+	  With these defaults +30 % meanMs or medianMs on a phase of a tight baseline is flagged, a run within a few percent
+	  is not, and a p95-only jump (meanMs unchanged) shows in the table but is not flagged (checked below).
 
 	  Format-ArxPerfTable -Rows <Compare rows>
 	      Markdown lines for the job summary: a heading line (#..# with "Performance"), then a table whose header row
@@ -130,7 +137,8 @@
 	scripts\dev\perf-track.ps1 - what CI runs after the game checks (from ci-smoke.ps1 or a workflow step):
 	  -EvidenceDir <dir> -BaselineFile <path> -Lanes <n> -Kind <kind> [-Green] [-SummaryFile <path>] [-K] [-FloorPct]
 	  [-MinRuns] [-Runs] [-Metrics <a,b>]  (a comma-separated -Metrics is split: pwsh -File hands a list over as one string)
-	  Writes perf.json into EvidenceDir, compares with Get-ArxPerfBaseline of -Lanes, appends Format-ArxPerfTable to
+	  Writes perf.json into EvidenceDir, compares with Get-ArxPerfBaseline of -Lanes (the -Metrics rows flagged, the
+	  $ArxPerfInfoMetrics rows not in -Metrics added with -Info), appends Format-ArxPerfTable to
 	  -SummaryFile (default $env:GITHUB_STEP_SUMMARY), prints the annotations, then Update-ArxPerfBaseline. ALWAYS exit 0:
 	  a regression, a missing baseline, a missing or broken log or evidence folder never fails the run (the flag is not
 	  blocking - making it blocking is the owner's call).
@@ -459,17 +467,32 @@ Section 'the flag: a run read back from perf.json compares the same' {
 }
 
 Section 'the flag: the defaults (set from the measured noise)' {
-	foreach ($v in 'ArxPerfK', 'ArxPerfFloorPct', 'ArxPerfMetrics', 'ArxPerfMinRuns', 'ArxPerfRuns') {
+	foreach ($v in 'ArxPerfK', 'ArxPerfFloorPct', 'ArxPerfMetrics', 'ArxPerfInfoMetrics', 'ArxPerfMinRuns', 'ArxPerfRuns') {
 		Check ($null -ne (Get-Variable -Name $v -ValueOnly -ErrorAction SilentlyContinue)) "`$$v is set by the lib"
 	}
-	Check (@($ArxPerfMetrics) -contains 'p95Ms') "the default metrics compare p95Ms ($(@($ArxPerfMetrics) -join ', '))"
+	Check (@($ArxPerfMetrics) -contains 'meanMs' -and @($ArxPerfMetrics) -contains 'medianMs' -and @($ArxPerfMetrics) -notcontains 'p95Ms') "the default flagged metrics are meanMs and medianMs, not p95Ms ($(@($ArxPerfMetrics) -join ', '))"
+	$info = @($ArxPerfInfoMetrics)
+	Check ($info -contains 'p95Ms' -and $info -contains 'maxMs' -and $info -contains 'hitches' -and $info -contains 'missed') "p95Ms, maxMs, hitches and missed are shown for information ($($info -join ', '))"
 	Check ($ArxPerfK -gt 0 -and $ArxPerfFloorPct -gt 0) "K and the floor are positive ($ArxPerfK, $ArxPerfFloorPct %)"
 	Check ($ArxPerfMinRuns -ge 1 -and $ArxPerfMinRuns -le 10 -and $ArxPerfRuns -ge $ArxPerfMinRuns) "MinRuns 1..10 and at most Runs ($ArxPerfMinRuns, $ArxPerfRuns)"
 	$b = Get-ArxPerfBaseline -Path (Fixture 'perf-baseline.json') -Lanes 4 -Runs 10
-	$noise = @(Compare-ArxPhasePerf -RunPerf (RunOf @{ 'xrs-look-around' = @{ p95Ms = 11.4 } }) -Baseline $b)
-	Check (@($noise | Where-Object status -eq 'regressed').Count -eq 0) "with the defaults, p95 11.4 inside the baseline's own range is not flagged ($(($noise | ForEach-Object { "$($_.metric) $($_.status)" }) -join ', '))"
-	$reg = @(Compare-ArxPhasePerf -RunPerf (RunOf @{ 'xrs-look-around' = @{ p95Ms = 14.56 } }) -Baseline $b)
-	Check ((RowOf $reg 'xrs-look-around' 'p95Ms').status -eq 'regressed') 'with the defaults, +30 % p95 on a phase is flagged'
+	$noise = @(Compare-ArxPhasePerf -RunPerf (RunOf @{ 'xrs-look-around' = @{ p95Ms = 11.4; meanMs = 9.1; medianMs = 9.0 } }) -Baseline $b)
+	Check (@($noise | Where-Object status -eq 'regressed').Count -eq 0) "with the defaults, a run within 1-2 % of the baseline (mean 9.1, median 9.0, p95 11.4) is not flagged ($(($noise | ForEach-Object { "$($_.metric) $($_.status)" }) -join ', '))"
+	$reg = @(Compare-ArxPhasePerf -RunPerf (RunOf @{ 'xrs-look-around' = @{ meanMs = 11.7 } }) -Baseline $b)
+	Check ((RowOf $reg 'xrs-look-around' 'meanMs').status -eq 'regressed') "with the defaults, +30 % meanMs (9.0 -> 11.7) on a phase is flagged ($((RowOf $reg 'xrs-look-around' 'meanMs').status))"
+	$regMedian = @(Compare-ArxPhasePerf -RunPerf (RunOf @{ 'xrs-look-around' = @{ medianMs = 11.57 } }) -Baseline $b)
+	Check ((RowOf $regMedian 'xrs-look-around' 'medianMs').status -eq 'regressed') "with the defaults, +30 % medianMs (8.9 -> 11.57) on a phase is flagged ($((RowOf $regMedian 'xrs-look-around' 'medianMs').status))"
+
+	# A p95-only jump (+30 %, meanMs and medianMs unchanged): in the table for information, not flagged
+	$jump = RunOf @{ 'xrs-look-around' = @{ p95Ms = 14.56 } }
+	$p95Only = @(@(Compare-ArxPhasePerf -RunPerf $jump -Baseline $b) + @(Compare-ArxPhasePerf -RunPerf $jump -Baseline $b -Metrics $ArxPerfInfoMetrics -Info))
+	$row = RowOf $p95Only 'xrs-look-around' 'p95Ms'
+	Check ($null -ne $row -and $row.status -eq 'info' -and (Near $row.value 14.56) -and (Near $row.baseline 11.2)) "with the defaults, a p95-only jump is an info row with its numbers (status '$($row.status)', $($row.baseline) -> $($row.value))"
+	Check (@($p95Only | Where-Object status -eq 'regressed').Count -eq 0) "... and nothing is regressed ($(($p95Only | ForEach-Object { "$($_.metric) $($_.status)" }) -join ', '))"
+	Check (@(Format-ArxPerfAnnotations -Rows $p95Only).Count -eq 0) '... no annotation'
+	$table = @(Format-ArxPerfTable -Rows $p95Only)
+	$p95Line = @($table | Where-Object { $_ -match '\|\s*xrs-look-around\s*\|\s*p95Ms\s*\|' })
+	Check ($p95Line.Count -eq 1 -and $p95Line[0] -match '11\.20' -and $p95Line[0] -match '14\.56' -and $p95Line[0] -notmatch 'regressed') "... the table shows the p95Ms row with 11.20 and 14.56, not regressed ($($p95Line -join ''))"
 }
 
 # --- 6. The summary table and the annotations ------------------------------------------------------------------------
@@ -573,6 +596,23 @@ Section 'perf-track.ps1 without a baseline, without evidence, with the summary f
 	}
 	$s = if (Test-Path -LiteralPath $envSum) { Get-Content -LiteralPath $envSum -Raw } else { '' }
 	Check ($s -match '\|\s*Phase\s*\|\s*Metric\s*\|\s*Baseline\s*\|\s*This run\s*\|\s*Delta\s*\|') 'without -SummaryFile the table goes to $env:GITHUB_STEP_SUMMARY'
+}
+
+Section 'perf-track.ps1 with its defaults: a p95-only jump is shown, not flagged' {
+	$ev = Join-Path $root 'track3\evidence'
+	New-Item -ItemType Directory -Force (Join-Path $ev 'xrs-look-around') | Out-Null
+	# meanMs / medianMs 9.0 (the baseline's 9.0 / 8.9), p95 14.56 (+30 % on 11.2)
+	[IO.File]::WriteAllLines((Join-Path $ev 'xrs-look-around\arx-perf.log'), [string[]](FlatLog 9.0 14.56 15.0), [Text.UTF8Encoding]::new($false))
+	$bf = Join-Path $root 'track3\perf-baseline.json'
+	Copy-Item (Fixture 'perf-baseline.json') $bf
+	$sum = Join-Path $root 'track3\summary.md'
+	$out = @(& $pwsh -NoProfile -File $trackScript -EvidenceDir $ev -BaselineFile $bf -Lanes 4 -Kind 'pr' -SummaryFile $sum 2>&1 | ForEach-Object { "$_" })
+	$exit = $LASTEXITCODE
+	$s = if (Test-Path -LiteralPath $sum) { Get-Content -LiteralPath $sum -Raw } else { '' }
+	$p95Line = @($s -split "`r?`n" | Where-Object { $_ -match '\|\s*xrs-look-around\s*\|\s*p95Ms\s*\|' })
+	Check ($exit -eq 0 -and $p95Line.Count -eq 1 -and $p95Line[0] -match '11\.20' -and $p95Line[0] -match '14\.56') "exit 0, the table shows p95Ms 11.20 -> 14.56 for information ($exit; $($p95Line -join ''))"
+	Check ($s -notmatch 'regressed' -and @($out | Where-Object { $_ -match '^::warning' }).Count -eq 0) 'nothing is flagged: no regressed row, no ::warning'
+	Check (@($s -split "`r?`n" | Where-Object { $_ -match '\|\s*xrs-look-around\s*\|\s*meanMs\s*\|' }).Count -eq 1) 'the flagged metric meanMs has its row too'
 }
 
 } finally {

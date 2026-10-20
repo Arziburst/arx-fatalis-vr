@@ -1097,7 +1097,7 @@ std::string buildStatus(PlatformInstant now) {
 
 	writeSceneStatus(json);
 
-	// Marks of the moment in the headset (#551): both stick clicks held 3 s, the marker folder, the voice note
+	// Marks of the moment in the headset (#551): both trackpads held 3 s, the marker folder, the voice note
 	{
 		const vr::marks::MarksStatus & marks = vr::marks::status();
 		json.object("marks");
@@ -1107,6 +1107,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("recording", marks.recording);
 		json.value("note", marks.note);
 		json.value("holdMs", vr::ControlResolver::markHoldMs);
+		// The gesture of the controllers in use: both trackpads on the Index, none without trackpads (the Touch)
+		json.value("gesture", vr::markGestureAvailable(vr::controllerType()) ? "both.trackpad" : "none");
 		json.end();
 	}
 

@@ -29,7 +29,7 @@
  * \file
  * \brief Mark the moment in the headset (#551): the game's side
  *
- * Both thumbstick clicks held 3 s in VR (vr::ControlResolver::markGesture) write <user dir>\c \\marks\\<name>\\
+ * Both Index trackpads held 3 s in VR (vr::ControlResolver::markGesture) write <user dir>\c \\marks\\<name>\\
  * (vr::markFolderName): left.png and right.png (the eye images of the next drawn frame), recorder.txt (the flight
  * recorder's tail, scrubbed like arx-recorder.txt), clip.vrsim (the replay ring's last 30 s, the clip of
  * `replay mark`), meta.txt (vr::formatMarkMeta) and, with the voice note on, note.wav (up to 10 s of the default

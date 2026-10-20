@@ -29,7 +29,7 @@
  * \file
  * \brief Mark the moment in the headset (#551): the marker folder's name, its meta.txt and the panel's lines
  *
- * During a headset test both thumbstick clicks held 3 s (vr::ControlResolver::markGesture) write
+ * During a headset test both Index trackpads held 3 s (vr::ControlResolver::markGesture) write
  * <user dir>\c \\marks\\<name>\\ with the eye images, the flight recorder's tail, the replay ring's last 30 s, this
  * meta.txt and an optional voice note (vr/VoiceNote.h); the game's side is vr/VRMarks.h. Pure: no engine globals,
  * no file system - covered by tests/vr/MarkMomentTest.cpp.

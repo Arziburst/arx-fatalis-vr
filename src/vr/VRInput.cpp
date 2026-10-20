@@ -581,7 +581,7 @@ void updateInput() {
 		}
 	}
 
-	// Both stick clicks held 3 s mark the moment, whatever the layout and the menus (#551)
+	// Both trackpads held 3 s mark the moment, whatever the layout and the menus (#551)
 	marks::update();
 
 	// The hands on the floating panel (#34), before the events reach the engine: a press moves the

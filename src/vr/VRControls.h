@@ -208,6 +208,12 @@ enum class ControllerType : u8 {
 //! "unknown", "index", "touch" or "simple"
 const char * controllerTypeName(ControllerType type);
 
+/*!
+ * Whether a controller type has the mark gesture of #551 (both trackpads held): the Index only - not the Touch, the
+ * simple controller or one not identified yet. The game marks only when it is true for the controllers in use
+ */
+bool markGestureAvailable(ControllerType type);
+
 //! \param profile an interaction profile path, e.g. "/interaction_profiles/valve/index_controller"
 ControllerType controllerTypeFromProfile(std::string_view profile);
 
@@ -421,14 +427,14 @@ public:
 	const ControlSet & down() const { return m_down; }
 
 	/*!
-	 * How long both thumbstick clicks are held together to mark the moment (#551, the owner; it replaced the menu
-	 * fallback of #326). Fixed, not part of the layout and not rebindable: whatever the stick clicks are bound to,
-	 * the hold of both marks.
+	 * How long both trackpads are pressed together to mark the moment (#551, the owner, 2026-10-20; the menu fallback
+	 * of #326 on both stick clicks is gone). Fixed, not part of the layout and not rebindable: whatever the trackpads
+	 * are bound to, the hold of both marks (and their bindings act as well). Only where \ref markGestureAvailable.
 	 */
 	static constexpr s64 markHoldMs = 3000;
 
 	/*!
-	 * The hold of both stick clicks reached \ref markHoldMs in the last update: true for that one update, once per
+	 * The hold of both trackpads reached \ref markHoldMs in the last update: true for that one update, once per
 	 * hold - a second mark needs one of them released first; a release before it marks nothing
 	 */
 	bool markGesture() const { return m_markGesture; }
@@ -466,7 +472,7 @@ private:
 	ControlSet m_hasLongPress;
 	std::array<bool, HandCount> m_chords = { true, true };
 
-	s64 m_bothSticksSince = -1;  //!< when both stick clicks were first down together, -1 when not both are down
+	s64 m_bothTrackpadsSince = -1;  //!< when both trackpads were first down together, -1 when not both are down
 	bool m_markFired = false;
 	bool m_markGesture = false;
 	u32 m_markGestures = 0;

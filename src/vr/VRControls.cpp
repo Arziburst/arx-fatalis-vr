@@ -209,6 +209,11 @@ const char * controllerTypeName(ControllerType type) {
 	return "unknown";
 }
 
+bool markGestureAvailable(ControllerType type) {
+	// Both trackpads: only the Index has them
+	return type == ControllerType::Index;
+}
+
 ControllerType controllerTypeFromProfile(std::string_view profile) {
 	if(profile == "/interaction_profiles/valve/index_controller") {
 		return ControllerType::Index;
@@ -626,19 +631,19 @@ void ControlResolver::release(Control control, s64 timeMs) {
 
 void ControlResolver::update(s64 timeMs, const ControlSet & down, const ControlSet & taps) {
 
-	// Mark the moment (#551): both stick clicks held together for markHoldMs, whatever the layout is
+	// Mark the moment (#551): both trackpads held together for markHoldMs, whatever the layout is
 	m_markGesture = false;
-	if(down[control(Hand::Left, ControlKind::StickClick)] && down[control(Hand::Right, ControlKind::StickClick)]) {
-		if(m_bothSticksSince < 0) {
-			m_bothSticksSince = timeMs;
+	if(down[control(Hand::Left, ControlKind::Trackpad)] && down[control(Hand::Right, ControlKind::Trackpad)]) {
+		if(m_bothTrackpadsSince < 0) {
+			m_bothTrackpadsSince = timeMs;
 		}
-		if(!m_markFired && timeMs - m_bothSticksSince >= markHoldMs) {
+		if(!m_markFired && timeMs - m_bothTrackpadsSince >= markHoldMs) {
 			m_markFired = true;
 			m_markGesture = true;
 			m_markGestures++;
 		}
 	} else {
-		m_bothSticksSince = -1;
+		m_bothTrackpadsSince = -1;
 		m_markFired = false;
 	}
 

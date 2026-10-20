@@ -38,13 +38,11 @@ bool writeWhole(const std::filesystem::path & file, const std::string & text) {
 
 } // anonymous namespace
 
-ChannelWriter::ChannelWriter(Files files, Landed landed, Warn warn, std::chrono::milliseconds patience,
-                             std::chrono::milliseconds ackPatience)
+ChannelWriter::ChannelWriter(Files files, Landed landed, Warn warn, std::chrono::milliseconds patience)
 	: m_files(std::move(files))
 	, m_landed(std::move(landed))
 	, m_warn(std::move(warn))
 	, m_patience(patience)
-	, m_ackPatience(ackPatience)
 	, m_thread(&ChannelWriter::run, this)
 { }
 
@@ -144,16 +142,11 @@ void ChannelWriter::warnOnce(bool & warned, std::string_view message) {
 
 void ChannelWriter::run() {
 
-	using Clock = std::chrono::steady_clock;
-
 	std::string status;
 	unsigned long long tag = 0;
-	bool hasStatus = false;   // a status taken that has not landed yet
+	bool hasStatus = false; // a status taken that has not landed yet
 	std::string ack;
-	bool hasAck = false;      // an ack taken that waits for that status
-	Clock::time_point ackTaken;
-	unsigned long long landedTag = 0;
-	bool followed = true;     // what follows the last status that landed was done (Landed returned true)
+	bool hasAck = false;    // an ack taken that waits for that status
 
 	std::unique_lock lock(m_mutex);
 	while(true) {
@@ -162,12 +155,6 @@ void ChannelWriter::run() {
 		if(hasStatus) {
 			// A status a reader held for the whole patience: tried again soon, with a newer one if there is one
 			m_wake.wait_for(lock, std::chrono::milliseconds(10), work);
-		} else if(hasAck) {
-			// An ack that waits for a status Landed lets it follow: the next one, or its patience
-			const auto waited = Clock::now() - ackTaken;
-			if(waited < m_ackPatience) {
-				m_wake.wait_for(lock, m_ackPatience - waited, work);
-			}
 		} else {
 			m_wake.wait(lock, work);
 		}
@@ -183,9 +170,6 @@ void ChannelWriter::run() {
 			ack = std::move(m_ack);
 			m_ack.clear();
 			m_hasAck = false;
-			if(!hasAck) {
-				ackTaken = Clock::now();
-			}
 			hasAck = true;
 		}
 		const unsigned long long upto = m_queued;
@@ -199,27 +183,22 @@ void ChannelWriter::run() {
 			} else if(core::replaceFile(m_files.tmp, m_files.status, core::ReplaceMode::Patient, m_patience)) {
 				landed = true;
 				hasStatus = false;
-				landedTag = tag;
-				followed = m_landed ? m_landed(tag, false) : true;
 			} else {
 				warnOnce(m_warnedHeld, "status.json was held by a reader for the whole patience, the write is tried again");
 			}
+		}
+		if(landed && m_landed) {
+			m_landed(tag);
 		}
 		if(stop) {
 			// The last try is over: a status a reader still holds is given up, and its ack written all the same
 			hasStatus = false;
 		}
 		if(hasAck && !hasStatus) {
-			if(!followed && (stop || Clock::now() - ackTaken >= m_ackPatience)) {
-				// No status came that its work could follow: done after the last one, so the ack is not lost
-				followed = m_landed ? m_landed(landedTag, true) : true;
+			if(!writeWhole(m_files.ack, ack) && m_warn) {
+				m_warn("could not write " + m_files.ack.string());
 			}
-			if(followed) {
-				if(!writeWhole(m_files.ack, ack) && m_warn) {
-					m_warn("could not write " + m_files.ack.string());
-				}
-				hasAck = false;
-			}
+			hasAck = false;
 		}
 
 		lock.lock();

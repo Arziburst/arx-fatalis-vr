@@ -447,7 +447,7 @@ struct State {
 	//! Writes status.json and ack.txt on its own thread (#553); deleted in shutdown only, never at static
 	//! destruction (its thread flushes the logger)
 	ChannelWriter * writer = nullptr;
-	//! The writer could not flush arx.log after a status (lines came after it was built): the next frame builds one
+	//! The writer did not flush arx.log after a status (lines came after it was built): the next frame builds one
 	std::atomic<bool> freshStatus { false };
 
 	//! The simulated headset's `record <name>`: the motion values of the frame it named, as JSON, in order
@@ -4046,28 +4046,28 @@ void initialize() {
 	g.counter = new LogCounter;
 	Logger::add(g.counter);
 
-	// The file logger flushes on its own every second (#129); a test reading arx.log after an ack wants it fresher:
-	// flushed after a status that landed, before the ack that follows it. A test reads status.json right after a log
-	// line it waited for (@log, then @assert): the old main-thread write never showed a line newer than the status on
-	// disk, as nothing was logged between building, writing and flushing. On the writer thread the frame goes on
-	// logging meanwhile - a command's event in the same frame (scene-switches: `scene.active` false after its
-	// `vr.scene state=start` line) - so the log is flushed only while no line came after the status was built; else
-	// the next frame builds a fresh status and the ack waits for it (100 ms at most, then the flush is done anyway)
+	// The file logger flushes on its own every second (#129); a test reading arx.log wants it fresher: flushed after a
+	// status that landed. A test reads status.json right after a log line it waited for (@log, then @assert): the old
+	// main-thread write never showed a line newer than the status on disk, as nothing was logged between building,
+	// writing and flushing. On the writer thread the frame goes on logging meanwhile - a command's event in the same
+	// frame (scene-switches: `scene.active` false after its `vr.scene state=start` line) - so the log is flushed only
+	// while no line came after the status was built; else the next frame builds a fresh status, which flushes it. The
+	// ack does not wait for that: a test reads its batch's own state right after it (melee-damage: `playground fight`,
+	// and the fight is over a frame later)
 	g.writer = new ChannelWriter(
 		ChannelWriter::Files{ std::filesystem::path((g.dir / "status.json").string()),
 		                      std::filesystem::path((g.dir / "status.json.tmp").string()),
 		                      std::filesystem::path((g.dir / "ack.txt").string()) },
-		[](unsigned long long lines, bool force) {
-			if(!force && g.counter->lines.load() != lines) {
+		[](unsigned long long lines) {
+			if(g.counter->lines.load() != lines) {
 				g.freshStatus = true;
-				return false;
+				return;
 			}
 			Logger::flush();
 			if(g.counter->lines.load() != lines) {
 				// A line came in before the flush took the logger's lock: a status after it follows
 				g.freshStatus = true;
 			}
-			return true;
 		},
 		[](std::string_view message) { LogWarning << "[channel] " << message; });
 

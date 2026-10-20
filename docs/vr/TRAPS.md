@@ -27,8 +27,10 @@ never showed a line newer than the status on disk - nothing was logged between b
 first writer-thread version flushed `arx.log` after the status landed while the frame went on logging, and the full
 suite failed `scene-switches` (`@log vr\.scene state=start` matched, `scene.active` read false: the command's event
 was logged in the same frame, after the status was built). So each status carries the count of log lines at its build
-(`LogCounter::lines`), the writer flushes only when no line came since, else the next frame builds a fresh status, and
-the ack waits for it (100 ms at most). A frames guard that fails is not to be
+(`LogCounter::lines`), the writer flushes only when no line came since, else the next frame builds a fresh status
+that flushes it. The ack does not wait for that fresh status: a second try that held the ack for it failed
+`melee-damage` (`playground fight` acked with the state of a frame later, when the goblin's script had dropped the
+fight already) - a test reads its batch's own state right after the ack. A frames guard that fails is not to be
 loosened: look for an `H` line with `cause=channel` in the record's window, and for `[channel] slow frame part:` in
 `arx.log`, which names what is left of the channel on the frame (commands, the status build, the records) when it
 takes 20 ms or more. Reproduce with `scripts/dev/refresh-rate-stress.ps1 -SlowStatusMs 150` (an oplock on each

@@ -137,6 +137,7 @@ constexpr const bool
 	vrRealStepNoise = true,
 	vrPhysicalCrouch = vr::DefaultPhysicalCrouch,
 	vrHudFrame = false,
+	vrMarkNote = true,
 	viewBobbing = true,
 	screenShake = true,
 	showCrosshair = true,
@@ -325,6 +326,7 @@ constexpr const std::string_view
 	vrSceneFirstLow = "vr_scene_first_low",
 	vrSceneCut = "vr_scene_cut",
 	vrSubtitles = "vr_subtitles",
+	vrMarkNote = "vr_mark_note",
 	fov = "fov",
 	viewBobbing = "view_bobbing",
 	screenShake = "screen_shake",
@@ -657,6 +659,7 @@ bool Config::save() {
 	writer.writeKey(Key::vrSceneFirstLow, video.vrSceneFirstLow);
 	writer.writeKey(Key::vrSceneCut, video.vrSceneCut);
 	writer.writeKey(Key::vrSubtitles, video.vrSubtitles);
+	writer.writeKey(Key::vrMarkNote, video.vrMarkNote);
 	writer.writeKey(Key::fov, video.fov);
 	writer.writeKey(Key::viewBobbing, video.viewBobbing);
 	writer.writeKey(Key::screenShake, video.screenShake);
@@ -880,6 +883,8 @@ bool Config::init(const fs::path & file) {
 	std::string vrSubtitles(reader.getKey(Section::Video, Key::vrSubtitles, Default::vrSubtitles));
 	video.vrSubtitles = vr::subtitlePlacementName(
 		vr::parseSubtitlePlacement(vrSubtitles).value_or(vr::DefaultSubtitlePlacement));
+	// The voice note after a mark of the moment (#551)
+	video.vrMarkNote = reader.getKey(Section::Video, Key::vrMarkNote, Default::vrMarkNote);
 	float fov = reader.getKey(Section::Video, Key::fov, Default::fov);
 	video.fov = std::max(fov, 10.f);
 	video.viewBobbing = reader.getKey(Section::Video, Key::viewBobbing, Default::viewBobbing);

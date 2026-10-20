@@ -164,6 +164,23 @@ inline Rectf subtitleLowerThirdBox(const Vec2f & canvas, const Vec2f & size,
 	return subtitleBox(Vec2f(canvas.x * 0.5f, canvas.y * params.lowerThirdBottom), size, SubtitleAlign::Above);
 }
 
+//! A notice of the game's own in the hero-dialogue panel (#551: the mark of the moment, its voice note)
+enum class SubtitleNotice : u8 {
+	None,
+	Marked,    //!< "Moment marked (#N)"
+	Recording  //!< "Recording note... (N s)"
+};
+
+//! "none", "marked" or "recording" - for status.json and the log
+inline const char * subtitleNoticeName(SubtitleNotice notice) {
+	switch(notice) {
+		case SubtitleNotice::None: return "none";
+		case SubtitleNotice::Marked: return "marked";
+		case SubtitleNotice::Recording: return "recording";
+	}
+	return "none";
+}
+
 //! status.json \c scene.subtitle
 struct SubtitleStatus {
 	SubtitlePlacement placement = DefaultSubtitlePlacement;
@@ -180,6 +197,8 @@ struct SubtitleStatus {
 	Vec3f panelLocal = Vec3f(0.f); //!< the panel's middle, LOCAL (OpenXR axes), meters
 	float panelYawDeg = 0.f;       //!< the panel's facing about the vertical in LOCAL, degrees
 	float panelWidthM = 0.f;       //!< the panel's image width, meters
+	//! The notice the panel shows now instead of a scene's line (#551); while not none, \c text is its line
+	SubtitleNotice notice = SubtitleNotice::None;
 };
 
 const SubtitleStatus & subtitleStatus();
@@ -203,6 +222,18 @@ void showSubtitle(u64 line, std::string_view speaker, std::string_view text, boo
 
 //! No line to show in VR
 void hideSubtitle();
+
+/*!
+ * The hero-dialogue panel shows \a text as a notice of the game's own (#551) until \ref clearSubtitleNotice: below the
+ * centre of the view (the chest panel, whatever the placement setting), with the hero's lazy follow, in the eyes and
+ * so in the desktop mirror. A scene's line waits while it shows. Logged once per notice kind as
+ * \c vr.scene.subtitle \c notice=<kind> \c drawn=chest \c text=<line>; a new \a text of the same kind (a countdown)
+ * only redraws the panel where it is
+ */
+void showSubtitleNotice(SubtitleNotice notice, std::string_view text);
+
+//! The notice is over: the panel is a scene's again (from the next frame's line)
+void clearSubtitleNotice();
 
 //! The scene took a cut (a teleport, a scripted turn, another shot): the line's panel is placed anew (#460)
 void replaceSubtitlePanel();

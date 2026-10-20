@@ -236,11 +236,13 @@ set(arxtest_SOURCES
 	src/vr/VRControls.cpp
 	src/vr/BindingCapture.cpp
 	src/vr/VRGameInput.cpp
+	src/vr/VoiceNote.cpp
 	src/vr/VRTurn.cpp
 	src/vr/VRSettingsRows.cpp
 	src/vr/EyeImage.cpp
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
+	src/vr/MarkMoment.cpp
 	src/vr/MenuPointer.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/ArmIK.cpp

@@ -363,16 +363,27 @@ bool validMarkName(std::string_view name) {
 	return true;
 }
 
-std::string mark(std::string_view name, u32 seconds) {
+//! The ring's last \a seconds as a clip named \a name into \a text: "" or why there is none
+std::string cutClipText(std::string_view name, u32 seconds, std::string & text) {
 
 	if(!g.recording || !g.ring) {
 		return "replay: nothing records (a VR session without --no-replay-log, once the game is playable)";
 	}
 
 	const u64 markUs = g.lastUs;
-	const std::string text = replayRingClip(g.ringMemory, g.ringSize, name, markUs, u64(seconds) * 1000000);
+	text = replayRingClip(g.ringMemory, g.ringSize, name, markUs, u64(seconds) * 1000000);
 	if(text.empty()) {
 		return "replay: the ring holds no clip";
+	}
+	return std::string();
+}
+
+std::string mark(std::string_view name, u32 seconds) {
+
+	std::string text;
+	const std::string error = cutClipText(name, seconds, text);
+	if(!error.empty()) {
+		return error;
 	}
 
 	fs::path dir = fs::getUserDir() / "replay-marks";
@@ -552,6 +563,10 @@ void shutdown() {
 	finish("the game quit");
 	g.ring.reset();
 	g.ringHeap.clear();
+}
+
+std::string cutClip(std::string_view name, u32 seconds, std::string & text) {
+	return cutClipText(name, seconds, text);
 }
 
 std::string command(std::string_view rest) {

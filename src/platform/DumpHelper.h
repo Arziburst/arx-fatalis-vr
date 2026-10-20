@@ -90,6 +90,12 @@ void setDumpRegionWriter(std::string (*writer)(const void * image, size_t size),
 //! The game's flight recorder, or nullptr when it is off; name the calling thread's ring once
 FlightRecorder * flightRecorder() noexcept;
 
+/*!
+ * The game's flight recorder as text now (serializeRecorder of the live memory), scrubbed of personal data like
+ * arx-recorder.txt - the tail of a mark of the moment (#551); "" when the recorder is off. Any thread
+ */
+std::string flightRecorderText();
+
 //! Record on the game's recorder (no-op when it is off); the cheap call the engine uses everywhere
 void flightRecord(RecordKind kind, std::string_view text, s64 value = 0) noexcept;
 

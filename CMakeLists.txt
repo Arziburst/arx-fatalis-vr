@@ -1296,6 +1296,8 @@ set(VR_SOURCES
 	src/vr/PhysicalCrouch.cpp
 	src/vr/HeadTracking.cpp
 	src/vr/InterfaceSize.cpp
+	src/vr/MarkMoment.cpp
+	src/vr/NoteMicrophone.cpp
 	src/vr/MenuPointer.cpp
 	src/vr/Locomotion.cpp
 	src/vr/RadialMenu.cpp
@@ -1323,6 +1325,7 @@ set(VR_SOURCES
 	src/vr/VRGameInput.cpp
 	src/vr/VRHud.cpp
 	src/vr/VRInput.cpp
+	src/vr/VRMarks.cpp
 	src/vr/VRMirror.cpp
 	src/vr/VRRadial.cpp
 	src/vr/VRReticle.cpp
@@ -1330,6 +1333,7 @@ set(VR_SOURCES
 	src/vr/VRSwapchain.cpp
 	src/vr/VRSettingsRows.cpp
 	src/vr/VRSystem.cpp
+	src/vr/VoiceNote.cpp
 	src/vr/VRTurn.cpp
 	src/vr/WeaponGrip.cpp
 	src/vr/WristHud.cpp

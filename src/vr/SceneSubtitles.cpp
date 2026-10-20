@@ -84,6 +84,8 @@ struct SubtitleDrawState {
 	float eyePixels[2] = { 0.f, 0.f };       //!< the pixels the panel covered in the eyes drawn this frame
 	int eyeDraws = 0;                         //!< eyes the panel was drawn into this frame
 
+	bool noticeLogged = false; //!< the notice shown now was logged (vr.scene.subtitle notice=...)
+
 };
 
 SubtitleDrawState g_subtitles;
@@ -97,6 +99,15 @@ SubtitleParams subtitleParams() {
 
 //! The line is drawn: the first time it is counted in \c lines and logged as \c vr.scene.subtitle
 void countSubtitleShown() {
+	if(g_subtitles.status.notice != SubtitleNotice::None) {
+		// A notice of the game's own is no voiced line: logged, not counted
+		if(!g_subtitles.noticeLogged) {
+			g_subtitles.noticeLogged = true;
+			gameevent::Event("vr.scene.subtitle", 200)("notice", subtitleNoticeName(g_subtitles.status.notice))
+				("drawn", subtitlePlacementName(g_subtitles.drawn))("text", g_subtitles.status.text);
+		}
+		return;
+	}
 	if(g_subtitles.line > g_subtitles.countedLine) {
 		g_subtitles.countedLine = g_subtitles.line;
 		g_subtitles.status.lines++;
@@ -206,6 +217,9 @@ u64 startSubtitle() {
 void showSubtitle(u64 line, std::string_view speaker, std::string_view text, bool named, const Vec3f * headTop) {
 
 	SubtitleDrawState & s = g_subtitles;
+	if(s.status.notice != SubtitleNotice::None) {
+		return; // the line waits for the notice (#551)
+	}
 	if(s.line != line) {
 		// A new line: its own chest panel where the player looks now, its own decision for above
 		s.line = line;
@@ -230,6 +244,9 @@ void showSubtitle(u64 line, std::string_view speaker, std::string_view text, boo
 
 void hideSubtitle() {
 	SubtitleDrawState & s = g_subtitles;
+	if(s.status.notice != SubtitleNotice::None) {
+		return; // the notice stays (#551)
+	}
 	s.line = 0;
 	s.decided = false;
 	s.imageReady = false;
@@ -238,6 +255,45 @@ void hideSubtitle() {
 	s.status.visible = false;
 	s.status.text.clear();
 	s.status.speaker.clear();
+}
+
+void showSubtitleNotice(SubtitleNotice notice, std::string_view text) {
+
+	SubtitleDrawState & s = g_subtitles;
+	if(notice == SubtitleNotice::None) {
+		clearSubtitleNotice();
+		return;
+	}
+	if(s.status.notice == SubtitleNotice::None) {
+		// Its own panel where the player looks now, like a new line of the hero's (a line number of its own, which
+		// no voiced line gets)
+		s.line = ++s.nextLine;
+		s.decided = false;
+		s.imageReady = false;
+		s.named = false;
+		s.hasHead = false;
+		s.status.speaker.clear();
+	}
+	if(s.status.notice != notice) {
+		s.noticeLogged = false;
+	}
+	s.status.notice = notice;
+	s.status.visible = true;
+	if(s.status.text != text) {
+		s.status.text = std::string(text);
+	}
+}
+
+void clearSubtitleNotice() {
+	SubtitleDrawState & s = g_subtitles;
+	if(s.status.notice == SubtitleNotice::None) {
+		return;
+	}
+	s.status.notice = SubtitleNotice::None;
+	s.noticeLogged = false;
+	// The notice's line is never a scene's: not counted after a meter reset either
+	s.countedLine = std::max(s.countedLine, s.line);
+	hideSubtitle();
 }
 
 void replaceSubtitlePanel() {
@@ -360,7 +416,10 @@ void drawSubtitlesOnInterface() {
 		// An NPC's line is always over his head, in view or not (the owner, 2026-10-18); the hero's own line and an
 		// off-voice one (no head) go below the centre of the view
 		SubtitlePlacement drawn = s.status.placement;
-		if(drawn == SubtitlePlacement::Above && !s.hasHead) {
+		if(s.status.notice != SubtitleNotice::None) {
+			// A notice of the game's own goes where the hero's lines go, whatever the setting (#551)
+			drawn = SubtitlePlacement::Chest;
+		} else if(drawn == SubtitlePlacement::Above && !s.hasHead) {
 			drawn = SubtitlePlacement::Chest;
 		}
 		if(drawn == SubtitlePlacement::Above) {

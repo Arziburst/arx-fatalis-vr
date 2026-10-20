@@ -421,15 +421,19 @@ public:
 	const ControlSet & down() const { return m_down; }
 
 	/*!
-	 * How long both thumbstick clicks are held together to open the game menu whatever the layout is (#326, the
-	 * owner: the Index has no menu button the game can read). Fixed, not part of the layout.
+	 * How long both thumbstick clicks are held together to mark the moment (#551, the owner; it replaced the menu
+	 * fallback of #326). Fixed, not part of the layout and not rebindable: whatever the stick clicks are bound to,
+	 * the hold of both marks.
 	 */
-	static constexpr s64 menuFallbackMs = 2000;
+	static constexpr s64 markHoldMs = 3000;
 
-	//! The fallback opened the game menu in the last update (once per hold, while both are still held)
-	bool menuFallback() const { return m_menuFallback; }
-	//! How often the fallback opened the game menu since the resolver was created
-	u32 menuFallbackOpens() const { return m_menuFallbackOpens; }
+	/*!
+	 * The hold of both stick clicks reached \ref markHoldMs in the last update: true for that one update, once per
+	 * hold - a second mark needs one of them released first; a release before it marks nothing
+	 */
+	bool markGesture() const { return m_markGesture; }
+	//! How often the gesture came on since the resolver was created
+	u32 markGestures() const { return m_markGestures; }
 
 private:
 
@@ -463,9 +467,9 @@ private:
 	std::array<bool, HandCount> m_chords = { true, true };
 
 	s64 m_bothSticksSince = -1;  //!< when both stick clicks were first down together, -1 when not both are down
-	bool m_menuFallbackFired = false;
-	bool m_menuFallback = false;
-	u32 m_menuFallbackOpens = 0;
+	bool m_markFired = false;
+	bool m_markGesture = false;
+	u32 m_markGestures = 0;
 
 	ControlSet m_down;
 	std::array<ControlState, ControlCount> m_controls;

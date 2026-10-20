@@ -68,6 +68,7 @@
 #include "vr/PerfLog.h"
 #include "vr/UIPanel.h"
 #include "vr/VRActions.h"
+#include "vr/VRMarks.h"
 #include "vr/VRMirror.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSwapchain.h"
@@ -313,6 +314,41 @@ struct OpenXRState {
 };
 
 OpenXRState g_xr;
+
+//! The eye images a mark of the moment asked for (#551): read from the next frame's eyes as they are released
+struct EyeCapture {
+	bool wanted = false;
+	std::array<bool, 2> taken = { false, false };
+	std::array<RgbImage, 2> images;
+};
+EyeCapture g_eyeCapture;
+
+//! The picture of an eye's image as drawn (sRGB-encoded, rows bottom-up), when a capture wants it: one GPU sync
+void captureEye(size_t eye, const Swapchain & swapchain) {
+
+	if(!g_eyeCapture.wanted || eye >= g_eyeCapture.taken.size() || g_eyeCapture.taken[eye]) {
+		return;
+	}
+
+	const Vec2i size = swapchain.size();
+	RgbImage image(size.x > 0 ? size_t(size.x) : 0, size.y > 0 ? size_t(size.y) : 0);
+	if(!image.empty()) {
+		GLint bound = 0, alignment = 4, packBuffer = 0;
+		glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound);
+		glGetIntegerv(GL_PACK_ALIGNMENT, &alignment);
+		glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &packBuffer);
+		glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+		glPixelStorei(GL_PACK_ALIGNMENT, 1);
+		glBindTexture(GL_TEXTURE_2D, swapchain.texture());
+		// The stored values, no sRGB decoding: they are sRGB-encoded like the window
+		glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, image.pixels.data());
+		glBindTexture(GL_TEXTURE_2D, GLuint(bound));
+		glPixelStorei(GL_PACK_ALIGNMENT, alignment);
+		glBindBuffer(GL_PIXEL_PACK_BUFFER, GLuint(packBuffer));
+	}
+	g_eyeCapture.images[eye] = std::move(image);
+	g_eyeCapture.taken[eye] = true;
+}
 
 } // anonymous namespace
 
@@ -1367,6 +1403,7 @@ bool renderBackground(OpenXRState::Layers & layers) {
 		if(eye == g_xr.mirror.eye()) {
 			g_xr.mirror.copyEye(swapchain);
 		}
+		captureEye(eye, swapchain);
 		swapchain.release();
 	}
 
@@ -2727,6 +2764,7 @@ void endEyeRender(size_t eye) {
 		// The desktop mirror (#21) takes its copy while the image is ours
 		g_xr.mirror.copyEye(swapchain);
 	}
+	captureEye(eye, swapchain);
 	swapchain.release();
 	frame.eyeRendered[eye] = true;
 	frame.eyeInRender = size_t(-1);
@@ -2737,6 +2775,24 @@ void endEyeRender(size_t eye) {
 	} else {
 		restoreWindowTarget();
 	}
+}
+
+void requestEyeCapture() {
+	g_eyeCapture = EyeCapture();
+	g_eyeCapture.wanted = true;
+}
+
+bool takeEyeCapture(std::array<RgbImage, 2> & eyes) {
+	if(!g_eyeCapture.wanted || !g_eyeCapture.taken[0] || !g_eyeCapture.taken[1]) {
+		return false;
+	}
+	eyes = std::move(g_eyeCapture.images);
+	g_eyeCapture = EyeCapture();
+	return true;
+}
+
+void cancelEyeCapture() {
+	g_eyeCapture = EyeCapture();
 }
 
 StereoStatus stereoStatus() {
@@ -3066,6 +3122,9 @@ const HandJointsStatus & handJointsStatus() {
 
 void shutdown() {
 
+	// A mark still being written, its voice note (#551)
+	marks::shutdown();
+
 	requestExit();
 	destroySession();
 	g_xr.actions.destroy();
@@ -3137,6 +3196,14 @@ bool beginEyeRender(size_t /* eye */) {
 }
 
 void endEyeRender(size_t /* eye */) { }
+
+void requestEyeCapture() { }
+
+bool takeEyeCapture(std::array<RgbImage, 2> & /* eyes */) {
+	return false;
+}
+
+void cancelEyeCapture() { }
 
 StereoStatus stereoStatus() {
 	return StereoStatus();

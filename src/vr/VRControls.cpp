@@ -626,20 +626,20 @@ void ControlResolver::release(Control control, s64 timeMs) {
 
 void ControlResolver::update(s64 timeMs, const ControlSet & down, const ControlSet & taps) {
 
-	// The menu fallback (#326): both stick clicks held together for menuFallbackMs, whatever the layout is
-	m_menuFallback = false;
+	// Mark the moment (#551): both stick clicks held together for markHoldMs, whatever the layout is
+	m_markGesture = false;
 	if(down[control(Hand::Left, ControlKind::StickClick)] && down[control(Hand::Right, ControlKind::StickClick)]) {
 		if(m_bothSticksSince < 0) {
 			m_bothSticksSince = timeMs;
 		}
-		if(!m_menuFallbackFired && timeMs - m_bothSticksSince >= menuFallbackMs) {
-			m_menuFallbackFired = true;
-			m_menuFallback = true;
-			m_menuFallbackOpens++;
+		if(!m_markFired && timeMs - m_bothSticksSince >= markHoldMs) {
+			m_markFired = true;
+			m_markGesture = true;
+			m_markGestures++;
 		}
 	} else {
 		m_bothSticksSince = -1;
-		m_menuFallbackFired = false;
+		m_markFired = false;
 	}
 
 	for(size_t i = 0; i < EventCount; i++) {

@@ -989,12 +989,25 @@ void setDumpRegionWriter(std::string (*writer)(const void * image, size_t size),
 	g_regionFileName = fileName;
 }
 
+std::string flightRecorderText() {
+	if(!g_shared || !g_recorder) {
+		return std::string();
+	}
+	// The live memory read as the helper reads it (the serialiser never trusts it), scrubbed like arx-recorder.txt
+	const std::string text = serializeRecorder(reinterpret_cast<unsigned char *>(g_shared) + g_shared->recorderOffset,
+	                                           g_shared->recorderSize);
+	std::vector<unsigned char> bytes(text.begin(), text.end());
+	scrubBuffer(bytes, *g_shared);
+	return std::string(bytes.begin(), bytes.end());
+}
+
 #else // not Windows: the recorder and the out-of-process helper are a Windows feature; the API is a no-op
 
 bool initializeDumpHelper(const std::string &, const std::string &, const std::string &, bool, size_t) { return false; }
 void * dumpHelperRegion(size_t & size) noexcept { size = 0; return nullptr; }
 void setDumpRegionWriter(std::string (*)(const void *, size_t), const char *) noexcept { }
 FlightRecorder * flightRecorder() noexcept { return nullptr; }
+std::string flightRecorderText() { return std::string(); }
 void flightRecord(RecordKind, std::string_view, s64) noexcept { }
 void flightNameThread(std::string_view) noexcept { }
 u32 mainThreadId() noexcept { return 0; }

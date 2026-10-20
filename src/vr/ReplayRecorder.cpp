@@ -101,6 +101,9 @@ struct State {
 	bool savePending = false;    //!< the player saved: an anchor save line is due
 	std::array<Vec3f, 2> lastCurl = { };
 	std::array<Vec2f, 2> lastOuter = { };
+	//! The shortest display period the runtime predicted in this run, us: the display's own rate. SteamVR predicts a
+	//! multiple of it while the game misses frames (a level load, the start save: 72 Hz on a 144 Hz Index)
+	s64 fastestPeriodUs = 0;
 };
 
 State g;
@@ -218,7 +221,9 @@ void start() {
 	// The save first: the hitch is before the first frame, and the header names it
 	const std::string save = makeStartSave();
 
-	const s64 period = displayPeriodUs();
+	// The display's own rate, not the period of this frame: the record starts right after a load, when a throttled
+	// runtime predicts a multiple of the period (#551: a 144 Hz session recorded as 72 Hz)
+	const s64 period = g.fastestPeriodUs > 0 ? g.fastestPeriodUs : displayPeriodUs();
 	g.header = ReplayHeader();
 	g.header.build = arx_name + " " + arx_version;
 	g.header.save = save;
@@ -238,7 +243,8 @@ void start() {
 	// The ring: in the dump helper's shared memory when it has the room, else on the heap
 	size_t size = 0;
 	void * memory = platform::dumpHelperRegion(size);
-	const u32 rate = u32(std::ceil(std::max(g.header.rate, 1.f)));
+	// Sized for the fastest display it may meet: 60 s whatever the rate does during the session
+	const u32 rate = std::max(RingMaxRate, u32(std::ceil(std::max(g.header.rate, 1.f))));
 	const size_t wanted = ReplayRing::memorySize(RingSeconds, rate);
 	if(!memory || size < wanted) {
 		g.ringHeap.assign(wanted + 16, 0);
@@ -459,6 +465,11 @@ s64 clipClockUs(s64 displayTimeNs) {
 }
 
 void frame() {
+
+	const s64 period = displayPeriodUs();
+	if(period > 0 && (g.fastestPeriodUs == 0 || period < g.fastestPeriodUs)) {
+		g.fastestPeriodUs = period;
+	}
 
 	const FrameViews & views = frameViews();
 	const bool playable = gameevent::detectGameState() == gameevent::GameState::Gameplay;

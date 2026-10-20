@@ -102,6 +102,13 @@ struct MarksState {
 	u32 markedNumber = 0;
 	bool noticeShown = false;
 
+	~MarksState() {
+		// An exit that skipped shutdown(): a joinable thread must not be destroyed
+		if(worker.joinable()) {
+			worker.join();
+		}
+	}
+
 };
 
 MarksState g;
@@ -374,18 +381,24 @@ void updateNotice(s64 now) {
 	}
 }
 
+//! The voice note's setting from cfg.ini, once (the channel's `marks note` replaces it for the session)
+void readNoteSetting() {
+	if(!g.noteRead) {
+		g.noteRead = true;
+		g.status.note = config.video.vrMarkNote;
+	}
+}
+
 } // anonymous namespace
 
 const MarksStatus & status() {
+	readNoteSetting();
 	return g.status;
 }
 
 void update() {
 
-	if(!g.noteRead) {
-		g.noteRead = true;
-		g.status.note = config.video.vrMarkNote;
-	}
+	readNoteSetting();
 	if(!isEnabled()) {
 		return;
 	}

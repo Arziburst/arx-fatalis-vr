@@ -37,6 +37,19 @@
  */
 namespace vr {
 
+/*!
+ * Whether the mark gesture writes a mark: not while a recorded clip plays into the simulated headset (#550's replay
+ * replays the owner's trackpad presses - his marks are his session's, not the replay's)
+ */
+bool markAllowed(bool replayPlaying);
+
+/*!
+ * Whether the voice note may open the real microphone: never under the simulated headset (\c --vr-sim: CI, a
+ * replay, a worker's run - a microphone on the PC must never record the room); there the note behaves as without a
+ * microphone: no note, no error
+ */
+bool noteMicrophoneAllowed(bool simulatedHeadset);
+
 //! The confirmation in the hero-dialogue panel: "Moment marked (#<number>)"
 std::string markNoticeText(u32 number);
 

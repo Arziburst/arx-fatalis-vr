@@ -480,3 +480,14 @@ void MarkMomentTest::metaOneLinePerFieldTest() {
 	CPPUNIT_ASSERT(text.find("\nsession=focused \n") != std::string::npos);
 	CPPUNIT_ASSERT_MESSAGE("the last line ends the text", !text.empty() && text.back() == '\n');
 }
+
+void MarkMomentTest::replayAndSimulatorTest() {
+
+	// A replay (#550) plays the recorded trackpad presses back: they wrote their marks in the recorded session
+	CPPUNIT_ASSERT_MESSAGE("no replay playing: the gesture marks", markAllowed(false));
+	CPPUNIT_ASSERT_MESSAGE("a replay playing: the gesture writes no mark", !markAllowed(true));
+
+	// The simulated headset (CI, a replay, a worker's run) never opens the real microphone
+	CPPUNIT_ASSERT_MESSAGE("a real headset: the voice note may open the microphone", noteMicrophoneAllowed(false));
+	CPPUNIT_ASSERT_MESSAGE("the simulated headset: no microphone", !noteMicrophoneAllowed(true));
+}

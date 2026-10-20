@@ -41,9 +41,11 @@ a changed decision keeps its history in that cell.
   (OpenAL capture, 16 kHz mono 16-bit), up to **5 minutes**; letting go of either stops it at once
   (`ControlResolver::markHeld`, `VoiceNote::update(timeMs, held)`). The microphone opens on the mark (both pads down)
   and never records without both held; a note under 0.3 s (a quick press) is no note. `cfg.ini vr_mark_note=0` turns
-  it off, the channel's `marks note on|off` for a session; no microphone means no note and no error. CI keeps it off
-  except for a quick press that cannot keep anything (a microphone on the owner's PC must never record the room into a
-  CI user directory).
+  it off, the channel's `marks note on|off` for a session; no microphone means no note and no error. The
+  simulated headset (`--vr-sim`: CI, a replay, a worker's run) never opens the microphone - a microphone on the owner's
+  PC must never record the room (the coordinator, 2026-10-21).
+- **A replay writes no marks:** while a recorded clip plays into the simulated headset (#550), the replayed trackpad
+  presses log `[vr] mark ignored: a replay is playing` instead - the marks were the recorded session's.
 - **The hero-dialogue panel** (D-055: below the centre of the view, the lazy follow; in the eyes and so in the desktop
   mirror) shows "Moment marked (#N)" for about 2 s; while the note records, the indicator "🎤 m:ss" counting up
   instead; once its `note.wav` is written, "🎤 Note saved (m:ss)" for about 1.5 s, then nothing. The game's fonts

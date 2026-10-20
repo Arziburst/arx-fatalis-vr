@@ -86,6 +86,14 @@ std::string minutesSeconds(s64 ms) {
 
 } // anonymous namespace
 
+bool markAllowed(bool replayPlaying) {
+	return !replayPlaying;
+}
+
+bool noteMicrophoneAllowed(bool simulatedHeadset) {
+	return !simulatedHeadset;
+}
+
 std::string markNoticeText(u32 number) {
 	return "Moment marked (#" + std::to_string(number) + ")";
 }

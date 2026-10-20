@@ -2606,8 +2606,10 @@ records, the indicator "🎤 m:ss" counting up instead; once `note.wav` is writt
 1.5 s, then nothing. A quick press (under 0.3 s of audio) or no microphone shows the confirmation only. The panel draws
 a small red microphone where the text has U+1F3A4 (the game's fonts have no glyph for it); the status keeps the
 character. A notice takes the panel over a scene's line while it shows. `cfg.ini vr_mark_note=0` turns the voice note
-off; the channel's `marks note on|off` does it for the session (CI sequences keep it off, except for a quick press that
-cannot keep anything - a microphone on the PC must never record the room).
+off; the channel's `marks note on|off` does it for the session. The simulated headset (`--vr-sim`:
+CI, a replay, a worker's run) never opens the microphone - a microphone on the PC must never record the room. While a
+recorded clip plays (`replay.ps1`, #550), the replayed trackpad presses write no marks: the log says `[vr] mark
+ignored: a replay is playing`.
 
 - **status.json** `marks`: `count` (marks made since the start), `last` (the last mark's folder name), `lastFiles`
   (the non-empty files in it, sorted, joined by `,`; empty until they are written), `recording` (a voice note records

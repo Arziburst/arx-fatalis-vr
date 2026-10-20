@@ -156,6 +156,7 @@ class MarkMomentTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(folderNameTest);
 	CPPUNIT_TEST(metaFormatTest);
 	CPPUNIT_TEST(metaOneLinePerFieldTest);
+	CPPUNIT_TEST(replayAndSimulatorTest);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -172,6 +173,8 @@ public:
 	void folderNameTest();
 	void metaFormatTest();
 	void metaOneLinePerFieldTest();
+	//! The coordinator's rules (#551): no mark while a replay clip plays, no microphone under the simulated headset
+	void replayAndSimulatorTest();
 
 };
 

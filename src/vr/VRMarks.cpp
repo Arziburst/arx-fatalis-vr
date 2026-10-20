@@ -51,6 +51,7 @@
 #include "vr/SceneSubtitles.h"
 #include "vr/VoiceNote.h"
 #include "vr/VRInput.h"
+#include "vr/VRSimulator.h"
 #include "vr/VRSystem.h"
 
 namespace vr {
@@ -322,7 +323,9 @@ void startMark(s64 now) {
 		g.note.stop();
 		saveNote();
 	}
-	if(g.status.note) {
+	if(g.status.note && !noteMicrophoneAllowed(isSimulated())) {
+		LogInfo << "[vr] mark #" << number << ": no voice note - the simulated headset opens no microphone";
+	} else if(g.status.note) {
 		g.noteNumber = number;
 		g.noteFolder = mark->folder;
 		if(g.note.start(microphone(), now) == VoiceNote::State::Recording) {
@@ -418,7 +421,13 @@ void update() {
 
 	const s64 now = toMsi(platform::getTime());
 	if(controls().markGesture() && markGestureAvailable(controllerType())) {
-		startMark(now);
+		const SimStatus sim = isSimulated() ? simStatus() : SimStatus();
+		if(!markAllowed(sim.playing && !sim.play.done)) {
+			// A replay replays the recorded trackpad presses: the marks were the recorded session's
+			LogInfo << "[vr] mark ignored: a replay is playing";
+		} else {
+			startMark(now);
+		}
 	}
 
 	if(g.pending) {

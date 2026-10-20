@@ -377,8 +377,9 @@ void writePending(std::array<RgbImage, 2> eyes) {
 
 //! The hero-dialogue panel: the confirmation for 2 s, then the note's seconds left while it records
 void updateNotice(s64 now) {
-	if(g.note.recording()) {
-		// Push-to-talk: the indicator counts up while both trackpads are held, in place of the confirmation
+	if(g.note.recording() && now - g.note.startMs() >= VoiceNote::minMs) {
+		// Push-to-talk: the indicator counts up while both trackpads are held, in place of the confirmation - from the
+		// shortest note on, so a quick press (no note) shows the confirmation only
 		showSubtitleNotice(SubtitleNotice::Recording, noteIndicatorText(now - g.note.startMs()));
 		g.noticeShown = true;
 	} else if(g.savedAt >= 0 && now - g.savedAt < NoteSavedMs) {

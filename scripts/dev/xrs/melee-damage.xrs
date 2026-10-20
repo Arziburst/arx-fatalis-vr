@@ -196,13 +196,21 @@ vr-sim @+1-5 hand right pos 0 -0.8 -0.35
 @log melee\.hit source=player target=goblin_base_\d+ .*aim=1\.00 speed=\S+ size=\S+ kind=thrust
 melee stab dagger default
 
-# 7. The goblin fighting the player: the dagger in it deals the minimum - a touch, no swing hit. The set-up: the mode
-# lever (aggressive), the goblin placed against the resting dagger - not fighting yet, so the blade does nothing to it
-# (a touch reaches only an NPC fighting the player) - then its fight set directly (playground fight) and the dagger
-# swept through it. The playground goblin's script drops the fight - its behaviour and its target - as soon as it is
-# hit (TRAPS.md), so the first touch is the one checked
+# 7. The goblin fighting the player: the dagger in it deals the minimum - a touch, no swing hit. The set-up: the goblin
+# respawned and hit to 6 of its 12 life - below its class script's cowardice (8), whatever group 6's thrust rolled -
+# so the mode lever (aggressive) makes it flee, not fight (TRAPS.md, #532); placed against the resting dagger it is not
+# fighting, so the blade does nothing to it (a touch reaches only an NPC fighting the player). Then its fight set
+# directly (playground fight) with touches off (vr_melee_noswing=none) until the fight shows - the resting blade's
+# touch would end it at once - and the dagger swept through it. The playground goblin's script drops the fight - its
+# behaviour and its target - as soon as it is hit (TRAPS.md), so the first touch is the one checked
 vr-sim @+1-40 hand right pos 0.45 -0.8 -0.35
 @frames 50
+playground kill
+@until playground.npcAlive eq false 5s
+playground pull respawn
+@until playground.npcAlive eq true 5s
+playground hit 6
+@until playground.npcLife lt 8 5s
 playground pull mode
 @until playground.npcMode eq aggressive 5s
 playground place 60
@@ -213,9 +221,13 @@ playground place 60
 @frames 30
 @assert vr.melee.touches eq {touches}
 @mark
+melee noswing none
+@until vr.melee.params.noSwing eq none 5s
 playground fight
 @until playground.npcFighting eq true 5s
 @assert playground.npcDistance lt 100
+melee noswing min
+@until vr.melee.params.noSwing eq min 5s
 vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
 @until vr.melee.touches ge {touches+1} 5s
 @assert vr.melee.hits eq {hits}

@@ -44,9 +44,9 @@
 #include "cinematic/CinematicController.h"
 #include "core/Application.h"
 #include "core/ArxGame.h"
+#include "core/ChannelWriter.h"
 #include "core/Config.h"
 #include "core/Core.h"
-#include "core/FileReplace.h"
 #include "core/GameEvent.h"
 #include "core/GameTime.h"
 #include "core/SaveGame.h"
@@ -441,9 +441,9 @@ struct State {
 	//! motion: the player's walk, turn and jumps since `motion reset`, fed after every frame (#23)
 	vr::MotionProbe motion;
 	u32 motionResets = 0;
-	//! A status write a test waits for did not land (a reader held status.json for the whole patience): written again
-	//! every frame until it does (#23)
-	bool statusPending = false;
+	//! Writes status.json and ack.txt on its own thread (#553); deleted in shutdown only, never at static
+	//! destruction (its thread flushes the logger)
+	ChannelWriter * writer = nullptr;
 
 	//! The simulated headset's `record <name>`: the motion values of the frame it named, as JSON, in order
 	std::vector<std::pair<std::string, std::string>> records;
@@ -516,6 +516,19 @@ PlatformInstant g_crashAt = PlatformInstant(0);
 // command.txt is looked for every frame (a stat; it is read only when it is there), status.json is
 // replaced every 100 ms and after every batch, shot and state change (#522)
 const s64 StatusIntervalMs = 100;
+
+/*!
+ * A part of the channel's work on the frame that took 20 ms or more is named in the log (#553): the perf log's hitch
+ * line only says `cause=channel`, and what is left of the channel on the frame (reading command.txt, a batch's
+ * commands, building the status, the records) is then told apart by this line
+ */
+void noteSlowPart(const char * part, PlatformInstant start) {
+	const s64 ms = toMsi(platform::getTime() - start);
+	if(ms >= 20) {
+		LogInfo << "[channel] slow frame part: " << part << " took " << ms << " ms (frame " << g.frame << ", last command \""
+		        << g.lastCmd << "\")";
+	}
+}
 
 void setTestDir(const std::string & dir) {
 	g.dir = dir;
@@ -2151,8 +2164,12 @@ std::string buildStatus(PlatformInstant now) {
 	return json.str();
 }
 
-//! \param periodic the write of the 250 ms timer: it is skipped when a reader holds the file (the next one is near)
+//! \param periodic the write of the 100 ms timer: it does not wait for the writer's lock (the next one is near)
 void writeStatus(PlatformInstant now, bool periodic = false) {
+
+	if(!g.writer) {
+		return;
+	}
 
 	if(g.lastStatusTime != PlatformInstant(0)) {
 		s64 ms = toMsi(now - g.lastStatusTime);
@@ -2163,41 +2180,21 @@ void writeStatus(PlatformInstant now, bool periodic = false) {
 	g.lastStatusTime = now;
 	g.lastStatusFrame = g.frame;
 
-	// Written to a temporary file and renamed, so a reader never sees a half-written status. The engine's own rename
-	// sleeps 100 ms per try while a reader holds the file - the test runner reads status.json all the time - and the
-	// main thread stalled 118 ms inside a frame (#23, TRAPS.md): core::replaceFile tries every millisecond instead. A
-	// write a test waits for is never dropped: it waits for the reader, and when even that fails it stays pending and
-	// the next frame writes it again
-	fs::path file = g.dir / "status.json";
-	fs::path tmp = g.dir / "status.json.tmp";
-	static bool warned = false;
-	if(!fs::write(tmp, buildStatus(now))) {
-		if(!warned) {
-			warned = true;
-			LogWarning << "[channel] could not write " << tmp;
-		}
-	} else if(core::replaceFile(std::filesystem::path(tmp.string()), std::filesystem::path(file.string()),
-	                            periodic ? core::ReplaceMode::Once : core::ReplaceMode::Patient)) {
-		g.statusPending = false;
-	} else if(!periodic) {
-		g.statusPending = true;
-		static bool pendingLogged = false;
-		if(!pendingLogged) {
-			pendingLogged = true;
-			LogWarning << "[channel] status.json is held by a reader, the write waits for the next frame";
-		}
-	}
-
-	// The file logger flushes on its own every second (#129); a test reading arx.log wants it fresher
-	Logger::flush();
+	// Only built here: the writer thread writes it to a temporary file and renames that over status.json, so a reader
+	// never sees a half-written status. The rename waits while a reader - the test runner reads status.json all the
+	// time, a scanner may hold it under load - has the file: on the frame that cost 118 ms (#23, TRAPS.md) and 159.6 ms
+	// (CI run 39359033513: 11 display slots missed, a refresh-rate record short of its frames, #553)
+	const PlatformInstant start = platform::getTime();
+	std::string text = buildStatus(now);
+	noteSlowPart("status build", start);
+	g.writer->status(std::move(text), periodic);
 }
 void writeAck(unsigned errors) {
 	std::ostringstream oss;
 	oss << "seq=" << g.cmdSeq << " frame=" << g.frame << " errors=" << errors
 	    << " last=" << g.lastCmd << " error=" << (g.lastCmdError.empty() ? "-" : g.lastCmdError) << '\n';
-	if(!fs::write(g.dir / "ack.txt", oss.str())) {
-		LogWarning << "[channel] could not write " << (g.dir / "ack.txt");
-	}
+	// Written after the status handed over before it has landed (#23)
+	g.writer->ack(oss.str());
 }
 
 /*
@@ -4041,6 +4038,15 @@ void initialize() {
 	fs::remove(g.dir / "ack.txt");
 	fs::remove(g.dir / "hang.txt");
 
+	// The file logger flushes on its own every second (#129); a test reading arx.log after an ack wants it fresher:
+	// flushed after every status that landed, before the ack that follows it
+	g.writer = new ChannelWriter(
+		ChannelWriter::Files{ std::filesystem::path((g.dir / "status.json").string()),
+		                      std::filesystem::path((g.dir / "status.json.tmp").string()),
+		                      std::filesystem::path((g.dir / "ack.txt").string()) },
+		[]() { Logger::flush(); },
+		[](std::string_view message) { LogWarning << "[channel] " << message; });
+
 	g.counter = new LogCounter;
 	Logger::add(g.counter);
 
@@ -4113,6 +4119,7 @@ void update() {
 		}
 	}
 
+	const PlatformInstant commandsStart = platform::getTime();
 	if(g.batch.resumeFrame != 0) {
 		// A batch waits for frames (waitframes): no new batch before its ack
 		if(g.frame >= g.batch.resumeFrame) {
@@ -4121,11 +4128,12 @@ void update() {
 	} else {
 		pollCommands();
 	}
+	noteSlowPart("commands", commandsStart);
 
-	if(g.statusPending) {
-		writeStatus(now, true); // one quick try a frame: no stall, and pending until it lands
-	} else if(toMsi(now - g.lastStatusTime) >= StatusIntervalMs) {
+	if(toMsi(now - g.lastStatusTime) >= StatusIntervalMs) {
 		writeStatus(now, true);
+	} else {
+		g.writer->poll(); // a timer status the writer's lock kept back
 	}
 
 }
@@ -4160,6 +4168,7 @@ void afterRender() {
 		g.curlTargetLast = target;
 		g.curlLastSeconds = sample.seconds;
 	}
+	const PlatformInstant recordsStart = platform::getTime();
 	for(const std::string & name : vr::takeSimRecords()) {
 		std::string json = "{}";
 		if(g_currentArea && entities.player()) {
@@ -4177,6 +4186,7 @@ void afterRender() {
 		// The values in the log too: the evidence of a CI run outlives its status.json
 		LogInfo << "[channel] record " << name << ": " << json;
 	}
+	noteSlowPart("records", recordsStart);
 
 	if(g.simShotWatch.active) {
 		// The simulator saves its shots when the frame ends (xrEndFrame), before this; a test waits for the
@@ -4358,6 +4368,9 @@ void shutdown() {
 	g.state = GameState::Exited;
 	g.cleanShutdown = true;
 	writeStatus(platform::getTime());
+	// The final status (and an ack still on its way) lands before the game ends
+	delete g.writer;
+	g.writer = nullptr;
 
 	g.enabled = false;
 }

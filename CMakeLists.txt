@@ -964,6 +964,7 @@ set(CORE_SOURCES
 	src/core/Application.cpp
 	src/core/ArxGame.cpp
 	src/core/Benchmark.cpp
+	src/core/ChannelWriter.cpp
 	src/core/CommandChannel.cpp
 	src/core/Config.cpp
 	src/core/Core.cpp

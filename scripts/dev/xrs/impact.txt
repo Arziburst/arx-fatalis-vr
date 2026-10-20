@@ -89,6 +89,7 @@ src/game/Camera.* -> *
 # would have been full; with them on the core, all 11 failed phases of those runs were still in the selection. What
 # this leaves open - a feature whose sequence reads a hub file's key but has no files of its own here - is caught by
 # the full suite before the merge, and closed by a line for that sequence (docs/vr/TESTING.md "The CI gate").
+src/core/ChannelWriter.* -> core
 src/core/CommandChannel.* -> core
 src/core/Config.* -> core
 src/core/ArxGame.* -> core
@@ -274,6 +275,9 @@ CHANGELOG -> core
 src/vr/MotionProbe.* -> refresh-rate
 src/vr/PerfLog.* -> refresh-rate
 src/vr/PerfStats.* -> refresh-rate
+# The channel's writer thread (#553): status.json and ack.txt off the frame; every sequence reads them (the core, with
+# CommandChannel above), and the pacing sequence is the one a write on the frame failed
+src/core/ChannelWriter.* -> refresh-rate
 # The refresh-rate stress check (#553): the sequence N times on two lanes beside a busy game, hand-run. It launches its
 # own games and is no game check
 scripts/dev/refresh-rate-stress.ps1 -> core

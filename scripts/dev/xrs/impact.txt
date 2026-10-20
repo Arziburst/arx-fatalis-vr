@@ -291,3 +291,7 @@ scripts/dev/vrsim/replay-clip.vrsim -> replay-clip
 scripts/dev/replay.ps1 -> core
 scripts/dev/clip-to-xrs.ps1 -> core
 scripts/dev/replay-check.ps1 -> core
+
+# --- The melee-damage stress check (#532): the sequence N times on two lanes beside a busy game, hand-run --------------
+# It launches its own games and is no game check
+scripts/dev/melee-damage-stress.ps1 -> core

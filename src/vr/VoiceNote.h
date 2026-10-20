@@ -85,7 +85,8 @@ public:
 	 */
 	State update(s64 timeMs);
 
-	//! Stop early (the game quits, a new mark): Finished, the device closed; nothing in any other state
+	//! Stop early (the game quits, a new mark): what the device still has is read, then Finished, the device closed;
+	//! nothing in any other state
 	State stop();
 
 	State state() const { return m_state; }

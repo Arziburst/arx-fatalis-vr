@@ -42,8 +42,8 @@ a changed decision keeps its history in that cell.
 
 ### Consequences
 - The mark's frame reads both eye images back from the GPU (one hitch: 18 ms instead of 13 ms on the simulated
-  1440x1600 eyes); the files are written on a thread of their own. No cost while nobody marks.
-- An Index player who unbinds the radial and the menu event still cannot lock themselves out (D-058's guards), but
+  1440x1600 eyes); the files are written on a thread of their own. No cost while nobody marks. With the voice note
+  on, opening the microphone (on the mark's frame) and closing it (about 10 s later) run on the frame thread too.- An Index player who unbinds the radial and the menu event still cannot lock themselves out (D-058's guards), but
   there is no longer a hidden way to the menu for a layout that somehow has none.
 
 ## D-060: Every VR session is recorded as a replayable clip - poses and inputs over the same save, the drift measured, no lockstep

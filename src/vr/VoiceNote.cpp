@@ -60,17 +60,23 @@ VoiceNote::State VoiceNote::update(s64 timeMs) {
 		return m_state;
 	}
 
-	if(m_samples.size() < NoteCapacity) {
-		m_device->read(m_samples, NoteCapacity - m_samples.size());
-	}
 	if(m_samples.size() >= NoteCapacity || timeMs - m_startMs >= maxMs) {
-		stop();
+		stop(); // reads what is left first
+	} else {
+		m_device->read(m_samples, NoteCapacity - m_samples.size());
+		if(m_samples.size() >= NoteCapacity) {
+			stop();
+		}
 	}
 	return m_state;
 }
 
 VoiceNote::State VoiceNote::stop() {
 	if(m_state == State::Recording) {
+		// What the device captured since the last frame belongs to the note too
+		if(m_samples.size() < NoteCapacity) {
+			m_device->read(m_samples, NoteCapacity - m_samples.size());
+		}
 		m_device->close();
 		m_device = nullptr;
 		m_state = State::Finished;

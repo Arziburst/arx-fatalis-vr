@@ -289,13 +289,17 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 - **rewrites `<dir>\status.json`** every 100 ms (#522; 250 ms before), after every batch (just BEFORE its ack since #23: a
   test that reads the status right after the ack finds the batch's state), once a `shot` or a simulated headset's shot
   asked for through the channel is saved, and on every state change - atomically (`status.json.tmp`, then rename), so a
-  reader sees whole files only. A reader that holds the file delays the rename by the time it holds it (every
-  millisecond a try, `core::replaceFile`); the timer's write skips a held file, a write a test waits for is kept pending
-  and written again every frame until it lands. The engine's own rename would sleep 100 ms per try in the middle of a frame.
+  reader sees whole files only. The frame only builds the status: the channel's writer thread writes the file, renames
+  it and writes the ack after it (#553, `ChannelWriter`), so a reader or a scanner that holds the file delays the file
+  by the time it holds it (every millisecond a try, `core::replaceFile`), never a frame; a status that waited is
+  replaced by the newest one, and the ack still comes only after its status landed.
 - **flushes `arx.log`** at the same cadence, so `game.state` events and `[mark]` lines are readable
   while the game runs (since #129 the file logger flushes on its own after every warning or error
   and at least once a second — see *Log:* in [The log banner](#the-log-banner); the channel only
-  makes it fresher).
+  makes it fresher). The channel flushes after a status landed and only while no line was logged since that status
+  was built (else the next frame builds a fresh one, #553): a line a test waited for never shows with a status older
+  than it, so `@log` then `@assert` reads the state the line came from or later. The ack does not wait for that
+  flush: a batch's own log lines may show a frame after its ack (`@log` waits for them).
 - reports the state that the [game event log](#the-game-event-log) logs on every change as
   `game.state to=STARTUP|MENU|LOADING|GAMEPLAY|CINEMATIC|EXITED` — always, with or without the
   channel (#130 replaced the channel's own `[game] state:` lines).

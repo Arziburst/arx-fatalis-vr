@@ -51,6 +51,11 @@
  *     bool markGesture() const;
  *     //! How often the gesture came on since the resolver was created
  *     u32 markGestures() const;
+ *     //! Both trackpads are still down since the update the gesture came on (#551, push-to-talk): true from that
+ *     //! update on, false from the first update either is not down - the release that stops the voice note
+ *     //! (tests/vr/VoiceNoteTest.h: VoiceNote::update's \a held). False before any mark, with one trackpad alone and
+ *     //! with both stick clicks; true again with the next mark (the released one pressed again)
+ *     bool markHeld() const;
  *   };
  *
  * 2. The marker, in src/vr/MarkMoment.h (pure: no engine globals, no file system; the game's side is in
@@ -60,8 +65,16 @@
  *
  *   //! The confirmation in the hero-dialogue panel: "Moment marked (#<number>)"
  *   std::string markNoticeText(u32 number);
- *   //! The voice note's line in the same panel: "Recording note... (<seconds> s)"
- *   std::string noteNoticeText(u32 seconds);
+ *   //! The microphone mark that leads the voice note's lines: U+1F3A4 (MICROPHONE) in UTF-8, "\xF0\x9F\x8E\xA4".
+ *   //! The panel may draw it as an icon where the font has no glyph for it; the status text carries the character
+ *
+ *   //! The recording indicator while the note records, counting UP: the mark, a space, then the elapsed time as
+ *   //! <minutes>:<seconds> - minutes without padding, seconds two digits, whole seconds rounded down; a negative time
+ *   //! is 0:00. 0 -> "<mic> 0:00", 23999 -> "<mic> 0:23", 60000 -> "<mic> 1:00", 300000 -> "<mic> 5:00"
+ *   std::string noteIndicatorText(s64 elapsedMs);
+ *   //! The brief confirmation after a note was saved (about 1.5 s): "<mic> Note saved (<m>:<ss>)", the note's length
+ *   //! in the same form - "<mic> Note saved (0:23)"
+ *   std::string noteSavedText(s64 lengthMs);
  *
  *   //! The marker folder's name, <user dir>\marks\<name>\: the mark's UTC time (ISO 8601 basic) and its number in
  *   //! the session - "20261020T153012Z-1"; sorts by time, valid on every file system
@@ -102,22 +115,29 @@
  *        recorder.txt          the flight recorder's tail (#545: serializeRecorder of the live recorder)
  *        clip.vrsim            the replay ring's last 30 s, via the same code as the channel's `replay mark` (#550)
  *        meta.txt              formatMarkMeta
- *        note.wav              the voice note (tests/vr/VoiceNoteTest.h), when it is on and a microphone recorded one
- *    - the hero-dialogue panel shows markNoticeText(N) for about 2 s, then (or while the note records) noteNoticeText
+ *        note.wav              the voice note (tests/vr/VoiceNoteTest.h), when it is on and a microphone recorded at
+ *                              least VoiceNote::minMs of it while both trackpads were held
+ *    - the hero-dialogue panel shows markNoticeText(N) for about 2 s; while the note records (both trackpads still
+ *      held, push-to-talk) noteIndicatorText(the elapsed time) instead, counting up; when a note.wav was saved (a
+ *      release, or the 5 minutes) noteSavedText(its length) for about 1.5 s, then nothing. A press too short for a
+ *      note (or no microphone) shows no indicator after the release and no "Note saved": the mark's confirmation only
  *    - the log: "[vr] mark #<N>: marks\<folder> files=<lastFiles>" once the five files are written, and the panel's
- *      "vr.scene.subtitle notice=<marked|recording> ... text="<the line>"" when a notice shows
+ *      "vr.scene.subtitle notice=<marked|recording|saved> ... text="<the line>"" when a notice shows
  *    - status.json (src/core/CommandChannel.cpp):
  *        marks.count      (count)  marks written since the start
  *        marks.last       (text)   the last mark's folder name (markFolderName), "" before the first
  *        marks.lastFiles  (text)   the non-empty files in that folder, sorted by name, joined by "," without spaces:
  *                                  "clip.vrsim,left.png,meta.txt,recorder.txt,right.png" (",note.wav" sorts in)
- *        marks.recording  (bool)   a voice note records now
+ *        marks.recording  (bool)   a voice note records now - only ever while both trackpads are held
+ *        marks.noteMs     (number) how long the note records so far, in ms (what the indicator shows); 0 when none
+ *                                  records
  *        marks.note       (bool)   the voice note is on (cfg.ini vr_mark_note, the channel's `marks note on|off`)
  *        marks.gesture    (text)   the gesture of the controllers in use: both.trackpad (the Index), none where
  *                                  markGestureAvailable is false (the Touch)
- *        scene.subtitle.notice (text) the notice the hero-dialogue panel shows now: none | marked | recording;
+ *        scene.subtitle.notice (text) the notice the hero-dialogue panel shows now: none | marked | recording | saved;
  *                                  while it is not none, scene.subtitle.visible is true, scene.subtitle.text is the
- *                                  line (markNoticeText / noteNoticeText) and scene.subtitle.drawn is chest
+ *                                  line (markNoticeText / noteIndicatorText / noteSavedText) and scene.subtitle.drawn
+ *                                  is chest
  *    - cfg.ini vr_mark_note (bool, default 1): the voice note after a mark; 0 turns it off
  *    - channel: `marks note on|off` - the voice note for this session (cfg.ini keeps the player's choice)
  */
@@ -131,6 +151,7 @@ class MarkMomentTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(gestureSticksDoNotMarkTest);
 	CPPUNIT_TEST(gestureTouchTest);
 	CPPUNIT_TEST(gestureAnyLayoutTest);
+	CPPUNIT_TEST(markHeldTest);
 	CPPUNIT_TEST(noticeTextTest);
 	CPPUNIT_TEST(folderNameTest);
 	CPPUNIT_TEST(metaFormatTest);
@@ -146,6 +167,7 @@ public:
 	void gestureSticksDoNotMarkTest();
 	void gestureTouchTest();
 	void gestureAnyLayoutTest();
+	void markHeldTest();
 	void noticeTextTest();
 	void folderNameTest();
 	void metaFormatTest();

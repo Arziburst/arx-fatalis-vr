@@ -303,15 +303,98 @@ void MarkMomentTest::gestureAnyLayoutTest() {
 	                             f.hold(MmBoth, 2000).gestures);
 }
 
+void MarkMomentTest::markHeldTest() {
+
+	MmFrames f(defaultLayout(ControllerType::Index));
+	const auto step = [&f](const ControlSet & down) {
+		f.time += MmStepMs;
+		f.resolver.update(f.time, down);
+	};
+
+	CPPUNIT_ASSERT_MESSAGE("before any mark: not held", !f.resolver.markHeld());
+
+	// One trackpad alone, both stick clicks: never held
+	for(int i = 0; i < 90; i++) {
+		step(mmSet({ MmLeftPad }));
+		CPPUNIT_ASSERT_MESSAGE("one trackpad alone is not the mark's hold", !f.resolver.markHeld());
+	}
+	for(int i = 0; i < 90; i++) {
+		step(MmSticks);
+		CPPUNIT_ASSERT_MESSAGE("both stick clicks are not the mark's hold", !f.resolver.markHeld());
+	}
+	f.release();
+
+	// Both pressed: held from the mark's update, every update while both stay down (2 s)
+	step(MmBoth);
+	CPPUNIT_ASSERT(f.resolver.markGesture());
+	CPPUNIT_ASSERT_MESSAGE("held on the mark's update", f.resolver.markHeld());
+	for(int i = 0; i < 180; i++) {
+		step(MmBoth);
+		CPPUNIT_ASSERT_MESSAGE("held while both stay down", f.resolver.markHeld());
+		CPPUNIT_ASSERT(!f.resolver.markGesture());
+	}
+
+	// The left let go: not held on that very update, nor while only the right stays down
+	step(mmSet({ MmRightPad }));
+	CPPUNIT_ASSERT_MESSAGE("either trackpad let go: not held on that update", !f.resolver.markHeld());
+	for(int i = 0; i < 30; i++) {
+		step(mmSet({ MmRightPad }));
+		CPPUNIT_ASSERT(!f.resolver.markHeld());
+	}
+
+	// The left pressed again: the second mark, held again
+	step(MmBoth);
+	CPPUNIT_ASSERT(f.resolver.markGesture());
+	CPPUNIT_ASSERT_MESSAGE("the next mark is held again", f.resolver.markHeld());
+
+	// Both let go at once: not held
+	step(ControlSet());
+	CPPUNIT_ASSERT(!f.resolver.markHeld());
+
+	// A press of both for a single update: held on it, not on the next
+	step(MmBoth);
+	CPPUNIT_ASSERT(f.resolver.markHeld());
+	step(ControlSet());
+	CPPUNIT_ASSERT_MESSAGE("a quick press and release: not held on the release's update", !f.resolver.markHeld());
+
+	// Another control let go with both trackpads still down changes nothing
+	ControlSet more = MmBoth;
+	more[MmLeftTrigger] = true;
+	step(more);
+	CPPUNIT_ASSERT(f.resolver.markHeld());
+	step(MmBoth);
+	CPPUNIT_ASSERT_MESSAGE("the trigger let go: still held", f.resolver.markHeld());
+	f.release();
+	CPPUNIT_ASSERT(!f.resolver.markHeld());
+	CPPUNIT_ASSERT_EQUAL(u32(4), f.resolver.markGestures());
+}
+
 void MarkMomentTest::noticeTextTest() {
 
 	CPPUNIT_ASSERT_EQUAL(std::string("Moment marked (#1)"), markNoticeText(1));
 	CPPUNIT_ASSERT_EQUAL(std::string("Moment marked (#2)"), markNoticeText(2));
 	CPPUNIT_ASSERT_EQUAL(std::string("Moment marked (#12)"), markNoticeText(12));
 
-	CPPUNIT_ASSERT_EQUAL(std::string("Recording note... (0 s)"), noteNoticeText(0));
-	CPPUNIT_ASSERT_EQUAL(std::string("Recording note... (3 s)"), noteNoticeText(3));
-	CPPUNIT_ASSERT_EQUAL(std::string("Recording note... (10 s)"), noteNoticeText(10));
+	// The voice note's indicator (the owner, 2026-10-21): the microphone mark (U+1F3A4), the elapsed time counting up
+	const std::string mic = "\xF0\x9F\x8E\xA4";
+	CPPUNIT_ASSERT_EQUAL(mic + " 0:00", noteIndicatorText(0));
+	CPPUNIT_ASSERT_EQUAL(mic + " 0:00", noteIndicatorText(999));
+	CPPUNIT_ASSERT_EQUAL(mic + " 0:01", noteIndicatorText(1000));
+	CPPUNIT_ASSERT_EQUAL(mic + " 0:09", noteIndicatorText(9500));
+	CPPUNIT_ASSERT_EQUAL(mic + " 0:23", noteIndicatorText(23000));
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("whole seconds rounded down", mic + " 0:23", noteIndicatorText(23999));
+	CPPUNIT_ASSERT_EQUAL(mic + " 0:59", noteIndicatorText(59999));
+	CPPUNIT_ASSERT_EQUAL(mic + " 1:00", noteIndicatorText(60000));
+	CPPUNIT_ASSERT_EQUAL(mic + " 1:01", noteIndicatorText(61000));
+	CPPUNIT_ASSERT_EQUAL(mic + " 4:59", noteIndicatorText(299999));
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("the longest note", mic + " 5:00", noteIndicatorText(300000));
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("no time before the start", mic + " 0:00", noteIndicatorText(-5));
+
+	// The brief confirmation of a saved note, with its length in the same form
+	CPPUNIT_ASSERT_EQUAL(mic + " Note saved (0:23)", noteSavedText(23400));
+	CPPUNIT_ASSERT_EQUAL(mic + " Note saved (0:00)", noteSavedText(300));
+	CPPUNIT_ASSERT_EQUAL(mic + " Note saved (1:05)", noteSavedText(65999));
+	CPPUNIT_ASSERT_EQUAL(mic + " Note saved (5:00)", noteSavedText(300000));
 }
 
 void MarkMomentTest::folderNameTest() {

@@ -5,21 +5,22 @@
 # about 2 s. One trackpad alone: no mark; the other pressed 1 s later: the mark then. Held on: no second mark; one let
 # go and pressed again: the second mark. Both stick clicks held: no mark and no game menu (the D-058 fallback stays
 # removed; menu-long-press.xrs has the radial's way to the menu). The feature's one CI sequence (coordinator Tests and
-# CI rule 11), about 12 s after the load.
+# CI rule 11), about 14 s after the load. Last, with the voice note on: a quick press of both marks and records no note.
 #
 # Assumes (the worker adds them, named exactly; tests/vr/MarkMomentTest.h has the whole interface):
 #   marks.count          (count)  marks written since the start
 #   marks.last           (text)   the last mark's folder name: <yyyymmdd>T<hhmmss>Z-<n> (UTC, n = its number)
 #   marks.lastFiles      (text)   the non-empty files in it, sorted by name, joined by "," without spaces
-#   marks.recording      (bool)   a voice note records now
+#   marks.recording      (bool)   a voice note records now (only while both trackpads are held)
+#   marks.noteMs         (number) how long it records so far, ms; 0 when none records
 #   marks.note           (bool)   the voice note is on (cfg.ini vr_mark_note; the channel's `marks note on|off`)
 #   marks.gesture        (text)   both.trackpad on the Index, none on a controller without trackpads (the Touch)
-#   scene.subtitle.notice (text)  the notice the hero-dialogue panel shows: none | marked | recording
+#   scene.subtitle.notice (text)  the notice the hero-dialogue panel shows: none | marked | recording | saved
 #   log "[vr] mark #<n>: marks\<folder> files=<lastFiles>" once the folder is written, and the panel's
-#   "vr.scene.subtitle notice=marked ... text="Moment marked (#<n>)"" when the confirmation shows
-# The voice note is turned off for the run: CI runs on the owner's PC, where a microphone may be plugged in (a room
+#   "vr.scene.subtitle notice=<marked|recording|saved> ... text="<the line>"" when a notice shows
+# The voice note is off for steps 1-5: CI runs on the owner's PC, where a microphone may be plugged in (a room
 # recording must never land in a CI user directory); the note itself is a host test (tests/vr/VoiceNoteTest.h) and
-# the owner's headset test.
+# the owner's headset test. Step 6 turns it on for a press too short to keep anything.
 @sim idle
 @save mvp-new-game
 @args --loadslot 0
@@ -31,6 +32,7 @@
 @assert menuMode eq ingame
 @assert marks.count eq 0
 @assert marks.gesture eq both.trackpad
+@assert marks.noteMs eq 0
 @assert scene.subtitle.notice eq none
 marks note off
 @frames 2
@@ -62,13 +64,15 @@ vr-input down right.trackpad
 @assert marks.recording eq false
 @assert menuMode eq ingame
 
-# 3. Both held on: the confirmation stays about 2 s and goes; no second mark
+# 3. Both held on: the confirmation stays about 2 s and goes; no second mark (the note is off: nothing records)
 @wait 1000
 @assert scene.subtitle.notice eq marked
 @assert scene.subtitle.panel eq true
 @until scene.subtitle.notice eq none 2s
 @wait 500
 @assert marks.count eq 1
+@assert marks.recording eq false
+@assert marks.noteMs eq 0
 
 # 4. The right let go and pressed again (the left still held): the second mark, at once
 vr-input up right.trackpad
@@ -90,7 +94,27 @@ vr-input up left.trackpad; vr-input up right.trackpad
 @log (?s)^(?=.*vr\.scene\.subtitle notice=marked [^\n]*text="Moment marked \(#1\)")(?=.*\[vr\] mark #1: marks\\\d{8}T\d{6}Z-1 files=clip\.vrsim,left\.png,meta\.txt,recorder\.txt,right\.png) 5s
 @log \[vr\] mark #2: marks\\\d{8}T\d{6}Z-2 files=clip\.vrsim,left\.png,meta\.txt,recorder\.txt,right\.png 5s
 
+# 6. The voice note on (push-to-talk): a press of both let go at once - the mark, and no note: the note records only
+# while both are held and keeps nothing shorter than 0.3 s (VoiceNote::minMs), so the result is the same with or
+# without a microphone on the machine (no microphone: no note, no error). Nothing records once they are up, and the
+# panel shows no "Note saved" (notice saved) - only the mark's own confirmation
 marks note on
 @frames 2
 @assert marks.note eq true
+@assert marks.noteMs eq 0
+@mark
+vr-input down left.trackpad; vr-input down right.trackpad
+@frames 2
+vr-input up left.trackpad; vr-input up right.trackpad
+@until marks.count eq 3 2s
+@frames 5
+@assert marks.recording eq false
+@assert marks.noteMs eq 0
+@assert scene.subtitle.notice ne recording
+@wait 1000
+@assert marks.recording eq false
+@assert scene.subtitle.notice ne saved
+@assert marks.lastFiles eq clip.vrsim,left.png,meta.txt,recorder.txt,right.png
+@nolog vr\.scene\.subtitle notice=(recording|saved)
+@log \[vr\] mark #3: marks\\\d{8}T\d{6}Z-3 files=clip\.vrsim,left\.png,meta\.txt,recorder\.txt,right\.png 10s
 @assert errors eq 0

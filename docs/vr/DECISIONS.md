@@ -13,6 +13,39 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: Both stick clicks held 3 s mark the moment in the headset; the game menu only through the radial
+
+- **Date:** 2026-10-20
+- **Status:** Accepted (#551; supersedes the fixed two-stick hold of D-058, its other rules stay)
+- **Decided by:** the owner (both sticks 3 s; the menu only via the radial; the confirmation in the hero-dialogue panel;
+  2026-10-19/20); the coordinator (the panel's order, the voice note off in CI, 16 kHz mono up to 10 s); the worker of
+  #551 (the folder layout, PNG eye images read back at the mark's frame, the writer thread - technical internals, D-017)
+
+### Decision
+- **A headset test marks a moment instead of remembering it.** Both thumbstick clicks held together for **3 s**
+  (`ControlResolver::markGesture`, fixed, not part of the layout and not rebindable, once per hold) write
+  `<user dir>\marks\<yyyymmdd>T<hhmmss>Z-<n>\` (`src/vr/VRMarks.h`): `left.png` / `right.png` (the eye images of that
+  frame), `recorder.txt` (the flight recorder's tail, scrubbed like `arx-recorder.txt`, #545), `clip.vrsim` (the
+  replay ring's last 30 s - the clip of `replay mark`, D-060), `meta.txt` (time, area, position, yaw, build, game and
+  session state) and, with the voice note on, `note.wav`.
+- **The confirmation** "Moment marked (#N)" shows for about 2 s in the hero-dialogue panel (D-055: below the centre
+  of the view, the lazy follow; in the eyes and so in the desktop mirror), then "Recording note... (N s)" counting the
+  note's seconds left down. It takes the panel over a scene's line while it shows; the line comes back after.
+- **The voice note:** from the mark on, up to 10 s of the default microphone (OpenAL capture, 16 kHz mono 16-bit);
+  `cfg.ini vr_mark_note=0` turns it off, the channel's `marks note on|off` for a session; no microphone means no note
+  and no error. CI turns it off (a microphone on the owner's PC must never record the room into a CI user directory).
+- **The game menu** is reached through the radial menu (and the menu event where one is bound); D-058's refused last
+  binding and the restored way of a broken saved layout stay. The 2 s two-stick fallback is gone - the gesture is
+  the mark's now.
+- `scripts/dev/marks.ps1` lists a user directory's marks (time, area, position, files, the note's length) and copies
+  one out; nothing it prints holds a personal path. No upload (#545 stage 3).
+
+### Consequences
+- The mark's frame reads both eye images back from the GPU (one hitch: 18 ms instead of 13 ms on the simulated
+  1440x1600 eyes); the files are written on a thread of their own. No cost while nobody marks.
+- An Index player who unbinds the radial and the menu event still cannot lock themselves out (D-058's guards), but
+  there is no longer a hidden way to the menu for a layout that somehow has none.
+
 ## D-060: Every VR session is recorded as a replayable clip - poses and inputs over the same save, the drift measured, no lockstep
 
 - **Date:** 2026-10-20
@@ -122,7 +155,9 @@ a changed decision keeps its history in that cell.
 ## D-058: The game menu stays reachable whatever is rebound - a refused last binding and a fixed two-stick hold
 
 - **Date:** 2026-10-18
-- **Status:** Accepted (#326; amends D-042's table and D-019's menu rule)
+- **Status:** Accepted (#326; amends D-042's table and D-019's menu rule); the fixed two-stick hold is superseded by
+  D-NEW (#551: the hold of both sticks marks the moment, the menu is reached through the radial) - the refused last
+  binding and the restored way of a broken layout stay
 - **Decided by:** the owner (the Index has no menu button the game can read; the fallback is both thumbstick clicks held
   for 2 s)
 

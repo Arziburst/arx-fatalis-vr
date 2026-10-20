@@ -273,6 +273,8 @@ void showSubtitleNotice(SubtitleNotice notice, std::string_view text) {
 		s.named = false;
 		s.hasHead = false;
 		s.status.speaker.clear();
+		// Where it goes is known now (the interface pass places it): the status says so from this frame on
+		s.status.drawn = SubtitlePlacement::Chest;
 	}
 	if(s.status.notice != notice) {
 		s.noticeLogged = false;

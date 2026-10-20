@@ -323,6 +323,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `quit` | ask the game to quit at the end of the frame (the same path as closing the window) |
 | `save <name>` | save the running game as a new slot named `<name>` (no thumbnail); the newest save is slot 0, so `loadslot 0` loads it back. A `save slot=save000N name=<name> ok=yes\|no` event either way; refused outside a running game (#130) |
 | `replay mark <name> [<seconds>]` | the last 30 s (1..60) of the recorded VR session into `<user dir>\replay-marks\<time>-<name>.vrsim`, a clip of its own with `# mark: <name> <ms>` (#550, [Record and replay](#record-and-replay-550)); `[replay] mark <name>: replay-marks\<file> (<n> frames, <s> s)` in the log; refused while nothing records (flat mode, `--no-replay-log`, before the game is playable) and for a name that is not letters, digits, `-` and `_` |
+| `marks note on\|off` | the voice note after a mark of the moment (#551, [Marks of the moment](#marks-of-the-moment-551)) for this session; `cfg.ini vr_mark_note` (default 1) keeps the player's choice; `marks.note` in the status |
 | `loadslot <n>` | load save slot `n` (from the menu or in-game), refused with the slot count if it does not exist. The command-line `--loadslot <n>` of a missing slot logs an `[E]` and starts at the main menu (before #24 it started an empty level: a black world with only the HUD, TRAPS.md); `run-windows.ps1` / `test-pr.ps1` refuse such a launch before it starts |
 | `ui inventory open\|close` | what the inventory key does (the book has the script command `book open\|close`); a `ui.inventory` event once the inventory is open / has finished closing. While a level script holds the player (the level 10 start: letterbox, controls blocked) the HUD is not drawn and a close never finishes — `setplayercontrols on` and `cinemascope off` first (#130) |
 | `loadlevel <n> [target]` | change to level `n` in a running game (refused from the menu: start with `--loadlevel` or `loadslot`) |
@@ -1234,7 +1235,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.scene.cut` (#29) | the shot the eyes see jumps: the hero teleported or turned at once, a ghost's or the observer's shot (at once with `cut` `instant`, the default), an eye that must not be seen (always behind the fade) | `faded=yes\|no`, `reason=start\|end\|line\|camera\|jump` |
 | `vr.scene.switch` (#29) | the shot changes at once, no blink (D-055): a dialogue's line or camera, a scene's start or end in the hero's head, the world to the screen and back | `reason=start\|end\|line\|camera`, `shown` |
 | `vr.scene.lookat` (#29) | a script's `playerlookat` in VR | `how=ignore\|fade`, `target` |
-| `vr.scene.subtitle` (#29.3) | a scene line's subtitle is drawn for the first time (VR only) | `placement` (the setting), `speaker`, `drawn` (where it is drawn: `above`, or `chest` for the hero's own line and a speaker out of view) |
+| `vr.scene.subtitle` (#29.3) | a scene line's subtitle is drawn for the first time (VR only) | `placement` (the setting), `speaker`, `drawn` (where it is drawn: `above`, or `chest` for the hero's own line and a speaker out of view); a notice of the game's own in the panel (#551) logs `notice` (`marked`, `recording`), `drawn` and `text` instead, once per notice kind |
 | `chargen.roll` (#394) | a click of the quick generation | `kind=average\|random` |
 | `player.death` | the player dies | `source` (entity id), `damage`, `type` (damage type flags) |
 | `player.respawn` | the player died in the test playground (#321) and is back at its start, alive, in the same frame | `x` `y` `z` (the start), `fromX` `fromZ` (where he died), `life` |
@@ -2581,3 +2582,37 @@ script tests `test-replay.ps1`, `test-clip-to-xrs.ps1` and the clip line of `tes
 `scripts/dev/replay-check.ps1` (hand-run, 7 launches: record, replay compared at equal display times within 1 mm /
 0.1 degree / 0.01 of curl, the anchor across a level change, the cost, flat) and `flight-recorder-check.ps1 -Case
 replay-crash` (the clip in a hang's and a crash's report).
+
+## Marks of the moment (#551)
+
+During a headset test the owner marks a moment instead of remembering it: **both thumbstick clicks held together for
+3 s** (D-NEW; fixed, not rebindable, once per hold - a second mark needs a stick let go first, a release before 3 s
+marks nothing). The game writes `<user dir>\marks\<yyyymmdd>T<hhmmss>Z-<n>\` (UTC; `n` the mark's number in the
+session) off the frame thread:
+
+| File | What |
+|---|---|
+| `left.png`, `right.png` | the eye images of the mark's frame, read back from the GPU as drawn (a menu's frame: the background the eyes are cleared to) |
+| `recorder.txt` | the flight recorder's tail (#545), scrubbed of personal data like `arx-recorder.txt` |
+| `clip.vrsim` | the replay ring's last 30 s - the clip of `replay mark` (#550); `scripts/dev/replay.ps1` plays it |
+| `meta.txt` | `# moment mark (#551)`, then `mark`, `time`, `area`, `position`, `yaw`, `build`, `state`, `session` as `key=value` lines |
+| `note.wav` | the voice note: from the mark on, up to 10 s of the default microphone (16 kHz mono 16-bit); only when it is on and a microphone recorded something |
+
+The hero-dialogue panel (D-055, below the centre of the view) shows "Moment marked (#N)" for about 2 s, then "Recording
+note... (N s)" counting the note's seconds left down; it takes the panel over a scene's line while it shows.
+`cfg.ini vr_mark_note=0` turns the voice note off; the channel's `marks note on|off` does it for the session (CI
+sequences turn it off - a microphone on the PC must never record the room).
+
+- **status.json** `marks`: `count` (marks made since the start), `last` (the last mark's folder name), `lastFiles`
+  (the non-empty files in it, sorted, joined by `,`; empty until they are written), `recording` (a voice note records
+  now), `note` (the voice note is on), `holdMs` (3000); `scene.subtitle.notice` (`none`, `marked`, `recording`) - while
+  not `none`, `scene.subtitle.text` is the notice's line and `drawn` is `chest`.
+- **The log:** `[vr] mark #<n>: the moment is marked ...` at the gesture, `[vr] mark #<n>: marks\<folder> files=<list>`
+  once the files are written, `[vr] mark #<n>: note.wav (<s> s)` after the note; the panel's
+  `vr.scene.subtitle notice=<kind> drawn=chest text="<line>"` once per notice kind.
+- **After the test:** `scripts\dev\marks.ps1` lists the marks of the user directory (time, area, position, files, the
+  note's length; `-UserDir` for another one), `-Copy <name>|last -To <dir>` copies one out. Nothing it prints holds a
+  personal path. Marks are never committed (the repository is public) and not uploaded (#545 stage 3).
+- **The checks:** host tests `MarkMomentTest` (the gesture with any layout, the folder name, `meta.txt`, the panel's
+  lines) and `VoiceNoteTest` (the WAV writer, the capture on a fake device); `mark-moment.xrs` (2.5 s hold: no mark;
+  3 s: one mark, the confirmation in the panel for about 2 s, the five files); `test-marks.ps1` (the listing).

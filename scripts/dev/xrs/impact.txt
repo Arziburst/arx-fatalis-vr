@@ -274,6 +274,9 @@ CHANGELOG -> core
 src/vr/MotionProbe.* -> refresh-rate
 src/vr/PerfLog.* -> refresh-rate
 src/vr/PerfStats.* -> refresh-rate
+# The refresh-rate stress check (#553): the sequence N times on two lanes beside a busy game, hand-run. It launches its
+# own games and is no game check
+scripts/dev/refresh-rate-stress.ps1 -> core
 
 # --- The flight recorder (#545): a stall gets a hang report with a dump --------------------------------------------------
 src/platform/HangWatchdog.* -> hang-dump

@@ -10,7 +10,7 @@
 	  3. scripts\dev\run-script-tests.ps1: the PowerShell self-tests of the dev scripts (the impact map's coverage check
 	     among them)
 	  4. scripts\dev\ci-smoke.ps1 -Suite pr: the branch's selection - the core plus what its changes against origin/main
-	     select in scripts\dev\xrs\impact.txt, exactly as a pull request's CI run - on 2 lanes (1 while another game of
+	     select in scripts\dev\xrs\impact.txt, exactly as a pull request's CI run - on CI's lanes (1 while another game of
 	     the PC holds a slot of the game lock: the owner's, another worker's); -Full runs every phase, as the merge
 	     gate does
 	The selection is of the commits (origin/main...HEAD): commit first. A change not committed yet is built and run,
@@ -40,7 +40,7 @@
 	The ref the branch is compared with (default origin/main).
 
 .PARAMETER Lanes
-	How many games at once (default 2, as CI).
+	How many games at once; default 0: as many as CI (the workflow's ARXVR_MAX_GAMES, #563).
 
 .EXAMPLE
 	.\scripts\dev\ci-local.ps1
@@ -52,8 +52,8 @@ param(
 	[switch]$Full,
 	[string]$OutDir,
 	[string]$Base = 'origin/main',
-	[ValidateRange(1, 8)]
-	[int]$Lanes = 2
+	[ValidateRange(0, 8)]
+	[int]$Lanes = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -104,8 +104,12 @@ $smokeExit = $null
 if ($buildExit -eq 0) {
 	$null = Invoke-Step 'script-tests' 'script self-tests' (Join-Path $PSScriptRoot 'run-script-tests.ps1') @()
 	$suite = if ($Full) { 'full' } else { 'pr' }
-	# Two games at once, as CI (ARXVR_MAX_GAMES for this run's process tree only; ci-smoke.ps1 drops to one lane while
+	# As many games at once as CI (ARXVR_MAX_GAMES for this run's process tree only; ci-smoke.ps1 drops to one lane while
 	# another game of the PC holds a slot)
+	if (-not $Lanes) {
+		$Lanes = Get-ArxCiLaneCount (Join-Path $ArxSourceDir '.github\workflows\build-windows.yml')
+		if (-not $Lanes) { Write-Warning 'the workflow sets no single ARXVR_MAX_GAMES: one lane'; $Lanes = 1 }
+	}
 	$previousMax = $env:ARXVR_MAX_GAMES
 	$env:ARXVR_MAX_GAMES = "$Lanes"
 	try {

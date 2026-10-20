@@ -14,10 +14,10 @@
 setplayercontrols on
 @assert player.controlsBlocked eq false
 
-# The clip's inputs, as the game saw them: a jump from the right stick at 6.7 s, a left grip press at 9.7 s
+# The clip's inputs, as the game saw them: a jump from the right stick at 6.7 s, a left grip press at 9.7 s (still held
+# when the clip ends at 10 s)
 @log \[vr\] input: jump \(right\.stick_up\) 20s
 @log \[vr\] input: left grip down at 10s
-@log \[vr\] input: left grip up at 5s
 @until vr.sim.pending eq 0 40s
 @assert vr.sim.timelineFrame ge 850
 @assert errors eq 0

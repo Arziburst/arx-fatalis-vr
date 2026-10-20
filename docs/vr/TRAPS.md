@@ -8,6 +8,22 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-20 — The playground goblin flees instead of fighting when its life is below 8 - a damage roll decides which (#532)
+
+**Symptom:** `melee-damage.xrs` failed now and then (main runs 39128985121 and 39328879039, about 1 run in 17) at
+group 7's `@assert playground.npcFighting eq false` (true) right after the mode lever, while the same tree passed the
+merge gate. **Cause:** the goblin class script (`npc/goblin_base`, the plain goblin: life 12, `§cowardice 8`) runs
+`IF (^LIFE < §cowardice) GOTO FLEE` in `ATTACK_PLAYER`, which the mode lever's `attack_player` reaches. Group 6's
+thrust usually took the goblin below 8 (a hit of 4.3 or 6.5), so the lever made it flee - not fighting, the check
+passed. When the engine's armour roll dealt nothing (`melee.hit ... damage=0.0 aim=1.00 ... kind=thrust` in run
+39328879039) the goblin kept 12, the lever started a real fight (`BEHAVIOR -f MOVE_TO`, `SETTARGET -a PLAYER`) and the
+check saw it. Whether a playground NPC fights or flees from `attack_player` depends on its life at that moment.
+A second window in the same group: `playground fight` against the resting dagger - its touch ends the fight within a
+few frames, so `@until playground.npcFighting eq true` on a slow status read could miss it. **Do:** set the life a
+step depends on (respawn, then `playground hit <n>` - `damageNpc` with no armour roll - and wait on `npcLife`) instead
+of inheriting it from earlier hits; keep touches off (`melee noswing none`) until a fight set for a touch shows.
+`scripts/dev/melee-damage-stress.ps1 -FullLife` / `-SlowFrames 30` force both cases.
+
 ## 2026-10-19 — `abort()` / `std::terminate()` leave no crash report, the process ends with 0xE06D7363 or a fail-fast 0xC0000409 (#545)
 
 **Symptom:** the channel's `abort` ended the game with exit code 0xE06D7363 (a C++ exception) and `terminate` with
@@ -267,6 +283,8 @@ peaceful. The save's goblin (`mvp-goblin-fight`) keeps fighting after hits.
 **Do:** to test what only fighting NPCs feel in the playground, set the fight with `playground fight` right before the
 check, let nothing hit the goblin in between (a peaceful-in-fact goblin refuses touches: `melee.touch ... refused`),
 and check the first hit only; `npcFightBehaviour` / `npcTargetsPlayer` show which half is missing.
+**Corrected 2026-10-20 (#532):** the fight never started from the mode lever because the goblin's life was below its
+cowardice, not because of a hit's reaction: see the 2026-10-20 entry. At full life the lever does start a real fight.
 
 ## 2026-10-17 — A changed cfg.ini default does not show in a test run (#465)
 

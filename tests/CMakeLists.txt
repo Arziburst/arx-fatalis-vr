@@ -13,6 +13,8 @@ set(arxtest_TESTCASES
 	tests/graphics/PixelStoreTest.h
 	tests/graphics/PixelStoreTest.cpp
 
+	tests/core/ChannelWriterTest.h
+	tests/core/ChannelWriterTest.cpp
 	tests/core/GameEventTest.h
 	tests/core/GameEventTest.cpp
 	tests/core/FileReplaceTest.h
@@ -204,6 +206,7 @@ set(arxtest_SOURCES
 	${BASE_SOURCES}
 	${MATH_SOURCES}
 	
+	src/core/ChannelWriter.cpp
 	src/game/Camera.cpp
 	src/graphics/Math.cpp
 	src/graphics/Renderer.cpp

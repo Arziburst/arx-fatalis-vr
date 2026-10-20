@@ -274,6 +274,13 @@ CHANGELOG -> core
 src/vr/MotionProbe.* -> refresh-rate
 src/vr/PerfLog.* -> refresh-rate
 src/vr/PerfStats.* -> refresh-rate
+# The channel's writer thread (#553): status.json and ack.txt off the frame. Every sequence reads them: the core (which
+# every pull request runs, as for CommandChannel), and the pacing sequence a write on the frame failed. 'core' stands
+# alone on a line and a glob is listed once, so this one line is both
+src/core/ChannelWriter.* -> refresh-rate
+# The refresh-rate stress check (#553): the sequence N times on two lanes beside a busy game, hand-run. It launches its
+# own games and is no game check
+scripts/dev/refresh-rate-stress.ps1 -> core
 
 # --- The flight recorder (#545): a stall gets a hang report with a dump --------------------------------------------------
 src/platform/HangWatchdog.* -> hang-dump

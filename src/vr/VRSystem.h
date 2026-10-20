@@ -527,6 +527,9 @@ bool readControllers(ControllerInput & input);
 //! The OpenXR interaction profile path per hand, empty while there is none - for status.json
 std::array<std::string, HandCount> controllerProfiles();
 
+//! One hand's interaction profile path without a copy (the replay recorder reads it every frame, #550)
+const std::string & controllerProfile(Hand hand);
+
 //! How often the controllers were read while the session was focused
 u64 controllerSyncs();
 

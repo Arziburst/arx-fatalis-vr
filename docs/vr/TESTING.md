@@ -2428,13 +2428,16 @@ only what changed (about 1 MB per minute at 90 Hz, 2 MB is the ceiling). At the 
 (`arx-replay.log.gz`, the plain one removed); the next run rotates the old ones like `arx-perf.log`
 (`arx-replay.1.log.gz` .. `.9`; a run that died leaves a plain `arx-replay.<n>.log`). `--no-replay-log` turns the
 recorder off; flat mode (`--no-vr`) never records. `arx.log` says `[replay] recording arx-replay.log: save <folder>
-"<name>", seed <n>, <hz> Hz` at the start. The lines are written off the frame path (`PerfWriter`, as the performance
-log); the cost against `--no-replay-log` is measured by `replay-check.ps1 -Case cost`.
+"<name>", seed <n>, <hz> Hz` at the start. A frame's line is formatted on the main thread and written to the file off
+it (`PerfWriter`, as the performance log); the cost against `--no-replay-log` is measured by `replay-check.ps1 -Case
+cost`. A recording lives as long as its VR session: a frame without eye poses (tracking lost for a moment) is skipped,
+the session's end closes the clip, a new session starts a new one (`RecordGate`, host-tested).
 
 **The save at the record start** goes into a replay slot, `<user dir>\save\save9000` .. `save9004` (the oldest is
-reused: five are kept). Those slots are never listed - not in the load menu, not for `--loadslot` - while an ordinary
-save exists (`src/core/SaveGame.cpp`), so `--loadslot 0` stays the player's newest save; a replay's own user
-directory holds nothing but the clip's save, and there it is slot 0.
+reused: five are kept). Those slots are never the player's saves - not in the load menu, not numbered for `--loadslot`,
+never quickloaded - whether or not any other save exists (`src/core/SaveSlots.h`, `SaveSlotsTest`), so `--loadslot 0`
+stays the player's newest save; a replay copies the clip's save into its own user directory as an ordinary slot
+(`save0000`) and loads that.
 
 **The replay** (`scripts/dev/replay.ps1 <clip> [-From <ms>] [-To <ms>] [-Save <save>] [-Rate <hz>] [-Shots
 <ms>,...] [-Plan]`) launches the simulated headset from the clip's save (`smoke-test.ps1 -VrSim`, the isolated user

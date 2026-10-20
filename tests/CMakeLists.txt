@@ -17,6 +17,8 @@ set(arxtest_TESTCASES
 	tests/core/GameEventTest.cpp
 	tests/core/FileReplaceTest.h
 	tests/core/FileReplaceTest.cpp
+	tests/core/SaveSlotsTest.h
+	tests/core/SaveSlotsTest.cpp
 
 	tests/game/JumpPhysicsTest.h
 	tests/game/JumpPhysicsTest.cpp
@@ -113,6 +115,8 @@ set(arxtest_TESTCASES
 	tests/vr/ReplayClipTest.cpp
 	tests/vr/ReplayRingTest.h
 	tests/vr/ReplayRingTest.cpp
+	tests/vr/RecordGateTest.h
+	tests/vr/RecordGateTest.cpp
 	tests/vr/UIPanelTest.h
 	tests/vr/UIPanelTest.cpp
 	tests/vr/MenuPointerTest.h

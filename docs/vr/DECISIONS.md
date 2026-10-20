@@ -31,12 +31,15 @@ a changed decision keeps its history in that cell.
   hand read off the joints, the raw action values, the session state, the interaction profile - and where the
   engine's player was. Only what changed since the previous frame is written (a self-contained first frame): about
   1 MB per minute at 90 Hz, gzipped to `arx-replay.log.gz` at the session's end, rotated like `arx-perf.log`;
-  `--no-replay-log` turns it off, flat mode never records. The lines are written off the frame path
-  (`PerfWriter`). A clip loads as a `--vr-sim` script as it is; a long one is streamed by the simulator's `play`
+  `--no-replay-log` turns it off, flat mode never records. A frame's line is formatted on the main thread (a few
+  microseconds, no allocation in steady state) and written to the file off it (`PerfWriter`). A recording lives as
+  long as its VR session: a frame without eye poses is skipped, the session's end closes the clip, a new session
+  starts a new one. A clip loads as a `--vr-sim` script as it is; a long one is streamed by the simulator's `play`
   command (`ClipPlayer`: a file cursor, one line read ahead, microseconds per frame).
 - **"The same save, the same seed, the drift measured" - not lockstep.** The recorder makes a save at the record
-  start (a replay slot `save9000`..`save9004` the load menu and `--loadslot` never list while ordinary saves exist;
-  the five newest are kept) and names it in the clip's header with the RNG seed (`--seed <n>`, else the clock's,
+  start (a replay slot `save9000`..`save9004`: never the player's - not in the load menu, not numbered for
+  `--loadslot`, never quickloaded, whether or not other saves exist; the five newest are kept; a replay copies it
+  into its own user directory as an ordinary slot) and names it in the clip's header with the RNG seed (`--seed <n>`, else the clock's,
   `Random::currentSeed`) and the display rate. The replay (`scripts/dev/replay.ps1`) starts from that save with
   that seed, paces at the recorded rate and streams the clip from the timeline's frame 0; at an `anchor level
   <area>` line (written when a new level became playable) it holds until the replayed game is playable there, at an

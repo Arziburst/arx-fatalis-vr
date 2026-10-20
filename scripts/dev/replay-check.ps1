@@ -470,7 +470,9 @@ function Invoke-AnchorCase {
 	$saves = Join-Path $work 'anchor-saves'
 	Remove-Item -Recurse -Force $saves -ErrorAction SilentlyContinue
 	New-Item -ItemType Directory -Force $saves | Out-Null
-	Copy-Item -Recurse -LiteralPath (Join-Path $userDir "save\$folder") -Destination (Join-Path $saves $folder)
+	# A replay slot (save9000..) is never listed by the game: the replay starts from it as an ordinary slot, as replay.ps1 does
+	Copy-Item -Recurse -LiteralPath (Join-Path $userDir "save\$folder") -Destination (Join-Path $saves 'save0000')
+	$folder = 'save0000'
 	$playDir = Join-Path $testDir 'replay'
 	New-Item -ItemType Directory -Force $playDir | Out-Null
 	[IO.File]::WriteAllText((Join-Path $playDir 'anchor.vrsim'), $text, [Text.UTF8Encoding]::new($false))

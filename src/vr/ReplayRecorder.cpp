@@ -79,8 +79,8 @@ const size_t ClipHistory = 10;
 struct State {
 	bool clockStarted = false;   //!< the clip clock runs: the first playable frame of the game loop was seen
 	s64 startNs = 0;             //!< the display time the clock started at
+	RecordGate gate;             //!< the session's life: start, record, skip a frame without poses, finish with the session
 	bool recording = false;
-	bool ended = false;          //!< the session's clip was closed: no second record in this run
 	u64 lastUs = 0;              //!< the last frame's time on the clip's clock
 	u64 frames = 0;
 	fs::path file;
@@ -212,7 +212,6 @@ void start() {
 	if(!g.stream->is_open()) {
 		LogWarning << "[replay] could not open " << g.file << " - this session is not recorded";
 		g.stream.reset();
-		g.ended = true;
 		return;
 	}
 
@@ -328,7 +327,8 @@ void finish(const char * why) {
 		return;
 	}
 	g.recording = false;
-	g.ended = true;
+	// The next session starts a new recording with a new clock
+	g.clockStarted = false;
 
 	const double seconds = double(g.lastUs) / 1e6;
 	pushLine("# end: " + std::to_string(g.frames) + " frames, " + std::to_string(seconds) + " s (" + why + ")");
@@ -450,28 +450,25 @@ s64 clipClockUs(s64 displayTimeNs) {
 void frame() {
 
 	const FrameViews & views = frameViews();
-	if(!isEnabled() || !views.valid) {
-		if(g.recording) {
-			finish("the VR session ended");
-		}
-		return;
-	}
-
-	// The clock starts at the first playable frame of the game loop (the simulated runtime may have started it at
-	// this frame's xrWaitFrame already, on the same display time)
-	const s64 clockUs = clipClockUs(views.displayTime);
-	if(clockUs < 0 || g_disabled || g.ended) {
-		return;
-	}
 	const bool playable = gameevent::detectGameState() == gameevent::GameState::Gameplay;
-	if(!g.recording) {
-		if(!playable) {
-			return;
-		}
-		start();
-		if(!g.recording) {
-			return;
-		}
+	// The clock starts at the first playable frame of the game loop (the simulated runtime may have started it at
+	// this frame's xrWaitFrame already, on the same display time); the gate: a recording per session, a frame
+	// without eye poses skipped, the session's end closes it
+	const s64 clockUs = isEnabled() && views.valid ? clipClockUs(views.displayTime) : -1;
+	switch(g.gate.step(isEnabled() && !g_disabled, views.valid && clockUs >= 0, playable)) {
+		case RecordGate::Action::Skip: return;
+		case RecordGate::Action::Finish: finish("the VR session ended"); return;
+		case RecordGate::Action::Start:
+			start();
+			if(!g.recording) {
+				return; // the file could not be opened: this session stays unrecorded (the gate keeps its state)
+			}
+			break;
+		case RecordGate::Action::Record:
+			if(!g.recording) {
+				return;
+			}
+			break;
 	}
 
 	ReplayFrame & frame = g.frame;
@@ -502,8 +499,8 @@ void frame() {
 		rig.fingers[hand].outer = g.lastOuter[hand];
 	}
 
-	const std::array<std::string, HandCount> profiles = controllerProfiles();
-	const std::string & profile = !profiles[1].empty() ? profiles[1] : profiles[0];
+	const std::string & right = controllerProfile(Hand::Right);
+	const std::string & profile = !right.empty() ? right : controllerProfile(Hand::Left);
 	if(rig.profile != profile) {
 		rig.profile = profile;
 	}
@@ -539,7 +536,7 @@ void frame() {
 		pushLine("@" + std::to_string((frame.timeUs + 500) / 1000) + "ms anchor save");
 	}
 
-	g.line = formatReplayFrame(frame, g.havePrevious ? &g.previous : nullptr, g.current);
+	formatReplayFrame(frame, g.havePrevious ? &g.previous : nullptr, g.current, g.line);
 	std::swap(g.previous, g.current);
 	g.havePrevious = true;
 	if(!g.line.empty() && g.line.back() == '\n') {

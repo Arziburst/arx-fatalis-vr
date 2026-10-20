@@ -100,6 +100,45 @@ std::string formatReplayFrame(const ReplayFrame & frame, const ReplayFrame * pre
 //! The same with the previous frame's text already formatted (\a previous may be null): \a text gets this frame's
 std::string formatReplayFrame(const ReplayFrame & frame, const ReplayFrameText * previous, ReplayFrameText & text);
 
+//! The same into \a line (written over; it keeps its room between frames - the recorder's form, no allocation)
+void formatReplayFrame(const ReplayFrame & frame, const ReplayFrameText * previous, ReplayFrameText & text, std::string & line);
+
+/*!
+ * \brief What the recorder does with a frame (#550): the session's life, not one frame's tracking
+ *
+ * A recording starts at the first frame of a session that is playable and has eye poses, and ends only when the
+ * session ends (the game shuts down, the runtime takes the session away); a frame without eye poses in between -
+ * tracking lost for a moment - is skipped, never the end of the recording (which would gzip the clip mid-game, a
+ * hitch of seconds, and leave the rest of the session unrecorded). A new session after that starts a new
+ * recording. Pure: tests/vr/RecordGateTest.cpp.
+ */
+class RecordGate {
+
+public:
+
+	enum class Action {
+		Skip,   //!< nothing this frame
+		Start,  //!< start a recording and record this frame
+		Record, //!< record this frame
+		Finish, //!< the session ended: close the recording
+	};
+
+	/*!
+	 * Once per frame of the game loop
+	 * \param session    a VR session exists
+	 * \param views      the eyes were located for this frame
+	 * \param playable   the game is in gameplay (no loading screen, no menu)
+	 */
+	Action step(bool session, bool views, bool playable);
+
+	bool recording() const { return m_recording; }
+
+private:
+
+	bool m_recording = false;
+
+};
+
 //! What the replayed game is doing: for the anchors and the drift
 struct ReplayGame {
 	bool playable = true; //!< in gameplay (no loading screen, no menu)

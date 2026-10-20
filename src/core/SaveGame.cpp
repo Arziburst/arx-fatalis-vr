@@ -25,6 +25,7 @@
 
 #include "core/Config.h"
 #include "core/GameEvent.h"
+#include "core/SaveSlots.h"
 #include "io/fs/Filesystem.h"
 #include "io/fs/SystemPaths.h"
 #include "io/log/Logger.h"
@@ -45,17 +46,6 @@ enum SaveGameChange {
 	SaveGameUnchanged,
 	SaveGameChanged
 };
-
-/*!
- * The replay recorder's save slots (#550, vr/ReplayRecorder.cpp): save9000 .. save9004, the save made at every VR
- * session's record start. They stay out of the load menu and the slot numbers (--loadslot 0 is the player's newest
- * save, not the recorder's) unless they are the only saves - a replay's own user directory holds nothing else
- */
-bool isReplaySlot(const fs::path & dirname) {
-	const std::string name = dirname.string();
-	return name.size() == 8 && name.compare(0, 4, "save") == 0 && name.compare(4, 4, "9000") >= 0
-	       && name.compare(4, 4, "9004") <= 0;
-}
 
 int saveTimeCompare(const SaveGame & a, const SaveGame & b) {
 	return (a.stime > b.stime);
@@ -82,21 +72,16 @@ void SaveGameList::update(bool verbose) {
 		LogInfo << "Using save game dir " << savedir;
 	}
 
-	// The replay recorder's slots are listed only when no other save exists (#550)
-	bool ordinary = false;
-	for(fs::directory_iterator it(savedir); !it.end() && !ordinary; ++it) {
-		fs::path dirname = it.name();
-		ordinary = !isReplaySlot(dirname) && fs::last_write_time(savedir / dirname / SAVEGAME_NAME) != 0;
+	// The replay recorder's slots (core/SaveSlots.h, #550) are never the player's: not listed, not numbered, not quickloaded
+	std::vector<std::string> folders;
+	for(fs::directory_iterator it(savedir); !it.end(); ++it) {
+		folders.push_back(it.name());
 	}
 
-	for(fs::directory_iterator it(savedir); !it.end(); ++it) {
+	for(const std::string & name : listedSaveFolders(folders)) {
 
-		fs::path dirname = it.name();
+		fs::path dirname = name;
 		fs::path path = savedir / dirname / SAVEGAME_NAME;
-
-		if(ordinary && isReplaySlot(dirname)) {
-			continue;
-		}
 
 		std::time_t stime = fs::last_write_time(path);
 		if(stime == 0) {

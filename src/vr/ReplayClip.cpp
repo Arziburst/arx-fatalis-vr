@@ -72,8 +72,10 @@ bool vectorAction(std::string_view name) {
 	return name == "thumbstick" || name == "trackpad" || name == "joystick";
 }
 
-std::string formatMs(u64 timeUs) {
-	return "@" + std::to_string((timeUs + 500) / 1000) + "ms ";
+void appendMs(std::string & out, u64 timeUs) {
+	char buffer[32];
+	const int n = std::snprintf(buffer, sizeof(buffer), "@%llums ", static_cast<unsigned long long>((timeUs + 500) / 1000));
+	out.append(buffer, n > 0 ? size_t(n) : 0);
 }
 
 } // anonymous namespace
@@ -215,10 +217,17 @@ void formatReplayFrameText(const ReplayFrame & frame, ReplayFrameText & text) {
 }
 
 std::string formatReplayFrame(const ReplayFrame & frame, const ReplayFrameText * previous, ReplayFrameText & text) {
+	std::string line;
+	formatReplayFrame(frame, previous, text, line);
+	return line;
+}
+
+void formatReplayFrame(const ReplayFrame & frame, const ReplayFrameText * previous, ReplayFrameText & text, std::string & line) {
 
 	formatReplayFrameText(frame, text);
 
-	std::string line = formatMs(frame.timeUs);
+	line.clear();
+	appendMs(line, frame.timeUs);
 	bool first = true;
 	size_t cursor = 0;
 	for(size_t i = 0; i < text.keys.size(); i++) {
@@ -250,7 +259,29 @@ std::string formatReplayFrame(const ReplayFrame & frame, const ReplayFrameText *
 		line += text.commands[0];
 	}
 	line += '\n';
-	return line;
+}
+
+// --- The recorder's gate ------------------------------------------------------------------------
+
+RecordGate::Action RecordGate::step(bool session, bool views, bool playable) {
+	if(!session) {
+		if(m_recording) {
+			m_recording = false;
+			return Action::Finish;
+		}
+		return Action::Skip;
+	}
+	if(!views) {
+		return Action::Skip; // tracking lost for a frame: nothing to record, the recording goes on
+	}
+	if(m_recording) {
+		return Action::Record;
+	}
+	if(!playable) {
+		return Action::Skip;
+	}
+	m_recording = true;
+	return Action::Start;
 }
 
 std::string formatReplayFrame(const ReplayFrame & frame, const ReplayFrame * previous) {

@@ -3052,6 +3052,10 @@ std::array<std::string, HandCount> controllerProfiles() {
 	return g_xr.actions.profiles();
 }
 
+const std::string & controllerProfile(Hand hand) {
+	return g_xr.actions.profiles()[size_t(hand)];
+}
+
 u64 controllerSyncs() {
 	return g_xr.actions.syncs();
 }
@@ -3278,6 +3282,11 @@ bool readControllers(ControllerInput & input) {
 
 std::array<std::string, HandCount> controllerProfiles() {
 	return { };
+}
+
+const std::string & controllerProfile(Hand /* hand */) {
+	static const std::string none;
+	return none;
 }
 
 u64 controllerSyncs() {

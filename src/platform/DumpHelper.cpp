@@ -78,10 +78,11 @@ const size_t RecorderThreads = 24;
 const size_t RecorderRecords = 8192;
 
 const u32 SharedMagic = 0x46524431; // "FRD1"
-const u32 SharedVersion = 1;
+const u32 SharedVersion = 2;        // 2: the region after the recorder (#550)
 
-// The control area the game and the helper share, followed by the recorder's memory in the same mapping.
-// POD, fixed size, no pointers: the helper maps it at its own address.
+// The control area the game and the helper share, followed by the recorder's memory and the game's own
+// region (#550: the replay ring) in the same mapping. POD, fixed size, no pointers: the helper maps it at
+// its own address.
 #pragma pack(push, 8)
 struct DumpShared {
 	u32 magic;
@@ -89,6 +90,8 @@ struct DumpShared {
 	u32 gamePid;
 	u32 recorderOffset;
 	u32 recorderSize;
+	u32 regionOffset;           // the game's region (0 = none)
+	u32 regionSize;
 	volatile LONG requestSeq;   // the game bumps this to ask for a report
 	volatile LONG doneSeq;      // the helper sets this to the requestSeq it has handled
 	volatile LONG cleanExit;    // the game sets this at its own clean shutdown
@@ -201,7 +204,7 @@ bool genericName(const std::wstring & name) {
 } // anonymous namespace
 
 bool initializeDumpHelper(const std::string & exePath, const std::string & userDir,
-                          const std::string & version, bool enabled) {
+                          const std::string & version, bool enabled, size_t regionBytes) {
 
 	if(!enabled) {
 		g_enabled = false;
@@ -214,7 +217,9 @@ bool initializeDumpHelper(const std::string & exePath, const std::string & userD
 	std::wstring id = idText;
 
 	size_t recorderSize = FlightRecorder::memorySize(RecorderThreads, RecorderRecords);
-	size_t total = sizeof(DumpShared) + recorderSize;
+	// The game's region after the recorder, 16-aligned (#550: the replay ring)
+	size_t regionOffset = (sizeof(DumpShared) + recorderSize + 15) & ~size_t(15);
+	size_t total = regionBytes ? regionOffset + regionBytes : sizeof(DumpShared) + recorderSize;
 
 	std::wstring mapName = L"Local\\arxfr-map-" + id;
 	g_mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
@@ -235,6 +240,8 @@ bool initializeDumpHelper(const std::string & exePath, const std::string & userD
 	g_shared->gamePid = GetCurrentProcessId();
 	g_shared->recorderOffset = u32(sizeof(DumpShared));
 	g_shared->recorderSize = u32(recorderSize);
+	g_shared->regionOffset = regionBytes ? u32(regionOffset) : 0;
+	g_shared->regionSize = u32(regionBytes);
 	copyNarrow(g_shared->exeVersion, sizeof(g_shared->exeVersion), version);
 	copyWide(g_shared->exePath, std::size(g_shared->exePath), widen(exePath));
 	copyWide(g_shared->reportRoot, std::size(g_shared->reportRoot), widen(userDir));
@@ -300,6 +307,15 @@ bool initializeDumpHelper(const std::string & exePath, const std::string & userD
 
 FlightRecorder * flightRecorder() noexcept {
 	return g_recorder;
+}
+
+void * dumpHelperRegion(size_t & size) noexcept {
+	if(!g_shared || g_shared->regionOffset == 0 || g_shared->regionSize == 0) {
+		size = 0;
+		return nullptr;
+	}
+	size = g_shared->regionSize;
+	return reinterpret_cast<unsigned char *>(g_shared) + g_shared->regionOffset;
 }
 
 void flightRecord(RecordKind kind, std::string_view text, s64 value) noexcept {
@@ -872,13 +888,29 @@ void copyLogFile(const std::wstring & src, const std::wstring & dst) {
 	writeFileBytes(dst, bytes.data(), bytes.size());
 }
 
-// Write the whole report folder (report.txt, arx-recorder.txt, a copy of arx-perf.log, and crash.txt for a
-// crash so the run digest still reads it). The dump, when any, was already written into \a folder.
+// The game's region as a report file (#550): set by setDumpRegionWriter in the helper process
+std::string (*g_regionWriter)(const void * image, size_t size) = nullptr;
+const char * g_regionFileName = nullptr;
+
+// Write the whole report folder (report.txt, arx-recorder.txt, a copy of arx-perf.log, the game's region as its
+// file, and crash.txt for a crash so the run digest still reads it). The dump, when any, was already written
+// into \a folder.
 void writeReportFolder(const std::wstring & folder, DumpShared * shared, DumpKind kind, DWORD exitCode,
                        bool exitKnown, bool haveDump, const std::wstring & dumpName) {
 
 	std::string recorderText = serializeRecorder(reinterpret_cast<unsigned char *>(shared) + shared->recorderOffset,
 	                                              shared->recorderSize);
+
+	// The game's region (the replay ring): its text, when the writer makes one of it
+	if(g_regionWriter && g_regionFileName && shared->regionOffset >= sizeof(DumpShared) && shared->regionSize > 0
+	   && shared->regionSize <= (64u << 20)) {
+		std::string text = g_regionWriter(reinterpret_cast<unsigned char *>(shared) + shared->regionOffset,
+		                                  shared->regionSize);
+		if(!text.empty()) {
+			std::string name = g_regionFileName;
+			writeTextFile(folder + L"\\" + std::wstring(name.begin(), name.end()), text);
+		}
+	}
 
 	// report.txt
 	std::string report;
@@ -952,9 +984,16 @@ void writeReportFolder(const std::wstring & folder, DumpShared * shared, DumpKin
 
 } // anonymous namespace
 
+void setDumpRegionWriter(std::string (*writer)(const void * image, size_t size), const char * fileName) noexcept {
+	g_regionWriter = writer;
+	g_regionFileName = fileName;
+}
+
 #else // not Windows: the recorder and the out-of-process helper are a Windows feature; the API is a no-op
 
-bool initializeDumpHelper(const std::string &, const std::string &, const std::string &, bool) { return false; }
+bool initializeDumpHelper(const std::string &, const std::string &, const std::string &, bool, size_t) { return false; }
+void * dumpHelperRegion(size_t & size) noexcept { size = 0; return nullptr; }
+void setDumpRegionWriter(std::string (*)(const void *, size_t), const char *) noexcept { }
 FlightRecorder * flightRecorder() noexcept { return nullptr; }
 void flightRecord(RecordKind, std::string_view, s64) noexcept { }
 void flightNameThread(std::string_view) noexcept { }

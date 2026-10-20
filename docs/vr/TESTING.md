@@ -318,6 +318,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `watchdog <ms>` | the hang watchdog's threshold, 100..60000 ms (default 5000): a main thread without a beat for this long is reported with its stack (#440); `hangWatchdog.thresholdMs` in the status |
 | `quit` | ask the game to quit at the end of the frame (the same path as closing the window) |
 | `save <name>` | save the running game as a new slot named `<name>` (no thumbnail); the newest save is slot 0, so `loadslot 0` loads it back. A `save slot=save000N name=<name> ok=yes\|no` event either way; refused outside a running game (#130) |
+| `replay mark <name> [<seconds>]` | the last 30 s (1..60) of the recorded VR session into `<user dir>\replay-marks\<time>-<name>.vrsim`, a clip of its own with `# mark: <name> <ms>` (#550, [Record and replay](#record-and-replay-550)); `[replay] mark <name>: replay-marks\<file> (<n> frames, <s> s)` in the log; refused while nothing records (flat mode, `--no-replay-log`, before the game is playable) and for a name that is not letters, digits, `-` and `_` |
 | `loadslot <n>` | load save slot `n` (from the menu or in-game), refused with the slot count if it does not exist. The command-line `--loadslot <n>` of a missing slot logs an `[E]` and starts at the main menu (before #24 it started an empty level: a black world with only the HUD, TRAPS.md); `run-windows.ps1` / `test-pr.ps1` refuse such a launch before it starts |
 | `ui inventory open\|close` | what the inventory key does (the book has the script command `book open\|close`); a `ui.inventory` event once the inventory is open / has finished closing. While a level script holds the player (the level 10 start: letterbox, controls blocked) the HUD is not drawn and a close never finishes — `setplayercontrols on` and `cinemascope off` first (#130) |
 | `loadlevel <n> [target]` | change to level `n` in a running game (refused from the menu: start with `--loadlevel` or `loadslot`) |
@@ -2397,3 +2398,93 @@ full report without them) and neither ships to players:
   launches (`run-windows.ps1`, `test-pr.ps1`) archive each build's `arx.pdb` under its exe hash in
   `%LOCALAPPDATA%\ArxFatalisVR\symbols\<sha256>\`, so a later report of that build can be symbolised even after
   its build directory is gone.
+
+## Record and replay (#550)
+
+**Every VR session is recorded, nobody has to ask:** from the first frame the game is playable in VR the recorder
+(`src/vr/ReplayRecorder.h`) writes `<user dir>\arx-replay.log`, a clip in the simulated headset's script dialect
+(`src/vr/ReplayClip.h`): a header, then one line per frame with an absolute display time since the record start -
+
+```
+# arx-replay 1: a VR session as a .vrsim clip (#550) - scripts/dev/replay.ps1 plays it
+# build: Arx Fatalis VR 1.3.0-dev
+# save: save9002 VR replay 2026-10-20 14-03-12     the save made at the record start (a replay slot, see below)
+# seed: 4242                                        --seed <n>, else the clock's seed (Random::currentSeed)
+# rate: 90                                          the display rate at the record start
+ipd 0.0617                                          set-up lines: the eyes' distance and the floor below the LOCAL origin
+floor 1.8325
+@0ms head 0.0000 -0.0100 0.0000 0.00 0.00 0.00; hand left -0.2000 -0.4200 -0.3500 0.00 -20.00 0.00; ...; player 1000.00 120.00 2000.00 270.00 10
+@11ms head 0.0001 -0.0100 0.0000 0.02 0.00 0.00; hand left fingers 0.51 0.95 0.30 0.90 0.70
+@5006ms anchor level 11                             a level change, once the new level is playable; `anchor save` after a save
+```
+
+A frame line holds what the runtime gave the game at that display time: the head (between the eyes, turned as they
+are), the grips and `hand <side> on|off` (tracked or not), each hand's aim pose in its grip's space (`hand <side>
+aim`), five curls per hand read off the joints (`hand <side> fingers`, with `fingers on|off` for the joints), the raw
+action values the game read (`action <name> <side> <value>`, the thumbstick with both axes), the session state
+(`session focused|visible|idle`), the interaction profile, and `player <x> <y> <z> <yaw> <area>` - where the engine's
+player was (engine units, degrees, the level), for the drift. The first frame is complete; every later line holds
+only what changed (about 1 MB per minute at 90 Hz, 2 MB is the ceiling). At the session's end the file is gzipped
+(`arx-replay.log.gz`, the plain one removed); the next run rotates the old ones like `arx-perf.log`
+(`arx-replay.1.log.gz` .. `.9`; a run that died leaves a plain `arx-replay.<n>.log`). `--no-replay-log` turns the
+recorder off; flat mode (`--no-vr`) never records. `arx.log` says `[replay] recording arx-replay.log: save <folder>
+"<name>", seed <n>, <hz> Hz` at the start. A frame's line is formatted on the main thread and written to the file off
+it (`PerfWriter`, as the performance log); the cost against `--no-replay-log` is measured by `replay-check.ps1 -Case
+cost`. A recording lives as long as its VR session: a frame without eye poses (tracking lost for a moment) is skipped,
+the session's end closes the clip, a new session starts a new one (`RecordGate`, host-tested).
+
+**The save at the record start** goes into a replay slot, `<user dir>\save\save9000` .. `save9004` (the oldest is
+reused: five are kept). Those slots are never the player's saves - not in the load menu, not numbered for `--loadslot`,
+never quickloaded - whether or not any other save exists (`src/core/SaveSlots.h`, `SaveSlotsTest`), so `--loadslot 0`
+stays the player's newest save; a replay copies the clip's save into its own user directory as an ordinary slot
+(`save0000`) and loads that.
+
+**The replay** (`scripts/dev/replay.ps1 <clip> [-From <ms>] [-To <ms>] [-Save <save>] [-Rate <hz>] [-Shots
+<ms>,...] [-Plan]`) launches the simulated headset from the clip's save (`smoke-test.ps1 -VrSim`, the isolated user
+directory, the game lock) with `--loadslot 0 --seed <the clip's seed>` and a script that sets the clip's rate and
+streams the clip from the timeline's frame 0 - the first playable frame, the moment the record started:
+
+```
+rate 90 cap
+timeline gameplay
+play replay\arx-replay.vrsim from 0 to 39988      the clip, copied (decompressed) under the test channel directory
+```
+
+`play <file> [from <ms>] [to <ms>]` is a simulator command (a set-up line, a timed line or the channel's `vr-sim
+play ...`; `play stop` ends it): the streaming clip player keeps a file cursor, reads one line ahead and applies each
+frame line to the rig when the timeline reaches its time, so a 30-minute clip (50+ MB) costs microseconds per frame.
+At an `anchor level <area>` line it holds (`vr.sim.play.anchorsWaiting` 1, the position still) until the replayed
+game is playable in that level; at `anchor save` until it is playable again. `status.json` `vr.sim.play` has
+`{file, positionMs, framesServed, done, anchorsWaiting, drift {current, max, frames}, eventsReplayed, error}` -
+`drift` is the distance in metres between the recorded and the replayed player (current and the largest so far,
+compared only in the same level; nothing promises a threshold: walking drifts by a few percent, combat and AI
+diverge within seconds, the clip still shows what the hands did), `eventsReplayed` counts the discrete changes
+applied (action values, session, profile, hand on/off, fingers on/off; poses and curls are not events). The script
+waits for `done`, takes a shot at each `-Shots` time (`capture\replay-<ms>-*.bmp`) and prints `Drift: current <m> m,
+max <m> m` and `Input events (<n>):` with every `[vr] input:` event of the run in order; `-Plan` prints what would be
+launched without launching (no user path in it, only the clip's name). A clip that starts mid-session - a mark's or
+a report's - is replayed approximately: the player is placed where its first frame has him (`setpos`) and the inputs
+go on from there.
+
+**The last 60 s are always at hand:** the same frames go into a ring (`ReplayRing`: fixed binary frames with a
+checksum each, no pointers) in the dump helper's shared memory, so every `crashes\<utc>\` and `hangs\<utc>\` report
+holds `arx-replay.vrsim`, written by the helper from the image even after the game is gone (`crash-report.ps1`
+prints `Replay clip: arx-replay.vrsim, <n> frames, <s> s`, or `none` for a flat run). The channel's `replay mark
+<name> [<seconds>]` (default 30, at most 60) cuts the same ring into `<user dir>\replay-marks\<time>-<name>.vrsim`
+with `# mark: <name> <ms>` - "the hand twitched here" from the headset becomes that file.
+
+**Into CI (rule 11, at most one short sequence):** `scripts/dev/clip-to-xrs.ps1 <clip> -From <ms> -To <ms> -Name
+<name>` cuts up to 30 s into `scripts\dev\vrsim\<name>.vrsim` (the whole state at `From` on `@0ms`, then the frames
+re-based; the `ipd` and `floor` lines, the clip's comments and the anchors stripped, no user path or account name)
+and a skeleton `scripts\dev\xrs\<name>.xrs` (`@sim`, `@args --loadslot 0 --seed <seed>`, a `@save` placeholder with
+the clip's save folder in a comment - a test save library scenario takes its place, `@until vr.sim.pending eq 0`);
+the worker adds the asserts. `replay-clip.xrs` is the one in CI. Clips stay in the user directory and are never
+committed.
+
+**The checks:** host tests `ReplayClipTest` (the dialect, the byte-equal round trip of the formatter and the parser,
+the tolerances, the frame budget, the streaming player, the window, the anchors, the events, the drift, broken
+lines), `ReplayRingTest` (the ring, the mark's window, byte copies, broken images) and `RandomTest` (`--seed`);
+script tests `test-replay.ps1`, `test-clip-to-xrs.ps1` and the clip line of `test-crash-report.ps1`;
+`scripts/dev/replay-check.ps1` (hand-run, 7 launches: record, replay compared at equal display times within 1 mm /
+0.1 degree / 0.01 of curl, the anchor across a level change, the cost, flat) and `flight-recorder-check.ps1 -Case
+replay-crash` (the clip in a hang's and a crash's report).

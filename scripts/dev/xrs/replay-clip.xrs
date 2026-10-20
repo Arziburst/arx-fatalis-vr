@@ -1,0 +1,23 @@
+# replay-clip (#550): 10 s of a recorded VR session - a walk-and-turn clip of replay-record.xrs (4500-14500 ms on its
+# clock), cut by scripts/dev/clip-to-xrs.ps1 - replayed on the simulated headset as a script: the recorded head, hands,
+# fingers and raw inputs go through the simulator's OpenXR poses and actions, and the game answers them as it did.
+# The clip's save was the record start's (save9000); the mvp-new-game scenario it was recorded from takes its place.
+# The one CI sequence of the feature (coordinator Tests and CI rule 11); the record-and-replay check itself is
+# scripts/dev/replay-check.ps1 (hand-run).
+@sim replay-clip
+@save mvp-new-game
+@args --loadslot 0 --seed 4242
+
+@until state eq GAMEPLAY 60s
+# (this session is recorded too - every VR session records - but its "[replay] recording" line comes at the first
+# playable frame, before this sequence's first mark: replay-check.ps1 reads it from the whole log)
+setplayercontrols on
+@assert player.controlsBlocked eq false
+
+# The clip's inputs, as the game saw them: a jump from the right stick at 6.7 s, a left grip press at 9.7 s (still held
+# when the clip ends at 10 s)
+@log \[vr\] input: jump \(right\.stick_up\) 20s
+@log \[vr\] input: left grip down at 10s
+@until vr.sim.pending eq 0 40s
+@assert vr.sim.timelineFrame ge 850
+@assert errors eq 0

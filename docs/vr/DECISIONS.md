@@ -13,6 +13,60 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-060: Every VR session is recorded as a replayable clip - poses and inputs over the same save, the drift measured, no lockstep
+
+- **Date:** 2026-10-20
+- **Status:** Accepted (#550; the research is `coordinator/plans/2026-10-20-replay-research.md`)
+- **Decided by:** the owner (record every session, "poses and inputs over the same save, drift measured" instead of
+  lockstep determinism, one save at the record start and no periodic autosaves, a text clip, the ring in the crash
+  and hang reports, raw hand joints off by default, `--seed`); the worker of #550 (the dialect, the ring layout,
+  the replay save slots - technical internals, D-017)
+
+### Decision
+- **A headset complaint becomes a file a worker can run without the headset.** From the first frame the game is
+  playable in VR, every frame goes into `<user dir>\arx-replay.log` (`src/vr/ReplayRecorder.h`): one line
+  `@<ms>ms <command>; <command>; ...` in the simulated headset's own script dialect (`src/vr/SimRig.h`, extended by
+  `head` / `hand` / `hand aim` / `player` / `floor` / `anchor` and `;` lines) holding what the runtime gave the game -
+  the head between the eyes, the grips and whether they are tracked, the aims in the grip's space, five curls per
+  hand read off the joints, the raw action values, the session state, the interaction profile - and where the
+  engine's player was. Only what changed since the previous frame is written (a self-contained first frame): about
+  1 MB per minute at 90 Hz, gzipped to `arx-replay.log.gz` at the session's end, rotated like `arx-perf.log`;
+  `--no-replay-log` turns it off, flat mode never records. A frame's line is formatted on the main thread (a few
+  microseconds, no allocation in steady state) and written to the file off it (`PerfWriter`). A recording lives as
+  long as its VR session: a frame without eye poses is skipped, the session's end closes the clip, a new session
+  starts a new one. A clip loads as a `--vr-sim` script as it is; a long one is streamed by the simulator's `play`
+  command (`ClipPlayer`: a file cursor, one line read ahead, microseconds per frame).
+- **"The same save, the same seed, the drift measured" - not lockstep.** The recorder makes a save at the record
+  start (a replay slot `save9000`..`save9004`: never the player's - not in the load menu, not numbered for
+  `--loadslot`, never quickloaded, whether or not other saves exist; the five newest are kept; a replay copies it
+  into its own user directory as an ordinary slot) and names it in the clip's header with the RNG seed (`--seed <n>`, else the clock's,
+  `Random::currentSeed`) and the display rate. The replay (`scripts/dev/replay.ps1`) starts from that save with
+  that seed, paces at the recorded rate and streams the clip from the timeline's frame 0; at an `anchor level
+  <area>` line (written when a new level became playable) it holds until the replayed game is playable there, at an
+  `anchor save` until it is playable again. The UI, the hands, the body, the reticles and the radials reproduce
+  exactly; walking drifts by a few percent; combat and AI diverge within seconds - the clip still shows what the
+  hands did. `vr.sim.play.drift` reports the distance between the recorded and the replayed player (current and
+  max, same level only); nothing promises a threshold.
+- **The last 60 s live in the dump helper's shared memory** (`ReplayRing`: fixed binary frames with a checksum each,
+  no pointers, read from a copy or from another process) so every crash and hang report carries `arx-replay.vrsim`
+  (`crash-report.ps1` names it); the channel's `replay mark <name> [<seconds>]` cuts the last 30 s of the same ring
+  into `replay-marks\<time>-<name>.vrsim`. Marks and report clips start mid-session: their replay is approximate (the
+  player is placed where the clip's first frame has him).
+- **Privacy:** clips stay in the user directory and are never committed; the IPD and the floor height are header
+  set-up lines that `clip-to-xrs.ps1` strips when it cuts at most 30 s of a clip into a CI sequence (rule 11); the
+  report folders are scrubbed by the dump helper as before.
+
+### Consequences
+- Budget: the recording adds under 0.05 ms to the median frame and under 0.2 ms to the 99th percentile
+  (`replay-check.ps1 -Case cost` measures it against `--no-replay-log`); the ring reserves 60 s at 144 Hz in the
+  helper's mapping (pages untouched until a session records).
+- One CI sequence from a converted 10 s clip (`replay-clip.xrs`); the record-and-replay check itself
+  (`scripts/dev/replay-check.ps1`: two launches, judged after the game quit) is hand-run, not CI.
+- Raw hand joints are not in the stream (a flag only if ever needed for debugging): the five curls per hand are
+  what the hand model is posed from.
+
+---
+
 ## D-059: Crash diagnostics are a flight recorder in shared memory plus an out-of-process dump helper, shipped in stages
 
 - **Date:** 2026-10-19

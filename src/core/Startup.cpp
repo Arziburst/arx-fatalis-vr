@@ -77,6 +77,9 @@
 #include "util/String.h"
 #include "util/cmdline/CommandLine.h"
 
+#include "vr/ReplayClip.h"
+#include "vr/ReplayRecorder.h"
+
 /*
  * Under macOS we want SDLmain to replace the entry point with its own.
  * This is needed to initialize NSApplication - otherwise we will later
@@ -340,6 +343,8 @@ int utf8_main(int argc, char ** argv) {
 	// The flight recorder's out-of-process dump helper (#545): handle it before anything else - no engine,
 	// no crash handler, no logger - so the helper process stays tiny (it only maps shared memory and waits)
 	if(argc >= 2 && std::string_view(argv[1]) == "--dump-helper") {
+		// The replay ring in the shared memory becomes the report's arx-replay.vrsim (#550)
+		platform::setDumpRegionWriter(&vr::replayRingClip, "arx-replay.vrsim");
 		return platform::runDumpHelper(argc, argv);
 	}
 
@@ -436,7 +441,8 @@ int utf8_main(int argc, char ** argv) {
 		// The flight recorder and its out-of-process dump helper (#545): started once the user directory
 		// is known (that is where the reports go); --no-recorder keeps both off (the overhead baseline)
 		platform::initializeDumpHelper(platform::getExecutablePath().string(), fs::getUserDir().string(),
-		                               arx_name + " " + arx_version, platform::flightRecorderRequested());
+		                               arx_name + " " + arx_version, platform::flightRecorderRequested(),
+		                               vr::replay::ringBytes());
 
 		// 14: Start the game already!
 		LogInfo << "Starting " << arx_name << ' ' << arx_version;

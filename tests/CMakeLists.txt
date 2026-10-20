@@ -17,6 +17,8 @@ set(arxtest_TESTCASES
 	tests/core/GameEventTest.cpp
 	tests/core/FileReplaceTest.h
 	tests/core/FileReplaceTest.cpp
+	tests/core/SaveSlotsTest.h
+	tests/core/SaveSlotsTest.cpp
 
 	tests/game/JumpPhysicsTest.h
 	tests/game/JumpPhysicsTest.cpp
@@ -57,6 +59,8 @@ set(arxtest_TESTCASES
 	tests/math/AssertionTraits.h
 	tests/math/LegacyMath.h
 	tests/math/LegacyMathTest.cpp
+	tests/math/RandomTest.h
+	tests/math/RandomTest.cpp
 	
 	tests/util/StringTest.h
 	tests/util/StringTest.cpp
@@ -107,6 +111,12 @@ set(arxtest_TESTCASES
 	tests/vr/EyeImageTest.cpp
 	tests/vr/SimRigTest.h
 	tests/vr/SimRigTest.cpp
+	tests/vr/ReplayClipTest.h
+	tests/vr/ReplayClipTest.cpp
+	tests/vr/ReplayRingTest.h
+	tests/vr/ReplayRingTest.cpp
+	tests/vr/RecordGateTest.h
+	tests/vr/RecordGateTest.cpp
 	tests/vr/UIPanelTest.h
 	tests/vr/UIPanelTest.cpp
 	tests/vr/MenuPointerTest.h
@@ -210,6 +220,7 @@ set(arxtest_SOURCES
 	src/vr/FramePacing.cpp
 	src/vr/PerfStats.cpp
 	src/vr/PerfWriter.cpp
+	src/vr/ReplayClip.cpp
 	src/vr/VRBindings.cpp
 	src/vr/HeadLean.cpp
 	src/vr/HeadPose.cpp

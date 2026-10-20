@@ -1306,6 +1306,8 @@ set(VR_SOURCES
 	src/vr/PerfLog.cpp
 	src/vr/PerfStats.cpp
 	src/vr/PerfWriter.cpp
+	src/vr/ReplayClip.cpp
+	src/vr/ReplayRecorder.cpp
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
 	src/vr/VRActions.cpp

@@ -258,6 +258,39 @@ struct FrameHands {
  */
 const FrameHands & frameHands();
 
+//! A hand's aim pose located for the current frame, in the LOCAL space (the replay recorder, #550)
+struct AimSample {
+	bool valid = false;
+	Vec3f position = Vec3f(0.f);
+	glm::quat orientation = glm::quat(1.f, 0.f, 0.f, 0.f);
+};
+
+//! Both hands' aim poses for the current frame's display time; nothing valid outside a running session
+std::array<AimSample, HandCount> frameAims();
+
+//! The current frame's predicted display period in microseconds (0 outside a session)
+s64 displayPeriodUs();
+
+//! True while the current frame is the game loop's (not a loading screen's or a copied window's): the replay clock (#550)
+bool gameFrame();
+
+/*!
+ * \brief The raw values of the game's OpenXR actions as the last sync read them (#550), by action name, per hand
+ *
+ * Zero while the session is not focused, the hand is not tracked or the control is not bound; a boolean is 0 or
+ * 1, a float its state, the thumbstick both axes. The replay recorder writes them; the simulated headset's
+ * \c action command sets the same names (vr/VRActions.cpp).
+ */
+struct RawActionValues {
+	static const size_t Count = 9;
+	//! trigger, grip, button_a, button_b, thumbstick, thumbstick_click, trackpad_press, menu, thumb_touch
+	static const char * name(size_t index);
+	std::array<std::array<Vec2f, HandCount>, Count> values = { };
+};
+
+//! The raw action values the last controller read gave (zeros outside a session)
+const RawActionValues & rawControllerValues();
+
 //! XR_EXT_hand_tracking as status.json reports it (#305)
 struct HandJointsStatus {
 	bool extension = false;  //!< the runtime lists the extension and the instance has its functions
@@ -493,6 +526,9 @@ bool readControllers(ControllerInput & input);
 
 //! The OpenXR interaction profile path per hand, empty while there is none - for status.json
 std::array<std::string, HandCount> controllerProfiles();
+
+//! One hand's interaction profile path without a copy (the replay recorder reads it every frame, #550)
+const std::string & controllerProfile(Hand hand);
 
 //! How often the controllers were read while the session was focused
 u64 controllerSyncs();

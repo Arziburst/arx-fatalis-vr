@@ -59,6 +59,12 @@
 	  overhead          two 60 s runs, with and without --no-recorder (2 launches; run it on a quiet PC): the frame's busy
 	                    time (mean - limit - vrwait) and self of the perf log's S lines, and private MiB of the game plus
 	                    its dump helper; FAILS over 0.05 ms or 5 MiB. Prints the numbers for the PR body.
+	  replay-crash      (#550; not in 'all') one run on the simulated headset (idle.vrsim, the head turning): a 25 s
+	                    session, `stall 6000`, then `crash`. The hang's and the crash's report folders each hold
+	                    arx-replay.vrsim - the replay ring's last 60 s of poses, written by the dump helper: the clip
+	                    header (# arx-replay, # seed:, # save:), frames up to the report (its last frame within 3 s of the
+	                    session time the command was sent at), at most 61 s of them - and crash-report.ps1 prints
+	                    "Replay clip: arx-replay.vrsim"
 
 	Exit code 0 on PASS, 1 on FAIL (also when crash-report.ps1 is missing: before any launch), 2 when a launch was
 	skipped (the game lock stayed busy).
@@ -79,7 +85,7 @@
 #>
 [CmdletBinding()]
 param(
-	[ValidateSet('all', 'plain', 'clean', 'crash', 'abort', 'terminate', 'terminate-thread', 'heapcorrupt', 'exitprocess', 'remote-exit', 'stop-process', 'overhead')]
+	[ValidateSet('all', 'plain', 'clean', 'crash', 'abort', 'terminate', 'terminate-thread', 'heapcorrupt', 'exitprocess', 'remote-exit', 'stop-process', 'overhead', 'replay-crash')]
 	[string[]]$Case = @('all'),
 	[switch]$Rebuild,
 	[int]$ExitBoundSec = 15
@@ -360,9 +366,10 @@ public static class ArxRemoteExitNative {
 # object until this script ends, so the helper can finish a report after the smoke test is done). Returns the run once
 # the game is in GAMEPLAY, or $null (skipped or failed: $script:skipped / a failed check says which).
 
-function Start-ArxCheckRun([string]$What, [int]$Seconds, [string[]]$ArxArgs = @('--loadlevel', '10')) {
+function Start-ArxCheckRun([string]$What, [int]$Seconds, [string[]]$ArxArgs = @('--loadlevel', '10'), [string]$VrSim) {
 	Clear-ArxLaunchMarker $testDir
 	$params = @{ Seconds = $Seconds; LockTimeoutSec = 600; ArxArgs = $ArxArgs }
+	if ($VrSim) { $params.VrSim = $VrSim }
 	if ($Rebuild -and -not $script:rebuilt) { $params.Rebuild = $true; $script:rebuilt = $true }
 	$job = Start-ThreadJob -ScriptBlock {
 		param($Smoke, $Params)
@@ -651,6 +658,70 @@ function Invoke-OverheadCase {
 	}
 }
 
+# The replay ring's clip in a report folder (#550): arx-replay.vrsim, its header, frames up to $AtSec of the session
+function Test-ArxReplayClipInReport([string]$What, [string]$Folder, [double]$AtSec) {
+	$file = Join-Path $Folder 'arx-replay.vrsim'
+	$exists = Test-Path -LiteralPath $file
+	Check $exists "$What`: the report folder holds arx-replay.vrsim (the last 60 s of poses)"
+	if (-not $exists) { return }
+	$lines = @(Read-ArxSharedLines $file)
+	Check ($lines.Count -gt 0 -and $lines[0] -like '# arx-replay*') "$What`: the clip starts with its header (# arx-replay)"
+	Check (@($lines | Where-Object { $_ -match '^# seed: \d+$' }).Count -eq 1 -and @($lines | Where-Object { $_ -match '^# save: \S' }).Count -eq 1) "$What`: the clip's # seed: and # save:"
+	$times = @($lines | ForEach-Object { if ($_ -match '^@(\d+)ms\s') { [long]$Matches[1] } })
+	Check ($times.Count -ge 90) "$What`: the clip has frames ($($times.Count))"
+	if ($times.Count) {
+		$span = ($times[-1] - $times[0]) / 1000.0
+		Check ($span -le 61) ("$What`: at most the last 60 s ({0:0.0} s)" -f $span)
+		Check ([math]::Abs($times[-1] / 1000.0 - $AtSec) -le 3) ("$What`: its last frame at the report ({0:0.0} s into the session, the command at {1:0.0} s)" -f ($times[-1] / 1000.0), $AtSec)
+	}
+	$report = Invoke-ArxCrashReport $Folder
+	Check ($report.Text -match '(?m)^Replay clip: arx-replay\.vrsim\b') "$What`: crash-report prints 'Replay clip: arx-replay.vrsim'"
+}
+
+function Invoke-ReplayCrashCase {
+	Write-Host '==> replay-crash: a VR session on the simulated headset, a stall, then a crash' -ForegroundColor Cyan
+	$crashesBefore = Get-ArxReportNames $crashDir
+	$hangsBefore = Get-ArxReportNames $hangDir
+	$run = Start-ArxCheckRun 'replay-crash' 90 @('--loadlevel', '10') 'idle'
+	if (-not $run) { return }
+	$sessionStart = Get-Date
+	Check ($null -ne $run.Process) 'replay-crash: the game''s process'
+	if (-not $run.Process) { Complete-ArxCheckRun $run; return }
+	# Two lines of one batch (the channel does not split a line at ';' - only the .xrs runner does)
+	try { $ack = Send-ArxCommand -Lines @('vr-sim @+0-20000ms head rot 60 10 0', 'vr-sim @+0-20000ms hand right pos 0.3 -0.3 -0.5') -Dir $testDir } catch { $ack = "$_" }
+	Check ($ack -match 'errors=0 ') "replay-crash: the head and the hand move ($ack)"
+	Start-Sleep -Seconds 25
+
+	$stallAt = ((Get-Date) - $sessionStart).TotalSeconds
+	try { $ack = Send-ArxCommand -Lines @('stall 6000') -Dir $testDir -TimeoutSec 20 } catch { $ack = "$_" }
+	Check ($ack -match 'errors=0 ') "replay-crash: 'stall 6000' is acknowledged ($ack)"
+	Check (Wait-ArxNewReport $hangDir $hangsBefore 30) 'replay-crash: the stall left a report in hangs\'
+	Start-Sleep -Seconds 3
+
+	$crashAt = ((Get-Date) - $sessionStart).TotalSeconds
+	Write-Host '  > crash'
+	Send-ArxCommandNoWait 'crash'
+	$ended = $run.Process.WaitForExit(60000)
+	Check $ended 'replay-crash: the game ended within 60 s of the crash'
+	if (-not $ended) { Stop-Process -Id $run.Process.Id -Force -ErrorAction SilentlyContinue; $run.Process.WaitForExit() }
+	Complete-ArxCheckRun $run
+	$null = Wait-ArxNewReport $crashDir $crashesBefore 30
+	Check (Wait-ArxDumpHelpersGone 30) 'replay-crash: the dump helper is gone within 30 s'
+	Start-Sleep -Seconds 1
+
+	$newHang = @(Get-ArxReportNames $hangDir | Where-Object { $_ -notin $hangsBefore }) | Select-Object -Last 1
+	$newCrash = @(Get-ArxReportNames $crashDir | Where-Object { $_ -notin $crashesBefore }) | Select-Object -Last 1
+	Check ([bool]$newHang) 'replay-crash: a new report in hangs\'
+	Check ([bool]$newCrash) 'replay-crash: a new report in crashes\'
+	if ($newHang) { Test-ArxReplayClipInReport 'replay-crash (hang)' (Join-Path $hangDir $newHang) $stallAt }
+	if ($newCrash) {
+		$folder = Join-Path $crashDir $newCrash
+		Test-ArxReplayClipInReport 'replay-crash (crash)' $folder $crashAt
+		# The rest of the report as every crash has it, the clip included in the scan for personal data
+		Test-ArxReportFolder $folder @{ What = 'replay-crash'; Kind = 'crash'; Dump = $true; Command = 'crash'; Exception = '(?i)^0xc0000005\b'; KillerMatch = 'main thread' }
+	}
+}
+
 # --- Run ---------------------------------------------------------------------------------------------------------------
 
 $previousReport = $env:ARXVR_AUTOREPORT
@@ -662,6 +733,7 @@ try {
 			'plain' { Invoke-PlainCase }
 			'clean' { Invoke-CleanCase }
 			'overhead' { Invoke-OverheadCase }
+			'replay-crash' { Invoke-ReplayCrashCase }
 			default { Invoke-KillCase $c }
 		}
 	}

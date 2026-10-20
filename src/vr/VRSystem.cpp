@@ -219,6 +219,7 @@ struct OpenXRState {
 		bool quadAcquired = false;          //!< the flat frame image is acquired and bound as the 2D target
 		size_t eyeInRender = size_t(-1);    //!< the eye whose image is bound right now, or none
 		Vec2i windowSize = Vec2i(0);        //!< the window, i.e. the flat frame, this frame
+		bool game = false;                  //!< a frame of the game loop, not a loading screen's or a copied window's (#550)
 	} frame;
 
 	//! The floating UI panel (#49): the engine's menu state and where the 2D interface's quad is shown
@@ -2484,6 +2485,8 @@ bool beginFrameFor(const Vec2i & windowSize, FrameTargets targets) {
 		abandonFrameTargets();
 		endFrame(true);
 	}
+	// Known before xrWaitFrame: the replay clock starts at the first game-loop frame that is playable (#550)
+	frame.game = (targets == FrameTargets::Game);
 
 	XrResult result;
 	PlatformInstant waited;
@@ -2748,6 +2751,32 @@ const FrameViews & frameViews() {
 
 const FrameHands & frameHands() {
 	return g_xr.frame.hands;
+}
+
+std::array<AimSample, HandCount> frameAims() {
+	std::array<AimSample, HandCount> aims;
+	if(!g_xr.running || !g_xr.frame.begun) {
+		return aims;
+	}
+	const std::array<ActionSet::AimPose, HandCount> poses = g_xr.actions.locateAim(g_xr.localSpace, g_xr.frame.state.predictedDisplayTime);
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		aims[hand].valid = poses[hand].valid;
+		aims[hand].position = poses[hand].position;
+		aims[hand].orientation = poses[hand].orientation;
+	}
+	return aims;
+}
+
+s64 displayPeriodUs() {
+	return g_xr.running ? g_xr.frame.period : 0;
+}
+
+bool gameFrame() {
+	return g_xr.running && g_xr.frame.game;
+}
+
+const RawActionValues & rawControllerValues() {
+	return g_xr.actions.raw();
 }
 
 bool isEnabled() {
@@ -3023,6 +3052,10 @@ std::array<std::string, HandCount> controllerProfiles() {
 	return g_xr.actions.profiles();
 }
 
+const std::string & controllerProfile(Hand hand) {
+	return g_xr.actions.profiles()[size_t(hand)];
+}
+
 u64 controllerSyncs() {
 	return g_xr.actions.syncs();
 }
@@ -3116,6 +3149,23 @@ const FrameViews & frameViews() {
 
 const FrameHands & frameHands() {
 	static const FrameHands none;
+	return none;
+}
+
+std::array<AimSample, HandCount> frameAims() {
+	return { };
+}
+
+s64 displayPeriodUs() {
+	return 0;
+}
+
+bool gameFrame() {
+	return false;
+}
+
+const RawActionValues & rawControllerValues() {
+	static const RawActionValues none;
 	return none;
 }
 
@@ -3234,6 +3284,11 @@ std::array<std::string, HandCount> controllerProfiles() {
 	return { };
 }
 
+const std::string & controllerProfile(Hand /* hand */) {
+	static const std::string none;
+	return none;
+}
+
 u64 controllerSyncs() {
 	return 0;
 }
@@ -3254,5 +3309,12 @@ FrameCounters frameCounters() {
 void shutdown() { }
 
 #endif // !ARX_HAVE_OPENXR
+
+const char * RawActionValues::name(size_t index) {
+	static const char * const names[Count] = {
+		"trigger", "grip", "button_a", "button_b", "thumbstick", "thumbstick_click", "trackpad_press", "menu", "thumb_touch",
+	};
+	return index < Count ? names[index] : "";
+}
 
 } // namespace vr

@@ -21,6 +21,7 @@
 #define ARX_VR_SIMRIG_H
 
 #include <array>
+#include <limits>
 #include <map>
 #include <string>
 #include <string_view>
@@ -43,7 +44,9 @@
  * Coordinates are OpenXR's: the room is the LOCAL space - x right, y up, -z forward, meters,
  * the origin where the head starts. Angles in a script are degrees.
  *
- * A script is text, one command per line, \c # starts a comment:
+ * A script is text, one command per line, \c # starts a comment; a line may hold several commands
+ * separated by \c ; (a recorded clip's frame line, #550: "@<t>ms head ...; hand left ...; ..." runs them
+ * all at t, in order; a \c mark text therefore holds no semicolon):
  *  - a line without \c @ is set-up: it runs when the script is loaded;
  *  - \c @<frame> \c <command> runs at that frame of the timeline;
  *  - \c @<from>-<to> \c <command> moves the numbers of the command there linearly, from the
@@ -70,8 +73,23 @@
  *    \c ipd \c <meters>; \c fov \c left|right \c <left> \c <right> \c <up> \c <down> (degrees,
  *    OpenXR signs: left and down negative); \c timeline \c gameplay|session (set-up only)
  *  - \c head \c pos \c <x> \c <y> \c <z>; \c head \c rot \c <yaw> \c <pitch> \c <roll> - yaw + turns
- *    left, pitch + looks up, roll + tilts the head to the left
- *  - \c hand \c left|right \c pos|rot \c ...; \c hand \c left|right \c on|off (tracked or not)
+ *    left, pitch + looks up, roll + tilts the head to the left; \c head \c <x> \c <y> \c <z> \c <yaw>
+ *    \c <pitch> \c <roll> is the whole pose in one command (a clip's form, #550)
+ *  - \c hand \c left|right \c pos|rot \c ...; \c hand \c left|right \c <x> \c <y> \c <z> \c <yaw> \c <pitch>
+ *    \c <roll> (the grip pose in one command); \c hand \c left|right \c on|off (tracked or not);
+ *    \c hand \c left|right \c aim \c <x> \c <y> \c <z> \c <yaw> \c <pitch> \c <roll>: the hand's aim pose in
+ *    its grip's space - where the aim action space is located (default: the grip itself)
+ *  - \c floor \c <meters>: how far below the LOCAL origin (where the head starts) the room's floor is - the
+ *    STAGE space (default 1.7; a clip records the player's); \c player \c <x> \c <y> \c <z> \c <yaw>
+ *    \c <area>: where the engine's player was when a clip was recorded (engine units, degrees, the level,
+ *    -1 = none) - the replay's drift compares it; the simulated runtime ignores it
+ *  - \c anchor \c level \c <area> | \c anchor \c save: a clip's anchor (#550) - the streaming clip player
+ *    waits there until the replayed game is playable in that level / playable again; in a script loaded
+ *    with \c --vr-sim and from the channel it does nothing
+ *  - \c play \c <file> \c [from \c <ms>] \c [to \c <ms>]: stream a recorded clip into the rig (#550,
+ *    vr/ReplayClip.h) - the file absolute or relative to the test channel directory, in double quotes when
+ *    it holds a space; a script's play starts on its timeline's frame 0, the channel's on the next frame;
+ *    \c play \c stop ends it. status.json: \c vr.sim.play
  *  - \c hand \c left|right \c fingers \c <thumb> \c <index> \c <middle> \c <ring> \c <little>: how far
  *    the real fingers are closed, 0 open to 1 a fist - the hand joints of XR_EXT_hand_tracking the
  *    simulated runtime gives (#305, five fingers #385); \c fingers \c <thumb> \c <index> \c <rest>
@@ -136,6 +154,8 @@ struct SimView {
 	 * not a whole slot (a 10-12 ms frame on a 90 Hz clock runs at 45 fps)
 	 */
 	bool cap = false;
+	//! Meters from the LOCAL origin (where the head starts) down to the room's floor: the STAGE space (\c floor, #550)
+	float floor = 1.7f;
 	SimView();
 };
 
@@ -166,12 +186,25 @@ struct SimFingers {
 	Vec2f outer = Vec2f(0.f);  //!< how far the ring finger (x) and the little finger (y) are closed, 0 - 1
 };
 
+/*!
+ * The player in the engine as a clip recorded him (#550): what the replay's drift compares; the simulated
+ * runtime itself ignores it
+ */
+struct SimPlayer {
+	Vec3f position = Vec3f(0.f); //!< engine units (1 m = 100, vr/WorldScale.h)
+	float yaw = 0.f;             //!< degrees, as player.angle.getYaw()
+	s32 area = -1;               //!< the level (g_currentArea), -1 = none (a menu)
+};
+
 //! The state of the simulated headset, controllers and runtime that commands change
 struct SimRig {
 	SimPose head;
 	std::array<SimPose, 2> hands;
 	std::array<bool, 2> handTracked = { true, true };
+	//! Each hand's aim pose in its grip's space (#550): the aim action space is located there; the grip itself by default
+	std::array<SimPose, 2> aims;
 	std::array<SimFingers, 2> fingers;
+	SimPlayer player; //!< the \c player command (a recorded clip)
 	std::string profile; //!< interaction profile path of both hands, empty = none
 	//! Action values by OpenXR action name, per hand (x, and y for 2D actions)
 	std::map<std::string, std::array<Vec2f, 2>> actions;
@@ -197,6 +230,16 @@ enum class SimExit {
 	ExitProcess, //!< ExitProcess (std::_Exit off Windows): what a library calls
 };
 
+//! The \c play command (#550): a clip to stream, or the end of the one playing
+struct SimPlayRequest {
+	bool requested = false;
+	bool stop = false;      //!< \c play \c stop
+	bool setup = false;     //!< a set-up line of the script: the play starts on the timeline's frame 0
+	std::string file;
+	u64 fromUs = 0;
+	u64 toUs = std::numeric_limits<u64>::max();
+};
+
 //! What a command asks of the simulated runtime beyond the rig
 struct SimRequests {
 	std::vector<std::string> shots;
@@ -208,9 +251,10 @@ struct SimRequests {
 	SimSessionEnd sessionEnd = SimSessionEnd::None;
 	SimExit exit = SimExit::None;
 	int exitCode = 0;
+	SimPlayRequest play;
 	bool empty() const {
 		return shots.empty() && marks.empty() && records.empty() && !quit && !focusChanged && !profileChanged
-		       && sessionEnd == SimSessionEnd::None && exit == SimExit::None;
+		       && sessionEnd == SimSessionEnd::None && exit == SimExit::None && !play.requested;
 	}
 };
 
@@ -228,10 +272,18 @@ public:
 	std::string load(std::string_view text);
 
 	/*!
-	 * \brief Run one command now (set-up lines, the channel's \c vr-sim)
-	 * \return an empty string, or what is wrong with it
+	 * \brief Run one line now (set-up lines, the channel's \c vr-sim): its commands, separated by \c ;, in order
+	 * \return an empty string, or what is wrong with it (nothing of the line is applied then)
 	 */
 	std::string execute(std::string_view line);
+
+	/*!
+	 * \brief What kind of change one command (no \c ;, no \c @) makes: a discrete event, or a pose / curl / nothing
+	 *
+	 * An event is a controller action value, the session state, the interaction profile, a hand tracked or lost,
+	 * its joints on or off (vr.sim.play.eventsReplayed, #550)
+	 */
+	static bool isEventCommand(std::string_view command);
 
 	/*!
 	 * \brief Run the timeline up to \a frame: due commands, ramps in progress
@@ -279,8 +331,8 @@ private:
 
 	std::string parse(std::string_view line, Command & command) const;
 	/*!
-	 * Put "@<when> <command>" on the timeline; @+n counts from \a base (frames), @+<t>ms from
-	 * \a baseUs; \a last / \a lastUs = its end in the line's own unit (the other is left alone)
+	 * Put "@<when> <command>[; <command>...]" on the timeline, an entry per command; @+n counts from \a base
+	 * (frames), @+<t>ms from \a baseUs; \a last / \a lastUs = its end in the line's own unit (the other is left alone)
 	 */
 	std::string addTimed(std::string_view line, u64 base, u64 & last, u64 baseUs, u64 & lastUs);
 	void apply(const Command & command);

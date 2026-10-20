@@ -323,4 +323,54 @@ HandJoints synthesizeHandJoints(Hand hand, const HandShape & shape, const Vec3f 
 	return joints;
 }
 
+namespace {
+
+//! Every joint's flexion of a synthetic hand, unclamped (the open hand's thumb rests bent against its base)
+std::array<std::array<float, 3>, FingerCount> synthesizedFlexions(float closed) {
+	HandShape shape;
+	shape.thumb = shape.index = shape.middle = shape.ring = shape.little = closed;
+	const HandJoints joints = synthesizeHandJoints(Hand::Right, shape);
+	FingerPoseLimits wide;
+	for(auto & finger : wide.flex) {
+		finger = { { 180.f, 180.f, 180.f } };
+	}
+	const FingerPose pose = fingerPoseFromJoints(joints, wide);
+	return pose.flex;
+}
+
+} // anonymous namespace
+
+HandShape handShapeFromJoints(const HandJoints & joints) {
+
+	HandShape shape;
+	if(!joints.valid) {
+		return shape;
+	}
+
+	// The synthetic hand's own open and closed flexions, once: what 0 and 1 read as
+	static const std::array<std::array<float, 3>, FingerCount> open = synthesizedFlexions(0.f);
+	static const std::array<std::array<float, 3>, FingerCount> fist = synthesizedFlexions(1.f);
+
+	FingerPoseLimits wide;
+	for(auto & finger : wide.flex) {
+		finger = { { 180.f, 180.f, 180.f } };
+	}
+	const FingerPose pose = fingerPoseFromJoints(joints, wide);
+	float * fingers[FingerCount] = { &shape.thumb, &shape.index, &shape.middle, &shape.ring, &shape.little };
+	for(size_t finger = 0; finger < FingerCount; finger++) {
+		float sum = 0.f;
+		size_t count = 0;
+		for(size_t joint = 0; joint < 3; joint++) {
+			const float range = fist[finger][joint] - open[finger][joint];
+			if(range < 1.f) {
+				continue; // a joint the synthetic hand does not bend tells nothing
+			}
+			sum += std::clamp((pose.flex[finger][joint] - open[finger][joint]) / range, 0.f, 1.f);
+			count++;
+		}
+		*fingers[finger] = count ? sum / float(count) : 0.f;
+	}
+	return shape;
+}
+
 } // namespace vr

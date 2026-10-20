@@ -257,6 +257,16 @@ HandJoints synthesizeHandJoints(Hand hand, const HandShape & shape, const Vec3f 
                                 const glm::quat & gripOrientation = glm::quat(1.f, 0.f, 0.f, 0.f));
 
 /*!
+ * \brief How far each finger of a located hand is closed, 0 - 1: the inverse of \ref synthesizeHandJoints (#550)
+ *
+ * Each joint's flexion (as fingerPoseFromJoints reads it) is placed between the synthetic open hand's and the
+ * synthetic fist's at that joint, and a finger is the mean of its three joints, held within 0 and 1 - so the
+ * joints a shape synthesizes read back as that shape, and a real hand's joints give the shape the simulated
+ * runtime would synthesize them from (the replay recorder's five curls per hand). Invalid joints: an open hand.
+ */
+HandShape handShapeFromJoints(const HandJoints & joints);
+
+/*!
  * \brief Every joint's OpenXR frame from the positions of \a joints (#385.7)
  *
  * \param along     the hand's direction from the wrist to the fingers (the palm's and the wrist's -Z)

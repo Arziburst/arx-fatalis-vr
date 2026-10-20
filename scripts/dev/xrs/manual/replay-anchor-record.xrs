@@ -1,0 +1,22 @@
+# Record and replay (#550), a recording across a level change: the clip gets "anchor level 11" where level 11 became
+# playable, and its replay holds there until the replayed game is in level 11. Hand-run by scripts/dev/replay-check.ps1
+# -Case anchor (not CI), which then replays the clip and drives the anchor.
+#   .\scripts\dev\xrs-run.ps1 scripts\dev\xrs\manual\replay-anchor-record.xrs
+@sim idle
+@save mvp-new-game
+@args --loadslot 0 --seed 4242
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s
+@remember area0 area
+
+# 4 s of head motion, the level change, 4 s more
+vr-sim @+0-4000ms head rot 30 10 0; vr-sim @+0-4000ms hand right pos 0.3 -0.3 -0.4
+@wait 4500
+loadlevel 11
+@until area eq 11 60s
+@until state eq GAMEPLAY 60s
+vr-sim @+0-4000ms head rot -30 0 0; vr-sim @+0-4000ms hand right pos 0.1 -0.5 -0.3
+@wait 4500
+@assert area ne {area0}
+@assert errors eq 0

@@ -37,6 +37,8 @@
 	      Stack (cdb): / Stack (report):              then the frames, indented
 	      Last <n> events (arx-recorder.txt...        then the last 100 events (or all, when fewer), indented, newest last
 	      Resource trend (arx-perf.log...             then perf-summary-lib's resource rows (test-resource-trend.ps1)
+	      Replay clip: arx-replay.vrsim, <n> frames, <s> s   the last 60 s of poses the report folder holds (#550:
+	                                                  replay it with scripts/dev/replay.ps1), or "Replay clip: none"
 	  - nothing it prints holds a user path or the account name (Protect-ArxText of log-digest-lib.ps1), even when a
 	    report file has one
 	  - exit 0 when it printed a report, 1 when there is none
@@ -177,6 +179,17 @@ try {
 	Check ($run.Text -match '(?m)^\s+priv\s.*first 412(\.0)?\s.*last 476(\.0)?\s.*step \+64(\.0)? at t=30\b') 'the priv row with the step'
 	Test-Clean $run 'the newest report'
 
+	Write-Host '==> the replay clip of a report (#550)'
+	# 60 s of frames, 12 ms apart, on the session's clock (5 s to 65 s), the account's path in a comment
+	$clipLines = @('# arx-replay (#550): fixture', '# build: Arx Fatalis VR test', '# save: save0001 replay', '# seed: 7', '# rate: 90',
+		('# note: ' + $fixtureHome + '\Saved Games\Arx Libertatis'), 'ipd 0.064', 'floor 1.7')
+	for ($ms = 5000; $ms -le 65000; $ms += 12) { $clipLines += "@$($ms)ms head 0.0000 0.0000 0.0000 $([string]::Format($c, '{0:0.00}', $ms / 1000)) 0.00 0.00" }
+	Write-Fixture (Join-Path $newest 'arx-replay.vrsim') $clipLines
+	$run = Invoke-CrashReport @('-UserDir', $user, '-Cdb', 'none')
+	Check ($run.Exit -eq 0) "exit 0 ($($run.Exit))"
+	Check ($run.Text -match '(?m)^Replay clip: arx-replay\.vrsim\b(?=.*\b5001 frames\b)(?=.*\b60(\.0+)? s\b)') 'Replay clip: arx-replay.vrsim, 5001 frames, 60 s'
+	Test-Clean $run 'a report with a replay clip'
+
 	Write-Host '==> a given report (-Path): a crash'
 	$run = Invoke-CrashReport @('-Path', $crash, '-Cdb', 'none')
 	Check ($run.Exit -eq 0) "exit 0 ($($run.Exit))"
@@ -203,6 +216,7 @@ try {
 	Check ($run.Text -match '(?m)^Report: 2026-10-19-12-00-00-00\b') 'the newest of crashes\ and hangs\ together'
 	Check ($run.Text -match '(?m)^Kind: hang\s*$') 'Kind: hang'
 	Check ($run.Text -match 'platform::stallThisThread') 'the stalled function'
+	Check ($run.Text -match '(?m)^Replay clip: none\s*$') 'Replay clip: none (a flat run records no clip)'
 
 	Write-Host '==> a kill: no dump, no recorder, no performance log'
 	$user3 = Join-Path $root 'user3'

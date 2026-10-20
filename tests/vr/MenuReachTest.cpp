@@ -45,8 +45,8 @@ const Control MrRightGrip = control(Hand::Right, ControlKind::Grip);
 
 /*
  * The fallback of #326 (both thumbsticks held together for 2 s opened the game menu) is removed by #551 (the owner,
- * 2026-10-19/20): the hold of both is the mark of the moment (3 s, tests/vr/MarkMomentTest.h), the game menu is
- * reached through the radial menu. How long the tests hold both stick clicks: past the old 2 s and past the mark's 3 s
+ * 2026-10-19/20): the hold of both sticks does nothing special (the mark is both trackpads, MarkMomentTest.h), the
+ * menu is reached through the radial menu. How long the tests hold both stick clicks: past the old 2 s and past 3 s
  */
 const s64 LongHoldMs = 3000;
 const s64 LongerHoldMs = 5000;
@@ -146,7 +146,7 @@ void assertBothSticksOpenNoMenu(const std::string & name, const ControlLayout & 
 
 	MrFrames f(layout);
 
-	// Past the old 2 s, past the mark's 3 s, twice; one stick 0.4 s before the other
+	// Past the old 2 s, past 3 s, twice; one stick 0.4 s before the other
 	assertNoMenu(name + " (both pressed together, 3 s)", holdFor(f, BothSticks, LongHoldMs));
 	assertNoMenu(name + " (again, 5 s)", holdFor(f, BothSticks, LongerHoldMs));
 	assertNoMenu(name + " (left first)",

@@ -24,30 +24,36 @@
 #include <cppunit/extensions/HelperMacros.h>
 
 /*!
- * Mark the moment in the headset (#551; written before the implementation). During a headset test the owner holds
- * BOTH thumbstick clicks (pressed in) for 3 s: the game writes a marker folder with everything a worker needs to
- * reproduce the moment, and a confirmation shows in the hero-dialogue panel (the subtitle panel of #460 / D-055).
- * The both-stick 2 s menu fallback of D-058 (#539) is removed so the gesture is free (tests/vr/MenuReachTest.h).
+ * Mark the moment in the headset (#551; written before the implementation). During a headset test the owner presses
+ * BOTH Index trackpads (a firm press or click: ControlKind::Trackpad) and holds them 3 s (the owner, 2026-10-20; it
+ * was both stick clicks before): the game writes a marker folder with everything a worker needs to reproduce the
+ * moment, and a confirmation shows in the hero-dialogue panel (the subtitle panel of #460 / D-055). Both stick clicks
+ * are nothing special any more: the 2 s menu fallback of D-058 (#539) stays removed (tests/vr/MenuReachTest.h) and
+ * they do not mark. A controller without trackpads (the Touch) has no mark gesture.
  *
  * The interface these tests expect (the voice note's half is in tests/vr/VoiceNoteTest.h):
  *
  * 1. The gesture, in src/vr/VRControls.h - where the menu fallback was (ControlResolver::menuFallbackMs,
  *    menuFallback() and menuFallbackOpens() go away with it):
  *
+ *   //! Whether a controller type has the mark gesture: the Index (trackpads) only - not the Touch, the simple
+ *   //! controller or one not identified yet. The game marks only when it is true for the controllers in use
+ *   bool markGestureAvailable(ControllerType type);
+ *
  *   class ControlResolver {
  *   public:
- *     //! How long both thumbstick clicks are held together to mark the moment (#551, the owner). Fixed, not part of
- *     //! the layout and not rebindable: whatever the stick clicks are bound to, the hold of both marks
+ *     //! How long both trackpads are pressed together to mark the moment (#551, the owner). Fixed, not part of the
+ *     //! layout and not rebindable: whatever the trackpads are bound to, the hold of both marks
  *     static constexpr s64 markHoldMs = 3000;
- *     //! The hold of both stick clicks reached markHoldMs in the last update: true for that one update, once per
+ *     //! The hold of both trackpads reached markHoldMs in the last update: true for that one update, once per
  *     //! hold - a second mark needs one of them released first; a release before markHoldMs marks nothing and the
- *     //! next hold counts from zero again
+ *     //! next hold counts from zero again. Both stick clicks held do nothing of the kind
  *     bool markGesture() const;
  *     //! How often the gesture came on since the resolver was created
  *     u32 markGestures() const;
  *   };
  *
- *   "Held for markHoldMs" counts from the first update() that had both stick clicks in \a down (as the fallback
+ *   "Held for markHoldMs" counts from the first update() that had both trackpads in \a down (as the fallback
  *   did): the gesture comes on at the first update at or after that time + markHoldMs, never before.
  *
  * 2. The marker, in src/vr/MarkMoment.h (pure: no engine globals, no file system; the game's side is in
@@ -111,6 +117,8 @@
  *        marks.recording  (bool)   a voice note records now
  *        marks.note       (bool)   the voice note is on (cfg.ini vr_mark_note, the channel's `marks note on|off`)
  *        marks.holdMs     (number) ControlResolver::markHoldMs
+ *        marks.gesture    (text)   the gesture of the controllers in use: both.trackpad (the Index), none where
+ *                                  markGestureAvailable is false (the Touch)
  *        scene.subtitle.notice (text) the notice the hero-dialogue panel shows now: none | marked | recording;
  *                                  while it is not none, scene.subtitle.visible is true, scene.subtitle.text is the
  *                                  line (markNoticeText / noteNoticeText) and scene.subtitle.drawn is chest
@@ -124,7 +132,9 @@ class MarkMomentTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(gestureOncePerHoldTest);
 	CPPUNIT_TEST(gestureShortHoldTest);
 	CPPUNIT_TEST(gestureReleaseResetsTest);
-	CPPUNIT_TEST(gestureOneStickTest);
+	CPPUNIT_TEST(gestureOneTrackpadTest);
+	CPPUNIT_TEST(gestureSticksDoNotMarkTest);
+	CPPUNIT_TEST(gestureTouchTest);
 	CPPUNIT_TEST(gestureAnyLayoutTest);
 	CPPUNIT_TEST(noticeTextTest);
 	CPPUNIT_TEST(folderNameTest);
@@ -138,7 +148,9 @@ public:
 	void gestureOncePerHoldTest();
 	void gestureShortHoldTest();
 	void gestureReleaseResetsTest();
-	void gestureOneStickTest();
+	void gestureOneTrackpadTest();
+	void gestureSticksDoNotMarkTest();
+	void gestureTouchTest();
 	void gestureAnyLayoutTest();
 	void noticeTextTest();
 	void folderNameTest();

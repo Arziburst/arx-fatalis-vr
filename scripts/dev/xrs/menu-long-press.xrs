@@ -1,7 +1,8 @@
 # The game menu without a menu button (#326; #551 removed its fallback - this version written before that
 # implementation): the fixed fallback of D-058 - both thumbsticks clicked (pressed in) and held TOGETHER for 2 s opened
 # the game menu whatever the bindings were - is gone (the owner, 2026-10-19/20: the menu only via the radial; the hold
-# of both is the mark of the moment, mark-moment.xrs), and so are its status fields vr.input.menuFallback.*. On the
+# of both sticks does nothing special now, the mark of the moment is both trackpads, mark-moment.xrs), and so are its
+# status fields vr.input.menuFallback.*. On the
 # simulated Index, with a binding set that has no menu entry, saved into vr-controls-index.ini as the VR settings page
 # saves it and read back as a start reads it: the radial menu (the only way to the game menu, D-042) moved to the left
 # trackpad, the menu event unbound. The right B then opens nothing; one stick click held 3 s and a tap of both open
@@ -59,7 +60,7 @@ vr-input tap left.stick_click; vr-input tap right.stick_click
 @wait 1000
 @assert menuMode eq ingame
 
-# Both stick clicks held together 2.5 s - past the removed fallback's 2 s, short of the mark's 3 s: the game menu
+# Both stick clicks held together 2.5 s - past the removed fallback's 2 s: the game menu
 # stays closed, while held and after
 vr-input down left.stick_click; vr-input down right.stick_click
 @wait 2500

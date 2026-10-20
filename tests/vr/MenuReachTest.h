@@ -26,9 +26,9 @@
 /*!
  * The game menu stays reachable whatever the player binds (#326), with the interfaces that exist today:
  *  - the fixed fallback of #326 / D-058 is REMOVED (#551, the owner 2026-10-19/20: the menu only via the radial;
- *    the hold of both thumbsticks is the mark of the moment, tests/vr/MarkMomentTest.h): both thumbsticks clicked
- *    (pressed in) and held TOGETHER - for the old 2 s, the mark's 3 s or longer, with ANY layout - never press the
- *    game menu key; one stick alone, or both for a short time, open nothing either. "Opens the game menu" is the
+ *    the hold of both thumbsticks does nothing special; the mark is both trackpads, MarkMomentTest.h): both
+ *    thumbsticks clicked (pressed in) and held TOGETHER - for the old 2 s, 3 s or longer, with ANY layout - never
+ *    press the game menu key; one stick alone, or both for a short time, open nothing either. "Opens the game menu" is the
  *    Escape key the controls give the engine (GameInputMapper's GameInputState::escape, VRGameInput.h) coming on;
  *  - a saved controls file (readSavedLayout, vr-controls-<type>.ini) that is empty, broken, or leaves no way to the
  *    game menu gives back the default way to it; a file that only moves the way elsewhere is kept (#326's guard,

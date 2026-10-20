@@ -37,7 +37,8 @@ namespace {
 const Control MmLeftStickClick = control(Hand::Left, ControlKind::StickClick);
 const Control MmRightStickClick = control(Hand::Right, ControlKind::StickClick);
 const Control MmLeftTrigger = control(Hand::Left, ControlKind::Trigger);
-const Control MmLeftTrackpad = control(Hand::Left, ControlKind::Trackpad);
+const Control MmLeftPad = control(Hand::Left, ControlKind::Trackpad);
+const Control MmRightPad = control(Hand::Right, ControlKind::Trackpad);
 const Control MmRightA = control(Hand::Right, ControlKind::A);
 const Control MmRightGrip = control(Hand::Right, ControlKind::Grip);
 
@@ -56,7 +57,10 @@ ControlSet mmSet(std::initializer_list<Control> list = { }) {
 	return result;
 }
 
-const ControlSet MmBoth = mmSet({ MmLeftStickClick, MmRightStickClick });
+//! The gesture (the owner, 2026-10-20): both Index trackpads pressed
+const ControlSet MmBoth = mmSet({ MmLeftPad, MmRightPad });
+//! No longer anything special: both stick clicks
+const ControlSet MmSticks = mmSet({ MmLeftStickClick, MmRightStickClick });
 
 //! What the gesture did over a stretch of updates
 struct MmHold {
@@ -106,7 +110,7 @@ std::string mmAt(const std::string & name, const char * what) {
 }
 
 void mmAssertMarks(const std::string & name, const MmHold & hold) {
-	CPPUNIT_ASSERT_EQUAL_MESSAGE(mmAt(name, "both stick clicks held past 3 s mark the moment once"), u32(1), hold.gestures);
+	CPPUNIT_ASSERT_EQUAL_MESSAGE(mmAt(name, "both trackpads held past 3 s mark the moment once"), u32(1), hold.gestures);
 	CPPUNIT_ASSERT_MESSAGE(mmAt(name, "... not before 3 s of holding both"), hold.firstMs >= MmHoldMs);
 	CPPUNIT_ASSERT_MESSAGE(mmAt(name, "... at the first update at or after 3 s"), hold.firstMs < MmHoldMs + MmStepMs);
 }
@@ -139,11 +143,11 @@ void MarkMomentTest::gestureAtThreeSecondsTest() {
 	CPPUNIT_ASSERT_EQUAL_MESSAGE("the release marks nothing", u32(0), f.release(1000).gestures);
 	CPPUNIT_ASSERT_EQUAL(u32(1), f.resolver.markGestures());
 
-	// One stick first, the other 0.4 s later: the 3 s count from when both are down
-	f.hold(mmSet({ MmLeftStickClick }), 400);
+	// One trackpad first, the other 0.4 s later: the 3 s count from when both are down
+	f.hold(mmSet({ MmLeftPad }), 400);
 	mmAssertMarks("the left first", f.hold(MmBoth, 3500));
 	f.release();
-	f.hold(mmSet({ MmRightStickClick }), 400);
+	f.hold(mmSet({ MmRightPad }), 400);
 	mmAssertMarks("the right first", f.hold(MmBoth, 3500));
 	CPPUNIT_ASSERT_EQUAL(u32(3), f.resolver.markGestures());
 }
@@ -154,7 +158,7 @@ void MarkMomentTest::gestureOncePerHoldTest() {
 
 	// Held 12 s: one mark, not one every 3 s
 	MmHold hold = f.hold(MmBoth, 12000);
-	CPPUNIT_ASSERT_EQUAL_MESSAGE("12 s of holding both is one mark: a second needs the sticks released first",
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("12 s of holding both is one mark: a second needs the trackpads released first",
 	                             u32(1), hold.gestures);
 	CPPUNIT_ASSERT_EQUAL(u32(1), f.resolver.markGestures());
 
@@ -163,10 +167,10 @@ void MarkMomentTest::gestureOncePerHoldTest() {
 	mmAssertMarks("the second hold", f.hold(MmBoth, 3500));
 	CPPUNIT_ASSERT_EQUAL(u32(2), f.resolver.markGestures());
 
-	// Only ONE stick let go and pressed again is a release too
-	f.hold(mmSet({ MmLeftStickClick }), MmReleaseMs);
+	// Only ONE trackpad let go and pressed again is a release too
+	f.hold(mmSet({ MmLeftPad }), MmReleaseMs);
 	mmAssertMarks("the right let go and pressed again", f.hold(MmBoth, 3500));
-	f.hold(mmSet({ MmRightStickClick }), MmReleaseMs);
+	f.hold(mmSet({ MmRightPad }), MmReleaseMs);
 	mmAssertMarks("the left let go and pressed again", f.hold(MmBoth, 3500));
 	CPPUNIT_ASSERT_EQUAL(u32(4), f.resolver.markGestures());
 }
@@ -178,7 +182,7 @@ void MarkMomentTest::gestureShortHoldTest() {
 	// Released before 3 s: nothing, whatever the time short of it
 	for(s64 ms : { s64(0), s64(300), s64(1200), s64(2000), s64(2500), s64(2900), s64(2980) }) {
 		const MmHold hold = f.hold(MmBoth, ms);
-		CPPUNIT_ASSERT_EQUAL_MESSAGE("both stick clicks let go before 3 s mark nothing (" + std::to_string(ms) + " ms)",
+		CPPUNIT_ASSERT_EQUAL_MESSAGE("both trackpads let go before 3 s mark nothing (" + std::to_string(ms) + " ms)",
 		                             u32(0), hold.gestures);
 		CPPUNIT_ASSERT_EQUAL(u32(0), f.release().gestures);
 	}
@@ -201,28 +205,33 @@ void MarkMomentTest::gestureReleaseResetsTest() {
 
 	// 2 s, the right let go for a moment while the left stays held, then both again: the count starts at the re-press
 	CPPUNIT_ASSERT_EQUAL(u32(0), f.hold(MmBoth, 2000).gestures);
-	CPPUNIT_ASSERT_EQUAL(u32(0), f.hold(mmSet({ MmLeftStickClick }), MmReleaseMs).gestures);
+	CPPUNIT_ASSERT_EQUAL(u32(0), f.hold(mmSet({ MmLeftPad }), MmReleaseMs).gestures);
 	const MmHold hold = f.hold(MmBoth, 3500);
-	CPPUNIT_ASSERT_EQUAL_MESSAGE("one stick let go resets the count too", u32(1), hold.gestures);
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("one trackpad let go resets the count too", u32(1), hold.gestures);
 	CPPUNIT_ASSERT_MESSAGE("... the 3 s count from the re-press", hold.firstMs >= MmHoldMs);
 	CPPUNIT_ASSERT_EQUAL(u32(1), f.resolver.markGestures());
 }
 
-void MarkMomentTest::gestureOneStickTest() {
+void MarkMomentTest::gestureOneTrackpadTest() {
 
 	MmFrames f(defaultLayout(ControllerType::Index));
 
-	CPPUNIT_ASSERT_EQUAL_MESSAGE("the left stick click alone held 5 s marks nothing", u32(0),
-	                             f.hold(mmSet({ MmLeftStickClick }), 5000).gestures);
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("the left trackpad alone held 3 s marks nothing", u32(0),
+	                             f.hold(mmSet({ MmLeftPad }), 3500).gestures);
 	f.release();
-	CPPUNIT_ASSERT_EQUAL_MESSAGE("the right stick click alone held 5 s marks nothing", u32(0),
-	                             f.hold(mmSet({ MmRightStickClick }), 5000).gestures);
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("the right trackpad alone held 5 s marks nothing", u32(0),
+	                             f.hold(mmSet({ MmRightPad }), 5000).gestures);
 	f.release();
 
 	// The left held 5 s, the right only tapped after 1 s: both together only for a moment
-	f.hold(mmSet({ MmLeftStickClick }), 1000);
-	CPPUNIT_ASSERT_EQUAL_MESSAGE("one stick held and the other tapped marks nothing", u32(0),
-	                             f.hold(mmSet({ MmLeftStickClick }), 4000, mmSet({ MmRightStickClick })).gestures);
+	f.hold(mmSet({ MmLeftPad }), 1000);
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("one trackpad held and the other tapped marks nothing", u32(0),
+	                             f.hold(mmSet({ MmLeftPad }), 4000, mmSet({ MmRightPad })).gestures);
+	f.release();
+
+	// One trackpad with the other hand's stick click: not the gesture
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("the left trackpad and the right stick click held 5 s mark nothing", u32(0),
+	                             f.hold(mmSet({ MmLeftPad, MmRightStickClick }), 5000).gestures);
 	f.release();
 
 	// Other controls held with them change nothing; other controls alone mark nothing
@@ -231,29 +240,70 @@ void MarkMomentTest::gestureOneStickTest() {
 	f.release();
 	ControlSet more = MmBoth;
 	more[MmLeftTrigger] = true;
-	mmAssertMarks("both stick clicks and the left trigger", f.hold(more, 3500));
+	mmAssertMarks("both trackpads and the left trigger", f.hold(more, 3500));
 	CPPUNIT_ASSERT_EQUAL(u32(1), f.resolver.markGestures());
+}
+
+void MarkMomentTest::gestureSticksDoNotMarkTest() {
+
+	// Both stick clicks are nothing special any more (the owner, 2026-10-20): held 3 s, 5 s, 12 s, one before the
+	// other, with any layout - no mark
+	const ControlLayout layouts[] = { defaultLayout(ControllerType::Index), ControlLayout(), mmLockedOutLayout() };
+	for(const ControlLayout & layout : layouts) {
+		MmFrames f(layout);
+		CPPUNIT_ASSERT_EQUAL_MESSAGE("both stick clicks held 3 s mark nothing", u32(0), f.hold(MmSticks, 3500).gestures);
+		f.release();
+		CPPUNIT_ASSERT_EQUAL_MESSAGE("both stick clicks held 12 s mark nothing", u32(0), f.hold(MmSticks, 12000).gestures);
+		f.release();
+		f.hold(mmSet({ MmLeftStickClick }), 400);
+		CPPUNIT_ASSERT_EQUAL_MESSAGE("the left stick first, then both 5 s: nothing", u32(0), f.hold(MmSticks, 5000).gestures);
+		f.release();
+		CPPUNIT_ASSERT_EQUAL(u32(0), f.resolver.markGestures());
+
+		// ... and the trackpads still mark right after
+		mmAssertMarks("both trackpads after the sticks", f.hold(MmBoth, 3500));
+	}
+}
+
+void MarkMomentTest::gestureTouchTest() {
+
+	// Only a controller with trackpads has the gesture: the Index. The Touch (no trackpads), the simple controller
+	// and a controller not identified yet have none
+	CPPUNIT_ASSERT_MESSAGE("the Index has the mark gesture", markGestureAvailable(ControllerType::Index));
+	CPPUNIT_ASSERT_MESSAGE("the Touch has no mark gesture (no trackpads)", !markGestureAvailable(ControllerType::Touch));
+	CPPUNIT_ASSERT_MESSAGE("the simple controller has no mark gesture", !markGestureAvailable(ControllerType::Simple));
+	CPPUNIT_ASSERT_MESSAGE("an unknown controller has no mark gesture", !markGestureAvailable(ControllerType::Unknown));
+
+	// The Touch's default layout binds no trackpad, and its sticks held do not mark
+	const ControlLayout touch = defaultLayout(ControllerType::Touch);
+	for(size_t i = 0; i < EventCount; i++) {
+		const Binding & binding = touch[Event(i)];
+		CPPUNIT_ASSERT_MESSAGE("the Touch layout binds no trackpad",
+		                       !binding.isBound() || (controlKind(binding.first) != ControlKind::Trackpad
+		                                              && (!binding.isChord() || controlKind(binding.second) != ControlKind::Trackpad)));
+	}
+	MmFrames f(touch);
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("the Touch's stick clicks held 5 s mark nothing", u32(0), f.hold(MmSticks, 5000).gestures);
 }
 
 void MarkMomentTest::gestureAnyLayoutTest() {
 
-	// Fixed, not part of the layout: nothing bound, the Touch, no way to the menu, the stick clicks bound to other
+	// Fixed, not part of the layout: nothing bound, no way to the menu, the trackpads bound to other
 	// events (a single press, a long press, a chord led by one) - the hold of both still marks at 3 s
 	ControlLayout bound = defaultLayout(ControllerType::Index);
-	bound[Event::Jump] = Binding::single(MmLeftStickClick);
-	bound[Event::Recenter] = Binding::hold(MmLeftStickClick);
-	bound[Event::Book] = Binding::chord(MmLeftStickClick, MmLeftTrigger);
-	bound[Event::MagicMode] = Binding::hold(MmRightStickClick);
+	bound[Event::Jump] = Binding::single(MmLeftPad);
+	bound[Event::Recenter] = Binding::hold(MmLeftPad);
+	bound[Event::Book] = Binding::chord(MmLeftPad, MmLeftTrigger);
+	bound[Event::MagicMode] = Binding::hold(MmRightPad);
 	bound[Event::Menu] = Binding::single(MmRightA);
 	ControlLayout moved = defaultLayout(ControllerType::Index);
-	moved[Event::RadialRight] = Binding::hold(MmLeftTrackpad);
+	moved[Event::RadialRight] = Binding::hold(MmLeftPad);
 	moved[Event::Menu] = Binding::chord(MmRightGrip, MmRightA);
 
 	const std::vector<std::pair<std::string, ControlLayout>> layouts = {
 		{ "no binding at all", ControlLayout() },
-		{ "the Touch default", defaultLayout(ControllerType::Touch) },
 		{ "no way to the menu", mmLockedOutLayout() },
-		{ "both stick clicks bound to other events", bound },
+		{ "both trackpads bound to other events", bound },
 		{ "the menu's way moved", moved },
 	};
 	for(const auto & layout : layouts) {
@@ -264,7 +314,7 @@ void MarkMomentTest::gestureAnyLayoutTest() {
 		CPPUNIT_ASSERT_EQUAL_MESSAGE(mmAt(layout.first, "two holds, two marks"), u32(2), f.resolver.markGestures());
 	}
 
-	// A new layout set while the sticks are held (the VR settings page, a controller change): no extra mark
+	// A new layout set while the trackpads are held (the VR settings page, a controller change): no extra mark
 	MmFrames f(defaultLayout(ControllerType::Index));
 	f.hold(MmBoth, 2000);
 	f.resolver.setLayout(bound);

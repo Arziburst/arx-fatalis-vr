@@ -1,10 +1,11 @@
-# Mark the moment (#551; written before the implementation): on the simulated Index, BOTH trackpads pressed together
-# and held 3 s (the owner, 2026-10-20) write a marker folder <user dir>\marks\<utc>-<n>\ (left.png, right.png,
-# recorder.txt, clip.vrsim, meta.txt; note.wav when the voice note is on and a microphone recorded one) and show
-# "Moment marked (#N)" in the hero-dialogue panel (the subtitle panel of #460 / D-055) for about 2 s. Held 2.5 s and
-# let go: no mark. Held on after the mark: no second mark until they are let go. Both stick clicks held 3 s: no mark
-# and no game menu (the D-058 fallback stays removed; menu-long-press.xrs has the radial's way to the menu). The
-# feature's one CI sequence (coordinator Tests and CI rule 11), about 16 s after the load.
+# Mark the moment (#551; written before the implementation): on the simulated Index, the moment BOTH trackpads are
+# down the game marks it at once - no hold (the owner, 2026-10-20) - writing a marker folder <user dir>\marks\<utc>-<n>\
+# (left.png, right.png, recorder.txt, clip.vrsim, meta.txt; note.wav when the voice note is on and a microphone
+# recorded one) and showing "Moment marked (#N)" in the hero-dialogue panel (the subtitle panel of #460 / D-055) for
+# about 2 s. One trackpad alone: no mark; the other pressed 1 s later: the mark then. Held on: no second mark; one let
+# go and pressed again: the second mark. Both stick clicks held: no mark and no game menu (the D-058 fallback stays
+# removed; menu-long-press.xrs has the radial's way to the menu). The feature's one CI sequence (coordinator Tests and
+# CI rule 11), about 12 s after the load.
 #
 # Assumes (the worker adds them, named exactly; tests/vr/MarkMomentTest.h has the whole interface):
 #   marks.count          (count)  marks written since the start
@@ -12,7 +13,6 @@
 #   marks.lastFiles      (text)   the non-empty files in it, sorted by name, joined by "," without spaces
 #   marks.recording      (bool)   a voice note records now
 #   marks.note           (bool)   the voice note is on (cfg.ini vr_mark_note; the channel's `marks note on|off`)
-#   marks.holdMs         (number) the hold: 3000
 #   marks.gesture        (text)   both.trackpad on the Index, none on a controller without trackpads (the Touch)
 #   scene.subtitle.notice (text)  the notice the hero-dialogue panel shows: none | marked | recording
 #   log "[vr] mark #<n>: marks\<folder> files=<lastFiles>" once the folder is written, and the panel's
@@ -30,64 +30,65 @@
 @assert vr.input.controllers eq index
 @assert menuMode eq ingame
 @assert marks.count eq 0
-@assert marks.holdMs eq 3000
 @assert marks.gesture eq both.trackpad
 @assert scene.subtitle.notice eq none
 marks note off
 @frames 2
 @assert marks.note eq false
 
-# 1. Both trackpads held 2.5 s and let go: no mark
-vr-input down left.trackpad; vr-input down right.trackpad
-@wait 2500
-@assert marks.count eq 0
-vr-input up left.trackpad; vr-input up right.trackpad
-@wait 500
-@assert marks.count eq 0
-@assert scene.subtitle.notice eq none
-@assert menuMode eq ingame
-
-# 2. Both stick clicks held 3.5 s: nothing special any more - no mark, no game menu
+# 1. Both stick clicks held 2.5 s: nothing special - no mark, no game menu (past the removed fallback's 2 s)
 vr-input down left.stick_click; vr-input down right.stick_click
-@wait 3500
+@wait 2500
 @assert marks.count eq 0
 @assert menuMode eq ingame
 vr-input up left.stick_click; vr-input up right.stick_click
-@wait 500
+@wait 300
 @assert marks.count eq 0
 @assert scene.subtitle.notice eq none
 @assert menuMode eq ingame
 
-# 3. Both trackpads held 3 s: the mark, its confirmation in the hero-dialogue panel (below the view centre: the hero's
-# panel)
+# 2. The left trackpad alone for 1 s: no mark. The right pressed too: the mark at once, its confirmation in the
+# hero-dialogue panel (below the view centre: the hero's panel)
 @mark
-vr-input down left.trackpad; vr-input down right.trackpad
-@wait 2000
+vr-input down left.trackpad
+@wait 1000
 @assert marks.count eq 0
-@until marks.count eq 1 3s
+@assert scene.subtitle.notice eq none
+vr-input down right.trackpad
+@until marks.count eq 1 1s
 @until scene.subtitle.notice eq marked 1s
 @assert scene.subtitle.visible eq true
 @assert scene.subtitle.drawn eq chest
 @assert marks.recording eq false
 @assert menuMode eq ingame
 
-# 4. Still held: the confirmation stays about 2 s and goes; no second mark while they are held (3 s past the mark)
+# 3. Both held on: the confirmation stays about 2 s and goes; no second mark
 @wait 1000
 @assert scene.subtitle.notice eq marked
 @assert scene.subtitle.panel eq true
 @until scene.subtitle.notice eq none 2s
-@wait 2000
-@assert marks.count eq 1
-vr-input up left.trackpad; vr-input up right.trackpad
 @wait 500
 @assert marks.count eq 1
+
+# 4. The right let go and pressed again (the left still held): the second mark, at once
+vr-input up right.trackpad
+@wait 300
+@assert marks.count eq 1
+vr-input down right.trackpad
+@until marks.count eq 2 1s
+@until scene.subtitle.notice eq marked 1s
+vr-input up left.trackpad; vr-input up right.trackpad
+@wait 300
+@assert marks.count eq 2
 @assert menuMode eq ingame
 
-# 5. The folder: the five files, written and not empty; no voice note (off). The log has the confirmation's line and
-# the folder's, in either order (the files may be written after the confirmation shows): one look-ahead for each
+# 5. The folders: the five files, written and not empty; no voice note (off). The log has the first confirmation's
+# line and the first folder's, in either order (the files may be written after the confirmation shows): one look-ahead
+# for each; then the second folder's line
 @until marks.lastFiles eq clip.vrsim,left.png,meta.txt,recorder.txt,right.png 10s
 @assert marks.recording eq false
 @log (?s)^(?=.*vr\.scene\.subtitle notice=marked [^\n]*text="Moment marked \(#1\)")(?=.*\[vr\] mark #1: marks\\\d{8}T\d{6}Z-1 files=clip\.vrsim,left\.png,meta\.txt,recorder\.txt,right\.png) 5s
+@log \[vr\] mark #2: marks\\\d{8}T\d{6}Z-2 files=clip\.vrsim,left\.png,meta\.txt,recorder\.txt,right\.png 5s
 
 marks note on
 @frames 2

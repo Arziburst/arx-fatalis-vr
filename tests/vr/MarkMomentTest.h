@@ -25,16 +25,17 @@
 
 /*!
  * Mark the moment in the headset (#551; written before the implementation). During a headset test the owner presses
- * BOTH Index trackpads (a firm press or click: ControlKind::Trackpad) and holds them 3 s (the owner, 2026-10-20; it
- * was both stick clicks before): the game writes a marker folder with everything a worker needs to reproduce the
- * moment, and a confirmation shows in the hero-dialogue panel (the subtitle panel of #460 / D-055). Both stick clicks
- * are nothing special any more: the 2 s menu fallback of D-058 (#539) stays removed (tests/vr/MenuReachTest.h) and
- * they do not mark. A controller without trackpads (the Touch) has no mark gesture.
+ * BOTH Index trackpads (a firm press or click: ControlKind::Trackpad): the mark fires at once, on the update both are
+ * down - no hold (the owner, 2026-10-20; it was both stick clicks held 3 s, then both trackpads held 3 s). The game
+ * writes a marker folder with everything a worker needs to reproduce the moment, and a confirmation shows in the
+ * hero-dialogue panel (the subtitle panel of #460 / D-055). Both stick clicks are nothing special: the 2 s menu
+ * fallback of D-058 (#539) stays removed (tests/vr/MenuReachTest.h) and they do not mark. A controller without
+ * trackpads (the Touch) has no mark gesture. The feature is on in every build, the testers' too (the owner).
  *
  * The interface these tests expect (the voice note's half is in tests/vr/VoiceNoteTest.h):
  *
  * 1. The gesture, in src/vr/VRControls.h - where the menu fallback was (ControlResolver::menuFallbackMs,
- *    menuFallback() and menuFallbackOpens() go away with it):
+ *    menuFallback() and menuFallbackOpens() go away with it, and so does markHoldMs - or it is 0):
  *
  *   //! Whether a controller type has the mark gesture: the Index (trackpads) only - not the Touch, the simple
  *   //! controller or one not identified yet. The game marks only when it is true for the controllers in use
@@ -42,19 +43,15 @@
  *
  *   class ControlResolver {
  *   public:
- *     //! How long both trackpads are pressed together to mark the moment (#551, the owner). Fixed, not part of the
- *     //! layout and not rebindable: whatever the trackpads are bound to, the hold of both marks
- *     static constexpr s64 markHoldMs = 3000;
- *     //! The hold of both trackpads reached markHoldMs in the last update: true for that one update, once per
- *     //! hold - a second mark needs one of them released first; a release before markHoldMs marks nothing and the
- *     //! next hold counts from zero again. Both stick clicks held do nothing of the kind
+ *     //! Both trackpads became down together in the last update (#551, the owner): true for that one update, once
+ *     //! per press - held on, nothing more; a release of either re-arms it, and the next update with both down
+ *     //! marks again. One pressed, the other later: the mark on the update the second goes down. Fixed, not part
+ *     //! of the layout and not rebindable: whatever the trackpads are bound to, both pressed mark (their bindings
+ *     //! act as well). Both stick clicks do nothing of the kind
  *     bool markGesture() const;
  *     //! How often the gesture came on since the resolver was created
  *     u32 markGestures() const;
  *   };
- *
- *   "Held for markHoldMs" counts from the first update() that had both trackpads in \a down (as the fallback
- *   did): the gesture comes on at the first update at or after that time + markHoldMs, never before.
  *
  * 2. The marker, in src/vr/MarkMoment.h (pure: no engine globals, no file system; the game's side is in
  *    src/vr/MarkMoment.cpp next to it, or wherever the worker wires it):
@@ -116,7 +113,6 @@
  *                                  "clip.vrsim,left.png,meta.txt,recorder.txt,right.png" (",note.wav" sorts in)
  *        marks.recording  (bool)   a voice note records now
  *        marks.note       (bool)   the voice note is on (cfg.ini vr_mark_note, the channel's `marks note on|off`)
- *        marks.holdMs     (number) ControlResolver::markHoldMs
  *        marks.gesture    (text)   the gesture of the controllers in use: both.trackpad (the Index), none where
  *                                  markGestureAvailable is false (the Touch)
  *        scene.subtitle.notice (text) the notice the hero-dialogue panel shows now: none | marked | recording;
@@ -128,10 +124,9 @@
 class MarkMomentTest final : public CppUnit::TestFixture {
 
 	CPPUNIT_TEST_SUITE(MarkMomentTest);
-	CPPUNIT_TEST(gestureAtThreeSecondsTest);
-	CPPUNIT_TEST(gestureOncePerHoldTest);
-	CPPUNIT_TEST(gestureShortHoldTest);
-	CPPUNIT_TEST(gestureReleaseResetsTest);
+	CPPUNIT_TEST(gestureAtOnceTest);
+	CPPUNIT_TEST(gestureOncePerPressTest);
+	CPPUNIT_TEST(gestureSecondLaterTest);
 	CPPUNIT_TEST(gestureOneTrackpadTest);
 	CPPUNIT_TEST(gestureSticksDoNotMarkTest);
 	CPPUNIT_TEST(gestureTouchTest);
@@ -144,10 +139,9 @@ class MarkMomentTest final : public CppUnit::TestFixture {
 
 public:
 
-	void gestureAtThreeSecondsTest();
-	void gestureOncePerHoldTest();
-	void gestureShortHoldTest();
-	void gestureReleaseResetsTest();
+	void gestureAtOnceTest();
+	void gestureOncePerPressTest();
+	void gestureSecondLaterTest();
 	void gestureOneTrackpadTest();
 	void gestureSticksDoNotMarkTest();
 	void gestureTouchTest();

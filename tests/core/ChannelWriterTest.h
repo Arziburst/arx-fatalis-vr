@@ -36,6 +36,8 @@ class ChannelWriterTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testPatienceRunsOutAndTheStatusIsTriedAgain);
 	CPPUNIT_TEST(testKeptStatusIsHandedOverByPoll);
 	CPPUNIT_TEST(testStopWritesWhatIsLeft);
+	CPPUNIT_TEST(testAckWaitsForAStatusItMayFollow);
+	CPPUNIT_TEST(testAckWaitsAtMostItsPatience);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -46,6 +48,8 @@ public:
 	void testPatienceRunsOutAndTheStatusIsTriedAgain();
 	void testKeptStatusIsHandedOverByPoll();
 	void testStopWritesWhatIsLeft();
+	void testAckWaitsForAStatusItMayFollow();
+	void testAckWaitsAtMostItsPatience();
 
 };
 

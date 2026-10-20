@@ -21,7 +21,14 @@ clock, skips the display slots a long frame missed, as a headset does - so the r
 the guard was right. The routine writes cost 7.6-12.9 ms of a frame too (ten such hitches in that run).
 **Do:** the channel builds the status on the frame and hands it to its writer thread (`ChannelWriter`,
 src/core/ChannelWriter.h, host test `ChannelWriterTest`), which writes the file, renames it, flushes the log and
-writes the ack after it - the status before the ack (#23) holds on that thread. A frames guard that fails is not to be
+writes the ack after it - the status before the ack (#23) holds on that thread. **The second half of the trap:** a
+sequence reads `status.json` right after a log line it waited for (`@log`, then `@assert`), and the main-thread write
+never showed a line newer than the status on disk - nothing was logged between building, writing and flushing. The
+first writer-thread version flushed `arx.log` after the status landed while the frame went on logging, and the full
+suite failed `scene-switches` (`@log vr\.scene state=start` matched, `scene.active` read false: the command's event
+was logged in the same frame, after the status was built). So each status carries the count of log lines at its build
+(`LogCounter::lines`), the writer flushes only when no line came since, else the next frame builds a fresh status, and
+the ack waits for it (100 ms at most). A frames guard that fails is not to be
 loosened: look for an `H` line with `cause=channel` in the record's window, and for `[channel] slow frame part:` in
 `arx.log`, which names what is left of the channel on the frame (commands, the status build, the records) when it
 takes 20 ms or more. Reproduce with `scripts/dev/refresh-rate-stress.ps1 -SlowStatusMs 150` (an oplock on each

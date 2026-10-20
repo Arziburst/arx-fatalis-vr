@@ -27,6 +27,8 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include "core/ChannelWriter.h"
 
@@ -119,7 +121,7 @@ void ChannelWriterTest::testStatusThenAck() {
 	WriterFolder folder;
 	std::atomic<bool> ackBeforeStatus { false };
 	const std::filesystem::path ack = folder.path / "ack.txt";
-	ChannelWriter writer(folder.files(), [&]() { ackBeforeStatus = ackBeforeStatus || std::filesystem::exists(ack); });
+	ChannelWriter writer(folder.files(), [&](unsigned long long, bool) { ackBeforeStatus = ackBeforeStatus || std::filesystem::exists(ack); return true; });
 	writer.status("{\"cmdSeq\": 1}\n");
 	writer.ack("seq=1\n");
 	writer.flush();
@@ -136,7 +138,7 @@ void ChannelWriterTest::testHeldStatusDelaysTheAckNotTheCaller() {
 	writeText(folder.path / "status.json", "old");
 	const std::filesystem::path ack = folder.path / "ack.txt";
 	std::atomic<bool> ackBeforeStatus { false };
-	ChannelWriter writer(folder.files(), [&]() { ackBeforeStatus = ackBeforeStatus || std::filesystem::exists(ack); });
+	ChannelWriter writer(folder.files(), [&](unsigned long long, bool) { ackBeforeStatus = ackBeforeStatus || std::filesystem::exists(ack); return true; });
 	{
 		// The reader lets go after 500 ms: the rename waits for it on the writer thread, not in the caller
 		HoldingReader reader(folder.path / "status.json", 500ms);
@@ -255,4 +257,53 @@ void ChannelWriterTest::testStopWritesWhatIsLeft() {
 	}
 	CPPUNIT_ASSERT_EQUAL(std::string("last"), readText(folder.path / "status.json"));
 	CPPUNIT_ASSERT_EQUAL(std::string("seq=5\n"), readText(folder.path / "ack.txt"));
+}
+
+void ChannelWriterTest::testAckWaitsForAStatusItMayFollow() {
+	WriterFolder folder;
+	// The test channel's case: arx.log has lines newer than status 1, so its flush (and the ack) waits for status 2
+	std::mutex mutex;
+	std::vector<std::pair<unsigned long long, bool>> calls;
+	ChannelWriter writer(folder.files(), [&](unsigned long long tag, bool force) {
+		std::scoped_lock lock(mutex);
+		calls.emplace_back(tag, force);
+		return tag == 2;
+	}, ChannelWriter::Warn(), 2000ms, 10s);
+	writer.status("1", false, 1);
+	writer.ack("seq=6\n");
+	const auto deadline = std::chrono::steady_clock::now() + 10s;
+	while(writer.statusesWritten() == 0 && std::chrono::steady_clock::now() < deadline) {
+		std::this_thread::sleep_for(1ms);
+	}
+	std::this_thread::sleep_for(100ms);
+	CPPUNIT_ASSERT_EQUAL(std::string("1"), readText(folder.path / "status.json"));
+	CPPUNIT_ASSERT(!std::filesystem::exists(folder.path / "ack.txt"));
+	writer.status("2", false, 2);
+	writer.flush();
+	CPPUNIT_ASSERT_EQUAL(std::string("2"), readText(folder.path / "status.json"));
+	CPPUNIT_ASSERT_EQUAL(std::string("seq=6\n"), readText(folder.path / "ack.txt"));
+	std::scoped_lock lock(mutex);
+	CPPUNIT_ASSERT_EQUAL(size_t(2), calls.size());
+	CPPUNIT_ASSERT(calls[0] == std::make_pair(1ull, false));
+	CPPUNIT_ASSERT(calls[1] == std::make_pair(2ull, false));
+}
+
+void ChannelWriterTest::testAckWaitsAtMostItsPatience() {
+	WriterFolder folder;
+	// No status comes that the work may follow: after the ack's patience the work is forced and the ack written
+	std::atomic<int> forced { 0 };
+	std::atomic<unsigned long long> forcedTag { 0 };
+	ChannelWriter writer(folder.files(), [&](unsigned long long tag, bool force) {
+		if(force) {
+			forced++;
+			forcedTag = tag;
+		}
+		return force;
+	}, ChannelWriter::Warn(), 2000ms, 100ms);
+	writer.status("only", false, 7);
+	writer.ack("seq=7\n");
+	writer.flush();
+	CPPUNIT_ASSERT_EQUAL(std::string("seq=7\n"), readText(folder.path / "ack.txt"));
+	CPPUNIT_ASSERT_EQUAL(1, forced.load());
+	CPPUNIT_ASSERT_EQUAL(7ull, forcedTag.load());
 }

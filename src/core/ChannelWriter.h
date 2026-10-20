@@ -42,6 +42,11 @@
  * a status handed over while an older one still waits for the file replaces it, as the newer one shows everything
  * the older one did.
  *
+ * What follows a status that landed is the caller's (\ref Landed: the test channel flushes arx.log there). It may say
+ * that an ack must not follow yet - the test channel's flush would show log lines newer than the status on disk - and
+ * the ack then waits for the next status that lands (the caller makes one), \a ackPatience at most; after that the
+ * callback is told to do its work all the same, and the ack is written.
+ *
  * The writer thread holds its lock only to take the texts over. A status the next one makes obsolete anyway (the
  * 100 ms timer's) does not even wait for that (a starved CPU may deschedule the writer holding it, as in PerfWriter):
  * it is kept on the frame thread's side and handed over by the next call, \ref poll included. A status a test waits
@@ -58,14 +63,19 @@ public:
 		std::filesystem::path ack;    //!< ack.txt
 	};
 
-	//! Called on the writer thread after each status that landed (the test channel flushes arx.log there)
-	using Landed = std::function<void()>;
+	/*!
+	 * Called on the writer thread after each status that landed, with the tag it was handed over with. Returns false
+	 * when an ack must not follow it yet; called with \a force when the ack waited its patience: it must then do its
+	 * work and return true
+	 */
+	using Landed = std::function<bool(unsigned long long tag, bool force)>;
 	//! Called on the writer thread once per kind of trouble (a file that could not be written, a rename that waited
 	//! its whole patience)
 	using Warn = std::function<void(std::string_view)>;
 
 	explicit ChannelWriter(Files files, Landed landed = Landed(), Warn warn = Warn(),
-	                       std::chrono::milliseconds patience = std::chrono::milliseconds(2000));
+	                       std::chrono::milliseconds patience = std::chrono::milliseconds(2000),
+	                       std::chrono::milliseconds ackPatience = std::chrono::milliseconds(100));
 
 	//! Writes what is still to be written (one more try of a status a reader holds up) and stops the writer thread
 	~ChannelWriter();
@@ -76,8 +86,9 @@ public:
 	/*!
 	 * The new content of status.json; replaces a status not written yet. Never waits for a file
 	 * \param mayKeep a status the next one makes obsolete: kept for the next call while the writer's lock is taken
+	 * \param tag given to \ref Landed once it landed (the test channel: the log lines logged when it was built)
 	 */
-	void status(std::string text, bool mayKeep = false);
+	void status(std::string text, bool mayKeep = false, unsigned long long tag = 0);
 
 	//! The new content of ack.txt, written once the status handed over before it landed. Never waits for a file
 	void ack(std::string text);
@@ -110,11 +121,13 @@ private:
 	Landed m_landed;
 	Warn m_warn;
 	std::chrono::milliseconds m_patience;
+	std::chrono::milliseconds m_ackPatience;
 
 	std::mutex m_mutex;
 	std::condition_variable m_wake;    //!< the writer thread: something to write, or stop
 	std::condition_variable m_written; //!< flush(): the writer thread caught up
 	std::string m_status;
+	unsigned long long m_statusTag = 0;
 	bool m_hasStatus = false;
 	std::string m_ack;
 	bool m_hasAck = false;
@@ -125,6 +138,7 @@ private:
 
 	// The producer's side, never touched by the writer thread
 	std::string m_heldStatus;
+	unsigned long long m_heldTag = 0;
 	bool m_holdsStatus = false;
 	std::string m_heldAck;
 	bool m_holdsAck = false;
@@ -132,7 +146,6 @@ private:
 	// The writer thread's side
 	bool m_warnedTmp = false;
 	bool m_warnedHeld = false;
-	bool m_warnedAck = false;
 
 	std::thread m_thread;
 

@@ -296,7 +296,9 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 - **flushes `arx.log`** at the same cadence, so `game.state` events and `[mark]` lines are readable
   while the game runs (since #129 the file logger flushes on its own after every warning or error
   and at least once a second — see *Log:* in [The log banner](#the-log-banner); the channel only
-  makes it fresher).
+  makes it fresher). The channel flushes after a status landed and only while no line was logged since that status
+  was built (else the next frame builds a fresh one, #553): a line a test waited for never shows with a status older
+  than it, so `@log` then `@assert` reads the state the line came from or later.
 - reports the state that the [game event log](#the-game-event-log) logs on every change as
   `game.state to=STARTUP|MENU|LOADING|GAMEPLAY|CINEMATIC|EXITED` — always, with or without the
   channel (#130 replaced the channel's own `[game] state:` lines).

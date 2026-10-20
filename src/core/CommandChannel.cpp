@@ -230,9 +230,12 @@ public:
 
 	std::atomic<unsigned> errors { 0 };
 	std::atomic<unsigned> warnings { 0 };
+	//! Every line, counted under the logger's lock like its flush: what a status was built after (#553)
+	std::atomic<unsigned long long> lines { 0 };
 
 	void log(const logger::Source & /* file */, int /* line */, Logger::LogLevel level,
 	         std::string_view /* str */) override {
+		lines++;
 		if(level >= Logger::Error) {
 			errors++;
 		} else if(level == Logger::Warning) {
@@ -444,6 +447,8 @@ struct State {
 	//! Writes status.json and ack.txt on its own thread (#553); deleted in shutdown only, never at static
 	//! destruction (its thread flushes the logger)
 	ChannelWriter * writer = nullptr;
+	//! The writer could not flush arx.log after a status (lines came after it was built): the next frame builds one
+	std::atomic<bool> freshStatus { false };
 
 	//! The simulated headset's `record <name>`: the motion values of the frame it named, as JSON, in order
 	std::vector<std::pair<std::string, std::string>> records;
@@ -2187,7 +2192,7 @@ void writeStatus(PlatformInstant now, bool periodic = false) {
 	const PlatformInstant start = platform::getTime();
 	std::string text = buildStatus(now);
 	noteSlowPart("status build", start);
-	g.writer->status(std::move(text), periodic);
+	g.writer->status(std::move(text), periodic, g.counter ? g.counter->lines.load() : 0);
 }
 void writeAck(unsigned errors) {
 	std::ostringstream oss;
@@ -4038,17 +4043,33 @@ void initialize() {
 	fs::remove(g.dir / "ack.txt");
 	fs::remove(g.dir / "hang.txt");
 
+	g.counter = new LogCounter;
+	Logger::add(g.counter);
+
 	// The file logger flushes on its own every second (#129); a test reading arx.log after an ack wants it fresher:
-	// flushed after every status that landed, before the ack that follows it
+	// flushed after a status that landed, before the ack that follows it. A test reads status.json right after a log
+	// line it waited for (@log, then @assert): the old main-thread write never showed a line newer than the status on
+	// disk, as nothing was logged between building, writing and flushing. On the writer thread the frame goes on
+	// logging meanwhile - a command's event in the same frame (scene-switches: `scene.active` false after its
+	// `vr.scene state=start` line) - so the log is flushed only while no line came after the status was built; else
+	// the next frame builds a fresh status and the ack waits for it (100 ms at most, then the flush is done anyway)
 	g.writer = new ChannelWriter(
 		ChannelWriter::Files{ std::filesystem::path((g.dir / "status.json").string()),
 		                      std::filesystem::path((g.dir / "status.json.tmp").string()),
 		                      std::filesystem::path((g.dir / "ack.txt").string()) },
-		[]() { Logger::flush(); },
+		[](unsigned long long lines, bool force) {
+			if(!force && g.counter->lines.load() != lines) {
+				g.freshStatus = true;
+				return false;
+			}
+			Logger::flush();
+			if(g.counter->lines.load() != lines) {
+				// A line came in before the flush took the logger's lock: a status after it follows
+				g.freshStatus = true;
+			}
+			return true;
+		},
 		[](std::string_view message) { LogWarning << "[channel] " << message; });
-
-	g.counter = new LogCounter;
-	Logger::add(g.counter);
 
 	// The simulated headset's shots go next to the channel's own
 	vr::setSimCaptureDir((g.dir / "capture").string());
@@ -4130,7 +4151,7 @@ void update() {
 	}
 	noteSlowPart("commands", commandsStart);
 
-	if(toMsi(now - g.lastStatusTime) >= StatusIntervalMs) {
+	if(g.freshStatus.exchange(false) || toMsi(now - g.lastStatusTime) >= StatusIntervalMs) {
 		writeStatus(now, true);
 	} else {
 		g.writer->poll(); // a timer status the writer's lock kept back

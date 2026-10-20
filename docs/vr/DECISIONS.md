@@ -13,25 +13,27 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: Both Index trackpads held 3 s mark the moment in the headset; the game menu only through the radial
+## D-NEW: Both Index trackpads pressed mark the moment in the headset; the game menu only through the radial
 
 - **Date:** 2026-10-20
 - **Status:** Accepted (#551; supersedes the fixed two-stick hold of D-058, its other rules stay)
 - **Decided by:** the owner (the menu only via the radial and the confirmation in the hero-dialogue panel, 2026-10-19/20;
-  the gesture on both trackpads held 3 s instead of both stick clicks, no gesture on the Touch, 2026-10-20); the
+  the gesture on both trackpads instead of both stick clicks, at once instead of a 3 s hold, no gesture on the Touch,
+  on in every build, the testers' too, 2026-10-20); the
   coordinator (the panel's order, the voice note off in CI, 16 kHz mono up to 10 s); the worker of #551 (the folder
   layout, PNG eye images read back at the mark's frame, the writer thread - technical internals, D-017)
 
 ### Decision
-- **A headset test marks a moment instead of remembering it.** Both Index trackpads pressed (the force press) and held
-  together for **3 s** (`ControlResolver::markGesture`, fixed, not part of the layout and not rebindable, once per
-  hold) write `<user dir>\marks\<yyyymmdd>T<hhmmss>Z-<n>\` (`src/vr/VRMarks.h`): `left.png` / `right.png` (the eye
+- **A headset test marks a moment instead of remembering it.** Both Index trackpads pressed (the force press) mark
+  **at once**, on the frame both are down - no hold (`ControlResolver::markGesture`, fixed, not part of the layout and
+  not rebindable; one mark per press, a release of either re-arms it; the input layer's hysteresis on the force
+  reading, `TrackpadThreshold` press 0.40 / release 0.25, is the only filter). The mark writes `<user dir>\marks\<yyyymmdd>T<hhmmss>Z-<n>\` (`src/vr/VRMarks.h`): `left.png` / `right.png` (the eye
   images of that frame), `recorder.txt` (the flight recorder's tail, scrubbed like `arx-recorder.txt`, #545),
   `clip.vrsim` (the replay ring's last 30 s - the clip of `replay mark`, D-060), `meta.txt` (time, area, position, yaw,
   build, game and session state) and, with the voice note on, `note.wav`.
 - **Only on the Index** (`markGestureAvailable`; status `marks.gesture` `both.trackpad` or `none`): the Touch has no
   trackpads and no mark gesture. The default layouts bind nothing to the trackpads; a player who binds an event to a
-  trackpad gets that event too when the hold marks.
+  trackpad gets that event too when the press marks. On in every build, the tester package included.
 - **Both stick clicks are nothing special any more:** they do what the layout binds (the right one draws the weapon)
   and neither mark nor open the menu.
 - **The confirmation** "Moment marked (#N)" shows for about 2 s in the hero-dialogue panel (D-055: below the centre
@@ -51,7 +53,8 @@ a changed decision keeps its history in that cell.
   on, opening the microphone (on the mark's frame) and closing it (about 10 s later) run on the frame thread too.
 - An Index player who unbinds the radial and the menu event still cannot lock themselves out (D-058's guards), but
   there is no longer a hidden way to the menu for a layout that somehow has none.
-- A Touch player cannot mark a moment; marks are a test tool of the owner's Index.
+- A Touch player cannot mark a moment. An Index player who presses both trackpads by accident marks one (a folder of
+  a few MB in the user directory and the confirmation); nothing else happens.
 
 ## D-060: Every VR session is recorded as a replayable clip - poses and inputs over the same save, the drift measured, no lockstep
 

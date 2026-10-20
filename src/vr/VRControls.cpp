@@ -631,19 +631,15 @@ void ControlResolver::release(Control control, s64 timeMs) {
 
 void ControlResolver::update(s64 timeMs, const ControlSet & down, const ControlSet & taps) {
 
-	// Mark the moment (#551): both trackpads held together for markHoldMs, whatever the layout is
+	// Mark the moment (#551): both trackpads down together, once per press, whatever the layout is
 	m_markGesture = false;
 	if(down[control(Hand::Left, ControlKind::Trackpad)] && down[control(Hand::Right, ControlKind::Trackpad)]) {
-		if(m_bothTrackpadsSince < 0) {
-			m_bothTrackpadsSince = timeMs;
-		}
-		if(!m_markFired && timeMs - m_bothTrackpadsSince >= markHoldMs) {
+		if(!m_markFired) {
 			m_markFired = true;
 			m_markGesture = true;
 			m_markGestures++;
 		}
 	} else {
-		m_bothTrackpadsSince = -1;
 		m_markFired = false;
 	}
 

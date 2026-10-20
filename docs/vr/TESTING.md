@@ -2586,10 +2586,11 @@ replay-crash` (the clip in a hang's and a crash's report).
 ## Marks of the moment (#551)
 
 During a headset test the owner marks a moment instead of remembering it: **both Index trackpads pressed (the force
-press) and held together for 3 s** (D-NEW; fixed, not rebindable, once per hold - a second mark needs a trackpad let
-go first, a release before 3 s marks nothing). Only on the Index: the Touch has no trackpads and no mark gesture. Both
-stick clicks do nothing special (no mark, no menu). The default layouts bind nothing to the trackpads; a player who
-binds an event to one gets that event too when the hold marks. The game writes `<user dir>\marks\<yyyymmdd>T<hhmmss>Z-<n>\` (UTC; `n` the mark's number in the
+press)** mark it **at once**, on the frame both are down - no hold (D-NEW; fixed, not rebindable, one mark per press - a
+second mark needs a trackpad let go and pressed again; one pressed, the other later: the mark when the second goes
+down). Only on the Index: the Touch has no trackpads and no mark gesture. On in every build, the tester package
+included. Both stick clicks do nothing special (no mark, no menu). The default layouts bind nothing to the trackpads; a
+player who binds an event to one gets that event too when the press marks. The game writes `<user dir>\marks\<yyyymmdd>T<hhmmss>Z-<n>\` (UTC; `n` the mark's number in the
 session) off the frame thread:
 
 | File | What |
@@ -2607,7 +2608,7 @@ sequences turn it off - a microphone on the PC must never record the room).
 
 - **status.json** `marks`: `count` (marks made since the start), `last` (the last mark's folder name), `lastFiles`
   (the non-empty files in it, sorted, joined by `,`; empty until they are written), `recording` (a voice note records
-  now), `note` (the voice note is on), `holdMs` (3000), `gesture` (`both.trackpad` on the Index, `none` on controllers
+  now), `note` (the voice note is on), `gesture` (`both.trackpad` on the Index, `none` on controllers
   without trackpads); `scene.subtitle.notice` (`none`, `marked`, `recording`) - while
   not `none`, `scene.subtitle.text` is the notice's line and `drawn` is `chest`.
 - **The log:** `[vr] mark #<n>: the moment is marked ...` at the gesture, `[vr] mark #<n>: marks\<folder> files=<list>`
@@ -2618,6 +2619,7 @@ sequences turn it off - a microphone on the PC must never record the room).
   personal path. Marks are never committed (the repository is public) and not uploaded (#545 stage 3).
 - **The checks:** host tests `MarkMomentTest` (the gesture with any layout, the folder name, `meta.txt`, the panel's
   lines, the Touch without the gesture, both stick clicks never marking) and `VoiceNoteTest` (the WAV writer, the
-  capture on a fake device); `mark-moment.xrs` (a 2.5 s trackpad hold: no mark; both stick clicks 3.5 s: no mark, no
-  menu; a 3 s trackpad hold: one mark, the confirmation in the panel for about 2 s, the five files); `test-marks.ps1`
+  capture on a fake device); `mark-moment.xrs` (both stick clicks held 2.5 s: no mark, no menu; one trackpad alone:
+  no mark, the other pressed too: the mark at once, the confirmation in the panel for about 2 s; held on: no second
+  mark; one let go and pressed again: the second mark; the five files of each); `test-marks.ps1`
   (the listing).

@@ -306,8 +306,7 @@ void startMark(s64 now) {
 	g.status.lastFiles.clear();
 	g.markedAt = now;
 	g.markedNumber = number;
-	LogInfo << "[vr] mark #" << number << ": the moment is marked (both trackpads held "
-	        << ControlResolver::markHoldMs << " ms)";
+	LogInfo << "[vr] mark #" << number << ": the moment is marked (both trackpads pressed)";
 
 	// The voice note from the mark on: an earlier one still recording is kept in its own mark
 	if(g.note.recording()) {

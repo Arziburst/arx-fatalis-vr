@@ -427,15 +427,10 @@ public:
 	const ControlSet & down() const { return m_down; }
 
 	/*!
-	 * How long both trackpads are pressed together to mark the moment (#551, the owner, 2026-10-20; the menu fallback
-	 * of #326 on both stick clicks is gone). Fixed, not part of the layout and not rebindable: whatever the trackpads
-	 * are bound to, the hold of both marks (and their bindings act as well). Only where \ref markGestureAvailable.
-	 */
-	static constexpr s64 markHoldMs = 3000;
-
-	/*!
-	 * The hold of both trackpads reached \ref markHoldMs in the last update: true for that one update, once per
-	 * hold - a second mark needs one of them released first; a release before it marks nothing
+	 * Both trackpads became down together in the last update: the mark of the moment (#551, the owner, 2026-10-20; the
+	 * menu fallback of #326 on both stick clicks is gone). True for that one update, once per press - held on, nothing
+	 * more; a release of either re-arms it. Fixed, not part of the layout and not rebindable: whatever the trackpads
+	 * are bound to, both pressed mark (and their bindings act as well). Only where \ref markGestureAvailable.
 	 */
 	bool markGesture() const { return m_markGesture; }
 	//! How often the gesture came on since the resolver was created
@@ -472,8 +467,7 @@ private:
 	ControlSet m_hasLongPress;
 	std::array<bool, HandCount> m_chords = { true, true };
 
-	s64 m_bothTrackpadsSince = -1;  //!< when both trackpads were first down together, -1 when not both are down
-	bool m_markFired = false;
+	bool m_markFired = false;  //!< both trackpads are down and marked: no mark until one is let go
 	bool m_markGesture = false;
 	u32 m_markGestures = 0;
 

@@ -8,6 +8,25 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-20 — A refresh-rate record is short of its frames (`turn72.frames` 62 < 64) under load, though every other frame was on time (#553)
+
+**Symptom:** `refresh-rate.xrs` failed a `motion.records.<x>.frames ge N` guard now and then, beside other games or in
+the merge gate (`turn90.frames` 76-80 < 81, `turn72.frames` 62 < 64), and passed alone. `arx-perf.log` of the gate
+(CI run 39359033513) had one frame of **173.8 ms, `cause=channel`, channel=159.6 ms, missed=11** inside turn72's
+window: 73 - 11 = 62. **Cause:** the test channel wrote `status.json` (temporary file, rename, `Logger::flush`) and
+`ack.txt` on the main thread, every 100 ms and after every batch. The #23 fix made the rename retry every millisecond
+instead of sleeping 100 ms, but a rename still waits as long as something holds the file: a scanner's or an indexer's
+oplock on `status.json` under I/O load breaks only when its holder lets go. The simulated headset, paced to the display
+clock, skips the display slots a long frame missed, as a headset does - so the record really ran short of frames, and
+the guard was right. The routine writes cost 7.6-12.9 ms of a frame too (ten such hitches in that run).
+**Do:** the channel builds the status on the frame and hands it to its writer thread (`ChannelWriter`,
+src/core/ChannelWriter.h, host test `ChannelWriterTest`), which writes the file, renames it, flushes the log and
+writes the ack after it - the status before the ack (#23) holds on that thread. A frames guard that fails is not to be
+loosened: look for an `H` line with `cause=channel` in the record's window, and for `[channel] slow frame part:` in
+`arx.log`, which names what is left of the channel on the frame (commands, the status build, the records) when it
+takes 20 ms or more. Reproduce with `scripts/dev/refresh-rate-stress.ps1 -SlowStatusMs 150` (an oplock on each
+`status.json` replacement): red every time with the write on the frame, green with the writer thread.
+
 ## 2026-10-19 — `abort()` / `std::terminate()` leave no crash report, the process ends with 0xE06D7363 or a fail-fast 0xC0000409 (#545)
 
 **Symptom:** the channel's `abort` ended the game with exit code 0xE06D7363 (a C++ exception) and `terminate` with
@@ -46,7 +65,8 @@ Euler step of the walk. **Do:** the channel replaces the file itself (`core::rep
 `FileReplaceTest`): a write a test waits for tries every millisecond until the reader lets go (2 s at most, then it
 stays pending and every frame tries once more - a waited-for write is never dropped), the 250 ms timer's write gives up
 when a reader holds the file and the next one comes. After it, five runs beside a paced third game: 5 of 5 (before: 3 of 5). When a
-pacing number looks wrong, look in `arx-perf.log` for an `H` line at that time before the code.
+pacing number looks wrong, look in `arx-perf.log` for an `H` line at that time before the code. *Since #553 the whole
+write is off the frame, on the channel's writer thread (the 2026-10-20 entry): a held file delays the file, not a frame.*
 
 ## 2026-10-18 — `@assert` right after an acknowledged command reads the state of the command before (#23)
 

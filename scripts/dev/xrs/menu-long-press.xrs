@@ -1,16 +1,13 @@
-# A fixed fallback opens the game menu whatever the bindings are (#326; written before the implementation): both
-# thumbsticks clicked (pressed in) and held TOGETHER for 2 s (the owner, 2026-10-18: the Index has no menu button the
-# game can read) - not part of the layout, not rebindable; the menu opens at 2 s while they are still held. On the
+# The game menu without a menu button (#326; #551 removed its fallback - this version written before that
+# implementation): the fixed fallback of D-058 - both thumbsticks clicked (pressed in) and held TOGETHER for 2 s opened
+# the game menu whatever the bindings were - is gone (the owner, 2026-10-19/20: the menu only via the radial; the hold
+# of both is the mark of the moment, mark-moment.xrs), and so are its status fields vr.input.menuFallback.*. On the
 # simulated Index, with a binding set that has no menu entry, saved into vr-controls-index.ini as the VR settings page
 # saves it and read back as a start reads it: the radial menu (the only way to the game menu, D-042) moved to the left
 # trackpad, the menu event unbound. The right B then opens nothing; one stick click held 3 s and a tap of both open
-# nothing; both held open the game menu while held; the VR settings' reset to default is reachable from it.
+# nothing; both held 2.5 s open nothing; the radial menu on the left trackpad opens the game menu; the VR settings'
+# reset to default is reachable from it.
 #
-# Assumes (the worker adds them to status.json, src/core/CommandChannel.cpp, named exactly):
-#   vr.input.menuFallback.control  (text)    the fallback's controls: both.stick_click (both hands' stick clicks
-#                                            together - the kind name of vr::controlName, "both" for the two hands)
-#   vr.input.menuFallback.holdMs   (number)  how long both are held before the game menu opens, in ms: 2000
-#   vr.input.menuFallback.opens    (count)   how often the fallback opened the game menu since the start
 # On the first-person test save, like menu-rebind-kept.xrs: --loadlevel 10 starts inside a scripted scene, where
 # Escape skips the scene instead of opening the game menu.
 # Self-contained: it ends with the default layout and no saved file (CI runs every sequence in one user directory).
@@ -26,9 +23,6 @@ vr-input default
 @frames 2
 @assert vr.input.remapped eq false
 @assert menuMode eq ingame
-@assert vr.input.menuFallback.control eq both.stick_click
-@assert vr.input.menuFallback.holdMs eq 2000
-@remember opens0 vr.input.menuFallback.opens
 
 # The binding set without a menu entry: the radial menu captured on the left trackpad (saved), read back as at a start
 menu pause
@@ -64,18 +58,25 @@ vr-input up left.stick_click
 vr-input tap left.stick_click; vr-input tap right.stick_click
 @wait 1000
 @assert menuMode eq ingame
-@assert vr.input.menuFallback.opens eq {opens0}
 
-# Both stick clicks held together: not open after 1 s, open by 2.5 s (+ the channel's latency) while still held
+# Both stick clicks held together 2.5 s - past the removed fallback's 2 s, short of the mark's 3 s: the game menu
+# stays closed, while held and after
 vr-input down left.stick_click; vr-input down right.stick_click
-@wait 1000
+@wait 2500
 @assert menuMode eq ingame
-@wait 1500
-@until menuMode eq mainmenu 2s
-@assert vr.input.menuFallback.opens eq {opens0+1}
 vr-input up left.stick_click; vr-input up right.stick_click
 @wait 500
-@assert menuMode eq mainmenu
+@assert menuMode eq ingame
+
+# The radial menu still opens it: held on the left trackpad (its moved binding), the ring's game menu item, let go
+vr-sim hand right pos 0.12 -0.2 -0.38; vr-sim hand left pos -0.12 -0.2 -0.38
+@frames 10
+vr-input down left.trackpad
+@until vr.radial.right.open eq true 5s
+vr-radial point right game_menu
+@frames 10
+vr-input up left.trackpad
+@until menuMode eq mainmenu 5s
 
 # From it the VR settings' reset to default: the right B's radial menu is back, the saved file gone
 menu vr

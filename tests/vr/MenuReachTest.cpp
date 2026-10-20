@@ -44,13 +44,12 @@ const Control MrRightB = control(Hand::Right, ControlKind::B);
 const Control MrRightGrip = control(Hand::Right, ControlKind::Grip);
 
 /*
- * The fallback (#326, the owner 2026-10-18): both thumbsticks clicked and held together for 2 s (2000 ms). The game
- * menu opens between 1.5 s and 2.1 s after both are down, while they are still held
+ * The fallback of #326 (both thumbsticks held together for 2 s opened the game menu) is removed by #551 (the owner,
+ * 2026-10-19/20): the hold of both is the mark of the moment (3 s, tests/vr/MarkMomentTest.h), the game menu is
+ * reached through the radial menu. How long the tests hold both stick clicks: past the old 2 s and past the mark's 3 s
  */
-const s64 FallbackNotBeforeMs = 1500;
-const s64 FallbackByMs = 2100;
-//! How long the tests hold both stick clicks: well past the 2 s, so the menu must open while they are held
 const s64 LongHoldMs = 3000;
+const s64 LongerHoldMs = 5000;
 
 ControlSet mrSet(std::initializer_list<Control> list = { }) {
 	ControlSet result;
@@ -137,29 +136,23 @@ std::string at(const std::string & name, const char * what) {
 	return name + ": " + what;
 }
 
-void assertOpensMenu(const std::string & name, const MenuKey & key) {
-	CPPUNIT_ASSERT_MESSAGE(at(name, "both stick clicks held 3 s open the game menu"), key.presses >= 1);
-	CPPUNIT_ASSERT_MESSAGE(at(name, "... once, not repeatedly while held"), key.presses == 1);
-	CPPUNIT_ASSERT_MESSAGE(at(name, "... not before about 2 s of holding both"), key.firstMs >= FallbackNotBeforeMs);
-	CPPUNIT_ASSERT_MESSAGE(at(name, "... by about 2 s of holding both"), key.firstMs <= FallbackByMs);
-	CPPUNIT_ASSERT_MESSAGE(at(name, "... while both are still held (Escape released before the sticks)"),
-	                       key.offMs > key.firstMs && key.offMs <= LongHoldMs);
+void assertNoMenu(const std::string & name, const MenuKey & key) {
+	CPPUNIT_ASSERT_EQUAL_MESSAGE(at(name, "both stick clicks held together open no game menu (the D-058 fallback is gone, #551)"),
+	                             u32(0), key.presses);
 	CPPUNIT_ASSERT_MESSAGE(at(name, "... and the game menu key is off after the release"), !key.onAfter);
 }
 
-void assertFallbackOpensMenu(const std::string & name, const ControlLayout & layout) {
+void assertBothSticksOpenNoMenu(const std::string & name, const ControlLayout & layout) {
 
 	MrFrames f(layout);
 
-	// Two holds one after the other: each opens the game menu once
-	assertOpensMenu(name + " (both pressed together)", holdFor(f, BothSticks, LongHoldMs));
-	assertOpensMenu(name + " (again)", holdFor(f, BothSticks, LongHoldMs));
-
-	// One stick first, the other 0.4 s later: the 2 s count from when both are down
-	assertOpensMenu(name + " (left first)",
-	                holdFor(f, BothSticks, LongHoldMs, ControlSet(), mrSet({ MrLeftStickClick }), 400));
-	assertOpensMenu(name + " (right first)",
-	                holdFor(f, BothSticks, LongHoldMs, ControlSet(), mrSet({ MrRightStickClick }), 400));
+	// Past the old 2 s, past the mark's 3 s, twice; one stick 0.4 s before the other
+	assertNoMenu(name + " (both pressed together, 3 s)", holdFor(f, BothSticks, LongHoldMs));
+	assertNoMenu(name + " (again, 5 s)", holdFor(f, BothSticks, LongerHoldMs));
+	assertNoMenu(name + " (left first)",
+	             holdFor(f, BothSticks, LongHoldMs, ControlSet(), mrSet({ MrLeftStickClick }), 400));
+	assertNoMenu(name + " (right first)",
+	             holdFor(f, BothSticks, LongHoldMs, ControlSet(), mrSet({ MrRightStickClick }), 400));
 }
 
 //! The Index default with no way to the game menu left: no menu event, no radial menu (D-042: the radial is the way)
@@ -185,32 +178,33 @@ ControlLayout readSaved(const std::string & text, ControllerType type) {
 
 } // anonymous namespace
 
-void MenuReachTest::fallbackOpensMenuTest() {
+void MenuReachTest::bothSticksOpenNoMenuTest() {
 
-	// Whatever the bindings are (#326): nothing bound at all, the defaults (the right stick click draws the weapon),
-	// no way to the game menu left, and the owner's case - the way moved to bindings he does not know
+	// Whatever the bindings are (#551 removes the fallback of #326): nothing bound at all, the defaults (the right
+	// stick click draws the weapon), no way to the game menu left, and the way moved to bindings the player does not
+	// know - the hold of both stick clicks never presses the game menu key
 	ControlLayout moved = defaultLayout(ControllerType::Index);
 	moved[Event::RadialRight] = Binding::hold(MrLeftTrackpad);
 	moved[Event::Menu] = Binding::chord(MrRightGrip, MrRightA);
 
-	assertFallbackOpensMenu("no binding at all", ControlLayout());
-	assertFallbackOpensMenu("the Index default", defaultLayout(ControllerType::Index));
-	assertFallbackOpensMenu("the Touch default", defaultLayout(ControllerType::Touch));
-	assertFallbackOpensMenu("the Index default without a way to the menu", lockedOutLayout());
-	assertFallbackOpensMenu("the menu's way moved where the player does not know", moved);
+	assertBothSticksOpenNoMenu("no binding at all", ControlLayout());
+	assertBothSticksOpenNoMenu("the Index default", defaultLayout(ControllerType::Index));
+	assertBothSticksOpenNoMenu("the Touch default", defaultLayout(ControllerType::Touch));
+	assertBothSticksOpenNoMenu("the Index default without a way to the menu", lockedOutLayout());
+	assertBothSticksOpenNoMenu("the menu's way moved where the player does not know", moved);
 }
 
-void MenuReachTest::fallbackNotRebindableTest() {
+void MenuReachTest::bothSticksBoundOpenNoMenuTest() {
 
 	// The player bound both stick clicks to other events - a single press, a long press of the layout's own (500 ms),
-	// a chord led by one - and the menu event to another button: the fixed hold of both still opens the menu
+	// a chord led by one - and the menu event to another button: the hold of both opens no menu either
 	ControlLayout layout = defaultLayout(ControllerType::Index);
 	layout[Event::Jump] = Binding::single(MrLeftStickClick);
 	layout[Event::Recenter] = Binding::hold(MrLeftStickClick);
 	layout[Event::Book] = Binding::chord(MrLeftStickClick, MrLeftTrigger);
 	layout[Event::MagicMode] = Binding::hold(MrRightStickClick);
 	layout[Event::Menu] = Binding::single(MrRightA);
-	assertFallbackOpensMenu("both stick clicks bound to other events", layout);
+	assertBothSticksOpenNoMenu("both stick clicks bound to other events", layout);
 }
 
 void MenuReachTest::fallbackShortPressTest() {

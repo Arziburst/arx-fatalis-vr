@@ -115,7 +115,7 @@ src/animation/* -> arms-follow arms-classic weapon-hold tl-reprojection melee-sw
 
 # --- Scripted scenes in VR (#29): the view, the subtitles, the hero's body in a cinema shot -------------------------
 src/vr/SceneView.* -> scene-switches
-src/vr/SceneSubtitles.* -> scene-switches
+src/vr/SceneSubtitles.* -> scene-switches mark-moment
 
 # --- The head and the camera ---------------------------------------------------------------------------------------
 src/vr/HeadPose.* -> look-around recenter real-steps arms-follow vr-turning-settings walk-look body-look-down tl-reprojection
@@ -155,7 +155,7 @@ src/vr/VRRunes.* -> rune-trail controls-v2 spell-drawcheck
 # --- Controls, bindings and settings -------------------------------------------------------------------------------
 src/vr/VRInput.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail sneak-jump-crouch walk-look physical-crouch vr-turning-settings hand-reticle playground-hands desktop-mouse first-run-chargen first-run-menu finger-held finger-tracking menu-rebind-kept menu-long-press
 src/vr/VRActions.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail sneak-jump-crouch walk-look physical-crouch vr-turning-settings hand-reticle playground-hands desktop-mouse first-run-chargen first-run-menu finger-held finger-tracking arms-follow hand-conforming menu-rebind-kept menu-long-press
-src/vr/VRControls.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail finger-held finger-tracking hand-reticle playground-hands menu-rebind-kept menu-long-press
+src/vr/VRControls.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail finger-held finger-tracking hand-reticle playground-hands menu-rebind-kept menu-long-press mark-moment
 src/vr/VRBindings.* -> controls-v2 vr-remap vr-remap-saved vr-settings-flat finger-held finger-tracking
 src/vr/BindingCapture.* -> vr-remap vr-remap-saved vr-settings-flat menu-rebind-kept menu-long-press
 src/vr/VRSettingsRows.* -> vr-turning-settings vr-settings-flat vr-remap
@@ -296,7 +296,7 @@ scripts/dev/crash-notice-check.ps1 -> core
 
 # --- Record and replay (#550): 10 s of a recorded session replayed as a script; the recorder runs in every VR session ----
 src/vr/ReplayClip.* -> replay-clip
-src/vr/ReplayRecorder.* -> replay-clip
+src/vr/ReplayRecorder.* -> replay-clip mark-moment
 scripts/dev/vrsim/replay-clip.vrsim -> replay-clip
 # The replay, the converter and the hand-run record-and-replay check (two launches, judged after the quit) are no game check
 scripts/dev/replay.ps1 -> core
@@ -306,3 +306,9 @@ scripts/dev/replay-check.ps1 -> core
 # --- The melee-damage stress check (#532): the sequence N times on two lanes beside a busy game, hand-run --------------
 # It launches its own games and is no game check
 scripts/dev/melee-damage-stress.ps1 -> core
+
+# --- Mark the moment (#551): both stick clicks held 3 s write a marker folder; the confirmation in the hero's panel ---
+src/vr/MarkMoment.* -> mark-moment
+src/vr/VoiceNote.* -> mark-moment
+# The marks listing (its self-test runs with the script tests) touches no game check
+scripts/dev/marks.ps1 -> core

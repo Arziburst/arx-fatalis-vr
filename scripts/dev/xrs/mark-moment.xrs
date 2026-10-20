@@ -1,0 +1,82 @@
+# Mark the moment (#551; written before the implementation): on the simulated Index, both thumbstick clicks held
+# together for 3 s write a marker folder <user dir>\marks\<utc>-<n>\ (left.png, right.png, recorder.txt, clip.vrsim,
+# meta.txt; note.wav when the voice note is on and a microphone recorded one) and show "Moment marked (#N)" in the
+# hero-dialogue panel (the subtitle panel of #460 / D-055) for about 2 s. Held 2.5 s and let go: no mark. Held on
+# after the mark: no second mark until they are let go. The hold no longer opens the game menu (the D-058 fallback is
+# gone; menu-long-press.xrs has the radial's way to it). The feature's one CI sequence (coordinator Tests and CI
+# rule 11), about 15 s after the load.
+#
+# Assumes (the worker adds them, named exactly; tests/vr/MarkMomentTest.h has the whole interface):
+#   marks.count          (count)  marks written since the start
+#   marks.last           (text)   the last mark's folder name: <yyyymmdd>T<hhmmss>Z-<n> (UTC, n = its number)
+#   marks.lastFiles      (text)   the non-empty files in it, sorted by name, joined by "," without spaces
+#   marks.recording      (bool)   a voice note records now
+#   marks.note           (bool)   the voice note is on (cfg.ini vr_mark_note; the channel's `marks note on|off`)
+#   marks.holdMs         (number) the hold: 3000
+#   scene.subtitle.notice (text)  the notice the hero-dialogue panel shows: none | marked | recording
+#   log "[vr] mark #<n>: marks\<folder> files=<lastFiles>" once the folder is written, and the panel's
+#   "vr.scene.subtitle notice=marked ... text="Moment marked (#<n>)"" when the confirmation shows
+# The voice note is turned off for the run: CI runs on the owner's PC, where a microphone may be plugged in (a room
+# recording must never land in a CI user directory); the note itself is a host test (tests/vr/VoiceNoteTest.h) and
+# the owner's headset test.
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.input.controllers eq index
+@assert menuMode eq ingame
+@assert marks.count eq 0
+@assert marks.holdMs eq 3000
+@assert scene.subtitle.notice eq none
+marks note off
+@frames 2
+@assert marks.note eq false
+
+# 1. Both stick clicks held 2.5 s and let go: no mark (and no game menu, the old fallback's 2 s are long past)
+vr-input down left.stick_click; vr-input down right.stick_click
+@wait 2500
+@assert marks.count eq 0
+@assert menuMode eq ingame
+vr-input up left.stick_click; vr-input up right.stick_click
+@wait 500
+@assert marks.count eq 0
+@assert scene.subtitle.notice eq none
+@assert menuMode eq ingame
+
+# 2. Held 3 s: the mark, its confirmation in the hero-dialogue panel (below the view centre: the hero's panel)
+@mark
+vr-input down left.stick_click; vr-input down right.stick_click
+@wait 2000
+@assert marks.count eq 0
+@until marks.count eq 1 3s
+@until scene.subtitle.notice eq marked 1s
+@assert scene.subtitle.visible eq true
+@assert scene.subtitle.drawn eq chest
+@assert marks.recording eq false
+@assert menuMode eq ingame
+
+# 3. Still held: the confirmation stays about 2 s and goes; no second mark while they are held (3 s past the mark)
+@wait 1000
+@assert scene.subtitle.notice eq marked
+@assert scene.subtitle.panel eq true
+@until scene.subtitle.notice eq none 2s
+@wait 2000
+@assert marks.count eq 1
+vr-input up left.stick_click; vr-input up right.stick_click
+@wait 500
+@assert marks.count eq 1
+@assert menuMode eq ingame
+
+# 4. The folder: the five files, written and not empty; no voice note (off). The log has the confirmation's line and
+# the folder's, in either order (the files may be written after the confirmation shows): one look-ahead for each
+@until marks.lastFiles eq clip.vrsim,left.png,meta.txt,recorder.txt,right.png 10s
+@assert marks.recording eq false
+@log (?s)^(?=.*vr\.scene\.subtitle notice=marked [^\n]*text="Moment marked \(#1\)")(?=.*\[vr\] mark #1: marks\\\d{8}T\d{6}Z-1 files=clip\.vrsim,left\.png,meta\.txt,recorder\.txt,right\.png) 5s
+
+marks note on
+@frames 2
+@assert marks.note eq true
+@assert errors eq 0

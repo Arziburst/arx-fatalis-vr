@@ -1,0 +1,150 @@
+/*
+ * Copyright 2026 Arx Fatalis VR contributors
+ *
+ * This file is part of Arx Fatalis VR, based on Arx Libertatis.
+ *
+ * Arx Libertatis is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Arx Libertatis is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Arx Libertatis.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#ifndef ARX_TESTS_VR_MARKMOMENTTEST_H
+#define ARX_TESTS_VR_MARKMOMENTTEST_H
+
+#include <cppunit/TestCase.h>
+#include <cppunit/extensions/HelperMacros.h>
+
+/*!
+ * Mark the moment in the headset (#551; written before the implementation). During a headset test the owner holds
+ * BOTH thumbstick clicks (pressed in) for 3 s: the game writes a marker folder with everything a worker needs to
+ * reproduce the moment, and a confirmation shows in the hero-dialogue panel (the subtitle panel of #460 / D-055).
+ * The both-stick 2 s menu fallback of D-058 (#539) is removed so the gesture is free (tests/vr/MenuReachTest.h).
+ *
+ * The interface these tests expect (the voice note's half is in tests/vr/VoiceNoteTest.h):
+ *
+ * 1. The gesture, in src/vr/VRControls.h - where the menu fallback was (ControlResolver::menuFallbackMs,
+ *    menuFallback() and menuFallbackOpens() go away with it):
+ *
+ *   class ControlResolver {
+ *   public:
+ *     //! How long both thumbstick clicks are held together to mark the moment (#551, the owner). Fixed, not part of
+ *     //! the layout and not rebindable: whatever the stick clicks are bound to, the hold of both marks
+ *     static constexpr s64 markHoldMs = 3000;
+ *     //! The hold of both stick clicks reached markHoldMs in the last update: true for that one update, once per
+ *     //! hold - a second mark needs one of them released first; a release before markHoldMs marks nothing and the
+ *     //! next hold counts from zero again
+ *     bool markGesture() const;
+ *     //! How often the gesture came on since the resolver was created
+ *     u32 markGestures() const;
+ *   };
+ *
+ *   "Held for markHoldMs" counts from the first update() that had both stick clicks in \a down (as the fallback
+ *   did): the gesture comes on at the first update at or after that time + markHoldMs, never before.
+ *
+ * 2. The marker, in src/vr/MarkMoment.h (pure: no engine globals, no file system; the game's side is in
+ *    src/vr/MarkMoment.cpp next to it, or wherever the worker wires it):
+ *
+ *   namespace vr {
+ *
+ *   //! The confirmation in the hero-dialogue panel: "Moment marked (#<number>)"
+ *   std::string markNoticeText(u32 number);
+ *   //! The voice note's line in the same panel: "Recording note... (<seconds> s)"
+ *   std::string noteNoticeText(u32 seconds);
+ *
+ *   //! The marker folder's name, <user dir>\marks\<name>\: the mark's UTC time (ISO 8601 basic) and its number in
+ *   //! the session - "20261020T153012Z-1"; sorts by time, valid on every file system
+ *   std::string markFolderName(s64 unixSeconds, u32 number);
+ *
+ *   //! What meta.txt says about a mark
+ *   struct MarkMeta {
+ *     u32 number = 0;               //!< the mark's number in this session, from 1 (the "#N" of the confirmation)
+ *     s64 unixSeconds = 0;          //!< when it was made: UTC seconds since 1970
+ *     u32 area = 0;                 //!< the level (status.json "area", g_currentArea), 0 for none
+ *     Vec3f position = Vec3f(0.f);  //!< the player's position (status.json player.x / y / z), game units
+ *     float yaw = 0.f;              //!< the player's heading (status.json player.yaw), degrees
+ *     std::string build;            //!< the build: version, commit and config, as the game names itself
+ *     std::string state;            //!< the game's state (status.json "state": GAMEPLAY, MENU, ...)
+ *     std::string session;          //!< the VR session's state (focused, visible, synchronized, ...)
+ *   };
+ *
+ *   //! meta.txt: a comment line, then one key=value line per field, in this order, each ending in "\n":
+ *   //!   # moment mark (#551)
+ *   //!   mark=<number>
+ *   //!   time=<YYYY-MM-DDTHH:MM:SSZ>              UTC
+ *   //!   area=<area>
+ *   //!   position=<x> <y> <z>                     one decimal each ("%.1f")
+ *   //!   yaw=<yaw>                                one decimal
+ *   //!   build=<build>
+ *   //!   state=<state>
+ *   //!   session=<session>
+ *   //! A control character (a new line, a tab) in a text field is written as a space, so a field is always one line.
+ *   //! No path of any kind is in it (the marks go to a coordinator, the repository is public).
+ *   std::string formatMarkMeta(const MarkMeta & meta);
+ *
+ *   }
+ *
+ * 3. The game (asserted by scripts/dev/xrs/mark-moment.xrs, the folder listed by scripts/dev/marks.ps1 and its
+ *    self-test scripts/dev/test-marks.ps1):
+ *    - only in VR, when ControlResolver::markGesture() comes on: <user dir>\marks\<markFolderName>\ with
+ *        left.png, right.png   the eye images of that frame, or the nearest rendered one
+ *        recorder.txt          the flight recorder's tail (#545: serializeRecorder of the live recorder)
+ *        clip.vrsim            the replay ring's last 30 s, via the same code as the channel's `replay mark` (#550)
+ *        meta.txt              formatMarkMeta
+ *        note.wav              the voice note (tests/vr/VoiceNoteTest.h), when it is on and a microphone recorded one
+ *    - the hero-dialogue panel shows markNoticeText(N) for about 2 s, then (or while the note records) noteNoticeText
+ *    - the log: "[vr] mark #<N>: marks\<folder> files=<lastFiles>" once the five files are written, and the panel's
+ *      "vr.scene.subtitle notice=<marked|recording> ... text="<the line>"" when a notice shows
+ *    - status.json (src/core/CommandChannel.cpp):
+ *        marks.count      (count)  marks written since the start
+ *        marks.last       (text)   the last mark's folder name (markFolderName), "" before the first
+ *        marks.lastFiles  (text)   the non-empty files in that folder, sorted by name, joined by "," without spaces:
+ *                                  "clip.vrsim,left.png,meta.txt,recorder.txt,right.png" (",note.wav" sorts in)
+ *        marks.recording  (bool)   a voice note records now
+ *        marks.note       (bool)   the voice note is on (cfg.ini vr_mark_note, the channel's `marks note on|off`)
+ *        marks.holdMs     (number) ControlResolver::markHoldMs
+ *        scene.subtitle.notice (text) the notice the hero-dialogue panel shows now: none | marked | recording;
+ *                                  while it is not none, scene.subtitle.visible is true, scene.subtitle.text is the
+ *                                  line (markNoticeText / noteNoticeText) and scene.subtitle.drawn is chest
+ *    - cfg.ini vr_mark_note (bool, default 1): the voice note after a mark; 0 turns it off
+ *    - channel: `marks note on|off` - the voice note for this session (cfg.ini keeps the player's choice)
+ */
+class MarkMomentTest final : public CppUnit::TestFixture {
+
+	CPPUNIT_TEST_SUITE(MarkMomentTest);
+	CPPUNIT_TEST(gestureAtThreeSecondsTest);
+	CPPUNIT_TEST(gestureOncePerHoldTest);
+	CPPUNIT_TEST(gestureShortHoldTest);
+	CPPUNIT_TEST(gestureReleaseResetsTest);
+	CPPUNIT_TEST(gestureOneStickTest);
+	CPPUNIT_TEST(gestureAnyLayoutTest);
+	CPPUNIT_TEST(noticeTextTest);
+	CPPUNIT_TEST(folderNameTest);
+	CPPUNIT_TEST(metaFormatTest);
+	CPPUNIT_TEST(metaOneLinePerFieldTest);
+	CPPUNIT_TEST_SUITE_END();
+
+public:
+
+	void gestureAtThreeSecondsTest();
+	void gestureOncePerHoldTest();
+	void gestureShortHoldTest();
+	void gestureReleaseResetsTest();
+	void gestureOneStickTest();
+	void gestureAnyLayoutTest();
+	void noticeTextTest();
+	void folderNameTest();
+	void metaFormatTest();
+	void metaOneLinePerFieldTest();
+
+};
+
+#endif // ARX_TESTS_VR_MARKMOMENTTEST_H

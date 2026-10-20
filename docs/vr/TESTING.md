@@ -2113,9 +2113,9 @@ How the runner differs from a worker's copy — none of it needs action, all of 
   profile. The **game lock** is not: it lives in `%ProgramData%\ArxFatalisVR\locks`, which both accounts
   can write, so CI waits for a game the owner or a worker runs and they wait for CI (#205, see
   [the game lock](#isolation-and-the-game-lock-parallel-work)). CI's own jobs never overlap (one runner). Since #522
-  the game checks may hold two slots (`ARXVR_MAX_GAMES=2`): while another game holds one, CI goes on with one lane in
-  the other slot instead of waiting; a launch of the owner or a worker (which tries slot 1 only) still waits while CI
-  holds slot 1.
+  the game checks may hold several slots (`ARXVR_MAX_GAMES`, CI's lane count - 4 since #563): while another game holds
+  one, CI goes on with one lane in a free slot instead of waiting; a launch of the owner or a worker (which tries slot 1
+  only) still waits while CI holds slot 1.
 - The service has no Steam registry entry of the owner, so the workflow passes the install folder:
   `ARXVR_DATA_DIR` in the workflow `env` (read by `ci-smoke.ps1`, passed as `--data-dir`).
 - `ARXVR_AUTOREPORT=0`: a CI run files no bug issues by itself (#131); the failed step is the report.
@@ -2123,27 +2123,32 @@ How the runner differs from a worker's copy — none of it needs action, all of 
 
 Run it by hand: `.\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence` (needs a fresh build of the
 copy; `-Phase smoke|spells` runs one half; exit 0 pass, 1 fail, 2 skipped, 3 cannot run here). On a PC whose lock
-allows one game (the owner's rule, no `settings.json`) it runs on one lane; `$env:ARXVR_MAX_GAMES = 2` first runs it on
-two, as CI does.
+allows one game (the owner's rule, no `settings.json`) it runs on one lane; `$env:ARXVR_MAX_GAMES = 4` first runs it on
+four, as CI does.
 
-### Two lanes, the order and the durations file (#522)
+### The lanes, the order and the durations file (#522, #563)
 
-The game checks are most of the job, so `ci-smoke.ps1` runs two games at once:
+The game checks are most of the job, so `ci-smoke.ps1` runs several games at once - as many as the game lock allows:
 - **Lanes.** A scheduler (`scripts/dev/ci-smoke-lib.ps1`, `Invoke-ArxPhaseSchedule`) hands the next phase to a free lane;
   each phase runs in its own background pwsh, and each lane has its own test channel folder (lane 1 the copy's usual one,
-  lane 2 the same path with `-lane2`), given as `-TestDir` and as `ARXVR_TEST_DIR` to every script of the phase. Every
+  lane n the same path with `-lane<n>`), given as `-TestDir` and as `ARXVR_TEST_DIR` to every script of the phase. Every
   sequence already has its own user directory (#296), under `ci-userdirs\<folder>-<hash>` of the working copy, so two
   copies running the suite never share one; `smoke-test` and `spell-drawcheck` share the copy's and never run
   together; `save-library` goes first and every `@save` sequence waits for it; a read-back runs after its sequence passed,
   in its user directory; the playground level is generated once before the lanes start. A phase's transcript is printed
   when it ends, then `==> ci-smoke phase '<name>': PASS (exit 0, 15 s) on lane 2`; the summary at the end lists every phase
-  in the serial order, as a serial run would. `-Lanes 1` runs one at a time.
-- **The game lock decides how many.** The lanes are capped at the lock's `maxGames`: the workflow sets `ARXVR_MAX_GAMES=2`
-  on the game checks step (it overrides `settings.json` and the default 1, for that step's launches only; everyone else
-  keeps one slot). Before a second lane starts a phase, the scheduler looks at the lock: while a game slot is held by a
-  launcher whose `copy=` is not this working copy, or an `arx.exe` runs outside the lock from another folder (the owner
-  plays, a worker tests), it uses one lane (`ci-smoke: 1 lane while another game of this PC runs: ...`), and two again
-  once that game is gone.
+  in the serial order, as a serial run would. `-Lanes 1` runs one at a time (`-Lanes n` asks for at most n).
+- **The game lock decides how many.** The lanes are the lock's `maxGames`: the workflow sets `ARXVR_MAX_GAMES` on the
+  game checks step (it overrides `settings.json` and the default 1, for that step's launches only; everyone else keeps
+  one slot). That one line is **CI's lane count** (#563) - nothing else holds a number: `ci-smoke.ps1` takes it from the
+  lock, `ci-local.ps1` reads it from the workflow (`Get-ArxCiLaneCount`), and `test-ci-smoke.ps1` fails a workflow
+  that sets it twice, outside 1-4, or passes ci-smoke a `-Lanes` of its own. 4 since #563 (measured in its pull
+  request against 2, 3 and 5: wall time, load, frame hitches, guard margins - 2 -> 3 -> 4 each over 20% faster on the
+  game checks, 5 only 13% faster than 4 with a CPU peak over 60%, one run); more than 4 is the owner's call. Before
+  another lane starts a phase, the scheduler looks at the lock: while a game slot is held by a launcher whose `copy=` is
+  not this working copy, or an `arx.exe` runs outside the lock from another folder (the owner plays, a worker tests),
+  it uses one lane (`ci-smoke: 1 lane while another game of this PC runs: ...`), and all of them again once that game is
+  gone.
 - **The order.** The `.xrs` files the change touches go first (`git diff --name-only <base>...HEAD`, the two-dot diff in
   CI's shallow checkout; a changed read-back counts for its sequence), so a fix round sees its own sequence early; then
   the rest by the last run's duration, longest first (a sequence and its read-back count together), so the lanes end
@@ -2224,7 +2229,7 @@ calls. `-DurationsFile` adds each selection's own time.
 `success` on the same head commit. A branch made before #522 has no `suite` input: merge main into it first.
 
 **Locally, before every push**: `.\scripts\dev\ci-local.ps1` builds the working copy (with `arxtest`), runs the
-script self-tests, then `ci-smoke.ps1 -Suite pr` against `origin/main` (fetched first) on two lanes - one while another
+script self-tests, then `ci-smoke.ps1 -Suite pr` against `origin/main` (fetched first) on CI's lanes - one while another
 game of the PC holds a slot - and prints a summary with each step's time, the suite line and the selection; exit 0 only
 when every step passed (2: the game lock stayed busy). `-Full` runs everything. The selection is of the commits
 (`origin/main...HEAD`): commit first. Its evidence goes to `%LOCALAPPDATA%\ArxFatalisVR\ci-local\<copy>-<time>` (the last
@@ -2271,7 +2276,7 @@ launch rules D-014 / #147). What keeps their runs apart — all derived from the
 
 **The game lock** (`scripts/launch-lib.ps1`): `%ProgramData%\ArxFatalisVR\locks\game-<n>.lock` (slots
 `1..maxGames`, `maxGames` = 1 unless `settings.json` next to it says otherwise, or `$env:ARXVR_MAX_GAMES` for the
-launches of one process tree - CI's two lanes, #522) plus `vr.lock` for a
+launches of one process tree - CI's lanes, #522, #563) plus `vr.lock` for a
 VR launch — each a file opened for writing without write sharing by the launching script and held
 until the game exits. Windows drops the handle with the process, so a crash or a kill cannot leave a
 stale lock.

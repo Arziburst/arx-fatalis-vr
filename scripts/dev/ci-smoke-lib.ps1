@@ -295,6 +295,15 @@ function Get-ArxForeignGames([string]$Copy, [string]$BuildDir) {
 	$foreign
 }
 
+# CI's lane count (#563): the one ARXVR_MAX_GAMES of the workflow file - ci-local.ps1 runs as many lanes, so a worker's
+# run before the push has CI's load. $null when the file is missing or does not set exactly one number.
+function Get-ArxCiLaneCount([string]$Workflow) {
+	if (-not (Test-Path -LiteralPath $Workflow)) { return $null }
+	$found = [regex]::Matches((Get-Content -LiteralPath $Workflow -Raw), "(?m)^\s*ARXVR_MAX_GAMES:\s*'?(\d+)'?\s*$")
+	if ($found.Count -ne 1) { return $null }
+	[int]$found[0].Groups[1].Value
+}
+
 # How many lanes may run now: one while another game of the PC (the owner's, a worker's) holds a slot, else $Lanes
 function Get-ArxLaneCount([int]$Lanes, [string]$Copy, [string]$BuildDir) {
 	if (@(Get-ArxForeignGames $Copy $BuildDir).Count) { 1 } else { $Lanes }

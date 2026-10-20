@@ -224,6 +224,8 @@ jobs:
     # scripts/dev/xrs/impact.txt (the log lists them); everything on a push to main, with the label full-ci and on a
     # manual run with suite=full (the merge gate). A pull request's run stops at the first FAIL (#527).
     # ARXVR_CI_RUNNER marks the launches as the job's own (#527): they take the slots the runner marker keeps free.
+    # At its end ci-smoke.ps1 adds the Performance table to the job summary (#552, perf-track.ps1): each phase against the
+    # rolling baseline of the green main and gate runs on this lane count, a warning per slower phase; it never fails.
     - name: Game checks (smoke test, draw check, spell draw check, .xrs sequences)
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh

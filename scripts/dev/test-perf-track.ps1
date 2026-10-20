@@ -615,6 +615,42 @@ Section 'perf-track.ps1 with its defaults: a p95-only jump is shown, not flagged
 	Check (@($s -split "`r?`n" | Where-Object { $_ -match '\|\s*xrs-look-around\s*\|\s*meanMs\s*\|' }).Count -eq 1) 'the flagged metric meanMs has its row too'
 }
 
+# worker's checks (#552): the coordinator's decisions on the measured noise - a phase of fewer than $ArxPerfMinSeconds whole
+# seconds is shown, never flagged; a count metric has an absolute floor ($ArxPerfAbsFloor), so a median of 0 does not flag
+# every single hitch
+Section 'worker: a phase too short to judge is shown, never flagged' {
+	$b = Get-ArxPerfBaseline -Path (Fixture 'perf-baseline.json') -Lanes 4 -Runs 10
+	Check ($ArxPerfMinSeconds -eq 3) "`$ArxPerfMinSeconds is 3 ($ArxPerfMinSeconds)"
+	$short = RunOf @{ 'xrs-look-around' = @{ seconds = 2; meanMs = 12.0; medianMs = 12.0 } }
+	$rows = @(Compare-ArxPhasePerf -RunPerf $short -Baseline $b -Metrics 'meanMs', 'medianMs' -K 4 -FloorPct 10 -MinRuns 5)
+	Check ($rows.Count -eq 2 -and @($rows | Where-Object { $_.status -ne 'info' -or $_.note -ne 'too short' }).Count -eq 0) "2 seconds, meanMs +33 %: status info, note 'too short' ($(($rows | ForEach-Object { "$($_.status)/$($_.note)" }) -join ', '))"
+	Check ((Near (RowOf $rows 'xrs-look-around' 'meanMs').baseline 9.0) -and (Near (RowOf $rows 'xrs-look-around' 'meanMs').value 12.0)) 'the short phase still shows its baseline and value'
+	Check (@(Format-ArxPerfAnnotations -Rows $rows).Count -eq 0) 'no annotation for a short phase'
+	$table = (Format-ArxPerfTable -Rows $rows) -join "`n"
+	Check ($table -match 'too short' -and $table -notmatch 'regressed') 'the table says too short, nothing regressed'
+	$three = @(Compare-ArxPhasePerf -RunPerf (RunOf @{ 'xrs-look-around' = @{ seconds = 3; meanMs = 12.0 } }) -Baseline $b -Metrics 'meanMs' -K 4 -FloorPct 10 -MinRuns 5)
+	Check ($three[0].status -eq 'regressed') "3 seconds is long enough: regressed ($($three[0].status))"
+	$zero = @(Compare-ArxPhasePerf -RunPerf $short -Baseline $b -Metrics 'meanMs' -K 4 -FloorPct 10 -MinRuns 5 -MinSeconds 0)
+	Check ($zero[0].status -eq 'regressed') "-MinSeconds 0 judges every phase: regressed ($($zero[0].status))"
+}
+
+Section 'worker: a count metric has an absolute floor' {
+	$b = Get-ArxPerfBaseline -Path (Fixture 'perf-baseline.json') -Lanes 4 -Runs 10
+	$h = BaseOf $b 'xrs-look-around' 'hitches'
+	Check ((Near $h.median 0.0) -and (Near $h.spread 0.0)) "the fixture's hitches: median 0, spread 0 ($($h.median), $($h.spread))"
+	Check ($ArxPerfAbsFloor.hitches -ge 1 -and $ArxPerfAbsFloor.missed -ge 1) "absolute floors for hitches and missed ($($ArxPerfAbsFloor.hitches), $($ArxPerfAbsFloor.missed))"
+	$opts = @{ Metrics = @('hitches'); K = 4; FloorPct = 10; MinRuns = 5; AbsFloor = @{ hitches = 3 } }
+	$at = RowOf @(Compare-ArxPhasePerf -RunPerf (RunOf @{ 'xrs-look-around' = @{ hitches = 3 } }) -Baseline $b @opts) 'xrs-look-around' 'hitches'
+	Check ($at.status -eq 'ok' -and (Near $at.limit 3.0)) "3 hitches on a median of 0 with the floor 3: ok, limit 3 ($($at.status), $($at.limit))"
+	$over = RowOf @(Compare-ArxPhasePerf -RunPerf (RunOf @{ 'xrs-look-around' = @{ hitches = 4 } }) -Baseline $b @opts) 'xrs-look-around' 'hitches'
+	Check ($over.status -eq 'regressed' -and $null -eq $over.deltaPct) "4 hitches: regressed, no percentage of a median 0 ($($over.status), '$($over.deltaPct)')"
+	$noFloor = @{} + $opts; $noFloor.AbsFloor = @{}
+	$one = RowOf @(Compare-ArxPhasePerf -RunPerf (RunOf @{ 'xrs-look-around' = @{ hitches = 1 } }) -Baseline $b @noFloor) 'xrs-look-around' 'hitches'
+	Check ($one.status -eq 'regressed') "without the floor a single hitch on a median of 0 would be flagged ($($one.status))"
+	$table = (Format-ArxPerfTable -Rows @($over)) -join "`n"
+	Check ($table -match '\|\s*xrs-look-around\s*\|\s*hitches\s*\|[^\r\n]*\+4\.00\s*\|' -and $table -notmatch '\d,\d\d\b') "a delta without a percentage: +4.00 ($(@($table -split "`n" | Where-Object { $_ -match 'hitches' }) -join ''))"
+}
+
 } finally {
 	Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue
 }

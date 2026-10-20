@@ -236,6 +236,9 @@ scripts/dev/next-task.ps1 -> core
 scripts/dev/number-decisions.ps1 -> core
 scripts/dev/perf-summary.ps1 -> core
 scripts/dev/perf-summary-lib.ps1 -> core
+scripts/dev/perf-noise.ps1 -> core
+scripts/dev/perf-track.ps1 -> core
+scripts/dev/perf-track-lib.ps1 -> core
 scripts/dev/plan-next.ps1 -> core
 scripts/dev/plan-next-lib.ps1 -> core
 scripts/dev/pr-checks.ps1 -> core

@@ -496,6 +496,20 @@ foreach ($name in $notRun) { $results += [pscustomobject]@{ Name = $name; Exit =
 $results = @(@($results) + @($outcome) | Sort-Object { $index[$_.Name] })
 # The run into the failure history (#527): what failed now goes early next time
 try { Add-ArxPhaseHistory $historyFile $results } catch { Write-Warning "could not write $historyFile ($($_.Exception.Message))" }
+# Performance tracking (#552): every phase's arx-perf.log as numbers (perf.json in the evidence), compared with the
+# rolling baseline of the green main and gate runs on this lane count (perf-baseline.json beside ci-history.json) - a
+# Performance table in the job summary, a warning per slower phase; a green main or gate run feeds the baseline. The
+# nominal lane count, also when the run dropped to one lane for a foreign game. Never fails the run.
+try {
+	$perfWatch = [Diagnostics.Stopwatch]::StartNew()
+	$perf = & {
+		. (Join-Path $PSScriptRoot 'perf-track-lib.ps1')
+		@{ Kind = Get-ArxCiRunKind $env:GITHUB_EVENT_NAME $env:GITHUB_REF_NAME $Suite; Baseline = Get-ArxPerfBaselinePath $DurationsFile }
+	}
+	$perfGreen = -not @($results | Where-Object { $_.Verdict -in 'FAIL', 'SKIPPED' })
+	& (Join-Path $PSScriptRoot 'perf-track.ps1') -EvidenceDir $OutDir -BaselineFile $perf.Baseline -Lanes $laneCount -Kind $perf.Kind -Green:$perfGreen
+	Write-Host ("ci-smoke: performance tracking ({0} run) in {1:0.0} s" -f $perf.Kind, $perfWatch.Elapsed.TotalSeconds)
+} catch { Write-Warning "performance tracking skipped ($($_.Exception.Message))" }
 foreach ($r in $results) { Write-Host ("  {0,-8} {1}" -f $r.Verdict, $r.Name) -ForegroundColor $(if ($r.Verdict -eq 'NOT RUN') { 'Yellow' } elseif ($r.Exit -eq 0) { 'Green' } else { 'Red' }) }
 if ($selection) { Write-Host "ci-smoke: suite pr - the checks the change does not select did not run; the full suite runs before the merge" }
 $failed = @($results | Where-Object Verdict -eq 'FAIL')

@@ -221,6 +221,7 @@ scripts/dev/exit-trace-check.ps1 -> core
 scripts/dev/eye-check.ps1 -> core
 scripts/dev/eye-check-lib.ps1 -> core
 scripts/dev/eye-height-check.ps1 -> core
+scripts/dev/fixtures/* -> core
 scripts/dev/game-cmd.ps1 -> core
 scripts/dev/game-input-check.ps1 -> core
 scripts/dev/game-status.ps1 -> core

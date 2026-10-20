@@ -49,19 +49,18 @@ VoiceNote::State VoiceNote::start(NoteDevice & device, s64 timeMs) {
 		return m_state;
 	}
 	m_device = &device;
-	m_samples.reserve(NoteCapacity);
 	m_state = State::Recording;
 	return m_state;
 }
 
-VoiceNote::State VoiceNote::update(s64 timeMs) {
+VoiceNote::State VoiceNote::update(s64 timeMs, bool held) {
 
 	if(m_state != State::Recording) {
 		return m_state;
 	}
 
-	if(m_samples.size() >= NoteCapacity || timeMs - m_startMs >= maxMs) {
-		stop(); // reads what is left first
+	if(!held || m_samples.size() >= NoteCapacity || timeMs - m_startMs >= maxMs) {
+		stop(); // push-to-talk let go, or the longest note: what the device has is read first
 	} else {
 		m_device->read(m_samples, NoteCapacity - m_samples.size());
 		if(m_samples.size() >= NoteCapacity) {
@@ -85,7 +84,8 @@ VoiceNote::State VoiceNote::stop() {
 }
 
 std::string VoiceNote::wav() const {
-	if(m_samples.empty()) {
+	// A release too quick to say anything is no note
+	if(m_samples.size() < size_t(sampleRate) * size_t(minMs) / 1000) {
 		return std::string();
 	}
 	return formatWav(m_samples.data(), m_samples.size(), sampleRate);

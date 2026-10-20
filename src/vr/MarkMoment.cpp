@@ -76,14 +76,26 @@ std::string oneLine(const std::string & text) {
 	return result;
 }
 
+//! \a ms as <minutes>:<seconds> - minutes without padding, whole seconds rounded down; a negative time is 0:00
+std::string minutesSeconds(s64 ms) {
+	const s64 seconds = ms > 0 ? ms / 1000 : 0;
+	char buffer[32];
+	std::snprintf(buffer, sizeof(buffer), "%lld:%02d", static_cast<long long>(seconds / 60), int(seconds % 60));
+	return buffer;
+}
+
 } // anonymous namespace
 
 std::string markNoticeText(u32 number) {
 	return "Moment marked (#" + std::to_string(number) + ")";
 }
 
-std::string noteNoticeText(u32 seconds) {
-	return "Recording note... (" + std::to_string(seconds) + " s)";
+std::string noteIndicatorText(s64 elapsedMs) {
+	return std::string(MicrophoneMark) + " " + minutesSeconds(elapsedMs);
+}
+
+std::string noteSavedText(s64 lengthMs) {
+	return std::string(MicrophoneMark) + " Note saved (" + minutesSeconds(lengthMs) + ")";
 }
 
 std::string markFolderName(s64 unixSeconds, u32 number) {

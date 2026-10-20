@@ -1105,6 +1105,7 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("last", marks.last);
 		json.value("lastFiles", marks.lastFiles);
 		json.value("recording", marks.recording);
+		json.value("noteMs", marks.noteMs);
 		json.value("note", marks.note);
 		// The gesture of the controllers in use: both trackpads on the Index, none without trackpads (the Touch)
 		json.value("gesture", vr::markGestureAvailable(vr::controllerType()) ? "both.trackpad" : "none");

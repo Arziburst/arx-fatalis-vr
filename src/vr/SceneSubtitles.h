@@ -168,15 +168,17 @@ inline Rectf subtitleLowerThirdBox(const Vec2f & canvas, const Vec2f & size,
 enum class SubtitleNotice : u8 {
 	None,
 	Marked,    //!< "Moment marked (#N)"
-	Recording  //!< "Recording note... (N s)"
+	Recording, //!< the voice note's indicator, "<mic> m:ss"
+	Saved      //!< "<mic> Note saved (m:ss)"
 };
 
-//! "none", "marked" or "recording" - for status.json and the log
+//! "none", "marked", "recording" or "saved" - for status.json and the log
 inline const char * subtitleNoticeName(SubtitleNotice notice) {
 	switch(notice) {
 		case SubtitleNotice::None: return "none";
 		case SubtitleNotice::Marked: return "marked";
 		case SubtitleNotice::Recording: return "recording";
+		case SubtitleNotice::Saved: return "saved";
 	}
 	return "none";
 }

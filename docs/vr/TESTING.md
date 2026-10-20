@@ -1235,7 +1235,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.scene.cut` (#29) | the shot the eyes see jumps: the hero teleported or turned at once, a ghost's or the observer's shot (at once with `cut` `instant`, the default), an eye that must not be seen (always behind the fade) | `faded=yes\|no`, `reason=start\|end\|line\|camera\|jump` |
 | `vr.scene.switch` (#29) | the shot changes at once, no blink (D-055): a dialogue's line or camera, a scene's start or end in the hero's head, the world to the screen and back | `reason=start\|end\|line\|camera`, `shown` |
 | `vr.scene.lookat` (#29) | a script's `playerlookat` in VR | `how=ignore\|fade`, `target` |
-| `vr.scene.subtitle` (#29.3) | a scene line's subtitle is drawn for the first time (VR only) | `placement` (the setting), `speaker`, `drawn` (where it is drawn: `above`, or `chest` for the hero's own line and a speaker out of view); a notice of the game's own in the panel (#551) logs `notice` (`marked`, `recording`), `drawn` and `text` instead, once per notice kind |
+| `vr.scene.subtitle` (#29.3) | a scene line's subtitle is drawn for the first time (VR only) | `placement` (the setting), `speaker`, `drawn` (where it is drawn: `above`, or `chest` for the hero's own line and a speaker out of view); a notice of the game's own in the panel (#551) logs `notice` (`marked`, `recording`, `saved`), `drawn` and `text` instead, once per notice kind |
 | `chargen.roll` (#394) | a click of the quick generation | `kind=average\|random` |
 | `player.death` | the player dies | `source` (entity id), `damage`, `type` (damage type flags) |
 | `player.respawn` | the player died in the test playground (#321) and is back at its start, alive, in the same frame | `x` `y` `z` (the start), `fromX` `fromZ` (where he died), `life` |
@@ -2599,27 +2599,32 @@ session) off the frame thread:
 | `recorder.txt` | the flight recorder's tail (#545), scrubbed of personal data like `arx-recorder.txt` |
 | `clip.vrsim` | the replay ring's last 30 s - the clip of `replay mark` (#550); `scripts/dev/replay.ps1` plays it |
 | `meta.txt` | `# moment mark (#551)`, then `mark`, `time`, `area`, `position`, `yaw`, `build`, `state`, `session` as `key=value` lines |
-| `note.wav` | the voice note: from the mark on, up to 10 s of the default microphone (16 kHz mono 16-bit); only when it is on and a microphone recorded something |
+| `note.wav` | the voice note, push-to-talk: the default microphone while both trackpads stay pressed after the mark, up to 5 minutes (16 kHz mono 16-bit); only when it is on and at least 0.3 s were recorded |
 
-The hero-dialogue panel (D-055, below the centre of the view) shows "Moment marked (#N)" for about 2 s, then "Recording
-note... (N s)" counting the note's seconds left down; it takes the panel over a scene's line while it shows.
-`cfg.ini vr_mark_note=0` turns the voice note off; the channel's `marks note on|off` does it for the session (CI
-sequences turn it off - a microphone on the PC must never record the room).
+The hero-dialogue panel (D-055, below the centre of the view) shows "Moment marked (#N)" for about 2 s; while the note
+records, the indicator "🎤 m:ss" counting up instead; once `note.wav` is written, "🎤 Note saved (m:ss)" for about
+1.5 s, then nothing. A quick press (under 0.3 s of audio) or no microphone shows the confirmation only. The panel draws
+a small red microphone where the text has U+1F3A4 (the game's fonts have no glyph for it); the status keeps the
+character. A notice takes the panel over a scene's line while it shows. `cfg.ini vr_mark_note=0` turns the voice note
+off; the channel's `marks note on|off` does it for the session (CI sequences keep it off, except for a quick press that
+cannot keep anything - a microphone on the PC must never record the room).
 
 - **status.json** `marks`: `count` (marks made since the start), `last` (the last mark's folder name), `lastFiles`
   (the non-empty files in it, sorted, joined by `,`; empty until they are written), `recording` (a voice note records
-  now), `note` (the voice note is on), `gesture` (`both.trackpad` on the Index, `none` on controllers
-  without trackpads); `scene.subtitle.notice` (`none`, `marked`, `recording`) - while
-  not `none`, `scene.subtitle.text` is the notice's line and `drawn` is `chest`.
+  now - only while both trackpads are held), `noteMs` (how long it records so far, ms; 0 when none records), `note`
+  (the voice note is on), `gesture` (`both.trackpad` on the Index, `none` on controllers without trackpads);
+  `scene.subtitle.notice` (`none`, `marked`, `recording`, `saved`) - while not `none`, `scene.subtitle.text` is the
+  notice's line and `drawn` is `chest`.
 - **The log:** `[vr] mark #<n>: the moment is marked ...` at the gesture, `[vr] mark #<n>: marks\<folder> files=<list>`
   once the files are written, `[vr] mark #<n>: note.wav (<s> s)` after the note; the panel's
   `vr.scene.subtitle notice=<kind> drawn=chest text="<line>"` once per notice kind.
 - **After the test:** `scripts\dev\marks.ps1` lists the marks of the user directory (time, area, position, files, the
   note's length; `-UserDir` for another one), `-Copy <name>|last -To <dir>` copies one out. Nothing it prints holds a
   personal path. Marks are never committed (the repository is public) and not uploaded (#545 stage 3).
-- **The checks:** host tests `MarkMomentTest` (the gesture with any layout, the folder name, `meta.txt`, the panel's
-  lines, the Touch without the gesture, both stick clicks never marking) and `VoiceNoteTest` (the WAV writer, the
-  capture on a fake device); `mark-moment.xrs` (both stick clicks held 2.5 s: no mark, no menu; one trackpad alone:
-  no mark, the other pressed too: the mark at once, the confirmation in the panel for about 2 s; held on: no second
-  mark; one let go and pressed again: the second mark; the five files of each); `test-marks.ps1`
-  (the listing).
+- **The checks:** host tests `MarkMomentTest` (the gesture with any layout, `markHeld`, the folder name, `meta.txt`,
+  the panel's lines, the Touch without the gesture, both stick clicks never marking) and `VoiceNoteTest` (the WAV
+  writer, the push-to-talk capture on a fake device: a release stops it, 5 minutes at most, nothing under 0.3 s,
+  never without the hold); `mark-moment.xrs` (both stick clicks held 2.5 s: no mark, no menu; one trackpad alone: no
+  mark, the other pressed too: the mark at once, the confirmation in the panel for about 2 s; held on: no second mark;
+  one let go and pressed again: the second mark; the five files of each; the note on, a quick press: no note);
+  `test-marks.ps1` (the listing).

@@ -32,9 +32,10 @@
  * Both Index trackpads pressed in VR (vr::ControlResolver::markGesture) write <user dir>\c \\marks\\<name>\\
  * (vr::markFolderName): left.png and right.png (the eye images of the next drawn frame), recorder.txt (the flight
  * recorder's tail, scrubbed like arx-recorder.txt), clip.vrsim (the replay ring's last 30 s, the clip of
- * `replay mark`), meta.txt (vr::formatMarkMeta) and, with the voice note on, note.wav (up to 10 s of the default
- * microphone from the mark on, vr/VoiceNote.h). The hero-dialogue panel shows "Moment marked (#N)" for 2 s, then
- * "Recording note... (N s)" counting the note's seconds left down (vr/SceneSubtitles.h).
+ * `replay mark`), meta.txt (vr::formatMarkMeta) and, with the voice note on, note.wav: push-to-talk, the default
+ * microphone while both trackpads stay pressed after the mark, up to 5 minutes, nothing under 0.3 s (vr/VoiceNote.h).
+ * The hero-dialogue panel (vr/SceneSubtitles.h) shows "Moment marked (#N)" for 2 s; while the note records, the
+ * indicator "<mic> m:ss" counting up instead; once a note.wav is written "<mic> Note saved (m:ss)" for 1.5 s.
  *
  * The files are written off the frame thread; the mark's frame reads both eye images back from the GPU (one hitch).
  * cfg.ini \c vr_mark_note turns the voice note off, the channel's \c marks \c note \c on|off for the session.
@@ -47,7 +48,8 @@ struct MarksStatus {
 	u32 count = 0;          //!< marks made since the start
 	std::string last;       //!< the last mark's folder name, "" before the first
 	std::string lastFiles;  //!< the non-empty files in it, sorted by name, joined by ","; "" until they are written
-	bool recording = false; //!< a voice note records now
+	bool recording = false; //!< a voice note records now (only while both trackpads are held)
+	s64 noteMs = 0;         //!< how long it records so far, ms (the indicator); 0 when none records
 	bool note = true;       //!< the voice note is on
 };
 

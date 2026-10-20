@@ -41,6 +41,7 @@
 #include "gui/Text.h"
 #include "vr/HeadPose.h"
 #include "vr/HeadTracking.h"
+#include "vr/MarkMoment.h"
 #include "vr/SceneView.h"
 #include "vr/VRSystem.h"
 
@@ -53,6 +54,8 @@ const Color4f SubtitleBackColor = Color4f::rgba(0.f, 0.f, 0.f, 0.6f);
 //! The speaker's name over the line, warm like the game's parchment, the line itself white
 const Color SubtitleNameColor = Color::rgb(0.95f, 0.8f, 0.5f);
 const Color SubtitleTextColor = Color::white;
+//! The voice note's microphone icon (#551): the red of a recording light
+const Color MicrophoneColor = Color::rgb(0.95f, 0.3f, 0.25f);
 
 struct SubtitleDrawState {
 
@@ -155,6 +158,24 @@ std::vector<std::string> wrapSubtitle(Font & font, std::string_view text, float 
 	return lines;
 }
 
+/*!
+ * A small microphone in the box where a voice note's line has the microphone mark (#551): a capsule on a holder, a
+ * stem and a foot, of a line's height \a size, its top left at \a at
+ */
+void drawMicrophoneIcon(const Vec2f & at, float size) {
+	const float x = at.x + size * 0.4f; // the icon's middle
+	const float y = at.y;
+	const float bar = std::max(1.f, size * 0.07f);
+	UseRenderState state(render2D());
+	const Color color(MicrophoneColor);
+	EERIEDrawBitmap(Rectf(Vec2f(x - size * 0.16f, y + size * 0.08f), size * 0.32f, size * 0.46f), 0.f, nullptr, color);
+	EERIEDrawBitmap(Rectf(Vec2f(x - size * 0.27f, y + size * 0.36f), bar, size * 0.28f), 0.f, nullptr, color);
+	EERIEDrawBitmap(Rectf(Vec2f(x + size * 0.27f - bar, y + size * 0.36f), bar, size * 0.28f), 0.f, nullptr, color);
+	EERIEDrawBitmap(Rectf(Vec2f(x - size * 0.27f, y + size * 0.64f - bar), size * 0.54f, bar), 0.f, nullptr, color);
+	EERIEDrawBitmap(Rectf(Vec2f(x - bar * 0.5f, y + size * 0.64f), bar, size * 0.18f), 0.f, nullptr, color);
+	EERIEDrawBitmap(Rectf(Vec2f(x - size * 0.18f, y + size * 0.82f), size * 0.36f, bar), 0.f, nullptr, color);
+}
+
 //! The box of the line on its anchor: the speaker's name over the text, wrapped to \a maxWidth
 void drawSubtitleBox(const Vec2f & anchor, SubtitleAlign align, float maxWidth, bool lowerThird) {
 
@@ -163,14 +184,26 @@ void drawSubtitleBox(const Vec2f & anchor, SubtitleAlign align, float maxWidth, 
 		return;
 	}
 
-	const std::vector<std::string> lines = wrapSubtitle(*font, g_subtitles.status.text, maxWidth);
-	const std::string & name = g_subtitles.status.speaker;
+	// The voice note's lines lead with the microphone mark: the game's fonts have no glyph for it, so an icon takes
+	// its place (the status keeps the character)
+	std::string_view text = g_subtitles.status.text;
+	const bool mic = text.substr(0, MicrophoneMark.size()) == MicrophoneMark;
+	if(mic) {
+		text.remove_prefix(MicrophoneMark.size());
+		while(!text.empty() && text.front() == ' ') {
+			text.remove_prefix(1);
+		}
+	}
+
 	const float lineHeight = float(font->getLineHeight());
 	const float pad = std::max(4.f, lineHeight * 0.4f);
+	const float iconWidth = mic ? lineHeight * 0.8f : 0.f;
+	const std::vector<std::string> lines = wrapSubtitle(*font, text, maxWidth - iconWidth);
+	const std::string & name = g_subtitles.status.speaker;
 
 	float width = g_subtitles.named ? float(font->getTextSize(name).width()) : 0.f;
 	for(const std::string & line : lines) {
-		width = std::max(width, float(font->getTextSize(line).width()));
+		width = std::max(width, iconWidth + float(font->getTextSize(line).width()));
 	}
 	const size_t rows = lines.size() + (g_subtitles.named ? 1 : 0);
 
@@ -184,6 +217,10 @@ void drawSubtitleBox(const Vec2f & anchor, SubtitleAlign align, float maxWidth, 
 	}
 
 	Vec2f pen(box.left + pad, box.top + pad);
+	if(mic) {
+		drawMicrophoneIcon(Vec2f(pen.x, pen.y + float(g_subtitles.named ? lineHeight : 0.f)), lineHeight);
+		pen.x += iconWidth;
+	}
 	if(g_subtitles.named) {
 		font->draw(int(pen.x), int(pen.y), name, SubtitleNameColor);
 		pen.y += lineHeight;

@@ -433,6 +433,11 @@ public:
 	 * are bound to, both pressed mark (and their bindings act as well). Only where \ref markGestureAvailable.
 	 */
 	bool markGesture() const { return m_markGesture; }
+	/*!
+	 * Both trackpads are still down since the update the gesture came on: the push-to-talk of the mark's voice note.
+	 * False from the first update either is not down, before any mark, with one alone and with both stick clicks
+	 */
+	bool markHeld() const { return m_markFired; }
 	//! How often the gesture came on since the resolver was created
 	u32 markGestures() const { return m_markGestures; }
 

@@ -28,7 +28,8 @@
 
 /*!
  * \file
- * \brief The voice note of a mark (#551): up to 10 s of the default microphone after the mark, saved as note.wav
+ * \brief The voice note of a mark (#551): push-to-talk - the default microphone while both trackpads stay pressed
+ *        after the mark, up to 5 minutes, saved as note.wav
  *
  * The capture's state machine and the WAV writer; the microphone is a \ref NoteDevice - the default OpenAL capture
  * device in the game (vr/NoteMicrophone.h), a fake in the tests. Pure: no OpenAL, no engine globals, no
@@ -57,33 +58,39 @@ public:
 
 };
 
-//! The capture of one note: started after a mark, updated every frame, at most \ref maxMs long
+/*!
+ * The capture of one note: started on the mark (both trackpads down), updated every frame with whether both are
+ * still held (ControlResolver::markHeld), at most \ref maxMs long
+ */
 class VoiceNote {
 
 public:
 
 	static constexpr u32 sampleRate = 16000;  //!< mono, 16 bit
-	static constexpr s64 maxMs = 10000;       //!< the longest note: 10 s
+	static constexpr s64 maxMs = 300000;      //!< the longest note: 5 minutes (16 kHz mono 16 bit: 9.6 MB)
+	static constexpr s64 minMs = 300;         //!< the shortest note kept: fewer samples give no WAV
 
 	enum class State {
 		Idle,       //!< never started
 		Recording,  //!< the device is open, samples come in
-		Finished,   //!< 10 s of time or of samples, or stop(): the device is closed (once)
+		Finished,   //!< released, 5 minutes of time or of samples, or stop(): the device is closed (once)
 		NoDevice    //!< start() found no microphone: no note, no error
 	};
 
 	/*!
 	 * Start a new note at \a timeMs (the samples of an earlier note are dropped): Recording, or NoDevice when
-	 * \a device does not open. The device must outlive the recording
+	 * \a device does not open. The device must outlive the recording. The game calls it only on the mark, with
+	 * both trackpads down
 	 */
 	State start(NoteDevice & device, s64 timeMs);
 
 	/*!
-	 * Every frame: read what the device has. At \a timeMs >= the start + \ref maxMs, or with maxMs of samples read,
-	 * it stops - the device closed, never more than that many samples kept - and is Finished. Does nothing in any
-	 * other state
+	 * Every frame. Recording and \a held (both trackpads still down): read what the device has; at \a timeMs >= the
+	 * start + \ref maxMs, or with maxMs of samples read, it stops - the device closed, never more than that many
+	 * samples kept - and is Finished. Recording and not \a held: it stops at once, what the device already has read
+	 * first. Does nothing in any other state: a note never starts or resumes by itself
 	 */
-	State update(s64 timeMs);
+	State update(s64 timeMs, bool held);
 
 	//! Stop early (the game quits, a new mark): what the device still has is read, then Finished, the device closed;
 	//! nothing in any other state
@@ -95,7 +102,8 @@ public:
 	//! When the note started, in the clock of \ref start
 	s64 startMs() const { return m_startMs; }
 
-	//! The note as note.wav's bytes; "" when no sample was recorded - then no note.wav is written
+	//! The note as note.wav's bytes; "" when fewer than \ref minMs of samples were recorded (a release too quick to
+	//! say anything) - then no note.wav is written
 	std::string wav() const;
 
 private:

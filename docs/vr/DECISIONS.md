@@ -19,29 +19,36 @@ a changed decision keeps its history in that cell.
 - **Status:** Accepted (#551; supersedes the fixed two-stick hold of D-058, its other rules stay)
 - **Decided by:** the owner (the menu only via the radial and the confirmation in the hero-dialogue panel, 2026-10-19/20;
   the gesture on both trackpads instead of both stick clicks, at once instead of a 3 s hold, no gesture on the Touch,
-  on in every build, the testers' too, 2026-10-20); the
-  coordinator (the panel's order, the voice note off in CI, 16 kHz mono up to 10 s); the worker of #551 (the folder
-  layout, PNG eye images read back at the mark's frame, the writer thread - technical internals, D-017)
+  on in every build, the testers' too, 2026-10-20; the voice note push-to-talk, up to 5 minutes, after his headset
+  test, 2026-10-21); the coordinator (the panel's order, the voice note off in CI, 16 kHz mono); the worker of #551
+  (the folder layout, PNG eye images read back at the mark's frame, the writer thread - technical internals, D-017)
 
 ### Decision
 - **A headset test marks a moment instead of remembering it.** Both Index trackpads pressed (the force press) mark
   **at once**, on the frame both are down - no hold (`ControlResolver::markGesture`, fixed, not part of the layout and
   not rebindable; one mark per press, a release of either re-arms it; the input layer's hysteresis on the force
-  reading, `TrackpadThreshold` press 0.40 / release 0.25, is the only filter). The mark writes `<user dir>\marks\<yyyymmdd>T<hhmmss>Z-<n>\` (`src/vr/VRMarks.h`): `left.png` / `right.png` (the eye
-  images of that frame), `recorder.txt` (the flight recorder's tail, scrubbed like `arx-recorder.txt`, #545),
-  `clip.vrsim` (the replay ring's last 30 s - the clip of `replay mark`, D-060), `meta.txt` (time, area, position, yaw,
-  build, game and session state) and, with the voice note on, `note.wav`.
+  reading, `TrackpadThreshold` press 0.40 / release 0.25, is the only filter). The mark writes
+  `<user dir>\marks\<yyyymmdd>T<hhmmss>Z-<n>\` (`src/vr/VRMarks.h`): `left.png` / `right.png` (the eye images of that
+  frame), `recorder.txt` (the flight recorder's tail, scrubbed like `arx-recorder.txt`, #545), `clip.vrsim` (the
+  replay ring's last 30 s - the clip of `replay mark`, D-060), `meta.txt` (time, area, position, yaw, build, game and
+  session state) and, with the voice note on, `note.wav`.
 - **Only on the Index** (`markGestureAvailable`; status `marks.gesture` `both.trackpad` or `none`): the Touch has no
   trackpads and no mark gesture. The default layouts bind nothing to the trackpads; a player who binds an event to a
   trackpad gets that event too when the press marks. On in every build, the tester package included.
 - **Both stick clicks are nothing special any more:** they do what the layout binds (the right one draws the weapon)
   and neither mark nor open the menu.
-- **The confirmation** "Moment marked (#N)" shows for about 2 s in the hero-dialogue panel (D-055: below the centre
-  of the view, the lazy follow; in the eyes and so in the desktop mirror), then "Recording note... (N s)" counting the
-  note's seconds left down. It takes the panel over a scene's line while it shows; the line comes back after.
-- **The voice note:** from the mark on, up to 10 s of the default microphone (OpenAL capture, 16 kHz mono 16-bit);
-  `cfg.ini vr_mark_note=0` turns it off, the channel's `marks note on|off` for a session; no microphone means no note
-  and no error. CI turns it off (a microphone on the owner's PC must never record the room into a CI user directory).
+- **The voice note is push-to-talk:** keeping both trackpads pressed after the mark records the default microphone
+  (OpenAL capture, 16 kHz mono 16-bit), up to **5 minutes**; letting go of either stops it at once
+  (`ControlResolver::markHeld`, `VoiceNote::update(timeMs, held)`). The microphone opens on the mark (both pads down)
+  and never records without both held; a note under 0.3 s (a quick press) is no note. `cfg.ini vr_mark_note=0` turns
+  it off, the channel's `marks note on|off` for a session; no microphone means no note and no error. CI keeps it off
+  except for a quick press that cannot keep anything (a microphone on the owner's PC must never record the room into a
+  CI user directory).
+- **The hero-dialogue panel** (D-055: below the centre of the view, the lazy follow; in the eyes and so in the desktop
+  mirror) shows "Moment marked (#N)" for about 2 s; while the note records, the indicator "🎤 m:ss" counting up
+  instead; once its `note.wav` is written, "🎤 Note saved (m:ss)" for about 1.5 s, then nothing. The game's fonts
+  have no glyph for U+1F3A4, so the panel draws a small red microphone in its place (the status text keeps the
+  character). A notice takes the panel over a scene's line while it shows; the line comes back after.
 - **The game menu** is reached through the radial menu (and the menu event where one is bound); D-058's refused last
   binding and the restored way of a broken saved layout stay. The 2 s two-stick fallback is gone.
 - `scripts/dev/marks.ps1` lists a user directory's marks (time, area, position, files, the note's length) and copies
@@ -49,8 +56,9 @@ a changed decision keeps its history in that cell.
 
 ### Consequences
 - The mark's frame reads both eye images back from the GPU (one hitch: 18 ms instead of 13 ms on the simulated
-  1440x1600 eyes); the files are written on a thread of their own. No cost while nobody marks. With the voice note
-  on, opening the microphone (on the mark's frame) and closing it (about 10 s later) run on the frame thread too.
+  1440x1600 eyes; not felt in the owner's headset test); the files are written on a thread of their own. No cost while
+  nobody marks. With the voice note on, opening the microphone (on the mark's frame) and closing it (on the release)
+  run on the frame thread too. A 5-minute note is 9.6 MB in memory and on disk.
 - An Index player who unbinds the radial and the menu event still cannot lock themselves out (D-058's guards), but
   there is no longer a hidden way to the menu for a layout that somehow has none.
 - A Touch player cannot mark a moment. An Index player who presses both trackpads by accident marks one (a folder of

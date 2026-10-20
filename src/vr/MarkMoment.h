@@ -21,6 +21,7 @@
 #define ARX_VR_MARKMOMENT_H
 
 #include <string>
+#include <string_view>
 
 #include "math/Types.h"
 #include "platform/Platform.h"
@@ -39,8 +40,20 @@ namespace vr {
 //! The confirmation in the hero-dialogue panel: "Moment marked (#<number>)"
 std::string markNoticeText(u32 number);
 
-//! The voice note's line in the same panel: "Recording note... (<seconds> s)"
-std::string noteNoticeText(u32 seconds);
+/*!
+ * The microphone mark that leads the voice note's lines: U+1F3A4 (MICROPHONE) in UTF-8. The status text carries the
+ * character; the panel draws an icon in its place (the game's fonts have no glyph for it)
+ */
+inline constexpr std::string_view MicrophoneMark = "\xF0\x9F\x8E\xA4";
+
+/*!
+ * The recording indicator while a push-to-talk note records, counting up: the mark, a space, the elapsed time as
+ * <minutes>:<seconds> (whole seconds rounded down, a negative time is 0:00) - "<mic> 0:23"
+ */
+std::string noteIndicatorText(s64 elapsedMs);
+
+//! The brief confirmation after a note was saved: "<mic> Note saved (<m>:<ss>)", the note's length in the same form
+std::string noteSavedText(s64 lengthMs);
 
 /*!
  * The marker folder's name: the mark's UTC time (ISO 8601 basic) and its number in the session -

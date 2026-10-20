@@ -60,6 +60,8 @@ namespace {
 
 //! How long "Moment marked (#N)" shows (the owner, #551: about 2 s)
 const s64 MarkNoticeMs = 2000;
+//! How long "Note saved (m:ss)" shows after a note.wav was written (the owner, #551: about 1.5 s)
+const s64 NoteSavedMs = 1500;
 //! How long a mark waits for its eye images (a frame that draws no eye, a session that stops): then without them
 const s64 EyeWaitMs = 1000;
 //! The replay ring's window in clip.vrsim (#551: the last 30 s, as `replay mark` cuts by default)
@@ -100,6 +102,8 @@ struct MarksState {
 
 	s64 markedAt = -1;      //!< when the last mark was made, for its notice
 	u32 markedNumber = 0;
+	s64 savedAt = -1;       //!< when the last note.wav was written, for "Note saved"
+	s64 savedLengthMs = 0;
 	bool noticeShown = false;
 
 	~MarksState() {
@@ -253,6 +257,7 @@ void saveNote() {
 		fs::write(folder / "note.wav", wav);
 	};
 	job.done = [folder, number, samples]() {
+		const s64 lengthMs = s64(samples) * 1000 / s64(VoiceNote::sampleRate);
 		std::ostringstream seconds;
 		seconds.precision(1);
 		seconds << std::fixed << double(samples) / double(VoiceNote::sampleRate);
@@ -260,6 +265,9 @@ void saveNote() {
 		if(folder.filename() == g.status.last) {
 			g.status.lastFiles = listFiles(folder);
 		}
+		// "Note saved" once it is on disk
+		g.savedAt = toMsi(platform::getTime());
+		g.savedLengthMs = lengthMs;
 	};
 	g.jobs.push_back(std::move(job));
 }
@@ -305,6 +313,7 @@ void startMark(s64 now) {
 	g.status.last = mark->name;
 	g.status.lastFiles.clear();
 	g.markedAt = now;
+	g.savedAt = -1;
 	g.markedNumber = number;
 	LogInfo << "[vr] mark #" << number << ": the moment is marked (both trackpads pressed)";
 
@@ -317,7 +326,8 @@ void startMark(s64 now) {
 		g.noteNumber = number;
 		g.noteFolder = mark->folder;
 		if(g.note.start(microphone(), now) == VoiceNote::State::Recording) {
-			LogInfo << "[vr] mark #" << number << ": recording a voice note (at most " << VoiceNote::maxMs / 1000 << " s)";
+			LogInfo << "[vr] mark #" << number << ": recording a voice note while both trackpads are held (at most "
+			        << VoiceNote::maxMs / 1000 << " s)";
 		}
 	}
 
@@ -367,12 +377,15 @@ void writePending(std::array<RgbImage, 2> eyes) {
 
 //! The hero-dialogue panel: the confirmation for 2 s, then the note's seconds left while it records
 void updateNotice(s64 now) {
-	if(g.markedAt >= 0 && now - g.markedAt < MarkNoticeMs) {
-		showSubtitleNotice(SubtitleNotice::Marked, markNoticeText(g.markedNumber));
+	if(g.note.recording()) {
+		// Push-to-talk: the indicator counts up while both trackpads are held, in place of the confirmation
+		showSubtitleNotice(SubtitleNotice::Recording, noteIndicatorText(now - g.note.startMs()));
 		g.noticeShown = true;
-	} else if(g.note.recording()) {
-		const s64 left = std::max<s64>(0, VoiceNote::maxMs - (now - g.note.startMs()));
-		showSubtitleNotice(SubtitleNotice::Recording, noteNoticeText(u32((left + 999) / 1000)));
+	} else if(g.savedAt >= 0 && now - g.savedAt < NoteSavedMs) {
+		showSubtitleNotice(SubtitleNotice::Saved, noteSavedText(g.savedLengthMs));
+		g.noticeShown = true;
+	} else if(g.markedAt >= 0 && now - g.markedAt < MarkNoticeMs) {
+		showSubtitleNotice(SubtitleNotice::Marked, markNoticeText(g.markedNumber));
 		g.noticeShown = true;
 	} else if(g.noticeShown) {
 		clearSubtitleNotice();
@@ -418,10 +431,12 @@ void update() {
 		}
 	}
 
-	if(g.note.recording() && g.note.update(now) != VoiceNote::State::Recording) {
+	// Push-to-talk: the note records while both trackpads stay down, a release of either ends it
+	if(g.note.recording() && g.note.update(now, controls().markHeld()) != VoiceNote::State::Recording) {
 		saveNote();
 	}
 	g.status.recording = g.note.recording();
+	g.status.noteMs = g.note.recording() ? std::max<s64>(0, now - g.note.startMs()) : 0;
 
 	updateNotice(now);
 	runJobs();
@@ -437,6 +452,7 @@ void shutdown() {
 		saveNote();
 	}
 	g.status.recording = false;
+	g.status.noteMs = 0;
 	finishJobs();
 	g.microphone.reset();
 }

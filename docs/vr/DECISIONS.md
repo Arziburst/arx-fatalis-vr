@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: Every VR session is recorded as a replayable clip - poses and inputs over the same save, the drift measured, no lockstep
+## D-060: Every VR session is recorded as a replayable clip - poses and inputs over the same save, the drift measured, no lockstep
 
 - **Date:** 2026-10-20
 - **Status:** Accepted (#550; the research is `coordinator/plans/2026-10-20-replay-research.md`)

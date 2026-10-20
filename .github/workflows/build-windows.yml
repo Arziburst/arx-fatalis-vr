@@ -228,7 +228,7 @@ jobs:
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
       env:
-        ARXVR_MAX_GAMES: '4'
+        ARXVR_MAX_GAMES: '5'
         ARXVR_CI_RUNNER: '1'
       run: |
         $evidence = Join-Path $env:LOCALAPPDATA "ArxFatalisVR\ci-evidence\$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"

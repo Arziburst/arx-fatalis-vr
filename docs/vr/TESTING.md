@@ -1614,6 +1614,9 @@ cause, exclusive phases add up); the writer has `tests/vr/PerfWriterTest.cpp` (o
 waits for a stuck sink nor for a held lock, drops when the sink falls far behind, nothing lost at
 the end); the summary script has `scripts/dev/test-perf-summary.ps1` (in `run-script-tests.ps1`).
 
+CI compares every game phase's log with a rolling baseline and flags a slower phase on a pull request:
+[Performance tracking in CI](#performance-tracking-in-ci-552).
+
 ## Stereo rendering (#19)
 
 In a frame the runtime wants rendered, the 3D scene is drawn **once per eye** into the eye
@@ -2234,6 +2237,87 @@ game of the PC holds a slot - and prints a summary with each step's time, the su
 when every step passed (2: the game lock stayed busy). `-Full` runs everything. The selection is of the commits
 (`origin/main...HEAD`): commit first. Its evidence goes to `%LOCALAPPDATA%\ArxFatalisVR\ci-local\<copy>-<time>` (the last
 5 runs of the copy stay). A selection is 15-35 launches, so the launch budget's note is expected.
+
+### Performance tracking in CI (#552)
+
+Every game phase leaves its [performance log](#the-performance-log-arx-perflog-327) in its evidence folder. At the end
+of `ci-smoke.ps1`, `scripts/dev/perf-track.ps1` (lib `perf-track-lib.ps1`) turns those logs into numbers. It never
+starts a game, never changes one and **never fails the run** (exit 0 always). The flag is a warning; making it blocking
+is the owner's call.
+
+**Per phase** (`<evidence>\perf.json`), from that phase's own `arx-perf.log` (never the `arx-perf.1.log` .. `.9.log` of
+earlier games beside it), counting only whole `S` lines:
+- frames and the frame time in ms: the frames-weighted mean of the seconds' means (`meanMs`), and their frames-weighted
+  median (`medianMs`);
+- `p95Ms`: the frames-weighted nearest rank of the seconds' own p95. The seconds are sorted by their p95; it is the first
+  one whose running frame count reaches 95 % of all frames. This is an estimate: the log keeps no single frames;
+- `maxMs`: the largest of every `S` max and `H` ms;
+- the hitch count (`H` lines), the missed display slots (the sum of the `S` lines' `missed`), every cause with its count
+  and the busiest one (a tie goes to the larger total ms);
+- `peakPrivMiB`: the peak private memory from the `R` lines.
+
+A missing, empty or broken log is a record with `valid: false` and its reason, never an error.
+
+**The baseline** is `perf-baseline.json` in the runner's evidence root, beside `ci-history.json`:
+`C:\Windows\ServiceProfiles\NetworkService\AppData\Local\ArxFatalisVR\ci-evidence` (the run folders' cleanup keeps
+it).
+- **What feeds it:** only a **green** run of kind `main` (a push to main) or `gate` (a manual run with suite full: the
+  merge gate, also on main) adds its valid phases. A pull request's run, a red run and a run by hand (`ci-local.ps1`,
+  kind `local`) never change it. The file keeps the last 40 runs.
+- **What a run compares with:** the last 10 runs **with the same lane count**, per phase and metric: their median and
+  spread (the median absolute deviation). A run that dropped to one lane for a foreign game still counts under its
+  nominal lane count (CI's `ARXVR_MAX_GAMES`). That is a known blur, not fixed.
+- **Before it fills up:** a phase with fewer than 5 baseline runs shows "no baseline yet". From the merge on, the first 5
+  green main or gate runs fill it.
+
+**The flag.** In a pull request's job summary, the section **Performance** has one row per phase and metric, with the
+regressed rows first: | Phase | Metric | Baseline (median ± spread) | This run | Delta | Limit | Status |. Each phase
+whose flagged metric goes over its limit gets one `::warning` annotation, which names the metric, the baseline and the
+value.
+- **The limit** is median + max(K × spread, median × floor %, an absolute floor: 3 hitches and 10 missed slots, when a
+  count metric is flagged).
+- **Flagged:** `meanMs` and `medianMs`, with K 4 and floor 10 %.
+- **Shown only, never flagged:** `p95Ms`, `maxMs`, `hitches` and `missed`.
+- **Too short:** a phase with fewer than 3 whole seconds (`hang-dump`, `level-load-hang`, `vr-session-end`,
+  `vr-session-loss`) is shown only ("too short"), because a deliberate stall is its number.
+
+The thresholds are in `perf-track-lib.ps1` (`$ArxPerfK`, `$ArxPerfFloorPct`, `$ArxPerfMetrics`, `$ArxPerfInfoMetrics`,
+`$ArxPerfAbsFloor`, `$ArxPerfMinSeconds`, `$ArxPerfMinRuns`, `$ArxPerfRuns`).
+
+**The noise behind them** (#552, `scripts/dev/perf-noise.ps1`). The data is the 7 green full runs on 4 lanes kept on the
+runner on 2026-10-20: 75 phases, 71 after leaving out the 4 short ones. Each run of each phase was checked against the
+baseline of the other 6 runs ("leave one out", 497 checks).
+
+| Metric | Phase spread / median: median, p90, max | Leave-one-out false flags at K 4, floor 10 % | A +30 % missed on |
+|---|---|---|---|
+| meanMs | 0.4 %, 1.0 %, 2.0 % | 0 / 497 | 0 / 71 phases |
+| medianMs | 0.0 %, 0.2 %, 2.7 % | 2 / 497 (`vr-turning-settings` +38 %) | 0 / 71 |
+| p95Ms | 2.2 %, 13.5 %, 63 % | 43 / 497 (35 at floor 20 %) | 13 / 71 |
+| maxMs | 2.0 %, 5.0 %, 10.3 % | 35 / 497 (15 at floor 20 %) | 2 / 71 |
+| hitches | 7.1 %, 16.7 %, 50 % | 10 / 497 (absolute floor 3) | 61 / 71 |
+| missed | 3.2 %, 7.7 %, 20 % | 20 / 497 (absolute floor 10) | 19 / 71 |
+
+Why these metrics are shown only:
+- **`p95Ms` is bimodal** on the short CI phases. The 95 % rank lands either in or beside the second of a level load:
+  that second has few frames, but a p95 of 300+ ms. `arms-elbow` measured 15, 288, 14, 40, 343, 51 and 19 ms across the
+  7 runs.
+- **`maxMs`** is the level-load frame itself.
+- **Counts** move by whole units.
+
+With the 4 short phases flagged as well, 6 more false flags came from them.
+
+Re-measure with:
+
+```powershell
+.\scripts\dev\perf-noise.ps1 -EvidenceDir <run folders>   # spread and leave-one-out false flags per metric
+```
+
+**Cost:** about 1.7 s per full run of 75 phases, in-process at the end of `ci-smoke.ps1`. A pull request's selection
+takes less.
+
+**Tested by:** `scripts/dev/test-perf-track.ps1`. It covers the fixture logs (normal, one long frame, several causes,
+cut mid-write, empty, broken), the update rules of the baseline, the flag, the table and the annotations, and the
+script's exit 0.
 
 ## The tester package (#88)
 

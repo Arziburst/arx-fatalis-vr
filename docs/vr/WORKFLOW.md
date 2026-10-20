@@ -284,8 +284,9 @@ and never discards uncommitted changes it finds; it reports them instead.
 ```
 
 It runs what the PR's CI run will run - the core and the sequences the branch's commits select in
-`scripts/dev/xrs/impact.txt` ([TESTING.md](TESTING.md#what-a-pull-request-runs-the-impact-map-522)) - on two
-lanes (one while another game of the PC holds a slot), and exits 0 only when every step passed; push only then.
+`scripts/dev/xrs/impact.txt` ([TESTING.md](TESTING.md#what-a-pull-request-runs-the-impact-map-522)) - on CI's
+lanes (4, the workflow's `ARXVR_MAX_GAMES`, #563; one while another game of the PC holds a slot), and exits 0 only
+when every step passed; push only then.
 Commit first: the selection is of the commits. A selection is 15-35 launches, so the launch budget's note is
 expected (a warning, not a refusal). Its summary goes into the PR's *How verified*.
 
@@ -453,8 +454,9 @@ human in a headset:
   `scripts/dev/run-script-tests.ps1`. The game runs in the runner service's session; evidence is the
   artifact `game-checks` — see [TESTING.md](TESTING.md#the-ci-gate-127). Since #522 it is uploaded **only when
   the job failed**: a green run keeps its evidence on the runner (the service's
-  `%LOCALAPPDATA%\ArxFatalisVR\ci-evidence\<run id>-<attempt>`, the last 10 runs), and the game checks run on two
-  lanes (two games at once, one while another game of the PC holds a lock slot). Since #527 **CI owns the slots**:
+  `%LOCALAPPDATA%\ArxFatalisVR\ci-evidence\<run id>-<attempt>`, the last 10 runs), and the game checks run on
+  several lanes (4 games at once since #563 - the one setting is the workflow's `ARXVR_MAX_GAMES`; one lane while
+  another game of the PC holds a lock slot). Since #527 **CI owns the slots**:
   workers' scripted launches wait while a job runs (see [Launch rules](#parallel-work)), a PR's run **fails fast**
   (the first FAIL starts nothing more; the phases not run are `NOT RUN` in the summary, the full suite runs them),
   the sequences run in the **risk order** (the PR's own `.xrs`, then what the impact map selects for its files, then

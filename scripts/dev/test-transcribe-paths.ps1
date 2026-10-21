@@ -31,24 +31,24 @@ $eAcute = [string][char]0x00E9                                                  
 $dima = -join (@(0x0414, 0x0438, 0x043C, 0x0430) | ForEach-Object { [char]$_ })   # Дима
 
 Write-Host '==> the code page'
-Check (Test-AnsiText "C:\Users\$dima\marks" 1251) 'Cyrillic is in cp1251'
-Check (-not (Test-AnsiText "C:\Users\Jos$eAcute\marks" 1251)) 'an e-acute is not in cp1251 (no best fit to e)'
-Check (Test-AnsiText "C:\Users\Jos$eAcute\marks" 1252) '... but in cp1252'
-Check (-not (Test-AnsiText "C:\Users\$dima\marks" 1252)) 'Cyrillic is not in cp1252'
-Check (Test-AnsiText "C:\Users\Jos$eAcute\$dima" 65001) 'a UTF-8 code page holds everything'
+Check (Test-AnsiText "D:\notes\$dima\marks" 1251) 'Cyrillic is in cp1251'
+Check (-not (Test-AnsiText "D:\notes\Jos$eAcute\marks" 1251)) 'an e-acute is not in cp1251 (no best fit to e)'
+Check (Test-AnsiText "D:\notes\Jos$eAcute\marks" 1252) '... but in cp1252'
+Check (-not (Test-AnsiText "D:\notes\$dima\marks" 1252)) 'Cyrillic is not in cp1252'
+Check (Test-AnsiText "D:\notes\Jos$eAcute\$dima" 65001) 'a UTF-8 code page holds everything'
 Check ((Get-AnsiSafePath 'C:\plain\note.wav' 1251) -ceq 'C:\plain\note.wav') 'a plain path stays as it is'
 
 Write-Host '==> whisper''s error line, not its usage'
 $sample = @(
 	'load_backend: loaded CPU backend from C:\tools\whisper-1.9.2\Release\ggml-cpu-haswell.dll'
-	"error: input file not found 'C:\Users\Jose\note.wav'"
+	"error: input file not found 'D:\notes\Jose\note.wav'"
 	'error: no input files specified'
 	''
 	'usage: whisper-cli.exe [options] file0 file1 ...'
 	'  -h,        --help              [default] show this help message and exit'
 )
 $message = Get-WhisperError $sample
-Check ($message -match "error: input file not found 'C:\\Users\\Jose\\note\.wav'") "the error line ($message)"
+Check ($message -match "error: input file not found 'D:\\notes\\Jose\\note\.wav'") "the error line ($message)"
 Check ($message -notmatch 'usage:|--help') '... not the usage text'
 Check ((Get-WhisperError @('a', 'b', 'c', 'last words')) -ceq 'b | c | last words') 'no error line: the last three lines'
 

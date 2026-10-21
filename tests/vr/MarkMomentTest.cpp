@@ -491,3 +491,59 @@ void MarkMomentTest::replayAndSimulatorTest() {
 	CPPUNIT_ASSERT_MESSAGE("a real headset: the voice note may open the microphone", noteMicrophoneAllowed(false));
 	CPPUNIT_ASSERT_MESSAGE("the simulated headset: no microphone", !noteMicrophoneAllowed(true));
 }
+
+void MarkMomentTest::noticeTransitionTest() {
+
+	const std::string mic = "\xF0\x9F\x8E\xA4";
+	std::string text;
+
+	// Nothing marked: no notice, no line
+	MarkNoticeState state;
+	CPPUNIT_ASSERT(markNotice(state, text) == MarkNotice::None);
+	CPPUNIT_ASSERT(text.empty());
+
+	// The mark, a quick press: the confirmation, never the indicator before the shortest note
+	state.sinceMarkedMs = 0;
+	state.markedNumber = 4;
+	state.recording = true;
+	state.recordingMs = 200;
+	CPPUNIT_ASSERT(markNotice(state, text) == MarkNotice::Marked);
+	CPPUNIT_ASSERT_EQUAL(std::string("Moment marked (#4)"), text);
+
+	// Held on: the indicator counts up, in place of the confirmation
+	state.recordingMs = 5300;
+	state.sinceMarkedMs = 5300;
+	CPPUNIT_ASSERT(markNotice(state, text) == MarkNotice::Recording);
+	CPPUNIT_ASSERT_EQUAL(mic + " 0:05", text);
+
+	// Let go: the note.wav is being written - the indicator stays, frozen at the note's length, never blank
+	state.recording = false;
+	state.recordingMs = 0;
+	state.saving = true;
+	state.savingLengthMs = 5300;
+	for(s64 later : { s64(5311), s64(6000), s64(9000) }) {
+		state.sinceMarkedMs = later;
+		CPPUNIT_ASSERT_MESSAGE("between the release and the write: the indicator", markNotice(state, text) == MarkNotice::Recording);
+		CPPUNIT_ASSERT_EQUAL_MESSAGE("... frozen at the final time", mic + " 0:05", text);
+	}
+
+	// Written: "Note saved" at once, for about 1.5 s, then nothing
+	state.saving = false;
+	state.sinceSavedMs = 0;
+	state.savedLengthMs = 5300;
+	CPPUNIT_ASSERT(markNotice(state, text) == MarkNotice::Saved);
+	CPPUNIT_ASSERT_EQUAL(mic + " Note saved (0:05)", text);
+	state.sinceSavedMs = NoteSavedMs - 1;
+	CPPUNIT_ASSERT(markNotice(state, text) == MarkNotice::Saved);
+	state.sinceSavedMs = NoteSavedMs;
+	CPPUNIT_ASSERT(markNotice(state, text) == MarkNotice::None);
+	CPPUNIT_ASSERT(text.empty());
+
+	// A mark after a saved note: the confirmation for 2 s
+	state.sinceMarkedMs = MarkNoticeMs - 1;
+	state.markedNumber = 5;
+	CPPUNIT_ASSERT(markNotice(state, text) == MarkNotice::Marked);
+	CPPUNIT_ASSERT_EQUAL(std::string("Moment marked (#5)"), text);
+	state.sinceMarkedMs = MarkNoticeMs;
+	CPPUNIT_ASSERT(markNotice(state, text) == MarkNotice::None);
+}

@@ -157,6 +157,7 @@ class MarkMomentTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(metaFormatTest);
 	CPPUNIT_TEST(metaOneLinePerFieldTest);
 	CPPUNIT_TEST(replayAndSimulatorTest);
+	CPPUNIT_TEST(noticeTransitionTest);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -175,6 +176,8 @@ public:
 	void metaOneLinePerFieldTest();
 	//! The coordinator's rules (#551): no mark while a replay clip plays, no microphone under the simulated headset
 	void replayAndSimulatorTest();
+	//! The panel from the release to "Note saved": the indicator frozen while the note.wav is written, no blank (#551)
+	void noticeTransitionTest();
 
 };
 

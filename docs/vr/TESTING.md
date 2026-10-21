@@ -2602,8 +2602,9 @@ session) off the frame thread:
 | `note.wav` | the voice note, push-to-talk: the default microphone while both trackpads stay pressed after the mark, up to 5 minutes (16 kHz mono 16-bit); only when it is on and at least 0.3 s were recorded |
 
 The hero-dialogue panel (D-055, below the centre of the view) shows "Moment marked (#N)" for about 2 s; while the note
-records, the indicator "🎤 m:ss" counting up instead; once `note.wav` is written, "🎤 Note saved (m:ss)" for about
-1.5 s, then nothing. A quick press (under 0.3 s of audio) or no microphone shows the confirmation only. The panel draws
+records, the indicator "🎤 m:ss" counting up instead (from 0.3 s on); after the release it stays, frozen at the note's
+length, while the writer thread builds and writes `note.wav` (the panel never goes blank in between); then "🎤 Note
+saved (m:ss)" for about 1.5 s, then nothing. A quick press (under 0.3 s of audio) or no microphone shows the confirmation only. The panel draws
 a small red microphone where the text has U+1F3A4 (the game's fonts have no glyph for it); the status keeps the
 character. A notice takes the panel over a scene's line while it shows. `cfg.ini vr_mark_note=0` turns the voice note
 off; the channel's `marks note on|off` does it for the session. The simulated headset (`--vr-sim`:

@@ -68,6 +68,34 @@ std::string noteIndicatorText(s64 elapsedMs);
 //! The brief confirmation after a note was saved: "<mic> Note saved (<m>:<ss>)", the note's length in the same form
 std::string noteSavedText(s64 lengthMs);
 
+//! How long "Moment marked (#N)" shows (the owner: about 2 s)
+const s64 MarkNoticeMs = 2000;
+//! How long "<mic> Note saved (m:ss)" shows after the note.wav was written (the owner: about 1.5 s)
+const s64 NoteSavedMs = 1500;
+
+//! What the hero-dialogue panel shows for the marks
+enum class MarkNotice { None, Marked, Recording, Saved };
+
+//! The marks' state the panel's notice follows
+struct MarkNoticeState {
+	bool recording = false;     //!< a voice note records (both trackpads held)
+	s64 recordingMs = 0;        //!< ... for this long
+	bool saving = false;        //!< a kept note was let go and its note.wav is being written
+	s64 savingLengthMs = 0;     //!< ... its length: the indicator's final time
+	s64 sinceSavedMs = -1;      //!< how long ago the last note.wav was written, -1 for none
+	s64 savedLengthMs = 0;      //!< ... its length
+	s64 sinceMarkedMs = -1;     //!< how long ago the last mark was made, -1 for none
+	u32 markedNumber = 0;
+};
+
+/*!
+ * The notice and its line: the indicator while a note records (from VoiceNote::minMs on: a quick press shows the
+ * confirmation only), and frozen at the note's final time while its note.wav is written - so the panel never goes
+ * blank between the release and "Note saved"; then "Note saved" for \ref NoteSavedMs; else the confirmation for
+ * \ref MarkNoticeMs; else none (an empty line)
+ */
+MarkNotice markNotice(const MarkNoticeState & state, std::string & text);
+
 /*!
  * The marker folder's name: the mark's UTC time (ISO 8601 basic) and its number in the session -
  * "20261020T153012Z-1"; sorts by time, valid on every file system

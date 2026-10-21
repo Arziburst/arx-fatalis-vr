@@ -59,10 +59,6 @@ namespace marks {
 
 namespace {
 
-//! How long "Moment marked (#N)" shows (the owner, #551: about 2 s)
-const s64 MarkNoticeMs = 2000;
-//! How long "Note saved (m:ss)" shows after a note.wav was written (the owner, #551: about 1.5 s)
-const s64 NoteSavedMs = 1500;
 //! How long a mark waits for its eye images (a frame that draws no eye, a session that stops): then without them
 const s64 EyeWaitMs = 1000;
 //! The replay ring's window in clip.vrsim (#551: the last 30 s, as `replay mark` cuts by default)
@@ -105,6 +101,8 @@ struct MarksState {
 	u32 markedNumber = 0;
 	s64 savedAt = -1;       //!< when the last note.wav was written, for "Note saved"
 	s64 savedLengthMs = 0;
+	bool saving = false;    //!< a kept note was handed to the writer: the indicator stays, frozen, until it is written
+	s64 savingLengthMs = 0;
 	bool noticeShown = false;
 
 	~MarksState() {
@@ -244,29 +242,37 @@ NoteDevice & microphone() {
 
 //! The note that ended (or was stopped) into note.wav of its mark, when it recorded anything
 void saveNote() {
-	std::string wav = g.note.wav();
-	const size_t samples = g.note.samples().size();
-	if(wav.empty() || g.noteFolder.empty()) {
+	if(!g.note.kept() || g.noteFolder.empty()) {
 		LogInfo << "[vr] mark #" << g.noteNumber << ": no voice note recorded";
 		return;
 	}
+	// The samples move to the writer thread, which builds the WAV (up to 9.6 MB): the frame only hands them over
+	auto samples = std::make_shared<std::vector<s16>>(g.note.takeSamples());
+	const size_t count = samples->size();
+	const s64 lengthMs = s64(count) * 1000 / s64(VoiceNote::sampleRate);
 	const fs::path folder = g.noteFolder;
 	const u32 number = g.noteNumber;
+	// The indicator stays, frozen at the note's length, until "Note saved" takes its place
+	g.saving = true;
+	g.savingLengthMs = lengthMs;
 	Job job;
-	job.work = [folder, wav = std::move(wav)]() {
+	job.work = [folder, samples]() {
+		const std::string wav = formatWav(samples->data(), samples->size(), VoiceNote::sampleRate);
+		samples->clear();
+		samples->shrink_to_fit();
 		fs::create_directories(folder);
 		fs::write(folder / "note.wav", wav);
 	};
-	job.done = [folder, number, samples]() {
-		const s64 lengthMs = s64(samples) * 1000 / s64(VoiceNote::sampleRate);
+	job.done = [folder, number, count, lengthMs]() {
 		std::ostringstream seconds;
 		seconds.precision(1);
-		seconds << std::fixed << double(samples) / double(VoiceNote::sampleRate);
+		seconds << std::fixed << double(count) / double(VoiceNote::sampleRate);
 		LogInfo << "[vr] mark #" << number << ": note.wav (" << seconds.str() << " s)";
 		if(folder.filename() == g.status.last) {
 			g.status.lastFiles = listFiles(folder);
 		}
-		// "Note saved" once it is on disk
+		// "Note saved" once it is on disk, straight after the frozen indicator
+		g.saving = false;
 		g.savedAt = toMsi(platform::getTime());
 		g.savedLengthMs = lengthMs;
 	};
@@ -378,23 +384,31 @@ void writePending(std::array<RgbImage, 2> eyes) {
 	g.jobs.push_back(std::move(job));
 }
 
-//! The hero-dialogue panel: the confirmation for 2 s, then the note's seconds left while it records
+//! The hero-dialogue panel (vr::markNotice): the indicator, "Note saved", the confirmation, or nothing
 void updateNotice(s64 now) {
-	if(g.note.recording() && now - g.note.startMs() >= VoiceNote::minMs) {
-		// Push-to-talk: the indicator counts up while both trackpads are held, in place of the confirmation - from the
-		// shortest note on, so a quick press (no note) shows the confirmation only
-		showSubtitleNotice(SubtitleNotice::Recording, noteIndicatorText(now - g.note.startMs()));
-		g.noticeShown = true;
-	} else if(g.savedAt >= 0 && now - g.savedAt < NoteSavedMs) {
-		showSubtitleNotice(SubtitleNotice::Saved, noteSavedText(g.savedLengthMs));
-		g.noticeShown = true;
-	} else if(g.markedAt >= 0 && now - g.markedAt < MarkNoticeMs) {
-		showSubtitleNotice(SubtitleNotice::Marked, markNoticeText(g.markedNumber));
-		g.noticeShown = true;
-	} else if(g.noticeShown) {
-		clearSubtitleNotice();
-		g.noticeShown = false;
+	MarkNoticeState state;
+	state.recording = g.note.recording();
+	state.recordingMs = state.recording ? now - g.note.startMs() : 0;
+	state.saving = g.saving;
+	state.savingLengthMs = g.savingLengthMs;
+	state.sinceSavedMs = g.savedAt >= 0 ? now - g.savedAt : -1;
+	state.savedLengthMs = g.savedLengthMs;
+	state.sinceMarkedMs = g.markedAt >= 0 ? now - g.markedAt : -1;
+	state.markedNumber = g.markedNumber;
+	std::string text;
+	switch(markNotice(state, text)) {
+		case MarkNotice::Recording: showSubtitleNotice(SubtitleNotice::Recording, text); break;
+		case MarkNotice::Saved: showSubtitleNotice(SubtitleNotice::Saved, text); break;
+		case MarkNotice::Marked: showSubtitleNotice(SubtitleNotice::Marked, text); break;
+		case MarkNotice::None: {
+			if(g.noticeShown) {
+				clearSubtitleNotice();
+			}
+			g.noticeShown = false;
+			return;
+		}
 	}
+	g.noticeShown = true;
 }
 
 //! The voice note's setting from cfg.ini, once (the channel's `marks note` replaces it for the session)

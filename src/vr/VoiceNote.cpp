@@ -19,6 +19,8 @@
 
 #include "vr/VoiceNote.h"
 
+#include <utility>
+
 namespace vr {
 
 namespace {
@@ -85,10 +87,20 @@ VoiceNote::State VoiceNote::stop() {
 
 std::string VoiceNote::wav() const {
 	// A release too quick to say anything is no note
-	if(m_samples.size() < size_t(sampleRate) * size_t(minMs) / 1000) {
+	if(!kept()) {
 		return std::string();
 	}
 	return formatWav(m_samples.data(), m_samples.size(), sampleRate);
+}
+
+bool VoiceNote::kept() const {
+	return m_samples.size() >= size_t(sampleRate) * size_t(minMs) / 1000;
+}
+
+std::vector<s16> VoiceNote::takeSamples() {
+	std::vector<s16> samples = std::move(m_samples);
+	m_samples.clear();
+	return samples;
 }
 
 std::string formatWav(const s16 * samples, size_t count, u32 sampleRate) {

@@ -21,6 +21,8 @@
 
 #include <cstdio>
 
+#include "vr/VoiceNote.h"
+
 namespace vr {
 
 namespace {
@@ -92,6 +94,27 @@ bool markAllowed(bool replayPlaying) {
 
 bool noteMicrophoneAllowed(bool simulatedHeadset) {
 	return !simulatedHeadset;
+}
+
+MarkNotice markNotice(const MarkNoticeState & state, std::string & text) {
+	if(state.recording && state.recordingMs >= VoiceNote::minMs) {
+		text = noteIndicatorText(state.recordingMs);
+		return MarkNotice::Recording;
+	}
+	if(state.saving) {
+		text = noteIndicatorText(state.savingLengthMs);
+		return MarkNotice::Recording;
+	}
+	if(state.sinceSavedMs >= 0 && state.sinceSavedMs < NoteSavedMs) {
+		text = noteSavedText(state.savedLengthMs);
+		return MarkNotice::Saved;
+	}
+	if(state.sinceMarkedMs >= 0 && state.sinceMarkedMs < MarkNoticeMs) {
+		text = markNoticeText(state.markedNumber);
+		return MarkNotice::Marked;
+	}
+	text.clear();
+	return MarkNotice::None;
 }
 
 std::string markNoticeText(u32 number) {

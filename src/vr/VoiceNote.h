@@ -106,6 +106,12 @@ public:
 	//! say anything) - then no note.wav is written
 	std::string wav() const;
 
+	//! At least \ref minMs of samples were recorded: \ref wav gives a note
+	bool kept() const;
+
+	//! The samples moved out (the note keeps none), to build the WAV off the frame thread
+	std::vector<s16> takeSamples();
+
 private:
 
 	State m_state = State::Idle;

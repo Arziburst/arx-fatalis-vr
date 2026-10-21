@@ -48,7 +48,8 @@ a changed decision keeps its history in that cell.
   presses log `[vr] mark ignored: a replay is playing` instead - the marks were the recorded session's.
 - **The hero-dialogue panel** (D-055: below the centre of the view, the lazy follow; in the eyes and so in the desktop
   mirror) shows "Moment marked (#N)" for about 2 s; while the note records, the indicator "🎤 m:ss" counting up
-  instead; once its `note.wav` is written, "🎤 Note saved (m:ss)" for about 1.5 s, then nothing. The game's fonts
+  instead (from 0.3 s on), frozen at the note's length after the release until its `note.wav` is written (off the
+  frame thread) - no blank in between; then "🎤 Note saved (m:ss)" for about 1.5 s, then nothing. The game's fonts
   have no glyph for U+1F3A4, so the panel draws a small red microphone in its place (the status text keeps the
   character). A notice takes the panel over a scene's line while it shows; the line comes back after.
 - **The game menu** is reached through the radial menu (and the menu event where one is bound); D-058's refused last

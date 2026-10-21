@@ -55,7 +55,7 @@ The whole of Arx Fatalis can be played through in a Valve Index, from a plain la
 | UI | Menus, inventory, loot, book, map, dialogs and notes on floating panels, readable text, a pointer only while a menu is open; health and mana on the left wrist; NPC lines above the head |
 | Comfort | Head bob, screen shake and FOV zoom disabled |
 
-## Accepted problems
+## Accepted for the MVP: known problems we live with
 
 - Engine animations that take over the body (death, ladders, knockdowns), cutscenes, the death camera and scripted
   cameras may look wrong.

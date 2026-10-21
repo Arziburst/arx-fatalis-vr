@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: Both Index trackpads pressed mark the moment in the headset; the game menu only through the radial
+## D-061: Both Index trackpads pressed mark the moment in the headset; the game menu only through the radial
 
 - **Date:** 2026-10-20
 - **Status:** Accepted (#551; supersedes the fixed two-stick hold of D-058, its other rules stay)
@@ -177,7 +177,7 @@ a changed decision keeps its history in that cell.
 
 - **Date:** 2026-10-18
 - **Status:** Accepted (#326; amends D-042's table and D-019's menu rule); the fixed two-stick hold is superseded by
-  D-NEW (#551: the menu is reached through the radial, the moment is marked on both trackpads) - the refused last
+  D-061 (#551: the menu is reached through the radial, the moment is marked on both trackpads) - the refused last
   binding and the restored way of a broken layout stay
 - **Decided by:** the owner (the Index has no menu button the game can read; the fallback is both thumbstick clicks held
   for 2 s)

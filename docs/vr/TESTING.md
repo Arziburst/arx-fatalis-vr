@@ -2586,7 +2586,7 @@ replay-crash` (the clip in a hang's and a crash's report).
 ## Marks of the moment (#551)
 
 During a headset test the owner marks a moment instead of remembering it: **both Index trackpads pressed (the force
-press)** mark it **at once**, on the frame both are down - no hold (D-NEW; fixed, not rebindable, one mark per press - a
+press)** mark it **at once**, on the frame both are down - no hold (D-061; fixed, not rebindable, one mark per press - a
 second mark needs a trackpad let go and pressed again; one pressed, the other later: the mark when the second goes
 down). Only on the Index: the Touch has no trackpads and no mark gesture. On in every build, the tester package
 included. Both stick clicks do nothing special (no mark, no menu). The default layouts bind nothing to the trackpads; a

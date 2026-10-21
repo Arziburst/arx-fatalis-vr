@@ -8,7 +8,7 @@
 	  <user dir>\arx-replay.log            the session being recorded (arx-replay.log.gz once it ended)
 	  <user dir>\arx-replay.<n>.log[.gz]   older sessions (rotated like arx-perf.log)
 	  <user dir>\replay-marks\*.vrsim      the last seconds before a `replay mark <name>` (the channel)
-	  <user dir>\crashes|hangs\<utc>\arx-replay.vrsim   the last 60 s before a crash or hang report
+	  <user dir>\crashes|hangs\<utc>\arx-replay.vrsim   the last 75 s before a crash or hang report
 
 	The replay (smoke-test.ps1 -VrSim, this working copy's isolated user directory, D-014's game lock):
 	  - the save the clip names in "# save:" (made at the record start) becomes the only save of the isolated user

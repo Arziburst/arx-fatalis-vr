@@ -573,16 +573,15 @@ void updateMark(s64 now) {
 		}
 	}
 
-	// The pictures that came back
+	// A picture that came back: one a frame, so the copies of the press's two full eyes fall on two frames
 	u32 id = 0;
 	RgbImage image;
-	while(takeEyeShot(id, image)) {
+	if(takeEyeShot(id, image)) {
 		auto shot = mark.shots.find(id);
 		if(shot != mark.shots.end()) {
 			writeShot(mark, shot->second, std::move(image));
 			mark.shots.erase(shot);
 		}
-		image = RgbImage();
 	}
 	for(auto shot = mark.shots.begin(); shot != mark.shots.end();) {
 		if(now - shot->second.requestedAt >= EyeWaitMs) {

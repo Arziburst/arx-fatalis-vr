@@ -61,7 +61,7 @@
 	                    its dump helper; FAILS over 0.05 ms or 5 MiB. Prints the numbers for the PR body.
 	  replay-crash      (#550; not in 'all') one run on the simulated headset (idle.vrsim, the head turning): a 25 s
 	                    session, `stall 6000`, then `crash`. The hang's and the crash's report folders each hold
-	                    arx-replay.vrsim - the replay ring's last 60 s of poses, written by the dump helper: the clip
+	                    arx-replay.vrsim - the replay ring's last 75 s of poses, written by the dump helper: the clip
 	                    header (# arx-replay, # seed:, # save:), frames up to the report (its last frame within 3 s of the
 	                    session time the command was sent at), at most 61 s of them - and crash-report.ps1 prints
 	                    "Replay clip: arx-replay.vrsim"
@@ -662,7 +662,7 @@ function Invoke-OverheadCase {
 function Test-ArxReplayClipInReport([string]$What, [string]$Folder, [double]$AtSec) {
 	$file = Join-Path $Folder 'arx-replay.vrsim'
 	$exists = Test-Path -LiteralPath $file
-	Check $exists "$What`: the report folder holds arx-replay.vrsim (the last 60 s of poses)"
+	Check $exists "$What`: the report folder holds arx-replay.vrsim (the last 75 s of poses, #574)"
 	if (-not $exists) { return }
 	$lines = @(Read-ArxSharedLines $file)
 	Check ($lines.Count -gt 0 -and $lines[0] -like '# arx-replay*') "$What`: the clip starts with its header (# arx-replay)"
@@ -671,7 +671,7 @@ function Test-ArxReplayClipInReport([string]$What, [string]$Folder, [double]$AtS
 	Check ($times.Count -ge 90) "$What`: the clip has frames ($($times.Count))"
 	if ($times.Count) {
 		$span = ($times[-1] - $times[0]) / 1000.0
-		Check ($span -le 61) ("$What`: at most the last 60 s ({0:0.0} s)" -f $span)
+		Check ($span -le 76) ("$What`: at most the last 75 s, the ring (#574) ({0:0.0} s)" -f $span)
 		Check ([math]::Abs($times[-1] / 1000.0 - $AtSec) -le 3) ("$What`: its last frame at the report ({0:0.0} s into the session, the command at {1:0.0} s)" -f ($times[-1] / 1000.0), $AtSec)
 	}
 	$report = Invoke-ArxCrashReport $Folder

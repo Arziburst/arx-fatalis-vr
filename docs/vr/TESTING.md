@@ -1065,7 +1065,7 @@ still bother you, do floating arms (hidden) feel right, and with which arm model
 ## The dev variants panel (#588)
 
 The owner compares variants (a font, a threshold, an offset) in the headset without restarts or settings: in a
-development launch (`--dev-launch`, every launch of our scripts) the spellbook's **map page** shows the variants of
+development launch (`--dev-launch`: our scripts' launches except a player's launch, `-Player` / `@player`) the spellbook's **map page** shows the variants of
 the PRs under test instead of the map - a block per PR, each group with its label and either its choice buttons
 (the current one highlighted) or `-  value  +` for a number - pressed with either hand's reticle like any button of
 the book. A switch applies at once and logs `[dev] variant <group> = <value>`, so the owner's marks and the log say

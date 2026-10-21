@@ -39,10 +39,14 @@ struct Item {
 	std::function<void(float)> numberSetter;
 };
 
-std::vector<Item> g_items;
+//! The registry, constructed on first use: a registration from another file's static initializer is kept
+std::vector<Item> & registry() {
+	static std::vector<Item> items;
+	return items;
+}
 
 Item * findItem(std::string_view group) {
-	for(Item & item : g_items) {
+	for(Item & item : registry()) {
 		if(item.entry.group == group) {
 			return &item;
 		}
@@ -62,7 +66,7 @@ void store(Item && item) {
 	if(Item * existing = findItem(item.entry.group)) {
 		*existing = std::move(item);
 	} else {
-		g_items.push_back(std::move(item));
+		registry().push_back(std::move(item));
 	}
 }
 
@@ -173,31 +177,31 @@ bool registerNumber(std::string_view group, std::string_view prLabel, float min,
 }
 
 bool unregister(std::string_view group) {
-	auto it = std::find_if(g_items.begin(), g_items.end(), [group](const Item & item) {
+	auto it = std::find_if(registry().begin(), registry().end(), [group](const Item & item) {
 		return item.entry.group == group;
 	});
-	if(it == g_items.end()) {
+	if(it == registry().end()) {
 		return false;
 	}
-	g_items.erase(it);
+	registry().erase(it);
 	return true;
 }
 
 void clear() {
-	g_items.clear();
+	registry().clear();
 }
 
 std::vector<Entry> entries() {
 	std::vector<Entry> list;
-	list.reserve(g_items.size());
-	for(const Item & item : g_items) {
+	list.reserve(registry().size());
+	for(const Item & item : registry()) {
 		list.push_back(item.entry);
 	}
 	return list;
 }
 
 size_t count() {
-	return g_items.size();
+	return registry().size();
 }
 
 const Entry * find(std::string_view group) {
@@ -370,14 +374,14 @@ float groupHeight(const Entry & entry, const Metrics & metrics) {
 //! The groups in panel order: the PRs in the order of their first group, a PR's groups in registration order
 std::vector<const Entry *> panelOrder() {
 	std::vector<std::string> prs;
-	for(const Item & item : g_items) {
+	for(const Item & item : registry()) {
 		if(std::find(prs.begin(), prs.end(), item.entry.prLabel) == prs.end()) {
 			prs.push_back(item.entry.prLabel);
 		}
 	}
 	std::vector<const Entry *> order;
 	for(const std::string & pr : prs) {
-		for(const Item & item : g_items) {
+		for(const Item & item : registry()) {
 			if(item.entry.prLabel == pr) {
 				order.push_back(&item.entry);
 			}
@@ -423,7 +427,7 @@ Layout layout(const Rectf & area, float rowHeight, size_t page, const TextWidth 
 
 	Layout result;
 
-	if(g_items.empty()) {
+	if(registry().empty()) {
 		result.empty = true;
 		result.notice = "No variants under test";
 		Button showMap;

@@ -220,6 +220,7 @@ set(arxtest_SOURCES
 	src/core/ChannelWriter.cpp
 	src/game/Camera.cpp
 	src/graphics/Math.cpp
+	src/gui/DevVariants.cpp
 	src/graphics/Renderer.cpp
 	src/io/IniSection.cpp
 	src/io/log/FileLogger.cpp

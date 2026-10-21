@@ -1732,3 +1732,8 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** a simulator script's frame 0 (`timeline gameplay`) comes while the level still loads: `[vr] sim: timeline starts at frame 2` stands before `Done loading level` in `arx.log`, and a recorded clip played from the timeline's frame 0 ran 270 ms ahead of its recording (#550: 1.7 degrees of head yaw at 6 degrees per second).
 **Cause:** the loading screen submits VR frames through `xrWaitFrame` from outside the game loop, and `detectGameState()` says gameplay between the load's synchronous parts, so the timeline starts on a loading screen's frame; the game loop's first playable frame - where a recording's time 0 is - comes some 25 frames later. Sequences wait that out (`@until vr.sim.timelineFrame ge 270`).
 **Do:** time a recording and its replay on the clip clock (`vr::replay::clipClockUs`: the display time since the first playable frame of the game loop; the `play` command runs on it), not on the timeline; a script's own timed lines keep the timeline's clock, as every CI sequence expects.
+
+## 2026-10-22 - A second quick click on an in-game button does nothing
+**Symptom:** a button of the book (the dev variants panel's `-`, #588) takes the first trigger press and ignores a second one 10 frames later: `dev-variants.xrs` pressed `-` twice and the value moved one step.
+**Cause:** the engine turns a click within the double-click time into a double click (`ArxGame.cpp`: `EERIEMouseButton` bit 4 set, bit 1 cleared), so `eeMouseDown1()` is false for it.
+**Do:** a button that must count every press checks `eeMouseDown1() || eeMouseDoubleClick1()`.

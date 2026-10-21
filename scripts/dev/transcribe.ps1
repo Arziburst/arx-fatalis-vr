@@ -49,6 +49,11 @@
 	(tests) Runs this program (or .ps1, with pwsh) instead of the cached whisper-cli.exe; the whisper zip is then not
 	needed and not fetched.
 
+.PARAMETER AnsiCodePage
+	(tests) The code page whisper-cli reads its command line in; default the system's. whisper-cli 1.9.2 gets its
+	arguments in it, so a path with a character outside it (an é under cp1251) is passed as its 8.3 short name, and a
+	note whose folder has none is copied to a plain temporary path first.
+
 .EXAMPLE
 	.\scripts\dev\transcribe.ps1 -All
 	.\scripts\dev\transcribe.ps1 -Mark last -Force
@@ -64,7 +69,8 @@ param(
 	[string]$ToolsDir,
 	[string]$Glossary,
 	[string]$PinsFile,
-	[string]$WhisperCli
+	[string]$WhisperCli,
+	[int]$AnsiCodePage
 )
 
 $ErrorActionPreference = 'Stop'
@@ -134,19 +140,33 @@ $prompt = Get-GlossaryPrompt $Glossary
 # whisper's no-speech threshold for the retry without the VAD (its default, set explicitly)
 $NoSpeechThreshold = '0.6'
 $threads = [math]::Max(1, [math]::Min([Environment]::ProcessorCount, 8))
+if (-not $AnsiCodePage) { $AnsiCodePage = Get-AnsiCodePage }
 $work = Join-Path ([IO.Path]::GetTempPath()) "arxvr-transcribe-$PID"
 $failed = 0
 try {
 	New-Item -ItemType Directory -Force $work | Out-Null
+	# whisper-cli reads its command line in the ANSI code page: every path it gets must survive it (else its 8.3 name)
+	$safe = @{}
+	foreach ($entry in @(@('model', $model), @('vad', $vad), @('work', $work))) {
+		$safe[$entry[0]] = Get-AnsiSafePath $entry[1] $AnsiCodePage
+		if (-not $safe[$entry[0]]) {
+			throw "whisper-cli cannot be given the path of the $($entry[0]) ($($entry[1])): it has characters outside the system's code page $AnsiCodePage and no 8.3 short name - use a plain path (-ToolsDir, or TEMP)"
+		}
+	}
 	foreach ($folder in $chosen) {
-		$note = Join-Path $folder.FullName 'note.wav'
-		$base = Join-Path $work $folder.Name
-		$common = @('-m', $model, '-f', $note, '-l', 'ru', '-t', "$threads", '--prompt', $prompt, '-oj', '-of', $base)
+		$note = Get-AnsiSafePath (Join-Path $folder.FullName 'note.wav') $AnsiCodePage
+		if (-not $note) {
+			# No short name for the mark's folder: whisper reads a copy in the work folder
+			$note = Join-Path $safe['work'] "$($folder.Name).wav"
+			Copy-Item -LiteralPath (Join-Path $folder.FullName 'note.wav') -Destination $note -Force
+		}
+		$base = Join-Path $safe['work'] $folder.Name
+		$common = @('-m', $safe['model'], '-f', $note, '-l', 'ru', '-t', "$threads", '--prompt', $prompt, '-oj', '-of', $base)
 		$segments = $null
 		foreach ($withVad in $true, $false) {
 			# The retry without the VAD hears silence too: non-speech tokens suppressed and whisper's no-speech threshold
 			# set (a real quiet note matters more than a stray line, so what it still writes is kept)
-			$arguments = if ($withVad) { $common + @('--vad', '-vm', $vad) } else { $common + @('--suppress-nst', '-nth', $NoSpeechThreshold) }
+			$arguments = if ($withVad) { $common + @('--vad', '-vm', $safe['vad']) } else { $common + @('--suppress-nst', '-nth', $NoSpeechThreshold) }
 			Remove-Item -LiteralPath "$base.json" -ErrorAction SilentlyContinue
 			$output = if ($cli -like '*.ps1') {
 				& (Get-Process -Id $PID).Path -NoProfile -File $cli @arguments 2>&1
@@ -154,8 +174,7 @@ try {
 				& $cli @arguments 2>&1
 			}
 			if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath "$base.json")) {
-				$tail = @($output | ForEach-Object { "$_" } | Select-Object -Last 5) -join ' | '
-				throw "whisper failed on $($folder.Name) (exit $LASTEXITCODE): $tail"
+				throw "whisper failed on $($folder.Name) (exit $LASTEXITCODE): $(Get-WhisperError $output)"
 			}
 			$segments = @(Read-WhisperSegments ([IO.File]::ReadAllText("$base.json", $utf8)))
 			# Quiet short notes come out empty with the VAD: once more without it

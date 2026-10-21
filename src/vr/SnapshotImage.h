@@ -29,8 +29,8 @@
  * \brief A hold mark's periodic snapshots (#574): the left eye at half resolution as a JPEG
  *
  * About 1008x1120 on the Index, 150-250 KB, at most vr::SnapshotMax a hold. The game halves the eye on the GPU (a
- * linear blit at exactly half: each pixel the mean of a 2x2 block, the picture \ref halfSize gives) and reads it
- * back asynchronously; the JPEG is written on the mark writer thread (vr/VRMarks.cpp). The JPEG encoder is
+ * linear blit at exactly half: each pixel the mean of a 2x2 block in linear light - close to \ref halfSize, which
+ * averages the stored sRGB values) and reads it back asynchronously; the JPEG is written on the mark writer thread (vr/VRMarks.cpp). The JPEG encoder is
  * stb_image_write (libs/stb, LICENSE.stb). Pure: no OpenGL, no engine globals, no file system - covered by
  * tests/vr/SnapshotImageTest.cpp.
  */

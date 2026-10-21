@@ -63,7 +63,7 @@
 	                    session, `stall 6000`, then `crash`. The hang's and the crash's report folders each hold
 	                    arx-replay.vrsim - the replay ring's last 75 s of poses, written by the dump helper: the clip
 	                    header (# arx-replay, # seed:, # save:), frames up to the report (its last frame within 3 s of the
-	                    session time the command was sent at), at most 61 s of them - and crash-report.ps1 prints
+	                    session time the command was sent at), at most 76 s of them (the 75 s ring, #574) - and crash-report.ps1 prints
 	                    "Replay clip: arx-replay.vrsim"
 
 	Exit code 0 on PASS, 1 on FAIL (also when crash-report.ps1 is missing: before any launch), 2 when a launch was

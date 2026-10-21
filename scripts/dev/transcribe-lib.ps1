@@ -99,6 +99,39 @@ function Test-TranscribeToolsCached([string]$ToolsDir) {
 	[bool]$found
 }
 
+# The system's ANSI code page: whisper-cli 1.9.2 reads its command line in it, so a path with a character outside it
+# (an é under cp1251) reaches whisper changed ("input file not found")
+function Get-AnsiCodePage {
+	try { [int](Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage').ACP } catch { 1252 }
+}
+
+# $Text goes through the code page unchanged (no best-fit: an é is not an e)
+function Test-AnsiText([string]$Text, [int]$CodePage) {
+	if ($CodePage -eq 65001) { return $true }
+	[Text.Encoding]::RegisterProvider([Text.CodePagesEncodingProvider]::Instance)
+	$encoding = [Text.Encoding]::GetEncoding($CodePage, [Text.EncoderFallback]::ExceptionFallback, [Text.DecoderFallback]::ExceptionFallback)
+	try { $null = $encoding.GetBytes($Text); $true } catch { $false }
+}
+
+# A path whisper-cli can open: as it is when the code page holds it, else its 8.3 short name; "" when there is none
+# (8.3 names off on that volume)
+function Get-AnsiSafePath([string]$Path, [int]$CodePage) {
+	if (Test-AnsiText $Path $CodePage) { return $Path }
+	try {
+		$fso = New-Object -ComObject Scripting.FileSystemObject
+		$short = if (Test-Path -LiteralPath $Path -PathType Container) { $fso.GetFolder($Path).ShortPath } else { $fso.GetFile($Path).ShortPath }
+		if ($short -and (Test-AnsiText $short $CodePage)) { return $short }
+	} catch { }
+	''
+}
+
+# What went wrong in a whisper run: its error lines, not the usage text it prints after them; else its last lines
+function Get-WhisperError($Output) {
+	$lines = @($Output | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+	$errors = @($lines | Where-Object { $_ -match '^error\b|\bfailed to\b|^whisper_\w+: .*\b(error|fail)' })
+	if ($errors.Count) { $errors -join ' | ' } else { @($lines | Select-Object -Last 3) -join ' | ' }
+}
+
 # The glossary file's words for whisper's prompt: the lines that are neither empty nor a '#' comment, trimmed, ", "
 function Get-GlossaryPrompt([string]$Path) {
 	$words = @([IO.File]::ReadAllLines($Path, [Text.UTF8Encoding]::new($false)) | ForEach-Object { $_.Trim() } |

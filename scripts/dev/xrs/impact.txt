@@ -182,7 +182,8 @@ src/gui/Interface.* -> hand-reticle menu-pointer ui-panel controls-v2 walk-forwa
 src/gui/Cursor.* -> hand-reticle menu-pointer rune-trail desktop-mouse
 src/gui/Dragging.* -> hand-reticle menu-pointer
 src/gui/DamageNumbers.* -> damage-numbers damage-numbers-off
-src/gui/book/* -> rune-trail controls-v2 first-run-menu first-run-chargen radial-menu
+src/gui/book/* -> rune-trail controls-v2 first-run-menu first-run-chargen radial-menu dev-variants
+src/gui/DevVariants.* -> dev-variants
 src/gui/CharacterCreation.* -> first-run-chargen first-run desktop-mouse desktop-mouse-flat
 src/gui/MainMenu.* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-remap-saved vr-turning-settings menu-trigger-grip menu-rebind-kept menu-long-press
 src/gui/Menu.* -> first-run first-run-intro first-run-menu first-run-chargen vr-settings-flat

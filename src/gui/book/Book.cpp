@@ -46,6 +46,7 @@
 #include "gui/MiniMap.h"
 #include "gui/Speech.h"
 #include "gui/TextManager.h"
+#include "gui/book/DevPanel.h"
 #include "gui/hud/PlayerInventory.h"
 #include "input/Input.h"
 #include "scene/GameSound.h"
@@ -225,6 +226,7 @@ void PlayerBook::toggle() {
 		player.Interface &= ~INTER_PLAYERBOOK;
 		g_miniMap.purgeTexContainer();
 		onClosePage();
+		devvariants::onBookClosed();
 	} else {
 		ARX_SOUND_PlayInterface(g_snd.BOOK_OPEN, Random::getf(0.9f, 1.1f));
 		SendIOScriptEvent(nullptr, entities.player(), SM_BOOK_OPEN);
@@ -1530,6 +1532,10 @@ MapPage::MapPage()
 
 void MapPage::manage() {
 	DrawBookInterfaceItem(g_bookResouces.questbook, g_bookRect.topLeft(), Color::white, 0.9999f);
+	// A development launch shows the variants of the PRs under test instead of the map (#588)
+	if(devvariants::manageMapPage(g_bookRect, g_bookScale)) {
+		return;
+	}
 	drawLeftTabs();
 	drawMaps();
 }

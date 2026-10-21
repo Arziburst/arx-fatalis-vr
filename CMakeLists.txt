@@ -1076,6 +1076,7 @@ set(GUI_SOURCES
 	src/gui/Credits.cpp
 	src/gui/Cursor.cpp
 	src/gui/DamageNumbers.cpp
+	src/gui/DevVariants.cpp
 	src/gui/Dragging.cpp
 	src/gui/Hud.cpp
 	src/gui/Interface.cpp
@@ -1092,6 +1093,7 @@ set(GUI_SOURCES
 	src/gui/Text.cpp
 	src/gui/TextManager.cpp
 	src/gui/book/Book.cpp
+	src/gui/book/DevPanel.cpp
 	src/gui/book/Necklace.cpp
 	src/gui/debug/DebugHud.cpp
 	src/gui/debug/DebugHudAudio.cpp

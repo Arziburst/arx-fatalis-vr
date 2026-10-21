@@ -1,0 +1,163 @@
+# The dev variants panel (#588) on the simulated Index controllers: in a development launch the spellbook's map page
+# shows the variants of the PRs under test instead of the map - with none registered "No variants under test" and a
+# Show map button; with groups, a block per PR, a choice group's buttons (the current one highlighted) and a number's
+# "-  value  +"; pressed with the hand's reticle like a menu (D-010), every switch applied at once and logged.
+# A player's launch keeps the normal map: first-run.xrs (@player) asserts it. The registry and the layout (a block
+# per PR, pages when the groups do not fit) are the host tests tests/gui/DevVariantsTest.
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-new-game -Sequence dev-variants
+#
+# The test channel's side (implemented as written here):
+#   devvariants clear                      every group unregistered (the sequence starts from none, whatever the
+#                                          branch under test registers)
+#   devvariants demo                       registers the demo groups of PR "#588": demo_choice - the choices Small,
+#                                          Medium, Large, default Small; demo_number - 0 to 1 m in steps of 0.25,
+#                                          default 0.75. Their setters keep what they got for devPanel.demo.*
+#   devvariants set <group> <value...>     devvariants::set: a choice by its label, a number
+#   All three are refused unless the launch is a development launch (--dev-launch): the hook never acts for a player.
+#
+# Status (status.json), in every launch:
+#   devPanel.enabled          the launch is a development launch (g_devLaunch): the panel and the hook are active
+#   devPanel.view             what the map page shows (devvariants::mapPageView): map | panel | empty
+#   devPanel.visible          the book is open on its map page and shows the panel or the empty notice (view ne map)
+#   devPanel.groups           the number of registered groups
+#   devPanel.page / .pages    the panel's page shown (0-based) / its number of pages
+#   devPanel.value.<group>    a group's current value: a choice's label, a number as a number (no unit)
+#   devPanel.demo.choice      the label the demo choice setter last got ("none" before)
+#   devPanel.demo.number      the number the demo number setter last got (-1 before)
+#   devPanel.demo.calls       how many times the demo setters were called
+# The panel's buttons are menu targets (vr-point <hand> menu <target>, ui.menuHover) while the book shows them:
+#   devpanel.<group>.<index>, devpanel.<group>.minus, devpanel.<group>.plus, devpanel.prev, devpanel.next,
+#   devpanel.show_map
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert devPanel.enabled eq true
+devvariants clear
+@frames 3
+@assert devPanel.groups eq 0
+@assert devPanel.view eq empty
+@assert devPanel.visible eq false            # the book is closed
+
+# The hands before the chest; the left hand points away so the right hand's ray owns the cursor
+vr-sim hand right pos 0.12 -0.2 -0.38; vr-sim hand left pos -0.12 -0.2 -0.38
+@frames 10
+
+# 1. No variants under test: the notice and Show map, which shows the map
+vr-input tap left.b
+@until player.bookOpen eq true 5s
+@assert player.bookPage eq map
+@frames 30
+@assert devPanel.view eq empty
+@assert devPanel.visible eq true
+vr-sim hand left rot 180 0 0
+vr-point right menu devpanel.show_map
+@frames 5
+vr-point right menu devpanel.show_map
+@frames 5
+@until vr.pointer.owner eq right 5s
+@assert ui.menuHover eq devpanel.show_map
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+@assert devPanel.view eq map
+@assert devPanel.visible eq false
+@assert player.bookOpen eq true
+
+# 2. The demo groups registered: the panel, one page, the defaults, no setter called yet
+@mark
+devvariants demo
+@frames 3
+@assert devPanel.groups eq 2
+@assert devPanel.view eq panel
+@assert devPanel.visible eq true
+@assert devPanel.pages eq 1
+@assert devPanel.page eq 0
+@assert devPanel.value.demo_choice eq Small
+@assert devPanel.value.demo_number eq 0.75
+@assert devPanel.demo.calls eq 0
+@assert devPanel.demo.choice eq none
+@frames 10
+@shot panel
+
+# 3. A choice pressed with the reticle: applied at once, logged
+vr-point right menu devpanel.demo_choice.2
+@frames 5
+vr-point right menu devpanel.demo_choice.2
+@frames 5
+@assert ui.menuHover eq devpanel.demo_choice.2
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+@assert devPanel.value.demo_choice eq Large
+@assert devPanel.demo.choice eq Large
+@assert devPanel.demo.calls eq 1
+@log \[dev\] variant demo_choice = Large 5s
+
+# 4. The number's +: 0.75 -> 1 m; + again at the max changes nothing, calls nothing, logs nothing
+vr-point right menu devpanel.demo_number.plus
+@frames 5
+vr-point right menu devpanel.demo_number.plus
+@frames 5
+@assert ui.menuHover eq devpanel.demo_number.plus
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+@assert devPanel.value.demo_number eq 1
+@assert devPanel.demo.number eq 1
+@assert devPanel.demo.calls eq 2
+@log \[dev\] variant demo_number = 1 m 5s
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+@assert devPanel.value.demo_number eq 1
+@assert devPanel.demo.calls eq 2
+@nolog \[dev\] variant demo_number
+
+# 5. The number's - twice: 0.5 m, a line for each step
+vr-point right menu devpanel.demo_number.minus
+@frames 5
+vr-point right menu devpanel.demo_number.minus
+@frames 5
+@assert ui.menuHover eq devpanel.demo_number.minus
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+vr-sim action trigger right 1
+@frames 5
+vr-sim action trigger right 0
+@frames 5
+@assert devPanel.value.demo_number eq 0.5
+@assert devPanel.demo.number eq 0.5
+@assert devPanel.demo.calls eq 4
+@log \[dev\] variant demo_number = 0\.75 m 5s
+@log \[dev\] variant demo_number = 0\.5 m 5s
+
+# 6. The channel's set (what a test or the coordinator uses): the same path, the same line
+devvariants set demo_choice Medium
+@frames 3
+@assert devPanel.value.demo_choice eq Medium
+@assert devPanel.demo.choice eq Medium
+@log \[dev\] variant demo_choice = Medium 5s
+devvariants set demo_number 0.25
+@frames 3
+@assert devPanel.value.demo_number eq 0.25
+@assert devPanel.demo.number eq 0.25
+@assert devPanel.demo.calls eq 6
+@log \[dev\] variant demo_number = 0\.25 m 5s
+
+# 7. The book closed: the panel is not shown; the game goes on
+vr-sim hand left rot 0 0 0
+vr-input tap left.b
+@until player.bookOpen eq false 5s
+@frames 10
+@assert devPanel.visible eq false
+@assert devPanel.view eq panel
+@assert errors eq 0

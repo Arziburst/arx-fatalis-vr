@@ -69,6 +69,7 @@
 #include "graphics/image/Image.h"
 #include "gui/Console.h"
 #include "gui/DamageNumbers.h"
+#include "gui/DevVariants.h"
 #include "gui/Dragging.h"
 #include "gui/CharacterCreation.h"
 #include "gui/Interface.h"
@@ -79,6 +80,7 @@
 #include "gui/MenuWidgets.h"
 #include "gui/Notification.h"
 #include "gui/book/Book.h"
+#include "gui/book/DevPanel.h"
 #include "gui/hud/PlayerInventory.h"
 #include "gui/hud/SecondaryInventory.h"
 #include "input/Input.h"
@@ -202,6 +204,14 @@ bool menuTargetRect(std::string_view name, Rectf & rect, std::string & why) {
 		return true;
 	}
 	if(ARXmenu.mode() == Mode_InGame && (player.Interface & INTER_PLAYERBOOK)) {
+		// The dev variants panel's buttons on the map page (#588)
+		if(name.substr(0, 9) == "devpanel.") {
+			if(!devvariants::panelTargetRect(name, rect)) {
+				why = "the book shows no dev panel button \"" + std::string(name) + "\" (devPanel.visible, its page)";
+				return false;
+			}
+			return true;
+		}
 		// The open book's bookmarks (#377): book_stats, book_spells, book_map, book_quests
 		const struct { std::string_view name; ARX_INTERFACE_BOOK_MODE page; } tabs[] = {
 			{ "book_stats", BOOKMODE_STATS }, { "book_spells", BOOKMODE_SPELLS },
@@ -462,6 +472,13 @@ struct State {
 	bool watchdogLogged = false;     //!< Its "watching" line is in the log
 	long watchdogThresholdMs = 5000; //!< Below the 10 s a test waits for an ack: the report comes first
 	long stallLoadMs = 0;            //!< stall load: how long the next level load sleeps, 0 = it does not
+
+	//! What the setters of `devvariants demo` got (#588): status.json devPanel.demo.*
+	struct DevDemo {
+		std::string choice = "none";
+		float number = -1.f;
+		u32 calls = 0;
+	} devDemo;
 
 	//! The running batch (#522): kept while a waitframes in it holds the ack until the frames are rendered
 	struct Batch {
@@ -1113,6 +1130,33 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("note", marks.note);
 		// The gesture of the controllers in use: both trackpads on the Index, none without trackpads (the Touch)
 		json.value("gesture", vr::markGestureAvailable(vr::controllerType()) ? "both.trackpad" : "none");
+		json.end();
+	}
+
+	// The dev variants panel on the book's map page (#588)
+	{
+		const devvariants::PanelStatus panel = devvariants::panelStatus();
+		json.object("devPanel");
+		json.value("enabled", g_devLaunch);
+		json.value("view", devvariants::mapPageViewName(panel.view));
+		json.value("visible", panel.visible);
+		json.value("groups", u64(devvariants::count()));
+		json.value("page", u64(panel.page));
+		json.value("pages", u64(panel.pages));
+		json.object("value");
+		for(const devvariants::Entry & entry : devvariants::entries()) {
+			if(entry.kind == devvariants::Kind::Number) {
+				json.value(entry.group, entry.value);
+			} else {
+				json.value(entry.group, devvariants::valueText(entry.group));
+			}
+		}
+		json.end();
+		json.object("demo");
+		json.value("choice", g.devDemo.choice);
+		json.value("number", g.devDemo.number);
+		json.value("calls", g.devDemo.calls);
+		json.end();
 		json.end();
 	}
 
@@ -2698,6 +2742,53 @@ std::string execute(std::string_view line) {
 			vr::setComfortMode(vr::ComfortMode::Off);
 		} else {
 			return refuse("comfort: expected auto, on or off, got \"" + std::string(rest) + "\"");
+		}
+		return std::string();
+	}
+
+	if(word == "devvariants") {
+		// The dev variants panel (#588), only in a development launch: devvariants clear unregisters every group,
+		// devvariants demo registers the demo groups of #588, devvariants set <group> <value> switches one as the
+		// panel's buttons do (a choice by its label, a number)
+		if(!g_devLaunch) {
+			return refuse("devvariants: only in a development launch (--dev-launch)");
+		}
+		std::string_view args;
+		std::string what(firstWord(rest, args));
+		util::makeLowercase(what);
+		if(what == "clear" && args.empty()) {
+			devvariants::clear();
+			LogInfo << "[channel] devvariants cleared";
+		} else if(what == "demo" && args.empty()) {
+			static const std::vector<std::string> sizes = { "Small", "Medium", "Large" };
+			devvariants::registerChoice("demo_choice", "#588", sizes, 0, [](size_t index) {
+				g.devDemo.choice = sizes[index];
+				g.devDemo.calls++;
+			});
+			devvariants::registerNumber("demo_number", "#588", 0.f, 1.f, 0.25f, "m", 0.75f, [](float value) {
+				g.devDemo.number = value;
+				g.devDemo.calls++;
+			});
+			LogInfo << "[channel] devvariants demo registered";
+		} else if(what == "set") {
+			std::string_view value;
+			const std::string group(firstWord(args, value));
+			const devvariants::Entry * entry = devvariants::find(group);
+			if(!entry) {
+				return refuse("devvariants set: no group \"" + group + "\"");
+			}
+			std::vector<float> number;
+			const bool valid = (entry->kind == devvariants::Kind::Choice)
+			                   ? std::find(entry->choices.begin(), entry->choices.end(), value) != entry->choices.end()
+			                   : parseFloats(value, number) && number.size() == 1;
+			if(!valid) {
+				return refuse("devvariants set: \"" + std::string(value) + "\" is no value of " + group);
+			}
+			if(!devvariants::set(group, value)) {
+				LogInfo << "[channel] devvariants set: " << group << " is " << devvariants::valueText(group) << " already";
+			}
+		} else {
+			return refuse("devvariants: expected clear, demo or set <group> <value>, got \"" + std::string(rest) + "\"");
 		}
 		return std::string();
 	}

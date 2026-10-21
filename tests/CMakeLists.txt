@@ -67,6 +67,9 @@ set(arxtest_TESTCASES
 	tests/util/StringTest.h
 	tests/util/StringTest.cpp
 
+	tests/gui/DevVariantsTest.h
+	tests/gui/DevVariantsTest.cpp
+
 	tests/vr/BodyYawTest.h
 	tests/vr/BodyYawTest.cpp
 

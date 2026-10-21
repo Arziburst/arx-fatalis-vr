@@ -13,6 +13,60 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-061: Both Index trackpads pressed mark the moment in the headset; the game menu only through the radial
+
+- **Date:** 2026-10-20
+- **Status:** Accepted (#551; supersedes the fixed two-stick hold of D-058, its other rules stay)
+- **Decided by:** the owner (the menu only via the radial and the confirmation in the hero-dialogue panel, 2026-10-19/20;
+  the gesture on both trackpads instead of both stick clicks, at once instead of a 3 s hold, no gesture on the Touch,
+  on in every build, the testers' too, 2026-10-20; the voice note push-to-talk, up to 5 minutes, after his headset
+  test, 2026-10-21); the coordinator (the panel's order, the voice note off in CI, 16 kHz mono); the worker of #551
+  (the folder layout, PNG eye images read back at the mark's frame, the writer thread - technical internals, D-017)
+
+### Decision
+- **A headset test marks a moment instead of remembering it.** Both Index trackpads pressed (the force press) mark
+  **at once**, on the frame both are down - no hold (`ControlResolver::markGesture`, fixed, not part of the layout and
+  not rebindable; one mark per press, a release of either re-arms it; the input layer's hysteresis on the force
+  reading, `TrackpadThreshold` press 0.40 / release 0.25, is the only filter). The mark writes
+  `<user dir>\marks\<yyyymmdd>T<hhmmss>Z-<n>\` (`src/vr/VRMarks.h`): `left.png` / `right.png` (the eye images of that
+  frame), `recorder.txt` (the flight recorder's tail, scrubbed like `arx-recorder.txt`, #545), `clip.vrsim` (the
+  replay ring's last 30 s - the clip of `replay mark`, D-060), `meta.txt` (time, area, position, yaw, build, game and
+  session state) and, with the voice note on, `note.wav`.
+- **Only on the Index** (`markGestureAvailable`; status `marks.gesture` `both.trackpad` or `none`): the Touch has no
+  trackpads and no mark gesture. The default layouts bind nothing to the trackpads; a player who binds an event to a
+  trackpad gets that event too when the press marks. On in every build, the tester package included.
+- **Both stick clicks are nothing special any more:** they do what the layout binds (the right one draws the weapon)
+  and neither mark nor open the menu.
+- **The voice note is push-to-talk:** keeping both trackpads pressed after the mark records the default microphone
+  (OpenAL capture, 16 kHz mono 16-bit), up to **5 minutes**; letting go of either stops it at once
+  (`ControlResolver::markHeld`, `VoiceNote::update(timeMs, held)`). The microphone opens on the mark (both pads down)
+  and never records without both held; a note under 0.3 s (a quick press) is no note. `cfg.ini vr_mark_note=0` turns
+  it off, the channel's `marks note on|off` for a session; no microphone means no note and no error. The
+  simulated headset (`--vr-sim`: CI, a replay, a worker's run) never opens the microphone - a microphone on the owner's
+  PC must never record the room (the coordinator, 2026-10-21).
+- **A replay writes no marks:** while a recorded clip plays into the simulated headset (#550), the replayed trackpad
+  presses log `[vr] mark ignored: a replay is playing` instead - the marks were the recorded session's.
+- **The hero-dialogue panel** (D-055: below the centre of the view, the lazy follow; in the eyes and so in the desktop
+  mirror) shows "Moment marked (#N)" for about 2 s; while the note records, the indicator "🎤 m:ss" counting up
+  instead (from 0.3 s on), frozen at the note's length after the release until its `note.wav` is written (off the
+  frame thread) - no blank in between; then "🎤 Note saved (m:ss)" for about 1.5 s, then nothing. The game's fonts
+  have no glyph for U+1F3A4, so the panel draws a small red microphone in its place (the status text keeps the
+  character). A notice takes the panel over a scene's line while it shows; the line comes back after.
+- **The game menu** is reached through the radial menu (and the menu event where one is bound); D-058's refused last
+  binding and the restored way of a broken saved layout stay. The 2 s two-stick fallback is gone.
+- `scripts/dev/marks.ps1` lists a user directory's marks (time, area, position, files, the note's length) and copies
+  one out; nothing it prints holds a personal path. No upload (#545 stage 3).
+
+### Consequences
+- The mark's frame reads both eye images back from the GPU (one hitch: 18 ms instead of 13 ms on the simulated
+  1440x1600 eyes; not felt in the owner's headset test); the files are written on a thread of their own. No cost while
+  nobody marks. With the voice note on, opening the microphone (on the mark's frame) and closing it (on the release)
+  run on the frame thread too. A 5-minute note is 9.6 MB in memory and on disk.
+- An Index player who unbinds the radial and the menu event still cannot lock themselves out (D-058's guards), but
+  there is no longer a hidden way to the menu for a layout that somehow has none.
+- A Touch player cannot mark a moment. An Index player who presses both trackpads by accident marks one (a folder of
+  a few MB in the user directory and the confirmation); nothing else happens.
+
 ## D-060: Every VR session is recorded as a replayable clip - poses and inputs over the same save, the drift measured, no lockstep
 
 - **Date:** 2026-10-20
@@ -122,7 +176,9 @@ a changed decision keeps its history in that cell.
 ## D-058: The game menu stays reachable whatever is rebound - a refused last binding and a fixed two-stick hold
 
 - **Date:** 2026-10-18
-- **Status:** Accepted (#326; amends D-042's table and D-019's menu rule)
+- **Status:** Accepted (#326; amends D-042's table and D-019's menu rule); the fixed two-stick hold is superseded by
+  D-061 (#551: the menu is reached through the radial, the moment is marked on both trackpads) - the refused last
+  binding and the restored way of a broken layout stay
 - **Decided by:** the owner (the Index has no menu button the game can read; the fallback is both thumbstick clicks held
   for 2 s)
 

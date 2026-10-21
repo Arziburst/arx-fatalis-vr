@@ -27,6 +27,7 @@
 
 #include "math/Types.h"
 #include "platform/Platform.h"
+#include "vr/EyeImage.h"
 #include "vr/EyeProjection.h"
 #include "vr/FingerCurl.h"
 #include "vr/FramePacing.h"
@@ -201,6 +202,18 @@ bool beginEyeRender(size_t eye);
 
 //! Hand the eye's image back and make the flat frame the render target again
 void endEyeRender(size_t eye);
+
+/*!
+ * Read both eye images of the next frame as they are drawn (#551, a mark of the moment): the scene's eyes, or the
+ * background a menu or loading frame clears them to. One GPU sync per eye - a hitch on the frame it is taken
+ */
+void requestEyeCapture();
+
+//! The eyes \ref requestEyeCapture asked for, once both were read (moved into \a eyes); false until then
+bool takeEyeCapture(std::array<RgbImage, 2> & eyes);
+
+//! Forget a capture that was asked for
+void cancelEyeCapture();
 
 //! The stereo render as status.json reports it (#19)
 struct StereoStatus {

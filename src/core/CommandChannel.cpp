@@ -117,6 +117,7 @@
 #include "vr/VRComfort.h"
 #include "vr/VRHud.h"
 #include "vr/VRInput.h"
+#include "vr/VRMarks.h"
 #include "vr/VRMelee.h"
 #include "vr/VRRadial.h"
 #include "vr/VRReticle.h"
@@ -922,6 +923,8 @@ void writeSceneStatus(JsonWriter & json) {
 	json.value("yawDeg", subtitle.panelYawDeg);
 	json.value("widthM", subtitle.panelWidthM);
 	json.end();
+	// A notice of the game's own in the panel instead of a line (#551): none, marked, recording
+	json.value("notice", vr::subtitleNoticeName(subtitle.notice));
 	json.end();
 	json.end();
 
@@ -1093,6 +1096,21 @@ std::string buildStatus(PlatformInstant now) {
 	}
 
 	writeSceneStatus(json);
+
+	// Marks of the moment in the headset (#551): both trackpads pressed, the marker folder, the voice note
+	{
+		const vr::marks::MarksStatus & marks = vr::marks::status();
+		json.object("marks");
+		json.value("count", marks.count);
+		json.value("last", marks.last);
+		json.value("lastFiles", marks.lastFiles);
+		json.value("recording", marks.recording);
+		json.value("noteMs", marks.noteMs);
+		json.value("note", marks.note);
+		// The gesture of the controllers in use: both trackpads on the Index, none without trackpads (the Touch)
+		json.value("gesture", vr::markGestureAvailable(vr::controllerType()) ? "both.trackpad" : "none");
+		json.end();
+	}
 
 	{
 		const vr::ComfortPolicy & policy = vr::comfort();
@@ -1967,11 +1985,6 @@ std::string buildStatus(PlatformInstant now) {
 		// The game menu stays reachable whatever is remapped (#326)
 		json.value("menuReachable", vr::menuReachable(controls.layout()));
 		json.value("remapRefusals", vr::remapRefusals());
-		json.object("menuFallback");
-		json.value("control", std::string("both.stick_click"));
-		json.value("holdMs", vr::ControlResolver::menuFallbackMs);
-		json.value("opens", controls.menuFallbackOpens());
-		json.end();
 		json.value("layoutFile", vr::layoutFileName(vr::controllerType()));
 		{
 			const std::vector<vr::Conflict> conflicts = vr::findConflicts(controls.layout());
@@ -2534,6 +2547,12 @@ std::string execute(std::string_view line) {
 	if(word == "replay") {
 		// The replay recorder (#550): mark <name> [<seconds>] cuts the last seconds of the session into a clip
 		std::string error = vr::replay::command(rest);
+		return error.empty() ? error : refuse(error);
+	}
+
+	if(word == "marks") {
+		// Marks of the moment (#551): note on|off - the voice note after a mark, for this session
+		std::string error = vr::marks::command(rest);
 		return error.empty() ? error : refuse(error);
 	}
 

@@ -30,6 +30,7 @@ $tests = @(
 	'test-github-lib.ps1'     # the GitHub access of the dev scripts (#186): REST first, the board cache, rate limits, the move queue
 	'test-launch-lib.ps1'     # the machine-wide game lock (#205): the lock folder and its ACL, old and new location, holders, stale files
 	'test-log-digest.ps1'    # the run digest and the automatic bug filing (#131): fixture logs, a fake GitHub, the command line modes
+	'test-marks.ps1'         # the marks of a headset run (#551): a fixture marks folder listed (time, area, position, files, note length), a mark copied out, no user path
 	'test-steam-shortcut.ps1' # the non-Steam VR shortcut (#80): binary shortcuts.vdf round-trip, add / update / remove on copies
 	'test-save-library.ps1'  # the test save library (#70): the scenario parser, the verification steps and slot order, Use-ArxSave
 	'test-number-decisions.ps1' # decision numbers at merge (#274): two branches adding D-NEW get consecutive numbers; the clash gate

@@ -156,6 +156,7 @@ public:
 		std::string vrSceneFirstLow; //!< VR: first person's eye too low in a scene: black, clamp, screen (#29)
 		std::string vrSceneCut; //!< VR: a scene's cut the eyes see a jump in: instant, fade (#29)
 		std::string vrSubtitles; //!< VR: where scene subtitles go: above, chest, lowerthird (#29, vr/SceneSubtitles.h)
+		bool vrMarkNote; //!< VR: a mark of the moment records a voice note of up to 10 s (#551, vr/VRMarks.h)
 
 		float fov;
 		bool viewBobbing;

@@ -99,6 +99,10 @@ set(arxtest_TESTCASES
 	tests/vr/MenuReachTest.cpp
 	tests/vr/MenuRebindTest.h
 	tests/vr/MenuRebindTest.cpp
+	tests/vr/MarkMomentTest.h
+	tests/vr/MarkMomentTest.cpp
+	tests/vr/VoiceNoteTest.h
+	tests/vr/VoiceNoteTest.cpp
 
 	tests/vr/VRGameInputTest.h
 	tests/vr/VRGameInputTest.cpp
@@ -232,11 +236,13 @@ set(arxtest_SOURCES
 	src/vr/VRControls.cpp
 	src/vr/BindingCapture.cpp
 	src/vr/VRGameInput.cpp
+	src/vr/VoiceNote.cpp
 	src/vr/VRTurn.cpp
 	src/vr/VRSettingsRows.cpp
 	src/vr/EyeImage.cpp
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
+	src/vr/MarkMoment.cpp
 	src/vr/MenuPointer.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/ArmIK.cpp

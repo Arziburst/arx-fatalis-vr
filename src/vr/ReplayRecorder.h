@@ -24,6 +24,8 @@
 #include <string>
 #include <string_view>
 
+#include "platform/Platform.h"
+
 /*!
  * \file
  * \brief The replay recorder (#550): every VR session written to arx-replay.log, the last 60 s in a ring
@@ -61,6 +63,12 @@ void shutdown();
 
 //! The channel's `replay ...` command (mark <name> [<seconds>]): "" or why it was refused
 std::string command(std::string_view rest);
+
+/*!
+ * The ring's last \a seconds cut as the clip named \a name into \a text - the clip `replay mark` writes, for the mark
+ * of the moment's clip.vrsim (#551). \return "" or why there is none (nothing records, the ring is empty)
+ */
+std::string cutClip(std::string_view name, u32 seconds, std::string & text);
 
 //! The player saved the game: an "anchor save" line goes into the clip
 void noteSave();

@@ -208,6 +208,12 @@ enum class ControllerType : u8 {
 //! "unknown", "index", "touch" or "simple"
 const char * controllerTypeName(ControllerType type);
 
+/*!
+ * Whether a controller type has the mark gesture of #551 (both trackpads held): the Index only - not the Touch, the
+ * simple controller or one not identified yet. The game marks only when it is true for the controllers in use
+ */
+bool markGestureAvailable(ControllerType type);
+
 //! \param profile an interaction profile path, e.g. "/interaction_profiles/valve/index_controller"
 ControllerType controllerTypeFromProfile(std::string_view profile);
 
@@ -421,15 +427,19 @@ public:
 	const ControlSet & down() const { return m_down; }
 
 	/*!
-	 * How long both thumbstick clicks are held together to open the game menu whatever the layout is (#326, the
-	 * owner: the Index has no menu button the game can read). Fixed, not part of the layout.
+	 * Both trackpads became down together in the last update: the mark of the moment (#551, the owner, 2026-10-20; the
+	 * menu fallback of #326 on both stick clicks is gone). True for that one update, once per press - held on, nothing
+	 * more; a release of either re-arms it. Fixed, not part of the layout and not rebindable: whatever the trackpads
+	 * are bound to, both pressed mark (and their bindings act as well). Only where \ref markGestureAvailable.
 	 */
-	static constexpr s64 menuFallbackMs = 2000;
-
-	//! The fallback opened the game menu in the last update (once per hold, while both are still held)
-	bool menuFallback() const { return m_menuFallback; }
-	//! How often the fallback opened the game menu since the resolver was created
-	u32 menuFallbackOpens() const { return m_menuFallbackOpens; }
+	bool markGesture() const { return m_markGesture; }
+	/*!
+	 * Both trackpads are still down since the update the gesture came on: the push-to-talk of the mark's voice note.
+	 * False from the first update either is not down, before any mark, with one alone and with both stick clicks
+	 */
+	bool markHeld() const { return m_markFired; }
+	//! How often the gesture came on since the resolver was created
+	u32 markGestures() const { return m_markGestures; }
 
 private:
 
@@ -462,10 +472,9 @@ private:
 	ControlSet m_hasLongPress;
 	std::array<bool, HandCount> m_chords = { true, true };
 
-	s64 m_bothSticksSince = -1;  //!< when both stick clicks were first down together, -1 when not both are down
-	bool m_menuFallbackFired = false;
-	bool m_menuFallback = false;
-	u32 m_menuFallbackOpens = 0;
+	bool m_markFired = false;  //!< both trackpads are down and marked: no mark until one is let go
+	bool m_markGesture = false;
+	u32 m_markGestures = 0;
 
 	ControlSet m_down;
 	std::array<ControlState, ControlCount> m_controls;

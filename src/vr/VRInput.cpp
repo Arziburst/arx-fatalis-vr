@@ -43,6 +43,7 @@
 #include "vr/BodyYaw.h"
 #include "vr/HeadTracking.h"
 #include "vr/MenuPointer.h"
+#include "vr/VRMarks.h"
 #include "vr/VRMelee.h"
 #include "vr/VRRadial.h"
 #include "vr/VRReticle.h"
@@ -579,6 +580,9 @@ void updateInput() {
 			LogInfo << "[vr] input: " << eventName(event) << " (" << formatBinding(g_input.resolver.layout()[event]) << ')';
 		}
 	}
+
+	// Both trackpads pressed mark the moment, whatever the layout and the menus (#551)
+	marks::update();
 
 	// The hands on the floating panel (#34), before the events reach the engine: a press moves the
 	// cursor under the pressing hand in the same update, so the click lands where it points

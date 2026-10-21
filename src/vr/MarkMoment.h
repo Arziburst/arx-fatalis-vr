@@ -1,0 +1,126 @@
+/*
+ * Copyright 2026 Arx Fatalis VR contributors
+ *
+ * This file is part of Arx Fatalis VR, based on Arx Libertatis.
+ *
+ * Arx Libertatis is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Arx Libertatis is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Arx Libertatis.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#ifndef ARX_VR_MARKMOMENT_H
+#define ARX_VR_MARKMOMENT_H
+
+#include <string>
+#include <string_view>
+
+#include "math/Types.h"
+#include "platform/Platform.h"
+
+/*!
+ * \file
+ * \brief Mark the moment in the headset (#551): the marker folder's name, its meta.txt and the panel's lines
+ *
+ * During a headset test both Index trackpads pressed (vr::ControlResolver::markGesture) write
+ * <user dir>\c \\marks\\<name>\\ with the eye images, the flight recorder's tail, the replay ring's last 30 s, this
+ * meta.txt and an optional voice note (vr/VoiceNote.h); the game's side is vr/VRMarks.h. Pure: no engine globals,
+ * no file system - covered by tests/vr/MarkMomentTest.cpp.
+ */
+namespace vr {
+
+/*!
+ * Whether the mark gesture writes a mark: not while a recorded clip plays into the simulated headset (#550's replay
+ * replays the owner's trackpad presses - his marks are his session's, not the replay's)
+ */
+bool markAllowed(bool replayPlaying);
+
+/*!
+ * Whether the voice note may open the real microphone: never under the simulated headset (\c --vr-sim: CI, a
+ * replay, a worker's run - a microphone on the PC must never record the room); there the note behaves as without a
+ * microphone: no note, no error
+ */
+bool noteMicrophoneAllowed(bool simulatedHeadset);
+
+//! The confirmation in the hero-dialogue panel: "Moment marked (#<number>)"
+std::string markNoticeText(u32 number);
+
+/*!
+ * The microphone mark that leads the voice note's lines: U+1F3A4 (MICROPHONE) in UTF-8. The status text carries the
+ * character; the panel draws an icon in its place (the game's fonts have no glyph for it)
+ */
+inline constexpr std::string_view MicrophoneMark = "\xF0\x9F\x8E\xA4";
+
+/*!
+ * The recording indicator while a push-to-talk note records, counting up: the mark, a space, the elapsed time as
+ * <minutes>:<seconds> (whole seconds rounded down, a negative time is 0:00) - "<mic> 0:23"
+ */
+std::string noteIndicatorText(s64 elapsedMs);
+
+//! The brief confirmation after a note was saved: "<mic> Note saved (<m>:<ss>)", the note's length in the same form
+std::string noteSavedText(s64 lengthMs);
+
+//! How long "Moment marked (#N)" shows (the owner: about 2 s)
+const s64 MarkNoticeMs = 2000;
+//! How long "<mic> Note saved (m:ss)" shows after the note.wav was written (the owner: about 1.5 s)
+const s64 NoteSavedMs = 1500;
+
+//! What the hero-dialogue panel shows for the marks
+enum class MarkNotice { None, Marked, Recording, Saved };
+
+//! The marks' state the panel's notice follows
+struct MarkNoticeState {
+	bool recording = false;     //!< a voice note records (both trackpads held)
+	s64 recordingMs = 0;        //!< ... for this long
+	bool saving = false;        //!< a kept note was let go and its note.wav is being written
+	s64 savingLengthMs = 0;     //!< ... its length: the indicator's final time
+	s64 sinceSavedMs = -1;      //!< how long ago the last note.wav was written, -1 for none
+	s64 savedLengthMs = 0;      //!< ... its length
+	s64 sinceMarkedMs = -1;     //!< how long ago the last mark was made, -1 for none
+	u32 markedNumber = 0;
+};
+
+/*!
+ * The notice and its line: the indicator while a note records (from VoiceNote::minMs on: a quick press shows the
+ * confirmation only), and frozen at the note's final time while its note.wav is written - so the panel never goes
+ * blank between the release and "Note saved"; then "Note saved" for \ref NoteSavedMs; else the confirmation for
+ * \ref MarkNoticeMs; else none (an empty line)
+ */
+MarkNotice markNotice(const MarkNoticeState & state, std::string & text);
+
+/*!
+ * The marker folder's name: the mark's UTC time (ISO 8601 basic) and its number in the session -
+ * "20261020T153012Z-1"; sorts by time, valid on every file system
+ */
+std::string markFolderName(s64 unixSeconds, u32 number);
+
+//! What meta.txt says about a mark
+struct MarkMeta {
+	u32 number = 0;               //!< the mark's number in this session, from 1 (the "#N" of the confirmation)
+	s64 unixSeconds = 0;          //!< when it was made: UTC seconds since 1970
+	u32 area = 0;                 //!< the level (status.json "area"), 0 for none
+	Vec3f position = Vec3f(0.f);  //!< the player's position (status.json player.x / y / z), game units
+	float yaw = 0.f;              //!< the player's heading (status.json player.yaw), degrees
+	std::string build;            //!< the build: version, commit and config
+	std::string state;            //!< the game's state (status.json "state": GAMEPLAY, MENU, ...)
+	std::string session;          //!< the VR session's state (focused, visible, synchronized, ...)
+};
+
+/*!
+ * meta.txt: "# moment mark (#551)", then one key=value line per field - mark, time (YYYY-MM-DDTHH:MM:SSZ, UTC),
+ * area, position ("<x> <y> <z>", one decimal each), yaw (one decimal), build, state, session - each ending in "\n".
+ * A control character in a text field is written as a space, so a field is always one line. No path of any kind.
+ */
+std::string formatMarkMeta(const MarkMeta & meta);
+
+} // namespace vr
+
+#endif // ARX_VR_MARKMOMENT_H

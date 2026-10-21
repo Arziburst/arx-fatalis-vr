@@ -102,6 +102,7 @@
  *   //!   build=<build>
  *   //!   state=<state>
  *   //!   session=<session>
+ *   //!   kind=<press|hold>  pressMs=<ms>  releaseMs=<ms>   one line each (#574, tests/vr/MarkHoldTest.h)
  *   //! A control character (a new line, a tab) in a text field is written as a space, so a field is always one line.
  *   //! No path of any kind is in it (the marks go to a coordinator, the repository is public).
  *   std::string formatMarkMeta(const MarkMeta & meta);
@@ -109,7 +110,8 @@
  *   }
  *
  * 3. The game (asserted by scripts/dev/xrs/mark-moment.xrs, the folder listed by scripts/dev/marks.ps1 and its
- *    self-test scripts/dev/test-marks.ps1):
+ *    self-test scripts/dev/test-marks.ps1). #574 changed the folder: a short press has no clip.vrsim and no note; a
+ *    hold adds the snapshots and its own clip, and the note is at most 1 minute - tests/vr/MarkHoldTest.h has it:
  *    - only in VR, when ControlResolver::markGesture() comes on: <user dir>\marks\<markFolderName>\ with
  *        left.png, right.png   the eye images of that frame, or the nearest rendered one
  *        recorder.txt          the flight recorder's tail (#545: serializeRecorder of the live recorder)

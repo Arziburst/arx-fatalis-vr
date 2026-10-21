@@ -42,6 +42,7 @@ $tests = @(
 	'test-resource-trend.ps1' # the resource trend of the performance log (#545): R lines, first / last / max / slope / step, the leak's step
 	'test-wait-launch.ps1'   # the launch marker (#258): checks wait out the game lock before their gameplay timeout; a lock skip is exit 2
 	'test-xrs.ps1'           # the .xrs sequence runner and img-diff (#113): parser, conditions, log marks, @pending, shots, a fake game
+	'test-transcribe.ps1'    # the voice notes' local transcription (#574): whisper JSON to transcript.txt byte for byte, the SHA-256 pins, the cache, the empty-VAD retry, the glossary prompt; a fake whisper, no network
 	'test-tree-fingerprint.ps1' # the build stamp's tree fingerprint (#306): an edit after a build makes it stale, no change stays fresh
 	'test-usage-plan.ps1'   # the usage accounting (#217): calibration, burn, task costs, the worker-count recommendation, the core's status JSON (#346)
 	'test-start-steamvr.ps1' # starting and quitting SteamVR on the owner's switches (#171): stubbed processes and clock, SteamVR is not touched

@@ -32,8 +32,8 @@ using namespace vr;
 
 namespace {
 
-//! 5 minutes of samples at the note's rate: the longest note (the owner)
-const size_t VnMaxSamples = size_t(VoiceNote::sampleRate) * 300;
+//! 1 minute of samples at the note's rate: the longest note, the hold's cap (#574, the owner)
+const size_t VnMaxSamples = size_t(VoiceNote::sampleRate) * 60;
 
 u32 vnU32(const std::string & bytes, size_t at) {
 	return u32(u8(bytes[at])) | (u32(u8(bytes[at + 1])) << 8) | (u32(u8(bytes[at + 2])) << 16)
@@ -169,14 +169,14 @@ void VoiceNoteTest::wavEmptyTest() {
 
 void VoiceNoteTest::wavLengthTest() {
 
-	// 5 minutes at 16 kHz mono 16 bit (the longest note): 9 600 000 data bytes, about 9.6 MB, and the header says 300 s
+	// 1 minute at 16 kHz mono 16 bit (the longest note): 1 920 000 data bytes, about 1.92 MB, and the header says 60 s
 	std::vector<s16> samples(VnMaxSamples, s16(-1234));
 	const std::string wav = formatWav(samples.data(), samples.size(), VoiceNote::sampleRate);
-	CPPUNIT_ASSERT_EQUAL(size_t(4800000), VnMaxSamples);
-	CPPUNIT_ASSERT_EQUAL_MESSAGE("a 5-minute note.wav is 9 600 044 bytes", size_t(9600044), wav.size());
-	CPPUNIT_ASSERT_EQUAL(u32(36 + 9600000), vnU32(wav, 4));
-	CPPUNIT_ASSERT_EQUAL(u32(9600000), vnU32(wav, 40));
-	CPPUNIT_ASSERT_EQUAL_MESSAGE("data bytes / bytes a second = 300 s", u32(300), vnU32(wav, 40) / vnU32(wav, 28));
+	CPPUNIT_ASSERT_EQUAL(size_t(960000), VnMaxSamples);
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("a 1-minute note.wav is 1 920 044 bytes", size_t(1920044), wav.size());
+	CPPUNIT_ASSERT_EQUAL(u32(36 + 1920000), vnU32(wav, 4));
+	CPPUNIT_ASSERT_EQUAL(u32(1920000), vnU32(wav, 40));
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("data bytes / bytes a second = 60 s", u32(60), vnU32(wav, 40) / vnU32(wav, 28));
 	CPPUNIT_ASSERT_EQUAL(s16(-1234), vnS16(wav, wav.size() - 2));
 
 	// 10 s still works the same way
@@ -193,7 +193,7 @@ void VoiceNoteTest::wavLengthTest() {
 void VoiceNoteTest::noDeviceTest() {
 
 	CPPUNIT_ASSERT_EQUAL_MESSAGE("the note is 16 kHz", u32(16000), VoiceNote::sampleRate);
-	CPPUNIT_ASSERT_EQUAL_MESSAGE("the note is at most 5 minutes (the owner)", s64(300000), VoiceNote::maxMs);
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("the note is at most 1 minute, the hold's cap (#574, the owner)", s64(60000), VoiceNote::maxMs);
 
 	VoiceNote note;
 	CPPUNIT_ASSERT(note.state() == VoiceNote::State::Idle);
@@ -216,7 +216,7 @@ void VoiceNoteTest::noDeviceTest() {
 	CPPUNIT_ASSERT_EQUAL_MESSAGE("nothing to close", u32(0), device.closes);
 }
 
-void VoiceNoteTest::recordsFiveMinutesTest() {
+void VoiceNoteTest::recordsOneMinuteTest() {
 
 	VoiceNote note;
 	VnFakeDevice device;
@@ -228,21 +228,21 @@ void VoiceNoteTest::recordsFiveMinutesTest() {
 
 	// Past the old 10 s: still recording while held
 	vnRun(note, device, 2011, 12500);
-	CPPUNIT_ASSERT_MESSAGE("still recording at 10.5 s (the limit is 5 minutes now)", note.recording());
+	CPPUNIT_ASSERT_MESSAGE("still recording at 10.5 s (the limit is 1 minute)", note.recording());
 
-	// 4:59.9: still recording, reading as it goes
-	vnRun(note, device, 12511, 301900);
-	CPPUNIT_ASSERT_MESSAGE("still recording at 4:59.9", note.recording());
+	// 0:59.9: still recording, reading as it goes
+	vnRun(note, device, 12511, 61900);
+	CPPUNIT_ASSERT_MESSAGE("still recording at 0:59.9", note.recording());
 	CPPUNIT_ASSERT_EQUAL(u32(0), device.closes);
-	CPPUNIT_ASSERT_MESSAGE("the samples come in while it records", note.samples().size() >= size_t(16) * 299800);
+	CPPUNIT_ASSERT_MESSAGE("the samples come in while it records", note.samples().size() >= size_t(16) * 59800);
 
-	// Past 5 minutes, still held: finished by itself, the device closed once, never more than 5 minutes
-	vnRun(note, device, 301911, 304000);
-	CPPUNIT_ASSERT_MESSAGE("finished by 5 minutes", note.state() == VoiceNote::State::Finished);
+	// Past 1 minute, still held: finished by itself, the device closed once, never more than 1 minute
+	vnRun(note, device, 61911, 64000);
+	CPPUNIT_ASSERT_MESSAGE("finished by 1 minute", note.state() == VoiceNote::State::Finished);
 	CPPUNIT_ASSERT(!note.recording());
 	CPPUNIT_ASSERT_EQUAL_MESSAGE("the device closed once", u32(1), device.closes);
-	CPPUNIT_ASSERT_MESSAGE("at most 5 minutes of samples", note.samples().size() <= VnMaxSamples);
-	CPPUNIT_ASSERT_MESSAGE("... and about 5 minutes", note.samples().size() >= VnMaxSamples - 16 * 50);
+	CPPUNIT_ASSERT_MESSAGE("at most 1 minute of samples", note.samples().size() <= VnMaxSamples);
+	CPPUNIT_ASSERT_MESSAGE("... and about 1 minute", note.samples().size() >= VnMaxSamples - 16 * 50);
 	CPPUNIT_ASSERT_EQUAL_MESSAGE("no read once closed", u32(0), device.readsWhileClosed);
 
 	// The samples are the device's, in order
@@ -253,22 +253,22 @@ void VoiceNoteTest::recordsFiveMinutesTest() {
 	// Later frames change nothing
 	const size_t kept = note.samples().size();
 	const u32 reads = device.reads;
-	vnRun(note, device, 304011, 310000);
+	vnRun(note, device, 64011, 70000);
 	CPPUNIT_ASSERT(note.state() == VoiceNote::State::Finished);
 	CPPUNIT_ASSERT_EQUAL(kept, note.samples().size());
 	CPPUNIT_ASSERT_EQUAL_MESSAGE("no read after the note finished", reads, device.reads);
 	CPPUNIT_ASSERT_EQUAL(u32(1), device.closes);
 
-	// The WAV of the note: about 9.6 MB
+	// The WAV of the note: about 1.92 MB
 	const std::string wav = note.wav();
 	CPPUNIT_ASSERT_EQUAL(formatWav(note.samples().data(), note.samples().size(), VoiceNote::sampleRate), wav);
 	CPPUNIT_ASSERT_EQUAL(size_t(44) + kept * 2, wav.size());
-	CPPUNIT_ASSERT(wav.size() > size_t(9500000) && wav.size() <= size_t(9600044));
+	CPPUNIT_ASSERT(wav.size() > size_t(1900000) && wav.size() <= size_t(1920044));
 }
 
 void VoiceNoteTest::sampleCapTest() {
 
-	// A device that hands over 7.5 minutes at once (a buffer that filled while the frame stalled): 5 minutes are
+	// A device that hands over 1.5 minutes at once (a buffer that filled while the frame stalled): 1 minute is
 	// kept, it stops
 	VoiceNote note;
 	VnFakeDevice device;
@@ -277,25 +277,25 @@ void VoiceNoteTest::sampleCapTest() {
 	CPPUNIT_ASSERT(note.start(device, 0) == VoiceNote::State::Recording);
 	device.now = 11;
 	note.update(11, true);
-	CPPUNIT_ASSERT_EQUAL_MESSAGE("never more than 5 minutes of samples", VnMaxSamples, note.samples().size());
-	CPPUNIT_ASSERT_MESSAGE("5 minutes of samples finish the note, whatever the clock says",
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("never more than 1 minute of samples", VnMaxSamples, note.samples().size());
+	CPPUNIT_ASSERT_MESSAGE("1 minute of samples finishes the note, whatever the clock says",
 	                       note.state() == VoiceNote::State::Finished);
 	CPPUNIT_ASSERT_EQUAL(u32(1), device.closes);
-	CPPUNIT_ASSERT_EQUAL(size_t(9600044), note.wav().size());
+	CPPUNIT_ASSERT_EQUAL(size_t(1920044), note.wav().size());
 }
 
 void VoiceNoteTest::silentDeviceTest() {
 
-	// A microphone that opens but gives nothing: it stops at 5 minutes by the clock, and there is no note
+	// A microphone that opens but gives nothing: it stops at 1 minute by the clock, and there is no note
 	VoiceNote note;
 	VnFakeDevice device;
 	device.silent = true;
 	device.now = 1000;
 	CPPUNIT_ASSERT(note.start(device, 1000) == VoiceNote::State::Recording);
-	vnRun(note, device, 1011, 300900);
+	vnRun(note, device, 1011, 60900);
 	CPPUNIT_ASSERT(note.recording());
-	vnRun(note, device, 300911, 301100);
-	CPPUNIT_ASSERT_MESSAGE("5 minutes of the clock finish the note", note.state() == VoiceNote::State::Finished);
+	vnRun(note, device, 60911, 61100);
+	CPPUNIT_ASSERT_MESSAGE("1 minute of the clock finishes the note", note.state() == VoiceNote::State::Finished);
 	CPPUNIT_ASSERT_EQUAL(u32(1), device.closes);
 	CPPUNIT_ASSERT(note.samples().empty());
 	CPPUNIT_ASSERT_MESSAGE("nothing recorded: no WAV, so no note.wav", note.wav().empty());
@@ -326,7 +326,7 @@ void VoiceNoteTest::stopEarlyTest() {
 
 void VoiceNoteTest::secondNoteTest() {
 
-	// The next mark's note starts empty and gets its own 5 minutes
+	// The next mark's note starts empty and gets its own minute
 	VoiceNote note;
 	VnFakeDevice device;
 	device.now = 0;
@@ -343,7 +343,7 @@ void VoiceNoteTest::secondNoteTest() {
 	vnRun(note, device, 30011, 35000);
 	CPPUNIT_ASSERT(note.recording());
 	CPPUNIT_ASSERT(note.samples().size() <= size_t(16) * 5000);
-	vnRun(note, device, 35011, 332000);
+	vnRun(note, device, 35011, 92000);
 	CPPUNIT_ASSERT(note.state() == VoiceNote::State::Finished);
 	CPPUNIT_ASSERT_EQUAL(u32(2), device.closes);
 	CPPUNIT_ASSERT(note.samples().size() <= VnMaxSamples);
@@ -466,7 +466,7 @@ void VoiceNoteTest::neverWithoutHoldTest() {
 	CPPUNIT_ASSERT_EQUAL(u32(0), device.reads);
 	CPPUNIT_ASSERT(note.wav().empty());
 
-	// Started, then released and pressed again within the 5 minutes: the note does not resume
+	// Started, then released and pressed again within the minute: the note does not resume
 	device.now = 2000;
 	note.start(device, 2000);
 	vnRun(note, device, 2011, 3000);

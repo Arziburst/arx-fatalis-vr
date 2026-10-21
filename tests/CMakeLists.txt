@@ -103,6 +103,10 @@ set(arxtest_TESTCASES
 	tests/vr/MarkMomentTest.cpp
 	tests/vr/VoiceNoteTest.h
 	tests/vr/VoiceNoteTest.cpp
+	tests/vr/MarkHoldTest.h
+	tests/vr/MarkHoldTest.cpp
+	tests/vr/SnapshotImageTest.h
+	tests/vr/SnapshotImageTest.cpp
 
 	tests/vr/VRGameInputTest.h
 	tests/vr/VRGameInputTest.cpp

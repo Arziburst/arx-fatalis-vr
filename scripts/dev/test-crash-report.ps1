@@ -37,7 +37,7 @@
 	      Stack (cdb): / Stack (report):              then the frames, indented
 	      Last <n> events (arx-recorder.txt...        then the last 100 events (or all, when fewer), indented, newest last
 	      Resource trend (arx-perf.log...             then perf-summary-lib's resource rows (test-resource-trend.ps1)
-	      Replay clip: arx-replay.vrsim, <n> frames, <s> s   the last 60 s of poses the report folder holds (#550:
+	      Replay clip: arx-replay.vrsim, <n> frames, <s> s   the last 75 s of poses the report folder holds (#550:
 	                                                  replay it with scripts/dev/replay.ps1), or "Replay clip: none"
 	  - nothing it prints holds a user path or the account name (Protect-ArxText of log-digest-lib.ps1), even when a
 	    report file has one

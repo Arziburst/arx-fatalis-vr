@@ -295,7 +295,7 @@ scripts/dev/flight-recorder-check.ps1 -> core
 scripts/dev/crash-notice-check.ps1 -> core
 
 # --- Record and replay (#550): 10 s of a recorded session replayed as a script; the recorder runs in every VR session ----
-src/vr/ReplayClip.* -> replay-clip
+src/vr/ReplayClip.* -> replay-clip mark-moment
 src/vr/ReplayRecorder.* -> replay-clip mark-moment
 scripts/dev/vrsim/replay-clip.vrsim -> replay-clip
 # The replay, the converter and the hand-run record-and-replay check (two launches, judged after the quit) are no game check
@@ -314,3 +314,11 @@ src/vr/NoteMicrophone.* -> mark-moment
 src/vr/VRMarks.* -> mark-moment
 # The marks listing (its self-test runs with the script tests) touches no game check
 scripts/dev/marks.ps1 -> core
+# Marks v2 (#574): a hold's snapshots (the eyes copied on the GPU, the JPEG writer); its clip is ReplayClip's line above
+src/vr/EyeShots.* -> mark-moment
+src/vr/SnapshotImage.* -> mark-moment
+libs/stb/* -> mark-moment
+# The local transcription of the notes (its self-test runs with the script tests) touches no game check
+scripts/dev/transcribe.ps1 -> core
+scripts/dev/transcribe-lib.ps1 -> core
+scripts/dev/transcribe-glossary.txt -> core

@@ -13,10 +13,59 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-062: Marks v2 - a short press is a snapshot, a hold is the voice note, its clip and a snapshot every 2 s; the notes transcribed locally
+
+- **Date:** 2026-10-21
+- **Status:** Accepted (#574; refines D-061 - its gesture, panel and microphone rules stay; the coordinator's research
+  is `coordinator/research/2026-10-21-marks-v2-transcription.md`)
+- **Decided by:** the owner (a short press records what he sees, a hold what he says and does; the hold capped at
+  1 minute; the left eye at half size every 2 s plus the release, both eyes at full size at the press; the press
+  frame's pose in `meta.txt`; a local transcription that works on another machine without setup, 2026-10-21); the
+  coordinator (whisper.cpp v1.9.2 with large-v3-turbo q8_0 and the Silero VAD, the retry without the VAD, press-relative
+  transcript times, the pins, +6 s of CI); the worker of #574 (the GPU copy and asynchronous read-back, the ring copy
+  cut on the writer thread, the 75 s ring, `stb_image_write` for the JPEGs, the glossary file - technical internals,
+  D-017)
+
+### Decision
+- **How long both trackpads stay down decides what a mark records.** Let go within `HoldThresholdMs` (500 ms, the
+  owner tunes it in the headset; `src/vr/MarkMoment.h`) it is a **short mark**: both eyes of the press frame at full
+  size (`left.png`, `right.png`), `recorder.txt` and `meta.txt` (`kind=press`) - no clip, no note, no microphone
+  indicator. Held longer it is a **hold**, at most `HoldMaxMs` (1 minute; then it ends by itself with a notice): also
+  the voice note while held (push-to-talk as in D-061, now at most 1 minute), the **left eye at half size as JPEG**
+  every 2 s after the press and at the release (`snap-+NN.Ns.jpg`, the seconds after the press), and `clip.vrsim`
+  from **10 s before the press to the release** with a `# hold: <pressMs> <releaseMs>` header line. The replay ring
+  grows from 60 to 75 s at 144 Hz so a full minute and its 10 s fit; the crash and hang reports' clip grows with it.
+- **`meta.txt`** adds `kind`, `pressMs` and `releaseMs` (the clip's clock) and the press frame's pose in the numbers
+  of the `.vrsim` commands (head, grips with their tracked state, curls), so a worker can set the scene up in the
+  simulator from it.
+- **No stutter:** the eyes are copied on the GPU and read back asynchronously (`src/vr/EyeShots.h`: blit - halved with
+  the linear filter for a snapshot - then a pixel-buffer read-back behind a fence, mapped a frame or two later); the
+  images, the clip and the WAV are made on the mark writer thread. This replaces #551's synchronous read-back of the
+  press frame (its hitch, D-061's consequences, is gone).
+- **The notes are transcribed on the machine they are on** (`scripts/dev/transcribe.ps1`, and `marks.ps1` by itself
+  once the tools are cached): whisper.cpp `whisper-cli.exe` v1.9.2 (CPU) with `ggml-large-v3-turbo-q8_0.bin`, `-l ru`
+  and a prompt of the project's Latin words (`scripts/dev/transcribe-glossary.txt`, editable), the Silero VAD and, when
+  the VAD finds nothing, once more without it (4 of the owner's 7 quiet notes came out empty with the VAD, all 7 without
+  it). The tools are downloaded on first use from pinned URLs (Hugging Face at a fixed revision), checked against
+  their SHA-256 and cached in `%LOCALAPPDATA%\ArxFatalisVR\tools`; nothing large goes into the repository and nothing
+  is uploaded. `transcript.txt` lines are `[m:ss.s] text` on the press-relative timeline of the snapshots, so the
+  listing puts the nearest picture beside each line.
+
+### Consequences
+- A coordinator that cannot listen reads the owner's words next to the pictures of what he was showing, and can replay
+  the hold in the simulator.
+- A one-minute hold writes up to about 6-8 MB of JPEGs, a 1.9 MB note and a clip of a few MB; a short press only the
+  two PNGs and the text files.
+- The first transcription downloads about 900 MB; afterwards no network. A second speech engine (GigaAM) was not added
+  (the owner decides).
+- A short press that the owner meant as a hold (let go too soon) keeps no note: the threshold is his to tune.
+
 ## D-061: Both Index trackpads pressed mark the moment in the headset; the game menu only through the radial
 
 - **Date:** 2026-10-20
-- **Status:** Accepted (#551; supersedes the fixed two-stick hold of D-058, its other rules stay)
+- **Status:** Accepted (#551; supersedes the fixed two-stick hold of D-058, its other rules stay); what a mark records
+  is refined by D-062 (#574: a short press is a snapshot, a hold has the note - now at most 1 minute -, the clip and
+  the snapshots; the press frame is read back without a sync)
 - **Decided by:** the owner (the menu only via the radial and the confirmation in the hero-dialogue panel, 2026-10-19/20;
   the gesture on both trackpads instead of both stick clicks, at once instead of a 3 s hold, no gesture on the Touch,
   on in every build, the testers' too, 2026-10-20; the voice note push-to-talk, up to 5 minutes, after his headset

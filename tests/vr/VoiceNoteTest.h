@@ -26,8 +26,9 @@
 /*!
  * The voice note of a mark (#551; written before the implementation, the gesture and the marker are in
  * tests/vr/MarkMomentTest.h). PUSH-TO-TALK (the owner, after his headset test of 2026-10-20): both trackpads pressed
- * mark at once; KEEPING both pressed records the default microphone, up to 5 minutes (the owner, 2026-10-21; it was
- * 10 s), saved as note.wav in the marker folder, with a recording indicator counting up in the hero-dialogue panel
+ * mark at once; KEEPING both pressed records the default microphone, up to 1 minute (#574, the owner, 2026-10-21: a hold
+ * is capped at 1 minute - MarkHoldTest.h HoldMaxMs; it was 5 minutes, before that 10 s), saved as note.wav in the
+ * marker folder, with a recording indicator counting up in the hero-dialogue panel
  * (MarkMomentTest.h: noteIndicatorText) only while held, then "Note saved" briefly (noteSavedText); releasing either
  * trackpad stops it at once; a release before the note has VoiceNote::minMs (0.3 s) of audio leaves no note.wav and no
  * "Note saved". Nothing ever records without both trackpads held. cfg.ini vr_mark_note 0 turns it off; no microphone
@@ -57,12 +58,12 @@
  *   class VoiceNote {
  *   public:
  *     static constexpr u32 sampleRate = 16000;  //!< mono, 16 bit
- *     static constexpr s64 maxMs = 300000;      //!< the longest note: 5 minutes (16 kHz mono 16 bit: 9.6 MB)
+ *     static constexpr s64 maxMs = 60000;       //!< the longest note: 1 minute = HoldMaxMs (16 kHz mono 16 bit: 1.92 MB)
  *     static constexpr s64 minMs = 300;         //!< the shortest note kept: fewer samples than this give no WAV
  *     enum class State {
  *       Idle,       //!< never started
  *       Recording,  //!< the device is open, samples come in
- *       Finished,   //!< released, 5 minutes of time or of samples, or stop(): the device is closed (once)
+ *       Finished,   //!< released, 1 minute of time or of samples, or stop(): the device is closed (once)
  *       NoDevice    //!< start() found no microphone: no note, no error
  *     };
  *     //! Start a new note at \a timeMs (the samples of an earlier note are dropped): Recording, or NoDevice when
@@ -101,7 +102,7 @@ class VoiceNoteTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(wavEmptyTest);
 	CPPUNIT_TEST(wavLengthTest);
 	CPPUNIT_TEST(noDeviceTest);
-	CPPUNIT_TEST(recordsFiveMinutesTest);
+	CPPUNIT_TEST(recordsOneMinuteTest);
 	CPPUNIT_TEST(sampleCapTest);
 	CPPUNIT_TEST(silentDeviceTest);
 	CPPUNIT_TEST(stopEarlyTest);
@@ -118,7 +119,7 @@ public:
 	void wavEmptyTest();
 	void wavLengthTest();
 	void noDeviceTest();
-	void recordsFiveMinutesTest();
+	void recordsOneMinuteTest();
 	void sampleCapTest();
 	void silentDeviceTest();
 	void stopEarlyTest();

@@ -1104,6 +1104,10 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("count", marks.count);
 		json.value("last", marks.last);
 		json.value("lastFiles", marks.lastFiles);
+		// Marks v2 (#574): pending until the release decides; then press or hold
+		json.value("lastKind", marks.lastKind);
+		json.value("lastSnapshots", marks.lastSnapshots);
+		json.value("lastClipMs", marks.lastClipMs);
 		json.value("recording", marks.recording);
 		json.value("noteMs", marks.noteMs);
 		json.value("note", marks.note);

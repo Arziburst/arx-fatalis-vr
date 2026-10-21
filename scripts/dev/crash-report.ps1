@@ -12,7 +12,7 @@
 
 	Each folder holds report.txt (key=value lines, then "stack:" and the stack), arx-recorder.txt (the flight
 	recorder, tests/platform/FlightRecorderTest.h), arx-perf.log (the run's performance log), arx-replay.vrsim
-	when the game recorded a VR session (the last 60 s of poses and inputs, #550: "Replay clip: ..." names it;
+	when the game recorded a VR session (the last 75 s of poses and inputs, #550/#574: "Replay clip: ..." names it;
 	scripts/dev/replay.ps1 plays it) and, when the game was still there to dump, the minidump named by dump=.
 
 	This prints one report. With a cdb.exe it symbolises the dump's stack; without one (or without a dump) it
@@ -184,7 +184,7 @@ if ($perfLines.Count) {
 	}
 }
 
-# --- The replay clip (#550): the last 60 s of poses and inputs before the report ----------------------
+# --- The replay clip (#550): the last 75 s of poses and inputs before the report (#574) ----------------------
 
 $clipTimes = @(Read-ReportLines (Join-Path $folder 'arx-replay.vrsim') | ForEach-Object { if ($_ -match '^@(\d+)ms\s+(?!anchor\b)') { [long]$Matches[1] } })
 if ($clipTimes.Count) {

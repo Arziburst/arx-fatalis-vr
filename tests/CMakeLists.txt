@@ -103,6 +103,10 @@ set(arxtest_TESTCASES
 	tests/vr/MarkMomentTest.cpp
 	tests/vr/VoiceNoteTest.h
 	tests/vr/VoiceNoteTest.cpp
+	tests/vr/MarkHoldTest.h
+	tests/vr/MarkHoldTest.cpp
+	tests/vr/SnapshotImageTest.h
+	tests/vr/SnapshotImageTest.cpp
 
 	tests/vr/VRGameInputTest.h
 	tests/vr/VRGameInputTest.cpp
@@ -243,6 +247,8 @@ set(arxtest_SOURCES
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
 	src/vr/MarkMoment.cpp
+	src/vr/SnapshotImage.cpp
+	src/graphics/image/stb_image.cpp
 	src/vr/MenuPointer.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/ArmIK.cpp

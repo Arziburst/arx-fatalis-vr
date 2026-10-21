@@ -436,7 +436,11 @@ void MarkMomentTest::metaFormatTest() {
 		"yaw=90.0\n"
 		"build=Arx Fatalis VR 1.3-dev abc1234 Release\n"
 		"state=GAMEPLAY\n"
-		"session=focused\n";
+		"session=focused\n"
+		// #574 (tests/vr/MarkHoldTest.h): what the mark became, its press and release on the clip's clock
+		"kind=press\n"
+		"pressMs=-1\n"
+		"releaseMs=-1\n";
 	CPPUNIT_ASSERT_EQUAL(expected, formatMarkMeta(meta));
 
 	// No level, at the origin, a second mark
@@ -471,7 +475,8 @@ void MarkMomentTest::metaOneLinePerFieldTest() {
 	for(char c : text) {
 		lines += (c == '\n') ? 1 : 0;
 	}
-	CPPUNIT_ASSERT_EQUAL_MESSAGE("the comment and eight fields: nine lines", size_t(9), lines);
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("the comment and eleven fields (#574: kind, pressMs, releaseMs): twelve lines",
+	                             size_t(12), lines);
 	CPPUNIT_ASSERT(text.find('\r') == std::string::npos);
 	CPPUNIT_ASSERT(text.find('\t') == std::string::npos);
 	CPPUNIT_ASSERT_MESSAGE("a new line in the build is a space", text.find("\nbuild=1.3-dev mark=99  Release\n") != std::string::npos);

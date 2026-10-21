@@ -29,7 +29,7 @@
 /*!
  * \file
  * \brief The voice note of a mark (#551): push-to-talk - the default microphone while both trackpads stay pressed
- *        after the mark, up to 5 minutes, saved as note.wav
+ *        after the mark, up to 1 minute (the hold's cap, #574), saved as note.wav
  *
  * The capture's state machine and the WAV writer; the microphone is a \ref NoteDevice - the default OpenAL capture
  * device in the game (vr/NoteMicrophone.h), a fake in the tests. Pure: no OpenAL, no engine globals, no
@@ -67,13 +67,13 @@ class VoiceNote {
 public:
 
 	static constexpr u32 sampleRate = 16000;  //!< mono, 16 bit
-	static constexpr s64 maxMs = 300000;      //!< the longest note: 5 minutes (16 kHz mono 16 bit: 9.6 MB)
+	static constexpr s64 maxMs = 60000;       //!< the longest note: 1 minute = HoldMaxMs (16 kHz mono 16 bit: 1.92 MB)
 	static constexpr s64 minMs = 300;         //!< the shortest note kept: fewer samples give no WAV
 
 	enum class State {
 		Idle,       //!< never started
 		Recording,  //!< the device is open, samples come in
-		Finished,   //!< released, 5 minutes of time or of samples, or stop(): the device is closed (once)
+		Finished,   //!< released, 1 minute of time or of samples, or stop(): the device is closed (once)
 		NoDevice    //!< start() found no microphone: no note, no error
 	};
 

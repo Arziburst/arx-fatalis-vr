@@ -93,6 +93,9 @@ std::string formatReplayHeader(const ReplayHeader & header) {
 	if(!header.mark.empty()) {
 		text += "# mark: " + header.mark + " " + std::to_string(header.markMs) + "\n";
 	}
+	if(header.holdPressMs >= 0) {
+		text += "# hold: " + std::to_string(header.holdPressMs) + " " + std::to_string(header.holdReleaseMs) + "\n";
+	}
 	if(header.ipd != 0.f) {
 		text += "ipd ";
 		formatNumber(text, header.ipd, 4);
@@ -406,6 +409,14 @@ ClipPlayer::ClipPlayer(LineSource source, u64 fromUs, u64 toUs)
 					m_header.markMs = s64(ms);
 				} else {
 					m_header.mark = std::string(value);
+				}
+			} else if(key == "hold") {
+				size_t space = value.find(' ');
+				u64 pressMs = 0, releaseMs = 0;
+				if(space != std::string_view::npos && parseU64(trimView(value.substr(0, space)), pressMs)
+				   && parseU64(trimView(value.substr(space + 1)), releaseMs)) {
+					m_header.holdPressMs = s64(pressMs);
+					m_header.holdReleaseMs = s64(releaseMs);
 				}
 			}
 			continue;
@@ -900,6 +911,48 @@ std::string clipOf(const ReplayHeader & header, const std::vector<ReplayFrame> &
 	return text;
 }
 
+/*!
+ * The clip of a mark at \a markUs: \a windowUs before it; with \a holdPressMs >= 0 the header's "# hold:" line too
+ * (a hold's clip, #574)
+ */
+std::string markClip(const void * image, size_t size, std::string_view mark, u64 markUs, u64 windowUs,
+                     s64 holdPressMs, s64 holdReleaseMs) {
+	RingView view;
+	if(!openRing(image, size, view)) {
+		return std::string();
+	}
+	ReplayHeader header = view.clipHeader;
+	header.mark = std::string(mark);
+	header.markMs = s64((markUs + 500) / 1000);
+	header.holdPressMs = holdPressMs;
+	header.holdReleaseMs = holdReleaseMs;
+	const std::vector<ReplayFrame> frames = ringFrames(view);
+	if(frames.empty()) {
+		return clipOf(header, frames, 0, 0);
+	}
+	// The last frame at or before the mark; none: the clip holds no frame
+	size_t last = frames.size();
+	for(size_t i = frames.size(); i > 0; i--) {
+		if(frames[i - 1].timeUs <= markUs) {
+			last = i - 1;
+			break;
+		}
+	}
+	if(last == frames.size()) {
+		return formatReplayHeader(header);
+	}
+	// The last frame at or before the window's start, or the oldest kept
+	const u64 startUs = markUs > windowUs ? markUs - windowUs : 0;
+	size_t first = 0;
+	for(size_t i = last + 1; i > 0; i--) {
+		if(frames[i - 1].timeUs <= startUs) {
+			first = i - 1;
+			break;
+		}
+	}
+	return clipOf(header, frames, first, last);
+}
+
 } // anonymous namespace
 
 size_t ReplayRing::memorySize(u32 seconds, u32 rate) {
@@ -1033,38 +1086,14 @@ std::string replayRingClip(const void * image, size_t size) {
 }
 
 std::string replayRingClip(const void * image, size_t size, std::string_view mark, u64 markUs, u64 windowUs) {
-	RingView view;
-	if(!openRing(image, size, view)) {
-		return std::string();
-	}
-	ReplayHeader header = view.clipHeader;
-	header.mark = std::string(mark);
-	header.markMs = s64((markUs + 500) / 1000);
-	const std::vector<ReplayFrame> frames = ringFrames(view);
-	if(frames.empty()) {
-		return clipOf(header, frames, 0, 0);
-	}
-	// The last frame at or before the mark; none: the clip holds no frame
-	size_t last = frames.size();
-	for(size_t i = frames.size(); i > 0; i--) {
-		if(frames[i - 1].timeUs <= markUs) {
-			last = i - 1;
-			break;
-		}
-	}
-	if(last == frames.size()) {
-		return formatReplayHeader(header);
-	}
-	// The last frame at or before the window's start, or the oldest kept
-	const u64 startUs = markUs > windowUs ? markUs - windowUs : 0;
-	size_t first = 0;
-	for(size_t i = last + 1; i > 0; i--) {
-		if(frames[i - 1].timeUs <= startUs) {
-			first = i - 1;
-			break;
-		}
-	}
-	return clipOf(header, frames, first, last);
+	return markClip(image, size, mark, markUs, windowUs, -1, -1);
+}
+
+std::string replayRingHoldClip(const void * image, size_t size, std::string_view mark, u64 pressUs, u64 releaseUs,
+                               u64 contextUs) {
+	const u64 heldUs = releaseUs > pressUs ? releaseUs - pressUs : 0;
+	return markClip(image, size, mark, releaseUs, heldUs + contextUs, s64((pressUs + 500) / 1000),
+	                s64((releaseUs + 500) / 1000));
 }
 
 } // namespace vr

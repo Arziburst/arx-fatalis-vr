@@ -9,6 +9,9 @@ Copyright (C) 1999-2010 Arkane Studios SA, a ZeniMax Media company.
 Arx Libertatis makes use of the stb_image library.
 Copyright (C) Sean T. Barrett. See the LICENSE.stb file for details.
 
+Arx Fatalis VR makes use of the stb_image_write library (libs/stb).
+Copyright (C) Sean T. Barrett. See the LICENSE.stb file for details.
+
 Arx Libertatis makes use of the fast_float number parsing library.
 Copyright (C) Daniel Lemire and João Paulo Magalhaes. See the LICENSE.fast_float file for details.
 

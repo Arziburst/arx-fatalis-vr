@@ -65,9 +65,9 @@ void setSeed(u64 seed) {
 	Random::seed(seed);
 }
 
-//! The ring: 60 s at the fastest display the game runs on (an Index at 144 Hz)
-const u32 RingSeconds = 60;
-const u32 RingMaxRate = 144;
+//! The ring: 75 s at the fastest display the game runs on (an Index at 144 Hz; vr/ReplayClip.h)
+const u32 RingSeconds = ReplayRingSeconds;
+const u32 RingMaxRate = ReplayRingMaxRate;
 
 //! The replay save slots the load menu does not list (core/SaveGame.cpp): the newest five are kept
 const u32 ReplaySlotFirst = 9000;
@@ -243,7 +243,7 @@ void start() {
 	// The ring: in the dump helper's shared memory when it has the room, else on the heap
 	size_t size = 0;
 	void * memory = platform::dumpHelperRegion(size);
-	// Sized for the fastest display it may meet: 60 s whatever the rate does during the session
+	// Sized for the fastest display it may meet: RingSeconds whatever the rate does during the session
 	const u32 rate = std::max(RingMaxRate, u32(std::ceil(std::max(g.header.rate, 1.f))));
 	const size_t wanted = ReplayRing::memorySize(RingSeconds, rate);
 	if(!memory || size < wanted) {
@@ -576,8 +576,29 @@ void shutdown() {
 	g.ringHeap.clear();
 }
 
-std::string cutClip(std::string_view name, u32 seconds, std::string & text) {
-	return cutClipText(name, seconds, text);
+s64 clockNowUs() {
+	const FrameViews & views = frameViews();
+	if(!g.clockStarted || !isEnabled() || !views.valid || views.displayTime < g.startNs) {
+		return -1;
+	}
+	return (views.displayTime - g.startNs) / 1000;
+}
+
+bool lastRig(SimRig & rig) {
+	if(!g.recording || g.frames == 0) {
+		return false;
+	}
+	rig = g.frame.rig;
+	return true;
+}
+
+bool copyRing(std::vector<unsigned char> & image) {
+	if(!g.recording || !g.ring || !g.ringMemory) {
+		return false;
+	}
+	const unsigned char * bytes = static_cast<const unsigned char *>(g.ringMemory);
+	image.assign(bytes, bytes + g.ringSize);
+	return true;
 }
 
 std::string command(std::string_view rest) {

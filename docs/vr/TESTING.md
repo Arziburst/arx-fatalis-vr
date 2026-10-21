@@ -2588,7 +2588,7 @@ replay-crash` (the clip in a hang's and a crash's report).
 During a headset test the owner marks a moment instead of remembering it: **both Index trackpads pressed (the force
 press)** mark it **at once**, on the frame both are down (D-061; fixed, not rebindable, one mark per press - a second
 mark needs a trackpad let go and pressed again; one pressed, the other later: the mark when the second goes down).
-**How long both stay down decides what the mark records** (D-NEW, #574): let go within `HoldThresholdMs` (about
+**How long both stay down decides what the mark records** (D-062, #574): let go within `HoldThresholdMs` (about
 0.5 s, tuned in the headset) it is a **short mark** - what he sees; held longer it is a **hold**, up to 1 minute -
 what he says *and* does meanwhile, so a coordinator that cannot listen reads his words next to the pictures of what he
 was showing and replays the hold in the simulator. At 1 minute the hold ends by itself ("Hold ended at the 1:00
@@ -2653,7 +2653,10 @@ one OpenAL call on the press frame; its time is in the log line `... (the microp
   letters; the Silero VAD skips silence, and when it finds no speech at all (quiet short notes) the note is run again
   without it (`--suppress-nst`, `-nth 0.6`). Whatever that retry writes is kept - a real quiet note matters more - so
   a note with no speech at all (game sound only) may get one of whisper's stray silence phrases; read it with the
-  snapshots. The first use downloads the three tools below (about 900 MB) into `%LOCALAPPDATA%\ArxFatalisVR\tools`,
+  snapshots. whisper-cli 1.9.2 reads its command line in the system's ANSI code page: a path with a character outside
+  it (a user name with an é under cp1251) is passed as its 8.3 short name, and a note whose folder has none is copied
+  to a plain temporary path first; tools or TEMP in such a path without a short name fail with a clear message (use a
+  plain `-ToolsDir`). A failed run prints whisper's own error line. The first use downloads the three tools below (about 900 MB) into `%LOCALAPPDATA%\ArxFatalisVR\tools`,
   each checked against its pinned SHA-256 (a mismatch deletes the file and fails with `SHA-256 mismatch`); once cached
   they are used as they are, with no network. Any Windows x64 PC works without setup (the CPU build; a minute of note
   takes about a minute on the owner's PC). `transcript.txt` is UTF-8: `[m:ss.s] text` a segment, the start rounded
@@ -2667,7 +2670,8 @@ one OpenAL call on the press frame; its time is in the log line `... (the microp
   stick clicks: no mark, no menu; a 0.2 s short mark: the four files, no clip, no snapshot, no note, no indicator; a
   second mark on a re-press; a 7 s hold: `kind=hold`, four snapshots, a clip of about 17 s, no `note.wav` under the
   simulated headset); `test-marks.ps1` (the listing) and `test-transcribe.ps1` (whisper's JSON to `transcript.txt`
-  byte for byte, the pins, the cache, the empty-VAD retry, the glossary; a fake whisper, no network).
+  byte for byte, the pins, the cache, the empty-VAD retry, the glossary; a fake whisper, no network) and
+  `test-transcribe-paths.ps1` (a mark folder outside the code page, whisper's error line).
 
 ### Third-party tools downloaded by scripts
 

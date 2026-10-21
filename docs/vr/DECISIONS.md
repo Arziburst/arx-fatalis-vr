@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: Marks v2 - a short press is a snapshot, a hold is the voice note, its clip and a snapshot every 2 s; the notes transcribed locally
+## D-062: Marks v2 - a short press is a snapshot, a hold is the voice note, its clip and a snapshot every 2 s; the notes transcribed locally
 
 - **Date:** 2026-10-21
 - **Status:** Accepted (#574; refines D-061 - its gesture, panel and microphone rules stay; the coordinator's research
@@ -64,7 +64,7 @@ a changed decision keeps its history in that cell.
 
 - **Date:** 2026-10-20
 - **Status:** Accepted (#551; supersedes the fixed two-stick hold of D-058, its other rules stay); what a mark records
-  is refined by D-NEW (#574: a short press is a snapshot, a hold has the note - now at most 1 minute -, the clip and
+  is refined by D-062 (#574: a short press is a snapshot, a hold has the note - now at most 1 minute -, the clip and
   the snapshots; the press frame is read back without a sync)
 - **Decided by:** the owner (the menu only via the radial and the confirmation in the hero-dialogue panel, 2026-10-19/20;
   the gesture on both trackpads instead of both stick clicks, at once instead of a 3 s hold, no gesture on the Touch,

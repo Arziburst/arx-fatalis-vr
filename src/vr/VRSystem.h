@@ -204,16 +204,18 @@ bool beginEyeRender(size_t eye);
 void endEyeRender(size_t eye);
 
 /*!
- * Read both eye images of the next frame as they are drawn (#551, a mark of the moment): the scene's eyes, or the
- * background a menu or loading frame clears them to. One GPU sync per eye - a hitch on the frame it is taken
+ * Ask for the picture of eye \a eye (0 left, 1 right) of the next frame that draws it, full size or \a half (#551,
+ * #574: a mark of the moment's eyes and a hold's snapshots): the scene's eye, or the background a menu or loading
+ * frame clears it to. Copied on the GPU and read back asynchronously - the frame never waits for it (vr/EyeShots.h);
+ * \a id names it in \ref takeEyeShot. \return false when it cannot be taken (no VR session, every slot busy)
  */
-void requestEyeCapture();
+bool requestEyeShot(u32 id, size_t eye, bool half);
 
-//! The eyes \ref requestEyeCapture asked for, once both were read (moved into \a eyes); false until then
-bool takeEyeCapture(std::array<RgbImage, 2> & eyes);
+//! One picture \ref requestEyeShot asked for that has come back (moved into \a image); false when none has
+bool takeEyeShot(u32 & id, RgbImage & image);
 
-//! Forget a capture that was asked for
-void cancelEyeCapture();
+//! Forget every picture asked for and not taken
+void cancelEyeShots();
 
 //! The stereo render as status.json reports it (#19)
 struct StereoStatus {

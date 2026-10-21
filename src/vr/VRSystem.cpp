@@ -59,6 +59,7 @@
 #if ARX_HAVE_OPENXR
 
 // OpenXR with the OpenGL binding (and windows.h on Windows)
+#include "vr/EyeShots.h"
 #include "vr/HandTracking.h"
 #include "vr/HandReticle.h"
 #include "vr/HeadTracking.h"
@@ -315,39 +316,14 @@ struct OpenXRState {
 
 OpenXRState g_xr;
 
-//! The eye images a mark of the moment asked for (#551): read from the next frame's eyes as they are released
-struct EyeCapture {
-	bool wanted = false;
-	std::array<bool, 2> taken = { false, false };
-	std::array<RgbImage, 2> images;
-};
-EyeCapture g_eyeCapture;
+//! The eye pictures the marks of the moment asked for (#551, #574): copied as the eyes are released, read back later
+EyeShots g_eyeShots;
 
-//! The picture of an eye's image as drawn (sRGB-encoded, rows bottom-up), when a capture wants it: one GPU sync
+//! An eye's image as drawn (sRGB-encoded, rows bottom-up) for the pictures that want it: GPU work only, no sync
 void captureEye(size_t eye, const Swapchain & swapchain) {
-
-	if(!g_eyeCapture.wanted || eye >= g_eyeCapture.taken.size() || g_eyeCapture.taken[eye]) {
-		return;
+	if(g_eyeShots.pending() > 0) {
+		g_eyeShots.capture(eye, swapchain.framebuffer(), swapchain.size(), g_xr.colorFormat);
 	}
-
-	const Vec2i size = swapchain.size();
-	RgbImage image(size.x > 0 ? size_t(size.x) : 0, size.y > 0 ? size_t(size.y) : 0);
-	if(!image.empty()) {
-		GLint bound = 0, alignment = 4, packBuffer = 0;
-		glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound);
-		glGetIntegerv(GL_PACK_ALIGNMENT, &alignment);
-		glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &packBuffer);
-		glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-		glPixelStorei(GL_PACK_ALIGNMENT, 1);
-		glBindTexture(GL_TEXTURE_2D, swapchain.texture());
-		// The stored values, no sRGB decoding: they are sRGB-encoded like the window
-		glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, image.pixels.data());
-		glBindTexture(GL_TEXTURE_2D, GLuint(bound));
-		glPixelStorei(GL_PACK_ALIGNMENT, alignment);
-		glBindBuffer(GL_PIXEL_PACK_BUFFER, GLuint(packBuffer));
-	}
-	g_eyeCapture.images[eye] = std::move(image);
-	g_eyeCapture.taken[eye] = true;
 }
 
 } // anonymous namespace
@@ -941,6 +917,7 @@ void destroySession() {
 	}
 	g_xr.radialFailed = false;
 	destroySubtitleImage();
+	g_eyeShots.destroy();
 	g_xr.mirror.destroy();
 	g_xr.colorFormat = 0;
 
@@ -2777,22 +2754,26 @@ void endEyeRender(size_t eye) {
 	}
 }
 
-void requestEyeCapture() {
-	g_eyeCapture = EyeCapture();
-	g_eyeCapture.wanted = true;
-}
-
-bool takeEyeCapture(std::array<RgbImage, 2> & eyes) {
-	if(!g_eyeCapture.wanted || !g_eyeCapture.taken[0] || !g_eyeCapture.taken[1]) {
+bool requestEyeShot(u32 id, size_t eye, bool half) {
+	if(g_xr.session == XR_NULL_HANDLE || eye >= g_xr.eyes.size()) {
 		return false;
 	}
-	eyes = std::move(g_eyeCapture.images);
-	g_eyeCapture = EyeCapture();
+	return g_eyeShots.request(id, eye, half);
+}
+
+bool takeEyeShot(u32 & id, RgbImage & image) {
+	s64 copyUs = 0;
+	if(!g_eyeShots.take(id, image, copyUs)) {
+		return false;
+	}
+	// The one piece of a picture's work the frame does itself: copying the mapped pixel buffer out (#574)
+	LogInfo << "[vr] eye shot " << id << ": " << image.width << "x" << image.height << " read back, copied in "
+	        << copyUs << " us";
 	return true;
 }
 
-void cancelEyeCapture() {
-	g_eyeCapture = EyeCapture();
+void cancelEyeShots() {
+	g_eyeShots.cancel();
 }
 
 StereoStatus stereoStatus() {
@@ -3197,13 +3178,15 @@ bool beginEyeRender(size_t /* eye */) {
 
 void endEyeRender(size_t /* eye */) { }
 
-void requestEyeCapture() { }
-
-bool takeEyeCapture(std::array<RgbImage, 2> & /* eyes */) {
+bool requestEyeShot(u32 /* id */, size_t /* eye */, bool /* half */) {
 	return false;
 }
 
-void cancelEyeCapture() { }
+bool takeEyeShot(u32 & /* id */, RgbImage & /* image */) {
+	return false;
+}
+
+void cancelEyeShots() { }
 
 StereoStatus stereoStatus() {
 	return StereoStatus();

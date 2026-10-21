@@ -247,6 +247,8 @@ set(arxtest_SOURCES
 	src/vr/SimRig.cpp
 	src/vr/UIPanel.cpp
 	src/vr/MarkMoment.cpp
+	src/vr/SnapshotImage.cpp
+	src/graphics/image/stb_image.cpp
 	src/vr/MenuPointer.cpp
 	src/vr/InterfaceSize.cpp
 	src/vr/ArmIK.cpp

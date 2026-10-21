@@ -1284,6 +1284,7 @@ set(VR_SOURCES
 	src/vr/BodyYaw.cpp
 	src/vr/EyeImage.cpp
 	src/vr/EyeProjection.cpp
+	src/vr/EyeShots.cpp
 	src/vr/FingerCurl.cpp
 	src/vr/HandRig.cpp
 	src/vr/FramePacing.cpp
@@ -1312,6 +1313,7 @@ set(VR_SOURCES
 	src/vr/ReplayClip.cpp
 	src/vr/ReplayRecorder.cpp
 	src/vr/SimRig.cpp
+	src/vr/SnapshotImage.cpp
 	src/vr/UIPanel.cpp
 	src/vr/VRActions.cpp
 	src/vr/VRArms.cpp
@@ -1358,6 +1360,8 @@ file(GLOB_RECURSE ALL_INCLUDES RELATIVE ${PROJECT_SOURCE_DIR} src/*.h)
 set_property(SOURCE src/graphics/image/stb_image.cpp APPEND PROPERTY COMPILE_FLAGS ${conservative_warnings})
 
 include_directories(src ${CMAKE_CURRENT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/tools)
+# Vendored single-header libraries (#574: stb_image_write for the marks' snapshot JPEGs)
+include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/libs)
 
 
 # Check for optional / alternative subsystem implementations

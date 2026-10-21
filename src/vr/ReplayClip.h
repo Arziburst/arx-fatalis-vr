@@ -39,7 +39,7 @@
  * the runtime gave the game (the head, the grips and whether they are tracked, the aims, five curls per
  * hand, the raw action values, the session state, the interaction profile) and where the engine's player
  * was. A clip loads as a \c --vr-sim script as it is (the dialect is vr/SimRig.h's); a long one is streamed
- * by \ref ClipPlayer (the simulated runtime's \c play command). \ref ReplayRing keeps the last 60 s in
+ * by \ref ClipPlayer (the simulated runtime's \c play command). \ref ReplayRing keeps the last 75 s in
  * memory the dump helper shares (every crash and hang report carries it, \c arx-replay.vrsim), and cuts
  * the clip of a \c replay \c mark.
  *
@@ -49,6 +49,14 @@
  */
 namespace vr {
 
+/*!
+ * The replay ring's length and the display rate it is sized for: 75 s at 144 Hz (#574), so a mark's 60 s hold and the
+ * 10 s before it fit on the Index at 144 Hz; at a lower rate the same ring keeps longer. Crash and hang reports'
+ * arx-replay.vrsim are as long
+ */
+const u32 ReplayRingSeconds = 75;
+const u32 ReplayRingMaxRate = 144;
+
 //! A clip's header: comment lines, then the set-up lines, before the first frame line
 struct ReplayHeader {
 	std::string build;    //!< "# build: <text>"   arx_name + " " + arx_version
@@ -57,11 +65,14 @@ struct ReplayHeader {
 	float rate = 0.f;     //!< "# rate: <hz>"      the display rate at the record start
 	std::string mark;     //!< "# mark: <name> <ms>" only in a clip cut at a `replay mark` ...
 	s64 markMs = -1;      //!< ... the mark's display time in ms on the clip's clock
+	s64 holdPressMs = -1;   //!< "# hold: <pressMs> <releaseMs>" only in a hold mark's clip (#574), on the clip's
+	s64 holdReleaseMs = -1; //!< clock; -1 without it
 	float ipd = 0.f;      //!< set-up line "ipd <m>"   (0: not written)
 	float floor = 0.f;    //!< set-up line "floor <m>" (0: not written)
 };
 
-//! "# arx-replay ..." first, then "# build: ", "# save: ", "# seed: ", "# rate: " [, "# mark: "] and the set-up lines
+//! "# arx-replay ..." first, then "# build: ", "# save: ", "# seed: ", "# rate: " [, "# mark: "] [, "# hold: "] and
+//! the set-up lines
 std::string formatReplayHeader(const ReplayHeader & header);
 
 //! One frame of the stream: the rig the game saw at a predicted display time, and the player in the engine
@@ -245,7 +256,7 @@ private:
 };
 
 /*!
- * \brief The last 60 s of the recorded stream in a block of memory the ring does not own (#550)
+ * \brief The last 75 s (ReplayRingSeconds) of the recorded stream in a block of memory the ring does not own (#550)
  *
  * The game lays it out in the dump helper's shared memory (#545), so every crash and hang report folder gets the
  * clip \c arx-replay.vrsim, written by the helper from the image even when the game is gone; \c replay \c mark
@@ -296,6 +307,17 @@ std::string replayRingClip(const void * image, size_t size);
  * markUs, the first in full; the header adds "# mark: <mark> <markUs in ms>". Frame times stay on the session's clock.
  */
 std::string replayRingClip(const void * image, size_t size, std::string_view mark, u64 markUs, u64 windowUs);
+
+/*!
+ * \brief A hold mark's clip, cut at the release (#574)
+ *
+ * replayRingClip(image, size, mark, releaseUs, releaseUs - pressUs + contextUs): the frames from the last one at or
+ * before pressUs - contextUs (or the oldest kept) to the last one at or before releaseUs - plus the header line
+ * "# hold: <pressUs in ms> <releaseUs in ms>". The window is by display time, so any display rate works; the
+ * game copies the ring's bytes on the release frame and calls this on its writer thread.
+ */
+std::string replayRingHoldClip(const void * image, size_t size, std::string_view mark, u64 pressUs, u64 releaseUs,
+                               u64 contextUs);
 
 } // namespace vr
 

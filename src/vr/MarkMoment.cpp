@@ -19,8 +19,10 @@
 
 #include "vr/MarkMoment.h"
 
+#include <algorithm>
 #include <cstdio>
 
+#include "vr/ReplayClip.h"
 #include "vr/VoiceNote.h"
 
 namespace vr {
@@ -86,7 +88,61 @@ std::string minutesSeconds(s64 ms) {
 	return buffer;
 }
 
+//! The command \a key of \a text after its own leading "<key> " (the numbers alone), "" without it
+std::string commandNumbers(const ReplayFrameText & text, std::string_view key) {
+	for(size_t i = 0; i < text.keys.size() && i < text.commands.size(); i++) {
+		if(text.keys[i] == key) {
+			const std::string & command = text.commands[i];
+			return command.size() > key.size() + 1 ? command.substr(key.size() + 1) : std::string();
+		}
+	}
+	return std::string();
+}
+
 } // anonymous namespace
+
+const char * markKindName(MarkKind kind) {
+	return kind == MarkKind::Hold ? "hold" : "press";
+}
+
+MarkKind markKind(s64 heldMs) {
+	return heldMs >= HoldThresholdMs ? MarkKind::Hold : MarkKind::Press;
+}
+
+bool holdCapped(s64 heldMs) {
+	return heldMs >= HoldMaxMs;
+}
+
+s64 holdLengthMs(s64 heldMs) {
+	return std::clamp<s64>(heldMs, 0, HoldMaxMs);
+}
+
+std::vector<s64> snapshotOffsets(s64 heldMs) {
+	std::vector<s64> offsets;
+	if(markKind(heldMs) == MarkKind::Press) {
+		return offsets;
+	}
+	const s64 length = holdLengthMs(heldMs);
+	for(s64 at = SnapshotIntervalMs; at < length && offsets.size() + 1 < SnapshotMax; at += SnapshotIntervalMs) {
+		offsets.push_back(at);
+	}
+	if(offsets.empty() || snapshotName(offsets.back()) != snapshotName(length)) {
+		offsets.push_back(length);
+	}
+	return offsets;
+}
+
+std::string snapshotName(s64 offsetMs) {
+	const s64 tenths = std::max<s64>(offsetMs, 0) / 100;
+	char buffer[48];
+	std::snprintf(buffer, sizeof(buffer), "snap-+%02lld.%llds.jpg", static_cast<long long>(tenths / 10),
+	              static_cast<long long>(tenths % 10));
+	return buffer;
+}
+
+std::string holdCappedText() {
+	return "Hold ended at the " + minutesSeconds(HoldMaxMs) + " limit";
+}
 
 bool markAllowed(bool replayPlaying) {
 	return !replayPlaying;
@@ -97,7 +153,7 @@ bool noteMicrophoneAllowed(bool simulatedHeadset) {
 }
 
 MarkNotice markNotice(const MarkNoticeState & state, std::string & text) {
-	if(state.recording && state.recordingMs >= VoiceNote::minMs) {
+	if(state.recording && state.recordingMs >= HoldThresholdMs) {
 		text = noteIndicatorText(state.recordingMs);
 		return MarkNotice::Recording;
 	}
@@ -108,6 +164,10 @@ MarkNotice markNotice(const MarkNoticeState & state, std::string & text) {
 	if(state.sinceSavedMs >= 0 && state.sinceSavedMs < NoteSavedMs) {
 		text = noteSavedText(state.savedLengthMs);
 		return MarkNotice::Saved;
+	}
+	if(state.sinceCappedMs >= 0 && state.sinceCappedMs < HoldCappedNoticeMs) {
+		text = holdCappedText();
+		return MarkNotice::Marked;
 	}
 	if(state.sinceMarkedMs >= 0 && state.sinceMarkedMs < MarkNoticeMs) {
 		text = markNoticeText(state.markedNumber);
@@ -158,6 +218,23 @@ std::string formatMarkMeta(const MarkMeta & meta) {
 	text += "build=" + oneLine(meta.build) + "\n";
 	text += "state=" + oneLine(meta.state) + "\n";
 	text += "session=" + oneLine(meta.session) + "\n";
+	text += "kind=" + std::string(markKindName(meta.kind)) + "\n";
+	text += "pressMs=" + std::to_string(meta.pressMs) + "\n";
+	text += "releaseMs=" + std::to_string(meta.releaseMs) + "\n";
+	if(meta.posed) {
+		// The .vrsim commands' own numbers: a worker pastes them into a sequence as they are
+		ReplayFrame frame;
+		frame.rig = meta.pose;
+		ReplayFrameText commands;
+		formatReplayFrameText(frame, commands);
+		const char * const tracked[2] = { meta.pose.handTracked[0] ? " on" : " off",
+		                                  meta.pose.handTracked[1] ? " on" : " off" };
+		text += "head=" + commandNumbers(commands, "head") + "\n";
+		text += "left=" + commandNumbers(commands, "hand left") + tracked[0] + "\n";
+		text += "right=" + commandNumbers(commands, "hand right") + tracked[1] + "\n";
+		text += "curlsLeft=" + commandNumbers(commands, "hand left fingers") + "\n";
+		text += "curlsRight=" + commandNumbers(commands, "hand right fingers") + "\n";
+	}
 	return text;
 }
 

@@ -13,7 +13,9 @@
 	The engine is whisper.cpp (whisper-cli.exe) with the model ggml-large-v3-turbo-q8_0.bin, in Russian (-l ru) with
 	a prompt of the project's words (scripts/dev/transcribe-glossary.txt: B, trigger, grip, trackpad, radial,
 	SteamVR, Index, ... - editable) so mixed Russian and English comes out right, and the Silero VAD model; when the
-	VAD finds no speech (quiet short notes) it runs once more without it.
+	VAD finds no speech (quiet short notes) it runs once more without it (--suppress-nst, -nth 0.6). A note that holds
+	no speech at all may then get a stray line (whisper's silence phrases, "thanks for watching" in Russian): read it with the
+	snapshots.
 
 	First use: the three files are downloaded from their pinned URLs (a release of whisper.cpp; Hugging Face at a fixed
 	revision, never main) into the tools directory, each checked against its pinned SHA-256 - a mismatch deletes the
@@ -129,6 +131,8 @@ try {
 }
 
 $prompt = Get-GlossaryPrompt $Glossary
+# whisper's no-speech threshold for the retry without the VAD (its default, set explicitly)
+$NoSpeechThreshold = '0.6'
 $threads = [math]::Max(1, [math]::Min([Environment]::ProcessorCount, 8))
 $work = Join-Path ([IO.Path]::GetTempPath()) "arxvr-transcribe-$PID"
 $failed = 0
@@ -140,7 +144,9 @@ try {
 		$common = @('-m', $model, '-f', $note, '-l', 'ru', '-t', "$threads", '--prompt', $prompt, '-oj', '-of', $base)
 		$segments = $null
 		foreach ($withVad in $true, $false) {
-			$arguments = if ($withVad) { $common + @('--vad', '-vm', $vad) } else { $common }
+			# The retry without the VAD hears silence too: non-speech tokens suppressed and whisper's no-speech threshold
+			# set (a real quiet note matters more than a stray line, so what it still writes is kept)
+			$arguments = if ($withVad) { $common + @('--vad', '-vm', $vad) } else { $common + @('--suppress-nst', '-nth', $NoSpeechThreshold) }
 			Remove-Item -LiteralPath "$base.json" -ErrorAction SilentlyContinue
 			$output = if ($cli -like '*.ps1') {
 				& (Get-Process -Id $PID).Path -NoProfile -File $cli @arguments 2>&1

@@ -2651,7 +2651,9 @@ one OpenAL call on the press frame; its time is in the log line `... (the microp
   of the project's Latin words from the editable `scripts/dev/transcribe-glossary.txt` (B, trigger, grip, trackpad,
   radial, SteamVR, Index, ...), so the owner's mixed Russian and English comes out with the English words in Latin
   letters; the Silero VAD skips silence, and when it finds no speech at all (quiet short notes) the note is run again
-  without it. The first use downloads the three tools below (about 900 MB) into `%LOCALAPPDATA%\ArxFatalisVR\tools`,
+  without it (`--suppress-nst`, `-nth 0.6`). Whatever that retry writes is kept - a real quiet note matters more - so
+  a note with no speech at all (game sound only) may get one of whisper's stray silence phrases; read it with the
+  snapshots. The first use downloads the three tools below (about 900 MB) into `%LOCALAPPDATA%\ArxFatalisVR\tools`,
   each checked against its pinned SHA-256 (a mismatch deletes the file and fails with `SHA-256 mismatch`); once cached
   they are used as they are, with no network. Any Windows x64 PC works without setup (the CPU build; a minute of note
   takes about a minute on the owner's PC). `transcript.txt` is UTF-8: `[m:ss.s] text` a segment, the start rounded

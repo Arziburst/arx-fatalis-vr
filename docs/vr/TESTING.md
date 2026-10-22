@@ -2812,22 +2812,26 @@ marks: the log says `[vr] mark ignored: a replay is playing`.
 into a texture of our own - a snapshot halved with the linear filter, each pixel the mean of a 2x2 block - and a
 read-back into a pixel buffer behind a fence); a later frame maps the buffer and copies it out (logged:
 `[vr] eye shot <id>: <w>x<h> read back, copied in <us> us`). The PNGs, the JPEGs, the clip (cut from a byte copy of
-the ring taken the frame after the release) and the WAV are made on the mark writer thread. Opening the microphone is
-one OpenAL call on the press frame; its time is in the log line `... (the microphone opened in <ms> ms)`.
+the ring taken the frame after the stop) and the WAV are made on the mark writer thread. Opening the microphone is
+one OpenAL call on the start frame; its time is in the log line `... (the microphone opened in <ms> ms)`.
 
-- **status.json** `marks`: `count` (marks made since the start), `last` (the last mark's folder name), `lastFiles`
-  (the non-empty files in it, sorted, joined by `,`; empty until every file of the mark is written - a hold's after
-  its release), `lastKind` (`""` before the first mark, `pending` until the release or the cap, then `press` or
-  `hold`), `lastSnapshots` (the `snap-*.jpg` written for the last mark so far; 0 for a press), `lastClipMs` (its
-  `clip.vrsim` length in ms once written; 0 for a press), `recording` (a voice note records now - only while both
-  trackpads are held), `noteMs` (how long it records so far, ms; 0 when none records), `note` (the voice note is on),
-  `gesture` (`both.trackpad` on the Index, `none` on controllers without trackpads); `scene.subtitle.notice` (`none`,
+- **status.json** `marks`: `count` (recordings started since the start; a stop press is no new one), `last` (the
+  last recording's folder name), `lastFiles` (the non-empty files in it, sorted, joined by `,`; empty until every
+  file of it is written, after its stop), `lastKind` (`""` before the first recording, `pending` from the start until
+  the stop - the second press or the cap -, then `hold`), `lastSnapshots` (the `snap-*.jpg` written for the last
+  recording so far), `lastClipMs` (its `clip.vrsim` length in ms once written), `recording` (a recording is on: from
+  the start press to the stop press or the cap, with or without a microphone), `recordingMs` (how long it has run,
+  ms; 0 when none is on), `capMs` (the longest recording: 60000, or the channel's `marks cap <ms>`), `noteMs` (how
+  long the voice note records so far, ms; 0 when none records), `note` (the voice note is on), `gesture`
+  (`both.trackpad` on the Index, `none` on controllers without trackpads); `scene.subtitle.notice` (`none`,
   `marked`, `recording`, `saved`) - while not `none`, `scene.subtitle.text` is the notice's line and `drawn` is
   `chest`.
-- **The log:** `[vr] mark #<n>: the moment is marked ...` at the gesture, `[vr] mark #<n>: a short press (<ms> ms)` or
-  `... a hold of <ms> ms` at the release, `[vr] mark #<n>: marks\<folder> files=<list>` once every file is written,
-  `[vr] mark #<n>: note.wav (<s> s)` after the note; the panel's `vr.scene.subtitle notice=<kind> drawn=chest
-  text="<line>"` once per notice kind.
+- **The log:** `[vr] mark #<n>: a recording starts (both trackpads pressed; pressed again it stops, at most <ms>
+  ms)` at the start press, `[vr] mark #<n>: the recording stopped after <ms> ms` at the stop (`... - its cap, by
+  itself` at the cap), `[vr] mark #<n>: marks\<folder> files=<list>` once every file is written, `[vr] mark #<n>:
+  note.wav (<s> s)` after the note (`... no voice note recorded` without one); `[vr] marks: a recording stops by
+  itself after <ms> ms` for `marks cap`; the panel's `vr.scene.subtitle notice=<kind> drawn=chest text="<line>"` once
+  per notice kind.
 - **After the test:** `scripts\dev\marks.ps1` lists the marks of the user directory - per mark the time, area,
   position, `Kind: press | hold <s.s> s`, the files, the note's length, `Clip: <len> s (<before> s before the press),
   <n> frames`, the pictures by their time after the press (`+0.0 s  left.png, right.png (press)`, `+2.0 s
@@ -2852,14 +2856,18 @@ one OpenAL call on the press frame; its time is in the log line `... (the microp
   takes about a minute on the owner's PC). `transcript.txt` is UTF-8: `[m:ss.s] text` a segment, the start rounded
   down to 0.1 s from the note's start - the press, the snapshots' timeline.
 - **The checks:** host tests `MarkMomentTest` (the gesture with any layout, `markHeld`, the folder name, `meta.txt`,
-  the panel's lines, the Touch without the gesture, both stick clicks never marking), `MarkHoldTest` (short against
-  hold, the 1 minute cap, the snapshot schedule and names, the indicator from the threshold, `meta.txt` kind and pose,
-  the 75 s ring, the hold's clip with its context at 144 and 80 Hz, the `# hold:` line), `SnapshotImageTest` (the 2x2
-  mean, the JPEG the right way up, its quality) and `VoiceNoteTest` (the WAV writer, the push-to-talk capture on a fake
-  device: a release stops it, 1 minute at most, nothing under 0.3 s, never without the hold); `mark-moment.xrs` (both
-  stick clicks: no mark, no menu; a 0.2 s short mark: the four files, no clip, no snapshot, no note, no indicator; a
-  second mark on a re-press; a 7 s hold: `kind=hold`, four snapshots, a clip of about 17 s, no `note.wav` under the
-  simulated headset); `test-marks.ps1` (the listing) and `test-transcribe.ps1` (whisper's JSON to `transcript.txt`
+  the panel's lines - "Recording saved" without a note -, the Touch without the gesture, both stick clicks never
+  marking, and #632's start / stop press that is not also a trackpad's own binding), `MarkHoldTest` (#574's pure
+  helpers, kept: short against hold, the 1 minute cap, the snapshot schedule and names, the indicator from the
+  threshold, `meta.txt` kind and pose, the 75 s ring, the clip with its context at 144 and 80 Hz, the `# hold:` line),
+  `SnapshotImageTest` (the 2x2 mean, the JPEG the right way up, its quality) and `VoiceNoteTest` (the WAV writer, the
+  capture on a fake device: stopped when told, 1 minute at most, nothing under 0.3 s); `mark-moment.xrs` (both stick
+  clicks: no mark, no menu; the cap shortened to 3 s with `marks cap 3000`: the start press held 1.5 s and let go
+  changes nothing, the recording stops by itself at 3 s with the snapshots at 2 and 3 s, the clip and "saved (0:03)";
+  a 0.2 s start press that records on, a trackpad alone (bound to jump) jumping and the bag opened and closed during
+  it, the second press stopping it at about 4.3 s: three snapshots, a clip of about 15 s, "saved (0:04)", no
+  `note.wav` under the simulated headset); `test-marks.ps1` (the listing, a #632 recording among older builds'
+  marks) and `test-transcribe.ps1` (whisper's JSON to `transcript.txt`
   byte for byte, the pins, the cache, the empty-VAD retry, the glossary; a fake whisper, no network) and
   `test-transcribe-paths.ps1` (a mark folder outside the code page, whisper's error line).
 

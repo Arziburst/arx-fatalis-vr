@@ -60,8 +60,9 @@ public:
 };
 
 /*!
- * The capture of one note: started on the mark (both trackpads down), updated every frame with whether both are
- * still held (ControlResolver::markHeld), at most \ref maxMs long
+ * The capture of one note: started on a recording's start press, updated every frame with whether it goes on (since
+ * #632 always while the recording is on - it is stopped with it; #574 passed ControlResolver::markHeld), at most
+ * \ref maxMs long
  */
 class VoiceNote {
 

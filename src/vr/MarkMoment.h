@@ -31,8 +31,8 @@
 
 /*!
  * \file
- * \brief Mark the moment in the headset (#551, marks v2 #574): the marker folder's name, its meta.txt, the short
- *        press against the hold, the hold's snapshots and the panel's lines
+ * \brief Mark the moment in the headset (#551, marks v2 #574, the toggle #632): the marker folder's name, its
+ *        meta.txt, a recording's snapshots, the panel's lines (and #574's short press against the hold, kept)
  *
  * During a headset test both Index trackpads pressed (vr::ControlResolver::markGesture) start a recording into
  * <user dir>\c \\marks\\<name>\\ and the same press again stops it (a toggle since #632; at \ref HoldMaxMs it stops
@@ -151,11 +151,12 @@ struct MarkNoticeState {
 std::string holdCappedText();
 
 /*!
- * The notice and its line: the indicator while a note records (from HoldThresholdMs on: a short press shows the
- * confirmation only), and frozen at the note's final time while its note.wav is written - so the panel never goes
- * blank between the release and "Note saved"; then "Note saved" for \ref NoteSavedMs; else, after a hold that
- * reached its cap, \ref holdCappedText for \ref HoldCappedNoticeMs (as the confirmation's kind, Marked); else the
- * confirmation for \ref MarkNoticeMs; else none (an empty line)
+ * The notice and its line: the indicator while a recording is on (from HoldThresholdMs on: before it the
+ * confirmation), and frozen at its final time while its files are written - so the panel never goes blank between
+ * the stop and "saved"; then "Note saved" (or, without \c savedNote, "Recording saved") for \ref NoteSavedMs; else,
+ * with \c sinceCappedMs set, \ref holdCappedText for \ref HoldCappedNoticeMs (as the confirmation's kind, Marked -
+ * #574's; the game sets it no more since #632); else the confirmation for \ref MarkNoticeMs; else none (an empty
+ * line)
  */
 MarkNotice markNotice(const MarkNoticeState & state, std::string & text);
 

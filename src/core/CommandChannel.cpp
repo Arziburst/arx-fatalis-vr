@@ -1170,7 +1170,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("lastKind", marks.lastKind);
 		json.value("lastSnapshots", marks.lastSnapshots);
 		json.value("lastClipMs", marks.lastClipMs);
-		// The toggle (#632): a recording is on from the start press to the stop press or the cap
+		// The toggle (#632): a recording is on from the start press to the stop press or the cap (capMs: 1 minute, the
+		// channel's `marks cap <ms>` for a test)
 		json.value("recording", marks.recording);
 		json.value("recordingMs", marks.recordingMs);
 		json.value("capMs", marks.capMs);

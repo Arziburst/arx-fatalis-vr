@@ -49,8 +49,8 @@ a changed decision keeps its history in that cell.
 
 - **Date:** 2026-10-21
 - **Status:** Partly superseded by D-NEW (#632: a toggle, no short press, no push-to-talk; the folder, the snapshots,
-  the clip, the note and the transcription stay). Accepted (#574; refines D-061 - its gesture, panel and microphone rules stay; the coordinator's research
-  is `coordinator/research/2026-10-21-marks-v2-transcription.md`)
+  the clip, the note and the transcription stay). Accepted (#574; refines D-061 - its gesture, panel and microphone
+  rules stay; the coordinator's research is `coordinator/research/2026-10-21-marks-v2-transcription.md`)
 - **Decided by:** the owner (a short press records what he sees, a hold what he says and does; the hold capped at
   1 minute; the left eye at half size every 2 s plus the release, both eyes at full size at the press; the press
   frame's pose in `meta.txt`; a local transcription that works on another machine without setup, 2026-10-21); the

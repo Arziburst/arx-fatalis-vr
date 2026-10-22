@@ -7,6 +7,13 @@
 	`## D-NEW:` decision and reference it in a source file; merges them one by one as the merge flow does (merge main,
 	number, commit, merge into main). Also covers D-NEW-<tag> (two decisions in one branch), the d-new-literal marker, and the
 	-Check gate (a numbered heading that clashes with main fails, a placeholder passes). Exit code 0 when everything passed, 1 otherwise.
+
+	#535 (contract 535, tests first): comment lines that talk about the placeholder in a workflow file and a script keep
+	their text when they carry the marker d-new-literal (anywhere on the line), while an unmarked reference beside them is
+	numbered; and the real lines of .github/workflows/build-windows.yml and scripts/dev/run-script-tests.ps1 that name
+	the placeholder carry the marker, so number-decisions.ps1 leaves both files unchanged in a branch that touches them.
+	The three lines are found by their text ('unnumbered D-NEW most likely arrives', 'new decisions are D-NEW and',
+	'two branches adding D-NEW get consecutive numbers'): keep those words when adding the marker.
 #>
 [CmdletBinding()]
 param()
@@ -105,6 +112,60 @@ try {
 	$r = Num; Check 'f: script ran' ($r.Exit -eq 0) $r.Out
 	Check 'f: doc line about the placeholder unchanged' ((Read 'docs/vr/WORKFLOW.md') -match 'written ## D-NEW: title and referenced as D-NEW\.')
 	Check 'f: heading numbered' ((Read 'docs/vr/DECISIONS.md') -match '(?m)^## D-005: real')
+	G add -A; G commit -q -m numbered
+
+	# Comment lines about the placeholder in a workflow and a script (#535): marked, they survive byte for byte; an
+	# unmarked reference in the same files is numbered (the control: the script did run over them)
+	G switch -q -c g main
+	New-Item -ItemType Directory -Force (Join-Path $repo '.github\workflows'), (Join-Path $repo 'scripts\dev') | Out-Null
+	$yamlMarked = @(
+		"    # unnumbered D-NEW most likely arrives in a docs-only merge, and the strict decision check (#383) must see it. (d-new-literal)",
+		"    # Seconds (#274, #296): a PR must not add a numbered D-0xx that main already has; new decisions are D-NEW and # d-new-literal"
+	)
+	$ps1Marked = "`t'test-number-decisions.ps1' # decision numbers at merge (#274): two branches adding D-NEW get consecutive numbers; the clash gate (d-new-literal)"
+	Put '.github/workflows/ci.yml' ("on: push`r`n" + ($yamlMarked -join "`r`n") + "`r`n    # this step follows D-NEW (a real reference)`r`n")
+	Put 'scripts/dev/run-tests.ps1' ("`$tests = @(`r`n$ps1Marked`r`n`t'test-x.ps1' # follows D-NEW`r`n)`r`n")
+	$d = Read 'docs/vr/DECISIONS.md'
+	Put 'docs/vr/DECISIONS.md' ($d -replace '(?m)^## D-004', "## D-NEW: comments`n`nx`n`n## D-004")
+	G add -A; G commit -q -m comments
+	$r = Num; Check 'g: script ran' ($r.Exit -eq 0) $r.Out
+	$yamlAfter = (Read '.github/workflows/ci.yml') -split "`r?`n"
+	$ps1After = (Read 'scripts/dev/run-tests.ps1') -split "`r?`n"
+	foreach ($line in $yamlMarked) { Check "g: marked workflow comment kept: $($line.Trim().Substring(0, 40))..." ($yamlAfter -ccontains $line) ($yamlAfter -join ' | ') }
+	Check 'g: marked script comment kept' ($ps1After -ccontains $ps1Marked) ($ps1After -join ' | ')
+	Check 'g: the unmarked workflow reference numbered (control)' ($yamlAfter -ccontains '    # this step follows D-005 (a real reference)') ($yamlAfter -join ' | ')
+	Check 'g: the unmarked script reference numbered (control)' ($ps1After -ccontains "`t'test-x.ps1' # follows D-005") ($ps1After -join ' | ')
+	G add -A; G commit -q -m numbered
+
+	# The real comment lines of #535: build-windows.yml and run-script-tests.ps1 as they are in this working copy, in a
+	# branch that also adds a D-NEW decision. Every line of them that names the placeholder is about the placeholder
+	# itself, so number-decisions.ps1 must leave both files as they are (the bug: it rewrote three such lines in -Pr 533)
+	$real = @(
+		@{ Rel = '.github/workflows/build-windows.yml'; Fragments = @('unnumbered D-NEW most likely arrives', 'new decisions are D-NEW and') },
+		@{ Rel = 'scripts/dev/run-script-tests.ps1'; Fragments = @('two branches adding D-NEW get consecutive numbers') }
+	)
+	$ours = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+	foreach ($f in $real) {
+		$lines = [IO.File]::ReadAllLines((Join-Path $ours $f.Rel))
+		foreach ($fragment in $f.Fragments) {
+			$hit = @($lines | Where-Object { $_.Contains($fragment) })
+			Check "$($f.Rel): the line '$fragment ...' is there and carries the d-new-literal marker" ($hit.Count -eq 1 -and $hit[0] -match 'd-new-literal') ($hit -join ' | ')
+		}
+	}
+	G switch -q -c h main
+	New-Item -ItemType Directory -Force (Join-Path $repo '.github\workflows'), (Join-Path $repo 'scripts\dev') | Out-Null
+	foreach ($f in $real) { Copy-Item -LiteralPath (Join-Path $ours $f.Rel) -Destination (Join-Path $repo $f.Rel) -Force }
+	$d = Read 'docs/vr/DECISIONS.md'
+	Put 'docs/vr/DECISIONS.md' ($d -replace '(?m)^## D-004', "## D-NEW: real files`n`nx`n`n## D-004")
+	G add -A; G commit -q -m realfiles
+	$r = Num; Check 'h: script ran' ($r.Exit -eq 0) $r.Out
+	Check 'h: the heading numbered (the script did run)' ((Read 'docs/vr/DECISIONS.md') -match '(?m)^## D-005: real files')
+	foreach ($f in $real) {
+		$before = [IO.File]::ReadAllLines((Join-Path $ours $f.Rel))
+		$after = [IO.File]::ReadAllLines((Join-Path $repo $f.Rel))
+		$changed = @(for ($i = 0; $i -lt [Math]::Max($before.Count, $after.Count); $i++) { if ($before[$i] -cne $after[$i]) { "line $($i + 1): '$($after[$i])'" } })
+		Check "h: number-decisions.ps1 leaves $($f.Rel) unchanged" ($changed.Count -eq 0) ($changed -join ' | ')
+	}
 } finally {
 	Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue
 }

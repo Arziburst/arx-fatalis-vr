@@ -36,7 +36,7 @@ $tests = @(
 	'test-marks.ps1'         # the marks of a headset run (#551): a fixture marks folder listed (time, area, position, files, note length), a mark copied out, no user path
 	'test-steam-shortcut.ps1' # the non-Steam VR shortcut (#80): binary shortcuts.vdf round-trip, add / update / remove on copies
 	'test-save-library.ps1'  # the test save library (#70): the scenario parser, the verification steps and slot order, Use-ArxSave
-	'test-number-decisions.ps1' # decision numbers at merge (#274): two branches adding D-NEW get consecutive numbers; the clash gate
+	'test-number-decisions.ps1' # decision numbers at merge (#274): two branches adding D-NEW get consecutive numbers; the clash gate; (d-new-literal)
 	'test-perf-summary.ps1'  # the performance log summary (#327): a fixture arx-perf.log, the totals, worst seconds, hitches, the script
 	'test-perf-track.ps1'    # CI performance tracking (#552): per-phase stats of fixture logs, the rolling baseline's update rules, the flag, the summary table and annotations
 	'test-private-data.ps1' # the personal-data check of tracked files (#428): made-up paths, ids, e-mails, docs images fail; placeholders pass

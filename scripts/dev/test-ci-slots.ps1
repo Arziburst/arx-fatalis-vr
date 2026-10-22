@@ -55,6 +55,27 @@
 	                                           pwsh, a background job, their games - dies with it; ci-local.ps1 and
 	                                           ci-smoke.ps1 call it first thing
 
+	The tester package beside a worker's holder (#540, contract 535, tests first). CI run 39155597388: the step 'Tester
+	package (zip, extracted-game check)' timed out with 'all 1 game slot(s) are held' behind game-1.lock, 'busy third game
+	(#23 proof)', a slot a worker held on purpose (ARXVR_MAX_GAMES=3 in the worker's own shell).
+	  the Tester package step                  of .github/workflows/build-windows.yml (the step whose name starts with
+	                                           'Tester package') gets CI's game-slot count in its env: ARXVR_MAX_GAMES with
+	                                           the number Get-ArxCiLaneCount (scripts/dev/ci-smoke-lib.ps1) reads from the
+	                                           workflow, and ARXVR_CI_RUNNER. This test reads the step's env: either the
+	                                           step's own mapping, or a YAML alias 'env: *<name>' of a mapping anchored
+	                                           'env: &<name>' elsewhere in the workflow (the Game checks step's, say). A
+	                                           value it cannot read (a ${{ }} expression, an assignment inside run:) does
+	                                           not count. Get-ArxCiLaneCount must still give a number (test-ci-smoke.ps1's
+	                                           one-setting checks stay): a second literal 'ARXVR_MAX_GAMES: <n>' line makes
+	                                           it $null today, so that way needs Get-ArxCiLaneCount to accept equal numbers
+	  the package step's lock                  scripts/package-tester.ps1 takes its slot with Enter-ArxGameLock (no -Owner);
+	                                           with the step's env, a worker's holder in slot 1 (taken before the marker
+	                                           went up) and the marker up, it takes another free slot instead of timing out
+	  a worker's holder started while the marker is up (a child pwsh: Enter-ArxGameLock with what 'busy third game
+	                                           (#23 proof)' and its own ARXVR_MAX_GAMES=3, no ARXVR_CI_RUNNER) takes no
+	                                           slot while the marker is up - not before the runner's lock, not after it -
+	                                           and takes one once the marker is cleared
+
 	Exit code 0 when everything passed, 1 otherwise.
 #>
 [CmdletBinding()]
@@ -217,6 +238,78 @@ try {
 	$clearStep = [regex]::Match($wf, '(?s)- name:(?:(?!\r?\n    - name:).)*?Clear-ArxRunnerMarker').Value
 	Check 'the workflow clears the marker in a step that always runs' ($clearStep -match '\n\s+if: always\(\)') $clearStep
 	Check 'the workflow marks its launches as the runner''s (ARXVR_CI_RUNNER)' ($wf -match 'ARXVR_CI_RUNNER:')
+
+	# --- The tester package beside a worker's holder (#540) -------------------------------------------------------
+	Write-Host '==> the tester package step gets CI''s slots and never waits behind a worker''s holder (#540)'
+	$wfPath = Join-Path $PSScriptRoot '..\..\.github\workflows\build-windows.yml'
+	. (Join-Path $PSScriptRoot 'ci-smoke-lib.ps1')
+	$ciGames = Get-ArxCiLaneCount $wfPath
+	Check 'the workflow has one CI game-slot count (Get-ArxCiLaneCount)' ($null -ne $ciGames -and $ciGames -ge 2) "$ciGames"
+	# The env: of a step as the runner would give it: the step's own mapping, or the anchored mapping its alias names
+	function Get-WorkflowStepEnv([string]$Workflow, [string]$StepName) {
+		$lines = $Workflow -split '\r?\n'
+		$at = -1
+		for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i] -match "^\s+- name: $([regex]::Escape($StepName))") { $at = $i; break } }
+		if ($at -lt 0) { return $null }
+		$stepIndent = $lines[$at].IndexOf('-')
+		$envLine = -1
+		for ($i = $at + 1; $i -lt $lines.Count; $i++) {
+			if ($lines[$i] -match '^\s*- name:' -and $lines[$i].IndexOf('-') -le $stepIndent) { break }
+			if ($lines[$i] -match '^\s+env:') { $envLine = $i; break }
+		}
+		$result = [ordered]@{}
+		if ($envLine -lt 0) { return $result }
+		if ($lines[$envLine] -match '^\s+env:\s*\*([\w-]+)\s*$') {
+			$anchor = $Matches[1]
+			$envLine = -1
+			for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i] -match "^\s+env:\s*&$([regex]::Escape($anchor))\s*$") { $envLine = $i; break } }
+			if ($envLine -lt 0) { return $result }
+		}
+		$envIndent = $lines[$envLine].Length - $lines[$envLine].TrimStart().Length
+		for ($i = $envLine + 1; $i -lt $lines.Count; $i++) {
+			$line = $lines[$i]
+			if (-not $line.Trim()) { continue }
+			if (($line.Length - $line.TrimStart().Length) -le $envIndent) { break }
+			if ($line -match "^\s+([A-Za-z_][\w]*):\s*'?([^'\s]*)'?\s*$") { $result[$Matches[1]] = $Matches[2] }
+		}
+		$result
+	}
+	$packageEnv = Get-WorkflowStepEnv $wf 'Tester package'
+	Check 'the workflow has the Tester package step' ($null -ne $packageEnv)
+	$packageGames = if ($packageEnv -and $packageEnv.Contains('ARXVR_MAX_GAMES')) { $packageEnv['ARXVR_MAX_GAMES'] } else { $null }
+	Check 'the Tester package step gets the workflow''s game-slot count (ARXVR_MAX_GAMES in its env = Get-ArxCiLaneCount)' ($null -ne $ciGames -and "$packageGames" -eq "$ciGames") "step env: $(if ($packageEnv) { ($packageEnv.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ' ' }); workflow count: $ciGames"
+	Check 'the Tester package step is the runner''s own (ARXVR_CI_RUNNER in its env)' ($packageEnv -and $packageEnv.Contains('ARXVR_CI_RUNNER') -and $packageEnv['ARXVR_CI_RUNNER'])
+	$pkg = & $text 'package-tester.ps1'
+	Check 'package-tester.ps1 takes its slot with Enter-ArxGameLock, not as the owner' ($pkg -match 'Enter-ArxGameLock -What ''package-tester\.ps1' -and $pkg -notmatch 'Enter-ArxGameLock[^\r\n]*-Owner')
+
+	# CI run 39155597388 again: a worker's deliberate holder took slot 1 before the job's marker went up (it finishes, it
+	# is not preempted); the marker goes up; a second worker holder starts while it is up; then the package step takes
+	# its slot with the step's env
+	$heldSlot = Join-Path $root 'busy-a.txt'
+	$busyA = Start-Child "Remove-Item Env:ARXVR_CI_RUNNER -ErrorAction SilentlyContinue; `$env:ARXVR_MAX_GAMES = '3'; `$l = Enter-ArxGameLock -What 'busy third game (#23 proof)' -Copy 'E:\work\worker23' -Branch 'ARXVR-23-feat-x' -TimeoutSec 0; if (`$l) { Set-Content -LiteralPath '$heldSlot' -Value `$l.Slot }; Start-Sleep 120"
+	Check 'the worker''s holder took slot 1 before the job started' ((Wait-Until { Test-Path $heldSlot }) -and (Get-Content $heldSlot -Raw).Trim() -eq '1') "$(Get-GameHolders)"
+	$runnerJob = Start-Child 'Start-Sleep 120'
+	$null = Invoke-Safe { Set-ArxRunnerMarker -RunnerPid $runnerJob.Id -What 'CI run 39155597388' }
+	$gotB = Join-Path $root 'busy-b.txt'
+	$busyB = Start-Child "Remove-Item Env:ARXVR_CI_RUNNER -ErrorAction SilentlyContinue; `$env:ARXVR_MAX_GAMES = '3'; `$l = Enter-ArxGameLock -What 'busy third game (#23 proof) again' -Copy 'E:\work\worker23' -Branch 'ARXVR-23-feat-x' -TimeoutSec 60; if (`$l) { Set-Content -LiteralPath '$gotB' -Value `$l.Slot }; Start-Sleep 120"
+	Start-Sleep -Seconds 3
+	Check 'a worker''s holder started while the marker is up takes no slot' (-not (Test-Path $gotB) -and @(Get-GameHolders | Where-Object { $_ -match "pid=$($busyB.Id) " }).Count -eq 0) "$(Get-GameHolders)"
+	# The package step: its env (as read above), nothing else of this test's
+	$savedEnv = @{ ARXVR_MAX_GAMES = $env:ARXVR_MAX_GAMES; ARXVR_CI_RUNNER = $env:ARXVR_CI_RUNNER }
+	Remove-Item Env:ARXVR_MAX_GAMES, Env:ARXVR_CI_RUNNER -ErrorAction SilentlyContinue
+	if ($packageEnv) { foreach ($k in @($packageEnv.Keys)) { if ($k -like 'ARXVR_*') { [Environment]::SetEnvironmentVariable($k, $packageEnv[$k]) } } }
+	$sw = [Diagnostics.Stopwatch]::StartNew()
+	$r = Invoke-Captured { Enter-ArxGameLock -What 'package-tester.ps1 (verify)' -Copy 'C:\runner\copy' -Branch 'ARXVR-539' -TimeoutSec 5 }
+	foreach ($k in $savedEnv.Keys) { [Environment]::SetEnvironmentVariable($k, $savedEnv[$k]) }
+	Check 'with the step''s env the package''s lock takes a free slot at once beside the worker''s holder' ($r.Value -and $r.Value.Slot -ne 1 -and $sw.Elapsed.TotalSeconds -lt 3) "slot $($r.Value.Slot) after $([Math]::Round($sw.Elapsed.TotalSeconds, 1)) s; $(($r.Lines | Select-Object -Last 2) -join ' | ') $($r.Error)"
+	Start-Sleep -Seconds 1
+	Check 'the worker''s first holder is not preempted' ((Test-Alive $busyA) -and @(Get-GameHolders | Where-Object { $_ -match "pid=$($busyA.Id) " }).Count -eq 1) "$(Get-GameHolders)"
+	Check 'the waiting worker holder still holds no slot while the marker is up' (-not (Test-Path $gotB) -and @(Get-GameHolders | Where-Object { $_ -match "pid=$($busyB.Id) " }).Count -eq 0) "$(Get-GameHolders)"
+	if ($r.Value) { Exit-ArxGameLock $r.Value }
+	$null = Invoke-Safe { Clear-ArxRunnerMarker }
+	Remove-Item (Join-Path $lockDir 'ci-runner.marker') -Force -ErrorAction SilentlyContinue
+	Check 'the marker cleared: the waiting worker holder takes a slot within 5 s (it waited, it did not give up)' (Wait-Until { Test-Path $gotB } 5)
+	Stop-Children
 
 	# --- The holder reports ---------------------------------------------------------------------------------------
 	Write-Host '==> a busy slot names its holder; no silent waits'

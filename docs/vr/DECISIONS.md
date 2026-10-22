@@ -34,7 +34,28 @@ a changed decision keeps its history in that cell.
   test `MeleeSwingTest::testAimAt90HzPinned` pins the 90 Hz aims and speeds of the test swings to the values the code
   gave before the change (within 0.01). At any other rate the detector reads the velocity at that same moment:
   `testSameContactAimAt45And90Hz` (the tester's, #613) holds the same swing's aim at 45 Hz within 0.05 of its 90 Hz
-  aim; 144 Hz, which read 1.5 of its own frames (10.4 ms) back before, now reads 16.7 ms back like 90.
+  aim.
+- **At every other rate the feel changes by design** - towards the 90 Hz feel. Before, each rate read 1.5 of its own
+  frames back (10.4 ms at 144 Hz, 12.5 at 120, 18.75 at 80, 20.8 at 72, 25 at 60); now every rate reads 16.7 ms back.
+  The most a contact's aim moves against the old reading of the same rate, measured by the host code on the test
+  swings (the bell swing: a real arm's 0.85 m in 0.3 s, the speed deciding on the dagger's 2-5 m/s scale; the ramp:
+  the sequences' 9.6 m/s, 0.85 m in 89 ms, with the dagger's defaults - its path decides, and a shifted stroke start
+  moves the path by a step):
+
+  | rate | old lag | bell swing | 9.6 m/s ramp |
+  |---|---|---|---|
+  | 144 Hz | 10.4 ms | 0.10 (0.26 for 0.16 at +250 ms) | 0.17 (0.48 for 0.65 at +49 ms) |
+  | 120 Hz | 12.5 ms | 0.07 | 0.00 |
+  | 90 Hz | 16.7 ms | 0.00 | 0.00 |
+  | 80 Hz | 18.75 ms | 0.03 | 0.00 |
+  | 72 Hz | 20.8 ms | 0.07 | 0.34 (at the ramp's last step) |
+  | 60 Hz | 25 ms | 0.14 | 0.07 |
+  | 45 Hz | 33.3 ms | 0.27 | 0.78 (at the ramp's last step) |
+
+  Above 90 Hz the old reading was fresher, so a faster headset (the owner's Index runs at 144 Hz) now reads a
+  speeding-up arm a little later - its blows land as 90 Hz's did. *Whether 90 Hz or 144 Hz is the feel reference is
+  the owner's call (open at the PR's review); the moment is one constant, `speedLag`, and a variant on the #588 panel
+  would let him compare 16.7 ms with 10.4 ms in the headset.*
 - **A long frame in a swing that visibly went on across it keeps the swing.** A time step over `maxStep` (100 ms)
   starts the detector over as before - except while a swing is in progress and the hand's mean speed across the gap
   is at least the end speed (1.5 m/s): the gap is one long step (its mean speed is as sound as any long step's, #352's
@@ -53,11 +74,16 @@ a changed decision keeps its history in that cell.
   display time, with the positions at its ends read linearly between samples, is the newest step's mean at low rates
   - centred 5.6 ms off the moment at 45 Hz, 0.3 m/s for the bell swing (0.09 of aim, over the tolerance); linear in
   velocity between the steps' middles is exact for a constant acceleration and off by 0.02 m/s for the bell.
-- **The newest raw sample enters the reading only where the moment lies past the medians' step** - weight 0 at
-  90 Hz, so F-59's protection against a sample that is off and back is what it was there; at 45 Hz it has three
-  quarters of the reading, at 30 frames/s all of it. The trade-off is accepted: without it the reading would have to
-  be extrapolated 17 ms past the last median (0.2 m/s off for the bell, and 6.9 m/s instead of 4.3 for #352's hitch
-  case), and a tracking glitch's speed falls with the rate (5 cm are 4.5 m/s at 90 Hz, 1.5 m/s at 30).
+- **The newest raw sample enters the reading only where the moment lies past the medians' step** - its share is
+  1.5 − rate/60: nothing at 90 Hz and above, so F-59's protection against a sample that is off and back is what it
+  was there; 0.17 at 80 Hz, 0.3 at 72, 0.5 at 60, three quarters at 45, all of it at 30 frames/s and below. Below
+  90 Hz a single sample off and back can therefore start a one-frame slash by itself (the swing speed 2.5 m/s over
+  that share of the raw step): the smallest such offset of a still hand, measured by the host code, is 18.8 cm at
+  80 Hz, 11.6 cm at 72, 8.4 cm at 60, 7.5 cm at 45-48 (the worst rates), 8.3 cm at 30; none at 90 Hz and above
+  (nothing up to 40 cm). Such a swing ends on the next sample, and a contact on it is a one-frame hit at the glitch's
+  speed. The trade-off is accepted: without the raw sample the reading would have to be extrapolated 17 ms past the
+  last median (0.2 m/s off for the bell, and 6.9 m/s instead of 4.3 for #352's hitch case), and a tracking glitch's
+  speed falls with the rate (5 cm are 4.5 m/s at 90 Hz, 1.5 m/s at 30).
 - **Keeping a swing across a long frame** costs nothing at 90 Hz (no frame is that long outside a stall) and saves the
   blow of a hitch frame on a slow PC, where the detector used to need four more frames (130 ms at 30 frames/s) to see
   the same swing again as a new one with a restarted stroke.

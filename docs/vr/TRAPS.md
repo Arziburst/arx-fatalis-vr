@@ -1737,3 +1737,8 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** a button of the book (the dev variants panel's `-`, #588) takes the first trigger press and ignores a second one 10 frames later: `dev-variants.xrs` pressed `-` twice and the value moved one step.
 **Cause:** the engine turns a click within the double-click time into a double click (`ArxGame.cpp`: `EERIEMouseButton` bit 4 set, bit 1 cleared), so `eeMouseDown1()` is false for it.
 **Do:** a button that must count every press checks `eeMouseDown1() || eeMouseDoubleClick1()`.
+
+## 2026-10-22 - After `loadlevel <n>` the eyes are black, and the player's position is the previous level's
+**Symptom:** a channel `loadlevel 2` (no target) after `loadlevel 1` loads level 2 with no error, but the shots are `black` and `player.x/y/z` are exactly what they were in level 1; going on that way, `loadlevel 21` after level 20 crashed in level 21's init (#601).
+**Cause:** a level change without a target restores the player's saved position (`ARX_CHANGELEVEL_PopLevel`, the `target.empty()` branch), the coordinates of the old level, which in the new one are often outside its geometry. Only a start with `--loadlevel` puts the player at the level's own start (the DLF's `pos_edit`).
+**Do:** enter a level as the game does, at an entry marker: `loadlevel <n> <marker>`, the target of another level's exit (`levelstats report` lists them in `level-tour.txt`, #596).

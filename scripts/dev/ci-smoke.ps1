@@ -28,7 +28,9 @@
 	save-library phase goes first and every sequence with a @save waits for it; smoke-test and spell-drawcheck share
 	this working copy's user directory and never run at the same time; a read-back runs after its sequence, in its
 	user directory; a sequence with @solo (it measures frame pacing, #527) starts only with empty lanes and nothing
-	starts while it runs. The risk order (#527): the .xrs files the change touches first (git diff against -Base),
+	starts while it runs, and before it starts it waits while another task's build compiles on the PC (up to
+	-QuietWaitSec, #566); it goes after every other phase, so the lanes are busy while such a build ends. The risk
+	order (#527): the .xrs files the change touches first (git diff against -Base),
 	then the sequences the impact map selects for the changed files, then what failed in the last 5 runs
 	(ci-history.json beside the durations, written at the end of every run), then the rest by the last run's duration,
 	longest first (ci-durations.json; a phase without a recorded time counts as the longest). The summary lists every
@@ -103,6 +105,14 @@
 .PARAMETER KeepRuns
 	When -OutDir is a run folder in %LOCALAPPDATA%\ArxFatalisVR\ci-evidence, how many run folders stay there (default 10).
 
+.PARAMETER QuietWaitSec
+	How long a phase that measures frame pacing (@solo) waits, before it starts, while something compiles on the PC
+	(cl, link, ninja, MSBuild, cmake --build, build-windows.ps1 that are not this run's, #566; quiet: 30 s without
+	one); then it runs anyway, under that load. In CI (NETWORK SERVICE) the command lines of another account's
+	processes cannot be read: only the names count there (cl, link, ninja; an MSBuild or a cmake does not), and the
+	30 s settle bridges a build's steps between its compiles; the log says how many command lines it could read. The
+	wait and what it waited for are in the log and the job summary. Default 600; 0: no wait.
+
 .EXAMPLE
 	.\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence
 .EXAMPLE
@@ -126,7 +136,9 @@ param(
 	[string[]]$Changed,
 	[string]$Base = $(if ($env:GITHUB_BASE_REF) { "origin/$env:GITHUB_BASE_REF" } elseif (-not $env:GITHUB_ACTIONS) { 'origin/main' }),
 	[string]$DurationsFile,
-	[int]$KeepRuns = 10
+	[int]$KeepRuns = 10,
+	[ValidateRange(0, 3600)]
+	[int]$QuietWaitSec = 600
 )
 
 $ErrorActionPreference = 'Stop'
@@ -220,7 +232,7 @@ $selection = $null
 $suiteWhy = 'asked for'
 $changedSet = $null
 if ($Suite -eq 'pr') {
-	$changedSet = if ($Changed) { [pscustomobject]@{ Ok = $true; Files = $Changed } } else { Get-ArxChangedFileSet $ArxSourceDir $Base }
+	$changedSet = if ($Changed) { [pscustomobject]@{ Ok = $true; Files = $Changed; Deleted = @() } } else { Get-ArxChangedFileSet $ArxSourceDir $Base }
 	if (-not $changedSet.Ok) { $suiteWhy = "the change is unknown ($(if ($Base) { "cannot diff against $Base" } else { 'no base' }))" }
 	else {
 		$impact = Read-ArxImpactMap $ImpactMap
@@ -228,7 +240,13 @@ if ($Suite -eq 'pr') {
 		foreach ($problem in @(Test-ArxImpactMap $impact (Get-ArxSequenceNames (Join-Path $PSScriptRoot 'xrs')))) { Write-Host "ci-smoke: impact map: $problem" -ForegroundColor Yellow }
 		if ($impact.Errors) { $suiteWhy = "the impact map $ImpactMap has errors" }
 		else {
-			$sel = Get-ArxImpactSelection $impact $changedSet.Files
+			# A deleted path whose line the change removed too is matched against the base tree's map (#608)
+			$baseImpact = $null
+			$mapRepoPath = [IO.Path]::GetRelativePath($ArxSourceDir, $ImpactMap) -replace '\\', '/'
+			if ($changedSet.Deleted -and -not $mapRepoPath.StartsWith('..') -and -not [IO.Path]::IsPathRooted($mapRepoPath)) {
+				$baseImpact = Read-ArxBaseImpactMap $ArxSourceDir $Base -MapPath $mapRepoPath
+			}
+			$sel = Get-ArxImpactSelection $impact $changedSet.Files -Deleted $changedSet.Deleted -BaseMap $baseImpact
 			if ($sel.Full) { $suiteWhy = "the change needs everything: $($sel.FullBecause -join '; ')" }
 			else { $selection = $sel }
 		}
@@ -374,6 +392,9 @@ $sequenceOrder = @(Get-ArxPhaseOrder $units $changed $durations -Affected $affec
 $byName = @{}
 foreach ($ph in $phases) { $byName[$ph.Name] = $ph }
 $dispatch = @(@('save-library', 'smoke-test', 'spell-drawcheck') + $sequenceOrder | Where-Object { $byName.ContainsKey($_) -and -not $byName[$_].Skip } | ForEach-Object { $byName[$_] })
+# A pacing phase (@solo) goes last, whatever its risk tier (#566): the other phases use every lane meanwhile, so a build
+# of another task beside them has time to end before the pacing phase waits for a quiet PC with the lanes empty
+$dispatch = @(@($dispatch | Where-Object { -not $_.Solo }) + @($dispatch | Where-Object { $_.Solo }))
 $known = @($dispatch | Where-Object { $durations.ContainsKey($_.Name) }).Count
 Write-Host "ci-smoke: $($dispatch.Count) phase(s) to run; changed $(if ($Changed) { '(given by -Changed)' } elseif ($Base) { "against $Base" } else { 'against nothing (no base)' }): $(if ($changedXrs) { $changedXrs -join ', ' } else { 'no .xrs' })"
 Write-Host "ci-smoke: risk order: map-affected: $(if ($affected) { $affected -join ', ' } else { 'none' }); failed in the last 5 runs ($historyFile): $(if ($recentFailures) { $recentFailures -join ', ' } else { 'none' })"
@@ -417,6 +438,20 @@ $startPhase = {
 	$params = @{} + $Phase.Params
 	if ($Phase.Command -eq 'smoke-test.ps1') { $params.TestDir = $laneDir }
 	$command = if ($Phase.Command -like '*.ps1') { Join-Path $script:scriptDir $Phase.Command } else { $Phase.Command }
+	# A phase that measures frame pacing starts on a quiet PC (#566): the lanes are empty already (the scheduler's
+	# @solo), and a compile of another task's build waits too, up to -QuietWaitSec
+	if ($Phase.Solo -and $script:QuietWaitSec -gt 0) {
+		# What this account sees of the others' processes: in CI (NETWORK SERVICE) their command lines are empty and only
+		# the names count (cl, link, ninja); the 30 s settle bridges a build's steps between them
+		try {
+			$seen = Get-ArxCommandLineCount (Get-CimInstance Win32_Process -Property Name, ProcessId, ParentProcessId, CommandLine -ErrorAction Stop)
+			Write-Host ("ci-smoke: {0}: {1} of the {2} other processes of the PC show their command line to {3}" -f $Phase.Name, $seen.Readable, $seen.Total, [Security.Principal.WindowsIdentity]::GetCurrent().Name)
+		} catch { }
+		$quiet = Wait-ArxQuietPc $Phase.Name { Get-ArxForeignBuilds (Get-CimInstance Win32_Process -Property Name, ProcessId, ParentProcessId, CommandLine -ErrorAction Stop) } -MaxSeconds $script:QuietWaitSec
+		if ($quiet.WaitedFor.Count -and $env:GITHUB_STEP_SUMMARY) {
+			Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ("> **{0}** (@solo) waited {1:0} s for compiles of the PC{2}: {3}" -f $Phase.Name, $quiet.Seconds, $(if ($quiet.TimedOut) { ', then ran under them' } else { '' }), (Format-ArxBuildList $quiet.WaitedFor))
+		}
+	}
 	Write-Host ("--> ci-smoke phase '{0}' started on lane {1}" -f $Phase.Name, $Lane)
 	$job = Start-Job -ScriptBlock $script:phaseJob -ArgumentList $command, $params, (Join-Path $script:OutDir "$($Phase.Name).log"), $laneDir, $script:libPath
 	$script:jobs += $job

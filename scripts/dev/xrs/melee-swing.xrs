@@ -3,10 +3,12 @@
 # trigger charges nothing and never starts the engine's strike while the IK hand holds the weapon.
 # Runs on the test save mvp-goblin-fight (#70: a sword equipped, a goblin ahead in a corridor):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence melee-swing -Save mvp-goblin-fight
-# The swings are ramps of the simulated right controller: 0.85 m in 8 frames - 9.6 m/s at 90 fps, 3.2 m/s at 30 fps,
-# above the swing speed (2.5 m/s) and below a tracking jump (20 m/s) at any frame rate the runner plays at. Every other
-# move of the hand is a slow ramp too: an instant move is a tracking jump only on a short frame - the set-up's 0.43 m
-# in one 22 ms frame (45 fps, a busy runner) is 19.5 m/s, a swing (#349, TRAPS.md).
+# The swings are timed ramps of the simulated right controller (#634): 0.85 m in 120 ms - 7.1 m/s at any frame rate (a
+# frame-counted 8 frames was 10.9 m/s at 90 fps and 3.3 m/s at 30), above the swing speed (2.5 m/s) and below a tracking
+# jump (20 m/s). Every other move of the hand is a slow ramp, counted in frames on purpose (a busy runner only makes it
+# slower - still no swing; the idle simulator never plays above 90 fps). An instant move is no option: it is a tracking
+# jump only on a short frame - the set-up's 0.43 m in one 22 ms frame (45 fps, a busy runner) is 19.5 m/s, a swing
+# (#349, TRAPS.md).
 @sim idle
 @save mvp-goblin-fight
 @args --loadslot 0
@@ -42,7 +44,7 @@ vr-sim @+1-60 hand right pos -0.4 -0.8 -0.35
 @until vr.melee.recovery.left eq 0 5s
 @remember hits vr.melee.hits
 @mark
-vr-sim @+1-8 hand right pos 0.45 -0.8 -0.35
+vr-sim @+0-120ms hand right pos 0.45 -0.8 -0.35
 @until vr.melee.swings ge 1 5s
 @until vr.melee.swinging eq false 5s
 @assert vr.melee.swinging eq false
@@ -61,7 +63,7 @@ vr-sim action trigger right 1
 @assert vr.melee.trigger eq true
 @until vr.melee.recovery.left eq 0 5s
 @remember hits vr.melee.hits
-vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35
+vr-sim @+0-120ms hand right pos -0.4 -0.8 -0.35
 @until vr.melee.swings ge 2 5s
 @until vr.melee.swinging eq false 5s
 @assert vr.melee.hits eq {hits+1}
@@ -95,7 +97,7 @@ ui inventory open
 @until vr.melee.active eq false 5s
 @assert vr.melee.refused eq inventory
 @remember swings vr.melee.swings
-vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35
+vr-sim @+0-120ms hand right pos -0.4 -0.8 -0.35
 @frames 30
 @assert vr.melee.swings eq {swings}
 ui inventory close

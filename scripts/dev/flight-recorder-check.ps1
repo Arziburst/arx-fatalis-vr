@@ -30,6 +30,7 @@
 	  - arx.exe --no-recorder: the same game without the flight recorder (the overhead baseline)
 	  - the test channel commands (each acknowledged, the killing ones not):
 	      crash             an access violation on the main thread (exists since #132)
+	      crash ntdll       an access violation inside ntdll (RtlFillMemory); the in-process stack walk faults too (#610)
 	      abort             abort() on the main thread
 	      terminate         std::terminate() on the main thread
 	      terminate thread  std::terminate() on a new std::thread (a thread the game's handlers were never set up on)
@@ -39,7 +40,7 @@
 	      leak <MiB>        allocate and touch <MiB> of private memory and keep it until the exit
 	  - scripts/dev/crash-report.ps1 -Path <folder> -Cdb none prints the folder's report
 
-	Cases (-Case, several allowed; 'all' = plain, clean and the 8 kills: 10 launches):
+	Cases (-Case, several allowed; 'all' = plain, clean and the 9 kills: 11 launches):
 	  plain             a launch without --test-dir: the watchdog's start in arx.log, one dump helper, a WM_CLOSE quit
 	                    is clean: exit 0, no new crash report, arx-recorder.txt written, the helper gone
 	  clean             a 75 s run that passes smoke-test.ps1: `leak 64` shows as a step of priv in the R lines and in
@@ -50,6 +51,9 @@
 	                    0xc0000374; crash: 0xc0000005 and channel::...execute in the stack) with the dump, the command
 	                    as the recorder's last command, a symbolised arx.exe frame in crash-report's stack; the killer is
 	                    the main thread, except for terminate-thread
+	  crash-ntdll       `crash ntdll` (#610): the fault inside ntdll, with an in-process stack walk that cannot run (it
+	                    faulted on the corrupt heap of #610); kind=crash, 0xc0000005, exit= that code (no second fault in the
+	                    handler), and crash.txt's Callstack is the helper's: an ntdll frame first, then channel::...execute
 	  exitprocess       `exitprocess 143`: the game ends with exit code 143 within -ExitBoundSec of the command (the
 	                    bounded dump wait never refuses the kill); kind=exit from outside, exit=143, killer=
 	                    ...KERNEL32!ExitProcess, the dump written before the exit, the thread birth in the recorder
@@ -85,7 +89,7 @@
 #>
 [CmdletBinding()]
 param(
-	[ValidateSet('all', 'plain', 'clean', 'crash', 'abort', 'terminate', 'terminate-thread', 'heapcorrupt', 'exitprocess', 'remote-exit', 'stop-process', 'overhead', 'replay-crash')]
+	[ValidateSet('all', 'plain', 'clean', 'crash', 'abort', 'terminate', 'terminate-thread', 'heapcorrupt', 'crash-ntdll', 'exitprocess', 'remote-exit', 'stop-process', 'overhead', 'replay-crash')]
 	[string[]]$Case = @('all'),
 	[switch]$Rebuild,
 	[int]$ExitBoundSec = 15
@@ -100,7 +104,7 @@ $crashReport = Join-Path $PSScriptRoot 'crash-report.ps1'
 $smoke = Join-Path $PSScriptRoot 'smoke-test.ps1'
 $pwsh = (Get-Process -Id $PID).Path
 
-$kills = @('crash', 'abort', 'terminate', 'terminate-thread', 'heapcorrupt', 'exitprocess', 'remote-exit', 'stop-process')
+$kills = @('crash', 'abort', 'terminate', 'terminate-thread', 'heapcorrupt', 'crash-ntdll', 'exitprocess', 'remote-exit', 'stop-process')
 $cases = if ($Case -contains 'all') { @('plain', 'clean') + $kills } else { @($Case) }
 
 # Before any launch: the report command every case reads the reports with
@@ -231,7 +235,7 @@ function Invoke-ArxCrashReport([string]$Folder) {
 }
 
 # Everything a report folder must hold; $Expect: What, Kind, ExitCode, KillerMatch, KillerNotMatch, Exception, Dump,
-# Command, ThreadEvent, StackMatch
+# Command, ThreadEvent, StackMatch, CrashStack (crash.txt's Callstack)
 function Test-ArxReportFolder([string]$Folder, [hashtable]$Expect) {
 	$what = $Expect.What
 	$name = Split-Path -Leaf $Folder
@@ -252,6 +256,15 @@ function Test-ArxReportFolder([string]$Folder, [hashtable]$Expect) {
 	if ($Expect.KillerMatch) { Check ("$($fields['killer'])" -match $Expect.KillerMatch) "$what`: the killer matches /$($Expect.KillerMatch)/" }
 	if ($Expect.KillerNotMatch) { Check ($fields['killer'] -and "$($fields['killer'])" -notmatch $Expect.KillerNotMatch) "$what`: the killer is not /$($Expect.KillerNotMatch)/" }
 	if ($Expect.Exception) { Check ("$($fields['exception'])" -match $Expect.Exception) "$what`: exception /$($Expect.Exception)/ (exception=$($fields['exception']))" }
+
+	# crash.txt (the run digest reads it): a crash, abort or terminate has its stack - #610's was empty
+	if ($Expect.Kind -in 'crash', 'abort', 'terminate') {
+		$crashText = (Get-Content -LiteralPath (Join-Path $Folder 'crash.txt') -Raw -ErrorAction SilentlyContinue) -replace "`r", ''
+		$callstack = if ("$crashText" -match '(?s)\nCallstack:\n(.*)\z') { $Matches[1] } else { '' }
+		$frames = @($callstack -split "`n" | Where-Object { $_ -match '^\s+#\d+ \S' })
+		Check ($frames.Count -gt 0) "$what`: crash.txt's Callstack has frames ($($frames.Count))"
+		if ($Expect.CrashStack) { Check ($callstack -match $Expect.CrashStack) "$what`: crash.txt's Callstack matches /$($Expect.CrashStack)/" }
+	}
 
 	# The flight recorder as the report has it
 	$events = Read-ArxRecorderEvents (Join-Path $Folder 'arx-recorder.txt')
@@ -565,6 +578,8 @@ $script:KillSpecs = [ordered]@{
 	'terminate'        = @{ Command = 'terminate'; Kind = 'terminate'; KillerMatch = 'main thread'; StackMatch = $script:ArxFrame; Dump = $true; BoundSec = 60 }
 	'terminate-thread' = @{ Command = 'terminate thread'; Kind = 'terminate'; KillerNotMatch = 'main thread'; StackMatch = $script:ArxFrame; Dump = $true; BoundSec = 60 }
 	'heapcorrupt'      = @{ Command = 'heapcorrupt'; Kind = 'crash'; Exception = '(?i)^0xc0000374\b'; KillerMatch = 'main thread'; StackMatch = $script:ArxFrame; Dump = $true; BoundSec = 60 }
+	# #610: 0xc0000005 = -1073741819, the code of the fault itself - a second fault in the handler ended with 1
+	'crash-ntdll'      = @{ Command = 'crash ntdll'; Kind = 'crash'; Exception = '(?i)^0xc0000005\b'; ExitCode = -1073741819; GameExit = -1073741819; KillerMatch = 'main thread'; StackMatch = $script:ArxFrame; CrashStack = '(?ism)\A\s+#0 ntdll\.dll\+0x[0-9a-f]+\b.*^\s+#\d+ arx\.exe\+0x[0-9a-f]+ [^\n]*channel::[^\n]*execute'; Dump = $true; BoundSec = 60 }
 	'exitprocess'      = @{ Command = 'exitprocess 143'; Kind = 'exit from outside'; ExitCode = 143; GameExit = 143; KillerMatch = '(?i)kernel32(\.dll)?!ExitProcess'; ThreadEvent = 'ExitProcess'; Dump = $true; BoundSec = $ExitBoundSec }
 	'remote-exit'      = @{ Remote = $true; Kind = 'exit from outside'; ExitCode = 143; GameExit = 143; KillerMatch = '(?i)kernel32(\.dll)?!ExitProcess'; ThreadEvent = 'ExitProcess'; Dump = $true; BoundSec = $ExitBoundSec }
 	'stop-process'     = @{ Stop = $true; Kind = 'terminated'; Dump = $false; BoundSec = 15 }
@@ -613,7 +628,8 @@ function Invoke-KillCase([string]$Name) {
 	Check ($new.Count -eq 1) "$Name`: exactly one new report in crashes\ ($($new -join ', '))"
 	if ($new) {
 		$expect = @{ What = $Name; Kind = $spec.Kind; Dump = $spec.Dump; ExitCode = $spec.ExitCode; KillerMatch = $spec.KillerMatch
-			KillerNotMatch = $spec.KillerNotMatch; Exception = $spec.Exception; Command = $spec.Command; ThreadEvent = $spec.ThreadEvent; StackMatch = $spec.StackMatch }
+			KillerNotMatch = $spec.KillerNotMatch; Exception = $spec.Exception; Command = $spec.Command; ThreadEvent = $spec.ThreadEvent; StackMatch = $spec.StackMatch
+			CrashStack = $spec.CrashStack }
 		# A kill from outside: the report has the code the process really ended with
 		if ($spec.Stop) { $expect.ExitCode = $exitCode }
 		Test-ArxReportFolder (Join-Path $crashDir $new[-1]) $expect

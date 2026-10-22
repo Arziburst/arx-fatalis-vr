@@ -131,7 +131,7 @@ if ($Remove) {
 		Invoke-Git 'worktree', 'prune' | Out-Null
 	}
 	Write-Host "removed worktree $path"
-	foreach ($dir in (Join-Path $env:LOCALAPPDATA "ArxFatalisVR\build\$(Get-WorkingCopyKey $path)"), (Get-DefaultUserDir $path), (Join-Path $env:LOCALAPPDATA "ArxFatalisVR\test\$(Get-WorkingCopyKey $path)")) {
+	foreach ($dir in (Join-Path $env:LOCALAPPDATA "ArxFatalisVR\build\$(Get-WorkingCopyKey $path)"), (Get-DefaultUserDir $path), (Join-Path $env:LOCALAPPDATA "ArxFatalisVR\test\$(Get-WorkingCopyKey $path)"), (Join-Path $env:LOCALAPPDATA "ArxFatalisVR\sequence-userdirs\$(Get-WorkingCopyKey $path)")) {
 		if (Test-Path $dir) { Remove-Item -Recurse -Force $dir; Write-Host "removed $dir" }
 	}
 	Invoke-Git 'fetch', '-q', '--prune', 'origin' | Out-Null

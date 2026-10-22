@@ -185,7 +185,7 @@ src/gui/DamageNumbers.* -> damage-numbers damage-numbers-off
 src/gui/book/* -> rune-trail controls-v2 first-run-menu first-run-chargen radial-menu dev-variants
 src/gui/DevVariants.* -> dev-variants
 src/gui/CharacterCreation.* -> first-run-chargen first-run desktop-mouse desktop-mouse-flat
-src/gui/MainMenu.* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-remap-saved vr-turning-settings menu-trigger-grip menu-rebind-kept menu-long-press
+src/gui/MainMenu.* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-remap-saved vr-turning-settings menu-trigger-grip menu-rebind-kept menu-long-press window-minimize-restore
 src/gui/Menu.* -> first-run first-run-intro first-run-menu first-run-chargen vr-settings-flat
 src/gui/MenuPublic.* -> first-run-menu vr-settings-flat
 src/gui/MenuWidgets.* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-turning-settings
@@ -199,6 +199,13 @@ data/core/localisation/* -> first-run-intro first-run-menu first-run-chargen vr-
 
 # --- The test playground (#321) ------------------------------------------------------------------------------------
 scripts/dev/playground/* -> controls-v2 damage-numbers melee-recovery playground-hands playground-levers playground-respawn weapon-classes
+
+# --- What a level's init runs (#601) ----------------------------------------------------------------------------------
+# A level loaded without a target whose init casts a field: Scene.*, Core.*, ChangeLevel.* and Field.* (src/scene/*,
+# src/core/Core.*, src/graphics/*) already run everything; these are the spells whose Launch / Update test visibility
+src/game/Spells.cpp -> level-init-targetless
+src/game/magic/spells/SpellsLvl06.* -> level-init-targetless
+src/game/magic/spells/SpellsLvl07.* -> level-init-targetless
 
 # --- Covered by the core alone: no game behaviour ------------------------------------------------------------------
 # Docs, the host unit tests (built and run by every build), the other dev scripts (their self-tests run on every pull
@@ -216,6 +223,7 @@ scripts/dev/test-*.ps1 -> core
 scripts/dev/board.ps1 -> core
 scripts/dev/body-check.ps1 -> core
 scripts/dev/check-private-data.ps1 -> core
+scripts/dev/ci-skip-equal-tree.ps1 -> core
 scripts/dev/comfort-check.ps1 -> core
 scripts/dev/cycle-report.ps1 -> core
 scripts/dev/exit-trace-check.ps1 -> core
@@ -283,11 +291,16 @@ src/vr/PerfStats.* -> refresh-rate
 # every pull request runs, as for CommandChannel), and the pacing sequence a write on the frame failed. 'core' stands
 # alone on a line and a glob is listed once, so this one line is both
 src/core/ChannelWriter.* -> refresh-rate
+# The channel's reader thread (#561): command.txt read off the frame; the same two, as for the writer
+src/core/CommandInbox.* -> refresh-rate
 
 # --- The desktop window's focus (#406): in VR a focus loss changes nothing in the game ----------------------------------
 # ArxGame.cpp holds the focus handlers (onWindowLostFocus / onWindowGotFocus); the rest of ArxGame.* stays on the core.
-# The flat counterpart is the end of desktop-mouse-flat (src/input/*); src/window/* already runs everything
-src/core/ArxGame.cpp -> window-focus
+# The flat counterpart is the end of desktop-mouse-flat (src/input/*); src/window/* already runs everything.
+# After a VR session ends mid-run the window minimises on a focus loss as cfg.ini says again (#606): ArxGame.cpp sets
+# it for VR, MainMenu.* (above) shows it in the Video page's checkbox; VRSystem.* stays on the core, whose vr-session-end
+# and vr-session-loss check the same setting
+src/core/ArxGame.cpp -> window-focus window-minimize-restore
 # The refresh-rate stress check (#553): the sequence N times on two lanes beside a busy game, hand-run. It launches its
 # own games and is no game check
 scripts/dev/refresh-rate-stress.ps1 -> core
@@ -297,6 +310,7 @@ src/platform/HangWatchdog.* -> hang-dump
 src/platform/crashhandler/* -> hang-dump
 # The report reader and the hand-run check (every way the game can end) touch no game check
 scripts/dev/crash-report.ps1 -> core
+scripts/dev/debugger-lib.ps1 -> core
 scripts/dev/flight-recorder-check.ps1 -> core
 scripts/dev/crash-notice-check.ps1 -> core
 
@@ -312,6 +326,10 @@ scripts/dev/replay-check.ps1 -> core
 # --- The melee-damage stress check (#532): the sequence N times on two lanes beside a busy game, hand-run --------------
 # It launches its own games and is no game check
 scripts/dev/melee-damage-stress.ps1 -> core
+# Its aim stress check (#613): the sequence N times beside busy loops, or its swings at a capped rate, hand-run
+scripts/dev/stress-melee-aim.ps1 -> core
+# The repeat of one script-test check under the load of the others (#624): hand-run, launches no game
+scripts/dev/repeat-script-test.ps1 -> core
 
 # --- Mark the moment (#551): both trackpads pressed write a marker folder at once; the confirmation in the hero's panel
 src/vr/MarkMoment.* -> mark-moment

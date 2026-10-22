@@ -204,6 +204,10 @@ the way out: a `TerminateProcess` from outside (the task manager, a launcher, a 
 - `scripts\dev\xrs\vr-session-end.xrs`, `vr-session-loss.xrs` (CI runs them): the simulated runtime ends the session
   (`vr-sim session exiting`, `vr-sim runtime lost`, `vr-sim session loss-pending`); the game must go on flat, name the
   cause and still end with `Clean shutdown` and no ExitTrace line. The three warnings are in the digest allowlist.
+  Once flat the window minimises on a focus loss as cfg.ini says again (#606, `window.minimizeOnFocusLost`).
+- `scripts\dev\xrs\window-minimize-restore.xrs` (#606): the runtime shuts down mid-run; in VR the window never
+  minimises on a focus loss (#406), once flat it follows `minimize_on_focus_lost` again, and the Video page's
+  minimise checkbox (`menu video`, the fullscreen box ticked without Apply) is enabled and shows the cfg.ini value.
 - `scripts\dev\exit-trace-check.ps1 [-Fault exit-process|exit] [-Code -1]`: one launch on the simulated headset,
   the session ended by the runtime, then `vr-sim fault ...` ends the process from inside. The smoke run FAILS (on
   purpose); the check PASSES when the exit code, the way out, the cause and a stack with `arx.exe` are in `arx.log`.
@@ -280,8 +284,10 @@ records only the extra arguments, not `--mute`.
 
 Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While enabled the game:
 
-- **polls `<dir>\command.txt`** every frame (#522; a file lookup, read only when it is there): one command per line, `#` comments, consumed on read
-  (deleted), a file older than the process start is discarded with a log line. Write it with
+- **polls `<dir>\command.txt`** every 5 ms on a reader thread of its own (#561; every frame on the main thread before,
+  where a busy file system's stat took up to 62 ms): one command per line, `#` comments, consumed on read
+  (deleted), a file older than the process start is discarded with a log line. The frame only takes a batch the
+  reader has ready, in the order the files came; a file its writer still holds is tried again (given up after 10 s). Write it with
   `scripts/dev/game-cmd.ps1` or `Send-ArxCommand` from `scripts/dev/test-lib.ps1`: both write a
   temporary file and rename it, so the game never reads a half-written batch, and wait for the ack.
 - **answers every batch in `<dir>\ack.txt`**: `seq=<batch> frame=<frame> errors=<refused lines>
@@ -298,7 +304,10 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
   and at least once a second — see *Log:* in [The log banner](#the-log-banner); the channel only
   makes it fresher). The channel flushes after a status landed and only while no line was logged since that status
   was built (else the next frame builds a fresh one, #553): a line a test waited for never shows with a status older
-  than it, so `@log` then `@assert` reads the state the line came from or later. The ack does not wait for that
+  than it, so `@log` then `@assert` reads the state the line came from or later. The file logger's own flushes (once
+  a second, after a warning) can still show a line before its status lands, so the runner makes sure of it (#528):
+  after a `@log` match, `@assert` / `@remember` judge a status whose `wallMs` (the wall clock it was built at) is
+  after the read of `arx.log` that found the line, waiting up to 10 s for one. The ack does not wait for that
   flush: a batch's own log lines may show a frame after its ack (`@log` waits for them).
 - reports the state that the [game event log](#the-game-event-log) logs on every change as
   `game.state to=STARTUP|MENU|LOADING|GAMEPLAY|CINEMATIC|EXITED` — always, with or without the
@@ -317,7 +326,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `mark <text>` | `[mark] <text>` in the log — an anchor for "the line I wait for must come after this"; also an `M` line in [the performance log](#the-performance-log-arx-perflog-327) |
 | `stall <ms>` | the main thread sleeps 1..60000 ms in this frame: a forced hitch, which the performance log must mark with `cause=channel` (#327); over the watchdog's threshold (6000) it forces a hang report with a dump (#545, `hang-dump.xrs`) |
 | `leak <MiB>` | allocate and touch 1..4096 MiB of private memory and keep it until the exit: the `R` lines of the performance log show the step, `perf-summary.ps1` the trend (#545) |
-| `abort`, `terminate`, `terminate thread`, `heapcorrupt`, `exitprocess <code>` | end the game on purpose for the crash-report checks (#545, `flight-recorder-check.ps1`): `abort()`, `std::terminate()` on the main thread or on a new `std::thread`, a heap corruption the heap detects (`STATUS_HEAP_CORRUPTION`), a thread that starts straight at `ExitProcess` (the #544 shape, caught by the ExitGuard). Each leaves one `crashes\<utc>\` report; the killing ones never get an ack |
+| `abort`, `terminate`, `terminate thread`, `heapcorrupt`, `crash ntdll`, `exitprocess <code>` | end the game on purpose for the crash-report checks (#545, `flight-recorder-check.ps1`): `abort()`, `std::terminate()` on the main thread or on a new `std::thread`, a heap corruption the heap detects (`STATUS_HEAP_CORRUPTION`), an access violation inside ntdll with an in-process stack walk that faults too (#610: the report's stack must come from the dump helper), a thread that starts straight at `ExitProcess` (the #544 shape, caught by the ExitGuard). Each leaves one `crashes\<utc>\` report; the killing ones never get an ack |
 | `crashnotice ok`, `crashnotice open` | the buttons of the next-launch crash notice at the main menu (#545, M6): OK dismisses it (every announced report gets `notice-shown.txt`), Open folder opens the report; `crashNotice.state` / `.report` in the status; `scripts/dev/crash-notice-check.ps1` |
 | `stall load <ms>` | the **next level load** sleeps 1..5000 ms right after its `Loading level` line: a stalled load for the [hang watchdog](#the-hang-watchdog-440) (#440, `level-load-hang.xrs`) |
 | `watchdog <ms>` | the hang watchdog's threshold, 100..60000 ms (default 5000): a main thread without a beat for this long is reported with its stack (#440); `hangWatchdog.thresholdMs` in the status |
@@ -339,7 +348,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `devvariants clear`, `devvariants demo`, `devvariants set <group> <value>` | the [dev variants panel](#the-dev-variants-panel-588) (#588), only in a development launch (refused in a player's): `clear` unregisters every group (a sequence starts from none, whatever the branch registers), `demo` registers the demo groups of `#588` (`demo_choice`: Small, Medium, Large, default Small; `demo_number`: 0 to 1 m in steps of 0.25, default 0.75; their setters fill `devPanel.demo.*`), `set` switches a group as the panel's buttons do - a choice by its exact label (spaces allowed), a number (clamped); refused for an unknown group or value. `devPanel` in the status: `enabled` (a development launch), `view` (`map` \| `panel` \| `empty`: what the map page shows), `visible` (the open book shows the panel or the notice), `groups`, `page` / `pages`, `value.<group>` (a choice's label, a number as a number), `demo.choice` / `demo.number` / `demo.calls`. The panel's buttons are `vr-point <hand> menu` targets while it is shown: `devpanel.<group>.<index>`, `devpanel.<group>.minus` / `.plus`, `devpanel.prev`, `devpanel.next`, `devpanel.show_map` |
 | `vr-input down\|up\|tap <control>`, `vr-input stick left\|right <x> <y>`, `vr-input bind <event> <binding>`, `vr-input reset`, `vr-input turn snap\|smooth\|angle <deg>\|speed <deg/s>\|repeat <s>` | the VR controls' table without a headset (#30, `vr/VRInput.h`): a control (`right.a`, `left.grip`, `right.stick_down` …) held, let go or tapped as if a controller did it, merged into what OpenXR reports and resolved by the same table at the next frame; the game then reacts as to the controllers (#74: inventory, book, jump, crouch toggle, the game menu, the mouse buttons). `stick` holds a stick deflected (the analog value only — its direction controls are `down` / `up`), seen in `vr.input.game.moveX/moveY/turn`; `bind` remaps one event (`bind jump left.grip+left.a`, `bind menu left.b:long`, `bind magic_mode none`); `reset` restores the default layout for the current controllers and lets go of everything (`bind` and `reset` are not saved); `turn` sets the turn settings as `cfg.ini` does (#32: mode, snap angle, the repeat pause of a held stick (0 = none), smooth speed — `vr.input.turn` shows them with `snaps`, `lastSnap`, `turned` degrees right positive, `allowed`, and for the last push `pushRepeats` and `repeatInterval` — the mean seconds by the clock from its first snap to its last repeat (#285); one `vr.turn.snap … repeat=no|yes` game event per snap, `vr.turn.smooth` at the start and stop of a smooth turn). Refused with the reason for an unknown control, event or binding. `vr.input` in the status (`vr.input.game.held`: the actions, buttons and keys the engine is given); one `[vr] input: <event> (<binding>)` log line per event press, one `[vr] input: layout …` line per layout change |
 | `vr-input capture <event>`, `vr-input cancel`, `vr-input default` | the VR settings page's remapping (#178, `vr/BindingCapture.h`): `capture` is what a click on the event's binding does — the next controls pressed (`vr-input down` / `up` / `tap`, or the simulated controllers) become its binding: released → single, held ≥ 0.5 s → `:long`, a second control of the same hand while the first is held → a chord; the walk stick and the turn stick's left / right are refused with the reason; nothing pressed for 8 s cancels. While capturing, the controls reach nothing else. The result is applied at once and **saved** for the controller type (`vr-controls-<type>.ini` in the config directory: only the events that differ from the default). `cancel` ends a capture; `default` is the page's "reset to default" (#35's layout, the file removed); `reload` reads the saved layout again at the next frame, as a start does. `vr.input.capture` and `vr.input.remapped` / `conflicts` in the status; a `vr.remap` game event per result |
-| `menu pause\|resume\|none\|options\|input\|vr\|vr-turning\|loadsave\|interface\|quit\|language`, `menu step <row> left\|right`, `menu drag <slider> <0..1>` | the main / pause menu without clicks (#178): `pause` opens the pause menu from a running game (as Escape does), `resume` goes back to the game ("Resume game"); the others open that page of the main or pause menu (`none` closes the options window). On the VR turning page (#260, D-043, the page open): `drag` is a slider's dot dragged to that point of its bar (0 left end, 1 right end) and let go — it lands on the nearest notch: `angle` (30–90° in 5° steps), `speed` (very slow / slow / medium / fast / very fast = 60 / 90 / 120 / 180 / 240°/s), `repeat` (off, 0.25, 0.4, 0.6, 0.8, 1 s); `step` is one notch of a slider (the arrow keys) or a click on the left / right arrow of the rows `turn` (snap / smooth) and `height` (−20 to +20 cm in 2 cm steps); a change is a `vr.settings row=… value=…` game event and applies at once. `menuPage` in the status |
+| `menu pause\|resume\|none\|options\|input\|video\|vr\|vr-turning\|loadsave\|interface\|quit\|language`, `menu step <row> left\|right`, `menu drag <slider> <0..1>` | the main / pause menu without clicks (#178): `pause` opens the pause menu from a running game (as Escape does), `resume` goes back to the game ("Resume game"); the others open that page of the main or pause menu (`none` closes the options window). On the VR turning page (#260, D-043, the page open): `drag` is a slider's dot dragged to that point of its bar (0 left end, 1 right end) and let go — it lands on the nearest notch: `angle` (30–90° in 5° steps), `speed` (very slow / slow / medium / fast / very fast = 60 / 90 / 120 / 180 / 240°/s), `repeat` (off, 0.25, 0.4, 0.6, 0.8, 1 s); `step` is one notch of a slider (the arrow keys) or a click on the left / right arrow of the rows `turn` (snap / smooth) and `height` (−20 to +20 cm in 2 cm steps); a change is a `vr.settings row=… value=…` game event and applies at once. `menuPage` in the status |
 | `stick-for left\|right <x> <y> <units> [<seconds>]` | a walk bounded by its distance (#370): holds the stick deflected as `vr-input stick` does and lets it go in the first frame the player is `units` or more from where it started on the ground (x, z) - however slow the frames or the runner are. The player still coasts a few units after the release (≈ 28 at 90 fps). `stickFor` in the status (`@until stickFor.active eq false`, then assert on `stickFor.walk`); one `[channel] stick-for:` log line per release. A player who never gets that far (a wall) is let go after `seconds` of game time (default 10) with `stickFor.timedOut` true and a `[W]` log line - assert `stickFor.timedOut eq false`. Refused outside gameplay |
 | `vr-input height <meters>` | the character height setting as `cfg.ini` (`vr_height_offset`) sets it (#260), clamped to ±0.2: the head camera sees from this far above the character's eye; `vr.head.heightOffset` in the status (updated while the head drives the camera, not in the menu) |
 | `pick [<entity>]` | what mouse picking (`FlyingOverObject`) finds, on an 8-pixel grid over the interface's screen (#72; the window's size in flat mode, the quad's own size in VR, #73): `pick.center` (the entity at its center), `pick.scan` (`<entity> <hits> <x> <y>` per entity found, most hits first) and, for an entity, `targetHits`, `targetHitX/Y` (the middle of its hits), `targetSeenX/Y` (where the camera prepared last — the head camera at the interface's size — sees the middle of its bounding box), `targetOffset` (the distance between the two), `targetBox` (its `bbox2D`) and `targetSeenInBox`. A thin item (a key) can fall between the grid points: `targetSeenInBox` still tests its box. Refused outside gameplay or for an unknown entity; one `[channel] pick:` log line |
@@ -402,8 +411,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
 {"pid":34120,"version":"0.1-dev + cead4a3",
  "build":{"commit":"cead4a3…(40 hex)","branch":"ARXVR-115-feat-log-banner-runtime","config":"Release"},
  "state":"GAMEPLAY","cleanShutdown":false,
- "frame":618,"uptimeMs":6240,"fps":120.2,"errors":0,"warnings":0,
- "menuMode":"ingame","area":10,"paused":false,"cinematic":false,
+ "frame":618,"uptimeMs":6240,"wallMs":1792656000123,"fps":120.2,"errors":0,"warnings":0,
+ "menuMode":"ingame","area":10,"paused":false,"cinematic":false,"scriptedScene":false,
  "player":{"x":...,"y":...,"z":...,"yaw":...,"life":...,"lifeMax":...,"mana":...,"manaMax":...,"controlsBlocked":false},
  "camera":{"x":...,"y":...,"z":...,"pitch":...,"yaw":...,"roll":...,"fov":75.0,"bob":0.0,"shake":0.0},
  "spells":{"active":2,"launched":3,"activeByType":{"speed":1,"fire_field":1},
@@ -445,6 +454,11 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
 - `hangWatchdog` (#440): `watching` (the [hang watchdog](#the-hang-watchdog-440) has read its symbols and checks
   the beats, about a second after the first frame), `thresholdMs`, `stalls` (stalls reported so far).
 - `fps`: frames over the last status interval (0 in the final status).
+- `wallMs` (#528): the wall clock (Unix epoch ms) when this status was built. The `.xrs` runner judges an `@assert`
+  right after a `@log` match on a status built after the read that found the line (`wallMs` greater than that moment).
+- `scriptedScene` (#473): a scripted scene plays in the game (the level 10 start's letterbox until `cinemascope off`),
+  flat too (`scene.active` is VR only): A, B and the triggers skip it and reach nothing else (#394). A check that
+  presses them waits for `false` - `smoke-test.ps1 -Commands 'cinemascope off','@until scriptedScene eq false 10s',...`.
 - `notifications` (#370): the timed texts at the top of the 2D interface on screen now (a level script's
   tutorial hint, `herosay`, "cannot cast"): each stays 2 s + 60 ms per character of **game time** and is
   drawn on the HUD quad. A check that compares HUD pixels over time waits for `notifications eq 0` first
@@ -530,7 +544,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   `menuHover` (#394): in the main menu and the character creation, the name a
   `vr-point ... menu` aimed at while the widget under the mouse is that one — what a click lands on; `other` for
   another widget of the main menu, `none` for nothing (a greyed-out entry counts as nothing: the engine does not click
-  it); `menuTargetEnabled`: the aimed main menu entry can be clicked (Resume game is greyed out without a save).
+  it); `menuTargetEnabled`: the aimed main menu entry can be clicked (Resume game is greyed out without a save);
+  `menuTargetChecked` (#606), only when the aimed widget is a checkbox: it is ticked.
   In VR `mouseInWindow` is false while no hand is on a target: the desktop mouse does not count (#338).
 - `desktopMouse` (#338): in VR the window only mirrors the headset, and the real mouse is dropped. `ignored`:
   true while a VR session runs (flat mode: false, the mouse works as in the original); `droppedButtons`,
@@ -550,7 +565,9 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
 - `window` (#487): `activation` `never` and `placement` `corner` for a test run's window (shown without activation,
   `WS_EX_NOACTIVATE`, in the bottom right corner of the main display's work area), `normal` / `default` for every
   other launch; `x`, `y` its position. `focused` is false for a test run unless someone clicked into it and
-  Windows allowed it (it does not with `WS_EX_NOACTIVATE`).
+  Windows allowed it (it does not with `WS_EX_NOACTIVATE`). `minimizeOnFocusLost` (#606): a fullscreen window
+  minimises when it loses the focus — false in VR (#406), cfg.ini's `minimize_on_focus_lost` in flat mode, also after
+  a VR session ended mid-run.
 - `watch` (#37): the entity named by the `watch` command — `id`, `found`, `show` (the engine's show state,
   0 = in the scene), `inScene`, `inInventory`, `dragged`, `x`, `y`, `z`.
 - `vr.pacing` (#20): the last rate / cadence report — present once the first 3 s window of a
@@ -798,8 +815,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   deflection — the stealth walk; below cfg `vr_sneak_below` 0.6 of the dead-zoned travel a run turns
   into a sneak, at `vr_run_above` 0.7 a sneak into a run), `paceChanges` (sneak ↔ run switches within
   a walk since the start; a game event `vr.walk state=pace pace=…` each, and `pace=` on `state=start`).
-- `menuPage` (#178): the page of the main / pause menu shown — `none`, `options`, `input`, `vr`, `vr-turning`,
-  `loadsave`, `interface`, `quit`, `language` (#394) or `other`; `none` outside the menu.
+- `menuPage` (#178): the page of the main / pause menu shown — `none`, `options`, `input`, `video` (#606), `vr`,
+  `vr-turning`, `loadsave`, `interface`, `quit`, `language` (#394) or `other`; `none` outside the menu.
 - `menuRows` (#374): the rows the VR turning page shows, top to bottom, named as `menu step` / `menu drag` name
   them — with Snap `turn,angle,repeat,height`, with Smooth `turn,speed,repeat,height` (only the active mode's
   row shows; `step` / `drag` on the hidden one is refused); empty when that page is not open.
@@ -810,7 +827,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   the quick generation's first click makes the average hero (10 each, skills 2, nothing to spend), each later
   click a random one — one `chargen.roll kind=average|random` game event per click.
 - `settings` (#394): `crosshair` — `config.interface.showCrosshair` (`show_crosshair` in `cfg.ini`), the setting
-  `first-run-menu` changes by pointer clicks and its second launch reads back.
+  `first-run-menu` changes by pointer clicks and its second launch reads back; `minimizeOnFocusLost` (#606) —
+  `config.window.minimizeOnFocusLost` (`minimize_on_focus_lost`).
 - `scene` (#29, D-055): scripted scenes in VR (`src/vr/SceneView.h`); flat mode leaves it at rest (`shown` `none`,
   `fade` 0, no meter frames). `active`: a scripted scene owns the game's camera (a `speak -c` line, a camera entity,
   the letterbox) on the last VR frame; `kind` `none` | `speech` | `entity`; `view` (`first` | `observer` | `ghost` |
@@ -1381,10 +1399,20 @@ by `N` / `<path>`); a family seen fewer than 6 times is printed in full and in o
 
 **Signatures.** A problem is a `[W]`, `[E]` or `[C]` line, or a crash report. Its signature is the
 level + the source file (not the line number, which moves with every edit) + the message with numbers,
-hex, ids and paths normalised, hashed to 12 hex digits; for a crash the title, the exception and the top
-four frames of `arx.exe` without line numbers. `%LOCALAPPDATA%\ArxFatalisVR\signatures.json` remembers
-every signature (first and last seen, in how many runs, the issue number). A run that is digested twice
-counts once.
+hex, ids and paths normalised, hashed to 12 hex digits. `%LOCALAPPDATA%\ArxFatalisVR\signatures.json`
+remembers every signature (first and last seen, in how many runs, the issue number). A run that is digested
+twice counts once.
+
+A **crash** signature (`Get-ArxCrashSignature`, #616) must be the same on every build, so it is keyed on the top
+5 symbolized frames of the dump helper's `crash.txt` as function + file: no module offsets (they move with
+every build), no line numbers, not the title's offset, not the exception code; an unsymbolized frame between
+symbolized ones is skipped. Only a report without any symbols falls back to the top 5 offsets. An empty stack and
+the crash processor's older `module!0xADDR File.cpp:12` format keep the key from before #616 (title, exception
+code, the first four files without addresses and line numbers). **One-time change:** a crash filed before #616
+(keyed on offsets, e.g. #601 and its duplicate #611) has a new signature, so it is filed once more by its next
+occurrence — a single new issue, marked `arxvr-auto-report: sig=<new hash>`; close it as a duplicate of the old one
+(or the old one of it). After that every build comments on that one issue. `scripts/dev/test-crash-signature.ps1`
+(in `run-script-tests.ps1`) checks the rule on fixture reports.
 
 **Automatic bug filing** — fully automatic, GitHub **REST** only (`gh api`; never GraphQL, whose quota the
 sessions share). The repository is **public** (since 2026-10-12), so every title, body and comment is
@@ -1821,6 +1849,13 @@ where none was asserted (TRAPS.md). **A sequence that asserts the frame pacing**
 refresh-rate checks of #436's `refresh-rate.xrs`) needs the clock: it declares `@sim basic` or a script of its own.
 To reproduce a slow-runner bug locally, run the sequence on a copy of `idle.vrsim` with `rate 42 cap` (`smoke-test.ps1 -VrSim <the copy>`).
 
+**Writing a hand swing (#613, #634):** a swing whose speed or timing a check depends on is a timed ramp, `vr-sim @+0-120ms
+hand right pos …` (0.85 m, 7.1 m/s at any rate) — never `@+1-8`, which is 10.9 m/s at 90 Hz and 3.3 m/s at 30. A pause
+between two swings is `@+<from>-<to>ms` of the second ramp (`melee-recovery.xrs`). A ramp that only has to be *slow* (the
+set-up move under 0.7 m/s, a sweep that must be no swing) may count frames: a busy PC only slows it, and `idle.vrsim`
+caps at 90 Hz. `scripts/dev/stress-melee-aim.ps1 -Sequence <name> -SlowRate 30 [-SlowSpan <a>-<b>]` runs a sequence's
+fast swings at a 30 Hz cap (a copy of the sequence; it does not change the shipped file).
+
 **The compositor** counts, per submitted frame, whether both eye images were released in the same
 frame (`vr.sim.compositor`: `projectionFrames`, `pairedFrames`, `staleFrames`, `freshFrames`,
 `quadFrames`). A **shot** composes what each eye sees — the projection layer with the head-locked
@@ -1921,7 +1956,7 @@ so they do not rot silently. The [level tour](#the-level-tour-596) (#596) is the
 | `<command>[; <command>]` | any [channel command](#commands) (`vr-sim head rot 25 0 0`, `vr-input tap right.a`, `loadlevel 10`, a script-console line); `;` makes one batch, applied in the same frame. A refused command fails the step |
 | `@wait <ms>` / `@frames <n>` | sleep / wait for n more rendered frames: the channel's `waitframes <n>`, whose ack comes once the frames are rendered (#522) — n frames cost n / fps plus the ack's pickup (the runner reads `ack.txt` every 10 ms), measured 875 ms for 75 frames and 372 ms for 30 at 90 fps. Frames are not time: a wait for something the game does in time is an `@until` |
 | `@until <path> <op> <v> [<n>s]` | wait up to n s (default 30) until `status.json` satisfies the condition |
-| `@assert <path> <op> <v>` | `status.json` now. `path` is dotted, `"quoted"` where a key holds a dot (`events.byName."spell.cast"`); `op` is `eq ne gt ge lt le`; numbers compare as numbers, anything else as text |
+| `@assert <path> <op> <v>` | `status.json` now; right after a `@log` match a status built after the read that found the line (its `wallMs`, waited for up to 10 s, #528). `path` is dotted, `"quoted"` where a key holds a dot (`events.byName."spell.cast"`); `op` is `eq ne gt ge lt le`; numbers compare as numbers, anything else as text |
 | `@remember <name> <path>` | keep a value; later `@assert` / `@until` values can be `{name}`, `{name+5}` / `{name-5}` (the yaw before a turn, the position before a walk) or `{name*0.9}` (a relative threshold: "at least 10 % less") |
 | `@mark`, `@log <regex> [<n>s]`, `@nolog <regex>` | `arx.log` since the mark (the sequence start is the first mark): wait up to n s (default 5) for a matching line — a match moves the mark past it, so consecutive `@log` lines assert an order — / fail on a matching line |
 | `@shot <name>` | on the simulated headset both eyes and the flat frame (`capture\<name>-left.bmp`, `-right.bmp`, `-quad.bmp`), otherwise `capture\<name>.bmp` |
@@ -1931,7 +1966,7 @@ so they do not rot silently. The [level tour](#the-level-tour-596) (#596) is the
 | `@sim <name>`, `@args <...>` | what `xrs-run.ps1` launches: the `scripts\dev\vrsim` script (default `idle`: no timed lines, no shots) and the arx.exe arguments (default `--loadlevel 10`); ignored while running |
 | `@player` | a player's launch (#394; `smoke-test.ps1 -Player`): no `--dev-launch`, so the logos, the intro and every cinematic play; without `@args` the sequence starts while the first logo is up (`LOGO`). `@args --dev-launch` is the other extreme: the main menu at once, no default `--loadlevel 10` |
 | `@save <name>` | start from this save of the test save library (#70; `smoke-test.ps1 -Save`, the only save of the isolated user directory), with `@args --loadslot 0`. Anything the **body** does — turning, walking — needs a first-person save: on level 10 the intro conversation's camera owns the view (TRAPS.md) |
-| `@solo` | the sequence measures frame pacing (#436, #527): CI runs it alone - it starts only when no lane is busy and nothing starts on the other lane while it runs - because a loaded PC drops display slots and every rate check then reads the load. Ignored while running |
+| `@solo` | the sequence measures frame pacing (#436, #527): CI runs it alone - it starts only when no lane is busy and nothing starts on the other lane while it runs - because a loaded PC drops display slots and every rate check then reads the load. Before it starts it also waits while another task's build compiles on the PC (`cl`, `link`, `ninja`, a building `MSBuild`, `cmake --build`, a running `build-windows.ps1`, outside the run's own process tree; in CI the runner (NETWORK SERVICE) cannot read the command lines of a worker's processes, so there only the names count - `cl`, `link`, `ninja`, never an `MSBuild` or a `cmake` - and the log says how many command lines it could read; after a compile the PC counts as quiet only after 30 s without one, so a gap between two build steps is not taken for the end; at most `ci-smoke.ps1 -QuietWaitSec`, 600 s, then it runs anyway; the wait and what it waited for are in the log and the job summary; a WMI error ends the wait and the phase starts; the `@solo` phases go after every other phase, so the lanes work while such a build ends, #566). Ignored while running |
 | `@playground` | start in the test playground (#321; `smoke-test.ps1 -Playground`: the generated level, area 30, a fresh max-level hero). CI sets up node itself (#412); on a machine without node it is NOT RUN with a warning |
 
 Rules: a sequence waits for `state eq GAMEPLAY` and for `vr.sim.timelineFrame ge 270` (3 s) before its
@@ -1967,7 +2002,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `weapon-hold` | the weapon in the IK hand (#75, D-033): on `mvp-items` the equipped short sword is in the right hand without the combat mode (`vr.weapon.place` `hand`), its blade read from the mesh (65.8 units; the asset 9.1° off the handle axis) and drawn 0.1° from the grip's -Z, the hilt on the palm attach point; the handle pitched up puts the tip 66 units above the hilt; a moved hand keeps the hilt on the palm; a controller switched off gives the sword back to the engine (`engine`), switched on it is back; `combat on` + the trigger held: the arm layer's ready and wait clips are `suppressed`, no strike clip starts (since #39 the swing is the strike), the shoulder stays, the sword stays in the hand. The shots `sword-ahead`, `sword-up` and `sword-at-face` (the raised blade 0.1 m from the eyes, F-39) are judged by eye. With the default custom arms the weapon is drawn from the glove's frame (#385.10): "the hilt on the palm" is then the handle anchor on the glove's hold point (`hiltToPalm` = `hiltToGrip`). `smoke-test.ps1 -VrSim idle -Sequence weapon-hold -Save mvp-items` | — |
 | `weapon-in-glove` | the weapon in the glove (#385.10, research #453 F-485, F-489) on `mvp-items`: with the custom arms the sword is drawn from the glove's hilt frame (`vr.weapon.frame` `glove`, `hiltToGrip` < 0.5, `edgeToKnuckles` < 5), held ahead, raised to the face and with the hand 1.5 m out past the reach (the arm stretched, the weapon still in the glove); the forearm and hands models take the same frame; `grip tilt -15` / `-30` lean the blade by 15 / 30° (`bladeAngle`), `0` puts it back, `grip tilt 40` snaps to a variant; `arms arx` gives the Arx placement (`frame` `arx`). `xrs-run.ps1 weapon-in-glove` | — |
 | `weapon-classes` | one item of each class from the playground's weapon table in the glove (#385.10, F-487): long sword and dagger anchored at the handle's centre, axe and club 15 - 25 % from the handle's end, the two-handed sword a hand-width above the pommel; a capture of each for the owner. Playground only (not in CI): `xrs-run.ps1 weapon-classes` | — |
-| `melee-swing` | physical melee (#39, D-038) on `mvp-goblin-fight`: the goblin held still and `place`d 80 units ahead, the sword at its chest; a slow sweep through it (under 1.3 m/s) is no swing, no swing hit; a swing (0.85 m in 8 frames) hits it once, its `melee.hit` with `aim`, `speed`, `size` and `kind`; the trigger held 2 s, a swing hits like any other and no `melee.charge` is logged; `combat on` + the trigger: no engine strike clip, no hit; the inventory open: no swing (`refused=inventory`). Shots `goblin-in-reach`, `after-hits` judged by eye. `smoke-test.ps1 -VrSim idle -Sequence melee-swing -Save mvp-goblin-fight` | — |
+| `melee-swing` | physical melee (#39, D-038) on `mvp-goblin-fight`: the goblin held still and `place`d 80 units ahead, the sword at its chest; a slow sweep through it (under 1.3 m/s) is no swing, no swing hit; a swing (0.85 m in 120 ms) hits it once, its `melee.hit` with `aim`, `speed`, `size` and `kind`; the trigger held 2 s, a swing hits like any other and no `melee.charge` is logged; `combat on` + the trigger: no engine strike clip, no hit; the inventory open: no swing (`refused=inventory`). Shots `goblin-in-reach`, `after-hits` judged by eye. `smoke-test.ps1 -VrSim idle -Sequence melee-swing -Save mvp-goblin-fight` | — |
 | `melee-recovery` | the recovery after a hit (#323) in the test playground: `freelook on` (the `--loadlevel` start sits in cursor mode, #405), the dagger equipped (recovery 0.6 s, `default`; the game's strike of every type in `vr.melee.recovery.games`), the peaceful goblin `place`d 60 units ahead; at 90 Hz a swing through it and one straight back two still frames later: one hit, the second within the recovery at any frame rate down to ~14 fps (the timeline counts frames: on a 41.8 fps runner a 33-frame gap lasted 0.8 s, #409), shown by its own marker (`vr.melee.recovery.recovering`, `melee.swing result=recovering hits=0`: such a swing never runs the strike check, whatever the per-target cooldown); once `recovery.left` is 0 (a time) a third swing hits; at 45 Hz (`vr-sim rate 45`, the goblin respawned) the same swings: the same hits; no jumps. Swings counted with `ge` (TRAPS.md). `smoke-test.ps1 -Playground -VrSim idle -Sequence melee-recovery` | — |
 | `melee-damage` | the damage from the swing (#465, D-054) in the playground with the dagger and the peaceful goblin, the defaults set live (`class` `dagger`, its #502 ranges, `noSwing` `min`, `quality` `min`): a slow sweep through the peaceful goblin (1.3 m/s) no swing, no touch, no `melee.hit` (a touch reaches only an NPC fighting the player); a fast swing with the defaults: a swing hit with `speed` and `size` logged; the speed alone (`melee slash dagger 0 0 2 5`): a medium swing (0.85 m in 24 frames, 3.2 m/s at 90 Hz) `aim` above 0.1 and below 0.95, a fast one (8 frames) `aim=1.00`; the trigger held 2 s: the same fast swing the same aim, a medium one with it still held part of the damage, a short press during a fast swing the same, no `melee.charge`; each factor alone keeps it low (`0 0 15 19`, `2 3 0 0`): a fast swing `aim` 0.1; a fast lunge (`melee stab dagger 0 0 2 4.5`) `aim=1.00 kind=thrust`; the goblin against the resting dagger, aggressive but not fighting: no touch; set fighting (`playground fight` right before the check - the playground goblin's script drops its fight at the first hit, TRAPS.md - `npcFighting`): the first touch `aim=0.10`, `last.swing` 0, no swing hit; `melee noswing none` and the goblin set fighting again: a slow sweep through it no touch, no player `melee.hit`, still `npcFighting`; before the north wall (`setpos`, between the table and the levers; the dagger's one hit sphere, radius 15, straddling the wall's plane - `melee.spheres`) the dagger held into the wall: `worldHit` false (no wall sound, no durability), a swing along it: `worldHit` true. Each `melee.hit` line has `aim`, `speed`, `size`, `kind`. `smoke-test.ps1 -Playground -VrSim idle -Sequence melee-damage` | — |
 | `hand-reticle` | the hand reticles (#37) on the test save `mvp-items` — run with `smoke-test.ps1 -VrSim idle -Sequence hand-reticle -Save mvp-items`: in the game both hands' rings are drawn (`overlayPixels` > 0 in both eyes), dim, nothing hovered; the player put on the floor by the table (the save stands it on the wall top, TRAPS.md); the right hand at the note: `under` / `entity` the note, `bright`, the engine's hover the note; the left hand onto the form takes the idle mouse (D-019); the right trigger takes it back and presses on the note (`vr.reticle.press`), the hand moved: the note is dragged and follows the ring, released: `item.drop how=place` on the floor at the ring; the bag open, the left hand drags the form from the table onto the bag on the panel: `item.toinventory`; the sword sheathed with the right stick click first (a drawn weapon's trigger clicks nothing, #377); grip + trigger on the note with the stash bound to that chord as a player can (no default since D-042): straight into the bag; the book open: the reticles off (`book`). Host test `HandReticleTest` | — |
@@ -1991,6 +2026,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `real-input` | a test run's window takes no real input and in VR no keyboard at all (#487), on the simulated headset from a development launch: the window `activation` never, `placement` corner, not focused; `realInput`, `desktopKeyboard` and `desktopMouse` ignored; with both hands behind the head a real Escape (`real-input`) and an injected one (`desktop-key`) are both dropped by VR (`desktopKeyboard.droppedKeys` + 2, both logged); real mouse moves, a left click and the wheel are dropped before the game's input (`realInput` counts, `desktopMouse.droppedButtons` unchanged, no menu page opened); the injected click still reaches the game's input (`desktopMouse.droppedButtons` + 1) and the right hand's trigger opens Options | — |
 | `real-input-flat` | the same flat (#487), `--no-vr`: the keyboard is not ignored for being a keyboard; the cursor on New game (`desktop-mouse at menu`), a real left click there opens nothing (`realInput.droppedButtons` + 1), a real move and the wheel leave the cursor on New game; the injected click opens the character creation, a real Escape leaves it open (`realInput.droppedKeys` + 1), the injected one goes back to the main menu; nothing dropped by the VR rules | — |
 | `level-load-hang` | a stalled level load is reported as a hang with its stack (#440): `watchdog 1000`, `stall load 3000`, `loadlevel 1` - `[hang] main thread stalled ... last beat at level load`, `platform::stallThisThread` and the load under it in the stack, `responsive again`, level 1 loaded, `hangWatchdog.stalls` ≥ 1 ([The hang watchdog](#the-hang-watchdog-440)) | — |
+| `level-init-targetless` | a level whose init casts a field, loaded with `loadlevel <n>` alone, does not crash (#601): level 20 at `marker_0903`, then `loadlevel 21` with no target (the level tour's crash in `FrustrumsClipSphere`); level 0 with no target; level 21 again with the player at `marker_0387`, inside the field's sphere - each with the init's `spell.cast spell=create_field` logged, GAMEPLAY, frames after it, the error count unchanged and no `[E]` / `[C]` line | — |
 | `scene-switches` | the switches of scripted scenes (#29): on the test save `scene-kultar` the defaults `hybrid` / `ignore` / `instant` / `above`, each `scene ...` command live (`scene cut fade` and back), `scene meter reset`; a `speak -c` line on Kultar: `vr.scene state=start kind=speech`, taken at once (`vr.scene.switch`, no cut, no fade frame), its subtitle event, `state=end`, the meter counted it, no letterbox; `playerlookat` counted with `ignore` (the yaw stays) and turned behind the fade with `fade` | — |
 | `scene-first` | the `first` view (#29) on `scene-kultar`: T1 - a walk into KULTAR_WAKE, Kultar's scene at the bars (camera entities, the hero teleported) seen from the hero's head: `kind=entity`, IK arms on, both eyes see the world, the teleport taken at once (no fade, `fadeFrames` 0, `unexplainedCuts` 0), the eyes 1.70 m above the floor, steps 0.009 cm, no yaw step, no letterbox; T5 - every `speak -c` mode on Kultar from the hero's head, the lines changing at once; in a line the stick turns the hero, the stick walk does not move him; T2 - a new game's prison intro from the pause menu, once per `firstlow` mode: `clamp` the eye never below 1.2 m, `black` held black (`blindFrames`) instead of a low eye, `screen` the intro on the screen; every view stays black while the hero stands off the level (the same T2 stretch ends `scene-ghost` and `scene-observer`); T5 with no blink between the lines (`cuts` 0, `fadeFrames` 0) | — |
 | `scene-ghost` | the `ghost` view (#29): dialogue first person as in `scene-observer` (T1, T5: no blink between the lines); T2 the prison intro, a cinematic shot, from the game's camera positions held at each shot's first frame and never lower than 1.2 m, IK arms off | — |
@@ -2265,10 +2301,26 @@ A pull request proves its own change; the whole suite runs once more right befor
 | `pr` | a pull request without the label `full-ci`; `ci-local.ps1` (below) | the **selection**: the core, every sequence a line of the map gives for a changed path, and the changed or added `.xrs` files themselves (a changed read-back selects its sequence; the save library when a selected sequence has a `@save`) |
 | `full` | a push to main, a manual run with `suite=full` (**the merge gate**), a pull request with the label `full-ci`, `ci-local.ps1 -Full` | every phase |
 
+**A push to main does not repeat the merge gate (#541).** The gate ran the full suite on the pull request's head right
+before the merge, and the merge commit usually has that very tree. So the push run's step *Equal tree* lists the last 30
+successful manual runs of the workflow, takes those whose title says `suite=full` (the workflow's `run-name` names a
+manual run's suite: `<branch> suite=full`) and compares their trees with `HEAD^{tree}`
+(`scripts/dev/ci-skip-equal-tree.ps1`, self-test `test-ci-skip-equal-tree.ps1`). Any of them on the same tree, not only
+the latest (the single runner often runs a merged pull request's push run after the next one's gate): the game checks
+step is skipped, the log, a notice and the job summary name that run (`the merge gate run 123... passed them on this
+tree ...`). The script self-tests, the build with `arxtest` and the tester package still run, and the job - the required
+check - reports its result as always. Everything runs as before when no such run had the tree, and on any doubt: the
+runs or a tree cannot be read, or the step itself fails. The gate's head commit is not in the push run's depth-1
+checkout, so a run's tree comes from the API (the run's `head_commit.tree_id`, else the commit).
+
 The workflow's Scope step decides (its log line `game check suite: pr (...)` says why); the label is read live through
 the API, so adding `full-ci` and re-running the PR's last run (`gh run rerun <id>`) or pushing runs everything. A
 selection falls back to everything when it cannot be sure: a changed path that no line of the map matches (a new
-folder, a new file in a folder that is listed file by file), a line `-> *`, or a diff that cannot be made. The log of
+folder, a new file in a folder that is listed file by file), a line `-> *`, or a diff that cannot be made. **A deleted
+path (#608)** - a rename's old path too - is matched like a changed one; when the change removed its line together with
+the file, the map of the base tree (the merge base's `impact.txt`, `Read-ArxBaseImpactMap`) gives its line instead, and
+its reason says `(deleted; the map before the change)`. Only a deleted path in no line of either map runs everything;
+a path that is not deleted never looks at the base map (self-test `test-ci-impact-deleted.ps1`). The log of
 the game checks names the suite and why (`ci-smoke: suite pr - ...` / `ci-smoke: suite full - ...`), lists the
 selection with the reason of each check (`ci-smoke: selected 19 of 66 checks: arms-follow (core), melee-swing
 (src/vr/VRMelee.cpp), ...`), and the job summary repeats both lines.
@@ -2420,6 +2472,8 @@ OpenXR `ActiveRuntime`, GPU and driver into one zip on the Desktop, nothing uplo
 No `data.dirs` (CMake writes it for the build directory and it names a path in the working copy) and no game data:
 the tester's game finds Arx Fatalis in their Steam libraries (#79).
 
+In CI the package step's verify launch shares the game checks step's env (a YAML alias, `env: *ci-game-env`, #540): the same `ARXVR_MAX_GAMES` and `ARXVR_CI_RUNNER`, so it takes any free slot of the job's lane count and never times out behind a slot a worker holds on purpose. A worker's own launch - a proof holder included - started while the runner marker is up waits on the marker and takes no slot (`test-ci-slots.ps1`, the #540 section).
+
 The script fails (exit 1) on: an import (`dumpbin /dependents`, recursively) that is neither in the package nor a Windows
 DLL; no OpenXR loader; `data.dirs` or `*.pak` in the zip; and — the real proof — the **extracted** zip, started from a
 clean temp folder with `PATH` reduced to the Windows folders, not reaching `GAMEPLAY`, exiting ≠ 0, lacking
@@ -2529,7 +2583,11 @@ the kind of a report) - in per-thread lock-free rings (`src/platform/FlightRecor
 the out-of-process dump helper shares, so it can be read after the game is gone. It is written into the crash
 dump as a user stream and to `arx-recorder.txt` on every exit. `scripts/dev/crash-report.ps1` prints the newest
 report's kind, exit code, killer thread, faulting module and stack, the last 100 recorder events and the
-resource trend, all scrubbed of personal data (`Protect-ArxText`). `--no-recorder` turns the recorder and the
+resource trend, all scrubbed of personal data (`Protect-ArxText`). The stack of a crash is walked by the dump helper,
+out of the game's process, while the dump is taken (#610): it reads the exception's context from the game's memory and
+symbolises it with a heap of its own. The game walks it itself (DbgHelp in process) only when the helper found none -
+an in-process walk allocates from the heap the crash may have corrupted, and on #610's heap corruption it faulted,
+leaving `exit=1` and an empty stack. `--no-recorder` turns the recorder and the
 dump helper off (the overhead baseline).
 
 The kinds a report can have (`report.txt` `kind=`): `crash` (an exception, a heap corruption), `abort`,
@@ -2575,11 +2633,56 @@ full report without them) and neither ships to players:
   ```
 
 - **WinDbg / cdb** - a debugger lets `crash-report.ps1` symbolise a dump beyond what `report.txt` already
-  holds. Install it once: `winget install Microsoft.WinDbg`. Without it `crash-report.ps1` prints the stack the
-  game captured in `report.txt` (arx.exe frames already symbolised from the build's `arx.pdb`). The owner's
-  launches (`run-windows.ps1`, `test-pr.ps1`) archive each build's `arx.pdb` under its exe hash in
-  `%LOCALAPPDATA%\ArxFatalisVR\symbols\<sha256>\`, so a later report of that build can be symbolised even after
-  its build directory is gone.
+  holds: the frames of the exception's context (`.ecxr; kn`), ntdll's internal functions from Microsoft's public
+  symbols (cached in `%LOCALAPPDATA%\ArxFatalisVR\tools\symbols`). `crash-report.ps1 -InstallCdb` installs the
+  pinned one into `%LOCALAPPDATA%\ArxFatalisVR\tools\windbg-<version>\` (`scripts/dev/debugger-lib.ps1`, #610: a
+  1.2 GB download once, SHA-256 and Microsoft's signature checked; see the table of third-party tools); an installed
+  WinDbg (`winget install Microsoft.WinDbg`) or the SDK's debuggers are used as well. Without one `crash-report.ps1`
+  prints the stack in `report.txt` (symbolised by the dump helper from the build's `arx.pdb`). The owner's
+  launches (`run-windows.ps1`, `test-pr.ps1`) archive each build's `arx.pdb` and `arx.exe` under its exe hash in
+  `%LOCALAPPDATA%\ArxFatalisVR\symbols\<sha256>\` (the 20 newest builds, ~0.8 GB at most), so a later report of that
+  build can be symbolised even after its build directory is gone - the exe too, because cdb unwinds a minidump's x64
+  frames from the image's unwind data, which the pdb does not hold (#610).
+
+### AddressSanitizer build (#618)
+
+A heap corruption faults far from where it is made: #610's crash was a `free` in the status writer, the corruption
+a write into freed memory elsewhere. An AddressSanitizer build stops the game at the bad access itself and names the
+access, the free and the allocation. A development tool only: never for release, never in CI, never by default.
+
+```powershell
+.\scripts\build-windows.ps1 -Asan     # MSVC /fsanitize=address (CMake ARX_ASAN=ON) into <the copy's build dir>\Release-asan
+$build = "$env:LOCALAPPDATA\ArxFatalisVR\build\<folder>-<hash>\Release-asan"   # the path the build prints
+$env:ASAN_OPTIONS = "log_path='$env:TEMP\asan\arx':halt_on_error=1"            # quote the path: ':' separates options
+.\scripts\dev\smoke-test.ps1 -BuildDir $build -VrSim idle -Sequence reach-lever -Save mvp-lever
+Get-ChildItem $env:TEMP\asan                                                    # arx.<pid> - one file per report
+```
+
+- **Its own build directory** (`Release-asan`, beside `Release`): the normal build is never replaced, and the launch
+  scripts take it with `-BuildDir` (it is the copy's own fresh build, D-014). The ASan runtime DLL
+  (`clang_rt.asan_dynamic-x86_64.dll`, from the MSVC toolset) is copied next to `arx.exe` at configure time.
+- **The report goes to `log_path`**: the game is a GUI program, its stderr is not shown. A report means the game ended
+  there (`halt_on_error=1`, the default); the smoke test then fails and the crash handler writes a report as well.
+  Without `ASAN_OPTIONS` the report goes to stderr only (`stderr.txt` of a failed smoke test's evidence).
+- **Only instrumented code is checked**: ours. The vcpkg libraries and the GPU driver are not, but their `malloc` /
+  `free` go through the ASan allocator, so a write of ours into a block they freed is still caught.
+- **The host tests are built but not run** by `-Asan`: under ASan two `/fp:fast` NaN checks (`HandShapeTest`,
+  `WristVitalsTest`) and one timing test (`ReplayClipTest`, 30 minutes of frames) fail without any memory error. Run
+  `arxtest.exe` from the ASan build directory by hand when a host test is the suspect.
+- **Speed:** a run usually plays at a usable rate (the level loads in about 1.5 s), but the first full run after the
+  build crawled at 2-3 frames a second (update ~100 ms, render ~250 ms a frame, cause not found) and failed the
+  sequence's `@until` on time; the next run did not. A run that crawls is run again, its failure is not the bug.
+- Each run is a launch of the task's budget (10, D-014).
+
+What it found: on every recreate of the player model in VR (a load, a level change, equipping or removing a helmet,
+armour or leggings), `ARX_INTERACTIVE_Show_Hide_1st` walked the model's face list while the body module bound to the
+new model and appended the neck cap to that list - the walk went on in the freed list and wrote `POLY_HIDE` into it
+(#618, TRAPS.md 2026-10-22 #618). The repro above (`reach-lever`, whose second load runs with the head tracked)
+reported it in the first run that reached the load; after the fix the same runs are clean.
+
+The ASan directory is the copy's own build like `Release`: a stale one is named with its command
+(`build-windows.ps1 -Config Release -Asan`), and a launch's `-Rebuild` rebuilds it with `-Asan`. `-Rebuild` refuses a
+directory it would not build itself (it never rebuilds `Release` and then launches the stale exe of another directory).
 
 ## Record and replay (#550)
 
@@ -2764,13 +2867,16 @@ one OpenAL call on the press frame; its time is in the log line `... (the microp
 ### Third-party tools downloaded by scripts
 
 Nothing of these is in the repository (it is public and they are large); a script downloads each on first use from
-the pinned URL, checks the SHA-256 and caches it. The pins live in `scripts/dev/transcribe-lib.ps1`.
+the pinned URL, checks the SHA-256 and caches it. The pins live in `scripts/dev/transcribe-lib.ps1` and, for the
+debugger, `scripts/dev/debugger-lib.ps1` (downloaded only on `crash-report.ps1 -InstallCdb`; its `cdb.exe` must also
+carry Microsoft's signature).
 
 | Name | Version | URL | Licence | SHA-256 |
 |---|---|---|---|---|
 | whisper.cpp (`whisper-bin-x64.zip`: `whisper-cli.exe`, CPU) | v1.9.2 | https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip | MIT | `49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a` |
 | Whisper large-v3-turbo, q8_0 (`ggml-large-v3-turbo-q8_0.bin`, 874 MB) | HF `ggerganov/whisper.cpp` rev `5359861c739e955e79d9a303bcbc70fb988958b1` | https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q8_0.bin | MIT | `317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1` |
 | Silero VAD v6.2.0 for whisper.cpp (`ggml-silero-v6.2.0.bin`) | HF `ggml-org/whisper-vad` rev `9ffd54a1e1ee413ddf265af9913beaf518d1639b` | https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin | MIT | `2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987` |
+| WinDbg (`windbg.msixbundle`; `amd64\` of its x64 package: `cdb.exe`, `dbgeng.dll`, `dbghelp.dll`, `symsrv.dll`, 1.2 GB download) | 1.2610.1001.0 | https://windbg.download.prss.microsoft.com/dbazure/prod/1-2610-1001-0/windbg.msixbundle | Microsoft software licence (free; not redistributed) | `4662ae17bc0dc77db987b89cccea32c30058baa06268f861d09e0ab4e4f45c20` |
 
 Vendored in the repository instead (small, compiled in): `stb_image_write.h` v1.16 (`libs/stb/`, from
 nothings/stb at `1ee679ca2ef753a528db5ba6801e1067b40481b8`; public domain or MIT, notice in `LICENSE.stb`) - the

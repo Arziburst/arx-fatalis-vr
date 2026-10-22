@@ -7,7 +7,8 @@
 	#30's input-check.ps1 proves the control table resolves the controls into events; this one proves
 	the game reacts to the events. Runs smoke-test.ps1 (flat, --loadlevel 10, isolated, every launch
 	rule of D-014) with 'vr-input' commands - controls pressed as if a controller did it, no headset:
-	  setplayercontrols on, cinemascope off      the level 10 start holds the player (TESTING.md)
+	  setplayercontrols on, cinemascope off      the level 10 start holds the player (TESTING.md); its scene's skip
+	                                             ate A, B and trigger presses: '@until scriptedScene eq false' (#473)
 	  tap left.a, tap left.a                     inventory closed, open (the level start shows the bag)
 	  tap left.b, tap left.b                     book open, closed            (ui.book = 2)
 	  tap right.stick_down x2                    crouch toggle on, off        (player.crouch = 2)
@@ -55,7 +56,9 @@ function Step([string]$command, [string]$what) {
 	return @("vr-input $command", "mark $what", "mark $what (settled)")
 }
 
-$commands = @('setplayercontrols on', 'cinemascope off')
+# ... and its scene skips every A, B and trigger press while it plays (#394): the presses wait until the status says it
+# no longer plays and the controls are free (#473)
+$commands = @('setplayercontrols on', 'cinemascope off', '@until scriptedScene eq false 10s', '@until player.controlsBlocked eq false 10s')
 # The book is a radial menu item since D-042 and the left B is the map (#377): the book on its own button for this check
 $commands += @('vr-input bind radial_left none', 'vr-input bind map none', 'vr-input bind inventory left.a', 'vr-input bind book left.b')
 if ($Unbind) { $commands += 'vr-input bind inventory none' }

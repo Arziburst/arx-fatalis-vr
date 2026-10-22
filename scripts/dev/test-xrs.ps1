@@ -14,6 +14,26 @@
 	#527 (written before the implementation) assumes the directive @solo in xrs-lib.ps1, as #436's c7dce4453 has it: a
 	line '@solo' (no argument) is launch information, not a step; Read-ArxSequence returns Solo = $true for it and
 	$false without it; '@pending #<n> @solo' is refused ('@pending needs a step that can fail').
+
+	#528 (written before the implementation) assumes a timestamp in status.json: every status carries
+	  "wallMs": <the wall clock, Unix epoch milliseconds UTC (std::chrono::system_clock), when this status was BUILT>
+	(src/core/CommandChannel.cpp buildStatus; the fake game below writes it the same way). After a @log match the next
+	@assert reads a status built after the read of arx.log that found the line (wallMs at or after that moment), waiting
+	for one if the status on disk is older; it then judges that status once, like any @assert. A status written to disk
+	after the match but built before the line (the writer thread is late, #553) does not count: its wallMs is older.
+
+	#494 (written before the implementation) assumes a function in xrs-lib.ps1 (or test-lib.ps1, which it dot-sources):
+	  Resolve-ArxRunUserDir [-UserDir <string>] [-Shared] [-Sequence <string>]  ->  the user / config dir of one
+	  smoke-test.ps1 run (one string). -Sequence is the sequence's name (Read-ArxSequence's .Name, e.g. first-run);
+	  empty for a run without a sequence.
+	    -UserDir given        that dir, as it is (ci-smoke's per-sequence dirs, a read-back's second launch)
+	    -Shared               the player's dir (Get-ArxUserDir -Shared), nothing in it touched
+	    -Sequence alone       a FRESH dir: created and empty, whatever an earlier run left there, under
+	                          %LOCALAPPDATA% and keyed by the working copy (Get-WorkingCopyKey), never the copy's own
+	                          isolated dir (Get-ArxUserDir), which it leaves untouched
+	    nothing               the copy's isolated dir (Get-ArxUserDir), untouched
+	  smoke-test.ps1 resolves its user dir with it, so xrs-run.ps1 and smoke-test.ps1 -Sequence run every sequence in a
+	  fresh dir, as ci-smoke.ps1 does (#296).
 #>
 [CmdletBinding()]
 param()
@@ -161,11 +181,24 @@ $logPath = Join-Path $work 'arx.log'
 
 # The fake game answers command.txt like CommandChannel.cpp: ack.txt, status.json, shots
 $fake = {
-	param($Dir, $Source)
+	param($Dir, $Source, $LogPath)
 	# First thing: tell the test the job process is up. Start-Job's own startup can take long on a busy PC (#446).
 	[IO.File]::WriteAllText((Join-Path $Dir 'started'), '1')
 	Add-Type -AssemblyName System.Drawing
 	$seq = 0; $frame = 0; $capture = 0; $yaw = 0.0; $shots = [ordered]@{}; $errors = 0
+	# fake-scene-skip (#528): the scene skips logged so far (events.byName."vr.skip"), and a skip asked for by the batch
+	$skips = 0; $sceneSkip = $false
+	# A status as the game builds it: wallMs is the wall clock when it was BUILT (#528), not when it reached the disk
+	$build = {
+		@{ pid = 1; state = 'GAMEPLAY'; frame = $frame; errors = $errors; cmdSeq = $seq; captureSeq = $capture
+			camera = @{ yaw = $yaw }; player = @{ controlsBlocked = $false }; events = @{ byName = @{ 'spell.cast' = 2; 'vr.skip' = $skips } }
+			wallMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() } | ConvertTo-Json -Depth 6 -Compress
+	}
+	$write = {
+		param($Json)
+		[IO.File]::WriteAllText((Join-Path $Dir 'status.json.tmp'), $Json)
+		[IO.File]::Move((Join-Path $Dir 'status.json.tmp'), (Join-Path $Dir 'status.json'), $true)  # atomic replace, like the real game (#446)
+	}
 	# The running batch: kept while a waitframes in it holds the ack (#522), the rest of its lines run once the frames are there
 	$batch = $null
 	$stop = Join-Path $Dir 'stop'
@@ -194,6 +227,7 @@ $fake = {
 				}
 				elseif ($l -match '^vr-sim head rot (\S+)') { $yaw = [double]$Matches[1] }
 				elseif ($l -match '^refuse') { $batch.Errors++ }
+				elseif ($l -match '^fake-scene-skip$') { $sceneSkip = $true }
 			}
 			if (-not $waiting) {
 				$seq++
@@ -205,15 +239,24 @@ $fake = {
 			}
 		}
 		$frame += 3
-		$status = @{ pid = 1; state = 'GAMEPLAY'; frame = $frame; errors = $errors; cmdSeq = $seq; captureSeq = $capture
-			camera = @{ yaw = $yaw }; player = @{ controlsBlocked = $false }; events = @{ byName = @{ 'spell.cast' = 2 } } }
-		$json = $status | ConvertTo-Json -Depth 6 -Compress
-		[IO.File]::WriteAllText((Join-Path $Dir 'status.json.tmp'), $json)
-		[IO.File]::Move((Join-Path $Dir 'status.json.tmp'), (Join-Path $Dir 'status.json'), $true)  # atomic replace, like the real game (#446)
+		if ($sceneSkip) {
+			# The #528 race, as CI run 39121707703 had it: the frame's status is built, THEN the skip's event line is
+			# logged and reaches arx.log; the writer thread puts that older status on disk 400 ms later (after any
+			# @log poll has seen the line), then the game stalls 2 s (no status, no ack). Only the status after the
+			# stall counts the skip.
+			$sceneSkip = $false
+			$stale = & $build
+			[IO.File]::AppendAllText($LogPath, "[I] [event] vr.skip what=SCENE`n")
+			Start-Sleep -Milliseconds 400
+			& $write $stale
+			Start-Sleep -Milliseconds 2000
+			$skips++
+		}
+		& $write (& $build)
 		Start-Sleep -Milliseconds 30
 	}
 }
-$job = Start-Job -ScriptBlock $fake -ArgumentList $testDir, $PSScriptRoot
+$job = Start-Job -ScriptBlock $fake -ArgumentList $testDir, $PSScriptRoot, $logPath
 try {
 	# The job's process start is not what is tested: wait for its marker (up to 3 min, or the job ending), then time the 15 s.
 	$startDeadline = (Get-Date).AddMinutes(3)
@@ -293,6 +336,15 @@ mark hello; mark again
 	Invoke-XrsStep $ctx3 $orderSteps[0]
 	Check '@log: a line before the matched one cannot match later' ($(try { Invoke-XrsStep $ctx3 $orderSteps[1]; 'passed' } catch { "$_" }) -match 'LOG FAILED')
 
+	# @assert right after a @log match (#528): the status on disk was built before the matched line (the fake's
+	# fake-scene-skip, see above). The @assert must judge a status built after the line (wallMs), not that one.
+	Write-Host '@assert after @log (#528)'
+	$r = Run-Seq "fake-scene-skip`n@log vr\.skip what=SCENE 5s`n@assert events.byName.`"vr.skip`" eq 1"
+	Check '@assert after a @log match reads a status built after the matched line' ($r.Passed -and $r.Ran -eq 3) ($r | ConvertTo-Json -Compress)
+	# Still an @assert, not an @until: it judges that newer status once - a wrong value fails, and names the newer value
+	$r = Run-Seq "fake-scene-skip`n@log vr\.skip what=SCENE 5s`n@assert events.byName.`"vr.skip`" eq 99"
+	Check '  a wrong value still fails, judged on the newer status' (-not $r.Passed -and $r.Ran -eq 3 -and $r.Failures[0] -match 'ASSERT FAILED: events\.byName\."vr\.skip" \(2\) eq 99') ($r | ConvertTo-Json -Compress)
+
 	# shots and the comparison
 	$r = Run-Seq @'
 vr-sim head rot 0 0 0
@@ -352,6 +404,66 @@ $dirA2 = New-ArxSequenceUserDir $ciDirs 'vr-remap'
 Check 'a re-run of a sequence starts from an empty dir' ($dirA2 -eq $dirA -and -not (Test-Path (Join-Path $dirA2 'vr-controls-index.ini')))
 $ciSource = Get-Content -Raw (Join-Path $PSScriptRoot 'ci-smoke.ps1')
 Check 'ci-smoke runs every sequence in such a dir' ($ciSource -match 'New-ArxSequenceUserDir' -and $ciSource -match '\$p\.UserDir = \$seqUserDir')
+
+# --- a fresh user dir per LOCAL sequence run too (#494) --------------------------------------------------------------
+# first-run.xrs turns the crosshair off and the game saves it: in the copy's one shared user dir the next local run of
+# any sequence starts with show_crosshair=false (first-run's own first check then fails). The interface is at the top.
+Write-Host 'fresh user dir per local sequence run (#494)'
+$savedLocalAppData = $env:LOCALAPPDATA
+$fakeLocal = Join-Path $work 'localappdata'
+$fakeShared = Join-Path $work 'saved-games\Arx Libertatis'
+$fakeSharedDir = $fakeShared
+New-Item -ItemType Directory -Force $fakeLocal, $fakeShared | Out-Null
+# Nothing here may touch the real %LOCALAPPDATA% or the player's Saved Games
+$env:LOCALAPPDATA = $fakeLocal
+$realSharedUserDir = ${function:Get-SharedUserDir}
+function Get-SharedUserDir { $fakeSharedDir }
+try {
+	$hasResolver = [bool](Get-Command Resolve-ArxRunUserDir -CommandType Function -ErrorAction SilentlyContinue)
+	Check 'Resolve-ArxRunUserDir exists (xrs-lib.ps1 / test-lib.ps1)' $hasResolver 'no such function'
+	if ($hasResolver) {
+		$isolated = Get-ArxUserDir
+		New-Item -ItemType Directory -Force $isolated | Out-Null
+		Set-Content (Join-Path $isolated 'keep.txt') 'the copy''s own user dir: run-windows -Isolated, -Saves'
+		Set-Content (Join-Path $fakeShared 'keep.txt') 'the player''s saves'
+		$key = Get-WorkingCopyKey $ArxSourceDir
+
+		$plain = Resolve-ArxRunUserDir
+		Check 'a run without a sequence keeps the copy''s isolated dir' ($plain -eq $isolated -and (Test-Path (Join-Path $isolated 'keep.txt'))) $plain
+
+		# first-run, as it leaves its dir behind
+		$first = Resolve-ArxRunUserDir -Sequence 'first-run'
+		Check 'a sequence run gets a dir that exists and is empty' ($first -is [string] -and (Test-Path -LiteralPath $first -PathType Container) -and @(Get-ChildItem -LiteralPath $first -Force).Count -eq 0) $first
+		Check '  not the copy''s isolated dir' ($first -and [IO.Path]::GetFullPath($first).TrimEnd('\') -ne [IO.Path]::GetFullPath($isolated).TrimEnd('\')) $first
+		Check '  under %LOCALAPPDATA%, keyed by the working copy' ($first -and [IO.Path]::GetFullPath($first).StartsWith([IO.Path]::GetFullPath($fakeLocal).TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase) -and $first -like "*$key*") $first
+		if ($first -and (Test-Path -LiteralPath $first)) {
+			Set-Content (Join-Path $first 'cfg.ini') "[interface]`nshow_crosshair=false"
+			New-Item -ItemType Directory -Force (Join-Path $first 'save') | Out-Null
+		}
+
+		# the next local run: another sequence, then first-run again
+		$next = Resolve-ArxRunUserDir -Sequence 'look-around'
+		Check 'the next sequence does not see first-run''s cfg.ini' ($next -and (Test-Path -LiteralPath $next -PathType Container) -and @(Get-ChildItem -LiteralPath $next -Force).Count -eq 0) $next
+		if ($next -and (Test-Path -LiteralPath $next)) { Set-Content (Join-Path $next 'cfg.ini') "[interface]`nshow_crosshair=false" }
+		$again = Resolve-ArxRunUserDir -Sequence 'first-run'
+		Check 'a re-run of first-run starts from an empty dir' ($again -and (Test-Path -LiteralPath $again -PathType Container) -and @(Get-ChildItem -LiteralPath $again -Force).Count -eq 0) $again
+
+		# What must stay as it is: a dir given by the caller (ci-smoke, a read-back's second launch) and the player's dir
+		$given = Join-Path $work 'ci-userdirs\vr-remap'
+		New-Item -ItemType Directory -Force $given | Out-Null
+		Set-Content (Join-Path $given 'cfg.ini') 'what the first launch wrote'
+		$got = Resolve-ArxRunUserDir -UserDir $given -Sequence 'vr-remap-readback'
+		Check '-UserDir is used as it is, its files kept' ($got -eq $given -and (Test-Path (Join-Path $given 'cfg.ini'))) $got
+		$got = Resolve-ArxRunUserDir -Shared -Sequence 'first-run'
+		Check '-Shared is the player''s dir, nothing in it deleted' ($got -eq $fakeShared -and (Test-Path (Join-Path $fakeShared 'keep.txt'))) $got
+		Check 'the copy''s isolated dir survived every sequence run' (Test-Path (Join-Path $isolated 'keep.txt'))
+	}
+} finally {
+	$env:LOCALAPPDATA = $savedLocalAppData
+	${function:Get-SharedUserDir} = $realSharedUserDir
+}
+$smokeSource = Get-Content -Raw (Join-Path $PSScriptRoot 'smoke-test.ps1')
+Check 'smoke-test.ps1 (and so xrs-run.ps1) resolves its user dir with Resolve-ArxRunUserDir' ($smokeSource -match '(?m)^[^#\r\n]*\bResolve-ArxRunUserDir\b')
 
 Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host ''

@@ -25,6 +25,13 @@
 .PARAMETER Clean
 	Delete the build directory before configuring.
 
+.PARAMETER Asan
+	An AddressSanitizer build (#618, CMake ARX_ASAN, MSVC /fsanitize=address) that finds memory errors where
+	they are made: its own build directory (the default one with "-asan" after the config), the ASan runtime
+	DLL copied next to arx.exe. A development tool only, never for release or CI; how to run the game under
+	it: docs/vr/TESTING.md, "AddressSanitizer build". The host tests are built but not run: under ASan the
+	timing tests are too slow and /fp:fast NaN checks differ (run arxtest.exe there by hand for its reports).
+
 .PARAMETER SkipTests
 	Do not run the host unit tests (arxtest) after the build. They are always built; a failing suite
 	fails the script.
@@ -33,6 +40,8 @@
 	.\scripts\build-windows.ps1
 .EXAMPLE
 	.\scripts\build-windows.ps1 -Config Debug -Clean
+.EXAMPLE
+	.\scripts\build-windows.ps1 -Asan
 #>
 [CmdletBinding()]
 param(
@@ -41,6 +50,7 @@ param(
 	[string]$BuildDir,
 	[string]$VcpkgRoot,
 	[switch]$Clean,
+	[switch]$Asan,
 	[switch]$SkipTests
 )
 
@@ -51,7 +61,7 @@ $UserVcpkgRoot = $env:VCPKG_ROOT
 $SourceDir = Split-Path -Parent $PSScriptRoot
 $AppDataDir = Join-Path $env:LOCALAPPDATA 'ArxFatalisVR'
 . (Join-Path $PSScriptRoot 'build-paths.ps1')
-if (-not $BuildDir) { $BuildDir = Get-DefaultBuildDir $SourceDir $Config }
+if (-not $BuildDir) { $BuildDir = "$(Get-DefaultBuildDir $SourceDir $Config)$(if ($Asan) { '-asan' })" }
 
 function Write-Step([string]$Message) { Write-Host "==> $Message" -ForegroundColor Cyan }
 
@@ -116,7 +126,8 @@ Write-Step "Configuring ($Config, $generator) in $BuildDir"
 	'-DBUILD_TOOLS=OFF' `
 	'-DBUILD_CRASHREPORTER=OFF' `
 	'-DBUILD_TESTS=ON' `
-	'-DICON_TYPE=none'
+	'-DICON_TYPE=none' `
+	"-DARX_ASAN=$(if ($Asan) { 'ON' } else { 'OFF' })"
 if ($LASTEXITCODE) { throw 'CMake configure failed.' }
 
 Write-Step 'Building'
@@ -128,7 +139,7 @@ if (-not (Test-Path $exe)) { throw "Build finished but $exe was not found." }
 
 # Host unit tests (CppUnit, tests/): pure logic, no game data, a few seconds. A suite that does not
 # compile fails the build above; one that fails fails here.
-if (-not $SkipTests) {
+if (-not $SkipTests -and -not $Asan) {
 	$arxtest = Join-Path $BuildDir 'arxtest.exe'
 	if (-not (Test-Path $arxtest)) { throw "Build finished but $arxtest was not found." }
 	Write-Step 'Running host unit tests (arxtest)'

@@ -488,6 +488,71 @@ try {
 	Check 'the Scope step reads the label full-ci live and outputs the suite' ($scope -match '/labels' -and $scope -match "'full-ci'" -and $scope -match 'suite=\$suite' -and $scope -match "\`$suite = 'pr'") $scope
 	Check 'the game checks run the Scope step''s suite against main' ($checks -match "-Suite '\$\{\{ steps\.scope\.outputs\.suite \}\}'" -and $checks -match '-Base origin/main') $checks
 
+	# --- A quiet PC for a pacing phase (#566) ---------------------------------------------------------------------------
+	Write-Host '==> a quiet PC for a pacing phase (#566)'
+	function FakeProc([string]$Name, [int]$Id, [int]$Parent, [string]$Line = '') { [pscustomobject]@{ Name = $Name; ProcessId = $Id; ParentProcessId = $Parent; CommandLine = $Line } }
+	$procs = @(
+		(FakeProc 'pwsh.exe' 100 1), (FakeProc 'cl.exe' 101 100), (FakeProc 'ninja.exe' 102 100)    # this run's own tree
+		(FakeProc 'pwsh.exe' 200 1), (FakeProc 'cmake.exe' 201 200 'cmake --build C:\b --config Release'), (FakeProc 'ninja.exe' 202 201), (FakeProc 'cl.exe' 203 202)
+		(FakeProc 'link.exe' 300 299)                                                                # its parent gone already
+		(FakeProc 'MSBuild.exe' 400 1 'MSBuild.exe /nologo /nodemode:1 /nodeReuse:true'), (FakeProc 'MSBuild.exe' 401 1 'MSBuild.exe arx.sln /m')
+		(FakeProc 'cmake.exe' 500 1 'cmake -S E:\src -B C:\b -G Ninja'), (FakeProc 'arx.exe' 600 1), (FakeProc 'mspdbsrv.exe' 700 1)
+		(FakeProc 'pwsh.exe' 800 1 '"pwsh.exe" -NoProfile -File E:\w\scripts\build-windows.ps1 -Config Release'), (FakeProc 'pwsh.exe' 801 1 'pwsh -File E:\w\scripts\dev\ci-smoke.ps1')
+	)
+	$builds = @(Get-ArxForeignBuilds $procs -Root 100)
+	Check 'a compile under this run''s own process is not counted' (-not ($builds -match 'pid 10[12]$')) "$builds"
+	Check 'another tree''s cmake --build, its ninja and its cl are counted' (($builds -contains 'cmake.exe pid 201') -and ($builds -contains 'ninja.exe pid 202') -and ($builds -contains 'cl.exe pid 203')) "$builds"
+	Check 'a link.exe whose parent is gone is counted' ($builds -contains 'link.exe pid 300') "$builds"
+	Check 'a building MSBuild.exe is counted, an idle node (/nodemode:) is not' (($builds -contains 'MSBuild.exe pid 401') -and -not ($builds -contains 'MSBuild.exe pid 400')) "$builds"
+	Check 'a build-windows.ps1 counts from start to end (its configure too), another script does not' (($builds -contains 'pwsh.exe pid 800') -and -not ($builds -contains 'pwsh.exe pid 801')) "$builds"
+	Check 'a cmake configure, a game and mspdbsrv are no compile' ($builds.Count -eq 6) "$builds"
+	Check 'a parent loop (reused pids) ends' (@(Get-ArxForeignBuilds @((FakeProc 'cl.exe' 10 11), (FakeProc 'pwsh.exe' 11 10)) -Root 1).Count -eq 1)
+	Check 'a quiet PC has no compile' (@(Get-ArxForeignBuilds @((FakeProc 'pwsh.exe' 1 0), (FakeProc 'arx.exe' 2 1)) -Root 1).Count -eq 0)
+	# The wait on a fake clock: every probe after the first moves it by the sleep it was asked for
+	$script:clock = [DateTime]::new(2026, 10, 22, 12, 0, 0)
+	$script:slept = [Collections.Generic.List[int]]::new()
+	$fakeSleep = { param($Seconds) $script:slept.Add([int]$Seconds); $script:clock = $script:clock.AddSeconds($Seconds) }
+	$fakeNow = { $script:clock }
+	$quiet = Wait-ArxQuietPc 'xrs-x' { @() } -MaxSeconds 600 -PollSeconds 10 -Sleep $fakeSleep -Now $fakeNow 6>$null
+	Check 'a quiet PC: no wait' ($quiet.Seconds -eq 0 -and $quiet.WaitedFor.Count -eq 0 -and -not $quiet.TimedOut -and $script:slept.Count -eq 0) "$($quiet | ConvertTo-Json -Compress)"
+	# Another account's processes without their command lines (CI's NETWORK SERVICE beside the owner's build): the names only
+	$hidden = @((FakeProc 'cl.exe' 900 1 $null), (FakeProc 'ninja.exe' 901 1 $null), (FakeProc 'MSBuild.exe' 902 1 $null), (FakeProc 'cmake.exe' 903 1 $null), (FakeProc 'pwsh.exe' 904 1 $null))
+	$blind = @(Get-ArxForeignBuilds $hidden -Root 100)
+	Check 'without a command line: cl and ninja count by their names, an MSBuild, a cmake and a pwsh do not' (($blind -join ',') -eq 'cl.exe pid 900,ninja.exe pid 901') "$blind"
+	$lines = Get-ArxCommandLineCount (@($procs) + @($hidden)) -Root 100
+	Check 'the command lines readable outside the own tree are counted' ($lines.Readable -eq 6 -and $lines.Total -eq 17) "$($lines | ConvertTo-Json -Compress)"
+	$short = Format-ArxBuildList @('cl.exe pid 5', 'link.exe pid 6', 'cl.exe pid 7', 'cl.exe pid 9', 'ninja.exe pid 8')
+	Check 'the compiles waited for, in short: each name once with its count' ($short -eq 'cl.exe x3, link.exe, ninja.exe') $short
+	# The probe's answers in turn, then quiet
+	function Set-Answers([object[]]$List) { $script:answers = $List; $script:answerAt = 0; $script:slept.Clear() }
+	$fromAnswers = { $i = $script:answerAt; $script:answerAt++; if ($i -lt $script:answers.Count) { $script:answers[$i] } }
+	Set-Answers @(@('cl.exe pid 5'), @('cl.exe pid 5', 'link.exe pid 6'), @('link.exe pid 6'))
+	$ended = Wait-ArxQuietPc 'xrs-x' $fromAnswers -MaxSeconds 600 -PollSeconds 10 -SettleSeconds 20 -Sleep $fakeSleep -Now $fakeNow 6>$null
+	Check 'a build that ends: the wait ends -SettleSeconds after it, every compile named once' ($ended.Seconds -eq 50 -and -not $ended.TimedOut -and ($ended.WaitedFor -join ',') -eq 'cl.exe pid 5,link.exe pid 6') "$($ended | ConvertTo-Json -Compress)"
+	Check 'it polls every -PollSeconds' (($script:slept -join ',') -eq '10,10,10,10,10') "$($script:slept -join ',')"
+	Set-Answers @(@('cl.exe pid 5'), @(), @('ninja.exe pid 8'))
+	$gap = Wait-ArxQuietPc 'xrs-x' $fromAnswers -MaxSeconds 600 -PollSeconds 10 -SettleSeconds 20 -Sleep $fakeSleep -Now $fakeNow 6>$null
+	Check 'a gap between two steps of a build is no quiet PC: the settle starts again after the next compile' ($gap.Seconds -eq 50 -and ($gap.WaitedFor -join ',') -eq 'cl.exe pid 5,ninja.exe pid 8') "$($gap | ConvertTo-Json -Compress)"
+	Set-Answers @(@('cl.exe pid 5'))
+	$settle = Wait-ArxQuietPc 'xrs-x' $fromAnswers -MaxSeconds 600 -PollSeconds 10 -SettleSeconds 15 -Sleep $fakeSleep -Now $fakeNow 6>$null
+	Check 'the settle is not overslept: its last sleep is what is left of it' ($settle.Seconds -eq 25 -and ($script:slept -join ',') -eq '10,10,5') "$($settle.Seconds): $($script:slept -join ',')"
+	Set-Answers @(@('cl.exe pid 5'))
+	$late = Wait-ArxQuietPc 'xrs-x' $fromAnswers -MaxSeconds 15 -PollSeconds 10 -SettleSeconds 30 -Sleep $fakeSleep -Now $fakeNow 6>$null
+	Check 'a settle cut by -MaxSeconds: the phase runs, TimedOut' ($late.TimedOut -and $late.Seconds -eq 15) "$($late | ConvertTo-Json -Compress)"
+	$script:slept.Clear()
+	$threw = $null
+	$broken = $null
+	try { $broken = @(Wait-ArxQuietPc 'xrs-x' { throw 'WMI: access denied' } -Sleep $fakeSleep -Now $fakeNow 6>&1 | ForEach-Object { $_ }) } catch { $threw = $_ }
+	$brokenResult = @($broken | Where-Object { $_ -isnot [Management.Automation.InformationRecord] })[0]
+	$brokenSaid = @($broken | Where-Object { $_ -is [Management.Automation.InformationRecord] } | ForEach-Object { "$_" })
+	Check 'a probe that throws ends the wait: no throw, the phase starts at once, the error is in the result and the log' (-not $threw -and $brokenResult.Error -match 'access denied' -and -not $brokenResult.TimedOut -and $script:slept.Count -eq 0 -and ($brokenSaid -join ' ') -match "xrs-x: cannot see the processes of the PC \(WMI: access denied\) - it starts without waiting") "threw: $threw; $($brokenResult | ConvertTo-Json -Compress); $brokenSaid"
+	$script:slept.Clear()
+	$endless = Wait-ArxQuietPc 'xrs-x' { 'ninja.exe pid 7' } -MaxSeconds 25 -PollSeconds 10 -Sleep $fakeSleep -Now $fakeNow 6>$null
+	Check 'a build that does not end: the phase runs after -MaxSeconds, TimedOut' ($endless.TimedOut -and $endless.Seconds -eq 25 -and ($endless.WaitedFor -join ',') -eq 'ninja.exe pid 7') "$($endless | ConvertTo-Json -Compress)"
+	Check 'the last sleep is cut to the bound' (($script:slept -join ',') -eq '10,10,5') "$($script:slept -join ',')"
+	$said = @(Wait-ArxQuietPc 'xrs-x' { 'ninja.exe pid 7' } -MaxSeconds 130 -PollSeconds 10 -Sleep $fakeSleep -Now $fakeNow 6>&1 | Where-Object { $_ -is [Management.Automation.InformationRecord] } | ForEach-Object { "$_" })
+	Check 'the wait names the phase and the compile at once, every minute, and at its end' ($said.Count -eq 4 -and $said[0] -match 'xrs-x measures frame pacing and waits while the PC compiles \(ninja\.exe pid 7; 0 s' -and $said[1] -match '; 60 s' -and $said[2] -match '; 120 s' -and $said[3] -match 'still compiles after 130 s .* runs anyway') ($said -join ' | ')
+
 	# --- ci-smoke.ps1 uses them (#527) ----------------------------------------------------------------------------------
 	Write-Host '==> ci-smoke.ps1: @solo, fail fast, the risk order (#527)'
 	$ci = Get-Content -Raw (Join-Path $PSScriptRoot 'ci-smoke.ps1')
@@ -496,6 +561,10 @@ try {
 	Check 'ci-smoke.ps1 schedules with -StopOnFail bound to the suite (a pull request''s run stops, the full suite does not)' ($scheduleCall -match '-StopOnFail:') $scheduleCall
 	Check 'ci-smoke.ps1 orders by the risk tiers: the impact selection (-Affected) and the recent failures (-RecentFailures)' ($ci -match 'Get-ArxPhaseOrder [^\r\n]*-Affected' -and $ci -match 'Get-ArxPhaseOrder [^\r\n]*-RecentFailures' -and $ci -match 'Get-ArxRecentFailures')
 	Check 'ci-smoke.ps1 records each run in the failure history beside the durations' ($ci -match 'Add-ArxPhaseHistory' -and $ci -match 'Get-ArxPhaseHistoryPath')
+	$start = [regex]::Match($ci, '(?s)\$startPhase = \{.*?\r?\n\}').Value
+	Check 'ci-smoke.ps1 starts an @solo phase after Wait-ArxQuietPc over Get-ArxForeignBuilds, bounded by -QuietWaitSec (#566)' ($start -match '(?s)if \(\$Phase\.Solo -and \$script:QuietWaitSec -gt 0\).*Wait-ArxQuietPc .*Get-ArxForeignBuilds.*-MaxSeconds \$script:QuietWaitSec.*Start-Job') $start
+	Check 'the probe of ci-smoke.ps1 reads WMI with -ErrorAction Stop (an error ends the wait, not the step)' ($start -match 'Wait-ArxQuietPc [^\r\n]*Get-CimInstance Win32_Process [^\r\n]*-ErrorAction Stop') $start
+	Check 'ci-smoke.ps1 dispatches the @solo phases after every other phase (#566)' ($ci -match '\$dispatch = @\(@\(\$dispatch \| Where-Object \{ -not \$_\.Solo \}\) \+ @\(\$dispatch \| Where-Object \{ \$_\.Solo \}\)\)')
 } finally {
 	Get-Job -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
 	Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue

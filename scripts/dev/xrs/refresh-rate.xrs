@@ -6,6 +6,9 @@
 # arx.log) - never a value read whenever the runner looked. Runs on the test save mvp-goblin-fight (a sword equipped, a
 # corridor ahead, the goblin held still):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Save mvp-goblin-fight -Sequence refresh-rate
+# It measures pacing, so it needs a quiet PC: `@solo` runs it alone on CI's lanes, and ci-smoke.ps1 starts it only once
+# no other task's build compiles on the PC (up to 10 min, #566) - a worker's build beside it failed the frames guards
+# below honestly (walk90 90 frames for >= 121, span90 4 for >= 9: the slots were missed). The guards stay as they are.
 # No teleports between the measurements: `setpos` leaves the player in the engine's fall for seconds (TRAPS.md). The walk
 # goes back by distance (`stick-for`), the turn back by time.
 #

@@ -382,6 +382,8 @@ function Invoke-XrsStep($Context, $Step) {
 			if (-not $hit.Success) { throw "LOG FAILED: no log line matched /$($Step.Regex)/ within $($Step.Seconds) s of the mark" }
 			$eol = $text.IndexOf("`n", $hit.Index); if ($eol -lt 0) { $eol = $text.Length }
 			$bol = $text.LastIndexOf("`n", [Math]::Max(0, $hit.Index - 1)) + 1
+			# A zero-width match (a pattern of look-aheads) on the new line the last @log stopped at: an empty line (#632)
+			$bol = [Math]::Min($bol, $eol)
 			Write-XrsLine $Context "      matched: $($text.Substring($bol, $eol - $bol).Trim())" 'DarkGray'
 			$Context.LogMark += $eol
 			$Context.LogMatchMs = $readMs

@@ -82,7 +82,7 @@ Work-in-progress limits: see [Parallel work](#parallel-work) (sequential mode: o
 ## The development loop
 
 One task per session, one pull request per task. The owner does not start tasks by command: the coordinator
-takes the next task from the [MVP task queue](MVP.md#task-queue), writes its contract and starts a worker
+takes the next task from the current sprint of the [MVP plan](MVP.md#sprints) (labels `sprint-N`), writes its contract and starts a worker
 with `scripts/dev/start-worker.ps1`; the worker implements it on its own branch, opens a PR and waits for CI.
 VR behavior goes to **Testing** with step-by-step test instructions; the owner gives the headset verdict
 (OK, or what is wrong) to the coordinator, who merges on OK or sends the worker back to fix it in the same PR.

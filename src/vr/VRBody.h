@@ -95,8 +95,20 @@ Vec3f bodyShift();
  */
 bool hidesHeadOnly();
 
-//! \return true for a vertex of the player model's head (the head group and everything under it) or neck
-bool isHeadVertex(EERIE_3DOBJ * obj, VertexId vertex);
+/*!
+ * Binds the body to the player model \a obj if it is not bound to it yet (a new or reloaded model): finds the arm
+ * chains and the head's vertices and appends the cap faces to \a obj's face list - which moves the list, so never
+ * while a caller walks it (#618: a walk that bound halfway wrote into the freed list whenever the player model was
+ * recreated in VR - a load, a level change, a helmet, armour or leggings put on or taken off)
+ */
+void bindPlayerModel(EERIE_3DOBJ * obj);
+
+/*!
+ * \return true for a vertex of the player model's head (the head group and everything under it) or neck; false for
+ *         a model the body is not bound to - \ref bindPlayerModel first. Changes nothing, so a walk over the face
+ *         list may ask it for every face
+ */
+bool isHeadVertex(const EERIE_3DOBJ * obj, VertexId vertex);
 
 /*!
  * \return the index of the first face the body added to the player model to close the neck opening the

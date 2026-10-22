@@ -31,6 +31,7 @@
 #include "io/log/Logger.h"
 
 #include "platform/Architecture.h"
+#include "platform/CrashGate.h"
 #include "platform/DumpHelper.h"
 #include "platform/Platform.h"
 
@@ -66,6 +67,9 @@ void InvalidParameterHandler(const wchar_t * expression, const wchar_t * functio
 void SignalHandler(int signalCode);
 
 CrashHandlerWindows * CrashHandlerWindows::m_sInstance = 0;
+
+//! Which crashing thread reports (#545, #554); constant-initialised, so it is there before any crash
+static platform::CrashGate g_crashGate;
 
 CrashHandlerWindows::CrashHandlerWindows()
 	: m_pPreviousCrashHandlers(nullptr)
@@ -291,28 +295,32 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 [[noreturn]] void CrashHandlerWindows::handleCrash(int crashType, void * crashExtraInfo, int fpeCode) {
 
 	// A second crash while this one is being reported (#545): on the same thread it is a fault inside the
-	// handler, and this thread ends the process; on another thread it parks for good - the first report (and
-	// its dump, in progress) is the one that counts
-	static std::atomic<DWORD> s_handlingThread(0);
-	{
-		DWORD me = GetCurrentThreadId();
-		DWORD expected = 0;
-		if(!s_handlingThread.compare_exchange_strong(expected, me)) {
-			if(expected == me) {
-				TerminateProcess(GetCurrentProcess(), 1);
-				std::abort();
-			}
-			while(true) {
-				Sleep(INFINITE);
-			}
+	// handler, and this thread ends the process; on another thread it parks - the first report (and its dump, in
+	// progress) is the one that counts - but not for good (#554): that thread may hold a lock the first handler
+	// needs (the heap's, while the first thread symbolises), so after the park it ends the process itself
+	switch(g_crashGate.enter(u32(GetCurrentThreadId()))) {
+		case platform::CrashGate::Entry::First: {
+			break;
+		}
+		case platform::CrashGate::Entry::Again: {
+			TerminateProcess(GetCurrentProcess(), 1);
+			std::abort();
+		}
+		case platform::CrashGate::Entry::Other: {
+			platform::CrashGate::park(platform::CrashGate::ParkLimit);
+			TerminateProcess(GetCurrentProcess(), 1);
+			std::abort();
 		}
 	}
 
 	std::scoped_lock lock(m_mutex);
 	
-	// Run the callbacks
-	for(auto & callback : m_crashCallbacks) {
-		callback();
+	// Run the callbacks (the log's quick shutdown closes its stream, which frees: with the dump helper they run
+	// after the request, so nothing before the dump allocates on a heap the crash may have corrupted, #610)
+	if(!platform::dumpHelperEnabled()) {
+		for(auto & callback : m_crashCallbacks) {
+			callback();
+		}
 	}
 	
 	m_pCrashInfo->signal = crashType;
@@ -368,11 +376,14 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 		// An exception leaves the process in an unknown state: the dump is taken first and the stack is
 		// symbolised afterwards (it loads arx.pdb). An abort() is a controlled runtime path: its stack is
 		// read first, because it tells a foreign thread's std::terminate() (no handler of ours, ends in
-		// abort) from a plain abort()
+		// abort) from a plain abort(). An exception's stack is walked by the helper, out of process (#610)
 		u32 code = pointers->ExceptionRecord ? u32(pointers->ExceptionRecord->ExceptionCode) : 0;
 		platform::DumpKind kind = platform::DumpKind::Crash;
-		std::string exceptionName;
-		std::string stack;
+		// Fixed buffers, the sizes of the request's fields: nothing on the way to the dump allocates (#610)
+		char exceptionName[96] = {};
+		char killer[160];
+		char faultModule[160];
+		std::string stack; // the abort path's own, symbolised before the request
 		bool stackFirst = (crashType == SIGNAL_SIGABRT || crashType == USER_CRASH);
 		if(stackFirst) {
 			platform::flightRecord(platform::RecordKind::Note, "crash handler: stack", crashType);
@@ -382,7 +393,7 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 		} else if(crashType == TERMINATE_CALL) {
 			kind = platform::DumpKind::Terminate;
 		} else if(code != 0) {
-			exceptionName = platform::exceptionCodeName(code);
+			platform::exceptionCodeName(code, exceptionName, sizeof(exceptionName));
 		}
 		platform::flightRecord(platform::RecordKind::Note, "crash handler: request", crashType);
 		u64 faultAddress = 0;
@@ -395,11 +406,16 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 			faultAddress = u64(pointers->ContextRecord->Eip);
 			#endif
 		}
+		platform::killerLabel(killer, sizeof(killer));
+		platform::moduleLabel(faultAddress, faultModule, sizeof(faultModule));
 		platform::requestReport(kind, true, u32(GetCurrentThreadId()), u64(reinterpret_cast<uintptr_t>(pointers)),
-		                        platform::killerLabel(), platform::moduleLabel(faultAddress), exceptionName, stack,
-		                        15000);
-		if(!stackFirst) {
-			// The dump is taken: now the symbols; the helper writes report.txt after the exit and reads it then
+		                        killer, faultModule, exceptionName, stack, 15000);
+		for(auto & callback : m_crashCallbacks) {
+			callback();
+		}
+		if(!stackFirst && !platform::reportHasStack()) {
+			// The helper walked no stack (#610: it does, out of process, for every exception): the symbols here,
+			// after the dump; the helper writes report.txt after the exit and reads it then
 			platform::flightRecord(platform::RecordKind::Note, "crash handler: stack", crashType);
 			platform::setReportStack(platform::symbolizedStack(pointers->ContextRecord));
 		}

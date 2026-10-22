@@ -6,7 +6,9 @@
 .DESCRIPTION
 	Runs smoke-test.ps1 (flat, --loadlevel 10, isolated, every launch rule of D-014) with 'vr-input'
 	commands - controls pressed as if a controller did it, no headset needed:
-	  tap right.stick_up                        jump (a single binding fires on the press, D-042)
+	  setplayercontrols on, cinemascope off     the level 10 start's scene ended; its skip ate A, B and trigger
+	                                            presses (#473): '@until scriptedScene eq false' first
+	  tap right.stick_up                       jump (a single binding fires on the press, D-042)
 	  down right.grip, tap right.trigger, up    use_right and act_right (an ordered chord; no click, no stash)
 	  tap right.grip                            nothing (the grip alone does nothing, D-042)
 	  bind jump left.b+left.a                   remap jump to a chord led by the book's button
@@ -15,8 +17,11 @@
 	  tap right.stick_down                      crouch_toggle (a stick direction)
 	  tap right.stick_click                     weapon (draw / sheathe, #377)
 	  reset                                     the default layout again
-	A 'mark' after the release of a chord's leader lets its release debounce window (150 ms) pass,
-	so the next tap is a new press and not the same hold.
+	After the release of a chord's leader (and the tap of one) the next command waits until it is no longer held
+	(vr.input.down): its release counts only after the debounce window (150 ms), so the next tap is a new press and
+	not the same hold, and the reset does not consume it. A 'mark' round trip was that wait until the channel
+	answered within a frame (#522); the gates are '@until vr.input.down ne <control>', after a tap one '@frames 1'
+	first: a tap is resolved in the frame after its ack (#473).
 	Then reads the final status.json (written when the game exits) and compares vr.input.presses
 	and vr.input.layout with the expected numbers.
 
@@ -45,18 +50,21 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot 'test-lib.ps1')
 
-$commands = @()
+# The level 10 start plays a scripted scene that skips every A, B and trigger press (#394): ended first, and the presses
+# wait until the status says it no longer plays and the controls are free (#473)
+$commands = @('setplayercontrols on', 'cinemascope off', '@until scriptedScene eq false 10s', '@until player.controlsBlocked eq false 10s')
 # B holds the radial menu since #376 (D-042), the left B the map and the left A the bag since #377: the book event goes
 # back on left B and the left A is left to the chord below, as the check was written
 $commands += @('vr-input bind radial_left none', 'vr-input bind map none', 'vr-input bind inventory none', 'vr-input bind book left.b')
 if ($Unbind) { $commands += 'vr-input bind jump none' }
 $commands += @(
 	'vr-input tap right.stick_up',
-	'vr-input down right.grip', 'vr-input tap right.trigger', 'vr-input up right.grip', 'mark release debounce (150 ms)',
-	'vr-input tap right.grip',
+	'vr-input down right.grip', 'vr-input tap right.trigger', 'vr-input up right.grip', '@until vr.input.down ne right.grip 5s',
+	# A tap is resolved in the frame after its ack (the input update runs before the channel's): one frame, then the gate
+	'vr-input tap right.grip', '@frames 1', '@until vr.input.down ne right.grip 5s',
 	'vr-input bind jump left.b+left.a',
-	'vr-input down left.b', 'vr-input tap left.a', 'vr-input up left.b', 'mark release debounce (150 ms)',
-	'vr-input tap left.b',
+	'vr-input down left.b', 'vr-input tap left.a', 'vr-input up left.b', '@until vr.input.down ne left.b 5s',
+	'vr-input tap left.b', '@frames 1', '@until vr.input.down ne left.b 5s',
 	'vr-input tap right.stick_down',
 	'vr-input tap right.stick_click',
 	'vr-input reset'

@@ -15,6 +15,8 @@ set(arxtest_TESTCASES
 
 	tests/core/ChannelWriterTest.h
 	tests/core/ChannelWriterTest.cpp
+	tests/core/CommandInboxTest.h
+	tests/core/CommandInboxTest.cpp
 	tests/core/GameEventTest.h
 	tests/core/GameEventTest.cpp
 	tests/core/FileReplaceTest.h
@@ -43,6 +45,8 @@ set(arxtest_TESTCASES
 	tests/io/IniTest.h
 	tests/io/IniTest.cpp
 	
+	tests/platform/CrashGateTest.h
+	tests/platform/CrashGateTest.cpp
 	tests/platform/CrashNoticeTest.h
 	tests/platform/CrashNoticeTest.cpp
 	tests/platform/CrashNoticeKindTest.h
@@ -216,6 +220,7 @@ set(arxtest_SOURCES
 	${MATH_SOURCES}
 	
 	src/core/ChannelWriter.cpp
+	src/core/CommandInbox.cpp
 	src/game/Camera.cpp
 	src/graphics/Math.cpp
 	src/graphics/Renderer.cpp
@@ -223,6 +228,7 @@ set(arxtest_SOURCES
 	src/io/IniSection.cpp
 	src/io/log/FileLogger.cpp
 	src/io/resource/ResourcePath.cpp
+	src/platform/CrashGate.cpp
 	src/platform/CrashNotice.cpp
 	src/platform/ExitReport.cpp
 	src/platform/FlightRecorder.cpp

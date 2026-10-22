@@ -276,6 +276,30 @@ include(PrintConfiguration)
 include(StyleCheck)
 include(UseStaticLibs)
 
+# AddressSanitizer (#618): a development build that finds memory errors where they are made (a write after a free,
+# a buffer overrun) instead of where a corrupted heap faults later. Only through scripts/build-windows.ps1 -Asan,
+# which builds into its own directory; never for release or CI (docs/vr/TESTING.md, "AddressSanitizer build").
+option(ARX_ASAN "Build with AddressSanitizer (MSVC, development only)" OFF)
+if(ARX_ASAN)
+	if(NOT MSVC)
+		message(FATAL_ERROR "ARX_ASAN is only wired for MSVC")
+	endif()
+	add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/fsanitize=address> $<$<COMPILE_LANGUAGE:C,CXX>:/Oy->)
+	# ASan cannot link incrementally
+	foreach(flag_var CMAKE_EXE_LINKER_FLAGS_DEBUG CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO)
+		string(REGEX REPLACE "/INCREMENTAL(:YES)?( |$)" "" ${flag_var} "${${flag_var}}")
+	endforeach()
+	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /INCREMENTAL:NO")
+	# The ASan runtime DLL (/MD) next to the executables, so arx.exe and arxtest.exe start without the MSVC
+	# environment on the path
+	get_filename_component(asan_runtime_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+	set(asan_runtime "${asan_runtime_dir}/clang_rt.asan_dynamic-x86_64.dll")
+	if(NOT EXISTS "${asan_runtime}")
+		message(FATAL_ERROR "ARX_ASAN: ${asan_runtime} not found (the MSVC toolset's AddressSanitizer runtime)")
+	endif()
+	file(COPY "${asan_runtime}" DESTINATION "${CMAKE_BINARY_DIR}")
+endif()
+
 
 # Find required libraries
 
@@ -966,6 +990,7 @@ set(CORE_SOURCES
 	src/core/Benchmark.cpp
 	src/core/ChannelWriter.cpp
 	src/core/CommandChannel.cpp
+	src/core/CommandInbox.cpp
 	src/core/Config.cpp
 	src/core/Core.cpp
 	src/core/FpsCounter.cpp
@@ -1196,6 +1221,7 @@ endif()
 
 # Extra platform abstraction - depends on the crash handler or SDL
 set(PLATFORM_EXTRA_SOURCES
+	src/platform/CrashGate.cpp
 	src/platform/CrashNotice.cpp
 	src/platform/Dialog.cpp
 	src/platform/DumpHelper.cpp

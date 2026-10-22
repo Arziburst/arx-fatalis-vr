@@ -22,11 +22,17 @@
 	  arx-perf.log      the run's performance log up to the report (its R lines are the resource trend)
 	  <name>.dmp        the minidump, when the game was still there to dump
 
-	crash-report.ps1 [-UserDir <dir>] [-Path <report folder>] [-Cdb <cdb.exe> | none]
+	crash-report.ps1 [-UserDir <dir>] [-Path <report folder>] [-Cdb <cdb.exe> | none] [-InstallCdb]
 	  - without -Path: the newest folder of <user dir>\crashes and <user dir>\hangs (by name); -UserDir defaults to this
 	    working copy's isolated user directory when it has reports, else the player's Saved Games\Arx Libertatis
 	  - -Cdb: the debugger to symbolise the dump with; "none" never runs one; by default a cdb.exe that is installed
-	    (Windows SDK Debuggers, WinDbg), else none. Without cdb (or without a dump) the stack is report.txt's own
+	    (Windows SDK Debuggers, WinDbg, the pinned one in the tools directory), else none. Without cdb (or without a
+	    dump) the stack is report.txt's own. cdb gets -z <dump>, -y <archived arx.pdb folder>;srv*<tools>\symbols*<Microsoft's
+	    symbol server>, -i <archived arx.exe folder> when the archive under report.txt's exehash= has them, and -c
+	    ".ecxr; kn 64; q" for a report with exception=, else "~#kn 64; q" (#610)
+	  - debugger-lib.ps1 (-InstallCdb): the pinned bundle (a file:/// URL in the test) is refused on a SHA-256 mismatch
+	    or a cdb.exe without Microsoft's signature, installing nothing; else windbg-<version>\amd64\ is unpacked and the
+	    bundle deleted
 	  - prints, each section starting at the beginning of a line:
 	      Report: <folder name>                       only the name, never the full path
 	      Kind: <kind>
@@ -249,7 +255,85 @@ try {
 	Check ($run.Text -match 'arx!channel::execute\+0x1a') 'cdb''s frames are printed'
 	$cdbArgs = Get-Content -LiteralPath (Join-Path $fakeDir 'cdb-args.txt') -Raw -ErrorAction SilentlyContinue
 	Check ("$cdbArgs" -match 'arx\.dmp') "cdb was given the report's dump ($("$cdbArgs".Trim()))"
+	Check ("$cdbArgs" -match '~#kn 64' -and "$cdbArgs" -notmatch '\.ecxr') 'no exception: the stack of the event''s thread (~#kn)'
+	Check ("$cdbArgs" -match '-y \S*srv\*\S+\*https://msdl\.microsoft\.com/download/symbols') 'cdb gets Microsoft''s public symbols, cached in the tools directory'
 	Test-Clean $run 'with cdb'
+
+	# A crash (#610): the stack of the exception's context, the archived arx.pdb and arx.exe (-y, -i) of its exe hash
+	$hash = 'ab' * 32
+	$localApp = Join-Path $root 'local'
+	$archive = Join-Path $localApp "ArxFatalisVR\symbols\$hash"
+	Write-Fixture (Join-Path $archive 'arx.pdb') @('pdb')
+	Write-Fixture (Join-Path $archive 'arx.exe') @('exe')
+	$reportFile = Join-Path $crash 'report.txt'
+	Write-Fixture $reportFile @(Get-Content -LiteralPath $reportFile | ForEach-Object { if ($_ -eq 'stack:') { "exehash=$hash" }; $_ })
+	$previousLocal = $env:LOCALAPPDATA
+	$env:LOCALAPPDATA = $localApp
+	try { $run = Invoke-CrashReport @('-Path', $crash, '-Cdb', $fakeCdb) } finally { $env:LOCALAPPDATA = $previousLocal }
+	$cdbArgs = "$(Get-Content -LiteralPath (Join-Path $fakeDir 'cdb-args.txt') -Raw -ErrorAction SilentlyContinue)"
+	Check ($run.Exit -eq 0) "a crash with cdb: exit 0 ($($run.Exit))"
+	Check ($cdbArgs -match '\.ecxr; kn 64') 'an exception: the stack of its context (.ecxr; kn)'
+	Check ($cdbArgs.Contains("-i $archive")) 'the archived arx.exe is cdb''s image path (-i): the x64 unwind data'
+	Check ($cdbArgs.Contains("-y $archive;srv*")) 'the archived arx.pdb first on the symbol path (-y)'
+
+	# --- The pinned debugger (scripts/dev/debugger-lib.ps1): checked before it is given its name -------------------
+	Write-Host '==> the pinned cdb'
+	. (Join-Path $PSScriptRoot 'debugger-lib.ps1')
+	$tools = Join-Path $root 'tools'
+	# A stand-in bundle: a zip holding an x64 package, itself a zip holding amd64\cdb.exe
+	function New-FakeBundle([string]$Path, [string]$CdbSource) {
+		$stage = Join-Path $root "bundle-$([IO.Path]::GetFileNameWithoutExtension($Path))"
+		New-Item -ItemType Directory -Force (Join-Path $stage 'pkg\amd64'), (Join-Path $stage 'bundle') | Out-Null
+		Copy-Item -LiteralPath $CdbSource -Destination (Join-Path $stage 'pkg\amd64\cdb.exe')
+		Set-Content -LiteralPath (Join-Path $stage 'pkg\amd64\dbgeng.dll') -Value 'engine'
+		Compress-Archive -Path (Join-Path $stage 'pkg\*') -DestinationPath (Join-Path $stage 'bundle\windbg_win-x64.zip')
+		Rename-Item (Join-Path $stage 'bundle\windbg_win-x64.zip') 'windbg_win-x64.msix'
+		Compress-Archive -Path (Join-Path $stage 'bundle\*') -DestinationPath "$Path.zip"
+		Move-Item "$Path.zip" $Path
+		(Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+	}
+	$unsigned = Join-Path $root 'unsigned-cdb.exe'
+	[IO.File]::WriteAllBytes($unsigned, [byte[]](0x4D, 0x5A) + [byte[]]::new(126))
+	$bundle = Join-Path $root 'unsigned.msixbundle'
+	$sha = New-FakeBundle $bundle $unsigned
+	Check ($null -eq (Get-ArxToolsCdb $tools @{ Version = 'test' })) 'not installed: none found (and nothing downloaded)'
+	$err = try { Install-ArxCdb $tools @{ Version = 'test'; Sha = ('0' * 64); Url = ([Uri]$bundle).AbsoluteUri }; '' } catch { "$_" }
+	Check ($err -match 'SHA-256 mismatch') "a bundle that is not the pinned one is refused ($err)"
+	Check (-not (Test-Path (Join-Path $tools 'windbg-test'))) 'a refused bundle installs nothing'
+	$err = try { Install-ArxCdb $tools @{ Version = 'test'; Sha = $sha; Url = ([Uri]$bundle).AbsoluteUri }; '' } catch { "$_" }
+	Check ($err -match 'not signed by Microsoft') "a cdb.exe that is not Microsoft's is refused ($err)"
+	Check (-not (Test-Path (Join-Path $tools 'windbg-test'))) 'a refused cdb.exe installs nothing'
+	Check (@(Get-ChildItem -LiteralPath $tools -Force -ErrorAction SilentlyContinue).Count -eq 0) 'no part file is left behind'
+	# A package entry that climbs out of amd64\ (amd64/../..) is refused before anything is written
+	Add-Type -AssemblyName System.IO.Compression
+	$evilBundle = Join-Path $root 'evil.msixbundle'
+	$evilPackage = Join-Path $root 'evil-x64.msix'
+	foreach ($pair in @(@($evilPackage, 'amd64/../../escaped.txt'), @($evilBundle, 'windbg_win-x64.msix'))) {
+		$stream = [IO.File]::Open($pair[0], 'Create')
+		$archiveOut = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create)
+		$writer = [IO.StreamWriter]::new($archiveOut.CreateEntry($pair[1]).Open())
+		if ($pair[0] -eq $evilBundle) { $writer.BaseStream.Write([IO.File]::ReadAllBytes($evilPackage)) } else { $writer.Write('escaped') }
+		$writer.Dispose(); $archiveOut.Dispose(); $stream.Dispose()
+	}
+	$sha = (Get-FileHash -LiteralPath $evilBundle -Algorithm SHA256).Hash.ToLowerInvariant()
+	$err = try { Install-ArxCdb $tools @{ Version = 'test'; Sha = $sha; Url = ([Uri]$evilBundle).AbsoluteUri }; '' } catch { "$_" }
+	Check ($err -match 'entry outside its folder') "a package entry with .. is refused ($err)"
+	Check (-not (Test-Path (Join-Path $root 'escaped.txt')) -and -not (Test-Path (Join-Path $tools 'escaped.txt'))) 'nothing was written outside the folder'
+	Check (-not (Test-Path (Join-Path $tools 'windbg-test'))) 'a refused package installs nothing'
+
+	# A file Microsoft signed (Windows' own where.exe) stands in for the real cdb.exe
+	$signed = Join-Path $env:SystemRoot 'System32\where.exe'
+	if (Test-ArxMicrosoftSigned $signed) {
+		$bundle = Join-Path $root 'signed.msixbundle'
+		$sha = New-FakeBundle $bundle $signed
+		$installed = Install-ArxCdb $tools @{ Version = 'test'; Sha = $sha; Url = ([Uri]$bundle).AbsoluteUri }
+		Check ($installed -eq (Join-Path $tools 'windbg-test\amd64\cdb.exe') -and (Test-Path -LiteralPath $installed)) "the pinned bundle installs windbg-<version>\amd64\cdb.exe ($installed)"
+		Check (Test-Path -LiteralPath (Join-Path $tools 'windbg-test\amd64\dbgeng.dll')) 'the rest of amd64\ comes with it'
+		Check ((Get-ArxToolsCdb $tools @{ Version = 'test' }) -eq $installed) 'installed: found without a download'
+		Check (@(Get-ChildItem -LiteralPath $tools -File -Force).Count -eq 0) 'the bundle is deleted after the install'
+	} else {
+		Write-Host '  (skipped: where.exe has no Microsoft signature here)'
+	}
 } finally {
 	$env:USERNAME = $previousUser
 	Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue

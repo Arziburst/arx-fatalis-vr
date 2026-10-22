@@ -224,32 +224,90 @@ function Get-ArxDialogProblems($Run) {
 
 # --- Crash reports --------------------------------------------------------------------------------------------
 
-# crash.txt of the game's crash processor: title, "Exception code:", "Callstack:" with ` module!0xADDR  File.cpp:12`
+# How many symbolized frames make a crash signature (#616)
+$script:ArxCrashSignatureFrames = 5
+
+# The lines of a crash.txt. Two frame formats:
+#   - the dump helper (#545, src/platform/DumpHelper.cpp): "  #<i> <module>+0x<offset> [<function> [(<file>:<line>)]]"
+#   - the crash processor's older one: " module!0xADDR  File.cpp:12" (addresses are ASLR noise: left out of Raw)
+# Returns Title, Exception and Frames (Module, Offset, Function, File, Text, Raw, Symbolized, Legacy).
+function Read-ArxCrashLines([string[]]$Lines) {
+	$title = ($Lines | Where-Object { $_.Trim() } | Select-Object -First 1)
+	$exception = ''
+	$frames = @()
+	$inStack = $false
+	foreach ($l in $Lines) {
+		if ($l -match '^\s*Exception code:\s*(.+)$') { $exception = $Matches[1].Trim() }
+		if ($l -match '^\s*Callstack:') { $inStack = $true; continue }
+		if (-not $inStack) { continue }
+		if (-not $l.Trim()) { $inStack = $false; continue }
+		$m = [regex]::Match($l, '^\s*#\d+\s+(\S+?)\+0x([0-9a-fA-F]+)(?:\s+(.*?))?\s*$')
+		if ($m.Success) {
+			$rest = $m.Groups[3].Value
+			$function = $rest
+			$file = ''
+			$fm = [regex]::Match($rest, '^(?<fn>.+?)\s+\((?<file>[^()]+?)(?::\d+)?\)$')
+			if ($fm.Success) { $function = $fm.Groups['fn'].Value; $file = ($fm.Groups['file'].Value -split '[\\/]')[-1] }
+			$frames += [pscustomobject]@{
+				Module = $m.Groups[1].Value; Offset = $m.Groups[2].Value; Function = $function; File = $file; Text = $rest; Raw = $l.Trim()
+				Symbolized = [bool]$function; Legacy = $false
+			}
+			continue
+		}
+		$m = [regex]::Match($l, '^\s*(\S+?)!(?:0x[0-9a-fA-F]+)?\s*(.*)$')
+		if ($m.Success) {
+			$frames += [pscustomobject]@{
+				Module = $m.Groups[1].Value; Offset = ''; Function = ''; File = ''; Text = $m.Groups[2].Value.Trim(); Raw = "$($m.Groups[1].Value)!$($m.Groups[2].Value.Trim())"
+				Symbolized = $false; Legacy = $true
+			}
+		} else {
+			$frames += [pscustomobject]@{ Module = ''; Offset = ''; Function = ''; File = ''; Text = $l.Trim(); Raw = $l.Trim(); Symbolized = $false; Legacy = $true }
+		}
+	}
+	[pscustomobject]@{ Title = $title; Exception = $exception; Frames = $frames }
+}
+
+# The signature of a crash (#616). It must not change with the build, or the same crash is filed again after every
+# rebuild (#611 duplicated #601):
+#   - symbols: the top $script:ArxCrashSignatureFrames symbolized frames, each as function + file - no module offsets
+#     (they move with every build), no line numbers (they move with every edit above the crash). The title (the fault
+#     location, an offset) and the exception code are not part of the key: the stack names the place. An
+#     unsymbolized frame between symbolized ones is skipped, so a missing symbol does not change the signature.
+#   - no symbols at all: the module offsets of the top frames, the only thing that tells such crashes apart.
+#   - no frame, and the crash processor's older format (module!0xADDR File.cpp:12): the key from before #616 - the
+#     title, the exception code and the first four files of arx without addresses and line numbers - so a crash
+#     filed under it keeps its signature.
+function Get-ArxCrashSignature([string]$Text) {
+	$parsed = Read-ArxCrashLines @($Text -split '\r?\n')
+	$count = $script:ArxCrashSignatureFrames
+	$dump = @($parsed.Frames | Where-Object { -not $_.Legacy })
+	$symbolized = @($dump | Where-Object Symbolized)
+	if ($symbolized) {
+		$key = 'crash|symbols|' + ((@($symbolized | Select-Object -First $count) | ForEach-Object { "$($_.Function) $($_.File)".Trim() }) -join '>')
+	} elseif ($dump) {
+		$key = 'crash|offsets|' + ((@($dump | Select-Object -First $count) | ForEach-Object { "$($_.Module)+0x$($_.Offset.ToLowerInvariant())" }) -join '>')
+	} else {
+		$ours = @($parsed.Frames | Where-Object { $_.Module -like 'arx*' -and $_.Text })
+		$top = @(($ours | Select-Object -First 4) | ForEach-Object { $_.Text -replace ':\d+\b', '' })
+		$key = "crash|$($parsed.Title)|$($parsed.Exception)|$($top -join '>')"
+	}
+	[pscustomobject]@{ Hash = Get-ArxHash $key; Key = $key }
+}
+
+# crash.txt of the game's crash reporting: title, "Exception code:", "Callstack:" and the frames (Read-ArxCrashLines)
 function Read-ArxCrashReport([string]$Dir) {
 	$file = Join-Path $Dir 'crash.txt'
 	if (-not (Test-Path $file)) { return $null }
 	$lines = Read-ArxLines $file
-	$title = ($lines | Where-Object { $_.Trim() } | Select-Object -First 1)
-	$exception = ''
-	$frames = @()
-	$inStack = $false
-	foreach ($l in $lines) {
-		if ($l -match '^\s*Exception code:\s*(.+)$') { $exception = $Matches[1].Trim() }
-		if ($l -match '^\s*Callstack:') { $inStack = $true; continue }
-		if ($inStack) {
-			if (-not $l.Trim()) { $inStack = $false; continue }
-			$m = [regex]::Match($l, '^\s*(\S+?)!(?:0x[0-9a-fA-F]+)?\s*(.*)$')
-			if ($m.Success) { $frames += [pscustomobject]@{ Module = $m.Groups[1].Value; Text = $m.Groups[2].Value.Trim(); Raw = "$($m.Groups[1].Value)!$($m.Groups[2].Value.Trim())" } }   # addresses are ASLR noise: left out
-			else { $frames += [pscustomobject]@{ Module = ''; Text = $l.Trim(); Raw = $l.Trim() } }
-		}
-	}
+	$parsed = Read-ArxCrashLines $lines
+	$frames = $parsed.Frames
+	$signature = Get-ArxCrashSignature -Text ($lines -join "`n")
+	# The dump helper's frames are shown by function and file (their offsets are build noise), the older ones by file
 	$ours = @($frames | Where-Object { $_.Module -like 'arx*' -and $_.Text })
-	$top = @(($ours | Select-Object -First 4) | ForEach-Object { $_.Text -replace ':\d+\b', '' })
-	$key = "crash|$title|$exception|$($top -join '>')"
 	$where = if ($ours) { $ours[0].Text } elseif ($frames) { $frames[0].Raw } else { 'unknown location' }
 	[pscustomobject]@{
-		Name = Split-Path -Leaf $Dir; Dir = $Dir; Title = $title; Exception = $exception; Frames = $frames; Top = $ours | Select-Object -First 8
-		Hash = Get-ArxHash $key; Normalized = $key; Kind = 'crash'; Level = 'C'; Source = $where; Message = "$title ($exception) at $where"; Count = 1
+		Name = Split-Path -Leaf $Dir; Dir = $Dir; Title = $parsed.Title; Exception = $parsed.Exception; Frames = $frames; Top = $ours | Select-Object -First 8
+		Hash = $signature.Hash; Normalized = $signature.Key; Kind = 'crash'; Level = 'C'; Source = $where; Message = "$($parsed.Title) ($($parsed.Exception)) at $where"; Count = 1
 		Text = ($lines -join "`n")
 	}
 }

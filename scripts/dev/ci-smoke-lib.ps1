@@ -70,16 +70,27 @@ function Get-ArxChangedFiles([string]$SourceDir, [string]$Base) {
 	$set.Files
 }
 
-# The same, telling an empty change from a diff that could not be made: { Ok = the diff ran; Files }. The selection of
-# a pull request (#522) runs everything when it does not know what changed.
+# The same, telling an empty change from a diff that could not be made: { Ok = the diff ran; Files; Deleted = the paths
+# of Files the change deletes, a rename's old path among them (#608) }. The selection of a pull request (#522) runs
+# everything when it does not know what changed.
 function Get-ArxChangedFileSet([string]$SourceDir, [string]$Base) {
-	if (-not $Base) { return [pscustomobject]@{ Ok = $false; Files = @() } }
+	if (-not $Base) { return [pscustomobject]@{ Ok = $false; Files = @(); Deleted = @() } }
 	foreach ($range in @("$Base...HEAD"), @($Base, 'HEAD')) {
-		$files = @(git -C $SourceDir diff --name-only --no-renames @range 2>$null)
-		if ($LASTEXITCODE -eq 0) { $global:LASTEXITCODE = 0; return [pscustomobject]@{ Ok = $true; Files = $files } }
+		$lines = @(git -C $SourceDir diff --name-status --no-renames @range 2>$null)
+		if ($LASTEXITCODE -ne 0) { continue }
+		$global:LASTEXITCODE = 0
+		$files = [Collections.Generic.List[string]]::new()
+		$deleted = [Collections.Generic.List[string]]::new()
+		foreach ($line in $lines) {
+			# <status letter(s)><tab><path>; --no-renames gives one path per line
+			if ($line -notmatch '^(\S+)\t(.+)$') { continue }
+			$files.Add($Matches[2])
+			if ($Matches[1] -eq 'D') { $deleted.Add($Matches[2]) }
+		}
+		return [pscustomobject]@{ Ok = $true; Files = @($files); Deleted = @($deleted) }
 	}
 	$global:LASTEXITCODE = 0
-	[pscustomobject]@{ Ok = $false; Files = @() }
+	[pscustomobject]@{ Ok = $false; Files = @(); Deleted = @() }
 }
 
 # The run order of the sequence phases - the risk order (#527). $Units: one per sequence, in the serial (name) order,
@@ -173,12 +184,15 @@ $ArxImpactChecks = @('smoke-test', 'spell-drawcheck')
 # $ArxImpactChecks. A glob is a repository path with / and the wildcards of -like (* also crosses folders), any case.
 # '#' starts a comment. Returns { Path; Core; Rules = { Glob; Targets; Line; Pattern }; Errors } - a line that is
 # none of these is an error, never skipped in silence.
-function Read-ArxImpactMap([string]$Path) {
+function Read-ArxImpactMap([string]$Path) { ConvertFrom-ArxImpactMapLines ([IO.File]::ReadAllLines($Path)) $Path }
+
+# The parser of Read-ArxImpactMap over the lines of a map; $Path is only what the result names
+function ConvertFrom-ArxImpactMapLines([string[]]$Lines, [string]$Path) {
 	$core = [Collections.Generic.List[string]]::new()
 	$rules = [Collections.Generic.List[object]]::new()
 	$errors = [Collections.Generic.List[string]]::new()
 	$n = 0
-	foreach ($raw in [IO.File]::ReadAllLines($Path)) {
+	foreach ($raw in @($Lines)) {
 		$n++
 		$line = ($raw -replace '(^|\s)#.*$', '').Trim()
 		if (-not $line) { continue }
@@ -199,6 +213,26 @@ function Read-ArxImpactMap([string]$Path) {
 	[pscustomobject]@{ Path = $Path; Core = @($core); Rules = @($rules); Errors = @($errors) }
 }
 
+# The impact map of the base tree (#608): the map before the change, where a deleted path's line may still stand when
+# the change removed it with the path. The base tree is the merge base of $Base and HEAD, or $Base itself when there is
+# none (a shallow checkout, as Get-ArxChangedFileSet). $MapPath is a repository path. $null - never a throw - when there
+# is no base, the ref is unknown or the base tree has no such file.
+function Read-ArxBaseImpactMap([string]$SourceDir, [string]$Base, [string]$MapPath = 'scripts/dev/xrs/impact.txt') {
+	if (-not $Base) { return $null }
+	try {
+		$commit = @(git -C $SourceDir merge-base $Base HEAD 2>$null)[0]
+		if ($LASTEXITCODE -ne 0 -or -not $commit) { $commit = @(git -C $SourceDir rev-parse --verify --quiet "$Base^{commit}" 2>$null)[0] }
+		if ($LASTEXITCODE -ne 0 -or -not $commit) { return $null }
+		$lines = @(git -C $SourceDir show "${commit}:$MapPath" 2>$null)
+		if ($LASTEXITCODE -ne 0) { return $null }
+		ConvertFrom-ArxImpactMapLines $lines "${commit}:$MapPath"
+	} catch {
+		$null
+	} finally {
+		$global:LASTEXITCODE = 0
+	}
+}
+
 # The sequence a changed .xrs file selects by itself: scripts/dev/xrs/<name>.xrs and its read-back
 # scripts/dev/xrs/readback/<name>-readback.xrs both give <name>; any other path gives $null
 function Get-ArxChangedSequenceName([string]$Path) {
@@ -209,28 +243,40 @@ function Get-ArxChangedSequenceName([string]$Path) {
 }
 
 # The game checks of a change set: the core, every name of a rule whose glob matches a changed path, and the changed or
-# added .xrs files themselves (a read-back selects its sequence). A changed path that no rule matches (and that is not
-# an .xrs) or a rule '-> *' makes it Full: everything runs. Returns
+# added .xrs files themselves (a read-back selects its sequence). A deleted path (in $Deleted) that no rule of $Map
+# matches is matched against the rules of $BaseMap, the map before the change (#608): a change that deletes a file
+# often removes its line too. A changed path that no rule of either matches (and that is not an .xrs) or a rule '-> *'
+# makes it Full: everything runs. Returns
 #   { Full; Names (sorted, without duplicates); Reasons (name -> the first reason: 'core' or the path); FullBecause
 #     (the lines that made it Full); Unmapped (the paths no rule matched) }
 # Names lists the selection even when Full, for the log.
-function Get-ArxImpactSelection($Map, [string[]]$Changed = @()) {
+function Get-ArxImpactSelection($Map, [string[]]$Changed = @(), [string[]]$Deleted = @(), $BaseMap = $null) {
 	$reasons = @{}
 	foreach ($name in $Map.Core) { if (-not $reasons.ContainsKey($name)) { $reasons[$name] = 'core' } }
 	$fullBecause = [Collections.Generic.List[string]]::new()
 	$unmapped = [Collections.Generic.List[string]]::new()
+	$deletedSet = @{}
+	foreach ($d in @($Deleted)) { if ($d) { $deletedSet[($d -replace '\\', '/').ToLowerInvariant()] = $true } }
+	# The names of every rule of $Rules that matches $Path go into the selection with $Reason; $true when one matched
+	function Add-MatchingRules($Rules, [string]$Path, [string]$Reason, [string]$Where) {
+		$hit = $false
+		foreach ($rule in $Rules) {
+			if (-not $rule.Pattern.IsMatch($Path)) { continue }
+			$hit = $true
+			if ($rule.Targets[0] -eq '*') { $fullBecause.Add("$Path (${Where}line $($rule.Line): $($rule.Glob) -> *)"); continue }
+			if ($rule.Targets[0] -eq 'core') { continue }
+			foreach ($name in $rule.Targets) { if (-not $reasons.ContainsKey($name)) { $reasons[$name] = $Reason } }
+		}
+		$hit
+	}
 	foreach ($raw in @($Changed)) {
 		if (-not $raw) { continue }
 		$path = $raw -replace '\\', '/'
 		$own = Get-ArxChangedSequenceName $path
 		if ($own -and -not $reasons.ContainsKey($own)) { $reasons[$own] = $path }
-		$matched = [bool]$own
-		foreach ($rule in $Map.Rules) {
-			if (-not $rule.Pattern.IsMatch($path)) { continue }
-			$matched = $true
-			if ($rule.Targets[0] -eq '*') { $fullBecause.Add("$path (line $($rule.Line): $($rule.Glob) -> *)"); continue }
-			if ($rule.Targets[0] -eq 'core') { continue }
-			foreach ($name in $rule.Targets) { if (-not $reasons.ContainsKey($name)) { $reasons[$name] = $path } }
+		$matched = (Add-MatchingRules $Map.Rules $path $path '') -or [bool]$own
+		if (-not $matched -and $BaseMap -and $deletedSet.ContainsKey($path.ToLowerInvariant())) {
+			$matched = Add-MatchingRules $BaseMap.Rules $path "$path (deleted; the map before the change)" 'deleted; the map before the change, '
 		}
 		if (-not $matched) {
 			$unmapped.Add($path)
@@ -307,6 +353,112 @@ function Get-ArxCiLaneCount([string]$Workflow) {
 # How many lanes may run now: one while another game of the PC (the owner's, a worker's) holds a slot, else $Lanes
 function Get-ArxLaneCount([int]$Lanes, [string]$Copy, [string]$BuildDir) {
 	if (@(Get-ArxForeignGames $Copy $BuildDir).Count) { 1 } else { $Lanes }
+}
+
+# --- A quiet PC for a pacing phase (#566) ---------------------------------------------------------------------------
+
+# The compiles of the PC that are not this run's: cl.exe, link.exe, ninja.exe, an MSBuild.exe that builds (an idle
+# node of an earlier build, `/nodemode:`, waits for work and compiles nothing itself - its cl.exe is what counts) and a
+# `cmake --build`; and a build-windows.ps1 from start to end - its configure and vcpkg steps between two compiles too.
+# A worker's build next to CI starves the game of whole display slots (#566: walk90 90 frames for >= 121,
+# UNDER-SUBMITTING 43/s on 90 slots). $Processes: Win32_Process-like objects (Name, ProcessId, ParentProcessId,
+# CommandLine); a process under $Root (this run's own tree) is never counted. An account that is not an administrator
+# reads no command line of another account's process (CI's runner, NETWORK SERVICE, beside a worker's build as the
+# owner): such a process is judged by its name alone - cl, link and ninja count, an MSBuild, a cmake or a pwsh do not
+# (an idle MSBuild node would hold every pacing phase for the whole wait). Returns one "<name> pid <pid>" per compile.
+function Get-ArxForeignBuilds($Processes, [int]$Root = $PID) {
+	$parent = @{}
+	foreach ($p in @($Processes)) { $parent[[int]$p.ProcessId] = [int]$p.ParentProcessId }
+	foreach ($p in @($Processes)) {
+		$name = "$($p.Name)".ToLowerInvariant()
+		$line = "$($p.CommandLine)"
+		$build = $name -in 'cl.exe', 'link.exe', 'ninja.exe' -or
+			($name -eq 'msbuild.exe' -and $line -and $line -notmatch '[/-]nodemode:') -or
+			($name -eq 'cmake.exe' -and $line -match '(^|\s)--build(\s|$)') -or
+			($name -in 'pwsh.exe', 'powershell.exe' -and $line -match '\bbuild-windows\.ps1\b')
+		if ($build -and -not (Test-ArxInProcessTree $parent ([int]$p.ProcessId) $Root)) { "$($p.Name) pid $($p.ProcessId)" }
+	}
+}
+
+# Is $Id under $Root? Up the parents ($Parent: pid -> parent pid; a pid seen twice is a reused pid's loop)
+function Test-ArxInProcessTree([hashtable]$Parent, [int]$Id, [int]$Root) {
+	$seen = @{}
+	for (; $Id -and -not $seen.ContainsKey($Id); $Id = [int]$Parent[$Id]) {
+		if ($Id -eq $Root) { return $true }
+		$seen[$Id] = $true
+		if (-not $Parent.ContainsKey($Id)) { break }
+	}
+	$false
+}
+
+# How much of the other process trees this account can see: Readable (a command line) of Total processes outside
+# $Root's tree - in CI (NETWORK SERVICE) another account's command lines are empty, and only the names count
+function Get-ArxCommandLineCount($Processes, [int]$Root = $PID) {
+	$parent = @{}
+	foreach ($p in @($Processes)) { $parent[[int]$p.ProcessId] = [int]$p.ParentProcessId }
+	$others = @($Processes | Where-Object { -not (Test-ArxInProcessTree $parent ([int]$_.ProcessId) $Root) })
+	[pscustomobject]@{ Readable = @($others | Where-Object { "$($_.CommandLine)" }).Count; Total = $others.Count }
+}
+
+# Get-ArxForeignBuilds' "<name> pid <pid>" lines as one short text: each name once, with how many there were
+# ("cl.exe x40, link.exe x12") - a build of ten minutes starts hundreds of compilers
+function Format-ArxBuildList([string[]]$Builds) {
+	$count = [ordered]@{}
+	foreach ($b in @($Builds)) {
+		$name = ($b -replace '\s+pid\s+\d+$', '')
+		$count[$name] = 1 + $(if ($count.Contains($name)) { $count[$name] } else { 0 })
+	}
+	@($count.Keys | ForEach-Object { if ($count[$_] -gt 1) { "$_ x$($count[$_])" } else { $_ } }) -join ', '
+}
+
+# Wait, before a phase that measures frame pacing (@solo) starts, until nothing compiles on the PC
+# (Get-ArxForeignBuilds), at most $MaxSeconds; then it runs anyway - a gate that never runs is no gate. A PC that
+# compiled is quiet only after $SettleSeconds without a compile: a build has gaps between its steps (a clean, then the
+# next build: #566's first proof run started in one and compiled under the measurement); a PC quiet at the first look
+# starts at once. $Probe { } returns what compiles now (nothing: quiet); $Sleep { param($Seconds) } and $Now { } are the
+# clock (a test passes its own). Prints what it waits for at once and every minute. A probe that throws (WMI cannot be
+# read) ends the wait at once, said in the log: the phase starts, the game checks go on. Returns Seconds (waited),
+# WaitedFor (every compile seen, once), TimedOut and Error (the probe's error, or $null).
+function Wait-ArxQuietPc(
+	[string]$What, [scriptblock]$Probe, [int]$MaxSeconds = 600, [int]$PollSeconds = 10, [int]$SettleSeconds = 30,
+	[scriptblock]$Sleep = { param($Seconds) Start-Sleep -Seconds $Seconds }, [scriptblock]$Now = { Get-Date }
+) {
+	$started = & $Now
+	$seenAll = [Collections.Generic.List[string]]::new()
+	$said = $null
+	$quietSince = $null
+	$busy = @()
+	while ($true) {
+		try {
+			$busy = @(& $Probe | Where-Object { $_ })
+		} catch {
+			$waited = ((& $Now) - $started).TotalSeconds
+			Write-Host ("ci-smoke: {0}: cannot see the processes of the PC ({1}) - it starts without waiting for compiles" -f $What, $_.Exception.Message) -ForegroundColor Yellow
+			return [pscustomobject]@{ Seconds = $waited; WaitedFor = $seenAll.ToArray(); TimedOut = $false; Error = "$($_.Exception.Message)" }
+		}
+		$waited = ((& $Now) - $started).TotalSeconds
+		if (-not $busy) {
+			if (-not $seenAll.Count) { return [pscustomobject]@{ Seconds = $waited; WaitedFor = @(); TimedOut = $false; Error = $null } }
+			if ($null -eq $quietSince) { $quietSince = $waited }
+			if ($waited - $quietSince -ge $SettleSeconds) {
+				Write-Host ("ci-smoke: {0}: the PC is quiet after {1:0} s ({2} s without a compile) - waited for {3}" -f $What, $waited, $SettleSeconds, (Format-ArxBuildList $seenAll)) -ForegroundColor Yellow
+				return [pscustomobject]@{ Seconds = $waited; WaitedFor = $seenAll.ToArray(); TimedOut = $false; Error = $null }
+			}
+		} else {
+			$quietSince = $null
+			foreach ($b in $busy) { if (-not $seenAll.Contains($b)) { $seenAll.Add($b) } }
+			if ($null -eq $said -or $waited - $said -ge 60) {
+				Write-Host ("ci-smoke: {0} measures frame pacing and waits while the PC compiles ({1}; {2:0} s of at most {3} s)" -f $What, ($busy -join ', '), $waited, $MaxSeconds) -ForegroundColor Yellow
+				$said = $waited
+			}
+		}
+		if ($waited -ge $MaxSeconds) {
+			Write-Host ("ci-smoke: {0}: the PC still compiles after {1:0} s ({2}) - it runs anyway, under that load" -f $What, $waited, $(if ($busy) { $busy -join ', ' } else { "quiet for $([int]($waited - $quietSince)) s only" })) -ForegroundColor Yellow
+			return [pscustomobject]@{ Seconds = $waited; WaitedFor = $seenAll.ToArray(); TimedOut = $true; Error = $null }
+		}
+		$left = if ($null -ne $quietSince) { $SettleSeconds - ($waited - $quietSince) } else { $PollSeconds }
+		& $Sleep ([Math]::Max(1, [Math]::Ceiling([Math]::Min([Math]::Min($PollSeconds, $left), $MaxSeconds - $waited))))
+	}
 }
 
 # --- The scheduler --------------------------------------------------------------------------------------------------

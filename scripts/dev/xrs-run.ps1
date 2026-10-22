@@ -23,6 +23,10 @@
 .PARAMETER TestDir
 	The test channel directory of the running game (-Attach). Default: this working copy's.
 
+.PARAMETER UserDir
+	The user and config directory of the run (smoke-test.ps1 -UserDir). Default: a fresh one per sequence run, as in CI
+	(#494); a read-back (xrs\readback\<name>-readback.xrs) gets the dir its sequence's run just before it left.
+
 .PARAMETER Rebuild
 	Build this working copy first when its build is stale.
 
@@ -44,6 +48,7 @@ param(
 	[switch]$Attach,
 	[switch]$ContinueOnError,
 	[string]$TestDir,
+	[string]$UserDir,
 	[switch]$Rebuild,
 	[Parameter(ValueFromRemainingArguments)]
 	[string[]]$ArxArgs
@@ -73,7 +78,7 @@ $parsed = Read-ArxSequence $Sequence
 if ($Attach) {
 	if (-not $TestDir) { $TestDir = Get-ArxTestDir }
 	if (-not (Read-ArxStatus $TestDir)) { throw "no running game answers in $TestDir (start it with --test-dir, or leave out -Attach)" }
-	$result = Invoke-ArxSequence $parsed -TestDir $TestDir -LogPath (Get-ArxLogPath) -ContinueOnError:$ContinueOnError
+	$result = Invoke-ArxSequence $parsed -TestDir $TestDir -LogPath $(if ($UserDir) { Get-ArxLogPath $UserDir } else { Get-ArxLogPath }) -ContinueOnError:$ContinueOnError
 	foreach ($p in $result.Pending) { Write-Host "  pending $p" -ForegroundColor Yellow }
 	if ($result.Passed) { Write-Host "sequence $($result.Name): PASS" -ForegroundColor Green; exit 0 }
 	Write-Host "sequence $($result.Name): FAIL ($($result.Failures.Count))" -ForegroundColor Red
@@ -84,6 +89,7 @@ $smokeArgs = @{ Sequence = $parsed.Path; Rebuild = $Rebuild }
 # A flat sequence says so: --no-vr in its @args and no @sim (stand-up.xrs); every other one runs on the idle simulated headset
 if ($parsed.Sim) { $smokeArgs.VrSim = $parsed.Sim } elseif ($parsed.Args -notcontains '--no-vr') { $smokeArgs.VrSim = 'idle' }
 if ($TestDir) { $smokeArgs.TestDir = $TestDir }
+if ($UserDir) { $smokeArgs.UserDir = $UserDir }
 if ($parsed.Save) { $smokeArgs.Save = $parsed.Save }
 if ($parsed.Playground) { $smokeArgs.Playground = $true }
 if ($parsed.Player) { $smokeArgs.Player = $true }

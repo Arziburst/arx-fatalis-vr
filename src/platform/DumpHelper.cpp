@@ -134,6 +134,7 @@ std::atomic<bool> g_requestInFlight(false);
 // arx.pdb is read at the first lookup, inside the crash handler
 HANDLE g_symProcess = nullptr;
 bool g_symReady = false;
+bool g_failInProcessStack = false;
 
 void initializeSymbols() {
 	g_symProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, GetCurrentProcessId());
@@ -343,7 +344,7 @@ void requestReport(DumpKind kind, bool wantDump, u32 faultThreadId, u64 exceptio
                    std::string_view stack, u32 timeoutMs) noexcept {
 
 	// The cause always goes into the recorder, helper or not
-	flightRecord(RecordKind::Exit, std::string(dumpKindName(kind)));
+	flightRecord(RecordKind::Exit, dumpKindName(kind));
 
 	if(!g_shared || !g_reqEvent || !g_helperProcess) {
 		return;
@@ -422,8 +423,10 @@ std::string dumpLastReportFolder() {
 	                   strnlen(g_shared->lastReportFolder, sizeof(g_shared->lastReportFolder)));
 }
 
-std::string moduleLabel(u64 address) {
-	char buffer[64];
+// The labels below write into a fixed buffer and allocate nothing: the crash handler builds its request with them
+// before the dump, on a heap the crash may have corrupted (#610). The std::string forms are for everyone else.
+
+void moduleLabel(u64 address, char * out, size_t size) noexcept {
 	HMODULE module = nullptr;
 	DWORD flags = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
 	if(GetModuleHandleExW(flags, reinterpret_cast<LPCWSTR>(static_cast<uintptr_t>(address)), &module) && module) {
@@ -437,16 +440,21 @@ std::string moduleLabel(u64 address) {
 			}
 			char name[MAX_PATH];
 			int n = WideCharToMultiByte(CP_UTF8, 0, file, -1, name, int(sizeof(name)), nullptr, nullptr);
-			std::snprintf(buffer, sizeof(buffer), "+0x%llx",
+			std::snprintf(out, size, "%s+0x%llx", n > 1 ? name : "?",
 			              static_cast<unsigned long long>(address - reinterpret_cast<uintptr_t>(module)));
-			return (n > 1 ? std::string(name, size_t(n - 1)) : std::string("?")) + buffer;
+			return;
 		}
 	}
-	std::snprintf(buffer, sizeof(buffer), "0x%llx", static_cast<unsigned long long>(address));
+	std::snprintf(out, size, "0x%llx", static_cast<unsigned long long>(address));
+}
+
+std::string moduleLabel(u64 address) {
+	char buffer[MAX_PATH + 32];
+	moduleLabel(address, buffer, sizeof(buffer));
 	return buffer;
 }
 
-std::string exceptionCodeName(u32 code) {
+void exceptionCodeName(u32 code, char * out, size_t size) noexcept {
 	const char * name = nullptr;
 	switch(code) {
 		case 0xC0000005: name = "EXCEPTION_ACCESS_VIOLATION"; break;
@@ -468,16 +476,20 @@ std::string exceptionCodeName(u32 code) {
 		case 0xE06D7363: name = "CPP_EXCEPTION"; break;
 		default: break;
 	}
-	char buffer[80];
 	if(name) {
-		std::snprintf(buffer, sizeof(buffer), "0x%08x %s", unsigned(code), name);
+		std::snprintf(out, size, "0x%08x %s", unsigned(code), name);
 	} else {
-		std::snprintf(buffer, sizeof(buffer), "0x%08x", unsigned(code));
+		std::snprintf(out, size, "0x%08x", unsigned(code));
 	}
+}
+
+std::string exceptionCodeName(u32 code) {
+	char buffer[80];
+	exceptionCodeName(code, buffer, sizeof(buffer));
 	return buffer;
 }
 
-std::string threadStartLabel(bool & isExit) {
+void threadStartLabel(bool & isExit, char * out, size_t size) noexcept {
 	isExit = false;
 	using NtQueryInformationThreadFn = LONG (NTAPI *)(HANDLE, int, PVOID, ULONG, PULONG);
 	static NtQueryInformationThreadFn query = reinterpret_cast<NtQueryInformationThreadFn>(
@@ -497,30 +509,71 @@ std::string threadStartLabel(bool & isExit) {
 	for(const Routine & routine : routines) {
 		if(start && start == routine.address) {
 			isExit = routine.exitsProcess;
-			return routine.name;
+			std::snprintf(out, size, "%s", routine.name);
+			return;
 		}
 	}
-	return moduleLabel(u64(reinterpret_cast<uintptr_t>(start)));
+	moduleLabel(u64(reinterpret_cast<uintptr_t>(start)), out, size);
+}
+
+std::string threadStartLabel(bool & isExit) {
+	char buffer[MAX_PATH + 32];
+	threadStartLabel(isExit, buffer, sizeof(buffer));
+	return buffer;
+}
+
+void killerLabel(char * out, size_t size) noexcept {
+	DWORD tid = GetCurrentThreadId();
+	if(tid == g_mainThreadId) {
+		std::snprintf(out, size, "%lu main thread", static_cast<unsigned long>(tid));
+		return;
+	}
+	bool isExit = false;
+	char start[MAX_PATH + 32];
+	threadStartLabel(isExit, start, sizeof(start));
+	std::snprintf(out, size, "%lu start %s", static_cast<unsigned long>(tid), start);
 }
 
 std::string killerLabel() {
-	DWORD tid = GetCurrentThreadId();
-	if(tid == g_mainThreadId) {
-		return std::to_string(tid) + " main thread";
-	}
-	bool isExit = false;
-	return std::to_string(tid) + " start " + threadStartLabel(isExit);
+	char buffer[MAX_PATH + 64];
+	killerLabel(buffer, sizeof(buffer));
+	return buffer;
 }
 
-std::string symbolizedStack(const void * contextIn) {
+namespace {
+
+#if ARX_ARCH == ARX_ARCH_X86_64
+
+// "<module file>+0x<offset>" from DbgHelp's module list of \a process (the helper's view of the game), else
+// "0x<address>"
+std::string symbolModuleLabel(HANDLE process, u64 address) {
+	char buffer[64];
+	IMAGEHLP_MODULEW64 module;
+	std::memset(&module, 0, sizeof(module));
+	module.SizeOfStruct = sizeof(module);
+	if(SymGetModuleInfoW64(process, address, &module) == TRUE && module.BaseOfImage != 0) {
+		const wchar_t * file = module.ImageName[0] ? module.ImageName : module.ModuleName;
+		for(const wchar_t * c = file; *c != L'\0'; c++) {
+			if(*c == L'\\' || *c == L'/') {
+				file = c + 1;
+			}
+		}
+		char name[MAX_PATH];
+		int n = WideCharToMultiByte(CP_UTF8, 0, file, -1, name, int(sizeof(name)), nullptr, nullptr);
+		std::snprintf(buffer, sizeof(buffer), "+0x%llx", static_cast<unsigned long long>(address - module.BaseOfImage));
+		return (n > 1 ? std::string(name, size_t(n - 1)) : std::string("?")) + buffer;
+	}
+	std::snprintf(buffer, sizeof(buffer), "0x%llx", static_cast<unsigned long long>(address));
+	return buffer;
+}
+
+/*
+ * The stack of \a context in \a process, one "  #<n> <module>+0x<offset> <function> (<file>:<line>)" line per
+ * frame: the game's own (in process, its modules named by moduleLabel) or the helper's walk of the game (#610)
+ */
+std::string walkStack(HANDLE process, HANDLE thread, CONTEXT & context, bool symbols, bool inProcess) {
 
 	std::string out;
-	#if ARX_ARCH == ARX_ARCH_X86_64
-	if(!contextIn) {
-		return out;
-	}
-	CONTEXT context;
-	std::memcpy(&context, contextIn, sizeof(context));
 
 	STACKFRAME64 frame;
 	std::memset(&frame, 0, sizeof(frame));
@@ -531,20 +584,16 @@ std::string symbolizedStack(const void * contextIn) {
 	frame.AddrStack.Offset = context.Rsp;
 	frame.AddrStack.Mode = AddrModeFlat;
 
-	HANDLE process = g_symProcess ? g_symProcess : GetCurrentProcess();
-	if(g_symReady) {
-		// Modules loaded since the start (the OpenXR runtime, a driver): named too
-		SymRefreshModuleList(process);
-	}
 	for(int i = 0; i < 64; i++) {
-		BOOL ok = StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, GetCurrentThread(), &frame, &context, nullptr,
+		BOOL ok = StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, thread, &frame, &context, nullptr,
 		                      SymFunctionTableAccess64, SymGetModuleBase64, nullptr);
 		if(ok != TRUE || frame.AddrPC.Offset == 0) {
 			break;
 		}
 		DWORD64 address = frame.AddrPC.Offset;
-		std::string line = "  #" + std::to_string(i) + " " + moduleLabel(u64(address));
-		if(g_symReady) {
+		std::string line = "  #" + std::to_string(i) + " "
+		                   + (inProcess ? moduleLabel(u64(address)) : symbolModuleLabel(process, u64(address)));
+		if(symbols) {
 			alignas(SYMBOL_INFO) char buffer[sizeof(SYMBOL_INFO) + 512] = {};
 			SYMBOL_INFO * symbol = reinterpret_cast<SYMBOL_INFO *>(buffer);
 			symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
@@ -575,10 +624,45 @@ std::string symbolizedStack(const void * contextIn) {
 		out += line;
 		out.push_back('\n');
 	}
+
+	return out;
+}
+
+#endif // ARX_ARCH_X86_64
+
+} // anonymous namespace
+
+std::string symbolizedStack(const void * contextIn) {
+
+	#if ARX_ARCH == ARX_ARCH_X86_64
+	if(!contextIn) {
+		return std::string();
+	}
+	if(g_failInProcessStack) {
+		// "crash ntdll" (#610): the in-process walk faults, as it did on a corrupt heap - the report must not need it
+		volatile int * nothing = nullptr;
+		*nothing = 1;
+	}
+	CONTEXT context;
+	std::memcpy(&context, contextIn, sizeof(context));
+	HANDLE process = g_symProcess ? g_symProcess : GetCurrentProcess();
+	if(g_symReady) {
+		// Modules loaded since the start (the OpenXR runtime, a driver): named too
+		SymRefreshModuleList(process);
+	}
+	return walkStack(process, GetCurrentThread(), context, g_symReady, true);
 	#else
 	ARX_UNUSED(contextIn);
+	return std::string();
 	#endif
-	return out;
+}
+
+void failInProcessStackForTest() noexcept {
+	g_failInProcessStack = true;
+}
+
+bool reportHasStack() noexcept {
+	return g_shared && g_shared->stack[0] != '\0';
 }
 
 // =====================================================================================================
@@ -830,6 +914,51 @@ bool writeMinidump(HANDLE game, DumpShared * shared, const std::wstring & path) 
 	return true;
 }
 
+/*
+ * The faulting thread's stack, walked and symbolised here, out of the game (#610): the game is waiting in its
+ * crash handler, its memory is all there, and the helper's heap is sound. The game's own walk allocates from the
+ * heap the crash may have corrupted - a heap corruption faulted in it and left the report without a stack.
+ * Empty when the request has no exception (an exit, a hang) or the context cannot be read.
+ */
+std::string helperStack(HANDLE game, const DumpShared & shared) {
+
+	#if ARX_ARCH == ARX_ARCH_X86_64
+	if(shared.exceptionPointers == 0) {
+		return std::string();
+	}
+	EXCEPTION_POINTERS pointers;
+	SIZE_T read = 0;
+	if(!ReadProcessMemory(game, reinterpret_cast<LPCVOID>(static_cast<uintptr_t>(shared.exceptionPointers)), &pointers,
+	                      sizeof(pointers), &read) || read != sizeof(pointers) || !pointers.ContextRecord) {
+		return std::string();
+	}
+	CONTEXT context;
+	if(!ReadProcessMemory(game, pointers.ContextRecord, &context, sizeof(context), &read) || read != sizeof(context)) {
+		return std::string();
+	}
+
+	// The game's modules, enumerated through its handle; arx.pdb from the executable's folder
+	std::wstring path = shared.exePath;
+	size_t slash = path.find_last_of(L"\\/");
+	path = (slash == std::wstring::npos) ? std::wstring() : path.substr(0, slash);
+	SymSetOptions(SYMOPT_UNDNAME | SYMOPT_LOAD_LINES | SYMOPT_DEFERRED_LOADS | SYMOPT_FAIL_CRITICAL_ERRORS
+	              | SYMOPT_NO_PROMPTS);
+	bool symbols = SymInitializeW(game, path.empty() ? nullptr : path.c_str(), TRUE) == TRUE;
+	HANDLE thread = OpenThread(THREAD_QUERY_INFORMATION | THREAD_GET_CONTEXT, FALSE, shared.faultThreadId);
+	std::string stack = walkStack(game, thread, context, symbols, false);
+	if(thread) {
+		CloseHandle(thread);
+	}
+	if(symbols) {
+		SymCleanup(game);
+	}
+	return stack;
+	#else
+	ARX_UNUSED(game), ARX_UNUSED(shared);
+	return std::string();
+	#endif
+}
+
 std::string exitText(DWORD code) {
 	char buffer[64];
 	std::snprintf(buffer, sizeof(buffer), "%d (0x%x)", int(s32(code)), unsigned(code));
@@ -1021,7 +1150,13 @@ std::string moduleLabel(u64) { return std::string(); }
 std::string exceptionCodeName(u32) { return std::string(); }
 std::string threadStartLabel(bool & isExit) { isExit = false; return std::string(); }
 std::string killerLabel() { return std::string(); }
+void moduleLabel(u64, char * out, size_t size) noexcept { if(size) { out[0] = '\0'; } }
+void exceptionCodeName(u32, char * out, size_t size) noexcept { if(size) { out[0] = '\0'; } }
+void threadStartLabel(bool & isExit, char * out, size_t size) noexcept { isExit = false; if(size) { out[0] = '\0'; } }
+void killerLabel(char * out, size_t size) noexcept { if(size) { out[0] = '\0'; } }
 std::string symbolizedStack(const void *) { return std::string(); }
+bool reportHasStack() noexcept { return false; }
+void failInProcessStackForTest() noexcept { }
 
 #endif // ARX_PLATFORM_WIN32
 
@@ -1102,6 +1237,12 @@ int runDumpHelper(int argc, char ** argv) {
 			bool haveDump = false;
 			if(!folder.empty() && wantDump) {
 				haveDump = writeMinidump(game, shared, folder + L"\\" + dumpName);
+			}
+			// A crash's stack, walked here while the game waits (#610): the game walks it itself only when this
+			// found none
+			if(!shared->stack[0]) {
+				std::string stack = helperStack(game, *shared);
+				copyNarrow(shared->stack, sizeof(shared->stack), stack);
 			}
 
 			if(final) {

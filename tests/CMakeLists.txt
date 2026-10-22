@@ -15,6 +15,8 @@ set(arxtest_TESTCASES
 
 	tests/core/ChannelWriterTest.h
 	tests/core/ChannelWriterTest.cpp
+	tests/core/CommandInboxTest.h
+	tests/core/CommandInboxTest.cpp
 	tests/core/GameEventTest.h
 	tests/core/GameEventTest.cpp
 	tests/core/FileReplaceTest.h
@@ -43,6 +45,8 @@ set(arxtest_TESTCASES
 	tests/io/IniTest.h
 	tests/io/IniTest.cpp
 	
+	tests/platform/CrashGateTest.h
+	tests/platform/CrashGateTest.cpp
 	tests/platform/CrashNoticeTest.h
 	tests/platform/CrashNoticeTest.cpp
 	tests/platform/CrashNoticeKindTest.h

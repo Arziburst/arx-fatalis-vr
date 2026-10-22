@@ -222,6 +222,7 @@ set(arxtest_SOURCES
 	${MATH_SOURCES}
 	
 	src/core/ChannelWriter.cpp
+	src/core/CommandInbox.cpp
 	src/game/Camera.cpp
 	src/graphics/Math.cpp
 	src/graphics/Renderer.cpp
@@ -229,6 +230,7 @@ set(arxtest_SOURCES
 	src/io/IniSection.cpp
 	src/io/log/FileLogger.cpp
 	src/io/resource/ResourcePath.cpp
+	src/platform/CrashGate.cpp
 	src/platform/CrashNotice.cpp
 	src/platform/ExitReport.cpp
 	src/platform/FlightRecorder.cpp

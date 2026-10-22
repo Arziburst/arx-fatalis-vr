@@ -37,6 +37,18 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#if _WIN32_WINNT < 0x0600
+// The build targets _WIN32_WINNT 0x0502 (CMakeLists.txt), which hides the rename through a handle (Vista and later)
+typedef struct _FILE_RENAME_INFO {
+	BOOLEAN ReplaceIfExists;
+	HANDLE RootDirectory;
+	DWORD FileNameLength;
+	WCHAR FileName[1];
+} FILE_RENAME_INFO;
+static const int FileRenameInfo = 3;
+extern "C" __declspec(dllimport) BOOL WINAPI SetFileInformationByHandle(HANDLE file, int infoClass, LPVOID info,
+                                                                         DWORD size);
+#endif
 #endif
 
 CppUnit::AutoRegisterSuite<CommandInboxTest> g_registerCommandInboxTest;

@@ -46,6 +46,7 @@
 #include "core/Application.h"
 #include "core/ArxGame.h"
 #include "core/ChannelWriter.h"
+#include "core/CommandInbox.h"
 #include "core/Config.h"
 #include "core/Core.h"
 #include "core/GameEvent.h"
@@ -374,7 +375,6 @@ struct State {
 
 	bool enabled = false;
 	fs::path dir;
-	std::time_t startTime = 0;
 	PlatformInstant startInstant = 0;
 	LogCounter * counter = nullptr; //!< Owned by the logger once added
 
@@ -388,7 +388,6 @@ struct State {
 
 	unsigned cmdSeq = 0; //!< Command batches started so far (the running batch included)
 	unsigned ackedSeq = 0; //!< Command batches finished; this is what status.json reports (#142), written just before their ack.txt (#23)
-	unsigned commandReadRetries = 0; //!< Frames command.txt could not be opened (its writer still had it, #527)
 	std::string lastCmd;
 	std::string lastCmdError;
 
@@ -462,6 +461,8 @@ struct State {
 	//! Writes status.json and ack.txt on its own thread (#553); deleted in shutdown only, never at static
 	//! destruction (its thread flushes the logger)
 	ChannelWriter * writer = nullptr;
+	//! Reads command.txt on its own thread (#561); deleted in shutdown only, like the writer
+	CommandInbox * inbox = nullptr;
 	//! The writer did not flush arx.log after a status (lines came after it was built): the next frame builds one
 	std::atomic<bool> freshStatus { false };
 
@@ -552,14 +553,14 @@ std::string menuHover(const Vec2f & mouse) {
 //! When the delayed deliberate crash of "crash steal" fires (#132); zero = none pending
 PlatformInstant g_crashAt = PlatformInstant(0);
 
-// command.txt is looked for every frame (a stat; it is read only when it is there), status.json is
+// command.txt is looked for by the inbox's reader thread (#561) and its batch taken by the next frame, status.json is
 // replaced every 100 ms and after every batch, shot and state change (#522)
 const s64 StatusIntervalMs = 100;
 
 /*!
  * A part of the channel's work on the frame that took 20 ms or more is named in the log (#553): the perf log's hitch
- * line only says `cause=channel`, and what is left of the channel on the frame (reading command.txt, a batch's
- * commands, building the status, the records) is then told apart by this line
+ * line only says `cause=channel`, and what is left of the channel on the frame (a batch's commands, building the
+ * status, the records; command.txt is read off the frame since #561) is then told apart by this line
  */
 void noteSlowPart(const char * part, PlatformInstant start) {
 	const s64 ms = toMsi(platform::getTime() - start);
@@ -4294,88 +4295,12 @@ void runBatch() {
 	writeAck(errors);
 }
 
-/*
- * Read command.txt whole, sharing the file with whoever still has it open. The test writes command.txt.tmp and
- * renames it into place; on Windows the renamer still holds the file open with DELETE access for a moment after
- * the new name is visible, and an open without FILE_SHARE_DELETE (std::ifstream, fs::read) fails then with a
- * sharing violation. The old code read "" in that moment, deleted the file and acknowledged nothing: the batch was
- * lost without a line in the log (CI run 39120032077 attempt 1, vr-remap's 'waitframes 5' after 'vr-input down
- * left.grip': the ack of the quit came back as seq 15, the lost batch's number; #527). The moment is microseconds
- * when the PC is idle and grows with every preemption of the writer's thread, so it hit under three games. Returns
- * false when the file could not be opened: then it is left alone and read next frame.
- */
-bool readCommandFile(const fs::path & file, std::string & contents) {
-
-#if ARX_PLATFORM == ARX_PLATFORM_WIN32
-	HANDLE handle = CreateFileW(platform::WinPath(file), GENERIC_READ,
-	                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-	                            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if(handle == INVALID_HANDLE_VALUE) {
-		return false;
-	}
-	contents.clear();
-	char buffer[4096];
-	DWORD read = 0;
-	while(ReadFile(handle, buffer, sizeof(buffer), &read, nullptr) && read != 0) {
-		contents.append(buffer, read);
-	}
-	CloseHandle(handle);
-	return true;
-#else
-	contents = fs::read(file);
-	return true;
-#endif
-
-}
-
 void pollCommands() {
 
-	fs::path file = g.dir / "command.txt";
-	if(!fs::exists(file)) {
-		return;
-	}
-
-	if(fs::last_write_time(file) < g.startTime) {
-		LogWarning << "[channel] ignoring " << file << ": written before this process started";
-		fs::remove(file);
-		return;
-	}
-
-	std::string contents;
-	if(!readCommandFile(file, contents)) {
-		// Still open by the test's rename (see above): the file stays, the next frame reads it
-		g.commandReadRetries++;
-		if(g.commandReadRetries == 1 || g.commandReadRetries % 100 == 0) {
-			LogInfo << "[channel] " << file << " cannot be opened yet (its writer still has it open), reading it next frame"
-			        << (g.commandReadRetries > 1 ? " (" + std::to_string(g.commandReadRetries) + " frames so far)" : "");
-		}
-		if(g.commandReadRetries >= 900) {
-			LogWarning << "[channel] giving up on " << file << " after " << g.commandReadRetries << " frames: it stays open";
-			g.commandReadRetries = 0;
-			fs::remove(file);
-		}
-		return;
-	}
-	g.commandReadRetries = 0;
-	if(!fs::remove(file)) {
-		// Do not run the same batch again next frame
-		LogWarning << "[channel] could not delete " << file << " after reading it";
-		fs::write(file, std::string_view());
-	}
-
+	// The inbox's reader thread looked for command.txt, read it, removed it and split it (#561): the frame only takes
+	// a batch that is ready, and never waits for the file system or the reader
 	std::vector<std::string> lines;
-	for(size_t pos = 0; pos < contents.size(); ) {
-		size_t end = contents.find('\n', pos);
-		if(end == std::string::npos) {
-			end = contents.size();
-		}
-		std::string_view line = trim(std::string_view(contents).substr(pos, end - pos));
-		if(!line.empty() && line.front() != '#') {
-			lines.emplace_back(line);
-		}
-		pos = end + 1;
-	}
-	if(lines.empty()) {
+	if(!g.inbox || !g.inbox->take(lines)) {
 		return;
 	}
 
@@ -4439,7 +4364,6 @@ void initialize() {
 		return;
 	}
 
-	g.startTime = std::time(nullptr);
 	g.startInstant = platform::getTime();
 
 	// Leftovers of a previous run must not be mistaken for this one
@@ -4474,6 +4398,20 @@ void initialize() {
 			}
 		},
 		[](std::string_view message) { LogWarning << "[channel] " << message; });
+
+	// command.txt is looked for, read and removed on the inbox's thread (#561): a busy file system's stat took up to
+	// 62 ms on the frame. A file last written before this second is a leftover of an earlier run (whole seconds, as
+	// the std::time start this check used before)
+	g.inbox = new CommandInbox(
+		std::filesystem::path((g.dir / "command.txt").string()),
+		std::chrono::floor<std::chrono::seconds>(std::filesystem::file_time_type::clock::now()),
+		[](bool warning, std::string_view message) {
+			if(warning) {
+				LogWarning << "[channel] " << message;
+			} else {
+				LogInfo << "[channel] " << message;
+			}
+		});
 
 	// The simulated headset's shots go next to the channel's own
 	vr::setSimCaptureDir((g.dir / "capture").string());
@@ -4797,6 +4735,10 @@ void shutdown() {
 	if(!g.enabled) {
 		return;
 	}
+
+	// No more batches: the game is going (one not taken yet is not run, as before)
+	delete g.inbox;
+	g.inbox = nullptr;
 
 	g.state = GameState::Exited;
 	g.cleanShutdown = true;

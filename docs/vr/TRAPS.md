@@ -173,8 +173,8 @@ delete - `std::ifstream`, so `fs::read` - fails with a sharing violation then. T
 (DeleteFile shares everything, so it succeeded) and acknowledged nothing. The moment is microseconds on an idle PC and
 grows with every preemption of the writer's thread: it hit under three games (two CI lanes and a worker's). Seen once in
 about 900 launches.
-**Do:** read a file another process renames into place with `FILE_SHARE_DELETE` (the channel does, with a retry next
-frame when the open fails: `readCommandFile` in `src/core/CommandChannel.cpp`). When an ack is missing, read the
+**Do:** read a file another process renames into place with `FILE_SHARE_DELETE` (the channel does, with a retry on
+the next look when the open fails: `readWhole` in `src/core/CommandInbox.cpp`, the channel's reader thread since #561). When an ack is missing, read the
 evidence's `ack.txt`: a quit with the missing seq means the batch never arrived; a quit with the next seq means the ack
 was written and the harness missed it.
 

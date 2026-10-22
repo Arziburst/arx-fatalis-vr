@@ -278,9 +278,12 @@ void endSwing(SwingChange change) {
 	const char * result = change == SwingChange::Lost ? "lost"
 	                      : m.swingRecovering ? "recovering"
 	                      : m.swingHits > 0 ? "hit" : "miss";
+	// The display rate the swing was sampled at (Hz, 0 outside a VR session): the speed is read a fixed 16.7 ms back
+	// at every rate (D-NEW, #620), and the owner's headset runs at 144 Hz - the line tells which rate a blow was dealt at
+	const s64 period = displayPeriodUs();
 	gameevent::Event("melee.swing", 1000)("kind", swingKindName(m.swingKind))("result", result)
 		("peak", d.peak(), 2)("aim", m.swingAim, 2)("hits", m.swingHits)
-		("ms", int((meleeClock() - m.swingStart) * 1000.));
+		("ms", int((meleeClock() - m.swingStart) * 1000.))("rate", period > 0 ? 1e6f / float(period) : 0.f, 1);
 	if(!m.swingSpheres.empty()) {
 		// The weapon's hit spheres of the swing's last check, world x,y,z/radius, and whether any of its checks reached
 		// the world's geometry: why a swing does or does not ring on a wall (#465)

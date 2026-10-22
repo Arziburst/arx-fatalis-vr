@@ -806,13 +806,19 @@ function Save-ArxSymbolArchive([string]$BuildDir, [string]$Branch = '', [string]
 	try {
 		$exeHash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
 		$archiveDir = Join-Path $env:LOCALAPPDATA "ArxFatalisVR\symbols\$exeHash"
-		if (Test-Path -LiteralPath (Join-Path $archiveDir 'arx.pdb')) { return $archiveDir }
+		# arx.exe too (#610, ~6 MB): cdb unwinds the x64 frames of a minidump from the image's unwind data, which the
+		# pdb does not hold - with the pdb alone a dump's stack stops at the first frame of arx.exe
+		if (Test-Path -LiteralPath (Join-Path $archiveDir 'arx.pdb')) {
+			if (-not (Test-Path -LiteralPath (Join-Path $archiveDir 'arx.exe'))) { Copy-Item -Force -LiteralPath $exe -Destination $archiveDir }
+			return $archiveDir
+		}
 		New-Item -ItemType Directory -Force $archiveDir | Out-Null
 		Copy-Item -Force -LiteralPath $pdb -Destination $archiveDir
+		Copy-Item -Force -LiteralPath $exe -Destination $archiveDir
 		$build = @("arx.exe sha256: $exeHash", "config: $Config", "branch: $Branch",
 			"archived: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))")
 		[IO.File]::WriteAllText((Join-Path $archiveDir 'BUILD.txt'), (($build -join "`r`n") + "`r`n"), [Text.UTF8Encoding]::new($false))
-		# Only the 20 newest builds stay (a pdb is ~35 MB); the newest by the time it was archived
+		# Only the 20 newest builds stay (a pdb is ~35 MB, the exe ~6 MB: ~0.8 GB at most); the newest by the time it was archived
 		$all = @(Get-ChildItem (Split-Path -Parent $archiveDir) -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
 		foreach ($old in ($all | Select-Object -Skip 20)) { Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 		return $archiveDir

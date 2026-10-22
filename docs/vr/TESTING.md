@@ -321,7 +321,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `mark <text>` | `[mark] <text>` in the log — an anchor for "the line I wait for must come after this"; also an `M` line in [the performance log](#the-performance-log-arx-perflog-327) |
 | `stall <ms>` | the main thread sleeps 1..60000 ms in this frame: a forced hitch, which the performance log must mark with `cause=channel` (#327); over the watchdog's threshold (6000) it forces a hang report with a dump (#545, `hang-dump.xrs`) |
 | `leak <MiB>` | allocate and touch 1..4096 MiB of private memory and keep it until the exit: the `R` lines of the performance log show the step, `perf-summary.ps1` the trend (#545) |
-| `abort`, `terminate`, `terminate thread`, `heapcorrupt`, `exitprocess <code>` | end the game on purpose for the crash-report checks (#545, `flight-recorder-check.ps1`): `abort()`, `std::terminate()` on the main thread or on a new `std::thread`, a heap corruption the heap detects (`STATUS_HEAP_CORRUPTION`), a thread that starts straight at `ExitProcess` (the #544 shape, caught by the ExitGuard). Each leaves one `crashes\<utc>\` report; the killing ones never get an ack |
+| `abort`, `terminate`, `terminate thread`, `heapcorrupt`, `crash ntdll`, `exitprocess <code>` | end the game on purpose for the crash-report checks (#545, `flight-recorder-check.ps1`): `abort()`, `std::terminate()` on the main thread or on a new `std::thread`, a heap corruption the heap detects (`STATUS_HEAP_CORRUPTION`), an access violation inside ntdll with an in-process stack walk that faults too (#610: the report's stack must come from the dump helper), a thread that starts straight at `ExitProcess` (the #544 shape, caught by the ExitGuard). Each leaves one `crashes\<utc>\` report; the killing ones never get an ack |
 | `crashnotice ok`, `crashnotice open` | the buttons of the next-launch crash notice at the main menu (#545, M6): OK dismisses it (every announced report gets `notice-shown.txt`), Open folder opens the report; `crashNotice.state` / `.report` in the status; `scripts/dev/crash-notice-check.ps1` |
 | `stall load <ms>` | the **next level load** sleeps 1..5000 ms right after its `Loading level` line: a stalled load for the [hang watchdog](#the-hang-watchdog-440) (#440, `level-load-hang.xrs`) |
 | `watchdog <ms>` | the hang watchdog's threshold, 100..60000 ms (default 5000): a main thread without a beat for this long is reported with its stack (#440); `hangWatchdog.thresholdMs` in the status |
@@ -2563,7 +2563,11 @@ the kind of a report) - in per-thread lock-free rings (`src/platform/FlightRecor
 the out-of-process dump helper shares, so it can be read after the game is gone. It is written into the crash
 dump as a user stream and to `arx-recorder.txt` on every exit. `scripts/dev/crash-report.ps1` prints the newest
 report's kind, exit code, killer thread, faulting module and stack, the last 100 recorder events and the
-resource trend, all scrubbed of personal data (`Protect-ArxText`). `--no-recorder` turns the recorder and the
+resource trend, all scrubbed of personal data (`Protect-ArxText`). The stack of a crash is walked by the dump helper,
+out of the game's process, while the dump is taken (#610): it reads the exception's context from the game's memory and
+symbolises it with a heap of its own. The game walks it itself (DbgHelp in process) only when the helper found none -
+an in-process walk allocates from the heap the crash may have corrupted, and on #610's heap corruption it faulted,
+leaving `exit=1` and an empty stack. `--no-recorder` turns the recorder and the
 dump helper off (the overhead baseline).
 
 The kinds a report can have (`report.txt` `kind=`): `crash` (an exception, a heap corruption), `abort`,
@@ -2609,11 +2613,16 @@ full report without them) and neither ships to players:
   ```
 
 - **WinDbg / cdb** - a debugger lets `crash-report.ps1` symbolise a dump beyond what `report.txt` already
-  holds. Install it once: `winget install Microsoft.WinDbg`. Without it `crash-report.ps1` prints the stack the
-  game captured in `report.txt` (arx.exe frames already symbolised from the build's `arx.pdb`). The owner's
-  launches (`run-windows.ps1`, `test-pr.ps1`) archive each build's `arx.pdb` under its exe hash in
-  `%LOCALAPPDATA%\ArxFatalisVR\symbols\<sha256>\`, so a later report of that build can be symbolised even after
-  its build directory is gone.
+  holds: the frames of the exception's context (`.ecxr; kn`), ntdll's internal functions from Microsoft's public
+  symbols (cached in `%LOCALAPPDATA%\ArxFatalisVR\tools\symbols`). `crash-report.ps1 -InstallCdb` installs the
+  pinned one into `%LOCALAPPDATA%\ArxFatalisVR\tools\windbg-<version>\` (`scripts/dev/debugger-lib.ps1`, #610: a
+  1.2 GB download once, SHA-256 and Microsoft's signature checked; see the table of third-party tools); an installed
+  WinDbg (`winget install Microsoft.WinDbg`) or the SDK's debuggers are used as well. Without one `crash-report.ps1`
+  prints the stack in `report.txt` (symbolised by the dump helper from the build's `arx.pdb`). The owner's
+  launches (`run-windows.ps1`, `test-pr.ps1`) archive each build's `arx.pdb` and `arx.exe` under its exe hash in
+  `%LOCALAPPDATA%\ArxFatalisVR\symbols\<sha256>\` (the 20 newest builds, ~0.8 GB at most), so a later report of that
+  build can be symbolised even after its build directory is gone - the exe too, because cdb unwinds a minidump's x64
+  frames from the image's unwind data, which the pdb does not hold (#610).
 
 ## Record and replay (#550)
 
@@ -2798,13 +2807,16 @@ one OpenAL call on the press frame; its time is in the log line `... (the microp
 ### Third-party tools downloaded by scripts
 
 Nothing of these is in the repository (it is public and they are large); a script downloads each on first use from
-the pinned URL, checks the SHA-256 and caches it. The pins live in `scripts/dev/transcribe-lib.ps1`.
+the pinned URL, checks the SHA-256 and caches it. The pins live in `scripts/dev/transcribe-lib.ps1` and, for the
+debugger, `scripts/dev/debugger-lib.ps1` (downloaded only on `crash-report.ps1 -InstallCdb`; its `cdb.exe` must also
+carry Microsoft's signature).
 
 | Name | Version | URL | Licence | SHA-256 |
 |---|---|---|---|---|
 | whisper.cpp (`whisper-bin-x64.zip`: `whisper-cli.exe`, CPU) | v1.9.2 | https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip | MIT | `49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a` |
 | Whisper large-v3-turbo, q8_0 (`ggml-large-v3-turbo-q8_0.bin`, 874 MB) | HF `ggerganov/whisper.cpp` rev `5359861c739e955e79d9a303bcbc70fb988958b1` | https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q8_0.bin | MIT | `317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1` |
 | Silero VAD v6.2.0 for whisper.cpp (`ggml-silero-v6.2.0.bin`) | HF `ggml-org/whisper-vad` rev `9ffd54a1e1ee413ddf265af9913beaf518d1639b` | https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin | MIT | `2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987` |
+| WinDbg (`windbg.msixbundle`; `amd64\` of its x64 package: `cdb.exe`, `dbgeng.dll`, `dbghelp.dll`, `symsrv.dll`, 1.2 GB download) | 1.2610.1001.0 | https://windbg.download.prss.microsoft.com/dbazure/prod/1-2610-1001-0/windbg.msixbundle | Microsoft software licence (free; not redistributed) | `4662ae17bc0dc77db987b89cccea32c30058baa06268f861d09e0ab4e4f45c20` |
 
 Vendored in the repository instead (small, compiled in): `stb_image_write.h` v1.16 (`libs/stb/`, from
 nothings/stb at `1ee679ca2ef753a528db5ba6801e1067b40481b8`; public domain or MIT, notice in `LICENSE.stb`) - the

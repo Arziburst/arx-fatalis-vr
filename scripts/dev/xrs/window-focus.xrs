@@ -1,0 +1,111 @@
+# In VR the desktop window's focus changes nothing in the game (#406): the player in the headset does not see the
+# window, and clicking OBS, a browser or Discord takes its focus (streaming and recording, #576/#77). A focus loss and
+# its return during gameplay keep free look (no cursor mode: the inventory stays shut, melee is not refused), keep the
+# combat mode, and the game keeps running - frames, the game clock, the headset session. The flat counterpart, where a
+# focus loss still leaves free look and puts the weapon away: the end of desktop-mouse-flat.xrs.
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence window-focus -Save mvp-goblin-fight
+#
+# The test channel's command this sequence needs (written before the implementation, #406):
+#   window focus lost | window focus gained
+#       the game window losing / getting the input focus, as when the player clicks another program or back on the
+#       game: SDL_WINDOWEVENT_FOCUS_LOST / SDL_WINDOWEVENT_FOCUS_GAINED for the game window pushed into SDL's event
+#       queue (as desktop-mouse does for the mouse), so it reaches the game through the same path as the real event -
+#       SDL2Window's event loop, Window::onFocus, ArxGame::onWindowLostFocus / onWindowGotFocus. Not a flag set beside
+#       it: status.json window.focused follows it (Window::hasFocus), and flat mode must react to it as to a real one.
+#       The existing "window <width> <height>" stays as it is.
+# Status fields read (all exist): window.focused, player.freelook, player.inventoryOpen, player.bookOpen,
+# vr.weapon.combatMode, vr.melee.*, frame, vr.frames, gameTimeMs, paused, vr.sessionState.
+# The CI runner's window is never activated (window.focused false from the start, #487), so the focus is given first:
+# the loss below is a real change.
+@sim idle
+@save mvp-goblin-fight
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert player.freelook eq true
+@assert player.inventoryOpen eq false
+@assert vr.weapon.place eq hand
+@assert vr.melee.active eq true
+# A touch is the minimum (the default, set live: a cfg.ini of an earlier build may keep another value, TRAPS.md)
+melee noswing min
+
+# The goblin held still 80 units ahead, the sword level with its chest, the hand to the right - moved there slowly
+# (0.43 m in 60 frames: under 0.7 m/s, no swing), as in melee-swing.xrs
+goblin_base_0036.setspeed 0
+place goblin_base_0036 80
+vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
+vr-sim head rot 0 -25 0
+@frames 75
+@assert vr.melee.swings eq 0
+
+# 1. The window gets the focus: nothing changes in the game
+window focus gained
+@until window.focused eq true 5s
+@frames 10
+@assert player.freelook eq true
+@assert player.inventoryOpen eq false
+@assert vr.melee.active eq true
+
+# 2. The window loses the focus (the player clicked another program): still free look, the inventory and the book shut,
+# melee not refused, and the game runs on - frames drawn and sent to the headset, the game clock, no pause
+window focus lost
+@until window.focused eq false 5s
+@remember frame0 frame
+@remember vrFrames0 vr.frames
+@remember clock0 gameTimeMs
+@wait 1000
+@assert player.freelook eq true
+@assert player.inventoryOpen eq false
+@assert player.bookOpen eq false
+@assert vr.melee.active eq true
+@assert paused eq false
+@assert vr.sessionState eq focused
+@assert frame ge {frame0+20}
+@assert vr.frames ge {vrFrames0+20}
+@assert gameTimeMs ge {clock0+500}
+
+# 3. Melee works while the window has no focus: a fast swing through the goblin (0.85 m in 8 frames) hits it
+@until vr.melee.recovery.left eq 0 5s
+@remember hits vr.melee.hits
+vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35
+@until vr.melee.swings ge 1 5s
+@until vr.melee.swinging eq false 5s
+@assert vr.melee.hits eq {hits+1}
+@assert vr.melee.last.target eq goblin_base_0036
+@assert window.focused eq false
+
+# 4. The focus comes back: the same - free look, the inventory shut, a swing back still hits
+window focus gained
+@until window.focused eq true 5s
+@frames 30
+@assert player.freelook eq true
+@assert player.inventoryOpen eq false
+@assert vr.melee.active eq true
+@until vr.melee.recovery.left eq 0 5s
+@remember hits vr.melee.hits
+vr-sim @+1-8 hand right pos 0.45 -0.8 -0.35
+@until vr.melee.swings ge 2 5s
+@until vr.melee.swinging eq false 5s
+@assert vr.melee.hits eq {hits+1}
+
+# 5. The combat mode survives a focus loss and its return (the engine's handler turned it off)
+combat on
+@until vr.weapon.combatMode eq true 5s
+window focus lost
+@until window.focused eq false 5s
+@frames 30
+@assert vr.weapon.combatMode eq true
+@assert player.freelook eq true
+@assert player.inventoryOpen eq false
+window focus gained
+@until window.focused eq true 5s
+@frames 30
+@assert vr.weapon.combatMode eq true
+@assert player.freelook eq true
+@assert player.inventoryOpen eq false
+combat off
+@until vr.weapon.combatMode eq false 5s
+
+@assert errors eq 0

@@ -282,6 +282,11 @@ src/vr/PerfStats.* -> refresh-rate
 # every pull request runs, as for CommandChannel), and the pacing sequence a write on the frame failed. 'core' stands
 # alone on a line and a glob is listed once, so this one line is both
 src/core/ChannelWriter.* -> refresh-rate
+
+# --- The desktop window's focus (#406): in VR a focus loss changes nothing in the game ----------------------------------
+# ArxGame.cpp holds the focus handlers (onWindowLostFocus / onWindowGotFocus); the rest of ArxGame.* stays on the core.
+# The flat counterpart is the end of desktop-mouse-flat (src/input/*); src/window/* already runs everything
+src/core/ArxGame.cpp -> window-focus
 # The refresh-rate stress check (#553): the sequence N times on two lanes beside a busy game, hand-run. It launches its
 # own games and is no game check
 scripts/dev/refresh-rate-stress.ps1 -> core

@@ -145,6 +145,13 @@ public:
 	bool isBackground() const { return m_background; }
 
 	virtual InputBackend * getInputBackend() = 0;
+
+	/*!
+	 * Pushes a focus change of this window into the window system's event queue, so it reaches the listeners
+	 * the way a real one does (the test channel's "window focus lost|gained", #406).
+	 * \return false where the window system cannot take one
+	 */
+	virtual bool pushFocusEvent(bool focused);
 	
 protected:
 	

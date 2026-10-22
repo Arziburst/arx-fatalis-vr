@@ -72,6 +72,8 @@ public:
 	
 	InputBackend * getInputBackend() override;
 	
+	bool pushFocusEvent(bool focused) override;
+	
 private:
 	
 	int createWindowAndGLContext(const char * profile);

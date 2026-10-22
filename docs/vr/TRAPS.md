@@ -19,10 +19,29 @@ reproduces it: 9 of 9 runs failed while a build compiled. **Do:** an `@solo` pha
 it starts while anything compiles that is not its run's (`Wait-ArxQuietPc`, at most 600 s, then it runs anyway and the
 log says so). The PC is quiet only after 30 s without a compile: the first proof run took the second between a
 `cmake --build --target clean` and the next `build-windows.ps1` for the end of the build, started, and failed
-`walk120.frames` (156 for `ge 162`) under the next round's compile. A frames guard that still fails: look for `ci-smoke: xrs-<name> measures frame pacing and waits` and
+`walk120.frames` (156 for `ge 162`) under the next round's compile. The runner (NETWORK SERVICE) reads no command line
+of the owner's processes: there an idle `MSBuild /nodemode:` node would look like a build and hold every pacing phase
+for 600 s, and `cmake --build` / `build-windows.ps1` are invisible - so a process without a command line counts by its
+name only (`cl`, `link`, `ninja`), and the settle bridges the steps between them. A frames guard that still fails: look for `ci-smoke: xrs-<name> measures frame pacing and waits` and
 `the PC still compiles after` in the job log, and for `H` lines in the record's window (`stress-sequence.ps1` prints
 them). Not covered: one long frame inside a held-stick window (`walk120.walked` 133.4 for `le 133.1` after one 36.5 ms
 update frame) - a re-measure of such a record needs a retry directive the `.xrs` language does not have.
+
+## 2026-10-22 — A fast simulated swing deals half the damage on a busy PC: its ramp counts frames (#613)
+
+**Symptom:** `melee-damage.xrs` failed in gates and PR runs while the PC was busy (`VR pacing: UNDER-SUBMITTING`, 28-44
+submits/s on 90 slots) at `@assert vr.melee.last.aim ge 0.99` (0.509) or `eq {full}` (0.454), and once at
+`@assert playground.npcFighting eq true` after `playground fight`; the same tree passed alone.
+**Cause:** the swings were frame-counted ramps (`vr-sim @+1-8 hand right pos ...`: 0.85 m over 7 frame steps, 10.9
+m/s at 90 frames/s), while the game measures the blade's speed over display time: capped at 30 Hz the same 7 steps
+take about 260 ms - 3.3 m/s, aim 0.49. The swing starts, and the blade already in the goblin hits, on the ramp's second
+frame; the median filter's speed there is the first frame step's. A frame-counted sweep and `@frames` wait after
+`playground fight` likewise gave the goblin's script (game time) three times as long at 30 frames/s.
+**Do:** a swing whose speed an assert depends on is a timed ramp, `vr-sim @+0-<t>ms ...` (from the display time of the
+frame advanced last, which sampled the hand at rest): its hit reads 0.85 m / max(t, the first frame step) at any rate
+(below 100 ms; a longer step is a gap that starts the detector over). A wait for something the game does in time is a
+display-time wait: `@remember t vr.sim.timelineMs`, then `@until vr.sim.timelineMs ge {t+<ms>}`. Reproduce with
+`scripts/dev/stress-melee-aim.ps1 -SlowRate 30` (the swings at a 30 Hz cap) or `-SlowSpan <a>-<b>`.
 
 ## 2026-10-20 — The playground goblin flees instead of fighting when its life is below 8 - a damage roll decides which (#532)
 
@@ -1763,3 +1782,18 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** after a `run-windows.ps1 -Isolated -Save ...`, `smoke-test.ps1 -Save ...` or `replay.ps1` run, the replay slot of a recorded headset session (`save9001`, D-060) was gone from the user directory and the recording could not be replayed (#569, 2026-10-21).
 **Cause:** `Use-ArxSave` (`scripts/build-paths.ps1`) made the library save the only save by removing the whole `save` folder of the user directory, and the replay recorder keeps each session's start save in `save9000`..`save9004` inside it. The game never lists those slots, so nothing showed that they were there.
 **Do:** `Use-ArxSave` removes everything in the save folder except the folders `save9000`..`save9004` (`Test-ArxReplaySaveSlot`); `Get-ArxLoadSlotProblem` does not count them for `--loadslot` either. A new script that clears or rewrites a user directory's `save` folder keeps them too, and the check is in `scripts/dev/test-use-arxsave.ps1`.
+
+## 2026-10-22 - A level's init crashes in `FrustrumsClipSphere` (Scene.cpp), a spellcast from a script under it
+**Symptom:** `loadlevel 21` (no target, after level 20) ends the game with 0xc0000005 in `FrustrumsClipSphere` <- `VisibleSphere` <- `CCreateField::Update` <- `CreateFieldSpell::Launch` <- `SpellcastCommand` <- `levelInit` (#601); with the player elsewhere the same load passes.
+**Cause:** `g_rooms->frustums` (each room's view frustums) is sized and filled by `ARX_SCENE_Update()` of a frame. A level load makes `g_rooms` anew with it empty, and `levelInit` sends `GAME_READY` before the level's first frame: a persistent field cast there with `-z` (restore) fast-forwards with `Update(4s)`, which since #71 tests visibility (`VisibleSphere`). Whenever the sphere passes the distance and the old screen frustum, its room's entry is read from the empty vector. Per-frame updates are safe: `ARX_SPELLS_Update()` runs after `ARX_SCENE_Update()`.
+**Do:** code that a script can reach during a level's init must not read per-frame render state (`frustums`, `visibleRooms`, `g_screenFrustum`) as if the level had drawn; `VisibleSphere` treats a room without frustums as not in view, and `getEntityVisibility` (the scripts' `^onscreen` / `^offscreen`) an entity as not in view until the frustums are sized. `level-init-targetless.xrs` covers the spell path.
+
+## 2026-10-22 - `[W] [marker_0495:761] playanim: animation action1 not loaded` after a channel `loadlevel 1`
+**Symptom:** the level tour logs the warning 2 s after entering level 1 by `loadlevel 1 marker_0228` from level 0; a start with `--loadlevel 1` or a New game does not (#602).
+**Cause:** level 1's new-game intro (camera_0035, marker_0495) runs on the first entry to level 1 because `#intro_played` is still 0. Entered by a level change, `ARX_CHANGELEVEL_Pop_Player` restores the hero's animations from the changelevel save after marker_0495's `INITEND` loaded `ACTION1`, so the slot is empty when `PLAYANIM -np ACTION1` runs. Upstream engine and original data; a player never enters level 1 first by a level change.
+**Do:** nothing: the line is in `scripts/dev/log-digest-allowlist.txt`. A test that needs the intro starts a New game (`newgame`) or `--loadlevel 1`.
+
+## 2026-10-22 - A crash report has `exit=1` and an empty stack, the fault inside ntdll
+**Symptom:** `crash.txt` / `report.txt` name `ntdll.dll+0x...` and `0xc0000005`, but `Callstack:` / `stack:` is empty and `exit=1 (0x1)`, not the exception's code; the report's `arx-recorder.txt` ends with `crash handler: request`, `exit 0 crash`, `crash handler: stack` (#610: `ntdll.dll+0x9566`, 1 run in 11 of `reach-lever`).
+**Cause:** the heap was corrupt. The fault was `ntdll!RtlpCoalesceFreeBlocks` freeing the status JSON's 16 KiB buffer (`buildStatus` -> `JsonWriter::writeString` -> `stringbuf::overflow`), because the free block after it had its list links overwritten - with sprite vertices (28-byte `TexturedVertex`, six per quad in `RenderBatcher::add`'s v0 v1 v2 v0 v2 v3 order, gray smoke-like colours, per-eye screen coordinates): a write into freed memory, `buildStatus` only the victim. The crash handler then symbolised the stack in process, after the dump; DbgHelp loading `arx.pdb` allocates from that heap, faulted, and the handler's second-fault path ended the process with 1 before the stack was set. The writer is not in the minidump (no heap in it) and not in our code as far as reading shows (#610 has the analysis).
+**Do:** since #610 the dump helper walks a crash's stack out of process (`helperStack`, `DumpHelper.cpp`), so such a report has its stack; `flight-recorder-check.ps1 -Case crash-ntdll` checks it. To read a dump yourself: `scripts/dev/crash-report.ps1 -Path <report folder> -InstallCdb` (the pinned cdb; the build's `arx.pdb` and `arx.exe` from the symbol archive - without the exe cdb's walk stops at the first arx.exe frame). A heap corruption is found where it is written, not where it faults: page heap or ASan, not the crash stack.

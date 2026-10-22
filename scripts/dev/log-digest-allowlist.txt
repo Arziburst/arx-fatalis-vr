@@ -29,3 +29,10 @@
 ^\[W\] CommandChannel:\d+\s+\[hang\] dump written: hangs[\\/]
 ^\[W\] CommandChannel:\d+\s+\[channel\] (abort\(\)|std::terminate\(\)( on a foreign thread)?|heap corruption|exitprocess -?\d+) requested
 ^\[W\] CommandChannel:\d+\s+\[channel\] leaked \d+ MiB on purpose
+
+# Level 1's new-game intro played outside a new game (#602): a channel `loadlevel 1` from another level (the level
+# tour) enters level 1 for the first time by a level change. marker_0495's INITEND loads the hero's ACTION1
+# (human_misc_appears), then ARX_CHANGELEVEL_Pop_Player puts back the hero's animations from the changelevel save,
+# which has none there, and camera_0035's intro (#intro_played still 0) plays it 2 s later. Upstream code and the
+# original scripts, unchanged by us; a player meets level 1 first through New game, where the intro works
+^\[W\] ScriptedAnimation:\d+\s+\[marker_0495:\d+\] playanim: animation action1 not loaded$

@@ -155,6 +155,14 @@ try {
 		Check ((Get-SlotPrint (Join-Path $rs $n)) -eq $beforeRo[$n]) "$n is untouched" (Get-SlotPrint (Join-Path $rs $n))
 	}
 
+	# Get-ArxLoadSlotProblem: the game does not number the replay slots for --loadslot (D-060)
+	Write-Host 'Get-ArxLoadSlotProblem and the replay slots'
+	Check ($null -eq (Get-ArxLoadSlotProblem -ArxArgs @('--loadslot', '0') -UserDir $replayOnly)) '--loadslot 0 with the library save and replay slots: slot 0 exists'
+	Check ($null -ne (Get-ArxLoadSlotProblem -ArxArgs @('--loadslot', '1') -UserDir $replayOnly)) '--loadslot 1 is a problem: the replay slots are not counted'
+	$onlyReplay = Join-Path $root 'user-only-replay-slots'
+	New-Slot (Join-Path $onlyReplay 'save\save9001') $replayFiles ([datetime]'2026-10-21 18:30:00')
+	Check ($null -ne (Get-ArxLoadSlotProblem -ArxArgs @('--loadslot', '0') -UserDir $onlyReplay)) '--loadslot 0 with only replay slots is a problem: there is nothing to load'
+
 	Check (@(Get-ChildItem -LiteralPath $guard -Force).Count -eq 0) 'nothing was written under %LOCALAPPDATA% (pointed into the scratch folder)' ((Get-ChildItem -LiteralPath $guard -Force -Recurse | Select-Object -ExpandProperty FullName) -join ', ')
 } finally {
 	$env:LOCALAPPDATA = $savedLocal

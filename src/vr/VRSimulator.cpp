@@ -33,15 +33,20 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "core/Application.h"
+#include "core/Core.h"
 #include "core/GameEvent.h"
+#include "game/Player.h"
 #include "graphics/image/Image.h"
 #include "io/fs/FilePath.h"
+#include "io/fs/FileStream.h"
 #include "io/fs/Filesystem.h"
 #include "io/fs/SystemPaths.h"
 #include "io/log/Logger.h"
 #include "platform/ExitTrace.h"
 #include "platform/ProgramOptions.h"
 #include "platform/Thread.h"
+#include "vr/PerfLog.h" // the simulated swapchains' textures count for the resource line (#545)
+#include "vr/ReplayRecorder.h" // the clip clock a play runs on (#550)
 #include "platform/Time.h"
 
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
@@ -80,9 +85,6 @@ bool simRequested() {
 
 namespace {
 
-//! STAGE (the room floor) below the LOCAL origin, where the head starts
-const float FloorBelowHead = 1.7f;
-
 //! Images per simulated swapchain
 const u32 SwapchainImages = 3;
 
@@ -109,6 +111,7 @@ struct SimSwapchain {
 
 struct SimSpace {
 	bool action = false;
+	bool aim = false; //!< the aim pose action's space: the rig's aim in the grip's space (#550)
 	XrReferenceSpaceType type = XR_REFERENCE_SPACE_TYPE_LOCAL;
 	size_t hand = 0;
 	XrPosef offset = { { 0.f, 0.f, 0.f, 1.f }, { 0.f, 0.f, 0.f } };
@@ -157,7 +160,17 @@ struct SimRuntime {
 	s64 displayTime = 0; //!< of the current frame
 	bool timelineStarted = false;
 	u64 timelineStart = 0;
+	s64 timelineStartTime = 0; //!< the display time of the timeline's frame 0, nanoseconds
 	bool timelineDoneLogged = false;
+	std::vector<std::string> pendingRecords; //!< \c record names for the test channel (#23)
+
+	// A recorded clip streamed into the rig (#550): the `play` command
+	SimPlayRequest pendingPlay;           //!< a play asked for, started when the timeline next runs
+	std::unique_ptr<fs::ifstream> clipFile;
+	std::unique_ptr<ClipPlayer> clip;
+	u64 playStartUs = 0;                  //!< the timeline time the play started at
+	bool playStarted = false;
+	std::string playError;
 
 	// Input: the action values as of the last two syncs, by (action, hand)
 	std::map<std::pair<u64, size_t>, Vec2f> synced;
@@ -289,11 +302,17 @@ bool roomPose(XrSpace space, Vec3f & position, glm::quat & orientation) {
 		}
 		position = rig.hands[s.hand].position;
 		orientation = rig.hands[s.hand].orientation();
+		if(s.aim) {
+			// The aim pose in the grip's space (#550)
+			const SimPose & aim = rig.aims[s.hand];
+			position += orientation * aim.position;
+			orientation = orientation * aim.orientation();
+		}
 	} else if(s.type == XR_REFERENCE_SPACE_TYPE_VIEW) {
 		position = rig.head.position;
 		orientation = rig.head.orientation();
 	} else if(s.type == XR_REFERENCE_SPACE_TYPE_STAGE) {
-		position = Vec3f(0.f, -FloorBelowHead, 0.f);
+		position = Vec3f(0.f, -g_sim->sim.view.floor, 0.f);
 		orientation = glm::quat(1.f, 0.f, 0.f, 0.f);
 	} else {
 		position = Vec3f(0.f);
@@ -666,11 +685,13 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrCreateReferenceSpace(XrSession /* session *
 
 XRAPI_ATTR XrResult XRAPI_CALL sim_xrCreateActionSpace(XrSession /* session */, const XrActionSpaceCreateInfo * info,
                                                        XrSpace * space) {
-	if(g_sim->actions.find(fromHandle(info->action)) == g_sim->actions.end()) {
+	auto action = g_sim->actions.find(fromHandle(info->action));
+	if(action == g_sim->actions.end()) {
 		return XR_ERROR_HANDLE_INVALID;
 	}
 	SimSpace s;
 	s.action = true;
+	s.aim = (action->second.name == "aim_pose");
 	s.hand = handOf(info->subactionPath);
 	s.offset = info->poseInActionSpace;
 	if(s.hand > 1) {
@@ -745,6 +766,9 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrCreateSwapchain(XrSession /* session */, co
 	GLint bound = 0;
 	glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound);
 	glGenTextures(GLsizei(s.textures.size()), s.textures.data());
+	for(size_t i = 0; i < s.textures.size(); i++) {
+		vr::perf::addTexture();
+	}
 	for(GLuint texture : s.textures) {
 		glBindTexture(GL_TEXTURE_2D, texture);
 		glTexImage2D(GL_TEXTURE_2D, 0, GLint(info->format), s.size.x, s.size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -765,6 +789,9 @@ XRAPI_ATTR XrResult XRAPI_CALL sim_xrDestroySwapchain(XrSwapchain swapchain) {
 		return XR_ERROR_HANDLE_INVALID;
 	}
 	glDeleteTextures(GLsizei(it->second.textures.size()), it->second.textures.data());
+	for(size_t i = 0; i < it->second.textures.size(); i++) {
+		vr::perf::removeTexture();
+	}
 	g_sim->swapchains.erase(it);
 	return XR_SUCCESS;
 }
@@ -894,6 +921,9 @@ void runRequests() {
 	for(const std::string & shot : requests.shots) {
 		g_sim->pendingShots.push_back(shot);
 	}
+	for(const std::string & record : requests.records) {
+		g_sim->pendingRecords.push_back(record);
+	}
 	if(requests.focusChanged && g_sim->running) {
 		const bool focused = g_sim->sim.rig.focused;
 		const bool worn = g_sim->sim.rig.worn;
@@ -922,6 +952,18 @@ void runRequests() {
 	if(requests.profileChanged) {
 		profileChanged();
 	}
+	if(requests.play.requested) {
+		if(requests.play.stop) {
+			if(g_sim->clip) {
+				g_sim->clip->stop();
+				LogInfo << "[vr] sim: play stopped at " << g_sim->clip->status().positionMs << " ms";
+			}
+			g_sim->pendingPlay = SimPlayRequest();
+		} else {
+			// Started when the timeline next runs: a script's on its frame 0, the channel's on the next frame
+			g_sim->pendingPlay = requests.play;
+		}
+	}
 	if(requests.sessionEnd != SimSessionEnd::None) {
 		endSessionFromRuntime(requests.sessionEnd);
 	}
@@ -936,6 +978,46 @@ void runRequests() {
 	}
 }
 
+//! Open the clip of a play request and start streaming it from the timeline time \a startUs (#550)
+void startPlay(const SimPlayRequest & play, u64 startUs) {
+
+	SimRuntime & s = *g_sim;
+	s.clip.reset();
+	s.clipFile.reset();
+	s.playError.clear();
+	s.playStarted = true;
+	s.playStartUs = startUs;
+
+	// Absolute, or relative to the test channel directory (the capture directory's parent); else the user directory
+	fs::path file(play.file);
+	if(!file.is_absolute()) {
+		fs::path base = s.captureDir.empty() ? fs::getUserDir() : fs::path(s.captureDir).parent();
+		file = base / file;
+	}
+	s.clipFile = std::make_unique<fs::ifstream>(file, std::ios_base::in | std::ios_base::binary);
+	if(!s.clipFile->is_open()) {
+		s.playError = "could not open the clip " + file.string();
+		LogWarning << "[vr] sim: play: " << s.playError;
+		s.clipFile.reset();
+		return;
+	}
+	std::ifstream * stream = s.clipFile.get();
+	s.clip = std::make_unique<ClipPlayer>([stream](std::string & line) {
+		if(!std::getline(*stream, line)) {
+			return false;
+		}
+		if(!line.empty() && line.back() == '\r') {
+			line.pop_back();
+		}
+		return true;
+	}, play.fromUs, play.toUs);
+	s.clip->status().file = file.filename();
+	LogInfo << "[vr] sim: play " << file.filename() << " from " << play.fromUs / 1000 << " ms"
+	        << (play.toUs == ClipPlayer::NoEnd ? std::string() : " to " + std::to_string(play.toUs / 1000) + " ms")
+	        << " at the timeline's " << startUs / 1000 << " ms: build \"" << s.clip->header().build << "\", save \""
+	        << s.clip->header().save << "\", seed " << s.clip->header().seed << ", " << s.clip->header().rate << " Hz";
+}
+
 void advanceTimeline() {
 
 	SimRuntime & s = *g_sim;
@@ -947,17 +1029,50 @@ void advanceTimeline() {
 		}
 		s.timelineStarted = true;
 		s.timelineStart = s.frames;
+		s.timelineStartTime = s.displayTime;
 		LogInfo << "[vr] sim: timeline starts at frame " << s.frames << " ("
 		        << (s.sim.timeline == SimTimeline::Session ? "first frame of the session" : "the game is playable")
 		        << "), " << s.sim.pending() << " timed lines";
 	}
 
-	s.sim.advance(s.frames - s.timelineStart);
+	// The ms lines (#23) count the predicted display time: the same motion at any rate
+	const s64 timelineUs = (s.displayTime - s.timelineStartTime) / 1000;
+	s.sim.advance(s.frames - s.timelineStart, timelineUs);
 	if(s.sim.pending() == 0 && !s.timelineDoneLogged) {
 		s.timelineDoneLogged = true;
 		LogInfo << "[vr] sim: timeline done at its frame " << s.sim.frame();
 	} else if(s.sim.pending() != 0) {
 		s.timelineDoneLogged = false;
+	}
+
+	// A recorded clip (#550): started when asked for, then streamed into the rig on the clip clock - the display time
+	// since the first playable frame of the game loop, where a recording's time 0 is (a loading screen's frames
+	// start this timeline earlier than that); before the clock runs the play waits
+	const s64 clockUs = replay::clipClockUs(s.displayTime);
+	if(s.pendingPlay.requested && (clockUs >= 0 || !s.pendingPlay.setup)) {
+		startPlay(s.pendingPlay, s.pendingPlay.setup ? 0 : u64(std::max<s64>(clockUs, 0)));
+		s.pendingPlay = SimPlayRequest();
+	}
+	if(s.clip && !s.clip->status().done && clockUs >= 0) {
+		const u64 nowUs = u64(clockUs);
+		ReplayGame game;
+		game.playable = gameevent::detectGameState() == gameevent::GameState::Gameplay;
+		game.player.position = player.pos;
+		game.player.yaw = player.angle.getYaw();
+		game.player.area = g_currentArea ? s32(u32(g_currentArea)) : -1;
+		s.clip->advance(nowUs >= s.playStartUs ? nowUs - s.playStartUs : 0, game, s.sim);
+		if(s.clip->status().done) {
+			const ClipStatus & status = s.clip->status();
+			if(!s.clip->error().empty()) {
+				LogWarning << "[vr] sim: play " << status.file << " ended with an error: " << s.clip->error();
+			} else {
+				LogInfo << "[vr] sim: play " << status.file << " done at " << status.positionMs << " ms: " << status.framesServed
+				        << " frames, " << status.eventsReplayed << " events, drift " << status.drift.current << " m (max "
+				        << status.drift.max << " m, " << status.drift.frames << " frames compared)";
+			}
+			gameevent::Event("vr.sim.play")("file", status.file)("frames", status.framesServed)
+				("error", s.clip->error().empty() ? "none" : s.clip->error());
+		}
 	}
 }
 
@@ -1587,6 +1702,15 @@ void setSimCaptureDir(const std::string & dir) {
 	g_sim->captureDir = dir;
 }
 
+std::vector<std::string> takeSimRecords() {
+	if(!g_sim) {
+		return { };
+	}
+	std::vector<std::string> records = std::move(g_sim->pendingRecords);
+	g_sim->pendingRecords.clear();
+	return records;
+}
+
 SimStatus simStatus() {
 
 	SimStatus status;
@@ -1600,6 +1724,7 @@ SimStatus simStatus() {
 	status.script = s.script;
 	status.frame = s.frames;
 	status.timelineFrame = s.timelineStarted ? s.sim.frame() : 0;
+	status.timelineMs = s.timelineStarted ? double(s.sim.timeUs()) / 1000.0 : 0.0;
 	status.pending = s.sim.pending();
 	status.timeline = !s.timelineStarted ? (s.sim.timeline == SimTimeline::Session ? "waiting for the session"
 	                                                                             : "waiting for gameplay")
@@ -1612,6 +1737,15 @@ SimStatus simStatus() {
 	status.pendingShots = s.pendingShots.size();
 	for(const ShotRecord & record : s.shots) {
 		status.shots.push_back(record.shot);
+	}
+	// The clip being played (#550)
+	status.playing = s.playStarted;
+	if(s.clip) {
+		status.play = s.clip->status();
+		status.playError = s.clip->error();
+	} else if(s.playStarted) {
+		status.play.done = true;
+		status.playError = s.playError;
 	}
 	return status;
 }
@@ -1632,6 +1766,10 @@ std::string simCommand(std::string_view /* line */) {
 }
 
 void setSimCaptureDir(const std::string & /* dir */) { }
+
+std::vector<std::string> takeSimRecords() {
+	return { };
+}
 
 SimStatus simStatus() {
 	return SimStatus();

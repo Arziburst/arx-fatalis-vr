@@ -1,0 +1,36 @@
+# Record and replay (#550), the recording: a 30 s walk-and-turn session on the simulated headset, recorded to
+# arx-replay.log, and a `replay mark` at its end. Hand-run by scripts/dev/replay-check.ps1 -Case record (not CI: it is
+# judged after the game quits, and its replay is a second launch). Every motion goes through the simulator's OpenXR
+# poses and actions (vr-sim), never vr-input: the recorder records what the runtime gave the game.
+#   .\scripts\dev\xrs-run.ps1 scripts\dev\xrs\manual\replay-record.xrs
+@sim idle
+@save mvp-new-game
+@args --loadslot 0 --seed 4242
+
+@until state eq GAMEPLAY 60s
+# (the record's start, its save and seed - "[replay] recording ..." in arx.log - may come before this sequence starts:
+# replay-check.ps1 reads them from the whole log)
+@until vr.sim.timelineFrame ge 270 60s
+setplayercontrols on
+@assert player.controlsBlocked eq false
+
+# 30 s of motion: the head turns, nods and moves, both hands sweep and turn, the fingers close and open
+vr-sim @+0-15000ms head rot 60 15 5; vr-sim @+0-30000ms head pos 0.1 -0.05 -0.1
+vr-sim @+0-10000ms hand left pos -0.35 -0.3 -0.45; vr-sim @+0-10000ms hand right rot -40 20 10
+vr-sim @+10000-20000ms hand left pos -0.15 -0.5 -0.25; vr-sim @+10000-30000ms hand right pos 0.3 -0.2 -0.5
+vr-sim @+0-30000ms hand left rot 30 -20 -15; vr-sim @+0-12000ms hand left fingers 0.9 0.8 0.7 0.6 0.5
+vr-sim @+12000-24000ms hand left fingers 0.1 0.2 0.1 0.0 0.0; vr-sim @+0-30000ms hand right fingers 0.6 0.9 1.0 1.0 0.8
+vr-sim @+15000-30000ms head rot -30 -10 0
+# Inputs through the simulator's actions: walk forward 4 s, jump, a left grip, a right trigger, walk again 3 s
+vr-sim @+2000ms action thumbstick left 0 1; vr-sim @+6000ms action thumbstick left 0 0
+vr-sim @+8000ms action thumbstick right 0 0.95; vr-sim @+8400ms action thumbstick right 0 0
+vr-sim @+11000ms action grip left 1; vr-sim @+11600ms action grip left 0
+vr-sim @+14000ms action trigger right 1; vr-sim @+14300ms action trigger right 0
+vr-sim @+18000ms action thumbstick left 0 1; vr-sim @+21000ms action thumbstick left 0 0
+@until vr.sim.pending eq 0 45s
+@frames 30
+
+# The mark: the last 30 s into replay-marks\, its own clip
+replay mark check
+@log \[replay\] mark check: replay-marks[\\/]\S+-check\.vrsim \(\d+ frames, \d+(\.\d+)? s\) 5s
+@assert errors eq 0

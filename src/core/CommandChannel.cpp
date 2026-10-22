@@ -28,19 +28,24 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <exception>
 #include <iomanip>
 #include <limits>
 #include <memory>
+#include <filesystem>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
+#include "ai/Paths.h"
 #include "animation/Animation.h"
 #include "cinematic/CinematicController.h"
 #include "core/Application.h"
 #include "core/ArxGame.h"
+#include "core/ChannelWriter.h"
 #include "core/Config.h"
 #include "core/Core.h"
 #include "core/GameEvent.h"
@@ -65,6 +70,7 @@
 #include "graphics/image/Image.h"
 #include "gui/Console.h"
 #include "gui/DamageNumbers.h"
+#include "gui/DevVariants.h"
 #include "gui/Dragging.h"
 #include "gui/CharacterCreation.h"
 #include "gui/Interface.h"
@@ -75,6 +81,7 @@
 #include "gui/MenuWidgets.h"
 #include "gui/Notification.h"
 #include "gui/book/Book.h"
+#include "gui/book/DevPanel.h"
 #include "gui/hud/PlayerInventory.h"
 #include "gui/hud/SecondaryInventory.h"
 #include "input/Input.h"
@@ -84,6 +91,7 @@
 #include "io/log/LogBackend.h"
 #include "io/log/Logger.h"
 #include "physics/Collisions.h"
+#include "platform/DumpHelper.h"
 #include "platform/Environment.h"
 #include "platform/ExitTrace.h"
 #include "platform/HangWatchdog.h"
@@ -95,13 +103,17 @@
 #include "platform/Time.h"
 #include "scene/ChangeLevel.h"
 #include "scene/Interactive.h"
+#include "scene/Tiles.h"
 #include "script/Script.h"
 #include "util/Number.h"
 #include "util/String.h"
+#include "vr/BodyYaw.h"
 #include "vr/ArmFit.h"
 #include "vr/EyeImage.h"
 #include "vr/HeadTracking.h"
+#include "vr/MotionProbe.h"
 #include "vr/PerfLog.h"
+#include "vr/ReplayRecorder.h"
 #include "vr/SceneSubtitles.h"
 #include "vr/SceneView.h"
 #include "vr/VRArms.h"
@@ -109,6 +121,7 @@
 #include "vr/VRComfort.h"
 #include "vr/VRHud.h"
 #include "vr/VRInput.h"
+#include "vr/VRMarks.h"
 #include "vr/VRMelee.h"
 #include "vr/VRRadial.h"
 #include "vr/VRReticle.h"
@@ -155,6 +168,7 @@ const struct { MENUSTATE page; const char * name; } MenuPages[] = {
 	{ Page_OptionsInterface, "interface" },
 	{ Page_QuitConfirm, "quit" },
 	{ Page_Localization, "language" },
+	{ Page_CrashNotice, "crashnotice" },
 };
 
 const char * menuPageName(MENUSTATE page) {
@@ -192,6 +206,14 @@ bool menuTargetRect(std::string_view name, Rectf & rect, std::string & why) {
 		return true;
 	}
 	if(ARXmenu.mode() == Mode_InGame && (player.Interface & INTER_PLAYERBOOK)) {
+		// The dev variants panel's buttons on the map page (#588)
+		if(name.substr(0, 9) == "devpanel.") {
+			if(!devvariants::panelTargetRect(name, rect)) {
+				why = "the book shows no dev panel button \"" + std::string(name) + "\" (devPanel.visible, its page)";
+				return false;
+			}
+			return true;
+		}
 		// The open book's bookmarks (#377): book_stats, book_spells, book_map, book_quests
 		const struct { std::string_view name; ARX_INTERFACE_BOOK_MODE page; } tabs[] = {
 			{ "book_stats", BOOKMODE_STATS }, { "book_spells", BOOKMODE_SPELLS },
@@ -221,9 +243,12 @@ public:
 
 	std::atomic<unsigned> errors { 0 };
 	std::atomic<unsigned> warnings { 0 };
+	//! Every line, counted under the logger's lock like its flush: what a status was built after (#553)
+	std::atomic<unsigned long long> lines { 0 };
 
 	void log(const logger::Source & /* file */, int /* line */, Logger::LogLevel level,
 	         std::string_view /* str */) override {
+		lines++;
 		if(level >= Logger::Error) {
 			errors++;
 		} else if(level == Logger::Warning) {
@@ -326,6 +351,13 @@ public:
 		return *this;
 	}
 
+	//! A value that is JSON already (a record kept from an earlier frame)
+	JsonWriter & raw(std::string_view name, std::string_view json) {
+		key(name);
+		m_out << json;
+		return *this;
+	}
+
 	std::string str() {
 		while(!m_first.empty()) {
 			end();
@@ -353,7 +385,7 @@ struct State {
 	bool cleanShutdown = false;
 
 	unsigned cmdSeq = 0; //!< Command batches started so far (the running batch included)
-	unsigned ackedSeq = 0; //!< Command batches whose ack.txt is written; this is what status.json reports (#142)
+	unsigned ackedSeq = 0; //!< Command batches finished; this is what status.json reports (#142), written just before their ack.txt (#23)
 	unsigned commandReadRetries = 0; //!< Frames command.txt could not be opened (its writer still had it, #527)
 	std::string lastCmd;
 	std::string lastCmdError;
@@ -422,11 +454,33 @@ struct State {
 		vr::WalkStatus walk;         //!< The stick walk of the hold's last frame that walked
 	} stickFor;
 
+	//! motion: the player's walk, turn and jumps since `motion reset`, fed after every frame (#23)
+	vr::MotionProbe motion;
+	u32 motionResets = 0;
+	//! Writes status.json and ack.txt on its own thread (#553); deleted in shutdown only, never at static
+	//! destruction (its thread flushes the logger)
+	ChannelWriter * writer = nullptr;
+	//! The writer did not flush arx.log after a status (lines came after it was built): the next frame builds one
+	std::atomic<bool> freshStatus { false };
+
+	//! The simulated headset's `record <name>`: the motion values of the frame it named, as JSON, in order
+	std::vector<std::pair<std::string, std::string>> records;
+	//! The free (left) hand's index finger: its bend and target last frame, where and when its approach started
+	float curlLast = 0.f, curlTargetLast = 0.f, curlFrom = 0.f;
+	double curlLastSeconds = 0.0, curlFromSeconds = 0.0;
+	float curlSpeed = 0.f; //!< degrees per second since the target changed
 	//! The hang watchdog of the main thread (#440), started at the first frame
 	std::unique_ptr<platform::HangWatchdog> watchdog;
 	bool watchdogLogged = false;     //!< Its "watching" line is in the log
 	long watchdogThresholdMs = 5000; //!< Below the 10 s a test waits for an ack: the report comes first
 	long stallLoadMs = 0;            //!< stall load: how long the next level load sleeps, 0 = it does not
+
+	//! What the setters of `devvariants demo` got (#588): status.json devPanel.demo.*
+	struct DevDemo {
+		std::string choice = "none";
+		float number = -1.f;
+		u32 calls = 0;
+	} devDemo;
 
 	//! The running batch (#522): kept while a waitframes in it holds the ack until the frames are rendered
 	struct Batch {
@@ -449,6 +503,18 @@ struct State {
 		Vec3f angles = Vec3f(0.f);   //!< pitch, yaw, roll in degrees
 		PlatformInstant movedAt = 0;
 	} cameraWatch;
+
+	//! levelstats (#596): the frame times since `levelstats start`, and what the last report found
+	struct LevelStats {
+		bool measuring = false;
+		PlatformInstant lastFrame = 0; //!< The previous frame's top while measuring; 0 before the first one
+		std::vector<s64> frameUs;      //!< Frame to frame, microseconds
+		u32 reports = 0;
+		u32 frames = 0;
+		double meanMs = 0.0, p95Ms = 0.0, maxMs = 0.0;
+		size_t exits = 0, ladders = 0;
+		std::string listing;           //!< Every report of the run: <dir>\level-tour.txt
+	} levelStats;
 
 };
 
@@ -487,6 +553,19 @@ PlatformInstant g_crashAt = PlatformInstant(0);
 // command.txt is looked for every frame (a stat; it is read only when it is there), status.json is
 // replaced every 100 ms and after every batch, shot and state change (#522)
 const s64 StatusIntervalMs = 100;
+
+/*!
+ * A part of the channel's work on the frame that took 20 ms or more is named in the log (#553): the perf log's hitch
+ * line only says `cause=channel`, and what is left of the channel on the frame (reading command.txt, a batch's
+ * commands, building the status, the records) is then told apart by this line
+ */
+void noteSlowPart(const char * part, PlatformInstant start) {
+	const s64 ms = toMsi(platform::getTime() - start);
+	if(ms >= 20) {
+		LogInfo << "[channel] slow frame part: " << part << " took " << ms << " ms (frame " << g.frame << ", last command \""
+		        << g.lastCmd << "\")";
+	}
+}
 
 void setTestDir(const std::string & dir) {
 	g.dir = dir;
@@ -533,6 +612,7 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 	json.value("timeline", sim.timeline);
 	json.value("frame", sim.frame);
 	json.value("timelineFrame", sim.timelineFrame);
+	json.value("timelineMs", float(sim.timelineMs));
 	json.value("pending", u64(sim.pending));
 
 	json.object("view");
@@ -569,6 +649,24 @@ void writeSimStatus(JsonWriter & json, const vr::SimStatus & sim) {
 	}
 	json.end();
 	json.end();
+
+	// A recorded clip streamed into the rig (#550, the `play` command): where it is, what it served, the drift
+	if(sim.playing) {
+		json.object("play");
+		json.value("file", sim.play.file);
+		json.value("positionMs", float(sim.play.positionMs));
+		json.value("framesServed", sim.play.framesServed);
+		json.value("done", sim.play.done);
+		json.value("anchorsWaiting", u64(sim.play.anchorsWaiting));
+		json.object("drift");
+		json.value("current", sim.play.drift.current);
+		json.value("max", sim.play.drift.max);
+		json.value("frames", sim.play.drift.frames);
+		json.end();
+		json.value("eventsReplayed", sim.play.eventsReplayed);
+		json.value("error", sim.playError);
+		json.end();
+	}
 
 	// The eyes as the runtime located them last, in the room (meters; yaw / pitch in degrees)
 	json.object("eyes");
@@ -746,6 +844,57 @@ void writePlaygroundStatus(JsonWriter & json) {
 
 }
 
+/*!
+ * The values the refresh-rate check compares (#23), as they are after the frame was updated: the motion
+ * probe's totals, the head-tracked camera, the body's follow of the head, the weapon arm and the free
+ * (left) hand's fingers, the swing detector. Written as \c motion and kept as a record when the
+ * simulated headset asks
+ */
+void writeMotionValues(JsonWriter & json) {
+
+	const vr::SimStatus sim = vr::simStatus();
+	json.value("timelineMs", float(sim.timelineMs));
+	json.value("frames", g.motion.frames());
+	json.value("seconds", float(g.motion.seconds()));
+	json.value("walked", g.motion.walked());
+	json.value("turned", g.motion.turned());
+	json.value("jumps", g.motion.jumps());
+	json.value("airborne", g.motion.airborne());
+	json.value("jumpApex", g.motion.jumpApex());
+	json.value("jumpSeconds", float(g.motion.jumpSeconds()));
+	json.value("yaw", player.angle.getYaw());
+	json.value("cameraYaw", g_playerCamera.angle.getYaw());
+	// The head's part of the camera's yaw (D-018): the camera against the heading, (-180, 180]; on the simulated
+	// headset how far it is behind the head itself in this frame - 0 when the camera is where the head is, however
+	// late the frame came (a late frame moves both)
+	const float cameraTurn = vr::wrapSignedDegrees(g_playerCamera.angle.getYaw() - player.angle.getYaw());
+	json.value("cameraTurn", cameraTurn);
+	if(sim.active) {
+		json.value("headYaw", sim.rig.head.angles.x);
+		json.value("cameraLag", vr::wrapSignedDegrees(sim.rig.head.angles.x - cameraTurn));
+	}
+	json.value("cameraPitch", g_playerCamera.angle.getPitch());
+	json.value("bodyOffset", vr::bodyStatus().offset);
+
+	// The weapon hand's arm and the free hand's fingers (a hand holding a weapon is closed on its grip, #305)
+	const vr::PlayerBodyStatus & body = vr::playerBodyStatus();
+	json.value("armError", body.hands[size_t(vr::Hand::Right)].error);
+	const vr::PlayerArmStatus & free = body.hands[size_t(vr::Hand::Left)];
+	json.value("curl", free.curl.indexRoot);
+	json.value("curlTarget", free.curlTarget.indexRoot);
+	// How fast the bend went since its target last changed, degrees per second of the frame clock - the fingers'
+	// smoothing as a speed, the same whichever frame reads it (until the bend arrives)
+	json.value("curlSpeed", g.curlSpeed);
+
+	const vr::MeleeStatus & melee = vr::meleeStatus();
+	json.value("swings", melee.swings);
+	json.value("swingKind", melee.kind);
+	json.value("swingSpeed", melee.speed);
+	json.value("swingPeak", melee.peak);
+	json.value("swingJumps", melee.jumps);
+	json.value("swingGaps", melee.gaps);
+	}
+
 //! status.json \c scene: the scene view of scripted scenes in VR, its meter and its subtitle (#29, SPEC.md)
 void writeSceneStatus(JsonWriter & json) {
 
@@ -805,6 +954,8 @@ void writeSceneStatus(JsonWriter & json) {
 	json.value("yawDeg", subtitle.panelYawDeg);
 	json.value("widthM", subtitle.panelWidthM);
 	json.end();
+	// A notice of the game's own in the panel instead of a line (#551): none, marked, recording
+	json.value("notice", vr::subtitleNoticeName(subtitle.notice));
 	json.end();
 	json.end();
 
@@ -833,6 +984,12 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("menuMode", menuModeName(ARXmenu.mode()));
 	json.value("menuPage", ARXmenu.mode() == Mode_MainMenu ? menuPageName(currentMenuPage()) : "none");
 	json.value("menuRows", ARXmenu.mode() == Mode_MainMenu ? visibleVRSettingRows() : std::string());
+
+	// The next-launch crash notice (#545, M6): shown at the main menu until OK, and the report it names
+	json.object("crashNotice");
+	json.value("state", crashNoticeShown() ? "shown" : "none");
+	json.value("report", crashNoticeShown() ? crashNoticeReport() : std::string());
+	json.end();
 	json.value("area", g_currentArea ? u32(g_currentArea) : 0u);
 	json.value("paused", g_gameTime.isPaused() != 0);
 	// The game clock: it runs while a VR radial menu is open (#376), stops in the pause menu
@@ -841,6 +998,17 @@ std::string buildStatus(PlatformInstant now) {
 	// The timed texts at the top of the 2D interface (a script's tutorial hint): a shot of the HUD that must not
 	// change waits for none (#370)
 	json.value("notifications", u64(notification_count()));
+	// The level tour's last `levelstats report` (#596)
+	json.object("levelStats");
+	json.value("measuring", g.levelStats.measuring);
+	json.value("reports", g.levelStats.reports);
+	json.value("frames", g.levelStats.frames);
+	json.value("meanMs", float(g.levelStats.meanMs));
+	json.value("p95Ms", float(g.levelStats.p95Ms));
+	json.value("maxMs", float(g.levelStats.maxMs));
+	json.value("exits", u64(g.levelStats.exits));
+	json.value("ladders", u64(g.levelStats.ladders));
+	json.end();
 
 	if(g_currentArea) {
 		json.object("player");
@@ -923,6 +1091,17 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("height", g_preparedCamera.m_viewport.height());
 		json.end();
 		json.end();
+		// The refresh-rate check (#23): totals since `motion reset` as of the last frame, and the records the
+		// simulated headset's `record <name>` took after the frame it named
+		json.object("motion");
+		writeMotionValues(json);
+		json.value("resets", g.motionResets);
+		json.object("records");
+		for(const auto & record : g.records) {
+			json.raw(record.first, record.second);
+		}
+		json.end();
+		json.end();
 		// Spells by type: active now, and launched since the level was loaded - the evidence that a spellcast
 		// really started a spell (#155: queued casts on the player never launch, TRAPS.md)
 		std::array<size_t, SPELL_TYPES_COUNT> active = {};
@@ -959,6 +1138,52 @@ std::string buildStatus(PlatformInstant now) {
 	}
 
 	writeSceneStatus(json);
+
+	// Marks of the moment in the headset (#551): both trackpads pressed, the marker folder, the voice note
+	{
+		const vr::marks::MarksStatus & marks = vr::marks::status();
+		json.object("marks");
+		json.value("count", marks.count);
+		json.value("last", marks.last);
+		json.value("lastFiles", marks.lastFiles);
+		// Marks v2 (#574): pending until the release decides; then press or hold
+		json.value("lastKind", marks.lastKind);
+		json.value("lastSnapshots", marks.lastSnapshots);
+		json.value("lastClipMs", marks.lastClipMs);
+		json.value("recording", marks.recording);
+		json.value("noteMs", marks.noteMs);
+		json.value("note", marks.note);
+		// The gesture of the controllers in use: both trackpads on the Index, none without trackpads (the Touch)
+		json.value("gesture", vr::markGestureAvailable(vr::controllerType()) ? "both.trackpad" : "none");
+		json.end();
+	}
+
+	// The dev variants panel on the book's map page (#588)
+	{
+		const devvariants::PanelStatus panel = devvariants::panelStatus();
+		json.object("devPanel");
+		json.value("enabled", g_devLaunch);
+		json.value("view", devvariants::mapPageViewName(panel.view));
+		json.value("visible", panel.visible);
+		json.value("groups", u64(devvariants::count()));
+		json.value("page", u64(panel.page));
+		json.value("pages", u64(panel.pages));
+		json.object("value");
+		for(const devvariants::Entry & entry : devvariants::entries()) {
+			if(entry.kind == devvariants::Kind::Number) {
+				json.value(entry.group, entry.value);
+			} else {
+				json.value(entry.group, devvariants::valueText(entry.group));
+			}
+		}
+		json.end();
+		json.object("demo");
+		json.value("choice", g.devDemo.choice);
+		json.value("number", g.devDemo.number);
+		json.value("calls", g.devDemo.calls);
+		json.end();
+		json.end();
+	}
 
 	{
 		const vr::ComfortPolicy & policy = vr::comfort();
@@ -1833,6 +2058,9 @@ std::string buildStatus(PlatformInstant now) {
 		json.end();
 		// The player's remapping in the VR settings (#178): saved per controller type, conflicts, the capture
 		json.value("remapped", vr::layoutRemapped());
+		// The game menu stays reachable whatever is remapped (#326)
+		json.value("menuReachable", vr::menuReachable(controls.layout()));
+		json.value("remapRefusals", vr::remapRefusals());
 		json.value("layoutFile", vr::layoutFileName(vr::controllerType()));
 		{
 			const std::vector<vr::Conflict> conflicts = vr::findConflicts(controls.layout());
@@ -2030,7 +2258,12 @@ std::string buildStatus(PlatformInstant now) {
 	return json.str();
 }
 
-void writeStatus(PlatformInstant now) {
+//! \param periodic the write of the 100 ms timer: it does not wait for the writer's lock (the next one is near)
+void writeStatus(PlatformInstant now, bool periodic = false) {
+
+	if(!g.writer) {
+		return;
+	}
 
 	if(g.lastStatusTime != PlatformInstant(0)) {
 		s64 ms = toMsi(now - g.lastStatusTime);
@@ -2041,26 +2274,21 @@ void writeStatus(PlatformInstant now) {
 	g.lastStatusTime = now;
 	g.lastStatusFrame = g.frame;
 
-	// Written to a temporary file and renamed, so a reader never sees a half-written status
-	fs::path file = g.dir / "status.json";
-	fs::path tmp = g.dir / "status.json.tmp";
-	static bool warned = false;
-	if((!fs::write(tmp, buildStatus(now)) || !fs::rename(tmp, file, true)) && !warned) {
-		warned = true;
-		LogWarning << "[channel] could not write " << file;
-	}
-
-	// The file logger flushes on its own every second (#129); a test reading arx.log wants it fresher
-	Logger::flush();
+	// Only built here: the writer thread writes it to a temporary file and renames that over status.json, so a reader
+	// never sees a half-written status. The rename waits while a reader - the test runner reads status.json all the
+	// time, a scanner may hold it under load - has the file: on the frame that cost 118 ms (#23, TRAPS.md) and 159.6 ms
+	// (CI run 39359033513: 11 display slots missed, a refresh-rate record short of its frames, #553)
+	const PlatformInstant start = platform::getTime();
+	std::string text = buildStatus(now);
+	noteSlowPart("status build", start);
+	g.writer->status(std::move(text), periodic, g.counter ? g.counter->lines.load() : 0);
 }
-
 void writeAck(unsigned errors) {
 	std::ostringstream oss;
 	oss << "seq=" << g.cmdSeq << " frame=" << g.frame << " errors=" << errors
 	    << " last=" << g.lastCmd << " error=" << (g.lastCmdError.empty() ? "-" : g.lastCmdError) << '\n';
-	if(!fs::write(g.dir / "ack.txt", oss.str())) {
-		LogWarning << "[channel] could not write " << (g.dir / "ack.txt");
-	}
+	// Written after the status handed over before it has landed (#23)
+	g.writer->ack(oss.str());
 }
 
 /*
@@ -2070,20 +2298,41 @@ void writeAck(unsigned errors) {
  */
 void reportHang(std::string_view report) {
 
-	{
+	// hang.txt only when the test channel gave us a directory (a plain launch has none)
+	if(g.enabled && !g.dir.empty()) {
 		fs::ofstream file(g.dir / "hang.txt", std::ios::out | std::ios::app);
 		file << report;
 	}
 
+	// One [hang] log line per report line; the indented frames become the report's stack
+	std::string stack;
 	for(size_t pos = 0; pos < report.size(); ) {
 		size_t end = report.find('\n', pos);
 		if(end == std::string_view::npos) {
 			end = report.size();
 		}
-		LogWarning << "[hang] " << report.substr(pos, end - pos);
+		std::string_view line = report.substr(pos, end - pos);
+		LogWarning << "[hang] " << line;
+		if(!line.empty() && (line[0] == ' ' || line[0] == '\t')) {
+			stack += line;
+			stack += '\n';
+		}
 		pos = end + 1;
 	}
 	Logger::flush();
+
+	// On the first report of a stall, ask the out-of-process dump helper for a hang report with a dump of
+	// every thread, and name the folder it made in the log (#545); the game runs on
+	if(report.find("(report 1 of") != std::string_view::npos && platform::dumpHelperEnabled()) {
+		std::string killer = std::to_string(platform::mainThreadId()) + " main thread";
+		platform::requestReport(platform::DumpKind::Hang, true, platform::mainThreadId(), 0,
+		                        killer, std::string_view(), std::string_view(), stack, 8000);
+		std::string folder = platform::dumpLastReportFolder();
+		if(!folder.empty()) {
+			LogWarning << "[hang] dump written: hangs\\" << folder << "\\arx.dmp";
+			Logger::flush();
+		}
+	}
 }
 
 void setState(GameState state) {
@@ -2144,6 +2393,211 @@ bool parseFloats(std::string_view text, std::vector<float> & values) {
 	return true;
 }
 
+//! A level change in a script (#596): `teleport -l<flags> [<angle>] <level> <target>` (ScriptedIOControl.cpp)
+struct ScriptLevelChange {
+	std::string level;
+	std::string target;
+};
+
+//! Every level change in a (lowercase) script, each level and target once
+std::vector<ScriptLevelChange> scriptLevelChanges(std::string_view script) {
+	std::vector<ScriptLevelChange> changes;
+	const std::string_view command = "teleport";
+	for(size_t pos = script.find(command); pos != std::string_view::npos; pos = script.find(command, pos + 1)) {
+		const size_t after = pos + command.size();
+		if((pos > 0 && !std::isspace(static_cast<unsigned char>(script[pos - 1])))
+		   || after >= script.size() || !std::isspace(static_cast<unsigned char>(script[after]))) {
+			continue; // part of another word
+		}
+		std::string_view line = script.substr(after);
+		line = line.substr(0, line.find_first_of("\r\n"));
+		std::string_view rest;
+		std::string_view flags = firstWord(trim(line), rest);
+		if(flags.size() < 2 || flags[0] != '-' || flags.find('l') == std::string_view::npos) {
+			continue; // a teleport within the level
+		}
+		if(flags.find('a') != std::string_view::npos) {
+			firstWord(rest, rest); // the angle comes first
+		}
+		ScriptLevelChange change;
+		change.level = std::string(firstWord(rest, rest));
+		change.target = std::string(firstWord(rest, rest));
+		if(change.level.empty()) {
+			continue;
+		}
+		// A script variable (the magic portals: ~£leading_to~) has the Latin-1 sigil: '?' keeps the list ASCII
+		for(std::string * word : { &change.level, &change.target }) {
+			for(char & c : *word) {
+				if(static_cast<unsigned char>(c) >= 0x80) {
+					c = '?';
+				}
+			}
+		}
+		bool known = false;
+		for(const ScriptLevelChange & other : changes) {
+			known = known || (other.level == change.level && other.target == change.target);
+		}
+		if(!known) {
+			changes.push_back(std::move(change));
+		}
+	}
+	return changes;
+}
+
+//! The climbable background polygons (POLY_CLIMB, from a texture named "climb"), grouped into ladders
+struct LevelLadder {
+	Vec3f min = Vec3f(0.f);
+	Vec3f max = Vec3f(0.f);
+	size_t polygons = 0;
+};
+
+std::vector<LevelLadder> levelLadders() {
+
+	std::vector<LevelLadder> pieces;
+	if(!g_tiles) {
+		return pieces;
+	}
+	for(auto tile : g_tiles->tiles()) {
+		for(const EERIEPOLY & polygon : tile.polygons()) {
+			if(polygon.type & POLY_CLIMB) {
+				pieces.push_back(LevelLadder{ polygon.min, polygon.max, 1 });
+			}
+		}
+	}
+
+	// One ladder is many polygons: pieces closer than a hand's width (in game units) are one ladder
+	const float gap = 30.f;
+	std::vector<size_t> group(pieces.size());
+	for(size_t i = 0; i < group.size(); i++) {
+		group[i] = i;
+	}
+	auto root = [&group](size_t i) {
+		while(group[i] != i) {
+			i = group[i] = group[group[i]];
+		}
+		return i;
+	};
+	for(size_t i = 0; i < pieces.size(); i++) {
+		for(size_t j = i + 1; j < pieces.size(); j++) {
+			const LevelLadder & a = pieces[i];
+			const LevelLadder & b = pieces[j];
+			if(a.min.x - gap <= b.max.x && b.min.x - gap <= a.max.x && a.min.y - gap <= b.max.y
+			   && b.min.y - gap <= a.max.y && a.min.z - gap <= b.max.z && b.min.z - gap <= a.max.z) {
+				group[root(j)] = root(i);
+			}
+		}
+	}
+
+	std::vector<LevelLadder> ladders;
+	std::vector<size_t> ladderOf(pieces.size(), size_t(-1));
+	for(size_t i = 0; i < pieces.size(); i++) {
+		const size_t r = root(i);
+		if(ladderOf[r] == size_t(-1)) {
+			ladderOf[r] = ladders.size();
+			ladders.push_back(LevelLadder{ pieces[i].min, pieces[i].max, 0 });
+		}
+		LevelLadder & ladder = ladders[ladderOf[r]];
+		ladder.min = glm::min(ladder.min, pieces[i].min);
+		ladder.max = glm::max(ladder.max, pieces[i].max);
+		ladder.polygons++;
+	}
+	return ladders;
+}
+
+std::string formatVec(const Vec3f & v) {
+	std::ostringstream oss;
+	oss << std::fixed << std::setprecision(1) << v.x << ' ' << v.y << ' ' << v.z;
+	return oss.str();
+}
+
+/*!
+ * levelstats report (#596): the frame times since `levelstats start` and where the player is, one log line; the
+ * level's exits (entities whose scripts change the level, with the zones they control) and ladders appended to
+ * <dir>\level-tour.txt
+ */
+std::string reportLevelStats() {
+
+	State::LevelStats & stats = g.levelStats;
+	std::vector<s64> frames = std::move(stats.frameUs);
+	stats.frameUs.clear();
+	stats.measuring = false;
+	stats.lastFrame = 0;
+
+	stats.reports++;
+	stats.frames = u32(frames.size());
+	stats.meanMs = stats.p95Ms = stats.maxMs = 0.0;
+	if(!frames.empty()) {
+		s64 total = 0;
+		for(s64 us : frames) {
+			total += us;
+		}
+		stats.meanMs = double(total) / double(frames.size()) / 1000.0;
+		// Nearest rank, as arx-perf.log: the smallest frame time that at least 95 % of the frames do not exceed
+		const size_t rank = (frames.size() * 95 + 99) / 100;
+		std::nth_element(frames.begin(), frames.begin() + std::ptrdiff_t(rank - 1), frames.end());
+		stats.p95Ms = double(frames[rank - 1]) / 1000.0;
+		stats.maxMs = double(*std::max_element(frames.begin(), frames.end())) / 1000.0;
+	}
+
+	const u32 area = g_currentArea ? u32(g_currentArea) : 0u;
+	std::ostringstream exits;
+	stats.exits = 0;
+	for(const Entity & entity : entities) {
+		std::vector<ScriptLevelChange> changes = scriptLevelChanges(entity.script.data);
+		for(ScriptLevelChange & change : scriptLevelChanges(entity.over_script.data)) {
+			changes.push_back(std::move(change));
+		}
+		for(const ScriptLevelChange & change : changes) {
+			bool zoned = false;
+			for(const Zone & zone : g_zones) {
+				if(zone.controled != entity.idString()) {
+					continue;
+				}
+				// A zone's box: x and z from its outline, y at its floor (pos.y), up by its height (y is down); a zone
+				// without a height reaches from top to bottom
+				const Vec3f center((zone.bbmin.x + zone.bbmax.x) / 2.f, zone.pos.y, (zone.bbmin.z + zone.bbmax.z) / 2.f);
+				exits << "  exit to=" << change.level << ' ' << (change.target.empty() ? "-" : change.target)
+				      << " by=" << entity.idString() << " zone=" << zone.name << " pos=" << formatVec(center)
+				      << std::fixed << std::setprecision(1) << " size=" << (zone.bbmax.x - zone.bbmin.x) << ' '
+				      << (zone.bbmax.z - zone.bbmin.z) << " height=";
+				if(zone.height > 0) {
+					exits << zone.height << '\n';
+				} else {
+					exits << "any\n";
+				}
+				stats.exits++;
+				zoned = true;
+			}
+			if(!zoned) {
+				exits << "  exit to=" << change.level << ' ' << (change.target.empty() ? "-" : change.target)
+				      << " by=" << entity.idString() << " zone=- pos=" << formatVec(entity.pos) << '\n';
+				stats.exits++;
+			}
+		}
+	}
+
+	const std::vector<LevelLadder> ladders = levelLadders();
+	stats.ladders = ladders.size();
+
+	std::ostringstream line;
+	line << "level " << area << " frames=" << stats.frames << std::fixed << std::setprecision(2)
+	     << " mean=" << stats.meanMs << " p95=" << stats.p95Ms << " max=" << stats.maxMs
+	     << " player=" << formatVec(player.pos) << " exits=" << stats.exits << " ladders=" << stats.ladders;
+	LogInfo << "[channel] levelstats: " << line.str();
+
+	std::ostringstream listing;
+	listing << line.str() << '\n' << exits.str();
+	for(const LevelLadder & ladder : ladders) {
+		listing << "  ladder pos=" << formatVec((ladder.min + ladder.max) / 2.f) << " size=" << formatVec(ladder.max - ladder.min)
+		        << " polygons=" << ladder.polygons << '\n';
+	}
+	stats.listing += listing.str();
+	if(!fs::write(g.dir / "level-tour.txt", stats.listing)) {
+		return refuse("levelstats: could not write " + (g.dir / "level-tour.txt").string());
+	}
+	return std::string();
+}
+
 /*!
  * Run one command line.
  * \return an empty string on success, otherwise the reason it was refused
@@ -2153,6 +2607,9 @@ std::string execute(std::string_view line) {
 	std::string_view rest;
 	std::string word(firstWord(line, rest));
 	util::makeLowercase(word);
+
+	// The flight recorder keeps every command (#545): the report shows what the game was asked to do last
+	platform::flightRecord(platform::RecordKind::Command, line);
 
 	if(word == "status") {
 		// Nothing to do: the status is written after every batch
@@ -2171,6 +2628,21 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "window") {
+		std::string_view change;
+		if(firstWord(rest, change) == "focus") {
+			// window focus lost|gained (#406): the window losing / getting the input focus as when the player clicks
+			// another program or back on the game - the window system's event pushed into its queue, so it takes the
+			// real event's path to the game (status.json window.focused follows it)
+			RenderWindow * window = mainApp ? mainApp->getWindow() : nullptr;
+			if(change != "lost" && change != "gained") {
+				return refuse("window focus: expected lost or gained, got \"" + std::string(change) + "\"");
+			}
+			if(!window || !window->pushFocusEvent(change == "gained")) {
+				return refuse("window focus: the window system cannot take \"" + std::string(change) + "\"");
+			}
+			LogInfo << "[channel] window focus " << change;
+			return std::string();
+		}
 		// window <width> <height>: the window resized as a player dragging its border does (#334) - the
 		// interface is laid out again for the new size at the next frame
 		std::vector<float> size;
@@ -2204,9 +2676,10 @@ std::string execute(std::string_view line) {
 		if(!load) {
 			value = rest;
 		}
+		// Up to 60 s: over the watchdog's default 5 s threshold, so a stall can force a hang report (#545)
 		long stallMs = 0;
-		if(!parseIndex(value, stallMs) || stallMs < 1 || stallMs > 5000) {
-			return refuse("stall: expected [load] and milliseconds 1..5000, got \"" + std::string(rest) + "\"");
+		if(!parseIndex(value, stallMs) || stallMs < 1 || stallMs > 60000) {
+			return refuse("stall: expected [load] and milliseconds 1..60000, got \"" + std::string(rest) + "\"");
 		}
 		if(load) {
 			g.stallLoadMs = stallMs;
@@ -2340,6 +2813,21 @@ std::string execute(std::string_view line) {
 		return std::string();
 	}
 
+	if(word == "motion") {
+		// motion reset: the walk, turn and jump totals of status.json motion start from zero (#23); motion clear:
+		// the records too
+		const std::string what = std::string(trim(rest));
+		if(what != "reset" && what != "clear") {
+			return refuse("motion: expected reset or clear, got \"" + what + "\"");
+		}
+		g.motion.reset();
+		g.motionResets++;
+		if(what == "clear") {
+			g.records.clear();
+		}
+		return std::string();
+	}
+
 	if(word == "vr-hud") {
 		// The screen-frame HUD in VR (#469): frame on|off, keep <names>|none, levelup <mode>, reset - cfg.ini's, live
 		std::string error = vr::hudCommand(rest);
@@ -2349,6 +2837,18 @@ std::string execute(std::string_view line) {
 	if(word == "vr-radial") {
 		// The radial menus (#376): point <hand> <item> moves the simulated hand onto an item of its open menu
 		std::string error = vr::radialCommand(rest);
+		return error.empty() ? error : refuse(error);
+	}
+
+	if(word == "replay") {
+		// The replay recorder (#550): mark <name> [<seconds>] cuts the last seconds of the session into a clip
+		std::string error = vr::replay::command(rest);
+		return error.empty() ? error : refuse(error);
+	}
+
+	if(word == "marks") {
+		// Marks of the moment (#551): note on|off - the voice note after a mark, for this session
+		std::string error = vr::marks::command(rest);
 		return error.empty() ? error : refuse(error);
 	}
 
@@ -2385,6 +2885,99 @@ std::string execute(std::string_view line) {
 		return std::string();
 	}
 
+	if(word == "abort") {
+		// abort() on the main thread (SIGABRT): the crash handler reports it, kind=abort (#545)
+		LogWarning << "[channel] abort() requested through the test channel";
+		std::abort();
+	}
+
+	if(word == "terminate") {
+		std::string mode(rest);
+		util::makeLowercase(mode);
+		if(mode == "thread") {
+			// std::terminate() on a new std::thread - a thread the game's handlers were never set up on
+			LogWarning << "[channel] std::terminate() on a foreign thread requested through the test channel";
+			std::thread([] { std::terminate(); }).detach();
+			return std::string();
+		}
+		if(!mode.empty()) {
+			return refuse("terminate: expected nothing or thread, got \"" + std::string(rest) + "\"");
+		}
+		LogWarning << "[channel] std::terminate() requested through the test channel";
+		std::terminate();
+	}
+
+	if(word == "heapcorrupt") {
+		// A heap corruption the heap detects (STATUS_HEAP_CORRUPTION, 0xc0000374): the vectored handler
+		// reports it, kind=crash (#545)
+		LogWarning << "[channel] heap corruption requested through the test channel";
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+		// Overwrite a block's own header on the process heap, then free it: the heap decodes the header,
+		// finds it corrupt and raises STATUS_HEAP_CORRUPTION (termination on corruption is on by default)
+		HANDLE heap = GetProcessHeap();
+		unsigned char * block = static_cast<unsigned char *>(HeapAlloc(heap, 0, 64));
+		if(block) {
+			std::memset(block - 16, 0xcc, 16);
+			HeapFree(heap, 0, block);
+		}
+#endif
+		return std::string();
+	}
+
+	if(word == "exitprocess") {
+		// A thread whose start routine IS ExitProcess, as a foreign kill does (#544): the ExitGuard catches
+		// it and asks for a report before the exit proceeds (#545)
+		long code = 0;
+		if(!parseIndex(rest, code)) {
+			return refuse("exitprocess: expected an exit code, got \"" + std::string(rest) + "\"");
+		}
+		LogWarning << "[channel] exitprocess " << code << " requested (a thread that starts at ExitProcess)";
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+		HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
+		LPTHREAD_START_ROUTINE exitProcess = reinterpret_cast<LPTHREAD_START_ROUTINE>(
+			reinterpret_cast<void *>(GetProcAddress(kernel32, "ExitProcess")));
+		if(exitProcess) {
+			HANDLE thread = CreateThread(nullptr, 0, exitProcess,
+			                             reinterpret_cast<LPVOID>(static_cast<uintptr_t>(u32(code))), 0, nullptr);
+			if(thread) {
+				CloseHandle(thread);
+			}
+		}
+#endif
+		return std::string();
+	}
+
+	if(word == "crashnotice") {
+		// The crash notice's buttons (#545, M6): ok dismisses it (the reports get their marker), open opens the folder
+		std::string what(rest);
+		util::makeLowercase(what);
+		if(!crashNoticeShown()) {
+			return refuse("crashnotice: no notice is on screen");
+		}
+		if(what == "ok") {
+			crashNoticeOk();
+			return std::string();
+		}
+		if(what == "open") {
+			crashNoticeOpen();
+			return std::string();
+		}
+		return refuse("crashnotice: expected ok or open, got \"" + std::string(rest) + "\"");
+	}
+
+	if(word == "leak") {
+		// Allocate and touch <MiB> of private memory and keep it until the exit: the R lines of arx-perf.log
+		// show the step, perf-summary shows the trend (#545)
+		long mb = 0;
+		if(!parseIndex(rest, mb) || mb < 1 || mb > 4096) {
+			return refuse("leak: expected MiB 1..4096, got \"" + std::string(rest) + "\"");
+		}
+		static std::vector<std::vector<char>> leaks;
+		leaks.emplace_back(size_t(mb) << 20, char(1));
+		LogWarning << "[channel] leaked " << mb << " MiB on purpose (kept until the exit)";
+		return std::string();
+	}
+
 	if(word == "comfort") {
 		// Who decides the VR comfort policy (#76): auto = the VR session, on / off force the VR rules
 		std::string mode(rest);
@@ -2397,6 +2990,53 @@ std::string execute(std::string_view line) {
 			vr::setComfortMode(vr::ComfortMode::Off);
 		} else {
 			return refuse("comfort: expected auto, on or off, got \"" + std::string(rest) + "\"");
+		}
+		return std::string();
+	}
+
+	if(word == "devvariants") {
+		// The dev variants panel (#588), only in a development launch: devvariants clear unregisters every group,
+		// devvariants demo registers the demo groups of #588, devvariants set <group> <value> switches one as the
+		// panel's buttons do (a choice by its label, a number)
+		if(!g_devLaunch) {
+			return refuse("devvariants: only in a development launch (--dev-launch)");
+		}
+		std::string_view args;
+		std::string what(firstWord(rest, args));
+		util::makeLowercase(what);
+		if(what == "clear" && args.empty()) {
+			devvariants::clear();
+			LogInfo << "[channel] devvariants cleared";
+		} else if(what == "demo" && args.empty()) {
+			static const std::vector<std::string> sizes = { "Small", "Medium", "Large" };
+			devvariants::registerChoice("demo_choice", "#588", sizes, 0, [](size_t index) {
+				g.devDemo.choice = sizes[index];
+				g.devDemo.calls++;
+			});
+			devvariants::registerNumber("demo_number", "#588", 0.f, 1.f, 0.25f, "m", 0.75f, [](float value) {
+				g.devDemo.number = value;
+				g.devDemo.calls++;
+			});
+			LogInfo << "[channel] devvariants demo registered";
+		} else if(what == "set") {
+			std::string_view value;
+			const std::string group(firstWord(args, value));
+			const devvariants::Entry * entry = devvariants::find(group);
+			if(!entry) {
+				return refuse("devvariants set: no group \"" + group + "\"");
+			}
+			std::vector<float> number;
+			const bool valid = (entry->kind == devvariants::Kind::Choice)
+			                   ? std::find(entry->choices.begin(), entry->choices.end(), value) != entry->choices.end()
+			                   : parseFloats(value, number) && number.size() == 1;
+			if(!valid) {
+				return refuse("devvariants set: \"" + std::string(value) + "\" is no value of " + group);
+			}
+			if(!devvariants::set(group, value)) {
+				LogInfo << "[channel] devvariants set: " << group << " is " << devvariants::valueText(group) << " already";
+			}
+		} else {
+			return refuse("devvariants: expected clear, demo or set <group> <value>, got \"" + std::string(rest) + "\"");
 		}
 		return std::string();
 	}
@@ -3535,6 +4175,26 @@ std::string execute(std::string_view line) {
 		return refuse("playground: expected pull, kill, fight, place or hit, got \"" + std::string(what) + "\"");
 	}
 
+	if(word == "levelstats") {
+		// levelstats start | report: the level tour's frame times, player position, exits and ladders (#596)
+		if(currentState() != GameState::Gameplay || !g_currentArea) {
+			return refuse(std::string("levelstats: needs a level on screen (state ") + gameStateName(currentState()) + ")");
+		}
+		if(rest == "start") {
+			g.levelStats.measuring = true;
+			g.levelStats.lastFrame = 0;
+			g.levelStats.frameUs.clear();
+			return std::string();
+		}
+		if(rest == "report") {
+			if(!g.levelStats.measuring) {
+				return refuse("levelstats report: no levelstats start before it");
+			}
+			return reportLevelStats();
+		}
+		return refuse("levelstats: expected start or report, got \"" + std::string(rest) + "\"");
+	}
+
 	if(word == "loadlevel") {
 		std::string_view target;
 		std::string_view level = firstWord(rest, target);
@@ -3601,10 +4261,15 @@ void runBatch() {
 		}
 	}
 
-	writeAck(batch.errors);
+	// The status first, then the ack (#23): a test that waits for the ack reads status.json right after it, and the ack
+	// written first left a window - the status still of the batch before - in which that read got the old state (the
+	// merge gate's scene-switches: `scene view observer` acked, `scene.view` read `first`). The status carries the
+	// batch's number (cmdSeq = ackedSeq) from the moment it shows the batch's effects, as the ack follows at once
+	const unsigned errors = batch.errors;
 	g.ackedSeq = g.cmdSeq;
 	batch = State::Batch();
 	writeStatus(platform::getTime());
+	writeAck(errors);
 }
 
 /*
@@ -3763,6 +4428,31 @@ void initialize() {
 	g.counter = new LogCounter;
 	Logger::add(g.counter);
 
+	// The file logger flushes on its own every second (#129); a test reading arx.log wants it fresher: flushed after a
+	// status that landed. A test reads status.json right after a log line it waited for (@log, then @assert): the old
+	// main-thread write never showed a line newer than the status on disk, as nothing was logged between building,
+	// writing and flushing. On the writer thread the frame goes on logging meanwhile - a command's event in the same
+	// frame (scene-switches: `scene.active` false after its `vr.scene state=start` line) - so the log is flushed only
+	// while no line came after the status was built; else the next frame builds a fresh status, which flushes it. The
+	// ack does not wait for that: a test reads its batch's own state right after it (melee-damage: `playground fight`,
+	// and the fight is over a frame later)
+	g.writer = new ChannelWriter(
+		ChannelWriter::Files{ std::filesystem::path((g.dir / "status.json").string()),
+		                      std::filesystem::path((g.dir / "status.json.tmp").string()),
+		                      std::filesystem::path((g.dir / "ack.txt").string()) },
+		[](unsigned long long lines) {
+			if(g.counter->lines.load() != lines) {
+				g.freshStatus = true;
+				return;
+			}
+			Logger::flush();
+			if(g.counter->lines.load() != lines) {
+				// A line came in before the flush took the logger's lock: a status after it follows
+				g.freshStatus = true;
+			}
+		},
+		[](std::string_view message) { LogWarning << "[channel] " << message; });
+
 	// The simulated headset's shots go next to the channel's own
 	vr::setSimCaptureDir((g.dir / "capture").string());
 
@@ -3776,6 +4466,28 @@ void initialize() {
 
 void update() {
 
+	// The hang watchdog runs in every launch, with or without the test channel (#440; always-on since
+	// #545): the main thread beats every frame and a stall is reported with its stack and a dump (reportHang)
+	if(!g.watchdog) {
+		g.watchdog = std::make_unique<platform::HangWatchdog>("main thread",
+			std::chrono::milliseconds(g.watchdogThresholdMs), reportHang);
+	}
+	g.watchdog->beat("frame");
+	// One beat record a second in the flight recorder (#545): a stall shows as the gap before the hang's exit cause
+	{
+		static PlatformInstant s_lastBeatRecord = PlatformInstant(0);
+		const PlatformInstant beatNow = platform::getTime();
+		if(s_lastBeatRecord == PlatformInstant(0) || toMsi(beatNow - s_lastBeatRecord) >= 1000) {
+			s_lastBeatRecord = beatNow;
+			platform::flightRecord(platform::RecordKind::Beat, "frame", s64(g.watchdog->stalls()));
+		}
+	}
+	if(!g.watchdogLogged && g.watchdog->watching()) {
+		g.watchdogLogged = true;
+		LogInfo << "[channel] hang watchdog: watching the main thread, threshold "
+		        << g.watchdog->threshold().count() << " ms";
+	}
+
 	if(!g.enabled) {
 		return;
 	}
@@ -3783,16 +4495,12 @@ void update() {
 	g.frame++;
 	PlatformInstant now = platform::getTime();
 
-	// Watched from the first frame on: the start-up before it has the smoke test's own timeout
-	if(!g.watchdog) {
-		g.watchdog = std::make_unique<platform::HangWatchdog>("main thread",
-			std::chrono::milliseconds(g.watchdogThresholdMs), reportHang);
-	}
-	g.watchdog->beat("frame");
-	if(!g.watchdogLogged && g.watchdog->watching()) {
-		g.watchdogLogged = true;
-		LogInfo << "[channel] hang watchdog: watching the main thread, threshold "
-		        << g.watchdog->threshold().count() << " ms";
+	// levelstats (#596): one frame is from this point to the same point of the next frame, as in arx-perf.log
+	if(g.levelStats.measuring) {
+		if(g.levelStats.lastFrame != PlatformInstant(0)) {
+			g.levelStats.frameUs.push_back(toUs(now - g.levelStats.lastFrame));
+		}
+		g.levelStats.lastFrame = now;
 	}
 
 	if(g_crashAt != PlatformInstant(0) && toUs(now - g_crashAt) >= 0) {
@@ -3822,6 +4530,7 @@ void update() {
 		}
 	}
 
+	const PlatformInstant commandsStart = platform::getTime();
 	if(g.batch.resumeFrame != 0) {
 		// A batch waits for frames (waitframes): no new batch before its ack
 		if(g.frame >= g.batch.resumeFrame) {
@@ -3830,9 +4539,12 @@ void update() {
 	} else {
 		pollCommands();
 	}
+	noteSlowPart("commands", commandsStart);
 
-	if(toMsi(now - g.lastStatusTime) >= StatusIntervalMs) {
-		writeStatus(now);
+	if(g.freshStatus.exchange(false) || toMsi(now - g.lastStatusTime) >= StatusIntervalMs) {
+		writeStatus(now, true);
+	} else {
+		g.writer->poll(); // a timer status the writer's lock kept back
 	}
 
 }
@@ -3842,6 +4554,50 @@ void afterRender() {
 	if(!g.enabled) {
 		return;
 	}
+
+	// The motion probe (#23) after the frame's update, and the records the simulated headset asked for in it:
+	// the state this frame displays, at the display time its timeline named
+	if(g_currentArea && entities.player()) {
+		vr::MotionSample sample;
+		sample.seconds = double(toUs(g_platformTime.frameStart() - PlatformInstant(0))) * 1e-6;
+		sample.position = player.pos;
+		sample.yaw = player.angle.getYaw();
+		sample.jumping = player.jumpphase != NotJumping;
+		g.motion.update(sample);
+		// The free hand's bend: its speed since the target changed, measured while it is on its way
+		const vr::PlayerArmStatus & free = vr::playerBodyStatus().hands[size_t(vr::Hand::Left)];
+		const float curl = free.curl.indexRoot;
+		const float target = free.curlTarget.indexRoot;
+		if(target != g.curlTargetLast) {
+			g.curlFrom = g.curlLast;
+			g.curlFromSeconds = g.curlLastSeconds;
+		}
+		if(curl != target && sample.seconds > g.curlFromSeconds) {
+			g.curlSpeed = std::abs(curl - g.curlFrom) / float(sample.seconds - g.curlFromSeconds);
+		}
+		g.curlLast = curl;
+		g.curlTargetLast = target;
+		g.curlLastSeconds = sample.seconds;
+	}
+	const PlatformInstant recordsStart = platform::getTime();
+	for(const std::string & name : vr::takeSimRecords()) {
+		std::string json = "{}";
+		if(g_currentArea && entities.player()) {
+			JsonWriter values;
+			writeMotionValues(values);
+			json = values.str();
+			json.pop_back(); // the newline
+		}
+		auto found = std::find_if(g.records.begin(), g.records.end(), [&](const auto & record) { return record.first == name; });
+		if(found != g.records.end()) {
+			found->second = json;
+		} else {
+			g.records.emplace_back(name, json);
+		}
+		// The values in the log too: the evidence of a CI run outlives its status.json
+		LogInfo << "[channel] record " << name << ": " << json;
+	}
+	noteSlowPart("records", recordsStart);
 
 	if(g.simShotWatch.active) {
 		// The simulator saves its shots when the frame ends (xrEndFrame), before this; a test waits for the
@@ -4012,16 +4768,20 @@ void note(const char * what) {
 
 void shutdown() {
 
+	// The game is down: nothing beats any more (the watchdog runs even without the test channel, so it is
+	// stopped here whether or not the channel was enabled)
+	g.watchdog.reset();
+
 	if(!g.enabled) {
 		return;
 	}
 
-	// The game is down: nothing beats any more
-	g.watchdog.reset();
-
 	g.state = GameState::Exited;
 	g.cleanShutdown = true;
 	writeStatus(platform::getTime());
+	// The final status (and an ack still on its way) lands before the game ends
+	delete g.writer;
+	g.writer = nullptr;
 
 	g.enabled = false;
 }

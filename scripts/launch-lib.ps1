@@ -45,7 +45,8 @@ function ConvertTo-ShortSha([string]$Sha) { if ($Sha -and $Sha.Length -gt 9) { $
 # CI runner service reads the same file), else the old %LOCALAPPDATA%\ArxFatalisVR\settings.json, e.g.
 # { "maxGames": 2 } (how many games may run at once; default 1 - the owner's rule). Missing file or key:
 # the defaults. $env:ARXVR_MAX_GAMES overrides maxGames for the launches of one process tree: the CI workflow
-# sets it to 2, so its two lanes (ci-smoke.ps1, #522) may hold two slots while everyone else keeps one.
+# sets it to its lane count (#563), so its lanes (ci-smoke.ps1, #522) may hold that many slots while everyone else
+# keeps one.
 function Get-ArxLaunchSettings {
 	$settings = @{ maxGames = 1 }
 	$file = @(Get-ArxLockDirs | ForEach-Object { Join-Path $_ 'settings.json' } | Where-Object { Test-Path $_ })[0]
@@ -338,8 +339,10 @@ function Get-ArxLockHolders {
 }
 
 # arx.exe processes that no lock names (started by hand, or by a script before it recorded the pid);
-# the crash processor (arx.exe --crashinfo=...) is not a game. The process list comes from WMI, not from
-# Get-Process: the .Path of a process of another account (the CI runner service) is empty there (#205).
+# the crash processor (arx.exe --crashinfo=...) and the flight-recorder dump helper (arx.exe --dump-helper,
+# #545) are not games - the helper outlives its game by a bounded time to write its report, and must not keep
+# the next launch waiting for a game that is not there. The process list comes from WMI, not from Get-Process:
+# the .Path of a process of another account (the CI runner service) is empty there (#205).
 function Get-ArxGamesOutsideLock {
 	$known = @()
 	foreach ($dir in Get-ArxLockDirs) {
@@ -347,14 +350,31 @@ function Get-ArxGamesOutsideLock {
 			if ((Read-ArxLockHolder $file.FullName) -match 'game=(\d+)') { $known += [int]$Matches[1] }
 		}
 	}
-	@(Get-CimInstance Win32_Process -Filter "Name='arx.exe'" -ErrorAction SilentlyContinue | Where-Object {
-		[int]$_.ProcessId -notin $known -and "$($_.CommandLine)" -notmatch '--crashinfo' -and
+	# The helper and the crash processor are children of a game: a process whose parent is itself an arx.exe is
+	# never a game - this holds even where WMI shows no command line (a process of another account, the CI runner)
+	$all = @(Get-CimInstance Win32_Process -Filter "Name='arx.exe'" -ErrorAction SilentlyContinue)
+	$arxPids = @($all | ForEach-Object { [int]$_.ProcessId })
+	@($all | Where-Object {
+		[int]$_.ProcessId -notin $known -and [int]$_.ParentProcessId -notin $arxPids -and
+		"$($_.CommandLine)" -notmatch '--(crashinfo|dump-helper)' -and
 		(-not $_.ExecutablePath -or $_.ExecutablePath.EndsWith('\arx.exe', [StringComparison]::OrdinalIgnoreCase))
 	} | ForEach-Object { [pscustomobject]@{ Id = [int]$_.ProcessId; Path = "$($_.ExecutablePath)" } })
 }
 
 function Open-ArxLockFile([string]$Path) {
-	$stream = [IO.File]::Open($Path, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::Read)
+	# A lock file another lane is deleting right now (Close-ArxLockFiles, the legacy copy in particular) is
+	# "delete pending" for a few milliseconds: Open answers "access denied", not "in use". Try again a few times
+	# before giving up (#545); a sharing violation (the slot is held) is not retried and keeps its meaning.
+	$stream = $null
+	for ($try = 0; ; $try++) {
+		try {
+			$stream = [IO.File]::Open($Path, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::Read)
+			break
+		} catch [UnauthorizedAccessException] {
+			if ($try -ge 10) { throw }
+			Start-Sleep -Milliseconds 50
+		}
+	}
 	[pscustomobject]@{ Path = $Path; Stream = $stream; Writer = [IO.StreamWriter]::new($stream, [Text.UTF8Encoding]::new($false)) }
 }
 
@@ -549,6 +569,7 @@ public static class ArxJobNative {
   }
   public const int JobObjectExtendedLimitInformation = 9;
   public const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
+  public const uint JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x800;
   [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] public static extern IntPtr CreateJobObjectW(IntPtr attributes, string name);
   [DllImport("kernel32.dll", SetLastError = true)] public static extern bool SetInformationJobObject(IntPtr job, int infoClass, ref JOBOBJECT_EXTENDED_LIMIT_INFORMATION info, int size);
   [DllImport("kernel32.dll", SetLastError = true)] public static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
@@ -567,7 +588,9 @@ function Get-ArxLauncherJob {
 		$info = [ArxJobNative+JOBOBJECT_EXTENDED_LIMIT_INFORMATION]::new()
 		# A nested struct comes back as a copy: set it whole
 		$basic = $info.BasicLimitInformation
-		$basic.LimitFlags = [ArxJobNative]::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+		# BREAKAWAY_OK: the game's dump helper (arx.exe --dump-helper, #545) asks to break away from the job so it
+		# can finish its report after a killed launcher took the game; everything else stays in the job and dies with it
+		$basic.LimitFlags = [ArxJobNative]::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE -bor [ArxJobNative]::JOB_OBJECT_LIMIT_BREAKAWAY_OK
 		$info.BasicLimitInformation = $basic
 		$size = [Runtime.InteropServices.Marshal]::SizeOf($info)
 		if (-not [ArxJobNative]::SetInformationJobObject($job, [ArxJobNative]::JobObjectExtendedLimitInformation, [ref]$info, $size)) {
@@ -768,4 +791,34 @@ function Get-ArxDialogReason([string[]]$Lines) {
 	$Lines = @($Lines | Where-Object { $_ })
 	if (-not $Lines) { return $null }
 	"the game ended on a dialog: $($Lines[0])$(if ($Lines.Count -gt 1) { " (and $($Lines.Count - 1) more)" })"
+}
+
+# Archive arx.pdb under the exe's SHA-256 (#545, stage 0; extends D4 / #132's symbol archive): the symbols
+# of a build the owner launches stay on this PC, keyed by the exe hash, so a crash report of that build can
+# be symbolised later (scripts/dev/crash-report.ps1 with cdb) even after the build directory is gone. The
+# location and BUILD.txt match scripts/package-tester.ps1 (%LOCALAPPDATA%\ArxFatalisVR\symbols\<sha256>\).
+# Cheap and idempotent: it hashes the exe and returns at once when that hash is already archived. Returns the
+# archive directory, or $null when the build has no arx.pdb (a Release build without debug symbols).
+function Save-ArxSymbolArchive([string]$BuildDir, [string]$Branch = '', [string]$Config = 'Release') {
+	$exe = Join-Path $BuildDir 'arx.exe'
+	$pdb = Join-Path $BuildDir 'arx.pdb'
+	if (-not (Test-Path -LiteralPath $exe) -or -not (Test-Path -LiteralPath $pdb)) { return $null }
+	try {
+		$exeHash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+		$archiveDir = Join-Path $env:LOCALAPPDATA "ArxFatalisVR\symbols\$exeHash"
+		if (Test-Path -LiteralPath (Join-Path $archiveDir 'arx.pdb')) { return $archiveDir }
+		New-Item -ItemType Directory -Force $archiveDir | Out-Null
+		Copy-Item -Force -LiteralPath $pdb -Destination $archiveDir
+		$build = @("arx.exe sha256: $exeHash", "config: $Config", "branch: $Branch",
+			"archived: $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))")
+		[IO.File]::WriteAllText((Join-Path $archiveDir 'BUILD.txt'), (($build -join "`r`n") + "`r`n"), [Text.UTF8Encoding]::new($false))
+		# Only the 20 newest builds stay (a pdb is ~35 MB); the newest by the time it was archived
+		$all = @(Get-ChildItem (Split-Path -Parent $archiveDir) -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+		foreach ($old in ($all | Select-Object -Skip 20)) { Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+		return $archiveDir
+	} catch {
+		# Never fail a launch over symbol archiving
+		Write-Warning "could not archive arx.pdb ($($_.Exception.Message))"
+		return $null
+	}
 }

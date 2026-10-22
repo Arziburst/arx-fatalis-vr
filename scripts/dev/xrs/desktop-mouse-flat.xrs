@@ -76,4 +76,24 @@ desktop-mouse move 300 0
 @frames 10
 @assert player.yaw ne {yaw}
 @assert desktopMouse.droppedMoves eq 0
+
+# The desktop window's focus keeps the engine's flat behaviour (#406; only VR ignores it, window-focus.xrs): a focus
+# loss puts the weapon away and leaves free look (the cursor mode), and the focus coming back does not restore free
+# look - the flat player clicks. The focus changes go through SDL's event queue (the channel's window focus
+# lost|gained, window-focus.xrs's header); the test run's window starts without the focus (#487), so it is given first
+window focus gained
+@until window.focused eq true 5s
+combat on
+@until vr.weapon.combatMode eq true 5s
+@assert player.freelook eq true
+window focus lost
+@until window.focused eq false 5s
+@frames 10
+@assert player.freelook eq false
+@assert vr.weapon.combatMode eq false
+window focus gained
+@until window.focused eq true 5s
+@frames 30
+@assert player.freelook eq false
+@assert vr.weapon.combatMode eq false
 @assert errors eq 0

@@ -46,6 +46,7 @@ enum MENUSTATE {
 	Page_OptionsVR, //!< the VR settings, Controls section (#178)
 	Page_OptionsVRTurning, //!< the VR settings, Controls section: turning and the character height (#260)
 	Page_QuitConfirm,
+	Page_CrashNotice, //!< "The game ended with an error last time" at the next launch (#545)
 	Page_Localization,
 };
 

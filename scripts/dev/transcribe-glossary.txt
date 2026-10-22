@@ -1,0 +1,20 @@
+# The words of the owner's voice notes that whisper should write in Latin letters (#574, scripts/dev/transcribe.ps1).
+# One word or phrase a line, '#' comments; the lines are joined by ", " into whisper's prompt. Edit freely: a word
+# that keeps coming out wrong in transcript.txt goes here (a word he says in Russian does not: it would come out in
+# Latin too). Kept to ASCII: whisper-cli may read its command line in the system code page on Windows. Few single
+# letters: on a silent note whisper repeats them ("X, X, X" with A, X and Y in the list, 2026-10-21).
+B
+trigger
+grip
+trackpad
+thumbstick
+radial
+radial menu
+SteamVR
+Index
+Valve Index
+snap turn
+recenter
+HUD
+FPS
+Arx Fatalis

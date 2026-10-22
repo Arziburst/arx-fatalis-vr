@@ -13,6 +13,286 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-062: Marks v2 - a short press is a snapshot, a hold is the voice note, its clip and a snapshot every 2 s; the notes transcribed locally
+
+- **Date:** 2026-10-21
+- **Status:** Accepted (#574; refines D-061 - its gesture, panel and microphone rules stay; the coordinator's research
+  is `coordinator/research/2026-10-21-marks-v2-transcription.md`)
+- **Decided by:** the owner (a short press records what he sees, a hold what he says and does; the hold capped at
+  1 minute; the left eye at half size every 2 s plus the release, both eyes at full size at the press; the press
+  frame's pose in `meta.txt`; a local transcription that works on another machine without setup, 2026-10-21); the
+  coordinator (whisper.cpp v1.9.2 with large-v3-turbo q8_0 and the Silero VAD, the retry without the VAD, press-relative
+  transcript times, the pins, +6 s of CI); the worker of #574 (the GPU copy and asynchronous read-back, the ring copy
+  cut on the writer thread, the 75 s ring, `stb_image_write` for the JPEGs, the glossary file - technical internals,
+  D-017)
+
+### Decision
+- **How long both trackpads stay down decides what a mark records.** Let go within `HoldThresholdMs` (500 ms, the
+  owner tunes it in the headset; `src/vr/MarkMoment.h`) it is a **short mark**: both eyes of the press frame at full
+  size (`left.png`, `right.png`), `recorder.txt` and `meta.txt` (`kind=press`) - no clip, no note, no microphone
+  indicator. Held longer it is a **hold**, at most `HoldMaxMs` (1 minute; then it ends by itself with a notice): also
+  the voice note while held (push-to-talk as in D-061, now at most 1 minute), the **left eye at half size as JPEG**
+  every 2 s after the press and at the release (`snap-+NN.Ns.jpg`, the seconds after the press), and `clip.vrsim`
+  from **10 s before the press to the release** with a `# hold: <pressMs> <releaseMs>` header line. The replay ring
+  grows from 60 to 75 s at 144 Hz so a full minute and its 10 s fit; the crash and hang reports' clip grows with it.
+- **`meta.txt`** adds `kind`, `pressMs` and `releaseMs` (the clip's clock) and the press frame's pose in the numbers
+  of the `.vrsim` commands (head, grips with their tracked state, curls), so a worker can set the scene up in the
+  simulator from it.
+- **No stutter:** the eyes are copied on the GPU and read back asynchronously (`src/vr/EyeShots.h`: blit - halved with
+  the linear filter for a snapshot - then a pixel-buffer read-back behind a fence, mapped a frame or two later); the
+  images, the clip and the WAV are made on the mark writer thread. This replaces #551's synchronous read-back of the
+  press frame (its hitch, D-061's consequences, is gone).
+- **The notes are transcribed on the machine they are on** (`scripts/dev/transcribe.ps1`, and `marks.ps1` by itself
+  once the tools are cached): whisper.cpp `whisper-cli.exe` v1.9.2 (CPU) with `ggml-large-v3-turbo-q8_0.bin`, `-l ru`
+  and a prompt of the project's Latin words (`scripts/dev/transcribe-glossary.txt`, editable), the Silero VAD and, when
+  the VAD finds nothing, once more without it (4 of the owner's 7 quiet notes came out empty with the VAD, all 7 without
+  it). The tools are downloaded on first use from pinned URLs (Hugging Face at a fixed revision), checked against
+  their SHA-256 and cached in `%LOCALAPPDATA%\ArxFatalisVR\tools`; nothing large goes into the repository and nothing
+  is uploaded. `transcript.txt` lines are `[m:ss.s] text` on the press-relative timeline of the snapshots, so the
+  listing puts the nearest picture beside each line.
+
+### Consequences
+- A coordinator that cannot listen reads the owner's words next to the pictures of what he was showing, and can replay
+  the hold in the simulator.
+- A one-minute hold writes up to about 6-8 MB of JPEGs, a 1.9 MB note and a clip of a few MB; a short press only the
+  two PNGs and the text files.
+- The first transcription downloads about 900 MB; afterwards no network. A second speech engine (GigaAM) was not added
+  (the owner decides).
+- A short press that the owner meant as a hold (let go too soon) keeps no note: the threshold is his to tune.
+
+## D-061: Both Index trackpads pressed mark the moment in the headset; the game menu only through the radial
+
+- **Date:** 2026-10-20
+- **Status:** Accepted (#551; supersedes the fixed two-stick hold of D-058, its other rules stay); what a mark records
+  is refined by D-062 (#574: a short press is a snapshot, a hold has the note - now at most 1 minute -, the clip and
+  the snapshots; the press frame is read back without a sync)
+- **Decided by:** the owner (the menu only via the radial and the confirmation in the hero-dialogue panel, 2026-10-19/20;
+  the gesture on both trackpads instead of both stick clicks, at once instead of a 3 s hold, no gesture on the Touch,
+  on in every build, the testers' too, 2026-10-20; the voice note push-to-talk, up to 5 minutes, after his headset
+  test, 2026-10-21); the coordinator (the panel's order, the voice note off in CI, 16 kHz mono); the worker of #551
+  (the folder layout, PNG eye images read back at the mark's frame, the writer thread - technical internals, D-017)
+
+### Decision
+- **A headset test marks a moment instead of remembering it.** Both Index trackpads pressed (the force press) mark
+  **at once**, on the frame both are down - no hold (`ControlResolver::markGesture`, fixed, not part of the layout and
+  not rebindable; one mark per press, a release of either re-arms it; the input layer's hysteresis on the force
+  reading, `TrackpadThreshold` press 0.40 / release 0.25, is the only filter). The mark writes
+  `<user dir>\marks\<yyyymmdd>T<hhmmss>Z-<n>\` (`src/vr/VRMarks.h`): `left.png` / `right.png` (the eye images of that
+  frame), `recorder.txt` (the flight recorder's tail, scrubbed like `arx-recorder.txt`, #545), `clip.vrsim` (the
+  replay ring's last 30 s - the clip of `replay mark`, D-060), `meta.txt` (time, area, position, yaw, build, game and
+  session state) and, with the voice note on, `note.wav`.
+- **Only on the Index** (`markGestureAvailable`; status `marks.gesture` `both.trackpad` or `none`): the Touch has no
+  trackpads and no mark gesture. The default layouts bind nothing to the trackpads; a player who binds an event to a
+  trackpad gets that event too when the press marks. On in every build, the tester package included.
+- **Both stick clicks are nothing special any more:** they do what the layout binds (the right one draws the weapon)
+  and neither mark nor open the menu.
+- **The voice note is push-to-talk:** keeping both trackpads pressed after the mark records the default microphone
+  (OpenAL capture, 16 kHz mono 16-bit), up to **5 minutes**; letting go of either stops it at once
+  (`ControlResolver::markHeld`, `VoiceNote::update(timeMs, held)`). The microphone opens on the mark (both pads down)
+  and never records without both held; a note under 0.3 s (a quick press) is no note. `cfg.ini vr_mark_note=0` turns
+  it off, the channel's `marks note on|off` for a session; no microphone means no note and no error. The
+  simulated headset (`--vr-sim`: CI, a replay, a worker's run) never opens the microphone - a microphone on the owner's
+  PC must never record the room (the coordinator, 2026-10-21).
+- **A replay writes no marks:** while a recorded clip plays into the simulated headset (#550), the replayed trackpad
+  presses log `[vr] mark ignored: a replay is playing` instead - the marks were the recorded session's.
+- **The hero-dialogue panel** (D-055: below the centre of the view, the lazy follow; in the eyes and so in the desktop
+  mirror) shows "Moment marked (#N)" for about 2 s; while the note records, the indicator "🎤 m:ss" counting up
+  instead (from 0.3 s on), frozen at the note's length after the release until its `note.wav` is written (off the
+  frame thread) - no blank in between; then "🎤 Note saved (m:ss)" for about 1.5 s, then nothing. The game's fonts
+  have no glyph for U+1F3A4, so the panel draws a small red microphone in its place (the status text keeps the
+  character). A notice takes the panel over a scene's line while it shows; the line comes back after.
+- **The game menu** is reached through the radial menu (and the menu event where one is bound); D-058's refused last
+  binding and the restored way of a broken saved layout stay. The 2 s two-stick fallback is gone.
+- `scripts/dev/marks.ps1` lists a user directory's marks (time, area, position, files, the note's length) and copies
+  one out; nothing it prints holds a personal path. No upload (#545 stage 3).
+
+### Consequences
+- The mark's frame reads both eye images back from the GPU (one hitch: 18 ms instead of 13 ms on the simulated
+  1440x1600 eyes; not felt in the owner's headset test); the files are written on a thread of their own. No cost while
+  nobody marks. With the voice note on, opening the microphone (on the mark's frame) and closing it (on the release)
+  run on the frame thread too. A 5-minute note is 9.6 MB in memory and on disk.
+- An Index player who unbinds the radial and the menu event still cannot lock themselves out (D-058's guards), but
+  there is no longer a hidden way to the menu for a layout that somehow has none.
+- A Touch player cannot mark a moment. An Index player who presses both trackpads by accident marks one (a folder of
+  a few MB in the user directory and the confirmation); nothing else happens.
+
+## D-060: Every VR session is recorded as a replayable clip - poses and inputs over the same save, the drift measured, no lockstep
+
+- **Date:** 2026-10-20
+- **Status:** Accepted (#550; the research is `coordinator/plans/2026-10-20-replay-research.md`)
+- **Decided by:** the owner (record every session, "poses and inputs over the same save, drift measured" instead of
+  lockstep determinism, one save at the record start and no periodic autosaves, a text clip, the ring in the crash
+  and hang reports, raw hand joints off by default, `--seed`); the worker of #550 (the dialect, the ring layout,
+  the replay save slots - technical internals, D-017)
+
+### Decision
+- **A headset complaint becomes a file a worker can run without the headset.** From the first frame the game is
+  playable in VR, every frame goes into `<user dir>\arx-replay.log` (`src/vr/ReplayRecorder.h`): one line
+  `@<ms>ms <command>; <command>; ...` in the simulated headset's own script dialect (`src/vr/SimRig.h`, extended by
+  `head` / `hand` / `hand aim` / `player` / `floor` / `anchor` and `;` lines) holding what the runtime gave the game -
+  the head between the eyes, the grips and whether they are tracked, the aims in the grip's space, five curls per
+  hand read off the joints, the raw action values, the session state, the interaction profile - and where the
+  engine's player was. Only what changed since the previous frame is written (a self-contained first frame): about
+  1 MB per minute at 90 Hz, gzipped to `arx-replay.log.gz` at the session's end, rotated like `arx-perf.log`;
+  `--no-replay-log` turns it off, flat mode never records. A frame's line is formatted on the main thread (a few
+  microseconds, no allocation in steady state) and written to the file off it (`PerfWriter`). A recording lives as
+  long as its VR session: a frame without eye poses is skipped, the session's end closes the clip, a new session
+  starts a new one. A clip loads as a `--vr-sim` script as it is; a long one is streamed by the simulator's `play`
+  command (`ClipPlayer`: a file cursor, one line read ahead, microseconds per frame).
+- **"The same save, the same seed, the drift measured" - not lockstep.** The recorder makes a save at the record
+  start (a replay slot `save9000`..`save9004`: never the player's - not in the load menu, not numbered for
+  `--loadslot`, never quickloaded, whether or not other saves exist; the five newest are kept; a replay copies it
+  into its own user directory as an ordinary slot) and names it in the clip's header with the RNG seed (`--seed <n>`, else the clock's,
+  `Random::currentSeed`) and the display rate. The replay (`scripts/dev/replay.ps1`) starts from that save with
+  that seed, paces at the recorded rate and streams the clip from the timeline's frame 0; at an `anchor level
+  <area>` line (written when a new level became playable) it holds until the replayed game is playable there, at an
+  `anchor save` until it is playable again. The UI, the hands, the body, the reticles and the radials reproduce
+  exactly; walking drifts by a few percent; combat and AI diverge within seconds - the clip still shows what the
+  hands did. `vr.sim.play.drift` reports the distance between the recorded and the replayed player (current and
+  max, same level only); nothing promises a threshold.
+- **The last 60 s live in the dump helper's shared memory** (`ReplayRing`: fixed binary frames with a checksum each,
+  no pointers, read from a copy or from another process) so every crash and hang report carries `arx-replay.vrsim`
+  (`crash-report.ps1` names it); the channel's `replay mark <name> [<seconds>]` cuts the last 30 s of the same ring
+  into `replay-marks\<time>-<name>.vrsim`. Marks and report clips start mid-session: their replay is approximate (the
+  player is placed where the clip's first frame has him).
+- **Privacy:** clips stay in the user directory and are never committed; the IPD and the floor height are header
+  set-up lines that `clip-to-xrs.ps1` strips when it cuts at most 30 s of a clip into a CI sequence (rule 11); the
+  report folders are scrubbed by the dump helper as before.
+
+### Consequences
+- Budget: the recording adds under 0.05 ms to the median frame and under 0.2 ms to the 99th percentile
+  (`replay-check.ps1 -Case cost` measures it against `--no-replay-log`); the ring reserves 60 s at 144 Hz in the
+  helper's mapping (pages untouched until a session records).
+- One CI sequence from a converted 10 s clip (`replay-clip.xrs`); the record-and-replay check itself
+  (`scripts/dev/replay-check.ps1`: two launches, judged after the game quit) is hand-run, not CI.
+- Raw hand joints are not in the stream (a flag only if ever needed for debugging): the five curls per hand are
+  what the hand model is posed from.
+
+---
+
+## D-059: Crash diagnostics are a flight recorder in shared memory plus an out-of-process dump helper, shipped in stages
+
+- **Date:** 2026-10-19
+- **Status:** Accepted (#545, stage 1; the research is `coordinator/plans/2026-10-19-flight-recorder-research.md`)
+- **Decided by:** the owner (the stages, the 5 MiB / 0.05 ms budget, one report folder per death, the dump scrubbed in
+  place); the worker of #545 (the ring layout, the helper protocol - technical internals, D-017)
+
+### Decision
+- **The flight recorder** keeps the run's last events (frames, state changes, channel commands, thread births with their
+  start routine, GL errors, texture / buffer creates, watchdog beats, exit causes) in **per-thread lock-free rings of
+  fixed 64-byte records** (`src/platform/FlightRecorder.h`): one producer per ring, a per-record sequence lock for the
+  reader, no pointers and no absolute addresses in the image, so a byte copy - or the bytes read from another process
+  or from a minidump - serialises to the same text. Serialising never trusts the image.
+- **The rings live in a file mapping the game shares with `arx.exe --dump-helper`**, a second copy of the executable
+  started at launch (`src/platform/DumpHelper.h`). The helper writes the minidump out of process while the game is
+  still alive (every thread before the exit proceeds, ThreadInfo / HandleData / UnloadedModules, the recorder as a
+  user stream) and the report files - `report.txt`, `arx-recorder.txt`, a copy of `arx-perf.log` - **after the game
+  has exited**, so the exit code is the real one; a hang is reported at once and the game runs on. A game killed from
+  outside (`TerminateProcess`) still gets `kind=terminated` with its real exit code and the recorder, because the
+  helper outlives it by a bounded time. **Exactly one folder per death** (`crashes\<utc>\`, `hangs\<utc>\`); the five
+  newest are kept; every file of a folder, the dump included, is rewritten in place with same-length placeholders
+  where a user path, the account or the machine name stood (#387).
+- **The ExitGuard** (`src/platform/ExitTrace.cpp`): every thread birth is logged with its start routine; a thread that
+  starts straight at `ExitProcess` / `TerminateProcess` (the #544 shape) asks the helper for the report first, waits
+  a bounded 15 s, and never refuses the kill (`ExitThread` ends only a thread: named, not an exit). An `exit()` /
+  `ExitProcess` by the game's own or a library's code before the shutdown is `kind=exit (in process)` with the
+  calling frames - from `exit()` with a dump of every thread, from the process detach (the threads are gone, the
+  modules unloading) without one.
+- **No "Fatal Error" dialog any more; a notice at the next launch instead** (M6, the owner): the main menu - flat,
+  on the VR panel, in the desktop mirror - says "The game ended with an error last time. A report was saved." with
+  [Open folder] and [OK], once per new report (`src/platform/CrashNotice.h`, the marker `notice-shown.txt`). A
+  `kind=terminated` report (SteamVR's own quit, the task manager) is not an error of the game and is never announced.
+  Stage 3 adds "Send the report?" to the same notice.
+- **Always on, measured:** the hang watchdog runs in every launch, not only with `--test-dir`; `arx-perf.log` gets a
+  resource line every 5 s; `--no-recorder` turns the recorder and the helper off and is the overhead baseline
+  (budget: 0.05 ms per frame, 5 MiB for the game plus the helper). `scripts/dev/crash-report.ps1` is the one command
+  that reads a report.
+- **Stages:** 0 = local extras without code (the WER LocalDumps key, WinDbg, the `arx.pdb` archive per exe hash);
+  1 = this; 2 = a WER runtime-exception module only if WER is not enough; 3 = upload (Sentry Native or our own
+  HTTPS) - later, no network and no third-party crash SDK before that.
+
+### Consequences
+- The old `--crashinfo` processor is no longer the owner of a crash folder: the helper is. A crash still leaves a
+  `crash.txt` next to `report.txt` so the run digest and the smoke test keep reading it.
+- The helper is the same `arx.exe`: `launch-lib`'s "game outside the lock" check and the digest's crash wait know
+  `--dump-helper`; the launcher's kill-on-close job allows breakaway (`JOB_OBJECT_LIMIT_BREAKAWAY_OK`), so the helper
+  breaks away and finishes its report after a killed launcher took the game.
+- The helper is a full `arx.exe` process: about 6 MiB of private memory before `main` sees `--dump-helper` (the
+  engine's static initialisers, the DLLs' writable data). The owner set the budget at 8 MiB for the game plus the
+  helper (measured: +7.2 MiB, +0.000 ms per frame); a separate tiny helper executable would bring it under 1 MiB
+  if that ever matters.
+
+## D-058: The game menu stays reachable whatever is rebound - a refused last binding and a fixed two-stick hold
+
+- **Date:** 2026-10-18
+- **Status:** Accepted (#326; amends D-042's table and D-019's menu rule); the fixed two-stick hold is superseded by
+  D-061 (#551: the menu is reached through the radial, the moment is marked on both trackpads) - the refused last
+  binding and the restored way of a broken layout stay
+- **Decided by:** the owner (the Index has no menu button the game can read; the fallback is both thumbstick clicks held
+  for 2 s)
+
+### Decision
+- A way to the game menu is the menu event or a radial menu event (D-042). `vr::assignBinding` refuses an assignment
+  that would leave none bound (the layout stays, the VR settings page shows a short note, `vr.input.remapRefusals`
+  counts it). A saved controls file that leaves none gets the default way back (`readSavedLayout`).
+- Fixed fallback, not part of the layout and not rebindable: **both thumbstick clicks held together for 2 s** press the
+  game menu key once, while still held (`ControlResolver::menuFallback`).
+
+### Consequences
+- The right stick click draws the weapon in the default layout, so the fallback hold toggles it as well.
+
+
+## D-057: Refresh-rate independence — times, not frames; a sample is timed by the display time it is for
+
+- **Date:** 2026-10-13
+- **Status:** Accepted
+- **Decided by:** worker of #23 (technical internals, D-017)
+
+### Decision
+- **Nothing in the game counts frames for a length of time or smooths by a factor per frame.** Players run the
+  Index at 80/90/120/144 Hz, a Quest at 72-120, a Beyond at 75/90; the runtime's predicted display period is the
+  only rate the game knows (D-024). Every timer, hysteresis and smoothing is a time: a count of frames becomes the
+  time it took **at 90 Hz**, the rate the VR features were tuned on (the simulator's default) - the hand reticle's
+  "2 frames in" is 10 ms, the engine magic's "every second frame" at the hand is 22 ms, a per-frame ease of the
+  external view (half the gap, a tenth of the turn) is `1 - keep^(dt * 90)`. Rates of change are per second.
+- **A sample is timed by the display time it is for.** The controllers and the head are located for the frame's
+  predicted display time (D-024), so the melee swing detector divides their moves by display-time steps, not by
+  the frame clock's (a millisecond of its jitter is 14 % of a 144 Hz frame); the frame clock where there is no
+  display time (flat mode).
+- **The proof is a simulated run at four rates.** The simulated headset's timeline takes display milliseconds
+  (`@+500ms`): the same motion at every rate (poses at the frame's display time, controller actions as held when
+  the frame's interval began), and `record <name>` keeps a frame's motion values. `refresh-rate.xrs` compares
+  72, 120 and 144 Hz against 90 within tolerances its header states, and judges lags and totals - never a value
+  read at a moment of a motion, which moves when a frame comes late.
+- **The perf log names the display rate** at every change, and `perf-summary.ps1` judges the frames of each rate
+  against rate / divisor (`-ExpectHz` for the rate the headset was set to).
+- **The jumping player moves in fixed physics steps** (2026-10-18, the owner: fix it here, #537 folded into #436).
+  `ARX_PLAYER_Manage_Movement` puts the frame's time into a `FixedStepClock` and moves a jumping player by 25 ms
+  at a time (`src/game/JumpPhysics.h`), what is left waiting for the next frame; the rise is in step time, the apex
+  ends the rise in the step that reached it, and the frame's input goes to every step. The flight is a function of
+  the number of steps alone: the same at 72-144 Hz and after a hitch (the host test `JumpPhysicsTest`). The step is
+  the engine's own `FIXED_TIMESTEP`. **The flat game's arc is kept by a time scale, not by the step:** the old loop
+  integrated the remainder it carried a second time, so 25 ms of frames were 29-33 ms of physics at 60-144 Hz and
+  the fall and the push were 1.2-1.33 times quicker than the gravity and friction constants say (measured above
+  50 cm: 0.30-0.32 s; the constants' own arc 0.34 s). A step integrates `jump_time_scale` (cfg.ini `[misc]`, default
+  1.2, 1 to 1.5) times its length of physics; the rise stays 200 ms of frames as it was. 1.2: 130 units up in
+  200 ms, 0.30 s above 50 cm, down after 0.45 s - the jump as played; 1: 0.34 s and 0.5 s. The owner picks in the
+  headset (#436's test), the other value is one line of cfg.ini away.
+
+### Why
+A filter tuned at one rate and stepped per frame is twice as fast at 144 Hz as at 72; a frame count is half the
+time. Measured before the fix where it showed: none of the gameplay totals moved with the rate once the inputs
+were timed (walk, turn, jump apex, camera, fingers), the frame-counted pieces were found by reading the code
+(the audit in #23's PR).
+
+### What it rules out
+- New per-frame constants in VR code: a value "per frame" needs a time (and a host test at 72 and 144 Hz).
+- Fixed-step simulation of everything, with render interpolation: the walk keeps the engine's variable step (one
+  iteration per frame); only the jump moves in fixed steps, because its loop was never the fixed step it looked
+  like - it stepped once by all the time that had added up (25-35 ms, a hitch's whole length), so the Euler fall
+  and the damped push followed the frames (air times of 0.29-0.36 s for one jump). The 25 ms stepping of the
+  position between rendered frames while jumping (#435's judder, and the hang above the floor) is unchanged.
+
 ## D-056: CI owns the game slots - workers' launches wait for a running CI job, a PR's run fails fast
 
 - **Date:** 2026-10-18
@@ -1647,6 +1927,8 @@ without a headset session (F-07).
   the cost of finished tasks per model / effort / size, a forecast for the READY tasks). Run every cycle and before starting a worker; it
   names the binding limit and the number of workers that keeps the week at <= 90% by its reset and the 5-hour window < 95%.
   The coordinator starts no more than it recommends; one line of its output goes to the status page (#193).
+  Since #346 the inputs are the core's status-line files (`~/.claude/coordinator/statusline.json`, `sessions/<id>.json`);
+  the samples and the task ledger are kept by `usage-plan.ps1` itself in `~/.claude/arxvr-usage/`.
 - **Autopilot (owner, 2026-10-10):** the coordinator runs the work on its own while the limits last. It reads the limits and
   `usage-plan.ps1` on a timer (about every 30 minutes) and before starting a worker, starts every unblocked task the budget
   allows with a sensible model / effort, loads a 5-hour window that has headroom before its reset, but paces the week to <= 90%
@@ -1982,7 +2264,7 @@ The owner wants the desktop quiet while workers run, and the headset untouched u
   work that needs no headset goes on meanwhile — or (3) the budget is reached. The owner gives VR
   verdicts to the coordinator ("#18 ok" / what is wrong); the coordinator merges or passes the feedback
   to the worker.
-- **Budget:** the common weekly limit up to **70%** — from there no new workers start, running ones finish
+- *(The 70% budget point is superseded by D-022: weekly 90%, five-hour 95%.)* **Budget:** the common weekly limit up to **70%** — from there no new workers start, running ones finish
   their PRs; the 5-hour limit may be used up (sessions wait for its reset and continue,
   `autoContinueAtUsageLimit`); Fable's separate weekly limit may be used up.
 - *(Superseded by D-015: Opus by default, Fable only for really hard tasks.)* **Models** (replaced D-012's table): **Fable** for every engine task (any area except build and docs)

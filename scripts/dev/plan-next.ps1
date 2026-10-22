@@ -1,3 +1,4 @@
+# retired 2026-10-22: the plan is the sprints in docs/vr/MVP.md / labels sprint-N
 <#
 .SYNOPSIS
 	The coordinator's task order by rule (#187, D-021): which MVP tasks may start now, and why the others may not.

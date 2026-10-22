@@ -48,6 +48,7 @@ class FingerCurlTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testPoseControlsFallback);
 	CPPUNIT_TEST(testPoseClosed);
 	CPPUNIT_TEST(testPoseApproach);
+	CPPUNIT_TEST(testShapeFromJointsInvertsTheSynthesis);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -68,6 +69,8 @@ public:
 	void testPoseControlsFallback();
 	void testPoseClosed();
 	void testPoseApproach();
+	//! The replay recorder's five curls (#550): the joints a shape synthesizes read back as that shape, both hands, any space
+	void testShapeFromJointsInvertsTheSynthesis();
 
 };
 

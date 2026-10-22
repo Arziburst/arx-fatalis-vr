@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
 	CI gate (#127): the flat game checks of every pull request - smoke test with the draw check, the spell draw check
-	and every .xrs sequence - on two games at once (#522), with the evidence collected into one folder.
+	and every .xrs sequence - on several games at once (#522), with the evidence collected into one folder.
 
 .DESCRIPTION
 	Runs on the self-hosted runner after the build (.github/workflows/build-windows.yml), and by hand. The phases:
@@ -20,9 +20,10 @@
 	scripts\dev\xrs\impact.txt (the core, the sequences of the changed paths, the changed .xrs files), and everything
 	when the map cannot say (a path in no line, a line '-> *', no diff). The log names the suite and lists the selection.
 
-	Lanes (#522): the phases run on up to -Lanes games at once (default 2), each lane with its own test channel
-	folder; a scheduler hands the next phase to a free lane. The game lock decides how many may run: the lanes are
-	capped at its maxGames (the workflow sets ARXVR_MAX_GAMES=2; on a PC without it a run by hand stays on one lane),
+	Lanes (#522): the phases run on several games at once, each lane with its own test channel folder; a scheduler
+	hands the next phase to a free lane. The game lock decides how many may run: as many lanes as its maxGames, or
+	-Lanes when that is fewer (the workflow sets ARXVR_MAX_GAMES, CI's lane count - #563; on a PC without it a run by
+	hand stays on one lane),
 	and while a game that is not this run's holds a slot (the owner plays, a worker tests) only one lane runs. The
 	save-library phase goes first and every sequence with a @save waits for it; smoke-test and spell-drawcheck share
 	this working copy's user directory and never run at the same time; a read-back runs after its sequence, in its
@@ -76,7 +77,8 @@
 	smoke, spells, sequences, or all (default). One phase is for trying the CI setup in pieces.
 
 .PARAMETER Lanes
-	How many games may run at once (default 2), capped by the game lock's maxGames ($env:ARXVR_MAX_GAMES).
+	How many games may run at once, capped by the game lock's maxGames ($env:ARXVR_MAX_GAMES); default 0: as many as
+	the lock allows (#563 - CI's lane count is set in one place, the workflow's ARXVR_MAX_GAMES).
 
 .PARAMETER Suite
 	full (default): every phase. pr: the selection of a pull request (#522) - the core, the sequences the changed paths
@@ -104,8 +106,8 @@
 .EXAMPLE
 	.\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence
 .EXAMPLE
-	$env:ARXVR_MAX_GAMES = 2; .\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence
-	# two lanes by hand, as CI runs them
+	$env:ARXVR_MAX_GAMES = 3; .\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence
+	# three lanes by hand (CI's count is the workflow's ARXVR_MAX_GAMES)
 #>
 [CmdletBinding()]
 param(
@@ -116,8 +118,8 @@ param(
 	[string]$Config = 'Release',
 	[ValidateSet('all', 'smoke', 'spells', 'sequences')]
 	[string]$Phase = 'all',
-	[ValidateRange(1, 8)]
-	[int]$Lanes = 2,
+	[ValidateRange(0, 8)]
+	[int]$Lanes = 0,
 	[ValidateSet('full', 'pr')]
 	[string]$Suite = 'full',
 	[string]$ImpactMap,
@@ -171,11 +173,11 @@ if ($DataDir) {
 }
 
 # --- Lanes (#522) -----------------------------------------------------------------------------------------------
-# As many games at once as -Lanes asks and the game lock allows; each lane has its own test channel folder (the
-# first is the copy's usual one, so game-status.ps1 still finds it)
+# As many games at once as the game lock allows (-Lanes may ask for fewer); each lane has its own test channel folder
+# (the first is the copy's usual one, so game-status.ps1 still finds it)
 $maxGames = (Get-ArxLaunchSettings).maxGames
-$laneCount = [Math]::Min($Lanes, $maxGames)
-Write-Host "ci-smoke: $laneCount lane(s) (-Lanes $Lanes; the game lock allows $maxGames game(s) at once$(if ($maxGames -lt $Lanes) { ', ARXVR_MAX_GAMES raises it' }))"
+$laneCount = if ($Lanes) { [Math]::Min($Lanes, $maxGames) } else { $maxGames }
+Write-Host "ci-smoke: $laneCount lane(s) ($(if ($Lanes) { "-Lanes $Lanes" } else { 'as the lock allows' }); the game lock allows $maxGames game(s) at once$(if ($maxGames -lt $Lanes) { ', ARXVR_MAX_GAMES raises it' }))"
 $laneTestDirs = @{}
 for ($l = 1; $l -le $laneCount; $l++) {
 	$laneTestDirs[$l] = if ($l -eq 1) { $testDir } else { "$testDir-lane$l" }
@@ -494,6 +496,20 @@ foreach ($name in $notRun) { $results += [pscustomobject]@{ Name = $name; Exit =
 $results = @(@($results) + @($outcome) | Sort-Object { $index[$_.Name] })
 # The run into the failure history (#527): what failed now goes early next time
 try { Add-ArxPhaseHistory $historyFile $results } catch { Write-Warning "could not write $historyFile ($($_.Exception.Message))" }
+# Performance tracking (#552): every phase's arx-perf.log as numbers (perf.json in the evidence), compared with the
+# rolling baseline of the green main and gate runs on this lane count (perf-baseline.json beside ci-history.json) - a
+# Performance table in the job summary, a warning per slower phase; a green main or gate run feeds the baseline. The
+# nominal lane count, also when the run dropped to one lane for a foreign game. Never fails the run.
+try {
+	$perfWatch = [Diagnostics.Stopwatch]::StartNew()
+	$perf = & {
+		. (Join-Path $PSScriptRoot 'perf-track-lib.ps1')
+		@{ Kind = Get-ArxCiRunKind $env:GITHUB_EVENT_NAME $env:GITHUB_REF_NAME $Suite; Baseline = Get-ArxPerfBaselinePath $DurationsFile }
+	}
+	$perfGreen = -not @($results | Where-Object { $_.Verdict -in 'FAIL', 'SKIPPED' })
+	& (Join-Path $PSScriptRoot 'perf-track.ps1') -EvidenceDir $OutDir -BaselineFile $perf.Baseline -Lanes $laneCount -Kind $perf.Kind -Green:$perfGreen
+	Write-Host ("ci-smoke: performance tracking ({0} run) in {1:0.0} s" -f $perf.Kind, $perfWatch.Elapsed.TotalSeconds)
+} catch { Write-Warning "performance tracking skipped ($($_.Exception.Message))" }
 foreach ($r in $results) { Write-Host ("  {0,-8} {1}" -f $r.Verdict, $r.Name) -ForegroundColor $(if ($r.Verdict -eq 'NOT RUN') { 'Yellow' } elseif ($r.Exit -eq 0) { 'Green' } else { 'Red' }) }
 if ($selection) { Write-Host "ci-smoke: suite pr - the checks the change does not select did not run; the full suite runs before the merge" }
 $failed = @($results | Where-Object Verdict -eq 'FAIL')

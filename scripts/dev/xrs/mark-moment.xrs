@@ -1,0 +1,149 @@
+# Mark the moment (#551; marks v2 #574 - both written before their implementation): on the simulated Index, the
+# moment BOTH trackpads are down the game marks it at once - no wait (the owner, 2026-10-20). What the mark records
+# depends on how long both stay down (#574, the owner 2026-10-21; tests/vr/MarkHoldTest.h): let go before
+# HoldThresholdMs (about 0.5 s) it is a SHORT mark - left.png, right.png, recorder.txt and meta.txt (kind=press) and
+# nothing else: no clip, no snapshot, no note, no microphone indicator. Held longer it is a HOLD (up to 1 minute) -
+# also clip.vrsim (the replay ring from 10 s before the press to the release, with a "# hold:" header line), the left
+# eye as snap-+NN.Ns.jpg every 2 s and at the release, and note.wav when a microphone recorded one (never here: the
+# simulated headset opens no microphone). "Moment marked (#N)" shows in the hero-dialogue panel (the subtitle panel of
+# #460 / D-055) for about 2 s. One trackpad alone: no mark; the other pressed 1 s later: the mark then. One let go and
+# pressed again: a new mark. Both stick clicks held: no mark and no game menu (the D-058 fallback stays removed;
+# menu-long-press.xrs has the radial's way to the menu). The feature's one CI sequence (coordinator Tests and CI rule
+# 11): about 19 s after the load (#551's was about 13 s) - the 7 s hold and the 10 s of session its clip needs before
+# the press.
+#
+# Assumes (the worker adds them, named exactly; tests/vr/MarkMomentTest.h and tests/vr/MarkHoldTest.h have the whole
+# interface):
+#   marks.count          (count)  marks written since the start
+#   marks.last           (text)   the last mark's folder name: <yyyymmdd>T<hhmmss>Z-<n> (UTC, n = its number)
+#   marks.lastFiles      (text)   the non-empty files in it, sorted by name, joined by "," without spaces
+#   marks.lastKind       (text)   "" before the first mark; pending from the mark until its release (or the 1 minute
+#                                 cap) decides; then press | hold
+#   marks.lastSnapshots  (number) the snap-*.jpg files written for the last mark so far; 0 for a press
+#   marks.lastClipMs     (number) the last mark's clip.vrsim length in ms (its last frame line's time less its first's)
+#                                 once written; 0 for a press
+#   marks.recording      (bool)   a voice note records now (only while both trackpads are held)
+#   marks.noteMs         (number) how long it records so far, ms; 0 when none records
+#   marks.note           (bool)   the voice note is on (cfg.ini vr_mark_note; the channel's `marks note on|off`)
+#   marks.gesture        (text)   both.trackpad on the Index, none on a controller without trackpads (the Touch)
+#   scene.subtitle.notice (text)  the notice the hero-dialogue panel shows: none | marked | recording | saved
+#   log "[vr] mark #<n>: marks\<folder> files=<lastFiles>" once every file of the mark is written (a hold: after its
+#   release), and the panel's "vr.scene.subtitle notice=<marked|recording|saved> ... text="<the line>"" when a notice
+#   shows
+# The voice note is ON from the start (#551 kept it off for most steps): the simulated headset never opens a microphone
+# (tests/vr/MarkMomentTest.cpp replayAndSimulatorTest), so a microphone plugged into the CI machine records nothing, and
+# the hold proves a hold without a microphone writes no note.wav and shows no indicator. The note itself is a host test
+# (tests/vr/VoiceNoteTest.h) and the owner's headset test.
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.input.controllers eq index
+@assert menuMode eq ingame
+@assert marks.count eq 0
+@assert marks.gesture eq both.trackpad
+@assert marks.noteMs eq 0
+@assert marks.lastSnapshots eq 0
+@assert marks.lastClipMs eq 0
+@assert scene.subtitle.notice eq none
+marks note off
+@frames 2
+@assert marks.note eq false
+marks note on
+@frames 2
+@assert marks.note eq true
+
+# 1. Both stick clicks held 2.5 s: nothing special - no mark, no game menu (past the removed fallback's 2 s)
+vr-input down left.stick_click; vr-input down right.stick_click
+@wait 2500
+@assert marks.count eq 0
+@assert menuMode eq ingame
+vr-input up left.stick_click; vr-input up right.stick_click
+@wait 300
+@assert marks.count eq 0
+@assert scene.subtitle.notice eq none
+@assert menuMode eq ingame
+
+# 2. A SHORT mark (0.2 s): the left trackpad alone for 1 s - no mark; the right pressed too - the mark at once; both
+# let go 0.2 s later. The press's eyes, the recorder and meta only - no clip, no snapshot, no note; the confirmation
+# in the hero-dialogue panel (below the view centre: the hero's panel), never the microphone indicator
+@mark
+vr-input down left.trackpad
+@wait 1000
+@assert marks.count eq 0
+@assert scene.subtitle.notice eq none
+vr-input down right.trackpad
+@wait 200
+vr-input up left.trackpad; vr-input up right.trackpad
+@until marks.count eq 1 1s
+@until marks.lastKind eq press 2s
+@until scene.subtitle.notice eq marked 1s
+@assert scene.subtitle.visible eq true
+@assert scene.subtitle.drawn eq chest
+@assert marks.recording eq false
+@assert marks.noteMs eq 0
+@assert menuMode eq ingame
+@until marks.lastFiles eq left.png,meta.txt,recorder.txt,right.png 10s
+@assert marks.lastSnapshots eq 0
+@assert marks.lastClipMs eq 0
+
+# 3. Both pressed, the right let go and pressed again (the left still held): a new mark at once - two more short marks
+vr-input down left.trackpad; vr-input down right.trackpad
+@until marks.count eq 2 1s
+vr-input up right.trackpad
+@wait 300
+@assert marks.count eq 2
+@assert marks.lastKind eq press
+vr-input down right.trackpad
+@until marks.count eq 3 1s
+vr-input up left.trackpad; vr-input up right.trackpad
+@until marks.lastKind eq press 2s
+@until marks.lastFiles eq left.png,meta.txt,recorder.txt,right.png 10s
+@assert marks.lastSnapshots eq 0
+@assert marks.lastClipMs eq 0
+@assert marks.recording eq false
+@assert menuMode eq ingame
+# No indicator, no "Note saved", no note for a short press - with the voice note on
+@nolog vr\.scene\.subtitle notice=(recording|saved)
+@nolog note\.wav
+# The log: the first confirmation's line and the first folder's, in either order (the files may be written after the
+# confirmation shows): one look-ahead each; then the other folders' lines. Nothing after right.png: no clip, no snap
+@log (?s)^(?=.*vr\.scene\.subtitle notice=marked [^\n]*text="Moment marked \(#1\)")(?=.*\[vr\] mark #1: marks\\\d{8}T\d{6}Z-1 files=left\.png,meta\.txt,recorder\.txt,right\.png(?!,)) 5s
+@log \[vr\] mark #2: marks\\\d{8}T\d{6}Z-2 files=left\.png,meta\.txt,recorder\.txt,right\.png(?!,) 5s
+@log \[vr\] mark #3: marks\\\d{8}T\d{6}Z-3 files=left\.png,meta\.txt,recorder\.txt,right\.png(?!,) 5s
+
+# 4. The hold's clip starts 10 s before its press: at least that much of the session recorded (about 11 s at 90 Hz)
+@until vr.sim.timelineFrame ge 1000 30s
+
+# 5. A HOLD of 7 s: the mark at once, "pending" while held; the confirmation for about 2 s, then nothing (no
+# microphone here: no indicator). At the release: kind hold, the snapshots at 2, 4 and 6 s and the release (about
+# 7 s), the clip from 10 s before the press to the release (about 17 s), still no note.wav
+@mark
+vr-input down left.trackpad; vr-input down right.trackpad
+@until marks.count eq 4 1s
+@until scene.subtitle.notice eq marked 1s
+@assert marks.lastKind eq pending
+@wait 2500
+@assert scene.subtitle.notice eq none
+@assert marks.recording eq false
+@assert marks.lastKind eq pending
+@wait 4500
+@assert marks.count eq 4
+@assert marks.lastKind eq pending
+@assert marks.recording eq false
+vr-input up left.trackpad; vr-input up right.trackpad
+@until marks.lastKind eq hold 2s
+@until marks.lastSnapshots eq 4 10s
+@until marks.lastClipMs ge 16900 10s
+@assert marks.lastClipMs le 18000
+@assert marks.count eq 4
+@assert marks.recording eq false
+@assert marks.noteMs eq 0
+@log \[vr\] mark #4: marks\\\d{8}T\d{6}Z-4 files=clip\.vrsim,left\.png,meta\.txt,recorder\.txt,right\.png,snap-\+02\.0s\.jpg,snap-\+04\.0s\.jpg,snap-\+06\.0s\.jpg,snap-\+07\.\ds\.jpg(?!,) 10s
+@assert marks.lastSnapshots eq 4
+@nolog vr\.scene\.subtitle notice=(recording|saved)
+@nolog note\.wav
+@assert errors eq 0

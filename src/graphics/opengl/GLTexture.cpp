@@ -98,7 +98,8 @@ bool GLTexture::create() {
 	arx_assert_msg(tex == GL_NONE, "leaking OpenGL texture");
 	
 	glGenTextures(1, &tex);
-	
+	vr::perf::addTexture(); // a live-object count for the resource line, a recorder event (#545)
+
 	// Set our state to the default OpenGL state
 	wrapMode = TextureStage::WrapRepeat;
 	minFilter = TextureStage::FilterNearest;
@@ -204,6 +205,7 @@ void GLTexture::destroy() {
 	
 	if(tex) {
 		glDeleteTextures(1, &tex), tex = GL_NONE;
+		vr::perf::removeTexture();
 	}
 	
 	for(size_t i = 0; i < renderer->getTextureStageCount(); i++) {

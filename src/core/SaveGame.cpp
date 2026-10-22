@@ -25,11 +25,13 @@
 
 #include "core/Config.h"
 #include "core/GameEvent.h"
+#include "core/SaveSlots.h"
 #include "io/fs/Filesystem.h"
 #include "io/fs/SystemPaths.h"
 #include "io/log/Logger.h"
 #include "io/resource/PakReader.h"
 #include "scene/ChangeLevel.h"
+#include "vr/ReplayRecorder.h"
 
 const fs::path SAVEGAME_NAME = "gsave.sav";
 
@@ -69,12 +71,18 @@ void SaveGameList::update(bool verbose) {
 	if(verbose) {
 		LogInfo << "Using save game dir " << savedir;
 	}
-	
+
+	// The replay recorder's slots (core/SaveSlots.h, #550) are never the player's: not listed, not numbered, not quickloaded
+	std::vector<std::string> folders;
 	for(fs::directory_iterator it(savedir); !it.end(); ++it) {
-		
-		fs::path dirname = it.name();
+		folders.push_back(it.name());
+	}
+
+	for(const std::string & name : listedSaveFolders(folders)) {
+
+		fs::path dirname = name;
 		fs::path path = savedir / dirname / SAVEGAME_NAME;
-		
+
 		std::time_t stime = fs::last_write_time(path);
 		if(stime == 0) {
 			LogDebug("Ignoring directory without " << SAVEGAME_NAME << ": " << path);
@@ -243,9 +251,12 @@ bool SaveGameList::save(std::string_view name, SavegameHandle overwrite, const I
 	if(thumbnail.isValid() && !thumbnail.save(savefile.parent() / SAVEGAME_THUMBNAIL)) {
 		LogWarning << "Failed to save screenshot to " << (savefile.parent() / SAVEGAME_THUMBNAIL);
 	}
-	
+
+	// A replay of this session holds at this point until the replayed game plays again (#550)
+	vr::replay::noteSave();
+
 	update();
-	
+
 	return true;
 }
 

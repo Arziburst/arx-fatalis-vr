@@ -503,14 +503,15 @@ function Invoke-ArxRunDigest(
 	# A run that crashed on purpose (channel command `crash`, #132) is a check, not a bug: digest only, nothing filed
 	if ($run.Entries | Where-Object { $_.Text -like '`[crash`] deliberate crash requested*' } | Select-Object -First 1) { $NoReport = $true }
 
-	# The crash processor (arx.exe --crashinfo) writes the report after the game process is gone: after an unclean
-	# exit give it time to finish before looking for the report
+	# The crash processor (arx.exe --crashinfo) and the flight recorder's dump helper (arx.exe --dump-helper, #545)
+	# write the report after the game process is gone: after an unclean exit give them time to finish before
+	# looking for the report
 	$crashDir = Join-Path $UserDir 'crashes'
 	$unclean = -not $clean -and $null -ne $ExitCode -and [int]$ExitCode -ne 0
 	if ($unclean -and $CrashWaitSec -gt 0) {
 		$until = (Get-Date).AddSeconds($CrashWaitSec)
 		do {
-			$processing = [bool](Get-CimInstance Win32_Process -Filter "Name='arx.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match '--crashinfo' })
+			$processing = [bool](Get-CimInstance Win32_Process -Filter "Name='arx.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match '--(crashinfo|dump-helper)' })
 			$found = @(Get-ArxNewCrashReports $crashDir $started).Count -gt 0
 			if ($found -and -not $processing) { break }
 			Start-Sleep -Milliseconds 500

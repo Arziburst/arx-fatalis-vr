@@ -1,0 +1,71 @@
+# The game menu keeps a binding whatever the player remaps (#326; written before the implementation). On the simulated
+# Index: the menu's button - the right B, the radial menu, the only way to the game menu (D-042) - given to jump as
+# the VR settings page does it; the radial menu stays on it, and back in the game the right B still opens the game
+# menu through the ring's game menu item. Taking the last binding from the way to the menu is refused, with a note.
+#
+# Assumes (the worker adds them, named exactly):
+#   - status vr.input.menuReachable  (bool)   a binding of the current layout leads to the game menu: the menu event or
+#                                             a radial menu event is bound (vr::menuReachable, src/vr/VRControls.h)
+#   - status vr.input.remapRefusals  (count)  assignments refused since the start because they would have left the
+#                                             game menu without a binding (the VR settings page and vr-input bind)
+#   - `vr-input bind <event> <binding>` remaps through vr::assignBinding like the VR settings page: an assignment that
+#     would leave the game menu without a binding is not made and counted; the command itself is accepted (errors=0)
+# On the first-person test save, like radial-menu.xrs (the ring's game menu item needs a hero and tracked hands).
+# Self-contained: it ends with the default layout and no saved file (CI runs every sequence in one user directory).
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.input.controllers eq index
+vr-input default
+@frames 2
+@assert vr.input.remapped eq false
+@assert vr.input.layout.radial_right eq right.b
+@assert vr.input.layout.menu eq none
+@assert vr.input.menuReachable eq true
+@remember refusals0 vr.input.remapRefusals
+
+# 1. The menu's button given to another action on the VR settings page: the right B captured for jump
+menu pause
+@until menuMode eq mainmenu 10s
+menu vr
+@until menuPage eq vr 10s
+@frames 10
+vr-input capture jump
+@frames 2
+@assert vr.input.capture.state eq waiting
+vr-input tap right.b
+@until vr.input.capture.state eq done 5s
+@assert vr.input.layout.radial_right eq right.b
+@assert vr.input.menuReachable eq true
+
+# 2. The last binding of the way to the menu taken away: refused, the layout as it was, the note on the page
+vr-input bind radial_right none
+@until vr.input.remapRefusals eq {refusals0+1} 5s
+@assert vr.input.layout.radial_right eq right.b
+@assert vr.input.menuReachable eq true
+@frames 10
+@shot refused-note
+
+# 3. Back in the game the right B still opens the game menu: the ring's game menu item
+menu resume
+@until menuMode eq ingame 10s
+vr-sim hand right pos 0.12 -0.2 -0.38; vr-sim hand left pos -0.12 -0.2 -0.38
+@frames 10
+vr-input down right.b
+@until vr.radial.right.open eq true 5s
+vr-radial point right game_menu
+@frames 10
+vr-input up right.b
+@until menuMode eq mainmenu 5s
+menu resume
+@until menuMode eq ingame 10s
+
+# Leave no saved layout behind for the next sequence
+vr-input default
+@frames 2
+@assert vr.input.remapped eq false
+@assert errors eq 0

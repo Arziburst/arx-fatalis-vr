@@ -79,6 +79,16 @@ private:
 extern MainMenu * g_mainMenu;
 
 /*!
+ * The next-launch crash notice (#545, M6): "The game ended with an error last time. A report was saved."
+ * at the main menu, once per new report (platform/CrashNotice.h). The report it is about ("" = none),
+ * whether it is on screen, and its two buttons - the test channel's `crashnotice ok|open` press them too.
+ */
+const std::string & crashNoticeReport();
+bool crashNoticeShown();
+void crashNoticeOk();
+void crashNoticeOpen();
+
+/*!
  * A click on the left (\a delta -1) or right (+1) arrow of a row of the VR turning page (#260) - turn,
  * angle, speed, repeat or height - for the test channel; the page must be open
  * \return an empty string, or why it was refused

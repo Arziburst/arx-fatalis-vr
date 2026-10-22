@@ -8,6 +8,143 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-20 — The playground goblin flees instead of fighting when its life is below 8 - a damage roll decides which (#532)
+
+**Symptom:** `melee-damage.xrs` failed now and then (main runs 39128985121 and 39328879039, about 1 run in 17) at
+group 7's `@assert playground.npcFighting eq false` (true) right after the mode lever, while the same tree passed the
+merge gate. **Cause:** the goblin class script (`npc/goblin_base`, the plain goblin: life 12, `§cowardice 8`) runs
+`IF (^LIFE < §cowardice) GOTO FLEE` in `ATTACK_PLAYER`, which the mode lever's `attack_player` reaches. Group 6's
+thrust usually took the goblin below 8 (a hit of 4.3 or 6.5), so the lever made it flee - not fighting, the check
+passed. When the engine's armour roll dealt nothing (`melee.hit ... damage=0.0 aim=1.00 ... kind=thrust` in run
+39328879039) the goblin kept 12, the lever started a real fight (`BEHAVIOR -f MOVE_TO`, `SETTARGET -a PLAYER`) and the
+check saw it. Whether a playground NPC fights or flees from `attack_player` depends on its life at that moment.
+A second window in the same group: `playground fight` against the resting dagger - its touch ends the fight within a
+few frames, so `@until playground.npcFighting eq true` on a slow status read could miss it. **Do:** set the life a
+step depends on (respawn, then `playground hit <n>` - `damageNpc` with no armour roll - and wait on `npcLife`) instead
+of inheriting it from earlier hits; keep touches off (`melee noswing none`) until a fight set for a touch shows.
+`scripts/dev/melee-damage-stress.ps1 -FullLife` / `-SlowFrames 30` force both cases.
+
+## 2026-10-20 — A refresh-rate record is short of its frames (`turn72.frames` 62 < 64) under load, though every other frame was on time (#553)
+
+**Symptom:** `refresh-rate.xrs` failed a `motion.records.<x>.frames ge N` guard now and then, beside other games or in
+the merge gate (`turn90.frames` 76-80 < 81, `turn72.frames` 62 < 64), and passed alone. `arx-perf.log` of the gate
+(CI run 39359033513) had one frame of **173.8 ms, `cause=channel`, channel=159.6 ms, missed=11** inside turn72's
+window: 73 - 11 = 62. **Cause:** the test channel wrote `status.json` (temporary file, rename, `Logger::flush`) and
+`ack.txt` on the main thread, every 100 ms and after every batch. The #23 fix made the rename retry every millisecond
+instead of sleeping 100 ms, but a rename still waits as long as something holds the file: a scanner's or an indexer's
+oplock on `status.json` under I/O load breaks only when its holder lets go. The simulated headset, paced to the display
+clock, skips the display slots a long frame missed, as a headset does - so the record really ran short of frames, and
+the guard was right. The routine writes cost 7.6-12.9 ms of a frame too (ten such hitches in that run).
+**Do:** the channel builds the status on the frame and hands it to its writer thread (`ChannelWriter`,
+src/core/ChannelWriter.h, host test `ChannelWriterTest`), which writes the file, renames it, flushes the log and
+writes the ack after it - the status before the ack (#23) holds on that thread. **The second half of the trap:** a
+sequence reads `status.json` right after a log line it waited for (`@log`, then `@assert`), and the main-thread write
+never showed a line newer than the status on disk - nothing was logged between building, writing and flushing. The
+first writer-thread version flushed `arx.log` after the status landed while the frame went on logging, and the full
+suite failed `scene-switches` (`@log vr\.scene state=start` matched, `scene.active` read false: the command's event
+was logged in the same frame, after the status was built). So each status carries the count of log lines at its build
+(`LogCounter::lines`), the writer flushes only when no line came since, else the next frame builds a fresh status
+that flushes it. The ack does not wait for that fresh status: a second try that held the ack for it failed
+`melee-damage` (`playground fight` acked with the state of a frame later, when the goblin's script had dropped the
+fight already) - a test reads its batch's own state right after the ack. A frames guard that fails is not to be
+loosened: look for an `H` line with `cause=channel` in the record's window, and for `[channel] slow frame part:` in
+`arx.log`, which names what is left of the channel on the frame (commands, the status build, the records) when it
+takes 20 ms or more. Reproduce with `scripts/dev/refresh-rate-stress.ps1 -SlowStatusMs 150` (an oplock on each
+`status.json` replacement): red every time with the write on the frame, green with the writer thread.
+
+## 2026-10-19 — `abort()` / `std::terminate()` leave no crash report, the process ends with 0xE06D7363 or a fail-fast 0xC0000409 (#545)
+
+**Symptom:** the channel's `abort` ended the game with exit code 0xE06D7363 (a C++ exception) and `terminate` with
+0xC0000409 (`STATUS_STACK_BUFFER_OVERRUN`), nothing from the crash handler in `arx.log`, the dump helper's folder said
+`kind=terminated`. The `crash` command (an access violation) was reported fine. **Cause:** two faults inside the crash
+handler itself, on the path a signal or `terminate()` takes (no exception pointers), which #132 had never exercised:
+(1) `CrashInfo` is `#pragma pack(1)` and lives in shared memory, so its `contextRecord` is not 16-byte aligned, and
+`RtlCaptureContext` writing straight into it faults (`movaps`); (2) `SignalHandler` passed `_pxcptinfoptrs` for every
+signal, but the C runtime fills it only for the signals it raises from an exception (SIGSEGV, SIGFPE, SIGILL) - for
+`abort()` it is a stale pointer into a stack that is gone. The nested fault re-entered `handleCrash`, which took its
+plain `std::mutex` a second time on the same thread (`system_error` → 0xE06D7363) or, via `terminate()`, ended in the
+runtime's fail-fast. **Do:** capture the context into an aligned local and copy it; pass no pointers for SIGABRT /
+SIGINT / SIGTERM; a recursive mutex and a re-entry guard in `handleCrash`. When a crash path ends with a code that is
+not the crash's own, suspect the handler before the game: the flight recorder's `note` events (`crash handler: ...`)
+in the report's `arx-recorder.txt` show how far it got.
+
+## 2026-10-19 — A check started with `Start-ThreadJob` "ends without launching the game", yet its smoke test passes (#545)
+
+**Symptom:** every case of `flight-recorder-check.ps1` failed with "the game was launched (smoke-test exit 0)" while
+the smoke run under it ran its full time and passed. **Cause:** `Wait-ArxGameLaunched` treated any job state but
+`Running` as "the job ended" - and a thread job is `NotStarted` for a moment right after `Start-ThreadJob` (a
+`Start-Job` child is `Running` at once, which is why every older check was fine). **Do:** `NotStarted` is "on its
+way", not "ended" (`scripts/dev/test-lib.ps1`); a check that sees this symptom has not driven the game at all, so
+nothing it asserts about the run means anything.
+
+## 2026-10-18 — A 118 ms hitch of cause `channel` in the middle of a pacing measurement: `status.json` is renamed with a Sleep(100) (#23)
+
+**Symptom:** `refresh-rate.xrs` failed one run in two beside another game with a number that made no sense
+(`turn72.turned` -58.6 for -60, `walk72.walked` 141 for 129, a jump's air time off by 12 ms): `arx-perf.log` showed
+one frame of **117-119 ms, 8.5 slots at 72 Hz, `cause=channel`** inside the span, always about that long.
+**Cause:** the test channel writes `status.json` as a temporary file and renames it over the old one; the engine's
+`fs::rename` (FilesystemWindows.cpp) retries a file a reader holds open with `Sleep(100)` per try, and the runner
+reads `status.json` all the time - the game's main thread then sleeps 100 ms in the middle of the frame. A hitch that
+long moves what a stick held for 500 ms did (the long frame takes the whole interval at the held value), and the
+Euler step of the walk. **Do:** the channel replaces the file itself (`core::replaceFile`, src/core/FileReplace.h, host test
+`FileReplaceTest`): a write a test waits for tries every millisecond until the reader lets go (2 s at most, then it
+stays pending and every frame tries once more - a waited-for write is never dropped), the 250 ms timer's write gives up
+when a reader holds the file and the next one comes. After it, five runs beside a paced third game: 5 of 5 (before: 3 of 5). When a
+pacing number looks wrong, look in `arx-perf.log` for an `H` line at that time before the code. *Since #553 the whole
+write is off the frame, on the channel's writer thread (the 2026-10-20 entry): a held file delays the file, not a frame.*
+
+## 2026-10-18 — `@assert` right after an acknowledged command reads the state of the command before (#23)
+
+**Symptom:** the merge gate (full suite, two lanes, the CI runner busy) failed `scene-switches` at `@assert scene.view eq
+observer` with `scene.view (first)`, 7 s into the run, right after `scene view observer` was acknowledged (`seq=2`).
+Green on main and in 10 of 10 local runs. **Cause:** the game wrote `ack.txt` first and `status.json` after it (status
+build, temporary file, rename); the runner polls the ack every 10 ms and reads `status.json` at once - when the PC is
+loaded, the status of the batch is a few milliseconds late and the read gets the file of the batch before. It was
+first thought to be a dropped status write (the 20 ms patience of the first fix): the gate's `arx.log` has no
+"could not write" line, so it was not - and a dropped or delayed write would have been read stale the same way.
+**Do:** the batch's end writes the status first and the ack after it (CommandChannel.cpp, `runBatch`): an ack always
+finds the status of its batch. When an `@assert` after a command reads the old value, look at that order and at
+`status.json`'s `cmdSeq` before the code under test.
+## 2026-10-18 — A jump's air time varied by up to 60 ms between runs: the "fixed timestep" loop stepped by all the time that had added up (#23, #537)
+
+**Symptom:** `jump<rate>.jumpSeconds` differed by up to 57 ms between two blocks of one run beside a busy third game
+(0.289 ... 0.346 s), and by 63 ms on the quiet CI runner (0.299 at 90 Hz, 0.362 at 120), though every apex was 130.
+**Cause:** `ARX_PLAYER_Manage_Movement`'s loop looked like a fixed step (`while(DeltaTime > FIXED_TIMESTEP)`) but
+passed the WHOLE pile to each iteration and took 25 off it - a step of 25-35 ms depending on the rate's phase, and
+of a hitch's whole length after one (its own TODO said so: the forward push was applied in the first iteration
+only). An Euler fall with a variable step, and a per-step friction, follow the frames. And the remainder was
+integrated twice: 25 ms of frames became 29-33 ms of physics, so the jump everyone knows fell 1.2-1.33 times
+quicker than `WORLD_GRAVITY` says - a true fixed step of 25 ms made the jump 10 % longer in the air (0.34 s above
+50 cm for 0.31) until that was put back as a time scale. **Do:** the jumping player moves in fixed 25 ms steps from
+a `FixedStepClock` (src/game/JumpPhysics.h), the input re-armed for every step, each step integrating
+`jump_time_scale` (1.2) times its length; the flight is a function of the step count (JumpPhysicsTest). When a
+"fixed step" loop misbehaves, check what it passes to the step, not only how often it runs - and measure the old
+arc before replacing the loop, the game may have been tuned to its bug.
+## 2026-10-13 — The same 500 ms walk measured 77, 100, 107 and 109 units at four rates (#23)
+
+**Symptom:** a walk timed exactly in display time gave wildly different distances per rate, and not in the
+order of the rates - it looked like a rate-dependent walk. **Cause:** each measurement started with `setpos` to
+the same spot. `setpos` puts the player where the engine starts a fall (`player.falling`): a per-frame trace
+showed him hanging 16 units above the floor in the jump's end phase for seconds, and `falling` still set when the
+walk began, so the walk started from a landing. The walk itself is the same at every rate (127.7-129.7 units once
+nothing was teleported). **Do:** never teleport between measurements that compare motion; return by motion
+(`stick-for` back, a turn back by time). Wait for `player.jumping eq false` and half a second after any teleport.
+
+## 2026-10-13 — A jump's "time in the air" read 0.40 s or 1.0 s at the same rate (#23, #435)
+
+**Symptom:** the time above 20 cm of the same jump differed by 0.6 s between runs. **Cause:** the engine moves a
+jumping player in 25-35 ms steps; a step that would end below the floor is refused, so the player hangs where the
+last step ended - 6 or 24 units above the floor - until the landing animation ends, then snaps down. A gauge
+below that height reads the hang. **Do:** measure a jump above 50 cm (`MotionProbe::AirborneUnits`); the hang is
+#435.
+
+## 2026-10-13 — A swing peaked at 2x or 3x its speed, a slow hand made a phantom swing, on the simulated headset (#23, #352)
+
+**Symptom:** a 9.4 m/s swing peaked at 18.89 or 28.33; a 1.2 m/s return counted as a swing. **Cause:** a frame
+hitch (here: the 22-26 ms that come with each `Cursor escaped the window` warning in a background run, #198) makes
+the runtime skip one or two display slots; the swing detector's median then moved over two or three slots and
+was divided by one frame's step (#352). **Do:** look for `H ... missed=` lines in `arx-perf.log` at the swing's
+time before suspecting the detector; #409 fixes the divisor.
 ## 2026-10-18 - A channel batch vanishes: no ack for 60 s, no line in arx.log, and the quit afterwards takes the lost batch's seq
 
 **Symptom:** a sequence step (`@frames 5` in vr-remap, CI run 39120032077 attempt 1) times out "waiting for the game to
@@ -175,6 +312,8 @@ peaceful. The save's goblin (`mvp-goblin-fight`) keeps fighting after hits.
 **Do:** to test what only fighting NPCs feel in the playground, set the fight with `playground fight` right before the
 check, let nothing hit the goblin in between (a peaceful-in-fact goblin refuses touches: `melee.touch ... refused`),
 and check the first hit only; `npcFightBehaviour` / `npcTargetsPlayer` show which half is missing.
+**Corrected 2026-10-20 (#532):** the fight never started from the mode lever because the goblin's life was below its
+cowardice, not because of a hit's reaction: see the 2026-10-20 entry. At full life the lever does start a real fight.
 
 ## 2026-10-17 — A changed cfg.ini default does not show in a test run (#465)
 
@@ -1583,3 +1722,28 @@ the controls ask for is not applied to the player there - not a locomotion bug.
 **Symptom:** reading a past CI run's diff from its log, the first `HEAD is now at <sha> Merge <head> into <base>` line of the checkout step names a head that is not the run's (`gh run view <id> --json headSha`), and the changed files of `compare/<base>...<head>` belong to another pull request (#522, the impact map's replay first counted 9 of 14 failures as missed this way).
 **Cause:** the self-hosted runner keeps its workspace between jobs: the checkout first prints where the workspace stood - the previous job's merge commit - and only its last `HEAD is now at` line is the merge this run built.
 **Do:** take the last such line of the checkout step and check that its head is the run's `headSha` (`scripts/dev/impact-replay.ps1` does both).
+
+## 2026-10-20 - A channel line with `;` sent from a script is refused, while the same line works in a `.xrs` file
+**Symptom:** `Send-ArxCommand -Lines @('vr-sim @+0-20000ms head rot 60 10 0; vr-sim @+0-20000ms hand right pos 0.3 -0.3 -0.5')` is acknowledged with `errors=1` ("a ramp holds one command", or "expected ..." before #550), and nothing moves; the same text as a `.xrs` line runs both ramps (#550, the `replay-crash` case of `flight-recorder-check.ps1`).
+**Cause:** only the `.xrs` runner splits a line at `;` into the lines of one batch (`xrs-lib.ps1`); the channel runs each line of `command.txt` as it is, so the whole text reaches `vr-sim` as one command with a `;` in it.
+**Do:** from a script, give `Send-ArxCommand` one line per command (`-Lines @('vr-sim ...', 'vr-sim ...')`): they are one batch, applied in the same frame, as the `.xrs` form is.
+
+## 2026-10-20 - The simulated headset's gameplay timeline starts 0.3 s before the game plays
+**Symptom:** a simulator script's frame 0 (`timeline gameplay`) comes while the level still loads: `[vr] sim: timeline starts at frame 2` stands before `Done loading level` in `arx.log`, and a recorded clip played from the timeline's frame 0 ran 270 ms ahead of its recording (#550: 1.7 degrees of head yaw at 6 degrees per second).
+**Cause:** the loading screen submits VR frames through `xrWaitFrame` from outside the game loop, and `detectGameState()` says gameplay between the load's synchronous parts, so the timeline starts on a loading screen's frame; the game loop's first playable frame - where a recording's time 0 is - comes some 25 frames later. Sequences wait that out (`@until vr.sim.timelineFrame ge 270`).
+**Do:** time a recording and its replay on the clip clock (`vr::replay::clipClockUs`: the display time since the first playable frame of the game loop; the `play` command runs on it), not on the timeline; a script's own timed lines keep the timeline's clock, as every CI sequence expects.
+
+## 2026-10-22 - A second quick click on an in-game button does nothing
+**Symptom:** a button of the book (the dev variants panel's `-`, #588) takes the first trigger press and ignores a second one 10 frames later: `dev-variants.xrs` pressed `-` twice and the value moved one step.
+**Cause:** the engine turns a click within the double-click time into a double click (`ArxGame.cpp`: `EERIEMouseButton` bit 4 set, bit 1 cleared), so `eeMouseDown1()` is false for it.
+**Do:** a button that must count every press checks `eeMouseDown1() || eeMouseDoubleClick1()`.
+
+## 2026-10-22 - After `loadlevel <n>` the eyes are black, and the player's position is the previous level's
+**Symptom:** a channel `loadlevel 2` (no target) after `loadlevel 1` loads level 2 with no error, but the shots are `black` and `player.x/y/z` are exactly what they were in level 1; going on that way, `loadlevel 21` after level 20 crashed in level 21's init (#601).
+**Cause:** a level change without a target restores the player's saved position (`ARX_CHANGELEVEL_PopLevel`, the `target.empty()` branch), the coordinates of the old level, which in the new one are often outside its geometry. Only a start with `--loadlevel` puts the player at the level's own start (the DLF's `pos_edit`).
+**Do:** enter a level as the game does, at an entry marker: `loadlevel <n> <marker>`, the target of another level's exit (`levelstats report` lists them in `level-tour.txt`, #596).
+
+## 2026-10-22 - A scripted launch with `-Save` deleted the replay start save
+**Symptom:** after a `run-windows.ps1 -Isolated -Save ...`, `smoke-test.ps1 -Save ...` or `replay.ps1` run, the replay slot of a recorded headset session (`save9001`, D-060) was gone from the user directory and the recording could not be replayed (#569, 2026-10-21).
+**Cause:** `Use-ArxSave` (`scripts/build-paths.ps1`) made the library save the only save by removing the whole `save` folder of the user directory, and the replay recorder keeps each session's start save in `save9000`..`save9004` inside it. The game never lists those slots, so nothing showed that they were there.
+**Do:** `Use-ArxSave` removes everything in the save folder except the folders `save9000`..`save9004` (`Test-ArxReplaySaveSlot`); `Get-ArxLoadSlotProblem` does not count them for `--loadslot` either. A new script that clears or rewrites a user directory's `save` folder keeps them too, and the check is in `scripts/dev/test-use-arxsave.ps1`.

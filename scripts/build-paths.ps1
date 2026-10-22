@@ -69,11 +69,23 @@ function Copy-ArxSaves([string[]]$Names, [string]$UserDir, [string]$Library) {
 	}
 }
 
-# Make one library save the ONLY save of an isolated user directory, so `--loadslot 0` loads it
+# Whether a save folder name is a replay start-save slot: exactly save9000..save9004 (D-060,
+# src/core/SaveSlots.h isReplaySaveSlot). The game never lists them; the replay recorder writes them.
+function Test-ArxReplaySaveSlot([string]$Folder) {
+	$Folder -match '^save900[0-4]$'
+}
+
+# Make one library save the ONLY listed save of an isolated user directory, so `--loadslot 0` loads it
 # (slots are numbered newest first, so with several saves the slot of a given one is not stable).
+# The replay start-save slots save9000..save9004 stay untouched: they hold a recorded session's start
+# save (TRAPS.md, #569). Everything else in the save folder, loose files included, is removed.
 function Use-ArxSave([string]$Name, [string]$UserDir, [string]$Library) {
 	$saves = Join-Path $UserDir 'save'
-	if (Test-Path $saves) { Remove-Item -Recurse -Force $saves }
+	if (Test-Path $saves) {
+		Get-ChildItem -LiteralPath $saves -Force |
+			Where-Object { -not ($_.PSIsContainer -and (Test-ArxReplaySaveSlot $_.Name)) } |
+			Remove-Item -Recurse -Force
+	}
 	Copy-ArxSaves -Names @($Name) -UserDir $UserDir -Library $Library
 }
 
@@ -88,8 +100,9 @@ function Get-ArxLoadSlotProblem([string[]]$ArxArgs, [string]$UserDir) {
 	if ($i + 1 -ge $args_.Count -or $args_[$i + 1] -notmatch '^\d+$') { return '--loadslot needs a slot number' }
 	$slot = [int]$args_[$i + 1]
 	$saveDir = Join-Path $UserDir 'save'
+	# the replay slots (save9000..save9004) are not numbered by the game (D-060)
 	$count = @(Get-ChildItem $saveDir -Directory -ErrorAction SilentlyContinue |
-	           Where-Object { Test-Path (Join-Path $_.FullName 'gsave.sav') }).Count
+	           Where-Object { -not (Test-ArxReplaySaveSlot $_.Name) -and (Test-Path (Join-Path $_.FullName 'gsave.sav')) }).Count
 	if ($slot -lt $count) { return $null }
 	"--loadslot ${slot}: $saveDir has $count save(s) (slot 0 = the newest), so there is nothing to load - the game " +
 	"would start at the main menu. Load a test save instead: -Isolated -Save mvp-new-game (the test save library, " +

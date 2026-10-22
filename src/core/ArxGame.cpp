@@ -47,6 +47,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <sstream>
 #include <string_view>
@@ -159,6 +160,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "platform/CrashHandler.h"
 #include "platform/Dialog.h"
+#include "platform/DumpHelper.h"
 #include "platform/ExitTrace.h"
 #include "platform/Platform.h"
 #include "platform/Process.h"
@@ -186,6 +188,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "vr/HeadLean.h"
 #include "vr/HeadTracking.h"
 #include "vr/PerfLog.h"
+#include "vr/ReplayRecorder.h"
 #include "vr/SceneSubtitles.h"
 #include "vr/SceneView.h"
 #include "vr/VRBody.h"
@@ -272,6 +275,11 @@ bool ArxGame::initialize() {
 	vr::createSession();
 	// One line with the outcome; the lines before it say why when it is flat
 	gameevent::Event("vr.mode")("mode", vr::isEnabled() ? "vr" : "flat")("simulated", vr::isSimulated());
+	if(vr::isEnabled()) {
+		// A fullscreen window minimized on a focus loss draws no frames - the headset would freeze when the player
+		// clicks another program (#406); cfg.ini minimize_on_focus_lost keeps its value for flat mode
+		m_MainWindow->setMinimizeOnFocusLost(false);
+	}
 
 	init = initGameData();
 	if(!init) {
@@ -1181,6 +1189,8 @@ void ArxGame::shutdown() {
 
 	// The last second of frames, before the slow parts of the shutdown
 	vr::perf::shutdown();
+	// The session's clip (#550): closed and compressed
+	vr::replay::shutdown();
 
 	if(m_gameInitialized)
 		shutdownGame();
@@ -1196,6 +1206,8 @@ void ArxGame::shutdown() {
 
 	LogInfo << "Clean shutdown";
 	platform::markCleanExit();
+	// Tell the flight recorder's dump helper this exit is clean: no report, just let it go (#545)
+	platform::dumpHelperMarkClean();
 }
 
 void ArxGame::shutdownGame() {
@@ -1271,7 +1283,9 @@ void ArxGame::shutdownGame() {
 
 void ArxGame::onWindowGotFocus(const Window & /* window */) {
 	
-	if(GInput) {
+	// In VR the controllers drive the game and the window's focus changes nothing (#406): a reset would also clear
+	// the actions the controllers hold
+	if(GInput && !vr::isEnabled()) {
 		GInput->reset();
 	}
 	
@@ -1283,10 +1297,15 @@ void ArxGame::onWindowGotFocus(const Window & /* window */) {
 
 void ArxGame::onWindowLostFocus(const Window & /* window */) {
 	
-	// TODO(option-control) add a config option for this
-	ARX_INTERFACE_setCombatMode(COMBAT_MODE_OFF);
-	TRUE_PLAYER_MOUSELOOK_ON = false;
-	PLAYER_MOUSELOOK_ON = false;
+	// In VR the desktop window only mirrors the headset (#406): the player does not see it, and clicking OBS, a
+	// browser or Discord takes its focus - leaving free look would drop the game into cursor mode (the inventory
+	// open, melee refused) with nothing in the headset to say why. Flat mode keeps the engine's behaviour
+	if(!vr::isEnabled()) {
+		// TODO(option-control) add a config option for this
+		ARX_INTERFACE_setCombatMode(COMBAT_MODE_OFF);
+		TRUE_PLAYER_MOUSELOOK_ON = false;
+		PLAYER_MOUSELOOK_ON = false;
+	}
 	
 	// TODO(option-audio) add a config option to disable audio on focus loss
 	
@@ -1474,6 +1493,13 @@ void ArxGame::doFrame() {
 	// The performance log (#327): the previous frame ends here, this one's phases are timed from now on
 	vr::perf::frameStart();
 
+	// The flight recorder (#545): one event per frame (a no-op with --no-recorder). The resource line goes
+	// into arx-perf.log from the performance log's own thread; the hang watchdog beats inside channel::update.
+	{
+		static s64 s_frame = 0;
+		platform::flightRecord(platform::RecordKind::Frame, std::string_view(), ++s_frame);
+	}
+
 	{
 		vr::perf::Scope perfInput(vr::PerfPhase::Input);
 		vr::pollEvents();
@@ -1535,6 +1561,12 @@ void ArxGame::doFrame() {
 	{
 		vr::perf::Scope perfChannel(vr::PerfPhase::Channel);
 		channel::update();
+	}
+
+	// The replay recorder (#550): this frame's poses and inputs, as the runtime gave them, to arx-replay.log
+	{
+		vr::perf::Scope perfInput(vr::PerfPhase::Input);
+		vr::replay::frame();
 	}
 
 	{
@@ -1804,8 +1836,13 @@ void ArxGame::updateFirstPersonCamera() {
 	}
 	
 	if(EXTERNALVIEW) {
-		g_playerCameraStablePos = g_playerCamera.m_pos = (g_playerCamera.m_pos + targetPos) * 0.5f;
-		g_playerCamera.angle = interpolate(g_playerCamera.angle, targetAngle, 0.1f);
+		// The external view eases towards its target: half the gap and a tenth of the turn per frame at 90 Hz,
+		// by the frame's time - per frame it closed twice as fast at 144 Hz as at 72 (#23)
+		const float frames90 = toMsf(g_platformTime.lastFrameDuration()) * (90.f / 1000.f);
+		const float closePos = 1.f - std::pow(0.5f, frames90);
+		const float closeAngle = 1.f - std::pow(0.9f, frames90);
+		g_playerCameraStablePos = g_playerCamera.m_pos = g_playerCamera.m_pos + (targetPos - g_playerCamera.m_pos) * closePos;
+		g_playerCamera.angle = interpolate(g_playerCamera.angle, targetAngle, closeAngle);
 	}
 	
 }

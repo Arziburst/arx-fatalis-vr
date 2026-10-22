@@ -406,3 +406,31 @@ void FingerCurlTest::testPoseApproach() {
 	}
 	poseCheck("repeated steps", closed, now, 0.001f);
 }
+
+void FingerCurlTest::testShapeFromJointsInvertsTheSynthesis() {
+
+	// Each finger alone through its range, the others half closed; either hand, turned and moved: the shape comes back
+	const glm::quat turned = glm::angleAxis(glm::radians(50.f), glm::normalize(Vec3f(0.3f, 1.f, -0.2f)));
+	for(size_t finger = 0; finger < vr::FingerCount; finger++) {
+		for(int step = 0; step <= 10; step++) {
+			vr::HandShape shape;
+			shape.thumb = shape.index = shape.middle = shape.ring = shape.little = 0.5f;
+			float * fingers[vr::FingerCount] = { &shape.thumb, &shape.index, &shape.middle, &shape.ring, &shape.little };
+			*fingers[finger] = float(step) / 10.f;
+			const vr::Hand hand = (step % 2) ? vr::Hand::Left : vr::Hand::Right;
+			const vr::HandJoints joints = vr::synthesizeHandJoints(hand, shape, Vec3f(0.4f, -0.3f, -0.6f), turned);
+			const vr::HandShape read = vr::handShapeFromJoints(joints);
+			const float * got[vr::FingerCount] = { &read.thumb, &read.index, &read.middle, &read.ring, &read.little };
+			for(size_t f = 0; f < vr::FingerCount; f++) {
+				const std::string what = "finger " + std::to_string(finger) + " at " + std::to_string(step) + "/10, read finger "
+				                         + std::to_string(f);
+				CPPUNIT_ASSERT_DOUBLES_EQUAL_MESSAGE(what, double(*fingers[f]), double(*got[f]), 0.005);
+			}
+		}
+	}
+
+	// Invalid joints: an open hand
+	vr::HandJoints none;
+	const vr::HandShape open = vr::handShapeFromJoints(none);
+	CPPUNIT_ASSERT_DOUBLES_EQUAL(0.0, double(open.thumb + open.index + open.middle + open.ring + open.little), 1e-6);
+}

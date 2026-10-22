@@ -215,8 +215,12 @@ the way out: a `TerminateProcess` from outside (the task manager, a launcher, a 
 
 ## The hang watchdog (#440)
 
-With the test channel the game watches its main thread (`platform/HangWatchdog`, from the first frame): the main
-thread beats every frame, when a level load starts and at every step of a load's progress bar. When no beat came
+In every launch - with or without the test channel, since #545 - the game watches its main thread
+(`platform/HangWatchdog`, from the first frame; `arx.log` says `hang watchdog: watching the main thread, threshold
+5000 ms`): the main thread beats every frame, when a level load starts and at every step of a load's progress bar.
+The first report of a stall also asks the dump helper for a hang report - `hangs\<utc>\` with `report.txt`
+(`kind=hang`), a minidump of every thread, the flight recorder and the performance log - and names it in the log:
+`[hang] dump written: hangs\<utc>\arx.dmp` (`scripts/dev/crash-report.ps1` reads it; `hang-dump.xrs` in CI checks it). When no beat came
 for the threshold (5 s, below the 10 s a test waits for an ack; the channel's `watchdog <ms>` changes it) a thread
 of the watchdog suspends the main thread just long enough to walk its stack, resumes it and writes the report to
 `<dir>\hang.txt` (first, without the logger) and as `[W] ... [hang]` lines of `arx.log`:
@@ -282,13 +286,20 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
   temporary file and rename it, so the game never reads a half-written batch, and wait for the ack.
 - **answers every batch in `<dir>\ack.txt`**: `seq=<batch> frame=<frame> errors=<refused lines>
   last=<last line> error=<reason or ->`.
-- **rewrites `<dir>\status.json`** every 100 ms (#522; 250 ms before), after every batch (right after its ack), once
-  a `shot` or a simulated headset's shot asked for through the channel is saved, and on every state change —
-  atomically (`status.json.tmp`, then rename), so a reader sees whole files only.
+- **rewrites `<dir>\status.json`** every 100 ms (#522; 250 ms before), after every batch (just BEFORE its ack since #23: a
+  test that reads the status right after the ack finds the batch's state), once a `shot` or a simulated headset's shot
+  asked for through the channel is saved, and on every state change - atomically (`status.json.tmp`, then rename), so a
+  reader sees whole files only. The frame only builds the status: the channel's writer thread writes the file, renames
+  it and writes the ack after it (#553, `ChannelWriter`), so a reader or a scanner that holds the file delays the file
+  by the time it holds it (every millisecond a try, `core::replaceFile`), never a frame; a status that waited is
+  replaced by the newest one, and the ack still comes only after its status landed.
 - **flushes `arx.log`** at the same cadence, so `game.state` events and `[mark]` lines are readable
   while the game runs (since #129 the file logger flushes on its own after every warning or error
   and at least once a second — see *Log:* in [The log banner](#the-log-banner); the channel only
-  makes it fresher).
+  makes it fresher). The channel flushes after a status landed and only while no line was logged since that status
+  was built (else the next frame builds a fresh one, #553): a line a test waited for never shows with a status older
+  than it, so `@log` then `@assert` reads the state the line came from or later. The ack does not wait for that
+  flush: a batch's own log lines may show a frame after its ack (`@log` waits for them).
 - reports the state that the [game event log](#the-game-event-log) logs on every change as
   `game.state to=STARTUP|MENU|LOADING|GAMEPLAY|CINEMATIC|EXITED` — always, with or without the
   channel (#130 replaced the channel's own `[game] state:` lines).
@@ -302,15 +313,22 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `waitframes <n>` | hold the batch until the game rendered `n` more frames (#522): the lines after it run, and the ack is written, at the start of the next frame once those are rendered — its `frame=` is the frame the batch was read in plus `n`. No new batch is read meanwhile. The `.xrs` `@frames` sends it: a frame wait costs the frames and the ack's pickup, no `status.json` polling. Anywhere in a batch; `0` waits for nothing; not a number: refused |
 | `shot [name]` | after the next rendered frame, save it as `<dir>\capture\<name>.bmp` (default `shot<N>`); `captureSeq` and `lastCapture` in the status, and `capture`: what each quarter of the picture shows (#334) |
 | `window <width> <height>` | resize the game window as a player dragging its border does (#334): the interface is laid out again for the new size at the next frame (`window` and `vr.interface.windowWidth/Height` in the status). At least 320 × 240; refused in fullscreen. The size is saved to `cfg.ini` when the game quits |
+| `window focus lost\|gained` | the game window losing / getting the input focus, as when the player clicks another program or back on the game (#406): the window event pushed into SDL's event queue, so it takes the real event's path (`window.focused` in the status follows it). In VR a focus change leaves the game as it is; flat mode leaves free look and puts the weapon away on a loss. A test run's window starts without the focus (#487): give it first, then take it |
 | `mark <text>` | `[mark] <text>` in the log — an anchor for "the line I wait for must come after this"; also an `M` line in [the performance log](#the-performance-log-arx-perflog-327) |
-| `stall <ms>` | the main thread sleeps 1..5000 ms in this frame: a forced hitch, which the performance log must mark with `cause=channel` (#327) |
+| `stall <ms>` | the main thread sleeps 1..60000 ms in this frame: a forced hitch, which the performance log must mark with `cause=channel` (#327); over the watchdog's threshold (6000) it forces a hang report with a dump (#545, `hang-dump.xrs`) |
+| `leak <MiB>` | allocate and touch 1..4096 MiB of private memory and keep it until the exit: the `R` lines of the performance log show the step, `perf-summary.ps1` the trend (#545) |
+| `abort`, `terminate`, `terminate thread`, `heapcorrupt`, `exitprocess <code>` | end the game on purpose for the crash-report checks (#545, `flight-recorder-check.ps1`): `abort()`, `std::terminate()` on the main thread or on a new `std::thread`, a heap corruption the heap detects (`STATUS_HEAP_CORRUPTION`), a thread that starts straight at `ExitProcess` (the #544 shape, caught by the ExitGuard). Each leaves one `crashes\<utc>\` report; the killing ones never get an ack |
+| `crashnotice ok`, `crashnotice open` | the buttons of the next-launch crash notice at the main menu (#545, M6): OK dismisses it (every announced report gets `notice-shown.txt`), Open folder opens the report; `crashNotice.state` / `.report` in the status; `scripts/dev/crash-notice-check.ps1` |
 | `stall load <ms>` | the **next level load** sleeps 1..5000 ms right after its `Loading level` line: a stalled load for the [hang watchdog](#the-hang-watchdog-440) (#440, `level-load-hang.xrs`) |
 | `watchdog <ms>` | the hang watchdog's threshold, 100..60000 ms (default 5000): a main thread without a beat for this long is reported with its stack (#440); `hangWatchdog.thresholdMs` in the status |
 | `quit` | ask the game to quit at the end of the frame (the same path as closing the window) |
 | `save <name>` | save the running game as a new slot named `<name>` (no thumbnail); the newest save is slot 0, so `loadslot 0` loads it back. A `save slot=save000N name=<name> ok=yes\|no` event either way; refused outside a running game (#130) |
+| `replay mark <name> [<seconds>]` | the last 30 s (1..60) of the recorded VR session into `<user dir>\replay-marks\<time>-<name>.vrsim`, a clip of its own with `# mark: <name> <ms>` (#550, [Record and replay](#record-and-replay-550)); `[replay] mark <name>: replay-marks\<file> (<n> frames, <s> s)` in the log; refused while nothing records (flat mode, `--no-replay-log`, before the game is playable) and for a name that is not letters, digits, `-` and `_` |
+| `marks note on\|off` | the voice note of a mark of the moment's hold (#551, [Marks of the moment](#marks-of-the-moment-551-marks-v2-574)) for this session; `cfg.ini vr_mark_note` (default 1) keeps the player's choice; `marks.note` in the status |
 | `loadslot <n>` | load save slot `n` (from the menu or in-game), refused with the slot count if it does not exist. The command-line `--loadslot <n>` of a missing slot logs an `[E]` and starts at the main menu (before #24 it started an empty level: a black world with only the HUD, TRAPS.md); `run-windows.ps1` / `test-pr.ps1` refuse such a launch before it starts |
 | `ui inventory open\|close` | what the inventory key does (the book has the script command `book open\|close`); a `ui.inventory` event once the inventory is open / has finished closing. While a level script holds the player (the level 10 start: letterbox, controls blocked) the HUD is not drawn and a close never finishes — `setplayercontrols on` and `cinemascope off` first (#130) |
 | `loadlevel <n> [target]` | change to level `n` in a running game (refused from the menu: start with `--loadlevel` or `loadslot`) |
+| `levelstats start\|report` | the [level tour](#the-level-tour-596)'s numbers (#596): `start` times every frame from then on (top of a frame to the next, as `arx-perf.log`); `report` stops, logs `[channel] levelstats: level <n> frames=<n> mean=<ms> p95=<ms> max=<ms> player=<x> <y> <z> exits=<n> ladders=<n>` (p95 the nearest rank) and appends the level's exits and ladders to `<dir>\level-tour.txt`. `status.json` → `levelStats`. Refused outside gameplay, and `report` without a `start` |
 | `newgame` | what the menu does for "New game" and the end of the character creation, without the screens: an average hero (all attributes 10, skills 2, nothing to distribute), level 1. Refused outside the main menu (a plain launch). The hero then lies in the start cell and `player.controlsBlocked` stays `true` for 30-40 s while the level script plays the awakening (#70) |
 | `entities [filter]` | write one line per entity to `<dir>\entities.txt`: `<id> npc\|item\|fix\|marker\|camera\|other show=<n> pos=<x> <y> <z> [life=<n>] interactive=<0\|1>`; `filter` is a substring of the id. `show` is the engine's `EntityShowState`: 0 in the scene, 2 in an inventory, 6 equipped by the player. The position of a floor object (lever, chest, item) is on the **floor** (#70). `interactive=0`: its script switched it off, no hand reticle or mouse hovers it (#210) |
 | `setpos <x> <y> <z> [yaw]` | put the player at exact coordinates, optionally facing `yaw`. `y` is the **feet** (the engine's teleport): the eye, `player.y` in the status, ends 170 units higher (smaller `y`). A `y` taken from the eye puts the player 170 units above the floor (TRAPS.md, #210). About 100 units are a metre. Refused outside gameplay (#70) |
@@ -318,6 +336,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `lookat <entity>` | turn the player (yaw and pitch) towards an entity, aiming 40 units above its floor position. The pitch is not kept by a save and does not matter in VR (the head decides); the yaw is kept (#70) |
 | `place <entity> <ahead> [<right>]` | put an entity on the floor `ahead` units along the player's heading (and `right` units to its right), facing the player — a target in reach for melee checks (#39; `goblin_base_0036.setspeed 0` first keeps an NPC from walking off). Refused outside gameplay or for an unknown entity |
 | `drawcheck [frames]` | for the next `frames` frames (default 1) draw the scene view **twice** per frame with the same camera and compare the two pictures pixel by pixel; result in `drawCheck` of the status and one `[render] drawcheck N done:` log line — see [The draw check](#the-draw-check-drawcheck). Refused outside gameplay or while a check runs |
+| `devvariants clear`, `devvariants demo`, `devvariants set <group> <value>` | the [dev variants panel](#the-dev-variants-panel-588) (#588), only in a development launch (refused in a player's): `clear` unregisters every group (a sequence starts from none, whatever the branch registers), `demo` registers the demo groups of `#588` (`demo_choice`: Small, Medium, Large, default Small; `demo_number`: 0 to 1 m in steps of 0.25, default 0.75; their setters fill `devPanel.demo.*`), `set` switches a group as the panel's buttons do - a choice by its exact label (spaces allowed), a number (clamped); refused for an unknown group or value. `devPanel` in the status: `enabled` (a development launch), `view` (`map` \| `panel` \| `empty`: what the map page shows), `visible` (the open book shows the panel or the notice), `groups`, `page` / `pages`, `value.<group>` (a choice's label, a number as a number), `demo.choice` / `demo.number` / `demo.calls`. The panel's buttons are `vr-point <hand> menu` targets while it is shown: `devpanel.<group>.<index>`, `devpanel.<group>.minus` / `.plus`, `devpanel.prev`, `devpanel.next`, `devpanel.show_map` |
 | `vr-input down\|up\|tap <control>`, `vr-input stick left\|right <x> <y>`, `vr-input bind <event> <binding>`, `vr-input reset`, `vr-input turn snap\|smooth\|angle <deg>\|speed <deg/s>\|repeat <s>` | the VR controls' table without a headset (#30, `vr/VRInput.h`): a control (`right.a`, `left.grip`, `right.stick_down` …) held, let go or tapped as if a controller did it, merged into what OpenXR reports and resolved by the same table at the next frame; the game then reacts as to the controllers (#74: inventory, book, jump, crouch toggle, the game menu, the mouse buttons). `stick` holds a stick deflected (the analog value only — its direction controls are `down` / `up`), seen in `vr.input.game.moveX/moveY/turn`; `bind` remaps one event (`bind jump left.grip+left.a`, `bind menu left.b:long`, `bind magic_mode none`); `reset` restores the default layout for the current controllers and lets go of everything (`bind` and `reset` are not saved); `turn` sets the turn settings as `cfg.ini` does (#32: mode, snap angle, the repeat pause of a held stick (0 = none), smooth speed — `vr.input.turn` shows them with `snaps`, `lastSnap`, `turned` degrees right positive, `allowed`, and for the last push `pushRepeats` and `repeatInterval` — the mean seconds by the clock from its first snap to its last repeat (#285); one `vr.turn.snap … repeat=no|yes` game event per snap, `vr.turn.smooth` at the start and stop of a smooth turn). Refused with the reason for an unknown control, event or binding. `vr.input` in the status (`vr.input.game.held`: the actions, buttons and keys the engine is given); one `[vr] input: <event> (<binding>)` log line per event press, one `[vr] input: layout …` line per layout change |
 | `vr-input capture <event>`, `vr-input cancel`, `vr-input default` | the VR settings page's remapping (#178, `vr/BindingCapture.h`): `capture` is what a click on the event's binding does — the next controls pressed (`vr-input down` / `up` / `tap`, or the simulated controllers) become its binding: released → single, held ≥ 0.5 s → `:long`, a second control of the same hand while the first is held → a chord; the walk stick and the turn stick's left / right are refused with the reason; nothing pressed for 8 s cancels. While capturing, the controls reach nothing else. The result is applied at once and **saved** for the controller type (`vr-controls-<type>.ini` in the config directory: only the events that differ from the default). `cancel` ends a capture; `default` is the page's "reset to default" (#35's layout, the file removed); `reload` reads the saved layout again at the next frame, as a start does. `vr.input.capture` and `vr.input.remapped` / `conflicts` in the status; a `vr.remap` game event per result |
 | `menu pause\|resume\|none\|options\|input\|vr\|vr-turning\|loadsave\|interface\|quit\|language`, `menu step <row> left\|right`, `menu drag <slider> <0..1>` | the main / pause menu without clicks (#178): `pause` opens the pause menu from a running game (as Escape does), `resume` goes back to the game ("Resume game"); the others open that page of the main or pause menu (`none` closes the options window). On the VR turning page (#260, D-043, the page open): `drag` is a slider's dot dragged to that point of its bar (0 left end, 1 right end) and let go — it lands on the nearest notch: `angle` (30–90° in 5° steps), `speed` (very slow / slow / medium / fast / very fast = 60 / 90 / 120 / 180 / 240°/s), `repeat` (off, 0.25, 0.4, 0.6, 0.8, 1 s); `step` is one notch of a slider (the arrow keys) or a click on the left / right arrow of the rows `turn` (snap / smooth) and `height` (−20 to +20 cm in 2 cm steps); a change is a `vr.settings row=… value=…` game event and applies at once. `menuPage` in the status |
@@ -338,9 +357,10 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `desktop-key <name> down\|up` | a key of the desktop keyboard pressed or released through SDL's event queue, the same way (#399); `<name>` as `cfg.ini` names keys (`Space`, `Escape`, `Enter`, `A` …). Works without a game window, where the `.xrs` `@key` cannot: the CI runner's session has none. One `[channel] desktop key:` log line each. Both commands' events are marked as injected (#487): a test run's window takes them, but not the real devices'; in VR the keyboard is dropped whatever its origin (`desktopKeyboard`) |
 | `real-input key <name> down\|up`, `real-input mouse at <x> <y>`, `real-input mouse button <1-3> down\|up`, `real-input mouse wheel <steps>` | the **real** mouse and keyboard (#487, Windows only): the window system's own messages (`WM_KEYDOWN`, `WM_MOUSEMOVE`, `WM_LBUTTONDOWN`, `WM_MOUSEWHEEL` …) posted by the game to its own window, so SDL reads them as it reads the real devices' - also in the CI runner's session, and without the focus that `SendInput` would need. A test run's window drops them all (`realInput` in the status); in VR a key is dropped by the VR rule first (`desktopKeyboard`). A button is posted at the cursor's position (put it there with `desktop-mouse at …`). One `[channel] real input:` log line each |
 | `vr-point left\|right entity <id> [<dx> <dy> <dz>]`, `vr-point left\|right at <x> <y> <z>` | a simulated hand (`--vr-sim` only) turned so its hidden ray (#37) points at the middle of an entity's box in the world (optionally that many game units beside it) or at a point of the world (game units, y down) — from where the hand is this frame, through the inverse of the hand's mapping into the world. Only aims: what the reticle hits and what the engine makes of it is the game's path (`vr.reticle`). Refused without the simulator, for an unknown entity, or while the reticles are off (no ray in the world) |
+| `motion reset` / `motion clear` | the motion probe (#23): `status.json` → `motion`'s totals (walked, turned, jumps) start from zero with the next frame; `clear` also forgets the `motion.records` the simulated headset's `record <name>` took. See `motion` in [status.json](#statusjson) |
 | `watch <id>` / `watch off` | report one entity's place in `status.json` → `watch` (#37): where an item is, whether it is dragged, in the scene or in an inventory |
 | `handpose left\|right <yaw> <pitch> <roll> [<x> <y> <z>]` / `handpose left\|right off` | a simulated controller for the body without one (#36): the grip pose in the same terms as `headpose` (degrees as a person says them, metres in the OpenXR LOCAL space); the body poses that arm towards it exactly as towards a located controller (`vr.body.<hand>` in the status, `source=sim`). A located controller wins over it; `off` removes it. Needs a head too (`headpose`, or a headset / `--vr-sim`), since hands are placed rigid with the head camera |
-| `vr-sim <command>` | a command of the simulated headset (#112), only in a `--vr-sim` run: `head rot 25 0 0`, `head pos 0 -0.3 0`, `action trigger right 1`, `shot <name>`, `session visible`, `fault swap-eyes on`, … — now, or `@+<n> <command>` n frames from now on its timeline. See [The simulated headset](#the-simulated-headset---vr-sim-112) |
+| `vr-sim <command>` | a command of the simulated headset (#112), only in a `--vr-sim` run: `head rot 25 0 0`, `head pos 0 -0.3 0`, `action trigger right 1`, `shot <name>`, `session visible`, `fault swap-eyes on`, … — now, or `@+<n> <command>` n frames from now on its timeline, `@+<t>ms <command>` t ms of display time from now (#23), `record <name>` (the frame's `motion` values into `motion.records`). See [The simulated headset](#the-simulated-headset---vr-sim-112) |
 | `combat on\|off` | the engine's combat mode without a key (#75): what the weapon key does — `on` draws the weapon (ready clips), `off` puts it away; a strike is then the mouse button — or, with the weapon in the VR hand, a physical swing (#39; the trigger does nothing, #465). VR has no control for it (D-019); `vr.weapon.combatMode` in the status |
 | `freelook on\|off` | the engine's free look without the mouse (#323): `on` leaves the cursor mode, as loading a save does. A level started with `--loadlevel` (the playground) stays in cursor mode, where the engine keeps the inventory open and VR melee is refused (#405). A test-only workaround: it goes once #394 keeps VR gameplay in free look |
 | `melee noswing none\|min`, `melee quality min\|geomean\|product`, `melee pathscale <factor>`, `melee slash\|stab <class> <path min> <path max> <speed min> <speed max>\|default` | the damage from the swing (#465) live: `vr_melee_noswing`, `vr_melee_quality`, `vr_melee_path_scale` (0.25-2), `vr_melee_slash_<class>` / `vr_melee_stab_<class>` (m, m/s, 0-20; `default` empties it), so one run tests each mode and each factor alone (`0 0` as a range is always full); `vr.melee.params` shows the weapon's |
@@ -429,6 +449,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   tutorial hint, `herosay`, "cannot cast"): each stays 2 s + 60 ms per character of **game time** and is
   drawn on the HUD quad. A check that compares HUD pixels over time waits for `notifications eq 0` first
   (`mvp-new-game` starts with one for about 6 s; see TRAPS.md).
+- `levelStats` (#596): `measuring` (between `levelstats start` and `report`), `reports` so far, and the last report's
+  `frames`, `meanMs`, `p95Ms`, `maxMs`, `exits`, `ladders` ([The level tour](#the-level-tour-596)).
 - `stickFor` (#370, after the first `stick-for`): `seq` holds started, `active` while the stick is held,
   `units` the distance asked for, `moved` the distance walked (the last hold's, once let go), `timedOut` the hold ended at its time limit instead, `walk` the stick
   walk of the hold's last walking frame - `walking`, `yaw`, `dirX`, `dirZ` as in `vr.input.walk`, kept after
@@ -495,7 +517,7 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   pose), `hit` (the ray hits something within 20 m), `onWorld` (a target for the mouse: hit, not on the panel,
   in front of the head), `ring` (asked for this frame), `shown` (in the last submitted frame), `bright` (over
   an item that can be taken), `under` (the interactive entity in reach under the ray this frame), `entity`
-  (the hover after the hysteresis: 2 frames in, 150 ms out), `distance` (game units), `pixelX` / `pixelY`
+  (the hover after the hysteresis: 10 ms in (two frames at 90 Hz, a time since #23), 150 ms out), `distance` (game units), `pixelX` / `pixelY`
   (the engine mouse for the hit: the projection with the head camera plus 16384 in x — the world band, where
   no widget of the interface is), `origin` / `direction` / `point` (the ray and its hit in the world).
 - `ui` (#34): the 2D interface under the mouse. `mouseX`, `mouseY`: the engine's mouse on the interface
@@ -731,6 +753,21 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   whether the VR rules apply (`active`) and what is allowed right now (#76). The status is written
   at the **start** of a frame, so the write that acknowledges a `comfort` command still carries the
   previous policy's camera — a check skips that sample (`comfort-check.ps1`).
+- `motion` (with `player`, #23): what the refresh-rate check compares, as the last frame left it after
+  its update (`src/vr/MotionProbe.h`, fed by the channel after every frame). Totals since `motion reset`
+  (`resets` counts them): `frames`, `seconds` (the frame clock), `walked` (horizontal units, frame by
+  frame; a step over 200 units in one frame is a teleport and not counted), `turned` (the heading's yaw,
+  signed, unwrapped), `jumps` landed and the last one's `jumpApex` (units above its take-off) and
+  `jumpSeconds` (its time above 50 cm, the crossings placed between frames - below that the engine's
+  jump hangs before it lands, #435), `airborne`. Now: `yaw`, `cameraYaw`, `cameraPitch`, `cameraTurn`
+  (the camera against the heading: the head's part, D-018), on the simulated headset `headYaw` (the
+  rig's head) and `cameraLag` (`headYaw` − `cameraTurn`: 0 when the camera is where the head is, however
+  late the frame), `bodyOffset`, `armError` (the right arm), `curl` / `curlTarget` (the free left hand's
+  index finger, degrees) and `curlSpeed` (its bend's degrees per second since the target last changed,
+  while on its way), the swing detector's `swings`, `swingKind`, `swingSpeed`, `swingPeak`, `swingJumps`,
+  `swingGaps`; `timelineMs` (the simulated display time). `motion.records.<name>`: the same values as a
+  frame named by the simulated headset's `record <name>` left them - taken after that frame was updated
+  and drawn, kept until `motion clear`, also logged as one `[channel] record <name>: {...}` line.
 - `spells` (with `player`, #155): `active` spells right now and `launched` since the level was loaded
   (the spell manager is cleared on a level change), each also by type (script names, only the types
   with a non-zero count). A spell counts as launched once it passed its own `CanLaunch` and started —
@@ -1028,6 +1065,38 @@ faces and their shoulder caps; above 0 only with the Arx arms). Sequence: `body-
 
 **What to compare** in the headset, one variant after the other, standing and looking down: does the body (full)
 still bother you, do floating arms (hidden) feel right, and with which arm model.
+
+## The dev variants panel (#588)
+
+The owner compares variants (a font, a threshold, an offset) in the headset without restarts or settings: in a
+development launch (`--dev-launch`: our scripts' launches except a player's launch, `-Player` / `@player`) the spellbook's **map page** shows the variants of
+the PRs under test instead of the map - a block per PR, each group with its label and either its choice buttons
+(the current one highlighted) or `-  value  +` for a number - pressed with either hand's reticle like any button of
+the book. A switch applies at once and logs `[dev] variant <group> = <value>`, so the owner's marks and the log say
+which variant was on. With nothing registered the page says "No variants under test" with a Show map button. A
+player's launch always shows the map. Nothing is saved: every launch starts from the code's defaults.
+
+**The rule for workers.** A variant the owner chooses between goes through this registry
+(`src/gui/DevVariants.h`), one line per set, from the code that owns the value - not a `cfg.ini` key, a setting or a
+console command:
+
+```cpp
+devvariants::registerChoice("rune_font", "#612", { "Font 1", "Font 2" }, 0, [](size_t i) { g_runeFont = i; });
+devvariants::registerNumber("grab_radius", "#613", 0.05f, 0.30f, 0.05f, "m", 0.15f, [](float v) { g_grabRadius = v; });
+```
+
+The group id has no spaces; the label is the PR (or issue) under test, so a combined test branch
+(`arx-batch-headset-test`) shows a block per PR; the default is what the code does without the panel (registering
+calls no setter); `afterRestart = true` marks a change the game only takes after a restart. **After the owner's
+choice** the PR keeps the winner as the code's default and deletes the losing variants and their registration line
+in the same PR, so the panel only ever shows what is under test; when the owner wants to keep several choices, they
+become a normal setting (the VR settings page and `cfg.ini`) and leave the registry. A later kind of entry (an action
+button such as the playground's teleports, #481) is a new `Kind` with its own button - see the header.
+
+Checks: the host tests `tests/gui/DevVariantsTest` (the registry, the number steps, the log line, the layout with
+pages), `dev-variants.xrs` (the panel by the reticle) and the map step of `first-run.xrs` (a player's launch). The
+channel's `devvariants` commands and the `devPanel` status are under [Commands](#commands).
+
 ## The default controls (D-042, #377)
 
 What a headset test plays with unless the player remapped (VR settings, D-039). The same on the Index and the Touch
@@ -1203,7 +1272,7 @@ rest=counted` line). `status.json` `events` counts every event, logged or not.
 | `vr.scene.cut` (#29) | the shot the eyes see jumps: the hero teleported or turned at once, a ghost's or the observer's shot (at once with `cut` `instant`, the default), an eye that must not be seen (always behind the fade) | `faded=yes\|no`, `reason=start\|end\|line\|camera\|jump` |
 | `vr.scene.switch` (#29) | the shot changes at once, no blink (D-055): a dialogue's line or camera, a scene's start or end in the hero's head, the world to the screen and back | `reason=start\|end\|line\|camera`, `shown` |
 | `vr.scene.lookat` (#29) | a script's `playerlookat` in VR | `how=ignore\|fade`, `target` |
-| `vr.scene.subtitle` (#29.3) | a scene line's subtitle is drawn for the first time (VR only) | `placement` (the setting), `speaker`, `drawn` (where it is drawn: `above`, or `chest` for the hero's own line and a speaker out of view) |
+| `vr.scene.subtitle` (#29.3) | a scene line's subtitle is drawn for the first time (VR only) | `placement` (the setting), `speaker`, `drawn` (where it is drawn: `above`, or `chest` for the hero's own line and a speaker out of view); a notice of the game's own in the panel (#551) logs `notice` (`marked`, `recording`, `saved`), `drawn` and `text` instead, once per notice kind |
 | `chargen.roll` (#394) | a click of the quick generation | `kind=average\|random` |
 | `player.death` | the player dies | `source` (entity id), `damage`, `type` (damage type flags) |
 | `player.respawn` | the player died in the test playground (#321) and is back at its start, alive, in the same frame | `x` `y` `z` (the start), `fromX` `fromZ` (where he died), `life` |
@@ -1488,6 +1557,26 @@ names the file in a `[perf] performance log:` line. `--no-perf-log` turns it off
 .\scripts\dev\perf-summary.ps1                 # the last run: this copy's isolated one if it has a log, else the owner's Saved Games
 .\scripts\dev\perf-summary.ps1 -Previous 1     # the run before it (arx-perf.1.log)
 .\scripts\dev\perf-summary.ps1 -Path <file> -Top 10
+.\scripts\dev\perf-summary.ps1 -ExpectHz 120     # the headset was set to 120 Hz: did the runtime give it, did the game keep up (#23)
+```
+
+**The display rate (#23).** The game knows one rate: in VR the runtime's predicted display period
+(`xrWaitFrame`), flat the monitor or `fps_limit`. `arx.log` names it at the start and at every change -
+the player switching the Index from 90 to 120 Hz, a simulated `vr-sim rate`:
+`[perf] display: 120.0 Hz (8.33 ms) from the runtime's predicted display period, expected 120.0 frames/s - was 90.0 Hz`
+(at most 20 changes per run). The summary groups the seconds by display rate and judges each group's
+frames against rate / `div` (MISMATCH when more than 5 % off: the game did not keep up, or nothing paced
+it); the second the rate changed in mixes both and is named, not judged. `-ExpectHz` checks the rate the
+run was meant to have. From a `refresh-rate.xrs` run on a PC busy with other work during the 120 Hz block:
+
+```
+Display rates (in VR the runtime's predicted display period; expected frames/s = rate / div):
+    90.0 Hz (11.11 ms) div 1 vr    t=0-18      19 s,   1605 frames: 86.0 frames/s of 90.0 expected: matched, 1 of 19 s under 95 %
+    82.2 Hz (12.16 ms) div 1 vr    t=19         1 s,     82 frames: the rate changed within this second (its line mixes both)
+    72.0 Hz (13.89 ms) div 1 vr    t=20-33     14 s,   1003 frames: 71.6 frames/s of 72.0 expected: matched, 0 of 14 s under 95 %
+   118.1 Hz (8.47 ms) div 1 vr    t=34         1 s,    118 frames: the rate changed within this second (its line mixes both)
+   120.0 Hz (8.33 ms) div 1 vr    t=35-49     15 s,    881 frames: 60.7 frames/s of 120.0 expected: MISMATCH, 11 of 15 s under 95 %
+Expected display rate 144.0 Hz: MISMATCH - the runtime ran at 72.0 Hz, 90.0 Hz, 120.0 Hz
 ```
 
 ```
@@ -1562,6 +1651,9 @@ stats and p95, the 1.5-period threshold with and without the cap, no verdict wit
 cause, exclusive phases add up); the writer has `tests/vr/PerfWriterTest.cpp` (order, a push never
 waits for a stuck sink nor for a held lock, drops when the sink falls far behind, nothing lost at
 the end); the summary script has `scripts/dev/test-perf-summary.ps1` (in `run-script-tests.ps1`).
+
+CI compares every game phase's log with a rolling baseline and flags a slower phase on a pull request:
+[Performance tracking in CI](#performance-tracking-in-ci-552).
 
 ## Stereo rendering (#19)
 
@@ -1688,7 +1780,17 @@ add, D-014); a script with an error means flat mode, with the line named in the 
 at once, `@<frame> <command>` at that frame of the timeline, `@<a>-<b> <command>` moves the numbers
 there linearly (a ramp), `@+<n>` counts from the previous timed line. Frame 0 of the timeline is the
 first frame the game is playable (`timeline gameplay`, the default) or of the session (`timeline
-session`). Commands: `rate <hz> [clock|cap]` (0 = no pacing; see *Pacing* below), `eye-size <w> <h>`, `ipd <m>`, `fov left|right <l>
+session`). **Display time instead of frames (#23):** the same forms with `ms` — `@<t>ms`, `@<a>-<b>ms`,
+`@+<t>ms`, `@+<a>-<b>ms` — count milliseconds of the predicted display time (`@+` from the channel: from
+the frame advanced last; in a script: from the previous `ms` line's end). A frame-counted line is a
+different length of time at every rate; a timed one is the same motion at any rate. Poses are where the
+display time puts them in each frame; an `action` is what the controller held when the frame's interval
+began, so a stick pushed `@+0ms` and let go `@+500ms` is held for exactly 500 ms of frame steps;
+everything else runs at the first frame whose display time reached its time (`vr.sim.timelineMs`). On a
+busy PC a frame can come a slot or two late: a value read at a moment of a motion moves with it, a lag or
+a total does not (`refresh-rate.xrs`). `record <name>`: the test channel keeps that frame's `motion`
+values (`status.json` → `motion.records.<name>`). Commands: `rate <hz> [clock|cap]` (0 = no pacing; see *Pacing* below; also mid-run: the
+runtime's display period changes as when the player switches the headset's rate), `eye-size <w> <h>`, `ipd <m>`, `fov left|right <l>
 <r> <u> <d>` (degrees, OpenXR signs), `head pos <x> <y> <z>` (meters, the room's LOCAL space: x right,
 y up, −z forward), `head rot <yaw> <pitch> <roll>` (degrees: yaw + turns left, pitch + looks up),
 `hand left|right pos|rot …`, `hand left|right on|off`, `hand left|right fingers <thumb> <index> <middle> <ring> <little>`
@@ -1804,7 +1906,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 in the table below still describe them). They cost about 6.5 minutes of every full suite and merge gate, so the owner moved
 them out for CI time; they are kept unchanged so they can be run by hand when scenes are worked on again. `ci-smoke` and
 `ci-local` do not look into this folder; `test-xrs.ps1` still parses every file there (syntax and `@save` checks, no run),
-so they do not rot silently. Run one by hand:
+so they do not rot silently. The [level tour](#the-level-tour-596) (#596) is there too, for the same reason. Run one by hand:
 
 ```powershell
 .\scripts\dev\xrs-run.ps1 manual\scene-first          # or any path to the file; also -Rebuild, as for any sequence
@@ -1875,6 +1977,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `vr-remap` | the VR settings' remapping (#178) on the simulated Index controllers: `menu pause` + `menu vr` open the page; `jump` captured as `right.b` (a conflict with `radial_right` since #376: `conflicts` 1, shown in red), `magic_mode` as the chord `left.grip+left.a`, `crouch_toggle` as `right.stick_click:long`; the walk stick refused, a cancel. Leaves the layout saved | — |
 | `vr-remap-saved` | the saved layout read back as a start reads it: `jump` captured as `right.b` (saved), `vr-input reset` (not saved), `vr-input reload` → `remapped`, `jump` = `right.b`; `vr-input default` → the file removed, `reload` gives the default. Every #178 sequence starts and ends with the default layout: CI runs all sequences in one user directory, in any order | — |
 | `vr-settings-flat` | a plain launch (`@args --skiplogo`: the main menu) on the simulated headset — "VR" in the Options list after "Input", the VR page with the default Index layout, shots `options` and `vr-menu` (the name is from its first, flat version) | — |
+| `refresh-rate` | refresh-rate independence (#23) on `mvp-goblin-fight` — `smoke-test.ps1 -VrSim idle -Save mvp-goblin-fight -Sequence refresh-rate`: the same display-timed inputs at 90 Hz (the reference, also checked against what the inputs ask for), 72, 120 and 144 Hz (`vr-sim rate`), each switch named by the perf log (`[perf] display: 72.0 Hz (13.89 ms) from the runtime's predicted display period`). Per rate, as `record`s: the stick 500 ms forward walks the same distance within 3 % (measured 127.7–129.7 units), a 500 ms smooth turn 60° within 0.6°, the camera's lag behind the head 0 within 0.3° (D-018), the free hand's bend 720 °/s within 5 %, a jump 130 units high within 3 % and its time above 50 cm within 40 ms, a 9.4 m/s swing one swing with its peak within 5 % and a 1.2 m/s return none; each measured span first must have kept up with the rate (≥ 90 % of its frames). The swing checks fail whenever display slots are missed during a swing until #409 fixes #352. The tolerances and their reasons are in the sequence's header | — (swing: #409) |
 | `vr-turning-settings` | the VR settings' turning and height page (#260) on `mvp-new-game`: `menu pause` + `menu vr-turning` open it; the snap angle slider's dot dragged to the middle of the bar makes the snap 60°, to the right end 90° (past it still 90°, one step left 85°) at once (`vr.input.turn.snapAngle`, a `vr.settings row=angle` game event); the turning row snap → smooth → snap with only the active mode's row shown (#374: `menuRows` is `turn,angle,repeat,height` with Snap, `turn,speed,repeat,height` with Smooth; shots `vr-turning-smooth`, `vr-turning-snap`), the speed slider (Smooth) at its right end "very fast" (240) and in the middle "medium" (120), the repeat slider off → 0.25 s → off, each read back from `vr.input.turn` at once; five `menu step height right` make the character 10 cm taller; back in the game (`menu resume`) `vr.head.heightOffset` is 0.1, `vr.head.offsetY` 10 units lower and `camera.eyeAboveFeet` 10 units higher, and one push of the stick turns 90°. Leaves `vr_snap_turn_angle=90` and `vr_height_offset=0.1` in the run's `cfg.ini` | — |
 | `first-run-menu` | the main menu as a player meets it (#394, #334), a plain development launch (`@args --dev-launch`: the main menu after about a second): the flat frame has the interface's own size (918 × 689) and covers part of both eyes; the window shot is `world` in all four quarters (before the fix the top ones were the eye's flat background); every entry under the right and then the left hand's pointer (`ui.menuHover`; Resume game greyed out without a save: the mouse on it, `menuTargetEnabled` false); Load / save, Quit (No), the language page and the credits (left A back) opened and closed by clicks; Options > Interface > Crosshair turned off — `settings.crosshair` false, one click per press (`vr.pointer.clicks`); both hands behind the head: a press is muted (`offPanelPresses` + 1), nothing changes; back twice; the window resized to 1024 × 600: the interface laid out again, the window still filled, the pointer still on Options. Leaves `show_crosshair=false` in `cfg.ini` | — |
 | `readback/first-run-menu-readback` | not a sequence of its own (one level below, so `ci-smoke.ps1` never runs it on a fresh user directory; it runs it itself right after `first-run-menu`, in that sequence's user directory): the **second launch** after `first-run-menu` in the same user directory — `settings.crosshair` is `false` at the start, read from `cfg.ini`; turned on again by pointer, so the pair leaves the directory as it found it. `smoke-test.ps1 -VrSim idle -Sequence first-run-menu -UserDir <dir> -- --dev-launch`, then `smoke-test.ps1 -VrSim idle -Sequence scripts\dev\xrs\readback\first-run-menu-readback.xrs -UserDir <dir> -- --dev-launch` | — |
@@ -1884,6 +1987,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `menu-trigger-grip` | the trigger clicks in the menus however the controller is held (#496), from a development launch: with the right grip held at 0.55 (a firm resting hold, no grip press on the Index: `vr.input.down` without `right.grip`) and at 0.95 (the grip down), the trigger on New game is one pointer click, `interact_right` +1, the character creation opens, `use_right` / `act_right` unchanged - and letting the grip go after the click adds none; the right B brings the main menu back between the two | — |
 | `desktop-mouse` | in VR the desktop window takes no mouse input (#338): a development launch with `mvp-new-game` in slot 0; in the main menu the desktop mouse parked over Options with both hands behind the head - its left and right clicks open nothing (`menuPage` none), the wheel and a move change nothing (`ui.mouseX/Y` kept, `ui.mouseInWindow` false), all counted in `desktopMouse` and logged; the save loaded (`loadslot 0`): moves of 300 px and the wheel turn neither the body nor the camera (`player.yaw`, `camera.yaw`, `camera.pitch` unchanged) | — |
 | `desktop-mouse-flat` | flat mode keeps the mouse (#338) and a key past the logos reaches a character creation that draws (#399): a player's launch with `--no-vr`, Space during the first logo (`desktop-key`; `startup.logo ... how=key`, no level 10 intro), New game clicked with the desktop mouse, the window shot `world` in all four quarters, its left button spends a point on strength and the right one takes it back, Escape (`desktop-key`) to the main menu, `loadslot 0`, and a mouse move turns the player (`player.yaw` changes); nothing dropped | — |
+| `dev-variants` | the dev variants panel (#588) on `mvp-new-game` in a development launch: `devvariants clear`, the map tab shows "No variants under test" (`devPanel.view` `empty`) and Show map pressed with the right reticle shows the map; `devvariants demo`: the panel (2 groups, 1 page, the defaults, no setter called), a choice pressed with the reticle (applied at once, `[dev] variant demo_choice = Large`), the number's + to its max and + again (nothing changes, no line), - twice, the channel's `set` for both; the book closed hides it. A player's launch keeps the map: `first-run` | — |
 | `real-input` | a test run's window takes no real input and in VR no keyboard at all (#487), on the simulated headset from a development launch: the window `activation` never, `placement` corner, not focused; `realInput`, `desktopKeyboard` and `desktopMouse` ignored; with both hands behind the head a real Escape (`real-input`) and an injected one (`desktop-key`) are both dropped by VR (`desktopKeyboard.droppedKeys` + 2, both logged); real mouse moves, a left click and the wheel are dropped before the game's input (`realInput` counts, `desktopMouse.droppedButtons` unchanged, no menu page opened); the injected click still reaches the game's input (`desktopMouse.droppedButtons` + 1) and the right hand's trigger opens Options | — |
 | `real-input-flat` | the same flat (#487), `--no-vr`: the keyboard is not ignored for being a keyboard; the cursor on New game (`desktop-mouse at menu`), a real left click there opens nothing (`realInput.droppedButtons` + 1), a real move and the wheel leave the cursor on New game; the injected click opens the character creation, a real Escape leaves it open (`realInput.droppedKeys` + 1), the injected one goes back to the main menu; nothing dropped by the VR rules | — |
 | `level-load-hang` | a stalled level load is reported as a hang with its stack (#440): `watchdog 1000`, `stall load 3000`, `loadlevel 1` - `[hang] main thread stalled ... last beat at level load`, `platform::stallThisThread` and the load under it in the stack, `responsive again`, level 1 loaded, `hangWatchdog.stalls` ≥ 1 ([The hang watchdog](#the-hang-watchdog-440)) | — |
@@ -1902,6 +2006,55 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
 `scripts\dev\test-xrs.ps1` (a fake game answering the channel files; in `run-script-tests.ps1`, so in CI).
+
+### The level tour (#596)
+
+`scripts\dev\xrs\manual\level-tour.xrs` visits every level of the game on the simulated headset - 10 (the start),
+then 0-8 and 11-23 with `loadlevel` (there is no level 9) - because the MVP is a full playthrough and CI exercises only
+levels 1, 3 and 10. Run it by hand (it is in `manual\`: the game runs 1 min 42 s - 2 min 2 s, about 1 min 46 s from the
+launch to the verdict, measured on the owner's PC 2026-10-22 - far over the 30 s a check of the merge gate may cost):
+
+```powershell
+.\scripts\dev\xrs-run.ps1 manual\level-tour       # also -Rebuild; the run folder is the test channel's directory it prints
+```
+
+Per level: no `[E]` / `[C]` line and no hang report in the load (`errors` unchanged), the level renders (240 frames in
+gameplay, a shot whose eyes are not `background`), and one log line from `levelstats report`:
+
+```
+[channel] levelstats: level 3 frames=244 mean=11.11 p95=12.18 max=12.88 player=7257.6 822.9 7663.8 exits=22 ladders=0
+```
+
+Every level is entered at a real entry marker (`loadlevel <n> <marker>`, the target of another level's exit), as the
+game enters it: without a target the player keeps the previous level's coordinates and often stands outside the new
+level, the eyes black. That way level 21 crashed in its init once (#601), not at its entry.
+
+`mean`, `p95`, `max` are the frame times (ms) of the 240 frames from 30 frames after the load, under `idle.vrsim`'s
+90 Hz cap: about 11.1 ms while the level keeps up. They are logged, not judged: the frame rate is guaranteed in level 1
+only (the owner, #596); a drop elsewhere becomes a bug issue. They read the PC's load as well: two runs made while other
+games ran had means of 17-32 ms on different levels each time (8, 11, 13, then 0, 1, 3, 4) and 11.1 ms on all the
+others, so compare runs made while no other game runs (the sequence says `@solo` for when it moves to CI). The shots
+run after the measurement (a shot stalls its frame). The run folder gets `level-tour.txt`, the list later tasks start
+from (#479 the level exits, #55 ladders):
+
+```
+level 1 frames=243 mean=11.11 p95=12.12 max=14.85 player=11540.0 2935.1 10620.0 exits=14 ladders=0
+  exit to=2 marker_0217 by=marker_0152 zone=level1_zone7 pos=13258.4 3145.4 7491.9 size=406.0 303.9 height=any
+  exit to=15 marker_0915 by=marker_0225 zone=level1_zone1 pos=9783.3 3645.2 9442.7 size=433.2 285.8 height=450
+  exit to=15 marker_0391 by=camera_0033 zone=- pos=8560.0 2990.1 8500.0
+  exit to=~?leading_to~ ~?destination~ by=snake_teleport_door_0032 zone=- pos=7279.5 3810.1 5049.7
+...
+  ladder pos=3222.4 606.5 10495.4 size=100.0 435.0 0.0 polygons=5
+```
+
+An **exit** is an entity whose script changes the level (`teleport -l...`: the target level and marker as written in
+the script; the magic portals' `~?leading_to~ ~?destination~` are script variables, the Latin-1 sigil shown as `?`),
+at each zone it controls (`setcontrolledzone`: the zone's centre at its floor, its width and depth, its height or
+`any`; y is down, in game units) or, without a zone, at the entity. A **ladder** is the climbable background polygons
+(a texture named `climb`, `POLY_CLIMB` - what the player climbs), pieces closer than 30 units grouped into one: its
+box's centre and size. In all 23 levels: 146 exits (most of them the magic portals), 7 ladders. A level that fails is
+filed as a bug and its failing step becomes `@pending #<issue>` - never a weaker check.
+
 ## `xr_hello` — the runtime alone
 
 `xr_hello.exe` is built next to `arx.exe` (CMake option `BUILD_XR_HELLO`, on by default with OpenXR;
@@ -2052,9 +2205,9 @@ How the runner differs from a worker's copy — none of it needs action, all of 
   profile. The **game lock** is not: it lives in `%ProgramData%\ArxFatalisVR\locks`, which both accounts
   can write, so CI waits for a game the owner or a worker runs and they wait for CI (#205, see
   [the game lock](#isolation-and-the-game-lock-parallel-work)). CI's own jobs never overlap (one runner). Since #522
-  the game checks may hold two slots (`ARXVR_MAX_GAMES=2`): while another game holds one, CI goes on with one lane in
-  the other slot instead of waiting; a launch of the owner or a worker (which tries slot 1 only) still waits while CI
-  holds slot 1.
+  the game checks may hold several slots (`ARXVR_MAX_GAMES`, CI's lane count - 4 since #563): while another game holds
+  one, CI goes on with one lane in a free slot instead of waiting; a launch of the owner or a worker (which tries slot 1
+  only) still waits while CI holds slot 1.
 - The service has no Steam registry entry of the owner, so the workflow passes the install folder:
   `ARXVR_DATA_DIR` in the workflow `env` (read by `ci-smoke.ps1`, passed as `--data-dir`).
 - `ARXVR_AUTOREPORT=0`: a CI run files no bug issues by itself (#131); the failed step is the report.
@@ -2062,27 +2215,32 @@ How the runner differs from a worker's copy — none of it needs action, all of 
 
 Run it by hand: `.\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence` (needs a fresh build of the
 copy; `-Phase smoke|spells` runs one half; exit 0 pass, 1 fail, 2 skipped, 3 cannot run here). On a PC whose lock
-allows one game (the owner's rule, no `settings.json`) it runs on one lane; `$env:ARXVR_MAX_GAMES = 2` first runs it on
-two, as CI does.
+allows one game (the owner's rule, no `settings.json`) it runs on one lane; `$env:ARXVR_MAX_GAMES = 4` first runs it on
+four, as CI does.
 
-### Two lanes, the order and the durations file (#522)
+### The lanes, the order and the durations file (#522, #563)
 
-The game checks are most of the job, so `ci-smoke.ps1` runs two games at once:
+The game checks are most of the job, so `ci-smoke.ps1` runs several games at once - as many as the game lock allows:
 - **Lanes.** A scheduler (`scripts/dev/ci-smoke-lib.ps1`, `Invoke-ArxPhaseSchedule`) hands the next phase to a free lane;
   each phase runs in its own background pwsh, and each lane has its own test channel folder (lane 1 the copy's usual one,
-  lane 2 the same path with `-lane2`), given as `-TestDir` and as `ARXVR_TEST_DIR` to every script of the phase. Every
+  lane n the same path with `-lane<n>`), given as `-TestDir` and as `ARXVR_TEST_DIR` to every script of the phase. Every
   sequence already has its own user directory (#296), under `ci-userdirs\<folder>-<hash>` of the working copy, so two
   copies running the suite never share one; `smoke-test` and `spell-drawcheck` share the copy's and never run
   together; `save-library` goes first and every `@save` sequence waits for it; a read-back runs after its sequence passed,
   in its user directory; the playground level is generated once before the lanes start. A phase's transcript is printed
   when it ends, then `==> ci-smoke phase '<name>': PASS (exit 0, 15 s) on lane 2`; the summary at the end lists every phase
-  in the serial order, as a serial run would. `-Lanes 1` runs one at a time.
-- **The game lock decides how many.** The lanes are capped at the lock's `maxGames`: the workflow sets `ARXVR_MAX_GAMES=2`
-  on the game checks step (it overrides `settings.json` and the default 1, for that step's launches only; everyone else
-  keeps one slot). Before a second lane starts a phase, the scheduler looks at the lock: while a game slot is held by a
-  launcher whose `copy=` is not this working copy, or an `arx.exe` runs outside the lock from another folder (the owner
-  plays, a worker tests), it uses one lane (`ci-smoke: 1 lane while another game of this PC runs: ...`), and two again
-  once that game is gone.
+  in the serial order, as a serial run would. `-Lanes 1` runs one at a time (`-Lanes n` asks for at most n).
+- **The game lock decides how many.** The lanes are the lock's `maxGames`: the workflow sets `ARXVR_MAX_GAMES` on the
+  game checks step (it overrides `settings.json` and the default 1, for that step's launches only; everyone else keeps
+  one slot). That one line is **CI's lane count** (#563) - nothing else holds a number: `ci-smoke.ps1` takes it from the
+  lock, `ci-local.ps1` reads it from the workflow (`Get-ArxCiLaneCount`), and `test-ci-smoke.ps1` fails a workflow
+  that sets it twice, outside 1-4, or passes ci-smoke a `-Lanes` of its own. 4 since #563 (measured in its pull
+  request against 2, 3 and 5: wall time, load, frame hitches, guard margins - 2 -> 3 -> 4 each over 20% faster on the
+  game checks, 5 only 13% faster than 4 with a CPU peak over 60%, one run); more than 4 is the owner's call. Before
+  another lane starts a phase, the scheduler looks at the lock: while a game slot is held by a launcher whose `copy=` is
+  not this working copy, or an `arx.exe` runs outside the lock from another folder (the owner plays, a worker tests),
+  it uses one lane (`ci-smoke: 1 lane while another game of this PC runs: ...`), and all of them again once that game is
+  gone.
 - **The order.** The `.xrs` files the change touches go first (`git diff --name-only <base>...HEAD`, the two-dot diff in
   CI's shallow checkout; a changed read-back counts for its sequence), so a fix round sees its own sequence early; then
   the rest by the last run's duration, longest first (a sequence and its read-back count together), so the lanes end
@@ -2163,11 +2321,92 @@ calls. `-DurationsFile` adds each selection's own time.
 `success` on the same head commit. A branch made before #522 has no `suite` input: merge main into it first.
 
 **Locally, before every push**: `.\scripts\dev\ci-local.ps1` builds the working copy (with `arxtest`), runs the
-script self-tests, then `ci-smoke.ps1 -Suite pr` against `origin/main` (fetched first) on two lanes - one while another
+script self-tests, then `ci-smoke.ps1 -Suite pr` against `origin/main` (fetched first) on CI's lanes - one while another
 game of the PC holds a slot - and prints a summary with each step's time, the suite line and the selection; exit 0 only
 when every step passed (2: the game lock stayed busy). `-Full` runs everything. The selection is of the commits
 (`origin/main...HEAD`): commit first. Its evidence goes to `%LOCALAPPDATA%\ArxFatalisVR\ci-local\<copy>-<time>` (the last
 5 runs of the copy stay). A selection is 15-35 launches, so the launch budget's note is expected.
+
+### Performance tracking in CI (#552)
+
+Every game phase leaves its [performance log](#the-performance-log-arx-perflog-327) in its evidence folder. At the end
+of `ci-smoke.ps1`, `scripts/dev/perf-track.ps1` (lib `perf-track-lib.ps1`) turns those logs into numbers. It never
+starts a game, never changes one and **never fails the run** (exit 0 always). The flag is a warning; making it blocking
+is the owner's call.
+
+**Per phase** (`<evidence>\perf.json`), from that phase's own `arx-perf.log` (never the `arx-perf.1.log` .. `.9.log` of
+earlier games beside it), counting only whole `S` lines:
+- frames and the frame time in ms: the frames-weighted mean of the seconds' means (`meanMs`), and their frames-weighted
+  median (`medianMs`);
+- `p95Ms`: the frames-weighted nearest rank of the seconds' own p95. The seconds are sorted by their p95; it is the first
+  one whose running frame count reaches 95 % of all frames. This is an estimate: the log keeps no single frames;
+- `maxMs`: the largest of every `S` max and `H` ms;
+- the hitch count (`H` lines), the missed display slots (the sum of the `S` lines' `missed`), every cause with its count
+  and the busiest one (a tie goes to the larger total ms);
+- `peakPrivMiB`: the peak private memory from the `R` lines.
+
+A missing, empty or broken log is a record with `valid: false` and its reason, never an error.
+
+**The baseline** is `perf-baseline.json` in the runner's evidence root, beside `ci-history.json`:
+`C:\Windows\ServiceProfiles\NetworkService\AppData\Local\ArxFatalisVR\ci-evidence` (the run folders' cleanup keeps
+it).
+- **What feeds it:** only a **green** run of kind `main` (a push to main) or `gate` (a manual run with suite full: the
+  merge gate, also on main) adds its valid phases. A pull request's run, a red run and a run by hand (`ci-local.ps1`,
+  kind `local`) never change it. The file keeps the last 40 runs.
+- **What a run compares with:** the last 10 runs **with the same lane count**, per phase and metric: their median and
+  spread (the median absolute deviation). A run that dropped to one lane for a foreign game still counts under its
+  nominal lane count (CI's `ARXVR_MAX_GAMES`). That is a known blur, not fixed.
+- **Before it fills up:** a phase with fewer than 5 baseline runs shows "no baseline yet". From the merge on, the first 5
+  green main or gate runs fill it.
+
+**The flag.** In a pull request's job summary, the section **Performance** has one row per phase and metric, with the
+regressed rows first: | Phase | Metric | Baseline (median ± spread) | This run | Delta | Limit | Status |. Each phase
+whose flagged metric goes over its limit gets one `::warning` annotation, which names the metric, the baseline and the
+value.
+- **The limit** is median + max(K × spread, median × floor %, an absolute floor: 3 hitches and 10 missed slots, when a
+  count metric is flagged).
+- **Flagged:** `meanMs` and `medianMs`, with K 4 and floor 10 %.
+- **Shown only, never flagged:** `p95Ms`, `maxMs`, `hitches` and `missed`.
+- **Too short:** a phase with fewer than 3 whole seconds (`hang-dump`, `level-load-hang`, `vr-session-end`,
+  `vr-session-loss`) is shown only ("too short"), because a deliberate stall is its number.
+
+The thresholds are in `perf-track-lib.ps1` (`$ArxPerfK`, `$ArxPerfFloorPct`, `$ArxPerfMetrics`, `$ArxPerfInfoMetrics`,
+`$ArxPerfAbsFloor`, `$ArxPerfMinSeconds`, `$ArxPerfMinRuns`, `$ArxPerfRuns`).
+
+**The noise behind them** (#552, `scripts/dev/perf-noise.ps1`). The data is the 7 green full runs on 4 lanes kept on the
+runner on 2026-10-20: 75 phases, 71 after leaving out the 4 short ones. Each run of each phase was checked against the
+baseline of the other 6 runs ("leave one out", 497 checks).
+
+| Metric | Phase spread / median: median, p90, max | Leave-one-out false flags at K 4, floor 10 % | A +30 % missed on |
+|---|---|---|---|
+| meanMs | 0.4 %, 1.0 %, 2.0 % | 0 / 497 | 0 / 71 phases |
+| medianMs | 0.0 %, 0.2 %, 2.7 % | 2 / 497 (`vr-turning-settings` +38 %) | 0 / 71 |
+| p95Ms | 2.2 %, 13.5 %, 63 % | 43 / 497 (35 at floor 20 %) | 13 / 71 |
+| maxMs | 2.0 %, 5.0 %, 10.3 % | 35 / 497 (15 at floor 20 %) | 2 / 71 |
+| hitches | 7.1 %, 16.7 %, 50 % | 10 / 497 (absolute floor 3) | 61 / 71 |
+| missed | 3.2 %, 7.7 %, 20 % | 20 / 497 (absolute floor 10) | 19 / 71 |
+
+Why these metrics are shown only:
+- **`p95Ms` is bimodal** on the short CI phases. The 95 % rank lands either in or beside the second of a level load:
+  that second has few frames, but a p95 of 300+ ms. `arms-elbow` measured 15, 288, 14, 40, 343, 51 and 19 ms across the
+  7 runs.
+- **`maxMs`** is the level-load frame itself.
+- **Counts** move by whole units.
+
+With the 4 short phases flagged as well, 6 more false flags came from them.
+
+Re-measure with:
+
+```powershell
+.\scripts\dev\perf-noise.ps1 -EvidenceDir <run folders>   # spread and leave-one-out false flags per metric
+```
+
+**Cost:** about 1.7 s per full run of 75 phases, in-process at the end of `ci-smoke.ps1`. A pull request's selection
+takes less.
+
+**Tested by:** `scripts/dev/test-perf-track.ps1`. It covers the fixture logs (normal, one long frame, several causes,
+cut mid-write, empty, broken), the update rules of the baseline, the flag, the table and the annotations, and the
+script's exit 0.
 
 ## The tester package (#88)
 
@@ -2210,7 +2449,7 @@ launch rules D-014 / #147). What keeps their runs apart — all derived from the
 
 **The game lock** (`scripts/launch-lib.ps1`): `%ProgramData%\ArxFatalisVR\locks\game-<n>.lock` (slots
 `1..maxGames`, `maxGames` = 1 unless `settings.json` next to it says otherwise, or `$env:ARXVR_MAX_GAMES` for the
-launches of one process tree - CI's two lanes, #522) plus `vr.lock` for a
+launches of one process tree - CI's lanes, #522, #563) plus `vr.lock` for a
 VR launch — each a file opened for writing without write sharing by the launching script and held
 until the game exits. Windows drops the handle with the process, so a crash or a kill cannot leave a
 stale lock.
@@ -2279,3 +2518,260 @@ Measured (owner's PC, 2026-10-09, #123):
   the zip as the artifact `tester-symbols` (90 days). A tester's support bundle (`system.txt`, `BUILD.txt`) names the hash of
   the exe that crashed: take the pdb of that hash, nothing else matches.
 - **The support bundle** already holds `arx.log` + previous runs and `crashes\` (#88); it now also has the exe hash and `BUILD.txt`.
+
+### The flight recorder and the dump helper (#545)
+
+The flight recorder keeps a short, crash-safe history of the run in every launch - frames, the game / VR
+session / level / scene / panel state changes (`state` records: `game GAMEPLAY`, `vr FOCUSED`, `level load`,
+`scene start`, `panel ...`), channel commands, thread births with their start `module!export`, GL errors,
+texture and buffer creates, one hang-watchdog `beat` a second and the cause of an exit (every `noteExitCause`,
+the kind of a report) - in per-thread lock-free rings (`src/platform/FlightRecorder.h`), in a block of memory
+the out-of-process dump helper shares, so it can be read after the game is gone. It is written into the crash
+dump as a user stream and to `arx-recorder.txt` on every exit. `scripts/dev/crash-report.ps1` prints the newest
+report's kind, exit code, killer thread, faulting module and stack, the last 100 recorder events and the
+resource trend, all scrubbed of personal data (`Protect-ArxText`). `--no-recorder` turns the recorder and the
+dump helper off (the overhead baseline).
+
+The kinds a report can have (`report.txt` `kind=`): `crash` (an exception, a heap corruption), `abort`,
+`terminate`, `exit from outside` (a thread made from outside that starts at `ExitProcess`, #544),
+`exit (in process)` (`exit()` / `ExitProcess` called by the game's or a library's code before the shutdown -
+from `exit()` with a dump of every thread, from the process detach with the calling frames only),
+`terminated` (a `TerminateProcess` from outside: no code of the game ran, no dump) and `hang`. `exe=` and
+`exehash=` name the build: the archived `arx.pdb` under `%LOCALAPPDATA%\ArxFatalisVR\symbols\<exehash>\` is the
+one that matches, and `crash-report.ps1` hands it to cdb.
+
+**The next-launch notice (M6):** with the dump helper on there is no "Fatal Error" dialog any more. At the next
+launch the main menu - flat, on the VR panel and in the desktop mirror, which all draw the same 2D menu - says
+"The game ended with an error last time. A report was saved." with [Open folder] and [OK], once per new report
+(`src/platform/CrashNotice.h`: a `crashes\<utc>\` folder with a `report.txt` and no `notice-shown.txt`; OK
+writes the marker into every such folder). A `kind=terminated` report is never announced - the owner quits
+SteamVR on purpose - and `hangs\` never is. Host tests `CrashNoticeTest` (the rule) and `CrashNoticeKindTest`
+(the kinds); `scripts/dev/crash-notice-check.ps1` (two flat launches) checks the game. Stage 3 adds "Send the
+report?" to the same notice.
+
+The performance log gains an `R` line every 5 s (`src/platform/ProcessResources.h`): private bytes, working
+set, the system commit charge, kernel / GDI / USER handles, threads, GL textures and buffers and OpenXR
+swapchains. `perf-summary.ps1` prints the trend (first / last / max / slope per minute / largest step), so a
+leak shows as a step of `priv`. The channel's `leak <MiB>` forces one.
+
+`scripts/dev/flight-recorder-check.ps1` ends the game every way it can end and checks that each leaves one
+obvious report (a hand-run check, not CI: most cases kill the game on purpose). `scripts/dev/xrs/hang-dump.xrs`
+(CI) checks that a stall gets a hang report with a dump.
+
+#### Stage 0: optional local extras (no code)
+
+Two Windows features make a crash easier to inspect on this PC; neither is required (the dump helper writes a
+full report without them) and neither ships to players:
+
+- **WER LocalDumps** - have Windows Error Reporting keep a full dump of `arx.exe` even for a fail-fast
+  (`STATUS_STACK_BUFFER_OVERRUN` / `__fastfail`, which the in-process handler cannot catch). Create the key
+  (one time, as administrator) and dumps land in `%LOCALAPPDATA%\CrashDumps`:
+
+  ```powershell
+  $k = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\arx.exe'
+  New-Item -Path $k -Force | Out-Null
+  New-ItemProperty -Path $k -Name DumpType  -Value 2 -PropertyType DWord -Force | Out-Null   # 2 = full dump
+  New-ItemProperty -Path $k -Name DumpCount -Value 10 -PropertyType DWord -Force | Out-Null
+  ```
+
+- **WinDbg / cdb** - a debugger lets `crash-report.ps1` symbolise a dump beyond what `report.txt` already
+  holds. Install it once: `winget install Microsoft.WinDbg`. Without it `crash-report.ps1` prints the stack the
+  game captured in `report.txt` (arx.exe frames already symbolised from the build's `arx.pdb`). The owner's
+  launches (`run-windows.ps1`, `test-pr.ps1`) archive each build's `arx.pdb` under its exe hash in
+  `%LOCALAPPDATA%\ArxFatalisVR\symbols\<sha256>\`, so a later report of that build can be symbolised even after
+  its build directory is gone.
+
+## Record and replay (#550)
+
+**Every VR session is recorded, nobody has to ask:** from the first frame the game is playable in VR the recorder
+(`src/vr/ReplayRecorder.h`) writes `<user dir>\arx-replay.log`, a clip in the simulated headset's script dialect
+(`src/vr/ReplayClip.h`): a header, then one line per frame with an absolute display time since the record start -
+
+```
+# arx-replay 1: a VR session as a .vrsim clip (#550) - scripts/dev/replay.ps1 plays it
+# build: Arx Fatalis VR 1.3.0-dev
+# save: save9002 VR replay 2026-10-20 14-03-12     the save made at the record start (a replay slot, see below)
+# seed: 4242                                        --seed <n>, else the clock's seed (Random::currentSeed)
+# rate: 90                                          the display rate at the record start
+ipd 0.0617                                          set-up lines: the eyes' distance and the floor below the LOCAL origin
+floor 1.8325
+@0ms head 0.0000 -0.0100 0.0000 0.00 0.00 0.00; hand left -0.2000 -0.4200 -0.3500 0.00 -20.00 0.00; ...; player 1000.00 120.00 2000.00 270.00 10
+@11ms head 0.0001 -0.0100 0.0000 0.02 0.00 0.00; hand left fingers 0.51 0.95 0.30 0.90 0.70
+@5006ms anchor level 11                             a level change, once the new level is playable; `anchor save` after a save
+```
+
+A frame line holds what the runtime gave the game at that display time: the head (between the eyes, turned as they
+are), the grips and `hand <side> on|off` (tracked or not), each hand's aim pose in its grip's space (`hand <side>
+aim`), five curls per hand read off the joints (`hand <side> fingers`, with `fingers on|off` for the joints), the raw
+action values the game read (`action <name> <side> <value>`, the thumbstick with both axes), the session state
+(`session focused|visible|idle`), the interaction profile, and `player <x> <y> <z> <yaw> <area>` - where the engine's
+player was (engine units, degrees, the level), for the drift. The first frame is complete; every later line holds
+only what changed (about 1 MB per minute at 90 Hz, 2 MB is the ceiling). At the session's end the file is gzipped
+(`arx-replay.log.gz`, the plain one removed); the next run rotates the old ones like `arx-perf.log`
+(`arx-replay.1.log.gz` .. `.9`; a run that died leaves a plain `arx-replay.<n>.log`). `--no-replay-log` turns the
+recorder off; flat mode (`--no-vr`) never records. `arx.log` says `[replay] recording arx-replay.log: save <folder>
+"<name>", seed <n>, <hz> Hz` at the start. A frame's line is formatted on the main thread and written to the file off
+it (`PerfWriter`, as the performance log); the cost against `--no-replay-log` is measured by `replay-check.ps1 -Case
+cost`. A recording lives as long as its VR session: a frame without eye poses (tracking lost for a moment) is skipped,
+the session's end closes the clip, a new session starts a new one (`RecordGate`, host-tested).
+
+**The save at the record start** goes into a replay slot, `<user dir>\save\save9000` .. `save9004` (the oldest is
+reused: five are kept). Those slots are never the player's saves - not in the load menu, not numbered for `--loadslot`,
+never quickloaded - whether or not any other save exists (`src/core/SaveSlots.h`, `SaveSlotsTest`), so `--loadslot 0`
+stays the player's newest save; a replay copies the clip's save into its own user directory as an ordinary slot
+(`save0000`) and loads that.
+
+**The replay** (`scripts/dev/replay.ps1 <clip> [-From <ms>] [-To <ms>] [-Save <save>] [-Rate <hz>] [-Shots
+<ms>,...] [-Plan]`) launches the simulated headset from the clip's save (`smoke-test.ps1 -VrSim`, the isolated user
+directory, the game lock) with `--loadslot 0 --seed <the clip's seed>` and a script that sets the clip's rate and
+streams the clip from the timeline's frame 0 - the first playable frame, the moment the record started:
+
+```
+rate 90 cap
+timeline gameplay
+play replay\arx-replay.vrsim from 0 to 39988      the clip, copied (decompressed) under the test channel directory
+```
+
+`play <file> [from <ms>] [to <ms>]` is a simulator command (a set-up line, a timed line or the channel's `vr-sim
+play ...`; `play stop` ends it): the streaming clip player keeps a file cursor, reads one line ahead and applies each
+frame line to the rig when the timeline reaches its time, so a 30-minute clip (50+ MB) costs microseconds per frame.
+At an `anchor level <area>` line it holds (`vr.sim.play.anchorsWaiting` 1, the position still) until the replayed
+game is playable in that level; at `anchor save` until it is playable again. `status.json` `vr.sim.play` has
+`{file, positionMs, framesServed, done, anchorsWaiting, drift {current, max, frames}, eventsReplayed, error}` -
+`drift` is the distance in metres between the recorded and the replayed player (current and the largest so far,
+compared only in the same level; nothing promises a threshold: walking drifts by a few percent, combat and AI
+diverge within seconds, the clip still shows what the hands did), `eventsReplayed` counts the discrete changes
+applied (action values, session, profile, hand on/off, fingers on/off; poses and curls are not events). The script
+waits for `done`, takes a shot at each `-Shots` time (`capture\replay-<ms>-*.bmp`) and prints `Drift: current <m> m,
+max <m> m` and `Input events (<n>):` with every `[vr] input:` event of the run in order; `-Plan` prints what would be
+launched without launching (no user path in it, only the clip's name). A clip that starts mid-session - a mark's or
+a report's - is replayed approximately: the player is placed where its first frame has him (`setpos`) and the inputs
+go on from there.
+
+**The last 75 s are always at hand** (60 s before #574): the same frames go into a ring (`ReplayRing`: fixed binary frames with a
+checksum each, no pointers) in the dump helper's shared memory, so every `crashes\<utc>\` and `hangs\<utc>\` report
+holds `arx-replay.vrsim`, written by the helper from the image even after the game is gone (`crash-report.ps1`
+prints `Replay clip: arx-replay.vrsim, <n> frames, <s> s`, or `none` for a flat run). The channel's `replay mark
+<name> [<seconds>]` (default 30, at most 60) cuts the same ring into `<user dir>\replay-marks\<time>-<name>.vrsim`
+with `# mark: <name> <ms>` - "the hand twitched here" from the headset becomes that file.
+
+**Into CI (rule 11, at most one short sequence):** `scripts/dev/clip-to-xrs.ps1 <clip> -From <ms> -To <ms> -Name
+<name>` cuts up to 30 s into `scripts\dev\vrsim\<name>.vrsim` (the whole state at `From` on `@0ms`, then the frames
+re-based; the `ipd` and `floor` lines, the clip's comments and the anchors stripped, no user path or account name)
+and a skeleton `scripts\dev\xrs\<name>.xrs` (`@sim`, `@args --loadslot 0 --seed <seed>`, a `@save` placeholder with
+the clip's save folder in a comment - a test save library scenario takes its place, `@until vr.sim.pending eq 0`);
+the worker adds the asserts. `replay-clip.xrs` is the one in CI. Clips stay in the user directory and are never
+committed.
+
+**The checks:** host tests `ReplayClipTest` (the dialect, the byte-equal round trip of the formatter and the parser,
+the tolerances, the frame budget, the streaming player, the window, the anchors, the events, the drift, broken
+lines), `ReplayRingTest` (the ring, the mark's window, byte copies, broken images) and `RandomTest` (`--seed`);
+script tests `test-replay.ps1`, `test-clip-to-xrs.ps1` and the clip line of `test-crash-report.ps1`;
+`scripts/dev/replay-check.ps1` (hand-run, 7 launches: record, replay compared at equal display times within 1 mm /
+0.1 degree / 0.01 of curl, the anchor across a level change, the cost, flat) and `flight-recorder-check.ps1 -Case
+replay-crash` (the clip in a hang's and a crash's report).
+
+## Marks of the moment (#551, marks v2 #574)
+
+During a headset test the owner marks a moment instead of remembering it: **both Index trackpads pressed (the force
+press)** mark it **at once**, on the frame both are down (D-061; fixed, not rebindable, one mark per press - a second
+mark needs a trackpad let go and pressed again; one pressed, the other later: the mark when the second goes down).
+**How long both stay down decides what the mark records** (D-062, #574): let go within `HoldThresholdMs` (about
+0.5 s, tuned in the headset) it is a **short mark** - what he sees; held longer it is a **hold**, up to 1 minute -
+what he says *and* does meanwhile, so a coordinator that cannot listen reads his words next to the pictures of what he
+was showing and replays the hold in the simulator. At 1 minute the hold ends by itself ("Hold ended at the 1:00
+limit" in the panel). Only on the Index: the Touch has no trackpads and no mark gesture. On in every build, the tester
+package included. Both stick clicks do nothing special (no mark, no menu). The default layouts bind nothing to the
+trackpads; a player who binds an event to one gets that event too when the press marks. The game writes
+`<user dir>\marks\<yyyymmdd>T<hhmmss>Z-<n>\` (UTC; `n` the mark's number in the session) off the frame thread:
+
+| File | Short | Hold | What |
+|---|---|---|---|
+| `left.png`, `right.png` | yes | yes | both eyes of the press frame, full size (a menu's frame: the background the eyes are cleared to) |
+| `recorder.txt` | yes | yes | the flight recorder's tail at the press (#545), scrubbed of personal data like `arx-recorder.txt` |
+| `meta.txt` | yes | yes | `# moment mark (#551)`, then `mark`, `time`, `area`, `position`, `yaw`, `build`, `state`, `session`, `kind` (`press` / `hold`), `pressMs`, `releaseMs` (on the clip's clock: the `@<ms>ms` times of `clip.vrsim`; -1 before it started) and the press frame's pose in the numbers of the `.vrsim` commands: `head=`, `left=` / `right=` (the grip, then `on`/`off` tracked), `curlsLeft=` / `curlsRight=` (five curls) - pasted into a sequence as they are. Written once the release decides the kind |
+| `snap-+NN.Ns.jpg` | - | yes | the **left eye at half size** (about 1008x1120, JPEG quality 85, 150-250 KB) every 2 s after the press and one at the release; `NN.N` the seconds after the press, rounded down (`snap-+02.0s.jpg` ... `snap-+07.0s.jpg`); at most 31 |
+| `clip.vrsim` | - | yes | the replay ring from **10 s before the press to the release** (#550), a `# hold: <pressMs> <releaseMs>` line after `# mark:`; `scripts/dev/replay.ps1` plays it. The ring keeps 75 s at 144 Hz (crash and hang reports' `arx-replay.vrsim` too), so a full minute's hold and its 10 s fit |
+| `note.wav` | - | yes | the voice note, push-to-talk: the default microphone while both trackpads stay pressed, up to 1 minute (16 kHz mono 16-bit); only when it is on and the press became a hold (a short press keeps none) |
+| `transcript.txt` | - | after `transcribe.ps1` | the note as text, `[m:ss.s] text` a segment on the same press-relative timeline as the snapshots (below) |
+
+The hero-dialogue panel (D-055, below the centre of the view) shows "Moment marked (#N)" for about 2 s; while a hold's
+note records, the indicator "🎤 m:ss" counting up instead (from `HoldThresholdMs` on - a short press never shows the
+microphone); after the release it stays, frozen at the note's length, while the writer thread builds and writes
+`note.wav` (the panel never goes blank in between); then "🎤 Note saved (m:ss)" for about 1.5 s, then nothing. No
+microphone shows the confirmation only. The panel draws a small red microphone where the text has U+1F3A4 (the game's
+fonts have no glyph for it); the status keeps the character. A notice takes the panel over a scene's line while it
+shows. `cfg.ini vr_mark_note=0` turns the voice note off; the channel's `marks note on|off` does it for the session.
+The simulated headset (`--vr-sim`: CI, a replay, a worker's run) never opens the microphone - a microphone on the PC
+must never record the room. While a recorded clip plays (`replay.ps1`, #550), the replayed trackpad presses write no
+marks: the log says `[vr] mark ignored: a replay is playing`.
+
+**No stutter:** nothing on the frame waits for the GPU. The eyes are copied on the GPU (`src/vr/EyeShots.h`: a blit
+into a texture of our own - a snapshot halved with the linear filter, each pixel the mean of a 2x2 block - and a
+read-back into a pixel buffer behind a fence); a later frame maps the buffer and copies it out (logged:
+`[vr] eye shot <id>: <w>x<h> read back, copied in <us> us`). The PNGs, the JPEGs, the clip (cut from a byte copy of
+the ring taken the frame after the release) and the WAV are made on the mark writer thread. Opening the microphone is
+one OpenAL call on the press frame; its time is in the log line `... (the microphone opened in <ms> ms)`.
+
+- **status.json** `marks`: `count` (marks made since the start), `last` (the last mark's folder name), `lastFiles`
+  (the non-empty files in it, sorted, joined by `,`; empty until every file of the mark is written - a hold's after
+  its release), `lastKind` (`""` before the first mark, `pending` until the release or the cap, then `press` or
+  `hold`), `lastSnapshots` (the `snap-*.jpg` written for the last mark so far; 0 for a press), `lastClipMs` (its
+  `clip.vrsim` length in ms once written; 0 for a press), `recording` (a voice note records now - only while both
+  trackpads are held), `noteMs` (how long it records so far, ms; 0 when none records), `note` (the voice note is on),
+  `gesture` (`both.trackpad` on the Index, `none` on controllers without trackpads); `scene.subtitle.notice` (`none`,
+  `marked`, `recording`, `saved`) - while not `none`, `scene.subtitle.text` is the notice's line and `drawn` is
+  `chest`.
+- **The log:** `[vr] mark #<n>: the moment is marked ...` at the gesture, `[vr] mark #<n>: a short press (<ms> ms)` or
+  `... a hold of <ms> ms` at the release, `[vr] mark #<n>: marks\<folder> files=<list>` once every file is written,
+  `[vr] mark #<n>: note.wav (<s> s)` after the note; the panel's `vr.scene.subtitle notice=<kind> drawn=chest
+  text="<line>"` once per notice kind.
+- **After the test:** `scripts\dev\marks.ps1` lists the marks of the user directory - per mark the time, area,
+  position, `Kind: press | hold <s.s> s`, the files, the note's length, `Clip: <len> s (<before> s before the press),
+  <n> frames`, the pictures by their time after the press (`+0.0 s  left.png, right.png (press)`, `+2.0 s
+  snap-+02.0s.jpg`, ... the last one `(release)`) and the transcript's lines, each with the picture nearest it
+  (`[0:03.1] ...  <- snap-+04.0s.jpg`); `-UserDir` for another one, `-Copy <name>|last -To <dir>` copies one out.
+  When the transcription tools are cached it transcribes new notes first; `-Transcribe` fetches the tools on first
+  use. Nothing it prints holds a personal path. Marks and transcripts are never committed (the repository is public)
+  and not uploaded (#545 stage 3).
+- **Transcription** (`scripts\dev\transcribe.ps1 -Mark <name>|last` or `-All`, `-Force` to redo one): local, on this
+  machine, nothing uploaded. whisper.cpp's `whisper-cli.exe` with `ggml-large-v3-turbo-q8_0.bin`, `-l ru` and a prompt
+  of the project's Latin words from the editable `scripts/dev/transcribe-glossary.txt` (B, trigger, grip, trackpad,
+  radial, SteamVR, Index, ...), so the owner's mixed Russian and English comes out with the English words in Latin
+  letters; the Silero VAD skips silence, and when it finds no speech at all (quiet short notes) the note is run again
+  without it (`--suppress-nst`, `-nth 0.6`). Whatever that retry writes is kept - a real quiet note matters more - so
+  a note with no speech at all (game sound only) may get one of whisper's stray silence phrases; read it with the
+  snapshots. whisper-cli 1.9.2 reads its command line in the system's ANSI code page: a path with a character outside
+  it (a user name with an é under cp1251) is passed as its 8.3 short name, and a note whose folder has none is copied
+  to a plain temporary path first; tools or TEMP in such a path without a short name fail with a clear message (use a
+  plain `-ToolsDir`). A failed run prints whisper's own error line. The first use downloads the three tools below (about 900 MB) into `%LOCALAPPDATA%\ArxFatalisVR\tools`,
+  each checked against its pinned SHA-256 (a mismatch deletes the file and fails with `SHA-256 mismatch`); once cached
+  they are used as they are, with no network. Any Windows x64 PC works without setup (the CPU build; a minute of note
+  takes about a minute on the owner's PC). `transcript.txt` is UTF-8: `[m:ss.s] text` a segment, the start rounded
+  down to 0.1 s from the note's start - the press, the snapshots' timeline.
+- **The checks:** host tests `MarkMomentTest` (the gesture with any layout, `markHeld`, the folder name, `meta.txt`,
+  the panel's lines, the Touch without the gesture, both stick clicks never marking), `MarkHoldTest` (short against
+  hold, the 1 minute cap, the snapshot schedule and names, the indicator from the threshold, `meta.txt` kind and pose,
+  the 75 s ring, the hold's clip with its context at 144 and 80 Hz, the `# hold:` line), `SnapshotImageTest` (the 2x2
+  mean, the JPEG the right way up, its quality) and `VoiceNoteTest` (the WAV writer, the push-to-talk capture on a fake
+  device: a release stops it, 1 minute at most, nothing under 0.3 s, never without the hold); `mark-moment.xrs` (both
+  stick clicks: no mark, no menu; a 0.2 s short mark: the four files, no clip, no snapshot, no note, no indicator; a
+  second mark on a re-press; a 7 s hold: `kind=hold`, four snapshots, a clip of about 17 s, no `note.wav` under the
+  simulated headset); `test-marks.ps1` (the listing) and `test-transcribe.ps1` (whisper's JSON to `transcript.txt`
+  byte for byte, the pins, the cache, the empty-VAD retry, the glossary; a fake whisper, no network) and
+  `test-transcribe-paths.ps1` (a mark folder outside the code page, whisper's error line).
+
+### Third-party tools downloaded by scripts
+
+Nothing of these is in the repository (it is public and they are large); a script downloads each on first use from
+the pinned URL, checks the SHA-256 and caches it. The pins live in `scripts/dev/transcribe-lib.ps1`.
+
+| Name | Version | URL | Licence | SHA-256 |
+|---|---|---|---|---|
+| whisper.cpp (`whisper-bin-x64.zip`: `whisper-cli.exe`, CPU) | v1.9.2 | https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip | MIT | `49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a` |
+| Whisper large-v3-turbo, q8_0 (`ggml-large-v3-turbo-q8_0.bin`, 874 MB) | HF `ggerganov/whisper.cpp` rev `5359861c739e955e79d9a303bcbc70fb988958b1` | https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q8_0.bin | MIT | `317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1` |
+| Silero VAD v6.2.0 for whisper.cpp (`ggml-silero-v6.2.0.bin`) | HF `ggml-org/whisper-vad` rev `9ffd54a1e1ee413ddf265af9913beaf518d1639b` | https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin | MIT | `2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987` |
+
+Vendored in the repository instead (small, compiled in): `stb_image_write.h` v1.16 (`libs/stb/`, from
+nothings/stb at `1ee679ca2ef753a528db5ba6801e1067b40481b8`; public domain or MIT, notice in `LICENSE.stb`) - the
+snapshots' JPEG writer.

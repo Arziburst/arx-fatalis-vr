@@ -1,3 +1,4 @@
+# retired 2026-10-22: the plan is the sprints in docs/vr/MVP.md / labels sprint-N
 <#
 .SYNOPSIS
 	Show which task to work on next, following the MVP task queue in docs/vr/MVP.md.

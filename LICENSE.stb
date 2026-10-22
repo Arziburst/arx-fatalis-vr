@@ -1,4 +1,7 @@
 
+The licence of the stb libraries by Sean Barrett used here: stb_image (src/graphics/image/stb_image.*) and
+stb_image_write v1.16 (libs/stb/stb_image_write.h, the marks' snapshot JPEGs, #574).
+
 This software is available under 2 licenses -- choose whichever you prefer.
 ------------------------------------------------------------------------------
 ALTERNATIVE A - MIT License

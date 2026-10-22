@@ -48,6 +48,7 @@
 #include "io/fs/Filesystem.h"
 #include "io/log/Logger.h"
 #include "platform/CrashHandler.h"
+#include "platform/DumpHelper.h"
 #include "platform/ExitTrace.h"
 #include "platform/ProgramOptions.h"
 #include "platform/Thread.h"
@@ -58,6 +59,7 @@
 #if ARX_HAVE_OPENXR
 
 // OpenXR with the OpenGL binding (and windows.h on Windows)
+#include "vr/EyeShots.h"
 #include "vr/HandTracking.h"
 #include "vr/HandReticle.h"
 #include "vr/HeadTracking.h"
@@ -67,6 +69,7 @@
 #include "vr/PerfLog.h"
 #include "vr/UIPanel.h"
 #include "vr/VRActions.h"
+#include "vr/VRMarks.h"
 #include "vr/VRMirror.h"
 #include "vr/VRSimulator.h"
 #include "vr/VRSwapchain.h"
@@ -218,6 +221,7 @@ struct OpenXRState {
 		bool quadAcquired = false;          //!< the flat frame image is acquired and bound as the 2D target
 		size_t eyeInRender = size_t(-1);    //!< the eye whose image is bound right now, or none
 		Vec2i windowSize = Vec2i(0);        //!< the window, i.e. the flat frame, this frame
+		bool game = false;                  //!< a frame of the game loop, not a loading screen's or a copied window's (#550)
 	} frame;
 
 	//! The floating UI panel (#49): the engine's menu state and where the 2D interface's quad is shown
@@ -311,6 +315,16 @@ struct OpenXRState {
 };
 
 OpenXRState g_xr;
+
+//! The eye pictures the marks of the moment asked for (#551, #574): copied as the eyes are released, read back later
+EyeShots g_eyeShots;
+
+//! An eye's image as drawn (sRGB-encoded, rows bottom-up) for the pictures that want it: GPU work only, no sync
+void captureEye(size_t eye, const Swapchain & swapchain) {
+	if(g_eyeShots.pending() > 0) {
+		g_eyeShots.capture(eye, swapchain.framebuffer(), swapchain.size(), g_xr.colorFormat);
+	}
+}
 
 } // anonymous namespace
 
@@ -903,6 +917,7 @@ void destroySession() {
 	}
 	g_xr.radialFailed = false;
 	destroySubtitleImage();
+	g_eyeShots.destroy();
 	g_xr.mirror.destroy();
 	g_xr.colorFormat = 0;
 
@@ -1365,6 +1380,7 @@ bool renderBackground(OpenXRState::Layers & layers) {
 		if(eye == g_xr.mirror.eye()) {
 			g_xr.mirror.copyEye(swapchain);
 		}
+		captureEye(eye, swapchain);
 		swapchain.release();
 	}
 
@@ -1730,6 +1746,8 @@ void updatePanel() {
 	if(mode != panel.loggedMode) {
 		panel.loggedMode = mode;
 		gameevent::Event("vr.panel")("mode", panelModeName(mode))("menu", panel.menu.empty() ? "none" : panel.menu);
+		platform::flightRecord(platform::RecordKind::State, std::string("panel ") + panelModeName(mode)
+		                       + ' ' + (panel.menu.empty() ? "none" : panel.menu));
 	}
 
 	// The logos and the cinematics play on a screen fixed in the room (#394): placed where the player
@@ -2381,6 +2399,7 @@ void pollEvents() {
 				g_xr.sessionState = changed.state;
 				gameevent::Event("vr.session")("state", sessionStateName(changed.state))
 					("was", sessionStateName(previous))("meaning", sessionStateMeaning(changed.state));
+				platform::flightRecord(platform::RecordKind::State, std::string("vr ") + sessionStateName(changed.state));
 				if(previous == XR_SESSION_STATE_FOCUSED) {
 					logFocusLost();
 				}
@@ -2480,6 +2499,8 @@ bool beginFrameFor(const Vec2i & windowSize, FrameTargets targets) {
 		abandonFrameTargets();
 		endFrame(true);
 	}
+	// Known before xrWaitFrame: the replay clock starts at the first game-loop frame that is playable (#550)
+	frame.game = (targets == FrameTargets::Game);
 
 	XrResult result;
 	PlatformInstant waited;
@@ -2720,6 +2741,7 @@ void endEyeRender(size_t eye) {
 		// The desktop mirror (#21) takes its copy while the image is ours
 		g_xr.mirror.copyEye(swapchain);
 	}
+	captureEye(eye, swapchain);
 	swapchain.release();
 	frame.eyeRendered[eye] = true;
 	frame.eyeInRender = size_t(-1);
@@ -2730,6 +2752,28 @@ void endEyeRender(size_t eye) {
 	} else {
 		restoreWindowTarget();
 	}
+}
+
+bool requestEyeShot(u32 id, size_t eye, bool half) {
+	if(g_xr.session == XR_NULL_HANDLE || eye >= g_xr.eyes.size()) {
+		return false;
+	}
+	return g_eyeShots.request(id, eye, half);
+}
+
+bool takeEyeShot(u32 & id, RgbImage & image) {
+	s64 copyUs = 0;
+	if(!g_eyeShots.take(id, image, copyUs)) {
+		return false;
+	}
+	// The one piece of a picture's work the frame does itself: copying the mapped pixel buffer out (#574)
+	LogInfo << "[vr] eye shot " << id << ": " << image.width << "x" << image.height << " read back, copied in "
+	        << copyUs << " us";
+	return true;
+}
+
+void cancelEyeShots() {
+	g_eyeShots.cancel();
 }
 
 StereoStatus stereoStatus() {
@@ -2744,6 +2788,32 @@ const FrameViews & frameViews() {
 
 const FrameHands & frameHands() {
 	return g_xr.frame.hands;
+}
+
+std::array<AimSample, HandCount> frameAims() {
+	std::array<AimSample, HandCount> aims;
+	if(!g_xr.running || !g_xr.frame.begun) {
+		return aims;
+	}
+	const std::array<ActionSet::AimPose, HandCount> poses = g_xr.actions.locateAim(g_xr.localSpace, g_xr.frame.state.predictedDisplayTime);
+	for(size_t hand = 0; hand < HandCount; hand++) {
+		aims[hand].valid = poses[hand].valid;
+		aims[hand].position = poses[hand].position;
+		aims[hand].orientation = poses[hand].orientation;
+	}
+	return aims;
+}
+
+s64 displayPeriodUs() {
+	return g_xr.running ? g_xr.frame.period : 0;
+}
+
+bool gameFrame() {
+	return g_xr.running && g_xr.frame.game;
+}
+
+const RawActionValues & rawControllerValues() {
+	return g_xr.actions.raw();
 }
 
 bool isEnabled() {
@@ -3019,6 +3089,10 @@ std::array<std::string, HandCount> controllerProfiles() {
 	return g_xr.actions.profiles();
 }
 
+const std::string & controllerProfile(Hand hand) {
+	return g_xr.actions.profiles()[size_t(hand)];
+}
+
 u64 controllerSyncs() {
 	return g_xr.actions.syncs();
 }
@@ -3028,6 +3102,9 @@ const HandJointsStatus & handJointsStatus() {
 }
 
 void shutdown() {
+
+	// A mark still being written, its voice note (#551)
+	marks::shutdown();
 
 	requestExit();
 	destroySession();
@@ -3101,6 +3178,16 @@ bool beginEyeRender(size_t /* eye */) {
 
 void endEyeRender(size_t /* eye */) { }
 
+bool requestEyeShot(u32 /* id */, size_t /* eye */, bool /* half */) {
+	return false;
+}
+
+bool takeEyeShot(u32 & /* id */, RgbImage & /* image */) {
+	return false;
+}
+
+void cancelEyeShots() { }
+
 StereoStatus stereoStatus() {
 	return StereoStatus();
 }
@@ -3112,6 +3199,23 @@ const FrameViews & frameViews() {
 
 const FrameHands & frameHands() {
 	static const FrameHands none;
+	return none;
+}
+
+std::array<AimSample, HandCount> frameAims() {
+	return { };
+}
+
+s64 displayPeriodUs() {
+	return 0;
+}
+
+bool gameFrame() {
+	return false;
+}
+
+const RawActionValues & rawControllerValues() {
+	static const RawActionValues none;
 	return none;
 }
 
@@ -3230,6 +3334,11 @@ std::array<std::string, HandCount> controllerProfiles() {
 	return { };
 }
 
+const std::string & controllerProfile(Hand /* hand */) {
+	static const std::string none;
+	return none;
+}
+
 u64 controllerSyncs() {
 	return 0;
 }
@@ -3250,5 +3359,12 @@ FrameCounters frameCounters() {
 void shutdown() { }
 
 #endif // !ARX_HAVE_OPENXR
+
+const char * RawActionValues::name(size_t index) {
+	static const char * const names[Count] = {
+		"trigger", "grip", "button_a", "button_b", "thumbstick", "thumbstick_click", "trackpad_press", "menu", "thumb_touch",
+	};
+	return index < Count ? names[index] : "";
+}
 
 } // namespace vr

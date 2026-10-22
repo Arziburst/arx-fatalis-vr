@@ -63,12 +63,13 @@ function Clear-ArxLaunchMarker([string]$Dir = (Get-ArxTestDir)) {
 # Wait until the game was started (the marker exists): $true. Returns $false when the job ended first - the
 # smoke test was skipped (lock busy, exit 2) or failed before the launch; the caller then goes on to the job's
 # verdict instead of waiting for a game that never starts. No timeout of its own: the lock wait is bounded by
-# smoke-test.ps1 (-LockTimeoutSec), and $Job leaving the Running state is the end of it.
+# smoke-test.ps1 (-LockTimeoutSec), and $Job leaving the Running state is the end of it. A job that has not
+# started yet (Start-ThreadJob reports NotStarted for a moment, #545) is still on its way, not ended.
 function Wait-ArxGameLaunched($Job, [string]$Dir = (Get-ArxTestDir), [int]$PollMs = 200) {
 	$marker = Get-ArxLaunchMarker $Dir
 	while ($true) {
 		if (Test-Path -LiteralPath $marker) { return $true }
-		if ($Job.State -ne 'Running') { return (Test-Path -LiteralPath $marker) }
+		if ($Job.State -notin @('Running', 'NotStarted')) { return (Test-Path -LiteralPath $marker) }
 		Start-Sleep -Milliseconds $PollMs
 	}
 }
@@ -101,7 +102,8 @@ function Send-ArxCommand(
 	[string]$Dir = (Get-ArxTestDir),
 	[int]$TimeoutSec = 10
 ) {
-	# The game writes ack.txt first and status.json later, so status.json can still show the batch before the
+	# The game writes status.json first and ack.txt right after (#23; it was the other way round, and a read of the status
+	# after the ack found the old state), so status.json can show a batch before its ack - and may still show the batch before the
 	# previous one: a baseline taken from it alone lets that late update (and the previous ack) pass for the
 	# answer to this batch (#250). The baseline is the newest seq of both files; the answer is the ack file itself.
 	$before = Read-ArxStatus $Dir

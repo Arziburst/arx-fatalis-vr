@@ -209,6 +209,11 @@ const char * controllerTypeName(ControllerType type) {
 	return "unknown";
 }
 
+bool markGestureAvailable(ControllerType type) {
+	// Both trackpads: only the Index has them
+	return type == ControllerType::Index;
+}
+
 ControllerType controllerTypeFromProfile(std::string_view profile) {
 	if(profile == "/interaction_profiles/valve/index_controller") {
 		return ControllerType::Index;
@@ -389,6 +394,30 @@ bool readSavedLayout(std::string_view text, ControllerType type, ControlLayout &
 		layout = defaultLayout(type);
 		return false;
 	}
+	// A file that leaves no way to the game menu gets the default way back (#326)
+	if(!menuReachable(layout)) {
+		const ControlLayout base = defaultLayout(type);
+		for(Event event : { Event::Menu, Event::RadialLeft, Event::RadialRight }) {
+			layout[event] = base[event];
+		}
+	}
+	return true;
+}
+
+bool menuReachable(const ControlLayout & layout) {
+	return layout[Event::Menu].isBound() || layout[Event::RadialLeft].isBound() || layout[Event::RadialRight].isBound();
+}
+
+bool assignBinding(ControlLayout & layout, Event event, const Binding & binding, std::string * note) {
+	ControlLayout changed = layout;
+	changed[event] = binding;
+	if(!menuReachable(changed)) {
+		if(note) {
+			*note = "The game menu needs a binding: this would remove its last one.";
+		}
+		return false;
+	}
+	layout = changed;
 	return true;
 }
 
@@ -601,6 +630,18 @@ void ControlResolver::release(Control control, s64 timeMs) {
 }
 
 void ControlResolver::update(s64 timeMs, const ControlSet & down, const ControlSet & taps) {
+
+	// Mark the moment (#551): both trackpads down together, once per press, whatever the layout is
+	m_markGesture = false;
+	if(down[control(Hand::Left, ControlKind::Trackpad)] && down[control(Hand::Right, ControlKind::Trackpad)]) {
+		if(!m_markFired) {
+			m_markFired = true;
+			m_markGesture = true;
+			m_markGestures++;
+		}
+	} else {
+		m_markFired = false;
+	}
 
 	for(size_t i = 0; i < EventCount; i++) {
 		EventState & event = m_events[i];

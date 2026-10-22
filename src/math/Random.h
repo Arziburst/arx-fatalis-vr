@@ -78,7 +78,10 @@ public:
 	
 	//! Seed the random number generator with the given value.
 	static void seed(u64 seedVal);
-	
+
+	//! The seed this thread's generator was last seeded with: by seed(u64), or the clock's value seed() took (#550)
+	static u64 currentSeed();
+
 	//! Release all resources held by this threads random generator
 	static void shutdown();
 
@@ -103,6 +106,7 @@ public:
 private:
 
 	static thread_local Generator * rng;
+	static thread_local u64 seedValue; //!< what rng was last seeded with (currentSeed, #550)
 };
 
 ///////////////////////////////////////////////////////////////////////////////

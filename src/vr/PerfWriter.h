@@ -68,6 +68,15 @@ public:
 	//! Lines dropped because the sink fell behind
 	size_t dropped();
 
+	/*!
+	 * \brief A line made on the writer thread every \a every (the resource line, #545)
+	 *
+	 * Off the frame path, and it keeps coming while the frame thread stalls or loads; the first one comes
+	 * \a every after this call, then on a fixed schedule (up to the writer's wake-up interval late). An empty
+	 * string is not written. Called from the producer thread, once, right after construction.
+	 */
+	void setPeriodic(std::chrono::milliseconds every, std::function<std::string()> make);
+
 	//! For the host test: hold the lock the writer thread takes, as if it were descheduled holding it
 	std::unique_lock<std::mutex> holdLockForTest() { return std::unique_lock<std::mutex>(m_mutex); }
 
@@ -91,6 +100,11 @@ private:
 	unsigned long long m_done = 0;
 	bool m_flushWanted = false;
 	bool m_stop = false;
+
+	// The periodic line (under the lock; made with the lock released)
+	std::chrono::milliseconds m_periodicEvery{0};
+	std::function<std::string()> m_periodic;
+	std::chrono::steady_clock::time_point m_periodicNext;
 
 	// The producer's side, never touched by the writer thread
 	std::string m_held;           //!< lines pushed while the lock was taken

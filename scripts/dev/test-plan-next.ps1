@@ -83,18 +83,6 @@ Check 'text without numbers = no dependency' ((Get-Task $plan 21).DependsOn.Coun
 Check 'waves from the lane cells' ((Get-Task $plan 10).Wave -eq 0 -and (Get-Task $plan 11).Wave -eq 1 -and (Get-Task $plan 19).Wave -eq 4 -and (Get-Task $plan 20).Wave -eq 5)
 Check 'a number inside a "*(remark)*" does not move the task to that wave (#10 stays in wave 0)' ((Get-Task $plan 10).Wave -eq 0)
 
-Write-Host 'Parsing the real docs/vr/MVP.md'
-$real = Read-MvpPlan (Get-Content -Raw -Encoding UTF8 (Join-Path $PSScriptRoot '..\..\docs\vr\MVP.md'))
-function RealDeps([int]$N) { @((Get-Task $real $N).DependsOn) }
-Check 'more than 40 tasks and a queue' ($real.Tasks.Count -gt 40 -and $real.Queue.Count -gt 40) "$($real.Tasks.Count) tasks, $($real.Queue.Count) queued"
-Check '#36 depends on #72 #24 #74 and the research #118 #120' ((RealDeps 36) -contains 72 -and (RealDeps 36) -contains 24 -and (RealDeps 36) -contains 74 -and (RealDeps 36) -contains 118 -and (RealDeps 36) -contains 120) ((RealDeps 36) -join ',')
-Check '#37 depends on #74 and #166, not on #36 (D-016)' ((RealDeps 37) -contains 74 -and (RealDeps 37) -contains 166 -and (RealDeps 37) -notcontains 36) ((RealDeps 37) -join ',')
-Check '#166 (research) has no dependency' ((RealDeps 166).Count -eq 0) ((RealDeps 166) -join ',')
-Check '#19 depends on #71 #20 and the simulator #112' ((RealDeps 19) -contains 71 -and (RealDeps 19) -contains 20 -and (RealDeps 19) -contains 112) ((RealDeps 19) -join ',')
-Check '#44 follows #43 and #45 follows #44 (the arrow chain of wave 7)' ((RealDeps 44) -contains 43 -and (RealDeps 45) -contains 44)
-Check '#77 (the video) depends on everything' ((RealDeps 77).Count -gt 40)
-Check 'every task of the Dependencies table has an area, a lane and a wave' (@($real.Tasks | Where-Object { $_.Area -and (-not $_.Lane -or $null -eq $_.Wave) }).Count -eq 0) (($real.Tasks | Where-Object { $_.Area -and (-not $_.Lane -or $null -eq $_.Wave) } | ForEach-Object Number) -join ',')
-
 Write-Host 'Dependencies, waves and the order'
 $board = @(
 	(Item 10 'Done'), (Item 11 'Done'),

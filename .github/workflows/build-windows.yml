@@ -213,19 +213,24 @@ jobs:
     # lock) - a gate that did not run is not a pass. Never leaves arx.exe behind.
     # Then (#255) every shipped .xrs sequence, one launch each, on the test save library of the service account
     # (verified, or generated when missing or stale).
-    # Two games at once (#522): ARXVR_MAX_GAMES=2 lets this step's launches hold two slots of the game lock (everyone
-    # else keeps one); ci-smoke.ps1 drops to one lane while a game that is not this job's holds a slot. The evidence
-    # stays on the runner, in the service's %LOCALAPPDATA%\ArxFatalisVR\ci-evidence\<run id>-<attempt> (the last 10
-    # runs), and is uploaded only when the job failed.
+    # Several games at once (#522, #563): ARXVR_MAX_GAMES is the CI lane count, the one place it is set - this step's
+    # launches may hold that many slots of the game lock (everyone else keeps one), ci-smoke.ps1 runs as many lanes as the
+    # lock allows, and ci-local.ps1 reads it from here so a worker's run has CI's load. 4 since #563 (measured in its
+    # pull request: 2 -> 3 -> 4 lanes each over 20% faster, 5 only 13% faster than 4 with a CPU peak over 60%); more than
+    # 4 is the owner's call. ci-smoke.ps1 drops to one lane while a game that is not this job's holds a slot. The
+    # evidence stays on the runner, in the service's %LOCALAPPDATA%\ArxFatalisVR\ci-evidence\<run id>-<attempt> (the
+    # last 10 runs), and is uploaded only when the job failed.
     # What runs is the Scope step's suite (#522): on a pull request the core plus what its changed paths select in
     # scripts/dev/xrs/impact.txt (the log lists them); everything on a push to main, with the label full-ci and on a
     # manual run with suite=full (the merge gate). A pull request's run stops at the first FAIL (#527).
     # ARXVR_CI_RUNNER marks the launches as the job's own (#527): they take the slots the runner marker keeps free.
+    # At its end ci-smoke.ps1 adds the Performance table to the job summary (#552, perf-track.ps1): each phase against the
+    # rolling baseline of the green main and gate runs on this lane count, a warning per slower phase; it never fails.
     - name: Game checks (smoke test, draw check, spell draw check, .xrs sequences)
       if: steps.scope.outputs.heavy == 'true'
       shell: pwsh
       env:
-        ARXVR_MAX_GAMES: '2'
+        ARXVR_MAX_GAMES: '4'
         ARXVR_CI_RUNNER: '1'
       run: |
         $evidence = Join-Path $env:LOCALAPPDATA "ArxFatalisVR\ci-evidence\$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"

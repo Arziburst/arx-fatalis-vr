@@ -83,6 +83,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "gui/Interface.h"
 #include "gui/Notification.h"
 #include "gui/Speech.h"
+#include "gui/book/DevPanel.h"
 #include "gui/hud/SecondaryInventory.h"
 
 #include "graphics/GlobalFog.h"
@@ -1482,6 +1483,7 @@ static bool ARX_CHANGELEVEL_Pop_Player(std::string_view target, float angle) {
 	
 	player.Interface = PlayerInterfaceFlags::load(asp->Interface); // TODO save/load flags
 	player.Interface &= ~INTER_PLAYERBOOK;
+	devvariants::onBookClosed(); // the book closed by the load (#588)
 	player.falling = (asp->falling != 0);
 	player.gold = asp->gold;
 	entities.player()->invisibility = asp->invisibility;

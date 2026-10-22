@@ -22,17 +22,23 @@
 #include <ctime>
 
 thread_local Random::Generator * Random::rng = nullptr;
+thread_local u64 Random::seedValue = 0;
 
 void Random::seed() {
 	seed(u64(std::time(nullptr)));
 }
 
 void Random::seed(u64 seedVal) {
+	seedValue = seedVal;
 	if(rng) {
 		rng->seed(seedVal);
 	} else {
 		rng = new Generator(seedVal);
 	}
+}
+
+u64 Random::currentSeed() {
+	return seedValue;
 }
 
 void Random::shutdown() {

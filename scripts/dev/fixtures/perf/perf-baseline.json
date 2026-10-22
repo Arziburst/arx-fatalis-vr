@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "runs": [
+    { "time": "2026-10-01 10:00:00", "kind": "main", "lanes": 4, "phases": { "xrs-look-around": { "meanMs": 15.0, "medianMs": 8.9, "p95Ms": 20.0, "maxMs": 14.0, "hitches": 0, "missed": 0, "peakPrivMiB": 410.0 } } },
+    { "time": "2026-10-02 10:00:00", "kind": "gate", "lanes": 4, "phases": { "xrs-look-around": { "meanMs": 15.0, "medianMs": 8.9, "p95Ms": 21.0, "maxMs": 14.0, "hitches": 0, "missed": 0, "peakPrivMiB": 410.0 } } },
+    { "time": "2026-10-03 10:00:00", "kind": "main", "lanes": 4, "phases": { "xrs-look-around": { "meanMs": 9.0, "medianMs": 8.9, "p95Ms": 11.0, "maxMs": 14.0, "hitches": 0, "missed": 0, "peakPrivMiB": 410.0 } } },
+    { "time": "2026-10-04 10:00:00", "kind": "main", "lanes": 3, "phases": { "xrs-look-around": { "meanMs": 7.0, "medianMs": 8.9, "p95Ms": 9.0, "maxMs": 14.0, "hitches": 0, "missed": 0, "peakPrivMiB": 410.0 } } },
+    { "time": "2026-10-05 10:00:00", "kind": "main", "lanes": 4, "phases": { "xrs-look-around": { "meanMs": 9.0, "medianMs": 8.9, "p95Ms": 11.2, "maxMs": 14.0, "hitches": 0, "missed": 0, "peakPrivMiB": 410.0 }, "smoke-test": { "meanMs": 16.65, "medianMs": 16.65, "p95Ms": 17.0, "maxMs": 17.7, "hitches": 0, "missed": 0, "peakPrivMiB": 412.3 } } },
+    { "time": "2026-10-06 10:00:00", "kind": "gate", "lanes": 4, "phases": { "xrs-look-around": { "meanMs": 9.0, "medianMs": 8.9, "p95Ms": 11.4, "maxMs": 14.0, "hitches": 0, "missed": 0, "peakPrivMiB": 410.0 } } },
+    { "time": "2026-10-07 10:00:00", "kind": "main", "lanes": 4, "phases": { "xrs-look-around": { "meanMs": 9.0, "medianMs": 8.9, "p95Ms": 11.1, "maxMs": 14.0, "hitches": 0, "missed": 0, "peakPrivMiB": 410.0 } } },
+    { "time": "2026-10-08 10:00:00", "kind": "gate", "lanes": 3, "phases": { "xrs-look-around": { "meanMs": 7.0, "medianMs": 8.9, "p95Ms": 9.0, "maxMs": 14.0, "hitches": 0, "missed": 0, "peakPrivMiB": 410.0 } } },
+    { "time": "2026-10-09 10:00:00", "kind": "main", "lanes": 4, "phases": { "xrs-look-around": { "meanMs": 9.0, "medianMs": 8.9, "p95Ms": 11.3, "maxMs": 14.0, "hitches": 0, "missed": 0, "peakPrivMiB": 410.0 }, "smoke-test": { "meanMs": 16.65, "medianMs": 16.65, "p95Ms": 17.0, "maxMs": 17.7, "hitches": 0, "missed": 0, "peakPrivMiB": 412.3 } } },
+    { "time": "2026-10-10 10:00:00", "kind": "main", "lanes": 4, "phases": { "xrs-look-around": { "meanMs": 9.0, "medianMs": 8.9, "p95Ms": 11.2, "maxMs": 14.0, "hitches": 0, "missed": 0, "peakPrivMiB": 410.0 } } },
+    { "time": "2026-10-11 10:00:00", "kind": "main", "lanes": 4, "phases": { "xrs-look-around": { "meanMs": 9.0, "medianMs": 8.9, "p95Ms": 11.0, "maxMs": 14.0, "hitches": 0, "missed": 0, "peakPrivMiB": 410.0 } } },
+    { "time": "2026-10-12 10:00:00", "kind": "main", "lanes": 3, "phases": { "xrs-look-around": { "meanMs": 7.0, "medianMs": 8.9, "p95Ms": 9.0, "maxMs": 14.0, "hitches": 0, "missed": 0, "peakPrivMiB": 410.0 } } },
+    { "time": "2026-10-13 10:00:00", "kind": "gate", "lanes": 4, "phases": { "xrs-look-around": { "meanMs": 9.0, "medianMs": 8.9, "p95Ms": 11.4, "maxMs": 14.0, "hitches": 0, "missed": 0, "peakPrivMiB": 410.0 } } },
+    { "time": "2026-10-14 10:00:00", "kind": "main", "lanes": 4, "phases": { "xrs-look-around": { "meanMs": 9.0, "medianMs": 8.9, "p95Ms": 11.1, "maxMs": 14.0, "hitches": 0, "missed": 0, "peakPrivMiB": 410.0 } } },
+    { "time": "2026-10-15 10:00:00", "kind": "main", "lanes": 4, "phases": { "xrs-look-around": { "meanMs": 9.0, "medianMs": 8.9, "p95Ms": 11.3, "maxMs": 14.0, "hitches": 0, "missed": 0, "peakPrivMiB": 410.0 } } }
+  ]
+}

@@ -19,6 +19,8 @@
 
 #include "core/Config.h"
 
+#include "game/JumpPhysics.h"
+
 #include <stddef.h>
 #include <algorithm>
 // #include <exception>
@@ -135,6 +137,7 @@ constexpr const bool
 	vrRealStepNoise = true,
 	vrPhysicalCrouch = vr::DefaultPhysicalCrouch,
 	vrHudFrame = false,
+	vrMarkNote = true,
 	viewBobbing = true,
 	screenShake = true,
 	showCrosshair = true,
@@ -214,6 +217,7 @@ constexpr const float
 
 // The Index grip as a button (#496): pressed above a firm resting hold, let go below a closed hand's flicker
 const float
+	jumpTimeScale = JumpTimeScaleDefault,
 	vrGripPress = vr::IndexGripThreshold.press,
 	vrGripRelease = vr::IndexGripThreshold.release;
 
@@ -322,6 +326,7 @@ constexpr const std::string_view
 	vrSceneFirstLow = "vr_scene_first_low",
 	vrSceneCut = "vr_scene_cut",
 	vrSubtitles = "vr_subtitles",
+	vrMarkNote = "vr_mark_note",
 	fov = "fov",
 	viewBobbing = "view_bobbing",
 	screenShake = "screen_shake",
@@ -474,7 +479,8 @@ constexpr const std::string_view
 	migration = "migration",
 	quicksaveSlots = "quicksave_slots",
 	debugLevels = "debug",
-	realtimeOverride = "realtime_override";
+	realtimeOverride = "realtime_override",
+	jumpTimeScale = "jump_time_scale";
 
 } // namespace Key
 
@@ -653,6 +659,7 @@ bool Config::save() {
 	writer.writeKey(Key::vrSceneFirstLow, video.vrSceneFirstLow);
 	writer.writeKey(Key::vrSceneCut, video.vrSceneCut);
 	writer.writeKey(Key::vrSubtitles, video.vrSubtitles);
+	writer.writeKey(Key::vrMarkNote, video.vrMarkNote);
 	writer.writeKey(Key::fov, video.fov);
 	writer.writeKey(Key::viewBobbing, video.viewBobbing);
 	writer.writeKey(Key::screenShake, video.screenShake);
@@ -773,6 +780,7 @@ bool Config::save() {
 	writer.writeKey(Key::quicksaveSlots, misc.quicksaveSlots);
 	writer.writeKey(Key::debugLevels, misc.debug);
 	writer.writeKey(Key::realtimeOverride, misc.realtimeOverride);
+	writer.writeKey(Key::jumpTimeScale, misc.jumpTimeScale);
 	
 	return writer.flush();
 }
@@ -875,6 +883,8 @@ bool Config::init(const fs::path & file) {
 	std::string vrSubtitles(reader.getKey(Section::Video, Key::vrSubtitles, Default::vrSubtitles));
 	video.vrSubtitles = vr::subtitlePlacementName(
 		vr::parseSubtitlePlacement(vrSubtitles).value_or(vr::DefaultSubtitlePlacement));
+	// The voice note after a mark of the moment (#551)
+	video.vrMarkNote = reader.getKey(Section::Video, Key::vrMarkNote, Default::vrMarkNote);
 	float fov = reader.getKey(Section::Video, Key::fov, Default::fov);
 	video.fov = std::max(fov, 10.f);
 	video.viewBobbing = reader.getKey(Section::Video, Key::viewBobbing, Default::viewBobbing);
@@ -1067,6 +1077,7 @@ bool Config::init(const fs::path & file) {
 	misc.quicksaveSlots = std::max(reader.getKey(Section::Misc, Key::quicksaveSlots, Default::quicksaveSlots), 1);
 	misc.debug = reader.getKey(Section::Misc, Key::debugLevels, Default::debugLevels);
 	misc.realtimeOverride = reader.getKey(Section::Misc, Key::realtimeOverride, Default::realtimeOverride);
+	misc.jumpTimeScale = glm::clamp(reader.getKey(Section::Misc, Key::jumpTimeScale, Default::jumpTimeScale), 1.f, 1.5f);
 	
 	return loaded;
 }

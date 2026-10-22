@@ -1,0 +1,91 @@
+# The game menu without a menu button (#326; #551 removed its fallback - this version written before that
+# implementation): the fixed fallback of D-058 - both thumbsticks clicked (pressed in) and held TOGETHER for 2 s opened
+# the game menu whatever the bindings were - is gone (the owner, 2026-10-19/20: the menu only via the radial; the hold
+# of both sticks does nothing special now, the mark of the moment is both trackpads, mark-moment.xrs), and so are its
+# status fields vr.input.menuFallback.*. On the
+# simulated Index, with a binding set that has no menu entry, saved into vr-controls-index.ini as the VR settings page
+# saves it and read back as a start reads it: the radial menu (the only way to the game menu, D-042) moved to the left
+# trackpad, the menu event unbound. The right B then opens nothing; one stick click held 3 s and a tap of both open
+# nothing; both held 2.5 s open nothing; the radial menu on the left trackpad opens the game menu; the VR settings'
+# reset to default is reachable from it.
+#
+# On the first-person test save, like menu-rebind-kept.xrs: --loadlevel 10 starts inside a scripted scene, where
+# Escape skips the scene instead of opening the game menu.
+# Self-contained: it ends with the default layout and no saved file (CI runs every sequence in one user directory).
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.input.controllers eq index
+vr-input default
+@frames 2
+@assert vr.input.remapped eq false
+@assert menuMode eq ingame
+
+# The binding set without a menu entry: the radial menu captured on the left trackpad (saved), read back as at a start
+menu pause
+@until menuMode eq mainmenu 10s
+menu vr
+@until menuPage eq vr 10s
+@frames 10
+vr-input capture radial_right
+@frames 2
+vr-input tap left.trackpad
+@until vr.input.capture.state eq done 5s
+menu resume
+@until menuMode eq ingame 10s
+@mark
+vr-input reload
+@log \[vr\] input: controllers index - layout saved for index
+@until vr.input.remapped eq true 5s
+@assert vr.input.layout.radial_right eq left.trackpad
+@assert vr.input.layout.radial_left eq none
+@assert vr.input.layout.menu eq none
+
+# The right B opens nothing now
+vr-input tap right.b
+@wait 1000
+@assert menuMode eq ingame
+
+# One stick click alone held 3 s, and a tap of both: no fallback
+vr-input down left.stick_click
+@wait 3000
+vr-input up left.stick_click
+@wait 500
+@assert menuMode eq ingame
+vr-input tap left.stick_click; vr-input tap right.stick_click
+@wait 1000
+@assert menuMode eq ingame
+
+# Both stick clicks held together 2.5 s - past the removed fallback's 2 s: the game menu
+# stays closed, while held and after
+vr-input down left.stick_click; vr-input down right.stick_click
+@wait 2500
+@assert menuMode eq ingame
+vr-input up left.stick_click; vr-input up right.stick_click
+@wait 500
+@assert menuMode eq ingame
+
+# The radial menu still opens it: held on the left trackpad (its moved binding), the ring's game menu item, let go
+vr-sim hand right pos 0.12 -0.2 -0.38; vr-sim hand left pos -0.12 -0.2 -0.38
+@frames 10
+vr-input down left.trackpad
+@until vr.radial.right.open eq true 5s
+vr-radial point right game_menu
+@frames 10
+vr-input up left.trackpad
+@until menuMode eq mainmenu 5s
+
+# From it the VR settings' reset to default: the right B's radial menu is back, the saved file gone
+menu vr
+@until menuPage eq vr 10s
+vr-input default
+@frames 2
+@assert vr.input.remapped eq false
+@assert vr.input.layout.radial_right eq right.b
+menu resume
+@until menuMode eq ingame 10s
+@assert errors eq 0

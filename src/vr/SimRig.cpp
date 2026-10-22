@@ -209,21 +209,104 @@ std::string simProfilePath(std::string_view name) {
 struct Simulation::Command {
 	enum Op {
 		Rate, EyeSize, Ipd, Fov, Timeline, HeadPos, HeadRot, HandPos, HandRot, HandTracked, HandFingers, HandJoints,
-		Profile, Action, Session, Shot, Mark, Quit, Fault, Layers, SessionEnd, FaultExit,
+		Profile, Action, Session, Shot, Mark, Record, Quit, Fault, Layers, SessionEnd, FaultExit,
+		// A recorded clip's commands (#550)
+		HeadPose, HandPose, HandAim, Player, Floor, Anchor, Play,
 	};
 	Op op = Rate;
 	size_t index = 0; //!< eye or hand; 2 = both hands
 	std::string text;
-	std::array<float, 5> values = { };
+	std::array<float, 6> values = { };
 	size_t count = 0;
 	bool flag = false;
 	SimSessionEnd sessionEnd = SimSessionEnd::None;
 	int exitCode = 0;
+	s32 area = -1;    //!< \c player / \c anchor \c level
+	u64 fromUs = 0;   //!< \c play
+	u64 toUs = std::numeric_limits<u64>::max();
 	bool rampable() const {
 		return op == Ipd || op == HeadPos || op == HeadRot || op == HandPos || op == HandRot || op == HandFingers
-		       || op == Action;
+		       || op == Action || op == HeadPose || op == HandPose || op == HandAim;
 	}
 };
+
+namespace {
+
+//! The commands of a line, split at ';' (a clip's frame line holds several, #550); empty ones are left out
+std::vector<std::string_view> splitCommands(std::string_view line) {
+	std::vector<std::string_view> commands;
+	size_t pos = 0;
+	while(pos <= line.size()) {
+		size_t end = line.find(';', pos);
+		if(end == std::string_view::npos) {
+			end = line.size();
+		}
+		std::string_view command = stripComment(line.substr(pos, end - pos));
+		if(!command.empty()) {
+			commands.push_back(command);
+		}
+		pos = end + 1;
+	}
+	return commands;
+}
+
+bool parseArea(std::string_view text, s32 & area) {
+	if(text.empty() || text.size() > 9) {
+		return false;
+	}
+	size_t pos = 0;
+	bool negative = false;
+	if(text[0] == '-') {
+		negative = true;
+		pos = 1;
+	}
+	if(pos >= text.size()) {
+		return false;
+	}
+	s32 value = 0;
+	for(; pos < text.size(); pos++) {
+		if(text[pos] < '0' || text[pos] > '9') {
+			return false;
+		}
+		value = value * 10 + (text[pos] - '0');
+	}
+	area = negative ? -value : value;
+	return true;
+}
+
+//! A clip time in whole milliseconds as microseconds; false for anything but digits (or a value past 2^63)
+bool parseMs(std::string_view text, u64 & us) {
+	u64 ms = 0;
+	if(!parseFrame(text, ms) || ms > u64(1) << 50) {
+		return false;
+	}
+	us = ms * 1000;
+	return true;
+}
+
+} // anonymous namespace
+
+bool Simulation::isEventCommand(std::string_view command) {
+	std::vector<std::string_view> words = splitWords(stripComment(command));
+	if(words.empty()) {
+		return false;
+	}
+	const std::string word = lowercase(words[0]);
+	if(word == "action" || word == "session" || word == "profile") {
+		return true;
+	}
+	if(word == "hand" && words.size() >= 3) {
+		const std::string what = lowercase(words[2]);
+		if(what == "on" || what == "off") {
+			return true;
+		}
+		if(what == "fingers" && words.size() == 4) {
+			const std::string mode = lowercase(words[3]);
+			return mode == "on" || mode == "off";
+		}
+	}
+	return false;
+}
 
 std::string Simulation::parse(std::string_view line, Command & command) const {
 
@@ -343,13 +426,17 @@ std::string Simulation::parse(std::string_view line, Command & command) const {
 		} else if(what == "rot") {
 			command.op = Command::HeadRot;
 			return numbers(2, 3, "head rot <yaw> <pitch> <roll> in degrees");
+		} else if(words.size() == 7) {
+			// The whole pose in one command (a clip's form, #550)
+			command.op = Command::HeadPose;
+			return numbers(1, 6, "head <x> <y> <z> <yaw> <pitch> <roll>");
 		}
-		return "head: expected pos or rot";
+		return "head: expected pos, rot or <x> <y> <z> <yaw> <pitch> <roll>";
 	}
 
 	if(word == "hand") {
 		if(!side(1, false)) {
-			return "hand: expected left|right pos|rot|fingers|on|off";
+			return "hand: expected left|right pos|rot|aim|fingers|on|off or <x> <y> <z> <yaw> <pitch> <roll>";
 		}
 		const std::string what = words.size() > 2 ? lowercase(words[2]) : std::string();
 		if(what == "pos") {
@@ -358,6 +445,13 @@ std::string Simulation::parse(std::string_view line, Command & command) const {
 		} else if(what == "rot") {
 			command.op = Command::HandRot;
 			return numbers(3, 3, "hand left|right rot <yaw> <pitch> <roll> in degrees");
+		} else if(what == "aim") {
+			// The aim pose in the grip's space (#550)
+			command.op = Command::HandAim;
+			return numbers(3, 6, "hand left|right aim <x> <y> <z> <yaw> <pitch> <roll>");
+		} else if(words.size() == 8 && what != "fingers") {
+			command.op = Command::HandPose;
+			return numbers(2, 6, "hand left|right <x> <y> <z> <yaw> <pitch> <roll>");
 		} else if((what == "on" || what == "off") && words.size() == 3) {
 			command.op = Command::HandTracked;
 			command.flag = (what == "on");
@@ -385,7 +479,7 @@ std::string Simulation::parse(std::string_view line, Command & command) const {
 			}
 			return error;
 		}
-		return "hand: expected left|right pos|rot|fingers|on|off";
+		return "hand: expected left|right pos|rot|aim|fingers|on|off or <x> <y> <z> <yaw> <pitch> <roll>";
 	}
 
 	if(word == "profile") {
@@ -443,6 +537,15 @@ std::string Simulation::parse(std::string_view line, Command & command) const {
 		return std::string();
 	}
 
+	if(word == "record") {
+		command.op = Command::Record;
+		if(words.size() != 2 || !validShotName(words[1])) {
+			return "record: expected a name of letters, digits, - and _";
+		}
+		command.text = std::string(words[1]);
+		return std::string();
+	}
+
 	if(word == "quit") {
 		command.op = Command::Quit;
 		return words.size() == 1 ? std::string() : "quit: takes no arguments";
@@ -481,6 +584,87 @@ std::string Simulation::parse(std::string_view line, Command & command) const {
 		return std::string();
 	}
 
+	// A recorded clip's commands (#550)
+
+	if(word == "player") {
+		command.op = Command::Player;
+		if(words.size() != 6) {
+			return "player: expected <x> <y> <z> <yaw> <area>";
+		}
+		for(size_t i = 0; i < 4; i++) {
+			if(!parseFloat(words[1 + i], command.values[i])) {
+				return "player: \"" + std::string(words[1 + i]) + "\" is not a number";
+			}
+		}
+		command.count = 4;
+		if(!parseArea(words[5], command.area)) {
+			return "player: \"" + std::string(words[5]) + "\" is not a level number";
+		}
+		return std::string();
+	}
+
+	if(word == "floor") {
+		command.op = Command::Floor;
+		std::string error = numbers(1, 1, "the floor's distance below the LOCAL origin in meters");
+		if(error.empty() && (command.values[0] < 0.f || command.values[0] > 5.f)) {
+			return "floor: expected 0-5 m";
+		}
+		return error;
+	}
+
+	if(word == "anchor") {
+		command.op = Command::Anchor;
+		const std::string what = words.size() >= 2 ? lowercase(words[1]) : std::string();
+		if(what == "save" && words.size() == 2) {
+			command.flag = false;
+			return std::string();
+		}
+		if(what == "level" && words.size() == 3 && parseArea(words[2], command.area) && command.area >= 0) {
+			command.flag = true;
+			return std::string();
+		}
+		return "anchor: expected level <area> or save";
+	}
+
+	if(word == "play") {
+		command.op = Command::Play;
+		if(words.size() == 2 && lowercase(words[1]) == "stop") {
+			command.flag = true;
+			return std::string();
+		}
+		// play <file> [from <ms>] [to <ms>]: the file in double quotes when it holds a space
+		size_t start = line.find(words[0]) + words[0].size();
+		std::string_view rest = stripComment(line.substr(start));
+		if(rest.empty()) {
+			return "play: expected <file> [from <ms>] [to <ms>] or stop";
+		}
+		if(rest.front() == '"') {
+			size_t close = rest.find('"', 1);
+			if(close == std::string_view::npos || close == 1) {
+				return "play: the file's closing quote is missing";
+			}
+			command.text = std::string(rest.substr(1, close - 1));
+			rest = rest.substr(close + 1);
+		} else {
+			size_t end = rest.find_first_of(" \t");
+			command.text = std::string(rest.substr(0, end));
+			rest = end == std::string_view::npos ? std::string_view() : rest.substr(end);
+		}
+		std::vector<std::string_view> options = splitWords(rest);
+		for(size_t i = 0; i < options.size(); i += 2) {
+			const std::string key = lowercase(options[i]);
+			u64 us = 0;
+			if(i + 1 >= options.size() || (key != "from" && key != "to") || !parseMs(options[i + 1], us)) {
+				return "play: expected from <ms> / to <ms> after the file, got \"" + std::string(options[i]) + "\"";
+			}
+			(key == "from" ? command.fromUs : command.toUs) = us;
+		}
+		if(command.toUs < command.fromUs) {
+			return "play: the window ends before it starts";
+		}
+		return std::string();
+	}
+
 	return "unknown command \"" + std::string(words[0]) + "\"";
 }
 
@@ -499,6 +683,9 @@ std::vector<float *> Simulation::targets(const Command & command) {
 		case Command::HeadRot: add(rig.head.angles); break;
 		case Command::HandPos: add(rig.hands[command.index].position); break;
 		case Command::HandRot: add(rig.hands[command.index].angles); break;
+		case Command::HeadPose: add(rig.head.position); add(rig.head.angles); break;
+		case Command::HandPose: add(rig.hands[command.index].position); add(rig.hands[command.index].angles); break;
+		case Command::HandAim: add(rig.aims[command.index].position); add(rig.aims[command.index].angles); break;
 		case Command::HandFingers:
 			add(rig.fingers[command.index].curl);
 			result.push_back(&rig.fingers[command.index].outer.x);
@@ -572,6 +759,7 @@ void Simulation::apply(const Command & command) {
 			m_requests.shots.push_back(command.text.empty() ? "sim" + std::to_string(m_shots) : command.text);
 			return;
 		case Command::Mark: m_requests.marks.push_back(command.text); return;
+		case Command::Record: m_requests.records.push_back(command.text); return;
 		case Command::Quit: m_requests.quit = true; return;
 		case Command::Fault: rig.swapEyes = command.flag; return;
 		case Command::SessionEnd: m_requests.sessionEnd = command.sessionEnd; return;
@@ -580,6 +768,21 @@ void Simulation::apply(const Command & command) {
 			m_requests.exitCode = command.exitCode;
 			return;
 		case Command::Layers: rig.saveLayers = command.flag; return;
+		case Command::Player:
+			rig.player.position = Vec3f(command.values[0], command.values[1], command.values[2]);
+			rig.player.yaw = command.values[3];
+			rig.player.area = command.area;
+			return;
+		case Command::Floor: view.floor = command.values[0]; return;
+		case Command::Anchor: return; // the streaming clip player's (vr/ReplayClip.h); nothing on the rig
+		case Command::Play:
+			m_requests.play.requested = true;
+			m_requests.play.stop = command.flag;
+			m_requests.play.setup = !m_setupLocked;
+			m_requests.play.file = command.text;
+			m_requests.play.fromUs = command.fromUs;
+			m_requests.play.toUs = command.toUs;
+			return;
 		default: break;
 	}
 
@@ -597,24 +800,32 @@ std::string Simulation::execute(std::string_view text) {
 	}
 
 	if(line.front() == '@') {
-		// A timed line from the channel: absolute frames, or @+n from the next frame on
-		u64 last = 0;
-		return addTimed(line, m_advanced ? m_frame + 1 : 0, last);
+		// A timed line from the channel: absolute frames, or @+n from the next frame on; @+<t>ms from the
+		// display time of the frame advanced last
+		u64 last = 0, lastUs = 0;
+		return addTimed(line, m_advanced ? m_frame + 1 : 0, last, m_advanced ? u64(std::max<s64>(m_timeUs, 0)) : 0, lastUs);
 	}
 
-	Command command;
-	std::string error = parse(line, command);
-	if(!error.empty()) {
-		return error;
+	// Every command of the line is checked before any is applied
+	std::vector<Command> commands;
+	for(std::string_view part : splitCommands(line)) {
+		Command command;
+		std::string error = parse(part, command);
+		if(!error.empty()) {
+			return error;
+		}
+		commands.push_back(std::move(command));
 	}
-	apply(command);
+	for(const Command & command : commands) {
+		apply(command);
+	}
 	return std::string();
 }
 
 std::string Simulation::load(std::string_view text) {
 
 	Simulation copy = *this;
-	u64 previous = 0;
+	u64 previous = 0, previousUs = 0;
 	size_t number = 0;
 
 	for(size_t pos = 0; pos <= text.size(); ) {
@@ -631,8 +842,9 @@ std::string Simulation::load(std::string_view text) {
 			continue;
 		}
 
-		// @+n in a script counts from the previous timed line's last frame
-		std::string error = line.front() == '@' ? copy.addTimed(line, previous, previous) : copy.execute(line);
+		// @+n in a script counts from the previous timed line's last frame, @+<t>ms from the previous ms line's end
+		std::string error = line.front() == '@' ? copy.addTimed(line, previous, previous, previousUs, previousUs)
+		                                        : copy.execute(line);
 		if(!error.empty()) {
 			return "line " + std::to_string(number) + ": " + error;
 		}
@@ -642,7 +854,7 @@ std::string Simulation::load(std::string_view text) {
 	return std::string();
 }
 
-std::string Simulation::addTimed(std::string_view line, u64 base, u64 & last) {
+std::string Simulation::addTimed(std::string_view line, u64 base, u64 & last, u64 baseUs, u64 & lastUs) {
 
 	size_t space = line.find_first_of(" \t");
 	if(space == std::string_view::npos) {
@@ -655,51 +867,93 @@ std::string Simulation::addTimed(std::string_view line, u64 base, u64 & last) {
 	if(relative) {
 		when.remove_prefix(1);
 	}
-
+	// Milliseconds of display time instead of frames (#23)
 	Entry entry;
+	if(when.size() > 2 && when.substr(when.size() - 2) == "ms") {
+		entry.timed = true;
+		when.remove_suffix(2);
+	}
+
 	size_t dash = when.find('-');
 	if(!parseFrame(when.substr(0, dash), entry.from)
 	   || (dash != std::string_view::npos && !parseFrame(when.substr(dash + 1), entry.to))) {
-		return "@" + written + ": expected @<frame>, @<from>-<to>, @+<n> or @+<n>-<m>";
+		return "@" + written + ": expected @<frame>, @<from>-<to>, @+<n> or @+<n>-<m>, frames or with ms";
 	}
 	if(dash == std::string_view::npos) {
 		entry.to = entry.from;
 	}
+	if(entry.timed) {
+		entry.from *= 1000;
+		entry.to *= 1000;
+	}
 	if(relative) {
-		entry.from += base;
-		entry.to += base;
+		entry.from += entry.timed ? baseUs : base;
+		entry.to += entry.timed ? baseUs : base;
 	}
 	if(entry.to < entry.from) {
 		return "@" + written + ": a ramp must end after it starts";
 	}
 
-	entry.text = std::string(stripComment(line.substr(space + 1)));
-	Command command;
-	std::string error = parse(entry.text, command);
-	if(!error.empty()) {
-		return error;
+	// One entry per command of the line (a clip's frame line holds several, #550); all checked before any is added
+	std::vector<std::string_view> commands = splitCommands(line.substr(space + 1));
+	if(commands.empty()) {
+		return "@" + written + ": expected a command";
 	}
-	if(entry.to != entry.from && !command.rampable()) {
-		return "@" + written + ": " + lowercase(splitWords(entry.text)[0]) + " cannot be a ramp";
+	if(commands.size() > 1 && entry.to != entry.from) {
+		return "@" + written + ": a ramp holds one command";
+	}
+	std::vector<Entry> entries;
+	for(std::string_view text : commands) {
+		Entry each = entry;
+		each.text = std::string(text);
+		Command command;
+		std::string error = parse(each.text, command);
+		if(!error.empty()) {
+			return error;
+		}
+		if(each.to != each.from && !command.rampable()) {
+			return "@" + written + ": " + lowercase(splitWords(each.text)[0]) + " cannot be a ramp";
+		}
+		each.action = (command.op == Command::Action);
+		entries.push_back(std::move(each));
 	}
 
-	last = entry.to;
-	m_timeline.push_back(std::move(entry));
+	(entry.timed ? lastUs : last) = entry.to;
+	for(Entry & each : entries) {
+		m_timeline.push_back(std::move(each));
+	}
+	// Frame lines before ms lines, each in the order of their start (stable: the order written for equal starts)
 	std::stable_sort(m_timeline.begin(), m_timeline.end(), [](const Entry & a, const Entry & b) {
-		return a.from < b.from;
+		return a.timed != b.timed ? !a.timed : a.from < b.from;
 	});
 
 	return std::string();
 }
 
-void Simulation::advance(u64 frame) {
+namespace {
 
+/*!
+ * A display time this close below a line's time counts as reached: the runtime's period is whole
+ * nanoseconds (72 Hz: 13888888 ns), so 36 slots end 32 ns short of 500 ms
+ */
+const u64 TimeSlackUs = 50;
+
+} // anonymous namespace
+
+void Simulation::advance(u64 frame, s64 timeUs) {
+
+	// An action is what the controller held when the frame's interval began: the previous frame's display time
+	const u64 previousUs = u64(std::max<s64>(m_advanced ? m_timeUs : timeUs, 0));
+	const u64 nowUs = u64(std::max<s64>(timeUs, 0));
 	m_frame = frame;
+	m_timeUs = timeUs;
 	m_advanced = true;
 
 	for(Entry & entry : m_timeline) {
 
-		if(entry.done || entry.from > frame) {
+		const u64 at = !entry.timed ? frame : (entry.action ? previousUs : nowUs);
+		const u64 reached = entry.timed ? at + TimeSlackUs : at;
+		if(entry.done || entry.from > reached) {
 			continue;
 		}
 
@@ -723,12 +977,14 @@ void Simulation::advance(u64 frame) {
 				entry.start.push_back(*value);
 			}
 		}
-		float t = std::min(1.f, float(frame - entry.from) / float(entry.to - entry.from));
+		const bool end = reached >= entry.to;
+		const u64 into = at > entry.from ? at - entry.from : 0;
+		const float t = end ? 1.f : float(double(into) / double(entry.to - entry.from));
 		for(size_t i = 0; i < values.size() && i < entry.start.size(); i++) {
 			float target = command.values[i % command.count];
 			*values[i] = entry.start[i] + (target - entry.start[i]) * t;
 		}
-		if(frame >= entry.to) {
+		if(end) {
 			entry.done = true;
 		}
 	}

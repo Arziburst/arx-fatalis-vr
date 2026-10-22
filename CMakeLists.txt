@@ -329,7 +329,9 @@ if(WIN32)
 	
 	add_definitions(-DNOMINMAX)
 	add_definitions(-DWIN32_LEAN_AND_MEAN)
-	list(APPEND BASE_LIBRARIES version)
+	# psapi and user32 back the process resource sampler (#545, src/platform/ProcessResources.cpp,
+	# also linked into arxtest through BASE_LIBRARIES); version backs the crash handler's module info
+	list(APPEND BASE_LIBRARIES version psapi user32)
 	list(APPEND ARX_LIBRARIES gdi32 shell32 comdlg32 ole32 comctl32)
 endif()
 
@@ -962,6 +964,7 @@ set(CORE_SOURCES
 	src/core/Application.cpp
 	src/core/ArxGame.cpp
 	src/core/Benchmark.cpp
+	src/core/ChannelWriter.cpp
 	src/core/CommandChannel.cpp
 	src/core/Config.cpp
 	src/core/Core.cpp
@@ -1073,6 +1076,7 @@ set(GUI_SOURCES
 	src/gui/Credits.cpp
 	src/gui/Cursor.cpp
 	src/gui/DamageNumbers.cpp
+	src/gui/DevVariants.cpp
 	src/gui/Dragging.cpp
 	src/gui/Hud.cpp
 	src/gui/Interface.cpp
@@ -1089,6 +1093,7 @@ set(GUI_SOURCES
 	src/gui/Text.cpp
 	src/gui/TextManager.cpp
 	src/gui/book/Book.cpp
+	src/gui/book/DevPanel.cpp
 	src/gui/book/Necklace.cpp
 	src/gui/debug/DebugHud.cpp
 	src/gui/debug/DebugHudAudio.cpp
@@ -1191,10 +1196,14 @@ endif()
 
 # Extra platform abstraction - depends on the crash handler or SDL
 set(PLATFORM_EXTRA_SOURCES
+	src/platform/CrashNotice.cpp
 	src/platform/Dialog.cpp
+	src/platform/DumpHelper.cpp
 	src/platform/ExitReport.cpp
 	src/platform/ExitTrace.cpp
+	src/platform/FlightRecorder.cpp
 	src/platform/HangWatchdog.cpp
+	src/platform/ProcessResources.cpp
 	src/platform/Thread.cpp
 )
 if(MACOS)
@@ -1277,6 +1286,7 @@ set(VR_SOURCES
 	src/vr/BodyYaw.cpp
 	src/vr/EyeImage.cpp
 	src/vr/EyeProjection.cpp
+	src/vr/EyeShots.cpp
 	src/vr/FingerCurl.cpp
 	src/vr/HandRig.cpp
 	src/vr/FramePacing.cpp
@@ -1289,6 +1299,8 @@ set(VR_SOURCES
 	src/vr/PhysicalCrouch.cpp
 	src/vr/HeadTracking.cpp
 	src/vr/InterfaceSize.cpp
+	src/vr/MarkMoment.cpp
+	src/vr/NoteMicrophone.cpp
 	src/vr/MenuPointer.cpp
 	src/vr/Locomotion.cpp
 	src/vr/RadialMenu.cpp
@@ -1296,10 +1308,14 @@ set(VR_SOURCES
 	src/vr/SceneSubtitles.cpp
 	src/vr/SceneView.cpp
 	src/vr/MeleeSwing.cpp
+	src/vr/MotionProbe.cpp
 	src/vr/PerfLog.cpp
 	src/vr/PerfStats.cpp
 	src/vr/PerfWriter.cpp
+	src/vr/ReplayClip.cpp
+	src/vr/ReplayRecorder.cpp
 	src/vr/SimRig.cpp
+	src/vr/SnapshotImage.cpp
 	src/vr/UIPanel.cpp
 	src/vr/VRActions.cpp
 	src/vr/VRArms.cpp
@@ -1313,6 +1329,7 @@ set(VR_SOURCES
 	src/vr/VRGameInput.cpp
 	src/vr/VRHud.cpp
 	src/vr/VRInput.cpp
+	src/vr/VRMarks.cpp
 	src/vr/VRMirror.cpp
 	src/vr/VRRadial.cpp
 	src/vr/VRReticle.cpp
@@ -1320,6 +1337,7 @@ set(VR_SOURCES
 	src/vr/VRSwapchain.cpp
 	src/vr/VRSettingsRows.cpp
 	src/vr/VRSystem.cpp
+	src/vr/VoiceNote.cpp
 	src/vr/VRTurn.cpp
 	src/vr/WeaponGrip.cpp
 	src/vr/WristHud.cpp
@@ -1344,6 +1362,8 @@ file(GLOB_RECURSE ALL_INCLUDES RELATIVE ${PROJECT_SOURCE_DIR} src/*.h)
 set_property(SOURCE src/graphics/image/stb_image.cpp APPEND PROPERTY COMPILE_FLAGS ${conservative_warnings})
 
 include_directories(src ${CMAKE_CURRENT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/tools)
+# Vendored single-header libraries (#574: stb_image_write for the marks' snapshot JPEGs)
+include_directories(SYSTEM ${PROJECT_SOURCE_DIR}/libs)
 
 
 # Check for optional / alternative subsystem implementations

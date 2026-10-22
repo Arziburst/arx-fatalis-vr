@@ -105,9 +105,9 @@ src/vr/ArmMesh.* -> arm-fit arms-elbow arms-roll arms-variants arms-model
 src/vr/ArmRoll.* -> arms-roll arms-elbow
 src/vr/ArxArmFix.* -> arms-classic arms-classic-glove arms-model
 src/vr/BodyView.* -> body-look-down body-hidden arms-follow
-src/vr/BodyYaw.* -> arms-follow body-look-down snap-turn walk-look real-steps
+src/vr/BodyYaw.* -> refresh-rate arms-follow body-look-down snap-turn walk-look real-steps
 src/vr/HandRig.* -> arms-follow hand-conforming finger-five arms-classic-glove weapon-in-glove
-src/vr/FingerCurl.* -> finger-five finger-held finger-tracking hand-conforming
+src/vr/FingerCurl.* -> refresh-rate finger-five finger-held finger-tracking hand-conforming
 src/vr/HandTracking.* -> finger-five finger-held finger-tracking hand-conforming
 data/core/vr/arms/* -> arms-classic-glove arms-variants finger-five hand-conforming weapon-in-glove weapon-classes body-hidden arm-fit
 data/core/vr/hands/* -> hand-conforming finger-five finger-tracking finger-held
@@ -115,37 +115,37 @@ src/animation/* -> arms-follow arms-classic weapon-hold tl-reprojection melee-sw
 
 # --- Scripted scenes in VR (#29): the view, the subtitles, the hero's body in a cinema shot -------------------------
 src/vr/SceneView.* -> scene-switches
-src/vr/SceneSubtitles.* -> scene-switches
+src/vr/SceneSubtitles.* -> scene-switches mark-moment
 
 # --- The head and the camera ---------------------------------------------------------------------------------------
 src/vr/HeadPose.* -> look-around recenter real-steps arms-follow vr-turning-settings walk-look body-look-down tl-reprojection
-src/vr/HeadTracking.* -> look-around recenter real-steps arms-follow physical-crouch ui-panel vr-turning-settings walk-look height-hands
+src/vr/HeadTracking.* -> refresh-rate look-around recenter real-steps arms-follow physical-crouch ui-panel vr-turning-settings walk-look height-hands
 src/vr/HeadLean.* -> real-steps look-around
 src/vr/HeadReferenceGate.* -> recenter physical-crouch real-steps
 src/vr/EyeImage.* -> tl-reprojection look-around
-src/vr/FramePacing.* -> tl-reprojection look-around vr-session-end vr-session-loss
+src/vr/FramePacing.* -> refresh-rate tl-reprojection look-around vr-session-end vr-session-loss
 src/vr/Perf*.* -> tl-reprojection
 src/vr/VRComfort.* -> snap-turn walk-forward walk-look real-steps
 
 # --- Movement ------------------------------------------------------------------------------------------------------
 src/vr/Locomotion.* -> walk-forward walk-look sneak-jump-crouch controls-v2 playground-respawn
-src/vr/VRTurn.* -> snap-turn vr-turning-settings controls-v2
+src/vr/VRTurn.* -> refresh-rate snap-turn vr-turning-settings controls-v2
 src/vr/PhysicalCrouch.* -> physical-crouch stand-up sneak-jump-crouch
-src/vr/VRGameInput.* -> sneak-jump-crouch walk-forward walk-look controls-v2 stand-up
+src/vr/VRGameInput.* -> sneak-jump-crouch walk-forward walk-look controls-v2 stand-up menu-long-press
 src/physics/* -> stand-up real-steps physical-crouch sneak-jump-crouch walk-forward walk-look playground-respawn melee-swing
 src/game/Player.* -> stand-up real-steps physical-crouch sneak-jump-crouch walk-forward walk-look height-hands playground-respawn playground-levers wrist-vitals
 
 # --- Hands in the world: reticles, reach, weapons, melee -----------------------------------------------------------
-src/vr/HandReticle.* -> hand-reticle menu-pointer playground-hands reach-chest reach-door reach-lever
+src/vr/HandReticle.* -> refresh-rate hand-reticle menu-pointer playground-hands reach-chest reach-door reach-lever
 src/vr/VRReticle.* -> hand-reticle menu-pointer controls-v2 rune-trail playground-hands reach-chest reach-door reach-lever
 src/vr/VRWeapon.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery melee-damage reach-lever finger-held
 src/vr/WeaponGrip.* -> weapon-classes weapon-hold weapon-in-glove finger-held melee-damage
-src/vr/VRMelee.* -> melee-swing melee-recovery melee-damage damage-numbers damage-numbers-off controls-v2 weapon-hold
-src/vr/MeleeSwing.* -> melee-swing melee-recovery melee-damage damage-numbers weapon-hold
+src/vr/VRMelee.* -> refresh-rate melee-swing melee-recovery melee-damage damage-numbers damage-numbers-off controls-v2 weapon-hold
+src/vr/MeleeSwing.* -> refresh-rate melee-swing melee-recovery melee-damage damage-numbers weapon-hold
 src/game/Equipment.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery melee-damage finger-held damage-numbers
 src/game/Damage.* -> damage-numbers damage-numbers-off melee-swing melee-recovery melee-damage playground-respawn
 src/game/Inventory.* -> menu-pointer hand-reticle ui-panel playground-hands
-src/game/Spells.* -> rune-trail spell-drawcheck
+src/game/Spells.* -> refresh-rate rune-trail spell-drawcheck
 src/game/spell/* -> rune-trail spell-drawcheck
 src/game/magic/* -> rune-trail spell-drawcheck
 src/game/effect/* -> spell-drawcheck rune-trail
@@ -153,11 +153,11 @@ src/vr/RuneTrail.* -> rune-trail controls-v2
 src/vr/VRRunes.* -> rune-trail controls-v2 spell-drawcheck
 
 # --- Controls, bindings and settings -------------------------------------------------------------------------------
-src/vr/VRInput.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail sneak-jump-crouch walk-look physical-crouch vr-turning-settings hand-reticle playground-hands desktop-mouse first-run-chargen first-run-menu finger-held finger-tracking
-src/vr/VRActions.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail sneak-jump-crouch walk-look physical-crouch vr-turning-settings hand-reticle playground-hands desktop-mouse first-run-chargen first-run-menu finger-held finger-tracking arms-follow hand-conforming
-src/vr/VRControls.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail finger-held finger-tracking hand-reticle playground-hands
+src/vr/VRInput.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail sneak-jump-crouch walk-look physical-crouch vr-turning-settings hand-reticle playground-hands desktop-mouse first-run-chargen first-run-menu finger-held finger-tracking menu-rebind-kept menu-long-press
+src/vr/VRActions.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail sneak-jump-crouch walk-look physical-crouch vr-turning-settings hand-reticle playground-hands desktop-mouse first-run-chargen first-run-menu finger-held finger-tracking arms-follow hand-conforming menu-rebind-kept menu-long-press
+src/vr/VRControls.* -> controls-v2 menu-trigger-grip vr-remap vr-remap-saved vr-settings-flat radial-menu rune-trail finger-held finger-tracking hand-reticle playground-hands menu-rebind-kept menu-long-press mark-moment
 src/vr/VRBindings.* -> controls-v2 vr-remap vr-remap-saved vr-settings-flat finger-held finger-tracking
-src/vr/BindingCapture.* -> vr-remap vr-remap-saved vr-settings-flat
+src/vr/BindingCapture.* -> vr-remap vr-remap-saved vr-settings-flat menu-rebind-kept menu-long-press
 src/vr/VRSettingsRows.* -> vr-turning-settings vr-settings-flat vr-remap
 src/input/* -> real-input real-input-flat desktop-mouse desktop-mouse-flat first-run-chargen menu-pointer hand-reticle vr-remap menu-trigger-grip
 
@@ -166,8 +166,8 @@ src/vr/MenuPointer.* -> menu-pointer menu-trigger-grip desktop-mouse desktop-mou
 src/vr/UIPanel.* -> ui-panel menu-pointer first-run-menu first-run-chargen
 src/vr/VRMirror.* -> ui-panel menu-pointer first-run-menu first-run-chargen cinematics desktop-mouse
 src/vr/MirrorGeometry.h -> ui-panel menu-pointer first-run-menu first-run-chargen cinematics desktop-mouse
-src/vr/RadialMenu.* -> radial-menu controls-v2 vr-remap hand-reticle first-run-menu
-src/vr/VRRadial.* -> radial-menu controls-v2 hud-frame first-run-menu first-run-chargen rune-trail tl-reprojection
+src/vr/RadialMenu.* -> radial-menu controls-v2 vr-remap hand-reticle first-run-menu menu-rebind-kept
+src/vr/VRRadial.* -> radial-menu controls-v2 hud-frame first-run-menu first-run-chargen rune-trail tl-reprojection menu-rebind-kept
 src/vr/HudFrame.* -> hud-frame hud-frame-flat tl-reprojection orbs-no-arm
 src/vr/VRHud.* -> hud-frame hud-frame-flat tl-reprojection wrist-vitals ui-panel orbs-no-arm
 src/vr/WristHud.* -> wrist-vitals hud-frame hud-frame-flat weapon-hold tl-reprojection orbs-no-arm
@@ -182,14 +182,15 @@ src/gui/Interface.* -> hand-reticle menu-pointer ui-panel controls-v2 walk-forwa
 src/gui/Cursor.* -> hand-reticle menu-pointer rune-trail desktop-mouse
 src/gui/Dragging.* -> hand-reticle menu-pointer
 src/gui/DamageNumbers.* -> damage-numbers damage-numbers-off
-src/gui/book/* -> rune-trail controls-v2 first-run-menu first-run-chargen radial-menu
+src/gui/book/* -> rune-trail controls-v2 first-run-menu first-run-chargen radial-menu dev-variants
+src/gui/DevVariants.* -> dev-variants
 src/gui/CharacterCreation.* -> first-run-chargen first-run desktop-mouse desktop-mouse-flat
-src/gui/MainMenu.* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-remap-saved vr-turning-settings menu-trigger-grip
+src/gui/MainMenu.* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-remap-saved vr-turning-settings menu-trigger-grip menu-rebind-kept menu-long-press
 src/gui/Menu.* -> first-run first-run-intro first-run-menu first-run-chargen vr-settings-flat
 src/gui/MenuPublic.* -> first-run-menu vr-settings-flat
 src/gui/MenuWidgets.* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-turning-settings
 src/gui/menu/* -> first-run-menu vr-settings-flat vr-remap vr-turning-settings
-src/gui/widget/* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-remap-saved vr-turning-settings
+src/gui/widget/* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-remap-saved vr-turning-settings menu-rebind-kept menu-long-press
 src/gui/Logo.* -> first-run first-run-intro desktop-mouse-flat
 src/gui/LoadLevelScreen.* -> level-load-hang first-run-intro
 src/gui/CinematicBorder.* -> cinematics first-run-intro
@@ -221,6 +222,7 @@ scripts/dev/exit-trace-check.ps1 -> core
 scripts/dev/eye-check.ps1 -> core
 scripts/dev/eye-check-lib.ps1 -> core
 scripts/dev/eye-height-check.ps1 -> core
+scripts/dev/fixtures/* -> core
 scripts/dev/game-cmd.ps1 -> core
 scripts/dev/game-input-check.ps1 -> core
 scripts/dev/game-status.ps1 -> core
@@ -236,6 +238,9 @@ scripts/dev/next-task.ps1 -> core
 scripts/dev/number-decisions.ps1 -> core
 scripts/dev/perf-summary.ps1 -> core
 scripts/dev/perf-summary-lib.ps1 -> core
+scripts/dev/perf-noise.ps1 -> core
+scripts/dev/perf-track.ps1 -> core
+scripts/dev/perf-track-lib.ps1 -> core
 scripts/dev/plan-next.ps1 -> core
 scripts/dev/plan-next-lib.ps1 -> core
 scripts/dev/pr-checks.ps1 -> core
@@ -269,3 +274,57 @@ AUTHORS -> core
 CHANGELOG -> core
 .gitignore -> core
 .gitattributes -> core
+
+# --- Refresh-rate independence (#23): the sequence runs the same actions at four display rates ---------------------------
+src/vr/MotionProbe.* -> refresh-rate
+src/vr/PerfLog.* -> refresh-rate
+src/vr/PerfStats.* -> refresh-rate
+# The channel's writer thread (#553): status.json and ack.txt off the frame. Every sequence reads them: the core (which
+# every pull request runs, as for CommandChannel), and the pacing sequence a write on the frame failed. 'core' stands
+# alone on a line and a glob is listed once, so this one line is both
+src/core/ChannelWriter.* -> refresh-rate
+
+# --- The desktop window's focus (#406): in VR a focus loss changes nothing in the game ----------------------------------
+# ArxGame.cpp holds the focus handlers (onWindowLostFocus / onWindowGotFocus); the rest of ArxGame.* stays on the core.
+# The flat counterpart is the end of desktop-mouse-flat (src/input/*); src/window/* already runs everything
+src/core/ArxGame.cpp -> window-focus
+# The refresh-rate stress check (#553): the sequence N times on two lanes beside a busy game, hand-run. It launches its
+# own games and is no game check
+scripts/dev/refresh-rate-stress.ps1 -> core
+
+# --- The flight recorder (#545): a stall gets a hang report with a dump --------------------------------------------------
+src/platform/HangWatchdog.* -> hang-dump
+src/platform/crashhandler/* -> hang-dump
+# The report reader and the hand-run check (every way the game can end) touch no game check
+scripts/dev/crash-report.ps1 -> core
+scripts/dev/flight-recorder-check.ps1 -> core
+scripts/dev/crash-notice-check.ps1 -> core
+
+# --- Record and replay (#550): 10 s of a recorded session replayed as a script; the recorder runs in every VR session ----
+src/vr/ReplayClip.* -> replay-clip mark-moment
+src/vr/ReplayRecorder.* -> replay-clip mark-moment
+scripts/dev/vrsim/replay-clip.vrsim -> replay-clip
+# The replay, the converter and the hand-run record-and-replay check (two launches, judged after the quit) are no game check
+scripts/dev/replay.ps1 -> core
+scripts/dev/clip-to-xrs.ps1 -> core
+scripts/dev/replay-check.ps1 -> core
+
+# --- The melee-damage stress check (#532): the sequence N times on two lanes beside a busy game, hand-run --------------
+# It launches its own games and is no game check
+scripts/dev/melee-damage-stress.ps1 -> core
+
+# --- Mark the moment (#551): both trackpads pressed write a marker folder at once; the confirmation in the hero's panel
+src/vr/MarkMoment.* -> mark-moment
+src/vr/VoiceNote.* -> mark-moment
+src/vr/NoteMicrophone.* -> mark-moment
+src/vr/VRMarks.* -> mark-moment
+# The marks listing (its self-test runs with the script tests) touches no game check
+scripts/dev/marks.ps1 -> core
+# Marks v2 (#574): a hold's snapshots (the eyes copied on the GPU, the JPEG writer); its clip is ReplayClip's line above
+src/vr/EyeShots.* -> mark-moment
+src/vr/SnapshotImage.* -> mark-moment
+libs/stb/* -> mark-moment
+# The local transcription of the notes (its self-test runs with the script tests) touches no game check
+scripts/dev/transcribe.ps1 -> core
+scripts/dev/transcribe-lib.ps1 -> core
+scripts/dev/transcribe-glossary.txt -> core

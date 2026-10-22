@@ -38,7 +38,8 @@
  * What it hits is the engine's mouse when that hand owns the mouse (the arbiter is the menu pointer of
  * #34, vr/MenuPointer.h, extended to world targets). The rules here have no OpenXR, no engine globals
  * and no clock reads - host-tested in tests/vr/HandReticleTest.cpp:
- *  - \ref HoverFilter: a new entity under the ray counts after 2 frames, a lost one stays for 150 ms
+ *  - \ref HoverFilter: a new entity under the ray counts once it has stayed there 10 ms (F-57's "2 frames
+ *    in" at 90 Hz, as a time so it is the same at every rate - #23), a lost one stays for 150 ms
  *    (F-57, F-160) - a thin item under a shaking hand does not flicker.
  *  - \ref worldCursorPixel and \ref PickHistory: the engine picks what is under the mouse by a 2D
  *    position. A world reticle's pixel is its hit projected with the head camera, moved into a band to
@@ -60,8 +61,13 @@ constexpr float ReticleAngleDegrees = 1.5f;
 constexpr float ReticleDimAlpha = 0.45f;
 constexpr float ReticleBrightAlpha = 1.f;
 
-//! Hover hysteresis (F-57): frames a new entity must stay under the ray, seconds a lost one is kept
-constexpr u32 HoverFramesIn = 2;
+/*!
+ * Hover hysteresis (F-57): seconds a new entity must stay under the ray, seconds a lost one is kept.
+ * F-57 says "2 frames in": at 90 Hz the second frame comes 11.1 ms after the first; counted in frames
+ * it would be 6.9 ms at 144 Hz and 13.9 ms at 72 (#23). 10 ms keeps the second frame at 90 Hz under
+ * the clock's jitter.
+ */
+constexpr float HoverInSeconds = 0.010f;
 constexpr float HoverHoldSeconds = 0.15f;
 
 //! Where the world reticles' pixels start: x of the band right of any 2D interface (see \ref worldCursorPixel)
@@ -95,7 +101,7 @@ private:
 
 	s32 m_hovered = None;
 	s32 m_candidate = None;
-	u32 m_candidateFrames = 0;
+	double m_candidateSince = 0.0; //!< when the candidate came under the ray
 	double m_lastSeen = 0.0;
 
 };

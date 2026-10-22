@@ -176,6 +176,19 @@ vr-input tap left.a
 @assert player.freelook eq true
 @assert player.inventoryOpen eq false
 
+# A player's map page is the map (#588): the dev variants panel lives only in development launches
+@assert devPanel.enabled eq false
+@assert devPanel.view eq map
+vr-input tap left.b
+@until player.bookOpen eq true 5s
+@assert player.bookPage eq map
+@frames 30
+@assert devPanel.view eq map
+@assert devPanel.visible eq false
+vr-input tap left.b
+@until player.bookOpen eq false 5s
+@frames 30
+
 # The hero can fight: a sword from the prison equipped (as the test saves do), a swing of the IK hand is taken
 inventory playeraddfromscene short_sword_0030
 short_sword_0030.equip player

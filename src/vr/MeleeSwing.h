@@ -44,7 +44,7 @@
  *    hand (F-61: a wrist flick turns a long blade's tip fast but this point slowly), measured relative
  *    to the head (F-59: leaning or stepping with a still arm is no swing; the room-space position
  *    already ignores the stick's walk and turn, F-178), and read at one moment of display time,
- *    \ref SwingParams::speedLag before the frame's (D-NEW, #620): every step between neighbouring positions - the
+ *    \ref SwingParams::speedLag before the frame's (D-063, #620): every step between neighbouring positions - the
  *    medians of three samples (F-59), the newest sample itself at the front - is the mean velocity over its span,
  *    placed at the span's middle, and the reading is the one between the two middles around that moment (an
  *    accelerating arm's parabola), or the newest step's when the moment is past its middle (a long frame). At 90 Hz
@@ -102,7 +102,7 @@ struct SwingParams {
 	float jumpSpeed = 20.f;      //!< faster (raw or filtered) is a tracking jump, not a swing (F-59, #352)
 	float minStep = 0.004f;      //!< s: samples closer than this are skipped
 	float maxStep = 0.1f;        //!< s: a longer gap starts over (not a swing that went on across it at \ref endSpeed or more)
-	float speedLag = 1.f / 60.f; //!< s before the frame's display time the speed is read at: 1.5 frames of 90 Hz (D-NEW)
+	float speedLag = 1.f / 60.f; //!< s before the frame's display time the speed is read at: 1.5 frames of 90 Hz (D-063)
 	float targetCooldown = 0.25f; //!< s before a target can be hit again, by a new swing [vr_melee_target_cooldown]
 };
 
@@ -251,7 +251,7 @@ public:
 	 * \return the filtered velocity (m/s, relative to the head) of the blade's point \a distance m from the grip - the
 	 *         contact point of a hit (#465), filtered like \ref speed (which is the one of \ref SwingParams::lever):
 	 *         the velocity \ref SwingParams::speedLag before the newest sample, read between the steps of the
-	 *         median-filtered points around that moment (D-NEW); 0 before four samples
+	 *         median-filtered points around that moment (D-063); 0 before four samples
 	 */
 	Vec3f pointVelocity(float distance) const;
 	//! The blade's direction in the last sample (the grip's -Z), relative to the head

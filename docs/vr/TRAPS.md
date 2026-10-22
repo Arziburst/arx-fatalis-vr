@@ -36,7 +36,7 @@ with `melee.swing kind=stab ... peak=6.00`. **Cause:** the speed was the median'
 90 Hz, 33 at 45 - and a swing that starts on its first moving sample (a long step covering the stab distance) had no
 median step yet, so its speed read 0 and the contact's kind, from a zero velocity, a slash. **Do:** the detector reads
 the velocity at one moment of display time, `SwingParams::speedLag` (16.7 ms) before the frame's, between the steps
-of the filtered positions around it (D-NEW); a swing's first sample reads its step's mean. A new reading of the speed is
+of the filtered positions around it (D-063); a swing's first sample reads its step's mean. A new reading of the speed is
 checked against `MeleeSwingTest::testAimAt90HzPinned` (the 90 Hz values before the change) and
 `testSameContactAimAt45And90Hz` (45 against 90), and in the game with `stress-melee-aim.ps1 -SlowRate 30` / `20`.
 A frame over 100 ms in a swing keeps it now when the hand's mean speed across it is at least the end speed; outside a

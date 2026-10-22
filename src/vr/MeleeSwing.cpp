@@ -350,7 +350,7 @@ Vec3f SwingDetector::pointVelocity(float distance) const {
 	// middle. The velocity speedLag before the newest sample lies between the two middles around that moment; past
 	// the newest middle (a long frame) it is the newest step's, before the oldest (short frames after a start) the
 	// oldest's. At 90 Hz the moment is the middle of the step between the median window's middle samples: the
-	// reading of the 1.5-frame median lag, the same at every rate (D-NEW, #620)
+	// reading of the 1.5-frame median lag, the same at every rate (D-063, #620)
 	const size_t steps = m_count - 2;
 	const auto stepAt = [&](size_t i, Vec3f & velocity, double & middle) {
 		const Vec3f from = filtered(i);

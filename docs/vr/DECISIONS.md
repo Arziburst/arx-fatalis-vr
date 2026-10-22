@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: A swing's speed is read at one moment of display time, 16.7 ms back - the same blow at every frame rate
+## D-063: A swing's speed is read at one moment of display time, 16.7 ms back - the same blow at every frame rate
 
 - **Date:** 2026-10-22
 - **Status:** Accepted (#620; refines D-054's speed measure and applies D-057 to the swing detector; D-054's median of

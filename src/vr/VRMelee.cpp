@@ -279,7 +279,7 @@ void endSwing(SwingChange change) {
 	                      : m.swingRecovering ? "recovering"
 	                      : m.swingHits > 0 ? "hit" : "miss";
 	// The display rate the swing was sampled at (Hz, 0 outside a VR session): the speed is read a fixed 16.7 ms back
-	// at every rate (D-NEW, #620), and the owner's headset runs at 144 Hz - the line tells which rate a blow was dealt at
+	// at every rate (D-063, #620), and the owner's headset runs at 144 Hz - the line tells which rate a blow was dealt at
 	const s64 period = displayPeriodUs();
 	gameevent::Event("melee.swing", 1000)("kind", swingKindName(m.swingKind))("result", result)
 		("peak", d.peak(), 2)("aim", m.swingAim, 2)("hits", m.swingHits)

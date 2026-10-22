@@ -567,6 +567,11 @@ EntityVisibility getEntityVisibility(Entity & entity, bool cullingOnly) {
 			return EntityNotInView;
 		}
 		if(g_rooms && USE_PLAYERCOLLISIONS) {
+			// A script in a level's init (^onscreen) asks before the level's first ARX_SCENE_Update() sized the
+			// room frustums: no room of the new level is in view yet (#601, as in VisibleSphere)
+			if(g_rooms->frustums.size() != g_rooms->rooms.size()) {
+				return EntityNotInView;
+			}
 			if(RoomHandle room = ARX_PORTALS_GetRoomNumForPosition(g_camera->m_pos, RoomPositionForCamera)) {
 				arx_assume(size_t(room) < g_rooms->frustums.size());
 				RoomHandle room2 = entity.room;

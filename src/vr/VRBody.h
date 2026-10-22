@@ -137,11 +137,11 @@ struct ReskinnedVertex {
 const std::vector<ReskinnedVertex> & reskinnedArmVertices(const EERIE_3DOBJ * obj);
 
 /*!
- * \return false for a face of the player model not drawn under a tracked head this frame (#385.3): an Arx arm's
- *         face while the custom arm (vr/VRArms.h) is drawn in its place, or a face of the cap that closes that
- *         shoulder while it is not; with vr_body = hidden (#385.11) every face of the body, and the cap of a shoulder
- *         then closes the drawn Arx arm's open end instead. Asked only for the two-sided view of the VR body (never
- *         the book, never flat)
+ * \return false for a face of the player model not drawn under a tracked head this frame (#385.3): an Arx hand's
+ *         face while the glove (vr/VRArms.h) is drawn at its wrist (#466.2), or a face of the cap that closes a
+ *         shoulder while the body is drawn; with vr_body = hidden (#385.11) every face of the body, the cap then
+ *         closing the drawn Arx arm's open end. Asked only for the two-sided view of the VR body (never the book,
+ *         never flat)
  */
 bool drawsBodyFace(const EERIE_3DOBJ * obj, size_t face);
 
@@ -151,7 +151,7 @@ bool drawsBodyFace(const EERIE_3DOBJ * obj, size_t face);
  */
 enum class BodyMode : u8 {
 	Full,  //!< the body, pushed back behind the eyes (the default)
-	Hidden //!< no torso, legs, neck or head: only the arms - the custom arms, or the Arx arms with their shoulder caps
+	Hidden //!< no torso, legs, neck or head: only the Arx arms with their shoulder caps
 };
 
 //! \return the mode a cfg.ini value names: "hidden" hides the body, anything else draws it
@@ -244,7 +244,7 @@ struct PlayerArmStatus {
 	FingerCurl curl;              //!< the segments' bend this frame (degrees), approaching \c curlTarget
 	FingerCurl curlTarget;        //!< what the source asked for
 	// The Arx arm along its rings (#466.1, vr/ArxArmFix.h)
-	const char * armSkin = "none"; //!< the skin it was measured on: classic, arx (the engine's), none (not posed)
+	const char * armSkin = "none"; //!< the skin it was measured on: classic, none (not posed)
 	ArmBend bend;                 //!< the creases, the elbow's bend and the forearm's twist spread on that skin
 	bool classicDrawn = false;    //!< the classic arm re-skinned this arm's vertices this frame
 };
@@ -266,8 +266,7 @@ struct PlayerBodyStatus {
 	float upperShare = 0.f;
 	float elbowShare = 0.f;
 	float twistOverflow = 0.f;
-	const char * armsModel = "classic"; //!< cfg.ini vr_arms_model: the arms drawn in VR (#385.3; classic only for a player, #466)
-	bool arxArmsHidden = false;   //!< an Arx arm's faces are not drawn this frame: a custom arm is drawn in their place
+	const char * armsModel = "classic"; //!< cfg.ini vr_arms_model: the arms drawn in VR (#385.3; classic only, #466, #486)
 	// The body variant (#385.11): cfg.ini vr_body, and what of the player model the last frame drew (both eyes counted)
 	const char * bodyMode = "full";
 	size_t drawnBodyFaces = 0;    //!< the body's faces: torso, legs, the neck cap, the head - not the arms

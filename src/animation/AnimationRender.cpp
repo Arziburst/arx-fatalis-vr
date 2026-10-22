@@ -1095,7 +1095,7 @@ static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io,
 }
 
 /*!
- * The custom VR arms (#385.3, vr/VRArms.h) in place of the player's Arx arms: skinned once per frame after the
+ * The VR glove (#466.2, vr/VRArms.h) in place of the classic arm's Arx hand: skinned once per frame after the
  * body was posed, lit here with the player's lights and colour, projected for the eye being drawn and put into
  * the model batch, two-sided like the VR body (D-032, research row F-231)
  */

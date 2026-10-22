@@ -1389,10 +1389,20 @@ by `N` / `<path>`); a family seen fewer than 6 times is printed in full and in o
 
 **Signatures.** A problem is a `[W]`, `[E]` or `[C]` line, or a crash report. Its signature is the
 level + the source file (not the line number, which moves with every edit) + the message with numbers,
-hex, ids and paths normalised, hashed to 12 hex digits; for a crash the title, the exception and the top
-four frames of `arx.exe` without line numbers. `%LOCALAPPDATA%\ArxFatalisVR\signatures.json` remembers
-every signature (first and last seen, in how many runs, the issue number). A run that is digested twice
-counts once.
+hex, ids and paths normalised, hashed to 12 hex digits. `%LOCALAPPDATA%\ArxFatalisVR\signatures.json`
+remembers every signature (first and last seen, in how many runs, the issue number). A run that is digested
+twice counts once.
+
+A **crash** signature (`Get-ArxCrashSignature`, #616) must be the same on every build, so it is keyed on the top
+5 symbolized frames of the dump helper's `crash.txt` as function + file: no module offsets (they move with
+every build), no line numbers, not the title's offset, not the exception code; an unsymbolized frame between
+symbolized ones is skipped. Only a report without any symbols falls back to the top 5 offsets. An empty stack and
+the crash processor's older `module!0xADDR File.cpp:12` format keep the key from before #616 (title, exception
+code, the first four files without addresses and line numbers). **One-time change:** a crash filed before #616
+(keyed on offsets, e.g. #601 and its duplicate #611) has a new signature, so it is filed once more by its next
+occurrence — a single new issue, marked `arxvr-auto-report: sig=<new hash>`; close it as a duplicate of the old one
+(or the old one of it). After that every build comments on that one issue. `scripts/dev/test-crash-signature.ps1`
+(in `run-script-tests.ps1`) checks the rule on fixture reports.
 
 **Automatic bug filing** — fully automatic, GitHub **REST** only (`gh api`; never GraphQL, whose quota the
 sessions share). The repository is **public** (since 2026-10-12), so every title, body and comment is

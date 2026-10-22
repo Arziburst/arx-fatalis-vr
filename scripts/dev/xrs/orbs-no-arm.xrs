@@ -1,0 +1,95 @@
+# No HP/mana orbs without a posed left arm (#484): the owner saw the red and blue half-spheres on the head-locked quad
+# before the controllers came on (2026-10-15, PR #471's headset test) and wants no fallback at all - while no left arm
+# is posed (the left controller off or lost) health and mana are drawn nowhere: not on the wrist, not on the quad. They
+# come back on the wrist as soon as the left arm is posed, and leave again when it is lost.
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence orbs-no-arm -Save mvp-new-game
+#
+# Interface (written before the implementation; the worker adds the field as a diagnostic):
+#   vr.hud.orbs.placement - where the health and mana orbs are this frame, one of
+#     wrist  the wrist bars are shown this frame (vr.wrist.shown true: the left arm is posed from a controller, #116)
+#     quad   the orbs are let through to draw on the 2D interface (gui/Hud.cpp's orbs: the head-locked quad in VR,
+#            the screen in flat mode)
+#     none   neither: in VR with no left arm posed, by #484 (and wherever else nothing shows them)
+#   wrist wins over quad (the orbs step aside for the bars, as since #116). Published in status.json with the rest of
+#   vr.hud (src/core/CommandChannel.cpp), from the same gate vr/VRHud.cpp decides the orbs' drawing with.
+# Besides it the sequence reads what exists already: vr.hud.drawn.health / mana (the frames the orbs were drawn on the
+# 2D interface since `vr-hud reset`) and the eye shot's quadPixels (the head-locked quad's pixels in each eye).
+@sim idle
+@save mvp-new-game
+@args --loadslot 0
+
+@until state eq GAMEPLAY 60s
+@until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
+@assert player.controlsBlocked eq false
+@assert vr.hud.vr eq true
+@assert vr.hud.frame eq off
+@assert vr.hud.keep eq none
+# The quad's tutorial hint expires by game time (ui-panel, #370): the quad's pixels are judged once it is gone
+@until notifications eq 0 30s
+
+# 1. Both controllers on (the idle rig): the bars are on the wrist, the orbs nowhere on the quad
+@assert vr.body.left.posed eq true
+@assert vr.wrist.shown eq true
+@assert vr.hud.orbs.placement eq wrist
+vr-hud reset
+@frames 20
+@assert vr.hud.drawn.health eq 0
+@assert vr.hud.drawn.mana eq 0
+@shot arm-on
+@assert vr.sim.shots.arm-on.left.quadPixels eq 0
+@assert vr.sim.shots.arm-on.right.quadPixels eq 0
+
+# 2. The left controller off: no left arm posed - no bars, and no orbs on the quad either (the old fallback)
+vr-sim hand left off
+@frames 10
+@assert vr.body.left.posed eq false
+@assert vr.wrist.shown eq false
+@assert vr.hud.orbs.placement eq none
+vr-hud reset
+@frames 20
+@assert vr.hud.orbs.placement eq none
+@assert vr.hud.drawn.health eq 0
+@assert vr.hud.drawn.mana eq 0
+@shot arm-off
+@assert vr.sim.shots.arm-off.left.quadPixels eq 0
+@assert vr.sim.shots.arm-off.right.quadPixels eq 0
+
+# 3. On again: back on the wrist at once
+vr-sim hand left on
+@frames 10
+@assert vr.body.left.posed eq true
+@assert vr.wrist.shown eq true
+@assert vr.hud.orbs.placement eq wrist
+
+# 4. Off again: gone again
+vr-sim hand left off
+@frames 10
+@assert vr.body.left.posed eq false
+@assert vr.wrist.shown eq false
+@assert vr.hud.orbs.placement eq none
+vr-hud reset
+@frames 20
+@assert vr.hud.drawn.health eq 0
+@assert vr.hud.drawn.mana eq 0
+
+# 5. Both controllers off (the owner's case: before the controllers come on): still nowhere
+vr-sim hand right off
+@frames 10
+@assert vr.body.left.posed eq false
+@assert vr.hud.orbs.placement eq none
+vr-hud reset
+@frames 20
+@assert vr.hud.drawn.health eq 0
+@assert vr.hud.drawn.mana eq 0
+@shot hands-off
+@assert vr.sim.shots.hands-off.left.quadPixels eq 0
+@assert vr.sim.shots.hands-off.right.quadPixels eq 0
+
+# The rest of the head-locked HUD is not this task's: both controllers back, the bars on the wrist
+vr-sim hand right on
+vr-sim hand left on
+@frames 10
+@assert vr.wrist.shown eq true
+@assert vr.hud.orbs.placement eq wrist
+
+@assert errors eq 0

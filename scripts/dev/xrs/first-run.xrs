@@ -194,10 +194,10 @@ inventory playeraddfromscene short_sword_0030
 short_sword_0030.equip player
 @until vr.melee.active eq true 5s
 @assert player.inventoryOpen eq false
-vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35  # slowly into place (under 0.7 m/s: no swing)
+vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35  # slowly into place (under 0.7 m/s: no swing, a busy PC only slows it)
 @frames 75
 @assert vr.melee.swings eq 0
-vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35   # 0.85 m in 8 frames: a swing
+vr-sim @+0-120ms hand right pos -0.4 -0.8 -0.35   # 0.85 m in 120 ms (7.1 m/s at any frame rate): a swing
 @until vr.melee.swings ge 1 5s
 @log GameEvent:.*melee\.swing kind=
 @assert errors eq 0

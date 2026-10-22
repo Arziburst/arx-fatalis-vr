@@ -375,6 +375,7 @@ try {
 			EvidenceDir = (Join-Path $OutDir ('run{0:00}-evidence' -f $run)) } + $dataArgs
 		if ($parsed.Sim) { $p.VrSim = $parsed.Sim } elseif ($parsed.Args -notcontains '--no-vr') { $p.VrSim = 'idle' }
 		if ($parsed.Playground) { $p.Playground = $true }
+		if ($parsed.Player) { $p.Player = $true }   # first-run: a player's launch, as xrs-run.ps1 starts it
 		if ($parsed.Save) { $p.Save = $parsed.Save }
 		if ($parsed.Args) { $p.ArxArgs = @($parsed.Args) }
 		$transcript = Join-Path $OutDir ('run{0:00}.log' -f $run)

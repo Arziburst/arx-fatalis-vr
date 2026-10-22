@@ -1,6 +1,7 @@
 # Health and mana on the left wrist (#116, D-029, D-037): two bars, red towards the elbow and blue towards the
 # hand, on the inner side of the left wrist of the full body (#36); read by raising the wrist to the face like
-# a watch, faded out when it turns away. While they are on the wrist the HUD's orbs are not drawn.
+# a watch, faded out when it turns away. While they are on the wrist the HUD's orbs are not drawn; without a posed
+# left arm they are not drawn either (#484).
 # Needs a first-person save (TRAPS.md: level 10's conversation camera is nowhere near the body):
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence wrist-vitals -Save mvp-new-game
 @sim idle
@@ -74,15 +75,22 @@ vr-sim hand left rot -100 90 -30
 @assert vr.wrist.alpha lt 1
 @shot wrist-fading
 
-# Without a left controller the arm goes back to the engine and the orbs come back
+# Without a left controller the arm goes back to the engine; the orbs do not come back on the quad (#484: no
+# fallback - orbs-no-arm checks the quad's pixels)
+@assert vr.hud.orbs.placement eq wrist
 vr-sim hand left off
 @frames 10
 @assert vr.body.left.posed eq false
 @assert vr.wrist.shown eq false
-@shot orbs-back
-@diff wrist-hurt orbs-back gt 0.15 quad
+@assert vr.hud.orbs.placement eq none
+vr-hud reset
+@frames 10
+@assert vr.hud.drawn.health eq 0
+@assert vr.hud.drawn.mana eq 0
+@shot orbs-gone
 vr-sim hand left on
 @frames 10
 @assert vr.wrist.shown eq true
+@assert vr.hud.orbs.placement eq wrist
 
 @assert errors eq 0

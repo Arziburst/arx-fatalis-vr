@@ -2015,6 +2015,9 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("frame", hud.frame ? "on" : "off");
 		json.value("keep", hud.keep.empty() ? std::string("none") : hud.keep);
 		json.value("frames", hud.frames);
+		json.object("orbs");
+		json.value("placement", hud.orbsPlacement);
+		json.end();
 		json.value("drawnTotal", vr::hudDrawnTotal());
 		json.object("drawn");
 		for(size_t i = 0; i < vr::HudElementCount; i++) {

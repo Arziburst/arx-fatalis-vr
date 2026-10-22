@@ -9,7 +9,8 @@
 # frames (#613): a frame-counted swing is slower on a busy PC (8 frames at a 30 Hz cap read 3.3 m/s, aim 0.49), a
 # timed one reads its own speed at any rate - the swing starts, and hits, on its second frame, whose speed is the
 # first frame step's (TRAPS.md). So does the wait the fighting goblin is asserted after: its script runs on game time;
-# the slow set-up moves still count frames (slower on a busy PC, still no swing). Where the blade
+# the slow set-up moves and the slow touch sweep (group 1) still count frames on purpose (slower on a busy PC, still no
+# swing; the idle simulator never plays above 90 fps) (#634). Where the blade
 # first touches the goblin - so a stroke's size at contact - depends on the IK arm's reach and the goblin's mesh, so each
 # factor is proven alone with the other one's range set live to "always full" (min = max = 0) or out of reach; the
 # scale itself is MeleeSwingTest's. Damage has the engine's rolls (critical, armour class): the sequence asserts the

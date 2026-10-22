@@ -57,6 +57,9 @@ frame advanced last, which sampled the hand at rest): its hit reads 0.85 m / max
 (below 100 ms; a longer step is a gap that starts the detector over). A wait for something the game does in time is a
 display-time wait: `@remember t vr.sim.timelineMs`, then `@until vr.sim.timelineMs ge {t+<ms>}`. Reproduce with
 `scripts/dev/stress-melee-aim.ps1 -SlowRate 30` (the swings at a 30 Hz cap) or `-SlowSpan <a>-<b>`.
+The other swings of the sequences (`melee-swing`, `melee-recovery`, `window-focus`, `first-run`) are timed ramps too since
+#634 (`window-focus` failed at its swing back on 2026-10-22); `-Sequence <name>` runs the stress script on them. A new
+swing is written as a timed ramp from the start (TESTING.md, *Writing a hand swing*).
 
 ## 2026-10-20 — The playground goblin flees instead of fighting when its life is below 8 - a damage roll decides which (#532)
 

@@ -2779,7 +2779,7 @@ replay-crash` (the clip in a hang's and a crash's report).
 
 During a headset test the owner marks a moment instead of remembering it: **one press of both Index trackpads (the
 force press) starts a recording** at once, on the frame both are down, and **the same press again stops it** (D-061,
-D-062, the toggle of D-063 / #632; fixed, not rebindable; one pressed, the other later: the press when the second goes down).
+D-062, the toggle of D-NEW / #632; fixed, not rebindable; one pressed, the other later: the press when the second goes down).
 A recording is what he sees, says *and* does meanwhile, so a coordinator that cannot listen reads his words next to
 the pictures of what he was showing and replays it in the simulator. **At most 1 minute**: then it stops and saves by
 itself (the channel's `marks cap <ms>` shortens it for a test). How long the start press is held changes nothing -

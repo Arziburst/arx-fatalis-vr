@@ -1,0 +1,75 @@
+# After the VR session ends mid-run and the game goes on flat, the window minimises on a focus loss again as cfg.ini
+# says (#606; written before the implementation). In VR the window never minimises on a focus loss (#406: a minimised
+# fullscreen window draws no frames and the headset would freeze), but #406 set that once when the session was made and
+# never undid it: after SteamVR went away the flat game ignored the player's minimize_on_focus_lost for the rest of the
+# run, and the Video page's checkbox, enabled again, showed the window's state instead of cfg.ini.
+# Here the runtime itself shuts down while the session runs (instance loss pending: the session, then the instance
+# go). vr-session-loss.xrs (loss pending) and vr-session-end.xrs (the runtime quits the app: exiting) check the window
+# setting on the other two ways a session ends.
+#   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence window-minimize-restore
+#
+# Assumes (the worker adds them, named exactly; written before the implementation, #606):
+#   - status window.minimizeOnFocusLost  (bool)  the game window minimises now when it loses the focus:
+#                                                Window::willMinimizeOnFocusLost() is Enabled or AlwaysEnabled
+#   - status settings.minimizeOnFocusLost (bool) cfg.ini [window] minimize_on_focus_lost as the game holds it
+#                                                (config.window.minimizeOnFocusLost)
+#   - status ui.menuTargetChecked        (bool)  beside ui.menuTargetEnabled, when the menu target (vr-point /
+#                                                desktop-mouse at menu <name>) is a checkbox: CheckboxWidget::checked()
+#   - `menu video` opens the Video options page (Page_OptionsVideo) as the Options page's Video entry does; menuPage
+#     reads "video" on it
+# The test run is windowed (--windowed): the Video page enables its minimise checkbox only for a fullscreen game, so
+# the page's fullscreen checkbox is ticked first, without Apply (the window stays a window) - its handler re-reads the
+# window's setting for the minimise checkbox as a fullscreen game's page shows it.
+# cfg.ini's default is true (Config.cpp) and CI gives every sequence a fresh user dir (#296): the value restored is
+# true. A false would equal the VR value and prove nothing, hence the precondition.
+@sim idle
+@args --loadlevel 10
+
+@until state eq GAMEPLAY 60s
+@until vr.sessionState eq focused 30s
+@assert settings.minimizeOnFocusLost eq true
+@remember cfg settings.minimizeOnFocusLost
+
+# 1. In VR: no minimise on a focus loss (#406), whatever cfg.ini says
+@assert vr.enabled eq true
+@assert window.minimizeOnFocusLost eq false
+
+# 2. The runtime shuts down mid-run: the game goes on flat, and the window follows cfg.ini again
+vr-sim runtime lost
+@log OpenXR runtime is shutting down \(instance loss pending\), continuing in flat mode 10s
+@until vr.sessionState eq none 10s
+@frames 10
+@assert state eq GAMEPLAY
+@assert vr.enabled eq false
+@assert window.minimizeOnFocusLost eq {cfg}
+@assert settings.minimizeOnFocusLost eq {cfg}
+
+# 3. The Video page's minimise checkbox is enabled again and shows cfg.ini, not the state VR left
+menu pause
+@until menuMode eq mainmenu 10s
+menu video
+@until menuPage eq video 10s
+@frames 30
+@assert desktopMouse.ignored eq false
+desktop-mouse at menu system_menus_options_videos_full_screen
+@frames 5
+@assert ui.menuHover eq system_menus_options_videos_full_screen
+@assert ui.menuTargetChecked eq false
+desktop-mouse button 1 down
+@frames 5
+desktop-mouse button 1 up
+@until ui.menuTargetChecked eq true 5s
+desktop-mouse at menu system_menus_options_videos_minimize_on_focus_lost
+@frames 5
+@assert ui.menuTargetEnabled eq true
+@assert ui.menuTargetChecked eq {cfg}
+# Nothing applied: still a window, the setting as cfg.ini has it
+@assert window.fullscreen eq false
+@assert window.minimizeOnFocusLost eq {cfg}
+
+# 4. Back in the flat game the setting stays
+menu resume
+@until menuMode eq ingame 10s
+@frames 10
+@assert window.minimizeOnFocusLost eq {cfg}
+@assert settings.minimizeOnFocusLost eq {cfg}

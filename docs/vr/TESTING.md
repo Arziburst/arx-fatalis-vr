@@ -204,6 +204,10 @@ the way out: a `TerminateProcess` from outside (the task manager, a launcher, a 
 - `scripts\dev\xrs\vr-session-end.xrs`, `vr-session-loss.xrs` (CI runs them): the simulated runtime ends the session
   (`vr-sim session exiting`, `vr-sim runtime lost`, `vr-sim session loss-pending`); the game must go on flat, name the
   cause and still end with `Clean shutdown` and no ExitTrace line. The three warnings are in the digest allowlist.
+  Once flat the window minimises on a focus loss as cfg.ini says again (#606, `window.minimizeOnFocusLost`).
+- `scripts\dev\xrs\window-minimize-restore.xrs` (#606): the runtime shuts down mid-run; in VR the window never
+  minimises on a focus loss (#406), once flat it follows `minimize_on_focus_lost` again, and the Video page's
+  minimise checkbox (`menu video`, the fullscreen box ticked without Apply) is enabled and shows the cfg.ini value.
 - `scripts\dev\exit-trace-check.ps1 [-Fault exit-process|exit] [-Code -1]`: one launch on the simulated headset,
   the session ended by the runtime, then `vr-sim fault ...` ends the process from inside. The smoke run FAILS (on
   purpose); the check PASSES when the exit code, the way out, the cause and a stack with `arx.exe` are in `arx.log`.
@@ -339,7 +343,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `devvariants clear`, `devvariants demo`, `devvariants set <group> <value>` | the [dev variants panel](#the-dev-variants-panel-588) (#588), only in a development launch (refused in a player's): `clear` unregisters every group (a sequence starts from none, whatever the branch registers), `demo` registers the demo groups of `#588` (`demo_choice`: Small, Medium, Large, default Small; `demo_number`: 0 to 1 m in steps of 0.25, default 0.75; their setters fill `devPanel.demo.*`), `set` switches a group as the panel's buttons do - a choice by its exact label (spaces allowed), a number (clamped); refused for an unknown group or value. `devPanel` in the status: `enabled` (a development launch), `view` (`map` \| `panel` \| `empty`: what the map page shows), `visible` (the open book shows the panel or the notice), `groups`, `page` / `pages`, `value.<group>` (a choice's label, a number as a number), `demo.choice` / `demo.number` / `demo.calls`. The panel's buttons are `vr-point <hand> menu` targets while it is shown: `devpanel.<group>.<index>`, `devpanel.<group>.minus` / `.plus`, `devpanel.prev`, `devpanel.next`, `devpanel.show_map` |
 | `vr-input down\|up\|tap <control>`, `vr-input stick left\|right <x> <y>`, `vr-input bind <event> <binding>`, `vr-input reset`, `vr-input turn snap\|smooth\|angle <deg>\|speed <deg/s>\|repeat <s>` | the VR controls' table without a headset (#30, `vr/VRInput.h`): a control (`right.a`, `left.grip`, `right.stick_down` …) held, let go or tapped as if a controller did it, merged into what OpenXR reports and resolved by the same table at the next frame; the game then reacts as to the controllers (#74: inventory, book, jump, crouch toggle, the game menu, the mouse buttons). `stick` holds a stick deflected (the analog value only — its direction controls are `down` / `up`), seen in `vr.input.game.moveX/moveY/turn`; `bind` remaps one event (`bind jump left.grip+left.a`, `bind menu left.b:long`, `bind magic_mode none`); `reset` restores the default layout for the current controllers and lets go of everything (`bind` and `reset` are not saved); `turn` sets the turn settings as `cfg.ini` does (#32: mode, snap angle, the repeat pause of a held stick (0 = none), smooth speed — `vr.input.turn` shows them with `snaps`, `lastSnap`, `turned` degrees right positive, `allowed`, and for the last push `pushRepeats` and `repeatInterval` — the mean seconds by the clock from its first snap to its last repeat (#285); one `vr.turn.snap … repeat=no|yes` game event per snap, `vr.turn.smooth` at the start and stop of a smooth turn). Refused with the reason for an unknown control, event or binding. `vr.input` in the status (`vr.input.game.held`: the actions, buttons and keys the engine is given); one `[vr] input: <event> (<binding>)` log line per event press, one `[vr] input: layout …` line per layout change |
 | `vr-input capture <event>`, `vr-input cancel`, `vr-input default` | the VR settings page's remapping (#178, `vr/BindingCapture.h`): `capture` is what a click on the event's binding does — the next controls pressed (`vr-input down` / `up` / `tap`, or the simulated controllers) become its binding: released → single, held ≥ 0.5 s → `:long`, a second control of the same hand while the first is held → a chord; the walk stick and the turn stick's left / right are refused with the reason; nothing pressed for 8 s cancels. While capturing, the controls reach nothing else. The result is applied at once and **saved** for the controller type (`vr-controls-<type>.ini` in the config directory: only the events that differ from the default). `cancel` ends a capture; `default` is the page's "reset to default" (#35's layout, the file removed); `reload` reads the saved layout again at the next frame, as a start does. `vr.input.capture` and `vr.input.remapped` / `conflicts` in the status; a `vr.remap` game event per result |
-| `menu pause\|resume\|none\|options\|input\|vr\|vr-turning\|loadsave\|interface\|quit\|language`, `menu step <row> left\|right`, `menu drag <slider> <0..1>` | the main / pause menu without clicks (#178): `pause` opens the pause menu from a running game (as Escape does), `resume` goes back to the game ("Resume game"); the others open that page of the main or pause menu (`none` closes the options window). On the VR turning page (#260, D-043, the page open): `drag` is a slider's dot dragged to that point of its bar (0 left end, 1 right end) and let go — it lands on the nearest notch: `angle` (30–90° in 5° steps), `speed` (very slow / slow / medium / fast / very fast = 60 / 90 / 120 / 180 / 240°/s), `repeat` (off, 0.25, 0.4, 0.6, 0.8, 1 s); `step` is one notch of a slider (the arrow keys) or a click on the left / right arrow of the rows `turn` (snap / smooth) and `height` (−20 to +20 cm in 2 cm steps); a change is a `vr.settings row=… value=…` game event and applies at once. `menuPage` in the status |
+| `menu pause\|resume\|none\|options\|input\|video\|vr\|vr-turning\|loadsave\|interface\|quit\|language`, `menu step <row> left\|right`, `menu drag <slider> <0..1>` | the main / pause menu without clicks (#178): `pause` opens the pause menu from a running game (as Escape does), `resume` goes back to the game ("Resume game"); the others open that page of the main or pause menu (`none` closes the options window). On the VR turning page (#260, D-043, the page open): `drag` is a slider's dot dragged to that point of its bar (0 left end, 1 right end) and let go — it lands on the nearest notch: `angle` (30–90° in 5° steps), `speed` (very slow / slow / medium / fast / very fast = 60 / 90 / 120 / 180 / 240°/s), `repeat` (off, 0.25, 0.4, 0.6, 0.8, 1 s); `step` is one notch of a slider (the arrow keys) or a click on the left / right arrow of the rows `turn` (snap / smooth) and `height` (−20 to +20 cm in 2 cm steps); a change is a `vr.settings row=… value=…` game event and applies at once. `menuPage` in the status |
 | `stick-for left\|right <x> <y> <units> [<seconds>]` | a walk bounded by its distance (#370): holds the stick deflected as `vr-input stick` does and lets it go in the first frame the player is `units` or more from where it started on the ground (x, z) - however slow the frames or the runner are. The player still coasts a few units after the release (≈ 28 at 90 fps). `stickFor` in the status (`@until stickFor.active eq false`, then assert on `stickFor.walk`); one `[channel] stick-for:` log line per release. A player who never gets that far (a wall) is let go after `seconds` of game time (default 10) with `stickFor.timedOut` true and a `[W]` log line - assert `stickFor.timedOut eq false`. Refused outside gameplay |
 | `vr-input height <meters>` | the character height setting as `cfg.ini` (`vr_height_offset`) sets it (#260), clamped to ±0.2: the head camera sees from this far above the character's eye; `vr.head.heightOffset` in the status (updated while the head drives the camera, not in the menu) |
 | `pick [<entity>]` | what mouse picking (`FlyingOverObject`) finds, on an 8-pixel grid over the interface's screen (#72; the window's size in flat mode, the quad's own size in VR, #73): `pick.center` (the entity at its center), `pick.scan` (`<entity> <hits> <x> <y>` per entity found, most hits first) and, for an entity, `targetHits`, `targetHitX/Y` (the middle of its hits), `targetSeenX/Y` (where the camera prepared last — the head camera at the interface's size — sees the middle of its bounding box), `targetOffset` (the distance between the two), `targetBox` (its `bbox2D`) and `targetSeenInBox`. A thin item (a key) can fall between the grid points: `targetSeenInBox` still tests its box. Refused outside gameplay or for an unknown entity; one `[channel] pick:` log line |
@@ -530,7 +534,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   `menuHover` (#394): in the main menu and the character creation, the name a
   `vr-point ... menu` aimed at while the widget under the mouse is that one — what a click lands on; `other` for
   another widget of the main menu, `none` for nothing (a greyed-out entry counts as nothing: the engine does not click
-  it); `menuTargetEnabled`: the aimed main menu entry can be clicked (Resume game is greyed out without a save).
+  it); `menuTargetEnabled`: the aimed main menu entry can be clicked (Resume game is greyed out without a save);
+  `menuTargetChecked` (#606), only when the aimed widget is a checkbox: it is ticked.
   In VR `mouseInWindow` is false while no hand is on a target: the desktop mouse does not count (#338).
 - `desktopMouse` (#338): in VR the window only mirrors the headset, and the real mouse is dropped. `ignored`:
   true while a VR session runs (flat mode: false, the mouse works as in the original); `droppedButtons`,
@@ -550,7 +555,9 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
 - `window` (#487): `activation` `never` and `placement` `corner` for a test run's window (shown without activation,
   `WS_EX_NOACTIVATE`, in the bottom right corner of the main display's work area), `normal` / `default` for every
   other launch; `x`, `y` its position. `focused` is false for a test run unless someone clicked into it and
-  Windows allowed it (it does not with `WS_EX_NOACTIVATE`).
+  Windows allowed it (it does not with `WS_EX_NOACTIVATE`). `minimizeOnFocusLost` (#606): a fullscreen window
+  minimises when it loses the focus — false in VR (#406), cfg.ini's `minimize_on_focus_lost` in flat mode, also after
+  a VR session ended mid-run.
 - `watch` (#37): the entity named by the `watch` command — `id`, `found`, `show` (the engine's show state,
   0 = in the scene), `inScene`, `inInventory`, `dragged`, `x`, `y`, `z`.
 - `vr.pacing` (#20): the last rate / cadence report — present once the first 3 s window of a
@@ -798,8 +805,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   deflection — the stealth walk; below cfg `vr_sneak_below` 0.6 of the dead-zoned travel a run turns
   into a sneak, at `vr_run_above` 0.7 a sneak into a run), `paceChanges` (sneak ↔ run switches within
   a walk since the start; a game event `vr.walk state=pace pace=…` each, and `pace=` on `state=start`).
-- `menuPage` (#178): the page of the main / pause menu shown — `none`, `options`, `input`, `vr`, `vr-turning`,
-  `loadsave`, `interface`, `quit`, `language` (#394) or `other`; `none` outside the menu.
+- `menuPage` (#178): the page of the main / pause menu shown — `none`, `options`, `input`, `video` (#606), `vr`,
+  `vr-turning`, `loadsave`, `interface`, `quit`, `language` (#394) or `other`; `none` outside the menu.
 - `menuRows` (#374): the rows the VR turning page shows, top to bottom, named as `menu step` / `menu drag` name
   them — with Snap `turn,angle,repeat,height`, with Smooth `turn,speed,repeat,height` (only the active mode's
   row shows; `step` / `drag` on the hidden one is refused); empty when that page is not open.
@@ -810,7 +817,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   the quick generation's first click makes the average hero (10 each, skills 2, nothing to spend), each later
   click a random one — one `chargen.roll kind=average|random` game event per click.
 - `settings` (#394): `crosshair` — `config.interface.showCrosshair` (`show_crosshair` in `cfg.ini`), the setting
-  `first-run-menu` changes by pointer clicks and its second launch reads back.
+  `first-run-menu` changes by pointer clicks and its second launch reads back; `minimizeOnFocusLost` (#606) —
+  `config.window.minimizeOnFocusLost` (`minimize_on_focus_lost`).
 - `scene` (#29, D-055): scripted scenes in VR (`src/vr/SceneView.h`); flat mode leaves it at rest (`shown` `none`,
   `fade` 0, no meter frames). `active`: a scripted scene owns the game's camera (a `speak -c` line, a camera entity,
   the letterbox) on the last VR frame; `kind` `none` | `speech` | `entity`; `view` (`first` | `observer` | `ghost` |
@@ -2280,7 +2288,11 @@ checkout, so a run's tree comes from the API (the run's `head_commit.tree_id`, e
 The workflow's Scope step decides (its log line `game check suite: pr (...)` says why); the label is read live through
 the API, so adding `full-ci` and re-running the PR's last run (`gh run rerun <id>`) or pushing runs everything. A
 selection falls back to everything when it cannot be sure: a changed path that no line of the map matches (a new
-folder, a new file in a folder that is listed file by file), a line `-> *`, or a diff that cannot be made. The log of
+folder, a new file in a folder that is listed file by file), a line `-> *`, or a diff that cannot be made. **A deleted
+path (#608)** - a rename's old path too - is matched like a changed one; when the change removed its line together with
+the file, the map of the base tree (the merge base's `impact.txt`, `Read-ArxBaseImpactMap`) gives its line instead, and
+its reason says `(deleted; the map before the change)`. Only a deleted path in no line of either map runs everything;
+a path that is not deleted never looks at the base map (self-test `test-ci-impact-deleted.ps1`). The log of
 the game checks names the suite and why (`ci-smoke: suite pr - ...` / `ci-smoke: suite full - ...`), lists the
 selection with the reason of each check (`ci-smoke: selected 19 of 66 checks: arms-follow (core), melee-swing
 (src/vr/VRMelee.cpp), ...`), and the job summary repeats both lines.

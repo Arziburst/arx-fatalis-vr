@@ -965,6 +965,12 @@ public:
 		
 	}
 	
+	void focus() override {
+		MenuPage::focus();
+		// Made in VR, the page shows the setting again once a session that ended mid-run left the game flat (#606)
+		updateMinimizeOnFocusLostStateCheckbox();
+	}
+	
 private:
 	
 	void updateGammaSlider() {

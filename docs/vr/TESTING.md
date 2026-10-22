@@ -2009,8 +2009,8 @@ A new feature's task un-pends its lines (and adds its own sequence). The runner 
 
 `scripts\dev\xrs\manual\level-tour.xrs` visits every level of the game on the simulated headset - 10 (the start),
 then 0-8 and 11-23 with `loadlevel` (there is no level 9) - because the MVP is a full playthrough and CI exercises only
-levels 1, 3 and 10. Run it by hand (it is in `manual\`: the game runs about 2 minutes, 4-4.5 minutes with the launch
-and the checks, measured on the owner's PC 2026-10-22 - far over the 30 s a check of the merge gate may cost):
+levels 1, 3 and 10. Run it by hand (it is in `manual\`: the game runs 1 min 42 s - 2 min 2 s, about 1 min 46 s from the
+launch to the verdict, measured on the owner's PC 2026-10-22 - far over the 30 s a check of the merge gate may cost):
 
 ```powershell
 .\scripts\dev\xrs-run.ps1 manual\level-tour       # also -Rebuild; the run folder is the test channel's directory it prints

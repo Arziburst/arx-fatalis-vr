@@ -4,8 +4,8 @@
 #   [channel] levelstats: level 3 frames=244 mean=11.11 p95=12.18 max=12.88 player=7257.6 822.9 7663.8 exits=22 ladders=0
 # The level's exits (the entities whose scripts change the level, with the zones they control) and ladders (the
 # climbable polygons, grouped) go to <test dir>\level-tour.txt for later tasks (#479, #55).
-# Manual (not in CI): the game runs about 2 minutes, 4-4.5 minutes with the launch and the checks - far over the
-# 30 s a check of the merge gate may cost (docs/vr/TESTING.md "The level tour").
+# Manual (not in CI): the game runs 1 min 42 s - 2 min 2 s (four runs), about 1 min 46 s from the launch to the
+# verdict - far over the 30 s a check of the merge gate may cost (docs/vr/TESTING.md "The level tour").
 #   .\scripts\dev\xrs-run.ps1 manual\level-tour
 # Every level is entered at a real entry marker - the target of an exit of another level (level-tour.txt) - as the
 # game enters it. Without a target the player keeps the previous level's coordinates and often stands outside the

@@ -21,8 +21,8 @@ $ErrorActionPreference = 'Stop'
 
 # The self-tests. Keep the list sorted.
 $tests = @(
+	'test-ci-skip-equal-tree.ps1' # the equal-tree skip of a push to main (#541): fixture gh run lists, a fake tree lookup, any successful suite=full gate run on the head's tree, fail safe to run
 	'test-ci-smoke.ps1'       # the CI game checks' lanes (#522): the order, the scheduler over fake phases, the lane count, durations, evidence; the impact map's selection and coverage
-	'test-ci-skip-equal-tree.ps1' # the equal-tree skip of a push to main (#541): fixture gh run lists, a fake tree lookup, the latest successful suite=full gate run only, fail safe to run
 	'test-ci-slots.ps1'       # CI owns the game slots (#527, #526): the runner marker's priority, holder lines, orphans stopped, games die with their launcher
 	'test-clip-to-xrs.ps1'    # a replay clip cut into a CI sequence (#550): the 30 s window, the state at its start, IPD and height stripped, no user path
 	'test-crash-report.ps1'   # the crash report command (#545): fixture crashes\ and hangs\ folders, the newest, the sections, the last 100 events, cdb or not, no user path

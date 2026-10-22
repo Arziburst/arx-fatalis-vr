@@ -106,7 +106,8 @@
 
 .PARAMETER QuietWaitSec
 	How long a phase that measures frame pacing (@solo) waits, before it starts, while something compiles on the PC
-	(cl, link, ninja, MSBuild, cmake --build that are not this run's, #566); then it runs anyway, under that load. The
+	(cl, link, ninja, MSBuild, cmake --build, build-windows.ps1 that are not this run's, #566; quiet: 30 s without
+	one); then it runs anyway, under that load. The
 	wait and what it waited for are in the log and the job summary. Default 600; 0: no wait.
 
 .EXAMPLE

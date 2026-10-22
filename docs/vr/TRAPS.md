@@ -17,7 +17,9 @@ but not the PC: a worker's build (cl.exe on every core) ran next to the runner, 
 skips the slots it misses - the guard was right, the PC was busy. `scripts/dev/stress-sequence.ps1 -Load build`
 reproduces it: 9 of 9 runs failed while a build compiled. **Do:** an `@solo` phase of `ci-smoke.ps1` now waits before
 it starts while anything compiles that is not its run's (`Wait-ArxQuietPc`, at most 600 s, then it runs anyway and the
-log says so). A frames guard that still fails: look for `ci-smoke: xrs-<name> measures frame pacing and waits` and
+log says so). The PC is quiet only after 30 s without a compile: the first proof run took the second between a
+`cmake --build --target clean` and the next `build-windows.ps1` for the end of the build, started, and failed
+`walk120.frames` (156 for `ge 162`) under the next round's compile. A frames guard that still fails: look for `ci-smoke: xrs-<name> measures frame pacing and waits` and
 `the PC still compiles after` in the job log, and for `H` lines in the record's window (`stress-sequence.ps1` prints
 them). Not covered: one long frame inside a held-stick window (`walk120.walked` 133.4 for `le 133.1` after one 36.5 ms
 update frame) - a re-measure of such a record needs a retry directive the `.xrs` language does not have.

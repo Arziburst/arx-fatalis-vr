@@ -176,8 +176,9 @@ vr-sim @+0-120ms hand right pos -0.4 -0.8 -0.35
 @assert vr.melee.last.aim eq 0.1
 melee slash dagger default
 
-# 6. A fast lunge along the blade (6 m/s, the lunge range set to always full): the full damage, kind thrust. The hand
-# drawn back and to the middle slowly first
+# 6. A fast lunge along the blade (5 m/s, the lunge range set to always full): the full damage, kind thrust. The hand
+# drawn back and to the middle slowly first. The lunge's first frame step stays under the 0.2 m of a stab's start
+# down to 25 frames/s: a stab started on the ramp's first frame has no filtered speed yet and deals the minimum (#620)
 playground kill
 @until playground.npcAlive eq false 5s
 playground pull respawn
@@ -191,7 +192,7 @@ vr-sim @+1-40 hand right pos 0.45 -0.8 0.1; vr-sim @+41-80 hand right pos 0 -0.8
 @remember swings vr.melee.swings
 @remember hits vr.melee.hits
 @mark
-vr-sim @+0-75ms hand right pos 0 -0.8 -0.35
+vr-sim @+0-90ms hand right pos 0 -0.8 -0.35
 @until vr.melee.swings ge {swings+1} 5s
 @until vr.melee.swinging eq false 5s
 @assert vr.melee.hits ge {hits+1}

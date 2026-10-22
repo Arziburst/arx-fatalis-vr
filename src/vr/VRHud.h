@@ -60,6 +60,7 @@ struct HudStatus {
 	bool frame = false;     //!< vr_hud_frame
 	std::string keep;       //!< vr_hud_keep as read
 	u64 frames = 0;         //!< HUD updates (frames the HUD was drawn in)
+	const char * orbsPlacement = "none"; //!< where health and mana are this frame: wrist, quad (the 2D interface) or none (#484)
 	std::array<u64, HudElementCount> drawn = { }; //!< per element: frames it was let through to draw
 	u64 levelUpWristViews = 0;  //!< views the wrist notice was drawn into
 	u64 levelUpRadialImages = 0; //!< radial images the Character item's mark was drawn on

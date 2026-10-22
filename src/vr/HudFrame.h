@@ -116,9 +116,9 @@ struct HudGate {
 /*!
  * \return true when the element is drawn on the 2D interface (and takes its clicks)
  *
- * Flat: everything, as before. VR: nothing, unless \c frame or \c keep say otherwise - except the
- * orbs while the wrist bars cannot be shown (no left controller): health and mana have no other
- * home then. The orbs step aside for the wrist bars in either mode, as since #116.
+ * Flat: everything, as before. VR: nothing, unless \c frame or \c keep say otherwise (the player's own
+ * choice). Health and mana have no automatic fallback: without a posed left arm they are drawn nowhere
+ * (#484). The orbs step aside for the wrist bars in either mode, as since #116.
  */
 bool hudElementDrawn(HudElement element, const HudGate & gate);
 

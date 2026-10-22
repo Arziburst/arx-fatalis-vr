@@ -222,13 +222,19 @@ try {
 		[pscustomobject]@{ Name = $Name; Lane = $Lane; Start = $s; End = [DateTime]::UtcNow; Exit = $Exit }
 	}
 	$script:runs = [Collections.Generic.List[object]]::new()
-	$start = { param($Phase, $Lane) Start-ThreadJob -ScriptBlock $fakeJob -ArgumentList $Phase.Name, $Lane, $Phase.Ms, $Phase.FakeExit }
+	# The scheduler's events in the order it made them (#624): "start <name>" when $Start is called, "finish <name> <verdict>"
+	# when $Finish is done. A check of the scheduler's order judges these; the in-job timestamps in $script:runs are the
+	# jobs' own clocks and lag behind the scheduler by the start latency of a loaded machine.
+	$script:events = [Collections.Generic.List[string]]::new()
+	$start = { param($Phase, $Lane) $script:events.Add("start $($Phase.Name)"); Start-ThreadJob -ScriptBlock $fakeJob -ArgumentList $Phase.Name, $Lane, $Phase.Ms, $Phase.FakeExit }
 	$finish = {
 		param($Phase, $Lane, $Job, $Seconds)
 		$r = Receive-Job $Job -Wait
 		Remove-Job $Job -Force
 		$script:runs.Add($r)
-		[pscustomobject]@{ Name = $Phase.Name; Exit = $r.Exit; Verdict = $(if ($r.Exit -eq 0) { 'PASS' } else { 'FAIL' }) }
+		$verdict = if ($r.Exit -eq 0) { 'PASS' } else { 'FAIL' }
+		$script:events.Add("finish $($Phase.Name) $verdict")
+		[pscustomobject]@{ Name = $Phase.Name; Exit = $r.Exit; Verdict = $verdict }
 	}
 	$saveGate = { param($Done, $Phase) $l = $Done['save-library']; if ($l -and $l.Exit -ne 0) { [pscustomobject]@{ Name = $Phase.Name; Exit = 1; Verdict = 'FAIL' } } }
 	$readbackGate = { param($Done, $Phase) $f = $Done[$Phase.DependsOn[0]]; if ($f -and $f.Exit -eq 0) { $null } else { 'omit' } }
@@ -260,6 +266,18 @@ try {
 		$max
 	}
 	function Test-Overlap($A, $B) { $A -and $B -and $A.Start -lt $B.End -and $B.Start -lt $A.End }
+	# Event order (#624): the index of an event in $script:events, -1 when it did not happen
+	function Get-EventIndex([string]$Event) { $script:events.IndexOf($Event) }
+	# Both phases were started before either was seen finished: they ran together, whatever the jobs' clocks say
+	function Test-StartedTogether([string]$A, [string]$B) {
+		$sa = Get-EventIndex "start $A"; $sb = Get-EventIndex "start $B"
+		$fa = Get-EventIndex "finish $A PASS"; $fb = Get-EventIndex "finish $B PASS"
+		$sa -ge 0 -and $sb -ge 0 -and $fa -gt $sb -and $fb -gt $sa
+	}
+	function Get-StartsAfter([string]$Event) {
+		$at = Get-EventIndex $Event
+		if ($at -ge 0) { @($script:events | Select-Object -Skip ($at + 1) | Where-Object { $_ -like 'start *' }) }
+	}
 
 	$script:runs.Clear()
 	$serial = @(Invoke-ArxPhaseSchedule -Phases (New-FakePhases) -Lanes 1 -Start $start -Finish $finish -PollMs 20)
@@ -310,6 +328,7 @@ try {
 	Write-Host '==> @solo: a phase that runs alone (#527)'
 	try {
 		$script:runs.Clear()
+		$script:events.Clear()
 		$soloPhases = @((Fake 'a' 200), (Fake 'b' 200), (Fake 'solo' 300), (Fake 'c' 100), (Fake 'd' 100))
 		$soloPhases[2] | Add-Member -NotePropertyName Solo -NotePropertyValue $true
 		$soloRuns = @(Invoke-ArxPhaseSchedule -Phases $soloPhases -Lanes 2 -Start $start -Finish $finish -LaneLimit { 2 } -PollMs 20)
@@ -319,7 +338,7 @@ try {
 		Check 'a solo phase starts only after the running phases ended' ($soloByName['solo'].Start -ge $soloByName['a'].End -and $soloByName['solo'].Start -ge $soloByName['b'].End)
 		Check 'nothing starts while a solo phase runs: the phases after it start when it ended' ($soloByName['c'].Start -ge $soloByName['solo'].End -and $soloByName['d'].Start -ge $soloByName['solo'].End)
 		Check 'a solo phase: the others still run, once each' ($script:runs.Count -eq 5 -and @($soloRuns | Where-Object Verdict -eq 'PASS').Count -eq 5)
-		Check 'a solo phase: the phases before it ran together (two lanes)' (Test-Overlap $soloByName['a'] $soloByName['b'])
+		Check 'a solo phase: the phases before it ran together (two lanes)' (Test-StartedTogether 'a' 'b') ($script:events -join ', ')
 		$script:runs.Clear()
 		$soloLast = @((Fake 'a' 150), (Fake 'b' 150), (Fake 'c' 150), (Fake 'solo' 200))
 		$soloLast[3] | Add-Member -NotePropertyName Solo -NotePropertyValue $true
@@ -335,11 +354,14 @@ try {
 	try {
 		function New-FailFastPhases { @((Fake 'ff-fail' 150 1), (Fake 'ff-long' 900), (Fake 'ff-after1' 100), (Fake 'ff-after2' 100), (Fake 'ff-after3' 100)) }
 		$script:runs.Clear()
+		$script:events.Clear()
 		$ff = @(Invoke-ArxPhaseSchedule -Phases (New-FailFastPhases) -Lanes 2 -Start $start -Finish $finish -LaneLimit { 2 } -PollMs 20 -StopOnFail)
 		$ffRuns = @($script:runs)
 		$ffByName = @{}
 		foreach ($r in $ffRuns) { $ffByName[$r.Name] = $r }
-		Check 'fail fast: nothing starts after the first FAIL' ($ffByName.ContainsKey('ff-fail') -and -not @($ffRuns | Where-Object { $_.Start -ge $ffByName['ff-fail'].End })) (($ffRuns | ForEach-Object Name) -join ',')
+		# Nothing starts after the scheduler saw the FAIL: no "start" event after the failed phase's "finish ... FAIL" (#624)
+		$ffAfter = @(Get-StartsAfter 'finish ff-fail FAIL')
+		Check 'fail fast: nothing starts after the first FAIL' ((Get-EventIndex 'finish ff-fail FAIL') -ge 0 -and -not $ffAfter) $(if ($ffAfter) { "started after the FAIL: $($ffAfter -join ', ') (events: $($script:events -join ', '))" } else { $script:events -join ', ' })
 		Check 'fail fast: only the failed phase and the one running beside it ran' ((@($ffRuns | ForEach-Object Name | Sort-Object) -join ',') -eq 'ff-fail,ff-long') (($ffRuns | ForEach-Object Name) -join ',')
 		Check 'fail fast: the phase that was running finishes with its own verdict' (@($ff | Where-Object { $_.Name -eq 'ff-long' -and $_.Verdict -eq 'PASS' }).Count -eq 1)
 		Check 'fail fast: the failure is in the results' (@($ff | Where-Object { $_.Name -eq 'ff-fail' -and $_.Verdict -eq 'FAIL' }).Count -eq 1)

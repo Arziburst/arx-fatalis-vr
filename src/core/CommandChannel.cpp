@@ -84,6 +84,7 @@
 #include "gui/book/DevPanel.h"
 #include "gui/hud/PlayerInventory.h"
 #include "gui/hud/SecondaryInventory.h"
+#include "gui/widget/CheckboxWidget.h"
 #include "input/Input.h"
 #include "io/fs/FilePath.h"
 #include "io/fs/FileStream.h"
@@ -161,6 +162,7 @@ const struct { MENUSTATE page; const char * name; } MenuPages[] = {
 	{ Page_None, "none" },
 	{ Page_Options, "options" },
 	{ Page_OptionsInput, "input" },
+	{ Page_OptionsVideo, "video" },
 	{ Page_OptionsVR, "vr" },
 	{ Page_OptionsVRTurning, "vr-turning" },
 	// The pages the main menu's entries and the Interface options open (#394)
@@ -1217,6 +1219,10 @@ std::string buildStatus(PlatformInstant now) {
 		std::string why;
 		const Widget * widget = findMenuWidget(g.pointTarget.id, why);
 		json.value("menuTargetEnabled", widget && widget->isEnabled());
+		// A checkbox target: whether it is ticked (#606)
+		if(widget && widget->type() == WidgetType_Checkbox) {
+			json.value("menuTargetChecked", static_cast<const CheckboxWidget *>(widget)->checked());
+		}
 	}
 	json.end();
 
@@ -1276,6 +1282,7 @@ std::string buildStatus(PlatformInstant now) {
 	// A setting the menu sequence changes by pointer and a second launch reads back from cfg.ini (#394)
 	json.object("settings");
 	json.value("crosshair", config.interface.showCrosshair);
+	json.value("minimizeOnFocusLost", config.window.minimizeOnFocusLost);
 	json.end();
 
 	// One entity followed by the watch command (#37): where it is and whether it is in an inventory
@@ -1297,13 +1304,16 @@ std::string buildStatus(PlatformInstant now) {
 	}
 
 	if(mainApp && mainApp->getWindow()) {
-		const RenderWindow & window = *mainApp->getWindow();
+		RenderWindow & window = *mainApp->getWindow();
 		json.object("window");
 		json.value("width", window.getSize().x);
 		json.value("height", window.getSize().y);
 		json.value("focused", window.hasFocus());
 		json.value("minimized", window.isMinimized());
 		json.value("fullscreen", window.isFullScreen());
+		// Off in VR (#406), as cfg.ini says in flat mode, also after a VR session ended mid-run (#606)
+		const Window::MinimizeSetting minimize = window.willMinimizeOnFocusLost();
+		json.value("minimizeOnFocusLost", minimize == Window::Enabled || minimize == Window::AlwaysEnabled);
 		// A test run's window (#487): never activated, placed in the corner of the main display
 		json.value("activation", window.isBackground() ? "never" : "normal");
 		json.value("placement", window.isBackground() ? "corner" : "default");
@@ -3506,7 +3516,7 @@ std::string execute(std::string_view line) {
 				return std::string();
 			}
 		}
-		return refuse("menu: expected pause, resume, none, options, input, vr, vr-turning, loadsave, interface, quit, language, step <row> left|right or drag <slider> <0..1>, got \""
+		return refuse("menu: expected pause, resume, none, options, input, video, vr, vr-turning, loadsave, interface, quit, language, step <row> left|right or drag <slider> <0..1>, got \""
 		              + name + "\"");
 	}
 

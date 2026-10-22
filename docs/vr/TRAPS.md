@@ -386,6 +386,11 @@ skip it (`vr.skip what=SCENE` in arx.log) and never reach the control table.
 **Do:** the scene does not end on its own: send `setplayercontrols on` and `cinemascope off`, then wait for
 `scriptedScene eq false` (status.json, flat too; `scene.active` is VR only) before pressing A, B or a trigger. Both
 checks do since #473, through `smoke-test.ps1 -Commands` gates (`'@until scriptedScene eq false 10s'`).
+**Also:** a `mark` command is no wait. `input-check.ps1` used one to let a chord leader's 150 ms release debounce pass;
+since the channel answers within a frame (#522) the next tap landed inside the window (the same hold, `book` 0) and
+`vr-input reset` consumed the still-held control. Wait on the state instead: `'@frames 1'` (an injected tap is
+resolved in the frame after its ack: `vr::updateInput` runs before `channel::update`), then
+`'@until vr.input.down ne left.b 5s'`.
 
 ## 2026-10-14 — `playground-hands.xrs`: the left hand's reticle misses the pulled lever on CI, passes locally (#377)
 

@@ -113,7 +113,8 @@
 	Channel commands to send once the game is in the expected state, e.g. 'shot start', 'mark hello',
 	'player.setplayerpos 0 0 0' (see docs/vr/TESTING.md). Each must be acknowledged without an error. A line
 	'@until <path> <op> <value> [<n>s]' is a status gate (#473), as in a sequence: the commands after it are sent once
-	status.json satisfies it, e.g. 'cinemascope off','@until scriptedScene eq false 10s' before pressing A, B or a trigger.
+	status.json satisfies it, e.g. 'cinemascope off','@until scriptedScene eq false 10s' before pressing A, B or a trigger;
+	'@frames <n>' waits until the game rendered n more frames (an injected press is resolved in the frame after its ack).
 
 .PARAMETER Sequence
 	A scripted sequence (#113, scripts\dev\xrs\*.xrs: a name or a path) run on the game once it is in the expected
@@ -195,12 +196,12 @@ $ErrorActionPreference = 'Stop'
 
 # A sequence with a syntax error costs no launch
 $sequenceToRun = if ($Sequence) { Read-ArxSequence $Sequence } else { $null }
-# An '@until <path> <op> <value> [<n>s]' line among -Commands is a status gate, not a command (#473): the commands after
-# it wait for it, as in a sequence (the level 10 start's scene skips A, B and trigger presses while it plays)
+# An '@until <path> <op> <value> [<n>s]' or '@frames <n>' line among -Commands is a gate, not a command (#473): the
+# commands after it wait for it, as in a sequence (the level 10 start's scene skips A, B and trigger presses while it plays)
 $commandSteps = @(foreach ($command in $Commands) {
 	if (-not $command.StartsWith('@')) { $command; continue }
 	$gate = try { ConvertTo-XrsStep $command 0 } catch { throw "-Commands '$command': $($_.Exception.Message)" }
-	if ($gate.Kind -ne 'until') { throw "-Commands '$command': only an @until gate can stand among the commands" }
+	if ($gate.Kind -notin 'until', 'frames') { throw "-Commands '$command': only an @until or @frames gate can stand among the commands" }
 	$gate
 })
 
@@ -386,6 +387,8 @@ function Invoke-SmokeRun([int]$Run) {
 					Write-Host "  > $($command.Line)"
 					try { Invoke-XrsStep $gateContext $command }
 					catch { $reasons.Add("gate '$($command.Line)': $($_.Exception.Message) - the commands after it were not sent"); break }
+					# @frames is a batch of its own (waitframes): its ack took the next seq
+					if ($command.Kind -eq 'frames' -and $null -ne $lastAckSeq) { $lastAckSeq++ }
 					continue
 				}
 				$ack = Send-ArxCommand -Lines @($command) -Dir $TestDir

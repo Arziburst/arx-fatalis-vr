@@ -17,8 +17,11 @@
 	  tap right.stick_down                      crouch_toggle (a stick direction)
 	  tap right.stick_click                     weapon (draw / sheathe, #377)
 	  reset                                     the default layout again
-	A 'mark' after the release of a chord's leader lets its release debounce window (150 ms) pass,
-	so the next tap is a new press and not the same hold.
+	After the release of a chord's leader (and the tap of one) the next command waits until it is no longer held
+	(vr.input.down): its release counts only after the debounce window (150 ms), so the next tap is a new press and
+	not the same hold, and the reset does not consume it. A 'mark' round trip was that wait until the channel
+	answered within a frame (#522); the gates are '@until vr.input.down ne <control>', after a tap one '@frames 1'
+	first: a tap is resolved in the frame after its ack (#473).
 	Then reads the final status.json (written when the game exits) and compares vr.input.presses
 	and vr.input.layout with the expected numbers.
 
@@ -56,11 +59,12 @@ $commands += @('vr-input bind radial_left none', 'vr-input bind map none', 'vr-i
 if ($Unbind) { $commands += 'vr-input bind jump none' }
 $commands += @(
 	'vr-input tap right.stick_up',
-	'vr-input down right.grip', 'vr-input tap right.trigger', 'vr-input up right.grip', 'mark release debounce (150 ms)',
-	'vr-input tap right.grip',
+	'vr-input down right.grip', 'vr-input tap right.trigger', 'vr-input up right.grip', '@until vr.input.down ne right.grip 5s',
+	# A tap is resolved in the frame after its ack (the input update runs before the channel's): one frame, then the gate
+	'vr-input tap right.grip', '@frames 1', '@until vr.input.down ne right.grip 5s',
 	'vr-input bind jump left.b+left.a',
-	'vr-input down left.b', 'vr-input tap left.a', 'vr-input up left.b', 'mark release debounce (150 ms)',
-	'vr-input tap left.b',
+	'vr-input down left.b', 'vr-input tap left.a', 'vr-input up left.b', '@until vr.input.down ne left.b 5s',
+	'vr-input tap left.b', '@frames 1', '@until vr.input.down ne left.b 5s',
 	'vr-input tap right.stick_down',
 	'vr-input tap right.stick_click',
 	'vr-input reset'

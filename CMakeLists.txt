@@ -1277,7 +1277,6 @@ list(APPEND IO_RESOURCE_SOURCES ${UTIL_MD5_SOURCES})
 
 set(VR_SOURCES
 	src/vr/BindingCapture.cpp
-	src/vr/ArmFit.cpp
 	src/vr/ArmIK.cpp
 	src/vr/ArmMesh.cpp
 	src/vr/ArmRoll.cpp

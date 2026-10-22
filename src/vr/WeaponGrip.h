@@ -76,10 +76,11 @@ float angleDegrees(const Vec3f & a, const Vec3f & b);
 Vec3f directionInGrip(const Vec3f & worldDirection, const glm::quat & handWorld, const glm::quat & handToGrip);
 
 /*
- * The weapon in the custom glove (#385.10, research #453 F-485 .. F-489): with a model that draws our glove the held
- * weapon is placed from the glove's hilt frame - a point of the handle on the line the closed fingers wrap, the
- * blade along that line, its edge toward the knuckles - never from the hidden Arx hand. Where along the handle the
- * fingers close depends on the weapon's class (the anchor table, VRWeapon.cpp reads the class from the item).
+ * The weapon in the glove (#385.10, research #453 F-485 .. F-489): the held weapon placed from the glove's hilt frame -
+ * a point of the handle on the line the closed fingers wrap, the blade along that line, its edge toward the knuckles.
+ * Where along the handle the fingers close depends on the weapon's class (the anchor table, VRWeapon.cpp reads the
+ * class from the item). Unused since the arm models that drew from it were removed (#486): kept for #548, from
+ * weaponAnchorOffset to swordTiltVariant (which still snaps cfg.ini vr_sword_tilt)
  */
 
 //! The classes a held weapon is anchored by (F-487)

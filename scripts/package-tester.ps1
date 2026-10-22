@@ -107,7 +107,8 @@ Copy-Item (Join-Path $buildDir 'arx.exe') $stage
 foreach ($dll in Get-ChildItem $buildDir -Filter '*.dll' -File) { Copy-Item $dll.FullName $stage }
 # xr_hello.exe is a development tool; the tester package carries only the game
 
-# The engine's own data (data/core: localisation, misc) next to arx.exe, where RUNTIME_DATADIR "." looks for it.
+# The engine's own data (data/core: localisation, misc, and vr - the glove meshes and texture, the hand shapes) next to
+# arx.exe, where RUNTIME_DATADIR "." looks for it.
 # data.dirs, which CMake writes into the build directory, is left out on purpose: it names a path in the working copy.
 Copy-Item -Recurse -Force (Join-Path $SourceDir 'data\core\*') $stage
 

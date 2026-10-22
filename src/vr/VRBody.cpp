@@ -89,8 +89,8 @@ enum FingerGroup : u8 {
 
 const u8 NoFinger = 0xff;
 
-//! What a face of the bound model is to the custom arms (#385.3): the body, an Arx arm face (its arm's upper arm and
-//! everything under it - hidden while the custom arm is drawn), or a face of the cap that closes the shoulder then
+//! What a face of the bound model is to the arms (#385.3): the body, an Arx arm face (its arm's upper arm and everything
+//! under it), or a face of the cap that closes the shoulder with the body hidden (#385.11)
 const u8 FaceBody = 0;
 const u8 FaceArm = 1;     //!< + the hand
 const u8 FaceArmCap = 3;  //!< + the hand
@@ -165,7 +165,7 @@ struct BodyState {
 	std::vector<char> headVertex;                 //!< per vertex of the bound model: in the head or the neck
 	size_t capStart = 0;                          //!< the first cap face added to the bound model (its face count without one)
 	size_t boundFaces = 0;                        //!< the bound model's faces with the caps (a reloaded model has fewer)
-	//! per face of the bound model: what it is to the custom arms (#385.3) - FaceBody, FaceArm + hand, FaceArmCap + hand
+	//! per face of the bound model: what it is to the arms (#385.3) - FaceBody, FaceArm + hand, FaceArmCap + hand
 	std::vector<u8> faceRole;
 	//! per face of the bound model: 1 for a face of an Arx hand on the classic skin - every corner on the hand (#466.2)
 	std::vector<u8> arxHandFace;
@@ -424,7 +424,7 @@ float segmentAngle(const FingerCurl & curl, u8 group, u8 segment) {
  * a triangle fan with the material and texture coordinates of the visible faces on it. The cap faces are
  * appended to the model's face list and drawn only under a tracked head (\ref bodyCapStart).
  *
- * The same walk closes a shoulder when the custom arms hide an Arx arm (#385.3, research row F-234):
+ * The same walk closes a shoulder of the Arx arm drawn without the body (#385.3, #385.11, research row F-234):
  * \a hiddenVertex then marks the arm's vertices. \return the faces added
  */
 size_t addCap(EERIE_3DOBJ * obj, const std::vector<char> & hiddenVertex, const char * what) {
@@ -549,12 +549,12 @@ size_t addCap(EERIE_3DOBJ * obj, const std::vector<char> & hiddenVertex, const c
 }
 
 /*!
- * \brief The faces the custom arms hide and the caps that close the shoulders then (#385.3, research rows F-233, F-234)
+ * \brief The Arx arms' faces, their hands' and the caps that close the shoulders (#385.3, research rows F-233, F-234)
  *
  * An Arx arm is its upper arm group with everything under it (the forearm, the hand, the fingers); the shoulder
- * group above stays. A face with any vertex in the arm is the arm's; the opening its faces leave in the torso is
- * closed with a cap like the neck's, drawn only while the arm is hidden. Called after the neck cap, so the caps
- * sit behind \c capStart and flat mode and the book never see them.
+ * group above stays. A face with any vertex in the arm is the arm's; the opening between the arm and the torso is
+ * closed with a cap like the neck's, drawn only while the body is hidden (vr_body = hidden) and closing the arm's open
+ * end then. Called after the neck cap, so the caps sit behind \c capStart and flat mode and the book never see them.
  */
 void addArmCaps(EERIE_3DOBJ * obj) {
 
@@ -625,7 +625,7 @@ void addArmCaps(EERIE_3DOBJ * obj) {
 			}
 		}
 		const std::string what = std::string(handName(Hand(hand))) + " shoulder (" + std::to_string(armFaces)
-		                         + " arm faces hidden under the custom arm, " + std::to_string(handFaces)
+		                         + " arm faces, " + std::to_string(handFaces)
 		                         + " hand faces under the classic arm's glove, its wrist ring "
 		                         + std::to_string(g_body.arxWristRing[hand].size()) + " vertices)";
 		addCap(obj, armVertex, what.c_str());
@@ -861,7 +861,7 @@ BodyViewParams bodyViewParams() {
  *
  * The eyes are the head camera's (g_playerCamera, where the head pose put it) with this frame's eye offsets in
  * stereo, the head camera itself otherwise. The faces looked at are the ones the two-sided view draws: not hidden
- * by the engine, not given way to a custom arm. An Arx arm's own faces follow the controller - a hand brought to
+ * by the engine. An Arx arm's own faces follow the controller - a hand brought to
  * the face stays drawn - so the rule and the nearest-vertex count leave them out.
  */
 void updateNearEye(const EERIE_3DOBJ * obj) {
@@ -945,8 +945,8 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 	status.drawnArmFaces = g_body.drawingArmFaces;
 	g_body.drawingBodyFaces = 0;
 	g_body.drawingArmFaces = 0;
-	// The custom arms (#385.3): nothing is drawn until an arm is posed again
-	resetCustomArms();
+	// The gloves (#466.2): nothing is drawn until an arm is posed again
+	resetGloves();
 	g_body.reskinned.clear();
 	g_body.shift = Vec3f(0.f);
 	status.shift = Vec3f(0.f);
@@ -1103,14 +1103,11 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 			// No controller orientation for this hand: nothing to share, the bones sit in their bend plane
 			roll.forearmShare = roll.upperShare = roll.elbowShare = 0.f;
 		}
-		// The logical arm - what the wrist bars, the held weapon and the status read - solves from the player's
-		// own shoulder, before the body was pushed back behind the eyes (#385.9: the push moves the drawn torso,
-		// never the arm the game reads); the custom arm hangs from the drawn, pushed shoulder below. With the Arx
-		// arms drawn the logical arm is the drawn one: it stays on the pushed shoulder, so the shoulder's band of
-		// faces is not stretched (the wrist bars read a second solve from the own shoulder, below)
+		// The logical arm - what the wrist bars, the held weapon and the status read - is the drawn Arx arm: it stays on
+		// the shoulder pushed back behind the eyes (#385.9), so the shoulder's band of faces is not stretched (the wrist
+		// bars read a second solve from the player's own shoulder, below)
 		const Vec3f shoulder = upper.anim.trans;
-		const Vec3f realShoulder = armsModelInfo().arxArms ? shoulder : shoulder - push;
-		const ArmRollPose posed = solveArmRoll(realShoulder, target, handQuat, upperLength, forearmLength, hint,
+		const ArmRollPose posed = solveArmRoll(shoulder, target, handQuat, upperLength, forearmLength, hint,
 		                                       chain.rest, params, roll, g_body.roll[hand]);
 		const ArmPose & pose = posed.pose;
 
@@ -1120,7 +1117,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		// overflow side is untouched
 		Vec3f barsElbow = pose.elbow;
 		Vec3f barsWrist = pose.wrist;
-		if(realShoulder != shoulder - push) {
+		if(push != Vec3f(0.f)) {
 			ArmRollState barsRoll = g_body.roll[hand];
 			const ArmPose bars = solveArmRoll(shoulder - push, target, handQuat, upperLength, forearmLength, hint,
 			                                  chain.rest, params, roll, barsRoll).pose;
@@ -1236,27 +1233,18 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		noteArm(hand, true, source);
 		any = true;
 
-		// How the drawn Arx arm bends along its rings (#466.1): on the classic skin when it is drawn, else on the engine's
-		const bool classic = armsModelInfo().classicSkin;
-		arm.armSkin = classic ? "classic" : "arx";
-		arm.bend = measureArm(chain.armRest, chain.diagnosis, classic ? chain.classicParts : chain.armRest.parts,
+		// How the drawn Arx arm bends along its rings on the classic skin (#466.1)
+		arm.armSkin = "classic";
+		arm.bend = measureArm(chain.armRest, chain.diagnosis, chain.classicParts,
 		                      { upper.anim.quat, forearm.anim.quat, handBone.anim.quat });
 
-		// The custom arm (#385.3) hangs from this logical arm's shoulder and solves its own chain (#385.6); its Arx
-		// faces are then not drawn (drawsBodyFace)
+		// The glove at this arm's Arx wrist (vr_classic_hand = glove, #466.2); its Arx hand faces are then not drawn
+		// (drawsBodyFace)
 		if(chain.frame.valid) {
 			LogicalArm logical;
-			logical.shoulder = shoulder;
-			logical.hand = handQuat;
-			logical.rest = chain.rest;
-			logical.restElbow = chain.restElbow;
-			logical.elbowHint = hint;
 			logical.holdsWeapon = holds;
-			logical.roll = roll;
 			logical.grip = grip;
 			logical.gripOrientation = placement.orientation;
-			logical.upperLength = upperLength;
-			logical.forearmLength = forearmLength;
 			logical.arxWrist = pose.wrist;
 			// The glove's five fingers (#385.4) read the same sources as the Arx fingers above
 			logical.joints = joints;
@@ -1268,7 +1256,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 				logical.fingers.thumbTouch = input.thumbTouch[hand];
 			}
 			logical.seconds = seconds;
-			poseCustomArm(Hand(hand), logical);
+			poseGlove(Hand(hand), logical);
 		}
 	}
 	for(size_t hand = 0; hand < HandCount; hand++) {
@@ -1320,9 +1308,6 @@ void skinPlayerArms(EERIE_3DOBJ * obj) {
 		return;
 	}
 	g_body.reskinned.clear();
-	if(!armsModelInfo().classicSkin) {
-		return;
-	}
 	const Skeleton & rig = *obj->m_skeleton;
 	PlayerBodyStatus & status = g_body.status;
 	for(size_t hand = 0; hand < HandCount; hand++) {
@@ -1367,15 +1352,10 @@ bool drawsBodyFace(const EERIE_3DOBJ * obj, size_t face) {
 		return !hidden;
 	}
 	if(role >= FaceArmCap) {
-		// The cap closes the torso's shoulder while the custom arm is drawn; with the body hidden it closes the open
-		// end of the Arx arm drawn alone
-		const bool customArm = customArmDrawn(Hand(role - FaceArmCap));
-		return hidden ? !customArm : customArm;
+		// The cap closes the open end of the Arx arm drawn without the body
+		return hidden;
 	}
 	const Hand hand = Hand(role - FaceArm);
-	if(customArmDrawn(hand)) {
-		return false;
-	}
 	// The classic arm's Arx hand while our glove is drawn at its wrist (#466.2)
 	return !(arxHandHidden(hand) && face < g_body.arxHandFace.size() && g_body.arxHandFace[face]);
 }
@@ -1483,7 +1463,6 @@ void clearSimulatedHand(Hand hand) {
 const PlayerBodyStatus & playerBodyStatus() {
 	PlayerBodyStatus & status = g_body.status;
 	status.armsModel = armsModelName(armsModel());
-	status.arxArmsHidden = customArmDrawn(Hand::Left) || customArmDrawn(Hand::Right);
 	status.bodyMode = bodyModeName(bodyMode());
 	return status;
 }

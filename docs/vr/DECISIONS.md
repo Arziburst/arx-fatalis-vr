@@ -660,8 +660,8 @@ same grip frame as the Arx hand (D-032, research F-281); no sleeve - the Arx for
 ## D-047: The VR arms are the classic Arx arm (D-051) - picked by the owner from five arm models compared live in the headset
 
 - **Date:** 2026-10-14 (the comparison), 2026-10-16 (the pick)
-- **Status:** Accepted: **classic** (D-051) is the default and the only model a player chooses; the other models are
-  kept for their tests only until they are deleted (#486)
+- **Status:** Accepted: **classic** (D-051) is the default and the only model a player chooses; the other models were
+  deleted with their tests by #486 (2026-10-22)
 - **Decided by:** project owner (2026-10-13, via the coordinator: build the variants and switch them live; 2026-10-16,
   headset test of #472: "keep this variant; you can delete the others" - of custom and forearm earlier: "delete, never
   come back to them"; the library hand of #467 was dropped unmerged); #385.8 for the formulation
@@ -704,7 +704,8 @@ engine's Arx arms.
 ## D-048: The custom arm solves its own chain - fitted to the player's reach, a small stretch, the elbow down with a weapon
 
 - **Date:** 2026-10-13
-- **Status:** Superseded for the player by D-047 (2026-10-16: the classic Arx arm, D-051): the custom arm's own solve is test-only until #486
+- **Status:** Superseded for the player by D-047 (2026-10-16: the classic Arx arm, D-051): the custom arm's own solve,
+  its fit and its cfg.ini keys were deleted by #486 (2026-10-22)
 - **Decided by:** project owner (2026-10-13: "the arm's own length must fit first", "arm stretch yes", "elbow drop yes"); #385.6
 - **Builds on:** D-049 (own arms), the roll-aware IK (D-050 of #313)
 
@@ -743,7 +744,8 @@ engine's Arx arms.
 
 - **Date:** 2026-10-13
 - **Status:** Superseded for the player by D-047 (2026-10-16: the owner kept the classic Arx arm, D-051); the glove stays as
-  the classic arm's optional hand (`vr_classic_hand = glove`), the own arms are test-only until #486
+  the classic arm's optional hand (`vr_classic_hand = glove`), the own arms, the sleeve and the weapon from the
+  glove's hilt frame were deleted by #486 (2026-10-22; the hilt-frame math in WeaponGrip stays for #548)
 - **Decided by:** project owner (variant B of #385); the worker of #385.5 for the formulation; within D-009 / D-032
 
 ### Decision

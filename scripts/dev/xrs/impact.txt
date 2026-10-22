@@ -97,19 +97,18 @@ src/vr/VRSystem.* -> core
 CMakeLists.txt -> core
 
 # --- The VR body: arms, hands, fingers -----------------------------------------------------------------------------
-src/vr/VRBody.* -> arm-fit arms-classic arms-classic-glove arms-elbow arms-follow arms-model arms-roll arms-variants body-hidden body-look-down finger-five finger-held finger-tracking hand-conforming height-hands weapon-hold weapon-in-glove wrist-vitals real-steps physical-crouch
-src/vr/VRArms.* -> arm-fit arms-classic arms-classic-glove arms-elbow arms-follow arms-model arms-roll arms-variants body-hidden finger-five hand-conforming weapon-in-glove
-src/vr/ArmFit.* -> arm-fit arms-elbow arms-variants height-hands
-src/vr/ArmIK.* -> arm-fit arms-elbow arms-follow arms-roll arms-variants height-hands weapon-hold
-src/vr/ArmMesh.* -> arm-fit arms-elbow arms-roll arms-variants arms-model
-src/vr/ArmRoll.* -> arms-roll arms-elbow
-src/vr/ArxArmFix.* -> arms-classic arms-classic-glove arms-model
+src/vr/VRBody.* -> arms-classic arms-classic-glove arms-follow arms-roll body-hidden body-look-down finger-five finger-held finger-tracking hand-conforming height-hands weapon-hold weapon-in-glove wrist-vitals real-steps physical-crouch
+src/vr/VRArms.* -> arms-classic arms-classic-glove arms-follow arms-roll body-hidden finger-five hand-conforming weapon-in-glove
+src/vr/ArmIK.* -> arms-follow arms-roll height-hands weapon-hold
+src/vr/ArmMesh.* -> arms-roll arms-classic-glove
+src/vr/ArmRoll.* -> arms-roll
+src/vr/ArxArmFix.* -> arms-classic arms-classic-glove
 src/vr/BodyView.* -> body-look-down body-hidden arms-follow
 src/vr/BodyYaw.* -> refresh-rate arms-follow body-look-down snap-turn walk-look real-steps
 src/vr/HandRig.* -> arms-follow hand-conforming finger-five arms-classic-glove weapon-in-glove
 src/vr/FingerCurl.* -> refresh-rate finger-five finger-held finger-tracking hand-conforming
 src/vr/HandTracking.* -> finger-five finger-held finger-tracking hand-conforming
-data/core/vr/arms/* -> arms-classic-glove arms-variants finger-five hand-conforming weapon-in-glove weapon-classes body-hidden arm-fit
+data/core/vr/arms/* -> arms-classic-glove finger-five hand-conforming weapon-in-glove body-hidden
 data/core/vr/hands/* -> hand-conforming finger-five finger-tracking finger-held
 src/animation/* -> arms-follow arms-classic weapon-hold tl-reprojection melee-swing
 
@@ -138,11 +137,11 @@ src/game/Player.* -> stand-up real-steps physical-crouch sneak-jump-crouch walk-
 # --- Hands in the world: reticles, reach, weapons, melee -----------------------------------------------------------
 src/vr/HandReticle.* -> refresh-rate hand-reticle menu-pointer playground-hands reach-chest reach-door reach-lever
 src/vr/VRReticle.* -> hand-reticle menu-pointer controls-v2 rune-trail playground-hands reach-chest reach-door reach-lever
-src/vr/VRWeapon.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery melee-damage reach-lever finger-held
-src/vr/WeaponGrip.* -> weapon-classes weapon-hold weapon-in-glove finger-held melee-damage
+src/vr/VRWeapon.* -> weapon-hold weapon-in-glove melee-swing melee-recovery melee-damage reach-lever finger-held
+src/vr/WeaponGrip.* -> weapon-hold weapon-in-glove finger-held melee-damage
 src/vr/VRMelee.* -> refresh-rate melee-swing melee-recovery melee-damage damage-numbers damage-numbers-off controls-v2 weapon-hold
 src/vr/MeleeSwing.* -> refresh-rate melee-swing melee-recovery melee-damage damage-numbers weapon-hold
-src/game/Equipment.* -> weapon-classes weapon-hold weapon-in-glove melee-swing melee-recovery melee-damage finger-held damage-numbers
+src/game/Equipment.* -> weapon-hold weapon-in-glove melee-swing melee-recovery melee-damage finger-held damage-numbers
 src/game/Damage.* -> damage-numbers damage-numbers-off melee-swing melee-recovery melee-damage playground-respawn
 src/game/Inventory.* -> menu-pointer hand-reticle ui-panel playground-hands
 src/game/Spells.* -> refresh-rate rune-trail spell-drawcheck
@@ -198,7 +197,7 @@ src/cinematic/* -> cinematics first-run-intro
 data/core/localisation/* -> first-run-intro first-run-menu first-run-chargen vr-settings-flat vr-remap cinematics
 
 # --- The test playground (#321) ------------------------------------------------------------------------------------
-scripts/dev/playground/* -> controls-v2 damage-numbers melee-recovery playground-hands playground-levers playground-respawn weapon-classes
+scripts/dev/playground/* -> controls-v2 damage-numbers melee-recovery playground-hands playground-levers playground-respawn
 
 # --- Covered by the core alone: no game behaviour ------------------------------------------------------------------
 # Docs, the host unit tests (built and run by every build), the other dev scripts (their self-tests run on every pull

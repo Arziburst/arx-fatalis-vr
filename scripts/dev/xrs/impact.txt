@@ -200,6 +200,13 @@ data/core/localisation/* -> first-run-intro first-run-menu first-run-chargen vr-
 # --- The test playground (#321) ------------------------------------------------------------------------------------
 scripts/dev/playground/* -> controls-v2 damage-numbers melee-recovery playground-hands playground-levers playground-respawn weapon-classes
 
+# --- What a level's init runs (#601) ----------------------------------------------------------------------------------
+# A level loaded without a target whose init casts a field: Scene.*, Core.*, ChangeLevel.* and Field.* (src/scene/*,
+# src/core/Core.*, src/graphics/*) already run everything; these are the spells whose Launch / Update test visibility
+src/game/Spells.cpp -> level-init-targetless
+src/game/magic/spells/SpellsLvl06.* -> level-init-targetless
+src/game/magic/spells/SpellsLvl07.* -> level-init-targetless
+
 # --- Covered by the core alone: no game behaviour ------------------------------------------------------------------
 # Docs, the host unit tests (built and run by every build), the other dev scripts (their self-tests run on every pull
 # request) and this map (its coverage check is one of them)

@@ -143,6 +143,10 @@ void Window::onToggleFullscreen(bool fullscreen) {
 	}
 }
 	
+bool Window::pushFocusEvent(bool /* focused */) {
+	return false;
+}
+
 void Window::onFocus(bool hasFocus) {
 	m_focused = hasFocus;
 	if(hasFocus) {

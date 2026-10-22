@@ -981,7 +981,9 @@ private:
 	
 	void updateMinimizeOnFocusLostStateCheckbox() {
 		
-		if(m_fullscreen) {
+		// In VR the window never minimizes on a focus loss (#406): the box is off as for a window, and the setting
+		// stays as cfg.ini keeps it for flat mode
+		if(m_fullscreen && !vr::isEnabled()) {
 			Window::MinimizeSetting minimize = mainApp->getWindow()->willMinimizeOnFocusLost();
 			bool checked = (minimize == Window::Enabled || minimize == Window::AlwaysEnabled);
 			bool enabled = (minimize != Window::AlwaysDisabled && minimize != Window::AlwaysEnabled);

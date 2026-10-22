@@ -327,6 +327,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `loadslot <n>` | load save slot `n` (from the menu or in-game), refused with the slot count if it does not exist. The command-line `--loadslot <n>` of a missing slot logs an `[E]` and starts at the main menu (before #24 it started an empty level: a black world with only the HUD, TRAPS.md); `run-windows.ps1` / `test-pr.ps1` refuse such a launch before it starts |
 | `ui inventory open\|close` | what the inventory key does (the book has the script command `book open\|close`); a `ui.inventory` event once the inventory is open / has finished closing. While a level script holds the player (the level 10 start: letterbox, controls blocked) the HUD is not drawn and a close never finishes — `setplayercontrols on` and `cinemascope off` first (#130) |
 | `loadlevel <n> [target]` | change to level `n` in a running game (refused from the menu: start with `--loadlevel` or `loadslot`) |
+| `levelstats start\|report` | the [level tour](#the-level-tour-596)'s numbers (#596): `start` times every frame from then on (top of a frame to the next, as `arx-perf.log`); `report` stops, logs `[channel] levelstats: level <n> frames=<n> mean=<ms> p95=<ms> max=<ms> player=<x> <y> <z> exits=<n> ladders=<n>` (p95 the nearest rank) and appends the level's exits and ladders to `<dir>\level-tour.txt`. `status.json` → `levelStats`. Refused outside gameplay, and `report` without a `start` |
 | `newgame` | what the menu does for "New game" and the end of the character creation, without the screens: an average hero (all attributes 10, skills 2, nothing to distribute), level 1. Refused outside the main menu (a plain launch). The hero then lies in the start cell and `player.controlsBlocked` stays `true` for 30-40 s while the level script plays the awakening (#70) |
 | `entities [filter]` | write one line per entity to `<dir>\entities.txt`: `<id> npc\|item\|fix\|marker\|camera\|other show=<n> pos=<x> <y> <z> [life=<n>] interactive=<0\|1>`; `filter` is a substring of the id. `show` is the engine's `EntityShowState`: 0 in the scene, 2 in an inventory, 6 equipped by the player. The position of a floor object (lever, chest, item) is on the **floor** (#70). `interactive=0`: its script switched it off, no hand reticle or mouse hovers it (#210) |
 | `setpos <x> <y> <z> [yaw]` | put the player at exact coordinates, optionally facing `yaw`. `y` is the **feet** (the engine's teleport): the eye, `player.y` in the status, ends 170 units higher (smaller `y`). A `y` taken from the eye puts the player 170 units above the floor (TRAPS.md, #210). About 100 units are a metre. Refused outside gameplay (#70) |
@@ -447,6 +448,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   tutorial hint, `herosay`, "cannot cast"): each stays 2 s + 60 ms per character of **game time** and is
   drawn on the HUD quad. A check that compares HUD pixels over time waits for `notifications eq 0` first
   (`mvp-new-game` starts with one for about 6 s; see TRAPS.md).
+- `levelStats` (#596): `measuring` (between `levelstats start` and `report`), `reports` so far, and the last report's
+  `frames`, `meanMs`, `p95Ms`, `maxMs`, `exits`, `ladders` ([The level tour](#the-level-tour-596)).
 - `stickFor` (#370, after the first `stick-for`): `seq` holds started, `active` while the stick is held,
   `units` the distance asked for, `moved` the distance walked (the last hold's, once let go), `timedOut` the hold ended at its time limit instead, `walk` the stick
   walk of the hold's last walking frame - `walking`, `yaw`, `dirX`, `dirZ` as in `vr.input.walk`, kept after
@@ -1902,7 +1905,7 @@ eye. Adapted from the harness of Dishonored VR (`xrsim-run.ps1`, `img-diff.ps1`,
 in the table below still describe them). They cost about 6.5 minutes of every full suite and merge gate, so the owner moved
 them out for CI time; they are kept unchanged so they can be run by hand when scenes are worked on again. `ci-smoke` and
 `ci-local` do not look into this folder; `test-xrs.ps1` still parses every file there (syntax and `@save` checks, no run),
-so they do not rot silently. Run one by hand:
+so they do not rot silently. The [level tour](#the-level-tour-596) (#596) is there too, for the same reason. Run one by hand:
 
 ```powershell
 .\scripts\dev\xrs-run.ps1 manual\scene-first          # or any path to the file; also -Rebuild, as for any sequence
@@ -2001,6 +2004,55 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 
 A new feature's task un-pends its lines (and adds its own sequence). The runner is checked by
 `scripts\dev\test-xrs.ps1` (a fake game answering the channel files; in `run-script-tests.ps1`, so in CI).
+
+### The level tour (#596)
+
+`scripts\dev\xrs\manual\level-tour.xrs` visits every level of the game on the simulated headset - 10 (the start),
+then 0-8 and 11-23 with `loadlevel` (there is no level 9) - because the MVP is a full playthrough and CI exercises only
+levels 1, 3 and 10. Run it by hand (it is in `manual\`: the game runs 1 min 42 s - 2 min 2 s, about 1 min 46 s from the
+launch to the verdict, measured on the owner's PC 2026-10-22 - far over the 30 s a check of the merge gate may cost):
+
+```powershell
+.\scripts\dev\xrs-run.ps1 manual\level-tour       # also -Rebuild; the run folder is the test channel's directory it prints
+```
+
+Per level: no `[E]` / `[C]` line and no hang report in the load (`errors` unchanged), the level renders (240 frames in
+gameplay, a shot whose eyes are not `background`), and one log line from `levelstats report`:
+
+```
+[channel] levelstats: level 3 frames=244 mean=11.11 p95=12.18 max=12.88 player=7257.6 822.9 7663.8 exits=22 ladders=0
+```
+
+Every level is entered at a real entry marker (`loadlevel <n> <marker>`, the target of another level's exit), as the
+game enters it: without a target the player keeps the previous level's coordinates and often stands outside the new
+level, the eyes black. That way level 21 crashed in its init once (#601), not at its entry.
+
+`mean`, `p95`, `max` are the frame times (ms) of the 240 frames from 30 frames after the load, under `idle.vrsim`'s
+90 Hz cap: about 11.1 ms while the level keeps up. They are logged, not judged: the frame rate is guaranteed in level 1
+only (the owner, #596); a drop elsewhere becomes a bug issue. They read the PC's load as well: two runs made while other
+games ran had means of 17-32 ms on different levels each time (8, 11, 13, then 0, 1, 3, 4) and 11.1 ms on all the
+others, so compare runs made while no other game runs (the sequence says `@solo` for when it moves to CI). The shots
+run after the measurement (a shot stalls its frame). The run folder gets `level-tour.txt`, the list later tasks start
+from (#479 the level exits, #55 ladders):
+
+```
+level 1 frames=243 mean=11.11 p95=12.12 max=14.85 player=11540.0 2935.1 10620.0 exits=14 ladders=0
+  exit to=2 marker_0217 by=marker_0152 zone=level1_zone7 pos=13258.4 3145.4 7491.9 size=406.0 303.9 height=any
+  exit to=15 marker_0915 by=marker_0225 zone=level1_zone1 pos=9783.3 3645.2 9442.7 size=433.2 285.8 height=450
+  exit to=15 marker_0391 by=camera_0033 zone=- pos=8560.0 2990.1 8500.0
+  exit to=~?leading_to~ ~?destination~ by=snake_teleport_door_0032 zone=- pos=7279.5 3810.1 5049.7
+...
+  ladder pos=3222.4 606.5 10495.4 size=100.0 435.0 0.0 polygons=5
+```
+
+An **exit** is an entity whose script changes the level (`teleport -l...`: the target level and marker as written in
+the script; the magic portals' `~?leading_to~ ~?destination~` are script variables, the Latin-1 sigil shown as `?`),
+at each zone it controls (`setcontrolledzone`: the zone's centre at its floor, its width and depth, its height or
+`any`; y is down, in game units) or, without a zone, at the entity. A **ladder** is the climbable background polygons
+(a texture named `climb`, `POLY_CLIMB` - what the player climbs), pieces closer than 30 units grouped into one: its
+box's centre and size. In all 23 levels: 146 exits (most of them the magic portals), 7 ladders. A level that fails is
+filed as a bug and its failing step becomes `@pending #<issue>` - never a weaker check.
+
 ## `xr_hello` — the runtime alone
 
 `xr_hello.exe` is built next to `arx.exe` (CMake option `BUILD_XR_HELLO`, on by default with OpenXR;

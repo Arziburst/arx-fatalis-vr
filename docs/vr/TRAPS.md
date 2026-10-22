@@ -27,6 +27,21 @@ name only (`cl`, `link`, `ninja`), and the settle bridges the steps between them
 them). Not covered: one long frame inside a held-stick window (`walk120.walked` 133.4 for `le 133.1` after one 36.5 ms
 update frame) - a re-measure of such a record needs a retry directive the `.xrs` language does not have.
 
+## 2026-10-22 — The same swing hit weaker or harder at 45 fps: the speed's lag was a frame count, and a lunge at 25 fps read speed 0 (#620)
+
+**Symptom:** a timed swing (the same motion in display time) dealt a different aim at 45 Hz than at 90: an
+accelerating arm up to 0.9 m/s slower (aim 0.26 instead of 0.53), a slowing one faster; at a 30 Hz cap
+(`stress-melee-aim.ps1 -SlowRate 30`) group 6's lunge logged `melee.hit ... aim=0.10 speed=0.00 size=0.20 kind=slash`
+with `melee.swing kind=stab ... peak=6.00`. **Cause:** the speed was the median's step, 1.5 *frames* back - 17 ms at
+90 Hz, 33 at 45 - and a swing that starts on its first moving sample (a long step covering the stab distance) had no
+median step yet, so its speed read 0 and the contact's kind, from a zero velocity, a slash. **Do:** the detector reads
+the velocity at one moment of display time, `SwingParams::speedLag` (16.7 ms) before the frame's, between the steps
+of the filtered positions around it (D-063); a swing's first sample reads its step's mean. A new reading of the speed is
+checked against `MeleeSwingTest::testAimAt90HzPinned` (the 90 Hz values before the change) and
+`testSameContactAimAt45And90Hz` (45 against 90), and in the game with `stress-melee-aim.ps1 -SlowRate 30` / `20`.
+A frame over 100 ms in a swing keeps it now when the hand's mean speed across it is at least the end speed; outside a
+swing a gap still starts the detector over (`vr.melee.gaps`).
+
 ## 2026-10-22 — A fast simulated swing deals half the damage on a busy PC: its ramp counts frames (#613)
 
 **Symptom:** `melee-damage.xrs` failed in gates and PR runs while the PC was busy (`VR pacing: UNDER-SUBMITTING`, 28-44

@@ -2666,10 +2666,15 @@ Get-ChildItem $env:TEMP\asan                                                    
   sequence's `@until` on time; the next run did not. A run that crawls is run again, its failure is not the bug.
 - Each run is a launch of the task's budget (10, D-014).
 
-What it found: on every load in VR, `ARX_INTERACTIVE_Show_Hide_1st` walked the player model's face list while the
-body module bound to the reloaded model and appended the neck cap to that list - the walk went on in the freed list
-and wrote `POLY_HIDE` into it (#618, TRAPS.md 2026-10-22 #618). The repro above (`reach-lever`, whose second load runs
-with the head tracked) reported it in the first run that reached the load; after the fix the same runs are clean.
+What it found: on every recreate of the player model in VR (a load, a level change, equipping or removing a helmet,
+armour or leggings), `ARX_INTERACTIVE_Show_Hide_1st` walked the model's face list while the body module bound to the
+new model and appended the neck cap to that list - the walk went on in the freed list and wrote `POLY_HIDE` into it
+(#618, TRAPS.md 2026-10-22 #618). The repro above (`reach-lever`, whose second load runs with the head tracked)
+reported it in the first run that reached the load; after the fix the same runs are clean.
+
+The ASan directory is the copy's own build like `Release`: a stale one is named with its command
+(`build-windows.ps1 -Config Release -Asan`), and a launch's `-Rebuild` rebuilds it with `-Asan`. `-Rebuild` refuses a
+directory it would not build itself (it never rebuilds `Release` and then launches the stale exe of another directory).
 
 ## Record and replay (#550)
 

@@ -98,7 +98,8 @@ bool hidesHeadOnly();
 /*!
  * Binds the body to the player model \a obj if it is not bound to it yet (a new or reloaded model): finds the arm
  * chains and the head's vertices and appends the cap faces to \a obj's face list - which moves the list, so never
- * while a caller walks it (#618: a walk that bound halfway wrote into the freed list on every load in VR)
+ * while a caller walks it (#618: a walk that bound halfway wrote into the freed list whenever the player model was
+ * recreated in VR - a load, a level change, a helmet, armour or leggings put on or taken off)
  */
 void bindPlayerModel(EERIE_3DOBJ * obj);
 

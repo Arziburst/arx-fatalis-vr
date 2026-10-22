@@ -231,15 +231,17 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 	if(step < double(m_params.minStep)) {
 		return SwingChange::None; // the same pose again, or too close to measure
 	}
-	if(step > double(m_params.maxStep)) {
+	const float seconds = float(step);
+	const float raw = glm::length(point - m_lastPoint) / seconds;
+	// A long gap starts over: nobody knows the way the hand took across it - except in a swing that visibly went on
+	// (#620: a hitch frame on a slow PC): its mean speed across the gap, as sound a measurement as any long step's
+	// (#352), is at least the end speed, and the swing goes on from the hand's new place; a jump still ends it below
+	if(step > double(m_params.maxStep) && !(swinging() && raw >= m_params.endSpeed)) {
 		m_gaps++;
 		const SwingChange change = drop();
 		update(sample, true); // seed with it
 		return change;
 	}
-
-	const float seconds = float(step);
-	const float raw = glm::length(point - m_lastPoint) / seconds;
 	if(raw > m_params.jumpSpeed) {
 		m_jumps++;
 		const SwingChange change = drop();
@@ -247,10 +249,11 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 		return change;
 	}
 
-	// The speed of the median of the last three lever points (F-59's median of three, taken on the
-	// positions: a sample that is off and back gives two fast speeds, but its position is never the median).
-	// The median lags a sample: it moved over the step between the middle samples, not over this frame's -
-	// divided by this frame's step, a long frame followed by a short one reads a speed the hand never had (#352)
+	// The speed of the lever point, read speedLag before this sample from the steps of the medians of three
+	// positions (F-59's median of three, taken on the positions: a sample that is off and back gives two fast
+	// speeds, but its position is never the median) - at 90 Hz the step between the median window's middle samples,
+	// over its own time (a long frame followed by a short one must not read a speed the hand never had, #352); at
+	// any other rate the velocity at that same moment (#620, pointVelocity)
 	for(size_t i = m_hands.size() - 1; i > 0; i--) {
 		m_hands[i] = m_hands[i - 1];
 		m_blades[i] = m_blades[i - 1];
@@ -262,9 +265,11 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 	m_count = std::min(m_count + 1, m_hands.size());
 	m_speed = glm::length(pointVelocity(m_params.lever));
 	if(m_speed > m_params.jumpSpeed) {
-		// A guard that cannot fire (#352): over its true span the median never outruns the raw speed of that
-		// step, already checked above (on each axis both medians lie between the two samples they share). It
-		// stays as protection should the filter change; no test can reach it
+		// A guard that cannot fire (#352): the reading lies between two steps' velocities, and over its true span
+		// a step of the medians never outruns the raw speed of that step, already checked when it came (on each
+		// axis both medians lie between the two samples they share; the newest step, from the median to the newest
+		// sample, is at most this frame's raw step). It stays as protection should the filter change; no test can
+		// reach it
 		m_jumps++;
 		const SwingChange change = drop();
 		update(sample, true);
@@ -333,14 +338,53 @@ SwingChange SwingDetector::update(const SwingSample & sample, bool tracked) {
 }
 
 Vec3f SwingDetector::pointVelocity(float distance) const {
-	if(m_count < m_hands.size()) {
+	if(m_count < 4) {
 		return Vec3f(0.f);
 	}
 	const auto point = [&](size_t i) { return m_hands[i] + m_blades[i] * distance; };
-	const Vec3f now = median(point(0), point(1), point(2));
-	const Vec3f before = median(point(1), point(2), point(3));
-	const float span = float(m_times[1] - m_times[2]); // at least minStep: skipped samples never get here
-	return (now - before) / span;
+	// The filtered points: the median of three neighbouring samples, at the middle one's time (F-59: for a sample
+	// that is off and back the median is a neighbour's position)
+	const auto filtered = [&](size_t k) { return median(point(k), point(k + 1), point(k + 2)); };
+	// The steps between them, newest first - the newest sample itself from the newest filtered point at the front:
+	// each is the mean velocity over its span (at least minStep: skipped samples never get here), read at the span's
+	// middle. The velocity speedLag before the newest sample lies between the two middles around that moment; past
+	// the newest middle (a long frame) it is the newest step's, before the oldest (short frames after a start) the
+	// oldest's. At 90 Hz the moment is the middle of the step between the median window's middle samples: the
+	// reading of the 1.5-frame median lag, the same at every rate (D-NEW, #620)
+	const size_t steps = m_count - 2;
+	const auto stepAt = [&](size_t i, Vec3f & velocity, double & middle) {
+		const Vec3f from = filtered(i);
+		const Vec3f to = i == 0 ? point(0) : filtered(i - 1);
+		velocity = (to - from) / float(m_times[i] - m_times[i + 1]);
+		middle = (m_times[i] + m_times[i + 1]) / 2.;
+	};
+	// A moment within a microsecond of a step's middle reads that step alone: at 90 Hz the moment and the middle are
+	// the same time up to rounding (display times are nanosecond integers), and a 1e-16 share of the newest step would
+	// flip the sign of a velocity that is exactly 0 - the median standing still at a turn - for the stroke's turn-back
+	// rule, which read the plain step before
+	constexpr double Snap = 1e-6;
+	const double moment = m_times[0] - double(m_params.speedLag);
+	Vec3f newer;
+	double newerMiddle;
+	stepAt(0, newer, newerMiddle);
+	if(moment > newerMiddle - Snap) {
+		return newer;
+	}
+	for(size_t i = 1; i < steps; i++) {
+		Vec3f older;
+		double olderMiddle;
+		stepAt(i, older, olderMiddle);
+		if(moment > olderMiddle + Snap) {
+			const float share = float((moment - olderMiddle) / (newerMiddle - olderMiddle));
+			return older + (newer - older) * share;
+		}
+		if(moment > olderMiddle - Snap) {
+			return older;
+		}
+		newer = older;
+		newerMiddle = olderMiddle;
+	}
+	return newer;
 }
 
 float SwingDetector::strokePath(float distance) const {

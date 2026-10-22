@@ -43,9 +43,16 @@
  *    point \ref SwingParams::lever along the blade from the
  *    hand (F-61: a wrist flick turns a long blade's tip fast but this point slowly), measured relative
  *    to the head (F-59: leaning or stepping with a still arm is no swing; the room-space position
- *    already ignores the stick's walk and turn, F-178), from the median of the last three positions (F-59) over
- *    the time between the middle samples (the step the median really moved over, #352), and samples with a time
- *    step outside 4-100 ms or a speed above 20 m/s - raw or filtered - (a tracking jump) start it over.
+ *    already ignores the stick's walk and turn, F-178), and read at one moment of display time,
+ *    \ref SwingParams::speedLag before the frame's (D-NEW, #620): every step between neighbouring positions - the
+ *    medians of three samples (F-59), the newest sample itself at the front - is the mean velocity over its span,
+ *    placed at the span's middle, and the reading is the one between the two middles around that moment (an
+ *    accelerating arm's parabola), or the newest step's when the moment is past its middle (a long frame). At 90 Hz
+ *    that moment is the middle of the step between the median window's middle samples (the step the median really
+ *    moved over, #352): the reading of the 1.5-frame median lag, now the same at every rate. Samples with a time
+ *    step under 4 ms are skipped; a step over 100 ms or a speed above 20 m/s - raw or filtered - (a tracking jump)
+ *    starts it over, except a long frame in a swing that visibly went on across it (its mean speed at least
+ *    \ref SwingParams::endSpeed, #620).
  *    A swing starts at \ref SwingParams::startSpeed - or as a stab: a thrust of \ref SwingParams::stabDistance
  *    along the blade within \ref SwingParams::stabWindow at \ref SwingParams::stabSpeed (F-61) - and
  *    ends below \ref SwingParams::endSpeed or after \ref SwingParams::maxDuration.
@@ -94,7 +101,8 @@ struct SwingParams {
 	float maxDuration = 1.f;     //!< s: a longer swing (circling the blade) ends and a new one may start
 	float jumpSpeed = 20.f;      //!< faster (raw or filtered) is a tracking jump, not a swing (F-59, #352)
 	float minStep = 0.004f;      //!< s: samples closer than this are skipped
-	float maxStep = 0.1f;        //!< s: a longer gap starts over
+	float maxStep = 0.1f;        //!< s: a longer gap starts over (not a swing that went on across it at \ref endSpeed or more)
+	float speedLag = 1.f / 60.f; //!< s before the frame's display time the speed is read at: 1.5 frames of 90 Hz (D-NEW)
 	float targetCooldown = 0.25f; //!< s before a target can be hit again, by a new swing [vr_melee_target_cooldown]
 };
 
@@ -241,8 +249,9 @@ public:
 	float peak() const { return m_peak; }
 	/*!
 	 * \return the filtered velocity (m/s, relative to the head) of the blade's point \a distance m from the grip - the
-	 *         contact point of a hit (#465), filtered like \ref speed (which is the one of \ref SwingParams::lever);
-	 *         0 before four samples
+	 *         contact point of a hit (#465), filtered like \ref speed (which is the one of \ref SwingParams::lever):
+	 *         the velocity \ref SwingParams::speedLag before the newest sample, read between the steps of the
+	 *         median-filtered points around that moment (D-NEW); 0 before four samples
 	 */
 	Vec3f pointVelocity(float distance) const;
 	//! The blade's direction in the last sample (the grip's -Z), relative to the head
@@ -277,6 +286,11 @@ private:
 
 	//! The longest stroke kept, samples (\ref SwingParams::maxDuration at 250 Hz)
 	static constexpr size_t MaxStroke = 256;
+	/*!
+	 * The samples kept for the velocity, newest first: enough steps of the median-filtered points to reach
+	 * \ref SwingParams::speedLag back at 250 Hz (4 ms frames: the moment is 4 steps back, 7 samples)
+	 */
+	static constexpr size_t Samples = 8;
 
 	SwingChange drop();
 
@@ -285,11 +299,11 @@ private:
 	double m_lastTime = 0.;
 	Vec3f m_lastPoint = Vec3f(0.f);
 	Vec3f m_lastHand = Vec3f(0.f);
-	// The last four samples, newest first: the median of the newest three against the one before it is the
-	// filtered velocity of any point of the blade (F-59)
-	std::array<Vec3f, 4> m_hands = { };
-	std::array<Vec3f, 4> m_blades = { };
-	std::array<double, 4> m_times = { };
+	// The last samples, newest first: the medians of three neighbours are the filtered points any point of the
+	// blade moved through (F-59), their steps its velocity (\ref pointVelocity)
+	std::array<Vec3f, Samples> m_hands = { };
+	std::array<Vec3f, Samples> m_blades = { };
+	std::array<double, Samples> m_times = { };
 	size_t m_count = 0;
 	std::vector<StrokeSample> m_stroke;   //!< the stroke so far, oldest first
 	std::array<Vec3f, 4> m_handVelocities = { }; //!< the hand's filtered velocity of the last four samples, newest first

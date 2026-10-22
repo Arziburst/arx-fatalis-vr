@@ -13,6 +13,67 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: A swing's speed is read at one moment of display time, 16.7 ms back - the same blow at every frame rate
+
+- **Date:** 2026-10-22
+- **Status:** Accepted (#620; refines D-054's speed measure and applies D-057 to the swing detector; D-054's median of
+  three, lever point, ranges and rule stay)
+- **Decided by:** the owner (the contract: the aim is a function of the physical swing, not of the frame cadence, and
+  the feel at the headset's normal rate must not change; combat on Fable); the mechanism by the worker of #620
+
+### Decision
+- **The lever point's speed is its velocity at one moment of display time, `speedLag` = 1/60 s (16.7 ms) before the
+  frame's display time** (`SwingParams::speedLag`, no cfg.ini key). Every step between neighbouring filtered positions
+  - the medians of three samples (F-59), and the newest sample itself from the newest median at the front - is the
+  mean velocity over its span, placed at the span's middle; the reading is the one between the two middles around
+  that moment (linear between them: an accelerating arm's parabola), the newest step's when the moment is past its
+  middle (a long frame), the oldest's before the oldest (short frames right after a start). The detector keeps the
+  last 8 samples: enough steps at 250 Hz.
+- **At 90 Hz nothing changes.** There the moment is the middle of the step between the median window's middle samples
+  - exactly the reading before (#352's "the step the median really moved over"), whose lag is 1.5 frames. The host
+  test `MeleeSwingTest::testAimAt90HzPinned` pins the 90 Hz aims and speeds of the test swings to the values the code
+  gave before the change (within 0.01). At any other rate the detector reads the velocity at that same moment:
+  `testSameContactAimAt45And90Hz` (the tester's, #613) holds the same swing's aim at 45 Hz within 0.05 of its 90 Hz
+  aim; 144 Hz, which read 1.5 of its own frames (10.4 ms) back before, now reads 16.7 ms back like 90.
+- **A long frame in a swing that visibly went on across it keeps the swing.** A time step over `maxStep` (100 ms)
+  starts the detector over as before - except while a swing is in progress and the hand's mean speed across the gap
+  is at least the end speed (1.5 m/s): the gap is one long step (its mean speed is as sound as any long step's, #352's
+  hitch tests), the stroke grows by the straight way across it, and `gaps` counts only the samples refused. A jump
+  (over 20 m/s) across the gap still ends it; the hand all but stopped across it is dropped as before.
+- **A swing may start on the first moving sample.** At 25 frames/s a lunge's first step covers the stab distance by
+  itself; the speed there is now that step's mean (the moment is past the step's middle), so a contact on it reads
+  the lunge's speed and a thrust, not speed 0 and a slash (the issue's second finding).
+
+### Why
+- The median's step is a frame count: 1.5 frames of lag, 17 ms at 90 Hz, 33 ms at 45. A real arm's speed is a bell,
+  so at 45 Hz the same swing read up to 0.9 m/s slower while speeding up and faster while slowing down - 0.26 of aim
+  on the dagger's scale: a player on a slower PC dealt weaker or stronger blows than intended (the #613 tester's
+  finding). D-057: a frame count becomes the time it took at 90 Hz - here 16.7 ms.
+- **Interpolating between step middles rather than a window of positions:** the mean velocity over a fixed window of
+  display time, with the positions at its ends read linearly between samples, is the newest step's mean at low rates
+  - centred 5.6 ms off the moment at 45 Hz, 0.3 m/s for the bell swing (0.09 of aim, over the tolerance); linear in
+  velocity between the steps' middles is exact for a constant acceleration and off by 0.02 m/s for the bell.
+- **The newest raw sample enters the reading only where the moment lies past the medians' step** - weight 0 at
+  90 Hz, so F-59's protection against a sample that is off and back is what it was there; at 45 Hz it has three
+  quarters of the reading, at 30 frames/s all of it. The trade-off is accepted: without it the reading would have to
+  be extrapolated 17 ms past the last median (0.2 m/s off for the bell, and 6.9 m/s instead of 4.3 for #352's hitch
+  case), and a tracking glitch's speed falls with the rate (5 cm are 4.5 m/s at 90 Hz, 1.5 m/s at 30).
+- **Keeping a swing across a long frame** costs nothing at 90 Hz (no frame is that long outside a stall) and saves the
+  blow of a hitch frame on a slow PC, where the detector used to need four more frames (130 ms at 30 frames/s) to see
+  the same swing again as a new one with a restarted stroke.
+
+### Rules out
+Reading the speed over a frame count at any rate; a per-rate lag (1.5 frames of the headset's own rate); a cfg.ini
+key for the moment (it is the 90 Hz feel, not a preference); a longer or shorter smoothing window at 90 Hz (the feel
+the owner tuned).
+
+### Consequences
+`vr/MeleeSwing.h`'s `SwingParams::speedLag`, `SwingDetector::pointVelocity`; the host tests `testAimAt90HzPinned`,
+`testGapInSwingGoesOn`, `testLungeAtLowRateReadsItsSpeed` and the tester's `testSameContactAimAt45And90Hz`;
+`scripts/dev/stress-melee-aim.ps1 -SlowRate 30` / `20` pass `melee-damage.xrs` (the fast slash and the lunge at full
+aim). A stroke's size is still sampled per frame (a hit on a swing's first sample reads one step of path at any rate)
+and the hand's turn-back is still three samples back: both outside this change.
+
 ## D-062: Marks v2 - a short press is a snapshot, a hold is the voice note, its clip and a snapshot every 2 s; the notes transcribed locally
 
 - **Date:** 2026-10-21

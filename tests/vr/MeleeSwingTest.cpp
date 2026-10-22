@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -925,6 +926,200 @@ void MeleeSwingTest::testSameContactAimAt45And90Hz() {
 	if(!failures.empty()) {
 		CPPUNIT_FAIL(failures);
 	}
+}
+
+void MeleeSwingTest::testAimAt90HzPinned() {
+	// #620: the fix for the frame rate changes nothing at 90 Hz. The aims the test swings dealt before it (the speed read
+	// as the median's step, 1.5 frames back), at every 90 Hz slot the detector was swinging at, printed by the code
+	// before the fix: pinned within 0.01 of aim (the log's rounding) and 0.01 m/s of speed
+	struct Pinned {
+		int slot;
+		float aim;
+		float speed;
+	};
+	// The bell swing with the dagger's speed range alone (the speed decides)
+	const Pinned bell[] = {
+		{ 53, 0.3517f, 2.8389f }, { 54, 0.5257f, 3.4190f }, { 55, 0.6856f, 3.9521f }, { 56, 0.8251f, 4.4171f },
+		{ 57, 0.9390f, 4.7966f }, { 58, 1.0000f, 5.0773f }, { 59, 1.0000f, 5.2496f }, { 60, 1.0000f, 5.3076f },
+		{ 61, 1.0000f, 5.2496f }, { 62, 1.0000f, 5.0773f }, { 63, 0.9390f, 4.7966f }, { 64, 0.8251f, 4.4171f },
+		{ 65, 0.6856f, 3.9521f }, { 66, 0.5257f, 3.4190f }, { 67, 0.3517f, 2.8389f }, { 68, 0.1710f, 2.2367f },
+		{ 69, 0.1000f, 1.6413f }
+	};
+	// The sequences' 9.6 m/s ramp with the dagger's defaults (the path decides)
+	const Pinned ramp[] = {
+		{ 42, 0.1000f, 9.5625f }, { 43, 0.2768f, 9.5625f }, { 44, 0.5500f, 9.5625f }, { 45, 0.8232f, 9.5625f },
+		{ 46, 1.0000f, 9.5625f }, { 47, 1.0000f, 9.5625f }, { 48, 1.0000f, 9.5625f }, { 49, 1.0000f, 9.5625f }
+	};
+	std::string failures;
+	auto check = [&](const char * name, const CadenceRun & run, const Pinned * pinned, size_t count) {
+		if(run.slots.size() != count) {
+			failures += std::string(" ") + name + ": swinging at " + std::to_string(run.slots.size()) + " slots, pinned "
+			            + std::to_string(count) + ";";
+			return;
+		}
+		for(size_t i = 0; i < count; i++) {
+			if(run.slots[i] != pinned[i].slot || std::abs(run.aims[i] - pinned[i].aim) > 0.01f
+			   || std::abs(run.speeds[i] - pinned[i].speed) > 0.01f) {
+				failures += std::string(" ") + name + " slot " + std::to_string(run.slots[i]) + ": aim "
+				            + std::to_string(run.aims[i]) + " (speed " + std::to_string(run.speeds[i]) + "), pinned slot "
+				            + std::to_string(pinned[i].slot) + " aim " + std::to_string(pinned[i].aim) + " (speed "
+				            + std::to_string(pinned[i].speed) + ");";
+			}
+		}
+	};
+	{
+		vr::DamageParams damage;
+		damage.slash = { 0.f, 0.f, 2.f, 5.f };
+		check("the bell swing", sampleSwing(bellSwing, 0.5, 1, damage), bell, std::size(bell));
+	}
+	{
+		vr::DamageParams damage;
+		damage.slash = vr::defaultRanges(vr::MeleeClass::Dagger).slash;
+		check("the 9.6 m/s ramp", sampleSwing(rampSwing, 40. / 90., 1, damage), ramp, std::size(ramp));
+	}
+	// The fixture's constant swings from a still hand with the sword's defaults, frame by frame from the first moving
+	// sample: a 4 m/s slash (the speed factor 0.43 once the path is there), a 3 m/s thrust (0.5), a 6 m/s slash (full
+	// from 0.8 m); the speed reads from the second moving sample, as before
+	struct Frame {
+		float aim;
+		float speed;
+		float size;
+	};
+	struct Constant {
+		const char * name;
+		Vec3f velocity;
+		std::vector<Frame> frames;
+	};
+	const Constant constants[] = {
+		{ "4 m/s sideways", Vec3f(-4.f, 0.f, 0.f), {
+			{ 0.1000f, 0.0000f, 0.0444f }, { 0.1000f, 4.0000f, 0.0889f }, { 0.1000f, 4.0000f, 0.1333f },
+			{ 0.1000f, 4.0000f, 0.1778f }, { 0.1000f, 4.0000f, 0.2222f }, { 0.1000f, 4.0000f, 0.2667f },
+			{ 0.1200f, 4.0000f, 0.3111f }, { 0.2000f, 4.0000f, 0.3556f }, { 0.2800f, 4.0000f, 0.4000f },
+			{ 0.3600f, 4.0000f, 0.4444f }, { 0.4400f, 4.0000f, 0.4889f }, { 0.4857f, 4.0000f, 0.5333f },
+			{ 0.4857f, 4.0000f, 0.5778f }, { 0.4857f, 4.0000f, 0.6222f }, { 0.4857f, 4.0000f, 0.6667f },
+			{ 0.4857f, 4.0000f, 0.7111f }, { 0.4857f, 4.0000f, 0.7556f }, { 0.4857f, 4.0000f, 0.8000f },
+			{ 0.4857f, 4.0000f, 0.8444f }, { 0.4857f, 4.0000f, 0.8889f } } },
+		{ "3 m/s along the blade", Vec3f(0.f, 0.f, -3.f), {
+			{ 0.1000f, 0.0000f, 0.0333f }, { 0.1000f, 3.0000f, 0.0667f }, { 0.1000f, 3.0000f, 0.1000f },
+			{ 0.1000f, 3.0000f, 0.1333f }, { 0.1000f, 3.0000f, 0.1667f }, { 0.1000f, 3.0000f, 0.2000f },
+			{ 0.2000f, 3.0000f, 0.2333f }, { 0.3000f, 3.0000f, 0.2667f }, { 0.4000f, 3.0000f, 0.3000f },
+			{ 0.5000f, 3.0000f, 0.3333f }, { 0.5500f, 3.0000f, 0.3667f }, { 0.5500f, 3.0000f, 0.4000f },
+			{ 0.5500f, 3.0000f, 0.4333f }, { 0.5500f, 3.0000f, 0.4667f }, { 0.5500f, 3.0000f, 0.5000f },
+			{ 0.5500f, 3.0000f, 0.5333f }, { 0.5500f, 3.0000f, 0.5667f }, { 0.5500f, 3.0000f, 0.6000f },
+			{ 0.5500f, 3.0000f, 0.6333f }, { 0.5500f, 3.0000f, 0.6667f } } },
+		{ "6 m/s sideways", Vec3f(-6.f, 0.f, 0.f), {
+			{ 0.1000f, 0.0000f, 0.0667f }, { 0.1000f, 6.0000f, 0.1333f }, { 0.1000f, 6.0000f, 0.2000f },
+			{ 0.1000f, 6.0000f, 0.2667f }, { 0.1600f, 6.0000f, 0.3333f }, { 0.2800f, 6.0000f, 0.4000f },
+			{ 0.4000f, 6.0000f, 0.4667f }, { 0.5200f, 6.0000f, 0.5333f }, { 0.6400f, 6.0000f, 0.6000f },
+			{ 0.7600f, 6.0000f, 0.6667f }, { 0.8800f, 6.0000f, 0.7333f }, { 1.0000f, 6.0000f, 0.8000f },
+			{ 1.0000f, 6.0000f, 0.8667f }, { 1.0000f, 6.0000f, 0.9333f }, { 1.0000f, 6.0000f, 1.0000f },
+			{ 1.0000f, 6.0000f, 1.0667f }, { 1.0000f, 6.0000f, 1.1333f }, { 1.0000f, 6.0000f, 1.2000f },
+			{ 1.0000f, 6.0000f, 1.2667f }, { 1.0000f, 6.0000f, 1.3333f } } }
+	};
+	for(const Constant & constant : constants) {
+		vr::SwingDetector detector;
+		double time = 0.;
+		Vec3f hand = Rest;
+		move(detector, time, hand, Vec3f(0.f), 5);
+		for(size_t i = 0; i < constant.frames.size(); i++) {
+			move(detector, time, hand, constant.velocity, 1);
+			const vr::ContactMeasure contact = vr::measureContact(detector);
+			const float aim = vr::contactAim(contact, vr::DamageParams());
+			const Frame & pinned = constant.frames[i];
+			if(std::abs(aim - pinned.aim) > 0.01f || std::abs(contact.speed - pinned.speed) > 0.01f
+			   || std::abs(contact.size - pinned.size) > 0.001f) {
+				failures += std::string(" ") + constant.name + " frame " + std::to_string(i) + ": aim " + std::to_string(aim)
+				            + " speed " + std::to_string(contact.speed) + " size " + std::to_string(contact.size)
+				            + ", pinned " + std::to_string(pinned.aim) + " " + std::to_string(pinned.speed) + " "
+				            + std::to_string(pinned.size) + ";";
+			}
+		}
+	}
+	if(!failures.empty()) {
+		CPPUNIT_FAIL("the 90 Hz aim changed:" + failures);
+	}
+}
+
+void MeleeSwingTest::testGapInSwingGoesOn() {
+	// #620: a frame over 100 ms in a swing that visibly went on across it - the hand's mean speed over the gap at least
+	// the end speed - keeps the swing, so a hitch on a slow PC loses no blow: the speed reads the gap's mean, the stroke
+	// grows by the way across it. The hand all but stopped across the gap, or a jump: dropped as before (and outside a
+	// swing a gap starts over, testGapAndLostTracking)
+	{
+		vr::SwingDetector detector;
+		double time = 0.;
+		Vec3f hand = Rest;
+		move(detector, time, hand, Vec3f(0.f), 5);
+		move(detector, time, hand, Vec3f(-4.f, 0.f, 0.f), 5);
+		CPPUNIT_ASSERT(detector.swinging());
+		const float before = detector.strokePath(0.f);
+		time += 0.15;
+		hand += Vec3f(-0.6f, 0.f, 0.f);
+		CPPUNIT_ASSERT(detector.update(sample(time, hand), true) == vr::SwingChange::None);
+		CPPUNIT_ASSERT(detector.swinging());
+		CPPUNIT_ASSERT_EQUAL(u64(0), detector.gaps());
+		CPPUNIT_ASSERT_EQUAL(u64(1), detector.swings());
+		if(std::abs(detector.speed() - 4.f) > 0.01f) {
+			CPPUNIT_FAIL("0.6 m across a 150 ms frame in a swing read " + std::to_string(detector.speed()) + " m/s");
+		}
+		CPPUNIT_ASSERT(std::abs(detector.strokePath(0.f) - before - 0.6f) < 1e-4f);
+		CPPUNIT_ASSERT(move(detector, time, hand, Vec3f(-4.f, 0.f, 0.f), 3).empty());
+		CPPUNIT_ASSERT(detector.swinging());
+		std::vector<vr::SwingChange> changes = move(detector, time, hand, Vec3f(0.f), 5);
+		CPPUNIT_ASSERT_EQUAL(size_t(1), count(changes, vr::SwingChange::Ended));
+		CPPUNIT_ASSERT_EQUAL(u64(1), detector.swings());
+	}
+	// The hand 10 cm on after 150 ms (0.67 m/s): the swing is lost, nobody knows the way the hand took
+	{
+		vr::SwingDetector detector;
+		double time = 0.;
+		Vec3f hand = Rest;
+		move(detector, time, hand, Vec3f(0.f), 5);
+		move(detector, time, hand, Vec3f(-4.f, 0.f, 0.f), 5);
+		time += 0.15;
+		hand += Vec3f(-0.1f, 0.f, 0.f);
+		CPPUNIT_ASSERT(detector.update(sample(time, hand), true) == vr::SwingChange::Lost);
+		CPPUNIT_ASSERT(!detector.swinging());
+		CPPUNIT_ASSERT_EQUAL(u64(1), detector.gaps());
+		CPPUNIT_ASSERT(move(detector, time, hand, Vec3f(0.f), 5).empty());
+	}
+	// 3.5 m on after 150 ms (23 m/s): a tracking jump, not a swing that went on
+	{
+		vr::SwingDetector detector;
+		double time = 0.;
+		Vec3f hand = Rest;
+		move(detector, time, hand, Vec3f(0.f), 5);
+		move(detector, time, hand, Vec3f(-4.f, 0.f, 0.f), 5);
+		time += 0.15;
+		hand += Vec3f(-3.5f, 0.f, 0.f);
+		CPPUNIT_ASSERT(detector.update(sample(time, hand), true) == vr::SwingChange::Lost);
+		CPPUNIT_ASSERT(!detector.swinging());
+		CPPUNIT_ASSERT_EQUAL(u64(1), detector.jumps());
+		CPPUNIT_ASSERT_EQUAL(u64(0), detector.gaps());
+	}
+}
+
+void MeleeSwingTest::testLungeAtLowRateReadsItsSpeed() {
+	// #620: at 25 frames/s a lunge's first step covers the stab distance by itself, and the swing starts on that very
+	// sample. Before the fix the speed there was 0 (the median's step had not moved yet): a contact on it read
+	// speed 0, kind slash, and dealt the minimum. Now the speed is the step's mean, the kind a thrust: the full strike
+	// with the sequences' stab range (melee-damage.xrs group 6, the lunge at a 30 Hz cap)
+	vr::SwingDetector detector;
+	double time = 0.;
+	Vec3f hand = Rest;
+	moveSteps(detector, time, hand, Vec3f(0.f), std::vector<double>(5, 0.04));
+	std::vector<vr::SwingChange> changes = moveSteps(detector, time, hand, Vec3f(0.f, 0.f, -5.5f), { 0.04 });
+	CPPUNIT_ASSERT_EQUAL(size_t(1), count(changes, vr::SwingChange::Started));
+	CPPUNIT_ASSERT(detector.swinging());
+	const vr::ContactMeasure lunge = vr::measureContact(detector);
+	if(std::abs(lunge.speed - 5.5f) > 0.01f) {
+		CPPUNIT_FAIL("a 0.22 m lunge in one 40 ms frame read " + std::to_string(lunge.speed) + " m/s");
+	}
+	CPPUNIT_ASSERT(lunge.kind == vr::ContactKind::Thrust);
+	CPPUNIT_ASSERT(std::abs(lunge.size - 0.22f) < 1e-3f);
+	vr::DamageParams damage;
+	damage.stab = { 0.f, 0.f, 2.f, 4.5f };
+	CPPUNIT_ASSERT_EQUAL(1.f, vr::contactAim(lunge, damage));
 }
 
 void MeleeSwingTest::testRecoveryTime() {

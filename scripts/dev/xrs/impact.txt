@@ -97,7 +97,7 @@ src/vr/VRSystem.* -> core
 CMakeLists.txt -> core
 
 # --- The VR body: arms, hands, fingers -----------------------------------------------------------------------------
-src/vr/VRBody.* -> arm-fit arms-classic arms-classic-glove arms-elbow arms-follow arms-model arms-roll arms-variants body-hidden body-look-down finger-five finger-held finger-tracking hand-conforming height-hands weapon-hold weapon-in-glove wrist-vitals real-steps physical-crouch
+src/vr/VRBody.* -> arm-fit arms-classic arms-classic-glove arms-elbow arms-follow arms-model arms-roll arms-variants body-hidden body-look-down finger-five finger-held finger-tracking hand-conforming height-hands weapon-hold weapon-in-glove wrist-vitals real-steps physical-crouch orbs-no-arm
 src/vr/VRArms.* -> arm-fit arms-classic arms-classic-glove arms-elbow arms-follow arms-model arms-roll arms-variants body-hidden finger-five hand-conforming weapon-in-glove
 src/vr/ArmFit.* -> arm-fit arms-elbow arms-variants height-hands
 src/vr/ArmIK.* -> arm-fit arms-elbow arms-follow arms-roll arms-variants height-hands weapon-hold
@@ -168,16 +168,16 @@ src/vr/VRMirror.* -> ui-panel menu-pointer first-run-menu first-run-chargen cine
 src/vr/MirrorGeometry.h -> ui-panel menu-pointer first-run-menu first-run-chargen cinematics desktop-mouse
 src/vr/RadialMenu.* -> radial-menu controls-v2 vr-remap hand-reticle first-run-menu menu-rebind-kept
 src/vr/VRRadial.* -> radial-menu controls-v2 hud-frame first-run-menu first-run-chargen rune-trail tl-reprojection menu-rebind-kept
-src/vr/HudFrame.* -> hud-frame hud-frame-flat tl-reprojection
-src/vr/VRHud.* -> hud-frame hud-frame-flat tl-reprojection wrist-vitals ui-panel
-src/vr/WristHud.* -> wrist-vitals hud-frame hud-frame-flat weapon-hold tl-reprojection
-src/vr/WristVitals.* -> wrist-vitals
+src/vr/HudFrame.* -> hud-frame hud-frame-flat tl-reprojection orbs-no-arm
+src/vr/VRHud.* -> hud-frame hud-frame-flat tl-reprojection wrist-vitals ui-panel orbs-no-arm
+src/vr/WristHud.* -> wrist-vitals hud-frame hud-frame-flat weapon-hold tl-reprojection orbs-no-arm
+src/vr/WristVitals.* -> wrist-vitals orbs-no-arm
 src/vr/InterfaceSize.* -> ui-panel tl-reprojection hud-frame menu-pointer
-src/gui/Hud.* -> hud-frame hud-frame-flat wrist-vitals tl-reprojection
+src/gui/Hud.* -> hud-frame hud-frame-flat wrist-vitals tl-reprojection orbs-no-arm
 src/gui/MiniMap.* -> hud-frame hud-frame-flat
 src/gui/Notification.* -> hud-frame hud-frame-flat ui-panel walk-look
 src/gui/Speech.* -> hud-frame hud-frame-flat first-run-intro cinematics
-src/gui/hud/* -> hud-frame hud-frame-flat wrist-vitals
+src/gui/hud/* -> hud-frame hud-frame-flat wrist-vitals orbs-no-arm
 src/gui/Interface.* -> hand-reticle menu-pointer ui-panel controls-v2 walk-forward walk-look snap-turn sneak-jump-crouch physical-crouch playground-hands
 src/gui/Cursor.* -> hand-reticle menu-pointer rune-trail desktop-mouse
 src/gui/Dragging.* -> hand-reticle menu-pointer

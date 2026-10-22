@@ -128,8 +128,8 @@ function Send-ArxCommand(
 	do {
 		$ack = Read-ArxAck $Dir
 		if ($ack -and [int]$ack.Seq -gt $seq) { return $ack.Text }
-		# The game answers in the next frame (it looks for command.txt every frame, #522), a waitframes when its frames
-		# are rendered: a fine poll keeps the round trip near that, a small file read each time
+		# The game answers in the next frame after its reader thread found command.txt (it looks every 5 ms, #561), a
+		# waitframes when its frames are rendered: a fine poll keeps the round trip near that, a small file read each time
 		Start-Sleep -Milliseconds 10
 	} while ((Get-Date) -lt $deadline)
 	$last = if ($before) { $before | ConvertTo-Json -Compress -Depth 4 } else { 'none' }

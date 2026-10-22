@@ -284,8 +284,10 @@ records only the extra arguments, not `--mute`.
 
 Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While enabled the game:
 
-- **polls `<dir>\command.txt`** every frame (#522; a file lookup, read only when it is there): one command per line, `#` comments, consumed on read
-  (deleted), a file older than the process start is discarded with a log line. Write it with
+- **polls `<dir>\command.txt`** every 5 ms on a reader thread of its own (#561; every frame on the main thread before,
+  where a busy file system's stat took up to 62 ms): one command per line, `#` comments, consumed on read
+  (deleted), a file older than the process start is discarded with a log line. The frame only takes a batch the
+  reader has ready, in the order the files came; a file its writer still holds is tried again (given up after 10 s). Write it with
   `scripts/dev/game-cmd.ps1` or `Send-ArxCommand` from `scripts/dev/test-lib.ps1`: both write a
   temporary file and rename it, so the game never reads a half-written batch, and wait for the ack.
 - **answers every batch in `<dir>\ack.txt`**: `seq=<batch> frame=<frame> errors=<refused lines>

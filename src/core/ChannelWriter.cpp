@@ -179,7 +179,7 @@ void ChannelWriter::run() {
 		bool landed = false;
 		if(hasStatus) {
 			if(!writeWhole(m_files.tmp, status)) {
-				warnOnce(m_warnedTmp, "could not write " + m_files.tmp.string());
+				warnOnce(m_warnedTmp, "could not write " + m_files.tmp.filename().string());
 			} else if(core::replaceFile(m_files.tmp, m_files.status, core::ReplaceMode::Patient, m_patience)) {
 				landed = true;
 				hasStatus = false;
@@ -196,7 +196,7 @@ void ChannelWriter::run() {
 		}
 		if(hasAck && !hasStatus) {
 			if(!writeWhole(m_files.ack, ack) && m_warn) {
-				m_warn("could not write " + m_files.ack.string());
+				m_warn("could not write " + m_files.ack.filename().string());
 			}
 			hasAck = false;
 		}

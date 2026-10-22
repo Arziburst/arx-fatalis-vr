@@ -231,11 +231,23 @@ function Assert-ArxFreshBuild([string]$SourceDir, [string]$BuildDir, [string]$Co
 		elseif ($Head -and -not (Get-ArxStampFingerprint $stamp)) { 'the build stamp has no tree fingerprint (made before #306)' }
 		elseif ($Head -and (Get-ArxStampFingerprint $stamp) -ne (Get-ArxTreeFingerprint $SourceDir)) { 'the working tree changed since the build (uncommitted edits, #306)' }
 	if (-not $problem) { return $stamp }
+	# An AddressSanitizer build (build-windows.ps1 -Asan, #618) lives in <Config>-asan beside <Config>
+	$asan = $full.EndsWith('-asan', [StringComparison]::OrdinalIgnoreCase)
+	$buildCommand = ".\scripts\build-windows.ps1 -Config $Config$(if ($asan) { ' -Asan' })"
 	if (-not $Rebuild) {
-		throw "stale build: $problem. Build first (.\scripts\build-windows.ps1 -Config $Config) or pass -Rebuild - a launch runs only a fresh build of its working copy (D-014)."
+		throw "stale build: $problem. Build first ($buildCommand) or pass -Rebuild - a launch runs only a fresh build of its working copy (D-014)."
+	}
+	# -Rebuild builds the default directory of the config: another directory would stay stale and still be launched
+	$expected = "$(Get-DefaultBuildDir $SourceDir $Config)$(if ($asan) { '-asan' })"
+	if (-not $full.Equals([IO.Path]::GetFullPath($expected).TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
+		throw "stale build: $problem. -Rebuild builds only $expected ($buildCommand), not $BuildDir - build that directory yourself."
 	}
 	Write-Host "==> Build is stale ($problem) - rebuilding on -Rebuild" -ForegroundColor Yellow
-	& (Join-Path $SourceDir 'scripts\build-windows.ps1') -Config $Config
+	if ($asan) {
+		& (Join-Path $SourceDir 'scripts\build-windows.ps1') -Config $Config -Asan
+	} else {
+		& (Join-Path $SourceDir 'scripts\build-windows.ps1') -Config $Config
+	}
 	$stamp = & $readStamp
 	if (-not (Test-Path $exe) -or -not $stamp) { throw 'the rebuild left no arx.exe or no built-from.txt' }
 	return $stamp

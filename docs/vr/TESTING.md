@@ -2636,6 +2636,46 @@ full report without them) and neither ships to players:
   build can be symbolised even after its build directory is gone - the exe too, because cdb unwinds a minidump's x64
   frames from the image's unwind data, which the pdb does not hold (#610).
 
+### AddressSanitizer build (#618)
+
+A heap corruption faults far from where it is made: #610's crash was a `free` in the status writer, the corruption
+a write into freed memory elsewhere. An AddressSanitizer build stops the game at the bad access itself and names the
+access, the free and the allocation. A development tool only: never for release, never in CI, never by default.
+
+```powershell
+.\scripts\build-windows.ps1 -Asan     # MSVC /fsanitize=address (CMake ARX_ASAN=ON) into <the copy's build dir>\Release-asan
+$build = "$env:LOCALAPPDATA\ArxFatalisVR\build\<folder>-<hash>\Release-asan"   # the path the build prints
+$env:ASAN_OPTIONS = "log_path='$env:TEMP\asan\arx':halt_on_error=1"            # quote the path: ':' separates options
+.\scripts\dev\smoke-test.ps1 -BuildDir $build -VrSim idle -Sequence reach-lever -Save mvp-lever
+Get-ChildItem $env:TEMP\asan                                                    # arx.<pid> - one file per report
+```
+
+- **Its own build directory** (`Release-asan`, beside `Release`): the normal build is never replaced, and the launch
+  scripts take it with `-BuildDir` (it is the copy's own fresh build, D-014). The ASan runtime DLL
+  (`clang_rt.asan_dynamic-x86_64.dll`, from the MSVC toolset) is copied next to `arx.exe` at configure time.
+- **The report goes to `log_path`**: the game is a GUI program, its stderr is not shown. A report means the game ended
+  there (`halt_on_error=1`, the default); the smoke test then fails and the crash handler writes a report as well.
+  Without `ASAN_OPTIONS` the report goes to stderr only (`stderr.txt` of a failed smoke test's evidence).
+- **Only instrumented code is checked**: ours. The vcpkg libraries and the GPU driver are not, but their `malloc` /
+  `free` go through the ASan allocator, so a write of ours into a block they freed is still caught.
+- **The host tests are built but not run** by `-Asan`: under ASan two `/fp:fast` NaN checks (`HandShapeTest`,
+  `WristVitalsTest`) and one timing test (`ReplayClipTest`, 30 minutes of frames) fail without any memory error. Run
+  `arxtest.exe` from the ASan build directory by hand when a host test is the suspect.
+- **Speed:** a run usually plays at a usable rate (the level loads in about 1.5 s), but the first full run after the
+  build crawled at 2-3 frames a second (update ~100 ms, render ~250 ms a frame, cause not found) and failed the
+  sequence's `@until` on time; the next run did not. A run that crawls is run again, its failure is not the bug.
+- Each run is a launch of the task's budget (10, D-014).
+
+What it found: on every recreate of the player model in VR (a load, a level change, equipping or removing a helmet,
+armour or leggings), `ARX_INTERACTIVE_Show_Hide_1st` walked the model's face list while the body module bound to the
+new model and appended the neck cap to that list - the walk went on in the freed list and wrote `POLY_HIDE` into it
+(#618, TRAPS.md 2026-10-22 #618). The repro above (`reach-lever`, whose second load runs with the head tracked)
+reported it in the first run that reached the load; after the fix the same runs are clean.
+
+The ASan directory is the copy's own build like `Release`: a stale one is named with its command
+(`build-windows.ps1 -Config Release -Asan`), and a launch's `-Rebuild` rebuilds it with `-Asan`. `-Rebuild` refuses a
+directory it would not build itself (it never rebuilds `Release` and then launches the stale exe of another directory).
+
 ## Record and replay (#550)
 
 **Every VR session is recorded, nobody has to ask:** from the first frame the game is playable in VR the recorder

@@ -46,7 +46,9 @@ public:
 	};
 
 	//! How long another crashing thread parks: longer than the first report takes (the dump helper's request waits up
-	//! to 15 s), short enough that a deadlocked report does not keep a dead game around
+	//! to 15 s), short enough that a deadlocked report does not keep a dead game around. A trade-off: a report that
+	//! symbolises its stack after the dump, or the legacy path's wait on the crash processor (exitLock), can take
+	//! longer, and is then cut short by the parked thread's exit
 	static constexpr std::chrono::milliseconds ParkLimit = std::chrono::seconds(30);
 
 	constexpr CrashGate() noexcept = default;

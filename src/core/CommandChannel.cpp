@@ -570,6 +570,16 @@ void noteSlowPart(const char * part, PlatformInstant start) {
 	}
 }
 
+//! A channel file for the writer and inbox threads: the engine's paths are UTF-8, and a std::filesystem::path made from
+//! a std::string reads it in the ANSI code page on Windows (a test dir with a non-ASCII name)
+std::filesystem::path channelFile(const char * name) {
+#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+	return std::filesystem::path(platform::WinPath(g.dir / name).c_str());
+#else
+	return std::filesystem::path((g.dir / name).string());
+#endif
+}
+
 void setTestDir(const std::string & dir) {
 	g.dir = dir;
 	g.enabled = true;
@@ -4383,9 +4393,7 @@ void initialize() {
 	// ack does not wait for that: a test reads its batch's own state right after it (melee-damage: `playground fight`,
 	// and the fight is over a frame later)
 	g.writer = new ChannelWriter(
-		ChannelWriter::Files{ std::filesystem::path((g.dir / "status.json").string()),
-		                      std::filesystem::path((g.dir / "status.json.tmp").string()),
-		                      std::filesystem::path((g.dir / "ack.txt").string()) },
+		ChannelWriter::Files{ channelFile("status.json"), channelFile("status.json.tmp"), channelFile("ack.txt") },
 		[](unsigned long long lines) {
 			if(g.counter->lines.load() != lines) {
 				g.freshStatus = true;
@@ -4403,7 +4411,7 @@ void initialize() {
 	// 62 ms on the frame. A file last written before this second is a leftover of an earlier run (whole seconds, as
 	// the std::time start this check used before)
 	g.inbox = new CommandInbox(
-		std::filesystem::path((g.dir / "command.txt").string()),
+		channelFile("command.txt"),
 		std::chrono::floor<std::chrono::seconds>(std::filesystem::file_time_type::clock::now()),
 		[](bool warning, std::string_view message) {
 			if(warning) {

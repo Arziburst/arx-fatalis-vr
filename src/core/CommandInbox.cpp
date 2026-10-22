@@ -152,7 +152,7 @@ bool CommandInbox::look(std::vector<std::string> & lines) {
 
 	const std::filesystem::file_time_type written = std::filesystem::last_write_time(m_file, error);
 	if(!error && written < m_notBefore) {
-		note(true, "ignoring " + m_file.string() + ": written before this process started");
+		note(true, "ignoring " + m_file.filename().string() + ": written before this process started");
 		// Emptied, it counts as written now: the next look consumes it without a batch
 		removeOrEmpty(m_file);
 		return false;
@@ -171,15 +171,15 @@ bool CommandInbox::look(std::vector<std::string> & lines) {
 		if(m_openFailures == 1) {
 			m_firstOpenFailure = now;
 			m_lastOpenNote = now;
-			note(false, m_file.string() + " cannot be opened yet (its writer still has it open), reading it later");
+			note(false, m_file.filename().string() + " cannot be opened yet (its writer still has it open), reading it later");
 		} else if(now - m_lastOpenNote >= std::chrono::seconds(1)) {
 			m_lastOpenNote = now;
 			const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_firstOpenFailure).count();
-			note(false, m_file.string() + " cannot be opened yet (its writer still has it open), reading it later ("
+			note(false, m_file.filename().string() + " cannot be opened yet (its writer still has it open), reading it later ("
 			            + std::to_string(m_openFailures) + " tries in " + std::to_string(ms) + " ms so far)");
 		}
 		if(now - m_firstOpenFailure >= GiveUpAfter) {
-			note(true, "giving up on " + m_file.string() + " after " + std::to_string(m_openFailures)
+			note(true, "giving up on " + m_file.filename().string() + " after " + std::to_string(m_openFailures)
 			           + " tries: it stays open");
 			m_openFailures = 0;
 			std::filesystem::remove(m_file, error);
@@ -193,7 +193,7 @@ bool CommandInbox::look(std::vector<std::string> & lines) {
 		// Do not run the same batch again on the next look
 		const bool emptied = empty(m_file);
 		if(!contents.empty()) {
-			note(true, "could not delete " + m_file.string() + " after reading it"
+			note(true, "could not delete " + m_file.filename().string() + " after reading it"
 			           + (emptied ? ", emptied it" : ", and could not empty it"));
 		}
 	}

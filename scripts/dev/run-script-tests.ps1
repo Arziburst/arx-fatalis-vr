@@ -27,6 +27,7 @@ $tests = @(
 	'test-ci-slots.ps1'       # CI owns the game slots (#527, #526): the runner marker's priority, holder lines, orphans stopped, games die with their launcher
 	'test-clip-to-xrs.ps1'    # a replay clip cut into a CI sequence (#550): the 30 s window, the state at its start, IPD and height stripped, no user path
 	'test-crash-report.ps1'   # the crash report command (#545): fixture crashes\ and hangs\ folders, the newest, the sections, the last 100 events, cdb or not, no user path
+	'test-crash-signature.ps1' # crash signatures by frames (#616): fixture crash.txt texts, the same crash on two builds one signature, other crashes others, the offset fallback, an empty stack
 	'test-dump-helper.ps1'    # the dump helper is not a game (#545): arx.exe --dump-helper never keeps a launch waiting for the game lock
 	'test-eye-check.ps1'     # the two-eyes check's judge (#112, F-06): every leg passes on good eyes, fails on its broken case
 	'test-github-lib.ps1'     # the GitHub access of the dev scripts (#186): REST first, the board cache, rate limits, the move queue

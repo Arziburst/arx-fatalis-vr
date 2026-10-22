@@ -990,6 +990,10 @@ std::string buildStatus(PlatformInstant now) {
 	json.value("cleanShutdown", g.cleanShutdown);
 	json.value("frame", g.frame);
 	json.value("uptimeMs", toMsi(now - g.startInstant));
+	// The wall clock when this status was built (Unix epoch ms): a test that waited for a log line takes only a status
+	// built after its read of the log found it, never an older one the writer thread put on disk late (#528)
+	json.value("wallMs", s64(std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::system_clock::now().time_since_epoch()).count()));
 	json.value("fps", g.fps);
 	json.value("errors", g.counter ? g.counter->errors.load() : 0u);
 	json.value("warnings", g.counter ? g.counter->warnings.load() : 0u);
@@ -1008,6 +1012,9 @@ std::string buildStatus(PlatformInstant now) {
 	// The game clock: it runs while a VR radial menu is open (#376), stops in the pause menu
 	json.value("gameTimeMs", toMsi(g_gameTime.now()));
 	json.value("cinematic", isInCinematic());
+	// A scripted scene plays in the game (the level 10 start's letterbox): A, B and the triggers skip it and reach
+	// nothing else (#394), so a check that presses them waits for false (#473). Flat too, unlike scene.active
+	json.value("scriptedScene", scriptedScenePlaying());
 	// The timed texts at the top of the 2D interface (a script's tutorial hint): a shot of the HUD that must not
 	// change waits for none (#370)
 	json.value("notifications", u64(notification_count()));

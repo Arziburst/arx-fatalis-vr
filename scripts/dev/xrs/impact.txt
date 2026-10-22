@@ -185,7 +185,7 @@ src/gui/DamageNumbers.* -> damage-numbers damage-numbers-off
 src/gui/book/* -> rune-trail controls-v2 first-run-menu first-run-chargen radial-menu dev-variants
 src/gui/DevVariants.* -> dev-variants
 src/gui/CharacterCreation.* -> first-run-chargen first-run desktop-mouse desktop-mouse-flat
-src/gui/MainMenu.* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-remap-saved vr-turning-settings menu-trigger-grip menu-rebind-kept menu-long-press
+src/gui/MainMenu.* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-remap-saved vr-turning-settings menu-trigger-grip menu-rebind-kept menu-long-press window-minimize-restore
 src/gui/Menu.* -> first-run first-run-intro first-run-menu first-run-chargen vr-settings-flat
 src/gui/MenuPublic.* -> first-run-menu vr-settings-flat
 src/gui/MenuWidgets.* -> first-run-menu first-run-chargen vr-settings-flat vr-remap vr-turning-settings
@@ -287,8 +287,11 @@ src/core/ChannelWriter.* -> refresh-rate
 
 # --- The desktop window's focus (#406): in VR a focus loss changes nothing in the game ----------------------------------
 # ArxGame.cpp holds the focus handlers (onWindowLostFocus / onWindowGotFocus); the rest of ArxGame.* stays on the core.
-# The flat counterpart is the end of desktop-mouse-flat (src/input/*); src/window/* already runs everything
-src/core/ArxGame.cpp -> window-focus
+# The flat counterpart is the end of desktop-mouse-flat (src/input/*); src/window/* already runs everything.
+# After a VR session ends mid-run the window minimises on a focus loss as cfg.ini says again (#606): ArxGame.cpp sets
+# it for VR, MainMenu.* (above) shows it in the Video page's checkbox; VRSystem.* stays on the core, whose vr-session-end
+# and vr-session-loss check the same setting
+src/core/ArxGame.cpp -> window-focus window-minimize-restore
 # The refresh-rate stress check (#553): the sequence N times on two lanes beside a busy game, hand-run. It launches its
 # own games and is no game check
 scripts/dev/refresh-rate-stress.ps1 -> core

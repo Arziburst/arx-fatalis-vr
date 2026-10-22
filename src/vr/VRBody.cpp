@@ -934,10 +934,7 @@ void posePlayerBody(EERIE_3DOBJ * eobj, Skeleton & skeleton, Entity * io) {
 		return;
 	}
 
-	if(g_body.boundObject != eobj || g_body.boundGroups != eobj->grouplist.size()
-	   || g_body.boundVertices != eobj->vertexlist.size() || g_body.boundFaces != eobj->facelist.size()) {
-		bind(eobj);
-	}
+	bindPlayerModel(eobj);
 
 	status.poseCalls++;
 	// What the last frame drew of the player model (#385.11)
@@ -1299,13 +1296,20 @@ bool hidesHeadOnly() {
 	return std::strcmp(headStatus().source, "none") != 0 && sceneState().armsIk;
 }
 
-bool isHeadVertex(EERIE_3DOBJ * obj, VertexId vertex) {
+void bindPlayerModel(EERIE_3DOBJ * obj) {
 	if(!obj || !obj->m_skeleton) {
-		return false;
+		return;
 	}
 	if(g_body.boundObject != obj || g_body.boundGroups != obj->grouplist.size()
 	   || g_body.boundVertices != obj->vertexlist.size() || g_body.boundFaces != obj->facelist.size()) {
 		bind(obj);
+	}
+}
+
+bool isHeadVertex(const EERIE_3DOBJ * obj, VertexId vertex) {
+	// Never binds: a bind appends the cap faces to the face list the caller walks (#618)
+	if(!obj || obj != g_body.boundObject) {
+		return false;
 	}
 	return size_t(vertex) < g_body.headVertex.size() && g_body.headVertex[size_t(vertex)];
 }

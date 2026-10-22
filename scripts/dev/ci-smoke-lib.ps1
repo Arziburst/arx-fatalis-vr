@@ -355,6 +355,68 @@ function Get-ArxLaneCount([int]$Lanes, [string]$Copy, [string]$BuildDir) {
 	if (@(Get-ArxForeignGames $Copy $BuildDir).Count) { 1 } else { $Lanes }
 }
 
+# --- A quiet PC for a pacing phase (#566) ---------------------------------------------------------------------------
+
+# The compiles of the PC that are not this run's: cl.exe, link.exe, ninja.exe, an MSBuild.exe that builds (an idle
+# node of an earlier build, `/nodemode:`, waits for work and compiles nothing itself - its cl.exe is what counts) and a
+# `cmake --build`. A worker's build next to CI starves the game of whole display slots (#566: walk90 90 frames for
+# >= 121, UNDER-SUBMITTING 43/s on 90 slots). $Processes: Win32_Process-like objects (Name, ProcessId,
+# ParentProcessId, CommandLine); a process under $Root (this run's own tree) is never counted. Returns one
+# "<name> pid <pid>" per compile.
+function Get-ArxForeignBuilds($Processes, [int]$Root = $PID) {
+	$parent = @{}
+	foreach ($p in @($Processes)) { $parent[[int]$p.ProcessId] = [int]$p.ParentProcessId }
+	foreach ($p in @($Processes)) {
+		$name = "$($p.Name)".ToLowerInvariant()
+		$line = "$($p.CommandLine)"
+		$build = $name -in 'cl.exe', 'link.exe', 'ninja.exe' -or
+			($name -eq 'msbuild.exe' -and $line -notmatch '[/-]nodemode:') -or
+			($name -eq 'cmake.exe' -and $line -match '(^|\s)--build(\s|$)')
+		if (-not $build) { continue }
+		# Up the parents (a pid seen twice is a reused pid's loop): ours when the chain reaches $Root
+		$own = $false
+		$seen = @{}
+		for ($id = [int]$p.ProcessId; $id -and -not $seen.ContainsKey($id); $id = $parent[$id]) {
+			if ($id -eq $Root) { $own = $true; break }
+			$seen[$id] = $true
+			if (-not $parent.ContainsKey($id)) { break }
+		}
+		if (-not $own) { "$($p.Name) pid $($p.ProcessId)" }
+	}
+}
+
+# Wait, before a phase that measures frame pacing (@solo) starts, until nothing compiles on the PC
+# (Get-ArxForeignBuilds), at most $MaxSeconds; then it runs anyway - a gate that never runs is no gate. $Probe { }
+# returns what compiles now (nothing: quiet); $Sleep { param($Seconds) } and $Now { } are the clock (a test passes its
+# own). Prints what it waits for at once and every minute. Returns Seconds (waited), WaitedFor (every compile seen,
+# once) and TimedOut.
+function Wait-ArxQuietPc(
+	[string]$What, [scriptblock]$Probe, [int]$MaxSeconds = 600, [int]$PollSeconds = 10,
+	[scriptblock]$Sleep = { param($Seconds) Start-Sleep -Seconds $Seconds }, [scriptblock]$Now = { Get-Date }
+) {
+	$started = & $Now
+	$seenAll = [Collections.Generic.List[string]]::new()
+	$said = $null
+	while ($true) {
+		$busy = @(& $Probe | Where-Object { $_ })
+		$waited = ((& $Now) - $started).TotalSeconds
+		if (-not $busy) {
+			if ($seenAll.Count) { Write-Host ("ci-smoke: {0}: the PC is quiet after {1:0} s - waited for {2}" -f $What, $waited, ($seenAll -join ', ')) -ForegroundColor Yellow }
+			return [pscustomobject]@{ Seconds = $waited; WaitedFor = $seenAll.ToArray(); TimedOut = $false }
+		}
+		foreach ($b in $busy) { if (-not $seenAll.Contains($b)) { $seenAll.Add($b) } }
+		if ($waited -ge $MaxSeconds) {
+			Write-Host ("ci-smoke: {0}: the PC still compiles after {1:0} s ({2}) - it runs anyway, under that load" -f $What, $waited, ($busy -join ', ')) -ForegroundColor Yellow
+			return [pscustomobject]@{ Seconds = $waited; WaitedFor = $seenAll.ToArray(); TimedOut = $true }
+		}
+		if ($null -eq $said -or $waited - $said -ge 60) {
+			Write-Host ("ci-smoke: {0} measures frame pacing and waits while the PC compiles ({1}; {2:0} s of at most {3} s)" -f $What, ($busy -join ', '), $waited, $MaxSeconds) -ForegroundColor Yellow
+			$said = $waited
+		}
+		& $Sleep ([Math]::Min($PollSeconds, [Math]::Max(1, [Math]::Ceiling($MaxSeconds - $waited))))
+	}
+}
+
 # --- The scheduler --------------------------------------------------------------------------------------------------
 
 # Run $Phases on up to $Lanes lanes at once, in the given order, every phase exactly once. A phase:

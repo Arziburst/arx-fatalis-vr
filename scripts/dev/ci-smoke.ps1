@@ -28,7 +28,8 @@
 	save-library phase goes first and every sequence with a @save waits for it; smoke-test and spell-drawcheck share
 	this working copy's user directory and never run at the same time; a read-back runs after its sequence, in its
 	user directory; a sequence with @solo (it measures frame pacing, #527) starts only with empty lanes and nothing
-	starts while it runs. The risk order (#527): the .xrs files the change touches first (git diff against -Base),
+	starts while it runs, and before it starts it waits while another task's build compiles on the PC (up to
+	-QuietWaitSec, #566). The risk order (#527): the .xrs files the change touches first (git diff against -Base),
 	then the sequences the impact map selects for the changed files, then what failed in the last 5 runs
 	(ci-history.json beside the durations, written at the end of every run), then the rest by the last run's duration,
 	longest first (ci-durations.json; a phase without a recorded time counts as the longest). The summary lists every
@@ -103,6 +104,11 @@
 .PARAMETER KeepRuns
 	When -OutDir is a run folder in %LOCALAPPDATA%\ArxFatalisVR\ci-evidence, how many run folders stay there (default 10).
 
+.PARAMETER QuietWaitSec
+	How long a phase that measures frame pacing (@solo) waits, before it starts, while something compiles on the PC
+	(cl, link, ninja, MSBuild, cmake --build that are not this run's, #566); then it runs anyway, under that load. The
+	wait and what it waited for are in the log and the job summary. Default 600; 0: no wait.
+
 .EXAMPLE
 	.\scripts\dev\ci-smoke.ps1 -OutDir $env:TEMP\ci-evidence
 .EXAMPLE
@@ -126,7 +132,9 @@ param(
 	[string[]]$Changed,
 	[string]$Base = $(if ($env:GITHUB_BASE_REF) { "origin/$env:GITHUB_BASE_REF" } elseif (-not $env:GITHUB_ACTIONS) { 'origin/main' }),
 	[string]$DurationsFile,
-	[int]$KeepRuns = 10
+	[int]$KeepRuns = 10,
+	[ValidateRange(0, 3600)]
+	[int]$QuietWaitSec = 600
 )
 
 $ErrorActionPreference = 'Stop'
@@ -423,6 +431,14 @@ $startPhase = {
 	$params = @{} + $Phase.Params
 	if ($Phase.Command -eq 'smoke-test.ps1') { $params.TestDir = $laneDir }
 	$command = if ($Phase.Command -like '*.ps1') { Join-Path $script:scriptDir $Phase.Command } else { $Phase.Command }
+	# A phase that measures frame pacing starts on a quiet PC (#566): the lanes are empty already (the scheduler's
+	# @solo), and a compile of another task's build waits too, up to -QuietWaitSec
+	if ($Phase.Solo -and $script:QuietWaitSec -gt 0) {
+		$quiet = Wait-ArxQuietPc $Phase.Name { Get-ArxForeignBuilds (Get-CimInstance Win32_Process -Property Name, ProcessId, ParentProcessId, CommandLine) } -MaxSeconds $script:QuietWaitSec
+		if ($quiet.WaitedFor.Count -and $env:GITHUB_STEP_SUMMARY) {
+			Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ("> **{0}** (@solo) waited {1:0} s for compiles of the PC{2}: {3}" -f $Phase.Name, $quiet.Seconds, $(if ($quiet.TimedOut) { ', then ran under them' } else { '' }), ($quiet.WaitedFor -join ', '))
+		}
+	}
 	Write-Host ("--> ci-smoke phase '{0}' started on lane {1}" -f $Phase.Name, $Lane)
 	$job = Start-Job -ScriptBlock $script:phaseJob -ArgumentList $command, $params, (Join-Path $script:OutDir "$($Phase.Name).log"), $laneDir, $script:libPath
 	$script:jobs += $job

@@ -83,6 +83,7 @@ void updateHud() {
 	status.frame = gate.frame;
 	status.keep = config.video.vrHudKeep;
 	status.frames++;
+	status.orbsPlacement = gate.wristVitals ? "wrist" : hudElementDrawn(HudElement::Health, gate) ? "quad" : "none";
 
 	// Logged when it changes, never per frame
 	if(!g_hud.logged || gate.vr != g_hud.loggedGate.vr || gate.frame != g_hud.loggedGate.frame

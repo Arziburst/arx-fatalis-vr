@@ -26,7 +26,7 @@
 /*!
  * The screen-frame HUD in VR (#469): every element has a name and a VR home (the level-up, book and bag
  * icons in the radial menu, health and mana on the wrist); flat mode draws every element, VR none -
- * except what vr_hud_frame / vr_hud_keep bring back and the orbs without the wrist bars; the level-up
+ * except what vr_hud_frame / vr_hud_keep bring back (no orb fallback without the wrist bars, #484); the level-up
  * indication marks the radial item while points wait and shows the wrist notice for a while after a
  * level-up.
  */
@@ -37,6 +37,7 @@ class HudFrameTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testNamesRoundTrip);
 	CPPUNIT_TEST(testFlatDrawsTheFrame);
 	CPPUNIT_TEST(testVrDrawsNoFrame);
+	CPPUNIT_TEST(testNoOrbFallbackWithoutLeftArm);
 	CPPUNIT_TEST(testSwitchesBringItBack);
 	CPPUNIT_TEST(testParseKeep);
 	CPPUNIT_TEST(testLevelUpModes);
@@ -49,6 +50,7 @@ public:
 	void testNamesRoundTrip();
 	void testFlatDrawsTheFrame();
 	void testVrDrawsNoFrame();
+	void testNoOrbFallbackWithoutLeftArm();
 	void testSwitchesBringItBack();
 	void testParseKeep();
 	void testLevelUpModes();

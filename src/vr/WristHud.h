@@ -29,8 +29,8 @@
  *
  * The bars are shown while the left arm is posed from a controller (a located one or the test
  * channel's \c handpose); then the health and mana orbs of the HUD step aside. Without a posed left
- * arm - flat mode, no left controller, a model without arm chains - the orbs stay where they were
- * (on the head-locked quad in VR). The rest of the screen-frame HUD is not drawn in VR (#469, vr/VRHud.h);
+ * arm in VR (no left controller, a model without arm chains) the orbs are drawn nowhere (#484); flat
+ * mode keeps them. The rest of the screen-frame HUD is not drawn in VR (#469, vr/VRHud.h);
  * the level-up notice shows beside the bars.
  */
 namespace vr {

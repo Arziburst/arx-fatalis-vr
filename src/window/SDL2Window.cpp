@@ -923,3 +923,18 @@ InputBackend * SDL2Window::getInputBackend() {
 	}
 	return m_input;
 }
+
+bool SDL2Window::pushFocusEvent(bool focused) {
+	
+	if(!m_window) {
+		return false;
+	}
+	
+	// Taken from SDL's queue by processEvents(); SDL's own focus flags stay as the window system set them
+	SDL_Event event = { };
+	event.type = SDL_WINDOWEVENT;
+	event.window.timestamp = SDL_GetTicks();
+	event.window.windowID = SDL_GetWindowID(m_window);
+	event.window.event = focused ? SDL_WINDOWEVENT_FOCUS_GAINED : SDL_WINDOWEVENT_FOCUS_LOST;
+	return SDL_PushEvent(&event) == 1;
+}

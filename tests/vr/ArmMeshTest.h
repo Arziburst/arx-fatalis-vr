@@ -27,7 +27,7 @@
  * The arm mesh core of the VR body (#385.1): the glTF loader on both shipped glove hands (26 joints,
  * every XR_EXT_hand_tracking joint found, vertex and triangle counts, normalised weights, a malformed
  * buffer refused), the weighted CPU skinning (rest pose, half-way blend, four joints, renormalised
- * normals) and the procedural sleeve (rings, weights across the elbow, lengths, wider top ring).
+ * normals) and smooth normals recomputed from moved positions.
  *
  * The shipped files are found through the compiled-in ARX_TEST_SOURCE_DIR (the source tree's root).
  */
@@ -42,15 +42,7 @@ class ArmMeshTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(testHalfWeightLandsHalfWay);
 	CPPUNIT_TEST(testFourJointVertexMatchesHandComputation);
 	CPPUNIT_TEST(testNormalsAreRenormalised);
-	CPPUNIT_TEST(testSleeveCounts);
-	CPPUNIT_TEST(testSleeveWeightsSumToOne);
-	CPPUNIT_TEST(testSleeveElbowRingIsWeightedAcrossBothJoints);
-	CPPUNIT_TEST(testSleeveSpansTheArm);
-	CPPUNIT_TEST(testSleeveTopRingIsWider);
 	CPPUNIT_TEST(testRecomputeNormalsOfAFlatStrip);
-	CPPUNIT_TEST(testElbowCorrective);
-	CPPUNIT_TEST(testCutSleeveEndsInAClosedCuff);
-	CPPUNIT_TEST(testWristOnlySleeveIsTheCuff);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -63,15 +55,7 @@ public:
 	void testHalfWeightLandsHalfWay();
 	void testFourJointVertexMatchesHandComputation();
 	void testNormalsAreRenormalised();
-	void testSleeveCounts();
-	void testSleeveWeightsSumToOne();
-	void testSleeveElbowRingIsWeightedAcrossBothJoints();
-	void testSleeveSpansTheArm();
-	void testSleeveTopRingIsWider();
 	void testRecomputeNormalsOfAFlatStrip();
-	void testElbowCorrective();
-	void testCutSleeveEndsInAClosedCuff();
-	void testWristOnlySleeveIsTheCuff();
 
 };
 

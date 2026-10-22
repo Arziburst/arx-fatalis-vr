@@ -29,7 +29,6 @@
 
 #include "math/Types.h"
 #include "platform/Platform.h"
-#include "vr/ArmRoll.h"
 #include "vr/HandRig.h"
 #include "vr/VRControls.h"
 
@@ -37,95 +36,44 @@ class TextureContainer;
 
 /*!
  * \file
- * \brief Our own arms on the player in VR (#385, D-049): a sleeve from the shoulder to the wrist and a glove hand
+ * \brief The arms on the player in VR (D-047, D-051): the classic Arx arm, with the Arx hand or our glove at its wrist
  *
- * The Arx arm stays the logical arm: vr/VRBody.cpp poses it as before (#313's roll-aware IK), and the
- * weapon, the reticle, the wrist bars and the melee keep reading it. With \c vr_arms_model = custom (forearm, hands) its
- * faces are not drawn in VR (\ref vr::drawsBodyFace), and this module draws in its place:
- *  - the procedural sleeve of vr/ArmMesh.h on the custom arm's own solve (#385.6): segment lengths fitted to the
- *    player's reach (vr/ArmFit.h), from the Arx shoulder to the glove's cuff, stretched by at most MaxArmStretch
- *    instead of the shoulder slide, the elbow dropped while the hand holds a weapon (F-300); its joints: the shoulder
- *    (sunk a little into the torso), the upper twist joint with the upper arm's roll, the elbow in the
- *    bend plane with the drawn bend clamped (\c MaxDrawnBend), the two forearm twist joints with a third
- *    and two thirds of the forearm-to-hand roll, and the wrist on the glove hand's cuff, so the two
- *    openings meet; the elbow corrective is applied from the bend, the normals are recomputed from the
- *    skinned positions every frame (research rows F-233, F-310 .. F-312);
- *  - the Godot XR Tools glove hand (data/core/vr/arms/Hand_Glove_low_L/R.gltf) with its palm behind the
- *    controller's grip by the handle's and the palm's radius (short of it past the stretch limit) and the
- *    controller's orientation, scaled by \c vr_hand_scale; its joints turn as the joints' orientations say
- *    (vr/HandRig.h poseHandFromJoints, #385.7): closed on the hilt pose by a held weapon on either hand (D-042),
- *    else following the runtime's hand joints (conforming to the controller where the runtime can), else
- *    closing each finger toward MRTK3's Grab by the controller's trigger, grip and thumb rest (D-041).
- * The forearm and hands models (#385.8) pose the same arm and draw less of it: the sleeve cut ForearmKept along the
- * forearm from the wrist, or only at the wrist, its cut closed by a cuff (vr/ArmMesh.h SleeveParams::startAt).
- * Skinned once per frame after the body is posed; the animation code lights and projects the result per eye
- * into the model batch, two-sided like the VR body (research row F-231). Flat mode and the inventory book
- * always draw the Arx arms.
+ * The Arx arm is the drawn and the logical arm: vr/VRBody.cpp poses it (#313's roll-aware IK) and re-skins it with one
+ * elbow (vr/ArxArmFix.h), and the weapon, the reticle, the wrist bars and the melee read it. With
+ * \c vr_classic_hand = glove (#466.2) the Arx hand's faces are not drawn in VR (\ref vr::drawsBodyFace) and this module
+ * draws the Godot XR Tools glove hand (data/core/vr/arms/Hand_Glove_low_L/R.gltf) in its place: its cuff on the Arx
+ * wrist joint, turned by the controller's grip like the Arx hand (D-032), scaled by \c vr_hand_scale; its joints turn as
+ * the joints' orientations say (vr/HandRig.h poseHandFromJoints, #385.7): closed on the hilt pose by a held weapon on
+ * either hand (D-042), else following the runtime's hand joints (conforming to the controller where the runtime can),
+ * else closing each finger toward MRTK3's Grab by the controller's trigger, grip and thumb rest (D-041).
+ * Skinned once per frame after the body is posed; the animation code lights and projects it per eye into the model
+ * batch, two-sided like the VR body (research row F-231). Flat mode and the inventory book always draw the Arx arms.
+ * The other arm models (custom, forearm, hands, arx) were removed with their own arm solve and sleeve (#486).
  */
 namespace vr {
 
-//! The arms drawn in VR (#385.8); what each draws is its ArmsModelInfo. The owner kept Classic (2026-10-16, #466): the
-//! only one cfg.ini selects; the others are test-channel only until they are deleted (#486)
+//! The arms drawn in VR: the owner kept Classic (2026-10-16, #466), the other models are gone (#486)
 enum class ArmsModel : u8 {
-	Custom,  //!< our own arms: the glove and the whole sleeve
-	Forearm, //!< the glove and a short forearm ending in a closed cuff before the elbow (research F-305, F-467)
-	Hands,   //!< the glove alone, closed at the wrist (Half-Life: Alyx, research F-303)
-	Arx,     //!< the player model's own arms
-	Classic, //!< the player model's own arms with one elbow and a rigid forearm (#466.1, vr/ArxArmFix.h; the default)
+	Classic, //!< the player model's own arms with one elbow and a rigid forearm (#466.1, vr/ArxArmFix.h)
 };
 
-/*!
- * What one arms model draws (#385.8). The models are one table (VRArms.cpp ArmsModelTable), the default first; the
- * code reads these properties, never the model itself
- */
-struct ArmsModelInfo {
-	ArmsModel model;
-	const char * name;  //!< cfg.ini vr_arms_model, the channel's `arms <name>`, status.json vr.body.armsModel
-	bool glove;         //!< our glove hand is drawn (with a closed cuff when no sleeve meets it)
-	bool sleeve;        //!< the sleeve is drawn, from the wrist along the forearm
-	bool upperArm;      //!< the sleeve goes on to the shoulder; without it, it ends forearmKept along the forearm
-	float forearmKept;  //!< the share of the forearm the sleeve covers from the wrist without the upper arm
-	bool arxArms;       //!< the Arx arm faces are drawn (the logical arm then stays on the drawn, pushed shoulder)
-	bool classicSkin;   //!< the Arx arm is drawn with the classic re-skin (#466.1, vr/ArxArmFix.h); its hand is the Arx
-	                    //!< hand or our glove at the Arx wrist, as vr_classic_hand says (#466.2)
-};
-
-/*!
- * The forearm variant's sleeve ends this share of the forearm from the wrist (#385.8, the owner's first proposal): before
- * the elbow, so the elbow no solver places where the player's is (F-461) is never drawn
- */
-constexpr float ForearmKept = 0.6f;
-
-//! The custom hands against the glove's real size: bigger than the Arx hands by default (the owner: fingers too small)
+//! The glove against its real size: bigger than the Arx hands by default (the owner: fingers too small)
 constexpr float DefaultHandScale = 1.15f;
 constexpr float MinHandScale = 0.8f;
 constexpr float MaxHandScale = 1.5f;
 
-/*!
- * A hand holding a weapon drops its elbow (#385.6, research row F-300: VHVR's equipped palm-to-thumb axis (-+1, -3, 0)
- * puts three parts down to one sideways): the elbow turns about the shoulder-target line towards its lowest position
- * by this share of its angle off it. The default of cfg.ini vr_arm_weapon_elbow_drop, which the owner tunes in the headset
- */
-constexpr float DefaultWeaponElbowDrop = 0.75f;
-
-//! \return \a share within [0, 1] (DefaultWeaponElbowDrop for a value that is not a number)
-float clampWeaponElbowDrop(float share);
-
-//! \return the model cfg.ini selects: always the default, classic (#466) - a value an earlier build saved reads as it
+//! \return the model cfg.ini selects: always classic (#466) - a value an earlier build saved reads as it
 ArmsModel parseArmsModel(std::string_view text);
 //! \return false unless \a text names a model (the test channel's \c arms command)
 bool parseArmsModelStrict(std::string_view text, ArmsModel & model);
 const char * armsModelName(ArmsModel model);
-//! The models' names for a message: "custom, forearm, hands, arx or classic"
+//! The models' names for a message
 std::string armsModelNames();
-const ArmsModelInfo & armsModelInfo(ArmsModel model);
 
 float clampHandScale(float scale);
 
 //! The model cfg.ini asks for (vr_arms_model)
 ArmsModel armsModel();
-//! What it draws
-const ArmsModelInfo & armsModelInfo();
 //! Switch the model live and save it to cfg.ini; \a by says who asked (the test channel)
 void setArmsModel(ArmsModel model, const char * by);
 
@@ -147,43 +95,27 @@ void setClassicHand(ClassicHand hand, const char * by);
 //! Set vr_hand_scale live (clamped) and save it to cfg.ini
 void setHandScale(float scale, const char * by);
 
-/*!
- * The logical Arx arm of one hand this frame: what the custom arm is solved from (#385.6) - its shoulder, the Arx
- * hand frame the roll is measured in, and the elbow poles; the custom arm then solves its own chain with its own
- * lengths from that shoulder to the glove's cuff
- */
+//! The posed Arx arm of one hand this frame: what the glove at its wrist is placed and closed by (#466.2)
 struct LogicalArm {
-	Vec3f shoulder = Vec3f(0.f);        //!< the Arx shoulder joint before the logical arm's shoulder slide
-	glm::quat hand = quat_identity();   //!< the Arx hand bone's world rotation (rest -> world), from the controller
-	ArmRest rest;                       //!< the Arx chain at rest, in the model's mesh space
-	Vec3f restElbow = Vec3f(0.f);       //!< where the Arx elbow sticks out at rest, in the model's mesh space
-	Vec3f elbowHint = Vec3f(0.f);       //!< the base pole of the elbow (the body's down, out, back)
-	bool holdsWeapon = false;           //!< the hand holds the equipped weapon this frame: its elbow drops (F-300)
-	ArmRollParams roll;                 //!< the shares of the hand's roll, as the logical arm uses them
 	Vec3f grip = Vec3f(0.f);            //!< the controller's grip in the world
 	glm::quat gripOrientation = quat_identity(); //!< the grip's rotation in engine axes
-	float upperLength = 0.f;            //!< the Arx bones, units: the fit when the character's height is unknown
-	float forearmLength = 0.f;
-	Vec3f arxWrist = Vec3f(0.f);        //!< the Arx wrist joint as posed: the classic arm's glove sits there (#466.2)
+	Vec3f arxWrist = Vec3f(0.f);        //!< the Arx wrist joint as posed: the glove's cuff sits there
+	bool holdsWeapon = false;           //!< the hand holds the equipped weapon this frame
 	// The glove's five fingers (#385.4, D-041, D-042): the held rule's inputs (holds = holdsWeapon) and the hand joints
 	CustomFingerInput fingers;
 	HandJoints joints;                  //!< this frame's hand joints (invalid without them)
 	float seconds = 0.f;                //!< this frame's duration: the fingers move at most CurlDegreesPerSecond
 };
 
-//! Forget last frame's custom arms (before the body is posed)
-void resetCustomArms();
+//! Forget last frame's gloves (before the body is posed)
+void resetGloves();
 
 /*!
- * \brief Skin the custom arm of \a hand on the logical arm, when the model draws our glove (custom, forearm, hands),
- *        or only its glove at the Arx wrist (classic with vr_classic_hand = glove, #466.2)
- * \return true when the glove is drawn this frame: with as much of the sleeve as the model draws in place of the Arx
- *         arm, or alone in place of the Arx hand
+ * \brief Skin the glove of \a hand at the classic arm's Arx wrist (vr_classic_hand = glove, #466.2)
+ * \return true when the glove is drawn this frame in place of the Arx hand
  */
-bool poseCustomArm(Hand hand, const LogicalArm & arm);
+bool poseGlove(Hand hand, const LogicalArm & arm);
 
-//! The custom arm of \a hand, whole or in part, is drawn this frame (its Arx arm faces are not)
-bool customArmDrawn(Hand hand);
 //! The glove of \a hand is drawn at the classic arm's Arx wrist this frame (#466.2): its Arx hand faces are not
 bool arxHandHidden(Hand hand);
 //! The centre of the Arx wrist ring the glove's cuff meets, as the classic arm skinned it this frame: its wristGap (#466.2)
@@ -191,7 +123,7 @@ void noteArxWristRing(Hand hand, const Vec3f & centre);
 
 /*!
  * Whether the glove meshes loaded (status.json vr.body.customArms). A glove is read the first time its arm is
- * posed with the custom model on; a missing or broken data/core/vr/arms file is logged as an error.
+ * posed with vr_classic_hand = glove; a missing or broken data/core/vr/arms file is logged as an error.
  */
 struct CustomArmsLoad {
 	bool tried = false;   //!< at least one glove was read
@@ -201,29 +133,15 @@ struct CustomArmsLoad {
 
 CustomArmsLoad customArmsLoad();
 
-//! One custom arm as status.json reports it (vr.body.<hand>.custom)
+//! One glove as status.json reports it (vr.body.<hand>.custom)
 struct CustomArmStatus {
-	bool drawn = false;          //!< the glove is drawn (with what of the sleeve the model draws)
-	bool sleeveDrawn = false;    //!< the sleeve, whole or the forearm's part (#385.8)
-	bool upperArmDrawn = false;  //!< the sleeve's upper arm and elbow (#385.8)
+	bool drawn = false;          //!< the glove is drawn at the Arx wrist
 	float handScale = DefaultHandScale;
 	float tipLength = 0.f;       //!< the hand from the palm joint to the middle fingertip (units)
-	Vec3f palm = Vec3f(0.f);     //!< the glove's palm joint in the world (behind the grip, #385.7)
-	Vec3f wrist = Vec3f(0.f);    //!< where the sleeve meets the glove's cuff
-	// The fit (#385.6, vr/ArmFit.h)
-	float upperLength = 0.f;     //!< the fitted segments, units
-	float forearmLength = 0.f;   //!< the forearm drawn: the fitted one, ForearmKept of it in the forearm model, 0 for hands
-	const char * fitSource = "none"; //!< reach (measured), height (the character height setting) or arx (the Arx bones)
-	float reach = 0.f;           //!< the measured reach so far (shoulder to wrist, units; 0 before a sample)
-	float stretch = 0.f;         //!< the stretch fraction in use, 0 .. MaxArmStretch
-	float error = 0.f;           //!< the solved wrist to its target on the controller (units; > 0 past the stretch limit)
-	float elbowDrop = 0.f;       //!< how far the elbow is below the elbow without a weapon (units, 0 without one)
-	float bend = 0.f;            //!< the custom elbow's bend (degrees, 0 straight)
-	float drawnBend = 0.f;       //!< the bend the sleeve is drawn with (clamped)
-	float upperRoll = 0.f;       //!< the roll on the upper twist joint
-	float forearmTwist = 0.f;    //!< the roll from the elbow to the wrist; the twist joints take a third and two thirds
-	float wristGap = 0.f;        //!< the sleeve's last ring centre to the glove's cuff centre (units, 0 = they meet); for the
-	                             //!< glove at the classic arm's wrist the Arx wrist ring as skinned (#466.2), -1 unmeasured
+	Vec3f palm = Vec3f(0.f);     //!< the glove's palm joint in the world
+	Vec3f wrist = Vec3f(0.f);    //!< the Arx wrist joint the glove's cuff sits on
+	float wristGap = 0.f;        //!< the Arx wrist ring as skinned to the glove's cuff centre (units, 0 = they meet),
+	                             //!< -1 unmeasured
 	// The five fingers (#385.4): what they follow (none while the arm is not posed) and each joint's bend this frame
 	CustomFingerSource fingerSource = CustomFingerSource::None;
 	FingerPose fingers;          //!< degrees, approaching what the source asks for
@@ -234,14 +152,14 @@ struct CustomArmStatus {
 	Vec3f handle = Vec3f(0.f, 0.f, 1.f); //!< the handle's direction in the world (the grip's Z), unit
 	float curlToHandle = 0.f;    //!< the hilt pose's curl centre from the handle's line, as drawn (units)
 	float curlAngle = 0.f;       //!< the hilt pose's curl axis off the handle, as drawn (degrees)
-	// The glove's hilt frame (#385.10): a held weapon is drawn from it with every model that draws the glove
+	// The glove's hilt frame (#385.10): unused while the weapon is placed from the Arx hand, kept for #548
 	bool hiltFrame = false;      //!< set this frame (the glove drawn)
 	Vec3f hiltCentre = Vec3f(0.f); //!< the hold point: the hilt pose's curl centre as drawn (the grip without a curl)
 	Vec3f hiltAxis = Vec3f(0.f, 0.f, 1.f); //!< unit: the line the closed fingers wrap, toward the thumb side (the blade's way)
 	Vec3f knuckles = Vec3f(0.f, 1.f, 0.f); //!< unit: the glove's wrist to its middle knuckle
-	glm::quat hiltGrip = quat_identity(); //!< the controller grip's rotation (engine axes): vr.weapon.bladeGrip's frame
+	glm::quat hiltGrip = quat_identity(); //!< the controller grip's rotation (engine axes)
 	float handWidth = 0.f;       //!< the glove's breadth across its four knuckles (units)
-	size_t vertices = 0;         //!< sleeve + hand
+	size_t vertices = 0;
 	size_t triangles = 0;
 };
 
@@ -259,7 +177,7 @@ bool captureHiltPose(Hand hand, std::string & result);
 //! Forget \a hand's captured hilt pose and delete its file: a held weapon closes the hand on the default hilt pose
 void clearHiltPose(Hand hand);
 
-//! One mesh to draw, in the world: the sleeve or the hand of an arm drawn this frame
+//! One mesh to draw, in the world: the glove of an arm drawn this frame
 struct CustomArmMesh {
 	const std::vector<Vec3f> * positions = nullptr;
 	const std::vector<Vec3f> * normals = nullptr;
@@ -268,7 +186,7 @@ struct CustomArmMesh {
 	TextureContainer * texture = nullptr;
 };
 
-//! The meshes drawn this frame (up to four: each arm's sleeve and hand); \return how many
+//! The meshes drawn this frame (one glove per hand at most); \return how many
 size_t customArmMeshes(CustomArmMesh (&meshes)[4]);
 
 } // namespace vr

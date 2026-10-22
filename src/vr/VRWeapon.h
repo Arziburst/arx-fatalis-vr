@@ -37,15 +37,11 @@ class Entity;
  *    own (\ref toggleHeldWeapon, D-042), drawn #39's swings hit (the trigger charges nothing, #465). When
  *    the right arm goes back to the engine (no controller, flat mode) the weapon goes back to where the
  *    engine keeps it (the back, or the hand in combat mode). Bows are left to the engine.
- *  - With the Arx arms (vr_arms_model arx) the hilt sits on the palm attach point and the blade lies along the
- *    controller's handle (grip -Z, vr/WeaponGrip.h): the blade's axis is read from the weapon's mesh once per
- *    weapon and turned onto the hand's thumb axis about the attach point.
- *  - With a model that draws our glove (custom, forearm, hands) the weapon is drawn from the glove's hilt frame
- *    instead (#385.10, research #453 F-485), never from the hidden Arx hand: its handle's anchor (the class's point
- *    along the handle, WeaponGrip.h weaponAnchorOffset) on the line the glove's closed fingers wrap, the blade along
- *    that line toward the thumb side, its edge toward the glove's knuckles (F-489), a sword tilted forward by
- *    cfg.ini vr_sword_tilt. The glove keeps its own placement (past the stretch limit it stops on the custom arm's
- *    wrist) and the weapon follows it.
+ *  - The hilt sits on the Arx hand's palm attach point and the blade lies along the controller's handle (grip -Z,
+ *    vr/WeaponGrip.h): the blade's axis is read from the weapon's mesh once per weapon and turned onto the hand's
+ *    thumb axis about the attach point - with the glove at the classic arm's wrist too (vr_classic_hand = glove,
+ *    #466.2). The placement from the glove's hilt frame (#385.10) went with the arm models that had it (#486); its
+ *    math stays in vr/WeaponGrip.h for #548.
  *  - While the IK drives the arms, the engine's arm layer (animation layer 1: ready, unready, strike and
  *    cast clips) is not applied to the player's skeleton (F-67); its timing and game logic still run.
  */
@@ -58,9 +54,8 @@ void updateHeldWeapon();
  * \brief Where the engine draws a linked object of the player (AnimationRender.cpp)
  * \param linked     the linked entity
  * \param attach     the player's attach vertex in the world in, the point the object's attach vertex is drawn
- *                   from out (changed only in the glove's frame)
- * \param rotation   the hand bone's world rotation in, the held weapon's rotation out (the Arx hand: bone *
- *                   correction; the glove: from the glove's hilt frame alone)
+ *                   from out (left as it is: the weapon hangs on the Arx hand's attach vertex)
+ * \param rotation   the hand bone's world rotation in, the held weapon's rotation out (bone * correction)
  * \return true when \a linked is the weapon held by the IK hand and the transform was changed
  */
 bool heldWeaponTransform(const Entity * linked, Vec3f & attach, glm::quat & rotation);
@@ -118,16 +113,10 @@ struct HeldWeaponStatus {
 	Vec3f tip = Vec3f(0.f);        //!< the vertex farthest along the blade
 	Vec3f bladeGrip = Vec3f(0.f);  //!< the drawn blade's direction in the controller's grip axes (OpenXR)
 	float bladeAngle = 0.f;        //!< degrees between the drawn blade and the grip's -Z (the handle)
-	// The glove's frame (#385.10)
-	const char * frame = "arx";    //!< glove: drawn from the glove's hilt frame; arx: from the Arx hand
+	// The handle and the class (#385.10, read for the weapon in the glove, unused until #548)
 	const char * weaponClass = "none"; //!< the anchor's class: sword, dagger, axe, mace, twoHanded (WeaponGrip.h)
 	float handleLength = 0.f;      //!< units, the handle read from the mesh: the pommel end to the guard or the head
-	float anchor = 0.f;            //!< units from the pommel end along the handle to the point held on the grip axis (glove)
-	float handWidth = 0.f;         //!< units, the glove's breadth a two-handed weapon's anchor is measured by (glove)
-	float hiltToGrip = 0.f;        //!< units, the drawn anchor to the glove's hold point (~0; glove, 0 with arx)
-	float edgeToKnuckles = 0.f;    //!< degrees, the drawn edge to the glove's knuckle direction across the blade (glove)
-	float tilt = 0.f;              //!< the sword tilt configured (cfg.ini vr_sword_tilt: 0, -15 or -30)
-	float tiltApplied = 0.f;       //!< the tilt the drawn weapon has: the configured one for a sword in the glove, else 0
+	float tilt = 0.f;              //!< the sword tilt configured (cfg.ini vr_sword_tilt: 0, -15 or -30; not applied, #548)
 	// The engine's arm layer (F-67)
 	bool armAnimSuppressed = false; //!< the layer was not applied in the last animated frame
 	std::string armAnimation;       //!< the clip it plays (suppressed or not)

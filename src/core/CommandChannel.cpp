@@ -110,7 +110,6 @@
 #include "util/Number.h"
 #include "util/String.h"
 #include "vr/BodyYaw.h"
-#include "vr/ArmFit.h"
 #include "vr/EyeImage.h"
 #include "vr/HeadTracking.h"
 #include "vr/MotionProbe.h"
@@ -1553,10 +1552,8 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("shiftX", body.shift.x);
 		json.value("shiftZ", body.shift.z);
 		json.value("facingYaw", body.facingYaw);
-		// the arms drawn in VR (#385.3): cfg.ini vr_arms_model (classic; the others by the test channel, #466, #486), and
-		// whether an Arx arm's faces gave way to a custom arm
+		// the arms drawn in VR (#385.3): cfg.ini vr_arms_model (classic, the only one since #466, #486)
 		json.value("armsModel", body.armsModel);
-		json.value("arxArmsHidden", body.arxArmsHidden);
 		// the body variant (#385.11): cfg.ini vr_body, and the body's and the Arx arms' faces the last frame drew
 		json.value("mode", body.bodyMode);
 		json.value("drawnBodyFaces", body.drawnBodyFaces);
@@ -1638,9 +1635,9 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("wristTwist", arm.wristTwist);
 			json.value("elbowTwist", arm.elbowTwist);
 			json.value("rollOverflow", arm.overflow);
-			// The Arx arm along its rings (#466.1): the skin it was measured on (classic when vr_arms_model = classic,
-			// else the engine's), the bands bent past the threshold (the elbow of a bent arm is one), the most bent
-			// band, the elbow's bend and the forearm rings' roll spread
+			// The Arx arm along its rings (#466.1): the skin it was measured on (classic), the bands bent past the
+			// threshold (the elbow of a bent arm is one), the most bent band, the elbow's bend and the forearm rings'
+			// roll spread
 			json.object("classic");
 			json.value("skin", arm.armSkin);
 			json.value("drawn", arm.classicDrawn);
@@ -1655,19 +1652,14 @@ std::string buildStatus(PlatformInstant now) {
 			json.value("hand", vr::classicHandName(vr::classicHand()));
 			json.value("arxHandHidden", vr::arxHandHidden(vr::Hand(hand)));
 			json.end();
-			// The custom arm drawn on this logical arm (#385.3): the hand's size, where the glove and the sleeve sit,
-			// the bend the sleeve is drawn with and the roll its twist joints carry
+			// The glove drawn at this arm's Arx wrist (vr_classic_hand = glove, #466.2): the hand's size, where it sits
 			const vr::CustomArmStatus & custom = vr::customArmStatus(vr::Hand(hand));
 			json.value("handScale", custom.handScale);
 			json.object("custom");
 			json.value("drawn", custom.drawn);
-			// the glove went into the batch this frame (#385.11): a drawn arm hands out its sleeve and its glove
-			// together (vr::customArmMeshes), each with a texture (the file's, or a plain one when it is missing)
+			// the glove went into the batch this frame (#385.11, vr::customArmMeshes) with a texture (the file's, or a
+			// plain one when it is missing)
 			json.value("gloveDrawn", custom.drawn);
-			// what of the sleeve the model draws with it (#385.8): custom the whole, forearm the forearm's part, hands
-			// none (only the cuff closing the glove); forearmLength below is the forearm as drawn
-			json.value("sleeveDrawn", custom.sleeveDrawn);
-			json.value("upperArmDrawn", custom.upperArmDrawn);
 			json.value("tipLength", custom.tipLength);
 			const struct { const char * name; const Vec3f & point; } customPoints[] = {
 				{ "palm", custom.palm }, { "wrist", custom.wrist }
@@ -1679,19 +1671,7 @@ std::string buildStatus(PlatformInstant now) {
 				json.value("z", point.point.z);
 				json.end();
 			}
-			// its own solve (#385.6): the segments fitted to the player (fitSource height | reach | arx, the reach
-			// measured so far), the stretch fraction in use, the wrist short of the controller, the weapon's elbow drop
-			json.value("upperLength", custom.upperLength);
-			json.value("forearmLength", custom.forearmLength);
-			json.value("fitSource", custom.fitSource);
-			json.value("reach", custom.reach);
-			json.value("stretch", custom.stretch);
-			json.value("error", custom.error);
-			json.value("elbowDrop", custom.elbowDrop);
-			json.value("bend", custom.bend);
-			json.value("drawnBend", custom.drawnBend);
-			json.value("upperRoll", custom.upperRoll);
-			json.value("forearmTwist", custom.forearmTwist);
+			// the Arx wrist ring as skinned to the glove's cuff (#466.2)
 			json.value("wristGap", custom.wristGap);
 			json.value("vertices", u64(custom.vertices));
 			json.value("triangles", u64(custom.triangles));
@@ -1747,9 +1727,6 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("upperShare", body.upperShare);
 		json.value("elbowShare", body.elbowShare);
 		json.value("twistOverflow", body.twistOverflow);
-		// the custom arm's tunables in use (cfg.ini vr_arm_max_stretch, vr_arm_weapon_elbow_drop, #385.6)
-		json.value("armMaxStretch", vr::clampArmMaxStretch(config.input.vrArmMaxStretch));
-		json.value("weaponElbowDrop", vr::clampWeaponElbowDrop(config.input.vrArmWeaponElbowDrop));
 		json.end();
 	}
 	// XR_EXT_hand_tracking (#305): whether the runtime gives hand joints and how often it did
@@ -1834,28 +1811,17 @@ std::string buildStatus(PlatformInstant now) {
 			json.end();
 		}
 		// Distance from the hilt to the right palm, both taken in this one status write: a check that remembers
-		// the palm and asserts the hilt later compares two frames of a moving idle rig (#316). Per frame (#385.10):
-		// arx - the weapon's attach vertex to the Arx hand's palm; glove - the drawn handle anchor to the glove's hold
-		// point (= hiltToGrip), the hidden Arx hand holds nothing then
-		const bool inGlove = std::strcmp(weapon.frame, "glove") == 0;
+		// the palm and asserts the hilt later compares two frames of a moving idle rig (#316): the weapon's attach
+		// vertex to the Arx hand's palm
 		vr::HandLandmarks palm;
-		if(inGlove) {
-			json.value("hiltToPalm", weapon.hiltToGrip);
-		} else if(vr::handLandmarks(vr::Hand::Right, palm)) {
+		if(vr::handLandmarks(vr::Hand::Right, palm)) {
 			json.value("hiltToPalm", glm::distance(weapon.hilt, palm.palm));
 		}
 		json.value("bladeAngle", weapon.bladeAngle);
-		// The weapon in the glove (#385.10): the frame it is drawn from, the class's anchor along the handle, the
-		// anchor on the glove's hold point, the edge toward the knuckles, the sword's tilt
-		json.value("frame", weapon.frame);
+		// The class and the handle read from the weapon, the sword's tilt configured (#385.10; not applied, #548)
 		json.value("weaponClass", weapon.weaponClass);
 		json.value("handleLength", weapon.handleLength);
-		json.value("anchor", weapon.anchor);
-		json.value("handWidth", weapon.handWidth);
-		json.value("hiltToGrip", weapon.hiltToGrip);
-		json.value("edgeToKnuckles", weapon.edgeToKnuckles);
 		json.value("tilt", weapon.tilt);
-		json.value("tiltApplied", weapon.tiltApplied);
 		json.value("armAnimSuppressed", weapon.armAnimSuppressed);
 		json.value("armAnimation", weapon.armAnimation);
 		json.value("suppressedFrames", weapon.suppressedFrames);
@@ -3116,10 +3082,9 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "arms") {
-		// The arms drawn on the player in VR (#385.3): arms classic|custom|forearm|hands|arx switches the model live
-		// (#385.8, #466; only classic is a player choice, the others stay for their tests until #486), arms scale <factor>
-		// sets the custom hands' size (vr_hand_scale), arms classic-hand arx|glove
-		// the classic arm's hand (vr_classic_hand, #466.2); all are saved to cfg.ini
+		// The arms drawn on the player in VR (#385.3): arms classic sets the model (the only one since #466, #486),
+		// arms scale <factor> the glove's size (vr_hand_scale), arms classic-hand arx|glove the classic arm's hand
+		// (vr_classic_hand, #466.2); all are saved to cfg.ini
 		std::string_view args;
 		std::string_view what = firstWord(rest, args);
 		vr::ArmsModel model;
@@ -3232,7 +3197,8 @@ std::string execute(std::string_view line) {
 			return std::string();
 		}
 		if(what == "tilt") {
-			// The sword's forward tilt in the glove (#385.10): grip tilt <deg> snaps to 0, -15 or -30 (cfg.ini vr_sword_tilt)
+			// The sword's forward tilt in the glove (#385.10): grip tilt <deg> snaps to 0, -15 or -30 (cfg.ini vr_sword_tilt;
+			// stored, not applied while the weapon is placed from the Arx hand, #486 - kept for #548)
 			float degrees = 0.f;
 			std::istringstream iss{std::string(args)};
 			std::string extra;

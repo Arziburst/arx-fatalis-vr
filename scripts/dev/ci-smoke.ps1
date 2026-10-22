@@ -29,7 +29,8 @@
 	this working copy's user directory and never run at the same time; a read-back runs after its sequence, in its
 	user directory; a sequence with @solo (it measures frame pacing, #527) starts only with empty lanes and nothing
 	starts while it runs, and before it starts it waits while another task's build compiles on the PC (up to
-	-QuietWaitSec, #566). The risk order (#527): the .xrs files the change touches first (git diff against -Base),
+	-QuietWaitSec, #566); it goes after every other phase, so the lanes are busy while such a build ends. The risk
+	order (#527): the .xrs files the change touches first (git diff against -Base),
 	then the sequences the impact map selects for the changed files, then what failed in the last 5 runs
 	(ci-history.json beside the durations, written at the end of every run), then the rest by the last run's duration,
 	longest first (ci-durations.json; a phase without a recorded time counts as the longest). The summary lists every
@@ -107,7 +108,9 @@
 .PARAMETER QuietWaitSec
 	How long a phase that measures frame pacing (@solo) waits, before it starts, while something compiles on the PC
 	(cl, link, ninja, MSBuild, cmake --build, build-windows.ps1 that are not this run's, #566; quiet: 30 s without
-	one); then it runs anyway, under that load. The
+	one); then it runs anyway, under that load. In CI (NETWORK SERVICE) the command lines of another account's
+	processes cannot be read: only the names count there (cl, link, ninja; an MSBuild or a cmake does not), and the
+	30 s settle bridges a build's steps between its compiles; the log says how many command lines it could read. The
 	wait and what it waited for are in the log and the job summary. Default 600; 0: no wait.
 
 .EXAMPLE
@@ -389,6 +392,9 @@ $sequenceOrder = @(Get-ArxPhaseOrder $units $changed $durations -Affected $affec
 $byName = @{}
 foreach ($ph in $phases) { $byName[$ph.Name] = $ph }
 $dispatch = @(@('save-library', 'smoke-test', 'spell-drawcheck') + $sequenceOrder | Where-Object { $byName.ContainsKey($_) -and -not $byName[$_].Skip } | ForEach-Object { $byName[$_] })
+# A pacing phase (@solo) goes last, whatever its risk tier (#566): the other phases use every lane meanwhile, so a build
+# of another task beside them has time to end before the pacing phase waits for a quiet PC with the lanes empty
+$dispatch = @(@($dispatch | Where-Object { -not $_.Solo }) + @($dispatch | Where-Object { $_.Solo }))
 $known = @($dispatch | Where-Object { $durations.ContainsKey($_.Name) }).Count
 Write-Host "ci-smoke: $($dispatch.Count) phase(s) to run; changed $(if ($Changed) { '(given by -Changed)' } elseif ($Base) { "against $Base" } else { 'against nothing (no base)' }): $(if ($changedXrs) { $changedXrs -join ', ' } else { 'no .xrs' })"
 Write-Host "ci-smoke: risk order: map-affected: $(if ($affected) { $affected -join ', ' } else { 'none' }); failed in the last 5 runs ($historyFile): $(if ($recentFailures) { $recentFailures -join ', ' } else { 'none' })"
@@ -435,7 +441,13 @@ $startPhase = {
 	# A phase that measures frame pacing starts on a quiet PC (#566): the lanes are empty already (the scheduler's
 	# @solo), and a compile of another task's build waits too, up to -QuietWaitSec
 	if ($Phase.Solo -and $script:QuietWaitSec -gt 0) {
-		$quiet = Wait-ArxQuietPc $Phase.Name { Get-ArxForeignBuilds (Get-CimInstance Win32_Process -Property Name, ProcessId, ParentProcessId, CommandLine) } -MaxSeconds $script:QuietWaitSec
+		# What this account sees of the others' processes: in CI (NETWORK SERVICE) their command lines are empty and only
+		# the names count (cl, link, ninja); the 30 s settle bridges a build's steps between them
+		try {
+			$seen = Get-ArxCommandLineCount (Get-CimInstance Win32_Process -Property Name, ProcessId, ParentProcessId, CommandLine -ErrorAction Stop)
+			Write-Host ("ci-smoke: {0}: {1} of the {2} other processes of the PC show their command line to {3}" -f $Phase.Name, $seen.Readable, $seen.Total, [Security.Principal.WindowsIdentity]::GetCurrent().Name)
+		} catch { }
+		$quiet = Wait-ArxQuietPc $Phase.Name { Get-ArxForeignBuilds (Get-CimInstance Win32_Process -Property Name, ProcessId, ParentProcessId, CommandLine -ErrorAction Stop) } -MaxSeconds $script:QuietWaitSec
 		if ($quiet.WaitedFor.Count -and $env:GITHUB_STEP_SUMMARY) {
 			Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ("> **{0}** (@solo) waited {1:0} s for compiles of the PC{2}: {3}" -f $Phase.Name, $quiet.Seconds, $(if ($quiet.TimedOut) { ', then ran under them' } else { '' }), (Format-ArxBuildList $quiet.WaitedFor))
 		}

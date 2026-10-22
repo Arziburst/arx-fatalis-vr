@@ -275,6 +275,11 @@ bool ArxGame::initialize() {
 	vr::createSession();
 	// One line with the outcome; the lines before it say why when it is flat
 	gameevent::Event("vr.mode")("mode", vr::isEnabled() ? "vr" : "flat")("simulated", vr::isSimulated());
+	if(vr::isEnabled()) {
+		// A fullscreen window minimized on a focus loss draws no frames - the headset would freeze when the player
+		// clicks another program (#406); cfg.ini minimize_on_focus_lost keeps its value for flat mode
+		m_MainWindow->setMinimizeOnFocusLost(false);
+	}
 
 	init = initGameData();
 	if(!init) {

@@ -2287,7 +2287,11 @@ checkout, so a run's tree comes from the API (the run's `head_commit.tree_id`, e
 The workflow's Scope step decides (its log line `game check suite: pr (...)` says why); the label is read live through
 the API, so adding `full-ci` and re-running the PR's last run (`gh run rerun <id>`) or pushing runs everything. A
 selection falls back to everything when it cannot be sure: a changed path that no line of the map matches (a new
-folder, a new file in a folder that is listed file by file), a line `-> *`, or a diff that cannot be made. The log of
+folder, a new file in a folder that is listed file by file), a line `-> *`, or a diff that cannot be made. **A deleted
+path (#608)** - a rename's old path too - is matched like a changed one; when the change removed its line together with
+the file, the map of the base tree (the merge base's `impact.txt`, `Read-ArxBaseImpactMap`) gives its line instead, and
+its reason says `(deleted; the map before the change)`. Only a deleted path in no line of either map runs everything;
+a path that is not deleted never looks at the base map (self-test `test-ci-impact-deleted.ps1`). The log of
 the game checks names the suite and why (`ci-smoke: suite pr - ...` / `ci-smoke: suite full - ...`), lists the
 selection with the reason of each check (`ci-smoke: selected 19 of 66 checks: arms-follow (core), melee-swing
 (src/vr/VRMelee.cpp), ...`), and the job summary repeats both lines.

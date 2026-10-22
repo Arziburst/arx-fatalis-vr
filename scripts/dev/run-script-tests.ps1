@@ -21,6 +21,7 @@ $ErrorActionPreference = 'Stop'
 
 # The self-tests. Keep the list sorted.
 $tests = @(
+	'test-ci-impact-deleted.ps1' # the selection of a pull request for deleted paths (#608): fixture change sets, the base tree's map, a rename's two paths, an unknown deleted path still everything
 	'test-ci-skip-equal-tree.ps1' # the equal-tree skip of a push to main (#541): fixture gh run lists, a fake tree lookup, any successful suite=full gate run on the head's tree, fail safe to run
 	'test-ci-smoke.ps1'       # the CI game checks' lanes (#522): the order, the scheduler over fake phases, the lane count, durations, evidence; the impact map's selection and coverage
 	'test-ci-slots.ps1'       # CI owns the game slots (#527, #526): the runner marker's priority, holder lines, orphans stopped, games die with their launcher

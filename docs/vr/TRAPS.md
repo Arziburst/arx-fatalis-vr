@@ -8,6 +8,20 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-22 — `refresh-rate.xrs` fails its frames guards in CI though it ran alone on the lanes (#566)
+
+**Symptom:** the merge gate and PR runs failed `motion.records.walk90.frames` 90 for `ge 121` (VR pacing
+`UNDER-SUBMITTING 43/s on 90 slots`) and `motion.records.span90.frames` 4 for `ge 9`; the same commits passed in the
+workers' ci-local, and the sequence passed 4 of 4 runs on a quiet PC. **Cause:** `@solo` kept the other lanes empty,
+but not the PC: a worker's build (cl.exe on every core) ran next to the runner, and a game paced to the display clock
+skips the slots it misses - the guard was right, the PC was busy. `scripts/dev/stress-sequence.ps1 -Load build`
+reproduces it: 9 of 9 runs failed while a build compiled. **Do:** an `@solo` phase of `ci-smoke.ps1` now waits before
+it starts while anything compiles that is not its run's (`Wait-ArxQuietPc`, at most 600 s, then it runs anyway and the
+log says so). A frames guard that still fails: look for `ci-smoke: xrs-<name> measures frame pacing and waits` and
+`the PC still compiles after` in the job log, and for `H` lines in the record's window (`stress-sequence.ps1` prints
+them). Not covered: one long frame inside a held-stick window (`walk120.walked` 133.4 for `le 133.1` after one 36.5 ms
+update frame) - a re-measure of such a record needs a retry directive the `.xrs` language does not have.
+
 ## 2026-10-20 — The playground goblin flees instead of fighting when its life is below 8 - a damage roll decides which (#532)
 
 **Symptom:** `melee-damage.xrs` failed now and then (main runs 39128985121 and 39328879039, about 1 run in 17) at

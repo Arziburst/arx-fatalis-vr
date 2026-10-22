@@ -37,8 +37,8 @@
  * \brief The mesh core of the VR arms (#385): pure, host-tested in tests/vr/ArmMeshTest.cpp
  *
  * No engine globals, no renderer, no file access: a skinned mesh, a glTF loader that reads one from
- * a memory buffer (cgltf, MIT), weighted CPU skinning with up to four joints per vertex, and a
- * procedural low-poly sleeve from the shoulder to the wrist. Drawing it is the body module's job.
+ * a memory buffer (cgltf, MIT) and weighted CPU skinning with up to four joints per vertex. Drawing it
+ * is the body module's job.
  *
  * The hands are the Godot XR Tools low-poly glove hands (data/core/vr/arms/Hand_Glove_low_L/R.gltf,
  * CC0, research rows F-219 / F-274). The game reads them through its resource system as
@@ -119,111 +119,6 @@ void skinMesh(const SkinnedMesh & mesh, const std::vector<glm::mat4> & jointWorl
  * position (a UV seam) share one normal, so a seam does not show in the shading.
  */
 void recomputeNormals(const SkinnedMesh & mesh, const std::vector<Vec3f> & positions, std::vector<Vec3f> & normals);
-
-/*!
- * \brief The joints of the procedural sleeve; a sleeve's skeleton index is this value
- *
- * A chain along +X, each the parent of the next, all with the identity rotation at rest:
- *
- *  joint               | at x (rest)                       | drives
- *  --------------------|-----------------------------------|----------------------------------------
- *  SleeveShoulder      | 0                                 | the top ring (sunk into the torso)
- *  SleeveUpperTwist    | upperTwistAt * upperLength        | the upper arm, full upper-arm twist
- *  SleeveElbow         | upperLength                       | the forearm at the elbow, none of the wrist's roll
- *  SleeveForearmTwist1 | upperLength + forearmLength / 3   | a third of the wrist's roll
- *  SleeveForearmTwist2 | upperLength + forearmLength * 2/3 | two thirds of the wrist's roll
- *  SleeveWrist         | upperLength + forearmLength       | the last ring, the full wrist roll
- *
- * The weights blend linearly from one joint's ring to the next along the chain, except across the
- * elbow: there the upper twist hands over to the elbow over \c elbowBlend units each side of the
- * elbow, so the ring at the elbow is 50/50 and the rings \c elbowRingOffset each side of it are mostly
- * their own side (research rows F-310, F-311). The body module poses the joints itself (it knows
- * the shoulder, elbow and wrist, and the wrist's roll): the bend is about the elbow's local Z with the
- * forearm folding toward +Y, so +Y is the arm's inner side and -Y its outer side (the point of the
- * elbow).
- */
-enum SleeveJoint {
-	SleeveShoulder,
-	SleeveUpperTwist,
-	SleeveElbow,
-	SleeveForearmTwist1,
-	SleeveForearmTwist2,
-	SleeveWrist,
-	SleeveJointCount
-};
-
-/*!
- * \brief The shape of the procedural sleeve, lengths and radii in game units (about a centimetre)
- *
- * The default lengths are the Arx player's bones (research row F-233). The last ring is sized to meet
- * the glove hand's cuff with no gap; the join stays a plain visible seam, nothing widens to hide it.
- *
- * The glove's cuff (Hand_Glove_low_L/R.gltf, meters, the hand pointing to -Z): its opening is an
- * ellipse 4.8 cm across mesh X (the hand's thickness) by 6.4 cm across mesh Y (its width), centred
- * within 0.4 cm of the Wrist joint's axis, at z = 2.6 cm, 0.14 cm toward the fingers from the Wrist
- * joint (z = 2.7 cm). So the defaults end the sleeve in an ellipse of 3.2 units across Z (the width)
- * by 2.4 across Y (the thickness, the inner and outer side): with the hand's Wrist joint on the
- * sleeve's, the hand's width along the sleeve's Z and its thickness along the sleeve's Y, the two
- * openings meet.
- */
-struct SleeveParams {
-	float upperLength = 27.6f;   //!< shoulder to elbow
-	float forearmLength = 30.5f; //!< elbow to wrist
-	int rings = 16;              //!< rings from the shoulder to the wrist (at least the 8 the joints need)
-	int sides = 14;              //!< sides of each ring (12 to 16 for the low-poly look, F-312)
-	float topFlare = 1.3f;       //!< the top ring is this much wider than shoulderRadius, to sink into the torso
-	float shoulderRadius = 5.f;  //!< at the upper twist ring
-	float elbowRadius = 3.8f;
-	float forearmRadius = 4.f;   //!< at the first forearm twist ring
-	float wristRadius = 3.2f;    //!< the last ring across Z (the hand's width)
-	float wristFlatten = 0.75f;  //!< the last ring across Y is wristRadius times this (the hand's thickness)
-	float upperTwistAt = 0.25f;  //!< where the upper twist joint sits, as a fraction of upperLength
-	float elbowBlend = 4.f;      //!< the elbow's weight blend reaches this far each side of the elbow
-	float elbowRingOffset = 2.5f; //!< the rings each side of the elbow ring (F-310: 2 to 3 cm)
-	/*!
-	 * Where the sleeve starts along +X (#385.8): 0 at the shoulder (the open top sunk into the torso); past 0 the
-	 * sleeve is cut there - a short forearm, or at upperLength + forearmLength only the wrist's ring - and the cut
-	 * is closed by a cuff
-	 */
-	float startAt = 0.f;
-	float cuffFlare = 1.1f;      //!< the cuff's rim is this much wider than the cut ring (a first proposal)
-	float cuffDepth = 1.f;       //!< the cuff closes this far past the cut, towards the shoulder
-};
-
-/*!
- * \brief Build the low-poly sleeve
- *
- * An open tube along +X from the shoulder joint at the origin to the wrist at
- * upperLength + forearmLength. Rings sit at every joint, at the elbow and \c elbowRingOffset each
- * side of it; the rest are spread over the longest gaps. Each ring has sides + 1 vertices: the
- * first and the last are the same point (the UV seam), which runs along the inner side (+Y), the
- * side least seen. The rings are round down to the first forearm twist ring and flatten from there
- * to the last ring's ellipse (wristFlatten).
- *
- * UVs: the whole texture is the sleeve. U goes once around the arm from the seam on the inner side
- * (+Y, U = 0) through the front (-Z, U = 0.25), the outer side (-Y, the elbow's point, U = 0.5) and
- * the back (+Z, U = 0.75) to the seam again (U = 1). V goes along the arm, 0 at the shoulder's top
- * ring to 1 at the wrist, proportional to the length (the elbow at V = upperLength / (upperLength +
- * forearmLength), about 0.475 by default).
- *
- * Cut (\c startAt past 0, #385.8): the rings start at \c startAt, and three more rings close it towards the
- * shoulder - the rim (\c cuffFlare wider, at 0.4 of \c cuffDepth), a ring at 0.6 of the radius (0.8 of the depth)
- * and the centre on the axis (the whole depth). They are weighted and textured as the cut ring, at its V.
- */
-SkinnedMesh buildSleeve(const SleeveParams & params);
-
-/*!
- * \brief The elbow's corrective shape, in rest space before skinning (research row F-310)
- *
- * The bend \a bendDegrees (0 straight, up to 180) pushes the outer side of the elbow (-Y) out by
- * up to k * sin(bend / 2) and pulls the inner side (+Y) toward the arm's axis by as much, where the
- * fold closes. Each vertex moves by how much it is shared between the upper arm and the forearm
- * (4 * upper share * forearm share: 1 on the elbow ring, 0 outside the elbow's blend) and by how
- * far round it is on its side. Vertices outside the elbow's blend do not move.
- *
- * \param positions the sleeve's rest positions (or ones already corrected); changed in place
- */
-void applyElbowCorrective(const SkinnedMesh & sleeve, float bendDegrees, float k, std::vector<Vec3f> & positions);
 
 } // namespace vr
 

@@ -1,12 +1,8 @@
-# The weapon in the glove (#385.10, research #453): with the custom, forearm or hands model the held weapon is
-# placed from the glove's hilt frame (the handle centre on the grip axis inside the closed fingers), never from the
-# hidden Arx hand, the blade's edge toward the knuckles; with `arms arx` the weapon keeps today's placement.
-# PROPOSED status.json keys (385.10 implements them):
-#   vr.weapon.frame           = glove | arx          which frame the weapon is placed from
-#   vr.weapon.hiltToGrip      units, handle anchor to the glove's grip axis point (~0)
-#   vr.weapon.edgeToKnuckles  degrees, the blade's edge axis vs the glove's knuckle direction
-#   vr.weapon.anchor          the anchor's distance from the pommel along the handle, units (per class table)
-#   vr.weapon.tilt            the sword's forward tilt in degrees: 0 | -15 | -30   (cfg vr_sword_tilt, `grip tilt <deg>`)
+# The weapon in the glove on the classic arm (#385.10, #466.2): with `arms classic-hand glove` the Arx hand is hidden
+# and the glove drawn at its wrist; the held sword keeps the Arx hand's placement (#75, D-033: the hilt on the hidden
+# hand's palm attach point, the blade along the controller's handle) - held ahead, raised to the face and with the hand
+# 1.5 m out past the reach. The placement from the glove's own hilt frame went with the custom, forearm and hands models
+# (#486); `grip tilt` still stores and snaps cfg.ini vr_sword_tilt (vr.weapon.tilt), which nothing applies until #548.
 # The right hand holds the sword (mvp-items). The pose numbers are a first guess: move the POSE, never the assertions.
 #   .\scripts\dev\xrs-run.ps1 weapon-in-glove
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence weapon-in-glove -Save mvp-items
@@ -17,97 +13,67 @@
 @until state eq GAMEPLAY 60s
 @until vr.sim.timelineFrame ge 270 60s       # 3 s into the level: past its fade-in (TRAPS.md)
 @assert player.controlsBlocked eq false
-# The custom arms: a test-only model since #466 (classic is the default) until #486 removes it
-arms custom
-@frames 5
+arms classic
+arms classic-hand glove
+@frames 15
 @assert vr.body.active eq true
-@assert vr.body.armsModel eq custom
+@assert vr.body.armsModel eq classic
 @assert vr.body.right.posed eq true
+@assert vr.body.right.custom.gloveDrawn eq true
+@assert vr.body.right.classic.arxHandHidden eq true
 @assert vr.weapon.inHand eq true
 
-# 1. The custom glove: the weapon is drawn from the glove's frame, the handle in the closed fingers, the edge to the knuckles
-@assert vr.weapon.frame eq glove
-@assert vr.weapon.hiltToGrip lt 0.5
-@assert vr.weapon.edgeToKnuckles lt 5
+# 1. The sword in the glove keeps the Arx hand's placement: on the hidden hand's palm, the blade along the handle
+@assert vr.weapon.place eq hand
+@assert vr.weapon.bladeAngle lt 2
+@assert vr.weapon.hiltToPalm lt 0.5
 @assert vr.weapon.tilt eq 0
-@assert vr.weapon.anchor gt 0
 @shot glove-default
 
-# 2. The same raised to the face, the hand turned (the roll is pinned, not left to the controller)
+# 2. The same raised to the face, the hand turned
 vr-sim hand right pos 0.12 -0.1 -0.35
 vr-sim hand right rot 0 90 0
 vr-sim head rot 0 -15 0
 @frames 20
-@assert vr.weapon.frame eq glove
-@assert vr.weapon.hiltToGrip lt 0.5
-@assert vr.weapon.edgeToKnuckles lt 5
+@assert vr.weapon.inHand eq true
+@assert vr.weapon.bladeAngle lt 2
+@assert vr.weapon.hiltToPalm lt 0.5
 @shot glove-raised
 
-# 3. A hand past the reach (as arm-fit.xrs's far pose): the arm stretches at most 10%, the weapon stays in the glove
+# 3. A hand past the reach: the weapon stays in the hand with the glove
 vr-sim head rot 0 0 0
 vr-sim hand left off
 vr-sim hand right pos 0.2 -0.3 -1.5
 vr-sim hand right rot 0 0 0
 @frames 20
 @assert vr.body.right.posed eq true
-@assert vr.body.right.custom.stretch gt 0
-@assert vr.weapon.frame eq glove
-@assert vr.weapon.hiltToGrip lt 0.5
-@assert vr.weapon.edgeToKnuckles lt 5
+@assert vr.body.right.custom.gloveDrawn eq true
+@assert vr.weapon.inHand eq true
+@assert vr.weapon.bladeAngle lt 2
+@assert vr.weapon.hiltToPalm lt 0.5
 @shot glove-far
 vr-sim hand left on
 vr-sim hand right pos 0.2 -0.3 -0.35
 @frames 20
 
-# 4. The forearm and the hands models take the same frame
-arms forearm
-@frames 10
-@assert vr.weapon.frame eq glove
-@assert vr.weapon.hiltToGrip lt 0.5
-@assert vr.weapon.edgeToKnuckles lt 5
-arms hands
-@frames 10
-@assert vr.weapon.frame eq glove
-@assert vr.weapon.hiltToGrip lt 0.5
-arms custom
-@frames 10
-
-# 5. The tilt switch: -15 leans the blade (angle changes), the status follows, the weapon stays in the glove
-@remember angle0 vr.weapon.bladeAngle
+# 4. The tilt switch: the status follows; a value off the table is refused or snapped to a variant - never stored as is
 grip tilt -15
-@frames 15
+@frames 5
 @assert vr.weapon.tilt eq -15
-@assert vr.weapon.bladeAngle gt {angle0+10}
-@assert vr.weapon.bladeAngle lt {angle0+20}
-@assert vr.weapon.hiltToGrip lt 0.5
-@assert vr.weapon.edgeToKnuckles lt 5
-@shot tilt-15
-grip tilt -30
-@frames 15
-@assert vr.weapon.tilt eq -30
-@assert vr.weapon.bladeAngle gt {angle0+25}
-@shot tilt-30
-grip tilt 0
-@frames 15
-@assert vr.weapon.tilt eq 0
-@assert vr.weapon.bladeAngle lt {angle0+2}
-
-# 6. A value off the table is refused or snapped to a variant - never stored as is
 grip tilt 40
 @frames 5
 @assert vr.weapon.tilt le 0
 @assert vr.weapon.tilt ge -30
 grip tilt 0
 @frames 5
+@assert vr.weapon.tilt eq 0
 
-# 7. The Arx hands: the weapon keeps today's placement (the hidden hand's)
-arms arx
+# 5. Back to the Arx hand: the same placement
+arms classic-hand arx
 @frames 15
-@assert vr.weapon.frame eq arx
+@assert vr.body.right.custom.gloveDrawn eq false
 @assert vr.weapon.inHand eq true
-@shot arx-model
-arms custom
-@frames 15
-@assert vr.weapon.frame eq glove
+@assert vr.weapon.bladeAngle lt 2
+@shot arx-hand
 
 @assert errors eq 0

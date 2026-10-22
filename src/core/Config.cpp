@@ -48,7 +48,6 @@
 #include "util/Number.h"
 #include "util/String.h"
 
-#include "vr/ArmFit.h"
 #include "vr/ArmRoll.h"
 #include "vr/BodyView.h"
 #include "vr/HeadPose.h"
@@ -209,8 +208,6 @@ constexpr const float
 	vrArmTwistOverflow = vr::DefaultTwistOverflow,
 	vrHeightOffset = 0.f,
 	vrHandScale = vr::DefaultHandScale,
-	vrArmMaxStretch = vr::MaxArmStretch,
-	vrArmWeaponElbowDrop = vr::DefaultWeaponElbowDrop,
 	vrBodyPush = vr::BodyViewParams().push,
 	vrBodyPushDown = vr::BodyViewParams().pushDown,
 	vrBodyClearance = vr::BodyViewParams().clearance;
@@ -400,8 +397,6 @@ constexpr const std::string_view
 	vrClassicHand = "vr_classic_hand",
 	vrBody = "vr_body",
 	vrHandScale = "vr_hand_scale",
-	vrArmMaxStretch = "vr_arm_max_stretch",
-	vrArmWeaponElbowDrop = "vr_arm_weapon_elbow_drop",
 	vrMeleeSwingSpeed = "vr_melee_swing_speed",
 	vrMeleeQuality = "vr_melee_quality",
 	vrMeleePathScale = "vr_melee_path_scale",
@@ -736,8 +731,6 @@ bool Config::save() {
 	writer.writeKey(Key::vrClassicHand, input.vrClassicHand);
 	writer.writeKey(Key::vrBody, input.vrBody);
 	writer.writeKey(Key::vrHandScale, input.vrHandScale);
-	writer.writeKey(Key::vrArmMaxStretch, input.vrArmMaxStretch);
-	writer.writeKey(Key::vrArmWeaponElbowDrop, input.vrArmWeaponElbowDrop);
 	writer.writeKey(Key::vrMeleeSwingSpeed, input.vrMeleeSwingSpeed);
 	for(vr::MeleeClass meleeClass : vr::MeleeClasses) {
 		writer.writeKey(meleeRangeKey("slash", meleeClass), input.vrMeleeSlash[size_t(meleeClass)]);
@@ -978,16 +971,13 @@ bool Config::init(const fs::path & file) {
 	float vrArmTwistOverflow = reader.getKey(Section::Input, Key::vrArmTwistOverflow, Default::vrArmTwistOverflow);
 	input.vrArmTwistOverflow = glm::clamp(vrArmTwistOverflow, vr::MinTwistOverflow, vr::MaxTwistOverflow);
 	input.vrHeightOffset = vr::clampHeightOffset(reader.getKey(Section::Input, Key::vrHeightOffset, Default::vrHeightOffset));
-	// The arms drawn on the player in VR (#385): anything but "arx" is our own arms
+	// The arms drawn on the player in VR (#385): always classic (#466, #486)
 	input.vrArmsModel = vr::armsModelName(vr::parseArmsModel(reader.getKey(Section::Input, Key::vrArmsModel, Default::vrArmsModel)));
 	// The classic arm's hand (#466.2): anything but "glove" is the Arx hand
 	input.vrClassicHand = vr::classicHandName(vr::parseClassicHand(reader.getKey(Section::Input, Key::vrClassicHand, Default::vrClassicHand)));
 	input.vrHandScale = vr::clampHandScale(reader.getKey(Section::Input, Key::vrHandScale, Default::vrHandScale));
 	// The body drawn under a tracked head (#385.11): anything but "hidden" is the whole body
 	input.vrBody = vr::bodyModeName(vr::parseBodyMode(reader.getKey(Section::Input, Key::vrBody, Default::vrBody)));
-	input.vrArmMaxStretch = vr::clampArmMaxStretch(reader.getKey(Section::Input, Key::vrArmMaxStretch, Default::vrArmMaxStretch));
-	input.vrArmWeaponElbowDrop = vr::clampWeaponElbowDrop(reader.getKey(Section::Input, Key::vrArmWeaponElbowDrop,
-	                                                                    Default::vrArmWeaponElbowDrop));
 	// Physical melee (#39)
 	float vrMeleeSwingSpeed = reader.getKey(Section::Input, Key::vrMeleeSwingSpeed, Default::vrMeleeSwingSpeed);
 	input.vrMeleeSwingSpeed = glm::clamp(vrMeleeSwingSpeed, 0.5f, 10.f);

@@ -4,7 +4,7 @@
 #   vr.body.<hand>.classic.hand            arx | glove (the switch)
 #   vr.body.<hand>.classic.arxHandHidden   the Arx hand faces are left out of the draw this frame (true only with glove)
 # Existing: vr.body.<hand>.custom.gloveDrawn, vr.body.<hand>.fingers.holds, vr.hands.<hand>.hiltPose,
-# vr.body.<hand>.classic.creases (466.1).
+# vr.body.<hand>.classic.creases (466.1), vr.body.<hand>.handScale and .custom.tipLength (the glove's size, #385.3).
 # Needs the sword save:
 #   .\scripts\dev\xrs-run.ps1 arms-classic-glove
 #   .\scripts\dev\smoke-test.ps1 -VrSim idle -Sequence arms-classic-glove -Save mvp-items
@@ -40,6 +40,28 @@ arms classic-hand glove
 @assert vr.hands.right.hiltPose ne none
 @assert vr.body.right.classic.creases le 1
 @shot classic-hand-glove
+
+# 2b. The glove's size (vr_hand_scale, moved from arms-model.xrs, #486): bigger than the Arx hands by default (1.15);
+#     its length grows with the setting (`arms scale <factor>`, 0.8 - 1.5)
+@assert vr.body.right.handScale gt 1.0
+@assert vr.body.right.custom.tipLength gt 0
+@remember tip0 vr.body.right.custom.tipLength
+@remember scale0 vr.body.right.handScale
+arms scale 1.4
+@frames 5
+@assert vr.body.right.handScale gt 1.35
+@assert vr.body.right.handScale lt 1.45
+@assert vr.body.right.handScale gt {scale0}
+@assert vr.body.right.custom.tipLength gt {tip0}
+@shot hand-scale-140
+arms scale 1.0
+@frames 5
+@assert vr.body.right.handScale lt 1.05
+@assert vr.body.right.custom.tipLength lt {tip0}
+arms scale 1.15
+@frames 5
+@assert vr.body.right.handScale gt 1.1
+@assert vr.body.right.handScale lt 1.2
 
 # 3. back to the Arx hand
 arms classic-hand arx

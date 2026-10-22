@@ -227,7 +227,9 @@ float & shapeOf(vr::HandShape & shape, size_t finger) {
 	return *fields[finger];
 }
 
-//! The synthesized angle at each joint of a fully closed finger (the thumb's metacarpal joint has no synthesized bend)
+//! The synthesized angle at each joint of a fully closed finger; the thumb's metacarpal joint is not compared (0 here):
+//! synthesizeHandJoints bends it by 40 degrees times the closure (#385.4), but the open thumb already rests bent there,
+//! so the flexion read back is not that angle
 const float ClosedAngles[5][3] = {
 	{ 0.f, 50.f, 70.f }, { 90.f, 100.f, 70.f }, { 90.f, 100.f, 70.f }, { 90.f, 100.f, 70.f }, { 90.f, 100.f, 70.f },
 };
@@ -236,7 +238,7 @@ float poseFlex(const vr::FingerPose & pose, size_t finger, size_t joint) {
 	return pose.flex[finger][joint];
 }
 
-//! Compares every joint; the thumb's metacarpal joint is skipped (the synthesized hand does not define it)
+//! Compares every joint but the thumb's metacarpal joint (ClosedAngles: its flexion is not the synthesized bend)
 void poseCheck(const char * what, const vr::FingerPose & expected, const vr::FingerPose & actual, float tolerance) {
 	for(size_t finger = 0; finger < 5; finger++) {
 		for(size_t joint = (finger == 0) ? 1 : 0; joint < 3; joint++) {

@@ -188,8 +188,6 @@ set(arxtest_TESTCASES
 	tests/vr/HandShapeTest.h
 	tests/vr/HandShapeTest.cpp
 
-	tests/vr/ArmFitTest.h
-	tests/vr/ArmFitTest.cpp
 
 	tests/vr/BodyViewTest.h
 	tests/vr/BodyViewTest.cpp
@@ -271,7 +269,6 @@ set(arxtest_SOURCES
 	src/vr/FingerCurl.cpp
 	src/vr/ArmMesh.cpp
 	src/vr/HandRig.cpp
-	src/vr/ArmFit.cpp
 	src/vr/BodyView.cpp
 	src/vr/RuneTrail.cpp
 	src/vr/MeleeSwing.cpp

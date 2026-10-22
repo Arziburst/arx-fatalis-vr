@@ -643,8 +643,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   fingertip vertex from the wrist along the hand's long axis and out towards the palm's face (units) — a closing
   hand brings the tip back and out. `fingerGroups` names the groups found per hand (`human_base`: `thumb
   right_hand_thumb, index right_hand_index_root>right_hand_index_tip, block right_hand_fingers_root>right_hand_finger_tip`).
-  The custom glove hand's five fingers (#385.4), per hand under `custom.fingers`: `source` (`held` | `joints` |
-  `controls` | `none` as above; `none` also while the custom arm is not posed) and per finger (`thumb`, `index`,
+  The glove's five fingers (#385.4; at the classic arm's wrist with `vr_classic_hand = glove`), per hand under
+  `custom.fingers`: `source` (`held` | `joints` | `controls` | `none` as above; `none` also while the glove is not posed) and per finger (`thumb`, `index`,
   `middle`, `ring`, `little`) `root`, `mid`, `tip` (the three joints' bend, degrees, 0 straight; the limits are
   90 / 100 / 70, the thumb 40 / 50 / 70; the thumb's first joint is read past its 30° rest) and `spread` (the
   knuckle's sideways turn, + toward the thumb), approaching the source's pose at 720°/s.
@@ -706,17 +706,10 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
   between the asset's blade and the hand's handle axis in the fist), `correction` (the turn applied, = `assetAngle`);
   after the weapon was drawn: `drawn`, `hilt` and `tip` (world), `bladeGrip` (the blade's direction in the
   controller's grip axes, OpenXR: -Z is the handle), `bladeAngle` (degrees from grip -Z: ~0 when held right),
-  `hiltToPalm` (units; its meaning depends on `frame`: `arx` - the weapon's attach vertex to the Arx hand's palm
-  attach point; `glove` - the drawn handle anchor to the glove's hold point, the same as `hiltToGrip`);
-  the weapon in the glove (#385.10): `frame` (`glove`: drawn from the glove's hilt frame with the custom, forearm
-  and hands models; `arx`: from the Arx hand, the arx model), `weaponClass` (`sword`, `dagger`, `axe`, `mace`,
-  `twoHanded`: from the item's type and class name), `handleLength` (units, the handle read from the mesh: pommel
-  end to guard or head), `anchor` (units from the pommel end to the point held on the glove's grip axis: the class's
-  row of the anchor table), `handWidth` (units, the glove's breadth: a two-handed weapon's anchor), `hiltToGrip`
-  (units, the drawn anchor to the glove's hold point, ~0), `edgeToKnuckles` (degrees, the drawn edge to the glove's
-  knuckle direction across the blade), `tilt` (the configured sword tilt: `0`, `-15`, `-30`) and `tiltApplied`
-  (what the drawn weapon has: the tilt for a sword in the glove, else 0); the anchor, the distances and the edge are
-  0 with `arx`;
+  `hiltToPalm` (units: the weapon's attach vertex to the Arx hand's palm attach point);
+  read for the weapon in the glove (#385.10, applied by nothing since #486, kept for #548): `weaponClass` (`sword`,
+  `dagger`, `axe`, `mace`, `twoHanded`: from the item's type and class name), `handleLength` (units, the handle read
+  from the mesh: pommel end to guard or head), `tilt` (the configured sword tilt: `0`, `-15`, `-30`);
   the engine's arm layer (F-67): `armAnimSuppressed`, `armAnimation` (the clip it plays), `suppressedFrames`;
   `combatMode`.
 - `vr.melee` (#39, D-038): physical melee. `active` (swings count now) or `refused` (why not: `no weapon in the
@@ -1001,12 +994,12 @@ cfg.ini `vr_arms_model` reads every value as `classic` (a `custom` or `library` 
 included). The arms lever is gone from the playground. **Flat mode and the inventory book always show the engine's
 Arx arms.** It is re-skinned in VR only.
 
-The other models stay in the code, **for their tests only**, until #486 deletes them: the test channel's
-`arms custom|forearm|hands|arx` switches to one for the run (`arms classic` back); `arms scale <factor>` sets
-`vr_hand_scale` (the glove's size, default `1.15`, range `0.8` – `1.5`). status.json: `vr.body.armsModel`
-(`classic`, or the test model), `vr.body.arxArmsHidden`, `vr.body.<left|right>.handScale` and, for the glove and the
-test-only models, `vr.body.<left|right>.custom.*` (`gloveDrawn`, `sleeveDrawn`, `upperArmDrawn`, `forearmLength`).
-Sequences: `arms-model.xrs` (the default and the switch), `arms-variants.xrs` (the test-only models).
+The other models (custom, forearm, hands, arx), their own arm solve and fit (`vr_arm_max_stretch`,
+`vr_arm_weapon_elbow_drop`), the sleeve and the weapon placed from the glove's hilt frame were deleted with their
+sequences by #486. The test channel's `arms classic` sets the one model; `arms scale <factor>` sets `vr_hand_scale`
+(the glove's size, default `1.15`, range `0.8` – `1.5`). status.json: `vr.body.armsModel` (`classic`),
+`vr.body.<left|right>.handScale` and, for the glove, `vr.body.<left|right>.custom.*` (`gloveDrawn`, `tipLength`,
+`wristGap`, the fingers below).
 
 **The glove's five fingers** (#385.4, D-041, D-042; on the classic arm with `vr_classic_hand = glove`, below) bend joint
 by joint, each about its own flexion axis read from the glove's rest skeleton (`src/vr/HandRig.*`). They follow, in
@@ -1014,62 +1007,46 @@ this order: a **held** weapon closes all five on the grip (either hand), else th
 the **controls** (trigger = index finger, grip = middle, ring and little finger, thumb rest = thumb), else **none**.
 status.json: `vr.body.<left|right>.custom.fingers.source` (`held` | `joints` | `controls` | `none`) and
 `vr.body.<left|right>.custom.fingers.<thumb|index|middle|ring|little>.<root|mid|tip|spread>` (degrees, 0 straight;
-root is the thumb's first joint or a finger's knuckle). Sequence: `finger-five.xrs` (on the test-only custom arm until
-#486). The Arx hand's three finger groups (`vr.body.<hand>.fingers.*`) are unchanged.
+root is the thumb's first joint or a finger's knuckle). Sequences: `finger-five.xrs` and `hand-conforming.xrs` (the
+conforming joints and `grip capture`), both with the glove. The Arx hand's three finger groups
+(`vr.body.<hand>.fingers.*`) are unchanged.
 
 #### The classic arm's hand (#466)
 
 
 The classic arm's **hand** is a second switch, to compare the Arx hand with our five-finger glove on the same arm:
 - **arx** (the default) — the Arx hand of the player model, its three finger groups;
-- **glove** — the Arx hand is not drawn; the glove of the custom arms (five fingers, the runtime's joints or the
-  controls, the hilt pose on a held weapon) sits at the Arx wrist, turned like the Arx hand, and the Arx forearm ends
-  in its cuff (no sleeve). Its closed fingers lie some 30 degrees off the handle (`custom.curlAngle`) — the price of
-  meeting the Arx wrist.
+- **glove** — the Arx hand is not drawn; our glove (five fingers, the runtime's joints or the controls, the hilt pose
+  on a held weapon) sits at the Arx wrist, turned like the Arx hand, and the Arx forearm ends in its cuff. Its closed
+  fingers lie some 30 degrees off the handle (`custom.curlAngle`) — the price of meeting the Arx wrist.
 
 How to switch (live, saved to cfg.ini): `arms classic-hand arx` or `arms classic-hand glove`; cfg.ini
 `vr_classic_hand` = `arx` | `glove`. It only matters with `vr_arms_model = classic`. status.json:
 `vr.body.<left|right>.classic.hand` (the switch), `vr.body.<left|right>.classic.arxHandHidden` (the Arx hand faces
 left out this frame — true only with the glove on a posed arm), `vr.body.<left|right>.custom.gloveDrawn` and
-`vr.hands.<left|right>.hiltPose` (the glove's, as on the custom arms); the one elbow:
+`vr.hands.<left|right>.hiltPose` (what a held weapon closes the glove on); the one elbow:
 `vr.body.<left|right>.classic.creases` (bands bent past 20 degrees, 1 on a bent arm) and `.forearmTwistSpread`.
-Sequences: `arms-classic.xrs` (one elbow) and `arms-classic-glove.xrs` (the hand switch, sword save `mvp-items`):
-`.\scripts\dev\xrs-run.ps1 arms-classic-glove`.
+Sequences: `arms-classic.xrs` (one elbow) and `arms-classic-glove.xrs` (the hand switch and the glove's size, sword
+save `mvp-items`): `.\scripts\dev\xrs-run.ps1 arms-classic-glove`.
 
-**What to compare:** classic against arx (the second elbow gone? the elbow band with the hand rolled 90° and 180°),
+**What to compare:** the classic arm with the hand rolled 90° and 180° (one elbow, a rigid forearm),
 then the classic arm with `classic-hand arx` against `classic-hand glove`: does the glove meet the Arx forearm without a
 gap or a kink at the wrist, hanging, held ahead and rolled; is its size right next to the Arx arm (`vr_hand_scale`);
 which hand do you want on the classic arm?
 
-**The weapon in the glove** (#385.10, research #453). With the custom, forearm and hands models (test-only until #486) the held weapon is
-drawn from the glove's hilt frame, not from the hidden Arx hand: a point of its handle sits on the line the glove's
-closed fingers wrap, the blade runs along that line out of the thumb side of the fist, and the blade's edge points
-toward the glove's knuckles (the wrist-to-knuckles direction: forward, F-489). The glove keeps its own place (past
-the stretch limit it stops short of the controller) and the weapon follows it. With `classic` (either hand) and `arx` the weapon keeps the old
-placement. Where along the handle the fingers close depends on the class (`src/vr/WeaponGrip.cpp`, the anchor table,
-the research's first proposal): sword and dagger at the handle's centre, axe and mace (club, hammer) 20 % of the
-handle from its end, a two-handed weapon in the right hand a hand-width above the pommel.
-
-**The sword's tilt** — three variants for the owner to pick (the default 0 until then):
-- **cfg.ini** `vr_sword_tilt` = `0` | `-15` | `-30` (degrees; another value snaps to the nearest), or live through the
-  channel: `grip tilt 0`, `grip tilt -15`, `grip tilt -30` (saved to cfg.ini).
-- The tilt turns the blade about the palm's normal, its tip leaning **forward, toward the knuckles** (the Index's
-  pointing frame lies about 55° from its handle, F-488), in the plane of the edges. Only a sword leans; the other
-  classes stay along the handle.
-
-**What to compare** with a weapon in the hand (the playground's weapon table has every class):
-- Does the handle sit inside the closed fingers — the guard just above the fist, the pommel below it?
-- The edge: does the sharp side face forward (where the knuckles point) whichever way the hand turns?
-- The tilt: 0, -15 and -30 with the sword held ready — which one feels like holding a sword?
-- Axe, club and the two-handed sword: is the hand at the right place along the handle?
-- With the hand stretched out past the arm's reach: does the weapon stay in the glove?
+**The weapon with the glove** (#385.10, #466.2): the held weapon keeps the Arx hand's placement (the hilt on the hidden
+Arx hand's palm attach point, the blade along the controller's handle, D-033) - the weapon placed from the glove's own
+hilt frame went with the custom, forearm and hands models (#486); its math (`src/vr/WeaponGrip.*`: the anchor table
+by class, the edge toward the knuckles, the sword's tilt) stays for #548. `grip tilt 0 | -15 | -30` and cfg.ini
+`vr_sword_tilt` are still stored and snapped (`vr.weapon.tilt`), applied by nothing until then. Sequence:
+`weapon-in-glove.xrs`.
 
 ### Switching the body: full or hidden (#385.11)
 
 Two variants of the own body in VR, to pick by feel: **full** — the whole player model, pushed back behind the
 eyes so it never blocks the view (#385.9) — and **hidden** — no torso, legs, neck or head, only the arms and hands
-(Half-Life: Alyx style): the classic Arx arms with their shoulders closed by a cap (and the test-only models of
-#486 their own way). The held weapon, the wrist bars and the reticle are the same
+(Half-Life: Alyx style): the classic Arx arms with their shoulders closed by a cap (the glove at the wrist with
+`vr_classic_hand = glove`). The held weapon, the wrist bars and the reticle are the same
 in both. **Flat mode and the inventory book always show the whole model.** The floor shadow (the engine's blob
 shadow under the player) stays in both variants.
 
@@ -1079,11 +1056,11 @@ shadow under the player) stays in both variants.
 
 status.json shows the state: `vr.body.mode` (`full` | `hidden`), `vr.body.drawnBodyFaces` (the body's faces the
 last frame drew — torso, legs, the neck cap, the head; 0 in hidden) and `vr.body.drawnArmFaces` (the Arx arms'
-faces and their shoulder caps; above 0 only with the Arx arms). Sequence: `body-hidden.xrs`
+faces and their shoulder caps). Sequence: `body-hidden.xrs`
 (`.\scripts\dev\xrs-run.ps1 body-hidden`).
 
 **What to compare** in the headset, one variant after the other, standing and looking down: does the body (full)
-still bother you, do floating arms (hidden) feel right, and with which arm model.
+still bother you, do floating arms (hidden) feel right, and with which hand.
 
 ## The dev variants panel (#588)
 
@@ -1983,7 +1960,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `recenter` | a head offset is set and read back | #28: `recenter` is accepted (it logs one expected `[W]`) |
 | `finger-tracking` | the fingers follow the real fingers (#305): on `mvp-new-game` the simulated runtime's hand trackers are on (`vr.hands`), finger groups are found under both hands, the open hand bends nothing; pointing (`hand right fingers 1 0 1`) closes the thumb and the block to their limits and leaves the index finger straight, a fist closes every segment and brings the fingertip vertex back along the hand and out towards the palm (`tipAlong`, `tipOut`), half closed is half; with joints the trigger does nothing; `fingers off` → `source=controls`: a trigger pulled 0.4 bends the index finger to 36°, a grip of 0.45 the block to 40.5°, `thumb_touch` the thumb to 60°; `fingers on` gives the joints back; a controller off gives the whole arm back. Shots `hand-open-a/b`, `hand-point`, `hand-fist` of the hand before the face are for the eye (the fingers are a small part of the frame and the torch's flicker on the arm moves the whole-frame difference by up to ~0.5: no picture threshold beyond the still pair): `smoke-test.ps1 -VrSim idle -Sequence finger-tracking -Save mvp-new-game` | — |
 | `finger-held` | a hand holding a weapon is closed on the grip (#305, #75): on `mvp-items` (a short sword equipped) the right hand's `source=held` with every segment at its limit whatever its joints say, the left hand follows its own joints; the right controller off gives the arm back, on holds again; shot `sword-fist`: `smoke-test.ps1 -VrSim idle -Sequence finger-held -Save mvp-items` | — |
-| `finger-five` | the custom hand's five fingers (#385.4, D-041, D-042) on `mvp-items`: the left hand's fingers closed one at a time by its joints (`hand left fingers <thumb> <index> <middle> <ring> <little>`) bend only that finger's three joints (`vr.body.left.custom.fingers.<finger>.<root\|mid\|tip>`, the thumb's first joint read past its 30° rest), a fist bends all five; `fingers off` → `source=controls`: a trigger of 0.4 bends the index finger, a grip of 0.4 the other three; the right hand holding the sword is `source=held` with all five closed whatever its joints say; its controller off → `none`, on → `held`. Shots `finger-five-thumb` … `-fist` and `finger-five-weapon-fist`: `smoke-test.ps1 -VrSim idle -Sequence finger-five -Save mvp-items` | — |
+| `finger-five` | the glove's five fingers (#385.4, D-041, D-042) at the classic arm's wrist (`arms classic-hand glove`) on `mvp-items`: the left hand's fingers closed one at a time by its joints (`hand left fingers <thumb> <index> <middle> <ring> <little>`) bend only that finger's three joints (`vr.body.left.custom.fingers.<finger>.<root\|mid\|tip>`, the thumb's first joint read past its 30° rest), a fist bends all five; `fingers off` → `source=controls`: a trigger of 0.4 bends the index finger, a grip of 0.4 the other three; the right hand holding the sword is `source=held` with all five closed whatever its joints say; its controller off → `none`, on → `held`. Shots `finger-five-thumb` … `-fist` and `finger-five-weapon-fist`: `smoke-test.ps1 -VrSim idle -Sequence finger-five -Save mvp-items` | — |
 | `arms-follow` | the full body (#36): both arm chains found, both arms posed from the idle rig's controllers with `error` 0; the hand takes the controller's orientation (the identity grip is a hand hanging down in the OpenXR grip pose: the wrist 8 units above the grip and the fingertips below the wrist; pitched up 90°, fingers ahead and thumb up: wrist and fingertips level with the grip); a hand moved 20 cm out and 25 cm up (x 0.3: x 0.5 left the classic arm at 3.9 against the threshold 4, #489) moves the wrist with it and changes both eyes' pictures of the body seen from above (> 2, floor < 1.5); 1.2 m out: `stretched`, `slide` 20; a controller switched off gives its arm back to the engine; a 30 cm lean shifts the body by the camera's offset and keeps `error` 0. **Needs the first-person save** (level 10's conversation camera is nowhere near the body): `smoke-test.ps1 -VrSim idle -Sequence arms-follow -Save mvp-new-game` | — |
 | `arms-roll` | the roll-aware arm IK (#304, D-050) on `mvp-new-game` (`smoke-test.ps1 -VrSim idle -Sequence arms-roll -Save mvp-new-game`): the right hand hanging down and pointing forward, rolled 0 / 45 / 90 / 180° — the eight poses of the #298 baseline (`docs/vr/research/arms-roll.xrs`, section 16g) — with `error` < 1 in every pose and the roll shared along the arm: at 90° the wrist band and the elbow band each under 35°, at 180° under 70° (the whole 90 / 180 sat on the wrist band before); the hanging hand at the identity grip — not the model's rest relation, whose bands are 0 in the host test: its bend plane is the pole's, 30° from the hand's — keeps every band under 6°; rolled on from 170° to 200° the roll keeps its side (`rollOverflow` ≠ 0) and flips past 225°. Eight shots, made into a sheet by `scripts/dev/shot-sheet.ps1` (game captures stay in the CI artifact and the local capture folder, never in git) | — |
 | `height-hands` | the hands under the character height setting (#482) on `mvp-new-game`: `vr-input height 0.2` lifts the camera (`camera.y`) and the right hand's grip (`vr.body.right.controller.y`) by the same 20 units, `height 0` puts the grip back - the hands are placed from the camera that renders, height setting included. `smoke-test.ps1 -VrSim idle -Sequence height-hands -Save mvp-new-game` | — |
@@ -2001,8 +1978,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `menu-pointer` | the menu pointer (#34) on the test save `mvp-items` — run with `smoke-test.ps1 -VrSim idle -Sequence menu-pointer -Save mvp-items`: no pointer and no beam without a menu (`overlayPixels` 0); the key from the table put in the bag, the inventory opened, the right hand aimed at it (`vr-point right item`): the engine's mouse on the key's pixel (192, 606 = the target), `ui.hover` the key, the beam drawn above the panel (`overlayPixels` 2125 left / 1997 right); the trigger clicks (`vr.pointer.click`), a hand move of 8 px keeps the cursor on the key (dead zone, no drag), 40 px drags **the key the click landed on**; released over the bag it goes back; the left hand's trigger takes the cursor and its click lands on the key too; both hands pointing behind the head (since #37 a hand pointing ahead in the game is a world reticle): no cursor, no beam, a press is muted (`offPanelPresses` 1, nothing dragged); closed: the pointer goes. Host test `MenuPointerTest` | — |
 | `physical-crouch` | physical crouch (#100, D-034) on `mvp-new-game` — `smoke-test.ps1 -VrSim idle -Sequence physical-crouch -Save mvp-new-game`: the button crouches and stands at that spot first; the head 25 cm down follows the view and stands, 35 cm crouches the character (one `vr.head.crouch` episode), back at 25 cm stays crouched, 15 cm stands; the view never above the head nor twice as low; the crouch button still crouches and stands with the head up | — |
 | `weapon-hold` | the weapon in the IK hand (#75, D-033): on `mvp-items` the equipped short sword is in the right hand without the combat mode (`vr.weapon.place` `hand`), its blade read from the mesh (65.8 units; the asset 9.1° off the handle axis) and drawn 0.1° from the grip's -Z, the hilt on the palm attach point; the handle pitched up puts the tip 66 units above the hilt; a moved hand keeps the hilt on the palm; a controller switched off gives the sword back to the engine (`engine`), switched on it is back; `combat on` + the trigger held: the arm layer's ready and wait clips are `suppressed`, no strike clip starts (since #39 the swing is the strike), the shoulder stays, the sword stays in the hand. The shots `sword-ahead`, `sword-up` and `sword-at-face` (the raised blade 0.1 m from the eyes, F-39) are judged by eye. With the default custom arms the weapon is drawn from the glove's frame (#385.10): "the hilt on the palm" is then the handle anchor on the glove's hold point (`hiltToPalm` = `hiltToGrip`). `smoke-test.ps1 -VrSim idle -Sequence weapon-hold -Save mvp-items` | — |
-| `weapon-in-glove` | the weapon in the glove (#385.10, research #453 F-485, F-489) on `mvp-items`: with the custom arms the sword is drawn from the glove's hilt frame (`vr.weapon.frame` `glove`, `hiltToGrip` < 0.5, `edgeToKnuckles` < 5), held ahead, raised to the face and with the hand 1.5 m out past the reach (the arm stretched, the weapon still in the glove); the forearm and hands models take the same frame; `grip tilt -15` / `-30` lean the blade by 15 / 30° (`bladeAngle`), `0` puts it back, `grip tilt 40` snaps to a variant; `arms arx` gives the Arx placement (`frame` `arx`). `xrs-run.ps1 weapon-in-glove` | — |
-| `weapon-classes` | one item of each class from the playground's weapon table in the glove (#385.10, F-487): long sword and dagger anchored at the handle's centre, axe and club 15 - 25 % from the handle's end, the two-handed sword a hand-width above the pommel; a capture of each for the owner. Playground only (not in CI): `xrs-run.ps1 weapon-classes` | — |
+| `weapon-in-glove` | the weapon with the glove at the classic arm's wrist (#385.10, #466.2) on `mvp-items`: with `arms classic-hand glove` the Arx hand is hidden and the glove drawn, and the sword keeps the Arx hand's placement (`vr.weapon.bladeAngle` < 2, `hiltToPalm` < 0.5) held ahead, raised to the face and with the hand 1.5 m out past the reach; `grip tilt -15` is stored (`vr.weapon.tilt`), `grip tilt 40` snaps to a variant; back to the Arx hand, the same placement. `xrs-run.ps1 weapon-in-glove` | — |
 | `melee-swing` | physical melee (#39, D-038) on `mvp-goblin-fight`: the goblin held still and `place`d 80 units ahead, the sword at its chest; a slow sweep through it (under 1.3 m/s) is no swing, no swing hit; a swing (0.85 m in 120 ms) hits it once, its `melee.hit` with `aim`, `speed`, `size` and `kind`; the trigger held 2 s, a swing hits like any other and no `melee.charge` is logged; `combat on` + the trigger: no engine strike clip, no hit; the inventory open: no swing (`refused=inventory`). Shots `goblin-in-reach`, `after-hits` judged by eye. `smoke-test.ps1 -VrSim idle -Sequence melee-swing -Save mvp-goblin-fight` | — |
 | `melee-recovery` | the recovery after a hit (#323) in the test playground: `freelook on` (the `--loadlevel` start sits in cursor mode, #405), the dagger equipped (recovery 0.6 s, `default`; the game's strike of every type in `vr.melee.recovery.games`), the peaceful goblin `place`d 60 units ahead; at 90 Hz a swing through it and one straight back two still frames later: one hit, the second within the recovery at any frame rate down to ~14 fps (the timeline counts frames: on a 41.8 fps runner a 33-frame gap lasted 0.8 s, #409), shown by its own marker (`vr.melee.recovery.recovering`, `melee.swing result=recovering hits=0`: such a swing never runs the strike check, whatever the per-target cooldown); once `recovery.left` is 0 (a time) a third swing hits; at 45 Hz (`vr-sim rate 45`, the goblin respawned) the same swings: the same hits; no jumps. Swings counted with `ge` (TRAPS.md). `smoke-test.ps1 -Playground -VrSim idle -Sequence melee-recovery` | — |
 | `melee-damage` | the damage from the swing (#465, D-054) in the playground with the dagger and the peaceful goblin, the defaults set live (`class` `dagger`, its #502 ranges, `noSwing` `min`, `quality` `min`): a slow sweep through the peaceful goblin (1.3 m/s) no swing, no touch, no `melee.hit` (a touch reaches only an NPC fighting the player); a fast swing with the defaults: a swing hit with `speed` and `size` logged; the speed alone (`melee slash dagger 0 0 2 5`): a medium swing (0.85 m in 24 frames, 3.2 m/s at 90 Hz) `aim` above 0.1 and below 0.95, a fast one (8 frames) `aim=1.00`; the trigger held 2 s: the same fast swing the same aim, a medium one with it still held part of the damage, a short press during a fast swing the same, no `melee.charge`; each factor alone keeps it low (`0 0 15 19`, `2 3 0 0`): a fast swing `aim` 0.1; a fast lunge (`melee stab dagger 0 0 2 4.5`) `aim=1.00 kind=thrust`; the goblin against the resting dagger, aggressive but not fighting: no touch; set fighting (`playground fight` right before the check - the playground goblin's script drops its fight at the first hit, TRAPS.md - `npcFighting`): the first touch `aim=0.10`, `last.swing` 0, no swing hit; `melee noswing none` and the goblin set fighting again: a slow sweep through it no touch, no player `melee.hit`, still `npcFighting`; before the north wall (`setpos`, between the table and the levers; the dagger's one hit sphere, radius 15, straddling the wall's plane - `melee.spheres`) the dagger held into the wall: `worldHit` false (no wall sound, no durability), a swing along it: `worldHit` true. Each `melee.hit` line has `aim`, `speed`, `size`, `kind`. `smoke-test.ps1 -Playground -VrSim idle -Sequence melee-damage` | — |

@@ -45,6 +45,93 @@ a changed decision keeps its history in that cell.
 - The status `marks.recording` means "a recording is on" (D-062: "a voice note records"); `marks.recordingMs` and
   `marks.capMs` are new; `marks.count` counts recordings started.
 
+## D-063: A swing's speed is read at one moment of display time, 16.7 ms back - the same blow at every frame rate
+
+- **Date:** 2026-10-22
+- **Status:** Accepted (#620; refines D-054's speed measure and applies D-057 to the swing detector; D-054's median of
+  three, lever point, ranges and rule stay)
+- **Decided by:** the owner (the contract: the aim is a function of the physical swing, not of the frame cadence, and
+  the feel at the headset's normal rate must not change; combat on Fable); the mechanism by the worker of #620
+
+### Decision
+- **The lever point's speed is its velocity at one moment of display time, `speedLag` = 1/60 s (16.7 ms) before the
+  frame's display time** (`SwingParams::speedLag`, no cfg.ini key). Every step between neighbouring filtered positions
+  - the medians of three samples (F-59), and the newest sample itself from the newest median at the front - is the
+  mean velocity over its span, placed at the span's middle; the reading is the one between the two middles around
+  that moment (linear between them: an accelerating arm's parabola), the newest step's when the moment is past its
+  middle (a long frame), the oldest's before the oldest (short frames right after a start). The detector keeps the
+  last 8 samples: enough steps at 250 Hz.
+- **At 90 Hz nothing changes.** There the moment is the middle of the step between the median window's middle samples
+  - exactly the reading before (#352's "the step the median really moved over"), whose lag is 1.5 frames. The host
+  test `MeleeSwingTest::testAimAt90HzPinned` pins the 90 Hz aims and speeds of the test swings to the values the code
+  gave before the change (within 0.01). At any other rate the detector reads the velocity at that same moment:
+  `testSameContactAimAt45And90Hz` (the tester's, #613) holds the same swing's aim at 45 Hz within 0.05 of its 90 Hz
+  aim.
+- **At every other rate the feel changes by design** - towards the 90 Hz feel. Before, each rate read 1.5 of its own
+  frames back (10.4 ms at 144 Hz, 12.5 at 120, 18.75 at 80, 20.8 at 72, 25 at 60); now every rate reads 16.7 ms back.
+  The most a contact's aim moves against the old reading of the same rate, measured by the host code on the test
+  swings (the bell swing: a real arm's 0.85 m in 0.3 s, the speed deciding on the dagger's 2-5 m/s scale; the ramp:
+  the sequences' 9.6 m/s, 0.85 m in 89 ms, with the dagger's defaults - its path decides, and a shifted stroke start
+  moves the path by a step):
+
+  | rate | old lag | bell swing | 9.6 m/s ramp |
+  |---|---|---|---|
+  | 144 Hz | 10.4 ms | 0.10 (0.26 for 0.16 at +250 ms) | 0.17 (0.48 for 0.65 at +49 ms) |
+  | 120 Hz | 12.5 ms | 0.07 | 0.00 |
+  | 90 Hz | 16.7 ms | 0.00 | 0.00 |
+  | 80 Hz | 18.75 ms | 0.03 | 0.00 |
+  | 72 Hz | 20.8 ms | 0.07 | 0.34 (at the ramp's last step) |
+  | 60 Hz | 25 ms | 0.14 | 0.07 |
+  | 45 Hz | 33.3 ms | 0.27 | 0.78 (at the ramp's last step) |
+
+  Above 90 Hz the old reading was fresher, so a faster headset (the owner's Index runs at 144 Hz) now reads a
+  speeding-up arm a little later - its blows land as 90 Hz's did. *Whether 90 Hz or 144 Hz is the feel reference is
+  the owner's call (open at the PR's review); the moment is one constant, `speedLag`, and a variant on the #588 panel
+  would let him compare 16.7 ms with 10.4 ms in the headset.*
+- **A long frame in a swing that visibly went on across it keeps the swing.** A time step over `maxStep` (100 ms)
+  starts the detector over as before - except while a swing is in progress and the hand's mean speed across the gap
+  is at least the end speed (1.5 m/s): the gap is one long step (its mean speed is as sound as any long step's, #352's
+  hitch tests), the stroke grows by the straight way across it, and `gaps` counts only the samples refused. A jump
+  (over 20 m/s) across the gap still ends it; the hand all but stopped across it is dropped as before.
+- **A swing may start on the first moving sample.** At 25 frames/s a lunge's first step covers the stab distance by
+  itself; the speed there is now that step's mean (the moment is past the step's middle), so a contact on it reads
+  the lunge's speed and a thrust, not speed 0 and a slash (the issue's second finding).
+
+### Why
+- The median's step is a frame count: 1.5 frames of lag, 17 ms at 90 Hz, 33 ms at 45. A real arm's speed is a bell,
+  so at 45 Hz the same swing read up to 0.9 m/s slower while speeding up and faster while slowing down - 0.26 of aim
+  on the dagger's scale: a player on a slower PC dealt weaker or stronger blows than intended (the #613 tester's
+  finding). D-057: a frame count becomes the time it took at 90 Hz - here 16.7 ms.
+- **Interpolating between step middles rather than a window of positions:** the mean velocity over a fixed window of
+  display time, with the positions at its ends read linearly between samples, is the newest step's mean at low rates
+  - centred 5.6 ms off the moment at 45 Hz, 0.3 m/s for the bell swing (0.09 of aim, over the tolerance); linear in
+  velocity between the steps' middles is exact for a constant acceleration and off by 0.02 m/s for the bell.
+- **The newest raw sample enters the reading only where the moment lies past the medians' step** - its share is
+  1.5 − rate/60: nothing at 90 Hz and above, so F-59's protection against a sample that is off and back is what it
+  was there; 0.17 at 80 Hz, 0.3 at 72, 0.5 at 60, three quarters at 45, all of it at 30 frames/s and below. Below
+  90 Hz a single sample off and back can therefore start a one-frame slash by itself (the swing speed 2.5 m/s over
+  that share of the raw step): the smallest such offset of a still hand, measured by the host code, is 18.8 cm at
+  80 Hz, 11.6 cm at 72, 8.4 cm at 60, 7.5 cm at 45-48 (the worst rates), 8.3 cm at 30; none at 90 Hz and above
+  (nothing up to 40 cm). Such a swing ends on the next sample, and a contact on it is a one-frame hit at the glitch's
+  speed. The trade-off is accepted: without the raw sample the reading would have to be extrapolated 17 ms past the
+  last median (0.2 m/s off for the bell, and 6.9 m/s instead of 4.3 for #352's hitch case), and a tracking glitch's
+  speed falls with the rate (5 cm are 4.5 m/s at 90 Hz, 1.5 m/s at 30).
+- **Keeping a swing across a long frame** costs nothing at 90 Hz (no frame is that long outside a stall) and saves the
+  blow of a hitch frame on a slow PC, where the detector used to need four more frames (130 ms at 30 frames/s) to see
+  the same swing again as a new one with a restarted stroke.
+
+### Rules out
+Reading the speed over a frame count at any rate; a per-rate lag (1.5 frames of the headset's own rate); a cfg.ini
+key for the moment (it is the 90 Hz feel, not a preference); a longer or shorter smoothing window at 90 Hz (the feel
+the owner tuned).
+
+### Consequences
+`vr/MeleeSwing.h`'s `SwingParams::speedLag`, `SwingDetector::pointVelocity`; the host tests `testAimAt90HzPinned`,
+`testGapInSwingGoesOn`, `testLungeAtLowRateReadsItsSpeed` and the tester's `testSameContactAimAt45And90Hz`;
+`scripts/dev/stress-melee-aim.ps1 -SlowRate 30` / `20` pass `melee-damage.xrs` (the fast slash and the lunge at full
+aim). A stroke's size is still sampled per frame (a hit on a swing's first sample reads one step of path at any rate)
+and the hand's turn-back is still three samples back: both outside this change.
+
 ## D-062: Marks v2 - a short press is a snapshot, a hold is the voice note, its clip and a snapshot every 2 s; the notes transcribed locally
 
 - **Date:** 2026-10-21
@@ -693,8 +780,8 @@ same grip frame as the Arx hand (D-032, research F-281); no sleeve - the Arx for
 ## D-047: The VR arms are the classic Arx arm (D-051) - picked by the owner from five arm models compared live in the headset
 
 - **Date:** 2026-10-14 (the comparison), 2026-10-16 (the pick)
-- **Status:** Accepted: **classic** (D-051) is the default and the only model a player chooses; the other models are
-  kept for their tests only until they are deleted (#486)
+- **Status:** Accepted: **classic** (D-051) is the default and the only model a player chooses; the other models were
+  deleted with their tests by #486 (2026-10-22)
 - **Decided by:** project owner (2026-10-13, via the coordinator: build the variants and switch them live; 2026-10-16,
   headset test of #472: "keep this variant; you can delete the others" - of custom and forearm earlier: "delete, never
   come back to them"; the library hand of #467 was dropped unmerged); #385.8 for the formulation
@@ -737,7 +824,8 @@ engine's Arx arms.
 ## D-048: The custom arm solves its own chain - fitted to the player's reach, a small stretch, the elbow down with a weapon
 
 - **Date:** 2026-10-13
-- **Status:** Superseded for the player by D-047 (2026-10-16: the classic Arx arm, D-051): the custom arm's own solve is test-only until #486
+- **Status:** Superseded for the player by D-047 (2026-10-16: the classic Arx arm, D-051): the custom arm's own solve,
+  its fit and its cfg.ini keys were deleted by #486 (2026-10-22)
 - **Decided by:** project owner (2026-10-13: "the arm's own length must fit first", "arm stretch yes", "elbow drop yes"); #385.6
 - **Builds on:** D-049 (own arms), the roll-aware IK (D-050 of #313)
 
@@ -776,7 +864,8 @@ engine's Arx arms.
 
 - **Date:** 2026-10-13
 - **Status:** Superseded for the player by D-047 (2026-10-16: the owner kept the classic Arx arm, D-051); the glove stays as
-  the classic arm's optional hand (`vr_classic_hand = glove`), the own arms are test-only until #486
+  the classic arm's optional hand (`vr_classic_hand = glove`), the own arms, the sleeve and the weapon from the
+  glove's hilt frame were deleted by #486 (2026-10-22; the hilt-frame math in WeaponGrip stays for #548)
 - **Decided by:** project owner (variant B of #385); the worker of #385.5 for the formulation; within D-009 / D-032
 
 ### Decision

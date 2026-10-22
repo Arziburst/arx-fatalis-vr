@@ -32,7 +32,8 @@
 melee noswing min
 
 # The goblin held still 80 units ahead, the sword level with its chest, the hand to the right - moved there slowly
-# (0.43 m in 60 frames: under 0.7 m/s, no swing), as in melee-swing.xrs
+# (0.43 m in 60 frames: under 0.7 m/s, no swing), as in melee-swing.xrs - counted in frames on purpose: a busy PC only
+# makes it slower
 goblin_base_0036.setspeed 0
 place goblin_base_0036 80
 vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
@@ -66,10 +67,11 @@ window focus lost
 @assert vr.frames ge {vrFrames0+20}
 @assert gameTimeMs ge {clock0+500}
 
-# 3. Melee works while the window has no focus: a fast swing through the goblin (0.85 m in 8 frames) hits it
+# 3. Melee works while the window has no focus: a fast swing through the goblin (0.85 m in 120 ms, 7.1 m/s at any frame
+# rate: a timed ramp, #634 - the frame-counted one read 3.3 m/s on a busy PC) hits it
 @until vr.melee.recovery.left eq 0 5s
 @remember hits vr.melee.hits
-vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35
+vr-sim @+0-120ms hand right pos -0.4 -0.8 -0.35
 @until vr.melee.swings ge 1 5s
 @until vr.melee.swinging eq false 5s
 @assert vr.melee.hits eq {hits+1}
@@ -85,7 +87,7 @@ window focus gained
 @assert vr.melee.active eq true
 @until vr.melee.recovery.left eq 0 5s
 @remember hits vr.melee.hits
-vr-sim @+1-8 hand right pos 0.45 -0.8 -0.35
+vr-sim @+0-120ms hand right pos 0.45 -0.8 -0.35
 @until vr.melee.swings ge 2 5s
 @until vr.melee.swinging eq false 5s
 @assert vr.melee.hits eq {hits+1}

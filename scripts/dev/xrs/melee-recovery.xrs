@@ -3,10 +3,11 @@
 # 0.6 / 0.8 / 1.0 s) - a swing started within it hits nothing, a swing after it hits. The same swings at 90 Hz and at
 # 45 Hz give the same hits.
 #   .\scripts\dev\smoke-test.ps1 -Playground -VrSim idle -Sequence melee-recovery
-# The swings are ramps of the simulated right controller (0.85 m in 89 ms: 8 frames at 90 Hz, 4 at 45 Hz). The timeline
-# counts frames, not seconds, and a busy runner plays far below the simulator's rate (41.8 fps on CI, #409: 33 frames
-# lasted 0.8 s, past the dagger's 0.6 s), so the second swing of a pair goes straight back, two still frames after the
-# first: it starts within the recovery at any rate down to ~14 fps. It may also fall within the per-target cooldown
+# The swings are timed ramps of the simulated right controller (#634): 0.85 m in 120 ms, 7.1 m/s at any frame rate (they
+# were 8 frames at 90 Hz and 4 at 45 Hz, 10.9 m/s and 12.7 m/s - and 3.3 m/s at 30 Hz). A frame-counted pause is not a
+# time, and a busy runner plays far below the simulator's rate (41.8 fps on CI, #409: 33 frames lasted 0.8 s, past the
+# dagger's 0.6 s), so the second swing of a pair goes straight back, 60 ms of stillness after the first (the 3 frames
+# of 45 Hz): it starts within the recovery at any rate down to ~14 fps. It may also fall within the per-target cooldown
 # (0.25 s), so its own marker shows that the recovery refused it: `recovering`, `result=recovering` (such a swing never
 # runs the strike check). The swing after the recovery waits for `recovery.left` to reach 0, a time.
 # Swings are counted with ge, hits exactly: the simulated hand moves a step per frame, not per second, so a frame that
@@ -39,7 +40,8 @@ dagger_9001.equip player
 @assert vr.melee.recovery.games.2h gt 0
 @log melee\.recovery weapon=dagger seconds=0\.60 source=default game=\S+ dagger=\S+\.tea 1h=\S+\.tea 2h=\S+\.tea
 
-# The peaceful goblin 60 units ahead, the dagger level with its chest, the hand to the right - moved there slowly
+# The peaceful goblin 60 units ahead, the dagger level with its chest, the hand to the right - moved there slowly (in
+# frames on purpose: a busy PC only slows it, still no swing)
 playground place 60
 vr-sim @+1-60 hand right pos 0.45 -0.8 -0.35
 vr-sim head rot 0 -25 0
@@ -51,7 +53,7 @@ vr-sim head rot 0 -25 0
 
 # 2. At 90 Hz: a swing through the goblin and straight back - one hit; the second swing is in the recovery
 @mark
-vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35; vr-sim @+11-18 hand right pos 0.45 -0.8 -0.35
+vr-sim @+0-120ms hand right pos -0.4 -0.8 -0.35; vr-sim @+180-300ms hand right pos 0.45 -0.8 -0.35
 @until vr.melee.swings ge 2 5s
 @until vr.melee.swinging eq false 5s
 @assert vr.melee.recovery.recovering eq true
@@ -63,7 +65,7 @@ vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35; vr-sim @+11-18 hand right pos 0.45 
 # A third swing once the recovery is over: it hits
 @until vr.melee.recovery.left eq 0 5s
 @remember swings vr.melee.swings
-vr-sim @+1-8 hand right pos -0.4 -0.8 -0.35
+vr-sim @+0-120ms hand right pos -0.4 -0.8 -0.35
 @until vr.melee.swings ge {swings+1} 5s
 @until vr.melee.swinging eq false 5s
 @frames 30
@@ -83,7 +85,7 @@ vr-sim rate 45
 @remember swings vr.melee.swings
 @remember recovering vr.melee.recovery.swings
 @mark
-vr-sim @+1-4 hand right pos 0.45 -0.8 -0.35; vr-sim @+7-10 hand right pos -0.4 -0.8 -0.35
+vr-sim @+0-120ms hand right pos 0.45 -0.8 -0.35; vr-sim @+180-300ms hand right pos -0.4 -0.8 -0.35
 @until vr.melee.swings ge {swings+2} 5s
 @until vr.melee.swinging eq false 5s
 @assert vr.melee.recovery.recovering eq true
@@ -94,7 +96,7 @@ vr-sim @+1-4 hand right pos 0.45 -0.8 -0.35; vr-sim @+7-10 hand right pos -0.4 -
 @log melee\.swing kind=slash result=recovering .*hits=0
 @until vr.melee.recovery.left eq 0 5s
 @remember swings vr.melee.swings
-vr-sim @+1-4 hand right pos 0.45 -0.8 -0.35
+vr-sim @+0-120ms hand right pos 0.45 -0.8 -0.35
 @until vr.melee.swings ge {swings+1} 5s
 @until vr.melee.swinging eq false 5s
 @frames 15

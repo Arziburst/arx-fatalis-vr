@@ -2395,6 +2395,21 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "window") {
+		std::string_view change;
+		if(firstWord(rest, change) == "focus") {
+			// window focus lost|gained (#406): the window losing / getting the input focus as when the player clicks
+			// another program or back on the game - the window system's event pushed into its queue, so it takes the
+			// real event's path to the game (status.json window.focused follows it)
+			RenderWindow * window = mainApp ? mainApp->getWindow() : nullptr;
+			if(change != "lost" && change != "gained") {
+				return refuse("window focus: expected lost or gained, got \"" + std::string(change) + "\"");
+			}
+			if(!window || !window->pushFocusEvent(change == "gained")) {
+				return refuse("window focus: the window system cannot take \"" + std::string(change) + "\"");
+			}
+			LogInfo << "[channel] window focus " << change;
+			return std::string();
+		}
 		// window <width> <height>: the window resized as a player dragging its border does (#334) - the
 		// interface is laid out again for the new size at the next frame
 		std::vector<float> size;

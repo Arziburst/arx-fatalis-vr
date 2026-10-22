@@ -2462,6 +2462,8 @@ OpenXR `ActiveRuntime`, GPU and driver into one zip on the Desktop, nothing uplo
 No `data.dirs` (CMake writes it for the build directory and it names a path in the working copy) and no game data:
 the tester's game finds Arx Fatalis in their Steam libraries (#79).
 
+In CI the package step's verify launch shares the game checks step's env (a YAML alias, `env: *ci-game-env`, #540): the same `ARXVR_MAX_GAMES` and `ARXVR_CI_RUNNER`, so it takes any free slot of the job's lane count and never times out behind a slot a worker holds on purpose. A worker's own launch - a proof holder included - started while the runner marker is up waits on the marker and takes no slot (`test-ci-slots.ps1`, the #540 section).
+
 The script fails (exit 1) on: an import (`dumpbin /dependents`, recursively) that is neither in the package nor a Windows
 DLL; no OpenXR loader; `data.dirs` or `*.pak` in the zip; and — the real proof — the **extracted** zip, started from a
 clean temp folder with `PATH` reduced to the Windows folders, not reaching `GAMEPLAY`, exiting ≠ 0, lacking

@@ -50,6 +50,7 @@ $tests = @(
 	'test-usage-plan.ps1'   # the usage accounting (#217): calibration, burn, task costs, the worker-count recommendation, the core's status JSON (#346)
 	'test-use-arxsave.ps1'  # Use-ArxSave keeps the replay start-save slots (#569, D-060): save9000..9004 untouched, the other slots replaced, no save folder, only replay slots, a failed call
 	'test-start-steamvr.ps1' # starting and quitting SteamVR on the owner's switches (#171): stubbed processes and clock, SteamVR is not touched
+	'test-stress-sequence.ps1' # the sequence stress check (#566): the marked / stalled / edited copy, a run's failure, a record's window in a fixture arx-perf.log, the per-assert table, -DryRun's arguments
 )
 # test-*.ps1 files that are libraries or tools, not tests
 $notTests = @(

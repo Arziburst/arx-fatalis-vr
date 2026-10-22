@@ -316,6 +316,8 @@ scripts/dev/replay-check.ps1 -> core
 # --- The melee-damage stress check (#532): the sequence N times on two lanes beside a busy game, hand-run --------------
 # It launches its own games and is no game check
 scripts/dev/melee-damage-stress.ps1 -> core
+# Its aim stress check (#613): the sequence N times beside busy loops, or its swings at a capped rate, hand-run
+scripts/dev/stress-melee-aim.ps1 -> core
 
 # --- Mark the moment (#551): both trackpads pressed write a marker folder at once; the confirmation in the hero's panel
 src/vr/MarkMoment.* -> mark-moment

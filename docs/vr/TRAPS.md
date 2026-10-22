@@ -8,6 +8,22 @@ Format: **symptom** — what is really going on — what to do.
 
 ---
 
+## 2026-10-22 — A fast simulated swing deals half the damage on a busy PC: its ramp counts frames (#613)
+
+**Symptom:** `melee-damage.xrs` failed in gates and PR runs while the PC was busy (`VR pacing: UNDER-SUBMITTING`, 28-44
+submits/s on 90 slots) at `@assert vr.melee.last.aim ge 0.99` (0.509) or `eq {full}` (0.454), and once at
+`@assert playground.npcFighting eq true` after `playground fight`; the same tree passed alone.
+**Cause:** the swings were frame-counted ramps (`vr-sim @+1-8 hand right pos ...`: 0.85 m over 7 frame steps, 10.9
+m/s at 90 frames/s), while the game measures the blade's speed over display time: capped at 30 Hz the same 7 steps
+take about 260 ms - 3.3 m/s, aim 0.49. The swing starts, and the blade already in the goblin hits, on the ramp's second
+frame; the median filter's speed there is the first frame step's. A frame-counted sweep and `@frames` wait after
+`playground fight` likewise gave the goblin's script (game time) three times as long at 30 frames/s.
+**Do:** a swing whose speed an assert depends on is a timed ramp, `vr-sim @+0-<t>ms ...` (from the display time of the
+frame advanced last, which sampled the hand at rest): its hit reads 0.85 m / max(t, the first frame step) at any rate
+(below 100 ms; a longer step is a gap that starts the detector over). A wait for something the game does in time is a
+display-time wait: `@remember t vr.sim.timelineMs`, then `@until vr.sim.timelineMs ge {t+<ms>}`. Reproduce with
+`scripts/dev/stress-melee-aim.ps1 -SlowRate 30` (the swings at a 30 Hz cap) or `-SlowSpan <a>-<b>`.
+
 ## 2026-10-20 — The playground goblin flees instead of fighting when its life is below 8 - a damage roll decides which (#532)
 
 **Symptom:** `melee-damage.xrs` failed now and then (main runs 39128985121 and 39328879039, about 1 run in 17) at

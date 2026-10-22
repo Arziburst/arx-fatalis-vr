@@ -515,6 +515,8 @@ try {
 	$fakeNow = { $script:clock }
 	$quiet = Wait-ArxQuietPc 'xrs-x' { @() } -MaxSeconds 600 -PollSeconds 10 -Sleep $fakeSleep -Now $fakeNow 6>$null
 	Check 'a quiet PC: no wait' ($quiet.Seconds -eq 0 -and $quiet.WaitedFor.Count -eq 0 -and -not $quiet.TimedOut -and $script:slept.Count -eq 0) "$($quiet | ConvertTo-Json -Compress)"
+	$short = Format-ArxBuildList @('cl.exe pid 5', 'link.exe pid 6', 'cl.exe pid 7', 'cl.exe pid 9', 'ninja.exe pid 8')
+	Check 'the compiles waited for, in short: each name once with its count' ($short -eq 'cl.exe x3, link.exe, ninja.exe') $short
 	# The probe's answers in turn, then quiet
 	function Set-Answers([object[]]$List) { $script:answers = $List; $script:answerAt = 0; $script:slept.Clear() }
 	$fromAnswers = { $i = $script:answerAt; $script:answerAt++; if ($i -lt $script:answers.Count) { $script:answers[$i] } }

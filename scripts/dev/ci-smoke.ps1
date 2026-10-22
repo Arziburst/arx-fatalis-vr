@@ -437,7 +437,7 @@ $startPhase = {
 	if ($Phase.Solo -and $script:QuietWaitSec -gt 0) {
 		$quiet = Wait-ArxQuietPc $Phase.Name { Get-ArxForeignBuilds (Get-CimInstance Win32_Process -Property Name, ProcessId, ParentProcessId, CommandLine) } -MaxSeconds $script:QuietWaitSec
 		if ($quiet.WaitedFor.Count -and $env:GITHUB_STEP_SUMMARY) {
-			Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ("> **{0}** (@solo) waited {1:0} s for compiles of the PC{2}: {3}" -f $Phase.Name, $quiet.Seconds, $(if ($quiet.TimedOut) { ', then ran under them' } else { '' }), ($quiet.WaitedFor -join ', '))
+			Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value ("> **{0}** (@solo) waited {1:0} s for compiles of the PC{2}: {3}" -f $Phase.Name, $quiet.Seconds, $(if ($quiet.TimedOut) { ', then ran under them' } else { '' }), (Format-ArxBuildList $quiet.WaitedFor))
 		}
 	}
 	Write-Host ("--> ci-smoke phase '{0}' started on lane {1}" -f $Phase.Name, $Lane)

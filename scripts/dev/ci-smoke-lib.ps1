@@ -386,6 +386,17 @@ function Get-ArxForeignBuilds($Processes, [int]$Root = $PID) {
 	}
 }
 
+# Get-ArxForeignBuilds' "<name> pid <pid>" lines as one short text: each name once, with how many there were
+# ("cl.exe x40, link.exe x12") - a build of ten minutes starts hundreds of compilers
+function Format-ArxBuildList([string[]]$Builds) {
+	$count = [ordered]@{}
+	foreach ($b in @($Builds)) {
+		$name = ($b -replace '\s+pid\s+\d+$', '')
+		$count[$name] = 1 + $(if ($count.Contains($name)) { $count[$name] } else { 0 })
+	}
+	@($count.Keys | ForEach-Object { if ($count[$_] -gt 1) { "$_ x$($count[$_])" } else { $_ } }) -join ', '
+}
+
 # Wait, before a phase that measures frame pacing (@solo) starts, until nothing compiles on the PC
 # (Get-ArxForeignBuilds), at most $MaxSeconds; then it runs anyway - a gate that never runs is no gate. A PC that
 # compiled is quiet only after $SettleSeconds without a compile: a build has gaps between its steps (a clean, then the
@@ -409,7 +420,7 @@ function Wait-ArxQuietPc(
 			if (-not $seenAll.Count) { return [pscustomobject]@{ Seconds = $waited; WaitedFor = @(); TimedOut = $false } }
 			if ($null -eq $quietSince) { $quietSince = $waited }
 			if ($waited - $quietSince -ge $SettleSeconds) {
-				Write-Host ("ci-smoke: {0}: the PC is quiet after {1:0} s ({2} s without a compile) - waited for {3}" -f $What, $waited, $SettleSeconds, ($seenAll -join ', ')) -ForegroundColor Yellow
+				Write-Host ("ci-smoke: {0}: the PC is quiet after {1:0} s ({2} s without a compile) - waited for {3}" -f $What, $waited, $SettleSeconds, (Format-ArxBuildList $seenAll)) -ForegroundColor Yellow
 				return [pscustomobject]@{ Seconds = $waited; WaitedFor = $seenAll.ToArray(); TimedOut = $false }
 			}
 		} else {

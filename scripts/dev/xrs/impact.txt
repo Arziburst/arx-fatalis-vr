@@ -328,6 +328,8 @@ scripts/dev/replay-check.ps1 -> core
 scripts/dev/melee-damage-stress.ps1 -> core
 # Its aim stress check (#613): the sequence N times beside busy loops, or its swings at a capped rate, hand-run
 scripts/dev/stress-melee-aim.ps1 -> core
+# The repeat of one script-test check under the load of the others (#624): hand-run, launches no game
+scripts/dev/repeat-script-test.ps1 -> core
 
 # --- Mark the moment (#551): both trackpads pressed write a marker folder at once; the confirmation in the hero's panel
 src/vr/MarkMoment.* -> mark-moment

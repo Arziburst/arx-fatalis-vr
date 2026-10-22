@@ -27,10 +27,13 @@
 	    run:  RunId is $null and Reason is not empty (why the game checks run).
 	  Never throws; a run decision is not an error.
 
-	Which run counts: among the runs with event 'workflow_dispatch', conclusion 'success' and suite full, only the latest
-	by createdAt. Its tree (TreeOf headSha) equal to -HeadTree -> skip; otherwise, or when there is no such run, or
-	anything cannot be read -> run (fail safe). Runs of another suite, of another event, not successful, without a
-	headSha are ignored - they neither match nor hide an older full run.
+	Which runs count: every listed run with event 'workflow_dispatch', conclusion 'success', suite full and a headSha
+	(the listing's size is the workflow's choice, e.g. gh run list --limit 30; the helper takes the whole file). The
+	single runner often runs a merged PR's push run after the next PR's gate, so the head's tree need not be the latest
+	gate's. Any such run whose tree (TreeOf headSha) equals -HeadTree -> skip, naming that run; when several match, the
+	latest of them by createdAt. No match, no such run, or anything that cannot be read -> run (fail safe). A run whose
+	tree cannot be read (the lookup throws or finds nothing) does not match; the others are still compared. Runs of
+	another suite, of another event, not successful, without a headSha are ignored - they never match.
 
 	The suite of a run (the access point). gh run list does not show a run's inputs, so the workflow names the suite in
 	the title of a manual run, and the helper reads it from displayTitle:
@@ -127,35 +130,58 @@ try {
 	Expect-Run 'the tree lookup returns an empty string: run' (Decide $one -TreeOf { param($Sha) '' })
 	Expect-Run 'an empty head tree never equals an unknown run tree: run' (Decide $one -HeadTree '' -TreeOf { param($Sha) '' })
 
-	Write-Host '--- several runs: only the latest successful suite=full run counts'
+	Write-Host '--- several runs: any successful suite=full run on the same tree skips'
 	$old = Sha 'd4'; $new = Sha 'e5'
 	$trees[$old] = $head; $trees[$new] = $other
-	Expect-Run 'the latest full run has another tree, an older one the same: run' (Decide (Json @(
-		(Run 202 $new '2026-10-22T11:00:00Z'), (Run 201 $old '2026-10-22T10:00:00Z'))))
-	Expect-Run 'the same, listed oldest first (order by createdAt, not by position): run' (Decide (Json @(
-		(Run 201 $old '2026-10-22T10:00:00Z'), (Run 202 $new '2026-10-22T11:00:00Z'))))
+	Expect-Skip 'an older full run on the same tree, a later full run on another: skip, naming the older' (Decide (Json @(
+		(Run 202 $new '2026-10-22T11:00:00Z'), (Run 201 $old '2026-10-22T10:00:00Z')))) 201
+	Expect-Skip 'the same, listed oldest first: skip, naming the older' (Decide (Json @(
+		(Run 201 $old '2026-10-22T10:00:00Z'), (Run 202 $new '2026-10-22T11:00:00Z')))) 201
+	Expect-Skip 'the matching run is the 30th of 30, after 29 full runs on other trees: skip, naming it' (Decide (Json @(
+		@(foreach ($i in 1..29) { Run (240 + $i) $new ('2026-10-22T{0:00}:30:00Z' -f (23 - [math]::Floor($i / 2))) }) + @(Run 239 $old '2026-10-21T08:00:00Z')))) 239
 	$trees[$old] = $other; $trees[$new] = $head
-	Expect-Skip 'the latest full run has the same tree, an older one another: skip, naming the latest' (Decide (Json @(
+	Expect-Skip 'the latest full run on the same tree, an older one on another: skip, naming the latest' (Decide (Json @(
 		(Run 302 $new '2026-10-22T11:00:00Z'), (Run 301 $old '2026-10-22T10:00:00Z')))) 302
 	Expect-Skip 'the same, listed oldest first: skip, naming the latest' (Decide (Json @(
 		(Run 301 $old '2026-10-22T10:00:00Z'), (Run 302 $new '2026-10-22T11:00:00Z')))) 302
 	Expect-Skip 'a later failed full run on another tree does not count: skip' (Decide (Json @(
 		(Run 303 $old '2026-10-22T12:00:00Z' -Conclusion 'failure'), (Run 302 $new '2026-10-22T11:00:00Z'), (Run 301 $old '2026-10-22T10:00:00Z')))) 302
+	$trees[$old] = $other; $trees[$new] = $other
+	Expect-Run 'several full runs, none on the same tree: run' (Decide (Json @(
+		(Run 312 $new '2026-10-22T11:00:00Z'), (Run 311 $old '2026-10-22T10:00:00Z'))))
+	$same1 = Sha '3a'; $same2 = Sha '4b'
+	$trees[$same1] = $head; $trees[$same2] = $head
+	Expect-Skip 'two full runs on the same tree: skip, naming the later' (Decide (Json @(
+		(Run 321 $same1 '2026-10-22T10:00:00Z'), (Run 322 $same2 '2026-10-22T11:00:00Z'), (Run 323 $new '2026-10-22T12:00:00Z')))) 322
+	Expect-Skip 'the same, the later listed last of three after another tree: skip, naming the later' (Decide (Json @(
+		(Run 323 $new '2026-10-22T12:00:00Z'), (Run 321 $same1 '2026-10-22T10:00:00Z'), (Run 322 $same2 '2026-10-22T11:00:00Z')))) 322
+	Expect-Run 'a later failed full run on the same tree, the successful full run on another: run' (Decide (Json @(
+		(Run 332 $same1 '2026-10-22T11:00:00Z' -Conclusion 'failure'), (Run 331 $new '2026-10-22T10:00:00Z'))))
+	Expect-Run 'a later cancelled full run on the same tree, the successful full run on another: run' (Decide (Json @(
+		(Run 334 $same1 '2026-10-22T11:00:00Z' -Conclusion 'cancelled'), (Run 333 $new '2026-10-22T10:00:00Z'))))
+	$broken = Sha '5c'
+	$picky = { param($Sha) if ($Sha -eq $broken) { throw "fatal: bad object $Sha" }; $trees[$Sha] }
+	Expect-Skip 'the lookup throws for the latest full run, an older one is on the same tree: skip, naming the older' (Decide (Json @(
+		(Run 342 $broken '2026-10-22T11:00:00Z'), (Run 341 $same1 '2026-10-22T10:00:00Z'))) -TreeOf $picky) 341
+	Expect-Run 'the lookup throws for the only full run, the others are not full: run' (Decide (Json @(
+		(Run 344 $broken '2026-10-22T11:00:00Z'), (Run 343 $same1 '2026-10-22T10:00:00Z' -Title 'ARXVR-2-feat-y suite=pr'))) -TreeOf $picky)
 
 	Write-Host '--- runs of another suite are ignored'
 	$prRun = Sha 'f6'; $full = Sha '17'
 	$trees[$prRun] = $head; $trees[$full] = $other
-	Expect-Run 'a later suite=pr run on the same tree, the latest full run on another: run' (Decide (Json @(
+	Expect-Run 'a later suite=pr run on the same tree, the full run on another: run' (Decide (Json @(
 		(Run 402 $prRun '2026-10-22T11:00:00Z' -Title 'ARXVR-2-feat-y suite=pr'), (Run 401 $full '2026-10-22T10:00:00Z'))))
 	Expect-Run 'only a suite=pr run on the same tree: run' (Decide (Json (Run 403 $prRun '2026-10-22T11:00:00Z' -Title 'ARXVR-2-feat-y suite=pr')))
 	Expect-Run 'only a run whose title names no suite (before run-name) on the same tree: run' (Decide (Json (Run 404 $prRun '2026-10-22T11:00:00Z' -Title 'Build (Windows)')))
 	$trees[$prRun] = $other; $trees[$full] = $head
-	Expect-Skip 'a later suite=pr run on another tree does not hide the latest full run: skip, naming the full run' (Decide (Json @(
+	Expect-Skip 'a later suite=pr run on another tree does not hide the full run: skip, naming the full run' (Decide (Json @(
 		(Run 412 $prRun '2026-10-22T11:00:00Z' -Title 'ARXVR-2-feat-y suite=pr'), (Run 411 $full '2026-10-22T10:00:00Z')))) 411
 	Expect-Skip 'a later run without a suite on another tree does not hide it either: skip' (Decide (Json @(
 		(Run 413 $prRun '2026-10-22T11:00:00Z' -Title 'Build (Windows)'), (Run 411 $full '2026-10-22T10:00:00Z')))) 411
 	Expect-Skip 'a later push run on another tree does not hide it either: skip' (Decide (Json @(
 		(Run 414 $prRun '2026-10-22T11:00:00Z' -EventName 'push'), (Run 411 $full '2026-10-22T10:00:00Z')))) 411
+	Expect-Skip 'a later suite=pr run on the same tree does not take the name: skip, naming the full run' (Decide (Json @(
+		(Run 416 $full '2026-10-22T12:00:00Z' -Title 'ARXVR-2-feat-y suite=pr'), (Run 411 $full '2026-10-22T10:00:00Z')))) 411
 
 	Write-Host '--- the default tree lookup (git, current directory)'
 	$repo = Join-Path $root 'repo'

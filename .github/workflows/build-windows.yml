@@ -9,7 +9,11 @@ name: Build (Windows)
 # then the flat game checks - smoke test with the draw check, and the spell draw check. A red step blocks
 # the merge. A pull request runs the game checks its change selects (#522, scripts/dev/xrs/impact.txt); the whole
 # suite runs on a push to main and once more on the pull request's head right before the merge (a manual run). The evidence of the game checks is the artifact "game-checks" when the job failed; a green run keeps it on
-# the runner only (#522).
+# the runner only (#522). A push to main whose tree a green merge gate run already had skips the game checks (#541).
+
+# A manual run's title names its suite (#541): gh run list shows no inputs, and the push run's equal-tree step reads
+# the merge gate runs (suite=full) from their titles. Empty for a push or a pull request: they keep their default title.
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('{0} suite={1}', github.ref_name, inputs.suite) || '' }}
 
 on:
   pull_request:
@@ -128,6 +132,49 @@ jobs:
         "suite=$suite" >> $env:GITHUB_OUTPUT
         Write-Host "game check suite: $suite ($why)"
 
+    # A push to main repeats nothing the merge gate proved (#541): the gate ran the full suite on the pull request's head
+    # right before the merge, and the merge commit usually has that very tree. When a successful suite=full manual run
+    # of this workflow had the pushed commit's tree, the game checks are skipped with a line naming that run; everything
+    # else (the script self-tests, the build with arxtest, the tester package) runs as before, and the job - the required
+    # check - still reports its result. Any doubt runs them (scripts/dev/ci-skip-equal-tree.ps1 decides, fail safe): no
+    # such run, a different tree, a tree or a list that cannot be read; a failure of this step itself too. The gate's
+    # head commit is not in this depth-1 checkout: a run's tree comes from the API (head_commit.tree_id of the run, else
+    # the commit itself).
+    - name: Equal tree (skip the game checks a merge gate run passed)
+      id: equal-tree
+      if: github.event_name == 'push' && steps.scope.outputs.heavy == 'true'
+      continue-on-error: true
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
+        $api = "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY"
+        $runsFile = Join-Path $env:RUNNER_TEMP 'gate-runs.json'
+        $treeOfRun = @{}
+        try {
+          $page = Invoke-RestMethod -Uri "$api/actions/workflows/build-windows.yml/runs?event=workflow_dispatch&status=success&per_page=30" -Headers $headers
+          $listed = @(foreach ($r in @($page.workflow_runs)) {
+            if ($r.head_commit.tree_id) { $treeOfRun[$r.head_sha] = $r.head_commit.tree_id }
+            [ordered]@{ databaseId = $r.id; headSha = $r.head_sha; displayTitle = $r.display_title; conclusion = $r.conclusion; event = $r.event; createdAt = $r.created_at }
+          })
+          Set-Content -LiteralPath $runsFile -Value (ConvertTo-Json -InputObject $listed -Depth 3)
+        } catch { Set-Content -LiteralPath $runsFile -Value "the gate runs could not be listed: $($_.Exception.Message)" }
+        $treeOf = {
+          param($Sha)
+          if ($treeOfRun[$Sha]) { return $treeOfRun[$Sha] }
+          (Invoke-RestMethod -Uri "$api/commits/$Sha" -Headers $headers).commit.tree.sha
+        }.GetNewClosure()
+        $headTree = git rev-parse 'HEAD^{tree}'
+        $decision = ./scripts/dev/ci-skip-equal-tree.ps1 -HeadTree "$headTree" -RunsJson $runsFile -TreeOf $treeOf
+        Write-Host "equal tree: $($decision.Reason)"
+        "skip=$(([bool]($decision.Decision -eq 'skip')).ToString().ToLower())" >> $env:GITHUB_OUTPUT
+        if ($decision.Decision -eq 'skip') {
+          Write-Output "::notice::$($decision.Reason) (#541)"
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value "- Game checks skipped: $($decision.Reason) (#541)"
+        }
+        exit 0
+
     # The repository is public: no personal paths, ids or e-mails in tracked files, no images under docs/ (#428).
     # Runs on every change, docs-only ones included.
     - name: No personal data in tracked files
@@ -222,12 +269,13 @@ jobs:
     # last 10 runs), and is uploaded only when the job failed.
     # What runs is the Scope step's suite (#522): on a pull request the core plus what its changed paths select in
     # scripts/dev/xrs/impact.txt (the log lists them); everything on a push to main, with the label full-ci and on a
-    # manual run with suite=full (the merge gate). A pull request's run stops at the first FAIL (#527).
+    # manual run with suite=full (the merge gate). A pull request's run stops at the first FAIL (#527). A push to main
+    # skips the step when the Equal tree step found a green merge gate run on its tree (#541).
     # ARXVR_CI_RUNNER marks the launches as the job's own (#527): they take the slots the runner marker keeps free.
     # At its end ci-smoke.ps1 adds the Performance table to the job summary (#552, perf-track.ps1): each phase against the
     # rolling baseline of the green main and gate runs on this lane count, a warning per slower phase; it never fails.
     - name: Game checks (smoke test, draw check, spell draw check, .xrs sequences)
-      if: steps.scope.outputs.heavy == 'true'
+      if: steps.scope.outputs.heavy == 'true' && steps.equal-tree.outputs.skip != 'true'
       shell: pwsh
       env:
         ARXVR_MAX_GAMES: '4'

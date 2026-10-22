@@ -543,6 +543,12 @@ void ControlResolver::press(Control control, s64 timeMs) {
 	m_controls[control].since = timeMs;
 	m_controls[control].consumed = false;
 
+	if(m_markSuppressed[control]) {
+		// A trackpad pressed with the other one: the mark's press, nothing of its own (#632)
+		m_controls[control].consumed = true;
+		return;
+	}
+
 	// A chord: this control is pressed while the one leading it is held
 	bool chord = false;
 	for(size_t i = 0; i < EventCount; i++) {
@@ -632,12 +638,17 @@ void ControlResolver::release(Control control, s64 timeMs) {
 void ControlResolver::update(s64 timeMs, const ControlSet & down, const ControlSet & taps) {
 
 	// Mark the moment (#551): both trackpads down together, once per press, whatever the layout is
+	const Control trackpads[HandCount] = { control(Hand::Left, ControlKind::Trackpad),
+	                                       control(Hand::Right, ControlKind::Trackpad) };
 	m_markGesture = false;
-	if(down[control(Hand::Left, ControlKind::Trackpad)] && down[control(Hand::Right, ControlKind::Trackpad)]) {
+	m_markSuppressed.reset();
+	if(down[trackpads[0]] && down[trackpads[1]]) {
 		if(!m_markFired) {
 			m_markFired = true;
 			m_markGesture = true;
 			m_markGestures++;
+			m_markSuppressed[trackpads[0]] = true;
+			m_markSuppressed[trackpads[1]] = true;
 		}
 	} else {
 		m_markFired = false;
@@ -650,6 +661,22 @@ void ControlResolver::update(s64 timeMs, const ControlSet & down, const ControlS
 		if(event.pulse) {
 			event.pulse = false;
 			deactivate(Event(i));
+		}
+	}
+
+	// The start / stop press of a recording (#632) is not also a trackpad's own binding: one pressed in this update
+	// does nothing (press()), one already held ends what it holds and taps nothing at its release
+	for(Control pad : trackpads) {
+		if(!m_markSuppressed[pad] || !m_down[pad]) {
+			continue;
+		}
+		m_controls[pad].consumed = true;
+		for(size_t i = 0; i < EventCount; i++) {
+			const Binding & binding = m_layout.bindings[i];
+			if(binding.isBound() && (binding.first == pad || (binding.isChord() && binding.second == pad))) {
+				m_events[i].pending = -1;
+				deactivate(Event(i));
+			}
 		}
 	}
 

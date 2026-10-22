@@ -551,4 +551,58 @@ void MarkMomentTest::noticeTransitionTest() {
 	CPPUNIT_ASSERT_EQUAL(std::string("Moment marked (#5)"), text);
 	state.sinceMarkedMs = MarkNoticeMs;
 	CPPUNIT_ASSERT(markNotice(state, text) == MarkNotice::None);
+
+	// #632: a recording saved without a note (no microphone, the note off) says so
+	state.sinceSavedMs = 0;
+	state.savedLengthMs = 3000;
+	state.savedNote = false;
+	CPPUNIT_ASSERT(markNotice(state, text) == MarkNotice::Saved);
+	CPPUNIT_ASSERT_EQUAL(mic + " Recording saved (0:03)", text);
+}
+
+void MarkMomentTest::gestureNotTheTrackpadsBindingsTest() {
+
+	// The left trackpad bound to jump three ways: a single press that acts at once, one that waits for the release
+	// (the trackpad leads a chord), a long press
+	ControlLayout atOnce = defaultLayout(ControllerType::Index);
+	atOnce[Event::Jump] = Binding::single(MmLeftPad);
+	ControlLayout deferred = atOnce;
+	deferred[Event::Book] = Binding::chord(MmLeftPad, MmLeftTrigger);
+	ControlLayout longPress = defaultLayout(ControllerType::Index);
+	longPress[Event::Jump] = Binding::hold(MmLeftPad);
+	const std::vector<std::pair<std::string, ControlLayout>> layouts = {
+		{ "a single press", atOnce },
+		{ "a deferred single press", deferred },
+		{ "a long press", longPress },
+	};
+
+	for(const auto & layout : layouts) {
+		MmFrames f(layout.second);
+		const bool actsAtOnce = (layout.first == "a single press");
+
+		// Both in one update, held past the long press, let go: the gesture and nothing of the trackpad's own
+		mmAssertMarks(layout.first, f.hold(MmBoth, 1000));
+		f.release();
+		CPPUNIT_ASSERT_EQUAL_MESSAGE(mmAt(layout.first, "both together: no jump"), u32(0),
+		                             f.resolver.presses(Event::Jump));
+
+		// The left alone: it jumps as bound
+		f.hold(mmSet({ MmLeftPad }), layout.second[Event::Jump].longPress ? 800 : 100);
+		f.release();
+		CPPUNIT_ASSERT_EQUAL_MESSAGE(mmAt(layout.first, "the left alone jumps"), u32(1),
+		                             f.resolver.presses(Event::Jump));
+
+		// The left first, then the right too: only what the left already did alone (a single press acts on its
+		// own update); a deferred tap and a long press never come
+		f.hold(mmSet({ MmLeftPad }), 200);
+		const u32 before = f.resolver.presses(Event::Jump);
+		CPPUNIT_ASSERT_EQUAL_MESSAGE(mmAt(layout.first, "the left first: only a single press acted before"),
+		                             u32(actsAtOnce ? 2 : 1), before);
+		mmAssertMarks(layout.first + " (the left first)", f.hold(MmBoth, 1000));
+		f.hold(mmSet({ MmLeftPad }), 300);
+		f.release();
+		CPPUNIT_ASSERT_EQUAL_MESSAGE(mmAt(layout.first, "the left first: nothing more after the gesture"), before,
+		                             f.resolver.presses(Event::Jump));
+		CPPUNIT_ASSERT_MESSAGE(mmAt(layout.first, "no jump held after the release"), !f.resolver.active(Event::Jump));
+	}
 }

@@ -29,17 +29,18 @@
  * \file
  * \brief Mark the moment in the headset (#551, marks v2 #574): the game's side
  *
- * Both Index trackpads pressed in VR (vr::ControlResolver::markGesture) write <user dir>\c \\marks\\<name>\\
- * (vr::markFolderName) at once: left.png and right.png (both eyes of the press frame, full size), recorder.txt (the
- * flight recorder's tail, scrubbed like arx-recorder.txt) and, once the release decides what the mark is, meta.txt
- * (vr::formatMarkMeta: kind, press and release on the clip's clock, the press frame's pose). Let go before
- * vr::HoldThresholdMs it is a SHORT mark and that is all. Held longer it is a HOLD, up to vr::HoldMaxMs (then it
- * ends by itself with a notice): snap-+NN.Ns.jpg (the left eye at half size, every vr::SnapshotIntervalMs and at the
- * release), clip.vrsim (the replay ring from vr::HoldContextMs before the press to the release, with a "# hold:"
- * line) and, with the voice note on, note.wav: push-to-talk, the default microphone while both trackpads stay
- * pressed (vr/VoiceNote.h; a short press keeps no note). The hero-dialogue panel (vr/SceneSubtitles.h) shows
- * "Moment marked (#N)" for 2 s; while a hold's note records, the indicator "<mic> m:ss" counting up instead; once a
- * note.wav is written "<mic> Note saved (m:ss)" for 1.5 s.
+ * A toggle (#632, the owner, 2026-10-22): both Index trackpads pressed in VR (vr::ControlResolver::markGesture)
+ * START a recording, the same press again STOPS it; at vr::HoldMaxMs (the channel's `marks cap` for a test) it
+ * stops by itself. The thumbs stay free in between: a trackpad or a button alone acts on the game. A recording is
+ * #574's hold, its folder <user dir>\c \\marks\\<name>\\ (vr::markFolderName): at the start left.png and right.png
+ * (both eyes of the start frame, full size) and recorder.txt (the flight recorder's tail, scrubbed like
+ * arx-recorder.txt); snap-+NN.Ns.jpg (the left eye at half size, every vr::SnapshotIntervalMs and at the stop);
+ * after the stop clip.vrsim (the replay ring from vr::HoldContextMs before the start to the stop, with a "# hold:"
+ * line), with the voice note on note.wav (the default microphone for as long as the recording is on,
+ * vr/VoiceNote.h) and meta.txt last (vr::formatMarkMeta: kind=hold, the start and the stop on the clip's clock, the
+ * start frame's pose). The hero-dialogue panel (vr/SceneSubtitles.h) shows "Moment marked (#N)" for the first
+ * vr::HoldThresholdMs, then the indicator "<mic> m:ss" counting up while it records, frozen until the files are
+ * written, then "<mic> Note saved (m:ss)" (without a note "Recording saved") for 1.5 s.
  *
  * Nothing waits for the GPU: the eyes are copied on the GPU and read back later (vr/EyeShots.h); the images, the
  * clip and the note are formatted and written on the mark writer thread. The microphone opens on the press frame
@@ -51,14 +52,17 @@ namespace marks {
 
 //! status.json \c marks
 struct MarksStatus {
-	u32 count = 0;          //!< marks made since the start
+	u32 count = 0;          //!< recordings started since the start (a stop press is no new one)
 	std::string last;       //!< the last mark's folder name, "" before the first
 	std::string lastFiles;  //!< the non-empty files in it, sorted by name, joined by ","; "" until they are written
-	std::string lastKind;   //!< "" before the first mark; "pending" until its release (or the cap); "press" | "hold"
-	u32 lastSnapshots = 0;  //!< the snap-*.jpg files written for the last mark so far; 0 for a press
-	s64 lastClipMs = 0;     //!< the last mark's clip.vrsim length in ms once written; 0 for a press and until then
-	bool recording = false; //!< a voice note records now (only while both trackpads are held)
-	s64 noteMs = 0;         //!< how long it records so far, ms (the indicator); 0 when none records
+	std::string lastKind;   //!< "" before the first mark; "pending" until its stop; then "hold" (#574's "press"
+	                        //!< is gone since #632)
+	u32 lastSnapshots = 0;  //!< the snap-*.jpg files written for the last mark so far
+	s64 lastClipMs = 0;     //!< the last mark's clip.vrsim length in ms once written; 0 until then
+	bool recording = false; //!< a recording is on: from the start press to the stop press or the cap (#632)
+	s64 recordingMs = 0;    //!< how long it has run, ms; 0 when none is on
+	s64 capMs = 60000;      //!< the longest recording, ms (vr::HoldMaxMs; the channel's `marks cap <ms>`)
+	s64 noteMs = 0;         //!< how long the voice note records so far, ms; 0 when none records
 	bool note = true;       //!< the voice note is on
 };
 
@@ -70,7 +74,8 @@ void update();
 //! The game quits: the note stops (saved), the files still being written are finished
 void shutdown();
 
-//! The channel's `marks ...` command (note on|off): "" or why it was refused
+//! The channel's `marks ...` command (note on|off; cap <ms>: the longest recording for the session, a whole number
+//! from vr::RecordingCapMinMs to vr::HoldMaxMs): "" or why it was refused
 std::string command(std::string_view rest);
 
 } // namespace marks

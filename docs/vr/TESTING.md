@@ -333,7 +333,8 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `quit` | ask the game to quit at the end of the frame (the same path as closing the window) |
 | `save <name>` | save the running game as a new slot named `<name>` (no thumbnail); the newest save is slot 0, so `loadslot 0` loads it back. A `save slot=save000N name=<name> ok=yes\|no` event either way; refused outside a running game (#130) |
 | `replay mark <name> [<seconds>]` | the last 30 s (1..60) of the recorded VR session into `<user dir>\replay-marks\<time>-<name>.vrsim`, a clip of its own with `# mark: <name> <ms>` (#550, [Record and replay](#record-and-replay-550)); `[replay] mark <name>: replay-marks\<file> (<n> frames, <s> s)` in the log; refused while nothing records (flat mode, `--no-replay-log`, before the game is playable) and for a name that is not letters, digits, `-` and `_` |
-| `marks note on\|off` | the voice note of a mark of the moment's hold (#551, [Marks of the moment](#marks-of-the-moment-551-marks-v2-574)) for this session; `cfg.ini vr_mark_note` (default 1) keeps the player's choice; `marks.note` in the status |
+| `marks note on\|off` | the voice note of a mark of the moment's recording (#551, [Marks of the moment](#marks-of-the-moment-551-marks-v2-574-the-toggle-632)) for this session; `cfg.ini vr_mark_note` (default 1) keeps the player's choice; `marks.note` in the status |
+| `marks cap <ms>` | the longest recording of a mark of the moment for this session (#632's test hook): a whole number of ms from 1000 to 60000 (the default, 1 minute), anything else refused; a recording reaching it stops and saves by itself; `marks.capMs` in the status |
 | `loadslot <n>` | load save slot `n` (from the menu or in-game), refused with the slot count if it does not exist. The command-line `--loadslot <n>` of a missing slot logs an `[E]` and starts at the main menu (before #24 it started an empty level: a black world with only the HUD, TRAPS.md); `run-windows.ps1` / `test-pr.ps1` refuse such a launch before it starts |
 | `ui inventory open\|close` | what the inventory key does (the book has the script command `book open\|close`); a `ui.inventory` event once the inventory is open / has finished closing. While a level script holds the player (the level 10 start: letterbox, controls blocked) the HUD is not drawn and a close never finishes — `setplayercontrols on` and `cinemascope off` first (#130) |
 | `loadlevel <n> [target]` | change to level `n` in a running game (refused from the menu: start with `--loadlevel` or `loadslot`) |
@@ -2750,37 +2751,43 @@ script tests `test-replay.ps1`, `test-clip-to-xrs.ps1` and the clip line of `tes
 0.1 degree / 0.01 of curl, the anchor across a level change, the cost, flat) and `flight-recorder-check.ps1 -Case
 replay-crash` (the clip in a hang's and a crash's report).
 
-## Marks of the moment (#551, marks v2 #574)
+## Marks of the moment (#551, marks v2 #574, the toggle #632)
 
-During a headset test the owner marks a moment instead of remembering it: **both Index trackpads pressed (the force
-press)** mark it **at once**, on the frame both are down (D-061; fixed, not rebindable, one mark per press - a second
-mark needs a trackpad let go and pressed again; one pressed, the other later: the mark when the second goes down).
-**How long both stay down decides what the mark records** (D-062, #574): let go within `HoldThresholdMs` (about
-0.5 s, tuned in the headset) it is a **short mark** - what he sees; held longer it is a **hold**, up to 1 minute -
-what he says *and* does meanwhile, so a coordinator that cannot listen reads his words next to the pictures of what he
-was showing and replays the hold in the simulator. At 1 minute the hold ends by itself ("Hold ended at the 1:00
-limit" in the panel). Only on the Index: the Touch has no trackpads and no mark gesture. On in every build, the tester
-package included. Both stick clicks do nothing special (no mark, no menu). The default layouts bind nothing to the
-trackpads; a player who binds an event to one gets that event too when the press marks. The game writes
-`<user dir>\marks\<yyyymmdd>T<hhmmss>Z-<n>\` (UTC; `n` the mark's number in the session) off the frame thread:
+During a headset test the owner marks a moment instead of remembering it: **one press of both Index trackpads (the
+force press) starts a recording** at once, on the frame both are down, and **the same press again stops it** (D-061,
+D-062, the toggle of D-064 / #632; fixed, not rebindable; one pressed, the other later: the press when the second goes down).
+A recording is what he sees, says *and* does meanwhile, so a coordinator that cannot listen reads his words next to
+the pictures of what he was showing and replays it in the simulator. **At most 1 minute**: then it stops and saves by
+itself (the channel's `marks cap <ms>` shortens it for a test). How long the start press is held changes nothing -
+there is no snapshot-only short press and no push-to-talk any more (#574's; the owner, 2026-10-22: holding both
+trackpads blocked his thumbs). **The thumbs stay free:** during a recording a trackpad or a button pressed alone acts
+on the game as bound; only both together stop it. The start and stop press is not also a trackpad's own binding: a
+trackpad pressed with the other does nothing of its own (one pressed a moment earlier did what it does alone - a
+single press acts at once - and its deferred tap or long press do not follow). The default layouts bind nothing to the
+trackpads. Only on the Index: the Touch has no trackpads and no mark gesture. On in every build, the tester package
+included. Both stick clicks do nothing special (no mark, no menu). The game writes
+`<user dir>\marks\<yyyymmdd>T<hhmmss>Z-<n>\` (UTC; `n` the recording's number in the session) off the frame thread -
+#574's hold folder, so `marks.ps1` and `transcribe.ps1` read it as before:
 
-| File | Short | Hold | What |
-|---|---|---|---|
-| `left.png`, `right.png` | yes | yes | both eyes of the press frame, full size (a menu's frame: the background the eyes are cleared to) |
-| `recorder.txt` | yes | yes | the flight recorder's tail at the press (#545), scrubbed of personal data like `arx-recorder.txt` |
-| `meta.txt` | yes | yes | `# moment mark (#551)`, then `mark`, `time`, `area`, `position`, `yaw`, `build`, `state`, `session`, `kind` (`press` / `hold`), `pressMs`, `releaseMs` (on the clip's clock: the `@<ms>ms` times of `clip.vrsim`; -1 before it started) and the press frame's pose in the numbers of the `.vrsim` commands: `head=`, `left=` / `right=` (the grip, then `on`/`off` tracked), `curlsLeft=` / `curlsRight=` (five curls) - pasted into a sequence as they are. Written once the release decides the kind |
-| `snap-+NN.Ns.jpg` | - | yes | the **left eye at half size** (about 1008x1120, JPEG quality 85, 150-250 KB) every 2 s after the press and one at the release; `NN.N` the seconds after the press, rounded down (`snap-+02.0s.jpg` ... `snap-+07.0s.jpg`); at most 31 |
-| `clip.vrsim` | - | yes | the replay ring from **10 s before the press to the release** (#550), a `# hold: <pressMs> <releaseMs>` line after `# mark:`; `scripts/dev/replay.ps1` plays it. The ring keeps 75 s at 144 Hz (crash and hang reports' `arx-replay.vrsim` too), so a full minute's hold and its 10 s fit |
-| `note.wav` | - | yes | the voice note, push-to-talk: the default microphone while both trackpads stay pressed, up to 1 minute (16 kHz mono 16-bit); only when it is on and the press became a hold (a short press keeps none) |
-| `transcript.txt` | - | after `transcribe.ps1` | the note as text, `[m:ss.s] text` a segment on the same press-relative timeline as the snapshots (below) |
+| File | When | What |
+|---|---|---|
+| `left.png`, `right.png` | the start | both eyes of the start frame, full size (a menu's frame: the background the eyes are cleared to) |
+| `recorder.txt` | the start | the flight recorder's tail at the start (#545), scrubbed of personal data like `arx-recorder.txt` |
+| `snap-+NN.Ns.jpg` | every 2 s, the stop | the **left eye at half size** (about 1008x1120, JPEG quality 85, 150-250 KB) every 2 s after the start and one at the stop; `NN.N` the seconds after the start, rounded down (`snap-+02.0s.jpg` ... `snap-+07.0s.jpg`); at most 31 |
+| `clip.vrsim` | after the stop | the replay ring from **10 s before the start to the stop** (#550), a `# hold: <pressMs> <releaseMs>` line after `# mark:`; `scripts/dev/replay.ps1` plays it. The ring keeps 75 s at 144 Hz (crash and hang reports' `arx-replay.vrsim` too), so a full minute's recording and its 10 s fit |
+| `note.wav` | after the stop | the voice note: the default microphone for as long as the recording is on, up to 1 minute (16 kHz mono 16-bit); only when it is on and a microphone recorded at least 0.3 s |
+| `meta.txt` | last | `# moment mark (#551)`, then `mark`, `time`, `area`, `position`, `yaw`, `build`, `state`, `session`, `kind` (`hold`; `press` only in an older build's short mark), `pressMs`, `releaseMs` (the start and the stop on the clip's clock: the `@<ms>ms` times of `clip.vrsim`; -1 before it started) and the start frame's pose in the numbers of the `.vrsim` commands: `head=`, `left=` / `right=` (the grip, then `on`/`off` tracked), `curlsLeft=` / `curlsRight=` (five curls) - pasted into a sequence as they are |
+| `transcript.txt` | after `transcribe.ps1` | the note as text, `[m:ss.s] text` a segment on the same start-relative timeline as the snapshots (below) |
 
-The hero-dialogue panel (D-055, below the centre of the view) shows "Moment marked (#N)" for about 2 s; while a hold's
-note records, the indicator "🎤 m:ss" counting up instead (from `HoldThresholdMs` on - a short press never shows the
-microphone); after the release it stays, frozen at the note's length, while the writer thread builds and writes
-`note.wav` (the panel never goes blank in between); then "🎤 Note saved (m:ss)" for about 1.5 s, then nothing. No
-microphone shows the confirmation only. The panel draws a small red microphone where the text has U+1F3A4 (the game's
-fonts have no glyph for it); the status keeps the character. A notice takes the panel over a scene's line while it
-shows. `cfg.ini vr_mark_note=0` turns the voice note off; the channel's `marks note on|off` does it for the session.
+The hero-dialogue panel (D-055, below the centre of the view) shows "Moment marked (#N)" for the first 0.5 s
+(`HoldThresholdMs`), then the indicator "🎤 m:ss" counting up for as long as the recording is on, with or without a
+microphone; after the stop it stays, frozen at the recording's length, while the writer thread writes the files (the
+panel never goes blank in between); then "🎤 Note saved (m:ss)" - "🎤 Recording saved (m:ss)" without a note - for
+about 1.5 s, then nothing. The panel draws a small red microphone where the text has U+1F3A4 (the game's fonts have no
+glyph for it); the status keeps the character. A notice takes the panel over a scene's line while it shows.
+`cfg.ini vr_mark_note=0` turns the voice note off; the channel's `marks note on|off` does it for the session. The
+status: `marks.recording` (a recording is on), `marks.recordingMs`, `marks.capMs`, `marks.count` (recordings started),
+`marks.lastKind` (`pending` until the stop, then `hold`).
 The simulated headset (`--vr-sim`: CI, a replay, a worker's run) never opens the microphone - a microphone on the PC
 must never record the room. While a recorded clip plays (`replay.ps1`, #550), the replayed trackpad presses write no
 marks: the log says `[vr] mark ignored: a replay is playing`.
@@ -2789,22 +2796,26 @@ marks: the log says `[vr] mark ignored: a replay is playing`.
 into a texture of our own - a snapshot halved with the linear filter, each pixel the mean of a 2x2 block - and a
 read-back into a pixel buffer behind a fence); a later frame maps the buffer and copies it out (logged:
 `[vr] eye shot <id>: <w>x<h> read back, copied in <us> us`). The PNGs, the JPEGs, the clip (cut from a byte copy of
-the ring taken the frame after the release) and the WAV are made on the mark writer thread. Opening the microphone is
-one OpenAL call on the press frame; its time is in the log line `... (the microphone opened in <ms> ms)`.
+the ring taken the frame after the stop) and the WAV are made on the mark writer thread. Opening the microphone is
+one OpenAL call on the start frame; its time is in the log line `... (the microphone opened in <ms> ms)`.
 
-- **status.json** `marks`: `count` (marks made since the start), `last` (the last mark's folder name), `lastFiles`
-  (the non-empty files in it, sorted, joined by `,`; empty until every file of the mark is written - a hold's after
-  its release), `lastKind` (`""` before the first mark, `pending` until the release or the cap, then `press` or
-  `hold`), `lastSnapshots` (the `snap-*.jpg` written for the last mark so far; 0 for a press), `lastClipMs` (its
-  `clip.vrsim` length in ms once written; 0 for a press), `recording` (a voice note records now - only while both
-  trackpads are held), `noteMs` (how long it records so far, ms; 0 when none records), `note` (the voice note is on),
-  `gesture` (`both.trackpad` on the Index, `none` on controllers without trackpads); `scene.subtitle.notice` (`none`,
+- **status.json** `marks`: `count` (recordings started since the start; a stop press is no new one), `last` (the
+  last recording's folder name), `lastFiles` (the non-empty files in it, sorted, joined by `,`; empty until every
+  file of it is written, after its stop), `lastKind` (`""` before the first recording, `pending` from the start until
+  the stop - the second press or the cap -, then `hold`), `lastSnapshots` (the `snap-*.jpg` written for the last
+  recording so far), `lastClipMs` (its `clip.vrsim` length in ms once written), `recording` (a recording is on: from
+  the start press to the stop press or the cap, with or without a microphone), `recordingMs` (how long it has run,
+  ms; 0 when none is on), `capMs` (the longest recording: 60000, or the channel's `marks cap <ms>`), `noteMs` (how
+  long the voice note records so far, ms; 0 when none records), `note` (the voice note is on), `gesture`
+  (`both.trackpad` on the Index, `none` on controllers without trackpads); `scene.subtitle.notice` (`none`,
   `marked`, `recording`, `saved`) - while not `none`, `scene.subtitle.text` is the notice's line and `drawn` is
   `chest`.
-- **The log:** `[vr] mark #<n>: the moment is marked ...` at the gesture, `[vr] mark #<n>: a short press (<ms> ms)` or
-  `... a hold of <ms> ms` at the release, `[vr] mark #<n>: marks\<folder> files=<list>` once every file is written,
-  `[vr] mark #<n>: note.wav (<s> s)` after the note; the panel's `vr.scene.subtitle notice=<kind> drawn=chest
-  text="<line>"` once per notice kind.
+- **The log:** `[vr] mark #<n>: a recording starts (both trackpads pressed; pressed again it stops, at most <ms>
+  ms)` at the start press, `[vr] mark #<n>: the recording stopped after <ms> ms` at the stop (`... - its cap, by
+  itself` at the cap), `[vr] mark #<n>: marks\<folder> files=<list>` once every file is written, `[vr] mark #<n>:
+  note.wav (<s> s)` after the note (`... no voice note recorded` without one); `[vr] marks: a recording stops by
+  itself after <ms> ms` for `marks cap`; the panel's `vr.scene.subtitle notice=<kind> drawn=chest text="<line>"` once
+  per notice kind.
 - **After the test:** `scripts\dev\marks.ps1` lists the marks of the user directory - per mark the time, area,
   position, `Kind: press | hold <s.s> s`, the files, the note's length, `Clip: <len> s (<before> s before the press),
   <n> frames`, the pictures by their time after the press (`+0.0 s  left.png, right.png (press)`, `+2.0 s
@@ -2829,14 +2840,18 @@ one OpenAL call on the press frame; its time is in the log line `... (the microp
   takes about a minute on the owner's PC). `transcript.txt` is UTF-8: `[m:ss.s] text` a segment, the start rounded
   down to 0.1 s from the note's start - the press, the snapshots' timeline.
 - **The checks:** host tests `MarkMomentTest` (the gesture with any layout, `markHeld`, the folder name, `meta.txt`,
-  the panel's lines, the Touch without the gesture, both stick clicks never marking), `MarkHoldTest` (short against
-  hold, the 1 minute cap, the snapshot schedule and names, the indicator from the threshold, `meta.txt` kind and pose,
-  the 75 s ring, the hold's clip with its context at 144 and 80 Hz, the `# hold:` line), `SnapshotImageTest` (the 2x2
-  mean, the JPEG the right way up, its quality) and `VoiceNoteTest` (the WAV writer, the push-to-talk capture on a fake
-  device: a release stops it, 1 minute at most, nothing under 0.3 s, never without the hold); `mark-moment.xrs` (both
-  stick clicks: no mark, no menu; a 0.2 s short mark: the four files, no clip, no snapshot, no note, no indicator; a
-  second mark on a re-press; a 7 s hold: `kind=hold`, four snapshots, a clip of about 17 s, no `note.wav` under the
-  simulated headset); `test-marks.ps1` (the listing) and `test-transcribe.ps1` (whisper's JSON to `transcript.txt`
+  the panel's lines - "Recording saved" without a note -, the Touch without the gesture, both stick clicks never
+  marking, and #632's start / stop press that is not also a trackpad's own binding), `MarkHoldTest` (#574's pure
+  helpers, kept: short against hold, the 1 minute cap, the snapshot schedule and names, the indicator from the
+  threshold, `meta.txt` kind and pose, the 75 s ring, the clip with its context at 144 and 80 Hz, the `# hold:` line),
+  `SnapshotImageTest` (the 2x2 mean, the JPEG the right way up, its quality) and `VoiceNoteTest` (the WAV writer, the
+  capture on a fake device: stopped when told, 1 minute at most, nothing under 0.3 s); `mark-moment.xrs` (both stick
+  clicks: no mark, no menu; the cap shortened to 3 s with `marks cap 3000`: the start press held 1.5 s and let go
+  changes nothing, the recording stops by itself at 3 s with the snapshots at 2 and 3 s, the clip and "saved (0:03)";
+  a 0.2 s start press that records on, a trackpad alone (bound to jump) jumping and the bag opened and closed during
+  it, the second press stopping it at about 4.3 s: three snapshots, a clip of about 15 s, "saved (0:04)", no
+  `note.wav` under the simulated headset); `test-marks.ps1` (the listing, a #632 recording among older builds'
+  marks) and `test-transcribe.ps1` (whisper's JSON to `transcript.txt`
   byte for byte, the pins, the cache, the empty-VAD retry, the glossary; a fake whisper, no network) and
   `test-transcribe-paths.ps1` (a mark folder outside the code page, whisper's error line).
 

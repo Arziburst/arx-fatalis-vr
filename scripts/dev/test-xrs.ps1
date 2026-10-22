@@ -335,6 +335,14 @@ mark hello; mark again
 	$ctx3.LogMark = 0
 	Invoke-XrsStep $ctx3 $orderSteps[0]
 	Check '@log: a line before the matched one cannot match later' ($(try { Invoke-XrsStep $ctx3 $orderSteps[1]; 'passed' } catch { "$_" }) -match 'LOG FAILED')
+	# A pattern of look-aheads after another @log (#632): it matches with zero width where the last one stopped - on
+	# that line's new line - and passes; a look-ahead that finds nothing still fails
+	$aheadSteps = (Read-ArxSequence (Write-Seq 'ahead' "@log one 1s`n@log (?s)^(?=.*three)(?=.*two) 1s`n@log (?s)^(?=.*four) 1s")).Steps
+	$ctx4 = New-XrsContext $testDir $logPath { param($t, $c) }
+	& $append "[I] one`n[I] two`n[I] three`n"
+	Invoke-XrsStep $ctx4 $aheadSteps[0]
+	Check '@log: look-aheads right after another @log match' ($(try { Invoke-XrsStep $ctx4 $aheadSteps[1]; 'passed' } catch { "$_" }) -eq 'passed')
+	Check '  ... and one that finds nothing fails' ($(try { Invoke-XrsStep $ctx4 $aheadSteps[2]; 'passed' } catch { "$_" }) -match 'LOG FAILED')
 
 	# @assert right after a @log match (#528): the status on disk was built before the matched line (the fake's
 	# fake-scene-skip, see above). The @assert must judge a status built after the line (wallMs), not that one.

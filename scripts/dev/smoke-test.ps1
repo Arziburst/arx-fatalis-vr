@@ -50,7 +50,9 @@
 	The test channel directory. Default: $env:ARXVR_TEST_DIR or %LOCALAPPDATA%\ArxFatalisVR\test\<folder>-<hash>.
 
 .PARAMETER UserDir
-	The user and config directory for the game. Default: this working copy's isolated one.
+	The user and config directory for the game. Default: this working copy's isolated one; with -Sequence a fresh one
+	(#494, Resolve-ArxRunUserDir in xrs-lib.ps1: %LOCALAPPDATA%\ArxFatalisVR\sequence-userdirs\<folder>-<hash>\<sequence>,
+	emptied for every run, as ci-smoke.ps1 gives each sequence; a read-back <name>-readback gets <name>'s dir as it was left).
 
 .PARAMETER Shared
 	Use the player's %USERPROFILE%\Saved Games\Arx Libertatis (their saves, log and config) instead of
@@ -109,7 +111,9 @@
 
 .PARAMETER Commands
 	Channel commands to send once the game is in the expected state, e.g. 'shot start', 'mark hello',
-	'player.setplayerpos 0 0 0' (see docs/vr/TESTING.md). Each must be acknowledged without an error.
+	'player.setplayerpos 0 0 0' (see docs/vr/TESTING.md). Each must be acknowledged without an error. A line
+	'@until <path> <op> <value> [<n>s]' is a status gate (#473), as in a sequence: the commands after it are sent once
+	status.json satisfies it, e.g. 'cinemascope off','@until scriptedScene eq false 10s' before pressing A, B or a trigger.
 
 .PARAMETER Sequence
 	A scripted sequence (#113, scripts\dev\xrs\*.xrs: a name or a path) run on the game once it is in the expected
@@ -191,6 +195,14 @@ $ErrorActionPreference = 'Stop'
 
 # A sequence with a syntax error costs no launch
 $sequenceToRun = if ($Sequence) { Read-ArxSequence $Sequence } else { $null }
+# An '@until <path> <op> <value> [<n>s]' line among -Commands is a status gate, not a command (#473): the commands after
+# it wait for it, as in a sequence (the level 10 start's scene skips A, B and trigger presses while it plays)
+$commandSteps = @(foreach ($command in $Commands) {
+	if (-not $command.StartsWith('@')) { $command; continue }
+	$gate = try { ConvertTo-XrsStep $command 0 } catch { throw "-Commands '$command': $($_.Exception.Message)" }
+	if ($gate.Kind -ne 'until') { throw "-Commands '$command': only an @until gate can stand among the commands" }
+	$gate
+})
 
 # Game event counts to assert (#130): the event log's own baseline first, then -ExpectEvents
 $eventChecks = @(
@@ -207,7 +219,9 @@ $stamp = Assert-ArxFreshBuild -SourceDir $ArxSourceDir -BuildDir $BuildDir -Conf
 $exe = Join-Path $BuildDir 'arx.exe'
 if (-not $TestDir) { $TestDir = Get-ArxTestDir }
 if ($UserDir -and $Shared) { throw '-UserDir and -Shared exclude each other' }
-if (-not $UserDir) { $UserDir = Get-ArxUserDir -Shared:$Shared }
+$userDirKind = if ($Shared) { 'shared' } elseif ($UserDir) { 'given' } elseif ($sequenceToRun) { 'fresh for the sequence' } else { 'isolated' }
+# A sequence runs in a fresh user dir of its own, as in CI (#494); -Repeat runs share it
+$UserDir = Resolve-ArxRunUserDir -UserDir $UserDir -Shared:$Shared -Sequence $(if ($sequenceToRun) { $sequenceToRun.Name })
 if ($Shared -and ($Saves -or $Save)) { throw '-Saves / -Save copy saves into the isolated user directory; they cannot be combined with -Shared' }
 if ($Save -and $Saves) { throw '-Save and -Saves exclude each other' }
 # The simulated headset (#112): a script path, or a name in scripts\dev\vrsim
@@ -240,7 +254,7 @@ if (-not $Shared) {
 	if ($Saves) { Copy-ArxSaves -Names $Saves -UserDir $UserDir -Library $SaveLibrary }
 	if ($Save) { Use-ArxSave -Name $Save -UserDir $UserDir -Library $SaveLibrary }
 }
-Write-Host "build: $(ConvertTo-ShortSha $stamp) ($($copy.Branch));  user dir: $UserDir ($(if ($Shared) { 'shared' } else { 'isolated' }));  test channel: $TestDir"
+Write-Host "build: $(ConvertTo-ShortSha $stamp) ($($copy.Branch));  user dir: $UserDir ($userDirKind);  test channel: $TestDir"
 
 function Write-Check([bool]$Ok, [string]$Text) {
 	if ($Ok) { Write-Host "  [ok]   $Text" -ForegroundColor Green } else { Write-Host "  [FAIL] $Text" -ForegroundColor Red }
@@ -366,7 +380,14 @@ function Invoke-SmokeRun([int]$Run) {
 			# Each batch gets its own ack: seq advances by one per command and 'last=' names the command (#142: a
 			# level change inside a batch once exposed the next seq in status.json before the ack existed)
 			$lastAckSeq = $null
-			foreach ($command in $Commands) {
+			$gateContext = New-XrsContext $TestDir $log { param($Text, $Color) Write-Host "  $Text" -ForegroundColor $Color }
+			foreach ($command in $commandSteps) {
+				if ($command -isnot [string]) {
+					Write-Host "  > $($command.Line)"
+					try { Invoke-XrsStep $gateContext $command }
+					catch { $reasons.Add("gate '$($command.Line)': $($_.Exception.Message) - the commands after it were not sent"); break }
+					continue
+				}
 				$ack = Send-ArxCommand -Lines @($command) -Dir $TestDir
 				Write-Host "  > $command`n    $ack"
 				if ($ack -notmatch 'errors=0 ') { $reasons.Add("command '$command' failed: $ack") }

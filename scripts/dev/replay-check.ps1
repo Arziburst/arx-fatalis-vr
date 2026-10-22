@@ -340,7 +340,8 @@ function Get-ArxPlay {
 
 # A sequence of scripts\dev\xrs\manual through xrs-run.ps1: its exit code (2 = skipped)
 function Invoke-ArxManualSequence([string]$Name) {
-	$arguments = @((Join-Path $manual "$Name.xrs"))
+	# The cases read the recording from the copy's isolated dir: not the fresh one a sequence run gets (#494)
+	$arguments = @((Join-Path $manual "$Name.xrs"), '-UserDir', $userDir)
 	if ($Rebuild -and -not $script:rebuilt) { $arguments += '-Rebuild'; $script:rebuilt = $true }
 	& $pwsh -NoProfile -File $xrsRun @arguments *>&1 | ForEach-Object { Write-Host "    $(Hide-ArxPrivateText "$_")" }
 	$LASTEXITCODE

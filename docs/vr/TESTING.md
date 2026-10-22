@@ -302,7 +302,10 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
   and at least once a second — see *Log:* in [The log banner](#the-log-banner); the channel only
   makes it fresher). The channel flushes after a status landed and only while no line was logged since that status
   was built (else the next frame builds a fresh one, #553): a line a test waited for never shows with a status older
-  than it, so `@log` then `@assert` reads the state the line came from or later. The ack does not wait for that
+  than it, so `@log` then `@assert` reads the state the line came from or later. The file logger's own flushes (once
+  a second, after a warning) can still show a line before its status lands, so the runner makes sure of it (#528):
+  after a `@log` match, `@assert` / `@remember` judge a status whose `wallMs` (the wall clock it was built at) is at
+  or after the read of `arx.log` that found the line, waiting up to 10 s for one. The ack does not wait for that
   flush: a batch's own log lines may show a frame after its ack (`@log` waits for them).
 - reports the state that the [game event log](#the-game-event-log) logs on every change as
   `game.state to=STARTUP|MENU|LOADING|GAMEPLAY|CINEMATIC|EXITED` — always, with or without the
@@ -406,8 +409,8 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
 {"pid":34120,"version":"0.1-dev + cead4a3",
  "build":{"commit":"cead4a3…(40 hex)","branch":"ARXVR-115-feat-log-banner-runtime","config":"Release"},
  "state":"GAMEPLAY","cleanShutdown":false,
- "frame":618,"uptimeMs":6240,"fps":120.2,"errors":0,"warnings":0,
- "menuMode":"ingame","area":10,"paused":false,"cinematic":false,
+ "frame":618,"uptimeMs":6240,"wallMs":1792656000123,"fps":120.2,"errors":0,"warnings":0,
+ "menuMode":"ingame","area":10,"paused":false,"cinematic":false,"scriptedScene":false,
  "player":{"x":...,"y":...,"z":...,"yaw":...,"life":...,"lifeMax":...,"mana":...,"manaMax":...,"controlsBlocked":false},
  "camera":{"x":...,"y":...,"z":...,"pitch":...,"yaw":...,"roll":...,"fov":75.0,"bob":0.0,"shake":0.0},
  "spells":{"active":2,"launched":3,"activeByType":{"speed":1,"fire_field":1},
@@ -449,6 +452,11 @@ The script command `revive [-i] [-t <entity>]` can revive another NPC (a dead on
 - `hangWatchdog` (#440): `watching` (the [hang watchdog](#the-hang-watchdog-440) has read its symbols and checks
   the beats, about a second after the first frame), `thresholdMs`, `stalls` (stalls reported so far).
 - `fps`: frames over the last status interval (0 in the final status).
+- `wallMs` (#528): the wall clock (Unix epoch ms) when this status was built. The `.xrs` runner judges an `@assert`
+  right after a `@log` match on a status built after the line was read.
+- `scriptedScene` (#473): a scripted scene plays in the game (the level 10 start's letterbox until `cinemascope off`),
+  flat too (`scene.active` is VR only): A, B and the triggers skip it and reach nothing else (#394). A check that
+  presses them waits for `false` - `smoke-test.ps1 -Commands 'cinemascope off','@until scriptedScene eq false 10s',...`.
 - `notifications` (#370): the timed texts at the top of the 2D interface on screen now (a level script's
   tutorial hint, `herosay`, "cannot cast"): each stays 2 s + 60 ms per character of **game time** and is
   drawn on the HUD quad. A check that compares HUD pixels over time waits for `notifications eq 0` first
@@ -1939,7 +1947,7 @@ so they do not rot silently. The [level tour](#the-level-tour-596) (#596) is the
 | `<command>[; <command>]` | any [channel command](#commands) (`vr-sim head rot 25 0 0`, `vr-input tap right.a`, `loadlevel 10`, a script-console line); `;` makes one batch, applied in the same frame. A refused command fails the step |
 | `@wait <ms>` / `@frames <n>` | sleep / wait for n more rendered frames: the channel's `waitframes <n>`, whose ack comes once the frames are rendered (#522) — n frames cost n / fps plus the ack's pickup (the runner reads `ack.txt` every 10 ms), measured 875 ms for 75 frames and 372 ms for 30 at 90 fps. Frames are not time: a wait for something the game does in time is an `@until` |
 | `@until <path> <op> <v> [<n>s]` | wait up to n s (default 30) until `status.json` satisfies the condition |
-| `@assert <path> <op> <v>` | `status.json` now. `path` is dotted, `"quoted"` where a key holds a dot (`events.byName."spell.cast"`); `op` is `eq ne gt ge lt le`; numbers compare as numbers, anything else as text |
+| `@assert <path> <op> <v>` | `status.json` now; right after a `@log` match a status built after the matched line (its `wallMs`, waited for up to 10 s, #528). `path` is dotted, `"quoted"` where a key holds a dot (`events.byName."spell.cast"`); `op` is `eq ne gt ge lt le`; numbers compare as numbers, anything else as text |
 | `@remember <name> <path>` | keep a value; later `@assert` / `@until` values can be `{name}`, `{name+5}` / `{name-5}` (the yaw before a turn, the position before a walk) or `{name*0.9}` (a relative threshold: "at least 10 % less") |
 | `@mark`, `@log <regex> [<n>s]`, `@nolog <regex>` | `arx.log` since the mark (the sequence start is the first mark): wait up to n s (default 5) for a matching line — a match moves the mark past it, so consecutive `@log` lines assert an order — / fail on a matching line |
 | `@shot <name>` | on the simulated headset both eyes and the flat frame (`capture\<name>-left.bmp`, `-right.bmp`, `-quad.bmp`), otherwise `capture\<name>.bmp` |

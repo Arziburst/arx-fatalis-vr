@@ -6,7 +6,9 @@
 .DESCRIPTION
 	Runs smoke-test.ps1 (flat, --loadlevel 10, isolated, every launch rule of D-014) with 'vr-input'
 	commands - controls pressed as if a controller did it, no headset needed:
-	  tap right.stick_up                        jump (a single binding fires on the press, D-042)
+	  setplayercontrols on, cinemascope off     the level 10 start's scene ended; its skip ate A, B and trigger
+	                                            presses (#473): '@until scriptedScene eq false' first
+	  tap right.stick_up                       jump (a single binding fires on the press, D-042)
 	  down right.grip, tap right.trigger, up    use_right and act_right (an ordered chord; no click, no stash)
 	  tap right.grip                            nothing (the grip alone does nothing, D-042)
 	  bind jump left.b+left.a                   remap jump to a chord led by the book's button
@@ -45,7 +47,9 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot 'test-lib.ps1')
 
-$commands = @()
+# The level 10 start plays a scripted scene that skips every A, B and trigger press (#394): ended first, and the presses
+# wait until the status says it no longer plays and the controls are free (#473)
+$commands = @('setplayercontrols on', 'cinemascope off', '@until scriptedScene eq false 10s', '@until player.controlsBlocked eq false 10s')
 # B holds the radial menu since #376 (D-042), the left B the map and the left A the bag since #377: the book event goes
 # back on left B and the left A is left to the chord below, as the check was written
 $commands += @('vr-input bind radial_left none', 'vr-input bind map none', 'vr-input bind inventory none', 'vr-input bind book left.b')

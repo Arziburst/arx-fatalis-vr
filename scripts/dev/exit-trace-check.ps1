@@ -60,7 +60,8 @@ vr-sim fault $Fault $Code
 "@
 
 # smoke-test.ps1 takes the launch from its parameters (the @sim / @args lines are for xrs-run.ps1)
-$params = @{ Sequence = $sequence; VrSim = 'idle' }
+# ... in the copy's isolated user dir, whose arx.log is read below (a sequence run gets a fresh one otherwise, #494)
+$params = @{ Sequence = $sequence; VrSim = 'idle'; UserDir = (Get-ArxUserDir) }
 if ($Rebuild) { $params.Rebuild = $true }
 $previousReport = $env:ARXVR_AUTOREPORT
 $env:ARXVR_AUTOREPORT = '0'

@@ -383,8 +383,9 @@ only the stick taps (jump, crouch, the stick click) count. Neither check runs in
 **Cause:** level 10 starts with a scripted scene (`scene state=start ... controlsBlocked=yes`). Since #394, A, B and
 the triggers skip a playing scene and reach nothing else, so the presses the check sends in the scene's first seconds
 skip it (`vr.skip what=SCENE` in arx.log) and never reach the control table.
-**Do:** until #473 is fixed, do not count these two checks as evidence; the `.xrs` sequences wait for
-`player.controlsBlocked eq false` first.
+**Do:** the scene does not end on its own: send `setplayercontrols on` and `cinemascope off`, then wait for
+`scriptedScene eq false` (status.json, flat too; `scene.active` is VR only) before pressing A, B or a trigger. Both
+checks do since #473, through `smoke-test.ps1 -Commands` gates (`'@until scriptedScene eq false 10s'`).
 
 ## 2026-10-14 — `playground-hands.xrs`: the left hand's reticle misses the pulled lever on CI, passes locally (#377)
 

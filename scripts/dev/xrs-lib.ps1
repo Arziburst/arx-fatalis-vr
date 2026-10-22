@@ -18,8 +18,9 @@
 #   @frames <n>                    wait until the game rendered n more frames (the channel's waitframes: its ack comes then)
 #   @until <path> <op> <v> [<n>s]  wait up to n seconds (default 30) for status.json to satisfy the condition
 #   @assert <path> <op> <v>        status.json, read fresh now. path: dotted, "quoted" where a key holds a dot
-#                                  (events.byName."spell.cast"); op: eq ne gt ge lt le
-#   @remember <name> <path>        keep a status.json value; a later @assert / @until value can be {name} or {name+5} / {name-5}
+#                                  (events.byName."spell.cast"); op: eq ne gt ge lt le. Right after a @log match it
+#                                  judges a status BUILT after the matched line (status wallMs, #528), waiting up to 10 s
+#   @remember <name> <path>        keep a status.json value (after a @log match: as @assert, #528); a later @assert / @until value can be {name} or {name+5} / {name-5}
 #                                  / {name*0.9} (the yaw before a turn, the position before a walk; *: relative)
 #   @mark                          forget the arx.log written so far: @log and @nolog only look at what the
 #                                  game wrote after the last mark (the start of the sequence is the first mark)
@@ -292,6 +293,26 @@ function Read-XrsStatus([string]$Dir) {
 	throw "no status.json in $Dir"
 }
 
+# How long an @assert / @remember after a @log match waits for a status built after the match (#528). The game builds
+# one every 100 ms and after every batch: 10 s without one is a stalled game (the hang watchdog reports at 5 s, #440).
+$script:XrsFreshStatusSec = 10
+
+# The status a one-shot read judges (@assert, @remember). After a @log match it is one BUILT after the read of arx.log
+# that found the line (wallMs, #528): the writer thread can put a status built before the line on disk after the line
+# reached the log, and that one does not count the line's event yet. Waits for it; the match is used up by this read.
+function Read-XrsJudgedStatus($Context) {
+	$after = $Context.LogMatchMs
+	if ($null -eq $after) { return Read-XrsStatus $Context.TestDir }
+	$Context.LogMatchMs = $null
+	try {
+		return Wait-ArxStatus { param($s) $s.PSObject.Properties['wallMs'] -and [int64]$s.wallMs -ge $after } -TimeoutSec $script:XrsFreshStatusSec -Dir $Context.TestDir -What 'a status built after the @log match'
+	} catch {
+		$last = Read-ArxStatus $Context.TestDir
+		$lastText = if ($last -and $last.PSObject.Properties['wallMs']) { "wallMs $($last.wallMs)" } elseif ($last) { 'no wallMs' } else { 'no status.json' }
+		throw "no status built after the @log match (wallMs >= $after) within $($script:XrsFreshStatusSec) s (last status: $lastText)"
+	}
+}
+
 # --- running ---------------------------------------------------------------------------------------------------
 
 function New-XrsContext([string]$TestDir, [string]$LogPath, [scriptblock]$Out) {
@@ -299,6 +320,9 @@ function New-XrsContext([string]$TestDir, [string]$LogPath, [scriptblock]$Out) {
 		TestDir = $TestDir
 		LogPath = $LogPath
 		LogMark = [long](Get-XrsLogLength $LogPath)
+		# Set by a @log match: the wall clock (Unix ms) of the read that found the line; the next @assert / @remember waits
+		# for a status built at or after it (#528)
+		LogMatchMs = $null
 		Vars    = @{}
 		Out     = if ($Out) { $Out } else { { param($Text, $Color) Write-Host $Text -ForegroundColor $Color } }
 	}
@@ -323,14 +347,14 @@ function Invoke-XrsStep($Context, $Step) {
 			if ($ack -notmatch 'errors=0 ') { throw "the game refused the command: $ack" }
 		}
 		'remember' {
-			$value = Get-XrsValue (Read-XrsStatus $dir) $Step.Path
+			$value = Get-XrsValue (Read-XrsJudgedStatus $Context) $Step.Path
 			if ($null -eq $value) { throw "REMEMBER FAILED: status.json has no '$($Step.Path)'" }
 			$Context.Vars[$Step.Name] = $value
 			Write-XrsLine $Context "      {$($Step.Name)} = $(Format-XrsValue $value)" 'DarkGray'
 		}
 		'assert' {
 			$expected = Expand-XrsValue $Context $Step.Value
-			$actual = Get-XrsValue (Read-XrsStatus $dir) $Step.Path
+			$actual = Get-XrsValue (Read-XrsJudgedStatus $Context) $Step.Path
 			if (-not (Test-XrsCondition $actual $Step.Op $expected)) { throw "ASSERT FAILED: $($Step.Path) ($(Format-XrsValue $actual)) $($Step.Op) $expected" }
 			Write-XrsLine $Context "      $($Step.Path) = $(Format-XrsValue $actual)" 'DarkGray'
 		}
@@ -349,6 +373,8 @@ function Invoke-XrsStep($Context, $Step) {
 		'log' {
 			$deadline = (Get-Date).AddSeconds($Step.Seconds)
 			do {
+				# Taken before the read: a line this read finds was in arx.log at this moment (#528)
+				$readMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 				$text = Read-XrsLogSince $Context.LogPath $Context.LogMark
 				$hit = [regex]::Match($text, $Step.Regex)
 				if ($hit.Success) { break }
@@ -359,6 +385,7 @@ function Invoke-XrsStep($Context, $Step) {
 			$bol = $text.LastIndexOf("`n", [Math]::Max(0, $hit.Index - 1)) + 1
 			Write-XrsLine $Context "      matched: $($text.Substring($bol, $eol - $bol).Trim())" 'DarkGray'
 			$Context.LogMark += $eol
+			$Context.LogMatchMs = $readMs
 		}
 		'nolog' {
 			$hit = [regex]::Match((Read-XrsLogSince $Context.LogPath $Context.LogMark), $Step.Regex)
@@ -445,4 +472,28 @@ function New-ArxSequenceUserDir([string]$Root, [string]$Name) {
 	if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
 	New-Item -ItemType Directory -Force $dir | Out-Null
 	$dir
+}
+
+# Where a local sequence run's fresh user dirs go (#494): %LOCALAPPDATA%\ArxFatalisVR\sequence-userdirs\<folder>-<hash>
+function Get-ArxSequenceUserDirRoot([string]$SourceDir = $ArxSourceDir) {
+	Join-Path (Get-ArxAppDataDir) "sequence-userdirs\$(Get-WorkingCopyKey $SourceDir)"
+}
+
+# The user / config dir of one smoke-test.ps1 run (#494). -UserDir as given (ci-smoke's per-sequence dirs, a read-back's
+# second launch); -Shared the player's dir; a sequence run a FRESH dir, as ci-smoke gives every sequence (#296): what one
+# sequence leaves there (first-run's show_crosshair=false in cfg.ini) never reaches the next local run. A run without a
+# sequence keeps the copy's isolated dir (run-windows.ps1 -Isolated, -Saves). Only the last sequence run's dir is kept,
+# for its evidence: the next one removes it. A read-back (<name>-readback, xrs\readback, #394) is the second launch in
+# its sequence's dir, so it gets that dir as the run of <name> just before it left it.
+function Resolve-ArxRunUserDir([string]$UserDir, [switch]$Shared, [string]$Sequence) {
+	if ($UserDir) { return $UserDir }
+	if ($Shared -or -not $Sequence) { return (Get-ArxUserDir -Shared:$Shared) }
+	$root = Get-ArxSequenceUserDirRoot
+	if ($Sequence -match '^(.+)-readback$') {
+		$dir = Join-Path $root $Matches[1]
+		New-Item -ItemType Directory -Force $dir | Out-Null
+		return $dir
+	}
+	if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
+	New-ArxSequenceUserDir $root $Sequence
 }

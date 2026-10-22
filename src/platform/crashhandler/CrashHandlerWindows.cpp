@@ -31,6 +31,7 @@
 #include "io/log/Logger.h"
 
 #include "platform/Architecture.h"
+#include "platform/CrashGate.h"
 #include "platform/DumpHelper.h"
 #include "platform/Platform.h"
 
@@ -66,6 +67,9 @@ void InvalidParameterHandler(const wchar_t * expression, const wchar_t * functio
 void SignalHandler(int signalCode);
 
 CrashHandlerWindows * CrashHandlerWindows::m_sInstance = 0;
+
+//! Which crashing thread reports (#545, #554); constant-initialised, so it is there before any crash
+static platform::CrashGate g_crashGate;
 
 CrashHandlerWindows::CrashHandlerWindows()
 	: m_pPreviousCrashHandlers(nullptr)
@@ -291,20 +295,21 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 [[noreturn]] void CrashHandlerWindows::handleCrash(int crashType, void * crashExtraInfo, int fpeCode) {
 
 	// A second crash while this one is being reported (#545): on the same thread it is a fault inside the
-	// handler, and this thread ends the process; on another thread it parks for good - the first report (and
-	// its dump, in progress) is the one that counts
-	static std::atomic<DWORD> s_handlingThread(0);
-	{
-		DWORD me = GetCurrentThreadId();
-		DWORD expected = 0;
-		if(!s_handlingThread.compare_exchange_strong(expected, me)) {
-			if(expected == me) {
-				TerminateProcess(GetCurrentProcess(), 1);
-				std::abort();
-			}
-			while(true) {
-				Sleep(INFINITE);
-			}
+	// handler, and this thread ends the process; on another thread it parks - the first report (and its dump, in
+	// progress) is the one that counts - but not for good (#554): that thread may hold a lock the first handler
+	// needs (the heap's, while the first thread symbolises), so after the park it ends the process itself
+	switch(g_crashGate.enter(u32(GetCurrentThreadId()))) {
+		case platform::CrashGate::Entry::First: {
+			break;
+		}
+		case platform::CrashGate::Entry::Again: {
+			TerminateProcess(GetCurrentProcess(), 1);
+			std::abort();
+		}
+		case platform::CrashGate::Entry::Other: {
+			platform::CrashGate::park(platform::CrashGate::ParkLimit);
+			TerminateProcess(GetCurrentProcess(), 1);
+			std::abort();
 		}
 	}
 

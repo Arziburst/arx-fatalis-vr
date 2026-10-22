@@ -966,6 +966,7 @@ set(CORE_SOURCES
 	src/core/Benchmark.cpp
 	src/core/ChannelWriter.cpp
 	src/core/CommandChannel.cpp
+	src/core/CommandInbox.cpp
 	src/core/Config.cpp
 	src/core/Core.cpp
 	src/core/FpsCounter.cpp
@@ -1196,6 +1197,7 @@ endif()
 
 # Extra platform abstraction - depends on the crash handler or SDL
 set(PLATFORM_EXTRA_SOURCES
+	src/platform/CrashGate.cpp
 	src/platform/CrashNotice.cpp
 	src/platform/Dialog.cpp
 	src/platform/DumpHelper.cpp

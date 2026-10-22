@@ -291,6 +291,8 @@ src/vr/PerfStats.* -> refresh-rate
 # every pull request runs, as for CommandChannel), and the pacing sequence a write on the frame failed. 'core' stands
 # alone on a line and a glob is listed once, so this one line is both
 src/core/ChannelWriter.* -> refresh-rate
+# The channel's reader thread (#561): command.txt read off the frame; the same two, as for the writer
+src/core/CommandInbox.* -> refresh-rate
 
 # --- The desktop window's focus (#406): in VR a focus loss changes nothing in the game ----------------------------------
 # ArxGame.cpp holds the focus handlers (onWindowLostFocus / onWindowGotFocus); the rest of ArxGame.* stays on the core.

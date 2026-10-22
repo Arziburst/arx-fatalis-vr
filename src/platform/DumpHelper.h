@@ -163,6 +163,17 @@ std::string killerLabel();
  */
 std::string symbolizedStack(const void * context);
 
+/*!
+ * \brief The pending report has its stack: the helper walked it out of process while the dump was taken (#610)
+ *
+ * A crash with exception pointers gets its stack from the helper, which reads the context from the game's memory
+ * and symbolises it with a heap of its own; the crash handler walks the stack in process only when this is false.
+ */
+bool reportHasStack() noexcept;
+
+//! "crash ntdll" (#610): the in-process stack walk faults from now on, as it did on a corrupt heap
+void failInProcessStackForTest() noexcept;
+
 //! The id of the main thread (the one that called flightNameThread("main thread")), for the killer line
 u32 mainThreadId() noexcept;
 

@@ -2863,7 +2863,8 @@ std::string execute(std::string_view line) {
 	if(word == "crash") {
 		// A deliberate crash for the crash-report checks (#132): "crash" faults on the main thread;
 		// "crash steal" replaces the exception filter the way an overlay would and crashes 3 s later,
-		// after the game has put its own filter back (it does so every second)
+		// after the game has put its own filter back (it does so every second); "crash ntdll" faults inside
+		// ntdll with an in-process stack walk that cannot run (#610)
 		std::string mode(rest);
 		util::makeLowercase(mode);
 #if ARX_PLATFORM == ARX_PLATFORM_WIN32
@@ -2872,9 +2873,23 @@ std::string execute(std::string_view line) {
 			g_crashAt = platform::getTime() + std::chrono::seconds(3);
 			return std::string();
 		}
+		if(mode == "ntdll") {
+			// #610: the fault inside ntdll (an access violation in RtlFillMemory), and the in-process stack walk
+			// faults too, as it did on the corrupt heap of that crash - the report's stack is the helper's
+			using FillFn = void (WINAPI *)(void *, SIZE_T, BYTE);
+			FillFn fill = reinterpret_cast<FillFn>(
+				reinterpret_cast<void *>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlFillMemory")));
+			if(!fill) {
+				return refuse("crash ntdll: ntdll.dll has no RtlFillMemory");
+			}
+			LogWarning << "[crash] deliberate crash inside ntdll requested through the test channel";
+			platform::failInProcessStackForTest();
+			fill(nullptr, 64, 0);
+			return std::string();
+		}
 #endif
 		if(!mode.empty()) {
-			return refuse("crash: expected nothing or steal, got \"" + std::string(rest) + "\"");
+			return refuse("crash: expected nothing, steal or ntdll, got \"" + std::string(rest) + "\"");
 		}
 		LogWarning << "[crash] deliberate crash requested through the test channel";
 		volatile int * nothing = nullptr;

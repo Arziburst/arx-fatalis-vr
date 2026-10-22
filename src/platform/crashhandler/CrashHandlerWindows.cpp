@@ -368,7 +368,7 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 		// An exception leaves the process in an unknown state: the dump is taken first and the stack is
 		// symbolised afterwards (it loads arx.pdb). An abort() is a controlled runtime path: its stack is
 		// read first, because it tells a foreign thread's std::terminate() (no handler of ours, ends in
-		// abort) from a plain abort()
+		// abort) from a plain abort(). An exception's stack is walked by the helper, out of process (#610)
 		u32 code = pointers->ExceptionRecord ? u32(pointers->ExceptionRecord->ExceptionCode) : 0;
 		platform::DumpKind kind = platform::DumpKind::Crash;
 		std::string exceptionName;
@@ -398,8 +398,9 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 		platform::requestReport(kind, true, u32(GetCurrentThreadId()), u64(reinterpret_cast<uintptr_t>(pointers)),
 		                        platform::killerLabel(), platform::moduleLabel(faultAddress), exceptionName, stack,
 		                        15000);
-		if(!stackFirst) {
-			// The dump is taken: now the symbols; the helper writes report.txt after the exit and reads it then
+		if(!stackFirst && !platform::reportHasStack()) {
+			// The helper walked no stack (#610: it does, out of process, for every exception): the symbols here,
+			// after the dump; the helper writes report.txt after the exit and reads it then
 			platform::flightRecord(platform::RecordKind::Note, "crash handler: stack", crashType);
 			platform::setReportStack(platform::symbolizedStack(pointers->ContextRecord));
 		}

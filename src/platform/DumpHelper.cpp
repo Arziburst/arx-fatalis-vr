@@ -134,6 +134,7 @@ std::atomic<bool> g_requestInFlight(false);
 // arx.pdb is read at the first lookup, inside the crash handler
 HANDLE g_symProcess = nullptr;
 bool g_symReady = false;
+bool g_failInProcessStack = false;
 
 void initializeSymbols() {
 	g_symProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, GetCurrentProcessId());
@@ -512,15 +513,40 @@ std::string killerLabel() {
 	return std::to_string(tid) + " start " + threadStartLabel(isExit);
 }
 
-std::string symbolizedStack(const void * contextIn) {
+namespace {
+
+#if ARX_ARCH == ARX_ARCH_X86_64
+
+// "<module file>+0x<offset>" from DbgHelp's module list of \a process (the helper's view of the game), else
+// "0x<address>"
+std::string symbolModuleLabel(HANDLE process, u64 address) {
+	char buffer[64];
+	IMAGEHLP_MODULEW64 module;
+	std::memset(&module, 0, sizeof(module));
+	module.SizeOfStruct = sizeof(module);
+	if(SymGetModuleInfoW64(process, address, &module) == TRUE && module.BaseOfImage != 0) {
+		const wchar_t * file = module.ImageName[0] ? module.ImageName : module.ModuleName;
+		for(const wchar_t * c = file; *c != L'\0'; c++) {
+			if(*c == L'\\' || *c == L'/') {
+				file = c + 1;
+			}
+		}
+		char name[MAX_PATH];
+		int n = WideCharToMultiByte(CP_UTF8, 0, file, -1, name, int(sizeof(name)), nullptr, nullptr);
+		std::snprintf(buffer, sizeof(buffer), "+0x%llx", static_cast<unsigned long long>(address - module.BaseOfImage));
+		return (n > 1 ? std::string(name, size_t(n - 1)) : std::string("?")) + buffer;
+	}
+	std::snprintf(buffer, sizeof(buffer), "0x%llx", static_cast<unsigned long long>(address));
+	return buffer;
+}
+
+/*
+ * The stack of \a context in \a process, one "  #<n> <module>+0x<offset> <function> (<file>:<line>)" line per
+ * frame: the game's own (in process, its modules named by moduleLabel) or the helper's walk of the game (#610)
+ */
+std::string walkStack(HANDLE process, HANDLE thread, CONTEXT & context, bool symbols, bool inProcess) {
 
 	std::string out;
-	#if ARX_ARCH == ARX_ARCH_X86_64
-	if(!contextIn) {
-		return out;
-	}
-	CONTEXT context;
-	std::memcpy(&context, contextIn, sizeof(context));
 
 	STACKFRAME64 frame;
 	std::memset(&frame, 0, sizeof(frame));
@@ -531,20 +557,16 @@ std::string symbolizedStack(const void * contextIn) {
 	frame.AddrStack.Offset = context.Rsp;
 	frame.AddrStack.Mode = AddrModeFlat;
 
-	HANDLE process = g_symProcess ? g_symProcess : GetCurrentProcess();
-	if(g_symReady) {
-		// Modules loaded since the start (the OpenXR runtime, a driver): named too
-		SymRefreshModuleList(process);
-	}
 	for(int i = 0; i < 64; i++) {
-		BOOL ok = StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, GetCurrentThread(), &frame, &context, nullptr,
+		BOOL ok = StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, thread, &frame, &context, nullptr,
 		                      SymFunctionTableAccess64, SymGetModuleBase64, nullptr);
 		if(ok != TRUE || frame.AddrPC.Offset == 0) {
 			break;
 		}
 		DWORD64 address = frame.AddrPC.Offset;
-		std::string line = "  #" + std::to_string(i) + " " + moduleLabel(u64(address));
-		if(g_symReady) {
+		std::string line = "  #" + std::to_string(i) + " "
+		                   + (inProcess ? moduleLabel(u64(address)) : symbolModuleLabel(process, u64(address)));
+		if(symbols) {
 			alignas(SYMBOL_INFO) char buffer[sizeof(SYMBOL_INFO) + 512] = {};
 			SYMBOL_INFO * symbol = reinterpret_cast<SYMBOL_INFO *>(buffer);
 			symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
@@ -575,10 +597,45 @@ std::string symbolizedStack(const void * contextIn) {
 		out += line;
 		out.push_back('\n');
 	}
+
+	return out;
+}
+
+#endif // ARX_ARCH_X86_64
+
+} // anonymous namespace
+
+std::string symbolizedStack(const void * contextIn) {
+
+	#if ARX_ARCH == ARX_ARCH_X86_64
+	if(!contextIn) {
+		return std::string();
+	}
+	if(g_failInProcessStack) {
+		// "crash ntdll" (#610): the in-process walk faults, as it did on a corrupt heap - the report must not need it
+		volatile int * nothing = nullptr;
+		*nothing = 1;
+	}
+	CONTEXT context;
+	std::memcpy(&context, contextIn, sizeof(context));
+	HANDLE process = g_symProcess ? g_symProcess : GetCurrentProcess();
+	if(g_symReady) {
+		// Modules loaded since the start (the OpenXR runtime, a driver): named too
+		SymRefreshModuleList(process);
+	}
+	return walkStack(process, GetCurrentThread(), context, g_symReady, true);
 	#else
 	ARX_UNUSED(contextIn);
+	return std::string();
 	#endif
-	return out;
+}
+
+void failInProcessStackForTest() noexcept {
+	g_failInProcessStack = true;
+}
+
+bool reportHasStack() noexcept {
+	return g_shared && g_shared->stack[0] != '\0';
 }
 
 // =====================================================================================================
@@ -830,6 +887,51 @@ bool writeMinidump(HANDLE game, DumpShared * shared, const std::wstring & path) 
 	return true;
 }
 
+/*
+ * The faulting thread's stack, walked and symbolised here, out of the game (#610): the game is waiting in its
+ * crash handler, its memory is all there, and the helper's heap is sound. The game's own walk allocates from the
+ * heap the crash may have corrupted - a heap corruption faulted in it and left the report without a stack.
+ * Empty when the request has no exception (an exit, a hang) or the context cannot be read.
+ */
+std::string helperStack(HANDLE game, const DumpShared & shared) {
+
+	#if ARX_ARCH == ARX_ARCH_X86_64
+	if(shared.exceptionPointers == 0) {
+		return std::string();
+	}
+	EXCEPTION_POINTERS pointers;
+	SIZE_T read = 0;
+	if(!ReadProcessMemory(game, reinterpret_cast<LPCVOID>(static_cast<uintptr_t>(shared.exceptionPointers)), &pointers,
+	                      sizeof(pointers), &read) || read != sizeof(pointers) || !pointers.ContextRecord) {
+		return std::string();
+	}
+	CONTEXT context;
+	if(!ReadProcessMemory(game, pointers.ContextRecord, &context, sizeof(context), &read) || read != sizeof(context)) {
+		return std::string();
+	}
+
+	// The game's modules, enumerated through its handle; arx.pdb from the executable's folder
+	std::wstring path = shared.exePath;
+	size_t slash = path.find_last_of(L"\\/");
+	path = (slash == std::wstring::npos) ? std::wstring() : path.substr(0, slash);
+	SymSetOptions(SYMOPT_UNDNAME | SYMOPT_LOAD_LINES | SYMOPT_DEFERRED_LOADS | SYMOPT_FAIL_CRITICAL_ERRORS
+	              | SYMOPT_NO_PROMPTS);
+	bool symbols = SymInitializeW(game, path.empty() ? nullptr : path.c_str(), TRUE) == TRUE;
+	HANDLE thread = OpenThread(THREAD_QUERY_INFORMATION | THREAD_GET_CONTEXT, FALSE, shared.faultThreadId);
+	std::string stack = walkStack(game, thread, context, symbols, false);
+	if(thread) {
+		CloseHandle(thread);
+	}
+	if(symbols) {
+		SymCleanup(game);
+	}
+	return stack;
+	#else
+	ARX_UNUSED(game), ARX_UNUSED(shared);
+	return std::string();
+	#endif
+}
+
 std::string exitText(DWORD code) {
 	char buffer[64];
 	std::snprintf(buffer, sizeof(buffer), "%d (0x%x)", int(s32(code)), unsigned(code));
@@ -1022,6 +1124,8 @@ std::string exceptionCodeName(u32) { return std::string(); }
 std::string threadStartLabel(bool & isExit) { isExit = false; return std::string(); }
 std::string killerLabel() { return std::string(); }
 std::string symbolizedStack(const void *) { return std::string(); }
+bool reportHasStack() noexcept { return false; }
+void failInProcessStackForTest() noexcept { }
 
 #endif // ARX_PLATFORM_WIN32
 
@@ -1102,6 +1206,12 @@ int runDumpHelper(int argc, char ** argv) {
 			bool haveDump = false;
 			if(!folder.empty() && wantDump) {
 				haveDump = writeMinidump(game, shared, folder + L"\\" + dumpName);
+			}
+			// A crash's stack, walked here while the game waits (#610): the game walks it itself only when this
+			// found none
+			if(!shared->stack[0]) {
+				std::string stack = helperStack(game, *shared);
+				copyNarrow(shared->stack, sizeof(shared->stack), stack);
 			}
 
 			if(final) {

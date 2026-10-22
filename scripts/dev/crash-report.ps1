@@ -16,7 +16,9 @@
 	scripts/dev/replay.ps1 plays it) and, when the game was still there to dump, the minidump named by dump=.
 
 	This prints one report. With a cdb.exe it symbolises the dump's stack; without one (or without a dump) it
-	prints the stack report.txt already holds (the game symbolised arx.exe's frames with DbgHelp at the crash).
+	prints the stack report.txt already holds (the dump helper walked and symbolised it out of process at the crash,
+	#610). cdb gets the build's arx.pdb and arx.exe from the symbol archive (the exe's hash, report.txt exehash=) and
+	Microsoft's public symbols for the system's frames (cached under the tools directory).
 	Nothing it prints holds a user path, the account name or the machine name (Protect-ArxText,
 	scripts/dev/log-digest-lib.ps1), even when a report file does. Covered by scripts/dev/test-crash-report.ps1;
 	scripts/dev/flight-recorder-check.ps1 runs it on the real reports.
@@ -30,18 +32,25 @@
 
 .PARAMETER Cdb
 	The debugger to symbolise the dump with; "none" never runs one. Default: a cdb.exe that is installed (the
-	Windows SDK debuggers or WinDbg), else none.
+	Windows SDK debuggers, WinDbg, or the pinned one in %LOCALAPPDATA%\ArxFatalisVR\tools - see -InstallCdb), else none.
+
+.PARAMETER InstallCdb
+	Install the pinned cdb.exe first when it is not there (scripts/dev/debugger-lib.ps1: Microsoft's WinDbg bundle,
+	1.2 GB once, SHA-256 and signature checked) and symbolise with it.
 
 .EXAMPLE
 	.\scripts\dev\crash-report.ps1
 .EXAMPLE
 	.\scripts\dev\crash-report.ps1 -Path <folder> -Cdb none
+.EXAMPLE
+	.\scripts\dev\crash-report.ps1 -Path <folder> -InstallCdb
 #>
 [CmdletBinding()]
 param(
 	[string]$UserDir,
 	[string]$Path,
-	[string]$Cdb
+	[string]$Cdb,
+	[switch]$InstallCdb
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,6 +59,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\build-paths.ps1')
 . (Join-Path $PSScriptRoot 'perf-summary-lib.ps1')
 . (Join-Path $PSScriptRoot 'log-digest-lib.ps1')
+. (Join-Path $PSScriptRoot 'debugger-lib.ps1')
 
 # Every line out goes through the scrubber: a report file may hold a path the public repo must not (#387)
 function Emit([string]$Line = '') {
@@ -88,7 +98,7 @@ function Find-Cdb {
 		$candidate = Join-Path $base 'Windows Kits\10\Debuggers\x64\cdb.exe'
 		if (Test-Path -LiteralPath $candidate) { return $candidate }
 	}
-	$null
+	Get-ArxToolsCdb
 }
 
 # --- Resolve the report ------------------------------------------------------------------------------
@@ -132,6 +142,7 @@ Emit "Faulting module: $($fields['module'])"
 
 # --- The stack: cdb if there is one and a dump, else report.txt's own --------------------------------
 
+if ($InstallCdb -and $Cdb -ne 'none' -and -not (Find-Cdb)) { $null = Install-ArxCdb }
 if (-not $PSBoundParameters.ContainsKey('Cdb') -or $Cdb -eq '') { $Cdb = Find-Cdb }
 $dumpName = "$($fields['dump'])"
 $dumpFile = if ($dumpName -and $dumpName -ne 'none') { Join-Path $folder $dumpName } else { $null }
@@ -141,14 +152,20 @@ $cdbExe = if ($Cdb -and $Cdb -ne 'none') { $Cdb } else { $null }
 if ($cdbExe -and $haveDump) {
 	Emit 'Stack (cdb):'
 	# -z <dump> -c "<commands>; q": the faulting thread's stack with source lines, then quit. The symbols: the
-	# arx.pdb archived under the exe's hash (report.txt exehash=, scripts/launch-lib.ps1 Save-ArxSymbolArchive)
-	$cdbArgs = @('-z', $dumpFile, '-lines', '-n')
+	# arx.pdb archived under the exe's hash (report.txt exehash=, scripts/launch-lib.ps1 Save-ArxSymbolArchive), and
+	# Microsoft's public ones; the image: the archived arx.exe (-i), whose unwind data the x64 walk needs (#610)
+	$cdbArgs = @('-z', $dumpFile, '-lines')
+	$symbolFolders = @()
 	$exeHash = "$($fields['exehash'])".Trim().ToLowerInvariant()
 	if ($exeHash -match '^[0-9a-f]{64}$') {
 		$symbolDir = Join-Path $env:LOCALAPPDATA "ArxFatalisVR\symbols\$exeHash"
-		if (Test-Path -LiteralPath (Join-Path $symbolDir 'arx.pdb')) { $cdbArgs += @('-y', $symbolDir) }
+		if (Test-Path -LiteralPath (Join-Path $symbolDir 'arx.pdb')) { $symbolFolders += $symbolDir }
+		if (Test-Path -LiteralPath (Join-Path $symbolDir 'arx.exe')) { $cdbArgs += @('-i', $symbolDir) }
 	}
-	$cdbArgs += @('-c', '~#k; q')
+	$cdbArgs += @('-y', (Get-ArxCdbSymbolPath $symbolFolders))
+	# An exception: the stack of its context (the faulting frames, not the crash handler's); else the event's thread
+	$commands = if ($fields.Contains('exception') -and $fields['exception']) { '.ecxr; kn 64; q' } else { '~#kn 64; q' }
+	$cdbArgs += @('-c', $commands)
 	$cdbOutput = @()
 	try {
 		$cdbOutput = @(& $cdbExe @cdbArgs 2>&1 | ForEach-Object { "$_" })

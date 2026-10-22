@@ -321,7 +321,7 @@ Enabled by `arx.exe --test-dir <dir>`; off otherwise (no files, no cost). While 
 | `mark <text>` | `[mark] <text>` in the log — an anchor for "the line I wait for must come after this"; also an `M` line in [the performance log](#the-performance-log-arx-perflog-327) |
 | `stall <ms>` | the main thread sleeps 1..60000 ms in this frame: a forced hitch, which the performance log must mark with `cause=channel` (#327); over the watchdog's threshold (6000) it forces a hang report with a dump (#545, `hang-dump.xrs`) |
 | `leak <MiB>` | allocate and touch 1..4096 MiB of private memory and keep it until the exit: the `R` lines of the performance log show the step, `perf-summary.ps1` the trend (#545) |
-| `abort`, `terminate`, `terminate thread`, `heapcorrupt`, `exitprocess <code>` | end the game on purpose for the crash-report checks (#545, `flight-recorder-check.ps1`): `abort()`, `std::terminate()` on the main thread or on a new `std::thread`, a heap corruption the heap detects (`STATUS_HEAP_CORRUPTION`), a thread that starts straight at `ExitProcess` (the #544 shape, caught by the ExitGuard). Each leaves one `crashes\<utc>\` report; the killing ones never get an ack |
+| `abort`, `terminate`, `terminate thread`, `heapcorrupt`, `crash ntdll`, `exitprocess <code>` | end the game on purpose for the crash-report checks (#545, `flight-recorder-check.ps1`): `abort()`, `std::terminate()` on the main thread or on a new `std::thread`, a heap corruption the heap detects (`STATUS_HEAP_CORRUPTION`), an access violation inside ntdll with an in-process stack walk that faults too (#610: the report's stack must come from the dump helper), a thread that starts straight at `ExitProcess` (the #544 shape, caught by the ExitGuard). Each leaves one `crashes\<utc>\` report; the killing ones never get an ack |
 | `crashnotice ok`, `crashnotice open` | the buttons of the next-launch crash notice at the main menu (#545, M6): OK dismisses it (every announced report gets `notice-shown.txt`), Open folder opens the report; `crashNotice.state` / `.report` in the status; `scripts/dev/crash-notice-check.ps1` |
 | `stall load <ms>` | the **next level load** sleeps 1..5000 ms right after its `Loading level` line: a stalled load for the [hang watchdog](#the-hang-watchdog-440) (#440, `level-load-hang.xrs`) |
 | `watchdog <ms>` | the hang watchdog's threshold, 100..60000 ms (default 5000): a main thread without a beat for this long is reported with its stack (#440); `hangWatchdog.thresholdMs` in the status |
@@ -1389,10 +1389,20 @@ by `N` / `<path>`); a family seen fewer than 6 times is printed in full and in o
 
 **Signatures.** A problem is a `[W]`, `[E]` or `[C]` line, or a crash report. Its signature is the
 level + the source file (not the line number, which moves with every edit) + the message with numbers,
-hex, ids and paths normalised, hashed to 12 hex digits; for a crash the title, the exception and the top
-four frames of `arx.exe` without line numbers. `%LOCALAPPDATA%\ArxFatalisVR\signatures.json` remembers
-every signature (first and last seen, in how many runs, the issue number). A run that is digested twice
-counts once.
+hex, ids and paths normalised, hashed to 12 hex digits. `%LOCALAPPDATA%\ArxFatalisVR\signatures.json`
+remembers every signature (first and last seen, in how many runs, the issue number). A run that is digested
+twice counts once.
+
+A **crash** signature (`Get-ArxCrashSignature`, #616) must be the same on every build, so it is keyed on the top
+5 symbolized frames of the dump helper's `crash.txt` as function + file: no module offsets (they move with
+every build), no line numbers, not the title's offset, not the exception code; an unsymbolized frame between
+symbolized ones is skipped. Only a report without any symbols falls back to the top 5 offsets. An empty stack and
+the crash processor's older `module!0xADDR File.cpp:12` format keep the key from before #616 (title, exception
+code, the first four files without addresses and line numbers). **One-time change:** a crash filed before #616
+(keyed on offsets, e.g. #601 and its duplicate #611) has a new signature, so it is filed once more by its next
+occurrence — a single new issue, marked `arxvr-auto-report: sig=<new hash>`; close it as a duplicate of the old one
+(or the old one of it). After that every build comments on that one issue. `scripts/dev/test-crash-signature.ps1`
+(in `run-script-tests.ps1`) checks the rule on fixture reports.
 
 **Automatic bug filing** — fully automatic, GitHub **REST** only (`gh api`; never GraphQL, whose quota the
 sessions share). The repository is **public** (since 2026-10-12), so every title, body and comment is
@@ -1999,6 +2009,7 @@ a run with shots reads UNDER-SUBMITTING — judge pacing without them. The shipp
 | `real-input` | a test run's window takes no real input and in VR no keyboard at all (#487), on the simulated headset from a development launch: the window `activation` never, `placement` corner, not focused; `realInput`, `desktopKeyboard` and `desktopMouse` ignored; with both hands behind the head a real Escape (`real-input`) and an injected one (`desktop-key`) are both dropped by VR (`desktopKeyboard.droppedKeys` + 2, both logged); real mouse moves, a left click and the wheel are dropped before the game's input (`realInput` counts, `desktopMouse.droppedButtons` unchanged, no menu page opened); the injected click still reaches the game's input (`desktopMouse.droppedButtons` + 1) and the right hand's trigger opens Options | — |
 | `real-input-flat` | the same flat (#487), `--no-vr`: the keyboard is not ignored for being a keyboard; the cursor on New game (`desktop-mouse at menu`), a real left click there opens nothing (`realInput.droppedButtons` + 1), a real move and the wheel leave the cursor on New game; the injected click opens the character creation, a real Escape leaves it open (`realInput.droppedKeys` + 1), the injected one goes back to the main menu; nothing dropped by the VR rules | — |
 | `level-load-hang` | a stalled level load is reported as a hang with its stack (#440): `watchdog 1000`, `stall load 3000`, `loadlevel 1` - `[hang] main thread stalled ... last beat at level load`, `platform::stallThisThread` and the load under it in the stack, `responsive again`, level 1 loaded, `hangWatchdog.stalls` ≥ 1 ([The hang watchdog](#the-hang-watchdog-440)) | — |
+| `level-init-targetless` | a level whose init casts a field, loaded with `loadlevel <n>` alone, does not crash (#601): level 20 at `marker_0903`, then `loadlevel 21` with no target (the level tour's crash in `FrustrumsClipSphere`); level 0 with no target; level 21 again with the player at `marker_0387`, inside the field's sphere - each with the init's `spell.cast spell=create_field` logged, GAMEPLAY, frames after it, the error count unchanged and no `[E]` / `[C]` line | — |
 | `scene-switches` | the switches of scripted scenes (#29): on the test save `scene-kultar` the defaults `hybrid` / `ignore` / `instant` / `above`, each `scene ...` command live (`scene cut fade` and back), `scene meter reset`; a `speak -c` line on Kultar: `vr.scene state=start kind=speech`, taken at once (`vr.scene.switch`, no cut, no fade frame), its subtitle event, `state=end`, the meter counted it, no letterbox; `playerlookat` counted with `ignore` (the yaw stays) and turned behind the fade with `fade` | — |
 | `scene-first` | the `first` view (#29) on `scene-kultar`: T1 - a walk into KULTAR_WAKE, Kultar's scene at the bars (camera entities, the hero teleported) seen from the hero's head: `kind=entity`, IK arms on, both eyes see the world, the teleport taken at once (no fade, `fadeFrames` 0, `unexplainedCuts` 0), the eyes 1.70 m above the floor, steps 0.009 cm, no yaw step, no letterbox; T5 - every `speak -c` mode on Kultar from the hero's head, the lines changing at once; in a line the stick turns the hero, the stick walk does not move him; T2 - a new game's prison intro from the pause menu, once per `firstlow` mode: `clamp` the eye never below 1.2 m, `black` held black (`blindFrames`) instead of a low eye, `screen` the intro on the screen; every view stays black while the hero stands off the level (the same T2 stretch ends `scene-ghost` and `scene-observer`); T5 with no blink between the lines (`cuts` 0, `fadeFrames` 0) | — |
 | `scene-ghost` | the `ghost` view (#29): dialogue first person as in `scene-observer` (T1, T5: no blink between the lines); T2 the prison intro, a cinematic shot, from the game's camera positions held at each shot's first frame and never lower than 1.2 m, IK arms off | — |
@@ -2552,7 +2563,11 @@ the kind of a report) - in per-thread lock-free rings (`src/platform/FlightRecor
 the out-of-process dump helper shares, so it can be read after the game is gone. It is written into the crash
 dump as a user stream and to `arx-recorder.txt` on every exit. `scripts/dev/crash-report.ps1` prints the newest
 report's kind, exit code, killer thread, faulting module and stack, the last 100 recorder events and the
-resource trend, all scrubbed of personal data (`Protect-ArxText`). `--no-recorder` turns the recorder and the
+resource trend, all scrubbed of personal data (`Protect-ArxText`). The stack of a crash is walked by the dump helper,
+out of the game's process, while the dump is taken (#610): it reads the exception's context from the game's memory and
+symbolises it with a heap of its own. The game walks it itself (DbgHelp in process) only when the helper found none -
+an in-process walk allocates from the heap the crash may have corrupted, and on #610's heap corruption it faulted,
+leaving `exit=1` and an empty stack. `--no-recorder` turns the recorder and the
 dump helper off (the overhead baseline).
 
 The kinds a report can have (`report.txt` `kind=`): `crash` (an exception, a heap corruption), `abort`,
@@ -2598,11 +2613,16 @@ full report without them) and neither ships to players:
   ```
 
 - **WinDbg / cdb** - a debugger lets `crash-report.ps1` symbolise a dump beyond what `report.txt` already
-  holds. Install it once: `winget install Microsoft.WinDbg`. Without it `crash-report.ps1` prints the stack the
-  game captured in `report.txt` (arx.exe frames already symbolised from the build's `arx.pdb`). The owner's
-  launches (`run-windows.ps1`, `test-pr.ps1`) archive each build's `arx.pdb` under its exe hash in
-  `%LOCALAPPDATA%\ArxFatalisVR\symbols\<sha256>\`, so a later report of that build can be symbolised even after
-  its build directory is gone.
+  holds: the frames of the exception's context (`.ecxr; kn`), ntdll's internal functions from Microsoft's public
+  symbols (cached in `%LOCALAPPDATA%\ArxFatalisVR\tools\symbols`). `crash-report.ps1 -InstallCdb` installs the
+  pinned one into `%LOCALAPPDATA%\ArxFatalisVR\tools\windbg-<version>\` (`scripts/dev/debugger-lib.ps1`, #610: a
+  1.2 GB download once, SHA-256 and Microsoft's signature checked; see the table of third-party tools); an installed
+  WinDbg (`winget install Microsoft.WinDbg`) or the SDK's debuggers are used as well. Without one `crash-report.ps1`
+  prints the stack in `report.txt` (symbolised by the dump helper from the build's `arx.pdb`). The owner's
+  launches (`run-windows.ps1`, `test-pr.ps1`) archive each build's `arx.pdb` and `arx.exe` under its exe hash in
+  `%LOCALAPPDATA%\ArxFatalisVR\symbols\<sha256>\` (the 20 newest builds, ~0.8 GB at most), so a later report of that
+  build can be symbolised even after its build directory is gone - the exe too, because cdb unwinds a minidump's x64
+  frames from the image's unwind data, which the pdb does not hold (#610).
 
 ## Record and replay (#550)
 
@@ -2787,13 +2807,16 @@ one OpenAL call on the press frame; its time is in the log line `... (the microp
 ### Third-party tools downloaded by scripts
 
 Nothing of these is in the repository (it is public and they are large); a script downloads each on first use from
-the pinned URL, checks the SHA-256 and caches it. The pins live in `scripts/dev/transcribe-lib.ps1`.
+the pinned URL, checks the SHA-256 and caches it. The pins live in `scripts/dev/transcribe-lib.ps1` and, for the
+debugger, `scripts/dev/debugger-lib.ps1` (downloaded only on `crash-report.ps1 -InstallCdb`; its `cdb.exe` must also
+carry Microsoft's signature).
 
 | Name | Version | URL | Licence | SHA-256 |
 |---|---|---|---|---|
 | whisper.cpp (`whisper-bin-x64.zip`: `whisper-cli.exe`, CPU) | v1.9.2 | https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip | MIT | `49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a` |
 | Whisper large-v3-turbo, q8_0 (`ggml-large-v3-turbo-q8_0.bin`, 874 MB) | HF `ggerganov/whisper.cpp` rev `5359861c739e955e79d9a303bcbc70fb988958b1` | https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q8_0.bin | MIT | `317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1` |
 | Silero VAD v6.2.0 for whisper.cpp (`ggml-silero-v6.2.0.bin`) | HF `ggml-org/whisper-vad` rev `9ffd54a1e1ee413ddf265af9913beaf518d1639b` | https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin | MIT | `2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987` |
+| WinDbg (`windbg.msixbundle`; `amd64\` of its x64 package: `cdb.exe`, `dbgeng.dll`, `dbghelp.dll`, `symsrv.dll`, 1.2 GB download) | 1.2610.1001.0 | https://windbg.download.prss.microsoft.com/dbazure/prod/1-2610-1001-0/windbg.msixbundle | Microsoft software licence (free; not redistributed) | `4662ae17bc0dc77db987b89cccea32c30058baa06268f861d09e0ab4e4f45c20` |
 
 Vendored in the repository instead (small, compiled in): `stb_image_write.h` v1.16 (`libs/stb/`, from
 nothings/stb at `1ee679ca2ef753a528db5ba6801e1067b40481b8`; public domain or MIT, notice in `LICENSE.stb`) - the

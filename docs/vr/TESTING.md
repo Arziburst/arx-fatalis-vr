@@ -2240,6 +2240,18 @@ A pull request proves its own change; the whole suite runs once more right befor
 | `pr` | a pull request without the label `full-ci`; `ci-local.ps1` (below) | the **selection**: the core, every sequence a line of the map gives for a changed path, and the changed or added `.xrs` files themselves (a changed read-back selects its sequence; the save library when a selected sequence has a `@save`) |
 | `full` | a push to main, a manual run with `suite=full` (**the merge gate**), a pull request with the label `full-ci`, `ci-local.ps1 -Full` | every phase |
 
+**A push to main does not repeat the merge gate (#541).** The gate ran the full suite on the pull request's head right
+before the merge, and the merge commit usually has that very tree. So the push run's step *Equal tree* lists the last 30
+successful manual runs of the workflow, takes those whose title says `suite=full` (the workflow's `run-name` names a
+manual run's suite: `<branch> suite=full`) and compares their trees with `HEAD^{tree}`
+(`scripts/dev/ci-skip-equal-tree.ps1`, self-test `test-ci-skip-equal-tree.ps1`). Any of them on the same tree, not only
+the latest (the single runner often runs a merged pull request's push run after the next one's gate): the game checks
+step is skipped, the log, a notice and the job summary name that run (`the merge gate run 123... passed them on this
+tree ...`). The script self-tests, the build with `arxtest` and the tester package still run, and the job - the required
+check - reports its result as always. Everything runs as before when no such run had the tree, and on any doubt: the
+runs or a tree cannot be read, or the step itself fails. The gate's head commit is not in the push run's depth-1
+checkout, so a run's tree comes from the API (the run's `head_commit.tree_id`, else the commit).
+
 The workflow's Scope step decides (its log line `game check suite: pr (...)` says why); the label is read live through
 the API, so adding `full-ci` and re-running the PR's last run (`gh run rerun <id>`) or pushing runs everything. A
 selection falls back to everything when it cannot be sure: a changed path that no line of the map matches (a new

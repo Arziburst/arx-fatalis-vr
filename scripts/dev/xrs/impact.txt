@@ -215,6 +215,7 @@ scripts/dev/test-*.ps1 -> core
 scripts/dev/board.ps1 -> core
 scripts/dev/body-check.ps1 -> core
 scripts/dev/check-private-data.ps1 -> core
+scripts/dev/ci-skip-equal-tree.ps1 -> core
 scripts/dev/comfort-check.ps1 -> core
 scripts/dev/cycle-report.ps1 -> core
 scripts/dev/exit-trace-check.ps1 -> core

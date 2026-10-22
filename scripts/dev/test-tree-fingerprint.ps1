@@ -11,6 +11,8 @@
 	  - no change since the build (clean and dirty): fresh, no rebuild
 	  - an untracked file appearing, a staged edit, a deleted file: stale
 	  - a stamp without a fingerprint (an old build): stale
+	  - the AddressSanitizer build directory (<Config>-asan, #618): the stale message names -Asan, -Rebuild rebuilds
+	    that directory (not <Config>); -Rebuild of a directory it would not build is refused
 	  - the fingerprint of the real working copy takes well under a second
 	Exit code 0 when everything passed, 1 otherwise.
 #>
@@ -43,10 +45,10 @@ try {
 	$counter = Join-Path $root 'builds.txt'
 	# the stub build: the stamp lines of build-windows.ps1, plus a run counter
 	Set-Content (Join-Path $repo 'scripts\build-windows.ps1') @"
-param([string]`$Config = 'Release')
+param([string]`$Config = 'Release', [switch]`$Asan)
 . '$libPath'
 `$src = Split-Path -Parent `$PSScriptRoot
-`$dir = Get-DefaultBuildDir `$src `$Config
+`$dir = "`$(Get-DefaultBuildDir `$src `$Config)`$(if (`$Asan) { '-asan' })"
 New-Item -ItemType Directory -Force `$dir | Out-Null
 Set-Content (Join-Path `$dir 'arx.exe') 'x'
 `$fp = Get-ArxTreeFingerprint `$src
@@ -98,6 +100,30 @@ Add-Content '$counter' 'x'
 	& $assert -Rebuild | Out-Null
 	Set-Content (Join-Path $build 'built-from.txt') $head -NoNewline
 	Check 'an old stamp without a fingerprint: stale' (& $isStale)
+
+	Write-Host '--- the AddressSanitizer build directory (#618)'
+	& $assert -Rebuild | Out-Null
+	$releaseStamp = Get-Content (Join-Path $build 'built-from.txt') -Raw
+	$asanBuild = "$build-asan"
+	$assertAsan = { param([switch]$Rebuild) Assert-ArxFreshBuild -SourceDir $repo -BuildDir $asanBuild -Config Release -Head $head -Rebuild:$Rebuild 6>$null }
+	$asanError = { try { & $assertAsan | Out-Null; '' } catch { "$_" } }
+	& (Join-Path $repo 'scripts\build-windows.ps1') -Asan | Out-Null
+	Check 'asan build, no change: fresh' (-not (& $asanError))
+	Add-Content (Join-Path $repo 'a.cpp') '// edit 3'
+	$message = & $asanError
+	Check 'asan build, then an edit: stale, the message names -Asan' ($message -match 'stale build' -and $message -match 'build-windows\.ps1 -Config Release -Asan') $message
+	$n = & $builds
+	& $assertAsan -Rebuild | Out-Null
+	Check 'the edit, -Rebuild of the asan directory: rebuilt once' ((& $builds) -eq $n + 1)
+	Check 'the asan directory is fresh after the rebuild' (-not (& $asanError))
+	Check 'the Release directory was not the one rebuilt' ((Get-Content (Join-Path $build 'built-from.txt') -Raw) -eq $releaseStamp)
+	$other = "$build-other"
+	New-Item -ItemType Directory -Force $other | Out-Null
+	Set-Content (Join-Path $other 'arx.exe') 'x'
+	Set-Content (Join-Path $other 'built-from.txt') $head -NoNewline
+	$n = & $builds
+	$message = try { Assert-ArxFreshBuild -SourceDir $repo -BuildDir $other -Config Release -Head $head -Rebuild 6>$null | Out-Null; '' } catch { "$_" }
+	Check 'a directory -Rebuild would not build: refused, nothing built' ($message -match '-Rebuild builds only' -and (& $builds) -eq $n) $message
 
 	Write-Host '--- the cost on the real working copy'
 	$real = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)

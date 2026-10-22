@@ -252,6 +252,11 @@ void ARX_INTERACTIVE_Show_Hide_1st(Entity * io, bool hide1st) {
 		return;
 	}
 
+	// The bind appends the neck cap to the face list: before the walks below, never inside them (#618)
+	if(headOnly) {
+		vr::bindPlayerModel(io->obj);
+	}
+
 	// Another set of faces: show everything the old set hid before hiding the new one
 	if(HERO_HIDE_HEAD_ONLY != headOnly) {
 		for(EERIE_FACE & face : io->obj->facelist) {

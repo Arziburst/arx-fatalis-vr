@@ -221,8 +221,6 @@ $exe = Join-Path $BuildDir 'arx.exe'
 if (-not $TestDir) { $TestDir = Get-ArxTestDir }
 if ($UserDir -and $Shared) { throw '-UserDir and -Shared exclude each other' }
 $userDirKind = if ($Shared) { 'shared' } elseif ($UserDir) { 'given' } elseif ($sequenceToRun) { 'fresh for the sequence' } else { 'isolated' }
-# A sequence runs in a fresh user dir of its own, as in CI (#494); -Repeat runs share it
-$UserDir = Resolve-ArxRunUserDir -UserDir $UserDir -Shared:$Shared -Sequence $(if ($sequenceToRun) { $sequenceToRun.Name })
 if ($Shared -and ($Saves -or $Save)) { throw '-Saves / -Save copy saves into the isolated user directory; they cannot be combined with -Shared' }
 if ($Save -and $Saves) { throw '-Save and -Saves exclude each other' }
 # The simulated headset (#112): a script path, or a name in scripts\dev\vrsim
@@ -247,15 +245,6 @@ $loadsSomething = ($ArxArgs -join ' ') -match '--load(level|slot|save)'
 $expectedStates = if ($loadsSomething) { @('GAMEPLAY', 'CINEMATIC') } else { @('MENU') }
 # A player's launch starts with the publisher logos (#394): the checks start as soon as the first one is up
 if ($Player -and -not $loadsSomething) { $expectedStates = @('LOGO', 'MENU') }
-
-$log = Get-ArxLogPath $UserDir
-$crashDir = Get-ArxCrashDir $UserDir
-if (-not $Shared) {
-	New-Item -ItemType Directory -Force $UserDir | Out-Null
-	if ($Saves) { Copy-ArxSaves -Names $Saves -UserDir $UserDir -Library $SaveLibrary }
-	if ($Save) { Use-ArxSave -Name $Save -UserDir $UserDir -Library $SaveLibrary }
-}
-Write-Host "build: $(ConvertTo-ShortSha $stamp) ($($copy.Branch));  user dir: $UserDir ($userDirKind);  test channel: $TestDir"
 
 function Write-Check([bool]$Ok, [string]$Text) {
 	if ($Ok) { Write-Host "  [ok]   $Text" -ForegroundColor Green } else { Write-Host "  [FAIL] $Text" -ForegroundColor Red }
@@ -591,6 +580,17 @@ Write-Host "game lock: slot $($lock.Slot)$(if ($lock.Vr) { ' + VR lock' }) ($(Ge
 
 $results = @()
 try {
+	# The user dir once the lock is held: a sequence's fresh one (#494; -Repeat runs share it) is emptied here, never
+	# under a game of this copy that still runs in it - a second run waits for the lock first
+	$UserDir = Resolve-ArxRunUserDir -UserDir $UserDir -Shared:$Shared -Sequence $(if ($sequenceToRun) { $sequenceToRun.Name })
+	$log = Get-ArxLogPath $UserDir
+	$crashDir = Get-ArxCrashDir $UserDir
+	if (-not $Shared) {
+		New-Item -ItemType Directory -Force $UserDir | Out-Null
+		if ($Saves) { Copy-ArxSaves -Names $Saves -UserDir $UserDir -Library $SaveLibrary }
+		if ($Save) { Use-ArxSave -Name $Save -UserDir $UserDir -Library $SaveLibrary }
+	}
+	Write-Host "build: $(ConvertTo-ShortSha $stamp) ($($copy.Branch));  user dir: $UserDir ($userDirKind);  test channel: $TestDir"
 	for ($run = 1; $run -le $Repeat; $run++) {
 		$results += Invoke-SmokeRun $run
 		if ($run -lt $Repeat) { Start-Sleep -Seconds 2 }

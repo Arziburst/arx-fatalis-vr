@@ -36,3 +36,8 @@
 # which has none there, and camera_0035's intro (#intro_played still 0) plays it 2 s later. Upstream code and the
 # original scripts, unchanged by us; a player meets level 1 first through New game, where the intro works
 ^\[W\] ScriptedAnimation:\d+\s+\[marker_0495:\d+\] playanim: animation action1 not loaded$
+
+# The desktop mouse left the window in relative input mode (a test run's window without the focus, another app on
+# top): logged once per episode by design (Input.cpp), the cursor is centred again. Closed as noise in the triage of
+# 2026-10-22 (#198, the owner confirmed); the digest reopened it from a smoke test the same day
+^\[W\] Input:\d+\s+Cursor escaped the window while in relative input mode$

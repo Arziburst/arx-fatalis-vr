@@ -19,7 +19,7 @@
 #   @until <path> <op> <v> [<n>s]  wait up to n seconds (default 30) for status.json to satisfy the condition
 #   @assert <path> <op> <v>        status.json, read fresh now. path: dotted, "quoted" where a key holds a dot
 #                                  (events.byName."spell.cast"); op: eq ne gt ge lt le. Right after a @log match it
-#                                  judges a status BUILT after the matched line (status wallMs, #528), waiting up to 10 s
+#                                  judges a status BUILT after the read that found the line (status wallMs, #528), waiting up to 10 s
 #   @remember <name> <path>        keep a status.json value (after a @log match: as @assert, #528); a later @assert / @until value can be {name} or {name+5} / {name-5}
 #                                  / {name*0.9} (the yaw before a turn, the position before a walk; *: relative)
 #   @mark                          forget the arx.log written so far: @log and @nolog only look at what the
@@ -305,11 +305,11 @@ function Read-XrsJudgedStatus($Context) {
 	if ($null -eq $after) { return Read-XrsStatus $Context.TestDir }
 	$Context.LogMatchMs = $null
 	try {
-		return Wait-ArxStatus { param($s) $s.PSObject.Properties['wallMs'] -and [int64]$s.wallMs -ge $after } -TimeoutSec $script:XrsFreshStatusSec -Dir $Context.TestDir -What 'a status built after the @log match'
+		return Wait-ArxStatus { param($s) $s.PSObject.Properties['wallMs'] -and [int64]$s.wallMs -gt $after } -TimeoutSec $script:XrsFreshStatusSec -Dir $Context.TestDir -What 'a status built after the @log match'
 	} catch {
 		$last = Read-ArxStatus $Context.TestDir
 		$lastText = if ($last -and $last.PSObject.Properties['wallMs']) { "wallMs $($last.wallMs)" } elseif ($last) { 'no wallMs' } else { 'no status.json' }
-		throw "no status built after the @log match (wallMs >= $after) within $($script:XrsFreshStatusSec) s (last status: $lastText)"
+		throw "no status built after the @log match (wallMs > $after) within $($script:XrsFreshStatusSec) s (last status: $lastText)"
 	}
 }
 
@@ -320,8 +320,8 @@ function New-XrsContext([string]$TestDir, [string]$LogPath, [scriptblock]$Out) {
 		TestDir = $TestDir
 		LogPath = $LogPath
 		LogMark = [long](Get-XrsLogLength $LogPath)
-		# Set by a @log match: the wall clock (Unix ms) of the read that found the line; the next @assert / @remember waits
-		# for a status built at or after it (#528)
+		# Set by a @log match: the wall clock (Unix ms) right after the read that found the line; the next @assert /
+		# @remember waits for a status built after it (#528)
 		LogMatchMs = $null
 		Vars    = @{}
 		Out     = if ($Out) { $Out } else { { param($Text, $Color) Write-Host $Text -ForegroundColor $Color } }
@@ -373,11 +373,10 @@ function Invoke-XrsStep($Context, $Step) {
 		'log' {
 			$deadline = (Get-Date).AddSeconds($Step.Seconds)
 			do {
-				# Taken before the read: a line this read finds was in arx.log at this moment (#528)
-				$readMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 				$text = Read-XrsLogSince $Context.LogPath $Context.LogMark
 				$hit = [regex]::Match($text, $Step.Regex)
-				if ($hit.Success) { break }
+				# Taken after the read that found the line: the line was in arx.log before this moment (#528)
+				if ($hit.Success) { $readMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(); break }
 				Start-Sleep -Milliseconds 250
 			} while ((Get-Date) -lt $deadline)
 			if (-not $hit.Success) { throw "LOG FAILED: no log line matched /$($Step.Regex)/ within $($Step.Seconds) s of the mark" }

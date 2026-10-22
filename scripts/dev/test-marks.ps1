@@ -9,7 +9,11 @@
 	(10 s before the press to the release, a "# hold: <pressMs> <releaseMs>" header line), snap-+NN.Ns.jpg (the offset
 	from the press), note.wav, and transcript.txt once transcribed (scripts/dev/transcribe.ps1; test-transcribe.ps1).
 	meta.txt adds kind=press|hold, pressMs=, releaseMs= (the clip's clock). The #551 part of the listing below stays;
-	the #574 part (written before the implementation):
+	the #574 part (written before the implementation) too. #632 (written before the implementation) makes the gesture a
+	toggle: one press of both trackpads starts a recording, the same press again (or the 1 minute cap) stops it - no
+	hold, no snapshot-only short press. A recording's folder is a #574 hold's (kind=hold, the "# hold:" line, the
+	snapshots, note.wav with a microphone), so the listing stays; the #574 short press's fixture stays as an older
+	build's mark. The help text says so (the checks at the end):
 
 	marks.ps1 [-UserDir <dir>] [-ToolsDir <dir>] [-Transcribe] [-Copy ...]
 	  - -ToolsDir: transcribe.ps1's tools directory (default %LOCALAPPDATA%\ArxFatalisVR\tools). When the tools are
@@ -371,6 +375,37 @@ try {
 	$run = Invoke-Marks @('-UserDir', $user)
 	Check ((Get-MarkSection $run $first) -match '(?m)^  Kind: unknown\s*$') 'a #551 mark: Kind: unknown'
 
+	# --- #632: the toggle - a recording from one press of both trackpads to the next (or the 1 minute cap). Its folder
+	# is #574's hold's (kind=hold, pressMs = the start, releaseMs = the stop, the "# hold:" line), so it lists the same
+	# way; here one as the simulated headset writes it: no microphone, so no note.wav (and the stop at the cap)
+	Write-Host '==> #632: a toggle recording without a note (as the simulated headset writes one)'
+	$v3 = Join-Path $root 'user-632'
+	$recMark = '20261022T091500Z-1'
+	$dir = Join-Path (Join-Path $v3 'marks') $recMark
+	New-Item -ItemType Directory -Force $dir | Out-Null
+	[IO.File]::WriteAllBytes((Join-Path $dir 'left.png'), $png)
+	[IO.File]::WriteAllBytes((Join-Path $dir 'right.png'), $png)
+	Write-Fixture (Join-Path $dir 'recorder.txt') @('# flight recorder (#545): fixture')
+	Write-Fixture (Join-Path $dir 'meta.txt') (& $v2meta 1 'hold' 9000 12000)
+	$clip = @('# arx-replay 1: a VR session as a .vrsim clip (#550) - scripts/dev/replay.ps1 plays it', '# build: Arx Fatalis VR 1.3.0-dev',
+		'# save: none', '# seed: 7', '# rate: 90', "# mark: $recMark 12000", '# hold: 9000 12000', 'ipd 0.0640')
+	for ($ms = 0; $ms -le 12000; $ms += 1000) { $clip += "@${ms}ms head 0.0000 0.0000 0.0000 0.00 0.00 0.00" }
+	Write-Fixture (Join-Path $dir 'clip.vrsim') $clip
+	foreach ($snap in 'snap-+03.0s.jpg', 'snap-+02.0s.jpg') { [IO.File]::WriteAllBytes((Join-Path $dir $snap), $jpeg) }
+	$run = Invoke-Marks @('-UserDir', $v3)
+	Check ($run.Exit -eq 0) "exit 0 ($($run.Exit))"
+	Check ($run.Text -match '(?m)^Marks: 1\s*$') 'Marks: 1'
+	$sv = Get-MarkSection $run $recMark
+	Check ($sv -match '(?m)^  Kind: hold 3\.0 s\s*$') "the recording: Kind: hold 3.0 s, from the start to the stop`n$sv"
+	Check ($sv -match '(?m)^  Files: clip\.vrsim, left\.png, meta\.txt, recorder\.txt, right\.png, snap-\+02\.0s\.jpg, snap-\+03\.0s\.jpg\s*$') 'the recording: Files'
+	Check ($sv -match '(?m)^  Note: none\s*$') 'the recording: Note: none (no microphone)'
+	Check ($sv -match '(?m)^  Clip: 12\.0 s \(9\.0 s before the press\), 13 frames\s*$') 'the recording: Clip: 12.0 s (9.0 s before the start: a recording soon after the session started), 13 frames'
+	Check ($sv -match '(?m)^  Snapshots: 2\s*$') 'the recording: Snapshots: 2'
+	$images = @($sv -split "`n" | Where-Object { $_ -match '^    \+\d' } | ForEach-Object { $_.TrimEnd() })
+	Check (($images -join '|') -ceq ('    +0.0 s  left.png, right.png (press)|    +2.0 s  snap-+02.0s.jpg|    +3.0 s  snap-+03.0s.jpg (release)')) "the recording: its start's eyes, every 2 s, the stop last (got: $($images -join ' | '))"
+	Check ($sv -match '(?m)^  Transcript: none\s*$') 'the recording: Transcript: none (no note)'
+	Test-Clean $run 'the #632 listing'
+
 	Write-Host '==> the help text is current'
 	$help = [IO.File]::ReadAllText($script)
 	Check ($help -notmatch '(?i)thumbstick click') 'no stick clicks (the gesture is both trackpads)'
@@ -379,6 +414,12 @@ try {
 	Check ($help -match '(?i)\bhold\b') 'the hold'
 	Check ($help -match '-Transcribe') '-Transcribe'
 	Check ($help -match 'snap-') 'the snapshots'
+	# #632 (the owner, 2026-10-22): one press of both trackpads starts a recording, the same press again stops it; no
+	# snapshot-only short press, no push-to-talk while held
+	Check ($help -notmatch '(?i)let go within') '#632: no short press let go within a threshold (no snapshot-only mark)'
+	Check ($help -notmatch '(?i)while held') '#632: no voice note "while held" (the recording is a toggle)'
+	Check ($help -match '(?i)\bagain\b') '#632: the same press again stops the recording'
+	Check ($help -match '(?i)1 minute') '#632: at most 1 minute'
 } finally {
 	$env:USERNAME = $previousUser
 	Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue

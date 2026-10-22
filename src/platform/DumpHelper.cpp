@@ -344,7 +344,7 @@ void requestReport(DumpKind kind, bool wantDump, u32 faultThreadId, u64 exceptio
                    std::string_view stack, u32 timeoutMs) noexcept {
 
 	// The cause always goes into the recorder, helper or not
-	flightRecord(RecordKind::Exit, std::string(dumpKindName(kind)));
+	flightRecord(RecordKind::Exit, dumpKindName(kind));
 
 	if(!g_shared || !g_reqEvent || !g_helperProcess) {
 		return;
@@ -423,8 +423,10 @@ std::string dumpLastReportFolder() {
 	                   strnlen(g_shared->lastReportFolder, sizeof(g_shared->lastReportFolder)));
 }
 
-std::string moduleLabel(u64 address) {
-	char buffer[64];
+// The labels below write into a fixed buffer and allocate nothing: the crash handler builds its request with them
+// before the dump, on a heap the crash may have corrupted (#610). The std::string forms are for everyone else.
+
+void moduleLabel(u64 address, char * out, size_t size) noexcept {
 	HMODULE module = nullptr;
 	DWORD flags = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
 	if(GetModuleHandleExW(flags, reinterpret_cast<LPCWSTR>(static_cast<uintptr_t>(address)), &module) && module) {
@@ -438,16 +440,21 @@ std::string moduleLabel(u64 address) {
 			}
 			char name[MAX_PATH];
 			int n = WideCharToMultiByte(CP_UTF8, 0, file, -1, name, int(sizeof(name)), nullptr, nullptr);
-			std::snprintf(buffer, sizeof(buffer), "+0x%llx",
+			std::snprintf(out, size, "%s+0x%llx", n > 1 ? name : "?",
 			              static_cast<unsigned long long>(address - reinterpret_cast<uintptr_t>(module)));
-			return (n > 1 ? std::string(name, size_t(n - 1)) : std::string("?")) + buffer;
+			return;
 		}
 	}
-	std::snprintf(buffer, sizeof(buffer), "0x%llx", static_cast<unsigned long long>(address));
+	std::snprintf(out, size, "0x%llx", static_cast<unsigned long long>(address));
+}
+
+std::string moduleLabel(u64 address) {
+	char buffer[MAX_PATH + 32];
+	moduleLabel(address, buffer, sizeof(buffer));
 	return buffer;
 }
 
-std::string exceptionCodeName(u32 code) {
+void exceptionCodeName(u32 code, char * out, size_t size) noexcept {
 	const char * name = nullptr;
 	switch(code) {
 		case 0xC0000005: name = "EXCEPTION_ACCESS_VIOLATION"; break;
@@ -469,16 +476,20 @@ std::string exceptionCodeName(u32 code) {
 		case 0xE06D7363: name = "CPP_EXCEPTION"; break;
 		default: break;
 	}
-	char buffer[80];
 	if(name) {
-		std::snprintf(buffer, sizeof(buffer), "0x%08x %s", unsigned(code), name);
+		std::snprintf(out, size, "0x%08x %s", unsigned(code), name);
 	} else {
-		std::snprintf(buffer, sizeof(buffer), "0x%08x", unsigned(code));
+		std::snprintf(out, size, "0x%08x", unsigned(code));
 	}
+}
+
+std::string exceptionCodeName(u32 code) {
+	char buffer[80];
+	exceptionCodeName(code, buffer, sizeof(buffer));
 	return buffer;
 }
 
-std::string threadStartLabel(bool & isExit) {
+void threadStartLabel(bool & isExit, char * out, size_t size) noexcept {
 	isExit = false;
 	using NtQueryInformationThreadFn = LONG (NTAPI *)(HANDLE, int, PVOID, ULONG, PULONG);
 	static NtQueryInformationThreadFn query = reinterpret_cast<NtQueryInformationThreadFn>(
@@ -498,19 +509,35 @@ std::string threadStartLabel(bool & isExit) {
 	for(const Routine & routine : routines) {
 		if(start && start == routine.address) {
 			isExit = routine.exitsProcess;
-			return routine.name;
+			std::snprintf(out, size, "%s", routine.name);
+			return;
 		}
 	}
-	return moduleLabel(u64(reinterpret_cast<uintptr_t>(start)));
+	moduleLabel(u64(reinterpret_cast<uintptr_t>(start)), out, size);
+}
+
+std::string threadStartLabel(bool & isExit) {
+	char buffer[MAX_PATH + 32];
+	threadStartLabel(isExit, buffer, sizeof(buffer));
+	return buffer;
+}
+
+void killerLabel(char * out, size_t size) noexcept {
+	DWORD tid = GetCurrentThreadId();
+	if(tid == g_mainThreadId) {
+		std::snprintf(out, size, "%lu main thread", static_cast<unsigned long>(tid));
+		return;
+	}
+	bool isExit = false;
+	char start[MAX_PATH + 32];
+	threadStartLabel(isExit, start, sizeof(start));
+	std::snprintf(out, size, "%lu start %s", static_cast<unsigned long>(tid), start);
 }
 
 std::string killerLabel() {
-	DWORD tid = GetCurrentThreadId();
-	if(tid == g_mainThreadId) {
-		return std::to_string(tid) + " main thread";
-	}
-	bool isExit = false;
-	return std::to_string(tid) + " start " + threadStartLabel(isExit);
+	char buffer[MAX_PATH + 64];
+	killerLabel(buffer, sizeof(buffer));
+	return buffer;
 }
 
 namespace {
@@ -1123,6 +1150,10 @@ std::string moduleLabel(u64) { return std::string(); }
 std::string exceptionCodeName(u32) { return std::string(); }
 std::string threadStartLabel(bool & isExit) { isExit = false; return std::string(); }
 std::string killerLabel() { return std::string(); }
+void moduleLabel(u64, char * out, size_t size) noexcept { if(size) { out[0] = '\0'; } }
+void exceptionCodeName(u32, char * out, size_t size) noexcept { if(size) { out[0] = '\0'; } }
+void threadStartLabel(bool & isExit, char * out, size_t size) noexcept { isExit = false; if(size) { out[0] = '\0'; } }
+void killerLabel(char * out, size_t size) noexcept { if(size) { out[0] = '\0'; } }
 std::string symbolizedStack(const void *) { return std::string(); }
 bool reportHasStack() noexcept { return false; }
 void failInProcessStackForTest() noexcept { }

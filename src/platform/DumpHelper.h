@@ -139,9 +139,13 @@ std::string dumpLastReportFolder();
 
 //! "arx.exe+0x1234" for an address inside a loaded module, else "0x<address>" - the faulting module of a report
 std::string moduleLabel(u64 address);
+//! The same into \a out (\a size bytes, truncated), allocating nothing: the crash handler's request (#610)
+void moduleLabel(u64 address, char * out, size_t size) noexcept;
 
 //! "0xc0000005 EXCEPTION_ACCESS_VIOLATION": a Windows exception code with its name (the code alone when unknown)
 std::string exceptionCodeName(u32 code);
+//! The same into \a out, allocating nothing (#610)
+void exceptionCodeName(u32 code, char * out, size_t size) noexcept;
 
 /*!
  * \brief The calling thread's start routine: "KERNEL32!ExitProcess" or "<module>+0x<offset>"
@@ -150,9 +154,13 @@ std::string exceptionCodeName(u32 code);
  * RtlExitUserProcess - a thread made to end the process from outside (the ExitGuard, #544).
  */
 std::string threadStartLabel(bool & isExit);
+//! The same into \a out, allocating nothing (#610)
+void threadStartLabel(bool & isExit, char * out, size_t size) noexcept;
 
 //! The report's killer line for the calling thread: "<tid> main thread", or "<tid> start <threadStartLabel>"
 std::string killerLabel();
+//! The same into \a out, allocating nothing (#610)
+void killerLabel(char * out, size_t size) noexcept;
 
 /*!
  * \brief The calling thread's stack from a context, symbolised in process

@@ -304,6 +304,23 @@ try {
 	Check ($err -match 'not signed by Microsoft') "a cdb.exe that is not Microsoft's is refused ($err)"
 	Check (-not (Test-Path (Join-Path $tools 'windbg-test'))) 'a refused cdb.exe installs nothing'
 	Check (@(Get-ChildItem -LiteralPath $tools -Force -ErrorAction SilentlyContinue).Count -eq 0) 'no part file is left behind'
+	# A package entry that climbs out of amd64\ (amd64/../..) is refused before anything is written
+	Add-Type -AssemblyName System.IO.Compression
+	$evilBundle = Join-Path $root 'evil.msixbundle'
+	$evilPackage = Join-Path $root 'evil-x64.msix'
+	foreach ($pair in @(@($evilPackage, 'amd64/../../escaped.txt'), @($evilBundle, 'windbg_win-x64.msix'))) {
+		$stream = [IO.File]::Open($pair[0], 'Create')
+		$archiveOut = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveMode]::Create)
+		$writer = [IO.StreamWriter]::new($archiveOut.CreateEntry($pair[1]).Open())
+		if ($pair[0] -eq $evilBundle) { $writer.BaseStream.Write([IO.File]::ReadAllBytes($evilPackage)) } else { $writer.Write('escaped') }
+		$writer.Dispose(); $archiveOut.Dispose(); $stream.Dispose()
+	}
+	$sha = (Get-FileHash -LiteralPath $evilBundle -Algorithm SHA256).Hash.ToLowerInvariant()
+	$err = try { Install-ArxCdb $tools @{ Version = 'test'; Sha = $sha; Url = ([Uri]$evilBundle).AbsoluteUri }; '' } catch { "$_" }
+	Check ($err -match 'entry outside its folder') "a package entry with .. is refused ($err)"
+	Check (-not (Test-Path (Join-Path $root 'escaped.txt')) -and -not (Test-Path (Join-Path $tools 'escaped.txt'))) 'nothing was written outside the folder'
+	Check (-not (Test-Path (Join-Path $tools 'windbg-test'))) 'a refused package installs nothing'
+
 	# A file Microsoft signed (Windows' own where.exe) stands in for the real cdb.exe
 	$signed = Join-Path $env:SystemRoot 'System32\where.exe'
 	if (Test-ArxMicrosoftSigned $signed) {

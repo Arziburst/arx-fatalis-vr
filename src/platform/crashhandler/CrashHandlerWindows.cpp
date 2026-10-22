@@ -310,9 +310,12 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 
 	std::scoped_lock lock(m_mutex);
 	
-	// Run the callbacks
-	for(auto & callback : m_crashCallbacks) {
-		callback();
+	// Run the callbacks (the log's quick shutdown closes its stream, which frees: with the dump helper they run
+	// after the request, so nothing before the dump allocates on a heap the crash may have corrupted, #610)
+	if(!platform::dumpHelperEnabled()) {
+		for(auto & callback : m_crashCallbacks) {
+			callback();
+		}
 	}
 	
 	m_pCrashInfo->signal = crashType;
@@ -371,8 +374,11 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 		// abort) from a plain abort(). An exception's stack is walked by the helper, out of process (#610)
 		u32 code = pointers->ExceptionRecord ? u32(pointers->ExceptionRecord->ExceptionCode) : 0;
 		platform::DumpKind kind = platform::DumpKind::Crash;
-		std::string exceptionName;
-		std::string stack;
+		// Fixed buffers, the sizes of the request's fields: nothing on the way to the dump allocates (#610)
+		char exceptionName[96] = {};
+		char killer[160];
+		char faultModule[160];
+		std::string stack; // the abort path's own, symbolised before the request
 		bool stackFirst = (crashType == SIGNAL_SIGABRT || crashType == USER_CRASH);
 		if(stackFirst) {
 			platform::flightRecord(platform::RecordKind::Note, "crash handler: stack", crashType);
@@ -382,7 +388,7 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 		} else if(crashType == TERMINATE_CALL) {
 			kind = platform::DumpKind::Terminate;
 		} else if(code != 0) {
-			exceptionName = platform::exceptionCodeName(code);
+			platform::exceptionCodeName(code, exceptionName, sizeof(exceptionName));
 		}
 		platform::flightRecord(platform::RecordKind::Note, "crash handler: request", crashType);
 		u64 faultAddress = 0;
@@ -395,9 +401,13 @@ void CrashHandlerWindows::writeCrashDump(PEXCEPTION_POINTERS pointers) {
 			faultAddress = u64(pointers->ContextRecord->Eip);
 			#endif
 		}
+		platform::killerLabel(killer, sizeof(killer));
+		platform::moduleLabel(faultAddress, faultModule, sizeof(faultModule));
 		platform::requestReport(kind, true, u32(GetCurrentThreadId()), u64(reinterpret_cast<uintptr_t>(pointers)),
-		                        platform::killerLabel(), platform::moduleLabel(faultAddress), exceptionName, stack,
-		                        15000);
+		                        killer, faultModule, exceptionName, stack, 15000);
+		for(auto & callback : m_crashCallbacks) {
+			callback();
+		}
 		if(!stackFirst && !platform::reportHasStack()) {
 			// The helper walked no stack (#610: it does, out of process, for every exception): the symbols here,
 			// after the dump; the helper writes report.txt after the exit and reads it then

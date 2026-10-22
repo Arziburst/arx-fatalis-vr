@@ -65,7 +65,12 @@ function Install-ArxCdb([string]$ToolsDir = (Get-ArxDebuggerToolsDir), $Pin = $s
 		$zip = [IO.Compression.ZipFile]::OpenRead($package)
 		try {
 			foreach ($file in @($zip.Entries | Where-Object { $_.FullName -like 'amd64/*' -and $_.Name })) {
-				$target = Join-Path $unpack ($file.FullName -replace '/', '\')
+				# An entry name that climbs out (..) or is absolute would be written outside the folder: refused
+				$name = $file.FullName -replace '/', '\'
+				if ($name -match '(^|\\)\.\.(\\|$)' -or [IO.Path]::IsPathRooted($name) -or $name -match ':') {
+					throw "The WinDbg package has an entry outside its folder ($($file.FullName)) - nothing installed"
+				}
+				$target = Join-Path $unpack $name
 				New-Item -ItemType Directory -Force (Split-Path -Parent $target) | Out-Null
 				[IO.Compression.ZipFileExtensions]::ExtractToFile($file, $target, $true)
 			}

@@ -1,0 +1,78 @@
+# A level loaded without a target whose init casts a field must not crash (#601). `loadlevel <n>` alone keeps the
+# player's coordinates from the level he leaves (ChangeLevel.cpp, ARX_CHANGELEVEL_Pop_Player). The level's scripts
+# cast their persistent fields in levelInit (SM_GAME_READY, Core.cpp): CreateFieldSpell::Launch -> CCreateField::Update
+# -> VisibleSphere -> FrustrumsClipSphere(g_rooms->frustums[room]). The load made g_rooms anew, and frustums is sized
+# only by the first render of the level (Scene.cpp, frustums.resize): when the field's sphere (radius 400) is near
+# the camera and in the last frame's view, the room's entry is read from an empty vector - the access violation of
+# #601. A crash stops the game: the next @until / @frames step fails.
+#   .\scripts\dev\xrs-run.ps1 level-init-targetless
+# 1. The #601 run as it was: level 20 at its real entry marker_0903 (the player at 8964 / 7648, 270 frames there),
+#    then `loadlevel 21` with no target - marker_0387's create_field in level 21's init crashed.
+# 2. Level 0 with no target: its init casts a field too (marker_0357, create_field, seen in every level tour run).
+#    The player stands wherever level 21 left him: coverage of a second level, not a red of its own.
+# 3. Level 21 again with no target, the player put at marker_0387 first: the camera stands inside the field's sphere,
+#    so the sphere passes the distance and screen-frustum tests whatever the view - the crash does not depend on
+#    the place and the yaw of step 1. A revisit: the level comes from the changelevel save, and the field (cast with
+#    -z, the restore flag of a persistent effect) is cast again by its init.
+# Each step: the init's field cast logged, GAMEPLAY reached, frames rendered after it (the spells' per-frame update),
+# the error count unchanged and no [E] / [C] line.
+@sim idle
+@args --loadlevel 10
+
+@until state eq GAMEPLAY 60s
+
+# --- 1a. Level 20 at its real entry, as the #601 run had it
+@remember errors20 errors
+@mark
+loadlevel 20 marker_0903
+@assert area eq 20
+@until state eq GAMEPLAY 30s
+@frames 270                                      # the #601 run stood here 270 frames (levelstats, a shot)
+@assert player.x gt 8914                         # where the #601 run stood: 8964.3 694.6 7647.7
+@assert player.x lt 9014
+@assert player.z gt 7597
+@assert player.z lt 7697
+@assert state eq GAMEPLAY
+@assert errors eq {errors20}
+@nolog ^\[[EC]\]
+
+# --- 1b. Level 21 with no target: the player keeps level 20's coordinates, near marker_0387's field
+@remember errors21 errors
+@mark
+loadlevel 21
+@assert area eq 21
+@log spell\.cast spell=create_field caster=marker_0387\b 10s
+@until state eq GAMEPLAY 30s
+@frames 120
+@assert state eq GAMEPLAY
+@assert area eq 21
+@assert errors eq {errors21}
+@nolog ^\[[EC]\]
+
+# --- 2. Level 0 with no target: its init casts a field too (marker_0357)
+teleport -p marker_0387                          # for step 3: level 0 keeps these coordinates, level 21 gets them back
+@frames 60
+@remember errors0 errors
+@mark
+loadlevel 0
+@assert area eq 0
+@log spell\.cast spell=create_field caster=marker_0357\b 10s
+@until state eq GAMEPLAY 30s
+@frames 30                                       # few: the player may stand off level 0 and fall
+@assert state eq GAMEPLAY
+@assert area eq 0
+@assert errors eq {errors0}
+@nolog ^\[[EC]\]
+
+# --- 3. Level 21 again with no target, the camera inside the sphere of marker_0387's field
+@remember errors21b errors
+@mark
+loadlevel 21
+@assert area eq 21
+@log spell\.cast spell=create_field caster=marker_0387\b 10s
+@until state eq GAMEPLAY 30s
+@frames 120
+@assert state eq GAMEPLAY
+@assert area eq 21
+@assert errors eq {errors21b}
+@nolog ^\[[EC]\]

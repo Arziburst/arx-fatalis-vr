@@ -13,7 +13,7 @@ a changed decision keeps its history in that cell.
 
 ---
 
-## D-NEW: A mark of the moment is a toggle - both trackpads pressed start a recording, pressed again stop it, at most 1 minute
+## D-064: A mark of the moment is a toggle - both trackpads pressed start a recording, pressed again stop it, at most 1 minute
 
 - **Date:** 2026-10-22
 - **Status:** Accepted (#632; supersedes D-062's short press and hold - what a recording writes is D-062's hold, its
@@ -135,7 +135,7 @@ and the hand's turn-back is still three samples back: both outside this change.
 ## D-062: Marks v2 - a short press is a snapshot, a hold is the voice note, its clip and a snapshot every 2 s; the notes transcribed locally
 
 - **Date:** 2026-10-21
-- **Status:** Partly superseded by D-NEW (#632: a toggle, no short press, no push-to-talk; the folder, the snapshots,
+- **Status:** Partly superseded by D-064 (#632: a toggle, no short press, no push-to-talk; the folder, the snapshots,
   the clip, the note and the transcription stay). Accepted (#574; refines D-061 - its gesture, panel and microphone
   rules stay; the coordinator's research is `coordinator/research/2026-10-21-marks-v2-transcription.md`)
 - **Decided by:** the owner (a short press records what he sees, a hold what he says and does; the hold capped at

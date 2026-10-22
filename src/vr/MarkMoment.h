@@ -34,12 +34,14 @@
  * \brief Mark the moment in the headset (#551, marks v2 #574): the marker folder's name, its meta.txt, the short
  *        press against the hold, the hold's snapshots and the panel's lines
  *
- * During a headset test both Index trackpads pressed (vr::ControlResolver::markGesture) write
- * <user dir>\c \\marks\\<name>\\ with the eye images, the flight recorder's tail and this meta.txt. Let go before
- * \ref HoldThresholdMs that is all (a SHORT mark); held longer it is a HOLD (up to \ref HoldMaxMs): the voice note
- * while held (vr/VoiceNote.h), the left eye as a snapshot every \ref SnapshotIntervalMs and at the release, and the
- * replay clip from \ref HoldContextMs before the press to the release. The game's side is vr/VRMarks.h. Pure: no
- * engine globals, no file system - covered by tests/vr/MarkMomentTest.cpp and tests/vr/MarkHoldTest.cpp.
+ * During a headset test both Index trackpads pressed (vr::ControlResolver::markGesture) start a recording into
+ * <user dir>\c \\marks\\<name>\\ and the same press again stops it (a toggle since #632; at \ref HoldMaxMs it stops
+ * by itself): the eye images, the flight recorder's tail, the voice note (vr/VoiceNote.h), the left eye as a
+ * snapshot every \ref SnapshotIntervalMs and at the stop, the replay clip from \ref HoldContextMs before the start
+ * to the stop and this meta.txt - #574's HOLD, so the folder reads as before. #574's SHORT press (let go before
+ * \ref HoldThresholdMs: the eyes only) is gone from the game; its helpers stay for the folders older builds wrote
+ * and for the panel's first moments. The game's side is vr/VRMarks.h. Pure: no engine globals, no file system -
+ * covered by tests/vr/MarkMomentTest.cpp and tests/vr/MarkHoldTest.cpp.
  */
 namespace vr {
 
@@ -57,6 +59,8 @@ const size_t SnapshotMax = 31;
 const s64 HoldContextMs = 10000;
 //! How long "Hold ended at the 1:00 limit" shows once a hold reached \ref HoldMaxMs
 const s64 HoldCappedNoticeMs = 3000;
+//! The shortest cap the channel's `marks cap <ms>` sets for a session (#632's test hook; HoldMaxMs the longest)
+const s64 RecordingCapMinMs = 1000;
 
 enum class MarkKind { Press, Hold };
 
@@ -118,6 +122,9 @@ std::string noteIndicatorText(s64 elapsedMs);
 //! The brief confirmation after a note was saved: "<mic> Note saved (<m>:<ss>)", the note's length in the same form
 std::string noteSavedText(s64 lengthMs);
 
+//! ... after a recording without a note (no microphone, the note off) was saved: "<mic> Recording saved (<m>:<ss>)"
+std::string recordingSavedText(s64 lengthMs);
+
 //! How long "Moment marked (#N)" shows (the owner: about 2 s)
 const s64 MarkNoticeMs = 2000;
 //! How long "<mic> Note saved (m:ss)" shows after the note.wav was written (the owner: about 1.5 s)
@@ -128,12 +135,13 @@ enum class MarkNotice { None, Marked, Recording, Saved };
 
 //! The marks' state the panel's notice follows
 struct MarkNoticeState {
-	bool recording = false;     //!< a voice note records (both trackpads held)
+	bool recording = false;     //!< a recording is on (#632: from the start press to the stop or the cap)
 	s64 recordingMs = 0;        //!< ... for this long
-	bool saving = false;        //!< a kept note was let go and its note.wav is being written
+	bool saving = false;        //!< a stopped recording's files are being written
 	s64 savingLengthMs = 0;     //!< ... its length: the indicator's final time
-	s64 sinceSavedMs = -1;      //!< how long ago the last note.wav was written, -1 for none
+	s64 sinceSavedMs = -1;      //!< how long ago the last recording's files were written, -1 for none
 	s64 savedLengthMs = 0;      //!< ... its length
+	bool savedNote = true;      //!< ... with a note.wav: "Note saved", else "Recording saved"
 	s64 sinceMarkedMs = -1;     //!< how long ago the last mark was made, -1 for none
 	u32 markedNumber = 0;
 	s64 sinceCappedMs = -1;     //!< how long ago the last hold ended by itself at HoldMaxMs, -1 for none

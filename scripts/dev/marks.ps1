@@ -1,18 +1,20 @@
 <#
 .SYNOPSIS
-	Lists the marks of the moment of a headset run (#551, marks v2 #574), or copies one mark folder out.
+	Lists the marks of the moment of a headset run (#551, marks v2 #574, the toggle #632), or copies one mark folder
+	out.
 
 .DESCRIPTION
-	During a headset test the owner presses both Index trackpads to mark a moment; the game writes
-	<user dir>\marks\<yyyymmdd>T<hhmmss>Z-<n>\ (the UTC time of the mark and its number in the session).
-	A SHORT press (let go within about 0.5 s) records what he sees: left.png and right.png (both eyes of the press
-	frame), recorder.txt (the flight recorder's tail) and meta.txt (time, area, position, yaw, build, game state, VR
-	session state, kind=press, the press frame's pose). A HOLD (up to 1 minute) records what he says and does during
-	it as well: note.wav (the voice note while held), snap-+NN.Ns.jpg (the left eye at half size every 2 s after the
-	press and at the release, NN.N the seconds after the press), clip.vrsim (the replay from 10 s before the press to
-	the release, replayable with scripts/dev/replay.ps1; its "# hold: <pressMs> <releaseMs>" line), kind=hold with
-	the press and release times in meta.txt, and transcript.txt once the note is transcribed (scripts/dev/transcribe.ps1:
-	local, Russian and English, "[m:ss.s] text" lines on the press-relative timeline).
+	During a headset test the owner presses both Index trackpads once to start a recording and presses them again
+	to stop it (#632; at most 1 minute, then it stops by itself); his thumbs stay free in between. The game writes
+	<user dir>\marks\<yyyymmdd>T<hhmmss>Z-<n>\ (the UTC time of the start and its number in the session), a hold of
+	#574's: left.png and right.png (both eyes of the start frame), recorder.txt (the flight recorder's tail), note.wav
+	(the voice note for as long as the recording is on), snap-+NN.Ns.jpg (the left eye at half size every 2 s after
+	the start and at the stop, NN.N the seconds after the start), clip.vrsim (the replay from 10 s before the start to
+	the stop, replayable with scripts/dev/replay.ps1; its "# hold: <pressMs> <releaseMs>" line), meta.txt (time,
+	area, position, yaw, build, game state, VR session state, kind=hold with the start and stop times as pressMs and
+	releaseMs, the start frame's pose), and transcript.txt once the note is transcribed (scripts/dev/transcribe.ps1:
+	local, Russian and English, "[m:ss.s] text" lines on the start-relative timeline). Older builds' marks still
+	list: a #574 short press (kind=press: the eyes, recorder.txt and meta.txt only) and a #551 mark (no kind=).
 
 	Without -Copy it lists every mark, oldest first:
 	  Marks: <count>

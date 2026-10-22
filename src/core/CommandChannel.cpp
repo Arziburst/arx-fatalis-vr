@@ -1166,11 +1166,14 @@ std::string buildStatus(PlatformInstant now) {
 		json.value("count", marks.count);
 		json.value("last", marks.last);
 		json.value("lastFiles", marks.lastFiles);
-		// Marks v2 (#574): pending until the release decides; then press or hold
+		// Marks v2 (#574): pending until the stop; then hold (a toggle since #632: no short press any more)
 		json.value("lastKind", marks.lastKind);
 		json.value("lastSnapshots", marks.lastSnapshots);
 		json.value("lastClipMs", marks.lastClipMs);
+		// The toggle (#632): a recording is on from the start press to the stop press or the cap
 		json.value("recording", marks.recording);
+		json.value("recordingMs", marks.recordingMs);
+		json.value("capMs", marks.capMs);
 		json.value("noteMs", marks.noteMs);
 		json.value("note", marks.note);
 		// The gesture of the controllers in use: both trackpads on the Index, none without trackpads (the Touch)
@@ -2872,7 +2875,8 @@ std::string execute(std::string_view line) {
 	}
 
 	if(word == "marks") {
-		// Marks of the moment (#551): note on|off - the voice note after a mark, for this session
+		// Marks of the moment (#551): note on|off - the voice note of a recording; cap <ms> - the longest recording
+		// (#632's test hook); both for this session
 		std::string error = vr::marks::command(rest);
 		return error.empty() ? error : refuse(error);
 	}

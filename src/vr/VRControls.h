@@ -430,12 +430,16 @@ public:
 	 * Both trackpads became down together in the last update: the mark of the moment (#551, the owner, 2026-10-20; the
 	 * menu fallback of #326 on both stick clicks is gone). True for that one update, once per press - held on, nothing
 	 * more; a release of either re-arms it. Fixed, not part of the layout and not rebindable: whatever the trackpads
-	 * are bound to, both pressed mark (and their bindings act as well). Only where \ref markGestureAvailable.
+	 * are bound to, both pressed mark - the press starts or stops a recording (#632) - and that press is not also
+	 * their own bindings: a trackpad pressed in the gesture's update does nothing of its own, one already held ends
+	 * what it held and taps nothing at its release. A trackpad pressed alone acts as bound. Only where
+	 * \ref markGestureAvailable.
 	 */
 	bool markGesture() const { return m_markGesture; }
 	/*!
-	 * Both trackpads are still down since the update the gesture came on: the push-to-talk of the mark's voice note.
-	 * False from the first update either is not down, before any mark, with one alone and with both stick clicks
+	 * Both trackpads are still down since the update the gesture came on (#574's push-to-talk; the recording is a
+	 * toggle since #632). False from the first update either is not down, before any mark, with one alone and with
+	 * both stick clicks
 	 */
 	bool markHeld() const { return m_markFired; }
 	//! How often the gesture came on since the resolver was created
@@ -475,6 +479,8 @@ private:
 	bool m_markFired = false;  //!< both trackpads are down and marked: no mark until one is let go
 	bool m_markGesture = false;
 	u32 m_markGestures = 0;
+	//! The trackpads of the gesture's update: their own bindings do not act on that press (#632)
+	ControlSet m_markSuppressed;
 
 	ControlSet m_down;
 	std::array<ControlState, ControlCount> m_controls;

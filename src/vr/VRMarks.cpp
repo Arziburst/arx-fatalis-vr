@@ -79,19 +79,21 @@ struct Shot {
 	s64 requestedAt = 0; //!< when it was asked for, for EyeWaitMs
 };
 
-//! The mark being made: from the press until every file of it is queued
+//! The recording being made (#632: from the start press to the stop press or the cap) until every file of it is
+//! queued
 struct ActiveMark {
 	u32 number = 0;
 	std::string name;
 	fs::path folder;
-	s64 pressAt = 0;          //!< the press, ms of the platform clock
+	s64 pressAt = 0;          //!< the start press, ms of the platform clock
 	s64 pressUs = -1;         //!< ... on the replay clip's clock, -1 before it started
-	MarkMeta meta;            //!< kind, release and pose filled in as they are known
-	bool poseDue = true;      //!< the press frame's pose is read on the next update (the recorder has it then)
-	bool decided = false;     //!< released (or capped): the kind is known
-	s64 heldMs = 0;           //!< from the press to the release (or the cap)
-	s64 releaseUs = -1;       //!< the release on the clip's clock
-	bool clipDue = false;     //!< a hold's clip is cut on the next update (the ring has the release frame then)
+	MarkMeta meta;            //!< the stop and the pose filled in as they are known
+	bool poseDue = true;      //!< the start frame's pose is read on the next update (the recorder has it then)
+	bool decided = false;     //!< stopped (the second press or the cap): the recording is over
+	s64 heldMs = 0;           //!< from the start to the stop
+	s64 releaseUs = -1;       //!< the stop on the clip's clock
+	bool noteKept = false;    //!< its voice note was kept: note.wav is among its files
+	bool clipDue = false;     //!< the clip is cut on the next update (the ring has the stop frame then)
 	u32 periodic = 0;         //!< the periodic snapshots asked for
 	s64 lastSnapshotMs = -1;  //!< the offset of the last snapshot asked for
 	std::map<u32, Shot> shots; //!< the eye pictures asked for and not yet come
@@ -115,13 +117,16 @@ struct MarksState {
 	u32 noteNumber = 0;     //!< the mark the note belongs to
 	fs::path noteFolder;
 
-	s64 markedAt = -1;      //!< when the last mark was made, for its notice
+	//! The longest recording (#632): HoldMaxMs, the channel's `marks cap <ms>` for the session
+	s64 capMs = HoldMaxMs;
+
+	s64 markedAt = -1;      //!< when the last recording started, for its notice
 	u32 markedNumber = 0;
-	s64 savedAt = -1;       //!< when the last note.wav was written, for "Note saved"
+	s64 savedAt = -1;       //!< when the last recording's files were written, for "saved"
 	s64 savedLengthMs = 0;
-	bool saving = false;    //!< a kept note was handed to the writer: the indicator stays, frozen, until it is written
+	bool savedNote = false; //!< ... with a note.wav
+	bool saving = false;    //!< a stopped recording's files are written: the indicator stays, frozen, until they are
 	s64 savingLengthMs = 0;
-	s64 cappedAt = -1;      //!< when the last hold reached HoldMaxMs, for its notice
 	bool noticeShown = false;
 
 	~MarksState() {
@@ -300,35 +305,37 @@ void queueFile(const fs::path & folder, std::string name, std::function<std::str
 	g.jobs.push_back(std::move(job));
 }
 
-//! The note that ended (or was stopped) into note.wav of its mark, when it recorded anything
-void saveNote() {
+//! The note that ended (or was stopped) into note.wav of its mark, when it recorded anything; true when one is
+//! written
+bool saveNote() {
 	if(!g.note.kept() || g.noteFolder.empty()) {
 		LogInfo << "[vr] mark #" << g.noteNumber << ": no voice note recorded";
-		return;
+		return false;
 	}
 	// The samples move to the writer thread, which builds the WAV (up to 1.92 MB): the frame only hands them over
 	auto samples = std::make_shared<std::vector<s16>>(g.note.takeSamples());
 	const size_t count = samples->size();
-	const s64 lengthMs = s64(count) * 1000 / s64(VoiceNote::sampleRate);
 	const u32 number = g.noteNumber;
-	// The indicator stays, frozen at the note's length, until "Note saved" takes its place
-	g.saving = true;
-	g.savingLengthMs = lengthMs;
 	queueFile(g.noteFolder, "note.wav", [samples]() {
 		std::string wav = formatWav(samples->data(), samples->size(), VoiceNote::sampleRate);
 		samples->clear();
 		samples->shrink_to_fit();
 		return wav;
-	}, [number, count, lengthMs]() {
+	}, [number, count]() {
 		std::ostringstream seconds;
 		seconds.precision(1);
 		seconds << std::fixed << double(count) / double(VoiceNote::sampleRate);
 		LogInfo << "[vr] mark #" << number << ": note.wav (" << seconds.str() << " s)";
-		// "Note saved" once it is on disk, straight after the frozen indicator
-		g.saving = false;
-		g.savedAt = toMsi(platform::getTime());
-		g.savedLengthMs = lengthMs;
 	});
+	return true;
+}
+
+//! The note stopped (or ended by itself) and saved: the recording it belongs to has a note.wav when one was kept
+void keepNote() {
+	g.note.stop();
+	if(saveNote() && g.mark && g.mark->number == g.noteNumber) {
+		g.mark->noteKept = true;
+	}
 }
 
 //! Ask for an eye picture of the mark; false (logged) when it cannot be taken
@@ -370,42 +377,29 @@ void writeShot(const ActiveMark & mark, const Shot & shot, RgbImage image) {
 	}
 }
 
-//! The release (or the cap, or a new mark, or the game quitting) decides what the mark is
+//! The stop: the second press of both trackpads, the cap (\a capped), a new recording or the game quitting. Every
+//! recording is a hold of #574 (its folder and meta.txt as they were)
 void decide(ActiveMark & mark, s64 now, bool capped) {
 
 	mark.decided = true;
-	mark.heldMs = capped ? HoldMaxMs : now - mark.pressAt;
-	const MarkKind kind = markKind(mark.heldMs);
-	mark.meta.kind = kind;
+	mark.heldMs = holdLengthMs(capped ? g.capMs : now - mark.pressAt);
+	mark.meta.kind = MarkKind::Hold;
 	mark.releaseUs = replay::clockNowUs();
 	mark.meta.releaseMs = mark.releaseUs >= 0 ? (mark.releaseUs + 500) / 1000 : -1;
-	g.status.lastKind = markKindName(kind);
+	g.status.lastKind = markKindName(MarkKind::Hold);
 
-	// The note belongs to the hold: a short press keeps none
 	if(g.note.recording() && g.noteNumber == mark.number) {
-		g.note.stop();
-		if(kind == MarkKind::Hold) {
-			saveNote();
-		} else {
-			g.note.takeSamples();
-			LogInfo << "[vr] mark #" << mark.number << ": a short press - no voice note";
-		}
+		keepNote();
 	}
 
-	if(kind == MarkKind::Press) {
-		LogInfo << "[vr] mark #" << mark.number << ": a short press (" << mark.heldMs << " ms)";
-		return;
-	}
-
-	LogInfo << "[vr] mark #" << mark.number << ": a hold of " << holdLengthMs(mark.heldMs) << " ms"
-	        << (capped ? " - the 1 minute cap, ended by itself" : "");
-	if(capped) {
-		g.cappedAt = now;
-	}
-	// The release's snapshot, unless the last periodic one has its name
-	const std::vector<s64> offsets = snapshotOffsets(mark.heldMs);
-	if(!offsets.empty() && offsets.back() == holdLengthMs(mark.heldMs) && offsets.back() != mark.lastSnapshotMs) {
-		requestSnapshot(mark, offsets.back(), now);
+	LogInfo << "[vr] mark #" << mark.number << ": the recording stopped after " << mark.heldMs << " ms"
+	        << (capped ? " - its cap, by itself" : "");
+	// The indicator stays, frozen at the recording's length, until "saved" takes its place
+	g.saving = true;
+	g.savingLengthMs = mark.heldMs;
+	// The stop's snapshot, unless the last periodic one has its name
+	if(mark.lastSnapshotMs < 0 || snapshotName(mark.lastSnapshotMs) != snapshotName(mark.heldMs)) {
+		requestSnapshot(mark, mark.heldMs, now);
 	}
 	mark.clipDue = true;
 }
@@ -443,12 +437,19 @@ void finish(std::unique_ptr<ActiveMark> mark) {
 	const u32 number = mark->number;
 	const std::string name = mark->name;
 	const std::string meta = formatMarkMeta(mark->meta);
-	queueFile(folder, "meta.txt", [meta]() { return meta; }, [folder, number, name]() {
+	const s64 lengthMs = mark->heldMs;
+	const bool noteKept = mark->noteKept;
+	queueFile(folder, "meta.txt", [meta]() { return meta; }, [folder, number, name, lengthMs, noteKept]() {
 		const std::string files = listFiles(folder);
+		LogInfo << "[vr] mark #" << number << ": marks\\" << name << " files=" << files;
 		if(name == g.status.last) {
 			g.status.lastFiles = files;
+			// "saved" once every file is on disk, straight after the frozen indicator
+			g.saving = false;
+			g.savedAt = toMsi(platform::getTime());
+			g.savedLengthMs = lengthMs;
+			g.savedNote = noteKept;
 		}
-		LogInfo << "[vr] mark #" << number << ": marks\\" << name << " files=" << files;
 	});
 }
 
@@ -461,11 +462,12 @@ void dropShots(ActiveMark & mark, const char * why) {
 	}
 }
 
-//! The gesture came on: number the mark, take what only this frame has, ask for the eyes, start the note
+//! The gesture came on with no recording on: number the recording, take what only this frame has, ask for the eyes,
+//! start the note
 void startMark(s64 now) {
 
 	if(g.mark) {
-		// The last mark is still waiting for something: it is finished with what it has
+		// The last recording is still waiting for something: it is finished with what it has
 		if(!g.mark->decided) {
 			decide(*g.mark, now, false);
 		}
@@ -505,9 +507,10 @@ void startMark(s64 now) {
 	g.status.lastClipMs = 0;
 	g.markedAt = now;
 	g.savedAt = -1;
-	g.cappedAt = -1;
+	g.saving = false;
 	g.markedNumber = number;
-	LogInfo << "[vr] mark #" << number << ": the moment is marked (both trackpads pressed)";
+	LogInfo << "[vr] mark #" << number << ": a recording starts (both trackpads pressed; pressed again it stops, at "
+	        << "most " << g.capMs << " ms)";
 
 	// Both eyes of this frame, full size; the recorder's tail as it is now
 	Shot left;
@@ -518,8 +521,7 @@ void startMark(s64 now) {
 	requestShot(*mark, right, 1, false, now);
 	queueFile(mark->folder, "recorder.txt", []() { return platform::flightRecorderText(); });
 
-	// The voice note from the press on (push-to-talk): kept only if this becomes a hold. One still recording is kept
-	// in its own mark
+	// The voice note for as long as the recording is on. One still recording is kept in its own mark
 	if(g.note.recording()) {
 		g.note.stop();
 		saveNote();
@@ -534,7 +536,7 @@ void startMark(s64 now) {
 		const VoiceNote::State state = g.note.start(microphone(), now);
 		const s64 openUs = toUs(platform::getTime() - start);
 		if(state == VoiceNote::State::Recording) {
-			LogInfo << "[vr] mark #" << number << ": recording a voice note while both trackpads are held (at most "
+			LogInfo << "[vr] mark #" << number << ": recording a voice note until the recording stops (at most "
 			        << VoiceNote::maxMs / 1000 << " s; the microphone opened in " << openUs / 1000 << "." << (openUs / 100) % 10
 			        << " ms)";
 		}
@@ -543,7 +545,7 @@ void startMark(s64 now) {
 	g.mark = std::move(mark);
 }
 
-//! A frame of the mark being made: its pose, the snapshots, the release or the cap, its pictures, its end
+//! A frame of the recording being made: its pose, the snapshots, the cap, its pictures, its end
 void updateMark(s64 now) {
 
 	ActiveMark & mark = *g.mark;
@@ -559,14 +561,12 @@ void updateMark(s64 now) {
 
 	if(!mark.decided) {
 		const s64 held = now - mark.pressAt;
-		if(!controls().markHeld()) {
-			decide(mark, now, false);
-		} else if(holdCapped(held)) {
+		if(held >= g.capMs) {
 			decide(mark, now, true);
 		} else {
 			// The next periodic snapshot on the first frame at or after its time
 			const s64 next = s64(mark.periodic + 1) * SnapshotIntervalMs;
-			if(held >= next && next < HoldMaxMs && mark.periodic + 1 < SnapshotMax) {
+			if(held >= next && next < g.capMs && mark.periodic + 1 < SnapshotMax) {
 				mark.periodic++;
 				requestSnapshot(mark, next, now);
 			}
@@ -600,18 +600,18 @@ void updateMark(s64 now) {
 	}
 }
 
-//! The hero-dialogue panel (vr::markNotice): the indicator, "Note saved", the cap, the confirmation, or nothing
+//! The hero-dialogue panel (vr::markNotice): the indicator, "saved", the confirmation, or nothing
 void updateNotice(s64 now) {
 	MarkNoticeState state;
-	state.recording = g.note.recording();
-	state.recordingMs = state.recording ? now - g.note.startMs() : 0;
+	state.recording = g.status.recording;
+	state.recordingMs = g.status.recordingMs;
 	state.saving = g.saving;
 	state.savingLengthMs = g.savingLengthMs;
 	state.sinceSavedMs = g.savedAt >= 0 ? now - g.savedAt : -1;
 	state.savedLengthMs = g.savedLengthMs;
+	state.savedNote = g.savedNote;
 	state.sinceMarkedMs = g.markedAt >= 0 ? now - g.markedAt : -1;
 	state.markedNumber = g.markedNumber;
-	state.sinceCappedMs = g.cappedAt >= 0 ? now - g.cappedAt : -1;
 	std::string text;
 	switch(markNotice(state, text)) {
 		case MarkNotice::Recording: showSubtitleNotice(SubtitleNotice::Recording, text); break;
@@ -656,6 +656,9 @@ void update() {
 		if(!markAllowed(sim.playing && !sim.play.done)) {
 			// A replay replays the recorded trackpad presses: the marks were the recorded session's
 			LogInfo << "[vr] mark ignored: a replay is playing";
+		} else if(g.mark && !g.mark->decided) {
+			// A toggle (#632): the same press again stops the recording
+			decide(*g.mark, now, false);
 		} else {
 			startMark(now);
 		}
@@ -663,12 +666,15 @@ void update() {
 		updateMark(now);
 	}
 
-	// Push-to-talk: the note records while both trackpads stay down, a release of either ends it (and the hold:
-	// the mark decided above). Ended by itself (its minute) during a hold, it is the hold's note
-	if(g.note.recording() && g.note.update(now, controls().markHeld()) != VoiceNote::State::Recording) {
-		saveNote();
+	// The note records for as long as the recording is on (stopped with it, above). Ended by itself (its minute),
+	// it is the recording's note
+	if(g.note.recording() && g.note.update(now, true) != VoiceNote::State::Recording) {
+		keepNote();
 	}
-	g.status.recording = g.note.recording();
+	const bool recording = g.mark && !g.mark->decided;
+	g.status.recording = recording;
+	g.status.recordingMs = recording ? std::max<s64>(0, now - g.mark->pressAt) : 0;
+	g.status.capMs = g.capMs;
 	g.status.noteMs = g.note.recording() ? std::max<s64>(0, now - g.note.startMs()) : 0;
 
 	updateNotice(now);
@@ -692,6 +698,7 @@ void shutdown() {
 		saveNote();
 	}
 	g.status.recording = false;
+	g.status.recordingMs = 0;
 	g.status.noteMs = 0;
 	finishJobs();
 	g.microphone.reset();
@@ -701,14 +708,32 @@ std::string command(std::string_view rest) {
 	std::istringstream iss{std::string(rest)};
 	std::string what, value, extra;
 	iss >> what >> value;
-	if(what != "note" || (value != "on" && value != "off") || (iss >> extra)) {
-		return "marks: expected note on|off, got \"" + std::string(rest) + "\"";
+	const std::string refused = "marks: expected note on|off or cap <" + std::to_string(RecordingCapMinMs) + ".."
+	                            + std::to_string(HoldMaxMs) + " ms>, got \"" + std::string(rest) + "\"";
+	if(iss >> extra) {
+		return refused;
+	}
+	if(what == "cap") {
+		// The test hook of the 1 minute cap (#632): a whole number of ms
+		if(value.empty() || value.size() > 6 || value.find_first_not_of("0123456789") != std::string::npos) {
+			return refused;
+		}
+		const s64 ms = std::stoll(value);
+		if(ms < RecordingCapMinMs || ms > HoldMaxMs) {
+			return refused;
+		}
+		g.capMs = ms;
+		g.status.capMs = ms;
+		LogInfo << "[vr] marks: a recording stops by itself after " << ms << " ms";
+		return std::string();
+	}
+	if(what != "note" || (value != "on" && value != "off")) {
+		return refused;
 	}
 	g.noteRead = true;
 	g.status.note = (value == "on");
 	if(!g.status.note && g.note.recording()) {
-		g.note.stop();
-		saveNote();
+		keepNote();
 	}
 	LogInfo << "[vr] marks: voice note " << value;
 	return std::string();

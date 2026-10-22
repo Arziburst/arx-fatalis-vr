@@ -13,10 +13,43 @@ a changed decision keeps its history in that cell.
 
 ---
 
+## D-NEW: A mark of the moment is a toggle - both trackpads pressed start a recording, pressed again stop it, at most 1 minute
+
+- **Date:** 2026-10-22
+- **Status:** Accepted (#632; supersedes D-062's short press and hold - what a recording writes is D-062's hold, its
+  folder, snapshots, clip, note and transcription stay; D-061's gesture, panel and microphone rules stay)
+- **Decided by:** the owner (the toggle on both trackpads, no snapshot-only press, at most 1 minute, the thumbs free
+  during a recording, 2026-10-22); the coordinator (the start / stop press is not also a single trackpad's binding; a
+  press after the cap stopped a recording starts a new one; the `marks cap <ms>` test hook)
+
+### Decision
+- **One press of both Index trackpads starts a recording, the same press again stops and saves it**
+  (`ControlResolver::markGesture` as before; `src/vr/VRMarks.cpp`). How long a press is held changes nothing: no
+  short press (D-062's `HoldThresholdMs` snapshot-only mark) and no push-to-talk. At `HoldMaxMs` (1 minute) a
+  recording stops by itself; the channel's `marks cap <ms>` (1000 to 60000) shortens it for a test.
+- **What a recording writes is D-062's hold** (`kind=hold`, `pressMs` / `releaseMs` = the start and the stop, the
+  `# hold:` clip line), so `marks.ps1` and `transcribe.ps1` read it unchanged; the voice note records for as long as the
+  recording is on.
+- **The thumbs are free:** a trackpad or a button pressed alone acts on the game during a recording. The press of both
+  is not also a trackpad's own binding: a trackpad pressed in the gesture's update does nothing of its own, one held a
+  moment before ends what it holds and taps nothing at its release (a single press that acted at once has acted).
+- **The panel** shows the indicator for as long as the recording is on, with or without a microphone (after D-062's
+  first 0.5 s of "Moment marked (#N)"), frozen until the files are written, then "Note saved (m:ss)" or, without a
+  note, "Recording saved (m:ss)" for about 1.5 s. D-062's "Hold ended at the 1:00 limit" notice is gone: the saved
+  line's length says it.
+
+### Consequences
+- The owner can use the buttons while he talks. A forgotten recording runs to its minute (about 8-10 MB).
+- A trackpad bound to an event by a player does not get that event on the press of both; one pressed a moment earlier
+  that acts on its press (a single binding, not deferred) still acts once.
+- The status `marks.recording` means "a recording is on" (D-062: "a voice note records"); `marks.recordingMs` and
+  `marks.capMs` are new; `marks.count` counts recordings started.
+
 ## D-062: Marks v2 - a short press is a snapshot, a hold is the voice note, its clip and a snapshot every 2 s; the notes transcribed locally
 
 - **Date:** 2026-10-21
-- **Status:** Accepted (#574; refines D-061 - its gesture, panel and microphone rules stay; the coordinator's research
+- **Status:** Partly superseded by D-NEW (#632: a toggle, no short press, no push-to-talk; the folder, the snapshots,
+  the clip, the note and the transcription stay). Accepted (#574; refines D-061 - its gesture, panel and microphone rules stay; the coordinator's research
   is `coordinator/research/2026-10-21-marks-v2-transcription.md`)
 - **Decided by:** the owner (a short press records what he sees, a hold what he says and does; the hold capped at
   1 minute; the left eye at half size every 2 s plus the release, both eyes at full size at the press; the press

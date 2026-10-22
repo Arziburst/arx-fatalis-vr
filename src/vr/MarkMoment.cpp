@@ -162,7 +162,7 @@ MarkNotice markNotice(const MarkNoticeState & state, std::string & text) {
 		return MarkNotice::Recording;
 	}
 	if(state.sinceSavedMs >= 0 && state.sinceSavedMs < NoteSavedMs) {
-		text = noteSavedText(state.savedLengthMs);
+		text = state.savedNote ? noteSavedText(state.savedLengthMs) : recordingSavedText(state.savedLengthMs);
 		return MarkNotice::Saved;
 	}
 	if(state.sinceCappedMs >= 0 && state.sinceCappedMs < HoldCappedNoticeMs) {
@@ -187,6 +187,10 @@ std::string noteIndicatorText(s64 elapsedMs) {
 
 std::string noteSavedText(s64 lengthMs) {
 	return std::string(MicrophoneMark) + " Note saved (" + minutesSeconds(lengthMs) + ")";
+}
+
+std::string recordingSavedText(s64 lengthMs) {
+	return std::string(MicrophoneMark) + " Recording saved (" + minutesSeconds(lengthMs) + ")";
 }
 
 std::string markFolderName(s64 unixSeconds, u32 number) {

@@ -160,6 +160,7 @@ class MarkMomentTest final : public CppUnit::TestFixture {
 	CPPUNIT_TEST(metaOneLinePerFieldTest);
 	CPPUNIT_TEST(replayAndSimulatorTest);
 	CPPUNIT_TEST(noticeTransitionTest);
+	CPPUNIT_TEST(gestureNotTheTrackpadsBindingsTest);
 	CPPUNIT_TEST_SUITE_END();
 
 public:
@@ -180,6 +181,13 @@ public:
 	void replayAndSimulatorTest();
 	//! The panel from the release to "Note saved": the indicator frozen while the note.wav is written, no blank (#551)
 	void noticeTransitionTest();
+	/*!
+	 * The toggle (#632, the coordinator's decision): the press of both trackpads that starts or stops a recording is
+	 * not also a trackpad's own binding - pressed in one update nothing of theirs acts; one pressed first acts only
+	 * as far as it already did alone (a single press at once), its deferred tap and its long press do not follow. A
+	 * trackpad alone acts as bound
+	 */
+	void gestureNotTheTrackpadsBindingsTest();
 
 };
 

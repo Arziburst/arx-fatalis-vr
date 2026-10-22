@@ -28,8 +28,9 @@
 
 /*!
  * \file
- * \brief The voice note of a mark (#551): push-to-talk - the default microphone while both trackpads stay pressed
- *        after the mark, up to 1 minute (the hold's cap, #574), saved as note.wav
+ * \brief The voice note of a mark (#551): the default microphone for as long as the recording is on (#632: from
+ *        one press of both trackpads to the next; push-to-talk before), up to 1 minute (the cap, #574), saved as
+ *        note.wav
  *
  * The capture's state machine and the WAV writer; the microphone is a \ref NoteDevice - the default OpenAL capture
  * device in the game (vr/NoteMicrophone.h), a fake in the tests. Pure: no OpenAL, no engine globals, no

@@ -1426,7 +1426,8 @@ void ArxGame::limitFrameRate() {
  *
  * While an OpenXR session exists the headset's xrWaitFrame (vr::beginFrame) paces the game; the
  * window's vsync and the engine's fps limiter would pace it a second time, so both are off, and
- * restored when the session goes away. cfg.ini is not modified.
+ * restored when the session goes away. The same goes for minimizing the window on a focus loss
+ * (#406, restored for a game that goes on flat: #606). cfg.ini is not modified.
  */
 void ArxGame::applyVRPacing() {
 	
@@ -1437,6 +1438,7 @@ void ArxGame::applyVRPacing() {
 	m_vrPacing = vr;
 	
 	m_MainWindow->setVSync((vr || benchmark::isEnabled()) ? 0 : config.video.vsync);
+	m_MainWindow->setMinimizeOnFocusLost(!vr && config.window.minimizeOnFocusLost);
 	
 	if(vr) {
 		LogInfo << "[vr] pacing: window vsync off and the fps limiter disabled - the headset's xrWaitFrame"
@@ -1444,8 +1446,9 @@ void ArxGame::applyVRPacing() {
 		                                 ? " (cfg.ini fps_limit=" + std::to_string(config.video.fpsLimit)
 		                                   + " is ignored in VR; vr_frame_divisor caps the rate)" : "");
 	} else {
-		LogInfo << "[vr] pacing: flat mode - window vsync " << config.video.vsync << " and fps_limit "
-		        << config.video.fpsLimit << " from cfg.ini apply again";
+		LogInfo << "[vr] pacing: flat mode - window vsync " << config.video.vsync << ", fps_limit "
+		        << config.video.fpsLimit << " and minimize_on_focus_lost "
+		        << (config.window.minimizeOnFocusLost ? "true" : "false") << " from cfg.ini apply again";
 	}
 	
 	m_frameDelta = PlatformDuration(0);

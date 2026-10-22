@@ -70,16 +70,27 @@ function Get-ArxChangedFiles([string]$SourceDir, [string]$Base) {
 	$set.Files
 }
 
-# The same, telling an empty change from a diff that could not be made: { Ok = the diff ran; Files }. The selection of
-# a pull request (#522) runs everything when it does not know what changed.
+# The same, telling an empty change from a diff that could not be made: { Ok = the diff ran; Files; Deleted = the paths
+# of Files the change deletes, a rename's old path among them (#608) }. The selection of a pull request (#522) runs
+# everything when it does not know what changed.
 function Get-ArxChangedFileSet([string]$SourceDir, [string]$Base) {
-	if (-not $Base) { return [pscustomobject]@{ Ok = $false; Files = @() } }
+	if (-not $Base) { return [pscustomobject]@{ Ok = $false; Files = @(); Deleted = @() } }
 	foreach ($range in @("$Base...HEAD"), @($Base, 'HEAD')) {
-		$files = @(git -C $SourceDir diff --name-only --no-renames @range 2>$null)
-		if ($LASTEXITCODE -eq 0) { $global:LASTEXITCODE = 0; return [pscustomobject]@{ Ok = $true; Files = $files } }
+		$lines = @(git -C $SourceDir diff --name-status --no-renames @range 2>$null)
+		if ($LASTEXITCODE -ne 0) { continue }
+		$global:LASTEXITCODE = 0
+		$files = [Collections.Generic.List[string]]::new()
+		$deleted = [Collections.Generic.List[string]]::new()
+		foreach ($line in $lines) {
+			# <status letter(s)><tab><path>; --no-renames gives one path per line
+			if ($line -notmatch '^(\S+)\t(.+)$') { continue }
+			$files.Add($Matches[2])
+			if ($Matches[1] -eq 'D') { $deleted.Add($Matches[2]) }
+		}
+		return [pscustomobject]@{ Ok = $true; Files = @($files); Deleted = @($deleted) }
 	}
 	$global:LASTEXITCODE = 0
-	[pscustomobject]@{ Ok = $false; Files = @() }
+	[pscustomobject]@{ Ok = $false; Files = @(); Deleted = @() }
 }
 
 # The run order of the sequence phases - the risk order (#527). $Units: one per sequence, in the serial (name) order,
@@ -173,12 +184,15 @@ $ArxImpactChecks = @('smoke-test', 'spell-drawcheck')
 # $ArxImpactChecks. A glob is a repository path with / and the wildcards of -like (* also crosses folders), any case.
 # '#' starts a comment. Returns { Path; Core; Rules = { Glob; Targets; Line; Pattern }; Errors } - a line that is
 # none of these is an error, never skipped in silence.
-function Read-ArxImpactMap([string]$Path) {
+function Read-ArxImpactMap([string]$Path) { ConvertFrom-ArxImpactMapLines ([IO.File]::ReadAllLines($Path)) $Path }
+
+# The parser of Read-ArxImpactMap over the lines of a map; $Path is only what the result names
+function ConvertFrom-ArxImpactMapLines([string[]]$Lines, [string]$Path) {
 	$core = [Collections.Generic.List[string]]::new()
 	$rules = [Collections.Generic.List[object]]::new()
 	$errors = [Collections.Generic.List[string]]::new()
 	$n = 0
-	foreach ($raw in [IO.File]::ReadAllLines($Path)) {
+	foreach ($raw in @($Lines)) {
 		$n++
 		$line = ($raw -replace '(^|\s)#.*$', '').Trim()
 		if (-not $line) { continue }
@@ -199,6 +213,26 @@ function Read-ArxImpactMap([string]$Path) {
 	[pscustomobject]@{ Path = $Path; Core = @($core); Rules = @($rules); Errors = @($errors) }
 }
 
+# The impact map of the base tree (#608): the map before the change, where a deleted path's line may still stand when
+# the change removed it with the path. The base tree is the merge base of $Base and HEAD, or $Base itself when there is
+# none (a shallow checkout, as Get-ArxChangedFileSet). $MapPath is a repository path. $null - never a throw - when there
+# is no base, the ref is unknown or the base tree has no such file.
+function Read-ArxBaseImpactMap([string]$SourceDir, [string]$Base, [string]$MapPath = 'scripts/dev/xrs/impact.txt') {
+	if (-not $Base) { return $null }
+	try {
+		$commit = @(git -C $SourceDir merge-base $Base HEAD 2>$null)[0]
+		if ($LASTEXITCODE -ne 0 -or -not $commit) { $commit = @(git -C $SourceDir rev-parse --verify --quiet "$Base^{commit}" 2>$null)[0] }
+		if ($LASTEXITCODE -ne 0 -or -not $commit) { return $null }
+		$lines = @(git -C $SourceDir show "${commit}:$MapPath" 2>$null)
+		if ($LASTEXITCODE -ne 0) { return $null }
+		ConvertFrom-ArxImpactMapLines $lines "${commit}:$MapPath"
+	} catch {
+		$null
+	} finally {
+		$global:LASTEXITCODE = 0
+	}
+}
+
 # The sequence a changed .xrs file selects by itself: scripts/dev/xrs/<name>.xrs and its read-back
 # scripts/dev/xrs/readback/<name>-readback.xrs both give <name>; any other path gives $null
 function Get-ArxChangedSequenceName([string]$Path) {
@@ -209,28 +243,40 @@ function Get-ArxChangedSequenceName([string]$Path) {
 }
 
 # The game checks of a change set: the core, every name of a rule whose glob matches a changed path, and the changed or
-# added .xrs files themselves (a read-back selects its sequence). A changed path that no rule matches (and that is not
-# an .xrs) or a rule '-> *' makes it Full: everything runs. Returns
+# added .xrs files themselves (a read-back selects its sequence). A deleted path (in $Deleted) that no rule of $Map
+# matches is matched against the rules of $BaseMap, the map before the change (#608): a change that deletes a file
+# often removes its line too. A changed path that no rule of either matches (and that is not an .xrs) or a rule '-> *'
+# makes it Full: everything runs. Returns
 #   { Full; Names (sorted, without duplicates); Reasons (name -> the first reason: 'core' or the path); FullBecause
 #     (the lines that made it Full); Unmapped (the paths no rule matched) }
 # Names lists the selection even when Full, for the log.
-function Get-ArxImpactSelection($Map, [string[]]$Changed = @()) {
+function Get-ArxImpactSelection($Map, [string[]]$Changed = @(), [string[]]$Deleted = @(), $BaseMap = $null) {
 	$reasons = @{}
 	foreach ($name in $Map.Core) { if (-not $reasons.ContainsKey($name)) { $reasons[$name] = 'core' } }
 	$fullBecause = [Collections.Generic.List[string]]::new()
 	$unmapped = [Collections.Generic.List[string]]::new()
+	$deletedSet = @{}
+	foreach ($d in @($Deleted)) { if ($d) { $deletedSet[($d -replace '\\', '/').ToLowerInvariant()] = $true } }
+	# The names of every rule of $Rules that matches $Path go into the selection with $Reason; $true when one matched
+	function Add-MatchingRules($Rules, [string]$Path, [string]$Reason, [string]$Where) {
+		$hit = $false
+		foreach ($rule in $Rules) {
+			if (-not $rule.Pattern.IsMatch($Path)) { continue }
+			$hit = $true
+			if ($rule.Targets[0] -eq '*') { $fullBecause.Add("$Path (${Where}line $($rule.Line): $($rule.Glob) -> *)"); continue }
+			if ($rule.Targets[0] -eq 'core') { continue }
+			foreach ($name in $rule.Targets) { if (-not $reasons.ContainsKey($name)) { $reasons[$name] = $Reason } }
+		}
+		$hit
+	}
 	foreach ($raw in @($Changed)) {
 		if (-not $raw) { continue }
 		$path = $raw -replace '\\', '/'
 		$own = Get-ArxChangedSequenceName $path
 		if ($own -and -not $reasons.ContainsKey($own)) { $reasons[$own] = $path }
-		$matched = [bool]$own
-		foreach ($rule in $Map.Rules) {
-			if (-not $rule.Pattern.IsMatch($path)) { continue }
-			$matched = $true
-			if ($rule.Targets[0] -eq '*') { $fullBecause.Add("$path (line $($rule.Line): $($rule.Glob) -> *)"); continue }
-			if ($rule.Targets[0] -eq 'core') { continue }
-			foreach ($name in $rule.Targets) { if (-not $reasons.ContainsKey($name)) { $reasons[$name] = $path } }
+		$matched = (Add-MatchingRules $Map.Rules $path $path '') -or [bool]$own
+		if (-not $matched -and $BaseMap -and $deletedSet.ContainsKey($path.ToLowerInvariant())) {
+			$matched = Add-MatchingRules $BaseMap.Rules $path "$path (deleted; the map before the change)" 'deleted; the map before the change, '
 		}
 		if (-not $matched) {
 			$unmapped.Add($path)

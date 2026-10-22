@@ -220,7 +220,7 @@ $selection = $null
 $suiteWhy = 'asked for'
 $changedSet = $null
 if ($Suite -eq 'pr') {
-	$changedSet = if ($Changed) { [pscustomobject]@{ Ok = $true; Files = $Changed } } else { Get-ArxChangedFileSet $ArxSourceDir $Base }
+	$changedSet = if ($Changed) { [pscustomobject]@{ Ok = $true; Files = $Changed; Deleted = @() } } else { Get-ArxChangedFileSet $ArxSourceDir $Base }
 	if (-not $changedSet.Ok) { $suiteWhy = "the change is unknown ($(if ($Base) { "cannot diff against $Base" } else { 'no base' }))" }
 	else {
 		$impact = Read-ArxImpactMap $ImpactMap
@@ -228,7 +228,13 @@ if ($Suite -eq 'pr') {
 		foreach ($problem in @(Test-ArxImpactMap $impact (Get-ArxSequenceNames (Join-Path $PSScriptRoot 'xrs')))) { Write-Host "ci-smoke: impact map: $problem" -ForegroundColor Yellow }
 		if ($impact.Errors) { $suiteWhy = "the impact map $ImpactMap has errors" }
 		else {
-			$sel = Get-ArxImpactSelection $impact $changedSet.Files
+			# A deleted path whose line the change removed too is matched against the base tree's map (#608)
+			$baseImpact = $null
+			$mapRepoPath = [IO.Path]::GetRelativePath($ArxSourceDir, $ImpactMap) -replace '\\', '/'
+			if ($changedSet.Deleted -and -not $mapRepoPath.StartsWith('..') -and -not [IO.Path]::IsPathRooted($mapRepoPath)) {
+				$baseImpact = Read-ArxBaseImpactMap $ArxSourceDir $Base -MapPath $mapRepoPath
+			}
+			$sel = Get-ArxImpactSelection $impact $changedSet.Files -Deleted $changedSet.Deleted -BaseMap $baseImpact
 			if ($sel.Full) { $suiteWhy = "the change needs everything: $($sel.FullBecause -join '; ')" }
 			else { $selection = $sel }
 		}

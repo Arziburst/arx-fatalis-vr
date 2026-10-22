@@ -40,6 +40,7 @@
 #include <type_traits>
 #include <vector>
 
+#include "ai/Paths.h"
 #include "animation/Animation.h"
 #include "cinematic/CinematicController.h"
 #include "core/Application.h"
@@ -102,6 +103,7 @@
 #include "platform/Time.h"
 #include "scene/ChangeLevel.h"
 #include "scene/Interactive.h"
+#include "scene/Tiles.h"
 #include "script/Script.h"
 #include "util/Number.h"
 #include "util/String.h"
@@ -500,6 +502,18 @@ struct State {
 		Vec3f angles = Vec3f(0.f);   //!< pitch, yaw, roll in degrees
 		PlatformInstant movedAt = 0;
 	} cameraWatch;
+
+	//! levelstats (#596): the frame times since `levelstats start`, and what the last report found
+	struct LevelStats {
+		bool measuring = false;
+		PlatformInstant lastFrame = 0; //!< The previous frame's top while measuring; 0 before the first one
+		std::vector<s64> frameUs;      //!< Frame to frame, microseconds
+		u32 reports = 0;
+		u32 frames = 0;
+		double meanMs = 0.0, p95Ms = 0.0, maxMs = 0.0;
+		size_t exits = 0, ladders = 0;
+		std::string listing;           //!< Every report of the run: <dir>\level-tour.txt
+	} levelStats;
 
 };
 
@@ -983,6 +997,17 @@ std::string buildStatus(PlatformInstant now) {
 	// The timed texts at the top of the 2D interface (a script's tutorial hint): a shot of the HUD that must not
 	// change waits for none (#370)
 	json.value("notifications", u64(notification_count()));
+	// The level tour's last `levelstats report` (#596)
+	json.object("levelStats");
+	json.value("measuring", g.levelStats.measuring);
+	json.value("reports", g.levelStats.reports);
+	json.value("frames", g.levelStats.frames);
+	json.value("meanMs", float(g.levelStats.meanMs));
+	json.value("p95Ms", float(g.levelStats.p95Ms));
+	json.value("maxMs", float(g.levelStats.maxMs));
+	json.value("exits", u64(g.levelStats.exits));
+	json.value("ladders", u64(g.levelStats.ladders));
+	json.end();
 
 	if(g_currentArea) {
 		json.object("player");
@@ -2329,6 +2354,211 @@ bool parseFloats(std::string_view text, std::vector<float> & values) {
 		rest = next;
 	}
 	return true;
+}
+
+//! A level change in a script (#596): `teleport -l<flags> [<angle>] <level> <target>` (ScriptedIOControl.cpp)
+struct ScriptLevelChange {
+	std::string level;
+	std::string target;
+};
+
+//! Every level change in a (lowercase) script, each level and target once
+std::vector<ScriptLevelChange> scriptLevelChanges(std::string_view script) {
+	std::vector<ScriptLevelChange> changes;
+	const std::string_view command = "teleport";
+	for(size_t pos = script.find(command); pos != std::string_view::npos; pos = script.find(command, pos + 1)) {
+		const size_t after = pos + command.size();
+		if((pos > 0 && !std::isspace(static_cast<unsigned char>(script[pos - 1])))
+		   || after >= script.size() || !std::isspace(static_cast<unsigned char>(script[after]))) {
+			continue; // part of another word
+		}
+		std::string_view line = script.substr(after);
+		line = line.substr(0, line.find_first_of("\r\n"));
+		std::string_view rest;
+		std::string_view flags = firstWord(trim(line), rest);
+		if(flags.size() < 2 || flags[0] != '-' || flags.find('l') == std::string_view::npos) {
+			continue; // a teleport within the level
+		}
+		if(flags.find('a') != std::string_view::npos) {
+			firstWord(rest, rest); // the angle comes first
+		}
+		ScriptLevelChange change;
+		change.level = std::string(firstWord(rest, rest));
+		change.target = std::string(firstWord(rest, rest));
+		if(change.level.empty()) {
+			continue;
+		}
+		// A script variable (the magic portals: ~£leading_to~) has the Latin-1 sigil: '?' keeps the list ASCII
+		for(std::string * word : { &change.level, &change.target }) {
+			for(char & c : *word) {
+				if(static_cast<unsigned char>(c) >= 0x80) {
+					c = '?';
+				}
+			}
+		}
+		bool known = false;
+		for(const ScriptLevelChange & other : changes) {
+			known = known || (other.level == change.level && other.target == change.target);
+		}
+		if(!known) {
+			changes.push_back(std::move(change));
+		}
+	}
+	return changes;
+}
+
+//! The climbable background polygons (POLY_CLIMB, from a texture named "climb"), grouped into ladders
+struct LevelLadder {
+	Vec3f min = Vec3f(0.f);
+	Vec3f max = Vec3f(0.f);
+	size_t polygons = 0;
+};
+
+std::vector<LevelLadder> levelLadders() {
+
+	std::vector<LevelLadder> pieces;
+	if(!g_tiles) {
+		return pieces;
+	}
+	for(auto tile : g_tiles->tiles()) {
+		for(const EERIEPOLY & polygon : tile.polygons()) {
+			if(polygon.type & POLY_CLIMB) {
+				pieces.push_back(LevelLadder{ polygon.min, polygon.max, 1 });
+			}
+		}
+	}
+
+	// One ladder is many polygons: pieces closer than a hand's width (in game units) are one ladder
+	const float gap = 30.f;
+	std::vector<size_t> group(pieces.size());
+	for(size_t i = 0; i < group.size(); i++) {
+		group[i] = i;
+	}
+	auto root = [&group](size_t i) {
+		while(group[i] != i) {
+			i = group[i] = group[group[i]];
+		}
+		return i;
+	};
+	for(size_t i = 0; i < pieces.size(); i++) {
+		for(size_t j = i + 1; j < pieces.size(); j++) {
+			const LevelLadder & a = pieces[i];
+			const LevelLadder & b = pieces[j];
+			if(a.min.x - gap <= b.max.x && b.min.x - gap <= a.max.x && a.min.y - gap <= b.max.y
+			   && b.min.y - gap <= a.max.y && a.min.z - gap <= b.max.z && b.min.z - gap <= a.max.z) {
+				group[root(j)] = root(i);
+			}
+		}
+	}
+
+	std::vector<LevelLadder> ladders;
+	std::vector<size_t> ladderOf(pieces.size(), size_t(-1));
+	for(size_t i = 0; i < pieces.size(); i++) {
+		const size_t r = root(i);
+		if(ladderOf[r] == size_t(-1)) {
+			ladderOf[r] = ladders.size();
+			ladders.push_back(LevelLadder{ pieces[i].min, pieces[i].max, 0 });
+		}
+		LevelLadder & ladder = ladders[ladderOf[r]];
+		ladder.min = glm::min(ladder.min, pieces[i].min);
+		ladder.max = glm::max(ladder.max, pieces[i].max);
+		ladder.polygons++;
+	}
+	return ladders;
+}
+
+std::string formatVec(const Vec3f & v) {
+	std::ostringstream oss;
+	oss << std::fixed << std::setprecision(1) << v.x << ' ' << v.y << ' ' << v.z;
+	return oss.str();
+}
+
+/*!
+ * levelstats report (#596): the frame times since `levelstats start` and where the player is, one log line; the
+ * level's exits (entities whose scripts change the level, with the zones they control) and ladders appended to
+ * <dir>\level-tour.txt
+ */
+std::string reportLevelStats() {
+
+	State::LevelStats & stats = g.levelStats;
+	std::vector<s64> frames = std::move(stats.frameUs);
+	stats.frameUs.clear();
+	stats.measuring = false;
+	stats.lastFrame = 0;
+
+	stats.reports++;
+	stats.frames = u32(frames.size());
+	stats.meanMs = stats.p95Ms = stats.maxMs = 0.0;
+	if(!frames.empty()) {
+		s64 total = 0;
+		for(s64 us : frames) {
+			total += us;
+		}
+		stats.meanMs = double(total) / double(frames.size()) / 1000.0;
+		// Nearest rank, as arx-perf.log: the smallest frame time that at least 95 % of the frames do not exceed
+		const size_t rank = (frames.size() * 95 + 99) / 100;
+		std::nth_element(frames.begin(), frames.begin() + std::ptrdiff_t(rank - 1), frames.end());
+		stats.p95Ms = double(frames[rank - 1]) / 1000.0;
+		stats.maxMs = double(*std::max_element(frames.begin(), frames.end())) / 1000.0;
+	}
+
+	const u32 area = g_currentArea ? u32(g_currentArea) : 0u;
+	std::ostringstream exits;
+	stats.exits = 0;
+	for(const Entity & entity : entities) {
+		std::vector<ScriptLevelChange> changes = scriptLevelChanges(entity.script.data);
+		for(ScriptLevelChange & change : scriptLevelChanges(entity.over_script.data)) {
+			changes.push_back(std::move(change));
+		}
+		for(const ScriptLevelChange & change : changes) {
+			bool zoned = false;
+			for(const Zone & zone : g_zones) {
+				if(zone.controled != entity.idString()) {
+					continue;
+				}
+				// A zone's box: x and z from its outline, y at its floor (pos.y), up by its height (y is down); a zone
+				// without a height reaches from top to bottom
+				const Vec3f center((zone.bbmin.x + zone.bbmax.x) / 2.f, zone.pos.y, (zone.bbmin.z + zone.bbmax.z) / 2.f);
+				exits << "  exit to=" << change.level << ' ' << (change.target.empty() ? "-" : change.target)
+				      << " by=" << entity.idString() << " zone=" << zone.name << " pos=" << formatVec(center)
+				      << std::fixed << std::setprecision(1) << " size=" << (zone.bbmax.x - zone.bbmin.x) << ' '
+				      << (zone.bbmax.z - zone.bbmin.z) << " height=";
+				if(zone.height > 0) {
+					exits << zone.height << '\n';
+				} else {
+					exits << "any\n";
+				}
+				stats.exits++;
+				zoned = true;
+			}
+			if(!zoned) {
+				exits << "  exit to=" << change.level << ' ' << (change.target.empty() ? "-" : change.target)
+				      << " by=" << entity.idString() << " zone=- pos=" << formatVec(entity.pos) << '\n';
+				stats.exits++;
+			}
+		}
+	}
+
+	const std::vector<LevelLadder> ladders = levelLadders();
+	stats.ladders = ladders.size();
+
+	std::ostringstream line;
+	line << "level " << area << " frames=" << stats.frames << std::fixed << std::setprecision(2)
+	     << " mean=" << stats.meanMs << " p95=" << stats.p95Ms << " max=" << stats.maxMs
+	     << " player=" << formatVec(player.pos) << " exits=" << stats.exits << " ladders=" << stats.ladders;
+	LogInfo << "[channel] levelstats: " << line.str();
+
+	std::ostringstream listing;
+	listing << line.str() << '\n' << exits.str();
+	for(const LevelLadder & ladder : ladders) {
+		listing << "  ladder pos=" << formatVec((ladder.min + ladder.max) / 2.f) << " size=" << formatVec(ladder.max - ladder.min)
+		        << " polygons=" << ladder.polygons << '\n';
+	}
+	stats.listing += listing.str();
+	if(!fs::write(g.dir / "level-tour.txt", stats.listing)) {
+		return refuse("levelstats: could not write " + (g.dir / "level-tour.txt").string());
+	}
+	return std::string();
 }
 
 /*!
@@ -3893,6 +4123,26 @@ std::string execute(std::string_view line) {
 		return refuse("playground: expected pull, kill, fight, place or hit, got \"" + std::string(what) + "\"");
 	}
 
+	if(word == "levelstats") {
+		// levelstats start | report: the level tour's frame times, player position, exits and ladders (#596)
+		if(currentState() != GameState::Gameplay || !g_currentArea) {
+			return refuse(std::string("levelstats: needs a level on screen (state ") + gameStateName(currentState()) + ")");
+		}
+		if(rest == "start") {
+			g.levelStats.measuring = true;
+			g.levelStats.lastFrame = 0;
+			g.levelStats.frameUs.clear();
+			return std::string();
+		}
+		if(rest == "report") {
+			if(!g.levelStats.measuring) {
+				return refuse("levelstats report: no levelstats start before it");
+			}
+			return reportLevelStats();
+		}
+		return refuse("levelstats: expected start or report, got \"" + std::string(rest) + "\"");
+	}
+
 	if(word == "loadlevel") {
 		std::string_view target;
 		std::string_view level = firstWord(rest, target);
@@ -4192,6 +4442,14 @@ void update() {
 
 	g.frame++;
 	PlatformInstant now = platform::getTime();
+
+	// levelstats (#596): one frame is from this point to the same point of the next frame, as in arx-perf.log
+	if(g.levelStats.measuring) {
+		if(g.levelStats.lastFrame != PlatformInstant(0)) {
+			g.levelStats.frameUs.push_back(toUs(now - g.levelStats.lastFrame));
+		}
+		g.levelStats.lastFrame = now;
+	}
 
 	if(g_crashAt != PlatformInstant(0) && toUs(now - g_crashAt) >= 0) {
 		LogWarning << "[crash] deliberate crash requested through the test channel";

@@ -1,0 +1,458 @@
+# The level tour (#596): every level of the game loaded on the simulated headset with loadlevel - 10 (the start),
+# 0-8 and 11-23 (there is no level 9). Each level loads with no [E] line and no hang report, renders (frames in
+# gameplay, a shot whose eyes got a picture) and logs one line with its frame time and the player's position:
+#   [channel] levelstats: level 3 frames=244 mean=11.11 p95=12.18 max=12.88 player=7257.6 822.9 7663.8 exits=22 ladders=0
+# The level's exits (the entities whose scripts change the level, with the zones they control) and ladders (the
+# climbable polygons, grouped) go to <test dir>\level-tour.txt for later tasks (#479, #55).
+# Manual (not in CI): the game runs 1 min 42 s - 2 min 2 s (four runs), about 1 min 46 s from the launch to the
+# verdict - far over the 30 s a check of the merge gate may cost (docs/vr/TESTING.md "The level tour").
+#   .\scripts\dev\xrs-run.ps1 manual\level-tour
+# Every level is entered at a real entry marker - the target of an exit of another level (level-tour.txt) - as the
+# game enters it. Without a target the player keeps the previous level's coordinates and often stands outside the
+# new level (black eyes); that way level 21 crashed in its init once (#601), not at its real entry.
+# A level that fails is a bug issue, and its failing step here an @pending #<issue> - never a weaker check.
+# Frame rate is guaranteed in level 1 only (the owner, #596): the times are measured and logged, not judged. They
+# read the PC's load too (two runs beside other games: 17-32 ms means on different levels each time), so compare runs
+# made while no other game runs.
+@sim idle
+@solo
+@args --loadlevel 10
+
+@until state eq GAMEPLAY 60s
+@until hangWatchdog.watching eq true 30s
+
+# --- Level 10: the start (--loadlevel 10)
+@remember errors10 errors
+@assert area eq 10
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 10 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-10
+@assert vr.sim.shots.level-10.left.scene.verdict ne background
+@assert vr.sim.shots.level-10.right.scene.verdict ne background
+@assert errors eq {errors10}
+
+# --- Level 0, entered at marker_0318 as from level 8
+@remember errors0 errors
+@mark
+loadlevel 0 marker_0318
+@assert area eq 0
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 0 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-0
+@assert vr.sim.shots.level-0.left.scene.verdict ne background
+@assert vr.sim.shots.level-0.right.scene.verdict ne background
+@assert errors eq {errors0}
+
+# --- Level 1, entered at marker_0228 as from level 10
+@remember errors1 errors
+@mark
+loadlevel 1 marker_0228
+@assert area eq 1
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 1 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-1
+@assert vr.sim.shots.level-1.left.scene.verdict ne background
+@assert vr.sim.shots.level-1.right.scene.verdict ne background
+@assert errors eq {errors1}
+
+# --- Level 2, entered at marker_0217 as from level 1
+@remember errors2 errors
+@mark
+loadlevel 2 marker_0217
+@assert area eq 2
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 2 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-2
+@assert vr.sim.shots.level-2.left.scene.verdict ne background
+@assert vr.sim.shots.level-2.right.scene.verdict ne background
+@assert errors eq {errors2}
+
+# --- Level 3, entered at marker_0239 as from level 2
+@remember errors3 errors
+@mark
+loadlevel 3 marker_0239
+@assert area eq 3
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 3 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-3
+@assert vr.sim.shots.level-3.left.scene.verdict ne background
+@assert vr.sim.shots.level-3.right.scene.verdict ne background
+@assert errors eq {errors3}
+
+# --- Level 4, entered at marker_0224 as from level 3
+@remember errors4 errors
+@mark
+loadlevel 4 marker_0224
+@assert area eq 4
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 4 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-4
+@assert vr.sim.shots.level-4.left.scene.verdict ne background
+@assert vr.sim.shots.level-4.right.scene.verdict ne background
+@assert errors eq {errors4}
+
+# --- Level 5, entered at marker_0257 as from level 3
+@remember errors5 errors
+@mark
+loadlevel 5 marker_0257
+@assert area eq 5
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 5 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-5
+@assert vr.sim.shots.level-5.left.scene.verdict ne background
+@assert vr.sim.shots.level-5.right.scene.verdict ne background
+@assert errors eq {errors5}
+
+# --- Level 6, entered at marker_0256 as from level 5
+@remember errors6 errors
+@mark
+loadlevel 6 marker_0256
+@assert area eq 6
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 6 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-6
+@assert vr.sim.shots.level-6.left.scene.verdict ne background
+@assert vr.sim.shots.level-6.right.scene.verdict ne background
+@assert errors eq {errors6}
+
+# --- Level 7, entered at marker_0237 as from level 6
+@remember errors7 errors
+@mark
+loadlevel 7 marker_0237
+@assert area eq 7
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 7 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-7
+@assert vr.sim.shots.level-7.left.scene.verdict ne background
+@assert vr.sim.shots.level-7.right.scene.verdict ne background
+@assert errors eq {errors7}
+
+# --- Level 8, entered at marker_0298 as from level 0
+@remember errors8 errors
+@mark
+loadlevel 8 marker_0298
+@assert area eq 8
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 8 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-8
+@assert vr.sim.shots.level-8.left.scene.verdict ne background
+@assert vr.sim.shots.level-8.right.scene.verdict ne background
+@assert errors eq {errors8}
+
+# --- Level 11, entered at marker_0306 as from level 0
+@remember errors11 errors
+@mark
+loadlevel 11 marker_0306
+@assert area eq 11
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 11 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-11
+@assert vr.sim.shots.level-11.left.scene.verdict ne background
+@assert vr.sim.shots.level-11.right.scene.verdict ne background
+@assert errors eq {errors11}
+
+# --- Level 12, entered at marker_0197 as from level 1
+@remember errors12 errors
+@mark
+loadlevel 12 marker_0197
+@assert area eq 12
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 12 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-12
+@assert vr.sim.shots.level-12.left.scene.verdict ne background
+@assert vr.sim.shots.level-12.right.scene.verdict ne background
+@assert errors eq {errors12}
+
+# --- Level 13, entered at marker_0235 as from level 2
+@remember errors13 errors
+@mark
+loadlevel 13 marker_0235
+@assert area eq 13
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 13 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-13
+@assert vr.sim.shots.level-13.left.scene.verdict ne background
+@assert vr.sim.shots.level-13.right.scene.verdict ne background
+@assert errors eq {errors13}
+
+# --- Level 14, entered at marker_0230 as from level 12
+@remember errors14 errors
+@mark
+loadlevel 14 marker_0230
+@assert area eq 14
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 14 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-14
+@assert vr.sim.shots.level-14.left.scene.verdict ne background
+@assert vr.sim.shots.level-14.right.scene.verdict ne background
+@assert errors eq {errors14}
+
+# --- Level 15, entered at marker_0219 as from level 1
+@remember errors15 errors
+@mark
+loadlevel 15 marker_0219
+@assert area eq 15
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 15 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-15
+@assert vr.sim.shots.level-15.left.scene.verdict ne background
+@assert vr.sim.shots.level-15.right.scene.verdict ne background
+@assert errors eq {errors15}
+
+# --- Level 16, entered at marker_0203 as from level 3
+@remember errors16 errors
+@mark
+loadlevel 16 marker_0203
+@assert area eq 16
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 16 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-16
+@assert vr.sim.shots.level-16.left.scene.verdict ne background
+@assert vr.sim.shots.level-16.right.scene.verdict ne background
+@assert errors eq {errors16}
+
+# --- Level 17, entered at marker_0384 as from level 3
+@remember errors17 errors
+@mark
+loadlevel 17 marker_0384
+@assert area eq 17
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 17 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-17
+@assert vr.sim.shots.level-17.left.scene.verdict ne background
+@assert vr.sim.shots.level-17.right.scene.verdict ne background
+@assert errors eq {errors17}
+
+# --- Level 18, entered at marker_0234 as from level 3
+@remember errors18 errors
+@mark
+loadlevel 18 marker_0234
+@assert area eq 18
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 18 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-18
+@assert vr.sim.shots.level-18.left.scene.verdict ne background
+@assert vr.sim.shots.level-18.right.scene.verdict ne background
+@assert errors eq {errors18}
+
+# --- Level 19, entered at marker_0199 as from level 17
+@remember errors19 errors
+@mark
+loadlevel 19 marker_0199
+@assert area eq 19
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 19 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-19
+@assert vr.sim.shots.level-19.left.scene.verdict ne background
+@assert vr.sim.shots.level-19.right.scene.verdict ne background
+@assert errors eq {errors19}
+
+# --- Level 20, entered at marker_0903 as from level 3
+@remember errors20 errors
+@mark
+loadlevel 20 marker_0903
+@assert area eq 20
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 20 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-20
+@assert vr.sim.shots.level-20.left.scene.verdict ne background
+@assert vr.sim.shots.level-20.right.scene.verdict ne background
+@assert errors eq {errors20}
+
+# --- Level 21, entered at marker_0357 as from level 5
+@remember errors21 errors
+@mark
+loadlevel 21 marker_0357
+@assert area eq 21
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 21 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-21
+@assert vr.sim.shots.level-21.left.scene.verdict ne background
+@assert vr.sim.shots.level-21.right.scene.verdict ne background
+@assert errors eq {errors21}
+
+# --- Level 22, entered at marker_0254 as from level 21
+@remember errors22 errors
+@mark
+loadlevel 22 marker_0254
+@assert area eq 22
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 22 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-22
+@assert vr.sim.shots.level-22.left.scene.verdict ne background
+@assert vr.sim.shots.level-22.right.scene.verdict ne background
+@assert errors eq {errors22}
+
+# --- Level 23, entered at marker_0238 as from level 22
+@remember errors23 errors
+@mark
+loadlevel 23 marker_0238
+@assert area eq 23
+@nolog ^\[[EC]\]                                  # no error or critical line in the load
+@nolog \[hang\] main thread stalled               # nor a hang report
+@frames 30                                       # past the load's frame and its first texture uploads
+levelstats start
+@frames 240                                      # about 3 s at 90 Hz: also past the level's fade-in (TRAPS.md)
+levelstats report
+@log \[channel\] levelstats: level 23 frames=\d+ mean=[\d.]+ p95=[\d.]+ max=[\d.]+ player=\S+ \S+ \S+ exits=\d+ ladders=\d+
+@assert state eq GAMEPLAY
+@assert levelStats.frames ge 239
+@shot level-23
+@assert vr.sim.shots.level-23.left.scene.verdict ne background
+@assert vr.sim.shots.level-23.right.scene.verdict ne background
+@assert errors eq {errors23}
+

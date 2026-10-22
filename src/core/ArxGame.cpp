@@ -275,6 +275,11 @@ bool ArxGame::initialize() {
 	vr::createSession();
 	// One line with the outcome; the lines before it say why when it is flat
 	gameevent::Event("vr.mode")("mode", vr::isEnabled() ? "vr" : "flat")("simulated", vr::isSimulated());
+	if(vr::isEnabled()) {
+		// A fullscreen window minimized on a focus loss draws no frames - the headset would freeze when the player
+		// clicks another program (#406); cfg.ini minimize_on_focus_lost keeps its value for flat mode
+		m_MainWindow->setMinimizeOnFocusLost(false);
+	}
 
 	init = initGameData();
 	if(!init) {
@@ -1278,7 +1283,9 @@ void ArxGame::shutdownGame() {
 
 void ArxGame::onWindowGotFocus(const Window & /* window */) {
 	
-	if(GInput) {
+	// In VR the controllers drive the game and the window's focus changes nothing (#406): a reset would also clear
+	// the actions the controllers hold
+	if(GInput && !vr::isEnabled()) {
 		GInput->reset();
 	}
 	
@@ -1290,10 +1297,15 @@ void ArxGame::onWindowGotFocus(const Window & /* window */) {
 
 void ArxGame::onWindowLostFocus(const Window & /* window */) {
 	
-	// TODO(option-control) add a config option for this
-	ARX_INTERFACE_setCombatMode(COMBAT_MODE_OFF);
-	TRUE_PLAYER_MOUSELOOK_ON = false;
-	PLAYER_MOUSELOOK_ON = false;
+	// In VR the desktop window only mirrors the headset (#406): the player does not see it, and clicking OBS, a
+	// browser or Discord takes its focus - leaving free look would drop the game into cursor mode (the inventory
+	// open, melee refused) with nothing in the headset to say why. Flat mode keeps the engine's behaviour
+	if(!vr::isEnabled()) {
+		// TODO(option-control) add a config option for this
+		ARX_INTERFACE_setCombatMode(COMBAT_MODE_OFF);
+		TRUE_PLAYER_MOUSELOOK_ON = false;
+		PLAYER_MOUSELOOK_ON = false;
+	}
 	
 	// TODO(option-audio) add a config option to disable audio on focus loss
 	
